@@ -336,7 +336,7 @@ void do_main_loop(void)
 				if (rotate_mask == (1<<6)-1)
 					goto done;
 			} else {
-				if (rep > max_nr_syscalls) {
+				if (rep == max_nr_syscalls) {
 					/* Pointless running > once. */
 					if (rotate_mask == (1<<6)-1)
 						goto done;
