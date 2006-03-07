@@ -1,3 +1,6 @@
+* Thu Feb 16 2006 Dave Jones <davej@redhat.com>
+- Added all the i386 syscalls as of 2.6.16rc3
+
 * Wed Jul  7 2004 Dave Jones <davej@redhat.com>
 - Released as v1.0
 

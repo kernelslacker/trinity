@@ -274,6 +274,43 @@ char *syscall_names[] = {
 	"tgkill",	/* 270 */
 	"utimes",
 	"fadvise64_64",
-	"ni_syscall (reserved for vserver)"
+	"ni_syscall (reserved for vserver)",
+	"sys_mbind",
+	"sys_get_mempolicy",
+	"sys_set_mempolicy",
+	"sys_mq_open",
+	"sys_mq_unlink",
+	"sys_mq_timedsend",
+	"sys_mq_timedreceive",	/* 280 */
+	"sys_mq_notify",
+	"sys_mq_getsetattr",
+	"sys_kexec_load",
+	"sys_waitid",
+	"sys_ni_syscall",		/* 285 */ /* available */
+	"sys_add_key",
+	"sys_request_key",
+	"sys_keyctl",
+	"sys_ioprio_set",
+	"sys_ioprio_get",	/* 290 */
+	"sys_inotify_init",
+	"sys_inotify_add_watch",
+	"sys_inotify_rm_watch",
+	"sys_migrate_pages",
+	"sys_openat",		/* 295 */
+	"sys_mkdirat",
+	"sys_mknodat",
+	"sys_fchownat",
+	"sys_futimesat",
+	"sys_fstatat64",		/* 300 */
+	"sys_unlinkat",
+	"sys_renameat",
+	"sys_linkat",
+	"sys_symlinkat",
+	"sys_readlinkat",		/* 305 */
+	"sys_fchmodat",
+	"sys_faccessat",
+	"sys_pselect6",
+	"sys_ppoll",
+	"sys_unshare"		/* 310 */
 };
 

@@ -39,7 +39,7 @@ char opmode= MODE_UNDEFINED;
 
 #ifdef __i386__
 
-# define NR_SYSCALLS 274
+# define NR_SYSCALLS 310
 
 # define __syscall_return(type, res) \
 do { \
