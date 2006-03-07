@@ -40,35 +40,9 @@ char opmode= MODE_UNDEFINED;
 
 #ifdef __i386__
 # define NR_SYSCALLS 310
-
-# define __syscall_return(type, res) \
-do { \
-	if ((unsigned long)(res) >= (unsigned long)(-125)) { \
-		errno = -(res); \
-		res = -1; \
-	} \
-	return (type) (res); \
-} while (0)
-
-long call5(int nr, long a1, long a2, long a3, long a4, long a5)
-{
-	long __res;
-	__asm__ volatile ("int $0x80"
-			  : "=a" (__res)
-			  : "0" (nr),"b" ((long)(a1)),"c" ((long)(a2)),
-			    "d" ((long)(a3)), "S" ((long)(a4)),
-			    "D" ((long)(a5)));
-	__syscall_return(long,__res);
-	return __res;
-}
 #endif
-
 #ifdef __x86_64__
 #define NR_SYSCALLS 272
-long call5(int nr, long a1, long a2, long a3, long a4, long a5)
-{
-	return(syscall(nr, a1, a2, a3, a4, a5));
-}
 #endif
 
 void sighandler(int sig)
@@ -124,7 +98,7 @@ long mkcall (int call)
 	fflush (stdout);
 
 	if (call != __NR_exit && call != __NR_pause)
-		ret = call5 (call, a1, a2, a3, a4, a5);
+		ret = syscall(call, a1, a2, a3, a4, a5);
 	printf ("= %ld", ret);
 
 	if (ret < 0)
