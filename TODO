@@ -1,4 +1,5 @@
 -k = use kernel addresses
+ (make it wander like -z)
 -u = use userspace addresses
 -c NAME
 
@@ -16,4 +17,6 @@ use syscall()
 8 args ?
 
 skip select() sigsuspend() and pause()
+
+add a switch to use 32bit syscall entry point on x86-64
 
