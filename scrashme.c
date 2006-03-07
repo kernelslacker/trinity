@@ -183,12 +183,16 @@ int main (int argc, char* argv[])
 			case 'c':
 				specificsyscall = strtol(optarg, NULL, 10);
 				break;
+
+			/* Pass a ptr to a struct filled with -1 */
 			case 'f':
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_FF;
 				structptr = malloc(4096);
 				memset (structptr, 0xff, 4096);
 				break;
+
+			/* Pass a ptr to a struct filled with junk */
 			case 'j':
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_RAND;
@@ -196,6 +200,8 @@ int main (int argc, char* argv[])
 				for (i=0;i<4096;i++)
 					structptr[i]= rand();
 				break;
+
+			/* Pass in address of kernel text */
 			case 'k':
 				opmode = MODE_REGVAL;
 #ifdef __x86_64__
@@ -205,30 +211,44 @@ int main (int argc, char* argv[])
 				regval = 0xc0100220;
 #endif
 				break;
+
+			/* Pause after each syscall */
 			case 'p':
 				dopause =1;
 				break;
+
+			/* Pass a ptr to a struct filled with zeros */
 			case 'n':
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_0;
 				structptr = malloc(4096);
 				memset (structptr, 0, 4096);
 				break;
+
+			/* Pass in random numbers in registers. */
 			case 'r':
 				opmode = MODE_RANDOM;
 				break;
+
+			/* Set seed */
 			case 's':
 				seed = strtol(optarg, NULL, 10);
 				break;
+
+			/* Set seed from TOD */
 			case 't':
 				gettimeofday(&t, 0);
 				seed = t.tv_usec;
 				randomtime = 1;
 				break;
+
+			/* Set registers to specific value */
 			case 'x':
 				regval=strtoul(optarg, NULL, 10);
 				opmode = MODE_REGVAL;
 				break;
+
+			/* Wander a 0 through every register */
 			case 'z':
 				opmode = MODE_ZEROREGS;
 				break;
