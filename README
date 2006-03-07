@@ -1,0 +1,77 @@
+scrashme v1.0
+
+Original program by Kurt Garloff <garloff@suse.de>
+Subsequent improvements by Dave Jones <davej@redhat.com>
+
+######## Improvements over original version ######################
+
+o Now tests all syscalls, not just 256
+o Certain syscalls made things get out of hand too quickly.
+  Forkbombing a box with this app kills it very quickly.
+  (An alternative would be to only run this with strict rlimits, but
+  there are a few other syscalls we also take care of..)
+o Do the syscall in a child process so if something hangs, we can continue.
+o Printing of the syscall name/return code.
+o Several extra modes of attack.
+
+
+######### options ###############################################
+
+ -bN: begin at offset N.
+Useful for reproducing bugs that start after a certain # of runs.
+
+There are several modes.
+
+Random.
+~~~~~~~
+Good for stress testing, just does zillions of random junk syscalls.
+ -r:  call random syscalls with random inputs.
+ -sN: use N as random seed.
+ -t:  use time of day as seed.
+
+Specific.
+~~~~~~~~~
+Good for concentrating on a certain syscall, if for eg, you just added one.
+ -cN: do syscall N with random inputs.
+TODO: Accept syscall name instead of numeric input
+
+Zero.
+~~~~~
+ -z:  Use all zeros as register parameters.
+This calls every syscall with zeros in each of the registers in turn, in
+every possible combination, with random junk in the other registers.
+Useful for testing for missing NULL checks.
+
+Nullstruct.
+~~~~~~~~~~~
+-n:  pass struct filled with 0x00.
+This calls syscalls with a ptr to a 4KB struct of zero's as arguments.
+
+Fillstruct.
+~~~~~~~~~~~
+-f:  pass struct filled with 0xff.
+As Nullstruct, but with a 0xff instead of 0 fill byte.
+
+Junkstruct.
+~~~~~~~~~~~
+-j:  pass struct filled with random junk.
+As above, but with 4KB of random chars.
+
+
+
+######### Other words of warning ######################################
+
+- This will call syscalls which do things like deleting files, creating
+  files etc with random arguments. You could get really unlucky and
+  lose something, or end up with a lot of crap files in the dir you
+  run this from. Better to run it from a tmp dir or the likes.
+  (Or better yet, a chroot?)
+- It will also do things which affect memory consumption of the process.
+  Setting rlimits may be wise. The child which makes the process grow
+  will be killed, leaving the parent to continue issuing more syscalls.
+
+######### Links to similar projects ####################################
+
+tsys - 1991.
+http://groups.google.com/groups?q=syscall+crashme&hl=en&lr=&ie=UTF-8&selm=1991Sep20.232550.5013%40smsc.sony.com&rnum=1
+

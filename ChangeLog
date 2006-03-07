@@ -1,0 +1,44 @@
+* Wed Jul  7 2004 Dave Jones <davej@redhat.com>
+- Released as v1.0
+
+* Wed Jul  5 2004 Dave Jones <davej@redhat.com>
+- Fix up option parser. Some combination of options
+  did completely the wrong things.
+- Don't print garbage if -c > NR_SYSCALLS
+
+* Fri Oct 31 2003 Dave Jones <davej@redhat.com>
+- Added struct poisoning.
+  -f  pass struct filled with 0xff.
+  -j  pass struct filled with random junk.
+  -n  pass struct filled with 0x00.
+- Added -p (pause after syscall).
+- Fix to test all 274 syscalls, not just 256
+
+* Thu Oct 30 2003 Dave Jones <davej@redhat.com>
+- Dusted off improved version with many changes
+ -xN  use value as arguments.
+ -z  Use wandering zeros as register parameters.
+- Rewrote mode handling.
+
+* Wed Oct 1 2003 Dave Jones <davej@redhat.com>
+- Print out syscall name being called instead of number.
+
+* Thu Apr 10 2003 Dave Jones <davej@suse.de>
+- Added command line parser, and several new options
+  -t to randomize based on time of day
+  -bN begin at offset N.
+  -cN do syscall N with random inputs.
+  -r  call random syscalls with random inputs.
+  -sN use N as random seed.
+
+* Wed Apr 9 2003 Andi Kleen <ak@suse.de>
+- Various cleanups. (Andi did some of the same things I did,
+  I merged some of his changes, and kept some of mine -- davej).
+
+* Tue Apr 8 2003 Dave Jones <davej@suse.de>
+- Don't call functions that may hang.
+- Move doing the syscall to a child process.
+
+* Tue Apr 8 2003 Kurt Garloff <garloff@suse.de>
+- Initial version
+
