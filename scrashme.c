@@ -1,5 +1,5 @@
-/* crashme.c 
- * 
+/*
+ *
  * Call random system calls with random arguments.
  * Based on an original program by Kurt Garloff <garloff@suse.de>
  *
@@ -39,7 +39,6 @@ char *structptr=NULL;
 char opmode= MODE_UNDEFINED;
 
 #ifdef __i386__
-
 # define NR_SYSCALLS 310
 
 # define __syscall_return(type, res) \
@@ -51,11 +50,11 @@ do { \
 	return (type) (res); \
 } while (0)
 
-long call5 (int nr, long a1, long a2, long a3, long a4, long a5)
+long call5(int nr, long a1, long a2, long a3, long a4, long a5)
 {
-	long __res; 
+	long __res;
 	__asm__ volatile ("int $0x80"
-			  : "=a" (__res) 
+			  : "=a" (__res)
 			  : "0" (nr),"b" ((long)(a1)),"c" ((long)(a2)),
 			    "d" ((long)(a3)), "S" ((long)(a4)),
 			    "D" ((long)(a5)));
@@ -66,13 +65,13 @@ long call5 (int nr, long a1, long a2, long a3, long a4, long a5)
 
 #ifdef __x86_64__
 #define NR_SYSCALLS 272
-long call5 (int nr, long a1, long a2, long a3, long a4, long a5)
+long call5(int nr, long a1, long a2, long a3, long a4, long a5)
 {
 	return(syscall(nr, a1, a2, a3, a4, a5));
 }
 #endif
 
-void sighandler (int sig)
+void sighandler(int sig)
 {
 	printf ("%s ", strsignal (sig));
 	fflush (stdout);
@@ -178,7 +177,7 @@ retry:
 
 	alarm (2);
 
-	if(specificsyscall!=0)
+	if (specificsyscall!=0)
 		cl = specificsyscall;
 
 	res = mkcall(cl);
