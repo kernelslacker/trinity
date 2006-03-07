@@ -76,7 +76,7 @@ long mkcall (int call)
 		break;
 
 	case MODE_STRUCT:
-		a1 = a2 = a3 = a4 = a5 = a6 = (long) structptr;
+		a1 = a2 = a3 = a4 = a5 = a6 = (unsigned long) structptr;
 		break;
 
 	case MODE_RANDOM:
