@@ -18,6 +18,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/syscall.h>
 
 extern char *syscall_names[];
 
@@ -61,7 +62,14 @@ long call5 (int nr, long a1, long a2, long a3, long a4, long a5)
 	__syscall_return(long,__res);
 	return __res;
 }
+#endif
 
+#ifdef __x86_64__
+#define NR_SYSCALLS 272
+long call5 (int nr, long a1, long a2, long a3, long a4, long a5)
+{
+	return(syscall(nr, a1, a2, a3, a4, a5));
+}
 #endif
 
 void sighandler (int sig)
@@ -151,9 +159,11 @@ retry:
 	switch (cl) {
 		case __NR_exit:
 		case __NR_fork:
+#ifdef __i386__
 		case __NR_sigsuspend:
-		case __NR_select:
 		case __NR_sigreturn:
+#endif
+		case __NR_select:
 		case __NR_clone:
 		case __NR_rt_sigreturn:
 		case __NR_exit_group:
