@@ -82,16 +82,16 @@ void sighandler (int sig)
 
 long mkcall (int call)
 {
-	long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
+	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	long ret = 0;
 	switch (opmode) {
 	case MODE_ZEROREGS:
-		if (!(zeromask & (1<<0))) a6 = rand();
-		if (!(zeromask & (1<<1))) a5 = rand();
-		if (!(zeromask & (1<<2))) a4 = rand();
-		if (!(zeromask & (1<<3))) a3 = rand();
-		if (!(zeromask & (1<<4))) a2 = rand();
-		if (!(zeromask & (1<<5))) a1 = rand();
+		if (!(zeromask & (1<<0))) a6 = (long) rand() * rand();
+		if (!(zeromask & (1<<1))) a5 = (long) rand() * rand();
+		if (!(zeromask & (1<<2))) a4 = (long) rand() * rand();
+		if (!(zeromask & (1<<3))) a3 = (long) rand() * rand();
+		if (!(zeromask & (1<<4))) a2 = (long) rand() * rand();
+		if (!(zeromask & (1<<5))) a1 = (long) rand() * rand();
 		break;
 
 	case MODE_REGVAL:
@@ -113,20 +113,19 @@ long mkcall (int call)
 		break;
 	}
 	if (call >= NR_SYSCALLS)
-		printf ("%d(0x%08lx,0x%08lx,0x%08lx,0x%08lx,0x%08lx,0x%08lx) ",
-			call, a1, a2, a3, a4, a5, a6);
+		printf ("%d", call);
 	else
-		printf ("%s(0x%08lx,0x%08lx,0x%08lx,0x%08lx,0x%08lx,0x%08lx) ",
-			syscall_names[call], a1, a2, a3, a4, a5, a6);
+		printf ("%s", syscall_names[call]);
+	printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 
 	fflush (stdout);
 
 	if (call != __NR_exit && call != __NR_pause)
 		ret = call5 (call, a1, a2, a3, a4, a5);
-	printf ("=%ld ", ret);
+	printf ("= %ld", ret);
 
 	if (ret < 0)
-		printf ("%s\n", strerror (errno));
+		printf (" %s\n", strerror (errno));
 	else
 		printf ("\n");
 	return ret;
