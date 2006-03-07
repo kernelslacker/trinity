@@ -79,6 +79,10 @@ void sighandler (int sig)
 	_exit(0);
 }
 
+unsigned long getrand()
+{
+	return (unsigned long) rand() * rand();
+}
 
 long mkcall (int call)
 {
@@ -86,12 +90,12 @@ long mkcall (int call)
 	long ret = 0;
 	switch (opmode) {
 	case MODE_ZEROREGS:
-		if (!(zeromask & (1<<0))) a6 = (long) rand() * rand();
-		if (!(zeromask & (1<<1))) a5 = (long) rand() * rand();
-		if (!(zeromask & (1<<2))) a4 = (long) rand() * rand();
-		if (!(zeromask & (1<<3))) a3 = (long) rand() * rand();
-		if (!(zeromask & (1<<4))) a2 = (long) rand() * rand();
-		if (!(zeromask & (1<<5))) a1 = (long) rand() * rand();
+		if (!(zeromask & (1<<0))) a6 = getrand();
+		if (!(zeromask & (1<<1))) a5 = getrand();
+		if (!(zeromask & (1<<2))) a4 = getrand();
+		if (!(zeromask & (1<<3))) a3 = getrand();
+		if (!(zeromask & (1<<4))) a2 = getrand();
+		if (!(zeromask & (1<<5))) a1 = getrand();
 		break;
 
 	case MODE_REGVAL:
@@ -104,12 +108,12 @@ long mkcall (int call)
 
 	case MODE_RANDOM:
 	default:
-		a1 = rand();
-		a2 = rand();
-		a3 = rand();
-		a4 = rand();
-		a5 = rand();
-		a6 = rand();
+		a1 = getrand();
+		a2 = getrand();
+		a3 = getrand();
+		a4 = getrand();
+		a5 = getrand();
+		a6 = getrand();
 		break;
 	}
 	if (call >= NR_SYSCALLS)
@@ -154,7 +158,7 @@ void do_call(int cl)
 {
 	if (opmode == MODE_RANDOM)
 retry:
-		cl = rand () / (RAND_MAX/NR_SYSCALLS);
+		cl = rand() / (RAND_MAX/NR_SYSCALLS);
 
 	switch (cl) {
 		case __NR_exit:
@@ -279,7 +283,7 @@ int main (int argc, char* argv[])
 	}
 	signal(SIGCHLD, SIG_IGN);
 
-	srand (seed);
+	srand(seed);
 
 	for (;;) {
 		switch (opmode) {
