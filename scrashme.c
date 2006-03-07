@@ -139,6 +139,7 @@ void usage(void)
 	fprintf (stderr, "   -cN: do syscall N with random inputs.\n");
 	fprintf (stderr, "   -f:  pass struct filled with 0xff.\n");
 	fprintf (stderr, "   -j:  pass struct filled with random junk.\n");
+	fprintf (stderr, "   -k:  pass kernel addresses as arguments.\n");
 	fprintf (stderr, "   -n:  pass struct filled with 0x00.\n");
 	fprintf (stderr, "   -p;  pause after syscall.\n");
 	fprintf (stderr, "   -r:  call random syscalls with random inputs.\n");
@@ -198,7 +199,7 @@ int main (int argc, char* argv[])
 
 	progname = argv[0];
 
-	while ((c = getopt(argc, argv, "b:c:fjnprs:tx:z")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:fjknprs:tx:z")) != -1) {
 		switch (c) {
 			case 'b':
 				rep = strtol(optarg, NULL, 10);
@@ -218,6 +219,15 @@ int main (int argc, char* argv[])
 				structptr = malloc(4096);
 				for (i=0;i<4096;i++)
 					structptr[i]= rand();
+				break;
+			case 'k':
+				opmode = MODE_REGVAL;
+#ifdef __x86_64__
+				regval = 0xffffffff80100f18;
+#endif
+#ifdef __i386__
+				regval = 0xc0100220;
+#endif
 				break;
 			case 'p':
 				dopause =1;
@@ -274,18 +284,23 @@ int main (int argc, char* argv[])
 
 	for (;;) {
 		switch (opmode) {
-			case MODE_ZEROREGS:
-			if (rep == NR_SYSCALLS) {
-				/* Pointless running > once. */
-				if (zeromask == (1<<6)-1)
+			case MODE_REGVAL:
+				if (rep == NR_SYSCALLS)
 					goto done;
-				rep = 0;
-				zeromask++;
-			}
-			break;
+				break;
+
+			case MODE_ZEROREGS:
+				if (rep == NR_SYSCALLS) {
+					/* Pointless running > once. */
+					if (zeromask == (1<<6)-1)
+						goto done;
+					rep = 0;
+					zeromask++;
+				}
+				break;
 
 			case MODE_STRUCT:
-				switch(structmode) {
+				switch (structmode) {
 				case STRUCTMODE_RAND:
 					for (i=0;i<4096;i++)
 						structptr[i]= rand();
