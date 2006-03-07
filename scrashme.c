@@ -19,6 +19,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/syscall.h>
+#ifdef __x86_64__
+#include "x86-64.h"
+#endif
+#ifdef __i386__
+#include "i386.h"
+#endif
 
 extern char *syscall_names[];
 
@@ -37,13 +43,6 @@ char *structptr=NULL;
 #define MODE_STRUCT 4
 
 char opmode= MODE_UNDEFINED;
-
-#ifdef __i386__
-# define NR_SYSCALLS 310
-#endif
-#ifdef __x86_64__
-#define NR_SYSCALLS 272
-#endif
 
 void sighandler(int sig)
 {
@@ -204,12 +203,7 @@ int main (int argc, char* argv[])
 			/* Pass in address of kernel text */
 			case 'k':
 				opmode = MODE_REGVAL;
-#ifdef __x86_64__
-				regval = 0xffffffff80100f18;
-#endif
-#ifdef __i386__
-				regval = 0xc0100220;
-#endif
+				regval = KERNEL_ADDR;
 				break;
 
 			/* Pause after each syscall */

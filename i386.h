@@ -1,0 +1,3 @@
+#define NR_SYSCALLS 310
+#define KERNEL_ADDR	0xc0100220
+
