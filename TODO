@@ -26,11 +26,12 @@ Pass "interesting" 32 bit patterns.
 	8fffffff
 
 Pass "interesting" 64 bit patterns.
-	8000000000000000
-	80000000ffffffff
 	0000000100000000
 	00000001ffffffff
+	0000000800000000 (non canonical RIP?)
+	8000000000000000
+	80000000ffffffff
 	ffffffff00000000
 	ffffffff7fffffff
 	ffffffffffffffff
-
+	fffffff7ffffffff (non canonical RIP?)
