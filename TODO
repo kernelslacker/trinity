@@ -2,6 +2,7 @@
  (make it wander like -z)
 -u = use userspace addresses
 -c NAME
+-i = intelligent parameters
 
 --run-for=1hour
 --numcalls=1000000

@@ -1,3 +1,4 @@
-#define NR_SYSCALLS 310
+#include "syscalls-i386.h"
+
 #define KERNEL_ADDR	0xc0100220
 

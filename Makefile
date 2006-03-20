@@ -3,8 +3,7 @@ CFLAGS = -Wall -W -Wshadow -g -O2
 
 all: scrashme
 
-OBJS =	scrashme.o \
-		syscall-names.o
+OBJS =	scrashme.o
 
 scrashme: $(OBJS)
 	$(CC) $(CFLAGS) -o scrashme $(OBJS)

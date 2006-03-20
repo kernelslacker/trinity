@@ -25,8 +25,9 @@
 #ifdef __i386__
 #include "i386.h"
 #endif
+#include "scrashme.h"
 
-extern char *syscall_names[];
+struct syscalltable *syscalls;
 
 long res=0;
 long specificsyscall=0;
@@ -91,7 +92,7 @@ long mkcall (int call)
 	if (call >= NR_SYSCALLS)
 		printf ("%d", call);
 	else
-		printf ("%s", syscall_names[call]);
+		printf ("%s", syscalls[call].name);
 	printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 
 	fflush (stdout);
@@ -171,6 +172,13 @@ int main (int argc, char* argv[])
 	struct timeval t;
 	volatile char randomtime;
 	int structmode=0;
+
+#ifdef __x86_64__
+	syscalls = syscalls_x86_64;
+#else
+	syscalls = syscalls_i386;
+#endif
+
 
 	progname = argv[0];
 
