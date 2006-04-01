@@ -2,7 +2,7 @@
 
 #include "scrashme.h"
 
-#define NR_SYSCALLS 272
+#define NR_SYSCALLS 276
 
 struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "read", },		/* 0 */
@@ -278,5 +278,9 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "pselect6" },	/* 270 */
 	{ .name = "ppoll" },
 	{ .name = "unshare" },
+	{ .name = "set_robust_list", },
+	{ .name = "get_robust_list", },
+	{ .name = "splice", },	/* 275 */
+	{ .name = "sync_file_range", },
 };
 

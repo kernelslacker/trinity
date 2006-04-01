@@ -2,7 +2,7 @@
 
 #include "scrashme.h"
 
-#define NR_SYSCALLS 310
+#define NR_SYSCALLS 314
 
 struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
@@ -316,5 +316,9 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "pselect6", },
 	{ .name = "ppoll", },
 	{ .name = "unshare", },		/* 310 */
+	{ .name = "set_robust_list", },
+	{ .name = "get_robust_list", },
+	{ .name = "splice", },
+	{ .name = "sync_file_range", },
 };
 
