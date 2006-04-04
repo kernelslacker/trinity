@@ -319,7 +319,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "unshare", },		/* 310 */
 	{ .name = "set_robust_list", },
 	{ .name = "get_robust_list", },
-	{ .name = "splice", },
+	{ .name = "splice", .sanitise = sanitise_splice },
 	{ .name = "sync_file_range", },
 };
 
