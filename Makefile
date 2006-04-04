@@ -7,8 +7,8 @@ OBJS =	scrashme.o sanitise.o files.o
 
 scrashme: $(OBJS)
 	$(CC) $(CFLAGS) -o scrashme $(OBJS)
-	touch tmp/testfile
-	touch tmp/testfile2
+	dd if=/dev/urandom of=tmp/testfile bs=1M count=1
+	dd if=/dev/urandom of=tmp/testfile2 bs=1M count=1
 
 .c.o:
 	$(CC) $(CFLAGS) -o $@ -c $<
