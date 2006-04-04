@@ -1,15 +1,29 @@
+#include <stdlib.h>
+#include "files.h"
+
+
+/*
+ * asmlinkage long sys_splice(int fdin, int fdout, size_t len, unsigned int flags)
+ * : len must be > 0
+ * : fdin & fdout must be file handles
+ *
+ */
 void sanitise_splice(
 				unsigned long *a1,
 				unsigned long *a2,
-				unsigned long *a3,
-				unsigned long *a4,
-				unsigned long *a5,
-				unsigned long *a6)
+				__attribute((unused)) unsigned long *a3,
+				__attribute((unused)) unsigned long *a4,
+				__attribute((unused)) unsigned long *a5,
+				__attribute((unused)) unsigned long *a6)
 {
-	*a1 = 1;
-	*a2 = 2;
-	*a3 = 3;
-	*a4 = 4;
-	*a5 = 5;
-	*a6 = 6;
+	/* first param is fdin */
+	*a1 = get_random_fd();
+
+	/* second param is fdout */
+	*a2 = get_random_fd();
+
+	/* Returns 0 if !len */
+	if (*a3 == 0)
+		*a1 = rand();
+
 }

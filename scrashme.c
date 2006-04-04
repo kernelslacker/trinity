@@ -26,6 +26,7 @@
 #include "i386.h"
 #endif
 #include "scrashme.h"
+#include "files.h"
 
 struct syscalltable *syscalls;
 
@@ -212,6 +213,7 @@ int main (int argc, char* argv[])
 			/* use semi-intelligent options */
 			case 'i':
 				intelligence = 1;
+				setup_fds();
 				break;
 
 			/* Pass a ptr to a struct filled with junk */

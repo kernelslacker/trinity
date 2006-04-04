@@ -3,10 +3,12 @@ CFLAGS = -Wall -W -Wshadow -g -O2
 
 all: scrashme
 
-OBJS =	scrashme.o sanitise.o
+OBJS =	scrashme.o sanitise.o files.o
 
 scrashme: $(OBJS)
 	$(CC) $(CFLAGS) -o scrashme $(OBJS)
+	touch tmp/testfile
+	touch tmp/testfile2
 
 .c.o:
 	$(CC) $(CFLAGS) -o $@ -c $<
