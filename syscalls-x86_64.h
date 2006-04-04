@@ -1,6 +1,7 @@
 /* Syscalls from include/asm-x86_64/unistd.h as of 2.6.16 */
 
 #include "scrashme.h"
+#include "sanitise.h"
 
 #define NR_SYSCALLS 276
 
@@ -280,7 +281,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "unshare" },
 	{ .name = "set_robust_list", },
 	{ .name = "get_robust_list", },
-	{ .name = "splice", },	/* 275 */
+	{ .name = "splice", .sanitise = sanitise_splice },	/* 275 */
 	{ .name = "sync_file_range", },
 };
 

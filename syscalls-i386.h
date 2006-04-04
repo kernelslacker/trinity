@@ -1,6 +1,7 @@
 /* Syscalls from arch/i386/kernel/entry.S as of 2.6.16 */
 
 #include "scrashme.h"
+#include "sanitise.h"
 
 #define NR_SYSCALLS 314
 

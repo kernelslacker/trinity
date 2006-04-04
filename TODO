@@ -2,7 +2,6 @@
  (make it wander like -z)
 -u = use userspace addresses
 -c NAME
--i = intelligent parameters
 
 --run-for=1hour
 --numcalls=1000000
@@ -13,9 +12,9 @@
 
 flush() & fsync() before making the call
 
-use syscall()
-
 8 args ?
+
+- Other arch support. PPC? IA64? S390?
 
 skip select() sigsuspend() and pause()
 

@@ -3,7 +3,7 @@ CFLAGS = -Wall -W -Wshadow -g -O2
 
 all: scrashme
 
-OBJS =	scrashme.o
+OBJS =	scrashme.o sanitise.o
 
 scrashme: $(OBJS)
 	$(CC) $(CFLAGS) -o scrashme $(OBJS)

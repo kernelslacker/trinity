@@ -3,6 +3,13 @@
 
 struct syscalltable {
 	char name[80];
+	void (*sanitise)(
+		unsigned long *,
+		unsigned long *,
+		unsigned long *,
+		unsigned long *,
+		unsigned long *,
+		unsigned long *);
 };
 
 #endif	/* _SCRASHME_H */

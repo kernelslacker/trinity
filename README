@@ -57,6 +57,19 @@ Junkstruct.
 -j:  pass struct filled with random junk.
 As above, but with 4KB of random chars.
 
+Intelligent parameters.
+~~~~~~~~~~~~~~~~~~~~~~~
+Given a vast number of syscalls do some checking, chances are a majority
+of the calls will get something like -EINVAL back.  This option passes
+some almost sensible looking parameters to defeat the simplest checks.
+This requires a .sanitise method for each syscall, and right now,
+hardly any of the syscalls provide this.
+
+
+Examples:
+./scrashme -c 275 -r -i
+Stress test the splice syscall, with random parameters, but sanitise
+the passed params so they look almost sensible.
 
 
 ######### Other words of warning ######################################

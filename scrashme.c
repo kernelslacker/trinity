@@ -35,6 +35,7 @@ long regval=0;
 char zeromask=0;
 char *progname=0;
 char dopause=0;
+char intelligence=0;
 char *structptr=NULL;
 
 #define MODE_UNDEFINED 0
@@ -43,7 +44,7 @@ char *structptr=NULL;
 #define MODE_REGVAL 3
 #define MODE_STRUCT 4
 
-char opmode= MODE_UNDEFINED;
+char opmode = MODE_UNDEFINED;
 
 void sighandler(int sig)
 {
@@ -93,6 +94,15 @@ long mkcall (int call)
 		printf ("%d", call);
 	else
 		printf ("%s", syscalls[call].name);
+
+	if (intelligence == 1) {
+		if (syscalls[call].sanitise) {
+			printf ("\n\tSanitising options.\n\tBefore:\t");
+			printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n", a1, a2, a3, a4, a5, a6);
+			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
+			printf("\tAfter:\t(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+		}
+	}
 	printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 
 	fflush (stdout);
@@ -182,7 +192,7 @@ int main (int argc, char* argv[])
 
 	progname = argv[0];
 
-	while ((c = getopt(argc, argv, "b:c:fjknprs:tx:z")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:fijknprs:tx:z")) != -1) {
 		switch (c) {
 			case 'b':
 				rep = strtol(optarg, NULL, 10);
@@ -197,6 +207,11 @@ int main (int argc, char* argv[])
 				structmode = STRUCTMODE_FF;
 				structptr = malloc(4096);
 				memset (structptr, 0xff, 4096);
+				break;
+
+			/* use semi-intelligent options */
+			case 'i':
+				intelligence = 1;
 				break;
 
 			/* Pass a ptr to a struct filled with junk */
