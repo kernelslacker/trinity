@@ -14,7 +14,7 @@ static int file_no_write = 0;
 void setup_fds(void)
 {
 	if (!file_user)
-		file_user = open("tmp/testfile", O_RDWR);
+		file_user = open("tmp/testfile", O_RDWR | O_TRUNC);
 	if (file_user < 0) {
 		perror("couldn't open testfile");
 		exit(0);
@@ -40,6 +40,9 @@ int get_random_fd()
 {
 	int i = rand();
 	int fd = 0;
+
+	close_fds();
+	setup_fds();
 
 	switch (i & 1) {
 	case 0:	fd = file_user;

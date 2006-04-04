@@ -1,4 +1,4 @@
-/* Syscalls from arch/i386/kernel/entry.S as of 2.6.16 */
+/* Syscalls from arch/i386/kernel/entry.S as of 2.6.17rc1 */
 
 #include "scrashme.h"
 #include "sanitise.h"
@@ -9,8 +9,8 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
 	{ .name = "exit", },
 	{ .name = "fork", },
-	{ .name = "read", },
-	{ .name = "write", },
+	{ .name = "read", .sanitise = sanitise_read },
+	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", },		/* 5 */
 	{ .name = "close", },
 	{ .name = "waitpid", },

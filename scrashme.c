@@ -38,6 +38,7 @@ char *progname=0;
 char dopause=0;
 char intelligence=0;
 char *structptr=NULL;
+char do_specific_syscall=0;
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
@@ -162,7 +163,7 @@ retry:
 
 	alarm (2);
 
-	if (specificsyscall!=0)
+	if (do_specific_syscall != 0)
 		cl = specificsyscall;
 
 	res = mkcall(cl);
@@ -199,6 +200,7 @@ int main (int argc, char* argv[])
 				rep = strtol(optarg, NULL, 10);
 				break;
 			case 'c':
+				do_specific_syscall = 1;
 				specificsyscall = strtol(optarg, NULL, 10);
 				break;
 
