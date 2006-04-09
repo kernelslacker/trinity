@@ -95,7 +95,9 @@ void sanitise_splice(
 	*a2 = get_random_fd();
 
 	/* Returns 0 if !len */
-	if (*a3 == 0)
-		*a1 = rand();
-
+retry:
+	if (*a3 == 0) {
+		*a3 = rand();
+		goto retry;
+	}
 }
