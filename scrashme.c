@@ -299,6 +299,8 @@ int main (int argc, char* argv[])
 
 	srand(seed);
 
+	chroot("tmp");
+
 	for (;;) {
 		switch (opmode) {
 			case MODE_REGVAL:
