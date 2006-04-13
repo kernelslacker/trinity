@@ -12,7 +12,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", },		/* 5 */
-	{ .name = "close", },
+	{ .name = "close", .sanitise = sanitise_close },
 	{ .name = "waitpid", },
 	{ .name = "creat", },
 	{ .name = "link", },
@@ -25,7 +25,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "lchown16", },
 	{ .name = "ni_syscall (old break syscall holder)", },
 	{ .name = "stat", },
-	{ .name = "lseek", },
+	{ .name = "lseek", .sanitise = sanitise_lseek },
 	{ .name = "getpid", },	/* 20 */
 	{ .name = "mount", },
 	{ .name = "oldumount", },
@@ -60,7 +60,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "acct", },
 	{ .name = "umount (recycled never used phys())", },
 	{ .name = "ni_syscall (old lock syscall holder", },
-	{ .name = "ioctl", },
+	{ .name = "ioctl", .sanitise = sanitise_ioctl },
 	{ .name = "fcntl", },		/* 55 */
 	{ .name = "ni_syscall (old mpx syscall holder)", },
 	{ .name = "setpgid", },
@@ -96,7 +96,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "swapon", },
 	{ .name = "reboot", },
 	{ .name = "readdir", },
-	{ .name = "mmap", },		/* 90 */
+	{ .name = "mmap", .sanitise = sanitise_mmap },		/* 90 */
 	{ .name = "munmap", },
 	{ .name = "truncate", },
 	{ .name = "ftruncate", },
@@ -114,7 +114,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "getitimer", },	/* 105 */
 	{ .name = "newstat", },
 	{ .name = "newlstat", },
-	{ .name = "newfstat", },
+	{ .name = "newfstat", .sanitise = sanitise_newfstat },
 	{ .name = "uname", },
 	{ .name = "iopl", },		/* 110 */
 	{ .name = "vhangup", },
@@ -131,7 +131,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "newuname", },
 	{ .name = "modify_ldt", },
 	{ .name = "adjtimex", },
-	{ .name = "mprotect", },	/* 125 */
+	{ .name = "mprotect", .sanitise = sanitise_mprotect },	/* 125 */
 	{ .name = "sigprocmask", },
 	{ .name = "ni_syscall (old create_module)", },
 	{ .name = "init_module", },
@@ -151,8 +151,8 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "select", },
 	{ .name = "flock", },
 	{ .name = "msync", },
-	{ .name = "readv", },	/* 145 */
-	{ .name = "writev", },
+	{ .name = "readv", .sanitise = sanitise_readv },	/* 145 */
+	{ .name = "writev", .sanitise = sanitise_writev },
 	{ .name = "getsid", },
 	{ .name = "fdatasync", },
 	{ .name = "sysctl", },
@@ -169,7 +169,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "sched_get_priority_min", },  /* 160 */
 	{ .name = "sched_rr_get_interval", },
 	{ .name = "nanosleep", },
-	{ .name = "mremap", },
+	{ .name = "mremap", .sanitise = sanitise_mremap },
 	{ .name = "setresuid16", },
 	{ .name = "getresuid16", },	/* 165 */
 	{ .name = "vm86", },
@@ -180,14 +180,14 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "getresgid16", },
 	{ .name = "prctl", },
 	{ .name = "rt_sigreturn", },
-	{ .name = "rt_sigaction", },
-	{ .name = "rt_sigprocmask", },	/* 175 */
+	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
+	{ .name = "rt_sigprocmask", .santise = sanitise_rt_sigprocmask },	/* 175 */
 	{ .name = "rt_sigpending", },
 	{ .name = "rt_sigtimedwait", },
 	{ .name = "rt_sigqueueinfo", },
 	{ .name = "rt_sigsuspend", },
-	{ .name = "pread64", },	/* 180 */
-	{ .name = "pwrite64", },
+	{ .name = "pread64", .sanitise = sanitise_pread64 },	/* 180 */
+	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
 	{ .name = "chown16", },
 	{ .name = "getcwd", },
 	{ .name = "capget", },

@@ -35,3 +35,8 @@ Pass "interesting" 64 bit patterns.
 	ffffffff7fffffff
 	ffffffffffffffff
 	fffffff7ffffffff (non canonical RIP?)
+
+Due to forking of child processes, things like mmap/mprotect etc
+don't do anything to affect future calls.  Maybe add a --no-children
+to prevent forking?
+

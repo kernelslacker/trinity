@@ -3,6 +3,19 @@
 #include <unistd.h>
 #include <limits.h>
 #include "files.h"
+#ifdef __x86_64__
+#define TASK_SIZE       (0x800000000000UL - 4096)
+#endif
+#ifdef __i386__
+#define PAGE_OFFSET 0xC0000000
+#define TASK_SIZE (PAGE_OFFSET)
+/*
+ * Alternative possibilities for PAGE_OFFSET:
+ * default 0xB0000000 if VMSPLIT_3G_OPT
+ * default 0x78000000 if VMSPLIT_2G
+ * default 0x40000000 if VMSPLIT_1G
+ */
+#endif
 
 static char * filebuffer = NULL;
 unsigned long filebuffersize = 0;
@@ -75,6 +88,337 @@ retry:
 }
 
 /*
+ * asmlinkage long sys_open(const char __user *filename, int flags, int mode)
+ * TODO: Create a helper to pass in some filenames of real files.
+ */
+
+/*
+ * asmlinkage long sys_close(unsigned int fd)
+ */
+void sanitise_close(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+}
+
+
+/*
+ * asmlinkage long sys_newstat(char __user *filename, struct stat __user *statbuf)
+ */
+
+/*
+ * asmlinkage long sys_newfstat(unsigned int fd, struct stat __user *statbuf)
+ */
+void sanitise_newfstat(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+}
+
+
+/*
+ * asmlinkage long sys_newlstat(char __user *filename, struct stat __user *statbuf)
+ */
+
+/*
+ * asmlinkage long sys_poll(struct pollfd __user *ufds, unsigned int nfds,
+             long timeout_msecs)
+ */
+
+/*
+ * asmlinkage off_t sys_lseek(unsigned int fd, off_t offset, unsigned int origin)
+ */
+void sanitise_lseek(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+}
+
+/*
+ * asmlinkage long sys_mmap(unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags,
+   unsigned long fd, unsigned long off)
+ */
+void sanitise_mmap(
+		__attribute((unused)) unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a5 = get_random_fd();
+}
+
+/*
+ * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
+ */
+#include <sys/mman.h>
+#include <asm/page.h>
+#define PROT_SEM    0x8
+
+void sanitise_mprotect(
+		unsigned long *a1,
+		unsigned long *a2,
+		unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	unsigned long end;
+	int grows;
+
+retry_prot:
+	grows = *a3 & (PROT_GROWSDOWN|PROT_GROWSUP);
+	if (grows == (PROT_GROWSDOWN|PROT_GROWSUP)) {
+		*a3 = rand();
+		goto retry_prot;
+	}
+	if (*a3 & ~(PROT_READ | PROT_WRITE | PROT_EXEC | PROT_SEM)) {
+		*a3 = rand();
+		goto retry_prot;
+	}
+
+retry_start:
+	if (*a1 & ~PAGE_MASK) {
+		*a1 &= PAGE_MASK;
+		goto retry_start;
+	}
+
+	/* len must be >0 */
+retry_len:
+	if (*a2 == 0) {
+		*a2 = rand();
+		goto retry_len;
+	}
+
+	/* End must be after start */
+retry_end:
+	end = *a1 + *a2;
+	if (end <= *a1) {
+		*a2 *= 2;
+		goto retry_end;
+	}
+}
+
+/*
+ * asmlinkage long sys_munmap(unsigned long addr, size_t len)
+ */
+
+/*
+ * asmlinkage unsigned long sys_brk(unsigned long brk)
+ */
+
+/*
+ * asmlinkage long sys_rt_sigaction(int sig,
+          const struct sigaction __user *act,
+          struct sigaction __user *oact,
+          size_t sigsetsize)
+ */
+#include <signal.h>
+
+void sanitise_rt_sigaction(
+		__attribute((unused)) unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a4 = sizeof(sigset_t);
+}
+
+/*
+ * asmlinkage long
+ sys_rt_sigprocmask(int how, sigset_t __user *set, sigset_t __user *oset, size_t sigsetsize)
+ */
+void sanitise_rt_sigprocmask(
+		__attribute((unused)) unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a4 = sizeof(sigset_t);
+}
+
+/*
+ * asmlinkage int sys_rt_sigreturn(unsigned long __unused)
+ */
+
+/*
+ * asmlinkage long sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
+ */
+void sanitise_ioctl(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+}
+
+/*
+ * asmlinkage ssize_t sys_pread64(unsigned int fd, char __user *buf,
+				                 size_t count, loff_t pos)
+ */
+void sanitise_pread64(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+
+retry_pos:
+	if ((int)*a4 < 0) {
+		*a4 = rand();
+		goto retry_pos;
+	}
+}
+
+/*
+ * asmlinkage ssize_t sys_pwrite64(unsigned int fd, char __user *buf,
+				                 size_t count, loff_t pos)
+ */
+void sanitise_pwrite64(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+
+retry_pos:
+	if ((int)*a4 < 0) {
+		*a4 = rand();
+		goto retry_pos;
+	}
+}
+
+/*
+ * asmlinkage ssize_t
+ * sys_readv(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
+ */
+void sanitise_readv(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+}
+
+/*
+ * asmlinkage ssize_t
+ * sys_writev(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
+ */
+void sanitise_writev(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		__attribute((unused)) unsigned long *a3,
+		__attribute((unused)) unsigned long *a4,
+		__attribute((unused)) unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+	*a1 = get_random_fd();
+}
+
+/*
+ * asmlinkage long sys_access(const char __user *filename, int mode)
+ */
+
+/*
+ * asmlinkage long sys_pipe(int __user *fildes)
+ */
+
+/*
+ * asmlinkage long sys_select(int n, fd_set __user *inp, fd_set __user *outp,
+             fd_set __user *exp, struct timeval __user *tvp)
+ */
+
+/*
+ * asmlinkage long sys_sched_yield(void)
+ */
+
+/*
+ * asmlinkage unsigned long sys_mremap(unsigned long addr,
+ *   unsigned long old_len, unsigned long new_len,
+ *   unsigned long flags, unsigned long new_addr)
+ */
+#include <linux/mman.h>
+
+void sanitise_mremap(
+		unsigned long *a1,
+		__attribute((unused)) unsigned long *a2,
+		unsigned long *a3,
+		unsigned long *a4,
+		unsigned long *a5,
+		__attribute((unused)) unsigned long *a6)
+{
+retry_flags:
+	if (*a4 & ~(MREMAP_FIXED | MREMAP_MAYMOVE)) {
+		*a4 = rand();
+		goto retry_flags;
+	}
+
+retry_addr:
+	if (*a1 & ~PAGE_MASK) {
+		*a1 &= PAGE_MASK;
+		goto retry_addr;
+	}
+
+retry_newlen:
+	if (!*a3) {
+		*a3 = rand();
+		goto retry_newlen;
+	}
+
+	if (*a4 & MREMAP_FIXED) {
+		*a5 &= PAGE_MASK;
+
+		if (!(*a4 & MREMAP_MAYMOVE))
+			*a4 &= ~MREMAP_MAYMOVE;
+
+		if (*a3 > TASK_SIZE)	/* new_len > TASK_SIZE */
+			*a3 &= TASK_SIZE;
+
+		/* new_addr > TASK_SIZE - new_len*/
+retry_tasksize_end:
+		if (*a5 > TASK_SIZE - *a3) {
+			*a5 -= rand();
+			goto retry_tasksize_end;
+		}
+	}
+
+	//TODO: Lots more checks here.
+	// We already check for overlap in do_mremap()
+}
+
+/*
  * asmlinkage long sys_splice(int fdin, int fdout, size_t len, unsigned int flags)
  * : len must be > 0
  * : fdin & fdout must be file handles
@@ -101,3 +445,4 @@ retry:
 		goto retry;
 	}
 }
+

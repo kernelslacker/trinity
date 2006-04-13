@@ -9,29 +9,29 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },		/* 0 */
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open" },
-	{ .name = "close" },
+	{ .name = "close", .sanitise = sanitise_close },
 	{ .name = "newstat" },
-	{ .name = "newfstat" },	/* 5 */
+	{ .name = "newfstat", .sanitise = sanitise_newfstat },	/* 5 */
 	{ .name = "newlstat" },
 	{ .name = "poll" },
-	{ .name = "lseek" },
-	{ .name = "mmap" },
-	{ .name = "mprotect" },	/* 10 */
+	{ .name = "lseek", .sanitise = sanitise_lseek },
+	{ .name = "mmap", .sanitise = sanitise_mmap },
+	{ .name = "mprotect", .sanitise = sanitise_mprotect },	/* 10 */
 	{ .name = "munmap" },
 	{ .name = "brk" },
-	{ .name = "rt_sigaction" },
-	{ .name = "rt_sigprocmask" },
+	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
+	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
 	{ .name = "rt_sigreturn" },	/* 15 */
-	{ .name = "ioctl" },
-	{ .name = "pread64" },
-	{ .name = "pwrite64" },
-	{ .name = "readv" },
-	{ .name = "writev" },	/* 20 */
+	{ .name = "ioctl", .sanitise = sanitise_ioctl },
+	{ .name = "pread64", .sanitise = sanitise_pread64 },
+	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
+	{ .name = "readv", .sanitise = sanitise_readv },
+	{ .name = "writev", .sanitise = sanitise_writev },	/* 20 */
 	{ .name = "access" },
 	{ .name = "pipe" },
 	{ .name = "select" },
 	{ .name = "sched_yield" },
-	{ .name = "mremap" },	/* 25 */
+	{ .name = "mremap", .sanitise = sanitise_mremap },	/* 25 */
 	{ .name = "msync" },
 	{ .name = "mincore" },
 	{ .name = "madvise" },
@@ -284,4 +284,3 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "splice", .sanitise = sanitise_splice },	/* 275 */
 	{ .name = "sync_file_range", },
 };
-
