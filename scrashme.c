@@ -92,7 +92,7 @@ long mkcall (int call)
 		a6 = getrand();
 		break;
 	}
-	if (call >= NR_SYSCALLS)
+	if (call > NR_SYSCALLS)
 		printf ("%d", call);
 	else
 		printf ("%s", syscalls[call].name);
@@ -305,7 +305,7 @@ int main (int argc, char* argv[])
 	for (;;) {
 		switch (opmode) {
 			case MODE_REGVAL:
-				if (rep == NR_SYSCALLS)
+				if (rep > NR_SYSCALLS)
 					goto done;
 				break;
 
@@ -315,7 +315,7 @@ int main (int argc, char* argv[])
 					if (zeromask == (1<<6)-1)
 						goto done;
 				} else {
-					if (rep == NR_SYSCALLS) {
+					if (rep > NR_SYSCALLS) {
 						/* Pointless running > once. */
 						if (zeromask == (1<<6)-1)
 							goto done;
@@ -332,7 +332,7 @@ int main (int argc, char* argv[])
 						structptr[i]= rand();
 					break;
 				}
-				if (rep == NR_SYSCALLS)
+				if (rep > NR_SYSCALLS)
 					goto done;
 				break;
 		}
