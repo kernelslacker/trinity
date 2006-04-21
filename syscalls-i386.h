@@ -3,7 +3,7 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 314
+#define NR_SYSCALLS 315
 
 struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
@@ -321,5 +321,6 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "get_robust_list", },
 	{ .name = "splice", .sanitise = sanitise_splice },
 	{ .name = "sync_file_range", },
+	{ .name = "tee", },	/* 315 */
 };
 

@@ -3,7 +3,7 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 276
+#define NR_SYSCALLS 277
 
 struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },		/* 0 */
@@ -282,5 +282,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "set_robust_list", },
 	{ .name = "get_robust_list", },
 	{ .name = "splice", .sanitise = sanitise_splice },	/* 275 */
+	{ .name = "tee", },
 	{ .name = "sync_file_range", },
 };
