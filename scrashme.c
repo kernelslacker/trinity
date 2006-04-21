@@ -310,12 +310,18 @@ int main (int argc, char* argv[])
 				break;
 
 			case MODE_ZEROREGS:
-				if (rep == NR_SYSCALLS) {
-					/* Pointless running > once. */
+				if (do_specific_syscall == 1) {
+					zeromask++;
 					if (zeromask == (1<<6)-1)
 						goto done;
-					rep = 0;
-					zeromask++;
+				} else {
+					if (rep == NR_SYSCALLS) {
+						/* Pointless running > once. */
+						if (zeromask == (1<<6)-1)
+							goto done;
+						rep = 0;
+						zeromask++;
+					}
 				}
 				break;
 
