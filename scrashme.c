@@ -99,10 +99,11 @@ long mkcall (int call)
 
 	if (intelligence == 1) {
 		if (syscalls[call].sanitise) {
+#if 1
 			printf ("\n\tSanitising options.\n\tBefore:\t");
-			printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n", a1, a2, a3, a4, a5, a6);
+			printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n\tAfter:\t", a1, a2, a3, a4, a5, a6);
+#endif
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
-			printf("\tAfter:\t(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 		}
 	}
 	printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
