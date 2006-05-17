@@ -118,6 +118,7 @@ long mkcall (int call)
 		printf (" %s\n", strerror (errno));
 	else
 		printf ("\n");
+	fflush (stdout);
 	return ret;
 }
 
