@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
+#include <string.h>
 #include "files.h"
+
 #ifdef __x86_64__
 #define TASK_SIZE       (0x800000000000UL - 4096)
 #endif
