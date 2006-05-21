@@ -27,10 +27,16 @@ void setup_fds(void)
 	}
 }
 
-void close_fds(void)
+static void close_fds(void)
 {
-	close(file_user);
-	close(file_no_write);
+	if (close(file_user)==-1) {
+		perror("close file_user");
+		exit(EXIT_FAILURE);
+	}
+	if (close(file_no_write)==-1) {
+		perror("close file_nowrite");
+		exit(EXIT_FAILURE);
+	}
 	file_user = 0;
 	file_no_write = 0;
 }

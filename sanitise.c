@@ -18,7 +18,13 @@
 #endif
 
 static char * filebuffer = NULL;
-unsigned long filebuffersize = 0;
+static unsigned long filebuffersize = 0;
+
+#ifndef S_SPLINT_S
+#define __unused __attribute((unused))
+#else
+#define __unused /*@unused@*/
+#endif
 
 /*
  * asmlinkage ssize_t sys_read(unsigned int fd, char __user * buf, size_t count)
@@ -27,9 +33,9 @@ void sanitise_read(
 		unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	unsigned long newsize = ((unsigned int) *a3) >>8;
 
@@ -39,6 +45,7 @@ void sanitise_read(
 		if (filebuffersize < newsize) {
 			free(filebuffer);
 			filebuffersize = 0;
+			filebuffer = NULL;
 		}
 	}
 
@@ -54,6 +61,7 @@ retry:
 	}
 	*a2 = (unsigned long) filebuffer;
 	*a3 = newsize;
+	memset(filebuffer, 0, newsize);
 }
 
 /*
@@ -63,9 +71,9 @@ void sanitise_write(
 		unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	unsigned long newsize = *a3 & 0xffff;
 	void *newbuffer;
@@ -97,11 +105,11 @@ retry:
  */
 void sanitise_close(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 }
@@ -116,11 +124,11 @@ void sanitise_close(
  */
 void sanitise_newfstat(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 }
@@ -140,11 +148,11 @@ void sanitise_newfstat(
  */
 void sanitise_lseek(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 }
@@ -154,12 +162,12 @@ void sanitise_lseek(
    unsigned long fd, unsigned long off)
  */
 void sanitise_mmap(
-		__attribute((unused)) unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
+		__unused unsigned long *a1,
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
 		unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a6)
 {
 	*a5 = get_random_fd();
 }
@@ -175,9 +183,9 @@ void sanitise_mprotect(
 		unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	unsigned long end;
 	int grows;
@@ -232,12 +240,12 @@ retry_end:
 #include <signal.h>
 
 void sanitise_rt_sigaction(
-		__attribute((unused)) unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
+		__unused unsigned long *a1,
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
 		unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a4 = sizeof(sigset_t);
 }
@@ -247,12 +255,12 @@ void sanitise_rt_sigaction(
  sys_rt_sigprocmask(int how, sigset_t __user *set, sigset_t __user *oset, size_t sigsetsize)
  */
 void sanitise_rt_sigprocmask(
-		__attribute((unused)) unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
+		__unused unsigned long *a1,
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
 		unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a4 = sizeof(sigset_t);
 }
@@ -266,11 +274,11 @@ void sanitise_rt_sigprocmask(
  */
 void sanitise_ioctl(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 }
@@ -281,11 +289,11 @@ void sanitise_ioctl(
  */
 void sanitise_pread64(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
 		unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 
@@ -302,11 +310,11 @@ retry_pos:
  */
 void sanitise_pwrite64(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
 		unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 
@@ -323,11 +331,11 @@ retry_pos:
  */
 void sanitise_readv(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 }
@@ -338,11 +346,11 @@ void sanitise_readv(
  */
 void sanitise_writev(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a2,
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	*a1 = get_random_fd();
 }
@@ -373,11 +381,11 @@ void sanitise_writev(
 
 void sanitise_mremap(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
+		__unused unsigned long *a2,
 		unsigned long *a3,
 		unsigned long *a4,
 		unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a6)
 {
 retry_flags:
 	if (*a4 & ~(MREMAP_FIXED | MREMAP_MAYMOVE)) {
@@ -427,11 +435,11 @@ retry_tasksize_end:
  */
 void sanitise_splice(
 		unsigned long *a1,
-		__attribute((unused)) unsigned long *a2,
+		__unused unsigned long *a2,
 		unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	/* first param is fdin */
 	*a1 = get_random_fd();
@@ -457,10 +465,10 @@ retry:
 void sanitise_tee(
 		unsigned long *a1,
 		unsigned long *a2,
-		__attribute((unused)) unsigned long *a3,
-		__attribute((unused)) unsigned long *a4,
-		__attribute((unused)) unsigned long *a5,
-		__attribute((unused)) unsigned long *a6)
+		__unused unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
 {
 	/* first param is fdin */
 	*a1 = get_random_fd();

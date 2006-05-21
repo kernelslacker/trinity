@@ -28,17 +28,17 @@
 #include "scrashme.h"
 #include "files.h"
 
-struct syscalltable *syscalls;
+static struct syscalltable *syscalls;
 
-long res=0;
-long specificsyscall=0;
-long regval=0;
-char zeromask=0;
-char *progname=0;
-char dopause=0;
-char intelligence=0;
-char *structptr=NULL;
-char do_specific_syscall=0;
+static long res=0;
+static long specificsyscall=0;
+static long regval=0;
+static char zeromask=0;
+static char *progname=NULL;
+static char dopause=0;
+static char intelligence=0;
+static char *structptr=NULL;
+static char do_specific_syscall=0;
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
@@ -46,21 +46,24 @@ char do_specific_syscall=0;
 #define MODE_REGVAL 3
 #define MODE_STRUCT 4
 
-char opmode = MODE_UNDEFINED;
+static char opmode = MODE_UNDEFINED;
 
-void sighandler(int sig)
+static void sighandler(int sig)
 {
-	printf ("%s ", strsignal (sig));
-	fflush (stdout);
+	printf("%s ", strsignal (sig));
+	(void)fflush(stdout);
 	_exit(0);
 }
 
-unsigned long getrand()
+static unsigned long getrand()
 {
-	return (unsigned long) rand() * rand();
+	unsigned long r;
+	r = (unsigned long)rand();
+	r *= (unsigned long)rand();
+	return r;
 }
 
-long mkcall (int call)
+static long mkcall(int call)
 {
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	long ret = 0;
@@ -93,55 +96,54 @@ long mkcall (int call)
 		break;
 	}
 	if (call > NR_SYSCALLS)
-		printf ("%d", call);
+		printf("%d", call);
 	else
-		printf ("%s", syscalls[call].name);
+		printf("%s", syscalls[call].name);
 
 	if (intelligence == 1) {
 		if (syscalls[call].sanitise) {
 #if 1
-			printf ("\n\tSanitising options.\n\tBefore:\t");
-			printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n\tAfter:\t", a1, a2, a3, a4, a5, a6);
+			printf("\n\tSanitising options.\n\tBefore:\t");
+			printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n\tAfter:\t", a1, a2, a3, a4, a5, a6);
 #endif
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 		}
 	}
-	printf ("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+	printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 
-	fflush (stdout);
+	(void)fflush(stdout);
 
 	if (call != __NR_exit && call != __NR_pause)
 		ret = syscall(call, a1, a2, a3, a4, a5);
-	printf ("= %ld", ret);
+	printf("= %ld", ret);
 
 	if (ret < 0)
-		printf (" %s\n", strerror (errno));
+		printf(" %s\n", strerror (errno));
 	else
-		printf ("\n");
-	fflush (stdout);
+		printf("\n");
 	return ret;
 }
 
-void usage(void)
+static void usage(void)
 {
-	fprintf (stderr, "%s\n", progname);
-	fprintf (stderr, "   -bN: begin at offset N.\n");
-	fprintf (stderr, "   -cN: do syscall N with random inputs.\n");
-	fprintf (stderr, "   -f:  pass struct filled with 0xff.\n");
-	fprintf (stderr, "   -j:  pass struct filled with random junk.\n");
-	fprintf (stderr, "   -k:  pass kernel addresses as arguments.\n");
-	fprintf (stderr, "   -n:  pass struct filled with 0x00.\n");
-	fprintf (stderr, "   -p;  pause after syscall.\n");
-	fprintf (stderr, "   -r:  call random syscalls with random inputs.\n");
-	fprintf (stderr, "   -sN: use N as random seed.\n");
-	fprintf (stderr, "   -t:  use time of day as seed.\n");
-	fprintf (stderr, "   -xN:  use value as arguments.\n");
-	fprintf (stderr, "   -z:  Use all zeros as register parameters.\n");
-	exit(1);
+	fprintf(stderr, "%s\n", progname);
+	fprintf(stderr, "   -bN: begin at offset N.\n");
+	fprintf(stderr, "   -cN: do syscall N with random inputs.\n");
+	fprintf(stderr, "   -f:  pass struct filled with 0xff.\n");
+	fprintf(stderr, "   -j:  pass struct filled with random junk.\n");
+	fprintf(stderr, "   -k:  pass kernel addresses as arguments.\n");
+	fprintf(stderr, "   -n:  pass struct filled with 0x00.\n");
+	fprintf(stderr, "   -p;  pause after syscall.\n");
+	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
+	fprintf(stderr, "   -sN: use N as random seed.\n");
+	fprintf(stderr, "   -t:  use time of day as seed.\n");
+	fprintf(stderr, "   -xN:  use value as arguments.\n");
+	fprintf(stderr, "   -z:  Use all zeros as register parameters.\n");
+	exit(EXIT_SUCCESS);
 }
 
 
-void do_call(int cl)
+static void do_call(int cl)
 {
 	if (opmode == MODE_RANDOM)
 retry:
@@ -163,14 +165,14 @@ retry:
 			break;
 	}
 
-	alarm (2);
+	(void)alarm(2);
 
 	if (do_specific_syscall != 0)
 		cl = specificsyscall;
 
 	res = mkcall(cl);
 	if (dopause==1)
-		sleep(1);
+		(void)sleep(1);
 }
 
 #define STRUCTMODE_FF 1
@@ -184,7 +186,7 @@ int main (int argc, char* argv[])
 	int c=0, i;
 	int seed=0;
 	struct timeval t;
-	volatile char randomtime;
+	volatile char randomtime=0;
 	int structmode=0;
 
 #ifdef __x86_64__
@@ -211,7 +213,9 @@ int main (int argc, char* argv[])
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_FF;
 				structptr = malloc(4096);
-				memset (structptr, 0xff, 4096);
+				if (!structptr)
+					exit(EXIT_FAILURE);
+				memset(structptr, 0xff, 4096);
 				break;
 
 			/* use semi-intelligent options */
@@ -225,7 +229,9 @@ int main (int argc, char* argv[])
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_RAND;
 				structptr = malloc(4096);
-				for (i=0;i<4096;i++)
+				if (!structptr)
+					exit(EXIT_FAILURE);
+				for (i=0; i<4096; i++)
 					structptr[i]= rand();
 				break;
 
@@ -245,7 +251,9 @@ int main (int argc, char* argv[])
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_0;
 				structptr = malloc(4096);
-				memset (structptr, 0, 4096);
+				if (!structptr)
+					exit(EXIT_FAILURE);
+				memset(structptr, 0, 4096);
 				break;
 
 			/* Pass in random numbers in registers. */
@@ -261,13 +269,13 @@ int main (int argc, char* argv[])
 			/* Set seed from TOD */
 			case 't':
 				gettimeofday(&t, 0);
-				seed = t.tv_usec;
+				seed = t.tv_sec * t.tv_usec;
 				randomtime = 1;
 				break;
 
 			/* Set registers to specific value */
 			case 'x':
-				regval=strtoul(optarg, NULL, 10);
+				regval = strtoul(optarg, NULL, 10);
 				opmode = MODE_REGVAL;
 				break;
 
@@ -288,16 +296,29 @@ int main (int argc, char* argv[])
 
 	seteuid(65536);
 	seteuid(65536);
-	setgid(65536);
+	if (setgid(65536) == -1) {
+		perror("setgid");
+		exit(EXIT_FAILURE);
+	}
 	seteuid(65536);
 
 	for (i=0; i<512; i++)  {
 		struct sigaction sa;
+		sigset_t ss;
+
+		if (sigfillset(&ss) == -1) {
+			perror("sigfillset");
+			exit(EXIT_FAILURE);
+		}
 		sa.sa_flags = SA_RESTART;
 		sa.sa_handler = sighandler;
-		sigaction(i, &sa, NULL);
+		sa.sa_mask = ss;
+		if (sigaction(i, &sa, NULL) == -1) {
+			perror("sigaction");
+			exit(EXIT_FAILURE);
+		}
 	}
-	signal(SIGCHLD, SIG_IGN);
+	(void)signal(SIGCHLD, SIG_IGN);
 
 	srand(seed);
 
@@ -329,7 +350,7 @@ int main (int argc, char* argv[])
 			case MODE_STRUCT:
 				switch (structmode) {
 				case STRUCTMODE_RAND:
-					for (i=0;i<4096;i++)
+					for (i=0; i<4096; i++)
 						structptr[i]= rand();
 					break;
 				}
@@ -340,24 +361,24 @@ int main (int argc, char* argv[])
 
 		if (randomtime == 1) {
 			gettimeofday(&t, 0);
-			seed = t.tv_usec;
+			seed = t.tv_sec * t.tv_usec;
 			srand(seed);
 		}
 
 		if (fork() == 0) {
 			printf ("%i: ", rep);
-			alarm(1);
+			(void)alarm(1);
 			do_call(rep);
 			_exit(0);
 		}
-		rand();
-		waitpid(-1, NULL, 0);
+		(void)waitpid(-1, NULL, 0);
 		rep++;
 	}
 
 done:
 	if (structptr!=NULL)
 		free(structptr);
-	return 0;
+
+	exit(EXIT_SUCCESS);
 }
 

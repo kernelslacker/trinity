@@ -19,3 +19,5 @@ clean:
 	@find . -name "*~" -exec rm {} \;
 	@rm -f scrashme
 
+splint:
+	splint +posixlib -badflag -fileextensions -type -nullassign -boolops -showcolumn -sysunrecog -fullinitblock -onlytrans -unrecog -usedef -statictrans -compdestroy -predboolint -D__`uname -m`__  files.c scrashme.c  sanitise.c
