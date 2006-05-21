@@ -42,7 +42,7 @@ static void close_fds(void)
 }
 
 
-int get_random_fd()
+int get_random_fd(void)
 {
 	int i = rand();
 	int fd = 0;
