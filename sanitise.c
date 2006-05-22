@@ -479,3 +479,43 @@ void sanitise_tee(
 	*a2 = get_random_fd();
 }
 
+/*
+ * asmlinkage long sys_sync_file_range(int fd, loff_t offset, loff_t nbytes, unsigned int flags)
+ * flags must be part of VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| SYNC_FILE_RANGE_WAIT_AFTER)
+ */
+
+#define SYNC_FILE_RANGE_WAIT_BEFORE 1
+#define SYNC_FILE_RANGE_WRITE       2
+#define SYNC_FILE_RANGE_WAIT_AFTER  4
+
+#define VALID_SFR_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE|SYNC_FILE_RANGE_WAIT_AFTER)
+
+void sanitise_sync_file_range(
+		unsigned long *fd,
+		long *offset,
+		long *nbytes,
+		unsigned long *flags,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
+{
+	*fd = get_random_fd();
+
+retry_flags:
+	if (*flags & ~VALID_SFR_FLAGS) {
+		*flags = rand() & VALID_SFR_FLAGS;
+		goto retry_flags;
+	}
+
+retry_offset:
+	if (*offset < 0) {
+		*offset = rand();
+		goto retry_offset;
+	}
+
+	if (*offset+*nbytes < 0)
+		goto retry_offset;
+
+	if (*offset+*nbytes < *offset)
+		goto retry_offset;
+}
+

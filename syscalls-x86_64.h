@@ -283,5 +283,5 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "get_robust_list", },
 	{ .name = "splice", .sanitise = sanitise_splice },	/* 275 */
 	{ .name = "tee", .sanitise = sanitise_tee },
-	{ .name = "sync_file_range", },
+	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
 };

@@ -320,7 +320,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "set_robust_list", },
 	{ .name = "get_robust_list", },
 	{ .name = "splice", .sanitise = sanitise_splice },
-	{ .name = "sync_file_range", },
+	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
 	{ .name = "tee", .sanitise = sanitise_tee },	/* 315 */
 };
 
