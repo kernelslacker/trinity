@@ -5,7 +5,9 @@ if [ ! -d tmp ]; then
 fi
 cd tmp
 
-for i in `seq 1 50`;
+for i in `seq 1 20`;
 do
+	../scrashme -z &
 	../scrashme -r -t &
+	../scrashme -r -t -i &
 done
