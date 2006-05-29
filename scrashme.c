@@ -33,12 +33,12 @@ static struct syscalltable *syscalls;
 static long res=0;
 static long specificsyscall=0;
 static long regval=0;
-static char zeromask=0;
 static char *progname=NULL;
-static char dopause=0;
-static char intelligence=0;
 static char *structptr=NULL;
-static char do_specific_syscall=0;
+static unsigned char zeromask=0;
+static unsigned char dopause=0;
+static unsigned char intelligence=0;
+static unsigned char do_specific_syscall=0;
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
