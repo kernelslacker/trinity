@@ -294,15 +294,7 @@ int main (int argc, char* argv[])
 		usage();
 	}
 
-	seteuid(65536);
-	seteuid(65536);
-	if (setgid(65536) == -1) {
-		perror("setgid");
-		exit(EXIT_FAILURE);
-	}
-	seteuid(65536);
-
-	for (i=0; i<512; i++)  {
+	for (i=1; i<512; i++)  {
 		struct sigaction sa;
 		sigset_t ss;
 
@@ -313,10 +305,7 @@ int main (int argc, char* argv[])
 		sa.sa_flags = SA_RESTART;
 		sa.sa_handler = sighandler;
 		sa.sa_mask = ss;
-		if (sigaction(i, &sa, NULL) == -1) {
-			perror("sigaction");
-			exit(EXIT_FAILURE);
-		}
+		(void)(sigaction(i, &sa, NULL) == -1);
 	}
 	(void)signal(SIGCHLD, SIG_IGN);
 
