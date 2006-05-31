@@ -298,14 +298,11 @@ int main (int argc, char* argv[])
 		struct sigaction sa;
 		sigset_t ss;
 
-		if (sigfillset(&ss) == -1) {
-			perror("sigfillset");
-			exit(EXIT_FAILURE);
-		}
+		(void)sigfillset(&ss);
 		sa.sa_flags = SA_RESTART;
 		sa.sa_handler = sighandler;
 		sa.sa_mask = ss;
-		(void)(sigaction(i, &sa, NULL) == -1);
+		(void)sigaction(i, &sa, NULL);
 	}
 	(void)signal(SIGCHLD, SIG_IGN);
 
