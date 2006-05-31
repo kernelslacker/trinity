@@ -294,6 +294,11 @@ int main (int argc, char* argv[])
 		usage();
 	}
 
+	seteuid(65536);
+	seteuid(65536);
+	(void)setgid(65536);
+	seteuid(65536);
+
 	for (i=1; i<512; i++)  {
 		struct sigaction sa;
 		sigset_t ss;
