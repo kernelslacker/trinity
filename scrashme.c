@@ -25,6 +25,9 @@
 #ifdef __i386__
 #include "i386.h"
 #endif
+#ifdef __ppc__
+#include "ppc.h"
+#endif
 #include "scrashme.h"
 #include "files.h"
 
