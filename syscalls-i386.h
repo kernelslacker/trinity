@@ -181,7 +181,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "prctl", },
 	{ .name = "rt_sigreturn", },
 	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
-	{ .name = "rt_sigprocmask", .santise = sanitise_rt_sigprocmask },	/* 175 */
+	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },	/* 175 */
 	{ .name = "rt_sigpending", },
 	{ .name = "rt_sigtimedwait", },
 	{ .name = "rt_sigqueueinfo", },
