@@ -155,7 +155,7 @@ retry:
 	switch (cl) {
 		case __NR_exit:
 		case __NR_fork:
-#ifdef __i386__
+#ifndef __x86_64__
 		case __NR_sigsuspend:
 		case __NR_sigreturn:
 #endif
