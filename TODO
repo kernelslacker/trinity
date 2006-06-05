@@ -1,11 +1,10 @@
--k = use kernel addresses
- (make it wander like -z)
--u = use userspace addresses
--c NAME
+Make addresses used by -k 'wander' like -z does.
 
---run-for=1hour
+-u = use userspace addresses
+Parse -c arguments so that it accepts '-c sys_open' as well as '-c20'
+
 --numcalls=1000000
---silent
+
 --logfile
 
 --nrsyscalls (set NR_SYSCALLS)
@@ -14,9 +13,9 @@ flush() & fsync() before making the call
 
 8 args ?
 
-- Other arch support. IA64? S390?
+Other arch support. IA64? S390?
 
-skip select() sigsuspend() and pause()
+skip pause(), and any other functions that take no inputs from userspace.
 
 add a switch to use 32bit syscall entry point on x86-64
 
@@ -39,4 +38,7 @@ Pass "interesting" 64 bit patterns.
 Due to forking of child processes, things like mmap/mprotect etc
 don't do anything to affect future calls.  Maybe add a --no-children
 to prevent forking?
+
+add a switch to call all the functions that should do a CAP_SYS_ADMIN
+check first thing, and check that they all return -EPERM
 
