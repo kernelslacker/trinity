@@ -18,6 +18,10 @@
  * default 0x40000000 if VMSPLIT_1G
  */
 #endif
+#ifdef __powerpc__
+#define PAGE_OFFSET 0xC0000000
+#define TASK_SIZE (PAGE_OFFSET)
+#endif
 
 static char * filebuffer = NULL;
 static unsigned long filebuffersize = 0;

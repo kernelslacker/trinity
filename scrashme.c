@@ -25,7 +25,7 @@
 #ifdef __i386__
 #include "i386.h"
 #endif
-#ifdef __ppc__
+#ifdef __powerpc__
 #include "ppc.h"
 #endif
 #include "scrashme.h"
@@ -194,6 +194,8 @@ int main (int argc, char* argv[])
 
 #ifdef __x86_64__
 	syscalls = syscalls_x86_64;
+#elif __powerpc__
+	syscalls = syscalls_ppc;
 #else
 	syscalls = syscalls_i386;
 #endif

@@ -14,7 +14,7 @@ flush() & fsync() before making the call
 
 8 args ?
 
-- Other arch support. PPC? IA64? S390?
+- Other arch support. IA64? S390?
 
 skip select() sigsuspend() and pause()
 

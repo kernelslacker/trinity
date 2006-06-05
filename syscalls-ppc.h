@@ -152,7 +152,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "flock", },
 	{ .name = "msync", },
 	{ .name = "readv", .sanitise = sanitise_readv }, /* 145 */
-	{ .name = "writev" .sanitise = sanitise_writev, },
+	{ .name = "writev", .sanitise = sanitise_writev },
 	{ .name = "getsid", },
 	{ .name = "fdatasync", },
 	{ .name = "sysctl", },
@@ -180,7 +180,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "prctl", },
 	{ .name = "rt_sigreturn", },
 	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
-	{ .name = "rt_sigprocmask", .santise = sanitise_rt_sigprocmask },
+	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
 	{ .name = "rt_sigpending", }, /* 175 */
 	{ .name = "rt_sigtimedwait", },
 	{ .name = "rt_sigqueueinfo", },
@@ -290,3 +290,4 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "ppoll", },
 	{ .name = "unshare", },
 };
+

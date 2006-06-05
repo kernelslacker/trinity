@@ -1,3 +1,6 @@
+- Sat Jun  3 2006 Jarod Wilson <jwilson@redhat.com>
+- PowerPC support.
+
 - Tue Mar  7 2006 Dave Jones <davej@redhat.com>
 - Native x86-64 support.
 
