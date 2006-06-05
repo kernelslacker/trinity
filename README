@@ -27,7 +27,6 @@ Random.
 Good for stress testing, just does zillions of random junk syscalls.
  -r:  call random syscalls with random inputs.
  -sN: use N as random seed.
- -t:  use time of day as seed.
 
 Specific.
 ~~~~~~~~~

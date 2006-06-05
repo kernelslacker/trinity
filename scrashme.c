@@ -139,7 +139,6 @@ static void usage(void)
 	fprintf(stderr, "   -p;  pause after syscall.\n");
 	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
 	fprintf(stderr, "   -sN: use N as random seed.\n");
-	fprintf(stderr, "   -t:  use time of day as seed.\n");
 	fprintf(stderr, "   -xN:  use value as arguments.\n");
 	fprintf(stderr, "   -z:  Use all zeros as register parameters.\n");
 	exit(EXIT_SUCCESS);
@@ -189,7 +188,6 @@ int main (int argc, char* argv[])
 	int c=0, i;
 	int seed=0;
 	struct timeval t;
-	volatile char randomtime=0;
 	int structmode=0;
 
 #ifdef __x86_64__
@@ -203,7 +201,7 @@ int main (int argc, char* argv[])
 
 	progname = argv[0];
 
-	while ((c = getopt(argc, argv, "b:c:fijknprs:tx:z")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:fijknprs:x:z")) != -1) {
 		switch (c) {
 			case 'b':
 				rep = strtol(optarg, NULL, 10);
@@ -269,13 +267,6 @@ int main (int argc, char* argv[])
 			/* Set seed */
 			case 's':
 				seed = strtol(optarg, NULL, 10);
-				break;
-
-			/* Set seed from TOD */
-			case 't':
-				gettimeofday(&t, 0);
-				seed = t.tv_sec * t.tv_usec;
-				randomtime = 1;
 				break;
 
 			/* Set registers to specific value */
@@ -355,11 +346,9 @@ int main (int argc, char* argv[])
 				break;
 		}
 
-		if (randomtime == 1) {
-			gettimeofday(&t, 0);
-			seed = t.tv_sec * t.tv_usec;
-			srand(seed);
-		}
+		gettimeofday(&t, 0);
+		seed = t.tv_sec * t.tv_usec;
+		srand(seed);
 
 		if (fork() == 0) {
 			printf ("%i: ", rep);
