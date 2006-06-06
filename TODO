@@ -39,6 +39,6 @@ Due to forking of child processes, things like mmap/mprotect etc
 don't do anything to affect future calls.  Maybe add a --no-children
 to prevent forking?
 
-add a switch to call all the functions that should do a CAP_SYS_ADMIN
+add a switch to call all the functions that should do a CAP_SYS_ADMIN/capable()
 check first thing, and check that they all return -EPERM
 
