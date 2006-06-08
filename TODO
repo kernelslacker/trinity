@@ -16,6 +16,7 @@ flush() & fsync() before making the call
 Other arch support. IA64? S390?
 
 skip pause(), and any other functions that take no inputs from userspace.
+skip ni_syscall() entries.
 
 add a switch to use 32bit syscall entry point on x86-64
 
