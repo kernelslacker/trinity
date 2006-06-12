@@ -64,6 +64,12 @@ some almost sensible looking parameters to defeat the simplest checks.
 This requires a .sanitise method for each syscall, and right now,
 hardly any of the syscalls provide this.
 
+Capability check.
+~~~~~~~~~~~~~~~~~
+-C:  check syscalls that call capable() return -EPERM.
+This calls every syscall that does a call to capable() as its
+first thing, and makes sure that it gets -EPERM back.
+
 
 Examples:
 ./scrashme -c 275 -r -i

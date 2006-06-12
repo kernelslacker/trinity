@@ -252,7 +252,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "mq_timedreceive" },
 	{ .name = "mq_notify" },
 	{ .name = "mq_getsetattr" },	/* 245 */
-	{ .name = "kexec_load" },
+	{ .name = "kexec_load", .flags = CAPABILITY_CHECK, },
 	{ .name = "waitid" },
 	{ .name = "add_key" },
 	{ .name = "request_key" },

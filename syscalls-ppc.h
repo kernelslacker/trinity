@@ -274,7 +274,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "mq_timedreceive", }, /* 265 */
 	{ .name = "mq_notify", },
 	{ .name = "mq_getsetattr", },
-	{ .name = "kexec_load", },
+	{ .name = "kexec_load", .flags = CAPABILITY_CHECK, },
 	{ .name = "add_key", },
 	{ .name = "request_key", }, /* 270 */
 	{ .name = "keyctl", },

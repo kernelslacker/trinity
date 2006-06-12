@@ -42,12 +42,14 @@ static unsigned char zeromask=0;
 static unsigned char dopause=0;
 static unsigned char intelligence=0;
 static unsigned char do_specific_syscall=0;
+static unsigned int seed=0;
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
 #define MODE_ZEROREGS 2
 #define MODE_REGVAL 3
 #define MODE_STRUCT 4
+#define MODE_CAPCHECK 5
 
 static char opmode = MODE_UNDEFINED;
 
@@ -132,6 +134,7 @@ static void usage(void)
 	fprintf(stderr, "%s\n", progname);
 	fprintf(stderr, "   -bN: begin at offset N.\n");
 	fprintf(stderr, "   -cN: do syscall N with random inputs.\n");
+	fprintf(stderr, "   -C:  check syscalls that call capable() return -EPERM.\n");
 	fprintf(stderr, "   -f:  pass struct filled with 0xff.\n");
 	fprintf(stderr, "   -j:  pass struct filled with random junk.\n");
 	fprintf(stderr, "   -k:  pass kernel addresses as arguments.\n");
@@ -139,14 +142,20 @@ static void usage(void)
 	fprintf(stderr, "   -p;  pause after syscall.\n");
 	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
 	fprintf(stderr, "   -sN: use N as random seed.\n");
-	fprintf(stderr, "   -xN:  use value as arguments.\n");
+	fprintf(stderr, "   -xN: use value as arguments.\n");
 	fprintf(stderr, "   -z:  Use all zeros as register parameters.\n");
 	exit(EXIT_SUCCESS);
 }
 
 
-static void do_call(int cl)
+static int do_syscall(int cl)
 {
+	struct timeval t;
+
+	gettimeofday(&t, 0);
+	seed = t.tv_sec * t.tv_usec;
+	srand(seed);
+
 	if (opmode == MODE_RANDOM)
 retry:
 		cl = rand() / (RAND_MAX/NR_SYSCALLS);
@@ -167,7 +176,6 @@ retry:
 		default:
 			break;
 	}
-
 	(void)alarm(2);
 
 	if (do_specific_syscall != 0)
@@ -176,6 +184,23 @@ retry:
 	res = mkcall(cl);
 	if (dopause==1)
 		(void)sleep(1);
+
+	return res;
+}
+
+
+static void do_syscall_from_child(int cl)
+{
+	if (fork() == 0) {
+		printf ("%i: ", cl);
+		(void)alarm(1);
+
+		do_syscall(cl);
+		if (intelligence==1)
+			close_fds();
+		_exit(EXIT_SUCCESS);
+	}
+	(void)waitpid(-1, NULL, 0);
 }
 
 #define STRUCTMODE_FF 1
@@ -187,8 +212,6 @@ int main (int argc, char* argv[])
 {
 	volatile int rep=0;
 	int c=0, i;
-	int seed=0;
-	struct timeval t;
 	int structmode=0;
 
 #ifdef __x86_64__
@@ -202,7 +225,7 @@ int main (int argc, char* argv[])
 
 	progname = argv[0];
 
-	while ((c = getopt(argc, argv, "b:c:fijknprs:x:z")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:Cfijknprs:x:z")) != -1) {
 		switch (c) {
 			case 'b':
 				rep = strtol(optarg, NULL, 10);
@@ -210,6 +233,10 @@ int main (int argc, char* argv[])
 			case 'c':
 				do_specific_syscall = 1;
 				specificsyscall = strtol(optarg, NULL, 10);
+				break;
+
+			case 'C':
+				opmode = MODE_CAPCHECK;
 				break;
 
 			/* Pass a ptr to a struct filled with -1 */
@@ -287,7 +314,7 @@ int main (int argc, char* argv[])
 		usage();
 
 	if (opmode==MODE_UNDEFINED) {
-		fprintf (stderr, "Must be either random (-r), specific (-c) or zero-sweep (-z).\n");
+		fprintf (stderr, "Must be one of random (-r), specific (-c), capable (-C) or zero-sweep (-z).\n");
 		usage();
 	}
 
@@ -317,6 +344,7 @@ int main (int argc, char* argv[])
 			case MODE_REGVAL:
 				if (rep > NR_SYSCALLS)
 					goto done;
+				do_syscall_from_child(rep);
 				break;
 
 			case MODE_ZEROREGS:
@@ -333,33 +361,35 @@ int main (int argc, char* argv[])
 						zeromask++;
 					}
 				}
+				do_syscall_from_child(rep);
 				break;
 
 			case MODE_STRUCT:
+				if (rep > NR_SYSCALLS)
+					goto done;
 				switch (structmode) {
 				case STRUCTMODE_RAND:
 					for (i=0; i<4096; i++)
 						structptr[i]= rand();
 					break;
 				}
+				do_syscall_from_child(rep);
+				break;
+
+			case MODE_CAPCHECK:
 				if (rep > NR_SYSCALLS)
 					goto done;
+				if (syscalls[rep].flags & CAPABILITY_CHECK) {
+					if (do_syscall(rep) != -EPERM) {
+						printf ("Didn't return EPERM!\n");
+					}
+				}
+				break;
+
+			case MODE_RANDOM:
+				do_syscall_from_child(rep);
 				break;
 		}
-
-		gettimeofday(&t, 0);
-		seed = t.tv_sec * t.tv_usec;
-		srand(seed);
-
-		if (fork() == 0) {
-			printf ("%i: ", rep);
-			(void)alarm(1);
-			do_call(rep);
-			if (intelligence==1)
-				close_fds();
-			_exit(0);
-		}
-		(void)waitpid(-1, NULL, 0);
 		rep++;
 	}
 

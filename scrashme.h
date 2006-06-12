@@ -10,6 +10,9 @@ struct syscalltable {
 		unsigned long *,
 		unsigned long *,
 		unsigned long *);
+	int flags;
 };
+
+#define CAPABILITY_CHECK 1
 
 #endif	/* _SCRASHME_H */

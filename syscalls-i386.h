@@ -289,7 +289,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "mq_timedreceive", },	/* 280 */
 	{ .name = "mq_notify", },
 	{ .name = "mq_getsetattr", },
-	{ .name = "kexec_load", },
+	{ .name = "kexec_load", .flags = CAPABILITY_CHECK, },
 	{ .name = "waitid", },
 	{ .name = "ni_syscall", },		/* 285 */ /* available */
 	{ .name = "add_key", },
