@@ -38,7 +38,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "pause", },
 	{ .name = "utime", },		/* 30 */
 	{ .name = "ni_syscall (old stty syscall holder)", },
-	{ .name = "ni_syscall (old gtty syscall holder", },
+	{ .name = "ni_syscall (old gtty syscall holder)", },
 	{ .name = "access", },
 	{ .name = "nice", },
 	{ .name = "ni_syscall (old ftime syscall holder)", },	/* 35 */
@@ -317,7 +317,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "pselect6", },
 	{ .name = "ppoll", },
 	{ .name = "unshare", },		/* 310 */
-	{ .name = "set_robust_list", .sanitise_set_robust_list},
+	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list },
 	{ .name = "get_robust_list", },
 	{ .name = "splice", .sanitise = sanitise_splice },
 	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
