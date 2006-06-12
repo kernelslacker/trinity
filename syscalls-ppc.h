@@ -289,5 +289,23 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "pselect6", }, /* 280 */
 	{ .name = "ppoll", },
 	{ .name = "unshare", },
+	{ .name = "splice", .sanitise = sanitise_splice },
+	{ .name = "tee", .sanitise = sanitise_tee },
+	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
+	{ .name = "openat", },
+	{ .name = "mkdirat", },
+	{ .name = "mknodat", },
+	{ .name = "fchownat", },
+	{ .name = "futimesat", },
+	{ .name = "fstatat64", },
+	{ .name = "unlinkat", },
+	{ .name = "renameat", },
+	{ .name = "linkat", },
+	{ .name = "symlinkat", },
+	{ .name = "readlinkat", },
+	{ .name = "fchmodat", },
+	{ .name = "faccessat", },
+	{ .name = "get_robust_list", },
+	{ .name = "set_robust_list", },
 };
 
