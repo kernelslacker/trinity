@@ -8,6 +8,6 @@ cd tmp
 for i in `seq 1 20`;
 do
 	../scrashme -z &
-	../scrashme -r -t &
-	../scrashme -r -t -i &
+	../scrashme -r &
+	../scrashme -r -i &
 done

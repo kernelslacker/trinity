@@ -154,6 +154,7 @@ retry:
 	switch (cl) {
 		case __NR_exit:
 		case __NR_fork:
+		case __NR_vfork:
 #ifndef __x86_64__
 		case __NR_sigsuspend:
 		case __NR_sigreturn:
@@ -354,6 +355,8 @@ int main (int argc, char* argv[])
 			printf ("%i: ", rep);
 			(void)alarm(1);
 			do_call(rep);
+			if (intelligence==1)
+				close_fds();
 			_exit(0);
 		}
 		(void)waitpid(-1, NULL, 0);
