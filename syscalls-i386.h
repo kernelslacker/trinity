@@ -322,6 +322,6 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "splice", .sanitise = sanitise_splice },
 	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
 	{ .name = "tee", .sanitise = sanitise_tee },	/* 315 */
-	{ .name = "vmsplice", },
+	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
 };
 

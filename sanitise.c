@@ -523,3 +523,18 @@ retry_offset:
 		goto retry_offset;
 }
 
+/*
+ * asmlinkage long sys_vmsplice(int fd, const struct iovec __user *iov,
+ *                unsigned long nr_segs, unsigned int flags)
+ */
+
+void sanitise_vmsplice(
+	unsigned long *fd,
+	__unused unsigned long *a2,
+	__unused unsigned long *a3,
+	__unused unsigned long *a4,
+	__unused unsigned long *a5,
+	__unused unsigned long *a6)
+{
+	*fd = get_random_fd();
+}
