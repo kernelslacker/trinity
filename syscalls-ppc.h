@@ -3,7 +3,7 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
-# define NR_SYSCALLS 230
+# define NR_SYSCALLS 300
 
 struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
