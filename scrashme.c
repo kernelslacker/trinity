@@ -380,9 +380,10 @@ int main (int argc, char* argv[])
 				if (rep > NR_SYSCALLS)
 					goto done;
 				if (syscalls[rep].flags & CAPABILITY_CHECK) {
-					if (do_syscall(rep) != -EPERM) {
+					int r;
+					r = do_syscall(rep);
+					if (r != -EPERM)
 						printf ("Didn't return EPERM!\n");
-					}
 				}
 				break;
 

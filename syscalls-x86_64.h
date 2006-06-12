@@ -155,34 +155,34 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "sched_get_priority_max" },
 	{ .name = "sched_get_priority_min" },
 	{ .name = "sched_rr_get_interval" },
-	{ .name = "mlock" },
+	{ .name = "mlock", },
 	{ .name = "munlock" },	/* 150 */
-	{ .name = "mlockall" },
+	{ .name = "mlockall", },
 	{ .name = "munlockall" },
-	{ .name = "vhangup" },
+	{ .name = "vhangup", .flags = CAPABILITY_CHECK, },
 	{ .name = "modify_ldt" },
-	{ .name = "pivot_root" },	/* 155 */
+	{ .name = "pivot_root", .flags = CAPABILITY_CHECK, },	/* 155 */
 	{ .name = "sysctl" },
 	{ .name = "prctl" },
 	{ .name = "arch_prctl" },
-	{ .name = "adjtimex" },
-	{ .name = "setrlimit" },	/* 160 */
-	{ .name = "chroot" },
+	{ .name = "adjtimex", },
+	{ .name = "setrlimit", },	/* 160 */
+	{ .name = "chroot", },
 	{ .name = "sync" },
 	{ .name = "acct" },
 	{ .name = "settimeofday" },
-	{ .name = "mount" },	/* 165 */
-	{ .name = "umount" },
-	{ .name = "swapon" },
-	{ .name = "swapoff" },
-	{ .name = "reboot" },
-	{ .name = "sethostname" },	/* 170 */
-	{ .name = "setdomainname" },
-	{ .name = "iopl" },
+	{ .name = "mount", },	/* 165 */
+	{ .name = "umount", },
+	{ .name = "swapon", },
+	{ .name = "swapoff", },
+	{ .name = "reboot", .flags = CAPABILITY_CHECK, },
+	{ .name = "sethostname", .flags = CAPABILITY_CHECK, },	/* 170 */
+	{ .name = "setdomainname", .flags = CAPABILITY_CHECK, },
+	{ .name = "iopl", },
 	{ .name = "ioperm" },
 	{ .name = "ni_syscall (create_module)" },
-	{ .name = "init_module" },	/* 175 */
-	{ .name = "delete_module" },
+	{ .name = "init_module", .flags = CAPABILITY_CHECK, },	/* 175 */
+	{ .name = "delete_module", .flags = CAPABILITY_CHECK, },
 	{ .name = "ni_syscall (get_kernel_syms)" },
 	{ .name = "ni_syscall (query_module)" },
 	{ .name = "quotactl" },
