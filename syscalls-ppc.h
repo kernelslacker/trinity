@@ -306,6 +306,6 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "fchmodat", },
 	{ .name = "faccessat", },
 	{ .name = "get_robust_list", },
-	{ .name = "set_robust_list", },	/* 300 */
+	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list }, /* 300 */
 };
 

@@ -279,7 +279,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "pselect6" },	/* 270 */
 	{ .name = "ppoll" },
 	{ .name = "unshare" },
-	{ .name = "set_robust_list", },
+	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list },
 	{ .name = "get_robust_list", },
 	{ .name = "splice", .sanitise = sanitise_splice },	/* 275 */
 	{ .name = "tee", .sanitise = sanitise_tee },

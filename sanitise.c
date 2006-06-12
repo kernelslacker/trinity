@@ -524,6 +524,31 @@ retry_offset:
 }
 
 /*
+ * asmlinkage long sys_set_robust_list(struct robust_list_head __user *head,
+ *           size_t len)
+*/
+struct robust_list {
+	struct robust_list *next;
+};
+struct robust_list_head {
+	struct robust_list list;
+	long futex_offset;
+	struct robust_list *list_op_pending;
+};
+
+void sanitise_set_robust_list(
+	__unused unsigned long *a1,
+	unsigned long *len,
+	__unused unsigned long *a3,
+	__unused unsigned long *a4,
+	__unused unsigned long *a5,
+	__unused unsigned long *a6)
+{
+	*len = sizeof(struct robust_list_head);
+}
+
+
+/*
  * asmlinkage long sys_vmsplice(int fd, const struct iovec __user *iov,
  *                unsigned long nr_segs, unsigned int flags)
  */
