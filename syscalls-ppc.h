@@ -1,9 +1,9 @@
-/* Syscalls from arch/powerpc/kernel/systbl.S as of 2.6.17rc1 */
+/* Syscalls from arch/powerpc/kernel/systbl.S as of 2.6.17rc6 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-# define NR_SYSCALLS 282
+# define NR_SYSCALLS 230
 
 struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
@@ -291,21 +291,21 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "unshare", },
 	{ .name = "splice", .sanitise = sanitise_splice },
 	{ .name = "tee", .sanitise = sanitise_tee },
-	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
+	{ .name = "vmsplice", .sanitise = sanitise_vmsplice }, /* 285 */
 	{ .name = "openat", },
 	{ .name = "mkdirat", },
 	{ .name = "mknodat", },
 	{ .name = "fchownat", },
-	{ .name = "futimesat", },
+	{ .name = "futimesat", },	/* 290 */
 	{ .name = "fstatat64", },
 	{ .name = "unlinkat", },
 	{ .name = "renameat", },
 	{ .name = "linkat", },
-	{ .name = "symlinkat", },
+	{ .name = "symlinkat", },	/* 295 */
 	{ .name = "readlinkat", },
 	{ .name = "fchmodat", },
 	{ .name = "faccessat", },
 	{ .name = "get_robust_list", },
-	{ .name = "set_robust_list", },
+	{ .name = "set_robust_list", },	/* 300 */
 };
 
