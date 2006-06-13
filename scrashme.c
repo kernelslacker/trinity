@@ -126,6 +126,7 @@ static long mkcall(int call)
 		printf(" %s\n", strerror (errno));
 	else
 		printf("\n");
+	(void)fflush(stdout);
 	return ret;
 }
 
