@@ -198,6 +198,7 @@ void sanitise_mprotect(
 		__unused unsigned long *a6)
 {
 	unsigned long end;
+	unsigned long mask = ~ (getpagesize() -1);
 	int grows;
 
 retry_prot:
@@ -212,8 +213,8 @@ retry_prot:
 	}
 
 retry_start:
-	if (*a1 & ~PAGE_MASK) {
-		*a1 &= PAGE_MASK;
+	if (*a1 & ~mask) {
+		*a1 &= mask;
 		goto retry_start;
 	}
 
@@ -397,6 +398,8 @@ void sanitise_mremap(
 		unsigned long *a5,
 		__unused unsigned long *a6)
 {
+	unsigned long mask = ~ (getpagesize() -1);
+
 retry_flags:
 	if (*a4 & ~(MREMAP_FIXED | MREMAP_MAYMOVE)) {
 		*a4 = rand();
@@ -404,8 +407,8 @@ retry_flags:
 	}
 
 retry_addr:
-	if (*a1 & ~PAGE_MASK) {
-		*a1 &= PAGE_MASK;
+	if (*a1 & ~mask) {
+		*a1 &= mask;
 		goto retry_addr;
 	}
 
@@ -416,7 +419,7 @@ retry_newlen:
 	}
 
 	if (*a4 & MREMAP_FIXED) {
-		*a5 &= PAGE_MASK;
+		*a5 &= mask;
 
 		if (!(*a4 & MREMAP_MAYMOVE))
 			*a4 &= ~MREMAP_MAYMOVE;
