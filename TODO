@@ -13,7 +13,7 @@ flush() & fsync() before making the call
 
 8 args ?
 
-Other arch support. IA64? S390?
+Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
 skip pause(), and any other functions that take no inputs from userspace.
 skip ni_syscall() entries.

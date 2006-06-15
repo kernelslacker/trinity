@@ -28,6 +28,9 @@
 #ifdef __powerpc__
 #include "ppc.h"
 #endif
+#ifdef __ia64__
+#include "ia64.h"
+#endif
 #include "scrashme.h"
 #include "files.h"
 
@@ -118,7 +121,11 @@ static long mkcall(int call)
 
 	(void)fflush(stdout);
 
+#ifndef __ia64__
 	if (call != __NR_exit && call != __NR_pause)
+#else
+	if (call != __NR_exit)
+#endif
 		ret = syscall(call, a1, a2, a3, a4, a5);
 	printf("= %ld", ret);
 
@@ -163,11 +170,13 @@ retry:
 
 	switch (cl) {
 		case __NR_exit:
+#ifndef __ia64__
 		case __NR_fork:
 		case __NR_vfork:
 #ifndef __x86_64__
 		case __NR_sigsuspend:
 		case __NR_sigreturn:
+#endif
 #endif
 		case __NR_select:
 		case __NR_clone:
@@ -219,6 +228,8 @@ int main (int argc, char* argv[])
 	syscalls = syscalls_x86_64;
 #elif __powerpc__
 	syscalls = syscalls_ppc;
+#elif __ia64__
+	syscalls = syscalls_ia64;
 #else
 	syscalls = syscalls_i386;
 #endif

@@ -22,6 +22,10 @@
 #define PAGE_OFFSET 0xC0000000
 #define TASK_SIZE (PAGE_OFFSET)
 #endif
+#ifdef __ia64__
+#define PAGE_OFFSET 0xe000000000000000
+#define TASK_SIZE 0xa000000000000000
+#endif
 
 static char * filebuffer = NULL;
 static unsigned long filebuffersize = 0;
