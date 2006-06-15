@@ -8,7 +8,7 @@
 struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 
 	{ .name = "ni_syscall", },		/* 0 - This must be sys_ni_syscall!  See ivt.S. */
-	{ .name = "exit", },
+	{ .name = "exit", .flags = AVOID_SYSCALL },
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", },			/* 5 */
@@ -72,7 +72,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "getrusage", },
 	{ .name = "gettimeofday", },
 	{ .name = "settimeofday", },		/* 65 */
-	{ .name = "select", },
+	{ .name = "select", .flags = AVOID_SYSCALL },
 	{ .name = "poll", },
 	{ .name = "symlink", },
 	{ .name = "readlink", },
@@ -111,7 +111,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "remap_file_pages", },
 	{ .name = "wait4", },
 	{ .name = "sysinfo", },
-	{ .name = "clone", },			/* 105 */
+	{ .name = "clone", .flags = AVOID_SYSCALL },			/* 105 */
 	{ .name = "setdomainname", },
 	{ .name = "newuname", },
 	{ .name = "adjtimex", },
@@ -164,7 +164,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "rt_sigpending", },		/* 155 */
 	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
 	{ .name = "rt_sigqueueinfo", },
-	{ .name = "rt_sigreturn", },
+	{ .name = "rt_sigreturn", .flags = AVOID_SYSCALL },
 	{ .name = "rt_sigsuspend", },
 	{ .name = "rt_sigtimedwait", },		/* 160 */
 	{ .name = "getcwd", },
@@ -219,7 +219,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "set_tid_address", },		/* 210 */
 	{ .name = "fadvise64_64", },
 	{ .name = "tgkill", },
-	{ .name = "exit_group", },
+	{ .name = "exit_group", .flags = AVOID_SYSCALL },
 	{ .name = "lookup_dcookie", },
 	{ .name = "io_setup", },		/* 215 */
 	{ .name = "io_destroy", },

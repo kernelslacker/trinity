@@ -14,5 +14,6 @@ struct syscalltable {
 };
 
 #define CAPABILITY_CHECK 1
+#define AVOID_SYSCALL 2
 
 #endif	/* _SCRASHME_H */

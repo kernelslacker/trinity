@@ -168,24 +168,9 @@ static int do_syscall(int cl)
 retry:
 		cl = rand() / (RAND_MAX/NR_SYSCALLS);
 
-	switch (cl) {
-		case __NR_exit:
-#ifndef __ia64__
-		case __NR_fork:
-		case __NR_vfork:
-#ifndef __x86_64__
-		case __NR_sigsuspend:
-		case __NR_sigreturn:
-#endif
-#endif
-		case __NR_select:
-		case __NR_clone:
-		case __NR_rt_sigreturn:
-		case __NR_exit_group:
-			goto retry;
-		default:
-			break;
-	}
+	if (syscalls[cl].flags & AVOID_SYSCALL)
+		goto retry;
+
 	(void)alarm(2);
 
 	if (do_specific_syscall != 0)

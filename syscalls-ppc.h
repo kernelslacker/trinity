@@ -7,8 +7,8 @@
 
 struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
-	{ .name = "exit", },
-	{ .name = "fork", },
+	{ .name = "exit", .flags = AVOID_SYSCALL },
+	{ .name = "fork", .flags = AVOID_SYSCALL },
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", }, /* 5 */
@@ -78,7 +78,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "ssetmask", },
 	{ .name = "setreuid", }, /* 70 */
 	{ .name = "setregid", },
-	{ .name = "sigsuspend", },
+	{ .name = "sigsuspend", .flags = AVOID_SYSCALL },
 	{ .name = "sigpending", },
 	{ .name = "sethostname", },
 	{ .name = "setrlimit", }, /* 75 */
@@ -88,7 +88,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "settimeofday", },
 	{ .name = "getgroups", }, /* 80 */
 	{ .name = "setgroups", },
-	{ .name = "select", },
+	{ .name = "select", .flags = AVOID_SYSCALL },
 	{ .name = "symlink", },
 	{ .name = "lstat", },
 	{ .name = "readlink", }, /* 85 */
@@ -125,8 +125,8 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "sysinfo", },
 	{ .name = "ipc", },
 	{ .name = "fsync", },
-	{ .name = "sigreturn", },
-	{ .name = "clone", }, /* 120 */
+	{ .name = "sigreturn", .flags = AVOID_SYSCALL },
+	{ .name = "clone", .flags = AVOID_SYSCALL }, /* 120 */
 	{ .name = "setdomainname", },
 	{ .name = "newuname", },
 	{ .name = "ni_syscall", },
@@ -178,7 +178,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "setresgid", },
 	{ .name = "getresgid", }, /* 170 */
 	{ .name = "prctl", },
-	{ .name = "rt_sigreturn", },
+	{ .name = "rt_sigreturn", .flags = AVOID_SYSCALL },
 	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
 	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
 	{ .name = "rt_sigpending", }, /* 175 */
@@ -195,7 +195,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "sendfile", },
 	{ .name = "ni_syscall (reserved for streams1)", },
 	{ .name = "ni_syscall (reserved for streams2)", },
-	{ .name = "vfork", },
+	{ .name = "vfork", .flags = AVOID_SYSCALL },
 	{ .name = "getrlimit", }, /* 190 */
 	{ .name = "readahead", },
 	{ .name = "mmap2", },
@@ -240,7 +240,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "io_cancel", },
 	{ .name = "set_tid_address", },
 	{ .name = "fadvise64", },
-	{ .name = "exit_group", },
+	{ .name = "exit_group", .flags = AVOID_SYSCALL },
 	{ .name = "lookup_dcookie", }, /* 235 */
 	{ .name = "epoll_create", },
 	{ .name = "epoll_ctl", },

@@ -21,7 +21,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "brk" },
 	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
 	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
-	{ .name = "rt_sigreturn" },	/* 15 */
+	{ .name = "rt_sigreturn", .flags = AVOID_SYSCALL },	/* 15 */
 	{ .name = "ioctl", .sanitise = sanitise_ioctl },
 	{ .name = "pread64", .sanitise = sanitise_pread64 },
 	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
@@ -29,7 +29,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "writev", .sanitise = sanitise_writev },	/* 20 */
 	{ .name = "access" },
 	{ .name = "pipe" },
-	{ .name = "select" },
+	{ .name = "select", .flags = AVOID_SYSCALL },
 	{ .name = "sched_yield" },
 	{ .name = "mremap", .sanitise = sanitise_mremap },	/* 25 */
 	{ .name = "msync" },
@@ -62,11 +62,11 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "socketpair" },
 	{ .name = "setsockopt" },
 	{ .name = "getsockopt" },	/* 55 */
-	{ .name = "clone" },
-	{ .name = "fork" },
-	{ .name = "vfork" },
+	{ .name = "clone", .flags = AVOID_SYSCALL },
+	{ .name = "fork", .flags = AVOID_SYSCALL },
+	{ .name = "vfork", .flags = AVOID_SYSCALL },
 	{ .name = "execve" },
-	{ .name = "exit" },	/* 60 */
+	{ .name = "exit", .flags = AVOID_SYSCALL },	/* 60 */
 	{ .name = "wait4" },
 	{ .name = "kill" },
 	{ .name = "uname" },
@@ -237,7 +237,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "clock_gettime" },
 	{ .name = "clock_retres" },
 	{ .name = "clock_nanosleep" },	/* 230 */
-	{ .name = "exit_group" },
+	{ .name = "exit_group", .flags = AVOID_SYSCALL },
 	{ .name = "epoll_wait" },
 	{ .name = "epoll_ctl" },
 	{ .name = "tgkill" },
