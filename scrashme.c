@@ -31,6 +31,9 @@
 #ifdef __ia64__
 #include "ia64.h"
 #endif
+#ifdef __sparc__
+#include "sparc.h"
+#endif
 #include "scrashme.h"
 #include "files.h"
 
@@ -215,6 +218,8 @@ int main (int argc, char* argv[])
 	syscalls = syscalls_ppc;
 #elif __ia64__
 	syscalls = syscalls_ia64;
+#elif __sparc__
+	syscalls = syscalls_sparc;
 #else
 	syscalls = syscalls_i386;
 #endif
