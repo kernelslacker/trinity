@@ -121,12 +121,7 @@ static long mkcall(int call)
 
 	(void)fflush(stdout);
 
-#ifndef __ia64__
-	if (call != __NR_exit && call != __NR_pause)
-#else
-	if (call != __NR_exit)
-#endif
-		ret = syscall(call, a1, a2, a3, a4, a5);
+	ret = syscall(call, a1, a2, a3, a4, a5);
 	printf("= %ld", ret);
 
 	if (ret < 0)
