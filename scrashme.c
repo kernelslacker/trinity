@@ -121,6 +121,11 @@ static long mkcall(int call)
 
 	(void)fflush(stdout);
 
+/* IA64 is retarde^Wspecial. */
+#ifdef __ia64__
+	call += 1024;
+#endif
+
 	ret = syscall(call, a1, a2, a3, a4, a5);
 	printf("= %ld", ret);
 
