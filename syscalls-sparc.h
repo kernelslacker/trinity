@@ -7,8 +7,8 @@
 
 struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
-	{ .name = "exit", },
-	{ .name = "fork", },
+	{ .name = "exit", .flags = AVOID_SYSCALL },
+	{ .name = "fork", .flags = AVOID_SYSCALL },
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", }, /* 5 */
@@ -72,7 +72,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "fstat64", },
 	{ .name = "getpagesize", },
 	{ .name = "msync", }, /* 65 */
-	{ .name = "vfork", },
+	{ .name = "vfork", .flags = AVOID_SYSCALL },
 	{ .name = "pread64", .sanitise = sanitise_pread64 },
 	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
 	{ .name = "geteuid", },
@@ -107,7 +107,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "connect", },
 	{ .name = "accept", },
 	{ .name = "getpriority", }, /* 100 */
-	{ .name = "rt_sigreturn", },
+	{ .name = "rt_sigreturn", .flags = AVOID_SYSCALL },
 	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
 	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
 	{ .name = "rt_sigpending", },
@@ -194,7 +194,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "setpgid", }, /* 185 */
 	{ .name = "fremovexattr", },
 	{ .name = "tkill", },
-	{ .name = "exit_group", },
+	{ .name = "exit_group", .flags = AVOID_SYSCALL },
 	{ .name = "newuname", },
 	{ .name = "init_module", }, /* 190 */
 	{ .name = "personality", },
@@ -223,7 +223,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "sysinfo", },
 	{ .name = "ipc", }, /* 215 */
 	{ .name = "sigreturn", },
-	{ .name = "clone", },
+	{ .name = "clone", .flags = AVOID_SYSCALL },
 	{ .name = "ioprio_get", },
 	{ .name = "adjtimex", },
 	{ .name = "sigprocmask", }, /* 220 */
@@ -236,7 +236,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "ni_syscall", },
 	{ .name = "setfsuid", },
 	{ .name = "setfsgid", },
-	{ .name = "select", }, /* 230 */
+	{ .name = "select", .flags = AVOID_SYSCALL }, /* 230 */
 	{ .name = "time" },
 	{ .name = "splice", .sanitise = sanitise_splice },
 	{ .name = "stime" },
