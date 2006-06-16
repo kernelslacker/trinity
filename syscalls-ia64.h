@@ -196,7 +196,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "newstat", },
 	{ .name = "newlstat", },
 	{ .name = "newfstat", .sanitise = sanitise_newfstat },
-	{ .name = "clone2", },			/* 190 */
+	{ .name = "clone2", .flags = AVOID_SYSCALL },			/* 190 */
 	{ .name = "getdents64", },
 	{ .name = "getunwind", },
 	{ .name = "readahead", },
