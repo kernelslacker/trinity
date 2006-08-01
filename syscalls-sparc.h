@@ -207,7 +207,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "ni_syscall", },
 	{ .name = "sgetmask", },
 	{ .name = "ssetmask", }, /* 200 */
-	{ .name = "sigsuspend", },
+	{ .name = "sigsuspend", .flags = AVOID_SYSCALL },
 	{ .name = "newlstat", },
 	{ .name = "uselib", },
 	{ .name = "old_readdir", },
