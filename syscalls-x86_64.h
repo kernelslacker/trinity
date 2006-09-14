@@ -1,9 +1,9 @@
-/* Syscalls from include/asm-x86_64/unistd.h as of 2.6.17rc1 */
+/* Syscalls from include/asm-x86_64/unistd.h as of 2.6.18rc4 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 278
+#define NR_SYSCALLS 279
 
 struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },		/* 0 */
@@ -285,4 +285,5 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "tee", .sanitise = sanitise_tee },
 	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
 	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
+	{ .name = "move_pages", },
 };

@@ -1,9 +1,9 @@
-/* Syscalls from arch/i386/kernel/entry.S as of 2.6.17rc1 */
+/* Syscalls from arch/i386/kernel/entry.S as of 2.6.18rc4 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 316
+#define NR_SYSCALLS 317
 
 struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
@@ -323,5 +323,6 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
 	{ .name = "tee", .sanitise = sanitise_tee },	/* 315 */
 	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
+	{ .name = "move_pages", },
 };
 
