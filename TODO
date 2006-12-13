@@ -3,8 +3,6 @@ Make addresses used by -k 'wander' like -z does.
 -u = use userspace addresses
 Parse -c arguments so that it accepts '-c sys_open' as well as '-c20'
 
---numcalls=1000000
-
 --logfile
 
 --nrsyscalls (set NR_SYSCALLS)
@@ -42,4 +40,3 @@ to prevent forking?
 
 add a switch to call all the functions that should do a CAP_SYS_ADMIN/capable()
 check first thing, and check that they all return -EPERM
-

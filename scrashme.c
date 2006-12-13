@@ -49,6 +49,8 @@ static unsigned char dopause=0;
 static unsigned char intelligence=0;
 static unsigned char do_specific_syscall=0;
 static unsigned int seed=0;
+static long long syscallcount=0;
+static long long execcount=0;
 
 #define STRUCT_SIZE	4096
 
@@ -145,17 +147,18 @@ static long mkcall(int call)
 static void usage(void)
 {
 	fprintf(stderr, "%s\n", progname);
-	fprintf(stderr, "   -bN: begin at offset N.\n");
-	fprintf(stderr, "   -cN: do syscall N with random inputs.\n");
+	fprintf(stderr, "   -b#: begin at offset #.\n");
+	fprintf(stderr, "   -c#: do syscall # with random inputs.\n");
 	fprintf(stderr, "   -C:  check syscalls that call capable() return -EPERM.\n");
 	fprintf(stderr, "   -f:  pass struct filled with 0xff.\n");
 	fprintf(stderr, "   -j:  pass struct filled with random junk.\n");
 	fprintf(stderr, "   -k:  pass kernel addresses as arguments.\n");
+	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
 	fprintf(stderr, "   -n:  pass struct filled with 0x00.\n");
 	fprintf(stderr, "   -p:  pause after syscall.\n");
 	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
-	fprintf(stderr, "   -sN: use N as random seed.\n");
-	fprintf(stderr, "   -xN: use value as arguments.\n");
+	fprintf(stderr, "   -s#: use # as random seed.\n");
+	fprintf(stderr, "   -x#: use value as arguments.\n");
 	fprintf(stderr, "   -z:  Use all zeros as register parameters.\n");
 	exit(EXIT_SUCCESS);
 }
@@ -229,7 +232,7 @@ int main (int argc, char* argv[])
 
 	progname = argv[0];
 
-	while ((c = getopt(argc, argv, "b:c:Cfijknprs:x:z")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:CfijkN:nprs:x:z")) != -1) {
 		switch (c) {
 			case 'b':
 				rep = strtol(optarg, NULL, 10);
@@ -274,6 +277,11 @@ int main (int argc, char* argv[])
 			case 'k':
 				opmode = MODE_REGVAL;
 				regval = KERNEL_ADDR;
+				break;
+
+			/* Set syscall loop counter */
+			case 'N':
+				syscallcount = strtoll(optarg, NULL, 10);
 				break;
 
 			/* Pause after each syscall */
@@ -397,6 +405,9 @@ int main (int argc, char* argv[])
 				break;
 		}
 		rep++;
+		execcount++;
+		if (execcount >= syscallcount)
+			break;
 	}
 
 done:
