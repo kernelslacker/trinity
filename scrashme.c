@@ -50,6 +50,8 @@ static unsigned char intelligence=0;
 static unsigned char do_specific_syscall=0;
 static unsigned int seed=0;
 
+#define STRUCT_SIZE	4096
+
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
 #define MODE_ZEROREGS 2
@@ -150,7 +152,7 @@ static void usage(void)
 	fprintf(stderr, "   -j:  pass struct filled with random junk.\n");
 	fprintf(stderr, "   -k:  pass kernel addresses as arguments.\n");
 	fprintf(stderr, "   -n:  pass struct filled with 0x00.\n");
-	fprintf(stderr, "   -p;  pause after syscall.\n");
+	fprintf(stderr, "   -p:  pause after syscall.\n");
 	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
 	fprintf(stderr, "   -sN: use N as random seed.\n");
 	fprintf(stderr, "   -xN: use value as arguments.\n");
@@ -245,10 +247,10 @@ int main (int argc, char* argv[])
 			case 'f':
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_FF;
-				structptr = malloc(4096);
+				structptr = malloc(STRUCT_SIZE);
 				if (!structptr)
 					exit(EXIT_FAILURE);
-				memset(structptr, 0xff, 4096);
+				memset(structptr, 0xff, STRUCT_SIZE);
 				break;
 
 			/* use semi-intelligent options */
@@ -261,10 +263,10 @@ int main (int argc, char* argv[])
 			case 'j':
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_RAND;
-				structptr = malloc(4096);
+				structptr = malloc(STRUCT_SIZE);
 				if (!structptr)
 					exit(EXIT_FAILURE);
-				for (i=0; i<4096; i++)
+				for (i=0; i<STRUCT_SIZE; i++)
 					structptr[i]= rand();
 				break;
 
@@ -283,10 +285,10 @@ int main (int argc, char* argv[])
 			case 'n':
 				opmode = MODE_STRUCT;
 				structmode = STRUCTMODE_0;
-				structptr = malloc(4096);
+				structptr = malloc(STRUCT_SIZE);
 				if (!structptr)
 					exit(EXIT_FAILURE);
-				memset(structptr, 0, 4096);
+				memset(structptr, 0, STRUCT_SIZE);
 				break;
 
 			/* Pass in random numbers in registers. */
@@ -316,7 +318,8 @@ int main (int argc, char* argv[])
 		usage();
 
 	if (opmode==MODE_UNDEFINED) {
-		fprintf (stderr, "Must be one of random (-r), specific (-c), capable (-C) or zero-sweep (-z).\n");
+		fprintf (stderr, "Must be one of random (-r), specific (-c), capable (-C), zero-sweep (-z), fixed register value (-x), kernel address args (-k),\n");
+		fprintf (stderr, "  struct with all bits filled (-f), struct with junk (-j), struct filled with zeros (-n)\n");
 		usage();
 	}
 
@@ -371,7 +374,7 @@ int main (int argc, char* argv[])
 					goto done;
 				switch (structmode) {
 				case STRUCTMODE_RAND:
-					for (i=0; i<4096; i++)
+					for (i=0; i<STRUCT_SIZE; i++)
 						structptr[i]= rand();
 					break;
 				}
