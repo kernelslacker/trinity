@@ -41,19 +41,14 @@ This calls every syscall with zeros in each of the registers in turn, in
 every possible combination, with random junk in the other registers.
 Useful for testing for missing NULL checks.
 
-Nullstruct.
-~~~~~~~~~~~
--n:  pass struct filled with 0x00.
-This calls syscalls with a ptr to a 4KB struct of zero's as arguments.
-
 Fillstruct.
 ~~~~~~~~~~~
--f:  pass struct filled with 0xff.
-As Nullstruct, but with a 0xff instead of 0 fill byte.
+-Sxx:  pass struct filled with any hex value (xx).
+This calls syscalls with a ptr to a 4KB struct that is filled with hex xx
+as arguments.
 
-Junkstruct.
-~~~~~~~~~~~
--j:  pass struct filled with random junk.
+or
+-Sr:  pass struct filled with random byte values.
 As above, but with 4KB of random chars.
 
 Intelligent parameters.

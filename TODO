@@ -7,13 +7,6 @@ Parse -c arguments so that it accepts '-c sys_open' as well as '-c20'
 
 --nrsyscalls (set NR_SYSCALLS)
 
-Consolidate the struct passing options.
-  -f:  pass struct filled with 0xff.
-  -j:  pass struct filled with random junk.
-  -n:  pass struct filled with 0x00.
-Instead have something like
--Sxx which sets the struct to byte pattern xx (or random if omitted).
-
 flush() & fsync() before making the call
 
 8 args ?

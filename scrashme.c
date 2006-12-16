@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <asm/unistd.h>
 #include <sys/time.h>
@@ -60,6 +61,9 @@ static long long execcount=0;
 #define MODE_REGVAL 3
 #define MODE_STRUCT 4
 #define MODE_CAPCHECK 5
+
+#define STRUCTMODE_CONST 1
+#define STRUCTMODE_RAND 2
 
 static char opmode = MODE_UNDEFINED;
 
@@ -150,16 +154,15 @@ static void usage(void)
 	fprintf(stderr, "   -b#: begin at offset #.\n");
 	fprintf(stderr, "   -c#: do syscall # with random inputs.\n");
 	fprintf(stderr, "   -C:  check syscalls that call capable() return -EPERM.\n");
-	fprintf(stderr, "   -f:  pass struct filled with 0xff.\n");
-	fprintf(stderr, "   -j:  pass struct filled with random junk.\n");
 	fprintf(stderr, "   -k:  pass kernel addresses as arguments.\n");
 	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
-	fprintf(stderr, "   -n:  pass struct filled with 0x00.\n");
 	fprintf(stderr, "   -p:  pause after syscall.\n");
 	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
 	fprintf(stderr, "   -s#: use # as random seed.\n");
+	fprintf(stderr, "   -Sr: pass struct filled with random junk.\n");
+	fprintf(stderr, "   -Sxx: pass struct filled with hex value xx.\n");
 	fprintf(stderr, "   -x#: use value as arguments.\n");
-	fprintf(stderr, "   -z:  Use all zeros as register parameters.\n");
+	fprintf(stderr, "   -z:  use all zeros as register parameters.\n");
 	exit(EXIT_SUCCESS);
 }
 
@@ -206,11 +209,6 @@ static void do_syscall_from_child(int cl)
 	(void)waitpid(-1, NULL, 0);
 }
 
-#define STRUCTMODE_FF 1
-#define STRUCTMODE_RAND 2
-#define STRUCTMODE_0 3
-
-
 int main (int argc, char* argv[])
 {
 	volatile int rep=0;
@@ -232,7 +230,7 @@ int main (int argc, char* argv[])
 
 	progname = argv[0];
 
-	while ((c = getopt(argc, argv, "b:c:CfijkN:nprs:x:z")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:CikN:prs:S:x:z")) != -1) {
 		switch (c) {
 			case 'b':
 				rep = strtol(optarg, NULL, 10);
@@ -246,31 +244,10 @@ int main (int argc, char* argv[])
 				opmode = MODE_CAPCHECK;
 				break;
 
-			/* Pass a ptr to a struct filled with -1 */
-			case 'f':
-				opmode = MODE_STRUCT;
-				structmode = STRUCTMODE_FF;
-				structptr = malloc(STRUCT_SIZE);
-				if (!structptr)
-					exit(EXIT_FAILURE);
-				memset(structptr, 0xff, STRUCT_SIZE);
-				break;
-
 			/* use semi-intelligent options */
 			case 'i':
 				intelligence = 1;
 				setup_fds();
-				break;
-
-			/* Pass a ptr to a struct filled with junk */
-			case 'j':
-				opmode = MODE_STRUCT;
-				structmode = STRUCTMODE_RAND;
-				structptr = malloc(STRUCT_SIZE);
-				if (!structptr)
-					exit(EXIT_FAILURE);
-				for (i=0; i<STRUCT_SIZE; i++)
-					structptr[i]= rand();
 				break;
 
 			/* Pass in address of kernel text */
@@ -289,16 +266,6 @@ int main (int argc, char* argv[])
 				dopause =1;
 				break;
 
-			/* Pass a ptr to a struct filled with zeros */
-			case 'n':
-				opmode = MODE_STRUCT;
-				structmode = STRUCTMODE_0;
-				structptr = malloc(STRUCT_SIZE);
-				if (!structptr)
-					exit(EXIT_FAILURE);
-				memset(structptr, 0, STRUCT_SIZE);
-				break;
-
 			/* Pass in random numbers in registers. */
 			case 'r':
 				opmode = MODE_RANDOM;
@@ -307,6 +274,51 @@ int main (int argc, char* argv[])
 			/* Set seed */
 			case 's':
 				seed = strtol(optarg, NULL, 10);
+				break;
+
+			/* Set Struct fill mode */
+			case 'S':
+				switch (*optarg) {
+
+				/* Pass a ptr to a struct filled with random junk */
+				case 'r':
+					opmode = MODE_STRUCT;
+					structmode = STRUCTMODE_RAND;
+					structptr = malloc(STRUCT_SIZE);
+					if (!structptr)
+						exit(EXIT_FAILURE);
+					for (i=0; i<STRUCT_SIZE; i++)
+						structptr[i]= rand();
+					break;
+
+				case '\0':
+				case ' ':
+					fprintf(stderr,
+						"-S requires 'r' or a hex value\n");
+					exit(EXIT_FAILURE);
+					break;
+
+				/* Pass a ptr to a struct filled with the
+				 * user-specified constant value. */
+				default: {
+					long value;
+					opmode = MODE_STRUCT;
+					structmode = STRUCTMODE_CONST;
+					if (!isxdigit(*optarg)) {
+						fprintf(stderr,
+						    "-S requires 'r' or a "
+						    "hex value\n");
+						exit(EXIT_FAILURE);
+					}
+					value = strtol(optarg, NULL, 16);
+					printf("struct fill value is 0x%x\n", (int)value);
+					structptr = malloc(STRUCT_SIZE);
+					if (!structptr)
+						exit(EXIT_FAILURE);
+					memset(structptr, value, STRUCT_SIZE);
+					break;
+				}
+				}
 				break;
 
 			/* Set registers to specific value */
@@ -326,8 +338,9 @@ int main (int argc, char* argv[])
 		usage();
 
 	if (opmode==MODE_UNDEFINED) {
-		fprintf (stderr, "Must be one of random (-r), specific (-c), capable (-C), zero-sweep (-z), fixed register value (-x), kernel address args (-k),\n");
-		fprintf (stderr, "  struct with all bits filled (-f), struct with junk (-j), struct filled with zeros (-n)\n");
+		fprintf (stderr, "Mode must be one of random (-r), specific (-c), capable (-C),\n");
+		fprintf (stderr, "zero-sweep (-z), fixed register value (-x), kernel address args (-k),\n");
+		fprintf (stderr, "or struct with value specified (-S)\n");
 		usage();
 	}
 
