@@ -419,7 +419,7 @@ int main (int argc, char* argv[])
 		}
 		rep++;
 		execcount++;
-		if (execcount >= syscallcount)
+		if (syscallcount && (execcount >= syscallcount))
 			break;
 	}
 
