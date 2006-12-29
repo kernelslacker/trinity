@@ -211,7 +211,7 @@ static void do_syscall_from_child(int cl)
 
 int main (int argc, char* argv[])
 {
-	volatile int rep=0;
+	int rep=0;
 	int c=0, i;
 	int structmode=0;
 
