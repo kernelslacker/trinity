@@ -1,11 +1,15 @@
 Make addresses used by -k 'wander' like -z does.
 
 -u = use userspace addresses
+
 Parse -c arguments so that it accepts '-c sys_open' as well as '-c20'
+Tricky, requires we have a txt file mapping names->syscalls, which
+we parse at load time, which might not be such a bad idea.
 
 --logfile
 
 --nrsyscalls (set NR_SYSCALLS)
+Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?
 
 flush() & fsync() before making the call
 
