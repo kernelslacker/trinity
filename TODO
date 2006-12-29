@@ -1,33 +1,35 @@
-Make addresses used by -k 'wander' like -z does.
+* Make addresses used by -k 'wander' like -z does.
 
--u = use userspace addresses
+* -u = use userspace addresses
 
-Parse -c arguments so that it accepts '-c sys_open' as well as '-c20'
-Tricky, requires we have a txt file mapping names->syscalls, which
-we parse at load time, which might not be such a bad idea.
+* Parse -c arguments so that it accepts '-c sys_open' as well as '-c20'
+  Tricky, requires we have a txt file mapping names->syscalls, which
+  we parse at load time, which might not be such a bad idea.
 
---logfile
+* --logfile
 
---nrsyscalls (set NR_SYSCALLS)
-Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?
+* --nrsyscalls (set NR_SYSCALLS)
+  Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?
 
-flush() & fsync() before making the call
+* flush() & fsync() before making the call
 
-8 args ?
+* 8 args ?
 
-Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
+* Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
-skip pause(), and any other functions that take no inputs from userspace.
-skip ni_syscall() entries.
+* Save time by not calling pointless syscalls.
+  - skip pause(), and any other functions that take no inputs from userspace.
+  - skip ni_syscall() entries.
+  - optionally skip syscalls we know check for CAP_SYS_ADMIN early
 
-add a switch to use 32bit syscall entry point on x86-64
+* add a switch to use 32bit syscall entry point on x86-64
 
-Pass "interesting" 32 bit patterns.
+* Pass "interesting" 32 bit patterns.
 	80000000
 	80000001
 	8fffffff
 
-Pass "interesting" 64 bit patterns.
+* Pass "interesting" 64 bit patterns.
 	0000000100000000
 	00000001ffffffff
 	0000000800000000 (non canonical RIP?)
@@ -38,9 +40,18 @@ Pass "interesting" 64 bit patterns.
 	ffffffffffffffff
 	fffffff7ffffffff (non canonical RIP?)
 
-Due to forking of child processes, things like mmap/mprotect etc
-don't do anything to affect future calls.  Maybe add a --no-children
-to prevent forking?
+* Due to forking of child processes, things like mmap/mprotect etc
+  don't do anything to affect future calls.
+  - Maybe add a --no-children to prevent forking?
+  - Or possibly a new syscall flag 'DONTFORK' for mm related syscalls ?
+  - Or possibly a --vm mode to only call VM related calls.
 
-add a switch to call all the functions that should do a CAP_SYS_ADMIN/capable()
-check first thing, and check that they all return -EPERM
+* add a switch to call all the functions that should do a CAP_SYS_ADMIN/capable()
+  check first thing, and check that they all return -EPERM
+
+* In struct checking, with some smarts, we could check the struct we passed
+  afterwards to ensure nothing scribbled outside of bounds.
+
+* Colorise some output (like the 0's in -z output to make the 'wandering' more
+  obvious).
+
