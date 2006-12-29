@@ -227,26 +227,9 @@ static void do_syscall_from_child(int cl)
 	(void)waitpid(-1, NULL, 0);
 }
 
-int main (int argc, char* argv[])
+static void parse_args (int argc, char *argv[])
 {
-	int c=0, i;
-
-#ifdef __x86_64__
-	syscalls = syscalls_x86_64;
-#elif __powerpc__
-	syscalls = syscalls_ppc;
-#elif __ia64__
-	syscalls = syscalls_ia64;
-#elif __sparc__
-	syscalls = syscalls_sparc;
-#else
-	syscalls = syscalls_i386;
-#endif
-
-	progname = argv[0];
-
-	if (argc==1)
-		usage();
+	int c = 0, i;
 
 	while ((c = getopt(argc, argv, "b:c:CikN:prs:S:x:z")) != -1) {
 		switch (c) {
@@ -348,19 +331,11 @@ int main (int argc, char* argv[])
 				break;
 		}
 	}
+}
 
-	if (opmode==MODE_UNDEFINED) {
-		fprintf (stderr, "Mode must be one of random (-r), specific (-c), capable (-C),\n");
-		fprintf (stderr, "zero-sweep (-z), fixed register value (-x), kernel address args (-k),\n");
-		fprintf (stderr, "or struct with value specified (-S)\n");
-		usage();
-	}
-
-	printf("scrashme mode: %s%s\n", opmodename[opmode],
-		opmode == MODE_STRUCT ? structmodename[structmode] : "");
-	if (opmode == MODE_STRUCT && structmode == STRUCTMODE_CONST)
-		printf("struct fill value is 0x%x\n", (int)struct_fill);
-	(void)fflush(stdout);
+static void run_setup (void)
+{
+	int i;
 
 	seteuid(65536);
 	seteuid(65536);
@@ -382,6 +357,17 @@ int main (int argc, char* argv[])
 	srand(seed);
 
 	chroot("tmp");
+}
+
+static void run_mode (void)
+{
+	int i;
+
+	printf("scrashme mode: %s%s\n", opmodename[opmode],
+		opmode == MODE_STRUCT ? structmodename[structmode] : "");
+	if (opmode == MODE_STRUCT && structmode == STRUCTMODE_CONST)
+		printf("struct fill value is 0x%x\n", (int)struct_fill);
+	(void)fflush(stdout);
 
 	for (;;) {
 		switch (opmode) {
@@ -440,8 +426,41 @@ int main (int argc, char* argv[])
 		if (syscallcount && (execcount >= syscallcount))
 			break;
 	}
+done: ;
+}
 
-done:
+int main (int argc, char* argv[])
+{
+#ifdef __x86_64__
+	syscalls = syscalls_x86_64;
+#elif __powerpc__
+	syscalls = syscalls_ppc;
+#elif __ia64__
+	syscalls = syscalls_ia64;
+#elif __sparc__
+	syscalls = syscalls_sparc;
+#else
+	syscalls = syscalls_i386;
+#endif
+
+	progname = argv[0];
+
+	if (argc==1)
+		usage();
+
+	parse_args(argc, argv);
+
+	if (opmode==MODE_UNDEFINED) {
+		fprintf (stderr, "Mode must be one of random (-r), specific (-c), capable (-C),\n");
+		fprintf (stderr, "zero-sweep (-z), fixed register value (-x), kernel address args (-k),\n");
+		fprintf (stderr, "or struct with value specified (-S)\n");
+		usage();
+	}
+
+	run_setup();
+
+	run_mode();
+
 	if (structptr!=NULL)
 		free(structptr);
 
