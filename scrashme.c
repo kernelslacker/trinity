@@ -104,6 +104,7 @@ static long mkcall(int call)
 {
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	long ret = 0;
+
 	switch (opmode) {
 	case MODE_ZEROREGS:
 		if (!(zeromask & (1<<0))) a6 = getrand();
@@ -179,7 +180,7 @@ static void usage(void)
 	fprintf(stderr, "   -s#: use # as random seed.\n");
 	fprintf(stderr, "   -Sr: pass struct filled with random junk.\n");
 	fprintf(stderr, "   -Sxx: pass struct filled with hex value xx.\n");
-	fprintf(stderr, "   -x#: use value as arguments.\n");
+	fprintf(stderr, "   -x#: use value as register arguments.\n");
 	fprintf(stderr, "   -z:  use all zeros as register parameters.\n");
 	exit(EXIT_SUCCESS);
 }
@@ -321,7 +322,7 @@ static void parse_args (int argc, char *argv[])
 
 			/* Set registers to specific value */
 			case 'x':
-				regval = strtoul(optarg, NULL, 10);
+				regval = strtoul(optarg, NULL, 0);
 				opmode = MODE_REGVAL;
 				break;
 
@@ -367,6 +368,8 @@ static void run_mode (void)
 		opmode == MODE_STRUCT ? structmodename[structmode] : "");
 	if (opmode == MODE_STRUCT && structmode == STRUCTMODE_CONST)
 		printf("struct fill value is 0x%x\n", (int)struct_fill);
+	else if (opmode == MODE_REGVAL)
+		printf("register fill value is 0x%lx\n", regval);
 	(void)fflush(stdout);
 
 	for (;;) {
@@ -411,6 +414,7 @@ static void run_mode (void)
 					goto done;
 				if (syscalls[rep].flags & CAPABILITY_CHECK) {
 					int r;
+					printf ("%i: ", rep);
 					r = do_syscall(rep);
 					if (r != -EPERM)
 						printf ("Didn't return EPERM!\n");
