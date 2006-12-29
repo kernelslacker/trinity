@@ -40,6 +40,7 @@
 
 static struct syscalltable *syscalls;
 
+static int rep=0;
 static long res=0;
 static long specificsyscall=0;
 static long regval=0;
@@ -62,14 +63,31 @@ static long long execcount=0;
 #define MODE_STRUCT 4
 #define MODE_CAPCHECK 5
 
+#define STRUCTMODE_UNDEF 0
 #define STRUCTMODE_CONST 1
 #define STRUCTMODE_RAND 2
 
-static char opmode = MODE_UNDEFINED;
+static int opmode = MODE_UNDEFINED;
+static int structmode = STRUCTMODE_UNDEF;
+static long struct_fill;		/* structmode fill value */
+
+char *opmodename[] = {
+	[MODE_UNDEFINED] = "undef",
+	[MODE_RANDOM] = "random",
+	[MODE_ZEROREGS] = "zero_regs",
+	[MODE_REGVAL] = "reg_val",
+	[MODE_STRUCT] = "struct_fill",
+	[MODE_CAPCHECK] = "capabilities_check",
+};
+char *structmodename[] = {
+	[STRUCTMODE_UNDEF] = ", unknown",
+	[STRUCTMODE_CONST] = ", constant",
+	[STRUCTMODE_RAND]  = ", random",
+};
 
 static void sighandler(int sig)
 {
-	printf("%s ", strsignal (sig));
+	printf("signal: %s\n", strsignal (sig));
 	(void)fflush(stdout);
 	_exit(0);
 }
@@ -211,9 +229,7 @@ static void do_syscall_from_child(int cl)
 
 int main (int argc, char* argv[])
 {
-	int rep=0;
 	int c=0, i;
-	int structmode=0;
 
 #ifdef __x86_64__
 	syscalls = syscalls_x86_64;
@@ -227,8 +243,10 @@ int main (int argc, char* argv[])
 	syscalls = syscalls_i386;
 #endif
 
-
 	progname = argv[0];
+
+	if (argc==1)
+		usage();
 
 	while ((c = getopt(argc, argv, "b:c:CikN:prs:S:x:z")) != -1) {
 		switch (c) {
@@ -263,7 +281,7 @@ int main (int argc, char* argv[])
 
 			/* Pause after each syscall */
 			case 'p':
-				dopause =1;
+				dopause = 1;
 				break;
 
 			/* Pass in random numbers in registers. */
@@ -300,8 +318,7 @@ int main (int argc, char* argv[])
 
 				/* Pass a ptr to a struct filled with the
 				 * user-specified constant value. */
-				default: {
-					long value;
+				default:
 					opmode = MODE_STRUCT;
 					structmode = STRUCTMODE_CONST;
 					if (!isxdigit(*optarg)) {
@@ -310,14 +327,12 @@ int main (int argc, char* argv[])
 						    "hex value\n");
 						exit(EXIT_FAILURE);
 					}
-					value = strtol(optarg, NULL, 16);
-					printf("struct fill value is 0x%x\n", (int)value);
+					struct_fill = strtol(optarg, NULL, 16);
 					structptr = malloc(STRUCT_SIZE);
 					if (!structptr)
 						exit(EXIT_FAILURE);
-					memset(structptr, value, STRUCT_SIZE);
+					memset(structptr, struct_fill, STRUCT_SIZE);
 					break;
-				}
 				}
 				break;
 
@@ -334,15 +349,18 @@ int main (int argc, char* argv[])
 		}
 	}
 
-	if (argc==1)
-		usage();
-
 	if (opmode==MODE_UNDEFINED) {
 		fprintf (stderr, "Mode must be one of random (-r), specific (-c), capable (-C),\n");
 		fprintf (stderr, "zero-sweep (-z), fixed register value (-x), kernel address args (-k),\n");
 		fprintf (stderr, "or struct with value specified (-S)\n");
 		usage();
 	}
+
+	printf("scrashme mode: %s%s\n", opmodename[opmode],
+		opmode == MODE_STRUCT ? structmodename[structmode] : "");
+	if (opmode == MODE_STRUCT && structmode == STRUCTMODE_CONST)
+		printf("struct fill value is 0x%x\n", (int)struct_fill);
+	(void)fflush(stdout);
 
 	seteuid(65536);
 	seteuid(65536);
@@ -429,4 +447,3 @@ done:
 
 	exit(EXIT_SUCCESS);
 }
-
