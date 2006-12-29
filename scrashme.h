@@ -16,4 +16,6 @@ struct syscalltable {
 #define CAPABILITY_CHECK 1
 #define AVOID_SYSCALL 2
 
+extern int page_size;
+
 #endif	/* _SCRASHME_H */

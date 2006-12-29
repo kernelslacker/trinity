@@ -54,7 +54,7 @@ static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
 
-#define STRUCT_SIZE	4096
+int page_size;
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
@@ -286,10 +286,10 @@ static void parse_args (int argc, char *argv[])
 				case 'r':
 					opmode = MODE_STRUCT;
 					structmode = STRUCTMODE_RAND;
-					structptr = malloc(STRUCT_SIZE);
+					structptr = malloc(page_size);
 					if (!structptr)
 						exit(EXIT_FAILURE);
-					for (i=0; i<STRUCT_SIZE; i++)
+					for (i=0; i<page_size; i++)
 						structptr[i]= rand();
 					break;
 
@@ -312,10 +312,10 @@ static void parse_args (int argc, char *argv[])
 						exit(EXIT_FAILURE);
 					}
 					struct_fill = strtol(optarg, NULL, 16);
-					structptr = malloc(STRUCT_SIZE);
+					structptr = malloc(page_size);
 					if (!structptr)
 						exit(EXIT_FAILURE);
-					memset(structptr, struct_fill, STRUCT_SIZE);
+					memset(structptr, struct_fill, page_size);
 					break;
 				}
 				break;
@@ -402,7 +402,7 @@ static void run_mode (void)
 					goto done;
 				switch (structmode) {
 				case STRUCTMODE_RAND:
-					for (i=0; i<STRUCT_SIZE; i++)
+					for (i=0; i<page_size; i++)
 						structptr[i]= rand();
 					break;
 				}
@@ -446,6 +446,8 @@ int main (int argc, char* argv[])
 #else
 	syscalls = syscalls_i386;
 #endif
+
+	page_size = getpagesize();
 
 	progname = argv[0];
 

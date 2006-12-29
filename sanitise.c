@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <string.h>
 #include "files.h"
+#include "scrashme.h"
 
 #ifdef __x86_64__
 #define TASK_SIZE       (0x800000000000UL - 4096)
@@ -205,7 +206,7 @@ void sanitise_mprotect(
 		__unused unsigned long *a6)
 {
 	unsigned long end;
-	unsigned long mask = ~ (getpagesize() -1);
+	unsigned long mask = ~(page_size-1);
 	int grows;
 
 retry_prot:
@@ -405,7 +406,7 @@ void sanitise_mremap(
 		unsigned long *a5,
 		__unused unsigned long *a6)
 {
-	unsigned long mask = ~ (getpagesize() -1);
+	unsigned long mask = ~(page_size-1);
 
 retry_flags:
 	if (*a4 & ~(MREMAP_FIXED | MREMAP_MAYMOVE)) {
