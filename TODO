@@ -55,3 +55,5 @@
 * Colorise some output (like the 0's in -z output to make the 'wandering' more
   obvious).
 
+* Xen dom0 hypercalls ?
+
