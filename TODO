@@ -57,3 +57,11 @@
 
 * Xen dom0 hypercalls ?
 
+- --oneshot
+  ./scrashme --oneshot sys_futex -1,0x40000000,1,2,3,4
+
+- --info sys_open
+   i386:   5
+   x86-64: 239
+   ppc64:  5
+
