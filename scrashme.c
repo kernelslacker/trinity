@@ -164,6 +164,11 @@ static long mkcall(int call)
 	else
 		printf("\n");
 	(void)fflush(stdout);
+
+	/* If the syscall doesn't exist don't bother calling it next time. */
+	if (ret == -ENOSYS)
+		syscalls[call].flags |= AVOID_SYSCALL;
+
 	return ret;
 }
 

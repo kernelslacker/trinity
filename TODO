@@ -19,7 +19,6 @@
 
 * Save time by not calling pointless syscalls.
   - skip pause(), and any other functions that take no inputs from userspace.
-  - skip ni_syscall() entries.
   - optionally skip syscalls we know check for CAP_SYS_ADMIN early
 
 * add a switch to use 32bit syscall entry point on x86-64
