@@ -324,7 +324,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "tee", .sanitise = sanitise_tee },	/* 315 */
 	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
 	{ .name = "move_pages", },
-	{ .name = "sys_getcpu", },
-	{ .name = "sys_epoll_pwait", },
+	{ .name = "getcpu", },
+	{ .name = "epoll_pwait", },
 };
 

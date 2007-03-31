@@ -7,7 +7,7 @@
 
 struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 
-	{ .name = "ni_syscall", },		/* 0 - This must be sys_ni_syscall!  See ivt.S. */
+	{ .name = "ni_syscall", },		/* 0 */
 	{ .name = "exit", .flags = AVOID_SYSCALL },
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },

@@ -28,7 +28,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "lseek", .sanitise = sanitise_lseek },
 	{ .name = "getpid", }, /* 20 */
 	{ .name = "mount", },
-	{ .name = "sys_ni_syscall,sys_oldumount,sys_oldumount", },
+	{ .name = "ni_syscall,oldumount,oldumount", },
 	{ .name = "setuid", },
 	{ .name = "getuid", },
 	{ .name = "stime", }, /* 25 */
@@ -148,7 +148,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "setfsgid", },
 	{ .name = "llseek", }, /* 140 */
 	{ .name = "getdents", },
-	{ .name = "sys_select,ppc32_select,ppc_select", },
+	{ .name = "select,ppc32_select,ppc_select", },
 	{ .name = "flock", },
 	{ .name = "msync", },
 	{ .name = "readv", .sanitise = sanitise_readv }, /* 145 */
