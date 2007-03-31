@@ -214,7 +214,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "readahead", }, /* 205 */
 	{ .name = "socketcall", },
 	{ .name = "syslog", },
-	{ .name = "lookup_dcookie", },
+	{ .name = "lookup_dcookie", .flags = CAPABILITY_CHECK, },
 	{ .name = "fadvise64", },
 	{ .name = "fadvise64_64", }, /* 210 */
 	{ .name = "tgkill", },

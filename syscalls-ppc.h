@@ -241,7 +241,7 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "set_tid_address", },
 	{ .name = "fadvise64", },
 	{ .name = "exit_group", .flags = AVOID_SYSCALL },
-	{ .name = "lookup_dcookie", }, /* 235 */
+	{ .name = "lookup_dcookie", .flags = CAPABILITY_CHECK, }, /* 235 */
 	{ .name = "epoll_create", },
 	{ .name = "epoll_ctl", },
 	{ .name = "epoll_wait", },

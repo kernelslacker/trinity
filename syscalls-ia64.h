@@ -220,7 +220,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "fadvise64_64", },
 	{ .name = "tgkill", },
 	{ .name = "exit_group", .flags = AVOID_SYSCALL },
-	{ .name = "lookup_dcookie", },
+	{ .name = "lookup_dcookie", .flags = CAPABILITY_CHECK, },
 	{ .name = "io_setup", },		/* 215 */
 	{ .name = "io_destroy", },
 	{ .name = "io_getevents", },

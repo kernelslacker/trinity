@@ -258,8 +258,8 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "io_cancel", },
 	{ .name = "fadvise64", },	/* 250 */
 	{ .name = "ni_syscall (251)", },
-	{ .name = "exit_group", .flags = AVOID_SYSCALL },
-	{ .name = "lookup_dcookie", },
+	{ .name = "exit_group", .flags = AVOID_SYSCALL, },
+	{ .name = "lookup_dcookie", .flags = CAPABILITY_CHECK, },
 	{ .name = "epoll_create", },
 	{ .name = "epoll_ctl", },	/* 255 */
 	{ .name = "epoll_wait", },
