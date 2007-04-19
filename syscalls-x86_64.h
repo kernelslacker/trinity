@@ -218,7 +218,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "io_submit" },
 	{ .name = "io_cancel" },	/* 210 */
 	{ .name = "ni_syscall (get_thread_area)" },
-	{ .name = "lookup_dcookie" .flags = CAPABILITY_CHECK, },
+	{ .name = "lookup_dcookie", .flags = CAPABILITY_CHECK, },
 	{ .name = "epoll_create" },
 	{ .name = "ni_syscall (epoll_ctl_old)" },
 	{ .name = "ni_syscall (epoll_wait_old)" },	/* 215 */
