@@ -1,9 +1,9 @@
-/* Syscalls from arch/i386/kernel/syscall_table.S as of 2.6.19rc4 */
+/* Syscalls from arch/i386/kernel/syscall_table.S as of 2.6.23rc2 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 319
+#define NR_SYSCALLS 324
 
 struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
@@ -326,5 +326,9 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "move_pages", },
 	{ .name = "getcpu", },
 	{ .name = "epoll_pwait", },
+	{ .name = "utimensat", },	/* 320 */
+	{ .name = "signalfd", },
+	{ .name = "timerfd", },
+	{ .name = "eventfd", },
+	{ .name = "fallocate", },
 };
-
