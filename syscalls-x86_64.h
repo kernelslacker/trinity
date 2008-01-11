@@ -1,4 +1,4 @@
-/* Syscalls from include/asm-x86_64/unistd.h as of 2.6.23rc2 */
+/* Syscalls from include/asm-x86_64/unistd_64.h as of 2.6.24rc7 */
 
 #include "scrashme.h"
 #include "sanitise.h"

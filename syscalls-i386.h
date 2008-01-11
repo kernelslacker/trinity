@@ -1,4 +1,4 @@
-/* Syscalls from arch/i386/kernel/syscall_table.S as of 2.6.23rc2 */
+/* Syscalls from arch/x86/kernel/syscall_table_32.S as of 2.6.24rc7 */
 
 #include "scrashme.h"
 #include "sanitise.h"
