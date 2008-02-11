@@ -576,5 +576,9 @@ void sanitise_vmsplice(
 	__unused unsigned long *a5,
 	__unused unsigned long *a6)
 {
-	*fd = get_random_fd();
+new_a3:	*a3 = random();
+	if (*a3 > 1024)	/* UIO_MAXIOV */
+		goto new_a3;
+
+	*fd = get_pipe_fd();
 }
