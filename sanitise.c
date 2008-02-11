@@ -463,10 +463,10 @@ void sanitise_splice(
 		__unused unsigned long *a6)
 {
 	/* first param is fdin */
-	*a1 = get_random_fd();
+	*a1 = get_pipe_fd();
 
 	/* third param is fdout */
-	*a3 = get_random_fd();
+	*a3 = get_pipe_fd();
 
 	/* Returns 0 if !len */
 retry:
