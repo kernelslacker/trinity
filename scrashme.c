@@ -245,6 +245,23 @@ static void parse_args (int argc, char *argv[])
 			case 'c':
 				do_specific_syscall = 1;
 				specificsyscall = strtol(optarg, NULL, 10);
+				if (specificsyscall == 0) {
+					/* If we get here, it wasn't a numeric syscall.
+					 * Perhaps someone is passing a syscall name.
+					 * Try and match. */
+
+					for (i=0; i<NR_SYSCALLS; i++) {
+						if (strcmp(optarg, syscalls[i].name) == 0) {
+							printf("Found %s at %d\n", syscalls[i].name, i);
+							specificsyscall = i;
+							break;
+						}
+					}
+					if (i==NR_SYSCALLS) {
+						printf ("Unable to parse syscall number\n");
+						exit(1);
+					}
+				}
 				break;
 
 			case 'C':
