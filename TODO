@@ -41,6 +41,10 @@
 	ffffffffffffffff
 	fffffff7ffffffff (non canonical RIP?)
 
+* For -i make 'len' parameters try 'interesting' parameters rather than just random
+  (ULONG_MAX, INT_MAX etc in the hope to exploit overflows)
+  Possibly introduce yet another option, as random len's are also useful.
+
 * Due to forking of child processes, things like mmap/mprotect etc
   don't do anything to affect future calls.
   - Maybe add a --no-children to prevent forking?
