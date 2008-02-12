@@ -1,5 +1,11 @@
 * Make addresses used by -k 'wander' like -z does.
 
+* --trashkernel. Make -k a useful kernel address, and then pass shellcode
+  in another register in the hope that we can trick the kernel into writing
+  the code to the kernel address.  Then call the kernel function we may have
+  overwritten.  (This sounds a bit pie-in-the-sky, but maybe bastardising an
+  off the shelf exploit will make this feasible)
+
 * -u = use userspace addresses
 
 * --logfile
