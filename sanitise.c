@@ -194,7 +194,6 @@ void sanitise_mmap(
  * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
  */
 #include <sys/mman.h>
-#include <asm/page.h>
 #define PROT_SEM    0x8
 
 void sanitise_mprotect(
