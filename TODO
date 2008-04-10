@@ -70,3 +70,6 @@
    x86-64: 239
    ppc64:  5
 
+* Set regs that should be preserved across syscalls to a known value, and check
+  on return whether any of them got clobbered.
+
