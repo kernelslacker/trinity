@@ -54,6 +54,8 @@ static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
 
+char poison = 0x55;
+
 int page_size;
 
 #define MODE_UNDEFINED 0
@@ -85,6 +87,16 @@ char *structmodename[] = {
 	[STRUCTMODE_RAND]  = ", random",
 };
 
+char* useraddr;
+void init_buffer()
+{
+	useraddr = malloc(4096*3);
+	memset(useraddr, poison, 4096);
+	memset(useraddr+4096, 0, 4096);
+	memset(useraddr+4096+4096, poison, 4096);
+}
+
+
 static void sighandler(int sig)
 {
 	printf("signal: %s\n", strsignal (sig));
@@ -104,6 +116,7 @@ static long mkcall(int call)
 {
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	long ret = 0;
+	int i;
 
 	switch (opmode) {
 	case MODE_ZEROREGS:
@@ -148,6 +161,17 @@ static long mkcall(int call)
 		}
 	}
 	printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+
+	for (i=0; i<4096; i++) {
+		if (useraddr[i]!=poison) {
+			printf ("Yikes! Poison was overwritten! (Was: %x)\n", useraddr[i]);
+		}
+	}
+	for (i=4096*2; i<4096*3; i++) {
+		if (useraddr[i]!=poison) {
+			printf ("Yikes! Poison was overwritten! (Was: %x)\n", useraddr[i]);
+		}
+	}
 
 	(void)fflush(stdout);
 
@@ -484,6 +508,8 @@ int main (int argc, char* argv[])
 		fprintf (stderr, "or struct with value specified (-S)\n");
 		usage();
 	}
+
+	init_buffer();
 
 	run_setup();
 
