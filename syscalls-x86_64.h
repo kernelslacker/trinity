@@ -50,7 +50,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "socket" },
 	{ .name = "connect" },
 	{ .name = "accept" },
-	{ .name = "sendto" },
+	{ .name = "sendto", .sanitise = sanitise_sendto },
 	{ .name = "recvfrom" },	/* 45 */
 	{ .name = "sendmsg" },
 	{ .name = "recvmsg" },

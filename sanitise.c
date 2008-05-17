@@ -581,3 +581,26 @@ new_a3:	*a3 = random();
 
 	*fd = get_pipe_fd();
 }
+
+#include <sys/types.h>
+#include <sys/socket.h>
+void sanitise_sendto(unsigned long *fd,
+	__unused unsigned long *buff,
+	__unused unsigned long *len,
+	__unused unsigned long *flags,
+	__unused unsigned long *addr,
+	__unused unsigned long *addr_len)
+{
+	int domain, type, protocol;
+retry:
+	domain = random() % 34;
+	type = random() % 10;
+	protocol = random();
+
+	*fd = socket(domain, type, protocol);
+	if (*fd == -1UL)
+		goto retry;
+
+	*addr_len = random() % 10;
+}
+
