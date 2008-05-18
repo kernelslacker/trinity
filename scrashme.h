@@ -17,5 +17,6 @@ struct syscalltable {
 #define AVOID_SYSCALL 2
 
 extern int page_size;
+extern char *useraddr;
 
 #endif	/* _SCRASHME_H */

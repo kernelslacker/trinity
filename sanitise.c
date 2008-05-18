@@ -588,8 +588,8 @@ void sanitise_sendto(unsigned long *fd,
 	__unused unsigned long *buff,
 	__unused unsigned long *len,
 	__unused unsigned long *flags,
-	__unused unsigned long *addr,
-	__unused unsigned long *addr_len)
+	unsigned long *addr,
+	unsigned long *addr_len)
 {
 	int domain, type, protocol;
 retry:
@@ -601,6 +601,7 @@ retry:
 	if (*fd == -1UL)
 		goto retry;
 
-	*addr_len = random() % 10;
-}
+	*addr = (unsigned long)useraddr;
 
+	*addr_len = random() % 128;	// MAX_SOCK_ADDR
+}

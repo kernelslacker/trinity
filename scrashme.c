@@ -87,13 +87,16 @@ char *structmodename[] = {
 	[STRUCTMODE_RAND]  = ", random",
 };
 
-char* useraddr;
+static char *userbuffer;
+char *useraddr;
 void init_buffer()
 {
-	useraddr = malloc(4096*3);
-	memset(useraddr, poison, 4096);
-	memset(useraddr+4096, 0, 4096);
-	memset(useraddr+4096+4096, poison, 4096);
+	userbuffer = malloc(4096*3);
+	memset(userbuffer, poison, 4096);
+	memset(userbuffer+4096+4096, poison, 4096);
+
+	useraddr = userbuffer+4096;
+	memset(useraddr, 0, 4096);
 }
 
 
@@ -163,14 +166,12 @@ static long mkcall(int call)
 	printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 
 	for (i=0; i<4096; i++) {
-		if (useraddr[i]!=poison) {
-			printf ("Yikes! Poison was overwritten! (Was: %x)\n", useraddr[i]);
-		}
+		if (userbuffer[i]!=poison)
+			printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
 	}
 	for (i=4096*2; i<4096*3; i++) {
-		if (useraddr[i]!=poison) {
-			printf ("Yikes! Poison was overwritten! (Was: %x)\n", useraddr[i]);
-		}
+		if (userbuffer[i]!=poison)
+			printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
 	}
 
 	(void)fflush(stdout);
