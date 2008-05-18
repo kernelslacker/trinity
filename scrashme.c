@@ -50,6 +50,7 @@ static unsigned char zeromask=0;
 static unsigned char dopause=0;
 static unsigned char intelligence=0;
 static unsigned char do_specific_syscall=0;
+static unsigned char check_poison = 0;
 static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
@@ -165,15 +166,16 @@ static long mkcall(int call)
 	}
 	printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 
-	for (i=0; i<4096; i++) {
-		if (userbuffer[i]!=poison)
-			printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
+	if (check_poison==1) {
+		for (i=0; i<4096; i++) {
+			if (userbuffer[i]!=poison)
+				printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
+		}
+		for (i=4096*2; i<4096*3; i++) {
+			if (userbuffer[i]!=poison)
+				printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
+		}
 	}
-	for (i=4096*2; i<4096*3; i++) {
-		if (userbuffer[i]!=poison)
-			printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
-	}
-
 	(void)fflush(stdout);
 
 /* IA64 is retarde^Wspecial. */
@@ -205,6 +207,7 @@ static void usage(void)
 	fprintf(stderr, "   -C:  check syscalls that call capable() return -EPERM.\n");
 	fprintf(stderr, "   -k:  pass kernel addresses as arguments.\n");
 	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
+	fprintf(stderr, "   -P:  poison buffers before calling syscall, and check afterwards.\n");
 	fprintf(stderr, "   -p:  pause after syscall.\n");
 	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
 	fprintf(stderr, "   -s#: use # as random seed.\n");
@@ -261,7 +264,7 @@ static void parse_args (int argc, char *argv[])
 {
 	int c = 0, i;
 
-	while ((c = getopt(argc, argv, "b:c:CikN:prs:S:x:z")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:CikN:pPrs:S:x:z")) != -1) {
 		switch (c) {
 			case 'b':
 				rep = strtol(optarg, NULL, 10);
@@ -312,6 +315,11 @@ static void parse_args (int argc, char *argv[])
 			/* Pause after each syscall */
 			case 'p':
 				dopause = 1;
+				break;
+
+			/* Poison buffers before syscall, and check afterwards. */
+			case 'P':
+				check_poison = 1;
 				break;
 
 			/* Pass in random numbers in registers. */
