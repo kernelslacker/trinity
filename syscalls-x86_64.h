@@ -40,7 +40,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "shmctl" },
 	{ .name = "dup" },
 	{ .name = "dup2" },
-	{ .name = "pause" },
+	{ .name = "pause", .flags = AVOID_SYSCALL },
 	{ .name = "nanosleep" },	/* 35 */
 	{ .name = "getitimer" },
 	{ .name = "alarm" },

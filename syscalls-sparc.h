@@ -35,7 +35,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "ptrace", },
 	{ .name = "alarm", },	
 	{ .name = "sigaltstack", },
-	{ .name = "pause", },
+	{ .name = "pause", .flags = AVOID_SYSCALL },
 	{ .name = "utime", }, /* 30 */
 	{ .name = "ni_syscall (old stty syscall holder)", },
 	{ .name = "ni_syscall (old gtty syscall holder)", },
