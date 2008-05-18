@@ -231,7 +231,7 @@ retry:
 	if (syscalls[cl].flags & AVOID_SYSCALL)
 		goto retry;
 
-	(void)alarm(2);
+	(void)alarm(3);
 
 	if (do_specific_syscall != 0)
 		cl = specificsyscall;
@@ -248,7 +248,6 @@ static void do_syscall_from_child(int cl)
 {
 	if (fork() == 0) {
 		printf ("%i: ", cl);
-		(void)alarm(1);
 
 		do_syscall(cl);
 		if (intelligence==1)
