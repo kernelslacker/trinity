@@ -394,52 +394,55 @@ void sanitise_writev(
  * asmlinkage unsigned long sys_mremap(unsigned long addr,
  *   unsigned long old_len, unsigned long new_len,
  *   unsigned long flags, unsigned long new_addr)
+ *
+ * This syscall is a bit of a nightmare to fuzz as we -EINVAL all over the place.
+ * It might be more useful once we start passing around valid maps instead of just
+ * trying random addresses.
  */
 #include <linux/mman.h>
 
 void sanitise_mremap(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		unsigned long *a3,
-		unsigned long *a4,
-		unsigned long *a5,
+		unsigned long *addr,
+		__unused unsigned long *old_len,
+		unsigned long *new_len,
+		unsigned long *flags,
+		unsigned long *new_addr,
 		__unused unsigned long *a6)
 {
 	unsigned long mask = ~(page_size-1);
+	int i;
 
-retry_flags:
-	if (*a4 & ~(MREMAP_FIXED | MREMAP_MAYMOVE)) {
-		*a4 = rand();
-		goto retry_flags;
-	}
+	*flags = rand()	& ~(MREMAP_FIXED | MREMAP_MAYMOVE);
 
+	*addr &= mask;
+
+	if (!*new_len)
+		*new_len = rand();
+
+	i=0;
+	if (*flags & MREMAP_FIXED) {
+		*flags &= ~MREMAP_MAYMOVE;
+		*new_len &= TASK_SIZE-*new_len;
 retry_addr:
-	if (*a1 & ~mask) {
-		*a1 &= mask;
-		goto retry_addr;
-	}
+		*new_addr &= mask;
+		if ((*new_addr <= *addr) && (*new_addr+*new_len) > *addr) {
+			*new_addr -= *addr - rand() % 1000;
+			goto retry_addr;
+		}
 
-retry_newlen:
-	if (!*a3) {
-		*a3 = rand();
-		goto retry_newlen;
-	}
-
-	if (*a4 & MREMAP_FIXED) {
-		*a5 &= mask;
-
-		if (!(*a4 & MREMAP_MAYMOVE))
-			*a4 &= ~MREMAP_MAYMOVE;
-
-		if (*a3 > TASK_SIZE)	/* new_len > TASK_SIZE */
-			*a3 &= TASK_SIZE;
+		if ((*addr <= *new_addr) && (*addr+*old_len) > *new_addr) {
+			*new_addr += *addr - rand() % 1000;
+			goto retry_addr;
+		}
 
 		/* new_addr > TASK_SIZE - new_len*/
 retry_tasksize_end:
-		if (*a5 > TASK_SIZE - *a3) {
-			*a5 -= rand();
+		if (*new_addr > TASK_SIZE - *new_len) {
+			*new_addr >>= 1;
+			i++;
 			goto retry_tasksize_end;
 		}
+		printf("retried_tasksize_end: %d\n", i);
 	}
 
 	//TODO: Lots more checks here.
