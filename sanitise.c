@@ -55,7 +55,7 @@ void sanitise_read(
 		__unused unsigned long *a5,
 		__unused unsigned long *a6)
 {
-	unsigned long newsize = ((unsigned int) *a3) >>8;
+	unsigned long newsize = (unsigned int) *a3 >> 16;
 
 	*a1 = get_random_fd();
 

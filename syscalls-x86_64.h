@@ -1,9 +1,9 @@
-/* Syscalls from include/asm-x86_64/unistd_64.h as of 2.6.24rc7 */
+/* Syscalls from include/asm-x86/unistd_64.h as of 2.6.26rc3 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 285
+#define NR_SYSCALLS 287
 
 struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },		/* 0 */
@@ -292,4 +292,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "timerfd", },
 	{ .name = "eventfd", },
 	{ .name = "fallocate", },	/* 285 */
+	{ .name = "timerfd_settime", },
+	{ .name = "timerfd_gettime", },
 };

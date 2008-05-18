@@ -1,9 +1,9 @@
-/* Syscalls from arch/sparc{,64}/kernel/systbl.S as of 2.6.17rc6 */
+/* Syscalls from arch/sparc{,64}/kernel/systbls.S as of 2.6.17rc6 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-# define NR_SYSCALLS 301
+# define NR_SYSCALLS 316
 
 struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
@@ -33,7 +33,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "getuid", },
 	{ .name = "vmsplice", .sanitise = sanitise_vmsplice }, /* 25 */
 	{ .name = "ptrace", },
-	{ .name = "alarm", },	
+	{ .name = "alarm", },
 	{ .name = "sigaltstack", },
 	{ .name = "pause", .flags = AVOID_SYSCALL },
 	{ .name = "utime", }, /* 30 */
@@ -308,5 +308,19 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "unshare", },
 	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list }, /* 300 */
 	{ .name = "get_robust_list", },
+	{ .name = "migrate_pages", },
+	{ .name = "mbind", },
+	{ .name = "get_mempolicy", },
+	{ .name = "set_mempolicy", },	/* 305 */
+	{ .name = "kexec_load", },
+	{ .name = "move_pages", },
+	{ .name = "getcpu", },
+	{ .name = "epoll_pwait", },
+	{ .name = "utimensat", },	/* 310 */
+	{ .name = "signalfd", },
+	{ .name = "timerfd_create", },
+	{ .name = "eventfd", },
+	{ .name = "fallocate", },
+	{ .name = "timerfd_settime", },	/* 315 */
+	{ .name = "timerfd_gettime", },
 };
-

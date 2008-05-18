@@ -1,9 +1,9 @@
-/* Syscalls from arch/ia64/kernel/entry.S as of 2.6.17rc6 */
+/* Syscalls from arch/ia64/kernel/entry.S as of 2.6.26rc3 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 278
+#define NR_SYSCALLS 289
 
 struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 
@@ -286,6 +286,14 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
 	{ .name = "tee", .sanitise = sanitise_tee },
 	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
+	{ .name = "fallocate", },	/* 280 */
+	{ .name = "getcpu", },
+	{ .name = "epoll_pwait", },
+	{ .name = "utimensat", },
+	{ .name = "signalfd", },
+	{ .name = "ni_syscall", .flags = AVOID_SYSCALL },	/* 285 */
+	{ .name = "eventfd", },
+	{ .name = "timerfd_create", },
+	{ .name = "timerfd_settime", },
+	{ .name = "timerfd_gettime", },
 };
-
-

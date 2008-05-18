@@ -1,9 +1,9 @@
-/* Syscalls from arch/powerpc/kernel/systbl.S as of 2.6.17rc6 */
+/* Syscalls from include/asm-powerpc/systbl.h as of 2.6.26rc3 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-# define NR_SYSCALLS 300
+# define NR_SYSCALLS 312
 
 struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
@@ -307,5 +307,17 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "faccessat", },
 	{ .name = "get_robust_list", },
 	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list }, /* 300 */
+	{ .name = "move_pages", },
+	{ .name = "getcpu", },
+	{ .name = "epoll_pwait", },
+	{ .name = "utimensat", },
+	{ .name = "signalfd", },	/* 305 */
+	{ .name = "timerfd_create", },
+	{ .name = "eventfd", },
+	{ .name = "sync_file_range2", },
+	{ .name = "fallocate", },
+	{ .name = "subpage_prot", },	/* 310 */
+	{ .name = "timerfd_settime", },
+	{ .name = "timerfd_gettime", },
 };
 
