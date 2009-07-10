@@ -1,9 +1,9 @@
-/* Syscalls from include/asm-powerpc/systbl.h as of 2.6.26rc3 */
+/* Syscalls from arch/powerpc/include/asm/systbl.h as of 2.6.31rc2 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-# define NR_SYSCALLS 312
+# define NR_SYSCALLS 322
 
 struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
@@ -319,5 +319,14 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .name = "subpage_prot", },	/* 310 */
 	{ .name = "timerfd_settime", },
 	{ .name = "timerfd_gettime", },
+	{ .name = "signalfd4", },
+	{ .name = "eventfd2", },
+	{ .name = "epoll_create1", },	/* 315 */
+	{ .name = "dup3", },
+	{ .name = "pipe2", },
+	{ .name = "inotify_init1", },
+	{ .name = "perf_counter_open", },
+	{ .name = "preadv", },		/* 320*/
+	{ .name = "pwritev", },
+	{ .name = "rt_tgsigqueueinfo", },
 };
-

@@ -1,9 +1,9 @@
-/* Syscalls from include/asm-x86/unistd_32.h as of 2.6.26rc3 */
+/* Syscalls from arch/x86/include/asm/unistd_32.h as of 2.6.31rc2 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 326
+#define NR_SYSCALLS 336
 
 struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
@@ -333,5 +333,14 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "fallocate", },
 	{ .name = "timerfd_settime", },	/* 325 */
 	{ .name = "timerfd_gettime", },
-
+	{ .name = "signalfd4", },
+	{ .name = "eventfd2", },
+	{ .name = "epoll_create1", },
+	{ .name = "dup3", },		/* 330 */
+	{ .name = "pipe2", },
+	{ .name = "inotify_init1", },
+	{ .name = "preadv", },
+	{ .name = "pwritev", },
+	{ .name = "rt_tgsigqueueinfo", },	/* 335 */
+	{ .name = "perf_counter_open", },
 };

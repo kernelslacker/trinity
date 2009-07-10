@@ -1,9 +1,9 @@
-/* Syscalls from include/asm-x86/unistd_64.h as of 2.6.26rc3 */
+/* Syscalls from arch/x86/include/asm/unistd_64.h as of 2.6.31rc2 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 287
+#define NR_SYSCALLS 298
 
 struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },		/* 0 */
@@ -294,4 +294,15 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "fallocate", },	/* 285 */
 	{ .name = "timerfd_settime", },
 	{ .name = "timerfd_gettime", },
+	{ .name = "accept4", },
+	{ .name = "signalfd4", },
+	{ .name = "eventfd2", },	/* 290 */
+	{ .name = "epoll_create1", },
+	{ .name = "dup3", },
+	{ .name = "pipe2", },
+	{ .name = "inotify_init1", },
+	{ .name = "preadv", },		/* 295 */
+	{ .name = "pwritev", },
+	{ .name = "rt_tgsigqueueinfo", },
+	{ .name = "perf_counter_open", },
 };

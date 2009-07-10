@@ -1,9 +1,9 @@
-/* Syscalls from arch/ia64/kernel/entry.S as of 2.6.26rc3 */
+/* Syscalls from arch/ia64/kernel/entry.S as of 2.6.31rc2 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 289
+#define NR_SYSCALLS 298
 
 struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 
@@ -296,4 +296,13 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "timerfd_create", },
 	{ .name = "timerfd_settime", },
 	{ .name = "timerfd_gettime", },
+        { .name = "signalfd4", },	/* 290*/
+        { .name = "eventfd2", },
+        { .name = "epoll_create1", },
+        { .name = "dup3", },
+        { .name = "pipe2", },
+        { .name = "inotify_init1", }, /* 295 */
+        { .name = "preadv", },
+        { .name = "pwritev", },
+        { .name = "rt_tgsigqueueinfo", },
 };

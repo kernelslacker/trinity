@@ -1,9 +1,9 @@
-/* Syscalls from arch/sparc{,64}/kernel/systbls.S as of 2.6.17rc6 */
+/* Syscalls from arch/sparc/kernel/systbls_{32,64}.S as of 2.6.31rc2 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-# define NR_SYSCALLS 316
+# define NR_SYSCALLS 326
 
 struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", }, /* 0 - old "setup()" system call, used for restarting */
@@ -323,4 +323,14 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "fallocate", },
 	{ .name = "timerfd_settime", },	/* 315 */
 	{ .name = "timerfd_gettime", },
+	{ .name = "signalfd4", },
+	{ .name = "eventfd2", },
+	{ .name = "epoll_create1", },
+	{ .name = "dup3", },		/* 320 */
+	{ .name = "pipe2", },
+	{ .name = "inotify_init1", },
+	{ .name = "accept4", },
+	{ .name = "preadv", },
+	{ .name = "pwritev", },		/* 325 */
+	{ .name = "rt_tgsigqueueinfo", },
 };
