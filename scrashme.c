@@ -44,7 +44,7 @@ static struct syscalltable *syscalls;
 static int rep=0;
 static long res=0;
 static long specificsyscall=0;
-static long regval=0;
+static unsigned long regval=0;
 static char *progname=NULL;
 static char *structptr=NULL;
 static unsigned char rotate_mask=1;
@@ -204,6 +204,7 @@ static void usage(void)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   --mode=rotate : rotate value through all register combinations\n");
 	fprintf(stderr, "     -k:  pass kernel addresses as arguments.\n");
+	fprintf(stderr, "     -u:  pass userspace addresses as arguments.\n");
 	fprintf(stderr, "     -x#: use value as register arguments.\n");
 	fprintf(stderr, "     -z:  use all zeros as register parameters.\n");
 	fprintf(stderr, "     -Sr: pass struct filled with random junk.\n");
@@ -272,7 +273,7 @@ static void parse_args(int argc, char *argv[])
 		{ "mode", required_argument, NULL, 'm' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:c:hikN:m:pPs:S:x:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:c:hikN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
@@ -390,6 +391,12 @@ static void parse_args(int argc, char *argv[])
 			}
 			passed_type = TYPE_STRUCT;
 			regval = (unsigned long) structptr;
+			break;
+
+		/* Pass in address of kernel text */
+		case 'u':
+			passed_type = TYPE_VALUE;
+			regval = (unsigned long) useraddr;
 			break;
 
 		/* Set registers to specific value */
@@ -544,9 +551,9 @@ int main(int argc, char* argv[])
 	if (argc==1)
 		usage();
 
-	parse_args(argc, argv);
-
 	init_buffer();
+
+	parse_args(argc, argv);
 
 	run_setup();
 

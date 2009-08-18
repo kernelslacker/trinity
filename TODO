@@ -1,7 +1,3 @@
-* Make -z more generic
-  - add a --rotate option to be used with -z, or -k
-  - Add -u = use userspace addresses
-  - Add -v = user specified value
 
 * Make -k use random kernel addresses (from System.map ?)
 
