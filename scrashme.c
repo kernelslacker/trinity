@@ -104,7 +104,6 @@ void init_buffer()
 	memset(useraddr, 0, 4096);
 }
 
-
 static void sighandler(int sig)
 {
 	printf("signal: %s\n", strsignal (sig));
@@ -124,7 +123,8 @@ static long mkcall(int call)
 {
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	long ret = 0;
-	int i;
+	int i, j;
+	int poisoned = 0;
 
 	switch (opmode) {
 	case MODE_ROTATE:
@@ -162,18 +162,41 @@ static long mkcall(int call)
 		}
 	}
 	printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+	(void)fflush(stdout);
 
 	if (check_poison==1) {
-		for (i=0; i<4096; i++) {
+		for (i = 0; i < 4096; i++) {
 			if (userbuffer[i]!=poison)
-				printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
+				poisoned = 1;
 		}
-		for (i=4096*2; i<4096*3; i++) {
+		for (i = 4096*2; i < 4096*3; i++) {
 			if (userbuffer[i]!=poison)
-				printf ("Yikes! Poison was overwritten! (Was: %x)\n", userbuffer[i]);
+				poisoned = 2;
+		}
+
+		if (poisoned==1) {
+			printf ("Yikes! pre-buffer poison was overwritten!\n");
+			for (i = 0; i < 4096; i+=32) {
+				printf("%d: ", i);
+				for (j=0; j < 32; j++)
+					printf("%x ", userbuffer[i+j]);
+				printf("\n");
+			}
+			(void)fflush(stdout);
+			(void)sleep(10);
+		}
+		if (poisoned==2) {
+			printf ("Yikes! post-buffer poison was overwritten!\n");
+			for (i = 4096*2; i < 4096*3; i+=32) {
+				printf("%i: ", i);
+				for (j=0; j < 32; j++)
+					printf("%x ", userbuffer[i+j]);
+				printf("\n");
+			}
+			(void)fflush(stdout);
+			(void)sleep(10);
 		}
 	}
-	(void)fflush(stdout);
 
 /* IA64 is retarde^Wspecial. */
 #ifdef __ia64__
@@ -526,6 +549,12 @@ static void run_mode(void)
 				}
 			}
 		}
+
+		/* If we're passing userspace addresses, mess with alignment */
+		if ((passed_type == TYPE_VALUE) &&
+		    ((regval & ~0xf) == (unsigned long)useraddr))
+			regval = (unsigned long)useraddr+(rand() & 0xf);
+
 	}
 done: ;
 }
