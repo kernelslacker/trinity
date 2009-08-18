@@ -286,17 +286,27 @@ static void do_syscall_from_child(int cl)
 	(void)waitpid(-1, NULL, 0);
 }
 
+static void syscall_list()
+{
+	int i;
+
+	for (i=0; i<=NR_SYSCALLS; i++) {
+		 printf("%i: %s\n", i, syscalls[i].name);
+	}
+}
+
 static void parse_args(int argc, char *argv[])
 {
 	int i;
 	int opt;
 
 	struct option longopts[] = {
+		{ "list", optional_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "mode", required_argument, NULL, 'm' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:c:hikN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:c:hikLN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
@@ -348,6 +358,11 @@ static void parse_args(int argc, char *argv[])
 		case 'i':
 			intelligence = 1;
 			setup_fds();
+			break;
+
+		case 'L':
+			syscall_list();
+			exit(EXIT_SUCCESS);
 			break;
 
 		/* Pass in address of kernel text */

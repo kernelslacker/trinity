@@ -77,6 +77,9 @@ This requires a .sanitise method for each syscall, and right now,
 hardly any of the syscalls provide this.
 
 
+Other useful arguments:
+--list will dump all available syscalls, and their syscall number.
+
 #######################################################################
 
 Examples:
