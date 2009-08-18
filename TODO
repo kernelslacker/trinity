@@ -1,12 +1,32 @@
-* Make addresses used by -k 'wander' like -z does.
+* Make -z more generic
+  - add a --rotate option to be used with -z, or -k
+  - Add -u = use userspace addresses
+  - Add -v = user specified value
 
-* --trashkernel. Make -k a useful kernel address, and then pass shellcode
-  in another register in the hope that we can trick the kernel into writing
-  the code to the kernel address.  Then call the kernel function we may have
-  overwritten.  (This sounds a bit pie-in-the-sky, but maybe bastardising an
-  off the shelf exploit will make this feasible)
+* Make -k use random kernel addresses (from System.map ?)
 
-* -u = use userspace addresses
+* --oneshot
+  ./scrashme --oneshot sys_futex -1,0x40000000,1,2,3,4
+
+* --info sys_open
+   i386:   5
+   x86-64: 239
+   ppc64:  5
+
+* Colorise some output
+  - The wandering value in --rotate
+  - Highlight odd looking return values
+
+* Add number of args per syscall to tables
+  - Only print random values for regs that matter
+  - Zero non-used regs. Allow an override ?
+
+* --check-clobber
+  Set regs that should be preserved across syscalls to a known value, and check
+  on return whether any of them got clobbered.
+
+* In struct checking, with some smarts, we could check the struct we passed
+  afterwards to ensure nothing scribbled outside of bounds.
 
 * --logfile
 
@@ -15,13 +35,15 @@
 
 * flush() & fsync() before making the call
 
-* Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
-
 * Save time by not calling pointless syscalls.
   - skip pause(), and any other functions that take no inputs from userspace.
   - optionally skip syscalls we know check for CAP_SYS_ADMIN early
 
+* Reduce amount of output from -C
+  The values passed aren't very interesting. (maybe add a --debug?)
+
 * add a switch to use 32bit syscall entry point on x86-64
+  This will require us to use assembly instead of syscall() again.
 
 * Pass "interesting" 32 bit patterns.
 	80000000
@@ -49,22 +71,7 @@
   - Or possibly a new syscall flag 'DONTFORK' for mm related syscalls ?
   - Or possibly a --vm mode to only call VM related calls.
 
-* In struct checking, with some smarts, we could check the struct we passed
-  afterwards to ensure nothing scribbled outside of bounds.
-
-* Colorise some output (like the 0's in -z output to make the 'wandering' more
-  obvious).
-
 * Xen dom0 hypercalls ?
 
-- --oneshot
-  ./scrashme --oneshot sys_futex -1,0x40000000,1,2,3,4
-
-- --info sys_open
-   i386:   5
-   x86-64: 239
-   ppc64:  5
-
-* Set regs that should be preserved across syscalls to a known value, and check
-  on return whether any of them got clobbered.
+* Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
