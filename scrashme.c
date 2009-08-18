@@ -46,7 +46,8 @@ static long specificsyscall=0;
 static long regval=0;
 static char *progname=NULL;
 static char *structptr=NULL;
-static unsigned char zeromask=0;
+static unsigned char rotate_mask=0;
+static unsigned char rotate_value=0;
 static unsigned char dopause=0;
 static unsigned char intelligence=0;
 static unsigned char do_specific_syscall=0;
@@ -61,7 +62,7 @@ int page_size;
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
-#define MODE_ZEROREGS 2
+#define MODE_ROTATE 2
 #define MODE_REGVAL 3
 #define MODE_STRUCT 4
 #define MODE_CAPCHECK 5
@@ -77,7 +78,7 @@ static long struct_fill;		/* structmode fill value */
 char *opmodename[] = {
 	[MODE_UNDEFINED] = "undef",
 	[MODE_RANDOM] = "random",
-	[MODE_ZEROREGS] = "zero_regs",
+	[MODE_ROTATE] = "rotate",
 	[MODE_REGVAL] = "reg_val",
 	[MODE_STRUCT] = "struct_fill",
 	[MODE_CAPCHECK] = "capabilities_check",
@@ -123,13 +124,14 @@ static long mkcall(int call)
 	int i;
 
 	switch (opmode) {
-	case MODE_ZEROREGS:
-		if (!(zeromask & (1<<0))) a6 = getrand();
-		if (!(zeromask & (1<<1))) a5 = getrand();
-		if (!(zeromask & (1<<2))) a4 = getrand();
-		if (!(zeromask & (1<<3))) a3 = getrand();
-		if (!(zeromask & (1<<4))) a2 = getrand();
-		if (!(zeromask & (1<<5))) a1 = getrand();
+	case MODE_ROTATE:
+		a1 = a2 = a3 = a4 = a5 = a6 = rotate_value;
+		if (!(rotate_mask & (1<<0))) a6 = getrand();
+		if (!(rotate_mask & (1<<1))) a5 = getrand();
+		if (!(rotate_mask & (1<<2))) a4 = getrand();
+		if (!(rotate_mask & (1<<3))) a3 = getrand();
+		if (!(rotate_mask & (1<<4))) a2 = getrand();
+		if (!(rotate_mask & (1<<5))) a1 = getrand();
 		break;
 
 	case MODE_REGVAL:
@@ -382,7 +384,8 @@ static void parse_args (int argc, char *argv[])
 
 			/* Wander a 0 through every register */
 			case 'z':
-				opmode = MODE_ZEROREGS;
+				opmode = MODE_ROTATE;
+				rotate_value = 0;
 				break;
 		}
 	}
@@ -434,18 +437,18 @@ static void run_mode (void)
 				do_syscall_from_child(rep);
 				break;
 
-			case MODE_ZEROREGS:
+			case MODE_ROTATE:
 				if (do_specific_syscall == 1) {
-					zeromask++;
-					if (zeromask == (1<<6)-1)
+					rotate_mask++;
+					if (rotate_mask == (1<<6)-1)
 						goto done;
 				} else {
 					if (rep > NR_SYSCALLS) {
 						/* Pointless running > once. */
-						if (zeromask == (1<<6)-1)
+						if (rotate_mask == (1<<6)-1)
 							goto done;
 						rep = 0;
-						zeromask++;
+						rotate_mask++;
 					}
 				}
 				do_syscall_from_child(rep);
