@@ -15,8 +15,6 @@
 
 * flush() & fsync() before making the call
 
-* 8 args ?
-
 * Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
 * Save time by not calling pointless syscalls.
@@ -50,9 +48,6 @@
   - Maybe add a --no-children to prevent forking?
   - Or possibly a new syscall flag 'DONTFORK' for mm related syscalls ?
   - Or possibly a --vm mode to only call VM related calls.
-
-* add a switch to call all the functions that should do a CAP_SYS_ADMIN/capable()
-  check first thing, and check that they all return -EPERM
 
 * In struct checking, with some smarts, we could check the struct we passed
   afterwards to ensure nothing scribbled outside of bounds.
