@@ -15,6 +15,7 @@
 #include <time.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <getopt.h>
 #include <asm/unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -46,8 +47,7 @@ static long specificsyscall=0;
 static long regval=0;
 static char *progname=NULL;
 static char *structptr=NULL;
-static unsigned char rotate_mask=0;
-static unsigned char rotate_value=0;
+static unsigned char rotate_mask=1;
 static unsigned char dopause=0;
 static unsigned char intelligence=0;
 static unsigned char do_specific_syscall=0;
@@ -56,6 +56,7 @@ static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
 
+
 char poison = 0x55;
 
 int page_size;
@@ -63,31 +64,33 @@ int page_size;
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
 #define MODE_ROTATE 2
-#define MODE_REGVAL 3
-#define MODE_STRUCT 4
-#define MODE_CAPCHECK 5
-
-#define STRUCTMODE_UNDEF 0
-#define STRUCTMODE_CONST 1
-#define STRUCTMODE_RAND 2
-
+#define MODE_CAPCHECK 3
 static int opmode = MODE_UNDEFINED;
-static int structmode = STRUCTMODE_UNDEF;
-static long struct_fill;		/* structmode fill value */
+
+#define STRUCT_UNDEFINED 0
+#define STRUCT_CONST 1
+#define STRUCT_RAND 2
+static int structmode = STRUCT_UNDEFINED;
+
+static long struct_fill;		/* value to fill struct with if CONST */
 
 char *opmodename[] = {
 	[MODE_UNDEFINED] = "undef",
 	[MODE_RANDOM] = "random",
 	[MODE_ROTATE] = "rotate",
-	[MODE_REGVAL] = "reg_val",
-	[MODE_STRUCT] = "struct_fill",
 	[MODE_CAPCHECK] = "capabilities_check",
 };
 char *structmodename[] = {
-	[STRUCTMODE_UNDEF] = ", unknown",
-	[STRUCTMODE_CONST] = ", constant",
-	[STRUCTMODE_RAND]  = ", random",
+	[STRUCT_UNDEFINED] = "unknown",
+	[STRUCT_CONST] = "constant",
+	[STRUCT_RAND]  = "random",
 };
+
+#define TYPE_UNDEFINED 0
+#define TYPE_VALUE 1
+#define TYPE_STRUCT 2
+static char passed_type = TYPE_UNDEFINED;
+
 
 static char *userbuffer;
 char *useraddr;
@@ -125,21 +128,13 @@ static long mkcall(int call)
 
 	switch (opmode) {
 	case MODE_ROTATE:
-		a1 = a2 = a3 = a4 = a5 = a6 = rotate_value;
+		a1 = a2 = a3 = a4 = a5 = a6 = regval;
 		if (!(rotate_mask & (1<<0))) a6 = getrand();
 		if (!(rotate_mask & (1<<1))) a5 = getrand();
 		if (!(rotate_mask & (1<<2))) a4 = getrand();
 		if (!(rotate_mask & (1<<3))) a3 = getrand();
 		if (!(rotate_mask & (1<<4))) a2 = getrand();
 		if (!(rotate_mask & (1<<5))) a1 = getrand();
-		break;
-
-	case MODE_REGVAL:
-		a1 = a2 = a3 = a4 = a5 = a6 = regval;
-		break;
-
-	case MODE_STRUCT:
-		a1 = a2 = a3 = a4 = a5 = a6 = (unsigned long) structptr;
 		break;
 
 	case MODE_RANDOM:
@@ -204,19 +199,24 @@ static long mkcall(int call)
 static void usage(void)
 {
 	fprintf(stderr, "%s\n", progname);
+	fprintf(stderr, "   --mode=random : pass random values in registers to random syscalls\n");
+	fprintf(stderr, "     -s#: use # as random seed.\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "   --mode=rotate : rotate value through all register combinations\n");
+	fprintf(stderr, "     -k:  pass kernel addresses as arguments.\n");
+	fprintf(stderr, "     -x#: use value as register arguments.\n");
+	fprintf(stderr, "     -z:  use all zeros as register parameters.\n");
+	fprintf(stderr, "     -Sr: pass struct filled with random junk.\n");
+	fprintf(stderr, "     -Sxx: pass struct filled with hex value xx.\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "   --mode=capcheck:  check syscalls that call capable() return -EPERM.\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "\n");
 	fprintf(stderr, "   -b#: begin at offset #.\n");
-	fprintf(stderr, "   -c#: do syscall # with random inputs.\n");
-	fprintf(stderr, "   -C:  check syscalls that call capable() return -EPERM.\n");
-	fprintf(stderr, "   -k:  pass kernel addresses as arguments.\n");
+	fprintf(stderr, "   -c#: target syscall # only.\n");
 	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
 	fprintf(stderr, "   -P:  poison buffers before calling syscall, and check afterwards.\n");
 	fprintf(stderr, "   -p:  pause after syscall.\n");
-	fprintf(stderr, "   -r:  call random syscalls with random inputs.\n");
-	fprintf(stderr, "   -s#: use # as random seed.\n");
-	fprintf(stderr, "   -Sr: pass struct filled with random junk.\n");
-	fprintf(stderr, "   -Sxx: pass struct filled with hex value xx.\n");
-	fprintf(stderr, "   -x#: use value as register arguments.\n");
-	fprintf(stderr, "   -z:  use all zeros as register parameters.\n");
 	exit(EXIT_SUCCESS);
 }
 
@@ -262,136 +262,160 @@ static void do_syscall_from_child(int cl)
 	(void)waitpid(-1, NULL, 0);
 }
 
-static void parse_args (int argc, char *argv[])
+static void parse_args(int argc, char *argv[])
 {
-	int c = 0, i;
+	int i;
+	int opt;
 
-	while ((c = getopt(argc, argv, "b:c:CikN:pPrs:S:x:z")) != -1) {
-		switch (c) {
-			case 'b':
-				rep = strtol(optarg, NULL, 10);
-				break;
-			case 'c':
-				do_specific_syscall = 1;
-				specificsyscall = strtol(optarg, NULL, 10);
-				if (specificsyscall == 0) {
-					/* If we get here, it wasn't a numeric syscall.
-					 * Perhaps someone is passing a syscall name.
-					 * Try and match. */
+	struct option longopts[] = {
+		{ "help", no_argument, NULL, 'h' },
+		{ "mode", required_argument, NULL, 'm' },
+		{ NULL, 0, NULL, 0 } };
 
-					for (i=0; i<NR_SYSCALLS; i++) {
-						if (strcmp(optarg, syscalls[i].name) == 0) {
-							printf("Found %s at %d\n", syscalls[i].name, i);
-							specificsyscall = i;
-							break;
-						}
-					}
-					if (i==NR_SYSCALLS) {
-						printf ("Unable to parse syscall number\n");
-						exit(1);
-					}
-				}
-				break;
+	while ((opt = getopt_long(argc, argv, "b:c:hikN:m:pPs:S:x:z", longopts, NULL)) != -1) {
+		switch (opt) {
+		default:
+		case '\0':
+			exit(EXIT_FAILURE);
 
-			case 'C':
-				opmode = MODE_CAPCHECK;
-				break;
-
-			/* use semi-intelligent options */
-			case 'i':
-				intelligence = 1;
-				setup_fds();
-				break;
-
-			/* Pass in address of kernel text */
-			case 'k':
-				opmode = MODE_REGVAL;
-				regval = KERNEL_ADDR;
-				break;
-
-			/* Set syscall loop counter */
-			case 'N':
-				syscallcount = strtoll(optarg, NULL, 10);
-				break;
-
-			/* Pause after each syscall */
-			case 'p':
-				dopause = 1;
-				break;
-
-			/* Poison buffers before syscall, and check afterwards. */
-			case 'P':
-				check_poison = 1;
-				break;
-
-			/* Pass in random numbers in registers. */
-			case 'r':
+		/* Get the mode we want to run */
+		case 'm':
+			if (!strcmp(optarg, "random"))
 				opmode = MODE_RANDOM;
-				break;
-
-			/* Set seed */
-			case 's':
-				seed = strtol(optarg, NULL, 10);
-				break;
-
-			/* Set Struct fill mode */
-			case 'S':
-				switch (*optarg) {
-
-				/* Pass a ptr to a struct filled with random junk */
-				case 'r':
-					opmode = MODE_STRUCT;
-					structmode = STRUCTMODE_RAND;
-					structptr = malloc(page_size);
-					if (!structptr)
-						exit(EXIT_FAILURE);
-					for (i=0; i<page_size; i++)
-						structptr[i]= rand();
-					break;
-
-				case '\0':
-				case ' ':
-					fprintf(stderr,
-						"-S requires 'r' or a hex value\n");
-					exit(EXIT_FAILURE);
-					break;
-
-				/* Pass a ptr to a struct filled with the
-				 * user-specified constant value. */
-				default:
-					opmode = MODE_STRUCT;
-					structmode = STRUCTMODE_CONST;
-					if (!isxdigit(*optarg)) {
-						fprintf(stderr,
-						    "-S requires 'r' or a "
-						    "hex value\n");
-						exit(EXIT_FAILURE);
-					}
-					struct_fill = strtol(optarg, NULL, 16);
-					structptr = malloc(page_size);
-					if (!structptr)
-						exit(EXIT_FAILURE);
-					memset(structptr, struct_fill, page_size);
-					break;
-				}
-				break;
-
-			/* Set registers to specific value */
-			case 'x':
-				regval = strtoul(optarg, NULL, 0);
-				opmode = MODE_REGVAL;
-				break;
-
-			/* Wander a 0 through every register */
-			case 'z':
+			if (!strcmp(optarg, "rotate"))
 				opmode = MODE_ROTATE;
-				rotate_value = 0;
+			if (!strcmp(optarg, "capcheck"))
+				opmode = MODE_CAPCHECK;
+			break;
+
+		case 'b':
+			rep = strtol(optarg, NULL, 10);
+			break;
+
+		case 'c':
+			do_specific_syscall = 1;
+			specificsyscall = strtol(optarg, NULL, 10);
+			if (specificsyscall == 0) {
+				/* If we get here, it wasn't a numeric syscall.
+				 * Perhaps someone is passing a syscall name.
+				 * Try and match. */
+
+				for (i=0; i<NR_SYSCALLS; i++) {
+					if (strcmp(optarg, syscalls[i].name) == 0) {
+						printf("Found %s at %d\n", syscalls[i].name, i);
+						specificsyscall = i;
+						break;
+					}
+				}
+				if (i==NR_SYSCALLS) {
+					printf ("Unable to parse syscall number\n");
+					exit(1);
+				}
+			}
+			break;
+
+		/* Show help */
+		case 'h':
+			usage();
+			exit(EXIT_SUCCESS);
+			break;
+
+		/* use semi-intelligent options */
+		case 'i':
+			intelligence = 1;
+			setup_fds();
+			break;
+
+		/* Pass in address of kernel text */
+		case 'k':
+			passed_type = TYPE_VALUE;
+			regval = KERNEL_ADDR;
+			break;
+
+		/* Set syscall loop counter */
+		case 'N':
+			syscallcount = strtoll(optarg, NULL, 10);
+			break;
+
+		/* Pause after each syscall */
+		case 'p':
+			dopause = 1;
+			break;
+
+		/* Poison buffers before syscall, and check afterwards. */
+		case 'P':
+			check_poison = 1;
+			break;
+
+		/* Set seed */
+		case 's':
+			seed = strtol(optarg, NULL, 10);
+			break;
+
+		/* Set Struct fill mode */
+		case 'S':
+			switch (*optarg) {
+				/* Pass a ptr to a struct filled with random junk */
+			case 'r':
+				structmode = STRUCT_RAND;
+				structptr = malloc(page_size);
+				if (!structptr)
+					exit(EXIT_FAILURE);
+				for (i=0; i<page_size; i++)
+					structptr[i]= rand();
 				break;
+			case '\0':
+			case ' ':
+				fprintf(stderr,
+					"-S requires 'r' or a hex value\n");
+				exit(EXIT_FAILURE);
+				break;
+
+			/* Pass a ptr to a struct filled with the
+			 * user-specified constant value. */
+			default:
+				structmode = STRUCT_CONST;
+				if (!isxdigit(*optarg)) {
+					fprintf(stderr,
+					    "-S requires 'r' or a "
+					    "hex value\n");
+					exit(EXIT_FAILURE);
+				}
+				struct_fill = strtol(optarg, NULL, 16);
+				structptr = malloc(page_size);
+				if (!structptr)
+					exit(EXIT_FAILURE);
+				memset(structptr, struct_fill, page_size);
+				break;
+			}
+			passed_type = TYPE_STRUCT;
+			regval = (unsigned long) structptr;
+			break;
+
+		/* Set registers to specific value */
+		case 'x':
+			regval = strtoul(optarg, NULL, 0);
+			passed_type = TYPE_VALUE;
+			break;
+
+		/* Wander a 0 through every register */
+		case 'z':
+			regval = 0;
+			passed_type = TYPE_VALUE;
+			break;
 		}
+	}
+
+	if (opmode == MODE_UNDEFINED) {
+		fprintf(stderr, "Unrecognised mode \'%s\'\n", optarg);
+		fprintf(stderr, "--mode must be one of random, rotate, regval, "
+			"struct, or capcheck\n\n");
+		usage();
+		exit(EXIT_FAILURE);
 	}
 }
 
-static void run_setup (void)
+static void run_setup(void)
 {
 	int i;
 
@@ -417,80 +441,89 @@ static void run_setup (void)
 	chroot("tmp");
 }
 
-static void run_mode (void)
+static void run_mode(void)
 {
 	int i;
 
-	printf("scrashme mode: %s%s\n", opmodename[opmode],
-		opmode == MODE_STRUCT ? structmodename[structmode] : "");
-	if (opmode == MODE_STRUCT && structmode == STRUCTMODE_CONST)
-		printf("struct fill value is 0x%x\n", (int)struct_fill);
-	else if (opmode == MODE_REGVAL)
-		printf("register fill value is 0x%lx\n", regval);
+	printf("scrashme mode: %s\n", opmodename[opmode]);
+
+	switch (opmode) {
+
+	case MODE_ROTATE:
+		switch (passed_type) {
+		case TYPE_STRUCT:
+			printf("struct mode = %s\n", structmodename[structmode]);
+			if (structmode == STRUCT_CONST)
+				printf("struct fill value is 0x%x\n", (int)struct_fill);
+			break;
+		}
+
+		printf("Rotating value %lx though all registers\n", regval);
+		break;
+	}
+
 	(void)fflush(stdout);
+
+	/* This is our main loop. */
 
 	for (;;) {
 		switch (opmode) {
-			case MODE_REGVAL:
-				if (rep > NR_SYSCALLS)
+		case MODE_ROTATE:
+			if (do_specific_syscall == 1) {
+				rotate_mask++;
+				if (rotate_mask == (1<<6)-1)
 					goto done;
-				do_syscall_from_child(rep);
-				break;
-
-			case MODE_ROTATE:
-				if (do_specific_syscall == 1) {
-					rotate_mask++;
+			} else {
+				if (rep > NR_SYSCALLS) {
+					/* Pointless running > once. */
 					if (rotate_mask == (1<<6)-1)
 						goto done;
-				} else {
-					if (rep > NR_SYSCALLS) {
-						/* Pointless running > once. */
-						if (rotate_mask == (1<<6)-1)
-							goto done;
-						rep = 0;
-						rotate_mask++;
-					}
+					rep = 0;
+					rotate_mask++;
 				}
-				do_syscall_from_child(rep);
-				break;
+			}
+			do_syscall_from_child(rep);
+			break;
 
-			case MODE_STRUCT:
-				if (rep > NR_SYSCALLS)
-					goto done;
-				switch (structmode) {
-				case STRUCTMODE_RAND:
-					for (i=0; i<page_size; i++)
-						structptr[i]= rand();
-					break;
-				}
-				do_syscall_from_child(rep);
-				break;
+		case MODE_CAPCHECK:
+			if (rep > NR_SYSCALLS)
+				goto done;
+			if (syscalls[rep].flags & CAPABILITY_CHECK) {
+				int r;
+				printf ("%i: ", rep);
+				r = do_syscall(rep);
+				if (r != -EPERM)
+					printf ("Didn't return EPERM!\n");
+			}
+			break;
 
-			case MODE_CAPCHECK:
-				if (rep > NR_SYSCALLS)
-					goto done;
-				if (syscalls[rep].flags & CAPABILITY_CHECK) {
-					int r;
-					printf ("%i: ", rep);
-					r = do_syscall(rep);
-					if (r != -EPERM)
-						printf ("Didn't return EPERM!\n");
-				}
-				break;
-
-			case MODE_RANDOM:
-				do_syscall_from_child(rep);
-				break;
+		case MODE_RANDOM:
+			do_syscall_from_child(rep);
+			break;
 		}
+
 		rep++;
 		execcount++;
 		if (syscallcount && (execcount >= syscallcount))
 			break;
+
+		/*
+		 * If we're passing random structs, regenerate the
+		 * buffer every time we make a syscall.
+		 */
+		if (passed_type == TYPE_STRUCT) {
+			if (structmode == STRUCT_RAND) {
+				for (i=0; i<page_size; i++) {
+					structptr[i]= rand();
+					break;
+				}
+			}
+		}
 	}
 done: ;
 }
 
-int main (int argc, char* argv[])
+int main(int argc, char* argv[])
 {
 #ifdef __x86_64__
 	syscalls = syscalls_x86_64;
@@ -512,13 +545,6 @@ int main (int argc, char* argv[])
 		usage();
 
 	parse_args(argc, argv);
-
-	if (opmode==MODE_UNDEFINED) {
-		fprintf (stderr, "Mode must be one of random (-r), specific (-c), capable (-C),\n");
-		fprintf (stderr, "zero-sweep (-z), fixed register value (-x), kernel address args (-k),\n");
-		fprintf (stderr, "or struct with value specified (-S)\n");
-		usage();
-	}
 
 	init_buffer();
 

@@ -17,57 +17,67 @@ o Several extra modes of attack.
 
 ######### options ###############################################
 
- -bN: begin at offset N.
-Useful for reproducing bugs that start after a certain # of runs.
+The first option that scrashme has is '--mode=', which must
+be one of the following..
 
-There are several modes.
-
-Random.
-~~~~~~~
-Good for stress testing, just does zillions of random junk syscalls.
- -r:  call random syscalls with random inputs.
+'random'
+ Good for stress testing, just does zillions of random junk syscalls.
  -sN: use N as random seed.
 
-Specific.
-~~~~~~~~~
-Good for concentrating on a certain syscall, if for eg, you just added one.
- -cN: do syscall N with random inputs.
-TODO: Accept syscall name instead of numeric input
+'rotate'
+ This will call every syscall sequentially, with a specific value in a register,
+ and will "rotate" it through all possible register combinations.
+ For example, the values of the registers being passed change thusly over time..
+  random, random, random, random, random, VALUE
+  random, random, random, random, VALUE, random
+  random, random, random, random, VALUE, VALUE 
+  random, random, random, VALUE, random, random
+  etc.. 
 
-Zero.
-~~~~~
+ until it eventually gets to calling with the value in all registers.
+
+'capcheck'
+ This will check syscalls that call capable() to make sure they return -EPERM.
+
+
+For random and rotate modes, there exist a number of further options that
+define what kinds of values are passed in registers to the syscalls.
+
+structures:
+  -Sxx:  pass a struct filled with any hex value (xx).
+  This calls syscalls with a pointer to a struct that is filled with hex xx
+  as arguments.
+ or
+  -Sr:  pass struct filled with random byte values.
+  As above, but with a struct filled with random chars.
+ In all cases, the structure passed is the size of one page.
+ (Ie, 4KB on most archs)
+
+
  -z:  Use all zeros as register parameters.
 This calls every syscall with zeros in each of the registers in turn, in
 every possible combination, with random junk in the other registers.
 Useful for testing for missing NULL checks.
 
-Fillstruct.
-~~~~~~~~~~~
--Sxx:  pass a struct filled with any hex value (xx).
-This calls syscalls with a pointer to a struct that is filled with hex xx
-as arguments.
 
-or
--Sr:  pass struct filled with random byte values.
-As above, but with a struct filled with random chars.
 
-In all cases, the structure passed is the size of one page.
-(Ie, 4KB on most archs)
+There also exist some options which apply to all available modes.
 
-Intelligent parameters.
-~~~~~~~~~~~~~~~~~~~~~~~
+-bN: begin at offset N.
+Useful for reproducing bugs that start after a certain # of runs.
+
+-cN: do syscall N with random inputs.
+Good for concentrating on a certain syscall, if for eg, you just added one.
+
+-i: Use Intelligent parameters.
 Given a vast number of syscalls do some checking, chances are a majority
 of the calls will get something like -EINVAL back.  This option passes
 some almost sensible looking parameters to defeat the simplest checks.
 This requires a .sanitise method for each syscall, and right now,
 hardly any of the syscalls provide this.
 
-Capability check.
-~~~~~~~~~~~~~~~~~
--C:  check syscalls that call capable() return -EPERM.
-This calls every syscall that does a call to capable() as its
-first thing, and makes sure that it gets -EPERM back.
 
+#######################################################################
 
 Examples:
 ./scrashme -c 275 -r -i
