@@ -71,3 +71,9 @@
 
 * Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
+* some of the syscalls allocate a chunk of memory. When we pass garbage, this could add up to
+  huge amounts of ram, which then mean we trigger the oom killer.
+  This isn't really desirable (nor is it a bug). We should possibly set some ulimits before
+  running the test harness.
+  (If we want to be really clever, somehow track the allocations, and then free them N syscalls later)
+
