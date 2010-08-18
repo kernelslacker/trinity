@@ -1,9 +1,9 @@
-/* Syscalls from arch/x86/include/asm/unistd_64.h as of 2.6.31rc2 */
+/* Syscalls from arch/x86/include/asm/unistd_64.h as of 2.6.35 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 298
+#define NR_SYSCALLS 302
 
 struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },		/* 0 */
@@ -304,5 +304,9 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{ .name = "preadv", },		/* 295 */
 	{ .name = "pwritev", },
 	{ .name = "rt_tgsigqueueinfo", },
-	{ .name = "perf_counter_open", },
+	{ .name = "perf_event_open", },
+	{ .name = "recvmmsg", },
+	{ .name = "fanotify_init", },		/* 300 */
+	{ .name = "fanotify_mark", },
+	{ .name = "prlimit64", },
 };

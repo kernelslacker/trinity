@@ -1,9 +1,9 @@
-/* Syscalls from arch/x86/include/asm/unistd_32.h as of 2.6.31rc2 */
+/* Syscalls from arch/x86/include/asm/unistd_32.h as of 2.6.35 */
 
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 336
+#define NR_SYSCALLS 340
 
 struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
@@ -342,5 +342,9 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "preadv", },
 	{ .name = "pwritev", },
 	{ .name = "rt_tgsigqueueinfo", },	/* 335 */
-	{ .name = "perf_counter_open", },
+	{ .name = "perf_event_open", },
+	{ .name = "recvmmsg", },
+	{ .name = "fanotify_init", },
+	{ .name = "fanotify_mark", },
+	{ .name = "prlimit64", },	/* 340*/
 };
