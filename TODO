@@ -82,3 +82,6 @@
   running the test harness.
   (If we want to be really clever, somehow track the allocations, and then free them N syscalls later)
 
+* syscall groups.
+  --group=vm  for example would only call memory management related syscalls.
+
