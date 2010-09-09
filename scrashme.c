@@ -179,8 +179,43 @@ static long mkcall(int call)
 		printf("(0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4);
 	if (syscalls[call].num_args == 5)
 		printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5);
-	if (syscalls[call].num_args == 6)
-		printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+
+	if (opmode == MODE_ROTATE) {
+		printf("(");
+		if (rotate_mask & (1<<5))
+			printf("[1;33m0x%lx[0;37m, ", a1);
+		else
+			printf("[0;37m0x%lx[0;37m, ", a1);
+
+		if (rotate_mask & (1<<4))
+			printf("[1;33m0x%lx[0;37m, ", a2);
+		else
+			printf("[0;37m0x%lx[0;37m, ", a2);
+
+		if (rotate_mask & (1<<3))
+			printf("[1;33m0x%lx[0;37m, ", a3);
+		else
+			printf("[0;37m0x%lx[0;37m, ", a3);
+
+		if (rotate_mask & (1<<2))
+			printf("[1;33m0x%lx[0;37m, ", a4);
+		else
+			printf("[0;37m0x%lx[0;37m, ", a4);
+
+		if (rotate_mask & (1<<1))
+			printf("[1;33m0x%lx[0;37m, ", a5);
+		else
+			printf("[0;37m0x%lx[0;37m, ", a5);
+
+		if (rotate_mask & (1<<0))
+			printf("[1;33m0x%lx[0;37m", a6);
+		else
+			printf("[0;37m0x%lx[0;37m", a6);
+		printf(")");
+	} else {
+		if (syscalls[call].num_args == 6)
+			printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+	}
 
 	(void)fflush(stdout);
 

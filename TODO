@@ -10,7 +10,6 @@
    ppc64:  5
 
 * Colorise some output
-  - The wandering value in --rotate
   - Highlight odd looking return values
 
 * Add number of args per syscall to tables
