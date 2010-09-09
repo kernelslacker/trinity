@@ -164,6 +164,20 @@ static long mkcall(int call)
 	printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 	(void)fflush(stdout);
 
+/* IA64 is retarde^Wspecial. */
+#ifdef __ia64__
+	call += 1024;
+#endif
+
+	ret = syscall(call, a1, a2, a3, a4, a5);
+	printf("= %ld", ret);
+
+	if (ret < 0)
+		printf(" %s\n", strerror (errno));
+	else
+		printf("\n");
+	(void)fflush(stdout);
+
 	if (check_poison==1) {
 		for (i = 0; i < 4096; i++) {
 			if (userbuffer[i]!=poison)
@@ -198,19 +212,6 @@ static long mkcall(int call)
 		}
 	}
 
-/* IA64 is retarde^Wspecial. */
-#ifdef __ia64__
-	call += 1024;
-#endif
-
-	ret = syscall(call, a1, a2, a3, a4, a5);
-	printf("= %ld", ret);
-
-	if (ret < 0)
-		printf(" %s\n", strerror (errno));
-	else
-		printf("\n");
-	(void)fflush(stdout);
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if (ret == -ENOSYS)
