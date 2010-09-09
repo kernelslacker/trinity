@@ -85,3 +85,6 @@
 * syscall groups.
   --group=vm  for example would only call memory management related syscalls.
 
+* When starting up, go through all the ni_syscall's, and make sure they return ENOSYS.
+  If they don't, set their num_args to 6
+
