@@ -3,6 +3,7 @@
 
 struct syscalltable {
 	char name[80];
+	unsigned int num_args;
 	void (*sanitise)(
 		unsigned long *,
 		unsigned long *,

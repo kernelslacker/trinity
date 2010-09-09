@@ -152,6 +152,13 @@ static long mkcall(int call)
 	else
 		printf("%s", syscalls[call].name);
 
+	/* If there are no inputs, we can't fuzz anything. */
+	if (syscalls[call].num_args == 0) {
+		syscalls[call].flags |= AVOID_SYSCALL;
+		printf(" syscall has no inputs:- skipping\n");
+		return 0;
+	}
+
 	if (intelligence == 1) {
 		if (syscalls[call].sanitise) {
 #if 1
@@ -161,7 +168,20 @@ static long mkcall(int call)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 		}
 	}
-	printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+
+	if (syscalls[call].num_args == 1)
+		printf("(0x%lx) ", a1);
+	if (syscalls[call].num_args == 2)
+		printf("(0x%lx,0x%lx) ", a1, a2);
+	if (syscalls[call].num_args == 3)
+		printf("(0x%lx,0x%lx,0x%lx) ", a1, a2, a3);
+	if (syscalls[call].num_args == 4)
+		printf("(0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4);
+	if (syscalls[call].num_args == 5)
+		printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5);
+	if (syscalls[call].num_args == 6)
+		printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+
 	(void)fflush(stdout);
 
 /* IA64 is retarde^Wspecial. */
@@ -506,6 +526,11 @@ static void run_mode(void)
 	for (;;) {
 		switch (opmode) {
 		case MODE_ROTATE:
+			/* It's easier to just use all regs for now. */
+			for (i=0; i<=NR_SYSCALLS; i++) {
+				syscalls[i].num_args = 6;
+			}
+
 			if (do_specific_syscall == 1) {
 				rotate_mask++;
 				if (rotate_mask == (1<<6)-1)

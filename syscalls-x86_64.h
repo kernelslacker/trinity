@@ -6,307 +6,307 @@
 #define NR_SYSCALLS 302
 
 struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
-	{ .name = "read", .sanitise = sanitise_read },		/* 0 */
-	{ .name = "write", .sanitise = sanitise_write },
-	{ .name = "open" },
-	{ .name = "close", .sanitise = sanitise_close },
-	{ .name = "newstat" },
-	{ .name = "newfstat", .sanitise = sanitise_newfstat },	/* 5 */
-	{ .name = "newlstat" },
-	{ .name = "poll" },
-	{ .name = "lseek", .sanitise = sanitise_lseek },
-	{ .name = "mmap", .sanitise = sanitise_mmap },
-	{ .name = "mprotect", .sanitise = sanitise_mprotect },	/* 10 */
-	{ .name = "munmap" },
-	{ .name = "brk" },
-	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
-	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
-	{ .name = "rt_sigreturn", .flags = AVOID_SYSCALL },	/* 15 */
-	{ .name = "ioctl", .sanitise = sanitise_ioctl },
-	{ .name = "pread64", .sanitise = sanitise_pread64 },
-	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
-	{ .name = "readv", .sanitise = sanitise_readv },
-	{ .name = "writev", .sanitise = sanitise_writev },	/* 20 */
-	{ .name = "access" },
-	{ .name = "pipe" },
-	{ .name = "select", .flags = AVOID_SYSCALL },
-	{ .name = "sched_yield" },
-	{ .name = "mremap", .sanitise = sanitise_mremap },	/* 25 */
-	{ .name = "msync" },
-	{ .name = "mincore" },
-	{ .name = "madvise" },
-	{ .name = "shmget" },
-	{ .name = "shmat" },	/* 30 */
-	{ .name = "shmctl" },
-	{ .name = "dup" },
-	{ .name = "dup2" },
-	{ .name = "pause", .flags = AVOID_SYSCALL },
-	{ .name = "nanosleep" },	/* 35 */
-	{ .name = "getitimer" },
-	{ .name = "alarm" },
-	{ .name = "setitimer" },
-	{ .name = "getpid" },
-	{ .name = "sendfile" },	/* 40 */
-	{ .name = "socket" },
-	{ .name = "connect" },
-	{ .name = "accept" },
-	{ .name = "sendto", .sanitise = sanitise_sendto },
-	{ .name = "recvfrom" },	/* 45 */
-	{ .name = "sendmsg" },
-	{ .name = "recvmsg" },
-	{ .name = "shutdown" },
-	{ .name = "bind" },
-	{ .name = "listen" },	/* 50 */
-	{ .name = "getsockname" },
-	{ .name = "getpeername" },
-	{ .name = "socketpair" },
-	{ .name = "setsockopt" },
-	{ .name = "getsockopt" },	/* 55 */
-	{ .name = "clone", .flags = AVOID_SYSCALL },
-	{ .name = "fork", .flags = AVOID_SYSCALL },
-	{ .name = "vfork", .flags = AVOID_SYSCALL },
-	{ .name = "execve" },
-	{ .name = "exit", .flags = AVOID_SYSCALL },	/* 60 */
-	{ .name = "wait4" },
-	{ .name = "kill" },
-	{ .name = "uname" },
-	{ .name = "semget" },
-	{ .name = "semop" },	/* 65 */
-	{ .name = "semctl" },
-	{ .name = "shmdt" },
-	{ .name = "msgget" },
-	{ .name = "msgsnd" },
-	{ .name = "msgrcv" },	/* 70 */
-	{ .name = "msgctl" },
-	{ .name = "fcntl" },
-	{ .name = "flock" },
-	{ .name = "fsync" },
-	{ .name = "fdatasync" },	/* 75 */
-	{ .name = "truncate" },
-	{ .name = "ftruncate" },
-	{ .name = "getdents" },
-	{ .name = "getcwd" },
-	{ .name = "chdir" },	/* 80 */
-	{ .name = "fchdir" },
-	{ .name = "rename" },
-	{ .name = "mkdir" },
-	{ .name = "rmdir" },
-	{ .name = "creat" },	/* 85 */
-	{ .name = "link" },
-	{ .name = "unlink" },
-	{ .name = "symlink" },
-	{ .name = "readlink" },
-	{ .name = "chmod" },	/* 90 */
-	{ .name = "fchmod" },
-	{ .name = "chown" },
-	{ .name = "fchown" },
-	{ .name = "lchown" },
-	{ .name = "umask" },	/* 95 */
-	{ .name = "gettimeofday" },
-	{ .name = "getrlimit" },
-	{ .name = "getrusage" },
-	{ .name = "sysinfo" },
-	{ .name = "times" },	/* 100 */
-	{ .name = "ptrace" },
-	{ .name = "getuid" },
-	{ .name = "syslog" },
-	{ .name = "getgid" },
-	{ .name = "setuid" },	/* 105 */
-	{ .name = "setgid" },
-	{ .name = "geteuid" },
-	{ .name = "getegid" },
-	{ .name = "setpgid" },
-	{ .name = "getppid" },	/* 110 */
-	{ .name = "getpgrp" },
-	{ .name = "setsid" },
-	{ .name = "setreuid" },
-	{ .name = "setregid" },
-	{ .name = "getgroups" },	/* 115 */
-	{ .name = "setgroups" },
-	{ .name = "setresuid" },
-	{ .name = "getresuid" },
-	{ .name = "setresgid" },
-	{ .name = "getresgid" },	/* 120 */
-	{ .name = "getpgid" },
-	{ .name = "setfsuid" },
-	{ .name = "setfsgid" },
-	{ .name = "getsid" },
-	{ .name = "capget" },	/* 125 */
-	{ .name = "capset" },
-	{ .name = "rt_sigpending" },
-	{ .name = "rt_sigtimedwait" },
-	{ .name = "rt_sigqueueinfo" },
-	{ .name = "rt_sigsuspend" },	/* 130 */
-	{ .name = "sigaltstack" },
-	{ .name = "utime" },
-	{ .name = "mknod" },
-	{ .name = "ni_syscall (uselib)" },
-	{ .name = "personality" },	/* 135 */
-	{ .name = "ustat" },
-	{ .name = "statfs" },
-	{ .name = "fstatfs" },
-	{ .name = "sysfs" },
-	{ .name = "getpriority" },	/* 140 */
-	{ .name = "setpriority" },
-	{ .name = "sched_setparam" },
-	{ .name = "sched_getparam" },
-	{ .name = "sched_setscheduler" },
-	{ .name = "sched_getscheduler" },	/* 145 */
-	{ .name = "sched_get_priority_max" },
-	{ .name = "sched_get_priority_min" },
-	{ .name = "sched_rr_get_interval" },
-	{ .name = "mlock", },
-	{ .name = "munlock" },	/* 150 */
-	{ .name = "mlockall", },
-	{ .name = "munlockall" },
-	{ .name = "vhangup", .flags = CAPABILITY_CHECK, },
-	{ .name = "modify_ldt" },
-	{ .name = "pivot_root", .flags = CAPABILITY_CHECK, },	/* 155 */
-	{ .name = "sysctl" },
-	{ .name = "prctl" },
-	{ .name = "arch_prctl" },
-	{ .name = "adjtimex", },
-	{ .name = "setrlimit", },	/* 160 */
-	{ .name = "chroot", },
-	{ .name = "sync" },
-	{ .name = "acct" },
-	{ .name = "settimeofday" },
-	{ .name = "mount", },	/* 165 */
-	{ .name = "umount", },
-	{ .name = "swapon", },
-	{ .name = "swapoff", },
-	{ .name = "reboot", .flags = CAPABILITY_CHECK, },
-	{ .name = "sethostname", .flags = CAPABILITY_CHECK, },	/* 170 */
-	{ .name = "setdomainname", .flags = CAPABILITY_CHECK, },
-	{ .name = "iopl", },
-	{ .name = "ioperm" },
-	{ .name = "ni_syscall (create_module)" },
-	{ .name = "init_module", .flags = CAPABILITY_CHECK, },	/* 175 */
-	{ .name = "delete_module", .flags = CAPABILITY_CHECK, },
-	{ .name = "ni_syscall (get_kernel_syms)" },
-	{ .name = "ni_syscall (query_module)" },
-	{ .name = "quotactl" },
-	{ .name = "nfsservctl" },	/* 180 */
-	{ .name = "ni_syscall (getpmsg)" },
-	{ .name = "ni_syscall (putpmsg)" },
-	{ .name = "ni_syscall (afs)" },
-	{ .name = "ni_syscall (tux)" },
-	{ .name = "ni_syscall (security)" },	/* 185 */
-	{ .name = "gettid" },
-	{ .name = "readahead" },
-	{ .name = "setxattr" },
-	{ .name = "lsetxattr" },
-	{ .name = "fsetxattr" },	/* 190 */
-	{ .name = "getxattr" },
-	{ .name = "lgetxattr" },
-	{ .name = "fgetxattr" },
-	{ .name = "listxattr" },
-	{ .name = "llistxattr" },	/* 195 */
-	{ .name = "flistxattr" },
-	{ .name = "removexattr" },
-	{ .name = "lremovexattr" },
-	{ .name = "fremovexattr" },
-	{ .name = "tkill" },	/* 200 */
-	{ .name = "time" },
-	{ .name = "futex" },
-	{ .name = "sched_setaffinity" },
-	{ .name = "sched_getaffinity" },
-	{ .name = "ni_syscall (set_thread_area)" },	/* 205 */
-	{ .name = "io_setup" },
-	{ .name = "io_destroy" },
-	{ .name = "io_getevents" },
-	{ .name = "io_submit" },
-	{ .name = "io_cancel" },	/* 210 */
-	{ .name = "ni_syscall (get_thread_area)" },
-	{ .name = "lookup_dcookie", .flags = CAPABILITY_CHECK, },
-	{ .name = "epoll_create" },
-	{ .name = "ni_syscall (epoll_ctl_old)" },
-	{ .name = "ni_syscall (epoll_wait_old)" },	/* 215 */
-	{ .name = "remap_file_pages" },
-	{ .name = "getdents64" },
-	{ .name = "set_tid_address" },
-	{ .name = "restart_syscall" },
-	{ .name = "semtimedop" },	/* 220 */
-	{ .name = "fadvise64" },
-	{ .name = "timer_create" },
-	{ .name = "timer_settime" },
-	{ .name = "timer_gettime" },
-	{ .name = "timer_getoverrun" },	/* 225 */
-	{ .name = "timer_delete" },
-	{ .name = "clock_settime" },
-	{ .name = "clock_gettime" },
-	{ .name = "clock_retres" },
-	{ .name = "clock_nanosleep" },	/* 230 */
-	{ .name = "exit_group", .flags = AVOID_SYSCALL },
-	{ .name = "epoll_wait" },
-	{ .name = "epoll_ctl" },
-	{ .name = "tgkill" },
-	{ .name = "utimes" },	/* 235 */
-	{ .name = "ni_syscall (vserver)" },
-	{ .name = "mbind" },
-	{ .name = "set_mempolicy" },
-	{ .name = "get_mempolicy" },
-	{ .name = "mq_open" },	/* 240 */
-	{ .name = "mq_unlink" },
-	{ .name = "mq_timedsend" },
-	{ .name = "mq_timedreceive" },
-	{ .name = "mq_notify" },
-	{ .name = "mq_getsetattr" },	/* 245 */
-	{ .name = "kexec_load", .flags = CAPABILITY_CHECK, },
-	{ .name = "waitid" },
-	{ .name = "add_key" },
-	{ .name = "request_key" },
-	{ .name = "keyctl" },	/* 250 */
-	{ .name = "ioprio_set" },
-	{ .name = "ioprio_get" },
-	{ .name = "inotify_init" },
-	{ .name = "inotify_add_watch" },
-	{ .name = "inotify_rm_watch" },	/* 255 */
-	{ .name = "migrate_pages" },
-	{ .name = "openat" },
-	{ .name = "mkdirat" },
-	{ .name = "mknodat" },
-	{ .name = "fchownat" },	/* 260 */
-	{ .name = "futimesat" },
-	{ .name = "fstatat" },
-	{ .name = "unlinkat" },
-	{ .name = "renameat" },
-	{ .name = "linkat" },	/* 265 */
-	{ .name = "symlinkat" },
-	{ .name = "readlinkat" },
-	{ .name = "fchmodat" },
-	{ .name = "faccessat" },
-	{ .name = "pselect6" },	/* 270 */
-	{ .name = "ppoll" },
-	{ .name = "unshare" },
-	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list },
-	{ .name = "get_robust_list", },
-	{ .name = "splice", .sanitise = sanitise_splice },	/* 275 */
-	{ .name = "tee", .sanitise = sanitise_tee },
-	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
-	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
-	{ .name = "move_pages", },
-	{ .name = "utimensat", },	/* 280 */
-	{ .name = "epoll_pwait", },
-	{ .name = "signalfd", },
-	{ .name = "timerfd", },
-	{ .name = "eventfd", },
-	{ .name = "fallocate", },	/* 285 */
-	{ .name = "timerfd_settime", },
-	{ .name = "timerfd_gettime", },
-	{ .name = "accept4", },
-	{ .name = "signalfd4", },
-	{ .name = "eventfd2", },	/* 290 */
-	{ .name = "epoll_create1", },
-	{ .name = "dup3", },
-	{ .name = "pipe2", },
-	{ .name = "inotify_init1", },
-	{ .name = "preadv", },		/* 295 */
-	{ .name = "pwritev", },
-	{ .name = "rt_tgsigqueueinfo", },
-	{ .name = "perf_event_open", },
-	{ .name = "recvmmsg", },
-	{ .name = "fanotify_init", },		/* 300 */
-	{ .name = "fanotify_mark", },
-	{ .name = "prlimit64", },
+	{ .name = "read", .num_args = 3, .sanitise = sanitise_read },		/* 0 */
+	{ .name = "write", .num_args = 3, .sanitise = sanitise_write },
+	{ .name = "open", .num_args = 3 },
+	{ .name = "close", .num_args = 1, .sanitise = sanitise_close },
+	{ .name = "newstat", .num_args = 2 },
+	{ .name = "newfstat", .num_args = 2, .sanitise = sanitise_newfstat },	/* 5 */
+	{ .name = "newlstat", .num_args = 2 },
+	{ .name = "poll", .num_args = 3 },
+	{ .name = "lseek", .num_args = 3, .sanitise = sanitise_lseek },
+	{ .name = "mmap", .num_args = 6, .sanitise = sanitise_mmap },
+	{ .name = "mprotect", .num_args = 3, .sanitise = sanitise_mprotect },	/* 10 */
+	{ .name = "munmap", .num_args = 2 },
+	{ .name = "brk", .num_args = 1 },
+	{ .name = "rt_sigaction", .num_args = 4, .sanitise = sanitise_rt_sigaction },
+	{ .name = "rt_sigprocmask", .num_args = 4, .sanitise = sanitise_rt_sigprocmask },
+	{ .name = "rt_sigreturn", .num_args = 1, .flags = AVOID_SYSCALL },	/* 15 */
+	{ .name = "ioctl", .num_args = 3, .sanitise = sanitise_ioctl },
+	{ .name = "pread64", .num_args = 4, .sanitise = sanitise_pread64 },
+	{ .name = "pwrite64", .num_args = 4, .sanitise = sanitise_pwrite64 },
+	{ .name = "readv", .num_args = 3, .sanitise = sanitise_readv },
+	{ .name = "writev", .num_args = 3, .sanitise = sanitise_writev },	/* 20 */
+	{ .name = "access", .num_args = 2, },
+	{ .name = "pipe", .num_args = 1 },
+	{ .name = "select", .num_args = 5, .flags = AVOID_SYSCALL },
+	{ .name = "sched_yield", .num_args = 0 },
+	{ .name = "mremap", .num_args = 5, .sanitise = sanitise_mremap },	/* 25 */
+	{ .name = "msync", .num_args = 3 },
+	{ .name = "mincore", .num_args = 3 },
+	{ .name = "madvise", .num_args = 3 },
+	{ .name = "shmget", .num_args = 3 },
+	{ .name = "shmat", .num_args = 3 },	/* 30 */
+	{ .name = "shmctl", .num_args = 3 },
+	{ .name = "dup", .num_args = 1 },
+	{ .name = "dup2", .num_args = 2 },
+	{ .name = "pause", .num_args = 0, .flags = AVOID_SYSCALL },
+	{ .name = "nanosleep", .num_args = 2 },	/* 35 */
+	{ .name = "getitimer", .num_args = 2 },
+	{ .name = "alarm", .num_args = 1 },
+	{ .name = "setitimer", .num_args = 3 },
+	{ .name = "getpid", .num_args = 0 },
+	{ .name = "sendfile", .num_args = 4 },	/* 40 */
+	{ .name = "socket", .num_args = 3 },
+	{ .name = "connect", .num_args = 3 },
+	{ .name = "accept", .num_args = 3 },
+	{ .name = "sendto", .num_args = 6, .sanitise = sanitise_sendto },
+	{ .name = "recvfrom", .num_args = 6 },	/* 45 */
+	{ .name = "sendmsg", .num_args = 3 },
+	{ .name = "recvmsg", .num_args = 3 },
+	{ .name = "shutdown", .num_args = 2 },
+	{ .name = "bind", .num_args = 3 },
+	{ .name = "listen", .num_args = 2 },	/* 50 */
+	{ .name = "getsockname", .num_args = 3 },
+	{ .name = "getpeername", .num_args = 3 },
+	{ .name = "socketpair", .num_args = 4 },
+	{ .name = "setsockopt", .num_args = 5 },
+	{ .name = "getsockopt", .num_args = 5 },	/* 55 */
+	{ .name = "clone", .num_args = 5, .flags = AVOID_SYSCALL },
+	{ .name = "fork", .num_args = 1, .flags = AVOID_SYSCALL },
+	{ .name = "vfork", .num_args = 1, .flags = AVOID_SYSCALL },
+	{ .name = "execve", .num_args = 4 },
+	{ .name = "exit", .num_args = 1, .flags = AVOID_SYSCALL },	/* 60 */
+	{ .name = "wait4", .num_args = 4 },
+	{ .name = "kill", .num_args = 2 },
+	{ .name = "uname", .num_args = 1 },
+	{ .name = "semget", .num_args = 3 },
+	{ .name = "semop", .num_args = 3 },	/* 65 */
+	{ .name = "semctl", .num_args = 4 },
+	{ .name = "shmdt", .num_args = 1 },
+	{ .name = "msgget", .num_args = 2 },
+	{ .name = "msgsnd", .num_args = 4 },
+	{ .name = "msgrcv", .num_args = 5 },	/* 70 */
+	{ .name = "msgctl", .num_args = 3 },
+	{ .name = "fcntl", .num_args = 3 },
+	{ .name = "flock", .num_args = 2 },
+	{ .name = "fsync", .num_args = 1 },
+	{ .name = "fdatasync", .num_args = 1 },	/* 75 */
+	{ .name = "truncate", .num_args = 2 },
+	{ .name = "ftruncate", .num_args = 2 },
+	{ .name = "getdents", .num_args = 3 },
+	{ .name = "getcwd", .num_args = 2 },
+	{ .name = "chdir", .num_args = 1 },	/* 80 */
+	{ .name = "fchdir", .num_args = 1 },
+	{ .name = "rename", .num_args = 2 },
+	{ .name = "mkdir", .num_args = 2 },
+	{ .name = "rmdir", .num_args = 1 },
+	{ .name = "creat", .num_args = 2 },	/* 85 */
+	{ .name = "link", .num_args = 2 },
+	{ .name = "unlink", .num_args = 1 },
+	{ .name = "symlink", .num_args = 2 },
+	{ .name = "readlink", .num_args = 3 },
+	{ .name = "chmod", .num_args = 2 },	/* 90 */
+	{ .name = "fchmod", .num_args = 2 },
+	{ .name = "chown", .num_args = 3 },
+	{ .name = "fchown", .num_args = 3 },
+	{ .name = "lchown", .num_args = 3 },
+	{ .name = "umask", .num_args = 1 },	/* 95 */
+	{ .name = "gettimeofday", .num_args = 2 },
+	{ .name = "getrlimit", .num_args = 2 },
+	{ .name = "getrusage", .num_args = 2 },
+	{ .name = "sysinfo", .num_args = 1 },
+	{ .name = "times", .num_args = 1 },	/* 100 */
+	{ .name = "ptrace", .num_args = 4 },
+	{ .name = "getuid", .num_args = 0 },
+	{ .name = "syslog", .num_args = 3 },
+	{ .name = "getgid", .num_args = 0 },
+	{ .name = "setuid", .num_args = 1 },	/* 105 */
+	{ .name = "setgid", .num_args = 1 },
+	{ .name = "geteuid", .num_args = 0 },
+	{ .name = "getegid", .num_args = 0 },
+	{ .name = "setpgid", .num_args = 2 },
+	{ .name = "getppid", .num_args = 0 },	/* 110 */
+	{ .name = "getpgrp", .num_args = 0 },
+	{ .name = "setsid", .num_args = 0 },
+	{ .name = "setreuid", .num_args = 2 },
+	{ .name = "setregid", .num_args = 2 },
+	{ .name = "getgroups", .num_args = 2 },	/* 115 */
+	{ .name = "setgroups", .num_args = 2 },
+	{ .name = "setresuid", .num_args = 3 },
+	{ .name = "getresuid", .num_args = 3 },
+	{ .name = "setresgid", .num_args = 3 },
+	{ .name = "getresgid", .num_args = 3 },	/* 120 */
+	{ .name = "getpgid", .num_args = 1 },
+	{ .name = "setfsuid", .num_args = 1 },
+	{ .name = "setfsgid", .num_args = 1 },
+	{ .name = "getsid", .num_args = 1 },
+	{ .name = "capget", .num_args = 2 },	/* 125 */
+	{ .name = "capset", .num_args = 2 },
+	{ .name = "rt_sigpending", .num_args = 2 },
+	{ .name = "rt_sigtimedwait", .num_args = 4 },
+	{ .name = "rt_sigqueueinfo", .num_args = 3 },
+	{ .name = "rt_sigsuspend", .num_args = 2 },	/* 130 */
+	{ .name = "sigaltstack", .num_args = 3 },
+	{ .name = "utime", .num_args = 2 },
+	{ .name = "mknod", .num_args = 3 },
+	{ .name = "ni_syscall (uselib)", .num_args = 0 },
+	{ .name = "personality", .num_args = 1 },	/* 135 */
+	{ .name = "ustat", .num_args = 2 },
+	{ .name = "statfs", .num_args = 2 },
+	{ .name = "fstatfs", .num_args = 2 },
+	{ .name = "sysfs", .num_args = 3 },
+	{ .name = "getpriority", .num_args = 2 },	/* 140 */
+	{ .name = "setpriority", .num_args = 3 },
+	{ .name = "sched_setparam", .num_args = 2 },
+	{ .name = "sched_getparam", .num_args = 2 },
+	{ .name = "sched_setscheduler", .num_args = 3 },
+	{ .name = "sched_getscheduler", .num_args = 1 },	/* 145 */
+	{ .name = "sched_get_priority_max", .num_args = 1 },
+	{ .name = "sched_get_priority_min", .num_args = 1 },
+	{ .name = "sched_rr_get_interval", .num_args = 2 },
+	{ .name = "mlock", .num_args = 2 },
+	{ .name = "munlock", .num_args = 2 },	/* 150 */
+	{ .name = "mlockall", .num_args = 1 },
+	{ .name = "munlockall", .num_args = 0 },
+	{ .name = "vhangup", .num_args = 0, .flags = CAPABILITY_CHECK, },
+	{ .name = "modify_ldt", .num_args = 3 },
+	{ .name = "pivot_root", .num_args = 2, .flags = CAPABILITY_CHECK, },	/* 155 */
+	{ .name = "sysctl", .num_args = 1 },
+	{ .name = "prctl", .num_args = 5 },
+	{ .name = "arch_prctl", .num_args = 2 },
+	{ .name = "adjtimex", .num_args = 1 },
+	{ .name = "setrlimit", .num_args = 2 },	/* 160 */
+	{ .name = "chroot", .num_args = 1 },
+	{ .name = "sync", .num_args = 0 },
+	{ .name = "acct", .num_args = 1 },
+	{ .name = "settimeofday", .num_args = 2 },
+	{ .name = "mount", .num_args = 5 },	/* 165 */
+	{ .name = "umount", .num_args = 2 },
+	{ .name = "swapon", .num_args = 2 },
+	{ .name = "swapoff", .num_args = 1 },
+	{ .name = "reboot", .num_args = 4, .flags = CAPABILITY_CHECK, },
+	{ .name = "sethostname", .num_args = 2, .flags = CAPABILITY_CHECK, },	/* 170 */
+	{ .name = "setdomainname", .num_args = 2, .flags = CAPABILITY_CHECK, },
+	{ .name = "iopl", .num_args = 2 },
+	{ .name = "ioperm", .num_args = 3 },
+	{ .name = "ni_syscall (create_module)", .num_args = 0 },
+	{ .name = "init_module", .num_args = 3, .flags = CAPABILITY_CHECK, },	/* 175 */
+	{ .name = "delete_module", .num_args = 2, .flags = CAPABILITY_CHECK, },
+	{ .name = "ni_syscall (get_kernel_syms)", .num_args = 0 },
+	{ .name = "ni_syscall (query_module)", .num_args = 0 },
+	{ .name = "quotactl", .num_args = 4 },
+	{ .name = "nfsservctl", .num_args = 3 },	/* 180 */
+	{ .name = "ni_syscall (getpmsg)", .num_args = 0 },
+	{ .name = "ni_syscall (putpmsg)", .num_args = 0 },
+	{ .name = "ni_syscall (afs)", .num_args = 6 },
+	{ .name = "ni_syscall (tux)", .num_args = 6 },
+	{ .name = "ni_syscall (security)", .num_args = 0 },	/* 185 */
+	{ .name = "gettid", .num_args = 0 },
+	{ .name = "readahead", .num_args = 3 },
+	{ .name = "setxattr", .num_args = 5 },
+	{ .name = "lsetxattr", .num_args = 5 },
+	{ .name = "fsetxattr", .num_args = 5 },	/* 190 */
+	{ .name = "getxattr", .num_args = 4 },
+	{ .name = "lgetxattr", .num_args = 4 },
+	{ .name = "fgetxattr", .num_args = 4 },
+	{ .name = "listxattr", .num_args = 3 },
+	{ .name = "llistxattr", .num_args = 3 },	/* 195 */
+	{ .name = "flistxattr", .num_args = 3 },
+	{ .name = "removexattr", .num_args = 2 },
+	{ .name = "lremovexattr", .num_args = 2 },
+	{ .name = "fremovexattr", .num_args = 2 },
+	{ .name = "tkill", .num_args = 2 },	/* 200 */
+	{ .name = "time", .num_args = 1 },
+	{ .name = "futex", .num_args = 6 },
+	{ .name = "sched_setaffinity", .num_args = 3 },
+	{ .name = "sched_getaffinity", .num_args = 3 },
+	{ .name = "ni_syscall (set_thread_area)", .num_args = 0 },	/* 205 */
+	{ .name = "io_setup", .num_args = 2 },
+	{ .name = "io_destroy", .num_args = 1 },
+	{ .name = "io_getevents", .num_args = 5 },
+	{ .name = "io_submit", .num_args = 3 },
+	{ .name = "io_cancel", .num_args = 3 },	/* 210 */
+	{ .name = "ni_syscall (get_thread_area)", .num_args = 0 },
+	{ .name = "lookup_dcookie", .num_args = 3, .flags = CAPABILITY_CHECK, },
+	{ .name = "epoll_create", .num_args = 1 },
+	{ .name = "ni_syscall (epoll_ctl_old)", .num_args = 0 },
+	{ .name = "ni_syscall (epoll_wait_old)", .num_args = 0 },	/* 215 */
+	{ .name = "remap_file_pages", .num_args = 5 },
+	{ .name = "getdents64", .num_args = 3 },
+	{ .name = "set_tid_address", .num_args = 1 },
+	{ .name = "restart_syscall", .num_args = 0 },
+	{ .name = "semtimedop", .num_args = 4 },	/* 220 */
+	{ .name = "fadvise64", .num_args = 4 },
+	{ .name = "timer_create", .num_args = 3 },
+	{ .name = "timer_settime", .num_args = 4 },
+	{ .name = "timer_gettime", .num_args = 2 },
+	{ .name = "timer_getoverrun", .num_args = 1 },	/* 225 */
+	{ .name = "timer_delete", .num_args = 1 },
+	{ .name = "clock_settime", .num_args = 2 },
+	{ .name = "clock_gettime", .num_args = 2 },
+	{ .name = "clock_getres", .num_args = 2 },
+	{ .name = "clock_nanosleep", .num_args = 4 },	/* 230 */
+	{ .name = "exit_group", .num_args = 1, .flags = AVOID_SYSCALL },
+	{ .name = "epoll_wait", .num_args = 4 },
+	{ .name = "epoll_ctl", .num_args = 4 },
+	{ .name = "tgkill", .num_args = 3 },
+	{ .name = "utimes", .num_args = 2 },	/* 235 */
+	{ .name = "ni_syscall (vserver)", .num_args = 0 },
+	{ .name = "mbind", .num_args = 6 },
+	{ .name = "set_mempolicy", .num_args = 3 },
+	{ .name = "get_mempolicy", .num_args = 5 },
+	{ .name = "mq_open", .num_args = 4 },	/* 240 */
+	{ .name = "mq_unlink", .num_args = 1 },
+	{ .name = "mq_timedsend", .num_args = 5 },
+	{ .name = "mq_timedreceive", .num_args = 5 },
+	{ .name = "mq_notify", .num_args = 2 },
+	{ .name = "mq_getsetattr", .num_args = 3 },	/* 245 */
+	{ .name = "kexec_load", .num_args = 4, .flags = CAPABILITY_CHECK, },
+	{ .name = "waitid", .num_args = 5 },
+	{ .name = "add_key", .num_args = 5 },
+	{ .name = "request_key", .num_args = 4 },
+	{ .name = "keyctl", .num_args = 5 },	/* 250 */
+	{ .name = "ioprio_set", .num_args = 3 },
+	{ .name = "ioprio_get", .num_args = 2 },
+	{ .name = "inotify_init", .num_args = 0 },
+	{ .name = "inotify_add_watch", .num_args = 3 },
+	{ .name = "inotify_rm_watch", .num_args = 2 },	/* 255 */
+	{ .name = "migrate_pages", .num_args = 4 },
+	{ .name = "openat", .num_args = 4 },
+	{ .name = "mkdirat", .num_args = 3 },
+	{ .name = "mknodat", .num_args = 4 },
+	{ .name = "fchownat", .num_args = 5 },	/* 260 */
+	{ .name = "futimesat", .num_args = 3 },
+	{ .name = "fstatat", .num_args = 4 },
+	{ .name = "unlinkat", .num_args = 3 },
+	{ .name = "renameat", .num_args = 4 },
+	{ .name = "linkat", .num_args = 5 },	/* 265 */
+	{ .name = "symlinkat", .num_args = 3 },
+	{ .name = "readlinkat", .num_args = 4 },
+	{ .name = "fchmodat", .num_args = 3 },
+	{ .name = "faccessat", .num_args = 3 },
+	{ .name = "pselect6", .num_args = 6 },	/* 270 */
+	{ .name = "ppoll", .num_args = 5 },
+	{ .name = "unshare", .num_args = 1 },
+	{ .name = "set_robust_list", .num_args = 2, .sanitise = sanitise_set_robust_list },
+	{ .name = "get_robust_list", .num_args = 3, },
+	{ .name = "splice", .num_args = 6, .sanitise = sanitise_splice },	/* 275 */
+	{ .name = "tee", .num_args = 4, .sanitise = sanitise_tee },
+	{ .name = "sync_file_range", .num_args = 4, .sanitise = sanitise_sync_file_range },
+	{ .name = "vmsplice", .num_args = 4, .sanitise = sanitise_vmsplice },
+	{ .name = "move_pages", .num_args = 6 },
+	{ .name = "utimensat", .num_args = 4 },	/* 280 */
+	{ .name = "epoll_pwait", .num_args = 6 },
+	{ .name = "signalfd", .num_args = 3 },
+	{ .name = "timerfd_create", .num_args = 2 },
+	{ .name = "eventfd", .num_args = 1 },
+	{ .name = "fallocate", .num_args = 4 },	/* 285 */
+	{ .name = "timerfd_settime", .num_args = 4 },
+	{ .name = "timerfd_gettime", .num_args = 2 },
+	{ .name = "accept4", .num_args = 4 },
+	{ .name = "signalfd4", .num_args = 4 },
+	{ .name = "eventfd2", .num_args = 2 },	/* 290 */
+	{ .name = "epoll_create1", .num_args = 1 },
+	{ .name = "dup3", .num_args = 3 },
+	{ .name = "pipe2", .num_args = 2 },
+	{ .name = "inotify_init1", .num_args = 1 },
+	{ .name = "preadv", .num_args = 5 },		/* 295 */
+	{ .name = "pwritev", .num_args = 5 },
+	{ .name = "rt_tgsigqueueinfo", .num_args = 4 },
+	{ .name = "perf_event_open", .num_args = 5 },
+	{ .name = "recvmmsg", .num_args = 5 },
+	{ .name = "fanotify_init", .num_args = 2 },		/* 300 */
+	{ .name = "fanotify_mark", .num_args = 5 },
+	{ .name = "prlimit64", .num_args = 4 },
 };
