@@ -12,10 +12,6 @@
 * Colorise some output
   - Highlight odd looking return values
 
-* Add number of args per syscall to tables
-  - Only print random values for regs that matter
-  - Zero non-used regs. Allow an override ?
-
 * --check-clobber
   Set regs that should be preserved across syscalls to a known value, and check
   on return whether any of them got clobbered.
