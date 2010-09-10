@@ -16,9 +16,6 @@
   Set regs that should be preserved across syscalls to a known value, and check
   on return whether any of them got clobbered.
 
-* In struct checking, with some smarts, we could check the struct we passed
-  afterwards to ensure nothing scribbled outside of bounds.
-
 * --logfile
 
 * --nrsyscalls (set NR_SYSCALLS)
@@ -26,9 +23,8 @@
 
 * flush() & fsync() before making the call
 
-* Save time by not calling pointless syscalls.
-  - skip pause(), and any other functions that take no inputs from userspace.
-  - optionally skip syscalls we know check for CAP_SYS_ADMIN early
+* if we get -EPERM from a syscalls we know checks for CAP_SYS_ADMIN early,
+  don't bother retrying it.
 
 * Reduce amount of output from -C
   The values passed aren't very interesting. (maybe add a --debug?)
