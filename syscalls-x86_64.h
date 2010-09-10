@@ -434,6 +434,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (uselib)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "personality",
 		.num_args = 1,
@@ -557,6 +558,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (create_module)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "init_module",
 		.num_args = 3,.flags = CAPABILITY_CHECK,
@@ -566,9 +568,11 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (get_kernel_syms)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "ni_syscall (query_module)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "quotactl",
 		.num_args = 4,
@@ -578,18 +582,23 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (getpmsg)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "ni_syscall (putpmsg)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "ni_syscall (afs)",
 		.num_args = 6,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "ni_syscall (tux)",
 		.num_args = 6,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "ni_syscall (security)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "gettid",
 		.num_args = 0,
@@ -650,6 +659,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (set_thread_area)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "io_setup",
 		.num_args = 2,
@@ -668,6 +678,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (get_thread_area)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "lookup_dcookie",
 		.num_args = 3,.flags = CAPABILITY_CHECK,
@@ -677,9 +688,11 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (epoll_ctl_old)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "ni_syscall (epoll_wait_old)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "remap_file_pages",
 		.num_args = 5,
@@ -744,6 +757,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	},{
 		.name = "ni_syscall (vserver)",
 		.num_args = 0,
+		.flags = NI_SYSCALL,
 	},{
 		.name = "mbind",
 		.num_args = 6,

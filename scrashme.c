@@ -628,6 +628,9 @@ done: ;
 
 int main(int argc, char* argv[])
 {
+	int i;
+	int ret;
+
 #ifdef __x86_64__
 	syscalls = syscalls_x86_64;
 #elif __powerpc__
@@ -644,8 +647,23 @@ int main(int argc, char* argv[])
 
 	progname = argv[0];
 
+	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
+	for (i=0; i<=NR_SYSCALLS; i++) {
+		if (syscalls[i].flags & NI_SYSCALL) {
+			ret = syscall(i);
+			if (ret == -1) {
+				if (errno != ENOSYS) {
+					printf("syscall %d (%s) should be ni_syscall, but returned %d(%s) !\n",
+						i, syscalls[i].name, errno, strerror(errno));
+					exit(EXIT_FAILURE);
+				}
+			}
+		}
+	}
+
 	if (argc==1)
 		usage();
+
 
 	init_buffer();
 

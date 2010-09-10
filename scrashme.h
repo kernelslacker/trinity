@@ -14,8 +14,9 @@ struct syscalltable {
 	int flags;
 };
 
-#define CAPABILITY_CHECK 1
-#define AVOID_SYSCALL 2
+#define CAPABILITY_CHECK (1<<0)
+#define AVOID_SYSCALL (1<<1)
+#define NI_SYSCALL (1<<2)
 
 extern int page_size;
 extern char *useraddr;
