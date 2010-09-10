@@ -1,3 +1,5 @@
+* Convert the syscall lists for all archs over to the new-style (see x86-64)
+  The lack of .num_args probably breaks scrashme on those archs right now.
 
 * Make -k use random kernel addresses (from System.map ?)
 
