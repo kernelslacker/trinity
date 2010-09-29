@@ -21,6 +21,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/syscall.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
 #ifdef __x86_64__
 #include "x86-64.h"
 #endif
@@ -56,6 +59,13 @@ static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
 
+static int ctrlc_hit = 0;
+
+struct shm_s {
+	unsigned long successes;
+	unsigned long failures;
+};
+struct shm_s *shm;
 
 char poison = 0x55;
 
@@ -230,11 +240,13 @@ static long mkcall(int call)
 #define GREEN	"[1;32m"
 #define WHITE	"[1;37m"
 
-	if (ret < 0)
+	if (ret < 0) {
 		printf(RED " %s\n" WHITE, strerror (errno));
-	else
+		shm->failures++;
+	} else {
 		printf(GREEN "= %ld\n" WHITE, ret);
-
+		shm->successes++;
+	}
 	(void)fflush(stdout);
 
 	if (check_poison==1) {
@@ -511,6 +523,11 @@ static void parse_args(int argc, char *argv[])
 	}
 }
 
+static void ctrlc(__attribute((unused)) int sig)
+{
+	ctrlc_hit=1;
+}
+
 static void run_setup(void)
 {
 	int i;
@@ -531,6 +548,7 @@ static void run_setup(void)
 		(void)sigaction(i, &sa, NULL);
 	}
 	(void)signal(SIGCHLD, SIG_IGN);
+	(void)signal(SIGINT, ctrlc);
 
 	srand(seed);
 
@@ -563,6 +581,10 @@ static void run_mode(void)
 	/* This is our main loop. */
 
 	for (;;) {
+
+		if (ctrlc_hit == 1)
+			return;
+
 		switch (opmode) {
 		case MODE_ROTATE:
 			/* It's easier to just use all regs for now. */
@@ -634,6 +656,8 @@ int main(int argc, char* argv[])
 {
 	int i;
 	int ret;
+	int shmid;
+	key_t key;
 
 #ifdef __x86_64__
 	syscalls = syscalls_x86_64;
@@ -668,6 +692,17 @@ int main(int argc, char* argv[])
 	if (argc==1)
 		usage();
 
+	key = random();
+	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
+		perror("shmget");
+		exit(EXIT_FAILURE);
+	}
+	if ((shm = shmat(shmid, NULL, 0)) == (void *) -1) {
+		perror("shmat");
+		exit(EXIT_FAILURE);
+	}
+	shm->successes = 0;
+	shm->failures = 0;
 
 	init_buffer();
 
@@ -679,6 +714,9 @@ int main(int argc, char* argv[])
 
 	if (structptr!=NULL)
 		free(structptr);
+
+	printf("\nRan %lld syscalls. Successes: %ld  Failures: %ld\n",
+		execcount, shm->successes, shm->failures);
 
 	exit(EXIT_SUCCESS);
 }
