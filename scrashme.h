@@ -12,7 +12,16 @@ struct syscalltable {
 		unsigned long *,
 		unsigned long *);
 	int flags;
+
+	int arg1type;
+	int arg2type;
+	int arg3type;
+	int arg4type;
+	int arg5type;
+	int arg6type;
 };
+
+#define ARG_FD	1
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)

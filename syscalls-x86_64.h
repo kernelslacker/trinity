@@ -13,6 +13,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "read",
 		.num_args = 3,
 		.sanitise = sanitise_read,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #1
@@ -21,6 +22,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "write",
 		.num_args = 3,
 		.sanitise = sanitise_write,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #2
@@ -36,6 +38,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "close",
 		.num_args = 1,
 		.sanitise = sanitise_close,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #4
@@ -51,6 +54,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "newfstat",
 		.num_args = 2,
 		.sanitise = sanitise_newfstat,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #6
@@ -73,6 +77,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "lseek",
 		.num_args = 3,
 		.sanitise = sanitise_lseek,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #9
@@ -83,6 +88,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "mmap",
 		.num_args = 6,
 		.sanitise = sanitise_mmap,
+		.arg5type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #10
@@ -141,6 +147,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "ioctl",
 		.num_args = 3,
 		.sanitise = sanitise_ioctl,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #17
@@ -149,6 +156,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "pread64",
 		.num_args = 4,
 		.sanitise = sanitise_pread64,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #18
@@ -157,6 +165,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "pwrite64",
 		.num_args = 4,
 		.sanitise = sanitise_pwrite64,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #19
@@ -165,6 +174,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "readv",
 		.num_args = 3,
 		.sanitise = sanitise_readv,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #20
@@ -173,6 +183,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "writev",
 		.num_args = 3,
 		.sanitise = sanitise_writev,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #21
@@ -269,6 +280,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "dup2",
 		.num_args = 2,
+		.arg1type = ARG_FD,
+		.arg2type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #34
@@ -319,6 +332,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "sendfile",
 		.num_args = 4,
+		.arg1type = ARG_FD,
+		.arg2type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #41
@@ -333,6 +348,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "connect",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #43
@@ -340,6 +356,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "accept",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #44
@@ -350,6 +367,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.name = "sendto",
 		.num_args = 6,
 		.sanitise = sanitise_sendto,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #45
@@ -359,6 +377,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "recvfrom",
 		.num_args = 6,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #46
@@ -366,6 +385,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "sendmsg",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #47
@@ -373,6 +393,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "recvmsg",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #48
@@ -380,6 +401,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "shutdown",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #49
@@ -387,6 +409,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "bind",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #50
@@ -394,6 +417,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "listen",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #51
@@ -401,6 +425,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "getsockname",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #52
@@ -408,6 +433,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "getpeername",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #53
@@ -422,6 +448,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "setsockopt",
 		.num_args = 5,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #55
@@ -429,6 +456,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "getsockopt",
 		.num_args = 5,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #56
@@ -556,6 +584,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fcntl",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #73
@@ -563,6 +592,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "flock",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #74
@@ -570,6 +600,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fsync",
 		.num_args = 1,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #75
@@ -577,6 +608,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fdatasync",
 		.num_args = 1,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #76
@@ -591,6 +623,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "ftruncate",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #78
@@ -599,6 +632,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "getdents",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #79
@@ -620,6 +654,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fchdir",
 		.num_args = 1,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #82
@@ -690,6 +725,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fchmod",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #92
@@ -704,6 +740,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fchown",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #94
@@ -1023,6 +1060,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fstatfs",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #139
@@ -1385,6 +1423,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "readahead",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #188
@@ -1411,6 +1450,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fsetxattr",
 		.num_args = 5,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #191
@@ -1435,6 +1475,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fgetxattr",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #194
@@ -1456,6 +1497,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "flistxattr",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #197
@@ -1477,6 +1519,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fremovexattr",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #200
@@ -1619,6 +1662,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "getdents64",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #218
@@ -1648,6 +1692,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fadvise64",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #222
@@ -1732,6 +1777,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "epoll_wait",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #233
@@ -1739,6 +1785,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "epoll_ctl",
 		.num_args = 4,
+		.arg1type = ARG_FD,
+		.arg3type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #234
@@ -1908,6 +1956,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "inotify_add_watch",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #255
@@ -1915,6 +1964,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "inotify_rm_watch",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #256
@@ -1931,6 +1981,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "openat",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #258
@@ -1938,6 +1989,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "mkdirat",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #259
@@ -1945,6 +1997,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "mknodat",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #260
@@ -1953,6 +2006,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fchownat",
 		.num_args = 5,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #261
@@ -1961,6 +2015,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "futimesat",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #262
@@ -1969,6 +2024,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fstatati64",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #263
@@ -1976,6 +2032,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "unlinkat",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #264
@@ -1984,6 +2041,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "renameat",
 		.num_args = 4,
+		.arg1type = ARG_FD,
+		.arg3type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #265
@@ -1992,6 +2051,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "linkat",
 		.num_args = 5,
+		.arg1type = ARG_FD,
+		.arg3type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #266
@@ -2000,6 +2061,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "symlinkat",
 		.num_args = 3,
+		.arg2type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #267
@@ -2008,6 +2070,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "readlinkat",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #268
@@ -2015,6 +2078,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fchmodat",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #269
@@ -2022,6 +2086,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "faccessat",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #270
@@ -2072,7 +2137,9 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "splice",
 		.num_args = 6,
-		.sanitise = sanitise_splice
+		.sanitise = sanitise_splice,
+		.arg1type = ARG_FD,
+		.arg3type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #276
@@ -2080,7 +2147,9 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "tee",
 		.num_args = 4,
-		.sanitise = sanitise_tee
+		.sanitise = sanitise_tee,
+		.arg1type = ARG_FD,
+		.arg2type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #277
@@ -2088,7 +2157,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "sync_file_range",
 		.num_args = 4,
-		.sanitise = sanitise_sync_file_range
+		.sanitise = sanitise_sync_file_range,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #278
@@ -2097,7 +2167,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "vmsplice",
 		.num_args = 4,
-		.sanitise = sanitise_vmsplice
+		.sanitise = sanitise_vmsplice,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #279
@@ -2116,6 +2187,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "utimensat",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #281
@@ -2124,6 +2196,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "epoll_pwait",
 		.num_args = 6,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #282
@@ -2131,6 +2204,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "signalfd",
 		.num_args = 3,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #283
@@ -2152,6 +2226,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fallocate",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #286
@@ -2161,6 +2236,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "timerfd_settime",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #287
@@ -2168,6 +2244,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "timerfd_gettime",
 		.num_args = 2,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #288
@@ -2176,6 +2253,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "accept4",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #289
@@ -2184,6 +2262,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "signalfd4",
 		.num_args = 4,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #290
@@ -2205,6 +2284,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "dup3",
 		.num_args = 3,
+		.arg1type = ARG_FD,
+		.arg2type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #293
@@ -2227,6 +2308,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "preadv",
 		.num_args = 5,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #296
@@ -2235,6 +2317,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "pwritev",
 		.num_args = 5,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #297
@@ -2252,6 +2335,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "perf_event_open",
 		.num_args = 5,
+		.arg4type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #299
@@ -2261,6 +2345,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "recvmmsg",
 		.num_args = 5,
+		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #300
@@ -2276,6 +2361,8 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "fanotify_mark",
 		.num_args = 5,
+		.arg1type = ARG_FD,
+		.arg4type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #302
