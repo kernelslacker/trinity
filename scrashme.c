@@ -225,12 +225,16 @@ static long mkcall(int call)
 #endif
 
 	ret = syscall(call, a1, a2, a3, a4, a5);
-	printf("= %ld", ret);
+
+#define RED	"[1;31m"
+#define GREEN	"[1;32m"
+#define WHITE	"[1;37m"
 
 	if (ret < 0)
-		printf(" %s\n", strerror (errno));
+		printf(RED " %s\n" WHITE, strerror (errno));
 	else
-		printf("\n");
+		printf(GREEN "= %ld\n" WHITE, ret);
+
 	(void)fflush(stdout);
 
 	if (check_poison==1) {
