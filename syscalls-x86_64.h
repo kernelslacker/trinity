@@ -974,7 +974,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "vhangup",
 		.num_args = 0,
-		.flags = CAPABILITY_CHECK,
+		.flags = AVOID_SYSCALL,
 	},
 	/* #154
 	   asmlinkage int sys_modify_ldt(int func, void __user *ptr, unsigned long bytecount) */
