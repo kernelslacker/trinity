@@ -75,6 +75,8 @@
   running the test harness.
   (If we want to be really clever, somehow track the allocations, and then free them N syscalls later)
 
+* Ability to pass a list of comma separated syscalls on the command-line.
+
 * syscall groups.
   --group=vm  for example would only call memory management related syscalls.
 
