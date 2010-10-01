@@ -37,7 +37,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "close",
 		.num_args = 1,
-		.sanitise = sanitise_close,
 		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
@@ -53,7 +52,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "newfstat",
 		.num_args = 2,
-		.sanitise = sanitise_newfstat,
 		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
@@ -76,7 +74,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "lseek",
 		.num_args = 3,
-		.sanitise = sanitise_lseek,
 		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
@@ -87,7 +84,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "mmap",
 		.num_args = 6,
-		.sanitise = sanitise_mmap,
 		.arg5type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
@@ -146,7 +142,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "ioctl",
 		.num_args = 3,
-		.sanitise = sanitise_ioctl,
 		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
@@ -173,7 +168,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "readv",
 		.num_args = 3,
-		.sanitise = sanitise_readv,
 		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
@@ -182,7 +176,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "writev",
 		.num_args = 3,
-		.sanitise = sanitise_writev,
 		.arg1type = ARG_FD,
 	},
 	/*-----------------------------------------------------------------------------------------------
@@ -2147,7 +2140,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "tee",
 		.num_args = 4,
-		.sanitise = sanitise_tee,
 		.arg1type = ARG_FD,
 		.arg2type = ARG_FD,
 	},

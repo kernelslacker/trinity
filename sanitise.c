@@ -87,7 +87,7 @@ void generic_sanitise(int call,
  * asmlinkage ssize_t sys_read(unsigned int fd, char __user * buf, size_t count)
  */
 void sanitise_read(
-		unsigned long *a1,
+		__unused unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
 		__unused unsigned long *a4,
@@ -95,8 +95,6 @@ void sanitise_read(
 		__unused unsigned long *a6)
 {
 	unsigned long newsize = (unsigned int) *a3 >> 16;
-
-	*a1 = get_random_fd();
 
 	if (filebuffer != NULL) {
 		if (filebuffersize < newsize) {
@@ -125,7 +123,7 @@ retry:
  * asmlinkage ssize_t sys_write(unsigned int fd, char __user * buf, size_t count)
  */
 void sanitise_write(
-		unsigned long *a1,
+		__unused unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
 		__unused unsigned long *a4,
@@ -134,8 +132,6 @@ void sanitise_write(
 {
 	unsigned long newsize = *a3 & 0xffff;
 	void *newbuffer;
-
-	*a1 = get_random_fd();
 
 retry:
 	newbuffer = malloc(newsize);
@@ -152,82 +148,6 @@ retry:
 	*a3 = newsize;
 }
 
-/*
- * asmlinkage long sys_open(const char __user *filename, int flags, int mode)
- * TODO: Create a helper to pass in some filenames of real files.
- */
-
-/*
- * asmlinkage long sys_close(unsigned int fd)
- */
-void sanitise_close(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	*a1 = get_random_fd();
-}
-
-
-/*
- * asmlinkage long sys_newstat(char __user *filename, struct stat __user *statbuf)
- */
-
-/*
- * asmlinkage long sys_newfstat(unsigned int fd, struct stat __user *statbuf)
- */
-void sanitise_newfstat(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	*a1 = get_random_fd();
-}
-
-
-/*
- * asmlinkage long sys_newlstat(char __user *filename, struct stat __user *statbuf)
- */
-
-/*
- * asmlinkage long sys_poll(struct pollfd __user *ufds, unsigned int nfds,
-             long timeout_msecs)
- */
-
-/*
- * asmlinkage off_t sys_lseek(unsigned int fd, off_t offset, unsigned int origin)
- */
-void sanitise_lseek(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	*a1 = get_random_fd();
-}
-
-/*
- * asmlinkage long sys_mmap(unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags,
-   unsigned long fd, unsigned long off)
- */
-void sanitise_mmap(
-		__unused unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	*a5 = get_random_fd();
-}
 
 /*
  * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
@@ -280,13 +200,6 @@ retry_end:
 	}
 }
 
-/*
- * asmlinkage long sys_munmap(unsigned long addr, size_t len)
- */
-
-/*
- * asmlinkage unsigned long sys_brk(unsigned long brk)
- */
 
 /*
  * asmlinkage long sys_rt_sigaction(int sig,
@@ -322,37 +235,19 @@ void sanitise_rt_sigprocmask(
 	*a4 = sizeof(sigset_t);
 }
 
-/*
- * asmlinkage int sys_rt_sigreturn(unsigned long __unused)
- */
-
-/*
- * asmlinkage long sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
- */
-void sanitise_ioctl(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	*a1 = get_random_fd();
-}
 
 /*
  * asmlinkage ssize_t sys_pread64(unsigned int fd, char __user *buf,
 				                 size_t count, loff_t pos)
  */
 void sanitise_pread64(
-		unsigned long *a1,
+		__unused unsigned long *a1,
 		__unused unsigned long *a2,
 		__unused unsigned long *a3,
 		unsigned long *a4,
 		__unused unsigned long *a5,
 		__unused unsigned long *a6)
 {
-	*a1 = get_random_fd();
 
 retry_pos:
 	if ((int)*a4 < 0) {
@@ -366,14 +261,13 @@ retry_pos:
 				                 size_t count, loff_t pos)
  */
 void sanitise_pwrite64(
-		unsigned long *a1,
+		__unused unsigned long *a1,
 		__unused unsigned long *a2,
 		__unused unsigned long *a3,
 		unsigned long *a4,
 		__unused unsigned long *a5,
 		__unused unsigned long *a6)
 {
-	*a1 = get_random_fd();
 
 retry_pos:
 	if ((int)*a4 < 0) {
@@ -382,52 +276,7 @@ retry_pos:
 	}
 }
 
-/*
- * asmlinkage ssize_t
- * sys_readv(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
- */
-void sanitise_readv(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	*a1 = get_random_fd();
-}
 
-/*
- * asmlinkage ssize_t
- * sys_writev(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
- */
-void sanitise_writev(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	*a1 = get_random_fd();
-}
-
-/*
- * asmlinkage long sys_access(const char __user *filename, int mode)
- */
-
-/*
- * asmlinkage long sys_pipe(int __user *fildes)
- */
-
-/*
- * asmlinkage long sys_select(int n, fd_set __user *inp, fd_set __user *outp,
-             fd_set __user *exp, struct timeval __user *tvp)
- */
-
-/*
- * asmlinkage long sys_sched_yield(void)
- */
 
 /*
  * asmlinkage unsigned long sys_mremap(unsigned long addr,
@@ -517,27 +366,6 @@ retry:
 	}
 }
 
-/*
- * asmlinkage long sys_tee(int fdin, int fdout, size_t len, unsigned int flags)
- *
- * : len must be > 0
- * : fdin & fdout must be file handles
- *
- */
-void sanitise_tee(
-		unsigned long *a1,
-		unsigned long *a2,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	/* first param is fdin */
-	*a1 = get_random_fd();
-
-	/* second param is fdout */
-	*a2 = get_random_fd();
-}
 
 /*
  * asmlinkage long sys_sync_file_range(int fd, loff_t offset, loff_t nbytes, unsigned int flags)
@@ -551,14 +379,13 @@ void sanitise_tee(
 #define VALID_SFR_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE|SYNC_FILE_RANGE_WAIT_AFTER)
 
 void sanitise_sync_file_range(
-		unsigned long *fd,
+		__unused unsigned long *fd,
 		long *offset,
 		long *nbytes,
 		unsigned long *flags,
 		__unused unsigned long *a5,
 		__unused unsigned long *a6)
 {
-	*fd = get_random_fd();
 
 retry_flags:
 	if (*flags & ~VALID_SFR_FLAGS) {
