@@ -44,6 +44,45 @@ static unsigned long filebuffersize = 0;
 #define __unused /*@unused@*/
 #endif
 
+static int fill_arg(int argtype)
+{
+	int fd;
+
+	switch (argtype) {
+	case ARG_FD:
+		fd = get_random_fd();
+		//printf (YELLOW "DBG: %x" WHITE "\n", fd);
+		return fd;
+	}
+	return 0x5a5a5a5a;	/* Should never happen */
+}
+
+
+void generic_sanitise(int call,
+	unsigned long *a1,
+	unsigned long *a2,
+	unsigned long *a3,
+	unsigned long *a4,
+	unsigned long *a5,
+	unsigned long *a6)
+{
+	if (syscalls[call].arg1type != 0)
+		*a1 = fill_arg(syscalls[call].arg1type);
+	if (syscalls[call].arg2type != 0)
+		*a2 = fill_arg(syscalls[call].arg2type);
+	if (syscalls[call].arg3type != 0)
+		*a3 = fill_arg(syscalls[call].arg3type);
+	if (syscalls[call].arg4type != 0)
+		*a4 = fill_arg(syscalls[call].arg4type);
+	if (syscalls[call].arg5type != 0)
+		*a5 = fill_arg(syscalls[call].arg5type);
+	if (syscalls[call].arg6type != 0)
+		*a6 = fill_arg(syscalls[call].arg6type);
+
+}
+
+
+
 /*
  * asmlinkage ssize_t sys_read(unsigned int fd, char __user * buf, size_t count)
  */

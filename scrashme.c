@@ -42,7 +42,7 @@
 #include "scrashme.h"
 #include "files.h"
 
-static struct syscalltable *syscalls;
+struct syscalltable *syscalls;
 
 static int rep=0;
 static long res=0;
@@ -170,6 +170,7 @@ static long mkcall(int call)
 	}
 
 	if (intelligence == 1) {
+		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
 		if (syscalls[call].sanitise) {
 #if 1
 			printf("\n\tSanitising options.\n\tBefore:\t");
@@ -235,10 +236,6 @@ static long mkcall(int call)
 #endif
 
 	ret = syscall(call, a1, a2, a3, a4, a5);
-
-#define RED	"[1;31m"
-#define GREEN	"[1;32m"
-#define WHITE	"[1;37m"
 
 	if (ret < 0) {
 		printf(RED " %s\n" WHITE, strerror (errno));
