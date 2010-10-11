@@ -343,6 +343,10 @@ retry_same:
 
 	/*  Brute force the same syscall until it succeeds */
 	if ((opmode == MODE_RANDOM) && (intelligence == 1) && (bruteforce == 1)) {
+		// Don't bother trying to bruteforce ni_syscall
+		if (res == -ENOSYS)
+			goto failed_repeat;
+
 		if (retrycount == 100) {
 			//printf("100 retries done without success. moving on\n");
 			goto failed_repeat;
