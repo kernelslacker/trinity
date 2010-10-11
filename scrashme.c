@@ -344,13 +344,15 @@ retry:
 
 static void do_syscall_from_child(int cl)
 {
+	int ret;
+
 	if (fork() == 0) {
 		printf ("%i: ", cl);
 
-		do_syscall(cl);
+		ret = do_syscall(cl);
 		if (intelligence==1)
 			close_fds();
-		_exit(EXIT_SUCCESS);
+		_exit(ret);
 	}
 	(void)waitpid(-1, NULL, 0);
 }
