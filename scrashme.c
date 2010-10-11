@@ -584,6 +584,7 @@ static void run_setup(void)
 		sa.sa_mask = ss;
 		(void)sigaction(i, &sa, NULL);
 	}
+	(void)signal(SIGWINCH, SIG_IGN);
 	(void)signal(SIGCHLD, SIG_IGN);
 	(void)signal(SIGINT, ctrlc);
 
