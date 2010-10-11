@@ -76,6 +76,3 @@
 * syscall groups.
   --group=vm  for example would only call memory management related syscalls.
 
-* --brute-force
-  when mode=random & -i, keep retrying the same syscall until it succeeds before moving on to a different one.
-

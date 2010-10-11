@@ -55,6 +55,7 @@ static unsigned char dopause=0;
 static unsigned char intelligence=0;
 static unsigned char do_specific_syscall=0;
 static unsigned char check_poison = 0;
+static unsigned char bruteforce = 0;
 static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
@@ -293,6 +294,7 @@ static void usage(void)
 	fprintf(stderr, "%s\n", progname);
 	fprintf(stderr, "   --mode=random : pass random values in registers to random syscalls\n");
 	fprintf(stderr, "     -s#: use # as random seed.\n");
+	fprintf(stderr, "     --bruteforce : Keep retrying syscalls until it succeeds (needs -i) [EXPERIMENTAL]\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   --mode=rotate : rotate value through all register combinations\n");
 	fprintf(stderr, "     -k:  pass kernel addresses as arguments.\n");
@@ -307,6 +309,7 @@ static void usage(void)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   -b#: begin at offset #.\n");
 	fprintf(stderr, "   -c#: target syscall # only.\n");
+	fprintf(stderr, "   -i:  pass sensible parameters where possible.\n");
 	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
 	fprintf(stderr, "   -P:  poison buffers before calling syscall, and check afterwards.\n");
 	fprintf(stderr, "   -p:  pause after syscall.\n");
@@ -317,6 +320,7 @@ static void usage(void)
 static int do_syscall(int cl)
 {
 	struct timeval t;
+	int retrycount = 0;
 
 	gettimeofday(&t, 0);
 	seed = t.tv_sec * t.tv_usec;
@@ -326,6 +330,7 @@ static int do_syscall(int cl)
 retry:
 		cl = rand() / (RAND_MAX/NR_SYSCALLS);
 
+retry_same:
 	if (syscalls[cl].flags & AVOID_SYSCALL)
 		goto retry;
 
@@ -335,6 +340,23 @@ retry:
 		cl = specificsyscall;
 
 	res = mkcall(cl);
+
+	/*  Brute force the same syscall until it succeeds */
+	if ((opmode == MODE_RANDOM) && (intelligence == 1) && (bruteforce == 1)) {
+		if (retrycount == 100) {
+			//printf("100 retries done without success. moving on\n");
+			goto failed_repeat;
+		}
+
+		if (res < 0) {
+			//printf ("syscall failed. Retrying\n");
+			retrycount++;
+			goto retry_same;
+		}
+	}
+
+failed_repeat:
+
 	if (dopause==1)
 		(void)sleep(1);
 
@@ -375,9 +397,10 @@ static void parse_args(int argc, char *argv[])
 		{ "list", optional_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "mode", required_argument, NULL, 'm' },
+		{ "bruteforce", optional_argument, NULL, 'B' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:c:hikLN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:hikLN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
@@ -395,6 +418,10 @@ static void parse_args(int argc, char *argv[])
 
 		case 'b':
 			rep = strtol(optarg, NULL, 10);
+			break;
+
+		case 'B':
+			bruteforce = 1;
 			break;
 
 		case 'c':
@@ -510,6 +537,17 @@ static void parse_args(int argc, char *argv[])
 			regval = 0;
 			passed_type = TYPE_VALUE;
 			break;
+		}
+	}
+
+	if (bruteforce == 1) {
+		if (opmode != MODE_RANDOM) {
+			printf("Brute-force only works in --mode=random\n");
+			exit(EXIT_FAILURE);
+		}
+		if (intelligence != 1) {
+			printf("Brute-force needs -i\n");
+			exit(EXIT_FAILURE);
 		}
 	}
 
