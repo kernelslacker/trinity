@@ -3,46 +3,14 @@
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
+
 #include "files.h"
+#include "arch.h"
 #include "scrashme.h"
 
-#ifdef __x86_64__
-#define TASK_SIZE       (0x800000000000UL - 4096)
-#endif
-#ifdef __i386__
-#define PAGE_OFFSET 0xC0000000
-#define TASK_SIZE (PAGE_OFFSET)
-/*
- * Alternative possibilities for PAGE_OFFSET:
- * default 0xB0000000 if VMSPLIT_3G_OPT
- * default 0x78000000 if VMSPLIT_2G
- * default 0x40000000 if VMSPLIT_1G
- */
-#endif
-#ifdef __powerpc__
-#define PAGE_OFFSET 0xC0000000
-#define TASK_SIZE (PAGE_OFFSET)
-#endif
-#ifdef __ia64__
-#define PAGE_OFFSET 0xe000000000000000
-#define TASK_SIZE 0xa000000000000000
-#endif
-#ifdef __sparc__
-#ifdef __arch64__
-#define TASK_SIZE ~0UL
-#else
-#define TASK_SIZE 0xF0000000UL
-#endif
-#endif
 
 static char * filebuffer = NULL;
 static unsigned long filebuffersize = 0;
-
-#ifndef S_SPLINT_S
-#define __unused __attribute((unused))
-#else
-#define __unused /*@unused@*/
-#endif
 
 static unsigned long get_interesting_value()
 {
@@ -84,6 +52,21 @@ static unsigned long get_interesting_value()
 }
 
 
+static unsigned long get_address()
+{
+	int i;
+
+	i = rand() % 3;
+	switch (i) {
+	case 0:	return KERNEL_ADDR;
+	case 1:	return (unsigned long) useraddr;
+	case 2:	return -1;
+	case 3:	return 0;
+	}
+
+	return 0;
+}
+
 
 static unsigned long fill_arg(int argtype)
 {
@@ -96,6 +79,8 @@ static unsigned long fill_arg(int argtype)
 		return fd;
 	case ARG_LEN:
 		return get_interesting_value();
+	case ARG_ADDRESS:
+		return get_address();
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
@@ -405,31 +390,25 @@ void sanitise_splice(
 
 #define VALID_SFR_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE|SYNC_FILE_RANGE_WAIT_AFTER)
 
-void sanitise_sync_file_range(
-		__unused unsigned long *fd,
-		long *offset,
-		long *nbytes,
-		unsigned long *flags,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+void sanitise_sync_file_range(__unused unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, __unused unsigned long *a5, __unused unsigned long *a6)
 {
 
 retry_flags:
-	if (*flags & ~VALID_SFR_FLAGS) {
-		*flags = rand() & VALID_SFR_FLAGS;
+	if (*a4 & ~VALID_SFR_FLAGS) {
+		*a4 = rand() & VALID_SFR_FLAGS;
 		goto retry_flags;
 	}
 
 retry_offset:
-	if (*offset < 0) {
-		*offset = rand();
+	if ((signed long)*a2 < 0) {
+		*a2 = rand();
 		goto retry_offset;
 	}
 
-	if (*offset+*nbytes < 0)
+	if ((signed long)*a2+(signed long)*a3 < 0)
 		goto retry_offset;
 
-	if (*offset+*nbytes < *offset)
+	if (*a2+*a3 < *a2)
 		goto retry_offset;
 }
 

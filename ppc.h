@@ -1,4 +1,4 @@
-#include "syscalls-ppc.h"
-
 #define KERNEL_ADDR	0xc0000000
+#define PAGE_OFFSET 0xC0000000
+#define TASK_SIZE (PAGE_OFFSET)
 

@@ -1,3 +1,4 @@
-#include "syscalls-ia64.h"
-
 #define KERNEL_ADDR	0xa000000100000000
+#define PAGE_OFFSET 0xe000000000000000
+#define TASK_SIZE 0xa000000000000000
+

@@ -1,6 +1,14 @@
 #ifndef _SCRASHME_H
 #define _SCRASHME_H 1
 
+
+#ifndef S_SPLINT_S
+#define __unused __attribute((unused))
+#else
+#define __unused /*@unused@*/
+#endif
+
+
 struct syscalltable {
 	char name[80];
 	unsigned int num_args;
@@ -25,6 +33,7 @@ extern struct syscalltable *syscalls;
 
 #define ARG_FD	1
 #define ARG_LEN	2
+#define ARG_ADDRESS 3
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)
