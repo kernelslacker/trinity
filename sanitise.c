@@ -44,7 +44,48 @@ static unsigned long filebuffersize = 0;
 #define __unused /*@unused@*/
 #endif
 
-static int fill_arg(int argtype)
+static unsigned long get_interesting_value()
+{
+	int i;
+
+	i = rand() & 10;
+
+	switch (i) {
+	/* 32 bit */
+	case 0:		return 0x00000001;
+	case 1:		return 0x80000000;
+	case 2:		return 0x80000001;
+	case 3:		return 0x8fffffff;
+	case 4:		return 0xf0000000;
+	case 5:		return 0xff000000;
+	case 6:		return 0xffffffff;
+
+	/* 64 bit */
+	case 7:		return 0x0000000100000000;
+	case 8:		return 0x0000000100000001;
+	case 9:		return 0x00000001ffffffff;
+
+	case 10:	return 0x0000000800000000;
+	case 11:	return 0x0000000800000001;
+	case 12:	return 0x00000008ffffffff;
+
+	case 13:	return 0x8000000000000000;
+	case 14:	return 0x8000000000000001;
+	case 15:	return 0x80000000ffffffff;
+
+	case 16:	return 0xffffffff00000000;
+	case 17:	return 0xffffffff00000001;
+	case 18:	return 0xffffffff7fffffff;
+	case 19:	return 0xfffffff7ffffffff;
+	case 20:	return 0xffffffffffffffff;
+	}
+	/* Should never be reached. */
+	return 0;
+}
+
+
+
+static unsigned long fill_arg(int argtype)
 {
 	int fd;
 
@@ -53,7 +94,10 @@ static int fill_arg(int argtype)
 		fd = get_random_fd();
 		//printf (YELLOW "DBG: %x" WHITE "\n", fd);
 		return fd;
+	case ARG_LEN:
+		return get_interesting_value();
 	}
+
 	return 0x5a5a5a5a;	/* Should never happen */
 }
 

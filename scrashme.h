@@ -24,6 +24,7 @@ struct syscalltable {
 extern struct syscalltable *syscalls;
 
 #define ARG_FD	1
+#define ARG_LEN	2
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)
