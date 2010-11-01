@@ -119,6 +119,7 @@ static unsigned long getrand()
 
 static long mkcall(int call)
 {
+	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	long ret = 0;
 	int i, j;
@@ -161,12 +162,44 @@ static long mkcall(int call)
 		printf("\n\tSanitising options.\n\tBefore:\t"
 		"(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n", a1, a2, a3, a4, a5, a6);
 
+		olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
+
 		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
 		if (syscalls[call].sanitise)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 
-		printf("\tAfter:\t"
-		"(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n", a1, a2, a3, a4, a5, a6);
+		printf("\tAfter:\t");
+		if (olda1==a1)
+			printf(WHITE "(0x%lx, ", a1);
+		else
+			printf(CYAN "(0x%lx, ", a1);
+
+		if (olda2==a2)
+			printf(WHITE "0x%lx, ", a2);
+		else
+			printf(CYAN "0x%lx, ", a2);
+
+		if (olda3==a3)
+			printf(WHITE "0x%lx, ", a3);
+		else
+			printf(CYAN "0x%lx, ", a3);
+
+		if (olda4==a4)
+			printf(WHITE "0x%lx, ", a4);
+		else
+			printf(CYAN "0x%lx, ", a4);
+
+		if (olda5==a5)
+			printf(WHITE "0x%lx, ", a5);
+		else
+			printf(CYAN "0x%lx, ", a5);
+
+		if (olda6==a6)
+			printf(WHITE "0x%lx", a6);
+		else
+			printf(CYAN "0x%lx", a6);
+
+		printf(WHITE ")\n");
 	}
 
 	if (syscalls[call].num_args == 1)
