@@ -2147,7 +2147,7 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "set_robust_list",
 		.num_args = 2,
-		.sanitise = sanitise_set_robust_list
+		.sanitise = sanitise_set_robust_list,
 		.arg2type = ARG_LEN,
 	},
 	/*-----------------------------------------------------------------------------------------------
