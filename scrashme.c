@@ -216,34 +216,35 @@ static long mkcall(int call)
 	if (opmode == MODE_ROTATE) {
 		printf("(");
 		if (rotate_mask & (1<<5))
-			printf("[1;33m0x%lx[0;37m, ", a1);
+			printf(YELLOW "0x%lx, " WHITE, a1);
 		else
-			printf("[0;37m0x%lx[0;37m, ", a1);
+			printf(WHITE "0x%lx, " WHITE, a1);
 
 		if (rotate_mask & (1<<4))
-			printf("[1;33m0x%lx[0;37m, ", a2);
+			printf(YELLOW "0x%lx, " WHITE, a2);
 		else
-			printf("[0;37m0x%lx[0;37m, ", a2);
+			printf(WHITE "0x%lx, " WHITE, a2);
 
 		if (rotate_mask & (1<<3))
-			printf("[1;33m0x%lx[0;37m, ", a3);
+			printf(YELLOW "0x%lx, " WHITE, a3);
 		else
-			printf("[0;37m0x%lx[0;37m, ", a3);
+			printf(WHITE "0x%lx, " WHITE, a3);
 
 		if (rotate_mask & (1<<2))
-			printf("[1;33m0x%lx[0;37m, ", a4);
+			printf(YELLOW "0x%lx, " WHITE, a4);
 		else
-			printf("[0;37m0x%lx[0;37m, ", a4);
+			printf(WHITE "0x%lx, " WHITE, a4);
 
 		if (rotate_mask & (1<<1))
-			printf("[1;33m0x%lx[0;37m, ", a5);
+			printf(YELLOW "0x%lx, " WHITE, a5);
 		else
-			printf("[0;37m0x%lx[0;37m, ", a5);
+			printf(WHITE "0x%lx, " WHITE, a5);
 
 		if (rotate_mask & (1<<0))
-			printf("[1;33m0x%lx[0;37m", a6);
+			printf(YELLOW "0x%lx" WHITE, a6);
 		else
-			printf("[0;37m0x%lx[0;37m", a6);
+			printf(WHITE "0x%lx" WHITE, a6);
+
 		printf(")");
 	} else {
 		if (syscalls[call].num_args == 6)
