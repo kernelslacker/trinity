@@ -228,13 +228,6 @@ retry_start:
 		goto retry_start;
 	}
 
-	/* len must be >0 */
-retry_len:
-	if (*a2 == 0) {
-		*a2 = rand();
-		goto retry_len;
-	}
-
 	/* End must be after start */
 retry_end:
 	end = *a1 + *a2;
@@ -348,9 +341,6 @@ void sanitise_mremap(
 
 	*addr &= mask;
 
-	if (!*new_len)
-		*new_len = rand();
-
 	i=0;
 	if (*flags & MREMAP_FIXED) {
 		*flags &= ~MREMAP_MAYMOVE;
@@ -401,13 +391,6 @@ void sanitise_splice(
 
 	/* third param is fdout */
 	*a3 = get_pipe_fd();
-
-	/* Returns 0 if !len */
-retry:
-	if (*a5 == 0) {
-		*a5 = rand();
-		goto retry;
-	}
 }
 
 
@@ -516,5 +499,5 @@ retry:
 
 	*addr = (unsigned long)useraddr;
 
-	*addr_len = random() % 128;	// MAX_SOCK_ADDR
+	*addr_len %= 128;	// MAX_SOCK_ADDR
 }
