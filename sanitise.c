@@ -16,7 +16,7 @@ static unsigned long get_interesting_value()
 {
 	int i;
 
-	i = rand() & 10;
+	i = rand() & 20;
 
 	switch (i) {
 	/* 32 bit */
