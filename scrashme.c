@@ -300,6 +300,7 @@ static long mkcall(int call)
 	if (ret == -ENOSYS)
 		syscalls[call].flags |= AVOID_SYSCALL;
 
+	printf("\n");
 	return ret;
 }
 
