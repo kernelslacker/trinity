@@ -152,7 +152,7 @@ static long mkcall(int call)
 
 	if (intelligence == 1) {
 		printf("\n\tSanitising options.\n\t Before: "
-		"(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n", a1, a2, a3, a4, a5, a6);
+		"(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n", a1, a2, a3, a4, a5, a6);
 
 		olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
 
