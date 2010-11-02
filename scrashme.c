@@ -195,16 +195,41 @@ static long mkcall(int call)
 	}
 
 	printf("\t");
-	if (syscalls[call].num_args == 1)
-		printf("(0x%lx) ", a1);
-	if (syscalls[call].num_args == 2)
-		printf("(0x%lx,0x%lx) ", a1, a2);
-	if (syscalls[call].num_args == 3)
-		printf("(0x%lx,0x%lx,0x%lx) ", a1, a2, a3);
-	if (syscalls[call].num_args == 4)
-		printf("(0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4);
-	if (syscalls[call].num_args == 5)
-		printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5);
+
+	if (syscalls[call].num_args >= 1) {
+		if (syscalls[call].arg1name)
+			printf("%s=", syscalls[call].arg1name);
+		printf("0x%lx, ", a1);
+	}
+	if (syscalls[call].num_args > 1) {
+		if (syscalls[call].arg2name)
+			printf("%s=", syscalls[call].arg2name);
+		printf("0x%lx, ", a2);
+	}
+	if (syscalls[call].num_args > 2) {
+		if (syscalls[call].arg3name)
+			printf("%s=", syscalls[call].arg3name);
+		printf("0x%lx", a3);
+	}
+	if (syscalls[call].num_args > 3) {
+		if (syscalls[call].arg4name)
+			printf("%s=", syscalls[call].arg4name);
+		printf("0x%lx", a4);
+	}
+	if (syscalls[call].num_args > 4) {
+		if (syscalls[call].arg5name)
+			printf("%s=", syscalls[call].arg5name);
+		printf("0x%lx", a5);
+	}
+	if (syscalls[call].num_args > 5) {
+		if (syscalls[call].arg6name)
+			printf("%s=", syscalls[call].arg6name);
+		printf("0x%lx", a6);
+	}
+
+
+
+
 
 	if (opmode == MODE_ROTATE) {
 		printf("(");

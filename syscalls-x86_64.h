@@ -107,8 +107,11 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 	{
 		.name = "mprotect",
 		.num_args = 3,
+		.arg1name = "start",
 		.arg1type = ARG_ADDRESS,
+		.arg2name = "len",
 		.arg2type = ARG_LEN,
+		.arg3name = "prot",
 		.sanitise = sanitise_mprotect,
 	},
 	/*-----------------------------------------------------------------------------------------------

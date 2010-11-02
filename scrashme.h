@@ -27,6 +27,13 @@ struct syscalltable {
 	int arg4type;
 	int arg5type;
 	int arg6type;
+
+	char *arg1name;
+	char *arg2name;
+	char *arg3name;
+	char *arg4name;
+	char *arg5name;
+	char *arg6name;
 };
 
 extern struct syscalltable *syscalls;
