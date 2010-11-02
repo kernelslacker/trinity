@@ -109,15 +109,6 @@ static void sighandler(int sig)
 	_exit(0);
 }
 
-static unsigned long getrand()
-{
-	unsigned long r;
-
-	r = (unsigned long)rand();
-	r *= (unsigned long)rand();
-	return r;
-}
-
 static long mkcall(int call)
 {
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
@@ -129,22 +120,22 @@ static long mkcall(int call)
 	switch (opmode) {
 	case MODE_ROTATE:
 		a1 = a2 = a3 = a4 = a5 = a6 = regval;
-		if (!(rotate_mask & (1<<0))) a6 = getrand();
-		if (!(rotate_mask & (1<<1))) a5 = getrand();
-		if (!(rotate_mask & (1<<2))) a4 = getrand();
-		if (!(rotate_mask & (1<<3))) a3 = getrand();
-		if (!(rotate_mask & (1<<4))) a2 = getrand();
-		if (!(rotate_mask & (1<<5))) a1 = getrand();
+		if (!(rotate_mask & (1<<0))) a6 = random();
+		if (!(rotate_mask & (1<<1))) a5 = random();
+		if (!(rotate_mask & (1<<2))) a4 = random();
+		if (!(rotate_mask & (1<<3))) a3 = random();
+		if (!(rotate_mask & (1<<4))) a2 = random();
+		if (!(rotate_mask & (1<<5))) a1 = random();
 		break;
 
 	case MODE_RANDOM:
 	default:
-		a1 = getrand();
-		a2 = getrand();
-		a3 = getrand();
-		a4 = getrand();
-		a5 = getrand();
-		a6 = getrand();
+		a1 = random();
+		a2 = random();
+		a3 = random();
+		a4 = random();
+		a5 = random();
+		a6 = random();
 		break;
 	}
 	if (call > NR_SYSCALLS)
