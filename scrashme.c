@@ -160,37 +160,43 @@ static long mkcall(int call)
 		if (syscalls[call].sanitise)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 
-		printf("\t After:\t");
-		if (olda1==a1)
-			printf(WHITE "(0x%lx, ", a1);
-		else
-			printf(CYAN "(0x%lx, ", a1);
-
-		if (olda2==a2)
-			printf(WHITE "0x%lx, ", a2);
-		else
-			printf(CYAN "0x%lx, ", a2);
-
-		if (olda3==a3)
-			printf(WHITE "0x%lx, ", a3);
-		else
-			printf(CYAN "0x%lx, ", a3);
-
-		if (olda4==a4)
-			printf(WHITE "0x%lx, ", a4);
-		else
-			printf(CYAN "0x%lx, ", a4);
-
-		if (olda5==a5)
-			printf(WHITE "0x%lx, ", a5);
-		else
-			printf(CYAN "0x%lx, ", a5);
-
-		if (olda6==a6)
-			printf(WHITE "0x%lx", a6);
-		else
-			printf(CYAN "0x%lx", a6);
-
+		printf("\t After:\t" WHITE "(");
+		if (syscalls[call].num_args >= 1) {
+			if (olda1==a1)
+				printf(WHITE "0x%lx", a1);
+			else
+				printf(CYAN "0x%lx", a1);
+		}
+		if (syscalls[call].num_args >= 2) {
+			if (olda2==a2)
+				printf(WHITE ", 0x%lx", a2);
+			else
+				printf(CYAN ", 0x%lx", a2);
+		}
+		if (syscalls[call].num_args >= 3) {
+			if (olda3==a3)
+				printf(WHITE ", 0x%lx", a3);
+			else
+				printf(CYAN ", 0x%lx", a3);
+		}
+		if (syscalls[call].num_args >= 4) {
+			if (olda4==a4)
+				printf(WHITE ", 0x%lx", a4);
+			else
+				printf(CYAN ", 0x%lx", a4);
+		}
+		if (syscalls[call].num_args >= 5) {
+			if (olda5==a5)
+				printf(WHITE ", 0x%lx", a5);
+			else
+				printf(CYAN ", 0x%lx", a5);
+		}
+		if (syscalls[call].num_args == 6) {
+			if (olda6==a6)
+				printf(WHITE ", 0x%lx", a6);
+			else
+				printf(CYAN ", 0x%lx", a6);
+		}
 		printf(WHITE ")\n");
 	}
 
