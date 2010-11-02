@@ -56,12 +56,11 @@ static unsigned long get_address()
 {
 	int i;
 
-	i = rand() % 3;
+	i = rand() % 2;
 	switch (i) {
 	case 0:	return KERNEL_ADDR;
 	case 1:	return (unsigned long) useraddr;
-	case 2:	return -1;
-	case 3:	return 0;
+	case 2:	return get_interesting_value();
 	}
 
 	return 0;
@@ -194,32 +193,23 @@ void sanitise_mprotect(
 {
 	unsigned long end;
 	unsigned long mask = ~(page_size-1);
-	int grows;
 
-retry_prot:
-	grows = *a3 & (PROT_GROWSDOWN|PROT_GROWSUP);
-	if (grows == (PROT_GROWSDOWN|PROT_GROWSUP)) {
-		*a3 = rand();
-		goto retry_prot;
-	}
-	if (*a3 & ~(PROT_READ | PROT_WRITE | PROT_EXEC | PROT_SEM)) {
-		*a3 = rand();
-		goto retry_prot;
-	}
+	*a1 &= mask;
 
-retry_start:
-	if (*a1 & ~mask) {
-		*a1 &= mask;
-		goto retry_start;
+retry_end:
+	end = *a1 + *a2;
+	if (*a2 == 0) {
+		*a2 = rand();
+		goto retry_end;
 	}
 
 	/* End must be after start */
-retry_end:
-	end = *a1 + *a2;
 	if (end <= *a1) {
-		*a2 *= 2;
+		*a2 = rand();
 		goto retry_end;
 	}
+
+	*a3 &= ((PROT_GROWSDOWN|PROT_GROWSUP) | ~(PROT_READ | PROT_WRITE | PROT_EXEC | PROT_SEM));
 }
 
 
@@ -273,7 +263,7 @@ void sanitise_pread64(
 
 retry_pos:
 	if ((int)*a4 < 0) {
-		*a4 = rand();
+		*a4 = random();
 		goto retry_pos;
 	}
 }
@@ -293,7 +283,7 @@ void sanitise_pwrite64(
 
 retry_pos:
 	if ((int)*a4 < 0) {
-		*a4 = rand();
+		*a4 = random();
 		goto retry_pos;
 	}
 }
@@ -322,7 +312,7 @@ void sanitise_mremap(
 	unsigned long mask = ~(page_size-1);
 	int i;
 
-	*flags = rand()	& ~(MREMAP_FIXED | MREMAP_MAYMOVE);
+	*flags = random() & ~(MREMAP_FIXED | MREMAP_MAYMOVE);
 
 	*addr &= mask;
 
@@ -333,12 +323,12 @@ void sanitise_mremap(
 retry_addr:
 		*new_addr &= mask;
 		if ((*new_addr <= *addr) && (*new_addr+*new_len) > *addr) {
-			*new_addr -= *addr - rand() % 1000;
+			*new_addr -= *addr - random() % 1000;
 			goto retry_addr;
 		}
 
 		if ((*addr <= *new_addr) && (*addr+*old_len) > *new_addr) {
-			*new_addr += *addr - rand() % 1000;
+			*new_addr += *addr - random() % 1000;
 			goto retry_addr;
 		}
 
@@ -395,13 +385,13 @@ void sanitise_sync_file_range(__unused unsigned long *a1, unsigned long *a2, uns
 
 retry_flags:
 	if (*a4 & ~VALID_SFR_FLAGS) {
-		*a4 = rand() & VALID_SFR_FLAGS;
+		*a4 = random() & VALID_SFR_FLAGS;
 		goto retry_flags;
 	}
 
 retry_offset:
 	if ((signed long)*a2 < 0) {
-		*a2 = rand();
+		*a2 = random();
 		goto retry_offset;
 	}
 
