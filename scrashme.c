@@ -151,7 +151,7 @@ static long mkcall(int call)
 	}
 
 	if (intelligence == 1) {
-		printf("\n\tSanitising options.\n\tBefore:\t"
+		printf("\n\tSanitising options.\n\t Before: "
 		"(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx)\n", a1, a2, a3, a4, a5, a6);
 
 		olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
@@ -160,7 +160,7 @@ static long mkcall(int call)
 		if (syscalls[call].sanitise)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 
-		printf("\tAfter:\t");
+		printf("\t After:\t");
 		if (olda1==a1)
 			printf(WHITE "(0x%lx, ", a1);
 		else
@@ -194,6 +194,7 @@ static long mkcall(int call)
 		printf(WHITE ")\n");
 	}
 
+	printf("\t");
 	if (syscalls[call].num_args == 1)
 		printf("(0x%lx) ", a1);
 	if (syscalls[call].num_args == 2)
