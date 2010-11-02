@@ -402,7 +402,6 @@ static void do_syscall_from_child(int cl)
 	if (fork() == 0) {
 		printf ("%i: ", cl);
 
-		seed_from_tod();
 		ret = do_syscall(cl);
 		if (intelligence==1)
 			close_fds();
