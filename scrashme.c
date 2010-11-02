@@ -112,6 +112,7 @@ static void sighandler(int sig)
 static unsigned long getrand()
 {
 	unsigned long r;
+
 	r = (unsigned long)rand();
 	r *= (unsigned long)rand();
 	return r;
@@ -338,15 +339,20 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-
-static int do_syscall(int cl)
+static void seed_from_tod()
 {
 	struct timeval t;
-	int retrycount = 0;
 
 	gettimeofday(&t, 0);
 	seed = t.tv_sec * t.tv_usec;
 	srand(seed);
+}
+
+static int do_syscall(int cl)
+{
+	int retrycount = 0;
+
+	seed_from_tod();
 
 	if (opmode == MODE_RANDOM)
 retry:
@@ -389,7 +395,6 @@ failed_repeat:
 	return res;
 }
 
-
 static void do_syscall_from_child(int cl)
 {
 	int ret;
@@ -397,6 +402,7 @@ static void do_syscall_from_child(int cl)
 	if (fork() == 0) {
 		printf ("%i: ", cl);
 
+		seed_from_tod();
 		ret = do_syscall(cl);
 		if (intelligence==1)
 			close_fds();
