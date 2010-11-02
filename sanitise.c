@@ -470,3 +470,14 @@ retry:
 
 	*addr_len %= 128;	// MAX_SOCK_ADDR
 }
+
+void sanitise_fanotify_mark(
+		__unused unsigned long *a1,
+		__unused unsigned long *a2,
+		unsigned long *a3,
+		__unused unsigned long *a4,
+		__unused unsigned long *a5,
+		__unused unsigned long *a6)
+{
+	*a3 &= 0xffffffff;
+}
