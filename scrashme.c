@@ -150,76 +150,74 @@ static long mkcall(int call)
 		return 0;
 	}
 
+	olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
+
 	if (intelligence == 1) {
 		printf("\n\tSanitising options.\n\t Before: "
 		"(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n", a1, a2, a3, a4, a5, a6);
 
-		olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
 
 		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
 		if (syscalls[call].sanitise)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
-
-		printf("\t After:\t" WHITE "(");
-		if (syscalls[call].num_args >= 1) {
-			if (syscalls[call].arg1name)
-				printf("%s=", syscalls[call].arg1name);
-			if (olda1==a1)
-				printf(WHITE "0x%lx", a1);
-			else
-				printf(CYAN "0x%lx", a1);
-		}
-		if (syscalls[call].num_args >= 2) {
-			printf(", ");
-			if (syscalls[call].arg2name)
-				printf("%s=", syscalls[call].arg2name);
-			if (olda2==a2)
-				printf(WHITE "0x%lx", a2);
-			else
-				printf(CYAN "0x%lx", a2);
-		}
-		if (syscalls[call].num_args >= 3) {
-			printf(", ");
-			if (syscalls[call].arg3name)
-				printf("%s=", syscalls[call].arg3name);
-			if (olda3==a3)
-				printf(WHITE "0x%lx", a3);
-			else
-				printf(CYAN "0x%lx", a3);
-		}
-		if (syscalls[call].num_args >= 4) {
-			printf(", ");
-			if (syscalls[call].arg4name)
-				printf("%s=", syscalls[call].arg4name);
-			if (olda4==a4)
-				printf(WHITE "0x%lx", a4);
-			else
-				printf(CYAN "0x%lx", a4);
-		}
-		if (syscalls[call].num_args >= 5) {
-			printf(", ");
-			if (syscalls[call].arg5name)
-				printf("%s=", syscalls[call].arg5name);
-			if (olda5==a5)
-				printf(WHITE "0x%lx", a5);
-			else
-				printf(CYAN "0x%lx", a5);
-		}
-		if (syscalls[call].num_args == 6) {
-			printf(", ");
-			if (syscalls[call].arg6name)
-				printf("%s=", syscalls[call].arg6name);
-			if (olda6==a6)
-				printf(WHITE "0x%lx", a6);
-			else
-				printf(CYAN "0x%lx", a6);
-		}
-		printf(WHITE ")");
+		printf("\t After:\t");
 	}
 
-	printf(" ");
-
-
+	printf(WHITE "(");
+	if (syscalls[call].num_args >= 1) {
+		if (syscalls[call].arg1name)
+			printf("%s=", syscalls[call].arg1name);
+		if (olda1==a1)
+			printf(WHITE "0x%lx", a1);
+		else
+			printf(CYAN "0x%lx", a1);
+	}
+	if (syscalls[call].num_args >= 2) {
+		printf(", ");
+		if (syscalls[call].arg2name)
+			printf("%s=", syscalls[call].arg2name);
+		if (olda2==a2)
+			printf(WHITE "0x%lx", a2);
+		else
+			printf(CYAN "0x%lx", a2);
+	}
+	if (syscalls[call].num_args >= 3) {
+		printf(", ");
+		if (syscalls[call].arg3name)
+			printf("%s=", syscalls[call].arg3name);
+		if (olda3==a3)
+			printf(WHITE "0x%lx", a3);
+		else
+			printf(CYAN "0x%lx", a3);
+	}
+	if (syscalls[call].num_args >= 4) {
+		printf(", ");
+		if (syscalls[call].arg4name)
+			printf("%s=", syscalls[call].arg4name);
+		if (olda4==a4)
+			printf(WHITE "0x%lx", a4);
+		else
+			printf(CYAN "0x%lx", a4);
+	}
+	if (syscalls[call].num_args >= 5) {
+		printf(", ");
+		if (syscalls[call].arg5name)
+			printf("%s=", syscalls[call].arg5name);
+		if (olda5==a5)
+			printf(WHITE "0x%lx", a5);
+		else
+			printf(CYAN "0x%lx", a5);
+	}
+	if (syscalls[call].num_args == 6) {
+		printf(", ");
+		if (syscalls[call].arg6name)
+			printf("%s=", syscalls[call].arg6name);
+		if (olda6==a6)
+			printf(WHITE "0x%lx", a6);
+		else
+			printf(CYAN "0x%lx", a6);
+	}
+	printf(WHITE ") ");
 
 
 	if (opmode == MODE_ROTATE) {
