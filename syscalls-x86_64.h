@@ -3496,7 +3496,6 @@ struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
 		.arg4type = ARG_FD,
 		.arg5name = "pathname",
 		.arg5type = ARG_ADDRESS,
-		.sanitise = sanitise_fanotify_mark,
 	},
 	/*-----------------------------------------------------------------------------------------------
 	  #302
