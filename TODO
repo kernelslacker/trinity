@@ -55,7 +55,6 @@
   --group=vm  for example would only call memory management related syscalls.
 
 * New ARG_ types.
-  - ARG_PID
   - ARG_RANGE, to allow...
     .lowrange = 0
     .hirange = 1

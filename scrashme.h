@@ -41,6 +41,7 @@ extern struct syscalltable *syscalls;
 #define ARG_FD	1
 #define ARG_LEN	2
 #define ARG_ADDRESS 3
+#define ARG_PID 4
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)

@@ -67,6 +67,20 @@ static unsigned long get_address()
 }
 
 
+static unsigned int get_pid()
+{
+	int i;
+	i = rand() % 2;
+
+	switch (i) {
+	case 0:	return getpid();
+	case 1:	return rand();
+	case 2: break;
+	}
+	return 0;
+}
+
+
 static unsigned long fill_arg(int argtype)
 {
 	int fd;
@@ -80,6 +94,8 @@ static unsigned long fill_arg(int argtype)
 		return get_interesting_value();
 	case ARG_ADDRESS:
 		return get_address();
+	case ARG_PID:
+		return get_pid();
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
