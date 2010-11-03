@@ -419,12 +419,14 @@ void sanitise_sync_file_range(__unused unsigned long *a1, unsigned long *a2, uns
 retry_flags:
 	if (*a4 & ~VALID_SFR_FLAGS) {
 		*a4 = random() & VALID_SFR_FLAGS;
+		printf("retrying flags\n");
 		goto retry_flags;
 	}
 
 retry_offset:
 	if ((signed long)*a2 < 0) {
 		*a2 = random();
+		printf("retrying offset\n");
 		goto retry_offset;
 	}
 

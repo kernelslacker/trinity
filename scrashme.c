@@ -16,6 +16,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <setjmp.h>
 #include <asm/unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -47,6 +48,8 @@ static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
 
+static unsigned int nofork=0;
+
 static int ctrlc_hit = 0;
 
 struct shm_s {
@@ -58,6 +61,8 @@ struct shm_s *shm;
 char poison = 0x55;
 
 int page_size;
+
+jmp_buf ret_jump;
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
@@ -106,6 +111,13 @@ static void sighandler(int sig)
 {
 	printf("signal: %s\n", strsignal (sig));
 	(void)fflush(stdout);
+	signal(sig, sighandler);
+	if (sig == SIGALRM)
+		printf("Alarm clock.\n");
+	if (nofork==1) {
+			printf("jumping back from sighandler\n");
+			siglongjmp(ret_jump, sig);
+	}
 	_exit(0);
 }
 
@@ -359,6 +371,8 @@ static int do_syscall(int cl)
 {
 	int retrycount = 0;
 
+	printf ("%i: ", cl);
+
 	seed_from_tod();
 
 	if (opmode == MODE_RANDOM)
@@ -406,9 +420,12 @@ static void do_syscall_from_child(int cl)
 {
 	int ret;
 
-	if (fork() == 0) {
-		printf ("%i: ", cl);
+	if (nofork==1) {
+		ret = do_syscall(cl);
+		return;
+	}
 
+	if (fork() == 0) {
 		ret = do_syscall(cl);
 		if (intelligence==1)
 			close_fds();
@@ -435,10 +452,11 @@ static void parse_args(int argc, char *argv[])
 		{ "list", optional_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "mode", required_argument, NULL, 'm' },
+		{ "nofork", optional_argument, NULL, 'F' },
 		{ "bruteforce", optional_argument, NULL, 'B' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:hikLN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:FhikLN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
@@ -473,6 +491,9 @@ static void parse_args(int argc, char *argv[])
 					break;
 				}
 			}
+			break;
+		case 'F':
+			nofork = 1;
 			break;
 
 		/* Show help */
@@ -785,6 +806,8 @@ int main(int argc, char* argv[])
 	parse_args(argc, argv);
 
 	run_setup();
+
+	sigsetjmp(ret_jump, 1);
 
 	run_mode();
 

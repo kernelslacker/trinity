@@ -36,7 +36,6 @@
 
 * Due to forking of child processes, things like mmap/mprotect etc
   don't do anything to affect future calls.
-  - Maybe add a --no-children to prevent forking?
   - Or possibly a new syscall flag 'DONTFORK' for mm related syscalls ?
   - Or possibly a --vm mode to only call VM related calls.
 
@@ -60,4 +59,6 @@
     .values = { 0x1000, 0x2000, 0x4000 }
 
 * run tests in different namespaces, personalities.
+
+* fork N threads.
 
