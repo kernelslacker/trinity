@@ -55,8 +55,8 @@
   --group=vm  for example would only call memory management related syscalls.
 
 * New ARG_ types.
-  - ARG_RANGE, to allow...
-    .lowrange = 0
-    .hirange = 1
+  - ARG_LIST, to allow...
+    .values = { 0x1000, 0x2000, 0x4000 }
 
+* run tests in different namespaces
 

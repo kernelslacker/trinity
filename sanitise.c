@@ -81,9 +81,10 @@ static unsigned int get_pid()
 }
 
 
-static unsigned long fill_arg(int argtype)
+static unsigned long fill_arg(unsigned int argtype, unsigned int low, unsigned int high)
 {
 	int fd;
+	unsigned long i;
 
 	switch (argtype) {
 	case ARG_FD:
@@ -96,6 +97,13 @@ static unsigned long fill_arg(int argtype)
 		return get_address();
 	case ARG_PID:
 		return get_pid();
+	case ARG_RANGE:
+		i = random() % high;
+		if (i < low) {
+			i += low;
+			i &= high;
+		}
+		return i;
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
@@ -111,17 +119,17 @@ void generic_sanitise(int call,
 	unsigned long *a6)
 {
 	if (syscalls[call].arg1type != 0)
-		*a1 = fill_arg(syscalls[call].arg1type);
+		*a1 = fill_arg(syscalls[call].arg1type, syscalls[call].lowrange, syscalls[call].hirange);
 	if (syscalls[call].arg2type != 0)
-		*a2 = fill_arg(syscalls[call].arg2type);
+		*a2 = fill_arg(syscalls[call].arg2type, syscalls[call].lowrange, syscalls[call].hirange);
 	if (syscalls[call].arg3type != 0)
-		*a3 = fill_arg(syscalls[call].arg3type);
+		*a3 = fill_arg(syscalls[call].arg3type, syscalls[call].lowrange, syscalls[call].hirange);
 	if (syscalls[call].arg4type != 0)
-		*a4 = fill_arg(syscalls[call].arg4type);
+		*a4 = fill_arg(syscalls[call].arg4type, syscalls[call].lowrange, syscalls[call].hirange);
 	if (syscalls[call].arg5type != 0)
-		*a5 = fill_arg(syscalls[call].arg5type);
+		*a5 = fill_arg(syscalls[call].arg5type, syscalls[call].lowrange, syscalls[call].hirange);
 	if (syscalls[call].arg6type != 0)
-		*a6 = fill_arg(syscalls[call].arg6type);
+		*a6 = fill_arg(syscalls[call].arg6type, syscalls[call].lowrange, syscalls[call].hirange);
 
 }
 
