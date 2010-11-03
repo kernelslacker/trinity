@@ -193,6 +193,7 @@ void sanitise_mprotect(
 {
 	unsigned long end;
 	unsigned long mask = ~(page_size-1);
+	int grows;
 
 	*a1 &= mask;
 
@@ -209,7 +210,15 @@ retry_end:
 		goto retry_end;
 	}
 
+retry_prot:
 	*a3 &= ((PROT_GROWSDOWN|PROT_GROWSUP) | ~(PROT_READ | PROT_WRITE | PROT_EXEC | PROT_SEM));
+
+	grows = *a3 & (PROT_GROWSDOWN|PROT_GROWSUP);
+
+	if (grows == (PROT_GROWSDOWN|PROT_GROWSUP)) { /* can't be both */
+		*a3 &= rand();
+		goto retry_prot;
+	}
 }
 
 
