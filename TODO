@@ -21,12 +21,16 @@
     on return whether any of them got clobbered.
   - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
 
-* --logfile
+* Improve logging.
+  - writelog is really crap.  It would be better if we just had a print_and_log
+    varargs function that did both the printf to stdout and the logging so
+    that we didn't need to duplicate output strings. (Though it would need to
+    strip out the ansi colour codes for the logfile output).
+  - when multi-threaded, it may make more sense to have a logfile per thread.
+  - is the fflush at the end enough? do we need to fsync ?
 
 * --nrsyscalls (set NR_SYSCALLS)
   Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?
-
-* flush() & fsync() before making the call
 
 * if we get -EPERM from a syscalls we know checks for CAP_SYS_ADMIN early,
   don't bother retrying it.
@@ -36,7 +40,7 @@
 
 * Due to forking of child processes, things like mmap/mprotect etc
   don't do anything to affect future calls.
-  - Or possibly a new syscall flag 'DONTFORK' for mm related syscalls ?
+  - Add a new syscall flag 'DONTFORK' for mm related syscalls ?
   - Or possibly a --vm mode to only call VM related calls.
 
 * Xen dom0 hypercalls ?

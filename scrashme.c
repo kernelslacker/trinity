@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
 #include <ctype.h>
@@ -93,6 +94,22 @@ char *structmodename[] = {
 #define TYPE_VALUE 1
 #define TYPE_STRUCT 2
 static char passed_type = TYPE_UNDEFINED;
+
+
+static const char *logfilename = "scrashme.log";
+FILE *logfile;
+
+#define writelog(...) do {      \
+        logfile = fopen(logfilename, "a"); \
+        if (!logfile) { \
+                perror("couldn't open logfile\n"); \
+                exit(EXIT_FAILURE); \
+        } \
+        fprintf(logfile, ## __VA_ARGS__); \
+	fflush(logfile); \
+        fclose(logfile); \
+} while (0)
+
 
 
 static char *userbuffer;
@@ -270,6 +287,10 @@ static long mkcall(int call)
 			printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 	}
 
+	writelog("%s (0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ",
+		syscalls[call].name, a1, a2, a3, a4, a5, a6);
+
+
 	(void)fflush(stdout);
 
 /* IA64 is retarde^Wspecial. */
@@ -281,9 +302,11 @@ static long mkcall(int call)
 
 	if (ret < 0) {
 		printf(RED "= %d (%s)\n" WHITE, ret, strerror(errno));
+		writelog("= %d (%s)\n", ret, strerror(errno));
 		shm->failures++;
 	} else {
 		printf(GREEN "= %d\n" WHITE, ret);
+		writelog("= %d\n" , ret);
 		shm->successes++;
 	}
 	(void)fflush(stdout);
@@ -749,6 +772,7 @@ static void run_mode(void)
 done: ;
 }
 
+
 int main(int argc, char* argv[])
 {
 	int i;
@@ -771,6 +795,8 @@ int main(int argc, char* argv[])
 	page_size = getpagesize();
 
 	progname = argv[0];
+
+	unlink(logfilename);
 
 	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
 	for (i=0; i<=NR_SYSCALLS; i++) {
