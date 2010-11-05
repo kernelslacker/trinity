@@ -125,7 +125,7 @@ static long mkcall(int call)
 {
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
-	long ret = 0;
+	int ret = 0;
 	int i, j;
 	int poisoned = 0;
 
@@ -280,10 +280,10 @@ static long mkcall(int call)
 	ret = syscall(call, a1, a2, a3, a4, a5);
 
 	if (ret < 0) {
-		printf(RED " %s\n" WHITE, strerror (errno));
+		printf(RED "= %d (%s)\n" WHITE, ret, strerror(errno));
 		shm->failures++;
 	} else {
-		printf(GREEN "= %ld\n" WHITE, ret);
+		printf(GREEN "= %d\n" WHITE, ret);
 		shm->successes++;
 	}
 	(void)fflush(stdout);
