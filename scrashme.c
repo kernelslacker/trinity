@@ -374,6 +374,7 @@ static void usage(void)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   -b#: begin at offset #.\n");
 	fprintf(stderr, "   -c#: target syscall # only.\n");
+	fprintf(stderr, "   -F:  don't fork after each syscall.\n");
 	fprintf(stderr, "   -i:  pass sensible parameters where possible.\n");
 	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
 	fprintf(stderr, "   -P:  poison buffers before calling syscall, and check afterwards.\n");
