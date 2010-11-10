@@ -3,9 +3,9 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 340
+#define NR_I386_SYSCALLS 340
 
-struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
+struct syscalltable syscalls_i386[NR_I386_SYSCALLS+1] = {
 	{ .name = "restart_syscall", },	/* 0 - old "setup()" system call, used for restarting */
 	{ .name = "exit", .flags = AVOID_SYSCALL },
 	{ .name = "fork", .flags = AVOID_SYSCALL },

@@ -6,9 +6,9 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_SYSCALLS 302
+#define NR_X86_64_SYSCALLS 302
 
-struct syscalltable syscalls_x86_64[NR_SYSCALLS+1] = {
+struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS+1] = {
 	/*-----------------------------------------------------------------------------------------------
 	  #0
 	   SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count) */

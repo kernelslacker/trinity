@@ -16,7 +16,11 @@ static unsigned long get_interesting_value()
 {
 	int i;
 
+#ifdef __64bit__
 	i = rand() & 20;
+#else
+	i = rand() & 6;
+#endif
 
 	switch (i) {
 	/* 32 bit */
@@ -28,6 +32,7 @@ static unsigned long get_interesting_value()
 	case 5:		return 0xff000000;
 	case 6:		return 0xffffffff;
 
+#ifdef __64bit__
 	/* 64 bit */
 	case 7:		return 0x0000000100000000;
 	case 8:		return 0x0000000100000001;
@@ -46,6 +51,7 @@ static unsigned long get_interesting_value()
 	case 18:	return 0xffffffff7fffffff;
 	case 19:	return 0xfffffff7ffffffff;
 	case 20:	return 0xffffffffffffffff;
+#endif
 	}
 	/* Should never be reached. */
 	return 0;

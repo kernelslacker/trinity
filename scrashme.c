@@ -33,7 +33,7 @@
 
 struct syscalltable *syscalls;
 
-static int rep=0;
+static unsigned int rep=0;
 static long res=0;
 static long specificsyscall=0;
 static unsigned long regval=0;
@@ -49,7 +49,11 @@ static unsigned int seed=0;
 static long long syscallcount=0;
 static long long execcount=0;
 
+static int do_32bit=0;
+
 static unsigned int nofork=0;
+
+static unsigned int max_nr_syscalls;
 
 static int ctrlc_hit = 0;
 
@@ -61,7 +65,7 @@ struct shm_s *shm;
 
 char poison = 0x55;
 
-int page_size;
+unsigned int page_size;
 
 jmp_buf ret_jump;
 
@@ -138,7 +142,41 @@ static void sighandler(int sig)
 	_exit(0);
 }
 
-static long mkcall(int call)
+#define __syscall_return(type, res) \
+do { \
+	if ((unsigned long)(res) >= (unsigned long)(-125)) { \
+		errno = -(res); \
+		res = -1; \
+	} \
+	return (type) (res); \
+} while (0)
+
+static long call_syscall(__unused int num_args, unsigned int call,
+	unsigned long a1, unsigned long a2, unsigned long a3,
+	unsigned long a4, unsigned long a5, unsigned long a6)
+{
+	if (!do_32bit)
+		return syscall(call, a1, a2, a3, a4, a5, a6);
+
+#ifdef __i386__
+	if (num_args < 6) {
+		long __res;
+		__asm__ volatile ("int $0x80"
+		: "=a" (__res)
+		: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),
+		"d" ((long)(a3)), "S" ((long)(a4)),
+		"D" ((long)(a5)));
+		__syscall_return(long,__res);
+		return __res;
+	}
+	/* TODO: 6 arg 32bit syscall goes here.*/
+#endif
+
+	return 0;
+
+}
+
+static long mkcall(unsigned int call)
 {
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
@@ -167,7 +205,7 @@ static long mkcall(int call)
 		a6 = random();
 		break;
 	}
-	if (call > NR_SYSCALLS)
+	if (call > max_nr_syscalls)
 		printf("%d", call);
 	else
 		printf("%s", syscalls[call].name);
@@ -298,7 +336,7 @@ static long mkcall(int call)
 	call += 1024;
 #endif
 
-	ret = syscall(call, a1, a2, a3, a4, a5);
+	ret = call_syscall(syscalls[call].num_args, call, a1, a2, a3, a4, a5, a6);
 
 	if (ret < 0) {
 		printf(RED "= %d (%s)\n" WHITE, ret, strerror(errno));
@@ -401,7 +439,7 @@ static int do_syscall(int cl)
 
 	if (opmode == MODE_RANDOM)
 retry:
-		cl = rand() / (RAND_MAX/NR_SYSCALLS);
+		cl = rand() / (RAND_MAX/max_nr_syscalls);
 
 retry_same:
 	if (syscalls[cl].flags & AVOID_SYSCALL)
@@ -460,16 +498,15 @@ static void do_syscall_from_child(int cl)
 
 static void syscall_list()
 {
-	int i;
+	unsigned int i;
 
-	for (i=0; i<=NR_SYSCALLS; i++) {
+	for (i=0; i<=max_nr_syscalls; i++)
 		 printf("%i: %s\n", i, syscalls[i].name);
-	}
 }
 
 static void parse_args(int argc, char *argv[])
 {
-	int i;
+	unsigned int i;
 	int opt;
 
 	struct option longopts[] = {
@@ -478,13 +515,14 @@ static void parse_args(int argc, char *argv[])
 		{ "mode", required_argument, NULL, 'm' },
 		{ "nofork", optional_argument, NULL, 'F' },
 		{ "bruteforce", optional_argument, NULL, 'B' },
+		{ "32bit", optional_argument, &do_32bit, 1 },
 		{ NULL, 0, NULL, 0 } };
 
 	while ((opt = getopt_long(argc, argv, "b:Bc:FhikLN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
-			exit(EXIT_FAILURE);
+			return;
 
 		/* Get the mode we want to run */
 		case 'm':
@@ -508,7 +546,7 @@ static void parse_args(int argc, char *argv[])
 			do_specific_syscall = 1;
 			specificsyscall = strtol(optarg, NULL, 10);
 
-			for (i=0; i<=NR_SYSCALLS; i++) {
+			for (i=0; i<=max_nr_syscalls; i++) {
 				if (strcmp(optarg, syscalls[i].name) == 0) {
 					printf("Found %s at %d\n", syscalls[i].name, i);
 					specificsyscall = i;
@@ -678,7 +716,7 @@ static void run_setup(void)
 
 static void run_mode(void)
 {
-	int i;
+	unsigned int i;
 
 	printf("scrashme mode: %s\n", opmodename[opmode]);
 
@@ -709,7 +747,7 @@ static void run_mode(void)
 		switch (opmode) {
 		case MODE_ROTATE:
 			/* It's easier to just use all regs for now. */
-			for (i=0; i<=NR_SYSCALLS; i++) {
+			for (i=0; i<=max_nr_syscalls; i++) {
 				syscalls[i].num_args = 6;
 			}
 
@@ -718,7 +756,7 @@ static void run_mode(void)
 				if (rotate_mask == (1<<6)-1)
 					goto done;
 			} else {
-				if (rep > NR_SYSCALLS) {
+				if (rep > max_nr_syscalls) {
 					/* Pointless running > once. */
 					if (rotate_mask == (1<<6)-1)
 						goto done;
@@ -730,7 +768,7 @@ static void run_mode(void)
 			break;
 
 		case MODE_CAPCHECK:
-			if (rep > NR_SYSCALLS)
+			if (rep > max_nr_syscalls)
 				goto done;
 			if (syscalls[rep].flags & CAPABILITY_CHECK) {
 				int r;
@@ -776,13 +814,28 @@ done: ;
 
 int main(int argc, char* argv[])
 {
-	int i;
+	unsigned int i;
 	int ret;
 	int shmid;
 	key_t key;
 
+	progname = argv[0];
+	parse_args(argc, argv);
+	if (argc==1)
+		usage();
+
+	max_nr_syscalls = NR_SYSCALLS;
+
 #ifdef __x86_64__
-	syscalls = syscalls_x86_64;
+	if (do_32bit) {
+		syscalls = syscalls_i386;
+		max_nr_syscalls = NR_I386_SYSCALLS;
+		printf("32bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
+	} else {
+		syscalls = syscalls_x86_64;
+		max_nr_syscalls = NR_X86_64_SYSCALLS;
+		printf("64bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
+	}
 #elif __powerpc__
 	syscalls = syscalls_ppc;
 #elif __ia64__
@@ -795,26 +848,10 @@ int main(int argc, char* argv[])
 
 	page_size = getpagesize();
 
-	progname = argv[0];
-
 	unlink(logfilename);
 
-	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
-	for (i=0; i<=NR_SYSCALLS; i++) {
-		if (syscalls[i].flags & NI_SYSCALL) {
-			ret = syscall(i);
-			if (ret == -1) {
-				if (errno != ENOSYS) {
-					printf("syscall %d (%s) should be ni_syscall, but returned %d(%s) !\n",
-						i, syscalls[i].name, errno, strerror(errno));
-					exit(EXIT_FAILURE);
-				}
-			}
-		}
-	}
-
-	if (argc==1)
-		usage();
+	if (!seed)
+		seed_from_tod();
 
 	key = random();
 	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
@@ -830,7 +867,20 @@ int main(int argc, char* argv[])
 
 	init_buffer();
 
-	parse_args(argc, argv);
+
+	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
+	for (i=0; i<= max_nr_syscalls; i++) {
+		if (syscalls[i].flags & NI_SYSCALL) {
+			ret = syscall(i);
+			if (ret == -1) {
+				if (errno != ENOSYS) {
+					printf("syscall %d (%s) should be ni_syscall, but returned %d(%s) !\n",
+						i, syscalls[i].name, errno, strerror(errno));
+					exit(EXIT_FAILURE);
+				}
+			}
+		}
+	}
 
 	run_setup();
 
