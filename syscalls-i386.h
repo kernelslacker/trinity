@@ -12,7 +12,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", },		/* 5 */
-	{ .name = "close", .sanitise = sanitise_close },
+	{ .name = "close", },
 	{ .name = "waitpid", },
 	{ .name = "creat", },
 	{ .name = "link", },
@@ -25,7 +25,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "lchown16", },
 	{ .name = "ni_syscall (old break syscall holder)", },
 	{ .name = "stat", },
-	{ .name = "lseek", .sanitise = sanitise_lseek },
+	{ .name = "lseek", },
 	{ .name = "getpid", },	/* 20 */
 	{ .name = "mount", },
 	{ .name = "oldumount", },
@@ -60,7 +60,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "acct", },
 	{ .name = "umount (recycled never used phys())", },
 	{ .name = "ni_syscall (old lock syscall holder", },
-	{ .name = "ioctl", .sanitise = sanitise_ioctl },
+	{ .name = "ioctl", },
 	{ .name = "fcntl", },		/* 55 */
 	{ .name = "ni_syscall (old mpx syscall holder)", },
 	{ .name = "setpgid", },
@@ -96,7 +96,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "swapon", },
 	{ .name = "reboot", },
 	{ .name = "readdir", },
-	{ .name = "mmap", .sanitise = sanitise_mmap },		/* 90 */
+	{ .name = "mmap", },		/* 90 */
 	{ .name = "munmap", },
 	{ .name = "truncate", },
 	{ .name = "ftruncate", },
@@ -114,7 +114,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "getitimer", },	/* 105 */
 	{ .name = "newstat", },
 	{ .name = "newlstat", },
-	{ .name = "newfstat", .sanitise = sanitise_newfstat },
+	{ .name = "newfstat", },
 	{ .name = "uname", },
 	{ .name = "iopl", },		/* 110 */
 	{ .name = "vhangup", },
@@ -151,8 +151,8 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "select", .flags = AVOID_SYSCALL },
 	{ .name = "flock", },
 	{ .name = "msync", },
-	{ .name = "readv", .sanitise = sanitise_readv },	/* 145 */
-	{ .name = "writev", .sanitise = sanitise_writev },
+	{ .name = "readv", },	/* 145 */
+	{ .name = "writev", },
 	{ .name = "getsid", },
 	{ .name = "fdatasync", },
 	{ .name = "sysctl", },
@@ -321,7 +321,7 @@ struct syscalltable syscalls_i386[NR_SYSCALLS+1] = {
 	{ .name = "get_robust_list", },
 	{ .name = "splice", .sanitise = sanitise_splice },
 	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
-	{ .name = "tee", .sanitise = sanitise_tee },	/* 315 */
+	{ .name = "tee", },	/* 315 */
 	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
 	{ .name = "move_pages", },
 	{ .name = "getcpu", },

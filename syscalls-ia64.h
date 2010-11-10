@@ -12,7 +12,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", },			/* 5 */
-	{ .name = "close", .sanitise = sanitise_close },
+	{ .name = "close", },
 	{ .name = "creat", },
 	{ .name = "link", },
 	{ .name = "unlink", },
@@ -23,7 +23,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "mknod", },
 	{ .name = "chmod", },			/* 15 */
 	{ .name = "chown", },
-	{ .name = "lseek", .sanitise = sanitise_lseek },
+	{ .name = "lseek", },
 	{ .name = "getpid", },
 	{ .name = "getppid", },
 	{ .name = "mount", },			/* 20 */
@@ -48,7 +48,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "getgid", },
 	{ .name = "getegid", },			/* 40 */
 	{ .name = "acct", },
-	{ .name = "ioctl", .sanitise = sanitise_ioctl },
+	{ .name = "ioctl", },
 	{ .name = "fcntl", },
 	{ .name = "umask", },
 	{ .name = "chroot", },			/* 45 */
@@ -129,12 +129,12 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "setfsgid", },		/* 120 */
 	{ .name = "getdents", },
 	{ .name = "flock", },
-	{ .name = "readv", .sanitise = sanitise_readv },
-	{ .name = "writev", .sanitise = sanitise_writev },
+	{ .name = "readv", },
+	{ .name = "writev", },
 	{ .name = "pread64", .sanitise = sanitise_pread64 },			/* 125 */
 	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
 	{ .name = "sysctl", },
-	{ .name = "mmap", .sanitise = sanitise_mmap },
+	{ .name = "mmap", },
 	{ .name = "munmap", },
 	{ .name = "mlock", },			/* 130 */
 	{ .name = "mlockall", },
@@ -195,7 +195,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "madvise", },
 	{ .name = "newstat", },
 	{ .name = "newlstat", },
-	{ .name = "newfstat", .sanitise = sanitise_newfstat },
+	{ .name = "newfstat", },
 	{ .name = "clone2", .flags = AVOID_SYSCALL },			/* 190 */
 	{ .name = "getdents64", },
 	{ .name = "getunwind", },
@@ -284,7 +284,7 @@ struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
 	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list },	/* 275 */
 	{ .name = "get_robust_list", },
 	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
-	{ .name = "tee", .sanitise = sanitise_tee },
+	{ .name = "tee", },
 	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
 	{ .name = "fallocate", },	/* 280 */
 	{ .name = "getcpu", },

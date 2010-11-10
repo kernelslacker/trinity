@@ -12,7 +12,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "read", .sanitise = sanitise_read },
 	{ .name = "write", .sanitise = sanitise_write },
 	{ .name = "open", }, /* 5 */
-	{ .name = "close", .sanitise = sanitise_close },
+	{ .name = "close", },
 	{ .name = "wait4", },
 	{ .name = "creat", },
 	{ .name = "link", },
@@ -25,7 +25,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "lchown", },
 	{ .name = "brk", },
 	{ .name = "perfctr", },
-	{ .name = "lseek", .sanitise = sanitise_lseek },
+	{ .name = "lseek", },
 	{ .name = "getpid", }, /* 20 */
 	{ .name = "capget", },
 	{ .name = "capset", },
@@ -60,7 +60,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "acct", },
 	{ .name = "memory_ordering", },
 	{ .name = "getgid", },
-	{ .name = "ioctl", .sanitise = sanitise_ioctl },
+	{ .name = "ioctl", },
 	{ .name = "reboot", }, /* 55 */
 	{ .name = "mmap2", },
 	{ .name = "symlink", },
@@ -68,7 +68,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "execve", },
 	{ .name = "umask", }, /* 60 */
 	{ .name = "chroot", },
-	{ .name = "newfstat", .sanitise = sanitise_newfstat },
+	{ .name = "newfstat", },
 	{ .name = "fstat64", },
 	{ .name = "getpagesize", },
 	{ .name = "msync", }, /* 65 */
@@ -77,7 +77,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
 	{ .name = "geteuid", },
 	{ .name = "getegid", }, /* 70 */
-	{ .name = "mmap", .sanitise = sanitise_mmap }, /* 90 */
+	{ .name = "mmap", }, /* 90 */
 	{ .name = "setreuid", },
 	{ .name = "munmap", },
 	{ .name = "mprotect", .sanitise = sanitise_mprotect },
@@ -126,8 +126,8 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "getrusage", },
 	{ .name = "getsockopt" },
 	{ .name = "getcwd" },
-	{ .name = "readv", .sanitise = sanitise_readv }, /* 120 */
-	{ .name = "writev", .sanitise = sanitise_writev },
+	{ .name = "readv", }, /* 120 */
+	{ .name = "writev", },
 	{ .name = "settimeofday" },
 	{ .name = "fchown" },
 	{ .name = "fchmod" },
@@ -286,7 +286,7 @@ struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .name = "mq_notify", },
 	{ .name = "mq_getsetattr", },
 	{ .name = "waitid", },
-	{ .name = "tee", .sanitise = sanitise_tee }, /* 280 */
+	{ .name = "tee", }, /* 280 */
 	{ .name = "add_key", },
 	{ .name = "request_key", },
 	{ .name = "keyctl", },
