@@ -176,6 +176,15 @@ static long call_syscall(__unused int num_args, unsigned int call,
 
 }
 
+static unsigned long rand64()
+{
+	unsigned long r;
+
+	r = (unsigned long)rand();
+	r *= (unsigned long)rand();
+	return r;
+}
+
 static long mkcall(unsigned int call)
 {
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
@@ -187,22 +196,22 @@ static long mkcall(unsigned int call)
 	switch (opmode) {
 	case MODE_ROTATE:
 		a1 = a2 = a3 = a4 = a5 = a6 = regval;
-		if (!(rotate_mask & (1<<0))) a6 = random();
-		if (!(rotate_mask & (1<<1))) a5 = random();
-		if (!(rotate_mask & (1<<2))) a4 = random();
-		if (!(rotate_mask & (1<<3))) a3 = random();
-		if (!(rotate_mask & (1<<4))) a2 = random();
-		if (!(rotate_mask & (1<<5))) a1 = random();
+		if (!(rotate_mask & (1<<0))) a6 = rand64();
+		if (!(rotate_mask & (1<<1))) a5 = rand64();
+		if (!(rotate_mask & (1<<2))) a4 = rand64();
+		if (!(rotate_mask & (1<<3))) a3 = rand64();
+		if (!(rotate_mask & (1<<4))) a2 = rand64();
+		if (!(rotate_mask & (1<<5))) a1 = rand64();
 		break;
 
 	case MODE_RANDOM:
 	default:
-		a1 = random();
-		a2 = random();
-		a3 = random();
-		a4 = random();
-		a5 = random();
-		a6 = random();
+		a1 = rand64();
+		a2 = rand64();
+		a3 = rand64();
+		a4 = rand64();
+		a5 = rand64();
+		a6 = rand64();
 		break;
 	}
 	if (call > max_nr_syscalls)
@@ -221,7 +230,7 @@ static long mkcall(unsigned int call)
 
 	if (intelligence == 1) {
 		printf("\n\tSanitising options.\n\t Before: "
-		"(0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n", a1, a2, a3, a4, a5, a6);
+		"(0x%016lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n", a1, a2, a3, a4, a5, a6);
 
 
 		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
