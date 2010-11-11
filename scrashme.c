@@ -124,6 +124,9 @@ char *useraddr;
 void init_buffer()
 {
 	userbuffer = malloc(4096*3);
+	if (!userbuffer) {
+		exit(EXIT_FAILURE);
+	}
 	memset(userbuffer, poison, 4096);
 	memset(userbuffer+4096+4096, poison, 4096);
 
@@ -135,7 +138,7 @@ static void sighandler(int sig)
 {
 	printf("signal: %s\n", strsignal (sig));
 	(void)fflush(stdout);
-	signal(sig, sighandler);
+	(void)signal(sig, sighandler);
 	if (sig == SIGALRM)
 		printf("Alarm clock.\n");
 	if (nofork==1) {
@@ -216,7 +219,7 @@ static long mkcall(unsigned int call)
 		break;
 	}
 	if (call > max_nr_syscalls)
-		printf("%d", call);
+		printf("%u", call);
 	else
 		printf("%s", syscalls[call].name);
 
@@ -374,7 +377,7 @@ static long mkcall(unsigned int call)
 			for (i = 0; i < 4096; i+=32) {
 				printf("%d: ", i);
 				for (j=0; j < 32; j++)
-					printf("%x ", userbuffer[i+j]);
+					printf("%x ", (unsigned int) userbuffer[i+j]);
 				printf("\n");
 			}
 			(void)fflush(stdout);
@@ -385,7 +388,7 @@ static long mkcall(unsigned int call)
 			for (i = 4096*2; i < 4096*3; i+=32) {
 				printf("%i: ", i);
 				for (j=0; j < 32; j++)
-					printf("%x ", userbuffer[i+j]);
+					printf("%x ", (unsigned int) userbuffer[i+j]);
 				printf("\n");
 			}
 			(void)fflush(stdout);
@@ -512,7 +515,7 @@ static void syscall_list()
 	unsigned int i;
 
 	for (i=0; i<=max_nr_syscalls; i++)
-		 printf("%i: %s\n", i, syscalls[i].name);
+		 printf("%u: %s\n", i, syscalls[i].name);
 }
 
 static void parse_args(int argc, char *argv[])
@@ -559,7 +562,7 @@ static void parse_args(int argc, char *argv[])
 
 			for (i=0; i<=max_nr_syscalls; i++) {
 				if (strcmp(optarg, syscalls[i].name) == 0) {
-					printf("Found %s at %d\n", syscalls[i].name, i);
+					printf("Found %s at %u\n", syscalls[i].name, i);
 					specificsyscall = i;
 					break;
 				}
@@ -573,7 +576,7 @@ static void parse_args(int argc, char *argv[])
 				/* Try looking in the 32bit table. */
 				for (i=0; i<=max_nr_syscalls32; i++) {
 					if (strcmp(optarg, syscalls32[i].name) == 0) {
-						printf("Found in the 32bit syscall table %s at %d\n", syscalls32[i].name, i);
+						printf("Found in the 32bit syscall table %s at %u\n", syscalls32[i].name, i);
 						specificsyscall = i;
 						printf("Forcing into 32bit mode.\n");
 						do_32bit = 1;
@@ -597,7 +600,6 @@ no_sys32:
 		case 'h':
 			usage();
 			exit(EXIT_SUCCESS);
-			break;
 
 		/* use semi-intelligent options */
 		case 'i':
@@ -608,7 +610,6 @@ no_sys32:
 		case 'L':
 			syscall_list();
 			exit(EXIT_SUCCESS);
-			break;
 
 		/* Pass in address of kernel text */
 		case 'k':
@@ -653,7 +654,6 @@ no_sys32:
 				fprintf(stderr,
 					"-S requires 'r' or a hex value\n");
 				exit(EXIT_FAILURE);
-				break;
 
 			/* Pass a ptr to a struct filled with the
 			 * user-specified constant value. */

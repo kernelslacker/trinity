@@ -3,9 +3,9 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
-#define NR_I386_SYSCALLS 340
+#define NR_I386_SYSCALLS 341
 
-struct syscalltable syscalls_i386[NR_I386_SYSCALLS+1] = {
+struct syscalltable syscalls_i386[NR_I386_SYSCALLS] = {
 #include "syscalls/restart_syscall.h"
 #include "syscalls/exit.h"
 #include "syscalls/fork.h"

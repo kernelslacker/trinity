@@ -18,4 +18,7 @@ clean:
 	@rm -f scrashme
 
 splint:
-	splint +posixlib -badflag -fileextensions -type -nullassign -boolops -showcolumn -sysunrecog -fullinitblock -onlytrans -unrecog -usedef -statictrans -compdestroy -predboolint -D__`uname -m`__  files.c scrashme.c  sanitise.c
+	@splint -nullpass -immediatetrans -compmempass -predboolothers -retvalint -preproc +posixlib \
+	 -badflag -fileextensions -type -nullassign -boolops -showcolumn -sysunrecog -fullinitblock \
+	 -onlytrans -unrecog -usedef -statictrans -compdestroy -predboolint -D__`uname -m`__  files.c \
+	 scrashme.c  sanitise.c

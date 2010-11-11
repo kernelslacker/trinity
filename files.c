@@ -51,6 +51,7 @@ static void open_fds(char *dir)
 		return;
 	}
 	while ((de = readdir(d))) {
+		memset(&buf, 0, sizeof(struct stat));
 		snprintf(b, sizeof(b), "%s/%s", dir, de->d_name);
 		if (ignore_files(de->d_name))
 			continue; /*".", "..", everything that's not a regular file or directory !*/
@@ -103,6 +104,7 @@ static void open_sockets()
 {
 	int fd;
 	int nr_to_create = 500;
+	int domain, type, protocol;
 
 	if (fd_idx < 500)
 		nr_to_create = fd_idx;
@@ -112,7 +114,10 @@ static void open_sockets()
 	printf("Creating sockets.\n");
 
 	while (socks < nr_to_create) {
-		fd = socket(rand() % PF_MAX, rand() % TYPE_MAX, rand() % PROTO_MAX);
+		domain = rand() % PF_MAX;
+		type = rand() % TYPE_MAX;
+		protocol = rand() % PROTO_MAX;
+		fd = socket(domain, type, protocol);
 		if (fd > -1) {
 			socket_fds[socks++] = fd;
 			socks++;
@@ -164,5 +169,5 @@ int get_random_fd(void)
 
 	// should never get here.
 	printf("oops! %s:%d\n", __FILE__, __LINE__);
-	exit(-1);
+	exit(EXIT_FAILURE);
 }

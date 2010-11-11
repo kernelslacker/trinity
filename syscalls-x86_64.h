@@ -8,7 +8,7 @@
 
 #define NR_X86_64_SYSCALLS 302
 
-struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS+1] = {
+struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS] = {
 #include "syscalls/read.h"
 #include "syscalls/write.h"
 #include "syscalls/open.h"
@@ -40,6 +40,7 @@ struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS+1] = {
 #include "syscalls/madvise.h"
 #include "syscalls/shmget.h"
 #include "syscalls/shmctl.h"
+#include "syscalls/shmat.h"
 #include "syscalls/dup.h"
 #include "syscalls/dup2.h"
 #include "syscalls/pause.h"
@@ -310,6 +311,5 @@ struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS+1] = {
 #include "syscalls/fanotify_init.h"
 #include "syscalls/fanotify_mark.h"
 #include "syscalls/prlimit64.h"
-
 };
 #endif	/* _SYSCALLS_x86_64_H */
