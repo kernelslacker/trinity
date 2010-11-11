@@ -101,10 +101,16 @@ static void open_sockets()
 {
 	int fd;
 	int socks=0;
+	int nr_to_create = 500;
+
+	if (fd_idx < 500)
+		nr_to_create = fd_idx;
+	if (nr_to_create < 100)
+		nr_to_create = 100;
 
 	printf("Creating sockets.\n");
 
-	while (socks < 500) {
+	while (socks < nr_to_create) {
 		fd = socket(rand() % PF_MAX, rand() % TYPE_MAX, rand() % PROTO_MAX);
 		if (fd > -1) {
 			fds[fd_idx++] = fd;
@@ -116,10 +122,20 @@ static void open_sockets()
 	printf("\ncreated %d sockets\n", socks);
 }
 
+static int pipes[2];
 
 void setup_fds(void)
 {
 	fd_idx = 0;
+
+	printf("Creating pipes\n");
+	if (pipe(pipes) < 0) {
+		perror("pipe fail.\n");
+		exit(EXIT_FAILURE);
+	}
+	fds[0] = pipes[0];
+	fds[1] = pipes[1];
+	fd_idx += 2;
 
 	printf("Opening fds\n");
 	open_fds("/dev");
