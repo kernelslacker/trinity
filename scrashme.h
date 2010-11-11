@@ -55,6 +55,8 @@ void generic_sanitise(int call,
 	unsigned long *a1, unsigned long *a2, unsigned long *a3,
 	unsigned long *a4, unsigned long *a5, unsigned long *a6);
 
+unsigned long rand64();
+
 extern unsigned int page_size;
 extern char *useraddr;
 

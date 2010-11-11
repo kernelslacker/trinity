@@ -177,7 +177,7 @@ static long call_syscall(__unused int num_args, unsigned int call,
 
 }
 
-static unsigned long rand64()
+unsigned long rand64()
 {
 	unsigned long r;
 
@@ -899,7 +899,7 @@ int main(int argc, char* argv[])
 	if (!seed)
 		seed_from_tod();
 
-	key = random();
+	key = rand64();
 	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
 		perror("shmget");
 		exit(EXIT_FAILURE);

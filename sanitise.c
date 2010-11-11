@@ -104,7 +104,7 @@ static unsigned long fill_arg(unsigned int argtype, unsigned int low, unsigned i
 	case ARG_PID:
 		return get_pid();
 	case ARG_RANGE:
-		i = random() % high;
+		i = rand64() % high;
 		if (i < low) {
 			i += low;
 			i &= high;
@@ -230,13 +230,13 @@ void sanitise_mprotect(
 retry_end:
 	end = *a1 + *a2;
 	if (*a2 == 0) {
-		*a2 = rand();
+		*a2 = rand64();
 		goto retry_end;
 	}
 
 	/* End must be after start */
 	if (end <= *a1) {
-		*a2 = rand();
+		*a2 = rand64();
 		goto retry_end;
 	}
 
@@ -246,7 +246,7 @@ retry_prot:
 	grows = *a3 & (PROT_GROWSDOWN|PROT_GROWSUP);
 
 	if (grows == (PROT_GROWSDOWN|PROT_GROWSUP)) { /* can't be both */
-		*a3 &= rand();
+		*a3 &= rand64();
 		goto retry_prot;
 	}
 }
@@ -302,7 +302,7 @@ void sanitise_pread64(
 
 retry_pos:
 	if ((int)*a4 < 0) {
-		*a4 = random();
+		*a4 = rand64();
 		goto retry_pos;
 	}
 }
@@ -322,7 +322,7 @@ void sanitise_pwrite64(
 
 retry_pos:
 	if ((int)*a4 < 0) {
-		*a4 = random();
+		*a4 = rand64();
 		goto retry_pos;
 	}
 }
@@ -351,7 +351,7 @@ void sanitise_mremap(
 	unsigned long mask = ~(page_size-1);
 	int i;
 
-	*flags = random() & ~(MREMAP_FIXED | MREMAP_MAYMOVE);
+	*flags = rand64() & ~(MREMAP_FIXED | MREMAP_MAYMOVE);
 
 	*addr &= mask;
 
@@ -362,12 +362,12 @@ void sanitise_mremap(
 retry_addr:
 		*new_addr &= mask;
 		if ((*new_addr <= *addr) && (*new_addr+*new_len) > *addr) {
-			*new_addr -= *addr - random() % 1000;
+			*new_addr -= *addr - (rand() % 1000);
 			goto retry_addr;
 		}
 
 		if ((*addr <= *new_addr) && (*addr+*old_len) > *new_addr) {
-			*new_addr += *addr - random() % 1000;
+			*new_addr += *addr - (rand() % 1000);
 			goto retry_addr;
 		}
 
@@ -424,14 +424,14 @@ void sanitise_sync_file_range(__unused unsigned long *a1, unsigned long *a2, uns
 
 retry_flags:
 	if (*a4 & ~VALID_SFR_FLAGS) {
-		*a4 = random() & VALID_SFR_FLAGS;
+		*a4 = rand64() & VALID_SFR_FLAGS;
 		printf("retrying flags\n");
 		goto retry_flags;
 	}
 
 retry_offset:
 	if ((signed long)*a2 < 0) {
-		*a2 = random();
+		*a2 = rand64();
 		printf("retrying offset\n");
 		goto retry_offset;
 	}
@@ -481,11 +481,8 @@ void sanitise_vmsplice(
 	__unused unsigned long *a5,
 	__unused unsigned long *a6)
 {
-new_a3:	*a3 = random();
-	if (*a3 > 1024)	/* UIO_MAXIOV */
-		goto new_a3;
-
 	*fd = get_pipe_fd();
+	*a3 = rand() % 1024;	/* UIO_MAXIOV */
 }
 
 #include <sys/types.h>
@@ -499,9 +496,9 @@ void sanitise_sendto(unsigned long *fd,
 {
 	int domain, type, protocol;
 retry:
-	domain = random() % 34;
-	type = random() % 10;
-	protocol = random();
+	domain = rand64() % 34;
+	type = rand64() % 10;
+	protocol = rand64();
 
 	*fd = socket(domain, type, protocol);
 	if (*fd == -1UL)

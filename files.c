@@ -36,13 +36,12 @@ void close_fds(void)
 
 int get_random_fd(void)
 {
-	int i = random();
+	int i = rand();
 
 	switch (i % 3) {
 	case 0:	return pipes[0];
 	case 1:	return pipes[1];
-	case 2:
-	case 3:	return file_user;
+	case 2:	return file_user;
 	}
 
 	return 0;
@@ -50,7 +49,7 @@ int get_random_fd(void)
 
 int get_pipe_fd(void)
 {
-	if (random() % 1)
+	if (rand() % 1)
 		return pipes[0];
 	else
 		return pipes[1];
