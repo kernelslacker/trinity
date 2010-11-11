@@ -486,38 +486,25 @@ void sanitise_set_robust_list(
  */
 
 void sanitise_vmsplice(
-	unsigned long *fd,
+	__unused unsigned long *fd,
 	__unused unsigned long *a2,
-	__unused unsigned long *a3,
+	unsigned long *a3,
 	__unused unsigned long *a4,
 	__unused unsigned long *a5,
 	__unused unsigned long *a6)
 {
-	*fd = get_random_fd();
 	*a3 = rand() % 1024;	/* UIO_MAXIOV */
 }
 
 #include <sys/types.h>
 #include <sys/socket.h>
-void sanitise_sendto(unsigned long *fd,
+void sanitise_sendto(__unused unsigned long *fd,
 	__unused unsigned long *buff,
 	__unused unsigned long *len,
 	__unused unsigned long *flags,
-	unsigned long *addr,
+	__unused unsigned long *addr,
 	unsigned long *addr_len)
 {
-	int domain, type, protocol;
-retry:
-	domain = rand64() % 34;
-	type = rand64() % 10;
-	protocol = rand64();
-
-	*fd = socket(domain, type, protocol);
-	if (*fd == -1UL)
-		goto retry;
-
-	*addr = (unsigned long)useraddr;
-
 	*addr_len %= 128;	// MAX_SOCK_ADDR
 }
 
