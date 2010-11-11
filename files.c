@@ -10,7 +10,9 @@
 #include <sys/socket.h>
 
 static int fds[1024];
+static int socket_fds[500];
 static int fd_idx;
+static int socks=0;
 
 static int ignore_files(char *file)
 {
@@ -100,7 +102,6 @@ static void open_fds(char *dir)
 static void open_sockets()
 {
 	int fd;
-	int socks=0;
 	int nr_to_create = 500;
 
 	if (fd_idx < 500)
@@ -113,7 +114,7 @@ static void open_sockets()
 	while (socks < nr_to_create) {
 		fd = socket(rand() % PF_MAX, rand() % TYPE_MAX, rand() % PROTO_MAX);
 		if (fd > -1) {
-			fds[fd_idx++] = fd;
+			socket_fds[socks++] = fd;
 			socks++;
 			printf("(%d sockets created)\r", socks);
 			fflush(stdout);
@@ -153,5 +154,15 @@ void setup_fds(void)
 
 int get_random_fd(void)
 {
-	return fds[rand() % fd_idx];
+	int i;
+
+	i = rand() % 2;
+	if (i == 0)
+		return fds[rand() % fd_idx];
+	if (i == 1)
+		return socket_fds[rand() % socks];
+
+	// should never get here.
+	printf("oops! %s:%d\n", __FILE__, __LINE__);
+	exit(-1);
 }
