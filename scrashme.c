@@ -62,6 +62,7 @@ static int ctrlc_hit = 0;
 struct shm_s {
 	unsigned long successes;
 	unsigned long failures;
+	unsigned long retries;
 };
 struct shm_s *shm;
 
@@ -475,6 +476,7 @@ retry_same:
 		if (res < 0) {
 			//printf ("syscall failed. Retrying\n");
 			retrycount++;
+			shm->retries++;
 			goto retry_same;
 		}
 	}
@@ -937,8 +939,8 @@ int main(int argc, char* argv[])
 	if (structptr!=NULL)
 		free(structptr);
 
-	printf("\nRan %lld syscalls. Successes: %ld  Failures: %ld\n",
-		execcount, shm->successes, shm->failures);
+	printf("\nRan %lld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
+		execcount, shm->retries, shm->successes, shm->failures);
 
 	exit(EXIT_SUCCESS);
 }
