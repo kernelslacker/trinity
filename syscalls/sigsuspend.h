@@ -8,4 +8,5 @@
 	.arg1name = "history0",
 	.arg2name = "history1",
 	.arg3name = "mask",
+	.flags = AVOID_SYSCALL,
 },

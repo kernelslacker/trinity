@@ -158,7 +158,6 @@ static long call_syscall(__unused int num_args, unsigned int call,
 	if (!do_32bit)
 		return syscall(call, a1, a2, a3, a4, a5, a6);
 
-#ifdef __i386__
 	if (num_args < 6) {
 		long __res;
 		__asm__ volatile ("int $0x80"
@@ -170,7 +169,6 @@ static long call_syscall(__unused int num_args, unsigned int call,
 		return __res;
 	}
 	/* TODO: 6 arg 32bit syscall goes here.*/
-#endif
 
 	return 0;
 
@@ -814,8 +812,9 @@ done: ;
 
 int main(int argc, char* argv[])
 {
-	unsigned int i;
-	int ret;
+	//unsigned int i;
+	//int ret;
+
 	int shmid;
 	key_t key;
 
