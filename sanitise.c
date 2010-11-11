@@ -47,7 +47,7 @@ static unsigned long get_interesting_value()
 
 	low = get_interesting_32bit_value();
 
-	i = rand() % 10;
+	i = rand() % 13;
 
 	switch (i) {
 	/* 64 bit */
@@ -61,6 +61,9 @@ static unsigned long get_interesting_value()
 	case 7:	return low | 0x7fffffff00000000;
 	case 8:	return low | 0x8000000000000000;
 	case 9:	return low | 0xffffffff00000000;
+	case 10: return low & 0xffffff | 0xffffffff81000000;	// x86-64 kernel text address
+	case 11: return low & 0x0fffff | 0xffffffffff600000;	// x86-64 vdso
+	case 12: return low & 0xffffff | 0xffffffffa0000000;	// x86-64 module space
 	}
 	/* Should never be reached. */
 	return 0;
