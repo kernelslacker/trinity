@@ -8,4 +8,5 @@
 	.arg1type = ARG_FD,
 	.arg2name = "cmd",
 	.arg3name = "arg",
+	.sanitise = sanitise_ioctl,
 },

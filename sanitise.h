@@ -18,3 +18,4 @@ void sanitise_vmsplice(unsigned long *a1, unsigned long *a2, unsigned long *a3, 
 void sanitise_set_robust_list(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 void sanitise_sendto(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 void sanitise_fanotify_mark(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
+void sanitise_ioctl(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
