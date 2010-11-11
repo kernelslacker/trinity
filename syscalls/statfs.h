@@ -4,7 +4,7 @@
 {
 	.name = "statfs",
 	.num_args = 2,
-	.arg1name = "pathanme",
+	.arg1name = "pathname",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "buf",
 	.arg2type = ARG_ADDRESS,

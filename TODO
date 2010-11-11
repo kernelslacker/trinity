@@ -66,3 +66,6 @@
 
 * fork N threads.
 
+* check x86-64 32bit syscalltable vs real 32bit syscalltable
+
+* flags for reserved syscalls (tux, vserver etc)
