@@ -17,9 +17,9 @@ static unsigned long get_interesting_value()
 	int i;
 
 #ifdef __64bit__
-	i = rand() & 20;
+	i = rand() % 21;
 #else
-	i = rand() & 6;
+	i = rand() % 7;
 #endif
 
 	switch (i) {
@@ -62,7 +62,7 @@ static unsigned long get_address()
 {
 	int i;
 
-	i = rand() % 2;
+	i = rand() % 3;
 	switch (i) {
 	case 0:	return KERNEL_ADDR;
 	case 1:	return (unsigned long) useraddr;
