@@ -32,6 +32,7 @@
 #include "files.h"
 
 struct syscalltable *syscalls;
+struct syscalltable *syscalls32;
 
 static unsigned int rep=0;
 static long res=0;
@@ -54,6 +55,7 @@ static int do_32bit=0;
 static unsigned int nofork=0;
 
 static unsigned int max_nr_syscalls;
+static unsigned int max_nr_syscalls32;
 
 static int ctrlc_hit = 0;
 
@@ -551,6 +553,26 @@ static void parse_args(int argc, char *argv[])
 					break;
 				}
 			}
+
+			if (i>max_nr_syscalls) {
+
+				/* Try looking in the 32bit table. */
+				for (i=0; i<=max_nr_syscalls32; i++) {
+					if (strcmp(optarg, syscalls32[i].name) == 0) {
+						printf("Found in the 32bit syscall table %s at %d\n", syscalls32[i].name, i);
+						specificsyscall = i;
+						printf("Forcing into 32bit mode.\n");
+						do_32bit = 1;
+						break;
+					}
+				}
+
+				if (i>max_nr_syscalls32) {
+					printf("syscall not found :(\n");
+					exit(EXIT_FAILURE);
+				}
+				break;
+			}
 			break;
 		case 'F':
 			nofork = 1;
@@ -818,23 +840,11 @@ int main(int argc, char* argv[])
 	int shmid;
 	key_t key;
 
-	progname = argv[0];
-	parse_args(argc, argv);
-	if (argc==1)
-		usage();
-
-	max_nr_syscalls = NR_SYSCALLS;
-
 #ifdef __x86_64__
-	if (do_32bit) {
-		syscalls = syscalls_i386;
-		max_nr_syscalls = NR_I386_SYSCALLS;
-		printf("32bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
-	} else {
-		syscalls = syscalls_x86_64;
-		max_nr_syscalls = NR_X86_64_SYSCALLS;
-		printf("64bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
-	}
+	syscalls32 = syscalls_i386;
+	syscalls = syscalls_x86_64;
+	max_nr_syscalls = NR_X86_64_SYSCALLS;
+	max_nr_syscalls32 = NR_I386_SYSCALLS;
 #elif __powerpc__
 	syscalls = syscalls_ppc;
 #elif __ia64__
@@ -844,6 +854,25 @@ int main(int argc, char* argv[])
 #else
 	syscalls = syscalls_i386;
 #endif
+
+	progname = argv[0];
+	parse_args(argc, argv);
+	if (argc==1)
+		usage();
+
+	max_nr_syscalls = NR_SYSCALLS;
+
+
+#ifdef __x86_64__
+	if (do_32bit) {
+		syscalls = syscalls_i386;
+		max_nr_syscalls = NR_I386_SYSCALLS;
+		printf("32bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
+	} else {
+		printf("64bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
+	}
+#endif
+
 
 	page_size = getpagesize();
 
