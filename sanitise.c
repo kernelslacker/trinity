@@ -92,7 +92,7 @@ static unsigned int get_pid()
 
 	switch (i) {
 	case 0:	return getpid();
-	case 1:	return rand();
+	case 1:	return rand() & 32768;
 	case 2: break;
 	}
 	return 0;
