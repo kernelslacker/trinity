@@ -413,10 +413,10 @@ void sanitise_splice(
 		__unused unsigned long *a6)
 {
 	/* first param is fdin */
-	*a1 = get_pipe_fd();
+	*a1 = get_random_fd();
 
 	/* third param is fdout */
-	*a3 = get_pipe_fd();
+	*a3 = get_random_fd();
 }
 
 
@@ -493,7 +493,7 @@ void sanitise_vmsplice(
 	__unused unsigned long *a5,
 	__unused unsigned long *a6)
 {
-	*fd = get_pipe_fd();
+	*fd = get_random_fd();
 	*a3 = rand() % 1024;	/* UIO_MAXIOV */
 }
 
