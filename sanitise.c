@@ -176,7 +176,6 @@ void sanitise_read(
 
 	if (filebuffer == NULL) {
 retry:
-		printf("Trying to allocate %lu bytes\n", newsize);
 		filebuffer = malloc(newsize);
 		if (filebuffer == NULL) {
 			newsize >>= 1;

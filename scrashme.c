@@ -233,14 +233,9 @@ static long mkcall(unsigned int call)
 	olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
 
 	if (intelligence == 1) {
-		printf("\n\tSanitising options.\n\t Before: "
-		"(0x%016lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n", a1, a2, a3, a4, a5, a6);
-
-
 		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
 		if (syscalls[call].sanitise)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
-		printf("\t After:\t");
 	}
 
 	printf(WHITE "(");
@@ -250,7 +245,7 @@ static long mkcall(unsigned int call)
 		if (olda1==a1)
 			printf(WHITE "0x%lx", a1);
 		else
-			printf(CYAN "0x%lx", a1);
+			printf(CYAN "0x%lx" WHITE, a1);
 	}
 	if (syscalls[call].num_args >= 2) {
 		printf(", ");
@@ -259,7 +254,7 @@ static long mkcall(unsigned int call)
 		if (olda2==a2)
 			printf(WHITE "0x%lx", a2);
 		else
-			printf(CYAN "0x%lx", a2);
+			printf(CYAN "0x%lx" WHITE, a2);
 	}
 	if (syscalls[call].num_args >= 3) {
 		printf(", ");
@@ -268,7 +263,7 @@ static long mkcall(unsigned int call)
 		if (olda3==a3)
 			printf(WHITE "0x%lx", a3);
 		else
-			printf(CYAN "0x%lx", a3);
+			printf(CYAN "0x%lx" WHITE, a3);
 	}
 	if (syscalls[call].num_args >= 4) {
 		printf(", ");
@@ -277,7 +272,7 @@ static long mkcall(unsigned int call)
 		if (olda4==a4)
 			printf(WHITE "0x%lx", a4);
 		else
-			printf(CYAN "0x%lx", a4);
+			printf(CYAN "0x%lx" WHITE, a4);
 	}
 	if (syscalls[call].num_args >= 5) {
 		printf(", ");
@@ -286,7 +281,7 @@ static long mkcall(unsigned int call)
 		if (olda5==a5)
 			printf(WHITE "0x%lx", a5);
 		else
-			printf(CYAN "0x%lx", a5);
+			printf(CYAN "0x%lx" WHITE, a5);
 	}
 	if (syscalls[call].num_args == 6) {
 		printf(", ");
@@ -295,7 +290,7 @@ static long mkcall(unsigned int call)
 		if (olda6==a6)
 			printf(WHITE "0x%lx", a6);
 		else
-			printf(CYAN "0x%lx", a6);
+			printf(CYAN "0x%lx" WHITE, a6);
 	}
 	printf(WHITE ") ");
 
@@ -333,9 +328,9 @@ static long mkcall(unsigned int call)
 			printf(WHITE "0x%lx" WHITE, a6);
 
 		printf(")");
-	} else {
-		if (syscalls[call].num_args == 6)
-			printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
+//	} else {
+//		if (syscalls[call].num_args == 6)
+//			printf("(0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ", a1, a2, a3, a4, a5, a6);
 	}
 
 	writelog("%s (0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ",
