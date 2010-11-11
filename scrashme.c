@@ -556,6 +556,9 @@ static void parse_args(int argc, char *argv[])
 
 			if (i>max_nr_syscalls) {
 
+				if (!max_nr_syscalls32)
+					goto no_sys32;
+
 				/* Try looking in the 32bit table. */
 				for (i=0; i<=max_nr_syscalls32; i++) {
 					if (strcmp(optarg, syscalls32[i].name) == 0) {
@@ -568,6 +571,7 @@ static void parse_args(int argc, char *argv[])
 				}
 
 				if (i>max_nr_syscalls32) {
+no_sys32:
 					printf("syscall not found :(\n");
 					exit(EXIT_FAILURE);
 				}
@@ -845,6 +849,9 @@ int main(int argc, char* argv[])
 	syscalls = syscalls_x86_64;
 	max_nr_syscalls = NR_X86_64_SYSCALLS;
 	max_nr_syscalls32 = NR_I386_SYSCALLS;
+#elif __i386__
+	syscalls = syscalls_i386;
+	max_nr_syscalls = NR_I386_SYSCALLS;
 #elif __powerpc__
 	syscalls = syscalls_ppc;
 #elif __ia64__

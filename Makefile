@@ -1,5 +1,5 @@
 CFLAGS = -Wall -W -Wshadow -g -O2
-#CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
+CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
 
 all: scrashme
 
