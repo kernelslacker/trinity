@@ -396,28 +396,6 @@ retry_tasksize_end:
 	// We already check for overlap in do_mremap()
 }
 
-/*
- * asmlinkage long sys_splice(int fd_in, loff_t __user *off_in, int fd_out, loff_t __user *off_out, size_t len, unsigned int flags)
- *
- * : len must be > 0
- * : fdin & fdout must be file handles
- *
- */
-void sanitise_splice(
-		unsigned long *a1,
-		__unused unsigned long *a2,
-		unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
-{
-	/* first param is fdin */
-	*a1 = get_random_fd();
-
-	/* third param is fdout */
-	*a3 = get_random_fd();
-}
-
 
 /*
  * asmlinkage long sys_sync_file_range(int fd, loff_t offset, loff_t nbytes, unsigned int flags)

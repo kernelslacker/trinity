@@ -6,7 +6,6 @@
 {
 	.name = "splice",
 	.num_args = 6,
-	.sanitise = sanitise_splice,
 	.arg1name = "fd_in",
 	.arg1type = ARG_FD,
 	.arg2name = "off_in",
