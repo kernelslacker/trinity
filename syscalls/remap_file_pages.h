@@ -4,6 +4,7 @@
  */
 {
 	.name = "remap_file_pages",
+	.sanitise = sanitise_remap_file_pages,
 	.num_args = 5,
 	.arg1name = "start",
 	.arg1type = ARG_ADDRESS,
