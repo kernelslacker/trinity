@@ -587,7 +587,6 @@ no_sys32:
 		case 'i':
 			intelligence = 1;
 			setup_fds();
-exit(1);
 			break;
 
 		case 'L':
