@@ -137,17 +137,17 @@ void generic_sanitise(int call,
 	unsigned long *a6)
 {
 	if (syscalls[call].arg1type != 0)
-		*a1 = fill_arg(syscalls[call].arg1type, syscalls[call].lowrange, syscalls[call].hirange);
+		*a1 = fill_arg(syscalls[call].arg1type, syscalls[call].low1range, syscalls[call].hi1range);
 	if (syscalls[call].arg2type != 0)
-		*a2 = fill_arg(syscalls[call].arg2type, syscalls[call].lowrange, syscalls[call].hirange);
+		*a2 = fill_arg(syscalls[call].arg2type, syscalls[call].low2range, syscalls[call].hi2range);
 	if (syscalls[call].arg3type != 0)
-		*a3 = fill_arg(syscalls[call].arg3type, syscalls[call].lowrange, syscalls[call].hirange);
+		*a3 = fill_arg(syscalls[call].arg3type, syscalls[call].low3range, syscalls[call].hi3range);
 	if (syscalls[call].arg4type != 0)
-		*a4 = fill_arg(syscalls[call].arg4type, syscalls[call].lowrange, syscalls[call].hirange);
+		*a4 = fill_arg(syscalls[call].arg4type, syscalls[call].low4range, syscalls[call].hi4range);
 	if (syscalls[call].arg5type != 0)
-		*a5 = fill_arg(syscalls[call].arg5type, syscalls[call].lowrange, syscalls[call].hirange);
+		*a5 = fill_arg(syscalls[call].arg5type, syscalls[call].low5range, syscalls[call].hi5range);
 	if (syscalls[call].arg6type != 0)
-		*a6 = fill_arg(syscalls[call].arg6type, syscalls[call].lowrange, syscalls[call].hirange);
+		*a6 = fill_arg(syscalls[call].arg6type, syscalls[call].low6range, syscalls[call].hi6range);
 
 }
 

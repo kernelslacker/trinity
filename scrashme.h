@@ -35,8 +35,12 @@ struct syscalltable {
 	char *arg5name;
 	char *arg6name;
 
-	unsigned int lowrange;
-	unsigned int hirange;
+	unsigned int low1range, hi1range;
+	unsigned int low2range, hi2range;
+	unsigned int low3range, hi3range;
+	unsigned int low4range, hi4range;
+	unsigned int low5range, hi5range;
+	unsigned int low6range, hi6range;
 };
 
 extern struct syscalltable *syscalls;
