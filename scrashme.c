@@ -103,21 +103,8 @@ char *structmodename[] = {
 static char passed_type = TYPE_UNDEFINED;
 
 
-static const char *logfilename = "scrashme.log";
+const char *logfilename = "scrashme.log";
 FILE *logfile;
-
-#define writelog(...) do {      \
-        logfile = fopen(logfilename, "a"); \
-        if (!logfile) { \
-                perror("couldn't open logfile\n"); \
-                exit(EXIT_FAILURE); \
-        } \
-        fprintf(logfile, ## __VA_ARGS__); \
-	fflush(logfile); \
-        fclose(logfile); \
-} while (0)
-
-
 
 static char *userbuffer;
 char *useraddr;
@@ -600,6 +587,7 @@ no_sys32:
 		case 'i':
 			intelligence = 1;
 			setup_fds();
+exit(1);
 			break;
 
 		case 'L':
@@ -868,6 +856,8 @@ int main(int argc, char* argv[])
 	syscalls = syscalls_i386;
 #endif
 
+	unlink(logfilename);
+
 	progname = argv[0];
 	parse_args(argc, argv);
 	if (argc==1)
@@ -888,8 +878,6 @@ int main(int argc, char* argv[])
 
 
 	page_size = getpagesize();
-
-	unlink(logfilename);
 
 	if (!seed)
 		seed_from_tod();

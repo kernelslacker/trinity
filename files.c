@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 
+#include "scrashme.h"
+
 static int fds[1024];
 static int socket_fds[500];
 static int fd_idx;
@@ -92,6 +94,7 @@ static void open_fds(char *dir)
 			fd = open(b, openflag);
 			if (fd < 0)
 				continue;
+			writelog("fd[%i] = %s\n", fd_idx, b);
 			fds[fd_idx++] = fd;
 		}
 	}
@@ -119,7 +122,9 @@ static void open_sockets()
 		protocol = rand() % PROTO_MAX;
 		fd = socket(domain, type, protocol);
 		if (fd > -1) {
-			socket_fds[socks++] = fd;
+			socket_fds[socks] = fd;
+			writelog("socket_fd[%i] = domain:%i type:%i protocol:%i\n",
+				socks, domain, type, protocol);
 			socks++;
 			printf("(%d sockets created)\r", socks);
 			fflush(stdout);
@@ -142,6 +147,8 @@ void setup_fds(void)
 	fds[0] = pipes[0];
 	fds[1] = pipes[1];
 	fd_idx += 2;
+	writelog("fd[0] = pipe\n");
+	writelog("fd[1] = pipe\n");
 
 	printf("Opening fds\n");
 	open_fds("/dev");
