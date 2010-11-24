@@ -157,7 +157,7 @@ do { \
 	return (type) (res); \
 } while (0)
 
-static long call_syscall(__unused int num_args, unsigned int call,
+static long call_syscall(__unused__ int num_args, unsigned int call,
 	unsigned long a1, unsigned long a2, unsigned long a3,
 	unsigned long a4, unsigned long a5, unsigned long a6)
 {

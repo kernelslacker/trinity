@@ -157,12 +157,12 @@ void generic_sanitise(int call,
  * asmlinkage ssize_t sys_read(unsigned int fd, char __user * buf, size_t count)
  */
 void sanitise_read(
-		__unused unsigned long *a1,
+		__unused__ unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a4,
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 	unsigned long newsize = (unsigned int) *a3 >> 16;
 
@@ -192,12 +192,12 @@ retry:
  * asmlinkage ssize_t sys_write(unsigned int fd, char __user * buf, size_t count)
  */
 void sanitise_write(
-		__unused unsigned long *a1,
+		__unused__ unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a4,
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 	unsigned long newsize = *a3 & 0xffff;
 	void *newbuffer;
@@ -228,9 +228,9 @@ void sanitise_mprotect(
 		unsigned long *a1,
 		unsigned long *a2,
 		unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a4,
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 	unsigned long end;
 	unsigned long mask = ~(page_size-1);
@@ -272,12 +272,12 @@ retry_prot:
 #include <signal.h>
 
 void sanitise_rt_sigaction(
-		__unused unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
+		__unused__ unsigned long *a1,
+		__unused__ unsigned long *a2,
+		__unused__ unsigned long *a3,
 		unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 	*a4 = sizeof(sigset_t);
 }
@@ -287,12 +287,12 @@ void sanitise_rt_sigaction(
  sys_rt_sigprocmask(int how, sigset_t __user *set, sigset_t __user *oset, size_t sigsetsize)
  */
 void sanitise_rt_sigprocmask(
-		__unused unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
+		__unused__ unsigned long *a1,
+		__unused__ unsigned long *a2,
+		__unused__ unsigned long *a3,
 		unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 	*a4 = sizeof(sigset_t);
 }
@@ -303,12 +303,12 @@ void sanitise_rt_sigprocmask(
 				                 size_t count, loff_t pos)
  */
 void sanitise_pread64(
-		__unused unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
+		__unused__ unsigned long *a1,
+		__unused__ unsigned long *a2,
+		__unused__ unsigned long *a3,
 		unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 
 retry_pos:
@@ -323,12 +323,12 @@ retry_pos:
 				                 size_t count, loff_t pos)
  */
 void sanitise_pwrite64(
-		__unused unsigned long *a1,
-		__unused unsigned long *a2,
-		__unused unsigned long *a3,
+		__unused__ unsigned long *a1,
+		__unused__ unsigned long *a2,
+		__unused__ unsigned long *a3,
 		unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 
 retry_pos:
@@ -353,11 +353,11 @@ retry_pos:
 
 void sanitise_mremap(
 		unsigned long *addr,
-		__unused unsigned long *old_len,
+		__unused__ unsigned long *old_len,
 		unsigned long *new_len,
 		unsigned long *flags,
 		unsigned long *new_addr,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a6)
 {
 	unsigned long mask = ~(page_size-1);
 	int i;
@@ -408,7 +408,7 @@ retry_tasksize_end:
 
 #define VALID_SFR_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE|SYNC_FILE_RANGE_WAIT_AFTER)
 
-void sanitise_sync_file_range(__unused unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, __unused unsigned long *a5, __unused unsigned long *a6)
+void sanitise_sync_file_range(__unused__ unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, __unused__ unsigned long *a5, __unused__ unsigned long *a6)
 {
 
 retry_flags:
@@ -446,12 +446,12 @@ struct robust_list_head {
 };
 
 void sanitise_set_robust_list(
-	__unused unsigned long *a1,
+	__unused__ unsigned long *a1,
 	unsigned long *len,
-	__unused unsigned long *a3,
-	__unused unsigned long *a4,
-	__unused unsigned long *a5,
-	__unused unsigned long *a6)
+	__unused__ unsigned long *a3,
+	__unused__ unsigned long *a4,
+	__unused__ unsigned long *a5,
+	__unused__ unsigned long *a6)
 {
 	*len = sizeof(struct robust_list_head);
 }
@@ -463,35 +463,35 @@ void sanitise_set_robust_list(
  */
 
 void sanitise_vmsplice(
-	__unused unsigned long *fd,
-	__unused unsigned long *a2,
+	__unused__ unsigned long *fd,
+	__unused__ unsigned long *a2,
 	unsigned long *a3,
-	__unused unsigned long *a4,
-	__unused unsigned long *a5,
-	__unused unsigned long *a6)
+	__unused__ unsigned long *a4,
+	__unused__ unsigned long *a5,
+	__unused__ unsigned long *a6)
 {
 	*a3 = rand() % 1024;	/* UIO_MAXIOV */
 }
 
 #include <sys/types.h>
 #include <sys/socket.h>
-void sanitise_sendto(__unused unsigned long *fd,
-	__unused unsigned long *buff,
-	__unused unsigned long *len,
-	__unused unsigned long *flags,
-	__unused unsigned long *addr,
+void sanitise_sendto(__unused__ unsigned long *fd,
+	__unused__ unsigned long *buff,
+	__unused__ unsigned long *len,
+	__unused__ unsigned long *flags,
+	__unused__ unsigned long *addr,
 	unsigned long *addr_len)
 {
 	*addr_len %= 128;	// MAX_SOCK_ADDR
 }
 
 void sanitise_fanotify_mark(
-		__unused unsigned long *a1,
-		__unused unsigned long *a2,
+		__unused__ unsigned long *a1,
+		__unused__ unsigned long *a2,
 		unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a4,
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 	*a3 &= 0xffffffff;
 }
@@ -499,10 +499,10 @@ void sanitise_fanotify_mark(
 void sanitise_remap_file_pages(
 		unsigned long *start,
 		unsigned long *size,
-		__unused unsigned long *a3,
-		__unused unsigned long *a4,
+		__unused__ unsigned long *a3,
+		__unused__ unsigned long *a4,
 		unsigned long *pgoff,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a6)
 {
 
 	*start = *start & PAGE_MASK;
@@ -532,12 +532,12 @@ retry_pgoff_bits:
 
 
 void sanitise_ioctl(
-		__unused unsigned long *a1,
-		__unused unsigned long *a2,
+		__unused__ unsigned long *a1,
+		__unused__ unsigned long *a2,
 		unsigned long *a3,
-		__unused unsigned long *a4,
-		__unused unsigned long *a5,
-		__unused unsigned long *a6)
+		__unused__ unsigned long *a4,
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
 {
 	int i;
 

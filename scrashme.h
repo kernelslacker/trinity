@@ -3,9 +3,9 @@
 
 
 #ifndef S_SPLINT_S
-#define __unused __attribute((unused))
+#define __unused__ __attribute((unused))
 #else
-#define __unused /*@unused@*/
+#define __unused__ /*@unused@*/
 #endif
 
 
