@@ -99,10 +99,11 @@ static unsigned int get_pid()
 }
 
 
-static unsigned long fill_arg(unsigned int argtype, unsigned int low, unsigned int high)
+static unsigned long fill_arg(unsigned int argtype, int call, int argnum)
 {
 	int fd;
 	unsigned long i;
+	unsigned low=0, high=0;
 
 	switch (argtype) {
 	case ARG_FD:
@@ -116,6 +117,26 @@ static unsigned long fill_arg(unsigned int argtype, unsigned int low, unsigned i
 	case ARG_PID:
 		return get_pid();
 	case ARG_RANGE:
+		switch (argnum) {
+		case 1:	low = syscalls[call].low1range;
+			high = syscalls[call].hi1range;
+			break;
+		case 2:	low = syscalls[call].low2range;
+			high = syscalls[call].hi2range;
+			break;
+		case 3:	low = syscalls[call].low3range;
+			high = syscalls[call].hi3range;
+			break;
+		case 4:	low = syscalls[call].low4range;
+			high = syscalls[call].hi4range;
+			break;
+		case 5:	low = syscalls[call].low5range;
+			high = syscalls[call].hi5range;
+			break;
+		case 6:	low = syscalls[call].low6range;
+			high = syscalls[call].hi6range;
+			break;
+		}
 		i = rand64() % high;
 		if (i < low) {
 			i += low;
@@ -137,17 +158,17 @@ void generic_sanitise(int call,
 	unsigned long *a6)
 {
 	if (syscalls[call].arg1type != 0)
-		*a1 = fill_arg(syscalls[call].arg1type, syscalls[call].low1range, syscalls[call].hi1range);
+		*a1 = fill_arg(syscalls[call].arg1type, call, 1);
 	if (syscalls[call].arg2type != 0)
-		*a2 = fill_arg(syscalls[call].arg2type, syscalls[call].low2range, syscalls[call].hi2range);
+		*a2 = fill_arg(syscalls[call].arg2type, call, 2);
 	if (syscalls[call].arg3type != 0)
-		*a3 = fill_arg(syscalls[call].arg3type, syscalls[call].low3range, syscalls[call].hi3range);
+		*a3 = fill_arg(syscalls[call].arg3type, call, 3);
 	if (syscalls[call].arg4type != 0)
-		*a4 = fill_arg(syscalls[call].arg4type, syscalls[call].low4range, syscalls[call].hi4range);
+		*a4 = fill_arg(syscalls[call].arg4type, call, 4);
 	if (syscalls[call].arg5type != 0)
-		*a5 = fill_arg(syscalls[call].arg5type, syscalls[call].low5range, syscalls[call].hi5range);
+		*a5 = fill_arg(syscalls[call].arg5type, call, 5);
 	if (syscalls[call].arg6type != 0)
-		*a6 = fill_arg(syscalls[call].arg6type, syscalls[call].low6range, syscalls[call].hi6range);
+		*a6 = fill_arg(syscalls[call].arg6type, call, 6);
 
 }
 
