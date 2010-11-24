@@ -497,7 +497,7 @@ void sanitise_fanotify_mark(
 }
 
 void sanitise_remap_file_pages(
-		long *start,
+		unsigned long *start,
 		unsigned long *size,
 		__unused unsigned long *a3,
 		__unused unsigned long *a4,
