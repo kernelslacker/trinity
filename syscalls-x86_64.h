@@ -6,6 +6,8 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
+#include <fcntl.h>
+
 #define NR_X86_64_SYSCALLS 302
 
 struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS] = {

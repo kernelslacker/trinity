@@ -8,6 +8,10 @@
 #define __unused__ /*@unused@*/
 #endif
 
+struct arglist {
+	int num;
+	int values[1024];
+};
 
 struct syscalltable {
 	char name[80];
@@ -41,6 +45,13 @@ struct syscalltable {
 	unsigned int low4range, hi4range;
 	unsigned int low5range, hi5range;
 	unsigned int low6range, hi6range;
+
+	struct arglist arg1list;
+	struct arglist arg2list;
+	struct arglist arg3list;
+	struct arglist arg4list;
+	struct arglist arg5list;
+	struct arglist arg6list;
 };
 
 extern struct syscalltable *syscalls;
@@ -50,6 +61,7 @@ extern struct syscalltable *syscalls;
 #define ARG_ADDRESS 3
 #define ARG_PID 4
 #define ARG_RANGE 5
+#define ARG_LIST 6
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)

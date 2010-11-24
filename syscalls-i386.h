@@ -3,6 +3,8 @@
 #include "scrashme.h"
 #include "sanitise.h"
 
+#include <fcntl.h>
+
 #define NR_I386_SYSCALLS 341
 
 struct syscalltable syscalls_i386[NR_I386_SYSCALLS] = {
