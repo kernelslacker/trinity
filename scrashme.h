@@ -9,8 +9,8 @@
 #endif
 
 struct arglist {
-	int num;
-	int values[1024];
+	unsigned int num;
+	unsigned int values[1024];
 };
 
 struct syscalltable {

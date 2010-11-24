@@ -103,7 +103,9 @@ static unsigned long fill_arg(unsigned int argtype, int call, int argnum)
 {
 	int fd;
 	unsigned long i;
-	unsigned low=0, high=0;
+	unsigned long low=0, high=0;
+	unsigned int num=0;
+	unsigned int *values=NULL;
 
 	switch (argtype) {
 	case ARG_FD:
@@ -143,6 +145,29 @@ static unsigned long fill_arg(unsigned int argtype, int call, int argnum)
 			i &= high;
 		}
 		return i;
+	case ARG_LIST:
+		switch (argnum) {
+		case 1:	num = syscalls[call].arg1list.num;
+			values = syscalls[call].arg1list.values;
+			break;
+		case 2:	num = syscalls[call].arg2list.num;
+			values = syscalls[call].arg2list.values;
+			break;
+		case 3:	num = syscalls[call].arg3list.num;
+			values = syscalls[call].arg3list.values;
+			break;
+		case 4:	num = syscalls[call].arg4list.num;
+			values = syscalls[call].arg4list.values;
+			break;
+		case 5:	num = syscalls[call].arg5list.num;
+			values = syscalls[call].arg5list.values;
+			break;
+		case 6:	num = syscalls[call].arg6list.num;
+			values = syscalls[call].arg6list.values;
+			break;
+		}
+		i = rand() % num;
+		return values[i];
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
