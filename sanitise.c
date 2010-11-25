@@ -99,13 +99,29 @@ static unsigned int get_pid()
 }
 
 
-static unsigned long fill_arg(unsigned int argtype, int call, int argnum)
+static unsigned long fill_arg(int call, int argnum)
 {
 	int fd;
 	unsigned long i;
 	unsigned long low=0, high=0;
 	unsigned int num=0;
 	unsigned int *values=NULL;
+	unsigned int argtype=0;
+
+	switch (argnum) {
+	case 1:	argtype = syscalls[call].arg1type;
+		break;
+	case 2:	argtype = syscalls[call].arg2type;
+		break;
+	case 3:	argtype = syscalls[call].arg3type;
+		break;
+	case 4:	argtype = syscalls[call].arg4type;
+		break;
+	case 5:	argtype = syscalls[call].arg5type;
+		break;
+	case 6:	argtype = syscalls[call].arg6type;
+		break;
+	}
 
 	switch (argtype) {
 	case ARG_FD:
@@ -183,18 +199,17 @@ void generic_sanitise(int call,
 	unsigned long *a6)
 {
 	if (syscalls[call].arg1type != 0)
-		*a1 = fill_arg(syscalls[call].arg1type, call, 1);
+		*a1 = fill_arg(call, 1);
 	if (syscalls[call].arg2type != 0)
-		*a2 = fill_arg(syscalls[call].arg2type, call, 2);
+		*a2 = fill_arg(call, 2);
 	if (syscalls[call].arg3type != 0)
-		*a3 = fill_arg(syscalls[call].arg3type, call, 3);
+		*a3 = fill_arg(call, 3);
 	if (syscalls[call].arg4type != 0)
-		*a4 = fill_arg(syscalls[call].arg4type, call, 4);
+		*a4 = fill_arg(call, 4);
 	if (syscalls[call].arg5type != 0)
-		*a5 = fill_arg(syscalls[call].arg5type, call, 5);
+		*a5 = fill_arg(call, 5);
 	if (syscalls[call].arg6type != 0)
-		*a6 = fill_arg(syscalls[call].arg6type, call, 6);
-
+		*a6 = fill_arg(call, 6);
 }
 
 
