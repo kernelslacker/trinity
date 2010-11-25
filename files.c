@@ -123,8 +123,8 @@ static void open_sockets()
 		fd = socket(domain, type, protocol);
 		if (fd > -1) {
 			socket_fds[socks] = fd;
-			writelog("socket_fd[%i] = domain:%i type:%i protocol:%i\n",
-				socks, domain, type, protocol);
+			writelog("fd[%i] = domain:%i type:%i protocol:%i\n",
+				socks+fd_idx, domain, type, protocol);
 			socks++;
 			printf("(%d sockets created)\r", socks);
 			fflush(stdout);
