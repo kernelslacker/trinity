@@ -1,0 +1,11 @@
+Bugs found so far using this tool. (git hashes from linux-2.6.git)
+
+* ed3aada1bf34c5a9e98af167f125f8a740fc726a
+  world writable acpi file in sysfs
+
+* 52ca0e84b05595cf74f1ff772b3f9807256b1b27
+  Unnecessary noisy backtrace spew
+
+* 63bfd7384b119409685a17d5c58f0b56e5dc03da
+  mprotect/perf oops.
+
