@@ -1,0 +1,4 @@
+core.*
+*.o
+scrashme
+scrashme.log
