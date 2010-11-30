@@ -9,3 +9,6 @@ Bugs found so far using this tool. (git hashes from linux-2.6.git)
 * 63bfd7384b119409685a17d5c58f0b56e5dc03da
   mprotect/perf oops.
 
+* c66fb347946ebdd5b10908866ecc9fa05ee2cf3d
+  pipe_fcntl oopses when called on non-pipes.
+
