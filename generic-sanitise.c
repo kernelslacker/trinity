@@ -131,7 +131,10 @@ static unsigned long fill_arg(int call, int argnum)
 		//printf (YELLOW "DBG: %x" WHITE "\n", fd);
 		return fd;
 	case ARG_LEN:
-		return get_interesting_value();
+		if ((rand() % 2) == 0)
+			return rand() % page_size;
+		else
+			return get_interesting_value();
 	case ARG_ADDRESS:
 		return get_address();
 	case ARG_PID:
