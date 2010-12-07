@@ -185,7 +185,7 @@ static long mkcall(unsigned int call)
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	int ret = 0;
-	int i, j;
+	unsigned int i, j;
 	int poisoned = 0;
 
 	switch (opmode) {
@@ -349,18 +349,18 @@ static long mkcall(unsigned int call)
 	(void)fflush(stdout);
 
 	if (check_poison==1) {
-		for (i = 0; i < 4096; i++) {
+		for (i = 0; i < page_size; i++) {
 			if (userbuffer[i]!=poison)
 				poisoned = 1;
 		}
-		for (i = 4096*2; i < 4096*3; i++) {
+		for (i = page_size*2; i < page_size*3; i++) {
 			if (userbuffer[i]!=poison)
 				poisoned = 2;
 		}
 
 		if (poisoned==1) {
 			printf ("Yikes! pre-buffer poison was overwritten!\n");
-			for (i = 0; i < 4096; i+=32) {
+			for (i = 0; i < page_size; i+=32) {
 				printf("%d: ", i);
 				for (j=0; j < 32; j++)
 					printf("%x ", (unsigned int) userbuffer[i+j]);
@@ -371,7 +371,7 @@ static long mkcall(unsigned int call)
 		}
 		if (poisoned==2) {
 			printf ("Yikes! post-buffer poison was overwritten!\n");
-			for (i = 4096*2; i < 4096*3; i+=32) {
+			for (i = page_size*2; i < page_size*3; i+=32) {
 				printf("%i: ", i);
 				for (j=0; j < 32; j++)
 					printf("%x ", (unsigned int) userbuffer[i+j]);
