@@ -7,39 +7,28 @@
  */
 
 void sanitise_mprotect(
-		unsigned long *a1,
-		unsigned long *a2,
-		unsigned long *a3,
+		unsigned long *start,
+		unsigned long *len,
+		__unused__ unsigned long *prot,
 		__unused__ unsigned long *a4,
 		__unused__ unsigned long *a5,
 		__unused__ unsigned long *a6)
 {
 	unsigned long end;
 	unsigned long mask = ~(page_size-1);
-	int grows;
 
-	*a1 &= mask;
+	*start &= mask;
 
 retry_end:
-	end = *a1 + *a2;
-	if (*a2 == 0) {
-		*a2 = rand64();
+	end = *start + *len;
+	if (*len == 0) {
+		*len = rand64();
 		goto retry_end;
 	}
 
 	/* End must be after start */
-	if (end <= *a1) {
-		*a2 = rand64();
+	if (end <= *start) {
+		*len = rand64();
 		goto retry_end;
-	}
-
-retry_prot:
-	*a3 &= ((PROT_GROWSDOWN|PROT_GROWSUP) | ~(PROT_READ | PROT_WRITE | PROT_EXEC | PROT_SEM));
-
-	grows = *a3 & (PROT_GROWSDOWN|PROT_GROWSUP);
-
-	if (grows == (PROT_GROWSDOWN|PROT_GROWSUP)) { /* can't be both */
-		*a3 &= rand64();
-		goto retry_prot;
 	}
 }
