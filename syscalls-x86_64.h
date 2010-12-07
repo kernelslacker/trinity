@@ -7,6 +7,7 @@
 #include "sanitise.h"
 
 #include <fcntl.h>
+#include <asm/mman.h>
 
 #define NR_X86_64_SYSCALLS 302
 
