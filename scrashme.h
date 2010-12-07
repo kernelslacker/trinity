@@ -1,6 +1,7 @@
 #ifndef _SCRASHME_H
 #define _SCRASHME_H 1
 
+#include <stdio.h>
 
 #ifndef S_SPLINT_S
 #define __unused__ __attribute((unused))
@@ -55,23 +56,6 @@ struct syscalltable {
 };
 
 extern struct syscalltable *syscalls;
-
-#define ARG_FD	1
-#define ARG_LEN	2
-#define ARG_ADDRESS 3
-#define ARG_PID 4
-#define ARG_RANGE 5
-#define ARG_LIST 6
-
-#define CAPABILITY_CHECK (1<<0)
-#define AVOID_SYSCALL (1<<1)
-#define NI_SYSCALL (1<<2)
-
-void generic_sanitise(int call,
-	unsigned long *a1, unsigned long *a2, unsigned long *a3,
-	unsigned long *a4, unsigned long *a5, unsigned long *a6);
-
-unsigned long rand64();
 
 extern unsigned int page_size;
 

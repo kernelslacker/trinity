@@ -1,3 +1,6 @@
+#ifndef _SANITISE_H
+#define _SANITISE_H 1
+
 void sanitise_read(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 void sanitise_write(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 void sanitise_close(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
@@ -19,3 +22,27 @@ void sanitise_sendto(unsigned long *a1, unsigned long *a2, unsigned long *a3, un
 void sanitise_fanotify_mark(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 void sanitise_remap_file_pages(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 void sanitise_ioctl(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
+
+#define ARG_FD	1
+#define ARG_LEN	2
+#define ARG_ADDRESS 3
+#define ARG_PID 4
+#define ARG_RANGE 5
+#define ARG_LIST 6
+
+#define CAPABILITY_CHECK (1<<0)
+#define AVOID_SYSCALL (1<<1)
+#define NI_SYSCALL (1<<2)
+
+void generic_sanitise(int call,
+	unsigned long *a1, unsigned long *a2, unsigned long *a3,
+	unsigned long *a4, unsigned long *a5, unsigned long *a6);
+
+extern char * filebuffer;
+extern unsigned long filebuffersize;
+
+unsigned long get_interesting_value();
+unsigned long get_interesting_32bit_value();
+unsigned long rand64();
+
+#endif	/* _SCRASHME_H */
