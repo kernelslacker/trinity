@@ -74,11 +74,12 @@ static unsigned long get_address()
 {
 	int i;
 
-	i = rand() % 3;
+	i = rand() % 4;
 	switch (i) {
 	case 0:	return KERNEL_ADDR;
-	case 1:	return (unsigned long) useraddr;
-	case 2:	return get_interesting_value();
+	case 1:	return (unsigned long) page_zeros;
+	case 2:	return (unsigned long) page_0xff;
+	case 3:	return get_interesting_value();
 	}
 
 	return 0;

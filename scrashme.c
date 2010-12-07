@@ -64,9 +64,9 @@ struct shm_s {
 	unsigned long failures;
 	unsigned long retries;
 };
-struct shm_s *shm;
+static struct shm_s *shm;
 
-char poison = 0x55;
+static char poison = 0x55;
 
 unsigned int page_size;
 
@@ -85,13 +85,13 @@ static int structmode = STRUCT_UNDEFINED;
 
 static long struct_fill;		/* value to fill struct with if CONST */
 
-char *opmodename[] = {
+static char *opmodename[] = {
 	[MODE_UNDEFINED] = "undef",
 	[MODE_RANDOM] = "random",
 	[MODE_ROTATE] = "rotate",
 	[MODE_CAPCHECK] = "capabilities_check",
 };
-char *structmodename[] = {
+static char *structmodename[] = {
 	[STRUCT_UNDEFINED] = "unknown",
 	[STRUCT_CONST] = "constant",
 	[STRUCT_RAND]  = "random",
@@ -102,23 +102,27 @@ char *structmodename[] = {
 #define TYPE_STRUCT 2
 static char passed_type = TYPE_UNDEFINED;
 
-
 const char *logfilename = "scrashme.log";
 FILE *logfile;
 
 static char *userbuffer;
-char *useraddr;
-void init_buffer()
+char *page_zeros;
+char *page_0xff;
+
+/*
+ * [POISON][PAGE OF ZEROS][POISON][PAGE OF 0xFF's][POISON]
+ */
+static void init_buffers()
 {
-	userbuffer = malloc(4096*3);
+	userbuffer = malloc(page_size*5);
 	if (!userbuffer) {
 		exit(EXIT_FAILURE);
 	}
-	memset(userbuffer, poison, 4096);
-	memset(userbuffer+4096+4096, poison, 4096);
-
-	useraddr = userbuffer+4096;
-	memset(useraddr, 0, 4096);
+	memset(userbuffer, poison, page_size*5);
+	page_zeros = userbuffer+page_size;
+	memset(page_zeros, 0, page_size);
+	page_0xff = userbuffer+(page_size*3);
+	memset(page_0xff, 0xff, page_size);
 }
 
 static void sighandler(int sig)
@@ -658,10 +662,10 @@ no_sys32:
 			regval = (unsigned long) structptr;
 			break;
 
-		/* Pass in address of kernel text */
+		/* Pass in address of userspace addr text */
 		case 'u':
 			passed_type = TYPE_VALUE;
-			regval = (unsigned long) useraddr;
+			regval = (unsigned long) page_zeros;
 			break;
 
 		/* Set registers to specific value */
@@ -821,8 +825,8 @@ static void run_mode(void)
 
 		/* If we're passing userspace addresses, mess with alignment */
 		if ((passed_type == TYPE_VALUE) &&
-		    ((regval & ~0xf) == (unsigned long)useraddr))
-			regval = (unsigned long)useraddr+(rand() & 0xf);
+		    ((regval & ~0xf) == (unsigned long)page_zeros))
+			regval = (unsigned long)page_zeros+(rand() & 0xf);
 
 	}
 done: ;
@@ -874,8 +878,6 @@ int main(int argc, char* argv[])
 		printf("64bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
 	}
 #endif
-
-
 	page_size = getpagesize();
 
 	if (!seed)
@@ -893,7 +895,7 @@ int main(int argc, char* argv[])
 	shm->successes = 0;
 	shm->failures = 0;
 
-	init_buffer();
+	init_buffers();
 
 
 	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */

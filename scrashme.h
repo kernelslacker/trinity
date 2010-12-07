@@ -74,7 +74,9 @@ void generic_sanitise(int call,
 unsigned long rand64();
 
 extern unsigned int page_size;
-extern char *useraddr;
+
+extern char *page_zeros;
+extern char *page_0xff;
 
 #define RED	"[1;31m"
 #define GREEN	"[1;32m"
