@@ -180,13 +180,27 @@ unsigned long rand64()
 	return r;
 }
 
+static void dump_poison(char *addr)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < page_size; i+=32) {
+		printf("%d: ", i);
+		for (j=0; j < 32; j++)
+			printf("%x ", (unsigned int) addr[i+j]);
+		printf("\n");
+	}
+	(void)fflush(stdout);
+	(void)sleep(10);
+	exit(EXIT_FAILURE);
+}
+
 static long mkcall(unsigned int call)
 {
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	int ret = 0;
-	unsigned int i, j;
-	int poisoned = 0;
+	unsigned int i;
 
 	switch (opmode) {
 	case MODE_ROTATE:
@@ -350,38 +364,26 @@ static long mkcall(unsigned int call)
 
 	if (check_poison==1) {
 		for (i = 0; i < page_size; i++) {
-			if (userbuffer[i]!=poison)
-				poisoned = 1;
+			if (userbuffer[i]!=poison) {
+				printf ("Yikes! pre-buffer poison was overwritten!\n");
+				dump_poison(userbuffer);
+			}
 		}
+		/* FIXME: The msg for the middle poison page sucks, because we don't know
+		   if we passed a zero page or a 0xff page. */
 		for (i = page_size*2; i < page_size*3; i++) {
-			if (userbuffer[i]!=poison)
-				poisoned = 2;
-		}
-
-		if (poisoned==1) {
-			printf ("Yikes! pre-buffer poison was overwritten!\n");
-			for (i = 0; i < page_size; i+=32) {
-				printf("%d: ", i);
-				for (j=0; j < 32; j++)
-					printf("%x ", (unsigned int) userbuffer[i+j]);
-				printf("\n");
+			if (userbuffer[i]!=poison) {
+				printf ("Yikes! mid-buffer poison was overwritten!\n");
+				dump_poison(userbuffer+(page_size*2));
 			}
-			(void)fflush(stdout);
-			(void)sleep(10);
 		}
-		if (poisoned==2) {
-			printf ("Yikes! post-buffer poison was overwritten!\n");
-			for (i = page_size*2; i < page_size*3; i+=32) {
-				printf("%i: ", i);
-				for (j=0; j < 32; j++)
-					printf("%x ", (unsigned int) userbuffer[i+j]);
-				printf("\n");
+		for (i = page_size*4; i < page_size*5; i++) {
+			if (userbuffer[i]!=poison) {
+				printf ("Yikes! post-buffer poison was overwritten!\n");
+				dump_poison(userbuffer+(page_size*4));
 			}
-			(void)fflush(stdout);
-			(void)sleep(10);
 		}
 	}
-
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if (ret == -ENOSYS)
