@@ -108,6 +108,8 @@ static unsigned long fill_arg(int call, int argnum)
 {
 	int fd;
 	unsigned long i;
+	unsigned int bits;
+	unsigned long mask=0;
 	unsigned long low=0, high=0;
 	unsigned int num=0;
 	unsigned int *values=NULL;
@@ -190,8 +192,10 @@ static unsigned long fill_arg(int call, int argnum)
 			values = syscalls[call].arg6list.values;
 			break;
 		}
-		i = rand() % num;
-		return values[i];
+		bits = rand() % num;	/* num of bits to OR */
+		for (i=0; i<bits; i++)
+			mask |= values[rand() % num];
+		return mask;
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
