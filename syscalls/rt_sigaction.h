@@ -11,7 +11,7 @@
 	.arg1name = "sig",
 	.arg1type = ARG_RANGE,
 	.low1range = 0,
-	.hi1range = 1024,
+	.hi1range = _NSIG,
 	.arg2name = "act",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "oact",
