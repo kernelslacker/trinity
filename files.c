@@ -101,6 +101,9 @@ static void open_fds(char *dir)
 	closedir(d);
 }
 
+static int spin=0;
+static char spinner[]="-\\|/";
+
 #define TYPE_MAX 128
 #define PROTO_MAX 256
 static void open_sockets()
@@ -116,20 +119,30 @@ static void open_sockets()
 
 	printf("Creating sockets.\n");
 
-	while (socks < nr_to_create) {
-		domain = rand() % PF_MAX;
-		type = rand() % TYPE_MAX;
-		protocol = rand() % PROTO_MAX;
-		fd = socket(domain, type, protocol);
-		if (fd > -1) {
-			socket_fds[socks] = fd;
-			writelog("fd[%i] = domain:%i type:%i protocol:%i\n",
-				socks+fd_idx, domain, type, protocol);
-			socks++;
-			printf("(%d sockets created)\r", socks);
-			fflush(stdout);
+	for (domain = 0; domain < PF_MAX; domain++) {
+		for (type = 0; type < TYPE_MAX; type++) {
+			for (protocol = 0; protocol < PROTO_MAX; protocol++) {
+				printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
+					spinner[spin++], socks, nr_to_create-socks,
+					domain, type, protocol);
+				if (spin==4)
+					spin=0;
+				fd = socket(domain, type, protocol);
+				if (fd > -1) {
+					socket_fds[socks] = fd;
+					writelog("fd[%i] = domain:%i type:%i protocol:%i\n",
+						socks+fd_idx, domain, type, protocol);
+					socks++;
+
+					if (socks == nr_to_create)
+						goto done;
+				}
+			}
 		}
+		fflush(stdout);
 	}
+done:
+
 	printf("\ncreated %d sockets\n", socks);
 }
 
