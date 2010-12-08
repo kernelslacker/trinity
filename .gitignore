@@ -2,3 +2,4 @@ core.*
 *.o
 scrashme
 scrashme.log
+scrashme.socketcache
