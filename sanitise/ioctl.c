@@ -18,11 +18,8 @@ void sanitise_ioctl(
 		*cmd |= 1L << (rand() % 32);
 
 	/* the argument could mean anything, because ioctl sucks like that. */
-	i = rand() % 2;
-	switch (i) {
-	case 0: *arg = get_interesting_32bit_value();
-		break;
-	case 1: *arg = get_address();
-		break;
-	}
+	if (!(rand() % 3))
+		*arg = get_interesting_32bit_value();
+	else
+		*arg = (unsigned long)page_rand;
 }

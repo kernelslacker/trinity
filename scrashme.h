@@ -61,6 +61,7 @@ extern unsigned int page_size;
 
 extern char *page_zeros;
 extern char *page_0xff;
+extern char *page_rand;
 
 #define RED	"[1;31m"
 #define GREEN	"[1;32m"
