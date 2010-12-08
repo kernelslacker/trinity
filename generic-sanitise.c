@@ -74,7 +74,7 @@ unsigned long get_interesting_value()
 }
 
 
-static unsigned long get_address()
+unsigned long get_address()
 {
 	int i;
 

@@ -44,5 +44,6 @@ extern unsigned long filebuffersize;
 unsigned long get_interesting_value();
 unsigned long get_interesting_32bit_value();
 unsigned long rand64();
+unsigned long get_address();
 
 #endif	/* _SCRASHME_H */
