@@ -108,21 +108,23 @@ FILE *logfile;
 static char *userbuffer;
 char *page_zeros;
 char *page_0xff;
+char *page_rand;
 
 /*
- * [POISON][PAGE OF ZEROS][POISON][PAGE OF 0xFF's][POISON]
+ * [POISON][PAGE OF ZEROS][POISON][PAGE OF 0xFF's][POISON][RANDOM][POISON]
  */
 static void init_buffers()
 {
-	userbuffer = malloc(page_size*5);
+	userbuffer = malloc(page_size*7);
 	if (!userbuffer) {
 		exit(EXIT_FAILURE);
 	}
-	memset(userbuffer, poison, page_size*5);
+	memset(userbuffer, poison, page_size*7);
 	page_zeros = userbuffer+page_size;
 	memset(page_zeros, 0, page_size);
 	page_0xff = userbuffer+(page_size*3);
 	memset(page_0xff, 0xff, page_size);
+	page_rand = userbuffer+(page_size*5);
 }
 
 static void sighandler(int sig)
@@ -631,9 +633,7 @@ no_sys32:
 				/* Pass a ptr to a struct filled with random junk */
 			case 'r':
 				structmode = STRUCT_RAND;
-				structptr = malloc(page_size);
-				if (!structptr)
-					exit(EXIT_FAILURE);
+				structptr = page_rand;
 				for (i=0; i<page_size; i++)
 					structptr[i]= rand();
 				break;
@@ -812,18 +812,9 @@ static void run_mode(void)
 		if (syscallcount && (execcount >= syscallcount))
 			break;
 
-		/*
-		 * If we're passing random structs, regenerate the
-		 * buffer every time we make a syscall.
-		 */
-		if (passed_type == TYPE_STRUCT) {
-			if (structmode == STRUCT_RAND) {
-				for (i=0; i<page_size; i++) {
-					structptr[i]= rand();
-					break;
-				}
-			}
-		}
+		/* regenerate the random buffer every time we make a syscall. */
+		for (i=0; i<page_size; i++)
+			page_rand[i]= rand();
 
 		/* If we're passing userspace addresses, mess with alignment */
 		if ((passed_type == TYPE_VALUE) &&
@@ -922,7 +913,7 @@ int main(int argc, char* argv[])
 
 	run_mode();
 
-	if (structptr!=NULL)
+	if ((structptr!=NULL) && (structmode != STRUCT_RAND))
 		free(structptr);
 
 	printf("\nRan %lld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
