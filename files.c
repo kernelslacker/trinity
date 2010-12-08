@@ -150,9 +150,7 @@ static void generate_sockets()
 
 					if (socks == nr_to_create)
 						goto done;
-				} else
-					writelog_nosync("FAIL = domain:%i type:%i protocol:%i\n",
-						domain, type, protocol);
+				}
 			}
 		}
 	}
