@@ -367,22 +367,26 @@ static long mkcall(unsigned int call)
 	if (check_poison==1) {
 		for (i = 0; i < page_size; i++) {
 			if (userbuffer[i]!=poison) {
-				printf ("Yikes! pre-buffer poison was overwritten!\n");
+				printf ("Yikes! poison1 was overwritten!\n");
 				dump_poison(userbuffer);
 			}
 		}
-		/* FIXME: The msg for the middle poison page sucks, because we don't know
-		   if we passed a zero page or a 0xff page. */
 		for (i = page_size*2; i < page_size*3; i++) {
 			if (userbuffer[i]!=poison) {
-				printf ("Yikes! mid-buffer poison was overwritten!\n");
+				printf ("Yikes! poison2 was overwritten!\n");
 				dump_poison(userbuffer+(page_size*2));
 			}
 		}
 		for (i = page_size*4; i < page_size*5; i++) {
 			if (userbuffer[i]!=poison) {
-				printf ("Yikes! post-buffer poison was overwritten!\n");
+				printf ("Yikes! poison3 was overwritten!\n");
 				dump_poison(userbuffer+(page_size*4));
+			}
+		}
+		for (i = page_size*6; i < page_size*7; i++) {
+			if (userbuffer[i]!=poison) {
+				printf ("Yikes! poison4 was overwritten!\n");
+				dump_poison(userbuffer+(page_size*6));
 			}
 		}
 	}
