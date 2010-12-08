@@ -1,4 +1,5 @@
-#include <linux/fs.h>
+#define _GNU_SOURCE
+#include <fcntl.h>
 #include "scrashme.h"
 #include "sanitise.h"
 
