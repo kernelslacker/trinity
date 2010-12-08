@@ -130,7 +130,7 @@ static void open_sockets()
 				fd = socket(domain, type, protocol);
 				if (fd > -1) {
 					socket_fds[socks] = fd;
-					writelog("fd[%i] = domain:%i type:%i protocol:%i\n",
+					writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
 						socks+fd_idx, domain, type, protocol);
 					socks++;
 
@@ -139,7 +139,6 @@ static void open_sockets()
 				}
 			}
 		}
-		fflush(stdout);
 	}
 done:
 

@@ -86,4 +86,14 @@ extern FILE *logfile;
 	fclose(logfile); \
 } while (0)
 
+#define writelog_nosync(...) do {      \
+	logfile = fopen(logfilename, "a"); \
+	if (!logfile) { \
+		perror("couldn't open logfile\n"); \
+		exit(EXIT_FAILURE); \
+	} \
+	fprintf(logfile, ## __VA_ARGS__); \
+	fclose(logfile); \
+} while (0)
+
 #endif	/* _SCRASHME_H */
