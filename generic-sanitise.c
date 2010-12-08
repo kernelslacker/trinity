@@ -78,12 +78,13 @@ unsigned long get_address()
 {
 	int i;
 
-	i = rand() % 4;
+	i = rand() % 5;
 	switch (i) {
 	case 0:	return KERNEL_ADDR;
 	case 1:	return (unsigned long) page_zeros;
 	case 2:	return (unsigned long) page_0xff;
-	case 3:	return get_interesting_value();
+	case 3:	return (unsigned long) page_rand;
+	case 4:	return get_interesting_value();
 	}
 
 	return 0;
