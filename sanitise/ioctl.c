@@ -12,7 +12,9 @@ void sanitise_ioctl(
 		__unused__ unsigned long *a5,
 		__unused__ unsigned long *a6)
 {
-	int i;
+	unsigned int i, j;
+	unsigned int nr_elements;
+	unsigned int *ptr;
 
 	/* To begin, we choose from one of the known ioctls*/
 	*cmd = ioctllist[rand() % NR_IOCTLS].request;
@@ -21,11 +23,11 @@ void sanitise_ioctl(
 	if ((rand() % 50)==0) {
 
 		/* mangle the cmd by ORing up to 4 random bits */
-		for (i=0; i < (rand() % 4); i++)
+		for (i=0; i < (unsigned int)(rand() % 4); i++)
 			*cmd |= 1L << (rand() % 32);
 
 		/* mangle the cmd by ANDing up to 4 random bits */
-		for (i=0; i < (rand() % 4); i++)
+		for (i=0; i < (unsigned int)(rand() % 4); i++)
 			*cmd &= 1L << (rand() % 32);
 	}
 
@@ -38,7 +40,22 @@ void sanitise_ioctl(
 		break;
 	case 6 ... 9:
 		*arg = (unsigned long)page_rand;
-		/* TODO: manufacture a random struct */
+		ptr = (unsigned int*)page_rand;
+		/* manufacture a random struct */
+
+		nr_elements = rand() % 10;
+		for (i=0; i<nr_elements; i++) {
+			j = rand() % 2;
+
+			switch (j) {
+			case 0: *ptr = get_interesting_32bit_value();
+				ptr+= sizeof(unsigned int);
+				break;
+			case 1:	*ptr = get_address();
+				ptr+= sizeof(unsigned long);
+				break;
+			}
+		}
 		break;
 	}
 }
