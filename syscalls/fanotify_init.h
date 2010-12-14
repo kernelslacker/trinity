@@ -6,4 +6,5 @@
 	.num_args = 2,
 	.arg1name = "flags",
 	.arg2name = "event_f_flags",
+	.flags = CAPABILITY_CHECK,
 },
