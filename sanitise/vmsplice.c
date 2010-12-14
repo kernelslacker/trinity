@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <linux/uio.h>
 #include "scrashme.h"
 
 /*
@@ -14,5 +15,5 @@ void sanitise_vmsplice(
 	__unused__ unsigned long *a5,
 	__unused__ unsigned long *a6)
 {
-	*a3 = rand() % 1024;	/* UIO_MAXIOV */
+	*a3 = rand() % UIO_MAXIOV;
 }
