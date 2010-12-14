@@ -71,7 +71,7 @@ extern char *page_rand;
 #define CYAN	"[1;36m"
 #define WHITE	"[1;37m"
 
-extern const char *logfilename;
+extern char *logfilename;
 extern FILE *logfile;
 
 #define writelog(...) do {      \

@@ -102,7 +102,7 @@ static char *structmodename[] = {
 #define TYPE_STRUCT 2
 static char passed_type = TYPE_UNDEFINED;
 
-const char *logfilename = "scrashme.log";
+char *logfilename = NULL;
 FILE *logfile;
 
 static char *userbuffer;
@@ -361,6 +361,7 @@ static void usage(void)
 	fprintf(stderr, "   -c#: target syscall # only.\n");
 	fprintf(stderr, "   -F:  don't fork after each syscall.\n");
 	fprintf(stderr, "   -i:  pass sensible parameters where possible.\n");
+	fprintf(stderr, "   -l, --logfile:  set logfile name\n");
 	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
 	fprintf(stderr, "   -P:  poison buffers before calling syscall, and check afterwards.\n");
 	fprintf(stderr, "   -p:  pause after syscall.\n");
@@ -463,9 +464,10 @@ static void parse_args(int argc, char *argv[])
 		{ "nofork", optional_argument, NULL, 'F' },
 		{ "bruteforce", optional_argument, NULL, 'B' },
 		{ "32bit", optional_argument, &do_32bit, 1 },
+		{ "logfile", optional_argument, NULL, 'l' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:FhikLN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
@@ -537,7 +539,10 @@ no_sys32:
 		/* use semi-intelligent options */
 		case 'i':
 			intelligence = 1;
-			setup_fds();
+			break;
+
+		case 'l':
+			logfilename = optarg;
 			break;
 
 		case 'L':
@@ -811,6 +816,8 @@ int main(int argc, char* argv[])
 	syscalls = syscalls_i386;
 #endif
 
+	if (logfilename == NULL)
+		logfilename = strdup("scrashme.log");
 	unlink(logfilename);
 
 	progname = argv[0];
@@ -848,6 +855,9 @@ int main(int argc, char* argv[])
 	shm->failures = 0;
 
 	init_buffers();
+
+	if (intelligence == 1)
+		setup_fds();
 
 	check_sanity();
 
