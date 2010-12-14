@@ -9,5 +9,5 @@ void sanitise_mmap(
 	__unused__ unsigned long *a5,
 	unsigned long *offset)
 {
-	*offset &= ~PAGE_MASK;
+	*offset &= PAGE_MASK;
 }
