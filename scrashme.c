@@ -245,126 +245,38 @@ static long mkcall(unsigned int call)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 	}
 
+#define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)			\
+	if (syscalls[call].num_args >= ARGNUM) {			\
+		if (ARGNUM != 1)					\
+			printf(WHITE ", ");				\
+		if (NAME)						\
+			printf("%s=", NAME);				\
+		if (opmode == MODE_ROTATE) {				\
+			if (rotate_mask & (BIT))			\
+				printf(YELLOW "0x%lx" WHITE, REG);	\
+			else {						\
+				if (OLDREG == REG)			\
+					printf(WHITE "0x%lx", REG);	\
+				else					\
+					printf(CYAN "0x%lx" WHITE, REG); \
+			}						\
+		} else {						\
+			if (OLDREG == REG)				\
+				printf(WHITE "0x%lx", REG);		\
+			else						\
+				printf(CYAN "0x%lx" WHITE, REG);	\
+		}							\
+	}
+
 	printf(WHITE "(");
-	if (syscalls[call].num_args >= 1) {
-		if (syscalls[call].arg1name)
-			printf("%s=", syscalls[call].arg1name);
-		if (opmode == MODE_ROTATE) {
-			if (rotate_mask & (1<<5))
-				printf(YELLOW "0x%lx" WHITE, a1);
-			else {
-				if (olda1==a1)
-					printf(WHITE "0x%lx", a1);
-				else
-					printf(CYAN "0x%lx" WHITE, a1);
-			}
-		} else {
-			if (olda1==a1)
-				printf(WHITE "0x%lx", a1);
-			else
-				printf(CYAN "0x%lx" WHITE, a1);
-		}
-	}
-	if (syscalls[call].num_args >= 2) {
-		printf(", ");
-		if (syscalls[call].arg2name)
-			printf("%s=", syscalls[call].arg2name);
-		if (opmode == MODE_ROTATE) {
-			if (rotate_mask & (1<<4))
-				printf(YELLOW "0x%lx" WHITE, a2);
-			else {
-				if (olda2==a2)
-					printf(WHITE "0x%lx", a2);
-				else
-					printf(CYAN "0x%lx" WHITE, a2);
-			}
-		} else {
-			if (olda2==a2)
-				printf(WHITE "0x%lx", a2);
-			else
-				printf(CYAN "0x%lx" WHITE, a2);
-		}
-	}
-	if (syscalls[call].num_args >= 3) {
-		printf(", ");
-		if (syscalls[call].arg3name)
-			printf("%s=", syscalls[call].arg3name);
-		if (opmode == MODE_ROTATE) {
-			if (rotate_mask & (1<<3))
-				printf(YELLOW "0x%lx" WHITE, a3);
-			else {
-				if (olda3==a3)
-					printf(WHITE "0x%lx", a3);
-				else
-					printf(CYAN "0x%lx" WHITE, a3);
-			}
-		} else {
-			if (olda3==a3)
-				printf(WHITE "0x%lx", a3);
-			else
-				printf(CYAN "0x%lx" WHITE, a3);
-		}
-	}
-	if (syscalls[call].num_args >= 4) {
-		printf(", ");
-		if (syscalls[call].arg4name)
-			printf("%s=", syscalls[call].arg4name);
-		if (opmode == MODE_ROTATE) {
-			if (rotate_mask & (1<<2))
-				printf(YELLOW "0x%lx" WHITE, a4);
-			else {
-				if (olda4==a4)
-					printf(WHITE "0x%lx", a4);
-				else
-					printf(CYAN "0x%lx" WHITE, a4);
-			}
-		} else {
-			if (olda4==a4)
-				printf(WHITE "0x%lx", a4);
-			else
-				printf(CYAN "0x%lx" WHITE, a4);
-		}
-	}
-	if (syscalls[call].num_args >= 5) {
-		printf(", ");
-		if (syscalls[call].arg5name)
-			printf("%s=", syscalls[call].arg5name);
-		if (opmode == MODE_ROTATE) {
-			if (rotate_mask & (1<<1))
-				printf(YELLOW "0x%lx" WHITE, a5);
-			else {
-				if (olda5==a5)
-					printf(WHITE "0x%lx", a5);
-				else
-					printf(CYAN "0x%lx" WHITE, a5);
-			}
-		} else {
-			if (olda5==a5)
-				printf(WHITE "0x%lx", a5);
-			else
-				printf(CYAN "0x%lx" WHITE, a5);
-		}
-	}
-	if (syscalls[call].num_args == 6) {
-		printf(", ");
-		if (syscalls[call].arg6name)
-			printf("%s=", syscalls[call].arg6name);
-		if (opmode == MODE_ROTATE) {
-			if (rotate_mask & (1<<0))
-				printf(YELLOW "0x%lx" WHITE, a6);
-			else {
-				if (olda6==a6)
-					printf(WHITE "0x%lx" WHITE, a6);
-				else
-					printf(CYAN "0x%lx" WHITE, a6);
-			}
-		} else {
-			if (olda6==a6)
-				printf(WHITE "0x%lx", a6);
-			else
-				printf(CYAN "0x%lx" WHITE, a6);
-		}
-	}
+
+	COLOR_ARG(1, syscalls[call].arg1name, 1<<5, olda1, a1);
+	COLOR_ARG(2, syscalls[call].arg2name, 1<<4, olda2, a2);
+	COLOR_ARG(3, syscalls[call].arg3name, 1<<3, olda3, a3);
+	COLOR_ARG(4, syscalls[call].arg4name, 1<<2, olda4, a4);
+	COLOR_ARG(5, syscalls[call].arg5name, 1<<1, olda5, a5);
+	COLOR_ARG(6, syscalls[call].arg6name, 1<<0, olda6, a6);
+
 	printf(WHITE ") ");
 
 
