@@ -8,6 +8,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <linux/fanotify.h>
 
 #include <asm/mman.h>
 
