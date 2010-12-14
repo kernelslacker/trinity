@@ -434,6 +434,7 @@ static void seed_from_tod()
 	gettimeofday(&t, 0);
 	seed = t.tv_sec * t.tv_usec;
 	srand(seed);
+	writelog("Randomness reseeded to 0x%x\n", seed);
 }
 
 static int do_syscall(int cl)
@@ -441,8 +442,6 @@ static int do_syscall(int cl)
 	int retrycount = 0;
 
 	printf ("%i: ", cl);
-
-	seed_from_tod();
 
 	if (opmode == MODE_RANDOM)
 retry:
@@ -629,6 +628,8 @@ no_sys32:
 		/* Set seed */
 		case 's':
 			seed = strtol(optarg, NULL, 10);
+			writelog("Setting random seed to %d\n", seed);
+			srand(seed);
 			break;
 
 		/* Set Struct fill mode */
@@ -820,12 +821,30 @@ static void run_mode(void)
 done: ;
 }
 
-
-int main(int argc, char* argv[])
+void check_sanity(void)
 {
 	//unsigned int i;
 	//int ret;
 
+	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
+	/* disabled for now, breaks with 32bit calls.
+	for (i=0; i<= max_nr_syscalls; i++) {
+		if (syscalls[i].flags & NI_SYSCALL) {
+			ret = syscall(i);
+			if (ret == -1) {
+				if (errno != ENOSYS) {
+					printf("syscall %d (%s) should be ni_syscall, but returned %d(%s) !\n",
+						i, syscalls[i].name, errno, strerror(errno));
+					exit(EXIT_FAILURE);
+				}
+			}
+		}
+	}
+	*/
+}
+
+int main(int argc, char* argv[])
+{
 	int shmid;
 	key_t key;
 
@@ -890,26 +909,9 @@ int main(int argc, char* argv[])
 
 	init_buffers();
 
-
-	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
-	/* disable for now, breaks with 32bit calls.
-	for (i=0; i<= max_nr_syscalls; i++) {
-		if (syscalls[i].flags & NI_SYSCALL) {
-			ret = syscall(i);
-			if (ret == -1) {
-				if (errno != ENOSYS) {
-					printf("syscall %d (%s) should be ni_syscall, but returned %d(%s) !\n",
-						i, syscalls[i].name, errno, strerror(errno));
-					exit(EXIT_FAILURE);
-				}
-			}
-		}
-	}
-	*/
+	check_sanity();
 
 	mask_signals();
-
-	srand(seed);
 
 	sigsetjmp(ret_jump, 1);
 
