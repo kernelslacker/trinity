@@ -733,7 +733,7 @@ static void mask_signals(void)
 	(void)signal(SIGINT, ctrlc);
 }
 
-static void run_mode(void)
+static void do_main_loop(void)
 {
 	unsigned int i;
 
@@ -915,7 +915,7 @@ int main(int argc, char* argv[])
 
 	sigsetjmp(ret_jump, 1);
 
-	run_mode();
+	do_main_loop();
 
 	if ((structptr!=NULL) && (structmode != STRUCT_RAND))
 		free(structptr);
