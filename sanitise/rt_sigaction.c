@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <stdlib.h>
 #include "scrashme.h"
 
 /*
@@ -16,5 +17,11 @@ void sanitise_rt_sigaction(
 		__unused__ unsigned long *a5,
 		__unused__ unsigned long *a6)
 {
+	if ((rand() % 2) == 0)
+		*a2 = 0;
+
+	if ((rand() % 2) == 0)
+		*a3 = 0;
+
 	*a4 = sizeof(sigset_t);
 }
