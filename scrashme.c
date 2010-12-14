@@ -817,7 +817,7 @@ int main(int argc, char* argv[])
 #endif
 
 	if (logfilename == NULL)
-		logfilename = strdup("scrashme.log");
+		logfilename = strdup("../scrashme-cpu0.log");
 	unlink(logfilename);
 
 	progname = argv[0];
@@ -862,6 +862,9 @@ int main(int argc, char* argv[])
 	check_sanity();
 
 	mask_signals();
+
+	/* just in case we're not using the test.sh harness. */
+	chdir("tmp/");
 
 	sigsetjmp(ret_jump, 1);
 
