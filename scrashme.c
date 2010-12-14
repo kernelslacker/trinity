@@ -737,8 +737,6 @@ static void run_setup(void)
 	(void)signal(SIGINT, ctrlc);
 
 	srand(seed);
-
-	chroot("tmp");
 }
 
 static void run_mode(void)
@@ -837,6 +835,11 @@ int main(int argc, char* argv[])
 
 	int shmid;
 	key_t key;
+
+	if (getuid() == 0) {
+		printf("Don't run as root.\n");
+		exit(EXIT_FAILURE);
+	}
 
 #ifdef __x86_64__
 	syscalls32 = syscalls_i386;
