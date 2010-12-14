@@ -13,4 +13,9 @@
 	.arg3name = "nr_segs",
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
+	.arg4type = ARG_LIST,
+	.arg4list = {
+		.num = 23,
+		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
+	}
 },
