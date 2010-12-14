@@ -713,14 +713,9 @@ static void ctrlc(__attribute((unused)) int sig)
 	ctrlc_hit=1;
 }
 
-static void run_setup(void)
+static void mask_signals(void)
 {
 	int i;
-
-	seteuid(65536);
-	seteuid(65536);
-	(void)setgid(65536);
-	seteuid(65536);
 
 	for (i=1; i<512; i++)  {
 		struct sigaction sa;
@@ -735,8 +730,6 @@ static void run_setup(void)
 	(void)signal(SIGWINCH, SIG_IGN);
 	(void)signal(SIGCHLD, SIG_IGN);
 	(void)signal(SIGINT, ctrlc);
-
-	srand(seed);
 }
 
 static void run_mode(void)
@@ -914,7 +907,9 @@ int main(int argc, char* argv[])
 	}
 	*/
 
-	run_setup();
+	mask_signals();
+
+	srand(seed);
 
 	sigsetjmp(ret_jump, 1);
 
