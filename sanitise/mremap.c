@@ -25,13 +25,15 @@ void sanitise_mremap(
 	unsigned long mask = ~(page_size-1);
 	int i;
 
-	*flags = rand64() & ~(MREMAP_FIXED | MREMAP_MAYMOVE);
+	*flags = rand64() & (MREMAP_FIXED | MREMAP_MAYMOVE);
 
 	*addr &= mask;
 
 	i=0;
 	if (*flags & MREMAP_FIXED) {
+		// Can't be fixed, and maymove.
 		*flags &= ~MREMAP_MAYMOVE;
+
 		*new_len &= TASK_SIZE-*new_len;
 retry_addr:
 		*new_addr &= mask;
