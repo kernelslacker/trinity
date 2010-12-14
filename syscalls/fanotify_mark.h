@@ -15,6 +15,13 @@
 			    FAN_MARK_MOUNT, FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORED_SURV_MODIFY, FAN_MARK_FLUSH },
 	},
 	.arg3name = "mask",
+	.arg3type = ARG_LIST,
+	.arg3list = {
+		.num = 7,
+		.values = { FAN_ACCESS, FAN_MODIFY, FAN_CLOSE, FAN_OPEN,
+			    FAN_OPEN_PERM, FAN_ACCESS_PERM,
+			    FAN_EVENT_ON_CHILD },
+	},
 	.arg4name = "dfd",
 	.arg4type = ARG_FD,
 	.arg5name = "pathname",
