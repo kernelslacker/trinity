@@ -22,7 +22,7 @@
 #include <sys/shm.h>
 
 #include "arch.h"
-#include "scrashme.h"
+#include "trinity.h"
 //#include "files.h"
 #include "sanitise.h"
 
@@ -290,7 +290,7 @@ void do_main_loop(void)
 {
 	unsigned int i;
 
-	printf("scrashme mode: %s\n", opmodename[opmode]);
+	printf("trinity mode: %s\n", opmodename[opmode]);
 
 	switch (opmode) {
 

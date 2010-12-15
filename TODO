@@ -1,5 +1,5 @@
 * Convert the syscall lists for all archs over to the new-style (see x86-64)
-  The lack of .num_args probably breaks scrashme on those archs right now.
+  The lack of .num_args probably breaks trinity on those archs right now.
 
 * --mode=rotate is currently a bit broken.
   Because we force all syscalls to be 6-args in that mode, the childs segv
@@ -9,7 +9,7 @@
 * Make -k use random kernel addresses (from System.map ?)
 
 * --oneshot
-  ./scrashme --oneshot sys_futex -1,0x40000000,1,2,3,4
+  ./trinity --oneshot sys_futex -1,0x40000000,1,2,3,4
 
 * --info sys_open
    i386:   5

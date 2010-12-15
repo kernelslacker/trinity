@@ -1,5 +1,5 @@
 #include <asm/mman.h>
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 
 /*

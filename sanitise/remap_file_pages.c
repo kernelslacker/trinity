@@ -1,4 +1,4 @@
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 #include "arch.h"
 

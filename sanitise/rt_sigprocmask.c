@@ -1,5 +1,5 @@
 #include <signal.h>
-#include "scrashme.h"
+#include "trinity.h"
 
 /*
  * asmlinkage long

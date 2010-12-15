@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 #include <fcntl.h>
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 
 /*

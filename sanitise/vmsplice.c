@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <linux/uio.h>
-#include "scrashme.h"
+#include "trinity.h"
 
 /*
  * asmlinkage long sys_vmsplice(int fd, const struct iovec __user *iov,

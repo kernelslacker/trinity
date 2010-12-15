@@ -1,12 +1,5 @@
-/*
- *
- * Call random system calls with random arguments.
- * Based on an original program by Kurt Garloff <garloff@suse.de>
- *
- * License: Artistic
- */
-
 #define _GNU_SOURCE
+
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
@@ -28,7 +21,7 @@
 
 #include "arch.h"
 #include "arch-syscalls.h"
-#include "scrashme.h"
+#include "trinity.h"
 #include "files.h"
 
 static char *progname=NULL;
@@ -426,11 +419,12 @@ int main(int argc, char* argv[])
 	syscalls = syscalls_i386;
 #endif
 
+	progname = argv[0];
+
 	if (logfilename == NULL)
-		logfilename = strdup("../scrashme-cpu0.log");
+		logfilename = strdup("../trinity-cpu0.log");
 	unlink(logfilename);
 
-	progname = argv[0];
 	parse_args(argc, argv);
 	if (argc==1)
 		usage();

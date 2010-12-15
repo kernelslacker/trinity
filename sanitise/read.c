@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 
 /*

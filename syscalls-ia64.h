@@ -1,6 +1,6 @@
 /* Syscalls from arch/ia64/kernel/entry.S as of 2.6.31rc2 */
 
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 
 #define NR_SYSCALLS 298

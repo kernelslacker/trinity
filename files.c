@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 
-#include "scrashme.h"
+#include "trinity.h"
 
 static int fds[1024];
 static int socket_fds[500];
@@ -104,7 +104,7 @@ static void open_fds(char *dir)
 static int spin=0;
 static char spinner[]="-\\|/";
 
-static char *cachefilename="scrashme.socketcache";
+static char *cachefilename="trinity.socketcache";
 
 #define TYPE_MAX 128
 #define PROTO_MAX 256

@@ -3,7 +3,7 @@
 
 /* Syscalls from arch/x86/include/asm/unistd_64.h as of 2.6.35 */
 
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 
 #include <fcntl.h>

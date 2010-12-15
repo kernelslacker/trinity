@@ -1,28 +1,69 @@
-scrashme v1.0
+Trinity v1.0
 
-Original program by Kurt Garloff <garloff@suse.de>
-Subsequent rewrite by Dave Jones <davej@redhat.com>
+	"After the initial euphoria of witnessing the explosion had passed, test
+	 director Kenneth Bainbridge commented to Los Alamos director J. Robert
+	 Oppenheimer, "Now we are all sons of bitches."   Oppenheimer later stated
+	 that while watching the test he was reminded of a line from the Hindu
+	 scripture the Bhagavad Gita:
 
-######## Improvements over original version ######################
+		Now I am become Death, the destroyer of worlds."
 
-o Now tests all syscalls, not just 256
-o Certain syscalls made things get out of hand too quickly.
-  Forkbombing a box with this app kills it very quickly.
-  (An alternative would be to only run this with strict rlimits, but
-  there are a few other syscalls we also take care of..)
-o Do the syscall in a child process so if something hangs, we can continue.
-o Printing of the syscall name/return code.
-o Several extra modes of attack.
 
+
+Warning: This program may seriously corrupt your files, including any of those
+that may be writable on mounted network file shares.  It may create network
+packets that may cause disruption on your local network.
+Run at your own risk.
+
+
+System call fuzzers aren't a particularly new idea.   As far back as 1991,
+people have written apps that bomb syscall inputs with garbage data,
+that have had a variety of success in crashing assorted operating systems.
+
+After fixing the obvious dumb bugs however, a majority of the time
+these calls will just by rejected by the kernel very near the beginning
+of their function entry point as basic parameter validation is performed.
+
+Trinity is a system call fuzzer which employs some basic intelligence
+techniques (though when run without any arguments it too is dumb as a rock).
+
+The intelligence features include:
+
+- If a system call expects a certain datatype as an argument
+  (for example a file descriptor) it gets passed one.
+  This is the reason for the slow initial startup, as it generates a
+  list of fd's of files it can read from /sys, /proc and /dev
+  and then supplements this with fd's for various network protocol sockets.
+  (Information on which protocols succeed/fail is cached on the first run,
+   greatly increasing the speed of subsequent runs).
+
+- If a system call only accepts certain values as an argument,
+  (for example a 'flags' field), trinity has a list of all the valid
+  flags that may be passed.
+  Just to throw a spanner in the works, occasionally, it will bitflip
+  one of the flags, just to make things more interesting.
+
+- If a system call only takes a range of values, the random value
+  passed is ensured to fit within that range.
+
+
+Trinity logs it's output to a file, and fsync's the file before
+it actually makes the system call. This way, should you trigger something
+which panics the kernel, you should be able to find out exactly what
+happened by examining the log.
+
+There is a test harness provided (test.sh), which runs trinity in various modes,
+and takes care of things like cpu affinity, and makes sure it runs from the
+tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp afterwards)
 
 ######### options ###############################################
 
-The first option that scrashme has is '--mode=', which must
+The first option that trinity has is '--mode=', which must
 be one of the following..
 
 'random'
  Good for stress testing, just does zillions of random junk syscalls.
- -sN: use N as random seed.
+ -sN: use N as random seed.  (Omitting this uses time of day as a seed).
  Adding '--bruteforce' (or -B) to the command line will keep retrying the
  same syscall with random parameters until it succeeds. This option needs -i
  to also be passed. (described below)
@@ -41,6 +82,7 @@ be one of the following..
   etc.. 
 
  until it eventually gets to calling with the value in all registers.
+ (This option usually used with -z, see below)
 
 'capcheck'
  This will check syscalls that call capable() to make sure they return -EPERM.
@@ -89,24 +131,29 @@ Other useful arguments:
 #######################################################################
 
 Examples:
-./scrashme -c 275 -r -i
+./trinity -c splice -r -i
 Stress test the splice syscall, with random parameters, but sanitise
 the passed params so they look almost sensible.
 
 
-######### Other words of warning ######################################
-
-- This will call syscalls which do things like deleting files, creating
-  files etc with random arguments. You could get really unlucky and
-  lose something, or end up with a lot of crap files in the dir you
-  run this from. Better to run it from a tmp dir or the likes.
-  (Or better yet, a chroot?)
-- It will also do things which affect memory consumption of the process.
-  Setting rlimits may be wise. The child which makes the process grow
-  will be killed, leaving the parent to continue issuing more syscalls.
-
 ######### Links to similar projects ####################################
 
-tsys - 1991.
-http://groups.google.com/groups?q=syscall+crashme&hl=en&lr=&ie=UTF-8&selm=1991Sep20.232550.5013%40smsc.sony.com&rnum=1
+= tsys - 1991.
+  http://groups.google.com/groups?q=syscall+crashme&hl=en&lr=&ie=UTF-8&selm=1991Sep20.232550.5013%40smsc.sony.com&rnum=1
 
+= iknowthis
+  http://iknowthis.googlecode.com
+  Fuzzer by Tavis Ormandy with very similar goals to this project.
+
+= sysfuzz
+  basic fuzzer by Ilja van Sprundel
+  mentioned in http://events.ccc.de/congress/2005/fahrplan/attachments/683-slides_fuzzing.pdf
+  http://leetupload.com/dbindex2/index.php?dir=Linux/&file=sysfuzz.tar.gz
+
+= xnufuzz
+  https://github.com/fintler/xnufuzz/tree/
+  basic fuzzer for XNU.  Looks to be based on Ilja's sysfuzz.
+
+= kg_crashme / ak_crashme / dj_crashme
+  Kurt Garloff wrote a fuzzer similar to Ilja's sysfuzz in 2003.
+  The ak / dj variants were improvements added by Andi Kleen, and Dave Jones.

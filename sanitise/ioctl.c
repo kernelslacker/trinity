@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 
 #include "ioctls.h"

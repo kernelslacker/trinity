@@ -1,6 +1,6 @@
 #include <signal.h>
 #include <stdlib.h>
-#include "scrashme.h"
+#include "trinity.h"
 
 /*
  * asmlinkage long sys_rt_sigaction(int sig,

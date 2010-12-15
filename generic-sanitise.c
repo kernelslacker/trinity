@@ -6,7 +6,7 @@
 
 #include "files.h"
 #include "arch.h"
-#include "scrashme.h"
+#include "trinity.h"
 #include "sanitise.h"
 
 

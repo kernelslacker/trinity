@@ -1,4 +1,4 @@
-#include "scrashme.h"
+#include "trinity.h"
 #include "arch.h"
 
 void sanitise_mmap(

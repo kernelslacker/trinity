@@ -1,5 +1,5 @@
 #include <linux/futex.h>
-#include "scrashme.h"
+#include "trinity.h"
 
 /*
  * asmlinkage long sys_set_robust_list(struct robust_list_head __user *head,
