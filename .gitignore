@@ -1,5 +1,5 @@
 core.*
 *.o
-scrashme
-scrashme*.log
-scrashme.socketcache
+trinity
+trinity*.log
+trinity.socketcache
