@@ -210,6 +210,10 @@ static void parse_args(int argc, char *argv[])
 			for (i=0; i<=max_nr_syscalls; i++) {
 				if (strcmp(optarg, syscalls[i].name) == 0) {
 					printf("Found %s at %u\n", syscalls[i].name, i);
+					if (syscalls[i].flags &= AVOID_SYSCALL) {
+						printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].name);
+						exit(EXIT_FAILURE);
+					}
 					specific_syscall = i;
 					break;
 				}
@@ -223,6 +227,10 @@ static void parse_args(int argc, char *argv[])
 				/* Try looking in the 32bit table. */
 				for (i=0; i<=max_nr_syscalls32; i++) {
 					if (strcmp(optarg, syscalls32[i].name) == 0) {
+						if (syscalls32[i].flags &= AVOID_SYSCALL) {
+							printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls32[i].name);
+							exit(EXIT_FAILURE);
+						}
 						printf("Found in the 32bit syscall table %s at %u\n", syscalls32[i].name, i);
 						specific_syscall = i;
 						printf("Forcing into 32bit mode.\n");
