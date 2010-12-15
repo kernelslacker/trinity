@@ -4,7 +4,7 @@ CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror
 all: scrashme
 
 SANITISE	= $(patsubst %.c,%.o,$(wildcard sanitise/*.c))
-OBJS		= scrashme.o generic-sanitise.o files.o $(SANITISE)
+OBJS		= scrashme.o generic-sanitise.o files.o syscall.o $(SANITISE)
 
 scrashme: $(OBJS)
 	$(CC) $(CFLAGS) -o scrashme $(OBJS)

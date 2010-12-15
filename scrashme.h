@@ -9,6 +9,10 @@
 #define __unused__ /*@unused@*/
 #endif
 
+void syscall_list(void);
+void check_sanity(void);
+void do_main_loop(void);
+
 struct arglist {
 	unsigned int num;
 	unsigned int values[1024];
@@ -58,7 +62,38 @@ struct syscalltable {
 extern struct syscalltable *syscalls;
 
 extern unsigned int page_size;
+extern unsigned char check_poison;
+extern long long syscallcount;
+extern long long execcount;
+extern unsigned int opmode;
+extern char *opmodename[];
+extern char *structmodename[];
+extern int do_32bit;
+extern unsigned int max_nr_syscalls;
+extern unsigned char intelligence;
+extern unsigned int structmode;
+extern unsigned long regval;
+extern unsigned char rotate_mask;
+extern unsigned char poison;
+extern unsigned int rep;
+extern unsigned char do_specific_syscall;
+extern unsigned long specific_syscall;
+extern unsigned char dopause;
+extern long struct_fill;
+extern unsigned char bruteforce;
+extern unsigned char nofork;
+extern char passed_type;
 
+struct shm_s {
+        unsigned long successes;
+        unsigned long failures;
+        unsigned long retries;
+};
+extern struct shm_s *shm;
+
+extern unsigned char ctrlc_hit;
+
+extern char *userbuffer;
 extern char *page_zeros;
 extern char *page_0xff;
 extern char *page_rand;
@@ -95,5 +130,19 @@ extern FILE *logfile;
 	fprintf(logfile, ## __VA_ARGS__); \
 	fclose(logfile); \
 } while (0)
+
+#define MODE_UNDEFINED 0
+#define MODE_RANDOM 1
+#define MODE_ROTATE 2
+#define MODE_CAPCHECK 3
+
+#define TYPE_UNDEFINED 0
+#define TYPE_VALUE 1
+#define TYPE_STRUCT 2
+
+#define STRUCT_UNDEFINED 0
+#define STRUCT_CONST 1
+#define STRUCT_RAND 2
+
 
 #endif	/* _SCRASHME_H */
