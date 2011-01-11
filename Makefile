@@ -4,7 +4,8 @@ CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror
 all: trinity
 
 SANITISE	= $(patsubst %.c,%.o,$(wildcard sanitise/*.c))
-OBJS		= trinity.o generic-sanitise.o files.o syscall.o $(SANITISE)
+IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
+OBJS		= trinity.o generic-sanitise.o files.o syscall.o $(SANITISE) $(IOCTLS)
 
 trinity: $(OBJS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)

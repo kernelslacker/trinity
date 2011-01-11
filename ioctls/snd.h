@@ -1,0 +1,637 @@
+{
+	.name = "SNDRV_SEQ_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'S',0x00,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_CLIENT_ID",
+	_IOC(_IOC_NONE,'S',0x01,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SYSTEM_INFO",
+	_IOC(_IOC_NONE,'S',0x02,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_RUNNING_MODE",
+	_IOC(_IOC_NONE,'S',0x03,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_CLIENT_INFO",
+	_IOC(_IOC_NONE,'S',0x10,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_CLIENT_INFO",
+	_IOC(_IOC_NONE,'S',0x11,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_CREATE_PORT",
+	_IOC(_IOC_NONE,'S',0x20,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_DELETE_PORT",
+	_IOC(_IOC_NONE,'S',0x21,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_PORT_INFO",
+	_IOC(_IOC_NONE,'S',0x22,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_PORT_INFO",
+	_IOC(_IOC_NONE,'S',0x23,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SUBSCRIBE_PORT",
+	_IOC(_IOC_NONE,'S',0x30,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_UNSUBSCRIBE_PORT",
+	_IOC(_IOC_NONE,'S',0x31,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_CREATE_QUEUE",
+	_IOC(_IOC_NONE,'S',0x32,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_DELETE_QUEUE",
+	_IOC(_IOC_NONE,'S',0x33,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_QUEUE_INFO",
+	_IOC(_IOC_NONE,'S',0x34,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_QUEUE_INFO",
+	_IOC(_IOC_NONE,'S',0x35,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_NAMED_QUEUE",
+	_IOC(_IOC_NONE,'S',0x36,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_QUEUE_STATUS",
+	_IOC(_IOC_NONE,'S',0x40,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_QUEUE_TEMPO",
+	_IOC(_IOC_NONE,'S',0x41,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_QUEUE_TEMPO",
+	_IOC(_IOC_NONE,'S',0x42,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_QUEUE_OWNER",
+	_IOC(_IOC_NONE,'S',0x43,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_QUEUE_OWNER",
+	_IOC(_IOC_NONE,'S',0x44,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_QUEUE_TIMER",
+	_IOC(_IOC_NONE,'S',0x45,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_QUEUE_TIMER",
+	_IOC(_IOC_NONE,'S',0x46,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_QUEUE_SYNC",
+	_IOC(_IOC_NONE,'S',0x53,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_QUEUE_SYNC",
+	_IOC(_IOC_NONE,'S',0x54,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_QUEUE_CLIENT",
+	_IOC(_IOC_NONE,'S',0x49,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_QUEUE_CLIENT",
+	_IOC(_IOC_NONE,'S',0x4a,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_CLIENT_POOL",
+	_IOC(_IOC_NONE,'S',0x4b,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_SET_CLIENT_POOL",
+	_IOC(_IOC_NONE,'S',0x4c,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_REMOVE_EVENTS",
+	_IOC(_IOC_NONE,'S',0x4e,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_QUERY_SUBS",
+	_IOC(_IOC_NONE,'S',0x4f,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_GET_SUBSCRIPTION",
+	_IOC(_IOC_NONE,'S',0x50,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_QUERY_NEXT_CLIENT",
+	_IOC(_IOC_NONE,'S',0x51,0),
+},
+{
+	.name = "SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT",
+	_IOC(_IOC_NONE,'S',0x52,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_INFO",
+	_IOC(_IOC_NONE,'H',0x20,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_RESET",
+	_IOC(_IOC_NONE,'H',0x21,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_PLAY_NOTE",
+	_IOC(_IOC_NONE,'H',0x22,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_SET_VOICE",
+	_IOC(_IOC_NONE,'H',0x23,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_SET_PARAMS",
+	_IOC(_IOC_NONE,'H',0x24,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_SET_MODE",
+	_IOC(_IOC_NONE,'H',0x25,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_SET_CONNECTION",
+	_IOC(_IOC_NONE,'H',0x26,0),
+},
+{
+	.name = "SNDRV_DM_FM_IOCTL_CLEAR_PATCHES",
+	_IOC(_IOC_NONE,'H',0x40,0),
+},
+{
+	.name = "SNDRV_HWDEP_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'H',0x00,0),
+},
+{
+	.name = "SNDRV_HWDEP_IOCTL_INFO",
+	_IOC(_IOC_NONE,'H',0x01,0),
+},
+{
+	.name = "SNDRV_HWDEP_IOCTL_DSP_STATUS",
+	_IOC(_IOC_NONE,'H',0x02,0),
+},
+{
+	.name = "SNDRV_HWDEP_IOCTL_DSP_LOAD",
+	_IOC(_IOC_NONE,'H',0x03,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'A',0x00,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_INFO",
+	_IOC(_IOC_NONE,'A',0x01,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_TSTAMP",
+	_IOC(_IOC_NONE,'A',0x02,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_TTSTAMP",
+	_IOC(_IOC_NONE,'A',0x03,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_HW_REFINE",
+	_IOC(_IOC_NONE,'A',0x10,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_HW_PARAMS",
+	_IOC(_IOC_NONE,'A',0x11,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_HW_FREE",
+	_IOC(_IOC_NONE,'A',0x12,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_SW_PARAMS",
+	_IOC(_IOC_NONE,'A',0x13,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_STATUS",
+	_IOC(_IOC_NONE,'A',0x20,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_DELAY",
+	_IOC(_IOC_NONE,'A',0x21,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_HWSYNC",
+	_IOC(_IOC_NONE,'A',0x22,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_SYNC_PTR",
+	_IOC(_IOC_NONE,'A',0x23,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_CHANNEL_INFO",
+	_IOC(_IOC_NONE,'A',0x32,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_PREPARE",
+	_IOC(_IOC_NONE,'A',0x40,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_RESET",
+	_IOC(_IOC_NONE,'A',0x41,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_START",
+	_IOC(_IOC_NONE,'A',0x42,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_DROP",
+	_IOC(_IOC_NONE,'A',0x43,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_DRAIN",
+	_IOC(_IOC_NONE,'A',0x44,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_PAUSE",
+	_IOC(_IOC_NONE,'A',0x45,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_REWIND",
+	_IOC(_IOC_NONE,'A',0x46,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_RESUME",
+	_IOC(_IOC_NONE,'A',0x47,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_XRUN",
+	_IOC(_IOC_NONE,'A',0x48,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_FORWARD",
+	_IOC(_IOC_NONE,'A',0x49,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_WRITEI_FRAMES",
+	_IOC(_IOC_NONE,'A',0x50,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_READI_FRAMES",
+	_IOC(_IOC_NONE,'A',0x51,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_WRITEN_FRAMES",
+	_IOC(_IOC_NONE,'A',0x52,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_READN_FRAMES",
+	_IOC(_IOC_NONE,'A',0x53,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_LINK",
+	_IOC(_IOC_NONE,'A',0x60,0),
+},
+{
+	.name = "SNDRV_PCM_IOCTL_UNLINK",
+	_IOC(_IOC_NONE,'A',0x61,0),
+},
+{
+	.name = "SNDRV_RAWMIDI_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'W',0x00,0),
+},
+{
+	.name = "SNDRV_RAWMIDI_IOCTL_INFO",
+	_IOC(_IOC_NONE,'W',0x01,0),
+},
+{
+	.name = "SNDRV_RAWMIDI_IOCTL_PARAMS",
+	_IOC(_IOC_NONE,'W',0x10,0),
+},
+{
+	.name = "SNDRV_RAWMIDI_IOCTL_STATUS",
+	_IOC(_IOC_NONE,'W',0x20,0),
+},
+{
+	.name = "SNDRV_RAWMIDI_IOCTL_DROP",
+	_IOC(_IOC_NONE,'W',0x30,0),
+},
+{
+	.name = "SNDRV_RAWMIDI_IOCTL_DRAIN",
+	_IOC(_IOC_NONE,'W',0x31,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'T',0x00,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_NEXT_DEVICE",
+	_IOC(_IOC_NONE,'T',0x01,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_TREAD",
+	_IOC(_IOC_NONE,'T',0x02,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_GINFO",
+	_IOC(_IOC_NONE,'T',0x03,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_GPARAMS",
+	_IOC(_IOC_NONE,'T',0x04,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_GSTATUS",
+	_IOC(_IOC_NONE,'T',0x05,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_SELECT",
+	_IOC(_IOC_NONE,'T',0x10,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_INFO",
+	_IOC(_IOC_NONE,'T',0x11,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_PARAMS",
+	_IOC(_IOC_NONE,'T',0x12,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_STATUS",
+	_IOC(_IOC_NONE,'T',0x14,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_START",
+	_IOC(_IOC_NONE,'T',0xa0,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_STOP",
+	_IOC(_IOC_NONE,'T',0xa1,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_CONTINUE",
+	_IOC(_IOC_NONE,'T',0xa2,0),
+},
+{
+	.name = "SNDRV_TIMER_IOCTL_PAUSE",
+	_IOC(_IOC_NONE,'T',0xa3,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'U',0x00,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_CARD_INFO",
+	_IOC(_IOC_NONE,'U',0x01,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_LIST",
+	_IOC(_IOC_NONE,'U',0x10,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_INFO",
+	_IOC(_IOC_NONE,'U',0x11,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_READ",
+	_IOC(_IOC_NONE,'U',0x12,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_WRITE",
+	_IOC(_IOC_NONE,'U',0x13,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_LOCK",
+	_IOC(_IOC_NONE,'U',0x14,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_UNLOCK",
+	_IOC(_IOC_NONE,'U',0x15,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS",
+	_IOC(_IOC_NONE,'U',0x16,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_ADD",
+	_IOC(_IOC_NONE,'U',0x17,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_REPLACE",
+	_IOC(_IOC_NONE,'U',0x18,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_ELEM_REMOVE",
+	_IOC(_IOC_NONE,'U',0x19,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_TLV_READ",
+	_IOC(_IOC_NONE,'U',0x1a,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_TLV_WRITE",
+	_IOC(_IOC_NONE,'U',0x1b,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_TLV_COMMAND",
+	_IOC(_IOC_NONE,'U',0x1c,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_HWDEP_NEXT_DEVICE",
+	_IOC(_IOC_NONE,'U',0x20,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_HWDEP_INFO",
+	_IOC(_IOC_NONE,'U',0x21,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE",
+	_IOC(_IOC_NONE,'U',0x30,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_PCM_INFO",
+	_IOC(_IOC_NONE,'U',0x31,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_PCM_PREFER_SUBDEVICE",
+	_IOC(_IOC_NONE,'U',0x32,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE",
+	_IOC(_IOC_NONE,'U',0x40,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_RAWMIDI_INFO",
+	_IOC(_IOC_NONE,'U',0x41,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_RAWMIDI_PREFER_SUBDEVICE",
+	_IOC(_IOC_NONE,'U',0x42,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_POWER",
+	_IOC(_IOC_NONE,'U',0xd0,0),
+},
+{
+	.name = "SNDRV_CTL_IOCTL_POWER_STATE",
+	_IOC(_IOC_NONE,'U',0xd1,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_INFO",
+	_IOC(_IOC_NONE,'H',0x10,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_CODE_POKE",
+	_IOC(_IOC_NONE,'H',0x11,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_CODE_PEEK",
+	_IOC(_IOC_NONE,'H',0x12,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_TRAM_SETUP",
+	_IOC(_IOC_NONE,'H',0x20,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_TRAM_POKE",
+	_IOC(_IOC_NONE,'H',0x21,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_TRAM_PEEK",
+	_IOC(_IOC_NONE,'H',0x22,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_PCM_POKE",
+	_IOC(_IOC_NONE,'H',0x30,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_PCM_PEEK",
+	_IOC(_IOC_NONE,'H',0x31,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'H',0x40,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_STOP",
+	_IOC(_IOC_NONE,'H',0x80,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_CONTINUE",
+	_IOC(_IOC_NONE,'H',0x81,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_ZERO_TRAM_COUNTER",
+	_IOC(_IOC_NONE,'H',0x82,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_SINGLE_STEP",
+	_IOC(_IOC_NONE,'H',0x83,0),
+},
+{
+	.name = "SNDRV_EMU10K1_IOCTL_DBG_READ",
+	_IOC(_IOC_NONE,'H',0x84,0),
+},
+{
+	.name = "HDA_IOCTL_PVERSION",
+	_IOC(_IOC_NONE,'H',0x10,0),
+},
+{
+	.name = "HDA_IOCTL_VERB_WRITE",
+	_IOC(_IOC_NONE,'H',0x11,0),
+},
+{
+	.name = "HDA_IOCTL_GET_WCAP",
+	_IOC(_IOC_NONE,'H',0x12,0),
+},
+{
+	.name = "SNDRV_HDSP_IOCTL_GET_PEAK_RMS",
+	_IOC(_IOC_NONE,'H',0x40,0),
+},
+{
+	.name = "SNDRV_HDSP_IOCTL_GET_CONFIG_INFO",
+	_IOC(_IOC_NONE,'H',0x41,0),
+},
+{
+	.name = "SNDRV_HDSP_IOCTL_UPLOAD_FIRMWARE",
+	_IOC(_IOC_NONE,'H',0x42,0),
+},
+{
+	.name = "SNDRV_HDSP_IOCTL_GET_VERSION",
+	_IOC(_IOC_NONE,'H',0x43,0),
+},
+{
+	.name = "SNDRV_HDSP_IOCTL_GET_MIXER",
+	_IOC(_IOC_NONE,'H',0x44,0),
+},
+{
+	.name = "SNDRV_HDSP_IOCTL_GET_9632_AEB",
+	_IOC(_IOC_NONE,'H',0x45,0),
+},
+{
+	.name = "SNDRV_HDSPM_IOCTL_GET_VERSION",
+	_IOC(_IOC_NONE,'H',0x43,0),
+},
+{
+	.name = "SNDRV_HDSPM_IOCTL_GET_MIXER",
+	_IOC(_IOC_NONE,'H',0x44,0),
+},
+{
+	.name = "SNDRV_SB_CSP_IOCTL_INFO",
+	_IOC(_IOC_NONE,'H',0x10,0),
+},
+{
+	.name = "SNDRV_SB_CSP_IOCTL_LOAD_CODE",
+	_IOC(_IOC_NONE,'H',0x11,0),
+},
+{
+	.name = "SNDRV_SB_CSP_IOCTL_UNLOAD_CODE",
+	_IOC(_IOC_NONE,'H',0x12,0),
+},
+{
+	.name = "SNDRV_SB_CSP_IOCTL_START",
+	_IOC(_IOC_NONE,'H',0x13,0),
+},
+{
+	.name = "SNDRV_SB_CSP_IOCTL_STOP",
+	_IOC(_IOC_NONE,'H',0x14,0),
+},
+{
+	.name = "SNDRV_SB_CSP_IOCTL_PAUSE",
+	_IOC(_IOC_NONE,'H',0x15,0),
+},
+{
+	.name = "SNDRV_SB_CSP_IOCTL_RESTART",
+	_IOC(_IOC_NONE,'H',0x16,0),
+},
+{
+	.name = "SNDRV_EMUX_IOCTL_VERSION",
+	_IOC(_IOC_NONE,'H',0x80,0),
+},
+{
+	.name = "SNDRV_EMUX_IOCTL_LOAD_PATCH",
+	_IOC(_IOC_NONE,'H',0x81,0),
+},
+{
+	.name = "SNDRV_EMUX_IOCTL_RESET_SAMPLES",
+	_IOC(_IOC_NONE,'H',0x82,0),
+},
+{
+	.name = "SNDRV_EMUX_IOCTL_REMOVE_LAST_SAMPLES",
+	_IOC(_IOC_NONE,'H',0x83,0),
+},
+{
+	.name = "SNDRV_EMUX_IOCTL_MEM_AVAIL",
+	_IOC(_IOC_NONE,'H',0x84,0),
+},
+{
+	.name = "SNDRV_EMUX_IOCTL_MISC_MODE",
+	_IOC(_IOC_NONE,'H',0x84,0),
+},
+

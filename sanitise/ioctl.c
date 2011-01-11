@@ -4,7 +4,7 @@
 
 #include "ioctls.h"
 
-void sanitise_ioctl(
+static void generic_sanitise_ioctl(
 		__unused__ unsigned long *fd,
 		unsigned long *cmd,
 		unsigned long *arg,
@@ -15,9 +15,6 @@ void sanitise_ioctl(
 	unsigned int i, j;
 	unsigned int nr_elements;
 	unsigned int *ptr;
-
-	/* To begin, we choose from one of the known ioctls*/
-	*cmd = ioctllist[rand() % NR_IOCTLS].request;
 
 	/* One time in 50, mangle it. */
 	if ((rand() % 50)==0) {
@@ -58,4 +55,23 @@ void sanitise_ioctl(
 		}
 		break;
 	}
+}
+
+void sanitise_ioctl(
+		__unused__ unsigned long *fd,
+		unsigned long *cmd,
+		unsigned long *arg,
+		__unused__ unsigned long *a4,
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
+{
+	int ioctlnr;
+
+	ioctlnr = rand() % NR_IOCTLS;
+	*cmd = ioctllist[ioctlnr].request;
+
+	if (ioctllist[ioctlnr].sanitise)
+		ioctllist[ioctlnr].sanitise(fd, cmd, arg, a4, a5, a6);
+	else
+		generic_sanitise_ioctl(fd, cmd, arg, a4, a5, a6);
 }
