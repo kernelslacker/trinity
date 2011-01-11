@@ -430,8 +430,13 @@ int main(int argc, char* argv[])
 	progname = argv[0];
 
 	if (logfilename == NULL)
-		logfilename = strdup("../trinity-cpu0.log");
+		logfilename = strdup("trinity-cpu0.log");
 	unlink(logfilename);
+	logfile = fopen(logfilename, "a");
+	if (!logfile) {
+		perror("couldn't open logfile\n");
+		exit(EXIT_FAILURE);
+	}
 
 	parse_args(argc, argv);
 	if (argc==1)
