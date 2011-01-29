@@ -82,6 +82,8 @@ char *page_rand;
 char *logfilename = NULL;
 FILE *logfile;
 
+static char *specific_optarg;
+
 /*
  * [POISON][PAGE OF ZEROS][POISON][PAGE OF 0xFF's][POISON][RANDOM][POISON]
  */
@@ -207,47 +209,9 @@ static void parse_args(int argc, char *argv[])
 		case 'c':
 			do_specific_syscall = 1;
 			specific_syscall = strtol(optarg, NULL, 10);
-
-			for (i=0; i<=max_nr_syscalls; i++) {
-				if (strcmp(optarg, syscalls[i].name) == 0) {
-					printf("Found %s at %u\n", syscalls[i].name, i);
-					if (syscalls[i].flags &= AVOID_SYSCALL) {
-						printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].name);
-						exit(EXIT_FAILURE);
-					}
-					specific_syscall = i;
-					break;
-				}
-			}
-
-			if (i>max_nr_syscalls) {
-
-				if (!max_nr_syscalls32)
-					goto no_sys32;
-
-				/* Try looking in the 32bit table. */
-				for (i=0; i<=max_nr_syscalls32; i++) {
-					if (strcmp(optarg, syscalls32[i].name) == 0) {
-						if (syscalls32[i].flags &= AVOID_SYSCALL) {
-							printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls32[i].name);
-							exit(EXIT_FAILURE);
-						}
-						printf("Found in the 32bit syscall table %s at %u\n", syscalls32[i].name, i);
-						specific_syscall = i;
-						printf("Forcing into 32bit mode.\n");
-						do_32bit = 1;
-						break;
-					}
-				}
-
-				if (i>max_nr_syscalls32) {
-no_sys32:
-					printf("syscall not found :(\n");
-					exit(EXIT_FAILURE);
-				}
-				break;
-			}
+			specific_optarg = optarg;
 			break;
+
 		case 'F':
 			nofork = 1;
 			break;
@@ -399,6 +363,54 @@ static void mask_signals(void)
 	(void)signal(SIGINT, ctrlc);
 }
 
+static void find_specific_syscall()
+{
+	unsigned int i;
+
+	if (do_32bit == 1)
+		goto force_32bit;
+
+	for (i=0; i<=max_nr_syscalls; i++) {
+		if (strcmp(specific_optarg, syscalls[i].name) == 0) {
+			printf("Found %s at %u\n", syscalls[i].name, i);
+			if (syscalls[i].flags &= AVOID_SYSCALL) {
+				printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].name);
+				exit(EXIT_FAILURE);
+			}
+			specific_syscall = i;
+			break;
+		}
+	}
+
+	if (i > max_nr_syscalls) {
+
+		if (!max_nr_syscalls32)
+			goto no_sys32;
+
+force_32bit:
+		/* Try looking in the 32bit table. */
+		for (i=0; i<=max_nr_syscalls32; i++) {
+			if (strcmp(specific_optarg, syscalls32[i].name) == 0) {
+				if (syscalls32[i].flags &= AVOID_SYSCALL) {
+					printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls32[i].name);
+					exit(EXIT_FAILURE);
+				}
+				printf("Found in the 32bit syscall table %s at %u\n", syscalls32[i].name, i);
+				specific_syscall = i;
+				printf("Forcing into 32bit mode.\n");
+				do_32bit = 1;
+				break;
+			}
+		}
+
+		if (i>max_nr_syscalls32) {
+no_sys32:
+			printf("syscall not found :(\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -455,6 +467,10 @@ int main(int argc, char* argv[])
 		printf("64bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
 	}
 #endif
+
+	if (do_specific_syscall == 1)
+		find_specific_syscall();
+
 	page_size = getpagesize();
 
 	if (!seed)
