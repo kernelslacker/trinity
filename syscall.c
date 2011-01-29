@@ -378,7 +378,7 @@ void syscall_list()
 {
 	unsigned int i;
 
-	for (i=0; i<=max_nr_syscalls; i++)
+	for (i=0; i < max_nr_syscalls; i++)
 		 printf("%u: %s\n", i, syscalls[i].name);
 }
 
