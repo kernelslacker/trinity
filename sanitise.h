@@ -23,12 +23,15 @@ void sanitise_fanotify_mark(unsigned long *a1, unsigned long *a2, unsigned long 
 void sanitise_remap_file_pages(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 void sanitise_ioctl(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
 
+void sanitise_ioctl_sg_io(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
+
 #define ARG_FD	1
 #define ARG_LEN	2
 #define ARG_ADDRESS 3
 #define ARG_PID 4
 #define ARG_RANGE 5
 #define ARG_LIST 6
+#define ARG_RANDPAGE	7	/* ->sanitise will scribble over this. */
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)

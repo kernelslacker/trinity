@@ -197,6 +197,9 @@ static unsigned long fill_arg(int call, int argnum)
 		for (i=0; i<bits; i++)
 			mask |= values[rand() % num];
 		return mask;
+
+	case ARG_RANDPAGE:
+		return (unsigned long) page_rand;
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */

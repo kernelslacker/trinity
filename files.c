@@ -23,6 +23,7 @@ static int ignore_files(char *file)
 		/* boring stuff in /dev */
 		"dmmidi0", "dmmidi1","dmmidi2","dmmidi3",
 		"midi00", "midi01","midi02","midi03",
+		".udev",
 		/* Ignore per-process stuff. */
 		"keycreate", "sockcreate", "fscreate", "exec",
 		"current", "coredump_filter", "make-it-fail",
@@ -63,6 +64,8 @@ static void open_fds(char *dir)
 		openflag = 0;
 		if (S_ISLNK(buf.st_mode))
 			continue;
+		if (S_ISFIFO(buf.st_mode))
+			continue;
 		//if (S_ISREG(buf.st_mode))
 		//	continue;
 		if (S_ISDIR(buf.st_mode)) {
@@ -86,17 +89,23 @@ static void open_fds(char *dir)
 				if (buf.st_mode & S_IROTH) openflag |= O_RDONLY;
 				if (buf.st_mode & S_IWOTH) openflag |= O_WRONLY;
 			}
-			if (!openflag)
-				continue;
+			//if (strcmp(de->d_name, "sr0") == 0) {
+			//	printf("sr0 mode = %o\n", buf.st_mode);
+			//}
+			//if (!openflag) {
+			//}
+				//continue;
 			if ((openflag & O_RDONLY) && (openflag & O_WRONLY))
 				openflag = O_RDWR;
-			printf("%s/%s\n", dir, de->d_name);
 			fd = open(b, openflag);
 			if (fd < 0)
 				continue;
+			printf("%s/%s\n", dir, de->d_name);
 			writelog("fd[%i] = %s\n", fd_idx, b);
 			fds[fd_idx++] = fd;
 		}
+		if (fd_idx > 250)
+			break;
 	}
 	closedir(d);
 }

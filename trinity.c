@@ -130,6 +130,7 @@ static void usage(void)
 	fprintf(stderr, "   --mode=random : pass random values in registers to random syscalls\n");
 	fprintf(stderr, "     -s#: use # as random seed.\n");
 	fprintf(stderr, "     --bruteforce : Keep retrying syscalls until it succeeds (needs -i) [EXPERIMENTAL]\n");
+	fprintf(stderr, "     --32bit : call 32bit entrypoint\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   --mode=rotate : rotate value through all register combinations\n");
 	fprintf(stderr, "     -k:  pass kernel addresses as arguments.\n");

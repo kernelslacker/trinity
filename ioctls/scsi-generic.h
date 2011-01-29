@@ -1,3 +1,4 @@
+/*
 {
 	.name = "SG_EMULATED_HOST",
 	.request = 0x2203,
@@ -54,10 +55,13 @@
 	.name = "SG_SCSI_RESET",
 	.request = 0x2284,
 },
+*/
 {
 	.name = "SG_IO",
 	.request = 0x2285,
+	.sanitise = sanitise_ioctl_sg_io,
 },
+/*
 {
 	.name = "SG_GET_REQUEST_TABLE",
 	.request = 0x2286,
@@ -98,3 +102,4 @@
 	.name = "SG_NEXT_CMD_LEN",
 	.request = 0x2283,
 },
+*/
