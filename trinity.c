@@ -48,6 +48,7 @@ unsigned char check_poison = 0;
 unsigned char bruteforce = 0;
 unsigned char poison = 0x55;
 unsigned char nofork = 0;
+unsigned char show_syscall_list = 0;
 int do_32bit = 0;
 
 unsigned int max_nr_syscalls;
@@ -231,8 +232,8 @@ static void parse_args(int argc, char *argv[])
 			break;
 
 		case 'L':
-			syscall_list();
-			exit(EXIT_SUCCESS);
+			show_syscall_list = 1;
+			break;
 
 		/* Pass in address of kernel text */
 		case 'k':
@@ -318,6 +319,9 @@ static void parse_args(int argc, char *argv[])
 			break;
 		}
 	}
+
+	if (show_syscall_list == 1)
+		return;
 
 	if (bruteforce == 1) {
 		if (opmode != MODE_RANDOM) {
@@ -470,6 +474,11 @@ int main(int argc, char* argv[])
 
 	if (do_specific_syscall == 1)
 		find_specific_syscall();
+
+	if (show_syscall_list == 1) {
+		syscall_list();
+		exit(EXIT_SUCCESS);
+	}
 
 	page_size = getpagesize();
 
