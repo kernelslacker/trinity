@@ -109,10 +109,14 @@ extern char *page_rand;
 extern char *logfilename;
 extern FILE *logfile;
 
-#define writelog(...) do {      \
-	fprintf(logfile, ## __VA_ARGS__); \
+#define synclog() do {      \
 	fflush(logfile); \
 	fsync(fileno(logfile)); \
+} while (0)
+
+#define writelog(...) do {      \
+	fprintf(logfile, ## __VA_ARGS__); \
+	synclog(); \
 } while (0)
 
 #define writelog_nosync(...) do {      \

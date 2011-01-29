@@ -205,6 +205,7 @@ static void open_sockets()
 		socks++;
 	}
 	printf("(%d sockets created based on info from socket cachefile.)\n", socks);
+	synclog();
 
 	close(cachefile);
 }
