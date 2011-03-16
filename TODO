@@ -69,3 +69,6 @@
 
 * mprotect the buffers we allocate that get passed to the kernel.
 
+* make a list of filenames during fd_setup, so that we can pass one at random
+  when sanitising open()
+
