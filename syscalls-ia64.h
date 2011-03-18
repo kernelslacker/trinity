@@ -5,304 +5,311 @@
 
 #define NR_SYSCALLS 298
 
-struct syscalltable syscalls_ia64[NR_SYSCALLS+1] = {
+#define NI_SYSCALL		\
+{				\
+        .name = "ni_syscall",	\
+        .num_args = 6,		\
+        .flags = NI_SYSCALL,	\
+},				\
 
-	{ .name = "ni_syscall", },		/* 0 */
-	{ .name = "exit", .flags = AVOID_SYSCALL },
-	{ .name = "read", .sanitise = sanitise_read },
-	{ .name = "write", .sanitise = sanitise_write },
-	{ .name = "open", },			/* 5 */
-	{ .name = "close", },
-	{ .name = "creat", },
-	{ .name = "link", },
-	{ .name = "unlink", },
-	{ .name = "execve", },			/* 10 */
-	{ .name = "chdir", },
-	{ .name = "fchdir", },
-	{ .name = "utimes", },
-	{ .name = "mknod", },
-	{ .name = "chmod", },			/* 15 */
-	{ .name = "chown", },
-	{ .name = "lseek", },
-	{ .name = "getpid", },
-	{ .name = "getppid", },
-	{ .name = "mount", },			/* 20 */
-	{ .name = "umount", },
-	{ .name = "setuid", },
-	{ .name = "getuid", },
-	{ .name = "geteuid", },
-	{ .name = "ptrace", },			/* 25 */
-	{ .name = "access", },
-	{ .name = "sync", },
-	{ .name = "fsync", },
-	{ .name = "fdatasync", },
-	{ .name = "kill", },			/* 30 */
-	{ .name = "rename", },
-	{ .name = "mkdir", },
-	{ .name = "rmdir", },
-	{ .name = "dup", },
-	{ .name = "pipe", },			/* 35 */
-	{ .name = "times", },
-	{ .name = "brk", },
-	{ .name = "setgid", },
-	{ .name = "getgid", },
-	{ .name = "getegid", },			/* 40 */
-	{ .name = "acct", },
-	{ .name = "ioctl", },
-	{ .name = "fcntl", },
-	{ .name = "umask", },
-	{ .name = "chroot", },			/* 45 */
-	{ .name = "ustat", },
-	{ .name = "dup2", },
-	{ .name = "setreuid", },
-	{ .name = "setregid", },
-	{ .name = "getresuid", },		/* 50 */
-	{ .name = "setresuid", },
-	{ .name = "getresgid", },
-	{ .name = "setresgid", },
-	{ .name = "getgroups", },
-	{ .name = "setgroups", },		/* 55 */
-	{ .name = "getpgid", },
-	{ .name = "setpgid", },
-	{ .name = "setsid", },
-	{ .name = "getsid", },
-	{ .name = "sethostname", },		/* 60 */
-	{ .name = "setrlimit", },
-	{ .name = "getrlimit", },
-	{ .name = "getrusage", },
-	{ .name = "gettimeofday", },
-	{ .name = "settimeofday", },		/* 65 */
-	{ .name = "select", .flags = AVOID_SYSCALL },
-	{ .name = "poll", },
-	{ .name = "symlink", },
-	{ .name = "readlink", },
-	{ .name = "uselib", },			/* 70 */
-	{ .name = "swapon", },
-	{ .name = "swapoff", },
-	{ .name = "reboot", },
-	{ .name = "truncate", },
-	{ .name = "ftruncate", },		/* 75 */
-	{ .name = "fchmod", },
-	{ .name = "fchown", },
-	{ .name = "getpriority", },
-	{ .name = "setpriority", },
-	{ .name = "statfs", },			/* 80 */
-	{ .name = "fstatfs", },
-	{ .name = "gettid", },
-	{ .name = "semget", },
-	{ .name = "semop", },
-	{ .name = "semctl", },			/* 85 */
-	{ .name = "msgget", },
-	{ .name = "msgsnd", },
-	{ .name = "msgrcv", },
-	{ .name = "msgctl", },
-	{ .name = "shmget", },			/* 90 */
-	{ .name = "shmat", },
-	{ .name = "shmdt", },
-	{ .name = "shmctl", },
-	{ .name = "syslog", },
-	{ .name = "setitimer", },		/* 95 */
-	{ .name = "getitimer", },
-	{ .name = "tux", },
-	{ .name = "ni_syscall (was ia64_oldlstat)", },	/* was: ia64_oldlstat */
-	{ .name = "ni_syscall (was ia64_oldfstat)", },	/* was: ia64_oldfstat */
-	{ .name = "vhangup", },			/* 100 */
-	{ .name = "lchown", },
-	{ .name = "remap_file_pages", },
-	{ .name = "wait4", },
-	{ .name = "sysinfo", },
-	{ .name = "clone", .flags = AVOID_SYSCALL },			/* 105 */
-	{ .name = "setdomainname", },
-	{ .name = "newuname", },
-	{ .name = "adjtimex", },
-	{ .name = "ni_syscall (was ia64_create_module)", },	/* was: ia64_create_module */
-	{ .name = "init_module", },		/* 110 */
-	{ .name = "delete_module", },
-	{ .name = "ni_syscall", },
-	{ .name = "ni_syscall (was query_module)", },	/* was:query_module */
-	{ .name = "quotactl", },
-	{ .name = "bdflush", },			/* 115 */
-	{ .name = "sysfs", },
-	{ .name = "personality", },
-	{ .name = "ni_syscall (afs_syscall)", },	/* afs_syscall */
-	{ .name = "setfsuid", },
-	{ .name = "setfsgid", },		/* 120 */
-	{ .name = "getdents", },
-	{ .name = "flock", },
-	{ .name = "readv", },
-	{ .name = "writev", },
-	{ .name = "pread64", .sanitise = sanitise_pread64 },			/* 125 */
-	{ .name = "pwrite64", .sanitise = sanitise_pwrite64 },
-	{ .name = "sysctl", },
-	{ .name = "mmap", },
-	{ .name = "munmap", },
-	{ .name = "mlock", },			/* 130 */
-	{ .name = "mlockall", },
-	{ .name = "mprotect", .sanitise = sanitise_mprotect },
-	{ .name = "mremap", },
-	{ .name = "msync", },
-	{ .name = "munlock", },			/* 135 */
-	{ .name = "munlockall", },
-	{ .name = "sched_getparam", },
-	{ .name = "sched_setparam", },
-	{ .name = "sched_getscheduler", },
-	{ .name = "sched_setscheduler", },	/* 140 */
-	{ .name = "sched_yield", },
-	{ .name = "sched_get_priority_max", },
-	{ .name = "sched_get_priority_min", },
-	{ .name = "sched_rr_get_interval", },
-	{ .name = "nanosleep", },		/* 145 */
-	{ .name = "nfsservctl", },
-	{ .name = "prctl", },
-	{ .name = "getpagesize", },
-	{ .name = "mmap2", },
-	{ .name = "pciconfig_read", },		/* 150 */
-	{ .name = "pciconfig_write", },
-	{ .name = "perfmonctl", },
-	{ .name = "sigaltstack", },
-	{ .name = "rt_sigaction", .sanitise = sanitise_rt_sigaction },
-	{ .name = "rt_sigpending", },		/* 155 */
-	{ .name = "rt_sigprocmask", .sanitise = sanitise_rt_sigprocmask },
-	{ .name = "rt_sigqueueinfo", },
-	{ .name = "rt_sigreturn", .flags = AVOID_SYSCALL },
-	{ .name = "rt_sigsuspend", },
-	{ .name = "rt_sigtimedwait", },		/* 160 */
-	{ .name = "getcwd", },
-	{ .name = "capget", },
-	{ .name = "capset", },
-	{ .name = "sendfile64", },
-	{ .name = "ni_syscall (getpmsg)", },	/* 165 - getpmsg (STREAMS) */
-	{ .name = "ni_syscall (putpmsg)", },	/* putpmsg (STREAMS) */
-	{ .name = "socket", },
-	{ .name = "bind", },
-	{ .name = "connect", },
-	{ .name = "listen", },			/* 170 */
-	{ .name = "accept", },
-	{ .name = "getsockname", },
-	{ .name = "getpeername", },
-	{ .name = "socketpair", },
-	{ .name = "send", },			/* 175 */
-	{ .name = "sendto", },
-	{ .name = "recv", },
-	{ .name = "recvfrom", },
-	{ .name = "shutdown", },
-	{ .name = "setsockopt", },		/* 180 */
-	{ .name = "getsockopt", },
-	{ .name = "sendmsg", },
-	{ .name = "recvmsg", },
-	{ .name = "pivot_root", },
-	{ .name = "mincore", },			/* 185 */
-	{ .name = "madvise", },
-	{ .name = "newstat", },
-	{ .name = "newlstat", },
-	{ .name = "newfstat", },
-	{ .name = "clone2", .flags = AVOID_SYSCALL },			/* 190 */
-	{ .name = "getdents64", },
-	{ .name = "getunwind", },
-	{ .name = "readahead", },
-	{ .name = "setxattr", },
-	{ .name = "lsetxattr", },		/* 195 */
-	{ .name = "fsetxattr", },
-	{ .name = "getxattr", },
-	{ .name = "lgetxattr", },
-	{ .name = "fgetxattr", },
-	{ .name = "listxattr", },		/* 200 */
-	{ .name = "llistxattr", },
-	{ .name = "flistxattr", },
-	{ .name = "removexattr", },
-	{ .name = "lremovexattr", },
-	{ .name = "fremovexattr", },		/* 205 */
-	{ .name = "tkill", },
-	{ .name = "futex", },
-	{ .name = "sched_setaffinity", },
-	{ .name = "sched_getaffinity", },
-	{ .name = "set_tid_address", },		/* 210 */
-	{ .name = "fadvise64_64", },
-	{ .name = "tgkill", },
-	{ .name = "exit_group", .flags = AVOID_SYSCALL },
-	{ .name = "lookup_dcookie", .flags = CAPABILITY_CHECK, },
-	{ .name = "io_setup", },		/* 215 */
-	{ .name = "io_destroy", },
-	{ .name = "io_getevents", },
-	{ .name = "io_submit", },
-	{ .name = "io_cancel", },
-	{ .name = "epoll_create", },		/* 220 */
-	{ .name = "epoll_ctl", },
-	{ .name = "epoll_wait", },
-	{ .name = "restart_syscall", },
-	{ .name = "semtimedop", },
-	{ .name = "timer_create", },		/* 225 */
-	{ .name = "timer_settime", },
-	{ .name = "timer_gettime", },
-	{ .name = "timer_getoverrun", },
-	{ .name = "timer_delete", },
-	{ .name = "clock_settime", },		/* 230 */
-	{ .name = "clock_gettime", },
-	{ .name = "clock_getres", },
-	{ .name = "clock_nanosleep", },
-	{ .name = "fstatfs64", },
-	{ .name = "statfs64", },		/* 235 */
-	{ .name = "mbind", },
-	{ .name = "get_mempolicy", },
-	{ .name = "set_mempolicy", },
-	{ .name = "mq_open", },
-	{ .name = "mq_unlink", },		/* 240 */
-	{ .name = "mq_timedsend", },
-	{ .name = "mq_timedreceive", },
-	{ .name = "mq_notify", },
-	{ .name = "mq_getsetattr", },
-	{ .name = "kexec_load", .flags = CAPABILITY_CHECK },	/* 245 - reserved for kexec_load */
-	{ .name = "ni_syscall (reserved for vserver)", },	/* reserved for vserver */
-	{ .name = "waitid", },
-	{ .name = "add_key", },
-	{ .name = "request_key", },
-	{ .name = "keyctl", },			/* 250 */
-	{ .name = "ioprio_set", },
-	{ .name = "ioprio_get", },
-	{ .name = "ni_syscall", },
-	{ .name = "inotify_init", },
-	{ .name = "inotify_add_watch", },	/* 255 */
-	{ .name = "inotify_rm_watch", },
-	{ .name = "migrate_pages", },
-	{ .name = "openat", },
-	{ .name = "mkdirat", },
-	{ .name = "mknodat", },			/* 260 */
-	{ .name = "fchownat", },
-	{ .name = "futimesat", },
-	{ .name = "newfstatat", },
-	{ .name = "unlinkat", },
-	{ .name = "renameat", },		/* 265 */
-	{ .name = "linkat", },
-	{ .name = "symlinkat", },
-	{ .name = "readlinkat", },
-	{ .name = "fchmodat", },
-	{ .name = "faccessat", },		/* 270 */
-	{ .name = "ni_syscall (reserved for pselect)", },	/* reserved for pselect */
-	{ .name = "ni_syscall", },
-	{ .name = "unshare", },
-	{ .name = "splice", .sanitise = sanitise_splice },
-	{ .name = "set_robust_list", .sanitise = sanitise_set_robust_list },	/* 275 */
-	{ .name = "get_robust_list", },
-	{ .name = "sync_file_range", .sanitise = sanitise_sync_file_range },
-	{ .name = "tee", },
-	{ .name = "vmsplice", .sanitise = sanitise_vmsplice },
-	{ .name = "fallocate", },	/* 280 */
-	{ .name = "getcpu", },
-	{ .name = "epoll_pwait", },
-	{ .name = "utimensat", },
-	{ .name = "signalfd", },
-	{ .name = "ni_syscall", .flags = AVOID_SYSCALL },	/* 285 */
-	{ .name = "eventfd", },
-	{ .name = "timerfd_create", },
-	{ .name = "timerfd_settime", },
-	{ .name = "timerfd_gettime", },
-        { .name = "signalfd4", },	/* 290*/
-        { .name = "eventfd2", },
-        { .name = "epoll_create1", },
-        { .name = "dup3", },
-        { .name = "pipe2", },
-        { .name = "inotify_init1", }, /* 295 */
-        { .name = "preadv", },
-        { .name = "pwritev", },
-        { .name = "rt_tgsigqueueinfo", },
+
+struct syscalltable syscalls_ia64[NR_SYSCALLS] = {
+NI_SYSCALL
+#include "syscalls/exit.h.h"
+#include "syscalls/read.h"
+#include "syscalls/write.h"
+#include "syscalls/open.h"
+#include "syscalls/close.h"
+#include "syscalls/creat.h"
+#include "syscalls/link.h"
+#include "syscalls/unlink.h"
+#include "syscalls/execve.h"
+#include "syscalls/chdir.h"
+#include "syscalls/fchdir.h"
+#include "syscalls/utimes.h"
+#include "syscalls/mknod.h"
+#include "syscalls/chmod.h"
+#include "syscalls/chown.h"
+#include "syscalls/lseek.h"
+#include "syscalls/getpid.h"
+#include "syscalls/getppid.h"
+#include "syscalls/mount.h"
+#include "syscalls/umount.h"
+#include "syscalls/setuid.h"
+#include "syscalls/getuid.h"
+#include "syscalls/geteuid.h"
+#include "syscalls/ptrace.h"
+#include "syscalls/access.h"
+#include "syscalls/sync.h"
+#include "syscalls/fsync.h"
+#include "syscalls/fdatasync.h"
+#include "syscalls/kill.h"
+#include "syscalls/rename.h"
+#include "syscalls/mkdir.h"
+#include "syscalls/rmdir.h"
+#include "syscalls/dup.h"
+#include "syscalls/pipe.h"
+#include "syscalls/times.h"
+#include "syscalls/brk.h"
+#include "syscalls/setgid.h"
+#include "syscalls/getgid.h"
+#include "syscalls/getegid.h"
+#include "syscalls/acct.h"
+#include "syscalls/ioctl.h"
+#include "syscalls/fcntl.h"
+#include "syscalls/umask.h"
+#include "syscalls/chroot.h"
+#include "syscalls/ustat.h"
+#include "syscalls/dup2.h"
+#include "syscalls/setreuid.h"
+#include "syscalls/setregid.h"
+#include "syscalls/getresuid.h"
+#include "syscalls/setresuid.h"
+#include "syscalls/getresgid.h"
+#include "syscalls/setresgid.h"
+#include "syscalls/getgroups.h"
+#include "syscalls/setgroups.h"
+#include "syscalls/getpgid.h"
+#include "syscalls/setpgid.h"
+#include "syscalls/setsid.h"
+#include "syscalls/getsid.h"
+#include "syscalls/sethostname.h"
+#include "syscalls/setrlimit.h"
+#include "syscalls/getrlimit.h"
+#include "syscalls/getrusage.h"
+#include "syscalls/gettimeofday.h"
+#include "syscalls/settimeofday.h"
+#include "syscalls/select.h"
+#include "syscalls/poll.h"
+#include "syscalls/symlink.h"
+#include "syscalls/readlink.h"
+#include "syscalls/uselib.h"
+#include "syscalls/swapon.h"
+#include "syscalls/swapoff.h"
+#include "syscalls/reboot.h"
+#include "syscalls/truncate.h"
+#include "syscalls/ftruncate.h"
+#include "syscalls/fchmod.h"
+#include "syscalls/fchown.h"
+#include "syscalls/getpriority.h"
+#include "syscalls/setpriority.h"
+#include "syscalls/statfs.h"
+#include "syscalls/fstatfs.h"
+#include "syscalls/gettid.h"
+#include "syscalls/semget.h"
+#include "syscalls/semop.h"
+#include "syscalls/semctl.h"
+#include "syscalls/msgget.h"
+#include "syscalls/msgsnd.h"
+#include "syscalls/msgrcv.h"
+#include "syscalls/msgctl.h"
+#include "syscalls/shmget.h"
+#include "syscalls/shmat.h"
+#include "syscalls/shmdt.h"
+#include "syscalls/shmctl.h"
+#include "syscalls/syslog.h"
+#include "syscalls/setitimer.h"
+#include "syscalls/getitimer.h"
+#include "syscalls/tux.h"
+NI_SYSCALL	/* was ia64_oldlstat */
+NI_SYSCALL	/* was ia64_oldfstat */
+#include "syscalls/vhangup.h"
+#include "syscalls/lchown.h"
+#include "syscalls/remap_file_pages.h"
+#include "syscalls/wait4.h"
+#include "syscalls/sysinfo.h"
+#include "syscalls/clone.h"
+#include "syscalls/setdomainname.h"
+#include "syscalls/newuname.h"
+#include "syscalls/adjtimex.h"
+#include "syscalls/create_module.h
+#include "syscalls/init_module.h"
+#include "syscalls/delete_module.h"
+NI_SYSCALL	/* ? */
+#include "syscalls/query_module.h"
+#include "syscalls/quotactl.h"
+#include "syscalls/bdflush.h"
+#include "syscalls/sysfs.h"
+#include "syscalls/personality.h"
+#include "syscalls/afs.h"
+#include "syscalls/setfsuid.h"
+#include "syscalls/setfsgid.h"
+#include "syscalls/getdents.h"
+#include "syscalls/flock.h"
+#include "syscalls/readv.h"
+#include "syscalls/writev.h"
+#include "syscalls/pread64.h"
+#include "syscalls/pwrite64.h"
+#include "syscalls/sysctl.h"
+#include "syscalls/mmap.h"
+#include "syscalls/munmap.h"
+#include "syscalls/mlock.h"
+#include "syscalls/mlockall.h"
+#include "syscalls/mprotect.h"
+#include "syscalls/mremap.h"
+#include "syscalls/msync.h"
+#include "syscalls/munlock.h"
+#include "syscalls/munlockall.h"
+#include "syscalls/sched_getparam.h"
+#include "syscalls/sched_setparam.h"
+#include "syscalls/sched_getscheduler.h"
+#include "syscalls/sched_setscheduler.h"
+#include "syscalls/sched_yield.h"
+#include "syscalls/sched_get_priority_max.h"
+#include "syscalls/sched_get_priority_min.h"
+#include "syscalls/sched_rr_get_interval.h"
+#include "syscalls/nanosleep.h"
+#include "syscalls/nfsservctl.h"
+#include "syscalls/prctl.h"
+#include "syscalls/getpagesize.h"
+#include "syscalls/mmap2.h"
+#include "syscalls/pciconfig_read.h"
+#include "syscalls/pciconfig_write.h"
+#include "syscalls/perfmonctl.h"
+#include "syscalls/sigaltstack.h"
+#include "syscalls/rt_sigaction.h"
+#include "syscalls/rt_sigpending.h"
+#include "syscalls/rt_sigprocmask.h"
+#include "syscalls/rt_sigqueueinfo.h"
+#include "syscalls/rt_sigreturn.h"
+#include "syscalls/rt_sigsuspend.h"
+#include "syscalls/rt_sigtimedwait.h"
+#include "syscalls/getcwd.h"
+#include "syscalls/capget.h"
+#include "syscalls/capset.h"
+#include "syscalls/sendfile64.h"
+#include "syscalls/getpmsg.h"
+#include "syscalls/putpmsg.h"
+#include "syscalls/socket.h"
+#include "syscalls/bind.h"
+#include "syscalls/connect.h"
+#include "syscalls/listen.h"
+#include "syscalls/accept.h"
+#include "syscalls/getsockname.h"
+#include "syscalls/getpeername.h"
+#include "syscalls/socketpair.h"
+#include "syscalls/send.h"
+#include "syscalls/sendto.h"
+#include "syscalls/recv.h"
+#include "syscalls/recvfrom.h"
+#include "syscalls/shutdown.h"
+#include "syscalls/setsockopt.h"
+#include "syscalls/getsockopt.h"
+#include "syscalls/sendmsg.h"
+#include "syscalls/recvmsg.h"
+#include "syscalls/pivot_root.h"
+#include "syscalls/mincore.h"
+#include "syscalls/madvise.h"
+#include "syscalls/newstat.h"
+#include "syscalls/newlstat.h"
+#include "syscalls/newfstat.h"
+#include "syscalls/clone2.h"
+#include "syscalls/getdents64.h"
+#include "syscalls/getunwind.h"
+#include "syscalls/readahead.h"
+#include "syscalls/setxattr.h"
+#include "syscalls/lsetxattr.h"
+#include "syscalls/fsetxattr.h"
+#include "syscalls/getxattr.h"
+#include "syscalls/lgetxattr.h"
+#include "syscalls/fgetxattr.h"
+#include "syscalls/listxattr.h"
+#include "syscalls/llistxattr.h"
+#include "syscalls/flistxattr.h"
+#include "syscalls/removexattr.h"
+#include "syscalls/lremovexattr.h"
+#include "syscalls/fremovexattr.h"
+#include "syscalls/tkill.h"
+#include "syscalls/futex.h"
+#include "syscalls/sched_setaffinity.h"
+#include "syscalls/sched_getaffinity.h"
+#include "syscalls/set_tid_address.h"
+#include "syscalls/fadvise64_64.h"
+#include "syscalls/tgkill.h"
+#include "syscalls/exit_group.h"
+#include "syscalls/lookup_dcookie.h"
+#include "syscalls/io_setup.h"
+#include "syscalls/io_destroy.h"
+#include "syscalls/io_getevents.h"
+#include "syscalls/io_submit.h"
+#include "syscalls/io_cancel.h"
+#include "syscalls/epoll_create.h"
+#include "syscalls/epoll_ctl.h"
+#include "syscalls/epoll_wait.h"
+#include "syscalls/restart_syscall.h"
+#include "syscalls/semtimedop.h"
+#include "syscalls/timer_create.h"
+#include "syscalls/timer_settime.h"
+#include "syscalls/timer_gettime.h"
+#include "syscalls/timer_getoverrun.h"
+#include "syscalls/timer_delete.h"
+#include "syscalls/clock_settime.h"
+#include "syscalls/clock_gettime.h"
+#include "syscalls/clock_getres.h"
+#include "syscalls/clock_nanosleep.h"
+#include "syscalls/fstatfs64.h"
+#include "syscalls/statfs64.h"
+#include "syscalls/mbind.h"
+#include "syscalls/get_mempolicy.h"
+#include "syscalls/set_mempolicy.h"
+#include "syscalls/mq_open.h"
+#include "syscalls/mq_unlink.h"
+#include "syscalls/mq_timedsend.h"
+#include "syscalls/mq_timedreceive.h"
+#include "syscalls/mq_notify.h"
+#include "syscalls/mq_getsetattr.h"
+#include "syscalls/kexec_load.h"
+#include "syscalls/vserver.h"
+#include "syscalls/waitid.h"
+#include "syscalls/add_key.h"
+#include "syscalls/request_key.h"
+#include "syscalls/keyctl.h"
+#include "syscalls/ioprio_set.h"
+#include "syscalls/ioprio_get.h"
+#include "syscalls/ni_syscall.h"	/* ? */
+#include "syscalls/inotify_init.h"
+#include "syscalls/inotify_add_watch.h"
+#include "syscalls/inotify_rm_watch.h"
+#include "syscalls/migrate_pages.h"
+#include "syscalls/openat.h"
+#include "syscalls/mkdirat.h"
+#include "syscalls/mknodat.h"
+#include "syscalls/fchownat.h"
+#include "syscalls/futimesat.h"
+#include "syscalls/newfstatat.h"
+#include "syscalls/unlinkat.h"
+#include "syscalls/renameat.h"
+#include "syscalls/linkat.h"
+#include "syscalls/symlinkat.h"
+#include "syscalls/readlinkat.h"
+#include "syscalls/fchmodat.h"
+#include "syscalls/faccessat.h"
+#include "syscalls/pselect.h"
+#include "syscalls/ni_syscall.h"	/* ? */
+#include "syscalls/unshare.h"
+#include "syscalls/splice.h"
+#include "syscalls/set_robust_list.h"
+#include "syscalls/get_robust_list.h"
+#include "syscalls/sync_file_range.h"
+#include "syscalls/tee.h"
+#include "syscalls/vmsplice.h"
+#include "syscalls/fallocate.h"
+#include "syscalls/getcpu.h"
+#include "syscalls/epoll_pwait.h"
+#include "syscalls/utimensat.h"
+#include "syscalls/signalfd.h"
+#include "syscalls/ni_syscall.h"	/* ? */
+#include "syscalls/eventfd.h"
+#include "syscalls/timerfd_create.h"
+#include "syscalls/timerfd_settime.h"
+#include "syscalls/timerfd_gettime.h"
+#include "syscalls/signalfd4.h"
+#include "syscalls/eventfd2.h"
+#include "syscalls/epoll_create1.h"
+#include "syscalls/dup3.h"
+#include "syscalls/pipe2.h"
+#include "syscalls/inotify_init1.h"
+#include "syscalls/preadv.h"
+#include "syscalls/pwritev.h"
+#include "syscalls/rt_tgsigqueueinfo.h"
 };
