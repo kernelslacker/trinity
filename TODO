@@ -1,3 +1,7 @@
+* Argument order bug.
+  ./trinity --mode=random --32bit -c mprotect  doesn't see the -c
+  ./trinity --mode=random -c mprotect --32bit does.
+
 * Convert the syscall lists for all archs over to the new-style (see x86-64)
   The lack of .num_args probably breaks trinity on those archs right now.
 
