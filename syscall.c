@@ -41,8 +41,12 @@ static long call_syscall(__unused__ int num_args, unsigned int call,
 	unsigned long a1, unsigned long a2, unsigned long a3,
 	unsigned long a4, unsigned long a5, unsigned long a6)
 {
+	/* If we passed --32bit don't do the 64bit syscall() */
 	if (!do_32bit)
 		return syscall(call, a1, a2, a3, a4, a5, a6);
+
+	/* do the 32 bit call. */
+
 #if defined(__i386__) || defined (__x86_64__)
 	if (num_args < 6) {
 		long __res;
