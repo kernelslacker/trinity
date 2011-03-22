@@ -43,7 +43,7 @@ static long call_syscall(__unused__ int num_args, unsigned int call,
 {
 	if (!do_32bit)
 		return syscall(call, a1, a2, a3, a4, a5, a6);
-
+#if defined(__i386__) || defined (__x86_64__)
 	if (num_args < 6) {
 		long __res;
 		__asm__ volatile ("int $0x80"
@@ -54,8 +54,10 @@ static long call_syscall(__unused__ int num_args, unsigned int call,
 		__syscall_return(long,__res);
 		return __res;
 	}
-	/* TODO: 6 arg 32bit syscall goes here.*/
+	/* TODO: 6 arg 32bit x86 syscall goes here.*/
+#endif
 
+	// TODO: 32-bit syscall entry for non-x86 archs goes here.
 	return 0;
 
 }
