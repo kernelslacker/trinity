@@ -1,6 +1,7 @@
 #include <linux/ioctl.h>
 #include <linux/major.h>
 
+/*
 #include <linux/agpgart.h>
 #include <linux/atmioc.h>
 #include <linux/cciss_ioctl.h>
@@ -27,7 +28,7 @@
 #include <linux/watchdog.h>
 #include <mtd/ubi-user.h>
 #include <rdma/ib_user_mad.h>
-
+*/
 // msm_mdp.h not exported to glibc yet.
 #define MSMFB_IOCTL_MAGIC 'm'
 
