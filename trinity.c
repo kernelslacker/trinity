@@ -446,6 +446,10 @@ int main(int argc, char* argv[])
 
 	progname = argv[0];
 
+	parse_args(argc, argv);
+	if (argc==1)
+		usage();
+
 	if (logfilename == NULL)
 		logfilename = strdup("trinity-cpu0.log");
 	unlink(logfilename);
@@ -454,10 +458,6 @@ int main(int argc, char* argv[])
 		perror("couldn't open logfile\n");
 		exit(EXIT_FAILURE);
 	}
-
-	parse_args(argc, argv);
-	if (argc==1)
-		usage();
 
 	max_nr_syscalls = NR_SYSCALLS;
 
