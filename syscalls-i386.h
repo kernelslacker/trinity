@@ -1,11 +1,11 @@
-/* Syscalls from arch/x86/include/asm/unistd_32.h as of 2.6.35 */
+/* Syscalls from arch/x86/include/asm/unistd_32.h as of 2.6.39 */
 
 #include "trinity.h"
 #include "sanitise.h"
 
 #include <fcntl.h>
 
-#define NR_I386_SYSCALLS 341
+#define NR_I386_SYSCALLS 345
 
 struct syscalltable syscalls_i386[NR_I386_SYSCALLS] = {
 #include "syscalls/restart_syscall.h"
@@ -349,4 +349,8 @@ struct syscalltable syscalls_i386[NR_I386_SYSCALLS] = {
 #include "syscalls/fanotify_init.h"
 #include "syscalls/fanotify_mark.h"
 #include "syscalls/prlimit64.h"
+#include "syscalls/name_to_handle_at.h"
+#include "syscalls/open_by_handle_at.h"
+#include "syscalls/clock_adjtime.h"
+#include "syscalls/syncfs.h"
 };
