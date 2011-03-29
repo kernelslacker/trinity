@@ -12,9 +12,9 @@
 
 #include <asm/mman.h>
 
-#define NR_X86_64_SYSCALLS 306
+#define NR_X86_64_SYSCALLS 307	/* syscalls numbered from 0 */
 
-struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS] = {
+struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS+1] = {
 #include "syscalls/read.h"
 #include "syscalls/write.h"
 #include "syscalls/open.h"
@@ -251,6 +251,7 @@ struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS] = {
 #include "syscalls/epoll_ctl.h"
 #include "syscalls/tgkill.h"
 #include "syscalls/utimes.h"
+#include "syscalls/vserver.h"
 #include "syscalls/mbind.h"
 #include "syscalls/set_mempolicy.h"
 #include "syscalls/get_mempolicy.h"
