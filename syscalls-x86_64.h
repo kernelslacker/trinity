@@ -1,7 +1,7 @@
 #ifndef _SYSCALLS_x86_64_H
 #define _SYSCALLS_x86_64_H 1
 
-/* Syscalls from arch/x86/include/asm/unistd_64.h as of 2.6.35 */
+/* Syscalls from arch/x86/include/asm/unistd_64.h as of 2.6.39 */
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -12,7 +12,7 @@
 
 #include <asm/mman.h>
 
-#define NR_X86_64_SYSCALLS 302
+#define NR_X86_64_SYSCALLS 306
 
 struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS] = {
 #include "syscalls/read.h"
@@ -317,5 +317,9 @@ struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS] = {
 #include "syscalls/fanotify_init.h"
 #include "syscalls/fanotify_mark.h"
 #include "syscalls/prlimit64.h"
+#include "syscalls/name_to_handle_at.h"
+#include "syscalls/open_by_handle_at.h"
+#include "syscalls/clock_adjtime.h"
+#include "syscalls/syncfs.h"
 };
 #endif	/* _SYSCALLS_x86_64_H */
