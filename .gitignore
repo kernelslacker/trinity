@@ -3,3 +3,4 @@ core.*
 trinity
 trinity*.log
 trinity.socketcache
+tmp
