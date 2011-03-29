@@ -97,7 +97,7 @@ static void open_fds(char *dir)
 				//continue;
 			if ((openflag & O_RDONLY) && (openflag & O_WRONLY))
 				openflag = O_RDWR;
-			fd = open(b, openflag);
+			fd = open(b, openflag | O_NONBLOCK);
 			if (fd < 0)
 				continue;
 			printf("%s/%s\n", dir, de->d_name);
