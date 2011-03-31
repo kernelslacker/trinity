@@ -132,6 +132,8 @@ static long mkcall(unsigned int call)
 
 #define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)			\
 	if (syscalls[call].num_args >= ARGNUM) {			\
+		if (!NAME)						\
+			goto args_done;					\
 		if (ARGNUM != 1)					\
 			printf(WHITE ", ");				\
 		if (NAME)						\
@@ -161,7 +163,7 @@ static long mkcall(unsigned int call)
 	COLOR_ARG(4, syscalls[call].arg4name, 1<<2, olda4, a4);
 	COLOR_ARG(5, syscalls[call].arg5name, 1<<1, olda5, a5);
 	COLOR_ARG(6, syscalls[call].arg6name, 1<<0, olda6, a6);
-
+args_done:
 	printf(WHITE ") ");
 
 
@@ -325,9 +327,9 @@ void do_main_loop(void)
 		switch (opmode) {
 		case MODE_ROTATE:
 			/* It's easier to just use all regs for now. */
-			for (i=0; i<=max_nr_syscalls; i++) {
-				syscalls[i].num_args = 6;
-			}
+			//for (i=0; i<=max_nr_syscalls; i++) {
+			//	syscalls[i].num_args = 6;
+			//}
 
 			if (do_specific_syscall == 1) {
 				rotate_mask++;
