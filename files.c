@@ -11,8 +11,10 @@
 
 #include "trinity.h"
 
+#define MAX_FDS 750
+
 static int fds[1024];
-static int socket_fds[500];
+static int socket_fds[MAX_FDS];
 static int fd_idx;
 static int socks=0;
 
@@ -104,7 +106,7 @@ static void open_fds(char *dir)
 			writelog("fd[%i] = %s\n", fd_idx, b);
 			fds[fd_idx++] = fd;
 		}
-		if (fd_idx > 250)
+		if (fd_idx > (MAX_FDS / 2))
 			break;
 	}
 	closedir(d);
@@ -121,11 +123,11 @@ static void generate_sockets()
 {
 	int fd;
 	int cachefile;
-	int nr_to_create = 500;
+	int nr_to_create = MAX_FDS;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
 
-	if (fd_idx < 500)
+	if (fd_idx < MAX_FDS)
 		nr_to_create = fd_idx;
 	if (nr_to_create < 100)
 		nr_to_create = 100;
@@ -137,32 +139,33 @@ static void generate_sockets()
 		exit(EXIT_FAILURE);
 	}
 
-	for (domain = 0; domain < PF_MAX; domain++) {
-		for (type = 0; type < TYPE_MAX; type++) {
-			for (protocol = 0; protocol < PROTO_MAX; protocol++) {
-				printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
-					spinner[spin++], socks, nr_to_create-socks,
-					domain, type, protocol);
-				if (spin == 4)
-					spin = 0;
-				fd = socket(domain, type, protocol);
-				if (fd > -1) {
-					socket_fds[socks] = fd;
-					writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
-						socks+fd_idx, domain, type, protocol);
-					socks++;
+	while (socks < nr_to_create) {
+		domain = rand() % PF_MAX;
+		type = rand() % TYPE_MAX;
+		protocol = rand() % PROTO_MAX;
 
-					buffer[0] = domain;
-					buffer[1] = type;
-					buffer[2] = protocol;
-					write(cachefile, &buffer, sizeof(int) * 3);
+		printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
+			spinner[spin++], socks, nr_to_create-socks,
+			domain, type, protocol);
+		if (spin == 4)
+			spin = 0;
+		fd = socket(domain, type, protocol);
+		if (fd > -1) {
+			socket_fds[socks] = fd;
+			writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
+				socks+fd_idx, domain, type, protocol);
+			socks++;
 
-					if (socks == nr_to_create)
-						goto done;
-				}
-			}
+			buffer[0] = domain;
+			buffer[1] = type;
+			buffer[2] = protocol;
+			write(cachefile, &buffer, sizeof(int) * 3);
+
+			if (socks == nr_to_create)
+				goto done;
 		}
 	}
+
 done:
 	close(cachefile);
 	printf("\ncreated %d sockets\n", socks);
