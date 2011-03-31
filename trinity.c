@@ -371,6 +371,9 @@ static void find_specific_syscall()
 {
 	unsigned int i;
 
+	if (specific_syscall != 0)
+		return;
+
 	if (do_32bit == 1)
 		goto force_32bit;
 
