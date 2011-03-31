@@ -94,6 +94,14 @@ void regenerate_random_page()
 {
 	unsigned int i, j;
 
+	/* sometimes return a page of complete trash */
+	if (rand() % 2 == 0) {
+		for (i = 0; i < page_size; i++)
+			page_rand[i++] = (unsigned char)rand();
+		return;
+	}
+
+	/* sometimes return a page that looks kinda like a struct */
 	for (i = 0; i < page_size; i++) {
 		j = rand() % 4;
 		switch (j) {
