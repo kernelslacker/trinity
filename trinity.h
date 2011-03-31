@@ -12,6 +12,7 @@
 void syscall_list(void);
 void check_sanity(void);
 void do_main_loop(void);
+void regenerate_random_page(void);
 
 struct arglist {
 	unsigned int num;
