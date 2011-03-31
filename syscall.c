@@ -296,8 +296,6 @@ static void do_syscall_from_child(int cl)
 
 void do_main_loop(void)
 {
-	unsigned int i;
-
 	printf("trinity mode: %s\n", opmodename[opmode]);
 
 	switch (opmode) {
@@ -369,9 +367,7 @@ void do_main_loop(void)
 		if (syscallcount && (execcount >= syscallcount))
 			break;
 
-		/* regenerate the random buffer every time we make a syscall. */
-		for (i=0; i<page_size; i++)
-			page_rand[i]= rand();
+		regenerate_random_page();
 
 		/* If we're passing userspace addresses, mess with alignment */
 		if ((passed_type == TYPE_VALUE) &&

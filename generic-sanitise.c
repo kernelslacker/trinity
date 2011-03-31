@@ -90,6 +90,28 @@ unsigned long get_address()
 	return 0;
 }
 
+void regenerate_random_page()
+{
+	unsigned int i, j;
+
+	for (i = 0; i < page_size; i++) {
+		j = rand() % 4;
+		switch (j) {
+		case 0: page_rand[i] = get_interesting_32bit_value();
+			i += sizeof(unsigned long);
+			break;
+		case 1: page_rand[i] = get_interesting_value();
+			i += sizeof(unsigned long long);
+			break;
+		case 2: page_rand[i] = get_address();
+			i += sizeof(void *);
+			break;
+		case 3: page_rand[i] = (unsigned int) rand() % page_size;
+			i += sizeof(unsigned int);
+			break;
+		}
+	}
+}
 
 static unsigned int get_pid()
 {
