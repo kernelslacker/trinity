@@ -84,6 +84,12 @@ be one of the following..
  until it eventually gets to calling with the value in all registers.
  (This option usually used with -z, see below)
 
+ This mode operates internally as if every syscall has 6 args.  Due to the way
+ that the value 'travels' through the registers, a syscall with 3 args
+ for example has to wait until the value has travelled through the 4th, 5th and 6th
+ registers before it appears, even though those registers never get passed
+ to the syscall.
+
 'capcheck'
  This will check syscalls that call capable() to make sure they return -EPERM.
 
