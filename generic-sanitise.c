@@ -97,7 +97,7 @@ void regenerate_random_page()
 	/* sometimes return a page of complete trash */
 	if (rand() % 2 == 0) {
 		for (i = 0; i < page_size; i++)
-			page_rand[i++] = (unsigned char)rand();
+			page_rand[i] = (unsigned char)rand();
 		return;
 	}
 
