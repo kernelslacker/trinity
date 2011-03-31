@@ -1,3 +1,31 @@
+
+/* flags used for fanotify_modify_mark() */
+#define FAN_MARK_ADD            0x00000001
+#define FAN_MARK_REMOVE         0x00000002
+#define FAN_MARK_DONT_FOLLOW    0x00000004
+#define FAN_MARK_ONLYDIR        0x00000008
+#define FAN_MARK_MOUNT          0x00000010
+#define FAN_MARK_IGNORED_MASK   0x00000020
+#define FAN_MARK_IGNORED_SURV_MODIFY    0x00000040
+#define FAN_MARK_FLUSH          0x00000080
+
+#define FAN_ACCESS              0x00000001      /* File was accessed */
+#define FAN_MODIFY              0x00000002      /* File was modified */
+#define FAN_CLOSE_WRITE         0x00000008      /* Writtable file closed */
+#define FAN_CLOSE_NOWRITE       0x00000010      /* Unwrittable file closed */
+#define FAN_OPEN                0x00000020      /* File was opened */
+
+#define FAN_Q_OVERFLOW          0x00004000      /* Event queued overflowed */
+
+#define FAN_OPEN_PERM           0x00010000      /* File open in perm check */
+#define FAN_ACCESS_PERM         0x00020000      /* File accessed in perm check */
+
+#define FAN_ONDIR               0x40000000      /* event occurred against dir */
+
+#define FAN_EVENT_ON_CHILD      0x08000000      /* interested in child events */
+#define FAN_CLOSE               (FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE) /* close */
+
+
 /*
  * SYSCALL_DEFINE(fanotify_mark)(int fanotify_fd, unsigned int flags,
 	__u64 mask, int dfd, const char  __user * pathname)
