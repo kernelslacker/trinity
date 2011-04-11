@@ -9,3 +9,8 @@
  * default 0x40000000 if VMSPLIT_1G
  */
 
+#define PAGE_SHIFT 12
+#define PAGE_SIZE (1UL << PAGE_SHIFT)
+#define PAGE_MASK (~(PAGE_SIZE-1))
+#define PTE_FILE_MAX_BITS 32
+
