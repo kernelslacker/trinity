@@ -6,6 +6,7 @@
 {
 	.name = "pselect6",
 	.num_args = 6,
+	.flags = AVOID_SYSCALL,
 	.arg1name = "n",
 	.arg2name = "inp",
 	.arg2type = ARG_ADDRESS,
