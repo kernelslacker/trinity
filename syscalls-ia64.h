@@ -3,19 +3,18 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+#include <fcntl.h>
+#include <signal.h>
+#include <asm/mman.h>
+#include <asm/perfmon.h>
+#include <asm/types.h>
+#include <sys/socket.h>
+
 #define NR_SYSCALLS 298
 
-#define NI_SYSCALL		\
-{				\
-        .name = "ni_syscall",	\
-        .num_args = 6,		\
-        .flags = NI_SYSCALL,	\
-},				\
-
-
 struct syscalltable syscalls_ia64[NR_SYSCALLS] = {
-NI_SYSCALL
-#include "syscalls/exit.h.h"
+#include "syscalls/ni_syscall.h"
+#include "syscalls/exit.h"
 #include "syscalls/read.h"
 #include "syscalls/write.h"
 #include "syscalls/open.h"
@@ -111,8 +110,8 @@ NI_SYSCALL
 #include "syscalls/setitimer.h"
 #include "syscalls/getitimer.h"
 #include "syscalls/tux.h"
-NI_SYSCALL	/* was ia64_oldlstat */
-NI_SYSCALL	/* was ia64_oldfstat */
+#include "syscalls/ni_syscall.h"	// ia64_oldlstat
+#include "syscalls/ni_syscall.h"	// ia64_oldfstat
 #include "syscalls/vhangup.h"
 #include "syscalls/lchown.h"
 #include "syscalls/remap_file_pages.h"
@@ -122,10 +121,10 @@ NI_SYSCALL	/* was ia64_oldfstat */
 #include "syscalls/setdomainname.h"
 #include "syscalls/newuname.h"
 #include "syscalls/adjtimex.h"
-#include "syscalls/create_module.h
+#include "syscalls/create_module.h"
 #include "syscalls/init_module.h"
 #include "syscalls/delete_module.h"
-NI_SYSCALL	/* ? */
+#include "syscalls/ni_syscall.h"	// ?
 #include "syscalls/query_module.h"
 #include "syscalls/quotactl.h"
 #include "syscalls/bdflush.h"
@@ -284,7 +283,7 @@ NI_SYSCALL	/* ? */
 #include "syscalls/readlinkat.h"
 #include "syscalls/fchmodat.h"
 #include "syscalls/faccessat.h"
-#include "syscalls/pselect.h"
+#include "syscalls/pselect6.h"
 #include "syscalls/ni_syscall.h"	/* ? */
 #include "syscalls/unshare.h"
 #include "syscalls/splice.h"
