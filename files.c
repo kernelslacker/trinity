@@ -231,10 +231,10 @@ void setup_fds(void)
 	writelog("fd[1] = pipe\n");
 
 	printf("Opening fds\n");
+	open_sockets();
 	open_fds("/dev");
 	open_fds("/sys");
 	open_fds("/proc");
-	open_sockets();
 
 	printf("done getting fds [idx:%d]\n", fd_idx);
 	if (!fd_idx) {
