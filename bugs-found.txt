@@ -14,3 +14,6 @@ Bugs found so far using this tool. (git hashes from linux-2.6.git)
   72083646528d4887b920deb71b37e09bc7d227bb
   pipe_fcntl oopses when called on non-pipes. (CVE-2010-4256)
 
+* 4352d9d44b935e4d000be6ec89ddb55c2bf35f24
+  ntp: fix non privileged system time shifting
+
