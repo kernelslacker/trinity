@@ -3,6 +3,23 @@
 	unsigned long, prot, unsigned long, flags,
 	unsigned long, fd, unsigned long, off)
  */
+
+#ifndef MAP_UNINITIALIZED
+#define MAP_UNINITIALIZED 0x4000000
+#endif
+
+#ifndef PROT_SEM
+#define PROT_SEM 0x8
+#endif
+
+#ifndef MAP_HUGETLB
+#define MAP_HUGETLB 0x40000
+#endif
+
+#ifndef MAP_STACK
+#define MAP_STACK 0x20000
+#endif
+
 {
 	.name = "mmap",
 	.num_args = 6,

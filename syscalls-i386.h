@@ -4,6 +4,7 @@
 #include "sanitise.h"
 
 #include <fcntl.h>
+#include <sys/mman.h>
 
 #define NR_I386_SYSCALLS 345
 
