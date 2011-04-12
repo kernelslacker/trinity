@@ -32,6 +32,8 @@ static int ignore_files(char *file)
 		"oom_adj", "oom_score_adj",
 		"clear_refs", "loginuid", "sched", "comm", "mem",
 		"task",
+		/* ignore cgroup stuff*/
+		"cgroup",
 		NULL};
 
 	for(i = 0; ignored_files[i]; i++) {
