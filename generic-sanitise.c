@@ -16,7 +16,7 @@ unsigned long filebuffersize = 0;
 unsigned long get_interesting_32bit_value()
 {
 	int i;
-	i = rand() % 13;
+	i = rand() % 15;
 
 	switch (i) {
 	/* 32 bit */
