@@ -17,3 +17,6 @@ Bugs found so far using this tool. (git hashes from linux-2.6.git)
 * 4352d9d44b935e4d000be6ec89ddb55c2bf35f24
   ntp: fix non privileged system time shifting
 
+* c100c8f4c3c6f2a407bdbaaad2c4f1062e6a473a
+  appletalk: Fix OOPS in atalk_release().
+
