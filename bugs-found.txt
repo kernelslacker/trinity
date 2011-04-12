@@ -1,4 +1,5 @@
 Bugs found so far using this tool. (git hashes from linux-2.6.git)
+Interestingly, trinity triggers quite a few bugs not directly related to syscalls.
 
 * ed3aada1bf34c5a9e98af167f125f8a740fc726a
   world writable acpi file in sysfs
@@ -19,4 +20,7 @@ Bugs found so far using this tool. (git hashes from linux-2.6.git)
 
 * c100c8f4c3c6f2a407bdbaaad2c4f1062e6a473a
   appletalk: Fix OOPS in atalk_release().
+
+* a5660b41af6a28f8004e70eb261e1202ad55c5e3
+  tty: fix endless work loop when the buffer fills up
 
