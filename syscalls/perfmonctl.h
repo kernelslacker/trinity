@@ -1,6 +1,20 @@
 /*
     sys_perfmonctl (int fd, int cmd, void __user *arg, int count)
  */
+
+/* TODO: FIXME */
+#ifndef PFM_CREATE_EVTSETS
+#define PFM_CREATE_EVTSETS 0
+#endif
+
+#ifndef PFM_DELETE_EVTSETS
+#define PFM_DELETE_EVTSETS 0
+#endif
+
+#ifndef PFM_GETINFO_EVTSETS
+#define PFM_GETINFO_EVTSETS 0
+#endif
+
 {
 	.name = "perfmonctl",
 	.num_args = 4,

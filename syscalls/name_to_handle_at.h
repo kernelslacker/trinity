@@ -4,6 +4,10 @@
  *	int, flag)
  */
 
+#ifndef AT_NO_AUTOMOUNT
+#define AT_NO_AUTOMOUNT 0x800
+#endif
+
 #ifndef AT_EMPTY_PATH
 #define AT_EMPTY_PATH	0x1000  /* Allow empty relative pathname */
 #endif

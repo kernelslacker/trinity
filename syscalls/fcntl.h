@@ -1,6 +1,31 @@
 /*
  * SYSCALL_DEFINE3(fcntl, unsigned int, fd, unsigned int, cmd, unsigned long, arg)
  */
+
+#ifndef F_LINUX_SPECIFIC_BASE
+#define F_LINUX_SPECIFIC_BASE 1024
+#endif
+
+#ifndef F_SETPIPE_SZ
+#define F_SETPIPE_SZ    (F_LINUX_SPECIFIC_BASE + 7)
+#endif
+
+#ifndef F_GETPIPE_SZ
+#define F_GETPIPE_SZ    (F_LINUX_SPECIFIC_BASE + 8)
+#endif
+
+#ifndef F_DUPFD_CLOEXEC
+#define F_DUPFD_CLOEXEC (F_LINUX_SPECIFIC_BASE + 6)
+#endif
+
+#ifndef F_SETOWN_EX
+#define F_SETOWN_EX 15
+#endif
+
+#ifndef F_GETOWN_EX
+#define F_GETOWN_EX 16
+#endif
+
 {
 	.name = "fcntl",
 	.num_args = 3,
