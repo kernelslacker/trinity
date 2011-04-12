@@ -16,26 +16,39 @@ unsigned long filebuffersize = 0;
 unsigned long get_interesting_32bit_value()
 {
 	int i;
-	i = rand() % 15;
 
-	switch (i) {
-	/* 32 bit */
-	case 0:	 return 0x00000001;
-	case 1:	 return 0x00000fff;	// 4095
-	case 2:	 return 0x00001000;	// 4096
-	case 3:	 return 0x00001001;	// 4097
-	case 4:	 return 0x00008000;
-	case 5:	 return 0x0000ffff;
-	case 6:	 return 0x00010000;
-	case 7:	 return 0x7fffffff;
-	case 8:	 return 0x80000000;
-	case 9:	 return 0x80000001;
-	case 10: return 0x8fffffff;
-	case 11: return 0xf0000000;
-	case 12: return 0xff000000;
-	case 13: return 0xffffff00 | (rand() % 256);
-	case 14: return 0xffffffff;
+	i = rand() % 10;
+
+	if (i > 3) {
+		/* common case, return small values*/
+		i = rand() % 6;
+
+		switch (i) {
+		case 0:	return 0x00000001;
+		case 1:	return 0x00000fff;	// 4095
+		case 2:	return 0x00001000;	// 4096
+		case 3:	return 0x00001001;	// 4097
+		case 4:	return 0x00008000;
+		case 5:	return 0x0000ffff;
+		}
+
+	} else {
+		/* less common case, go crazy */
+		i = rand() % 9;
+
+		switch (i) {
+		case 0:	return 0x00010000;
+		case 1:	return 0x7fffffff;
+		case 2:	return 0x80000000;
+		case 3:	return 0x80000001;
+		case 4:	return 0x8fffffff;
+		case 5:	return 0xf0000000;
+		case 6:	return 0xff000000;
+		case 7:	return 0xffffff00 | (rand() % 256);
+		case 8:	return 0xffffffff;
+		}
 	}
+
 	/* Should never be reached. */
 	return 0;
 }
