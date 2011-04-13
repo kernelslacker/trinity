@@ -13,10 +13,10 @@
 
 #define MAX_FDS 750
 
-static int fds[1024];
-static int socket_fds[MAX_FDS];
-static int fd_idx;
-static int socks=0;
+static unsigned int fds[1024];
+static unsigned int socket_fds[MAX_FDS];
+static unsigned int fd_idx;
+static unsigned int socks=0;
 
 static int ignore_files(char *file)
 {
@@ -150,18 +150,13 @@ static char *cachefilename="trinity.socketcache";
 
 #define TYPE_MAX 128
 #define PROTO_MAX 256
-static void generate_sockets()
+static void generate_sockets(unsigned int nr_to_create)
 {
 	int fd;
 	int cachefile;
-	int nr_to_create = MAX_FDS;
+
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
-
-	if (fd_idx < MAX_FDS)
-		nr_to_create = fd_idx;
-	if (nr_to_create < 100)
-		nr_to_create = 100;
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
 	if (cachefile < 0) {
@@ -184,7 +179,7 @@ static void generate_sockets()
 		if (fd > -1) {
 			socket_fds[socks] = fd;
 			writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
-				socks+fd_idx, domain, type, protocol);
+				fd, domain, type, protocol);
 			socks++;
 
 			buffer[0] = domain;
@@ -214,7 +209,7 @@ static void open_sockets()
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
 		printf("Couldn't find socket cachefile. Regenerating.\n");
-		generate_sockets();
+		generate_sockets(MAX_FDS/2);
 		return;
 	}
 
@@ -231,7 +226,7 @@ static void open_sockets()
 		if (fd < 0) {
 			printf("Cachefile is stale. Need to regenerate.\n");
 			unlink(cachefilename);
-			generate_sockets();
+			generate_sockets(MAX_FDS/2);
 		}
 		socket_fds[socks] = fd;
 		writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
