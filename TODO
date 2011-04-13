@@ -1,3 +1,7 @@
+* Add a parameter to bias the randomness passed to length parameters.
+  Right now it's hardwired to return 16 bit 70% of the time.
+  (and 32bit in the 64bit path)
+
 * Argument order bug.
   ./trinity --mode=random --32bit -c mprotect  doesn't see the -c
   ./trinity --mode=random -c mprotect --32bit does.
