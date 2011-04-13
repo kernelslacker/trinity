@@ -67,6 +67,12 @@ unsigned long get_interesting_value()
 
 	low = get_interesting_32bit_value();
 
+	i = rand() % 10;
+	if (i > 3)
+		/* return small values 70% of the time */
+		return low;
+
+
 	i = rand() % 13;
 
 	switch (i) {
