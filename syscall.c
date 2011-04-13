@@ -115,13 +115,6 @@ static long mkcall(unsigned int call)
 	else
 		printf("%s", syscalls[call].name);
 
-	/* If there are no inputs, we can't fuzz anything. */
-	if (syscalls[call].num_args == 0) {
-		syscalls[call].flags |= AVOID_SYSCALL;
-		printf(" syscall has no inputs:- skipping\n");
-		return 0;
-	}
-
 	olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
 
 	if (intelligence == 1) {
@@ -227,26 +220,34 @@ args_done:
 }
 
 
-static int do_syscall(int cl)
+static int do_syscall(int callnr)
 {
+	unsigned int syscallnr = callnr;
 	int retrycount = 0;
 
-	printf ("%i: ", cl);
-
 	if (opmode == MODE_RANDOM)
-retry:
-		cl = rand() / (RAND_MAX/max_nr_syscalls);
-
-retry_same:
-	if (syscalls[cl].flags & AVOID_SYSCALL)
-		goto retry;
-
-	(void)alarm(3);
+		syscallnr = rand() / (RAND_MAX/max_nr_syscalls);
 
 	if (do_specific_syscall != 0)
-		cl = specific_syscall;
+		syscallnr = specific_syscall;
+	else {
 
-	res = mkcall(cl);
+		if (syscalls[syscallnr].num_args == 0)
+			goto skip_syscall;
+
+		if (syscalls[syscallnr].flags & AVOID_SYSCALL)
+			goto skip_syscall;
+
+		if (syscalls[syscallnr].flags & NI_SYSCALL)
+			goto skip_syscall;
+	}
+
+	printf ("%i: ", callnr);
+
+retry_same:
+	(void)alarm(3);
+
+	res = mkcall(syscallnr);
 
 	/*  Brute force the same syscall until it succeeds */
 	if ((opmode == MODE_RANDOM) && (intelligence == 1) && (bruteforce == 1)) {
@@ -272,6 +273,7 @@ failed_repeat:
 	if (dopause==1)
 		(void)sleep(1);
 
+skip_syscall:
 	return res;
 }
 
