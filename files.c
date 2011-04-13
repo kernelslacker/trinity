@@ -52,6 +52,7 @@ static void open_fds(char *dir)
 	DIR *d = opendir(dir);
 	struct dirent *de;
 	struct stat buf;
+	char *modestr;
 
 	if (!d) {
 		printf("cant open %s\n", dir);
@@ -127,8 +128,13 @@ static void open_fds(char *dir)
 			fd = open(b, openflag | O_NONBLOCK);
 			if (fd < 0)
 				continue;
-			printf("%s/%s\n", dir, de->d_name);
-			writelog("fd[%i] = %s\n", fd_idx, b);
+			switch (openflag) {
+			case O_RDONLY:	modestr = "read-only";	break;
+			case O_WRONLY:	modestr = "write-only";	break;
+			case O_RDWR:	modestr = "read-write";	break;
+			}
+			printf("%s/%s (%s)\n", dir, de->d_name, modestr);
+			writelog("fd[%i] = %s (%s)\n", fd_idx, b, modestr);
 			fds[fd_idx++] = fd;
 		}
 		if (fd_idx > (MAX_FDS / 2))
