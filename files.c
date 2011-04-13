@@ -31,7 +31,7 @@ static int ignore_files(char *file)
 		"current", "coredump_filter", "make-it-fail",
 		"oom_adj", "oom_score_adj",
 		"clear_refs", "loginuid", "sched", "comm", "mem",
-		"task",
+		"task", "autogroup",
 		/* ignore cgroup stuff*/
 		"cgroup",
 		NULL};
