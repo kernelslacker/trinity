@@ -2,9 +2,6 @@
   ./trinity --mode=random --32bit -c mprotect  doesn't see the -c
   ./trinity --mode=random -c mprotect --32bit does.
 
-* Convert the syscall lists for all archs over to the new-style (see x86-64)
-  The lack of .num_args probably breaks trinity on those archs right now.
-
 * Make -k use random kernel addresses (from System.map ?)
 
 * --oneshot
@@ -31,12 +28,12 @@
 
 * --nrsyscalls (set NR_SYSCALLS)
   Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?
+  This would require a database of per-kernel syscall numbers.
+  It would also be incorrect with any enterprise kernels which backport syscalls.
+  Maybe we could do a probe first, and adjust based on the -ENOSYS's we get back.
 
 * if we get -EPERM from a syscalls we know checks for CAP_SYS_ADMIN early,
   don't bother retrying it.
-
-* add a switch to use 32bit syscall entry point on x86-64
-  This will require us to use assembly instead of syscall() again.
 
 * Due to forking of child processes, things like mmap/mprotect etc
   don't do anything to affect future calls.
@@ -61,10 +58,6 @@
 * run tests in different namespaces, personalities.
 
 * fork N threads.
-
-* check x86-64 32bit syscalltable vs real 32bit syscalltable
-
-* flags for reserved syscalls (tux, vserver etc)
 
 * mprotect the buffers we allocate that get passed to the kernel.
 
