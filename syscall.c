@@ -326,11 +326,6 @@ void do_main_loop(void)
 
 		switch (opmode) {
 		case MODE_ROTATE:
-			/* It's easier to just use all regs for now. */
-			//for (i=0; i<=max_nr_syscalls; i++) {
-			//	syscalls[i].num_args = 6;
-			//}
-
 			if (do_specific_syscall == 1) {
 				rotate_mask++;
 				if (rotate_mask == (1<<6)-1)
