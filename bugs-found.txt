@@ -24,3 +24,6 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 * a5660b41af6a28f8004e70eb261e1202ad55c5e3
   tty: fix endless work loop when the buffer fills up
 
+* a84b50ceb7d640437d0dc28a2bef0d0de054de89
+  sctp spew on allocation failure.
+
