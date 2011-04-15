@@ -71,8 +71,9 @@ static void dump_poison(char *addr)
 {
 	unsigned int i, j;
 
+	printf("pagezero:%p, page0xff:%p, pagerand:%p\n", page_zeros, page_0xff, page_rand);
 	for (i = 0; i < page_size; i+=32) {
-		printf("%d: ", i);
+		printf("%x: ", i);
 		for (j=0; j < 32; j++)
 			printf("%x ", (unsigned int) addr[i+j]);
 		printf("\n");
@@ -189,25 +190,25 @@ args_done:
 	if (check_poison==1) {
 		for (i = 0; i < page_size; i++) {
 			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison1 was overwritten!\n");
+				printf ("Yikes! poison1 (%p) was overwritten!\n", &userbuffer[i]);
 				dump_poison(userbuffer);
 			}
 		}
 		for (i = page_size*2; i < page_size*3; i++) {
 			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison2 was overwritten!\n");
+				printf ("Yikes! poison2 (%p) was overwritten!\n", &userbuffer[i]);
 				dump_poison(userbuffer+(page_size*2));
 			}
 		}
 		for (i = page_size*4; i < page_size*5; i++) {
 			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison3 was overwritten!\n");
+				printf ("Yikes! poison3 (%p) was overwritten!\n", &userbuffer[i]);
 				dump_poison(userbuffer+(page_size*4));
 			}
 		}
 		for (i = page_size*6; i < page_size*7; i++) {
 			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison4 was overwritten!\n");
+				printf ("Yikes! poison4 (%p) was overwritten!\n", &userbuffer[i]);
 				dump_poison(userbuffer+(page_size*6));
 			}
 		}
