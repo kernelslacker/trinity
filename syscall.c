@@ -325,18 +325,13 @@ void do_main_loop(void)
 
 		switch (opmode) {
 		case MODE_ROTATE:
-			if (do_specific_syscall == 1) {
-				rotate_mask++;
+			/* Reset syscall nr, unless we asked to do a specific one */
+			if (rep == max_nr_syscalls) {
+				/* Pointless running > once. */
 				if (rotate_mask == (1<<6)-1)
 					goto done;
-			} else {
-				if (rep == max_nr_syscalls) {
-					/* Pointless running > once. */
-					if (rotate_mask == (1<<6)-1)
-						goto done;
-					rep = 0;
-					rotate_mask++;
-				}
+				rep = 0;
+				rotate_mask++;
 			}
 			do_syscall_from_child(rep);
 			break;
