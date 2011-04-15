@@ -99,6 +99,8 @@ static void init_buffers()
 	page_0xff = userbuffer+(page_size*3);
 	memset(page_0xff, 0xff, page_size);
 	page_rand = userbuffer+(page_size*5);
+
+	setup_maps();
 }
 
 static void sighandler(int sig)

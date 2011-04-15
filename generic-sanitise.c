@@ -96,43 +96,6 @@ unsigned long get_interesting_value()
 #endif
 }
 
-static void * get_map()
-{
-	FILE *f;
-	void *startaddr, *endaddr;
-	unsigned int i, j=0;
-	unsigned int maps=0;
-
-retry:
-	f = fopen("/proc/self/maps", "r");
-	if (f) {
-		/* first, count how many maps we have. */
-		do {
-			fscanf(f, "%p-%p %*[^\n]\n", &startaddr, &endaddr);
-			maps++;
-		} while (!feof(f));
-
-		/* now return a random one */
-		rewind(f);
-		i = rand() % maps;
-		do {
-			fscanf(f, "%p-%p %*[^\n]\n", &startaddr, &endaddr);
-			j++;
-			if (i == j)
-				break;
-		} while (!feof(f));
-		fclose(f);
-	}
-
-	// Avoid the shm segment, or we might corrupt it.
-	if (startaddr == shm)
-		goto retry;
-
-//	printf("return map %p\n", startaddr);
-	return startaddr;
-}
-
-
 void * get_address()
 {
 	int i;
