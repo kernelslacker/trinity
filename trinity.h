@@ -100,6 +100,13 @@ extern char *page_zeros;
 extern char *page_0xff;
 extern char *page_rand;
 
+struct map {
+	struct map *next;
+	void *ptr;
+};
+void setup_maps();
+void * get_map();
+
 #define RED	"[1;31m"
 #define GREEN	"[1;32m"
 #define YELLOW	"[1;33m"

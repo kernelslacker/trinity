@@ -5,7 +5,7 @@ all: trinity
 
 SANITISE	= $(patsubst %.c,%.o,$(wildcard sanitise/*.c))
 IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
-OBJS		= trinity.o generic-sanitise.o files.o syscall.o $(SANITISE) $(IOCTLS)
+OBJS		= trinity.o generic-sanitise.o files.o syscall.o maps.o $(SANITISE) $(IOCTLS)
 
 trinity: $(OBJS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
