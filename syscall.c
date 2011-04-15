@@ -288,8 +288,6 @@ static void do_syscall_from_child(int cl)
 
 	if (fork() == 0) {
 		ret = do_syscall(cl);
-		//if (intelligence==1)
-		//	close_fds();
 		_exit(ret);
 	}
 	(void)waitpid(-1, NULL, 0);
