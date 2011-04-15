@@ -296,7 +296,7 @@ static void do_syscall_from_child(int cl)
 }
 
 
-void do_main_loop(void)
+void display_opmode(void)
 {
 	printf("trinity mode: %s\n", opmodename[opmode]);
 
@@ -316,9 +316,10 @@ void do_main_loop(void)
 	}
 
 	(void)fflush(stdout);
+}
 
-	/* This is our main loop. */
-
+void do_main_loop(void)
+{
 	for (;;) {
 
 		if (ctrlc_hit == 1)
