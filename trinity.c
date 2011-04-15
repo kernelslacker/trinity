@@ -65,7 +65,6 @@ char *opmodename[] = {
 	[MODE_UNDEFINED] = "undef",
 	[MODE_RANDOM] = "random",
 	[MODE_ROTATE] = "rotate",
-	[MODE_CAPCHECK] = "capabilities_check",
 };
 char *structmodename[] = {
 	[STRUCT_UNDEFINED] = "unknown",
@@ -143,8 +142,6 @@ static void usage(void)
 	fprintf(stderr, "     -Sr: pass struct filled with random junk.\n");
 	fprintf(stderr, "     -Sxx: pass struct filled with hex value xx.\n");
 	fprintf(stderr, "\n");
-	fprintf(stderr, "   --mode=capcheck:  check syscalls that call capable() return -EPERM.\n");
-	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   -b#: begin at offset #.\n");
 	fprintf(stderr, "   -c#: target syscall # only.\n");
@@ -195,8 +192,6 @@ static void parse_args(int argc, char *argv[])
 				opmode = MODE_RANDOM;
 			if (!strcmp(optarg, "rotate"))
 				opmode = MODE_ROTATE;
-			if (!strcmp(optarg, "capcheck"))
-				opmode = MODE_CAPCHECK;
 			break;
 
 		case 'b':
@@ -337,7 +332,7 @@ static void parse_args(int argc, char *argv[])
 	if (opmode == MODE_UNDEFINED) {
 		fprintf(stderr, "Unrecognised mode \'%s\'\n", optarg);
 		fprintf(stderr, "--mode must be one of random, rotate, regval, "
-			"struct, or capcheck\n\n");
+			"or struct\n\n");
 		usage();
 		exit(EXIT_FAILURE);
 	}

@@ -127,7 +127,6 @@ extern FILE *logfile;
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1
 #define MODE_ROTATE 2
-#define MODE_CAPCHECK 3
 
 #define TYPE_UNDEFINED 0
 #define TYPE_VALUE 1

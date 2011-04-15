@@ -90,9 +90,6 @@ be one of the following..
  registers before it appears, even though those registers never get passed
  to the syscall.
 
-'capcheck'
- This will check syscalls that call capable() to make sure they return -EPERM.
-
 
 For random and rotate modes, there exist a number of further options that
 define what kinds of values are passed in registers to the syscalls.
