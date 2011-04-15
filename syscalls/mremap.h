@@ -3,6 +3,9 @@
 	unsigned long, new_len, unsigned long, flags,
 	unsigned long, new_addr)
  */
+
+#include <linux/mman.h>
+
 {
 	.name = "mremap",
 	.num_args = 5,
@@ -14,6 +17,11 @@
 	.arg3name = "new_len",
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
+        .arg4type = ARG_LIST,
+        .arg4list = {
+		.num = 2,
+		.values = { MREMAP_MAYMOVE, MREMAP_FIXED },
+        },
 	.arg5name = "new_addr",
 	.arg5type = ARG_ADDRESS,
 },
