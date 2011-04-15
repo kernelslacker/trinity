@@ -509,6 +509,8 @@ int main(int argc, char* argv[])
 
 	sigsetjmp(ret_jump, 1);
 
+	display_opmode();
+
 	do_main_loop();
 
 	if ((structptr!=NULL) && (structmode != STRUCT_RAND))
