@@ -25,8 +25,6 @@ void sanitise_mremap(
 	unsigned long mask = ~(page_size-1);
 	int i;
 
-	*flags = rand64() & (MREMAP_FIXED | MREMAP_MAYMOVE);
-
 	*addr &= mask;
 
 	i=0;
