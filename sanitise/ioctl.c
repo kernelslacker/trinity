@@ -15,6 +15,7 @@ static void generic_sanitise_ioctl(
 	unsigned int i, j;
 	unsigned int nr_elements;
 	unsigned int *ptr;
+	void *addr;
 
 	/* One time in 50, mangle it. */
 	if ((rand() % 50)==0) {
@@ -48,7 +49,8 @@ static void generic_sanitise_ioctl(
 			case 0: *ptr = get_interesting_32bit_value();
 				ptr+= sizeof(unsigned int);
 				break;
-			case 1:	*ptr = get_address();
+			case 1:	addr = get_address();
+				*ptr = (unsigned long) (addr);
 				ptr+= sizeof(unsigned long);
 				break;
 			}

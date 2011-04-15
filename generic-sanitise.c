@@ -96,18 +96,50 @@ unsigned long get_interesting_value()
 #endif
 }
 
+static void * get_map()
+{
+	FILE *f;
+	void *startaddr, *endaddr;
+	unsigned int i, j=0;
+	unsigned int maps=0;
 
-unsigned long get_address()
+	f = fopen("/proc/self/maps", "r");
+	if (f) {
+		/* first, count how many maps we have. */
+		do {
+			fscanf(f, "%p-%p %*[^\n]\n", &startaddr, &endaddr);
+			maps++;
+		} while (!feof(f));
+
+		/* now return a random one */
+		rewind(f);
+		i = rand() % maps;
+		do {
+			fscanf(f, "%p-%p %*[^\n]\n", &startaddr, &endaddr);
+			j++;
+			if (i == j)
+				break;
+		} while (!feof(f));
+		fclose(f);
+	}
+
+//	printf("return map %p\n", startaddr);
+	return startaddr;
+}
+
+
+void * get_address()
 {
 	int i;
 
-	i = rand() % 5;
+	i = rand() % 6;
 	switch (i) {
-	case 0:	return KERNEL_ADDR;
-	case 1:	return (unsigned long) page_zeros;
-	case 2:	return (unsigned long) page_0xff;
-	case 3:	return (unsigned long) page_rand;
-	case 4:	return get_interesting_value();
+	case 0:	return (void *) KERNEL_ADDR;
+	case 1:	return page_zeros;
+	case 2:	return page_0xff;
+	case 3:	return page_rand;
+	case 4:	return (void *) get_interesting_value();
+	case 5: return get_map();
 	}
 
 	return 0;
@@ -116,6 +148,7 @@ unsigned long get_address()
 void regenerate_random_page()
 {
 	unsigned int i, j;
+	void *addr;
 
 	/* sometimes return a page of complete trash */
 	if (rand() % 2 == 0) {
@@ -134,8 +167,9 @@ void regenerate_random_page()
 		case 1: page_rand[i] = get_interesting_value();
 			i += sizeof(unsigned long long);
 			break;
-		case 2: page_rand[i] = get_address();
-			i += sizeof(void *);
+		case 2: addr = get_address();
+			page_rand[i] = (unsigned long) addr;
+			i += sizeof(unsigned long);
 			break;
 		case 3: page_rand[i] = (unsigned int) rand() % page_size;
 			i += sizeof(unsigned int);
@@ -195,7 +229,7 @@ static unsigned long fill_arg(int call, int argnum)
 		else
 			return get_interesting_value();
 	case ARG_ADDRESS:
-		return get_address();
+		return (unsigned long)get_address();
 	case ARG_PID:
 		return get_pid();
 	case ARG_RANGE:
