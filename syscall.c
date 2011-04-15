@@ -88,6 +88,7 @@ static long mkcall(unsigned int call)
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	int ret = 0;
 	unsigned int i;
+	char string[120], *sptr=string;
 
 	switch (opmode) {
 	case MODE_ROTATE:
@@ -111,9 +112,9 @@ static long mkcall(unsigned int call)
 		break;
 	}
 	if (call > max_nr_syscalls)
-		printf("%u", call);
+		sptr += sprintf(sptr, "%u", call);
 	else
-		printf("%s", syscalls[call].name);
+		sptr += sprintf(sptr, "%s", syscalls[call].name);
 
 	olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
 
@@ -123,32 +124,32 @@ static long mkcall(unsigned int call)
 			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 	}
 
-#define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)			\
-	if (syscalls[call].num_args >= ARGNUM) {			\
-		if (!NAME)						\
-			goto args_done;					\
-		if (ARGNUM != 1)					\
-			printf(WHITE ", ");				\
-		if (NAME)						\
-			printf("%s=", NAME);				\
-		if (opmode == MODE_ROTATE) {				\
-			if (rotate_mask & (BIT))			\
-				printf(YELLOW "0x%lx" WHITE, REG);	\
-			else {						\
-				if (OLDREG == REG)			\
-					printf(WHITE "0x%lx", REG);	\
-				else					\
-					printf(CYAN "0x%lx" WHITE, REG); \
-			}						\
-		} else {						\
-			if (OLDREG == REG)				\
-				printf(WHITE "0x%lx", REG);		\
-			else						\
-				printf(CYAN "0x%lx" WHITE, REG);	\
-		}							\
+#define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)					\
+	if (syscalls[call].num_args >= ARGNUM) {					\
+		if (!NAME)								\
+			goto args_done;							\
+		if (ARGNUM != 1)							\
+			sptr += sprintf(sptr, WHITE ", ");				\
+		if (NAME)								\
+			sptr += sprintf(sptr, "%s=", NAME);				\
+		if (opmode == MODE_ROTATE) {						\
+			if (rotate_mask & (BIT))					\
+				sptr += sprintf(sptr, YELLOW "0x%lx" WHITE, REG);	\
+			else {								\
+				if (OLDREG == REG)					\
+					sptr += sprintf(sptr, WHITE "0x%lx", REG);	\
+				else							\
+					sptr += sprintf(sptr, CYAN "0x%lx" WHITE, REG); \
+			}								\
+		} else {								\
+			if (OLDREG == REG)						\
+				sptr += sprintf(sptr, WHITE "0x%lx", REG);		\
+			else								\
+				sptr += sprintf(sptr, CYAN "0x%lx" WHITE, REG);		\
+		}									\
 	}
 
-	printf(WHITE "(");
+	sptr += sprintf(sptr, WHITE "(");
 
 	COLOR_ARG(1, syscalls[call].arg1name, 1<<5, olda1, a1);
 	COLOR_ARG(2, syscalls[call].arg2name, 1<<4, olda2, a2);
@@ -157,12 +158,11 @@ static long mkcall(unsigned int call)
 	COLOR_ARG(5, syscalls[call].arg5name, 1<<1, olda5, a5);
 	COLOR_ARG(6, syscalls[call].arg6name, 1<<0, olda6, a6);
 args_done:
-	printf(WHITE ") ");
+	sptr += sprintf(sptr, WHITE ") ");
 
-
-	writelog("%s (0x%lx,0x%lx,0x%lx,0x%lx,0x%lx,0x%lx) ",
-		syscalls[call].name, a1, a2, a3, a4, a5, a6);
-
+	printf("%s", string);
+	writelog("%s", string);
+	sptr = string;
 
 	(void)fflush(stdout);
 
@@ -174,14 +174,16 @@ args_done:
 	ret = call_syscall(syscalls[call].num_args, call, a1, a2, a3, a4, a5, a6);
 
 	if (ret < 0) {
-		printf(RED "= %d (%s)\n" WHITE, ret, strerror(errno));
-		writelog("= %d (%s)\n", ret, strerror(errno));
+		sptr +=sprintf(sptr, RED "= %d (%s)\n" WHITE, ret, strerror(errno));
 		shm->failures++;
 	} else {
-		printf(GREEN "= %d\n" WHITE, ret);
-		writelog("= %d\n" , ret);
+		sptr += sprintf(sptr, GREEN "= %d\n" WHITE, ret);
 		shm->successes++;
 	}
+	printf("%s", string);
+	writelog("%s", string);
+	sptr = string;
+
 	(void)fflush(stdout);
 
 	if (check_poison==1) {
@@ -215,7 +217,6 @@ args_done:
 	if (ret == -ENOSYS)
 		syscalls[call].flags |= AVOID_SYSCALL;
 
-	printf("\n");
 	return ret;
 }
 
