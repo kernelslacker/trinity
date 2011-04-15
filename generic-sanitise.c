@@ -103,6 +103,7 @@ static void * get_map()
 	unsigned int i, j=0;
 	unsigned int maps=0;
 
+retry:
 	f = fopen("/proc/self/maps", "r");
 	if (f) {
 		/* first, count how many maps we have. */
@@ -122,6 +123,10 @@ static void * get_map()
 		} while (!feof(f));
 		fclose(f);
 	}
+
+	// Avoid the shm segment, or we might corrupt it.
+	if (startaddr == shm)
+		goto retry;
 
 //	printf("return map %p\n", startaddr);
 	return startaddr;
