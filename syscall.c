@@ -342,18 +342,6 @@ void do_main_loop(void)
 			do_syscall_from_child(rep);
 			break;
 
-		case MODE_CAPCHECK:
-			if (rep > max_nr_syscalls)
-				goto done;
-			if (syscalls[rep].flags & CAPABILITY_CHECK) {
-				int r;
-				printf ("%i: ", rep);
-				r = do_syscall(rep);
-				if (r != -EPERM)
-					printf ("Didn't return EPERM!\n");
-			}
-			break;
-
 		case MODE_RANDOM:
 			do_syscall_from_child(rep);
 			break;
