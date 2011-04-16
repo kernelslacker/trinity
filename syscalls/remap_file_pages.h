@@ -13,4 +13,9 @@
 	.arg3name = "prot",
 	.arg4name = "pgoff",
 	.arg5name = "flags",
+	.arg5type = ARG_LIST,
+	.arg5list = {
+		.num = 1,
+		.values = { MAP_NONBLOCK },
+	},
 },
