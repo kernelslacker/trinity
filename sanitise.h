@@ -49,4 +49,4 @@ unsigned long get_interesting_32bit_value();
 unsigned long rand64();
 void *get_address();
 
-#endif	/* _SCRASHME_H */
+#endif	/* _SANITISE_H */
