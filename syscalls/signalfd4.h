@@ -2,6 +2,10 @@
  * SYSCALL_DEFINE4(signalfd4, int, ufd, sigset_t __user *, user_mask,
 	 size_t, sizemask, int, flags)
  */
+
+#define SFD_CLOEXEC 02000000
+#define SFD_NONBLOCK 04000
+
 {
 	.name = "signalfd4",
 	.num_args = 4,
@@ -11,4 +15,9 @@
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "sizemask",
 	.arg4name = "flags",
+	.arg4type = ARG_LIST,
+	.arg4list = {
+		.num = 2,
+		.values = { SFD_CLOEXEC , SFD_NONBLOCK },
+	},
 },
