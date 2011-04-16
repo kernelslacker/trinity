@@ -3,6 +3,9 @@
                             unsigned flags)
 
  */
+
+#include <sys/socket.h>
+
 {
 	.name = "recv",
 	.num_args = 4,
@@ -15,11 +18,11 @@
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
 	.arg4list = {
-                .num = 13,
-                .values = { MSG_DONTWAIT, MSG_ERRQUEUE, MSG_ERRQUEUE,
-	      		    MSG_ERRQUEUE, MSG_OOB, MSG_PEEK, MSG_TRUNC,
-       			    MSG_WAITALL, MSG_EOR, MSG_TRUNC, MSG_CTRUNC,
-       			    MSG_OOB, MSG_ERRQUEUE },
+		.num = 13,
+		.values = { MSG_DONTWAIT, MSG_ERRQUEUE, MSG_ERRQUEUE,
+			    MSG_ERRQUEUE, MSG_OOB, MSG_PEEK, MSG_TRUNC,
+			    MSG_WAITALL, MSG_EOR, MSG_TRUNC, MSG_CTRUNC,
+			    MSG_OOB, MSG_ERRQUEUE },
 	},
 
 },
