@@ -1,5 +1,5 @@
-#ifndef _SCRASHME_H
-#define _SCRASHME_H 1
+#ifndef _TRINITY_H
+#define _TRINITY_H 1
 
 #include <stdio.h>
 
@@ -143,4 +143,4 @@ extern FILE *logfile;
 #define STRUCT_RAND 2
 
 
-#endif	/* _SCRASHME_H */
+#endif	/* _TRINITY_H */
