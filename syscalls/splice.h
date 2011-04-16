@@ -24,8 +24,8 @@
 	.arg5name = "len",
 	.arg5type = ARG_LEN,
 	.arg6name = "flags",
-	.arg4type = ARG_LIST,
-	.arg4list = {
+	.arg6type = ARG_LIST,
+	.arg6list = {
 		.num = 4,
 		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
 	},
