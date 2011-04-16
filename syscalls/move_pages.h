@@ -4,6 +4,10 @@
 	const int __user *, nodes,
 	int __user *, status, int, flags)
  */
+
+#define MPOL_MF_MOVE    (1<<1)  /* Move pages owned by this process to conform to mapping */
+#define MPOL_MF_MOVE_ALL (1<<2) /* Move every page to conform to mapping */
+
 {
 	.name = "move_pages",
 	.num_args = 6,
@@ -18,4 +22,9 @@
 	.arg5name = "status",
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "flags",
+	.arg6type = ARG_LIST,
+	.arg6list = {
+		.num = 2,
+		.values = { MPOL_MF_MOVE, MPOL_MF_MOVE_ALL },
+	},
 },
