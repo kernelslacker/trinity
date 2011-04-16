@@ -44,9 +44,7 @@ unsigned char rotate_mask = 1;
 unsigned char dopause = 0;
 unsigned char intelligence = 0;
 unsigned char do_specific_syscall = 0;
-unsigned char check_poison = 0;
 unsigned char bruteforce = 0;
-unsigned char poison = 0x55;
 unsigned char nofork = 0;
 unsigned char show_syscall_list = 0;
 int do_32bit = 0;
@@ -84,21 +82,25 @@ FILE *logfile;
 
 static char *specific_optarg;
 
-/*
- * [POISON][PAGE OF ZEROS][POISON][PAGE OF 0xFF's][POISON][RANDOM][POISON]
- */
 static void init_buffers()
 {
-	userbuffer = malloc(page_size*7);
-	if (!userbuffer) {
+	userbuffer = malloc(page_size);
+	if (!userbuffer)
 		exit(EXIT_FAILURE);
-	}
-	memset(userbuffer, poison, page_size*7);
-	page_zeros = userbuffer+page_size;
+
+	page_zeros = malloc(page_size);
+	if (!page_zeros)
+		exit(EXIT_FAILURE);
 	memset(page_zeros, 0, page_size);
-	page_0xff = userbuffer+(page_size*3);
+
+	page_0xff = malloc(page_size);
+	if (!page_0xff)
+		exit(EXIT_FAILURE);
 	memset(page_0xff, 0xff, page_size);
-	page_rand = userbuffer+(page_size*5);
+
+	page_rand = malloc(page_size);
+	if (!page_rand)
+		exit(EXIT_FAILURE);
 
 	setup_maps();
 }
@@ -151,7 +153,6 @@ static void usage(void)
 	fprintf(stderr, "   -i:  pass sensible parameters where possible.\n");
 	fprintf(stderr, "   -l, --logfile:  set logfile name\n");
 	fprintf(stderr, "   -N#: do # syscalls then exit.\n");
-	fprintf(stderr, "   -P:  poison buffers before calling syscall, and check afterwards.\n");
 	fprintf(stderr, "   -p:  pause after syscall.\n");
 	exit(EXIT_SUCCESS);
 }
@@ -182,7 +183,7 @@ static void parse_args(int argc, char *argv[])
 		{ "logfile", optional_argument, NULL, 'l' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:pPs:S:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:ps:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
@@ -246,11 +247,6 @@ static void parse_args(int argc, char *argv[])
 		/* Pause after each syscall */
 		case 'p':
 			dopause = 1;
-			break;
-
-		/* Poison buffers before syscall, and check afterwards. */
-		case 'P':
-			check_poison = 1;
 			break;
 
 		/* Set seed */
