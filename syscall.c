@@ -67,28 +67,11 @@ static long call_syscall(__unused__ int num_args, unsigned int call,
 }
 
 
-static void dump_poison(char *addr)
-{
-	unsigned int i, j;
-
-	printf("pagezero:%p, page0xff:%p, pagerand:%p\n", page_zeros, page_0xff, page_rand);
-	for (i = 0; i < page_size; i+=32) {
-		printf("%x: ", i);
-		for (j=0; j < 32; j++)
-			printf("%x ", (unsigned int) addr[i+j]);
-		printf("\n");
-	}
-	(void)fflush(stdout);
-	(void)sleep(10);
-	exit(EXIT_FAILURE);
-}
-
 static long mkcall(unsigned int call)
 {
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
 	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
 	int ret = 0;
-	unsigned int i;
 	char string[120], *sptr=string;
 
 	switch (opmode) {
@@ -186,33 +169,6 @@ args_done:
 	sptr = string;
 
 	(void)fflush(stdout);
-
-	if (check_poison==1) {
-		for (i = 0; i < page_size; i++) {
-			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison1 (%p) was overwritten!\n", &userbuffer[i]);
-				dump_poison(userbuffer);
-			}
-		}
-		for (i = page_size*2; i < page_size*3; i++) {
-			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison2 (%p) was overwritten!\n", &userbuffer[i]);
-				dump_poison(userbuffer+(page_size*2));
-			}
-		}
-		for (i = page_size*4; i < page_size*5; i++) {
-			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison3 (%p) was overwritten!\n", &userbuffer[i]);
-				dump_poison(userbuffer+(page_size*4));
-			}
-		}
-		for (i = page_size*6; i < page_size*7; i++) {
-			if (userbuffer[i]!=poison) {
-				printf ("Yikes! poison4 (%p) was overwritten!\n", &userbuffer[i]);
-				dump_poison(userbuffer+(page_size*6));
-			}
-		}
-	}
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if (ret == -ENOSYS)

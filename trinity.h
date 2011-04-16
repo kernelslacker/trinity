@@ -64,7 +64,6 @@ struct syscalltable {
 extern struct syscalltable *syscalls;
 
 extern unsigned int page_size;
-extern unsigned char check_poison;
 extern long long syscallcount;
 extern long long execcount;
 extern unsigned int opmode;
@@ -76,7 +75,6 @@ extern unsigned char intelligence;
 extern unsigned int structmode;
 extern unsigned long regval;
 extern unsigned char rotate_mask;
-extern unsigned char poison;
 extern unsigned int rep;
 extern unsigned char do_specific_syscall;
 extern unsigned long specific_syscall;
