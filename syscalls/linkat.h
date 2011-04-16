@@ -14,4 +14,9 @@
 	.arg4name = "newname",
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "flags",
+	.arg5type = ARG_LIST,
+	.arg5list = {
+		.num = 2,
+		.values = { AT_SYMLINK_FOLLOW , AT_EMPTY_PATH },
+	},
 },
