@@ -517,5 +517,7 @@ int main(int argc, char* argv[])
 	printf("\nRan %lld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		execcount, shm->retries, shm->successes, shm->failures);
 
+	shmdt(shm);
+
 	exit(EXIT_SUCCESS);
 }
