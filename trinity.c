@@ -13,6 +13,7 @@
 #include <setjmp.h>
 #include <asm/unistd.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/syscall.h>
@@ -508,6 +509,7 @@ int main(int argc, char* argv[])
 	mask_signals();
 
 	/* just in case we're not using the test.sh harness. */
+	chmod("tmp/", 0755);
 	chdir("tmp/");
 
 	sigsetjmp(ret_jump, 1);
