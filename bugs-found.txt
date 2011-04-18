@@ -27,3 +27,9 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 * a84b50ceb7d640437d0dc28a2bef0d0de054de89
   sctp spew on allocation failure.
 
+* FIXME: (No fix yet)
+  hugetlbfs lockdep spew. https://lkml.org/lkml/2011/4/15/272
+
+* FIXME: (No fix yet)
+  ip_rt_bug: 0.0.0.0 -> 255.255.255.255, ?
+
