@@ -18,6 +18,7 @@ void mask_signals(void);
 void do_main_loop(void);
 void display_opmode(void);
 void regenerate_random_page(void);
+void seed_from_tod();
 
 struct arglist {
 	unsigned int num;

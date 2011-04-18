@@ -152,7 +152,7 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static void seed_from_tod()
+void seed_from_tod()
 {
 	struct timeval t;
 
