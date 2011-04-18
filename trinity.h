@@ -68,8 +68,7 @@ struct syscalltable {
 extern struct syscalltable *syscalls;
 
 extern unsigned int page_size;
-extern long long syscallcount;
-extern long long execcount;
+extern unsigned long long syscallcount;
 extern unsigned int opmode;
 extern char *opmodename[];
 extern char *structmodename[];
@@ -89,9 +88,10 @@ extern unsigned char nofork;
 extern char passed_type;
 
 struct shm_s {
-        unsigned long successes;
-        unsigned long failures;
-        unsigned long retries;
+	unsigned long execcount;
+	unsigned long successes;
+	unsigned long failures;
+	unsigned long retries;
 };
 extern struct shm_s *shm;
 
