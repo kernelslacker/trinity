@@ -27,7 +27,7 @@
 static char *progname=NULL;
 static char *structptr=NULL;
 static unsigned int seed=0;
-static jmp_buf ret_jump;
+jmp_buf ret_jump;
 
 struct syscalltable *syscalls;
 struct syscalltable *syscalls32;
@@ -112,10 +112,6 @@ static void sighandler(int sig)
 	(void)signal(sig, sighandler);
 	if (sig == SIGALRM)
 		printf("Alarm clock.\n");
-	if (nofork==1) {
-			printf("jumping back from sighandler\n");
-			siglongjmp(ret_jump, sig);
-	}
 	_exit(0);
 }
 
@@ -341,7 +337,7 @@ static void ctrlc(__attribute((unused)) int sig)
 	ctrlc_hit=1;
 }
 
-static void mask_signals(void)
+void mask_signals(void)
 {
 	int i;
 

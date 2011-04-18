@@ -274,7 +274,7 @@ void display_opmode(void)
 	(void)fflush(stdout);
 }
 
-void do_main_loop(void)
+void main_loop(void)
 {
 	for (;;) {
 
@@ -312,6 +312,40 @@ void do_main_loop(void)
 
 	}
 done: ;
+}
+
+
+void do_main_loop(void)
+{
+	if (opmode != MODE_RANDOM) {
+		main_loop();
+		return;
+	}
+
+	/* By default, MODE_RANDOM will do one syscall per child,
+	 * unless -F is passed.
+	 */
+	if (nofork == 0) {
+		main_loop();
+		return;
+	} else {
+		/* if we opt to not fork for each syscall, we still need
+		   to fork once, in case calling the syscall segfaults. */
+		while (1) {
+			sigsetjmp(ret_jump, 1);
+			printf("forking new child.\n");
+			sleep(1);
+			if (fork() == 0) {
+				mask_signals();
+				main_loop();
+				if (ctrlc_hit == 1)
+					_exit(EXIT_SUCCESS);
+			}
+			(void)waitpid(-1, NULL, 0);
+			if (ctrlc_hit == 1)
+				return;
+		}
+	}
 }
 
 void syscall_list()
