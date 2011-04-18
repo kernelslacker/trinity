@@ -364,8 +364,14 @@ static void find_specific_syscall()
 {
 	unsigned int i;
 
-	if (specific_syscall != 0)
+	if (specific_syscall != 0) {
+		i = specific_syscall;
+		if (syscalls[i].flags &= AVOID_SYSCALL) {
+			printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].name);
+			exit(EXIT_FAILURE);
+		}
 		return;
+	}
 
 	if (do_32bit == 1)
 		goto force_32bit;
