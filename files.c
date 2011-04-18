@@ -257,6 +257,12 @@ static void open_sockets()
 			socks+fd_idx, domain, type, protocol);
 		socks++;
 	}
+	if (socks < MAX_FDS/2) {
+		printf("Insufficient sockets in cachefile. Regenerating.\n");
+		generate_sockets(MAX_FDS/2);
+		return;
+	}
+
 	printf("(%d sockets created based on info from socket cachefile.)\n", socks);
 	synclog();
 
