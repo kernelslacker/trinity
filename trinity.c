@@ -477,6 +477,10 @@ int main(int argc, char* argv[])
 		exit(EXIT_SUCCESS);
 	}
 
+	/* rotate doesn't work with nofork. */
+	if (opmode == MODE_ROTATE)
+		nofork = 0;
+
 	page_size = getpagesize();
 
 	if (!seed)
