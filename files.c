@@ -45,6 +45,19 @@ static int ignore_files(char *file)
 	return 0;
 }
 
+static int add_fd(unsigned int chance, char *b, int flags)
+{
+	int fd = -1;
+
+	if ((unsigned int)(rand() % 100) < chance) {
+		fd = open(b, flags | O_NONBLOCK);
+		if (fd < 0)
+			return -1;
+//		printf("Added: %s\n", b);
+	}
+	return fd;
+}
+
 static void open_fds(char *dir)
 {
 	char b[4096];
@@ -53,6 +66,7 @@ static void open_fds(char *dir)
 	struct dirent *de;
 	struct stat buf;
 	char *modestr;
+	unsigned int chance;
 
 	if (!d) {
 		printf("cant open %s\n", dir);
@@ -74,13 +88,19 @@ static void open_fds(char *dir)
 		//if (S_ISREG(buf.st_mode))
 		//	continue;
 		if (S_ISDIR(buf.st_mode)) {
+			/* probability of adding a directory to the list. */
+			chance = 30;
+			openflag = O_RDONLY;
 			if (buf.st_uid != getuid()) {
 				/* We don't own the dir, is it group/other readable ? */
-				if (buf.st_mode & (S_IRGRP|S_IROTH))
+				if (buf.st_mode & (S_IRGRP|S_IROTH)) {
 					open_fds(b);
+					goto openit;
+				}
 			} else {
 				/* We own this dir. */
 				open_fds(b);
+				goto openit;
 			}
 		} else {
 			int mode_was_set = 0;
@@ -125,9 +145,13 @@ static void open_fds(char *dir)
 
 			if ((openflag & O_RDONLY) && (openflag & O_WRONLY))
 				openflag = O_RDWR;
-			fd = open(b, openflag | O_NONBLOCK);
-			if (fd < 0)
+			// for files, increase the probability of success
+			chance = 40;
+openit:
+			fd = add_fd(chance, b, openflag);
+			if (fd == -1)
 				continue;
+
 			switch (openflag) {
 			case O_RDONLY:	modestr = "read-only";	break;
 			case O_WRONLY:	modestr = "write-only";	break;
