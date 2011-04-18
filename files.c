@@ -258,7 +258,7 @@ static void open_sockets()
 		socks++;
 	}
 	if (socks < MAX_FDS/2) {
-		printf("Insufficient sockets in cachefile. Regenerating.\n");
+		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", socks);
 		generate_sockets(MAX_FDS/2);
 		return;
 	}
