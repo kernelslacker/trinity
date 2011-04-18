@@ -1,6 +1,7 @@
 core.*
 *.o
 trinity
+logs/
 trinity*.log
 trinity.socketcache
 tmp
