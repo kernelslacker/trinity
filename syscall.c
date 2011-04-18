@@ -299,8 +299,8 @@ void main_loop(void)
 		}
 
 		rep++;
-		execcount++;
-		if (syscallcount && (execcount >= syscallcount))
+		shm->execcount++;
+		if (syscallcount && (shm->execcount >= syscallcount))
 			break;
 
 		regenerate_random_page();

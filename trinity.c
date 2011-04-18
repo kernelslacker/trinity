@@ -32,8 +32,7 @@ jmp_buf ret_jump;
 struct syscalltable *syscalls;
 struct syscalltable *syscalls32;
 
-long long syscallcount = 0;
-long long execcount = 0;
+unsigned long long syscallcount = 0;
 
 unsigned long regval = 0;
 unsigned long specific_syscall = 0;
@@ -516,8 +515,8 @@ int main(int argc, char* argv[])
 	if ((structptr!=NULL) && (structmode != STRUCT_RAND))
 		free(structptr);
 
-	printf("\nRan %lld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
-		execcount, shm->retries, shm->successes, shm->failures);
+	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
+		shm->execcount, shm->retries, shm->successes, shm->failures);
 
 	shmdt(shm);
 
