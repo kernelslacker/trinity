@@ -283,8 +283,8 @@ void setup_fds(void)
 	printf("Opening fds\n");
 	open_sockets();
 	open_fds("/dev");
-	open_fds("/sys");
 	open_fds("/proc");
+	open_fds("/sys");
 
 	printf("done getting fds [idx:%d]\n", fd_idx);
 	if (!fd_idx) {
