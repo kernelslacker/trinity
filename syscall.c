@@ -336,6 +336,7 @@ void do_main_loop(void)
 			printf("forking new child.\n");
 			sleep(1);
 			if (fork() == 0) {
+				seed_from_tod();
 				mask_signals();
 				main_loop();
 				if (ctrlc_hit == 1)
