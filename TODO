@@ -41,10 +41,7 @@
 * if we get -EPERM from a syscalls we know checks for CAP_SYS_ADMIN early,
   don't bother retrying it.
 
-* Due to forking of child processes, things like mmap/mprotect etc
-  don't do anything to affect future calls.
-  - Add a new syscall flag 'DONTFORK' for mm related syscalls ?
-  - Or possibly a --vm mode to only call VM related calls.
+* Possibly a --vm mode to only call syscalls marked SYSCALL_VM in flags
 
 * Xen dom0 hypercalls ?
 

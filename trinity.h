@@ -2,6 +2,7 @@
 #define _TRINITY_H 1
 
 #include <stdio.h>
+#include <setjmp.h>
 
 #ifndef S_SPLINT_S
 #define __unused__ __attribute((unused))
@@ -9,8 +10,11 @@
 #define __unused__ /*@unused@*/
 #endif
 
+extern jmp_buf ret_jump;
+
 void syscall_list(void);
 void check_sanity(void);
+void mask_signals(void);
 void do_main_loop(void);
 void display_opmode(void);
 void regenerate_random_page(void);
