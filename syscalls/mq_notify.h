@@ -5,6 +5,7 @@
 	.name = "mq_notify",
 	.num_args = 2,
 	.arg1name = "mqdes",
+	.arg1type = ARG_FD,
 	.arg2name = "u_notification",
 	.arg2type = ARG_ADDRESS,
 },
