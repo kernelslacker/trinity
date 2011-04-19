@@ -89,7 +89,7 @@ static void open_fds(char *dir)
 		//	continue;
 		if (S_ISDIR(buf.st_mode)) {
 			/* probability of adding a directory to the list. */
-			chance = 30;
+			chance = 5;
 			openflag = O_RDONLY;
 			if (buf.st_uid != getuid()) {
 				/* We don't own the dir, is it group/other readable ? */
@@ -146,7 +146,7 @@ static void open_fds(char *dir)
 			if ((openflag & O_RDONLY) && (openflag & O_WRONLY))
 				openflag = O_RDWR;
 			// for files, increase the probability of success
-			chance = 40;
+			chance = 10;
 openit:
 			fd = add_fd(chance, b, openflag);
 			if (fd == -1)
