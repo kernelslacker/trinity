@@ -12,8 +12,12 @@ cd tmp
 NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
 NR_CPUS=$(($NR_CPUS-1))
 
-for i in `seq 0 $NR_CPUS`
+while [ 1 ];
 do
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i.log -i -F &
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i --32bit -F &
+  for i in `seq 0 $NR_CPUS`
+  do
+	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i.log    -i -N 100 -F
+	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i -N 100 -F --32bit
+	rm -f trinity.socketcache
+  done
 done
