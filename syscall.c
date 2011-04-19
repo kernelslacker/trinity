@@ -341,9 +341,14 @@ void do_main_loop(void)
 				main_loop();
 				if (ctrlc_hit == 1)
 					_exit(EXIT_SUCCESS);
+				if (syscallcount && (shm->execcount >= syscallcount))
+					_exit(EXIT_SUCCESS);
 			}
 			(void)waitpid(-1, NULL, 0);
+
 			if (ctrlc_hit == 1)
+				return;
+			if (syscallcount && (shm->execcount >= syscallcount))
 				return;
 		}
 	}
