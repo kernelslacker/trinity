@@ -7,6 +7,7 @@ fi
 if [ ! -d tmp ]; then
   mkdir tmp
 fi
+chmod 755 tmp
 cd tmp
 
 NR=$(../trinity -L | tail -n1 | awk '{ print $1}' | sed s/://)
