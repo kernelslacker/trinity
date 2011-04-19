@@ -7,6 +7,7 @@ fi
 if [ ! -d tmp ]; then
   mkdir tmp
 fi
+chmod 755 tmp
 cd tmp
 
 ../trinity --mode=rotate --logfile=../logs/trinity-z.log -z -i

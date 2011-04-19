@@ -7,6 +7,7 @@ fi
 if [ ! -d tmp ]; then
   mkdir tmp
 fi
+chmod 755 tmp
 cd tmp
 
 NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
