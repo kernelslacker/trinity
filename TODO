@@ -1,3 +1,13 @@
+* Destructors
+  Need to store the result of syscalls on success, so that if we allocated
+  something, we can deallocate it when we're done. (Perhaps delay the
+  deallocation N syscalls?)
+
+* Struct fabrication
+  Some syscalls are rejecting immediately because we aren't passing them
+  a struct they're expecting. So allocate and fake one. Then throw it
+  away in the destructor.
+
 * Add a parameter to bias the randomness passed to length parameters.
   Right now it's hardwired to return 16 bit 70% of the time.
   (and 32bit in the 64bit path)
@@ -24,6 +34,8 @@
   - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
   - in 32bit mode check that there isn't anything in the upper bits.
 
+* --32bit still passes 64bit addresses.
+
 * Improve logging.
   - writelog is really crap.  It would be better if we just had a print_and_log
     varargs function that did both the printf to stdout and the logging so
@@ -37,11 +49,6 @@
   This would require a database of per-kernel syscall numbers.
   It would also be incorrect with any enterprise kernels which backport syscalls.
   Maybe we could do a probe first, and adjust based on the -ENOSYS's we get back.
-
-* if we get -EPERM from a syscalls we know checks for CAP_SYS_ADMIN early,
-  don't bother retrying it.
-
-* Possibly a --vm mode to only call syscalls marked SYSCALL_VM in flags
 
 * Xen dom0 hypercalls ?
 
@@ -57,6 +64,7 @@
 
 * syscall groups.
   --group=vm  for example would only call memory management related syscalls.
+  (Mark syscalls with SYSCALL_VM in flags
 
 * run tests in different namespaces, personalities.
 
