@@ -148,7 +148,11 @@ args_done:
 	writelog("%s", string);
 	sptr = string;
 
+	synclog();
 	(void)fflush(stdout);
+
+	if (dopause == 1)
+		sleep(1);
 
 /* IA64 is retarde^Wspecial. */
 #ifdef __ia64__
@@ -168,6 +172,7 @@ args_done:
 	writelog("%s", string);
 	sptr = string;
 
+	synclog();
 	(void)fflush(stdout);
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
@@ -227,9 +232,6 @@ retry_same:
 	}
 
 failed_repeat:
-
-	if (dopause==1)
-		(void)sleep(1);
 
 skip_syscall:
 	return res;

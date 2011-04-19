@@ -7,6 +7,7 @@
 	.name = "mq_getsetattr",
 	.num_args = 3,
 	.arg1name = "mqdes",
+	.arg1type = ARG_FD,
 	.arg2name = "u_mqstat",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "u_omqstat",

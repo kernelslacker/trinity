@@ -17,8 +17,8 @@ while [ 1 ];
 do
   for i in `seq 0 $NR_CPUS`
   do
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i.log    -i -N 100 -F &
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i -N 100 -F --32bit &
+	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i.log    -i -N 100 -F -p &
+	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i -N 100 -F -p --32bit &
 	rm -f trinity.socketcache
   done
   wait

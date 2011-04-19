@@ -7,6 +7,7 @@
 	.name = "mq_timedreceive",
 	.num_args = 5,
 	.arg1name = "mqdes",
+	.arg1type = ARG_FD,
 	.arg2name = "u_msg_ptr",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "msg_len",
