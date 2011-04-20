@@ -11,8 +11,6 @@
 
 #include "trinity.h"
 
-#define MAX_FDS 750
-
 static int ignore_files(char *file)
 {
 	int i;

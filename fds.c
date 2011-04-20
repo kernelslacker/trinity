@@ -11,8 +11,6 @@
 
 #include "trinity.h"
 
-#define MAX_FDS 750
-
 unsigned int fds[1024];
 unsigned int fd_idx;
 
