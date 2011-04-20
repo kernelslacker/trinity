@@ -11,8 +11,6 @@
 
 #include "trinity.h"
 
-#define MAX_FDS 750
-
 unsigned int socket_fds[MAX_FDS];
 unsigned int socks=0;
 
