@@ -33,6 +33,9 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 * FIXME: (No fix yet)
   ip_rt_bug: 0.0.0.0 -> 255.255.255.255, ?
 
-* Assorted debug spew from sendmsg
-  (Fixed in netdev-next)
+* bfac3693c426d280b026f6a1b77dc2294ea43fea
+  Assorted debug spew from ieee802154 sendmsg
+
+* 020318d0d2af51e0fd59ba654ede9b2171558720
+  broken locking in irda
 
