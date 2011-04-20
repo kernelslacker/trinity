@@ -1,0 +1,63 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+
+#include "trinity.h"
+
+#define MAX_FDS 750
+
+unsigned int fds[1024];
+unsigned int fd_idx;
+
+static int pipes[2];
+
+void setup_fds(void)
+{
+	fd_idx = 0;
+
+	printf("Creating pipes\n");
+	if (pipe(pipes) < 0) {
+		perror("pipe fail.\n");
+		exit(EXIT_FAILURE);
+	}
+	fds[0] = pipes[0];
+	fds[1] = pipes[1];
+	fd_idx += 2;
+	writelog("fd[0] = pipe\n");
+	writelog("fd[1] = pipe\n");
+
+	printf("Opening fds\n");
+	open_sockets();
+	open_fds("/dev");
+	open_fds("/proc");
+	open_fds("/sys");
+
+	printf("done getting fds [idx:%d]\n", fd_idx);
+	if (!fd_idx) {
+		printf("couldn't open any files\n");
+		exit(0);
+	}
+}
+
+
+int get_random_fd(void)
+{
+	int i;
+
+	i = rand() % 2;
+	if (i == 0)
+		return fds[rand() % fd_idx];
+	if (i == 1)
+		return socket_fds[rand() % socks];
+
+	// should never get here.
+	printf("oops! %s:%d\n", __FILE__, __LINE__);
+	exit(EXIT_FAILURE);
+}
