@@ -20,6 +20,15 @@ void display_opmode(void);
 void regenerate_random_page(void);
 void seed_from_tod();
 
+#define MAX_FDS 750
+extern unsigned int socket_fds[MAX_FDS];
+extern unsigned int socks;
+void open_sockets();
+
+extern unsigned int fd_idx;
+extern unsigned int fds[1024];
+void open_fds(char *dir);
+
 struct arglist {
 	unsigned int num;
 	unsigned int values[1024];

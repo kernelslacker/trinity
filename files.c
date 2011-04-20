@@ -13,11 +13,6 @@
 
 #define MAX_FDS 750
 
-static unsigned int fds[1024];
-static unsigned int socket_fds[MAX_FDS];
-static unsigned int fd_idx;
-static unsigned int socks=0;
-
 static int ignore_files(char *file)
 {
 	int i;
@@ -58,7 +53,7 @@ static int add_fd(unsigned int chance, char *b, int flags)
 	return fd;
 }
 
-static void open_fds(char *dir)
+void open_fds(char *dir)
 {
 	char b[4096];
 	int openflag, fd, r;
@@ -165,152 +160,4 @@ openit:
 			break;
 	}
 	closedir(d);
-}
-
-static int spin=0;
-static char spinner[]="-\\|/";
-
-static char *cachefilename="trinity.socketcache";
-
-#define TYPE_MAX 128
-#define PROTO_MAX 256
-static void generate_sockets(unsigned int nr_to_create)
-{
-	int fd;
-	int cachefile;
-
-	unsigned int domain, type, protocol;
-	unsigned int buffer[3];
-
-	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
-	if (cachefile < 0) {
-		printf("Couldn't open cachefile for writing! (%s)\n",
-			strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-
-	while (socks < nr_to_create) {
-		domain = rand() % PF_MAX;
-		type = rand() % TYPE_MAX;
-		protocol = rand() % PROTO_MAX;
-
-		printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
-			spinner[spin++], socks, nr_to_create-socks,
-			domain, type, protocol);
-		if (spin == 4)
-			spin = 0;
-		fd = socket(domain, type, protocol);
-		if (fd > -1) {
-			socket_fds[socks] = fd;
-			writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
-				fd, domain, type, protocol);
-			socks++;
-
-			buffer[0] = domain;
-			buffer[1] = type;
-			buffer[2] = protocol;
-			write(cachefile, &buffer, sizeof(int) * 3);
-
-			if (socks == nr_to_create)
-				goto done;
-		}
-	}
-
-done:
-	close(cachefile);
-	printf("\ncreated %d sockets\n", socks);
-	writelog("created %d sockets\n\n", socks);
-}
-
-static void open_sockets()
-{
-	int cachefile;
-	unsigned int domain, type, protocol;
-	unsigned int buffer[3];
-	int bytesread=-1;
-	int fd;
-
-	cachefile = open(cachefilename, O_RDONLY);
-	if (cachefile < 0) {
-		printf("Couldn't find socket cachefile. Regenerating.\n");
-		generate_sockets(MAX_FDS/2);
-		return;
-	}
-
-	while (bytesread != 0) {
-		bytesread = read(cachefile, buffer, sizeof(int) * 3);
-		if (bytesread == 0)
-			break;
-
-		domain = buffer[0];
-		type = buffer[1];
-		protocol = buffer[2];
-
-		fd = socket(domain, type, protocol);
-		if (fd < 0) {
-			printf("Cachefile is stale. Need to regenerate.\n");
-			unlink(cachefilename);
-			generate_sockets(MAX_FDS/2);
-		}
-		socket_fds[socks] = fd;
-		writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
-			socks+fd_idx, domain, type, protocol);
-		socks++;
-	}
-	if (socks < MAX_FDS/2) {
-		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", socks);
-		generate_sockets(MAX_FDS/2);
-		return;
-	}
-
-	printf("(%d sockets created based on info from socket cachefile.)\n", socks);
-	synclog();
-
-	close(cachefile);
-}
-
-static int pipes[2];
-
-void setup_fds(void)
-{
-	fd_idx = 0;
-
-	printf("Creating pipes\n");
-	if (pipe(pipes) < 0) {
-		perror("pipe fail.\n");
-		exit(EXIT_FAILURE);
-	}
-	fds[0] = pipes[0];
-	fds[1] = pipes[1];
-	fd_idx += 2;
-	writelog("fd[0] = pipe\n");
-	writelog("fd[1] = pipe\n");
-
-	printf("Opening fds\n");
-	open_sockets();
-	open_fds("/dev");
-	open_fds("/proc");
-	open_fds("/sys");
-
-	printf("done getting fds [idx:%d]\n", fd_idx);
-	if (!fd_idx) {
-		printf("couldn't open any files\n");
-		exit(0);
-	}
-}
-
-
-int get_random_fd(void)
-{
-	int i;
-
-	i = rand() % 2;
-	if (i == 0)
-		return fds[rand() % fd_idx];
-	if (i == 1)
-		return socket_fds[rand() % socks];
-
-	// should never get here.
-	printf("oops! %s:%d\n", __FILE__, __LINE__);
-	exit(EXIT_FAILURE);
 }
