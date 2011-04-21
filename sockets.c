@@ -20,9 +20,14 @@ static char *cachefilename="trinity.socketcache";
 #define TYPE_MAX 128
 #define PROTO_MAX 256
 
+#define MAX_PER_DOMAIN 5
+#define MAX_TRIES_PER_DOMAIN 10
+static char sockarray[PF_MAX];
+
 void generate_sockets(unsigned int nr_to_create)
 {
 	int fd;
+	unsigned int i, tries;
 	int cachefile;
 
 	unsigned int domain, type, protocol;
@@ -36,29 +41,47 @@ void generate_sockets(unsigned int nr_to_create)
 	}
 
 	while (socks < nr_to_create) {
-		domain = rand() % PF_MAX;
-		type = rand() % TYPE_MAX;
-		protocol = rand() % PROTO_MAX;
+		for (i = 0; i < PF_MAX; i++)
+			sockarray[i] = 0;
 
-		printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
-			spinner[spin++], socks, nr_to_create-socks,
-			domain, type, protocol);
-		if (spin == 4)
-			spin = 0;
-		fd = socket(domain, type, protocol);
-		if (fd > -1) {
-			socket_fds[socks] = fd;
-			writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
-				fd, domain, type, protocol);
-			socks++;
+		for (i = 0; i < PF_MAX; i++) {
+			tries = 0;
 
-			buffer[0] = domain;
-			buffer[1] = type;
-			buffer[2] = protocol;
-			write(cachefile, &buffer, sizeof(int) * 3);
+			if (sockarray[i] == MAX_PER_DOMAIN)
+				break;
 
-			if (socks == nr_to_create)
-				goto done;
+			domain = i;
+			type = rand() % TYPE_MAX;
+			protocol = rand() % PROTO_MAX;
+
+			printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
+				spinner[spin++], socks, nr_to_create-socks,
+				domain, type, protocol);
+			if (spin == 4)
+				spin = 0;
+
+			fd = socket(domain, type, protocol);
+			if (fd > -1) {
+				socket_fds[socks] = fd;
+
+				writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
+					fd, domain, type, protocol);
+
+				sockarray[i]++;
+				socks++;
+
+				buffer[0] = domain;
+				buffer[1] = type;
+				buffer[2] = protocol;
+				write(cachefile, &buffer, sizeof(int) * 3);
+
+				if (socks == nr_to_create)
+					goto done;
+			} else {
+				tries++;
+			}
+			if (tries == MAX_TRIES_PER_DOMAIN)
+				break;
 		}
 	}
 
