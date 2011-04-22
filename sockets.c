@@ -96,6 +96,7 @@ void open_sockets()
 	int cachefile;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
+	unsigned int i;
 	int bytesread=-1;
 	int fd;
 
@@ -118,8 +119,18 @@ void open_sockets()
 		fd = socket(domain, type, protocol);
 		if (fd < 0) {
 			printf("Cachefile is stale. Need to regenerate.\n");
+			close(cachefile);
 			unlink(cachefilename);
+
+			for (i = 0; i < socks; i++) {
+				close(socket_fds[i]);
+				socket_fds[i] = 0;
+				fd_idx--;
+			}
+			socks = 0;
+
 			generate_sockets(MAX_FDS/2);
+			return;
 		}
 		socket_fds[socks] = fd;
 		writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
