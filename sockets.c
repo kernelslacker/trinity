@@ -119,6 +119,7 @@ void open_sockets()
 		fd = socket(domain, type, protocol);
 		if (fd < 0) {
 			printf("Cachefile is stale. Need to regenerate.\n");
+regenerate:
 			close(cachefile);
 			unlink(cachefilename);
 
@@ -139,8 +140,7 @@ void open_sockets()
 	}
 	if (socks < MAX_FDS/2) {
 		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", socks);
-		generate_sockets(MAX_FDS/2);
-		return;
+		goto regenerate;
 	}
 
 	printf("(%d sockets created based on info from socket cachefile.)\n", socks);
