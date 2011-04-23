@@ -1,3 +1,10 @@
+* --nolog
+* --ignore-socketcache
+* --monochrome
+
+* Check out how kerneloops notices an oops.
+  If it's something in proc/sys check it after each syscall
+
 * Destructors
   Need to store the result of syscalls on success, so that if we allocated
   something, we can deallocate it when we're done. (Perhaps delay the
