@@ -149,12 +149,12 @@ openit:
 			case O_WRONLY:	modestr = "write-only";	break;
 			case O_RDWR:	modestr = "read-write";	break;
 			}
-			printf("%s/%s (%s)\n", dir, de->d_name, modestr);
-			writelog("fd[%i] = %s (%s)\n", fd_idx, b, modestr);
+			output("fd[%i] = %s (%s)\n", fd_idx, b, modestr);
 			fds[fd_idx++] = fd;
 		}
 		if (fd_idx > (MAX_FDS / 2))
 			break;
 	}
+	synclog();
 	closedir(d);
 }

@@ -64,7 +64,7 @@ void generate_sockets(unsigned int nr_to_create)
 			if (fd > -1) {
 				socket_fds[socks] = fd;
 
-				writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
+				output("fd[%i] = domain:%i type:%i protocol:%i\n",
 					fd, domain, type, protocol);
 
 				sockarray[i]++;
@@ -87,8 +87,8 @@ void generate_sockets(unsigned int nr_to_create)
 
 done:
 	close(cachefile);
-	printf("\ncreated %d sockets\n", socks);
-	writelog("created %d sockets\n\n", socks);
+	output("\ncreated %d sockets\n", socks);
+	synclog();
 }
 
 void open_sockets()
@@ -134,17 +134,17 @@ regenerate:
 			return;
 		}
 		socket_fds[socks] = fd;
-		writelog_nosync("fd[%i] = domain:%i type:%i protocol:%i\n",
+		output("fd[%i] = domain:%i type:%i protocol:%i\n",
 			socks+fd_idx, domain, type, protocol);
 		socks++;
 	}
+	synclog();
 	if (socks < MAX_FDS/2) {
 		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", socks);
 		goto regenerate;
 	}
 
 	printf("(%d sockets created based on info from socket cachefile.)\n", socks);
-	synclog();
 
 	close(cachefile);
 }
