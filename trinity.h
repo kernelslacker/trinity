@@ -129,20 +129,9 @@ void * get_map();
 
 extern char *logfilename;
 extern FILE *logfile;
+void synclog();
+void output(const char *fmt, ...);
 
-#define synclog() do {      \
-	fflush(logfile); \
-	fsync(fileno(logfile)); \
-} while (0)
-
-#define writelog(...) do {      \
-	fprintf(logfile, ## __VA_ARGS__); \
-	synclog(); \
-} while (0)
-
-#define writelog_nosync(...) do {      \
-	fprintf(logfile, ## __VA_ARGS__); \
-} while (0)
 
 #define MODE_UNDEFINED 0
 #define MODE_RANDOM 1

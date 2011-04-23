@@ -10,6 +10,7 @@ OBJS		= trinity.o \
 			files.o sockets.o fds.o \
 			syscall.o \
 			maps.o \
+			log.c \
 			$(SANITISE) \
 			$(IOCTLS)
 

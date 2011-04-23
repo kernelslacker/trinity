@@ -77,9 +77,6 @@ char *page_zeros;
 char *page_0xff;
 char *page_rand;
 
-char *logfilename = NULL;
-FILE *logfile;
-
 static char *specific_optarg;
 
 static void init_buffers()
@@ -160,7 +157,7 @@ void seed_from_tod()
 	gettimeofday(&t, 0);
 	seed = t.tv_sec * t.tv_usec;
 	srand(seed);
-	writelog("Randomness reseeded to 0x%x\n", seed);
+	output("Randomness reseeded to 0x%x\n", seed);
 }
 
 
@@ -248,7 +245,7 @@ static void parse_args(int argc, char *argv[])
 		/* Set seed */
 		case 's':
 			seed = strtol(optarg, NULL, 10);
-			writelog("Setting random seed to %d\n", seed);
+			output("Setting random seed to %d\n", seed);
 			srand(seed);
 			break;
 

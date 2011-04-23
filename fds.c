@@ -21,8 +21,8 @@ void setup_fds(void)
 	fds[0] = pipes[0];
 	fds[1] = pipes[1];
 	fd_idx += 2;
-	writelog("fd[0] = pipe\n");
-	writelog("fd[1] = pipe\n");
+	output("fd[0] = pipe\n");
+	output("fd[1] = pipe\n");
 
 	printf("Opening fds\n");
 	open_sockets();

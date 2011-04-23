@@ -144,8 +144,7 @@ static long mkcall(unsigned int call)
 args_done:
 	sptr += sprintf(sptr, WHITE ") ");
 
-	printf("%s", string);
-	writelog("%s", string);
+	output("%s", string);
 	sptr = string;
 
 	synclog();
@@ -168,8 +167,7 @@ args_done:
 		sptr += sprintf(sptr, GREEN "= %d\n" WHITE, ret);
 		shm->successes++;
 	}
-	printf("%s", string);
-	writelog("%s", string);
+	output("%s", string);
 	sptr = string;
 
 	synclog();
