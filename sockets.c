@@ -144,7 +144,7 @@ regenerate:
 		goto regenerate;
 	}
 
-	printf("(%d sockets created based on info from socket cachefile.)\n", socks);
+	output("(%d sockets created based on info from socket cachefile.)\n", socks);
 
 	close(cachefile);
 }
