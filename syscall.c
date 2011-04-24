@@ -161,12 +161,15 @@ args_done:
 	ret = call_syscall(syscalls[call].num_args, call, a1, a2, a3, a4, a5, a6);
 
 	if (ret < 0) {
-		sptr +=sprintf(sptr, RED "= %d (%s)\n" WHITE, ret, strerror(errno));
+		sptr +=sprintf(sptr, RED "= %d (%s)" WHITE, ret, strerror(errno));
 		shm->failures++;
 	} else {
-		sptr += sprintf(sptr, GREEN "= %d\n" WHITE, ret);
+		sptr += sprintf(sptr, GREEN "= %d" WHITE, ret);
 		shm->successes++;
 	}
+	sptr += sprintf(sptr, " [T:%ld F:%ld S:%ld]", shm->execcount, shm->failures, shm->successes);
+	sptr += sprintf(sptr, "\n");
+
 	output("%s", string);
 	sptr = string;
 
