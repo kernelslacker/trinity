@@ -61,7 +61,7 @@ void open_fds(char *dir)
 	unsigned int chance;
 
 	if (!d) {
-		printf("cant open %s\n", dir);
+		printf("can't open %s\n", dir);
 		return;
 	}
 	while ((de = readdir(d))) {
@@ -149,7 +149,7 @@ openit:
 			case O_WRONLY:	modestr = "write-only";	break;
 			case O_RDWR:	modestr = "read-write";	break;
 			}
-			output("fd[%i] = %s (%s)\n", fd_idx, b, modestr);
+			output("fd[%i] = %s (%s)\n", fd, b, modestr);
 			fds[fd_idx++] = fd;
 		}
 		if (fd_idx > (MAX_FDS / 2))
