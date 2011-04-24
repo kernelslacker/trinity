@@ -9,4 +9,7 @@
 	.arg2name = "nfds",
 	.arg2type = ARG_LEN,
 	.arg3name = "timeout_msecs",
+	.arg3type = ARG_RANGE,
+	.low3range = 0,
+	.hi3range = 1,
 },
