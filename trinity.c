@@ -527,5 +527,7 @@ int main(int argc, char* argv[])
 	for (i = 0; i < socks; i++)
 		close(socket_fds[i]);
 
+	fclose(logfile);
+
 	exit(EXIT_SUCCESS);
 }
