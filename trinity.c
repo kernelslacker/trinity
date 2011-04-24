@@ -414,6 +414,7 @@ no_sys32:
 int main(int argc, char* argv[])
 {
 	int shmid;
+	unsigned int i;
 	key_t key;
 
 	if (getuid() == 0) {
@@ -522,6 +523,9 @@ int main(int argc, char* argv[])
 		shm->execcount, shm->retries, shm->successes, shm->failures);
 
 	shmdt(shm);
+
+	for (i = 0; i < socks; i++)
+		close(socket_fds[i]);
 
 	exit(EXIT_SUCCESS);
 }
