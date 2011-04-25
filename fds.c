@@ -33,10 +33,6 @@ void setup_fds(void)
 	open_fds("/sys");
 
 	printf("done getting fds [idx:%d]\n", fd_idx);
-	if (!fd_idx) {
-		printf("couldn't open any files\n");
-		exit(0);
-	}
 }
 
 

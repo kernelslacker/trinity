@@ -69,7 +69,6 @@ void generate_sockets(unsigned int nr_to_create)
 
 				sockarray[i]++;
 				socks++;
-				fd_idx++;
 				fds_left_to_create--;
 
 				buffer[0] = domain;
@@ -128,7 +127,6 @@ regenerate:
 			for (i = 0; i < socks; i++) {
 				close(socket_fds[i]);
 				socket_fds[i] = 0;
-				fd_idx--;
 				fds_left_to_create++;
 			}
 			socks = 0;
@@ -140,7 +138,6 @@ regenerate:
 		output("fd[%i] = domain:%i type:%i protocol:%i\n",
 			fd, domain, type, protocol);
 		socks++;
-		fd_idx++;
 		fds_left_to_create--;
 	}
 	synclog();
