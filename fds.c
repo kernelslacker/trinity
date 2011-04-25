@@ -42,15 +42,19 @@ void setup_fds(void)
 
 int get_random_fd(void)
 {
-	int i;
+	unsigned int i;
+	unsigned int fd = 0;
 
+retry:
 	i = rand() % 2;
 	if (i == 0)
-		return fds[rand() % fd_idx];
+		fd = fds[rand() % fd_idx];
 	if (i == 1)
-		return socket_fds[rand() % socks];
+		fd = socket_fds[rand() % socks];
 
-	// should never get here.
-	printf("oops! %s:%d\n", __FILE__, __LINE__);
-	exit(EXIT_FAILURE);
+	/* retry if we hit stdin/stdout/logfile */
+	if (fd < fds[0])
+		goto retry;
+
+	return fd;
 }
