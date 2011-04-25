@@ -4,7 +4,7 @@
 
 #include "trinity.h"
 
-unsigned int fds[1024];
+unsigned int fds[MAX_FDS/2];
 unsigned int fd_idx;
 
 unsigned int fds_left_to_create = MAX_FDS;

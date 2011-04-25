@@ -22,12 +22,12 @@ void seed_from_tod();
 
 #define MAX_FDS 750
 extern unsigned int fds_left_to_create;
-extern unsigned int socket_fds[MAX_FDS];
+extern unsigned int socket_fds[MAX_FDS/2];
 extern unsigned int socks;
 void open_sockets();
 
 extern unsigned int fd_idx;
-extern unsigned int fds[1024];
+extern unsigned int fds[MAX_FDS/2];
 void open_fds(char *dir);
 
 struct arglist {
