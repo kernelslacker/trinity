@@ -9,7 +9,7 @@
 
 #include "trinity.h"
 
-unsigned int socket_fds[MAX_FDS];
+unsigned int socket_fds[MAX_FDS/2];
 unsigned int socks=0;
 
 static int spin=0;
