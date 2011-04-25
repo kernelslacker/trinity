@@ -7,6 +7,8 @@
 unsigned int fds[1024];
 unsigned int fd_idx;
 
+unsigned int fds_left_to_create = MAX_FDS;
+
 static int pipes[2];
 
 void setup_fds(void)
@@ -21,10 +23,10 @@ void setup_fds(void)
 	fds[0] = pipes[0];
 	fds[1] = pipes[1];
 	fd_idx += 2;
+	fds_left_to_create-=2;
 	output("fd[%d] = pipe\n", fds[0]);
 	output("fd[%d] = pipe\n", fds[1]);
 
-	printf("Opening fds\n");
 	open_sockets();
 	open_fds("/dev");
 	open_fds("/proc");

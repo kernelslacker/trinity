@@ -69,13 +69,15 @@ void generate_sockets(unsigned int nr_to_create)
 
 				sockarray[i]++;
 				socks++;
+				fd_idx++;
+				fds_left_to_create--;
 
 				buffer[0] = domain;
 				buffer[1] = type;
 				buffer[2] = protocol;
 				write(cachefile, &buffer, sizeof(int) * 3);
 
-				if (socks == nr_to_create)
+				if (fds_left_to_create > 0)
 					goto done;
 			} else {
 				tries++;
@@ -103,7 +105,7 @@ void open_sockets()
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
 		printf("Couldn't find socket cachefile. Regenerating.\n");
-		generate_sockets(MAX_FDS/2);
+		generate_sockets(fds_left_to_create/2);
 		return;
 	}
 
@@ -127,19 +129,23 @@ regenerate:
 				close(socket_fds[i]);
 				socket_fds[i] = 0;
 				fd_idx--;
+				fds_left_to_create++;
 			}
 			socks = 0;
 
-			generate_sockets(MAX_FDS/2);
+			generate_sockets(fds_left_to_create/2);
 			return;
 		}
 		socket_fds[socks] = fd;
 		output("fd[%i] = domain:%i type:%i protocol:%i\n",
-			socks+fd_idx, domain, type, protocol);
+			fd, domain, type, protocol);
 		socks++;
+		fd_idx++;
+		fds_left_to_create--;
 	}
 	synclog();
-	if (socks < MAX_FDS/2) {
+
+	if (socks < fds_left_to_create/2) {
 		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", socks);
 		goto regenerate;
 	}
