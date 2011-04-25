@@ -40,7 +40,7 @@ void generate_sockets(unsigned int nr_to_create)
 		exit(EXIT_FAILURE);
 	}
 
-	while (socks < nr_to_create) {
+	while (nr_to_create > 0) {
 		for (i = 0; i < PF_MAX; i++)
 			sockarray[i] = 0;
 
@@ -55,7 +55,7 @@ void generate_sockets(unsigned int nr_to_create)
 			protocol = rand() % PROTO_MAX;
 
 			printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
-				spinner[spin++], socks, nr_to_create-socks,
+				spinner[spin++], socks, nr_to_create,
 				domain, type, protocol);
 			if (spin == 4)
 				spin = 0;
@@ -70,13 +70,14 @@ void generate_sockets(unsigned int nr_to_create)
 				sockarray[i]++;
 				socks++;
 				fds_left_to_create--;
+				nr_to_create--;
 
 				buffer[0] = domain;
 				buffer[1] = type;
 				buffer[2] = protocol;
 				write(cachefile, &buffer, sizeof(int) * 3);
 
-				if (fds_left_to_create > 0)
+				if (nr_to_create == 0)
 					goto done;
 			} else {
 				tries++;

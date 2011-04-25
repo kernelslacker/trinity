@@ -28,6 +28,7 @@ void setup_fds(void)
 	output("fd[%d] = pipe\n", fds[1]);
 
 	open_sockets();
+
 	open_fds("/dev");
 	open_fds("/proc");
 	open_fds("/sys");
