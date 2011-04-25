@@ -21,6 +21,7 @@ void regenerate_random_page(void);
 void seed_from_tod();
 
 #define MAX_FDS 750
+extern unsigned int fds_left_to_create;
 extern unsigned int socket_fds[MAX_FDS];
 extern unsigned int socks;
 void open_sockets();

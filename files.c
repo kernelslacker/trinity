@@ -65,6 +65,9 @@ void open_fds(char *dir)
 		return;
 	}
 	while ((de = readdir(d))) {
+		if (fds_left_to_create == 0)
+			break;
+
 		memset(&buf, 0, sizeof(struct stat));
 		snprintf(b, sizeof(b), "%s/%s", dir, de->d_name);
 		if (ignore_files(de->d_name))
@@ -151,9 +154,8 @@ openit:
 			}
 			output("fd[%i] = %s (%s)\n", fd, b, modestr);
 			fds[fd_idx++] = fd;
+			fds_left_to_create--;
 		}
-		if (fd_idx > (MAX_FDS / 2))
-			break;
 	}
 	synclog();
 	closedir(d);
