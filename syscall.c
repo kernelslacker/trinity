@@ -74,6 +74,8 @@ static long mkcall(unsigned int call)
 	int ret = 0;
 	char string[512], *sptr=string;
 
+	sptr += sprintf(sptr, "%lu: ", shm->execcount);
+
 	switch (opmode) {
 	case MODE_ROTATE:
 		a1 = a2 = a3 = a4 = a5 = a6 = regval;
