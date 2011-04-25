@@ -208,8 +208,6 @@ static int do_syscall(int callnr)
 			goto skip_syscall;
 	}
 
-	printf ("%i: ", callnr);
-
 retry_same:
 	(void)alarm(3);
 
