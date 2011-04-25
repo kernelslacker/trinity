@@ -40,8 +40,10 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
   broken locking in irda
 
 * CAN bcm_release NULL sock-> sk
+  CVE-2011-1598
 
 * CAN raw_release NULL sock-> sk
+  CVE-2011-1748
 
 * irias_seq_show recursive locking
 
