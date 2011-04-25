@@ -43,14 +43,6 @@
 
 * --32bit still passes 64bit addresses.
 
-* Improve logging.
-  - writelog is really crap.  It would be better if we just had a print_and_log
-    varargs function that did both the printf to stdout and the logging so
-    that we didn't need to duplicate output strings. (Though it would need to
-    strip out the ansi colour codes for the logfile output).
-  - when multi-threaded, it may make more sense to have a logfile per thread.
-  - is the fflush at the end enough? do we need to fsync ?
-
 * --nrsyscalls (set NR_SYSCALLS)
   Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?
   This would require a database of per-kernel syscall numbers.
