@@ -194,6 +194,8 @@ args_done:
 	if (ret == -ENOSYS)
 		syscalls[call].flags |= AVOID_SYSCALL;
 
+	shm->execcount++;
+
 	return ret;
 }
 
@@ -314,7 +316,6 @@ void main_loop(void)
 		}
 
 		rep++;
-		shm->execcount++;
 		if (syscallcount && (shm->execcount >= syscallcount))
 			break;
 
@@ -332,6 +333,8 @@ done: ;
 
 void do_main_loop(void)
 {
+	shm->execcount = 1;
+
 	if (opmode != MODE_RANDOM) {
 		main_loop();
 		return;
