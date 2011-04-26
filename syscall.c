@@ -123,15 +123,23 @@ static long mkcall(unsigned int call)
 				sptr += sprintf(sptr, YELLOW "0x%lx" WHITE, REG);	\
 			else {								\
 				if (OLDREG == REG)					\
-					sptr += sprintf(sptr, WHITE "0x%lx", REG);	\
+					sptr += sprintf(sptr, WHITE);			\
 				else							\
-					sptr += sprintf(sptr, CYAN "0x%lx" WHITE, REG); \
+					sptr += sprintf(sptr, CYAN);			\
+				if (REG > 1024)						\
+					sptr += sprintf(sptr, "0x%lx" WHITE, REG);	\
+				else							\
+					sptr += sprintf(sptr, "%ld" WHITE, REG);	\
 			}								\
 		} else {								\
 			if (OLDREG == REG)						\
-				sptr += sprintf(sptr, WHITE "0x%lx", REG);		\
+				sptr += sprintf(sptr, WHITE);				\
 			else								\
-				sptr += sprintf(sptr, CYAN "0x%lx" WHITE, REG);		\
+				sptr += sprintf(sptr, CYAN);				\
+			if (REG > 1024)							\
+				sptr += sprintf(sptr, "0x%lx" WHITE, REG);		\
+			else								\
+				sptr += sprintf(sptr, "%ld" WHITE, REG);		\
 		}									\
 		if (REG == (unsigned long)page_zeros)					\
 			sptr += sprintf(sptr, "[page_zeros]");				\
