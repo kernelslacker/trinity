@@ -37,11 +37,13 @@ retry_addr:
 		*new_addr &= mask;
 		if ((*new_addr <= *addr) && (*new_addr+*new_len) > *addr) {
 			*new_addr -= *addr - (rand() % 1000);
+			printf("retried addr1\n");
 			goto retry_addr;
 		}
 
 		if ((*addr <= *new_addr) && (*addr+*old_len) > *new_addr) {
 			*new_addr += *addr - (rand() % 1000);
+			printf("retried addr2\n");
 			goto retry_addr;
 		}
 
