@@ -17,7 +17,10 @@ void check_sanity(void);
 void mask_signals(void);
 void do_main_loop(void);
 void display_opmode(void);
+
+#define FD_REGENERATION_POINT 25000
 void regenerate_random_page(void);
+
 void seed_from_tod();
 
 #define MAX_FDS 750
@@ -105,6 +108,7 @@ struct shm_s {
 	unsigned long successes;
 	unsigned long failures;
 	unsigned long retries;
+	unsigned int regenerate_fds;
 };
 extern struct shm_s *shm;
 
