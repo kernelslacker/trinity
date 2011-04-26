@@ -1,3 +1,6 @@
+* clock_nanosleep can wedge for a really long time without the alarm going off.
+  either figure out if we can limit it, or mark it AVOID
+
 * --nolog
 * --ignore-socketcache
 * --monochrome
