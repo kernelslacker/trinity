@@ -26,7 +26,7 @@ static char sockarray[PF_MAX];
 
 void generate_sockets(unsigned int nr_to_create)
 {
-	int fd;
+	int fd, n;
 	unsigned int i, tries;
 	int cachefile;
 
@@ -75,7 +75,11 @@ void generate_sockets(unsigned int nr_to_create)
 				buffer[0] = domain;
 				buffer[1] = type;
 				buffer[2] = protocol;
-				write(cachefile, &buffer, sizeof(int) * 3);
+				n = write(cachefile, &buffer, sizeof(int) * 3);
+				if (n == -1) {
+					printf("something went wrong writing the cachefile!\n");
+					exit(EXIT_FAILURE);
+				}
 
 				if (nr_to_create == 0)
 					goto done;
