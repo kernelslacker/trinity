@@ -413,7 +413,7 @@ no_sys32:
 
 int main(int argc, char* argv[])
 {
-	int shmid;
+	int shmid, ret;
 	unsigned int i;
 	key_t key;
 
@@ -508,7 +508,10 @@ int main(int argc, char* argv[])
 
 	/* just in case we're not using the test.sh harness. */
 	chmod("tmp/", 0755);
-	chdir("tmp/");
+	ret = chdir("tmp/");
+	if (!ret) {
+		/* nothing right now */
+	}
 
 	sigsetjmp(ret_jump, 1);
 

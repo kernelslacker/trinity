@@ -40,6 +40,7 @@ void setup_maps()
 	FILE *f;
 	void *startaddr, *endaddr;
 	struct map *tmpmap;
+	unsigned int ret;
 
 	f = fopen("/proc/self/maps", "r");
 	if (!f) {
@@ -49,7 +50,11 @@ void setup_maps()
 
 	tmpmap = maps_list = alloc_map();
 	do {
-		fscanf(f, "%p-%p %*[^\n]\n", &startaddr, &endaddr);
+		ret = fscanf(f, "%p-%p %*[^\n]\n", &startaddr, &endaddr);
+		if (ret == 0) {
+			printf("/proc/maps parsing failure\n");
+			exit(EXIT_FAILURE);
+		}
 
 		/* skip over the shm, in case we corrupt it*/
 		if (startaddr == shm)

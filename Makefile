@@ -1,4 +1,4 @@
-CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror
+CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror -D_FORTIFY_SOURCE=2
 #CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
 
 all: trinity
