@@ -523,7 +523,7 @@ int main(int argc, char* argv[])
 		free(structptr);
 
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
-		shm->execcount, shm->retries, shm->successes, shm->failures);
+		shm->execcount - 1, shm->retries, shm->successes, shm->failures);
 
 	shmdt(shm);
 
