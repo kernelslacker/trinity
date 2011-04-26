@@ -132,6 +132,7 @@ extern char *logfilename;
 extern FILE *logfile;
 void synclog();
 void output(const char *fmt, ...);
+void sync_output();
 
 
 #define MODE_UNDEFINED 0

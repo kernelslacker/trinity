@@ -163,8 +163,7 @@ args_done:
 	output("%s", string);
 	sptr = string;
 
-	synclog();
-	(void)fflush(stdout);
+	sync_output();
 
 	if (dopause == 1)
 		sleep(1);
@@ -189,8 +188,7 @@ args_done:
 	output("%s", string);
 	sptr = string;
 
-	synclog();
-	(void)fflush(stdout);
+	sync_output();
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if (ret == -ENOSYS)

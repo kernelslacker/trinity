@@ -8,8 +8,14 @@ FILE *logfile;
 
 void synclog()
 {
-	fflush(logfile);
+	(void)fflush(logfile);
 	fsync(fileno(logfile));
+}
+
+void sync_output()
+{
+	(void)fflush(stdout);
+	synclog();
 }
 
 void output(const char *fmt, ...)
