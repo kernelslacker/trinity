@@ -28,6 +28,8 @@ void open_sockets();
 
 extern unsigned int fd_idx;
 extern unsigned int fds[MAX_FDS/2];
+void open_files();
+void close_files();
 void open_fds(char *dir);
 
 struct arglist {

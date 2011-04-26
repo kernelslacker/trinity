@@ -161,3 +161,22 @@ openit:
 	sync_output();
 	closedir(d);
 }
+
+void open_files()
+{
+	open_fds("/dev");
+	open_fds("/proc");
+	open_fds("/sys");
+}
+
+void close_files()
+{
+	unsigned int i;
+
+	for (i = 0; i < fd_idx; i++) {
+		close(fds[i]);
+		fds[i] = 0;
+		fds_left_to_create++;
+	}
+	fd_idx = 0;
+}

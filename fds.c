@@ -4,36 +4,37 @@
 
 #include "trinity.h"
 
+#define MAX_PIPE_FDS 10
+unsigned int pipe_fds[MAX_PIPE_FDS*2];
+
 unsigned int fds[MAX_FDS/2];
-unsigned int fd_idx;
+unsigned int fd_idx = 0;
 
 unsigned int fds_left_to_create = MAX_FDS;
 
-static int pipes[2];
+void open_pipes(void)
+{
+	int pipes[2];
+	unsigned int i;
+
+	for (i = 0; i < MAX_PIPE_FDS; i++) {
+		if (pipe(pipes) < 0) {
+			perror("pipe fail.\n");
+			exit(EXIT_FAILURE);
+		}
+		pipe_fds[i] = pipes[0];
+		pipe_fds[i+1] = pipes[1];
+
+		output("fd[%d] = pipe\n", pipe_fds[i]);
+		output("fd[%d] = pipe\n", pipe_fds[i+1]);
+	}
+}
 
 void setup_fds(void)
 {
-	fd_idx = 0;
-
-	printf("Creating pipes\n");
-	if (pipe(pipes) < 0) {
-		perror("pipe fail.\n");
-		exit(EXIT_FAILURE);
-	}
-	fds[0] = pipes[0];
-	fds[1] = pipes[1];
-	fd_idx += 2;
-	fds_left_to_create-=2;
-	output("fd[%d] = pipe\n", fds[0]);
-	output("fd[%d] = pipe\n", fds[1]);
-
+	open_pipes();
 	open_sockets();
-
-	open_fds("/dev");
-	open_fds("/proc");
-	open_fds("/sys");
-
-	printf("done getting fds [idx:%d]\n", fd_idx);
+	open_files();
 }
 
 
@@ -42,7 +43,7 @@ int get_random_fd(void)
 	unsigned int i;
 	unsigned int fd = 0;
 
-	i = rand() % 2;
+	i = rand() % 3;
 	switch (i) {
 	case 0:
 retry:		fd = fds[rand() % fd_idx];
@@ -53,6 +54,10 @@ retry:		fd = fds[rand() % fd_idx];
 
 	case 1:
 		fd = socket_fds[rand() % socks];
+		break;
+
+	case 2:
+		fd = pipe_fds[rand() % MAX_PIPE_FDS];
 		break;
 	}
 
