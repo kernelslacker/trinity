@@ -65,9 +65,6 @@ void open_fds(char *dir)
 		return;
 	}
 	while ((de = readdir(d))) {
-		if (fds_left_to_create == 0)
-			break;
-
 		memset(&buf, 0, sizeof(struct stat));
 		snprintf(b, sizeof(b), "%s/%s", dir, de->d_name);
 		if (ignore_files(de->d_name))
@@ -143,6 +140,9 @@ void open_fds(char *dir)
 			// for files, increase the probability of success
 			chance = 10;
 openit:
+			if (fds_left_to_create == 0)
+				break;
+
 			fd = add_fd(chance, b, openflag);
 			if (fd == -1)
 				continue;
