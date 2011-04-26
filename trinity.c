@@ -496,6 +496,7 @@ int main(int argc, char* argv[])
 	}
 	shm->successes = 0;
 	shm->failures = 0;
+	shm->regenerate_fds = FD_REGENERATION_POINT - 1;
 
 	init_buffers();
 
