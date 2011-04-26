@@ -42,16 +42,19 @@ int get_random_fd(void)
 	unsigned int i;
 	unsigned int fd = 0;
 
-retry:
 	i = rand() % 2;
-	if (i == 0)
-		fd = fds[rand() % fd_idx];
-	if (i == 1)
-		fd = socket_fds[rand() % socks];
+	switch (i) {
+	case 0:
+retry:		fd = fds[rand() % fd_idx];
+		/* retry if we hit stdin/stdout/logfile */
+		if (fd < fds[0])
+			goto retry;
+		break;
 
-	/* retry if we hit stdin/stdout/logfile */
-	if (fd < fds[0])
-		goto retry;
+	case 1:
+		fd = socket_fds[rand() % socks];
+		break;
+	}
 
 	return fd;
 }
