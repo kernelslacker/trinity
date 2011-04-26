@@ -119,7 +119,7 @@ void regenerate_random_page()
 	void *addr;
 
 	/* sometimes return a page of complete trash */
-	if (rand() % 2 == 0) {
+	if ((rand() % 100) < 20) {
 		for (i = 0; i < page_size; i++)
 			page_rand[i] = (unsigned char)rand();
 		return;
