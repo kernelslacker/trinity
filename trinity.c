@@ -234,7 +234,7 @@ static void parse_args(int argc, char *argv[])
 
 		/* Set syscall loop counter */
 		case 'N':
-			syscallcount = strtoll(optarg, NULL, 10);
+			syscallcount = strtoll(optarg, NULL, 10) + 1;
 			break;
 
 		/* Pause after each syscall */
