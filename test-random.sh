@@ -18,14 +18,14 @@ do
   chmod 755 tmp
   for i in `seq 0 $NR_CPUS`
   do
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i.log    -i -N 1000 -F &
+	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i.log    -i -N 1000 &
   done
   wait
   rm -f trinity.socketcache
 
   for i in `seq 0 $NR_CPUS`
   do
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i -N 1000 -F --32bit &
+	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i -N 1000 --32bit
   done
   wait
   rm -f trinity.socketcache
