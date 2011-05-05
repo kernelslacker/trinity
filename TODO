@@ -1,3 +1,11 @@
+* Build both a 64bit and a 32bit executable.
+
+* sanitise_sync_file_range is bullshit
+
+* log addresses of pages & maps that we pass.
+
+* print/log the owner of the mapping.
+
 * -F occasionally wedges the process.  It still runs, but there's no output.
   Not entirely sure what's going on yet. Could be just another syscall that
   we need to mark AVOID.  The alarm doesn't go off because the process is
