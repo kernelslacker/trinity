@@ -59,8 +59,12 @@ void setup_maps()
 		}
 
 		/* skip over the shm, in case we corrupt it*/
-		if (startaddr == shm)
+		if (startaddr == shm) {
+			do {
+				ch = getc(f);
+			} while ((ch != EOF) && (ch != '\n'));
 			continue;
+		}
 
 		// search forward until we reach a name or eol
 		do {
@@ -77,7 +81,6 @@ void setup_maps()
 				break;
 			name[strlen(name) - 1] = '\0';
 			tmpmap->name = strdup(name);
-			printf("found %s\n", name);
 		}
 
 		tmpmap->ptr = startaddr;
