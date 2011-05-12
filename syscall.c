@@ -120,7 +120,10 @@ static long mkcall(unsigned int call)
 			sptr += sprintf(sptr, "%s=", NAME);				\
 		if (opmode == MODE_ROTATE) {						\
 			if (rotate_mask & (BIT))					\
-				sptr += sprintf(sptr, YELLOW "0x%lx" WHITE, REG);	\
+				if (OLDREG == REG)					\
+					sptr += sprintf(sptr, YELLOW "0x%lx" WHITE, REG);	\
+				else							\
+					sptr += sprintf(sptr, CYAN "0x%lx" WHITE, REG);	\
 			else {								\
 				if (OLDREG == REG)					\
 					sptr += sprintf(sptr, WHITE);			\
