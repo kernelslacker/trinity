@@ -66,6 +66,8 @@ void setup_maps()
 		tmpmap->next = alloc_map();
 		tmpmap = tmpmap->next;
 
+		output("mapping[%d]: %p-%p\n", num_mappings - 1, startaddr, endaddr);
+
 	} while (!feof(f));
 
 	/* free the empty map on the end */
