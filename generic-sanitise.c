@@ -199,7 +199,7 @@ static unsigned long fill_arg(int call, int argnum)
 	case ARG_ADDRESS:
 		return (unsigned long)get_address();
 	case ARG_PID:
-		return get_pid();
+		return (unsigned long)get_pid();
 	case ARG_RANGE:
 		switch (argnum) {
 		case 1:	low = syscalls[call].low1range;
