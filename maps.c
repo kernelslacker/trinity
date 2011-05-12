@@ -128,4 +128,5 @@ void destroy_maps()
 		free(thismap);
 		thismap = next;
 	}
+	num_mappings = 0;
 }
