@@ -528,6 +528,8 @@ int main(int argc, char* argv[])
 
 	shmdt(shm);
 
+	destroy_maps();
+
 	for (i = 0; i < socks; i++)
 		close(socket_fds[i]);
 
