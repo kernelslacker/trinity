@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include "trinity.h"
+#include "arch.h"
 
 static unsigned int num_mappings = 0;
 
@@ -58,8 +59,9 @@ void setup_maps()
 			exit(EXIT_FAILURE);
 		}
 
-		/* skip over the shm, in case we corrupt it*/
-		if (startaddr == shm) {
+		/* skip over the shm (and any nearby mappings), in case we corrupt it*/
+		if ((startaddr > (void *) shm - (PAGE_SIZE * 8)) &&
+		    (startaddr < (void *) shm + (PAGE_SIZE * 8))) {
 			do {
 				ch = getc(f);
 			} while ((ch != EOF) && (ch != '\n'));
