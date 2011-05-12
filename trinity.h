@@ -122,8 +122,10 @@ extern char *page_rand;
 struct map {
 	struct map *next;
 	void *ptr;
+	char *name;
 };
 void setup_maps();
+void destroy_maps();
 void * get_map();
 
 #define RED	"[1;31m"

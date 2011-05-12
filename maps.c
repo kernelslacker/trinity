@@ -41,6 +41,8 @@ void setup_maps()
 	void *startaddr, *endaddr;
 	struct map *tmpmap;
 	unsigned int ret;
+	char name[80];
+	char ch;
 
 	f = fopen("/proc/self/maps", "r");
 	if (!f) {
@@ -50,7 +52,7 @@ void setup_maps()
 
 	tmpmap = maps_list = alloc_map();
 	do {
-		ret = fscanf(f, "%p-%p %*[^\n]\n", &startaddr, &endaddr);
+		ret = fscanf(f, "%p-%p", &startaddr, &endaddr);
 		if (ret == 0) {
 			printf("/proc/maps parsing failure\n");
 			exit(EXIT_FAILURE);
@@ -60,13 +62,35 @@ void setup_maps()
 		if (startaddr == shm)
 			continue;
 
+		// search forward until we reach a name or eol
+		do {
+			ch = getc(f);
+		} while ((ch != EOF) && (ch != '\n') && (ch != '/') && (ch != '['));
+
+		if (ch == EOF)
+			break;
+
+		// Store the name if we find it.
+		if ((ch == '/') || (ch == '[')) {
+			ungetc(ch, f);
+			if (fgets(name, 80, f) == NULL)
+				break;
+			name[strlen(name) - 1] = '\0';
+			tmpmap->name = strdup(name);
+			printf("found %s\n", name);
+		}
+
 		tmpmap->ptr = startaddr;
 		num_mappings++;
 
 		tmpmap->next = alloc_map();
-		tmpmap = tmpmap->next;
 
-		output("mapping[%d]: %p-%p\n", num_mappings - 1, startaddr, endaddr);
+		output("mapping[%d]: %p-%p ", num_mappings - 1, startaddr, endaddr);
+		if (tmpmap->name)
+			output("%s", tmpmap->name);
+		output("\n");
+
+		tmpmap = tmpmap->next;
 
 	} while (!feof(f));
 
@@ -88,4 +112,17 @@ void * get_map()
 		tmpmap = tmpmap->next;
 
 	return tmpmap->ptr;
+}
+
+void destroy_maps()
+{
+	unsigned int i;
+	struct map *thismap = maps_list, *next;
+
+	for (i = 0; i < num_mappings; i++) {
+		next = thismap->next;
+		free(thismap->name);
+		free(thismap);
+		thismap = next;
+	}
 }
