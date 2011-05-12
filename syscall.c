@@ -252,6 +252,10 @@ retry_same:
 	if (!shm->regenerate_fds) {
 		close_files();
 		open_files();
+
+		destroy_maps();
+		setup_maps();
+
 		shm->regenerate_fds = FD_REGENERATION_POINT - 1;
 	}
 	shm->regenerate_fds--;
