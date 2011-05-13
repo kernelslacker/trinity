@@ -1,3 +1,9 @@
+/*
+ * SYSCALL_DEFINE(fanotify_mark)(int fanotify_fd, unsigned int flags,
+	__u64 mask, int dfd, const char  __user * pathname)
+ */
+#include "trinity.h"
+#include "sanitise.h"
 
 /* flags used for fanotify_modify_mark() */
 #define FAN_MARK_ADD            0x00000001
@@ -25,13 +31,16 @@
 #define FAN_EVENT_ON_CHILD      0x08000000      /* interested in child events */
 #define FAN_CLOSE               (FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE) /* close */
 
-
-/*
- * SYSCALL_DEFINE(fanotify_mark)(int fanotify_fd, unsigned int flags,
-	__u64 mask, int dfd, const char  __user * pathname)
- */
-#include "trinity.h"
-#include "sanitise.h"
+static void sanitise_fanotify_mark(
+		__unused__ unsigned long *a1,
+		__unused__ unsigned long *a2,
+		unsigned long *a3,
+		__unused__ unsigned long *a4,
+		__unused__ unsigned long *a5,
+		__unused__ unsigned long *a6)
+{
+	*a3 &= 0xffffffff;
+}
 
 struct syscall syscall_fanotify_mark = {
 	.name = "fanotify_mark",
