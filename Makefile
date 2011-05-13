@@ -3,6 +3,7 @@ CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror -D_FORTIFY_SOURCE=2
 
 all: trinity
 
+SYSCALLS	= $(patsubst %.c,%.o,$(wildcard syscalls/*.c))
 SANITISE	= $(patsubst %.c,%.o,$(wildcard sanitise/*.c))
 IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
 OBJS		= trinity.o \
@@ -11,6 +12,7 @@ OBJS		= trinity.o \
 			syscall.o \
 			maps.o \
 			log.c \
+			$(SYSCALLS) \
 			$(SANITISE) \
 			$(IOCTLS)
 

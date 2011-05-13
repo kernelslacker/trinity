@@ -172,17 +172,17 @@ static unsigned long fill_arg(int call, int argnum)
 	unsigned int argtype=0;
 
 	switch (argnum) {
-	case 1:	argtype = syscalls[call].arg1type;
+	case 1:	argtype = syscalls[call].entry->arg1type;
 		break;
-	case 2:	argtype = syscalls[call].arg2type;
+	case 2:	argtype = syscalls[call].entry->arg2type;
 		break;
-	case 3:	argtype = syscalls[call].arg3type;
+	case 3:	argtype = syscalls[call].entry->arg3type;
 		break;
-	case 4:	argtype = syscalls[call].arg4type;
+	case 4:	argtype = syscalls[call].entry->arg4type;
 		break;
-	case 5:	argtype = syscalls[call].arg5type;
+	case 5:	argtype = syscalls[call].entry->arg5type;
 		break;
-	case 6:	argtype = syscalls[call].arg6type;
+	case 6:	argtype = syscalls[call].entry->arg6type;
 		break;
 	}
 
@@ -202,23 +202,23 @@ static unsigned long fill_arg(int call, int argnum)
 		return (unsigned long)get_pid();
 	case ARG_RANGE:
 		switch (argnum) {
-		case 1:	low = syscalls[call].low1range;
-			high = syscalls[call].hi1range;
+		case 1:	low = syscalls[call].entry->low1range;
+			high = syscalls[call].entry->hi1range;
 			break;
-		case 2:	low = syscalls[call].low2range;
-			high = syscalls[call].hi2range;
+		case 2:	low = syscalls[call].entry->low2range;
+			high = syscalls[call].entry->hi2range;
 			break;
-		case 3:	low = syscalls[call].low3range;
-			high = syscalls[call].hi3range;
+		case 3:	low = syscalls[call].entry->low3range;
+			high = syscalls[call].entry->hi3range;
 			break;
-		case 4:	low = syscalls[call].low4range;
-			high = syscalls[call].hi4range;
+		case 4:	low = syscalls[call].entry->low4range;
+			high = syscalls[call].entry->hi4range;
 			break;
-		case 5:	low = syscalls[call].low5range;
-			high = syscalls[call].hi5range;
+		case 5:	low = syscalls[call].entry->low5range;
+			high = syscalls[call].entry->hi5range;
 			break;
-		case 6:	low = syscalls[call].low6range;
-			high = syscalls[call].hi6range;
+		case 6:	low = syscalls[call].entry->low6range;
+			high = syscalls[call].entry->hi6range;
 			break;
 		}
 		i = rand64() % high;
@@ -229,23 +229,23 @@ static unsigned long fill_arg(int call, int argnum)
 		return i;
 	case ARG_LIST:
 		switch (argnum) {
-		case 1:	num = syscalls[call].arg1list.num;
-			values = syscalls[call].arg1list.values;
+		case 1:	num = syscalls[call].entry->arg1list.num;
+			values = syscalls[call].entry->arg1list.values;
 			break;
-		case 2:	num = syscalls[call].arg2list.num;
-			values = syscalls[call].arg2list.values;
+		case 2:	num = syscalls[call].entry->arg2list.num;
+			values = syscalls[call].entry->arg2list.values;
 			break;
-		case 3:	num = syscalls[call].arg3list.num;
-			values = syscalls[call].arg3list.values;
+		case 3:	num = syscalls[call].entry->arg3list.num;
+			values = syscalls[call].entry->arg3list.values;
 			break;
-		case 4:	num = syscalls[call].arg4list.num;
-			values = syscalls[call].arg4list.values;
+		case 4:	num = syscalls[call].entry->arg4list.num;
+			values = syscalls[call].entry->arg4list.values;
 			break;
-		case 5:	num = syscalls[call].arg5list.num;
-			values = syscalls[call].arg5list.values;
+		case 5:	num = syscalls[call].entry->arg5list.num;
+			values = syscalls[call].entry->arg5list.values;
 			break;
-		case 6:	num = syscalls[call].arg6list.num;
-			values = syscalls[call].arg6list.values;
+		case 6:	num = syscalls[call].entry->arg6list.num;
+			values = syscalls[call].entry->arg6list.values;
 			break;
 		}
 		bits = rand() % num;	/* num of bits to OR */
@@ -269,17 +269,17 @@ void generic_sanitise(int call,
 	unsigned long *a5,
 	unsigned long *a6)
 {
-	if (syscalls[call].arg1type != 0)
+	if (syscalls[call].entry->arg1type != 0)
 		*a1 = fill_arg(call, 1);
-	if (syscalls[call].arg2type != 0)
+	if (syscalls[call].entry->arg2type != 0)
 		*a2 = fill_arg(call, 2);
-	if (syscalls[call].arg3type != 0)
+	if (syscalls[call].entry->arg3type != 0)
 		*a3 = fill_arg(call, 3);
-	if (syscalls[call].arg4type != 0)
+	if (syscalls[call].entry->arg4type != 0)
 		*a4 = fill_arg(call, 4);
-	if (syscalls[call].arg5type != 0)
+	if (syscalls[call].entry->arg5type != 0)
 		*a5 = fill_arg(call, 5);
-	if (syscalls[call].arg6type != 0)
+	if (syscalls[call].entry->arg6type != 0)
 		*a6 = fill_arg(call, 6);
 }
 
