@@ -100,18 +100,18 @@ static long mkcall(unsigned int call)
 	if (call > max_nr_syscalls)
 		sptr += sprintf(sptr, "%u", call);
 	else
-		sptr += sprintf(sptr, "%s", syscalls[call].name);
+		sptr += sprintf(sptr, "%s", syscalls[call].entry->name);
 
 	olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
 
 	if (intelligence == 1) {
 		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
-		if (syscalls[call].sanitise)
-			syscalls[call].sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
+		if (syscalls[call].entry->sanitise)
+			syscalls[call].entry->sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 	}
 
 #define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)					\
-	if (syscalls[call].num_args >= ARGNUM) {					\
+	if (syscalls[call].entry->num_args >= ARGNUM) {					\
 		if (!NAME)								\
 			goto args_done;							\
 		if (ARGNUM != 1)							\
@@ -154,12 +154,12 @@ static long mkcall(unsigned int call)
 
 	sptr += sprintf(sptr, WHITE "(");
 
-	COLOR_ARG(1, syscalls[call].arg1name, 1<<5, olda1, a1);
-	COLOR_ARG(2, syscalls[call].arg2name, 1<<4, olda2, a2);
-	COLOR_ARG(3, syscalls[call].arg3name, 1<<3, olda3, a3);
-	COLOR_ARG(4, syscalls[call].arg4name, 1<<2, olda4, a4);
-	COLOR_ARG(5, syscalls[call].arg5name, 1<<1, olda5, a5);
-	COLOR_ARG(6, syscalls[call].arg6name, 1<<0, olda6, a6);
+	COLOR_ARG(1, syscalls[call].entry->arg1name, 1<<5, olda1, a1);
+	COLOR_ARG(2, syscalls[call].entry->arg2name, 1<<4, olda2, a2);
+	COLOR_ARG(3, syscalls[call].entry->arg3name, 1<<3, olda3, a3);
+	COLOR_ARG(4, syscalls[call].entry->arg4name, 1<<2, olda4, a4);
+	COLOR_ARG(5, syscalls[call].entry->arg5name, 1<<1, olda5, a5);
+	COLOR_ARG(6, syscalls[call].entry->arg6name, 1<<0, olda6, a6);
 args_done:
 	sptr += sprintf(sptr, WHITE ") ");
 
@@ -176,7 +176,7 @@ args_done:
 	call += 1024;
 #endif
 
-	ret = call_syscall(syscalls[call].num_args, call, a1, a2, a3, a4, a5, a6);
+	ret = call_syscall(syscalls[call].entry->num_args, call, a1, a2, a3, a4, a5, a6);
 
 	if (ret < 0) {
 		sptr +=sprintf(sptr, RED "= %d (%s)" WHITE, ret, strerror(errno));
@@ -195,7 +195,7 @@ args_done:
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if (ret == -ENOSYS)
-		syscalls[call].flags |= AVOID_SYSCALL;
+		syscalls[call].entry->flags |= AVOID_SYSCALL;
 
 	shm->execcount++;
 
@@ -215,13 +215,13 @@ static int do_syscall(int callnr)
 		syscallnr = specific_syscall;
 	else {
 
-		if (syscalls[syscallnr].num_args == 0)
+		if (syscalls[syscallnr].entry->num_args == 0)
 			goto skip_syscall;
 
-		if (syscalls[syscallnr].flags & AVOID_SYSCALL)
+		if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
 			goto skip_syscall;
 
-		if (syscalls[syscallnr].flags & NI_SYSCALL)
+		if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
 			goto skip_syscall;
 	}
 
@@ -392,7 +392,7 @@ void syscall_list()
 	unsigned int i;
 
 	for (i=0; i < max_nr_syscalls; i++)
-		 printf("%u: %s\n", i, syscalls[i].name);
+		 printf("%u: %s\n", i, syscalls[i].entry->name);
 }
 
 void check_sanity(void)
@@ -403,12 +403,12 @@ void check_sanity(void)
 	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
 	/* disabled for now, breaks with 32bit calls.
 	for (i=0; i<= max_nr_syscalls; i++) {
-		if (syscalls[i].flags & NI_SYSCALL) {
+		if (syscalls[i].entry->flags & NI_SYSCALL) {
 			ret = syscall(i);
 			if (ret == -1) {
 				if (errno != ENOSYS) {
 					printf("syscall %d (%s) should be ni_syscall, but returned %d(%s) !\n",
-						i, syscalls[i].name, errno, strerror(errno));
+						i, syscalls[i].entry->name, errno, strerror(errno));
 					exit(EXIT_FAILURE);
 				}
 			}

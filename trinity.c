@@ -359,8 +359,8 @@ static void find_specific_syscall()
 
 	if (specific_syscall != 0) {
 		i = specific_syscall;
-		if (syscalls[i].flags &= AVOID_SYSCALL) {
-			printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].name);
+		if (syscalls[i].entry->flags &= AVOID_SYSCALL) {
+			printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].entry->name);
 			exit(EXIT_FAILURE);
 		}
 		return;
@@ -370,10 +370,10 @@ static void find_specific_syscall()
 		goto force_32bit;
 
 	for (i=0; i<=max_nr_syscalls; i++) {
-		if (strcmp(specific_optarg, syscalls[i].name) == 0) {
-			printf("Found %s at %u\n", syscalls[i].name, i);
-			if (syscalls[i].flags &= AVOID_SYSCALL) {
-				printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].name);
+		if (strcmp(specific_optarg, syscalls[i].entry->name) == 0) {
+			printf("Found %s at %u\n", syscalls[i].entry->name, i);
+			if (syscalls[i].entry->flags &= AVOID_SYSCALL) {
+				printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].entry->name);
 				exit(EXIT_FAILURE);
 			}
 			specific_syscall = i;
@@ -389,12 +389,12 @@ static void find_specific_syscall()
 force_32bit:
 		/* Try looking in the 32bit table. */
 		for (i=0; i<=max_nr_syscalls32; i++) {
-			if (strcmp(specific_optarg, syscalls32[i].name) == 0) {
-				if (syscalls32[i].flags &= AVOID_SYSCALL) {
-					printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls32[i].name);
+			if (strcmp(specific_optarg, syscalls32[i].entry->name) == 0) {
+				if (syscalls32[i].entry->flags &= AVOID_SYSCALL) {
+					printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls32[i].entry->name);
 					exit(EXIT_FAILURE);
 				}
-				printf("Found in the 32bit syscall table %s at %u\n", syscalls32[i].name, i);
+				printf("Found in the 32bit syscall table %s at %u\n", syscalls32[i].entry->name, i);
 				specific_syscall = i;
 				printf("Forcing into 32bit mode.\n");
 				do_32bit = 1;

@@ -1,0 +1,12 @@
+/*
+ * SYSCALL_DEFINE2(capset, cap_user_header_t, header, const cap_user_data_t, data)
+ */
+#include "trinity.h"
+#include "sanitise.h"
+
+struct syscall syscall_capset = {
+	.name = "capset",
+	.num_args = 2,
+	.arg1name = "header",
+	.arg2name = "data",
+};

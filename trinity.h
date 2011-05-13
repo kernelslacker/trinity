@@ -40,7 +40,7 @@ struct arglist {
 	unsigned int values[1024];
 };
 
-struct syscalltable {
+struct syscall {
 	char name[80];
 	unsigned int num_args;
 	void (*sanitise)(
@@ -81,6 +81,9 @@ struct syscalltable {
 	struct arglist arg6list;
 };
 
+struct syscalltable {
+	struct syscall *entry;
+};
 extern struct syscalltable *syscalls;
 
 extern unsigned int page_size;

@@ -1,7 +1,7 @@
 /* Syscalls from arch/ia64/kernel/entry.S as of 2.6.31rc2 */
 
-#include "trinity.h"
-#include "sanitise.h"
+#include "trinity },
+#include "sanitise },
 
 #include <fcntl.h>
 #include <signal.h>
@@ -13,302 +13,302 @@
 #define NR_SYSCALLS 298
 
 struct syscalltable syscalls_ia64[NR_SYSCALLS] = {
-#include "syscalls/ni_syscall.h"
-#include "syscalls/exit.h"
-#include "syscalls/read.h"
-#include "syscalls/write.h"
-#include "syscalls/open.h"
-#include "syscalls/close.h"
-#include "syscalls/creat.h"
-#include "syscalls/link.h"
-#include "syscalls/unlink.h"
-#include "syscalls/execve.h"
-#include "syscalls/chdir.h"
-#include "syscalls/fchdir.h"
-#include "syscalls/utimes.h"
-#include "syscalls/mknod.h"
-#include "syscalls/chmod.h"
-#include "syscalls/chown.h"
-#include "syscalls/lseek.h"
-#include "syscalls/getpid.h"
-#include "syscalls/getppid.h"
-#include "syscalls/mount.h"
-#include "syscalls/umount.h"
-#include "syscalls/setuid.h"
-#include "syscalls/getuid.h"
-#include "syscalls/geteuid.h"
-#include "syscalls/ptrace.h"
-#include "syscalls/access.h"
-#include "syscalls/sync.h"
-#include "syscalls/fsync.h"
-#include "syscalls/fdatasync.h"
-#include "syscalls/kill.h"
-#include "syscalls/rename.h"
-#include "syscalls/mkdir.h"
-#include "syscalls/rmdir.h"
-#include "syscalls/dup.h"
-#include "syscalls/pipe.h"
-#include "syscalls/times.h"
-#include "syscalls/brk.h"
-#include "syscalls/setgid.h"
-#include "syscalls/getgid.h"
-#include "syscalls/getegid.h"
-#include "syscalls/acct.h"
-#include "syscalls/ioctl.h"
-#include "syscalls/fcntl.h"
-#include "syscalls/umask.h"
-#include "syscalls/chroot.h"
-#include "syscalls/ustat.h"
-#include "syscalls/dup2.h"
-#include "syscalls/setreuid.h"
-#include "syscalls/setregid.h"
-#include "syscalls/getresuid.h"
-#include "syscalls/setresuid.h"
-#include "syscalls/getresgid.h"
-#include "syscalls/setresgid.h"
-#include "syscalls/getgroups.h"
-#include "syscalls/setgroups.h"
-#include "syscalls/getpgid.h"
-#include "syscalls/setpgid.h"
-#include "syscalls/setsid.h"
-#include "syscalls/getsid.h"
-#include "syscalls/sethostname.h"
-#include "syscalls/setrlimit.h"
-#include "syscalls/getrlimit.h"
-#include "syscalls/getrusage.h"
-#include "syscalls/gettimeofday.h"
-#include "syscalls/settimeofday.h"
-#include "syscalls/select.h"
-#include "syscalls/poll.h"
-#include "syscalls/symlink.h"
-#include "syscalls/readlink.h"
-#include "syscalls/uselib.h"
-#include "syscalls/swapon.h"
-#include "syscalls/swapoff.h"
-#include "syscalls/reboot.h"
-#include "syscalls/truncate.h"
-#include "syscalls/ftruncate.h"
-#include "syscalls/fchmod.h"
-#include "syscalls/fchown.h"
-#include "syscalls/getpriority.h"
-#include "syscalls/setpriority.h"
-#include "syscalls/statfs.h"
-#include "syscalls/fstatfs.h"
-#include "syscalls/gettid.h"
-#include "syscalls/semget.h"
-#include "syscalls/semop.h"
-#include "syscalls/semctl.h"
-#include "syscalls/msgget.h"
-#include "syscalls/msgsnd.h"
-#include "syscalls/msgrcv.h"
-#include "syscalls/msgctl.h"
-#include "syscalls/shmget.h"
-#include "syscalls/shmat.h"
-#include "syscalls/shmdt.h"
-#include "syscalls/shmctl.h"
-#include "syscalls/syslog.h"
-#include "syscalls/setitimer.h"
-#include "syscalls/getitimer.h"
-#include "syscalls/tux.h"
-#include "syscalls/ni_syscall.h"	// ia64_oldlstat
-#include "syscalls/ni_syscall.h"	// ia64_oldfstat
-#include "syscalls/vhangup.h"
-#include "syscalls/lchown.h"
-#include "syscalls/remap_file_pages.h"
-#include "syscalls/wait4.h"
-#include "syscalls/sysinfo.h"
-#include "syscalls/clone.h"
-#include "syscalls/setdomainname.h"
-#include "syscalls/newuname.h"
-#include "syscalls/adjtimex.h"
-#include "syscalls/create_module.h"
-#include "syscalls/init_module.h"
-#include "syscalls/delete_module.h"
-#include "syscalls/ni_syscall.h"	// ?
-#include "syscalls/query_module.h"
-#include "syscalls/quotactl.h"
-#include "syscalls/bdflush.h"
-#include "syscalls/sysfs.h"
-#include "syscalls/personality.h"
-#include "syscalls/afs.h"
-#include "syscalls/setfsuid.h"
-#include "syscalls/setfsgid.h"
-#include "syscalls/getdents.h"
-#include "syscalls/flock.h"
-#include "syscalls/readv.h"
-#include "syscalls/writev.h"
-#include "syscalls/pread64.h"
-#include "syscalls/pwrite64.h"
-#include "syscalls/sysctl.h"
-#include "syscalls/mmap.h"
-#include "syscalls/munmap.h"
-#include "syscalls/mlock.h"
-#include "syscalls/mlockall.h"
-#include "syscalls/mprotect.h"
-#include "syscalls/mremap.h"
-#include "syscalls/msync.h"
-#include "syscalls/munlock.h"
-#include "syscalls/munlockall.h"
-#include "syscalls/sched_getparam.h"
-#include "syscalls/sched_setparam.h"
-#include "syscalls/sched_getscheduler.h"
-#include "syscalls/sched_setscheduler.h"
-#include "syscalls/sched_yield.h"
-#include "syscalls/sched_get_priority_max.h"
-#include "syscalls/sched_get_priority_min.h"
-#include "syscalls/sched_rr_get_interval.h"
-#include "syscalls/nanosleep.h"
-#include "syscalls/nfsservctl.h"
-#include "syscalls/prctl.h"
-#include "syscalls/getpagesize.h"
-#include "syscalls/mmap2.h"
-#include "syscalls/pciconfig_read.h"
-#include "syscalls/pciconfig_write.h"
-#include "syscalls/perfmonctl.h"
-#include "syscalls/sigaltstack.h"
-#include "syscalls/rt_sigaction.h"
-#include "syscalls/rt_sigpending.h"
-#include "syscalls/rt_sigprocmask.h"
-#include "syscalls/rt_sigqueueinfo.h"
-#include "syscalls/rt_sigreturn.h"
-#include "syscalls/rt_sigsuspend.h"
-#include "syscalls/rt_sigtimedwait.h"
-#include "syscalls/getcwd.h"
-#include "syscalls/capget.h"
-#include "syscalls/capset.h"
-#include "syscalls/sendfile64.h"
-#include "syscalls/getpmsg.h"
-#include "syscalls/putpmsg.h"
-#include "syscalls/socket.h"
-#include "syscalls/bind.h"
-#include "syscalls/connect.h"
-#include "syscalls/listen.h"
-#include "syscalls/accept.h"
-#include "syscalls/getsockname.h"
-#include "syscalls/getpeername.h"
-#include "syscalls/socketpair.h"
-#include "syscalls/send.h"
-#include "syscalls/sendto.h"
-#include "syscalls/recv.h"
-#include "syscalls/recvfrom.h"
-#include "syscalls/shutdown.h"
-#include "syscalls/setsockopt.h"
-#include "syscalls/getsockopt.h"
-#include "syscalls/sendmsg.h"
-#include "syscalls/recvmsg.h"
-#include "syscalls/pivot_root.h"
-#include "syscalls/mincore.h"
-#include "syscalls/madvise.h"
-#include "syscalls/newstat.h"
-#include "syscalls/newlstat.h"
-#include "syscalls/newfstat.h"
-#include "syscalls/clone2.h"
-#include "syscalls/getdents64.h"
-#include "syscalls/getunwind.h"
-#include "syscalls/readahead.h"
-#include "syscalls/setxattr.h"
-#include "syscalls/lsetxattr.h"
-#include "syscalls/fsetxattr.h"
-#include "syscalls/getxattr.h"
-#include "syscalls/lgetxattr.h"
-#include "syscalls/fgetxattr.h"
-#include "syscalls/listxattr.h"
-#include "syscalls/llistxattr.h"
-#include "syscalls/flistxattr.h"
-#include "syscalls/removexattr.h"
-#include "syscalls/lremovexattr.h"
-#include "syscalls/fremovexattr.h"
-#include "syscalls/tkill.h"
-#include "syscalls/futex.h"
-#include "syscalls/sched_setaffinity.h"
-#include "syscalls/sched_getaffinity.h"
-#include "syscalls/set_tid_address.h"
-#include "syscalls/fadvise64_64.h"
-#include "syscalls/tgkill.h"
-#include "syscalls/exit_group.h"
-#include "syscalls/lookup_dcookie.h"
-#include "syscalls/io_setup.h"
-#include "syscalls/io_destroy.h"
-#include "syscalls/io_getevents.h"
-#include "syscalls/io_submit.h"
-#include "syscalls/io_cancel.h"
-#include "syscalls/epoll_create.h"
-#include "syscalls/epoll_ctl.h"
-#include "syscalls/epoll_wait.h"
-#include "syscalls/restart_syscall.h"
-#include "syscalls/semtimedop.h"
-#include "syscalls/timer_create.h"
-#include "syscalls/timer_settime.h"
-#include "syscalls/timer_gettime.h"
-#include "syscalls/timer_getoverrun.h"
-#include "syscalls/timer_delete.h"
-#include "syscalls/clock_settime.h"
-#include "syscalls/clock_gettime.h"
-#include "syscalls/clock_getres.h"
-#include "syscalls/clock_nanosleep.h"
-#include "syscalls/fstatfs64.h"
-#include "syscalls/statfs64.h"
-#include "syscalls/mbind.h"
-#include "syscalls/get_mempolicy.h"
-#include "syscalls/set_mempolicy.h"
-#include "syscalls/mq_open.h"
-#include "syscalls/mq_unlink.h"
-#include "syscalls/mq_timedsend.h"
-#include "syscalls/mq_timedreceive.h"
-#include "syscalls/mq_notify.h"
-#include "syscalls/mq_getsetattr.h"
-#include "syscalls/kexec_load.h"
-#include "syscalls/vserver.h"
-#include "syscalls/waitid.h"
-#include "syscalls/add_key.h"
-#include "syscalls/request_key.h"
-#include "syscalls/keyctl.h"
-#include "syscalls/ioprio_set.h"
-#include "syscalls/ioprio_get.h"
-#include "syscalls/ni_syscall.h"	/* ? */
-#include "syscalls/inotify_init.h"
-#include "syscalls/inotify_add_watch.h"
-#include "syscalls/inotify_rm_watch.h"
-#include "syscalls/migrate_pages.h"
-#include "syscalls/openat.h"
-#include "syscalls/mkdirat.h"
-#include "syscalls/mknodat.h"
-#include "syscalls/fchownat.h"
-#include "syscalls/futimesat.h"
-#include "syscalls/newfstatat.h"
-#include "syscalls/unlinkat.h"
-#include "syscalls/renameat.h"
-#include "syscalls/linkat.h"
-#include "syscalls/symlinkat.h"
-#include "syscalls/readlinkat.h"
-#include "syscalls/fchmodat.h"
-#include "syscalls/faccessat.h"
-#include "syscalls/pselect6.h"
-#include "syscalls/ni_syscall.h"	/* ? */
-#include "syscalls/unshare.h"
-#include "syscalls/splice.h"
-#include "syscalls/set_robust_list.h"
-#include "syscalls/get_robust_list.h"
-#include "syscalls/sync_file_range.h"
-#include "syscalls/tee.h"
-#include "syscalls/vmsplice.h"
-#include "syscalls/fallocate.h"
-#include "syscalls/getcpu.h"
-#include "syscalls/epoll_pwait.h"
-#include "syscalls/utimensat.h"
-#include "syscalls/signalfd.h"
-#include "syscalls/ni_syscall.h"	/* ? */
-#include "syscalls/eventfd.h"
-#include "syscalls/timerfd_create.h"
-#include "syscalls/timerfd_settime.h"
-#include "syscalls/timerfd_gettime.h"
-#include "syscalls/signalfd4.h"
-#include "syscalls/eventfd2.h"
-#include "syscalls/epoll_create1.h"
-#include "syscalls/dup3.h"
-#include "syscalls/pipe2.h"
-#include "syscalls/inotify_init1.h"
-#include "syscalls/preadv.h"
-#include "syscalls/pwritev.h"
-#include "syscalls/rt_tgsigqueueinfo.h"
+	{ .entry = &syscall_ni_syscall },
+	{ .entry = &syscall_exit },
+	{ .entry = &syscall_read },
+	{ .entry = &syscall_write },
+	{ .entry = &syscall_open },
+	{ .entry = &syscall_close },
+	{ .entry = &syscall_creat },
+	{ .entry = &syscall_link },
+	{ .entry = &syscall_unlink },
+	{ .entry = &syscall_execve },
+	{ .entry = &syscall_chdir },
+	{ .entry = &syscall_fchdir },
+	{ .entry = &syscall_utimes },
+	{ .entry = &syscall_mknod },
+	{ .entry = &syscall_chmod },
+	{ .entry = &syscall_chown },
+	{ .entry = &syscall_lseek },
+	{ .entry = &syscall_getpid },
+	{ .entry = &syscall_getppid },
+	{ .entry = &syscall_mount },
+	{ .entry = &syscall_umount },
+	{ .entry = &syscall_setuid },
+	{ .entry = &syscall_getuid },
+	{ .entry = &syscall_geteuid },
+	{ .entry = &syscall_ptrace },
+	{ .entry = &syscall_access },
+	{ .entry = &syscall_sync },
+	{ .entry = &syscall_fsync },
+	{ .entry = &syscall_fdatasync },
+	{ .entry = &syscall_kill },
+	{ .entry = &syscall_rename },
+	{ .entry = &syscall_mkdir },
+	{ .entry = &syscall_rmdir },
+	{ .entry = &syscall_dup },
+	{ .entry = &syscall_pipe },
+	{ .entry = &syscall_times },
+	{ .entry = &syscall_brk },
+	{ .entry = &syscall_setgid },
+	{ .entry = &syscall_getgid },
+	{ .entry = &syscall_getegid },
+	{ .entry = &syscall_acct },
+	{ .entry = &syscall_ioctl },
+	{ .entry = &syscall_fcntl },
+	{ .entry = &syscall_umask },
+	{ .entry = &syscall_chroot },
+	{ .entry = &syscall_ustat },
+	{ .entry = &syscall_dup2 },
+	{ .entry = &syscall_setreuid },
+	{ .entry = &syscall_setregid },
+	{ .entry = &syscall_getresuid },
+	{ .entry = &syscall_setresuid },
+	{ .entry = &syscall_getresgid },
+	{ .entry = &syscall_setresgid },
+	{ .entry = &syscall_getgroups },
+	{ .entry = &syscall_setgroups },
+	{ .entry = &syscall_getpgid },
+	{ .entry = &syscall_setpgid },
+	{ .entry = &syscall_setsid },
+	{ .entry = &syscall_getsid },
+	{ .entry = &syscall_sethostname },
+	{ .entry = &syscall_setrlimit },
+	{ .entry = &syscall_getrlimit },
+	{ .entry = &syscall_getrusage },
+	{ .entry = &syscall_gettimeofday },
+	{ .entry = &syscall_settimeofday },
+	{ .entry = &syscall_select },
+	{ .entry = &syscall_poll },
+	{ .entry = &syscall_symlink },
+	{ .entry = &syscall_readlink },
+	{ .entry = &syscall_uselib },
+	{ .entry = &syscall_swapon },
+	{ .entry = &syscall_swapoff },
+	{ .entry = &syscall_reboot },
+	{ .entry = &syscall_truncate },
+	{ .entry = &syscall_ftruncate },
+	{ .entry = &syscall_fchmod },
+	{ .entry = &syscall_fchown },
+	{ .entry = &syscall_getpriority },
+	{ .entry = &syscall_setpriority },
+	{ .entry = &syscall_statfs },
+	{ .entry = &syscall_fstatfs },
+	{ .entry = &syscall_gettid },
+	{ .entry = &syscall_semget },
+	{ .entry = &syscall_semop },
+	{ .entry = &syscall_semctl },
+	{ .entry = &syscall_msgget },
+	{ .entry = &syscall_msgsnd },
+	{ .entry = &syscall_msgrcv },
+	{ .entry = &syscall_msgctl },
+	{ .entry = &syscall_shmget },
+	{ .entry = &syscall_shmat },
+	{ .entry = &syscall_shmdt },
+	{ .entry = &syscall_shmctl },
+	{ .entry = &syscall_syslog },
+	{ .entry = &syscall_setitimer },
+	{ .entry = &syscall_getitimer },
+	{ .entry = &syscall_tux },
+	{ .entry = &syscall_ni_syscall.h },	// ia64_oldlstat
+	{ .entry = &syscall_ni_syscall.h },	// ia64_oldfstat
+	{ .entry = &syscall_vhangup },
+	{ .entry = &syscall_lchown },
+	{ .entry = &syscall_remap_file_pages },
+	{ .entry = &syscall_wait4 },
+	{ .entry = &syscall_sysinfo },
+	{ .entry = &syscall_clone },
+	{ .entry = &syscall_setdomainname },
+	{ .entry = &syscall_newuname },
+	{ .entry = &syscall_adjtimex },
+	{ .entry = &syscall_create_module },
+	{ .entry = &syscall_init_module },
+	{ .entry = &syscall_delete_module },
+	{ .entry = &syscall_ni_syscall.h },	// ?
+	{ .entry = &syscall_query_module },
+	{ .entry = &syscall_quotactl },
+	{ .entry = &syscall_bdflush },
+	{ .entry = &syscall_sysfs },
+	{ .entry = &syscall_personality },
+	{ .entry = &syscall_afs },
+	{ .entry = &syscall_setfsuid },
+	{ .entry = &syscall_setfsgid },
+	{ .entry = &syscall_getdents },
+	{ .entry = &syscall_flock },
+	{ .entry = &syscall_readv },
+	{ .entry = &syscall_writev },
+	{ .entry = &syscall_pread64 },
+	{ .entry = &syscall_pwrite64 },
+	{ .entry = &syscall_sysctl },
+	{ .entry = &syscall_mmap },
+	{ .entry = &syscall_munmap },
+	{ .entry = &syscall_mlock },
+	{ .entry = &syscall_mlockall },
+	{ .entry = &syscall_mprotect },
+	{ .entry = &syscall_mremap },
+	{ .entry = &syscall_msync },
+	{ .entry = &syscall_munlock },
+	{ .entry = &syscall_munlockall },
+	{ .entry = &syscall_sched_getparam },
+	{ .entry = &syscall_sched_setparam },
+	{ .entry = &syscall_sched_getscheduler },
+	{ .entry = &syscall_sched_setscheduler },
+	{ .entry = &syscall_sched_yield },
+	{ .entry = &syscall_sched_get_priority_max },
+	{ .entry = &syscall_sched_get_priority_min },
+	{ .entry = &syscall_sched_rr_get_interval },
+	{ .entry = &syscall_nanosleep },
+	{ .entry = &syscall_nfsservctl },
+	{ .entry = &syscall_prctl },
+	{ .entry = &syscall_getpagesize },
+	{ .entry = &syscall_mmap2 },
+	{ .entry = &syscall_pciconfig_read },
+	{ .entry = &syscall_pciconfig_write },
+	{ .entry = &syscall_perfmonctl },
+	{ .entry = &syscall_sigaltstack },
+	{ .entry = &syscall_rt_sigaction },
+	{ .entry = &syscall_rt_sigpending },
+	{ .entry = &syscall_rt_sigprocmask },
+	{ .entry = &syscall_rt_sigqueueinfo },
+	{ .entry = &syscall_rt_sigreturn },
+	{ .entry = &syscall_rt_sigsuspend },
+	{ .entry = &syscall_rt_sigtimedwait },
+	{ .entry = &syscall_getcwd },
+	{ .entry = &syscall_capget },
+	{ .entry = &syscall_capset },
+	{ .entry = &syscall_sendfile64 },
+	{ .entry = &syscall_getpmsg },
+	{ .entry = &syscall_putpmsg },
+	{ .entry = &syscall_socket },
+	{ .entry = &syscall_bind },
+	{ .entry = &syscall_connect },
+	{ .entry = &syscall_listen },
+	{ .entry = &syscall_accept },
+	{ .entry = &syscall_getsockname },
+	{ .entry = &syscall_getpeername },
+	{ .entry = &syscall_socketpair },
+	{ .entry = &syscall_send },
+	{ .entry = &syscall_sendto },
+	{ .entry = &syscall_recv },
+	{ .entry = &syscall_recvfrom },
+	{ .entry = &syscall_shutdown },
+	{ .entry = &syscall_setsockopt },
+	{ .entry = &syscall_getsockopt },
+	{ .entry = &syscall_sendmsg },
+	{ .entry = &syscall_recvmsg },
+	{ .entry = &syscall_pivot_root },
+	{ .entry = &syscall_mincore },
+	{ .entry = &syscall_madvise },
+	{ .entry = &syscall_newstat },
+	{ .entry = &syscall_newlstat },
+	{ .entry = &syscall_newfstat },
+	{ .entry = &syscall_clone2 },
+	{ .entry = &syscall_getdents64 },
+	{ .entry = &syscall_getunwind },
+	{ .entry = &syscall_readahead },
+	{ .entry = &syscall_setxattr },
+	{ .entry = &syscall_lsetxattr },
+	{ .entry = &syscall_fsetxattr },
+	{ .entry = &syscall_getxattr },
+	{ .entry = &syscall_lgetxattr },
+	{ .entry = &syscall_fgetxattr },
+	{ .entry = &syscall_listxattr },
+	{ .entry = &syscall_llistxattr },
+	{ .entry = &syscall_flistxattr },
+	{ .entry = &syscall_removexattr },
+	{ .entry = &syscall_lremovexattr },
+	{ .entry = &syscall_fremovexattr },
+	{ .entry = &syscall_tkill },
+	{ .entry = &syscall_futex },
+	{ .entry = &syscall_sched_setaffinity },
+	{ .entry = &syscall_sched_getaffinity },
+	{ .entry = &syscall_set_tid_address },
+	{ .entry = &syscall_fadvise64_64 },
+	{ .entry = &syscall_tgkill },
+	{ .entry = &syscall_exit_group },
+	{ .entry = &syscall_lookup_dcookie },
+	{ .entry = &syscall_io_setup },
+	{ .entry = &syscall_io_destroy },
+	{ .entry = &syscall_io_getevents },
+	{ .entry = &syscall_io_submit },
+	{ .entry = &syscall_io_cancel },
+	{ .entry = &syscall_epoll_create },
+	{ .entry = &syscall_epoll_ctl },
+	{ .entry = &syscall_epoll_wait },
+	{ .entry = &syscall_restart_syscall },
+	{ .entry = &syscall_semtimedop },
+	{ .entry = &syscall_timer_create },
+	{ .entry = &syscall_timer_settime },
+	{ .entry = &syscall_timer_gettime },
+	{ .entry = &syscall_timer_getoverrun },
+	{ .entry = &syscall_timer_delete },
+	{ .entry = &syscall_clock_settime },
+	{ .entry = &syscall_clock_gettime },
+	{ .entry = &syscall_clock_getres },
+	{ .entry = &syscall_clock_nanosleep },
+	{ .entry = &syscall_fstatfs64 },
+	{ .entry = &syscall_statfs64 },
+	{ .entry = &syscall_mbind },
+	{ .entry = &syscall_get_mempolicy },
+	{ .entry = &syscall_set_mempolicy },
+	{ .entry = &syscall_mq_open },
+	{ .entry = &syscall_mq_unlink },
+	{ .entry = &syscall_mq_timedsend },
+	{ .entry = &syscall_mq_timedreceive },
+	{ .entry = &syscall_mq_notify },
+	{ .entry = &syscall_mq_getsetattr },
+	{ .entry = &syscall_kexec_load },
+	{ .entry = &syscall_vserver },
+	{ .entry = &syscall_waitid },
+	{ .entry = &syscall_add_key },
+	{ .entry = &syscall_request_key },
+	{ .entry = &syscall_keyctl },
+	{ .entry = &syscall_ioprio_set },
+	{ .entry = &syscall_ioprio_get },
+	{ .entry = &syscall_ni_syscall.h },	/* ? */
+	{ .entry = &syscall_inotify_init },
+	{ .entry = &syscall_inotify_add_watch },
+	{ .entry = &syscall_inotify_rm_watch },
+	{ .entry = &syscall_migrate_pages },
+	{ .entry = &syscall_openat },
+	{ .entry = &syscall_mkdirat },
+	{ .entry = &syscall_mknodat },
+	{ .entry = &syscall_fchownat },
+	{ .entry = &syscall_futimesat },
+	{ .entry = &syscall_newfstatat },
+	{ .entry = &syscall_unlinkat },
+	{ .entry = &syscall_renameat },
+	{ .entry = &syscall_linkat },
+	{ .entry = &syscall_symlinkat },
+	{ .entry = &syscall_readlinkat },
+	{ .entry = &syscall_fchmodat },
+	{ .entry = &syscall_faccessat },
+	{ .entry = &syscall_pselect6 },
+	{ .entry = &syscall_ni_syscall.h },	/* ? */
+	{ .entry = &syscall_unshare },
+	{ .entry = &syscall_splice },
+	{ .entry = &syscall_set_robust_list },
+	{ .entry = &syscall_get_robust_list },
+	{ .entry = &syscall_sync_file_range },
+	{ .entry = &syscall_tee },
+	{ .entry = &syscall_vmsplice },
+	{ .entry = &syscall_fallocate },
+	{ .entry = &syscall_getcpu },
+	{ .entry = &syscall_epoll_pwait },
+	{ .entry = &syscall_utimensat },
+	{ .entry = &syscall_signalfd },
+	{ .entry = &syscall_ni_syscall.h },	/* ? */
+	{ .entry = &syscall_eventfd },
+	{ .entry = &syscall_timerfd_create },
+	{ .entry = &syscall_timerfd_settime },
+	{ .entry = &syscall_timerfd_gettime },
+	{ .entry = &syscall_signalfd4 },
+	{ .entry = &syscall_eventfd2 },
+	{ .entry = &syscall_epoll_create1 },
+	{ .entry = &syscall_dup3 },
+	{ .entry = &syscall_pipe2 },
+	{ .entry = &syscall_inotify_init1 },
+	{ .entry = &syscall_preadv },
+	{ .entry = &syscall_pwritev },
+	{ .entry = &syscall_rt_tgsigqueueinfo },
 };

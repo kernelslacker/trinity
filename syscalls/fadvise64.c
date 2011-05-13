@@ -1,0 +1,16 @@
+/*
+ * SYSCALL_DEFINE(fadvise64)(int fd, loff_t offset, size_t len, int advice)
+ */
+#include "trinity.h"
+#include "sanitise.h"
+
+struct syscall syscall_fadvise64 = {
+	.name = "fadvise64",
+	.num_args = 4,
+	.arg1name = "fd",
+	.arg1type = ARG_FD,
+	.arg2name = "offset",
+	.arg3name = "len",
+	.arg3type = ARG_LEN,
+	.arg4name = "advice",
+};
