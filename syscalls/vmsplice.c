@@ -4,9 +4,22 @@
  */
 #define _GNU_SOURCE
 #include <fcntl.h>
+#include <sys/uio.h>
+#include <stdlib.h>
 
 #include "trinity.h"
 #include "sanitise.h"
+
+static void sanitise_vmsplice(
+	__unused__ unsigned long *fd,
+	__unused__ unsigned long *a2,
+	unsigned long *a3,
+	__unused__ unsigned long *a4,
+	__unused__ unsigned long *a5,
+	__unused__ unsigned long *a6)
+{
+	*a3 = rand() % UIO_MAXIOV;
+}
 
 struct syscall syscall_vmsplice = {
 	.name = "vmsplice",
