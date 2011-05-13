@@ -10,7 +10,6 @@
 struct syscall syscall_sync_file_range2 = {
         .name = "sync_file_range2",
         .num_args = 4,
-        .sanitise = sanitise_sync_file_range,
         .arg1name = "fd",
         .arg1type = ARG_FD,
         .arg2name = "flags",
