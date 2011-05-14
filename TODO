@@ -1,3 +1,8 @@
+* Store a field in the syscall definition on when it was added upstream.
+  This will allow for things like "just fuzz syscalls added since 2.6.32"
+  It won't be much use on kernels that have them backported, but that's
+  not a big deal. We could do a ENOSYS test.
+
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
   ia64: build syscalls/ia64/
