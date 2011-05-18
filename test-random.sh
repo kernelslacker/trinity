@@ -23,6 +23,7 @@ do
   wait
   rm -f trinity.socketcache
 
+  chmod 755 tmp
   for i in `seq 0 $NR_CPUS`
   do
 	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i -N 1000 --32bit &
