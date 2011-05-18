@@ -27,23 +27,26 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 * a84b50ceb7d640437d0dc28a2bef0d0de054de89
   sctp spew on allocation failure.
 
-* FIXME: (No fix yet)
-  hugetlbfs lockdep spew. https://lkml.org/lkml/2011/4/15/272
-
-* FIXME: (No fix yet)
-  ip_rt_bug: 0.0.0.0 -> 255.255.255.255, ?
-
 * bfac3693c426d280b026f6a1b77dc2294ea43fea
   Assorted debug spew from ieee802154 sendmsg
 
 * 020318d0d2af51e0fd59ba654ede9b2171558720
   broken locking in irda
 
-* CAN bcm_release NULL sock-> sk
+* c6914a6f261aca0c9f715f883a353ae7ff51fe83
+  CAN bcm_release NULL sock-> sk
   CVE-2011-1598
 
-* CAN raw_release NULL sock-> sk
+* 10022a6c66e199d8f61d9044543f38785713cbbd
+  CAN raw_release NULL sock-> sk
   CVE-2011-1748
+
+------------------------------------------------------------------
+Still unfixed:
+
+* hugetlbfs lockdep spew. https://lkml.org/lkml/2011/4/15/272
+
+* ip_rt_bug: 0.0.0.0 -> 255.255.255.255, ?
 
 * irias_seq_show recursive locking
 
