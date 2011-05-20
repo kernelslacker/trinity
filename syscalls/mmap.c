@@ -3,6 +3,7 @@
 	unsigned long, prot, unsigned long, flags,
 	unsigned long, fd, unsigned long, off)
  */
+#include <stdlib.h>
 #include <asm/mman.h>
 
 #ifndef MAP_UNINITIALIZED
@@ -26,15 +27,24 @@
 #include "arch.h"
 
 void sanitise_mmap(
-	__unused__ unsigned long *a1,
-	__unused__ unsigned long *a2,
-	__unused__ unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
+	__unused__ unsigned long *addr,
+	__unused__ unsigned long *len,
+	__unused__ unsigned long *prot,
+	__unused__ unsigned long *flags,
+	__unused__ unsigned long *fd,
 	unsigned long *offset)
 {
+	unsigned int i;
+
 	*offset &= PAGE_MASK;
+
+	if (*flags & MAP_ANONYMOUS) {
+		i = rand() % 100;
+		if (i > 50)
+			*fd = -1;
+	}
 }
+
 struct syscall syscall_mmap = {
 	.name = "mmap",
 	.num_args = 6,
