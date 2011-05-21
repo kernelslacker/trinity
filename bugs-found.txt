@@ -50,3 +50,6 @@ Still unfixed:
 
 * irias_seq_show recursive locking
 
+* ipq_rcv_skb page allocation order >= MAX_ORDER
+  http://permalink.gmane.org/gmane.linux.network/192892
+
