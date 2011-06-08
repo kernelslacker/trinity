@@ -25,8 +25,12 @@ void seed_from_tod();
 
 #define MAX_FDS 750
 extern unsigned int fds_left_to_create;
+
+#define TYPE_MAX 128
+#define PROTO_MAX 256
 extern unsigned int socket_fds[MAX_FDS/2];
 extern unsigned int socks;
+extern unsigned int specific_proto;
 void open_sockets();
 
 extern unsigned int fd_idx;
@@ -98,6 +102,7 @@ extern unsigned int structmode;
 extern unsigned long regval;
 extern unsigned char rotate_mask;
 extern unsigned int rep;
+extern unsigned char do_specific_proto;
 extern unsigned char do_specific_syscall;
 extern unsigned long specific_syscall;
 extern unsigned char dopause;

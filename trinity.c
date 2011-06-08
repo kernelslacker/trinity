@@ -19,6 +19,7 @@
 #include <sys/syscall.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/socket.h>
 
 #include "arch.h"
 #include "arch-syscalls.h"
@@ -37,6 +38,7 @@ unsigned long long syscallcount = 0;
 
 unsigned long regval = 0;
 unsigned long specific_syscall = 0;
+unsigned int specific_proto = 0;
 unsigned char ctrlc_hit = 0;
 unsigned int page_size;
 unsigned int rep = 0;
@@ -44,6 +46,7 @@ unsigned char rotate_mask = 1;
 unsigned char dopause = 0;
 unsigned char intelligence = 0;
 unsigned char do_specific_syscall = 0;
+unsigned char do_specific_proto = 0;
 unsigned char bruteforce = 0;
 unsigned char nofork = 0;
 unsigned char show_syscall_list = 0;
@@ -77,7 +80,8 @@ char *page_zeros;
 char *page_0xff;
 char *page_rand;
 
-static char *specific_optarg;
+static char *specific_syscall_optarg;
+static char *specific_proto_optarg;
 
 static void init_buffers()
 {
@@ -140,6 +144,7 @@ static void usage(void)
 	fprintf(stderr, "     -Sxx: pass struct filled with hex value xx.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
+	fprintf(stderr, "   -P,--proto=#: Create socket fd's using a specific protocol.\n");
 	fprintf(stderr, "   -b#: begin at offset #.\n");
 	fprintf(stderr, "   -c#: target syscall # only.\n");
 	fprintf(stderr, "   -F:  don't fork after each syscall.\n");
@@ -174,9 +179,10 @@ static void parse_args(int argc, char *argv[])
 		{ "bruteforce", optional_argument, NULL, 'B' },
 		{ "32bit", optional_argument, &do_32bit, 1 },
 		{ "logfile", optional_argument, NULL, 'l' },
+		{ "proto", optional_argument, NULL, 'P' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:ps:S:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:ps:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 		case '\0':
@@ -201,7 +207,7 @@ static void parse_args(int argc, char *argv[])
 		case 'c':
 			do_specific_syscall = 1;
 			specific_syscall = strtol(optarg, NULL, 10);
-			specific_optarg = optarg;
+			specific_syscall_optarg = optarg;
 			break;
 
 		case 'F':
@@ -240,6 +246,12 @@ static void parse_args(int argc, char *argv[])
 		/* Pause after each syscall */
 		case 'p':
 			dopause = 1;
+			break;
+
+		case 'P':
+			do_specific_proto = 1;
+			specific_proto = strtol(optarg, NULL, 10);
+			specific_proto_optarg = optarg;
 			break;
 
 		/* Set seed */
@@ -370,7 +382,7 @@ static void find_specific_syscall()
 		goto force_32bit;
 
 	for (i=0; i<=max_nr_syscalls; i++) {
-		if (strcmp(specific_optarg, syscalls[i].entry->name) == 0) {
+		if (strcmp(specific_syscall_optarg, syscalls[i].entry->name) == 0) {
 			printf("Found %s at %u\n", syscalls[i].entry->name, i);
 			if (syscalls[i].entry->flags &= AVOID_SYSCALL) {
 				printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].entry->name);
@@ -389,7 +401,7 @@ static void find_specific_syscall()
 force_32bit:
 		/* Try looking in the 32bit table. */
 		for (i=0; i<=max_nr_syscalls32; i++) {
-			if (strcmp(specific_optarg, syscalls32[i].entry->name) == 0) {
+			if (strcmp(specific_syscall_optarg, syscalls32[i].entry->name) == 0) {
 				if (syscalls32[i].entry->flags &= AVOID_SYSCALL) {
 					printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls32[i].entry->name);
 					exit(EXIT_FAILURE);
@@ -408,6 +420,84 @@ no_sys32:
 			exit(EXIT_FAILURE);
 		}
 	}
+}
+
+struct protocol {
+	char *name;
+	unsigned int proto;
+};
+
+static struct protocol protocols[PROTO_MAX] = {
+	{ "PF_UNSPEC",       0 },
+	{ "PF_LOCAL",        1 },
+	{ "PF_UNIX",         PF_LOCAL },
+	{ "PF_FILE",         PF_LOCAL },
+	{ "PF_INET",         2 },
+	{ "PF_AX25",         3 },
+	{ "PF_IPX",          4 },
+	{ "PF_APPLETALK",    5 },
+	{ "PF_NETROM",       6 },
+	{ "PF_BRIDGE",       7 },
+	{ "PF_ATMPVC",       8 },
+	{ "PF_X25",          9 },
+	{ "PF_INET6",        10 },
+	{ "PF_ROSE",         11 },
+	{ "PF_DECnet",       12 },
+	{ "PF_NETBEUI",      13 },
+	{ "PF_SECURITY",     14 },
+	{ "PF_KEY",          15 },
+	{ "PF_NETLINK",      16 },
+	{ "PF_ROUTE",        PF_NETLINK },
+	{ "PF_PACKET",       17 },
+	{ "PF_ASH",          18 },
+	{ "PF_ECONET",       19 },
+	{ "PF_ATMSVC",       20 },
+	{ "PF_RDS",          21 },
+	{ "PF_SNA",          22 },
+	{ "PF_IRDA",         23 },
+	{ "PF_PPPOX",        24 },
+	{ "PF_WANPIPE",      25 },
+	{ "PF_LLC",          26 },
+	{ "PF_CAN",          29 },
+	{ "PF_TIPC",         30 },
+	{ "PF_BLUETOOTH",    31 },
+	{ "PF_IUCV",         32 },
+	{ "PF_RXRPC",        33 },
+	{ "PF_ISDN",         34 },
+	{ "PF_PHONET",       35 },
+	{ "PF_IEEE802154",   36 },
+	{ "PF_CAIF",         37 },
+	{ "PF_ALG",          38 },
+};
+
+static void find_specific_proto()
+{
+	unsigned int i;
+	struct protocol *p = protocols;
+
+	if (specific_proto == 0) {
+		/* we were passed a string */
+		for (i = 0; i < PROTO_MAX; i++) {
+			if (strcmp(specific_proto_optarg, p[i].name) == 0) {
+				specific_proto = p[i].proto;
+				break;
+			}
+		}
+	} else {
+		/* we were passed a numeric arg. */
+		for (i = 0; i < PROTO_MAX; i++) {
+			if (specific_proto == p[i].proto)
+				break;
+		}
+	}
+
+	if (i > PF_MAX) {
+		printf("Protocol unknown, or out of range [0-%d]\n", PF_MAX);
+		exit(EXIT_FAILURE);
+	}
+
+	printf("Using protocol %s (%u) for all sockets\n", p[i].name, p[i].proto);
+	return;
 }
 
 
@@ -470,6 +560,9 @@ int main(int argc, char* argv[])
 
 	if (do_specific_syscall == 1)
 		find_specific_syscall();
+
+	if (do_specific_proto == 1)
+		find_specific_proto();
 
 	if (show_syscall_list == 1) {
 		syscall_list();

@@ -17,9 +17,6 @@ static char spinner[]="-\\|/";
 
 static char *cachefilename="trinity.socketcache";
 
-#define TYPE_MAX 128
-#define PROTO_MAX 256
-
 #define MAX_PER_DOMAIN 5
 #define MAX_TRIES_PER_DOMAIN 10
 static char sockarray[PF_MAX];
@@ -52,7 +49,11 @@ void generate_sockets(unsigned int nr_to_create)
 
 			domain = i;
 			type = rand() % TYPE_MAX;
-			protocol = rand() % PROTO_MAX;
+
+			if (do_specific_proto == 1)
+				protocol = specific_proto;
+			else
+				protocol = rand() % PROTO_MAX;
 
 			printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
 				spinner[spin++], socks, nr_to_create,
