@@ -41,15 +41,17 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
   CAN raw_release NULL sock-> sk
   CVE-2011-1748
 
+* 79b3891587741dfac72cdfead1f2764b56a567b0
+  irias_seq_show recursive locking
+
+* d232b8dded624af3e346b13807a591c63b601c44
+  ipq_rcv_skb page allocation order >= MAX_ORDER
+  http://permalink.gmane.org/gmane.linux.network/192892
+
 ------------------------------------------------------------------
 Still unfixed:
 
 * hugetlbfs lockdep spew. https://lkml.org/lkml/2011/4/15/272
 
 * ip_rt_bug: 0.0.0.0 -> 255.255.255.255, ?
-
-* irias_seq_show recursive locking
-
-* ipq_rcv_skb page allocation order >= MAX_ORDER
-  http://permalink.gmane.org/gmane.linux.network/192892
 
