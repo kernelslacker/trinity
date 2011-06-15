@@ -99,6 +99,8 @@ void setup_maps()
 
 	} while (!feof(f));
 
+	fclose(f);
+
 	/* free the empty map on the end */
 	free(tmpmap);
 
