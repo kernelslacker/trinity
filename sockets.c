@@ -107,6 +107,12 @@ void open_sockets()
 	int bytesread=-1;
 	int fd;
 
+	if (do_specific_proto == 1) {
+		printf("ignoring socket cachefile due to specific protocol request.\n");
+		generate_sockets(fds_left_to_create/2);
+		return;
+	}
+
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
 		printf("Couldn't find socket cachefile. Regenerating.\n");
