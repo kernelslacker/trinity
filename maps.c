@@ -1,7 +1,11 @@
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "trinity.h"
 #include "arch.h"
@@ -31,10 +35,38 @@ static void dump_maps()
 	printf("There are %d entries in the map table\n", num_mappings);
 
 	for (j = 0; j < num_mappings; j++) {
-		printf(" start: %p\n", tmpmap->ptr);
+		printf(" start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
 		tmpmap = tmpmap->next;
 	}
 }
+
+void * alloc_zero_map(struct map *map, int prot, char *name)
+{
+	struct map *tmpmap = map;
+	int fd;
+
+	if (!tmpmap)
+		tmpmap = alloc_map();
+
+	fd = open("/dev/zero", O_RDWR);
+	if (!fd) {
+		printf("open /dev/zero failure\n");
+		exit(EXIT_FAILURE);
+	}
+	tmpmap->ptr = mmap(NULL, PAGE_SIZE, prot, MAP_PRIVATE, fd, 0);
+
+	if (!tmpmap->ptr) {
+		printf("mmap /dev/zero failure\n");
+		exit(EXIT_FAILURE);
+	}
+	tmpmap->name = malloc(80);
+	sprintf(tmpmap->name, "/dev/zero(%s)", name);
+	num_mappings++;
+
+	close(fd);
+	return tmpmap;
+}
+
 
 void setup_maps()
 {
@@ -100,12 +132,19 @@ void setup_maps()
 	} while (!feof(f));
 
 	fclose(f);
+	printf("Added %d mappings from /proc/self\n", num_mappings);
 
-	/* free the empty map on the end */
-	free(tmpmap);
+	/* Add a bunch of /dev/zero mappings */
+	tmpmap->next = alloc_zero_map(tmpmap, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
+	tmpmap = tmpmap->next;
 
-	printf("Added %d mappings\n", num_mappings);
+	tmpmap->next = alloc_zero_map(NULL, PROT_READ, "PROT_READ");
+	tmpmap = tmpmap->next;
 
+	tmpmap->next = alloc_zero_map(NULL, PROT_WRITE, "PROT_WRITE");
+	tmpmap = tmpmap->next;
+
+	printf("Added /dev/zero mappings.\n");
 	dump_maps();
 }
 
