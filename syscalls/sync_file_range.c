@@ -18,18 +18,22 @@ static void sanitise_sync_file_range(__unused__ unsigned long *fd,
 	__unused__ unsigned long *a6)
 {
 	unsigned long endbyte;
+	loff_t off = *offset;
 
 retry:
-	*offset = rand() & 0xfffffff;
+	off = rand() & 0xfffffff;
 	*nbytes = rand() & 0xfffffff;
 
-	endbyte = *offset + *nbytes;
+	endbyte = off + *nbytes;
 
-	if (endbyte < *offset)
+
+	if (endbyte < off)
 		goto retry;
 
-	if (*offset >= (0x100000000ULL << PAGE_SHIFT))
+	if (off >= (0x100000000LL << PAGE_SHIFT))
 		goto retry;
+
+	*offset = off;
 
 }
 
