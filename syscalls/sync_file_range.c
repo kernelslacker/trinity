@@ -17,7 +17,7 @@ static void sanitise_sync_file_range(__unused__ unsigned long *fd,
 	__unused__ unsigned long *a5,
 	__unused__ unsigned long *a6)
 {
-	unsigned long endbyte;
+	long endbyte;
 	loff_t off = *offset;
 
 retry:
