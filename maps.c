@@ -94,6 +94,7 @@ void setup_maps()
 		/* skip over the shm (and any nearby mappings), in case we corrupt it*/
 		if ((startaddr > (void *) shm - (PAGE_SIZE * 8)) &&
 		    (startaddr < (void *) shm + (PAGE_SIZE * 8))) {
+			output("skipping mapping at %p -> %p (too close to shm at %p)\n", startaddr, endaddr, shm);
 			do {
 				ch = getc(f);
 			} while ((ch != EOF) && (ch != '\n'));
