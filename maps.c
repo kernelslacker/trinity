@@ -32,10 +32,10 @@ static void dump_maps()
 	struct map *tmpmap = maps_list;
 	unsigned int j;
 
-	printf("There are %d entries in the map table\n", num_mappings);
+	output("There are %d entries in the map table\n", num_mappings);
 
 	for (j = 0; j < num_mappings; j++) {
-		printf(" start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
+		output(" start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
 		tmpmap = tmpmap->next;
 	}
 }
