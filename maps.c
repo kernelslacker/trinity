@@ -133,7 +133,7 @@ void setup_maps()
 	} while (!feof(f));
 
 	fclose(f);
-	printf("Added %d mappings from /proc/self\n", num_mappings);
+	output("Added %d mappings from /proc/self\n", num_mappings);
 
 	/* Add a bunch of /dev/zero mappings */
 	tmpmap->next = alloc_zero_map(tmpmap, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
@@ -145,7 +145,7 @@ void setup_maps()
 	tmpmap->next = alloc_zero_map(NULL, PROT_WRITE, "PROT_WRITE");
 	tmpmap = tmpmap->next;
 
-	printf("Added /dev/zero mappings.\n");
+	output("Added /dev/zero mappings.\n");
 	dump_maps();
 }
 
