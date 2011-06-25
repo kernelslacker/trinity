@@ -63,6 +63,8 @@ void * alloc_zero_map(struct map *map, int prot, char *name)
 	sprintf(tmpmap->name, "/dev/zero(%s)", name);
 	num_mappings++;
 
+	output("mapping[%d]: (zeropage %s) %p\n", num_mappings - 1, name, tmpmap->ptr);
+
 	close(fd);
 	return tmpmap;
 }
@@ -73,7 +75,7 @@ void setup_maps()
 	FILE *f;
 	void *startaddr, *endaddr;
 	struct map *tmpmap;
-	unsigned int ret;
+	unsigned int ret, fd, i;
 	char name[80];
 	char ch;
 
@@ -134,6 +136,12 @@ void setup_maps()
 
 	fclose(f);
 	output("Added %d mappings from /proc/self\n", num_mappings);
+
+	/* Make sure our zero page mappings are nowhere near the shm. */
+	fd = open("/dev/zero", O_RDWR);
+	for (i = 0; i < 50; i++)
+		mmap(NULL, PAGE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
+	close(fd);
 
 	/* Add a bunch of /dev/zero mappings */
 	tmpmap->next = alloc_zero_map(tmpmap, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
