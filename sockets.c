@@ -112,12 +112,6 @@ void open_sockets()
 	int bytesread=-1;
 	int fd;
 
-	if (do_specific_proto == 1) {
-		printf("ignoring socket cachefile due to specific protocol request.\n");
-		generate_sockets(fds_left_to_create/2);
-		return;
-	}
-
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
 		printf("Couldn't find socket cachefile. Regenerating.\n");
@@ -133,6 +127,14 @@ void open_sockets()
 		domain = buffer[0];
 		type = buffer[1];
 		protocol = buffer[2];
+
+		if (do_specific_proto == 1) {
+			if (domain != specific_proto) {
+				printf("ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
+				generate_sockets(fds_left_to_create/2);
+				return;
+			}
+		}
 
 		fd = socket(domain, type, protocol);
 		if (fd < 0) {
