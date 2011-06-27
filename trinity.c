@@ -427,7 +427,7 @@ struct protocol {
 	unsigned int proto;
 };
 
-static struct protocol protocols[PROTO_MAX] = {
+static struct protocol protocols[] = {
 	{ "PF_UNSPEC",       0 },
 	{ "PF_LOCAL",        1 },
 	{ "PF_UNIX",         PF_LOCAL },
@@ -477,7 +477,7 @@ static void find_specific_proto()
 
 	if (specific_proto == 0) {
 		/* we were passed a string */
-		for (i = 0; i < PROTO_MAX; i++) {
+		for (i = 0; i < (sizeof(protocols) / sizeof(struct protocol)); i++) {
 			if (strcmp(specific_proto_optarg, p[i].name) == 0) {
 				specific_proto = p[i].proto;
 				break;
