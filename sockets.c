@@ -53,12 +53,23 @@ void generate_sockets(unsigned int nr_to_create)
 				domain = i;
 
 			type = rand() % TYPE_MAX;
+			protocol = rand() % PROTO_MAX;
+
+			switch (domain) {
+
+			case AF_INET6:
+				if (type == SOCK_STREAM)
+					protocol = 0;
+				break;
+
+			default:
+				;;
+			}
+
 			if ((rand() % 100) < 25)
 				type |= SOCK_CLOEXEC;
 			if ((rand() % 100) < 25)
 				type |= SOCK_NONBLOCK;
-
-			protocol = rand() % PROTO_MAX;
 
 			printf("%c (%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]    \r",
 				spinner[spin++], socks, nr_to_create,
