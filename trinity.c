@@ -172,14 +172,14 @@ static void parse_args(int argc, char *argv[])
 	int opt;
 
 	struct option longopts[] = {
-		{ "list", optional_argument, NULL, 'L' },
+		{ "list", no_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "mode", required_argument, NULL, 'm' },
-		{ "nofork", optional_argument, NULL, 'F' },
-		{ "bruteforce", optional_argument, NULL, 'B' },
-		{ "32bit", optional_argument, &do_32bit, 1 },
-		{ "logfile", optional_argument, NULL, 'l' },
-		{ "proto", optional_argument, NULL, 'P' },
+		{ "nofork", no_argument, NULL, 'F' },
+		{ "bruteforce", no_argument, NULL, 'B' },
+		{ "32bit", no_argument, &do_32bit, 1 },
+		{ "logfile", required_argument, NULL, 'l' },
+		{ "proto", required_argument, NULL, 'P' },
 		{ NULL, 0, NULL, 0 } };
 
 	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:ps:S:ux:z", longopts, NULL)) != -1) {
@@ -333,7 +333,8 @@ static void parse_args(int argc, char *argv[])
 	}
 
 	if (opmode == MODE_UNDEFINED) {
-		fprintf(stderr, "Unrecognised mode \'%s\'\n", optarg);
+		if (optarg != NULL)
+			fprintf(stderr, "Unrecognised mode \'%s\'\n", optarg);
 		fprintf(stderr, "--mode must be one of random, rotate, regval, "
 			"or struct\n\n");
 		usage();
