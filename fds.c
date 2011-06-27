@@ -43,7 +43,11 @@ int get_random_fd(void)
 	unsigned int i;
 	unsigned int fd = 0;
 
-	i = rand() % 3;
+	if (do_specific_proto == 1)
+		i = 1;
+	else
+		i = rand() % 3;
+
 	switch (i) {
 	case 0:
 retry:		fd = fds[rand() % fd_idx];
