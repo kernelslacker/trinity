@@ -155,10 +155,6 @@ void sync_output();
 #define MODE_RANDOM 1
 #define MODE_ROTATE 2
 
-#define TYPE_UNDEFINED 0
-#define TYPE_VALUE 1
-#define TYPE_STRUCT 2
-
 #define STRUCT_UNDEFINED 0
 #define STRUCT_CONST 1
 #define STRUCT_RAND 2
