@@ -47,13 +47,13 @@ void generate_sockets(unsigned int nr_to_create)
 			if (sockarray[i] == MAX_PER_DOMAIN)
 				break;
 
-			domain = i;
-			type = rand() % TYPE_MAX;
-
 			if (do_specific_proto == 1)
-				protocol = specific_proto;
+				domain = specific_proto;
 			else
-				protocol = rand() % PROTO_MAX;
+				domain = i;
+
+			type = rand() % TYPE_MAX;
+			protocol = rand() % PROTO_MAX;
 
 			printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
 				spinner[spin++], socks, nr_to_create,
