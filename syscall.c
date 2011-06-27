@@ -321,11 +321,6 @@ void main_loop(void)
 			break;
 
 		regenerate_random_page();
-
-		/* If we're passing userspace addresses, mess with alignment */
-		if ((regval & ~0xf) == (unsigned long)page_zeros)
-			regval = (unsigned long)page_zeros+(rand() & 0xf);
-
 	}
 done: ;
 }
