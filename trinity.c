@@ -492,7 +492,11 @@ static void find_specific_proto()
 	}
 
 	if (i > PF_MAX) {
-		printf("Protocol unknown, or out of range [0-%d]\n", PF_MAX);
+		printf("Protocol unknown. Pass a numeric value [0-%d] or one of ", PF_MAX);
+		for (i = 0; i < (sizeof(protocols) / sizeof(struct protocol)); i++)
+			printf("%s ", p[i].name);
+		printf("\n");
+
 		exit(EXIT_FAILURE);
 	}
 
