@@ -335,8 +335,7 @@ static void parse_args(int argc, char *argv[])
 	if (opmode == MODE_UNDEFINED) {
 		if (optarg != NULL)
 			fprintf(stderr, "Unrecognised mode \'%s\'\n", optarg);
-		fprintf(stderr, "--mode must be one of random, rotate, regval, "
-			"or struct\n\n");
+		fprintf(stderr, "--mode must be either random or rotate\n\n");
 		usage();
 		exit(EXIT_FAILURE);
 	}
