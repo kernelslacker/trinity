@@ -286,24 +286,10 @@ static void do_syscall_from_child(int cl)
 
 void display_opmode(void)
 {
-	printf("trinity mode: %s\n", opmodename[opmode]);
+	output("trinity mode: %s\n", opmodename[opmode]);
 
-	switch (opmode) {
-
-	case MODE_ROTATE:
-		switch (passed_type) {
-		case TYPE_STRUCT:
-			printf("struct mode = %s\n", structmodename[structmode]);
-			if (structmode == STRUCT_CONST)
-				printf("struct fill value is 0x%x\n", (int)struct_fill);
-			break;
-		}
-
-		printf("Rotating value %lx though all registers\n", regval);
-		break;
-	}
-
-	(void)fflush(stdout);
+	if (opmode == MODE_ROTATE)
+		output("Rotating value %lx though all registers\n", regval);
 }
 
 void main_loop(void)
@@ -337,8 +323,7 @@ void main_loop(void)
 		regenerate_random_page();
 
 		/* If we're passing userspace addresses, mess with alignment */
-		if ((passed_type == TYPE_VALUE) &&
-		    ((regval & ~0xf) == (unsigned long)page_zeros))
+		if ((regval & ~0xf) == (unsigned long)page_zeros)
 			regval = (unsigned long)page_zeros+(rand() & 0xf);
 
 	}

@@ -27,7 +27,6 @@
 #include "files.h"
 
 static char *progname=NULL;
-static char *structptr=NULL;
 static unsigned int seed=0;
 jmp_buf ret_jump;
 
@@ -58,22 +57,12 @@ static unsigned int max_nr_syscalls32;
 struct shm_s *shm;
 
 unsigned int opmode = MODE_UNDEFINED;
-unsigned int structmode = STRUCT_UNDEFINED;
-
-long struct_fill;		/* value to fill struct with if CONST */
 
 char *opmodename[] = {
 	[MODE_UNDEFINED] = "undef",
 	[MODE_RANDOM] = "random",
 	[MODE_ROTATE] = "rotate",
 };
-char *structmodename[] = {
-	[STRUCT_UNDEFINED] = "unknown",
-	[STRUCT_CONST] = "constant",
-	[STRUCT_RAND]  = "random",
-};
-
-char passed_type = TYPE_UNDEFINED;
 
 char *userbuffer;
 char *page_zeros;
@@ -140,8 +129,6 @@ static void usage(void)
 	fprintf(stderr, "     -u:  pass userspace addresses as arguments.\n");
 	fprintf(stderr, "     -x#: use value as register arguments.\n");
 	fprintf(stderr, "     -z:  use all zeros as register parameters.\n");
-	fprintf(stderr, "     -Sr: pass struct filled with random junk.\n");
-	fprintf(stderr, "     -Sxx: pass struct filled with hex value xx.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   -P,--proto=#: Create socket fd's using a specific protocol.\n");
@@ -168,7 +155,6 @@ void seed_from_tod()
 
 static void parse_args(int argc, char *argv[])
 {
-	unsigned int i;
 	int opt;
 
 	struct option longopts[] = {
@@ -182,7 +168,7 @@ static void parse_args(int argc, char *argv[])
 		{ "proto", required_argument, NULL, 'P' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:ps:S:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:ps:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -239,7 +225,6 @@ static void parse_args(int argc, char *argv[])
 
 		/* Pass in address of kernel text */
 		case 'k':
-			passed_type = TYPE_VALUE;
 			regval = KERNEL_ADDR;
 			break;
 
@@ -266,59 +251,19 @@ static void parse_args(int argc, char *argv[])
 			srand(seed);
 			break;
 
-		/* Set Struct fill mode */
-		case 'S':
-			switch (*optarg) {
-				/* Pass a ptr to a struct filled with random junk */
-			case 'r':
-				structmode = STRUCT_RAND;
-				structptr = page_rand;
-				for (i=0; i<page_size; i++)
-					structptr[i]= rand();
-				break;
-			case '\0':
-			case ' ':
-				fprintf(stderr,
-					"-S requires 'r' or a hex value\n");
-				exit(EXIT_FAILURE);
-
-			/* Pass a ptr to a struct filled with the
-			 * user-specified constant value. */
-			default:
-				structmode = STRUCT_CONST;
-				if (!isxdigit(*optarg)) {
-					fprintf(stderr,
-					    "-S requires 'r' or a "
-					    "hex value\n");
-					exit(EXIT_FAILURE);
-				}
-				struct_fill = strtol(optarg, NULL, 16);
-				structptr = malloc(page_size);
-				if (!structptr)
-					exit(EXIT_FAILURE);
-				memset(structptr, struct_fill, page_size);
-				break;
-			}
-			passed_type = TYPE_STRUCT;
-			regval = (unsigned long) structptr;
-			break;
-
 		/* Pass in address of userspace addr text */
 		case 'u':
-			passed_type = TYPE_VALUE;
 			regval = (unsigned long) page_zeros;
 			break;
 
 		/* Set registers to specific value */
 		case 'x':
 			regval = strtoul(optarg, NULL, 0);
-			passed_type = TYPE_VALUE;
 			break;
 
 		/* Wander a 0 through every register */
 		case 'z':
 			regval = 0;
-			passed_type = TYPE_VALUE;
 			break;
 		}
 	}
@@ -621,9 +566,6 @@ int main(int argc, char* argv[])
 	display_opmode();
 
 	do_main_loop();
-
-	if ((structptr!=NULL) && (structmode != STRUCT_RAND))
-		free(structptr);
 
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		shm->execcount - 1, shm->retries, shm->successes, shm->failures);
