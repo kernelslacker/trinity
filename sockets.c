@@ -165,7 +165,7 @@ regenerate:
 			return;
 		}
 		socket_fds[socks] = fd;
-		output("fd[%i] = domain:%i type:%i protocol:%i\n",
+		output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
 			fd, domain, type, protocol);
 		socks++;
 		fds_left_to_create--;
