@@ -26,7 +26,7 @@ void seed_from_tod();
 #define MAX_FDS 750
 extern unsigned int fds_left_to_create;
 
-#define TYPE_MAX 128
+#define TYPE_MAX 10
 #define PROTO_MAX 256
 extern unsigned int socket_fds[MAX_FDS/2];
 extern unsigned int socks;

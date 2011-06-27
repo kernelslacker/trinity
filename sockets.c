@@ -53,9 +53,14 @@ void generate_sockets(unsigned int nr_to_create)
 				domain = i;
 
 			type = rand() % TYPE_MAX;
+			if ((rand() % 100) < 25)
+				type |= SOCK_CLOEXEC;
+			if ((rand() % 100) < 25)
+				type |= SOCK_NONBLOCK;
+
 			protocol = rand() % PROTO_MAX;
 
-			printf("%c (%d sockets created. needed:%d) [domain:%d type:%d proto:%d]    \r",
+			printf("%c (%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]    \r",
 				spinner[spin++], socks, nr_to_create,
 				domain, type, protocol);
 			if (spin == 4)
@@ -65,7 +70,7 @@ void generate_sockets(unsigned int nr_to_create)
 			if (fd > -1) {
 				socket_fds[socks] = fd;
 
-				output("fd[%i] = domain:%i type:%i protocol:%i\n",
+				output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
 					fd, domain, type, protocol);
 
 				sockarray[i]++;
