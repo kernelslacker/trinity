@@ -185,6 +185,11 @@ static void parse_args(int argc, char *argv[])
 	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:ps:S:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
+			if (opt == '?')
+				exit(EXIT_FAILURE);
+			else
+				printf("opt:%c\n", opt);
+
 		case '\0':
 			return;
 
