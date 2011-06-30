@@ -48,10 +48,11 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
   ipq_rcv_skb page allocation order >= MAX_ORDER
   http://permalink.gmane.org/gmane.linux.network/192892
 
+* ed6e4ef836d425bc35e33bf20fcec95e68203afa
+  ip_rt_bug: 0.0.0.0 -> 255.255.255.255
+
 ------------------------------------------------------------------
 Still unfixed:
 
 * hugetlbfs lockdep spew. https://lkml.org/lkml/2011/4/15/272
-
-* ip_rt_bug: 0.0.0.0 -> 255.255.255.255, ?
 
