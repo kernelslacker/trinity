@@ -15,19 +15,24 @@ NR_CPUS=$(($NR_CPUS-1))
 
 while [ 1 ];
 do
-  chmod 755 tmp
+  RND=$RANDOM
+  mkdir tmp.$RND
+  cd tmp.$RND
   for i in `seq 0 $NR_CPUS`
   do
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i.log    -i -N 1000 &
+	taskset -c $i ../../trinity --mode=random --logfile=../../logs/trinity-rand-cpu$i.log    -i -N 1000 &
   done
   wait
-  rm -f trinity.socketcache
+  cd ..
+  rm -rf tmp.$RND
 
-  chmod 755 tmp
+  mkdir tmp.$RND
+  cd tmp.$RND
   for i in `seq 0 $NR_CPUS`
   do
-	taskset -c $i ../trinity --mode=random --logfile=../logs/trinity-rand-cpu$i-32.log -i -N 1000 --32bit &
+	taskset -c $i ../../trinity --mode=random --logfile=../../logs/trinity-rand-cpu$i-32.log -i -N 1000 --32bit &
   done
   wait
-  rm -f trinity.socketcache
+  cd ..
+  rm -rf tmp.$RND
 done
