@@ -208,7 +208,6 @@ extern struct syscall syscall_open;
 extern struct syscall syscall_pause;
 extern struct syscall syscall_pciconfig_read;
 extern struct syscall syscall_pciconfig_write;
-extern struct syscall syscall_perf_counter_open;
 extern struct syscall syscall_perf_event_open;
 extern struct syscall syscall_perfmonctl;
 extern struct syscall syscall_personality;
