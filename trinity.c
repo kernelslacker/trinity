@@ -149,7 +149,7 @@ void seed_from_tod()
 	gettimeofday(&t, 0);
 	seed = t.tv_sec * t.tv_usec;
 	srand(seed);
-	output("Randomness reseeded to %d (0x%x)\n", seed, seed);
+	output("Randomness reseeded to %u (0x%x)\n", seed, seed);
 }
 
 
@@ -531,7 +531,7 @@ int main(int argc, char* argv[])
 	if (!seed)
 		seed_from_tod();
 	else
-		output("Setting random seed to %d (0x%x)\n", seed, seed);
+		output("Setting random seed to %u (0x%x)\n", seed, seed);
 
 	key = rand64();
 	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
