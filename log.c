@@ -33,5 +33,5 @@ void output(const char *fmt, ...)
 	}
 	printf("%s", outputbuf);
 
-	fprintf(logfile, outputbuf);
+	fprintf(logfile, "%s", outputbuf);
 }
