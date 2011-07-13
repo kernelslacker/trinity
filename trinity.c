@@ -530,7 +530,8 @@ int main(int argc, char* argv[])
 
 	if (!seed)
 		seed_from_tod();
-	output("Setting random seed to %d\n", seed);
+	else
+		output("Setting random seed to 0x%x\n", seed);
 
 	key = rand64();
 	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
