@@ -7,6 +7,10 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+#ifndef AT_EMPTY_PATH
+#define AT_EMPTY_PATH		0x1000
+#endif
+
 struct syscall syscall_linkat = {
 	.name = "linkat",
 	.num_args = 5,
