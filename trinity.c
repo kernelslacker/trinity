@@ -247,7 +247,6 @@ static void parse_args(int argc, char *argv[])
 		/* Set seed */
 		case 's':
 			seed = strtol(optarg, NULL, 10);
-			output("Setting random seed to %d\n", seed);
 			srand(seed);
 			break;
 
@@ -531,6 +530,7 @@ int main(int argc, char* argv[])
 
 	if (!seed)
 		seed_from_tod();
+	output("Setting random seed to %d\n", seed);
 
 	key = rand64();
 	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
