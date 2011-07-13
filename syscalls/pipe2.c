@@ -8,6 +8,10 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+#ifndef O_CLOEXEC
+#define O_CLOEXEC       02000000
+#endif
+
 struct syscall syscall_pipe2 = {
 	.name = "pipe2",
 	.num_args = 2,
