@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <unistd.h>
 
@@ -33,5 +34,9 @@ void output(const char *fmt, ...)
 	}
 	printf("%s", outputbuf);
 
+	if (logfile == NULL) {
+		printf("Logfile not open!\n");
+		exit(EXIT_FAILURE);
+	}
 	fprintf(logfile, "%s", outputbuf);
 }
