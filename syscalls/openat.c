@@ -7,6 +7,10 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+#ifndef O_PATH
+#define O_PATH        010000000 /* Resolve pathname but do not open file.  */
+#endif
+
 struct syscall syscall_openat = {
 	.name = "openat",
 	.num_args = 4,
