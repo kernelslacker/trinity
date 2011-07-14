@@ -318,7 +318,7 @@ static void find_specific_syscall()
 {
 	unsigned int i;
 
-	if (specific_syscall != 0) {
+	if (isdigit(*specific_syscall_optarg)) {
 		i = specific_syscall;
 		if (syscalls[i].entry->flags &= AVOID_SYSCALL) {
 			printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].entry->name);
