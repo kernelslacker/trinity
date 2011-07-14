@@ -11,5 +11,5 @@ struct syscall syscall_sigsuspend = {
 	.arg1name = "history0",
 	.arg2name = "history1",
 	.arg3name = "mask",
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL, // Confuses the signal state and causes the fuzzer to hang with timeout not firing
 };

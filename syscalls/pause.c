@@ -7,5 +7,5 @@
 struct syscall syscall_pause = {
 	.name = "pause",
 	.num_args = 0,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL, // Boring.  Can cause long sleeps
 };
