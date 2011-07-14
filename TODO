@@ -1,3 +1,8 @@
+* -b is broken. We need to do the same number of rand() calls we did in
+  the calls we're skipping, which is pretty much impossible without
+  doing them when we're using -i.  Maybe just be silent until we get
+  to the point of -b ?
+
 * Store a field in the syscall definition on when it was added upstream.
   This will allow for things like "just fuzz syscalls added since 2.6.32"
   It won't be much use on kernels that have them backported, but that's
