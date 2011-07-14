@@ -11,5 +11,5 @@ struct syscall syscall_nanosleep = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "rmtp",
 	.arg2type = ARG_ADDRESS,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL, // Boring.  Can cause long sleeps.
 };

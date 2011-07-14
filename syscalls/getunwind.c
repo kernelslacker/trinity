@@ -7,7 +7,7 @@
 struct syscall syscall_getunwind = {
 	.name = "getunwind",
 	.num_args = 2,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL, // IA-64 only
 	.arg1name = "buf",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "buf_size",

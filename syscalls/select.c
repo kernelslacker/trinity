@@ -8,7 +8,7 @@
 struct syscall syscall_select = {
 	.name = "select",
 	.num_args = 5,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL, // Confuses the signal state and causes the fuzzer to hang with timeout not firing
 	.arg1name = "n",
 	.arg2name = "inp",
 	.arg2type = ARG_ADDRESS,
