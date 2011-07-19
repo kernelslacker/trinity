@@ -359,6 +359,8 @@ force_32bit:
 				specific_syscall = i;
 				printf("Forcing into 32bit mode.\n");
 				do_32bit = 1;
+				syscalls = syscalls_i386;
+				max_nr_syscalls = NR_I386_SYSCALLS;
 				break;
 			}
 		}

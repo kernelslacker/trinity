@@ -1,5 +1,3 @@
-* BUG: -c socketcall calls the wrong syscall. Looks like syscalltable confusion.
-
 * generate overlapping addresses/lengths.
 
 * -b is broken. We need to do the same number of rand() calls we did in
