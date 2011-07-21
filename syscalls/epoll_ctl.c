@@ -1,8 +1,7 @@
 /*
  * SYSCALL_DEFINE4(epoll_ctl, int, epfd, int, op, int, fd, struct epoll_event __user *, event)
  */
-#include <linux/eventpoll.h>
-#include <sys/types.h>
+#include <sys/epoll.h>
 
 #include "trinity.h"
 #include "sanitise.h"
