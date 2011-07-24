@@ -47,10 +47,6 @@
 
 * Add a parameter for the dir/file randomness bias
 
-* Argument order bug.
-  ./trinity --mode=random --32bit -c mprotect  doesn't see the -c
-  ./trinity --mode=random -c mprotect --32bit does.
-
 * Make -k use random kernel addresses (from System.map ?)
 
 * --oneshot
@@ -65,9 +61,6 @@
   - Set regs that should be preserved across syscalls to a known value, and check
     on return whether any of them got clobbered.
   - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
-  - in 32bit mode check that there isn't anything in the upper bits.
-
-* --32bit still passes 64bit addresses.
 
 * --nrsyscalls (set NR_SYSCALLS)
   Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?

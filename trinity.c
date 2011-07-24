@@ -31,7 +31,6 @@ static unsigned int seed=0;
 jmp_buf ret_jump;
 
 struct syscalltable *syscalls;
-struct syscalltable *syscalls32;
 
 unsigned long long syscallcount = 0;
 
@@ -49,10 +48,8 @@ unsigned char do_specific_proto = 0;
 unsigned char bruteforce = 0;
 unsigned char nofork = 0;
 unsigned char show_syscall_list = 0;
-int do_32bit = 0;
 
 unsigned int max_nr_syscalls;
-static unsigned int max_nr_syscalls32;
 
 struct shm_s *shm;
 
@@ -122,7 +119,6 @@ static void usage(void)
 	fprintf(stderr, "   --mode=random : pass random values in registers to random syscalls\n");
 	fprintf(stderr, "     -s#: use # as random seed.\n");
 	fprintf(stderr, "     --bruteforce : Keep retrying syscalls until it succeeds (needs -i) [EXPERIMENTAL]\n");
-	fprintf(stderr, "     --32bit : call 32bit entrypoint\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   --mode=rotate : rotate value through all register combinations\n");
 	fprintf(stderr, "     -k:  pass kernel addresses as arguments.\n");
@@ -163,7 +159,6 @@ static void parse_args(int argc, char *argv[])
 		{ "mode", required_argument, NULL, 'm' },
 		{ "nofork", no_argument, NULL, 'F' },
 		{ "bruteforce", no_argument, NULL, 'B' },
-		{ "32bit", no_argument, &do_32bit, 1 },
 		{ "logfile", required_argument, NULL, 'l' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ NULL, 0, NULL, 0 } };
@@ -327,9 +322,6 @@ static void find_specific_syscall()
 		return;
 	}
 
-	if (do_32bit == 1)
-		goto force_32bit;
-
 	for (i = 0; i < max_nr_syscalls; i++) {
 		if (strcmp(specific_syscall_optarg, syscalls[i].entry->name) == 0) {
 			printf("Found %s at %u\n", syscalls[i].entry->name, i);
@@ -343,33 +335,8 @@ static void find_specific_syscall()
 	}
 
 	if (i == max_nr_syscalls) {
-		printf("couldn't find syscall. looking in 32bit table\n");
-		if (!max_nr_syscalls32)
-			goto no_sys32;
-
-force_32bit:
-		/* Try looking in the 32bit table. */
-		for (i = 0; i < max_nr_syscalls32; i++) {
-			if (strcmp(specific_syscall_optarg, syscalls32[i].entry->name) == 0) {
-				if (syscalls32[i].entry->flags &= AVOID_SYSCALL) {
-					printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls32[i].entry->name);
-					exit(EXIT_FAILURE);
-				}
-				printf("Found in the 32bit syscall table %s at %u\n", syscalls32[i].entry->name, i);
-				specific_syscall = i;
-				printf("Forcing into 32bit mode.\n");
-				do_32bit = 1;
-				syscalls = syscalls_i386;
-				max_nr_syscalls = NR_I386_SYSCALLS;
-				break;
-			}
-		}
-
-		if (i == max_nr_syscalls32) {
-no_sys32:
-			printf("syscall not found :(\n");
-			exit(EXIT_FAILURE);
-		}
+		printf("syscall not found :(\n");
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -468,10 +435,8 @@ int main(int argc, char* argv[])
 	}
 
 #ifdef __x86_64__
-	syscalls32 = syscalls_i386;
 	syscalls = syscalls_x86_64;
 	max_nr_syscalls = NR_X86_64_SYSCALLS;
-	max_nr_syscalls32 = NR_I386_SYSCALLS;
 #elif __i386__
 	syscalls = syscalls_i386;
 	max_nr_syscalls = NR_I386_SYSCALLS;
@@ -503,15 +468,7 @@ int main(int argc, char* argv[])
 	max_nr_syscalls = NR_SYSCALLS;
 
 
-#ifdef __x86_64__
-	if (do_32bit) {
-		syscalls = syscalls_i386;
-		max_nr_syscalls = NR_I386_SYSCALLS;
-		printf("32bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
-	} else {
-		printf("64bit mode. Fuzzing %d syscalls.\n", max_nr_syscalls);
-	}
-#endif
+	printf("Fuzzing %d syscalls.\n", max_nr_syscalls);
 
 	if (do_specific_syscall == 1)
 		find_specific_syscall();
