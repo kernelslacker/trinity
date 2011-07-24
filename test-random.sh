@@ -25,14 +25,4 @@ do
   wait
   cd ..
   rm -rf tmp.$RND
-
-  mkdir tmp.$RND
-  cd tmp.$RND
-  for i in `seq 0 $NR_CPUS`
-  do
-	taskset -c $i ../../trinity --mode=random --logfile=../../logs/trinity-rand-cpu$i-32.log -i -N 1000 --32bit &
-  done
-  wait
-  cd ..
-  rm -rf tmp.$RND
 done
