@@ -95,7 +95,6 @@ extern unsigned long long syscallcount;
 extern unsigned int opmode;
 extern char *opmodename[];
 extern char *structmodename[];
-extern int do_32bit;
 extern unsigned int max_nr_syscalls;
 extern unsigned char intelligence;
 extern unsigned int structmode;
