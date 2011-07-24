@@ -28,45 +28,6 @@
 
 static long res = 0;
 
-#define __syscall_return(type, res) \
-do { \
-	if ((unsigned long)(res) >= (unsigned long)(-125)) { \
-		errno = -(res); \
-		res = -1; \
-	} \
-	return (type) (res); \
-} while (0)
-
-static long call_syscall(__unused__ int num_args, unsigned int call,
-	unsigned long a1, unsigned long a2, unsigned long a3,
-	unsigned long a4, unsigned long a5, unsigned long a6)
-{
-	/* If we passed --32bit don't do the 64bit syscall() */
-	if (!do_32bit)
-		return syscall(call, a1, a2, a3, a4, a5, a6);
-
-	/* do the 32 bit call. */
-
-#if defined(__i386__) || defined (__x86_64__)
-	if (num_args < 6) {
-		long __res;
-		__asm__ volatile ("int $0x80"
-		: "=a" (__res)
-		: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),
-		"d" ((long)(a3)), "S" ((long)(a4)),
-		"D" ((long)(a5)));
-		__syscall_return(long,__res);
-		return __res;
-	}
-	/* TODO: 6 arg 32bit x86 syscall goes here.*/
-#endif
-
-	// TODO: 32-bit syscall entry for non-x86 archs goes here.
-	return 0;
-
-}
-
-
 static long mkcall(unsigned int call)
 {
 	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
@@ -176,7 +137,7 @@ args_done:
 	call += 1024;
 #endif
 
-	ret = call_syscall(syscalls[call].entry->num_args, call, a1, a2, a3, a4, a5, a6);
+	ret = syscall(syscalls[call].entry->num_args, call, a1, a2, a3, a4, a5, a6);
 
 	if (ret < 0) {
 		sptr +=sprintf(sptr, RED "= %d (%s)" WHITE, ret, strerror(errno));
