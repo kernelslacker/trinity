@@ -65,12 +65,16 @@ char *userbuffer;
 char *page_zeros;
 char *page_0xff;
 char *page_rand;
+char *page_allocs;
 
 static char *specific_syscall_optarg;
 static char *specific_proto_optarg;
 
 static void init_buffers()
 {
+	unsigned int i;
+	unsigned long *allocs;
+
 	userbuffer = malloc(page_size);
 	if (!userbuffer)
 		exit(EXIT_FAILURE);
@@ -88,6 +92,14 @@ static void init_buffers()
 	page_rand = malloc(page_size);
 	if (!page_rand)
 		exit(EXIT_FAILURE);
+
+	page_allocs = malloc(page_size);
+	allocs = (void *)page_allocs;
+	if (!page_allocs)
+		exit(EXIT_FAILURE);
+
+	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
+		allocs[i++] = (unsigned long) malloc(page_size);
 
 	setup_maps();
 }

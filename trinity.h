@@ -125,6 +125,7 @@ extern char *userbuffer;
 extern char *page_zeros;
 extern char *page_0xff;
 extern char *page_rand;
+extern char *page_allocs;
 
 struct map {
 	struct map *next;
