@@ -100,14 +100,15 @@ void * get_address()
 {
 	int i;
 
-	i = rand() % 6;
+	i = rand() % 7;
 	switch (i) {
 	case 0:	return (void *) KERNEL_ADDR;
 	case 1:	return page_zeros;
 	case 2:	return page_0xff;
 	case 3:	return page_rand;
-	case 4:	return (void *) get_interesting_value();
-	case 5: return get_map();
+	case 4: return page_allocs;
+	case 5:	return (void *) get_interesting_value();
+	case 6: return get_map();
 	}
 
 	return 0;
@@ -254,7 +255,10 @@ static unsigned long fill_arg(int call, int argnum)
 		return mask;
 
 	case ARG_RANDPAGE:
-		return (unsigned long) page_rand;
+		if ((rand() % 2) == 0)
+			return (unsigned long) page_allocs;
+		else
+			return (unsigned long) page_rand;
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
