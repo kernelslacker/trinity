@@ -120,10 +120,31 @@ void regenerate_random_page()
 	void *addr;
 
 	/* sometimes return a page of complete trash */
-	if ((rand() % 100) < 20) {
-		for (i = 0; i < page_size; i++)
-			page_rand[i] = (unsigned char)rand();
-		return;
+	if ((rand() % 100) < 50) {
+		unsigned int type = rand() % 3;
+
+		switch (type) {
+		case 0:	/* bytes */
+			for (i = 0; i < page_size; i++)
+				page_rand[i++] = (unsigned char)rand();
+			return;
+
+		case 1:	/* ints */
+			for (i = 0; i < (page_size / 2); i++) {
+				page_rand[i++] = 0;
+				page_rand[i++] = (unsigned char)rand();
+			}
+			return;
+
+		case 2:	/* longs */
+			for (i = 0; i < (page_size / 4); i++) {
+				page_rand[i++] = 0;
+				page_rand[i++] = 0;
+				page_rand[i++] = 0;
+				page_rand[i++] = (unsigned char)rand();
+			}
+			return;
+		}
 	}
 
 	/* sometimes return a page that looks kinda like a struct */
