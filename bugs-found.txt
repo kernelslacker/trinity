@@ -54,5 +54,10 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 ------------------------------------------------------------------
 Still unfixed:
 
+* irqs_disabled page fault lockdep trace.
+  http://lkml.org/lkml/2011/7/23/167
+
 * hugetlbfs lockdep spew. https://lkml.org/lkml/2011/4/15/272
+
+* sel_netnode_insert suspicious rcu usage.
 
