@@ -387,3 +387,6 @@ extern struct syscall syscall_waitid;
 extern struct syscall syscall_waitpid;
 extern struct syscall syscall_write;
 extern struct syscall syscall_writev;
+extern struct syscall syscall_sendmmsg;
+extern struct syscall syscall_setns;
+
