@@ -40,7 +40,7 @@ struct syscall syscall_sendmmsg = {
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg3list = {
+	.arg4list = {
 		.num = 19,
 		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
 				MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
