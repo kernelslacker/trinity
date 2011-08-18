@@ -253,6 +253,8 @@ void display_opmode(void)
 
 	if (opmode == MODE_ROTATE)
 		output("Rotating value %lx though all registers\n", regval);
+
+	sync_output();
 }
 
 void main_loop(void)

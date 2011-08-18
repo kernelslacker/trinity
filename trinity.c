@@ -533,9 +533,9 @@ int main(int argc, char* argv[])
 		/* nothing right now */
 	}
 
-	sigsetjmp(ret_jump, 1);
-
 	display_opmode();
+
+	sigsetjmp(ret_jump, 1);
 
 	do_main_loop();
 
