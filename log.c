@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include "trinity.h"
 
 static char outputbuf[1024];
 char *logfilename;
@@ -32,7 +33,8 @@ void output(const char *fmt, ...)
 		printf("Something went wrong in output() [%d]\n", n);
 		return;
 	}
-	printf("%s", outputbuf);
+	if (!quiet)
+		printf("%s", outputbuf);
 
 	if (logfile == NULL) {
 		printf("Logfile not open!\n");

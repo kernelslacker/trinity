@@ -146,6 +146,7 @@ void * get_map();
 
 extern char *logfilename;
 extern FILE *logfile;
+extern unsigned char quiet;
 void synclog();
 void output(const char *fmt, ...);
 void sync_output();
