@@ -48,6 +48,7 @@ unsigned char do_specific_proto = 0;
 unsigned char bruteforce = 0;
 unsigned char nofork = 0;
 unsigned char show_syscall_list = 0;
+unsigned char quiet = 0;
 
 unsigned int max_nr_syscalls;
 
@@ -139,6 +140,7 @@ static void usage(void)
 	fprintf(stderr, "     -z:  use all zeros as register parameters.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
+	fprintf(stderr, "   --quiet: less output.\n");
 	fprintf(stderr, "   -P,--proto=#: Create socket fd's using a specific protocol.\n");
 	fprintf(stderr, "   -b#: begin at offset #.\n");
 	fprintf(stderr, "   -c#: target syscall # only.\n");
@@ -173,9 +175,10 @@ static void parse_args(int argc, char *argv[])
 		{ "bruteforce", no_argument, NULL, 'B' },
 		{ "logfile", required_argument, NULL, 'l' },
 		{ "proto", required_argument, NULL, 'P' },
+		{ "quiet", no_argument, NULL, 'q' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:ps:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -249,6 +252,10 @@ static void parse_args(int argc, char *argv[])
 			do_specific_proto = 1;
 			specific_proto = strtol(optarg, NULL, 10);
 			specific_proto_optarg = optarg;
+			break;
+
+		case 'q':
+			quiet = 1;
 			break;
 
 		/* Set seed */
