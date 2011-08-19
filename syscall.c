@@ -126,12 +126,9 @@ static long mkcall(unsigned int call)
 args_done:
 	sptr += sprintf(sptr, WHITE ") ");
 
-	if (!quiet) {
-		output("%s", string);
-		sptr = string;
-
-		sync_output();
-	}
+	output("%s", string);
+	sptr = string;
+	sync_output();
 
 	if (dopause == 1)
 		sleep(1);
