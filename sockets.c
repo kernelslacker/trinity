@@ -58,6 +58,10 @@ void generate_sockets(unsigned int nr_to_create)
 
 			switch (domain) {
 
+			case AF_X25:
+				type = SOCK_SEQPACKET;
+				break;
+
 			case AF_INET6:
 				if (type == SOCK_STREAM)
 					protocol = 0;
