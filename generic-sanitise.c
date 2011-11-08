@@ -181,6 +181,18 @@ static unsigned int get_pid()
 	return 0;
 }
 
+static unsigned int get_cpu()
+{
+	int i;
+	i = rand() % 3;
+
+	switch (i) {
+	case 0: return -1;
+	case 1: return rand() & 4095;
+	case 2: return rand() & 15;
+	}
+	return 0;
+}
 
 static unsigned long fill_arg(int call, int argnum)
 {
@@ -280,6 +292,9 @@ static unsigned long fill_arg(int call, int argnum)
 			return (unsigned long) page_allocs;
 		else
 			return (unsigned long) page_rand;
+
+	case ARG_CPU:
+		return (unsigned long) get_cpu();
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
