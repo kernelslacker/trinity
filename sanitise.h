@@ -19,6 +19,7 @@ void sanitise_ioctl_sg_io(unsigned long *a1, unsigned long *a2, unsigned long *a
 #define ARG_RANGE 5
 #define ARG_LIST 6
 #define ARG_RANDPAGE	7	/* ->sanitise will scribble over this. */
+#define ARG_CPU 8
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)
