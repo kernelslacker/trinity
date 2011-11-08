@@ -134,7 +134,7 @@ Other useful arguments:
 #######################################################################
 
 Examples:
-./trinity -c splice -r -i
+./trinity --mode=random -i -c splice
 Stress test the splice syscall, with random parameters, but sanitise
 the passed params so they look almost sensible.
 
