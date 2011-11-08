@@ -171,11 +171,11 @@ void regenerate_random_page()
 static unsigned int get_pid()
 {
 	int i;
-	i = rand() % 2;
+	i = rand() % 3;
 
 	switch (i) {
 	case 0:	return getpid();
-	case 1:	return rand() & 32768;
+	case 1:	return rand() & 32767;
 	case 2: break;
 	}
 	return 0;
