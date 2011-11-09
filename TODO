@@ -12,7 +12,7 @@
 
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
-  ia64: build syscalls/ia64/
+  *: Move arch specific syscalls into syscalls/arch/
 
 * sanitise_sync_file_range is bullshit
 
