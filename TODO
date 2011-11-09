@@ -90,7 +90,9 @@
 
 * fork N threads.
 
-* mprotect the buffers we allocate that get passed to the kernel.
+* Safety checks for buffers we pass to the kernel
+- mprotect them
+- add guard pages before/after, and add poison to be checked on return.
 
 * make a list of filenames during fd_setup, so that we can pass one at random
   when sanitising open()
