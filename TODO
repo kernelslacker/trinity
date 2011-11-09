@@ -28,9 +28,6 @@
 * --ignore-socketcache
 * --monochrome
 
-* Check /proc/sys/kernel/tainted after each syscall.
-  If we get a 'D' or 'W', we should stop.
-
 * Destructors
   Need to store the result of syscalls on success, so that if we allocated
   something, we can deallocate it when we're done. (Perhaps delay the
