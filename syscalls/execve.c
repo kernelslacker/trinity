@@ -2,6 +2,9 @@
    long sys_execve(const char __user *name,
 	const char __user *const __user *argv,
 	const char __user *const __user *envp, struct pt_regs *regs)
+ *
+ * On success, execve() does not return
+ * on error -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"
@@ -9,6 +12,7 @@
 struct syscall syscall_execve = {
 	.name = "execve",
 	.num_args = 4,
+	.flags = AVOID_SYSCALL,
 	.arg1name = "name",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "argv",
