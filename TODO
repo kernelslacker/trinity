@@ -64,12 +64,6 @@
     on return whether any of them got clobbered.
   - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
 
-* --nrsyscalls (set NR_SYSCALLS)
-  Hmm, maybe --kver=2.6.9 to set the nr to the nr syscalls in that rev ?
-  This would require a database of per-kernel syscall numbers.
-  It would also be incorrect with any enterprise kernels which backport syscalls.
-  Maybe we could do a probe first, and adjust based on the -ENOSYS's we get back.
-
 * Xen dom0 hypercalls ?
 
 * Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
