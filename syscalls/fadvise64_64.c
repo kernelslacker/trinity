@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE(fadvise64_64)(int fd, loff_t offset, loff_t len, int advice)
+ *
+ * On success, zero is returned.
+ * On error, an error number is returned.
  */
 #include "trinity.h"
 #include "sanitise.h"

@@ -1,6 +1,9 @@
 /*
  * SYSCALL_DEFINE5(fchownat, int, dfd, const char __user *, filename, uid_t, user,
 	gid_t, group, int, flag)
+ *
+ * On success, fchownat() returns 0.
+ *  On error, -1 is returned and errno is set to indicate the error.
  */
 #include "trinity.h"
 #include "sanitise.h"

@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE1(close, unsigned int, fd)
+ *
+ * returns zero on success.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

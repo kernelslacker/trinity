@@ -1,5 +1,20 @@
 /*
  * SYSCALL_DEFINE3(fcntl, unsigned int, fd, unsigned int, cmd, unsigned long, arg)
+ *
+ * For a successful call, the return value depends on the operation:
+ *
+ *     F_DUPFD The new descriptor.
+ *     F_GETFD Value of file descriptor flags.
+ *     F_GETFL Value of file status flags.
+ *     F_GETLEASE Type of lease held on file descriptor.
+ *     F_GETOWN Value of descriptor owner.
+ *     F_GETSIG Value of signal sent when read or write becomes possible, or zero for traditional SIGIO behavior.
+ *     F_GETPIPE_SZ The pipe capacity.
+ *
+ *     All other commands
+ *              Zero.
+ *
+ *     On error, -1 is returned, and errno is set appropriately.
  */
 #define _GNU_SOURCE
 #include <fcntl.h>

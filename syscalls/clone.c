@@ -1,6 +1,8 @@
 /*
-   long sys_clone(unsigned long clone_flags, unsigned long newsp,
+ * long sys_clone(unsigned long clone_flags, unsigned long newsp,
 	void __user *parent_tid, void __user *child_tid, struct pt_regs *regs)
+ * On success, the thread ID of the child process is returned in the caller's thread of execution.
+ * On failure, -1 is returned in the caller's context, no child process will be created, and errno will be set appropriately.
  */
 
 #include <linux/sched.h>

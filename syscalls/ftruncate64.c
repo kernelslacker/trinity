@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE(ftruncate64)(unsigned int fd, loff_t length)
+ *
+ * On success, zero is returned.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

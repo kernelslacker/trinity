@@ -1,6 +1,8 @@
 /*
- * sys_clone2(u64 flags, u64 ustack_base, u64 ustack_size, u64 parent_tidptr, u64 child_tidptr,
-              u64 tls)
+ * sys_clone2(u64 flags, u64 ustack_base, u64 ustack_size, u64 parent_tidptr, u64 child_tidptr, u64 tls)
+ *
+ * On success, the thread ID of the child process is returned in the caller's thread of execution.
+ * On failure, -1 is returned in the caller's context, no child process will be created, and errno will be set appropriately.
  */
 
 #include <linux/sched.h>

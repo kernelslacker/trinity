@@ -1,5 +1,7 @@
 /*
  * SYSCALL_DEFINE(fallocate)(int fd, int mode, loff_t offset, loff_t len)
+ *
+ * fallocate() returns zero on success, and -1 on failure.
  */
 #include "trinity.h"
 #include "sanitise.h"

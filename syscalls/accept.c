@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(accept, int, fd, struct sockaddr __user *, upeer_sockaddr, int __user *, upeer_addrlen)
+ *
+ * On success, these system calls return a nonnegative integer that is a descriptor for the accepted socket.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

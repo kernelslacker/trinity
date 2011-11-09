@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE1(fdatasync, unsigned int, fd)
+ *
+ * On success, returns zero.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

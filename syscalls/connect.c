@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr, int, addrlen
+ *
+ * If the connection or binding succeeds, zero is returned.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

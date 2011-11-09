@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE1(epoll_create1, int, flags)
+ *
+ * On success, returns a nonnegative file descriptor.
+ * On error, -1 is returned, and errno is set to indicate the error.
  */
 
 #define EPOLL_CLOEXEC 02000000
@@ -16,4 +19,5 @@ struct syscall syscall_epoll_create1 = {
 		.num = 1,
 		.values = { EPOLL_CLOEXEC },
 	},
+	.retval = ARG_FD,
 };

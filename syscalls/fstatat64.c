@@ -1,6 +1,9 @@
 /*
  * SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
 	struct stat64 __user *, statbuf, int, flag)
+ *
+ * On success, fstatat() returns 0.
+ * On error, -1 is returned and errno is set to indicate the error.
  */
 #include "trinity.h"
 #include "sanitise.h"

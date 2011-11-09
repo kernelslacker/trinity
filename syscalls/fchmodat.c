@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(fchmodat, int, dfd, const char __user *, filename, mode_t, mode)
+ *
+ * On success, fchmodat() returns 0.
+ * On error, -1 is returned and errno is set to indicate the error.
  */
 #include "trinity.h"
 #include "sanitise.h"

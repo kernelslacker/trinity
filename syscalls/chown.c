@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(chown, const char __user *, filename, uid_t, user, gid_t, group)
+ *
+ * On success, zero is returned.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

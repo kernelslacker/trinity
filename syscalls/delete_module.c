@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE2(delete_module, const char __user *, name_user, unsigned int, flags
+ *
+ * On success, zero is returned.
+ * On error, -1 is returned and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

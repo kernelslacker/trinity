@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE1(brk, unsigned long, brk)
+ *
+ * On success: Returns the new program break
+ * On failure: Returns current program break
  */
 #include "trinity.h"
 #include "sanitise.h"
