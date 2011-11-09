@@ -41,6 +41,8 @@
   a struct they're expecting. So allocate and fake one. Then throw it
   away in the destructor.
 
+* On return from a syscall, check padding between struct members is zeroed.
+
 * Add a parameter to bias the randomness passed to length parameters.
   Right now it's hardwired to return 16 bit 70% of the time.
   (and 32bit in the 64bit path)
