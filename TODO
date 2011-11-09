@@ -28,8 +28,8 @@
 * --ignore-socketcache
 * --monochrome
 
-* Check out how kerneloops notices an oops.
-  If it's something in proc/sys check it after each syscall
+* Check /proc/sys/kernel/tainted after each syscall.
+  If we get a 'D' or 'W', we should stop.
 
 * Destructors
   Need to store the result of syscalls on success, so that if we allocated
