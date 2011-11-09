@@ -83,6 +83,8 @@ struct syscall {
 	struct arglist arg4list;
 	struct arglist arg5list;
 	struct arglist arg6list;
+
+	unsigned int retval;
 };
 
 struct syscalltable {

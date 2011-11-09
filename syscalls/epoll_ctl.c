@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE4(epoll_ctl, int, epfd, int, op, int, fd, struct epoll_event __user *, event)
+ *
+ * When successful, epoll_ctl() returns zero.
+ * When an error occurs, epoll_ctl() returns -1 and errno is set appropriately.
  */
 #include <sys/epoll.h>
 

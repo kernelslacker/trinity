@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ *
+ * On success, (all requested permissions granted) faccessat() returns 0.
+ * On error, -1 is returned and errno is set to indicate the error.
  */
 #include "trinity.h"
 #include "sanitise.h"

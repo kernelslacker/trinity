@@ -1,6 +1,10 @@
 /*
  * SYSCALL_DEFINE4(accept4, int, fd, struct sockaddr __user *, upeer_sockaddr,
 	 int __user *, upeer_addrlen, int, flags)
+ *
+ * On success, these system calls return a nonnegative integer that is a descriptor for the accepted socket.
+ * On error, -1 is returned, and errno is set appropriately.
+ *
  */
 
 #define SOCK_CLOEXEC 02000000

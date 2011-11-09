@@ -26,4 +26,5 @@ struct syscall syscall_fanotify_init = {
 	},
 	.arg2name = "event_f_flags",
 	.flags = CAPABILITY_CHECK,
+	.retval = ARG_FD,
 };

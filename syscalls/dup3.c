@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(dup3, unsigned int, oldfd, unsigned int, newfd, int, flags)
+ *
+ * On success, returns the new descriptor.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 
 #include <unistd.h>
@@ -25,4 +28,5 @@ struct syscall syscall_dup3 = {
 		.num = 1,
 		.values = { O_CLOEXEC },
 	},
+	.retval = ARG_FD,
 };

@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE2(chmod, const char __user *, filename, mode_t, mode)
+ *
+ * On success, zero is returned.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"

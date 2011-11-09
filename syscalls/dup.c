@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE1(dup, unsigned int, fildes)
+ *
+ * On success, returns the new descriptor.
+ * On error, -1 is returned, and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"
@@ -9,4 +12,5 @@ struct syscall syscall_dup = {
 	.num_args = 1,
 	.arg1name = "fildes",
 	.arg1type = ARG_FD,
+	.retval = ARG_FD,
 };

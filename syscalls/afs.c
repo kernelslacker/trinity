@@ -1,5 +1,5 @@
 /*
-   
+ * 
  */
 #include "trinity.h"
 #include "sanitise.h"

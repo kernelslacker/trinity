@@ -2,6 +2,10 @@
  * SYSCALL_DEFINE4(clock_nanosleep, const clockid_t, which_clock, int, flags,
 	const struct timespec __user *, rqtp,
 	struct timespec __user *, rmtp)
+ *
+ * On successfully sleeping for the requested interval, clock_nanosleep() returns 0.
+ * If the call is interrupted by a signal handler or  encounters  an  error,
+ *  then it returns one of the positive error number listed in ERRORS.
  */
 
 #include <time.h>

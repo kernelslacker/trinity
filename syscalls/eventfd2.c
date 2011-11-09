@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE2(eventfd2, unsigned int, count, int, flags)
+ *
+ * On success, eventfd() returns a new eventfd file descriptor.
+ * On error, -1 is returned and errno is set to indicate the error.
  */
 
 #define EFD_SEMAPHORE 1
@@ -20,5 +23,5 @@ struct syscall syscall_eventfd2 = {
 		.num = 3,
 		.values = { EFD_CLOEXEC, EFD_NONBLOCK, EFD_SEMAPHORE },
 	},
-
+	.retval = ARG_FD,
 };

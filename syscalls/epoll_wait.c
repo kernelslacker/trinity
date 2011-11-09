@@ -1,5 +1,9 @@
 /*
  * SYSCALL_DEFINE4(epoll_wait, int, epfd, struct epoll_event __user *, events, int, maxevents, int, timeout)
+ *
+ * When  successful, returns the number of file descriptors ready for the requested I/O,
+ * or zero if no file descriptor became ready during the requested timeout milliseconds.
+ * When an error occurs, returns -1 and errno is set appropriately.
  */
 #include "trinity.h"
 #include "sanitise.h"
