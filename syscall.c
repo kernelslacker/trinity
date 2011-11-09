@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <fcntl.h>
 #include <asm/unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -20,6 +21,7 @@
 #include <sys/syscall.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/stat.h>
 
 #include "arch.h"
 #include "trinity.h"
@@ -263,8 +265,28 @@ void display_opmode(void)
 	sync_output();
 }
 
+
+static int check_tainted(void)
+{
+	int fd;
+	int ret;
+	char buffer[4];
+
+	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+	if (!fd)
+		return -1;
+	ret = read(fd, buffer, 3);
+	close(fd);
+	ret = atoi(buffer);
+
+	return ret;
+}
+
+
 void main_loop(void)
 {
+	int ret;
+
 	for (;;) {
 
 		if (ctrlc_hit == 1)
@@ -292,6 +314,13 @@ void main_loop(void)
 			break;
 
 		regenerate_random_page();
+
+		ret = check_tainted();
+		if (ret != 0) {
+			output("kernel became tainted! (%d)\n", ret);
+			ctrlc_hit = 1;
+			return;
+		}
 	}
 done: ;
 }
