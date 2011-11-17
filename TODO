@@ -16,6 +16,10 @@
   It won't be much use on kernels that have them backported, but that's
   not a big deal. We could do a ENOSYS test.
 
+* Rethink the parent/child model.
+  - Fork multiple fuzzers.
+  - Store the pids of the children, and hand them out in ARG_PID
+
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
   *: Move arch specific syscalls into syscalls/arch/
