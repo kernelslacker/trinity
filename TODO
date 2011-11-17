@@ -1,3 +1,22 @@
+* Struct fabrication
+  Some syscalls are rejecting immediately because we aren't passing them
+  a struct they're expecting. This requires us to create a few new methods.
+  .constructor:
+	Before we do the syscall, we need a constructor method
+	to allocate and fake one.
+  .destructor:
+	Likewise, we need destructors to prevent resource leaks.
+
+  On return from the syscall, we don't call the destructor immediately.
+  We pick a small random number, and do N other syscalls before we do the destruction.
+  This requires us to create a list of work to be done later, along with a pointer
+  to any allocated data.
+  .post:
+	Recieves the retval from the syscall, and handles appropriately.
+	Pick a small random number for the lifetime of the resource
+	Store any allocated resources in the 'to be destroyed' list.
+
+
 * generate overlapping addresses/lengths.
 
 * There are a few syscalls with duplicate '64' variants.
@@ -37,16 +56,6 @@
 * --nolog
 * --ignore-socketcache
 * --monochrome
-
-* Destructors
-  Need to store the result of syscalls on success, so that if we allocated
-  something, we can deallocate it when we're done. (Perhaps delay the
-  deallocation N syscalls?)
-
-* Struct fabrication
-  Some syscalls are rejecting immediately because we aren't passing them
-  a struct they're expecting. So allocate and fake one. Then throw it
-  away in the destructor.
 
 * On return from a syscall, check padding between struct members is zeroed.
 
