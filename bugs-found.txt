@@ -76,3 +76,6 @@ Still unfixed:
 * vhost-net: Acquire device lock when releasing device
   https://lkml.org/lkml/2011/11/18/69
 
+* pipe: Fail cleanly when root tries F_SETPIPE_SZ with big size
+  https://lkml.org/lkml/2011/11/19/14
+
