@@ -61,3 +61,18 @@ Still unfixed:
 
 * sel_netnode_insert suspicious rcu usage.
 
+* DECNET redzone overwritten
+  https://lkml.org/lkml/2011/11/21/59
+
+* [BUG] Recursive locking in sound/core
+  https://lkml.org/lkml/2011/11/18/206
+
+* ieee802154:  WARNING: at mm/page_alloc.c:2095
+  https://lkml.org/lkml/2011/11/22/41
+
+* nfsd: Fix oops when parsing a 0 length export
+  https://lkml.org/lkml/2011/11/18/130
+
+* vhost-net: Acquire device lock when releasing device
+  https://lkml.org/lkml/2011/11/18/69
+
