@@ -79,3 +79,5 @@ Still unfixed:
 * pipe: Fail cleanly when root tries F_SETPIPE_SZ with big size
   https://lkml.org/lkml/2011/11/19/14
 
+* net: kernel BUG at include/net/netns/generic.h:40!
+  https://lkml.org/lkml/2011/12/3/3
