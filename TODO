@@ -107,3 +107,5 @@
 * make a list of filenames during fd_setup, so that we can pass one at random
   when sanitising open()
 
+* --blacklist=open,read,write
+
