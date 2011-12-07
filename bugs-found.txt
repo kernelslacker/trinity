@@ -81,3 +81,7 @@ Still unfixed:
 
 * net: kernel BUG at include/net/netns/generic.h:40!
   https://lkml.org/lkml/2011/12/3/3
+
+* net: WARNING: at fs/sysfs/dir.c:481 sysfs_add_one+0xb7/0xe0()
+  https://lkml.org/lkml/2011/12/5/192
+
