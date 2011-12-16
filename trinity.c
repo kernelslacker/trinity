@@ -49,6 +49,7 @@ unsigned char bruteforce = 0;
 unsigned char nofork = 0;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
+static unsigned char dangerous = 0;
 
 unsigned int max_nr_syscalls;
 
@@ -176,9 +177,10 @@ static void parse_args(int argc, char *argv[])
 		{ "logfile", required_argument, NULL, 'l' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
+		{ "dangerous", no_argument, NULL, 'd' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:Fhikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:dFhikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -209,6 +211,10 @@ static void parse_args(int argc, char *argv[])
 			do_specific_syscall = 1;
 			specific_syscall = strtol(optarg, NULL, 10);
 			specific_syscall_optarg = optarg;
+			break;
+
+		case 'd':
+			dangerous = 1;
 			break;
 
 		case 'F':
@@ -448,11 +454,6 @@ int main(int argc, char* argv[])
 	unsigned int i;
 	key_t key;
 
-	if (getuid() == 0) {
-		printf("Don't run as root.\n");
-		exit(EXIT_FAILURE);
-	}
-
 #ifdef __x86_64__
 	syscalls = syscalls_x86_64;
 	max_nr_syscalls = NR_X86_64_SYSCALLS;
@@ -474,6 +475,24 @@ int main(int argc, char* argv[])
 	parse_args(argc, argv);
 	if (argc==1)
 		usage();
+
+	if (getuid() == 0) {
+		if (dangerous == 1) {
+			printf("DANGER: RUNNING AS ROOT.\n");
+			printf("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
+			printf("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
+			printf("ctrl-c now unless you really know what you are doing.\n");
+			for (i = 10; i > 0; i--) {
+				printf("Continuing in %d seconds.\r", i);
+				(void)fflush(stdout);
+				sleep(1);
+			}
+		} else {
+			printf("Don't run as root (or pass --dangerous if you know what you are doing).\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+
 
 	if (logfilename == NULL)
 		logfilename = strdup("trinity-cpu0.log");
