@@ -85,3 +85,6 @@ Still unfixed:
 * net: WARNING: at fs/sysfs/dir.c:481 sysfs_add_one+0xb7/0xe0()
   https://lkml.org/lkml/2011/12/5/192
 
+* futex: Fix uninterruptble loop due to gate_area
+  https://lkml.org/lkml/2011/12/21/182
+
