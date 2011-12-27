@@ -109,3 +109,4 @@
 
 * --blacklist=open,read,write
 
+* Log timestamps along with each syscall.
