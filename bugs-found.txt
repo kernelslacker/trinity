@@ -88,3 +88,6 @@ Still unfixed:
 * futex: Fix uninterruptble loop due to gate_area
   https://lkml.org/lkml/2011/12/21/182
 
+* WARNING: at block/blk-ioc.c:234 exit_io_context+0x40/0x92()
+  https://lkml.org/lkml/2011/12/26/35
+
