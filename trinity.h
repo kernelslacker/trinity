@@ -162,5 +162,7 @@ void sync_output();
 #define STRUCT_CONST 1
 #define STRUCT_RAND 2
 
+extern unsigned char do_check_tainted;
+int check_tainted(void);
 
 #endif	/* _TRINITY_H */

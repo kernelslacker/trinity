@@ -28,6 +28,8 @@
 //#include "files.h"
 #include "sanitise.h"
 
+unsigned char do_check_tainted;
+
 static long res = 0;
 
 static long mkcall(unsigned int call)
@@ -266,7 +268,7 @@ void display_opmode(void)
 }
 
 
-static int check_tainted(void)
+int check_tainted(void)
 {
 	int fd;
 	int ret;
@@ -315,11 +317,14 @@ void main_loop(void)
 
 		regenerate_random_page();
 
-		ret = check_tainted();
-		if (ret != 0) {
-			output("kernel became tainted! (%d)\n", ret);
-			ctrlc_hit = 1;
-			return;
+		/* Only check taint if it was zero on startup */
+		if (do_check_tainted == 0) {
+			ret = check_tainted();
+			if (ret != 0) {
+				output("kernel became tainted! (%d)\n", ret);
+				ctrlc_hit = 1;
+				return;
+			}
 		}
 	}
 done: ;
