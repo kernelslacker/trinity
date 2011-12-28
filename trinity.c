@@ -550,6 +550,11 @@ int main(int argc, char* argv[])
 
 	check_sanity();
 
+	if (check_tainted() != 0) {
+		output("Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");
+		do_check_tainted = 1;
+	}
+
 	mask_signals();
 
 	/* just in case we're not using the test.sh harness. */
