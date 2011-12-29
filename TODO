@@ -50,8 +50,9 @@
   we need to mark AVOID.  The alarm doesn't go off because the process is
   still running.
 
-* clock_nanosleep can wedge for a really long time without the alarm going off.
-  either figure out if we can limit it, or mark it AVOID
+* Some syscalls can wedge for a really long time without the alarm going off.
+  either figure out if we can limit the time taken, or mark them AVOID.
+  (clock_nanosleep, futex)
 
 * --nolog
 * --ignore-socketcache
