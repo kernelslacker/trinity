@@ -52,7 +52,8 @@
 
 * Some syscalls can wedge for a really long time without the alarm going off.
   either figure out if we can limit the time taken, or mark them AVOID.
-  (clock_nanosleep, futex)
+  (clock_nanosleep for eg.) Possibly also futex, though earlier hangs seen
+  there may have been fixed in e6780f7243eddb133cc20ec37fa69317c218b709
 
 * --nolog
 * --ignore-socketcache
