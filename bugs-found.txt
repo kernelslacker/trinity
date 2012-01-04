@@ -54,6 +54,9 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 * f9fab10bbd768b0e5254e53a4a8477a94bfc4b96
   hung_task: fix false positive during vfork
 
+* e6780f7243eddb133cc20ec37fa69317c218b709
+  futex: Fix uninterruptible loop due to gate_area
+
 ------------------------------------------------------------------
 Still unfixed:
 
