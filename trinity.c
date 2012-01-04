@@ -101,7 +101,7 @@ static void init_buffers()
 		exit(EXIT_FAILURE);
 
 	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
-		allocs[i++] = (unsigned long) malloc(page_size);
+		allocs[i] = (unsigned long) malloc(page_size);
 
 	setup_maps();
 }
