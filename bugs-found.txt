@@ -97,3 +97,6 @@ Still unfixed:
 * WARNING: at block/blk-ioc.c:234 exit_io_context+0x40/0x92()
   https://lkml.org/lkml/2011/12/26/35
 
+* mm: Don't warn if memdup_user fails
+  https://lkml.org/lkml/2012/1/11/234
+
