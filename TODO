@@ -59,7 +59,11 @@
 * --ignore-socketcache
 * --monochrome
 
-* On return from a syscall, check padding between struct members is zeroed.
+* Perform some checks on return from syscall
+  - check padding between struct members is zeroed.
+  - Set regs that should be preserved across syscalls to a known value, and check
+    on return whether any of them got clobbered.
+  - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
 
 * Add a parameter to bias the randomness passed to length parameters.
   Right now it's hardwired to return 16 bit 70% of the time.
@@ -77,11 +81,6 @@
    x86-64: 239
    ppc64:  5
 
-* Check registers on return 
-  - Set regs that should be preserved across syscalls to a known value, and check
-    on return whether any of them got clobbered.
-  - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
-
 * Xen dom0 hypercalls ?
 
 * Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
@@ -90,7 +89,6 @@
   huge amounts of ram, which then mean we trigger the oom killer.
   This isn't really desirable (nor is it a bug). We should possibly set some ulimits before
   running the test harness.
-  (If we want to be really clever, somehow track the allocations, and then free them N syscalls later)
 
 * Ability to pass a list of comma separated syscalls on the command-line.
 
@@ -99,8 +97,6 @@
   (Mark syscalls with SYSCALL_VM in flags
 
 * run tests in different namespaces, personalities.
-
-* fork N threads.
 
 * Safety checks for buffers we pass to the kernel
 - mprotect them
