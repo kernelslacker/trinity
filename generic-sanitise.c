@@ -21,16 +21,17 @@ unsigned long get_interesting_32bit_value()
 
 	if (i > 3) {
 		/* common case, return small values*/
-		i = rand() % 7;
+		i = rand() % 8;
 
 		switch (i) {
-		case 0:	return 0x00000001;
-		case 1:	return rand() % 256;
-		case 2:	return 0x00000fff;	// 4095
-		case 3:	return 0x00001000;	// 4096
-		case 4:	return 0x00001001;	// 4097
-		case 5:	return 0x00008000;
-		case 6:	return 0x0000ffff;
+		case 0:	return 0x00000000;
+		case 1:	return 0x00000001;
+		case 2:	return rand() % 256;
+		case 3:	return 0x00000fff;	// 4095
+		case 4:	return 0x00001000;	// 4096
+		case 5:	return 0x00001001;	// 4097
+		case 6:	return 0x00008000;
+		case 7:	return 0x0000ffff;
 		}
 
 	} else {
