@@ -41,7 +41,7 @@ static int add_fd(unsigned int chance, char *b, int flags)
 {
 	int fd = -1;
 
-	if ((unsigned int)(rand() % 100) < chance) {
+	if ((unsigned int)(rand() % 5000) < chance) {
 		fd = open(b, flags | O_NONBLOCK);
 		if (fd < 0)
 			return -1;
@@ -164,9 +164,13 @@ openit:
 
 void open_files()
 {
+more:
+	open_fds("/sys/kernel/debug");
 	open_fds("/dev");
 	open_fds("/proc");
 	open_fds("/sys");
+	if (fds_left_to_create > 0)
+		goto more;
 }
 
 void close_files()
