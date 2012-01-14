@@ -101,6 +101,8 @@
 * Safety checks for buffers we pass to the kernel
 - mprotect them
 - add guard pages before/after, and add poison to be checked on return.
+  (Note, in some cases the kernel will write before/after buffers passed, because
+   libc has set things up that way, so it's expected)
 
 * make a list of filenames during fd_setup, so that we can pass one at random
   when sanitising open()
