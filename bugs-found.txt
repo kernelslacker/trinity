@@ -100,3 +100,6 @@ Still unfixed:
 * mm: Don't warn if memdup_user fails
   https://lkml.org/lkml/2012/1/11/234
 
+* Hung task when calling clone() due to netfilter/slab
+  https://lkml.org/lkml/2012/1/14/45
+
