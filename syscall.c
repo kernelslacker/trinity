@@ -222,6 +222,16 @@ retry_same:
 		}
 	}
 
+failed_repeat:
+
+skip_syscall:
+	return res;
+}
+
+static void do_syscall_from_child(int cl)
+{
+	int ret;
+
 	if (!shm->regenerate_fds) {
 		close_files();
 		open_files();
@@ -233,16 +243,6 @@ retry_same:
 	}
 	shm->regenerate_fds--;
 
-
-failed_repeat:
-
-skip_syscall:
-	return res;
-}
-
-static void do_syscall_from_child(int cl)
-{
-	int ret;
 
 	if (nofork==1) {
 		ret = do_syscall(cl);
