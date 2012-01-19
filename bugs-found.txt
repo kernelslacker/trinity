@@ -103,3 +103,6 @@ Still unfixed:
 * Hung task when calling clone() due to netfilter/slab
   https://lkml.org/lkml/2012/1/14/45
 
+* [BUG] kernel BUG at mm/memcontrol.c:1074!
+  https://lkml.org/lkml/2012/1/18/509
+
