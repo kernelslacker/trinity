@@ -1,10 +1,10 @@
-/* Syscalls from arch/x86/include/asm/unistd_32.h as of 2.6.39 */
+/* Syscalls from arch/x86/syscalls/syscall_32.tbl as of 3.3rc1 */
 
 #include "trinity.h"
 #include "sanitise.h"
 #include "syscalls/syscalls.h"
 
-#define NR_I386_SYSCALLS 345
+#define NR_I386_SYSCALLS 349
 
 struct syscalltable syscalls_i386[NR_I386_SYSCALLS + 1] = {
 	{ .entry = &syscall_restart_syscall },
@@ -352,4 +352,8 @@ struct syscalltable syscalls_i386[NR_I386_SYSCALLS + 1] = {
 	{ .entry = &syscall_open_by_handle_at },
 	{ .entry = &syscall_clock_adjtime },
 	{ .entry = &syscall_syncfs },
+	{ .entry = &syscall_sendmmsg },
+	{ .entry = &syscall_setns },
+	{ .entry = &syscall_process_vm_readv },
+	{ .entry = &syscall_process_vm_writev },
 };

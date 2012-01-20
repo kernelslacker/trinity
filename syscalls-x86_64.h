@@ -1,14 +1,14 @@
 #ifndef _SYSCALLS_x86_64_H
 #define _SYSCALLS_x86_64_H 1
 
-/* Syscalls from arch/x86/include/asm/unistd_64.h as of 3.1 */
+/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.2 */
 
 #include "trinity.h"
 #include "sanitise.h"
 
 #include "syscalls/syscalls.h"
 
-#define NR_X86_64_SYSCALLS 309	/* syscalls numbered from 0 */
+#define NR_X86_64_SYSCALLS 312	/* syscalls numbered from 0 */
 
 struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS + 1] = {
 	{ .entry = &syscall_read },
@@ -320,6 +320,9 @@ struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS + 1] = {
 	{ .entry = &syscall_syncfs },
 	{ .entry = &syscall_sendmmsg },
 	{ .entry = &syscall_setns },
+	{ .entry = &syscall_getcpu },
+	{ .entry = &syscall_process_vm_readv },
+	{ .entry = &syscall_process_vm_writev },
 };
 
 #endif	/* _SYSCALLS_x86_64_H */
