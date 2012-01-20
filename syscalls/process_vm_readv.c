@@ -8,7 +8,7 @@
 #include "sanitise.h"
 
 struct syscall syscall_process_vm_readv = {
-	.name = "process_vm_readv,",
+	.name = "process_vm_readv",
 	.num_args = 6,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
