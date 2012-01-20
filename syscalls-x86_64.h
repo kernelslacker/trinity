@@ -1,7 +1,7 @@
 #ifndef _SYSCALLS_x86_64_H
 #define _SYSCALLS_x86_64_H 1
 
-/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.2 */
+/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.3rc1 */
 
 #include "trinity.h"
 #include "sanitise.h"
