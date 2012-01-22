@@ -106,3 +106,6 @@ Still unfixed:
 * [BUG] kernel BUG at mm/memcontrol.c:1074!
   https://lkml.org/lkml/2012/1/18/509
 
+* BUG: unable to handle kernel paging request at ffffc7ff81000398 (sys_kexec_load)
+  https://lkml.org/lkml/2012/1/21/209
+
