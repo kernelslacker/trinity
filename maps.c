@@ -53,7 +53,7 @@ void * alloc_zero_map(struct map *map, int prot, char *name)
 		printf("open /dev/zero failure\n");
 		exit(EXIT_FAILURE);
 	}
-	tmpmap->ptr = mmap(NULL, PAGE_SIZE, prot, MAP_PRIVATE, fd, 0);
+	tmpmap->ptr = mmap(NULL, page_size, prot, MAP_PRIVATE, fd, 0);
 
 	if (!tmpmap->ptr) {
 		printf("mmap /dev/zero failure\n");
@@ -94,8 +94,8 @@ void setup_maps()
 		}
 
 		/* skip over the shm (and any nearby mappings), in case we corrupt it*/
-		if ((startaddr > (void *) shm - (PAGE_SIZE * 8)) &&
-		    (startaddr < (void *) shm + (PAGE_SIZE * 8))) {
+		if ((startaddr > (void *) shm - (page_size * 8)) &&
+		    (startaddr < (void *) shm + (page_size * 8))) {
 			output("skipping mapping at %p -> %p (too close to shm at %p)\n", startaddr, endaddr, shm);
 			do {
 				ch = getc(f);
@@ -140,7 +140,7 @@ void setup_maps()
 	/* Make sure our zero page mappings are nowhere near the shm. */
 	fd = open("/dev/zero", O_RDWR);
 	for (i = 0; i < 50; i++)
-		mmap(NULL, PAGE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
+		mmap(NULL, page_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	close(fd);
 
 	/* Add a bunch of /dev/zero mappings */
