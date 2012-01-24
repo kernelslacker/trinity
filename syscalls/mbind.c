@@ -12,6 +12,24 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+static void sanitise_mbind(
+	__unused__ unsigned long *a0,
+	__unused__ unsigned long *a1,
+	__unused__ unsigned long *a2,
+	__unused__ unsigned long *a3,
+	unsigned long *maxnode,
+	__unused__ unsigned long *a5)
+{
+
+retry_maxnode:
+	if (*maxnode < 2 || (*maxnode) > (page_size * 8)) {
+		*maxnode = get_interesting_value();
+		goto retry_maxnode;
+	}
+}
+
+
+
 struct syscall syscall_mbind = {
 	.name = "mbind",
 	.num_args = 6,
@@ -31,8 +49,6 @@ struct syscall syscall_mbind = {
 
 	.arg5name = "maxnode",
 	.arg5type = ARG_RANGE,
-	.low5range = 2,
-	.hi5range = PAGE_SIZE * 8,
 
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
@@ -40,4 +56,5 @@ struct syscall syscall_mbind = {
 		.num = 2,
 		.values = { MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES },
 	},
+	.sanitise = sanitise_mbind
 };
