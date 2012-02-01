@@ -112,3 +112,6 @@ Still unfixed:
 * net: caif: Don't act on notification for non-caif devices
   https://lkml.org/lkml/2012/1/24/4
 
+* Hang (deadlock?) inside iscsi_if_rx
+  https://lkml.org/lkml/2012/1/24/154
+
