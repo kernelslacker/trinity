@@ -108,11 +108,11 @@ static void init_buffers()
 
 static void sighandler(int sig)
 {
-	printf("signal: %s\n", strsignal (sig));
+	output("signal: %s\n", strsignal (sig));
 	(void)fflush(stdout);
 	(void)signal(sig, sighandler);
 	if (sig == SIGALRM)
-		printf("Alarm clock.\n");
+		output("Alarm clock.\n");
 	_exit(0);
 }
 
@@ -160,7 +160,7 @@ void seed_from_tod()
 	gettimeofday(&t, 0);
 	seed = t.tv_sec * t.tv_usec;
 	srand(seed);
-	output("Randomness reseeded to %u (0x%x)\n", seed, seed);
+	output("Random seed: %u (0x%x)\n", seed, seed);
 }
 
 
@@ -506,7 +506,8 @@ int main(int argc, char* argv[])
 	max_nr_syscalls = NR_SYSCALLS;
 
 
-	printf("Fuzzing %d syscalls.\n", max_nr_syscalls);
+	if (!do_specific_syscall)
+		output("Fuzzing %d syscalls.\n", max_nr_syscalls);
 
 	if (do_specific_syscall == 1)
 		find_specific_syscall();
@@ -528,7 +529,7 @@ int main(int argc, char* argv[])
 	if (!seed)
 		seed_from_tod();
 	else
-		output("Setting random seed to %u (0x%x)\n", seed, seed);
+		output("Random seed: %u (0x%x)\n", seed, seed);
 
 	key = rand64();
 	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
