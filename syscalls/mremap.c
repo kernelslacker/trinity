@@ -43,13 +43,13 @@ retry_addr:
 		*new_addr &= mask;
 		if ((*new_addr <= *addr) && (*new_addr+*new_len) > *addr) {
 			*new_addr -= *addr - (rand() % 1000);
-			printf("retried addr1\n");
+			output("retried addr1\n");
 			goto retry_addr;
 		}
 
 		if ((*addr <= *new_addr) && (*addr+*old_len) > *new_addr) {
 			*new_addr += *addr - (rand() % 1000);
-			printf("retried addr2\n");
+			output("retried addr2\n");
 			goto retry_addr;
 		}
 
@@ -60,7 +60,7 @@ retry_tasksize_end:
 			i++;
 			goto retry_tasksize_end;
 		}
-		printf("retried_tasksize_end: %d\n", i);
+		output("retried_tasksize_end: %d\n", i);
 	}
 
 	//TODO: Lots more checks here.

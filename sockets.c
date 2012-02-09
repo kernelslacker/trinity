@@ -76,7 +76,7 @@ void generate_sockets(unsigned int nr_to_create)
 			if ((rand() % 100) < 25)
 				type |= SOCK_NONBLOCK;
 
-			printf("%c (%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]    \r",
+			output("%c (%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]    \r",
 				spinner[spin++], socks, nr_to_create,
 				domain, type, protocol);
 			if (spin == 4)
