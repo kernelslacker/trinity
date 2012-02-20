@@ -115,3 +115,6 @@ Still unfixed:
 * Hang (deadlock?) inside iscsi_if_rx
   https://lkml.org/lkml/2012/1/24/154
 
+* TTY: NULL dereference when closing a pty file
+  https://lkml.org/lkml/2012/2/19/75
+
