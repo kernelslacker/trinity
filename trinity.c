@@ -94,6 +94,7 @@ static void init_buffers()
 	page_rand = malloc(page_size);
 	if (!page_rand)
 		exit(EXIT_FAILURE);
+	regenerate_random_page();
 
 	page_allocs = malloc(page_size);
 	allocs = (void *)page_allocs;
