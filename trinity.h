@@ -45,7 +45,7 @@ struct arglist {
 };
 
 struct syscall {
-	char name[80];
+	const char name[80];
 	unsigned int num_args;
 	void (*sanitise)(
 		unsigned long *,
@@ -63,12 +63,12 @@ struct syscall {
 	unsigned int arg5type;
 	unsigned int arg6type;
 
-	char *arg1name;
-	char *arg2name;
-	char *arg3name;
-	char *arg4name;
-	char *arg5name;
-	char *arg6name;
+	const char *arg1name;
+	const char *arg2name;
+	const char *arg3name;
+	const char *arg4name;
+	const char *arg5name;
+	const char *arg6name;
 
 	unsigned int low1range, hi1range;
 	unsigned int low2range, hi2range;
