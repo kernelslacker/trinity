@@ -165,4 +165,7 @@ void sync_output();
 extern unsigned char do_check_tainted;
 int check_tainted(void);
 
+#define __stringify_1(x...)     #x
+#define __stringify(x...)       __stringify_1(x)
+
 #endif	/* _TRINITY_H */

@@ -5,3 +5,4 @@ logs/
 trinity*.log
 trinity.socketcache
 tmp
+trinity-*.tgz

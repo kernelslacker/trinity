@@ -455,6 +455,8 @@ int main(int argc, char* argv[])
 	unsigned int i;
 	key_t key;
 
+	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
+
 #ifdef __x86_64__
 	syscalls = syscalls_x86_64;
 	max_nr_syscalls = NR_X86_64_SYSCALLS;
