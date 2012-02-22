@@ -9,7 +9,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 
-/* note: will eventually also be called from sanitise_socketcall, and generate_sockets() */
+/* note: also called from generate_sockets() & sanitise_socketcall() */
 void sanitise_socket(
         unsigned long *family,
         unsigned long *type,
@@ -33,6 +33,11 @@ void sanitise_socket(
 			*protocol = 0;
 		break;
 	}
+
+	if ((rand() % 100) < 25)
+		*type |= SOCK_CLOEXEC;
+	if ((rand() % 100) < 25)
+		*type |= SOCK_NONBLOCK;
 }
 
 struct syscall syscall_socket = {
