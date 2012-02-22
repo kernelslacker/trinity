@@ -1,5 +1,5 @@
 /*
- * SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds, long, timeout_msecs)
+ * sys_poll(struct pollfd __user *ufds, unsigned int nfds, int timeout);
  */
 #include "trinity.h"
 #include "sanitise.h"
