@@ -250,6 +250,10 @@ static void do_syscall_from_child(int cl)
 	}
 
 	if (fork() == 0) {
+		if (!shm->regenerate_fds)
+			regenerate_random_page();
+		if (do_specific_syscall == 1)
+			regenerate_random_page();
 		ret = do_syscall(cl);
 		_exit(ret);
 	}
@@ -307,6 +311,7 @@ void main_loop(void)
 			break;
 
 		case MODE_RANDOM:
+			rep = rand();
 			do_syscall_from_child(rep);
 			break;
 		}
@@ -314,8 +319,6 @@ void main_loop(void)
 		rep++;
 		if (syscallcount && (shm->execcount >= syscallcount))
 			break;
-
-		regenerate_random_page();
 
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == 0) {
