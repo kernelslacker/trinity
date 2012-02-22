@@ -7,7 +7,7 @@
 #include "sanitise.h"
 
 static void sanitise_socketcall(
-	__unused__ unsigned long *call,
+	unsigned long *call,
 	unsigned long *argptr,
 	__unused__ unsigned long *a3,
 	__unused__ unsigned long *a4,
@@ -15,13 +15,13 @@ static void sanitise_socketcall(
 	__unused__ unsigned long *a6)
 {
 	unsigned long *args;
-
 	args = malloc(6 * sizeof(unsigned long));
 
 	*call = rand() % 20;
 
 	switch (*call) {
 	case SYS_SOCKET:
+		sanitise_socket(&args[0], &args[1], &args[2], NULL, NULL, NULL);
 		break;
 	case SYS_BIND:
 		break;
@@ -62,7 +62,7 @@ static void sanitise_socketcall(
 	case SYS_SENDMMSG:
 		break;
 	}
-	*argptr = (unsigned long) &args;
+	*argptr = (unsigned long) args;
 }
 
 struct syscall syscall_socketcall = {
