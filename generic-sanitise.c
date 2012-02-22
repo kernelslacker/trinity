@@ -102,7 +102,7 @@ void * get_address()
 {
 	int i;
 
-	i = rand() % 7;
+	i = rand() % 8;
 	switch (i) {
 	case 0:	return (void *) KERNEL_ADDR;
 	case 1:	return page_zeros;
@@ -111,6 +111,7 @@ void * get_address()
 	case 4: return page_allocs;
 	case 5:	return (void *) get_interesting_value();
 	case 6: return get_map();
+	case 7: return malloc(page_size);
 	}
 
 	return 0;
@@ -196,6 +197,23 @@ static unsigned int get_cpu()
 	return 0;
 }
 
+unsigned long get_len()
+{
+	int i;
+
+	i = get_interesting_value();
+
+	switch(rand() % 4) {
+
+	case 0:	return (i & 0xff);
+	case 1:	return (i & 0xffff);
+	case 2:	return (i & 0xffffff);
+	case 3:	return (i & 0xffffffff);
+	}
+
+	return i;
+}
+
 static unsigned long fill_arg(int call, int argnum)
 {
 	int fd;
@@ -228,10 +246,8 @@ static unsigned long fill_arg(int call, int argnum)
 		//printf (YELLOW "DBG: %x" WHITE "\n", fd);
 		return fd;
 	case ARG_LEN:
-		if ((rand() % 2) == 0)
-			return rand() % page_size;
-		else
-			return get_interesting_value();
+		return (unsigned long)get_len();
+
 	case ARG_ADDRESS:
 		return (unsigned long)get_address();
 	case ARG_PID:
