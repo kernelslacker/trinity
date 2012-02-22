@@ -232,16 +232,16 @@ static void do_syscall_from_child(int cl)
 {
 	int ret;
 
-	if (!shm->regenerate_fds) {
+	if (!shm->regenerate) {
 		close_files();
 		open_files();
 
 		destroy_maps();
 		setup_maps();
 
-		shm->regenerate_fds = FD_REGENERATION_POINT - 1;
+		shm->regenerate = REGENERATION_POINT - 1;
 	}
-	shm->regenerate_fds--;
+	shm->regenerate--;
 
 
 	if (nofork==1) {
@@ -250,7 +250,7 @@ static void do_syscall_from_child(int cl)
 	}
 
 	if (fork() == 0) {
-		if (!shm->regenerate_fds)
+		if (!shm->regenerate)
 			regenerate_random_page();
 		if (do_specific_syscall == 1)
 			regenerate_random_page();
