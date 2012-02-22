@@ -94,7 +94,6 @@ static void init_buffers()
 	page_rand = malloc(page_size);
 	if (!page_rand)
 		exit(EXIT_FAILURE);
-	regenerate_random_page();
 
 	page_allocs = malloc(page_size);
 	allocs = (void *)page_allocs;
@@ -105,6 +104,9 @@ static void init_buffers()
 		allocs[i] = (unsigned long) malloc(page_size);
 
 	setup_maps();
+
+	// regenerate_random_page may end up using maps, so has to be last.
+	regenerate_random_page();
 }
 
 static void sighandler(int sig)
