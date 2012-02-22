@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "trinity.h"
+#include "sanitise.h"
 
 unsigned int socket_fds[MAX_FDS/2];
 unsigned int socks=0;
@@ -28,7 +29,7 @@ void generate_sockets(unsigned int nr_to_create)
 	unsigned int i, tries;
 	int cachefile;
 
-	unsigned int domain, type, protocol;
+	unsigned long domain, type, protocol;
 	unsigned int buffer[3];
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
@@ -48,33 +49,12 @@ void generate_sockets(unsigned int nr_to_create)
 			if (sockarray[i] == MAX_PER_DOMAIN)
 				break;
 
+			sanitise_socket(&domain, &type, &protocol, NULL, NULL, NULL);
+
 			if (do_specific_proto == 1)
 				domain = specific_proto;
 			else
 				domain = i;
-
-			type = rand() % TYPE_MAX;
-			protocol = rand() % PROTO_MAX;
-
-			switch (domain) {
-
-			case AF_X25:
-				type = SOCK_SEQPACKET;
-				break;
-
-			case AF_INET6:
-				if (type == SOCK_STREAM)
-					protocol = 0;
-				break;
-
-			default:
-				;;
-			}
-
-			if ((rand() % 100) < 25)
-				type |= SOCK_CLOEXEC;
-			if ((rand() % 100) < 25)
-				type |= SOCK_NONBLOCK;
 
 			output("%c (%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]    \r",
 				spinner[spin++], socks, nr_to_create,
