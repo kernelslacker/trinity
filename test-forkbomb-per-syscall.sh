@@ -12,9 +12,13 @@ cd tmp
 
 NR=$(../trinity -L | tail -n1 | awk '{ print $1}' | sed s/://)
 
+NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
+NR_CPUS=$(($NR_CPUS-1))
+
 echo Starting $NR fuzzers
 
 for i in $(seq 0 $NR)
 do
-	../trinity --mode=random --logfile=../logs/trinity-rand-syscall-$i.log -i -p -c $i &
+	CPU=$(($RANDOM % $NR_CPUS))
+	taskset -c $CPU ../trinity --mode=random --logfile=../logs/trinity-rand-syscall-$i.log -i -p -c $i &
 done
