@@ -25,6 +25,7 @@ static char sockarray[PF_MAX];
 
 void generate_sockets(unsigned int nr_to_create)
 {
+	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 	int fd, n;
 	unsigned int i, tries;
 	int cachefile;
@@ -38,6 +39,15 @@ void generate_sockets(unsigned int nr_to_create)
 			strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+
+	output("taking writer lock for cachefile\n");
+	fl.l_pid = getpid();
+	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
+		perror("fcntl F_SETLKW");
+		exit(1);
+	}
+
+	output("took writer lock for cachefile\n");
 
 	while (nr_to_create > 0) {
 		for (i = 0; i < PF_MAX; i++)
@@ -94,13 +104,22 @@ void generate_sockets(unsigned int nr_to_create)
 	}
 
 done:
+	fl.l_type = F_UNLCK;
+	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
+		perror("fcntl F_SETLK");
+		exit(1);
+	}
+
+	output("dropped writer lock for cachefile\n");
 	close(cachefile);
+
 	output("\ncreated %d sockets\n", socks);
 	synclog();
 }
 
 void open_sockets()
 {
+	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 	int cachefile;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
@@ -114,6 +133,15 @@ void open_sockets()
 		generate_sockets(fds_left_to_create/2);
 		return;
 	}
+
+	output("taking reader lock for cachefile\n");
+	fl.l_pid = getpid();
+	fl.l_type = F_RDLCK;
+	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
+		perror("fcntl reader F_SETLKW");
+		exit(1);
+	}
+	output("took reader lock for cachefile\n");
 
 	while (bytesread != 0) {
 		bytesread = read(cachefile, buffer, sizeof(int) * 3);
@@ -164,5 +192,12 @@ regenerate:
 
 	output("(%d sockets created based on info from socket cachefile.)\n", socks);
 
+	fl.l_type = F_UNLCK;
+	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
+		perror("fcntl reader F_SETLK ");
+		exit(1);
+	}
+
+	output("dropped reader lock for cachefile\n");
 	close(cachefile);
 }

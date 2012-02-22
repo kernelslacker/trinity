@@ -1,6 +1,3 @@
-* lock the socket cachefile during startup.
-  Running several instances of trinity causes a mess.
-
 * If no -i passed, don't setup maps etc.
 
 * Replace -F with 'run N syscalls per child'.
