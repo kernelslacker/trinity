@@ -23,7 +23,7 @@ static void sanitise_sendmsg(
 
         msg = malloc(sizeof(struct msghdr));
 	if (msg == NULL) {
-		*a2 = get_address();
+		*a2 = (unsigned long) get_address();
 		return;
 	}
 
