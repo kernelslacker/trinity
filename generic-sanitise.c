@@ -57,13 +57,9 @@ unsigned long get_interesting_32bit_value()
 
 unsigned long get_interesting_value()
 {
-
-/* /usr/include/bits/wordsize.h */
 #if __WORDSIZE == 32
-#pragma message("__WORDSIZE == 32")
 	return get_interesting_32bit_value();
 #else
-#pragma message("__WORDSIZE == 64")
 	int i;
 	unsigned long low;
 
