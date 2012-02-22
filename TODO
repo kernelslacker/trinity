@@ -1,3 +1,14 @@
+* lock the socket cachefile during startup.
+  Running several instances of trinity causes a mess.
+
+* If no -i passed, don't setup maps etc.
+
+* Replace -F with 'run N syscalls per child'.
+
+* Improve signal handling.
+  * bug: ctrl-c handler doesn't always work.
+  * better handling of segfault/fp exception etc
+
 * Struct fabrication
   Some syscalls are rejecting immediately because we aren't passing them
   a struct they're expecting. This requires us to create a few new methods.
@@ -15,7 +26,6 @@
 	Recieves the retval from the syscall, and handles appropriately.
 	Pick a small random number for the lifetime of the resource
 	Store any allocated resources in the 'to be destroyed' list.
-
 
 * generate overlapping addresses/lengths.
 
@@ -85,11 +95,6 @@
 
 * Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
-* some of the syscalls allocate a chunk of memory. When we pass garbage, this could add up to
-  huge amounts of ram, which then mean we trigger the oom killer.
-  This isn't really desirable (nor is it a bug). We should possibly set some ulimits before
-  running the test harness.
-
 * Ability to pass a list of comma separated syscalls on the command-line.
 
 * syscall groups.
@@ -98,15 +103,20 @@
 
 * run tests in different namespaces, personalities.
 
-* Safety checks for buffers we pass to the kernel
-- mprotect them
-- add guard pages before/after, and add poison to be checked on return.
-  (Note, in some cases the kernel will write before/after buffers passed, because
-   libc has set things up that way, so it's expected)
-
 * make a list of filenames during fd_setup, so that we can pass one at random
   when sanitising open()
 
 * --blacklist=open,read,write
 
 * Log timestamps along with each syscall.
+
+Experiments:
+* Add option to exhaust memory in child to try and run syscalls in low memory situations.
+
+* Safety checks for buffers we pass to the kernel
+- mprotect them
+- add guard pages before/after, and add poison to be checked on return.
+  (Note, in some cases the kernel will write before/after buffers passed, because
+   libc has set things up that way, so it's expected)
+
+
