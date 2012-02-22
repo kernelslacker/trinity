@@ -1,4 +1,6 @@
-CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror -D_FORTIFY_SOURCE=2
+VERSION=1.0
+
+CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror -D_FORTIFY_SOURCE=2 -DVERSION="$(VERSION)"
 #CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
 
 all: trinity
@@ -32,3 +34,8 @@ splint:
 	 -badflag -fileextensions -type -nullassign -boolops -showcolumn -sysunrecog -fullinitblock \
 	 -onlytrans -unrecog -usedef -statictrans -compdestroy -predboolint -D__`uname -m`__  files.c \
 	 trinity.c  generic-sanitise.c
+
+release:
+	git repack -a -d
+	git prune-packed
+	git archive --format=tar.gz --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tgz
