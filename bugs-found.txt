@@ -63,7 +63,9 @@ Still unfixed:
 * irqs_disabled page fault lockdep trace.
   http://lkml.org/lkml/2011/7/23/167
 
-* hugetlbfs lockdep spew. https://lkml.org/lkml/2011/4/15/272
+* hugetlbfs lockdep spew.
+  https://lkml.org/lkml/2011/4/15/272
+  https://lkml.org/lkml/2012/2/16/498
 
 * sel_netnode_insert suspicious rcu usage.
 
@@ -117,4 +119,7 @@ Still unfixed:
 
 * TTY: NULL dereference when closing a pty file
   https://lkml.org/lkml/2012/2/19/75
+
+* 9p: BUG: unable to handle kernel paging request at ffff880035698000
+  https://lkml.org/lkml/2012/2/21/180
 
