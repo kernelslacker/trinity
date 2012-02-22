@@ -18,7 +18,7 @@ void mask_signals(void);
 void do_main_loop(void);
 void display_opmode(void);
 
-#define FD_REGENERATION_POINT 25000
+#define REGENERATION_POINT 25000
 void regenerate_random_page(void);
 
 void seed_from_tod();
@@ -117,7 +117,7 @@ struct shm_s {
 	unsigned long successes;
 	unsigned long failures;
 	unsigned long retries;
-	unsigned int regenerate_fds;
+	unsigned int regenerate;
 };
 extern struct shm_s *shm;
 
