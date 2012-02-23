@@ -25,46 +25,19 @@ static void sanitise_mremap(
 		__unused__ unsigned long *old_len,
 		unsigned long *new_len,
 		unsigned long *flags,
-		unsigned long *new_addr,
+		__unused__ unsigned long *new_addr,
 		__unused__ unsigned long *a6)
 {
 	unsigned long mask = ~(page_size-1);
-	int i;
 
 	*addr &= mask;
 
-	i=0;
 	if (*flags & MREMAP_FIXED) {
 		// Can't be fixed, and maymove.
 		*flags &= ~MREMAP_MAYMOVE;
 
 		*new_len &= TASK_SIZE-*new_len;
-retry_addr:
-		*new_addr &= mask;
-		if ((*new_addr <= *addr) && (*new_addr+*new_len) > *addr) {
-			*new_addr -= *addr - (rand() % 1000);
-			output("retried addr1\n");
-			goto retry_addr;
-		}
-
-		if ((*addr <= *new_addr) && (*addr+*old_len) > *new_addr) {
-			*new_addr += *addr - (rand() % 1000);
-			output("retried addr2\n");
-			goto retry_addr;
-		}
-
-		/* new_addr > TASK_SIZE - new_len*/
-retry_tasksize_end:
-		if (*new_addr > TASK_SIZE - *new_len) {
-			*new_addr >>= 1;
-			i++;
-			goto retry_tasksize_end;
-		}
-		output("retried_tasksize_end: %d\n", i);
 	}
-
-	//TODO: Lots more checks here.
-	// We already check for overlap in do_mremap()
 }
 
 struct syscall syscall_mremap = {
