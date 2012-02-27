@@ -39,7 +39,7 @@ static long mkcall(unsigned int call)
 	int ret = 0;
 	char string[512], *sptr=string;
 
-	sptr += sprintf(sptr, "%lu: ", shm->execcount);
+	sptr += sprintf(sptr, "[%d] %lu: ", getpid(), shm->execcount);
 
 	switch (opmode) {
 	case MODE_ROTATE:
