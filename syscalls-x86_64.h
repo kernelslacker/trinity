@@ -323,6 +323,7 @@ struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS + 1] = {
 	{ .entry = &syscall_getcpu },
 	{ .entry = &syscall_process_vm_readv },
 	{ .entry = &syscall_process_vm_writev },
+	{ .entry = NULL }
 };
 
 #endif	/* _SYSCALLS_x86_64_H */

@@ -61,7 +61,6 @@ char *opmodename[] = {
 	[MODE_ROTATE] = "rotate",
 };
 
-char *userbuffer;
 char *page_zeros;
 char *page_0xff;
 char *page_rand;
@@ -73,11 +72,6 @@ static char *specific_proto_optarg;
 static void init_buffers()
 {
 	unsigned int i;
-	unsigned long *allocs;
-
-	userbuffer = malloc(page_size);
-	if (!userbuffer)
-		exit(EXIT_FAILURE);
 
 	page_zeros = malloc(page_size);
 	if (!page_zeros)
@@ -92,14 +86,15 @@ static void init_buffers()
 	page_rand = malloc(page_size);
 	if (!page_rand)
 		exit(EXIT_FAILURE);
+	memset(page_rand, 0x55, page_size);	/* overwritten below */
 
 	page_allocs = malloc(page_size);
-	allocs = (void *)page_allocs;
 	if (!page_allocs)
 		exit(EXIT_FAILURE);
+	memset(page_allocs, 0xff, page_size);
 
 	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
-		allocs[i] = (unsigned long) malloc(page_size);
+		page_allocs[i] = (unsigned long) malloc(page_size);
 
 	setup_maps();
 
@@ -188,6 +183,7 @@ static void parse_args(int argc, char *argv[])
 				exit(EXIT_FAILURE);
 			else
 				printf("opt:%c\n", opt);
+			return;
 
 		case '\0':
 			return;
