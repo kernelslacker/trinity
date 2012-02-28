@@ -44,7 +44,7 @@ unsigned char intelligence = 0;
 unsigned char do_specific_syscall = 0;
 unsigned char do_specific_proto = 0;
 unsigned char bruteforce = 0;
-unsigned char nofork = 0;
+unsigned char syscalls_per_child = 5;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
 static unsigned char dangerous = 0;
@@ -168,7 +168,7 @@ static void parse_args(int argc, char *argv[])
 		{ "list", no_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "mode", required_argument, NULL, 'm' },
-		{ "nofork", no_argument, NULL, 'F' },
+		{ "childcalls", required_argument, NULL, 'F' },
 		{ "bruteforce", no_argument, NULL, 'B' },
 		{ "logfile", required_argument, NULL, 'l' },
 		{ "proto", required_argument, NULL, 'P' },
@@ -176,7 +176,7 @@ static void parse_args(int argc, char *argv[])
 		{ "dangerous", no_argument, NULL, 'd' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:dFhikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:dF:hikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -215,7 +215,7 @@ static void parse_args(int argc, char *argv[])
 			break;
 
 		case 'F':
-			nofork = 1;
+			syscalls_per_child = strtol(optarg, NULL, 10);
 			break;
 
 		/* Show help */
@@ -519,9 +519,8 @@ int main(int argc, char* argv[])
 		exit(EXIT_SUCCESS);
 	}
 
-	/* rotate doesn't work with nofork. */
 	if (opmode == MODE_ROTATE)
-		nofork = 0;
+		syscalls_per_child = 1;
 
 	page_size = getpagesize();
 
