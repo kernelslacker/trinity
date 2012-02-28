@@ -47,4 +47,5 @@ struct syscall syscall_mprotect = {
 		.values = { PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM, PROT_GROWSDOWN, PROT_GROWSUP },
 	},
 	.sanitise = sanitise_mprotect,
+	.group = GROUP_VM,
 };

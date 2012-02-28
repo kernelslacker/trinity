@@ -22,4 +22,5 @@ struct syscall syscall_msync = {
 		.num = 3,
 		.values = { MS_ASYNC, MS_INVALIDATE, MS_SYNC },
 	},
+	.group = GROUP_VM,
 };

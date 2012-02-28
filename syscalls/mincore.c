@@ -13,4 +13,5 @@ struct syscall syscall_mincore = {
 	.arg2type = ARG_LEN,
 	.arg3name = "vec",
 	.arg3type = ARG_ADDRESS,
+	.group = GROUP_VM,
 };

@@ -10,4 +10,5 @@ struct syscall syscall_munlock = {
 	.arg1name = "start",
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
+	.group = GROUP_VM,
 };

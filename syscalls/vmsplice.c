@@ -36,5 +36,6 @@ struct syscall syscall_vmsplice = {
 	.arg4list = {
 		.num = 4,
 		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
-	}
+	},
+	.group = GROUP_VM,
 };

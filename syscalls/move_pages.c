@@ -30,4 +30,5 @@ struct syscall syscall_move_pages = {
 		.num = 2,
 		.values = { MPOL_MF_MOVE, MPOL_MF_MOVE_ALL },
 	},
+	.group = GROUP_VM,
 };
