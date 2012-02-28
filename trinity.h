@@ -110,7 +110,7 @@ extern unsigned long specific_syscall;
 extern unsigned char dopause;
 extern long struct_fill;
 extern unsigned char bruteforce;
-extern unsigned char nofork;
+extern unsigned char syscalls_per_child;
 extern char passed_type;
 
 struct shm_s {

@@ -213,7 +213,7 @@ skip_syscall:
 
 void do_syscall_from_child(int cl)
 {
-	int ret;
+	int ret = 0;
 
 	if (!shm->regenerate) {
 		close_files();
@@ -226,20 +226,23 @@ void do_syscall_from_child(int cl)
 	}
 	shm->regenerate--;
 
-
-	if (nofork==1) {
-		ret = do_syscall(cl);
-		return;
-	}
-
 	if (fork() == 0) {
-		if (!shm->regenerate)
-			regenerate_random_page();
-		if (do_specific_syscall == 1)
-			regenerate_random_page();
-		ret = do_syscall(cl);
+		while (syscalls_per_child > 0) {
+
+			if (!shm->regenerate)
+				regenerate_random_page();
+			if (do_specific_syscall == 1)
+				regenerate_random_page();
+
+			ret = do_syscall(cl);
+
+			syscalls_per_child--;
+
+			if (ctrlc_hit == 1)
+				break;
+		}
+
 		_exit(ret);
 	}
 	(void)waitpid(-1, NULL, 0);
 }
-
