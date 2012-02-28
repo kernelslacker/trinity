@@ -49,6 +49,8 @@ unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
 static unsigned char dangerous = 0;
 
+static unsigned char desired_group = GROUP_NONE;
+
 unsigned int max_nr_syscalls;
 
 struct shm_s *shm;
@@ -174,9 +176,10 @@ static void parse_args(int argc, char *argv[])
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "dangerous", no_argument, NULL, 'd' },
+		{ "group", required_argument, NULL, 'g' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:dF:hikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:dF:g:hikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -216,6 +219,11 @@ static void parse_args(int argc, char *argv[])
 
 		case 'F':
 			syscalls_per_child = strtol(optarg, NULL, 10);
+			break;
+
+		case 'g':
+			if (!strcmp(optarg, "vm"))
+				desired_group = GROUP_VM;
 			break;
 
 		/* Show help */
@@ -503,6 +511,28 @@ int main(int argc, char* argv[])
 	}
 
 	max_nr_syscalls = NR_SYSCALLS;
+
+	if (desired_group == GROUP_VM) {
+		struct syscalltable *newsyscalls;
+		int count = 0, j = 0;
+
+		for (i = 0; i < max_nr_syscalls; i++) {
+			if (syscalls[i].entry->group == GROUP_VM)
+				count++;
+		}
+
+		newsyscalls = malloc(count * sizeof(struct syscalltable));
+		if (newsyscalls == NULL)
+			exit(EXIT_FAILURE);
+
+		for (i = 0; i < max_nr_syscalls; i++) {
+			if (syscalls[i].entry->group == GROUP_VM)
+				newsyscalls[j++].entry = syscalls[i].entry;
+		}
+
+		max_nr_syscalls = count;
+		syscalls = newsyscalls;
+	}
 
 
 	if (!do_specific_syscall)
