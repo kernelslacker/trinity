@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
@@ -553,8 +551,6 @@ int main(int argc, char* argv[])
 
 	if (intelligence == 1)
 		setup_fds();
-
-	check_sanity();
 
 	if (check_tainted() != 0) {
 		output("Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, int, mode)
  */
-#define _GNU_SOURCE
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>

@@ -16,7 +16,6 @@
  *
  *     On error, -1 is returned, and errno is set appropriately.
  */
-#define _GNU_SOURCE
 #include <fcntl.h>
 
 #ifndef F_LINUX_SPECIFIC_BASE

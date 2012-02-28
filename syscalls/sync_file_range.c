@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE(sync_file_range)(int fd, loff_t offset, loff_t nbytes, unsigned int flags)
  */
-#define _GNU_SOURCE
 #include <linux/fs.h>
 #include <fcntl.h>
 #include <stdlib.h>
