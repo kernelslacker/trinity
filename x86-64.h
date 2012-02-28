@@ -3,7 +3,6 @@
 #define TASK_SIZE       (0x800000000000UL - 4096)
 
 #define PAGE_SHIFT 12
-#define PAGE_SIZE (1UL << PAGE_SHIFT)
 
 #define PTE_FILE_MAX_BITS 32
 
