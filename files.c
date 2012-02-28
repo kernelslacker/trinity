@@ -141,8 +141,14 @@ void open_fds(char *dir)
 
 			if ((openflag & O_RDONLY) && (openflag & O_WRONLY))
 				openflag = O_RDWR;
-			// for files, increase the probability of success
-			chance = 10;
+
+			/* files have a higher probability of success than directories
+			 * also, writable files are probably more 'fun' */
+			switch (openflag) {
+			case O_RDONLY:	chance = 10; break;
+			case O_WRONLY:	chance = 100; break;
+			case O_RDWR:	chance = 100; break;
+			}
 openit:
 			if (fds_left_to_create == 0)
 				break;
