@@ -3,7 +3,6 @@
  *               struct file_handle __user *, handle,
  *               int, flags)
  */
-#define _GNU_SOURCE
 #include <fcntl.h>
 
 #include "trinity.h"

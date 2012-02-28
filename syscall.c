@@ -2,33 +2,16 @@
  * Functions for actually doing the system calls.
  */
 
-#define _GNU_SOURCE
 #include <errno.h>
-#include <signal.h>
-#include <string.h>
 #include <stdlib.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <time.h>
-#include <ctype.h>
+#include <string.h>
 #include <unistd.h>
-#include <getopt.h>
-#include <fcntl.h>
-#include <asm/unistd.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/syscall.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/stat.h>
 
 #include "arch.h"
 #include "trinity.h"
-//#include "files.h"
 #include "sanitise.h"
-
-unsigned char do_check_tainted;
 
 static long res = 0;
 
@@ -228,7 +211,7 @@ skip_syscall:
 	return res;
 }
 
-static void do_syscall_from_child(int cl)
+void do_syscall_from_child(int cl)
 {
 	int ret;
 
@@ -260,147 +243,3 @@ static void do_syscall_from_child(int cl)
 	(void)waitpid(-1, NULL, 0);
 }
 
-
-void display_opmode(void)
-{
-	output("trinity mode: %s\n", opmodename[opmode]);
-
-	if (opmode == MODE_ROTATE)
-		output("Rotating value %lx though all registers\n", regval);
-
-	sync_output();
-}
-
-
-int check_tainted(void)
-{
-	int fd;
-	int ret;
-	char buffer[4];
-
-	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
-	if (!fd)
-		return -1;
-	ret = read(fd, buffer, 3);
-	close(fd);
-	ret = atoi(buffer);
-
-	return ret;
-}
-
-
-void main_loop(void)
-{
-	int ret;
-
-	for (;;) {
-
-		if (ctrlc_hit == 1)
-			return;
-
-		switch (opmode) {
-		case MODE_ROTATE:
-			if (rep == max_nr_syscalls) {
-				/* Pointless running > once. */
-				if (rotate_mask == (1<<6)-1)
-					goto done;
-				rep = 0;
-				rotate_mask++;
-			}
-			do_syscall_from_child(rep);
-			break;
-
-		case MODE_RANDOM:
-			rep = rand();
-			do_syscall_from_child(rep);
-			break;
-		}
-
-		rep++;
-		if (syscallcount && (shm->execcount >= syscallcount))
-			break;
-
-		/* Only check taint if it was zero on startup */
-		if (do_check_tainted == 0) {
-			ret = check_tainted();
-			if (ret != 0) {
-				output("kernel became tainted! (%d)\n", ret);
-				ctrlc_hit = 1;
-				return;
-			}
-		}
-	}
-done: ;
-}
-
-
-void do_main_loop(void)
-{
-	shm->execcount = 1;
-
-	if (opmode != MODE_RANDOM) {
-		main_loop();
-		return;
-	}
-
-	/* By default, MODE_RANDOM will do one syscall per child,
-	 * unless -F is passed.
-	 */
-	if (nofork == 0) {
-		main_loop();
-		return;
-	} else {
-		/* if we opt to not fork for each syscall, we still need
-		   to fork once, in case calling the syscall segfaults. */
-		while (1) {
-			sigsetjmp(ret_jump, 1);
-			printf("forking new child.\n");
-			sleep(1);
-			if (fork() == 0) {
-				seed_from_tod();
-				mask_signals();
-				main_loop();
-				if (ctrlc_hit == 1)
-					_exit(EXIT_SUCCESS);
-				if (syscallcount && (shm->execcount >= syscallcount))
-					_exit(EXIT_SUCCESS);
-			}
-			(void)waitpid(-1, NULL, 0);
-
-			if (ctrlc_hit == 1)
-				return;
-			if (syscallcount && (shm->execcount >= syscallcount))
-				return;
-		}
-	}
-}
-
-void syscall_list()
-{
-	unsigned int i;
-
-	for (i=0; i < max_nr_syscalls; i++)
-		 printf("%u: %s\n", i, syscalls[i].entry->name);
-}
-
-void check_sanity(void)
-{
-	//unsigned int i;
-	//int ret;
-
-	/* Sanity test. All NI_SYSCALL's should return ENOSYS. */
-	/* disabled for now, breaks with 32bit calls.
-	for (i=0; i<= max_nr_syscalls; i++) {
-		if (syscalls[i].entry->flags & NI_SYSCALL) {
-			ret = syscall(i);
-			if (ret == -1) {
-				if (errno != ENOSYS) {
-					printf("syscall %d (%s) should be ni_syscall, but returned %d(%s) !\n",
-						i, syscalls[i].entry->name, errno, strerror(errno));
-					exit(EXIT_FAILURE);
-				}
-			}
-		}
-	}
-	*/
-}

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, int, mode)
  */
-#define _GNU_SOURCE
 #include <fcntl.h>
 
 #include "trinity.h"

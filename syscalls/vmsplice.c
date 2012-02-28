@@ -2,7 +2,7 @@
  * SYSCALL_DEFINE4(vmsplice, int, fd, const struct iovec __user *, iov,
 	 unsigned long, nr_segs, unsigned int, flags)
  */
-#define _GNU_SOURCE
+
 #include <fcntl.h>
 #include <sys/uio.h>
 #include <stdlib.h>
