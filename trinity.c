@@ -95,16 +95,6 @@ static void init_buffers()
 	regenerate_random_page();
 }
 
-static void sighandler(int sig)
-{
-	output("signal: %s\n", strsignal (sig));
-	(void)fflush(stdout);
-	(void)signal(sig, sighandler);
-	if (sig == SIGALRM)
-		output("Alarm clock.\n");
-	_exit(0);
-}
-
 
 unsigned long rand64()
 {
@@ -283,6 +273,16 @@ static void parse_args(int argc, char *argv[])
 	}
 }
 
+static void sighandler(int sig)
+{
+	output("signal: %s\n", strsignal (sig));
+	(void)fflush(stdout);
+	(void)signal(sig, sighandler);
+	if (sig == SIGALRM)
+		output("Alarm clock.\n");
+	_exit(0);
+}
+
 static void ctrlc(__attribute((unused)) int sig)
 {
 	ctrlc_hit=1;
@@ -290,18 +290,15 @@ static void ctrlc(__attribute((unused)) int sig)
 
 void mask_signals(void)
 {
-	int i;
+	struct sigaction sa;
+	sigset_t ss;
 
-	for (i=1; i<512; i++)  {
-		struct sigaction sa;
-		sigset_t ss;
+	(void)sigfillset(&ss);
+	sa.sa_flags = SA_RESTART;
+	sa.sa_handler = sighandler;
+	sa.sa_mask = ss;
+	(void)sigaction(SIGALRM, &sa, NULL);
 
-		(void)sigfillset(&ss);
-		sa.sa_flags = SA_RESTART;
-		sa.sa_handler = sighandler;
-		sa.sa_mask = ss;
-		(void)sigaction(i, &sa, NULL);
-	}
 	(void)signal(SIGWINCH, SIG_IGN);
 	(void)signal(SIGCHLD, SIG_IGN);
 	(void)signal(SIGINT, ctrlc);
