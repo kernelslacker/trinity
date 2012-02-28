@@ -12,4 +12,5 @@ struct syscall syscall_madvise = {
 	.arg2name = "len_in",
 	.arg2type = ARG_LEN,
 	.arg3name = "behaviour",
+	.group = GROUP_VM,
 };

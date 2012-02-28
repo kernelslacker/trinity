@@ -86,7 +86,11 @@ struct syscall {
 	struct arglist arg6list;
 
 	unsigned int retval;
+	unsigned int group;
 };
+
+#define GROUP_NONE	0
+#define GROUP_VM	1
 
 struct syscalltable {
 	struct syscall *entry;

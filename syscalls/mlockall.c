@@ -17,4 +17,5 @@ struct syscall syscall_mlockall = {
 		.num = 2,
 		.values = { MCL_CURRENT, MCL_FUTURE },
 	},
+	.group = GROUP_VM,
 };

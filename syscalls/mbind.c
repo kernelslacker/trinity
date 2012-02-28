@@ -56,5 +56,6 @@ struct syscall syscall_mbind = {
 		.num = 2,
 		.values = { MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES },
 	},
-	.sanitise = sanitise_mbind
+	.sanitise = sanitise_mbind,
+	.group = GROUP_VM,
 };

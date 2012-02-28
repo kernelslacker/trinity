@@ -50,4 +50,5 @@ struct syscall syscall_mmap_pgoff = {
 	.arg5type = ARG_FD,
 	.arg6name = "pgoff",
 	.arg6type = ARG_LEN,
+	.group = GROUP_VM,
 };
