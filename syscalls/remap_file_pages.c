@@ -56,4 +56,5 @@ struct syscall syscall_remap_file_pages = {
 		.num = 1,
 		.values = { MAP_NONBLOCK },
 	},
+	.group = GROUP_VM,
 };
