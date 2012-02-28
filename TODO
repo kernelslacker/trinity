@@ -92,10 +92,6 @@
 
 * Ability to pass a list of comma separated syscalls on the command-line.
 
-* syscall groups.
-  --group=vm  for example would only call memory management related syscalls.
-  (Mark syscalls with SYSCALL_VM in flags
-
 * run tests in different namespaces, personalities.
 
 * make a list of filenames during fd_setup, so that we can pass one at random
