@@ -162,10 +162,6 @@ void sync_output();
 #define MODE_RANDOM 1
 #define MODE_ROTATE 2
 
-#define STRUCT_UNDEFINED 0
-#define STRUCT_CONST 1
-#define STRUCT_RAND 2
-
 extern unsigned char do_check_tainted;
 int check_tainted(void);
 

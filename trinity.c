@@ -265,7 +265,7 @@ static void parse_args(int argc, char *argv[])
 			regval = strtoul(optarg, NULL, 0);
 			break;
 
-		/* Wander a 0 through every register */
+		/* Pass zeros in registers */
 		case 'z':
 			regval = 0;
 			break;

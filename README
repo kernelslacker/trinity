@@ -72,16 +72,6 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 There exist a number of further options that define what kinds of values are passed
 in registers to the syscalls.
 
-structures:
-  -Sxx:  pass a struct filled with any hex value (xx).
-  This calls syscalls with a pointer to a struct that is filled with hex xx
-  as arguments.
- or
-  -Sr:  pass struct filled with random byte values.
-  As above, but with a struct filled with random chars.
- In all cases, the structure passed is the size of one page.
- (Ie, 4KB on most archs)
-
  -z:  Use all zeros as register parameters.
 This calls every syscall with zeros in each of the registers in turn, in
 every possible combination, with random junk in the other registers.
