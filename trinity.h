@@ -15,7 +15,6 @@ extern jmp_buf ret_jump;
 void syscall_list(void);
 void mask_signals(void);
 void do_main_loop(void);
-void display_opmode(void);
 
 void do_syscall_from_child(int cl);
 

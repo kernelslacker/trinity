@@ -24,27 +24,13 @@ static long mkcall(unsigned int call)
 
 	sptr += sprintf(sptr, "[%d] %lu: ", getpid(), shm->execcount);
 
-	switch (opmode) {
-	case MODE_ROTATE:
-		a1 = a2 = a3 = a4 = a5 = a6 = regval;
-		if (!(rotate_mask & (1<<0))) a6 = rand64();
-		if (!(rotate_mask & (1<<1))) a5 = rand64();
-		if (!(rotate_mask & (1<<2))) a4 = rand64();
-		if (!(rotate_mask & (1<<3))) a3 = rand64();
-		if (!(rotate_mask & (1<<4))) a2 = rand64();
-		if (!(rotate_mask & (1<<5))) a1 = rand64();
-		break;
+	a1 = rand64();
+	a2 = rand64();
+	a3 = rand64();
+	a4 = rand64();
+	a5 = rand64();
+	a6 = rand64();
 
-	case MODE_RANDOM:
-	default:
-		a1 = rand64();
-		a2 = rand64();
-		a3 = rand64();
-		a4 = rand64();
-		a5 = rand64();
-		a6 = rand64();
-		break;
-	}
 	if (call > max_nr_syscalls)
 		sptr += sprintf(sptr, "%u", call);
 	else
@@ -58,48 +44,32 @@ static long mkcall(unsigned int call)
 			syscalls[call].entry->sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 	}
 
-#define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)					\
-	if (syscalls[call].entry->num_args >= ARGNUM) {					\
-		if (!NAME)								\
-			goto args_done;							\
-		if (ARGNUM != 1)							\
-			sptr += sprintf(sptr, WHITE ", ");				\
-		if (NAME)								\
-			sptr += sprintf(sptr, "%s=", NAME);				\
-		if (opmode == MODE_ROTATE) {						\
-			if (rotate_mask & (BIT))					\
-				if (OLDREG == REG)					\
-					sptr += sprintf(sptr, YELLOW "0x%lx" WHITE, REG);	\
-				else							\
-					sptr += sprintf(sptr, CYAN "0x%lx" WHITE, REG);	\
-			else {								\
-				if (OLDREG == REG)					\
-					sptr += sprintf(sptr, WHITE);			\
-				else							\
-					sptr += sprintf(sptr, CYAN);			\
-				if (REG > 1024)						\
-					sptr += sprintf(sptr, "0x%lx" WHITE, REG);	\
-				else							\
-					sptr += sprintf(sptr, "%ld" WHITE, REG);	\
-			}								\
-		} else {								\
-			if (OLDREG == REG)						\
-				sptr += sprintf(sptr, WHITE);				\
-			else								\
-				sptr += sprintf(sptr, CYAN);				\
-			if (REG > 1024)							\
-				sptr += sprintf(sptr, "0x%lx" WHITE, REG);		\
-			else								\
-				sptr += sprintf(sptr, "%ld" WHITE, REG);		\
-		}									\
-		if (REG == (unsigned long)page_zeros)					\
-			sptr += sprintf(sptr, "[page_zeros]");				\
-		if (REG == (unsigned long)page_rand)					\
-			sptr += sprintf(sptr, "[page_rand]");				\
-		if (REG == (unsigned long)page_0xff)					\
-			sptr += sprintf(sptr, "[page_0xff]");				\
-		if (REG == (unsigned long)page_allocs)					\
-			sptr += sprintf(sptr, "[page_allocs]");				\
+#define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)			\
+	if (syscalls[call].entry->num_args >= ARGNUM) {			\
+		if (!NAME)						\
+			goto args_done;					\
+		if (ARGNUM != 1)					\
+			sptr += sprintf(sptr, WHITE ", ");		\
+		if (NAME)						\
+			sptr += sprintf(sptr, "%s=", NAME);		\
+									\
+		if (OLDREG == REG)					\
+			sptr += sprintf(sptr, WHITE);			\
+		else							\
+			sptr += sprintf(sptr, CYAN);			\
+		if (REG > 1024)						\
+			sptr += sprintf(sptr, "0x%lx" WHITE, REG);	\
+		else							\
+			sptr += sprintf(sptr, "%ld" WHITE, REG);	\
+									\
+		if (REG == (unsigned long)page_zeros)			\
+			sptr += sprintf(sptr, "[page_zeros]");		\
+		if (REG == (unsigned long)page_rand)			\
+			sptr += sprintf(sptr, "[page_rand]");		\
+		if (REG == (unsigned long)page_0xff)			\
+			sptr += sprintf(sptr, "[page_0xff]");		\
+		if (REG == (unsigned long)page_allocs)			\
+			sptr += sprintf(sptr, "[page_allocs]");		\
 	}
 
 	sptr += sprintf(sptr, WHITE "(");
@@ -164,8 +134,7 @@ static int do_syscall(int callnr)
 	unsigned int syscallnr = callnr;
 	int retrycount = 0;
 
-	if (opmode == MODE_RANDOM)
-		syscallnr = rand() / (RAND_MAX/max_nr_syscalls);
+	syscallnr = rand() / (RAND_MAX/max_nr_syscalls);
 
 	if (do_specific_syscall != 0)
 		syscallnr = specific_syscall;
@@ -187,7 +156,7 @@ retry_same:
 	res = mkcall(syscallnr);
 
 	/*  Brute force the same syscall until it succeeds */
-	if ((opmode == MODE_RANDOM) && (intelligence == 1) && (bruteforce == 1)) {
+	if ((intelligence == 1) && (bruteforce == 1)) {
 		// Don't bother trying to bruteforce ni_syscall
 		if (res == -ENOSYS)
 			goto failed_repeat;

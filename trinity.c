@@ -38,7 +38,6 @@ unsigned int specific_proto = 0;
 unsigned char ctrlc_hit = 0;
 unsigned int page_size;
 unsigned int rep = 0;
-unsigned char rotate_mask = 1;
 unsigned char dopause = 0;
 unsigned char intelligence = 0;
 unsigned char do_specific_syscall = 0;
@@ -54,14 +53,6 @@ static unsigned char desired_group = GROUP_NONE;
 unsigned int max_nr_syscalls;
 
 struct shm_s *shm;
-
-unsigned int opmode = MODE_UNDEFINED;
-
-char *opmodename[] = {
-	[MODE_UNDEFINED] = "undef",
-	[MODE_RANDOM] = "random",
-	[MODE_ROTATE] = "rotate",
-};
 
 char *page_zeros;
 char *page_0xff;
@@ -131,8 +122,6 @@ static void usage(void)
 	fprintf(stderr, "   --mode=random : pass random values in registers to random syscalls\n");
 	fprintf(stderr, "     -s#: use # as random seed.\n");
 	fprintf(stderr, "     --bruteforce : Keep retrying syscalls until it succeeds (needs -i) [EXPERIMENTAL]\n");
-	fprintf(stderr, "\n");
-	fprintf(stderr, "   --mode=rotate : rotate value through all register combinations\n");
 	fprintf(stderr, "     -k:  pass kernel addresses as arguments.\n");
 	fprintf(stderr, "     -u:  pass userspace addresses as arguments.\n");
 	fprintf(stderr, "     -x#: use value as register arguments.\n");
@@ -169,7 +158,6 @@ static void parse_args(int argc, char *argv[])
 	struct option longopts[] = {
 		{ "list", no_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
-		{ "mode", required_argument, NULL, 'm' },
 		{ "childcalls", required_argument, NULL, 'F' },
 		{ "bruteforce", no_argument, NULL, 'B' },
 		{ "logfile", required_argument, NULL, 'l' },
@@ -190,14 +178,6 @@ static void parse_args(int argc, char *argv[])
 
 		case '\0':
 			return;
-
-		/* Get the mode we want to run */
-		case 'm':
-			if (!strcmp(optarg, "random"))
-				opmode = MODE_RANDOM;
-			if (!strcmp(optarg, "rotate"))
-				opmode = MODE_ROTATE;
-			break;
 
 		case 'b':
 			rep = strtol(optarg, NULL, 10);
@@ -296,22 +276,10 @@ static void parse_args(int argc, char *argv[])
 		return;
 
 	if (bruteforce == 1) {
-		if (opmode != MODE_RANDOM) {
-			printf("Brute-force only works in --mode=random\n");
-			exit(EXIT_FAILURE);
-		}
 		if (intelligence != 1) {
 			printf("Brute-force needs -i\n");
 			exit(EXIT_FAILURE);
 		}
-	}
-
-	if (opmode == MODE_UNDEFINED) {
-		if (optarg != NULL)
-			fprintf(stderr, "Unrecognised mode \'%s\'\n", optarg);
-		fprintf(stderr, "--mode must be either random or rotate\n\n");
-		usage();
-		exit(EXIT_FAILURE);
 	}
 }
 
@@ -551,9 +519,6 @@ int main(int argc, char* argv[])
 		exit(EXIT_SUCCESS);
 	}
 
-	if (opmode == MODE_ROTATE)
-		syscalls_per_child = 1;
-
 	page_size = getpagesize();
 
 	if (!seed)
@@ -592,8 +557,6 @@ int main(int argc, char* argv[])
 	if (!ret) {
 		/* nothing right now */
 	}
-
-	display_opmode();
 
 	sigsetjmp(ret_jump, 1);
 

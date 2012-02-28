@@ -33,16 +33,6 @@ void syscall_list()
 		 printf("%u: %s\n", i, syscalls[i].entry->name);
 }
 
-void display_opmode(void)
-{
-	output("trinity mode: %s\n", opmodename[opmode]);
-
-	if (opmode == MODE_ROTATE)
-		output("Rotating value %lx though all registers\n", regval);
-
-	sync_output();
-}
-
 void main_loop(void)
 {
 	int ret;
@@ -52,23 +42,8 @@ void main_loop(void)
 		if (ctrlc_hit == 1)
 			return;
 
-		switch (opmode) {
-		case MODE_ROTATE:
-			if (rep == max_nr_syscalls) {
-				/* Pointless running > once. */
-				if (rotate_mask == (1<<6)-1)
-					goto done;
-				rep = 0;
-				rotate_mask++;
-			}
-			do_syscall_from_child(rep);
-			break;
-
-		case MODE_RANDOM:
-			rep = rand();
-			do_syscall_from_child(rep);
-			break;
-		}
+		rep = rand();
+		do_syscall_from_child(rep);
 
 		rep++;
 		if (syscallcount && (shm->execcount >= syscallcount))
@@ -84,17 +59,11 @@ void main_loop(void)
 			}
 		}
 	}
-done: ;
 }
 
 void do_main_loop(void)
 {
 	shm->execcount = 1;
-
-	if (opmode != MODE_RANDOM) {
-		main_loop();
-		return;
-	}
 
 	while (1) {
 		sigsetjmp(ret_jump, 1);
