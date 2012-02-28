@@ -36,7 +36,14 @@ void sanitise_mmap(
 {
 	unsigned int i;
 
+	/* page align inputs */
+	*addr &= PAGE_MASK;
+	*len &= PAGE_MASK;
 	*offset &= PAGE_MASK;
+
+	if (*len == 0)
+		*len = page_size;
+
 
 	if (*flags & MAP_ANONYMOUS) {
 		i = rand() % 100;
@@ -71,5 +78,6 @@ struct syscall syscall_mmap = {
 	.arg5name = "fd",
 	.arg5type = ARG_FD,
 	.arg6name = "off",
+	.arg6type = ARG_LEN,
 	.group = GROUP_VM,
 };
