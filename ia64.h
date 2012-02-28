@@ -3,7 +3,6 @@
 #define TASK_SIZE 0xa000000000000000
 
 #define PAGE_SHIFT 		12
-#define PAGE_SIZE               (__IA64_UL_CONST(1) << PAGE_SHIFT)
 #define PTE_FILE_MAX_BITS	61
 
 // for __IA64_UL_CONST we need to include:
