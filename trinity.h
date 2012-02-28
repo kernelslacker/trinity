@@ -124,7 +124,6 @@ extern struct shm_s *shm;
 
 extern unsigned char ctrlc_hit;
 
-extern char *userbuffer;
 extern char *page_zeros;
 extern char *page_0xff;
 extern char *page_rand;
