@@ -4,7 +4,6 @@
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1UL << PAGE_SHIFT)
-#define PAGE_MASK (~(PAGE_SIZE-1))
 #define BITS_PER_LONG 64
 #define PTE_RPN_SHIFT   (PAGE_SHIFT)
 #define PTE_FILE_MAX_BITS       (BITS_PER_LONG - PTE_RPN_SHIFT)

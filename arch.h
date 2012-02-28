@@ -17,4 +17,6 @@
 #include "sparc.h"
 #endif
 
+#define PAGE_MASK (~(page_size - 1))
+
 #endif  /* _ARCH_H */
