@@ -511,6 +511,8 @@ int main(int argc, char* argv[])
 	}
 
 	max_nr_syscalls = NR_SYSCALLS;
+	for (i = 0; i < max_nr_syscalls; i++)
+		syscalls[i].entry->number = i;
 
 	if (desired_group == GROUP_VM) {
 		struct syscalltable *newsyscalls;
