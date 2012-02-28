@@ -52,47 +52,25 @@ it actually makes the system call. This way, should you trigger something
 which panics the kernel, you should be able to find out exactly what
 happened by examining the log.
 
-There is a test harness provided (test.sh), which runs trinity in various modes,
-and takes care of things like cpu affinity, and makes sure it runs from the
+There are several test harnesses provided (test-*.sh), which run trinity in
+various modes and takes care of things like cpu affinity, and makes sure it runs from the
 tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp afterwards)
 
 ######### options ###############################################
 
-The first option that trinity has is '--mode=', which must
-be one of the following..
-
-'random'
- Good for stress testing, just does zillions of random junk syscalls.
  -sN: use N as random seed.  (Omitting this uses time of day as a seed).
+
  Adding '--bruteforce' (or -B) to the command line will keep retrying the
  same syscall with random parameters until it succeeds. This option needs -i
  to also be passed. (described below)
  Until more of the -i option gets fleshed out, this will cause many syscalls
  to 'stick', due to random parameters being repeatedly rejected.
  Because of this, currently, bruteforce will only retry the same syscall 100 times.
-
-'rotate'
- This will call every syscall sequentially, with a specific value in a register,
- and will "rotate" it through all possible register combinations.
- For example, the values of the registers being passed change thusly over time..
-  random, random, random, random, random, VALUE
-  random, random, random, random, VALUE, random
-  random, random, random, random, VALUE, VALUE 
-  random, random, random, VALUE, random, random
-  etc.. 
-
- until it eventually gets to calling with the value in all registers.
- (This option usually used with -z, see below)
-
- This mode operates internally as if every syscall has 6 args.  Due to the way
- that the value 'travels' through the registers, a syscall with 3 args
- for example has to wait until the value has travelled through the 4th, 5th and 6th
  registers before it appears, even though those registers never get passed
  to the syscall.
 
-
-For random and rotate modes, there exist a number of further options that
-define what kinds of values are passed in registers to the syscalls.
+There exist a number of further options that define what kinds of values are passed
+in registers to the syscalls.
 
 structures:
   -Sxx:  pass a struct filled with any hex value (xx).
@@ -103,7 +81,6 @@ structures:
   As above, but with a struct filled with random chars.
  In all cases, the structure passed is the size of one page.
  (Ie, 4KB on most archs)
-
 
  -z:  Use all zeros as register parameters.
 This calls every syscall with zeros in each of the registers in turn, in
@@ -134,7 +111,7 @@ Other useful arguments:
 #######################################################################
 
 Examples:
-./trinity --mode=random -i -c splice
+./trinity -i -c splice
 Stress test the splice syscall, with random parameters, but sanitise
 the passed params so they look almost sensible.
 
