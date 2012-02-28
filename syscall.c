@@ -125,7 +125,7 @@ args_done:
 	call += 1024;
 #endif
 
-	ret = syscall(call, a1, a2, a3, a4, a5, a6);
+	ret = syscall(syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
 
 	if (ret < 0) {
 		sptr +=sprintf(sptr, RED "= %d (%s)" WHITE, ret, strerror(errno));
