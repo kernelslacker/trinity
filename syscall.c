@@ -17,26 +17,24 @@ static long res = 0;
 
 static long mkcall(unsigned int call)
 {
-	unsigned long olda1=0, olda2=0, olda3=0, olda4=0, olda5=0, olda6=0;
-	unsigned long a1=0, a2=0, a3=0, a4=0, a5=0, a6=0;
+	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
+	unsigned long a1, a2, a3, a4, a5, a6;
 	int ret = 0;
 	char string[512], *sptr=string;
 
 	sptr += sprintf(sptr, "[%d] %lu: ", getpid(), shm->execcount);
 
-	a1 = rand64();
-	a2 = rand64();
-	a3 = rand64();
-	a4 = rand64();
-	a5 = rand64();
-	a6 = rand64();
+	olda1 = a1 = rand64();
+	olda2 = a2 = rand64();
+	olda3 = a3 = rand64();
+	olda4 = a4 = rand64();
+	olda5 = a5 = rand64();
+	olda6 = a6 = rand64();
 
 	if (call > max_nr_syscalls)
 		sptr += sprintf(sptr, "%u", call);
 	else
 		sptr += sprintf(sptr, "%s", syscalls[call].entry->name);
-
-	olda1=a1; olda2=a2; olda3=a3; olda4=a4; olda5=a5; olda6=a6;
 
 	if (intelligence == 1) {
 		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
