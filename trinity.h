@@ -115,7 +115,7 @@ extern unsigned char dopause;
 extern long struct_fill;
 extern unsigned char bruteforce;
 extern unsigned char syscalls_per_child;
-extern char passed_type;
+extern unsigned char logging;
 
 struct shm_s {
 	unsigned long execcount;

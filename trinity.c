@@ -47,6 +47,7 @@ unsigned char syscalls_per_child = 5;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
 static unsigned char dangerous = 0;
+unsigned char logging = 1;
 
 static unsigned char desired_group = GROUP_NONE;
 
@@ -157,7 +158,7 @@ static void parse_args(int argc, char *argv[])
 		{ "group", required_argument, NULL, 'g' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:dF:g:hikl:LN:m:P:pqs:ux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "b:Bc:dF:g:hikl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -208,6 +209,8 @@ static void parse_args(int argc, char *argv[])
 
 		case 'l':
 			logfilename = optarg;
+			if (!strcmp(optarg, "off"))
+				logging = 0;
 			break;
 
 		case 'L':
@@ -465,14 +468,15 @@ int main(int argc, char* argv[])
 		}
 	}
 
-
-	if (logfilename == NULL)
-		logfilename = strdup("trinity-cpu0.log");
-	unlink(logfilename);
-	logfile = fopen(logfilename, "a");
-	if (!logfile) {
-		perror("couldn't open logfile\n");
-		exit(EXIT_FAILURE);
+	if (logging == 0) {
+		if (logfilename == NULL)
+			logfilename = strdup("trinity-cpu0.log");
+		unlink(logfilename);
+		logfile = fopen(logfilename, "a");
+		if (!logfile) {
+			perror("couldn't open logfile\n");
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	max_nr_syscalls = NR_SYSCALLS;
@@ -569,7 +573,8 @@ int main(int argc, char* argv[])
 	for (i = 0; i < socks; i++)
 		close(socket_fds[i]);
 
-	fclose(logfile);
+	if (logfile)
+		fclose(logfile);
 
 	exit(EXIT_SUCCESS);
 }

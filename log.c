@@ -10,6 +10,9 @@ FILE *logfile;
 
 void synclog()
 {
+	if (logging == 0)
+		return;
+
 	(void)fflush(logfile);
 	fsync(fileno(logfile));
 }
@@ -35,6 +38,9 @@ void output(const char *fmt, ...)
 	}
 	if (!quiet)
 		printf("%s", outputbuf);
+
+	if (logging == 0)
+		return;
 
 	if (logfile == NULL) {
 		printf("Logfile not open!\n");
