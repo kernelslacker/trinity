@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/ptrace.h>
 
 #include "arch.h"
 #include "trinity.h"
@@ -208,6 +209,9 @@ void do_syscall_from_child(int cl)
 			if (ctrlc_hit == 1)
 				break;
 		}
+
+		/* In case we randomly did a PTRACE_TRACEME */
+		ptrace(PTRACE_CONT, getpid(), NULL, NULL);
 
 		_exit(ret);
 	}
