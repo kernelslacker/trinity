@@ -37,7 +37,6 @@ unsigned long specific_syscall = 0;
 unsigned int specific_proto = 0;
 unsigned char ctrlc_hit = 0;
 unsigned int page_size;
-unsigned int rep = 0;
 unsigned char dopause = 0;
 unsigned char intelligence = 0;
 unsigned char do_specific_syscall = 0;
@@ -131,7 +130,6 @@ static void usage(void)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   --quiet: less output.\n");
 	fprintf(stderr, "   -P,--proto=#: Create socket fd's using a specific protocol.\n");
-	fprintf(stderr, "   -b#: begin at offset #.\n");
 	fprintf(stderr, "   -c#: target syscall # only.\n");
 	fprintf(stderr, "   -F:  don't fork after each syscall.\n");
 	fprintf(stderr, "   -i:  pass sensible parameters where possible.\n");
@@ -168,7 +166,7 @@ static void parse_args(int argc, char *argv[])
 		{ "group", required_argument, NULL, 'g' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "b:Bc:dF:g:hikl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "Bc:dF:g:hikl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -179,10 +177,6 @@ static void parse_args(int argc, char *argv[])
 
 		case '\0':
 			return;
-
-		case 'b':
-			rep = strtol(optarg, NULL, 10);
-			break;
 
 		case 'B':
 			bruteforce = 1;
@@ -564,7 +558,7 @@ int main(int argc, char* argv[])
 
 	sigsetjmp(ret_jump, 1);
 
-	do_main_loop();
+	main_loop();
 
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		shm->execcount - 1, shm->retries, shm->successes, shm->failures);

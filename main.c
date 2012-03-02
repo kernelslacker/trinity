@@ -37,15 +37,13 @@ void main_loop(void)
 {
 	int ret;
 
-	for (;;) {
+	shm->execcount = 1;
 
-		if (ctrlc_hit == 1)
-			return;
+	while (1) {
+		sigsetjmp(ret_jump, 1);
 
-		rep = rand();
-		do_syscall_from_child(rep);
+		do_syscall_from_child();
 
-		rep++;
 		if (syscallcount && (shm->execcount >= syscallcount))
 			break;
 
@@ -58,31 +56,10 @@ void main_loop(void)
 				return;
 			}
 		}
-	}
-}
-
-void do_main_loop(void)
-{
-	shm->execcount = 1;
-
-	while (1) {
-		sigsetjmp(ret_jump, 1);
-		printf("forking new child.\n");
-		sleep(1);
-		if (fork() == 0) {
-			seed_from_tod();
-			mask_signals();
-			main_loop();
-			if (ctrlc_hit == 1)
-				_exit(EXIT_SUCCESS);
-			if (syscallcount && (shm->execcount >= syscallcount))
-				_exit(EXIT_SUCCESS);
-		}
-		(void)waitpid(-1, NULL, 0);
 
 		if (ctrlc_hit == 1)
-			return;
+			_exit(EXIT_SUCCESS);
 		if (syscallcount && (shm->execcount >= syscallcount))
-			return;
+			_exit(EXIT_SUCCESS);
 	}
 }

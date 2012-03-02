@@ -14,9 +14,9 @@ extern jmp_buf ret_jump;
 
 void syscall_list(void);
 void mask_signals(void);
-void do_main_loop(void);
+void main_loop(void);
 
-void do_syscall_from_child(int cl);
+void do_syscall_from_child();
 
 #define REGENERATION_POINT 25000
 void regenerate_random_page(void);
