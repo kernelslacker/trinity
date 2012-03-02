@@ -60,15 +60,6 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 
  -sN: use N as random seed.  (Omitting this uses time of day as a seed).
 
- Adding '--bruteforce' (or -B) to the command line will keep retrying the
- same syscall with random parameters until it succeeds. This option needs -i
- to also be passed. (described below)
- Until more of the -i option gets fleshed out, this will cause many syscalls
- to 'stick', due to random parameters being repeatedly rejected.
- Because of this, currently, bruteforce will only retry the same syscall 100 times.
- registers before it appears, even though those registers never get passed
- to the syscall.
-
 There exist a number of further options that define what kinds of values are passed
 in registers to the syscalls.
 
