@@ -133,8 +133,6 @@ static int do_syscall(int callnr)
 	unsigned int syscallnr = callnr;
 	int retrycount = 0;
 
-	syscallnr = rand() / (RAND_MAX/max_nr_syscalls);
-
 	if (do_specific_syscall != 0)
 		syscallnr = specific_syscall;
 	else {
