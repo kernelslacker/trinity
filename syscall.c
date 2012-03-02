@@ -179,7 +179,7 @@ skip_syscall:
 	return res;
 }
 
-void do_syscall_from_child(int cl)
+void do_syscall_from_child()
 {
 	int ret = 0;
 
@@ -195,6 +195,10 @@ void do_syscall_from_child(int cl)
 	shm->regenerate--;
 
 	if (fork() == 0) {
+
+		seed_from_tod();
+		mask_signals();
+
 		while (syscalls_per_child > 0) {
 
 			if (!shm->regenerate)
@@ -202,7 +206,7 @@ void do_syscall_from_child(int cl)
 			if (do_specific_syscall == 1)
 				regenerate_random_page();
 
-			ret = do_syscall(cl);
+			ret = do_syscall(rand() % max_nr_syscalls);
 
 			syscalls_per_child--;
 
