@@ -191,8 +191,13 @@ void do_syscall_from_child()
 		setup_maps();
 
 		shm->regenerate = REGENERATION_POINT - 1;
+
+		regenerate_random_page();
 	}
 	shm->regenerate--;
+
+	if (do_specific_syscall == 1)
+		regenerate_random_page();
 
 	if (fork() == 0) {
 
@@ -200,11 +205,6 @@ void do_syscall_from_child()
 		mask_signals();
 
 		while (syscalls_per_child > 0) {
-
-			if (!shm->regenerate)
-				regenerate_random_page();
-			if (do_specific_syscall == 1)
-				regenerate_random_page();
 
 			ret = do_syscall(rand() % max_nr_syscalls);
 
