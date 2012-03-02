@@ -41,7 +41,6 @@ unsigned char dopause = 0;
 unsigned char intelligence = 0;
 unsigned char do_specific_syscall = 0;
 unsigned char do_specific_proto = 0;
-unsigned char bruteforce = 0;
 unsigned char syscalls_per_child = 5;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
@@ -125,7 +124,6 @@ static void usage(void)
 	fprintf(stderr, " --logfile,-l: filename to log to (off=disable logging).\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --group: only run syscalls from a certain group (So far just 'vm').\n");
-	fprintf(stderr, " --bruteforce : Keep retrying syscalls until it succeeds (needs -i) [EXPERIMENTAL]\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " -c#: target syscall # only.\n");
 	fprintf(stderr, " -i:  pass sensible parameters where possible.\n");
@@ -158,7 +156,6 @@ static void parse_args(int argc, char *argv[])
 		{ "list", no_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "childcalls", required_argument, NULL, 'F' },
-		{ "bruteforce", no_argument, NULL, 'B' },
 		{ "logfile", required_argument, NULL, 'l' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
@@ -166,7 +163,7 @@ static void parse_args(int argc, char *argv[])
 		{ "group", required_argument, NULL, 'g' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "Bc:dF:g:hikl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dF:g:hikl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -177,10 +174,6 @@ static void parse_args(int argc, char *argv[])
 
 		case '\0':
 			return;
-
-		case 'B':
-			bruteforce = 1;
-			break;
 
 		case 'c':
 			do_specific_syscall = 1;
@@ -271,13 +264,6 @@ static void parse_args(int argc, char *argv[])
 
 	if (show_syscall_list == 1)
 		return;
-
-	if (bruteforce == 1) {
-		if (intelligence != 1) {
-			printf("Brute-force needs -i\n");
-			exit(EXIT_FAILURE);
-		}
-	}
 }
 
 static void ctrlc(__attribute((unused)) int sig)

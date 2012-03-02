@@ -131,7 +131,6 @@ args_done:
 static int do_syscall(int callnr)
 {
 	unsigned int syscallnr = callnr;
-	int retrycount = 0;
 
 	if (do_specific_syscall != 0)
 		syscallnr = specific_syscall;
@@ -147,31 +146,9 @@ static int do_syscall(int callnr)
 			goto skip_syscall;
 	}
 
-retry_same:
 	(void)alarm(3);
 
 	res = mkcall(syscallnr);
-
-	/*  Brute force the same syscall until it succeeds */
-	if ((intelligence == 1) && (bruteforce == 1)) {
-		// Don't bother trying to bruteforce ni_syscall
-		if (res == -ENOSYS)
-			goto failed_repeat;
-
-		if (retrycount == 100) {
-			//printf("100 retries done without success. moving on\n");
-			goto failed_repeat;
-		}
-
-		if (res < 0) {
-			//printf ("syscall failed. Retrying\n");
-			retrycount++;
-			shm->retries++;
-			goto retry_same;
-		}
-	}
-
-failed_repeat:
 
 skip_syscall:
 	return res;

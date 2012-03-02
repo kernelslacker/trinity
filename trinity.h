@@ -113,7 +113,6 @@ extern unsigned char do_specific_syscall;
 extern unsigned long specific_syscall;
 extern unsigned char dopause;
 extern long struct_fill;
-extern unsigned char bruteforce;
 extern unsigned char syscalls_per_child;
 extern unsigned char logging;
 
