@@ -14,8 +14,6 @@
 #include "trinity.h"
 #include "sanitise.h"
 
-static long res = 0;
-
 static long mkcall(unsigned int call)
 {
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
@@ -128,34 +126,9 @@ args_done:
 }
 
 
-static int do_syscall(int callnr)
-{
-	unsigned int syscallnr = callnr;
-
-	if (do_specific_syscall != 0)
-		syscallnr = specific_syscall;
-	else {
-
-		if (syscalls[syscallnr].entry->num_args == 0)
-			goto skip_syscall;
-
-		if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
-			goto skip_syscall;
-
-		if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
-			goto skip_syscall;
-	}
-
-	(void)alarm(3);
-
-	res = mkcall(syscallnr);
-
-skip_syscall:
-	return res;
-}
-
 void do_syscall_from_child()
 {
+	unsigned int syscallnr;
 	int ret = 0;
 
 	if (!shm->regenerate) {
@@ -181,8 +154,27 @@ void do_syscall_from_child()
 
 		while (syscalls_per_child > 0) {
 
-			ret = do_syscall(rand() % max_nr_syscalls);
+			syscallnr = rand() % max_nr_syscalls;
 
+			if (do_specific_syscall != 0)
+				syscallnr = specific_syscall;
+			else {
+
+				if (syscalls[syscallnr].entry->num_args == 0)
+					goto skip_syscall;
+
+				if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
+					goto skip_syscall;
+
+				if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
+					goto skip_syscall;
+			}
+
+			(void)alarm(3);
+
+			ret = mkcall(syscallnr);
+
+skip_syscall:
 			syscalls_per_child--;
 
 			if (ctrlc_hit == 1)
