@@ -1,5 +1,3 @@
-* If no -i passed, don't setup maps etc.
-
 * Improve signal handling.
   * bug: ctrl-c handler doesn't always work.
   * better handling of segfault/fp exception etc

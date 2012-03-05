@@ -24,8 +24,8 @@ After fixing the obvious dumb bugs however, a majority of the time
 these calls will just by rejected by the kernel very near the beginning
 of their function entry point as basic parameter validation is performed.
 
-Trinity is a system call fuzzer which employs some basic intelligence
-techniques (though when run without any arguments it too is dumb as a rock).
+Trinity is a system call fuzzer which employs some techniques to
+pass semi-intelligent arguments to the syscalls being called.
 
 The intelligence features include:
 
@@ -74,19 +74,17 @@ There also exist some options which apply to all available modes.
 
 -bN: begin at offset N.
 Useful for reproducing bugs that start after a certain # of runs.
+*note*, this feature is currently broken. It passes the correct seed, but
+ as we don't know how much entropy was used up between seed and N,
+ runs won't be identical.
 
 -cN: do syscall N with random inputs.
 Good for concentrating on a certain syscall, if for eg, you just added one.
 
--i: Use Intelligent parameters.
-Given a vast number of syscalls do some checking, chances are a majority
-of the calls will get something like -EINVAL back.  This option passes
-some almost sensible looking parameters to defeat the simplest checks.
-This requires a .sanitise method for each syscall, and right now,
-hardly any of the syscalls provide this.
-
-
 Other useful arguments:
+
+-g vm
+ Just call VM related syscalls
 
 -l off
  This disables logging. Useful if you have a serial console, though you
@@ -99,7 +97,7 @@ Other useful arguments:
 #######################################################################
 
 Examples:
-./trinity -i -c splice
+./trinity -c splice
 Stress test the splice syscall, with random parameters, but sanitise
 the passed params so they look almost sensible.
 

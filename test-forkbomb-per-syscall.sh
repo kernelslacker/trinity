@@ -20,5 +20,5 @@ echo Starting $NR fuzzers
 for i in $(seq 0 $NR)
 do
 	CPU=$(($RANDOM % $NR_CPUS))
-	taskset -c $CPU ../trinity --logfile=../logs/trinity-rand-syscall-$i.log -i -p -c $i &
+	taskset -c $CPU ../trinity --logfile=../logs/trinity-rand-syscall-$i.log -c $i &
 done
