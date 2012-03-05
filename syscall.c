@@ -35,11 +35,9 @@ static long mkcall(unsigned int call)
 	else
 		sptr += sprintf(sptr, "%s", syscalls[call].entry->name);
 
-	if (intelligence == 1) {
-		generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
-		if (syscalls[call].entry->sanitise)
-			syscalls[call].entry->sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
-	}
+	generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
+	if (syscalls[call].entry->sanitise)
+		syscalls[call].entry->sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 
 #define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)			\
 	if (syscalls[call].entry->num_args >= ARGNUM) {			\

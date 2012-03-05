@@ -38,7 +38,6 @@ unsigned int specific_proto = 0;
 unsigned char ctrlc_hit = 0;
 unsigned int page_size;
 unsigned char dopause = 0;
-unsigned char intelligence = 0;
 unsigned char do_specific_syscall = 0;
 unsigned char do_specific_proto = 0;
 unsigned char syscalls_per_child = 5;
@@ -126,7 +125,6 @@ static void usage(void)
 	fprintf(stderr, " --group: only run syscalls from a certain group (So far just 'vm').\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " -c#: target syscall # only.\n");
-	fprintf(stderr, " -i:  pass sensible parameters where possible.\n");
 	fprintf(stderr, " -k:  pass kernel addresses as arguments.\n");
 	fprintf(stderr, " -N#: do # syscalls then exit.\n");
 	fprintf(stderr, " -p:  pause after syscall.\n");
@@ -163,7 +161,7 @@ static void parse_args(int argc, char *argv[])
 		{ "group", required_argument, NULL, 'g' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dF:g:hikl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dF:g:hkl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -198,11 +196,6 @@ static void parse_args(int argc, char *argv[])
 		case 'h':
 			usage();
 			exit(EXIT_SUCCESS);
-
-		/* use semi-intelligent options */
-		case 'i':
-			intelligence = 1;
-			break;
 
 		case 'l':
 			logfilename = optarg;
@@ -431,8 +424,6 @@ int main(int argc, char* argv[])
 	progname = argv[0];
 
 	parse_args(argc, argv);
-	if (argc==1)
-		usage();
 
 	if (getuid() == 0) {
 		if (dangerous == 1) {
@@ -525,8 +516,7 @@ int main(int argc, char* argv[])
 
 	init_buffers();
 
-	if (intelligence == 1)
-		setup_fds();
+	setup_fds();
 
 	if (check_tainted() != 0) {
 		output("Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");

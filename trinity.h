@@ -103,7 +103,6 @@ extern unsigned int opmode;
 extern char *opmodename[];
 extern char *structmodename[];
 extern unsigned int max_nr_syscalls;
-extern unsigned char intelligence;
 extern unsigned int structmode;
 extern unsigned long regval;
 extern unsigned char rotate_mask;
