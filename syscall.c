@@ -123,10 +123,52 @@ args_done:
 	return ret;
 }
 
+int child_process(void)
+{
+	int ret = 0;
+	unsigned int syscallnr;
+
+	seed_from_tod();
+	mask_signals();
+
+	while (syscalls_per_child > 0) {
+
+		syscallnr = rand() % max_nr_syscalls;
+
+		if (do_specific_syscall != 0)
+			syscallnr = specific_syscall;
+		else {
+
+			if (syscalls[syscallnr].entry->num_args == 0)
+				goto skip_syscall;
+
+			if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
+				goto skip_syscall;
+
+			if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
+				goto skip_syscall;
+		}
+
+		(void)alarm(3);
+
+		ret = mkcall(syscallnr);
+
+skip_syscall:
+		syscalls_per_child--;
+
+		if (ctrlc_hit == 1)
+			break;
+	}
+
+	/* In case we randomly did a PTRACE_TRACEME */
+	ptrace(PTRACE_CONT, getpid(), NULL, NULL);
+
+	return ret;
+}
+
 
 void do_syscall_from_child()
 {
-	unsigned int syscallnr;
 	int ret = 0;
 
 	if (!shm->regenerate) {
@@ -146,42 +188,7 @@ void do_syscall_from_child()
 		regenerate_random_page();
 
 	if (fork() == 0) {
-
-		seed_from_tod();
-		mask_signals();
-
-		while (syscalls_per_child > 0) {
-
-			syscallnr = rand() % max_nr_syscalls;
-
-			if (do_specific_syscall != 0)
-				syscallnr = specific_syscall;
-			else {
-
-				if (syscalls[syscallnr].entry->num_args == 0)
-					goto skip_syscall;
-
-				if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
-					goto skip_syscall;
-
-				if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
-					goto skip_syscall;
-			}
-
-			(void)alarm(3);
-
-			ret = mkcall(syscallnr);
-
-skip_syscall:
-			syscalls_per_child--;
-
-			if (ctrlc_hit == 1)
-				break;
-		}
-
-		/* In case we randomly did a PTRACE_TRACEME */
-		ptrace(PTRACE_CONT, getpid(), NULL, NULL);
-
+		ret = child_process();
 		_exit(ret);
 	}
 	(void)waitpid(-1, NULL, 0);
