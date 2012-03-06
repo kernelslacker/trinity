@@ -20,7 +20,7 @@ do
   cd tmp.$RND
   for i in `seq 0 $NR_CPUS`
   do
-	taskset -c $i ../../trinity --logfile=../../logs/trinity-rand-cpu$i.log -N 1000 &
+	taskset -c $i ../../trinity --logfile=../../logs/trinity-rand-cpu$i.log &
   done
   wait
   cd ..
