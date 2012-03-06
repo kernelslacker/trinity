@@ -444,7 +444,7 @@ int main(int argc, char* argv[])
 
 	if (logging == 1) {
 		if (logfilename == NULL)
-			logfilename = strdup("trinity-cpu0.log");
+			logfilename = strdup("trinity.log");
 		unlink(logfilename);
 		logfile = fopen(logfilename, "a");
 		if (!logfile) {
