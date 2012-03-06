@@ -13,7 +13,7 @@
 struct syscall syscall_clone = {
 	.name = "clone",
 	.num_args = 5,
-	//.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL,
 	.arg1name = "clone_flags",
 	.arg1type = ARG_LIST,
 	.arg1list = {
