@@ -74,8 +74,5 @@ void output(const char *fmt, ...)
 		perror("Logfile not open!\n");
 		exit(EXIT_FAILURE);
 	}
-
-	lock_logfile();
 	fprintf(logfile, "%s", outputbuf);
-	unlock_logfile();
 }
