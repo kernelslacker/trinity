@@ -169,7 +169,7 @@ skip_syscall:
 
 void do_syscall_from_child()
 {
-	int ret = 0;
+	unsigned int i;
 
 	if (!shm->regenerate) {
 		close_files();
@@ -187,9 +187,13 @@ void do_syscall_from_child()
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
-	if (fork() == 0) {
-		ret = child_process();
-		_exit(ret);
+	for (i = 0; i < 5; i++) {
+		if (fork() == 0) {
+			int ret = 0;
+
+			ret = child_process();
+			_exit(ret);
+		}
 	}
 	(void)waitpid(-1, NULL, 0);
 }
