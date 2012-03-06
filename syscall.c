@@ -78,8 +78,11 @@ static long mkcall(unsigned int call)
 args_done:
 	sptr += sprintf(sptr, WHITE ") ");
 
+	lock_logfile();
 	output("%s", string);
 	sptr = string;
+
+	/* This sync is here halfway through just in case the syscall crashes. */
 	sync_output();
 
 	if (dopause == 1)
@@ -105,6 +108,7 @@ args_done:
 	output("%s", string);
 	sptr = string;
 	sync_output();
+	unlock_logfile();
 
 	if (quiet) {
 		if (shm->execcount % 1000 == 0) {

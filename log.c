@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include "trinity.h"
 
+static struct flock logfilelock = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 static char outputbuf[1024];
 char *logfilename;
 FILE *logfile;
@@ -24,9 +25,33 @@ void sync_output()
 	synclog();
 }
 
+void lock_logfile()
+{
+	if (logging == 0)
+		return;
+
+	logfilelock.l_type = F_WRLCK;
+	logfilelock.l_pid = getpid();
+	if (fcntl(fileno(logfile), F_SETLKW, &logfilelock) == -1) {
+		perror("fcntl F_SETLKW");
+		exit(EXIT_FAILURE);
+	}
+}
+
+void unlock_logfile()
+{
+	if (logging == 0)
+		return;
+
+	logfilelock.l_type = F_UNLCK;
+	if (fcntl(fileno(logfile), F_SETLK, &logfilelock) == -1) {
+		perror("fcntl F_SETLK");
+		exit(EXIT_FAILURE);
+	}
+}
+
 void output(const char *fmt, ...)
 {
-	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 	va_list args;
 	int n;
 
@@ -45,21 +70,12 @@ void output(const char *fmt, ...)
 	if (logging == 0)
 		return;
 
-	fl.l_pid = getpid();
-	if (fcntl(fileno(logfile), F_SETLKW, &fl) == -1) {
-		perror("fcntl F_SETLKW");
-		exit(EXIT_FAILURE);
-	}
-
 	if (logfile == NULL) {
 		perror("Logfile not open!\n");
 		exit(EXIT_FAILURE);
 	}
-	fprintf(logfile, "%s", outputbuf);
 
-	fl.l_type = F_UNLCK;
-	if (fcntl(fileno(logfile), F_SETLK, &fl) == -1) {
-		perror("fcntl F_SETLK");
-		exit(EXIT_FAILURE);
-	}
+	lock_logfile();
+	fprintf(logfile, "%s", outputbuf);
+	unlock_logfile();
 }
