@@ -166,4 +166,6 @@ int check_tainted(void);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
+#define min(a,b) (((a) < (b)) ? (a) : (b))
+
 #endif	/* _TRINITY_H */
