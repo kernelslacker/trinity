@@ -93,16 +93,6 @@ static void init_buffers()
 	regenerate_random_page();
 }
 
-static void sighandler(int sig)
-{
-	output("signal: %s\n", strsignal (sig));
-	(void)fflush(stdout);
-	(void)signal(sig, sighandler);
-	if (sig == SIGALRM)
-		output("Alarm clock.\n");
-	_exit(0);
-}
-
 
 unsigned long rand64()
 {
@@ -257,6 +247,16 @@ static void parse_args(int argc, char *argv[])
 
 	if (show_syscall_list == 1)
 		return;
+}
+
+static void sighandler(int sig)
+{
+	output("signal: %s\n", strsignal (sig));
+	(void)fflush(stdout);
+	(void)signal(sig, sighandler);
+	if (sig == SIGALRM)
+		output("Alarm clock.\n");
+	_exit(0);
 }
 
 static void ctrlc(__attribute((unused)) int sig)
@@ -516,14 +516,14 @@ int main(int argc, char* argv[])
 
 	init_buffers();
 
+	mask_signals();
+
 	setup_fds();
 
 	if (check_tainted() != 0) {
 		output("Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");
 		do_check_tainted = 1;
 	}
-
-	mask_signals();
 
 	/* just in case we're not using the test.sh harness. */
 	chmod("tmp/", 0755);
