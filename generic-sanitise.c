@@ -71,23 +71,24 @@ unsigned long get_interesting_value()
 		return low;
 
 
-	i = rand() % 13;
+	i = rand() % 14;
 
 	switch (i) {
 	/* 64 bit */
-	case 0:	return 0;
-	case 1:	return 0x0000000100000000;
-	case 2:	return 0x7fffffff00000000;
-	case 3:	return 0x8000000000000000;
-	case 4:	return 0xffffffff00000000;
-	case 5:	return low;
-	case 6:	return low | 0x0000000100000000;
-	case 7:	return low | 0x7fffffff00000000;
-	case 8:	return low | 0x8000000000000000;
-	case 9:	return low | 0xffffffff00000000;
-	case 10: return (low & 0xffffff) | 0xffffffff81000000;	// x86-64 kernel text address
-	case 11: return (low & 0xffffff) | 0xffffffffa0000000;	// x86-64 module space
-	case 12: return (low & 0x0fffff) | 0xffffffffff600000;	// x86-64 vdso
+	case 0:	 return 0;
+	case 1:	 return 0x0000000100000000;
+	case 2:	 return 0x7fffffff00000000;
+	case 3:	 return 0x8000000000000000;
+	case 4:	 return 0xffffffff00000000;
+	case 5:	 return low;
+	case 6:	 return 0x0000000100000000 | low;
+	case 7:	 return 0x7fffffff00000000 | low;
+	case 8:	 return 0x8000000000000000 | low;
+	case 9:  return 0xffff880000000000 | (low << 4);	// x86-64 PAGE_OFFSET
+	case 10: return 0xffffffff00000000 | low;
+	case 11: return 0xffffffff80000000 | (low & 0xffffff);	// x86-64 kernel text address
+	case 12: return 0xffffffffa0000000 | (low & 0xffffff);	// x86-64 module space
+	case 13: return 0xffffffffff600000 | (low & 0x0fffff);	// x86-64 vdso
 	}
 	/* Should never be reached. */
 	return 0;
