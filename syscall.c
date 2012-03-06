@@ -170,6 +170,7 @@ skip_syscall:
 void do_syscall_from_child()
 {
 	unsigned int i;
+	unsigned int nr_CPUs = sysconf(_SC_NPROCESSORS_ONLN);
 
 	if (!shm->regenerate) {
 		close_files();
@@ -187,7 +188,7 @@ void do_syscall_from_child()
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < nr_CPUs; i++) {
 		if (fork() == 0) {
 			int ret = 0;
 
