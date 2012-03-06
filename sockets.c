@@ -44,7 +44,7 @@ void generate_sockets(unsigned int nr_to_create)
 	fl.l_pid = getpid();
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
 		perror("fcntl F_SETLKW");
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	output("took writer lock for cachefile\n");
