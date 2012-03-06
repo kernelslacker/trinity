@@ -160,17 +160,15 @@ skip_syscall:
 			break;
 	}
 
-	/* In case we randomly did a PTRACE_TRACEME */
-	ptrace(PTRACE_CONT, getpid(), NULL, NULL);
-
 	return ret;
 }
 
 
 void do_syscall_from_child()
 {
+	unsigned int pids[64];
 	unsigned int i;
-	unsigned int nr_CPUs = sysconf(_SC_NPROCESSORS_ONLN);
+	unsigned int nr_childs = min(64, sysconf(_SC_NPROCESSORS_ONLN));
 
 	if (!shm->regenerate) {
 		close_files();
@@ -188,8 +186,9 @@ void do_syscall_from_child()
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
-	for (i = 0; i < nr_CPUs; i++) {
-		if (fork() == 0) {
+	for (i = 0; i < nr_childs; i++) {
+		pids[i] =fork();
+		if (pids[i] == 0) {
 			int ret = 0;
 
 			ret = child_process();
@@ -197,4 +196,9 @@ void do_syscall_from_child()
 		}
 	}
 	(void)waitpid(-1, NULL, 0);
+
+	for (i = 0; i < nr_childs; i++) {
+		/* In case we randomly did a PTRACE_TRACEME */
+		ptrace(PTRACE_CONT, pids[i], NULL, NULL);
+	}
 }
