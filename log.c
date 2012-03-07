@@ -44,8 +44,9 @@ void unlock_logfile()
 		return;
 
 	logfilelock.l_type = F_UNLCK;
-	if (fcntl(fileno(logfile), F_SETLK, &logfilelock) == -1) {
-		perror("fcntl F_SETLK");
+	logfilelock.l_pid = getpid();
+	if (fcntl(fileno(logfile), F_SETLKW, &logfilelock) == -1) {
+		perror("fcntl F_SETLKW");
 		exit(EXIT_FAILURE);
 	}
 }
