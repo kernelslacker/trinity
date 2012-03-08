@@ -42,8 +42,9 @@ void generate_sockets(unsigned int nr_to_create)
 
 	output("taking writer lock for cachefile\n");
 	fl.l_pid = getpid();
+	fl.l_type = F_WRLCK;
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
-		perror("fcntl F_SETLKW");
+		perror("fcntl F_WRLCK F_SETLKW");
 		exit(EXIT_FAILURE);
 	}
 
@@ -138,7 +139,7 @@ void open_sockets()
 	fl.l_pid = getpid();
 	fl.l_type = F_RDLCK;
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
-		perror("fcntl reader F_SETLKW");
+		perror("fcntl F_RDLCK F_SETLKW");
 		exit(1);
 	}
 	output("took reader lock for cachefile\n");
@@ -192,9 +193,10 @@ regenerate:
 
 	output("(%d sockets created based on info from socket cachefile.)\n", socks);
 
+	fl.l_pid = getpid();
 	fl.l_type = F_UNLCK;
 	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
-		perror("fcntl reader F_SETLK ");
+		perror("fcntl F_UNLCK F_SETLK ");
 		exit(1);
 	}
 

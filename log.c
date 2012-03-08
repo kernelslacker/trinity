@@ -5,7 +5,6 @@
 #include <fcntl.h>
 #include "trinity.h"
 
-static struct flock logfilelock = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 static char outputbuf[1024];
 char *logfilename;
 FILE *logfile;
@@ -27,26 +26,38 @@ void sync_output()
 
 void lock_logfile()
 {
+	struct flock logfilelock;
+
 	if (logging == 0)
 		return;
 
 	logfilelock.l_type = F_WRLCK;
+	logfilelock.l_whence = SEEK_SET;
+	logfilelock.l_start = 0;
+	logfilelock.l_len = 0;
 	logfilelock.l_pid = getpid();
 	if (fcntl(fileno(logfile), F_SETLKW, &logfilelock) == -1) {
-		perror("fcntl F_SETLKW");
+		printf("[%d] ", getpid());
+		perror("fcntl lock F_SETLKW");
 		exit(EXIT_FAILURE);
 	}
 }
 
 void unlock_logfile()
 {
+	struct flock logfilelock;
+
 	if (logging == 0)
 		return;
 
 	logfilelock.l_type = F_UNLCK;
+	logfilelock.l_whence = SEEK_SET;
+	logfilelock.l_start = 0;
+	logfilelock.l_len = 0;
 	logfilelock.l_pid = getpid();
 	if (fcntl(fileno(logfile), F_SETLKW, &logfilelock) == -1) {
-		perror("fcntl F_SETLKW");
+		printf("[%d] ", getpid());
+		perror("fcntl unlock F_SETLKW\n");
 		exit(EXIT_FAILURE);
 	}
 }
