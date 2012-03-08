@@ -112,7 +112,7 @@ extern unsigned char do_specific_syscall;
 extern unsigned long specific_syscall;
 extern unsigned char dopause;
 extern long struct_fill;
-extern unsigned char syscalls_per_child;
+extern unsigned long syscalls_per_child;
 extern unsigned char logging;
 
 struct shm_s {

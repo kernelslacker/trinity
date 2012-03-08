@@ -40,7 +40,7 @@ unsigned int page_size;
 unsigned char dopause = 0;
 unsigned char do_specific_syscall = 0;
 unsigned char do_specific_proto = 0;
-unsigned char syscalls_per_child = 5;
+unsigned long syscalls_per_child = 5;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
 static unsigned char dangerous = 0;
@@ -175,6 +175,7 @@ static void parse_args(int argc, char *argv[])
 
 		case 'F':
 			syscalls_per_child = strtol(optarg, NULL, 10);
+			printf("doing %ld syscalls per child\n", syscalls_per_child);
 			break;
 
 		case 'g':
