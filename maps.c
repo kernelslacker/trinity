@@ -87,6 +87,7 @@ void setup_maps()
 
 	tmpmap = maps_list = alloc_map();
 	do {
+retry:
 		ret = fscanf(f, "%p-%p", &startaddr, &endaddr);
 		if (ret == 0) {
 			printf("/proc/maps parsing failure\n");
@@ -118,6 +119,12 @@ void setup_maps()
 				break;
 			name[strlen(name) - 1] = '\0';
 			tmpmap->name = strdup(name);
+
+			if (!strcmp(tmpmap->name, "[heap]")) {
+				output("skipping heap (%p-%p)\n", startaddr, endaddr);
+				free(tmpmap->name);
+				goto retry;
+			}
 		}
 
 		tmpmap->ptr = startaddr;
