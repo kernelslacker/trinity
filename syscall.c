@@ -200,16 +200,8 @@ void do_syscall_from_child()
 		}
 	}
 	for (i = 0; i < nr_childs; i++) {
+		/* In case we randomly did a PTRACE_TRACEME */
+		ptrace(PTRACE_CONT, pids[i], NULL, NULL);
 		(void)waitpid(pids[i], NULL, 0);
-		pids[i] = -1;
-	}
-
-	for (i = 0; i < nr_childs; i++) {
-		if (pids[i] != -1) {
-			/* In case we randomly did a PTRACE_TRACEME */
-			ptrace(PTRACE_CONT, pids[i], NULL, NULL);
-			(void)waitpid(pids[i], NULL, 0);
-			pids[i] = -1;
-		}
 	}
 }
