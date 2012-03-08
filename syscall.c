@@ -170,7 +170,7 @@ skip_syscall:
 
 void do_syscall_from_child()
 {
-	unsigned int pids[64];
+	int pids[64];
 	unsigned int i;
 	unsigned int nr_childs = min(64, sysconf(_SC_NPROCESSORS_ONLN));
 
@@ -191,7 +191,7 @@ void do_syscall_from_child()
 		regenerate_random_page();
 
 	for (i = 0; i < nr_childs; i++) {
-		pids[i] =fork();
+		pids[i] = fork();
 		if (pids[i] == 0) {
 			int ret = 0;
 
@@ -199,10 +199,17 @@ void do_syscall_from_child()
 			_exit(ret);
 		}
 	}
-	(void)waitpid(-1, NULL, 0);
+	for (i = 0; i < nr_childs; i++) {
+		(void)waitpid(pids[i], NULL, 0);
+		pids[i] = -1;
+	}
 
 	for (i = 0; i < nr_childs; i++) {
-		/* In case we randomly did a PTRACE_TRACEME */
-		ptrace(PTRACE_CONT, pids[i], NULL, NULL);
+		if (pids[i] != -1) {
+			/* In case we randomly did a PTRACE_TRACEME */
+			ptrace(PTRACE_CONT, pids[i], NULL, NULL);
+			(void)waitpid(pids[i], NULL, 0);
+			pids[i] = -1;
+		}
 	}
 }
