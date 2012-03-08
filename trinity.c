@@ -252,11 +252,11 @@ static void parse_args(int argc, char *argv[])
 
 static void sighandler(int sig)
 {
-	output("signal: %s\n", strsignal (sig));
+	output("[%d] signal: %s\n", getpid(), strsignal(sig));
 	(void)fflush(stdout);
 	(void)signal(sig, sighandler);
 	if (sig == SIGALRM)
-		output("Alarm clock.\n");
+		output("[%d] Alarm clock.\n", getpid());
 	_exit(0);
 }
 
