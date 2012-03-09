@@ -136,7 +136,6 @@ int child_process(void)
 	unsigned int left_to_do = syscalls_per_child;
 
 	seed_from_tod();
-	mask_signals();
 
 	while (left_to_do > 0) {
 
@@ -164,9 +163,6 @@ int child_process(void)
 
 skip_syscall:
 		left_to_do--;
-
-		if (ctrlc_hit == 1)
-			break;
 	}
 
 	return ret;
@@ -190,15 +186,24 @@ static void regenerate()
 
 #define debug printf
 
+void reap_child(pid_t childpid)
+{
+	unsigned int i;
+
+	for (i = 0; i < shm->nr_childs; i++) {
+		if (shm->pids[i] == childpid) {
+			debug("Removing %d from pidmap\n", shm->pids[i]);
+			shm->pids[i] = -1;
+			shm->running_childs--;
+			break;
+		}
+	}
+}
+
 void do_syscall_from_child()
 {
-	pid_t pids[64];
 	unsigned int i;
-	unsigned int nr_childs = min(64, sysconf(_SC_NPROCESSORS_ONLN));
-	unsigned int running_childs = 0;
 	int childpid, childstatus;
-
-	memset(pids, -1, sizeof(pids));
 
 	regenerate();
 	if (do_specific_syscall == 1)
@@ -208,59 +213,43 @@ void do_syscall_from_child()
 
 		/* Generate children*/
 
-		while (running_childs < nr_childs) {
+		while (shm->running_childs < shm->nr_childs) {
+			int pid = 0;
 
 			/* Find a space for it in the pid map */
-			for (i = 0; i < nr_childs; i++) {
-				if (pids[i] == -1)
+			for (i = 0; i < shm->nr_childs; i++) {
+				if (shm->pids[i] == -1)
 					break;
 			}
-			if (i >= nr_childs) {
+			if (i >= shm->nr_childs) {
 				output("pid map full!\n");
 				exit(EXIT_FAILURE);
 			}
-			pids[i] = fork();
-			if (pids[i] == 0) {
+			pid = fork();
+			if (pid != 0)
+				shm->pids[i] = pid;
+			else {
 				int ret = 0;
 
 				ret = child_process();
 				shm->regenerate--;
+				output("child %d exitting\n", getpid());
 
 				_exit(ret);
 			}
-			running_childs++;
-			debug("Created child %d [total:%d/%d]\n", pids[i], running_childs, nr_childs);
+			shm->running_childs++;
+			debug("Created child %d [total:%d/%d]\n", shm->pids[i], shm->running_childs, shm->nr_childs);
 		}
+		debug("created enough children\n\n");
 
 		/* deal with child processes */
 
-		childpid = waitpid(-1, &childstatus, WNOHANG | WUNTRACED | WCONTINUED);
+		childpid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED);
+//		debug("waitpid returned %d status:%x\n", childpid, childstatus);
 
 		switch (childpid) {
 		case 0:
-			debug("Nothing changed. children:%d\n", running_childs);
-			/* FIXME: This reaping of dead children shouldn't be necessary.
-			    There's a bug somewhere that causes the default switch case
-			    never to be taken. */
-			for (i = 0; i < nr_childs; i++) {
-				if (pids[i] != -1) {
-					pid_t pid = waitpid(pids[i], NULL, WNOHANG);
-					if (pid == -1) {
-						if (errno == ECHILD) {
-							debug("pid %d disappeared.", pids[i]);
-							debug("Removing from pidmap\n");
-							pids[i] = -1;
-							running_childs--;
-						}
-					}
-				}
-			}
-			debug("pids:");
-			for (i = 0; i < nr_childs; i++) {
-				if (pids[i] != -1)
-					debug("%d ", pids[i]);
-			}
-			debug("\n");
+			debug("Nothing changed. children:%d\n", shm->running_childs);
 			break;
 
 		case -1:
@@ -275,27 +264,21 @@ void do_syscall_from_child()
 			debug("Something happened to pid %d\n", childpid);
 			if (WIFEXITED(childstatus)) {
 				debug("Child %d exited\n", childpid);
-				for (i = 0; i < nr_childs; i++) {
-					if (pids[i] == childpid) {
-						debug("Removing %d from pidmap\n", pids[i]);
-						pids[i] = -1;
-						running_childs--;
-						break;
-					}
-				}
+				reap_child(childpid);
 				break;
 
 			} else if (WIFSIGNALED(childstatus)) {
-				debug("Child got a signal (%d)\n", WTERMSIG(childstatus));
-				if (WTERMSIG(childstatus) == SIGKILL) {
-					for (i = 0; i < nr_childs; i++) {
-						if (pids[i] == childpid) {
-							debug("Removing %d from pidmap\n", pids[i]);
-							pids[i] = -1;
-							running_childs--;
-							break;
-						}
-					}
+				switch (WTERMSIG(childstatus)) {
+				case SIGFPE:
+				case SIGSEGV:
+				case SIGKILL:
+				case SIGALRM:
+					debug("Child got a signal (%d)\n", WTERMSIG(childstatus));
+					reap_child(childpid);
+					break;
+				default:
+					debug("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
+					break;
 				}
 				break;
 
@@ -304,24 +287,12 @@ void do_syscall_from_child()
 				debug("Sending PTRACE_CONT (and then KILL)\n");
 				ptrace(PTRACE_CONT, childpid, NULL, NULL);
 				kill(childpid, SIGKILL);
-				for (i = 0; i < nr_childs; i++) {
-					if (pids[i] == childpid) {
-						debug("Removing %d from pidmap\n", pids[i]);
-						pids[i] = -1;
-						running_childs--;
-						break;
-					}
-				}
+				reap_child(childpid);
 			} else if (WIFCONTINUED(childstatus)) {
 				break;
 			} else {
 				output("erk, wtf\n");
 			}
 		}
-
-		sleep(1);
-
-		if (ctrlc_hit == 1)
-			return;
 	}
 }

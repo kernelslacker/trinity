@@ -66,9 +66,6 @@ void open_fds(char *dir)
 	}
 	while ((de = readdir(d))) {
 
-		if (ctrlc_hit == 1)
-			exit(EXIT_SUCCESS);
-
 		memset(&buf, 0, sizeof(struct stat));
 		snprintf(b, sizeof(b), "%s/%s", dir, de->d_name);
 		if (ignore_files(de->d_name))

@@ -50,13 +50,10 @@ void main_loop(void)
 			ret = check_tainted();
 			if (ret != 0) {
 				output("kernel became tainted! (%d)\n", ret);
-				ctrlc_hit = 1;
-				return;
+				exit(EXIT_FAILURE);
 			}
 		}
 
-		if (ctrlc_hit == 1)
-			_exit(EXIT_SUCCESS);
 		if (syscallcount && (shm->execcount >= syscallcount))
 			_exit(EXIT_SUCCESS);
 	}

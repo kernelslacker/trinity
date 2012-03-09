@@ -13,7 +13,6 @@
 extern jmp_buf ret_jump;
 
 void syscall_list(void);
-void mask_signals(void);
 void main_loop(void);
 
 void do_syscall_from_child();
@@ -121,10 +120,12 @@ struct shm_s {
 	unsigned long failures;
 	unsigned long retries;
 	unsigned int regenerate;
+
+	unsigned int nr_childs;
+	unsigned int running_childs;
+	pid_t pids[64];
 };
 extern struct shm_s *shm;
-
-extern unsigned char ctrlc_hit;
 
 extern char *page_zeros;
 extern char *page_0xff;
