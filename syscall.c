@@ -131,11 +131,12 @@ int child_process(void)
 {
 	int ret = 0;
 	unsigned int syscallnr;
+	unsigned int left_to_do = syscalls_per_child;
 
 	seed_from_tod();
 	mask_signals();
 
-	while (syscalls_per_child > 0) {
+	while (left_to_do > 0) {
 
 		syscallnr = rand() % max_nr_syscalls;
 
@@ -158,7 +159,7 @@ int child_process(void)
 		ret = mkcall(syscallnr);
 
 skip_syscall:
-		syscalls_per_child--;
+		left_to_do--;
 
 		if (ctrlc_hit == 1)
 			break;
