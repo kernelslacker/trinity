@@ -172,13 +172,8 @@ skip_syscall:
 	return ret;
 }
 
-
-void do_syscall_from_child()
+static void regenerate()
 {
-	int pids[64];
-	unsigned int i;
-	unsigned int nr_childs = min(64, sysconf(_SC_NPROCESSORS_ONLN));
-
 	if (!shm->regenerate) {
 		close_files();
 		open_files();
@@ -190,8 +185,15 @@ void do_syscall_from_child()
 
 		regenerate_random_page();
 	}
-	shm->regenerate--;
+}
 
+void do_syscall_from_child()
+{
+	int pids[64];
+	unsigned int i;
+	unsigned int nr_childs = min(64, sysconf(_SC_NPROCESSORS_ONLN));
+
+	regenerate();
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
@@ -201,6 +203,7 @@ void do_syscall_from_child()
 			int ret = 0;
 
 			ret = child_process();
+			shm->regenerate--;
 			_exit(ret);
 		}
 	}
