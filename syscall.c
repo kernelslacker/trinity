@@ -21,6 +21,8 @@ static long mkcall(unsigned int call)
 	int ret = 0;
 	char string[512], *sptr=string;
 
+	sigsetjmp(ret_jump, 1);
+
 	sptr += sprintf(sptr, "[%d] %lu: ", getpid(), shm->execcount);
 
 	olda1 = a1 = rand64();
