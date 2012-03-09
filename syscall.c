@@ -175,6 +175,7 @@ skip_syscall:
 static void regenerate()
 {
 	if (!shm->regenerate) {
+		output("Regenerating random pages, fd's etc.\n");
 		close_files();
 		open_files();
 
