@@ -533,8 +533,6 @@ int main(int argc, char* argv[])
 		/* nothing right now */
 	}
 
-	sigsetjmp(ret_jump, 1);
-
 	main_loop();
 
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",

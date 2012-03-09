@@ -40,8 +40,6 @@ void main_loop(void)
 	shm->execcount = 1;
 
 	while (1) {
-		sigsetjmp(ret_jump, 1);
-
 		do_syscall_from_child();
 
 		if (syscallcount && (shm->execcount >= syscallcount))
