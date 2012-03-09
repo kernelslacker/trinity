@@ -299,8 +299,18 @@ void do_syscall_from_child()
 				break;
 
 			} else if (WIFSTOPPED(childstatus)) {
-				debug("Child was stopped. Sending CONT\n");
+				debug("Child was stopped by %d.", WSTOPSIG(childstatus));
+				debug("Sending PTRACE_CONT (and then KILL)\n");
 				ptrace(PTRACE_CONT, childpid, NULL, NULL);
+				kill(childpid, SIGKILL);
+				for (i = 0; i < nr_childs; i++) {
+					if (pids[i] == childpid) {
+						debug("Removing %d from pidmap\n", pids[i]);
+						pids[i] = -1;
+						running_childs--;
+						break;
+					}
+				}
 			} else {
 				output("erk, wtf\n");
 			}
