@@ -35,7 +35,6 @@ unsigned long long syscallcount = 0;
 unsigned long regval = 0;
 unsigned long specific_syscall = 0;
 unsigned int specific_proto = 0;
-unsigned char ctrlc_hit = 0;
 unsigned int page_size;
 unsigned char dopause = 0;
 unsigned char do_specific_syscall = 0;
@@ -250,38 +249,26 @@ static void parse_args(int argc, char *argv[])
 		return;
 }
 
+
 static void sighandler(int sig)
 {
-	output("[%d] signal: %s\n", getpid(), strsignal(sig));
+	printf("[%d] signal: %s\n", getpid(), strsignal(sig));
 	(void)fflush(stdout);
 	(void)signal(sig, sighandler);
-	if (sig == SIGALRM)
-		output("[%d] Alarm clock.\n", getpid());
 	_exit(0);
 }
 
-static void ctrlc(__attribute((unused)) int sig)
+static void mask_signals(void)
 {
-	ctrlc_hit=1;
-}
+	struct sigaction sa;
+	sigset_t ss;
 
-void mask_signals(void)
-{
-	int i;
-
-	for (i=1; i<512; i++)  {
-		struct sigaction sa;
-		sigset_t ss;
-
-		(void)sigfillset(&ss);
-		sa.sa_flags = SA_RESTART;
-		sa.sa_handler = sighandler;
-		sa.sa_mask = ss;
-		(void)sigaction(i, &sa, NULL);
-	}
-	(void)signal(SIGWINCH, SIG_IGN);
-	(void)signal(SIGCHLD, SIG_IGN);
-	(void)signal(SIGINT, ctrlc);
+	(void)sigfillset(&ss);
+	sa.sa_flags = SA_RESTART;
+	sa.sa_handler = sighandler;
+	sa.sa_mask = ss;
+	(void)sigaction(SIGSEGV, &sa, NULL);
+	(void)sigaction(SIGFPE, &sa, NULL);
 }
 
 static void find_specific_syscall()
@@ -514,6 +501,8 @@ int main(int argc, char* argv[])
 	shm->successes = 0;
 	shm->failures = 0;
 	shm->regenerate = REGENERATION_POINT - 1;
+	memset(shm->pids, -1, sizeof(shm->pids));
+	shm->nr_childs = min(64, sysconf(_SC_NPROCESSORS_ONLN));
 
 	init_buffers();
 
