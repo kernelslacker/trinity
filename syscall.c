@@ -311,6 +311,8 @@ void do_syscall_from_child()
 						break;
 					}
 				}
+			} else if (WIFCONTINUED(childstatus)) {
+				break;
 			} else {
 				output("erk, wtf\n");
 			}
