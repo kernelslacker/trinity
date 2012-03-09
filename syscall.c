@@ -158,6 +158,8 @@ int child_process(void)
 
 		ret = mkcall(syscallnr);
 
+		(void)alarm(0);
+
 skip_syscall:
 		left_to_do--;
 
