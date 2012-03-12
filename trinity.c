@@ -39,7 +39,7 @@ unsigned int page_size;
 unsigned char dopause = 0;
 unsigned char do_specific_syscall = 0;
 unsigned char do_specific_proto = 0;
-unsigned long syscalls_per_child = 5;
+unsigned long syscalls_per_child = DEFAULT_SYSCALLS_PER_CHILD;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
 static unsigned char dangerous = 0;
