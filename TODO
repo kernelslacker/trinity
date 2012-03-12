@@ -1,6 +1,17 @@
-* Improve signal handling.
-  * bug: ctrl-c handler doesn't always work.
-  * better handling of segfault/fp exception etc
+* Annotate syscall return types
+
+* First thing a child should do is allocate a buffer of random numbers
+  to be used as syscall numbers.
+
+* Based upon the first syscall the child is going to call, bias the subsequent
+  random syscalls to be calls that use the return type from syscall 1.
+  Ie, if syscall #1 is going to be a syscall that returns an fd, do a bunch
+  of syscalls that work on fd's.
+  This will give us a sort of auto-grouping of syscalls.
+
+* Record the results of syscalls that return an object to be handed out
+  to subsequent syscalls/other child tasks. 
+  TODO: lifetime rules ? destroy on child exit ?
 
 * Struct fabrication
   Some syscalls are rejecting immediately because we aren't passing them
@@ -38,27 +49,12 @@
   It won't be much use on kernels that have them backported, but that's
   not a big deal. We could do a ENOSYS test.
 
-* Rethink the parent/child model.
-  - Fork multiple fuzzers.
-  - Store the pids of the children, and hand them out in ARG_PID
+* Store the pids of the children, and hand them out in ARG_PID
 
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
   *: Move arch specific syscalls into syscalls/arch/
 
-* sanitise_sync_file_range is bullshit
-
-* -F occasionally wedges the process.  It still runs, but there's no output.
-  Not entirely sure what's going on yet. Could be just another syscall that
-  we need to mark AVOID.  The alarm doesn't go off because the process is
-  still running.
-
-* Some syscalls can wedge for a really long time without the alarm going off.
-  either figure out if we can limit the time taken, or mark them AVOID.
-  (clock_nanosleep for eg.) Possibly also futex, though earlier hangs seen
-  there may have been fixed in e6780f7243eddb133cc20ec37fa69317c218b709
-
-* --nolog
 * --ignore-socketcache
 * --monochrome
 
@@ -107,5 +103,4 @@ Experiments:
 - add guard pages before/after, and add poison to be checked on return.
   (Note, in some cases the kernel will write before/after buffers passed, because
    libc has set things up that way, so it's expected)
-
 
