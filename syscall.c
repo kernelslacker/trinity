@@ -281,6 +281,7 @@ void do_syscall_from_child()
 				case SIGKILL:
 				case SIGALRM:
 				case SIGPIPE:
+				case SIGABRT:
 					debugf("Child got a signal (%d)\n", WTERMSIG(childstatus));
 					reap_child(childpid);
 					break;
