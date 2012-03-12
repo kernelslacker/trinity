@@ -255,6 +255,13 @@ void do_syscall_from_child()
 		case -1:
 			if (errno == ECHILD) {
 				debugf("All children exited!\n");
+				for (i = 0; i < shm->nr_childs; i++) {
+					if (shm->pids[i] != -1) {
+						debugf("Removing %d from pidmap\n", shm->pids[i]);
+						shm->pids[i] = -1;
+						shm->running_childs--;
+					}
+				}
 				return;
 			}
 			output("error! (%s)\n", strerror(errno));
