@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <setjmp.h>
+#include <sys/types.h>
 
 #ifndef S_SPLINT_S
 #define __unused__ __attribute((unused))
