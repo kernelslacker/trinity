@@ -112,8 +112,10 @@ extern unsigned char do_specific_syscall;
 extern unsigned long specific_syscall;
 extern unsigned char dopause;
 extern long struct_fill;
-extern unsigned long syscalls_per_child;
 extern unsigned char logging;
+
+#define DEFAULT_SYSCALLS_PER_CHILD 1000
+extern unsigned long syscalls_per_child;
 
 struct shm_s {
 	unsigned long execcount;
