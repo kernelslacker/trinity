@@ -32,6 +32,8 @@ struct syscalltable *syscalls;
 
 unsigned long long syscallcount = 0;
 
+unsigned char debug = 0;
+
 unsigned long regval = 0;
 unsigned long specific_syscall = 0;
 unsigned int specific_proto = 0;
@@ -148,9 +150,10 @@ static void parse_args(int argc, char *argv[])
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "dangerous", no_argument, NULL, 'd' },
 		{ "group", required_argument, NULL, 'g' },
+		{ "debug", no_argument, NULL, 'D' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dF:g:hkl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dDF:g:hkl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -170,6 +173,10 @@ static void parse_args(int argc, char *argv[])
 
 		case 'd':
 			dangerous = 1;
+			break;
+
+		case 'D':
+			debug = 1;
 			break;
 
 		case 'F':
@@ -252,8 +259,10 @@ static void parse_args(int argc, char *argv[])
 
 static void sighandler(int sig)
 {
-	printf("[%d] signal: %s\n", getpid(), strsignal(sig));
-	(void)fflush(stdout);
+	if (debug == 1) {
+		printf("[%d] signal: %s\n", getpid(), strsignal(sig));
+		(void)fflush(stdout);
+	}
 	(void)signal(sig, sighandler);
 	_exit(0);
 }

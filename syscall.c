@@ -184,7 +184,7 @@ static void regenerate()
 	}
 }
 
-#define debug printf
+#define debugf if (debug == 1) printf
 
 void reap_child(pid_t childpid)
 {
@@ -192,7 +192,7 @@ void reap_child(pid_t childpid)
 
 	for (i = 0; i < shm->nr_childs; i++) {
 		if (shm->pids[i] == childpid) {
-			debug("Removing %d from pidmap\n", shm->pids[i]);
+			debugf("Removing %d from pidmap\n", shm->pids[i]);
 			shm->pids[i] = -1;
 			shm->running_childs--;
 			break;
@@ -238,32 +238,32 @@ void do_syscall_from_child()
 				_exit(ret);
 			}
 			shm->running_childs++;
-			debug("Created child %d [total:%d/%d]\n", shm->pids[i], shm->running_childs, shm->nr_childs);
+			debugf("Created child %d [total:%d/%d]\n", shm->pids[i], shm->running_childs, shm->nr_childs);
 		}
-		debug("created enough children\n\n");
+		debugf("created enough children\n\n");
 
 		/* deal with child processes */
 
 		childpid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED);
-//		debug("waitpid returned %d status:%x\n", childpid, childstatus);
+//		debugf("waitpid returned %d status:%x\n", childpid, childstatus);
 
 		switch (childpid) {
 		case 0:
-			debug("Nothing changed. children:%d\n", shm->running_childs);
+			debugf("Nothing changed. children:%d\n", shm->running_childs);
 			break;
 
 		case -1:
 			if (errno == ECHILD) {
-				debug("All children exited!\n");
+				debugf("All children exited!\n");
 				return;
 			}
 			output("error! (%s)\n", strerror(errno));
 			break;
 
 		default:
-			debug("Something happened to pid %d\n", childpid);
+			debugf("Something happened to pid %d\n", childpid);
 			if (WIFEXITED(childstatus)) {
-				debug("Child %d exited\n", childpid);
+				debugf("Child %d exited\n", childpid);
 				reap_child(childpid);
 				break;
 
@@ -274,18 +274,18 @@ void do_syscall_from_child()
 				case SIGKILL:
 				case SIGALRM:
 				case SIGPIPE:
-					debug("Child got a signal (%d)\n", WTERMSIG(childstatus));
+					debugf("Child got a signal (%d)\n", WTERMSIG(childstatus));
 					reap_child(childpid);
 					break;
 				default:
-					debug("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
+					debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
 					break;
 				}
 				break;
 
 			} else if (WIFSTOPPED(childstatus)) {
-				debug("Child was stopped by %d.", WSTOPSIG(childstatus));
-				debug("Sending PTRACE_CONT (and then KILL)\n");
+				debugf("Child was stopped by %d.", WSTOPSIG(childstatus));
+				debugf("Sending PTRACE_CONT (and then KILL)\n");
 				ptrace(PTRACE_CONT, childpid, NULL, NULL);
 				kill(childpid, SIGKILL);
 				reap_child(childpid);

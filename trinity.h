@@ -11,6 +11,8 @@
 #define __unused__ /*@unused@*/
 #endif
 
+extern unsigned char debug;
+
 extern jmp_buf ret_jump;
 
 void syscall_list(void);
