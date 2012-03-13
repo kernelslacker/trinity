@@ -47,9 +47,6 @@ struct arglist {
 };
 
 struct syscall {
-	unsigned int number;
-	const char name[80];
-	unsigned int num_args;
 	void (*sanitise)(
 		unsigned long *,
 		unsigned long *,
@@ -57,6 +54,11 @@ struct syscall {
 		unsigned long *,
 		unsigned long *,
 		unsigned long *);
+	void (*post)(int);
+
+	unsigned int number;
+	const char name[80];
+	unsigned int num_args;
 	unsigned int flags;
 
 	unsigned int arg1type;

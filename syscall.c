@@ -126,6 +126,8 @@ args_done:
 
 	shm->execcount++;
 
+	if (syscalls[call].entry->post)
+	    syscalls[call].entry->post(ret);
 	return ret;
 }
 
