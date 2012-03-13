@@ -129,3 +129,6 @@ Still unfixed:
 * sys_poll use after free (hibernate)
   https://lkml.org/lkml/2012/3/12/748
 
+* tun oops dereferencing garbage nsproxy-> address.
+  https://lkml.org/lkml/2012/3/12/838
+
