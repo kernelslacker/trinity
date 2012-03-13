@@ -400,6 +400,7 @@ int main(int argc, char* argv[])
 	int shmid, ret;
 	unsigned int i;
 	key_t key;
+	struct shmid_ds shmid_ds;
 
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
 
@@ -508,6 +509,7 @@ int main(int argc, char* argv[])
 		perror("shmat");
 		exit(EXIT_FAILURE);
 	}
+	shmctl(key, IPC_RMID, &shmid_ds);
 	shm->successes = 0;
 	shm->failures = 0;
 	shm->regenerate = REGENERATION_POINT - 1;
