@@ -31,6 +31,13 @@
 	Pick a small random number for the lifetime of the resource
 	Store any allocated resources in the 'to be destroyed' list.
 
+* Rewrite the fd generation code.
+  - Don't generate so many fd's (faster startup)
+  - make a list of filenames during fd_setup, so that we can pass one at random
+    when sanitising open()
+  - When requesting an fd, occasionally generate a new one.
+  - If present, look in /mnt/test too, so we can test some filesystems like nfs.
+
 * generate overlapping addresses/lengths.
 
 * There are a few syscalls with duplicate '64' variants.
@@ -87,9 +94,6 @@
 * Ability to pass a list of comma separated syscalls on the command-line.
 
 * run tests in different namespaces, personalities.
-
-* make a list of filenames during fd_setup, so that we can pass one at random
-  when sanitising open()
 
 * --blacklist=open,read,write
 
