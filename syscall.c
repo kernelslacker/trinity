@@ -137,6 +137,8 @@ int child_process(void)
 	unsigned int syscallnr;
 	unsigned int left_to_do = syscalls_per_child;
 
+	(void)alarm(0);
+
 	seed_from_tod();
 
 	while (left_to_do > 0) {
