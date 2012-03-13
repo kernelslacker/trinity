@@ -126,3 +126,6 @@ Still unfixed:
 * rtc: INFO: possible circular locking dependency detected
   https://lkml.org/lkml/2012/2/27/438
 
+* sys_poll use after free (hibernate)
+  https://lkml.org/lkml/2012/3/12/748
+
