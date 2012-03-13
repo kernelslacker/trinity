@@ -279,6 +279,7 @@ static void mask_signals(void)
 	(void)sigaction(SIGSEGV, &sa, NULL);
 	(void)sigaction(SIGFPE, &sa, NULL);
 	(void)sigaction(SIGBUS, &sa, NULL);
+	(void)sigaction(SIGILL, &sa, NULL);
 }
 
 static void find_specific_syscall()
