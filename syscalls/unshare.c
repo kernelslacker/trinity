@@ -12,9 +12,9 @@ struct syscall syscall_unshare = {
 	.arg1name = "unshare_flags",
 	.arg1type = ARG_LIST,
 	.arg1list = {
-		.num = 7,
-		.values = { CLONE_FILES, CLONE_FS, CLONE_NEWIPC, CLONE_NEWNET,
-				CLONE_NEWNS, CLONE_SYSVSEM, CLONE_NEWUTS,
-		 },
+		.num = 10,
+		.values = { CLONE_THREAD, CLONE_FS, CLONE_NEWNS, CLONE_SIGHAND,
+			    CLONE_VM, CLONE_FILES, CLONE_SYSVSEM, CLONE_NEWUTS,
+			    CLONE_NEWIPC, CLONE_NEWNET },
 	},
 };
