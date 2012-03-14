@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sched.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -126,11 +127,25 @@ args_done:
 
 int child_process(void)
 {
+	cpu_set_t set;
+	pid_t pid = getpid();
 	int ret = 0;
 	unsigned int syscallnr;
+	unsigned int cpu;
 	unsigned int left_to_do = syscalls_per_child;
 
 	seed_from_tod();
+	for (cpu = 0; cpu < shm->nr_childs; cpu++) {
+		if (shm->pids[cpu] == pid)
+			break;
+	}
+
+	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
+		CPU_ZERO(&set);
+		CPU_SET(cpu, &set);
+		sched_setaffinity(getpid(), sizeof(set), &set);
+		output("bound child %d to cpu %d\n", pid, cpu);
+	}
 
 	while (left_to_do > 0) {
 
