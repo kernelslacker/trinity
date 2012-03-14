@@ -410,11 +410,17 @@ int create_shm()
 		return -1;
 	}
 	shmctl(key, IPC_RMID, &shmid_ds);
+
 	shm->successes = 0;
 	shm->failures = 0;
 	shm->regenerate = REGENERATION_POINT - 1;
-	memset(shm->pids, -1, sizeof(shm->pids));
 
+	shm->nr_childs = sysconf(_SC_NPROCESSORS_ONLN);
+	if (shm->nr_childs > MAX_NR_CHILDREN) {
+		printf("Increase MAX_NR_CHILDREN!\n");
+		exit(EXIT_FAILURE);
+	}
+	memset(shm->pids, -1, sizeof(shm->pids));
 	return 0;
 }
 
@@ -466,11 +472,6 @@ int main(int argc, char* argv[])
 	if (create_shm())
 		exit(EXIT_FAILURE);
 
-	shm->nr_childs = sysconf(_SC_NPROCESSORS_ONLN);
-	if (shm->nr_childs > MAX_NR_CHILDREN) {
-		printf("Increase MAX_NR_CHILDREN!\n");
-		exit(EXIT_FAILURE);
-	}
 	if (logging != 0)
 		open_logfiles(shm->nr_childs);
 
