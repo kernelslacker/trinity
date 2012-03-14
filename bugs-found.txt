@@ -138,3 +138,6 @@ Still unfixed:
 * vfs: chmod: Hung task after calling chmod()
   https://lkml.org/lkml/2012/3/14/373
 
+* net: Hung task when closing device
+  https://lkml.org/lkml/2012/3/14/375
+
