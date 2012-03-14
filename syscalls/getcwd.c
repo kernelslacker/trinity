@@ -11,4 +11,5 @@ struct syscall syscall_getcwd = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "size",
 	.arg2type = ARG_LEN,
+	.rettype = RET_PATH,
 };

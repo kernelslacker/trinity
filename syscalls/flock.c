@@ -13,4 +13,5 @@ struct syscall syscall_flock = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "cmd",
+	.rettype = RET_ZERO_SUCCESS,
 };

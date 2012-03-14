@@ -12,4 +12,5 @@ struct syscall syscall_capget = {
 	.num_args = 2,
 	.arg1name = "header",
 	.arg2name = "dataptr",
+	.rettype = RET_ZERO_SUCCESS,
 };

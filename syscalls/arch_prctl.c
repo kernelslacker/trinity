@@ -21,4 +21,5 @@ struct syscall syscall_arch_prctl = {
 	},
 	.arg2name = "addr",
 	.arg2type = ARG_ADDRESS,
+	.rettype = RET_BORING,
 };

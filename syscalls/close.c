@@ -13,4 +13,5 @@ struct syscall syscall_close = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.flags = AVOID_SYSCALL,
+	.rettype = RET_ZERO_SUCCESS,
 };

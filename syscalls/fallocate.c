@@ -15,4 +15,5 @@ struct syscall syscall_fallocate = {
 	.arg3name = "offset",
 	.arg4name = "len",
 	.arg4type = ARG_LEN,
+	.rettype = RET_ZERO_SUCCESS,
 };

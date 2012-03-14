@@ -15,4 +15,5 @@ struct syscall syscall_fchmodat = {
 	.arg2name = "filename",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "mode",
+	.rettype = RET_ZERO_SUCCESS,
 };

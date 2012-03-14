@@ -11,4 +11,5 @@ struct syscall syscall_fremovexattr = {
 	.arg1type = ARG_FD,
 	.arg2name = "name",
 	.arg2type = ARG_ADDRESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

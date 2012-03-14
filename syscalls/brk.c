@@ -12,4 +12,5 @@ struct syscall syscall_brk = {
 	.num_args = 1,
 	.arg1name = "brk",
 	.arg1type = ARG_ADDRESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

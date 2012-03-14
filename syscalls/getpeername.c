@@ -13,4 +13,5 @@ struct syscall syscall_getpeername = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "usockaddr_len",
 	.arg3type = ARG_LEN,
+	.rettype = RET_ZERO_SUCCESS,
 };

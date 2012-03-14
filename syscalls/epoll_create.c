@@ -12,5 +12,5 @@ struct syscall syscall_epoll_create = {
 	.num_args = 1,
 	.arg1name = "size",
 	.arg1type = ARG_LEN,
-	.retval = ARG_FD,
+	.rettype = RET_FD,
 };

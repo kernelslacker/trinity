@@ -28,5 +28,5 @@ struct syscall syscall_dup3 = {
 		.num = 1,
 		.values = { O_CLOEXEC },
 	},
-	.retval = ARG_FD,
+	.rettype = RET_FD,
 };

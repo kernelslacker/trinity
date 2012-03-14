@@ -12,4 +12,5 @@ struct syscall syscall_capset = {
 	.num_args = 2,
 	.arg1name = "header",
 	.arg2name = "data",
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -5,7 +5,7 @@
 #include "sanitise.h"
 
 struct syscall syscall_getpagesize = {
-        .name = "getpagesize",
-        .num_args = 0,
+	.flags = BORING,
+	.name = "getpagesize",
+	.num_args = 0,
 };
-

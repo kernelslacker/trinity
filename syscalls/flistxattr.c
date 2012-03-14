@@ -13,4 +13,5 @@ struct syscall syscall_flistxattr = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",
 	.arg3type = ARG_LEN,
+	.rettype = RET_ZERO_SUCCESS,
 };

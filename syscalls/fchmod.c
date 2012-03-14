@@ -13,4 +13,5 @@ struct syscall syscall_fchmod = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "mode",
+	.rettype = RET_ZERO_SUCCESS,
 };

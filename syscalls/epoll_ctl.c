@@ -24,4 +24,5 @@ struct syscall syscall_epoll_ctl = {
 	.arg3type = ARG_FD,
 	.arg4name = "event",
 	.arg4type = ARG_ADDRESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

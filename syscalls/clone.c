@@ -34,6 +34,5 @@ struct syscall syscall_clone = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "regs",
 	.arg5type = ARG_ADDRESS,
+	.rettype = RET_PID_T,
 };
-
-
