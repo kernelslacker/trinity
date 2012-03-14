@@ -141,3 +141,6 @@ Still unfixed:
 * net: Hung task when closing device
   https://lkml.org/lkml/2012/3/14/375
 
+* ntp: Fix integer overflow when setting time
+  https://lkml.org/lkml/2012/3/14/406
+
