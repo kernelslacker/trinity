@@ -173,9 +173,8 @@ void * get_map();
 #define WHITE	"[1;37m"
 
 extern unsigned char quiet;
-void synclog();
+void synclogs();
 void output(const char *fmt, ...);
-void sync_output();
 void open_logfiles();
 void close_logfiles();
 

@@ -164,8 +164,6 @@ openit:
 			fds_left_to_create--;
 		}
 	}
-
-	sync_output();
 	closedir(d);
 }
 
