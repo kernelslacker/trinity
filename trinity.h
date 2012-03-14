@@ -176,8 +176,6 @@ extern unsigned char quiet;
 void synclog();
 void output(const char *fmt, ...);
 void sync_output();
-void lock_logfile();
-void unlock_logfile();
 void open_logfiles();
 void close_logfiles();
 
