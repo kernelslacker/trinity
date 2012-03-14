@@ -111,7 +111,7 @@ static void usage(void)
 	fprintf(stderr, " --list: list all syscalls known on this architecture.\n");
 	fprintf(stderr, " --quiet: less output.\n");
 	fprintf(stderr, " --childcalls,-F: number of syscalls to do in child.\n");
-	fprintf(stderr, " --logfile,-l: filename to log to (off=disable logging).\n");
+	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --group: only run syscalls from a certain group (So far just 'vm').\n");
 	fprintf(stderr, "\n");
@@ -145,7 +145,7 @@ static void parse_args(int argc, char *argv[])
 		{ "list", no_argument, NULL, 'L' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "childcalls", required_argument, NULL, 'F' },
-		{ "logfile", required_argument, NULL, 'l' },
+		{ "logging", required_argument, NULL, 'l' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "dangerous", no_argument, NULL, 'd' },
@@ -195,7 +195,6 @@ static void parse_args(int argc, char *argv[])
 			exit(EXIT_SUCCESS);
 
 		case 'l':
-			logfilename = optarg;
 			if (!strcmp(optarg, "off"))
 				logging = 0;
 			break;
@@ -395,13 +394,35 @@ static void find_specific_proto()
 	return;
 }
 
+int create_shm()
+{
+	int shmid;
+	key_t key;
+	struct shmid_ds shmid_ds;
+
+	key = rand64();
+	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
+		perror("shmget");
+		return -1;
+	}
+	if ((shm = shmat(shmid, NULL, 0)) == (void *) -1) {
+		perror("shmat");
+		return -1;
+	}
+	shmctl(key, IPC_RMID, &shmid_ds);
+	shm->successes = 0;
+	shm->failures = 0;
+	shm->regenerate = REGENERATION_POINT - 1;
+	memset(shm->pids, -1, sizeof(shm->pids));
+
+	return 0;
+}
+
 
 int main(int argc, char* argv[])
 {
-	int shmid, ret;
+	int ret;
 	unsigned int i;
-	key_t key;
-	struct shmid_ds shmid_ds;
 
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
 
@@ -442,16 +463,16 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	if (logging == 1) {
-		if (logfilename == NULL)
-			logfilename = strdup("trinity.log");
-		unlink(logfilename);
-		logfile = fopen(logfilename, "a");
-		if (!logfile) {
-			perror("couldn't open logfile\n");
-			exit(EXIT_FAILURE);
-		}
+	if (create_shm())
+		exit(EXIT_FAILURE);
+
+	shm->nr_childs = sysconf(_SC_NPROCESSORS_ONLN);
+	if (shm->nr_childs > MAX_NR_CHILDREN) {
+		printf("Increase MAX_NR_CHILDREN!\n");
+		exit(EXIT_FAILURE);
 	}
+	if (logging != 0)
+		open_logfiles(shm->nr_childs);
 
 	max_nr_syscalls = NR_SYSCALLS;
 	for (i = 0; i < max_nr_syscalls; i++)
@@ -501,21 +522,6 @@ int main(int argc, char* argv[])
 	else
 		output("Random seed: %u (0x%x)\n", seed, seed);
 
-	key = rand64();
-	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
-		perror("shmget");
-		exit(EXIT_FAILURE);
-	}
-	if ((shm = shmat(shmid, NULL, 0)) == (void *) -1) {
-		perror("shmat");
-		exit(EXIT_FAILURE);
-	}
-	shmctl(key, IPC_RMID, &shmid_ds);
-	shm->successes = 0;
-	shm->failures = 0;
-	shm->regenerate = REGENERATION_POINT - 1;
-	memset(shm->pids, -1, sizeof(shm->pids));
-	shm->nr_childs = sysconf(_SC_NPROCESSORS_ONLN);
 
 	init_buffers();
 
@@ -547,8 +553,8 @@ int main(int argc, char* argv[])
 	for (i = 0; i < socks; i++)
 		close(socket_fds[i]);
 
-	if (logfile)
-		fclose(logfile);
+	if (logging != 0)
+		close_logfiles();
 
 	exit(EXIT_SUCCESS);
 }
