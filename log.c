@@ -44,7 +44,7 @@ void close_logfiles()
 		fclose(shm->logfiles[i]);
 }
 
-FILE * find_logfile_handle()
+static FILE * find_logfile_handle()
 {
 	pid_t pid;
 	unsigned int i;
