@@ -412,6 +412,8 @@ int create_shm()
 	shmctl(key, IPC_RMID, &shmid_ds);
 
 	memset(shm, 0, sizeof(struct shm_s));
+
+	shm->execcount = 1;
 	shm->regenerate = REGENERATION_POINT - 1;
 
 	shm->nr_childs = sysconf(_SC_NPROCESSORS_ONLN);
