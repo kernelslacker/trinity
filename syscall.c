@@ -22,7 +22,7 @@ static long mkcall(unsigned int call)
 
 	sigsetjmp(ret_jump, 1);
 
-	sptr += sprintf(sptr, "[%d] %lu: ", getpid(), shm->execcount);
+	sptr += sprintf(sptr, "[%d] ", getpid());
 
 	olda1 = a1 = rand64();
 	olda2 = a2 = rand64();
