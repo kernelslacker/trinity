@@ -137,8 +137,6 @@ int child_process(void)
 	unsigned int syscallnr;
 	unsigned int left_to_do = syscalls_per_child;
 
-	(void)alarm(0);
-
 	seed_from_tod();
 
 	while (left_to_do > 0) {
@@ -229,6 +227,7 @@ void do_syscall_from_child()
 				output("pid map full!\n");
 				exit(EXIT_FAILURE);
 			}
+			(void)alarm(0);
 			pid = fork();
 			if (pid != 0)
 				shm->pids[i] = pid;
