@@ -132,3 +132,9 @@ Still unfixed:
 * tun oops dereferencing garbage nsproxy-> address.
   https://lkml.org/lkml/2012/3/12/838
 
+* vfs namespace: Don't assume mount namespace has valid root
+  https://lkml.org/lkml/2012/3/14/372
+
+* vfs: chmod: Hung task after calling chmod()
+  https://lkml.org/lkml/2012/3/14/373
+
