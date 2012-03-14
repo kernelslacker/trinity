@@ -134,6 +134,7 @@ Still unfixed:
 
 * vfs namespace: Don't assume mount namespace has valid root
   https://lkml.org/lkml/2012/3/14/372
+  https://lkml.org/lkml/2012/3/14/461
 
 * vfs: chmod: Hung task after calling chmod()
   https://lkml.org/lkml/2012/3/14/373
