@@ -177,8 +177,6 @@ void main_loop()
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
-	shm->execcount = 1;
-
 	while (1) {
 		fork_children();
 		handle_children();
