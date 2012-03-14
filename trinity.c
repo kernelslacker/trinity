@@ -473,7 +473,7 @@ int main(int argc, char* argv[])
 		exit(EXIT_FAILURE);
 
 	if (logging != 0)
-		open_logfiles(shm->nr_childs);
+		open_logfiles();
 
 	max_nr_syscalls = NR_SYSCALLS;
 	for (i = 0; i < max_nr_syscalls; i++)
