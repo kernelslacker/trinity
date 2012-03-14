@@ -133,7 +133,7 @@ void seed_from_tod()
 	gettimeofday(&t, 0);
 	seed = t.tv_sec * t.tv_usec;
 	srand(seed);
-	output("[%d] Random seed: %u (0x%x)\n", getpid(), seed, seed);
+	output("\n\n[%d] Random seed: %u (0x%x)\n", getpid(), seed, seed);
 }
 
 
@@ -520,7 +520,7 @@ int main(int argc, char* argv[])
 	if (!seed)
 		seed_from_tod();
 	else
-		output("Random seed: %u (0x%x)\n", seed, seed);
+		output("[%d] Random seed: %u (0x%x)\n", getpid(), seed, seed);
 
 
 	init_buffers();
