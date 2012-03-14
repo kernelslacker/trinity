@@ -23,5 +23,5 @@ struct syscall syscall_eventfd2 = {
 		.num = 3,
 		.values = { EFD_CLOEXEC, EFD_NONBLOCK, EFD_SEMAPHORE },
 	},
-	.retval = ARG_FD,
+	.rettype = RET_FD,
 };

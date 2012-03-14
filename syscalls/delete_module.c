@@ -14,4 +14,5 @@ struct syscall syscall_delete_module = {
 	.arg1name = "name_user",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "flags",
+	.rettype = RET_ZERO_SUCCESS,
 };

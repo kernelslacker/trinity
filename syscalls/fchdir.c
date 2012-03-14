@@ -12,4 +12,5 @@ struct syscall syscall_fchdir = {
 	.num_args = 1,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
+	.rettype = RET_ZERO_SUCCESS,
 };

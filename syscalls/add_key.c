@@ -23,4 +23,5 @@ struct syscall syscall_add_key = {
 	.arg4name = "plen",
 	.arg4type = ARG_LEN,
 	.arg5name = "ringid",
+	.rettype = RET_KEY_SERIAL_T,
 };

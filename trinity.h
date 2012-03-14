@@ -89,9 +89,20 @@ struct syscall {
 	struct arglist arg5list;
 	struct arglist arg6list;
 
-	unsigned int retval;
 	unsigned int group;
+	int rettype;
 };
+
+#define RET_BORING		-1
+#define RET_NONE		0
+#define RET_ZERO_SUCCESS	1
+#define RET_FD			2
+#define RET_KEY_SERIAL_T	3
+#define RET_PID_T		4
+#define RET_PATH		5
+#define RET_NUM_BYTES		6
+#define RET_GID_T		7
+#define RET_UID_T		8
 
 #define GROUP_NONE	0
 #define GROUP_VM	1

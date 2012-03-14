@@ -30,4 +30,5 @@ struct syscall syscall_get_mempolicy = {
 		.num = 3,
 		.values = { MPOL_F_NODE, MPOL_F_ADDR, MPOL_F_MEMS_ALLOWED },
 	},
+	.rettype = RET_ZERO_SUCCESS,
 };

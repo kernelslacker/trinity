@@ -19,6 +19,7 @@ void sanitise_ioctl_sg_io(unsigned long *a1, unsigned long *a2, unsigned long *a
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)
 #define NI_SYSCALL (1<<2)
+#define BORING (1<<3)
 
 void generic_sanitise(int call,
 	unsigned long *a1, unsigned long *a2, unsigned long *a3,

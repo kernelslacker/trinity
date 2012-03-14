@@ -14,5 +14,5 @@ struct syscall syscall_dup2 = {
 	.arg1type = ARG_FD,
 	.arg2name = "newfd",
 	.arg2type = ARG_FD,
-	.retval = ARG_FD,
+	.rettype = RET_FD,
 };

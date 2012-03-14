@@ -15,4 +15,5 @@ struct syscall syscall_fstatfs64 = {
 	.arg2name = "sz",
 	.arg3name = "buf",
 	.arg3type = ARG_ADDRESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

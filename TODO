@@ -1,5 +1,7 @@
 * Annotate syscall return types
 
+* ARG_WRITABLE_BUFFER
+
 * First thing a child should do is allocate a buffer of random numbers
   to be used as syscall numbers.
 

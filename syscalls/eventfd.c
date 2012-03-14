@@ -12,5 +12,5 @@ struct syscall syscall_eventfd = {
 	.num_args = 1,
 	.arg1name = "count",
 	.arg2type = ARG_LEN,
-	.retval = ARG_FD,
+	.rettype = RET_FD,
 };

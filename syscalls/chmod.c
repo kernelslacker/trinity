@@ -13,4 +13,5 @@ struct syscall syscall_chmod = {
 	.arg1name = "filename",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "mode",
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -14,4 +14,5 @@ struct syscall syscall_chown16 = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "user",
 	.arg3name = "group",
+	.rettype = RET_ZERO_SUCCESS,
 };

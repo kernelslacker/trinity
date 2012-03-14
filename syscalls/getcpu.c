@@ -14,4 +14,5 @@ struct syscall syscall_getcpu = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "unused",
 	.arg3type = ARG_ADDRESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

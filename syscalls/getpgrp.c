@@ -7,4 +7,5 @@
 struct syscall syscall_getpgrp = {
 	.name = "getpgrp",
 	.num_args = 0,
+	.rettype = RET_PID_T,
 };

@@ -16,4 +16,5 @@ struct syscall syscall_fgetxattr = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "size",
 	.arg4type = ARG_LEN,
+	.rettype = RET_ZERO_SUCCESS,
 };

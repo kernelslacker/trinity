@@ -35,4 +35,5 @@ struct syscall syscall_clone2 = {
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "tls",
 	.arg6type = ARG_ADDRESS,
+	.rettype = RET_PID_T,
 };

@@ -10,4 +10,5 @@ struct syscall syscall_getitimer = {
 	.arg1name = "which",
 	.arg2name = "value",
 	.arg2type = ARG_ADDRESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -9,4 +9,5 @@ struct syscall syscall_getpgid = {
 	.num_args = 1,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
+	.rettype = RET_PID_T,
 };

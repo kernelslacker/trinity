@@ -18,4 +18,5 @@ struct syscall syscall_fchownat = {
 	.arg3name = "user",
 	.arg4name = "group",
 	.arg5name = "flag",
+	.rettype = RET_ZERO_SUCCESS,
 };

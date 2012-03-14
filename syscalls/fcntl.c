@@ -59,4 +59,5 @@ struct syscall syscall_fcntl = {
 		  F_SETLEASE, F_NOTIFY, F_SETPIPE_SZ, F_GETPIPE_SZ, F_GETLK64, F_SETLK64, F_SETLKW64 },
 	},
 	.arg3name = "arg",
+	.rettype = RET_FD,	//FIXME: Needs to mutate somehow depending on 'cmd'
 };

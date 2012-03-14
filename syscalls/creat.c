@@ -13,4 +13,5 @@ struct syscall syscall_creat = {
 	.arg1name = "pathname",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "mode",
+	.rettype = RET_FD,
 };

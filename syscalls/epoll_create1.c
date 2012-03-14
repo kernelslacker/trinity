@@ -19,5 +19,5 @@ struct syscall syscall_epoll_create1 = {
 		.num = 1,
 		.values = { EPOLL_CLOEXEC },
 	},
-	.retval = ARG_FD,
+	.rettype = RET_FD,
 };

@@ -10,4 +10,5 @@ struct syscall syscall_getgroups16 = {
 	.arg1name = "gidsetsize",
 	.arg2type = ARG_ADDRESS,
 	.arg2name = "grouplist",
+	.rettype = RET_BORING,
 };

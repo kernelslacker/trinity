@@ -12,4 +12,5 @@ struct syscall syscall_clock_gettime = {
 	.arg1name = "which_clock",
 	.arg2name = "tp",
 	.arg2type = ARG_ADDRESS,
+	.rettype = RET_ZERO_SUCCESS,
 };
