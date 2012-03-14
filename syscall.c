@@ -108,8 +108,8 @@ args_done:
 	if (quiet) {
 		if (shm->execcount % 1000 == 0) {
 			sptr = string;
-			sptr += sprintf(sptr, "%ld\n", shm->execcount);
-			printf("%s", string);
+			sptr += sprintf(sptr, "%ld", shm->execcount);
+			printf("%s iterations.\n", string);
 		}
 	}
 
