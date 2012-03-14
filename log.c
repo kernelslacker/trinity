@@ -60,22 +60,20 @@ static FILE * find_logfile_handle()
 	return (void *) -1;
 }
 
-void synclog()
+void synclogs()
 {
-	FILE *handle;
+	unsigned int i;
 
 	if (logging == 0)
 		return;
 
-	handle = find_logfile_handle();
-	(void)fflush(handle);
-	fsync(fileno(handle));
-}
+	for (i = 0; i < shm->nr_childs; i++) {
+		(void)fflush(shm->logfiles[i]);
+		(void)fsync(fileno(shm->logfiles[i]));
+	}
 
-void sync_output()
-{
-	(void)fflush(stdout);
-	synclog();
+	(void)fflush(parentlogfile);
+	fsync(fileno(parentlogfile));
 }
 
 void output(const char *fmt, ...)

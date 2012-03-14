@@ -115,7 +115,6 @@ done:
 	close(cachefile);
 
 	output("\ncreated %d sockets\n", socks);
-	synclog();
 }
 
 void open_sockets()
@@ -184,7 +183,6 @@ regenerate:
 		socks++;
 		fds_left_to_create--;
 	}
-	synclog();
 
 	if (socks < fds_left_to_create/2) {
 		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", socks);
