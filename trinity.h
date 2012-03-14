@@ -11,6 +11,8 @@
 #define __unused__ /*@unused@*/
 #endif
 
+#define MAX_NR_CHILDREN 64
+
 extern unsigned char debug;
 
 extern jmp_buf ret_jump;
@@ -142,7 +144,9 @@ struct shm_s {
 
 	unsigned int nr_childs;
 	unsigned int running_childs;
-	pid_t pids[64];
+	pid_t pids[MAX_NR_CHILDREN];
+
+	FILE *logfiles[MAX_NR_CHILDREN];
 };
 extern struct shm_s *shm;
 
@@ -168,14 +172,14 @@ void * get_map();
 #define CYAN	"[1;36m"
 #define WHITE	"[1;37m"
 
-extern char *logfilename;
-extern FILE *logfile;
 extern unsigned char quiet;
 void synclog();
 void output(const char *fmt, ...);
 void sync_output();
 void lock_logfile();
 void unlock_logfile();
+void open_logfiles();
+void close_logfiles();
 
 
 #define MODE_UNDEFINED 0
