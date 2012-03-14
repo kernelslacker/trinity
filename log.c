@@ -78,52 +78,6 @@ void sync_output()
 	synclog();
 }
 
-void lock_logfile()
-{
-	struct flock logfilelock;
-	FILE *handle;
-
-	if (logging == 0)
-		return;
-
-	logfilelock.l_type = F_WRLCK;
-	logfilelock.l_whence = SEEK_SET;
-	logfilelock.l_start = 0;
-	logfilelock.l_len = 0;
-	logfilelock.l_pid = getpid();
-
-	handle = find_logfile_handle();
-
-	if (fcntl(fileno(handle), F_SETLKW, &logfilelock) == -1) {
-		printf("[%d] ", getpid());
-		perror("fcntl lock F_SETLKW");
-		exit(EXIT_FAILURE);
-	}
-}
-
-void unlock_logfile()
-{
-	struct flock logfilelock;
-	FILE *handle;
-
-	if (logging == 0)
-		return;
-
-	logfilelock.l_type = F_UNLCK;
-	logfilelock.l_whence = SEEK_SET;
-	logfilelock.l_start = 0;
-	logfilelock.l_len = 0;
-	logfilelock.l_pid = getpid();
-
-	handle = find_logfile_handle();
-
-	if (fcntl(fileno(handle), F_SETLKW, &logfilelock) == -1) {
-		printf("[%d] ", getpid());
-		perror("fcntl unlock F_SETLKW\n");
-		exit(EXIT_FAILURE);
-	}
-}
-
 void output(const char *fmt, ...)
 {
 	va_list args;
