@@ -36,7 +36,7 @@ static void regenerate()
 
 unsigned char do_check_tainted;
 
-static int check_tainted(void)
+int check_tainted(void)
 {
 	int fd;
 	int ret;
