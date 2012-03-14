@@ -515,7 +515,7 @@ int main(int argc, char* argv[])
 	shm->failures = 0;
 	shm->regenerate = REGENERATION_POINT - 1;
 	memset(shm->pids, -1, sizeof(shm->pids));
-	shm->nr_childs = min(64, sysconf(_SC_NPROCESSORS_ONLN));
+	shm->nr_childs = sysconf(_SC_NPROCESSORS_ONLN);
 
 	init_buffers();
 
