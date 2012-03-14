@@ -134,7 +134,7 @@ void main_loop()
 						shm->running_childs--;
 					}
 				}
-				return;
+				break;
 			}
 			output("error! (%s)\n", strerror(errno));
 			break;
