@@ -7,6 +7,7 @@
 
 struct syscall syscall_prctl = {
 	.name = "prctl",
+	.flags = AVOID_SYSCALL,
 	.num_args = 5,
 	.arg1name = "option",
 	.arg2name = "arg2",
