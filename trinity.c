@@ -46,6 +46,7 @@ unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
 static unsigned char dangerous = 0;
 unsigned char logging = 1;
+unsigned char extrafork = 0;
 
 static unsigned char desired_group = GROUP_NONE;
 
@@ -153,7 +154,7 @@ static void parse_args(int argc, char *argv[])
 		{ "debug", no_argument, NULL, 'D' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dDF:g:hkl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dDfF:g:hkl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -177,6 +178,10 @@ static void parse_args(int argc, char *argv[])
 
 		case 'D':
 			debug = 1;
+			break;
+
+		case 'f':
+			extrafork = 1;
 			break;
 
 		case 'F':
