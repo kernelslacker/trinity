@@ -1,3 +1,5 @@
+* Bug: when we randomly call personality, the child stops logging.
+
 * Annotate syscall return types
 
 * ARG_WRITABLE_BUFFER
