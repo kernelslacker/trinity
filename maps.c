@@ -125,7 +125,14 @@ retry:
 				free(tmpmap->name);
 				goto retry;
 			}
+
+			if (strstr(tmpmap->name, "lib")) {
+				output("skipping library (%p-%p) %s\n", startaddr, endaddr, tmpmap->name);
+				free(tmpmap->name);
+				goto retry;
+			}
 		}
+
 
 		tmpmap->ptr = startaddr;
 		num_mappings++;
