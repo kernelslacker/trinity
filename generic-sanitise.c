@@ -239,7 +239,10 @@ static unsigned long fill_arg(int call, int argnum)
 
 	switch (argtype) {
 	case ARG_FD:
+retry_fd:
 		fd = get_random_fd();
+		if (fd < 3)
+			goto retry_fd;
 		//printf (YELLOW "DBG: %x" WHITE "\n", fd);
 		return fd;
 	case ARG_LEN:
