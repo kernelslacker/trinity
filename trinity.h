@@ -131,6 +131,7 @@ extern unsigned long specific_syscall;
 extern unsigned char dopause;
 extern long struct_fill;
 extern unsigned char logging;
+extern unsigned char extrafork;
 
 #define DEFAULT_SYSCALLS_PER_CHILD 1000
 extern unsigned long syscalls_per_child;

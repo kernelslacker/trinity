@@ -8,11 +8,63 @@
 #include <unistd.h>
 #include <sched.h>
 #include <sys/types.h>
+#include <sys/ptrace.h>
 #include <sys/wait.h>
 
 #include "arch.h"
 #include "trinity.h"
 #include "sanitise.h"
+
+static unsigned long do_syscall(int nr, unsigned long a1, unsigned long a2, unsigned long a3,
+			unsigned long a4, unsigned long a5, unsigned long a6)
+{
+	int childpid, childstatus;
+	int ret = 0;
+
+	if (extrafork == 0) {
+		(void)alarm(3);
+		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
+		(void)alarm(0);
+		return ret;
+	}
+
+	/* Do the actual syscall in another child. */
+	childpid = fork();
+	if (childpid == 0) {
+		(void)alarm(3);
+		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
+		(void)alarm(0);
+		_exit(ret);
+	}
+	childpid = waitpid(childpid, &childstatus, 0);
+	switch (childpid) {
+	case 0:	output("wtf\n");
+		break;
+
+	case -1: output("[%d] Something bad happened to child %d :(\n", getpid(), childpid);
+		break;
+
+	default:
+		if (WIFEXITED(childstatus)) {
+			ret = WEXITSTATUS(childstatus);
+			output("[%d] Child %d exited with return code %d\n", getpid(), childpid, ret);
+			break;
+		}
+		if (WIFSIGNALED(childstatus)) {
+			output("[%d] Child %d got a signal (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
+			ret = -1;
+			break;
+		}
+		if (WIFSTOPPED(childstatus)) {
+			output("[%d] Child process %d stopped. killing.\n", getpid(), childpid);
+			ptrace(PTRACE_CONT, childpid, NULL, NULL);
+			kill(childpid, SIGKILL);
+			break;
+		}
+		break;
+	}
+	return ret;
+}
 
 static long mkcall(unsigned int call)
 {
@@ -92,8 +144,7 @@ args_done:
 #ifdef __ia64__
 	call += 1024;
 #endif
-
-	ret = syscall(syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
+	ret = do_syscall(syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
 
 	sptr = string;
 	memset(string, 0, sizeof(string));
@@ -170,11 +221,7 @@ int child_process(void)
 				goto skip_syscall;
 		}
 
-		(void)alarm(3);
-
 		ret = mkcall(syscallnr);
-
-		(void)alarm(0);
 
 skip_syscall:
 		left_to_do--;
