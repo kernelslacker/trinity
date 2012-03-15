@@ -192,7 +192,7 @@ void main_loop()
 		if (syscallcount && (shm->execcount >= syscallcount))
 			exit(EXIT_SUCCESS);
 
-		if (shm->execcount % 100 == 0)
+		if (shm->execcount % 1000 == 0)
 			synclogs();
 	}
 }
