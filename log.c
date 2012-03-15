@@ -59,7 +59,7 @@ static FILE * find_logfile_handle()
 		if (shm->pids[i] == pid)
 			return shm->logfiles[i];
 	}
-	return (void *) -1;
+	return NULL;
 }
 
 void synclogs()
