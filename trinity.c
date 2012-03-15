@@ -400,7 +400,7 @@ int create_shm()
 	key_t key;
 	struct shmid_ds shmid_ds;
 
-	key = rand64();
+	key = IPC_PRIVATE;
 	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
 		perror("shmget");
 		return -1;
