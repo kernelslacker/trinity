@@ -1,9 +1,5 @@
 #!/bin/bash
 
-if [ ! -d logs ]; then
-  mkdir logs
-fi
-
 if [ ! -d tmp ]; then
   mkdir tmp
 fi
@@ -11,16 +7,16 @@ chmod 755 tmp
 cd tmp
 
 NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
-NR_CPUS=$(($NR_CPUS-1))
+NR_PROCESSES=$(($NR_CPUS * 2))
 
 while [ 1 ];
 do
   RND=$RANDOM
   mkdir tmp.$RND
   cd tmp.$RND
-  for i in `seq 0 $NR_CPUS`
+  for i in `seq 1 $NR_PROCESSES`
   do
-	taskset -c $i ../../trinity --logfile=../../logs/trinity-rand-cpu$i.log -F10 -g vm &
+	../../trinity -q -g vm &
   done
   wait
   cd ..
