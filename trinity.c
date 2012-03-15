@@ -262,7 +262,12 @@ static void sighandler(int sig)
 		printf("[%d] signal: %s\n", getpid(), strsignal(sig));
 		(void)fflush(stdout);
 	}
-	(void)signal(sig, sighandler);
+
+	if (sig == SIGALRM) {
+		(void)signal(sig, sighandler);
+		siglongjmp(ret_jump, 1);
+	}
+
 	_exit(0);
 }
 
