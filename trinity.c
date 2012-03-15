@@ -256,10 +256,12 @@ static void parse_args(int argc, char *argv[])
 }
 
 
+extern const char * const sys_siglist[];
+
 static void sighandler(int sig)
 {
 	if (debug == 1) {
-		printf("[%d] signal: %s\n", getpid(), strsignal(sig));
+		printf("[%d] signal: %s\n", getpid(), sys_siglist[sig]);
 		(void)fflush(stdout);
 	}
 
