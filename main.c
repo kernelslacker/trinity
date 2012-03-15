@@ -148,7 +148,7 @@ static void handle_children()
 			case SIGALRM:
 			case SIGPIPE:
 			case SIGABRT:
-				debugf("[%d] Child got a signal (%d)\n", getpid(), WTERMSIG(childstatus));
+				debugf("[%d] got a signal (%s)\n", getpid(), strsignal(WTERMSIG(childstatus)));
 				reap_child(childpid);
 				break;
 			default:

@@ -255,14 +255,8 @@ static void parse_args(int argc, char *argv[])
 		return;
 }
 
-
-extern const char * const sys_siglist[];
-
 static void sighandler(int sig)
 {
-	if (debug == 1)
-		printf("[%d] signal: %s\n", getpid(), sys_siglist[sig]);
-
 	if (sig == SIGALRM) {
 		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
