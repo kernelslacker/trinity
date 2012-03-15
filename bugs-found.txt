@@ -145,3 +145,6 @@ Still unfixed:
 * ntp: Fix integer overflow when setting time
   https://lkml.org/lkml/2012/3/14/406
 
+* ntp: BUG: spinlock lockup on CPU#1
+  https://lkml.org/lkml/2012/3/15/144
+
