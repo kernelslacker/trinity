@@ -13,5 +13,5 @@ echo Starting $NR fuzzers
 for i in $(seq 0 $NR)
 do
 	CPU=$(($RANDOM % $NR_CPUS))
-	../trinity -c $i &
+	../trinity -q -c $i &
 done
