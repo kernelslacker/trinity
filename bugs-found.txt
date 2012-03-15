@@ -148,3 +148,6 @@ Still unfixed:
 * ntp: BUG: spinlock lockup on CPU#1
   https://lkml.org/lkml/2012/3/15/144
 
+* sound: BUG: unable to handle kernel irq event stamp: 2013419
+  https://lkml.org/lkml/2012/3/15/223
+
