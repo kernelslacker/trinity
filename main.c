@@ -21,7 +21,7 @@ void syscall_list()
 static void regenerate()
 {
 	if (!shm->regenerate) {
-		output("Regenerating random pages, fd's etc.\n");
+		output("[%d] Regenerating random pages, fd's etc.\n", getpid());
 		close_files();
 		open_files();
 
@@ -87,9 +87,9 @@ static void fork_children()
 			_exit(ret);
 		}
 		shm->running_childs++;
-		debugf("Created child %d [total:%d/%d]\n", shm->pids[i], shm->running_childs, shm->nr_childs);
+		debugf("[%d] Created child %d [total:%d/%d]\n", getpid(), shm->pids[i], shm->running_childs, shm->nr_childs);
 	}
-	debugf("created enough children\n\n");
+	debugf("[%d] created enough children\n\n", getpid());
 }
 
 static void reap_child(pid_t childpid)
@@ -98,7 +98,7 @@ static void reap_child(pid_t childpid)
 
 	for (i = 0; i < shm->nr_childs; i++) {
 		if (shm->pids[i] == childpid) {
-			debugf("Removing %d from pidmap\n", shm->pids[i]);
+			debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
 			shm->pids[i] = -1;
 			shm->running_childs--;
 			break;
@@ -115,15 +115,15 @@ static void handle_children()
 
 	switch (childpid) {
 	case 0:
-		debugf("Nothing changed. children:%d\n", shm->running_childs);
+		debugf("[%d] Nothing changed. children:%d\n", getpid(), shm->running_childs);
 		break;
 
 	case -1:
 		if (errno == ECHILD) {
-			debugf("All children exited!\n");
+			debugf("[%d] All children exited!\n", getpid());
 			for (i = 0; i < shm->nr_childs; i++) {
 				if (shm->pids[i] != -1) {
-					debugf("Removing %d from pidmap\n", shm->pids[i]);
+					debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
 					shm->pids[i] = -1;
 					shm->running_childs--;
 				}
@@ -134,9 +134,9 @@ static void handle_children()
 		break;
 
 	default:
-		debugf("Something happened to pid %d\n", childpid);
+		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
 		if (WIFEXITED(childstatus)) {
-			debugf("Child %d exited\n", childpid);
+			debugf("[%d] Child %d exited\n", getpid(), childpid);
 			reap_child(childpid);
 			break;
 
@@ -148,18 +148,18 @@ static void handle_children()
 			case SIGALRM:
 			case SIGPIPE:
 			case SIGABRT:
-				debugf("Child got a signal (%d)\n", WTERMSIG(childstatus));
+				debugf("[%d] Child got a signal (%d)\n", getpid(), WTERMSIG(childstatus));
 				reap_child(childpid);
 				break;
 			default:
-				debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
+				debugf("[%d] ** Child got an unhandled signal (%d)\n", getpid(), WTERMSIG(childstatus));
 				break;
 			}
 			break;
 
 		} else if (WIFSTOPPED(childstatus)) {
-			debugf("Child was stopped by %d.", WSTOPSIG(childstatus));
-			debugf("Sending PTRACE_CONT (and then KILL)\n");
+			debugf("[%d] Child was stopped by %d.", getpid(), WSTOPSIG(childstatus));
+			debugf("[%d] Sending PTRACE_CONT (and then KILL)\n", getpid());
 			ptrace(PTRACE_CONT, childpid, NULL, NULL);
 			kill(childpid, SIGKILL);
 			reap_child(childpid);
