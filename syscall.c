@@ -19,9 +19,12 @@ static long mkcall(unsigned int call)
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	int ret = 0;
-	char string[512], *sptr=string;
+	char string[512], *sptr;
 
 	sigsetjmp(ret_jump, 1);
+
+	sptr = string;
+	memset(string, 0, sizeof(string));
 
 	sptr += sprintf(sptr, "[%d] ", getpid());
 
@@ -81,7 +84,6 @@ args_done:
 	sptr += sprintf(sptr, WHITE ") ");
 
 	output("%s", string);
-	sptr = string;
 
 	if (dopause == 1)
 		sleep(1);
@@ -92,6 +94,9 @@ args_done:
 #endif
 
 	ret = syscall(syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
+
+	sptr = string;
+	memset(string, 0, sizeof(string));
 
 	if (ret < 0) {
 		sptr +=sprintf(sptr, RED "= %d (%s)" WHITE, ret, strerror(errno));
