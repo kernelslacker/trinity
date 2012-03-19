@@ -151,3 +151,8 @@ Still unfixed:
 * sound: BUG: unable to handle kernel irq event stamp: 2013419
   https://lkml.org/lkml/2012/3/15/223
 
+* netfilter: Hung task
+  https://lkml.org/lkml/2012/3/18/14
+
+* sched: BUG: spinlock recursion on CPU#4
+  https://lkml.org/lkml/2012/3/19/639
