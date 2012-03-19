@@ -17,7 +17,7 @@ static int ignore_files(char *file)
 		/* boring stuff in /dev */
 		"dmmidi0", "dmmidi1","dmmidi2","dmmidi3",
 		"midi00", "midi01","midi02","midi03",
-		".udev", "pts",
+		".udev",
 		/* Ignore per-process stuff. */
 		"keycreate", "sockcreate", "fscreate", "exec",
 		"current", "coredump_filter", "make-it-fail",
