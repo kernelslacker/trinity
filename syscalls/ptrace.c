@@ -3,7 +3,33 @@
  */
 #include "trinity.h"
 #include "sanitise.h"
+#include <stdlib.h>
 #include <linux/ptrace.h>
+
+static void sanitise_ptrace(
+	__unused__ unsigned long *a1,
+	unsigned long *pid,
+	__unused__ unsigned long *a3,
+	__unused__ unsigned long *a4,
+	__unused__ unsigned long *a5,
+	__unused__ unsigned long *a6)
+{
+	unsigned int i;
+
+	/* We must be careful to not give out ARG_PID to ptrace,
+	 * because we might end up tracing the parent process, or screen/tmux,
+	 * or god knows what else that we don't control, but are allowed to trace.
+	 * As we can't send it a CONT, it'll just hang forever.
+	 * So we just send ptrace commands to child processes.
+	 * The parent will get a WIFSTOPPED, and send a CONT, and the world keeps turning.
+	 *
+	 * Or at least, that's the theory. In reality, this is currently causing 'no such process' errors.
+	 *  but broken is at least better than hanging.
+	 */
+	i  = rand() % shm->running_childs;
+	*pid = shm->pids[i];
+}
+
 
 struct syscall syscall_ptrace = {
 	.name = "ptrace",
@@ -20,8 +46,8 @@ struct syscall syscall_ptrace = {
 				PTRACE_KILL, PTRACE_ATTACH, PTRACE_DETACH },
 	},
 	.arg2name = "pid",
-	.arg2type = ARG_PID,
 	.arg3name = "addr",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "data",
+	.sanitise = sanitise_ptrace,
 };
