@@ -156,3 +156,7 @@ Still unfixed:
 
 * sched: BUG: spinlock recursion on CPU#4
   https://lkml.org/lkml/2012/3/19/639
+
+* BUG: sleeping function called from invalid context at fs/proc/task_mmu.c:826
+  https://lkml.org/lkml/2012/3/28/379
+
