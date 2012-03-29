@@ -158,5 +158,7 @@ Still unfixed:
   https://lkml.org/lkml/2012/3/19/639
 
 * BUG: sleeping function called from invalid context at fs/proc/task_mmu.c:826
+* mm: hung task (handle_pte_fault)
+  https://lkml.org/lkml/2012/3/23/112
   https://lkml.org/lkml/2012/3/28/379
 
