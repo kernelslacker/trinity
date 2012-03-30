@@ -162,3 +162,9 @@ Still unfixed:
   https://lkml.org/lkml/2012/3/23/112
   https://lkml.org/lkml/2012/3/28/379
 
+* sched: WARNING: at include/linux/cpumask.h:108 select_fallback_rq+0x241/0x280()
+  https://lkml.org/lkml/2012/3/29/446
+
+* vfs: hung task at path_openat
+  https://lkml.org/lkml/2012/3/29/390
+
