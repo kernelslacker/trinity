@@ -172,3 +172,6 @@ Still unfixed:
 * [PATCH] phonet: Check input from user before allocating
   https://lkml.org/lkml/2012/4/2/374
 
+* kvm: RCU warning in async pf
+  https://lkml.org/lkml/2012/4/2/496
+
