@@ -175,3 +175,6 @@ Still unfixed:
 * kvm: RCU warning in async pf
   https://lkml.org/lkml/2012/4/2/496
 
+* CPU softlockup due to smp_call_function()
+  https://lkml.org/lkml/2012/4/4/282
+
