@@ -180,3 +180,6 @@ Still unfixed:
 * CPU softlockup due to smp_call_function()
   https://lkml.org/lkml/2012/4/4/282
 
+* [PATCH] netfilter: ipvs: Verify that IP_VS protocol has been registered
+  https://lkml.org/lkml/2012/4/5/303
+
