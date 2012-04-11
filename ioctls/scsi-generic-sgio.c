@@ -38,6 +38,7 @@ void sanitise_ioctl_sg_io(
 	case 1:	sgio->ioh.dxfer_direction = SG_DXFER_TO_DEV;	break;
 	case 2:	sgio->ioh.dxfer_direction = SG_DXFER_FROM_DEV;	break;
 	case 3:	sgio->ioh.dxfer_direction = SG_DXFER_TO_FROM_DEV;	break;
+	default: break;
 	}
 
 	sgio->ioh.dxferp = sgio->data;
@@ -46,6 +47,7 @@ void sanitise_ioctl_sg_io(
 	case 0: sgio->ioh.dxfer_len = rand() % page_size;	break;
 	case 1: sgio->ioh.dxfer_len = get_interesting_value();	break;
 	case 2: sgio->ioh.dxfer_len = rand() % 512;		break;
+	default: break;
 	}
 
 	sgio->ioh.cmdp = sgio->cmd;

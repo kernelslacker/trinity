@@ -32,6 +32,7 @@ void sanitise_socket(
 		if (*type == SOCK_STREAM)
 			*protocol = 0;
 		break;
+	default: break;
 	}
 
 	if ((rand() % 100) < 25)

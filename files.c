@@ -13,7 +13,7 @@
 static int ignore_files(char *file)
 {
 	int i;
-	char *ignored_files[] = {".", "..",
+	const char *ignored_files[] = {".", "..",
 		/* boring stuff in /dev */
 		"dmmidi0", "dmmidi1","dmmidi2","dmmidi3",
 		"midi00", "midi01","midi02","midi03",
@@ -50,14 +50,14 @@ static int add_fd(unsigned int chance, char *b, int flags)
 	return fd;
 }
 
-void open_fds(char *dir)
+void open_fds(const char *dir)
 {
 	char b[4096];
 	int openflag, fd, r;
 	DIR *d = opendir(dir);
 	struct dirent *de;
 	struct stat buf;
-	char *modestr;
+	const char *modestr;
 	unsigned int chance;
 
 	if (!d) {
@@ -145,6 +145,7 @@ void open_fds(char *dir)
 			case O_RDONLY:	chance = 10; break;
 			case O_WRONLY:	chance = 100; break;
 			case O_RDWR:	chance = 100; break;
+			default: break;
 			}
 openit:
 			if (fds_left_to_create == 0)
@@ -158,6 +159,7 @@ openit:
 			case O_RDONLY:	modestr = "read-only";	break;
 			case O_WRONLY:	modestr = "write-only";	break;
 			case O_RDWR:	modestr = "read-write";	break;
+			default: break;
 			}
 			output("fd[%i] = %s (%s)\n", fd, b, modestr);
 			fds[fd_idx++] = fd;

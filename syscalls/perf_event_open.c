@@ -47,6 +47,7 @@ static void sanitise_perf_event_open(
 					break;
 				case 8: hw->config = rand();
 					break;
+				default: break;
 			}
 			break;
 		case 1: hw->type = PERF_TYPE_SOFTWARE;
@@ -70,6 +71,7 @@ static void sanitise_perf_event_open(
 				case 8: hw->config=PERF_COUNT_SW_EMULATION_FAULTS;
 					break;
 				case 9: hw->config=rand();
+				default: break;
 			}
 			break;
 		case 2: hw->type = PERF_TYPE_TRACEPOINT;
@@ -85,13 +87,14 @@ static void sanitise_perf_event_open(
 			break;
 		case 5: hw->type = PERF_TYPE_BREAKPOINT;
 			break;
-			
+		default: break;
 	}
 
 	switch(rand() % 2) {
 		case 0: hw->size = sizeof(struct perf_event_attr);
 			break;
 		case 1: hw->size = rand();
+		default: break;
 	}
 
 }

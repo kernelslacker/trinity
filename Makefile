@@ -1,7 +1,20 @@
 VERSION=1.0
 
-CFLAGS = -Wall -W -Wshadow -g -O2 -I. -Wimplicit -Werror -D_FORTIFY_SOURCE=2 -DVERSION="$(VERSION)" -D_GNU_SOURCE
+CFLAGS = -Wall -W -g -O2 -I. -Wimplicit -Werror -D_FORTIFY_SOURCE=2 -DVERSION="$(VERSION)" -D_GNU_SOURCE
 #CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
+CFLAGS += -Wdeclaration-after-statement
+CFLAGS += -Wformat-security
+CFLAGS += -Wformat-y2k
+CFLAGS += -Winit-self
+CFLAGS += -Wnested-externs
+CFLAGS += -Wpacked
+CFLAGS += -Wshadow
+CFLAGS += -Wstrict-aliasing=3
+CFLAGS += -Wswitch-default
+CFLAGS += -Wswitch-enum
+CFLAGS += -Wundef
+CFLAGS += -Wwrite-strings
+CFLAGS += -Wformat
 
 all: trinity
 
