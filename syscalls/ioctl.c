@@ -40,7 +40,7 @@
 #define MSMFB_IOCTL_MAGIC 'm'
 
 struct ioctl {
-	char *name;
+	const char *name;
 	unsigned int request;
 	void (*sanitise)(
 		unsigned long *, unsigned long *, unsigned long *,
@@ -114,9 +114,11 @@ static void generic_sanitise_ioctl(
 				*ptr = (unsigned long) (addr);
 				ptr+= sizeof(unsigned long);
 				break;
+			default: break;
 			}
 		}
 		break;
+	default: break;
 	}
 }
 

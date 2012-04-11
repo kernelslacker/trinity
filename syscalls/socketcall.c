@@ -61,6 +61,8 @@ static void sanitise_socketcall(
 		break;
 	case SYS_SENDMMSG:
 		break;
+	default:
+		break;
 	}
 	*argptr = (unsigned long) args;
 }

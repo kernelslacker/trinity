@@ -317,7 +317,7 @@ static void find_specific_syscall()
 }
 
 struct protocol {
-	char *name;
+	const char *name;
 	unsigned int proto;
 };
 
@@ -437,17 +437,17 @@ int main(int argc, char* argv[])
 
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
 
-#ifdef __x86_64__
+#if defined(__x86_64__)
 	syscalls = syscalls_x86_64;
 	max_nr_syscalls = NR_X86_64_SYSCALLS;
-#elif __i386__
+#elif defined(__i386__)
 	syscalls = syscalls_i386;
 	max_nr_syscalls = NR_I386_SYSCALLS;
-#elif __powerpc__
+#elif defined(__powerpc__)
 	syscalls = syscalls_ppc;
-#elif __ia64__
+#elif defined(__ia64__)
 	syscalls = syscalls_ia64;
-#elif __sparc__
+#elif defined(__sparc__)
 	syscalls = syscalls_sparc;
 #else
 	syscalls = syscalls_i386;

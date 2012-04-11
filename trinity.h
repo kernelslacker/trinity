@@ -42,7 +42,7 @@ extern unsigned int fd_idx;
 extern unsigned int fds[MAX_FDS/2];
 void open_files();
 void close_files();
-void open_fds(char *dir);
+void open_fds(const char *dir);
 
 struct arglist {
 	unsigned int num;
@@ -123,7 +123,6 @@ extern char *structmodename[];
 extern unsigned int max_nr_syscalls;
 extern unsigned int structmode;
 extern unsigned long regval;
-extern unsigned char rotate_mask;
 extern unsigned int rep;
 extern unsigned char do_specific_proto;
 extern unsigned char do_specific_syscall;

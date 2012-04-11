@@ -63,6 +63,8 @@ retry:		fd = fds[rand() % fd_idx];
 	case 2:
 		fd = pipe_fds[rand() % MAX_PIPE_FDS];
 		break;
+	default:
+		break;
 	}
 
 	return fd;

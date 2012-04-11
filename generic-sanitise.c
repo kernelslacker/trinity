@@ -32,6 +32,8 @@ unsigned long get_interesting_32bit_value()
 		case 5:	return 0x00001001;	// 4097
 		case 6:	return 0x00008000;
 		case 7:	return 0x0000ffff;
+		default: /* unreachable*/
+			return 0;
 		}
 
 	} else {
@@ -48,6 +50,8 @@ unsigned long get_interesting_32bit_value()
 		case 6:	return 0xff000000;
 		case 7:	return 0xffffff00 | (rand() % 256);
 		case 8:	return 0xffffffff;
+		default: /* unreachable*/
+			return 0;
 		}
 	}
 
@@ -89,6 +93,8 @@ unsigned long get_interesting_value()
 	case 11: return 0xffffffff80000000 | (low & 0xffffff);	// x86-64 kernel text address
 	case 12: return 0xffffffffa0000000 | (low & 0xffffff);	// x86-64 module space
 	case 13: return 0xffffffffff600000 | (low & 0x0fffff);	// x86-64 vdso
+	default: /* unreachable*/
+		return 0;
 	}
 	/* Should never be reached. */
 	return 0;
@@ -109,6 +115,8 @@ void * get_address()
 	case 5:	return (void *) get_interesting_value();
 	case 6: return get_map();
 	case 7: return malloc(page_size);
+	default: /* unreachable*/
+		return 0;
 	}
 
 	return 0;
@@ -144,6 +152,9 @@ void regenerate_random_page()
 				page_rand[i++] = (unsigned char)rand();
 			}
 			return;
+		default:
+			/* unreachable */
+			return;
 		}
 	}
 
@@ -164,6 +175,8 @@ void regenerate_random_page()
 		case 3: page_rand[i] = (unsigned int) rand() % page_size;
 			i += sizeof(unsigned int);
 			break;
+		default:/* unreachable */
+			return;
 		}
 	}
 }
@@ -177,6 +190,8 @@ static unsigned int get_pid()
 	case 0:	return getpid();
 	case 1:	return rand() & 32767;
 	case 2: break;
+	default:/* unreachable */
+		break;
 	}
 	return 0;
 }
@@ -190,13 +205,15 @@ static unsigned int get_cpu()
 	case 0: return -1;
 	case 1: return rand() & 4095;
 	case 2: return rand() & 15;
+	default:/* unreachable */
+		break;
 	}
 	return 0;
 }
 
 unsigned long get_len()
 {
-	int i;
+	int i = 0;
 
 	i = get_interesting_value();
 
@@ -206,6 +223,8 @@ unsigned long get_len()
 	case 1:	return (i & 0xffff);
 	case 2:	return (i & 0xffffff);
 	case 3:	return (i & 0xffffffff);
+	default:/* unreachable */
+		break;
 	}
 
 	return i;
@@ -235,6 +254,8 @@ static unsigned long fill_arg(int call, int argnum)
 		break;
 	case 6:	argtype = syscalls[call].entry->arg6type;
 		break;
+	default:/* unreachable */
+		return 0;
 	}
 
 	switch (argtype) {
@@ -272,6 +293,8 @@ retry_fd:
 		case 6:	low = syscalls[call].entry->low6range;
 			high = syscalls[call].entry->hi6range;
 			break;
+		default:
+			break;
 		}
 		i = rand64() % high;
 		if (i < low) {
@@ -299,6 +322,7 @@ retry_fd:
 		case 6:	num = syscalls[call].entry->arg6list.num;
 			values = syscalls[call].entry->arg6list.values;
 			break;
+		default: break;
 		}
 		bits = rand() % num;	/* num of bits to OR */
 		for (i=0; i<bits; i++)
@@ -313,6 +337,9 @@ retry_fd:
 
 	case ARG_CPU:
 		return (unsigned long) get_cpu();
+
+	default:/* unreachable */
+		return 0;
 	}
 
 	return 0x5a5a5a5a;	/* Should never happen */
@@ -340,4 +367,3 @@ void generic_sanitise(int call,
 	if (syscalls[call].entry->arg6type != 0)
 		*a6 = fill_arg(call, 6);
 }
-

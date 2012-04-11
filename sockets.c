@@ -17,7 +17,7 @@ unsigned int socks=0;
 static int spin=0;
 static char spinner[]="-\\|/";
 
-static char *cachefilename="trinity.socketcache";
+static const char *cachefilename="trinity.socketcache";
 
 #define MAX_PER_DOMAIN 5
 #define MAX_TRIES_PER_DOMAIN 10
