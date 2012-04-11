@@ -34,7 +34,6 @@ unsigned long long syscallcount = 0;
 
 unsigned char debug = 0;
 
-unsigned long regval = 0;
 unsigned long specific_syscall = 0;
 unsigned int specific_proto = 0;
 unsigned int page_size;
@@ -154,7 +153,7 @@ static void parse_args(int argc, char *argv[])
 		{ "debug", no_argument, NULL, 'D' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dDfF:g:hkl:LN:m:P:pqs:Sux:z", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dDfF:g:hl:LN:m:P:pqs:S", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -208,11 +207,6 @@ static void parse_args(int argc, char *argv[])
 			show_syscall_list = 1;
 			break;
 
-		/* Pass in address of kernel text */
-		case 'k':
-			regval = KERNEL_ADDR;
-			break;
-
 		/* Set syscall loop counter */
 		case 'N':
 			syscallcount = strtoll(optarg, NULL, 10) + 1;
@@ -237,21 +231,6 @@ static void parse_args(int argc, char *argv[])
 		case 's':
 			seed = strtol(optarg, NULL, 10);
 			srand(seed);
-			break;
-
-		/* Pass in address of userspace addr text */
-		case 'u':
-			regval = (unsigned long) page_zeros;
-			break;
-
-		/* Set registers to specific value */
-		case 'x':
-			regval = strtoul(optarg, NULL, 0);
-			break;
-
-		/* Pass zeros in registers */
-		case 'z':
-			regval = 0;
 			break;
 		}
 	}
