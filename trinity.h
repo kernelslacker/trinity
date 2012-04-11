@@ -117,12 +117,7 @@ extern struct syscalltable *syscalls;
 
 extern unsigned int page_size;
 extern unsigned long long syscallcount;
-extern unsigned int opmode;
-extern char *opmodename[];
-extern char *structmodename[];
 extern unsigned int max_nr_syscalls;
-extern unsigned int structmode;
-extern unsigned long regval;
 extern unsigned int rep;
 extern unsigned char do_specific_proto;
 extern unsigned char do_specific_syscall;
