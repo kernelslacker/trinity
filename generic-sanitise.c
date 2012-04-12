@@ -104,22 +104,41 @@ unsigned long get_interesting_value()
 void * get_address()
 {
 	int i;
+	void *addr = NULL;
 
-	i = rand() % 8;
+	i = rand() % 9;
 	switch (i) {
-	case 0:	return (void *) KERNEL_ADDR;
-	case 1:	return page_zeros;
-	case 2:	return page_0xff;
-	case 3:	return page_rand;
-	case 4: return page_allocs;
-	case 5:	return (void *) get_interesting_value();
-	case 6: return get_map();
-	case 7: return malloc(page_size);
+	case 0: addr = NULL;
+		break;
+	case 1:	addr = (void *) KERNEL_ADDR;
+		break;
+	case 2:	addr = page_zeros;
+		break;
+	case 3:	addr = page_0xff;
+		break;
+	case 4:	addr = page_rand;
+		break;
+	case 5: addr = page_allocs;
+		break;
+	case 6:	addr = (void *) get_interesting_value();
+		break;
+	case 7: addr = get_map();
+		break;
+	case 8: addr = malloc(page_size);
+		break;
 	default: /* unreachable*/
-		return 0;
+		break;
 	}
 
-	return 0;
+	i = rand() % 5;
+	switch (i) {
+	case 0:	return addr;
+	case 1:	return addr + (page_size - sizeof(char));
+	case 2:	return addr + (page_size - sizeof(int));
+	case 3:	return addr + (page_size - sizeof(long));
+	case 4:	return addr + (page_size / 2);
+	default: return addr;
+	}
 }
 
 void regenerate_random_page()
