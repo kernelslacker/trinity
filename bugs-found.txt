@@ -183,3 +183,6 @@ Still unfixed:
 * [PATCH] netfilter: ipvs: Verify that IP_VS protocol has been registered
   https://lkml.org/lkml/2012/4/5/303
 
+* remove unnecessary ftrace WARN_ONCE's.
+  https://lkml.org/lkml/2012/4/11/825
+
