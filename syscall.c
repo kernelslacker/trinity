@@ -114,13 +114,13 @@ static long mkcall(unsigned int call)
 		else							\
 			sptr += sprintf(sptr, "%ld" WHITE, REG);	\
 									\
-		if (REG == (unsigned long)page_zeros)			\
+		if (REG == (((unsigned long)page_zeros) & PAGE_MASK))	\
 			sptr += sprintf(sptr, "[page_zeros]");		\
-		if (REG == (unsigned long)page_rand)			\
+		if (REG == (((unsigned long)page_rand) & PAGE_MASK))	\
 			sptr += sprintf(sptr, "[page_rand]");		\
-		if (REG == (unsigned long)page_0xff)			\
+		if (REG == (((unsigned long)page_0xff) & PAGE_MASK))	\
 			sptr += sprintf(sptr, "[page_0xff]");		\
-		if (REG == (unsigned long)page_allocs)			\
+		if (REG == (((unsigned long)page_allocs) & PAGE_MASK))	\
 			sptr += sprintf(sptr, "[page_allocs]");		\
 	}
 
