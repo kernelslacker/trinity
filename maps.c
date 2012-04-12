@@ -72,10 +72,12 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 
 void setup_maps()
 {
-	FILE *f;
-	void *startaddr, *endaddr;
 	struct map *tmpmap;
-	unsigned int ret, fd, i;
+	unsigned int fd, i;
+
+/*	FILE *f;
+	void *startaddr, *endaddr;
+	unsigned int ret;
 	char name[80];
 	char ch;
 
@@ -84,9 +86,10 @@ void setup_maps()
 		printf("Couldn't open /proc/self/maps!\n");
 		exit(EXIT_FAILURE);
 	}
-
+*/
 	tmpmap = maps_list = alloc_map();
-	do {
+
+/*	do {
 retry:
 		ret = fscanf(f, "%p-%p", &startaddr, &endaddr);
 		if (ret == 0) {
@@ -94,7 +97,7 @@ retry:
 			exit(EXIT_FAILURE);
 		}
 
-		/* skip over the shm (and any nearby mappings), in case we corrupt it*/
+		// skip over the shm (and any nearby mappings), in case we corrupt it
 		if ((startaddr > (void *) shm - (page_size * 8)) &&
 		    (startaddr < (void *) shm + (page_size * 8))) {
 			output("skipping mapping at %p -> %p (too close to shm at %p)\n", startaddr, endaddr, shm);
@@ -150,7 +153,7 @@ retry:
 
 	fclose(f);
 	output("Added %d mappings from /proc/self\n", num_mappings);
-
+*/
 	/* Make sure our zero page mappings are nowhere near the shm. */
 	fd = open("/dev/zero", O_RDWR);
 	for (i = 0; i < 50; i++)
