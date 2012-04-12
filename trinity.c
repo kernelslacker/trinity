@@ -69,21 +69,25 @@ static void init_buffers()
 	if (!page_zeros)
 		exit(EXIT_FAILURE);
 	memset(page_zeros, 0, page_size);
+	output("page_zeros @ %p\n", page_zeros);
 
 	page_0xff = malloc(page_size);
 	if (!page_0xff)
 		exit(EXIT_FAILURE);
 	memset(page_0xff, 0xff, page_size);
+	output("page_0xff @ %p\n", page_0xff);
 
 	page_rand = malloc(page_size);
 	if (!page_rand)
 		exit(EXIT_FAILURE);
 	memset(page_rand, 0x55, page_size);	/* overwritten below */
+	output("page_rand @ %p\n", page_rand);
 
 	page_allocs = malloc(page_size);
 	if (!page_allocs)
 		exit(EXIT_FAILURE);
 	memset(page_allocs, 0xff, page_size);
+	output("page_allocs @ %p\n", page_allocs);
 
 	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
 		page_allocs[i] = (unsigned long) malloc(page_size);
