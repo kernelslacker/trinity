@@ -189,3 +189,6 @@ Still unfixed:
 * [PATCH 1/2] mm: fix NULL ptr dereference in migrate_pages
   https://lkml.org/lkml/2012/4/13/79
 
+* [PATCH] 9p: disconnect channel when PCI device is removed
+  https://lkml.org/lkml/2012/4/13/352
+
