@@ -186,3 +186,6 @@ Still unfixed:
 * remove unnecessary ftrace WARN_ONCE's.
   https://lkml.org/lkml/2012/4/11/825
 
+* [PATCH 1/2] mm: fix NULL ptr dereference in migrate_pages
+  https://lkml.org/lkml/2012/4/13/79
+
