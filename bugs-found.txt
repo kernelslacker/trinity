@@ -192,3 +192,5 @@ Still unfixed:
 * [PATCH] 9p: disconnect channel when PCI device is removed
   https://lkml.org/lkml/2012/4/13/352
 
+* [PATCH] 9p: disconnect channel when PCI device is removed
+  https://lkml.org/lkml/2012/4/13/352
