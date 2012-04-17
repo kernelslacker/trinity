@@ -198,3 +198,6 @@ Still unfixed:
 * New RCU related warning due to rcu_preempt_depth() changes
   https://lkml.org/lkml/2012/4/17/84
 
+* [3.4-rc3] Thread overran stack, or stack corrupted
+  https://lkml.org/lkml/2012/4/17/366
+
