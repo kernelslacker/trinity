@@ -251,7 +251,7 @@ static void sighandler(int sig)
 		siglongjmp(ret_jump, 1);
 	}
 
-	_exit(0);
+	_exit(EXIT_SUCCESS);
 }
 
 static void mask_signals(void)
@@ -274,7 +274,7 @@ static void mask_signals(void)
 	limit.rlim_max = 0;
 	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
 		perror( "setrlimit(RLIMIT_CORE)" );
-		exit( 1 );
+		exit(EXIT_FAILURE);
 	}
 }
 
