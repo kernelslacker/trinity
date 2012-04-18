@@ -201,3 +201,6 @@ Still unfixed:
 * [3.4-rc3] Thread overran stack, or stack corrupted
   https://lkml.org/lkml/2012/4/17/366
 
+* bdi_debug_stats_show oops.
+  https://lkml.org/lkml/2012/4/18/279
+
