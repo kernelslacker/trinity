@@ -33,13 +33,12 @@ extern unsigned int fds_left_to_create;
 
 #define TYPE_MAX 10
 #define PROTO_MAX 256
-extern unsigned int socket_fds[MAX_FDS/2];
 extern unsigned int socks;
 extern unsigned int specific_proto;
 void open_sockets();
 
 extern unsigned int fd_idx;
-extern unsigned int fds[MAX_FDS/2];
+
 void open_files();
 void close_files();
 void open_fds(const char *dir);
@@ -147,6 +146,8 @@ struct shm_s {
 
 	unsigned int pipe_fds[MAX_PIPE_FDS*2];
 	unsigned int fds[MAX_FDS/2];
+
+	unsigned int socket_fds[MAX_FDS/2];
 };
 extern struct shm_s *shm;
 

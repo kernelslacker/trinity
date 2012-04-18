@@ -53,7 +53,7 @@ retry:		fd = shm->fds[rand() % fd_idx];
 		break;
 
 	case 1:
-		fd = socket_fds[rand() % socks];
+		fd = shm->socket_fds[rand() % socks];
 		break;
 
 	case 2:
