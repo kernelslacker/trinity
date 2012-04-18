@@ -16,7 +16,7 @@ do
   cd tmp.$RND
   for i in `seq 1 $NR_PROCESSES`
   do
-	../../trinity -q &
+	../../trinity -q -l off &
   done
   wait
   cd ..
