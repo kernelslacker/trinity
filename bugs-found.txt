@@ -204,3 +204,6 @@ Still unfixed:
 * bdi_debug_stats_show oops.
   https://lkml.org/lkml/2012/4/18/279
 
+* jbd: NULL dereference on chown()
+  https://lkml.org/lkml/2012/4/18/328
+
