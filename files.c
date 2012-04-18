@@ -162,7 +162,7 @@ openit:
 			default: break;
 			}
 			output("fd[%i] = %s (%s)\n", fd, b, modestr);
-			fds[fd_idx++] = fd;
+			shm->fds[fd_idx++] = fd;
 			fds_left_to_create--;
 		}
 	}
@@ -185,8 +185,8 @@ void close_files()
 	unsigned int i;
 
 	for (i = 0; i < fd_idx; i++) {
-		close(fds[i]);
-		fds[i] = 0;
+		close(shm->fds[i]);
+		shm->fds[i] = 0;
 		fds_left_to_create++;
 	}
 	fd_idx = 0;

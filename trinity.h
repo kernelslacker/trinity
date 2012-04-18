@@ -130,6 +130,8 @@ extern unsigned char extrafork;
 #define DEFAULT_SYSCALLS_PER_CHILD 1000
 extern unsigned long syscalls_per_child;
 
+#define MAX_PIPE_FDS 10
+
 struct shm_s {
 	unsigned long execcount;
 	unsigned long successes;
@@ -142,6 +144,9 @@ struct shm_s {
 	pid_t pids[MAX_NR_CHILDREN];
 
 	FILE *logfiles[MAX_NR_CHILDREN];
+
+	unsigned int pipe_fds[MAX_PIPE_FDS*2];
+	unsigned int fds[MAX_FDS/2];
 };
 extern struct shm_s *shm;
 

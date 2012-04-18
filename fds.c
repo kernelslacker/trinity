@@ -4,10 +4,6 @@
 
 #include "trinity.h"
 
-#define MAX_PIPE_FDS 10
-unsigned int pipe_fds[MAX_PIPE_FDS*2];
-
-unsigned int fds[MAX_FDS/2];
 unsigned int fd_idx = 0;
 
 unsigned int fds_left_to_create = MAX_FDS;
@@ -22,11 +18,11 @@ void open_pipes(void)
 			perror("pipe fail.\n");
 			exit(EXIT_FAILURE);
 		}
-		pipe_fds[i] = pipes[0];
-		pipe_fds[i+1] = pipes[1];
+		shm->pipe_fds[i] = pipes[0];
+		shm->pipe_fds[i+1] = pipes[1];
 
-		output("fd[%d] = pipe\n", pipe_fds[i]);
-		output("fd[%d] = pipe\n", pipe_fds[i+1]);
+		output("fd[%d] = pipe\n", shm->pipe_fds[i]);
+		output("fd[%d] = pipe\n", shm->pipe_fds[i+1]);
 	}
 }
 
@@ -50,9 +46,9 @@ int get_random_fd(void)
 
 	switch (i) {
 	case 0:
-retry:		fd = fds[rand() % fd_idx];
+retry:		fd = shm->fds[rand() % fd_idx];
 		/* retry if we hit stdin/stdout/logfile */
-		if (fd < fds[0])
+		if (fd < shm->fds[0])
 			goto retry;
 		break;
 
@@ -61,7 +57,7 @@ retry:		fd = fds[rand() % fd_idx];
 		break;
 
 	case 2:
-		fd = pipe_fds[rand() % MAX_PIPE_FDS];
+		fd = shm->pipe_fds[rand() % MAX_PIPE_FDS];
 		break;
 	default:
 		break;
