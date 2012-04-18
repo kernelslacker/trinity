@@ -541,7 +541,7 @@ int main(int argc, char* argv[])
 	destroy_maps();
 
 	for (i = 0; i < socks; i++)
-		close(socket_fds[i]);
+		close(shm->socket_fds[i]);
 
 	if (logging != 0)
 		close_logfiles();

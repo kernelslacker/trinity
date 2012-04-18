@@ -11,7 +11,6 @@
 #include "trinity.h"
 #include "sanitise.h"
 
-unsigned int socket_fds[MAX_FDS/2];
 unsigned int socks=0;
 
 static int spin=0;
@@ -75,7 +74,7 @@ void generate_sockets(unsigned int nr_to_create)
 
 			fd = socket(domain, type, protocol);
 			if (fd > -1) {
-				socket_fds[socks] = fd;
+				shm->socket_fds[socks] = fd;
 
 				output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
 					fd, domain, type, protocol);
@@ -168,8 +167,8 @@ regenerate:
 			unlink(cachefilename);
 
 			for (i = 0; i < socks; i++) {
-				close(socket_fds[i]);
-				socket_fds[i] = 0;
+				close(shm->socket_fds[i]);
+				shm->socket_fds[i] = 0;
 				fds_left_to_create++;
 			}
 			socks = 0;
@@ -177,7 +176,7 @@ regenerate:
 			generate_sockets(fds_left_to_create/2);
 			return;
 		}
-		socket_fds[socks] = fd;
+		shm->socket_fds[socks] = fd;
 		output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
 			fd, domain, type, protocol);
 		socks++;
