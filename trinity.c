@@ -258,6 +258,7 @@ static void mask_signals(void)
 {
 	struct sigaction sa;
 	sigset_t ss;
+	struct rlimit limit;
 
 	(void)sigfillset(&ss);
 	sa.sa_flags = SA_RESTART;
@@ -267,6 +268,14 @@ static void mask_signals(void)
 	(void)sigaction(SIGFPE, &sa, NULL);
 	(void)sigaction(SIGBUS, &sa, NULL);
 	(void)sigaction(SIGILL, &sa, NULL);
+
+	/* Disable dumping core */
+	limit.rlim_cur = 0;
+	limit.rlim_max = 0;
+	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
+		perror( "setrlimit(RLIMIT_CORE)" );
+		exit( 1 );
+	}
 }
 
 static void find_specific_syscall()
