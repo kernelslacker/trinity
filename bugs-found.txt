@@ -207,3 +207,6 @@ Still unfixed:
 * jbd: NULL dereference on chown()
   https://lkml.org/lkml/2012/4/18/328
 
+* 3.4-rc3: kernel BUG at mm/memory.c:1228!
+  https://lkml.org/lkml/2012/4/19/272
+
