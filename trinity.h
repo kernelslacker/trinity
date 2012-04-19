@@ -148,6 +148,8 @@ struct shm_s {
 	unsigned int fds[MAX_FDS/2];
 
 	unsigned int socket_fds[MAX_FDS/2];
+
+	unsigned int current_fd, fd_lifetime;
 };
 extern struct shm_s *shm;
 
