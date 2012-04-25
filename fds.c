@@ -69,7 +69,7 @@ int get_fd(void)
 {
 	if (shm->fd_lifetime == 0) {
 		shm->current_fd = get_random_fd();
-		shm->fd_lifetime = MAX_NR_CHILDREN;
+		shm->fd_lifetime = rand() % MAX_NR_CHILDREN;
 	} else
 		shm->fd_lifetime--;
 
