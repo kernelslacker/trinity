@@ -21,6 +21,6 @@ struct syscall syscall_pipe2 = {
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 2,
-		.values = { O_CLOEXEC , O_NONBLOCK },
+		.values = { O_CLOEXEC, O_NONBLOCK, O_DIRECT },
 	},
 };
