@@ -192,9 +192,6 @@ Still unfixed:
 * [PATCH] 9p: disconnect channel when PCI device is removed
   https://lkml.org/lkml/2012/4/13/352
 
-* [PATCH] 9p: disconnect channel when PCI device is removed
-  https://lkml.org/lkml/2012/4/13/352
-
 * New RCU related warning due to rcu_preempt_depth() changes
   https://lkml.org/lkml/2012/4/17/84
 
@@ -212,3 +209,4 @@ Still unfixed:
 
 * mm: divide by zero in percpu_pagelist_fraction_sysctl_handler()
   https://lkml.org/lkml/2012/4/20/32
+
