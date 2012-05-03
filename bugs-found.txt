@@ -224,5 +224,5 @@ Still unfixed:
   https://lkml.org/lkml/2012/5/3/20
 
 * rcu: BUG on exit_group
-
+  https://lkml.org/lkml/2012/5/3/290
 
