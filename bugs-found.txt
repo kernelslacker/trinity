@@ -210,3 +210,19 @@ Still unfixed:
 * mm: divide by zero in percpu_pagelist_fraction_sysctl_handler()
   https://lkml.org/lkml/2012/4/20/32
 
+* WARNING: at include/linux/iocontext.h:140 copy_io+0xb9/0x130()
+  https://lkml.org/lkml/2012/5/1/82
+
+* net: l2tp: unlock socket lock before returning from l2tp_ip_sendmsg
+  https://lkml.org/lkml/2012/5/2/195
+  https://lkml.org/lkml/2012/5/2/216
+
+* c/r: broken locking when executing map_files
+  https://lkml.org/lkml/2012/5/2/274
+
+* ecryptfs: Kernel BUG when closing device
+  https://lkml.org/lkml/2012/5/3/20
+
+* rcu: BUG on exit_group
+
+
