@@ -32,6 +32,15 @@ void sanitise_socket(
 		if (*type == SOCK_STREAM)
 			*protocol = 0;
 		break;
+	case AF_NETLINK:
+		switch (rand() % 2) {
+		case 0:	*type = SOCK_RAW;
+			break;
+		case 1:	*type = SOCK_DGRAM;
+		default:break;
+		}
+		*protocol = rand() % 22;
+		break;
 	default: break;
 	}
 
