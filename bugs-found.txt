@@ -57,15 +57,16 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 * e6780f7243eddb133cc20ec37fa69317c218b709
   futex: Fix uninterruptible loop due to gate_area
 
+* 65ed76010dfed3cb75c863c9052c367a1bacf80a
+  hugetlbfs lockdep spew.
+  https://lkml.org/lkml/2011/4/15/272
+  https://lkml.org/lkml/2012/2/16/498
+
 ------------------------------------------------------------------
 Still unfixed:
 
 * irqs_disabled page fault lockdep trace.
   http://lkml.org/lkml/2011/7/23/167
-
-* hugetlbfs lockdep spew.
-  https://lkml.org/lkml/2011/4/15/272
-  https://lkml.org/lkml/2012/2/16/498
 
 * sel_netnode_insert suspicious rcu usage.
 
