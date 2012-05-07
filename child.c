@@ -19,12 +19,11 @@ void set_make_it_fail()
 	const char *buf = "1";
 
 	fd = open("/proc/self/make-it-fail", O_WRONLY);
-	if (fd != -1)
+	if (fd == -1)
 		return;
 
-	if (write(fd, buf, 1) == -1) {
-		printf("writing to /proc/self/make-it-fail failed!\n");
-	}
+	if (write(fd, buf, 1) == -1)
+		printf("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
 
 	close(fd);
 }
