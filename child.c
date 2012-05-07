@@ -29,6 +29,18 @@ void set_make_it_fail()
 	close(fd);
 }
 
+/*
+ * We call this occasionally to set some FPU state, in the hopes that we
+ * might tickle some weird FPU/scheduler related bugs
+ */
+static void use_fpu(void)
+{
+	double x = 0;
+	asm volatile("":"+m" (x));
+	x += 1;
+	asm volatile("":"+m" (x));
+}
+
 
 int child_process(void)
 {
@@ -53,8 +65,11 @@ int child_process(void)
 		output("bound child %d to cpu %d\n", pid, cpu);
 	}
 
-	if (extrafork == FALSE)
+	if (extrafork == FALSE) {
 		set_make_it_fail();
+		if (rand() % 100 < 50)
+			use_fpu();
+	}
 
 	while (left_to_do > 0) {
 
