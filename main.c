@@ -10,6 +10,7 @@
 
 #include "trinity.h"
 #include "shm.h"
+#include "syscall.h"
 
 void syscall_list()
 {

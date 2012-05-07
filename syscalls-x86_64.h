@@ -5,7 +5,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
-
+#include "syscall.h"
 #include "syscalls/syscalls.h"
 
 #define NR_X86_64_SYSCALLS 312	/* syscalls numbered from 0 */

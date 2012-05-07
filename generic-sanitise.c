@@ -8,7 +8,7 @@
 #include "arch.h"
 #include "trinity.h"
 #include "sanitise.h"
-
+#include "syscall.h"
 
 char * filebuffer = NULL;
 unsigned long filebuffersize = 0;

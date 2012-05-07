@@ -2,6 +2,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "syscall.h"
 #include "syscalls/syscalls.h"
 
 #define NR_I386_SYSCALLS 349

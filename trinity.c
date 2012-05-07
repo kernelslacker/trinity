@@ -25,6 +25,7 @@
 #include "trinity.h"
 #include "files.h"
 #include "shm.h"
+#include "syscall.h"
 
 static char *progname=NULL;
 static unsigned int seed=0;

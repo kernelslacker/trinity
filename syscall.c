@@ -15,6 +15,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 
 #define __syscall_return(type, res) \
 	do { \
