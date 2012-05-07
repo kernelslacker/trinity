@@ -161,11 +161,6 @@ void output(const char *fmt, ...);
 void open_logfiles();
 void close_logfiles();
 
-
-#define MODE_UNDEFINED 0
-#define MODE_RANDOM 1
-#define MODE_ROTATE 2
-
 extern unsigned char do_check_tainted;
 int check_tainted(void);
 
