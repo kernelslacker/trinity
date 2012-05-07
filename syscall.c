@@ -2,6 +2,7 @@
  * Functions for actually doing the system calls.
  */
 
+#include <fcntl.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,23 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+
+static void set_make_it_fail()
+{
+	int fd;
+	const char *buf = "1";
+
+	fd = open("/proc/self/make-it-fail", O_WRONLY);
+	if (fd != -1)
+		return;
+
+	if (write(fd, buf, 1) == -1) {
+		printf("writing to /proc/self/make-it-fail failed!\n");
+	}
+
+	close(fd);
+}
+
 
 #define __syscall_return(type, res) \
 	do { \
@@ -68,6 +86,7 @@ static unsigned long do_syscall(unsigned int num_args, int nr, unsigned long a1,
 	/* Do the actual syscall in another child. */
 	childpid = fork();
 	if (childpid == 0) {
+		set_make_it_fail();
 		(void)alarm(3);
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 		(void)alarm(0);
@@ -242,6 +261,9 @@ int child_process(void)
 		sched_setaffinity(getpid(), sizeof(set), &set);
 		output("bound child %d to cpu %d\n", pid, cpu);
 	}
+
+	if (extrafork == FALSE)
+		set_make_it_fail();
 
 	while (left_to_do > 0) {
 
