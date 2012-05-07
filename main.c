@@ -9,6 +9,7 @@
 #include <sys/ptrace.h>
 
 #include "trinity.h"
+#include "shm.h"
 
 void syscall_list()
 {

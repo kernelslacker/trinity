@@ -3,8 +3,10 @@
  */
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 #include <stdlib.h>
 #include <linux/ptrace.h>
+
 
 static void sanitise_ptrace(
 	__unused__ unsigned long *a1,

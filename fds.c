@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include "trinity.h"
+#include "shm.h"
 
 unsigned int fd_idx = 0;
 

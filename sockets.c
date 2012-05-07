@@ -10,6 +10,8 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "constants.h"
+#include "shm.h"
 
 unsigned int socks=0;
 

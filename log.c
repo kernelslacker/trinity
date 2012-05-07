@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "trinity.h"
+#include "shm.h"
 
 static char outputbuf[1024];
 FILE *parentlogfile;
