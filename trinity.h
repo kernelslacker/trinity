@@ -24,6 +24,7 @@ void syscall_list(void);
 void main_loop(void);
 int child_process(void);
 
+long mkcall(unsigned int call);
 void do_syscall_from_child();
 
 void regenerate_random_page(void);
@@ -86,6 +87,8 @@ void close_logfiles();
 
 extern unsigned char do_check_tainted;
 int check_tainted(void);
+
+void set_make_it_fail(void);
 
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
