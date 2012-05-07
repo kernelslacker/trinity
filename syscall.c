@@ -248,8 +248,8 @@ int child_process(void)
 			 * 10% possibility of a 32bit syscall
 			 */
 			shm->do32bit = FALSE;
-			if (rand() % 100 < 10)
-				shm->do32bit = TRUE;
+//			if (rand() % 100 < 10)
+//				shm->do32bit = TRUE;
 
 			if (shm->do32bit == TRUE) {
 				syscalls = syscalls_64bit;
