@@ -5,6 +5,8 @@
 #include <setjmp.h>
 #include <sys/types.h>
 
+#include "constants.h"
+
 #define FALSE 0
 #define TRUE 1
 
@@ -13,8 +15,6 @@
 #else
 #define __unused__ /*@unused@*/
 #endif
-
-#define MAX_NR_CHILDREN 64
 
 extern unsigned char debug;
 
@@ -26,16 +26,12 @@ int child_process(void);
 
 void do_syscall_from_child();
 
-#define REGENERATION_POINT 25000
 void regenerate_random_page(void);
 
 void seed_from_tod();
 
-#define MAX_FDS 750
 extern unsigned int fds_left_to_create;
 
-#define TYPE_MAX 10
-#define PROTO_MAX 256
 extern unsigned int socks;
 extern unsigned int specific_proto;
 void open_sockets();
@@ -135,34 +131,7 @@ extern unsigned char extrafork;
 
 extern unsigned char biarch;
 
-#define DEFAULT_SYSCALLS_PER_CHILD 1000
 extern unsigned long syscalls_per_child;
-
-#define MAX_PIPE_FDS 10
-
-struct shm_s {
-	unsigned long execcount;
-	unsigned long successes;
-	unsigned long failures;
-	unsigned long retries;
-	unsigned int regenerate;
-
-	unsigned int nr_childs;
-	unsigned int running_childs;
-	pid_t pids[MAX_NR_CHILDREN];
-
-	FILE *logfiles[MAX_NR_CHILDREN];
-
-	unsigned int pipe_fds[MAX_PIPE_FDS*2];
-	unsigned int fds[MAX_FDS/2];
-
-	unsigned int socket_fds[MAX_FDS/2];
-
-	unsigned int current_fd, fd_lifetime;
-
-	unsigned char do32bit;
-};
-extern struct shm_s *shm;
 
 extern char *page_zeros;
 extern char *page_0xff;

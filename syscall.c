@@ -14,6 +14,7 @@
 #include "arch.h"
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
 #define __syscall_return(type, res) \
 	do { \

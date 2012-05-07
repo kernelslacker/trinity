@@ -24,6 +24,7 @@
 #include "arch-syscalls.h"
 #include "trinity.h"
 #include "files.h"
+#include "shm.h"
 
 static char *progname=NULL;
 static unsigned int seed=0;

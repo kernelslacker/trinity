@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "trinity.h"
+#include "shm.h"
 
 static int ignore_files(char *file)
 {
