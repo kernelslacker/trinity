@@ -38,15 +38,15 @@ static int ignore_files(char *file)
 	return 0;
 }
 
-static int add_fd(unsigned int chance, char *b, int flags)
+static int add_fd(unsigned int chance, char *pathname, int flags)
 {
 	int fd = -1;
 
 	if ((unsigned int)(rand() % 5000) < chance) {
-		fd = open(b, flags | O_NONBLOCK);
+		fd = open(pathname, flags | O_NONBLOCK);
 		if (fd < 0)
 			return -1;
-//		printf("Added: %s\n", b);
+//		printf("Added: %s\n", pathname);
 	}
 	return fd;
 }
