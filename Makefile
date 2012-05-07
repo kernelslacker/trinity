@@ -26,7 +26,8 @@ OBJS		= trinity.o \
 			files.o sockets.o fds.o \
 			syscall.o \
 			maps.o \
-			log.c \
+			log.o \
+			child.o \
 			$(SYSCALLS) \
 			$(SANITISE) \
 			$(IOCTLS)
