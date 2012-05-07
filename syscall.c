@@ -15,15 +15,50 @@
 #include "trinity.h"
 #include "sanitise.h"
 
-static unsigned long do_syscall(int nr, unsigned long a1, unsigned long a2, unsigned long a3,
+#define __syscall_return(type, res) \
+	do { \
+	if ((unsigned long)(res) >= (unsigned long)(-125)) { \
+		errno = -(res); \
+		res = -1; \
+	} \
+	return (type) (res); \
+} while (0)
+
+static long syscall32(int num_args, unsigned int call,
+	unsigned long a1, unsigned long a2, unsigned long a3,
+	unsigned long a4, unsigned long a5, __unused__ unsigned long a6)
+{
+#if defined(__i386__) || defined (__x86_64__)
+	if (num_args < 6) {
+		long __res;
+		__asm__ volatile ("int $0x80"
+			: "=a" (__res)
+			: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),
+			"d" ((long)(a3)), "S" ((long)(a4)),
+			"D" ((long)(a5)));
+		__syscall_return(long,__res);
+		return __res;
+	}
+/* TODO: 6 arg 32bit x86 syscall goes here.*/
+#endif
+
+	// TODO: 32-bit syscall entry for non-x86 archs goes here.
+	return 0;
+}
+
+
+static unsigned long do_syscall(unsigned int num_args, int nr, unsigned long a1, unsigned long a2, unsigned long a3,
 			unsigned long a4, unsigned long a5, unsigned long a6)
 {
 	int childpid, childstatus;
 	int ret = 0;
 
-	if (extrafork == 0) {
+	if (extrafork == FALSE) {
 		(void)alarm(3);
-		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
+		if (shm->do32bit == FALSE)
+			ret = syscall(nr, a1, a2, a3, a4, a5, a6);
+		else
+			ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
 		(void)alarm(0);
 		return ret;
 	}
@@ -79,6 +114,8 @@ static long mkcall(unsigned int call)
 	memset(string, 0, sizeof(string));
 
 	sptr += sprintf(sptr, "[%d] ", getpid());
+	if (shm->do32bit == TRUE)
+		sptr += sprintf(sptr, "[32BIT] ");
 
 	olda1 = a1 = rand64();
 	olda2 = a2 = rand64();
@@ -144,7 +181,7 @@ args_done:
 #ifdef __ia64__
 	call += 1024;
 #endif
-	ret = do_syscall(syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
+	ret = do_syscall(syscalls[call].entry->num_args, syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
 
 	sptr = string;
 	memset(string, 0, sizeof(string));
@@ -191,6 +228,7 @@ int child_process(void)
 	unsigned int left_to_do = syscalls_per_child;
 
 	seed_from_tod();
+
 	for (cpu = 0; cpu < shm->nr_childs; cpu++) {
 		if (shm->pids[cpu] == pid)
 			break;
@@ -204,6 +242,23 @@ int child_process(void)
 	}
 
 	while (left_to_do > 0) {
+
+		if (biarch == TRUE) {
+			/*
+			 * 10% possibility of a 32bit syscall
+			 */
+			shm->do32bit = FALSE;
+			if (rand() % 100 < 10)
+				shm->do32bit = TRUE;
+
+			if (shm->do32bit == TRUE) {
+				syscalls = syscalls_64bit;
+				max_nr_syscalls = max_nr_64bit_syscalls;
+			} else {
+				syscalls = syscalls_32bit;
+				max_nr_syscalls = max_nr_32bit_syscalls;
+			}
+		}
 
 		syscallnr = rand() % max_nr_syscalls;
 

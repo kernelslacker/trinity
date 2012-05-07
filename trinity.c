@@ -30,6 +30,8 @@ static unsigned int seed=0;
 jmp_buf ret_jump;
 
 struct syscalltable *syscalls;
+struct syscalltable *syscalls_32bit;
+struct syscalltable *syscalls_64bit;
 
 unsigned long long syscallcount = 0;
 
@@ -51,6 +53,10 @@ unsigned char extrafork = 0;
 static unsigned char desired_group = GROUP_NONE;
 
 unsigned int max_nr_syscalls;
+unsigned int max_nr_32bit_syscalls;
+unsigned int max_nr_64bit_syscalls;
+
+unsigned char biarch = FALSE;
 
 struct shm_s *shm;
 
@@ -423,16 +429,16 @@ int create_shm()
 }
 
 
-int main(int argc, char* argv[])
+void setup_syscall_tables(void)
 {
-	int ret;
 	unsigned int i;
 
-	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
-
 #if defined(__x86_64__)
-	syscalls = syscalls_x86_64;
-	max_nr_syscalls = NR_X86_64_SYSCALLS;
+	syscalls_64bit = syscalls_x86_64;
+	syscalls_32bit = syscalls_i386;
+	max_nr_64bit_syscalls = NR_X86_64_SYSCALLS;
+	max_nr_32bit_syscalls = NR_I386_SYSCALLS;
+	biarch = TRUE;
 #elif defined(__i386__)
 	syscalls = syscalls_i386;
 	max_nr_syscalls = NR_I386_SYSCALLS;
@@ -446,7 +452,28 @@ int main(int argc, char* argv[])
 	syscalls = syscalls_i386;
 #endif
 
+	if (biarch == TRUE) {
+		for (i = 0; i < max_nr_32bit_syscalls; i++)
+			syscalls_32bit[i].entry->number = i;
+
+		for (i = 0; i < max_nr_64bit_syscalls; i++)
+			syscalls_64bit[i].entry->number = i;
+	} else {
+		for (i = 0; i < max_nr_syscalls; i++)
+			syscalls[i].entry->number = i;
+	}
+}
+
+int main(int argc, char* argv[])
+{
+	int ret;
+	unsigned int i;
+
+	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
+
 	progname = argv[0];
+
+	setup_syscall_tables();
 
 	parse_args(argc, argv);
 
@@ -473,10 +500,6 @@ int main(int argc, char* argv[])
 	if (logging != 0)
 		open_logfiles();
 
-	max_nr_syscalls = NR_SYSCALLS;
-	for (i = 0; i < max_nr_syscalls; i++)
-		syscalls[i].entry->number = i;
-
 	if (desired_group == GROUP_VM) {
 		struct syscalltable *newsyscalls;
 		int count = 0, j = 0;
@@ -500,8 +523,13 @@ int main(int argc, char* argv[])
 	}
 
 
-	if (!do_specific_syscall)
-		output("Fuzzing %d syscalls.\n", max_nr_syscalls);
+	if (!do_specific_syscall) {
+		if (biarch == TRUE)
+			output("Fuzzing %d 32-bit syscalls & %d 64-bit syscalls.\n",
+				max_nr_32bit_syscalls, max_nr_64bit_syscalls);
+		else
+			output("Fuzzing %d syscalls.\n", max_nr_syscalls);
+	}
 
 	if (do_specific_syscall == 1)
 		find_specific_syscall();

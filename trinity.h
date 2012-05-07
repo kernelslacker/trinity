@@ -5,6 +5,9 @@
 #include <setjmp.h>
 #include <sys/types.h>
 
+#define FALSE 0
+#define TRUE 1
+
 #ifndef S_SPLINT_S
 #define __unused__ __attribute((unused))
 #else
@@ -113,10 +116,14 @@ struct syscalltable {
 	struct syscall *entry;
 };
 extern struct syscalltable *syscalls;
+extern struct syscalltable *syscalls_32bit;
+extern struct syscalltable *syscalls_64bit;
 
 extern unsigned int page_size;
 extern unsigned long long syscallcount;
 extern unsigned int max_nr_syscalls;
+extern unsigned int max_nr_32bit_syscalls;
+extern unsigned int max_nr_64bit_syscalls;
 extern unsigned int rep;
 extern unsigned char do_specific_proto;
 extern unsigned char do_specific_syscall;
@@ -125,6 +132,8 @@ extern unsigned char dopause;
 extern long struct_fill;
 extern unsigned char logging;
 extern unsigned char extrafork;
+
+extern unsigned char biarch;
 
 #define DEFAULT_SYSCALLS_PER_CHILD 1000
 extern unsigned long syscalls_per_child;
@@ -150,6 +159,8 @@ struct shm_s {
 	unsigned int socket_fds[MAX_FDS/2];
 
 	unsigned int current_fd, fd_lifetime;
+
+	unsigned char do32bit;
 };
 extern struct shm_s *shm;
 
