@@ -14,4 +14,6 @@
 
 #define DEFAULT_SYSCALLS_PER_CHILD 1000
 
+#define NR_PATHNAMES 50
+
 #endif	/* _CONSTANTS_H */
