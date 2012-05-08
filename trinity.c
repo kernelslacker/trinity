@@ -110,10 +110,36 @@ static void init_buffers()
 
 unsigned long rand64()
 {
-	unsigned long r;
+	unsigned long r = 0;
 
-	r = (unsigned long)rand();
-	r *= (unsigned long)rand();
+	switch (rand() % 3) {
+	case 0:
+		r = (unsigned long)rand() & rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= (unsigned long)rand() & rand();
+#endif
+		break;
+
+	case 1:
+		r = (unsigned long)rand() | rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= (unsigned long)rand() | rand();
+#endif
+		break;
+
+	case 2:
+		r = (unsigned long)rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= (unsigned long)rand();
+#endif
+		break;
+
+	default:
+		break;
+	}
 	return r;
 }
 
