@@ -21,6 +21,7 @@ struct syscall syscall_fallocate = {
 		.values = { FALLOC_FL_KEEP_SIZE, FALLOC_FL_PUNCH_HOLE },
 	},
 	.arg3name = "offset",
+	.arg3type = ARG_LEN,
 	.arg4name = "len",
 	.arg4type = ARG_LEN,
 	.rettype = RET_ZERO_SUCCESS,
