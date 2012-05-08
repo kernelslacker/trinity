@@ -90,7 +90,7 @@ int child_process(void)
 				shm->do32bit = FALSE;
 
 
-			if (shm->do32bit == TRUE) {
+			if (shm->do32bit == FALSE) {
 				syscalls = syscalls_64bit;
 				max_nr_syscalls = max_nr_64bit_syscalls;
 			} else {
