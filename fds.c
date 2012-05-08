@@ -68,11 +68,18 @@ retry:		fd = shm->fds[rand() % fd_idx];
 
 int get_fd(void)
 {
+regen:
 	if (shm->fd_lifetime == 0) {
 		shm->current_fd = get_random_fd();
 		shm->fd_lifetime = rand() % MAX_NR_CHILDREN;
 	} else
 		shm->fd_lifetime--;
+
+	if (shm->current_fd == 0) {
+		printf("shm->lifetime = %d\n", shm->fd_lifetime);
+		shm->fd_lifetime = 0;
+		goto regen;
+	}
 
 	return shm->current_fd;
 }
