@@ -13,7 +13,7 @@
 #include "syscall.h"
 #include "shm.h"
 
-void set_make_it_fail()
+static void set_make_it_fail()
 {
 	int fd;
 	const char *buf = "1";
@@ -40,6 +40,12 @@ static void use_fpu(void)
 	asm volatile("":"+m" (x));
 }
 
+void init_child(void)
+{
+	set_make_it_fail();
+	if (rand() % 100 < 50)
+		use_fpu();
+}
 
 int child_process(void)
 {
@@ -63,12 +69,8 @@ int child_process(void)
 		sched_setaffinity(getpid(), sizeof(set), &set);
 		output("bound child %d to cpu %d\n", pid, cpu);
 	}
-
-	if (extrafork == FALSE) {
-		set_make_it_fail();
-		if (rand() % 100 < 50)
-			use_fpu();
-	}
+	if (extrafork == FALSE)
+		init_child();
 
 	while (left_to_do > 0) {
 

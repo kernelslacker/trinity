@@ -68,7 +68,7 @@ static unsigned long do_syscall(unsigned int num_args, int nr, unsigned long a1,
 	/* Do the actual syscall in another child. */
 	childpid = fork();
 	if (childpid == 0) {
-		set_make_it_fail();
+		init_child();
 		(void)alarm(3);
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 		(void)alarm(0);
