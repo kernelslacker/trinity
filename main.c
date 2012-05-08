@@ -16,8 +16,18 @@ void syscall_list()
 {
 	unsigned int i;
 
-	for (i=0; i < max_nr_syscalls; i++)
-		 printf("%u: %s\n", i, syscalls[i].entry->name);
+	if (biarch == TRUE) {
+		printf("32bit:\n");
+		for (i=0; i < max_nr_32bit_syscalls; i++)
+			 printf("%u: %s\n", i, syscalls_32bit[i].entry->name);
+
+		printf("\n64bit:\n");
+		for (i=0; i < max_nr_64bit_syscalls; i++)
+			 printf("%u: %s\n", i, syscalls_64bit[i].entry->name);
+	} else {
+		for (i=0; i < max_nr_syscalls; i++)
+			 printf("%u: %s\n", i, syscalls[i].entry->name);
+	}
 }
 
 static void regenerate()
