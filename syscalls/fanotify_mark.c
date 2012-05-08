@@ -65,7 +65,7 @@ struct syscall syscall_fanotify_mark = {
 	.arg4name = "dfd",
 	.arg4type = ARG_FD,
 	.arg5name = "pathname",
-	.arg5type = ARG_ADDRESS,
+	.arg5type = ARG_PATHNAME,
 	.sanitise = sanitise_fanotify_mark,
 	.rettype = RET_ZERO_SUCCESS,
 };

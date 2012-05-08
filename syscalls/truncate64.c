@@ -8,7 +8,7 @@ struct syscall syscall_truncate64 = {
 	.name = "truncate64",
 	.num_args = 2,
 	.arg1name = "path",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "length",
 	.arg2type = ARG_LEN,
 };

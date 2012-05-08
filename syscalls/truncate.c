@@ -8,7 +8,7 @@ struct syscall syscall_truncate = {
 	.name = "truncate",
 	.num_args = 2,
 	.arg1name = "path",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "length",
 	.arg2type = ARG_LEN,
 };
