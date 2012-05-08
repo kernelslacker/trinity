@@ -46,9 +46,15 @@ static int add_fd(unsigned int chance, char *pathname, int flags)
 {
 	int fd = -1;
 
-	if ((unsigned int)(rand() % 5000) < chance)
-		if (pathname_idx < NR_PATHNAMES)
+	if ((unsigned int)(rand() % 5000) < chance) {
+		if (pathname_idx != NR_PATHNAMES) {
+
+			if (pathnames[pathname_idx] != NULL)
+				free(pathnames[pathname_idx]);
+
 			pathnames[pathname_idx++] = strdup(pathname);
+		}
+	}
 
 	if ((unsigned int)(rand() % 5000) < chance) {
 		fd = open(pathname, flags | O_NONBLOCK);
@@ -199,4 +205,11 @@ void close_files()
 		fds_left_to_create++;
 	}
 	fd_idx = 0;
+}
+
+void regenerate_fds(void)
+{
+	close_files();
+	pathname_idx = 0;
+	open_files();
 }
