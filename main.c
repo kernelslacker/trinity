@@ -22,18 +22,16 @@ void syscall_list()
 
 static void regenerate()
 {
-	if (!shm->regenerate) {
-		output("[%d] Regenerating random pages, fd's etc.\n", getpid());
-		close_files();
-		open_files();
+	output("[%d] Regenerating random pages, fd's etc.\n", getpid());
+	close_files();
+	open_files();
 
-		destroy_maps();
-		setup_maps();
+	destroy_maps();
+	setup_maps();
 
-		shm->regenerate = REGENERATION_POINT - 1;
+	shm->regenerate = REGENERATION_POINT - 1;
 
-		regenerate_random_page();
-	}
+	regenerate_random_page();
 }
 
 unsigned char do_check_tainted;
@@ -175,7 +173,9 @@ static void handle_children()
 
 void main_loop()
 {
-	regenerate();
+	if (!shm->regenerate)
+		regenerate();
+
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
