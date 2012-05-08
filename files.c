@@ -10,6 +10,7 @@
 
 #include "trinity.h"
 #include "shm.h"
+#include "constants.h"
 
 static int ignore_files(char *file)
 {
@@ -38,9 +39,16 @@ static int ignore_files(char *file)
 	return 0;
 }
 
+char *pathnames[NR_PATHNAMES];
+unsigned int pathname_idx = 0;
+
 static int add_fd(unsigned int chance, char *pathname, int flags)
 {
 	int fd = -1;
+
+	if ((unsigned int)(rand() % 5000) < chance)
+		if (pathname_idx < NR_PATHNAMES)
+			pathnames[pathname_idx++] = strdup(pathname);
 
 	if ((unsigned int)(rand() % 5000) < chance) {
 		fd = open(pathname, flags | O_NONBLOCK);

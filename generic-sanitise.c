@@ -253,7 +253,7 @@ static unsigned long fill_arg(int call, int argnum)
 	unsigned long low=0, high=0;
 	unsigned int num=0;
 	unsigned int *values=NULL;
-	unsigned int argtype=0;
+	enum argtype argtype = 0;
 
 	switch (argnum) {
 	case 1:	argtype = syscalls[call].entry->arg1type;
@@ -351,6 +351,9 @@ retry_fd:
 
 	case ARG_CPU:
 		return (unsigned long) get_cpu();
+
+	case ARG_PATHNAME:
+		return (unsigned long) pathnames[rand() % 50];
 
 	default:/* unreachable */
 		return 0;

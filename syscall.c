@@ -136,7 +136,7 @@ long mkcall(unsigned int call)
 	if (syscalls[call].entry->sanitise)
 		syscalls[call].entry->sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
 
-#define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG)			\
+#define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG, TYPE)			\
 	if (syscalls[call].entry->num_args >= ARGNUM) {			\
 		if (!NAME)						\
 			goto args_done;					\
@@ -149,11 +149,26 @@ long mkcall(unsigned int call)
 			sptr += sprintf(sptr, WHITE);			\
 		else							\
 			sptr += sprintf(sptr, CYAN);			\
-		if (REG > 1024)						\
-			sptr += sprintf(sptr, "0x%lx" WHITE, REG);	\
-		else							\
-			sptr += sprintf(sptr, "%ld" WHITE, REG);	\
 									\
+		switch(TYPE) {						\
+		case ARG_PATHNAME:					\
+			sptr += sprintf(sptr, "\"%s\"", (char *) REG);	\
+			break;						\
+		case ARG_FD:						\
+		case ARG_LEN:						\
+		case ARG_ADDRESS:					\
+		case ARG_PID:						\
+		case ARG_RANGE:						\
+		case ARG_LIST:						\
+		case ARG_RANDPAGE:						\
+		case ARG_CPU:						\
+		default:						\
+			if (REG > 1024)						\
+				sptr += sprintf(sptr, "0x%lx" WHITE, REG);	\
+			else							\
+				sptr += sprintf(sptr, "%ld" WHITE, REG);	\
+			break;							\
+		}								\
 		if (REG == (((unsigned long)page_zeros) & PAGE_MASK))	\
 			sptr += sprintf(sptr, "[page_zeros]");		\
 		if (REG == (((unsigned long)page_rand) & PAGE_MASK))	\
@@ -166,12 +181,12 @@ long mkcall(unsigned int call)
 
 	sptr += sprintf(sptr, WHITE "(");
 
-	COLOR_ARG(1, syscalls[call].entry->arg1name, 1<<5, olda1, a1);
-	COLOR_ARG(2, syscalls[call].entry->arg2name, 1<<4, olda2, a2);
-	COLOR_ARG(3, syscalls[call].entry->arg3name, 1<<3, olda3, a3);
-	COLOR_ARG(4, syscalls[call].entry->arg4name, 1<<2, olda4, a4);
-	COLOR_ARG(5, syscalls[call].entry->arg5name, 1<<1, olda5, a5);
-	COLOR_ARG(6, syscalls[call].entry->arg6name, 1<<0, olda6, a6);
+	COLOR_ARG(1, syscalls[call].entry->arg1name, 1<<5, olda1, a1, syscalls[call].entry->arg1type);
+	COLOR_ARG(2, syscalls[call].entry->arg2name, 1<<4, olda2, a2, syscalls[call].entry->arg2type);
+	COLOR_ARG(3, syscalls[call].entry->arg3name, 1<<3, olda3, a3, syscalls[call].entry->arg3type);
+	COLOR_ARG(4, syscalls[call].entry->arg4name, 1<<2, olda4, a4, syscalls[call].entry->arg4type);
+	COLOR_ARG(5, syscalls[call].entry->arg5name, 1<<1, olda5, a5, syscalls[call].entry->arg5type);
+	COLOR_ARG(6, syscalls[call].entry->arg6name, 1<<0, olda6, a6, syscalls[call].entry->arg6type);
 args_done:
 	sptr += sprintf(sptr, WHITE ") ");
 

@@ -1,6 +1,18 @@
 #ifndef _TRINITY_SYSCALL_H
 #define _TRINITY_SYSCALL_H 1
 
+enum argtype {
+	ARG_FD,
+	ARG_LEN,
+	ARG_ADDRESS,
+	ARG_PID,
+	ARG_RANGE,
+	ARG_LIST,
+	ARG_RANDPAGE,
+	ARG_CPU,
+	ARG_PATHNAME,
+};
+
 struct arglist {
 	unsigned int num;
 	unsigned int values[1024];
@@ -21,12 +33,12 @@ struct syscall {
 	unsigned int num_args;
 	unsigned int flags;
 
-	unsigned int arg1type;
-	unsigned int arg2type;
-	unsigned int arg3type;
-	unsigned int arg4type;
-	unsigned int arg5type;
-	unsigned int arg6type;
+	enum argtype arg1type;
+	enum argtype arg2type;
+	enum argtype arg3type;
+	enum argtype arg4type;
+	enum argtype arg5type;
+	enum argtype arg6type;
 
 	const char *arg1name;
 	const char *arg2name;
@@ -78,16 +90,6 @@ extern unsigned long long syscallcount;
 extern unsigned int max_nr_syscalls;
 extern unsigned int max_nr_32bit_syscalls;
 extern unsigned int max_nr_64bit_syscalls;
-
-#define ARG_FD		1
-#define ARG_LEN		2
-#define ARG_ADDRESS	3
-#define ARG_PID		4
-#define ARG_RANGE	5
-#define ARG_LIST	6
-#define ARG_RANDPAGE	7	/* ->sanitise will scribble over this. */
-#define ARG_CPU		8
-#define ARG_PATHNAME	9
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)
