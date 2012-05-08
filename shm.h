@@ -16,12 +16,12 @@ struct shm_s {
 
 	FILE *logfiles[MAX_NR_CHILDREN];
 
-	unsigned int pipe_fds[MAX_PIPE_FDS*2];
-	unsigned int fds[MAX_FDS/2];
+	int pipe_fds[MAX_PIPE_FDS*2];
+	int fds[MAX_FDS/2];
+	int socket_fds[MAX_FDS/2];
 
-	unsigned int socket_fds[MAX_FDS/2];
-
-	unsigned int current_fd, fd_lifetime;
+	int current_fd;
+	unsigned int fd_lifetime;
 
 	unsigned char do32bit;
 };
