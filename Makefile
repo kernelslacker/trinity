@@ -40,8 +40,8 @@ trinity: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 clean:
-	@find . -name "*.o" -exec rm {} \;
-	@find . -name "*~" -exec rm {} \;
+	@rm -f *.o syscalls/*.o ioctls/*.o
+	@rm -f core.*
 	@rm -f trinity
 
 splint:
