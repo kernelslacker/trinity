@@ -8,7 +8,7 @@ struct syscall syscall_lchown16 = {
 	.name = "lchown16",
 	.num_args = 3,
 	.arg1name = "filename",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "user",
 	.arg3name = "group",
 };

@@ -9,6 +9,7 @@ struct syscall syscall_lstat64 = {
 	.name = "lstat64",
 	.num_args = 2,
 	.arg1name = "filename",
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
 };
