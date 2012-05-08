@@ -8,5 +8,5 @@ struct syscall syscall_unlink = {
 	.name = "unlink",
 	.num_args = 1,
 	.arg1name = "pathname",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 };

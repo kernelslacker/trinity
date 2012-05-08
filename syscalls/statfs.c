@@ -8,7 +8,7 @@ struct syscall syscall_statfs = {
 	.name = "statfs",
 	.num_args = 2,
 	.arg1name = "pathname",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "buf",
 	.arg2type = ARG_ADDRESS,
 };

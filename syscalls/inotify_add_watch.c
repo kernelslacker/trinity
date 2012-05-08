@@ -10,6 +10,6 @@ struct syscall syscall_inotify_add_watch = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "pathname",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_PATHNAME,
 	.arg3name = "mask",
 };

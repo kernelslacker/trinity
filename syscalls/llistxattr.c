@@ -7,7 +7,7 @@
 struct syscall syscall_llistxattr = {
 	.name = "llistxattr",
 	.arg1name = "pathname",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "list",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",
