@@ -9,7 +9,7 @@ struct syscall syscall_stat64 = {
 	.name = "stat64",
 	.num_args = 2,
 	.arg1name = "filename",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
 };

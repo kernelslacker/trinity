@@ -12,6 +12,6 @@ struct syscall syscall_access = {
 	.name = "access",
 	.num_args = 2,
 	.arg1name = "filename",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "mode",
 };

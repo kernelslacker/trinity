@@ -8,7 +8,7 @@ struct syscall syscall_mknod = {
 	.name = "mknod",
 	.num_args = 3,
 	.arg1name = "filename",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "mode",
 	.arg3name = "dev",
 };

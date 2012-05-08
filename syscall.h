@@ -87,6 +87,7 @@ extern unsigned int max_nr_64bit_syscalls;
 #define ARG_LIST	6
 #define ARG_RANDPAGE	7	/* ->sanitise will scribble over this. */
 #define ARG_CPU		8
+#define ARG_PATHNAME	9
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)

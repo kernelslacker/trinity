@@ -11,6 +11,6 @@ struct syscall syscall_chroot = {
 	.name = "chroot",
 	.num_args = 1,
 	.arg1name = "filename",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.rettype = RET_ZERO_SUCCESS,
 };
