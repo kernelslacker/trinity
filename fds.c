@@ -37,7 +37,7 @@ void setup_fds(void)
 static int get_random_fd(void)
 {
 	unsigned int i;
-	unsigned int fd = 0;
+	int fd = 0;
 
 	if (do_specific_proto == 1)
 		i = 1;
@@ -47,8 +47,8 @@ static int get_random_fd(void)
 	switch (i) {
 	case 0:
 retry:		fd = shm->fds[rand() % fd_idx];
-		/* retry if we hit stdin/stdout/logfile */
-		if (fd < shm->fds[0])
+		/* retry if we hit stdin/stdout/logfiles */
+		if (fd <= fileno(shm->logfiles[shm->nr_childs]))
 			goto retry;
 		break;
 

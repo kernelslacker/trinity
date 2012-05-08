@@ -246,7 +246,6 @@ unsigned long get_len()
 
 static unsigned long fill_arg(int call, int argnum)
 {
-	int fd;
 	unsigned long i;
 	unsigned int bits;
 	unsigned long mask=0;
@@ -274,12 +273,7 @@ static unsigned long fill_arg(int call, int argnum)
 
 	switch (argtype) {
 	case ARG_FD:
-retry_fd:
-		fd = get_fd();
-		if (fd < 3)
-			goto retry_fd;
-		//printf (YELLOW "DBG: %x" WHITE "\n", fd);
-		return fd;
+		return get_fd();
 	case ARG_LEN:
 		return (unsigned long)get_len();
 
