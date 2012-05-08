@@ -10,6 +10,7 @@
 
 #include "trinity.h"
 #include "shm.h"
+#include "files.h"
 #include "syscall.h"
 
 void syscall_list()
@@ -33,8 +34,8 @@ void syscall_list()
 static void regenerate()
 {
 	output("[%d] Regenerating random pages, fd's etc.\n", getpid());
-	close_files();
-	open_files();
+
+	regenerate_fds();
 
 	destroy_maps();
 	setup_maps();
