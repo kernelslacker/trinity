@@ -15,16 +15,24 @@
 
 static void set_make_it_fail()
 {
+	static char failed = 0;
 	int fd;
 	const char *buf = "1";
+
+	/* If we failed last time, don't bother trying in future. */
+	if (failed == 1)
+		return;
 
 	fd = open("/proc/self/make-it-fail", O_WRONLY);
 	if (fd == -1)
 		return;
 
-	if (write(fd, buf, 1) == -1)
-		printf("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
-
+	if (write(fd, buf, 1) == -1) {
+		if (errno != EPERM)
+			printf("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
+		else
+			failed = 1;
+	}
 	close(fd);
 }
 
