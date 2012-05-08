@@ -230,12 +230,13 @@ unsigned long get_len()
 
 	i = get_interesting_value();
 
-	switch(rand() % 4) {
+	switch(rand() % 5) {
 
 	case 0:	return (i & 0xff);
-	case 1:	return (i & 0xffff);
-	case 2:	return (i & 0xffffff);
-	case 3:	return (i & 0xffffffff);
+	case 1: return (i & page_size);
+	case 2:	return (i & 0xffff);
+	case 3:	return (i & 0xffffff);
+	case 4:	return (i & 0xffffffff);
 	default:/* unreachable */
 		break;
 	}
