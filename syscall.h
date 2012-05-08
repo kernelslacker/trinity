@@ -2,15 +2,15 @@
 #define _TRINITY_SYSCALL_H 1
 
 enum argtype {
-	ARG_FD,
-	ARG_LEN,
-	ARG_ADDRESS,
-	ARG_PID,
-	ARG_RANGE,
-	ARG_LIST,
-	ARG_RANDPAGE,
-	ARG_CPU,
-	ARG_PATHNAME,
+	ARG_FD = 1,
+	ARG_LEN = 2,
+	ARG_ADDRESS = 3,
+	ARG_PID = 4,
+	ARG_RANGE = 5,
+	ARG_LIST = 6,
+	ARG_RANDPAGE = 7,
+	ARG_CPU = 8,
+	ARG_PATHNAME = 9,
 };
 
 struct arglist {
