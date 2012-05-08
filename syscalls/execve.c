@@ -12,9 +12,8 @@
 struct syscall syscall_execve = {
 	.name = "execve",
 	.num_args = 4,
-	.flags = AVOID_SYSCALL,
 	.arg1name = "name",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "argv",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "envp",
