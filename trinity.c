@@ -345,7 +345,6 @@ static int search_syscall_table(struct syscalltable *table, unsigned int nr_sysc
 		}
 	}
 
-	printf("max: %d i: %d\n", max_nr_syscalls, i);
 	if (i == nr_syscalls)
 		return -1;
 
@@ -358,11 +357,11 @@ static void find_specific_syscall()
 
 	/* By default, when biarch, search first in the 64bit table. */
 	if (biarch == TRUE) {
+		printf("Searching the 64bit syscall table.\n");
 		i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls);
-		if (i != -1) {	// We found it in the 64bit table, return.
-			printf("found at %d\n", i);
+		if (i != -1)	// We found it in the 64bit table, return.
 			return;
-		}
+		printf("Couldn't find in the 64bit syscall table. Looking in 32bit\n");
 	}
 
 	/* 32bit only, also fall through from above 64bit failure.*/
