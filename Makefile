@@ -40,7 +40,7 @@ trinity: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 clean:
-	@rm -f *.o syscalls/*.o ioctls/*.o
+	@rm -f *.o syscalls/*.o syscalls/ia64/*.o syscalls/powerpc/*.o ioctls/*.o
 	@rm -f core.*
 	@rm -f trinity
 
