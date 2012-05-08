@@ -312,24 +312,32 @@ static void mask_signals(void)
 	}
 }
 
-static void find_specific_syscall()
+static int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls)
 {
 	unsigned int i;
 
+	/* passed a syscall number */
 	if (isdigit(*specific_syscall_optarg)) {
+
 		i = specific_syscall;
-		if (syscalls[i].entry->flags &= AVOID_SYSCALL) {
-			printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].entry->name);
+		if (i >= nr_syscalls) {
+			printf("Syscall %d is out of range (0-%d)\n", i, nr_syscalls-1);
 			exit(EXIT_FAILURE);
 		}
-		return;
+
+		if (table[i].entry->flags &= AVOID_SYSCALL) {
+			printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", table[i].entry->name);
+			exit(EXIT_FAILURE);
+		}
+		return i;
 	}
 
-	for (i = 0; i < max_nr_syscalls; i++) {
-		if (strcmp(specific_syscall_optarg, syscalls[i].entry->name) == 0) {
-			printf("Found %s at %u\n", syscalls[i].entry->name, i);
-			if (syscalls[i].entry->flags &= AVOID_SYSCALL) {
-				printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", syscalls[i].entry->name);
+	/* search by name */
+	for (i = 0; i < nr_syscalls; i++) {
+		if (strcmp(specific_syscall_optarg, table[i].entry->name) == 0) {
+			printf("Found %s at %u\n", table[i].entry->name, i);
+			if (table[i].entry->flags &= AVOID_SYSCALL) {
+				printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", table[i].entry->name);
 				exit(EXIT_FAILURE);
 			}
 			specific_syscall = i;
@@ -337,8 +345,30 @@ static void find_specific_syscall()
 		}
 	}
 
-	if (i == max_nr_syscalls) {
-		printf("syscall not found :(\n");
+	printf("max: %d i: %d\n", max_nr_syscalls, i);
+	if (i == nr_syscalls)
+		return -1;
+
+	return i;
+}
+
+static void find_specific_syscall()
+{
+	int i = -1;
+
+	/* By default, when biarch, search first in the 64bit table. */
+	if (biarch == TRUE) {
+		i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls);
+		if (i != -1) {	// We found it in the 64bit table, return.
+			printf("found at %d\n", i);
+			return;
+		}
+	}
+
+	/* 32bit only, also fall through from above 64bit failure.*/
+	i = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls);
+	if (i == -1) {
+		printf("No idea what syscall was asked for.\n");
 		exit(EXIT_FAILURE);
 	}
 }
