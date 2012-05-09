@@ -186,13 +186,12 @@ openit:
 
 void open_files()
 {
-more:
-	open_fds("/sys/kernel/debug");
-	open_fds("/dev");
-	open_fds("/proc");
-	open_fds("/sys");
-	if (fds_left_to_create > 0)
-		goto more;
+	while (fds_left_to_create > 0) {
+		open_fds("/sys/kernel/debug");
+		open_fds("/dev");
+		open_fds("/proc");
+		open_fds("/sys");
+	}
 }
 
 void close_files()
