@@ -30,15 +30,15 @@ struct syscall {
 
 	unsigned int number;
 	const char name[80];
-	unsigned int num_args;
+	const unsigned int num_args;
 	unsigned int flags;
 
-	enum argtype arg1type;
-	enum argtype arg2type;
-	enum argtype arg3type;
-	enum argtype arg4type;
-	enum argtype arg5type;
-	enum argtype arg6type;
+	const enum argtype arg1type;
+	const enum argtype arg2type;
+	const enum argtype arg3type;
+	const enum argtype arg4type;
+	const enum argtype arg5type;
+	const enum argtype arg6type;
 
 	const char *arg1name;
 	const char *arg2name;
@@ -47,22 +47,22 @@ struct syscall {
 	const char *arg5name;
 	const char *arg6name;
 
-	unsigned int low1range, hi1range;
-	unsigned int low2range, hi2range;
-	unsigned int low3range, hi3range;
-	unsigned int low4range, hi4range;
-	unsigned int low5range, hi5range;
-	unsigned int low6range, hi6range;
+	const unsigned int low1range, hi1range;
+	const unsigned int low2range, hi2range;
+	const unsigned int low3range, hi3range;
+	const unsigned int low4range, hi4range;
+	const unsigned int low5range, hi5range;
+	const unsigned int low6range, hi6range;
 
-	struct arglist arg1list;
-	struct arglist arg2list;
-	struct arglist arg3list;
-	struct arglist arg4list;
-	struct arglist arg5list;
-	struct arglist arg6list;
+	const struct arglist arg1list;
+	const struct arglist arg2list;
+	const struct arglist arg3list;
+	const struct arglist arg4list;
+	const struct arglist arg5list;
+	const struct arglist arg6list;
 
-	unsigned int group;
-	int rettype;
+	const unsigned int group;
+	const int rettype;
 };
 
 #define RET_BORING		-1
