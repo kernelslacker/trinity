@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <setjmp.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include "constants.h"
 
@@ -15,6 +16,8 @@
 #else
 #define __unused__ /*@unused@*/
 #endif
+
+extern pid_t parentpid;
 
 extern unsigned char debug;
 

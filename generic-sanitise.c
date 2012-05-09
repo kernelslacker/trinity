@@ -9,6 +9,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
+#include "shm.h"
 
 char * filebuffer = NULL;
 unsigned long filebuffersize = 0;
@@ -196,17 +197,26 @@ void regenerate_random_page()
 
 static unsigned int get_pid()
 {
-	int i;
-	i = rand() % 3;
+	int i, pid = 0;
+retry:
+	i = rand() % 2;
 
 	switch (i) {
-	case 0:	return getpid();
-	case 1:	return rand() & 32767;
-	case 2: break;
+	case 0:	pid = getpid();
+		break;
+	case 1:	pid = rand() & 32767;
+		break;
 	default:/* unreachable */
 		break;
 	}
-	return 0;
+	for (i = 0; i < MAX_NR_CHILDREN; i++) {
+		if (pid == shm->pids[i])
+			goto retry;
+	}
+	if (pid == parentpid)
+		goto retry;
+
+	return pid;
 }
 
 static unsigned int get_cpu()

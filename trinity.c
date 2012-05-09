@@ -27,6 +27,7 @@
 #include "shm.h"
 #include "syscall.h"
 
+pid_t parentpid;
 static char *progname=NULL;
 static unsigned int seed=0;
 jmp_buf ret_jump;
@@ -530,6 +531,7 @@ int main(int argc, char* argv[])
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
 
 	progname = argv[0];
+	parentpid = getpid();
 
 	setup_syscall_tables();
 
