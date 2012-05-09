@@ -76,7 +76,6 @@ regen:
 		shm->fd_lifetime--;
 
 	if (shm->current_fd == 0) {
-		printf("shm->lifetime = %d\n", shm->fd_lifetime);
 		shm->fd_lifetime = 0;
 		goto regen;
 	}
