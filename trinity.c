@@ -302,6 +302,7 @@ static void mask_signals(void)
 	(void)sigaction(SIGFPE, &sa, NULL);
 	(void)sigaction(SIGBUS, &sa, NULL);
 	(void)sigaction(SIGILL, &sa, NULL);
+	(void)sigaction(SIGXCPU, &sa, NULL);
 
 	/* Disable dumping core */
 	limit.rlim_cur = 0;
