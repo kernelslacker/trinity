@@ -9,14 +9,12 @@
 
 static char outputbuf[1024];
 FILE *parentlogfile;
-static int parentpid;
 
 void open_logfiles()
 {
 	unsigned int i;
 	char *logfilename;
 
-	parentpid = getpid();
 	logfilename = malloc(25);
 	sprintf(logfilename, "trinity-%d.log", parentpid);
 	unlink(logfilename);
