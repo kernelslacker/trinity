@@ -227,3 +227,6 @@ Still unfixed:
 * rcu: BUG on exit_group
   https://lkml.org/lkml/2012/5/3/290
 
+* vfs: INFO: possible circular locking dependency detected
+  https://lkml.org/lkml/2012/5/9/349
+
