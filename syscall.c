@@ -154,16 +154,18 @@ long mkcall(unsigned int call)
 		case ARG_PATHNAME:					\
 			sptr += sprintf(sptr, "\"%s\"", (char *) REG);	\
 			break;						\
+		case ARG_PID:						\
 		case ARG_FD:						\
+			sptr += sprintf(sptr, "%ld" WHITE, REG);	\
+			break;						\
 		case ARG_LEN:						\
 		case ARG_ADDRESS:					\
-		case ARG_PID:						\
 		case ARG_RANGE:						\
 		case ARG_LIST:						\
-		case ARG_RANDPAGE:						\
+		case ARG_RANDPAGE:					\
 		case ARG_CPU:						\
 		default:						\
-			if (REG > 1024)						\
+			if (REG > 8 * 1024)						\
 				sptr += sprintf(sptr, "0x%lx" WHITE, REG);	\
 			else							\
 				sptr += sprintf(sptr, "%ld" WHITE, REG);	\
