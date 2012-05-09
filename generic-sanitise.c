@@ -261,7 +261,7 @@ static unsigned long fill_arg(int call, int argnum)
 	unsigned long mask=0;
 	unsigned long low=0, high=0;
 	unsigned int num=0;
-	unsigned int *values=NULL;
+	const unsigned int *values = NULL;
 	enum argtype argtype = 0;
 
 	switch (argnum) {
