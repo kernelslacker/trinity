@@ -156,7 +156,8 @@ static void handle_children()
 	default:
 		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
 		if (WIFEXITED(childstatus)) {
-			debugf("[%d] Child %d exited\n", getpid(), childpid);
+			i = find_pid_slot(childpid);
+			debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[i]);
 			reap_child(childpid);
 			break;
 

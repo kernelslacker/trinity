@@ -56,12 +56,19 @@ static unsigned long do_syscall(unsigned int num_args, int nr, unsigned long a1,
 	int ret = 0;
 
 	if (extrafork == FALSE) {
+		int i;
+
 		(void)alarm(3);
 		if (shm->do32bit == FALSE)
 			ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 		else
 			ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
 		(void)alarm(0);
+
+		i = find_pid_slot(getpid());
+		if (i != -1)
+			shm->total_syscalls[i]++;
+
 		return ret;
 	}
 

@@ -13,6 +13,7 @@ struct shm_s {
 	unsigned int nr_childs;
 	unsigned int running_childs;
 	pid_t pids[MAX_NR_CHILDREN];
+	int total_syscalls[MAX_NR_CHILDREN];
 
 	FILE *logfiles[MAX_NR_CHILDREN];
 
