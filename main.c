@@ -63,6 +63,17 @@ int check_tainted(void)
 	return ret;
 }
 
+int find_pid_slot(pid_t mypid)
+{
+	unsigned int i;
+
+	for (i = 0; i < shm->nr_childs; i++) {
+		if (shm->pids[i] == mypid)
+			return i;
+	}
+	return -1;
+}
+
 
 #define debugf if (debug == 1) printf
 
@@ -105,15 +116,13 @@ static void fork_children()
 
 static void reap_child(pid_t childpid)
 {
-	unsigned int i;
+	int i;
 
-	for (i = 0; i < shm->nr_childs; i++) {
-		if (shm->pids[i] == childpid) {
-			debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
-			shm->pids[i] = -1;
-			shm->running_childs--;
-			break;
-		}
+	i = find_pid_slot(childpid);
+	if (i != -1) {
+		debugf("[%d] Removing %d from pidmap.\n", getpid(), shm->pids[i]);
+		shm->pids[i] = -1;
+		shm->running_childs--;
 	}
 }
 

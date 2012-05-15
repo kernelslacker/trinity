@@ -27,6 +27,8 @@ void syscall_list(void);
 void main_loop(void);
 int child_process(void);
 
+int find_pid_slot(pid_t mypid);
+
 long mkcall(unsigned int call);
 void do_syscall_from_child();
 

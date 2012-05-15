@@ -48,16 +48,15 @@ void close_logfiles()
 static FILE * find_logfile_handle()
 {
 	pid_t pid;
-	unsigned int i;
+	int i;
 
 	pid = getpid();
 	if (pid == parentpid)
 		return parentlogfile;
 
-	for (i = 0; i < shm->nr_childs; i++) {
-		if (shm->pids[i] == pid)
-			return shm->logfiles[i];
-	}
+	i = find_pid_slot(pid);
+	if (i != -1)
+		return shm->logfiles[i];
 	return NULL;
 }
 
