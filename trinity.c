@@ -279,12 +279,12 @@ static void parse_args(int argc, char *argv[])
 		return;
 }
 
-static void sighandler(int sig)
+static void sighandler(__unused__ int sig)
 {
-	if (sig == SIGALRM) {
-		(void)signal(sig, sighandler);
-		siglongjmp(ret_jump, 1);
-	}
+//	if (sig == SIGALRM) {
+//		(void)signal(sig, sighandler);
+//		siglongjmp(ret_jump, 1);
+//	}
 
 	_exit(EXIT_SUCCESS);
 }
