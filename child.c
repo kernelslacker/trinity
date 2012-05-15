@@ -50,6 +50,11 @@ static void use_fpu(void)
 
 void init_child(void)
 {
+	int i;
+
+	i = find_pid_slot(getpid());
+	shm->total_syscalls[i] = 0;
+
 	set_make_it_fail();
 	if (rand() % 100 < 50)
 		use_fpu();
