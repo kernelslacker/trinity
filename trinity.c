@@ -299,6 +299,7 @@ static void mask_signals(void)
 	sa.sa_flags = SA_RESTART;
 	sa.sa_handler = sighandler;
 	sa.sa_mask = ss;
+	(void)sigaction(SIGALRM, &sa, NULL);
 	(void)sigaction(SIGSEGV, &sa, NULL);
 	(void)sigaction(SIGFPE, &sa, NULL);
 	(void)sigaction(SIGBUS, &sa, NULL);
