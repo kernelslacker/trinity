@@ -6,3 +6,4 @@ trinity*.log
 trinity.socketcache
 tmp
 trinity-*.tgz
+victims
