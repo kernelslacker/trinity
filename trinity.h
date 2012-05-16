@@ -46,7 +46,8 @@ extern unsigned int fd_idx;
 
 void open_files();
 void close_files();
-void open_fds(const char *dir);
+void open_fds(const char *dir, unsigned char add_all);
+extern char *victim_path;
 
 extern unsigned int page_size;
 extern unsigned int rep;

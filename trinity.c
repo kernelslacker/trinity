@@ -71,6 +71,8 @@ char *page_allocs;
 static char *specific_syscall_optarg;
 static char *specific_proto_optarg;
 
+char *victim_path;
+
 static void init_buffers()
 {
 	unsigned int i;
@@ -176,6 +178,27 @@ void seed_from_tod()
 	output("\n\n[%d] Random seed: %u (0x%x)\n", getpid(), seed, seed);
 }
 
+static int parse_victim_path(char *opt)
+{
+	struct stat statbuf;
+	int status;
+
+	status = stat(opt, &statbuf);
+	if (status == -1) {
+		printf("stat failed\n");
+		return -1;
+	}
+
+	if (!(S_ISDIR(statbuf.st_mode))) {
+		printf("Victim path not a directory\n");
+		return -1;
+	}
+
+	victim_path = strdup(opt);
+
+	return 0;
+}
+
 
 static void parse_args(int argc, char *argv[])
 {
@@ -186,6 +209,7 @@ static void parse_args(int argc, char *argv[])
 		{ "help", no_argument, NULL, 'h' },
 		{ "childcalls", required_argument, NULL, 'F' },
 		{ "logging", required_argument, NULL, 'l' },
+		{ "victims", required_argument, NULL, 'V' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "dangerous", no_argument, NULL, 'd' },
@@ -193,7 +217,7 @@ static void parse_args(int argc, char *argv[])
 		{ "debug", no_argument, NULL, 'D' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dDfF:g:hl:LN:m:P:pqs:S", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dDfF:g:hl:LN:m:P:pqs:SV:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -271,6 +295,13 @@ static void parse_args(int argc, char *argv[])
 		case 's':
 			seed = strtol(optarg, NULL, 10);
 			srand(seed);
+			break;
+
+		case 'V':
+			if (parse_victim_path(optarg) < 0) {
+				printf("oops\n");
+				exit(EXIT_FAILURE);
+			}
 			break;
 		}
 	}

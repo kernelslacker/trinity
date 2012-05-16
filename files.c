@@ -42,11 +42,13 @@ static int ignore_files(char *file)
 char *pathnames[NR_PATHNAMES];
 unsigned int pathname_idx = 0;
 
+#define FD_LIKELYHOOD 5000
+
 static int add_fd(unsigned int chance, char *pathname, int flags)
 {
 	int fd = -1;
 
-	if ((unsigned int)(rand() % 5000) < chance) {
+	if ((unsigned int)(rand() % FD_LIKELYHOOD) < chance) {
 		if (pathname_idx != NR_PATHNAMES) {
 
 			if (pathnames[pathname_idx] != NULL)
@@ -56,7 +58,7 @@ static int add_fd(unsigned int chance, char *pathname, int flags)
 		}
 	}
 
-	if ((unsigned int)(rand() % 5000) < chance) {
+	if ((unsigned int)(rand() % FD_LIKELYHOOD) < chance) {
 		fd = open(pathname, flags | O_NONBLOCK);
 		if (fd < 0)
 			return -1;
@@ -65,7 +67,7 @@ static int add_fd(unsigned int chance, char *pathname, int flags)
 	return fd;
 }
 
-void open_fds(const char *dir)
+void open_fds(const char *dir, unsigned char add_all)
 {
 	char b[4096];
 	int openflag, fd, r;
@@ -102,12 +104,12 @@ void open_fds(const char *dir)
 			if (buf.st_uid != getuid()) {
 				/* We don't own the dir, is it group/other readable ? */
 				if (buf.st_mode & (S_IRGRP|S_IROTH)) {
-					open_fds(b);
+					open_fds(b, add_all);
 					goto openit;
 				}
 			} else {
 				/* We own this dir. */
-				open_fds(b);
+				open_fds(b, add_all);
 				goto openit;
 			}
 		} else {
@@ -166,6 +168,10 @@ openit:
 			if (fds_left_to_create == 0)
 				break;
 
+			/* This is used just for the victim files */
+			if (add_all == TRUE)
+				chance = FD_LIKELYHOOD;
+
 			fd = add_fd(chance, b, openflag);
 			if (fd == -1)
 				continue;
@@ -187,10 +193,13 @@ openit:
 void open_files()
 {
 	while (fds_left_to_create > 0) {
-		open_fds("/sys/kernel/debug");
-		open_fds("/dev");
-		open_fds("/proc");
-		open_fds("/sys");
+		if (victim_path != NULL)
+			open_fds(victim_path, TRUE);
+
+		open_fds("/sys/kernel/debug", FALSE);
+		open_fds("/dev", FALSE);
+		open_fds("/proc", FALSE);
+		open_fds("/sys", FALSE);
 	}
 }
 
