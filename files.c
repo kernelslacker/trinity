@@ -44,9 +44,10 @@ unsigned int pathname_idx = 0;
 
 #define FD_LIKELYHOOD 5000
 
-static int add_fd(unsigned int chance, char *pathname, int flags)
+static int add_fd(unsigned int chance, char *pathname, int flags, unsigned char is_dir)
 {
 	int fd = -1;
+	DIR *d = NULL;
 
 	if ((unsigned int)(rand() % FD_LIKELYHOOD) < chance) {
 		if (pathname_idx != NR_PATHNAMES) {
@@ -59,9 +60,18 @@ static int add_fd(unsigned int chance, char *pathname, int flags)
 	}
 
 	if ((unsigned int)(rand() % FD_LIKELYHOOD) < chance) {
-		fd = open(pathname, flags | O_NONBLOCK);
-		if (fd < 0)
+		if (is_dir == TRUE) {
+			d = opendir(pathname);
+			if (d != NULL)
+				fd = dirfd(d);
+		} else {
+			fd = open(pathname, flags | O_NONBLOCK);
+		}
+
+		if (fd < 0) {
+			printf("Couldn't open %s : %s\n", pathname, strerror(errno));
 			return -1;
+		}
 //		printf("Added: %s\n", pathname);
 	}
 	return fd;
@@ -75,7 +85,11 @@ void open_fds(const char *dir, unsigned char add_all)
 	struct dirent *de;
 	struct stat buf;
 	const char *modestr;
-	unsigned int chance;
+	unsigned int chance = 0;
+	int set_read;
+	int set_write;
+	unsigned char is_dir = FALSE;
+
 
 	if (!d) {
 		printf("can't open %s\n", dir);
@@ -87,19 +101,24 @@ void open_fds(const char *dir, unsigned char add_all)
 		snprintf(b, sizeof(b), "%s/%s", dir, de->d_name);
 		if (ignore_files(de->d_name))
 			continue; /*".", "..", everything that's not a regular file or directory !*/
+
 		r = lstat(b,&buf);
 		if (r == -1)
 			continue;
+
 		openflag = 0;
+
 		if (S_ISLNK(buf.st_mode))
 			continue;
 		if (S_ISFIFO(buf.st_mode))
 			continue;
 
 		if (S_ISDIR(buf.st_mode)) {
+			is_dir = TRUE;
+
 			/* probability of adding a directory to the list. */
 			chance = 5;
-			openflag = O_RDONLY;
+
 			if (buf.st_uid != getuid()) {
 				/* We don't own the dir, is it group/other readable ? */
 				if (buf.st_mode & (S_IRGRP|S_IROTH)) {
@@ -113,42 +132,45 @@ void open_fds(const char *dir, unsigned char add_all)
 				goto openit;
 			}
 			// unreachable.
+		} else {
+			is_dir = FALSE;
+		}
+
+openit:
+		set_read = FALSE;
+		set_write = FALSE;
+
+		/* if we own the file, unlikely, since you should NOT run this thing as root */
+		if (buf.st_uid == getuid()) {
+			if (buf.st_mode & S_IRUSR)
+				set_read = TRUE;
+			if (buf.st_mode & S_IWUSR)
+				set_write = TRUE;
+
+		} else if (buf.st_gid == getgid()) {
+			if (buf.st_mode & S_IRGRP)
+				set_read = TRUE;
+			if (buf.st_mode & S_IWGRP)
+				set_write = TRUE;
 
 		} else {
-			int set_read = FALSE;
-			int set_write = FALSE;
+			if ((buf.st_mode & S_IROTH))
+				set_read = TRUE;
+			if (buf.st_mode & S_IWOTH)
+				set_write = TRUE;
+		}
 
-			/* if we own the file, unlikely, since you should NOT run this thing as root */
-			if (buf.st_uid == getuid()) {
-				if (buf.st_mode & S_IRUSR)
-					set_read = TRUE;
-				if (buf.st_mode & S_IWUSR)
-					set_write = TRUE;
+		if ((set_read | set_write) == 0)
+			continue;
 
-			} else if (buf.st_gid == getgid()) {
-				if (buf.st_mode & S_IRGRP)
-					set_read = TRUE;
-				if (buf.st_mode & S_IWGRP)
-					set_write = TRUE;
+		if (set_read == 1)
+			openflag = O_RDONLY;
+		if (set_write == 1)
+			openflag = O_WRONLY;
+		if ((set_read == 1) && (set_write == 1))
+			openflag = O_RDWR;
 
-			} else {
-				if (buf.st_mode & S_IROTH)
-					set_read = TRUE;
-				if (buf.st_mode & S_IWOTH)
-					set_write = TRUE;
-			}
-
-			if ((set_read | set_write) == 0)
-				continue;
-
-
-			if (set_read == 1)
-				openflag = O_RDONLY;
-			if (set_write == 1)
-				openflag = O_WRONLY;
-			if ((set_read == 1) && (set_write == 1))
-				openflag = O_RDWR;
-
+		if (!S_ISDIR(buf.st_mode)) {
 			/* files have a higher probability of success than directories
 			 * also, writable files are probably more 'fun' */
 			switch (openflag) {
@@ -159,28 +181,31 @@ void open_fds(const char *dir, unsigned char add_all)
 					break;
 			default: break;
 			}
-openit:
-			if (fds_left_to_create == 0)
-				break;
-
-			/* This is used just for the victim files */
-			if (add_all == TRUE)
-				chance = FD_LIKELYHOOD;
-
-			fd = add_fd(chance, b, openflag);
-			if (fd == -1)
-				continue;
-
-			switch (openflag) {
-			case O_RDONLY:	modestr = "read-only";	break;
-			case O_WRONLY:	modestr = "write-only";	break;
-			case O_RDWR:	modestr = "read-write";	break;
-			default: break;
-			}
-			output("fd[%i] = %s (%s)\n", fd, b, modestr);
-			shm->fds[fd_idx++] = fd;
-			fds_left_to_create--;
 		}
+
+		if (fds_left_to_create == 0)
+			break;
+
+		/* This is used just for the victim files */
+		if (add_all == TRUE)
+			chance = FD_LIKELYHOOD;
+
+		fd = add_fd(chance, b, openflag, is_dir);
+		if (fd == -1)
+			continue;
+
+		switch (openflag) {
+		case O_RDONLY:	modestr = "read-only";	break;
+		case O_WRONLY:	modestr = "write-only";	break;
+		case O_RDWR:	modestr = "read-write";	break;
+		default: break;
+		}
+		output("fd[%i] = %s (%s)", fd, b, modestr);
+		if (is_dir == TRUE)
+			output(" [dir]");
+		output("\n");
+		shm->fds[fd_idx++] = fd;
+		fds_left_to_create--;
 	}
 	closedir(d);
 }
