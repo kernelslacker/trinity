@@ -115,55 +115,48 @@ void open_fds(const char *dir, unsigned char add_all)
 			// unreachable.
 
 		} else {
-			int mode_was_set = 0;
+			int set_read = FALSE;
+			int set_write = FALSE;
 
 			/* if we own the file, unlikely, since you should NOT run this thing as root */
 			if (buf.st_uid == getuid()) {
-				if (buf.st_mode & S_IRUSR) {
-					openflag &= O_RDONLY;
-					mode_was_set = 1;
-				}
-				if (buf.st_mode & S_IWUSR) {
-					openflag |= O_WRONLY;
-					mode_was_set = 1;
-				}
+				if (buf.st_mode & S_IRUSR)
+					set_read = TRUE;
+				if (buf.st_mode & S_IWUSR)
+					set_write = TRUE;
+
 			} else if (buf.st_gid == getgid()) {
-				if (buf.st_mode & S_IRGRP) {
-					openflag &= O_RDONLY;
-					mode_was_set = 1;
-				}
-				if (buf.st_mode & S_IWGRP) {
-					openflag |= O_WRONLY;
-					mode_was_set = 1;
-				}
+				if (buf.st_mode & S_IRGRP)
+					set_read = TRUE;
+				if (buf.st_mode & S_IWGRP)
+					set_write = TRUE;
+
 			} else {
-				if (buf.st_mode & S_IROTH) {
-					openflag &= O_RDONLY;
-					mode_was_set = 1;
-				}
-				if (buf.st_mode & S_IWOTH) {
-					openflag |= O_WRONLY;
-					mode_was_set = 1;
-				}
+				if (buf.st_mode & S_IROTH)
+					set_read = TRUE;
+				if (buf.st_mode & S_IWOTH)
+					set_write = TRUE;
 			}
-			//if (strcmp(de->d_name, "sr0") == 0) {
-			//	printf("sr0 mode = %o\n", buf.st_mode);
-			//}
 
-			if (!mode_was_set) {
-				//printf("couldn't find a mode to open %s\n", b);
+			if ((set_read | set_write) == 0)
 				continue;
-			}
 
-			if ((openflag & O_RDONLY) && (openflag & O_WRONLY))
+
+			if (set_read == 1)
+				openflag = O_RDONLY;
+			if (set_write == 1)
+				openflag = O_WRONLY;
+			if ((set_read == 1) && (set_write == 1))
 				openflag = O_RDWR;
 
 			/* files have a higher probability of success than directories
 			 * also, writable files are probably more 'fun' */
 			switch (openflag) {
-			case O_RDONLY:	chance = 10; break;
-			case O_WRONLY:	chance = 100; break;
-			case O_RDWR:	chance = 100; break;
+			case O_RDONLY:	chance = 10;
+					break;
+			case O_WRONLY:
+			case O_RDWR:	chance = 100;
+					break;
 			default: break;
 			}
 openit:
