@@ -12,6 +12,7 @@
 
 struct syscall syscall_arch_prctl = {
 	.name = "arch_prctl",
+	.flags = AVOID_SYSCALL,
 	.num_args = 2,
 	.arg1name = "code",
 	.arg1type = ARG_LIST,
