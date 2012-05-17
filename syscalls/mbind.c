@@ -49,6 +49,8 @@ struct syscall syscall_mbind = {
 
 	.arg5name = "maxnode",
 	.arg5type = ARG_RANGE,
+	.low5range = 0,
+	.hi5range = 32,
 
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
