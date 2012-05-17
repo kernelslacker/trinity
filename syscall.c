@@ -229,11 +229,8 @@ args_done:
 	sptr = string;
 
 	if (quiet) {
-		if (shm->execcount % 1000 == 0) {
-			sptr = string;
-			sptr += sprintf(sptr, "%ld", shm->execcount);
-			printf("%s iterations.\n", string);
-		}
+		if (shm->execcount % 1000 == 0)
+			printf("%ld iterations.\n", shm->execcount);
 	}
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
