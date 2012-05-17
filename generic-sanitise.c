@@ -312,8 +312,13 @@ static unsigned long fill_arg(int call, int argnum)
 			high = syscalls[call].entry->hi6range;
 			break;
 		default:
+			printf("this should never happen. %s:%d\n", __FILE__, __LINE__);
 			break;
 		}
+
+		if (high == 0)
+			printf("%s forgets to set hirange!\n", syscalls[call].entry->name);
+
 		i = rand64() % high;
 		if (i < low) {
 			i += low;
