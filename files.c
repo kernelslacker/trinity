@@ -95,8 +95,7 @@ void open_fds(const char *dir, unsigned char add_all)
 			continue;
 		if (S_ISFIFO(buf.st_mode))
 			continue;
-		//if (S_ISREG(buf.st_mode))
-		//	continue;
+
 		if (S_ISDIR(buf.st_mode)) {
 			/* probability of adding a directory to the list. */
 			chance = 5;
@@ -107,11 +106,14 @@ void open_fds(const char *dir, unsigned char add_all)
 					open_fds(b, add_all);
 					goto openit;
 				}
+				continue;
 			} else {
 				/* We own this dir. */
 				open_fds(b, add_all);
 				goto openit;
 			}
+			// unreachable.
+
 		} else {
 			int mode_was_set = 0;
 
