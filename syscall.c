@@ -201,8 +201,10 @@ args_done:
 
 	output("%s", string);
 
-	if (dopause == 1)
+	if (dopause == 1) {
+		synclogs();
 		sleep(1);
+	}
 
 /* IA64 is retarde^Wspecial. */
 #ifdef __ia64__
