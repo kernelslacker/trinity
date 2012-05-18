@@ -230,3 +230,15 @@ Still unfixed:
 * vfs: INFO: possible circular locking dependency detected
   https://lkml.org/lkml/2012/5/9/349
 
+* fs, namespaces: BUG: unable to handle kernel NULL pointer dereference at 0000000000000020
+
+* 3.4-rc7 numa_policy slab poison.
+  https://lkml.org/lkml/2012/5/18/399
+
+* [PATCH] cred: use correct cred accessor with regards to rcu read lock
+  https://lkml.org/lkml/2012/5/17/376
+
+* 3.4-rc7: kernel BUG at mm/mempolicy.c:1564!
+
+
+
