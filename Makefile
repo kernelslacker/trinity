@@ -18,7 +18,7 @@ CFLAGS += -Wformat
 
 all: trinity
 
-HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h))
+HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) syscalls/syscalls.h $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 SYSCALLS	= $(patsubst %.c,%.o,$(wildcard syscalls/*.c))
 IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
 OBJS		= trinity.o \
