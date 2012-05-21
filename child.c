@@ -8,11 +8,38 @@
 #include <string.h>
 #include <unistd.h>
 #include <sched.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #include "trinity.h"
 #include "syscall.h"
 #include "shm.h"
 
+static struct rlimit oldrlimit;
+
+static void disable_coredumps()
+{
+	struct rlimit limit;
+
+	getrlimit(RLIMIT_CORE, &oldrlimit);
+
+	limit.rlim_cur = 0;
+	limit.rlim_max = 0;
+	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
+		perror( "setrlimit(RLIMIT_CORE)" );
+		exit(EXIT_FAILURE);
+	}
+}
+
+static void reenable_coredumps()
+{
+	if (setrlimit(RLIMIT_CORE, &oldrlimit) != 0) {
+		printf("Error restoring rlimits to cur:%d max:%d\n",
+			(unsigned int) oldrlimit.rlim_cur,
+			(unsigned int) oldrlimit.rlim_max);
+		exit(EXIT_FAILURE);
+	}
+}
 static void set_make_it_fail()
 {
 	static char failed = 0;
@@ -70,6 +97,8 @@ int child_process(void)
 	unsigned int left_to_do = syscalls_per_child;
 
 	seed_from_tod();
+
+	disable_coredumps();
 
 	for (cpu = 0; cpu < shm->nr_childs; cpu++) {
 		if (shm->pids[cpu] == pid)
@@ -133,6 +162,7 @@ int child_process(void)
 skip_syscall:
 		left_to_do--;
 	}
+	reenable_coredumps();
 
 	return ret;
 }

@@ -324,7 +324,6 @@ static void mask_signals(void)
 {
 	struct sigaction sa;
 	sigset_t ss;
-	struct rlimit limit;
 
 	(void)sigfillset(&ss);
 	sa.sa_flags = SA_RESTART;
@@ -336,14 +335,6 @@ static void mask_signals(void)
 	(void)sigaction(SIGBUS, &sa, NULL);
 	(void)sigaction(SIGILL, &sa, NULL);
 	(void)sigaction(SIGXCPU, &sa, NULL);
-
-	/* Disable dumping core */
-	limit.rlim_cur = 0;
-	limit.rlim_max = 0;
-	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
-		perror( "setrlimit(RLIMIT_CORE)" );
-		exit(EXIT_FAILURE);
-	}
 }
 
 static int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls)
