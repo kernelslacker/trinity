@@ -33,10 +33,16 @@ static void disable_coredumps()
 
 static void reenable_coredumps()
 {
-	if (setrlimit(RLIMIT_CORE, &oldrlimit) != 0) {
-		printf("Error restoring rlimits to cur:%d max:%d\n",
-			(unsigned int) oldrlimit.rlim_cur,
-			(unsigned int) oldrlimit.rlim_max);
+	struct rlimit limit;
+
+	getrlimit(RLIMIT_CORE, &limit);
+	limit.rlim_cur = oldrlimit.rlim_cur;
+
+	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
+		printf("Error restoring rlimits to cur:%d max:%d (%s)\n",
+			(unsigned int) limit.rlim_cur,
+			(unsigned int) limit.rlim_max,
+			strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 }
