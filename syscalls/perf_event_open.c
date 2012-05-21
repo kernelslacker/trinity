@@ -13,6 +13,17 @@
 #include <stdlib.h>
 #include <linux/perf_event.h>
 
+/* For the F14 die-hards. */
+#ifndef PERF_COUNT_HW_STALLED_CYCLES_FRONTEND
+#define PERF_COUNT_HW_STALLED_CYCLES_FRONTEND 7
+#endif
+#ifndef PERF_COUNT_HW_STALLED_CYCLES_BACKEND
+#define PERF_COUNT_HW_STALLED_CYCLES_BACKEND 8
+#endif
+#ifndef PERF_COUNT_HW_REF_CPU_CYCLES
+#define PERF_COUNT_HW_REF_CPU_CYCLES 9
+#endif
+
 static void sanitise_perf_event_open(
 	unsigned long *a1,
 	__unused__ unsigned long *a2,
