@@ -77,15 +77,25 @@ void setup_maps();
 void destroy_maps();
 void * get_map();
 
-#define RED	"[1;31m"
-#define GREEN	"[1;32m"
-#define YELLOW	"[1;33m"
-#define BLUE	"[1;34m"
-#define MAGENTA	"[1;35m"
-#define CYAN	"[1;36m"
-#define WHITE	"[1;37m"
+#define ANSI_RED	"[1;31m"
+#define ANSI_GREEN	"[1;32m"
+#define ANSI_YELLOW	"[1;33m"
+#define ANSI_BLUE	"[1;34m"
+#define ANSI_MAGENTA	"[1;35m"
+#define ANSI_CYAN	"[1;36m"
+#define ANSI_WHITE	"[1;37m"
 
+#define RED if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RED);
+#define GREEN if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_GREEN);
+#define YELLOW if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_YELLOW);
+#define BLUE if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_BLUE);
+#define MAGENTA if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_MAGENTA);
+#define CYAN if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_CYAN);
+#define WHITE if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
+
+extern unsigned char no_colors;
 extern unsigned char quiet;
+
 void synclogs();
 void output(const char *fmt, ...);
 void open_logfiles();

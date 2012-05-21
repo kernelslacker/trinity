@@ -67,7 +67,6 @@
   *: Move arch specific syscalls into syscalls/arch/
 
 * --ignore-socketcache
-* --monochrome
 
 * Perform some checks on return from syscall
   - check padding between struct members is zeroed.
