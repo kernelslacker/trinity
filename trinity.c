@@ -312,11 +312,11 @@ static void parse_args(int argc, char *argv[])
 
 static void sighandler(__unused__ int sig)
 {
-//	if (sig == SIGALRM) {
-//		(void)signal(sig, sighandler);
-//		siglongjmp(ret_jump, 1);
-//	}
-
+/*	if (sig == SIGALRM) {
+		(void)signal(sig, sighandler);
+		siglongjmp(ret_jump, 1);
+	}
+*/
 	_exit(EXIT_SUCCESS);
 }
 
@@ -324,17 +324,17 @@ static void mask_signals(void)
 {
 	struct sigaction sa;
 	sigset_t ss;
+	unsigned int i;
 
-	(void)sigfillset(&ss);
-	sa.sa_flags = SA_RESTART;
-	sa.sa_handler = sighandler;
-	sa.sa_mask = ss;
-	(void)sigaction(SIGALRM, &sa, NULL);
-	(void)sigaction(SIGSEGV, &sa, NULL);
-	(void)sigaction(SIGFPE, &sa, NULL);
-	(void)sigaction(SIGBUS, &sa, NULL);
-	(void)sigaction(SIGILL, &sa, NULL);
-	(void)sigaction(SIGXCPU, &sa, NULL);
+	for (i = 1; i < 512; i++) {
+		(void)sigfillset(&ss);
+		sa.sa_flags = SA_RESTART;
+		sa.sa_handler = sighandler;
+		sa.sa_mask = ss;
+		(void)sigaction(i, &sa, NULL);
+	}
+	(void)signal(SIGCHLD, SIG_DFL);
+	(void)signal(SIGFPE, SIG_IGN);
 }
 
 static int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls)
