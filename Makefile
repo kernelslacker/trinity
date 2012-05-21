@@ -18,6 +18,7 @@ CFLAGS += -Wformat
 
 all: trinity
 
+HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h))
 SYSCALLS	= $(patsubst %.c,%.o,$(wildcard syscalls/*.c))
 IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
 OBJS		= trinity.o \
@@ -32,7 +33,7 @@ OBJS		= trinity.o \
 			$(SANITISE) \
 			$(IOCTLS)
 
-trinity: $(OBJS)
+trinity: $(OBJS) $(HEADERS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
 	mkdir -p tmp
 
