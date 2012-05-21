@@ -43,7 +43,7 @@ void sanitise_socket(
 			else
 				*protocol = IPPROTO_UDP;
 			break;
-		case 3:	*type = SOCK_RAW;
+		case 2:	*type = SOCK_RAW;
 			break;
 		default:break;
 		}
@@ -61,7 +61,7 @@ void sanitise_socket(
 			else
 				*protocol = IPPROTO_UDP;
 			break;
-		case 3:	*type = SOCK_RAW;
+		case 2:	*type = SOCK_RAW;
 			break;
 		default:break;
 		}
