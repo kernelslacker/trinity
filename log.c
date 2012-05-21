@@ -8,6 +8,7 @@
 #include "shm.h"
 
 static char outputbuf[1024];
+static char monobuf[1024];
 FILE *parentlogfile;
 
 void open_logfiles()
@@ -81,6 +82,7 @@ void output(const char *fmt, ...)
 	va_list args;
 	int n;
 	FILE *handle;
+	unsigned int len, i, j;
 
 	va_start(args, fmt);
 	n = vsnprintf(outputbuf, sizeof(outputbuf), fmt, args);
@@ -97,6 +99,17 @@ void output(const char *fmt, ...)
 	if (logging == 0)
 		return;
 
+	len = strlen(outputbuf);
+	for (i = 0, j = 0; i < len; i++) {
+		if (outputbuf[i] == '')
+			i += 6;
+		else {
+			monobuf[j] = outputbuf[i];
+			j++;
+		}
+	}
+	monobuf[j] = '\0';
+
 	handle = find_logfile_handle();
-	fprintf(handle, "%s", outputbuf);
+	fprintf(handle, "%s", monobuf);
 }
