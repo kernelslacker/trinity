@@ -206,17 +206,17 @@ static void parse_args(int argc, char *argv[])
 	int opt;
 
 	struct option longopts[] = {
-		{ "list", no_argument, NULL, 'L' },
-		{ "help", no_argument, NULL, 'h' },
 		{ "childcalls", required_argument, NULL, 'F' },
+		{ "dangerous", no_argument, NULL, 'd' },
+		{ "debug", no_argument, NULL, 'D' },
+		{ "group", required_argument, NULL, 'g' },
+		{ "help", no_argument, NULL, 'h' },
+		{ "list", no_argument, NULL, 'L' },
 		{ "logging", required_argument, NULL, 'l' },
-		{ "victims", required_argument, NULL, 'V' },
+		{ "nocolors", no_argument, NULL, 'C' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
-		{ "dangerous", no_argument, NULL, 'd' },
-		{ "group", required_argument, NULL, 'g' },
-		{ "debug", no_argument, NULL, 'D' },
-		{ "nocolors", no_argument, NULL, 'C' },
+		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
 	while ((opt = getopt_long(argc, argv, "c:CdDfF:g:hl:LN:m:P:pqs:SV:", longopts, NULL)) != -1) {
