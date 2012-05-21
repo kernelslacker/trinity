@@ -147,15 +147,18 @@ long mkcall(unsigned int call)
 	if (syscalls[call].entry->num_args >= ARGNUM) {			\
 		if (!NAME)						\
 			goto args_done;					\
-		if (ARGNUM != 1)					\
-			sptr += sprintf(sptr, WHITE ", ");		\
+		if (ARGNUM != 1) {					\
+			WHITE						\
+			sptr += sprintf(sptr, ", ");			\
+		}							\
 		if (NAME)						\
 			sptr += sprintf(sptr, "%s=", NAME);		\
 									\
-		if (OLDREG == REG)					\
-			sptr += sprintf(sptr, WHITE);			\
-		else							\
-			sptr += sprintf(sptr, CYAN);			\
+		if (OLDREG == REG) {					\
+			WHITE						\
+		} else {						\
+			CYAN						\
+		}							\
 									\
 		switch(TYPE) {						\
 		case ARG_PATHNAME:					\
@@ -163,7 +166,8 @@ long mkcall(unsigned int call)
 			break;						\
 		case ARG_PID:						\
 		case ARG_FD:						\
-			sptr += sprintf(sptr, "%ld" WHITE, REG);	\
+			WHITE						\
+			sptr += sprintf(sptr, "%ld", REG);		\
 			break;						\
 		case ARG_LEN:						\
 		case ARG_ADDRESS:					\
@@ -172,12 +176,13 @@ long mkcall(unsigned int call)
 		case ARG_RANDPAGE:					\
 		case ARG_CPU:						\
 		default:						\
-			if (REG > 8 * 1024)						\
-				sptr += sprintf(sptr, "0x%lx" WHITE, REG);	\
-			else							\
-				sptr += sprintf(sptr, "%ld" WHITE, REG);	\
-			break;							\
-		}								\
+			if (REG > 8 * 1024)				\
+				sptr += sprintf(sptr, "0x%lx", REG);	\
+			else						\
+				sptr += sprintf(sptr, "%ld", REG);	\
+			WHITE						\
+			break;						\
+		}							\
 		if (REG == (((unsigned long)page_zeros) & PAGE_MASK))	\
 			sptr += sprintf(sptr, "[page_zeros]");		\
 		if (REG == (((unsigned long)page_rand) & PAGE_MASK))	\
@@ -188,7 +193,8 @@ long mkcall(unsigned int call)
 			sptr += sprintf(sptr, "[page_allocs]");		\
 	}
 
-	sptr += sprintf(sptr, WHITE "(");
+	WHITE
+	sptr += sprintf(sptr, "(");
 
 	COLOR_ARG(1, syscalls[call].entry->arg1name, 1<<5, olda1, a1, syscalls[call].entry->arg1type);
 	COLOR_ARG(2, syscalls[call].entry->arg2name, 1<<4, olda2, a2, syscalls[call].entry->arg2type);
@@ -197,7 +203,8 @@ long mkcall(unsigned int call)
 	COLOR_ARG(5, syscalls[call].entry->arg5name, 1<<1, olda5, a5, syscalls[call].entry->arg5type);
 	COLOR_ARG(6, syscalls[call].entry->arg6name, 1<<0, olda6, a6, syscalls[call].entry->arg6type);
 args_done:
-	sptr += sprintf(sptr, WHITE ") ");
+	WHITE
+	sptr += sprintf(sptr, ") ");
 
 	output("%s", string);
 
@@ -216,10 +223,14 @@ args_done:
 	memset(string, 0, sizeof(string));
 
 	if (ret < 0) {
-		sptr +=sprintf(sptr, RED "= %d (%s)" WHITE, ret, strerror(errno));
+		RED
+		sptr += sprintf(sptr, "= %d (%s)", ret, strerror(errno));
+		WHITE
 		shm->failures++;
 	} else {
-		sptr += sprintf(sptr, GREEN "= %d" WHITE, ret);
+		GREEN
+		sptr += sprintf(sptr, "= %d", ret);
+		WHITE
 		shm->successes++;
 	}
 	sptr += sprintf(sptr, " [T:%ld F:%ld S:%ld]", shm->execcount, shm->failures, shm->successes);

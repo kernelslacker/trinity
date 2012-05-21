@@ -49,6 +49,7 @@ unsigned char do_specific_proto = 0;
 unsigned long syscalls_per_child = DEFAULT_SYSCALLS_PER_CHILD;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
+unsigned char no_colors = 0;
 static unsigned char dangerous = 0;
 unsigned char logging = 1;
 unsigned char extrafork = 0;
@@ -215,9 +216,10 @@ static void parse_args(int argc, char *argv[])
 		{ "dangerous", no_argument, NULL, 'd' },
 		{ "group", required_argument, NULL, 'g' },
 		{ "debug", no_argument, NULL, 'D' },
+		{ "nocolors", no_argument, NULL, 'C' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dDfF:g:hl:LN:m:P:pqs:SV:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:CdDfF:g:hl:LN:m:P:pqs:SV:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -233,6 +235,10 @@ static void parse_args(int argc, char *argv[])
 			do_specific_syscall = 1;
 			specific_syscall = strtol(optarg, NULL, 10);
 			specific_syscall_optarg = optarg;
+			break;
+
+		case 'C':
+			no_colors = TRUE;
 			break;
 
 		case 'd':
