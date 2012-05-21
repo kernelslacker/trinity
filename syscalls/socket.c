@@ -3,6 +3,7 @@
  */
 
 #include <stdlib.h>
+#include <linux/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -28,10 +29,44 @@ void sanitise_socket(
 		*type = SOCK_SEQPACKET;
 		break;
 
-	case AF_INET6:
-		if (*type == SOCK_STREAM)
-			*protocol = 0;
+	case AF_INET:
+		switch (rand() % 3) {
+		case 0:	*type = SOCK_STREAM;	// TCP
+			if ((rand() % 2) == 0)
+				*protocol = 0;
+			else
+				*protocol = IPPROTO_TCP;
+			break;
+		case 1:	*type = SOCK_DGRAM;	// UDP
+			if ((rand() % 2) == 0)
+				*protocol = 0;
+			else
+				*protocol = IPPROTO_UDP;
+			break;
+		case 3:	*type = SOCK_RAW;
+			break;
+		default:break;
+		}
 		break;
+
+
+	case AF_INET6:
+		switch (rand() % 3) {
+		case 0:	*type = SOCK_STREAM;	// TCP
+			*protocol = 0;
+			break;
+		case 1:	*type = SOCK_DGRAM;	// UDP
+			if ((rand() % 2) == 0)
+				*protocol = 0;
+			else
+				*protocol = IPPROTO_UDP;
+			break;
+		case 3:	*type = SOCK_RAW;
+			break;
+		default:break;
+		}
+		break;
+
 	case AF_NETLINK:
 		switch (rand() % 2) {
 		case 0:	*type = SOCK_RAW;
@@ -41,6 +76,31 @@ void sanitise_socket(
 		}
 		*protocol = rand() % 22;
 		break;
+
+	case AF_UNIX:
+		switch (rand() % 3) {
+		case 0:	*type = SOCK_STREAM;
+			break;
+		case 1:	*type = SOCK_DGRAM;
+			break;
+		case 2:	*type = SOCK_SEQPACKET;
+			break;
+		default:break;
+		}
+		break;
+
+	case AF_APPLETALK:
+		switch (rand() % 2) {
+		case 0:	*type = SOCK_DGRAM;
+			*protocol = 0;
+			break;
+		case 1:	*type = SOCK_RAW;
+			break;
+		default:break;
+		}
+		break;
+
+
 	default: break;
 	}
 
