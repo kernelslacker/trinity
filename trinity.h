@@ -86,15 +86,15 @@ void * get_map();
 #define ANSI_CYAN	"[1;36m"
 #define ANSI_WHITE	"[1;37m"
 
-#define RED if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RED);
-#define GREEN if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_GREEN);
-#define YELLOW if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_YELLOW);
-#define BLUE if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_BLUE);
-#define MAGENTA if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_MAGENTA);
-#define CYAN if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_CYAN);
-#define WHITE if (no_colors == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
+#define RED if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RED);
+#define GREEN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_GREEN);
+#define YELLOW if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_YELLOW);
+#define BLUE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_BLUE);
+#define MAGENTA if (monochrome == FALSE) sptr += sprintf(sptr, "%s", ANSI_MAGENTA);
+#define CYAN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_CYAN);
+#define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
 
-extern unsigned char no_colors;
+extern unsigned char monochrome;
 extern unsigned char quiet;
 
 void synclogs();

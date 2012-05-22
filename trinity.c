@@ -50,7 +50,7 @@ unsigned char do_specific_proto = 0;
 unsigned long syscalls_per_child = DEFAULT_SYSCALLS_PER_CHILD;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
-unsigned char no_colors = 0;
+unsigned char monochrome = 0;
 static unsigned char dangerous = 0;
 unsigned char logging = 1;
 unsigned char extrafork = 0;
@@ -203,7 +203,7 @@ static void usage(void)
 	fprintf(stderr, " --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
 	fprintf(stderr, " --list,-L: list all syscalls known on this architecture.\n");
 	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
-	fprintf(stderr, " --nocolor,C: don't output ANSI codes\n");
+	fprintf(stderr, " --monochrome,-m: don't output ANSI codes\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --quiet,-q: less output.\n");
 	fprintf(stderr, "\n");
@@ -232,13 +232,13 @@ static void parse_args(int argc, char *argv[])
 		{ "help", no_argument, NULL, 'h' },
 		{ "list", no_argument, NULL, 'L' },
 		{ "logging", required_argument, NULL, 'l' },
-		{ "nocolors", no_argument, NULL, 'C' },
+		{ "monochrome", no_argument, NULL, 'M' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:CdDfF:g:hl:LN:m:P:pqs:SV:x:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:CdDfF:g:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -256,7 +256,7 @@ static void parse_args(int argc, char *argv[])
 			break;
 
 		case 'C':
-			no_colors = TRUE;
+			monochrome = TRUE;
 			break;
 
 		case 'd':
