@@ -285,7 +285,7 @@ static void parse_args(int argc, char *argv[])
 			show_syscall_list = 1;
 			break;
 
-		/* Set syscall loop counter */
+		/* Set number of syscalls to do */
 		case 'N':
 			syscallcount = strtoll(optarg, NULL, 10) + 1;
 			break;
