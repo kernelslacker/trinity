@@ -233,7 +233,7 @@ static void parse_args(int argc, char *argv[])
 		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:CdDfg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dDfg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -248,10 +248,6 @@ static void parse_args(int argc, char *argv[])
 		case 'c':
 			do_specific_syscall = 1;
 			specific_syscall_optarg = optarg;
-			break;
-
-		case 'C':
-			monochrome = TRUE;
 			break;
 
 		case 'd':
@@ -283,6 +279,10 @@ static void parse_args(int argc, char *argv[])
 
 		case 'L':
 			show_syscall_list = 1;
+			break;
+
+		case 'm':
+			monochrome = TRUE;
 			break;
 
 		/* Set number of syscalls to do */
