@@ -40,7 +40,8 @@ unsigned long long syscallcount = 0;
 
 unsigned char debug = 0;
 
-unsigned long specific_syscall = 0;
+unsigned long specific_syscall32 = 0;
+unsigned long specific_syscall64 = 0;
 unsigned int specific_proto = 0;
 unsigned int page_size;
 unsigned char dopause = 0;
@@ -233,7 +234,6 @@ static void parse_args(int argc, char *argv[])
 
 		case 'c':
 			do_specific_syscall = 1;
-			specific_syscall = strtol(optarg, NULL, 10);
 			specific_syscall_optarg = optarg;
 			break;
 
@@ -343,65 +343,44 @@ static void mask_signals(void)
 	(void)signal(SIGFPE, SIG_IGN);
 }
 
-static int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls)
+static int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, char *arg)
 {
 	unsigned int i;
 
-	/* passed a syscall number */
-	if (isdigit(*specific_syscall_optarg)) {
-
-		i = specific_syscall;
-		if (i >= nr_syscalls) {
-			printf("Syscall %d is out of range (0-%d)\n", i, nr_syscalls-1);
-			exit(EXIT_FAILURE);
-		}
-
-		if (table[i].entry->flags &= AVOID_SYSCALL) {
-			printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", table[i].entry->name);
-			exit(EXIT_FAILURE);
-		}
-		return i;
-	}
-
 	/* search by name */
 	for (i = 0; i < nr_syscalls; i++) {
-		if (strcmp(specific_syscall_optarg, table[i].entry->name) == 0) {
-			printf("Found %s at %u\n", table[i].entry->name, i);
-			if (table[i].entry->flags &= AVOID_SYSCALL) {
-				printf("%s is marked AVOID_SYSCALL (probably for good reason)\n", table[i].entry->name);
-				exit(EXIT_FAILURE);
-			}
-			specific_syscall = i;
-			break;
+		if (strcmp(arg, table[i].entry->name) == 0) {
+			//printf("Found %s at %u\n", table[i].entry->name, i);
+			return i;
 		}
 	}
 
-	if (i == nr_syscalls)
-		return -1;
-
-	return i;
+	return -1;
 }
 
-static void find_specific_syscall()
+static int find_specific_syscall(char *arg)
 {
 	int i = -1;
 
 	/* By default, when biarch, search first in the 64bit table. */
 	if (biarch == TRUE) {
-		printf("Searching the 64bit syscall table.\n");
-		i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls);
-		if (i != -1)	// We found it in the 64bit table, return.
-			return;
-		printf("Couldn't find in the 64bit syscall table. Looking in 32bit\n");
+		//printf("Searching the 64bit syscall table.\n");
+		i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
+		if (i != -1)    // We found it in the 64bit table, return.
+			specific_syscall64 = i;
+		//printf("Couldn't find in the 64bit syscall table. Looking in 32bit\n");
 	}
 
 	/* 32bit only, also fall through from above 64bit failure.*/
-	i = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls);
+	i = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
 	if (i == -1) {
 		printf("No idea what syscall was asked for.\n");
 		exit(EXIT_FAILURE);
 	}
+	specific_syscall32 = i;
+	return TRUE;
 }
+
 
 struct protocol {
 	const char *name;
@@ -620,8 +599,14 @@ int main(int argc, char* argv[])
 			output("Fuzzing %d syscalls.\n", max_nr_syscalls);
 	}
 
-	if (do_specific_syscall == 1)
-		find_specific_syscall();
+	if (do_specific_syscall == 1) {
+		i = find_specific_syscall(specific_syscall_optarg);
+		if (i == TRUE)
+			printf("Fuzzing specific syscall %s (64bit:%ld 32bit:%ld)\n",
+				specific_syscall_optarg, specific_syscall64, specific_syscall32);
+		else
+			printf("Couldn't find syscall %s\n", specific_syscall_optarg);
+	}
 
 	if (do_specific_proto == 1)
 		find_specific_proto();
