@@ -99,6 +99,13 @@ void output(const char *fmt, ...)
 	if (logging == 0)
 		return;
 
+	handle = find_logfile_handle();
+
+	if (monochrome == TRUE) {
+		fprintf(handle, "%s", outputbuf);
+		return;
+	}
+
 	len = strlen(outputbuf);
 	for (i = 0, j = 0; i < len; i++) {
 		if (outputbuf[i] == '')
@@ -110,6 +117,5 @@ void output(const char *fmt, ...)
 	}
 	monobuf[j] = '\0';
 
-	handle = find_logfile_handle();
 	fprintf(handle, "%s", monobuf);
 }
