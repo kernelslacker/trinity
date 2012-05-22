@@ -130,14 +130,6 @@ int child_process(void)
 //			if (rand() % 100 < 10)
 //				shm->do32bit = TRUE;
 
-
-
-			// FIXME: if we passed -c, we call the wrong syscall in 32bit mode.
-			// For now, force it to be 64bit always in that case.
-			if (do_specific_syscall == 1)
-				shm->do32bit = FALSE;
-
-
 			if (shm->do32bit == FALSE) {
 				syscalls = syscalls_64bit;
 				max_nr_syscalls = max_nr_64bit_syscalls;
@@ -150,7 +142,10 @@ int child_process(void)
 		syscallnr = rand() % max_nr_syscalls;
 
 		if (do_specific_syscall != 0)
-			syscallnr = specific_syscall;
+			if (shm->do32bit == TRUE)
+				syscallnr = specific_syscall32;
+			else
+				syscallnr = specific_syscall64;
 		else {
 
 			if (syscalls[syscallnr].entry->num_args == 0)
