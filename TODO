@@ -1,6 +1,6 @@
 * Bug: when we randomly call personality, the child stops logging.
 
-* Annotate syscall return types
+* Finish annotating syscall return types
 
 * ARG_WRITABLE_BUFFER
 
@@ -37,10 +37,7 @@
 
 * Rewrite the fd generation code.
   - Don't generate so many fd's (faster startup)
-  - make a list of filenames during fd_setup, so that we can pass one at random
-    when sanitising open()
   - When requesting an fd, occasionally generate a new one.
-  - If present, look in /mnt/test too, so we can test some filesystems like nfs.
 
 * generate overlapping addresses/lengths.
 
@@ -50,17 +47,10 @@
   1. what I did for fcntl[64] in 22b4b44ececaf59f9178f52788e3bcfe92535574
   2. leave the dupes, just for the sake of getting the ->name right.
 
-* -b is broken. We need to do the same number of rand() calls we did in
-  the calls we're skipping, which is pretty much impossible without
-  doing them when we're using -i.  Maybe just be silent until we get
-  to the point of -b ?
-
 * Store a field in the syscall definition on when it was added upstream.
   This will allow for things like "just fuzz syscalls added since 2.6.32"
   It won't be much use on kernels that have them backported, but that's
   not a big deal. We could do a ENOSYS test.
-
-* Store the pids of the children, and hand them out in ARG_PID
 
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
@@ -83,9 +73,9 @@
 * Make -k use random kernel addresses (from System.map ?)
 
 * --oneshot
-  ./trinity --oneshot sys_futex -1,0x40000000,1,2,3,4
+  ./trinity --oneshot futex -1,0x40000000,1,2,3,4
 
-* --info sys_open
+* --info open
    i386:   5
    x86-64: 239
    ppc64:  5
@@ -93,12 +83,9 @@
 * Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
 * Ability to pass a list of comma separated syscalls on the command-line.
+  (The inverse of -x. Collect multiple -c's and build a new syscall table.)
 
 * run tests in different namespaces, personalities.
-
-* --blacklist=open,read,write
-
-* Log timestamps along with each syscall.
 
 Experiments:
 * Add option to exhaust memory in child to try and run syscalls in low memory situations.
