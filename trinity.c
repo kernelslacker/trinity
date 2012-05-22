@@ -159,6 +159,7 @@ static void usage(void)
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --group: only run syscalls from a certain group (So far just 'vm').\n");
 	fprintf(stderr, " --exclude: don't call a specific syscall\n");
+	fprintf(stderr, " --nocolor: don't output ANSI codes\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " -c#: target syscall # only.\n");
 	fprintf(stderr, " -k:  pass kernel addresses as arguments.\n");
