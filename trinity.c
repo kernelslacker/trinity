@@ -158,6 +158,7 @@ static void usage(void)
 	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --group: only run syscalls from a certain group (So far just 'vm').\n");
+	fprintf(stderr, " --exclude: don't call a specific syscall\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " -c#: target syscall # only.\n");
 	fprintf(stderr, " -k:  pass kernel addresses as arguments.\n");
@@ -201,15 +202,32 @@ static int parse_victim_path(char *opt)
 	return 0;
 }
 
+static int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, char *arg)
+{
+	unsigned int i;
+
+	/* search by name */
+	for (i = 0; i < nr_syscalls; i++) {
+		if (strcmp(arg, table[i].entry->name) == 0) {
+			//printf("Found %s at %u\n", table[i].entry->name, i);
+			return i;
+		}
+	}
+
+	return -1;
+}
+
 
 static void parse_args(int argc, char *argv[])
 {
+	int i;
 	int opt;
 
 	struct option longopts[] = {
 		{ "childcalls", required_argument, NULL, 'F' },
 		{ "dangerous", no_argument, NULL, 'd' },
 		{ "debug", no_argument, NULL, 'D' },
+		{ "exclude", required_argument, NULL, 'x' },
 		{ "group", required_argument, NULL, 'g' },
 		{ "help", no_argument, NULL, 'h' },
 		{ "list", no_argument, NULL, 'L' },
@@ -220,7 +238,7 @@ static void parse_args(int argc, char *argv[])
 		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:CdDfF:g:hl:LN:m:P:pqs:SV:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:CdDfF:g:hl:LN:m:P:pqs:SV:x:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -309,6 +327,25 @@ static void parse_args(int argc, char *argv[])
 				exit(EXIT_FAILURE);
 			}
 			break;
+
+		case 'x':
+			if (biarch == TRUE) {
+				i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, optarg);
+				if (i != -1) {
+					printf("Marking 64-bit syscall %d (%s) as AVOID\n", i, optarg);
+						syscalls_64bit[i].entry->flags |= AVOID_SYSCALL;
+				} else
+					printf("Couldn't find %s in 64-bit syscall table.\n", optarg);
+
+				/* 32bit only, also fall through from above 64bit */
+				i = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, optarg);
+				if (i == -1)
+					printf("Couldn't find %s in 32-bit syscall table.\n", optarg);
+				else {
+					printf("Marking 32-bit syscall %d (%s) as AVOID\n", i, optarg);
+						syscalls_64bit[i].entry->flags |= AVOID_SYSCALL;
+				}
+			}
 		}
 	}
 
@@ -341,21 +378,6 @@ static void mask_signals(void)
 	}
 	(void)signal(SIGCHLD, SIG_DFL);
 	(void)signal(SIGFPE, SIG_IGN);
-}
-
-static int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, char *arg)
-{
-	unsigned int i;
-
-	/* search by name */
-	for (i = 0; i < nr_syscalls; i++) {
-		if (strcmp(arg, table[i].entry->name) == 0) {
-			//printf("Found %s at %u\n", table[i].entry->name, i);
-			return i;
-		}
-	}
-
-	return -1;
 }
 
 static int find_specific_syscall(char *arg)
