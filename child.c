@@ -100,7 +100,7 @@ int child_process(void)
 	int ret = 0;
 	unsigned int syscallnr;
 	unsigned int cpu;
-	unsigned int left_to_do = syscalls_per_child;
+	unsigned int left_to_do = DEFAULT_SYSCALLS_PER_CHILD;
 
 	seed_from_tod();
 

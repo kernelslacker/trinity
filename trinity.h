@@ -62,8 +62,6 @@ extern unsigned char extrafork;
 
 extern unsigned char biarch;
 
-extern unsigned long syscalls_per_child;
-
 extern char *page_zeros;
 extern char *page_0xff;
 extern char *page_rand;

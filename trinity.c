@@ -47,7 +47,6 @@ unsigned int page_size;
 unsigned char dopause = 0;
 unsigned char do_specific_syscall = 0;
 unsigned char do_specific_proto = 0;
-unsigned long syscalls_per_child = DEFAULT_SYSCALLS_PER_CHILD;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
 unsigned char monochrome = 0;
@@ -198,7 +197,6 @@ static int search_syscall_table(struct syscalltable *table, unsigned int nr_sysc
 static void usage(void)
 {
 	fprintf(stderr, "%s\n", progname);
-	fprintf(stderr, " --childcalls,-F: number of syscalls to do in child.\n");
 	fprintf(stderr, " --exclude,-x: don't call a specific syscall\n");
 	fprintf(stderr, " --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
 	fprintf(stderr, " --list,-L: list all syscalls known on this architecture.\n");
@@ -222,7 +220,6 @@ static void parse_args(int argc, char *argv[])
 	int opt;
 
 	struct option longopts[] = {
-		{ "childcalls", required_argument, NULL, 'F' },
 		{ "dangerous", no_argument, NULL, 'd' },
 		{ "debug", no_argument, NULL, 'D' },
 		{ "exclude", required_argument, NULL, 'x' },
@@ -236,7 +233,7 @@ static void parse_args(int argc, char *argv[])
 		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:CdDfF:g:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:CdDfg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -267,11 +264,6 @@ static void parse_args(int argc, char *argv[])
 
 		case 'f':
 			extrafork = 1;
-			break;
-
-		case 'F':
-			syscalls_per_child = strtol(optarg, NULL, 10);
-			printf("doing %ld syscalls per child\n", syscalls_per_child);
 			break;
 
 		case 'g':
