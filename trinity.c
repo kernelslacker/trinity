@@ -206,15 +206,13 @@ static void usage(void)
 	fprintf(stderr, " --monochrome,-m: don't output ANSI codes\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --quiet,-q: less output.\n");
+	fprintf(stderr, " --victims,-V: path to victim files.\n");
 	fprintf(stderr, "\n");
-	fprintf(stderr, " -c#: target syscall # only.\n");
+	fprintf(stderr, " -c#: target specific syscall (takes syscall name as parameter).\n");
 	fprintf(stderr, " -k:  pass kernel addresses as arguments.\n");
 	fprintf(stderr, " -N#: do # syscalls then exit.\n");
 	fprintf(stderr, " -p:  pause after syscall.\n");
 	fprintf(stderr, " -s#: use # as random seed.\n");
-	fprintf(stderr, " -u:  pass userspace addresses as arguments.\n");
-	fprintf(stderr, " -x#: use value as register arguments.\n");
-	fprintf(stderr, " -z:  use all zeros as register parameters.\n");
 	exit(EXIT_SUCCESS);
 }
 
