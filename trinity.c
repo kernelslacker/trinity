@@ -149,29 +149,6 @@ unsigned long rand64()
 }
 
 
-static void usage(void)
-{
-	fprintf(stderr, "%s\n", progname);
-	fprintf(stderr, " --list: list all syscalls known on this architecture.\n");
-	fprintf(stderr, " --quiet: less output.\n");
-	fprintf(stderr, " --childcalls,-F: number of syscalls to do in child.\n");
-	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
-	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
-	fprintf(stderr, " --group: only run syscalls from a certain group (So far just 'vm').\n");
-	fprintf(stderr, " --exclude: don't call a specific syscall\n");
-	fprintf(stderr, " --nocolor: don't output ANSI codes\n");
-	fprintf(stderr, "\n");
-	fprintf(stderr, " -c#: target syscall # only.\n");
-	fprintf(stderr, " -k:  pass kernel addresses as arguments.\n");
-	fprintf(stderr, " -N#: do # syscalls then exit.\n");
-	fprintf(stderr, " -p:  pause after syscall.\n");
-	fprintf(stderr, " -s#: use # as random seed.\n");
-	fprintf(stderr, " -u:  pass userspace addresses as arguments.\n");
-	fprintf(stderr, " -x#: use value as register arguments.\n");
-	fprintf(stderr, " -z:  use all zeros as register parameters.\n");
-	exit(EXIT_SUCCESS);
-}
-
 void seed_from_tod()
 {
 	struct timeval t;
@@ -218,6 +195,28 @@ static int search_syscall_table(struct syscalltable *table, unsigned int nr_sysc
 	return -1;
 }
 
+static void usage(void)
+{
+	fprintf(stderr, "%s\n", progname);
+	fprintf(stderr, " --childcalls,-F: number of syscalls to do in child.\n");
+	fprintf(stderr, " --exclude,-x: don't call a specific syscall\n");
+	fprintf(stderr, " --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
+	fprintf(stderr, " --list,-L: list all syscalls known on this architecture.\n");
+	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
+	fprintf(stderr, " --nocolor,C: don't output ANSI codes\n");
+	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
+	fprintf(stderr, " --quiet,-q: less output.\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, " -c#: target syscall # only.\n");
+	fprintf(stderr, " -k:  pass kernel addresses as arguments.\n");
+	fprintf(stderr, " -N#: do # syscalls then exit.\n");
+	fprintf(stderr, " -p:  pause after syscall.\n");
+	fprintf(stderr, " -s#: use # as random seed.\n");
+	fprintf(stderr, " -u:  pass userspace addresses as arguments.\n");
+	fprintf(stderr, " -x#: use value as register arguments.\n");
+	fprintf(stderr, " -z:  use all zeros as register parameters.\n");
+	exit(EXIT_SUCCESS);
+}
 
 static void parse_args(int argc, char *argv[])
 {
