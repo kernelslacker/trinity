@@ -240,5 +240,6 @@ Still unfixed:
 
 * 3.4-rc7: kernel BUG at mm/mempolicy.c:1564!
 
+* GPF in numa_vma_unlink
 
 
