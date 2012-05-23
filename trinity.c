@@ -604,6 +604,10 @@ int main(int argc, char* argv[])
 		syscalls = newsyscalls;
 	}
 
+	if (show_syscall_list == 1) {
+		syscall_list();
+		exit(EXIT_SUCCESS);
+	}
 
 	if (!do_specific_syscall) {
 		if (biarch == TRUE)
@@ -624,11 +628,6 @@ int main(int argc, char* argv[])
 
 	if (do_specific_proto == 1)
 		find_specific_proto();
-
-	if (show_syscall_list == 1) {
-		syscall_list();
-		exit(EXIT_SUCCESS);
-	}
 
 	page_size = getpagesize();
 
