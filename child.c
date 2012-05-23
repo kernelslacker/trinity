@@ -175,9 +175,14 @@ retry:
 		}
 
 		ret = mkcall(syscallnr);
+
+		if (syscallcount) {
+			if (shm->execcount >= syscallcount)
+				goto out;
+		}
 	}
 
-// never reached.
+out:
 
 	reenable_coredumps();
 
