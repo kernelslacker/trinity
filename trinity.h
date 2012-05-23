@@ -106,6 +106,9 @@ int check_tainted(void);
 
 void init_child(void);
 
+void watchdog(void);
+void reap_child(pid_t childpid);
+
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
