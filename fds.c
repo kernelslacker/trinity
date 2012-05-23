@@ -1,5 +1,7 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "trinity.h"
@@ -38,6 +40,7 @@ static int get_random_fd(void)
 {
 	unsigned int i;
 	int fd = 0;
+	int ret;
 
 	if (do_specific_proto == 1)
 		i = 1;
@@ -48,7 +51,12 @@ static int get_random_fd(void)
 	case 0:
 retry:		fd = shm->fds[rand() % fd_idx];
 		/* retry if we hit stdin/stdout/logfiles */
-		if (fd <= fileno(shm->logfiles[shm->nr_childs-1]))
+		ret = fileno(shm->logfiles[shm->nr_childs-1]);
+		if (ret == -1) {
+			printf("%s:%s: fileno failed! %s\n", __FILE__, __func__, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		if (fd <= ret)
 			goto retry;
 		break;
 
