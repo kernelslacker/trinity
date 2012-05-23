@@ -11,6 +11,7 @@
 #include <sched.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/prctl.h>
 
 #include "trinity.h"
 #include "syscall.h"
@@ -30,29 +31,23 @@ static void disable_coredumps()
 	getrlimit(RLIMIT_CORE, &oldrlimit);
 
 	limit.rlim_cur = 0;
-	limit.rlim_max = 0;
-	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
+	limit.rlim_max = oldrlimit.rlim_max;
+	if (setrlimit(RLIMIT_CORE, &limit) != 0)
 		perror( "setrlimit(RLIMIT_CORE)" );
-		exit(EXIT_FAILURE);
-	}
 }
 
 static void reenable_coredumps()
 {
-	struct rlimit limit;
-
 	if (debug == TRUE)
 		return;
 
-	getrlimit(RLIMIT_CORE, &limit);
-	limit.rlim_cur = oldrlimit.rlim_cur;
+	prctl(PR_SET_DUMPABLE, TRUE);
 
-	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
+	if (setrlimit(RLIMIT_CORE, &oldrlimit) != 0) {
 		printf("Error restoring rlimits to cur:%d max:%d (%s)\n",
-			(unsigned int) limit.rlim_cur,
-			(unsigned int) limit.rlim_max,
+			(unsigned int) oldrlimit.rlim_cur,
+			(unsigned int) oldrlimit.rlim_max,
 			strerror(errno));
-		exit(EXIT_FAILURE);
 	}
 }
 static void set_make_it_fail()
