@@ -148,28 +148,28 @@ int child_process(void)
 			}
 		}
 
-		syscallnr = rand() % max_nr_syscalls;
-
-		if (do_specific_syscall != 0)
+		if (do_specific_syscall == TRUE)
 			if (shm->do32bit == TRUE)
 				syscallnr = specific_syscall32;
 			else
 				syscallnr = specific_syscall64;
 		else {
+retry:
+			/* We're doing something random. */
+			syscallnr = rand() % max_nr_syscalls;
 
 			if (syscalls[syscallnr].entry->num_args == 0)
-				goto skip_syscall;
+				goto retry;
 
 			if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
-				goto skip_syscall;
+				goto retry;
 
 			if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
-				goto skip_syscall;
+				goto retry;
 		}
 
 		ret = mkcall(syscallnr);
 
-skip_syscall:
 		left_to_do--;
 	}
 	reenable_coredumps();
