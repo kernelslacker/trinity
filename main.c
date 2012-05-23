@@ -161,7 +161,7 @@ static void handle_children()
 		if (WIFEXITED(childstatus)) {
 			slot = find_pid_slot(childpid);
 			if (slot == -1) {
-				printf("Couldn't find pid slot for %d\n", childpid);
+				printf("## Couldn't find pid slot for %d\n", childpid);
 				exit_now = TRUE;
 			} else
 				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
