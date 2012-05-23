@@ -59,6 +59,7 @@ extern unsigned char dopause;
 extern long struct_fill;
 extern unsigned char logging;
 extern unsigned char extrafork;
+extern unsigned char exit_now;
 
 extern unsigned char biarch;
 
