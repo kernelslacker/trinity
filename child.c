@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -21,6 +22,11 @@ static void disable_coredumps()
 {
 	struct rlimit limit;
 
+	if (debug == TRUE) {
+		(void)signal(SIGSEGV, SIG_DFL);
+		return;
+	}
+
 	getrlimit(RLIMIT_CORE, &oldrlimit);
 
 	limit.rlim_cur = 0;
@@ -34,6 +40,9 @@ static void disable_coredumps()
 static void reenable_coredumps()
 {
 	struct rlimit limit;
+
+	if (debug == TRUE)
+		return;
 
 	getrlimit(RLIMIT_CORE, &limit);
 	limit.rlim_cur = oldrlimit.rlim_cur;
