@@ -40,8 +40,8 @@ unsigned long long syscallcount = 0;
 
 unsigned char debug = 0;
 
-unsigned long specific_syscall32 = 0;
-unsigned long specific_syscall64 = 0;
+long specific_syscall32 = 0;
+long specific_syscall64 = 0;
 unsigned int specific_proto = 0;
 unsigned int page_size;
 unsigned char dopause = 0;
@@ -395,6 +395,26 @@ static int find_specific_syscall(char *arg)
 	return TRUE;
 }
 
+static int validate_specific_syscall(struct syscalltable *table, int call)
+{
+	if (call != -1) {
+		if (table[call].entry->flags & AVOID_SYSCALL) {
+			printf("%s is marked as AVOID. Skipping\n", table[call].entry->name);
+			return FALSE;
+		}
+
+		if (table[call].entry->flags & NI_SYSCALL) {
+			printf("%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
+			return FALSE;
+		}
+		if (table[call].entry->num_args == 0) {
+			printf("%s has no arguments. Skipping\n", table[call].entry->name);
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
 
 struct protocol {
 	const char *name;
@@ -617,12 +637,31 @@ int main(int argc, char* argv[])
 			output("Fuzzing %d syscalls.\n", max_nr_syscalls);
 	}
 
-	if (do_specific_syscall == 1) {
+	if (do_specific_syscall == TRUE) {
 		i = find_specific_syscall(specific_syscall_optarg);
-		if (i == TRUE)
+		if (i == TRUE) {
+			if (biarch == TRUE) {
+				if (specific_syscall64 != -1) {
+					ret = validate_specific_syscall(syscalls_64bit, specific_syscall64);
+					if (ret == FALSE)
+						goto cleanup;
+				}
+				if (specific_syscall32 != -1) {
+					ret = validate_specific_syscall(syscalls_32bit, specific_syscall32);
+					if (ret == FALSE)
+						goto cleanup;
+				}
+			} else {
+				if (specific_syscall32 != -1) {
+					ret = validate_specific_syscall(syscalls_32bit, specific_syscall32);
+					if (ret == FALSE)
+						goto cleanup;
+				}
+			}
+
 			printf("Fuzzing specific syscall %s (64bit:%ld 32bit:%ld)\n",
 				specific_syscall_optarg, specific_syscall64, specific_syscall32);
-		else
+		} else
 			printf("Couldn't find syscall %s\n", specific_syscall_optarg);
 	}
 
@@ -660,7 +699,9 @@ int main(int argc, char* argv[])
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		shm->execcount - 1, shm->retries, shm->successes, shm->failures);
 
-	shmdt(shm);
+	ret = EXIT_SUCCESS;
+
+cleanup:
 
 	destroy_maps();
 
@@ -670,5 +711,7 @@ int main(int argc, char* argv[])
 	if (logging != 0)
 		close_logfiles();
 
-	exit(EXIT_SUCCESS);
+	shmdt(shm);
+
+	exit(ret);
 }
