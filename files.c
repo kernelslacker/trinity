@@ -226,10 +226,12 @@ void open_files()
 void close_files()
 {
 	unsigned int i;
+	int fd;
 
 	for (i = 0; i < fd_idx; i++) {
-		close(shm->fds[i]);
+		fd = shm->fds[i];
 		shm->fds[i] = 0;
+		close(fd);
 		fds_left_to_create++;
 	}
 	fd_idx = 0;
