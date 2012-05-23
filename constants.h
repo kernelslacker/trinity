@@ -12,8 +12,6 @@
 #define TYPE_MAX 10
 #define PROTO_MAX 256
 
-#define DEFAULT_SYSCALLS_PER_CHILD 1000
-
 #define NR_PATHNAMES 50
 
 #endif	/* _CONSTANTS_H */
