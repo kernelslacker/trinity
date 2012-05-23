@@ -57,8 +57,8 @@ void watchdog(void)
 				shm->tv[i].tv_sec = now;
 				continue;
 			}
-			if (diff > 3)
-				printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
+//			if (diff > 3)
+//				printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
 
 			if (diff > 30) {
 				output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
