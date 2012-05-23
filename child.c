@@ -174,20 +174,23 @@ retry:
 				goto retry;
 		}
 
-		ret = mkcall(syscallnr);
-
 		if (syscallcount) {
-			if (shm->execcount >= syscallcount)
-				goto out;
+			if (shm->execcount >= syscallcount) {
+				shm->exit_now = TRUE;
+				printf("[%d] Reached maximum syscall count %ld\n", getpid(), shm->execcount);
+			}
 		}
-	}
 
-out:
+		ret = mkcall(syscallnr);
+	}
 
 	reenable_coredumps();
 
 	/* Let the watchdog process die before the children. */
-	while (shm->watchdog_pid != 0);
+	while (shm->watchdog_pid != 0) {
+		printf("Waiting for watchdog at %d to die\n", shm->watchdog_pid);
+		sleep(1);
+	}
 
 	return ret;
 }
