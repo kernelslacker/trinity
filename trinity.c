@@ -573,7 +573,7 @@ void setup_syscall_tables(void)
 
 int main(int argc, char* argv[])
 {
-	int ret;
+	int ret = EXIT_SUCCESS;
 	unsigned int i;
 
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
@@ -605,6 +605,11 @@ int main(int argc, char* argv[])
 	if (create_shm())
 		exit(EXIT_FAILURE);
 
+	if (show_syscall_list == TRUE) {
+		syscall_list();
+		goto cleanup_shm;
+	}
+
 	if (logging != 0)
 		open_logfiles();
 
@@ -628,11 +633,6 @@ int main(int argc, char* argv[])
 
 		max_nr_syscalls = count;
 		syscalls = newsyscalls;
-	}
-
-	if (show_syscall_list == 1) {
-		syscall_list();
-		exit(EXIT_SUCCESS);
 	}
 
 	if (!do_specific_syscall) {
@@ -720,6 +720,8 @@ cleanup:
 
 	if (logging != 0)
 		close_logfiles();
+
+cleanup_shm:
 
 	shmdt(shm);
 
