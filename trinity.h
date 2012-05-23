@@ -107,7 +107,6 @@ int check_tainted(void);
 void init_child(void);
 
 void watchdog(void);
-extern pid_t watchdog_pid;
 
 void reap_child(pid_t childpid);
 

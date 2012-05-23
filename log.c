@@ -56,7 +56,7 @@ static FILE * find_logfile_handle()
 	if (pid == parentpid)
 		return parentlogfile;
 
-	if (pid == watchdog_pid)
+	if (pid == shm->watchdog_pid)
 		return parentlogfile;
 
 	i = find_pid_slot(pid);
