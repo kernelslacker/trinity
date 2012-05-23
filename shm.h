@@ -28,6 +28,8 @@ struct shm_s {
 	unsigned int fd_lifetime;
 
 	unsigned char do32bit;
+
+	unsigned char exit_now;
 };
 extern struct shm_s *shm;
 

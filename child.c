@@ -128,7 +128,7 @@ int child_process(void)
 	if (extrafork == FALSE)
 		init_child();
 
-	while (exit_now == FALSE) {
+	while (shm->exit_now == FALSE) {
 
 		if (biarch == TRUE) {
 			/*
