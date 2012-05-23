@@ -396,7 +396,7 @@ static int find_specific_syscall(char *arg)
 		printf("Couldn't find %s in 64-bit table, but found in 32bit at %ld.\n", arg, specific_syscall32);
 
 	if (specific_syscall32 == -1)
-		printf("Couldn't find %s in 32-bit table.\n", arg);
+		printf("Couldn't find %s in 32-bit table, but found in 64bit at %ld.\n", arg, specific_syscall64);
 
 	return TRUE;
 }
