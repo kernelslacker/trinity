@@ -48,7 +48,7 @@ static int get_random_fd(void)
 	case 0:
 retry:		fd = shm->fds[rand() % fd_idx];
 		/* retry if we hit stdin/stdout/logfiles */
-		if (fd <= fileno(shm->logfiles[shm->nr_childs]))
+		if (fd <= fileno(shm->logfiles[shm->nr_childs-1]))
 			goto retry;
 		break;
 
