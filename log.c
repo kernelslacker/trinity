@@ -63,7 +63,7 @@ static FILE * find_logfile_handle()
 	if (i != -1)
 		return shm->logfiles[i];
 	else {
-		printf("## Couldn't find logfile for pid %d\n", pid);
+		printf("[%d] ## Couldn't find logfile for pid %d\n", getpid(), pid);
 		printf("## pids: ");
 		for (j = 0; j < shm->nr_childs; j++)
 			printf("%d ", shm->pids[j]);
