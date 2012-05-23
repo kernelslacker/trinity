@@ -6,12 +6,11 @@ fi
 chmod 755 tmp
 cd tmp
 
-NR=$(../trinity -L | tail -n1 | awk '{ print $1}' | sed s/://)
-
-echo Starting $NR fuzzers
-
-for i in $(seq 0 $NR)
+while [ 1 ];
 do
-	CPU=$(($RANDOM % $NR_CPUS))
-	../trinity -q -c $i &
+  for syscall in $(../trinity -L | grep -v Trinity | grep -v 32bit | grep -v 64bit | awk '{ print $2 }' | sort -u)
+  do
+	MALLOC_CHECK_=2 ../trinity -q -c $syscall -x mbind -D &
+  done
+  wait
 done
