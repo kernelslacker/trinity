@@ -388,7 +388,7 @@ static int find_specific_syscall(char *arg)
 	/* 32bit only, also fall through from above 64bit failure.*/
 	i = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
 	if (i == -1) {
-		printf("No idea what syscall was asked for.\n");
+		printf("No idea what syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);
 	}
 	specific_syscall32 = i;
