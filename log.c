@@ -8,8 +8,6 @@
 #include "trinity.h"
 #include "shm.h"
 
-static char outputbuf[1024];
-static char monobuf[1024];
 FILE *parentlogfile;
 
 void open_logfiles()
@@ -95,6 +93,8 @@ void output(const char *fmt, ...)
 	int n;
 	FILE *handle;
 	unsigned int len, i, j;
+	char outputbuf[1024];
+	char monobuf[1024];
 
 	va_start(args, fmt);
 	n = vsnprintf(outputbuf, sizeof(outputbuf), fmt, args);
