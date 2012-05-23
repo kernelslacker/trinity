@@ -20,7 +20,7 @@ void open_logfiles()
 	unlink(logfilename);
 	parentlogfile = fopen(logfilename, "a");
 	if (!parentlogfile) {
-		perror("couldn't open logfile\n");
+		printf("## couldn't open logfile %s\n", logfilename);
 		exit(EXIT_FAILURE);
 	}
 
@@ -30,7 +30,7 @@ void open_logfiles()
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
 		if (!shm->logfiles[i]) {
-			printf("couldn't open logfile %s\n", logfilename);
+			printf("## couldn't open logfile %s\n", logfilename);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -63,12 +63,12 @@ static FILE * find_logfile_handle()
 	if (i != -1)
 		return shm->logfiles[i];
 	else {
-		printf("Couldn't find logfile for pid %d\n", pid);
-		printf("pids: ");
+		printf("## Couldn't find logfile for pid %d\n", pid);
+		printf("## pids: ");
 		for (j = 0; j < shm->nr_childs; j++)
 			printf("%d ", shm->pids[j]);
 		printf("\n");
-		printf("Logfiles for pids: ");
+		printf("## Logfiles for pids: ");
 		for (j = 0; j < shm->nr_childs; j++)
 			printf("%p ", shm->logfiles[j]);
 		printf("\n");
@@ -87,7 +87,7 @@ void synclogs()
 	for (i = 0; i < shm->nr_childs; i++) {
 		ret = fflush(shm->logfiles[i]);
 		if (ret == EOF) {
-			printf("logfile flushing failed! %s\n", strerror(errno));
+			printf("## logfile flushing failed! %s\n", strerror(errno));
 			continue;
 		}
 
@@ -95,7 +95,7 @@ void synclogs()
 		if (fd != -1) {
 			ret = fsync(fd);
 			if (ret != 0)
-				printf("fsyncing logfile %d failed. %s\n", i, strerror(errno));
+				printf("## fsyncing logfile %d failed. %s\n", i, strerror(errno));
 		}
 	}
 
@@ -117,7 +117,7 @@ void output(const char *fmt, ...)
 	va_end(args);
 
 	if (n < 0) {
-		printf("Something went wrong in output() [%d]\n", n);
+		printf("## Something went wrong in output() [%d]\n", n);
 		exit(EXIT_FAILURE);
 	}
 
@@ -129,7 +129,7 @@ void output(const char *fmt, ...)
 
 	handle = find_logfile_handle();
 	if (!handle) {
-		printf("child logfile handle was null logging to main!\n");
+		printf("## child logfile handle was null logging to main!\n");
 		handle = parentlogfile;
 		return;
 	}
