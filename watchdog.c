@@ -28,7 +28,7 @@ void watchdog(void)
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
 
-	while (exit_now == FALSE) {
+	while (shm->exit_now == FALSE) {
 
 		gettimeofday(&tv, NULL);
 		now = tv.tv_sec;
@@ -73,12 +73,13 @@ void watchdog(void)
 		if (do_check_tainted == 0) {
 			if (check_tainted() != 0) {
 				output("kernel became tainted!\n");
-				exit_now = TRUE;
+				shm->exit_now = TRUE;
 			}
 		}
 
+
 		if (syscallcount && (shm->execcount >= syscallcount))
-			exit_now = TRUE;
+			shm->exit_now = TRUE;
 
 		if (shm->execcount % 1000 == 0)
 			synclogs();
@@ -91,5 +92,5 @@ void watchdog(void)
 
 		sleep(1);
 	}
-	printf("Watchdog thread exitting\n");
+	printf("[%d]eWatchdog thread exitting exit_now=%d\n", getpid(), shm->exit_now);
 }

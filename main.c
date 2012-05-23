@@ -165,10 +165,11 @@ static void handle_children()
 	default:
 		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
 		if (WIFEXITED(childstatus)) {
+
 			slot = find_pid_slot(childpid);
 			if (slot == -1) {
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
-				exit_now = TRUE;
+				shm->exit_now = TRUE;
 			} else
 				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
 			reap_child(childpid);
@@ -219,7 +220,7 @@ void main_loop()
 	else
 		printf("Started watchdog thread %d\n", watchdog_pid);
 
-	while (exit_now == FALSE) {
+	while (shm->exit_now == FALSE) {
 		fork_children();
 		handle_children();
 	}
