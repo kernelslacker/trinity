@@ -368,6 +368,8 @@ static void mask_signals(void)
 	}
 	(void)signal(SIGCHLD, SIG_DFL);
 	(void)signal(SIGFPE, SIG_IGN);
+	if (debug == TRUE)
+		(void)signal(SIGSEGV, SIG_DFL);
 }
 
 static int find_specific_syscall(char *arg)
