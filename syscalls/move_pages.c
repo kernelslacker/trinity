@@ -30,11 +30,15 @@ static void sanitise_move_pages(unsigned long *pid,
 	}
 
 	page_alloc = malloc(page_size);
+	if (page_alloc == NULL)
+		return;
 
 	*nr_pages = rand() % (page_size / sizeof(void *));
 
 	for (i = 0; i < *nr_pages; i++) {
 		page_alloc[i] = (unsigned long) malloc(page_size);
+		if (!page_alloc[i])
+			return;					// FIXME: MEMORY LEAK
 		page_alloc[i] &= PAGE_MASK;
 	}
 
