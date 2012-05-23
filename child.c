@@ -109,7 +109,6 @@ int child_process(void)
 	int ret = 0;
 	unsigned int syscallnr;
 	unsigned int cpu;
-	unsigned int left_to_do = DEFAULT_SYSCALLS_PER_CHILD;
 
 	seed_from_tod();
 
@@ -129,7 +128,7 @@ int child_process(void)
 	if (extrafork == FALSE)
 		init_child();
 
-	while (left_to_do > 0) {
+	while (1) {
 
 		if (biarch == TRUE) {
 			/*
@@ -176,9 +175,10 @@ retry:
 		}
 
 		ret = mkcall(syscallnr);
-
-		left_to_do--;
 	}
+
+// never reached.
+
 	reenable_coredumps();
 
 	return ret;
