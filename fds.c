@@ -39,6 +39,7 @@ void setup_fds(void)
 static int get_random_fd(void)
 {
 	unsigned int i;
+	FILE *file;
 	int fd = 0;
 	int ret;
 
@@ -50,12 +51,30 @@ static int get_random_fd(void)
 	switch (i) {
 	case 0:
 retry:		fd = shm->fds[rand() % fd_idx];
-		/* retry if we hit stdin/stdout/logfiles */
-		ret = fileno(shm->logfiles[shm->nr_childs-1]);
-		if (ret == -1) {
-			printf("%s:%s: fileno failed! %s\n", __FILE__, __func__, strerror(errno));
-			exit(EXIT_FAILURE);
+
+		/* avoid stdin/stdout/stderr */
+		if (logging == FALSE)
+			ret = fileno(stderr);
+
+		/* get highest logfile fd if logging is enabled */
+		else {
+			file = shm->logfiles[shm->nr_childs-1];
+			if (file == NULL) {
+				printf("## WTF, logfile was null!\n");
+				printf("## logfiles: ");
+				for (i = 0; i < shm->nr_childs; i++)
+					printf("%p ", shm->logfiles[i]);
+				printf("\n");
+				exit(EXIT_FAILURE);
+			}
+			ret = fileno(file);
+			if (ret == -1) {
+				printf("%s:%s: fileno failed! %s\n", __FILE__, __func__, strerror(errno));
+				exit(EXIT_FAILURE);
+			}
 		}
+
+
 		if (fd <= ret)
 			goto retry;
 		break;
