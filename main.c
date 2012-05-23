@@ -169,9 +169,10 @@ static void handle_children()
 		if (WIFEXITED(childstatus)) {
 
 			if (childpid == shm->watchdog_pid) {
-				if (shm->exit_now == FALSE)
+				if (shm->exit_now == FALSE) {
 					printf("## OMG the watchdog exited unexpectedly!\n");
-				shm->exit_now = TRUE;
+					shm->exit_now = TRUE;
+				}
 				shm->watchdog_pid = 0;
 				break;
 			}
