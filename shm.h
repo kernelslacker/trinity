@@ -30,6 +30,8 @@ struct shm_s {
 	unsigned char do32bit;
 
 	unsigned char exit_now;
+
+	pid_t watchdog_pid;
 };
 extern struct shm_s *shm;
 
