@@ -29,6 +29,7 @@ OBJS		= trinity.o \
 			maps.o \
 			log.o \
 			child.o \
+			watchdog.o \
 			$(SYSCALLS) \
 			$(SANITISE) \
 			$(IOCTLS)
