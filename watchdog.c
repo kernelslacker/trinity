@@ -13,6 +13,8 @@
 #include "files.h"
 #include "syscall.h"
 
+pid_t watchdog_pid;
+
 void watchdog(void)
 {
 	struct timeval tv;
