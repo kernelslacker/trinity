@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -64,13 +65,24 @@ static FILE * find_logfile_handle()
 void synclogs()
 {
 	unsigned int i;
+	int fd, ret;
 
 	if (logging == 0)
 		return;
 
 	for (i = 0; i < shm->nr_childs; i++) {
-		(void)fflush(shm->logfiles[i]);
-		(void)fsync(fileno(shm->logfiles[i]));
+		ret = fflush(shm->logfiles[i]);
+		if (ret == EOF) {
+			printf("logfile flushing failed! %s\n", strerror(errno));
+			continue;
+		}
+
+		fd = fileno(shm->logfiles[i]);
+		if (fd != -1) {
+			ret = fsync(fd);
+			if (ret != 0)
+				printf("fsyncing logfile %d failed. %s\n", i, strerror(errno));
+		}
 	}
 
 	(void)fflush(parentlogfile);
@@ -100,6 +112,11 @@ void output(const char *fmt, ...)
 		return;
 
 	handle = find_logfile_handle();
+	if (!handle) {
+		printf("child logfile handle was null logging to main!\n");
+		handle = parentlogfile;
+		return;
+	}
 
 	if (monochrome == TRUE) {
 		fprintf(handle, "%s", outputbuf);
