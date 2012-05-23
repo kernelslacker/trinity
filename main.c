@@ -103,7 +103,7 @@ static void fork_children()
 			int ret = 0;
 
 			ret = child_process();
-			shm->regenerate--;
+			/* We should never get here. */
 			output("child %d exitting\n", getpid());
 
 			_exit(ret);

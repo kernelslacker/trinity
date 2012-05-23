@@ -120,6 +120,8 @@ long mkcall(unsigned int call)
 	int ret = 0;
 	char string[512], *sptr;
 
+	shm->regenerate--;
+
 	sigsetjmp(ret_jump, 1);
 
 	sptr = string;
