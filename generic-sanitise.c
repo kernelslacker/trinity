@@ -119,7 +119,7 @@ void * get_address()
 		break;
 	case 7: addr = get_map();
 		break;
-	case 8: addr = malloc(page_size);
+	case 8: addr = malloc(page_size * 2);
 		break;
 	default: /* unreachable*/
 		break;
