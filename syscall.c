@@ -66,8 +66,10 @@ static unsigned long do_syscall(unsigned int num_args, int nr, unsigned long a1,
 		(void)alarm(0);
 
 		i = find_pid_slot(getpid());
-		if (i != -1)
+		if (i != -1) {
 			shm->total_syscalls[i]++;
+			(void)gettimeofday(&shm->tv[i], NULL);
+		}
 
 		return ret;
 	}

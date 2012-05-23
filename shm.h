@@ -1,6 +1,8 @@
 #ifndef _SHM_H
 #define _SHM_H 1
 
+#include <sys/time.h>
+
 #include "constants.h"
 
 struct shm_s {
@@ -14,6 +16,7 @@ struct shm_s {
 	unsigned int running_childs;
 	pid_t pids[MAX_NR_CHILDREN];
 	int total_syscalls[MAX_NR_CHILDREN];
+	struct timeval tv[MAX_NR_CHILDREN];
 
 	FILE *logfiles[MAX_NR_CHILDREN];
 
