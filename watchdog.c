@@ -15,14 +15,57 @@
 
 pid_t watchdog_pid;
 
-void watchdog(void)
+static void check_children(void)
 {
 	struct timeval tv;
-	unsigned int i;
-	pid_t pid;
 	unsigned int diff;
 	time_t old, now;
-	static char watchdogname[17]="trinity-watchdog";
+	pid_t pid;
+	unsigned int i;
+
+	gettimeofday(&tv, NULL);
+	now = tv.tv_sec;
+
+	for (i = 0; i < shm->nr_childs; i++) {
+		pid = shm->pids[i];
+
+		if ((pid == 0) || (pid == -1))
+			continue;
+
+		old = shm->tv[i].tv_sec;
+
+		if (old == 0)
+			continue;
+
+		/* if we wrapped, just reset it, we'll pick it up next time around. */
+		if (old > now) {
+			shm->tv[i].tv_sec = now;
+			continue;
+		}
+
+		diff = now - old;
+
+		/* if we're way off, we're comparing garbage. Reset it. */
+		if (diff > 1000) {
+			printf("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
+			shm->tv[i].tv_sec = now;
+			continue;
+		}
+//		if (diff > 3)
+//			printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
+
+		if (diff > 30) {
+			output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
+				pid, old, now, diff);
+			kill(pid, SIGKILL);
+			reap_child(pid);
+		}
+	}
+}
+
+void watchdog(void)
+{
+	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount;
 
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
@@ -30,44 +73,7 @@ void watchdog(void)
 
 	while (shm->exit_now == FALSE) {
 
-		gettimeofday(&tv, NULL);
-		now = tv.tv_sec;
-
-		for (i = 0; i < shm->nr_childs; i++) {
-			pid = shm->pids[i];
-
-			if ((pid == 0) || (pid == -1))
-				continue;
-
-			old = shm->tv[i].tv_sec;
-
-			if (old == 0)
-				continue;
-
-			/* if we wrapped, just reset it, we'll pick it up next time around. */
-			if (old > now) {
-				shm->tv[i].tv_sec = now;
-				continue;
-			}
-
-			diff = now - old;
-
-			/* if we're way off, we're comparing garbage. Reset it. */
-			if (diff > 1000) {
-				printf("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
-				shm->tv[i].tv_sec = now;
-				continue;
-			}
-//			if (diff > 3)
-//				printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
-
-			if (diff > 30) {
-				output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
-					pid, old, now, diff);
-				kill(pid, SIGKILL);
-				reap_child(pid);
-			}
-		}
+		check_children();
 
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == 0) {
