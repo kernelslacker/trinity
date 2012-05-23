@@ -42,7 +42,8 @@ void close_logfiles()
 	unsigned int i;
 
 	for (i = 0; i < shm->nr_childs; i++)
-		fclose(shm->logfiles[i]);
+		if (shm->logfiles[i] != NULL)
+			fclose(shm->logfiles[i]);
 }
 
 static FILE * find_logfile_handle()
