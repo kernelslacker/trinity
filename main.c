@@ -123,6 +123,7 @@ static void reap_child(pid_t childpid)
 		debugf("[%d] Removing %d from pidmap.\n", getpid(), shm->pids[i]);
 		shm->pids[i] = -1;
 		shm->running_childs--;
+		shm->tv[i].tv_sec = 0;
 	}
 }
 
@@ -192,6 +193,61 @@ static void handle_children()
 	}
 }
 
+static void watchdog(void)
+{
+	struct timeval tv;
+	unsigned int i;
+	pid_t pid;
+	unsigned int diff;
+	time_t old, now;
+	static time_t lasttime;
+
+	gettimeofday(&tv, NULL);
+	now = tv.tv_sec;
+
+	if (now == lasttime)	/* only do the watchdog once per second */
+		return;
+
+	lasttime = now;
+
+	for (i = 0; i < shm->nr_childs; i++) {
+		pid = shm->pids[i];
+
+		if ((pid == 0) || (pid == -1))
+			continue;
+
+		old = shm->tv[i].tv_sec;
+
+		if (old == 0)
+			continue;
+
+		/* if we wrapped, just reset it, we'll pick it up next time around. */
+		if (old > now) {
+			shm->tv[i].tv_sec = now;
+			continue;
+		}
+
+		diff = now - old;
+
+		/* if we're way off, we're comparing garbage. Reset it. */
+		if (diff > 1000) {
+			printf("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
+			shm->tv[i].tv_sec = now;
+			continue;
+		}
+		if (diff > 3)
+			printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
+
+		if (diff > 30) {
+			output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
+				pid, old, now, diff);
+			kill(pid, SIGKILL);
+			reap_child(pid);
+		}
+	}
+}
+
+
 void main_loop()
 {
 	if (!shm->regenerate)
@@ -203,6 +259,9 @@ void main_loop()
 	while (1) {
 		fork_children();
 		handle_children();
+
+		if (debug == TRUE)
+			watchdog();
 
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == 0) {
