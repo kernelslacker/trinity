@@ -148,12 +148,19 @@ int child_process(void)
 			}
 		}
 
-		if (do_specific_syscall == TRUE)
+		if (do_specific_syscall == TRUE) {
+			/* If we asked for a 32bit only syscall, force 32bit mode. */
+			if (specific_syscall64 == -1) {
+				shm->do32bit = TRUE;
+				syscalls = syscalls_32bit;
+				max_nr_syscalls = max_nr_32bit_syscalls;
+			}
+
 			if (shm->do32bit == TRUE)
 				syscallnr = specific_syscall32;
 			else
 				syscallnr = specific_syscall64;
-		else {
+		} else {
 retry:
 			/* We're doing something random. */
 			syscallnr = rand() % max_nr_syscalls;
