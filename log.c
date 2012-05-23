@@ -50,6 +50,7 @@ static FILE * find_logfile_handle()
 {
 	pid_t pid;
 	int i;
+	unsigned int j;
 
 	pid = getpid();
 	if (pid == parentpid)
@@ -58,6 +59,17 @@ static FILE * find_logfile_handle()
 	i = find_pid_slot(pid);
 	if (i != -1)
 		return shm->logfiles[i];
+	else {
+		printf("Couldn't find logfile for pid %d\n", pid);
+		printf("pids: ");
+		for (j = 0; j < shm->nr_childs; j++)
+			printf("%d ", shm->pids[j]);
+		printf("\n");
+		printf("Logfiles for pids: ");
+		for (j = 0; j < shm->nr_childs; j++)
+			printf("%p ", shm->logfiles[j]);
+		printf("\n");
+	}
 	return NULL;
 }
 
