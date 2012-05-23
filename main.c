@@ -80,7 +80,7 @@ int find_pid_slot(pid_t mypid)
 
 static void fork_children()
 {
-	unsigned int i;
+	int pidslot;
 
 	/* Generate children*/
 
@@ -88,18 +88,19 @@ static void fork_children()
 		int pid = 0;
 
 		/* Find a space for it in the pid map */
-		for (i = 0; i < shm->nr_childs; i++) {
-			if (shm->pids[i] == -1)
-				break;
+		pidslot = find_pid_slot(-1);
+		if (pidslot == -1) {
+			printf("[%d] ## Pid map was full!\n", getpid());
+			exit(EXIT_FAILURE);
 		}
-		if (i >= shm->nr_childs) {
-			output("pid map full!\n");
+		if ((unsigned int)pidslot >= shm->nr_childs) {
+			printf("[%d] ## Pid map was full!\n", getpid());
 			exit(EXIT_FAILURE);
 		}
 		(void)alarm(0);
 		pid = fork();
 		if (pid != 0)
-			shm->pids[i] = pid;
+			shm->pids[pidslot] = pid;
 		else {
 			int ret = 0;
 
@@ -110,7 +111,9 @@ static void fork_children()
 			_exit(ret);
 		}
 		shm->running_childs++;
-		debugf("[%d] Created child %d [total:%d/%d]\n", getpid(), shm->pids[i], shm->running_childs, shm->nr_childs);
+		debugf("[%d] Created child %d [total:%d/%d]\n",
+			getpid(), shm->pids[pidslot],
+			shm->running_childs, shm->nr_childs);
 	}
 	debugf("[%d] created enough children\n\n", getpid());
 }
@@ -161,7 +164,7 @@ static void handle_children()
 		if (WIFEXITED(childstatus)) {
 			slot = find_pid_slot(childpid);
 			if (slot == -1) {
-				printf("## Couldn't find pid slot for %d\n", childpid);
+				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
 				exit_now = TRUE;
 			} else
 				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
