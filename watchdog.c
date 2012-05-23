@@ -84,8 +84,10 @@ void watchdog(void)
 			}
 		}
 
-		if (syscallcount && (shm->execcount >= syscallcount))
+		if (syscallcount && (shm->execcount >= syscallcount)) {
+			output("Reached limit %d. Telling children to start exiting\n", syscallcount);
 			shm->exit_now = TRUE;
+		}
 
 		if (shm->execcount % 1000 == 0)
 			synclogs();
