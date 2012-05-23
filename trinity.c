@@ -374,24 +374,30 @@ static void mask_signals(void)
 
 static int find_specific_syscall(char *arg)
 {
-	int i = -1;
-
-	/* By default, when biarch, search first in the 64bit table. */
-	if (biarch == TRUE) {
-		//printf("Searching the 64bit syscall table.\n");
-		i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
-		if (i != -1)    // We found it in the 64bit table, return.
-			specific_syscall64 = i;
-		//printf("Couldn't find in the 64bit syscall table. Looking in 32bit\n");
-	}
+	/* when biarch, search first in the 64bit table too. */
+	if (biarch == TRUE)
+		specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
+	else
+		specific_syscall64 = -1;
 
 	/* 32bit only, also fall through from above 64bit failure.*/
-	i = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
-	if (i == -1) {
+	specific_syscall32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
+
+	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
 		printf("No idea what syscall (%s) is.\n", arg);
-		exit(EXIT_FAILURE);
+		return FALSE;
 	}
-	specific_syscall32 = i;
+	if ((specific_syscall64 != -1) && (specific_syscall32 != -1)) {
+		printf("Found (64bit:%ld 32bit:%ld)\n", specific_syscall64, specific_syscall32);
+		return TRUE;
+	}
+
+	if (specific_syscall64 == -1)
+		printf("Couldn't find %s in 64-bit table, but found in 32bit at %ld.\n", arg, specific_syscall32);
+
+	if (specific_syscall32 == -1)
+		printf("Couldn't find %s in 32-bit table.\n", arg);
+
 	return TRUE;
 }
 
@@ -659,8 +665,7 @@ int main(int argc, char* argv[])
 				}
 			}
 
-			printf("Fuzzing specific syscall %s (64bit:%ld 32bit:%ld)\n",
-				specific_syscall_optarg, specific_syscall64, specific_syscall32);
+			printf("Fuzzing specific syscall %s\n", specific_syscall_optarg);
 		} else
 			printf("Couldn't find syscall %s\n", specific_syscall_optarg);
 	}
