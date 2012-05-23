@@ -26,6 +26,7 @@ void watchdog(void)
 	static unsigned long lastcount;
 
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
+	(void)signal(SIGSEGV, SIG_DFL);
 
 	while (exit_now == FALSE) {
 
