@@ -166,6 +166,13 @@ static void handle_children()
 		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
 		if (WIFEXITED(childstatus)) {
 
+			if (childpid == watchdog_pid) {
+				if (shm->exit_now == FALSE)
+					printf("## OMG the watchdog exited!\n");
+				shm->exit_now = TRUE;
+				break;
+			}
+
 			slot = find_pid_slot(childpid);
 			if (slot == -1) {
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
