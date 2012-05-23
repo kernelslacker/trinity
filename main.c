@@ -104,6 +104,9 @@ static void fork_children()
 		else {
 			int ret = 0;
 
+			/* Wait for parent to set our pidslot */
+			while (shm->pids[pidslot] != getpid());
+
 			ret = child_process();
 
 			output("child %d exitting\n", getpid());
