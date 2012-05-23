@@ -186,5 +186,8 @@ out:
 
 	reenable_coredumps();
 
+	/* Let the watchdog process die before the children. */
+	while (shm->watchdog_pid != 0);
+
 	return ret;
 }

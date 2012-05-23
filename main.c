@@ -163,13 +163,16 @@ static void handle_children()
 		break;
 
 	default:
-		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
+		if (childpid != shm->watchdog_pid)
+			debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
+
 		if (WIFEXITED(childstatus)) {
 
 			if (childpid == shm->watchdog_pid) {
 				if (shm->exit_now == FALSE)
-					printf("## OMG the watchdog exited!\n");
+					printf("## OMG the watchdog exited unexpectedly!\n");
 				shm->exit_now = TRUE;
+				shm->watchdog_pid = 0;
 				break;
 			}
 
@@ -215,20 +218,26 @@ static void handle_children()
 
 void main_loop()
 {
+	pid_t pid;
+
 	if (!shm->regenerate)
 		regenerate();
 
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
-	shm->watchdog_pid = fork();
-	if (shm->watchdog_pid == 0)
-		watchdog();
-	else
-		printf("Started watchdog thread %d\n", shm->watchdog_pid);
+	pid = fork();
+	if (pid == 0)
+		watchdog();	// Never returns.
+
+	while (shm->watchdog_pid == 0)
+		sleep(1);
+
+	printf("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 
 	while (shm->exit_now == FALSE) {
 		fork_children();
 		handle_children();
 	}
+	printf("[%d] Bailing main loop\n", getpid());
 }

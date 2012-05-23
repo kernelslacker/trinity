@@ -322,7 +322,7 @@ static void parse_args(int argc, char *argv[])
 			if (biarch == TRUE) {
 				i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, optarg);
 				if (i != -1) {
-					printf("Marking 64-bit syscall %d (%s) as AVOID\n", i, optarg);
+					printf("[%d] Marking 64-bit syscall %d (%s) as AVOID\n", getpid(), i, optarg);
 						syscalls_64bit[i].entry->flags |= AVOID_SYSCALL;
 				} else
 					printf("Couldn't find %s in 64-bit syscall table.\n", optarg);
@@ -332,7 +332,7 @@ static void parse_args(int argc, char *argv[])
 				if (i == -1)
 					printf("Couldn't find %s in 32-bit syscall table.\n", optarg);
 				else {
-					printf("Marking 32-bit syscall %d (%s) as AVOID\n", i, optarg);
+					printf("[%d] Marking 32-bit syscall %d (%s) as AVOID\n", getpid(), i, optarg);
 						syscalls_64bit[i].entry->flags |= AVOID_SYSCALL;
 				}
 			}
@@ -700,6 +700,11 @@ int main(int argc, char* argv[])
 	}
 
 	main_loop();
+
+	while (shm->watchdog_pid != 0) {
+		printf("[%d] Waiting for watchdog %d to exit\n", getpid(), shm->watchdog_pid);
+		sleep(1);
+	}
 
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		shm->execcount - 1, shm->retries, shm->successes, shm->failures);

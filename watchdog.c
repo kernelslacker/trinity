@@ -45,7 +45,7 @@ static void check_children(void)
 
 		/* if we're way off, we're comparing garbage. Reset it. */
 		if (diff > 1000) {
-			printf("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
+			output("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
 			shm->tv[i].tv_sec = now;
 			continue;
 		}
@@ -66,6 +66,9 @@ void watchdog(void)
 	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount;
 
+	shm->watchdog_pid = getpid();
+	printf("[%d] Watchdog is alive\n", shm->watchdog_pid);
+
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
 
@@ -81,7 +84,6 @@ void watchdog(void)
 			}
 		}
 
-
 		if (syscallcount && (shm->execcount >= syscallcount))
 			shm->exit_now = TRUE;
 
@@ -96,5 +98,8 @@ void watchdog(void)
 
 		sleep(1);
 	}
-	printf("[%d]eWatchdog thread exitting exit_now=%d\n", getpid(), shm->exit_now);
+
+	output("[%d] Watchdog thread exitting\n", getpid());
+
+	_exit(EXIT_SUCCESS);
 }
