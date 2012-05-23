@@ -243,11 +243,6 @@ args_done:
 	output("%s", string);
 	sptr = string;
 
-	if (quiet) {
-		if (shm->execcount % 1000 == 0)
-			printf("%ld iterations.\n", shm->execcount);
-	}
-
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if (ret == -ENOSYS)
 		syscalls[call].entry->flags |= AVOID_SYSCALL;

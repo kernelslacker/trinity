@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -200,81 +201,96 @@ static void watchdog(void)
 	pid_t pid;
 	unsigned int diff;
 	time_t old, now;
-	static time_t lasttime;
+	static char watchdogname[17]="trinity-watchdog";
+	static unsigned long lastcount;
 
-	gettimeofday(&tv, NULL);
-	now = tv.tv_sec;
+	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 
-	if (now == lasttime)	/* only do the watchdog once per second */
-		return;
+	while (exit_now == FALSE) {
 
-	lasttime = now;
+		gettimeofday(&tv, NULL);
+		now = tv.tv_sec;
 
-	for (i = 0; i < shm->nr_childs; i++) {
-		pid = shm->pids[i];
+		for (i = 0; i < shm->nr_childs; i++) {
+			pid = shm->pids[i];
 
-		if ((pid == 0) || (pid == -1))
-			continue;
+			if ((pid == 0) || (pid == -1))
+				continue;
 
-		old = shm->tv[i].tv_sec;
+			old = shm->tv[i].tv_sec;
 
-		if (old == 0)
-			continue;
+			if (old == 0)
+				continue;
 
-		/* if we wrapped, just reset it, we'll pick it up next time around. */
-		if (old > now) {
-			shm->tv[i].tv_sec = now;
-			continue;
+			/* if we wrapped, just reset it, we'll pick it up next time around. */
+			if (old > now) {
+				shm->tv[i].tv_sec = now;
+				continue;
+			}
+
+			diff = now - old;
+
+			/* if we're way off, we're comparing garbage. Reset it. */
+			if (diff > 1000) {
+				printf("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
+				shm->tv[i].tv_sec = now;
+				continue;
+			}
+			if (diff > 3)
+				printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
+
+			if (diff > 30) {
+				output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
+					pid, old, now, diff);
+				kill(pid, SIGKILL);
+				reap_child(pid);
+			}
 		}
 
-		diff = now - old;
-
-		/* if we're way off, we're comparing garbage. Reset it. */
-		if (diff > 1000) {
-			printf("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
-			shm->tv[i].tv_sec = now;
-			continue;
+		/* Only check taint if it was zero on startup */
+		if (do_check_tainted == 0) {
+			if (check_tainted() != 0) {
+				output("kernel became tainted!\n");
+				exit_now = TRUE;
+			}
 		}
-		if (diff > 3)
-			printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
 
-		if (diff > 30) {
-			output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
-				pid, old, now, diff);
-			kill(pid, SIGKILL);
-			reap_child(pid);
+		if (syscallcount && (shm->execcount >= syscallcount))
+			exit_now = TRUE;
+
+		if (shm->execcount % 1000 == 0)
+			synclogs();
+
+		if (quiet && (shm->execcount > 1)) {
+			if (shm->execcount != lastcount)
+				printf("%ld iterations.\n", shm->execcount);
+			lastcount = shm->execcount;
 		}
+
+		sleep(1);
 	}
+	printf("Watchdog thread exitting\n");
 }
 
 
 void main_loop()
 {
+	pid_t watchdogpid;
+
 	if (!shm->regenerate)
 		regenerate();
 
 	if (do_specific_syscall == 1)
 		regenerate_random_page();
 
-	while (1) {
+	watchdogpid = fork();
+	if (watchdogpid == 0)
+		watchdog();
+	else
+		printf("Started watchdog thread %d\n", watchdogpid);
+
+	while (exit_now == FALSE) {
 		fork_children();
 		handle_children();
-
-		if (debug == TRUE)
-			watchdog();
-
-		/* Only check taint if it was zero on startup */
-		if (do_check_tainted == 0) {
-			if (check_tainted() != 0) {
-				output("kernel became tainted!\n");
-				exit(EXIT_FAILURE);
-			}
-		}
-
-		if (syscallcount && (shm->execcount >= syscallcount))
-			exit(EXIT_SUCCESS);
-
-		if (shm->execcount % 1000 == 0)
-			synclogs();
 	}
 }

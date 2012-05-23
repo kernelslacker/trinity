@@ -53,6 +53,7 @@ unsigned char monochrome = 0;
 static unsigned char dangerous = 0;
 unsigned char logging = 1;
 unsigned char extrafork = 0;
+unsigned char exit_now = FALSE;
 
 static unsigned char desired_group = GROUP_NONE;
 
