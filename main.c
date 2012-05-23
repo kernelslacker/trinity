@@ -23,7 +23,7 @@ void syscall_list()
 		for (i=0; i < max_nr_32bit_syscalls; i++)
 			 printf("%u: %s\n", i, syscalls_32bit[i].entry->name);
 
-		printf("\n64bit:\n");
+		printf("64bit:\n");
 		for (i=0; i < max_nr_64bit_syscalls; i++)
 			 printf("%u: %s\n", i, syscalls_64bit[i].entry->name);
 	} else {
