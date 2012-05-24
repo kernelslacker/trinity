@@ -216,6 +216,9 @@ retry:
 	if (pid == parentpid)
 		goto retry;
 
+	if (pid == shm->watchdog_pid)
+		goto retry;
+
 	return pid;
 }
 
