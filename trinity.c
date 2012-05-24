@@ -701,10 +701,7 @@ int main(int argc, char* argv[])
 
 	main_loop();
 
-	while (shm->watchdog_pid != 0) {
-		printf("[%d] Waiting for watchdog %d to exit\n", getpid(), shm->watchdog_pid);
-		sleep(1);
-	}
+	wait_for_watchdog_to_exit();
 
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		shm->execcount - 1, shm->retries, shm->successes, shm->failures);

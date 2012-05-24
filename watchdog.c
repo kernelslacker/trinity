@@ -7,11 +7,37 @@
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include "trinity.h"
 #include "shm.h"
 #include "files.h"
 #include "syscall.h"
+
+void wait_for_watchdog_to_exit(void)
+{
+	int ret, status;
+
+	printf("[%d] Waiting for watchdog (%d) to exit.\n", getpid(), shm->watchdog_pid);
+
+	while (shm->watchdog_pid != 0) {
+
+		ret = waitpid(shm->watchdog_pid, &status, 0);
+		switch (ret) {
+		case 0:
+			break;
+		case -1:
+			return;
+		default:
+			if (WIFEXITED(status)) {
+				if (ret == shm->watchdog_pid)
+					return;
+			}
+			break;
+		}
+		sleep(1);
+	}
+}
 
 static void check_children(void)
 {
