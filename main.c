@@ -81,6 +81,7 @@ int find_pid_slot(pid_t mypid)
 static void fork_children()
 {
 	int pidslot;
+	static char childname[17];
 
 	/* Generate children*/
 
@@ -97,12 +98,16 @@ static void fork_children()
 			printf("[%d] ## Pid map was full!\n", getpid());
 			exit(EXIT_FAILURE);
 		}
+
 		(void)alarm(0);
 		pid = fork();
 		if (pid != 0)
 			shm->pids[pidslot] = pid;
 		else {
 			int ret = 0;
+			memset(childname, 0, sizeof(childname));
+			sprintf(childname, "trinity-child%d", pidslot);
+			prctl(PR_SET_NAME, (unsigned long) &childname);
 
 			/* Wait for parent to set our pidslot */
 			while (shm->pids[pidslot] != getpid());
