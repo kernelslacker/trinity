@@ -181,11 +181,7 @@ retry:
 
 	reenable_coredumps();
 
-	/* Let the watchdog process die before the children. */
-	while (shm->watchdog_pid != 0) {
-		printf("Waiting for watchdog at %d to die\n", shm->watchdog_pid);
-		sleep(1);
-	}
+	wait_for_watchdog_to_exit();
 
 	return ret;
 }
