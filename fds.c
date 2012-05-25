@@ -13,10 +13,10 @@ unsigned int fds_left_to_create = MAX_FDS;
 
 void open_pipes(void)
 {
-	int pipes[2];
+	int pipes[MAX_PIPE_FDS * 2];
 	unsigned int i;
 
-	for (i = 0; i < MAX_PIPE_FDS; i++) {
+	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
 		if (pipe(pipes) < 0) {
 			perror("pipe fail.\n");
 			exit(EXIT_FAILURE);
