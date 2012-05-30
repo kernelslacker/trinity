@@ -62,6 +62,14 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
   https://lkml.org/lkml/2011/4/15/272
   https://lkml.org/lkml/2012/2/16/498
 
+* 05f144a0d5c2207a0349348127f996e104ad7404
+* 3.4-rc7: kernel BUG at mm/mempolicy.c:1564!
+  3.4-rc7 numa_policy slab poison.
+  https://lkml.org/lkml/2012/5/18/399
+
+* 06f97f6d58a1704681725f96117a152ee3e8c432
+  vma_resv_map bug.
+
 ------------------------------------------------------------------
 Still unfixed:
 
@@ -230,16 +238,21 @@ Still unfixed:
 * vfs: INFO: possible circular locking dependency detected
   https://lkml.org/lkml/2012/5/9/349
 
-* fs, namespaces: BUG: unable to handle kernel NULL pointer dereference at 0000000000000020
-
-* 3.4-rc7 numa_policy slab poison.
-  https://lkml.org/lkml/2012/5/18/399
-
 * [PATCH] cred: use correct cred accessor with regards to rcu read lock
   https://lkml.org/lkml/2012/5/17/376
 
-* 3.4-rc7: kernel BUG at mm/mempolicy.c:1564!
-
 * GPF in numa_vma_unlink
+  http://www.spinics.net/lists/kernel/msg1346336.html
 
+* [PATCH] Bluetooth: Really fix registering hci with duplicate name
+  https://lkml.org/lkml/2012/5/26/115
+
+* [PATCH] USB: Staging: media: lirc: initialize spinlocks before usage
+  https://lkml.org/lkml/2012/5/26/117
+
+* mm: kernel BUG at mm/memory.c:1230
+  https://lkml.org/lkml/2012/5/24/232
+
+* 3.4+ tty lockdep trace
+  https://lkml.org/lkml/2012/5/24/108
 
