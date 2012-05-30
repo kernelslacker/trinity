@@ -1,74 +1,72 @@
 Bugs found so far using this tool. (git hashes from linux-2.6.git)
 Interestingly, trinity triggers quite a few bugs not directly related to syscalls.
 
-* ed3aada1bf34c5a9e98af167f125f8a740fc726a
-  world writable acpi file in sysfs
+* world writable acpi file in sysfs
+  ed3aada1bf34c5a9e98af167f125f8a740fc726a
 
-* 52ca0e84b05595cf74f1ff772b3f9807256b1b27
-  Unnecessary noisy backtrace spew
+* Unnecessary noisy backtrace spew
+  52ca0e84b05595cf74f1ff772b3f9807256b1b27
 
-* 63bfd7384b119409685a17d5c58f0b56e5dc03da
-  mprotect/perf oops. (CVE-2010-4169)
+* mprotect/perf oops. (CVE-2010-4169)
+  63bfd7384b119409685a17d5c58f0b56e5dc03da
 
-* c66fb347946ebdd5b10908866ecc9fa05ee2cf3d
+* pipe_fcntl oopses when called on non-pipes. (CVE-2010-4256)
+  c66fb347946ebdd5b10908866ecc9fa05ee2cf3d
   71993e62a47dabddf10302807d6aa260455503f4
   72083646528d4887b920deb71b37e09bc7d227bb
-  pipe_fcntl oopses when called on non-pipes. (CVE-2010-4256)
 
-* 4352d9d44b935e4d000be6ec89ddb55c2bf35f24
-  ntp: fix non privileged system time shifting
+* ntp: fix non privileged system time shifting
+  4352d9d44b935e4d000be6ec89ddb55c2bf35f24
 
-* c100c8f4c3c6f2a407bdbaaad2c4f1062e6a473a
-  appletalk: Fix OOPS in atalk_release().
+* appletalk: Fix OOPS in atalk_release().
+  c100c8f4c3c6f2a407bdbaaad2c4f1062e6a473a
 
-* a5660b41af6a28f8004e70eb261e1202ad55c5e3
-  tty: fix endless work loop when the buffer fills up
+* tty: fix endless work loop when the buffer fills up
+  a5660b41af6a28f8004e70eb261e1202ad55c5e3
 
-* a84b50ceb7d640437d0dc28a2bef0d0de054de89
-  sctp spew on allocation failure.
+* sctp spew on allocation failure.
+  a84b50ceb7d640437d0dc28a2bef0d0de054de89
 
-* bfac3693c426d280b026f6a1b77dc2294ea43fea
-  Assorted debug spew from ieee802154 sendmsg
+* Assorted debug spew from ieee802154 sendmsg
+  bfac3693c426d280b026f6a1b77dc2294ea43fea
 
-* 020318d0d2af51e0fd59ba654ede9b2171558720
-  broken locking in irda
+* broken locking in irda
+  020318d0d2af51e0fd59ba654ede9b2171558720
 
-* c6914a6f261aca0c9f715f883a353ae7ff51fe83
-  CAN bcm_release NULL sock-> sk
-  CVE-2011-1598
+* CAN bcm_release NULL sock-> sk  (CVE-2011-1598)
+  c6914a6f261aca0c9f715f883a353ae7ff51fe83
 
-* 10022a6c66e199d8f61d9044543f38785713cbbd
-  CAN raw_release NULL sock-> sk
-  CVE-2011-1748
+* CAN raw_release NULL sock-> sk (CVE-2011-1748)
+  10022a6c66e199d8f61d9044543f38785713cbbd
 
-* 79b3891587741dfac72cdfead1f2764b56a567b0
-  irias_seq_show recursive locking
+* irias_seq_show recursive locking
+  79b3891587741dfac72cdfead1f2764b56a567b0
 
-* d232b8dded624af3e346b13807a591c63b601c44
-  ipq_rcv_skb page allocation order >= MAX_ORDER
+* ipq_rcv_skb page allocation order >= MAX_ORDER
   http://permalink.gmane.org/gmane.linux.network/192892
+  d232b8dded624af3e346b13807a591c63b601c44
 
-* ed6e4ef836d425bc35e33bf20fcec95e68203afa
-  ip_rt_bug: 0.0.0.0 -> 255.255.255.255
+* ip_rt_bug: 0.0.0.0 -> 255.255.255.255
+  ed6e4ef836d425bc35e33bf20fcec95e68203afa
 
-* f9fab10bbd768b0e5254e53a4a8477a94bfc4b96
-  hung_task: fix false positive during vfork
+* hung_task: fix false positive during vfork
+  f9fab10bbd768b0e5254e53a4a8477a94bfc4b96
 
-* e6780f7243eddb133cc20ec37fa69317c218b709
-  futex: Fix uninterruptible loop due to gate_area
+* futex: Fix uninterruptible loop due to gate_area
+  e6780f7243eddb133cc20ec37fa69317c218b709
 
-* 65ed76010dfed3cb75c863c9052c367a1bacf80a
-  hugetlbfs lockdep spew.
+* hugetlbfs lockdep spew.
   https://lkml.org/lkml/2011/4/15/272
   https://lkml.org/lkml/2012/2/16/498
+  65ed76010dfed3cb75c863c9052c367a1bacf80a
 
-* 05f144a0d5c2207a0349348127f996e104ad7404
 * 3.4-rc7: kernel BUG at mm/mempolicy.c:1564!
   3.4-rc7 numa_policy slab poison.
   https://lkml.org/lkml/2012/5/18/399
+  05f144a0d5c2207a0349348127f996e104ad7404
 
-* 06f97f6d58a1704681725f96117a152ee3e8c432
-  vma_resv_map bug.
+* vma_resv_map bug.
+  06f97f6d58a1704681725f96117a152ee3e8c432
 
 ------------------------------------------------------------------
 Still unfixed:
