@@ -333,7 +333,7 @@ static void parse_args(int argc, char *argv[])
 					printf("Couldn't find %s in 32-bit syscall table.\n", optarg);
 				else {
 					printf("[%d] Marking 32-bit syscall %d (%s) as AVOID\n", getpid(), i, optarg);
-						syscalls_64bit[i].entry->flags |= AVOID_SYSCALL;
+						syscalls_32bit[i].entry->flags |= AVOID_SYSCALL;
 				}
 			}
 		}
