@@ -391,3 +391,4 @@ extern struct syscall syscall_sendmmsg;
 extern struct syscall syscall_setns;
 extern struct syscall syscall_process_vm_readv;
 extern struct syscall syscall_process_vm_writev;
+extern struct syscall syscall_kcmp;
