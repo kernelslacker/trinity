@@ -5,7 +5,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-#define NR_I386_SYSCALLS 349
+#define NR_I386_SYSCALLS 350
 
 struct syscalltable syscalls_i386[NR_I386_SYSCALLS + 1] = {
 	{ .entry = &syscall_restart_syscall },
@@ -357,5 +357,6 @@ struct syscalltable syscalls_i386[NR_I386_SYSCALLS + 1] = {
 	{ .entry = &syscall_setns },
 	{ .entry = &syscall_process_vm_readv },
 	{ .entry = &syscall_process_vm_writev },
+	{ .entry = &syscall_kcmp },
 	{ .entry = NULL }
 };
