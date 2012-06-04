@@ -13,4 +13,5 @@ struct syscall syscall_oldreaddir = {
 	.arg2name = "dirent",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "count",
+	.arg3type = ARG_LEN,
 };
