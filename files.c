@@ -50,6 +50,7 @@ static int add_fd(unsigned int chance, char *pathname, int flags, unsigned char 
 	DIR *d = NULL;
 
 	if ((unsigned int)(rand() % FD_LIKELYHOOD) < chance) {
+		/* Add it to the list of filenames */
 		if (pathname_idx != NR_PATHNAMES) {
 
 			if (pathnames[pathname_idx] != NULL)
@@ -57,9 +58,8 @@ static int add_fd(unsigned int chance, char *pathname, int flags, unsigned char 
 
 			pathnames[pathname_idx++] = strdup(pathname);
 		}
-	}
 
-	if ((unsigned int)(rand() % FD_LIKELYHOOD) < chance) {
+		/* Add it to the list of fd's */
 		if (is_dir == TRUE) {
 			d = opendir(pathname);
 			if (d != NULL)
