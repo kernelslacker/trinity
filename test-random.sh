@@ -20,5 +20,6 @@ do
   done
   wait
   cd ..
+  chmod 755 ../tmp
   rm -rf tmp.$RND
 done
