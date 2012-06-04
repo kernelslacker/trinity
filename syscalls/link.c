@@ -8,7 +8,7 @@ struct syscall syscall_link = {
 	.name = "link",
 	.num_args = 2,
 	.arg1name = "oldname",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 	.arg2name = "newname",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_PATHNAME,
 };
