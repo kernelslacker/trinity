@@ -229,9 +229,6 @@ void main_loop()
 	if (!shm->regenerate)
 		regenerate();
 
-	if (do_specific_syscall == 1)
-		regenerate_random_page();
-
 	pid = fork();
 	if (pid == 0)
 		watchdog();	// Never returns.

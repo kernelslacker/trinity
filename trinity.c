@@ -40,12 +40,12 @@ unsigned long long syscallcount = 0;
 
 unsigned char debug = 0;
 
-long specific_syscall32 = 0;
-long specific_syscall64 = 0;
+static unsigned char do_specific_syscall = FALSE;
+static unsigned char do_exclude_syscall = FALSE;
+
 unsigned int specific_proto = 0;
 unsigned int page_size;
 unsigned char dopause = 0;
-unsigned char do_specific_syscall = 0;
 unsigned char do_specific_proto = 0;
 unsigned char show_syscall_list = 0;
 unsigned char quiet = 0;
@@ -69,7 +69,6 @@ char *page_0xff;
 char *page_rand;
 char *page_allocs;
 
-static char *specific_syscall_optarg;
 static char *specific_proto_optarg;
 
 char *victim_path;
@@ -194,6 +193,42 @@ static int search_syscall_table(struct syscalltable *table, unsigned int nr_sysc
 	return -1;
 }
 
+static int validate_specific_syscall(struct syscalltable *table, int call)
+{
+	if (call != -1) {
+		if (table[call].entry->flags & AVOID_SYSCALL) {
+			printf("%s is marked as AVOID. Skipping\n", table[call].entry->name);
+			return FALSE;
+		}
+
+		if (table[call].entry->flags & NI_SYSCALL) {
+			printf("%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
+			return FALSE;
+		}
+		if (table[call].entry->num_args == 0) {
+			printf("%s has no arguments. Skipping\n", table[call].entry->name);
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+static void mark_all_syscalls_active(void)
+{
+	unsigned int i;
+
+	if (biarch == TRUE) {
+		for (i = 0; i < max_nr_32bit_syscalls; i++)
+			syscalls_32bit[i].entry->flags |= ACTIVE;
+		for (i = 0; i < max_nr_64bit_syscalls; i++)
+			syscalls_64bit[i].entry->flags |= ACTIVE;
+	} else {
+		for (i = 0; i < max_nr_syscalls; i++)
+			syscalls[i].entry->flags |= ACTIVE;
+	}
+}
+
+
 static void usage(void)
 {
 	fprintf(stderr, "%s\n", progname);
@@ -214,9 +249,54 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
+static void toggle_syscall(char *arg, unsigned char state)
+{
+	int specific_syscall32 = 0;
+	int specific_syscall64 = 0;
+	int ret;
+
+	if (biarch == TRUE)
+		specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
+	else
+		specific_syscall64 = -1;
+
+	/* If we found a 64bit syscall, validate it. */
+	if (specific_syscall64 != -1) {
+		ret = validate_specific_syscall(syscalls_64bit, specific_syscall64);
+		if (ret == FALSE)
+			exit(EXIT_FAILURE);
+		if (state == TRUE) {
+			printf("[%d] Marking 64-bit syscall %d (%s) as enabled\n", getpid(), specific_syscall64, arg);
+			syscalls_64bit[specific_syscall64].entry->flags |= ACTIVE;
+		} else {
+			printf("[%d] Marking 64-bit syscall %d (%s) as disabled\n", getpid(), specific_syscall64, arg);
+			syscalls_64bit[specific_syscall64].entry->flags &= ACTIVE;
+		}
+	}
+
+	/* Search for and validate 32bit */
+	specific_syscall32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
+	if (specific_syscall32 != -1) {
+		ret = validate_specific_syscall(syscalls_32bit, specific_syscall32);
+		if (ret == FALSE)
+			exit(EXIT_FAILURE);
+		if (state == TRUE) {
+			printf("[%d] Marking 32-bit syscall %d (%s) as enabled\n", getpid(), specific_syscall32, arg);
+			syscalls_32bit[specific_syscall32].entry->flags |= ACTIVE;
+		} else {
+			printf("[%d] Marking 32-bit syscall %d (%s) as disabled\n", getpid(), specific_syscall32, arg);
+			syscalls_32bit[specific_syscall32].entry->flags &= ACTIVE;
+		}
+	}
+
+	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
+		printf("No idea what syscall (%s) is.\n", arg);
+		exit(EXIT_FAILURE);
+	}
+}
+
 static void parse_args(int argc, char *argv[])
 {
-	int i;
 	int opt;
 
 	struct option longopts[] = {
@@ -246,8 +326,10 @@ static void parse_args(int argc, char *argv[])
 			return;
 
 		case 'c':
-			do_specific_syscall = 1;
-			specific_syscall_optarg = optarg;
+			/* syscalls are all disabled at this point. enable the syscall we care about. */
+			do_specific_syscall = TRUE;
+			toggle_syscall(optarg, TRUE);
+			printf("Enabling syscall %s\n", optarg);
 			break;
 
 		case 'd':
@@ -319,23 +401,14 @@ static void parse_args(int argc, char *argv[])
 			break;
 
 		case 'x':
-			if (biarch == TRUE) {
-				i = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, optarg);
-				if (i != -1) {
-					printf("[%d] Marking 64-bit syscall %d (%s) as AVOID\n", getpid(), i, optarg);
-						syscalls_64bit[i].entry->flags |= AVOID_SYSCALL;
-				} else
-					printf("Couldn't find %s in 64-bit syscall table.\n", optarg);
+			/* First time we see a '-x', set all syscalls to enabled, then selectively disable. */
+			if (do_exclude_syscall == FALSE)
+				mark_all_syscalls_active();
 
-				/* 32bit only, also fall through from above 64bit */
-				i = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, optarg);
-				if (i == -1)
-					printf("Couldn't find %s in 32-bit syscall table.\n", optarg);
-				else {
-					printf("[%d] Marking 32-bit syscall %d (%s) as AVOID\n", getpid(), i, optarg);
-						syscalls_32bit[i].entry->flags |= AVOID_SYSCALL;
-				}
-			}
+			do_exclude_syscall = TRUE;
+			toggle_syscall(optarg, FALSE);
+
+			printf("Disabling syscall %s\n", optarg);
 		}
 	}
 
@@ -370,55 +443,6 @@ static void mask_signals(void)
 	(void)signal(SIGFPE, SIG_IGN);
 	if (debug == TRUE)
 		(void)signal(SIGSEGV, SIG_DFL);
-}
-
-static int find_specific_syscall(char *arg)
-{
-	/* when biarch, search first in the 64bit table too. */
-	if (biarch == TRUE)
-		specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
-	else
-		specific_syscall64 = -1;
-
-	/* 32bit only, also fall through from above 64bit failure.*/
-	specific_syscall32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
-
-	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
-		printf("No idea what syscall (%s) is.\n", arg);
-		return FALSE;
-	}
-	if ((specific_syscall64 != -1) && (specific_syscall32 != -1)) {
-		printf("Found (64bit:%ld 32bit:%ld)\n", specific_syscall64, specific_syscall32);
-		return TRUE;
-	}
-
-	if (specific_syscall64 == -1)
-		printf("Couldn't find %s in 64-bit table, but found in 32bit at %ld.\n", arg, specific_syscall32);
-
-	if (specific_syscall32 == -1)
-		printf("Couldn't find %s in 32-bit table, but found in 64bit at %ld.\n", arg, specific_syscall64);
-
-	return TRUE;
-}
-
-static int validate_specific_syscall(struct syscalltable *table, int call)
-{
-	if (call != -1) {
-		if (table[call].entry->flags & AVOID_SYSCALL) {
-			printf("%s is marked as AVOID. Skipping\n", table[call].entry->name);
-			return FALSE;
-		}
-
-		if (table[call].entry->flags & NI_SYSCALL) {
-			printf("%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
-			return FALSE;
-		}
-		if (table[call].entry->num_args == 0) {
-			printf("%s has no arguments. Skipping\n", table[call].entry->name);
-			return FALSE;
-		}
-	}
-	return TRUE;
 }
 
 
@@ -585,6 +609,10 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
+	/* If we didn't pass -c or -x, mark all syscalls active. */
+	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE))
+		mark_all_syscalls_active();
+
 	if (getuid() == 0) {
 		if (dangerous == 1) {
 			printf("DANGER: RUNNING AS ROOT.\n");
@@ -643,33 +671,6 @@ int main(int argc, char* argv[])
 			output("Fuzzing %d syscalls.\n", max_nr_syscalls);
 	}
 
-	if (do_specific_syscall == TRUE) {
-		i = find_specific_syscall(specific_syscall_optarg);
-		if (i == TRUE) {
-			if (biarch == TRUE) {
-				if (specific_syscall64 != -1) {
-					ret = validate_specific_syscall(syscalls_64bit, specific_syscall64);
-					if (ret == FALSE)
-						goto cleanup;
-				}
-				if (specific_syscall32 != -1) {
-					ret = validate_specific_syscall(syscalls_32bit, specific_syscall32);
-					if (ret == FALSE)
-						goto cleanup;
-				}
-			} else {
-				if (specific_syscall32 != -1) {
-					ret = validate_specific_syscall(syscalls_32bit, specific_syscall32);
-					if (ret == FALSE)
-						goto cleanup;
-				}
-			}
-
-			printf("Fuzzing specific syscall %s\n", specific_syscall_optarg);
-		} else
-			printf("Couldn't find syscall %s\n", specific_syscall_optarg);
-	}
-
 	if (do_specific_proto == 1)
 		find_specific_proto();
 
@@ -708,7 +709,6 @@ int main(int argc, char* argv[])
 
 	ret = EXIT_SUCCESS;
 
-cleanup:
 
 	destroy_maps();
 
