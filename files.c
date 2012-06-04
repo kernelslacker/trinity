@@ -212,31 +212,15 @@ openit:
 
 void open_files()
 {
-	int fd;
-
 	const char dir1[]="/";
 	const char dir2[]=".";
 	const char dir3[]="..";
 
 	while (fds_left_to_create > 0) {
 
-		fd = add_fd(-1, dir1, O_RDONLY, TRUE);
-		if (fd < 0) {
-			perror("fd1");
-			exit(EXIT_FAILURE);
-		}
-
-		fd = add_fd(-1, dir2, O_RDWR, TRUE);
-				if (fd < 0) {
-			perror("fd2");
-			exit(EXIT_FAILURE);
-		}
-
-		fd = add_fd(-1, dir3, O_RDWR, TRUE);
-		if (fd < 0) {
-			perror("fd3");
-			exit(EXIT_FAILURE);
-		}
+		(void)add_fd(-1, dir1, O_RDONLY, TRUE);
+		(void)add_fd(-1, dir2, O_RDWR, TRUE);
+		(void)add_fd(-1, dir3, O_RDWR, TRUE);
 
 		if (victim_path != NULL)
 			open_fds(victim_path, TRUE);
