@@ -43,4 +43,5 @@ struct syscall syscall_write = {
 	.arg2name = "buf",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "count",
+	.arg3type = ARG_LEN,
 };

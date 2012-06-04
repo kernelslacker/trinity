@@ -29,5 +29,6 @@ struct syscall syscall_pread64 = {
 	.arg2name = "buf",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "count",
+	.arg3type = ARG_LEN,
 	.arg4name = "pos",
 };
