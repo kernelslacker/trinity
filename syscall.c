@@ -125,7 +125,6 @@ long mkcall(unsigned int call)
 	sigsetjmp(ret_jump, 1);
 
 	sptr = string;
-	memset(string, 0, sizeof(string));
 
 	sptr += sprintf(sptr, "[%d] ", getpid());
 	if (shm->do32bit == TRUE)
@@ -209,6 +208,7 @@ long mkcall(unsigned int call)
 args_done:
 	WHITE
 	sptr += sprintf(sptr, ") ");
+	*sptr = '\0';
 
 	output("%s", string);
 
@@ -224,7 +224,6 @@ args_done:
 	ret = do_syscall(syscalls[call].entry->num_args, syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
 
 	sptr = string;
-	memset(string, 0, sizeof(string));
 
 	if (ret < 0) {
 		RED
@@ -239,6 +238,8 @@ args_done:
 	}
 	sptr += sprintf(sptr, " [T:%ld F:%ld S:%ld]", shm->execcount, shm->failures, shm->successes);
 	sptr += sprintf(sptr, "\n");
+
+	*sptr = '\0';
 
 	output("%s", string);
 	sptr = string;
