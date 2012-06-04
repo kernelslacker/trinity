@@ -95,5 +95,6 @@ extern unsigned int max_nr_64bit_syscalls;
 #define AVOID_SYSCALL (1<<1)
 #define NI_SYSCALL (1<<2)
 #define BORING (1<<3)
+#define ACTIVE (1<<4)
 
 #endif	/* _TRINITY_SYSCALL_H */
