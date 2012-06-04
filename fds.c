@@ -31,7 +31,7 @@ void open_pipes(void)
 
 void setup_fds(void)
 {
-	//open_pipes();
+	open_pipes();
 	open_sockets();
 	open_files();
 }
