@@ -270,7 +270,7 @@ static void toggle_syscall(char *arg, unsigned char state)
 			syscalls_64bit[specific_syscall64].entry->flags |= ACTIVE;
 		} else {
 			printf("[%d] Marking 64-bit syscall %d (%s) as disabled\n", getpid(), specific_syscall64, arg);
-			syscalls_64bit[specific_syscall64].entry->flags &= ACTIVE;
+			syscalls_64bit[specific_syscall64].entry->flags &= ~ACTIVE;
 		}
 	}
 
@@ -285,7 +285,7 @@ static void toggle_syscall(char *arg, unsigned char state)
 			syscalls_32bit[specific_syscall32].entry->flags |= ACTIVE;
 		} else {
 			printf("[%d] Marking 32-bit syscall %d (%s) as disabled\n", getpid(), specific_syscall32, arg);
-			syscalls_32bit[specific_syscall32].entry->flags &= ACTIVE;
+			syscalls_32bit[specific_syscall32].entry->flags &= ~ACTIVE;
 		}
 	}
 
@@ -294,6 +294,37 @@ static void toggle_syscall(char *arg, unsigned char state)
 		exit(EXIT_FAILURE);
 	}
 }
+
+void dump_syscall_status(void)
+{
+	unsigned int i;
+
+	if (biarch == TRUE) {
+		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+			printf("32bit %s : ", syscalls_32bit[i].entry->name);
+			if (syscalls_32bit[i].entry->flags & ACTIVE)
+				printf("Enabled\n");
+			else
+				printf("Disabled\n");
+		}
+		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+			printf("64bit %s : ", syscalls_64bit[i].entry->name);
+			if (syscalls_64bit[i].entry->flags & ACTIVE)
+				printf("Enabled\n");
+			else
+				printf("Disabled\n");
+		}
+	} else {
+		for (i = 0; i < max_nr_syscalls; i++) {
+			printf("%s : ", syscalls[i].entry->name);
+			if (syscalls[i].entry->flags & ACTIVE)
+				printf("Enabled\n");
+			else
+				printf("Disabled\n");
+		}
+	}
+}
+
 
 static void parse_args(int argc, char *argv[])
 {
@@ -612,6 +643,9 @@ int main(int argc, char* argv[])
 	/* If we didn't pass -c or -x, mark all syscalls active. */
 	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE))
 		mark_all_syscalls_active();
+
+	if (debug == TRUE)
+		dump_syscall_status();
 
 	if (getuid() == 0) {
 		if (dangerous == 1) {
