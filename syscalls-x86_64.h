@@ -8,7 +8,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-#define NR_X86_64_SYSCALLS 312	/* syscalls numbered from 0 */
+#define NR_X86_64_SYSCALLS 313	/* syscalls numbered from 0 */
 
 struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS + 1] = {
 	{ .entry = &syscall_read },
@@ -323,6 +323,7 @@ struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS + 1] = {
 	{ .entry = &syscall_getcpu },
 	{ .entry = &syscall_process_vm_readv },
 	{ .entry = &syscall_process_vm_writev },
+	{ .entry = &syscall_kcmp },
 	{ .entry = NULL }
 };
 
