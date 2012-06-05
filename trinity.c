@@ -225,12 +225,13 @@ int main(int argc, char* argv[])
 	if (create_shm())
 		exit(EXIT_FAILURE);
 
-	if (desired_group != GROUP_NONE)
+	if (desired_group != GROUP_NONE) {
 		ret = setup_syscall_group(desired_group);
 		if (ret == FALSE) {
 			ret = EXIT_FAILURE;
 			goto cleanup_shm;
 		}
+	}
 
 	if (show_syscall_list == TRUE) {
 		dump_syscall_tables();
