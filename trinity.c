@@ -225,6 +225,13 @@ int main(int argc, char* argv[])
 	if (create_shm())
 		exit(EXIT_FAILURE);
 
+	if (desired_group != GROUP_NONE)
+		ret = setup_syscall_group(desired_group);
+		if (ret == FALSE) {
+			ret = EXIT_FAILURE;
+			goto cleanup_shm;
+		}
+
 	if (show_syscall_list == TRUE) {
 		dump_syscall_tables();
 		goto cleanup_shm;
@@ -233,27 +240,6 @@ int main(int argc, char* argv[])
 	if (logging != 0)
 		open_logfiles();
 
-	if (desired_group == GROUP_VM) {
-		struct syscalltable *newsyscalls;
-		int count = 0, j = 0;
-
-		for (i = 0; i < max_nr_syscalls; i++) {
-			if (syscalls[i].entry->group == GROUP_VM)
-				count++;
-		}
-
-		newsyscalls = malloc(count * sizeof(struct syscalltable));
-		if (newsyscalls == NULL)
-			exit(EXIT_FAILURE);
-
-		for (i = 0; i < max_nr_syscalls; i++) {
-			if (syscalls[i].entry->group == GROUP_VM)
-				newsyscalls[j++].entry = syscalls[i].entry;
-		}
-
-		max_nr_syscalls = count;
-		syscalls = newsyscalls;
-	}
 
 	if (!do_specific_syscall) {
 		if (biarch == TRUE)

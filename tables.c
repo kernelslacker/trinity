@@ -185,3 +185,76 @@ void setup_syscall_tables(void)
 }
 
 
+int setup_syscall_group(unsigned int group)
+{
+	struct syscalltable *newsyscalls;
+	struct syscalltable *newsyscalls32;
+	struct syscalltable *newsyscalls64;
+
+	unsigned int i;
+	int count = 0, j = 0;
+
+	if (biarch == TRUE) {
+		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+			if (syscalls_32bit[i].entry->group == group)
+				count++;
+		}
+
+		newsyscalls32 = malloc(count * sizeof(struct syscalltable));
+		if (newsyscalls32 == NULL)
+			return FALSE;
+
+		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+			if (syscalls_32bit[i].entry->group == group)
+				newsyscalls32[j++].entry = syscalls_32bit[i].entry;
+		}
+
+		max_nr_32bit_syscalls = count;
+		syscalls_32bit = newsyscalls32;
+
+		printf("Found %d 32 bit syscalls in group\n", max_nr_32bit_syscalls);
+
+		/* now the 64 bit table*/
+		count = 0, j = 0;
+
+		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+			if (syscalls_64bit[i].entry->group == group)
+				count++;
+		}
+
+		newsyscalls64 = malloc(count * sizeof(struct syscalltable));
+		if (newsyscalls64 == NULL)
+			return FALSE;
+
+		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+			if (syscalls_64bit[i].entry->group == group)
+				newsyscalls64[j++].entry = syscalls_64bit[i].entry;
+		}
+
+		max_nr_64bit_syscalls = count;
+		syscalls_64bit = newsyscalls64;
+		printf("Found %d 64 bit syscalls in group\n", max_nr_32bit_syscalls);
+
+	} else {
+		for (i = 0; i < max_nr_syscalls; i++) {
+			if (syscalls[i].entry->group == group)
+				count++;
+		}
+
+		newsyscalls = malloc(count * sizeof(struct syscalltable));
+		if (newsyscalls == NULL)
+			exit(EXIT_FAILURE);
+
+		for (i = 0; i < max_nr_syscalls; i++) {
+			if (syscalls[i].entry->group == group)
+				newsyscalls[j++].entry = syscalls[i].entry;
+		}
+
+		max_nr_syscalls = count;
+		syscalls = newsyscalls;
+
+		printf("Found %d syscalls in group\n", max_nr_syscalls);
+	}
+
+	return TRUE;
+}
