@@ -438,8 +438,6 @@ static void parse_args(int argc, char *argv[])
 
 			do_exclude_syscall = TRUE;
 			toggle_syscall(optarg, FALSE);
-
-			printf("Disabling syscall %s\n", optarg);
 		}
 	}
 
