@@ -39,18 +39,19 @@ unsigned long get_interesting_32bit_value()
 
 	} else {
 		/* less common case, go crazy */
-		i = rand() % 9;
+		i = rand() % 10;
 
 		switch (i) {
 		case 0:	return 0x00010000;
-		case 1:	return 0x7fffffff;
-		case 2:	return 0x80000000;
-		case 3:	return 0x80000001;
-		case 4:	return 0x8fffffff;
-		case 5:	return 0xf0000000;
-		case 6:	return 0xff000000;
-		case 7:	return 0xffffff00 | (rand() % 256);
-		case 8:	return 0xffffffff;
+		case 1:	return 0x40000000;
+		case 2:	return 0x7fffffff;
+		case 3:	return 0x80000000;
+		case 4:	return 0x80000001;
+		case 5:	return 0x8fffffff;
+		case 6:	return 0xf0000000;
+		case 7:	return 0xff000000;
+		case 8:	return 0xffffff00 | (rand() % 256);
+		case 9:	return 0xffffffff;
 		default: /* unreachable*/
 			return 0;
 		}
