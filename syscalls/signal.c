@@ -10,4 +10,5 @@ struct syscall syscall_signal = {
 	.arg1name = "sig",
 	.arg2name = "handler",
 	.arg2type = ARG_ADDRESS,
+	.flags = AVOID_SYSCALL,
 };
