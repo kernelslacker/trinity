@@ -103,5 +103,6 @@ int validate_specific_syscall(struct syscalltable *table, int call);
 void mark_all_syscalls_active(void);
 void toggle_syscall(char *arg, unsigned char state);
 void dump_syscall_tables(void);
+int setup_syscall_group(unsigned int desired_group);
 
 #endif	/* _TRINITY_SYSCALL_H */
