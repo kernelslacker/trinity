@@ -238,6 +238,12 @@ int main(int argc, char* argv[])
 		goto cleanup_shm;
 	}
 
+	if (validate_syscall_tables() == FALSE) {
+		printf("No syscalls were enabled!\n");
+		goto cleanup_shm;
+	}
+	printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
+
 	if (logging == TRUE)
 		open_logfiles();
 

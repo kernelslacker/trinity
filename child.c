@@ -126,12 +126,16 @@ int child_process(void)
 	while (shm->exit_now == FALSE) {
 
 		if (biarch == TRUE) {
-			/*
-			 * 10% possibility of a 32bit syscall
-			 */
-			shm->do32bit = FALSE;
-//			if (rand() % 100 < 10)
-//				shm->do32bit = TRUE;
+
+			if ((use_64bit == TRUE) && (use_32bit == TRUE)) {
+				/*
+				 * 10% possibility of a 32bit syscall
+				 */
+				shm->do32bit = FALSE;
+//				if (rand() % 100 < 10)
+//					shm->do32bit = TRUE;
+			}
+
 
 			if (shm->do32bit == FALSE) {
 				syscalls = syscalls_64bit;

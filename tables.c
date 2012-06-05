@@ -22,6 +22,8 @@ unsigned int max_nr_syscalls;
 unsigned int max_nr_32bit_syscalls;
 unsigned int max_nr_64bit_syscalls;
 
+unsigned char use_32bit = FALSE;
+unsigned char use_64bit = FALSE;
 
 int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, char *arg)
 {
@@ -56,6 +58,34 @@ int validate_specific_syscall(struct syscalltable *table, int call)
 		}
 	}
 	return TRUE;
+}
+
+/* Make sure there's at least one syscall enabled. */
+int validate_syscall_tables(void)
+{
+	unsigned int i;
+
+	if (biarch == TRUE) {
+		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+			if (syscalls_32bit[i].entry->flags & ACTIVE) {
+				use_32bit = TRUE;
+				break;
+			}
+		}
+		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+			if (syscalls_64bit[i].entry->flags & ACTIVE) {
+				use_64bit = TRUE;
+				break;
+			}
+		}
+		return (use_32bit | use_64bit);
+
+	} else {
+		for (i = 0; i < max_nr_syscalls; i++)
+			if (syscalls[i].entry->flags & ACTIVE)
+				return TRUE;
+	}
+	return FALSE;
 }
 
 void mark_all_syscalls_active(void)
