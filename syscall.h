@@ -97,4 +97,11 @@ extern unsigned int max_nr_64bit_syscalls;
 #define BORING (1<<3)
 #define ACTIVE (1<<4)
 
+void setup_syscall_tables(void);
+int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, char *arg);
+int validate_specific_syscall(struct syscalltable *table, int call);
+void mark_all_syscalls_active(void);
+void toggle_syscall(char *arg, unsigned char state);
+void dump_syscall_tables(void);
+
 #endif	/* _TRINITY_SYSCALL_H */

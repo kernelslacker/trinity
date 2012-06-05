@@ -23,7 +23,6 @@ extern unsigned char debug;
 
 extern jmp_buf ret_jump;
 
-void syscall_list(void);
 void main_loop(void);
 int child_process(void);
 
