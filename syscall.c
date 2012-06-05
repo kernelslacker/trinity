@@ -212,7 +212,7 @@ args_done:
 
 	output("%s", string);
 
-	if (dopause == 1) {
+	if (dopause == TRUE) {
 		synclogs();
 		sleep(1);
 	}

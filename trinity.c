@@ -206,7 +206,7 @@ int main(int argc, char* argv[])
 		mark_all_syscalls_active();
 
 	if (getuid() == 0) {
-		if (dangerous == 1) {
+		if (dangerous == TRUE) {
 			printf("DANGER: RUNNING AS ROOT.\n");
 			printf("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
 			printf("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
@@ -238,11 +238,11 @@ int main(int argc, char* argv[])
 		goto cleanup_shm;
 	}
 
-	if (logging != 0)
+	if (logging == TRUE)
 		open_logfiles();
 
 
-	if (!do_specific_syscall) {
+	if (do_specific_syscall == FALSE) {
 		if (biarch == TRUE)
 			output("Fuzzing %d 32-bit syscalls & %d 64-bit syscalls.\n",
 				max_nr_32bit_syscalls, max_nr_64bit_syscalls);
@@ -250,7 +250,7 @@ int main(int argc, char* argv[])
 			output("Fuzzing %d syscalls.\n", max_nr_syscalls);
 	}
 
-	if (do_specific_proto == 1)
+	if (do_specific_proto == TRUE)
 		find_specific_proto(specific_proto_optarg);
 
 	page_size = getpagesize();
@@ -269,7 +269,7 @@ int main(int argc, char* argv[])
 
 	if (check_tainted() != 0) {
 		output("Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");
-		do_check_tainted = 1;
+		do_check_tainted = TRUE;
 	}
 
 	/* just in case we're not using the test.sh harness. */
@@ -294,7 +294,7 @@ int main(int argc, char* argv[])
 	for (i = 0; i < socks; i++)
 		close(shm->socket_fds[i]);
 
-	if (logging != 0)
+	if (logging == TRUE)
 		close_logfiles();
 
 cleanup_shm:

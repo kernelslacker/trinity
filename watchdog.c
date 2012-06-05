@@ -103,7 +103,7 @@ void watchdog(void)
 		check_children();
 
 		/* Only check taint if it was zero on startup */
-		if (do_check_tainted == 0) {
+		if (do_check_tainted == FALSE) {
 			if (check_tainted() != 0) {
 				output("kernel became tainted!\n");
 				shm->exit_now = TRUE;

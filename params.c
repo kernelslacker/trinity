@@ -137,7 +137,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'L':
-			show_syscall_list = 1;
+			show_syscall_list = TRUE;
 			break;
 
 		case 'm':
@@ -184,6 +184,7 @@ void parse_args(int argc, char *argv[])
 
 			do_exclude_syscall = TRUE;
 			toggle_syscall(optarg, FALSE);
+			break;
 		}
 	}
 }
