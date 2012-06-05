@@ -175,7 +175,7 @@ void dump_syscall_tables(void)
 		for (i = 0; i < max_nr_64bit_syscalls; i++) {
 			printf("64-bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
 			show_state(syscalls_64bit[i].entry->flags & ACTIVE);
-			if (syscalls_32bit[i].entry->flags & AVOID_SYSCALL)
+			if (syscalls_64bit[i].entry->flags & AVOID_SYSCALL)
 				printf(" AVOID");
 			printf("\n");
 		}
