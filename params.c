@@ -186,7 +186,4 @@ void parse_args(int argc, char *argv[])
 			toggle_syscall(optarg, FALSE);
 		}
 	}
-
-	if (show_syscall_list == 1)
-		return;
 }
