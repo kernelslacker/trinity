@@ -245,8 +245,10 @@ args_done:
 	sptr = string;
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
-	if (ret == -ENOSYS)
+	if ((ret == -1) && (errno == ENOSYS)) {
+		output("%s returned ENOSYS, marking as avoid.\n", syscalls[call].entry->name);
 		syscalls[call].entry->flags |= AVOID_SYSCALL;
+	}
 
 	shm->execcount++;
 
