@@ -69,7 +69,7 @@ static int add_fd(unsigned int chance, const char *pathname, int flags, unsigned
 		}
 
 		if (fd < 0) {
-			printf("Couldn't open %s : %s\n", pathname, strerror(errno));
+			//printf("Couldn't open %s : %s\n", pathname, strerror(errno));
 			return -1;
 		}
 //		printf("Added: %s\n", pathname);
