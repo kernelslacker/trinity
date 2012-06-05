@@ -22,13 +22,16 @@ HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) syscalls/syscalls.h $(patsubst %.
 SYSCALLS	= $(patsubst %.c,%.o,$(wildcard syscalls/*.c))
 IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
 OBJS		= trinity.o \
-			main.o \
-			generic-sanitise.o \
-			files.o sockets.o fds.o \
-			syscall.o \
-			maps.o \
-			log.o \
 			child.o \
+			main.o \
+			fds.o \
+			files.o \
+			generic-sanitise.o \
+			log.o \
+			maps.o \
+			sockets.o \
+			syscall.o \
+			tables.o \
 			watchdog.o \
 			$(SYSCALLS) \
 			$(SANITISE) \
