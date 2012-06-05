@@ -132,15 +132,15 @@ void dump_syscall_tables(void)
 	unsigned int i;
 
 	if (biarch == TRUE) {
-		printf("32bit syscalls: %d\n", max_nr_32bit_syscalls);
-		printf("64bit syscalls: %d\n", max_nr_64bit_syscalls);
+		printf("32-bit syscalls: %d\n", max_nr_32bit_syscalls);
+		printf("64-bit syscalls: %d\n", max_nr_64bit_syscalls);
 
 		for (i = 0; i < max_nr_32bit_syscalls; i++) {
-			printf("32 bit entrypoint %d %s : ", syscalls_32bit[i].entry->number, syscalls_32bit[i].entry->name);
+			printf("32-bit entrypoint %d %s : ", syscalls_32bit[i].entry->number, syscalls_32bit[i].entry->name);
 			show_state(syscalls_32bit[i].entry->flags & ACTIVE);
 		}
 		for (i = 0; i < max_nr_64bit_syscalls; i++) {
-			printf("64 bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
+			printf("64-bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
 			show_state(syscalls_64bit[i].entry->flags & ACTIVE);
 		}
 	} else {
@@ -215,7 +215,7 @@ int setup_syscall_group(unsigned int group)
 		max_nr_32bit_syscalls = count;
 		syscalls_32bit = newsyscalls32;
 
-		printf("Found %d 32 bit syscalls in group\n", max_nr_32bit_syscalls);
+		printf("Found %d 32-bit syscalls in group\n", max_nr_32bit_syscalls);
 
 		/* now the 64 bit table*/
 		count = 0, j = 0;
@@ -236,7 +236,7 @@ int setup_syscall_group(unsigned int group)
 
 		max_nr_64bit_syscalls = count;
 		syscalls_64bit = newsyscalls64;
-		printf("Found %d 64 bit syscalls in group\n", max_nr_32bit_syscalls);
+		printf("Found %d 64-bit syscalls in group\n", max_nr_32bit_syscalls);
 
 	} else {
 		for (i = 0; i < max_nr_syscalls; i++) {
