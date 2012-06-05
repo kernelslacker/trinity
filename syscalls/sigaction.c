@@ -14,4 +14,5 @@ struct syscall syscall_sigaction = {
 	.arg2name = "act",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "oact",
+	.flags = AVOID_SYSCALL,
 };
