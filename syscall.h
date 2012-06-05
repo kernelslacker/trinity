@@ -91,6 +91,9 @@ extern unsigned int max_nr_syscalls;
 extern unsigned int max_nr_32bit_syscalls;
 extern unsigned int max_nr_64bit_syscalls;
 
+extern unsigned char use_32bit;
+extern unsigned char use_64bit;
+
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)
 #define NI_SYSCALL (1<<2)
@@ -104,5 +107,6 @@ void mark_all_syscalls_active(void);
 void toggle_syscall(char *arg, unsigned char state);
 void dump_syscall_tables(void);
 int setup_syscall_group(unsigned int desired_group);
+int validate_syscall_tables(void);
 
 #endif	/* _TRINITY_SYSCALL_H */
