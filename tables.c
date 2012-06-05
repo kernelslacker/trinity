@@ -125,14 +125,14 @@ void dump_syscall_tables(void)
 
 	if (biarch == TRUE) {
 		for (i = 0; i < max_nr_32bit_syscalls; i++) {
-			printf("32bit %s : ", syscalls_32bit[i].entry->name);
+			printf("32 bit entrypoint %d %s : ", syscalls_32bit[i].entry->number, syscalls_32bit[i].entry->name);
 			if (syscalls_32bit[i].entry->flags & ACTIVE)
 				printf("Enabled\n");
 			else
 				printf("Disabled\n");
 		}
 		for (i = 0; i < max_nr_64bit_syscalls; i++) {
-			printf("64bit %s : ", syscalls_64bit[i].entry->name);
+			printf("64 bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
 			if (syscalls_64bit[i].entry->flags & ACTIVE)
 				printf("Enabled\n");
 			else
