@@ -76,6 +76,7 @@ Still unfixed:
 
 * sel_netnode_insert suspicious rcu usage.
   http://lkml.org/lkml/2011/4/20/308
+  http://lkml.org/lkml/2012/6/5/10
 
 * DECNET redzone overwritten
   https://lkml.org/lkml/2011/11/21/59
