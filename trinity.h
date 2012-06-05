@@ -17,9 +17,8 @@
 #define __unused__ /*@unused@*/
 #endif
 
+extern char *progname;
 extern pid_t parentpid;
-
-extern unsigned char debug;
 
 extern jmp_buf ret_jump;
 
@@ -33,6 +32,7 @@ void do_syscall_from_child();
 
 void regenerate_random_page(void);
 
+extern unsigned int seed;
 void seed_from_tod();
 
 extern unsigned int fds_left_to_create;
@@ -51,11 +51,26 @@ extern char *victim_path;
 
 extern unsigned int page_size;
 extern unsigned int rep;
-extern unsigned char do_specific_proto;
-extern unsigned char dopause;
 extern long struct_fill;
+
+/* command line args. */
+void parse_args(int argc, char *argv[]);
+
+extern unsigned char debug;
+extern unsigned char do_specific_syscall;
+extern unsigned char do_exclude_syscall;
+extern unsigned int specific_proto;
+extern unsigned char do_specific_proto;
+extern char *specific_proto_optarg;
+extern unsigned char dopause;
+extern unsigned char show_syscall_list;
+extern unsigned char quiet;
+extern unsigned char monochrome;
+extern unsigned char dangerous;
 extern unsigned char logging;
 extern unsigned char extrafork;
+extern unsigned char desired_group;
+
 extern unsigned char exit_now;
 
 extern unsigned char biarch;
@@ -89,9 +104,6 @@ void * get_map();
 #define MAGENTA if (monochrome == FALSE) sptr += sprintf(sptr, "%s", ANSI_MAGENTA);
 #define CYAN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_CYAN);
 #define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
-
-extern unsigned char monochrome;
-extern unsigned char quiet;
 
 void synclogs();
 void output(const char *fmt, ...);
