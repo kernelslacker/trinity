@@ -119,6 +119,14 @@ void toggle_syscall(char *arg, unsigned char state)
 	}
 }
 
+static void show_state(unsigned int bool)
+{
+	if (bool)
+		printf("Enabled\n");
+	else
+		printf("Disabled\n");
+}
+
 void dump_syscall_tables(void)
 {
 	unsigned int i;
@@ -129,26 +137,17 @@ void dump_syscall_tables(void)
 
 		for (i = 0; i < max_nr_32bit_syscalls; i++) {
 			printf("32 bit entrypoint %d %s : ", syscalls_32bit[i].entry->number, syscalls_32bit[i].entry->name);
-			if (syscalls_32bit[i].entry->flags & ACTIVE)
-				printf("Enabled\n");
-			else
-				printf("Disabled\n");
+			show_state(syscalls_32bit[i].entry->flags & ACTIVE);
 		}
 		for (i = 0; i < max_nr_64bit_syscalls; i++) {
 			printf("64 bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
-			if (syscalls_64bit[i].entry->flags & ACTIVE)
-				printf("Enabled\n");
-			else
-				printf("Disabled\n");
+			show_state(syscalls_64bit[i].entry->flags & ACTIVE);
 		}
 	} else {
 		printf("syscalls: %d\n", max_nr_syscalls);
 		for (i = 0; i < max_nr_syscalls; i++) {
 			printf("%s : ", syscalls[i].entry->name);
-			if (syscalls[i].entry->flags & ACTIVE)
-				printf("Enabled\n");
-			else
-				printf("Disabled\n");
+			show_state(syscalls[i].entry->flags & ACTIVE);
 		}
 	}
 }
