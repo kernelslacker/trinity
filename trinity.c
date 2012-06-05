@@ -151,6 +151,7 @@ static void mask_signals(void)
 	}
 	(void)signal(SIGCHLD, SIG_DFL);
 	(void)signal(SIGFPE, SIG_IGN);
+	(void)signal(SIGXCPU, SIG_IGN);
 	if (debug == TRUE)
 		(void)signal(SIGSEGV, SIG_DFL);
 }
