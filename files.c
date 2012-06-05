@@ -163,11 +163,11 @@ openit:
 		if ((set_read | set_write) == 0)
 			continue;
 
-		if (set_read == 1)
+		if (set_read == TRUE)
 			openflag = O_RDONLY;
-		if (set_write == 1)
+		if (set_write == TRUE)
 			openflag = O_WRONLY;
-		if ((set_read == 1) && (set_write == 1))
+		if ((set_read == TRUE) && (set_write == TRUE))
 			openflag = O_RDWR;
 
 		if (!S_ISDIR(buf.st_mode)) {

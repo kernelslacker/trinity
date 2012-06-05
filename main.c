@@ -76,7 +76,7 @@ int find_pid_slot(pid_t mypid)
 }
 
 
-#define debugf if (debug == 1) printf
+#define debugf if (debug == TRUE) printf
 
 static void fork_children()
 {

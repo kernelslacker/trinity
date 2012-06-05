@@ -52,12 +52,12 @@ static void reenable_coredumps()
 }
 static void set_make_it_fail()
 {
-	static char failed = 0;
+	static char failed = FALSE;
 	int fd;
 	const char *buf = "1";
 
 	/* If we failed last time, don't bother trying in future. */
-	if (failed == 1)
+	if (failed == TRUE)
 		return;
 
 	fd = open("/proc/self/make-it-fail", O_WRONLY);
@@ -68,7 +68,7 @@ static void set_make_it_fail()
 		if (errno != EPERM)
 			printf("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
 		else
-			failed = 1;
+			failed = TRUE;
 	}
 	close(fd);
 }

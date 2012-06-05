@@ -81,7 +81,7 @@ void synclogs()
 	unsigned int i;
 	int fd, ret;
 
-	if (logging == 0)
+	if (logging == FALSE)
 		return;
 
 	for (i = 0; i < shm->nr_childs; i++) {
@@ -124,7 +124,7 @@ void output(const char *fmt, ...)
 	if (!quiet)
 		printf("%s", outputbuf);
 
-	if (logging == 0)
+	if (logging == FALSE)
 		return;
 
 	handle = find_logfile_handle();

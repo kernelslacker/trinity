@@ -63,7 +63,7 @@ void generate_sockets(unsigned int nr_to_create)
 
 			sanitise_socket(&domain, &type, &protocol, NULL, NULL, NULL);
 
-			if (do_specific_proto == 1)
+			if (do_specific_proto == TRUE)
 				domain = specific_proto;
 			else
 				domain = i;
@@ -153,7 +153,7 @@ void open_sockets()
 		type = buffer[1];
 		protocol = buffer[2];
 
-		if (do_specific_proto == 1) {
+		if (do_specific_proto == TRUE) {
 			if (domain != specific_proto) {
 				printf("ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
 				generate_sockets(fds_left_to_create/2);

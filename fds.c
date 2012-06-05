@@ -43,7 +43,7 @@ static int get_random_fd(void)
 	int fd = 0;
 	int ret;
 
-	if (do_specific_proto == 1)
+	if (do_specific_proto == TRUE)
 		i = 1;
 	else
 		i = rand() % 3;
