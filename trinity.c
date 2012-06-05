@@ -476,89 +476,6 @@ static void mask_signals(void)
 		(void)signal(SIGSEGV, SIG_DFL);
 }
 
-
-struct protocol {
-	const char *name;
-	unsigned int proto;
-};
-
-static struct protocol protocols[] = {
-	{ "PF_UNSPEC",       0 },
-	{ "PF_LOCAL",        1 },
-	{ "PF_UNIX",         PF_LOCAL },
-	{ "PF_FILE",         PF_LOCAL },
-	{ "PF_INET",         2 },
-	{ "PF_AX25",         3 },
-	{ "PF_IPX",          4 },
-	{ "PF_APPLETALK",    5 },
-	{ "PF_NETROM",       6 },
-	{ "PF_BRIDGE",       7 },
-	{ "PF_ATMPVC",       8 },
-	{ "PF_X25",          9 },
-	{ "PF_INET6",        10 },
-	{ "PF_ROSE",         11 },
-	{ "PF_DECnet",       12 },
-	{ "PF_NETBEUI",      13 },
-	{ "PF_SECURITY",     14 },
-	{ "PF_KEY",          15 },
-	{ "PF_NETLINK",      16 },
-	{ "PF_ROUTE",        PF_NETLINK },
-	{ "PF_PACKET",       17 },
-	{ "PF_ASH",          18 },
-	{ "PF_ECONET",       19 },
-	{ "PF_ATMSVC",       20 },
-	{ "PF_RDS",          21 },
-	{ "PF_SNA",          22 },
-	{ "PF_IRDA",         23 },
-	{ "PF_PPPOX",        24 },
-	{ "PF_WANPIPE",      25 },
-	{ "PF_LLC",          26 },
-	{ "PF_CAN",          29 },
-	{ "PF_TIPC",         30 },
-	{ "PF_BLUETOOTH",    31 },
-	{ "PF_IUCV",         32 },
-	{ "PF_RXRPC",        33 },
-	{ "PF_ISDN",         34 },
-	{ "PF_PHONET",       35 },
-	{ "PF_IEEE802154",   36 },
-	{ "PF_CAIF",         37 },
-	{ "PF_ALG",          38 },
-};
-
-static void find_specific_proto()
-{
-	unsigned int i;
-	struct protocol *p = protocols;
-
-	if (specific_proto == 0) {
-		/* we were passed a string */
-		for (i = 0; i < (sizeof(protocols) / sizeof(struct protocol)); i++) {
-			if (strcmp(specific_proto_optarg, p[i].name) == 0) {
-				specific_proto = p[i].proto;
-				break;
-			}
-		}
-	} else {
-		/* we were passed a numeric arg. */
-		for (i = 0; i < PROTO_MAX; i++) {
-			if (specific_proto == p[i].proto)
-				break;
-		}
-	}
-
-	if (i > PF_MAX) {
-		printf("Protocol unknown. Pass a numeric value [0-%d] or one of ", PF_MAX);
-		for (i = 0; i < (sizeof(protocols) / sizeof(struct protocol)); i++)
-			printf("%s ", p[i].name);
-		printf("\n");
-
-		exit(EXIT_FAILURE);
-	}
-
-	printf("Using protocol %s (%u) for all sockets\n", p[i].name, p[i].proto);
-	return;
-}
-
 int create_shm()
 {
 	int shmid;
@@ -706,7 +623,7 @@ int main(int argc, char* argv[])
 	}
 
 	if (do_specific_proto == 1)
-		find_specific_proto();
+		find_specific_proto(specific_proto_optarg);
 
 	page_size = getpagesize();
 
