@@ -100,6 +100,15 @@ void sanitise_socket(
 		}
 		break;
 
+	case AF_NFC:
+		switch (rand() % 2) {
+		case 0:	*type = SOCK_DGRAM;
+			break;
+		case 1:	*type = SOCK_STREAM;
+			break;
+		default: break;
+		}
+		break;
 
 	default: break;
 	}
