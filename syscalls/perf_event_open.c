@@ -3,26 +3,13 @@
 	 struct perf_event_attr __user *, attr_uptr,
 	 pid_t, pid, int, cpu, int, group_fd, unsigned long, flags)
  */
-#define PERF_FLAG_FD_NO_GROUP   (1U << 0)
-#define PERF_FLAG_FD_OUTPUT     (1U << 1)
-#define PERF_FLAG_PID_CGROUP    (1U << 2) /* pid=cgroup id, per-cpu mode only */
-
-#include "trinity.h"
-#include "sanitise.h"
 
 #include <stdlib.h>
 #include <linux/perf_event.h>
 
-/* For the F14 die-hards. */
-#ifndef PERF_COUNT_HW_STALLED_CYCLES_FRONTEND
-#define PERF_COUNT_HW_STALLED_CYCLES_FRONTEND 7
-#endif
-#ifndef PERF_COUNT_HW_STALLED_CYCLES_BACKEND
-#define PERF_COUNT_HW_STALLED_CYCLES_BACKEND 8
-#endif
-#ifndef PERF_COUNT_HW_REF_CPU_CYCLES
-#define PERF_COUNT_HW_REF_CPU_CYCLES 9
-#endif
+#include "trinity.h"
+#include "sanitise.h"
+#include "compat.h"
 
 static void sanitise_perf_event_open(
 	unsigned long *a1,

@@ -4,17 +4,9 @@
  *	int, flag)
  */
 #include <fcntl.h>
-
-#ifndef AT_NO_AUTOMOUNT
-#define AT_NO_AUTOMOUNT 0x800
-#endif
-
-#ifndef AT_EMPTY_PATH
-#define AT_EMPTY_PATH	0x1000  /* Allow empty relative pathname */
-#endif
-
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 
 struct syscall syscall_name_to_handle_at = {
 	.name = "name_to_handle_at",

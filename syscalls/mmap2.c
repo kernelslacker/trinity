@@ -5,10 +5,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
-
-#ifndef MAP_UNINITIALIZED
-#define MAP_UNINITIALIZED 0x4000000
-#endif
+#include "compat.h"
 
 struct syscall syscall_mmap2 = {
 	.name = "mmap2",
