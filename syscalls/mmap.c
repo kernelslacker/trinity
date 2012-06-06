@@ -6,25 +6,10 @@
 #include <stdlib.h>
 #include <asm/mman.h>
 
-#ifndef MAP_UNINITIALIZED
-#define MAP_UNINITIALIZED 0x4000000
-#endif
-
-#ifndef PROT_SEM
-#define PROT_SEM 0x8
-#endif
-
-#ifndef MAP_HUGETLB
-#define MAP_HUGETLB 0x40000
-#endif
-
-#ifndef MAP_STACK
-#define MAP_STACK 0x20000
-#endif
-
 #include "trinity.h"
 #include "sanitise.h"
 #include "arch.h"
+#include "compat.h"
 
 void sanitise_mmap(
 	__unused__ unsigned long *addr,

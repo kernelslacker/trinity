@@ -10,10 +10,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
-
-#ifndef O_CLOEXEC
-#define O_CLOEXEC	02000000
-#endif
+#include "compat.h"
 
 struct syscall syscall_dup3 = {
 	.name = "dup3",

@@ -9,6 +9,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void sanitise_socket(
