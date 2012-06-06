@@ -15,9 +15,6 @@
 
 unsigned int socks=0;
 
-static int spin=0;
-static char spinner[]="-\\|/";
-
 static const char *cachefilename="trinity.socketcache";
 
 #define MAX_PER_DOMAIN 5
@@ -68,11 +65,9 @@ void generate_sockets(unsigned int nr_to_create)
 			else
 				domain = i;
 
-			output("%c (%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]    \r",
-				spinner[spin++], socks, nr_to_create,
+			output("(%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]\n",
+				socks, nr_to_create,
 				domain, type, protocol);
-			if (spin == 4)
-				spin = 0;
 
 			fd = socket(domain, type, protocol);
 			if (fd > -1) {
