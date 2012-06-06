@@ -249,6 +249,7 @@ static struct protocol protocols[] = {
 	{ "PF_IEEE802154",   36 },
 	{ "PF_CAIF",         37 },
 	{ "PF_ALG",          38 },
+	{ "PF_NFC",          39 },
 };
 
 void find_specific_proto(char *protoarg)
