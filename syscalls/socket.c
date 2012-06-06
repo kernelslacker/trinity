@@ -110,7 +110,18 @@ void sanitise_socket(
 		}
 		break;
 
-	default: break;
+	default:
+		switch (rand() % 6) {
+		case 0:	*type = SOCK_DGRAM;	break;
+		case 1:	*type = SOCK_STREAM;	break;
+		case 2:	*type = SOCK_SEQPACKET;	break;
+		case 3:	*type = SOCK_RAW;	break;
+		case 4:	*type = SOCK_RDM;	break;
+		case 5:	*type = SOCK_PACKET;	break;
+		default: break;
+		}
+
+		break;
 	}
 
 	if ((rand() % 100) < 25)
