@@ -266,7 +266,7 @@ void find_specific_proto(char *protoarg)
 		}
 	} else {
 		/* we were passed a numeric arg. */
-		for (i = 0; i < PROTO_MAX; i++) {
+		for (i = 0; i < PF_MAX; i++) {
 			if (specific_proto == p[i].proto)
 				break;
 		}
