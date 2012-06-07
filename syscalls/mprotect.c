@@ -48,4 +48,6 @@ struct syscall syscall_mprotect = {
 	},
 	.sanitise = sanitise_mprotect,
 	.group = GROUP_VM,
+
+	.flags = AVOID_SYSCALL,	// hopefully temporary.
 };
