@@ -168,6 +168,9 @@ static void handle_children()
 			if (slot == -1) {
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
 				shm->exit_now = TRUE;
+
+				for (i = 0; i < shm->nr_childs; i++)
+					printf("slot%d: %d\n", i, shm->pids[i]);
 			} else
 				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
 			reap_child(childpid);
