@@ -30,7 +30,12 @@ static void sanitise_mremap(
 {
 	unsigned long mask = ~(page_size-1);
 
+retry_addr:
 	*addr &= mask;
+
+	if (*addr == 0)
+		*addr = (unsigned long) get_address();
+	goto retry_addr;
 
 	if (*flags & MREMAP_FIXED) {
 		// Can't be fixed, and maymove.
