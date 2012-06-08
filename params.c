@@ -23,6 +23,7 @@ unsigned char monochrome = FALSE;
 unsigned char dangerous = FALSE;
 unsigned char logging = TRUE;
 unsigned char extrafork = FALSE;
+unsigned char do_syslog = FALSE;
 
 unsigned char desired_group = GROUP_NONE;
 
@@ -62,6 +63,7 @@ static void usage(void)
 	fprintf(stderr, " --monochrome,-m: don't output ANSI codes\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --quiet,-q: less output.\n");
+	fprintf(stderr, " --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
 	fprintf(stderr, " --victims,-V: path to victim files.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " -c#: target specific syscall (takes syscall name as parameter).\n");
@@ -87,6 +89,7 @@ void parse_args(int argc, char *argv[])
 		{ "monochrome", no_argument, NULL, 'M' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
+		{ "syslog", no_argument, NULL, 'S' },
 		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
@@ -168,6 +171,11 @@ void parse_args(int argc, char *argv[])
 		case 's':
 			seed = strtol(optarg, NULL, 10);
 			srand(seed);
+			break;
+
+
+		case 'S':
+			do_syslog = TRUE;
 			break;
 
 		case 'V':

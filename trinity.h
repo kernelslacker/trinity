@@ -67,6 +67,7 @@ extern unsigned char show_syscall_list;
 extern unsigned char quiet;
 extern unsigned char monochrome;
 extern unsigned char dangerous;
+extern unsigned char do_syslog;
 extern unsigned char logging;
 extern unsigned char extrafork;
 extern unsigned char desired_group;
