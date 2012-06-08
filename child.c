@@ -105,8 +105,6 @@ int child_process(void)
 	unsigned int syscallnr;
 	unsigned int cpu;
 
-	seed_from_tod();
-
 	disable_coredumps();
 
 	for (cpu = 0; cpu < shm->nr_childs; cpu++) {
