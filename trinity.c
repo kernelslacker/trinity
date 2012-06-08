@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <setjmp.h>
 #include <malloc.h>
+#include <syslog.h>
 #include <asm/unistd.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -124,6 +125,13 @@ void seed_from_tod()
 	seed = t.tv_sec * t.tv_usec;
 	srand(seed);
 	output("\n\n[%d] Random seed from time of day: %u (0x%x)\n", getpid(), seed, seed);
+	if (do_syslog == FALSE)
+		return;
+
+	fprintf(stderr, "Randomness reseeded to 0x%x\n", seed);
+	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
+	syslog(LOG_CRIT, "Randomness reseeded to 0x%x\n", seed);
+	closelog();
 }
 
 static void sighandler(__unused__ int sig)
