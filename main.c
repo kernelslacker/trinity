@@ -81,6 +81,12 @@ static void fork_children()
 			exit(EXIT_FAILURE);
 		}
 
+		/*
+		 * consume some randomness. otherwise each child starts
+		 *  with the same random seed, and ends up doing identical syscalls.
+		 */
+		(void) rand();
+
 		(void)alarm(0);
 		pid = fork();
 		if (pid != 0)
