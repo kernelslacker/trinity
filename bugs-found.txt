@@ -68,6 +68,14 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 * vma_resv_map bug.
   06f97f6d58a1704681725f96117a152ee3e8c432
 
+* WARNING: at mm/page-writeback.c:1990 __set_page_dirty_nobuffers+0x13a/0x170()
+  https://lkml.org/lkml/2012/5/30/580
+  752dc185dacba1edcba425e67fc6df3c7793a5c3
+
+* (compaction related corruption) WARNING: at mm/page-writeback.c:1990 __set_page_dirty_nobuffers+0x13a/0x170()
+  https://lkml.org/lkml/2012/6/1/341
+  68e3e92620c323703bc7db75c2ba15239ee85c39
+
 ------------------------------------------------------------------
 Still unfixed:
 
@@ -215,6 +223,7 @@ Still unfixed:
 
 * 3.4-rc3: kernel BUG at mm/memory.c:1228!
   https://lkml.org/lkml/2012/4/19/272
+  https://lkml.org/lkml/2012/6/6/495
 
 * mm: divide by zero in percpu_pagelist_fraction_sysctl_handler()
   https://lkml.org/lkml/2012/4/20/32
@@ -255,4 +264,19 @@ Still unfixed:
 
 * 3.4+ tty lockdep trace
   https://lkml.org/lkml/2012/5/24/108
+
+* [PATCH] ieee802154: verify packet size before trying to allocate it
+  https://lkml.org/lkml/2012/6/10/74
+
+* net: nfc: BUG and panic in accept() on 3.5-rc2
+  https://lkml.org/lkml/2012/6/11/305
+
+* selinux_inode_setxattr oops.
+  http://lkml.org/lkml/2012/6/4/477
+
+* vmsplice triggering bug in kfree.
+  http://lkml.org/lkml/2012/6/6/713
+
+* processes hung after sys_renameat, and 'missing' processes
+  https://lkml.org/lkml/2012/6/3/122
 
