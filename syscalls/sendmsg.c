@@ -8,6 +8,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 
 #define MSG_CMSG_COMPAT 0x80000000      /* This message needs 32 bit fixups */
 

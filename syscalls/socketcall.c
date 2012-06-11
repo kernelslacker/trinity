@@ -5,6 +5,7 @@
 #include <linux/net.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 
 static void sanitise_socketcall(
 	unsigned long *call,

@@ -3,6 +3,7 @@
  */
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 
 #include <sys/mman.h>
 
