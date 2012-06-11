@@ -16,12 +16,19 @@ unsigned long filebuffersize = 0;
 
 unsigned long get_interesting_32bit_value()
 {
-	int i;
+	int i, bit;
 
 	i = rand() % 10;
 
-	if (i > 3) {
-		/* common case, return small values*/
+	switch (i) {
+
+	/* rare case, single bit. */
+	case 0:
+		bit = rand() % 63;
+		return (1 << bit);
+
+	/* common case, return small values*/
+	case 1 ... 7:
 		i = rand() % 8;
 
 		switch (i) {
@@ -36,8 +43,9 @@ unsigned long get_interesting_32bit_value()
 		default: /* unreachable*/
 			return 0;
 		}
+		break;
 
-	} else {
+	case 8 ... 10:
 		/* less common case, go crazy */
 		i = rand() % 10;
 
@@ -55,6 +63,10 @@ unsigned long get_interesting_32bit_value()
 		default: /* unreachable*/
 			return 0;
 		}
+		break;
+
+	default:
+		break;
 	}
 
 	/* Should never be reached. */
