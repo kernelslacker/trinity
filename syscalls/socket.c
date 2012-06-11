@@ -103,11 +103,21 @@ void sanitise_socket(
 
 	case AF_NFC:
 		switch (rand() % 2) {
-		case 0:	*type = SOCK_DGRAM;
+		case 0:	*protocol = NFC_SOCKPROTO_LLCP;
+			switch (rand() % 2) {
+				*type = SOCK_DGRAM;
+				break;
+			case 1:	*type = SOCK_STREAM;
+				break;
+			default: break;
+			}
 			break;
-		case 1:	*type = SOCK_STREAM;
+
+		case 1:	*protocol = NFC_SOCKPROTO_RAW;
+			*type = SOCK_SEQPACKET;
 			break;
-		default: break;
+		default:
+			BUG("impossible.");
 		}
 		break;
 
