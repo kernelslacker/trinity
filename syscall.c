@@ -174,6 +174,7 @@ long mkcall(unsigned int call)
 			break;						\
 		case ARG_LEN:						\
 		case ARG_ADDRESS:					\
+		case ARG_NON_NULL_ADDRESS:				\
 		case ARG_RANGE:						\
 		case ARG_LIST:						\
 		case ARG_RANDPAGE:					\

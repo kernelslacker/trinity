@@ -5,12 +5,13 @@ enum argtype {
 	ARG_FD = 1,
 	ARG_LEN = 2,
 	ARG_ADDRESS = 3,
-	ARG_PID = 4,
-	ARG_RANGE = 5,
-	ARG_LIST = 6,
-	ARG_RANDPAGE = 7,
-	ARG_CPU = 8,
-	ARG_PATHNAME = 9,
+	ARG_NON_NULL_ADDRESS = 4,
+	ARG_PID = 5,
+	ARG_RANGE = 6,
+	ARG_LIST = 7,
+	ARG_RANDPAGE = 8,
+	ARG_CPU = 9,
+	ARG_PATHNAME = 10,
 };
 
 struct arglist {
