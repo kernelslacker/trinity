@@ -357,7 +357,7 @@ static unsigned long fill_arg(int call, int argnum)
 			high = syscalls[call].entry->hi6range;
 			break;
 		default:
-			printf("this should never happen. %s:%d\n", __FILE__, __LINE__);
+			BUG("Should never happen.\n");
 			break;
 		}
 
