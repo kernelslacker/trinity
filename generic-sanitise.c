@@ -25,7 +25,7 @@ unsigned long get_interesting_32bit_value()
 	/* rare case, single bit. */
 	case 0:
 		bit = rand() % 63;
-		return (1 << bit);
+		return (1L << bit);
 
 	/* common case, return small values*/
 	case 1 ... 7:
