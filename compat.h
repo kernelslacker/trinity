@@ -54,6 +54,17 @@
 #define PERF_COUNT_HW_REF_CPU_CYCLES 9
 #endif
 
+#ifndef PERF_COUNT_SW_ALIGNMENT_FAULTS
+#define PERF_COUNT_SW_ALIGNMENT_FAULTS 7
+#endif
+#ifndef PERF_COUNT_SW_EMULATION_FAULTS
+#define PERF_COUNT_SW_EMULATION_FAULTS 8
+#endif
+
+#ifndef PERF_TYPE_BREAKPOINT
+#define PERF_TYPE_BREAKPOINT 5
+#endif
+
 #ifndef PERF_FLAG_FD_NO_GROUP
 #define PERF_FLAG_FD_NO_GROUP   (1U << 0)
 #endif
@@ -80,6 +91,13 @@
 #define MAP_STACK 0x20000
 #endif
 
+#ifndef MADV_HUGEPAGE
+#define MADV_HUGEPAGE 14
+#endif
+#ifndef MADV_NOHUGEPAGE
+#define MADV_NOHUGEPAGE 15
+#endif
+
 
 /* bits/socket.h */
 #ifndef AF_NFC
@@ -91,6 +109,19 @@
 #endif
 #ifndef NFC_SOCKPROTO_LLCP
 #define NFC_SOCKPROTO_LLCP	1
+#endif
+
+#ifndef MSG_WAITFORONE
+#define MSG_WAITFORONE	0x10000
+#endif
+
+
+/* linux/net.h */
+#ifndef SYS_RECVMMSG
+#define SYS_RECVMMSG 19
+#endif
+#ifndef SYS_SENDMMSG
+#define SYS_SENDMMSG 20
 #endif
 
 #endif	/* _TRINITY_COMPAT_H */

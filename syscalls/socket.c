@@ -3,9 +3,9 @@
  */
 
 #include <stdlib.h>
-#include <linux/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <linux/in.h>
 
 #include "trinity.h"
 #include "sanitise.h"
