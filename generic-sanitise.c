@@ -97,12 +97,17 @@ unsigned long get_interesting_value()
 #endif
 }
 
-void * get_address()
+static void * _get_address(unsigned char null_allowed)
 {
 	int i;
 	void *addr = NULL;
 
-	i = rand() % 9;
+	if (null_allowed == TRUE)
+		i = rand() % 9;
+	else
+		i = (rand() % 8) + 1;
+
+
 	switch (i) {
 	case 0: addr = NULL;
 		break;
@@ -136,6 +141,18 @@ void * get_address()
 	default: return addr;
 	}
 }
+
+void * get_address()
+{
+	return _get_address(TRUE);
+}
+
+void * get_non_null_address()
+{
+	return _get_address(FALSE);
+}
+
+
 
 void regenerate_random_page()
 {
@@ -293,6 +310,8 @@ static unsigned long fill_arg(int call, int argnum)
 
 	case ARG_ADDRESS:
 		return (unsigned long)get_address();
+	case ARG_NON_NULL_ADDRESS:
+		return (unsigned long)get_non_null_address();
 	case ARG_PID:
 		return (unsigned long)get_pid();
 	case ARG_RANGE:

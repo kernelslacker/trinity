@@ -30,12 +30,7 @@ static void sanitise_mremap(
 {
 	unsigned long mask = ~(page_size-1);
 
-retry_addr:
 	*addr &= mask;
-
-	if (*addr == 0)
-		*addr = (unsigned long) get_address();
-	goto retry_addr;
 
 	if (*flags & MREMAP_FIXED) {
 		// Can't be fixed, and maymove.
@@ -50,7 +45,7 @@ struct syscall syscall_mremap = {
 	.num_args = 5,
 	.sanitise = sanitise_mremap,
 	.arg1name = "addr",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.arg2name = "old_len",
 	.arg2type = ARG_LEN,
 	.arg3name = "new_len",

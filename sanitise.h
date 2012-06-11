@@ -20,6 +20,7 @@ unsigned long get_interesting_value();
 unsigned long get_interesting_32bit_value();
 unsigned long rand64();
 void *get_address();
+void *get_non_null_address();
 unsigned long get_len();
 
 #endif	/* _SANITISE_H */
