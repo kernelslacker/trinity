@@ -124,4 +124,6 @@ void reap_child(pid_t childpid);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
+#define BUG(bugtxt)	printf("%s:%s %s", __FILE__, __func__, bugtxt);
+
 #endif	/* _TRINITY_H */

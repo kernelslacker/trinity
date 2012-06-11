@@ -131,7 +131,8 @@ void open_fds(const char *dir, unsigned char add_all)
 				open_fds(b, add_all);
 				goto openit;
 			}
-			// unreachable.
+			BUG("unreachable!\n");
+
 		} else {
 			is_dir = FALSE;
 		}
