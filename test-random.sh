@@ -16,7 +16,7 @@ do
   cd tmp.$RND
   for i in `seq 1 $NR_PROCESSES`
   do
-	MALLOC_CHECK_=2 ../../trinity -q -l off -x lgetxattr -x fgetxattr -x getxattr -x setxattr -x fsetxattr -x lsetxattr &
+	MALLOC_CHECK_=2 ../../trinity -q -l off &
   done
   wait
   cd ..
