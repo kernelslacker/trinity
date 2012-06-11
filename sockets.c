@@ -65,10 +65,6 @@ void generate_sockets(unsigned int nr_to_create)
 			else
 				domain = i;
 
-			output("(%d sockets created. needed:%d) [domain:%d type:0x%x proto:%d]\n",
-				socks, nr_to_create,
-				domain, type, protocol);
-
 			fd = socket(domain, type, protocol);
 			if (fd > -1) {
 				shm->socket_fds[socks] = fd;
