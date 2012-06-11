@@ -40,7 +40,8 @@ unsigned long get_interesting_32bit_value()
 		case 5:	return 0x00001001;	// 4097
 		case 6:	return 0x00008000;
 		case 7:	return 0x0000ffff;
-		default: /* unreachable*/
+		default:
+			BUG("unreachable!\n");
 			return 0;
 		}
 		break;
@@ -60,16 +61,18 @@ unsigned long get_interesting_32bit_value()
 		case 7:	return 0xff000000;
 		case 8:	return 0xffffff00 | (rand() % 256);
 		case 9:	return 0xffffffff;
-		default: /* unreachable*/
+		default:
+			BUG("unreachable!\n");
 			return 0;
 		}
 		break;
 
 	default:
+		BUG("unreachable!\n");
 		break;
 	}
 
-	/* Should never be reached. */
+	BUG("unreachable!\n");
 	return 0;
 }
 
@@ -101,10 +104,11 @@ unsigned long get_interesting_value()
 	case 11: return 0xffffffff80000000 | (low & 0xffffff);	// x86-64 kernel text address
 	case 12: return 0xffffffffa0000000 | (low & 0xffffff);	// x86-64 module space
 	case 13: return 0xffffffffff600000 | (low & 0x0fffff);	// x86-64 vdso
-	default: /* unreachable*/
+	default:
+		BUG("unreachable!\n");
 		return 0;
 	}
-	/* Should never be reached. */
+	BUG("unreachable!\n");
 	return 0;
 #endif
 }
@@ -139,7 +143,8 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	case 8: addr = malloc(page_size * 2);
 		break;
-	default: /* unreachable*/
+	default:
+		BUG("unreachable!\n");
 		break;
 	}
 
@@ -197,7 +202,7 @@ void regenerate_random_page()
 			}
 			return;
 		default:
-			/* unreachable */
+			BUG("unreachable!\n");
 			return;
 		}
 	}
@@ -219,7 +224,8 @@ void regenerate_random_page()
 		case 3: page_rand[i] = (unsigned int) rand() % page_size;
 			i += sizeof(unsigned int);
 			break;
-		default:/* unreachable */
+		default:
+			BUG("unreachable!\n");
 			return;
 		}
 	}
@@ -236,7 +242,8 @@ retry:
 		break;
 	case 1:	pid = rand() & 32767;
 		break;
-	default:/* unreachable */
+	default:
+		BUG("unreachable!\n");
 		break;
 	}
 	for (i = 0; i < MAX_NR_CHILDREN; i++) {
@@ -261,7 +268,8 @@ static unsigned int get_cpu()
 	case 0: return -1;
 	case 1: return rand() & 4095;
 	case 2: return rand() & 15;
-	default:/* unreachable */
+	default:
+		BUG("unreachable!\n");
 		break;
 	}
 	return 0;
@@ -280,7 +288,8 @@ unsigned long get_len()
 	case 2:	return (i & 0xffff);
 	case 3:	return (i & 0xffffff);
 	case 4:	return (i & 0xffffffff);
-	default:/* unreachable */
+	default:
+		BUG("unreachable!\n");
 		break;
 	}
 
@@ -310,7 +319,8 @@ static unsigned long fill_arg(int call, int argnum)
 		break;
 	case 6:	argtype = syscalls[call].entry->arg6type;
 		break;
-	default:/* unreachable */
+	default:
+		BUG("unreachable!\n");
 		return 0;
 	}
 
@@ -399,10 +409,12 @@ static unsigned long fill_arg(int call, int argnum)
 	case ARG_PATHNAME:
 		return (unsigned long) pathnames[rand() % 50];
 
-	default:/* unreachable */
+	default:
+		BUG("unreachable!\n");
 		return 0;
 	}
 
+	BUG("unreachable!\n");
 	return 0x5a5a5a5a;	/* Should never happen */
 }
 

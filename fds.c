@@ -69,7 +69,8 @@ retry:		fd = shm->fds[rand() % fd_idx];
 			}
 			ret = fileno(file);
 			if (ret == -1) {
-				printf("%s:%s: fileno failed! %s\n", __FILE__, __func__, strerror(errno));
+				BUG("fileno failed!");
+				printf("%s", strerror(errno));
 				exit(EXIT_FAILURE);
 			}
 		}
