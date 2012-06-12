@@ -284,4 +284,5 @@ Still unfixed:
 
 * Re: rcu,sched: spinlock recursion on 3.5-rc2
 
+* [PATCH] NFC: only put local on destruction if it was created before
 
