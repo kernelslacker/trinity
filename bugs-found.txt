@@ -282,3 +282,6 @@ Still unfixed:
 
 * blk/dm: Kernel crash on 3.5-rc2
 
+* Re: rcu,sched: spinlock recursion on 3.5-rc2
+
+
