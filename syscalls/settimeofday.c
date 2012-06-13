@@ -10,5 +10,5 @@ struct syscall syscall_settimeofday = {
 	.arg1name = "tv",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "tz",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_ADDRESS2,
 };

@@ -10,5 +10,5 @@ struct syscall syscall_symlink = {
 	.arg1name = "oldname",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "newname",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_ADDRESS2,
 };

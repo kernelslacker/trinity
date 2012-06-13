@@ -31,6 +31,6 @@ struct syscall syscall_clock_nanosleep = {
 	.arg3name = "rqtp",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "rmtp",
-	.arg4type = ARG_ADDRESS,
+	.arg4type = ARG_ADDRESS2,
 	.rettype = RET_ZERO_SUCCESS,
 };

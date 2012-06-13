@@ -25,6 +25,6 @@ struct syscall syscall_rt_sigprocmask = {
 	.arg2name = "set",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "oset",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 	.arg4name = "sigsetsize",
 };

@@ -13,5 +13,5 @@ struct syscall syscall_semtimedop = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "nsops",
 	.arg4name = "timeout",
-	.arg4type = ARG_ADDRESS,
+	.arg4type = ARG_ADDRESS2,
 };

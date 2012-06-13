@@ -11,7 +11,7 @@ struct syscall syscall_sigaltstack = {
 	.arg1name = "uss",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "uoss",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_ADDRESS2,
 	.arg3name = "regs",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 };

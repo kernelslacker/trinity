@@ -14,5 +14,5 @@ struct syscall syscall_mq_getsetattr = {
 	.arg2name = "u_mqstat",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "u_omqstat",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 };

@@ -10,7 +10,7 @@ struct syscall syscall_getresuid16 = {
 	.arg1name = "ruid",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "euid",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_ADDRESS2,
 	.arg3name = "suid",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 };
