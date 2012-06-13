@@ -333,6 +333,7 @@ static unsigned long fill_arg(int call, int argnum)
 		return (unsigned long)get_len();
 
 	case ARG_ADDRESS:
+	case ARG_ADDRESS2:
 		return (unsigned long)get_address();
 	case ARG_NON_NULL_ADDRESS:
 		return (unsigned long)get_non_null_address();

@@ -13,7 +13,7 @@ struct syscall syscall_getxattr = {
 	.arg2name = "name",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "value",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 	.arg4name = "size",
 	.arg4type = ARG_LEN,
 };

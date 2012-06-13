@@ -16,7 +16,7 @@ struct syscall syscall_recvfrom = {
 	.arg3name = "size",
 	.arg3type = ARG_LEN,
 	.arg5name = "addr",
-	.arg5type = ARG_ADDRESS,
+	.arg5type = ARG_ADDRESS2,
 	.arg6name = "addr_len",
-	.arg6type = ARG_ADDRESS,
+	.arg6type = ARG_ADDRESS2,
 };

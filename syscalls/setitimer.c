@@ -12,5 +12,5 @@ struct syscall syscall_setitimer = {
 	.arg2name = "value",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "ovalue",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 };

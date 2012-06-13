@@ -29,10 +29,10 @@ struct syscall syscall_clone = {
 	.arg2name = "newsp",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "parent_tid",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 	.arg4name = "child_tid",
-	.arg4type = ARG_ADDRESS,
+	.arg4type = ARG_ADDRESS2,
 	.arg5name = "regs",
-	.arg5type = ARG_ADDRESS,
+	.arg5type = ARG_ADDRESS2,
 	.rettype = RET_PID_T,
 };

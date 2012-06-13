@@ -13,10 +13,11 @@ struct syscall syscall_io_getevents = {
 	.num_args = 5,
 	.arg1name = "ctx_id",
 	.arg2name = "min_nr",
+	.arg2type = ARG_LEN,
 	.arg3name = "nr",
 	.arg3type = ARG_LEN,
 	.arg4name = "events",
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "timeout",
-	.arg5type = ARG_ADDRESS,
+	.arg5type = ARG_ADDRESS2,
 };

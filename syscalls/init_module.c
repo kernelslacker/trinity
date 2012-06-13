@@ -14,5 +14,5 @@ struct syscall syscall_init_module = {
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
 	.arg3name = "uargs",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 };

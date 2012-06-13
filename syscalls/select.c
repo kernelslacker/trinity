@@ -13,9 +13,9 @@ struct syscall syscall_select = {
 	.arg2name = "inp",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "outp",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_ADDRESS2,
 	.arg4name = "exp",
-	.arg4type = ARG_ADDRESS,
+	.arg4type = ARG_ADDRESS2,
 	.arg5name = "tvp",
-	.arg5type = ARG_ADDRESS,
+	.arg5type = ARG_ADDRESS2,
 };

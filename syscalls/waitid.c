@@ -15,5 +15,5 @@ struct syscall syscall_waitid = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "options",
 	.arg5name = "ru",
-	.arg5type = ARG_ADDRESS,
+	.arg5type = ARG_ADDRESS2,
 };
