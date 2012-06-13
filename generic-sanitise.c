@@ -48,7 +48,7 @@ unsigned long get_interesting_32bit_value()
 
 	case 8 ... 10:
 		/* less common case, go crazy */
-		i = rand() % 10;
+		i = rand() % 12;
 
 		switch (i) {
 		case 0:	return 0x00010000;
@@ -57,10 +57,12 @@ unsigned long get_interesting_32bit_value()
 		case 3:	return 0x80000000;
 		case 4:	return 0x80000001;
 		case 5:	return 0x8fffffff;
-		case 6:	return 0xf0000000;
-		case 7:	return 0xff000000;
-		case 8:	return 0xffffff00 | (rand() % 256);
-		case 9:	return 0xffffffff;
+		case 6: return 0xc0000000;
+		case 7:	return 0xf0000000;
+		case 8:	return 0xff000000;
+		case 9:	return 0xFFFFe000;
+		case 10: return 0xffffff00 | (rand() % 256);
+		case 11: return 0xffffffff;
 		default:
 			BUG("unreachable!\n");
 			return 0;
