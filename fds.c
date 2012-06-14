@@ -122,6 +122,7 @@ regen:
 void setup_fds(void)
 {
 	open_pipes();
+	open_sockets();
 	open_files();
 }
 
@@ -130,5 +131,6 @@ void regenerate_fds(void)
 	close_files();
 	close_pipes();
 
-	setup_fds();
+	open_pipes();
+	open_files();
 }
