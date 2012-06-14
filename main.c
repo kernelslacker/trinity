@@ -88,6 +88,7 @@ static void fork_children()
 		(void) rand();
 
 		(void)alarm(0);
+		fflush(stdout);
 		pid = fork();
 		if (pid != 0)
 			shm->pids[pidslot] = pid;
@@ -220,6 +221,7 @@ void main_loop()
 	if (!shm->regenerate)
 		regenerate();
 
+	fflush(stdout);
 	pid = fork();
 	if (pid == 0)
 		watchdog();	// Never returns.
