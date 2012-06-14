@@ -82,7 +82,6 @@ static void check_children(void)
 			output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
 				pid, old, now, diff);
 			kill(pid, SIGKILL);
-			reap_child(pid);
 			break;
 		}
 	}
