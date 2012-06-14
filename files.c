@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "trinity.h"
+#include "files.h"
 #include "shm.h"
 #include "constants.h"
 
@@ -253,5 +254,5 @@ void regenerate_fds(void)
 {
 	close_files();
 	pathname_idx = 0;
-	open_files();
+	setup_fds();
 }
