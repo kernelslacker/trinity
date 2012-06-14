@@ -16,14 +16,14 @@
 
 static void regenerate()
 {
+	shm->regenerate = 0;
+
 	output("[%d] Regenerating random pages, fd's etc.\n", getpid());
 
 	regenerate_fds();
 
 	destroy_maps();
 	setup_maps();
-
-	shm->regenerate = REGENERATION_POINT - 1;
 
 	regenerate_random_page();
 }
@@ -218,9 +218,6 @@ void main_loop()
 {
 	pid_t pid;
 
-	if (!shm->regenerate)
-		regenerate();
-
 	fflush(stdout);
 	pid = fork();
 	if (pid == 0)
@@ -234,6 +231,11 @@ void main_loop()
 	while (shm->exit_now == FALSE) {
 		fork_children();
 		handle_children();
+
+		if (shm->regenerate >= REGENERATION_POINT)
+			regenerate();
+
+//		output("regenerate:%d\n", shm->regenerate);
 	}
 	printf("[%d] Bailing main loop\n", getpid());
 }
