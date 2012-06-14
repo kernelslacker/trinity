@@ -307,6 +307,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	unsigned int bits;
 	unsigned int num = 0;
 	const unsigned int *values = NULL;
+	unsigned char set_addr = FALSE;
 	enum argtype argtype = 0;
 
 	switch (argnum) {
@@ -338,16 +339,41 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 
 	case ARG_ADDRESS2:
 
-		if (syscalls[call].entry->arg1type == ARG_ADDRESS)
+		if ((syscalls[call].entry->arg1type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg1type == ARG_NON_NULL_ADDRESS)) {
 			addr = shm->a1[childno];
-		if (syscalls[call].entry->arg2type == ARG_ADDRESS)
+			set_addr = TRUE;
+		}
+
+		if ((syscalls[call].entry->arg2type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg2type == ARG_NON_NULL_ADDRESS)) {
 			addr = shm->a2[childno];
-		if (syscalls[call].entry->arg3type == ARG_ADDRESS)
+			set_addr = TRUE;
+		}
+
+		if ((syscalls[call].entry->arg3type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg3type == ARG_NON_NULL_ADDRESS)) {
 			addr = shm->a3[childno];
-		if (syscalls[call].entry->arg4type == ARG_ADDRESS)
+			set_addr = TRUE;
+		}
+
+		if ((syscalls[call].entry->arg4type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg4type == ARG_NON_NULL_ADDRESS)) {
 			addr = shm->a4[childno];
-		if (syscalls[call].entry->arg5type == ARG_ADDRESS)
+			set_addr = TRUE;
+		}
+
+		if ((syscalls[call].entry->arg5type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg5type == ARG_NON_NULL_ADDRESS)) {
 			addr = shm->a5[childno];
+			set_addr = TRUE;
+		}
+
+		if (set_addr == FALSE) {
+			BUG("addr should never be 0!\n");
+			printf("syscall was %s\n", syscalls[call].entry->name);
+			shm->exit_now = TRUE;
+		}
 
 		switch (rand() % 4) {
 		case 0:	break;	/* return unmodified */
