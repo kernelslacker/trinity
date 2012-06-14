@@ -83,6 +83,7 @@ static void check_children(void)
 				pid, old, now, diff);
 			kill(pid, SIGKILL);
 			reap_child(pid);
+			break;
 		}
 	}
 }
