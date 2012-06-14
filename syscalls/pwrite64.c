@@ -3,19 +3,14 @@
  */
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-static void sanitise_pwrite64(
-		__unused__ unsigned long *a1,
-		__unused__ unsigned long *a2,
-		__unused__ unsigned long *a3,
-		unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void sanitise_pwrite64(int childno)
 {
 
 retry_pos:
-	if ((int)*a4 < 0) {
-		*a4 = rand64();
+	if ((int) shm->a4[childno] < 0) {
+		shm->a4[childno] = rand64();
 		goto retry_pos;
 	}
 }

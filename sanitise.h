@@ -3,15 +3,14 @@
 
 #include "syscall.h"
 
-void sanitise_mmap(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
-void sanitise_sendto(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
-void sanitise_rt_sigaction(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
-void sanitise_socket(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
-void sanitise_ioctl_sg_io(unsigned long *a1, unsigned long *a2, unsigned long *a3, unsigned long *a4, unsigned long *a5, unsigned long *a6);
+void sanitise_mmap(int childno);
+void sanitise_sendto(int childno);
+void sanitise_rt_sigaction(int childno);
+void sanitise_socket(int childno);
 
-void generic_sanitise(int call,
-	unsigned long *a1, unsigned long *a2, unsigned long *a3,
-	unsigned long *a4, unsigned long *a5, unsigned long *a6);
+void sanitise_ioctl_sg_io(int childno);
+
+void generic_sanitise(int childno);
 
 extern char * filebuffer;
 extern unsigned long filebuffersize;

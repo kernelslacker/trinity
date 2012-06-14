@@ -422,24 +422,20 @@ static unsigned long fill_arg(int call, int argnum)
 }
 
 
-void generic_sanitise(int call,
-	unsigned long *a1,
-	unsigned long *a2,
-	unsigned long *a3,
-	unsigned long *a4,
-	unsigned long *a5,
-	unsigned long *a6)
+void generic_sanitise(int childno)
 {
+	unsigned int call = shm->syscallno[childno];
+
 	if (syscalls[call].entry->arg1type != 0)
-		*a1 = fill_arg(call, 1);
+		shm->a1[childno] = fill_arg(call, 1);
 	if (syscalls[call].entry->arg2type != 0)
-		*a2 = fill_arg(call, 2);
+		shm->a2[childno] = fill_arg(call, 2);
 	if (syscalls[call].entry->arg3type != 0)
-		*a3 = fill_arg(call, 3);
+		shm->a3[childno] = fill_arg(call, 3);
 	if (syscalls[call].entry->arg4type != 0)
-		*a4 = fill_arg(call, 4);
+		shm->a4[childno] = fill_arg(call, 4);
 	if (syscalls[call].entry->arg5type != 0)
-		*a5 = fill_arg(call, 5);
+		shm->a5[childno] = fill_arg(call, 5);
 	if (syscalls[call].entry->arg6type != 0)
-		*a6 = fill_arg(call, 6);
+		shm->a6[childno] = fill_arg(call, 6);
 }

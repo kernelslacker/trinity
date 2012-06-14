@@ -6,6 +6,7 @@
 #include <scsi/sg.h>
 
 #include "sanitise.h"
+#include "shm.h"
 #include "trinity.h"
 
 struct sgio {
@@ -15,13 +16,7 @@ struct sgio {
 	unsigned char sense[252];
 };
 
-void sanitise_ioctl_sg_io(
-		__unused__ unsigned long *fd,
-		__unused__ unsigned long *a2,
-		__unused__ unsigned long *arg,
-		__unused__ unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+void sanitise_ioctl_sg_io(int childno)
 {
 	struct sgio *sgio;
 
@@ -57,4 +52,6 @@ void sanitise_ioctl_sg_io(
 	sgio->ioh.timeout = UINT_MAX;
 	sgio->ioh.usr_ptr = 0;
 	sgio->ioh.flags |= SG_FLAG_DIRECT_IO;
+
+	shm->a3[childno] = (unsigned long) page_rand;
 }

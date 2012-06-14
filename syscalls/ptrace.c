@@ -8,13 +8,7 @@
 #include <linux/ptrace.h>
 
 
-static void sanitise_ptrace(
-	__unused__ unsigned long *a1,
-	unsigned long *pid,
-	__unused__ unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6)
+static void sanitise_ptrace(int childno)
 {
 	unsigned int i;
 
@@ -29,7 +23,7 @@ static void sanitise_ptrace(
 	 *  but broken is at least better than hanging.
 	 */
 	i  = rand() % shm->running_childs;
-	*pid = shm->pids[i];
+	shm->a2[childno] = shm->pids[i];
 }
 
 

@@ -8,21 +8,17 @@
 #include <stdlib.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-static void sanitise_mlockall(unsigned long *flags,
-		__unused__ unsigned long *a2,
-		__unused__ unsigned long *a3,
-		__unused__ unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void sanitise_mlockall(int childno)
 {
-	if (*flags != 0)
+	if (shm->a1[childno] != 0)
 		return;
 
 	if ((rand() % 2) == 0)
-		*flags = MCL_CURRENT;
+		shm->a1[childno] = MCL_CURRENT;
 	else
-		*flags = MCL_FUTURE;
+		shm->a1[childno] = MCL_FUTURE;
 }
 
 

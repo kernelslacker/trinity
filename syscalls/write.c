@@ -4,19 +4,14 @@
 #include <stdlib.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
 /*
  * asmlinkage ssize_t sys_write(unsigned int fd, char __user * buf, size_t count)
  */
-static void sanitise_write(
-		__unused__ unsigned long *a1,
-		unsigned long *a2,
-		unsigned long *a3,
-		__unused__ unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void sanitise_write(int childno)
 {
-	unsigned long newsize = *a3 & 0xffff;
+	unsigned long newsize = shm->a3[childno] & 0xffff;
 	void *newbuffer;
 
 retry:
@@ -30,8 +25,8 @@ retry:
 	filebuffer = newbuffer;
 	filebuffersize = newsize;
 
-	*a2 = (unsigned long) filebuffer;
-	*a3 = newsize;
+	shm->a2[childno] = (unsigned long) filebuffer;
+	shm->a3[childno] = newsize;
 }
 
 struct syscall syscall_write = {

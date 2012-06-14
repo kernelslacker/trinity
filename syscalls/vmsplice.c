@@ -9,16 +9,11 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-static void sanitise_vmsplice(
-	__unused__ unsigned long *fd,
-	__unused__ unsigned long *a2,
-	unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6)
+static void sanitise_vmsplice(int childno)
 {
-	*a3 = rand() % UIO_MAXIOV;
+	shm->a3[childno] = rand() % UIO_MAXIOV;
 }
 
 struct syscall syscall_vmsplice = {

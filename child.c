@@ -104,6 +104,7 @@ int child_process(void)
 	int ret = 0;
 	unsigned int syscallnr;
 	unsigned int cpu;
+	unsigned int childno = find_pid_slot(pid);
 
 	disable_coredumps();
 
@@ -160,15 +161,18 @@ retry:
 		if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
 			goto retry;
 
+		/* if we get here, syscallnr is finally valid */
+
+		shm->syscallno[childno] = syscallnr;
 
 		if (syscallcount) {
 			if (shm->execcount >= syscallcount) {
 				shm->exit_now = TRUE;
-				printf("[%d] Reached maximum syscall count %ld\n", getpid(), shm->execcount);
+				printf("[%d] Reached maximum syscall count %ld\n", pid, shm->execcount);
 			}
 		}
 
-		ret = mkcall(syscallnr);
+		ret = mkcall(childno);
 	}
 
 	reenable_coredumps();

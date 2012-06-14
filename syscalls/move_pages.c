@@ -15,41 +15,41 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "arch.h"
+#include "shm.h"
 
-static void sanitise_move_pages(unsigned long *pid,
-	unsigned long *nr_pages, unsigned long *pages,
-	unsigned long *nodes,unsigned long *status, unsigned long *flags)
+static void sanitise_move_pages(int childno)
 {
+	unsigned long *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
 
 	// Needs CAP_SYS_NICE to move pages in another process
 	if (getuid() != 0) {
-		*pid = 0;
-		*flags &= ~MPOL_MF_MOVE_ALL;
+		shm->a1[childno] = 0;
+		shm->a6[childno] &= ~MPOL_MF_MOVE_ALL;
 	}
 
 	page_alloc = malloc(page_size);
 	if (page_alloc == NULL)
 		return;
 
-	*nr_pages = rand() % (page_size / sizeof(void *));
+	shm->a2[childno] = rand() % (page_size / sizeof(void *));
 
-	for (i = 0; i < *nr_pages; i++) {
+	for (i = 0; i < shm->a2[childno]; i++) {
 		page_alloc[i] = (unsigned long) malloc(page_size);
 		if (!page_alloc[i])
 			return;					// FIXME: MEMORY LEAK
 		page_alloc[i] &= PAGE_MASK;
 	}
 
-	*pages = (unsigned long) page_alloc;
+	shm->a3[childno] = (unsigned long) page_alloc;
 
-	*nodes = (unsigned long) malloc(page_size);
-	for (i = 0; i < page_size; i++) {
-		*nodes = (int) rand() % 2;
-	}
+	nodes = malloc(page_size);
+	for (i = 0; i < page_size; i++)
+		nodes[i] = (int) rand() % 2;
+	shm->a4[childno] = (unsigned long) nodes;
 
-	*status = (unsigned long) malloc(page_size);
+	shm->a5[childno] = (unsigned long) malloc(page_size);
 }
 
 struct syscall syscall_move_pages = {

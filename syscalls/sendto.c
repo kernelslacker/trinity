@@ -29,15 +29,11 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-void sanitise_sendto(__unused__ unsigned long *fd,
-	__unused__ unsigned long *buff,
-	__unused__ unsigned long *len,
-	__unused__ unsigned long *flags,
-	__unused__ unsigned long *addr,
-	unsigned long *addr_len)
+void sanitise_sendto(int childno)
 {
-	*addr_len %= 128;	// MAX_SOCK_ADDR
+	shm->a6[childno] %= 128;	// MAX_SOCK_ADDR
 }
 
 struct syscall syscall_sendto = {

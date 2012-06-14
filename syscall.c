@@ -49,11 +49,21 @@ static long syscall32(int num_args, unsigned int call,
 }
 
 
-static unsigned long do_syscall(unsigned int num_args, int nr, unsigned long a1, unsigned long a2, unsigned long a3,
-			unsigned long a4, unsigned long a5, unsigned long a6)
+static unsigned long do_syscall(int childno)
 {
+	int nr = shm->syscallno[childno];
+	unsigned int num_args = syscalls[nr].entry->num_args;
+	unsigned long a1, a2, a3, a4, a5, a6;
+
 	int childpid, childstatus;
 	int ret = 0;
+
+	a1 = shm->a1[childno];
+	a2 = shm->a2[childno];
+	a3 = shm->a3[childno];
+	a4 = shm->a4[childno];
+	a5 = shm->a5[childno];
+	a6 = shm->a6[childno];
 
 	if (extrafork == FALSE) {
 		int i;
@@ -113,10 +123,11 @@ static unsigned long do_syscall(unsigned int num_args, int nr, unsigned long a1,
 	return ret;
 }
 
-long mkcall(unsigned int call)
+long mkcall(int childno)
 {
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
-	unsigned long a1, a2, a3, a4, a5, a6;
+	unsigned int call = shm->syscallno[childno];
+
 	int ret = 0;
 	char string[512], *sptr;
 
@@ -130,22 +141,25 @@ long mkcall(unsigned int call)
 	if (shm->do32bit == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
 
-	olda1 = a1 = rand64();
-	olda2 = a2 = rand64();
-	olda3 = a3 = rand64();
-	olda4 = a4 = rand64();
-	olda5 = a5 = rand64();
-	olda6 = a6 = rand64();
+	olda1 = shm->a1[childno] = rand64();
+	olda2 = shm->a2[childno] = rand64();
+	olda3 = shm->a3[childno] = rand64();
+	olda4 = shm->a4[childno] = rand64();
+	olda5 = shm->a5[childno] = rand64();
+	olda6 = shm->a6[childno] = rand64();
 
 	if (call > max_nr_syscalls)
 		sptr += sprintf(sptr, "%u", call);
 	else
 		sptr += sprintf(sptr, "%s", syscalls[call].entry->name);
 
-	generic_sanitise(call, &a1, &a2, &a3, &a4, &a5, &a6);
+	generic_sanitise(childno);
 	if (syscalls[call].entry->sanitise)
-		syscalls[call].entry->sanitise(&a1, &a2, &a3, &a4, &a5, &a6);
+		syscalls[call].entry->sanitise(childno);
 
+/*
+ * I *really* loathe how this macro has grown. It should be a real function one day.
+ */
 #define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG, TYPE)			\
 	if (syscalls[call].entry->num_args >= ARGNUM) {			\
 		if (!NAME)						\
@@ -201,12 +215,12 @@ long mkcall(unsigned int call)
 	WHITE
 	sptr += sprintf(sptr, "(");
 
-	COLOR_ARG(1, syscalls[call].entry->arg1name, 1<<5, olda1, a1, syscalls[call].entry->arg1type);
-	COLOR_ARG(2, syscalls[call].entry->arg2name, 1<<4, olda2, a2, syscalls[call].entry->arg2type);
-	COLOR_ARG(3, syscalls[call].entry->arg3name, 1<<3, olda3, a3, syscalls[call].entry->arg3type);
-	COLOR_ARG(4, syscalls[call].entry->arg4name, 1<<2, olda4, a4, syscalls[call].entry->arg4type);
-	COLOR_ARG(5, syscalls[call].entry->arg5name, 1<<1, olda5, a5, syscalls[call].entry->arg5type);
-	COLOR_ARG(6, syscalls[call].entry->arg6name, 1<<0, olda6, a6, syscalls[call].entry->arg6type);
+	COLOR_ARG(1, syscalls[call].entry->arg1name, 1<<5, olda1, shm->a1[childno], syscalls[call].entry->arg1type);
+	COLOR_ARG(2, syscalls[call].entry->arg2name, 1<<4, olda2, shm->a2[childno], syscalls[call].entry->arg2type);
+	COLOR_ARG(3, syscalls[call].entry->arg3name, 1<<3, olda3, shm->a3[childno], syscalls[call].entry->arg3type);
+	COLOR_ARG(4, syscalls[call].entry->arg4name, 1<<2, olda4, shm->a4[childno], syscalls[call].entry->arg4type);
+	COLOR_ARG(5, syscalls[call].entry->arg5name, 1<<1, olda5, shm->a5[childno], syscalls[call].entry->arg5type);
+	COLOR_ARG(6, syscalls[call].entry->arg6name, 1<<0, olda6, shm->a6[childno], syscalls[call].entry->arg6type);
 args_done:
 	WHITE
 	sptr += sprintf(sptr, ") ");
@@ -223,7 +237,7 @@ args_done:
 #ifdef __ia64__
 	call += 1024;
 #endif
-	ret = do_syscall(syscalls[call].entry->num_args, syscalls[call].entry->number, a1, a2, a3, a4, a5, a6);
+	ret = do_syscall(childno);
 
 	sptr = string;
 

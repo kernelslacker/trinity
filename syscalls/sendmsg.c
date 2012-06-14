@@ -9,22 +9,17 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "shm.h"
 
 #define MSG_CMSG_COMPAT 0x80000000      /* This message needs 32 bit fixups */
 
-static void sanitise_sendmsg(
-	__unused__ unsigned long *fd,
-	unsigned long *a2,
-	__unused__ unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6)
+static void sanitise_sendmsg(int childno)
 {
 	struct msghdr *msg;
 
         msg = malloc(sizeof(struct msghdr));
 	if (msg == NULL) {
-		*a2 = (unsigned long) get_address();
+		shm->a2[childno] = (unsigned long) get_address();
 		return;
 	}
 
@@ -36,7 +31,7 @@ static void sanitise_sendmsg(
 	msg->msg_controllen = get_len();
 	msg->msg_flags = rand();
 
-	*a2 = (unsigned long) msg;
+	shm->a2[childno] = (unsigned long) msg;
 }
 
 struct syscall syscall_sendmsg = {

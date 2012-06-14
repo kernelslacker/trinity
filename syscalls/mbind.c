@@ -11,19 +11,18 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-static void sanitise_mbind(
-	__unused__ unsigned long *a0,
-	__unused__ unsigned long *a1,
-	__unused__ unsigned long *a2,
-	__unused__ unsigned long *a3,
-	unsigned long *maxnode,
-	__unused__ unsigned long *a5)
+static void sanitise_mbind(int childno)
 {
-
+	unsigned long maxnode;
 retry_maxnode:
-	if (*maxnode < 2 || (*maxnode) > (page_size * 8)) {
-		*maxnode = get_interesting_value();
+	shm->a5[childno] &= ~((page_size * 8) - 1);
+
+	maxnode = shm->a5[childno];
+
+	if (maxnode < 2 || (maxnode) > (page_size * 8)) {
+		shm->a5[childno] = get_interesting_32bit_value();
 		goto retry_maxnode;
 	}
 }

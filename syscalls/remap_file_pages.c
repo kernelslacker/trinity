@@ -7,35 +7,30 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "arch.h"
+#include "shm.h"
 
-static void sanitise_remap_file_pages(
-		unsigned long *start,
-		unsigned long *size,
-		__unused__ unsigned long *a3,
-		__unused__ unsigned long *a4,
-		unsigned long *pgoff,
-		__unused__ unsigned long *a6)
+static void sanitise_remap_file_pages(int childno)
 {
 
-	*start = *start & PAGE_MASK;
-	*size = *size & PAGE_MASK;
+	shm->a1[childno] &= PAGE_MASK;
+	shm->a2[childno] &= PAGE_MASK;
 
 
 retry_size:
-	if (*start + *size <= *start) {
-		*size = get_interesting_32bit_value() & PAGE_MASK;
+	if (shm->a1[childno] + shm->a2[childno] <= shm->a1[childno]) {
+		shm->a2[childno] = get_interesting_32bit_value() & PAGE_MASK;
 		goto retry_size;
 	}
 
 retry_pgoff:
-	if (*pgoff + (*size >> PAGE_SHIFT) < *pgoff) {
-		*pgoff = get_interesting_value();
+	if (shm->a5[childno] + (shm->a2[childno] >> PAGE_SHIFT) < shm->a5[childno]) {
+		shm->a5[childno] = get_interesting_value();
 		goto retry_pgoff;
 	}
 
 retry_pgoff_bits:
-	if (*pgoff + (*size >> PAGE_SHIFT) >= (1UL << PTE_FILE_MAX_BITS)) {
-		*pgoff = (*pgoff >> 1);
+	if (shm->a5[childno] + (shm->a2[childno] >> PAGE_SHIFT) >= (1UL << PTE_FILE_MAX_BITS)) {
+		shm->a5[childno] = (shm->a5[childno] >> 1);
 		goto retry_pgoff_bits;
 	}
 }

@@ -6,19 +6,14 @@
 #include <string.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
 /*
  * asmlinkage ssize_t sys_read(unsigned int fd, char __user * buf, size_t count)
  */
-static void sanitise_read(
-		__unused__ unsigned long *a1,
-		unsigned long *a2,
-		unsigned long *a3,
-		__unused__ unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void sanitise_read(int childno)
 {
-	unsigned long newsize = (unsigned int) *a3 >> 16;
+	unsigned long newsize = (unsigned int) shm->a3[childno] & 0xffffffff;
 
 	if (filebuffer != NULL) {
 		if (filebuffersize < newsize) {
@@ -37,8 +32,8 @@ retry:
 		}
 		filebuffersize = newsize;
 	}
-	*a2 = (unsigned long) filebuffer;
-	*a3 = newsize;
+	shm->a2[childno] = (unsigned long) filebuffer;
+	shm->a3[childno] = newsize;
 	memset(filebuffer, 0, newsize);
 }
 

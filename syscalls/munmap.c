@@ -3,17 +3,13 @@
  */
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-void sanitise_munmap(unsigned long *addr,
-	__unused__ unsigned long *len,
-	__unused__ unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6)
+void sanitise_munmap(int childno)
 {
 retry:
-	if (*addr == 0) {
-		*addr = (unsigned long) get_address();
+	if (shm->a1[childno] == 0) {
+		shm->a1[childno] = (unsigned long) get_address();
 		goto retry;
 	}
 }
