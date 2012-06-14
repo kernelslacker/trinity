@@ -80,22 +80,35 @@ static void check_children(void)
 //		if (diff > 3)
 //			printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
 
-		if (diff > 30) {
+		/* After 30 seconds of no progress, send a kill signal. */
+		if (diff == 30) {
+			output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
+				pid, old, now, diff);
+			kill(pid, SIGKILL);
+			break;
+		}
+
+		/* If it's still around after 60 seconds, we have bigger problems.
+		 * Find out what's going on. */
+
+		if (diff > 60) {
 
 			ret = ptrace(PTRACE_ATTACH, pid, NULL, NULL);
+
 			switch (ret) {
 			case -ESRCH:
 				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n");
 				reap_child(pid);
 				break;
+
 			case -EPERM:
 				output("couldn't attach to pid %d. Zombie? Removing from pid map.\n");
 				reap_child(pid);
 				break;
+
 			default:
-				output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
-				pid, old, now, diff);
 				ptrace(PTRACE_CONT, pid, NULL, NULL);
+				output("tried to kill pid %d, but %s. Trying again.\n", strerror(errno));
 				kill(pid, SIGKILL);
 				break;
 			}
