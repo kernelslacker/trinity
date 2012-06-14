@@ -122,15 +122,13 @@ regen:
 void setup_fds(void)
 {
 	open_pipes();
-	open_sockets();
 	open_files();
 }
 
 void regenerate_fds(void)
 {
-	close_pipes();
 	close_files();
-	close_sockets();
+	close_pipes();
 
 	setup_fds();
 }
