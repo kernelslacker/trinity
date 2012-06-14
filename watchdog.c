@@ -83,14 +83,21 @@ static void check_children(void)
 		if (diff > 30) {
 
 			ret = ptrace(PTRACE_ATTACH, pid, NULL, NULL);
-			if (ret == -ESRCH) {
+			switch (ret) {
+			case -ESRCH:
 				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n");
 				reap_child(pid);
-			} else {
+				break;
+			case -EPERM:
+				output("couldn't attach to pid %d. Zombie? Removing from pid map.\n");
+				reap_child(pid);
+				break;
+			default:
 				output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
 				pid, old, now, diff);
 				ptrace(PTRACE_CONT, pid, NULL, NULL);
 				kill(pid, SIGKILL);
+				break;
 			}
 			break;
 		}
