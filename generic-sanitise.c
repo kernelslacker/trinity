@@ -338,6 +338,9 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long)get_address();
 
 	case ARG_ADDRESS2:
+		/* just do ARG_ADDRESS half the time. */
+		if ((rand() % 2) == 0)
+			return (unsigned long)get_address();
 
 		if ((syscalls[call].entry->arg1type == ARG_ADDRESS) ||
 		    (syscalls[call].entry->arg1type == ARG_NON_NULL_ADDRESS)) {
