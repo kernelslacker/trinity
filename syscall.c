@@ -85,6 +85,7 @@ static unsigned long do_syscall(int childno)
 	}
 
 	/* Do the actual syscall in another child. */
+	fflush(stdout);
 	childpid = fork();
 	if (childpid == 0) {
 		init_child();
