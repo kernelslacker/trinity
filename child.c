@@ -124,6 +124,9 @@ int child_process(void)
 
 	while (shm->exit_now == FALSE) {
 
+		while (shm->regenerating == TRUE)
+			sleep(1);
+
 		if (biarch == TRUE) {
 
 			if ((use_64bit == TRUE) && (use_32bit == TRUE)) {

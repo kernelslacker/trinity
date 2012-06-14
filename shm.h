@@ -12,8 +12,9 @@ struct shm_s {
 	unsigned long successes;
 	unsigned long failures;
 	unsigned long retries;
-	unsigned int regenerate;
+	unsigned long regenerate;
 
+	pid_t watchdog_pid;
 	unsigned int nr_childs;
 	unsigned int running_childs;
 	pid_t pids[MAX_NR_CHILDREN];
@@ -38,11 +39,12 @@ struct shm_s {
 	int current_fd;
 	unsigned int fd_lifetime;
 
+	/* various flags. */
 	unsigned char do32bit;
 
 	unsigned char exit_now;
 
-	pid_t watchdog_pid;
+	unsigned char regenerating;
 };
 extern struct shm_s *shm;
 
