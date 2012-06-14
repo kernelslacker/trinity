@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/ptrace.h>
 
 #include "trinity.h"
 #include "shm.h"
@@ -46,6 +47,7 @@ static void check_children(void)
 	time_t old, now;
 	pid_t pid;
 	unsigned int i;
+	int ret;
 
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec;
@@ -79,9 +81,17 @@ static void check_children(void)
 //			printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
 
 		if (diff > 30) {
-			output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d) Killing.\n",
+
+			ret = ptrace(PTRACE_ATTACH, pid, NULL, NULL);
+			if (ret == -ESRCH) {
+				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n");
+				reap_child(pid);
+			} else {
+				output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
 				pid, old, now, diff);
-			kill(pid, SIGKILL);
+				ptrace(PTRACE_CONT, pid, NULL, NULL);
+				kill(pid, SIGKILL);
+			}
 			break;
 		}
 	}
