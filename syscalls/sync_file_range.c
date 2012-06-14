@@ -8,22 +8,18 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "arch.h"
+#include "shm.h"
 
-static void sanitise_sync_file_range(__unused__ unsigned long *fd,
-	unsigned long *offset,
-	__unused__ unsigned long *nbytes,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6)
+static void sanitise_sync_file_range(int childno)
 {
 	long endbyte;
-	loff_t off = *offset;
+	loff_t off = shm->a2[childno];
 
 retry:
 	off = rand() & 0xfffffff;
-	*nbytes = rand() & 0xfffffff;
+	shm->a3[childno] = rand() & 0xfffffff;
 
-	endbyte = off + *nbytes;
+	endbyte = off + shm->a2[childno];
 
 
 	if (endbyte < off)
@@ -32,8 +28,7 @@ retry:
 	if (off >= (0x100000000LL << PAGE_SHIFT))
 		goto retry;
 
-	*offset = off;
-
+	shm->a2[childno] = off;
 }
 
 struct syscall syscall_sync_file_range = {

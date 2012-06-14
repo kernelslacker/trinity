@@ -9,42 +9,37 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "compat.h"
 
 /* note: also called from generate_sockets() & sanitise_socketcall() */
-void sanitise_socket(
-        unsigned long *family,
-        unsigned long *type,
-        unsigned long *protocol,
-        __unused__ unsigned long *a4,
-        __unused__ unsigned long *a5,
-        __unused__ unsigned long *a6)
+void sanitise_socket(int childno)
 {
-	*family = rand() % PF_MAX;
-	*type = rand() % TYPE_MAX;
-	*protocol = rand() % PROTO_MAX;
+        unsigned long family = rand() % PF_MAX;
+        unsigned long type= rand() % TYPE_MAX;
+        unsigned long protocol = rand() % PROTO_MAX;
 
-	switch (*family) {
+	switch (family) {
 
 	case AF_X25:
-		*type = SOCK_SEQPACKET;
+		type = SOCK_SEQPACKET;
 		break;
 
 	case AF_INET:
 		switch (rand() % 3) {
-		case 0:	*type = SOCK_STREAM;	// TCP
+		case 0:	type = SOCK_STREAM;	// TCP
 			if ((rand() % 2) == 0)
-				*protocol = 0;
+				protocol = 0;
 			else
-				*protocol = IPPROTO_TCP;
+				protocol = IPPROTO_TCP;
 			break;
-		case 1:	*type = SOCK_DGRAM;	// UDP
+		case 1:	type = SOCK_DGRAM;	// UDP
 			if ((rand() % 2) == 0)
-				*protocol = 0;
+				protocol = 0;
 			else
-				*protocol = IPPROTO_UDP;
+				protocol = IPPROTO_UDP;
 			break;
-		case 2:	*type = SOCK_RAW;
+		case 2:	type = SOCK_RAW;
 			break;
 		default:break;
 		}
@@ -53,16 +48,16 @@ void sanitise_socket(
 
 	case AF_INET6:
 		switch (rand() % 3) {
-		case 0:	*type = SOCK_STREAM;	// TCP
-			*protocol = 0;
+		case 0:	type = SOCK_STREAM;	// TCP
+			protocol = 0;
 			break;
-		case 1:	*type = SOCK_DGRAM;	// UDP
+		case 1:	type = SOCK_DGRAM;	// UDP
 			if ((rand() % 2) == 0)
-				*protocol = 0;
+				protocol = 0;
 			else
-				*protocol = IPPROTO_UDP;
+				protocol = IPPROTO_UDP;
 			break;
-		case 2:	*type = SOCK_RAW;
+		case 2:	type = SOCK_RAW;
 			break;
 		default:break;
 		}
@@ -70,21 +65,21 @@ void sanitise_socket(
 
 	case AF_NETLINK:
 		switch (rand() % 2) {
-		case 0:	*type = SOCK_RAW;
+		case 0:	type = SOCK_RAW;
 			break;
-		case 1:	*type = SOCK_DGRAM;
+		case 1:	type = SOCK_DGRAM;
 		default:break;
 		}
-		*protocol = rand() % 22;
+		protocol = rand() % 22;
 		break;
 
 	case AF_UNIX:
 		switch (rand() % 3) {
-		case 0:	*type = SOCK_STREAM;
+		case 0:	type = SOCK_STREAM;
 			break;
-		case 1:	*type = SOCK_DGRAM;
+		case 1:	type = SOCK_DGRAM;
 			break;
-		case 2:	*type = SOCK_SEQPACKET;
+		case 2:	type = SOCK_SEQPACKET;
 			break;
 		default:break;
 		}
@@ -92,10 +87,10 @@ void sanitise_socket(
 
 	case AF_APPLETALK:
 		switch (rand() % 2) {
-		case 0:	*type = SOCK_DGRAM;
-			*protocol = 0;
+		case 0:	type = SOCK_DGRAM;
+			protocol = 0;
 			break;
-		case 1:	*type = SOCK_RAW;
+		case 1:	type = SOCK_RAW;
 			break;
 		default:break;
 		}
@@ -103,18 +98,18 @@ void sanitise_socket(
 
 	case AF_NFC:
 		switch (rand() % 2) {
-		case 0:	*protocol = NFC_SOCKPROTO_LLCP;
+		case 0:	protocol = NFC_SOCKPROTO_LLCP;
 			switch (rand() % 2) {
-				*type = SOCK_DGRAM;
+				type = SOCK_DGRAM;
 				break;
-			case 1:	*type = SOCK_STREAM;
+			case 1:	type = SOCK_STREAM;
 				break;
 			default: break;
 			}
 			break;
 
-		case 1:	*protocol = NFC_SOCKPROTO_RAW;
-			*type = SOCK_SEQPACKET;
+		case 1:	protocol = NFC_SOCKPROTO_RAW;
+			type = SOCK_SEQPACKET;
 			break;
 		default:
 			BUG("impossible.");
@@ -123,12 +118,12 @@ void sanitise_socket(
 
 	default:
 		switch (rand() % 6) {
-		case 0:	*type = SOCK_DGRAM;	break;
-		case 1:	*type = SOCK_STREAM;	break;
-		case 2:	*type = SOCK_SEQPACKET;	break;
-		case 3:	*type = SOCK_RAW;	break;
-		case 4:	*type = SOCK_RDM;	break;
-		case 5:	*type = SOCK_PACKET;	break;
+		case 0:	type = SOCK_DGRAM;	break;
+		case 1:	type = SOCK_STREAM;	break;
+		case 2:	type = SOCK_SEQPACKET;	break;
+		case 3:	type = SOCK_RAW;	break;
+		case 4:	type = SOCK_RDM;	break;
+		case 5:	type = SOCK_PACKET;	break;
 		default: break;
 		}
 
@@ -136,9 +131,13 @@ void sanitise_socket(
 	}
 
 	if ((rand() % 100) < 25)
-		*type |= SOCK_CLOEXEC;
+		type |= SOCK_CLOEXEC;
 	if ((rand() % 100) < 25)
-		*type |= SOCK_NONBLOCK;
+		type |= SOCK_NONBLOCK;
+
+	shm->a1[childno] = family;
+	shm->a2[childno] = type;
+	shm->a3[childno] = protocol;
 }
 
 struct syscall syscall_socket = {

@@ -5,30 +5,25 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "arch.h"
+#include "shm.h"
 
-static void sanitise_mprotect(
-		unsigned long *start,
-		unsigned long *len,
-		__unused__ unsigned long *prot,
-		__unused__ unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void sanitise_mprotect(int childno)
 {
 	unsigned long end;
-	unsigned long mask = ~(page_size-1);
 
-	*start &= mask;
+	shm->a1[childno] &= PAGE_MASK;
 
 retry_end:
-	end = *start + *len;
-	if (*len == 0) {
-		*len = rand64();
+	end = shm->a1[childno] + shm->a2[childno];
+	if (shm->a2[childno] == 0) {
+		shm->a2[childno] = rand64();
 		goto retry_end;
 	}
 
 	/* End must be after start */
-	if (end <= *start) {
-		*len = rand64();
+	if (end <= shm->a1[childno]) {
+		shm->a2[childno] = rand64();
 		goto retry_end;
 	}
 }

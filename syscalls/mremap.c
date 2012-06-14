@@ -9,6 +9,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "arch.h"
+#include "shm.h"
 
 /*
  * asmlinkage unsigned long sys_mremap(unsigned long addr,
@@ -20,23 +21,15 @@
  * trying random addresses.
  */
 
-static void sanitise_mremap(
-		unsigned long *addr,
-		__unused__ unsigned long *old_len,
-		unsigned long *new_len,
-		unsigned long *flags,
-		__unused__ unsigned long *new_addr,
-		__unused__ unsigned long *a6)
+static void sanitise_mremap(int childno)
 {
-	unsigned long mask = ~(page_size-1);
+	shm->a1[childno] &= PAGE_MASK;
 
-	*addr &= mask;
-
-	if (*flags & MREMAP_FIXED) {
+	if (shm->a4[childno] & MREMAP_FIXED) {
 		// Can't be fixed, and maymove.
-		*flags &= ~MREMAP_MAYMOVE;
+		shm->a4[childno] &= ~MREMAP_MAYMOVE;
 
-		*new_len &= TASK_SIZE-*new_len;
+		shm->a3[childno] &= TASK_SIZE - shm->a3[childno];
 	}
 }
 

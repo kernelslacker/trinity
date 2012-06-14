@@ -5,24 +5,21 @@
 #include <linux/net.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "compat.h"
 
-static void sanitise_socketcall(
-	unsigned long *call,
-	unsigned long *argptr,
-	__unused__ unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6)
+static void sanitise_socketcall(int childno)
 {
 	unsigned long *args;
+
 	args = malloc(6 * sizeof(unsigned long));
 
-	*call = rand() % 20;
+	shm->a1[childno] = rand() % 20;
 
-	switch (*call) {
+	switch (shm->a1[childno]) {
 	case SYS_SOCKET:
-		sanitise_socket(&args[0], &args[1], &args[2], NULL, NULL, NULL);
+		sanitise_socket(childno);
+		shm->syscallno[childno] = search_syscall_table(syscalls, max_nr_syscalls, "socket");
 		break;
 	case SYS_BIND:
 		break;
@@ -65,7 +62,8 @@ static void sanitise_socketcall(
 	default:
 		break;
 	}
-	*argptr = (unsigned long) args;
+
+	shm->a2[childno] = (unsigned long) args;
 }
 
 struct syscall syscall_socketcall = {

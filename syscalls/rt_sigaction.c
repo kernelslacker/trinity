@@ -9,22 +9,17 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-void sanitise_rt_sigaction(
-		__unused__ unsigned long *a1,
-		__unused__ unsigned long *a2,
-		__unused__ unsigned long *a3,
-		unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+void sanitise_rt_sigaction(int childno)
 {
 	if ((rand() % 2) == 0)
-		*a2 = 0;
+		shm->a2[childno] = 0;
 
 	if ((rand() % 2) == 0)
-		*a3 = 0;
+		shm->a3[childno] = 0;
 
-	*a4 = sizeof(sigset_t);
+	shm->a4[childno] = sizeof(sigset_t);
 }
 
 struct syscall syscall_rt_sigaction = {

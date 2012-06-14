@@ -7,6 +7,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
 /*
 #include <linux/agpgart.h>
@@ -42,9 +43,7 @@
 struct ioctl {
 	const char *name;
 	unsigned int request;
-	void (*sanitise)(
-		unsigned long *, unsigned long *, unsigned long *,
-		unsigned long *, unsigned long *, unsigned long *);
+	void (*sanitise)(int childno);
 };
 
 struct ioctl ioctllist[] = {
@@ -65,13 +64,7 @@ struct ioctl ioctllist[] = {
 
 #define NR_IOCTLS sizeof(ioctllist)/sizeof(struct ioctl)
 
-static void generic_sanitise_ioctl(
-		__unused__ unsigned long *fd,
-		unsigned long *cmd,
-		unsigned long *arg,
-		__unused__ unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void generic_sanitise_ioctl(int childno)
 {
 	unsigned int i, j;
 	unsigned int nr_elements;
@@ -83,22 +76,22 @@ static void generic_sanitise_ioctl(
 
 		/* mangle the cmd by ORing up to 4 random bits */
 		for (i=0; i < (unsigned int)(rand() % 4); i++)
-			*cmd |= 1L << (rand() % 32);
+			shm->a2[childno] |= 1L << (rand() % 32);
 
 		/* mangle the cmd by ANDing up to 4 random bits */
 		for (i=0; i < (unsigned int)(rand() % 4); i++)
-			*cmd &= 1L << (rand() % 32);
+			shm->a2[childno] &= 1L << (rand() % 32);
 	}
 
 	/* the argument could mean anything, because ioctl sucks like that. */
 	switch (rand() % 10) {
-	case 0:	*arg = get_interesting_32bit_value();
+	case 0:	shm->a3[childno] = get_interesting_32bit_value();
 		break;
 	case 1 ... 5:
-		*arg = (unsigned long)page_rand;
+		shm->a3[childno] = (unsigned long) page_rand;
 		break;
 	case 6 ... 9:
-		*arg = (unsigned long)page_rand;
+		shm->a3[childno] = (unsigned long) page_rand;
 		ptr = (unsigned int*)page_rand;
 		/* manufacture a random struct */
 
@@ -122,23 +115,17 @@ static void generic_sanitise_ioctl(
 	}
 }
 
-static void sanitise_ioctl(
-		__unused__ unsigned long *fd,
-		unsigned long *cmd,
-		unsigned long *arg,
-		__unused__ unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void sanitise_ioctl(int childno)
 {
 	int ioctlnr;
 
 	ioctlnr = rand() % NR_IOCTLS;
-	*cmd = ioctllist[ioctlnr].request;
+	shm->a2[childno] = ioctllist[ioctlnr].request;
 
 	if (ioctllist[ioctlnr].sanitise)
-		ioctllist[ioctlnr].sanitise(fd, cmd, arg, a4, a5, a6);
+		ioctllist[ioctlnr].sanitise(childno);
 	else
-		generic_sanitise_ioctl(fd, cmd, arg, a4, a5, a6);
+		generic_sanitise_ioctl(childno);
 }
 
 struct syscall syscall_ioctl = {

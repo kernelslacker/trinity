@@ -8,32 +8,26 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "arch.h"
 #include "compat.h"
 
-void sanitise_mmap(
-	__unused__ unsigned long *addr,
-	__unused__ unsigned long *len,
-	__unused__ unsigned long *prot,
-	__unused__ unsigned long *flags,
-	__unused__ unsigned long *fd,
-	unsigned long *offset)
+void sanitise_mmap(int childno)
 {
 	unsigned int i;
 
 	/* page align inputs */
-	*addr &= PAGE_MASK;
-	*len &= PAGE_MASK;
-	*offset &= PAGE_MASK;
+	shm->a1[childno] &= PAGE_MASK;
+	shm->a2[childno] &= PAGE_MASK;
+	shm->a6[childno] &= PAGE_MASK;
 
-	if (*len == 0)
-		*len = page_size;
+	if (shm->a2[childno] == 0)
+		shm->a2[childno] = page_size;
 
-
-	if (*flags & MAP_ANONYMOUS) {
+	if (shm->a4[childno] & MAP_ANONYMOUS) {
 		i = rand() % 100;
 		if (i > 50)
-			*fd = -1;
+			shm->a5[childno] = -1;
 	}
 }
 

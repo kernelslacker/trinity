@@ -10,19 +10,14 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "shm.h"
 
-static void sanitise_perf_event_open(
-	unsigned long *a1,
-	__unused__ unsigned long *a2,
-	__unused__ unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6) {
-
+static void sanitise_perf_event_open(int childno)
+{
 	struct perf_event_attr *hw;
 
-	a1 = (unsigned long *)page_rand;
-	hw = (struct perf_event_attr *)a1;
+	shm->a1[childno] = (unsigned long) page_rand;
+	hw = (struct perf_event_attr *) shm->a1[childno];
 
 	switch(rand() % 6) {
 		case 0:	hw->type = PERF_TYPE_HARDWARE;
@@ -94,7 +89,6 @@ static void sanitise_perf_event_open(
 		case 1: hw->size = rand();
 		default: break;
 	}
-
 }
 
 struct syscall syscall_perf_event_open = {

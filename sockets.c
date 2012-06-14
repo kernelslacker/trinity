@@ -58,7 +58,11 @@ void generate_sockets(unsigned int nr_to_create)
 			if (sockarray[i] == MAX_PER_DOMAIN)
 				break;
 
-			sanitise_socket(&domain, &type, &protocol, NULL, NULL, NULL);
+			/* Pretend we're child 0 and we've called sys_socket */
+			sanitise_socket(0);
+			domain = shm->a1[0];
+			type = shm->a2[0];
+			protocol = shm->a3[0];
 
 			if (do_specific_proto == TRUE)
 				domain = specific_proto;

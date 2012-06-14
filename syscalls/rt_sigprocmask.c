@@ -5,16 +5,11 @@
 #include <signal.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-static void sanitise_rt_sigprocmask(
-		__unused__ unsigned long *a1,
-		__unused__ unsigned long *a2,
-		__unused__ unsigned long *a3,
-		unsigned long *a4,
-		__unused__ unsigned long *a5,
-		__unused__ unsigned long *a6)
+static void sanitise_rt_sigprocmask(int childno)
 {
-	*a4 = sizeof(sigset_t);
+	shm->a4[childno] = sizeof(sigset_t);
 }
 
 struct syscall syscall_rt_sigprocmask = {

@@ -3,6 +3,8 @@
 
 #include <sys/time.h>
 
+#include <stdio.h>
+
 #include "constants.h"
 
 struct shm_s {
@@ -23,6 +25,15 @@ struct shm_s {
 	int pipe_fds[MAX_PIPE_FDS*2];
 	int fds[MAX_FDS/2];
 	int socket_fds[MAX_FDS/2];
+
+	/* state for the syscall currently in progress. */
+	unsigned int syscallno[MAX_NR_CHILDREN];
+	unsigned long a1[MAX_NR_CHILDREN];
+	unsigned long a2[MAX_NR_CHILDREN];
+	unsigned long a3[MAX_NR_CHILDREN];
+	unsigned long a4[MAX_NR_CHILDREN];
+	unsigned long a5[MAX_NR_CHILDREN];
+	unsigned long a6[MAX_NR_CHILDREN];
 
 	int current_fd;
 	unsigned int fd_lifetime;

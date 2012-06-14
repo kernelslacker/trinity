@@ -21,13 +21,7 @@ struct arglist {
 };
 
 struct syscall {
-	void (*sanitise)(
-		unsigned long *,
-		unsigned long *,
-		unsigned long *,
-		unsigned long *,
-		unsigned long *,
-		unsigned long *);
+	void (*sanitise)(int childno);
 	void (*post)(int);
 
 	unsigned int number;
@@ -103,7 +97,7 @@ extern unsigned char use_64bit;
 #define ACTIVE (1<<4)
 
 void setup_syscall_tables(void);
-int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, char *arg);
+int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
 int validate_specific_syscall(struct syscalltable *table, int call);
 void mark_all_syscalls_active(void);
 void toggle_syscall(char *arg, unsigned char state);

@@ -4,16 +4,11 @@
 #include <linux/futex.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
 
-static void sanitise_set_robust_list(
-	__unused__ unsigned long *a1,
-	unsigned long *len,
-	__unused__ unsigned long *a3,
-	__unused__ unsigned long *a4,
-	__unused__ unsigned long *a5,
-	__unused__ unsigned long *a6)
+static void sanitise_set_robust_list(int childno)
 {
-	*len = sizeof(struct robust_list_head);
+	shm->a2[childno] = sizeof(struct robust_list_head);
 }
 
 struct syscall syscall_set_robust_list = {

@@ -25,7 +25,7 @@ unsigned int max_nr_64bit_syscalls;
 unsigned char use_32bit = FALSE;
 unsigned char use_64bit = FALSE;
 
-int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, char *arg)
+int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, const char *arg)
 {
 	unsigned int i;
 
