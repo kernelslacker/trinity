@@ -113,13 +113,30 @@ done:
 	output("\ncreated %d sockets\n", socks);
 }
 
+
+static void close_sockets(void)
+{
+	unsigned int i;
+	int fd;
+
+	for (i = 0; i < socks; i++) {
+		fd = shm->socket_fds[i];
+		shm->socket_fds[i] = 0;
+		if (close(fd) == 0) {
+			socks--;
+			fds_left_to_create++;
+		} else {
+			printf("failed to close socket.(%s)\n", strerror(errno));
+		}
+	}
+}
+
 void open_sockets()
 {
 	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 	int cachefile;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
-	unsigned int i;
 	int bytesread=-1;
 	int fd;
 
@@ -163,12 +180,7 @@ regenerate:
 			close(cachefile);
 			unlink(cachefilename);
 
-			for (i = 0; i < socks; i++) {
-				close(shm->socket_fds[i]);
-				shm->socket_fds[i] = 0;
-				fds_left_to_create++;
-			}
-			socks = 0;
+			close_sockets();
 
 			generate_sockets(fds_left_to_create/2);
 			return;
@@ -279,18 +291,4 @@ void find_specific_proto(char *protoarg)
 
 	printf("Using protocol %s (%u) for all sockets\n", p[i].name, p[i].proto);
 	return;
-}
-
-void close_sockets(void)
-{
-	unsigned int i;
-	int fd;
-
-	for (i = 0; i < socks; i++) {
-		fd = shm->socket_fds[i];
-		shm->socket_fds[i] = 0;
-		close(fd);
-		socks--;
-		fds_left_to_create++;
-	}
 }
