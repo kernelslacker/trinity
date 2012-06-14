@@ -132,7 +132,7 @@ long mkcall(int childno)
 	int ret = 0;
 	char string[512], *sptr;
 
-	shm->regenerate--;
+	shm->regenerate++;
 
 	sigsetjmp(ret_jump, 1);
 
