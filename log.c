@@ -151,4 +151,5 @@ void output(const char *fmt, ...)
 	monobuf[j] = '\0';
 
 	fprintf(handle, "%s", monobuf);
+	(void)fflush(handle);
 }

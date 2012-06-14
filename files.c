@@ -247,12 +247,6 @@ void close_files()
 		close(fd);
 		fds_left_to_create++;
 	}
-	fd_idx = 0;
-}
-
-void regenerate_fds(void)
-{
-	close_files();
 	pathname_idx = 0;
-	setup_fds();
+	fd_idx = 0;
 }

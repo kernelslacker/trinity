@@ -11,7 +11,7 @@ unsigned int fd_idx = 0;
 
 unsigned int fds_left_to_create = MAX_FDS;
 
-void open_pipes(void)
+static void open_pipes(void)
 {
 	int pipes[MAX_PIPE_FDS * 2];
 	unsigned int i;
@@ -29,11 +29,19 @@ void open_pipes(void)
 	}
 }
 
-void setup_fds(void)
+static void close_pipes(void)
 {
-	open_pipes();
-	open_sockets();
-	open_files();
+	unsigned int i;
+	int fd;
+
+	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
+		fd = shm->pipe_fds[i];
+		shm->pipe_fds[i] = 0;
+		close(fd);
+		fd = shm->pipe_fds[i+1];
+		shm->pipe_fds[i+1] = 0;
+		close(fd);
+	}
 }
 
 static int get_random_fd(void)
@@ -109,4 +117,20 @@ regen:
 	}
 
 	return shm->current_fd;
+}
+
+void setup_fds(void)
+{
+	open_pipes();
+	open_sockets();
+	open_files();
+}
+
+void regenerate_fds(void)
+{
+	close_pipes();
+	close_files();
+	close_sockets();
+
+	setup_fds();
 }

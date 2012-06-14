@@ -280,3 +280,17 @@ void find_specific_proto(char *protoarg)
 	printf("Using protocol %s (%u) for all sockets\n", p[i].name, p[i].proto);
 	return;
 }
+
+void close_sockets(void)
+{
+	unsigned int i;
+	int fd;
+
+	for (i = 0; i < socks; i++) {
+		fd = shm->socket_fds[i];
+		shm->socket_fds[i] = 0;
+		close(fd);
+		socks--;
+		fds_left_to_create++;
+	}
+}
