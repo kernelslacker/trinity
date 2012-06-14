@@ -7,7 +7,7 @@
 
 #define MAX_FDS 750
 
-#define REGENERATION_POINT 25000
+#define REGENERATION_POINT 100000
 
 #define TYPE_MAX 10
 #define PROTO_MAX 256
