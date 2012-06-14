@@ -16,6 +16,10 @@
 
 static void regenerate()
 {
+	shm->regenerating = TRUE;
+
+	sleep(1);	/* give children time to finish with fds. */
+
 	shm->regenerate = 0;
 
 	output("[%d] Regenerating random pages, fd's etc.\n", getpid());
@@ -26,6 +30,8 @@ static void regenerate()
 	setup_maps();
 
 	regenerate_random_page();
+
+	shm->regenerating = FALSE;
 }
 
 unsigned char do_check_tainted;

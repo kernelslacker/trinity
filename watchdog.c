@@ -130,6 +130,9 @@ void watchdog(void)
 
 	while (shm->exit_now == FALSE) {
 
+		while (shm->regenerating == TRUE)
+			sleep(1);
+
 		check_children();
 
 		/* Only check taint if it was zero on startup */
