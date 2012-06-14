@@ -298,13 +298,14 @@ unsigned long get_len()
 	return i;
 }
 
-static unsigned long fill_arg(int call, int argnum)
+static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
+	unsigned long mask = 0;
+	unsigned long low = 0, high = 0;
+	unsigned long addr = 0;
 	unsigned int bits;
-	unsigned long mask=0;
-	unsigned long low=0, high=0;
-	unsigned int num=0;
+	unsigned int num = 0;
 	const unsigned int *values = NULL;
 	enum argtype argtype = 0;
 
@@ -333,8 +334,35 @@ static unsigned long fill_arg(int call, int argnum)
 		return (unsigned long)get_len();
 
 	case ARG_ADDRESS:
-	case ARG_ADDRESS2:
 		return (unsigned long)get_address();
+
+	case ARG_ADDRESS2:
+
+		if (syscalls[call].entry->arg1type == ARG_ADDRESS)
+			addr = shm->a1[childno];
+		if (syscalls[call].entry->arg2type == ARG_ADDRESS)
+			addr = shm->a2[childno];
+		if (syscalls[call].entry->arg3type == ARG_ADDRESS)
+			addr = shm->a3[childno];
+		if (syscalls[call].entry->arg4type == ARG_ADDRESS)
+			addr = shm->a4[childno];
+		if (syscalls[call].entry->arg5type == ARG_ADDRESS)
+			addr = shm->a5[childno];
+
+		switch (rand() % 4) {
+		case 0:	break;	/* return unmodified */
+		case 1:	addr++;
+			break;
+		case 2:	addr+= sizeof(int);
+			break;
+		case 3:	addr+= sizeof(long);
+			break;
+		default: BUG("unreachable!\n");
+			break;
+		}
+
+		return addr;
+
 	case ARG_NON_NULL_ADDRESS:
 		return (unsigned long)get_non_null_address();
 	case ARG_PID:
@@ -427,15 +455,15 @@ void generic_sanitise(int childno)
 	unsigned int call = shm->syscallno[childno];
 
 	if (syscalls[call].entry->arg1type != 0)
-		shm->a1[childno] = fill_arg(call, 1);
+		shm->a1[childno] = fill_arg(childno, call, 1);
 	if (syscalls[call].entry->arg2type != 0)
-		shm->a2[childno] = fill_arg(call, 2);
+		shm->a2[childno] = fill_arg(childno, call, 2);
 	if (syscalls[call].entry->arg3type != 0)
-		shm->a3[childno] = fill_arg(call, 3);
+		shm->a3[childno] = fill_arg(childno, call, 3);
 	if (syscalls[call].entry->arg4type != 0)
-		shm->a4[childno] = fill_arg(call, 4);
+		shm->a4[childno] = fill_arg(childno, call, 4);
 	if (syscalls[call].entry->arg5type != 0)
-		shm->a5[childno] = fill_arg(call, 5);
+		shm->a5[childno] = fill_arg(childno, call, 5);
 	if (syscalls[call].entry->arg6type != 0)
-		shm->a6[childno] = fill_arg(call, 6);
+		shm->a6[childno] = fill_arg(childno, call, 6);
 }
