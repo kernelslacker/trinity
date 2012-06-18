@@ -88,24 +88,27 @@ unsigned long get_interesting_value()
 
 	low = get_interesting_32bit_value();
 
-	i = rand() % 14;
+	i = rand() % 17;
 
 	switch (i) {
 	/* 64 bit */
-	case 0:	 return 0;
-	case 1:	 return 0x0000000100000000;
-	case 2:	 return 0x7fffffff00000000;
-	case 3:	 return 0x8000000000000000;
-	case 4:	 return 0xffffffff00000000;
-	case 5:	 return low;
-	case 6:	 return 0x0000000100000000 | low;
-	case 7:	 return 0x7fffffff00000000 | low;
-	case 8:	 return 0x8000000000000000 | low;
-	case 9:  return 0xffff880000000000 | (low << 4);	// x86-64 PAGE_OFFSET
-	case 10: return 0xffffffff00000000 | low;
-	case 11: return 0xffffffff80000000 | (low & 0xffffff);	// x86-64 kernel text address
-	case 12: return 0xffffffffa0000000 | (low & 0xffffff);	// x86-64 module space
-	case 13: return 0xffffffffff600000 | (low & 0x0fffff);	// x86-64 vdso
+	case 0: return 0;
+	case 1: return 0x0000000100000000;
+	case 2: return 0x7fffffff00000000;
+	case 3: return 0x8000000000000000;
+	case 4: return 0xffffffff00000000;
+	case 5: return low;
+	case 6: return 0x0000000100000000 | low;
+	case 7: return 0x00007fffffffffff;			// x86-64 canonical addr end.
+	case 8: return 0x0000800000000000;			// First x86-64 non-canonical addr
+	case 9: return 0x7fffffff00000000 | low;
+	case 10: return 0x8000000000000000 | low;
+	case 11: return 0xffff800000000000 | (low << 4);	// x86-64 canonical addr range 2 begin
+	case 12: return 0xffff880000000000 | (low << 4);	// x86-64 PAGE_OFFSET
+	case 13: return 0xffffffff00000000 | low;
+	case 14: return 0xffffffff80000000 | (low & 0xffffff);	// x86-64 kernel text address
+	case 15: return 0xffffffffa0000000 | (low & 0xffffff);	// x86-64 module space
+	case 16: return 0xffffffffff600000 | (low & 0x0fffff);	// x86-64 vdso
 	default:
 		BUG("unreachable!\n");
 		return 0;
