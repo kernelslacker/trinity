@@ -120,6 +120,10 @@ static void fork_children()
 		debugf("[%d] Created child %d [total:%d/%d]\n",
 			getpid(), shm->pids[pidslot],
 			shm->running_childs, shm->nr_childs);
+
+		if (shm->exit_now == TRUE)
+			return;
+
 	}
 	debugf("[%d] created enough children\n\n", getpid());
 }
