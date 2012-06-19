@@ -176,6 +176,11 @@ retry:
 		}
 
 		ret = mkcall(childno);
+
+		if (validate_syscall_tables() == FALSE) {
+			shm->exit_now = TRUE;
+			output("[%d] No more syscalls enabled. Exiting\n");
+		}
 	}
 
 	reenable_coredumps();
