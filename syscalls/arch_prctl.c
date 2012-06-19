@@ -5,6 +5,7 @@
  * On error, -1 is returned, and errno is set to indicate the error.
  */
 
+#if defined(__i386__) || defined (__x86_64__)
 #include "trinity.h"
 #include "sanitise.h"
 #include <asm/prctl.h>
@@ -24,3 +25,4 @@ struct syscall syscall_arch_prctl = {
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_BORING,
 };
+#endif
