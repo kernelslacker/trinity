@@ -278,8 +278,8 @@ args_done:
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
 			goto skip_enosys;
 
-		output("%s returned ENOSYS, marking as avoid.\n", syscalls[call].entry->name);
-		syscalls[call].entry->flags |= AVOID_SYSCALL;
+		output("%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
+		syscalls[call].entry->flags &= ~ACTIVE;
 	}
 
 skip_enosys:

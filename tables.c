@@ -60,30 +60,72 @@ int validate_specific_syscall(struct syscalltable *table, int call)
 	return TRUE;
 }
 
-/* Make sure there's at least one syscall enabled. */
-int validate_syscall_tables(void)
+unsigned int count_enabled_syscalls(void)
+{
+	unsigned int i;
+	unsigned int count = 0;
+
+	if (biarch == TRUE) {
+		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+			if (syscalls_64bit[i].entry->flags & ACTIVE)
+				count++;
+		}
+		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+			if (syscalls_32bit[i].entry->flags & ACTIVE)
+				count++;
+		}
+		return count;
+	}
+
+	/* non-biarch */
+	for (i = 0; i < max_nr_syscalls; i++) {
+		if (syscalls[i].entry->flags & ACTIVE)
+			count++;
+	}
+	return count;
+}
+
+int validate_syscall_table_64(void)
 {
 	unsigned int i;
 
-	if (biarch == TRUE) {
-		for (i = 0; i < max_nr_32bit_syscalls; i++) {
-			if (syscalls_32bit[i].entry->flags & ACTIVE) {
-				use_32bit = TRUE;
-				break;
-			}
+	for (i = 0; i < max_nr_64bit_syscalls; i++) {
+		if (syscalls_64bit[i].entry->flags & ACTIVE) {
+			use_64bit = TRUE;
+			break;
 		}
-		for (i = 0; i < max_nr_64bit_syscalls; i++) {
-			if (syscalls_64bit[i].entry->flags & ACTIVE) {
-				use_64bit = TRUE;
-				break;
-			}
-		}
-		return (use_32bit | use_64bit);
+	}
+	return use_64bit;
+}
 
-	} else {
-		for (i = 0; i < max_nr_syscalls; i++)
-			if (syscalls[i].entry->flags & ACTIVE)
-				return TRUE;
+int validate_syscall_table_32(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < max_nr_32bit_syscalls; i++) {
+		if (syscalls_32bit[i].entry->flags & ACTIVE) {
+			use_32bit = TRUE;
+			break;
+		}
+	}
+	return use_32bit;
+}
+
+/* Make sure there's at least one syscall enabled. */
+int validate_syscall_tables(void)
+{
+	unsigned int i, ret;
+
+	if (biarch == TRUE) {
+		ret = validate_syscall_table_32();
+		ret |= validate_syscall_table_64();
+		return ret;
+	}
+
+	/* non-biarch case*/
+	for (i = 0; i < max_nr_syscalls; i++) {
+		if (syscalls[i].entry->flags & ACTIVE)
+			return TRUE;
 	}
 	return FALSE;
 }

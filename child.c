@@ -138,6 +138,11 @@ int child_process(void)
 //					shm->do32bit = TRUE;
 			}
 
+			if (validate_syscall_table_32() == FALSE)
+				use_32bit = FALSE;
+
+			if (validate_syscall_table_64() == FALSE)
+				use_64bit = FALSE;
 
 			if (shm->do32bit == FALSE) {
 				syscalls = syscalls_64bit;
@@ -148,8 +153,12 @@ int child_process(void)
 			}
 		}
 
+		if (count_enabled_syscalls() == 0) {
+			output("[%d] No more syscalls enabled. Exiting\n");
+			shm->exit_now = TRUE;
+		}
+
 retry:
-		/* We're doing something random. */
 		syscallnr = rand() % max_nr_syscalls;
 
 		if (syscalls[syscallnr].entry->num_args == 0)
@@ -176,15 +185,11 @@ retry:
 		}
 
 		ret = mkcall(childno);
-
-		if (validate_syscall_tables() == FALSE) {
-			shm->exit_now = TRUE;
-			output("[%d] No more syscalls enabled. Exiting\n");
-		}
 	}
 
 	reenable_coredumps();
 
+	output("child %d waiting for watchdog to exit\n", getpid());
 	wait_for_watchdog_to_exit();
 
 	return ret;
