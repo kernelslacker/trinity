@@ -16,6 +16,9 @@
 #ifdef __sparc__
 #include "sparc.h"
 #endif
+#ifdef __arm__
+#include "arm.h"
+#endif
 
 #define PAGE_MASK (~(page_size - 1))
 
