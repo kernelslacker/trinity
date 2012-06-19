@@ -42,9 +42,18 @@ static long syscall32(int num_args, unsigned int call,
 		return __res;
 	}
 /* TODO: 6 arg 32bit x86 syscall goes here.*/
-#endif
+#else
 
-	// TODO: 32-bit syscall entry for non-x86 archs goes here.
+// TODO: 32-bit syscall entry for non-x86 archs goes here.
+	UNUSED(num_args);
+	UNUSED(call);
+	UNUSED(a1);
+	UNUSED(a2);
+	UNUSED(a3);
+	UNUSED(a4);
+	UNUSED(a5);
+	UNUSED(a6);
+#endif
 	return 0;
 }
 
