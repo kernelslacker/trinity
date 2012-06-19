@@ -272,9 +272,16 @@ args_done:
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if ((ret == -1) && (errno == ENOSYS)) {
+
+		/* Futex is awesome, it ENOSYS's depending on arguments. Sigh. */
+		if (call == search_syscall_table(syscalls, max_nr_syscalls, "futex"))
+			goto skip_enosys;
+
 		output("%s returned ENOSYS, marking as avoid.\n", syscalls[call].entry->name);
 		syscalls[call].entry->flags |= AVOID_SYSCALL;
 	}
+
+skip_enosys:
 
 	shm->execcount++;
 
