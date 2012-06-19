@@ -1,5 +1,6 @@
 core.*
 *.o
+*.d
 trinity
 logs/
 trinity*.log
