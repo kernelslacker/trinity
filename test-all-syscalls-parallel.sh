@@ -10,7 +10,7 @@ while [ 1 ];
 do
   for syscall in $(../trinity -L | grep -v Trinity | grep -v 32bit | grep -v 64bit | awk '{ print $2 }' | sort -u)
   do
-	MALLOC_CHECK_=2 ../trinity -q -c $syscall -x mbind -D &
+	MALLOC_CHECK_=2 ../trinity -q -c $syscall -D &
   done
   wait
 done
