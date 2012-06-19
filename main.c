@@ -201,6 +201,11 @@ static void handle_children()
 			case SIGPIPE:
 			case SIGABRT:
 				debugf("[%d] got a signal from pid %d (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
+				if (childpid == shm->watchdog_pid) {
+					output("Bad juju from the watchdog.Exiting immediately.\n");
+					shm->exit_now = TRUE;
+				}
+
 				reap_child(childpid);
 				break;
 			default:
