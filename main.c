@@ -125,7 +125,7 @@ static void fork_children()
 			return;
 
 	}
-	debugf("[%d] created enough children\n\n", getpid());
+	debugf("[%d] created enough children\n", getpid());
 }
 
 void reap_child(pid_t childpid)
