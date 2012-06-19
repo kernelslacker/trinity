@@ -202,7 +202,7 @@ static void handle_children()
 			case SIGABRT:
 				debugf("[%d] got a signal from pid %d (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
 				if (childpid == shm->watchdog_pid) {
-					output("Bad juju from the watchdog.Exiting immediately.\n");
+					output("Bad juju from the watchdog. Exiting immediately. %s\n", strsignal(WTERMSIG(childstatus)));
 					shm->exit_now = TRUE;
 				}
 
