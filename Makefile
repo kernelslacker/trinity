@@ -37,6 +37,7 @@ OBJS		= trinity.o \
 			$(SYSCALLS) \
 			$(SANITISE) \
 			$(IOCTLS)
+-include $(OBJS:.o=.d)
 
 trinity: $(OBJS) $(HEADERS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
@@ -44,9 +45,16 @@ trinity: $(OBJS) $(HEADERS)
 
 .c.o:
 	$(CC) $(CFLAGS) -o $@ -c $<
+	gcc -MM $(CFLAGS) $*.c > $*.d
+	@mv -f $*.d $*.d.tmp
+	@sed -e 's|.*:|$*.o:|' < $*.d.tmp > $*.d
+	@sed -e 's/.*://' -e 's/\\$$//' < $*.d.tmp | fmt -1 | \
+	  sed -e 's/^ *//' -e 's/$$/:/' >> $*.d
+	@rm -f $*.d.tmp
 
 clean:
 	@rm -f *.o syscalls/*.o syscalls/ia64/*.o syscalls/powerpc/*.o ioctls/*.o
+	@rm -f *.d syscalls/*.d syscalls/ia64/*.d syscalls/powerpc/*.d ioctls/*.d
 	@rm -f core.*
 	@rm -f trinity
 
