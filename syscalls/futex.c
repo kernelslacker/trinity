@@ -7,6 +7,12 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+/*
+ * TODO:
+ * FUTEX_FD returns ENOSYS as of 2.6.26. Somehow handle this.
+ * FUTEX_WAKE_OP also returns ENOSYS
+ */
+
 struct syscall syscall_futex = {
 	.name = "futex",
 	.num_args = 6,
