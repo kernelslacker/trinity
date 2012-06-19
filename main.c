@@ -16,6 +16,9 @@
 
 static void regenerate()
 {
+	if (syscallcount >= shm->regenerate)
+		return;
+
 	shm->regenerating = TRUE;
 
 	sleep(1);	/* give children time to finish with fds. */
