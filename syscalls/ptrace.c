@@ -1,11 +1,13 @@
 /*
  * SYSCALL_DEFINE4(ptrace, long, request, long, pid, long, addr, long, data)
  */
+#include <stdlib.h>
+#include <linux/ptrace.h>
+
 #include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
-#include <stdlib.h>
-#include <linux/ptrace.h>
+#include "compat.h"
 
 
 static void sanitise_ptrace(int childno)

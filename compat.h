@@ -124,4 +124,12 @@
 #define SYS_SENDMMSG 20
 #endif
 
+/* asm/ptrace-abi.h */
+#ifndef PTRACE_SYSEMU
+#define PTRACE_SYSEMU		  31
+#endif
+#ifndef PTRACE_SYSEMU_SINGLESTEP
+#define PTRACE_SYSEMU_SINGLESTEP  32
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
