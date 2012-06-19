@@ -275,7 +275,7 @@ args_done:
 	if ((ret == -1) && (errno == ENOSYS)) {
 
 		/* Futex is awesome, it ENOSYS's depending on arguments. Sigh. */
-		if (call == search_syscall_table(syscalls, max_nr_syscalls, "futex"))
+		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
 			goto skip_enosys;
 
 		output("%s returned ENOSYS, marking as avoid.\n", syscalls[call].entry->name);
