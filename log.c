@@ -15,7 +15,7 @@ void open_logfiles()
 	unsigned int i;
 	char *logfilename;
 
-	logfilename = malloc(25);
+	logfilename = malloc(64);
 	sprintf(logfilename, "trinity-%d.log", parentpid);
 	unlink(logfilename);
 	parentlogfile = fopen(logfilename, "a");
@@ -25,7 +25,7 @@ void open_logfiles()
 	}
 
 	for (i = 0; i < shm->nr_childs; i++) {
-		logfilename = malloc(25);
+		logfilename = malloc(64);
 		sprintf(logfilename, "trinity-%d-child%d.log", parentpid, i);
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
