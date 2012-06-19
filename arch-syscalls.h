@@ -20,5 +20,8 @@
 #ifdef __sparc__
 #include "syscalls-sparc.h"
 #endif
+#ifdef __arm__
+#include "syscalls-arm.h"
+#endif
 
 #endif  /* _ARCH_SYSCALLS_H */
