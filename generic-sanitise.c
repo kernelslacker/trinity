@@ -433,6 +433,32 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 			i &= high;
 		}
 		return i;
+
+	case ARG_OP:	/* Like ARG_LIST, but just a single value. */
+		switch (argnum) {
+		case 1:	num = syscalls[call].entry->arg1list.num;
+			values = syscalls[call].entry->arg1list.values;
+			break;
+		case 2:	num = syscalls[call].entry->arg2list.num;
+			values = syscalls[call].entry->arg2list.values;
+			break;
+		case 3:	num = syscalls[call].entry->arg3list.num;
+			values = syscalls[call].entry->arg3list.values;
+			break;
+		case 4:	num = syscalls[call].entry->arg4list.num;
+			values = syscalls[call].entry->arg4list.values;
+			break;
+		case 5:	num = syscalls[call].entry->arg5list.num;
+			values = syscalls[call].entry->arg5list.values;
+			break;
+		case 6:	num = syscalls[call].entry->arg6list.num;
+			values = syscalls[call].entry->arg6list.values;
+			break;
+		default: break;
+		}
+		mask |= values[rand() % num];
+		return mask;
+
 	case ARG_LIST:
 		switch (argnum) {
 		case 1:	num = syscalls[call].entry->arg1list.num;

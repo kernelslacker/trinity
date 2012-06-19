@@ -9,10 +9,11 @@ enum argtype {
 	ARG_NON_NULL_ADDRESS = 5,
 	ARG_PID = 6,
 	ARG_RANGE = 7,
-	ARG_LIST = 8,
-	ARG_RANDPAGE = 9,
-	ARG_CPU = 10,
-	ARG_PATHNAME = 11,
+	ARG_OP = 8,
+	ARG_LIST = 9,
+	ARG_RANDPAGE = 10,
+	ARG_CPU = 11,
+	ARG_PATHNAME = 12,
 };
 
 struct arglist {
