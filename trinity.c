@@ -184,7 +184,7 @@ static int create_shm()
 	memset(shm, 0, sizeof(struct shm_s));
 
 	shm->execcount = 1;
-	shm->regenerate = REGENERATION_POINT - 1;
+	shm->regenerate = 0;
 
 	shm->nr_childs = sysconf(_SC_NPROCESSORS_ONLN);
 	if (shm->nr_childs > MAX_NR_CHILDREN) {
