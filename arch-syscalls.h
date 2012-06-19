@@ -12,6 +12,7 @@
 #endif
 #ifdef __powerpc__
 #include "syscalls-ppc.h"
+#define NR_SYSCALLS NR_PPC_SYSCALLS
 #endif
 #ifdef __ia64__
 #include "syscalls-ia64.h"

@@ -8,9 +8,9 @@
 #include <asm/mman.h>
 #include "syscalls/syscalls.h"
 
-# define NR_SYSCALLS 322
+#define NR_PPC_SYSCALLS 323
 
-struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
+struct syscalltable syscalls_ppc[NR_PPC_SYSCALLS+1] = {
 	{ .entry = &syscall_restart_syscall },
 	{ .entry = &syscall_exit },
 	{ .entry = &syscall_fork },
@@ -334,4 +334,5 @@ struct syscalltable syscalls_ppc[NR_SYSCALLS+1] = {
 	{ .entry = &syscall_preadv },
 	{ .entry = &syscall_pwritev },
 	{ .entry = &syscall_rt_tgsigqueueinfo },
+	{ .entry = NULL }
 };

@@ -206,6 +206,7 @@ void setup_syscall_tables(void)
 	max_nr_syscalls = NR_I386_SYSCALLS;
 #elif defined(__powerpc__)
 	syscalls = syscalls_ppc;
+	max_nr_syscalls = NR_PPC_SYSCALLS;
 #elif defined(__ia64__)
 	syscalls = syscalls_ia64;
 #elif defined(__sparc__)
