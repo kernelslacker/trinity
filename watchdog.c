@@ -97,18 +97,18 @@ static void check_children(void)
 
 			switch (ret) {
 			case -ESRCH:
-				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n");
+				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
 				reap_child(pid);
 				break;
 
 			case -EPERM:
-				output("couldn't attach to pid %d. Zombie? Removing from pid map.\n");
+				output("couldn't attach to pid %d. Zombie? Removing from pid map.\n", pid);
 				reap_child(pid);
 				break;
 
 			default:
 				ptrace(PTRACE_CONT, pid, NULL, NULL);
-				output("tried to kill pid %d, but %s. Trying again.\n", strerror(errno));
+				output("tried to kill pid %d, but %s. Trying again.\n", pid, strerror(errno));
 				kill(pid, SIGKILL);
 				break;
 			}
