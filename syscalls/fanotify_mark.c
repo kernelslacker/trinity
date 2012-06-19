@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE(fanotify_mark)(int fanotify_fd, unsigned int flags,
 	__u64 mask, int dfd, const char  __user * pathname)
  */
+#include <stdlib.h>
 #include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -34,6 +35,17 @@
 
 static void sanitise_fanotify_mark(int childno)
 {
+	unsigned int flagvals[5] = { FAN_MARK_DONT_FOLLOW, FAN_MARK_ONLYDIR, FAN_MARK_MOUNT,
+				    FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORED_SURV_MODIFY };
+
+	unsigned int i;
+	unsigned int numflags = rand() % 5;
+
+	// set additional flags
+	for (i = 0; i < numflags; i++)
+		shm->a2[childno] |= flagvals[i];
+
+	// Set mask
 	shm->a3[childno] &= 0xffffffff;
 }
 
@@ -43,11 +55,10 @@ struct syscall syscall_fanotify_mark = {
 	.arg1name = "fanotify_fd",
 	.arg1type = ARG_FD,
 	.arg2name = "flags",
-	.arg2type = ARG_LIST,
+	.arg2type = ARG_OP,
 	.arg2list = {
-		.num = 8,
-		.values = { FAN_MARK_ADD, FAN_MARK_REMOVE, FAN_MARK_DONT_FOLLOW, FAN_MARK_ONLYDIR,
-			    FAN_MARK_MOUNT, FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORED_SURV_MODIFY, FAN_MARK_FLUSH },
+		.num = 3,
+		.values = { FAN_MARK_ADD, FAN_MARK_REMOVE, FAN_MARK_FLUSH },
 	},
 	.arg3name = "mask",
 	.arg3type = ARG_LIST,

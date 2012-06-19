@@ -132,4 +132,51 @@
 #define PTRACE_SYSEMU_SINGLESTEP  32
 #endif
 
+/* sys/timerfd.h */
+#ifndef TFD_CLOEXEC
+#define TFD_CLOEXEC 02000000
+#endif
+#ifndef TFD_NONBLOCK
+#define TFD_NONBLOCK 04000
+#endif
+
+/* linux/keyctl.h */
+#ifndef KEYCTL_GET_KEYRING_ID
+#define KEYCTL_GET_KEYRING_ID		0	/* ask for a keyring's ID */
+#define KEYCTL_JOIN_SESSION_KEYRING	1	/* join or start named session keyring */
+#define KEYCTL_UPDATE			2	/* update a key */
+#define KEYCTL_REVOKE			3	/* revoke a key */
+#define KEYCTL_CHOWN			4	/* set ownership of a key */
+#define KEYCTL_SETPERM			5	/* set perms on a key */
+#define KEYCTL_DESCRIBE			6	/* describe a key */
+#define KEYCTL_CLEAR			7	/* clear contents of a keyring */
+#define KEYCTL_LINK			8	/* link a key into a keyring */
+#define KEYCTL_UNLINK			9	/* unlink a key from a keyring */
+#define KEYCTL_SEARCH			10	/* search for a key in a keyring */
+#define KEYCTL_READ			11	/* read a key or keyring's contents */
+#define KEYCTL_INSTANTIATE		12	/* instantiate a partially constructed key */
+#define KEYCTL_NEGATE			13	/* negate a partially constructed key */
+#define KEYCTL_SET_REQKEY_KEYRING	14	/* set default request-key keyring */
+#define KEYCTL_SET_TIMEOUT		15	/* set key timeout */
+#define KEYCTL_ASSUME_AUTHORITY		16	/* assume request_key() authorisation */
+#define KEYCTL_GET_SECURITY		17	/* get key security label */
+#define KEYCTL_SESSION_TO_PARENT	18	/* apply session keyring to parent process */
+#define KEYCTL_REJECT			19	/* reject a partially constructed key */
+#define KEYCTL_INSTANTIATE_IOV		20	/* instantiate a partially constructed key */
+#endif
+
+#ifndef KCMP_TYPES
+enum kcmp_type {
+	KCMP_FILE,
+	KCMP_VM,
+	KCMP_FILES,
+	KCMP_FS,
+	KCMP_SIGHAND,
+	KCMP_IO,
+	KCMP_SYSVSEM,
+
+	KCMP_TYPES,
+};
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */

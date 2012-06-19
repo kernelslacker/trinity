@@ -201,6 +201,7 @@ long mkcall(int childno)
 		case ARG_ADDRESS2:					\
 		case ARG_NON_NULL_ADDRESS:				\
 		case ARG_RANGE:						\
+		case ARG_OP:						\
 		case ARG_LIST:						\
 		case ARG_RANDPAGE:					\
 		case ARG_CPU:						\

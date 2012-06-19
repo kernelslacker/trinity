@@ -6,18 +6,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
-
-enum kcmp_type {
-	KCMP_FILE,
-	KCMP_VM,
-	KCMP_FILES,
-	KCMP_FS,
-	KCMP_SIGHAND,
-	KCMP_IO,
-	KCMP_SYSVSEM,
-
-	KCMP_TYPES,
-};
+#include "compat.h"
 
 struct syscall syscall_kcmp = {
 	.name = "kcmp",
@@ -27,7 +16,7 @@ struct syscall syscall_kcmp = {
 	.arg2name = "pid2",
 	.arg2type = ARG_PID,
 	.arg3name = "type",
-	.arg3type = ARG_LIST,
+	.arg3type = ARG_OP,
 	.arg3list = {
 		.num = KCMP_TYPES,
 		.values = { KCMP_FILE, KCMP_VM, KCMP_FILES, KCMP_FS, KCMP_SIGHAND, KCMP_IO, KCMP_SYSVSEM },
