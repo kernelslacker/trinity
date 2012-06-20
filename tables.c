@@ -255,7 +255,6 @@ void setup_syscall_tables(void)
 	syscalls = syscalls_sparc;
 #elif defined(__arm__)
 	syscalls = syscalls_arm;
-	syscalls_32bit = syscalls_arm;
 	max_nr_syscalls = NR_ARM_SYSCALLS;
 #else
 	syscalls = syscalls_i386;
