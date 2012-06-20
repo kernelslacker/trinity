@@ -263,7 +263,6 @@ args_done:
 		WHITE
 		shm->successes++;
 	}
-	sptr += sprintf(sptr, " [T:%ld F:%ld S:%ld]", shm->execcount, shm->failures, shm->successes);
 	sptr += sprintf(sptr, "\n");
 
 	*sptr = '\0';
