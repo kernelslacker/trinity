@@ -15,20 +15,33 @@
 void sanitise_mmap(int childno)
 {
 	unsigned int i;
+	unsigned int flagvals[12] = { MAP_FIXED, MAP_ANONYMOUS,
+			    MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
+			    MAP_NORESERVE, MAP_POPULATE, MAP_NONBLOCK, MAP_STACK,
+			    MAP_HUGETLB, MAP_UNINITIALIZED };
+	unsigned int numflags = rand() % 12;
 
-	/* page align inputs */
+	/* page align addr & len */
 	shm->a1[childno] &= PAGE_MASK;
 	shm->a2[childno] &= PAGE_MASK;
-	shm->a6[childno] &= PAGE_MASK;
-
 	if (shm->a2[childno] == 0)
 		shm->a2[childno] = page_size;
 
-	if (shm->a4[childno] & MAP_ANONYMOUS) {
-		i = rand() % 100;
-		if (i > 50)
-			shm->a5[childno] = -1;
-	}
+
+	// set additional flags
+	for (i = 0; i < numflags; i++)
+		shm->a4[childno] |= flagvals[i];
+
+	/* no fd if anonymous mapping. */
+	if (shm->a4[childno] & MAP_ANONYMOUS)
+		shm->a5[childno] = -1;
+
+	/* page align non-anonymous mappings. */
+	if (shm->a4[childno] & MAP_ANONYMOUS)
+		shm->a6[childno] &= PAGE_MASK;
+	else
+		shm->a6[childno] = 0;
+
 }
 
 struct syscall syscall_mmap = {
@@ -46,13 +59,10 @@ struct syscall syscall_mmap = {
 		.values = { PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM },
 	},
 	.arg4name = "flags",
-	.arg4type = ARG_LIST,
+	.arg4type = ARG_OP,
 	.arg4list = {
-		.num = 14,
-		.values = { MAP_SHARED, MAP_PRIVATE, MAP_FIXED, MAP_ANONYMOUS,
-			    MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
-			    MAP_NORESERVE, MAP_POPULATE, MAP_NONBLOCK, MAP_STACK,
-			    MAP_HUGETLB, MAP_UNINITIALIZED },
+		.num = 2,
+		.values = { MAP_SHARED, MAP_PRIVATE },
 	},
 	.arg5name = "fd",
 	.arg5type = ARG_FD,
