@@ -6,6 +6,8 @@ fi
 chmod 755 tmp
 cd tmp
 
+TAINT=$(cat /proc/sys/kernel/tainted)
+
 NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
 NR_PROCESSES=$(($NR_CPUS * 2))
 
@@ -22,4 +24,9 @@ do
   cd ..
   chmod 755 ../tmp
   rm -rf tmp.$RND
+
+  if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
+	echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
+	exit
+  fi
 done
