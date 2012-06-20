@@ -392,3 +392,4 @@ extern struct syscall syscall_setns;
 extern struct syscall syscall_process_vm_readv;
 extern struct syscall syscall_process_vm_writev;
 extern struct syscall syscall_kcmp;
+extern struct syscall syscall_pciconfig_iobase;
