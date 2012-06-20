@@ -16,7 +16,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-#define NR_ARM_SYSCALLS 369
+#define NR_ARM_SYSCALLS 370
 
 struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_restart_syscall },
@@ -284,8 +284,8 @@ struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_fstatfs64 },		/* ftstatfs64_wrapper */
 		{ .entry = &syscall_tgkill },
 		{ .entry = &syscall_utimes },
-/* TODO:	{ .entry = &syscall_arm_fadvise64_64 }, 
-		{ .entry = &syscall_pciconfig_iobase }, */
+/* TODO:	{ .entry = &syscall_arm_fadvise64_64 }, */
+		{ .entry = &syscall_pciconfig_iobase }, 
 		{ .entry = &syscall_pciconfig_read },
 		{ .entry = &syscall_pciconfig_write },
 		{ .entry = &syscall_mq_open },
