@@ -157,7 +157,7 @@ void watchdog(void)
 
 		if (quiet && (shm->execcount > 1)) {
 			if (shm->execcount != lastcount)
-				printf("%ld iterations.\n", shm->execcount);
+				printf("%ld iterations. [F:%ld S:%ld]\n", shm->execcount, shm->failures, shm->successes);
 			lastcount = shm->execcount;
 		}
 
