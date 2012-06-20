@@ -16,7 +16,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-#define NR_ARM_SYSCALLS 370
+#define NR_ARM_SYSCALLS 371
 
 struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_restart_syscall },
@@ -355,7 +355,7 @@ struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_set_robust_list },
 		{ .entry = &syscall_get_robust_list },
 		{ .entry = &syscall_splice },
-/* TODO:	{ .entry = &syscall_sync_file_range2 }, */
+		{ .entry = &syscall_sync_file_range2 },
 		{ .entry = &syscall_tee },
 		{ .entry = &syscall_vmsplice },
 		{ .entry = &syscall_move_pages },
