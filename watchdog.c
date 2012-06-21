@@ -19,6 +19,9 @@ void wait_for_watchdog_to_exit(void)
 {
 	int ret, status;
 
+	if (shm->watchdog_pid == 0)
+		return;
+
 	printf("[%d] Waiting for watchdog (%d) to exit.\n", getpid(), shm->watchdog_pid);
 
 	while (shm->watchdog_pid != 0) {
