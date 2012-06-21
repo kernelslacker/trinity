@@ -66,6 +66,19 @@ int find_pid_slot(pid_t mypid)
 	return -1;
 }
 
+static unsigned char pidmap_empty()
+{
+	unsigned int i;
+
+	for (i = 0; i < shm->nr_childs; i++) {
+		if (shm->pids[i] == -1)
+			continue;
+		if (shm->pids[i] != 0)
+			return FALSE;
+	}
+	return TRUE;
+}
+
 
 #define debugf if (debug == TRUE) printf
 
@@ -155,6 +168,9 @@ static void handle_children()
 		break;
 
 	case -1:
+		if (shm->exit_now == TRUE)
+			return;
+
 		if (errno == ECHILD) {
 			debugf("[%d] All children exited!\n", getpid());
 			for (i = 0; i < shm->nr_childs; i++) {
@@ -270,5 +286,8 @@ void main_loop()
 
 //		output("regenerate:%d\n", shm->regenerate);
 	}
+	while (!(pidmap_empty()))
+		handle_children();
+
 	printf("[%d] Bailing main loop\n", getpid());
 }
