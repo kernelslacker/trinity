@@ -102,8 +102,8 @@ static void check_children(void)
 				break;
 
 			case -EPERM:
-				output("couldn't attach to pid %d. Zombie? Removing from pid map.\n", pid);
-				reap_child(pid);
+				output("couldn't attach to pid %d. Zombie? Sleeping another 30s\n", pid);
+				shm->tv[i].tv_sec = now;
 				break;
 
 			default:
