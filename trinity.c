@@ -296,8 +296,6 @@ int main(int argc, char* argv[])
 
 	main_loop();
 
-	wait_for_watchdog_to_exit();
-
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		shm->execcount - 1, shm->retries, shm->successes, shm->failures);
 

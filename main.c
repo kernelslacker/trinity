@@ -286,6 +286,8 @@ void main_loop()
 
 //		output("regenerate:%d\n", shm->regenerate);
 	}
+	wait_for_watchdog_to_exit();
+
 	while (!(pidmap_empty()))
 		handle_children();
 
