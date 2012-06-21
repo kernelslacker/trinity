@@ -197,8 +197,6 @@ long mkcall(int childno)
 			sptr += sprintf(sptr, "%ld", REG);		\
 			break;						\
 		case ARG_UNDEFINED:					\
-			BUG("Undefined!\n")				\
-			break;						\
 		case ARG_LEN:						\
 		case ARG_ADDRESS:					\
 		case ARG_ADDRESS2:					\
