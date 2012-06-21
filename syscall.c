@@ -287,5 +287,15 @@ skip_enosys:
 
 	if (syscalls[call].entry->post)
 	    syscalls[call].entry->post(ret);
+
+	/* store info for debugging. */
+	shm->previous_syscallno[childno] = shm->syscallno[childno];
+	shm->previous_a1[childno] = shm->a1[childno];
+	shm->previous_a2[childno] = shm->a2[childno];
+	shm->previous_a3[childno] = shm->a3[childno];
+	shm->previous_a4[childno] = shm->a4[childno];
+	shm->previous_a5[childno] = shm->a5[childno];
+	shm->previous_a6[childno] = shm->a6[childno];
+
 	return ret;
 }
