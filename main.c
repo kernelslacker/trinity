@@ -197,33 +197,48 @@ static void handle_children()
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
-			switch (WTERMSIG(childstatus)) {
-			case SIGFPE:
-			case SIGSEGV:
-			case SIGKILL:
-			case SIGALRM:
-			case SIGPIPE:
-			case SIGABRT:
-				debugf("[%d] got a signal from pid %d (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
-				if (childpid == shm->watchdog_pid) {
+			if (childpid == shm->watchdog_pid) {
+
+				switch (WTERMSIG(childstatus)) {
+				case SIGSEGV:
+				case SIGKILL:
+				case SIGABRT:
 					output("Bad juju from the watchdog. Exiting immediately. %s\n", strsignal(WTERMSIG(childstatus)));
 					shm->exit_now = TRUE;
+					shm->watchdog_pid = 0;
+				default:
+					break;
 				}
+				break;
 
-				reap_child(childpid);
-				break;
-			default:
-				debugf("[%d] ** Child got an unhandled signal (%d)\n", getpid(), WTERMSIG(childstatus));
-				break;
+			} else {
+				/* it's a child */
+				switch (WTERMSIG(childstatus)) {
+				case SIGFPE:
+				case SIGSEGV:
+				case SIGKILL:
+				case SIGALRM:
+				case SIGPIPE:
+				case SIGABRT:
+					debugf("[%d] got a signal from pid %d (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
+					reap_child(childpid);
+					break;
+				default:
+					debugf("[%d] ** Child got an unhandled signal (%d)\n", getpid(), WTERMSIG(childstatus));
+					break;
+				}
 			}
 			break;
 
 		} else if (WIFSTOPPED(childstatus)) {
-			debugf("[%d] Child was stopped by %d.", getpid(), WSTOPSIG(childstatus));
-			debugf("[%d] Sending PTRACE_CONT (and then KILL)\n", getpid());
 			ptrace(PTRACE_CONT, childpid, NULL, NULL);
-			kill(childpid, SIGKILL);
-			reap_child(childpid);
+			/* if it was a child (not watchdog, kill it) */
+			if (childpid != shm->watchdog_pid) {
+				debugf("[%d] Child was stopped by %d.", getpid(), WSTOPSIG(childstatus));
+				debugf("[%d] Sending PTRACE_CONT (and then KILL)\n", getpid());
+				kill(childpid, SIGKILL);
+				reap_child(childpid);
+			}
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
 		} else {
