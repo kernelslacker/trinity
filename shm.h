@@ -28,6 +28,14 @@ struct shm_s {
 	int socket_fds[MAX_FDS/2];
 
 	/* state for the syscall currently in progress. */
+	unsigned int previous_syscallno[MAX_NR_CHILDREN];
+	unsigned long previous_a1[MAX_NR_CHILDREN];
+	unsigned long previous_a2[MAX_NR_CHILDREN];
+	unsigned long previous_a3[MAX_NR_CHILDREN];
+	unsigned long previous_a4[MAX_NR_CHILDREN];
+	unsigned long previous_a5[MAX_NR_CHILDREN];
+	unsigned long previous_a6[MAX_NR_CHILDREN];
+
 	unsigned int syscallno[MAX_NR_CHILDREN];
 	unsigned long a1[MAX_NR_CHILDREN];
 	unsigned long a2[MAX_NR_CHILDREN];
