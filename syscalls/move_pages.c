@@ -17,11 +17,15 @@
 #include "arch.h"
 #include "shm.h"
 
+//FIXME: This leaks memory.
+// A ->post function should free up the allocations.
+
 static void sanitise_move_pages(int childno)
 {
-	unsigned long *nodes;
+	unsigned int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
+	unsigned int count;
 
 	// Needs CAP_SYS_NICE to move pages in another process
 	if (getuid() != 0) {
@@ -33,9 +37,10 @@ static void sanitise_move_pages(int childno)
 	if (page_alloc == NULL)
 		return;
 
-	shm->a2[childno] = rand() % (page_size / sizeof(void *));
+	count = rand() % (page_size / sizeof(void *));
+	shm->a2[childno] = count;
 
-	for (i = 0; i < shm->a2[childno]; i++) {
+	for (i = 0; i < count; i++) {
 		page_alloc[i] = (unsigned long) malloc(page_size);
 		if (!page_alloc[i])
 			return;					// FIXME: MEMORY LEAK
@@ -44,12 +49,12 @@ static void sanitise_move_pages(int childno)
 
 	shm->a3[childno] = (unsigned long) page_alloc;
 
-	nodes = malloc(page_size);
-	for (i = 0; i < page_size; i++)
+	nodes = malloc(count * sizeof(int));
+	for (i = 0; i < count; i++)
 		nodes[i] = (int) rand() % 2;
 	shm->a4[childno] = (unsigned long) nodes;
 
-	shm->a5[childno] = (unsigned long) malloc(page_size);
+	shm->a5[childno] = (unsigned long) malloc(count * sizeof(int));
 }
 
 struct syscall syscall_move_pages = {
