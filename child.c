@@ -159,6 +159,9 @@ int child_process(void)
 		}
 
 retry:
+		if (shm->exit_now == TRUE)
+			goto out;
+
 		syscallnr = rand() % max_nr_syscalls;
 
 		if (syscalls[syscallnr].entry->num_args == 0)
@@ -187,6 +190,8 @@ retry:
 		ret = mkcall(childno);
 	}
 
+
+out:
 	reenable_coredumps();
 
 	output("child %d waiting for watchdog to exit\n", getpid());
