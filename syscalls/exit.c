@@ -9,4 +9,5 @@ struct syscall syscall_exit = {
 	.num_args = 1,
 	.flags = AVOID_SYSCALL, // No args to fuzz, confuses fuzzer
 	.arg1name = "error_code",
+	.arg1type = ARG_RANDOM_INT,
 };

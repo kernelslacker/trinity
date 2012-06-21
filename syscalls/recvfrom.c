@@ -3,6 +3,8 @@
 	unsigned, flags, struct sockaddr __user *, addr,
 	int __user *, addr_len)
  */
+#include <sys/types.h>
+#include <sys/socket.h>
 #include "trinity.h"
 #include "sanitise.h"
 
@@ -15,6 +17,13 @@ struct syscall syscall_recvfrom = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",
 	.arg3type = ARG_LEN,
+	.arg4name = "flags",
+	.arg4type = ARG_LIST,
+	.arg4list = {
+		.num = 7,
+		.values = { MSG_CMSG_CLOEXEC, MSG_DONTWAIT, MSG_ERRQUEUE, MSG_OOB,
+			    MSG_PEEK, MSG_TRUNC, MSG_WAITALL },
+	},
 	.arg5name = "addr",
 	.arg5type = ARG_ADDRESS2,
 	.arg6name = "addr_len",

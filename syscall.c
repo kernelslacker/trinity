@@ -196,6 +196,9 @@ long mkcall(int childno)
 			WHITE						\
 			sptr += sprintf(sptr, "%ld", REG);		\
 			break;						\
+		case ARG_UNDEFINED:					\
+			BUG("Undefined!\n")				\
+			break;						\
 		case ARG_LEN:						\
 		case ARG_ADDRESS:					\
 		case ARG_ADDRESS2:					\
@@ -205,6 +208,7 @@ long mkcall(int childno)
 		case ARG_LIST:						\
 		case ARG_RANDPAGE:					\
 		case ARG_CPU:						\
+		case ARG_RANDOM_INT:					\
 		default:						\
 			if (REG > 8 * 1024)				\
 				sptr += sprintf(sptr, "0x%lx", REG);	\

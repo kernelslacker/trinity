@@ -130,6 +130,67 @@ int validate_syscall_tables(void)
 	return FALSE;
 }
 
+static void check_syscall(struct syscall *entry)
+{
+	/* check that we have a name set. */
+#define CHECK(NUMARGS, ARGNUM, ARGTYPE, ARGNAME)		\
+	if (entry->num_args > 0) {				\
+		if (entry->num_args > NUMARGS) {		\
+			if (entry->ARGNAME == NULL)  {		\
+				printf("arg %d of %s has no name\n", ARGNUM, entry->name);      \
+				exit(EXIT_FAILURE);		\
+			}					\
+		}						\
+	}							\
+
+	CHECK(0, 1, arg1type, arg1name);
+	CHECK(1, 2, arg2type, arg2name);
+	CHECK(2, 3, arg3type, arg3name);
+	CHECK(3, 4, arg4type, arg4name);
+	CHECK(4, 5, arg5type, arg5name);
+	CHECK(5, 6, arg6type, arg6name);
+
+	/* check if we have a type. */
+	/* note: not enabled by default, because we haven't annotated everything yet. */
+#undef CHECK
+#define CHECK(NUMARGS, ARGNUM, ARGTYPE, ARGNAME)		\
+	if (entry->num_args > 0) {				\
+		if (entry->num_args > NUMARGS) {		\
+			if (entry->ARGTYPE == ARG_UNDEFINED) {	\
+				printf("%s has an undefined argument type for arg1 (%s)!\n", entry->name, entry->ARGNAME);	\
+			}					\
+		}						\
+	}							\
+
+/*	CHECK(0, 1, arg1type, arg1name);
+	CHECK(1, 2, arg2type, arg2name);
+	CHECK(2, 3, arg3type, arg3name);
+	CHECK(3, 4, arg4type, arg4name);
+	CHECK(4, 5, arg5type, arg5name);
+	CHECK(5, 6, arg6type, arg6name);
+*/
+}
+
+static void sanity_check(struct syscalltable *table, unsigned int nr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++)
+		check_syscall(table[i].entry);
+}
+
+void sanity_check_tables()
+{
+	if (biarch == TRUE) {
+		sanity_check(syscalls_32bit, max_nr_32bit_syscalls);
+		sanity_check(syscalls_64bit, max_nr_64bit_syscalls);
+		return;
+	}
+
+	/* non-biarch case*/
+	sanity_check(syscalls, max_nr_syscalls);
+}
+
 void mark_all_syscalls_active(void)
 {
 	unsigned int i;
