@@ -2,18 +2,20 @@
 #define _TRINITY_SYSCALL_H 1
 
 enum argtype {
-	ARG_FD = 1,
-	ARG_LEN = 2,
-	ARG_ADDRESS = 3,
-	ARG_ADDRESS2 = 4,
-	ARG_NON_NULL_ADDRESS = 5,
-	ARG_PID = 6,
-	ARG_RANGE = 7,
-	ARG_OP = 8,
-	ARG_LIST = 9,
-	ARG_RANDPAGE = 10,
-	ARG_CPU = 11,
-	ARG_PATHNAME = 12,
+	ARG_UNDEFINED = 0,
+	ARG_RANDOM_INT = 1,
+	ARG_FD = 2,
+	ARG_LEN = 3,
+	ARG_ADDRESS = 4,
+	ARG_ADDRESS2 = 5,
+	ARG_NON_NULL_ADDRESS = 6,
+	ARG_PID = 7,
+	ARG_RANGE = 8,
+	ARG_OP = 9,
+	ARG_LIST = 10,
+	ARG_RANDPAGE = 11,
+	ARG_CPU = 12,
+	ARG_PATHNAME = 13,
 };
 
 struct arglist {
@@ -108,5 +110,6 @@ int validate_syscall_tables(void);
 unsigned int count_enabled_syscalls(void);
 int validate_syscall_table_64(void);
 int validate_syscall_table_32(void);
+void sanity_check_tables();
 
 #endif	/* _TRINITY_SYSCALL_H */

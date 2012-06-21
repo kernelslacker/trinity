@@ -253,6 +253,8 @@ int main(int argc, char* argv[])
 		goto cleanup_shm;
 	}
 
+	sanity_check_tables();
+
 	if (logging == TRUE)
 		open_logfiles();
 
