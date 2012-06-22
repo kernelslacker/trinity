@@ -255,7 +255,7 @@ retry:
 		if (pid == shm->pids[i])
 			goto retry;
 	}
-	if (pid == parentpid)
+	if (pid == shm->parentpid)
 		goto retry;
 
 	if (pid == shm->watchdog_pid)

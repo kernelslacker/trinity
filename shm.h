@@ -14,6 +14,7 @@ struct shm_s {
 	unsigned long retries;
 	unsigned long regenerate;
 
+	pid_t parentpid;
 	pid_t watchdog_pid;
 	unsigned int nr_childs;
 	unsigned int running_childs;

@@ -16,7 +16,7 @@ void open_logfiles()
 	char *logfilename;
 
 	logfilename = malloc(64);
-	sprintf(logfilename, "trinity-%d.log", parentpid);
+	sprintf(logfilename, "trinity-%d.log", shm->parentpid);
 	unlink(logfilename);
 	parentlogfile = fopen(logfilename, "a");
 	if (!parentlogfile) {
@@ -26,7 +26,7 @@ void open_logfiles()
 
 	for (i = 0; i < shm->nr_childs; i++) {
 		logfilename = malloc(64);
-		sprintf(logfilename, "trinity-%d-child%d.log", parentpid, i);
+		sprintf(logfilename, "trinity-%d-child%d.log", shm->parentpid, i);
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
 		if (!shm->logfiles[i]) {
@@ -53,7 +53,7 @@ static FILE * find_logfile_handle()
 	unsigned int j;
 
 	pid = getpid();
-	if (pid == parentpid)
+	if (pid == shm->parentpid)
 		return parentlogfile;
 
 	if (pid == shm->watchdog_pid)
