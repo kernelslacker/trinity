@@ -286,3 +286,6 @@ Still unfixed:
 
 * [PATCH] NFC: only put local on destruction if it was created before
 
+* New tty ldisc lockup on 3.5-rc3
+  https://lkml.org/lkml/2012/6/22/184
+
