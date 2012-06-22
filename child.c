@@ -101,7 +101,7 @@ int child_process(void)
 {
 	cpu_set_t set;
 	pid_t pid = getpid();
-	int ret = 0;
+	int ret;
 	unsigned int syscallnr;
 	unsigned int cpu;
 	unsigned int childno = find_pid_slot(pid);
@@ -121,6 +121,10 @@ int child_process(void)
 	}
 	if (extrafork == FALSE)
 		init_child();
+
+	sigsetjmp(ret_jump, 1);
+
+	ret = 0;
 
 	while (shm->exit_now == FALSE) {
 
