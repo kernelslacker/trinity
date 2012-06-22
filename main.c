@@ -187,7 +187,7 @@ static void handle_children()
 
 	default:
 		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
-
+again:
 		if (WIFEXITED(childstatus)) {
 
 			slot = find_pid_slot(childpid);
@@ -232,6 +232,17 @@ static void handle_children()
 			output("erk, wtf\n");
 		}
 	}
+
+	/* anything else to process ? */
+	sleep(1);	/* Give other children a chance to do something. */
+	childpid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+	if (childpid == 0)
+		return;
+	if (childpid == -1)
+		return;
+
+	goto again;
+
 }
 
 void main_loop()
