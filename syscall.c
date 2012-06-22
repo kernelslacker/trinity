@@ -143,8 +143,6 @@ long mkcall(int childno)
 
 	shm->regenerate++;
 
-	sigsetjmp(ret_jump, 1);
-
 	sptr = string;
 
 	sptr += sprintf(sptr, "[%d] ", getpid());

@@ -135,11 +135,11 @@ void seed_from_tod()
 
 static void sighandler(__unused__ int sig)
 {
-/*	if (sig == SIGALRM) {
+	if (sig == SIGALRM) {
 		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
 	}
-*/
+
 	_exit(EXIT_SUCCESS);
 }
 
