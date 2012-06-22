@@ -131,6 +131,7 @@ void output(const char *fmt, ...)
 	if (!handle) {
 		printf("## child logfile handle was null logging to main!\n");
 		handle = parentlogfile;
+		sleep(5);
 		return;
 	}
 
