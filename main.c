@@ -263,8 +263,11 @@ void main_loop()
 	pid = fork();
 	if (pid != 0) {
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED);
-		_exit(EXIT_SUCCESS);
+		shm->parentpid = getpid(); /* reset */
+		return;
 	}
+
+	shm->parentpid = getpid();
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
