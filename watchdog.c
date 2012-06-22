@@ -110,11 +110,12 @@ static void check_children(void)
 				break;
 
 			default:
-				output("tried to kill pid %d, but %s. Trying again.\n", pid, strerror(errno));
+				output("(ret=%d) tried to attach to pid %d, but %s (%d). Trying again.\n", ret, pid, strerror(errno), errno);
 				// fallthrough
 				;;
 
 			case -EBUSY:
+			case 0:
 				ptrace(PTRACE_CONT, pid, NULL, NULL);
 				kill(pid, SIGKILL);
 				break;
