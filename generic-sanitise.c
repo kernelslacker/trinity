@@ -332,6 +332,10 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	}
 
 	switch (argtype) {
+	case ARG_UNDEFINED:
+	case ARG_RANDOM_INT:
+		return (unsigned long)rand();
+
 	case ARG_FD:
 		return get_fd();
 	case ARG_LEN:
