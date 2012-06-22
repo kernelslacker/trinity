@@ -221,13 +221,20 @@ again:
 			break;
 
 		} else if (WIFSTOPPED(childstatus)) {
-			debugf("[%d] Child %d was stopped (%s).\n", getpid(), childpid, strsignal(WSTOPSIG(childstatus)));
-			if (WSTOPSIG(childstatus) == SIGSTOP) {
+			switch (WSTOPSIG(childstatus)) {
+			case SIGALRM:
+				break;
+			default:
+				debugf("[%d] Child %d was stopped (%s).\n", getpid(), childpid, strsignal(WSTOPSIG(childstatus)));
+				;; // fallthrough
+			case SIGSTOP:
 				debugf("[%d] Sending PTRACE_CONT (and then KILL)\n", getpid());
 				ptrace(PTRACE_CONT, childpid, NULL, NULL);
+				kill(childpid, SIGKILL);
+				reap_child(childpid);
 			}
-			kill(childpid, SIGKILL);
-			reap_child(childpid);
+			break;
+
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
 		} else {
