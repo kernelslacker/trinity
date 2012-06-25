@@ -154,17 +154,14 @@ void reap_child(pid_t childpid)
 	}
 }
 
-static void handle_children()
+static void handle_child(pid_t childpid, int childstatus)
 {
-	int childpid, childstatus;
 	unsigned int i;
 	int slot;
 
-	childpid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED);
-
 	switch (childpid) {
 	case 0:
-		debugf("[%d] Nothing changed. children:%d\n", getpid(), shm->running_childs);
+		//debugf("[%d] Nothing changed. children:%d\n", getpid(), shm->running_childs);
 		break;
 
 	case -1:
@@ -187,7 +184,7 @@ static void handle_children()
 
 	default:
 		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
-again:
+
 		if (WIFEXITED(childstatus)) {
 
 			slot = find_pid_slot(childpid);
@@ -203,12 +200,14 @@ again:
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
-			/* it's a child */
+
 			switch (WTERMSIG(childstatus)) {
+			case SIGALRM:
+				debugf("[%d] got a alarm signal from pid %d\n", getpid(), childpid);
+				break;
 			case SIGFPE:
 			case SIGSEGV:
 			case SIGKILL:
-			case SIGALRM:
 			case SIGPIPE:
 			case SIGABRT:
 				debugf("[%d] got a signal from pid %d (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
@@ -216,22 +215,31 @@ again:
 				break;
 			default:
 				debugf("[%d] ** Child got an unhandled signal (%d)\n", getpid(), WTERMSIG(childstatus));
-					break;
+				break;
 			}
 			break;
 
 		} else if (WIFSTOPPED(childstatus)) {
+
 			switch (WSTOPSIG(childstatus)) {
 			case SIGALRM:
+				debugf("[%d] got an alarm signal from pid %d\n", getpid(), childpid);
+				break;
+			case SIGSTOP:
+				debugf("[%d] Sending PTRACE_DETACH (and then KILL)\n", getpid());
+				ptrace(PTRACE_DETACH, childpid, NULL, NULL);
+				kill(childpid, SIGKILL);
+				;;	// fallthrough
+			case SIGFPE:
+			case SIGSEGV:
+			case SIGKILL:
+			case SIGPIPE:
+			case SIGABRT:
+				reap_child(childpid);
 				break;
 			default:
-				debugf("[%d] Child %d was stopped (%s).\n", getpid(), childpid, strsignal(WSTOPSIG(childstatus)));
-				;; // fallthrough
-			case SIGSTOP:
-				debugf("[%d] Sending PTRACE_CONT (and then KILL)\n", getpid());
-				ptrace(PTRACE_CONT, childpid, NULL, NULL);
-				kill(childpid, SIGKILL);
-				reap_child(childpid);
+				debugf("[%d] Child %d was stopped by unhandled signal (%s).\n", getpid(), childpid, strsignal(WSTOPSIG(childstatus)));
+				break;
 			}
 			break;
 
@@ -241,17 +249,33 @@ again:
 			output("erk, wtf\n");
 		}
 	}
+}
 
-	/* anything else to process ? */
-	sleep(1);	/* Give other children a chance to do something. */
-	childpid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-	if (childpid == 0)
-		return;
-	if (childpid == -1)
-		return;
+static void handle_children()
+{
+	unsigned int i;
+	int childstatus;
+	pid_t pid;
 
-	goto again;
+	pid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED);
 
+	handle_child(pid, childstatus);
+
+	for (i = 0; i < shm->nr_childs; i++) {
+
+		pid = shm->pids[i];
+
+		if (pid == 0)
+			continue;
+		if (pid == -1)
+			continue;
+
+		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+		if (pid != 0)
+			handle_child(pid, childstatus);
+
+		sleep(0.1);	/* Give other children a chance to do something. */
+	}
 }
 
 void main_loop()
@@ -284,7 +308,9 @@ void main_loop()
 	printf("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 
 	while (shm->exit_now == FALSE) {
-		fork_children();
+		if (shm->running_childs < shm->nr_childs)
+			fork_children();
+
 		handle_children();
 
 		if (shm->regenerate >= REGENERATION_POINT)
