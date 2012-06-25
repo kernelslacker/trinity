@@ -11,5 +11,5 @@ struct syscall syscall_nfsservctl = {
 	.arg2name = "arg",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "res",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 };

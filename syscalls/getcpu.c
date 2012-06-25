@@ -11,8 +11,8 @@ struct syscall syscall_getcpu = {
 	.arg1name = "cpup",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "nodep",
-	.arg2type = ARG_ADDRESS2,
+	.arg2type = ARG_ADDRESS,
 	.arg3name = "unused",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 };

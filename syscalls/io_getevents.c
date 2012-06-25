@@ -19,5 +19,5 @@ struct syscall syscall_io_getevents = {
 	.arg4name = "events",
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "timeout",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 };

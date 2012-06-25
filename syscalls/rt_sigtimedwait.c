@@ -13,7 +13,7 @@ struct syscall syscall_rt_sigtimedwait = {
 	.arg2name = "uinfo",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "uts",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "sigsetsize",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 };

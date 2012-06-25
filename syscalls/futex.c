@@ -30,9 +30,9 @@ struct syscall syscall_futex = {
 	},
 	.arg3name = "val",
 	.arg4name = "utime",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 	.arg5name = "uaddr2",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 	.arg6name = "val3",
 	.rettype = RET_FD,		// FIXME: Needs to mutate depending on 'op' value
 };

@@ -13,5 +13,5 @@ struct syscall syscall_symlinkat = {
 	.arg2name = "newdfd",
 	.arg2type = ARG_FD,
 	.arg3name = "newname",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 };

@@ -50,5 +50,5 @@ struct syscall syscall_recvmmsg = {
 				MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
 	},
 	.arg5name = "timeout",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 };

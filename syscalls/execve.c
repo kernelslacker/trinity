@@ -17,7 +17,7 @@ struct syscall syscall_execve = {
 	.arg2name = "argv",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "envp",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "regs",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 };

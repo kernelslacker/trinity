@@ -7,7 +7,7 @@ enum argtype {
 	ARG_FD = 2,
 	ARG_LEN = 3,
 	ARG_ADDRESS = 4,
-	ARG_ADDRESS2 = 5,
+	ARG_UNUSED = 5,			//RE-USE
 	ARG_NON_NULL_ADDRESS = 6,
 	ARG_PID = 7,
 	ARG_RANGE = 8,

@@ -12,5 +12,5 @@ struct syscall syscall_getsockname = {
 	.arg2name = "usockaddr",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "usockaddr_len",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 };

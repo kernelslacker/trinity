@@ -15,6 +15,6 @@ struct syscall syscall_migrate_pages = {
 	.arg3name = "old_nodes",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "new_nodes",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 	.group = GROUP_VM,
 };

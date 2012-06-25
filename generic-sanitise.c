@@ -317,6 +317,38 @@ static struct iovec * alloc_iovec(unsigned int num)
 	return iov;
 }
 
+static unsigned long find_previous_arg_address(unsigned int argnum, unsigned int call, int childno)
+{
+	unsigned long addr = 0;
+
+	if (argnum > 1)
+		if ((syscalls[call].entry->arg1type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg1type == ARG_NON_NULL_ADDRESS))
+			addr = shm->a1[childno];
+
+	if (argnum > 2)
+		if ((syscalls[call].entry->arg2type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg2type == ARG_NON_NULL_ADDRESS))
+			addr = shm->a2[childno];
+
+	if (argnum > 3)
+		if ((syscalls[call].entry->arg3type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg3type == ARG_NON_NULL_ADDRESS))
+			addr = shm->a3[childno];
+
+	if (argnum > 4)
+		if ((syscalls[call].entry->arg4type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg4type == ARG_NON_NULL_ADDRESS))
+			addr = shm->a4[childno];
+
+	if (argnum > 5)
+		if ((syscalls[call].entry->arg5type == ARG_ADDRESS) ||
+		    (syscalls[call].entry->arg5type == ARG_NON_NULL_ADDRESS))
+			addr = shm->a5[childno];
+
+	return addr;
+}
+
 
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
@@ -327,7 +359,6 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	unsigned int bits;
 	unsigned int num = 0;
 	const unsigned int *values = NULL;
-	unsigned char set_addr = FALSE;
 	enum argtype argtype = 0;
 
 	switch (argnum) {
@@ -359,48 +390,13 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long)get_len();
 
 	case ARG_ADDRESS:
-		return (unsigned long)get_address();
-
-	case ARG_ADDRESS2:
-		/* just do ARG_ADDRESS half the time. */
 		if ((rand() % 2) == 0)
 			return (unsigned long)get_address();
 
-		if ((syscalls[call].entry->arg1type == ARG_ADDRESS) ||
-		    (syscalls[call].entry->arg1type == ARG_NON_NULL_ADDRESS)) {
-			addr = shm->a1[childno];
-			set_addr = TRUE;
-		}
+		/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
+		 * and munge that instead of returning a new one from get_address() */
 
-		if ((syscalls[call].entry->arg2type == ARG_ADDRESS) ||
-		    (syscalls[call].entry->arg2type == ARG_NON_NULL_ADDRESS)) {
-			addr = shm->a2[childno];
-			set_addr = TRUE;
-		}
-
-		if ((syscalls[call].entry->arg3type == ARG_ADDRESS) ||
-		    (syscalls[call].entry->arg3type == ARG_NON_NULL_ADDRESS)) {
-			addr = shm->a3[childno];
-			set_addr = TRUE;
-		}
-
-		if ((syscalls[call].entry->arg4type == ARG_ADDRESS) ||
-		    (syscalls[call].entry->arg4type == ARG_NON_NULL_ADDRESS)) {
-			addr = shm->a4[childno];
-			set_addr = TRUE;
-		}
-
-		if ((syscalls[call].entry->arg5type == ARG_ADDRESS) ||
-		    (syscalls[call].entry->arg5type == ARG_NON_NULL_ADDRESS)) {
-			addr = shm->a5[childno];
-			set_addr = TRUE;
-		}
-
-		if (set_addr == FALSE) {
-			BUG("addr should never be 0!\n");
-			printf("syscall was %s\n", syscalls[call].entry->name);
-			shm->exit_now = TRUE;
-		}
+		addr = find_previous_arg_address(argnum, call, childno);
 
 		switch (rand() % 4) {
 		case 0:	break;	/* return unmodified */

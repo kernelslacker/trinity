@@ -13,8 +13,8 @@ struct syscall syscall_request_key = {
 	.arg1name = "_type",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "_description",
-	.arg2type = ARG_ADDRESS2,
+	.arg2type = ARG_ADDRESS,
 	.arg3name = "_callout_info",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "destringid",
 };

@@ -13,5 +13,5 @@ struct syscall syscall_quotactl = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "id",
 	.arg4name = "addr",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 };

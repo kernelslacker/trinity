@@ -13,5 +13,5 @@ struct syscall syscall_timer_create = {
 	.arg2name = "timer_event_spec",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "create_timer_id",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 };

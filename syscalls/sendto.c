@@ -57,7 +57,7 @@ struct syscall syscall_sendto = {
 				MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
 	},
 	.arg5name = "addr",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 	.arg6name = "addr_len",
 	.arg6type = ARG_LEN,
 };

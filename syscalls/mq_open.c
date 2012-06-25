@@ -12,5 +12,5 @@ struct syscall syscall_mq_open = {
 	.arg2name = "oflag",
 	.arg3name = "mode",
 	.arg4name = "u_attr",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 };

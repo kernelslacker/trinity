@@ -25,7 +25,7 @@ struct syscall syscall_recvfrom = {
 			    MSG_PEEK, MSG_TRUNC, MSG_WAITALL },
 	},
 	.arg5name = "addr",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 	.arg6name = "addr_len",
-	.arg6type = ARG_ADDRESS2,
+	.arg6type = ARG_ADDRESS,
 };
