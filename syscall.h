@@ -16,6 +16,8 @@ enum argtype {
 	ARG_RANDPAGE = 11,
 	ARG_CPU = 12,
 	ARG_PATHNAME = 13,
+	ARG_IOVEC = 14,
+	ARG_IOVECLEN = 15,
 };
 
 struct arglist {

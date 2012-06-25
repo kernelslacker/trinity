@@ -205,6 +205,8 @@ long mkcall(int childno)
 		case ARG_RANDPAGE:					\
 		case ARG_CPU:						\
 		case ARG_RANDOM_INT:					\
+		case ARG_IOVEC:						\
+		case ARG_IOVECLEN:					\
 		default:						\
 			if (REG > 8 * 1024)				\
 				sptr += sprintf(sptr, "0x%lx", REG);	\

@@ -10,7 +10,7 @@ struct syscall syscall_readv = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "vec",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_IOVEC,
 	.arg3name = "vlen",
-	.arg3type = ARG_LEN,
+	.arg3type = ARG_IOVECLEN,
 };

@@ -17,6 +17,7 @@ static void sanitise_sendmsg(int childno)
 {
 	struct msghdr *msg;
 
+	// FIXME: Convert to use generic ARG_IOVEC
         msg = malloc(sizeof(struct msghdr));
 	if (msg == NULL) {
 		shm->a2[childno] = (unsigned long) get_address();
