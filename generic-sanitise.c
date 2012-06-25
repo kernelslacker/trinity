@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
+#include <linux/uio.h>
 
 #include "files.h"
 #include "arch.h"
@@ -301,6 +302,22 @@ unsigned long get_len()
 	return i;
 }
 
+static struct iovec * alloc_iovec(unsigned int num)
+{
+	struct iovec *iov;
+	unsigned int i;
+
+	iov = malloc(num * sizeof(struct iovec));
+	if (iov != NULL) {
+		for (i = 0; i < num; i++) {
+			iov[i].iov_len = rand() % page_size;
+			iov[i].iov_base = malloc(iov[i].iov_len);;
+		}
+	}
+	return iov;
+}
+
+
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
@@ -502,6 +519,42 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	case ARG_PATHNAME:
 		return (unsigned long) pathnames[rand() % 50];
 
+	case ARG_IOVEC:
+		i = rand() % 4;
+
+		switch (argnum) {
+		case 1:	if (syscalls[call].entry->arg2type == ARG_IOVECLEN)
+				shm->a2[childno] = i;
+			break;
+		case 2:	if (syscalls[call].entry->arg3type == ARG_IOVECLEN)
+				shm->a3[childno] = i;
+			break;
+		case 3:	if (syscalls[call].entry->arg4type == ARG_IOVECLEN)
+				shm->a4[childno] = i;
+			break;
+		case 4:	if (syscalls[call].entry->arg5type == ARG_IOVECLEN)
+				shm->a5[childno] = i;
+			break;
+		case 5:	if (syscalls[call].entry->arg6type == ARG_IOVECLEN)
+				shm->a6[childno] = i;
+			break;
+		case 6:
+		default: BUG("impossible\n");
+		}
+		return (unsigned long) alloc_iovec(i);
+
+	case ARG_IOVECLEN:
+		switch (argnum) {
+		case 1:	return(shm->a1[childno]);
+		case 2:	return(shm->a2[childno]);
+		case 3:	return(shm->a3[childno]);
+		case 4:	return(shm->a4[childno]);
+		case 5:	return(shm->a5[childno]);
+		case 6:	return(shm->a6[childno]);
+		default: break;
+		}
+		;; // fallthrough
+
 	default:
 		BUG("unreachable!\n");
 		return 0;
@@ -510,7 +563,6 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	BUG("unreachable!\n");
 	return 0x5a5a5a5a;	/* Should never happen */
 }
-
 
 void generic_sanitise(int childno)
 {

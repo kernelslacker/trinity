@@ -11,9 +11,9 @@ struct syscall syscall_pwritev = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "vec",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_IOVEC,
 	.arg3name = "vlen",
-	.arg3type = ARG_LEN,
+	.arg3type = ARG_IOVECLEN,
 	.arg4name = "pos_l",
 	.arg5name = "pos_h",
 };
