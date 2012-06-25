@@ -18,6 +18,8 @@ retry:
 	newbuffer = malloc(newsize);
 	if (newbuffer == NULL) {
 		newsize >>= 1;
+		if (shm->exit_now == TRUE)
+			return;
 		goto retry;
 	}
 
