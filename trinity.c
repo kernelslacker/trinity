@@ -304,18 +304,24 @@ int main(int argc, char* argv[])
 		/* nothing right now */
 	}
 
-	main_loop();
+	if (shm->exit_now == TRUE)
+		goto cleanup_fds;
+
+	init_watchdog();
+
+	do_main_loop();
 
 	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
 		shm->execcount - 1, shm->retries, shm->successes, shm->failures);
 
 	ret = EXIT_SUCCESS;
 
-
-	destroy_maps();
+cleanup_fds:
 
 	for (i = 0; i < socks; i++)
 		close(shm->socket_fds[i]);
+
+	destroy_maps();
 
 	if (logging == TRUE)
 		close_logfiles();

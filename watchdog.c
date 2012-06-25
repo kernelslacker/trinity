@@ -21,8 +21,14 @@ void init_watchdog()
 
 	fflush(stdout);
 	pid = fork();
+
 	if (pid == 0)
 		watchdog();     // Never returns.
+
+	while (shm->watchdog_pid == 0)
+		sleep(0.1);
+
+	output("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 }
 
 void wait_for_watchdog_to_exit(void)
@@ -44,8 +50,10 @@ void wait_for_watchdog_to_exit(void)
 			return;
 		default:
 			if (WIFEXITED(status)) {
-				if (ret == shm->watchdog_pid)
+				if (ret == shm->watchdog_pid) {
+					shm->watchdog_pid = 0;
 					return;
+				}
 			}
 			break;
 		}
