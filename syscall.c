@@ -124,7 +124,7 @@ static unsigned long do_syscall(int childno)
 		}
 		if (WIFSTOPPED(childstatus)) {
 			output("[%d] Child process %d stopped. killing.\n", getpid(), childpid);
-			ptrace(PTRACE_CONT, childpid, NULL, NULL);
+			ptrace(PTRACE_DETACH, childpid, NULL, NULL);
 			kill(childpid, SIGKILL);
 			break;
 		}
