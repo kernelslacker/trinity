@@ -46,11 +46,10 @@ void wait_for_watchdog_to_exit(void)
 static void check_children(void)
 {
 	struct timeval tv;
-	unsigned int diff;
+	time_t diff;
 	time_t old, now;
 	pid_t pid;
 	unsigned int i;
-	int ret;
 
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec;
@@ -60,6 +59,13 @@ static void check_children(void)
 
 		if ((pid == 0) || (pid == -1))
 			continue;
+
+		/* first things first, does the pid still exist ? */
+		if (getpgid(pid) == -1) {
+			output("pid %d has disappeared (oom-killed maybe?). (ret=%d:%s) Reaping.\n", pid, errno, strerror(errno));
+			reap_child(pid);
+			continue;
+		}
 
 		old = shm->tv[i].tv_sec;
 
@@ -95,32 +101,9 @@ static void check_children(void)
 		 * Find out what's going on. */
 
 		if (diff > 60) {
-
-			ret = ptrace(PTRACE_ATTACH, pid, NULL, NULL);
-
-			switch (ret) {
-			case -ESRCH:
-				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
-				reap_child(pid);
-				break;
-
-			case -EPERM:
-				output("couldn't attach to pid %d. Zombie? Sleeping another 30s\n", pid);
-				shm->tv[i].tv_sec = now;
-				break;
-
-			default:
-				output("(ret=%d) tried to attach to pid %d, but %s (%d). Trying again.\n", ret, pid, strerror(errno), errno);
-				// fallthrough
-				;;
-
-			case -EBUSY:
-			case 0:
-				ptrace(PTRACE_CONT, pid, NULL, NULL);
-				kill(pid, SIGKILL);
-				break;
-			}
-			break;
+			output("pid %d hasn't made progress in 60 seconds! (last:%ld now:%ld diff:%d)\n",
+				pid, old, now, diff);
+			shm->tv[i].tv_sec = now;
 		}
 	}
 }
@@ -139,7 +122,7 @@ void watchdog(void)
 	while (shm->exit_now == FALSE) {
 
 		while (shm->regenerating == TRUE)
-			sleep(1);
+			sleep(0.1);
 
 		check_children();
 
