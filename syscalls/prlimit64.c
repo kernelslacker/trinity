@@ -15,5 +15,5 @@ struct syscall syscall_prlimit64 = {
 	.arg3name = "new_rlim",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "old_rlim",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 };

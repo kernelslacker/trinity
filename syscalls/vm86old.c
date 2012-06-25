@@ -10,5 +10,5 @@ struct syscall syscall_vm86old = {
 	.arg1name = "v86",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "regs",
-	.arg2type = ARG_ADDRESS2,
+	.arg2type = ARG_ADDRESS,
 };

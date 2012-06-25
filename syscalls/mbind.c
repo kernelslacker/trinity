@@ -44,7 +44,7 @@ struct syscall syscall_mbind = {
 	.hi3range = 5,
 
 	.arg4name = "nmask",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 
 	.arg5name = "maxnode",
 	.arg5type = ARG_RANGE,

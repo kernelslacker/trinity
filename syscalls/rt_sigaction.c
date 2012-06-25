@@ -33,6 +33,6 @@ struct syscall syscall_rt_sigaction = {
 	.arg2name = "act",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "oact",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "sigsetsize",
 };

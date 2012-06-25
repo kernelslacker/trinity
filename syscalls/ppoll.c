@@ -13,8 +13,8 @@ struct syscall syscall_ppoll = {
 	.arg2name = "nfds",
 	.arg2type = ARG_LEN,
 	.arg3name= "tsp",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "sigmask",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 	.arg5name = "sigsetsize",
 };

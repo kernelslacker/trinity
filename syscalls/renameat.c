@@ -15,5 +15,5 @@ struct syscall syscall_renameat = {
 	.arg3name = "newdfd",
 	.arg3type = ARG_FD,
 	.arg4name = "newname",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 };

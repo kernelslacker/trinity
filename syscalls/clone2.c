@@ -31,10 +31,10 @@ struct syscall syscall_clone2 = {
 	.arg3name = "ustack_size",
 	.arg3type = ARG_LEN,
 	.arg4name = "parent_tidptr",
-	.arg4type = ARG_ADDRESS2,
+	.arg4type = ARG_ADDRESS,
 	.arg5name = "child_tidptr",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 	.arg6name = "tls",
-	.arg6type = ARG_ADDRESS2,
+	.arg6type = ARG_ADDRESS,
 	.rettype = RET_PID_T,
 };

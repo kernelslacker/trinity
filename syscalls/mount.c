@@ -11,10 +11,10 @@ struct syscall syscall_mount = {
 	.arg1name = "dev_name",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "dir_name",
-	.arg2type = ARG_ADDRESS2,
+	.arg2type = ARG_ADDRESS,
 	.arg3name = "type",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "flags",
 	.arg5name = "data",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 };

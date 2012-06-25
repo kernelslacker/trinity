@@ -197,7 +197,6 @@ long mkcall(int childno)
 		case ARG_UNDEFINED:					\
 		case ARG_LEN:						\
 		case ARG_ADDRESS:					\
-		case ARG_ADDRESS2:					\
 		case ARG_NON_NULL_ADDRESS:				\
 		case ARG_RANGE:						\
 		case ARG_OP:						\

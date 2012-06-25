@@ -50,6 +50,6 @@ struct syscall syscall_mremap = {
 		.values = { MREMAP_MAYMOVE, MREMAP_FIXED },
         },
 	.arg5name = "new_addr",
-	.arg5type = ARG_ADDRESS2,
+	.arg5type = ARG_ADDRESS,
 	.group = GROUP_VM,
 };

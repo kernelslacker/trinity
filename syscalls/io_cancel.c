@@ -12,5 +12,5 @@ struct syscall syscall_io_cancel = {
 	.arg2name = "iocb",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "result",
-	.arg3type = ARG_ADDRESS2,
+	.arg3type = ARG_ADDRESS,
 };
