@@ -48,4 +48,6 @@ struct syscall syscall_ptrace = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "data",
 	.sanitise = sanitise_ptrace,
+
+	.flags = AVOID_SYSCALL,
 };
