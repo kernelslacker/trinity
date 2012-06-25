@@ -278,33 +278,13 @@ static void handle_children()
 	}
 }
 
-void main_loop()
+static void main_loop()
 {
 	static const char taskname[13]="trinity-main";
-	int childstatus;
-	pid_t pid;
-
-	if (shm->exit_now == TRUE)
-		return;
-
-	init_watchdog();
-
-	/* do an extra fork so that the watchdog and the children don't share a common parent */
-	pid = fork();
-	if (pid != 0) {
-		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED);
-		shm->parentpid = getpid(); /* reset */
-		return;
-	}
 
 	shm->parentpid = getpid();
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
-
-	while (shm->watchdog_pid == 0)
-		sleep(1);
-
-	printf("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 
 	while (shm->exit_now == FALSE) {
 		if (shm->running_childs < shm->nr_childs)
@@ -314,13 +294,28 @@ void main_loop()
 
 		if (shm->regenerate >= REGENERATION_POINT)
 			regenerate();
-
-//		output("regenerate:%d\n", shm->regenerate);
 	}
-	wait_for_watchdog_to_exit();
-
 	while (!(pidmap_empty()))
 		handle_children();
 
 	printf("[%d] Bailing main loop\n", getpid());
+	_exit(EXIT_SUCCESS);
+}
+
+
+void do_main_loop()
+{
+	int childstatus;
+	pid_t pid;
+
+	/* do an extra fork so that the watchdog and the children don't share a common parent */
+	fflush(stdout);
+	pid = fork();
+	if (pid == 0)
+		main_loop();
+
+	while (pid != -1)
+		pid = waitpid(-1, &childstatus, 0);
+
+	shm->parentpid = getpid();
 }

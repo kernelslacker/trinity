@@ -22,7 +22,7 @@ extern pid_t parentpid;
 
 extern jmp_buf ret_jump;
 
-void main_loop(void);
+void do_main_loop(void);
 int child_process(void);
 
 int find_pid_slot(pid_t mypid);
