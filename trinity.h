@@ -116,6 +116,7 @@ int check_tainted(void);
 
 void init_child(void);
 
+void init_watchdog(void);
 void watchdog(void);
 void wait_for_watchdog_to_exit(void);
 

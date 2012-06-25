@@ -15,6 +15,16 @@
 #include "files.h"
 #include "syscall.h"
 
+void init_watchdog()
+{
+	pid_t pid;
+
+	fflush(stdout);
+	pid = fork();
+	if (pid == 0)
+		watchdog();     // Never returns.
+}
+
 void wait_for_watchdog_to_exit(void)
 {
 	int ret, status;

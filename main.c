@@ -287,10 +287,7 @@ void main_loop()
 	if (shm->exit_now == TRUE)
 		return;
 
-	fflush(stdout);
-	pid = fork();
-	if (pid == 0)
-		watchdog();	// Never returns.
+	init_watchdog();
 
 	/* do an extra fork so that the watchdog and the children don't share a common parent */
 	pid = fork();
