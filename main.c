@@ -284,6 +284,8 @@ void main_loop()
 	int childstatus;
 	pid_t pid;
 
+	if (shm->exit_now == TRUE)
+		return;
 
 	fflush(stdout);
 	pid = fork();

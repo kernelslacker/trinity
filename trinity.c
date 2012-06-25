@@ -135,12 +135,19 @@ void seed_from_tod()
 
 static void sighandler(__unused__ int sig)
 {
-	if (sig == SIGALRM) {
+	switch(sig) {
+	case SIGALRM:
 		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
-	}
+		break;
 
-	_exit(EXIT_SUCCESS);
+	case SIGINT:
+		shm->exit_now = 1;
+		break;
+
+	default:
+		_exit(EXIT_SUCCESS);
+	}
 }
 
 static void mask_signals(void)

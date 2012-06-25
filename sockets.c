@@ -49,6 +49,10 @@ void generate_sockets(unsigned int nr_to_create)
 	output("took writer lock for cachefile\n");
 
 	while (nr_to_create > 0) {
+
+		if (shm->exit_now == TRUE)
+			return;
+
 		for (i = 0; i < PF_MAX; i++)
 			sockarray[i] = 0;
 

@@ -98,6 +98,9 @@ void open_fds(const char *dir, unsigned char add_all)
 	}
 	while ((de = readdir(d))) {
 
+		if (shm->exit_now == TRUE)
+			return;
+
 		memset(&buf, 0, sizeof(struct stat));
 		snprintf(b, sizeof(b), "%s/%s", dir, de->d_name);
 		if (ignore_files(de->d_name))
@@ -220,6 +223,9 @@ void open_files()
 	const char dir4[]="";
 */
 	while (fds_left_to_create > 0) {
+
+		if (shm->exit_now == TRUE)
+			return;
 
 /*		(void)add_fd(-1, dir1, O_RDONLY, TRUE);
 		(void)add_fd(-1, dir2, O_RDWR, TRUE);
