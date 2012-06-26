@@ -69,7 +69,6 @@ extern unsigned char monochrome;
 extern unsigned char dangerous;
 extern unsigned char do_syslog;
 extern unsigned char logging;
-extern unsigned char extrafork;
 extern unsigned char desired_group;
 
 extern unsigned char exit_now;

@@ -22,7 +22,6 @@ unsigned char quiet = FALSE;
 unsigned char monochrome = FALSE;
 unsigned char dangerous = FALSE;
 unsigned char logging = TRUE;
-unsigned char extrafork = FALSE;
 unsigned char do_syslog = FALSE;
 
 unsigned char desired_group = GROUP_NONE;
@@ -93,7 +92,7 @@ void parse_args(int argc, char *argv[])
 		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dDfg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:dDg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -118,10 +117,6 @@ void parse_args(int argc, char *argv[])
 
 		case 'D':
 			debug = 1;
-			break;
-
-		case 'f':
-			extrafork = 1;
 			break;
 
 		case 'g':
