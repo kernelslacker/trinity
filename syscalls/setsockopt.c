@@ -8,6 +8,7 @@
 #include "linux/filter.h"
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 #include "shm.h"
 
 void sanitise_setsockopt(int childno)

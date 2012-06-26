@@ -179,4 +179,21 @@ enum kcmp_type {
 };
 #endif
 
+/* asm/socket.h */
+#ifndef SO_RXQ_OVFL
+#define SO_RXQ_OVFL		40
+#endif
+
+#ifndef SO_WIFI_STATUS
+#define SO_WIFI_STATUS		41
+#endif
+
+#ifndef SO_PEEK_OFF
+#define SO_PEEK_OFF		42
+#endif
+
+#ifndef SO_NOFCS
+#define SO_NOFCS		43
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
