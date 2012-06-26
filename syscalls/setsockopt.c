@@ -4,6 +4,8 @@
 
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include "linux/filter.h"
 #include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -16,7 +18,25 @@ void sanitise_setsockopt(int childno)
 		shm->a2[childno] = rand() % 256;
 
 	shm->a4[childno] = (unsigned long) page_rand;
-	shm->a5[childno] = rand() % page_size;
+
+	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int.
+
+	/* Adjust length according to operation set. */
+	if (shm->a2[childno] == SOL_SOCKET) {
+		switch (shm->a3[childno]) {
+		case SO_LINGER:	shm->a5[childno] = sizeof(struct linger);
+			break;
+		case SO_RCVTIMEO:
+		case SO_SNDTIMEO:
+			shm->a5[childno] = sizeof(struct timeval);
+			break;
+		case SO_ATTACH_FILTER:
+			shm->a5[childno] = sizeof(struct sock_fprog);
+			break;
+		default:
+			break;
+		}
+	}
 }
 
 struct syscall syscall_setsockopt = {
