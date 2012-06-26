@@ -13,6 +13,7 @@
 
 static void sanitise_vmsplice(int childno)
 {
+	shm->a1[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
 	shm->a3[childno] = rand() % UIO_MAXIOV;
 }
 
