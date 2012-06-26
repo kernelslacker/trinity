@@ -63,9 +63,8 @@ static unsigned long do_syscall(int childno)
 	int nr = shm->syscallno[childno];
 	unsigned int num_args = syscalls[nr].entry->num_args;
 	unsigned long a1, a2, a3, a4, a5, a6;
-
-	int childpid, childstatus;
 	int ret = 0;
+	int pidslot;
 
 	a1 = shm->a1[childno];
 	a2 = shm->a2[childno];
@@ -74,62 +73,19 @@ static unsigned long do_syscall(int childno)
 	a5 = shm->a5[childno];
 	a6 = shm->a6[childno];
 
-	if (extrafork == FALSE) {
-		int i;
-
-		(void)alarm(3);
-		if (shm->do32bit == FALSE)
-			ret = syscall(nr, a1, a2, a3, a4, a5, a6);
-		else
-			ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
-		(void)alarm(0);
-
-		i = find_pid_slot(getpid());
-		if (i != -1) {
-			shm->total_syscalls[i]++;
-			(void)gettimeofday(&shm->tv[i], NULL);
-		}
-
-		return ret;
-	}
-
-	/* Do the actual syscall in another child. */
-	fflush(stdout);
-	childpid = fork();
-	if (childpid == 0) {
-		init_child();
-		(void)alarm(3);
+	(void)alarm(3);
+	if (shm->do32bit == FALSE)
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
-		(void)alarm(0);
-		_exit(ret);
-	}
-	childpid = waitpid(childpid, &childstatus, 0);
-	switch (childpid) {
-	case 0:	output("wtf\n");
-		break;
+	else
+		ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
+	(void)alarm(0);
 
-	case -1: output("[%d] Something bad happened to child %d :(\n", getpid(), childpid);
-		break;
-
-	default:
-		if (WIFEXITED(childstatus)) {
-			ret = WEXITSTATUS(childstatus);
-			output("[%d] Child %d exited with return code %d\n", getpid(), childpid, ret);
-			break;
-		}
-		if (WIFSIGNALED(childstatus)) {
-			output("[%d] Child %d got a signal (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
-			ret = -1;
-			break;
-		}
-		if (WIFSTOPPED(childstatus)) {
-			output("[%d] Child process %d stopped. killing.\n", getpid(), childpid);
-			ptrace(PTRACE_DETACH, childpid, NULL, NULL);
-			kill(childpid, SIGKILL);
-			break;
-		}
-		break;
+	pidslot = find_pid_slot(getpid());
+	if (pidslot != -1) {
+		shm->total_syscalls[pidslot]++;
+		(void)gettimeofday(&shm->tv[pidslot], NULL);
 	}
+
 	return ret;
 }
 

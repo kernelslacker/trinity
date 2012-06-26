@@ -119,8 +119,8 @@ int child_process(void)
 		sched_setaffinity(getpid(), sizeof(set), &set);
 		output("bound child %d to cpu %d\n", pid, cpu);
 	}
-	if (extrafork == FALSE)
-		init_child();
+
+	init_child();
 
 	sigsetjmp(ret_jump, 1);
 
