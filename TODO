@@ -1,8 +1,44 @@
-* Bug: when we randomly call personality, the child stops logging.
+* Bugs
+  - when we randomly call personality, the child stops logging.
+  - fuzzing mmap causes a segfault to occur. We seem to corrupt the glibc memory pool.
+  - fuzzing munmap causes a segfault to occur. Looks like we munmap something important.
+  - fuzzing read() occasionally hangs a long time. Probably a socket ?
+  - Totalling success + failures doesn't always equal the total number of syscalls.
+  - occasionally a thread exits after 0 syscalls. Find out why.
+  - occasionally trinity fails to startup because we've leaked so much ipc stuff.
+    cleanup on startup.
+
+* Clean up logging.
+  - prepend [watchdog] for watchdog messages
+  - Make -D use a separate debug log file
+  - audit printfs and change to output/debugf as necessary
+  - make debugf a proper varargs function.
+
+* decode fd number -> filename in output
+
+* watchdog improvements
+  - in main loop, check watchdog is still alive
+  - check shm->parent_pid still alive in watchdog
+  - bind watchdog process to a cpu.
+  - RT watchdog task ? (needs initial startup as root, and drop privs afterwards).
+
+==============================================================================
+Post 1.0 material:
+
+* ->decode_argN functions to print decoded flags etc.
+
+* Improve socket generation to not generate duplicates.
+
+* the COLOR_ARG macro in syscall.c:mkcall() has grown into a monster.
+  Look at turning it into a function or two.
+
+* Revisit fuzzing ptrace.
+  - It's disabled currently because of situations like..
+  child a traces child b
+  child a segfaults
+  child b never proceeds, and doesn't get untraced.
 
 * Finish annotating syscall return types
-
-* ARG_WRITABLE_BUFFER
 
 * First thing a child should do is allocate a buffer of random numbers
   to be used as syscall numbers.
@@ -13,27 +49,11 @@
   of syscalls that work on fd's.
   This will give us a sort of auto-grouping of syscalls.
 
-* Record the results of syscalls that return an object to be handed out
-  to subsequent syscalls/other child tasks. 
-  TODO: lifetime rules ? destroy on child exit ?
-
-* Struct fabrication
-  Some syscalls are rejecting immediately because we aren't passing them
-  a struct they're expecting. This requires us to create a few new methods.
-  .constructor:
-	Before we do the syscall, we need a constructor method
-	to allocate and fake one.
-  .destructor:
-	Likewise, we need destructors to prevent resource leaks.
-
-  On return from the syscall, we don't call the destructor immediately.
-  We pick a small random number, and do N other syscalls before we do the destruction.
-  This requires us to create a list of work to be done later, along with a pointer
-  to any allocated data.
-  .post:
-	Recieves the retval from the syscall, and handles appropriately.
-	Pick a small random number for the lifetime of the resource
-	Store any allocated resources in the 'to be destroyed' list.
+* Destroy structures we allocated during a syscalls ->sanitise in a ->post method.
+  - On return from the syscall, we don't call the destructor immediately.
+    We pick a small random number, and do N other syscalls before we do the destruction.
+    This requires us to create a list of work to be done later, along with a pointer
+    to any allocated data.
 
 * Rewrite the fd generation code.
   - Don't generate so many fd's (faster startup)
@@ -70,29 +90,34 @@
 
 * Add a parameter for the dir/file randomness bias
 
-* Make -k use random kernel addresses (from System.map ?)
-
 * --oneshot
   ./trinity --oneshot futex -1,0x40000000,1,2,3,4
 
-* --info open
-   i386:   5
-   x86-64: 239
-   ppc64:  5
-
 * Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
-
-* Ability to pass a list of comma separated syscalls on the command-line.
-  (The inverse of -x. Collect multiple -c's and build a new syscall table.)
 
 * run tests in different namespaces, personalities.
 
-Experiments:
-* Add option to exhaust memory in child to try and run syscalls in low memory situations.
+* Output errno distribution on exit
 
-* Safety checks for buffers we pass to the kernel
-- mprotect them
-- add guard pages before/after, and add poison to be checked on return.
-  (Note, in some cases the kernel will write before/after buffers passed, because
-   libc has set things up that way, so it's expected)
+* Track success/failure per-thread instead of globally
+
+* Store previous syscall results
+
+* -x & -C should build a syscall table & adjust max_nr_syscalls
+
+* allow for multiple -G's (after there is more than 'vm')
+
+* ARG_MODE_T
+
+* use inotify to check if /proc/sys/kernel/tainted changes instead of polling.
+  (does inotify work on procfs?)
+
+* audit which syscalls never succeed, and write sanitise routines for them
+
+* Try passing a format string as a syscall argument.
+
+* sanitise_setsockopt needs further expansion to cope with things such as
+  those in do_ip_setsockopt
+
+* decode addresses when printing them out to print 'page_rand+4' instead of a hex address.
 
