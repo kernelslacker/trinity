@@ -28,6 +28,8 @@ retry:
 		filebuffer = malloc(newsize);
 		if (filebuffer == NULL) {
 			newsize >>= 1;
+			if (shm->exit_now == TRUE)
+				return;
 			goto retry;
 		}
 		filebuffersize = newsize;
