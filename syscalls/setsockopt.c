@@ -12,17 +12,13 @@
 
 void sanitise_setsockopt(int childno)
 {
-	if (rand() % 2)
-		shm->a2[childno] = SOL_SOCKET;
-	else
-		shm->a2[childno] = rand() % 256;
-
 	shm->a4[childno] = (unsigned long) page_rand;
+	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int (overridden below)
 
-	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int.
+	if (rand() % 2) {
+		shm->a2[childno] = SOL_SOCKET;
 
-	/* Adjust length according to operation set. */
-	if (shm->a2[childno] == SOL_SOCKET) {
+		/* Adjust length according to operation set. */
 		switch (shm->a3[childno]) {
 		case SO_LINGER:	shm->a5[childno] = sizeof(struct linger);
 			break;
@@ -36,6 +32,10 @@ void sanitise_setsockopt(int childno)
 		default:
 			break;
 		}
+	} else {
+		//TODO: Add some specific cases here for IP etc.
+		shm->a2[childno] = rand() % 256;	/* random protocol. */
+		shm->a3[childno] = rand() % 255;	/* random operation. */
 	}
 }
 
