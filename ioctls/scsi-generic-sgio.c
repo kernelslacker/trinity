@@ -21,7 +21,6 @@ void sanitise_ioctl_sg_io(int childno)
 	struct sgio *sgio;
 
 	sgio = (struct sgio *) page_rand;
-	memset(page_rand, 0, page_size);
 
 	sgio->cmd[0] = 0x12;
 	sgio->cmd[3] = 0x2;
