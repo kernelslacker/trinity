@@ -41,7 +41,7 @@ OBJS		= trinity.o \
 
 trinity: $(OBJS) $(HEADERS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
-	@rm -f *.d
+	@rm -f *.d syscalls/*.d ioctls/*.d
 	@mkdir -p tmp
 
 .c.o:
