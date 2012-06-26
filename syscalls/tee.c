@@ -8,8 +8,18 @@
 # define SPLICE_F_MORE          4       /* Expect more data.  */
 # define SPLICE_F_GIFT          8       /* Pages passed in are a gift.  */
 
+#include <stdlib.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "shm.h"
+
+void sanitise_tee(int childno)
+{
+	if ((rand() % 10) > 0) {
+		shm->a1[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		shm->a2[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+	}
+}
 
 struct syscall syscall_tee = {
 	.name = "tee",
@@ -26,4 +36,5 @@ struct syscall syscall_tee = {
 		.num = 4,
 		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
 	},
+	.sanitise = sanitise_tee,
 };
