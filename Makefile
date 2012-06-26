@@ -41,7 +41,8 @@ OBJS		= trinity.o \
 
 trinity: $(OBJS) $(HEADERS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
-	mkdir -p tmp
+	@rm -f *.d
+	@mkdir -p tmp
 
 .c.o:
 	$(CC) $(CFLAGS) -o $@ -c $<
