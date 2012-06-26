@@ -66,7 +66,6 @@ static void usage(void)
 	fprintf(stderr, " --victims,-V: path to victim files.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " -c#: target specific syscall (takes syscall name as parameter).\n");
-	fprintf(stderr, " -k:  pass kernel addresses as arguments.\n");
 	fprintf(stderr, " -N#: do # syscalls then exit.\n");
 	fprintf(stderr, " -p:  pause after syscall.\n");
 	fprintf(stderr, " -s#: use # as random seed.\n");
