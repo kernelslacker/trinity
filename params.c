@@ -84,7 +84,7 @@ void parse_args(int argc, char *argv[])
 		{ "help", no_argument, NULL, 'h' },
 		{ "list", no_argument, NULL, 'L' },
 		{ "logging", required_argument, NULL, 'l' },
-		{ "monochrome", no_argument, NULL, 'M' },
+		{ "monochrome", no_argument, NULL, 'm' },
 		{ "proto", required_argument, NULL, 'P' },
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "syslog", no_argument, NULL, 'S' },
