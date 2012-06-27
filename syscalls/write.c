@@ -11,19 +11,22 @@
  */
 static void sanitise_write(int childno)
 {
-	unsigned long newsize = shm->a3[childno] & 0xffff;
+	unsigned long newsize = shm->a3[childno] & 0xfffff;
 	void *newbuffer;
 
 retry:
 	newbuffer = malloc(newsize);
 	if (newbuffer == NULL) {
 		newsize >>= 1;
+		if (newsize == 0)
+			return;		// FIXME: Need a better way to indicate "we're fucked".
 		if (shm->exit_now == TRUE)
 			return;
 		goto retry;
 	}
 
-	free(filebuffer);
+	if (filebuffer != NULL)
+		free(filebuffer);
 	filebuffer = newbuffer;
 	filebuffersize = newsize;
 

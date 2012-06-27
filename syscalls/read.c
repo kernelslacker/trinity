@@ -13,7 +13,7 @@
  */
 static void sanitise_read(int childno)
 {
-	unsigned long newsize = (unsigned int) shm->a3[childno] & 0xffffffff;
+	unsigned long newsize = (unsigned int) shm->a3[childno] & 0xfffff;
 
 	if (filebuffer != NULL) {
 		if (filebuffersize < newsize) {
@@ -28,15 +28,18 @@ retry:
 		filebuffer = malloc(newsize);
 		if (filebuffer == NULL) {
 			newsize >>= 1;
+			if (newsize == 0)	// FIXME: Need a better way to indicate "we're fucked".
+				return;
 			if (shm->exit_now == TRUE)
 				return;
 			goto retry;
 		}
 		filebuffersize = newsize;
 	}
+	memset(filebuffer, 0, newsize);
+
 	shm->a2[childno] = (unsigned long) filebuffer;
 	shm->a3[childno] = newsize;
-	memset(filebuffer, 0, newsize);
 }
 
 struct syscall syscall_read = {
