@@ -42,11 +42,15 @@ void wait_for_watchdog_to_exit(void)
 
 	while (shm->watchdog_pid != 0) {
 
-		ret = waitpid(shm->watchdog_pid, &status, 0);
+		if (shm->watchdog_pid == 0)
+			return;
+
+		ret = waitpid(shm->watchdog_pid, &status, WNOHANG);
 		switch (ret) {
 		case 0:
 			break;
 		case -1:
+			shm->watchdog_pid = 0;
 			return;
 		default:
 			if (WIFEXITED(status)) {
@@ -57,7 +61,7 @@ void wait_for_watchdog_to_exit(void)
 			}
 			break;
 		}
-		sleep(1);
+		sleep(0.1);
 	}
 }
 
