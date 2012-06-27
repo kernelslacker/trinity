@@ -16,9 +16,12 @@ struct shm_s {
 
 	pid_t parentpid;
 	pid_t watchdog_pid;
+	pid_t pids[MAX_NR_CHILDREN];
+
+	pid_t last_reaped;
+
 	unsigned int nr_childs;
 	unsigned int running_childs;
-	pid_t pids[MAX_NR_CHILDREN];
 	int total_syscalls[MAX_NR_CHILDREN];
 	struct timeval tv[MAX_NR_CHILDREN];
 
@@ -50,10 +53,11 @@ struct shm_s {
 
 	/* various flags. */
 	unsigned char do32bit;
-
 	unsigned char exit_now;
 
+	/* locks */
 	unsigned char regenerating;
+	unsigned char reaper_lock;
 };
 extern struct shm_s *shm;
 
