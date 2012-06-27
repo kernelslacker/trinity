@@ -26,6 +26,7 @@ void do_main_loop(void);
 int child_process(void);
 
 int find_pid_slot(pid_t mypid);
+void dump_pid_slots(void);
 
 long mkcall(int child);
 void do_syscall_from_child();
