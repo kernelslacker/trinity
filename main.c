@@ -79,6 +79,15 @@ static unsigned char pidmap_empty()
 	return TRUE;
 }
 
+void dump_pid_slots(void)
+{
+	unsigned int i;
+
+	printf("## pids:\n");
+
+	for (i = 0; i < shm->nr_childs; i++)
+		printf("## slot%d: %d\n", i, shm->pids[i]);
+}
 
 #define debugf if (debug == TRUE) printf
 
@@ -96,10 +105,7 @@ static void fork_children()
 		pidslot = find_pid_slot(-1);
 		if (pidslot == -1) {
 			printf("[%d] ## Pid map was full!\n", getpid());
-			exit(EXIT_FAILURE);
-		}
-		if ((unsigned int)pidslot >= shm->nr_childs) {
-			printf("[%d] ## Pid map was full!\n", getpid());
+			dump_pid_slots();
 			exit(EXIT_FAILURE);
 		}
 
@@ -191,9 +197,8 @@ static void handle_child(pid_t childpid, int childstatus)
 			if (slot == -1) {
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
 				shm->exit_now = TRUE;
+				dump_pid_slots();
 
-				for (i = 0; i < shm->nr_childs; i++)
-					printf("slot%d: %d\n", i, shm->pids[i]);
 			} else
 				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
 			reap_child(childpid);
