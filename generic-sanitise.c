@@ -310,8 +310,8 @@ static struct iovec * alloc_iovec(unsigned int num)
 	iov = malloc(num * sizeof(struct iovec));
 	if (iov != NULL) {
 		for (i = 0; i < num; i++) {
-			iov[i].iov_len = rand() % page_size;
-			iov[i].iov_base = malloc(iov[i].iov_len);;
+			iov[i].iov_base = malloc(page_size);
+			iov[i].iov_len = page_size;
 		}
 	}
 	return iov;
@@ -516,7 +516,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) pathnames[rand() % 50];
 
 	case ARG_IOVEC:
-		i = rand() % 4;
+		i = (rand() % 4) + 1;
 
 		switch (argnum) {
 		case 1:	if (syscalls[call].entry->arg2type == ARG_IOVECLEN)
