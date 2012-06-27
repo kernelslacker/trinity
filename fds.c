@@ -13,7 +13,7 @@ unsigned int fds_left_to_create = MAX_FDS;
 
 static void open_pipes(void)
 {
-	int pipes[MAX_PIPE_FDS * 2];
+	int pipes[2];
 	unsigned int i;
 
 	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
