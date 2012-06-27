@@ -85,7 +85,7 @@ static void check_children(void)
 		/* first things first, does the pid still exist ? */
 		if (getpgid(pid) == -1) {
 			if (errno == ESRCH) {
-				output("pid %d has disappeared (oom-killed maybe?). (ret=%d:%s) Reaping.\n", pid, errno, strerror(errno));
+				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
 				reap_child(pid);
 			} else {
 				output("problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
