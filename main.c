@@ -198,10 +198,10 @@ static void handle_child(pid_t childpid, int childstatus)
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
 				shm->exit_now = TRUE;
 				dump_pid_slots();
-
-			} else
+			} else {
 				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
-			reap_child(childpid);
+				reap_child(childpid);
+			}
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
