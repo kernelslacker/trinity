@@ -11,6 +11,9 @@
 #define FALSE 0
 #define TRUE 1
 
+#define UNLOCKED 0
+#define LOCKED 1
+
 #ifndef S_SPLINT_S
 #define __unused__ __attribute((unused))
 #else

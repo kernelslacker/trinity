@@ -151,13 +151,27 @@ void reap_child(pid_t childpid)
 {
 	int i;
 
-	i = find_pid_slot(childpid);
-	if (i != -1) {
-		debugf("[%d] Removing %d from pidmap.\n", getpid(), shm->pids[i]);
-		shm->pids[i] = -1;
-		shm->running_childs--;
-		shm->tv[i].tv_sec = 0;
+	while (shm->reaper_lock == LOCKED);
+
+	shm->reaper_lock = LOCKED;
+
+	if (childpid == shm->last_reaped) {
+		debugf("[%d] already reaped %d!\n", getpid(), childpid);
+		goto out;
 	}
+
+	i = find_pid_slot(childpid);
+	if (i == -1)
+		goto out;
+
+	debugf("[%d] Removing pid %d from pidmap.\n", getpid(), childpid);
+	shm->pids[i] = -1;
+	shm->running_childs--;
+	shm->tv[i].tv_sec = 0;
+	shm->last_reaped = childpid;
+
+out:
+	shm->reaper_lock = UNLOCKED;
 }
 
 static void handle_child(pid_t childpid, int childstatus)
@@ -177,6 +191,8 @@ static void handle_child(pid_t childpid, int childstatus)
 		if (errno == ECHILD) {
 			debugf("[%d] All children exited!\n", getpid());
 			for (i = 0; i < shm->nr_childs; i++) {
+				if (shm->pids[i] == 0)
+					continue;
 				if (shm->pids[i] != -1) {
 					debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
 					shm->pids[i] = -1;
