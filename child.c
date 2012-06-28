@@ -198,8 +198,5 @@ retry:
 out:
 	reenable_coredumps();
 
-	output("child %d waiting for watchdog to exit\n", getpid());
-	wait_for_watchdog_to_exit();
-
 	return ret;
 }
