@@ -31,40 +31,6 @@ void init_watchdog()
 	output("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 }
 
-void wait_for_watchdog_to_exit(void)
-{
-	int ret, status;
-
-	if (shm->watchdog_pid == 0)
-		return;
-
-	printf("[%d] Waiting for watchdog (%d) to exit.\n", getpid(), shm->watchdog_pid);
-
-	while (shm->watchdog_pid != 0) {
-
-		if (shm->watchdog_pid == 0)
-			return;
-
-		ret = waitpid(shm->watchdog_pid, &status, WNOHANG);
-		switch (ret) {
-		case 0:
-			break;
-		case -1:
-			shm->watchdog_pid = 0;
-			return;
-		default:
-			if (WIFEXITED(status)) {
-				if (ret == shm->watchdog_pid) {
-					shm->watchdog_pid = 0;
-					return;
-				}
-			}
-			break;
-		}
-		sleep(0.1);
-	}
-}
-
 static void check_children(void)
 {
 	struct timeval tv;
@@ -177,7 +143,23 @@ void watchdog(void)
 		sleep(1);
 	}
 
-	output("[%d] Watchdog thread exitting\n", getpid());
+	/* Wait for all the children to exit. */
+	while (shm->running_childs > 0) {
+		unsigned int i;
+
+		for (i = 0; i < shm->nr_childs; i++) {
+			pid_t pid;
+			pid = shm->pids[i];
+			if (pid == 0)
+				continue;
+			if (pid == -1)
+				continue;
+			kill(pid, SIGKILL);
+		}
+		sleep(1);
+	}
+
+	output("[%d] Watchdog thread exiting\n", getpid());
 
 	_exit(EXIT_SUCCESS);
 }

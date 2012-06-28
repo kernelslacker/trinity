@@ -66,7 +66,7 @@ int find_pid_slot(pid_t mypid)
 	return -1;
 }
 
-static unsigned char pidmap_empty()
+static unsigned char pidmap_empty(void)
 {
 	unsigned int i;
 

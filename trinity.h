@@ -121,7 +121,6 @@ void init_child(void);
 
 void init_watchdog(void);
 void watchdog(void);
-void wait_for_watchdog_to_exit(void);
 
 void reap_child(pid_t childpid);
 
