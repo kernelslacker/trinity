@@ -289,3 +289,9 @@ Still unfixed:
 * New tty ldisc lockup on 3.5-rc3
   https://lkml.org/lkml/2012/6/22/184
 
+* mtd: kernel BUG at arch/x86/mm/pat.c:279!
+  https://lkml.org/lkml/2012/6/29/49
+
+* rcu: BUG: spinlock recursion on CPU#3, trinity-child19/5970
+  https://lkml.org/lkml/2012/6/29/66
+
