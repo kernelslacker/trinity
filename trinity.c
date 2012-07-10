@@ -137,6 +137,9 @@ static void sighandler(__unused__ int sig)
 {
 	switch(sig) {
 	case SIGALRM:
+		/* if we blocked in read() or similar, we want to avoid doing it again. */
+		shm->fd_lifetime = 0;
+
 		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
 		break;
