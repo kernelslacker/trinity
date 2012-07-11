@@ -66,6 +66,7 @@ static void check_children(void)
 
 		/* if we wrapped, just reset it, we'll pick it up next time around. */
 		if (old > now) {
+			printf("child %d wrapped! old=%ld now=%ld\n", i, old, now);
 			shm->tv[i].tv_sec = now;
 			continue;
 		}
