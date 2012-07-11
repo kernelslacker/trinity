@@ -24,6 +24,8 @@ unsigned char dangerous = FALSE;
 unsigned char logging = TRUE;
 unsigned char do_syslog = FALSE;
 
+unsigned char user_set_seed = FALSE;
+
 unsigned char desired_group = GROUP_NONE;
 
 char *specific_proto_optarg;
@@ -164,7 +166,7 @@ void parse_args(int argc, char *argv[])
 		/* Set seed */
 		case 's':
 			seed = strtol(optarg, NULL, 10);
-			srand(seed);
+			user_set_seed = TRUE;
 			break;
 
 
