@@ -109,12 +109,6 @@ static void fork_children()
 			exit(EXIT_FAILURE);
 		}
 
-		/*
-		 * consume some randomness. otherwise each child starts
-		 *  with the same random seed, and ends up doing identical syscalls.
-		 */
-		(void) rand();
-
 		(void)alarm(0);
 		fflush(stdout);
 		pid = fork();
@@ -122,9 +116,12 @@ static void fork_children()
 			shm->pids[pidslot] = pid;
 		else {
 			int ret = 0;
+
 			memset(childname, 0, sizeof(childname));
 			sprintf(childname, "trinity-child%d", pidslot);
 			prctl(PR_SET_NAME, (unsigned long) &childname);
+
+			set_seed(pidslot);
 
 			/* Wait for parent to set our pidslot */
 			while (shm->pids[pidslot] != getpid());

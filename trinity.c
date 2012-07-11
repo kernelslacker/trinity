@@ -115,15 +115,28 @@ unsigned long rand64()
 	return r;
 }
 
-
-void seed_from_tod()
+void set_seed(unsigned int pidslot)
 {
 	struct timeval t;
 
-	gettimeofday(&t, 0);
-	seed = t.tv_sec * t.tv_usec;
-	srand(seed);
-	output("\n\n[%d] Random seed from time of day: %u (0x%x)\n", getpid(), seed, seed);
+	if (user_set_seed == TRUE)
+		output("[%d] Using user passed random seed: %u (0x%x)\n", getpid(), seed, seed);
+	else {
+		gettimeofday(&t, 0);
+		seed = t.tv_sec * t.tv_usec;
+
+		output("[%d:%d] Random seed from time of day: %u (0x%x)\n", pidslot, getpid(), seed, seed);
+	}
+
+	/* Mix in the pidslot so that all children get different randomness.
+	 * we can't use the actual pid or anything else 'random' because otherwise reproducing
+	 * seeds with -s would be much harder to replicate.
+	 *
+	 * This still isn't perfect: When we -s right now, we set all children to the same seed.
+	 *  This sucks if the bug we're trying to reproduce was caused by interaction between threads.
+	 */
+	srand(seed << pidslot);
+
 	if (do_syslog == FALSE)
 		return;
 
@@ -283,12 +296,6 @@ int main(int argc, char* argv[])
 		find_specific_proto(specific_proto_optarg);
 
 	page_size = getpagesize();
-
-	if (!seed)
-		seed_from_tod();
-	else
-		output("[%d] Using user passed random seed: %u (0x%x)\n", getpid(), seed, seed);
-
 
 	init_buffers();
 

@@ -37,7 +37,7 @@ void do_syscall_from_child();
 void regenerate_random_page(void);
 
 extern unsigned int seed;
-void seed_from_tod();
+void set_seed(unsigned int pidslot);
 
 extern unsigned int fds_left_to_create;
 
@@ -74,6 +74,7 @@ extern unsigned char dangerous;
 extern unsigned char do_syslog;
 extern unsigned char logging;
 extern unsigned char desired_group;
+extern unsigned char user_set_seed;
 
 extern unsigned char exit_now;
 
