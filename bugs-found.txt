@@ -295,3 +295,6 @@ Still unfixed:
 * rcu: BUG: spinlock recursion on CPU#3, trinity-child19/5970
   https://lkml.org/lkml/2012/6/29/66
 
+* 3.5-rc6: kernel BUG at kernel/timer.c:711!
+  https://lkml.org/lkml/2012/7/11/234
+
