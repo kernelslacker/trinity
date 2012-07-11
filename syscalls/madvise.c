@@ -1,17 +1,24 @@
 /*
  * SYSCALL_DEFINE3(madvise, unsigned long, start, size_t, len_in, int, behavior)
  */
+#include <stdlib.h>
+#include <sys/mman.h>
+
 #include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "shm.h"
 
-#include <sys/mman.h>
+static void sanitise_madvise(int childno)
+{
+	shm->a2[childno] = rand() % page_size;
+}
 
 struct syscall syscall_madvise = {
 	.name = "madvise",
 	.num_args = 3,
 	.arg1name = "start",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.arg2name = "len_in",
 	.arg2type = ARG_LEN,
 	.arg3name = "advice",
@@ -23,4 +30,5 @@ struct syscall syscall_madvise = {
 			    MADV_MERGEABLE, MADV_UNMERGEABLE, MADV_HUGEPAGE, MADV_NOHUGEPAGE },
 	},
 	.group = GROUP_VM,
+	.sanitise = sanitise_madvise,
 };
