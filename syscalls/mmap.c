@@ -23,7 +23,7 @@ void sanitise_mmap(int childno)
 
 	/* page align addr & len */
 	shm->a1[childno] &= PAGE_MASK;
-	shm->a2[childno] &= PAGE_MASK;
+	shm->a2[childno] = page_size;
 	if (shm->a2[childno] == 0)
 		shm->a2[childno] = page_size;
 
