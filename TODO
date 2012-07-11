@@ -1,6 +1,5 @@
 * Bugs
   - when we randomly call personality, the child stops logging.
-  - fuzzing mmap causes a segfault to occur. We seem to corrupt the glibc memory pool.
   - fuzzing munmap causes a segfault to occur. Looks like we munmap something important.
   - fuzzing read() occasionally hangs a long time. Probably a socket ?
   - Totalling success + failures doesn't always equal the total number of syscalls.

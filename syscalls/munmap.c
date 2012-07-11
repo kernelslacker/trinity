@@ -12,6 +12,8 @@ retry:
 		shm->a1[childno] = (unsigned long) get_address();
 		goto retry;
 	}
+
+	shm->a2[childno] = page_size;
 }
 
 struct syscall syscall_munmap = {
