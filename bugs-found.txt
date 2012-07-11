@@ -298,3 +298,8 @@ Still unfixed:
 * 3.5-rc6: kernel BUG at kernel/timer.c:711!
   https://lkml.org/lkml/2012/7/11/234
 
+* 3.5-rc6 dentry related GPF
+  http://lkml.org/lkml/2012/7/11/433
+
+* 3.5-rc6 configfs BUG_ON
+
