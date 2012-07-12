@@ -2,22 +2,22 @@
 #define _ARCH_H 1
 
 #ifdef __x86_64__
-#include "x86-64.h"
+#include "arch-x86-64.h"
 #endif
 #ifdef __i386__
-#include "i386.h"
+#include "arch-i386.h"
 #endif
 #ifdef __powerpc__
-#include "ppc.h"
+#include "arch-ppc.h"
 #endif
 #ifdef __ia64__
-#include "ia64.h"
+#include "arch-ia64.h"
 #endif
 #ifdef __sparc__
-#include "sparc.h"
+#include "arch-sparc.h"
 #endif
 #ifdef __arm__
-#include "arm.h"
+#include "arch-arm.h"
 #endif
 
 #define PAGE_MASK (~(page_size - 1))
