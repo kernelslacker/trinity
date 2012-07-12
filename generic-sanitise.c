@@ -104,6 +104,7 @@ unsigned long get_interesting_value()
 	case 8: return 0x0000800000000000;			// First x86-64 non-canonical addr
 	case 9: return 0x7fffffff00000000 | low;
 	case 10: return 0x8000000000000000 | low;
+	// FIXME: Use per-arch #defines for these
 	case 11: return 0xffff800000000000 | (low << 4);	// x86-64 canonical addr range 2 begin
 	case 12: return 0xffff880000000000 | (low << 4);	// x86-64 PAGE_OFFSET
 	case 13: return 0xffffffff00000000 | low;
