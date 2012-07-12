@@ -154,13 +154,13 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	}
 
-	i = rand() % 5;
+	i = rand() % 100;
 	switch (i) {
-	case 0:	return addr;
-	case 1:	return addr + (page_size - sizeof(char));
-	case 2:	return addr + (page_size - sizeof(int));
-	case 3:	return addr + (page_size - sizeof(long));
-	case 4:	return addr + (page_size / 2);
+	case 0:	return addr + (page_size - sizeof(char));
+	case 1:	return addr + (page_size - sizeof(int));
+	case 2:	return addr + (page_size - sizeof(long));
+	case 3:	return addr + (page_size / 2);
+	case 4 ... 99:
 	default: return addr;
 	}
 }
