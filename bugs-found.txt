@@ -303,3 +303,6 @@ Still unfixed:
 
 * 3.5-rc6 configfs BUG_ON
 
+* sysvipc bug
+  https://lkml.org/lkml/2012/7/11/629
+
