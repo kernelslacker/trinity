@@ -309,3 +309,6 @@ Still unfixed:
 * Remove easily user-triggerable BUG from generic_setlease
   https://lkml.org/lkml/2012/7/13/311
 
+* 3.5-rc6 futex_wait_requeue_pi oops.
+  https://lkml.org/lkml/2012/7/13/328
+
