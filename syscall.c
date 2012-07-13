@@ -89,6 +89,14 @@ static unsigned long do_syscall(int childno)
 	return ret;
 }
 
+static unsigned long get_reg()
+{
+	if ((rand() % 2) == 0)
+		return rand64();
+	else
+		return get_interesting_value();
+}
+
 long mkcall(int childno)
 {
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
@@ -105,12 +113,12 @@ long mkcall(int childno)
 	if (shm->do32bit == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
 
-	olda1 = shm->a1[childno] = rand64();
-	olda2 = shm->a2[childno] = rand64();
-	olda3 = shm->a3[childno] = rand64();
-	olda4 = shm->a4[childno] = rand64();
-	olda5 = shm->a5[childno] = rand64();
-	olda6 = shm->a6[childno] = rand64();
+	olda1 = shm->a1[childno] = get_reg();
+	olda2 = shm->a2[childno] = get_reg();
+	olda3 = shm->a3[childno] = get_reg();
+	olda4 = shm->a4[childno] = get_reg();
+	olda5 = shm->a5[childno] = get_reg();
+	olda6 = shm->a6[childno] = get_reg();
 
 	if (call > max_nr_syscalls)
 		sptr += sprintf(sptr, "%u", call);
