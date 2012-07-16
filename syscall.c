@@ -110,6 +110,7 @@ long mkcall(int childno)
 	sptr = string;
 
 	sptr += sprintf(sptr, "[%d] ", getpid());
+	sptr += sprintf(sptr, "[%d] ", shm->execcount);	/* just debug info, will remove later. */
 	if (shm->do32bit == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
 
