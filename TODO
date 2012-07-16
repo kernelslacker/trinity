@@ -7,6 +7,32 @@
   - occasionally trinity fails to startup because we've leaked so much ipc stuff.
     cleanup on startup.
 
+* The pid map needs locking.
+  There seem to be two different races that would be fixed with proper locking.
+
+  [9478] ## Couldn't find logfile for pid 9478
+  ## pids:
+  ## slot0: 9472
+  ## slot1: 9478
+  ## Logfiles for pids: 0x24f0300 0x24f05a0 
+  ## child logfile handle was null logging to main!
+
+  04c26dec185513631fefe7d8eb8088c30bd98db2 is an ugly workaround for this for now.
+
+
+  [14874] ## Couldn't find pid slot for 19330
+  ## pids:
+  ## slot0: -1
+  ## slot1: 19642
+  ## slot2: 19319
+  ## slot3: 19678
+  ## slot4: 19631
+  ## slot5: -1
+  ## slot6: -1
+  ## slot7: 19643
+
+  Looks like we reaped a child, but somehow it was still around, and then exited ?
+
 * Clean up logging.
   - prepend [watchdog] for watchdog messages
   - Make -D use a separate debug log file
