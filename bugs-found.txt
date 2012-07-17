@@ -314,3 +314,5 @@ Still unfixed:
 
 * [PATCH] SUNRPC: Prevent kernel stack corruption on long values of flush
 
+* sched, debug: INFO: possible irq lock inversion dependency detected
+
