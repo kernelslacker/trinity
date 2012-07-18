@@ -12,14 +12,16 @@
 #include "arch.h"
 #include "compat.h"
 
+#define NUM_FLAGS 12
+
 void sanitise_mmap(int childno)
 {
 	unsigned int i;
-	unsigned int flagvals[12] = { MAP_FIXED, MAP_ANONYMOUS,
+	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
 			    MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
 			    MAP_NORESERVE, MAP_POPULATE, MAP_NONBLOCK, MAP_STACK,
 			    MAP_HUGETLB, MAP_UNINITIALIZED };
-	unsigned int numflags = rand() % 12;
+	unsigned int numflags = rand() % NUM_FLAGS;
 
 	/* page align addr & len */
 	shm->a1[childno] &= PAGE_MASK;
@@ -30,7 +32,7 @@ void sanitise_mmap(int childno)
 
 	// set additional flags
 	for (i = 0; i < numflags; i++)
-		shm->a4[childno] |= flagvals[i];
+		shm->a4[childno] |= flagvals[rand() % NUM_FLAGS];
 
 	/* no fd if anonymous mapping. */
 	if (shm->a4[childno] & MAP_ANONYMOUS)
