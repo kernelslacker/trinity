@@ -23,8 +23,13 @@ void sanitise_mmap(int childno)
 			    MAP_HUGETLB, MAP_UNINITIALIZED };
 	unsigned int numflags = rand() % NUM_FLAGS;
 
-	/* page align addr & len */
-	shm->a1[childno] &= PAGE_MASK;
+	/* Don't actually set a hint right now, in case we give out
+	   something that we don't want changed.  One day, we'll recycle
+	   mappings from mmap results and the like here instead.
+	   Right now, ARG_ADDRESS is a bad choice, as it causes page_rand()
+	   to be remapped as unwritable/unreadable, and then we segfault */
+	shm->a1[childno] = 0;
+
 	shm->a2[childno] = page_size;
 	if (shm->a2[childno] == 0)
 		shm->a2[childno] = page_size;
