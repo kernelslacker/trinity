@@ -19,4 +19,9 @@ struct syscall syscall_munmap = {
 	.arg2type = ARG_LEN,
 	.group = GROUP_VM,
 	.sanitise = sanitise_munmap,
+
+	/* For now, disable this syscall entirely. We segfault when
+	   we try to unmap things we need. Resurrect this when we
+	   have proper tracking of mappings from other syscalls. */
+	.flags = AVOID_SYSCALL,
 };
