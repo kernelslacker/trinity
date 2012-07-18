@@ -158,7 +158,7 @@ int child_process(void)
 		}
 
 		if (count_enabled_syscalls() == 0) {
-			output("[%d] No more syscalls enabled. Exiting\n");
+			output("[%d] No more syscalls enabled. Exiting\n", getpid());
 			shm->exit_now = TRUE;
 		}
 
@@ -185,8 +185,11 @@ retry:
 		shm->syscallno[childno] = syscallnr;
 
 		if (syscallcount) {
-			if (shm->execcount >= syscallcount)
+			if (shm->execcount >= syscallcount) {
+				output("[%d] shm->execcount (%d) >= syscallcount (%d)\n", getpid(), shm->execcount,syscallcount);
 				shm->exit_now = TRUE;
+			}
+
 			if (shm->execcount == syscallcount)
 				printf("[%d] Reached maximum syscall count %ld\n", pid, shm->execcount);
 		}
