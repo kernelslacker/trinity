@@ -7,12 +7,6 @@
 
 void sanitise_munmap(int childno)
 {
-retry:
-	if (shm->a1[childno] == 0) {
-		shm->a1[childno] = (unsigned long) get_address();
-		goto retry;
-	}
-
 	shm->a2[childno] = page_size;
 }
 
@@ -20,7 +14,7 @@ struct syscall syscall_munmap = {
 	.name = "munmap",
 	.num_args = 2,
 	.arg1name = "addr",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
 	.group = GROUP_VM,
