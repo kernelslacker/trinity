@@ -216,6 +216,10 @@ args_done:
 #endif
 	ret = do_syscall(childno);
 
+
+	page_rand[0] = rand();
+
+
 	sptr = string;
 
 	if (ret < 0) {
