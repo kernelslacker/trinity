@@ -10,4 +10,5 @@ struct syscall syscall_kill = {
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
 	.arg2name = "sig",
+	.flags = AVOID_SYSCALL,
 };
