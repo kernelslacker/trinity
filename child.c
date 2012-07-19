@@ -108,10 +108,7 @@ int child_process(void)
 
 	disable_coredumps();
 
-	for (cpu = 0; cpu < shm->nr_childs; cpu++) {
-		if (shm->pids[cpu] == pid)
-			break;
-	}
+	cpu = find_pid_slot(pid);
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
