@@ -50,7 +50,7 @@ void generate_sockets(unsigned int nr_to_create)
 
 	while (nr_to_create > 0) {
 
-		if (shm->exit_now != EXIT_FALSE)
+		if (shm->exit_reason != EXIT_FALSE)
 			return;
 
 		for (i = 0; i < PF_MAX; i++)
