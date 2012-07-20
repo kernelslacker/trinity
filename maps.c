@@ -53,7 +53,13 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 		printf("open /dev/zero failure\n");
 		exit(EXIT_FAILURE);
 	}
-	tmpmap->ptr = mmap(NULL, page_size, prot, MAP_PRIVATE, fd, 0);
+
+	/* page_size * 2, so we have a guard page afterwards.
+	 * This is necessary for when we want to test page boundaries.
+	 * see end of _get_address() for details.
+	 */
+	tmpmap->ptr = mmap(NULL, page_size * 2, prot, MAP_PRIVATE, fd, 0);
+
 
 	if (!tmpmap->ptr) {
 		printf("mmap /dev/zero failure\n");
