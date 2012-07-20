@@ -155,6 +155,11 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	}
 
+	/*
+	 * Most of the time, we just return the address we got above unmunged.
+	 * But sometimes, we return an address just before the end of the page.
+	 * The idea here is that we might see some bugs that are caused by page boundary failures.
+	 */
 	i = rand() % 100;
 	switch (i) {
 	case 0:	return addr + (page_size - sizeof(char));
