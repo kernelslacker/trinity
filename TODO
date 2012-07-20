@@ -3,9 +3,14 @@
   - fuzzing munmap causes a segfault to occur. Looks like we munmap something important.
   - fuzzing read() occasionally hangs a long time. Probably a socket ?
   - Totalling success + failures doesn't always equal the total number of syscalls.
+    This is bizarre. We sometimes do a syscall which segfaults, but the SIGSEGV delivery
+     doesn't happen until after we've incremented some (but not all) of the counts,
+     so we get off by one with every segfault.
   - occasionally a thread exits after 0 syscalls. Find out why.
   - occasionally trinity fails to startup because we've leaked so much ipc stuff.
     cleanup on startup.
+  - Sometimes all child threads end up in Z state.
+  - Sometimes we get to get_random_fd() with 0 fd's open.
 
 * The pid map needs locking.
   There seem to be two different races that would be fixed with proper locking.
@@ -150,4 +155,8 @@ Post 1.0 material:
   those in do_ip_setsockopt
 
 * decode addresses when printing them out to print 'page_rand+4' instead of a hex address.
+
+* 'safe root' syscall mode.
+
+* if a read() blocks, blacklist (close?) that fd.
 
