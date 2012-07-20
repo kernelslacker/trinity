@@ -41,23 +41,25 @@ OBJS		= trinity.o \
 
 trinity: $(OBJS) $(HEADERS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
-	@rm -f *.d syscalls/*.d ioctls/*.d
 	@mkdir -p tmp
+
+DEPDIR= .deps
+df = $(DEPDIR)/$(*F)
 
 .c.o:
 	$(CC) $(CFLAGS) -o $@ -c $<
-	gcc -MM $(CFLAGS) $*.c > $*.d
-	@mv -f $*.d $*.d.tmp
-	@sed -e 's|.*:|$*.o:|' < $*.d.tmp > $*.d
-	@sed -e 's/.*://' -e 's/\\$$//' < $*.d.tmp | fmt -1 | \
-	  sed -e 's/^ *//' -e 's/$$/:/' >> $*.d
-	@rm -f $*.d.tmp
+	gcc -MM $(CFLAGS) $*.c > $(df).d
+	@mv -f $(df).d $(df).d.tmp
+	@sed -e 's|.*:|$*.o:|' <$(df).d.tmp > $(df).d
+	@sed -e 's/.*://' -e 's/\\$$//' < $(df).d.tmp | fmt -1 | \
+	  sed -e 's/^ *//' -e 's/$$/:/' >> $(df).d
+	@rm -f $(df).d.tmp
 
 clean:
 	@rm -f *.o syscalls/*.o syscalls/ia64/*.o syscalls/powerpc/*.o ioctls/*.o
-	@rm -f *.d syscalls/*.d syscalls/ia64/*.d syscalls/powerpc/*.d ioctls/*.d
 	@rm -f core.*
 	@rm -f trinity
+	@rm -f $(DEPDIR)/*.d
 
 splint:
 	@splint -nullpass -immediatetrans -compmempass -predboolothers -retvalint -preproc +posixlib \
