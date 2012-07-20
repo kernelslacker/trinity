@@ -315,7 +315,7 @@ int main(int argc, char* argv[])
 		/* nothing right now */
 	}
 
-	if (shm->exit_reason != EXIT_FALSE)
+	if (shm->exit_reason != STILL_RUNNING)
 		goto cleanup_fds;
 
 	init_watchdog();

@@ -132,7 +132,7 @@ void reap_child(pid_t childpid);
 #define UNUSED(x) (void)(x)
 
 enum exit_reasons {
-	EXIT_FALSE = 0,
+	STILL_RUNNING = 0,
 	EXIT_NO_SYSCALLS_ENABLED = 1,
 	EXIT_REACHED_COUNT = 2,
 	EXIT_NO_FDS = 3,

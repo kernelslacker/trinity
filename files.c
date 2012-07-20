@@ -98,7 +98,7 @@ void open_fds(const char *dir, unsigned char add_all)
 	}
 	while ((de = readdir(d))) {
 
-		if (shm->exit_reason != EXIT_FALSE)
+		if (shm->exit_reason != STILL_RUNNING)
 			return;
 
 		memset(&buf, 0, sizeof(struct stat));
@@ -224,7 +224,7 @@ void open_files()
 */
 	while (fds_left_to_create > 0) {
 
-		if (shm->exit_reason != EXIT_FALSE)
+		if (shm->exit_reason != STILL_RUNNING)
 			return;
 
 /*		(void)add_fd(-1, dir1, O_RDONLY, TRUE);
