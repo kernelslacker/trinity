@@ -137,7 +137,7 @@ static void fork_children()
 			getpid(), shm->pids[pidslot],
 			shm->running_childs, shm->nr_childs);
 
-		if (shm->exit_now != EXIT_FALSE)
+		if (shm->exit_reason != EXIT_FALSE)
 			return;
 
 	}
@@ -182,7 +182,7 @@ static void handle_child(pid_t childpid, int childstatus)
 		break;
 
 	case -1:
-		if (shm->exit_now != EXIT_FALSE)
+		if (shm->exit_reason != EXIT_FALSE)
 			return;
 
 		if (errno == ECHILD) {
@@ -209,7 +209,7 @@ static void handle_child(pid_t childpid, int childstatus)
 			slot = find_pid_slot(childpid);
 			if (slot == -1) {
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
-				shm->exit_now = EXIT_LOST_PID_SLOT;
+				shm->exit_reason = EXIT_LOST_PID_SLOT;
 				dump_pid_slots();
 			} else {
 				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
@@ -303,7 +303,7 @@ static void check_shm_sanity(void)
 	for (i = 0; i < shm->nr_childs; i++) {
 		if (shm->pids[i] > 65535) {
 			output("Sanity check failed! Found pid %d!\n", shm->pids[i]);
-			shm->exit_now = EXIT_PID_OUT_OF_RANGE;
+			shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
 			sleep(30);
 		}
 	}
@@ -317,7 +317,7 @@ static void main_loop()
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
-	while (shm->exit_now == EXIT_FALSE) {
+	while (shm->exit_reason == EXIT_FALSE) {
 		if (shm->running_childs < shm->nr_childs)
 			fork_children();
 
@@ -332,7 +332,7 @@ static void main_loop()
 	while (!(pidmap_empty()))
 		handle_children();
 
-	printf("[%d] Bailing main loop. Exit reason: %d\n", getpid(), shm->exit_now);
+	printf("[%d] Bailing main loop. Exit reason: %d\n", getpid(), shm->exit_reason);
 	_exit(EXIT_SUCCESS);
 }
 

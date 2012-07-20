@@ -76,7 +76,7 @@ extern unsigned char logging;
 extern unsigned char desired_group;
 extern unsigned char user_set_seed;
 
-extern unsigned char exit_now;
+extern unsigned char exit_reason;
 
 extern unsigned char biarch;
 

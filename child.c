@@ -123,7 +123,7 @@ int child_process(void)
 
 	ret = 0;
 
-	while (shm->exit_now == FALSE) {
+	while (shm->exit_reason == FALSE) {
 
 		while (shm->regenerating == TRUE)
 			sleep(1);
@@ -156,11 +156,11 @@ int child_process(void)
 
 		if (count_enabled_syscalls() == 0) {
 			output("[%d] No more syscalls enabled. Exiting\n", getpid());
-			shm->exit_now = EXIT_NO_SYSCALLS_ENABLED;
+			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 		}
 
 retry:
-		if (shm->exit_now != EXIT_FALSE)
+		if (shm->exit_reason != EXIT_FALSE)
 			goto out;
 
 		syscallnr = rand() % max_nr_syscalls;
@@ -184,7 +184,7 @@ retry:
 		if (syscallcount) {
 			if (shm->execcount >= syscallcount) {
 				output("[%d] shm->execcount (%d) >= syscallcount (%d)\n", getpid(), shm->execcount,syscallcount);
-				shm->exit_now = EXIT_REACHED_COUNT;
+				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 
 			if (shm->execcount == syscallcount)
