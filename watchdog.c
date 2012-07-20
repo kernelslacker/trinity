@@ -31,6 +31,18 @@ void init_watchdog()
 	output("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 }
 
+static void check_shm_sanity(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < shm->max_children; i++) {
+		if (shm->pids[i] > 65535) {
+			output("Sanity check failed! Found pid %d!\n", shm->pids[i]);
+			shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
+		}
+	}
+}
+
 static void check_children(void)
 {
 	struct timeval tv;
@@ -116,6 +128,8 @@ void watchdog(void)
 
 		while (shm->regenerating == TRUE)
 			sleep(0.1);
+
+		check_shm_sanity();
 
 		check_children();
 
