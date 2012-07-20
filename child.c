@@ -123,7 +123,7 @@ int child_process(void)
 
 	ret = 0;
 
-	while (shm->exit_reason == FALSE) {
+	while (shm->exit_reason == STILL_RUNNING) {
 
 		while (shm->regenerating == TRUE)
 			sleep(1);
