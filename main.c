@@ -296,19 +296,6 @@ static void handle_children()
 	}
 }
 
-static void check_shm_sanity(void)
-{
-	unsigned int i;
-
-	for (i = 0; i < shm->max_children; i++) {
-		if (shm->pids[i] > 65535) {
-			output("Sanity check failed! Found pid %d!\n", shm->pids[i]);
-			shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
-			sleep(30);
-		}
-	}
-}
-
 static void main_loop()
 {
 	static const char taskname[13]="trinity-main";
@@ -325,9 +312,6 @@ static void main_loop()
 
 		if (shm->regenerate >= REGENERATION_POINT)
 			regenerate();
-
-		check_shm_sanity();
-
 	}
 	while (!(pidmap_empty()))
 		handle_children();
