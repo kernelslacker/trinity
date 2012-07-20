@@ -13,7 +13,7 @@
 #include "constants.h"
 #include "shm.h"
 
-unsigned int socks=0;
+unsigned int nr_sockets = 0;
 
 static const char *cachefilename="trinity.socketcache";
 
@@ -75,13 +75,13 @@ void generate_sockets(unsigned int nr_to_create)
 
 			fd = socket(domain, type, protocol);
 			if (fd > -1) {
-				shm->socket_fds[socks] = fd;
+				shm->socket_fds[nr_sockets] = fd;
 
 				output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
 					fd, domain, type, protocol);
 
 				sockarray[i]++;
-				socks++;
+				nr_sockets++;
 				fds_left_to_create--;
 				nr_to_create--;
 
@@ -114,7 +114,7 @@ done:
 	output("dropped writer lock for cachefile\n");
 	close(cachefile);
 
-	output("\ncreated %d sockets\n", socks);
+	output("\ncreated %d sockets\n", nr_sockets);
 }
 
 
@@ -123,11 +123,11 @@ static void close_sockets(void)
 	unsigned int i;
 	int fd;
 
-	for (i = 0; i < socks; i++) {
+	for (i = 0; i < nr_sockets; i++) {
 		fd = shm->socket_fds[i];
 		shm->socket_fds[i] = 0;
 		if (close(fd) == 0) {
-			socks--;
+			nr_sockets--;
 			fds_left_to_create++;
 		} else {
 			printf("failed to close socket.(%s)\n", strerror(errno));
@@ -189,19 +189,19 @@ regenerate:
 			generate_sockets(fds_left_to_create/2);
 			return;
 		}
-		shm->socket_fds[socks] = fd;
+		shm->socket_fds[nr_sockets] = fd;
 		output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
 			fd, domain, type, protocol);
-		socks++;
+		nr_sockets++;
 		fds_left_to_create--;
 	}
 
-	if (socks < fds_left_to_create/2) {
-		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", socks);
+	if (nr_sockets < fds_left_to_create/2) {
+		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", nr_sockets);
 		goto regenerate;
 	}
 
-	output("(%d sockets created based on info from socket cachefile.)\n", socks);
+	output("(%d sockets created based on info from socket cachefile.)\n", nr_sockets);
 
 	fl.l_pid = getpid();
 	fl.l_type = F_UNLCK;

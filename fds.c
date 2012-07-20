@@ -98,7 +98,7 @@ retry:
 		break;
 
 	case 1:
-		fd = shm->socket_fds[rand() % socks];
+		fd = shm->socket_fds[rand() % nr_sockets];
 		break;
 
 	case 2:

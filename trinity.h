@@ -41,7 +41,7 @@ void set_seed(unsigned int pidslot);
 
 extern unsigned int fds_left_to_create;
 
-extern unsigned int socks;
+extern unsigned int nr_sockets;
 extern unsigned int specific_proto;
 void open_sockets();
 void find_specific_proto();

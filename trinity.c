@@ -329,7 +329,7 @@ int main(int argc, char* argv[])
 
 cleanup_fds:
 
-	for (i = 0; i < socks; i++)
+	for (i = 0; i < nr_sockets; i++)
 		close(shm->socket_fds[i]);
 
 	destroy_maps();
