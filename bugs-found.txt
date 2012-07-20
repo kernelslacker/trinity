@@ -54,6 +54,7 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
 
 * futex: Fix uninterruptible loop due to gate_area
   e6780f7243eddb133cc20ec37fa69317c218b709
+  https://lkml.org/lkml/2011/12/21/182
 
 * hugetlbfs lockdep spew.
   https://lkml.org/lkml/2011/4/15/272
@@ -110,9 +111,6 @@ Still unfixed:
 
 * net: WARNING: at fs/sysfs/dir.c:481 sysfs_add_one+0xb7/0xe0()
   https://lkml.org/lkml/2011/12/5/192
-
-* futex: Fix uninterruptble loop due to gate_area
-  https://lkml.org/lkml/2011/12/21/182
 
 * WARNING: at block/blk-ioc.c:234 exit_io_context+0x40/0x92()
   https://lkml.org/lkml/2011/12/26/35
@@ -311,6 +309,7 @@ Still unfixed:
 
 * 3.5-rc6 futex_wait_requeue_pi oops.
   https://lkml.org/lkml/2012/7/13/328
+  https://lkml.org/lkml/2012/7/20/350
 
 * [PATCH] SUNRPC: Prevent kernel stack corruption on long values of flush
   https://lkml.org/lkml/2012/7/16/416
