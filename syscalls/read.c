@@ -30,7 +30,7 @@ retry:
 			newsize >>= 1;
 			if (newsize == 0)	// FIXME: Need a better way to indicate "we're fucked".
 				return;
-			if (shm->exit_now == TRUE)
+			if (shm->exit_reason != STILL_RUNNING)
 				return;
 			goto retry;
 		}
