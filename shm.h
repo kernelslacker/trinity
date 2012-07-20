@@ -55,6 +55,7 @@ struct shm_s {
 
 	/* various flags. */
 	unsigned char do32bit;
+	unsigned char do_make_it_fail;
 	enum exit_reasons exit_reason;
 
 	/* locks */
