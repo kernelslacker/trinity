@@ -160,7 +160,7 @@ int child_process(void)
 		}
 
 retry:
-		if (shm->exit_reason != EXIT_FALSE)
+		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
 
 		syscallnr = rand() % max_nr_syscalls;

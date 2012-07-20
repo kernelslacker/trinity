@@ -112,7 +112,7 @@ void watchdog(void)
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
 
-	while (shm->exit_reason == EXIT_FALSE) {
+	while (shm->exit_reason == STILL_RUNNING) {
 
 		while (shm->regenerating == TRUE)
 			sleep(0.1);

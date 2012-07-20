@@ -137,7 +137,7 @@ static void fork_children()
 			getpid(), shm->pids[pidslot],
 			shm->running_childs, shm->nr_childs);
 
-		if (shm->exit_reason != EXIT_FALSE)
+		if (shm->exit_reason != STILL_RUNNING)
 			return;
 
 	}
@@ -182,7 +182,7 @@ static void handle_child(pid_t childpid, int childstatus)
 		break;
 
 	case -1:
-		if (shm->exit_reason != EXIT_FALSE)
+		if (shm->exit_reason != STILL_RUNNING)
 			return;
 
 		if (errno == ECHILD) {
@@ -317,7 +317,7 @@ static void main_loop()
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
-	while (shm->exit_reason == EXIT_FALSE) {
+	while (shm->exit_reason == STILL_RUNNING) {
 		if (shm->running_childs < shm->nr_childs)
 			fork_children();
 
