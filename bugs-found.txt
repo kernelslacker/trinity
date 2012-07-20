@@ -317,3 +317,9 @@ Still unfixed:
 
 * sched, debug: INFO: possible irq lock inversion dependency detected
 
+* hrtimer: Lockups with latest -next kernel
+  https://lkml.org/lkml/2012/7/20/133
+
+* netfilter,rcu: hang in nf_conntrack_net_exit
+  https://lkml.org/lkml/2012/7/20/345
+
