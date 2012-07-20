@@ -247,6 +247,9 @@ void close_files()
 	unsigned int i;
 	int fd;
 
+	shm->current_fd = 0;
+	shm->fd_lifetime = 0;
+
 	for (i = 0; i < fd_idx; i++) {
 		fd = shm->fds[i];
 		shm->fds[i] = 0;
