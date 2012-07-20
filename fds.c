@@ -63,7 +63,7 @@ retry:
 			i = find_pid_slot(getpid());
 			output("[%d] wtf, no fds! Last syscall was %d\n",
 				getpid(), shm->previous_syscallno[i]);
-			shm->exit_now = TRUE;
+			shm->exit_now = EXIT_NO_FDS;
 			return -1;
 		}
 

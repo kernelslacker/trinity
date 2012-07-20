@@ -53,7 +53,7 @@ struct shm_s {
 
 	/* various flags. */
 	unsigned char do32bit;
-	unsigned char exit_now;
+	enum exit_reasons exit_now;
 
 	/* locks */
 	unsigned char regenerating;

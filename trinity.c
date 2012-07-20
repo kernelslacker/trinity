@@ -158,7 +158,7 @@ static void sighandler(__unused__ int sig)
 		break;
 
 	case SIGINT:
-		shm->exit_now = 1;
+		shm->exit_now = EXIT_SIGINT;
 		break;
 
 	default:
@@ -315,7 +315,7 @@ int main(int argc, char* argv[])
 		/* nothing right now */
 	}
 
-	if (shm->exit_now == TRUE)
+	if (shm->exit_now != EXIT_FALSE)
 		goto cleanup_fds;
 
 	init_watchdog();

@@ -112,7 +112,7 @@ void watchdog(void)
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
 
-	while (shm->exit_now == FALSE) {
+	while (shm->exit_now == EXIT_FALSE) {
 
 		while (shm->regenerating == TRUE)
 			sleep(0.1);
@@ -123,13 +123,13 @@ void watchdog(void)
 		if (do_check_tainted == FALSE) {
 			if (check_tainted() != 0) {
 				output("kernel became tainted!\n");
-				shm->exit_now = TRUE;
+				shm->exit_now = EXIT_KERNEL_TAINTED;
 			}
 		}
 
 		if (syscallcount && (shm->execcount >= syscallcount)) {
 			output("Reached limit %d. Telling children to start exiting\n", syscallcount);
-			shm->exit_now = TRUE;
+			shm->exit_now = EXIT_REACHED_COUNT;
 		}
 
 		if (shm->execcount % 1000 == 0)

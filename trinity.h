@@ -131,4 +131,15 @@ void reap_child(pid_t childpid);
 #define BUG(bugtxt)	printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt);
 #define UNUSED(x) (void)(x)
 
+enum exit_reasons {
+	EXIT_FALSE = 0,
+	EXIT_NO_SYSCALLS_ENABLED = 1,
+	EXIT_REACHED_COUNT = 2,
+	EXIT_NO_FDS = 3,
+	EXIT_LOST_PID_SLOT = 4,
+	EXIT_PID_OUT_OF_RANGE = 5,
+	EXIT_SIGINT = 6,
+	EXIT_KERNEL_TAINTED = 7,
+};
+
 #endif	/* _TRINITY_H */
