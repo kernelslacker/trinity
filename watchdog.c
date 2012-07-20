@@ -42,7 +42,7 @@ static void check_children(void)
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec;
 
-	for (i = 0; i < shm->nr_childs; i++) {
+	for (i = 0; i < shm->max_children; i++) {
 		pid = shm->pids[i];
 
 		if ((pid == 0) || (pid == -1))
@@ -148,7 +148,7 @@ void watchdog(void)
 	while (shm->running_childs > 0) {
 		unsigned int i;
 
-		for (i = 0; i < shm->nr_childs; i++) {
+		for (i = 0; i < shm->max_children; i++) {
 			pid_t pid;
 			pid = shm->pids[i];
 			if (pid == 0)
