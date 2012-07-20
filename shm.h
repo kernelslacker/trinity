@@ -1,10 +1,12 @@
 #ifndef _SHM_H
 #define _SHM_H 1
 
+
 #include <sys/time.h>
 
 #include <stdio.h>
 
+#include "trinity.h"
 #include "constants.h"
 
 struct shm_s {
