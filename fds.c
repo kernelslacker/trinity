@@ -58,7 +58,16 @@ static int get_random_fd(void)
 
 	switch (i) {
 	case 0:
-retry:		fd = shm->fds[rand() % fd_idx];
+retry:
+		if (fd_idx == 0) {
+			i = find_pid_slot(getpid());
+			output("[%d] wtf, no fds! Last syscall was %d\n",
+				getpid(), shm->previous_syscallno[i]);
+			shm->exit_now = TRUE;
+			return -1;
+		}
+
+		fd = shm->fds[rand() % fd_idx];
 
 		/* avoid stdin/stdout/stderr */
 		if (logging == FALSE)
