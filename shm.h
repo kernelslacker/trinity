@@ -22,7 +22,7 @@ struct shm_s {
 
 	pid_t last_reaped;
 
-	unsigned int nr_childs;
+	unsigned int max_children;
 	unsigned int running_childs;
 	int total_syscalls[MAX_NR_CHILDREN];
 	struct timeval tv[MAX_NR_CHILDREN];

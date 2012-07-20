@@ -75,11 +75,11 @@ retry:
 
 		/* get highest logfile fd if logging is enabled */
 		else {
-			file = shm->logfiles[shm->nr_childs-1];
+			file = shm->logfiles[shm->max_children - 1];
 			if (file == NULL) {
 				printf("## WTF, logfile was null!\n");
 				printf("## logfiles: ");
-				for (i = 0; i < shm->nr_childs; i++)
+				for (i = 0; i < shm->max_children; i++)
 					printf("%p ", shm->logfiles[i]);
 				printf("\n");
 				exit(EXIT_FAILURE);

@@ -59,7 +59,7 @@ int find_pid_slot(pid_t mypid)
 {
 	unsigned int i;
 
-	for (i = 0; i < shm->nr_childs; i++) {
+	for (i = 0; i < shm->max_children; i++) {
 		if (shm->pids[i] == mypid)
 			return i;
 	}
@@ -70,7 +70,7 @@ static unsigned char pidmap_empty(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < shm->nr_childs; i++) {
+	for (i = 0; i < shm->max_children; i++) {
 		if (shm->pids[i] == -1)
 			continue;
 		if (shm->pids[i] != 0)
@@ -85,7 +85,7 @@ void dump_pid_slots(void)
 
 	printf("## pids:\n");
 
-	for (i = 0; i < shm->nr_childs; i++)
+	for (i = 0; i < shm->max_children; i++)
 		printf("## slot%d: %d\n", i, shm->pids[i]);
 }
 
@@ -98,7 +98,7 @@ static void fork_children()
 
 	/* Generate children*/
 
-	while (shm->running_childs < shm->nr_childs) {
+	while (shm->running_childs < shm->max_children) {
 		int pid = 0;
 
 		/* Find a space for it in the pid map */
@@ -135,7 +135,7 @@ static void fork_children()
 		shm->running_childs++;
 		debugf("[%d] Created child %d [total:%d/%d]\n",
 			getpid(), shm->pids[pidslot],
-			shm->running_childs, shm->nr_childs);
+			shm->running_childs, shm->max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)
 			return;
@@ -187,7 +187,7 @@ static void handle_child(pid_t childpid, int childstatus)
 
 		if (errno == ECHILD) {
 			debugf("[%d] All children exited!\n", getpid());
-			for (i = 0; i < shm->nr_childs; i++) {
+			for (i = 0; i < shm->max_children; i++) {
 				if (shm->pids[i] == 0)
 					continue;
 				if (shm->pids[i] != -1) {
@@ -279,7 +279,7 @@ static void handle_children()
 
 	handle_child(pid, childstatus);
 
-	for (i = 0; i < shm->nr_childs; i++) {
+	for (i = 0; i < shm->max_children; i++) {
 
 		pid = shm->pids[i];
 
@@ -300,7 +300,7 @@ static void check_shm_sanity(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < shm->nr_childs; i++) {
+	for (i = 0; i < shm->max_children; i++) {
 		if (shm->pids[i] > 65535) {
 			output("Sanity check failed! Found pid %d!\n", shm->pids[i]);
 			shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
@@ -318,7 +318,7 @@ static void main_loop()
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
 	while (shm->exit_reason == STILL_RUNNING) {
-		if (shm->running_childs < shm->nr_childs)
+		if (shm->running_childs < shm->max_children)
 			fork_children();
 
 		handle_children();
