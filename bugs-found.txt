@@ -322,3 +322,6 @@ Still unfixed:
 * netfilter,rcu: hang in nf_conntrack_net_exit
   https://lkml.org/lkml/2012/7/20/345
 
+* lockdep trace from posix timers
+  https://lkml.org/lkml/2012/7/24/443
+
