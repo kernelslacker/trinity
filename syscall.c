@@ -81,7 +81,7 @@ static unsigned long do_syscall(int childno)
 	(void)alarm(0);
 
 	pidslot = find_pid_slot(getpid());
-	if (pidslot != -1) {
+	if (pidslot != NO_PIDSLOT) {
 		shm->total_syscalls[pidslot]++;
 		(void)gettimeofday(&shm->tv[pidslot], NULL);
 	}

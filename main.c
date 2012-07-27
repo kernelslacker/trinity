@@ -63,7 +63,7 @@ int find_pid_slot(pid_t mypid)
 		if (shm->pids[i] == mypid)
 			return i;
 	}
-	return -1;
+	return NO_PIDSLOT;
 }
 
 static unsigned char pidmap_empty(void)
@@ -102,7 +102,7 @@ static void fork_children()
 		int pid = 0;
 
 		/* Find a space for it in the pid map */
-		pidslot = find_pid_slot(-1);
+		pidslot = find_pid_slot(NO_PIDSLOT);
 		if (pidslot == -1) {
 			printf("[%d] ## Pid map was full!\n", getpid());
 			dump_pid_slots();
@@ -158,7 +158,7 @@ void reap_child(pid_t childpid)
 	}
 
 	i = find_pid_slot(childpid);
-	if (i == -1)
+	if (i == NO_PIDSLOT)
 		goto out;
 
 	debugf("[%d] Removing pid %d from pidmap.\n", getpid(), childpid);
@@ -207,7 +207,7 @@ static void handle_child(pid_t childpid, int childstatus)
 		if (WIFEXITED(childstatus)) {
 
 			slot = find_pid_slot(childpid);
-			if (slot == -1) {
+			if (slot == NO_PIDSLOT) {
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
 				shm->exit_reason = EXIT_LOST_PID_SLOT;
 				dump_pid_slots();
