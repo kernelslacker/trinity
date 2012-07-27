@@ -133,8 +133,8 @@ static void fork_children()
 			_exit(ret);
 		}
 		shm->running_childs++;
-		debugf("[%d] Created child %d [total:%d/%d]\n",
-			getpid(), shm->pids[pidslot],
+		debugf("[%d] Created child %d in pidslot %d [total:%d/%d]\n",
+			getpid(), shm->pids[pidslot], pidslot,
 			shm->running_childs, shm->max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)

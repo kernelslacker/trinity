@@ -64,10 +64,9 @@ static FILE * find_logfile_handle()
 		return shm->logfiles[i];
 	else {
 		/* try one more time. FIXME: This is awful. */
-		printf("[%d] ## Couldn't find logfile for pid %d. Retrying.\n", getpid(), pid);
 		sleep(1);
 		i = find_pid_slot(pid);
-		if (i != 1)
+		if (i != -1)
 			return shm->logfiles[i];
 
 		printf("[%d] ## Couldn't find logfile for pid %d\n", getpid(), pid);
