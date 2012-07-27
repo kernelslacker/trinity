@@ -102,18 +102,15 @@ int child_process(void)
 	pid_t pid = getpid();
 	int ret;
 	unsigned int syscallnr;
-	unsigned int cpu;
 	unsigned int childno = find_pid_slot(pid);
 
 	disable_coredumps();
 
-	cpu = find_pid_slot(pid);
-
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
-		CPU_SET(cpu, &set);
+		CPU_SET(childno, &set);
 		sched_setaffinity(getpid(), sizeof(set), &set);
-		output("bound child %d to cpu %d\n", pid, cpu);
+		output("bound child %d to cpu %d\n", pid, childno);
 	}
 
 	init_child();
