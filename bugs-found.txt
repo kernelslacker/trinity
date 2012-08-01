@@ -325,3 +325,6 @@ Still unfixed:
 * lockdep trace from posix timers
   https://lkml.org/lkml/2012/7/24/443
 
+* Replace BUG() in mpol_to_str with -EINVAL
+  https://lkml.org/lkml/2012/8/1/170
+
