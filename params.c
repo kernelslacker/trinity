@@ -8,23 +8,23 @@
 #include "syscall.h"
 #include "trinity.h"
 
-unsigned char debug = FALSE;
+bool debug = FALSE;
 
-unsigned char do_specific_syscall = FALSE;
-unsigned char do_exclude_syscall = FALSE;
+bool do_specific_syscall = FALSE;
+bool do_exclude_syscall = FALSE;
 
 unsigned int specific_proto = 0;
-unsigned char do_specific_proto = FALSE;
+bool do_specific_proto = FALSE;
 
-unsigned char dopause = FALSE;
-unsigned char show_syscall_list = FALSE;
-unsigned char quiet = FALSE;
-unsigned char monochrome = FALSE;
-unsigned char dangerous = FALSE;
-unsigned char logging = TRUE;
-unsigned char do_syslog = FALSE;
+bool dopause = FALSE;
+bool show_syscall_list = FALSE;
+bool quiet = FALSE;
+bool monochrome = FALSE;
+bool dangerous = FALSE;
+bool logging = TRUE;
+bool do_syslog = FALSE;
 
-unsigned char user_set_seed = FALSE;
+bool user_set_seed = FALSE;
 
 unsigned char desired_group = GROUP_NONE;
 

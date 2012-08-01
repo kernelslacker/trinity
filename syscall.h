@@ -1,6 +1,8 @@
 #ifndef _TRINITY_SYSCALL_H
 #define _TRINITY_SYSCALL_H 1
 
+#include "trinity.h"
+
 enum argtype {
 	ARG_UNDEFINED = 0,
 	ARG_RANDOM_INT = 1,
@@ -92,8 +94,8 @@ extern unsigned int max_nr_syscalls;
 extern unsigned int max_nr_32bit_syscalls;
 extern unsigned int max_nr_64bit_syscalls;
 
-extern unsigned char use_32bit;
-extern unsigned char use_64bit;
+extern bool use_32bit;
+extern bool use_64bit;
 
 #define CAPABILITY_CHECK (1<<0)
 #define AVOID_SYSCALL (1<<1)

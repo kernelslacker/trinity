@@ -45,7 +45,7 @@ unsigned int pathname_idx = 0;
 
 #define FD_LIKELYHOOD 5000
 
-static int add_fd(unsigned int chance, const char *pathname, int flags, unsigned char is_dir)
+static int add_fd(unsigned int chance, const char *pathname, int flags, bool is_dir)
 {
 	int fd = -1;
 	DIR *d = NULL;
@@ -89,7 +89,7 @@ void open_fds(const char *dir, unsigned char add_all)
 	unsigned int chance = 0;
 	int set_read;
 	int set_write;
-	unsigned char is_dir = FALSE;
+	bool is_dir = FALSE;
 
 
 	if (!d) {

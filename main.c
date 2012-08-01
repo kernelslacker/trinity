@@ -37,7 +37,7 @@ static void regenerate()
 	shm->regenerating = FALSE;
 }
 
-unsigned char do_check_tainted;
+bool do_check_tainted;
 
 int check_tainted(void)
 {
@@ -66,7 +66,7 @@ int find_pid_slot(pid_t mypid)
 	return NO_PIDSLOT;
 }
 
-static unsigned char pidmap_empty(void)
+static bool pidmap_empty(void)
 {
 	unsigned int i;
 
