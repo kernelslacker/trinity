@@ -22,8 +22,8 @@ unsigned int max_nr_syscalls;
 unsigned int max_nr_32bit_syscalls;
 unsigned int max_nr_64bit_syscalls;
 
-unsigned char use_32bit = FALSE;
-unsigned char use_64bit = FALSE;
+bool use_32bit = FALSE;
+bool use_64bit = FALSE;
 
 int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, const char *arg)
 {
@@ -252,9 +252,9 @@ void toggle_syscall(char *arg, unsigned char state)
 	}
 }
 
-static void show_state(unsigned int bool)
+static void show_state(unsigned int state)
 {
-	if (bool)
+	if (state)
 		printf("Enabled");
 	else
 		printf("Disabled");

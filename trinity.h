@@ -8,8 +8,7 @@
 
 #include "constants.h"
 
-#define FALSE 0
-#define TRUE 1
+typedef enum { FALSE = 0, TRUE = 1 } bool;
 
 #define UNLOCKED 0
 #define LOCKED 1
@@ -19,6 +18,7 @@
 #else
 #define __unused__ /*@unused@*/
 #endif
+
 
 extern char *progname;
 extern pid_t parentpid;
@@ -61,25 +61,25 @@ extern long struct_fill;
 /* command line args. */
 void parse_args(int argc, char *argv[]);
 
-extern unsigned char debug;
-extern unsigned char do_specific_syscall;
-extern unsigned char do_exclude_syscall;
+extern bool debug;
+extern bool do_specific_syscall;
+extern bool do_exclude_syscall;
 extern unsigned int specific_proto;
-extern unsigned char do_specific_proto;
+extern bool do_specific_proto;
 extern char *specific_proto_optarg;
-extern unsigned char dopause;
-extern unsigned char show_syscall_list;
-extern unsigned char quiet;
-extern unsigned char monochrome;
-extern unsigned char dangerous;
-extern unsigned char do_syslog;
-extern unsigned char logging;
+extern bool dopause;
+extern bool show_syscall_list;
+extern bool quiet;
+extern bool monochrome;
+extern bool dangerous;
+extern bool do_syslog;
+extern bool logging;
 extern unsigned char desired_group;
-extern unsigned char user_set_seed;
+extern bool user_set_seed;
 
 extern unsigned char exit_reason;
 
-extern unsigned char biarch;
+extern bool biarch;
 
 extern char *page_zeros;
 extern char *page_0xff;
@@ -116,7 +116,7 @@ void output(const char *fmt, ...);
 void open_logfiles();
 void close_logfiles();
 
-extern unsigned char do_check_tainted;
+extern bool do_check_tainted;
 int check_tainted(void);
 
 void init_child(void);

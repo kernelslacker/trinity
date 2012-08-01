@@ -32,7 +32,7 @@ jmp_buf ret_jump;
 
 unsigned int page_size;
 
-unsigned char biarch = FALSE;
+bool biarch = FALSE;
 
 struct shm_s *shm;
 
