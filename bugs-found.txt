@@ -77,6 +77,10 @@ Interestingly, trinity triggers quite a few bugs not directly related to syscall
   https://lkml.org/lkml/2012/6/1/341
   68e3e92620c323703bc7db75c2ba15239ee85c39
 
+* [PATCH] NFC: Prevent NULL deref when getting socket name
+  147f20e316f3949f3f5ffe6c8658e9fe1c6ceb23
+  https://lkml.org/lkml/2012/6/30/44
+
 ------------------------------------------------------------------
 Still unfixed:
 
