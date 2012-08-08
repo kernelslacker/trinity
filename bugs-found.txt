@@ -332,3 +332,6 @@ Still unfixed:
 * Replace BUG() in mpol_to_str with -EINVAL
   https://lkml.org/lkml/2012/8/1/170
 
+* mq: INFO: possible circular locking dependency detected
+  https://lkml.org/lkml/2012/8/4/65
+
