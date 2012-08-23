@@ -335,3 +335,6 @@ Still unfixed:
 * mq: INFO: possible circular locking dependency detected
   https://lkml.org/lkml/2012/8/4/65
 
+* 3.6rc3 lockdep trace. tasklist_lock vs fasync
+  https://lkml.org/lkml/2012/8/22/673
+
