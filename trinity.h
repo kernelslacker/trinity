@@ -126,6 +126,8 @@ void watchdog(void);
 
 void reap_child(pid_t childpid);
 
+extern unsigned int user_specified_children;
+
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 

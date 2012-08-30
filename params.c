@@ -14,6 +14,8 @@ bool do_specific_syscall = FALSE;
 bool do_exclude_syscall = FALSE;
 
 unsigned int specific_proto = 0;
+unsigned int user_specified_children = 0;
+
 bool do_specific_proto = FALSE;
 
 bool dopause = FALSE;
@@ -57,6 +59,7 @@ static int parse_victim_path(char *opt)
 static void usage(void)
 {
 	fprintf(stderr, "%s\n", progname);
+	fprintf(stderr, " --children,-C: specify number of child processes\n");
 	fprintf(stderr, " --exclude,-x: don't call a specific syscall\n");
 	fprintf(stderr, " --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
 	fprintf(stderr, " --list,-L: list all syscalls known on this architecture.\n");
@@ -79,6 +82,7 @@ void parse_args(int argc, char *argv[])
 	int opt;
 
 	struct option longopts[] = {
+		{ "children", required_argument, NULL, 'C' },
 		{ "dangerous", no_argument, NULL, 'd' },
 		{ "debug", no_argument, NULL, 'D' },
 		{ "exclude", required_argument, NULL, 'x' },
@@ -93,7 +97,7 @@ void parse_args(int argc, char *argv[])
 		{ "victims", required_argument, NULL, 'V' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:dDg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:C:dDg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -110,6 +114,10 @@ void parse_args(int argc, char *argv[])
 			do_specific_syscall = TRUE;
 			toggle_syscall(optarg, TRUE);
 			printf("Enabling syscall %s\n", optarg);
+			break;
+
+		case 'C':
+			user_specified_children = strtoll(optarg, NULL, 10);
 			break;
 
 		case 'd':

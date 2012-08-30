@@ -55,8 +55,6 @@
 * Change regeneration code.
   Instead of every n syscalls, make it happen after 15 minutes.
 
-* command line arg to specify nr_childs
-
 ==============================================================================
 Post 1.0 material:
 
