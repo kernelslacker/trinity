@@ -102,6 +102,15 @@ Stress test the splice syscall, with random parameters, but sanitise
 the passed params so they look almost sensible.
 
 
+#######################################################################
+
+Reporting bugs upstream:
+If you find a kernel bug using trinity, first check the list at
+http://www.codemonkey.org.uk/projects/trinity/bugs-found.html
+You may find that the bug is either already fixed (in which case
+a git commit hash should point to the fix), or there will be a link
+to an existing upstream report on the bug.
+
 ######### Links to similar projects ####################################
 
 = tsys - 1991.
