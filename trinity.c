@@ -210,7 +210,11 @@ static int create_shm()
 	shm->execcount = 1;
 	shm->regenerate = 0;
 
-	shm->max_children = sysconf(_SC_NPROCESSORS_ONLN);
+	if (user_specified_children != 0)
+		shm->max_children = user_specified_children;
+	else
+		shm->max_children = sysconf(_SC_NPROCESSORS_ONLN);
+
 	if (shm->max_children > MAX_NR_CHILDREN) {
 		printf("Increase MAX_NR_CHILDREN!\n");
 		exit(EXIT_FAILURE);
