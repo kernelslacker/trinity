@@ -326,8 +326,8 @@ int main(int argc, char* argv[])
 
 	do_main_loop();
 
-	printf("\nRan %ld syscalls (%ld retries). Successes: %ld  Failures: %ld\n",
-		shm->execcount - 1, shm->retries, shm->successes, shm->failures);
+	printf("\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
+		shm->execcount - 1, shm->successes, shm->failures);
 
 	ret = EXIT_SUCCESS;
 

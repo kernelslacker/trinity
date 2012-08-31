@@ -13,7 +13,6 @@ struct shm_s {
 	unsigned long execcount;
 	unsigned long successes;
 	unsigned long failures;
-	unsigned long retries;
 	unsigned long regenerate;
 
 	pid_t parentpid;
