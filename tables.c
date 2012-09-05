@@ -206,16 +206,13 @@ void mark_all_syscalls_active(void)
 	}
 }
 
-void toggle_syscall(char *arg, unsigned char state)
+static void toggle_syscall_biarch(char *arg, unsigned char state)
 {
 	int specific_syscall32 = 0;
 	int specific_syscall64 = 0;
 	int ret;
 
-	if (biarch == TRUE)
-		specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
-	else
-		specific_syscall64 = -1;
+	specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
 
 	/* If we found a 64bit syscall, validate it. */
 	if (specific_syscall64 != -1) {
@@ -247,6 +244,37 @@ void toggle_syscall(char *arg, unsigned char state)
 	}
 
 	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
+		printf("No idea what syscall (%s) is.\n", arg);
+		exit(EXIT_FAILURE);
+	}
+}
+
+void toggle_syscall(char *arg, unsigned char state)
+{
+	int specific_syscall = 0;
+	int ret;
+
+	if (biarch == TRUE) {
+		toggle_syscall_biarch(arg, state);
+		return;
+	}
+
+	/* non-biarch case. */
+	specific_syscall = search_syscall_table(syscalls, max_nr_syscalls, arg);
+	if (specific_syscall != -1) {
+		ret = validate_specific_syscall(syscalls, specific_syscall);
+		if (ret == FALSE)
+			exit(EXIT_FAILURE);
+		if (state == TRUE) {
+			printf("[%d] Marking syscall %d (%s) as enabled\n", getpid(), specific_syscall, arg);
+			syscalls[specific_syscall].entry->flags |= ACTIVE;
+		} else {
+			printf("[%d] Marking syscall %d (%s) as disabled\n", getpid(), specific_syscall, arg);
+			syscalls[specific_syscall].entry->flags &= ~ACTIVE;
+		}
+	}
+
+	if (specific_syscall == -1) {
 		printf("No idea what syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);
 	}
@@ -287,7 +315,7 @@ void dump_syscall_tables(void)
 		for (i = 0; i < max_nr_syscalls; i++) {
 			printf("%s : ", syscalls[i].entry->name);
 			show_state(syscalls[i].entry->flags & ACTIVE);
-			if (syscalls_32bit[i].entry->flags & AVOID_SYSCALL)
+			if (syscalls[i].entry->flags & AVOID_SYSCALL)
 				printf(" AVOID");
 			printf("\n");
 		}
@@ -385,6 +413,8 @@ int setup_syscall_group(unsigned int group)
 		printf("Found %d 64-bit syscalls in group\n", max_nr_32bit_syscalls);
 
 	} else {
+		/* non-biarch case. */
+
 		for (i = 0; i < max_nr_syscalls; i++) {
 			if (syscalls[i].entry->group == group)
 				count++;
