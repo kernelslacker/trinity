@@ -158,3 +158,6 @@ Post 1.0 material:
 
 * if a read() blocks, blacklist (close?) that fd.
 
+* Pause on oops.
+  Sometimes we might want to read trinity state when we trigger a bad event.
+
