@@ -1,42 +1,4 @@
-* Bugs
-  - when we randomly call personality, the child stops logging.
-  - fuzzing munmap causes a segfault to occur. Looks like we munmap something important.
-  - fuzzing read() occasionally hangs a long time. Probably a socket ?
-  - Totalling success + failures doesn't always equal the total number of syscalls.
-    This is bizarre. We sometimes do a syscall which segfaults, but the SIGSEGV delivery
-     doesn't happen until after we've incremented some (but not all) of the counts,
-     so we get off by one with every segfault.
-  - occasionally a thread exits after 0 syscalls. Find out why.
-  - occasionally trinity fails to startup because we've leaked so much ipc stuff.
-    cleanup on startup.
-  - Sometimes all child threads end up in Z state.
-  - Sometimes we get to get_random_fd() with 0 fd's open.
-
-* The pid map needs locking.
-  There seem to be two different races that would be fixed with proper locking.
-
-  [9478] ## Couldn't find logfile for pid 9478
-  ## pids:
-  ## slot0: 9472
-  ## slot1: 9478
-  ## Logfiles for pids: 0x24f0300 0x24f05a0 
-  ## child logfile handle was null logging to main!
-
-  04c26dec185513631fefe7d8eb8088c30bd98db2 is an ugly workaround for this for now.
-
-
-  [14874] ## Couldn't find pid slot for 19330
-  ## pids:
-  ## slot0: -1
-  ## slot1: 19642
-  ## slot2: 19319
-  ## slot3: 19678
-  ## slot4: 19631
-  ## slot5: -1
-  ## slot6: -1
-  ## slot7: 19643
-
-  Looks like we reaped a child, but somehow it was still around, and then exited ?
+* Switch from shm to shared mmap (because Android)
 
 * Clean up logging.
   - prepend [watchdog] for watchdog messages
@@ -54,9 +16,6 @@
 
 * Change regeneration code.
   Instead of every n syscalls, make it happen after 15 minutes.
-
-==============================================================================
-Post 1.0 material:
 
 * ->decode_argN functions to print decoded flags etc.
 

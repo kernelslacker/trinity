@@ -1,0 +1,60 @@
+- If you run trinity inside a tmux session, sometimes the tmux session gets killed.
+  Not sure yet which syscall is causing this to happen, but it gets a SIGINT.
+
+- when we randomly call personality, the child stops logging.
+
+- fuzzing certain syscalls causes segfaults
+
+  - munmap: Looks like we munmap something important.
+  - move_pages: possibly a similar bug.
+  - modify_ldt: This needs a proper sanitise routine
+
+- fuzzing read() occasionally hangs a long time. Probably a socket ?
+  The watchdog _should_ be killing processes that hang, but if they're stuck in D state,
+  there's not much we can do. Maybe close that fd so we don't hang on it again?
+
+- Totalling success + failures doesn't always equal the total number of syscalls.
+  This is bizarre. We sometimes do a syscall which segfaults, but the SIGSEGV delivery
+   doesn't happen until after we've incremented some (but not all) of the counts,
+   so we get off by one with every segfault.
+
+- occasionally a thread exits after 0 syscalls. Find out why.
+
+- occasionally trinity fails to startup because we've leaked so much ipc stuff.
+  cleanup on startup. (scripts/clean-ipc.sh in the meantime)
+
+- Sometimes all child threads end up in Z state.
+  (This may be fixed in 1.0)
+
+- Sometimes we get to get_random_fd() with 0 fd's open.
+
+- The pid map needs locking.
+  There seem to be two different races that would be fixed with proper locking.
+
+  [9478] ## Couldn't find logfile for pid 9478
+  ## pids:
+  ## slot0: 9472
+  ## slot1: 9478
+  ## Logfiles for pids: 0x24f0300 0x24f05a0 
+  ## child logfile handle was null logging to main!
+
+  04c26dec185513631fefe7d8eb8088c30bd98db2 is an ugly workaround for this for now.
+
+
+  [14874] ## Couldn't find pid slot for 19330
+  ## pids:
+  ## slot0: -1
+  ## slot1: 19642
+  ## slot2: 19319
+  ## slot3: 19678
+  ## slot4: 19631
+  ## slot5: -1
+  ## slot6: -1
+  ## slot7: 19643
+
+  Looks like we reaped a child, but somehow it was still around, and then exited ?
+
+- Occasionally the shm gets corrupted and the counts leap up into crazy numbers
+  (and probably a bunch of other state goes awry too). Need to determine which
+  syscall is causing this.
+
