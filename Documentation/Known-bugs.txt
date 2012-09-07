@@ -58,3 +58,9 @@
   (and probably a bunch of other state goes awry too). Need to determine which
   syscall is causing this.
 
+- Some syscall sanitise routines are doing operations on page_rand to create
+  a struct.  They need to be allocating their own memory to do this, as other
+  threads may be simultaneously scribbling over it.
+  Note that if we do this right now, because we don't have post-syscall destructors,
+  we will leak memory until that thread exits.
+
