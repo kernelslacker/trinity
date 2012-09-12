@@ -308,10 +308,10 @@ static void main_loop()
 		if (shm->running_childs < shm->max_children)
 			fork_children();
 
-		handle_children();
-
 		if (shm->regenerate >= REGENERATION_POINT)
 			regenerate();
+
+		handle_children();
 	}
 	while (!(pidmap_empty()))
 		handle_children();
