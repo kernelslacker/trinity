@@ -60,13 +60,13 @@ static FILE * find_logfile_handle()
 		return parentlogfile;
 
 	i = find_pid_slot(pid);
-	if (i != NO_PIDSLOT)
+	if (i != PIDSLOT_NOT_FOUND)
 		return shm->logfiles[i];
 	else {
 		/* try one more time. FIXME: This is awful. */
 		sleep(1);
 		i = find_pid_slot(pid);
-		if (i != NO_PIDSLOT)
+		if (i != PIDSLOT_NOT_FOUND)
 			return shm->logfiles[i];
 
 		printf("[%d] ## Couldn't find logfile for pid %d\n", getpid(), pid);
