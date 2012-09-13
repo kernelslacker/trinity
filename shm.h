@@ -58,8 +58,8 @@ struct shm_s {
 	enum exit_reasons exit_reason;
 
 	/* locks */
-	unsigned char regenerating;
-	unsigned char reaper_lock;
+	volatile unsigned char regenerating;
+	volatile unsigned char reaper_lock;
 };
 extern struct shm_s *shm;
 
