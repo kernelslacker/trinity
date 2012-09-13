@@ -30,7 +30,8 @@ int child_process(void);
 
 int find_pid_slot(pid_t mypid);
 void dump_pid_slots(void);
-#define NO_PIDSLOT -1
+#define PIDSLOT_NOT_FOUND -1
+#define EMPTY_PIDSLOT -1
 
 long mkcall(int child);
 void do_syscall_from_child();

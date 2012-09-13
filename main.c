@@ -63,7 +63,7 @@ int find_pid_slot(pid_t mypid)
 		if (shm->pids[i] == mypid)
 			return i;
 	}
-	return NO_PIDSLOT;
+	return PIDSLOT_NOT_FOUND;
 }
 
 static bool pidmap_empty(void)
@@ -71,9 +71,7 @@ static bool pidmap_empty(void)
 	unsigned int i;
 
 	for (i = 0; i < shm->max_children; i++) {
-		if (shm->pids[i] == -1)
-			continue;
-		if (shm->pids[i] != 0)
+		if (shm->pids[i] != EMPTY_PIDSLOT)
 			return FALSE;
 	}
 	return TRUE;
@@ -102,8 +100,8 @@ static void fork_children()
 		int pid = 0;
 
 		/* Find a space for it in the pid map */
-		pidslot = find_pid_slot(NO_PIDSLOT);
-		if (pidslot == -1) {
+		pidslot = find_pid_slot(EMPTY_PIDSLOT);
+		if (pidslot == PIDSLOT_NOT_FOUND) {
 			printf("[%d] ## Pid map was full!\n", getpid());
 			dump_pid_slots();
 			exit(EXIT_FAILURE);
@@ -158,11 +156,11 @@ void reap_child(pid_t childpid)
 	}
 
 	i = find_pid_slot(childpid);
-	if (i == NO_PIDSLOT)
+	if (i == PIDSLOT_NOT_FOUND)
 		goto out;
 
 	debugf("[%d] Removing pid %d from pidmap.\n", getpid(), childpid);
-	shm->pids[i] = -1;
+	shm->pids[i] = EMPTY_PIDSLOT;
 	shm->running_childs--;
 	shm->tv[i].tv_sec = 0;
 	shm->last_reaped = childpid;
@@ -188,11 +186,9 @@ static void handle_child(pid_t childpid, int childstatus)
 		if (errno == ECHILD) {
 			debugf("[%d] All children exited!\n", getpid());
 			for (i = 0; i < shm->max_children; i++) {
-				if (shm->pids[i] == 0)
-					continue;
-				if (shm->pids[i] != -1) {
+				if (shm->pids[i] != EMPTY_PIDSLOT) {
 					debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
-					shm->pids[i] = -1;
+					shm->pids[i] = EMPTY_PIDSLOT;
 					shm->running_childs--;
 				}
 			}
@@ -207,7 +203,7 @@ static void handle_child(pid_t childpid, int childstatus)
 		if (WIFEXITED(childstatus)) {
 
 			slot = find_pid_slot(childpid);
-			if (slot == NO_PIDSLOT) {
+			if (slot == PIDSLOT_NOT_FOUND) {
 				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
 				shm->exit_reason = EXIT_LOST_PID_SLOT;
 				dump_pid_slots();
@@ -275,6 +271,9 @@ static void handle_children()
 	int childstatus;
 	pid_t pid;
 
+	if (shm->running_childs == 0)
+		return;
+
 	pid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED);
 
 	handle_child(pid, childstatus);
@@ -313,7 +312,7 @@ static void main_loop()
 
 		handle_children();
 	}
-	while (!(pidmap_empty()))
+	while (pidmap_empty() == FALSE)
 		handle_children();
 
 	printf("[%d] Bailing main loop. Exit reason: %d\n", getpid(), shm->exit_reason);

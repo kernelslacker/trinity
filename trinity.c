@@ -219,7 +219,7 @@ static int create_shm()
 		printf("Increase MAX_NR_CHILDREN!\n");
 		exit(EXIT_FAILURE);
 	}
-	memset(shm->pids, -1, sizeof(shm->pids));
+	memset(shm->pids, EMPTY_PIDSLOT, sizeof(shm->pids));
 
 	shm->parentpid = getpid();
 	return 0;
