@@ -333,8 +333,14 @@ int main(int argc, char* argv[])
 
 cleanup_fds:
 
-	for (i = 0; i < nr_sockets; i++)
+	for (i = 0; i < nr_sockets; i++) {
+		struct linger ling;
+
+		ling.l_onoff = FALSE;	/* linger active */
+		setsockopt(shm->socket_fds[i], SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
+		shutdown(shm->socket_fds[i], SHUT_RDWR);
 		close(shm->socket_fds[i]);
+	}
 
 	destroy_maps();
 
