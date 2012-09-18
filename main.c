@@ -262,6 +262,22 @@ static void handle_children()
 	}
 }
 
+static const char * decode_exit(unsigned int reason)
+{
+	const char *reasons[] = {
+		"Still running",
+		"No more syscalls enabled",
+		"Reached maximum syscall count",
+		"No file descriptors open",
+		"Lost track of a pid slot",
+		"shm corruption - Found a pid out of range.",
+		"ctrl-c",
+		"kernel became tainted",
+	};
+
+	return reasons[reason];
+}
+
 static void main_loop()
 {
 	static const char taskname[13]="trinity-main";
@@ -282,7 +298,7 @@ static void main_loop()
 	while (pidmap_empty() == FALSE)
 		handle_children();
 
-	printf("[%d] Bailing main loop. Exit reason: %d\n", getpid(), shm->exit_reason);
+	printf("[%d] Bailing main loop. Exit reason: %s\n", getpid(), decode_exit(shm->exit_reason));
 	_exit(EXIT_SUCCESS);
 }
 
