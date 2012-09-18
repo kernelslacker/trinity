@@ -282,8 +282,6 @@ static void handle_children()
 
 		pid = shm->pids[i];
 
-		if (pid == 0)
-			continue;
 		if (pid == -1)
 			continue;
 
