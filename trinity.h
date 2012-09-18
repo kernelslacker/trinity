@@ -28,11 +28,6 @@ extern jmp_buf ret_jump;
 void do_main_loop(void);
 int child_process(void);
 
-int find_pid_slot(pid_t mypid);
-void dump_pid_slots(void);
-#define PIDSLOT_NOT_FOUND -1
-#define EMPTY_PIDSLOT -1
-
 long mkcall(int child);
 void do_syscall_from_child();
 
@@ -129,6 +124,11 @@ void reap_child(pid_t childpid);
 
 extern unsigned int user_specified_children;
 
+#define PIDSLOT_NOT_FOUND -1
+#define EMPTY_PIDSLOT -1
+int find_pid_slot(pid_t mypid);
+bool pidmap_empty(void);
+void dump_pid_slots(void);
 int pid_is_valid(pid_t);
 
 #define __stringify_1(x...)     #x
