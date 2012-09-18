@@ -87,6 +87,16 @@ void dump_pid_slots(void)
 		printf("## slot%d: %d\n", i, shm->pids[i]);
 }
 
+int pid_is_valid(pid_t pid)
+{
+	if ((pid > 65535) || (pid < 1)) {
+		output("Sanity check failed! Found pid %d!\n", pid);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 #define debugf if (debug == TRUE) printf
 
 static void fork_children()
@@ -284,6 +294,9 @@ static void handle_children()
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;
+
+		if (pid_is_valid(pid) == FALSE)
+			return;
 
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 		if (pid != 0)
