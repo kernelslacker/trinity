@@ -32,6 +32,7 @@ OBJS		= trinity.o \
 			sockets.o \
 			syscall.o \
 			params.o \
+			pids.o \
 			tables.o \
 			watchdog.o \
 			$(SYSCALLS) \
