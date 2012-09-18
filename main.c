@@ -282,7 +282,7 @@ static void handle_children()
 
 		pid = shm->pids[i];
 
-		if (pid == -1)
+		if (pid == EMPTY_PIDSLOT)
 			continue;
 
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
