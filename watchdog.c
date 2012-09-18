@@ -31,16 +31,22 @@ void init_watchdog()
 	output("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 }
 
-static void check_shm_sanity(void)
+static int check_shm_sanity(void)
 {
 	unsigned int i;
+	pid_t pid;
 
 	for (i = 0; i < shm->max_children; i++) {
-		if (shm->pids[i] > 65535) {
-			output("Sanity check failed! Found pid %d!\n", shm->pids[i]);
+		pid = shm->pids[i];
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+
+		if (pid_is_valid(pid) == FALSE) {
 			shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
+			return SHM_CORRUPT;
 		}
 	}
+	return SHM_OK;
 }
 
 static void check_children(void)
@@ -129,7 +135,8 @@ void watchdog(void)
 		while (shm->regenerating == TRUE)
 			sleep(0.1);
 
-		check_shm_sanity();
+		if (check_shm_sanity() == SHM_CORRUPT)
+			goto corrupt;
 
 		check_children();
 
@@ -158,6 +165,8 @@ void watchdog(void)
 		sleep(1);
 	}
 
+corrupt:
+
 	/* Wait for all the children to exit. */
 	while (shm->running_childs > 0) {
 		unsigned int i;
@@ -172,8 +181,14 @@ void watchdog(void)
 			kill(pid, SIGKILL);
 		}
 		sleep(1);
+		if (check_shm_sanity()) {
+			// FIXME: If we get here, we over-wrote the real exit_reason.
+			// We should have saved that, and handled appropriately.
+			goto out;
+		}
 	}
 
+out:
 	output("[%d] Watchdog thread exiting\n", getpid());
 
 	_exit(EXIT_SUCCESS);
