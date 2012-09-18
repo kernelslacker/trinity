@@ -288,8 +288,6 @@ static void handle_children()
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 		if (pid != 0)
 			handle_child(pid, childstatus);
-
-		sleep(0.1);	/* Give other children a chance to do something. */
 	}
 }
 
