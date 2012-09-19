@@ -46,7 +46,7 @@ struct ioctl {
 	void (*sanitise)(int childno);
 };
 
-struct ioctl ioctllist[] = {
+const struct ioctl ioctllist[] = {
 #include "ioctls/scsi-generic.h"
 /*
 #include "ioctls/framebuffer.h"
