@@ -1,5 +1,7 @@
 VERSION=1.1pre
 
+INSTALL_PREFIX ?= $(HOME)
+
 CFLAGS = -Wall -W -g -O2 -I. -Wimplicit -D_FORTIFY_SOURCE=2 -DVERSION="$(VERSION)" -D_GNU_SOURCE
 #CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
 CFLAGS += -Wdeclaration-after-statement
@@ -72,3 +74,7 @@ release:
 	git repack -a -d
 	git prune-packed
 	git archive --format=tar.gz --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tgz
+
+install:
+	install -d -m 755 $(INSTALL_PREFIX)/bin
+	install trinity $(INSTALL_PREFIX)/bin
