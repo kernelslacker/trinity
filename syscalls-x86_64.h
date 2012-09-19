@@ -10,7 +10,7 @@
 
 #define NR_X86_64_SYSCALLS 313	/* syscalls numbered from 0 */
 
-struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS + 1] = {
+const struct syscalltable syscalls_x86_64[NR_X86_64_SYSCALLS + 1] = {
 	{ .entry = &syscall_read },
 	{ .entry = &syscall_write },
 	{ .entry = &syscall_open },

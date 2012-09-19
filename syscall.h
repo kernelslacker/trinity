@@ -85,9 +85,9 @@ struct syscall {
 struct syscalltable {
 	struct syscall *entry;
 };
-extern struct syscalltable *syscalls;
-extern struct syscalltable *syscalls_32bit;
-extern struct syscalltable *syscalls_64bit;
+extern const struct syscalltable *syscalls;
+extern const struct syscalltable *syscalls_32bit;
+extern const struct syscalltable *syscalls_64bit;
 
 extern unsigned long long syscallcount;
 extern unsigned int max_nr_syscalls;
@@ -104,8 +104,8 @@ extern bool use_64bit;
 #define ACTIVE (1<<4)
 
 void setup_syscall_tables(void);
-int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
-int validate_specific_syscall(struct syscalltable *table, int call);
+int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
+int validate_specific_syscall(const struct syscalltable *table, int call);
 void mark_all_syscalls_active(void);
 void toggle_syscall(char *arg, unsigned char state);
 void dump_syscall_tables(void);
