@@ -219,7 +219,7 @@ struct protocol {
 	unsigned int proto;
 };
 
-static struct protocol protocols[] = {
+static const struct protocol protocols[] = {
 	{ "PF_UNSPEC",       0 },
 	{ "PF_LOCAL",        1 },
 	{ "PF_UNIX",         PF_LOCAL },
@@ -266,7 +266,7 @@ static struct protocol protocols[] = {
 void find_specific_proto(char *protoarg)
 {
 	unsigned int i;
-	struct protocol *p = protocols;
+	const struct protocol *p = protocols;
 
 	if (specific_proto == 0) {
 		/* we were passed a string */
