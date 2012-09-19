@@ -12,9 +12,9 @@
 #include "syscall.h"
 #include "trinity.h"
 
-struct syscalltable *syscalls;
-struct syscalltable *syscalls_32bit;
-struct syscalltable *syscalls_64bit;
+const struct syscalltable *syscalls;
+const struct syscalltable *syscalls_32bit;
+const struct syscalltable *syscalls_64bit;
 
 unsigned long long syscallcount = 0;
 
@@ -25,7 +25,7 @@ unsigned int max_nr_64bit_syscalls;
 bool use_32bit = FALSE;
 bool use_64bit = FALSE;
 
-int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, const char *arg)
+int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg)
 {
 	unsigned int i;
 
@@ -40,7 +40,7 @@ int search_syscall_table(struct syscalltable *table, unsigned int nr_syscalls, c
 	return -1;
 }
 
-int validate_specific_syscall(struct syscalltable *table, int call)
+int validate_specific_syscall(const struct syscalltable *table, int call)
 {
 	if (call != -1) {
 		if (table[call].entry->flags & AVOID_SYSCALL) {
@@ -171,7 +171,7 @@ static void check_syscall(struct syscall *entry)
 */
 }
 
-static void sanity_check(struct syscalltable *table, unsigned int nr)
+static void sanity_check(const struct syscalltable *table, unsigned int nr)
 {
 	unsigned int i;
 

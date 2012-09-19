@@ -18,7 +18,7 @@
 
 #define NR_ARM_SYSCALLS 371
 
-struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
+const struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_restart_syscall },
 		{ .entry = &syscall_exit },
 		{ .entry = &syscall_fork }, /* syscall_fork_wrapper */

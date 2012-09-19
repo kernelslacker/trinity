@@ -7,7 +7,7 @@
 
 #define NR_I386_SYSCALLS 350
 
-struct syscalltable syscalls_i386[NR_I386_SYSCALLS + 1] = {
+const struct syscalltable syscalls_i386[NR_I386_SYSCALLS + 1] = {
 	{ .entry = &syscall_restart_syscall },
 	{ .entry = &syscall_exit },
 	{ .entry = &syscall_fork },

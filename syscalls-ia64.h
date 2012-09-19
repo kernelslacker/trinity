@@ -12,7 +12,7 @@
 
 #define NR_SYSCALLS 298
 
-struct syscalltable syscalls_ia64[NR_SYSCALLS] = {
+const struct syscalltable syscalls_ia64[NR_SYSCALLS] = {
 	{ .entry = &syscall_ni_syscall },
 	{ .entry = &syscall_exit },
 	{ .entry = &syscall_read },
