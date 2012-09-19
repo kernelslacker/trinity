@@ -63,7 +63,7 @@ static void check_children(void)
 	for (i = 0; i < shm->max_children; i++) {
 		pid = shm->pids[i];
 
-		if ((pid == 0) || (pid == -1))
+		if (pid == EMPTY_PIDSLOT)
 			continue;
 
 		/* first things first, does the pid still exist ? */
@@ -174,9 +174,7 @@ corrupt:
 		for (i = 0; i < shm->max_children; i++) {
 			pid_t pid;
 			pid = shm->pids[i];
-			if (pid == 0)
-				continue;
-			if (pid == -1)
+			if (pid == EMPTY_PIDSLOT)
 				continue;
 			kill(pid, SIGKILL);
 		}
