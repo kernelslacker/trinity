@@ -87,10 +87,10 @@ static void fork_children()
 			sprintf(childname, "trinity-child%d", pidslot);
 			prctl(PR_SET_NAME, (unsigned long) &childname);
 
-			set_seed(pidslot);
-
 			/* Wait for parent to set our pidslot */
 			while (shm->pids[pidslot] != getpid());
+
+			set_seed(pidslot);
 
 			ret = child_process();
 
