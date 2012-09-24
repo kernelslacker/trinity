@@ -14,7 +14,7 @@
 static void sanitise_modify_ldt(int childno)
 {
 	void *ldt;
-	struct user_desc *desc;
+	//struct user_desc *desc;
 
 	switch (shm->a1[childno]) {
 	case 0:
