@@ -19,6 +19,9 @@
 #ifdef __arm__
 #include "arch-arm.h"
 #endif
+#ifdef __mips__
+#include "arch-mips.h"
+#endif
 
 #define PAGE_MASK (~(page_size - 1))
 
