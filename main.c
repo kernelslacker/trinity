@@ -294,6 +294,8 @@ static void main_loop()
 			regenerate();
 
 		handle_children();
+
+		sleep(1);	// Nothing left to do, sleep a while.
 	}
 	while (pidmap_empty() == FALSE)
 		handle_children();
