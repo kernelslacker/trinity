@@ -345,6 +345,9 @@ void setup_syscall_tables(void)
 #elif defined(__arm__)
 	syscalls = syscalls_arm;
 	max_nr_syscalls = NR_ARM_SYSCALLS;
+#elif defined(__mips__)
+	syscalls = syscalls_mips;
+	max_nr_syscalls = NR_MIPS_SYSCALLS;
 #else
 	syscalls = syscalls_i386;
 #endif

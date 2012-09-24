@@ -23,5 +23,8 @@
 #ifdef __arm__
 #include "syscalls-arm.h"
 #endif
+#ifdef __mips__
+#include "syscalls-mips.h"
+#endif
 
 #endif  /* _ARCH_SYSCALLS_H */
