@@ -5,5 +5,7 @@
 #define PAGE_SHIFT 		12
 #define PTE_FILE_MAX_BITS	61
 
+#define SYSCALL_OFFSET	1024
+
 // for __IA64_UL_CONST we need to include:
 #include <asm/types.h>

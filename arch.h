@@ -23,6 +23,10 @@
 #include "arch-mips.h"
 #endif
 
+#ifndef SYSCALL_OFFSET
+#define SYSCALL_OFFSET 0
+#endif
+
 #define PAGE_MASK (~(page_size - 1))
 
 #endif  /* _ARCH_H */
