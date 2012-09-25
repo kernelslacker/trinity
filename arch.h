@@ -2,9 +2,11 @@
 #define _ARCH_H 1
 
 #ifdef __x86_64__
+#define X86 1
 #include "arch-x86-64.h"
 #endif
 #ifdef __i386__
+#define X86 1
 #include "arch-i386.h"
 #endif
 #ifdef __powerpc__

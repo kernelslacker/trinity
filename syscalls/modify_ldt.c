@@ -1,3 +1,4 @@
+#ifdef X86
 /*
  * asmlinkage int sys_modify_ldt(int func, void __user *ptr, unsigned long bytecount)
  */
@@ -62,3 +63,4 @@ struct syscall syscall_modify_ldt = {
 	.arg2name = "ptr",
 	.arg3name = "bytecount",
 };
+#endif
