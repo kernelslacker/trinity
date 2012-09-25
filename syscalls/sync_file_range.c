@@ -57,6 +57,10 @@ struct syscall syscall_sync_file_range = {
         },
 };
 
+/*
+ * ARM & PowerPC have different argument order.
+ * See edd5cd4a9424f22b0fa08bef5e299d41befd5622 in kernel tree.
+ */
 struct syscall syscall_sync_file_range2 = {
 	.name = "sync_file_range2",
 	.num_args = 4,
