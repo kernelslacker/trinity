@@ -1,5 +1,3 @@
-* Switch from shm to shared mmap (because Android)
-
 * Clean up logging.
   - prepend [watchdog] for watchdog messages
   - Make -D use a separate debug log file
