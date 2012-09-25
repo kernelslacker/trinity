@@ -10,6 +10,8 @@
 * Porting to new architectures
   - Add a syscalls-{archname}.h defining the syscall table in the same order as your arch
   - Add a arch-{archname}.h to define useful things like PAGE_OFFSET
+  - If your arch starts its Linux syscalls at non-zero (like MIPS/IA64 do), define SYSCALL_OFFSET
+    in arch-{archname}.h
   - Add syscalls/{syscallname}.c for your arch specific syscalls.
   - Change setup_syscall_tables in tables.c to pick the correct syscall table for your arch.
   That should be it.
