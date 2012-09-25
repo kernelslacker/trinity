@@ -46,6 +46,14 @@ static int check_shm_sanity(void)
 			return SHM_CORRUPT;
 		}
 	}
+
+	if (shm->execcount - shm->previous_count > 100000) {
+		output("Execcount increased dramatically! (old:%ld new:%ld):\n",
+			shm->previous_count, shm->execcount);
+		shm->exit_reason = EXIT_SHM_CORRUPTION;
+	}
+	shm->previous_count = shm->execcount;
+
 	return SHM_OK;
 }
 
