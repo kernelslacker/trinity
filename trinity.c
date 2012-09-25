@@ -17,7 +17,7 @@
 #include <sys/wait.h>
 #include <sys/syscall.h>
 #include <sys/ipc.h>
-#include <sys/shm.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 
 #include "arch.h"
@@ -190,20 +190,11 @@ static void mask_signals(void)
 
 static int create_shm()
 {
-	int shmid;
-	key_t key;
-	struct shmid_ds shmid_ds;
-
-	key = IPC_PRIVATE;
-	if ((shmid = shmget(key, sizeof(struct shm_s), IPC_CREAT | 0666)) < 0) {
-		perror("shmget");
+	shm = mmap(NULL, sizeof(struct shm_s), PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+	if (shm == MAP_FAILED) {
+		perror("mmap");
 		return -1;
 	}
-	if ((shm = shmat(shmid, NULL, 0)) == (void *) -1) {
-		perror("shmat");
-		return -1;
-	}
-	shmctl(key, IPC_RMID, &shmid_ds);
 
 	memset(shm, 0, sizeof(struct shm_s));
 
@@ -349,7 +340,8 @@ cleanup_fds:
 
 cleanup_shm:
 
-	shmdt(shm);
+	if (shm != NULL)
+		munmap(shm, sizeof(struct shm_s));
 
 	exit(ret);
 }
