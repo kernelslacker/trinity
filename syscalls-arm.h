@@ -1,14 +1,5 @@
 /*
  *  from  linux/arch/arm/kernel/calls.S
- *
- *  Copyright C }, 1995-2005 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- *  This file is included thrice in entry-common.S
- * { ..entry = &syscallcall_exit  },
  */
 
 #include "trinity.h"
@@ -83,7 +74,7 @@ const struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_chroot },
 		{ .entry = &syscall_ustat },
 		{ .entry = &syscall_dup2 },
-		{ .entry = &syscall_getppid },	
+		{ .entry = &syscall_getppid },
 		{ .entry = &syscall_getpgrp },
 		{ .entry = &syscall_setsid },
 		{ .entry = &syscall_sigaction },
@@ -285,7 +276,7 @@ const struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_tgkill },
 		{ .entry = &syscall_utimes },
 		{ .entry = &syscall_arm_fadvise64_64 },
-		{ .entry = &syscall_pciconfig_iobase }, 
+		{ .entry = &syscall_pciconfig_iobase },
 		{ .entry = &syscall_pciconfig_read },
 		{ .entry = &syscall_pciconfig_write },
 		{ .entry = &syscall_mq_open },
