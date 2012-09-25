@@ -210,10 +210,11 @@ args_done:
 		sleep(1);
 	}
 
-/* IA64 is retarde^Wspecial. */
-#ifdef __ia64__
-	call += 1024;
-#endif
+	/* Some architectures (IA64/MIPS) start their Linux syscalls
+	 * At non-zero, and have other ABIs below.
+	 */
+	call += SYSCALL_OFFSET;
+
 	ret = do_syscall(childno);
 
 	sptr = string;
