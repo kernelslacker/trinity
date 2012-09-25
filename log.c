@@ -25,7 +25,6 @@ void open_logfiles()
 	}
 
 	for (i = 0; i < shm->max_children; i++) {
-		logfilename = malloc(64);
 		sprintf(logfilename, "trinity-%d-child%d.log", shm->parentpid, i);
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
