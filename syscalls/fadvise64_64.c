@@ -18,3 +18,19 @@ struct syscall syscall_fadvise64_64 = {
 	.arg4name = "advice",
 	.rettype = RET_ZERO_SUCCESS,
 };
+
+/*
+ * asmlinkage long sys_arm_fadvise64_64(int fd, int advice, loff_t offset, loff_t len)
+ * ARM has same as fadvise64 but with other argument order.
+ */
+struct syscall syscall_arm_fadvise64_64 = {
+	.name = "arm_fadvise64_64",
+	.num_args = 4,
+	.arg1name = "fd",
+	.arg1type = ARG_FD,
+	.arg2name = "advice",
+	.arg3name = "offset",
+	.arg4name = "len",
+	.arg4type = ARG_LEN,
+	.rettype = RET_ZERO_SUCCESS,
+};
