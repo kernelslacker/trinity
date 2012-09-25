@@ -146,6 +146,7 @@ enum exit_reasons {
 	EXIT_PID_OUT_OF_RANGE = 5,
 	EXIT_SIGINT = 6,
 	EXIT_KERNEL_TAINTED = 7,
+	EXIT_SHM_CORRUPTION = 8,
 };
 
 #endif	/* _TRINITY_H */
