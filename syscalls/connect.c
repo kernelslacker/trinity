@@ -25,6 +25,7 @@
 #include <linux/can.h>
 #include <linux/tipc.h>
 #include <linux/caif/caif_socket.h>
+#include <linux/if_alg.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -53,6 +54,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_can *can;
 	struct sockaddr_tipc *tipc;
 	struct sockaddr_caif *caif;
+	struct sockaddr_alg *alg;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -446,7 +448,20 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_ALG:
-		//TODO
+		// TODO: See also sockaddr_nfc_llcp
+		alg = malloc(sizeof(struct sockaddr_alg));
+		if (alg == NULL)
+			return;
+
+		alg->salg_family = PF_ALG;
+		for (i = 0; i < 14; i++)
+			alg->salg_type[i] = rand();
+		alg->salg_feat = rand();
+		alg->salg_mask = rand();
+		for (i = 0; i < 64; i++)
+			alg->salg_name[i] = rand();
+		shm->a2[childno] = (unsigned long) alg;
+		shm->a3[childno] = sizeof(struct sockaddr_alg);
 		break;
 
 	case PF_NFC:
