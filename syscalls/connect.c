@@ -15,6 +15,9 @@
 #include <linux/atm.h>
 #include <linux/rose.h>
 #include <linux/dn.h>
+#include <linux/if.h>
+#include <linux/if_arp.h>
+#include <linux/llc.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -34,6 +37,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_atmpvc *atmpvc;
 	struct sockaddr_rose *rose;
 	struct sockaddr_dn *dn;
+	struct sockaddr_llc *llc;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -205,9 +209,18 @@ static void sanitise_connect(int childno)
 		shm->a3[childno] = sizeof(struct sockaddr_dn);
 		break;
 
-
 	case PF_NETBEUI:
-		//TODO
+		llc = malloc(sizeof(struct sockaddr_llc));
+		if (llc == NULL)
+			return;
+		llc->sllc_family = AF_LLC;
+		llc->sllc_arphrd = ARPHRD_ETHER;
+		llc->sllc_test = rand();
+		llc->sllc_xid = rand();
+		llc->sllc_ua = rand();
+		llc->sllc_sap = rand();
+		for (i = 0; i < IFHWADDRLEN; i++)
+			llc->sllc_mac[i] = rand();
 		break;
 
 	case PF_SECURITY:
