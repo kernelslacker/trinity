@@ -12,6 +12,7 @@
 #include <linux/ax25.h>
 #include <linux/ipx.h>
 #include <linux/atalk.h>
+#include <linux/atm.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -28,6 +29,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_ax25 *ax25;
 	struct sockaddr_ipx *ipx;
 	struct sockaddr_at *atalk;
+	struct sockaddr_atmpvc *atmpvc;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -119,7 +121,16 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_ATMPVC:
-		//TODO
+		atmpvc = malloc(sizeof(struct sockaddr_atmpvc));
+		if (atmpvc == NULL)
+			return;
+
+		atmpvc->sap_family = PF_ATMPVC;
+		atmpvc->sap_addr.itf = rand();
+		atmpvc->sap_addr.vpi = rand();
+		atmpvc->sap_addr.vci = rand();
+		shm->a2[childno] = (unsigned long) atmpvc;
+		shm->a3[childno] = sizeof(struct sockaddr_atmpvc);
 		break;
 
 	case PF_X25:
