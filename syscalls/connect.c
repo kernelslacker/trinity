@@ -9,6 +9,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <linux/x25.h>
+#include <linux/netlink.h>
 #include <stdlib.h>
 #include "trinity.h"
 #include "sanitise.h"
@@ -20,6 +21,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_in6 *ipv6;
 	struct sockaddr_un *unixsock;
 	struct sockaddr_x25 *x25;
+	struct sockaddr_nl *nl;
 	unsigned int len;
 	unsigned int pf;
 
@@ -79,7 +81,15 @@ static void sanitise_connect(int childno)
 		break;
 
 	case AF_NETLINK:
+		nl = malloc(sizeof(struct sockaddr_nl));
+		if (nl == NULL)
+			return;
+
+		nl->nl_family = AF_NETLINK;
+		nl->nl_pid = rand();
+		nl->nl_groups = rand();
 		break;
+
 	case AF_APPLETALK:
 		break;
 	case AF_NFC:
