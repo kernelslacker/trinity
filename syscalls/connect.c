@@ -19,6 +19,7 @@
 #include <linux/if_arp.h>
 #include <linux/llc.h>
 #include <linux/if_packet.h>
+#include <neteconet/ec.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -40,6 +41,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_dn *dn;
 	struct sockaddr_llc *llc;
 	struct sockaddr_pkt *pkt;
+	struct sockaddr_ec *ec;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -259,13 +261,24 @@ static void sanitise_connect(int childno)
 		shm->a3[childno] = sizeof(struct sockaddr_pkt);
 		break;
 
-
 	case PF_ASH:
 		//TODO
 		break;
 
 	case PF_ECONET:
-		//TODO
+		ec = malloc(sizeof(struct sockaddr_ec));
+		if (ec == NULL)
+			return;
+
+		ec->sec_family = PF_ECONET;
+		ec->port = rand();
+		ec->cb = rand();
+		ec->type = rand();
+		ec->addr.station = rand();
+		ec->addr.net = rand();
+		ec->cookie = rand();
+		shm->a2[childno] = (unsigned long) ec;
+		shm->a3[childno] = sizeof(struct sockaddr_ec);
 		break;
 
 	case PF_ATMSVC:
