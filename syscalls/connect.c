@@ -20,6 +20,7 @@
 #include <linux/llc.h>
 #include <linux/if_packet.h>
 #include <neteconet/ec.h>
+#include <linux/irda.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -43,6 +44,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_llc *llc;
 	struct sockaddr_pkt *pkt;
 	struct sockaddr_ec *ec;
+	struct sockaddr_irda *irda;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -307,7 +309,17 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_IRDA:
-		//TODO
+		irda = malloc(sizeof(struct sockaddr_irda));
+		if (irda == NULL)
+			return;
+
+		irda->sir_family = PF_IRDA;
+		irda->sir_lsap_sel = rand();
+		irda->sir_addr = rand();
+		for (i = 0; i < 25; i++)
+			irda->sir_name[i] = rand();
+		shm->a2[childno] = (unsigned long) irda;
+		shm->a3[childno] = sizeof(struct sockaddr_irda);
 		break;
 
 	case PF_PPPOX:
