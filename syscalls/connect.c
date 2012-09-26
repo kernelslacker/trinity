@@ -23,6 +23,7 @@
 #include <linux/irda.h>
 #include <linux/if_pppox.h>
 #include <linux/can.h>
+#include <linux/tipc.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -49,6 +50,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_irda *irda;
 	struct sockaddr_pppox *pppox;
 	struct sockaddr_can *can;
+	struct sockaddr_tipc *tipc;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -379,7 +381,22 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_TIPC:
-		//TODO
+		tipc = malloc(sizeof(struct sockaddr_tipc));
+		if (tipc == NULL)
+			return;
+		tipc->family = AF_TIPC;
+		tipc->addrtype = rand();
+		tipc->scope = rand();
+		tipc->addr.id.ref = rand();
+		tipc->addr.id.node = rand();
+		tipc->addr.nameseq.type = rand();
+		tipc->addr.nameseq.lower = rand();
+		tipc->addr.nameseq.upper = rand();
+		tipc->addr.name.name.type = rand();
+		tipc->addr.name.name.instance = rand();
+		tipc->addr.name.domain = rand();
+		shm->a2[childno] = (unsigned long) tipc;
+		shm->a3[childno] = sizeof(struct sockaddr_tipc);
 		break;
 
 	case PF_BLUETOOTH:
