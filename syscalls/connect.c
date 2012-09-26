@@ -13,6 +13,7 @@
 #include <linux/ipx.h>
 #include <linux/atalk.h>
 #include <linux/atm.h>
+#include <linux/rose.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -30,6 +31,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_ipx *ipx;
 	struct sockaddr_at *atalk;
 	struct sockaddr_atmpvc *atmpvc;
+	struct sockaddr_rose *rose;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -162,6 +164,26 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_ROSE:
+		rose = malloc(sizeof(struct sockaddr_rose));
+		if (rose == NULL)
+			return;
+
+		rose->srose_family = PF_ROSE;
+		rose->srose_addr.rose_addr[0] = rand();
+		rose->srose_addr.rose_addr[1] = rand();
+		rose->srose_addr.rose_addr[2] = rand();
+		rose->srose_addr.rose_addr[3] = rand();
+		rose->srose_addr.rose_addr[4] = rand();
+
+		strncpy(rose->srose_call.ax25_call, page_rand, 7);
+
+		rose->srose_ndigis = rand();
+		strncpy(rose->srose_digi.ax25_call, page_rand+7, 7);
+
+		shm->a2[childno] = (unsigned long) rose;
+		shm->a3[childno] = sizeof(struct sockaddr_rose);
+		break;
+
 		//TODO
 		break;
 
