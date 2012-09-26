@@ -31,24 +31,77 @@ static void sanitise_connect(int childno)
 
 	switch (pf) {
 
-	case AF_INET:
+	case PF_UNSPEC:
+		//TODO
+		break;
+
+	case PF_UNIX:
+		unixsock = malloc(sizeof(struct sockaddr_un));
+		if (unixsock == NULL)
+			return;
+
+		unixsock->sun_family = PF_UNIX;
+		len = rand() % 20;
+		memset(&page_rand[len], 0, 1);
+		strncpy(unixsock->sun_path, page_rand, len);
+		shm->a2[childno] = (unsigned long) unixsock;
+		shm->a3[childno] = sizeof(struct sockaddr_un);
+		break;
+
+	case PF_INET:
 		ipv4 = malloc(sizeof(struct sockaddr_in));
 		if (ipv4 == NULL)
 			return;
 
-		ipv4->sin_family = AF_INET;
+		ipv4->sin_family = PF_INET;
 		ipv4->sin_addr.s_addr = htonl(0x7f000001);
 		ipv4->sin_port = rand() % 65535;
 		shm->a2[childno] = (unsigned long) ipv4;
 		shm->a3[childno] = sizeof(struct sockaddr_in);
 		break;
 
-	case AF_INET6:
+	case PF_AX25:
+		//TODO
+		break;
+
+	case PF_IPX:
+		//TODO
+		break;
+
+	case PF_APPLETALK:
+		//TODO
+		break;
+
+	case PF_NETROM:
+		//TODO
+		break;
+
+	case PF_BRIDGE:
+		//TODO
+		break;
+
+	case PF_ATMPVC:
+		//TODO
+		break;
+
+	case PF_X25:
+		x25 = malloc(sizeof(struct sockaddr_x25));
+		if (x25 == NULL)
+			return;
+
+		x25->sx25_family = PF_X25;
+		len = rand() % 15;
+		memset(&page_rand[len], 0, 1);
+		strncpy(x25->sx25_addr.x25_addr, page_rand, len);
+		break;
+
+
+	case PF_INET6:
 		ipv6 = malloc(sizeof(struct sockaddr_in6));
 		if (ipv6 == NULL)
 			return;
 
-		ipv6->sin6_family = AF_INET6;
+		ipv6->sin6_family = PF_INET6;
 		ipv6->sin6_addr.s6_addr32[0] = 0;
 		ipv6->sin6_addr.s6_addr32[1] = 0;
 		ipv6->sin6_addr.s6_addr32[2] = 0;
@@ -58,53 +111,126 @@ static void sanitise_connect(int childno)
 		shm->a3[childno] = sizeof(struct sockaddr_in6);
 		break;
 
-	case AF_UNIX:
-		unixsock = malloc(sizeof(struct sockaddr_un));
-		if (unixsock == NULL)
-			return;
-
-		unixsock->sun_family = AF_UNIX;
-		len = rand() % 20;
-		memset(&page_rand[len], 0, 1);
-		strncpy(unixsock->sun_path, page_rand, len);
-		shm->a2[childno] = (unsigned long) unixsock;
-		shm->a3[childno] = sizeof(struct sockaddr_un);
+	case PF_ROSE:
+		//TODO
 		break;
 
-	case AF_X25:
-		x25 = malloc(sizeof(struct sockaddr_x25));
-		if (x25 == NULL)
-			return;
-
-		x25->sx25_family = AF_X25;
-		len = rand() % 15;
-		memset(&page_rand[len], 0, 1);
-		strncpy(x25->sx25_addr.x25_addr, page_rand, len);
+	case PF_DECnet:
+		//TODO
 		break;
 
-	case AF_NETLINK:
+	case PF_NETBEUI:
+		//TODO
+		break;
+
+	case PF_SECURITY:
+		//TODO
+		break;
+
+	case PF_KEY:
+		break;
+
+	case PF_NETLINK:
 		nl = malloc(sizeof(struct sockaddr_nl));
 		if (nl == NULL)
 			return;
 
-		nl->nl_family = AF_NETLINK;
+		nl->nl_family = PF_NETLINK;
 		nl->nl_pid = rand();
 		nl->nl_groups = rand();
 		break;
 
-	case AF_NFC:
+	case PF_PACKET:
+		//TODO
+		break;
+
+	case PF_ASH:
+		//TODO
+		break;
+
+	case PF_ECONET:
+		//TODO
+		break;
+
+	case PF_ATMSVC:
+		//TODO
+		break;
+
+	case PF_RDS:
+		//TODO
+		break;
+
+	case PF_SNA:
+		//TODO
+		break;
+
+	case PF_IRDA:
+		//TODO
+		break;
+
+	case PF_PPPOX:
+		//TODO
+		break;
+
+	case PF_WANPIPE:
+		//TODO
+		break;
+
+	case PF_LLC:
+		//TODO
+		break;
+
+	case PF_CAN:
+		//TODO
+		break;
+
+	case PF_TIPC:
+		//TODO
+		break;
+
+	case PF_BLUETOOTH:
+		//TODO
+		break;
+
+	case PF_IUCV:
+		//TODO
+		break;
+
+	case PF_RXRPC:
+		//TODO
+		break;
+
+	case PF_ISDN:
+		//TODO
+		break;
+
+	case PF_PHONET:
+		//TODO
+		break;
+
+	case PF_IEEE802154:
+		//TODO
+		break;
+
+	case PF_CAIF:
+		//TODO
+		break;
+
+	case PF_ALG:
+		//TODO
+		break;
+
+	case PF_NFC:
 		// TODO: See also sockaddr_nfc_llcp
 		nfc = malloc(sizeof(struct sockaddr_nfc));
 		if (nfc == NULL)
 			return;
 
-		nfc->sa_family = AF_NFC;
+		nfc->sa_family = PF_NFC;
 		nfc->dev_idx = rand();
 		nfc->target_idx = rand();
 		nfc->nfc_protocol = rand() % 5;
 		break;
-
-	//TODO: Support more families
 
 	default:
 		break;
