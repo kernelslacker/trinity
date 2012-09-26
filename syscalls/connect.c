@@ -37,6 +37,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_ipx *ipx;
 	struct sockaddr_at *atalk;
 	struct sockaddr_atmpvc *atmpvc;
+	struct sockaddr_atmsvc *atmsvc;
 	struct sockaddr_rose *rose;
 	struct sockaddr_dn *dn;
 	struct sockaddr_llc *llc;
@@ -282,7 +283,19 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_ATMSVC:
-		//TODO
+		atmsvc = malloc(sizeof(struct sockaddr_atmsvc));
+		if (atmsvc == NULL)
+			return;
+
+		atmsvc->sas_family = PF_ATMSVC;
+		for (i = 0; i < ATM_ESA_LEN; i++)
+			atmsvc->sas_addr.prv[i] = rand();
+		for (i = 0; i < ATM_E164_LEN; i++)
+			atmsvc->sas_addr.pub[i] = rand();
+		atmsvc->sas_addr.lij_type = rand();
+		atmsvc->sas_addr.lij_id = rand();
+		shm->a2[childno] = (unsigned long) atmsvc;
+		shm->a3[childno] = sizeof(struct sockaddr_atmsvc);
 		break;
 
 	case PF_RDS:
