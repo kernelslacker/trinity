@@ -11,6 +11,7 @@
 #include <linux/x25.h>
 #include <linux/ax25.h>
 #include <linux/ipx.h>
+#include <linux/atalk.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -26,6 +27,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_in6 *ipv6;
 	struct sockaddr_ax25 *ax25;
 	struct sockaddr_ipx *ipx;
+	struct sockaddr_at *atalk;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -96,7 +98,16 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_APPLETALK:
-		//TODO
+		atalk = malloc(sizeof(struct sockaddr_at));
+		if (atalk == NULL)
+			return;
+
+		atalk->sat_family = PF_APPLETALK;
+		atalk->sat_port = rand();
+		atalk->sat_addr.s_net = rand();
+		atalk->sat_addr.s_node = rand();
+		shm->a2[childno] = (unsigned long) atalk;
+		shm->a3[childno] = sizeof(struct sockaddr_at);
 		break;
 
 	case PF_NETROM:
