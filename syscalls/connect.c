@@ -9,6 +9,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <linux/x25.h>
+#include <linux/ax25.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -18,10 +19,11 @@
 
 static void sanitise_connect(int childno)
 {
-	struct sockaddr_in *ipv4;
-	struct sockaddr_in6 *ipv6;
 	struct sockaddr_un *unixsock;
+	struct sockaddr_in *ipv4;
 	struct sockaddr_x25 *x25;
+	struct sockaddr_in6 *ipv6;
+	struct sockaddr_ax25 *ax25;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -61,7 +63,17 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_AX25:
-		//TODO
+		ax25 = malloc(sizeof(struct sockaddr_ax25));
+		if (ax25 == NULL)
+			return;
+
+		ax25->sax25_family = PF_AX25;
+		len = rand() % 7;
+		memset(&page_rand[len], 0, 1);
+		strncpy(ax25->sax25_call.ax25_call, page_rand, len);
+		ax25->sax25_ndigis = rand();
+		shm->a2[childno] = (unsigned long) ax25;
+		shm->a3[childno] = sizeof(struct sockaddr_ax25);
 		break;
 
 	case PF_IPX:
