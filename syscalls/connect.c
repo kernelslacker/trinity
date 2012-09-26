@@ -335,22 +335,31 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_PPPOX:
+		//FIXME: Allocate after deciding which protocol to use
 		pppox = malloc(sizeof(struct sockaddr_pppox));
 		if (pppox == NULL)
 			return;
 
 		pppox->sa_family = PF_PPPOX;
-		pppox->sa_addr.pppoe.sid = rand();
-		for (i = 0; i < ETH_ALEN; i++)
-			pppox->sa_addr.pppoe.remote[i] = rand();
-		for (i = 0; i < IFNAMSIZ; i++)
-			pppox->sa_addr.pppoe.dev[i] = rand();
+		pppox->sa_protocol = rand() % 4;
 
-		pppox->sa_addr.pptp.call_id = rand();
-		pppox->sa_addr.pptp.sin_addr.s_addr = htonl(0x7f000001);
+		switch (pppox->sa_protocol) {
+		case PX_PROTO_OE:
+			pppox->sa_addr.pppoe.sid = rand();
+			for (i = 0; i < ETH_ALEN; i++)
+				pppox->sa_addr.pppoe.remote[i] = rand();
+			for (i = 0; i < IFNAMSIZ; i++)
+				pppox->sa_addr.pppoe.dev[i] = rand();
 
-		shm->a2[childno] = (unsigned long) pppox;
-		shm->a3[childno] = sizeof(struct sockaddr_pppox);
+			pppox->sa_addr.pptp.call_id = rand();
+			pppox->sa_addr.pptp.sin_addr.s_addr = htonl(0x7f000001);
+
+			shm->a2[childno] = (unsigned long) pppox;
+			shm->a3[childno] = sizeof(struct sockaddr_pppox);
+			break;
+		default:
+			break;
+		}
 		break;
 
 
