@@ -150,7 +150,7 @@ int child_process(void)
 			}
 		}
 
-		if (count_enabled_syscalls() == 0) {
+		if (no_syscalls_enabled() == TRUE) {
 			output("[%d] No more syscalls enabled. Exiting\n", getpid());
 			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 		}

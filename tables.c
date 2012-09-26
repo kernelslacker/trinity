@@ -60,29 +60,28 @@ int validate_specific_syscall(const struct syscalltable *table, int call)
 	return TRUE;
 }
 
-unsigned int count_enabled_syscalls(void)
+bool no_syscalls_enabled(void)
 {
 	unsigned int i;
-	unsigned int count = 0;
 
 	if (biarch == TRUE) {
 		for (i = 0; i < max_nr_64bit_syscalls; i++) {
 			if (syscalls_64bit[i].entry->flags & ACTIVE)
-				count++;
+				return FALSE;
 		}
 		for (i = 0; i < max_nr_32bit_syscalls; i++) {
 			if (syscalls_32bit[i].entry->flags & ACTIVE)
-				count++;
+				return FALSE;
 		}
-		return count;
+		return TRUE;;
 	}
 
 	/* non-biarch */
 	for (i = 0; i < max_nr_syscalls; i++) {
 		if (syscalls[i].entry->flags & ACTIVE)
-			count++;
+			return FALSE;
 	}
-	return count;
+	return TRUE;
 }
 
 int validate_syscall_table_64(void)
