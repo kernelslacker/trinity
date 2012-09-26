@@ -14,6 +14,7 @@
 #include <linux/atalk.h>
 #include <linux/atm.h>
 #include <linux/rose.h>
+#include <linux/dn.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -32,6 +33,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_at *atalk;
 	struct sockaddr_atmpvc *atmpvc;
 	struct sockaddr_rose *rose;
+	struct sockaddr_dn *dn;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -186,8 +188,23 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_DECnet:
-		//TODO
+		dn = malloc(sizeof(struct sockaddr_dn));
+		if (dn == NULL)
+			return;
+
+		dn->sdn_family = PF_DECnet;
+		dn->sdn_flags = rand();
+		dn->sdn_objnum = rand();
+		dn->sdn_objnamel = rand() % 16;
+		for (i = 0; i < dn->sdn_objnamel; i++)
+			dn->sdn_objname[i] = rand();
+		dn->sdn_add.a_len = rand() % 2;
+		dn->sdn_add.a_addr[0] = rand();
+		dn->sdn_add.a_addr[1] = rand();
+		shm->a2[childno] = (unsigned long) dn;
+		shm->a3[childno] = sizeof(struct sockaddr_dn);
 		break;
+
 
 	case PF_NETBEUI:
 		//TODO
