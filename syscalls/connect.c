@@ -18,6 +18,7 @@
 #include <linux/if.h>
 #include <linux/if_arp.h>
 #include <linux/llc.h>
+#include <linux/if_packet.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -38,6 +39,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_rose *rose;
 	struct sockaddr_dn *dn;
 	struct sockaddr_llc *llc;
+	struct sockaddr_pkt *pkt;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -243,8 +245,18 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_PACKET:
-		//TODO
+		//TODO: See also sockaddr_ll
+		pkt = malloc(sizeof(struct sockaddr_pkt));
+		if (pkt == NULL)
+			return;
+
+		pkt->spkt_family = PF_PACKET;
+		for (i = 0; i < 14; i++)
+			pkt->spkt_device[i] = rand();
+		shm->a2[childno] = (unsigned long) pkt;
+		shm->a3[childno] = sizeof(struct sockaddr_pkt);
 		break;
+
 
 	case PF_ASH:
 		//TODO
