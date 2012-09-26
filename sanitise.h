@@ -21,5 +21,7 @@ unsigned long rand64();
 void *get_address();
 void *get_non_null_address();
 unsigned long get_len();
+unsigned int get_pid(void);
+int get_random_fd(void);
 
 #endif	/* _SANITISE_H */

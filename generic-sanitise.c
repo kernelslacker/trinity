@@ -243,7 +243,7 @@ void regenerate_random_page()
 	}
 }
 
-static unsigned int get_pid()
+unsigned int get_pid(void)
 {
 	int i, pid = 0;
 retry:
