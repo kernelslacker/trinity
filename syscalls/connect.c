@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <linux/x25.h>
 #include <linux/netlink.h>
+#include <linux/nfc.h>
 #include <stdlib.h>
 #include "trinity.h"
 #include "sanitise.h"
@@ -22,6 +23,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_un *unixsock;
 	struct sockaddr_x25 *x25;
 	struct sockaddr_nl *nl;
+	struct sockaddr_nfc *nfc;
 	unsigned int len;
 	unsigned int pf;
 
@@ -90,9 +92,16 @@ static void sanitise_connect(int childno)
 		nl->nl_groups = rand();
 		break;
 
-	case AF_APPLETALK:
-		break;
 	case AF_NFC:
+		// TODO: See also sockaddr_nfc_llcp
+		nfc = malloc(sizeof(struct sockaddr_nfc));
+		if (nfc == NULL)
+			return;
+
+		nfc->sa_family = AF_NFC;
+		nfc->dev_idx = rand();
+		nfc->target_idx = rand();
+		nfc->nfc_protocol = rand() % 5;
 		break;
 
 	//TODO: Support more families
