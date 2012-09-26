@@ -22,6 +22,7 @@
 #include <neteconet/ec.h>
 #include <linux/irda.h>
 #include <linux/if_pppox.h>
+#include <linux/can.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -47,6 +48,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_ec *ec;
 	struct sockaddr_irda *irda;
 	struct sockaddr_pppox *pppox;
+	struct sockaddr_can *can;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -364,9 +366,16 @@ static void sanitise_connect(int childno)
 		shm->a3[childno] = sizeof(struct sockaddr_llc);
 		break;
 
-
 	case PF_CAN:
-		//TODO
+		can = malloc(sizeof(struct sockaddr_can));
+		if (can == NULL)
+			return;
+		can->can_family = AF_CAN;
+		can->can_ifindex = rand();
+		can->can_addr.tp.rx_id = rand();
+		can->can_addr.tp.tx_id = rand();
+		shm->a2[childno] = (unsigned long) can;
+		shm->a3[childno] = sizeof(struct sockaddr_can);
 		break;
 
 	case PF_TIPC:
