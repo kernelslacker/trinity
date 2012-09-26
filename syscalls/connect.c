@@ -24,6 +24,7 @@
 #include <linux/if_pppox.h>
 #include <linux/can.h>
 #include <linux/tipc.h>
+#include <linux/caif/caif_socket.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -51,6 +52,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_pppox *pppox;
 	struct sockaddr_can *can;
 	struct sockaddr_tipc *tipc;
+	struct sockaddr_caif *caif;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -424,7 +426,23 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_CAIF:
-		//TODO
+		caif = malloc(sizeof(struct sockaddr_caif));
+		if (caif == NULL)
+			return;
+
+		caif->family = PF_CAIF;
+		caif->u.at.type = rand();
+		for (i = 0; i < 16; i++)
+			caif->u.util.service[i] = rand();
+		caif->u.dgm.connection_id = rand();
+		caif->u.dgm.nsapi = rand();
+		caif->u.rfm.connection_id = rand();
+		for (i = 0; i < 16; i++)
+			caif->u.rfm.volume[i] = rand();
+		caif->u.dbg.type = rand();
+		caif->u.dbg.service = rand();
+		shm->a2[childno] = (unsigned long) caif;
+		shm->a3[childno] = sizeof(struct sockaddr_caif);
 		break;
 
 	case PF_ALG:
