@@ -21,6 +21,7 @@
 #include <linux/if_packet.h>
 #include <neteconet/ec.h>
 #include <linux/irda.h>
+#include <linux/if_pppox.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -45,6 +46,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_pkt *pkt;
 	struct sockaddr_ec *ec;
 	struct sockaddr_irda *irda;
+	struct sockaddr_pppox *pppox;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -323,8 +325,24 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_PPPOX:
-		//TODO
+		pppox = malloc(sizeof(struct sockaddr_pppox));
+		if (pppox == NULL)
+			return;
+
+		pppox->sa_family = PF_PPPOX;
+		pppox->sa_addr.pppoe.sid = rand();
+		for (i = 0; i < ETH_ALEN; i++)
+			pppox->sa_addr.pppoe.remote[i] = rand();
+		for (i = 0; i < IFNAMSIZ; i++)
+			pppox->sa_addr.pppoe.dev[i] = rand();
+
+		pppox->sa_addr.pptp.call_id = rand();
+		pppox->sa_addr.pptp.sin_addr.s_addr = htonl(0x7f000001);
+
+		shm->a2[childno] = (unsigned long) pppox;
+		shm->a3[childno] = sizeof(struct sockaddr_pppox);
 		break;
+
 
 	case PF_WANPIPE:
 		//TODO
