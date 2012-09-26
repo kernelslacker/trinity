@@ -6,6 +6,7 @@
  */
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include "trinity.h"
@@ -14,18 +15,71 @@
 
 static void sanitise_connect(int childno)
 {
-	struct sockaddr_in *addr;
+	struct sockaddr_in *ipv4;
+	struct sockaddr_in6 *ipv6;
+	struct sockaddr_un *unixsock;
+	unsigned int len;
+	unsigned int pf;
 
-	addr = malloc(sizeof(struct sockaddr_in));
-	if (addr == NULL)
-		return;
+	pf = rand() % PF_MAX;
+
+	switch (pf) {
+
+	case AF_INET:
+		ipv4 = malloc(sizeof(struct sockaddr_in));
+		if (ipv4 == NULL)
+			return;
+
+		ipv4->sin_family = AF_INET;
+		ipv4->sin_addr.s_addr = htonl(0x7f000001);
+		ipv4->sin_port = rand() % 65535;
+		shm->a2[childno] = (unsigned long) ipv4;
+		shm->a3[childno] = sizeof(struct sockaddr_in);
+		break;
+
+	case AF_INET6:
+		ipv6 = malloc(sizeof(struct sockaddr_in6));
+		if (ipv6 == NULL)
+			return;
+
+		ipv6->sin6_family = AF_INET6;
+		ipv6->sin6_addr.s6_addr32[0] = 0;
+		ipv6->sin6_addr.s6_addr32[1] = 0;
+		ipv6->sin6_addr.s6_addr32[2] = 0;
+		ipv6->sin6_addr.s6_addr32[3] = htonl(1);
+		ipv6->sin6_port = rand() % 65535;
+		shm->a2[childno] = (unsigned long) ipv6;
+		shm->a3[childno] = sizeof(struct sockaddr_in6);
+		break;
+
+	case AF_UNIX:
+		unixsock = malloc(sizeof(struct sockaddr_un));
+		if (unixsock == NULL)
+			return;
+
+		unixsock->sun_family = AF_UNIX;
+		len = rand() % 20;
+		memset(&page_rand[len], 0, 1);
+		strncpy(unixsock->sun_path, page_rand, len);
+		shm->a2[childno] = (unsigned long) unixsock;
+		shm->a3[childno] = sizeof(struct sockaddr_un);
+		break;
+
+	case AF_X25:
+		
+		break;
+	case AF_NETLINK:
+		break;
+	case AF_APPLETALK:
+		break;
+	case AF_NFC:
+		break;
 
 	//TODO: Support more families
-	addr->sin_family = AF_INET;
-	addr->sin_addr.s_addr = htonl(0x7f000001);
-	addr->sin_port = rand() % 65535;
-	shm->a2[childno] = (unsigned long) addr;
-	shm->a3[childno] = sizeof(struct sockaddr_in);
+
+	default:
+		break;
+	}
 }
 
 struct syscall syscall_connect = {
