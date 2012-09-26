@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <linux/x25.h>
 #include <linux/ax25.h>
+#include <linux/ipx.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -24,10 +25,12 @@ static void sanitise_connect(int childno)
 	struct sockaddr_x25 *x25;
 	struct sockaddr_in6 *ipv6;
 	struct sockaddr_ax25 *ax25;
+	struct sockaddr_ipx *ipx;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
 	unsigned int pf;
+	unsigned int i;
 
 	pf = rand() % PF_MAX;
 
@@ -77,7 +80,19 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_IPX:
-		//TODO
+		ipx = malloc(sizeof(struct sockaddr_ipx));
+		if (ipx == NULL)
+			return;
+
+		ipx->sipx_family = PF_AX25;
+		ipx->sipx_port = rand();
+		ipx->sipx_network = rand();
+		for (i = 0; i < 6; i++)
+			ipx->sipx_node[i] = rand();
+		ipx->sipx_type = rand();
+		ipx->sipx_zero = rand() % 2;
+		shm->a2[childno] = (unsigned long) ipx;
+		shm->a3[childno] = sizeof(struct sockaddr_ipx);
 		break;
 
 	case PF_APPLETALK:
