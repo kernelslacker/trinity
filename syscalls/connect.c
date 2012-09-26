@@ -26,6 +26,7 @@
 #include <linux/tipc.h>
 #include <linux/caif/caif_socket.h>
 #include <linux/if_alg.h>
+#include <linux/phonet.h>
 #include <linux/netlink.h>
 #include <linux/nfc.h>
 #include <stdlib.h>
@@ -55,6 +56,7 @@ static void sanitise_connect(int childno)
 	struct sockaddr_tipc *tipc;
 	struct sockaddr_caif *caif;
 	struct sockaddr_alg *alg;
+	struct sockaddr_pn *pn;
 	struct sockaddr_nl *nl;
 	struct sockaddr_nfc *nfc;
 	unsigned int len;
@@ -420,8 +422,18 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_PHONET:
-		//TODO
+		pn = malloc(sizeof(struct sockaddr_pn));
+		if (pn == NULL)
+			return;
+
+		pn->spn_family = PF_PHONET;
+		pn->spn_obj = rand();
+		pn->spn_dev = rand();
+		pn->spn_resource = rand();
+		shm->a2[childno] = (unsigned long) pn;
+		shm->a3[childno] = sizeof(struct sockaddr_pn);
 		break;
+
 
 	case PF_IEEE802154:
 		//TODO
