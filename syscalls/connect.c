@@ -223,6 +223,8 @@ static void sanitise_connect(int childno)
 		llc->sllc_sap = rand();
 		for (i = 0; i < IFHWADDRLEN; i++)
 			llc->sllc_mac[i] = rand();
+		shm->a2[childno] = (unsigned long) llc;
+		shm->a3[childno] = sizeof(struct sockaddr_llc);
 		break;
 
 	case PF_SECURITY:
