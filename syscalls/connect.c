@@ -93,8 +93,9 @@ static void sanitise_connect(int childno)
 		len = rand() % 15;
 		memset(&page_rand[len], 0, 1);
 		strncpy(x25->sx25_addr.x25_addr, page_rand, len);
+		shm->a2[childno] = (unsigned long) x25;
+		shm->a3[childno] = sizeof(struct sockaddr_x25);
 		break;
-
 
 	case PF_INET6:
 		ipv6 = malloc(sizeof(struct sockaddr_in6));
@@ -138,6 +139,8 @@ static void sanitise_connect(int childno)
 		nl->nl_family = PF_NETLINK;
 		nl->nl_pid = rand();
 		nl->nl_groups = rand();
+		shm->a2[childno] = (unsigned long) nl;
+		shm->a3[childno] = sizeof(struct sockaddr_nl);
 		break;
 
 	case PF_PACKET:
@@ -230,6 +233,8 @@ static void sanitise_connect(int childno)
 		nfc->dev_idx = rand();
 		nfc->target_idx = rand();
 		nfc->nfc_protocol = rand() % 5;
+		shm->a2[childno] = (unsigned long) nfc;
+		shm->a3[childno] = sizeof(struct sockaddr_nfc);
 		break;
 
 	default:
