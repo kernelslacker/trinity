@@ -460,7 +460,6 @@ static void sanitise_connect(int childno)
 		break;
 
 	case PF_ALG:
-		// TODO: See also sockaddr_nfc_llcp
 		alg = malloc(sizeof(struct sockaddr_alg));
 		if (alg == NULL)
 			return;
