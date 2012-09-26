@@ -77,9 +77,7 @@ static void sanitise_connect(int childno)
 			return;
 
 		ax25->sax25_family = PF_AX25;
-		len = rand() % 7;
-		memset(&page_rand[len], 0, 1);
-		strncpy(ax25->sax25_call.ax25_call, page_rand, len);
+		strncpy(ax25->sax25_call.ax25_call, page_rand, 7);
 		ax25->sax25_ndigis = rand();
 		shm->a2[childno] = (unsigned long) ax25;
 		shm->a3[childno] = sizeof(struct sockaddr_ax25);
