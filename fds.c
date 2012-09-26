@@ -44,7 +44,7 @@ static void close_pipes(void)
 	}
 }
 
-static int get_random_fd(void)
+int get_random_fd(void)
 {
 	unsigned int i;
 	FILE *file;
