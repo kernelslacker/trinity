@@ -273,6 +273,7 @@ static const char * decode_exit(unsigned int reason)
 		"shm corruption - Found a pid out of range.",
 		"ctrl-c",
 		"kernel became tainted",
+		"SHM was corrupted!\n",
 	};
 
 	return reasons[reason];
