@@ -47,7 +47,10 @@ static int check_shm_sanity(void)
 		}
 	}
 
-	if (shm->execcount - shm->previous_count > 100000) {
+	// FIXME: The '500000' is magic, and should be dynamically calculated.
+	// On startup, we should figure out how many getpid()'s per second we can do,
+	// and use that.
+	if (shm->execcount - shm->previous_count > 500000) {
 		output("Execcount increased dramatically! (old:%ld new:%ld):\n",
 			shm->previous_count, shm->execcount);
 		shm->exit_reason = EXIT_SHM_CORRUPTION;
