@@ -116,7 +116,7 @@ int get_fd(void)
 regen:
 	if (shm->fd_lifetime == 0) {
 		shm->current_fd = get_random_fd();
-		shm->fd_lifetime = rand() % shm->running_childs;
+		shm->fd_lifetime = rand() % shm->max_children;
 	} else
 		shm->fd_lifetime--;
 
