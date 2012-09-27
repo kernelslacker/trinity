@@ -171,6 +171,8 @@ long mkcall(int childno)
 		case ARG_RANDOM_INT:					\
 		case ARG_IOVEC:						\
 		case ARG_IOVECLEN:					\
+		case ARG_SOCKADDR:					\
+		case ARG_SOCKADDRLEN:					\
 		default:						\
 			if (REG > 8 * 1024)				\
 				sptr += sprintf(sptr, "0x%lx", REG);	\
