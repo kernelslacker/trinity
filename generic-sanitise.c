@@ -248,32 +248,22 @@ unsigned int get_pid(void)
 	unsigned int i;
 	pid_t pid = 0;
 
-retry:
-	i = rand() % 2;
+	switch (rand() % 3) {
 
-	switch (i) {
-	case 0:	pid = getpid();
+	case 0:	i = rand() % shm->running_childs;
+		pid = shm->pids[i];
 		break;
-	case 1:	pid = rand() & 32767;
+
+	case 1:	pid = 0;
 		break;
+
+	case 2:	if (dangerous == TRUE)	// We don't want root trying to kill init.
+			pid = 1;
+		break;
+
 	default:
-		BUG("unreachable!\n");
 		break;
 	}
-
-	/*
-	 * Exclude pids of our children, parent, and watchdog.
-	 * FIXME: This is at odds with 'getpid' above.
-	 */
-	for (i = 0; i < shm->max_children; i++) {
-		if (pid == shm->pids[i])
-			goto retry;
-	}
-	if (pid == shm->parentpid)
-		goto retry;
-
-	if (pid == shm->watchdog_pid)
-		goto retry;
 
 	return pid;
 }
