@@ -245,7 +245,9 @@ void regenerate_random_page()
 
 unsigned int get_pid(void)
 {
-	int i, pid = 0;
+	unsigned int i;
+	pid_t pid = 0;
+
 retry:
 	i = rand() % 2;
 
@@ -258,6 +260,11 @@ retry:
 		BUG("unreachable!\n");
 		break;
 	}
+
+	/*
+	 * Exclude pids of our children, parent, and watchdog.
+	 * FIXME: This is at odds with 'getpid' above.
+	 */
 	for (i = 0; i < shm->max_children; i++) {
 		if (pid == shm->pids[i])
 			goto retry;
