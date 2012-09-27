@@ -366,6 +366,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	unsigned int num = 0;
 	const unsigned int *values = NULL;
 	enum argtype argtype = 0;
+	unsigned long sockaddr, sockaddrlen;
 
 	switch (argnum) {
 	case 1:	argtype = syscalls[call].entry->arg1type;
@@ -546,6 +547,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) alloc_iovec(i);
 
 	case ARG_IOVECLEN:
+	case ARG_SOCKADDRLEN:
 		switch (argnum) {
 		case 1:	return(shm->a1[childno]);
 		case 2:	return(shm->a2[childno]);
@@ -556,6 +558,31 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		default: break;
 		}
 		;; // fallthrough
+
+	case ARG_SOCKADDR:
+		generate_sockaddr(&sockaddr, &sockaddrlen);
+
+		switch (argnum) {
+		case 1:	if (syscalls[call].entry->arg2type == ARG_SOCKADDRLEN)
+				shm->a2[childno] = sockaddrlen;
+			break;
+		case 2:	if (syscalls[call].entry->arg3type == ARG_SOCKADDRLEN)
+				shm->a3[childno] = sockaddrlen;
+			break;
+		case 3:	if (syscalls[call].entry->arg4type == ARG_SOCKADDRLEN)
+				shm->a4[childno] = sockaddrlen;
+			break;
+		case 4:	if (syscalls[call].entry->arg5type == ARG_SOCKADDRLEN)
+				shm->a5[childno] = sockaddrlen;
+			break;
+		case 5:	if (syscalls[call].entry->arg6type == ARG_SOCKADDRLEN)
+				shm->a6[childno] = sockaddrlen;
+			break;
+		case 6:
+		default: BUG("impossible\n");
+		}
+		return (unsigned long) sockaddr;
+
 
 	default:
 		BUG("unreachable!\n");

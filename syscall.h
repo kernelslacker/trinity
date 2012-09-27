@@ -20,6 +20,8 @@ enum argtype {
 	ARG_PATHNAME = 13,
 	ARG_IOVEC = 14,
 	ARG_IOVECLEN = 15,
+	ARG_SOCKADDR = 16,
+	ARG_SOCKADDRLEN = 17,
 };
 
 struct arglist {
