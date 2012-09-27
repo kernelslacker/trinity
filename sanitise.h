@@ -4,7 +4,6 @@
 #include "syscall.h"
 
 void sanitise_mmap(int childno);
-void sanitise_sendto(int childno);
 void sanitise_rt_sigaction(int childno);
 void sanitise_socket(int childno);
 

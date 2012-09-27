@@ -10,8 +10,8 @@ struct syscall syscall_getpeername = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "usockaddr",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_SOCKADDR,
 	.arg3name = "usockaddr_len",
-	.arg3type = ARG_LEN,
+	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_ZERO_SUCCESS,
 };

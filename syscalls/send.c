@@ -10,7 +10,6 @@
 struct syscall syscall_send = {
 	.name = "send",
 	.num_args = 4,
-	.sanitise = sanitise_sendto,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "buff",

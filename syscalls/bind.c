@@ -13,8 +13,8 @@ struct syscall syscall_bind = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "umyaddr",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_SOCKADDR,
 	.arg3name = "addrlen",
-	.arg3type = ARG_LEN,
+	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_ZERO_SUCCESS,
 };
