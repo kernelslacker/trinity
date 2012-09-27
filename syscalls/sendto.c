@@ -31,15 +31,9 @@
 #include "sanitise.h"
 #include "shm.h"
 
-void sanitise_sendto(int childno)
-{
-	shm->a6[childno] %= 128;	// MAX_SOCK_ADDR
-}
-
 struct syscall syscall_sendto = {
 	.name = "sendto",
 	.num_args = 6,
-	.sanitise = sanitise_sendto,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "buff",
@@ -57,7 +51,7 @@ struct syscall syscall_sendto = {
 				MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
 	},
 	.arg5name = "addr",
-	.arg5type = ARG_ADDRESS,
+	.arg5type = ARG_SOCKADDR,
 	.arg6name = "addr_len",
-	.arg6type = ARG_LEN,
+	.arg6type = ARG_SOCKADDRLEN,
 };

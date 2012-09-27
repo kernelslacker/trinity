@@ -10,7 +10,7 @@ struct syscall syscall_getsockname = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "usockaddr",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_SOCKADDR,
 	.arg3name = "usockaddr_len",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_SOCKADDRLEN,
 };

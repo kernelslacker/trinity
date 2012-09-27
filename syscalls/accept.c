@@ -13,8 +13,8 @@ struct syscall syscall_accept = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "upeer_sockaddr",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_SOCKADDR,
 	.arg3name = "upeer_addrlen",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_FD,
 };
