@@ -23,5 +23,6 @@ void *get_non_null_address();
 unsigned long get_len();
 unsigned int get_pid(void);
 int get_random_fd(void);
+void generate_sockaddr(unsigned long *addr, unsigned long *addrlen);
 
 #endif	/* _SANITISE_H */

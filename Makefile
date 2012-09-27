@@ -32,6 +32,7 @@ OBJS		= trinity.o \
 			log.o \
 			maps.o \
 			sockets.o \
+			sockaddr.o \
 			syscall.o \
 			params.o \
 			pids.o \
