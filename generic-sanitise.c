@@ -258,7 +258,7 @@ retry:
 		BUG("unreachable!\n");
 		break;
 	}
-	for (i = 0; i < MAX_NR_CHILDREN; i++) {
+	for (i = 0; i < shm->max_children; i++) {
 		if (pid == shm->pids[i])
 			goto retry;
 	}
