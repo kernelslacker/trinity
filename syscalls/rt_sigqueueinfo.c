@@ -12,4 +12,5 @@ struct syscall syscall_rt_sigqueueinfo = {
 	.arg2name = "sig",
 	.arg3name = "uinfo",
 	.arg3type = ARG_ADDRESS,
+	.flags = AVOID_SYSCALL,	// needs more signal handling.
 };
