@@ -111,7 +111,6 @@ int child_process(void)
 		CPU_ZERO(&set);
 		CPU_SET(childno, &set);
 		sched_setaffinity(getpid(), sizeof(set), &set);
-		output("bound child %d to cpu %d\n", pid, childno);
 	}
 
 	init_child();
