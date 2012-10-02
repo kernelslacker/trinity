@@ -35,53 +35,6 @@ bool biarch = FALSE;
 
 struct shm_s *shm;
 
-char *page_zeros;
-char *page_0xff;
-char *page_rand;
-char *page_allocs;
-
-
-static void init_buffers()
-{
-	unsigned int i;
-
-	page_zeros = memalign(page_size, page_size * 2);
-	if (!page_zeros)
-		exit(EXIT_FAILURE);
-	memset(page_zeros, 0, page_size);
-	if (quiet_level == 0)
-		output("page_zeros @ %p\n", page_zeros);
-
-	page_0xff = memalign(page_size, page_size * 2);
-	if (!page_0xff)
-		exit(EXIT_FAILURE);
-	memset(page_0xff, 0xff, page_size);
-	if (quiet_level == 0)
-		output("page_0xff @ %p\n", page_0xff);
-
-	page_rand = memalign(page_size, page_size * 2);
-	if (!page_rand)
-		exit(EXIT_FAILURE);
-	memset(page_rand, 0x55, page_size);	/* overwritten below */
-	if (quiet_level == 0)
-		output("page_rand @ %p\n", page_rand);
-
-	page_allocs = memalign(page_size, page_size * 2);
-	if (!page_allocs)
-		exit(EXIT_FAILURE);
-	memset(page_allocs, 0xff, page_size);
-	if (quiet_level == 0)
-		output("page_allocs @ %p\n", page_allocs);
-
-	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
-		page_allocs[i] = (unsigned long) malloc(page_size);
-
-	setup_maps();
-
-	// regenerate_random_page may end up using maps, so has to be last.
-	regenerate_random_page();
-}
-
 
 unsigned long rand64()
 {
