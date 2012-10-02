@@ -135,7 +135,7 @@ void set_seed(unsigned int pidslot)
 	 * This still isn't perfect: When we -s right now, we set all children to the same seed.
 	 *  This sucks if the bug we're trying to reproduce was caused by interaction between threads.
 	 */
-	srand(seed << pidslot);
+	srand(seed + pidslot);
 
 	if (do_syslog == FALSE)
 		return;
