@@ -12,4 +12,5 @@ struct syscall syscall_tgkill = {
 	.arg2name = "pid",
 	.arg2type = ARG_PID,
 	.arg3name = "sig",
+	.flags = AVOID_SYSCALL,
 };
