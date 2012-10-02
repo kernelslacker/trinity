@@ -118,7 +118,3 @@
 * Pause on oops.
   Sometimes we might want to read trinity state when we trigger a bad event.
 
-* Every few seconds, re-seed based upon the current rand() call.
-  Then, monitor /dev/kmsg for changes, and make a note in the log of the last
-  recorded seed.
-
