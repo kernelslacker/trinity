@@ -16,6 +16,7 @@ struct shm_s {
 	unsigned long previous_count;
 
 	unsigned long regenerate;
+	unsigned int seed;
 
 	pid_t parentpid;
 	pid_t watchdog_pid;
@@ -57,6 +58,7 @@ struct shm_s {
 	/* various flags. */
 	bool do32bit;
 	bool do_make_it_fail;
+	bool need_reseed;
 	enum exit_reasons exit_reason;
 
 	/* locks */

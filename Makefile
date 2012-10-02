@@ -31,6 +31,7 @@ OBJS		= trinity.o \
 			generic-sanitise.o \
 			log.o \
 			maps.o \
+			seed.o \
 			sockets.o \
 			sockaddr.o \
 			syscall.o \

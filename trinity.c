@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <setjmp.h>
 #include <malloc.h>
-#include <syslog.h>
 #include <asm/unistd.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -115,37 +114,6 @@ unsigned long rand64()
 	return r;
 }
 
-void set_seed(unsigned int pidslot)
-{
-	struct timeval t;
-
-	if (user_set_seed == TRUE)
-		output("[%d] Using user passed random seed: %u (0x%x)\n", getpid(), seed, seed);
-	else {
-		gettimeofday(&t, 0);
-		seed = t.tv_sec * t.tv_usec;
-
-		output("[%d:%d] Random seed from time of day: %u (0x%x)\n", pidslot, getpid(), seed, seed);
-	}
-
-	/* Mix in the pidslot so that all children get different randomness.
-	 * we can't use the actual pid or anything else 'random' because otherwise reproducing
-	 * seeds with -s would be much harder to replicate.
-	 *
-	 * This still isn't perfect: When we -s right now, we set all children to the same seed.
-	 *  This sucks if the bug we're trying to reproduce was caused by interaction between threads.
-	 */
-	srand(seed + pidslot);
-
-	if (do_syslog == FALSE)
-		return;
-
-	fprintf(stderr, "Randomness reseeded to 0x%x\n", seed);
-	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
-	syslog(LOG_CRIT, "Randomness reseeded to 0x%x\n", seed);
-	closelog();
-}
-
 static void sighandler(__unused__ int sig)
 {
 	switch(sig) {
@@ -222,6 +190,9 @@ static int create_shm()
 	memset(shm->pids, EMPTY_PIDSLOT, sizeof(shm->pids));
 
 	shm->parentpid = getpid();
+
+	shm->seed = init_seed(seed);
+
 	return 0;
 }
 

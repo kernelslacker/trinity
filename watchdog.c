@@ -134,6 +134,7 @@ void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount;
+	unsigned int reseed_counter = 0;
 
 	shm->watchdog_pid = getpid();
 	printf("[%d] Watchdog is alive\n", shm->watchdog_pid);
@@ -171,6 +172,12 @@ void watchdog(void)
 			if (shm->execcount != lastcount)
 				printf("%ld iterations. [F:%ld S:%ld]\n", shm->execcount, shm->failures, shm->successes);
 			lastcount = shm->execcount;
+		}
+
+		reseed_counter++;
+		if (reseed_counter == 10) {
+			shm->need_reseed = TRUE;
+			reseed_counter = 0;
 		}
 
 		sleep(1);

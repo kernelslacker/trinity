@@ -308,6 +308,9 @@ static void main_loop()
 		if (shm->regenerate >= REGENERATION_POINT)
 			regenerate();
 
+		if (shm->need_reseed == TRUE)
+			reseed();
+
 		handle_children();
 
 		sleep(1);	// Nothing left to do, sleep a while.
