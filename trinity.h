@@ -92,6 +92,7 @@ struct map {
 void setup_maps();
 void destroy_maps();
 void * get_map();
+void init_buffers(void);
 
 #define ANSI_RED	"[1;31m"
 #define ANSI_GREEN	"[1;32m"
