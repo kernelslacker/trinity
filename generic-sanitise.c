@@ -254,8 +254,11 @@ unsigned int get_pid(void)
 		return 0;
 
 	switch (rand() % 3) {
-	case 0:	i = rand() % shm->running_childs;
+	case 0:
+retry:		i = rand() % shm->max_children;
 		pid = shm->pids[i];
+		if (pid == EMPTY_PIDSLOT)
+			goto retry;
 		break;
 
 	case 1:	pid = 0;
