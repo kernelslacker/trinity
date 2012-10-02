@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "trinity.h"
 #include "shm.h"
 
@@ -41,4 +42,36 @@ int pid_is_valid(pid_t pid)
 	}
 
 	return TRUE;
+}
+
+unsigned int get_pid(void)
+{
+	unsigned int i;
+	pid_t pid = 0;
+
+	/* If we get called from the parent, and there are no
+	 * children around yet, we need to not look at the pidmap. */
+	if (shm->running_childs == 0)
+		return 0;
+
+	switch (rand() % 3) {
+	case 0:
+retry:		i = rand() % shm->max_children;
+		pid = shm->pids[i];
+		if (pid == EMPTY_PIDSLOT)
+			goto retry;
+		break;
+
+	case 1:	pid = 0;
+		break;
+
+	case 2:	if (dangerous == TRUE)	// We don't want root trying to kill init.
+			pid = 1;
+		break;
+
+	default:
+		break;
+	}
+
+	return pid;
 }
