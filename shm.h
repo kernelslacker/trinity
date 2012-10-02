@@ -17,6 +17,7 @@ struct shm_s {
 
 	unsigned long regenerate;
 	unsigned int seed;
+	unsigned int seeds[MAX_NR_CHILDREN];
 
 	pid_t parentpid;
 	pid_t watchdog_pid;
