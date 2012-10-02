@@ -155,7 +155,7 @@ void watchdog(void)
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == FALSE) {
 			if (check_tainted() != 0) {
-				output("kernel became tainted!\n");
+				output("kernel became tainted! Last seed was %d:%x\n", shm->seed, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
 			}
 		}
