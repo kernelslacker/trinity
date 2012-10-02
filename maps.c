@@ -84,85 +84,8 @@ void setup_maps()
 	struct map *tmpmap;
 	unsigned int fd, i;
 
-/*	FILE *f;
-	void *startaddr, *endaddr;
-	unsigned int ret;
-	char name[80];
-	char ch;
-
-	f = fopen("/proc/self/maps", "r");
-	if (!f) {
-		printf("Couldn't open /proc/self/maps!\n");
-		exit(EXIT_FAILURE);
-	}
-*/
 	tmpmap = maps_list = alloc_map();
 
-/*	do {
-retry:
-		ret = fscanf(f, "%p-%p", &startaddr, &endaddr);
-		if (ret == 0) {
-			printf("/proc/maps parsing failure\n");
-			exit(EXIT_FAILURE);
-		}
-
-		// skip over the shm (and any nearby mappings), in case we corrupt it
-		if ((startaddr > (void *) shm - (page_size * 8)) &&
-		    (startaddr < (void *) shm + (page_size * 8))) {
-			output("skipping mapping at %p -> %p (too close to shm at %p)\n", startaddr, endaddr, shm);
-			do {
-				ch = getc(f);
-			} while ((ch != EOF) && (ch != '\n'));
-			continue;
-		}
-
-		// search forward until we reach a name or eol
-		do {
-			ch = getc(f);
-		} while ((ch != EOF) && (ch != '\n') && (ch != '/') && (ch != '['));
-
-		if (ch == EOF)
-			break;
-
-		// Store the name if we find it.
-		if ((ch == '/') || (ch == '[')) {
-			ungetc(ch, f);
-			if (fgets(name, 80, f) == NULL)
-				break;
-			name[strlen(name) - 1] = '\0';
-			tmpmap->name = strdup(name);
-
-			if (!strcmp(tmpmap->name, "[heap]")) {
-				output("skipping heap (%p-%p)\n", startaddr, endaddr);
-				free(tmpmap->name);
-				goto retry;
-			}
-
-			if (strstr(tmpmap->name, "lib")) {
-				output("skipping library (%p-%p) %s\n", startaddr, endaddr, tmpmap->name);
-				free(tmpmap->name);
-				goto retry;
-			}
-		}
-
-
-		tmpmap->ptr = startaddr;
-		num_mappings++;
-
-		tmpmap->next = alloc_map();
-
-		output("mapping[%d]: %p-%p ", num_mappings - 1, startaddr, endaddr);
-		if (tmpmap->name)
-			output("%s", tmpmap->name);
-		output("\n");
-
-		tmpmap = tmpmap->next;
-
-	} while (!feof(f));
-
-	fclose(f);
-	output("Added %d mappings from /proc/self\n", num_mappings);
-*/
 	/* Make sure our zero page mappings are nowhere near the shm. */
 	fd = open("/dev/zero", O_RDWR);
 	for (i = 0; i < 50; i++)
