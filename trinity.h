@@ -134,6 +134,8 @@ int pid_is_valid(pid_t);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
+#define BUGTXT ANSI_RED "BUG!: " ANSI_WHITE
+
 #define BUG(bugtxt)	printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt);
 #define UNUSED(x) (void)(x)
 
@@ -148,5 +150,7 @@ enum exit_reasons {
 	EXIT_KERNEL_TAINTED = 7,
 	EXIT_SHM_CORRUPTION = 8,
 };
+
+#define pid_alive(_pid) kill(_pid, 0)
 
 #endif	/* _TRINITY_H */
