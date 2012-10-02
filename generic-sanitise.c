@@ -248,8 +248,12 @@ unsigned int get_pid(void)
 	unsigned int i;
 	pid_t pid = 0;
 
-	switch (rand() % 3) {
+	/* If we get called from the parent, and there are no
+	 * children around yet, we need to not look at the pidmap. */
+	if (shm->running_childs == 0)
+		return 0;
 
+	switch (rand() % 3) {
 	case 0:	i = rand() % shm->running_childs;
 		pid = shm->pids[i];
 		break;
