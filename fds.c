@@ -24,8 +24,10 @@ static void open_pipes(void)
 		shm->pipe_fds[i] = pipes[0];
 		shm->pipe_fds[i+1] = pipes[1];
 
-		output("fd[%d] = pipe\n", shm->pipe_fds[i]);
-		output("fd[%d] = pipe\n", shm->pipe_fds[i+1]);
+		if (quiet_level == 0) {
+			output("fd[%d] = pipe\n", shm->pipe_fds[i]);
+			output("fd[%d] = pipe\n", shm->pipe_fds[i+1]);
+		}
 	}
 }
 

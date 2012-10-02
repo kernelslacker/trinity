@@ -20,7 +20,7 @@ bool do_specific_proto = FALSE;
 
 bool dopause = FALSE;
 bool show_syscall_list = FALSE;
-bool quiet = FALSE;
+unsigned char quiet_level = 0;
 bool monochrome = FALSE;
 bool dangerous = FALSE;
 bool logging = TRUE;
@@ -168,7 +168,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'q':
-			quiet = 1;
+			quiet_level++;
 			break;
 
 		/* Set seed */

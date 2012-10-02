@@ -205,7 +205,8 @@ args_done:
 	sptr += sprintf(sptr, ") ");
 	*sptr = '\0';
 
-	output("%s", string);
+	if (quiet_level == 0)
+		output("%s", string);
 
 	if (dopause == TRUE) {
 		synclogs();
@@ -236,7 +237,8 @@ args_done:
 
 	*sptr = '\0';
 
-	output("%s", string);
+	if (quiet_level == 0)
+		output("%s", string);
 	sptr = string;
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
@@ -246,7 +248,9 @@ args_done:
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
 			goto skip_enosys;
 
-		output("%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
+//FIXME: This seems broken, as these syscalls keep getting called.
+
+		//output("%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
 		syscalls[call].entry->flags &= ~ACTIVE;
 	}
 

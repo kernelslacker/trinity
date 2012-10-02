@@ -123,8 +123,8 @@ void output(const char *fmt, ...)
 		exit(EXIT_FAILURE);
 	}
 
-	if (!quiet)
-		printf("%s", outputbuf);
+
+	printf("%s", outputbuf);
 
 	if (logging == FALSE)
 		return;
