@@ -38,7 +38,8 @@ void generate_sockets(unsigned int nr_to_create)
 		exit(EXIT_FAILURE);
 	}
 
-	output("taking writer lock for cachefile\n");
+	if (quiet_level == 0)
+		output("taking writer lock for cachefile\n");
 	fl.l_pid = getpid();
 	fl.l_type = F_WRLCK;
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
@@ -46,7 +47,8 @@ void generate_sockets(unsigned int nr_to_create)
 		exit(EXIT_FAILURE);
 	}
 
-	output("took writer lock for cachefile\n");
+	if (quiet_level == 0)
+		output("took writer lock for cachefile\n");
 
 	while (nr_to_create > 0) {
 
@@ -77,8 +79,9 @@ void generate_sockets(unsigned int nr_to_create)
 			if (fd > -1) {
 				shm->socket_fds[nr_sockets] = fd;
 
-				output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
-					fd, domain, type, protocol);
+				if (quiet_level == 0)
+					output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
+						fd, domain, type, protocol);
 
 				sockarray[i]++;
 				nr_sockets++;
@@ -111,10 +114,11 @@ done:
 		exit(1);
 	}
 
-	output("dropped writer lock for cachefile\n");
+	if (quiet_level == 0) {
+		output("dropped writer lock for cachefile\n");
+		output("\ncreated %d sockets\n", nr_sockets);
+	}
 	close(cachefile);
-
-	output("\ncreated %d sockets\n", nr_sockets);
 }
 
 
@@ -151,14 +155,16 @@ void open_sockets()
 		return;
 	}
 
-	output("taking reader lock for cachefile\n");
+	if (quiet_level == 0)
+		output("taking reader lock for cachefile\n");
 	fl.l_pid = getpid();
 	fl.l_type = F_RDLCK;
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
 		perror("fcntl F_RDLCK F_SETLKW");
 		exit(1);
 	}
-	output("took reader lock for cachefile\n");
+	if (quiet_level == 0)
+		output("took reader lock for cachefile\n");
 
 	while (bytesread != 0) {
 		bytesread = read(cachefile, buffer, sizeof(int) * 3);
@@ -190,8 +196,9 @@ regenerate:
 			return;
 		}
 		shm->socket_fds[nr_sockets] = fd;
-		output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
-			fd, domain, type, protocol);
+		if (quiet_level == 0)
+			output("fd[%i] = domain:%i type:0x%x protocol:%i\n",
+				fd, domain, type, protocol);
 		nr_sockets++;
 		fds_left_to_create--;
 	}
@@ -201,7 +208,8 @@ regenerate:
 		goto regenerate;
 	}
 
-	output("(%d sockets created based on info from socket cachefile.)\n", nr_sockets);
+	if (quiet_level == 0)
+		output("(%d sockets created based on info from socket cachefile.)\n", nr_sockets);
 
 	fl.l_pid = getpid();
 	fl.l_type = F_UNLCK;
@@ -210,7 +218,8 @@ regenerate:
 		exit(1);
 	}
 
-	output("dropped reader lock for cachefile\n");
+	if (quiet_level == 0)
+		output("dropped reader lock for cachefile\n");
 	close(cachefile);
 }
 

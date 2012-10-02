@@ -32,10 +32,12 @@ static void dump_maps()
 	struct map *tmpmap = maps_list;
 	unsigned int j;
 
-	output("There are %d entries in the map table\n", num_mappings);
+	if (quiet_level == 0)
+		output("There are %d entries in the map table\n", num_mappings);
 
 	for (j = 0; j < num_mappings; j++) {
-		output(" start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
+		if (quiet_level == 0)
+			output(" start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
 		tmpmap = tmpmap->next;
 	}
 }
@@ -69,7 +71,8 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 	sprintf(tmpmap->name, "/dev/zero(%s)", name);
 	num_mappings++;
 
-	output("mapping[%d]: (zeropage %s) %p\n", num_mappings - 1, name, tmpmap->ptr);
+	if (quiet_level == 0)
+		output("mapping[%d]: (zeropage %s) %p\n", num_mappings - 1, name, tmpmap->ptr);
 
 	close(fd);
 	return tmpmap;
@@ -176,7 +179,8 @@ retry:
 	tmpmap->next = alloc_zero_map(NULL, PROT_WRITE, "PROT_WRITE");
 	tmpmap = tmpmap->next;
 
-	output("Added /dev/zero mappings.\n");
+	if (quiet_level == 0)
+		output("Added /dev/zero mappings.\n");
 	dump_maps();
 }
 

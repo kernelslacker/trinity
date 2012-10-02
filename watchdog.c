@@ -168,7 +168,7 @@ void watchdog(void)
 		if (shm->execcount % 1000 == 0)
 			synclogs();
 
-		if (quiet && (shm->execcount > 1)) {
+		if ((quiet_level < 2) && (shm->execcount > 1)) {
 			if (shm->execcount != lastcount)
 				printf("%ld iterations. [F:%ld S:%ld]\n", shm->execcount, shm->failures, shm->successes);
 			lastcount = shm->execcount;

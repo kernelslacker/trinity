@@ -17,7 +17,7 @@ int init_seed(unsigned int seedparam)
 		gettimeofday(&t, 0);
 		seedparam = t.tv_sec * t.tv_usec;
 
-		printf("[%d] Initial random seed from time of day: %u (0x%x)\n", getpid(), seedparam, seedparam);
+		printf("Initial random seed from time of day: %u (0x%x)\n", seedparam, seedparam);
 	}
 
 	if (do_syslog == TRUE) {

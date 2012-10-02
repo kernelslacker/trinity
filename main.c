@@ -299,6 +299,8 @@ static void main_loop()
 
 	shm->parentpid = getpid();
 
+	output("[%d] Main thread is alive.\n", getpid());
+
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
 	while (shm->exit_reason == STILL_RUNNING) {
