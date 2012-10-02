@@ -144,40 +144,45 @@ void watchdog(void)
 
 	while (shm->exit_reason == STILL_RUNNING) {
 
-		while (shm->regenerating == TRUE)
-			sleep(0.1);
+		if (shm->regenerating == FALSE) {
 
-		if (check_shm_sanity() == SHM_CORRUPT)
-			goto corrupt;
+			if (check_shm_sanity() == SHM_CORRUPT)
+				goto corrupt;
 
-		check_children();
+			check_children();
+
+			if (syscallcount && (shm->execcount >= syscallcount)) {
+				output("Reached limit %d. Telling children to start exiting\n", syscallcount);
+				shm->exit_reason = EXIT_REACHED_COUNT;
+			}
+
+			// Periodic log syncing. FIXME: This is kinda ugly, and mostly unnecessary.
+			if (shm->execcount % 1000 == 0)
+				synclogs();
+
+			if ((quiet_level < 2) && (shm->execcount > 1)) {
+				if (shm->execcount != lastcount)
+					printf("%ld iterations. [F:%ld S:%ld]\n", shm->execcount, shm->failures, shm->successes);
+				lastcount = shm->execcount;
+			}
+		}
 
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == FALSE) {
 			if (check_tainted() != 0) {
 				output("kernel became tainted! Last seed was %d:%x\n", shm->seed, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
+				while (shm->regenerating ==TRUE)
+					sleep(1);
 			}
 		}
 
-		if (syscallcount && (shm->execcount >= syscallcount)) {
-			output("Reached limit %d. Telling children to start exiting\n", syscallcount);
-			shm->exit_reason = EXIT_REACHED_COUNT;
-		}
-
-		if (shm->execcount % 1000 == 0)
-			synclogs();
-
-		if ((quiet_level < 2) && (shm->execcount > 1)) {
-			if (shm->execcount != lastcount)
-				printf("%ld iterations. [F:%ld S:%ld]\n", shm->execcount, shm->failures, shm->successes);
-			lastcount = shm->execcount;
-		}
-
-		reseed_counter++;
-		if (reseed_counter == 10) {
-			shm->need_reseed = TRUE;
-			reseed_counter = 0;
+		if (shm->need_reseed == FALSE) {
+			reseed_counter++;
+			if (reseed_counter == 300) {
+				shm->need_reseed = TRUE;
+				reseed_counter = 0;
+			}
 		}
 
 		sleep(1);
