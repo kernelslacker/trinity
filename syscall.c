@@ -248,9 +248,11 @@ args_done:
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
 			goto skip_enosys;
 
-//FIXME: This seems broken, as these syscalls keep getting called.
+// FIXME: Crap, this can't work. We're in the child at this point, and we want to change a global
+// structure in the parent.  Will need big changes to how syscall_table's are stored if we have
+// to make those a shared struct.
 
-		//output("%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
+//		output("%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
 		syscalls[call].entry->flags &= ~ACTIVE;
 	}
 
