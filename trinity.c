@@ -179,11 +179,20 @@ static void mask_signals(void)
 		sa.sa_mask = ss;
 		(void)sigaction(i, &sa, NULL);
 	}
+	/* we want default behaviour for child process signals */
 	(void)signal(SIGCHLD, SIG_DFL);
+
+	/* ignore signals we don't care about */
 	(void)signal(SIGFPE, SIG_IGN);
 	(void)signal(SIGXCPU, SIG_IGN);
 	(void)signal(SIGTSTP, SIG_IGN);
 	(void)signal(SIGWINCH, SIG_IGN);
+
+	/* Ignore the RT signals. */
+	for (i = SIGRTMIN; i <= (unsigned int) SIGRTMAX; i++)
+		(void)signal(i, SIG_IGN);
+
+	/* If we are in debug mode, we want segfaults and core dumps */
 	if (debug == TRUE)
 		(void)signal(SIGSEGV, SIG_DFL);
 }
