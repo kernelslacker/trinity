@@ -88,7 +88,15 @@ static void fork_children()
 			prctl(PR_SET_NAME, (unsigned long) &childname);
 
 			/* Wait for parent to set our pidslot */
-			while (shm->pids[pidslot] != getpid());
+			while (shm->pids[pidslot] != getpid()) {
+				/* Make sure parent is actually alive to wait for us. */
+				ret = pid_alive(shm->parentpid);
+				if (ret != 0) {
+					shm->exit_reason = EXIT_SHM_CORRUPTION;
+					printf("[%d] " BUGTXT "parent (%d) went away!\n", getpid(), shm->parentpid);
+					sleep(20000);
+				}
+			}
 
 			set_seed(pidslot);
 
@@ -155,9 +163,13 @@ static void handle_child(pid_t childpid, int childstatus)
 			debugf("[%d] All children exited!\n", getpid());
 			for (i = 0; i < shm->max_children; i++) {
 				if (shm->pids[i] != EMPTY_PIDSLOT) {
-					debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
-					shm->pids[i] = EMPTY_PIDSLOT;
-					shm->running_childs--;
+					if (pid_alive(shm->pids[i]) == -1) {
+						debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
+						shm->pids[i] = EMPTY_PIDSLOT;
+						shm->running_childs--;
+					} else {
+						debugf("[%d] %d looks still alive! ignoring.\n", getpid(), shm->pids[i]);
+					}
 				}
 			}
 			break;
@@ -211,12 +223,14 @@ static void handle_child(pid_t childpid, int childstatus)
 				debugf("[%d] Sending PTRACE_DETACH (and then KILL)\n", getpid());
 				ptrace(PTRACE_DETACH, childpid, NULL, NULL);
 				kill(childpid, SIGKILL);
-				;;	// fallthrough
+				reap_child(childpid);
+				break;
 			case SIGFPE:
 			case SIGSEGV:
 			case SIGKILL:
 			case SIGPIPE:
 			case SIGABRT:
+				debugf("[%d] Child %d was stopped by %s\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
 				reap_child(childpid);
 				break;
 			default:

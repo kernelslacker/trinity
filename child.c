@@ -103,6 +103,7 @@ int child_process(void)
 	int ret;
 	unsigned int syscallnr;
 	unsigned int childno = find_pid_slot(pid);
+	unsigned int i;
 
 	disable_coredumps();
 
@@ -120,6 +121,15 @@ int child_process(void)
 	ret = 0;
 
 	while (shm->exit_reason == STILL_RUNNING) {
+
+		if (getppid() != shm->parentpid) {
+			i = find_pid_slot(getpid());
+			output(BUGTXT "CHILD (pid:%d) GOT REPARENTED!\n"
+				"Last syscall was %d (call:%d)\n",
+				getpid(), shm->previous_syscallno[i], shm->total_syscalls[i]);
+			while(1)
+				sleep(5);
+		}
 
 		while (shm->regenerating == TRUE)
 			sleep(1);
