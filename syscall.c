@@ -205,8 +205,7 @@ args_done:
 	sptr += sprintf(sptr, ") ");
 	*sptr = '\0';
 
-	if (quiet_level == 0)
-		output("%s", string);
+	output(2, "%s", string);
 
 	if (dopause == TRUE) {
 		synclogs();
@@ -237,8 +236,7 @@ args_done:
 
 	*sptr = '\0';
 
-	if (quiet_level == 0)
-		output("%s", string);
+	output(2, "%s", string);
 	sptr = string;
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
@@ -252,7 +250,7 @@ args_done:
 // structure in the parent.  Will need big changes to how syscall_table's are stored if we have
 // to make those a shared struct.
 
-//		output("%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
+//		output(0, "%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
 		syscalls[call].entry->flags &= ~ACTIVE;
 	}
 

@@ -37,7 +37,7 @@ void dump_pid_slots(void)
 int pid_is_valid(pid_t pid)
 {
 	if ((pid > 65535) || (pid < 1)) {
-		output("Sanity check failed! Found pid %d!\n", pid);
+		output(0, "Sanity check failed! Found pid %d!\n", pid);
 		return FALSE;
 	}
 

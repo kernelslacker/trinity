@@ -110,8 +110,9 @@ void init_buffers(void);
 #define CYAN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_CYAN);
 #define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
 
+#define MAX_LOGLEVEL 3
 void synclogs();
-void output(const char *fmt, ...);
+void output(unsigned char level, const char *fmt, ...);
 void open_logfiles();
 void close_logfiles();
 

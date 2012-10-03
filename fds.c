@@ -24,10 +24,8 @@ static void open_pipes(void)
 		shm->pipe_fds[i] = pipes[0];
 		shm->pipe_fds[i+1] = pipes[1];
 
-		if (quiet_level == 0) {
-			output("fd[%d] = pipe\n", shm->pipe_fds[i]);
-			output("fd[%d] = pipe\n", shm->pipe_fds[i+1]);
-		}
+		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i]);
+		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i+1]);
 	}
 }
 
@@ -63,7 +61,7 @@ int get_random_fd(void)
 retry:
 		if (fd_idx == 0) {
 			i = find_pid_slot(getpid());
-			output("[%d] wtf, no fds! Last syscall was %d\n",
+			output(0, "[%d] wtf, no fds! Last syscall was %d\n",
 				getpid(), shm->previous_syscallno[i]);
 			shm->exit_reason = EXIT_NO_FDS;
 			return -1;

@@ -28,7 +28,7 @@ void init_watchdog()
 	while (shm->watchdog_pid == 0)
 		sleep(0.1);
 
-	output("[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
+	output(0, "[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 }
 
 static int check_shm_sanity(void)
@@ -51,7 +51,7 @@ static int check_shm_sanity(void)
 	// On startup, we should figure out how many getpid()'s per second we can do,
 	// and use that.
 	if (shm->execcount - shm->previous_count > 500000) {
-		output("Execcount increased dramatically! (old:%ld new:%ld):\n",
+		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
 			shm->previous_count, shm->execcount);
 		shm->exit_reason = EXIT_SHM_CORRUPTION;
 	}
@@ -80,10 +80,10 @@ static void check_children(void)
 		/* first things first, does the pid still exist ? */
 		if (getpgid(pid) == -1) {
 			if (errno == ESRCH) {
-				output("pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
+				output(0, "pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
 				reap_child(pid);
 			} else {
-				output("problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
+				output(0, "problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
 			}
 			continue;
 		}
@@ -104,7 +104,7 @@ static void check_children(void)
 
 		/* if we're way off, we're comparing garbage. Reset it. */
 		if (diff > 1000) {
-			output("huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
+			output(0, "huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
 			shm->tv[i].tv_sec = now;
 			continue;
 		}
@@ -113,7 +113,7 @@ static void check_children(void)
 
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
-			output("pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
+			output(0, "pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
 				pid, old, now, diff);
 			kill(pid, SIGKILL);
 			break;
@@ -123,7 +123,7 @@ static void check_children(void)
 		 * Find out what's going on. */
 
 		if (diff > 60) {
-			output("pid %d hasn't made progress in 60 seconds! (last:%ld now:%ld diff:%d)\n",
+			output(0, "pid %d hasn't made progress in 60 seconds! (last:%ld now:%ld diff:%d)\n",
 				pid, old, now, diff);
 			shm->tv[i].tv_sec = now;
 		}
@@ -152,7 +152,7 @@ void watchdog(void)
 			check_children();
 
 			if (syscallcount && (shm->execcount >= syscallcount)) {
-				output("Reached limit %d. Telling children to start exiting\n", syscallcount);
+				output(0, "Reached limit %d. Telling children to start exiting\n", syscallcount);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 
@@ -160,9 +160,10 @@ void watchdog(void)
 			if (shm->execcount % 1000 == 0)
 				synclogs();
 
-			if ((quiet_level < 2) && (shm->execcount > 1)) {
+			if ((quiet_level > 1) && (shm->execcount > 1)) {
 				if (shm->execcount != lastcount)
-					printf("%ld iterations. [F:%ld S:%ld]\n", shm->execcount, shm->failures, shm->successes);
+					printf("%ld iterations. [F:%ld S:%ld]\n",
+						shm->execcount, shm->failures, shm->successes);
 				lastcount = shm->execcount;
 			}
 		}
@@ -170,7 +171,7 @@ void watchdog(void)
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == FALSE) {
 			if (check_tainted() != 0) {
-				output("kernel became tainted! Last seed was %d:%x\n", shm->seed, shm->seed);
+				output(0, "kernel became tainted! Last seed was %d:%x\n", shm->seed, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
 				while (shm->regenerating ==TRUE)
 					sleep(1);
@@ -210,7 +211,7 @@ corrupt:
 	}
 
 out:
-	output("[%d] Watchdog thread exiting\n", getpid());
+	output(0, "[%d] Watchdog thread exiting\n", getpid());
 
 	_exit(EXIT_SUCCESS);
 }

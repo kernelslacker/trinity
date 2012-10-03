@@ -205,12 +205,11 @@ openit:
 		case O_RDWR:	modestr = "read-write";	break;
 		default: break;
 		}
-		if (quiet_level == 0) {
-			output("fd[%i] = %s (%s)", fd, b, modestr);
-			if (is_dir == TRUE)
-				output(" [dir]");
-			output("\n");
-		}
+		output(2, "fd[%i] = %s (%s)", fd, b, modestr);
+		if (is_dir == TRUE)
+			output(2, " [dir]");
+		output(2, "\n");
+
 		shm->fds[fd_idx++] = fd;
 		fds_left_to_create--;
 	}
@@ -225,8 +224,7 @@ void open_files()
 	const char dir4[]="";
 */
 
-	if (quiet_level < 2)
-		output("Generating file descriptors\n");
+	output(1, "Generating file descriptors\n");
 
 	while (fds_left_to_create > 0) {
 

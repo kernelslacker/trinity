@@ -199,4 +199,8 @@ void parse_args(int argc, char *argv[])
 			break;
 		}
 	}
+	if (quiet_level > MAX_LOGLEVEL)
+		quiet_level = MAX_LOGLEVEL;
+
+	quiet_level = MAX_LOGLEVEL - quiet_level;
 }

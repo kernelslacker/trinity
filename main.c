@@ -25,7 +25,7 @@ static void regenerate()
 
 	shm->regenerate = 0;
 
-	output("[%d] Regenerating random pages, fd's etc.\n", getpid());
+	output(0, "[%d] Regenerating random pages, fd's etc.\n", getpid());
 
 	regenerate_fds();
 
@@ -102,7 +102,7 @@ static void fork_children()
 
 			ret = child_process();
 
-			output("child %d exitting\n", getpid());
+			output(0, "child %d exitting\n", getpid());
 
 			_exit(ret);
 		}
@@ -174,7 +174,7 @@ static void handle_child(pid_t childpid, int childstatus)
 			}
 			break;
 		}
-		output("error! (%s)\n", strerror(errno));
+		output(0, "error! (%s)\n", strerror(errno));
 		break;
 
 	default:
@@ -242,7 +242,7 @@ static void handle_child(pid_t childpid, int childstatus)
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
 		} else {
-			output("erk, wtf\n");
+			output(0, "erk, wtf\n");
 		}
 	}
 }
@@ -299,7 +299,7 @@ static void main_loop()
 
 	shm->parentpid = getpid();
 
-	output("[%d] Main thread is alive.\n", getpid());
+	output(0, "[%d] Main thread is alive.\n", getpid());
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 

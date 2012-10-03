@@ -124,7 +124,7 @@ int child_process(void)
 		pidslot = find_pid_slot(getpid());
 
 		if (getppid() != shm->parentpid) {
-			output(BUGTXT "CHILD (pid:%d) GOT REPARENTED!\n"
+			output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED!\n"
 				"Last syscall was %d (call:%d)\n",
 				getpid(), shm->previous_syscallno[pidslot], shm->total_syscalls[pidslot]);
 			while(1)
@@ -165,7 +165,7 @@ int child_process(void)
 		}
 
 		if (no_syscalls_enabled() == TRUE) {
-			output("[%d] No more syscalls enabled. Exiting\n", getpid());
+			output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
 			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 		}
 
@@ -193,7 +193,7 @@ retry:
 
 		if (syscallcount) {
 			if (shm->execcount >= syscallcount) {
-				output("[%d] shm->execcount (%d) >= syscallcount (%d)\n", getpid(), shm->execcount,syscallcount);
+				output(0, "[%d] shm->execcount (%d) >= syscallcount (%d)\n", getpid(), shm->execcount,syscallcount);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 

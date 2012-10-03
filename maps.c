@@ -37,12 +37,10 @@ static void dump_maps()
 	struct map *tmpmap = maps_list;
 	unsigned int j;
 
-	if (quiet_level == 0)
-		output("There are %d entries in the map table\n", num_mappings);
+	output(2, "There are %d entries in the map table\n", num_mappings);
 
 	for (j = 0; j < num_mappings; j++) {
-		if (quiet_level == 0)
-			output(" start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
+		output(2, " start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
 		tmpmap = tmpmap->next;
 	}
 }
@@ -76,8 +74,7 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 	sprintf(tmpmap->name, "/dev/zero(%s)", name);
 	num_mappings++;
 
-	if (quiet_level == 0)
-		output("mapping[%d]: (zeropage %s) %p\n", num_mappings - 1, name, tmpmap->ptr);
+	output(2, "mapping[%d]: (zeropage %s) %p\n", num_mappings - 1, name, tmpmap->ptr);
 
 	close(fd);
 	return tmpmap;
@@ -107,8 +104,7 @@ void setup_maps()
 	tmpmap->next = alloc_zero_map(NULL, PROT_WRITE, "PROT_WRITE");
 	tmpmap = tmpmap->next;
 
-	if (quiet_level == 0)
-		output("Added /dev/zero mappings.\n");
+	output(2, "Added /dev/zero mappings.\n");
 	dump_maps();
 }
 
@@ -146,29 +142,25 @@ void init_buffers(void)
 	if (!page_zeros)
 		exit(EXIT_FAILURE);
 	memset(page_zeros, 0, page_size);
-	if (quiet_level == 0)
-		output("page_zeros @ %p\n", page_zeros);
+	output(2, "page_zeros @ %p\n", page_zeros);
 
 	page_0xff = memalign(page_size, page_size * 2);
 	if (!page_0xff)
 		exit(EXIT_FAILURE);
 	memset(page_0xff, 0xff, page_size);
-	if (quiet_level == 0)
-		output("page_0xff @ %p\n", page_0xff);
+	output(2, "page_0xff @ %p\n", page_0xff);
 
 	page_rand = memalign(page_size, page_size * 2);
 	if (!page_rand)
 		exit(EXIT_FAILURE);
 	memset(page_rand, 0x55, page_size);	/* overwritten below */
-	if (quiet_level == 0)
-		output("page_rand @ %p\n", page_rand);
+	output(2, "page_rand @ %p\n", page_rand);
 
 	page_allocs = memalign(page_size, page_size * 2);
 	if (!page_allocs)
 		exit(EXIT_FAILURE);
 	memset(page_allocs, 0xff, page_size);
-	if (quiet_level == 0)
-		output("page_allocs @ %p\n", page_allocs);
+	output(2, "page_allocs @ %p\n", page_allocs);
 
 	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
 		page_allocs[i] = (unsigned long) malloc(page_size);
