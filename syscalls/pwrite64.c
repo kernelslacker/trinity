@@ -10,7 +10,7 @@ static void sanitise_pwrite64(int childno)
 
 retry_pos:
 	if ((int) shm->a4[childno] < 0) {
-		shm->a4[childno] = rand64();
+		shm->a4[childno] = get_reg();
 		goto retry_pos;
 	}
 }

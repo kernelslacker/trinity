@@ -89,14 +89,6 @@ static unsigned long do_syscall(int childno)
 	return ret;
 }
 
-static unsigned long get_reg()
-{
-	if ((rand() % 2) == 0)
-		return rand64();
-	else
-		return get_interesting_value();
-}
-
 long mkcall(int childno)
 {
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;

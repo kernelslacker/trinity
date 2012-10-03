@@ -181,7 +181,13 @@ void * get_non_null_address()
 	return _get_address(FALSE);
 }
 
+unsigned long get_reg(void)
+{
+	if ((rand() % 2) == 0)
+		return random();
 
+	return get_interesting_value();
+}
 
 void regenerate_random_page()
 {
@@ -423,7 +429,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		if (high == 0)
 			printf("%s forgets to set hirange!\n", syscalls[call].entry->name);
 
-		i = rand64() % high;
+		i = random() % high;
 		if (i < low) {
 			i += low;
 			i &= high;

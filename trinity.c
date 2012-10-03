@@ -35,42 +35,6 @@ bool biarch = FALSE;
 
 struct shm_s *shm;
 
-
-unsigned long rand64()
-{
-	unsigned long r = 0;
-
-	switch (rand() % 3) {
-	case 0:
-		r = (unsigned long)rand() & rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= (unsigned long)rand() & rand();
-#endif
-		break;
-
-	case 1:
-		r = (unsigned long)rand() | rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= (unsigned long)rand() | rand();
-#endif
-		break;
-
-	case 2:
-		r = (unsigned long)rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= (unsigned long)rand();
-#endif
-		break;
-
-	default:
-		break;
-	}
-	return r;
-}
-
 static void sighandler(__unused__ int sig)
 {
 	switch(sig) {
