@@ -26,12 +26,9 @@
 #include "syscall.h"
 
 char *progname = NULL;
-unsigned int seed = 0;
 jmp_buf ret_jump;
 
 unsigned int page_size;
-
-bool biarch = FALSE;
 
 struct shm_s *shm;
 

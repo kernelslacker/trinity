@@ -24,6 +24,7 @@ unsigned int max_nr_64bit_syscalls;
 
 bool use_32bit = FALSE;
 bool use_64bit = FALSE;
+bool biarch = FALSE;
 
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg)
 {
