@@ -19,6 +19,10 @@ char *page_0xff;
 char *page_rand;
 char *page_allocs;
 
+void * alloc_shared(unsigned int size)
+{
+	return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0); 
+}
 
 static struct map * alloc_map()
 {

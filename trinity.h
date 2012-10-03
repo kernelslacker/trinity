@@ -25,6 +25,8 @@ extern pid_t parentpid;
 
 extern jmp_buf ret_jump;
 
+void * alloc_shared(unsigned int size);
+
 void do_main_loop(void);
 int child_process(void);
 
