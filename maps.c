@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include "trinity.h"
 #include "arch.h"
+#include "shm.h"
 
 static unsigned int num_mappings = 0;
 static struct map *maps_list;
@@ -137,6 +138,8 @@ void destroy_maps()
 void init_buffers(void)
 {
 	unsigned int i;
+
+	output(2, "shm is at %p\n", shm);
 
 	page_zeros = memalign(page_size, page_size * 2);
 	if (!page_zeros)
