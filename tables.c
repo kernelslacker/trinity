@@ -322,46 +322,53 @@ void dump_syscall_tables(void)
 	}
 }
 
+static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsigned int nr)
+{
+	unsigned int n;
+	struct syscall *copy;
+
+	for (n = 0; n < nr; n++) {
+		copy = alloc_shared(sizeof(struct syscall));
+		if (copy == NULL)
+			exit(EXIT_FAILURE);
+		memcpy(copy, from[n].entry, sizeof(struct syscall));
+		copy->number = n;
+		from[n].entry = copy;
+	}
+	return from;
+}
+
 void setup_syscall_tables(void)
 {
-	unsigned int i;
-
 #if defined(__x86_64__)
-	syscalls_64bit = syscalls_x86_64;
-	syscalls_32bit = syscalls_i386;
+	syscalls_64bit = copy_syscall_table(syscalls_x86_64, NR_X86_64_SYSCALLS);
+	syscalls_32bit = copy_syscall_table(syscalls_i386, NR_I386_SYSCALLS);
+
 	max_nr_64bit_syscalls = NR_X86_64_SYSCALLS;
 	max_nr_32bit_syscalls = NR_I386_SYSCALLS;
 	biarch = TRUE;
 #elif defined(__i386__)
-	syscalls = syscalls_i386;
+	syscalls = copy_syscall_table(syscalls_i386, NR_I386_SYSCALLS);
 	max_nr_syscalls = NR_I386_SYSCALLS;
 #elif defined(__powerpc__)
-	syscalls = syscalls_ppc;
+	syscalls = copy_syscall_table(syscalls_ppc, NR_PPC_SYSCALLS);
 	max_nr_syscalls = NR_PPC_SYSCALLS;
 #elif defined(__ia64__)
-	syscalls = syscalls_ia64;
+	syscalls = copy_syscall_table(syscalls_ia64, NR_IA64_SYSCALLS);
+	max_nr_syscalls = NR_IA64_SYSCALLS;
 #elif defined(__sparc__)
-	syscalls = syscalls_sparc;
+	syscalls = copy_syscall_table(syscalls_sparc, NR_SPARC_SYSCALLS);
+	max_nr_syscalls = NR_SPARC_SYSCALLS;
 #elif defined(__arm__)
-	syscalls = syscalls_arm;
+	syscalls = copy_syscall_table(syscalls_arm, NR_ARM_SYSCALLS);
 	max_nr_syscalls = NR_ARM_SYSCALLS;
 #elif defined(__mips__)
-	syscalls = syscalls_mips;
+	syscalls = copy_syscall_table(syscalls_mips, NR_MIPS_SYSCALLS);
 	max_nr_syscalls = NR_MIPS_SYSCALLS;
 #else
-	syscalls = syscalls_i386;
+#error Unknown architecture.
 #endif
 
-	if (biarch == TRUE) {
-		for (i = 0; i < max_nr_32bit_syscalls; i++)
-			syscalls_32bit[i].entry->number = i;
-
-		for (i = 0; i < max_nr_64bit_syscalls; i++)
-			syscalls_64bit[i].entry->number = i;
-	} else {
-		for (i = 0; i < max_nr_syscalls; i++)
-			syscalls[i].entry->number = i;
-	}
 }
 
 
