@@ -32,9 +32,9 @@ unsigned int page_size;
 
 struct shm_s *shm;
 
-static void sighandler(__unused__ int sig)
+static void sighandler(int sig)
 {
-	switch(sig) {
+	switch (sig) {
 	case SIGALRM:
 		/* if we blocked in read() or similar, we want to avoid doing it again. */
 		shm->fd_lifetime = 0;
