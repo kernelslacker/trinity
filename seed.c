@@ -17,7 +17,7 @@ int init_seed(unsigned int seedparam)
 		printf("[%d] Using user passed random seed: %u (0x%x)\n", getpid(), seedparam, seedparam);
 	else {
 		gettimeofday(&t, 0);
-		seedparam = t.tv_sec * t.tv_usec;
+		seedparam = (t.tv_sec * getpid()) | t.tv_usec;
 
 		printf("Initial random seed from time of day: %u (0x%x)\n", seedparam, seedparam);
 	}
