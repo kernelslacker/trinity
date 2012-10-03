@@ -4,6 +4,8 @@
 #include "trinity.h"
 #include "shm.h"
 
+unsigned int seed = 0;
+
 /*
  * If we passed in a seed with -s, use that. Otherwise make one up from time of day.
  */
