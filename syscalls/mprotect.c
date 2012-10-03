@@ -17,13 +17,13 @@ static void sanitise_mprotect(int childno)
 retry_end:
 	end = shm->a1[childno] + shm->a2[childno];
 	if (shm->a2[childno] == 0) {
-		shm->a2[childno] = rand64();
+		shm->a2[childno] = get_reg();
 		goto retry_end;
 	}
 
 	/* End must be after start */
 	if (end <= shm->a1[childno]) {
-		shm->a2[childno] = rand64();
+		shm->a2[childno] = get_reg();
 		goto retry_end;
 	}
 }

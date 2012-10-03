@@ -38,6 +38,7 @@ int init_seed(unsigned int seedparam)
 void set_seed(unsigned int pidslot)
 {
 	srand(shm->seed + (pidslot + 1));
+	srandom(shm->seed + (pidslot + 1));
 	shm->seeds[pidslot] = shm->seed;
 }
 
