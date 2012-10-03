@@ -85,7 +85,7 @@ static void mask_signals(void)
 
 static int create_shm()
 {
-	shm = mmap(NULL, sizeof(struct shm_s), PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+	shm = alloc_shared(sizeof(struct shm_s));
 	if (shm == MAP_FAILED) {
 		perror("mmap");
 		return -1;
