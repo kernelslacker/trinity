@@ -7,7 +7,7 @@
 
 #define NR_MIPS_SYSCALLS 346
 
-const struct syscalltable syscalls_mips[NR_MIPS_SYSCALLS + 1] = {
+struct syscalltable syscalls_mips[NR_MIPS_SYSCALLS + 1] = {
 		{ .entry = &syscall_ni_syscall },	/* 4000 */
 /*		{ .entry = &syscall_syscall },		 4000 */
 		{ .entry = &syscall_exit },

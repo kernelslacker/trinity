@@ -5,7 +5,7 @@
 
 # define NR_SYSCALLS 326
 
-const struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
+struct syscalltable syscalls_sparc[NR_SYSCALLS+1] = {
 	{ .entry = &syscall_restart_syscall },
 	{ .entry = &syscall_exit },
 	{ .entry = &syscall_fork },
