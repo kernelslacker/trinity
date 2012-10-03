@@ -55,7 +55,7 @@ void reseed(void)
 	shm->need_reseed = FALSE;
 
 	if (getpid() != shm->parentpid) {
-		output("Reseeding should only happen from parent!\n");
+		output(0, "Reseeding should only happen from parent!\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -68,7 +68,7 @@ void reseed(void)
 
 	shm->seed = rand() * (t.tv_sec * t.tv_usec);
 
-	output("[%d] Random reseed from time of day: %u (0x%x)\n", getpid(), shm->seed, shm->seed);
+	output(0, "[%d] Random reseed from time of day: %u (0x%x)\n", getpid(), shm->seed, shm->seed);
 
 	if (do_syslog == FALSE)
 		return;

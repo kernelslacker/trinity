@@ -105,7 +105,15 @@ void synclogs()
 	fsync(fileno(parentlogfile));
 }
 
-void output(const char *fmt, ...)
+/*
+ * level defines whether it gets displayed to the screen with printf.
+ * (it always logs).
+ *   0 = everything, even all the registers
+ *   1 = Watchdog prints syscall count
+ *   2 = Just the reseed values
+ *
+ */
+void output(unsigned char level, const char *fmt, ...)
 {
 	va_list args;
 	int n;
@@ -123,8 +131,8 @@ void output(const char *fmt, ...)
 		exit(EXIT_FAILURE);
 	}
 
-
-	printf("%s", outputbuf);
+	if (quiet_level > level)
+		printf("%s", outputbuf);
 
 	if (logging == FALSE)
 		return;

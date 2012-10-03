@@ -218,10 +218,10 @@ int main(int argc, char* argv[])
 
 	if (do_specific_syscall == FALSE) {
 		if (biarch == TRUE)
-			output("Fuzzing %d 32-bit syscalls & %d 64-bit syscalls.\n",
+			output(0, "Fuzzing %d 32-bit syscalls & %d 64-bit syscalls.\n",
 				max_nr_32bit_syscalls, max_nr_64bit_syscalls);
 		else
-			output("Fuzzing %d syscalls.\n", max_nr_syscalls);
+			output(0, "Fuzzing %d syscalls.\n", max_nr_syscalls);
 	}
 
 	if (do_specific_proto == TRUE)
@@ -236,7 +236,7 @@ int main(int argc, char* argv[])
 	setup_fds();
 
 	if (check_tainted() != 0) {
-		output("Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");
+		output(0, "Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");
 		do_check_tainted = TRUE;
 	}
 
