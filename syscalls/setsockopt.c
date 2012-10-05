@@ -37,9 +37,19 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 
+#define NR_IP_OPTS 19
+
 void sanitise_setsockopt(int childno)
 {
 	int level;
+	unsigned char bit;
+
+	int ip_opts[NR_IP_OPTS] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
+		IP_ROUTER_ALERT, IP_RECVOPTS, IP_RETOPTS, IP_PKTINFO,
+		IP_PKTOPTIONS, IP_MTU_DISCOVER, IP_RECVERR, IP_RECVTTL,
+		IP_RECVTOS, IP_MTU, IP_FREEBIND, IP_IPSEC_POLICY,
+		IP_XFRM_POLICY, IP_PASSSEC, IP_TRANSPARENT };
+
 
 	shm->a4[childno] = (unsigned long) page_rand;
 	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int (overridden below)
@@ -104,6 +114,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_IP:
+		bit = rand() % NR_IP_OPTS;
+		shm->a3[childno] = 1 << (ip_opts[bit]);
+		break;
+
 	case SOL_TCP:
 	case SOL_UDP:
 	case SOL_IPV6:
