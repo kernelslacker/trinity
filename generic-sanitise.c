@@ -271,16 +271,35 @@ unsigned long get_len()
 
 	i = get_interesting_value();
 
-	switch(rand() % 5) {
+	switch(rand() % 6) {
 
-	case 0:	return (i & 0xff);
-	case 1: return (i & page_size);
-	case 2:	return (i & 0xffff);
-	case 3:	return (i & 0xffffff);
-	case 4:	return (i & 0xffffffff);
-	default:
-		BUG("unreachable!\n");
+	case 0:	i &= 0xff;
 		break;
+	case 1: i &= page_size;
+		break;
+	case 2:	i &= 0xffff;
+		break;
+	case 3:	i &= 0xffffff;
+		break;
+	case 4:	i &= 0xffffffff;
+		break;
+	default:
+		// Pass through
+		break;
+	}
+
+	/* we might get lucky if something is counting ints/longs etc. */
+	if (rand() % 100 < 25) {
+		switch (rand() % 3) {
+		case 0:	i /= sizeof(int);
+			break;
+		case 1:	i /= sizeof(long);
+			break;
+		case 2:	i /= sizeof(long long);
+			break;
+		default:
+			break;
+		}
 	}
 
 	return i;
