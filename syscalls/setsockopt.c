@@ -104,7 +104,7 @@ static int sctp_opts[NR_SOL_SCTP_OPTS] = {
 void sanitise_setsockopt(int childno)
 {
 	int level;
-	unsigned char bit;
+	unsigned char val;
 
 	shm->a4[childno] = (unsigned long) page_rand;
 	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int (overridden below)
@@ -152,13 +152,13 @@ void sanitise_setsockopt(int childno)
 
 	switch (level) {
 	case SOL_IP:
-		bit = rand() % NR_SOL_IP_OPTS;
-		shm->a3[childno] = 1 << (ip_opts[bit]);
+		val = rand() % NR_SOL_IP_OPTS;
+		shm->a3[childno] = ip_opts[val];
 		break;
 
 	case SOL_SOCKET:
-		bit = rand() % NR_SOL_SOCKET_OPTS;
-		shm->a3[childno] = 1 << (socket_opts[bit]);
+		val = rand() % NR_SOL_SOCKET_OPTS;
+		shm->a3[childno] = socket_opts[val];
 
 		/* Adjust length according to operation set. */
 		switch (shm->a3[childno]) {
@@ -177,13 +177,13 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_TCP:
-		bit = rand() % NR_SOL_TCP_OPTS;
-		shm->a3[childno] = 1 << (tcp_opts[bit]);
+		val = rand() % NR_SOL_TCP_OPTS;
+		shm->a3[childno] = tcp_opts[val];
 		break;
 
 	case SOL_UDP:
-		bit = rand() % NR_SOL_UDP_OPTS;
-		shm->a3[childno] = 1 << (udp_opts[bit]);
+		val = rand() % NR_SOL_UDP_OPTS;
+		shm->a3[childno] = udp_opts[val];
 
 		switch (shm->a3[childno]) {
 		case UDP_CORK:
@@ -197,23 +197,23 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_IPV6:
-		bit = rand() % NR_SOL_IPV6_OPTS;
-		shm->a3[childno] = 1 << (ipv6_opts[bit]);
+		val = rand() % NR_SOL_IPV6_OPTS;
+		shm->a3[childno] = ipv6_opts[val];
 		break;
 
 	case SOL_ICMPV6:
-		bit = rand() % NR_SOL_ICMPV6_OPTS;
-		shm->a3[childno] = 1 << (icmpv6_opts[bit]);
+		val = rand() % NR_SOL_ICMPV6_OPTS;
+		shm->a3[childno] = icmpv6_opts[val];
 		break;
 
 	case SOL_SCTP:
-		bit = rand() % NR_SOL_SCTP_OPTS;
-		shm->a3[childno] = 1 << (sctp_opts[bit]);
+		val = rand() % NR_SOL_SCTP_OPTS;
+		shm->a3[childno] = sctp_opts[val];
 		break;
 
 	case SOL_UDPLITE:
-		bit = rand() % NR_SOL_UDPLITE_OPTS;
-		shm->a3[childno] = 1 << (udplite_opts[bit]);
+		val = rand() % NR_SOL_UDPLITE_OPTS;
+		shm->a3[childno] = udplite_opts[val];
 
 		switch (shm->a3[childno]) {
 		case UDP_CORK:
@@ -261,7 +261,7 @@ void sanitise_setsockopt(int childno)
 	case SOL_ALG:
 
 	default:
-		shm->a3[childno] = 1 << (rand() % 16);	/* random operation. */
+		shm->a3[childno] = (rand() % 0xff);	/* random operation. */
 	}
 
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
