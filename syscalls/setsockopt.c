@@ -108,6 +108,11 @@ void sanitise_setsockopt(int childno)
 	shm->a2[childno] = level;
 
 	switch (level) {
+	case SOL_IP:
+		bit = rand() % NR_SOL_IP_OPTS;
+		shm->a3[childno] = 1 << (ip_opts[bit]);
+		break;
+
 	case SOL_SOCKET:
 		bit = rand() % NR_SOL_SOCKET_OPTS;
 		shm->a3[childno] = 1 << (socket_opts[bit]);
@@ -126,11 +131,6 @@ void sanitise_setsockopt(int childno)
 		default:
 			break;
 		}
-		break;
-
-	case SOL_IP:
-		bit = rand() % NR_SOL_IP_OPTS;
-		shm->a3[childno] = 1 << (ip_opts[bit]);
 		break;
 
 	case SOL_TCP:
