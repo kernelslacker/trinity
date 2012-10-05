@@ -176,6 +176,11 @@ static int tipc_opts[NR_SOL_TIPC_OPTS] = {
 	TIPC_IMPORTANCE, TIPC_SRC_DROPPABLE, TIPC_DEST_DROPPABLE, TIPC_CONN_TIMEOUT,
 	TIPC_NODE_RECVQ_DEPTH, TIPC_SOCK_RECVQ_DEPTH };
 
+#define NR_SOL_RXRPC_OPTS 8
+static int rxrpc_opts[NR_SOL_RXRPC_OPTS] = {
+	RXRPC_USER_CALL_ID, RXRPC_ABORT, RXRPC_ACK, RXRPC_NET_ERROR,
+	RXRPC_BUSY, RXRPC_LOCAL_ERROR, RXRPC_NEW_CALL, RXRPC_ACCEPT };
+
 
 void sanitise_setsockopt(int childno)
 {
@@ -387,6 +392,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_RXRPC:
+		val = rand() % NR_SOL_RXRPC_OPTS;
+		shm->a3[childno] = rxrpc_opts[val];
+		break;
+
 	case SOL_PPPOL2TP:
 	case SOL_BLUETOOTH:
 	case SOL_PNPIPE:
