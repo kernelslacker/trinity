@@ -252,7 +252,9 @@ void sanitise_setsockopt(int childno)
 		shm->a3[childno] = ax25_opts[val];
 		break;
 
-	case SOL_ATALK:
+	case SOL_ATALK:	/* sock_no_setsockopt */
+		break;
+
 	case SOL_NETROM:
 	case SOL_ROSE:
 	case SOL_DECNET:
