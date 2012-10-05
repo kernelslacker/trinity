@@ -18,6 +18,7 @@
 #include <linux/tipc.h>
 #include <linux/filter.h>
 #include <linux/icmpv6.h>
+#include <linux/icmp.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -231,6 +232,9 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_RAW:
+		shm->a3[childno] = ICMP_FILTER;	// that's all (for now?)
+		break;
+
 	case SOL_IPX:
 	case SOL_AX25:
 	case SOL_ATALK:
