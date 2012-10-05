@@ -153,6 +153,12 @@ void sanitise_setsockopt(int childno)
 	default:
 		shm->a3[childno] = 1 << (rand() % 16);	/* random operation. */
 	}
+
+	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
+	 * Let's disable it half the time.
+	 */
+	if (rand() % 2)
+		shm->a4[childno] = 0;
 }
 
 struct syscall syscall_setsockopt = {
