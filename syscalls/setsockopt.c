@@ -17,6 +17,7 @@
 #include <netrom/netrom.h>
 #include <linux/tipc.h>
 #include <linux/filter.h>
+#include <linux/icmpv6.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -82,6 +83,8 @@ static int ipv6_opts[NR_SOL_IPV6_OPTS] = {
 	IPV6_DROP_MEMBERSHIP, IPV6_ROUTER_ALERT, IPV6_MTU_DISCOVER, IPV6_MTU,
 	IPV6_RECVERR, IPV6_V6ONLY, IPV6_JOIN_ANYCAST, IPV6_LEAVE_ANYCAST };
 
+#define NR_SOL_ICMPV6_OPTS 1
+static int icmpv6_opts[NR_SOL_ICMPV6_OPTS] = { ICMPV6_FILTER };
 
 void sanitise_setsockopt(int childno)
 {
@@ -183,6 +186,11 @@ void sanitise_setsockopt(int childno)
 		shm->a3[childno] = 1 << (ipv6_opts[bit]);
 		break;
 
+	case SOL_ICMPV6:
+		bit = rand() % NR_SOL_ICMPV6_OPTS;
+		shm->a3[childno] = 1 << (icmpv6_opts[bit]);
+		break;
+
 	case SOL_UDPLITE:
 		bit = rand() % NR_SOL_UDPLITE_OPTS;
 		shm->a3[childno] = 1 << (udplite_opts[bit]);
@@ -203,7 +211,6 @@ void sanitise_setsockopt(int childno)
 
 		break;
 
-	case SOL_ICMPV6:
 	case SOL_SCTP:
 
 	case SOL_RAW:
