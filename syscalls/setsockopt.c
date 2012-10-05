@@ -179,8 +179,8 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_IPV6:
-		bit = rand() % NR_SOL_IP_OPTS;
-		shm->a3[childno] = 1 << (ip_opts[bit]);
+		bit = rand() % NR_SOL_IPV6_OPTS;
+		shm->a3[childno] = 1 << (ipv6_opts[bit]);
 		break;
 
 	case SOL_UDPLITE:
