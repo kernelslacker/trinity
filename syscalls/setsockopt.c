@@ -37,19 +37,31 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 
-#define NR_IP_OPTS 19
+#define NR_SOL_IP_OPTS 19
+static int ip_opts[NR_SOL_IP_OPTS] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
+	IP_ROUTER_ALERT, IP_RECVOPTS, IP_RETOPTS, IP_PKTINFO,
+	IP_PKTOPTIONS, IP_MTU_DISCOVER, IP_RECVERR, IP_RECVTTL,
+	IP_RECVTOS, IP_MTU, IP_FREEBIND, IP_IPSEC_POLICY,
+	IP_XFRM_POLICY, IP_PASSSEC, IP_TRANSPARENT };
+
+#define NR_SOL_SOCKET_OPTS 46
+static int socket_opts[NR_SOL_SOCKET_OPTS] = { SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_ERROR,
+	SO_DONTROUTE, SO_BROADCAST, SO_SNDBUF, SO_RCVBUF,
+	SO_SNDBUFFORCE, SO_RCVBUFFORCE, SO_KEEPALIVE, SO_OOBINLINE,
+	SO_NO_CHECK, SO_PRIORITY, SO_LINGER, SO_BSDCOMPAT,
+	SO_PASSCRED, SO_PEERCRED, SO_RCVLOWAT, SO_SNDLOWAT,
+	SO_RCVTIMEO, SO_SNDTIMEO, SO_SECURITY_AUTHENTICATION, SO_SECURITY_ENCRYPTION_TRANSPORT,
+	SO_SECURITY_ENCRYPTION_NETWORK, SO_BINDTODEVICE, SO_ATTACH_FILTER, SO_DETACH_FILTER,
+	SO_PEERNAME, SO_TIMESTAMP, SO_ACCEPTCONN, SO_PEERSEC,
+	SO_PASSSEC, SO_TIMESTAMPNS, SO_MARK, SO_TIMESTAMPING,
+	SO_PROTOCOL, SO_DOMAIN, SO_RXQ_OVFL, SO_WIFI_STATUS,
+	SO_PEEK_OFF, SO_NOFCS };
+
 
 void sanitise_setsockopt(int childno)
 {
 	int level;
 	unsigned char bit;
-
-	int ip_opts[NR_IP_OPTS] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
-		IP_ROUTER_ALERT, IP_RECVOPTS, IP_RETOPTS, IP_PKTINFO,
-		IP_PKTOPTIONS, IP_MTU_DISCOVER, IP_RECVERR, IP_RECVTTL,
-		IP_RECVTOS, IP_MTU, IP_FREEBIND, IP_IPSEC_POLICY,
-		IP_XFRM_POLICY, IP_PASSSEC, IP_TRANSPARENT };
-
 
 	shm->a4[childno] = (unsigned long) page_rand;
 	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int (overridden below)
@@ -97,6 +109,9 @@ void sanitise_setsockopt(int childno)
 
 	switch (level) {
 	case SOL_SOCKET:
+		bit = rand() % NR_SOL_SOCKET_OPTS;
+		shm->a3[childno] = 1 << (socket_opts[bit]);
+
 		/* Adjust length according to operation set. */
 		switch (shm->a3[childno]) {
 		case SO_LINGER:	shm->a5[childno] = sizeof(struct linger);
@@ -114,7 +129,7 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_IP:
-		bit = rand() % NR_IP_OPTS;
+		bit = rand() % NR_SOL_IP_OPTS;
 		shm->a3[childno] = 1 << (ip_opts[bit]);
 		break;
 
@@ -159,6 +174,8 @@ void sanitise_setsockopt(int childno)
 	 */
 	if (rand() % 2)
 		shm->a4[childno] = 0;
+
+	shm->a4[childno] = sizeof(int);
 }
 
 struct syscall syscall_setsockopt = {
@@ -168,24 +185,8 @@ struct syscall syscall_setsockopt = {
 	.arg1type = ARG_FD,
 	.arg2name = "level",
 	.arg3name = "optname",
-	.arg3type = ARG_OP,
-	.arg3list = {
-		.num = 46,
-		.values = { SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_ERROR,
-			    SO_DONTROUTE, SO_BROADCAST, SO_SNDBUF, SO_RCVBUF,
-			    SO_SNDBUFFORCE, SO_RCVBUFFORCE, SO_KEEPALIVE, SO_OOBINLINE,
-			    SO_NO_CHECK, SO_PRIORITY, SO_LINGER, SO_BSDCOMPAT,
-			    SO_PASSCRED, SO_PEERCRED, SO_RCVLOWAT, SO_SNDLOWAT,
-			    SO_RCVTIMEO, SO_SNDTIMEO, SO_SECURITY_AUTHENTICATION, SO_SECURITY_ENCRYPTION_TRANSPORT,
-			    SO_SECURITY_ENCRYPTION_NETWORK, SO_BINDTODEVICE, SO_ATTACH_FILTER, SO_DETACH_FILTER,
-			    SO_PEERNAME, SO_TIMESTAMP, SO_ACCEPTCONN, SO_PEERSEC,
-			    SO_PASSSEC, SO_TIMESTAMPNS, SO_MARK, SO_TIMESTAMPING,
-			    SO_PROTOCOL, SO_DOMAIN, SO_RXQ_OVFL, SO_WIFI_STATUS,
-			    SO_PEEK_OFF, SO_NOFCS },
-	},
 	.arg4name = "optval",
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "optlen",
-	.arg5type = ARG_LEN,
 	.sanitise = sanitise_setsockopt,
 };
