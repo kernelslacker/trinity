@@ -261,4 +261,16 @@ enum kcmp_type {
 #define SCTP_SOCKOPT_CONNECTX3  111     /* CONNECTX requests (updated) */
 #endif
 
+/* linux/rxrpc.h */
+#ifndef RXRPC_USER_CALL_ID
+#define RXRPC_USER_CALL_ID      1       /* user call ID specifier */
+#define RXRPC_ABORT             2       /* abort request / notification [terminal] */
+#define RXRPC_ACK               3       /* [Server] RPC op final ACK received [terminal] */
+#define RXRPC_NET_ERROR         5       /* network error received [terminal] */
+#define RXRPC_BUSY              6       /* server busy received [terminal] */
+#define RXRPC_LOCAL_ERROR       7       /* local error generated [terminal] */
+#define RXRPC_NEW_CALL          8       /* [Server] new incoming call notification */
+#define RXRPC_ACCEPT            9       /* [Server] accept request */
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
