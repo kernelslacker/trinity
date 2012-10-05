@@ -104,6 +104,15 @@ the passed params so they look almost sensible.
 
 #######################################################################
 
+WARNINGS:
+* Trinity may generate the right selection of syscalls to start sending random network
+  packets to other hosts. While every effort is made to restrict this to IP addresses
+  on local lans, multicast & broadcast, care should be taken to not allow the
+  packets it generates to go out onto the internet.
+
+
+#######################################################################
+
 Reporting bugs upstream:
 If you find a kernel bug using trinity, first check the list at
 http://www.codemonkey.org.uk/projects/trinity/bugs-found.html

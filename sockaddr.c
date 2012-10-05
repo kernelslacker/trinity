@@ -27,6 +27,59 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+static int random_ipv4_address(void)
+{
+	int addr = 0;
+	int class = 0;
+
+	switch (rand() % 9) {
+	case 0:	addr = 0;		/* 0.0.0.0 */
+		break;
+	case 1:	addr = 0x0a000000;	/* 10.0.0.0/8 */
+		class = 8;
+		break;
+	case 2:	addr = 0x7f000001;	/* 127.0.0.0/8 */
+		class = 8;
+		break;
+	case 3:	addr = 0xa9fe0000;	/* 169.254.0.0/16 (link-local) */
+		class = 16;
+		break;
+	case 4:	addr = 0xac100000;	/* 172.16.0.0/12 */
+		class = 12;
+		break;
+	case 5:	addr = 0xc0586300;	/* 192.88.99.0/24 (6to4 anycast) */
+		class = 24;
+		break;
+	case 6:	addr = 0xc0a80000;	/* 192.168.0.0/16 */
+		class = 16;
+		break;
+	case 7:	addr = 0xe0000000;	/* 224.0.0.0/4 (multicast)*/
+		class = 4;
+		break;
+	case 8:	addr = 0xffffffff;	/* 255.255.255.255 */
+		break;
+	default:
+		break;
+	}
+
+	if (rand() % 100 < 50) {
+		switch (class) {
+		case 4:	addr |= rand() % 0xfffffff;
+			break;
+		case 8:	addr |= rand() % 0xffffff;
+			break;
+		case 12: addr |= rand() % 0xfffff;
+			break;
+		case 16: addr |= rand() % 0xffff;
+			break;
+		case 24: addr |= rand() % 0xff;
+			break;
+		default: break;
+		}
+	}
+	return htonl(addr);
+}
+
 static void gen_unixsock(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_un *unixsock;
@@ -53,7 +106,7 @@ static void gen_ipv4(unsigned long *addr, unsigned long *addrlen)
 		return;
 
 	ipv4->sin_family = PF_INET;
-	ipv4->sin_addr.s_addr = htonl(0x7f000001);
+	ipv4->sin_addr.s_addr = random_ipv4_address();
 	ipv4->sin_port = rand() % 65535;
 	*addr = (unsigned long) ipv4;
 	*addrlen = sizeof(struct sockaddr_in);
@@ -344,7 +397,7 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			pppox->sa_addr.pppoe.dev[i] = rand();
 
 		pppox->sa_addr.pptp.call_id = rand();
-		pppox->sa_addr.pptp.sin_addr.s_addr = htonl(0x7f000001);
+		pppox->sa_addr.pptp.sin_addr.s_addr = random_ipv4_address();
 
 		*addr = (unsigned long) pppox;
 		*addrlen = sizeof(struct sockaddr_pppox);
@@ -362,7 +415,7 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			pppol2tp->sa_protocol = proto;
 			pppol2tp->pppol2tp.pid = get_pid();
 			pppol2tp->pppol2tp.fd = get_random_fd();
-			pppol2tp->pppol2tp.addr.sin_addr.s_addr = htonl(0x7f000001);
+			pppol2tp->pppol2tp.addr.sin_addr.s_addr = random_ipv4_address();
 			pppol2tp->pppol2tp.s_tunnel = rand();
 			pppol2tp->pppol2tp.s_session = rand();
 			pppol2tp->pppol2tp.d_tunnel = rand();
@@ -405,7 +458,7 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			pppol2tpv3->sa_protocol = proto;
 			pppol2tpv3->pppol2tp.pid = get_pid();
 			pppol2tpv3->pppol2tp.fd = get_random_fd();
-			pppol2tpv3->pppol2tp.addr.sin_addr.s_addr = htonl(0x7f000001);
+			pppol2tpv3->pppol2tp.addr.sin_addr.s_addr = random_ipv4_address();
 			pppol2tpv3->pppol2tp.s_tunnel = rand();
 			pppol2tpv3->pppol2tp.s_session = rand();
 			pppol2tpv3->pppol2tp.d_tunnel = rand();
@@ -433,7 +486,7 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[0] = 0;
 			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[1] = 0;
 			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[2] = 0;
-			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[3] = htonl(1);
+			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[3] = random_ipv4_address();
 			pppol2tpv3in6->pppol2tp.addr.sin6_scope_id = rand();
 			*addr = (unsigned long) pppol2tpv3in6;
 			*addrlen = sizeof(struct sockaddr_pppol2tpv3in6);
