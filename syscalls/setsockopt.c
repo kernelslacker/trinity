@@ -23,6 +23,7 @@
 #include <linux/if_packet.h>
 #include <linux/atmdev.h>
 #include <linux/atm.h>
+#include <linux/irda.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -141,6 +142,12 @@ static int packet_opts[NR_SOL_PACKET_OPTS] = {
 #define NR_SOL_ATM_OPTS 6
 static int atm_opts[NR_SOL_ATM_OPTS] = {
 	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT };
+
+#define NR_SOL_IRDA_OPTS 11
+static int irda_opts[NR_SOL_IRDA_OPTS] = {
+	IRLMP_ENUMDEVICES, IRLMP_IAS_SET, IRLMP_IAS_QUERY, IRLMP_HINTS_SET,
+	IRLMP_QOS_SET, IRLMP_QOS_GET, IRLMP_MAX_SDU_SIZE, IRLMP_IAS_GET,
+	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE };
 
 
 void sanitise_setsockopt(int childno)
@@ -320,8 +327,14 @@ void sanitise_setsockopt(int childno)
 		shm->a3[childno] = atm_opts[val];
 		break;
 
-	case SOL_AAL:
+	case SOL_AAL:	/* no setsockopt */
+		break;
+
 	case SOL_IRDA:
+		val = rand() % NR_SOL_IRDA_OPTS;
+		shm->a3[childno] = irda_opts[val];
+		break;
+
 	case SOL_NETBEUI:
 	case SOL_LLC:
 	case SOL_DCCP:
