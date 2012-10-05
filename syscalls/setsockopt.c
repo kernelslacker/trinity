@@ -29,6 +29,7 @@
 #include <linux/dccp.h>
 #include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
+#include <linux/rds.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -202,6 +203,12 @@ static int bluetooth_l2cap_opts[NR_SOL_BLUETOOTH_L2CAP_OPTS] = {
 
 #define NR_SOL_BLUETOOTH_RFCOMM_OPTS 2
 static int bluetooth_rfcomm_opts[NR_SOL_BLUETOOTH_RFCOMM_OPTS] = { RFCOMM_LM };
+
+#define NR_SOL_RDS_OPTS 7
+static int rds_opts[NR_SOL_RDS_OPTS] = {
+	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
+	4, /* deprecated RDS_BARRIER 4 */
+	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST };
 
 
 void sanitise_setsockopt(int childno)
@@ -467,8 +474,14 @@ void sanitise_setsockopt(int childno)
 		}
 		break;
 
-	case SOL_PNPIPE:
+	case SOL_PNPIPE	/* no setsockopt */:
+		break;
+
 	case SOL_RDS:
+		val = rand() % NR_SOL_RDS_OPTS;
+		shm->a3[childno] = rds_opts[val];
+		break;
+
 	case SOL_IUCV:
 	case SOL_CAIF:
 	case SOL_ALG:
