@@ -305,4 +305,11 @@ enum kcmp_type {
 #define RFCOMM_LM       0x03
 #endif
 
+/* net/iucv/af_iucv.h */
+#ifndef SO_IPRMDATA_MSG
+#define SO_IPRMDATA_MSG 0x0080          /* send/recv IPRM_DATA msgs */
+#define SO_MSGLIMIT     0x1000          /* get/set IUCV MSGLIMIT */
+#define SO_MSGSIZE      0x0800          /* get maximum msgsize */
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */

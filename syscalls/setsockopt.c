@@ -210,6 +210,10 @@ static int rds_opts[NR_SOL_RDS_OPTS] = {
 	4, /* deprecated RDS_BARRIER 4 */
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST };
 
+#define NR_SOL_IUCV_OPTS 3
+static int iucv_opts[NR_SOL_IUCV_OPTS] = {
+	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE };
+
 
 void sanitise_setsockopt(int childno)
 {
@@ -483,6 +487,11 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_IUCV:
+		val = rand() % NR_SOL_IUCV_OPTS;
+		shm->a3[childno] = iucv_opts[val];
+		shm->a4[childno] = sizeof(int);
+		break;
+
 	case SOL_CAIF:
 	case SOL_ALG:
 
