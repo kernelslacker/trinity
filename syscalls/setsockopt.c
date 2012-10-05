@@ -101,6 +101,14 @@ static int sctp_opts[NR_SOL_SCTP_OPTS] = {
 	SCTP_SOCKOPT_BINDX_ADD, SCTP_SOCKOPT_BINDX_REM, SCTP_SOCKOPT_PEELOFF, SCTP_SOCKOPT_CONNECTX_OLD,
 	SCTP_GET_PEER_ADDRS, SCTP_GET_LOCAL_ADDRS, SCTP_SOCKOPT_CONNECTX, SCTP_SOCKOPT_CONNECTX3 };
 
+#define NR_SOL_AX25_OPTS 12
+static int ax25_opts[NR_SOL_AX25_OPTS] = {
+	AX25_WINDOW, AX25_T1, AX25_N2, AX25_T3,
+	AX25_T2, AX25_BACKOFF, AX25_EXTSEQ, AX25_PIDINCL,
+	AX25_IDLE, AX25_PACLEN, AX25_IAMDIGI,
+	SO_BINDTODEVICE };
+
+
 void sanitise_setsockopt(int childno)
 {
 	int level;
@@ -240,6 +248,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_AX25:
+		val = rand() % NR_SOL_AX25_OPTS;
+		shm->a3[childno] = ax25_opts[val];
+		break;
+
 	case SOL_ATALK:
 	case SOL_NETROM:
 	case SOL_ROSE:
