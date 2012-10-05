@@ -196,4 +196,9 @@ enum kcmp_type {
 #define SO_NOFCS		43
 #endif
 
+/* linux/tcp.h */
+#ifndef TCP_FASTOPEN
+#define TCP_FASTOPEN 23
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */

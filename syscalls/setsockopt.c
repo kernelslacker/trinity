@@ -8,7 +8,7 @@
 #include <sys/time.h>
 #include <bits/socket.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <linux/tcp.h>
 #include <netinet/udp.h>
 #include <netipx/ipx.h>
 #include <netatalk/at.h>
@@ -22,6 +22,7 @@
 #include "compat.h"
 #include "shm.h"
 
+#define SOL_TCP		6
 #define SOL_SCTP        132
 #define SOL_UDPLITE     136
 #define SOL_NETBEUI     267
@@ -56,6 +57,14 @@ static int socket_opts[NR_SOL_SOCKET_OPTS] = { SO_DEBUG, SO_REUSEADDR, SO_TYPE, 
 	SO_PASSSEC, SO_TIMESTAMPNS, SO_MARK, SO_TIMESTAMPING,
 	SO_PROTOCOL, SO_DOMAIN, SO_RXQ_OVFL, SO_WIFI_STATUS,
 	SO_PEEK_OFF, SO_NOFCS };
+
+#define NR_SOL_TCP_OPTS 23
+static int tcp_opts[NR_SOL_TCP_OPTS] = { TCP_NODELAY, TCP_MAXSEG, TCP_CORK, TCP_KEEPIDLE,
+	TCP_KEEPINTVL, TCP_KEEPCNT, TCP_SYNCNT, TCP_LINGER2,
+	TCP_DEFER_ACCEPT, TCP_WINDOW_CLAMP, TCP_INFO, TCP_QUICKACK,
+	TCP_CONGESTION, TCP_MD5SIG, TCP_COOKIE_TRANSACTIONS, TCP_THIN_LINEAR_TIMEOUTS,
+	TCP_THIN_DUPACK, TCP_USER_TIMEOUT, TCP_REPAIR, TCP_REPAIR_QUEUE,
+	TCP_QUEUE_SEQ, TCP_REPAIR_OPTIONS, TCP_FASTOPEN};
 
 
 void sanitise_setsockopt(int childno)
@@ -134,6 +143,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_TCP:
+		bit = rand() % NR_SOL_TCP_OPTS;
+		shm->a3[childno] = 1 << (tcp_opts[bit]);
+		break;
+
 	case SOL_UDP:
 	case SOL_IPV6:
 	case SOL_ICMPV6:
