@@ -214,4 +214,51 @@ enum kcmp_type {
 #define IPV6_FLOWINFO 11
 #endif
 
+/* sctp/user.h */
+#ifndef SCTP_RTOINFO
+#define SCTP_RTOINFO    0
+#define SCTP_ASSOCINFO  1
+#define SCTP_INITMSG    2
+#define SCTP_NODELAY    3               /* Get/set nodelay option. */
+#define SCTP_AUTOCLOSE  4
+#define SCTP_SET_PEER_PRIMARY_ADDR 5
+#define SCTP_PRIMARY_ADDR       6
+#define SCTP_ADAPTATION_LAYER   7
+#define SCTP_DISABLE_FRAGMENTS  8
+#define SCTP_PEER_ADDR_PARAMS   9
+#define SCTP_DEFAULT_SEND_PARAM 10
+#define SCTP_EVENTS     11
+#define SCTP_I_WANT_MAPPED_V4_ADDR 12   /* Turn on/off mapped v4 addresses  */
+#define SCTP_MAXSEG     13              /* Get/set maximum fragment. */
+#define SCTP_STATUS     14
+#define SCTP_GET_PEER_ADDR_INFO 15
+#define SCTP_DELAYED_ACK_TIME   16
+#define SCTP_CONTEXT    17
+#define SCTP_FRAGMENT_INTERLEAVE        18
+#define SCTP_PARTIAL_DELIVERY_POINT     19 /* Set/Get partial delivery point */
+#define SCTP_MAX_BURST  20              /* Set/Get max burst */
+#define SCTP_AUTH_CHUNK 21      /* Set only: add a chunk type to authenticate */
+#define SCTP_HMAC_IDENT 22
+#define SCTP_AUTH_KEY   23
+#define SCTP_AUTH_ACTIVE_KEY    24
+#define SCTP_AUTH_DELETE_KEY    25
+#define SCTP_PEER_AUTH_CHUNKS   26      /* Read only */
+#define SCTP_LOCAL_AUTH_CHUNKS  27      /* Read only */
+#define SCTP_GET_ASSOC_NUMBER   28      /* Read only */
+#define SCTP_GET_ASSOC_ID_LIST  29      /* Read only */
+#define SCTP_AUTO_ASCONF       30
+#define SCTP_PEER_ADDR_THLDS    31
+#endif
+
+#ifndef SCTP_SOCKOPT_BINDX_ADD
+#define SCTP_SOCKOPT_BINDX_ADD  100     /* BINDX requests for adding addrs */
+#define SCTP_SOCKOPT_BINDX_REM  101     /* BINDX requests for removing addrs. */
+#define SCTP_SOCKOPT_PEELOFF    102     /* peel off association. */
+#define SCTP_SOCKOPT_CONNECTX_OLD       107     /* CONNECTX old requests. */
+#define SCTP_GET_PEER_ADDRS     108             /* Get all peer address. */
+#define SCTP_GET_LOCAL_ADDRS    109             /* Get all local address. */
+#define SCTP_SOCKOPT_CONNECTX   110             /* CONNECTX requests. */
+#define SCTP_SOCKOPT_CONNECTX3  111     /* CONNECTX requests (updated) */
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
