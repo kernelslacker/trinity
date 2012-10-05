@@ -201,4 +201,12 @@ enum kcmp_type {
 #define TCP_FASTOPEN 23
 #endif
 
+/* net/udplite.h */
+#ifndef UDPLITE_SEND_CSCOV
+#define UDPLITE_SEND_CSCOV   10 /* sender partial coverage (as sent)      */
+#endif
+#ifndef UDPLITE_RECV_CSCOV
+#define UDPLITE_RECV_CSCOV   11 /* receiver partial coverage (threshold ) */
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */

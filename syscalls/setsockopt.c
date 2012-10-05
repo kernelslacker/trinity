@@ -17,6 +17,7 @@
 #include <netrom/netrom.h>
 #include <linux/tipc.h>
 #include <linux/filter.h>
+
 #include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
@@ -66,6 +67,11 @@ static int tcp_opts[NR_SOL_TCP_OPTS] = { TCP_NODELAY, TCP_MAXSEG, TCP_CORK, TCP_
 	TCP_THIN_DUPACK, TCP_USER_TIMEOUT, TCP_REPAIR, TCP_REPAIR_QUEUE,
 	TCP_QUEUE_SEQ, TCP_REPAIR_OPTIONS, TCP_FASTOPEN};
 
+#define NR_SOL_UDP_OPTS 2
+static int udp_opts[NR_SOL_UDP_OPTS] = { UDP_CORK, UDP_ENCAP };
+
+#define NR_SOL_UDPLITE_OPTS 4
+static int udplite_opts[NR_SOL_UDPLITE_OPTS] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
 
 void sanitise_setsockopt(int childno)
 {
@@ -148,10 +154,44 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_UDP:
+		bit = rand() % NR_SOL_UDP_OPTS;
+		shm->a3[childno] = 1 << (udp_opts[bit]);
+
+		switch (shm->a3[childno]) {
+		case UDP_CORK:
+			break;
+		case UDP_ENCAP:
+			page_rand[0] = (rand() % 3) + 1;	// Encapsulation types.
+			break;
+		default:
+			break;
+		}
+		break;
+
+	case SOL_UDPLITE:
+		bit = rand() % NR_SOL_UDPLITE_OPTS;
+		shm->a3[childno] = 1 << (udplite_opts[bit]);
+
+		switch (shm->a3[childno]) {
+		case UDP_CORK:
+			break;
+		case UDP_ENCAP:
+			page_rand[0] = (rand() % 3) + 1;	// Encapsulation types.
+			break;
+		case UDPLITE_SEND_CSCOV:
+			break;
+		case UDPLITE_RECV_CSCOV:
+			break;
+		default:
+			break;
+		}
+
+		break;
+
 	case SOL_IPV6:
 	case SOL_ICMPV6:
 	case SOL_SCTP:
-	case SOL_UDPLITE:
+
 	case SOL_RAW:
 	case SOL_IPX:
 	case SOL_AX25:
