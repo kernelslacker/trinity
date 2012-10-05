@@ -26,6 +26,7 @@
 #include <linux/irda.h>
 #include <linux/if.h>
 #include <linux/llc.h>
+#include <linux/dccp.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -157,6 +158,12 @@ static int llc_opts[NR_SOL_LLC_OPTS] = {
 	LLC_OPT_REJ_TMR_EXP, LLC_OPT_BUSY_TMR_EXP, LLC_OPT_TX_WIN, LLC_OPT_RX_WIN,
 	LLC_OPT_PKTINFO };
 
+#define NR_SOL_DCCP_OPTS 16
+static int dccp_opts[NR_SOL_DCCP_OPTS] = {
+	DCCP_SOCKOPT_PACKET_SIZE, DCCP_SOCKOPT_SERVICE, DCCP_SOCKOPT_CHANGE_L, DCCP_SOCKOPT_CHANGE_R,
+	DCCP_SOCKOPT_GET_CUR_MPS, DCCP_SOCKOPT_SERVER_TIMEWAIT, DCCP_SOCKOPT_SEND_CSCOV, DCCP_SOCKOPT_RECV_CSCOV,
+	DCCP_SOCKOPT_AVAILABLE_CCIDS, DCCP_SOCKOPT_CCID, DCCP_SOCKOPT_TX_CCID, DCCP_SOCKOPT_RX_CCID,
+	DCCP_SOCKOPT_QPOLICY_ID, DCCP_SOCKOPT_QPOLICY_TXQLEN, DCCP_SOCKOPT_CCID_RX_INFO, DCCP_SOCKOPT_CCID_TX_INFO };
 
 void sanitise_setsockopt(int childno)
 {
@@ -352,6 +359,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_DCCP:
+		val = rand() % NR_SOL_DCCP_OPTS;
+		shm->a3[childno] = dccp_opts[val];
+		break;
+
 	case SOL_NETLINK:
 	case SOL_TIPC:
 	case SOL_RXRPC:
