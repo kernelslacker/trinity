@@ -92,7 +92,6 @@ unsigned long get_interesting_value()
 	i = rand() % 17;
 
 	switch (i) {
-	/* 64 bit */
 	case 0: return 0;
 	case 1: return 0x0000000100000000;
 	case 2: return 0x7fffffff00000000;
