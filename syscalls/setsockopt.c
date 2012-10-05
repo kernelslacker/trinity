@@ -21,6 +21,8 @@
 #include <linux/icmpv6.h>
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
+#include <linux/atmdev.h>
+#include <linux/atm.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -135,6 +137,10 @@ static int packet_opts[NR_SOL_PACKET_OPTS] = {
 	PACKET_ORIGDEV, PACKET_VERSION, PACKET_HDRLEN, PACKET_RESERVE,
 	PACKET_TX_RING, PACKET_LOSS, PACKET_VNET_HDR, PACKET_TX_TIMESTAMP,
 	PACKET_TIMESTAMP, PACKET_FANOUT };
+
+#define NR_SOL_ATM_OPTS 6
+static int atm_opts[NR_SOL_ATM_OPTS] = {
+	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT };
 
 
 void sanitise_setsockopt(int childno)
@@ -310,6 +316,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_ATM:
+		val = rand() % NR_SOL_ATM_OPTS;
+		shm->a3[childno] = atm_opts[val];
+		break;
+
 	case SOL_AAL:
 	case SOL_IRDA:
 	case SOL_NETBEUI:
