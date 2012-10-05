@@ -28,6 +28,7 @@
 #include <linux/llc.h>
 #include <linux/dccp.h>
 #include <linux/netlink.h>
+#include <linux/if_pppol2tp.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -181,6 +182,10 @@ static int rxrpc_opts[NR_SOL_RXRPC_OPTS] = {
 	RXRPC_USER_CALL_ID, RXRPC_ABORT, RXRPC_ACK, RXRPC_NET_ERROR,
 	RXRPC_BUSY, RXRPC_LOCAL_ERROR, RXRPC_NEW_CALL, RXRPC_ACCEPT };
 
+#define NR_SOL_PPPOL2TP_OPTS 5
+static int pppol2tp_opts[NR_SOL_PPPOL2TP_OPTS] = {
+	PPPOL2TP_SO_DEBUG, PPPOL2TP_SO_RECVSEQ, PPPOL2TP_SO_SENDSEQ, PPPOL2TP_SO_LNSMODE,
+	PPPOL2TP_SO_REORDERTO };
 
 void sanitise_setsockopt(int childno)
 {
@@ -397,6 +402,11 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_PPPOL2TP:
+		shm->a4[childno] = sizeof(int);
+		val = rand() % NR_SOL_PPPOL2TP_OPTS;
+		shm->a3[childno] = pppol2tp_opts[val];
+		break;
+
 	case SOL_BLUETOOTH:
 	case SOL_PNPIPE:
 	case SOL_RDS:
