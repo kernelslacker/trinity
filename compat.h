@@ -273,4 +273,36 @@ enum kcmp_type {
 #define RXRPC_ACCEPT            9       /* [Server] accept request */
 #endif
 
+/* net/bluetooth/bluetooth.h */
+#ifndef BT_SECURITY
+#define BT_SECURITY     4
+#define BT_DEFER_SETUP  7
+#define BT_FLUSHABLE    8
+#define BT_POWER        9
+#define BT_CHANNEL_POLICY       10
+
+#define SOL_HCI         0
+#define SOL_L2CAP       6
+#define SOL_SCO         17
+#define SOL_RFCOMM      18
+#endif
+
+/* net/bluetooth/hci.h */
+#ifndef HCI_DATA_DIR
+#define HCI_DATA_DIR    1
+#define HCI_FILTER      2
+#define HCI_TIME_STAMP  3
+#endif
+
+/* net/bluetooth/l2cap.h */
+#ifndef L2CAP_OPTIONS
+#define L2CAP_OPTIONS   0x01
+#define L2CAP_LM        0x03
+#endif
+
+/* net/bluetooth/rfcomm.h */
+#ifndef RFCOMM_LM
+#define RFCOMM_LM       0x03
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */

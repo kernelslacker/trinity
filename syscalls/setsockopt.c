@@ -187,6 +187,23 @@ static int pppol2tp_opts[NR_SOL_PPPOL2TP_OPTS] = {
 	PPPOL2TP_SO_DEBUG, PPPOL2TP_SO_RECVSEQ, PPPOL2TP_SO_SENDSEQ, PPPOL2TP_SO_LNSMODE,
 	PPPOL2TP_SO_REORDERTO };
 
+#define NR_SOL_BLUETOOTH_OPTS 5
+static int bluetooth_opts[NR_SOL_BLUETOOTH_OPTS] = {
+	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
+	BT_CHANNEL_POLICY };
+
+#define NR_SOL_BLUETOOTH_HCI_OPTS 3
+static int bluetooth_hci_opts[NR_SOL_BLUETOOTH_HCI_OPTS] = {
+	HCI_DATA_DIR, HCI_FILTER, HCI_TIME_STAMP };
+
+#define NR_SOL_BLUETOOTH_L2CAP_OPTS 2
+static int bluetooth_l2cap_opts[NR_SOL_BLUETOOTH_L2CAP_OPTS] = {
+	L2CAP_OPTIONS, L2CAP_LM };
+
+#define NR_SOL_BLUETOOTH_RFCOMM_OPTS 2
+static int bluetooth_rfcomm_opts[NR_SOL_BLUETOOTH_RFCOMM_OPTS] = { RFCOMM_LM };
+
+
 void sanitise_setsockopt(int childno)
 {
 	int level;
@@ -194,6 +211,8 @@ void sanitise_setsockopt(int childno)
 
 	shm->a4[childno] = (unsigned long) page_rand;
 	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int (overridden below)
+
+	/* First we pick a level  */
 
 	switch (rand() % 33) {
 	case 0:	level = SOL_IP;	break;
@@ -234,7 +253,8 @@ void sanitise_setsockopt(int childno)
 		break;
 	}
 
-	shm->a2[childno] = level;
+
+	/* Now, use that level to determine which options to set. */
 
 	switch (level) {
 	case SOL_IP:
@@ -408,6 +428,45 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_BLUETOOTH:
+		switch(rand() % 5) {
+		case 0: level = SOL_HCI; break;
+		case 1: level = SOL_L2CAP; break;
+		case 2: level = SOL_SCO; break;
+		case 3: level = SOL_RFCOMM; break;
+		case 4:	/* leave level unchanged */
+			;;
+		default:
+			break;
+		}
+
+		switch (level) {
+		case SOL_HCI:
+			val = rand() % NR_SOL_BLUETOOTH_HCI_OPTS;
+			shm->a3[childno] = bluetooth_hci_opts[val];
+			break;
+
+		case SOL_L2CAP:
+			val = rand() % NR_SOL_BLUETOOTH_L2CAP_OPTS;
+			shm->a3[childno] = bluetooth_l2cap_opts[val];
+			break;
+
+		case SOL_SCO:	/* no options currently */
+			break;
+
+		case SOL_RFCOMM:
+			val = rand() % NR_SOL_BLUETOOTH_RFCOMM_OPTS;
+			shm->a3[childno] = bluetooth_rfcomm_opts[val];
+			break;
+
+		case SOL_BLUETOOTH:
+			val = rand() % NR_SOL_BLUETOOTH_OPTS;
+			shm->a3[childno] = bluetooth_opts[val];
+			break;
+
+		default: break;
+		}
+		break;
+
 	case SOL_PNPIPE:
 	case SOL_RDS:
 	case SOL_IUCV:
@@ -417,6 +476,8 @@ void sanitise_setsockopt(int childno)
 	default:
 		shm->a3[childno] = (rand() % 0xff);	/* random operation. */
 	}
+
+	shm->a2[childno] = level;
 
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
