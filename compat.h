@@ -312,4 +312,13 @@ enum kcmp_type {
 #define SO_MSGSIZE      0x0800          /* get maximum msgsize */
 #endif
 
+/* linux/caif/caif_socket.h */
+#ifndef CAIFSO_LINK_SELECT
+enum caif_socket_opts {
+	CAIFSO_LINK_SELECT      = 127,
+	CAIFSO_REQ_PARAM        = 128,
+	CAIFSO_RSP_PARAM        = 129,
+};
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */

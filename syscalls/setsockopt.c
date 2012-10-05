@@ -214,6 +214,9 @@ static int rds_opts[NR_SOL_RDS_OPTS] = {
 static int iucv_opts[NR_SOL_IUCV_OPTS] = {
 	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE };
 
+#define NR_SOL_CAIF_OPTS 2
+static int caif_opts[NR_SOL_CAIF_OPTS] = {
+	CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM };
 
 void sanitise_setsockopt(int childno)
 {
@@ -493,6 +496,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_CAIF:
+		val = rand() % NR_SOL_CAIF_OPTS;
+		shm->a3[childno] = caif_opts[val];
+		break;
+
 	case SOL_ALG:
 
 	default:
