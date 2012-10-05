@@ -108,6 +108,10 @@ static int ax25_opts[NR_SOL_AX25_OPTS] = {
 	AX25_IDLE, AX25_PACLEN, AX25_IAMDIGI,
 	SO_BINDTODEVICE };
 
+#define NR_SOL_NETROM_OPTS 5
+static int netrom_opts[NR_SOL_NETROM_OPTS] = {
+	NETROM_T1, NETROM_T2, NETROM_N2, NETROM_T4, NETROM_IDLE };
+
 
 void sanitise_setsockopt(int childno)
 {
@@ -256,6 +260,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_NETROM:
+		val = rand() % NR_SOL_NETROM_OPTS;
+		shm->a3[childno] = netrom_opts[val];
+		break;
+
 	case SOL_ROSE:
 	case SOL_DECNET:
 	case SOL_X25:
