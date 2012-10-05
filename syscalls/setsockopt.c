@@ -171,6 +171,11 @@ static int netlink_opts[NR_SOL_NETLINK_OPTS] = {
 	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
 	NETLINK_NO_ENOBUFS };
 
+#define NR_SOL_TIPC_OPTS 6
+static int tipc_opts[NR_SOL_TIPC_OPTS] = {
+	TIPC_IMPORTANCE, TIPC_SRC_DROPPABLE, TIPC_DEST_DROPPABLE, TIPC_CONN_TIMEOUT,
+	TIPC_NODE_RECVQ_DEPTH, TIPC_SOCK_RECVQ_DEPTH };
+
 
 void sanitise_setsockopt(int childno)
 {
@@ -376,6 +381,11 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_TIPC:
+		shm->a4[childno] = sizeof(__u32);
+		val = rand() % NR_SOL_TIPC_OPTS;
+		shm->a3[childno] = tipc_opts[val];
+		break;
+
 	case SOL_RXRPC:
 	case SOL_PPPOL2TP:
 	case SOL_BLUETOOTH:
