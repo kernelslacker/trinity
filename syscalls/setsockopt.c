@@ -20,6 +20,7 @@
 #include <linux/filter.h>
 #include <linux/icmpv6.h>
 #include <linux/icmp.h>
+#include <linux/if_packet.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -126,6 +127,15 @@ static int decnet_opts[NR_SOL_DECNET_OPTS] = {
 	DSO_SEQPACKET, DSO_MAXWINDOW, DSO_NODELAY, DSO_CORK,
 	DSO_SERVICES, DSO_INFO
 };
+
+#define NR_SOL_PACKET_OPTS 22
+static int packet_opts[NR_SOL_PACKET_OPTS] = {
+	PACKET_ADD_MEMBERSHIP, PACKET_DROP_MEMBERSHIP, PACKET_RECV_OUTPUT, 4,	/* Value 4 is still used by obsolete turbo-packet. */
+	PACKET_RX_RING, PACKET_STATISTICS, PACKET_COPY_THRESH, PACKET_AUXDATA,
+	PACKET_ORIGDEV, PACKET_VERSION, PACKET_HDRLEN, PACKET_RESERVE,
+	PACKET_TX_RING, PACKET_LOSS, PACKET_VNET_HDR, PACKET_TX_TIMESTAMP,
+	PACKET_TIMESTAMP, PACKET_FANOUT };
+
 
 void sanitise_setsockopt(int childno)
 {
@@ -295,6 +305,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_PACKET:
+		val = rand() % NR_SOL_PACKET_OPTS;
+		shm->a3[childno] = packet_opts[val];
+		break;
+
 	case SOL_ATM:
 	case SOL_AAL:
 	case SOL_IRDA:
