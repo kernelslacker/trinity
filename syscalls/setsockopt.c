@@ -290,6 +290,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_X25:
+		page_rand[0] = rand() % 2;	/* Just a bool */
+		shm->a4[childno] = sizeof(int);
+		break;
+
 	case SOL_PACKET:
 	case SOL_ATM:
 	case SOL_AAL:
