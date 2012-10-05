@@ -73,6 +73,16 @@ static int udp_opts[NR_SOL_UDP_OPTS] = { UDP_CORK, UDP_ENCAP };
 #define NR_SOL_UDPLITE_OPTS 4
 static int udplite_opts[NR_SOL_UDPLITE_OPTS] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
 
+#define NR_SOL_IPV6_OPTS 24
+static int ipv6_opts[NR_SOL_IPV6_OPTS] = {
+	IPV6_ADDRFORM, IPV6_2292PKTINFO, IPV6_2292HOPOPTS, IPV6_2292DSTOPTS,
+	IPV6_2292RTHDR, IPV6_2292PKTOPTIONS, IPV6_CHECKSUM, IPV6_2292HOPLIMIT,
+	IPV6_NEXTHOP, IPV6_AUTHHDR, IPV6_FLOWINFO, IPV6_UNICAST_HOPS,
+	IPV6_MULTICAST_IF, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP, IPV6_ADD_MEMBERSHIP,
+	IPV6_DROP_MEMBERSHIP, IPV6_ROUTER_ALERT, IPV6_MTU_DISCOVER, IPV6_MTU,
+	IPV6_RECVERR, IPV6_V6ONLY, IPV6_JOIN_ANYCAST, IPV6_LEAVE_ANYCAST };
+
+
 void sanitise_setsockopt(int childno)
 {
 	int level;
@@ -168,6 +178,11 @@ void sanitise_setsockopt(int childno)
 		}
 		break;
 
+	case SOL_IPV6:
+		bit = rand() % NR_SOL_IP_OPTS;
+		shm->a3[childno] = 1 << (ip_opts[bit]);
+		break;
+
 	case SOL_UDPLITE:
 		bit = rand() % NR_SOL_UDPLITE_OPTS;
 		shm->a3[childno] = 1 << (udplite_opts[bit]);
@@ -188,7 +203,6 @@ void sanitise_setsockopt(int childno)
 
 		break;
 
-	case SOL_IPV6:
 	case SOL_ICMPV6:
 	case SOL_SCTP:
 

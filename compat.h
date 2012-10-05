@@ -209,4 +209,9 @@ enum kcmp_type {
 #define UDPLITE_RECV_CSCOV   11 /* receiver partial coverage (threshold ) */
 #endif
 
+/* linux/in6.h */
+#ifndef IPV6_FLOWINFO
+#define IPV6_FLOWINFO 11
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
