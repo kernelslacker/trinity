@@ -27,6 +27,7 @@
 #include <linux/if.h>
 #include <linux/llc.h>
 #include <linux/dccp.h>
+#include <linux/netlink.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -164,6 +165,12 @@ static int dccp_opts[NR_SOL_DCCP_OPTS] = {
 	DCCP_SOCKOPT_GET_CUR_MPS, DCCP_SOCKOPT_SERVER_TIMEWAIT, DCCP_SOCKOPT_SEND_CSCOV, DCCP_SOCKOPT_RECV_CSCOV,
 	DCCP_SOCKOPT_AVAILABLE_CCIDS, DCCP_SOCKOPT_CCID, DCCP_SOCKOPT_TX_CCID, DCCP_SOCKOPT_RX_CCID,
 	DCCP_SOCKOPT_QPOLICY_ID, DCCP_SOCKOPT_QPOLICY_TXQLEN, DCCP_SOCKOPT_CCID_RX_INFO, DCCP_SOCKOPT_CCID_TX_INFO };
+
+#define NR_SOL_NETLINK_OPTS 5
+static int netlink_opts[NR_SOL_NETLINK_OPTS] = {
+	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
+	NETLINK_NO_ENOBUFS };
+
 
 void sanitise_setsockopt(int childno)
 {
@@ -364,6 +371,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_NETLINK:
+		val = rand() % NR_SOL_NETLINK_OPTS;
+		shm->a3[childno] = netlink_opts[val];
+		break;
+
 	case SOL_TIPC:
 	case SOL_RXRPC:
 	case SOL_PPPOL2TP:
