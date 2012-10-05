@@ -500,7 +500,9 @@ void sanitise_setsockopt(int childno)
 		shm->a3[childno] = caif_opts[val];
 		break;
 
-	case SOL_ALG:
+	case SOL_ALG:	/* no setsockopt */
+		break;
+
 
 	default:
 		shm->a3[childno] = (rand() % 0xff);	/* random operation. */
