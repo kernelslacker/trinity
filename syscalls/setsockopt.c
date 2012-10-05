@@ -112,6 +112,11 @@ static int ax25_opts[NR_SOL_AX25_OPTS] = {
 static int netrom_opts[NR_SOL_NETROM_OPTS] = {
 	NETROM_T1, NETROM_T2, NETROM_N2, NETROM_T4, NETROM_IDLE };
 
+#define NR_SOL_ROSE_OPTS 7
+static int rose_opts[NR_SOL_ROSE_OPTS] = {
+	ROSE_DEFER, ROSE_T1, ROSE_T2, ROSE_T3,
+	ROSE_IDLE, ROSE_QBITINCL, ROSE_HOLDBACK };
+
 
 void sanitise_setsockopt(int childno)
 {
@@ -265,6 +270,10 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_ROSE:
+		val = rand() % NR_SOL_ROSE_OPTS;
+		shm->a3[childno] = rose_opts[val];
+		break;
+
 	case SOL_DECNET:
 	case SOL_X25:
 	case SOL_PACKET:
