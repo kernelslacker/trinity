@@ -15,6 +15,7 @@
 #include <netax25/ax25.h>
 #include <netrose/rose.h>
 #include <netrom/netrom.h>
+#include <linux/dn.h>
 #include <linux/tipc.h>
 #include <linux/filter.h>
 #include <linux/icmpv6.h>
@@ -117,6 +118,14 @@ static int rose_opts[NR_SOL_ROSE_OPTS] = {
 	ROSE_DEFER, ROSE_T1, ROSE_T2, ROSE_T3,
 	ROSE_IDLE, ROSE_QBITINCL, ROSE_HOLDBACK };
 
+#define NR_SOL_DECNET_OPTS 18
+static int decnet_opts[NR_SOL_DECNET_OPTS] = {
+	SO_CONDATA, SO_CONACCESS, SO_PROXYUSR, SO_LINKINFO,
+	DSO_CONDATA, DSO_DISDATA, DSO_CONACCESS, DSO_ACCEPTMODE,
+	DSO_CONACCEPT, DSO_CONREJECT, DSO_LINKINFO, DSO_STREAM,
+	DSO_SEQPACKET, DSO_MAXWINDOW, DSO_NODELAY, DSO_CORK,
+	DSO_SERVICES, DSO_INFO
+};
 
 void sanitise_setsockopt(int childno)
 {
@@ -275,6 +284,11 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_DECNET:
+		// TODO: set size correctly
+		val = rand() % NR_SOL_DECNET_OPTS;
+		shm->a3[childno] = decnet_opts[val];
+		break;
+
 	case SOL_X25:
 	case SOL_PACKET:
 	case SOL_ATM:
