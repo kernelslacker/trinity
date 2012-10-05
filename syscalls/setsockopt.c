@@ -236,6 +236,9 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	case SOL_IPX:
+		shm->a3[childno] = IPX_TYPE;
+		break;
+
 	case SOL_AX25:
 	case SOL_ATALK:
 	case SOL_NETROM:
