@@ -151,7 +151,7 @@ void sanitise_setsockopt(int childno)
 	case SOL_ALG:
 
 	default:
-		shm->a3[childno] = rand() % 255;	/* random operation. */
+		shm->a3[childno] = 1 << (rand() % 16);	/* random operation. */
 	}
 }
 
