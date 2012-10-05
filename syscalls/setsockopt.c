@@ -24,6 +24,8 @@
 #include <linux/atmdev.h>
 #include <linux/atm.h>
 #include <linux/irda.h>
+#include <linux/if.h>
+#include <linux/llc.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -148,6 +150,12 @@ static int irda_opts[NR_SOL_IRDA_OPTS] = {
 	IRLMP_ENUMDEVICES, IRLMP_IAS_SET, IRLMP_IAS_QUERY, IRLMP_HINTS_SET,
 	IRLMP_QOS_SET, IRLMP_QOS_GET, IRLMP_MAX_SDU_SIZE, IRLMP_IAS_GET,
 	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE };
+
+#define NR_SOL_LLC_OPTS 9
+static int llc_opts[NR_SOL_LLC_OPTS] = {
+	LLC_OPT_RETRY, LLC_OPT_SIZE, LLC_OPT_ACK_TMR_EXP, LLC_OPT_P_TMR_EXP,
+	LLC_OPT_REJ_TMR_EXP, LLC_OPT_BUSY_TMR_EXP, LLC_OPT_TX_WIN, LLC_OPT_RX_WIN,
+	LLC_OPT_PKTINFO };
 
 
 void sanitise_setsockopt(int childno)
@@ -335,8 +343,14 @@ void sanitise_setsockopt(int childno)
 		shm->a3[childno] = irda_opts[val];
 		break;
 
-	case SOL_NETBEUI:
+	case SOL_NETBEUI:	/* no setsockopt */
+		break;
+
 	case SOL_LLC:
+		val = rand() % NR_SOL_LLC_OPTS;
+		shm->a3[childno] = llc_opts[val];
+		break;
+
 	case SOL_DCCP:
 	case SOL_NETLINK:
 	case SOL_TIPC:
