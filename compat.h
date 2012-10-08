@@ -312,12 +312,16 @@ enum kcmp_type {
 #define SO_MSGSIZE      0x0800          /* get maximum msgsize */
 #endif
 
-/* linux/caif/caif_socket.h */
-#ifndef CAIFSO_LINK_SELECT
-enum caif_socket_opts {
-	CAIFSO_LINK_SELECT      = 127,
-	CAIFSO_REQ_PARAM        = 128,
-	CAIFSO_RSP_PARAM        = 129,
+/* linux/nfc.h */
+#ifndef sockaddr_nfc
+#include <bits/sockaddr.h>
+#include <linux/types.h>
+
+struct sockaddr_nfc {
+	sa_family_t sa_family;
+	__u32 dev_idx;
+	__u32 target_idx;
+	__u32 nfc_protocol;
 };
 #endif
 

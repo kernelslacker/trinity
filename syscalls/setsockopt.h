@@ -30,6 +30,7 @@
 #include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
 #include <linux/rds.h>
+#include <linux/caif/caif_socket.h>
 
 #include "compat.h"
 

@@ -22,10 +22,10 @@
 #include <linux/if_alg.h>
 #include <linux/phonet.h>
 #include <linux/netlink.h>
-#include <linux/nfc.h>
 #include <stdlib.h>
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 
 static int random_ipv4_address(void)
 {
