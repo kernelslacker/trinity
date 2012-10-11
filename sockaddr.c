@@ -27,7 +27,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-static int random_ipv4_address(void)
+static in_addr_t random_ipv4_address(void)
 {
 	int addr = 0;
 	int class = 0;
