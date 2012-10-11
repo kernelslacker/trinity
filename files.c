@@ -90,7 +90,8 @@ void open_fds(const char *dir, unsigned char add_all)
 	int set_read;
 	int set_write;
 	bool is_dir = FALSE;
-
+	uid_t my_id = getuid();
+	gid_t my_gid = getgid();
 
 	if (!d) {
 		printf("can't open %s\n", dir);
@@ -123,7 +124,7 @@ void open_fds(const char *dir, unsigned char add_all)
 			/* probability of adding a directory to the list. */
 			chance = 5;
 
-			if (buf.st_uid != getuid()) {
+			if (buf.st_uid != my_id) {
 				/* We don't own the dir, is it group/other readable ? */
 				if (buf.st_mode & (S_IRGRP|S_IROTH)) {
 					open_fds(b, add_all);
@@ -146,13 +147,13 @@ openit:
 		set_write = FALSE;
 
 		/* if we own the file, unlikely, since you should NOT run this thing as root */
-		if (buf.st_uid == getuid()) {
+		if (buf.st_uid == my_id) {
 			if (buf.st_mode & S_IRUSR)
 				set_read = TRUE;
 			if (buf.st_mode & S_IWUSR)
 				set_write = TRUE;
 
-		} else if (buf.st_gid == getgid()) {
+		} else if (buf.st_gid == my_gid) {
 			if (buf.st_mode & S_IRGRP)
 				set_read = TRUE;
 			if (buf.st_mode & S_IWGRP)
