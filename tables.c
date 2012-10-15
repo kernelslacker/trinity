@@ -365,6 +365,9 @@ void setup_syscall_tables(void)
 #elif defined(__mips__)
 	syscalls = copy_syscall_table(syscalls_mips, NR_MIPS_SYSCALLS);
 	max_nr_syscalls = NR_MIPS_SYSCALLS;
+#elif defined(__sh__)
+	syscalls = copy_syscall_table(syscalls_sh, NR_SH_SYSCALLS);
+	max_nr_syscalls = NR_SH_SYSCALLS;
 #else
 #error Unknown architecture.
 #endif
