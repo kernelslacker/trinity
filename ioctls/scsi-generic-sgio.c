@@ -49,7 +49,7 @@ void sanitise_ioctl_sg_io(int childno)
 	sgio->ioh.mx_sb_len = sizeof(sgio->sense);
 	sgio->ioh.sbp = sgio->sense;
 	sgio->ioh.timeout = UINT_MAX;
-	sgio->ioh.usr_ptr = 0;
+	sgio->ioh.usr_ptr = NULL;
 	sgio->ioh.flags |= SG_FLAG_DIRECT_IO;
 
 	shm->a3[childno] = (unsigned long) page_rand;
