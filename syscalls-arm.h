@@ -87,21 +87,21 @@ struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_sigpending },
 		{ .entry = &syscall_sethostname },
 /* 75 */	{ .entry = &syscall_setrlimit },
-		{ .entry = &syscall_old_getrlimit }, /* used by libc4 */
+		{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_old_getrlimit },*/ /* used by libc4 */
 		{ .entry = &syscall_getrusage },
 		{ .entry = &syscall_gettimeofday },
 		{ .entry = &syscall_settimeofday },
 /* 80 */	{ .entry = &syscall_getgroups16 },
 		{ .entry = &syscall_setgroups16 },
-		{ .entry = &syscall_old_select },	/* used by libc4 */
+		{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_old_select },*/	/* used by libc4 */
 		{ .entry = &syscall_symlink },
 		{ .entry = &syscall_ni_syscall },		/* was sys_lstat */
 /* 85 */	{ .entry = &syscall_readlink },
 		{ .entry = &syscall_uselib },
 		{ .entry = &syscall_swapon },
 		{ .entry = &syscall_reboot },
-		{ .entry = &syscall_old_readdir },	/* used by libc4 */
-/* 90 */	{ .entry = &syscall_old_mmap },	/* used by libc4 */
+		{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_old_readdir },*/	/* used by libc4 */
+/* 90 */	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_old_mmap },*/	/* used by libc4 */
 		{ .entry = &syscall_munmap },
 		{ .entry = &syscall_truncate },
 		{ .entry = &syscall_ftruncate },
@@ -124,7 +124,7 @@ struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 /* 110 */	{ .entry = &syscall_ni_syscall },		/* was sys_iopl */
 		{ .entry = &syscall_vhangup },
 		{ .entry = &syscall_ni_syscall },
-		{ .entry = &syscall_syscall },	/* call a syscall */
+		{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_syscall },*/	/* call a syscall */
 		{ .entry = &syscall_wait4 },
 /* 115 */	{ .entry = &syscall_swapoff },
 		{ .entry = &syscall_sysinfo },
