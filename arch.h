@@ -24,6 +24,9 @@
 #ifdef __mips__
 #include "arch-mips.h"
 #endif
+#ifdef __sh__
+#include "arch-sh.h"
+#endif
 
 #ifndef SYSCALL_OFFSET
 #define SYSCALL_OFFSET 0
