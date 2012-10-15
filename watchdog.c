@@ -15,7 +15,7 @@
 #include "files.h"
 #include "syscall.h"
 
-void init_watchdog()
+void init_watchdog(void)
 {
 	pid_t pid;
 

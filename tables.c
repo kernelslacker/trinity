@@ -179,7 +179,7 @@ static void sanity_check(const struct syscalltable *table, unsigned int nr)
 		check_syscall(table[i].entry);
 }
 
-void sanity_check_tables()
+void sanity_check_tables(void)
 {
 	if (biarch == TRUE) {
 		sanity_check(syscalls_32bit, max_nr_32bit_syscalls);

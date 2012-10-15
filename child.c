@@ -19,7 +19,7 @@
 
 static struct rlimit oldrlimit;
 
-static void disable_coredumps()
+static void disable_coredumps(void)
 {
 	struct rlimit limit;
 
@@ -36,7 +36,7 @@ static void disable_coredumps()
 		perror( "setrlimit(RLIMIT_CORE)" );
 }
 
-static void reenable_coredumps()
+static void reenable_coredumps(void)
 {
 	if (debug == TRUE)
 		return;
@@ -50,7 +50,7 @@ static void reenable_coredumps()
 			strerror(errno));
 	}
 }
-static void set_make_it_fail()
+static void set_make_it_fail(void)
 {
 	int fd;
 	const char *buf = "1";

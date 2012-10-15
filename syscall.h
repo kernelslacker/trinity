@@ -116,6 +116,6 @@ int validate_syscall_tables(void);
 bool no_syscalls_enabled(void);
 int validate_syscall_table_64(void);
 int validate_syscall_table_32(void);
-void sanity_check_tables();
+void sanity_check_tables(void);
 
 #endif	/* _TRINITY_SYSCALL_H */

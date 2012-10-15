@@ -14,12 +14,12 @@ void generic_sanitise(int childno);
 extern char * filebuffer;
 extern unsigned long filebuffersize;
 
-unsigned long get_interesting_value();
-unsigned long get_interesting_32bit_value();
+unsigned long get_interesting_value(void);
+unsigned long get_interesting_32bit_value(void);
 unsigned long get_reg(void);
-void *get_address();
-void *get_non_null_address();
-unsigned long get_len();
+void *get_address(void);
+void *get_non_null_address(void);
+unsigned long get_len(void);
 unsigned int get_pid(void);
 int get_random_fd(void);
 void generate_sockaddr(unsigned long *addr, unsigned long *addrlen);

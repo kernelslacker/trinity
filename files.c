@@ -217,7 +217,7 @@ openit:
 	closedir(d);
 }
 
-void open_files()
+void open_files(void)
 {
 /*	const char dir1[]="/";
 	const char dir2[]=".";
@@ -247,7 +247,7 @@ void open_files()
 	}
 }
 
-void close_files()
+void close_files(void)
 {
 	unsigned int i;
 	int fd;

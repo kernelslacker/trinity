@@ -135,7 +135,7 @@ static void close_sockets(void)
 	}
 }
 
-void open_sockets()
+void open_sockets(void)
 {
 	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 	int cachefile;
