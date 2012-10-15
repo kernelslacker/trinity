@@ -7,7 +7,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-#define NR_ARM_SYSCALLS 378
+#define NR_ARM_SYSCALLS 379
 
 struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 
