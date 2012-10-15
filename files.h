@@ -3,6 +3,6 @@
 extern char *pathnames[NR_PATHNAMES];
 
 void setup_fds(void);
-int get_fd();
+int get_fd(void);
 
 void regenerate_fds(void);

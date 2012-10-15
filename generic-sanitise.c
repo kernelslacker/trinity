@@ -15,7 +15,7 @@
 char * filebuffer = NULL;
 unsigned long filebuffersize = 0;
 
-unsigned long get_interesting_32bit_value()
+unsigned long get_interesting_32bit_value(void)
 {
 	int i, bit;
 
@@ -80,7 +80,7 @@ unsigned long get_interesting_32bit_value()
 	return 0;
 }
 
-unsigned long get_interesting_value()
+unsigned long get_interesting_value(void)
 {
 #if __WORDSIZE == 32
 	return get_interesting_32bit_value();
@@ -171,12 +171,12 @@ static void * _get_address(unsigned char null_allowed)
 	}
 }
 
-void * get_address()
+void * get_address(void)
 {
 	return _get_address(TRUE);
 }
 
-void * get_non_null_address()
+void * get_non_null_address(void)
 {
 	return _get_address(FALSE);
 }
@@ -189,7 +189,7 @@ unsigned long get_reg(void)
 	return get_interesting_value();
 }
 
-void regenerate_random_page()
+void regenerate_random_page(void)
 {
 	unsigned int i, j;
 	void *addr;
@@ -249,7 +249,7 @@ void regenerate_random_page()
 	}
 }
 
-static unsigned int get_cpu()
+static unsigned int get_cpu(void)
 {
 	int i;
 	i = rand() % 3;
@@ -265,7 +265,7 @@ static unsigned int get_cpu()
 	return 0;
 }
 
-unsigned long get_len()
+unsigned long get_len(void)
 {
 	int i = 0;
 

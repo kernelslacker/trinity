@@ -14,7 +14,7 @@
 #include "files.h"
 #include "syscall.h"
 
-static void regenerate()
+static void regenerate(void)
 {
 	if (syscallcount >= shm->regenerate)
 		return;
@@ -57,7 +57,7 @@ int check_tainted(void)
 
 #define debugf if (debug == TRUE) printf
 
-static void fork_children()
+static void fork_children(void)
 {
 	int pidslot;
 	static char childname[17];
@@ -247,7 +247,7 @@ static void handle_child(pid_t childpid, int childstatus)
 	}
 }
 
-static void handle_children()
+static void handle_children(void)
 {
 	unsigned int i;
 	int childstatus;
@@ -293,7 +293,7 @@ static const char * decode_exit(unsigned int reason)
 	return reasons[reason];
 }
 
-static void main_loop()
+static void main_loop(void)
 {
 	static const char taskname[13]="trinity-main";
 
@@ -325,7 +325,7 @@ static void main_loop()
 }
 
 
-void do_main_loop()
+void do_main_loop(void)
 {
 	int childstatus;
 	pid_t pid;

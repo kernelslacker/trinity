@@ -30,7 +30,7 @@ void * alloc_shared(unsigned int size)
 	return ret;
 }
 
-static struct map * alloc_map()
+static struct map * alloc_map(void)
 {
 	struct map *newmap;
 
@@ -43,7 +43,7 @@ static struct map * alloc_map()
 	return newmap;
 }
 
-static void dump_maps()
+static void dump_maps(void)
 {
 	struct map *tmpmap = maps_list;
 	unsigned int j;
@@ -92,7 +92,7 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 }
 
 
-void setup_maps()
+void setup_maps(void)
 {
 	struct map *tmpmap;
 	unsigned int fd, i;
@@ -119,7 +119,7 @@ void setup_maps()
 	dump_maps();
 }
 
-void * get_map()
+void * get_map(void)
 {
 	struct map *tmpmap = maps_list;
 	unsigned int i, j;
@@ -131,7 +131,7 @@ void * get_map()
 	return tmpmap->ptr;
 }
 
-void destroy_maps()
+void destroy_maps(void)
 {
 	unsigned int i;
 	struct map *thismap = maps_list, *next;

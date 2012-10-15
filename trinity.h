@@ -31,7 +31,7 @@ void do_main_loop(void);
 int child_process(void);
 
 long mkcall(int child);
-void do_syscall_from_child();
+void do_syscall_from_child(void);
 
 void regenerate_random_page(void);
 
@@ -44,13 +44,13 @@ extern unsigned int fds_left_to_create;
 
 extern unsigned int nr_sockets;
 extern unsigned int specific_proto;
-void open_sockets();
+void open_sockets(void);
 void find_specific_proto(char *protoarg);
 
 extern unsigned int fd_idx;
 
-void open_files();
-void close_files();
+void open_files(void);
+void close_files(void);
 void open_fds(const char *dir, unsigned char add_all);
 extern char *victim_path;
 
@@ -91,9 +91,9 @@ struct map {
 	void *ptr;
 	char *name;
 };
-void setup_maps();
-void destroy_maps();
-void * get_map();
+void setup_maps(void);
+void destroy_maps(void);
+void * get_map(void);
 void init_buffers(void);
 
 #define ANSI_RED	"[1;31m"
@@ -113,10 +113,10 @@ void init_buffers(void);
 #define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
 
 #define MAX_LOGLEVEL 3
-void synclogs();
+void synclogs(void);
 void output(unsigned char level, const char *fmt, ...);
-void open_logfiles();
-void close_logfiles();
+void open_logfiles(void);
+void close_logfiles(void);
 
 extern bool do_check_tainted;
 int check_tainted(void);

@@ -83,7 +83,7 @@ static void mask_signals(void)
 		(void)signal(SIGSEGV, SIG_DFL);
 }
 
-static int create_shm()
+static int create_shm(void)
 {
 	shm = alloc_shared(sizeof(struct shm_s));
 	if (shm == NULL) {

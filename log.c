@@ -10,7 +10,7 @@
 
 FILE *parentlogfile;
 
-void open_logfiles()
+void open_logfiles(void)
 {
 	unsigned int i;
 	char *logfilename;
@@ -36,7 +36,7 @@ void open_logfiles()
 	free(logfilename);
 }
 
-void close_logfiles()
+void close_logfiles(void)
 {
 	unsigned int i;
 
@@ -45,7 +45,7 @@ void close_logfiles()
 			fclose(shm->logfiles[i]);
 }
 
-static FILE * find_logfile_handle()
+static FILE * find_logfile_handle(void)
 {
 	pid_t pid;
 	int i;
@@ -78,7 +78,7 @@ static FILE * find_logfile_handle()
 	return NULL;
 }
 
-void synclogs()
+void synclogs(void)
 {
 	unsigned int i;
 	int fd, ret;
