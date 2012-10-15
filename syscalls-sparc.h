@@ -1,7 +1,7 @@
 /* Syscalls from arch/sparc/kernel/systbls_{32,64}.S as of 2.6.31rc2 */
 
-#include "trinity },
-#include "sanitise },
+#include "trinity.h"
+#include "sanitise.h"
 
 # define NR_SYSCALLS 326
 
