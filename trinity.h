@@ -45,7 +45,7 @@ extern unsigned int fds_left_to_create;
 extern unsigned int nr_sockets;
 extern unsigned int specific_proto;
 void open_sockets();
-void find_specific_proto();
+void find_specific_proto(char *protoarg);
 
 extern unsigned int fd_idx;
 
