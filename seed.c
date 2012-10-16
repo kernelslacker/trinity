@@ -6,6 +6,14 @@
 
 unsigned int seed = 0;
 
+static void syslog_seed(int seedparam)
+{
+	fprintf(stderr, "Randomness reseeded to 0x%x\n", seedparam);
+	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
+	syslog(LOG_CRIT, "Randomness reseeded to 0x%x\n", seedparam);
+	closelog();
+}
+
 /*
  * If we passed in a seed with -s, use that. Otherwise make one up from time of day.
  */
@@ -22,12 +30,8 @@ int init_seed(unsigned int seedparam)
 		printf("Initial random seed from time of day: %u (0x%x)\n", seedparam, seedparam);
 	}
 
-	if (do_syslog == TRUE) {
-		fprintf(stderr, "Randomness reseeded to 0x%x\n", seedparam);
-		openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
-		syslog(LOG_CRIT, "Randomness reseeded to 0x%x\n", seedparam);
-		closelog();
-	}
+	if (do_syslog == TRUE)
+		syslog_seed(seedparam);
 
 	return seed;
 }
@@ -73,11 +77,6 @@ void reseed(void)
 
 	output(0, "[%d] Random reseed from time of day: %u (0x%x)\n", getpid(), shm->seed, shm->seed);
 
-	if (do_syslog == FALSE)
-		return;
-
-	fprintf(stderr, "Randomness reseeded to 0x%x\n", shm->seed);
-	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
-	syslog(LOG_CRIT, "Randomness reseeded to 0x%x\n", shm->seed);
-	closelog();
+	if (do_syslog == TRUE)
+		syslog_seed(shm->seed);
 }
