@@ -14,18 +14,24 @@ static void syslog_seed(int seedparam)
 	closelog();
 }
 
+static int new_seed(void)
+{
+	struct timeval t;
+
+	gettimeofday(&t, 0);
+
+	return (t.tv_sec * getpid()) ^ t.tv_usec;
+}
+
 /*
  * If we passed in a seed with -s, use that. Otherwise make one up from time of day.
  */
 int init_seed(unsigned int seedparam)
 {
-	struct timeval t;
-
 	if (user_set_seed == TRUE)
 		printf("[%d] Using user passed random seed: %u (0x%x)\n", getpid(), seedparam, seedparam);
 	else {
-		gettimeofday(&t, 0);
-		seedparam = (t.tv_sec * getpid()) ^ t.tv_usec;
+		seedparam = new_seed();
 
 		printf("Initial random seed from time of day: %u (0x%x)\n", seedparam, seedparam);
 	}
@@ -57,8 +63,6 @@ void set_seed(unsigned int pidslot)
  */
 void reseed(void)
 {
-	struct timeval t;
-
 	shm->need_reseed = FALSE;
 
 	if (getpid() != shm->parentpid) {
@@ -71,11 +75,9 @@ void reseed(void)
 		return;
 
 	/* We are reseeding. */
-	gettimeofday(&t, 0);
+	shm->seed = new_seed();
 
-	shm->seed = rand() * (t.tv_sec * t.tv_usec);
-
-	output(0, "[%d] Random reseed from time of day: %u (0x%x)\n", getpid(), shm->seed, shm->seed);
+	output(0, "[%d] Random reseed: %u (0x%x)\n", getpid(), shm->seed, shm->seed);
 
 	if (do_syslog == TRUE)
 		syslog_seed(shm->seed);
