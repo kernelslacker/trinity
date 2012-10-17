@@ -153,7 +153,7 @@ void parse_args(int argc, char *argv[])
 
 		/* Set number of syscalls to do */
 		case 'N':
-			syscallcount = strtoll(optarg, NULL, 10) + 1;
+			syscalls_todo = strtoll(optarg, NULL, 10) + 1;
 			break;
 
 		/* Pause after each syscall */

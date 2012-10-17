@@ -93,7 +93,7 @@ static int create_shm(void)
 
 	memset(shm, 0, sizeof(struct shm_s));
 
-	shm->execcount = 1;
+	shm->total_syscalls_done = 1;
 	shm->regenerate = 0;
 
 	if (user_specified_children != 0)
@@ -214,7 +214,7 @@ int main(int argc, char* argv[])
 	do_main_loop();
 
 	printf("\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
-		shm->execcount - 1, shm->successes, shm->failures);
+		shm->total_syscalls_done - 1, shm->successes, shm->failures);
 
 	ret = EXIT_SUCCESS;
 

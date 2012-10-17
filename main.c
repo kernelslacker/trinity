@@ -16,7 +16,7 @@
 
 static void regenerate(void)
 {
-	if (syscallcount >= shm->regenerate)
+	if (syscalls_todo >= shm->regenerate)
 		return;
 
 	shm->regenerating = TRUE;
