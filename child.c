@@ -191,14 +191,14 @@ retry:
 
 		shm->syscallno[childno] = syscallnr;
 
-		if (syscallcount) {
-			if (shm->execcount >= syscallcount) {
-				output(0, "[%d] shm->execcount (%d) >= syscallcount (%d)\n", getpid(), shm->execcount,syscallcount);
+		if (syscalls_todo) {
+			if (shm->total_syscalls_done >= syscalls_todo) {
+				output(0, "[%d] shm->total_syscalls_done (%d) >= syscalls_todo (%d)\n", getpid(), shm->total_syscalls_done,syscalls_todo);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 
-			if (shm->execcount == syscallcount)
-				printf("[%d] Reached maximum syscall count %ld\n", pid, shm->execcount);
+			if (shm->total_syscalls_done == syscalls_todo)
+				printf("[%d] Reached maximum syscall count %ld\n", pid, shm->total_syscalls_done);
 		}
 
 		ret = mkcall(childno);

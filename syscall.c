@@ -102,7 +102,7 @@ long mkcall(int childno)
 	sptr = string;
 
 	sptr += sprintf(sptr, "[%d] ", getpid());
-	sptr += sprintf(sptr, "[%ld] ", shm->execcount);	/* just debug info, will remove later. */
+	sptr += sprintf(sptr, "[%ld] ", shm->total_syscalls_done);	/* just debug info, will remove later. */
 	if (shm->do32bit == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
 
@@ -248,7 +248,7 @@ args_done:
 
 skip_enosys:
 
-	shm->execcount++;
+	shm->total_syscalls_done++;
 
 	if (syscalls[call].entry->post)
 	    syscalls[call].entry->post(ret);

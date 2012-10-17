@@ -10,7 +10,7 @@
 #include "constants.h"
 
 struct shm_s {
-	unsigned long execcount;
+	unsigned long total_syscalls_done;
 	unsigned long successes;
 	unsigned long failures;
 	unsigned long previous_count;

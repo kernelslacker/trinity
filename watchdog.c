@@ -50,12 +50,12 @@ static int check_shm_sanity(void)
 	// FIXME: The '500000' is magic, and should be dynamically calculated.
 	// On startup, we should figure out how many getpid()'s per second we can do,
 	// and use that.
-	if (shm->execcount - shm->previous_count > 500000) {
+	if (shm->total_syscalls_done - shm->previous_count > 500000) {
 		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
-			shm->previous_count, shm->execcount);
+			shm->previous_count, shm->total_syscalls_done);
 		shm->exit_reason = EXIT_SHM_CORRUPTION;
 	}
-	shm->previous_count = shm->execcount;
+	shm->previous_count = shm->total_syscalls_done;
 
 	return SHM_OK;
 }
@@ -151,20 +151,20 @@ void watchdog(void)
 
 			check_children();
 
-			if (syscallcount && (shm->execcount >= syscallcount)) {
-				output(0, "Reached limit %d. Telling children to start exiting\n", syscallcount);
+			if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
+				output(0, "Reached limit %d. Telling children to start exiting\n", syscalls_todo);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 
 			// Periodic log syncing. FIXME: This is kinda ugly, and mostly unnecessary.
-			if (shm->execcount % 1000 == 0)
+			if (shm->total_syscalls_done % 1000 == 0)
 				synclogs();
 
-			if ((quiet_level > 1) && (shm->execcount > 1)) {
-				if (shm->execcount != lastcount)
+			if ((quiet_level > 1) && (shm->total_syscalls_done > 1)) {
+				if (shm->total_syscalls_done != lastcount)
 					printf("%ld iterations. [F:%ld S:%ld]\n",
-						shm->execcount, shm->failures, shm->successes);
-				lastcount = shm->execcount;
+						shm->total_syscalls_done, shm->failures, shm->successes);
+				lastcount = shm->total_syscalls_done;
 			}
 		}
 
