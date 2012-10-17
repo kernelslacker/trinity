@@ -273,20 +273,20 @@ static void handle_children(void)
 	}
 }
 
+static const char *reasons[] = {
+	"Still running",
+	"No more syscalls enabled",
+	"Reached maximum syscall count",
+	"No file descriptors open",
+	"Lost track of a pid slot",
+	"shm corruption - Found a pid out of range.",
+	"ctrl-c",
+	"kernel became tainted",
+	"SHM was corrupted!\n",
+};
+
 static const char * decode_exit(unsigned int reason)
 {
-	const char *reasons[] = {
-		"Still running",
-		"No more syscalls enabled",
-		"Reached maximum syscall count",
-		"No file descriptors open",
-		"Lost track of a pid slot",
-		"shm corruption - Found a pid out of range.",
-		"ctrl-c",
-		"kernel became tainted",
-		"SHM was corrupted!\n",
-	};
-
 	return reasons[reason];
 }
 

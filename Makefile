@@ -70,8 +70,8 @@ clean:
 splint:
 	@splint -nullpass -immediatetrans -compmempass -predboolothers -retvalint -preproc +posixlib \
 	 -badflag -fileextensions -type -nullassign -boolops -showcolumn -sysunrecog -fullinitblock \
-	 -onlytrans -unrecog -usedef -statictrans -compdestroy -predboolint -D__`uname -m`__  files.c \
-	 trinity.c  generic-sanitise.c
+	 -onlytrans -unrecog -usedef -statictrans -compdestroy -predboolint -D__`uname -m`__ -incondefs \
+	child.c
 
 release:
 	git repack -a -d
