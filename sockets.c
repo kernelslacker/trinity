@@ -21,12 +21,13 @@ static const char *cachefilename="trinity.socketcache";
 #define MAX_TRIES_PER_DOMAIN 10
 static char sockarray[PF_MAX];
 
-void generate_sockets(unsigned int nr_to_create)
+void generate_sockets(void)
 {
 	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
 	int fd, n;
 	unsigned int i, tries;
 	int cachefile;
+	unsigned int nr_to_create = NR_SOCKET_FDS;
 
 	unsigned long domain, type, protocol;
 	unsigned int buffer[3];
@@ -82,7 +83,6 @@ void generate_sockets(unsigned int nr_to_create)
 
 				sockarray[i]++;
 				nr_sockets++;
-				fds_left_to_create--;
 				nr_to_create--;
 
 				buffer[0] = domain;
@@ -128,7 +128,6 @@ static void close_sockets(void)
 		shm->socket_fds[i] = 0;
 		if (close(fd) == 0) {
 			nr_sockets--;
-			fds_left_to_create++;
 		} else {
 			printf("failed to close socket.(%s)\n", strerror(errno));
 		}
@@ -147,7 +146,7 @@ void open_sockets(void)
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
 		printf("Couldn't find socket cachefile. Regenerating.\n");
-		generate_sockets(fds_left_to_create/2);
+		generate_sockets();
 		return;
 	}
 
@@ -172,7 +171,7 @@ void open_sockets(void)
 		if (do_specific_proto == TRUE) {
 			if (domain != specific_proto) {
 				printf("ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
-				generate_sockets(fds_left_to_create/2);
+				generate_sockets();
 				return;
 			}
 		}
@@ -186,17 +185,16 @@ regenerate:
 
 			close_sockets();
 
-			generate_sockets(fds_left_to_create/2);
+			generate_sockets();
 			return;
 		}
 		shm->socket_fds[nr_sockets] = fd;
 		output(2, "fd[%i] = domain:%i type:0x%x protocol:%i\n",
 				fd, domain, type, protocol);
 		nr_sockets++;
-		fds_left_to_create--;
 	}
 
-	if (nr_sockets < fds_left_to_create/2) {
+	if (nr_sockets < NR_SOCKET_FDS) {
 		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", nr_sockets);
 		goto regenerate;
 	}

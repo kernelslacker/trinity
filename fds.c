@@ -6,10 +6,9 @@
 
 #include "trinity.h"
 #include "shm.h"
+#include "files.h"
 
-unsigned int fd_idx = 0;
-
-unsigned int fds_left_to_create = MAX_FDS;
+unsigned int nr_file_fds = 0;
 
 static void open_pipes(void)
 {
@@ -29,24 +28,10 @@ static void open_pipes(void)
 	}
 }
 
-static void close_pipes(void)
-{
-	unsigned int i;
-	int fd;
-
-	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
-		fd = shm->pipe_fds[i];
-		shm->pipe_fds[i] = 0;
-		close(fd);
-		fd = shm->pipe_fds[i+1];
-		shm->pipe_fds[i+1] = 0;
-		close(fd);
-	}
-}
-
 int get_random_fd(void)
 {
 	unsigned int i;
+	unsigned int fd_index;
 	FILE *file;
 	int fd = 0;
 	int ret;
@@ -59,15 +44,8 @@ int get_random_fd(void)
 	switch (i) {
 	case 0:
 retry:
-		if (fd_idx == 0) {
-			i = find_pid_slot(getpid());
-			output(0, "[%d] wtf, no fds! Last syscall was %d\n",
-				getpid(), shm->previous_syscallno[i]);
-			shm->exit_reason = EXIT_NO_FDS;
-			return -1;
-		}
-
-		fd = shm->fds[rand() % fd_idx];
+		fd_index = rand() % nr_file_fds;
+		fd = shm->file_fds[fd_index];
 
 		/* avoid stdin/stdout/stderr */
 		if (logging == FALSE)
@@ -131,15 +109,16 @@ regen:
 void setup_fds(void)
 {
 	open_pipes();
+
 	open_sockets();
+
+	generate_filelist();
+
 	open_files();
 }
 
 void regenerate_fds(void)
 {
 	close_files();
-	close_pipes();
-
-	open_pipes();
 	open_files();
 }

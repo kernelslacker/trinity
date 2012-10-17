@@ -40,8 +40,6 @@ int init_seed(unsigned int seed);
 void set_seed(unsigned int pidslot);
 void reseed(void);
 
-extern unsigned int fds_left_to_create;
-
 extern unsigned int nr_sockets;
 extern unsigned int specific_proto;
 void open_sockets(void);
@@ -49,10 +47,12 @@ void find_specific_proto(char *protoarg);
 
 extern unsigned int fd_idx;
 
+void generate_filelist(void);
 void open_files(void);
 void close_files(void);
-void open_fds(const char *dir, unsigned char add_all);
 extern char *victim_path;
+extern char **fileindex;
+extern unsigned int files_in_index;
 
 extern unsigned int page_size;
 extern unsigned int rep;
