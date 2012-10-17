@@ -14,6 +14,7 @@ struct shm_s {
 	unsigned long successes;
 	unsigned long failures;
 	unsigned long previous_count;
+	unsigned long child_syscall_count[MAX_NR_CHILDREN];
 
 	unsigned long regenerate;
 	unsigned int seed;
@@ -27,7 +28,6 @@ struct shm_s {
 
 	unsigned int max_children;
 	unsigned int running_childs;
-	int total_syscalls[MAX_NR_CHILDREN];
 	struct timeval tv[MAX_NR_CHILDREN];
 
 	FILE *logfiles[MAX_NR_CHILDREN];
