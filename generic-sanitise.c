@@ -17,7 +17,7 @@ unsigned long filebuffersize = 0;
 
 unsigned long get_interesting_32bit_value(void)
 {
-	int i, bit;
+	unsigned int i, bit;
 
 	i = rand() % 10;
 
