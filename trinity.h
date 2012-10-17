@@ -45,15 +45,6 @@ extern unsigned int specific_proto;
 void open_sockets(void);
 void find_specific_proto(char *protoarg);
 
-extern unsigned int fd_idx;
-
-void generate_filelist(void);
-void open_files(void);
-void close_files(void);
-extern char *victim_path;
-extern char **fileindex;
-extern unsigned int files_in_index;
-
 extern unsigned int page_size;
 extern unsigned int rep;
 extern long struct_fill;
