@@ -352,6 +352,10 @@ static unsigned long find_previous_arg_address(unsigned int argnum, unsigned int
 	return addr;
 }
 
+char * get_filename(void)
+{
+	return fileindex[rand() % files_in_index];
+}
 
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
@@ -517,7 +521,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) get_cpu();
 
 	case ARG_PATHNAME:
-		return (unsigned long) pathnames[rand() % 50];
+		return (unsigned long) get_filename();
 
 	case ARG_IOVEC:
 		i = (rand() % 4) + 1;

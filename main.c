@@ -303,6 +303,8 @@ static void main_loop(void)
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
+	setup_fds();
+
 	while (shm->exit_reason == STILL_RUNNING) {
 		if (shm->running_childs < shm->max_children)
 			fork_children();

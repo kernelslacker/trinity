@@ -33,8 +33,8 @@ struct shm_s {
 	FILE *logfiles[MAX_NR_CHILDREN];
 
 	int pipe_fds[MAX_PIPE_FDS*2];
-	int fds[MAX_FDS/2];
-	int socket_fds[MAX_FDS/2];
+	int file_fds[NR_FILE_FDS];		/* All children inherit these */
+	int socket_fds[NR_SOCKET_FDS];
 
 	/* state for the syscall currently in progress. */
 	unsigned int previous_syscallno[MAX_NR_CHILDREN];

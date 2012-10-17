@@ -194,8 +194,6 @@ int main(int argc, char* argv[])
 
 	mask_signals();
 
-	setup_fds();
-
 	if (check_tainted() != 0) {
 		output(0, "Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");
 		do_check_tainted = TRUE;
