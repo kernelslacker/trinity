@@ -84,9 +84,6 @@
   (and probably a bunch of other state goes awry too). Need to determine which
   syscall is causing this.
 
-- Sometimes a timeval in the shm goes backwards by 1 or 2 seconds, triggering
-  the 'wrap' logic.  I have no idea.
-
 - Some syscall sanitise routines are doing operations on page_rand to create
   a struct.  They need to be allocating their own memory to do this, as other
   threads may be simultaneously scribbling over it.
