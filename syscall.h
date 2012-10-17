@@ -91,7 +91,7 @@ extern const struct syscalltable *syscalls;
 extern const struct syscalltable *syscalls_32bit;
 extern const struct syscalltable *syscalls_64bit;
 
-extern unsigned long long syscalls_todo;
+extern unsigned long syscalls_todo;
 extern unsigned int max_nr_syscalls;
 extern unsigned int max_nr_32bit_syscalls;
 extern unsigned int max_nr_64bit_syscalls;

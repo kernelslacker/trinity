@@ -16,7 +16,7 @@ const struct syscalltable *syscalls;
 const struct syscalltable *syscalls_32bit;
 const struct syscalltable *syscalls_64bit;
 
-unsigned long long syscalls_todo = 0;
+unsigned long syscalls_todo = 0;
 
 unsigned int max_nr_syscalls;
 unsigned int max_nr_32bit_syscalls;
