@@ -67,12 +67,6 @@ clean:
 	@rm -f trinity
 	@rm -f $(DEPDIR)/*.d
 
-splint:
-	@splint -nullpass -immediatetrans -compmempass -predboolothers -retvalint -preproc +posixlib \
-	 -badflag -fileextensions -type -nullassign -boolops -showcolumn -sysunrecog -fullinitblock \
-	 -onlytrans -unrecog -usedef -statictrans -compdestroy -predboolint -D__`uname -m`__ -incondefs \
-	child.c
-
 release:
 	git repack -a -d
 	git prune-packed
