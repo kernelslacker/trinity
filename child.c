@@ -144,9 +144,9 @@ int child_process(void)
 				/*
 				 * 10% possibility of a 32bit syscall
 				 */
-				shm->do32bit = FALSE;
+				shm->do32bit[childno] = FALSE;
 //				if (rand() % 100 < 10)
-//					shm->do32bit = TRUE;
+//					shm->do32bit[childno] = TRUE;
 			}
 
 			if (validate_syscall_table_32() == FALSE)
@@ -155,7 +155,7 @@ int child_process(void)
 			if (validate_syscall_table_64() == FALSE)
 				use_64bit = FALSE;
 
-			if (shm->do32bit == FALSE) {
+			if (shm->do32bit[childno] == FALSE) {
 				syscalls = syscalls_64bit;
 				max_nr_syscalls = max_nr_64bit_syscalls;
 			} else {
