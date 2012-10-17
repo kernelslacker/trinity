@@ -16,9 +16,6 @@
 
 static void regenerate(void)
 {
-	if (syscalls_todo >= shm->regenerate)
-		return;
-
 	shm->regenerating = TRUE;
 
 	sleep(1);	/* give children time to finish with fds. */
