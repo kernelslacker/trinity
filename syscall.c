@@ -74,7 +74,7 @@ static unsigned long do_syscall(int childno)
 	a6 = shm->a6[childno];
 
 	(void)alarm(3);
-	if (shm->do32bit == FALSE)
+	if (shm->do32bit[childno] == FALSE)
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 	else
 		ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
@@ -104,7 +104,7 @@ long mkcall(int childno)
 
 	sptr += sprintf(sptr, "[%d] ", getpid());
 	sptr += sprintf(sptr, "[%ld] ", shm->child_syscall_count[childno]);
-	if (shm->do32bit == TRUE)
+	if (shm->do32bit[childno] == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
 
 	olda1 = shm->a1[childno] = get_reg();

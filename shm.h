@@ -57,7 +57,7 @@ struct shm_s {
 	unsigned int fd_lifetime;
 
 	/* various flags. */
-	bool do32bit;
+	bool do32bit[MAX_NR_CHILDREN];
 	bool do_make_it_fail;
 	bool need_reseed;
 	enum exit_reasons exit_reason;
