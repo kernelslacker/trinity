@@ -185,7 +185,7 @@ static void handle_child(pid_t childpid, int childstatus)
 				shm->exit_reason = EXIT_LOST_PID_SLOT;
 				dump_pid_slots();
 			} else {
-				debugf("[%d] Child %d exited after %d syscalls.\n", getpid(), childpid, shm->total_syscalls[slot]);
+				debugf("[%d] Child %d exited after %ld syscalls.\n", getpid(), childpid, shm->child_syscall_count[slot]);
 				reap_child(childpid);
 			}
 			break;

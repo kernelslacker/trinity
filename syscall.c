@@ -82,7 +82,8 @@ static unsigned long do_syscall(int childno)
 
 	pidslot = find_pid_slot(getpid());
 	if (pidslot != PIDSLOT_NOT_FOUND) {
-		shm->total_syscalls[pidslot]++;
+		shm->total_syscalls_done++;
+		shm->child_syscall_count[pidslot]++;
 		(void)gettimeofday(&shm->tv[pidslot], NULL);
 	}
 
@@ -102,7 +103,7 @@ long mkcall(int childno)
 	sptr = string;
 
 	sptr += sprintf(sptr, "[%d] ", getpid());
-	sptr += sprintf(sptr, "[%ld] ", shm->total_syscalls_done);	/* just debug info, will remove later. */
+	sptr += sprintf(sptr, "[%ld] ", shm->child_syscall_count[childno]);
 	if (shm->do32bit == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
 
@@ -247,8 +248,6 @@ args_done:
 	}
 
 skip_enosys:
-
-	shm->total_syscalls_done++;
 
 	if (syscalls[call].entry->post)
 	    syscalls[call].entry->post(ret);

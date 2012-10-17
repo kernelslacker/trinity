@@ -89,7 +89,7 @@ void init_child(void)
 	int i;
 
 	i = find_pid_slot(getpid());
-	shm->total_syscalls[i] = 0;
+	shm->child_syscall_count[i] = 0;
 
 	set_make_it_fail();
 	if (rand() % 100 < 50)
@@ -126,7 +126,7 @@ int child_process(void)
 		if (getppid() != shm->parentpid) {
 			output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED!\n"
 				"Last syscall was %d (call:%d)\n",
-				getpid(), shm->previous_syscallno[pidslot], shm->total_syscalls[pidslot]);
+				getpid(), shm->previous_syscallno[pidslot], shm->child_syscall_count[pidslot]);
 			while(1)
 				sleep(5);
 		}
