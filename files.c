@@ -318,6 +318,7 @@ void close_files(void)
 	for (i = 0; i < nr_file_fds; i++) {
 		fd = shm->file_fds[i];
 		shm->file_fds[i] = 0;
-		close(fd);
+		if (fd != 0)
+			close(fd);
 	}
 }
