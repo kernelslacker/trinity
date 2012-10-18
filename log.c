@@ -131,8 +131,10 @@ void output(unsigned char level, const char *fmt, ...)
 		exit(EXIT_FAILURE);
 	}
 
-	if (quiet_level > level)
+	if (quiet_level > level) {
 		printf("%s", outputbuf);
+		(void)fflush(stdout);
+	}
 
 	if (logging == FALSE)
 		return;
@@ -140,6 +142,7 @@ void output(unsigned char level, const char *fmt, ...)
 	handle = find_logfile_handle();
 	if (!handle) {
 		printf("## child logfile handle was null logging to main!\n");
+		(void)fflush(stdout);
 		handle = parentlogfile;
 		sleep(5);
 		return;
@@ -147,9 +150,11 @@ void output(unsigned char level, const char *fmt, ...)
 
 	if (monochrome == TRUE) {
 		fprintf(handle, "%s", outputbuf);
+		(void)fflush(handle);
 		return;
 	}
 
+	/* copy buffer, sans ANSI codes */
 	len = strlen(outputbuf);
 	for (i = 0, j = 0; i < len; i++) {
 		if (outputbuf[i] == '')
