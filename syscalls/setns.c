@@ -11,4 +11,5 @@ struct syscall syscall_setns= {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "nstype",
+	.flags = NEED_ALARM,
 };

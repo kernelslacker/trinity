@@ -35,4 +35,5 @@ struct syscall syscall_vmsplice = {
 		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
 	},
 	.group = GROUP_VM,
+	.flags = NEED_ALARM,
 };

@@ -15,4 +15,5 @@ struct syscall syscall_fstatfs = {
 	.arg2name = "buf",
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

@@ -15,4 +15,5 @@ struct syscall syscall_utimensat = {
 	.arg3name = "utimes",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "flags",
+	.flags = NEED_ALARM,
 };

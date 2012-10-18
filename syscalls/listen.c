@@ -10,4 +10,5 @@ struct syscall syscall_listen = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "backlog",
+	.flags = NEED_ALARM,
 };

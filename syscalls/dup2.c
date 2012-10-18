@@ -15,4 +15,5 @@ struct syscall syscall_dup2 = {
 	.arg2name = "newfd",
 	.arg2type = ARG_FD,
 	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 };

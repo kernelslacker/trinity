@@ -26,4 +26,5 @@ struct syscall syscall_dup3 = {
 		.values = { O_CLOEXEC },
 	},
 	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 };

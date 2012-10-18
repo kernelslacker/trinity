@@ -54,4 +54,5 @@ struct syscall syscall_sendto = {
 	.arg5type = ARG_SOCKADDR,
 	.arg6name = "addr_len",
 	.arg6type = ARG_SOCKADDRLEN,
+	.flags = NEED_ALARM,
 };

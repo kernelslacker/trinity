@@ -52,4 +52,5 @@ struct syscall syscall_read = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
+	.flags = NEED_ALARM,
 };

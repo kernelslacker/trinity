@@ -15,4 +15,5 @@ struct syscall syscall_poll = {
 	.arg3type = ARG_RANGE,
 	.low3range = 0,
 	.hi3range = 1,
+	.flags = NEED_ALARM,
 };

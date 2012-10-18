@@ -17,4 +17,5 @@ struct syscall syscall_fadvise64 = {
 	.arg3type = ARG_LEN,
 	.arg4name = "advice",
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

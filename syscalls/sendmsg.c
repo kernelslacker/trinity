@@ -52,4 +52,5 @@ struct syscall syscall_sendmsg = {
 				MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
 	},
 	.sanitise = sanitise_sendmsg,
+	.flags = NEED_ALARM,
 };

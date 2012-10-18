@@ -15,4 +15,5 @@ struct syscall syscall_getdents64 = {
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
 	.rettype = RET_NUM_BYTES,
+	.flags = NEED_ALARM,
 };

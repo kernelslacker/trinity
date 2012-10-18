@@ -48,4 +48,5 @@ struct syscall syscall_sendmmsg = {
 				MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
 				MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
 	},
+	.flags = NEED_ALARM,
 };

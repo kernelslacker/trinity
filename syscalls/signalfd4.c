@@ -23,4 +23,5 @@ struct syscall syscall_signalfd4 = {
 		.num = 2,
 		.values = { SFD_CLOEXEC , SFD_NONBLOCK },
 	},
+	.flags = NEED_ALARM,
 };

@@ -28,4 +28,5 @@ struct syscall syscall_open_by_handle_at = {
 				O_DIRECT, O_NOATIME, O_PATH,
 				O_DSYNC, O_LARGEFILE },
 	},
+	.flags = NEED_ALARM,
 };

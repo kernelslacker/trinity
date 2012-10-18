@@ -35,4 +35,5 @@ struct syscall syscall_futex = {
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "val3",
 	.rettype = RET_FD,		// FIXME: Needs to mutate depending on 'op' value
+	.flags = NEED_ALARM,
 };

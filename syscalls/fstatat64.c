@@ -19,4 +19,5 @@ struct syscall syscall_fstatat64 = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "flag",
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

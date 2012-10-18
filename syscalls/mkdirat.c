@@ -12,4 +12,5 @@ struct syscall syscall_mkdirat = {
 	.arg2name = "pathname",
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "mode",
+	.flags = NEED_ALARM,
 };

@@ -16,4 +16,5 @@ struct syscall syscall_fchmodat = {
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "mode",
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

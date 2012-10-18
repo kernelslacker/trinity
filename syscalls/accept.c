@@ -17,4 +17,5 @@ struct syscall syscall_accept = {
 	.arg3name = "upeer_addrlen",
 	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 };

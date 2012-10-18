@@ -13,4 +13,5 @@ struct syscall syscall_mknodat = {
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "mode",
 	.arg4name = "dev",
+	.flags = NEED_ALARM,
 };

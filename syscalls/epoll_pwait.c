@@ -19,4 +19,5 @@ struct syscall syscall_epoll_pwait = {
 	.arg3name = "maxevents",
 	.arg4name = "timeout",
 	.rettype = RET_BORING,
+	.flags = NEED_ALARM,
 };

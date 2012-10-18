@@ -51,4 +51,5 @@ struct syscall syscall_recvmmsg = {
 	},
 	.arg5name = "timeout",
 	.arg5type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

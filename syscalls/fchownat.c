@@ -19,4 +19,5 @@ struct syscall syscall_fchownat = {
 	.arg4name = "group",
 	.arg5name = "flag",
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

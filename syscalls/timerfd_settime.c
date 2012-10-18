@@ -24,4 +24,5 @@ struct syscall syscall_timerfd_settime = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "otmr",
 	.arg4type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

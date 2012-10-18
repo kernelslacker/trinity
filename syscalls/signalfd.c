@@ -13,4 +13,5 @@ struct syscall syscall_signalfd = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "sizemask",
 	.arg3type = ARG_LEN,
+	.flags = NEED_ALARM,
 };

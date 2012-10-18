@@ -16,4 +16,5 @@ struct syscall syscall_rt_sigtimedwait = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "sigsetsize",
 	.arg4type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

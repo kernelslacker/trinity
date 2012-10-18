@@ -12,4 +12,5 @@ struct syscall syscall_readahead = {
 	.arg2name = "offset",
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
+	.flags = NEED_ALARM,
 };
