@@ -118,9 +118,7 @@ void output(unsigned char level, const char *fmt, ...)
 	va_list args;
 	int n;
 	FILE *handle;
-	unsigned int len, i, j;
 	char outputbuf[1024];
-	char monobuf[1024];
 
 	va_start(args, fmt);
 	n = vsnprintf(outputbuf, sizeof(outputbuf), fmt, args);
@@ -148,24 +146,6 @@ void output(unsigned char level, const char *fmt, ...)
 		return;
 	}
 
-	if (monochrome == TRUE) {
-		fprintf(handle, "%s", outputbuf);
-		(void)fflush(handle);
-		return;
-	}
-
-	/* copy buffer, sans ANSI codes */
-	len = strlen(outputbuf);
-	for (i = 0, j = 0; i < len; i++) {
-		if (outputbuf[i] == '')
-			i += 6;
-		else {
-			monobuf[j] = outputbuf[i];
-			j++;
-		}
-	}
-	monobuf[j] = '\0';
-
-	fprintf(handle, "%s", monobuf);
+	fprintf(handle, "%s", outputbuf);
 	(void)fflush(handle);
 }
