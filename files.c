@@ -109,6 +109,9 @@ static void __open_fds(const char *dir)
 	}
 	while ((de = readdir(d))) {
 
+		if (shm->exit_reason != STILL_RUNNING)
+			return;
+
 		memset(&buf, 0, sizeof(struct stat));
 		memset(&path, 0, 4096);
 		snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
