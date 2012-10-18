@@ -137,4 +137,5 @@ struct syscall syscall_ioctl = {
 	.arg3name = "arg",
 	.arg3type = ARG_RANDPAGE,
 	.sanitise = sanitise_ioctl,
+	.flags = NEED_ALARM,
 };

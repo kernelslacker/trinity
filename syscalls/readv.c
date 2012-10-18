@@ -13,4 +13,5 @@ struct syscall syscall_readv = {
 	.arg2type = ARG_IOVEC,
 	.arg3name = "vlen",
 	.arg3type = ARG_IOVECLEN,
+	.flags = NEED_ALARM,
 };

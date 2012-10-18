@@ -25,4 +25,5 @@ struct syscall syscall_linkat = {
 		.num = 2,
 		.values = { AT_SYMLINK_FOLLOW , AT_EMPTY_PATH },
 	},
+	.flags = NEED_ALARM,
 };

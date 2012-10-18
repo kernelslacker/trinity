@@ -76,4 +76,5 @@ struct syscall syscall_mmap = {
 	.arg6name = "off",
 	.arg6type = ARG_LEN,
 	.group = GROUP_VM,
+	.flags = NEED_ALARM,
 };

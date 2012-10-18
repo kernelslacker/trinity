@@ -13,4 +13,5 @@ struct syscall syscall_dup = {
 	.arg1name = "fildes",
 	.arg1type = ARG_FD,
 	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 };

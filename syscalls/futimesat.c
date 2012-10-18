@@ -15,4 +15,5 @@ struct syscall syscall_futimesat = {
 	.arg3name = "utimes",
 	.arg3type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

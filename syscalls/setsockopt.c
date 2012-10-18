@@ -332,4 +332,5 @@ struct syscall syscall_setsockopt = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "optlen",
 	.sanitise = sanitise_setsockopt,
+	.flags = NEED_ALARM,
 };

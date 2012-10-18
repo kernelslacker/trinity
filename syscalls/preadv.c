@@ -16,4 +16,5 @@ struct syscall syscall_preadv = {
 	.arg3type = ARG_IOVECLEN,
 	.arg4name = "pos_l",
 	.arg5name = "pos_h",
+	.flags = NEED_ALARM,
 };

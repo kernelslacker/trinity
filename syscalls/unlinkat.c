@@ -12,4 +12,5 @@ struct syscall syscall_unlinkat = {
 	.arg2name = "pathname",
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "flag",
+	.flags = NEED_ALARM,
 };

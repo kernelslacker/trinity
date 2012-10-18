@@ -26,4 +26,5 @@ struct syscall syscall_fsetxattr = {
 		.values = { XATTR_CREATE , XATTR_REPLACE },
 	},
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

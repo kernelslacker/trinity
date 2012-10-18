@@ -17,4 +17,5 @@ struct syscall syscall_ppoll = {
 	.arg4name = "sigmask",
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "sigsetsize",
+	.flags = NEED_ALARM,
 };

@@ -16,4 +16,5 @@ struct syscall syscall_shutdown = {
 		.num = 3,
 		.values = { SHUT_RD, SHUT_WR, SHUT_RDWR },
 	},
+	.flags = NEED_ALARM,
 };

@@ -15,4 +15,5 @@ struct syscall syscall_fchown = {
 	.arg2name = "user",
 	.arg3name = "group",
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

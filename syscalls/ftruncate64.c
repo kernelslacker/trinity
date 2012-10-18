@@ -15,4 +15,5 @@ struct syscall syscall_ftruncate64 = {
 	.arg2name = "length",
 	.arg2type = ARG_LEN,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

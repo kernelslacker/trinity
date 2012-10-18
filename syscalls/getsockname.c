@@ -13,4 +13,5 @@ struct syscall syscall_getsockname = {
 	.arg2type = ARG_SOCKADDR,
 	.arg3name = "usockaddr_len",
 	.arg3type = ARG_SOCKADDRLEN,
+	.flags = NEED_ALARM,
 };

@@ -17,4 +17,5 @@ struct syscall syscall_bind = {
 	.arg3name = "addrlen",
 	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

@@ -27,5 +27,5 @@ struct syscall syscall_recv = {
 			    MSG_WAITALL, MSG_EOR, MSG_TRUNC, MSG_CTRUNC,
 			    MSG_OOB, MSG_ERRQUEUE },
 	},
-
+	.flags = NEED_ALARM,
 };

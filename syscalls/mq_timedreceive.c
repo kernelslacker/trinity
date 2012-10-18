@@ -19,4 +19,5 @@ struct syscall syscall_mq_timedreceive = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "u_abs_timeout",
 	.arg5type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

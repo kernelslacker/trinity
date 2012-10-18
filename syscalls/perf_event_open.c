@@ -109,4 +109,5 @@ struct syscall syscall_perf_event_open = {
 		.values = { PERF_FLAG_FD_NO_GROUP, PERF_FLAG_FD_OUTPUT, PERF_FLAG_PID_CGROUP },
 	},
 	.sanitise = sanitise_perf_event_open,
+	.flags = NEED_ALARM,
 };

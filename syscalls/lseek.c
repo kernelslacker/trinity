@@ -11,4 +11,5 @@ struct syscall syscall_lseek = {
 	.arg1type = ARG_FD,
 	.arg2name = "offset",
 	.arg3name = "origin",
+	.flags = NEED_ALARM,
 };

@@ -13,4 +13,5 @@ struct syscall syscall_io_submit = {
 	.arg2type = ARG_LEN,
 	.arg3name = "iocbpp",
 	.arg3type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

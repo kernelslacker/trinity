@@ -11,4 +11,5 @@ struct syscall syscall_mq_notify = {
 	.arg1type = ARG_FD,
 	.arg2name = "u_notification",
 	.arg2type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

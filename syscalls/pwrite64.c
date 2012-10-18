@@ -26,4 +26,5 @@ struct syscall syscall_pwrite64 = {
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
 	.arg4name = "pos",
+	.flags = NEED_ALARM,
 };

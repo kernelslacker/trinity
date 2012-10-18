@@ -36,4 +36,5 @@ struct syscall syscall_fcntl = {
 	},
 	.arg3name = "arg",
 	.rettype = RET_FD,	//FIXME: Needs to mutate somehow depending on 'cmd'
+	.flags = NEED_ALARM,
 };

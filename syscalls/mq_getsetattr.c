@@ -15,4 +15,5 @@ struct syscall syscall_mq_getsetattr = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "u_omqstat",
 	.arg3type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

@@ -15,4 +15,5 @@ struct syscall syscall_sendfile = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "count",
 	.arg4type = ARG_LEN,
+	.flags = NEED_ALARM,
 };

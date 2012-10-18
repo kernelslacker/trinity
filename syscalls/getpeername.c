@@ -14,4 +14,5 @@ struct syscall syscall_getpeername = {
 	.arg3name = "usockaddr_len",
 	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };

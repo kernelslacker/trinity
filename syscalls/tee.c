@@ -37,4 +37,5 @@ struct syscall syscall_tee = {
 		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
 	},
 	.sanitise = sanitise_tee,
+	.flags = NEED_ALARM,
 };

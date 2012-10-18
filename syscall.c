@@ -73,12 +73,16 @@ static unsigned long do_syscall(int childno)
 	a5 = shm->a5[childno];
 	a6 = shm->a6[childno];
 
-	(void)alarm(3);
+	if (syscalls[nr].entry->flags & NEED_ALARM)
+		(void)alarm(3);
+
 	if (shm->do32bit[childno] == FALSE)
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 	else
 		ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
-	(void)alarm(0);
+
+	if (syscalls[nr].entry->flags & NEED_ALARM)
+		(void)alarm(0);
 
 	pidslot = find_pid_slot(getpid());
 	if (pidslot != PIDSLOT_NOT_FOUND) {

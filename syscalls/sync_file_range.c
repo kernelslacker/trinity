@@ -55,6 +55,7 @@ struct syscall syscall_sync_file_range = {
 		.num = 3,
 		.values = { SYNC_FILE_RANGE_WAIT_BEFORE, SYNC_FILE_RANGE_WRITE, SYNC_FILE_RANGE_WAIT_AFTER },
         },
+	.flags = NEED_ALARM,
 };
 
 /*
@@ -76,4 +77,5 @@ struct syscall syscall_sync_file_range2 = {
 	.arg3name = "offset",
 	.arg4name = "nbytes",
 	.arg4type = ARG_LEN,
+	.flags = NEED_ALARM,
 };

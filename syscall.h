@@ -104,6 +104,7 @@ extern bool use_64bit;
 #define NI_SYSCALL (1<<2)
 #define BORING (1<<3)
 #define ACTIVE (1<<4)
+#define NEED_ALARM (1<<5)
 
 void setup_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);

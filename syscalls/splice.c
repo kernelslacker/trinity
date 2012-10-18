@@ -51,4 +51,5 @@ struct syscall syscall_splice = {
 		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
 	},
 	.sanitise = sanitise_splice,
+	.flags = NEED_ALARM,
 };

@@ -29,4 +29,5 @@ struct syscall syscall_accept4 = {
 		.values = { SOCK_NONBLOCK, SOCK_CLOEXEC },
 	},
 	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 };

@@ -16,4 +16,5 @@ struct syscall syscall_readlinkat = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "bufsiz",
 	.arg4type = ARG_LEN,
+	.flags = NEED_ALARM,
 };

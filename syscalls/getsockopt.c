@@ -15,4 +15,5 @@ struct syscall syscall_getsockopt = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "optlen",
 	.arg5type = ARG_LEN,
+	.flags = NEED_ALARM,
 };

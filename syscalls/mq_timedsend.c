@@ -21,4 +21,5 @@ struct syscall syscall_mq_timedsend = {
 	.hi4range = 32768,
 	.arg5name = "u_abs_timeout",
 	.arg5type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

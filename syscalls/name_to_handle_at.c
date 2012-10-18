@@ -24,5 +24,6 @@ struct syscall syscall_name_to_handle_at = {
 	.arg5list = {
 		.num = 6,
 		.values = { AT_FDCWD, AT_SYMLINK_NOFOLLOW, AT_REMOVEDIR, AT_SYMLINK_FOLLOW, AT_NO_AUTOMOUNT, AT_EMPTY_PATH },
-	}
+	},
+	.flags = NEED_ALARM,
 };
