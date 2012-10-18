@@ -28,7 +28,7 @@ static void open_pipes(void)
 	}
 }
 
-int get_random_fd(void)
+static int get_new_random_fd(void)
 {
 	unsigned int i;
 	unsigned int fd_index;
@@ -89,12 +89,18 @@ retry:
 	return fd;
 }
 
-int get_fd(void)
+int get_random_fd(void)
 {
+	/* 25% of the time, return something new. */
+	if ((rand() % 4) == 0)
+		return get_new_random_fd();
+
+	/* the rest of the time, return the same fd as last time. */
+
 regen:
 	if (shm->fd_lifetime == 0) {
-		shm->current_fd = get_random_fd();
-		shm->fd_lifetime = rand() % shm->max_children;
+		shm->current_fd = get_new_random_fd();
+		shm->fd_lifetime = (rand() % shm->max_children) + 5;
 	} else
 		shm->fd_lifetime--;
 
