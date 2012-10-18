@@ -113,8 +113,10 @@ static void check_children(void)
 
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
-			output(0, "pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
-				pid, old, now, diff);
+			output(0, "pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
+				"Stuck in syscall %d%s. Sending SIGKILL.\n",
+				pid, old, now, diff, shm->syscallno[i],
+				shm->do32bit[i] ? " (32bit)" : "");
 			kill(pid, SIGKILL);
 			break;
 		}
