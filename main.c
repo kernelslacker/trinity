@@ -303,8 +303,10 @@ static void main_loop(void)
 	setup_fds();
 
 	while (shm->exit_reason == STILL_RUNNING) {
-		if (shm->running_childs < shm->max_children)
+		if (shm->running_childs < shm->max_children) {
+			reseed();
 			fork_children();
+		}
 
 		if (shm->regenerate >= REGENERATION_POINT)
 			regenerate();
