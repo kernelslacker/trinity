@@ -1,7 +1,6 @@
 #include "constants.h"
 
 void setup_fds(void);
-int get_fd(void);
 
 void generate_filelist(void);
 void open_files(void);

@@ -393,7 +393,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long)rand();
 
 	case ARG_FD:
-		return get_fd();
+		return get_random_fd();
 	case ARG_LEN:
 		return (unsigned long)get_len();
 
