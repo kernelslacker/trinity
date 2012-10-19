@@ -173,7 +173,7 @@ void watchdog(void)
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == FALSE) {
 			if (check_tainted() != 0) {
-				output(0, "kernel became tainted! Last seed was %d:%x\n", shm->seed, shm->seed);
+				output(0, "kernel became tainted! Last seed was %u:%x\n", shm->seed, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
 				while (shm->regenerating ==TRUE)
 					sleep(1);
