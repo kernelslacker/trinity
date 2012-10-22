@@ -367,6 +367,12 @@ void setup_syscall_tables(void)
 #elif defined(__sparc__)
 	syscalls = copy_syscall_table(syscalls_sparc, ARRAY_SIZE(syscalls_sparc));
 	max_nr_syscalls = ARRAY_SIZE(syscalls_sparc);
+#elif defined(__s390x__)
+	syscalls = copy_syscall_table(syscalls_s390x, ARRAY_SIZE(syscalls_s390x));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_s390x);
+#elif defined(__s390__)
+	syscalls = copy_syscall_table(syscalls_s390, ARRAY_SIZE(syscalls_s390));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_s390);
 #elif defined(__arm__)
 	syscalls = copy_syscall_table(syscalls_arm, ARRAY_SIZE(syscalls_arm));
 	max_nr_syscalls = ARRAY_SIZE(syscalls_arm);

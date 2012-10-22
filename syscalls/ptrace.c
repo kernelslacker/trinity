@@ -6,6 +6,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
+#include "arch.h"
 
 
 static void sanitise_ptrace(int childno)

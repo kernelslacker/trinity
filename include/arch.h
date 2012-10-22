@@ -18,6 +18,9 @@
 #ifdef __sparc__
 #include "arch-sparc.h"
 #endif
+#ifdef __s390__
+#include "arch-s390.h"
+#endif
 #ifdef __arm__
 #include "arch-arm.h"
 #endif
