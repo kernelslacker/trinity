@@ -14,6 +14,9 @@
 
 #define NUM_FLAGS 12
 
+// need this to actually get MAP_UNINITIALIZED defined
+#define CONFIG_MMAP_ALLOW_UNINITIALIZED
+
 void sanitise_mmap(int childno)
 {
 	unsigned int i;
