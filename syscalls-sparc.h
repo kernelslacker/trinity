@@ -58,7 +58,7 @@ struct syscalltable syscalls_sparc[] = {
 	{ .entry = &syscall_geteuid },
 	{ .entry = &syscall_getegid },
 	{ .entry = &syscall_acct },
-	{ .entry = &syscall_memory_ordering },
+	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_memory_ordering },*/
 	{ .entry = &syscall_getgid },
 	{ .entry = &syscall_ioctl },
 	{ .entry = &syscall_reboot },
@@ -168,9 +168,9 @@ struct syscalltable syscalls_sparc[] = {
 	{ .entry = &syscall_oldumount },
 	{ .entry = &syscall_sched_setaffinity },
 	{ .entry = &syscall_sched_getaffinity },
-	{ .entry = &syscall_getdomainname },
+	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_getdomainname },*/
 	{ .entry = &syscall_setdomainname },
-	{ .entry = &syscall_utrap_install },
+	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_utrap_install },*/
 	{ .entry = &syscall_quotactl },
 	{ .entry = &syscall_set_tid_address },
 	{ .entry = &syscall_mount },
@@ -210,7 +210,7 @@ struct syscalltable syscalls_sparc[] = {
 	{ .entry = &syscall_sigsuspend },
 	{ .entry = &syscall_newlstat },
 	{ .entry = &syscall_uselib },
-	{ .entry = &syscall_old_readdir },
+	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_old_readdir },*/
 	{ .entry = &syscall_readahead },
 	{ .entry = &syscall_socketcall },
 	{ .entry = &syscall_syslog },
