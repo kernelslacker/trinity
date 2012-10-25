@@ -393,6 +393,7 @@ struct syscalltable syscalls_sh[] = {
 	{ .entry = &syscall_setns },			/* 375 */
 	{ .entry = &syscall_process_vm_readv },
 	{ .entry = &syscall_process_vm_writev },
+	{ .entry = &syscall_kcmp },
 };
 #else
 
@@ -766,5 +767,6 @@ struct syscalltable syscalls_sh[] = {
 	{ .entry = &syscall_setns },
 	{ .entry = &syscall_process_vm_readv },	/* 365 */
 	{ .entry = &syscall_process_vm_writev },
+	{ .entry = &syscall_kcmp },
 };
 #endif
