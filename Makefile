@@ -21,6 +21,11 @@ CFLAGS += -Wformat
 
 all: trinity
 
+MACHINE		= $(shell $(CC) -dumpmachine)
+SYSCALLS_ARCH	= $(patsubst %.c,%.o,$(shell case "$(MACHINE)" in \
+		  (sh*) echo syscalls/sh/*.c ;; \
+		  esac))
+
 HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) syscalls/syscalls.h $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 SYSCALLS	= $(patsubst %.c,%.o,$(wildcard syscalls/*.c))
 IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
@@ -41,6 +46,7 @@ OBJS		= trinity.o \
 			tables.o \
 			watchdog.o \
 			$(SYSCALLS) \
+			$(SYSCALLS_ARCH) \
 			$(SANITISE) \
 			$(IOCTLS)
 -include $(OBJS:.o=.d)

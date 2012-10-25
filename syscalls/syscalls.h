@@ -393,3 +393,4 @@ extern struct syscall syscall_process_vm_writev;
 extern struct syscall syscall_kcmp;
 extern struct syscall syscall_pciconfig_iobase;
 extern struct syscall syscall_arm_fadvise64_64;
+extern struct syscall syscall_sh_cacheflush;

@@ -133,7 +133,7 @@ struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
 	{ .entry = &syscall_clone },			/* 120 */
 	{ .entry = &syscall_setdomainname },
 	{ .entry = &syscall_newuname },
-	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_cacheflush },*/	/* x86: sys_modify_ldt */
+	{ .entry = &syscall_sh_cacheflush },	/* x86: sys_modify_ldt */
 	{ .entry = &syscall_adjtimex },
 	{ .entry = &syscall_mprotect },		/* 125 */
 	{ .entry = &syscall_sigprocmask },
@@ -524,7 +524,7 @@ struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
 	{ .entry = &syscall_clone },		/* 120 */
 	{ .entry = &syscall_setdomainname },
 	{ .entry = &syscall_newuname },
-	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_cacheflush },*/	/* x86: sys_modify_ldt */
+	{ .entry = &syscall_sh_cacheflush },	/* x86: sys_modify_ldt */
 	{ .entry = &syscall_adjtimex },
 	{ .entry = &syscall_mprotect },		/* 125 */
 	{ .entry = &syscall_sigprocmask },
