@@ -261,7 +261,7 @@ static const struct protocol protocols[] = {
 	{ "PF_NFC",          39 },
 };
 
-void find_specific_proto(char *protoarg)
+void find_specific_proto(const char *protoarg)
 {
 	unsigned int i;
 	const struct protocol *p = protocols;
