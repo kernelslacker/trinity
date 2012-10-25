@@ -5,9 +5,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-#define NR_MIPS_SYSCALLS 346
-
-struct syscalltable syscalls_mips[NR_MIPS_SYSCALLS + 1] = {
+struct syscalltable syscalls_mips[] = {
 		{ .entry = &syscall_ni_syscall },	/* 4000 */
 /*		{ .entry = &syscall_syscall },		 4000 */
 		{ .entry = &syscall_exit },
@@ -364,5 +362,4 @@ struct syscalltable syscalls_mips[NR_MIPS_SYSCALLS + 1] = {
 		{ .entry = &syscall_setns },
 		{ .entry = &syscall_process_vm_readv },	/* 4345 */
 		{ .entry = &syscall_process_vm_writev },
-	        { .entry = NULL }
  };

@@ -6,10 +6,9 @@
 #include <stdint.h>
 
 #if __WORDSIZE == 64
-#define NR_SH_SYSCALLS 378
 
 /* arch/sh/kernel/syscalls_64.S */
-struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
+struct syscalltable syscalls_sh[] = {
 	{ .entry = &syscall_restart_syscall },	/* 0  -  old "setup()" system call  */
 	{ .entry = &syscall_exit },
 	{ .entry = &syscall_fork },
@@ -394,13 +393,11 @@ struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
 	{ .entry = &syscall_setns },			/* 375 */
 	{ .entry = &syscall_process_vm_readv },
 	{ .entry = &syscall_process_vm_writev },
-	{ .entry = NULL }
 };
 #else
-#define NR_SH_SYSCALLS 367
 
 /* arch/sh/kernel/syscalls_32.S */
-struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
+struct syscalltable syscalls_sh[] = {
 	{ .entry = &syscall_restart_syscall },	/* 0  -  old "setup()" system call*/
 	{ .entry = &syscall_exit },
 	{ .entry = &syscall_fork },
@@ -769,6 +766,5 @@ struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
 	{ .entry = &syscall_setns },
 	{ .entry = &syscall_process_vm_readv },	/* 365 */
 	{ .entry = &syscall_process_vm_writev },
-	{ .entry = NULL }
 };
 #endif

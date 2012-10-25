@@ -341,33 +341,33 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 void setup_syscall_tables(void)
 {
 #if defined(__x86_64__)
-	syscalls_64bit = copy_syscall_table(syscalls_x86_64, NR_X86_64_SYSCALLS);
-	syscalls_32bit = copy_syscall_table(syscalls_i386, NR_I386_SYSCALLS);
+	syscalls_64bit = copy_syscall_table(syscalls_x86_64, ARRAY_SIZE(syscalls_x86_64));
+	syscalls_32bit = copy_syscall_table(syscalls_i386, ARRAY_SIZE(syscalls_i386));
 
-	max_nr_64bit_syscalls = NR_X86_64_SYSCALLS;
-	max_nr_32bit_syscalls = NR_I386_SYSCALLS;
+	max_nr_64bit_syscalls = ARRAY_SIZE(syscalls_x86_64);
+	max_nr_32bit_syscalls = ARRAY_SIZE(syscalls_i386);
 	biarch = TRUE;
 #elif defined(__i386__)
-	syscalls = copy_syscall_table(syscalls_i386, NR_I386_SYSCALLS);
-	max_nr_syscalls = NR_I386_SYSCALLS;
+	syscalls = copy_syscall_table(syscalls_i386, ARRAY_SIZE(syscalls_i386));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_i386);
 #elif defined(__powerpc__)
-	syscalls = copy_syscall_table(syscalls_ppc, NR_PPC_SYSCALLS);
-	max_nr_syscalls = NR_PPC_SYSCALLS;
+	syscalls = copy_syscall_table(syscalls_ppc, ARRAY_SIZE(syscalls_ppc));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_ppc);
 #elif defined(__ia64__)
-	syscalls = copy_syscall_table(syscalls_ia64, NR_IA64_SYSCALLS);
-	max_nr_syscalls = NR_IA64_SYSCALLS;
+	syscalls = copy_syscall_table(syscalls_ia64, ARRAY_SIZE(syscalls_ia64));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_ia64);
 #elif defined(__sparc__)
-	syscalls = copy_syscall_table(syscalls_sparc, NR_SPARC_SYSCALLS);
-	max_nr_syscalls = NR_SPARC_SYSCALLS;
+	syscalls = copy_syscall_table(syscalls_sparc, ARRAY_SIZE(syscalls_sparc));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_sparc);
 #elif defined(__arm__)
-	syscalls = copy_syscall_table(syscalls_arm, NR_ARM_SYSCALLS);
-	max_nr_syscalls = NR_ARM_SYSCALLS;
+	syscalls = copy_syscall_table(syscalls_arm, ARRAY_SIZE(syscalls_arm));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_arm);
 #elif defined(__mips__)
-	syscalls = copy_syscall_table(syscalls_mips, NR_MIPS_SYSCALLS);
-	max_nr_syscalls = NR_MIPS_SYSCALLS;
+	syscalls = copy_syscall_table(syscalls_mips, ARRAY_SIZE(syscalls_mips));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_mips);
 #elif defined(__sh__)
-	syscalls = copy_syscall_table(syscalls_sh, NR_SH_SYSCALLS);
-	max_nr_syscalls = NR_SH_SYSCALLS;
+	syscalls = copy_syscall_table(syscalls_sh, ARRAY_SIZE(syscalls_sh));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_sh);
 #else
 #error Unknown architecture.
 #endif

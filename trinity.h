@@ -150,4 +150,6 @@ enum exit_reasons {
 
 #define pid_alive(_pid) kill(_pid, 0)
 
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 #endif	/* _TRINITY_H */
