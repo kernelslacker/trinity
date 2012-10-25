@@ -86,7 +86,7 @@ struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
 	{ .entry = &syscall_sigpending },
 	{ .entry = &syscall_sethostname },
 	{ .entry = &syscall_setrlimit },		/* 75 */
-	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_old_getrlimit },*/
+	{ .entry = &syscall_getrlimit }, /* old_getrlimit */
 	{ .entry = &syscall_getrusage },
 	{ .entry = &syscall_gettimeofday },
 	{ .entry = &syscall_settimeofday },
@@ -477,7 +477,7 @@ struct syscalltable syscalls_sh[NR_SH_SYSCALLS + 1] = {
 	{ .entry = &syscall_sigpending },
 	{ .entry = &syscall_sethostname },
 	{ .entry = &syscall_setrlimit },	/* 75 */
-	{ .entry = &syscall_ni_syscall }, /*{ .entry = &syscall_old_getrlimit },*/
+	{ .entry = &syscall_getrlimit }, /* old_getrlimit */
 	{ .entry = &syscall_getrusage },
 	{ .entry = &syscall_gettimeofday },
 	{ .entry = &syscall_settimeofday },
