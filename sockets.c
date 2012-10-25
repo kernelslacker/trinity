@@ -23,7 +23,11 @@ static char sockarray[PF_MAX];
 
 void generate_sockets(void)
 {
-	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
+	struct flock fl = {
+		.l_type = F_WRLCK,
+		.l_whence = SEEK_SET,
+	};
+
 	int fd, n;
 	unsigned int i, tries;
 	int cachefile;
@@ -136,7 +140,11 @@ static void close_sockets(void)
 
 void open_sockets(void)
 {
-	struct flock fl = { F_WRLCK, SEEK_SET, 0, 0, 0 };
+	struct flock fl = {
+		.l_type = F_WRLCK,
+		.l_whence = SEEK_SET,
+	};
+
 	int cachefile;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
