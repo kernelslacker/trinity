@@ -104,6 +104,10 @@
 #define AF_NFC		39
 #endif
 
+#ifndef PF_NFC
+#define PF_NFC		39
+#endif
+
 #ifndef NFC_SOCKPROTO_RAW
 #define NFC_SOCKPROTO_RAW	0
 #endif
