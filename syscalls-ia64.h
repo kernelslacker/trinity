@@ -10,9 +10,7 @@
 #include <asm/types.h>
 #include <sys/socket.h>
 
-#define NR_SYSCALLS 298
-
-struct syscalltable syscalls_ia64[NR_SYSCALLS] = {
+struct syscalltable syscalls_ia64[] = {
 	{ .entry = &syscall_ni_syscall },
 	{ .entry = &syscall_exit },
 	{ .entry = &syscall_read },

@@ -7,9 +7,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-#define NR_ARM_SYSCALLS 379
-
-struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
+struct syscalltable syscalls_arm[] = {
 
 /* 0 */		{ .entry = &syscall_restart_syscall },
 		{ .entry = &syscall_exit },
@@ -390,5 +388,4 @@ struct syscalltable syscalls_arm[NR_ARM_SYSCALLS + 1] = {
 		{ .entry = &syscall_process_vm_readv },
 		{ .entry = &syscall_process_vm_writev },
 		{ .entry = &syscall_ni_syscall },	/* reserved for sys_kcmp */
-		{ .entry = NULL }
 };
