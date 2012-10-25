@@ -43,7 +43,7 @@ void reseed(void);
 extern unsigned int nr_sockets;
 extern unsigned int specific_proto;
 void open_sockets(void);
-void find_specific_proto(char *protoarg);
+void find_specific_proto(const char *protoarg);
 
 extern unsigned int page_size;
 extern unsigned int rep;
