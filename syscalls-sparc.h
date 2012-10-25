@@ -2,6 +2,8 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "syscall.h"
+#include "syscalls/syscalls.h"
 
 struct syscalltable syscalls_sparc[] = {
 	{ .entry = &syscall_restart_syscall },
