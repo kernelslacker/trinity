@@ -152,6 +152,9 @@ int main(int argc, char* argv[])
 	if (create_shm())
 		exit(EXIT_FAILURE);
 
+	/* Set seed in parent thread*/
+	set_seed(0);
+
 	if (desired_group != GROUP_NONE) {
 		ret = setup_syscall_group(desired_group);
 		if (ret == FALSE) {
