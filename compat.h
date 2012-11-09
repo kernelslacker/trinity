@@ -119,6 +119,16 @@
 #define MSG_WAITFORONE	0x10000
 #endif
 
+/* linux/socket.h */
+#ifndef MSG_PROBE
+#define MSG_PROBE 0x10
+#endif
+#ifndef MSG_FASTOPEN
+#define MSG_FASTOPEN 0x20000000
+#endif
+#ifndef MSG_CMSG_COMPAT
+#define MSG_CMSG_COMPAT 0x80000000
+#endif
 
 /* linux/net.h */
 #ifndef SYS_RECVMMSG
