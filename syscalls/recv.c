@@ -5,9 +5,9 @@
  */
 
 #include <sys/socket.h>
-
 #include "trinity.h"
 #include "sanitise.h"
+#include "compat.h"
 
 struct syscall syscall_recv = {
 	.name = "recv",
@@ -21,7 +21,7 @@ struct syscall syscall_recv = {
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
 	.arg4list = {
-		.num = 13,
+		.num = 20,
 		.values = { MSG_DONTWAIT, MSG_ERRQUEUE, MSG_ERRQUEUE,
 			    MSG_ERRQUEUE, MSG_OOB, MSG_PEEK, MSG_TRUNC,
 			    MSG_WAITALL, MSG_EOR, MSG_TRUNC, MSG_CTRUNC,
