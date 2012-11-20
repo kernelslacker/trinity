@@ -60,6 +60,7 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 {
 	struct map *tmpmap = map;
 	int fd;
+	unsigned long size;
 
 	if (!tmpmap)
 		tmpmap = alloc_map();
@@ -74,7 +75,13 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 	 * This is necessary for when we want to test page boundaries.
 	 * see end of _get_address() for details.
 	 */
-	tmpmap->ptr = mmap(NULL, page_size * 2, prot, MAP_PRIVATE, fd, 0);
+
+	if (rand() % 2)
+		size = page_size * 2;
+	else
+		size = 4*1024*1024*2-1;
+
+	tmpmap->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
 
 
 	if (!tmpmap->ptr) {
