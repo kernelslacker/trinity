@@ -118,3 +118,21 @@
 * Pause on oops.
   Sometimes we might want to read trinity state when we trigger a bad event.
 
+* config file
+  - specify an ip of a victim machine
+  - exclude file list for (certain sysfs files for eg)
+
+* rework ioctl
+  - pick known ioctl at random
+  - start with: DRM, Networking, ALSA,..
+  - lookup the correct /dev/node
+
+* generic linked list implementation
+  - convert file list usage
+  - memory allocation usage
+
+* file list struct extensions
+  - use count
+
+* destructor lists
+
