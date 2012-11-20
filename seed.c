@@ -4,6 +4,8 @@
 #include "trinity.h"
 #include "shm.h"
 
+/* The actual seed lives in the shm. This variable is used
+ * to store what gets passed in from the command line -s argument */
 unsigned int seed = 0;
 
 static void syslog_seed(int seedparam)
@@ -17,10 +19,11 @@ static void syslog_seed(int seedparam)
 static int new_seed(void)
 {
 	struct timeval t;
+	int r;
 
 	gettimeofday(&t, 0);
-
-	return (t.tv_sec * getpid()) ^ t.tv_usec;
+	r = rand() ^ (t.tv_sec * getpid()) ^ t.tv_usec;
+	return r;
 }
 
 /*
@@ -39,7 +42,7 @@ int init_seed(unsigned int seedparam)
 	if (do_syslog == TRUE)
 		syslog_seed(seedparam);
 
-	return seed;
+	return seedparam;
 }
 
 
