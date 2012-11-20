@@ -292,16 +292,6 @@ static const char * decode_exit(unsigned int reason)
 
 static void main_loop(void)
 {
-	static const char taskname[13]="trinity-main";
-
-	shm->parentpid = getpid();
-
-	output(0, "[%d] Main thread is alive.\n", getpid());
-
-	prctl(PR_SET_NAME, (unsigned long) &taskname);
-
-	setup_fds();
-
 	while (shm->exit_reason == STILL_RUNNING) {
 		if (shm->running_childs < shm->max_children) {
 			reseed();
@@ -328,14 +318,21 @@ static void main_loop(void)
 
 void do_main_loop(void)
 {
+	const char taskname[13]="trinity-main";
 	int childstatus;
 	pid_t pid;
 
 	/* do an extra fork so that the watchdog and the children don't share a common parent */
 	fflush(stdout);
 	pid = fork();
-	if (pid == 0)
+	if (pid == 0) {
+		shm->parentpid = getpid();
+		output(0, "[%d] Main thread is alive.\n", getpid());
+		prctl(PR_SET_NAME, (unsigned long) &taskname);
+		setup_fds();
+
 		main_loop();
+	}
 
 	while (pid != -1)
 		pid = waitpid(-1, &childstatus, 0);
