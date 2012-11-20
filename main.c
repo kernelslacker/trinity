@@ -329,6 +329,7 @@ void do_main_loop(void)
 		shm->parentpid = getpid();
 		output(0, "[%d] Main thread is alive.\n", getpid());
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
+		set_seed(0);
 		setup_fds();
 
 		main_loop();
