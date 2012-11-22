@@ -99,12 +99,12 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 	sprintf(tmpmap->name, "/dev/zero(%s)", name);
 	num_mappings++;
 
-	output(2, "mapping[%d]: (zeropage %s) %p\n", num_mappings - 1, name, tmpmap->ptr);
+	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
+			num_mappings - 1, name, tmpmap->ptr, size);
 
 	close(fd);
 	return tmpmap;
 }
-
 
 void setup_maps(void)
 {
