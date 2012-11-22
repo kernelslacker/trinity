@@ -81,6 +81,7 @@ struct map {
 	struct map *next;
 	void *ptr;
 	char *name;
+	unsigned long size;
 };
 void setup_maps(void);
 void destroy_maps(void);
