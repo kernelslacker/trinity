@@ -122,6 +122,9 @@ void output(unsigned char level, const char *fmt, ...)
 	char outputbuf[1024];
 	char monobuf[1024];
 
+	if (logging == FALSE && level >= quiet_level)
+		return;
+
 	va_start(args, fmt);
 	n = vsnprintf(outputbuf, sizeof(outputbuf), fmt, args);
 	va_end(args);
