@@ -56,7 +56,7 @@ static void dump_maps(void)
 	}
 }
 
-void * alloc_zero_map(struct map *map, int prot, const char *name)
+static void * alloc_zero_map(struct map *map, int prot, const char *name)
 {
 	struct map *tmpmap = map;
 	int fd;
