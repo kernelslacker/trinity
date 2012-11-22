@@ -87,7 +87,13 @@ void * alloc_zero_map(struct map *map, int prot, const char *name)
 		printf("mmap /dev/zero failure\n");
 		exit(EXIT_FAILURE);
 	}
+
 	tmpmap->name = malloc(80);
+	if (!tmpmap->name) {
+		fprintf(stderr, "malloc() failed in %s().", __func__);
+		exit(EXIT_FAILURE);
+	}
+
 	sprintf(tmpmap->name, "/dev/zero(%s)", name);
 	num_mappings++;
 
