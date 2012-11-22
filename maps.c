@@ -88,6 +88,8 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 		exit(EXIT_FAILURE);
 	}
 
+	tmpmap->size = size;
+
 	tmpmap->name = malloc(80);
 	if (!tmpmap->name) {
 		fprintf(stderr, "malloc() failed in %s().", __func__);
@@ -150,6 +152,7 @@ void destroy_maps(void)
 
 	for (i = 0; i < num_mappings; i++) {
 		next = thismap->next;
+		munmap(thismap->ptr, thismap->size);
 		free(thismap->name);
 		free(thismap);
 		thismap = next;
