@@ -103,6 +103,7 @@ int child_process(void)
 	int ret;
 	unsigned int syscallnr;
 	unsigned int childno = find_pid_slot(pid);
+	unsigned int i;
 
 	disable_coredumps();
 
@@ -121,11 +122,22 @@ int child_process(void)
 	while (shm->exit_reason == STILL_RUNNING) {
 
 		if (getppid() != shm->parentpid) {
-			output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED!\n"
-				"Last syscall was %d (call:%d)\n",
-				getpid(), shm->previous_syscallno[childno], shm->child_syscall_count[childno]);
-			while(1)
-				sleep(5);
+			//FIXME: Add locking so only one child does this output.
+			output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED! "
+				"parent pid:%d. Watchdog pid:%d\n",
+				getpid(),
+				shm->parentpid, shm->watchdog_pid);
+			output(0, BUGTXT "Last syscalls:\n");
+
+			for (i = 0; i < MAX_NR_CHILDREN; i++) {
+				output(0, "  pid:%d call:%d callno:%d\n",
+					shm->pids[i],
+					shm->previous_syscallno[i],
+					shm->child_syscall_count[i]);
+			}
+			shm->exit_reason = EXIT_REPARENT_PROBLEM;
+			exit(EXIT_FAILURE);
+			//TODO: Emergency logging.
 		}
 
 		while (shm->regenerating == TRUE)

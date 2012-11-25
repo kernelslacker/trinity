@@ -282,7 +282,8 @@ static const char *reasons[] = {
 	"shm corruption - Found a pid out of range.",
 	"ctrl-c",
 	"kernel became tainted",
-	"SHM was corrupted!\n",
+	"SHM was corrupted!",
+	"Child reparenting problem",
 };
 
 static const char * decode_exit(unsigned int reason)
