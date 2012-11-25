@@ -4,6 +4,8 @@
 	unsigned long, maxnode, unsigned, flags)
  */
 
+#include <linux/mempolicy.h>
+
 #include "../arch.h"
 
 #define MPOL_F_STATIC_NODES     (1 << 15)
@@ -16,6 +18,9 @@
 static void sanitise_mbind(int childno)
 {
 	unsigned long maxnode;
+
+	shm->a2[childno] &= PAGE_MASK;
+
 retry_maxnode:
 	shm->a5[childno] &= ~((page_size * 8) - 1);
 
@@ -39,9 +44,11 @@ struct syscall syscall_mbind = {
 	.arg2type = ARG_LEN,
 
 	.arg3name = "mode",
-	.arg3type = ARG_RANGE,
-	.low3range = 0,
-	.hi3range = 5,
+	.arg3type = ARG_LIST,
+	.arg3list = {
+		.num = 4,
+		.values = { MPOL_DEFAULT, MPOL_BIND, MPOL_INTERLEAVE, MPOL_PREFERRED },
+	},
 
 	.arg4name = "nmask",
 	.arg4type = ARG_ADDRESS,
