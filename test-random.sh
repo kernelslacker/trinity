@@ -15,18 +15,33 @@ while [ 1 ];
 do
   RND=$RANDOM
   mkdir tmp.$RND
-  cd tmp.$RND
+  if [ ! -d tmp.$RND ]; then
+    echo "no tmp dir !"
+    exit
+  fi
+
+  pushd tmp.$RND
+
   for i in `seq 1 $NR_PROCESSES`
   do
-	MALLOC_CHECK_=2 ../../trinity -qq -l off &
-  done
-  wait
-  cd ..
-  chmod 755 ../tmp
-  rm -rf tmp.$RND
 
-  if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
-	echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
-	exit
-  fi
+	if [ ! -f ../../trinity ]; then
+		echo lost!
+		pwd
+		exit
+	fi
+
+	MALLOC_CHECK_=2 ../../trinity -qq -l off &
+
+	if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
+	  echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
+	  exit
+	fi
+  done
+
+  wait
+
+  popd
+  chmod 755 ../tmp
+  rm -rf tmp.$RND &
 done
