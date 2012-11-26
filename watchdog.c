@@ -1,3 +1,4 @@
+#include <time.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -17,6 +18,7 @@
 
 void init_watchdog(void)
 {
+	static const struct timespec ts = { .tv_nsec = 100000000 }; /* 100ms */
 	pid_t pid;
 
 	fflush(stdout);
@@ -26,7 +28,7 @@ void init_watchdog(void)
 		watchdog();     // Never returns.
 
 	while (shm->watchdog_pid == 0)
-		sleep(0.1);
+		nanosleep(&ts, NULL);
 
 	output(0, "[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
 }
