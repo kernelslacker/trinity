@@ -58,7 +58,7 @@ static long syscall32(int num_args, unsigned int call,
 }
 
 
-static unsigned long do_syscall(int childno)
+static unsigned long do_syscall(int childno, int *errno_saved)
 {
 	int nr = shm->syscallno[childno];
 	unsigned int num_args = syscalls[nr].entry->num_args;
@@ -76,10 +76,14 @@ static unsigned long do_syscall(int childno)
 	if (syscalls[nr].entry->flags & NEED_ALARM)
 		(void)alarm(3);
 
+	errno = 0;
+
 	if (shm->do32bit[childno] == FALSE)
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 	else
 		ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
+
+	*errno_saved = errno;
 
 	if (syscalls[nr].entry->flags & NEED_ALARM)
 		(void)alarm(0);
@@ -99,7 +103,7 @@ long mkcall(int childno)
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
 	unsigned int call = shm->syscallno[childno];
 
-	int ret = 0;
+	int ret = 0, errno_saved;
 	char string[512], *sptr;
 
 	shm->regenerate++;
@@ -214,13 +218,13 @@ args_done:
 	 */
 	call += SYSCALL_OFFSET;
 
-	ret = do_syscall(childno);
+	ret = do_syscall(childno, &errno_saved);
 
 	sptr = string;
 
 	if (ret < 0) {
 		RED
-		sptr += sprintf(sptr, "= %d (%s)", ret, strerror(errno));
+		sptr += sprintf(sptr, "= %d (%s)", ret, strerror(errno_saved));
 		WHITE
 		shm->failures++;
 	} else {
@@ -237,7 +241,7 @@ args_done:
 	sptr = string;
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
-	if ((ret == -1) && (errno == ENOSYS)) {
+	if ((ret == -1) && (errno_saved == ENOSYS)) {
 
 		/* Futex is awesome, it ENOSYS's depending on arguments. Sigh. */
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
