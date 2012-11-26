@@ -276,7 +276,7 @@ void find_specific_proto(const char *protoarg)
 
 	if (specific_proto == 0) {
 		/* we were passed a string */
-		for (i = 0; i < (sizeof(protocols) / sizeof(struct protocol)); i++) {
+		for (i = 0; i < ARRAY_SIZE(protocols); i++) {
 			if (strcmp(protoarg, p[i].name) == 0) {
 				specific_proto = p[i].proto;
 				break;
@@ -292,7 +292,7 @@ void find_specific_proto(const char *protoarg)
 
 	if (i > PF_MAX) {
 		printf("Protocol unknown. Pass a numeric value [0-%d] or one of ", PF_MAX);
-		for (i = 0; i < (sizeof(protocols) / sizeof(struct protocol)); i++)
+		for (i = 0; i < ARRAY_SIZE(protocols); i++)
 			printf("%s ", p[i].name);
 		printf("\n");
 
