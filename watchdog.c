@@ -16,6 +16,8 @@
 #include "files.h"
 #include "syscall.h"
 
+static void watchdog(void);
+
 void init_watchdog(void)
 {
 	static const struct timespec ts = { .tv_nsec = 100000000 }; /* 100ms */
@@ -134,7 +136,7 @@ static void check_children(void)
 	}
 }
 
-void watchdog(void)
+static void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount;
