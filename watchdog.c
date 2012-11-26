@@ -32,7 +32,7 @@ void init_watchdog(void)
 	while (shm->watchdog_pid == 0)
 		nanosleep(&ts, NULL);
 
-	output(0, "[%d] Started watchdog thread %d\n", getpid(), shm->watchdog_pid);
+	output(0, "[%d] Started watchdog process, PID is %d\n", getpid(), shm->watchdog_pid);
 }
 
 static int check_shm_sanity(void)
@@ -217,7 +217,7 @@ corrupt:
 	}
 
 out:
-	output(0, "[%d] Watchdog thread exiting\n", getpid());
+	output(0, "[%d] Watchdog exiting\n", getpid());
 
 	_exit(EXIT_SUCCESS);
 }
