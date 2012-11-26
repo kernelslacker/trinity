@@ -253,7 +253,7 @@ args_done:
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "ioctl"))
 			goto skip_enosys;
 
-		output(1, "%s returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name);
+		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name, call);
 		syscalls[call].entry->flags &= ~ACTIVE;
 	}
 
