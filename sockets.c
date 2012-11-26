@@ -299,5 +299,4 @@ void find_specific_proto(const char *protoarg)
 	}
 
 	printf("Using protocol %s (%u) for all sockets\n", protocols[i].name, protocols[i].proto);
-	return;
 }
