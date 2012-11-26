@@ -55,7 +55,7 @@ static int check_shm_sanity(void)
 	// On startup, we should figure out how many getpid()'s per second we can do,
 	// and use that.
 	if (shm->total_syscalls_done - shm->previous_count > 500000) {
-		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
+		output(0, "[watchdog] Execcount increased dramatically! (old:%ld new:%ld):\n",
 			shm->previous_count, shm->total_syscalls_done);
 		shm->exit_reason = EXIT_SHM_CORRUPTION;
 	}
@@ -84,10 +84,10 @@ static void check_children(void)
 		/* first things first, does the pid still exist ? */
 		if (getpgid(pid) == -1) {
 			if (errno == ESRCH) {
-				output(0, "pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
+				output(0, "[watchdog] pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
 				reap_child(pid);
 			} else {
-				output(0, "problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
+				output(0, "[watchdog] problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
 			}
 			continue;
 		}
@@ -99,7 +99,7 @@ static void check_children(void)
 
 		/* if we wrapped, just reset it, we'll pick it up next time around. */
 		if (old > (now + 3)) {
-			printf("child %d wrapped! old=%ld now=%ld\n", i, old, now);
+			printf("[watchdog] child %d wrapped! old=%ld now=%ld\n", i, old, now);
 			shm->tv[i].tv_sec = now;
 			continue;
 		}
@@ -108,16 +108,16 @@ static void check_children(void)
 
 		/* if we're way off, we're comparing garbage. Reset it. */
 		if (diff > 1000) {
-			output(0, "huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
+			output(0, "[watchdog] huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
 			shm->tv[i].tv_sec = now;
 			continue;
 		}
 //		if (diff > 3)
-//			printf("pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
+//			printf("[watchdog] pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
 
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
-			output(0, "pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
+			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
 				"Stuck in syscall %d%s. Sending SIGKILL.\n",
 				pid, old, now, diff, shm->syscallno[i],
 				shm->do32bit[i] ? " (32bit)" : "");
@@ -129,7 +129,7 @@ static void check_children(void)
 		 * Find out what's going on. */
 
 		if (diff > 60) {
-			output(0, "pid %d hasn't made progress in 60 seconds! (last:%ld now:%ld diff:%d)\n",
+			output(0, "[watchdog] pid %d hasn't made progress in 60 seconds! (last:%ld now:%ld diff:%d)\n",
 				pid, old, now, diff);
 			shm->tv[i].tv_sec = now;
 		}
@@ -158,7 +158,7 @@ static void watchdog(void)
 			check_children();
 
 			if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
-				output(0, "Reached limit %d. Telling children to start exiting\n", syscalls_todo);
+				output(0, "[watchdog] Reached limit %d. Telling children to start exiting\n", syscalls_todo);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 
@@ -168,7 +168,7 @@ static void watchdog(void)
 
 			if ((quiet_level > 1) && (shm->total_syscalls_done > 1)) {
 				if (shm->total_syscalls_done != lastcount)
-					printf("%ld iterations. [F:%ld S:%ld]\n",
+					printf("[watchdog] %ld iterations. [F:%ld S:%ld]\n",
 						shm->total_syscalls_done, shm->failures, shm->successes);
 				lastcount = shm->total_syscalls_done;
 			}
@@ -177,7 +177,7 @@ static void watchdog(void)
 		/* Only check taint if it was zero on startup */
 		if (do_check_tainted == FALSE) {
 			if (check_tainted() != 0) {
-				output(0, "kernel became tainted! Last seed was %u:%x\n", shm->seed, shm->seed);
+				output(0, "[watchdog] kernel became tainted! Last seed was %u:%x\n", shm->seed, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
 				while (shm->regenerating ==TRUE)
 					sleep(1);
