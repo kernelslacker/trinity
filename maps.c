@@ -109,15 +109,8 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 void setup_maps(void)
 {
 	struct map *tmpmap;
-	unsigned int fd, i;
 
 	tmpmap = maps_list = alloc_map();
-
-	/* Make sure our zero page mappings are nowhere near the shm. */
-	fd = open("/dev/zero", O_RDWR);
-	for (i = 0; i < 50; i++)
-		mmap(NULL, page_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	close(fd);
 
 	/* Add a bunch of /dev/zero mappings */
 	tmpmap->next = alloc_zero_map(tmpmap, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");

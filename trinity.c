@@ -83,13 +83,27 @@ static void mask_signals(void)
 		(void)signal(SIGSEGV, SIG_DFL);
 }
 
+#define SHM_PROT_PAGES 30
+
 static int create_shm(void)
 {
-	shm = alloc_shared(sizeof(struct shm_s));
-	if (shm == NULL) {
+	void *p;
+	unsigned shm_pages;
+
+	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & ~(page_size - 1)) / page_size;
+
+	/* Waste some address space to set up some "protection" near the SHM location. */
+	p = alloc_shared((SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES) * page_size);
+	if (p == NULL) {
 		perror("mmap");
 		return -1;
 	}
+
+	mprotect(p, SHM_PROT_PAGES * page_size, PROT_NONE);
+	mprotect(p + (SHM_PROT_PAGES + shm_pages) * page_size,
+			SHM_PROT_PAGES * page_size, PROT_NONE);
+
+	shm = p + SHM_PROT_PAGES * page_size;
 
 	memset(shm, 0, sizeof(struct shm_s));
 
@@ -123,6 +137,8 @@ int main(int argc, char* argv[])
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
 
 	progname = argv[0];
+
+	page_size = getpagesize();
 
 	setup_syscall_tables();
 
@@ -159,19 +175,19 @@ int main(int argc, char* argv[])
 		ret = setup_syscall_group(desired_group);
 		if (ret == FALSE) {
 			ret = EXIT_FAILURE;
-			goto cleanup_shm;
+			goto out;
 		}
 	}
 
 	if (show_syscall_list == TRUE) {
 		dump_syscall_tables();
-		goto cleanup_shm;
+		goto out;
 	}
 
 	if (validate_syscall_tables() == FALSE) {
 		printf("No syscalls were enabled!\n");
 		printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
-		goto cleanup_shm;
+		goto out;
 	}
 
 	sanity_check_tables();
@@ -190,8 +206,6 @@ int main(int argc, char* argv[])
 
 	if (do_specific_proto == TRUE)
 		find_specific_proto(specific_proto_optarg);
-
-	page_size = getpagesize();
 
 	init_buffers();
 
@@ -237,10 +251,7 @@ cleanup_fds:
 	if (logging == TRUE)
 		close_logfiles();
 
-cleanup_shm:
-
-	if (shm != NULL)
-		munmap(shm, sizeof(struct shm_s));
+out:
 
 	exit(ret);
 }
