@@ -324,4 +324,6 @@ void close_files(void)
 		if (fd != 0)
 			close(fd);
 	}
+
+	nr_file_fds = 0;
 }
