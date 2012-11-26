@@ -62,8 +62,6 @@ const struct ioctl ioctllist[] = {
 */
 };
 
-#define NR_IOCTLS sizeof(ioctllist)/sizeof(struct ioctl)
-
 static void generic_sanitise_ioctl(int childno)
 {
 	unsigned int i, j;
@@ -119,7 +117,7 @@ static void sanitise_ioctl(int childno)
 {
 	int ioctlnr;
 
-	ioctlnr = rand() % NR_IOCTLS;
+	ioctlnr = rand() % ARRAY_SIZE(ioctllist);
 	shm->a2[childno] = ioctllist[ioctlnr].request;
 
 	if (ioctllist[ioctlnr].sanitise)
