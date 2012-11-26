@@ -5,9 +5,8 @@
 #include "sanitise.h"
 
 struct syscall syscall_uselib = {
-	.name = "ni_syscall (uselib)",
-	.num_args = 0,
-	.flags = NI_SYSCALL,
+	.name = "uselib",
+	.num_args = 1,
 	.arg1name = "library",
 	.arg1type = ARG_ADDRESS,
 };
