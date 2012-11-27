@@ -223,7 +223,6 @@ extern struct syscall syscall_removexattr;
 extern struct syscall syscall_renameat;
 extern struct syscall syscall_rename;
 extern struct syscall syscall_request_key;
-extern struct syscall syscall_reserved_223;
 extern struct syscall syscall_restart_syscall;
 extern struct syscall syscall_rmdir;
 extern struct syscall syscall_rtas;
