@@ -245,7 +245,6 @@ extern struct syscall syscall_sched_setaffinity;
 extern struct syscall syscall_sched_setparam;
 extern struct syscall syscall_sched_setscheduler;
 extern struct syscall syscall_sched_yield;
-extern struct syscall syscall_security;
 extern struct syscall syscall_select;
 extern struct syscall syscall_semctl;
 extern struct syscall syscall_semget;
