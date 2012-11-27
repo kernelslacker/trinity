@@ -255,7 +255,6 @@ extern struct syscall syscall_sendfile64;
 extern struct syscall syscall_sendfile;
 extern struct syscall syscall_sendmsg;
 extern struct syscall syscall_sendto;
-extern struct syscall syscall_setaltroot;
 extern struct syscall syscall_setdomainname;
 extern struct syscall syscall_setfsgid16;
 extern struct syscall syscall_setfsgid;
