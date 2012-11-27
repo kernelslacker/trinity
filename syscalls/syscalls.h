@@ -82,7 +82,6 @@ extern struct syscall syscall_getgid;
 extern struct syscall syscall_getgroups16;
 extern struct syscall syscall_getgroups;
 extern struct syscall syscall_getitimer;
-extern struct syscall syscall_get_kernel_syms;
 extern struct syscall syscall_get_mempolicy;
 extern struct syscall syscall_getpagesize;
 extern struct syscall syscall_getpeername;
