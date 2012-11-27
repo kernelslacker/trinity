@@ -287,7 +287,6 @@ extern struct syscall syscall_settimeofday;
 extern struct syscall syscall_setuid16;
 extern struct syscall syscall_setuid;
 extern struct syscall syscall_setxattr;
-extern struct syscall syscall_set_zone_reclaim;
 extern struct syscall syscall_sgetmask;
 extern struct syscall syscall_shmat;
 extern struct syscall syscall_shmctl;
