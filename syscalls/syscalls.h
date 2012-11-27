@@ -35,7 +35,6 @@ extern struct syscall syscall_epoll_create;
 extern struct syscall syscall_epoll_ctl;
 extern struct syscall syscall_epoll_pwait;
 extern struct syscall syscall_epoll_wait;
-extern struct syscall syscall_epoll_wait_old;
 extern struct syscall syscall_eventfd2;
 extern struct syscall syscall_eventfd;
 extern struct syscall syscall_execve;
