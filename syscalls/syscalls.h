@@ -282,7 +282,6 @@ extern struct syscall syscall_setrlimit;
 extern struct syscall syscall_set_robust_list;
 extern struct syscall syscall_setsid;
 extern struct syscall syscall_setsockopt;
-extern struct syscall syscall_set_thread_area;
 extern struct syscall syscall_set_tid_address;
 extern struct syscall syscall_settimeofday;
 extern struct syscall syscall_setuid16;
