@@ -106,7 +106,6 @@ extern struct syscall syscall_getuid16;
 extern struct syscall syscall_getuid;
 extern struct syscall syscall_getunwind;
 extern struct syscall syscall_getxattr;
-extern struct syscall syscall_gtty;
 extern struct syscall syscall_init_module;
 extern struct syscall syscall_inotify_add_watch;
 extern struct syscall syscall_inotify_init1;
