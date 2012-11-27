@@ -33,7 +33,6 @@ extern struct syscall syscall_dup;
 extern struct syscall syscall_epoll_create1;
 extern struct syscall syscall_epoll_create;
 extern struct syscall syscall_epoll_ctl;
-extern struct syscall syscall_epoll_ctl_old;
 extern struct syscall syscall_epoll_pwait;
 extern struct syscall syscall_epoll_wait;
 extern struct syscall syscall_epoll_wait_old;
