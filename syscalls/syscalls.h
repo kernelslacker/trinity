@@ -88,7 +88,6 @@ extern struct syscall syscall_getpeername;
 extern struct syscall syscall_getpgid;
 extern struct syscall syscall_getpgrp;
 extern struct syscall syscall_getpid;
-extern struct syscall syscall_getpmsg;
 extern struct syscall syscall_getppid;
 extern struct syscall syscall_getpriority;
 extern struct syscall syscall_getresgid16;
