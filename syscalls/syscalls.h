@@ -354,7 +354,6 @@ extern struct syscall syscall_vhangup;
 extern struct syscall syscall_vm86;
 extern struct syscall syscall_vm86old;
 extern struct syscall syscall_vmsplice;
-extern struct syscall syscall_vserver;
 extern struct syscall syscall_wait4;
 extern struct syscall syscall_waitid;
 extern struct syscall syscall_waitpid;
