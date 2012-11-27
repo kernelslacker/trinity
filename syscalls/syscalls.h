@@ -101,7 +101,6 @@ extern struct syscall syscall_getrusage;
 extern struct syscall syscall_getsid;
 extern struct syscall syscall_getsockname;
 extern struct syscall syscall_getsockopt;
-extern struct syscall syscall_get_thread_area;
 extern struct syscall syscall_gettid;
 extern struct syscall syscall_gettimeofday;
 extern struct syscall syscall_getuid16;
