@@ -183,7 +183,6 @@ extern struct syscall syscall_nfsservctl;
 extern struct syscall syscall_nice;
 extern struct syscall syscall_ni_syscall;
 extern struct syscall syscall_oldreaddir;
-extern struct syscall syscall_old_ulimit;
 extern struct syscall syscall_oldumount;
 extern struct syscall syscall_olduname;
 extern struct syscall syscall_openat;
