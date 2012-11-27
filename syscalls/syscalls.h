@@ -182,7 +182,6 @@ extern struct syscall syscall_newuname;
 extern struct syscall syscall_nfsservctl;
 extern struct syscall syscall_nice;
 extern struct syscall syscall_ni_syscall;
-extern struct syscall syscall_old_break;
 extern struct syscall syscall_old_ftime;
 extern struct syscall syscall_old_idle;
 extern struct syscall syscall_old_lock;
