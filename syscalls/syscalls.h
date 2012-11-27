@@ -207,7 +207,6 @@ extern struct syscall syscall_pselect6;
 extern struct syscall syscall_ptrace;
 extern struct syscall syscall_pwrite64;
 extern struct syscall syscall_pwritev;
-extern struct syscall syscall_query_module;
 extern struct syscall syscall_quotactl;
 extern struct syscall syscall_readahead;
 extern struct syscall syscall_read;
