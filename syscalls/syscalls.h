@@ -311,7 +311,6 @@ extern struct syscall syscall_stat;
 extern struct syscall syscall_statfs64;
 extern struct syscall syscall_statfs;
 extern struct syscall syscall_stime;
-extern struct syscall syscall_streams2;
 extern struct syscall syscall_stty;
 extern struct syscall syscall_swapoff;
 extern struct syscall syscall_swapon;
