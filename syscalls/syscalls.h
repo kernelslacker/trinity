@@ -4,7 +4,6 @@ extern struct syscall syscall_access;
 extern struct syscall syscall_acct;
 extern struct syscall syscall_add_key;
 extern struct syscall syscall_adjtimex;
-extern struct syscall syscall_afs;
 extern struct syscall syscall_alarm;
 extern struct syscall syscall_arch_prctl;
 extern struct syscall syscall_bdflush;
