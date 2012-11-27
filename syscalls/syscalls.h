@@ -338,7 +338,6 @@ extern struct syscall syscall_times;
 extern struct syscall syscall_tkill;
 extern struct syscall syscall_truncate64;
 extern struct syscall syscall_truncate;
-extern struct syscall syscall_tux;
 extern struct syscall syscall_umask;
 extern struct syscall syscall_umount;
 extern struct syscall syscall_uname;
