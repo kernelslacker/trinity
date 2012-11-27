@@ -26,7 +26,6 @@ extern struct syscall syscall_clone;
 extern struct syscall syscall_close;
 extern struct syscall syscall_connect;
 extern struct syscall syscall_creat;
-extern struct syscall syscall_create_module;
 extern struct syscall syscall_delete_module;
 extern struct syscall syscall_dup2;
 extern struct syscall syscall_dup3;
