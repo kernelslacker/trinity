@@ -65,6 +65,7 @@
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
   *: Move arch specific syscalls into syscalls/arch/
+  *: Move addresses in get_interesting_value() to per-arch headers.
 
 * --ignore-socketcache
 
