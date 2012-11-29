@@ -71,6 +71,7 @@ clean:
 	@rm -f *.o syscalls/*.o syscalls/ia64/*.o syscalls/powerpc/*.o ioctls/*.o
 	@rm -f core.*
 	@rm -f trinity
+	@rm -f tags
 	@rm -f $(DEPDIR)/*.d
 
 release:
@@ -81,3 +82,7 @@ release:
 install:
 	install -d -m 755 $(INSTALL_PREFIX)/bin
 	install trinity $(INSTALL_PREFIX)/bin
+
+tags:
+	@ctags -R
+
