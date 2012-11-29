@@ -8,3 +8,4 @@ trinity.socketcache
 tmp
 trinity-*.tgz
 victims
+tags
