@@ -312,8 +312,6 @@ static void main_loop(void)
 			reseed();
 
 		handle_children();
-
-		sleep(1);	// Nothing left to do, sleep a while.
 	}
 }
 
