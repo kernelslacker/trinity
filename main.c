@@ -338,8 +338,8 @@ void do_main_loop(void)
 		_exit(EXIT_SUCCESS);
 	}
 
-	while (pid != -1)
-		pid = waitpid(-1, &childstatus, 0);
+	/* wait for main loop process to exit. */
+	pid = waitpid(pid, &childstatus, 0);
 
 	shm->parentpid = getpid();
 }
