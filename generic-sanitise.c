@@ -561,7 +561,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		;; // fallthrough
 
 	case ARG_SOCKADDR:
-		generate_sockaddr(&sockaddr, &sockaddrlen);
+		generate_sockaddr(&sockaddr, &sockaddrlen, PF_NOHINT);
 
 		switch (argnum) {
 		case 1:	if (syscalls[call].entry->arg2type == ARG_SOCKADDRLEN)

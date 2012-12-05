@@ -620,9 +620,12 @@ static void gen_nfc(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_nfc);
 }
 
-void generate_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 {
-	switch (rand() % PF_MAX) {
+	if (pf == -1)
+		pf = rand() % PF_MAX;
+
+	switch (pf) {
 
 	case PF_UNSPEC:
 		//TODO
