@@ -309,11 +309,7 @@ static void main_loop(void)
 
 		sleep(1);	// Nothing left to do, sleep a while.
 	}
-	while (pidmap_empty() == FALSE)
-		handle_children();
-
 	printf("[%d] Bailing main loop. Exit reason: %s\n", getpid(), decode_exit(shm->exit_reason));
-	_exit(EXIT_SUCCESS);
 }
 
 
@@ -334,6 +330,12 @@ void do_main_loop(void)
 		setup_fds();
 
 		main_loop();
+
+		/* Wait until all children have exited. */
+		while (pidmap_empty() == FALSE)
+			handle_children();
+
+		_exit(EXIT_SUCCESS);
 	}
 
 	while (pid != -1)
