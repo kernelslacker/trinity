@@ -6,9 +6,11 @@ INSTALL_PREFIX ?= $(HOME)
 CFLAGS = -Wall -W -g -O2 -I. -Wimplicit -D_FORTIFY_SOURCE=2 -DVERSION="$(VERSION)" -D_GNU_SOURCE
 #CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
 CFLAGS += -Wdeclaration-after-statement
+CFLAGS += -Wformat
 CFLAGS += -Wformat-security
 CFLAGS += -Wformat-y2k
 CFLAGS += -Winit-self
+CFLAGS += -Wlogical-op
 CFLAGS += -Wnested-externs
 CFLAGS += -Wpacked
 CFLAGS += -Wshadow
@@ -17,7 +19,6 @@ CFLAGS += -Wswitch-default
 CFLAGS += -Wswitch-enum
 CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings
-CFLAGS += -Wformat
 
 all: trinity
 
