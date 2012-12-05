@@ -132,6 +132,7 @@ static int create_shm(void)
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
+	int childstatus;
 	unsigned int i;
 
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
@@ -229,6 +230,8 @@ int main(int argc, char* argv[])
 	init_watchdog();
 
 	do_main_loop();
+
+	waitpid(shm->watchdog_pid, &childstatus, 0);
 
 	printf("\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->total_syscalls_done - 1, shm->successes, shm->failures);
