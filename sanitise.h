@@ -23,6 +23,8 @@ unsigned long get_len(void);
 unsigned int get_pid(void);
 char * get_filename(void);
 int get_random_fd(void);
-void generate_sockaddr(unsigned long *addr, unsigned long *addrlen);
+
+void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
+#define PF_NOHINT (-1)
 
 #endif	/* _SANITISE_H */

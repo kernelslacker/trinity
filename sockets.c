@@ -44,16 +44,20 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		__unused__ int ret;
 
 		/* fake a sockaddr. */
-		/* FIXME: This needs to match the socket packet family */
-		generate_sockaddr((unsigned long *) &sa, (unsigned long *) &salen);
+		generate_sockaddr((unsigned long *) &sa, (unsigned long *) &salen, domain);
 
 		ret = bind(fd, &sa, salen);
-//		if (ret == -1)
-//			printf("bind: %s\n", strerror(errno));
-
+/*		if (ret == -1)
+			printf("bind: %s\n", strerror(errno));
+		else
+			printf("bind: success!\n");
+*/
 		ret = listen(fd, (rand() % 2) + 1);
-//		if (ret == -1)
-//			printf("bind: %s\n", strerror(errno));
+/*		if (ret == -1)
+			printf("listen: %s\n", strerror(errno));
+		else
+			printf("listen: success!\n");
+*/
 	}
 
 	return fd;
