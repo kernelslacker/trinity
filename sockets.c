@@ -21,6 +21,25 @@ static const char *cachefilename="trinity.socketcache";
 #define MAX_TRIES_PER_DOMAIN 10
 static char sockarray[PF_MAX];
 
+
+static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
+{
+	int fd;
+
+	fd = socket(domain, type, protocol);
+	if (fd == -1)
+		return fd;
+
+	shm->socket_fds[nr_sockets] = fd;
+
+	output(2, "fd[%i] = domain:%i type:0x%x protocol:%i\n",
+		fd, domain, type, protocol);
+
+	nr_sockets++;
+
+	return fd;
+}
+
 void generate_sockets(void)
 {
 	struct flock fl = {
@@ -78,15 +97,9 @@ void generate_sockets(void)
 			else
 				domain = i;
 
-			fd = socket(domain, type, protocol);
+			fd = open_socket(domain, type, protocol);
 			if (fd > -1) {
-				shm->socket_fds[nr_sockets] = fd;
-
-				output(2, "fd[%i] = domain:%i type:0x%x protocol:%i\n",
-					fd, domain, type, protocol);
-
 				sockarray[i]++;
-				nr_sockets++;
 				nr_to_create--;
 
 				buffer[0] = domain;
@@ -184,7 +197,7 @@ void open_sockets(void)
 			}
 		}
 
-		fd = socket(domain, type, protocol);
+		fd = open_socket(domain, type, protocol);
 		if (fd < 0) {
 			printf("Cachefile is stale. Need to regenerate.\n");
 regenerate:
@@ -196,10 +209,6 @@ regenerate:
 			generate_sockets();
 			return;
 		}
-		shm->socket_fds[nr_sockets] = fd;
-		output(2, "fd[%i] = domain:%i type:0x%x protocol:%i\n",
-				fd, domain, type, protocol);
-		nr_sockets++;
 	}
 
 	if (nr_sockets < NR_SOCKET_FDS) {
