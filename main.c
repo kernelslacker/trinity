@@ -253,10 +253,16 @@ static void handle_children(void)
 	if (shm->running_childs == 0)
 		return;
 
+	/* First, we wait for *any* child to wake us up. */
 	pid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED);
 
+	/* We were awoken, handle it. */
 	handle_child(pid, childstatus);
 
+	/* While we're awake, let's see if the other children need attention.
+	 * We do this instead of just waitpid(-1) again so that there's no way
+	 * for any one child to starve the others of attention.
+	 */
 	for (i = 0; i < shm->max_children; i++) {
 
 		pid = shm->pids[i];
