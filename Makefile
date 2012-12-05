@@ -84,5 +84,5 @@ install:
 	install trinity $(INSTALL_PREFIX)/bin
 
 tags:
-	@ctags -R
+	@ctags -R --exclude=tmp
 
