@@ -309,7 +309,6 @@ static void main_loop(void)
 
 		sleep(1);	// Nothing left to do, sleep a while.
 	}
-	printf("[%d] Bailing main loop. Exit reason: %s\n", getpid(), decode_exit(shm->exit_reason));
 }
 
 
@@ -335,6 +334,7 @@ void do_main_loop(void)
 		while (pidmap_empty() == FALSE)
 			handle_children();
 
+		printf("[%d] Bailing main loop. Exit reason: %s\n", getpid(), decode_exit(shm->exit_reason));
 		_exit(EXIT_SUCCESS);
 	}
 
