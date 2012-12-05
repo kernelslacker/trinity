@@ -25,6 +25,8 @@ static char sockarray[PF_MAX];
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	int fd;
+	struct sockaddr sa;
+	socklen_t salen;
 
 	fd = socket(domain, type, protocol);
 	if (fd == -1)
@@ -36,6 +38,23 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		fd, domain, type, protocol);
 
 	nr_sockets++;
+
+	/* Sometimes, listen on created sockets. */
+	if (rand() % 2) {
+		__unused__ int ret;
+
+		/* fake a sockaddr. */
+		/* FIXME: This needs to match the socket packet family */
+		generate_sockaddr((unsigned long *) &sa, (unsigned long *) &salen);
+
+		ret = bind(fd, &sa, salen);
+//		if (ret == -1)
+//			printf("bind: %s\n", strerror(errno));
+
+		ret = listen(fd, (rand() % 2) + 1);
+//		if (ret == -1)
+//			printf("bind: %s\n", strerror(errno));
+	}
 
 	return fd;
 }
