@@ -67,6 +67,7 @@ void set_seed(unsigned int pidslot)
 void reseed(void)
 {
 	shm->need_reseed = FALSE;
+	shm->reseed_counter = 0;
 
 	if (getpid() != shm->parentpid) {
 		output(0, "Reseeding should only happen from parent!\n");
