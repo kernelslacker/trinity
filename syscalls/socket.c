@@ -100,7 +100,7 @@ void sanitise_socket(int childno)
 		switch (rand() % 2) {
 		case 0:	protocol = NFC_SOCKPROTO_LLCP;
 			switch (rand() % 2) {
-				type = SOCK_DGRAM;
+			case 0:	type = SOCK_DGRAM;
 				break;
 			case 1:	type = SOCK_STREAM;
 				break;
