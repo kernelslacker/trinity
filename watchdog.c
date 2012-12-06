@@ -140,7 +140,6 @@ static void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount;
-	unsigned int reseed_counter = 0;
 
 	shm->watchdog_pid = getpid();
 	printf("[%d] Watchdog is alive\n", shm->watchdog_pid);
@@ -185,10 +184,12 @@ static void watchdog(void)
 		}
 
 		if (shm->need_reseed == FALSE) {
-			reseed_counter++;
-			if (reseed_counter == 300) {
+			shm->reseed_counter++;
+			/* If we haven't reseeded in five minutes, trigger one. */
+			if (shm->reseed_counter == 300) {
+				output(0, "[watchdog] Triggering periodic reseed.\n");
 				shm->need_reseed = TRUE;
-				reseed_counter = 0;
+				shm->reseed_counter = 0;
 			}
 		}
 
