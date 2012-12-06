@@ -204,12 +204,22 @@ corrupt:
 
 		for (i = 0; i < shm->max_children; i++) {
 			pid_t pid;
+			int ret;
+
 			pid = shm->pids[i];
 			if (pid == EMPTY_PIDSLOT)
 				continue;
-			kill(pid, SIGKILL);
+			ret = kill(pid, SIGKILL);
+			/* If it disappeared, reap it. */
+			if (ret == ESRCH)
+				reap_child(pid);
+
+			if (shm->running_childs == 0)
+				goto out;
 		}
+
 		sleep(1);
+
 		if (check_shm_sanity()) {
 			// FIXME: If we get here, we over-wrote the real exit_reason.
 			// We should have saved that, and handled appropriately.
