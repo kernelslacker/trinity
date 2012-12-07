@@ -16,10 +16,10 @@ static void syslog_seed(int seedparam)
 	closelog();
 }
 
-static int new_seed(void)
+static unsigned int new_seed(void)
 {
 	struct timeval t;
-	int r;
+	unsigned int r;
 
 	gettimeofday(&t, 0);
 	r = rand() ^ (t.tv_sec * getpid()) ^ t.tv_usec;
@@ -29,7 +29,7 @@ static int new_seed(void)
 /*
  * If we passed in a seed with -s, use that. Otherwise make one up from time of day.
  */
-int init_seed(unsigned int seedparam)
+unsigned int init_seed(unsigned int seedparam)
 {
 	if (user_set_seed == TRUE)
 		printf("[%d] Using user passed random seed: %u (0x%x)\n", getpid(), seedparam, seedparam);

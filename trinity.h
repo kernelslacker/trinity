@@ -36,7 +36,7 @@ void do_syscall_from_child(void);
 void regenerate_random_page(void);
 
 extern unsigned int seed;
-int init_seed(unsigned int seed);
+unsigned int init_seed(unsigned int seed);
 void set_seed(unsigned int pidslot);
 void reseed(void);
 
