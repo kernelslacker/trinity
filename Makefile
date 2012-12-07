@@ -18,6 +18,9 @@ CFLAGS += -Wswitch-enum
 CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings
 
+# Only enabled during development.
+CFLAGS += -Werror
+
 all: trinity
 
 MACHINE		= $(shell $(CC) -dumpmachine)
@@ -73,7 +76,12 @@ clean:
 	@rm -f tags
 	@rm -f $(DEPDIR)/*.d
 
+devel:
+	@perl -p -i -e 's/#CFLAGS += -Werror/CFLAGS += -Werror/' Makefile
+
 release:
+	@perl -p -i -e 's/CFLAGS += -Werror/#CFLAGS += -Werror/' Makefile
+	git commit Makefile -m "Disable -Werror"
 	git repack -a -d
 	git prune-packed
 	git archive --format=tar.gz --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tgz
