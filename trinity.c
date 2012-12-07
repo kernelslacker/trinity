@@ -56,7 +56,7 @@ static void mask_signals(void)
 {
 	struct sigaction sa;
 	sigset_t ss;
-	unsigned int i;
+	int i;
 
 	for (i = 1; i < 512; i++) {
 		(void)sigfillset(&ss);
@@ -75,7 +75,7 @@ static void mask_signals(void)
 	(void)signal(SIGWINCH, SIG_IGN);
 
 	/* Ignore the RT signals. */
-	for (i = SIGRTMIN; i <= (unsigned int) SIGRTMAX; i++)
+	for (i = SIGRTMIN; i <= SIGRTMAX; i++)
 		(void)signal(i, SIG_IGN);
 
 	/* If we are in debug mode, we want segfaults and core dumps */
