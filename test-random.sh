@@ -33,6 +33,7 @@ do
 
 	MALLOC_CHECK_=2 ../../trinity -qq -l off &
 
+	sleep 1
 	if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
 	  echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
 	  exit
