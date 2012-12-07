@@ -88,7 +88,7 @@ static void mask_signals(void)
 static int create_shm(void)
 {
 	void *p;
-	unsigned shm_pages;
+	unsigned int shm_pages;
 
 	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & ~(page_size - 1)) / page_size;
 
