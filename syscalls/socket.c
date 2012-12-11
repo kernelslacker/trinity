@@ -70,6 +70,15 @@ void sanitise_socket(int childno)
 		}
 		break;
 
+	case AF_LLC:
+		switch (rand() % 2) {
+		case 0:	type = SOCK_STREAM;
+			break;
+		case 1:	type = SOCK_DGRAM;
+		default:break;
+		}
+		break;
+
 	case AF_NETLINK:
 		switch (rand() % 2) {
 		case 0:	type = SOCK_RAW;
