@@ -128,6 +128,10 @@ void sanitise_socket(int childno)
 		}
 		break;
 
+	case AF_IPX:
+		type = SOCK_DGRAM;
+		break;
+
 	case AF_IRDA:
 		switch (rand() % 2) {
 		case 0:	type = SOCK_STREAM;
