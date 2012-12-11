@@ -41,6 +41,19 @@ static int get_new_random_fd(void)
 	else
 		i = rand() % 3;
 
+	/* Ugly special case.
+	 * Sometimes, we can get here without any fd's setup.
+	 * If this happens, we divide by zero if we pick case 0 because
+	 * nr_file_fds is zero
+	 *
+	 * When this circumstance occurs, we just force it to use another network socket.
+	 *
+	 * FIXME: A better solution would be to like, actually open an fd. duh.
+	 */
+	if (nr_file_fds == 0)
+		i = 1;
+
+
 	switch (i) {
 	case 0:
 retry:
