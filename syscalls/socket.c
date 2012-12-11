@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/in.h>
+#include <linux/irda.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -65,6 +66,25 @@ void sanitise_socket(int childno)
 				protocol = IPPROTO_UDP;
 			break;
 		case 2:	type = SOCK_RAW;
+			break;
+		default:break;
+		}
+		break;
+
+	case AF_IRDA:
+		switch (rand() % 2) {
+		case 0:	type = SOCK_STREAM;
+			break;
+		case 1:	type = SOCK_SEQPACKET;
+			break;
+		case 2:	type = SOCK_DGRAM;
+			switch (rand() % 2) {
+			case 0: protocol = IRDAPROTO_ULTRA;
+				break;
+			case 1: protocol = IRDAPROTO_UNITDATA;
+				break;
+			default:break;
+			}
 			break;
 		default:break;
 		}
