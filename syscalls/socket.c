@@ -100,6 +100,11 @@ void sanitise_socket(int childno)
 		}
 		break;
 
+	case AF_RDS:
+		protocol = 0;
+		type = SOCK_SEQPACKET;
+		break;
+
 	case AF_TIPC:
 		protocol = 0;
 		switch (rand() % 3) {
