@@ -78,7 +78,10 @@ static void fork_children(void)
 		if (pid != 0)
 			shm->pids[pidslot] = pid;
 		else {
+			/* Child process. */
 			int ret = 0;
+
+			mask_signals_child();
 
 			memset(childname, 0, sizeof(childname));
 			sprintf(childname, "trinity-child%d", pidslot);
@@ -322,6 +325,7 @@ void do_main_loop(void)
 	int childstatus;
 	pid_t pid;
 
+
 	/* do an extra fork so that the watchdog and the children don't share a common parent */
 	fflush(stdout);
 	pid = fork();
@@ -330,6 +334,7 @@ void do_main_loop(void)
 		output(0, "[%d] Main thread is alive.\n", getpid());
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
 		set_seed(0);
+
 		setup_fds();
 
 		main_loop();

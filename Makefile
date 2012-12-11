@@ -40,6 +40,7 @@ OBJS		= trinity.o \
 			log.o \
 			maps.o \
 			seed.o \
+			signals.o \
 			sockets.o \
 			sockaddr.o \
 			syscall.o \
