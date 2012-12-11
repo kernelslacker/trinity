@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <linux/in.h>
 #include <linux/irda.h>
+#include <linux/dn.h>
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -30,6 +31,15 @@ void sanitise_socket(int childno)
 		case 1:	type = SOCK_RAW;
 			break;
 		default:break;
+		}
+		break;
+
+	case AF_DECnet:
+		if (rand() % 2) {
+			type = SOCK_SEQPACKET;
+			protocol = DNPROTO_NSP;
+		} else {
+			type = SOCK_STREAM;
 		}
 		break;
 
