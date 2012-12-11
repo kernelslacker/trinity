@@ -34,6 +34,10 @@ void sanitise_socket(int childno)
 		}
 		break;
 
+	case AF_CAN:
+		protocol = rand() % 7;	// CAN_NPROTO
+		break;
+
 	case AF_DECnet:
 		if (rand() % 2) {
 			type = SOCK_SEQPACKET;
