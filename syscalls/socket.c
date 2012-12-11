@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/in.h>
+#include <linux/caif/caif_socket.h>
 #include <linux/irda.h>
 #include <linux/dn.h>
 
@@ -29,6 +30,17 @@ void sanitise_socket(int childno)
 			protocol = 0;
 			break;
 		case 1:	type = SOCK_RAW;
+			break;
+		default:break;
+		}
+		break;
+
+	case AF_CAIF:
+		protocol = rand() % _CAIFPROTO_MAX;
+		switch (rand() % 2) {
+		case 0:	type = SOCK_SEQPACKET;
+			break;
+		case 1:	type = SOCK_STREAM;
 			break;
 		default:break;
 		}
