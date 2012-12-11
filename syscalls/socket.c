@@ -77,7 +77,7 @@ void sanitise_socket(int childno)
 		case 1:	type = SOCK_DGRAM;
 		default:break;
 		}
-		protocol = rand() % 22;
+		protocol = rand() % 32;	// MAX_LINKS
 		break;
 
 	case AF_NFC:
