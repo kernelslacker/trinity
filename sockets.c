@@ -111,14 +111,17 @@ void generate_sockets(void)
 
 			/* Pretend we're child 0 and we've called sys_socket */
 			sanitise_socket(0);
-			domain = shm->a1[0];
-			type = shm->a2[0];
-			protocol = shm->a3[0];
+
+			//FIXME: If we passed a specific domain, we want to sanitise
+			//  the proto/type fields.  Split it out of sanitise_socket()
 
 			if (do_specific_proto == TRUE)
 				domain = specific_proto;
 			else
-				domain = i;
+				domain = shm->a1[0];
+
+			type = shm->a2[0];
+			protocol = shm->a3[0];
 
 			fd = open_socket(domain, type, protocol);
 			if (fd > -1) {
