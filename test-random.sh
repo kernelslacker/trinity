@@ -13,36 +13,37 @@ NR_PROCESSES=$(($NR_CPUS * 2))
 
 while [ 1 ];
 do
-  RND=$RANDOM
-  mkdir tmp.$RND
-  if [ ! -d tmp.$RND ]; then
-    echo "no tmp dir !"
-    exit
-  fi
-
-  pushd tmp.$RND
-
   for i in `seq 1 $NR_PROCESSES`
   do
 
-	if [ ! -f ../../trinity ]; then
-		echo lost!
-		pwd
-		exit
-	fi
+    RND=$RANDOM
+    mkdir tmp.$RND
+    if [ ! -d tmp.$RND ]; then
+      echo "no tmp dir !"
+      exit
+    fi
 
-	MALLOC_CHECK_=2 ../../trinity -qq -l off &
+    pushd tmp.$RND
 
-	sleep 1
-	if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
-	  echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
-	  exit
-	fi
+    if [ ! -f ../../trinity ]; then
+      echo lost!
+      pwd
+      exit
+    fi
+
+    MALLOC_CHECK_=2 ../../trinity -qq -l off &
+
+    popd
+
+    if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
+      echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
+      exit
+    fi
   done
 
   wait
+  sleep 1
 
-  popd
   chmod 755 ../tmp
   rm -rf tmp.$RND &
 done
