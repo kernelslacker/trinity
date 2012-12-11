@@ -21,9 +21,15 @@ void sanitise_socket(int childno)
 
 	switch (family) {
 
-	case AF_X25:
-		type = SOCK_SEQPACKET;
-		protocol = 0;
+	case AF_APPLETALK:
+		switch (rand() % 2) {
+		case 0:	type = SOCK_DGRAM;
+			protocol = 0;
+			break;
+		case 1:	type = SOCK_RAW;
+			break;
+		default:break;
+		}
 		break;
 
 	case AF_INET:
@@ -74,30 +80,6 @@ void sanitise_socket(int childno)
 		protocol = rand() % 22;
 		break;
 
-	case AF_UNIX:
-		protocol = PF_UNIX;
-		switch (rand() % 3) {
-		case 0:	type = SOCK_STREAM;
-			break;
-		case 1:	type = SOCK_DGRAM;
-			break;
-		case 2:	type = SOCK_SEQPACKET;
-			break;
-		default:break;
-		}
-		break;
-
-	case AF_APPLETALK:
-		switch (rand() % 2) {
-		case 0:	type = SOCK_DGRAM;
-			protocol = 0;
-			break;
-		case 1:	type = SOCK_RAW;
-			break;
-		default:break;
-		}
-		break;
-
 	case AF_NFC:
 		switch (rand() % 2) {
 		case 0:	protocol = NFC_SOCKPROTO_LLCP;
@@ -129,6 +111,24 @@ void sanitise_socket(int childno)
 			break;
 		default: break;
 		}
+		break;
+
+	case AF_UNIX:
+		protocol = PF_UNIX;
+		switch (rand() % 3) {
+		case 0:	type = SOCK_STREAM;
+			break;
+		case 1:	type = SOCK_DGRAM;
+			break;
+		case 2:	type = SOCK_SEQPACKET;
+			break;
+		default:break;
+		}
+		break;
+
+	case AF_X25:
+		type = SOCK_SEQPACKET;
+		protocol = 0;
 		break;
 
 	default:
