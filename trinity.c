@@ -1,5 +1,4 @@
 #include <errno.h>
-#include <signal.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -26,62 +25,10 @@
 #include "syscall.h"
 
 char *progname = NULL;
-jmp_buf ret_jump;
 
 unsigned int page_size;
 
 struct shm_s *shm;
-
-static void sighandler(int sig)
-{
-	switch (sig) {
-	case SIGALRM:
-		/* if we blocked in read() or similar, we want to avoid doing it again. */
-		shm->fd_lifetime = 0;
-
-		(void)signal(sig, sighandler);
-		siglongjmp(ret_jump, 1);
-		break;
-
-	case SIGINT:
-		shm->exit_reason = EXIT_SIGINT;
-		break;
-
-	default:
-		_exit(EXIT_SUCCESS);
-	}
-}
-
-static void mask_signals(void)
-{
-	struct sigaction sa;
-	sigset_t ss;
-	int i;
-
-	for (i = 1; i < 512; i++) {
-		(void)sigfillset(&ss);
-		sa.sa_flags = SA_RESTART;
-		sa.sa_handler = sighandler;
-		sa.sa_mask = ss;
-		(void)sigaction(i, &sa, NULL);
-	}
-	/* we want default behaviour for child process signals */
-	(void)signal(SIGCHLD, SIG_DFL);
-
-	/* ignore signals we don't care about */
-	(void)signal(SIGFPE, SIG_IGN);
-	(void)signal(SIGXCPU, SIG_IGN);
-	(void)signal(SIGTSTP, SIG_IGN);
-	(void)signal(SIGWINCH, SIG_IGN);
-
-	/* Ignore the RT signals. */
-	for (i = SIGRTMIN; i <= SIGRTMAX; i++)
-		(void)signal(i, SIG_IGN);
-
-	/* If we are in debug mode, we want segfaults and core dumps */
-	if (debug == TRUE)
-		(void)signal(SIGSEGV, SIG_DFL);
-}
 
 #define SHM_PROT_PAGES 30
 
@@ -210,7 +157,7 @@ int main(int argc, char* argv[])
 
 	init_buffers();
 
-	mask_signals();
+	setup_main_signals();
 
 	if (check_tainted() != 0) {
 		output(0, "Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");

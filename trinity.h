@@ -24,6 +24,8 @@ extern char *progname;
 extern pid_t parentpid;
 
 extern jmp_buf ret_jump;
+void mask_signals_child(void);
+void setup_main_signals(void);
 
 void * alloc_shared(unsigned int size);
 
