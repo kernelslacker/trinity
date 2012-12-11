@@ -23,6 +23,7 @@ void sanitise_socket(int childno)
 
 	case AF_X25:
 		type = SOCK_SEQPACKET;
+		protocol = 0;
 		break;
 
 	case AF_INET:
