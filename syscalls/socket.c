@@ -75,6 +75,7 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_UNIX:
+		protocol = PF_UNIX;
 		switch (rand() % 3) {
 		case 0:	type = SOCK_STREAM;
 			break;
