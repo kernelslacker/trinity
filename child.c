@@ -130,8 +130,14 @@ int child_process(void)
 			output(0, BUGTXT "Last syscalls:\n");
 
 			for (i = 0; i < MAX_NR_CHILDREN; i++) {
-				output(0, "  pid:%d call:%d callno:%d\n",
-					shm->pids[i],
+				// Skip over 'boring' entries.
+				if ((shm->pids[i] == -1) &&
+				    (shm->previous_syscallno[i] == 0) &&
+				    (shm->child_syscall_count[i] == 0))
+					continue;
+
+				output(0, "[%d]  pid:%d call:%d callno:%d\n",
+					i, shm->pids[i],
 					shm->previous_syscallno[i],
 					shm->child_syscall_count[i]);
 			}
