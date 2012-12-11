@@ -100,6 +100,17 @@ void sanitise_socket(int childno)
 		}
 		break;
 
+	case AF_PHONET:
+		protocol = 0;
+		switch (rand() % 2) {
+		case 0:	type = SOCK_DGRAM;
+			break;
+		case 1:	type = SOCK_SEQPACKET;
+			break;
+		default: break;
+		}
+		break;
+
 	case AF_RDS:
 		protocol = 0;
 		type = SOCK_SEQPACKET;
