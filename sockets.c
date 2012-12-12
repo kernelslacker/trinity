@@ -144,6 +144,11 @@ void generate_sockets(void)
 			}
 			if (tries == MAX_TRIES_PER_DOMAIN)
 				break;
+
+			/* check for ctrl-c */
+			if (shm->exit_reason != STILL_RUNNING)
+				return;
+
 		}
 	}
 
@@ -235,6 +240,11 @@ regenerate:
 			generate_sockets();
 			return;
 		}
+
+		/* check for ctrl-c */
+		if (shm->exit_reason != STILL_RUNNING)
+			return;
+
 	}
 
 	if (nr_sockets < NR_SOCKET_FDS) {

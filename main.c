@@ -330,6 +330,8 @@ void do_main_loop(void)
 	fflush(stdout);
 	pid = fork();
 	if (pid == 0) {
+		setup_main_signals();
+
 		shm->parentpid = getpid();
 		output(0, "[%d] Main thread is alive.\n", getpid());
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
