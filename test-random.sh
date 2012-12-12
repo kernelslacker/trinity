@@ -39,7 +39,7 @@ do
       exit
     fi
 
-    MALLOC_CHECK_=2 ../../trinity -qq -l off &
+    MALLOC_CHECK_=2 ../../trinity -qq -l off -N 250000 &
 
     popd
 
