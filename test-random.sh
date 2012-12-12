@@ -1,5 +1,13 @@
 #!/bin/bash
 
+check_tainted()
+{
+    if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
+      echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
+      exit
+    fi
+}
+
 if [ ! -d tmp ]; then
   mkdir tmp
 fi
@@ -35,14 +43,12 @@ do
 
     popd
 
-    if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
-      echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
-      exit
-    fi
+    check_tainted
   done
 
   wait
   sleep 1
+  check_tainted
 
   chmod 755 ../tmp
   rm -rf tmp.$RND &
