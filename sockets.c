@@ -19,8 +19,6 @@ static const char *cachefilename="trinity.socketcache";
 
 #define MAX_PER_DOMAIN 5
 #define MAX_TRIES_PER_DOMAIN 10
-static char sockarray[PF_MAX];
-
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
@@ -71,7 +69,6 @@ void generate_sockets(void)
 	};
 
 	int fd, n;
-	unsigned int i, tries;
 	int cachefile;
 	unsigned int nr_to_create = NR_SOCKET_FDS;
 
@@ -100,56 +97,40 @@ void generate_sockets(void)
 		if (shm->exit_reason != STILL_RUNNING)
 			return;
 
-		for (i = 0; i < PF_MAX; i++)
-			sockarray[i] = 0;
+		/* Pretend we're child 0 and we've called sys_socket */
+		sanitise_socket(0);
 
-		for (i = 0; i < PF_MAX; i++) {
-			tries = 0;
+		//FIXME: If we passed a specific domain, we want to sanitise
+		//  the proto/type fields.  Split it out of sanitise_socket()
 
-			if (sockarray[i] == MAX_PER_DOMAIN)
-				break;
+		if (do_specific_proto == TRUE)
+			domain = specific_proto;
+		else
+			domain = shm->a1[0];
 
-			/* Pretend we're child 0 and we've called sys_socket */
-			sanitise_socket(0);
+		type = shm->a2[0];
+		protocol = shm->a3[0];
 
-			//FIXME: If we passed a specific domain, we want to sanitise
-			//  the proto/type fields.  Split it out of sanitise_socket()
+		fd = open_socket(domain, type, protocol);
+		if (fd > -1) {
+			nr_to_create--;
 
-			if (do_specific_proto == TRUE)
-				domain = specific_proto;
-			else
-				domain = shm->a1[0];
-
-			type = shm->a2[0];
-			protocol = shm->a3[0];
-
-			fd = open_socket(domain, type, protocol);
-			if (fd > -1) {
-				sockarray[i]++;
-				nr_to_create--;
-
-				buffer[0] = domain;
-				buffer[1] = type;
-				buffer[2] = protocol;
-				n = write(cachefile, &buffer, sizeof(int) * 3);
-				if (n == -1) {
-					printf("something went wrong writing the cachefile!\n");
-					exit(EXIT_FAILURE);
-				}
-
-				if (nr_to_create == 0)
-					goto done;
-			} else {
-				tries++;
+			buffer[0] = domain;
+			buffer[1] = type;
+			buffer[2] = protocol;
+			n = write(cachefile, &buffer, sizeof(int) * 3);
+			if (n == -1) {
+				printf("something went wrong writing the cachefile!\n");
+				exit(EXIT_FAILURE);
 			}
-			if (tries == MAX_TRIES_PER_DOMAIN)
-				break;
 
-			/* check for ctrl-c */
-			if (shm->exit_reason != STILL_RUNNING)
-				return;
-
+			if (nr_to_create == 0)
+				goto done;
 		}
+
+		/* check for ctrl-c */
+		if (shm->exit_reason != STILL_RUNNING)
+			return;
 	}
 
 done:
