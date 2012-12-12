@@ -5,6 +5,11 @@
 
 jmp_buf ret_jump;
 
+static void ctrlc_handler(__unused__ int sig)
+{
+	shm->exit_reason = EXIT_SIGINT;
+}
+
 static void sighandler(int sig)
 {
 	switch (sig) {
@@ -14,10 +19,6 @@ static void sighandler(int sig)
 
 		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
-		break;
-
-	case SIGINT:
-		shm->exit_reason = EXIT_SIGINT;
 		break;
 
 	default:
@@ -54,11 +55,17 @@ void mask_signals_child(void)
 	/* If we are in debug mode, we want segfaults and core dumps */
 	if (debug == TRUE)
 		(void)signal(SIGSEGV, SIG_DFL);
+
+	/* trap ctrl-c */
+	(void)signal(SIGINT, ctrlc_handler);
 }
+
 
 void setup_main_signals(void)
 {
 	/* we want default behaviour for child process signals */
 	(void)signal(SIGFPE, SIG_DFL);
 	(void)signal(SIGCHLD, SIG_DFL);
+
+	(void)signal(SIGINT, ctrlc_handler);
 }
