@@ -60,7 +60,7 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 {
 	struct map *tmpmap = map;
 	int fd;
-	unsigned long size;
+	unsigned long size = 0;
 
 	if (!tmpmap)
 		tmpmap = alloc_map();
@@ -71,15 +71,25 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 		exit(EXIT_FAILURE);
 	}
 
+	/* Pick a random sized mmap. */
+	switch (rand() % 4) {
+	case 0:	size = page_size;
+		break;
+	case 1:	size = 1024*1024;
+		break;
+	case 2:	size = 2 * (1024*1024);
+		break;
+	case 3:	size = 4 * (1024*1024);
+		break;
+	default:
+		break;
+	}
+
 	/* page_size * 2, so we have a guard page afterwards.
 	 * This is necessary for when we want to test page boundaries.
 	 * see end of _get_address() for details.
 	 */
-
-	if (rand() % 2)
-		size = page_size * 2;
-	else
-		size = 4*1024*1024*2-1;
+	size *= 2;
 
 	tmpmap->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
 
