@@ -332,6 +332,10 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 	unsigned int n;
 	struct syscall *copy;
 
+	/* FIXME: Use fewer shared maps.
+	 * It's pretty sad that we use a whole page just for a copy of that struct when we
+	 * could fit dozens of them in a page.  This would cut down our /proc/$$/maps a *lot*
+	 */
 	for (n = 0; n < nr; n++) {
 		copy = alloc_shared(sizeof(struct syscall));
 		if (copy == NULL)
