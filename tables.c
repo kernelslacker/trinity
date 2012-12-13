@@ -322,6 +322,11 @@ void dump_syscall_tables(void)
 	}
 }
 
+/*
+ * This changes the pointers in the table 'from' to be copies in
+ * shared mmaps across all children.  We do this so that a child can
+ * modify the flags field (adding AVOID for eg) and have other processes see the change.
+ */
 static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsigned int nr)
 {
 	unsigned int n;
