@@ -382,6 +382,8 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 	proto = rand() % 3;
 
 	switch (proto) {
+
+#ifdef USE_PPPOX_PPTP
 	case PX_PROTO_OE:
 		pppox = malloc(sizeof(struct sockaddr_pppox));
 		if (pppox == NULL)
@@ -402,6 +404,7 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 		*addr = (unsigned long) pppox;
 		*addrlen = sizeof(struct sockaddr_pppox);
 		break;
+#endif
 
 	case PX_PROTO_OL2TP:
 		switch (rand() % 4) {
