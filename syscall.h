@@ -52,6 +52,11 @@ struct syscall {
 	const char *arg5name;
 	const char *arg6name;
 
+	/* FIXME: At some point, if we grow more type specific parts here,
+	 * it may be worth union-ising this
+	 */
+
+	/* ARG_RANGE */
 	const unsigned int low1range, hi1range;
 	const unsigned int low2range, hi2range;
 	const unsigned int low3range, hi3range;
@@ -59,6 +64,7 @@ struct syscall {
 	const unsigned int low5range, hi5range;
 	const unsigned int low6range, hi6range;
 
+	/* ARG_OP / ARG_LIST */
 	const struct arglist arg1list;
 	const struct arglist arg2list;
 	const struct arglist arg3list;
