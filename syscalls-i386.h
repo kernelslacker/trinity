@@ -1,4 +1,4 @@
-/* Syscalls from arch/x86/syscalls/syscall_32.tbl as of 3.3rc1 */
+/* Syscalls from arch/x86/syscalls/syscall_32.tbl as of 3.8rc1 */
 
 #include "trinity.h"
 #include "sanitise.h"
@@ -356,4 +356,5 @@ struct syscalltable syscalls_i386[] = {
 	{ .entry = &syscall_process_vm_readv },
 	{ .entry = &syscall_process_vm_writev },
 	{ .entry = &syscall_kcmp },
+	{ .entry = &syscall_finit_module },
 };
