@@ -117,9 +117,20 @@ static void check_children(void)
 
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
+			const struct syscalltable *table;
+			int callno = shm->syscallno[i];
+
+			if (shm->do32bit[i] == FALSE) {
+				table = syscalls_64bit;
+			} else {
+				table = syscalls_32bit;
+			}
+
 			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
-				"Stuck in syscall %d%s. Sending SIGKILL.\n",
-				pid, old, now, diff, shm->syscallno[i],
+				"Stuck in syscall %d:%s%s. Sending SIGKILL.\n",
+				pid, old, now, diff,
+				callno,
+				table[callno].entry->name,
 				shm->do32bit[i] ? " (32bit)" : "");
 			kill(pid, SIGKILL);
 			break;
