@@ -6,8 +6,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "config.h"
-
 #include "constants.h"
 
 typedef enum { FALSE = 0, TRUE = 1 } bool;
