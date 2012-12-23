@@ -216,10 +216,10 @@ void generate_filelist(void)
 	fileindex = malloc(sizeof(void *) * files_added);
 
 	node = names;
-	while (node->next != names) {
+	do {
 		fileindex[i++] = node->name;
 		node = node->next;
-	}
+	} while (node->next != names);
 	files_in_index = i;
 }
 
