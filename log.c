@@ -24,7 +24,7 @@ void open_logfiles(void)
 		exit(EXIT_FAILURE);
 	}
 
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 		sprintf(logfilename, "trinity-child%d.log", i);
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
@@ -40,7 +40,7 @@ void close_logfiles(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < shm->max_children; i++)
+	for_each_pidslot(i)
 		if (shm->logfiles[i] != NULL)
 			fclose(shm->logfiles[i]);
 }
@@ -71,7 +71,7 @@ static FILE * find_logfile_handle(void)
 		printf("[%d] ## Couldn't find logfile for pid %d\n", getpid(), pid);
 		dump_pid_slots();
 		printf("## Logfiles for pids: ");
-		for (j = 0; j < shm->max_children; j++)
+		for_each_pidslot(j)
 			printf("%p ", shm->logfiles[j]);
 		printf("\n");
 	}
@@ -86,7 +86,7 @@ void synclogs(void)
 	if (logging == FALSE)
 		return;
 
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 		ret = fflush(shm->logfiles[i]);
 		if (ret == EOF) {
 			printf("## logfile flushing failed! %s\n", strerror(errno));
