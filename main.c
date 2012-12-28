@@ -34,7 +34,7 @@ static void regenerate(void)
 	shm->regenerating = FALSE;
 }
 
-bool do_check_tainted;
+bool ignore_tainted;
 
 int check_tainted(void)
 {

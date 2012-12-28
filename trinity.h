@@ -112,7 +112,7 @@ void output(unsigned char level, const char *fmt, ...);
 void open_logfiles(void);
 void close_logfiles(void);
 
-extern bool do_check_tainted;
+extern bool ignore_tainted;
 int check_tainted(void);
 
 void init_child(void);
