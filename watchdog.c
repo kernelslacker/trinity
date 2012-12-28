@@ -198,7 +198,7 @@ static void watchdog(void)
 			check_children();
 
 			if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
-				output(0, "[watchdog] Reached limit %d. Telling children to start exiting\n", syscalls_todo);
+				output(0, "[watchdog] Reached limit %d. Telling children to exit.\n", syscalls_todo);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 
