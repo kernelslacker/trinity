@@ -219,8 +219,6 @@ static void watchdog(void)
 			if (check_tainted() != 0) {
 				output(0, "[watchdog] kernel became tainted! Last seed was %u:%x\n", shm->seed, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
-				while (shm->regenerating ==TRUE)
-					sleep(1);
 			}
 		}
 
@@ -238,6 +236,9 @@ static void watchdog(void)
 	}
 
 corrupt:
+	/* We don't want to ever exit before main is waiting for us. */
+	while (shm->regenerating == TRUE)
+		sleep(1);
 
 	/* Wait for all the children to exit. */
 	while (shm->running_childs > 0) {
