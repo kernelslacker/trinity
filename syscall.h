@@ -125,4 +125,11 @@ int validate_syscall_table_64(void);
 int validate_syscall_table_32(void);
 void sanity_check_tables(void);
 
+#define for_each_32bit_syscall(i) \
+	for (i = 0; i < max_nr_32bit_syscalls; i++)
+#define for_each_64bit_syscall(i) \
+	for (i = 0; i < max_nr_64bit_syscalls; i++)
+#define for_each_syscall(i) \
+	for (i = 0; i < max_nr_syscalls; i++)
+
 #endif	/* _TRINITY_SYSCALL_H */
