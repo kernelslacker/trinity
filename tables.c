@@ -66,11 +66,11 @@ bool no_syscalls_enabled(void)
 	unsigned int i;
 
 	if (biarch == TRUE) {
-		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->flags & ACTIVE)
 				return FALSE;
 		}
-		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->flags & ACTIVE)
 				return FALSE;
 		}
@@ -78,7 +78,7 @@ bool no_syscalls_enabled(void)
 	}
 
 	/* non-biarch */
-	for (i = 0; i < max_nr_syscalls; i++) {
+	for_each_syscall(i) {
 		if (syscalls[i].entry->flags & ACTIVE)
 			return FALSE;
 	}
@@ -89,7 +89,7 @@ int validate_syscall_table_64(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < max_nr_64bit_syscalls; i++) {
+	for_each_64bit_syscall(i) {
 		if (syscalls_64bit[i].entry->flags & ACTIVE) {
 			use_64bit = TRUE;
 			break;
@@ -102,7 +102,7 @@ int validate_syscall_table_32(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < max_nr_32bit_syscalls; i++) {
+	for_each_32bit_syscall(i) {
 		if (syscalls_32bit[i].entry->flags & ACTIVE) {
 			use_32bit = TRUE;
 			break;
@@ -123,7 +123,7 @@ int validate_syscall_tables(void)
 	}
 
 	/* non-biarch case*/
-	for (i = 0; i < max_nr_syscalls; i++) {
+	for_each_syscall(i) {
 		if (syscalls[i].entry->flags & ACTIVE)
 			return TRUE;
 	}
@@ -196,12 +196,12 @@ void mark_all_syscalls_active(void)
 	unsigned int i;
 
 	if (biarch == TRUE) {
-		for (i = 0; i < max_nr_32bit_syscalls; i++)
+		for_each_32bit_syscall(i)
 			syscalls_32bit[i].entry->flags |= ACTIVE;
-		for (i = 0; i < max_nr_64bit_syscalls; i++)
+		for_each_64bit_syscall(i)
 			syscalls_64bit[i].entry->flags |= ACTIVE;
 	} else {
-		for (i = 0; i < max_nr_syscalls; i++)
+		for_each_syscall(i)
 			syscalls[i].entry->flags |= ACTIVE;
 	}
 }
@@ -296,14 +296,14 @@ void dump_syscall_tables(void)
 		printf("32-bit syscalls: %d\n", max_nr_32bit_syscalls);
 		printf("64-bit syscalls: %d\n", max_nr_64bit_syscalls);
 
-		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+		for_each_32bit_syscall(i) {
 			printf("32-bit entrypoint %d %s : ", syscalls_32bit[i].entry->number, syscalls_32bit[i].entry->name);
 			show_state(syscalls_32bit[i].entry->flags & ACTIVE);
 			if (syscalls_32bit[i].entry->flags & AVOID_SYSCALL)
 				printf(" AVOID");
 			printf("\n");
 		}
-		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+		for_each_64bit_syscall(i) {
 			printf("64-bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
 			show_state(syscalls_64bit[i].entry->flags & ACTIVE);
 			if (syscalls_64bit[i].entry->flags & AVOID_SYSCALL)
@@ -312,7 +312,7 @@ void dump_syscall_tables(void)
 		}
 	} else {
 		printf("syscalls: %d\n", max_nr_syscalls);
-		for (i = 0; i < max_nr_syscalls; i++) {
+		for_each_syscall(i) {
 			printf("%s : ", syscalls[i].entry->name);
 			show_state(syscalls[i].entry->flags & ACTIVE);
 			if (syscalls[i].entry->flags & AVOID_SYSCALL)
@@ -394,7 +394,7 @@ int setup_syscall_group(unsigned int group)
 	int count = 0, j = 0;
 
 	if (biarch == TRUE) {
-		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->group == group)
 				count++;
 		}
@@ -403,7 +403,7 @@ int setup_syscall_group(unsigned int group)
 		if (newsyscalls32 == NULL)
 			return FALSE;
 
-		for (i = 0; i < max_nr_32bit_syscalls; i++) {
+		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->group == group)
 				newsyscalls32[j++].entry = syscalls_32bit[i].entry;
 		}
@@ -416,7 +416,7 @@ int setup_syscall_group(unsigned int group)
 		/* now the 64 bit table*/
 		count = 0, j = 0;
 
-		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->group == group)
 				count++;
 		}
@@ -425,7 +425,7 @@ int setup_syscall_group(unsigned int group)
 		if (newsyscalls64 == NULL)
 			return FALSE;
 
-		for (i = 0; i < max_nr_64bit_syscalls; i++) {
+		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->group == group)
 				newsyscalls64[j++].entry = syscalls_64bit[i].entry;
 		}
@@ -437,7 +437,7 @@ int setup_syscall_group(unsigned int group)
 	} else {
 		/* non-biarch case. */
 
-		for (i = 0; i < max_nr_syscalls; i++) {
+		for_each_syscall(i) {
 			if (syscalls[i].entry->group == group)
 				count++;
 		}
@@ -446,7 +446,7 @@ int setup_syscall_group(unsigned int group)
 		if (newsyscalls == NULL)
 			exit(EXIT_FAILURE);
 
-		for (i = 0; i < max_nr_syscalls; i++) {
+		for_each_syscall(i) {
 			if (syscalls[i].entry->group == group)
 				newsyscalls[j++].entry = syscalls[i].entry;
 		}
