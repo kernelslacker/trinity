@@ -161,7 +161,7 @@ static void handle_child(pid_t childpid, int childstatus)
 
 		if (errno == ECHILD) {
 			debugf("[%d] All children exited!\n", getpid());
-			for (i = 0; i < shm->max_children; i++) {
+			for_each_pidslot(i) {
 				if (shm->pids[i] != EMPTY_PIDSLOT) {
 					if (pid_alive(shm->pids[i]) == -1) {
 						debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
@@ -266,7 +266,7 @@ static void handle_children(void)
 	 * We do this instead of just waitpid(-1) again so that there's no way
 	 * for any one child to starve the others of attention.
 	 */
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 
 		pid = shm->pids[i];
 

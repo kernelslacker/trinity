@@ -40,7 +40,7 @@ static int check_shm_sanity(void)
 	unsigned int i;
 	pid_t pid;
 
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 		pid = shm->pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			continue;
@@ -70,7 +70,7 @@ static unsigned int reap_dead_kids()
 	unsigned int alive = 0;
 	unsigned int reaped = 0;
 
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 		pid_t pid;
 		int ret;
 
@@ -114,7 +114,7 @@ static void check_children(void)
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec;
 
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 		pid = shm->pids[i];
 
 		if (pid == EMPTY_PIDSLOT)
@@ -253,7 +253,7 @@ corrupt:
 			goto out;
 
 		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
-		for (i = 0; i < shm->max_children; i++) {
+		for_each_pidslot(i) {
 			pid_t pid;
 
 			pid = shm->pids[i];

@@ -123,6 +123,8 @@ void reap_child(pid_t childpid);
 
 extern unsigned int user_specified_children;
 
+#define for_each_pidslot(i)	for (i = 0; i < shm->max_children; i++)
+
 #define PIDSLOT_NOT_FOUND -1
 #define EMPTY_PIDSLOT -1
 int find_pid_slot(pid_t mypid);

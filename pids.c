@@ -6,7 +6,7 @@ int find_pid_slot(pid_t mypid)
 {
 	unsigned int i;
 
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 		if (shm->pids[i] == mypid)
 			return i;
 	}
@@ -17,7 +17,7 @@ bool pidmap_empty(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < shm->max_children; i++) {
+	for_each_pidslot(i) {
 		if (shm->pids[i] != EMPTY_PIDSLOT)
 			return FALSE;
 	}
@@ -30,7 +30,7 @@ void dump_pid_slots(void)
 
 	printf("## pids:\n");
 
-	for (i = 0; i < shm->max_children; i++)
+	for_each_pidslot(i)
 		printf("## slot%d: %d\n", i, shm->pids[i]);
 }
 

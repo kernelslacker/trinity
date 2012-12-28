@@ -70,7 +70,7 @@ retry:
 			if (file == NULL) {
 				printf("## WTF, logfile was null!\n");
 				printf("## logfiles: ");
-				for (i = 0; i < shm->max_children; i++)
+				for_each_pidslot(i)
 					printf("%p ", shm->logfiles[i]);
 				printf("\n");
 				exit(EXIT_FAILURE);
