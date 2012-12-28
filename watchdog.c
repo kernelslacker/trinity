@@ -64,6 +64,45 @@ static int check_shm_sanity(void)
 	return SHM_OK;
 }
 
+static unsigned int reap_dead_kids()
+{
+	unsigned int i;
+	unsigned int alive = 0;
+	unsigned int reaped = 0;
+
+	for (i = 0; i < shm->max_children; i++) {
+		pid_t pid;
+		int ret;
+
+		pid = shm->pids[i];
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+
+		ret = kill(pid, 0);
+		/* If it disappeared, reap it. */
+		if (ret == -1) {
+			if (errno == ESRCH) {
+				output(0, "[watchdog] pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
+				reap_child(pid);
+				reaped++;
+			} else {
+				output(0, "[watchdog] problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
+			}
+		} else {
+			alive++;
+		}
+
+		if (shm->running_childs == 0)
+			return 0;
+	}
+
+	if (reaped != 0)
+		output(0, "[watchdog] Reaped %d dead children\n", reaped);
+
+	return alive;
+}
+
+
 static void check_children(void)
 {
 	struct timeval tv;
@@ -80,17 +119,6 @@ static void check_children(void)
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;
-
-		/* first things first, does the pid still exist ? */
-		if (getpgid(pid) == -1) {
-			if (errno == ESRCH) {
-				output(0, "[watchdog] pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
-				reap_child(pid);
-			} else {
-				output(0, "[watchdog] problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
-			}
-			continue;
-		}
 
 		old = shm->tv[i].tv_sec;
 
@@ -165,6 +193,8 @@ static void watchdog(void)
 			if (check_shm_sanity() == SHM_CORRUPT)
 				goto corrupt;
 
+			reap_dead_kids();
+
 			check_children();
 
 			if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
@@ -212,23 +242,28 @@ corrupt:
 	/* Wait for all the children to exit. */
 	while (shm->running_childs > 0) {
 		unsigned int i;
+		unsigned int alive;
 
+		/* Make sure there's no dead kids lying around.
+		 * We need to do this in case the oom killer has been killing them,
+		 * otherwise we end up stuck here with no child processes.
+		 */
+		alive = reap_dead_kids();
+		if (alive == 0)
+			goto out;
+
+		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
 		for (i = 0; i < shm->max_children; i++) {
 			pid_t pid;
-			int ret;
 
 			pid = shm->pids[i];
 			if (pid == EMPTY_PIDSLOT)
 				continue;
-			ret = kill(pid, SIGKILL);
-			/* If it disappeared, reap it. */
-			if (ret == ESRCH)
-				reap_child(pid);
 
-			if (shm->running_childs == 0)
-				goto out;
+			kill(pid, SIGKILL);
 		}
 
+		/* wait a second to give kids a chance to exit. */
 		sleep(1);
 
 		if (check_shm_sanity()) {
