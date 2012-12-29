@@ -102,6 +102,9 @@ extern unsigned int max_nr_syscalls;
 extern unsigned int max_nr_32bit_syscalls;
 extern unsigned int max_nr_64bit_syscalls;
 
+extern int specific_syscall32;
+extern int specific_syscall64;
+
 extern bool use_32bit;
 extern bool use_64bit;
 
