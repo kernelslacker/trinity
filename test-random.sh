@@ -23,15 +23,8 @@ while [ 1 ];
 do
   for i in `seq 1 $NR_PROCESSES`
   do
-
-    RND=$RANDOM
-    mkdir tmp.$RND
-    if [ ! -d tmp.$RND ]; then
-      echo "no tmp dir !"
-      exit
-    fi
-
-    pushd tmp.$RND
+    mkdir -p tmp.$i
+    pushd tmp.$i
 
     if [ ! -f ../../trinity ]; then
       echo lost!
@@ -51,5 +44,10 @@ do
   check_tainted
 
   chmod 755 ../tmp
-  rm -rf tmp.$RND &
+
+  for i in `seq 1 $NR_PROCESSES`
+  do
+    rm -rf tmp.$i
+  done
+
 done
