@@ -22,6 +22,9 @@ unsigned int max_nr_syscalls;
 unsigned int max_nr_32bit_syscalls;
 unsigned int max_nr_64bit_syscalls;
 
+int specific_syscall32 = 0;
+int specific_syscall64 = 0;
+
 bool use_32bit = FALSE;
 bool use_64bit = FALSE;
 bool biarch = FALSE;
@@ -208,8 +211,6 @@ void mark_all_syscalls_active(void)
 
 static void toggle_syscall_biarch(char *arg, unsigned char state)
 {
-	int specific_syscall32 = 0;
-	int specific_syscall64 = 0;
 	int ret;
 
 	specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
