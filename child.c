@@ -188,26 +188,12 @@ retry:
 		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
 
-		if (do_specific_syscall == FALSE) {
-			syscallnr = rand() % max_nr_syscalls;
-			if (!(syscalls[syscallnr].entry->flags & ACTIVE))
-				goto retry;
-
-		} else {
-			if (shm->do32bit[childno] == FALSE)
-				syscallnr = specific_syscall64;
-			else
-				syscallnr = specific_syscall32;
-
-			if (!(syscalls[syscallnr].entry->flags & ACTIVE)) {
-				output(1, "%s is marked disabled. Can't continue.\n",
-					syscalls[syscallnr].entry->name);
-				shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
-				return EXIT_FAILURE;
-			}
-		}
+		syscallnr = rand() % max_nr_syscalls;
 
 		if (syscalls[syscallnr].entry->num_args == 0)
+			goto retry;
+
+		if (!(syscalls[syscallnr].entry->flags & ACTIVE))
 			goto retry;
 
 		if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
