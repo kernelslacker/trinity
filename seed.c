@@ -10,9 +10,9 @@ unsigned int seed = 0;
 
 static void syslog_seed(int seedparam)
 {
-	fprintf(stderr, "Randomness reseeded to 0x%x\n", seedparam);
+	fprintf(stderr, "Randomness reseeded to %u\n", seedparam);
 	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
-	syslog(LOG_CRIT, "Randomness reseeded to 0x%x\n", seedparam);
+	syslog(LOG_CRIT, "Randomness reseeded to %u\n", seedparam);
 	closelog();
 }
 
@@ -32,11 +32,11 @@ static unsigned int new_seed(void)
 unsigned int init_seed(unsigned int seedparam)
 {
 	if (user_set_seed == TRUE)
-		printf("[%d] Using user passed random seed: %u (0x%x)\n", getpid(), seedparam, seedparam);
+		printf("[%d] Using user passed random seed: %u\n", getpid(), seedparam);
 	else {
 		seedparam = new_seed();
 
-		printf("Initial random seed from time of day: %u (0x%x)\n", seedparam, seedparam);
+		printf("Initial random seed from time of day: %u\n", seedparam);
 	}
 
 	if (do_syslog == TRUE)
@@ -81,7 +81,7 @@ void reseed(void)
 	/* We are reseeding. */
 	shm->seed = new_seed();
 
-	output(0, "[%d] Random reseed: %u (0x%x)\n", getpid(), shm->seed, shm->seed);
+	output(0, "[%d] Random reseed: %u\n", getpid(), shm->seed);
 
 	if (do_syslog == TRUE)
 		syslog_seed(shm->seed);
