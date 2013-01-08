@@ -176,6 +176,10 @@ void open_sockets(void)
 	int bytesread=-1;
 	int fd;
 
+	/* If we have victim files, don't worry about sockets. */
+	if (victim_path != NULL)
+		return;
+
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
 		printf("Couldn't find socket cachefile. Regenerating.\n");
