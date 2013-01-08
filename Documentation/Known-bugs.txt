@@ -107,5 +107,5 @@ BUG!: Last syscalls:
 
 Also:
  - why are those -1 pidslots having non-zero 'call' entries?)
- - on that run, we should only have used 4 pidslots.
+ - on that run, we should only have used 8 pidslots.
 
