@@ -136,9 +136,9 @@ int child_process(void)
 				    (shm->child_syscall_count[i] == 0))
 					continue;
 
-				output(0, "[%d]  pid:%d call:%d callno:%d\n",
+				output(0, "[%d]  pid:%d call:%s callno:%d\n",
 					i, shm->pids[i],
-					shm->previous_syscallno[i],
+					print_syscall_name(shm->previous_syscallno[i], shm->do32bit[i]),	// FIXME: need previous do32bit
 					shm->child_syscall_count[i]);
 			}
 			shm->exit_reason = EXIT_REPARENT_PROBLEM;
