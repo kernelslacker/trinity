@@ -124,6 +124,7 @@ bool no_syscalls_enabled(void);
 int validate_syscall_table_64(void);
 int validate_syscall_table_32(void);
 void sanity_check_tables(void);
+const char * print_syscall_name(unsigned int callno, bool bitsize);
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)

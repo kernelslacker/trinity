@@ -84,3 +84,28 @@
   (and probably a bunch of other state goes awry too). Need to determine which
   syscall is causing this.
 
+- Reparenting bug is still there.
+
+[842] Random reseed: 1816612613
+I/O possible
+BUG!: CHILD (pid:12170) GOT REPARENTED! parent pid:842. Watchdog pid:841
+BUG!: Last syscalls:
+[0]  pid:12785 call:273 callno:2497
+[1]  pid:12889 call:106 callno:1770
+[2]  pid:12818 call:217 callno:5016
+[3]  pid:13082 call:89 callno:570
+[4]  pid:12170 call:160 callno:12823
+[5]  pid:12912 call:126 callno:1663
+[6]  pid:12507 call:93 callno:7397
+[7]  pid:-1 call:248 callno:4272
+[8]  pid:-1 call:397 callno:0
+[9]  pid:-1 call:398 callno:0
+[10]  pid:-1 call:399 callno:0
+[11]  pid:-1 call:400 callno:0
+[12]  pid:-1 call:401 callno:0
+[13]  pid:-1 call:402 callno:0
+
+Also:
+ - why are those -1 pidslots having non-zero 'call' entries?)
+ - on that run, we should only have used 4 pidslots.
+
