@@ -69,6 +69,7 @@ extern bool do_syslog;
 extern bool logging;
 extern unsigned char desired_group;
 extern bool user_set_seed;
+extern char *victim_path;
 
 extern unsigned char exit_reason;
 
