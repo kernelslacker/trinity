@@ -201,10 +201,11 @@ void generate_filelist(void)
 
 	if (victim_path != NULL)
 		open_fds(victim_path);
-
-	open_fds("/dev");
-	open_fds("/proc");
-	open_fds("/sys");
+	else {
+		open_fds("/dev");
+		open_fds("/proc");
+		open_fds("/sys");
+	}
 
 	if (shm->exit_reason != STILL_RUNNING)
 		return;
