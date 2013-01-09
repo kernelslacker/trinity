@@ -50,7 +50,6 @@ OBJS		= trinity.o \
 			watchdog.o \
 			$(SYSCALLS) \
 			$(SYSCALLS_ARCH) \
-			$(SANITISE) \
 			$(IOCTLS)
 -include $(OBJS:.o=.d)
 
