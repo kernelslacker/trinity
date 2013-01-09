@@ -28,13 +28,13 @@ SYSCALLS_ARCH	= $(patsubst %.c,%.o,$(shell case "$(MACHINE)" in \
 		  (sh*) echo syscalls/sh/*.c ;; \
 		  esac))
 
-HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) syscalls/syscalls.h $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
-SYSCALLS	= $(patsubst %.c,%.o,$(wildcard syscalls/*.c))
-IOCTLS		= $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
+HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
+
 OBJS		= $(patsubst %.c,%.o,$(wildcard *.c)) \
-			$(SYSCALLS) \
-			$(SYSCALLS_ARCH) \
-			$(IOCTLS)
+		  $(patsubst %.c,%.o,$(wildcard syscalls/*.c)) \
+		  $(SYSCALLS_ARCH) \
+		  $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
+
 -include $(OBJS:.o=.d)
 
 trinity: $(OBJS) $(HEADERS)
