@@ -34,22 +34,28 @@ SYSCALLS_ARCH	= $(patsubst %.c,%.o,$(shell case "$(MACHINE)" in \
 
 HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 
+SRCS		= $(wildcard *.c) \
+		  $(wildcard syscalls/*.c) \
+		  $(SYSCALLS_ARCH) \
+		  $(wildcard ioctls/*.c)
+
 OBJS		= $(patsubst %.c,%.o,$(wildcard *.c)) \
 		  $(patsubst %.c,%.o,$(wildcard syscalls/*.c)) \
 		  $(SYSCALLS_ARCH) \
 		  $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
 
--include $(OBJS:.o=.d)
+DEPDIR= .deps
+
+-include $(SRCS:%.c=$(DEPDIR)/%.d)
 
 trinity: test $(OBJS) $(HEADERS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
 	@mkdir -p tmp
 
-DEPDIR= .deps
 df = $(DEPDIR)/$(*F)
 
 %.o : %.c
-	$(CC) $(CFLAGS) -MMD -o $@ -c $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 	@gcc -MM $(CFLAGS) $*.c > $(df).d
 	@mv -f $(df).d $(df).d.tmp
 	@sed -e 's|.*:|$*.o:|' <$(df).d.tmp > $(df).d
