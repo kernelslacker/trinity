@@ -21,7 +21,10 @@ CFLAGS += -Wwrite-strings
 # Only enabled during development.
 CFLAGS += -Werror
 
-all: trinity
+test:
+	@if [ ! -f config.h ]; then  echo Run configure.sh first.; fi
+
+all: test trinity
 
 MACHINE		= $(shell $(CC) -dumpmachine)
 SYSCALLS_ARCH	= $(patsubst %.c,%.o,$(shell case "$(MACHINE)" in \
