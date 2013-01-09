@@ -21,10 +21,11 @@ CFLAGS += -Wwrite-strings
 # Only enabled during development.
 CFLAGS += -Werror
 
-test:
-	@if [ ! -f config.h ]; then  echo Run configure.sh first.; fi
+all: trinity
 
-all: test trinity
+test:
+	@if [ ! -f config.h ]; then  echo Run configure.sh first.; exit; fi
+
 
 MACHINE		= $(shell $(CC) -dumpmachine)
 SYSCALLS_ARCH	= $(patsubst %.c,%.o,$(shell case "$(MACHINE)" in \
@@ -40,7 +41,7 @@ OBJS		= $(patsubst %.c,%.o,$(wildcard *.c)) \
 
 -include $(OBJS:.o=.d)
 
-trinity: $(OBJS) $(HEADERS)
+trinity: test $(OBJS) $(HEADERS)
 	$(CC) $(CFLAGS) -o trinity $(OBJS)
 	@mkdir -p tmp
 
