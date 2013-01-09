@@ -374,9 +374,7 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_pppox *pppox;
 	struct sockaddr_pppol2tp *pppol2tp;
-	struct sockaddr_pppol2tpin6 *pppol2tpin6;
 	struct sockaddr_pppol2tpv3 *pppol2tpv3;
-	struct sockaddr_pppol2tpv3in6 *pppol2tpv3in6;
 	unsigned int proto;
 	unsigned int i;
 
@@ -384,7 +382,6 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 
 	switch (proto) {
 
-#ifdef USE_PPPOX_PPTP
 	case PX_PROTO_OE:
 		pppox = malloc(sizeof(struct sockaddr_pppox));
 		if (pppox == NULL)
@@ -405,7 +402,6 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 		*addr = (unsigned long) pppox;
 		*addrlen = sizeof(struct sockaddr_pppox);
 		break;
-#endif
 
 	case PX_PROTO_OL2TP:
 		switch (rand() % 4) {
@@ -429,6 +425,10 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			break;
 
 		case 1:	/* PPPoL2TPin6*/
+#ifdef USE_PPPOL2TPIN6
+			{
+			struct sockaddr_pppol2tpin6 *pppol2tpin6;
+
 			pppol2tpin6 = malloc(sizeof(struct sockaddr_pppol2tpin6));
 			if (pppol2tpin6 == NULL)
 				return;
@@ -451,6 +451,8 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			pppol2tpin6->pppol2tp.addr.sin6_scope_id = rand();
 			*addr = (unsigned long) pppol2tpin6;
 			*addrlen = sizeof(struct sockaddr_pppol2tpin6);
+			}
+#endif
 			break;
 
 		case 2:	/* PPPoL2TPv3*/
@@ -472,6 +474,10 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			break;
 
 		case 3:	/* PPPoL2TPv3in6 */
+#ifdef USE_PPPOL2TPIN6
+			{
+			struct sockaddr_pppol2tpv3in6 *pppol2tpv3in6;
+
 			pppol2tpv3in6 = malloc(sizeof(struct sockaddr_pppol2tpv3in6));
 			if (pppol2tpv3in6 == NULL)
 				return;
@@ -494,6 +500,8 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			pppol2tpv3in6->pppol2tp.addr.sin6_scope_id = rand();
 			*addr = (unsigned long) pppol2tpv3in6;
 			*addrlen = sizeof(struct sockaddr_pppol2tpv3in6);
+			}
+#endif
 			break;
 
 		default:
