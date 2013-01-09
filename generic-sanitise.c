@@ -189,63 +189,70 @@ unsigned long get_reg(void)
 	return get_interesting_value();
 }
 
-void regenerate_random_page(void)
+void fabricate_onepage_struct(char *page)
 {
-	unsigned int i, j;
 	void *addr;
+	unsigned int i, j;
 
-	/* sometimes return a page of complete trash */
-	if ((rand() % 100) < 50) {
-		unsigned int type = rand() % 3;
-
-		switch (type) {
-		case 0:	/* bytes */
-			for (i = 0; i < page_size; i++)
-				page_rand[i++] = (unsigned char)rand();
-			return;
-
-		case 1:	/* ints */
-			for (i = 0; i < (page_size / 2); i++) {
-				page_rand[i++] = 0;
-				page_rand[i++] = (unsigned char)rand();
-			}
-			return;
-
-		case 2:	/* longs */
-			for (i = 0; i < (page_size / 4); i++) {
-				page_rand[i++] = 0;
-				page_rand[i++] = 0;
-				page_rand[i++] = 0;
-				page_rand[i++] = (unsigned char)rand();
-			}
-			return;
-		default:
-			BUG("unreachable!\n");
-			return;
-		}
-	}
-
-	/* sometimes return a page that looks kinda like a struct */
 	for (i = 0; i < page_size; i++) {
 		j = rand() % 4;
 		switch (j) {
-		case 0: page_rand[i] = get_interesting_32bit_value();
+		case 0: page[i] = get_interesting_32bit_value();
 			i += sizeof(unsigned long);
 			break;
-		case 1: page_rand[i] = get_interesting_value();
+		case 1: page[i] = get_interesting_value();
 			i += sizeof(unsigned long long);
 			break;
 		case 2: addr = get_address();
-			page_rand[i] = (unsigned long) addr;
+			page[i] = (unsigned long) addr;
 			i += sizeof(unsigned long);
 			break;
-		case 3: page_rand[i] = (unsigned int) rand() % page_size;
+		case 3: page[i] = (unsigned int) rand() % page_size;
 			i += sizeof(unsigned int);
 			break;
 		default:
 			BUG("unreachable!\n");
 			return;
 		}
+	}
+}
+
+void regenerate_random_page(void)
+{
+	unsigned int i;
+	unsigned int type = rand() % 3;
+
+	/* sometimes return a page that looks kinda like a struct */
+	if ((rand() % 100) < 50) {
+		fabricate_onepage_struct(page_rand);
+		return;
+	}
+
+	/* The rest of the time, return a page of complete trash */
+	switch (type) {
+	case 0:	/* bytes */
+		for (i = 0; i < page_size; i++)
+			page_rand[i++] = (unsigned char)rand();
+		return;
+
+	case 1:	/* ints */
+		for (i = 0; i < (page_size / 2); i++) {
+			page_rand[i++] = 0;
+			page_rand[i++] = (unsigned char)rand();
+		}
+		return;
+
+	case 2:	/* longs */
+		for (i = 0; i < (page_size / 4); i++) {
+			page_rand[i++] = 0;
+			page_rand[i++] = 0;
+			page_rand[i++] = 0;
+			page_rand[i++] = (unsigned char)rand();
+		}
+		return;
+	default:
+		BUG("unreachable!\n");
+		return;
 	}
 }
 

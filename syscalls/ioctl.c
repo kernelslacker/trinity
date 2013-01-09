@@ -31,12 +31,9 @@ const struct ioctl ioctllist[] = {
 
 static void generic_sanitise_ioctl(int childno)
 {
-	unsigned int i, j;
-	unsigned int nr_elements;
-	unsigned int *ptr;
-	void *addr;
+	unsigned int i;
 
-	/* One time in 50, mangle it. */
+	/* One time in 50, mangle cmd. */
 	if ((rand() % 50)==0) {
 
 		/* mangle the cmd by ORing up to 4 random bits */
@@ -49,32 +46,12 @@ static void generic_sanitise_ioctl(int childno)
 	}
 
 	/* the argument could mean anything, because ioctl sucks like that. */
-	switch (rand() % 10) {
+	switch (rand() % 2) {
 	case 0:	shm->a3[childno] = get_interesting_32bit_value();
 		break;
-	case 1 ... 5:
-		shm->a3[childno] = (unsigned long) page_rand;
-		break;
-	case 6 ... 9:
-		shm->a3[childno] = (unsigned long) page_rand;
-		ptr = (unsigned int*)page_rand;
-		/* manufacture a random struct */
 
-		nr_elements = rand() % 10;
-		for (i=0; i<nr_elements; i++) {
-			j = rand() % 2;
-
-			switch (j) {
-			case 0: *ptr = get_interesting_32bit_value();
-				ptr+= sizeof(unsigned int);
-				break;
-			case 1:	addr = get_address();
-				*ptr = (unsigned long) (addr);
-				ptr+= sizeof(unsigned long);
-				break;
-			default: break;
-			}
-		}
+	case 1:	shm->a3[childno] = (unsigned long) page_rand;
+		fabricate_onepage_struct(page_rand);
 		break;
 	default: break;
 	}
