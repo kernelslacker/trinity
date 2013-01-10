@@ -211,6 +211,22 @@ enum kcmp_type {
 #endif
 
 /* linux/tcp.h */
+#ifndef TCP_REPAIR
+#define TCP_REPAIR              19      /* TCP sock is under repair right now */
+#endif
+
+#ifndef TCP_REPAIR_QUEUE
+#define TCP_REPAIR_QUEUE        20
+#endif
+
+#ifndef TCP_QUEUE_SEQ
+#define TCP_QUEUE_SEQ           21
+#endif
+
+#ifndef TCP_REPAIR_OPTIONS
+#define TCP_REPAIR_OPTIONS      22
+#endif
+
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN 23
 #endif
