@@ -47,6 +47,7 @@ void mask_signals_child(void)
 	(void)signal(SIGXCPU, SIG_IGN);
 	(void)signal(SIGTSTP, SIG_IGN);
 	(void)signal(SIGWINCH, SIG_IGN);
+	(void)signal(SIGIO, SIG_IGN);
 
 	/* Ignore the RT signals. */
 	for (i = SIGRTMIN; i <= SIGRTMAX; i++)
