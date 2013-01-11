@@ -9,6 +9,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include "compat.h"
+
 static void sanitise_getrlimit(int childno)
 {
 	if (rand() % 2 == 0)
