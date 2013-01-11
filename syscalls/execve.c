@@ -5,6 +5,8 @@
  *
  * On success, execve() does not return
  * on error -1 is returned, and errno is set appropriately.
+ *
+ * TODO: Redirect stdin/stdout.
  */
 #include "trinity.h"
 #include "sanitise.h"
