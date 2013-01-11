@@ -162,13 +162,19 @@ static void * _get_address(unsigned char null_allowed)
 	 */
 	i = rand() % 100;
 	switch (i) {
-	case 0:	return addr + (page_size - sizeof(char));
-	case 1:	return addr + (page_size - sizeof(int));
-	case 2:	return addr + (page_size - sizeof(long));
-	case 3:	return addr + (page_size / 2);
+	case 0:	addr += (page_size - sizeof(char));
+		break;
+	case 1:	addr += (page_size - sizeof(int));
+		break;
+	case 2:	addr += (page_size - sizeof(long));
+		break;
+	case 3:	addr += (page_size / 2);
+		break;
 	case 4 ... 99:
-	default: return addr;
+	default: break;
 	}
+
+	return addr;
 }
 
 void * get_address(void)
