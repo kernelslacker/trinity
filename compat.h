@@ -194,6 +194,10 @@ enum kcmp_type {
 #endif
 
 /* asm/socket.h */
+#ifndef SO_BSDCOMPAT
+#define SO_BSDCOMPAT		14
+#endif
+
 #ifndef SO_RXQ_OVFL
 #define SO_RXQ_OVFL		40
 #endif
