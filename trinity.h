@@ -138,7 +138,7 @@ int pid_is_valid(pid_t);
 
 #define BUGTXT ANSI_RED "BUG!: " ANSI_WHITE
 
-#define BUG(bugtxt)	printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt);
+#define BUG(bugtxt)	{ printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt); while(1); }
 #define UNUSED(x) (void)(x)
 
 enum exit_reasons {
