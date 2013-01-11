@@ -214,6 +214,16 @@ args_done:
 		sleep(1);
 	}
 
+	if (((unsigned long)shm->a1 == (unsigned long) shm) ||
+	    ((unsigned long)shm->a2 == (unsigned long) shm) ||
+	    ((unsigned long)shm->a3 == (unsigned long) shm) ||
+	    ((unsigned long)shm->a4 == (unsigned long) shm) ||
+	    ((unsigned long)shm->a5 == (unsigned long) shm) ||
+	    ((unsigned long)shm->a6 == (unsigned long) shm)) {
+		BUG("Address of shm ended up in a register!\n");
+	}
+
+
 	/* Some architectures (IA64/MIPS) start their Linux syscalls
 	 * At non-zero, and have other ABIs below.
 	 */
