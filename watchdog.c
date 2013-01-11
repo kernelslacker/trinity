@@ -40,6 +40,9 @@ static int check_shm_sanity(void)
 	unsigned int i;
 	pid_t pid;
 
+	if (shm->running_childs == 0)
+		return SHM_OK;
+
 	for_each_pidslot(i) {
 		pid = shm->pids[i];
 		if (pid == EMPTY_PIDSLOT)
