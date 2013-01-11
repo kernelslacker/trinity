@@ -215,24 +215,66 @@ enum kcmp_type {
 #endif
 
 /* linux/tcp.h */
+#ifndef TCP_COOKIE_TRANSACTIONS
+#define TCP_COOKIE_TRANSACTIONS	15
+#endif
+
+#ifndef TCP_THIN_LINEAR_TIMEOUTS
+#define TCP_THIN_LINEAR_TIMEOUTS 16
+#endif
+
+#ifndef TCP_THIN_DUPACK
+#define TCP_THIN_DUPACK		17
+#endif
+
+#ifndef TCP_USER_TIMEOUT
+#define TCP_USER_TIMEOUT	18
+#endif
+
 #ifndef TCP_REPAIR
-#define TCP_REPAIR              19      /* TCP sock is under repair right now */
+#define TCP_REPAIR		19
 #endif
 
 #ifndef TCP_REPAIR_QUEUE
-#define TCP_REPAIR_QUEUE        20
+#define TCP_REPAIR_QUEUE	20
 #endif
 
 #ifndef TCP_QUEUE_SEQ
-#define TCP_QUEUE_SEQ           21
+#define TCP_QUEUE_SEQ		21
 #endif
 
 #ifndef TCP_REPAIR_OPTIONS
-#define TCP_REPAIR_OPTIONS      22
+#define TCP_REPAIR_OPTIONS	22
 #endif
 
 #ifndef TCP_FASTOPEN
-#define TCP_FASTOPEN 23
+#define TCP_FASTOPEN		23
+#endif
+
+/* linux/if_packet.h */
+#ifndef PACKET_VNET_HDR
+#define PACKET_VNET_HDR		15
+#endif
+
+#ifndef PACKET_TX_TIMESTAMP
+#define PACKET_TX_TIMESTAMP	16
+#endif
+
+#ifndef PACKET_TIMESTAMP
+#define PACKET_TIMESTAMP	17
+#endif
+
+#ifndef PACKET_FANOUT
+#define PACKET_FANOUT		18
+#endif
+
+/* linux/dccp.h */
+#ifndef DCCP_SOCKOPT_QPOLICY_ID
+#define DCCP_SOCKOPT_QPOLICY_ID	16
+#endif
+
+#ifndef DCCP_SOCKOPT_QPOLICY_TXQLEN
+#define DCCP_SOCKOPT_QPOLICY_TXQLEN 17
 #endif
 
 /* net/udplite.h */
@@ -241,6 +283,31 @@ enum kcmp_type {
 #endif
 #ifndef UDPLITE_RECV_CSCOV
 #define UDPLITE_RECV_CSCOV   11 /* receiver partial coverage (threshold ) */
+#endif
+
+/* linux/in.h */
+#ifndef IP_MTU
+#define IP_MTU			14
+#endif
+
+#ifndef IP_FREEBIND
+#define IP_FREEBIND		15
+#endif
+
+#ifndef IP_IPSEC_POLICY
+#define IP_IPSEC_POLICY		16
+#endif
+
+#ifndef IP_XFRM_POLICY
+#define IP_XFRM_POLICY		17
+#endif
+
+#ifndef IP_PASSSEC
+#define IP_PASSSEC		18
+#endif
+
+#ifndef IP_TRANSPARENT
+#define IP_TRANSPARENT		19
 #endif
 
 /* linux/in6.h */
