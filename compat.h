@@ -248,6 +248,11 @@ enum kcmp_type {
 #define IPV6_FLOWINFO 11
 #endif
 
+/* asm/resource.h */
+#ifndef RLIMIT_RTTIME
+#define RLIMIT_RTTIME		15
+#endif
+
 /* sctp/user.h */
 #ifndef SCTP_RTOINFO
 #define SCTP_RTOINFO    0
