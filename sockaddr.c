@@ -634,6 +634,11 @@ static void gen_nfc(unsigned long *addr, unsigned long *addrlen)
 
 void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 {
+	/* If we want sockets of a specific type, we'll want sockaddrs that match. */
+	if (do_specific_proto == TRUE)
+		pf = specific_proto;
+
+	/* If we got no hint passed down, pick a random proto. */
 	if (pf == -1)
 		pf = rand() % PF_MAX;
 
