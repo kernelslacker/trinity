@@ -71,11 +71,11 @@ clean:
 	@rm -f $(DEPDIR)/*.d
 
 devel:
-	@perl -p -i -e 's/#CFLAGS += -Werror/CFLAGS += -Werror/' Makefile
+	@perl -p -i -e 's/^#CFLAGS \+\= -Werror/CFLAGS += -Werror/' Makefile
 	git commit Makefile -m "Enable -Werror"
 
 release:
-	@perl -p -i -e 's/CFLAGS += -Werror/#CFLAGS += -Werror/' Makefile
+	@perl -p -i -e 's/^CFLAGS \+\= -Werror/#CFLAGS += -Werror/' Makefile
 	git commit Makefile -m "Disable -Werror"
 
 tarball:
