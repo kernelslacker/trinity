@@ -72,10 +72,13 @@ clean:
 
 devel:
 	@perl -p -i -e 's/#CFLAGS += -Werror/CFLAGS += -Werror/' Makefile
+	git commit Makefile -m "Enable -Werror"
 
 release:
 	@perl -p -i -e 's/CFLAGS += -Werror/#CFLAGS += -Werror/' Makefile
 	git commit Makefile -m "Disable -Werror"
+
+tarball:
 	git repack -a -d
 	git prune-packed
 	git archive --format=tar.gz --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tgz
