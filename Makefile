@@ -78,6 +78,9 @@ release:
 	@perl -p -i -e 's/^CFLAGS \+\= -Werror/#CFLAGS += -Werror/' Makefile
 	git commit Makefile -m "Disable -Werror"
 
+tag:
+	git tag -a $(VERSION) -m "$(VERSION) release."
+
 tarball:
 	git repack -a -d
 	git prune-packed
