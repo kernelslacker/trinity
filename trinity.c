@@ -23,6 +23,7 @@
 #include "files.h"
 #include "shm.h"
 #include "syscall.h"
+#include "config.h"	// for VERSION
 
 char *progname = NULL;
 
