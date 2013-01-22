@@ -19,7 +19,7 @@ CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings
 
 # Only enabled during development.
-CFLAGS += -Werror
+#CFLAGS += -Werror
 
 all: trinity
 
