@@ -83,7 +83,7 @@ int main(int argc, char* argv[])
 	int childstatus;
 	unsigned int i;
 
-	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com> 2012\n");
+	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com>\n");
 
 	progname = argv[0];
 
