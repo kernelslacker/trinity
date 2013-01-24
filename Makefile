@@ -24,7 +24,7 @@ CFLAGS += -Wwrite-strings
 all: trinity
 
 test:
-	@if [ ! -f config.h ]; then  echo Run configure.sh first.; exit; fi
+	@if [ ! -f config.h ]; then  echo "[1;31mRun configure.sh first.[1;37m" ; exit; fi
 
 
 MACHINE		= $(shell $(CC) -dumpmachine)
