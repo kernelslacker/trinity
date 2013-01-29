@@ -136,6 +136,9 @@ long mkcall(int childno)
  * I *really* loathe how this macro has grown. It should be a real function one day.
  */
 #define COLOR_ARG(ARGNUM, NAME, BIT, OLDREG, REG, TYPE)			\
+	if ((logging == FALSE) && (quiet_level < MAX_LOGLEVEL))		\
+		goto args_done;						\
+									\
 	if (syscalls[call].entry->num_args >= ARGNUM) {			\
 		if (!NAME)						\
 			goto args_done;					\
