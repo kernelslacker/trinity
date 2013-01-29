@@ -11,6 +11,12 @@
 #include "trinity.h"
 #include "sanitise.h"
 
+void sanitise_execve(__unused__ int childno)
+{
+	/* we don't want to block if something tries to read from stdin */
+	fclose(stdin);
+}
+
 struct syscall syscall_execve = {
 	.name = "execve",
 	.num_args = 4,
@@ -22,4 +28,5 @@ struct syscall syscall_execve = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "regs",
 	.arg4type = ARG_ADDRESS,
+	.sanitise = sanitise_execve,
 };
