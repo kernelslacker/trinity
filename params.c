@@ -21,6 +21,7 @@ bool do_specific_proto = FALSE;
 bool dopause = FALSE;
 bool show_syscall_list = FALSE;
 unsigned char quiet_level = 0;
+bool verbose = FALSE;
 bool monochrome = FALSE;
 bool dangerous = FALSE;
 bool logging = TRUE;
@@ -68,6 +69,7 @@ static void usage(void)
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --quiet,-q: less output.\n");
 	fprintf(stderr, " --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
+	fprintf(stderr, " --verbose,-v: increase output verbosity.\n");
 	fprintf(stderr, " --victims,-V: path to victim files.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " -c#: target specific syscall (takes syscall name as parameter).\n");
@@ -95,9 +97,10 @@ void parse_args(int argc, char *argv[])
 		{ "quiet", no_argument, NULL, 'q' },
 		{ "syslog", no_argument, NULL, 'S' },
 		{ "victims", required_argument, NULL, 'V' },
+		{ "verbose", no_argument, NULL, 'v' },
 		{ NULL, 0, NULL, 0 } };
 
-	while ((opt = getopt_long(argc, argv, "c:C:dDg:hl:LN:mP:pqs:SV:x:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:C:dDg:hl:LN:mP:pqs:SV:vx:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -180,6 +183,10 @@ void parse_args(int argc, char *argv[])
 
 		case 'S':
 			do_syslog = TRUE;
+			break;
+
+		case 'v':
+			verbose = TRUE;
 			break;
 
 		case 'V':
