@@ -82,7 +82,8 @@ void generate_sockets(void)
 		exit(EXIT_FAILURE);
 	}
 
-	output(2, "taking writer lock for cachefile\n");
+	if (verbose)
+		output(2, "taking writer lock for cachefile\n");
 	fl.l_pid = getpid();
 	fl.l_type = F_WRLCK;
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
@@ -90,7 +91,8 @@ void generate_sockets(void)
 		exit(EXIT_FAILURE);
 	}
 
-	output(2, "took writer lock for cachefile\n");
+	if (verbose)
+		output(2, "took writer lock for cachefile\n");
 
 	while (nr_to_create > 0) {
 
@@ -140,7 +142,8 @@ done:
 		exit(1);
 	}
 
-	output(2, "dropped writer lock for cachefile\n");
+	if (verbose)
+		output(2, "dropped writer lock for cachefile\n");
 	output(1, "created %d sockets\n", nr_sockets);
 
 	close(cachefile);
@@ -187,14 +190,16 @@ void open_sockets(void)
 		return;
 	}
 
-	output(2, "taking reader lock for cachefile\n");
+	if (verbose)
+		output(2, "taking reader lock for cachefile\n");
 	fl.l_pid = getpid();
 	fl.l_type = F_RDLCK;
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
 		perror("fcntl F_RDLCK F_SETLKW");
 		exit(1);
 	}
-	output(2, "took reader lock for cachefile\n");
+	if (verbose)
+		output(2, "took reader lock for cachefile\n");
 
 	while (bytesread != 0) {
 		bytesread = read(cachefile, buffer, sizeof(int) * 3);
@@ -246,7 +251,8 @@ regenerate:
 		exit(1);
 	}
 
-	output(2, "dropped reader lock for cachefile\n");
+	if (verbose)
+		output(2, "dropped reader lock for cachefile\n");
 	close(cachefile);
 }
 

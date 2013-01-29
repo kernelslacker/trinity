@@ -63,6 +63,7 @@ extern char *specific_proto_optarg;
 extern bool dopause;
 extern bool show_syscall_list;
 extern unsigned char quiet_level;
+extern bool verbose;
 extern bool monochrome;
 extern bool dangerous;
 extern bool do_syslog;
