@@ -137,3 +137,6 @@
 
 * destructor lists
 
+* more multiplexed syscalls need .sanitise routines to pass the right args.
+  - fcntl
+
