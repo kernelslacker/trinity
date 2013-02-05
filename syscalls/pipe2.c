@@ -17,7 +17,7 @@ struct syscall syscall_pipe2 = {
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
 	.arg2list = {
-		.num = 2,
+		.num = 3,
 		.values = { O_CLOEXEC, O_NONBLOCK, O_DIRECT },
 	},
 };
