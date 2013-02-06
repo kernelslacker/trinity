@@ -97,6 +97,19 @@ int main(int argc, char* argv[])
 	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE))
 		mark_all_syscalls_active();
 
+	if (desired_group != GROUP_NONE) {
+		ret = setup_syscall_group(desired_group);
+		if (ret == FALSE) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+
+	if (show_syscall_list == TRUE) {
+		dump_syscall_tables();
+		goto out;
+	}
+
 	if (getuid() == 0) {
 		if (dangerous == TRUE) {
 			printf("DANGER: RUNNING AS ROOT.\n");
@@ -119,19 +132,6 @@ int main(int argc, char* argv[])
 
 	/* Set seed in parent thread*/
 	set_seed(0);
-
-	if (desired_group != GROUP_NONE) {
-		ret = setup_syscall_group(desired_group);
-		if (ret == FALSE) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-	}
-
-	if (show_syscall_list == TRUE) {
-		dump_syscall_tables();
-		goto out;
-	}
 
 	if (validate_syscall_tables() == FALSE) {
 		printf("No syscalls were enabled!\n");
