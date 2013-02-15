@@ -130,7 +130,6 @@ void setup_maps(void)
 	tmpmap = tmpmap->next;
 
 	tmpmap->next = alloc_zero_map(NULL, PROT_WRITE, "PROT_WRITE");
-	tmpmap = tmpmap->next;
 
 	output(2, "Added /dev/zero mappings.\n");
 	dump_maps();
