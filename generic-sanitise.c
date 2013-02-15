@@ -120,6 +120,31 @@ unsigned long get_interesting_value(void)
 #endif
 }
 
+static bool within_page(void *addr, void *check)
+{
+	if (addr == check)
+		return TRUE;
+	if ((addr > check) && (addr < (check + page_size)))
+		return TRUE;
+	return FALSE;
+}
+
+bool validate_address(void *addr)
+{
+	if (within_page(addr, shm) == TRUE)
+		return FALSE;
+	if (within_page(addr, page_rand) == TRUE)
+		return FALSE;
+	if (within_page(addr, page_zeros) == TRUE)
+		return FALSE;
+	if (within_page(addr, page_0xff) == TRUE)
+		return FALSE;
+	if (within_page(addr, page_allocs) == TRUE)
+		return FALSE;
+
+	return TRUE;
+}
+
 static void * _get_address(unsigned char null_allowed)
 {
 	int i;
