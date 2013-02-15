@@ -47,7 +47,13 @@ int check_tainted(void)
 		return -1;
 	ret = read(fd, buffer, 3);
 	close(fd);
-	ret = atoi(buffer);
+
+	if (ret > 0)
+		ret = atoi(buffer);
+	else {
+		/* We should never fail, but if we do, assume untainted. */
+		ret = 0;
+	}
 
 	return ret;
 }
