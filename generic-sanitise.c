@@ -487,8 +487,11 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 			break;
 		}
 
-		if (high == 0)
+		if (high == 0) {
 			printf("%s forgets to set hirange!\n", syscalls[call].entry->name);
+			BUG("Fix syscall definition!\n");
+			return 0;
+		}
 
 		i = random() % high;
 		if (i < low) {
