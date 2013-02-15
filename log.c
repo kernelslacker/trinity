@@ -146,7 +146,8 @@ void output(unsigned char level, const char *fmt, ...)
 	if (!handle) {
 		printf("## child logfile handle was null logging to main!\n");
 		(void)fflush(stdout);
-		handle = parentlogfile;
+		for_each_pidslot(j)
+			shm->logfiles[j] = parentlogfile;
 		sleep(5);
 		return;
 	}
