@@ -93,3 +93,6 @@ install:
 tags:
 	@ctags -R --exclude=tmp
 
+mirror:
+	@git push --mirror git@github.com:kernelslacker/trinity.git
+
