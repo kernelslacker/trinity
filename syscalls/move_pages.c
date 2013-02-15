@@ -38,6 +38,8 @@ static void sanitise_move_pages(int childno)
 		return;
 
 	count = rand() % (page_size / sizeof(void *));
+	count = max(1, count);
+
 	shm->a2[childno] = count;
 
 	for (i = 0; i < count; i++) {
