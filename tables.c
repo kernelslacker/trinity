@@ -399,6 +399,11 @@ int setup_syscall_group(unsigned int group)
 				count++;
 		}
 
+		if (count == 0) {
+			printf("No 32-bit syscalls in group\n");
+			goto try_64bit;
+		}
+
 		newsyscalls32 = malloc(count * sizeof(struct syscalltable));
 		if (newsyscalls32 == NULL)
 			return FALSE;
@@ -413,12 +418,18 @@ int setup_syscall_group(unsigned int group)
 
 		printf("Found %d 32-bit syscalls in group\n", max_nr_32bit_syscalls);
 
+try_64bit:
 		/* now the 64 bit table*/
 		count = 0, j = 0;
 
 		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->group == group)
 				count++;
+		}
+
+		if (count == 0) {
+			printf("No 64-bit syscalls in group\n");
+			return FALSE;
 		}
 
 		newsyscalls64 = malloc(count * sizeof(struct syscalltable));
@@ -440,6 +451,11 @@ int setup_syscall_group(unsigned int group)
 		for_each_syscall(i) {
 			if (syscalls[i].entry->group == group)
 				count++;
+		}
+
+		if (count == 0) {
+			printf("No syscalls found in group\n");
+			return FALSE;
 		}
 
 		newsyscalls = malloc(count * sizeof(struct syscalltable));
