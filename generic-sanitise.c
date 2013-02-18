@@ -90,7 +90,7 @@ unsigned long get_interesting_value(void)
 
 	low = get_interesting_32bit_value();
 
-	i = rand() % 17;
+	i = rand() % 18;
 
 	switch (i) {
 	case 0: return 0;
@@ -111,6 +111,7 @@ unsigned long get_interesting_value(void)
 	case 14: return 0xffffffff80000000 | (low & 0xffffff);	// x86-64 kernel text address
 	case 15: return 0xffffffffa0000000 | (low & 0xffffff);	// x86-64 module space
 	case 16: return 0xffffffffff600000 | (low & 0x0fffff);	// x86-64 vdso
+	case 17: return 0xffffffffffffff00 | (rand() % 256);
 	default:
 		BUG("unreachable!\n");
 		return 0;
