@@ -56,7 +56,7 @@ static int get_new_random_fd(void)
 
 	switch (i) {
 	case 0:
-retry:
+retry_file:
 		fd_index = rand() % nr_file_fds;
 		fd = shm->file_fds[fd_index];
 
@@ -85,10 +85,15 @@ retry:
 
 
 		if (fd <= ret)
-			goto retry;
+			goto retry_file;
 		break;
 
 	case 1:
+		/* When using victim files, sockets can be 0. */
+		//FIXME: See the previous fixme. Could we infinite loop here ?
+		if (nr_sockets == 0)
+			goto retry_file;
+
 		fd = shm->socket_fds[rand() % nr_sockets];
 		break;
 
