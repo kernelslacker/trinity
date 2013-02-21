@@ -640,7 +640,7 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 
 	/* If we got no hint passed down, pick a random proto. */
 	if (pf == -1)
-		pf = rand() % PF_MAX;
+		pf = rand() % TRINITY_PF_MAX;
 
 	switch (pf) {
 
@@ -793,6 +793,10 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 
 	case PF_NFC:
 		gen_nfc(addr, addrlen);
+		break;
+
+	case PF_VSOCK:
+		//TODO
 		break;
 
 	default:
