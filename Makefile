@@ -21,6 +21,11 @@ CFLAGS += -Wwrite-strings
 # Only enabled during development.
 #CFLAGS += -Werror
 
+V	= @
+Q	= $(V:1=)
+QUIET_CC = $(Q:@=@echo    '  CC	'$@;)
+
+
 all: trinity
 
 test:
@@ -49,13 +54,13 @@ DEPDIR= .deps
 -include $(SRCS:%.c=$(DEPDIR)/%.d)
 
 trinity: test $(OBJS) $(HEADERS)
-	$(CC) $(CFLAGS) -o trinity $(OBJS)
+	$(QUIET_CC)$(CC) $(CFLAGS) -o trinity $(OBJS)
 	@mkdir -p tmp
 
 df = $(DEPDIR)/$(*F)
 
 %.o : %.c
-	$(CC) $(CFLAGS) -o $@ -c $<
+	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ -c $<
 	@gcc -MM $(CFLAGS) $*.c > $(df).d
 	@mv -f $(df).d $(df).d.tmp
 	@sed -e 's|.*:|$*.o:|' <$(df).d.tmp > $(df).d
