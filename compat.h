@@ -100,12 +100,18 @@
 
 
 /* bits/socket.h */
-#ifndef AF_NFC
-#define AF_NFC		39
-#endif
-
 #ifndef PF_NFC
 #define PF_NFC		39
+#endif
+#ifndef AF_NFC
+#define AF_NFC		PF_NFC
+#endif
+
+#ifndef PF_VSOCK
+#define PF_VSOCK        40
+#endif
+#ifndef AF_VSOCK
+#define AF_VSOCK PF_VSOCK
 #endif
 
 #ifndef NFC_SOCKPROTO_RAW

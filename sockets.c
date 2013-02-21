@@ -67,6 +67,7 @@ static const struct protocol protocols[] = {
 	{ "PF_CAIF",         37 },
 	{ "PF_ALG",          38 },
 	{ "PF_NFC",          39 },
+	{ "PF_VSOCK",        40 },
 };
 
 static const char * get_proto_name(int proto)
@@ -83,19 +84,20 @@ void find_specific_proto(const char *protoarg)
 		for (i = 0; i < ARRAY_SIZE(protocols); i++) {
 			if (strcmp(protoarg, protocols[i].name) == 0) {
 				specific_proto = protocols[i].proto;
+				printf("Proto %s = %d\n", protoarg, specific_proto);
 				break;
 			}
 		}
 	} else {
 		/* we were passed a numeric arg. */
-		for (i = 0; i < PF_MAX; i++) {
+		for (i = 0; i < TRINITY_PF_MAX; i++) {
 			if (specific_proto == protocols[i].proto)
 				break;
 		}
 	}
 
-	if (i > PF_MAX) {
-		printf("Protocol unknown. Pass a numeric value [0-%d] or one of ", PF_MAX);
+	if (i > TRINITY_PF_MAX) {
+		printf("Protocol unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
 		for (i = 0; i < ARRAY_SIZE(protocols); i++)
 			printf("%s ", protocols[i].name);
 		printf("\n");
@@ -219,6 +221,9 @@ void generate_sockets(void)
 		/* check for ctrl-c */
 		if (shm->exit_reason != STILL_RUNNING)
 			return;
+
+		//FIXME: If we've passed -P and we're spinning here without making progress
+		// then we should abort after a few hundred loops.
 	}
 
 done:
