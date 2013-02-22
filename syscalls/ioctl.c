@@ -7,6 +7,7 @@
 
 #include "trinity.h"
 #include "sanitise.h"
+#include "maps.h"
 #include "shm.h"
 
 struct ioctl {

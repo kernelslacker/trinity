@@ -26,6 +26,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "maps.h"
 #include "config.h"
 
 static in_addr_t random_ipv4_address(void)

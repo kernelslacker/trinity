@@ -8,6 +8,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "maps.h"
 #include "shm.h"
 #include "syscalls/setsockopt.h"
 
