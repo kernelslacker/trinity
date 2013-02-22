@@ -3,11 +3,10 @@
 	 const struct itimerspec __user *, utmr,
 	 struct itimerspec __user *, otmr)
  */
+#include "sanitise.h"
+
 #define TFD_CLOEXEC 02000000
 #define TFD_NONBLOCK 04000
-
-#include "trinity.h"
-#include "sanitise.h"
 
 struct syscall syscall_timerfd_settime = {
 	.name = "timerfd_settime",

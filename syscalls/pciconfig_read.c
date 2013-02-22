@@ -2,7 +2,6 @@
    sys_pciconfig_read (unsigned long bus, unsigned long dfn, unsigned long off, unsigned long len,
                        void *buf)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_pciconfig_read = {

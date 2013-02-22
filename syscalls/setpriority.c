@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(setpriority, int, which, int, who, int, niceval)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setpriority = {

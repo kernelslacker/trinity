@@ -13,7 +13,6 @@
 #include <sys/wait.h>
 
 #include "arch.h"
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"

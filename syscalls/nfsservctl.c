@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(nfsservctl, int, cmd, struct nfsctl_arg __user *, arg, void __user *, res
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_nfsservctl = {

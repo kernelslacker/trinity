@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE5(msgrcv, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz, long, msgtyp, int, msgflg)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_msgrcv = {

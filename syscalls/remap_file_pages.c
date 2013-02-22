@@ -3,10 +3,8 @@
 	 unsigned long, prot, unsigned long, pgoff, unsigned long, flags)
  */
 #include <asm/mman.h>
-
-#include "trinity.h"
-#include "sanitise.h"
 #include "arch.h"
+#include "sanitise.h"
 #include "shm.h"
 
 static void sanitise_remap_file_pages(int childno)

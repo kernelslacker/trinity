@@ -1,10 +1,8 @@
 /*
  * SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
  */
-
 #include <stdlib.h>
 #include <string.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 

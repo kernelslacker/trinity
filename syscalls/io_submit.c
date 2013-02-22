@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(io_submit, aio_context_t, ctx_id, long, nr,
 	 struct iocb __user * __user *, iocbpp)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_io_submit = {

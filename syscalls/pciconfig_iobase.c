@@ -1,7 +1,6 @@
 /*
    asmlinkage long sys_pciconfig_iobase(long which, unsigned long bus, unsigned long devfn);
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_pciconfig_iobase = {

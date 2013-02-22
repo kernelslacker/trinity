@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE0(sgetmask)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sgetmask = {

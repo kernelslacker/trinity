@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(shmat, int, shmid, char __user *, shmaddr, int, shmflg)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_shmat = {

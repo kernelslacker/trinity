@@ -5,7 +5,6 @@
  * On error (at least one bit in mode asked for a permission that is denied,
  *  or some other error occurred), -1 is returned, and errno is set appropriately.
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_access = {

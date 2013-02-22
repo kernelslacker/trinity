@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(uselib, const char __user *, library)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_uselib = {

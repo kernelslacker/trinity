@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(init_module, void __user *, umod,
 	 unsigned long, len, const char __user *, uargs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_init_module = {

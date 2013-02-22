@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE4(sendfile, int, out_fd, int, in_fd, off_t __user *, offset, size_t, count)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sendfile = {

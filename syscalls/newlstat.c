@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(newlstat, const char __user *, filename, struct stat __user *, statbuf)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_newlstat = {

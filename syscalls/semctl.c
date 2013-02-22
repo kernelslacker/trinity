@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE(semctl)(int semid, int semnum, int cmd, union semun arg)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_semctl = {

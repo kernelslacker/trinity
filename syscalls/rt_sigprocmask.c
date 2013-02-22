@@ -3,7 +3,6 @@
 	sigset_t __user *, oset, size_t, sigsetsize)
  */
 #include <signal.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(msgget, key_t, key, int, msgflg)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_msgget = {

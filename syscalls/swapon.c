@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_swapon = {

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(semop, int, semid, struct sembuf __user *, tsops, unsigned, nsops)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_semop = {

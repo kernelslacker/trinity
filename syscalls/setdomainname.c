@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(setdomainname, char __user *, name, int, len)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setdomainname = {

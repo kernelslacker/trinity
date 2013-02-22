@@ -2,10 +2,8 @@
  * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
  */
 #include <asm/mman.h>
-
-#include "trinity.h"
-#include "sanitise.h"
 #include "arch.h"
+#include "sanitise.h"
 #include "shm.h"
 
 static void sanitise_mprotect(int childno)

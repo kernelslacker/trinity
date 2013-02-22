@@ -5,8 +5,6 @@
  */
 #include <stdlib.h>
 #include <asm/mman.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "arch.h"

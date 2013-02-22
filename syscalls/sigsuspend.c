@@ -2,7 +2,6 @@
  * asmlinkage int
    sys_sigsuspend(int history0, int history1, old_sigset_t mask)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sigsuspend = {

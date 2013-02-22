@@ -4,7 +4,6 @@
 	const char __user *, _callout_info,
 	key_serial_t, destringid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_request_key = {

@@ -10,7 +10,6 @@
 #include "arch.h"
 #include "arch-syscalls.h"
 #include "syscall.h"
-#include "trinity.h"
 
 const struct syscalltable *syscalls;
 const struct syscalltable *syscalls_32bit;

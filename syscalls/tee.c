@@ -1,17 +1,16 @@
 /*
  * SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
  */
+#include <stdlib.h>
+#include "sanitise.h"
+#include "shm.h"
+
 # define SPLICE_F_MOVE          1       /* Move pages instead of copying.  */
 # define SPLICE_F_NONBLOCK      2       /* Don't block on the pipe splicing
                                            (but we may still block on the fd
                                            we splice from/to).  */
 # define SPLICE_F_MORE          4       /* Expect more data.  */
 # define SPLICE_F_GIFT          8       /* Pages passed in are a gift.  */
-
-#include <stdlib.h>
-#include "trinity.h"
-#include "sanitise.h"
-#include "shm.h"
 
 void sanitise_tee(int childno)
 {

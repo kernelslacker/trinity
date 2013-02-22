@@ -1,15 +1,12 @@
 /*
  * SYSCALL_DEFINE2(getrlimit, unsigned int, resource, struct rlimit __user *, rlim)
  */
-#include "trinity.h"
-#include "sanitise.h"
-#include "shm.h"
-
 #include <stdlib.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-
 #include "compat.h"
+#include "sanitise.h"
+#include "shm.h"
 
 static void sanitise_getrlimit(int childno)
 {

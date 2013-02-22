@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(setrlimit, unsigned int, resource, struct rlimit __user *, rlim)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setrlimit = {

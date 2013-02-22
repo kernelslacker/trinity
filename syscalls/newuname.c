@@ -2,7 +2,6 @@
  *
  * SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_newuname = {

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE(readahead)(int fd, loff_t offset, size_t count)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_readahead = {

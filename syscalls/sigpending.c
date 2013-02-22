@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(sigpending, old_sigset_t __user *, set)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sigpending = {

@@ -23,7 +23,6 @@
 #include <linux/phonet.h>
 #include <linux/netlink.h>
 #include <stdlib.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 #include "net.h"

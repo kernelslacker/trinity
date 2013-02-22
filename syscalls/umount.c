@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(umount, char __user *, name, int, flags)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_umount = {

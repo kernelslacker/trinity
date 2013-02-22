@@ -7,7 +7,6 @@
 
 #include "files.h"
 #include "arch.h"
-#include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "net.h"

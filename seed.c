@@ -1,7 +1,6 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "trinity.h"
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'
 #include "log.h"

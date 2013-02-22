@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(sched_setscheduler, pid_t, pid, int, policy, struct sched_param __user *, param)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sched_setscheduler = {

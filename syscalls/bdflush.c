@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(bdflush, int, func, long, data)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_bdflush = {

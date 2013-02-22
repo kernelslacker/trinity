@@ -3,7 +3,6 @@
 	size_t, msg_len, unsigned int __user *, u_msg_prio,
 	const struct timespec __user *, u_abs_timeout)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mq_timedreceive = {

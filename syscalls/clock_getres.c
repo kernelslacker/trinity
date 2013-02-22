@@ -3,7 +3,6 @@
  *
  * return 0 for success, or -1 for failure (in which case errno is set appropriately).
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_clock_getres = {

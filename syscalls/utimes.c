@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(utimes, char __user *, filename, struct timeval __user *, utimes)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_utimes = {

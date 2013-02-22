@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(tgkill, pid_t, tgid, pid_t, pid, int, sig)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_tgkill = {

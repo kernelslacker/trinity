@@ -5,10 +5,9 @@
  */
 
 #include <sys/socket.h>
-#include "trinity.h"
+#include "compat.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "compat.h"
 
 struct syscall syscall_sendto = {
 	.name = "sendto",

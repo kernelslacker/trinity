@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
 	 char __user *, buf, int, bufsiz)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_readlinkat = {

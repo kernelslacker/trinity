@@ -3,7 +3,6 @@
 	struct robust_list_head __user * __user *, head_ptr,
 	size_t __user *, len_ptr)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_get_robust_list = {

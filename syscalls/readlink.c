@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(readlink, const char __user *, path, char __user *, buf, int, bufsiz)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_readlink = {

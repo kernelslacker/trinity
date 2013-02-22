@@ -2,12 +2,10 @@
  * SYSCALL_DEFINE4(signalfd4, int, ufd, sigset_t __user *, user_mask,
 	 size_t, sizemask, int, flags)
  */
+#include "sanitise.h"
 
 #define SFD_CLOEXEC 02000000
 #define SFD_NONBLOCK 04000
-
-#include "trinity.h"
-#include "sanitise.h"
 
 struct syscall syscall_signalfd4 = {
 	.name = "signalfd4",

@@ -3,8 +3,6 @@
  */
 #include <stdlib.h>
 #include <linux/ptrace.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"

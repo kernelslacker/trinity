@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(fremovexattr, int, fd, const char __user *, name)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_fremovexattr = {

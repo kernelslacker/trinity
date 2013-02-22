@@ -4,7 +4,6 @@
  * On success, returns a nonnegative file descriptor.
  * On error, -1 is returned, and errno is set to indicate the error.
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_epoll_create = {

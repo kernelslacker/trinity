@@ -1,7 +1,6 @@
 /*
  * int sys_vm86(unsigned long cmd, unsigned long arg, struct pt_regs *regs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_vm86 = {

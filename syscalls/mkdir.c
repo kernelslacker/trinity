@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(mkdir, const char __user *, pathname, int, mode)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mkdir = {

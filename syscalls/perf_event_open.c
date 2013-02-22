@@ -6,8 +6,6 @@
 
 #include <stdlib.h>
 #include <linux/perf_event.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(readv, unsigned long, fd, const struct iovec __user *, vec, unsigned long>
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_readv = {

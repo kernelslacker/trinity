@@ -5,8 +5,6 @@
 #include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 static void post_shmget(int syscallret)

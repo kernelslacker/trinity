@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(mq_unlink, const char __user *, u_name)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mq_unlink = {

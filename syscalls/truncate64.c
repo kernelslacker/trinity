@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE(truncate64)(const char __user * path, loff_t length)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_truncate64 = {

@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include "trinity.h"
 #include "shm.h"
 #include "params.h"	// for 'dangerous'
 #include "pids.h"

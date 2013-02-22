@@ -3,7 +3,6 @@
                 unsigned long, offset_low, loff_t __user *, result,
                 unsigned int, origin)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_llseek = {

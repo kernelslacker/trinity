@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(sysfs, int, option, unsigned long, arg1, unsigned long, arg2)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sysfs = {

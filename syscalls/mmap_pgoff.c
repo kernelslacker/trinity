@@ -4,8 +4,6 @@
                  unsigned long, fd, unsigned long, pgoff)
  */
 #include <asm/mman.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 

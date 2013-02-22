@@ -5,7 +5,6 @@
 	struct io_event __user *, events,
 	struct timespec __user *, timeout)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_io_getevents = {

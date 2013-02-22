@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(ftruncate, unsigned int, fd, unsigned long, length)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_ftruncate = {

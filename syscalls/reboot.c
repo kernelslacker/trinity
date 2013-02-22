@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd, void __user *, arg)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_reboot = {

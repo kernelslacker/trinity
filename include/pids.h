@@ -1,6 +1,9 @@
 #ifndef _PIDS_H
 #define _PIDS_H 1
 
+#include <sys/types.h>
+#include "types.h"
+
 extern pid_t parentpid;
 
 #define for_each_pidslot(i)	for (i = 0; i < shm->max_children; i++)

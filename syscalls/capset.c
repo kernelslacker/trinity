@@ -4,7 +4,6 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_capset = {

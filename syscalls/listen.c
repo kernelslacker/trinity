@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(listen, int, fd, int, backlog)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_listen = {

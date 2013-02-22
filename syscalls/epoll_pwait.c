@@ -6,7 +6,6 @@
  * or zero if no file descriptor became ready during the requested timeout milliseconds.
  * When an error occurs, returns -1 and errno is set appropriately.
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_epoll_pwait = {

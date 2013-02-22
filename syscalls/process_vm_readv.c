@@ -3,8 +3,6 @@
  *                unsigned long, liovcnt, const struct iovec __user *, rvec,
  *                unsigned long, riovcnt, unsigned long, flags)
  */
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_process_vm_readv = {

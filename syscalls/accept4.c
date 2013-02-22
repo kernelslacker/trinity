@@ -10,7 +10,6 @@
 #define SOCK_CLOEXEC 02000000
 #define SOCK_NONBLOCK 04000
 
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_accept4 = {

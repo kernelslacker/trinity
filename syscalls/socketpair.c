@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE4(socketpair, int, family, int, type, int, protocol, int __user *, usockvec)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_socketpair = {

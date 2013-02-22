@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(sched_getaffinity, pid_t, pid, unsigned int, len,
 	 unsigned long __user *, user_mask_ptr)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sched_getaffinity = {

@@ -1,8 +1,6 @@
 /*
  * SYSCALL_DEFINE2(setns, int, fd, int, nstype)
  */
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setns= {

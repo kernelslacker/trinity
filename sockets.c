@@ -8,7 +8,6 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
-#include "trinity.h"
 #include "sanitise.h"
 #include "constants.h"
 #include "shm.h"

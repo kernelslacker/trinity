@@ -1,9 +1,7 @@
 /*
  * SYSCALL_DEFINE2(timerfd_create, int, clockid, int, flags)
  */
-
 #include <sys/timerfd.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(nanosleep, struct timespec __user *, rqtp, struct timespec __user *, rmtp)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_nanosleep = {

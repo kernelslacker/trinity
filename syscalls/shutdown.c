@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(shutdown, int, fd, int, how)
  */
 #include <sys/socket.h>
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_shutdown = {

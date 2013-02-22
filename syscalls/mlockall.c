@@ -1,14 +1,12 @@
 /*
  * SYSCALL_DEFINE1(mlockall, int, flags)
  */
+#include <stdlib.h>
+#include "sanitise.h"
+#include "shm.h"
 
 #define MCL_CURRENT     1
 #define MCL_FUTURE      2
-
-#include <stdlib.h>
-#include "trinity.h"
-#include "sanitise.h"
-#include "shm.h"
 
 static void sanitise_mlockall(int childno)
 {

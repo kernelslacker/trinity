@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(inotify_rm_watch, int, fd, __s32, wd)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_inotify_rm_watch = {

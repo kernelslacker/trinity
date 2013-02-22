@@ -3,7 +3,6 @@
 	__u64 mask, int dfd, const char  __user * pathname)
  */
 #include <stdlib.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 

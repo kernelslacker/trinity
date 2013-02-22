@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getgroups16, int, gidsetsize, old_gid_t __user *, grouplist)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setgroups16 = {

@@ -2,10 +2,9 @@
  * SYSCALL_DEFINE5(keyctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	unsigned long, arg4, unsigned long, arg5)
  */
-#include "trinity.h"
+#include <linux/keyctl.h>
 #include "sanitise.h"
 #include "compat.h"
-#include <linux/keyctl.h>
 
 struct syscall syscall_keyctl = {
 	.name = "keyctl",

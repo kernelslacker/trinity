@@ -3,7 +3,6 @@
 	const struct itimerspec __user *, new_setting,
 	struct itimerspec __user *, old_setting)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_timer_settime = {

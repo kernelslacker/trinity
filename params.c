@@ -8,7 +8,6 @@
 
 #include "random.h"
 #include "syscall.h"
-#include "trinity.h"
 #include "log.h"
 
 bool debug = FALSE;

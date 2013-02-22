@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(timer_getoverrun, timer_t, timer_id)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_timer_getoverrun = {

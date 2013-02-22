@@ -3,7 +3,6 @@
                    struct stat __user *, statbuf, int, flag)
  */
 #include <fcntl.h>
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_newfstatat = {

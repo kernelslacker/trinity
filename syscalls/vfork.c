@@ -1,7 +1,6 @@
 /*
    int sys_vfork(struct pt_regs *regs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_vfork = {

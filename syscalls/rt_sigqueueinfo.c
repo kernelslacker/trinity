@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(rt_sigqueueinfo, pid_t, pid, int, sig, siginfo_t __user *, uinfo)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_rt_sigqueueinfo = {

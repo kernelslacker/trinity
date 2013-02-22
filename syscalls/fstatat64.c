@@ -5,7 +5,6 @@
  * On success, fstatat() returns 0.
  * On error, -1 is returned and errno is set to indicate the error.
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_fstatat64 = {

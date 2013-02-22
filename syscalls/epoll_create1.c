@@ -7,7 +7,6 @@
 
 #define EPOLL_CLOEXEC 02000000
 
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_epoll_create1 = {

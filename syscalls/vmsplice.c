@@ -6,8 +6,6 @@
 #include <fcntl.h>
 #include <sys/uio.h>
 #include <stdlib.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 

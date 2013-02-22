@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(getpeername, int, fd, struct sockaddr __user *, usockaddr, int __user *, usockaddr_len)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getpeername = {

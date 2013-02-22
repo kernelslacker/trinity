@@ -4,7 +4,6 @@
  * On success, zero is returned.
  * On error, an error number is returned.
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_fadvise64 = {

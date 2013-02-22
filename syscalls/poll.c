@@ -1,7 +1,6 @@
 /*
  * sys_poll(struct pollfd __user *ufds, unsigned int nfds, int timeout);
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_poll = {

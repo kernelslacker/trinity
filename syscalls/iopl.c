@@ -1,7 +1,6 @@
 /*
    long sys_iopl(unsigned int level, struct pt_regs *regs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_iopl = {

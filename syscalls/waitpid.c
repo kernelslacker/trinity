@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(waitpid, pid_t, pid, int __user *, stat_addr, int, options)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_waitpid = {

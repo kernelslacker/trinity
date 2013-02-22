@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(mlock, unsigned long, start, size_t, len)
  */
 #include <stdlib.h>
-#include "trinity.h"
 #include "shm.h"
 #include "sanitise.h"
 

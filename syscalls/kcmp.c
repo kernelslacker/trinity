@@ -1,10 +1,8 @@
 /*
- * +SYSCALL_DEFINE5(kcmp, pid_t, pid1, pid_t, pid2, int, type,
+ * SYSCALL_DEFINE5(kcmp, pid_t, pid1, pid_t, pid2, int, type,
  *               unsigned long, idx1, unsigned long, idx2)
  *
  */
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 

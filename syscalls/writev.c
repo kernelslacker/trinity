@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(writev, unsigned long, fd, const struct iovec __user *, vec, unsigned long, vlen)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_writev = {

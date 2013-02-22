@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(sched_get_priority_max, int, policy)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sched_get_priority_max = {

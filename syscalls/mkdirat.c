@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(mkdirat, int, dfd, const char __user *, pathname, int, mode)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mkdirat = {

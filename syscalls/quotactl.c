@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE4(quotactl, unsigned int, cmd, const char __user *, special,
 	 qid_t, id, void __user *, addr)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_quotactl = {

@@ -5,10 +5,8 @@
 #include <linux/fs.h>
 #include <fcntl.h>
 #include <stdlib.h>
-
-#include "trinity.h"
-#include "sanitise.h"
 #include "arch.h"
+#include "sanitise.h"
 #include "shm.h"
 
 struct syscall syscall_sync_file_range;

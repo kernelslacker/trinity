@@ -3,7 +3,6 @@
 	 const struct rlimit64 __user *, new_rlim,
 	 struct rlimit64 __user *, old_rlim)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_prlimit64 = {

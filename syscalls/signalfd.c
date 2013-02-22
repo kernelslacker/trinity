@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(signalfd, int, ufd, sigset_t __user *, user_mask, size_t, sizemask)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_signalfd = {

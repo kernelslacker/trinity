@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sysinfo = {

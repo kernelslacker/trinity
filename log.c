@@ -5,7 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include "trinity.h"
 #include "params.h"	// logging, monochrome, quiet_level
 #include "shm.h"
 #include "pids.h"

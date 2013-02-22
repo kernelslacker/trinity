@@ -3,7 +3,6 @@
 	struct sigevent __user *, timer_event_spec,
 	timer_t __user *, created_timer_id)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_timer_create = {

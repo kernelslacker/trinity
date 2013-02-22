@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(set_robust_list, struct robust_list_head __user *, head, size_t, len)
  */
 #include <linux/futex.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 

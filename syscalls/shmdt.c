@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(shmdt, char __user *, shmaddr)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_shmdt = {
