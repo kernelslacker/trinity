@@ -12,12 +12,7 @@
 #define UNLOCKED 0
 #define LOCKED 1
 
-#ifndef S_SPLINT_S
 #define __unused__ __attribute((unused))
-#else
-#define __unused__ /*@unused@*/
-#endif
-
 
 extern char *progname;
 extern pid_t parentpid;
