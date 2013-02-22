@@ -24,6 +24,7 @@
 #include "log.h"
 #include "maps.h"
 #include "pids.h"
+#include "params.h"
 #include "shm.h"
 #include "syscall.h"
 #include "config.h"	// for VERSION

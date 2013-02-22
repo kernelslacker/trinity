@@ -28,6 +28,7 @@
 #include "compat.h"
 #include "maps.h"
 #include "config.h"
+#include "params.h"	// do_specific_proto
 
 static in_addr_t random_ipv4_address(void)
 {

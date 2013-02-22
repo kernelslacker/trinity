@@ -9,6 +9,7 @@
 #include "files.h"
 #include "pids.h"
 #include "log.h"
+#include "params.h"
 
 unsigned int nr_file_fds = 0;
 

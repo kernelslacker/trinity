@@ -16,6 +16,7 @@
 #include "files.h"
 #include "syscall.h"
 #include "pids.h"
+#include "params.h"	// quiet_level
 #include "log.h"
 
 static void watchdog(void);

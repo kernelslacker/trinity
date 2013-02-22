@@ -15,6 +15,7 @@
 #include "syscall.h"
 #include "pids.h"
 #include "log.h"
+#include "params.h"
 #include "maps.h"
 
 static void regenerate(void)
