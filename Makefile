@@ -105,3 +105,6 @@ tags:
 mirror:
 	@git push --mirror git@github.com:kernelslacker/trinity.git
 
+scan:
+	scan-build --keep-going -o /tmp make CC="ccc-analyzer -isystem -iinclude/"
+
