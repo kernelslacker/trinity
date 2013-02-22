@@ -49,8 +49,6 @@ void find_specific_proto(const char *protoarg);
 #define TRINITY_PF_MAX 41
 
 extern unsigned int page_size;
-extern unsigned int rep;
-extern long struct_fill;
 
 /* command line args. */
 void parse_args(int argc, char *argv[]);
