@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include "params.h"	// debug
 #include "signals.h"

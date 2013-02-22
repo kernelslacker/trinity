@@ -1,9 +1,7 @@
 #ifndef _TRINITY_H
 #define _TRINITY_H 1
 
-#include <stdio.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include "types.h"
 
@@ -13,7 +11,6 @@
 #define __unused__ __attribute((unused))
 
 extern char *progname;
-extern pid_t parentpid;
 
 void * alloc_shared(unsigned int size);
 

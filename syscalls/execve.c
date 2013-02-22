@@ -8,6 +8,7 @@
  *
  * TODO: Redirect stdin/stdout.
  */
+#include <stdio.h>
 #include "trinity.h"
 #include "sanitise.h"
 
