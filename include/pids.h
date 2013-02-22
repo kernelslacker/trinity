@@ -1,6 +1,8 @@
 #ifndef _PIDS_H
 #define _PIDS_H 1
 
+extern pid_t parentpid;
+
 #define for_each_pidslot(i)	for (i = 0; i < shm->max_children; i++)
 
 #define PIDSLOT_NOT_FOUND -1
