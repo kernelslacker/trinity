@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(stat64, const char __user *, filename,
                  struct stat64 __user *, statbuf)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_stat64 = {

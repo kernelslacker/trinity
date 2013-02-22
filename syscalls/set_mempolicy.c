@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(set_mempolicy, int, mode, unsigned long __user *, nmask, unsigned long, maxnode)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_set_mempolicy = {

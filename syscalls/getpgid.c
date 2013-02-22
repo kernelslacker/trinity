@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(getpgid, pid_t, pid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getpgid = {

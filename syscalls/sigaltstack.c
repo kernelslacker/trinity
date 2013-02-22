@@ -2,7 +2,6 @@
    long sys_sigaltstack(const stack_t __user *uss, stack_t __user *uoss,
 	 struct pt_regs *regs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sigaltstack = {

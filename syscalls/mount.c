@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE5(mount, char __user *, dev_name, char __user *, dir_name,
 	 char __user *, type, unsigned long, flags, void __user *, data)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mount = {

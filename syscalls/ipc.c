@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE6(ipc, unsigned int, call, int, first, unsigned long, second,
                   unsigned long, third, void __user *, ptr, long, fifth)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_ipc = {

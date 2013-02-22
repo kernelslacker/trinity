@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE4(utimensat, int, dfd, const char __user *, filename,
 	 struct timespec __user *, utimes, int, flags)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_utimensat = {

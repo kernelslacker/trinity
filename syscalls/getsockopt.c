@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE5(getsockopt, int, fd, int, level, int, optname, char __user *, optval, int __user *, optlen)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getsockopt = {

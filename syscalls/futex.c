@@ -3,8 +3,6 @@
 	 struct timespec __user *, utime, u32 __user *, uaddr2, u32, val3)
  */
 #include <linux/futex.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 /*

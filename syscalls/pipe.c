@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(pipe, int __user *, fildes)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_pipe = {

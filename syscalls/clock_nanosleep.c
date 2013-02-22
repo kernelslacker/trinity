@@ -9,8 +9,6 @@
  */
 
 #include <time.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_clock_nanosleep = {

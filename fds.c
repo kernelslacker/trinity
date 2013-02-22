@@ -4,7 +4,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "trinity.h"
 #include "shm.h"
 #include "files.h"
 #include "pids.h"

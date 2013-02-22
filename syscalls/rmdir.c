@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(rmdir, const char __user *, pathname)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_rmdir = {

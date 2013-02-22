@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE4(fgetxattr, int, fd, const char __user *, name,
 	 void __user *, value, size_t, size)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_fgetxattr = {

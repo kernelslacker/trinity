@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(set_tid_address, int __user *, tidptr)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_set_tid_address = {

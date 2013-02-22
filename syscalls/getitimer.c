@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getitimer, int, which, struct itimerval __user *, value)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getitimer = {

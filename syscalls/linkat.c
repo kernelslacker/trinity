@@ -3,8 +3,6 @@
 	 int, newdfd, const char __user *, newname, int, flags)
  */
 #include <fcntl.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(finit_module, int, fd, const char __user *, uargs, int, flags)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 #define MODULE_INIT_IGNORE_MODVERSIONS  1

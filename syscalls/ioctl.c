@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include <linux/ioctl.h>
 #include <linux/major.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "maps.h"
 #include "shm.h"

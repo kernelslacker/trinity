@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(inotify_add_watch, int, fd, const char __user *, pathname, u32, mask)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_inotify_add_watch = {

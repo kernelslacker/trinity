@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(sched_rr_get_interval, pid_t, pid, struct timespec __user *, interval)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sched_rr_get_interval = {

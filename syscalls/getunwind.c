@@ -1,7 +1,6 @@
 /*
   sys_getunwind (void __user *buf, size_t buf_size)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getunwind = {

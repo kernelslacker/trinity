@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(symlinkat, const char __user *, oldname,
 	 int, newdfd, const char __user *, newname)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_symlinkat = {

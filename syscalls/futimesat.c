@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(futimesat, int, dfd, const char __user *, filename,
 	 struct timeval __user *, utimes)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_futimesat = {

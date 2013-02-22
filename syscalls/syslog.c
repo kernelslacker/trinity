@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(syslog, int, type, char __user *, buf, int, len)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_syslog = {

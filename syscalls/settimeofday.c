@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(settimeofday, struct timeval __user *, tv, struct timezone __user *, tz)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_settimeofday = {

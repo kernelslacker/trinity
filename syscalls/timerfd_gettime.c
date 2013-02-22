@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(timerfd_gettime, int, ufd, struct itimerspec __user *, otmr)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_timerfd_gettime = {

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(getresgid, gid_t __user *, rgid, gid_t __user *, egid, gid_t __user *, sgid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getresgid = {

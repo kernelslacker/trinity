@@ -3,10 +3,9 @@
  */
 #include <stdlib.h>
 #include <linux/net.h>
-#include "trinity.h"
+#include "compat.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "compat.h"
 
 static void sanitise_socketcall(int childno)
 {

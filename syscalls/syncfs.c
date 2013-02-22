@@ -1,8 +1,6 @@
 /*
  * SYSCALL_DEFINE1(syncfs, int, fd)
  */
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_syncfs = {

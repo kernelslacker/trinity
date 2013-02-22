@@ -14,7 +14,6 @@
 #include <sys/prctl.h>
 
 #include "child.h"
-#include "trinity.h"
 #include "syscall.h"
 #include "log.h"
 #include "random.h"

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(mincore, unsigned long, start, size_t, len, unsigned char __user *, vec)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mincore = {

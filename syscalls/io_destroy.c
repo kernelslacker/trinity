@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(io_destroy, aio_context_t, ctx)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_io_destroy = {

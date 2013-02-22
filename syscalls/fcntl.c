@@ -17,7 +17,6 @@
  *     On error, -1 is returned, and errno is set appropriately.
  */
 #include <fcntl.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 

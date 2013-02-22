@@ -1,7 +1,6 @@
 /*
  * unsigned long sys_sigreturn(struct pt_regs *regs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sigreturn = {

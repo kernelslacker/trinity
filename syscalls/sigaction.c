@@ -3,7 +3,6 @@
    sys_sigaction(int sig, const struct old_sigaction __user *act,
    struct old_sigaction __user *oact)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_sigaction = {

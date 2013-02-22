@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(stime, time_t __user *, tptr)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_stime = {

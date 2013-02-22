@@ -4,7 +4,6 @@
  * returns the new file descriptor on success.
  * returns -1 if an error occurred (in which case, errno is set appropriately).
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_creat = {

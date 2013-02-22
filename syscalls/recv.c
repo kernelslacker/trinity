@@ -3,11 +3,9 @@
                             unsigned flags)
 
  */
-
 #include <sys/socket.h>
-#include "trinity.h"
-#include "sanitise.h"
 #include "compat.h"
+#include "sanitise.h"
 
 struct syscall syscall_recv = {
 	.name = "recv",

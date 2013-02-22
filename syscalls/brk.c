@@ -4,7 +4,6 @@
  * On success: Returns the new program break
  * On failure: Returns current program break
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_brk = {

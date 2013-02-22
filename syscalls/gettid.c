@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE0(gettid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_gettid = {

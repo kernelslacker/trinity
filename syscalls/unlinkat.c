@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(unlinkat, int, dfd, const char __user *, pathname, int, flag)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_unlinkat = {

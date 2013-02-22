@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE5(select, int, n, fd_set __user *, inp, fd_set __user *, outp,
 	fd_set __user *, exp, struct timeval __user *, tvp)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_select = {

@@ -10,7 +10,6 @@
 #define FAN_UNLIMITED_QUEUE	0x00000010
 #define FAN_UNLIMITED_MARKS	0x00000020
 
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_fanotify_init = {

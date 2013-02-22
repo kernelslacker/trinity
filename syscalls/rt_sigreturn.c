@@ -1,7 +1,6 @@
 /*
  * long sys_rt_sigreturn(struct pt_regs *regs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_rt_sigreturn = {

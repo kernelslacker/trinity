@@ -4,10 +4,8 @@
 
 #include <unistd.h>
 #include <fcntl.h>
-
-#include "trinity.h"
-#include "sanitise.h"
 #include "compat.h"
+#include "sanitise.h"
 
 struct syscall syscall_pipe2 = {
 	.name = "pipe2",

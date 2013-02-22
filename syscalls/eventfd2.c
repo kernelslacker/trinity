@@ -9,7 +9,6 @@
 #define EFD_CLOEXEC 02000000
 #define EFD_NONBLOCK 04000
 
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_eventfd2 = {

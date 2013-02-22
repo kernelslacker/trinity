@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(umask, int, mask)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_umask = {

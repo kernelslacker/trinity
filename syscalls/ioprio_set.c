@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_ioprio_set = {

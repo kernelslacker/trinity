@@ -4,8 +4,6 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_msgctl = {

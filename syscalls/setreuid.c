@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(setreuid, uid_t, ruid, uid_t, euid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setreuid = {

@@ -4,13 +4,12 @@
 /*
  * asmlinkage int sys_modify_ldt(int func, void __user *ptr, unsigned long bytecount)
  */
-#include "trinity.h"
-#include "sanitise.h"
-#include "shm.h"
 #include <stdlib.h>
 #include <sys/types.h>
 #define __ASSEMBLY__ 1
 #include <asm/ldt.h>
+#include "sanitise.h"
+#include "shm.h"
 
 #define ALLOCSIZE LDT_ENTRIES * LDT_ENTRY_SIZE
 

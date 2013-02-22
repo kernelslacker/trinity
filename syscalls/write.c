@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf, size_t, count)
  */
 #include <stdlib.h>
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 

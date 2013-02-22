@@ -9,7 +9,6 @@
  * TODO: Redirect stdin/stdout.
  */
 #include <stdio.h>
-#include "trinity.h"
 #include "sanitise.h"
 
 void sanitise_execve(__unused__ int childno)

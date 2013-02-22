@@ -6,7 +6,6 @@
 #define KEXEC_ON_CRASH          0x00000001
 #define KEXEC_PRESERVE_CONTEXT  0x00000002
 
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_kexec_load = {

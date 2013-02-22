@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE5(ppoll, struct pollfd __user *, ufds, unsigned int, nfds,
 	 struct timespec __user *, tsp, const sigset_t __user *, sigmask, size_t, sigsetsize) 
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_ppoll = {

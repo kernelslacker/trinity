@@ -6,8 +6,6 @@
  */
 #include <signal.h>
 #include <stdlib.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
 

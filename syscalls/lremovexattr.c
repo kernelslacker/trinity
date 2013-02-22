@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(lremovexattr, const char __user *, pathname, const char __user *, name)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_lremovexattr = {

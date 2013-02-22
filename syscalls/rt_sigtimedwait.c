@@ -3,7 +3,6 @@
 	 siginfo_t __user *, uinfo, const struct timespec __user *, uts,
 	 size_t, sigsetsize)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_rt_sigtimedwait = {

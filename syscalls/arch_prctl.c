@@ -6,7 +6,7 @@
  */
 
 #if defined(__i386__) || defined (__x86_64__)
-#include "trinity.h"
+
 #include "sanitise.h"
 #include <asm/prctl.h>
 #include <sys/prctl.h>

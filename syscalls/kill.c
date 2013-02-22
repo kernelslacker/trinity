@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(kill, pid_t, pid, int, sig)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_kill = {

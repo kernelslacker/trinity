@@ -1,7 +1,6 @@
 /*
  * int sys_vm86old(struct vm86_struct __user *v86, struct pt_regs *regs)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_vm86old = {

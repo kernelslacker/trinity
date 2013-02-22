@@ -5,8 +5,6 @@
  * When an error occurs, epoll_ctl() returns -1 and errno is set appropriately.
  */
 #include <sys/epoll.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_epoll_ctl = {

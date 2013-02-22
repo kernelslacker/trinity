@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(setregid16, old_gid_t, rgid, old_gid_t, egid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setregid16 = {

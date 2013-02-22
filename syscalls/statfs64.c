@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(statfs64, const char __user *, pathname, size_t, sz, struct statfs64 __user *, buf)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_statfs64 = {

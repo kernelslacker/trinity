@@ -1,13 +1,11 @@
 /*
  * SYSCALL_DEFINE3(msync, unsigned long, start, size_t, len, int, flags)
  */
+#include "sanitise.h"
 
 #define MS_ASYNC        1               /* Sync memory asynchronously.  */
 #define MS_SYNC         4               /* Synchronous memory sync.  */
 #define MS_INVALIDATE   2               /* Invalidate the caches.  */
-
-#include "trinity.h"
-#include "sanitise.h"
 
 struct syscall syscall_msync = {
 	.name = "msync",

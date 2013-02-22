@@ -2,8 +2,6 @@
  * SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, int, mode)
  */
 #include <fcntl.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 

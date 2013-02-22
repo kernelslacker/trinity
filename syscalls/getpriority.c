@@ -4,8 +4,6 @@
 
 #include <sys/time.h>
 #include <sys/resource.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getpriority = {

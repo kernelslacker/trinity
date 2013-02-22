@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE(lookup_dcookie)(u64 cookie64, char __user * buf, size_t len)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_lookup_dcookie = {

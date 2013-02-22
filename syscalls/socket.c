@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
  */
-
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -9,13 +8,11 @@
 #include <linux/caif/caif_socket.h>
 #include <linux/irda.h>
 #include <linux/dn.h>
-
-#include "trinity.h"
+#include "compat.h"
+#include "log.h"
+#include "net.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "net.h"
-#include "log.h"
-#include "compat.h"
 
 #define NR_AX25_PROTOS 13
 static int ax25_protocols[NR_AX25_PROTOS] = {

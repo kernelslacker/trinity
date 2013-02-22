@@ -2,11 +2,9 @@
  * SYSCALL_DEFINE4(sendmmsg, int, fd, struct mmsghdr __user *, mmsg,
  *	unsigned int, vlen, unsigned int, flags)
  */
-
 #include <sys/socket.h>
-#include "trinity.h"
-#include "sanitise.h"
 #include "compat.h"
+#include "sanitise.h"
 
 struct syscall syscall_sendmmsg = {
 	.name = "sendmmsg",

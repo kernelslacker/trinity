@@ -2,8 +2,6 @@
  * sys_mmap2 (unsigned long addr, unsigned long len, int prot, int flags, int fd, long pgoff)
  */
 #include <linux/mman.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
 

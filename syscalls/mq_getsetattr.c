@@ -3,7 +3,6 @@
 	const struct mq_attr __user *, u_mqstat,
 	struct mq_attr __user *, u_omqstat)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mq_getsetattr = {

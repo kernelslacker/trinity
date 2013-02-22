@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(pivot_root, const char __user *, new_root, const char __user *, put_old)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_pivot_root = {

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(mq_notify, mqd_t, mqdes, const struct sigevent __user *, u_notification)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mq_notify = {

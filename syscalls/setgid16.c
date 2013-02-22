@@ -1,7 +1,6 @@
 /*
- * SYSCALL_DEFINE1(setgid16, old_gid_t, gid) 
+ * SYSCALL_DEFINE1(setgid16, old_gid_t, gid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setgid16 = {

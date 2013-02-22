@@ -2,8 +2,6 @@
  * SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
  */
 #include <linux/sched.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_unshare = {

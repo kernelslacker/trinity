@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_newfstat = {

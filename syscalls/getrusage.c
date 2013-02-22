@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getrusage, int, who, struct rusage __user *, ru)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getrusage = {

@@ -5,10 +5,8 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-
-#include "trinity.h"
-#include "sanitise.h"
 #include "compat.h"
+#include "sanitise.h"
 #include "shm.h"
 
 static void sanitise_sendmsg(int childno)

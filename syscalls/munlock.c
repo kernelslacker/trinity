@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(munlock, unsigned long, start, size_t, len)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_munlock = {

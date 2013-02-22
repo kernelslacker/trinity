@@ -5,15 +5,12 @@
  */
 
 #include <linux/mempolicy.h>
-
 #include "arch.h"
+#include "sanitise.h"
+#include "shm.h"
 
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)
-
-#include "trinity.h"
-#include "sanitise.h"
-#include "shm.h"
 
 static void sanitise_mbind(int childno)
 {

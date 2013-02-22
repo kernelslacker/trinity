@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(symlink, const char __user *, oldname, const char __user *, newname)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_symlink = {

@@ -1,7 +1,6 @@
 /*
    asmlinkage long sys_ioperm(unsigned long from, unsigned long num, int turn_on)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_ioperm = {

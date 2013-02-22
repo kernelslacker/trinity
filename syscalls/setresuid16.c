@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(setresuid16, old_uid_t, ruid, old_uid_t, euid, old_uid_t, suid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_setresuid16 = {

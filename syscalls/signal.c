@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(signal, int, sig, __sighandler_t, handler)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_signal = {

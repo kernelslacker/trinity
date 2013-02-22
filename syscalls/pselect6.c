@@ -3,7 +3,6 @@
 	fd_set __user *, exp, struct timespec __user *, tsp,
 	void __user *, sig)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_pselect6 = {

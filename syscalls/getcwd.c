@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getcwd, char __user *, buf, unsigned long, size)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getcwd = {

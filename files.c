@@ -8,7 +8,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "trinity.h"
 #include "files.h"
 #include "shm.h"
 #include "log.h"

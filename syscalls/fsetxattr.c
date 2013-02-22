@@ -4,8 +4,6 @@
  */
 
 #include <linux/xattr.h>
-
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_fsetxattr = {

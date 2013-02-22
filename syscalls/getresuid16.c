@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(getresuid16, old_uid_t __user *, ruid, old_uid_t __user *, euid, old_uid_t __user *, suid)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_getresuid16 = {

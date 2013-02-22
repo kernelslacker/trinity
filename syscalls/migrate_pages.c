@@ -3,7 +3,6 @@
 	 const unsigned long __user *, old_nodes,
 	 const unsigned long __user *, new_nodes)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_migrate_pages = {

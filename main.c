@@ -10,7 +10,6 @@
 #include <sys/ptrace.h>
 
 #include "child.h"
-#include "trinity.h"
 #include "signals.h"
 #include "shm.h"
 #include "files.h"

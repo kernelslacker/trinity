@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(mknod, const char __user *, filename, int, mode, unsigned, dev)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_mknod = {

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(lseek, unsigned int, fd, off_t, offset, unsigned int, origin)
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_lseek = {

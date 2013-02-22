@@ -12,7 +12,6 @@
 
  /* On failure, adjtimex() returns -1 and sets errno. */
 
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_adjtimex = {

@@ -4,9 +4,7 @@
  * If the connection or binding succeeds, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
-#include "trinity.h"
 #include "sanitise.h"
-#include "shm.h"
 
 struct syscall syscall_connect = {
 	.name = "connect",

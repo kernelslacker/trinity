@@ -11,7 +11,6 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
-#include "trinity.h"
 #include "shm.h"
 #include "files.h"
 #include "syscall.h"

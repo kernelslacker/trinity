@@ -8,7 +8,6 @@
  * On success add_key() returns the serial number of the key it created or updated.
  * On error, the value -1 will be returned and errno will have been set to an appropriate error.
  */
-#include "trinity.h"
 #include "sanitise.h"
 
 struct syscall syscall_add_key = {
