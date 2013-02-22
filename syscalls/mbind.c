@@ -6,7 +6,7 @@
 
 #include <linux/mempolicy.h>
 
-#include "../arch.h"
+#include "arch.h"
 
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)
