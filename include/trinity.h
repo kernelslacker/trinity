@@ -6,7 +6,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "constants.h"
 #include "types.h"
 
 #define UNLOCKED 0
