@@ -8,6 +8,7 @@
 #include "shm.h"
 #include "files.h"
 #include "pids.h"
+#include "net.h"
 #include "log.h"
 #include "params.h"
 

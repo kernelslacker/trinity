@@ -24,6 +24,7 @@
 #include "log.h"
 #include "maps.h"
 #include "pids.h"
+#include "net.h"
 #include "params.h"
 #include "shm.h"
 #include "syscall.h"
