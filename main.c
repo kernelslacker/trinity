@@ -10,6 +10,7 @@
 #include <sys/ptrace.h>
 
 #include "trinity.h"
+#include "signals.h"
 #include "shm.h"
 #include "files.h"
 #include "syscall.h"

@@ -2,6 +2,7 @@
 #include <signal.h>
 
 #include "params.h"	// debug
+#include "signals.h"
 #include "shm.h"
 
 jmp_buf ret_jump;

@@ -17,6 +17,7 @@
 #include "syscall.h"
 #include "log.h"
 #include "shm.h"
+#include "signals.h"
 #include "pids.h"
 #include "params.h"	// for 'debug'
 
