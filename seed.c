@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "trinity.h"
 #include "shm.h"
+#include "params.h"	// 'user_set_seed'
 #include "log.h"
 
 /* The actual seed lives in the shm. This variable is used

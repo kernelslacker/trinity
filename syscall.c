@@ -19,6 +19,7 @@
 #include "syscall.h"
 #include "pids.h"
 #include "log.h"
+#include "params.h"
 #include "maps.h"
 
 #define __syscall_return(type, res) \

@@ -18,6 +18,7 @@
 #include "log.h"
 #include "shm.h"
 #include "pids.h"
+#include "params.h"	// for 'debug'
 
 static struct rlimit oldrlimit;
 
