@@ -22,6 +22,7 @@
 #include "trinity.h"
 #include "files.h"
 #include "log.h"
+#include "maps.h"
 #include "pids.h"
 #include "shm.h"
 #include "syscall.h"

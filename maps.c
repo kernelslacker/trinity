@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include "trinity.h"
 #include "arch.h"
+#include "maps.h"
 #include "log.h"
 #include "shm.h"
 

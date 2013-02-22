@@ -35,8 +35,6 @@ int child_process(void);
 long mkcall(int child);
 void do_syscall_from_child(void);
 
-void regenerate_random_page(void);
-
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
 void set_seed(unsigned int pidslot);
@@ -78,22 +76,6 @@ extern char *victim_path;
 extern unsigned char exit_reason;
 
 extern bool biarch;
-
-extern char *page_zeros;
-extern char *page_0xff;
-extern char *page_rand;
-extern char *page_allocs;
-
-struct map {
-	struct map *next;
-	void *ptr;
-	char *name;
-	unsigned long size;
-};
-void setup_maps(void);
-void destroy_maps(void);
-void * get_map(void);
-void init_buffers(void);
 
 extern bool ignore_tainted;
 int check_tainted(void);

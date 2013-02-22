@@ -7,6 +7,7 @@
 
 #include "sanitise.h"
 #include "shm.h"
+#include "maps.h"
 #include "trinity.h"
 
 struct sgio {
