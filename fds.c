@@ -92,15 +92,20 @@ retry_file:
 		break;
 
 	case 1:
-		/* When using victim files, sockets can be 0. */
-		//FIXME: See the previous fixme. Could we infinite loop here ?
-		if (nr_sockets == 0)
-			goto retry_file;
-
+		/* When using victim files, sockets can be 0.
+		 * Use files as a fallback, or pipes if no files are open.
+		 */
+		if (nr_sockets == 0) {
+			if (nr_file_fds > 0)
+				goto retry_file;
+			else
+				goto do_pipe;
+		}
 		fd = shm->socket_fds[rand() % nr_sockets];
 		break;
 
 	case 2:
+do_pipe:
 		fd = shm->pipe_fds[rand() % MAX_PIPE_FDS];
 		break;
 	default:
