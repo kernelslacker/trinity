@@ -1,8 +1,8 @@
 #ifndef _SHM_H
 #define _SHM_H 1
 
-
 #include <sys/time.h>
+#include <sys/types.h>
 
 #include <stdio.h>
 

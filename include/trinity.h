@@ -1,8 +1,6 @@
 #ifndef _TRINITY_H
 #define _TRINITY_H 1
 
-#include <sys/types.h>
-
 #include "types.h"
 
 #define UNLOCKED 0
@@ -15,10 +13,6 @@ extern char *progname;
 void * alloc_shared(unsigned int size);
 
 void do_main_loop(void);
-int child_process(void);
-
-long mkcall(int child);
-void do_syscall_from_child(void);
 
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
@@ -34,11 +28,7 @@ extern bool biarch;
 extern bool ignore_tainted;
 int check_tainted(void);
 
-void init_child(void);
-
 void init_watchdog(void);
-
-void reap_child(pid_t childpid);
 
 extern unsigned int user_specified_children;
 
