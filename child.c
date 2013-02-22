@@ -17,6 +17,7 @@
 #include "trinity.h"
 #include "syscall.h"
 #include "log.h"
+#include "random.h"
 #include "shm.h"
 #include "signals.h"
 #include "pids.h"
