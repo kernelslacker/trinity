@@ -26,6 +26,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "net.h"
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto

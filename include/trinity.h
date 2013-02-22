@@ -34,14 +34,6 @@ unsigned int init_seed(unsigned int seed);
 void set_seed(unsigned int pidslot);
 void reseed(void);
 
-extern unsigned int nr_sockets;
-extern unsigned int specific_proto;
-void open_sockets(void);
-void find_specific_proto(const char *protoarg);
-/* glibc headers might be older than the kernel, so chances are we know
- * about more protocols than glibc does. So we define our own PF_MAX */
-#define TRINITY_PF_MAX 41
-
 extern unsigned int page_size;
 
 extern unsigned char exit_reason;

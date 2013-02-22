@@ -12,6 +12,7 @@
 #include "sanitise.h"
 #include "constants.h"
 #include "shm.h"
+#include "net.h"
 #include "log.h"
 #include "params.h"	// victim_path, verbose, do_specific_proto
 

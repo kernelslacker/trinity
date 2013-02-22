@@ -9,8 +9,4 @@
 
 #define REGENERATION_POINT 100000
 
-#define TYPE_MAX 10
-#define PROTO_MAX 256
-
-
 #endif	/* _CONSTANTS_H */
