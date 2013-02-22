@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
+#include "net.h"
 #include "log.h"
 #include "maps.h"
 #include "shm.h"
