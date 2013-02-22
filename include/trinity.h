@@ -128,15 +128,6 @@ void reap_child(pid_t childpid);
 
 extern unsigned int user_specified_children;
 
-#define for_each_pidslot(i)	for (i = 0; i < shm->max_children; i++)
-
-#define PIDSLOT_NOT_FOUND -1
-#define EMPTY_PIDSLOT -1
-int find_pid_slot(pid_t mypid);
-bool pidmap_empty(void);
-void dump_pid_slots(void);
-int pid_is_valid(pid_t);
-
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
@@ -157,8 +148,6 @@ enum exit_reasons {
 	EXIT_SHM_CORRUPTION = 8,
 	EXIT_REPARENT_PROBLEM = 9,
 };
-
-#define pid_alive(_pid) kill(_pid, 0)
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 

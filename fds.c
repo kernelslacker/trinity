@@ -7,6 +7,7 @@
 #include "trinity.h"
 #include "shm.h"
 #include "files.h"
+#include "pids.h"
 
 unsigned int nr_file_fds = 0;
 

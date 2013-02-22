@@ -15,6 +15,7 @@
 #include "shm.h"
 #include "files.h"
 #include "syscall.h"
+#include "pids.h"
 
 static void watchdog(void);
 

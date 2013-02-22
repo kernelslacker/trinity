@@ -17,6 +17,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "pids.h"
 
 #define __syscall_return(type, res) \
 	do { \
