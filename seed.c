@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "trinity.h"
 #include "shm.h"
+#include "log.h"
 
 /* The actual seed lives in the shm. This variable is used
  * to store what gets passed in from the command line -s argument */

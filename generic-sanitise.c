@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
+#include "log.h"
 #include "shm.h"
 
 char * filebuffer = NULL;
