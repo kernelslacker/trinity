@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "files.h"
 #include "syscall.h"
+#include "pids.h"
 
 static void regenerate(void)
 {

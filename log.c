@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include "trinity.h"
 #include "shm.h"
+#include "pids.h"
 
 FILE *parentlogfile;
 

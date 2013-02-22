@@ -21,6 +21,7 @@
 #include "arch.h"
 #include "trinity.h"
 #include "files.h"
+#include "pids.h"
 #include "shm.h"
 #include "syscall.h"
 #include "config.h"	// for VERSION

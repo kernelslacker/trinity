@@ -16,6 +16,7 @@
 #include "trinity.h"
 #include "syscall.h"
 #include "shm.h"
+#include "pids.h"
 
 static struct rlimit oldrlimit;
 
