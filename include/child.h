@@ -3,11 +3,11 @@
 
 #include <sys/types.h>
 
-int child_process(void);
+int child_process(int childno);
 long mkcall(int child);
 void do_syscall_from_child(void);
 
-void init_child(void);
+void init_child(int childno);
 
 void reap_child(pid_t childpid);
 
