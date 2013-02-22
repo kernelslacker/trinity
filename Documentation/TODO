@@ -1,26 +1,24 @@
 * Clean up logging.
-  - prepend [watchdog] for watchdog messages
   - Make -D use a separate debug log file
   - audit printfs and change to output/debugf as necessary
   - make debugf a proper varargs function.
 
-* decode fd number -> filename in output
+* Pretty-print improvements.
+ - decode fd number -> filename in output
+ - decode addresses when printing them out to print 'page_rand+4' instead of a hex address.
+ - ->decode_argN functions to print decoded flags etc.
+ - the COLOR_ARG macro in syscall.c:mkcall() has grown into a monster.
+   Look at turning it into a function or two.
 
 * watchdog improvements
   - in main loop, check watchdog is still alive
   - check shm->parent_pid still alive in watchdog
-  - bind watchdog process to a cpu.
   - RT watchdog task ? (needs initial startup as root, and drop privs afterwards).
 
 * Change regeneration code.
   Instead of every n syscalls, make it happen after 15 minutes.
 
-* ->decode_argN functions to print decoded flags etc.
-
 * Improve socket generation to not generate duplicates.
-
-* the COLOR_ARG macro in syscall.c:mkcall() has grown into a monster.
-  Look at turning it into a function or two.
 
 * Revisit fuzzing ptrace.
   - It's disabled currently because of situations like..
@@ -29,9 +27,6 @@
   child b never proceeds, and doesn't get untraced.
 
 * Finish annotating syscall return types
-
-* First thing a child should do is allocate a buffer of random numbers
-  to be used as syscall numbers.
 
 * Based upon the first syscall the child is going to call, bias the subsequent
   random syscalls to be calls that use the return type from syscall 1.
@@ -49,7 +44,7 @@
   - Don't generate so many fd's (faster startup)
   - When requesting an fd, occasionally generate a new one.
 
-* generate overlapping addresses/lengths.
+* Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
 
 * There are a few syscalls with duplicate '64' variants.
   They take the same arguments, and vary only in name.
@@ -66,8 +61,14 @@
   x86-64: Build both a 64bit and a 32bit executable.
   *: Move arch specific syscalls into syscalls/arch/
   *: Move addresses in get_interesting_value() to per-arch headers.
+  Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
-* --ignore-socketcache
+* filename cache.
+  Similar to the socketcache. Create on startup, then on loading, invalidate entries
+  that aren't present (/proc/pid etc).
+  This should improve reproducability in some cases. Right now, when a syscall
+  says "open the 5231st filename in the list", it differs across runs because we're
+  rebuilding the list, and the system state means stuff moves around.
 
 * Perform some checks on return from syscall
   - check padding between struct members is zeroed.
@@ -75,22 +76,12 @@
     on return whether any of them got clobbered.
   - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
 
-* Add a parameter to bias the randomness passed to length parameters.
-  Right now it's hardwired to return 16 bit 70% of the time.
-  (and 32bit in the 64bit path)
-
-* Add a parameter for the dir/file randomness bias
-
 * --oneshot
   ./trinity --oneshot futex -1,0x40000000,1,2,3,4
-
-* Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
 
 * run tests in different namespaces, personalities.
 
 * Output errno distribution on exit
-
-* Track success/failure per-thread instead of globally
 
 * Store previous syscall results
 
@@ -110,11 +101,7 @@
 * sanitise_setsockopt needs further expansion to cope with things such as
   those in do_ip_setsockopt
 
-* decode addresses when printing them out to print 'page_rand+4' instead of a hex address.
-
-* 'safe root' syscall mode.
-
-* if a read() blocks, blacklist (close?) that fd.
+* if a read() blocks and we get a kill from the watchdog, blacklist (close?) that fd/filename.
 
 * Pause on oops.
   Sometimes we might want to read trinity state when we trigger a bad event.
@@ -122,11 +109,28 @@
 * config file
   - specify an ip of a victim machine
   - exclude file list for (certain sysfs files for eg)
+  - parameter to bias the randomness passed to length parameters.
+    Right now it's hardwired to return 16 bit 70% of the time.
+    (and 32bit in the 64bit path)
+  - parameter for the dir/file randomness bias
+
+* 'syscall chains'.
+  These are fragments of things that a real program would do.
+  For example   open->read->close,  open->mmap->access mem->close
+  The main loop would randomly decide what a child is going to do
+  syscall chains, or random syscalls.
+
+* Ability to mark some chains as 'NEEDS_ROOT'.
+  At the same time, rework startup so that if we're root, when we fork
+  children, we decide whether or not to drop privs by looking at chain->flags
+  After completing a root-only chain, we either exit, or run other root-only chains. 
 
 * rework ioctl
+  When we have the syscall chains, and NEEDS_ROOT in place..
   - pick known ioctl at random
-  - start with: DRM, Networking, ALSA,..
   - lookup the correct /dev/node
+  - ->sanitise routines for each ioctl we know about to get request/argp right.
+  start with: DRM, Networking, ALSA,..
 
 * generic linked list implementation
   - convert file list usage
@@ -135,8 +139,8 @@
 * file list struct extensions
   - use count
 
-* destructor lists
-
 * more multiplexed syscalls need .sanitise routines to pass the right args.
   - fcntl
+
+* When we fuzz execve, do an extra fork, and exit the child.
 
