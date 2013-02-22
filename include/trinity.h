@@ -14,11 +14,6 @@ void * alloc_shared(unsigned int size);
 
 void do_main_loop(void);
 
-extern unsigned int seed;
-unsigned int init_seed(unsigned int seed);
-void set_seed(unsigned int pidslot);
-void reseed(void);
-
 extern unsigned int page_size;
 
 extern unsigned char exit_reason;

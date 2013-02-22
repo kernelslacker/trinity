@@ -14,6 +14,7 @@
 #include "signals.h"
 #include "shm.h"
 #include "files.h"
+#include "random.h"
 #include "syscall.h"
 #include "pids.h"
 #include "log.h"

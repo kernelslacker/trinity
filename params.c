@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "random.h"
 #include "syscall.h"
 #include "trinity.h"
 #include "log.h"
