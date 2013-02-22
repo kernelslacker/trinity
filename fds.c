@@ -8,6 +8,7 @@
 #include "shm.h"
 #include "files.h"
 #include "pids.h"
+#include "log.h"
 
 unsigned int nr_file_fds = 0;
 

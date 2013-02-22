@@ -16,6 +16,7 @@
 #include "files.h"
 #include "syscall.h"
 #include "pids.h"
+#include "log.h"
 
 static void watchdog(void);
 

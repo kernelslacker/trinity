@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include "trinity.h"
 #include "arch.h"
+#include "log.h"
 #include "shm.h"
 
 static unsigned int num_mappings = 0;

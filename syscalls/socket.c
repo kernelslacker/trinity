@@ -13,6 +13,7 @@
 #include "trinity.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "log.h"
 #include "compat.h"
 
 #define NR_AX25_PROTOS 13

@@ -18,6 +18,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "pids.h"
+#include "log.h"
 
 #define __syscall_return(type, res) \
 	do { \

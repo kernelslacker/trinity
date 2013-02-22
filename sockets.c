@@ -12,6 +12,7 @@
 #include "sanitise.h"
 #include "constants.h"
 #include "shm.h"
+#include "log.h"
 
 unsigned int nr_sockets = 0;
 

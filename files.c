@@ -11,6 +11,7 @@
 #include "trinity.h"
 #include "files.h"
 #include "shm.h"
+#include "log.h"
 #include "sanitise.h"
 #include "constants.h"
 

@@ -2,6 +2,7 @@
 #include "trinity.h"
 #include "shm.h"
 #include "pids.h"
+#include "log.h"
 
 int find_pid_slot(pid_t mypid)
 {
