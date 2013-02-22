@@ -59,6 +59,10 @@ trinity: test $(OBJS) $(HEADERS)
 
 df = $(DEPDIR)/$(*F)
 
+# FIXME:
+# Dependancy information for .c files in subdirs seems to be broken.
+# Example: touch include/sanitise.h should cause syscalls/*.c to be rebuilt.
+#
 %.o : %.c
 	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ -c $<
 	@gcc -MM $(CFLAGS) $*.c > $(df).d
