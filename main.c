@@ -110,9 +110,9 @@ static void fork_children(void)
 				}
 			}
 
-			set_seed(pidslot);
+			init_child(pidslot);
 
-			ret = child_process();
+			ret = child_process(pidslot);
 
 			output(0, "child %d exitting\n", getpid());
 

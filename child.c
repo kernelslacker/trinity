@@ -89,36 +89,35 @@ static void use_fpu(void)
 	asm volatile("":"+m" (x));
 }
 
-void init_child(void)
-{
-	int i;
-
-	i = find_pid_slot(getpid());
-	shm->child_syscall_count[i] = 0;
-
-	set_make_it_fail();
-	if (rand() % 100 < 50)
-		use_fpu();
-}
-
-int child_process(void)
+void init_child(int childno)
 {
 	cpu_set_t set;
 	pid_t pid = getpid();
-	int ret;
-	unsigned int syscallnr;
-	unsigned int childno = find_pid_slot(pid);
-	unsigned int i;
+
+	set_seed(childno);
 
 	disable_coredumps();
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
 		CPU_SET(childno, &set);
-		sched_setaffinity(getpid(), sizeof(set), &set);
+		sched_setaffinity(pid, sizeof(set), &set);
 	}
 
-	init_child();
+	shm->child_syscall_count[childno] = 0;
+
+	set_make_it_fail();
+
+	if (rand() % 100 < 50)
+		use_fpu();
+}
+
+int child_process(int childno)
+{
+	pid_t pid = getpid();
+	int ret;
+	unsigned int syscallnr;
+	unsigned int i;
 
 	sigsetjmp(ret_jump, 1);
 
@@ -130,8 +129,7 @@ int child_process(void)
 			//FIXME: Add locking so only one child does this output.
 			output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED! "
 				"parent pid:%d. Watchdog pid:%d\n",
-				getpid(),
-				shm->parentpid, shm->watchdog_pid);
+				pid, shm->parentpid, shm->watchdog_pid);
 			output(0, BUGTXT "Last syscalls:\n");
 
 			for (i = 0; i < MAX_NR_CHILDREN; i++) {
@@ -185,7 +183,7 @@ int child_process(void)
 		}
 
 		if (no_syscalls_enabled() == TRUE) {
-			output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+			output(0, "[%d] No more syscalls enabled. Exiting\n", pid);
 			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 		}
 
@@ -213,12 +211,14 @@ retry:
 
 		if (syscalls_todo) {
 			if (shm->total_syscalls_done >= syscalls_todo) {
-				output(0, "[%d] shm->total_syscalls_done (%d) >= syscalls_todo (%d)\n", getpid(), shm->total_syscalls_done,syscalls_todo);
+				output(0, "[%d] shm->total_syscalls_done (%d) >= syscalls_todo (%d)\n",
+					pid, shm->total_syscalls_done,syscalls_todo);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
 
 			if (shm->total_syscalls_done == syscalls_todo)
-				printf("[%d] Reached maximum syscall count %ld\n", pid, shm->total_syscalls_done);
+				printf("[%d] Reached maximum syscall count %ld\n",
+					pid, shm->total_syscalls_done);
 		}
 
 		ret = mkcall(childno);
