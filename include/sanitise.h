@@ -26,7 +26,4 @@ int get_random_fd(void);
 
 void fabricate_onepage_struct(char *page);
 
-void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
-#define PF_NOHINT (-1)
-
 #endif	/* _SANITISE_H */
