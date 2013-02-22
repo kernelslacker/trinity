@@ -26,6 +26,7 @@
 #include "pids.h"
 #include "net.h"
 #include "params.h"
+#include "signals.h"
 #include "shm.h"
 #include "syscall.h"
 #include "config.h"	// for VERSION
