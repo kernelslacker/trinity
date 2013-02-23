@@ -312,6 +312,9 @@ unsigned long get_len(void)
 
 	i = get_interesting_value();
 
+	if (i == 0)
+		return 0;
+
 	switch(rand() % 6) {
 
 	case 0:	i &= 0xff;
