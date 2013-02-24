@@ -146,8 +146,6 @@ static void check_children(void)
 			shm->tv[i].tv_sec = now;
 			continue;
 		}
-//		if (diff > 3)
-//			printf("[watchdog] pid slot %d [%d]: old:%ld now:%ld diff= %d\n", i, pid, old, now, diff);
 
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
