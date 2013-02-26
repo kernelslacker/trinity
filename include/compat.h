@@ -206,7 +206,13 @@
 #define KEYCTL_ASSUME_AUTHORITY		16	/* assume request_key() authorisation */
 #define KEYCTL_GET_SECURITY		17	/* get key security label */
 #define KEYCTL_SESSION_TO_PARENT	18	/* apply session keyring to parent process */
+#endif
+
+#ifndef KEYCTL_REJECT
 #define KEYCTL_REJECT			19	/* reject a partially constructed key */
+#endif
+
+#ifndef KEYCTL_INSTANTIATE_IOV
 #define KEYCTL_INSTANTIATE_IOV		20	/* instantiate a partially constructed key */
 #endif
 
