@@ -100,6 +100,20 @@
 
 
 /* bits/socket.h */
+#ifndef PF_CAIF
+#define PF_CAIF		37
+#endif
+#ifndef AF_CAIF
+#define AF_CAIF		PF_CAIF
+#endif
+
+#ifndef PF_ALG
+#define PF_ALG		38
+#endif
+#ifndef AF_ALG
+#define AF_ALG		PF_ALG
+#endif
+
 #ifndef PF_NFC
 #define PF_NFC		39
 #endif
