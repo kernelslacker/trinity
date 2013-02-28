@@ -18,7 +18,6 @@
 #include <linux/if_pppox.h>
 #include <linux/can.h>
 #include <linux/tipc.h>
-#include <linux/caif/caif_socket.h>
 #include <linux/if_alg.h>
 #include <linux/phonet.h>
 #include <linux/netlink.h>
@@ -29,6 +28,10 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
+
+#ifdef USE_CAIF
+#include <linux/caif/caif_socket.h>
+#endif
 
 static in_addr_t random_ipv4_address(void)
 {
@@ -582,6 +585,7 @@ static void gen_phonet(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_pn);
 }
 
+#ifdef USE_CAIF
 static void gen_caif(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_caif *caif;
@@ -605,6 +609,7 @@ static void gen_caif(unsigned long *addr, unsigned long *addrlen)
 	*addr = (unsigned long) caif;
 	*addrlen = sizeof(struct sockaddr_caif);
 }
+#endif
 
 static void gen_alg(unsigned long *addr, unsigned long *addrlen)
 {
@@ -794,9 +799,11 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		//TODO
 		break;
 
+#ifdef USE_CAIF
 	case PF_CAIF:
 		gen_caif(addr, addrlen);
 		break;
+#endif
 
 	case PF_ALG:
 		gen_alg(addr, addrlen);

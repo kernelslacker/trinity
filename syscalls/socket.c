@@ -5,7 +5,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/in.h>
-#include <linux/caif/caif_socket.h>
 #include <linux/irda.h>
 #include <linux/dn.h>
 #include "compat.h"
@@ -13,6 +12,11 @@
 #include "net.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "config.h"
+
+#ifdef USE_CAIF
+#include <linux/caif/caif_socket.h>
+#endif
 
 #define NR_AX25_PROTOS 13
 static int ax25_protocols[NR_AX25_PROTOS] = {
@@ -65,6 +69,7 @@ void sanitise_socket(int childno)
 		}
 		break;
 
+#ifdef USE_CAIF
 	case AF_CAIF:
 		protocol = rand() % _CAIFPROTO_MAX;
 		switch (rand() % 2) {
@@ -75,6 +80,7 @@ void sanitise_socket(int childno)
 		default:break;
 		}
 		break;
+#endif
 
 	case AF_CAN:
 		protocol = rand() % 7;	// CAN_NPROTO
