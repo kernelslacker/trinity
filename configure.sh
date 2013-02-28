@@ -111,6 +111,7 @@ fi
 
 #############################################################################################
 
+file_exists linux/caif/caif_socket.h USE_CAIF
 file_exists linux/signal.h HAVE_SIGNAL_H
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"

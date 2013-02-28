@@ -9,6 +9,7 @@
 #include "compat.h"
 #include "maps.h"
 #include "shm.h"
+#include "config.h"
 #include "syscalls/setsockopt.h"
 
 void sanitise_setsockopt(int childno)
@@ -288,10 +289,12 @@ void sanitise_setsockopt(int childno)
 		shm->a4[childno] = sizeof(int);
 		break;
 
+#ifdef USE_CAIF
 	case SOL_CAIF:
 		val = rand() % NR_SOL_CAIF_OPTS;
 		shm->a3[childno] = caif_opts[val];
 		break;
+#endif
 
 	case SOL_ALG:	/* no setsockopt */
 		break;

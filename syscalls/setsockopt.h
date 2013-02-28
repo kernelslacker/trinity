@@ -30,9 +30,13 @@
 #include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
 #include <linux/rds.h>
-#include <linux/caif/caif_socket.h>
 
 #include "compat.h"
+#include "config.h"
+
+#ifdef USE_CAIF
+#include <linux/caif/caif_socket.h>
+#endif
 
 #define SOL_TCP		6
 #define SOL_SCTP        132
@@ -212,7 +216,9 @@ static int rds_opts[NR_SOL_RDS_OPTS] = {
 static int iucv_opts[NR_SOL_IUCV_OPTS] = {
 	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE };
 
+#ifdef USE_CAIF
 #define NR_SOL_CAIF_OPTS 2
 static int caif_opts[NR_SOL_CAIF_OPTS] = {
 	CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM };
+#endif
 
