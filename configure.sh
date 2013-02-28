@@ -31,7 +31,7 @@ echo "[*] Checking system headers."
 echo -n "[*] Checking if pppox can use pppol2tpin6.. "
 rm -f "$TMP" || exit 1
 
-cat >>"$TMP.c" << EOF
+cat >"$TMP.c" << EOF
 #include <stdio.h>
 #include <netinet/in.h>
 #include <linux/if.h>
