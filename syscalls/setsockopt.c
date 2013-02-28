@@ -278,10 +278,12 @@ void sanitise_setsockopt(int childno)
 	case SOL_PNPIPE	/* no setsockopt */:
 		break;
 
+#ifdef USE_RDS
 	case SOL_RDS:
 		val = rand() % NR_SOL_RDS_OPTS;
 		shm->a3[childno] = rds_opts[val];
 		break;
+#endif
 
 	case SOL_IUCV:
 		val = rand() % NR_SOL_IUCV_OPTS;

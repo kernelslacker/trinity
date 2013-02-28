@@ -29,13 +29,16 @@
 #include <linux/dccp.h>
 #include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
-#include <linux/rds.h>
 
 #include "compat.h"
 #include "config.h"
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
+#endif
+
+#ifdef USE_RDS
+#include <linux/rds.h>
 #endif
 
 #define SOL_TCP		6
@@ -206,11 +209,13 @@ static int bluetooth_l2cap_opts[NR_SOL_BLUETOOTH_L2CAP_OPTS] = {
 #define NR_SOL_BLUETOOTH_RFCOMM_OPTS 2
 static int bluetooth_rfcomm_opts[NR_SOL_BLUETOOTH_RFCOMM_OPTS] = { RFCOMM_LM };
 
+#ifdef USE_RDS
 #define NR_SOL_RDS_OPTS 7
 static int rds_opts[NR_SOL_RDS_OPTS] = {
 	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
 	4, /* deprecated RDS_BARRIER 4 */
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST };
+#endif
 
 #define NR_SOL_IUCV_OPTS 3
 static int iucv_opts[NR_SOL_IUCV_OPTS] = {
