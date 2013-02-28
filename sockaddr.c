@@ -18,7 +18,6 @@
 #include <linux/if_pppox.h>
 #include <linux/can.h>
 #include <linux/tipc.h>
-#include <linux/if_alg.h>
 #include <linux/phonet.h>
 #include <linux/netlink.h>
 #include <stdlib.h>
@@ -31,6 +30,10 @@
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
+#endif
+
+#ifdef USE_IF_ALG
+#include <linux/if_alg.h>
 #endif
 
 static in_addr_t random_ipv4_address(void)
@@ -611,6 +614,7 @@ static void gen_caif(unsigned long *addr, unsigned long *addrlen)
 }
 #endif
 
+#ifdef USE_IF_ALG
 static void gen_alg(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_alg *alg;
@@ -630,6 +634,7 @@ static void gen_alg(unsigned long *addr, unsigned long *addrlen)
 	*addr = (unsigned long) alg;
 	*addrlen = sizeof(struct sockaddr_alg);
 }
+#endif
 
 static void gen_nfc(unsigned long *addr, unsigned long *addrlen)
 {
@@ -805,9 +810,11 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 #endif
 
+#ifdef USE_IF_ALG
 	case PF_ALG:
 		gen_alg(addr, addrlen);
 		break;
+#endif
 
 	case PF_NFC:
 		gen_nfc(addr, addrlen);
