@@ -54,6 +54,62 @@ else
 fi
 
 #############################################################################################
+# Test 2 : is /usr/include/linux/if_pppox.h new enough to feature pppol2tpv3
+#
+echo -n "[*] Checking if pppox can use pppol2tv3.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <stdio.h>
+#include <netinet/in.h>
+#include <linux/if.h>
+#include <linux/if_pppox.h>
+
+void main()
+{
+	struct sockaddr_pppol2tpv3 *pppox;
+	printf("%d\n", pppox->sa_family);
+}
+EOF
+
+gcc "$TMP.c" -o "$TMP" &>"$TMP.log"
+
+if [ ! -x "$TMP" ]; then
+	echo "[NO]"
+else
+	echo "[YES]"
+	echo "#define USE_PPPOL2TPV3 1" >> config.h
+fi
+
+#############################################################################################
+# Test 3 : is /usr/include/linux/if_pppox.h new enough to feature pptp
+#
+echo -n "[*] Checking if pppox can use pptp.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <stdio.h>
+#include <netinet/in.h>
+#include <linux/if.h>
+#include <linux/if_pppox.h>
+
+void main()
+{
+	struct sockaddr_pppox *pppox;
+	printf("%d\n", pppox->sa_addr.pptp.call_id);
+}
+EOF
+
+gcc "$TMP.c" -o "$TMP" &>"$TMP.log"
+
+if [ ! -x "$TMP" ]; then
+	echo "[NO]"
+else
+	echo "[YES]"
+	echo "#define USE_PPPOX_PPTP 1" >> config.h
+fi
+
+#############################################################################################
 
 file_exists linux/signal.h HAVE_SIGNAL_H
 

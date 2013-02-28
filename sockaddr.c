@@ -376,7 +376,6 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_pppox *pppox;
 	struct sockaddr_pppol2tp *pppol2tp;
-	struct sockaddr_pppol2tpv3 *pppol2tpv3;
 	unsigned int proto;
 	unsigned int i;
 
@@ -398,8 +397,10 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 		for (i = 0; i < IFNAMSIZ; i++)
 			pppox->sa_addr.pppoe.dev[i] = rand();
 
+#ifdef USE_PPPOX_PPTP
 		pppox->sa_addr.pptp.call_id = rand();
 		pppox->sa_addr.pptp.sin_addr.s_addr = random_ipv4_address();
+#endif
 
 		*addr = (unsigned long) pppox;
 		*addrlen = sizeof(struct sockaddr_pppox);
@@ -458,6 +459,10 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			break;
 
 		case 2:	/* PPPoL2TPv3*/
+#ifdef USE_PPPOL2TPV3
+			{
+			struct sockaddr_pppol2tpv3 *pppol2tpv3;
+
 			pppol2tpv3 = malloc(sizeof(struct sockaddr_pppol2tpv3));
 			if (pppol2tpv3 == NULL)
 				return;
@@ -473,6 +478,8 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 			pppol2tpv3->pppol2tp.d_session = rand();
 			*addr = (unsigned long) pppol2tpv3;
 			*addrlen = sizeof(struct sockaddr_pppol2tpv3);
+			}
+#endif
 			break;
 
 		case 3:	/* PPPoL2TPv3in6 */
@@ -511,9 +518,11 @@ static void gen_pppox(unsigned long *addr, unsigned long *addrlen)
 		}
 
 
+#ifdef USE_PPPOX_PPTP
 	case PX_PROTO_PPTP:
 		//FIXME: What do we do here?
 		break;
+#endif
 
 	default:
 		break;
