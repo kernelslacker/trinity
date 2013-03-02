@@ -91,6 +91,12 @@
 #define MAP_STACK 0x20000
 #endif
 
+#ifndef MADV_MERGEABLE
+#define MADV_MERGEABLE 12
+#endif
+#ifndef MADV_UNMERGEABLE
+#define MADV_UNMERGEABLE 13
+#endif
 #ifndef MADV_HUGEPAGE
 #define MADV_HUGEPAGE 14
 #endif
