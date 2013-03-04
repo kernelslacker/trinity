@@ -40,6 +40,7 @@ enum exit_reasons {
 	EXIT_KERNEL_TAINTED = 7,
 	EXIT_SHM_CORRUPTION = 8,
 	EXIT_REPARENT_PROBLEM = 9,
+	EXIT_NO_FILES = 10,
 };
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))

@@ -305,6 +305,7 @@ static const char *reasons[] = {
 	"kernel became tainted",
 	"SHM was corrupted!",
 	"Child reparenting problem",
+	"No files in file list",
 };
 
 static const char * decode_exit(unsigned int reason)
@@ -350,6 +351,10 @@ void do_main_loop(void)
 		set_seed(0);
 
 		setup_fds();
+		if (files_in_index == 0) {
+			shm->exit_reason = EXIT_NO_FILES;
+			_exit(EXIT_FAILURE);;
+		}
 
 		main_loop();
 

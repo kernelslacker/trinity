@@ -145,6 +145,8 @@ void setup_fds(void)
 	open_sockets();
 
 	generate_filelist();
+	if (files_in_index == 0)
+		return;
 
 	open_files();
 }
