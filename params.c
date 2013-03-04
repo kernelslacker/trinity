@@ -37,28 +37,6 @@ char *specific_proto_optarg;
 
 char *victim_path;
 
-static int parse_victim_path(char *opt)
-{
-	struct stat statbuf;
-	int status;
-
-	status = stat(opt, &statbuf);
-	if (status == -1) {
-		printf("stat failed\n");
-		return -1;
-	}
-
-	if (!(S_ISDIR(statbuf.st_mode))) {
-		printf("Victim path not a directory\n");
-		return -1;
-	}
-
-	victim_path = strdup(opt);
-
-	return 0;
-}
-
-
 static void usage(void)
 {
 	fprintf(stderr, "%s\n", progname);
@@ -192,10 +170,8 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'V':
-			if (parse_victim_path(optarg) < 0) {
-				printf("oops\n");
-				exit(EXIT_FAILURE);
-			}
+			victim_path = strdup(optarg);
+			//FIXME: Later, allow for multiple victim files
 			break;
 
 		case 'x':

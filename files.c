@@ -91,6 +91,36 @@ static void list_add(struct namelist *list, char *name)
 	__list_add(newnode, list, list->next);
 }
 
+static void add_file_to_list(struct stat buf, char *path)
+{
+	int set_read = FALSE, set_write = FALSE;
+
+	if (buf.st_uid == my_uid) {
+		if (buf.st_mode & S_IRUSR)
+			set_read = TRUE;
+		if (buf.st_mode & S_IWUSR)
+			set_write = TRUE;
+
+	} else if (buf.st_gid == my_gid) {
+		if (buf.st_mode & S_IRGRP)
+			set_read = TRUE;
+		if (buf.st_mode & S_IWGRP)
+			set_write = TRUE;
+
+	} else {
+		if ((buf.st_mode & S_IROTH))
+			set_read = TRUE;
+		if (buf.st_mode & S_IWOTH)
+			set_write = TRUE;
+	}
+
+	if ((set_read | set_write) == 0)
+		return;
+
+	list_add(names, path);
+	files_added++;
+}
+
 
 static void __open_fds(const char *dir)
 {
@@ -99,7 +129,6 @@ static void __open_fds(const char *dir)
 	DIR *d;
 	struct dirent *de;
 	struct stat buf;
-	int set_read, set_write;
 	char is_dir = FALSE;
 
 	d = opendir(dir);
@@ -148,36 +177,9 @@ static void __open_fds(const char *dir)
 		}
 
 openit:
-		set_read = FALSE;
-		set_write = FALSE;
+		if (is_dir == FALSE)
+			add_file_to_list(buf, path);
 
-		/* if we own the file, unlikely, since you should NOT run this thing as root */
-		if (buf.st_uid == my_uid) {
-			if (buf.st_mode & S_IRUSR)
-				set_read = TRUE;
-			if (buf.st_mode & S_IWUSR)
-				set_write = TRUE;
-
-		} else if (buf.st_gid == my_gid) {
-			if (buf.st_mode & S_IRGRP)
-				set_read = TRUE;
-			if (buf.st_mode & S_IWGRP)
-				set_write = TRUE;
-
-		} else {
-			if ((buf.st_mode & S_IROTH))
-				set_read = TRUE;
-			if (buf.st_mode & S_IWOTH)
-				set_write = TRUE;
-		}
-
-		if ((set_read | set_write) == 0)
-			continue;
-
-		if (is_dir == FALSE) {
-			list_add(names, path);
-			files_added++;
-		}
 	}
 	closedir(d);
 }
@@ -193,18 +195,34 @@ void generate_filelist(void)
 {
 	unsigned int i = 0;
 	struct namelist *node;
+	struct stat statbuf;
+	int r;
 
 	my_uid = getuid();
 	my_gid = getgid();
 
 	output(1, "Generating file descriptors\n");
 
-	if (victim_path != NULL)
-		open_fds(victim_path);
-	else {
+	if (victim_path != NULL) {
+		r = lstat(victim_path, &statbuf);
+		if (r == -1) {
+			output(1, "Couldn't stat %s\n", victim_path);
+			return;
+		}
+		if (S_ISDIR(statbuf.st_mode))
+			open_fds(victim_path);
+		else {
+			add_file_to_list(statbuf, victim_path);
+		}
+	} else {
 		open_fds("/dev");
 		open_fds("/proc");
 		open_fds("/sys");
+	}
+
+	if (files_added == 0) {
+		output(1, "Didn't add any files!!\n");
+		return;
 	}
 
 	if (shm->exit_reason != STILL_RUNNING)
@@ -296,13 +314,18 @@ retry:
 
 void open_files(void)
 {
-	unsigned int i;
+	unsigned int i, nr_to_open;
 	int fd;
+
+	if (files_in_index < NR_FILE_FDS)
+		nr_to_open = files_in_index;
+	else
+		nr_to_open = NR_FILE_FDS;
 
 	if (fileindex == NULL)	/* this can happen if we ctrl-c'd */
 		return;
 
-	for (i = 0; i < NR_FILE_FDS; i++) {
+	for (i = 0; i < nr_to_open; i++) {
 		fd = open_file();
 
 		shm->file_fds[i] = fd;
