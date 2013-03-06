@@ -193,13 +193,13 @@ retry:
 
 		syscallnr = rand() % max_nr_syscalls;
 
-		if (syscalls[syscallnr].entry->num_args == 0)
-			goto retry;
-
 		if (!(syscalls[syscallnr].entry->flags & ACTIVE))
 			goto retry;
 
 		if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
+			goto retry;
+
+		if (syscalls[syscallnr].entry->num_args == 0)
 			goto retry;
 
 		if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
