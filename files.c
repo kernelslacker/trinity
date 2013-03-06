@@ -237,7 +237,6 @@ static int open_file(void)
 
 retry:
 	filename = get_filename();
-	printf("filename:%s\t", filename);
 	ret = lstat(filename, &sb);
 	if (ret == -1)
 		goto retry;
