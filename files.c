@@ -1,3 +1,4 @@
+#include <ftw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ static struct namelist *names = NULL;
 static uid_t my_uid;
 static gid_t my_gid;
 
-static int ignore_files(char *file)
+static int ignore_files(const char *file)
 {
 	int i;
 	const char *ignored_files[] = {".", "..",
@@ -47,12 +48,18 @@ static int ignore_files(char *file)
 		"cgroup",
 		NULL};
 
+	//FIXME: Broken, 'file' is now a full pathname.
+
 	for(i = 0; ignored_files[i]; i++) {
-		if (!strcmp(file, ignored_files[i]))
+		if (!strcmp(file, ignored_files[i])) {
+			//printf("Skipping %s\n", fpath);
 			return 1;
+		}
 	}
-	if (!strncmp(file, "tty", 3))
+	if (!strncmp(file, "tty", 3)) {
+		//printf("Skipping %s\n", fpath);
 		return 1;
+	}
 	return 0;
 }
 
@@ -75,7 +82,7 @@ static void __list_add(struct namelist *new, struct namelist *prev, struct namel
 	prev->next = new;
 }
 
-static void list_add(struct namelist *list, char *name)
+static void list_add(struct namelist *list, const char *name)
 {
 	struct namelist *newnode;
 
@@ -91,26 +98,26 @@ static void list_add(struct namelist *list, char *name)
 	__list_add(newnode, list, list->next);
 }
 
-static void add_file_to_list(struct stat buf, char *path)
+static void add_file_to_list(const struct stat *sb, const char *path)
 {
 	int set_read = FALSE, set_write = FALSE;
 
-	if (buf.st_uid == my_uid) {
-		if (buf.st_mode & S_IRUSR)
+	if (sb->st_uid == my_uid) {
+		if (sb->st_mode & S_IRUSR)
 			set_read = TRUE;
-		if (buf.st_mode & S_IWUSR)
+		if (sb->st_mode & S_IWUSR)
 			set_write = TRUE;
 
-	} else if (buf.st_gid == my_gid) {
-		if (buf.st_mode & S_IRGRP)
+	} else if (sb->st_gid == my_gid) {
+		if (sb->st_mode & S_IRGRP)
 			set_read = TRUE;
-		if (buf.st_mode & S_IWGRP)
+		if (sb->st_mode & S_IWGRP)
 			set_write = TRUE;
 
 	} else {
-		if ((buf.st_mode & S_IROTH))
+		if ((sb->st_mode & S_IROTH))
 			set_read = TRUE;
-		if (buf.st_mode & S_IWOTH)
+		if (sb->st_mode & S_IWOTH)
 			set_write = TRUE;
 	}
 
@@ -119,84 +126,54 @@ static void add_file_to_list(struct stat buf, char *path)
 
 	list_add(names, path);
 	files_added++;
+
+	//printf("Adding %s\n", path);
+
 }
 
-
-static void __open_fds(const char *dir)
+static int file_tree_callback(const char *fpath, const struct stat *sb, __unused__ int typeflag, __unused__ struct FTW *ftwbuf)
 {
-	char path[4096];
-	int r;
-	DIR *d;
-	struct dirent *de;
-	struct stat buf;
-	char is_dir = FALSE;
 
-	d = opendir(dir);
-	if (!d) {
-		printf("can't open %s\n", dir);
-		return;
+	if (ignore_files(fpath)) {
+		return FTW_SKIP_SUBTREE;
 	}
-	while ((de = readdir(d))) {
 
-		if (shm->exit_reason != STILL_RUNNING)
-			return;
+	if (shm->exit_reason != STILL_RUNNING)
+		return FTW_STOP;
 
-		memset(&buf, 0, sizeof(struct stat));
-		memset(&path, 0, 4096);
-		snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
-		if (ignore_files(de->d_name))
-			continue; /*".", "..", everything that's not a regular file or directory !*/
+	add_file_to_list(sb, fpath);
 
-		r = lstat(path, &buf);
-		if (r == -1)
-			continue;
-
-		if (S_ISLNK(buf.st_mode))
-			continue;
-		if (S_ISFIFO(buf.st_mode))
-			continue;
-
-		if (S_ISDIR(buf.st_mode)) {
-			is_dir = TRUE;
-
-			if (buf.st_uid != my_uid) {
-				/* We don't own the dir, is it group/other readable ? */
-				if (buf.st_mode & (S_IRGRP|S_IROTH)) {
-					__open_fds(path);
-					goto openit;
-				}
-				continue;
-			} else {
-				/* We own this dir. */
-				__open_fds(path);
-				goto openit;
-			}
-
-		} else {
-			is_dir = FALSE;
-		}
-
-openit:
-		if (is_dir == FALSE)
-			add_file_to_list(buf, path);
-
-	}
-	closedir(d);
+	return FTW_CONTINUE;
 }
 
-static void open_fds(const char *dir)
+
+static void open_fds(const char *dirpath)
 {
 	int before = files_added;
-	__open_fds(dir);
-	output(0, "Added %d filenames from %s\n", files_added - before, dir);
+	int flags = FTW_DEPTH | FTW_ACTIONRETVAL | FTW_MOUNT;
+	int ret;
+
+	/* By default, don't follow symlinks so we only get each file once.
+	 * But, if we do something like -V /lib, then follow it
+	 *
+	 * I'm not sure about this, might remove later.
+	 */
+	if (victim_path == NULL)
+		flags |= FTW_PHYS;
+
+	ret = nftw(dirpath, file_tree_callback, 32, flags);
+	if (ret != 0) {
+		output(0, "Something went wrong during nftw(). Returned %d\n", ret);
+		return;
+	}
+
+	output(0, "Added %d filenames from %s\n", files_added - before, dirpath);
 }
 
 void generate_filelist(void)
 {
 	unsigned int i = 0;
 	struct namelist *node;
-	struct stat statbuf;
-	int r;
 
 	my_uid = getuid();
 	my_gid = getgid();
@@ -204,16 +181,7 @@ void generate_filelist(void)
 	output(1, "Generating file descriptors\n");
 
 	if (victim_path != NULL) {
-		r = lstat(victim_path, &statbuf);
-		if (r == -1) {
-			output(1, "Couldn't stat %s\n", victim_path);
-			return;
-		}
-		if (S_ISDIR(statbuf.st_mode))
-			open_fds(victim_path);
-		else {
-			add_file_to_list(statbuf, victim_path);
-		}
+		open_fds(victim_path);
 	} else {
 		open_fds("/dev");
 		open_fds("/proc");
@@ -300,6 +268,10 @@ retry:
 		goto retry;
 
 	fd = open(filename, flags | O_NONBLOCK);
+	if (fd < 0) {
+		output(2, "Couldn't open %s : %s\n", filename, strerror(errno));
+		return fd;
+	}
 
 	switch (flags) {
 	case O_RDONLY:  modestr = "read-only";  break;
