@@ -158,20 +158,29 @@ int child_process(int childno)
 
 		if (biarch == TRUE) {
 
-			if ((use_64bit == TRUE) && (use_32bit == TRUE)) {
-				/*
-				 * 10% possibility of a 32bit syscall
-				 */
-				shm->do32bit[childno] = FALSE;
-//				if (rand() % 100 < 10)
-//					shm->do32bit[childno] = TRUE;
+			/* First, check that we have syscalls enabled in either table. */
+			if (validate_syscall_table_64() == FALSE) {
+				use_64bit = FALSE;
+				/* If no 64bit syscalls enabled, force 32bit. */
+				shm->do32bit[childno] = TRUE;
 			}
 
 			if (validate_syscall_table_32() == FALSE)
 				use_32bit = FALSE;
 
-			if (validate_syscall_table_64() == FALSE)
-				use_64bit = FALSE;
+			/* If both tables enabled, pick randomly. */
+			if ((use_64bit == TRUE) && (use_32bit == TRUE)) {
+				/*
+				 * 10% possibility of a 32bit syscall
+				 */
+				shm->do32bit[childno] = FALSE;
+
+// FIXME: I forgot why this got disabled. Revisit.
+
+//				if (rand() % 100 < 10)
+//					shm->do32bit[childno] = TRUE;
+			}
+
 
 			if (shm->do32bit[childno] == FALSE) {
 				syscalls = syscalls_64bit;
