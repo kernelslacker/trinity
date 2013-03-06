@@ -98,9 +98,14 @@ static void list_add(struct namelist *list, const char *name)
 	__list_add(newnode, list, list->next);
 }
 
-static void add_file_to_list(const struct stat *sb, const char *path)
+static int check_stat_file(const struct stat *sb)
 {
-	int set_read = FALSE, set_write = FALSE;
+	int openflag;
+	bool set_read = FALSE;
+	bool set_write = FALSE;
+
+	if (S_ISLNK(sb->st_mode))
+		return -1;
 
 	if (sb->st_uid == my_uid) {
 		if (sb->st_mode & S_IRUSR)
@@ -122,13 +127,19 @@ static void add_file_to_list(const struct stat *sb, const char *path)
 	}
 
 	if ((set_read | set_write) == 0)
-		return;
+		return -1;
 
-	list_add(names, path);
-	files_added++;
+	if (set_read == TRUE)
+		openflag = O_RDONLY;
+	if (set_write == TRUE)
+		openflag = O_WRONLY;
+	if ((set_read == TRUE) && (set_write == TRUE))
+		openflag = O_RDWR;
 
-	//printf("Adding %s\n", path);
+	if (S_ISDIR(sb->st_mode))
+		openflag = O_RDONLY;
 
+	return openflag;
 }
 
 static int file_tree_callback(const char *fpath, const struct stat *sb, __unused__ int typeflag, __unused__ struct FTW *ftwbuf)
@@ -138,10 +149,16 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, __unused
 		return FTW_SKIP_SUBTREE;
 	}
 
+	// Check we can read it.
+	if (check_stat_file(sb) == -1)
+		return FTW_CONTINUE;
+
 	if (shm->exit_reason != STILL_RUNNING)
 		return FTW_STOP;
 
-	add_file_to_list(sb, fpath);
+	list_add(names, fpath);
+	//printf("Adding %s\n", fpath);
+	files_added++;
 
 	return FTW_CONTINUE;
 }
@@ -209,61 +226,23 @@ void generate_filelist(void)
 	files_in_index = i;
 }
 
-static int stat_file(char *filename)
-{
-	struct stat buf;
-	int ret;
-	int openflag;
-	bool set_read = FALSE;
-	bool set_write = FALSE;
-
-	memset(&buf, 0, sizeof(struct stat));
-	ret = lstat(filename, &buf);
-	if (ret == -1)
-		return -1;
-
-	if (buf.st_uid == my_uid) {
-		if (buf.st_mode & S_IRUSR)
-			set_read = TRUE;
-		if (buf.st_mode & S_IWUSR)
-			set_write = TRUE;
-
-	} else if (buf.st_gid == my_gid) {
-		if (buf.st_mode & S_IRGRP)
-			set_read = TRUE;
-		if (buf.st_mode & S_IWGRP)
-			set_write = TRUE;
-
-	} else {
-		if ((buf.st_mode & S_IROTH))
-			set_read = TRUE;
-		if (buf.st_mode & S_IWOTH)
-			set_write = TRUE;
-	}
-
-	if ((set_read | set_write) == 0)
-		return -1;
-
-	if (set_read == TRUE)
-		openflag = O_RDONLY;
-	if (set_write == TRUE)
-		openflag = O_WRONLY;
-	if ((set_read == TRUE) && (set_write == TRUE))
-		openflag = O_RDWR;
-
-	return openflag;
-}
-
 static int open_file(void)
 {
 	int fd;
+	int ret;
 	char *filename;
 	int flags;
 	const char *modestr;
+	struct stat sb;
 
 retry:
 	filename = get_filename();
-	flags = stat_file(filename);
+	printf("filename:%s\t", filename);
+	ret = lstat(filename, &sb);
+	if (ret == -1)
+		goto retry;
+
+	flags = check_stat_file(&sb);
 	if (flags == -1)
 		goto retry;
 
@@ -277,7 +256,7 @@ retry:
 	case O_RDONLY:  modestr = "read-only";  break;
 	case O_WRONLY:  modestr = "write-only"; break;
 	case O_RDWR:    modestr = "read-write"; break;
-	default: break;
+	default: modestr = "unknown"; break;
 	}
 	output(2, "[%d] fd[%i] = %s (%s)\n",
 		getpid(), fd, filename, modestr);
