@@ -568,7 +568,26 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) get_cpu();
 
 	case ARG_PATHNAME:
-		return (unsigned long) get_filename();
+		if ((rand() % 100) > 10) {
+fallback:
+			return (unsigned long) get_filename();
+		} else {
+			/* Create a bogus filename with junk at the end of an existing one. */
+			char *pathname = get_filename();
+			char *suffix;
+			int len = strlen(pathname);
+
+			suffix = malloc(page_size);
+			if (suffix == NULL)
+				goto fallback;
+
+			fabricate_onepage_struct(suffix);
+
+			(void) strcat(pathname, suffix);
+			if ((rand() % 2) == 0)
+				pathname[len] = '/';
+			return (unsigned long) pathname;
+		}
 
 	case ARG_IOVEC:
 		i = (rand() % 4) + 1;
