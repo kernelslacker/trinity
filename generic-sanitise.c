@@ -328,8 +328,8 @@ void regenerate_random_page(void)
 	unsigned int i;
 	unsigned int type = rand() % 5;
 
-	/* The rest of the time, return a page of complete trash */
 	switch (type) {
+	/* return a page of complete trash */
 	case 0:	/* bytes */
 		for (i = 0; i < page_size; i++)
 			page_rand[i++] = (unsigned char)rand();
@@ -351,12 +351,12 @@ void regenerate_random_page(void)
 		}
 		return;
 
-	case 3:	/* sometimes return a page that looks kinda like a struct */
-		fabricate_onepage_struct(page_rand);
+	/* return a page that looks kinda like a struct */
+	case 3:	fabricate_onepage_struct(page_rand);
 		return;
 
-	case 4:
-		gen_unicode_page(page_rand);
+	/* return a page of unicode nonsense. */
+	case 4:	gen_unicode_page(page_rand);
 		return;
 
 	default:
