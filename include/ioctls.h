@@ -47,6 +47,8 @@ const struct ioctl_group *get_random_ioctl_group(void);
 
 void pick_random_ioctl(const struct ioctl_group *, int childno);
 
+void dump_ioctls(void);
+
 #define IOCTL(_request) \
 	{ .request = _request, .name = #_request, }
 

@@ -30,6 +30,7 @@
 #include "signals.h"
 #include "shm.h"
 #include "syscall.h"
+#include "ioctls.h"
 #include "config.h"	// for VERSION
 
 char *progname = NULL;
@@ -114,6 +115,11 @@ int main(int argc, char* argv[])
 
 	if (show_syscall_list == TRUE) {
 		dump_syscall_tables();
+		goto out;
+	}
+
+	if (show_ioctl_list == TRUE) {
+		dump_ioctls();
 		goto out;
 	}
 

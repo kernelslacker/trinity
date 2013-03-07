@@ -14,6 +14,7 @@ extern bool do_specific_proto;
 extern char *specific_proto_optarg;
 extern bool dopause;
 extern bool show_syscall_list;
+extern bool show_ioctl_list;
 extern unsigned char quiet_level;
 extern bool verbose;
 extern bool monochrome;

@@ -94,6 +94,8 @@ Other useful arguments:
 
 --list will dump all available syscalls, and their syscall number.
 
+--ioctls will dump all available ioctls.
+
 #######################################################################
 
 Examples:
