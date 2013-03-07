@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <linux/kdev_t.h>
 
 #include "files.h"
 #include "shm.h"
@@ -300,4 +301,96 @@ void close_files(void)
 	}
 
 	nr_file_fds = 0;
+}
+
+static struct {
+	int major;
+	int minor;
+	char *name;
+} *block_devs, *char_devs, *misc_devs;
+
+static size_t bldevs, chrdevs, miscdevs;
+
+static void parse_proc_devices(void)
+{
+	FILE *fp;
+	char *name, *line = NULL;
+	size_t n = 0;
+	int block, major;
+	void *new;
+
+	fp = fopen("/proc/devices", "r");
+	if (!fp)
+		return;
+
+	block = 0;
+
+	while (getline(&line, &n, fp) >= 0) {
+		if (strcmp("Block devices:\n", line) == 0)
+			block = 1;
+		else if (sscanf(line, "%d %as", &major, &name) == 2) {
+			if (block) {
+				new = realloc(block_devs, (bldevs+1)*sizeof(*block_devs));
+				if (!new) {
+					free(name);
+					continue;
+				}
+				block_devs = new;
+				block_devs[bldevs].major = major;
+				block_devs[bldevs].minor = 0;
+				block_devs[bldevs].name = name;
+				bldevs++;
+			} else {
+				new = realloc(char_devs, (chrdevs+1)*sizeof(*char_devs));
+				if (!new) {
+					free(name);
+					continue;
+				}
+				char_devs = new;
+				char_devs[chrdevs].major = major;
+				char_devs[chrdevs].minor = 0;
+				char_devs[chrdevs].name = name;
+				chrdevs++;
+			}
+		}
+	}
+
+	fclose(fp);
+	free(line);
+}
+
+static void parse_proc_misc(void)
+{
+	FILE *fp;
+	char *name;
+	int minor;
+	void *new;
+
+	fp = fopen("/proc/misc", "r");
+	if (!fp)
+		return;
+
+	while (fscanf(fp, "%d %as", &minor, &name) == 2) {
+		new = realloc(misc_devs, (miscdevs+1)*sizeof(*misc_devs));
+		if (!new) {
+			free(name);
+			continue;
+		}
+		misc_devs = new;
+		misc_devs[miscdevs].major = 0;
+		misc_devs[miscdevs].minor = minor;
+		misc_devs[miscdevs].name = name;
+		miscdevs++;
+	}
+
+	fclose(fp);
+}
+
+void parse_devices(void)
+{
+	parse_proc_devices();
+	parse_proc_misc();
+
+	output(2, "Parsed %zu char devices, %zu block devices, %zu misc devices.\n",
+			chrdevs, bldevs, miscdevs);
 }

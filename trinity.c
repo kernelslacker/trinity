@@ -165,6 +165,8 @@ int main(int argc, char* argv[])
 
 	init_buffers();
 
+	parse_devices();
+
 	setup_main_signals();
 
 	if (check_tainted() != 0) {
