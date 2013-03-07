@@ -26,7 +26,7 @@ grep VERSION= Makefile | sed 's/=/ /' >> config.h
 echo "[*] Checking system headers."
 
 #############################################################################################
-# Test 1 : is /usr/include/linux/if_pppox.h new enough to feature pppol2tpin6/pppol2tpv3in6
+# is /usr/include/linux/if_pppox.h new enough to feature pppol2tpin6/pppol2tpv3in6
 #
 echo -n "[*] Checking if pppox can use pppol2tpin6.. "
 rm -f "$TMP" || exit 1
@@ -54,7 +54,7 @@ else
 fi
 
 #############################################################################################
-# Test 2 : is /usr/include/linux/if_pppox.h new enough to feature pppol2tpv3
+# is /usr/include/linux/if_pppox.h new enough to feature pppol2tpv3
 #
 echo -n "[*] Checking if pppox can use pppol2tv3.. "
 rm -f "$TMP" || exit 1
@@ -82,7 +82,7 @@ else
 fi
 
 #############################################################################################
-# Test 3 : is /usr/include/linux/if_pppox.h new enough to feature pptp
+# is /usr/include/linux/if_pppox.h new enough to feature pptp
 #
 echo -n "[*] Checking if pppox can use pptp.. "
 rm -f "$TMP" || exit 1
@@ -108,6 +108,33 @@ else
 	echo "[YES]"
 	echo "#define USE_PPPOX_PPTP 1" >> config.h
 fi
+
+#############################################################################################
+# is /usr/include/linux/llc.h new enough to feature LLC_OPT_PKTINFO
+#
+echo -n "[*] Checking if llc can use LLC_OPT_PKTINFO.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <stdio.h>
+#include <net/if.h>
+#include <linux/llc.h>
+
+void main()
+{
+	printf("%d\n", LLC_OPT_PKTINFO);
+}
+EOF
+
+gcc "$TMP.c" -o "$TMP" &>"$TMP.log"
+
+if [ ! -x "$TMP" ]; then
+	echo "[NO]"
+else
+	echo "[YES]"
+	echo "#define USE_LLC_OPT_PKTINFO 1" >> config.h
+fi
+
 
 #############################################################################################
 
