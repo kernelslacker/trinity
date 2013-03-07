@@ -325,7 +325,7 @@ static void gen_unicode_page(char *page)
 	page[rand() % page_size] = 0;
 }
 
-void regenerate_random_page(void)
+void generate_random_page(char *page)
 {
 	unsigned int i;
 	unsigned int type = rand() % 5;
@@ -334,31 +334,31 @@ void regenerate_random_page(void)
 	/* return a page of complete trash */
 	case 0:	/* bytes */
 		for (i = 0; i < page_size; i++)
-			page_rand[i++] = (unsigned char)rand();
+			page[i++] = (unsigned char)rand();
 		return;
 
 	case 1:	/* ints */
 		for (i = 0; i < (page_size / 2); i++) {
-			page_rand[i++] = 0;
-			page_rand[i++] = (unsigned char)rand();
+			page[i++] = 0;
+			page[i++] = (unsigned char)rand();
 		}
 		return;
 
 	case 2:	/* longs */
 		for (i = 0; i < (page_size / 4); i++) {
-			page_rand[i++] = 0;
-			page_rand[i++] = 0;
-			page_rand[i++] = 0;
-			page_rand[i++] = (unsigned char)rand();
+			page[i++] = 0;
+			page[i++] = 0;
+			page[i++] = 0;
+			page[i++] = (unsigned char)rand();
 		}
 		return;
 
 	/* return a page that looks kinda like a struct */
-	case 3:	fabricate_onepage_struct(page_rand);
+	case 3:	fabricate_onepage_struct(page);
 		return;
 
 	/* return a page of unicode nonsense. */
-	case 4:	gen_unicode_page(page_rand);
+	case 4:	gen_unicode_page(page);
 		return;
 
 	default:
@@ -658,7 +658,7 @@ fallback:
 			if (suffix == NULL)
 				goto fallback;
 
-			fabricate_onepage_struct(suffix);
+			generate_random_page(suffix);
 
 			(void) strcat(pathname, suffix);
 			if ((rand() % 2) == 0)

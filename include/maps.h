@@ -1,7 +1,7 @@
 #ifndef _MAPS_H
 #define _MAPS_H 1
 
-void regenerate_random_page(void);
+void generate_random_page(char *page);
 
 extern char *page_zeros;
 extern char *page_0xff;
