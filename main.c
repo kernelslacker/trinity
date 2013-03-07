@@ -35,7 +35,7 @@ static void regenerate(void)
 	destroy_maps();
 	setup_maps();
 
-	regenerate_random_page();
+	generate_random_page(page_rand);
 
 	shm->regenerating = FALSE;
 }

@@ -198,6 +198,6 @@ void init_buffers(void)
 
 	setup_maps();
 
-	// regenerate_random_page may end up using maps, so has to be last.
-	regenerate_random_page();
+	// generate_random_page may end up using maps, so has to be last.
+	generate_random_page(page_rand);
 }
