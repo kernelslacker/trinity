@@ -87,3 +87,34 @@ void pick_random_ioctl(const struct ioctl_group *grp, int childno)
 
 	shm->a2[childno] = grp->ioctls[ioctlnr].request;
 }
+
+void dump_ioctls(void)
+{
+	int i;
+	size_t j;
+
+	for (i=0; i < grps_cnt; ++i) {
+		if (grps[i]->name)
+			printf("- %s:\n", grps[i]->name);
+		else if (grps[i]->devtype) {
+			if (grps[i]->devtype == DEV_MISC)
+				printf("- misc devices");
+			else if (grps[i]->devtype == DEV_CHAR)
+				printf("- char devices");
+			else if (grps[i]->devtype == DEV_BLOCK)
+				printf("- block devices");
+			for (j=0; j < grps[i]->devs_cnt; ++j)
+				printf("%s '%s'",
+					j == 0 ? "" : ",",
+					grps[i]->devs[j]);
+			printf(":\n");
+		} else
+			printf("- <unknown>:\n");
+
+		for (j=0; j < grps[i]->ioctls_cnt; ++j) {
+			printf("  - 0x%08x : %s\n",
+					grps[i]->ioctls[j].request,
+					grps[i]->ioctls[j].name ? : "");
+		}
+	}
+}

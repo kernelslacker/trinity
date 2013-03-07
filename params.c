@@ -22,6 +22,7 @@ bool do_specific_proto = FALSE;
 
 bool dopause = FALSE;
 bool show_syscall_list = FALSE;
+bool show_ioctl_list = FALSE;
 unsigned char quiet_level = 0;
 bool verbose = FALSE;
 bool monochrome = FALSE;
@@ -44,6 +45,7 @@ static void usage(void)
 	fprintf(stderr, " --exclude,-x: don't call a specific syscall\n");
 	fprintf(stderr, " --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
 	fprintf(stderr, " --list,-L: list all syscalls known on this architecture.\n");
+	fprintf(stderr, " --ioctls,-I: list all ioctls.\n");
 	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
 	fprintf(stderr, " --monochrome,-m: don't output ANSI codes\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
@@ -67,6 +69,7 @@ static const struct option longopts[] = {
 	{ "group", required_argument, NULL, 'g' },
 	{ "help", no_argument, NULL, 'h' },
 	{ "list", no_argument, NULL, 'L' },
+	{ "ioctls", no_argument, NULL, 'I' },
 	{ "logging", required_argument, NULL, 'l' },
 	{ "monochrome", no_argument, NULL, 'm' },
 	{ "proto", required_argument, NULL, 'P' },
@@ -81,7 +84,7 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "c:C:dDg:hl:LN:mP:pqs:SV:vx:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:C:dDg:hIl:LN:mP:pqs:SV:vx:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -121,6 +124,10 @@ void parse_args(int argc, char *argv[])
 		case 'h':
 			usage();
 			exit(EXIT_SUCCESS);
+
+		case 'I':
+			show_ioctl_list = TRUE;
+			break;
 
 		case 'l':
 			if (!strcmp(optarg, "off"))
