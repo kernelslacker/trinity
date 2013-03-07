@@ -321,6 +321,8 @@ static void gen_unicode_page(char *page)
 			break;
 		}
 	}
+
+	page[rand() % page_size] = 0;
 }
 
 void regenerate_random_page(void)
