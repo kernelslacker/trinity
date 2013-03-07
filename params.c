@@ -59,26 +59,27 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
+static const struct option longopts[] = {
+	{ "children", required_argument, NULL, 'C' },
+	{ "dangerous", no_argument, NULL, 'd' },
+	{ "debug", no_argument, NULL, 'D' },
+	{ "exclude", required_argument, NULL, 'x' },
+	{ "group", required_argument, NULL, 'g' },
+	{ "help", no_argument, NULL, 'h' },
+	{ "list", no_argument, NULL, 'L' },
+	{ "logging", required_argument, NULL, 'l' },
+	{ "monochrome", no_argument, NULL, 'm' },
+	{ "proto", required_argument, NULL, 'P' },
+	{ "quiet", no_argument, NULL, 'q' },
+	{ "syslog", no_argument, NULL, 'S' },
+	{ "victims", required_argument, NULL, 'V' },
+	{ "verbose", no_argument, NULL, 'v' },
+	{ NULL, 0, NULL, 0 } };
+
+
 void parse_args(int argc, char *argv[])
 {
 	int opt;
-
-	struct option longopts[] = {
-		{ "children", required_argument, NULL, 'C' },
-		{ "dangerous", no_argument, NULL, 'd' },
-		{ "debug", no_argument, NULL, 'D' },
-		{ "exclude", required_argument, NULL, 'x' },
-		{ "group", required_argument, NULL, 'g' },
-		{ "help", no_argument, NULL, 'h' },
-		{ "list", no_argument, NULL, 'L' },
-		{ "logging", required_argument, NULL, 'l' },
-		{ "monochrome", no_argument, NULL, 'm' },
-		{ "proto", required_argument, NULL, 'P' },
-		{ "quiet", no_argument, NULL, 'q' },
-		{ "syslog", no_argument, NULL, 'S' },
-		{ "victims", required_argument, NULL, 'V' },
-		{ "verbose", no_argument, NULL, 'v' },
-		{ NULL, 0, NULL, 0 } };
 
 	while ((opt = getopt_long(argc, argv, "c:C:dDg:hl:LN:mP:pqs:SV:vx:", longopts, NULL)) != -1) {
 		switch (opt) {
