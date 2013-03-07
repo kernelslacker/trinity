@@ -254,13 +254,7 @@ void fabricate_onepage_struct(char *page)
 void regenerate_random_page(void)
 {
 	unsigned int i;
-	unsigned int type = rand() % 3;
-
-	/* sometimes return a page that looks kinda like a struct */
-	if ((rand() % 100) < 50) {
-		fabricate_onepage_struct(page_rand);
-		return;
-	}
+	unsigned int type = rand() % 4;
 
 	/* The rest of the time, return a page of complete trash */
 	switch (type) {
@@ -284,6 +278,11 @@ void regenerate_random_page(void)
 			page_rand[i++] = (unsigned char)rand();
 		}
 		return;
+
+	case 3:	/* sometimes return a page that looks kinda like a struct */
+		fabricate_onepage_struct(page_rand);
+		return;
+
 	default:
 		BUG("unreachable!\n");
 		return;
