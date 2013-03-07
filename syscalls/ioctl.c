@@ -7,43 +7,23 @@
 #include "sanitise.h"
 #include "maps.h"
 #include "shm.h"
+#include "ioctls.h"
 
-struct ioctl {
-	const char *name;
-	unsigned int request;
-	void (*sanitise)(int childno);
-};
-
-const struct ioctl ioctllist[] = {
-#include "ioctls/scsi-generic.h"
-#include "ioctls/framebuffer.h"
-#include "ioctls/console.h"
-#include "ioctls/cdrom.h"
-#include "ioctls/scsi.h"
-#include "ioctls/tty.h"
-#include "ioctls/vt.h"
-#include "ioctls/socket.h"
-#include "ioctls/snd.h"
-#include "ioctls/mem.h"
-#include "ioctls/sisfb.h"
-};
-
-static void generic_sanitise_ioctl(int childno)
+static void ioctl_mangle_cmd(int childno)
 {
 	unsigned int i;
 
-	/* One time in 50, mangle cmd. */
-	if ((rand() % 50)==0) {
+	/* mangle the cmd by ORing up to 4 random bits */
+	for (i=0; i < (unsigned int)(rand() % 4); i++)
+		shm->a2[childno] |= 1L << (rand() % 32);
 
-		/* mangle the cmd by ORing up to 4 random bits */
-		for (i=0; i < (unsigned int)(rand() % 4); i++)
-			shm->a2[childno] |= 1L << (rand() % 32);
+	/* mangle the cmd by ANDing up to 4 random bits */
+	for (i=0; i < (unsigned int)(rand() % 4); i++)
+		shm->a2[childno] &= 1L << (rand() % 32);
+}
 
-		/* mangle the cmd by ANDing up to 4 random bits */
-		for (i=0; i < (unsigned int)(rand() % 4); i++)
-			shm->a2[childno] &= 1L << (rand() % 32);
-	}
-
+static void ioctl_mangle_arg(int childno)
+{
 	/* the argument could mean anything, because ioctl sucks like that. */
 	switch (rand() % 2) {
 	case 0:	shm->a3[childno] = get_interesting_32bit_value();
@@ -56,16 +36,31 @@ static void generic_sanitise_ioctl(int childno)
 	}
 }
 
+static void generic_sanitise_ioctl(int childno)
+{
+	if ((rand() % 50)==0)
+		ioctl_mangle_cmd(childno);
+
+	ioctl_mangle_arg(childno);
+}
+
 static void sanitise_ioctl(int childno)
 {
-	int ioctlnr;
+	const struct ioctl_group *grp;
 
-	ioctlnr = rand() % ARRAY_SIZE(ioctllist);
-	shm->a2[childno] = ioctllist[ioctlnr].request;
-
-	if (ioctllist[ioctlnr].sanitise)
-		ioctllist[ioctlnr].sanitise(childno);
+	if (rand() % 100 == 0)
+		grp = get_random_ioctl_group();
 	else
+		grp = find_ioctl_group(shm->a1[childno]);
+
+	if (grp) {
+		ioctl_mangle_arg(childno);
+
+		grp->sanitise(grp, childno);
+
+		if (rand() % 100 == 0)
+			ioctl_mangle_cmd(childno);
+	} else
 		generic_sanitise_ioctl(childno);
 }
 
