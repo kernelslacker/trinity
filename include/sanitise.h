@@ -11,9 +11,6 @@ void sanitise_ioctl_sg_io(int childno);
 
 void generic_sanitise(int childno);
 
-extern char * filebuffer;
-extern unsigned long filebuffersize;
-
 unsigned long get_interesting_value(void);
 unsigned long get_interesting_32bit_value(void);
 unsigned long get_reg(void);

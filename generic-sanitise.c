@@ -13,9 +13,6 @@
 #include "maps.h"
 #include "shm.h"
 
-char * filebuffer = NULL;
-unsigned long filebuffersize = 0;
-
 /*
  * This function gets called before we call ->sanitise routines.
  */
