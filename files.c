@@ -12,8 +12,9 @@
 
 #include "trinity.h"	// __unused__
 #include "files.h"
-#include "shm.h"
 #include "log.h"
+#include "maps.h"
+#include "shm.h"
 #include "sanitise.h"
 #include "constants.h"
 
@@ -307,6 +308,33 @@ void close_files(void)
 char * get_filename(void)
 {
 	return fileindex[rand() % files_in_index];
+}
+
+char * generate_pathname(void)
+{
+	char *pathname = get_filename();
+	char *suffix;
+	int len = strlen(pathname);
+
+	/* 90% of the time, we just return an unmangled filename */
+	if ((rand() % 100) > 10)
+		return get_filename();
+
+	/* Create a bogus filename with junk at the end of an existing one. */
+	suffix = malloc(page_size);
+	if (suffix == NULL)
+		return get_filename();	// give up.
+
+	generate_random_page(suffix);
+
+//FIXME: We're scribbling past the length of pathname here.
+	(void) strcat(pathname, suffix);
+
+	/* 50% of the time, make it look like a dir */
+	if ((rand() % 2) == 0)
+		pathname[len] = '/';
+
+	return pathname;
 }
 
 
