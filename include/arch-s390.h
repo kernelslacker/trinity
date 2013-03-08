@@ -1,6 +1,7 @@
 #ifdef __s390x__
 
 #define KERNEL_ADDR	0UL
+#define MODULE_ADDR     0xffffffffa0000000L	// FIXME: Placeholder
 #define TASK_SIZE	~0UL
 #define PAGE_SHIFT	12
 #define PTE_FILE_MAX_BITS 59
