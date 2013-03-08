@@ -1,6 +1,5 @@
 /* Syscalls from arch/sparc/kernel/systbls_{32,64}.S as of 2.6.31rc2 */
 
-#include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"

@@ -1,6 +1,5 @@
 /* Syscalls from arch/powerpc/include/asm/systbl.h as of 2.6.31rc2 */
 
-#include "trinity.h"
 #include "sanitise.h"
 
 #include <fcntl.h>

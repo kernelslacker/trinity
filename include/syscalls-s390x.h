@@ -1,7 +1,6 @@
 #ifndef _SYSCALLS_S390X_H
 #define _SYSCALLS_S390X_H
 
-#include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"

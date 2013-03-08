@@ -1,6 +1,5 @@
 /* Syscalls from arch/ia64/kernel/entry.S as of 2.6.31rc2 */
 
-#include "trinity.h"
 #include "sanitise.h"
 
 #include <fcntl.h>

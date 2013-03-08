@@ -1,4 +1,3 @@
-#include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"

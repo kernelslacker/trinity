@@ -2,7 +2,6 @@
  * derived from linux/arch/arm/kernel/calls.S
  */
 
-#include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"
