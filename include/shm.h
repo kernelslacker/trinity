@@ -6,7 +6,8 @@
 
 #include <stdio.h>
 
-#include "trinity.h"
+#include "types.h"
+#include "exit.h"
 #include "constants.h"
 
 struct shm_s {

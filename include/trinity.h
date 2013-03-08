@@ -16,8 +16,6 @@ void do_main_loop(void);
 
 extern unsigned int page_size;
 
-extern unsigned char exit_reason;
-
 extern bool biarch;
 
 extern bool ignore_tainted;
@@ -28,20 +26,6 @@ void init_watchdog(void);
 extern unsigned int user_specified_children;
 
 #define UNUSED(x) (void)(x)
-
-enum exit_reasons {
-	STILL_RUNNING = 0,
-	EXIT_NO_SYSCALLS_ENABLED = 1,
-	EXIT_REACHED_COUNT = 2,
-	EXIT_NO_FDS = 3,
-	EXIT_LOST_PID_SLOT = 4,
-	EXIT_PID_OUT_OF_RANGE = 5,
-	EXIT_SIGINT = 6,
-	EXIT_KERNEL_TAINTED = 7,
-	EXIT_SHM_CORRUPTION = 8,
-	EXIT_REPARENT_PROBLEM = 9,
-	EXIT_NO_FILES = 10,
-};
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 

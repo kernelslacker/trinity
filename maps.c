@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include "trinity.h"	// page_size
 #include "arch.h"
 #include "maps.h"
 #include "log.h"
