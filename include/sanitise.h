@@ -24,6 +24,7 @@ unsigned int get_pid(void);
 char * get_filename(void);
 int get_random_fd(void);
 
+void gen_unicode_page(char *page);
 void fabricate_onepage_struct(char *page);
 
 #endif	/* _SANITISE_H */
