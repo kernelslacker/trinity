@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <linux/kdev_t.h>
 
+#include "trinity.h"	// __unused__
 #include "files.h"
 #include "shm.h"
 #include "log.h"

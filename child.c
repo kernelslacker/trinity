@@ -13,6 +13,7 @@
 #include <sys/resource.h>
 #include <sys/prctl.h>
 
+#include "trinity.h"	// biarch
 #include "child.h"
 #include "syscall.h"
 #include "log.h"

@@ -6,6 +6,7 @@
 
 #include <linux/mman.h>
 #include <stdlib.h>
+#include "trinity.h"	// page_size
 #include "arch.h"
 #include "sanitise.h"
 #include "shm.h"

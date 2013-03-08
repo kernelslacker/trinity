@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
  */
+#include "trinity.h"	// page_size
 #include "sanitise.h"
 #include "shm.h"
 

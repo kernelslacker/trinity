@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
+#include "trinity.h"
 #include "child.h"
 #include "signals.h"
 #include "shm.h"
