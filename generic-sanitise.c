@@ -111,6 +111,9 @@ void * get_non_null_address(void)
 	return _get_address(FALSE);
 }
 
+/*
+ * This function gets called before we call ->sanitise routines.
+ */
 unsigned long get_reg(void)
 {
 	if ((rand() % 2) == 0)

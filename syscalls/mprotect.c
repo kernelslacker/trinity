@@ -15,6 +15,7 @@ static void sanitise_mprotect(int childno)
 
 retry_end:
 	end = shm->a1[childno] + shm->a2[childno];
+	/* Length must not be zero. */
 	if (shm->a2[childno] == 0) {
 		shm->a2[childno] = get_reg();
 		goto retry_end;

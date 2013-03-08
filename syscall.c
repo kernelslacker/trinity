@@ -103,6 +103,9 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	return ret;
 }
 
+/*
+ * Generate arguments, print them out, then call the syscall.
+ */
 long mkcall(int childno)
 {
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
