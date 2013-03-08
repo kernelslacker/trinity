@@ -74,16 +74,17 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	switch (argtype) {
 	case ARG_UNDEFINED:
 	case ARG_RANDOM_INT:
-		return (unsigned long)rand();
+		return (unsigned long) rand();
 
 	case ARG_FD:
 		return get_random_fd();
+
 	case ARG_LEN:
-		return (unsigned long)get_len();
+		return (unsigned long) get_len();
 
 	case ARG_ADDRESS:
 		if ((rand() % 2) == 0)
-			return (unsigned long)get_address();
+			return (unsigned long) get_address();
 
 		/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
 		 * and munge that instead of returning a new one from get_address() */
@@ -105,9 +106,11 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return addr;
 
 	case ARG_NON_NULL_ADDRESS:
-		return (unsigned long)get_non_null_address();
+		return (unsigned long) get_non_null_address();
+
 	case ARG_PID:
-		return (unsigned long)get_pid();
+		return (unsigned long) get_pid();
+
 	case ARG_RANGE:
 		switch (argnum) {
 		case 1:	low = syscalls[call].entry->low1range;
