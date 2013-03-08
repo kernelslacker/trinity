@@ -1,6 +1,5 @@
 /* Syscalls from  arch/mips/kernel/scall32-o32.S */
 
-#include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"

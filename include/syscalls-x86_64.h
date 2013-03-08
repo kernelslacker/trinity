@@ -3,7 +3,6 @@
 
 /* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.8rc1 */
 
-#include "trinity.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"
