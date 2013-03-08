@@ -68,8 +68,12 @@ static const struct ioctl vt_ioctls[] = {
 	IOCTL(KDGETKEYCODE),
 	IOCTL(KDSETKEYCODE),
 	IOCTL(KDSIGACCEPT),
+#ifdef KDGKBMUTE
 	IOCTL(KDGKBMUTE),
+#endif
+#ifdef KDSKBMUTE
 	IOCTL(KDSKBMUTE),
+#endif
 	IOCTL(KDKBDREP),
 	IOCTL(KDFONTOP),
 
