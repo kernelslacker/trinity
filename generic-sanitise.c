@@ -295,10 +295,6 @@ static unsigned long find_previous_arg_address(unsigned int argnum, unsigned int
 	return addr;
 }
 
-char * get_filename(void)
-{
-	return fileindex[rand() % files_in_index];
-}
 
 static unsigned long fill_arg(int childno, int call, int argnum)
 {

@@ -304,6 +304,12 @@ void close_files(void)
 	nr_file_fds = 0;
 }
 
+char * get_filename(void)
+{
+	return fileindex[rand() % files_in_index];
+}
+
+
 static struct {
 	int major;
 	int minor;
