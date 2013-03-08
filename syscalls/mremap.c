@@ -1,17 +1,4 @@
 /*
- * SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
-	unsigned long, new_len, unsigned long, flags,
-	unsigned long, new_addr)
- */
-
-#include <linux/mman.h>
-#include <stdlib.h>
-#include "trinity.h"	// page_size
-#include "arch.h"
-#include "sanitise.h"
-#include "shm.h"
-
-/*
  * asmlinkage unsigned long sys_mremap(unsigned long addr,
  *   unsigned long old_len, unsigned long new_len,
  *   unsigned long flags, unsigned long new_addr)
@@ -20,6 +7,12 @@
  * It might be more useful once we start passing around valid maps instead of just
  * trying random addresses.
  */
+#include <linux/mman.h>
+#include <stdlib.h>
+#include "trinity.h"	// page_size
+#include "arch.h"
+#include "sanitise.h"
+#include "shm.h"
 
 static void sanitise_mremap(int childno)
 {
