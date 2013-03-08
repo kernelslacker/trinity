@@ -1,4 +1,5 @@
 #define KERNEL_ADDR	0xc0100220
+#define MODULE_ADDR     0xa0000000	// FIXME: Placeholder
 
 #define PAGE_OFFSET 0xC0000000
 #define TASK_SIZE (PAGE_OFFSET)

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "arch.h"
 #include "log.h"	// for BUG
 
 unsigned long get_interesting_32bit_value(void)
@@ -67,6 +68,28 @@ unsigned long get_interesting_32bit_value(void)
 	return 0;
 }
 
+static unsigned long per_arch_interesting_addr(unsigned long low)
+{
+	int i;
+
+#if defined(__x86_64__)
+	i = rand() % 4;
+
+	switch (i) {
+	case 0: return 0x00007fffffffffff;			// x86-64 canonical addr end.
+	case 1: return 0x0000800000000000;			// First x86-64 non-canonical addr
+	case 2: return 0xffff800000000000 | (low << 4);		// x86-64 canonical addr range 2 begin
+	case 3: return VDSO_ADDR | (low & 0x0fffff);
+	default: break;
+	}
+#endif
+
+	// FIXME: Add more arch specific addresses here.
+
+	return 0;
+}
+
+
 unsigned long get_interesting_value(void)
 {
 #if __WORDSIZE == 32
@@ -77,28 +100,25 @@ unsigned long get_interesting_value(void)
 
 	low = get_interesting_32bit_value();
 
-	i = rand() % 18;
+	i = rand() % 14;
 
 	switch (i) {
 	case 0: return 0;
-	case 1: return 0x0000000100000000;
-	case 2: return 0x7fffffff00000000;
-	case 3: return 0x8000000000000000;
-	case 4: return 0xffffffff00000000;
-	case 5: return low;
-	case 6: return 0x0000000100000000 | low;
-	case 7: return 0x00007fffffffffff;			// x86-64 canonical addr end.
-	case 8: return 0x0000800000000000;			// First x86-64 non-canonical addr
-	case 9: return 0x7fffffff00000000 | low;
-	case 10: return 0x8000000000000000 | low;
-	// FIXME: Use per-arch #defines for these
-	case 11: return 0xffff800000000000 | (low << 4);	// x86-64 canonical addr range 2 begin
-	case 12: return 0xffff880000000000 | (low << 4);	// x86-64 PAGE_OFFSET
-	case 13: return 0xffffffff00000000 | low;
-	case 14: return 0xffffffff80000000 | (low & 0xffffff);	// x86-64 kernel text address
-	case 15: return 0xffffffffa0000000 | (low & 0xffffff);	// x86-64 module space
-	case 16: return 0xffffffffff600000 | (low & 0x0fffff);	// x86-64 vdso
-	case 17: return 0xffffffffffffff00 | (rand() % 256);
+	case 1: return low;
+	case 2: return 0x0000000100000000;
+	case 3: return 0x0000000100000000 | low;
+	case 4: return 0x7fffffff00000000;
+	case 5: return 0x8000000000000000;
+	case 6: return 0xffffffff00000000;
+	case 7: return 0x7fffffff00000000 | low;
+	case 8: return 0x8000000000000000 | low;
+	case 9: return 0xffffffff00000000 | low;
+	case 10: return 0xffffffffffffff00 | (rand() % 256);
+	case 11: return PAGE_OFFSET | (low << 4);
+	case 12: return KERNEL_ADDR | (low & 0xffffff);
+	case 13: return MODULE_ADDR | (low & 0xffffff);
+	case 14: return per_arch_interesting_addr(low);
+
 	default:
 		BUG("unreachable!\n");
 		return 0;
