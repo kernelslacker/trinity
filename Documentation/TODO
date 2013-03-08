@@ -1,3 +1,45 @@
+* Rewrite the fd generation code.
+  - Don't generate so many fd's (faster startup)
+  - kill of NR_FILE_FDS
+  - open some files in the child too after forking.
+    - this requires a child-local fd mapping table.
+      Maybe we can then reduce the size of the shared shm->file_fds
+  - When requesting an fd, occasionally generate a new one.
+
+* 'syscall chains'.
+  These are fragments of things that a real program would do.
+  For example   open->read->close,  open->mmap->access mem->close
+  The main loop would randomly decide what a child is going to do
+  syscall chains, or random syscalls.
+
+* Ability to mark some chains as 'NEEDS_ROOT'.
+  At the same time, rework startup so that if we're root, when we fork
+  children, we decide whether or not to drop privs by looking at chain->flags
+  After completing a root-only chain, we either exit, or run other root-only chains. 
+
+* rework ioctl
+  When we have the syscall chains, and NEEDS_ROOT in place..
+  - pick known ioctl at random
+  - lookup the correct /dev/node
+  - ->sanitise routines for each ioctl we know about to get request/argp right.
+  start with: DRM, Networking, ALSA,..
+  After calling ioctl, what then ? More of the same ioctl's for a while before exiting child.
+
+* Destroy structures we allocated during a syscalls ->sanitise in a ->post method.
+  - On return from the syscall, we don't call the destructor immediately.
+    We pick a small random number, and do N other syscalls before we do the destruction.
+    This requires us to create a list of work to be done later, along with a pointer
+    to any allocated data.
+  - some ancillary data needs to be destroyed immediately after the syscall
+    (it's pointless keeping around mangled pathnames for eg).
+
+* generic linked list implementation
+  - convert file list usage
+  - memory allocation usage
+
+* file list struct extensions
+  - use count
+
 * Clean up logging.
   - Make -D use a separate debug log file
   - audit printfs and change to output/debugf as necessary
@@ -15,42 +57,26 @@
   - check shm->parent_pid still alive in watchdog
   - RT watchdog task ? (needs initial startup as root, and drop privs afterwards).
 
+* filename cache.
+  Similar to the socketcache. Create on startup, then on loading, invalidate entries
+  that aren't present (/proc/pid etc).
+  This should improve reproducability in some cases. Right now, when a syscall
+  says "open the 5231st filename in the list", it differs across runs because we're
+  rebuilding the list, and the system state means stuff moves around.
+
 * Change regeneration code.
   Instead of every n syscalls, make it happen after 15 minutes.
 
 * Improve socket generation to not generate duplicates.
-
-* Revisit fuzzing ptrace.
-  - It's disabled currently because of situations like..
-  child a traces child b
-  child a segfaults
-  child b never proceeds, and doesn't get untraced.
-
-* Finish annotating syscall return types
 
 * Based upon the first syscall the child is going to call, bias the subsequent
   random syscalls to be calls that use the return type from syscall 1.
   Ie, if syscall #1 is going to be a syscall that returns an fd, do a bunch
   of syscalls that work on fd's.
   This will give us a sort of auto-grouping of syscalls.
-
-* Destroy structures we allocated during a syscalls ->sanitise in a ->post method.
-  - On return from the syscall, we don't call the destructor immediately.
-    We pick a small random number, and do N other syscalls before we do the destruction.
-    This requires us to create a list of work to be done later, along with a pointer
-    to any allocated data.
-
-* Rewrite the fd generation code.
-  - Don't generate so many fd's (faster startup)
-  - When requesting an fd, occasionally generate a new one.
+  (This might be not really necessary once we have syscall chains)
 
 * Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
-
-* There are a few syscalls with duplicate '64' variants.
-  They take the same arguments, and vary only in name.
-  Two possibilities.
-  1. what I did for fcntl[64] in 22b4b44ececaf59f9178f52788e3bcfe92535574
-  2. leave the dupes, just for the sake of getting the ->name right.
 
 * Store a field in the syscall definition on when it was added upstream.
   This will allow for things like "just fuzz syscalls added since 2.6.32"
@@ -61,14 +87,6 @@
   x86-64: Build both a 64bit and a 32bit executable.
   *: Move arch specific syscalls into syscalls/arch/
   *: Move addresses in get_interesting_value() to per-arch headers.
-  Other arch support. S390? fully native PPC64? (PPC64 currently requires 32-bit glibc-kernheaders)
-
-* filename cache.
-  Similar to the socketcache. Create on startup, then on loading, invalidate entries
-  that aren't present (/proc/pid etc).
-  This should improve reproducability in some cases. Right now, when a syscall
-  says "open the 5231st filename in the list", it differs across runs because we're
-  rebuilding the list, and the system state means stuff moves around.
 
 * Perform some checks on return from syscall
   - check padding between struct members is zeroed.
@@ -76,10 +94,7 @@
     on return whether any of them got clobbered.
   - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
 
-* --oneshot
-  ./trinity --oneshot futex -1,0x40000000,1,2,3,4
-
-* run tests in different namespaces, personalities.
+* run children in different namespaces, personalities.
 
 * Output errno distribution on exit
 
@@ -88,8 +103,8 @@
 * -x & -C should build a syscall table & adjust max_nr_syscalls
 
 * allow for multiple -G's (after there is more than 'vm')
-
-* ARG_MODE_T
+  I might kill off -G. It might be better to just implement chains
+  that do various VM calls, or various network calls etc etc
 
 * use inotify to check if /proc/sys/kernel/tainted changes instead of polling.
   (does inotify work on procfs?)
@@ -114,33 +129,28 @@
     (and 32bit in the 64bit path)
   - parameter for the dir/file randomness bias
 
-* 'syscall chains'.
-  These are fragments of things that a real program would do.
-  For example   open->read->close,  open->mmap->access mem->close
-  The main loop would randomly decide what a child is going to do
-  syscall chains, or random syscalls.
+* Some of the syscalls marked AVOID are done so for good reason.
+  - Make the VM syscalls work on their own private mappings instead of page_rand
+    Right now, if mremap makes page_rand unreadable for some reason, we segfault.
 
-* Ability to mark some chains as 'NEEDS_ROOT'.
-  At the same time, rework startup so that if we're root, when we fork
-  children, we decide whether or not to drop privs by looking at chain->flags
-  After completing a root-only chain, we either exit, or run other root-only chains. 
-
-* rework ioctl
-  When we have the syscall chains, and NEEDS_ROOT in place..
-  - pick known ioctl at random
-  - lookup the correct /dev/node
-  - ->sanitise routines for each ioctl we know about to get request/argp right.
-  start with: DRM, Networking, ALSA,..
-
-* generic linked list implementation
-  - convert file list usage
-  - memory allocation usage
-
-* file list struct extensions
-  - use count
-
-* more multiplexed syscalls need .sanitise routines to pass the right args.
-  - fcntl
+  - Revisit fuzzing ptrace.
+    - It's disabled currently because of situations like..
+    child a traces child b
+    child a segfaults
+    child b never proceeds, and doesn't get untraced.
 
 * When we fuzz execve, do an extra fork, and exit the child.
 
+* Further syscall annotation improvements
+  - There are a few syscalls with duplicate '64' variants.
+    They take the same arguments, and vary only in name.
+    Two possibilities.
+    1. what I did for fcntl[64] in 22b4b44ececaf59f9178f52788e3bcfe92535574
+    2. leave the dupes, just for the sake of getting the ->name right.
+
+  - more multiplexed syscalls need .sanitise routines to pass the right args.
+    - fcntl
+
+  - ARG_MODE_T
+
+  -  Finish annotating syscall return types
