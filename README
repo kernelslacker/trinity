@@ -47,9 +47,9 @@ The intelligence features include:
   passed is ensured to fit within that range.
 
 
-Trinity logs it's output to a file, and fsync's the file before
-it actually makes the system call. This way, should you trigger something
-which panics the kernel, you should be able to find out exactly what
+Trinity logs it's output to a files (1 for each child process), and fsync's
+the files before it actually makes the system call. This way, should you trigger
+something which panics the kernel, you should be able to find out exactly what
 happened by examining the log.
 
 There are several test harnesses provided (test-*.sh), which run trinity in
@@ -58,50 +58,61 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 
 ######### options ###############################################
 
+ --quiet/-q: reduce verbosity.
+   Specify one to not output register values, or twice to also suppress syscall count,
+   and just reseed values.
+
+ --verbose: increase verbosity.
+
+ -D: Debug mode.
+     This is useful for catching core dumps if trinity is segfaulting, as by default
+     the child processes ignore those signals.
+
  -sN: use N as random seed.  (Omitting this uses time of day as a seed).
+  Note: There are currently a few bugs that mean no two runs are necessary 100%
+  identical with the same seed. See the TODO for details.
 
-There exist a number of further options that define what kinds of values are passed
-in registers to the syscalls.
+ --list/-L: list known syscalls and their offsets
 
- -z:  Use all zeros as register parameters.
-This calls every syscall with zeros in each of the registers in turn, in
-every possible combination, with random junk in the other registers.
-Useful for testing for missing NULL checks.
+ --monochrome/-m: Don't output ANSI control codes
 
+ --proto/-P: For network sockets, only use a specific packet family.
 
+ --victims/-V: Victim file/dirs.  By default, on startup trinity tree-walks /dev, /sys and /proc.
+     Using this option you can specify a different path.
+     (Currently limited to just one path)
 
-There also exist some options which apply to all available modes.
+ -p: Pause after making a syscall
 
--bN: begin at offset N.
-Useful for reproducing bugs that start after a certain # of runs.
-*note*, this feature is currently broken. It passes the correct seed, but
- as we don't know how much entropy was used up between seed and N,
- runs won't be identical.
+ --children/-C: Number of child processes (Max: 64)
 
--cN: do syscall N with random inputs.
-Good for concentrating on a certain syscall, if for eg, you just added one.
+ -x: Exclude a syscall from being called.  Useful when there's a known kernel bug
+     you keep hitting that you want to avoid.
 
-Other useful arguments:
+ -cN: do syscall N with random inputs.
+      Good for concentrating on a certain syscall, if for eg, you just added one.
 
--g vm
- Just call VM related syscalls
+ --group/-g vm
+   Just call VM related syscalls
 
--l off
- This disables logging. Useful if you have a serial console, though you
- will likely lose any information about what system call was being called,
- what maps got set up etc. Does make things go considerably faster however,
- as it no longer fsync()'s after every syscall
+ --logging/-l off: This disables logging. Useful if you have a serial console, though you
+         will likely lose any information about what system call was being called,
+         what maps got set up etc. Does make things go considerably faster however,
+         as it no longer fsync()'s after every syscall
 
---list will dump all available syscalls, and their syscall number.
-
---ioctls will dump all available ioctls.
+--ioctls/-I will dump all available ioctls.
 
 #######################################################################
 
 Examples:
 ./trinity -c splice
-Stress test the splice syscall, with random parameters, but sanitise
-the passed params so they look almost sensible.
+Stress test the splice syscall
+
+./trinity -x splice
+Call every syscall except for splice.
+
+./trinity -qq -l off -C16
+Turn off logging, and suppress most output to run as fast as possible. Use 16 child processes
 
 
 #######################################################################
@@ -117,7 +128,8 @@ WARNINGS:
 
 Reporting bugs upstream:
 If you find a kernel bug using trinity, first check the list at
-http://www.codemonkey.org.uk/projects/trinity/bugs-found.html
+http://www.codemonkey.org.uk/projects/trinity/bugs-found.php
+
 You may find that the bug is either already fixed (in which case
 a git commit hash should point to the fix), or there will be a link
 to an existing upstream report on the bug.
