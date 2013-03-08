@@ -315,7 +315,7 @@ char * generate_pathname(void)
 	char *newpath;
 	int len = strlen(pathname);
 
-	/* 90% of the time, we just return an unmangled filename */
+	/* 90% chance of returning an unmangled filename */
 	if ((rand() % 100) > 10)
 		return get_filename();
 
@@ -328,7 +328,7 @@ char * generate_pathname(void)
 
 	(void) strncpy(newpath, pathname, len);
 
-	/* 50% of the time, make it look like a dir */
+	/* 50/50 chance of making it look like a dir */
 	if ((rand() % 2) == 0)
 		newpath[len] = '/';
 

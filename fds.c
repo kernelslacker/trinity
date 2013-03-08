@@ -117,12 +117,11 @@ do_pipe:
 
 int get_random_fd(void)
 {
-	/* 25% of the time, return something new. */
+	/* 25% chance of returning something new. */
 	if ((rand() % 4) == 0)
 		return get_new_random_fd();
 
 	/* the rest of the time, return the same fd as last time. */
-
 regen:
 	if (shm->fd_lifetime == 0) {
 		shm->current_fd = get_new_random_fd();
