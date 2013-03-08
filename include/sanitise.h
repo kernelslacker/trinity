@@ -17,8 +17,12 @@ extern unsigned long filebuffersize;
 unsigned long get_interesting_value(void);
 unsigned long get_interesting_32bit_value(void);
 unsigned long get_reg(void);
+
 void *get_address(void);
 void *get_non_null_address(void);
+unsigned long find_previous_arg_address(unsigned int argnum, unsigned int call, int childno);
+struct iovec * alloc_iovec(unsigned int num);
+
 unsigned long get_len(void);
 unsigned int get_pid(void);
 char * get_filename(void);
