@@ -5,6 +5,7 @@
 #include <string.h>
 #include <linux/uio.h>
 
+#include "trinity.h"	// page_size
 #include "files.h"
 #include "arch.h"
 #include "sanitise.h"

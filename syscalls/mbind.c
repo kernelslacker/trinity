@@ -5,6 +5,7 @@
  */
 
 #include <linux/mempolicy.h>
+#include "trinity.h"	// page_size
 #include "arch.h"
 #include "sanitise.h"
 #include "shm.h"

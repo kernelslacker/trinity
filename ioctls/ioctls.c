@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "trinity.h"	// ARRAY_SIZE
 #include "files.h"
 #include "shm.h"
 #include "ioctls.h"

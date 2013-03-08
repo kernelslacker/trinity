@@ -1,7 +1,7 @@
 #ifndef _TRINITY_SYSCALL_H
 #define _TRINITY_SYSCALL_H 1
 
-#include "trinity.h"
+#include "types.h"
 
 enum argtype {
 	ARG_UNDEFINED = 0,

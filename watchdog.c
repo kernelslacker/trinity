@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
+#include "trinity.h"	// ignore_tainted
 #include "shm.h"
 #include "files.h"
 #include "syscall.h"
