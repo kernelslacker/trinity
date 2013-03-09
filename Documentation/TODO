@@ -154,3 +154,12 @@
   - ARG_MODE_T
 
   -  Finish annotating syscall return types
+
+* Add a way to add a filter to filelist.
+  ie, something like --filter-files=*[0-9]* to ignore all files with numbers in them.
+
+* Dump filelist to a logfile. (Perhaps this ties in with the idea above to cache the filelist?)
+
+* Add a mode to sequentially go through the whole file list a few hundred files at a time
+  instead of picking from the list randomly.
+
