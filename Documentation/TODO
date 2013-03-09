@@ -5,6 +5,8 @@
     - this requires a child-local fd mapping table.
       Maybe we can then reduce the size of the shared shm->file_fds
   - When requesting an fd, occasionally generate a new one.
+  - Could we do the nftw walks in parallel ?
+    That would speed up startup a lot.
 
 * 'syscall chains'.
   These are fragments of things that a real program would do.
