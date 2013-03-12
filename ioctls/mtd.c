@@ -27,8 +27,12 @@ static const struct ioctl mtd_ioctls[] = {
 	IOCTL(MEMERASE64),
 	IOCTL(MEMWRITEOOB64),
 	IOCTL(MEMREADOOB64),
+#ifdef MEMISLOCKED
 	IOCTL(MEMISLOCKED),
+#endif
+#ifdef MEMWRITE
 	IOCTL(MEMWRITE),
+#endif
 };
 
 static const char *const mtd_devs[] = {
