@@ -11,14 +11,22 @@ static const struct ioctl input_ioctls[] = {
 	IOCTL(EVIOCGREP),
 	IOCTL(EVIOCSREP),
 	IOCTL(EVIOCGKEYCODE),
+#ifdef EVIOCGKEYCODE_V2
 	IOCTL(EVIOCGKEYCODE_V2),
+#endif
 	IOCTL(EVIOCSKEYCODE),
+#ifdef EVIOCSKEYCODE_V2
 	IOCTL(EVIOCSKEYCODE_V2),
+#endif
 	IOCTL(EVIOCGNAME(0)),
 	IOCTL(EVIOCGPHYS(0)),
 	IOCTL(EVIOCGUNIQ(0)),
+#ifdef EVIOCGPROP
 	IOCTL(EVIOCGPROP(0)),
+#endif
+#ifdef EVIOCGMTSLOTS
 	IOCTL(EVIOCGMTSLOTS(0)),
+#endif
 	IOCTL(EVIOCGKEY(0)),
 	IOCTL(EVIOCGLED(0)),
 	IOCTL(EVIOCGSND(0)),
@@ -30,7 +38,9 @@ static const struct ioctl input_ioctls[] = {
 	IOCTL(EVIOCRMFF),
 	IOCTL(EVIOCGEFFECTS),
 	IOCTL(EVIOCGRAB),
+#ifdef EVIOCSCLOCKID
 	IOCTL(EVIOCSCLOCKID),
+#endif
 };
 
 static const char *const input_devs[] = {
@@ -56,14 +66,18 @@ static void input_sanitise(const struct ioctl_group *grp, int childno)
 		u = rand();
 		shm->a2[childno] = EVIOCGUNIQ(u);
 		break;
+#ifdef EVIOCGPROP
 	case EVIOCGPROP(0):
 		u = rand();
 		shm->a2[childno] = EVIOCGPROP(u);
 		break;
+#endif
+#ifdef EVIOCGMTSLOTS
 	case EVIOCGMTSLOTS(0):
 		u = rand();
 		shm->a2[childno] = EVIOCGMTSLOTS(u);
 		break;
+#endif
 	case EVIOCGKEY(0):
 		u = rand();
 		shm->a2[childno] = EVIOCGKEY(u);
