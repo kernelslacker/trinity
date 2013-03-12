@@ -165,3 +165,5 @@
 * Add a mode to sequentially go through the whole file list a few hundred files at a time
   instead of picking from the list randomly.
 
+* The unicode junk in page_rand when printed out can sometimes lock up or corrupt the tty.
+  Perhaps we should output some reset control code at the beginning of a new line in output()
