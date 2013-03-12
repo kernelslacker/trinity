@@ -68,9 +68,10 @@ unsigned long get_interesting_32bit_value(void)
 	return 0;
 }
 
+#if __WORDSIZE != 32
 static unsigned long per_arch_interesting_addr(unsigned long low)
 {
-	int i;
+	int i = 0;
 
 #if defined(__x86_64__)
 	i = rand() % 4;
@@ -86,9 +87,9 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 
 	// FIXME: Add more arch specific addresses here.
 
-	return 0;
+	return i | low;
 }
-
+#endif	/* __WORDSIZE */
 
 unsigned long get_interesting_value(void)
 {
@@ -125,5 +126,5 @@ unsigned long get_interesting_value(void)
 	}
 	BUG("unreachable!\n");
 	return 0;
-#endif
+#endif	/* __WORDSIZE */
 }
