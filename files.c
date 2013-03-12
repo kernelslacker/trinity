@@ -34,32 +34,45 @@ static gid_t my_gid;
 
 static int ignore_files(const char *file)
 {
-	int i;
-	const char *ignored_files[] = {".", "..",
+	int i, j;
+	int len, offset = 0;
+	const char *ignored_files[] = {
+		".", "..",
+
 		/* boring stuff in /dev */
 		"dmmidi0", "dmmidi1","dmmidi2","dmmidi3",
 		"midi00", "midi01","midi02","midi03",
 		".udev", "log",
+
 		/* Ignore per-process stuff. */
 		"keycreate", "sockcreate", "fscreate", "exec",
 		"current", "coredump_filter", "make-it-fail",
 		"oom_adj", "oom_score_adj",
 		"clear_refs", "loginuid", "sched", "comm", "mem",
 		"task", "autogroup",
+
 		/* ignore cgroup stuff*/
 		"cgroup",
-		NULL};
+		NULL };
 
-	//FIXME: Broken, 'file' is now a full pathname.
+	len = strlen(file);
+	for (j = 0; j < len; j++) {
+		if (file[j] == '/')
+			offset = j;
+	}
+	offset++;
 
-	for(i = 0; ignored_files[i]; i++) {
-		if (!strcmp(file, ignored_files[i])) {
-			//printf("Skipping %s\n", fpath);
+	if (offset == 1)
+		return 0;
+
+	for (i = 0; ignored_files[i]; i++) {
+		if (!strcmp(file + offset, ignored_files[i])) {
+//			printf("Skipping %s\n", file);
 			return 1;
 		}
 	}
-	if (!strncmp(file, "tty", 3)) {
-		//printf("Skipping %s\n", fpath);
+	if (!strncmp(file + offset, "tty", 3)) {
+//		printf("Skipping %s\n", file);
 		return 1;
 	}
 	return 0;
