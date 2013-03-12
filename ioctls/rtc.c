@@ -25,8 +25,12 @@ static const struct ioctl rtc_ioctls[] = {
 	IOCTL(RTC_WKALM_RD),
 	IOCTL(RTC_PLL_GET),
 	IOCTL(RTC_PLL_SET),
+#ifdef RTC_VL_READ
 	IOCTL(RTC_VL_READ),
+#endif
+#ifdef RTC_VL_CLR
 	IOCTL(RTC_VL_CLR),
+#endif
 };
 
 static const char *const rtc_devs[] = {
