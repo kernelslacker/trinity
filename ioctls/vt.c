@@ -129,7 +129,9 @@ static const struct ioctl vt_ioctls[] = {
 #endif
 	IOCTL(TIOCGPTN),
 	IOCTL(TIOCSPTLCK),
+#ifdef TIOCGDEV
 	IOCTL(TIOCGDEV),
+#endif
 #ifdef TCGETX
 	IOCTL(TCGETX),
 #endif
@@ -142,8 +144,12 @@ static const struct ioctl vt_ioctls[] = {
 #ifdef TCSETXW
 	IOCTL(TCSETXW),
 #endif
+#ifdef TIOCSIG
 	IOCTL(TIOCSIG),
+#endif
+#ifdef TIOCVHANGUP
 	IOCTL(TIOCVHANGUP),
+#endif
 	IOCTL(FIONCLEX),
 	IOCTL(FIOCLEX),
 	IOCTL(FIOASYNC),
