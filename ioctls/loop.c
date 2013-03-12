@@ -15,9 +15,15 @@ static const struct ioctl loop_ioctls[] = {
 	IOCTL(LOOP_CHANGE_FD),
 	IOCTL(LOOP_SET_CAPACITY),
 
+#ifdef LOOP_CTL_ADD
 	IOCTL(LOOP_CTL_ADD),
+#endif
+#ifdef LOOP_CTL_REMOVE
 	IOCTL(LOOP_CTL_REMOVE),
+#endif
+#ifdef LOOP_CTL_GET_FREE
 	IOCTL(LOOP_CTL_GET_FREE),
+#endif
 };
 
 static const char *const loop_ctrl_devs[] = {
