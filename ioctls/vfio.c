@@ -1,3 +1,4 @@
+#ifdef USE_VFIO
 #include <linux/vfio.h>
 
 #include "trinity.h"
@@ -35,3 +36,4 @@ static const struct ioctl_group vfio_grp = {
 };
 
 REG_IOCTL_GROUP(vfio_grp)
+#endif
