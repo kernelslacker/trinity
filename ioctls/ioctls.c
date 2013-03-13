@@ -8,7 +8,7 @@
 #include "shm.h"
 #include "ioctls.h"
 
-#define IOCTL_GROUPS_MAX 32
+#define IOCTL_GROUPS_MAX 48
 
 static const struct ioctl_group *grps[IOCTL_GROUPS_MAX];
 static int grps_cnt;
