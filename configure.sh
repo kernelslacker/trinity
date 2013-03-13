@@ -3,7 +3,7 @@
 
 RED="[1;31m"
 GREEN="[1;32m"
-WHITE="[1;37m"
+COL_RESET="[0;m"
 
 [ -z "$CC" ] && CC=cc
 
@@ -15,10 +15,10 @@ file_exists()
 {
 	echo -n "[*] Checking $1 exists... "
 	if [ -f /usr/include/$1 ]; then
-		echo $GREEN "[YES]" $WHITE
+		echo $GREEN "[YES]" $COL_RESET
 		echo "#define $2 1" >> config.h
 	else
-		echo $RED "[NO]" $WHITE
+		echo $RED "[NO]" $COL_RESET
 	fi
 }
 
@@ -53,9 +53,9 @@ EOF
 ${CC} "$TMP.c" -o "$TMP" &>"$TMP.log"
 
 if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $WHITE
+	echo $RED "[NO]" $COL_RESET
 else
-	echo $GREEN "[YES]" $WHITE
+	echo $GREEN "[YES]" $COL_RESET
 	echo "#define USE_PPPOL2TPIN6 1" >> config.h
 fi
 
@@ -81,9 +81,9 @@ EOF
 ${CC} "$TMP.c" -o "$TMP" &>"$TMP.log"
 
 if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $WHITE
+	echo $RED "[NO]" $COL_RESET
 else
-	echo $GREEN "[YES]" $WHITE
+	echo $GREEN "[YES]" $COL_RESET
 	echo "#define USE_PPPOL2TPV3 1" >> config.h
 fi
 
@@ -109,9 +109,9 @@ EOF
 ${CC} "$TMP.c" -o "$TMP" &>"$TMP.log"
 
 if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $WHITE
+	echo $RED "[NO]" $COL_RESET
 else
-	echo $GREEN "[YES]" $WHITE
+	echo $GREEN "[YES]" $COL_RESET
 	echo "#define USE_PPPOX_PPTP 1" >> config.h
 fi
 
@@ -135,9 +135,9 @@ EOF
 ${CC} "$TMP.c" -o "$TMP" &>"$TMP.log"
 
 if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $WHITE
+	echo $RED "[NO]" $COL_RESET
 else
-	echo $GREEN "[YES]" $WHITE
+	echo $GREEN "[YES]" $COL_RESET
 	echo "#define USE_LLC_OPT_PKTINFO 1" >> config.h
 fi
 
@@ -161,9 +161,9 @@ EOF
 ${CC} "$TMP.c" -o "$TMP" &>"$TMP.log"
 
 if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $WHITE
+	echo $RED "[NO]" $COL_RESET
 else
-	echo $GREEN "[YES]" $WHITE
+	echo $GREEN "[YES]" $COL_RESET
 	echo "#define HAVE_TERMIOS2 1" >> config.h
 fi
 
