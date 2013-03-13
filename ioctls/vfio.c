@@ -1,3 +1,5 @@
+#include "config.h"
+
 #ifdef USE_VFIO
 #include <linux/vfio.h>
 
