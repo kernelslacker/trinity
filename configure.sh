@@ -141,6 +141,31 @@ else
 	echo "#define USE_LLC_OPT_PKTINFO 1" >> config.h
 fi
 
+#############################################################################################
+# Do glibc headers provides struct termios2
+
+echo -n "[*] Checking if glibc headers provide termios2.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <sys/ioctl.h>
+#include <sys/vt.h>
+#include <termios.h>
+
+int main()
+{
+	struct termios2 test;
+}
+EOF
+
+${CC} "$TMP.c" -o "$TMP" &>"$TMP.log"
+
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $WHITE
+else
+	echo $GREEN "[YES]" $WHITE
+	echo "#define HAVE_TERMIOS2 1" >> config.h
+fi
 
 #############################################################################################
 

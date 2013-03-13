@@ -1,10 +1,29 @@
 #include <sys/vt.h>
 #include <sys/ioctl.h>
 #include <linux/kd.h>
-#include <asm/termbits.h>
 
 #include "trinity.h"
 #include "ioctls.h"
+
+#ifndef HAVE_TERMIOS2
+typedef unsigned char   cc_t;
+typedef unsigned int    speed_t;
+typedef unsigned int    tcflag_t;
+
+#ifndef NCCS
+#define NCCS 19
+#endif
+struct termios2 {
+        tcflag_t c_iflag;               /* input mode flags */
+        tcflag_t c_oflag;               /* output mode flags */
+        tcflag_t c_cflag;               /* control mode flags */
+        tcflag_t c_lflag;               /* local mode flags */
+        cc_t c_line;                    /* line discipline */
+        cc_t c_cc[NCCS];                /* control characters */
+        speed_t c_ispeed;               /* input speed */
+        speed_t c_ospeed;               /* output speed */
+};
+#endif
 
 static const struct ioctl vt_ioctls[] = {
 	IOCTL(VT_OPENQRY),
@@ -117,10 +136,18 @@ static const struct ioctl vt_ioctls[] = {
 	IOCTL(TIOCSBRK),
 	IOCTL(TIOCCBRK),
 	IOCTL(TIOCGSID),
+#ifdef TCGETS2
 	IOCTL(TCGETS2),
+#endif
+#ifdef TCSETS2
 	IOCTL(TCSETS2),
+#endif
+#ifdef TCSETSW2
 	IOCTL(TCSETSW2),
+#endif
+#ifdef TCSETSF2
 	IOCTL(TCSETSF2),
+#endif
 #ifdef TIOCGRS485
 	IOCTL(TIOCGRS485),
 #endif
