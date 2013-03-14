@@ -15,6 +15,10 @@ static int grps_cnt;
 
 void register_ioctl_group(const struct ioctl_group *grp)
 {
+	/* group could be empty e.g. if everything is ifdeffed out */
+	if (grp->ioctls_cnt == 0)
+		return;
+
 	if (grps_cnt == ARRAY_SIZE(grps)) {
 		fprintf(stderr, "WARNING: please grow IOCTL_GROUPS_MAX.\n");
 		return;
