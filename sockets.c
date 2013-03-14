@@ -252,12 +252,12 @@ static void close_sockets(void)
 	for (i = 0; i < nr_sockets; i++) {
 		fd = shm->socket_fds[i];
 		shm->socket_fds[i] = 0;
-		if (close(fd) == 0) {
-			nr_sockets--;
-		} else {
+		if (close(fd) != 0) {
 			printf("failed to close socket.(%s)\n", strerror(errno));
 		}
 	}
+
+	nr_sockets = 0;
 }
 
 void open_sockets(void)
