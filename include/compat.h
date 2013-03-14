@@ -241,6 +241,10 @@ enum kcmp_type {
 #define SO_BSDCOMPAT		14
 #endif
 
+#ifndef SO_REUSEPORT
+#define SO_REUSEPORT		15
+#endif
+
 #ifndef SO_RXQ_OVFL
 #define SO_RXQ_OVFL		40
 #endif
@@ -255,6 +259,10 @@ enum kcmp_type {
 
 #ifndef SO_NOFCS
 #define SO_NOFCS		43
+#endif
+
+#ifndef SO_LOCK_FILTER
+#define SO_LOCK_FILTER		44
 #endif
 
 /* linux/tcp.h */
