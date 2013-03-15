@@ -5,7 +5,7 @@
 #include "sanitise.h"	// interesting_*
 #include "log.h"	// For BUG
 
-void fabricate_onepage_struct(char *page)
+static void fabricate_onepage_struct(char *page)
 {
 	void *addr;
 	unsigned int i, j;
