@@ -14,6 +14,7 @@
 #include "trinity.h"	// page_size
 #include "sanitise.h"
 #include "shm.h"
+#include "maps.h"	// generate_random_page
 
 static unsigned long ** gen_ptrs_to_crap(void)
 {
@@ -29,7 +30,7 @@ static unsigned long ** gen_ptrs_to_crap(void)
 	for (i = 0; i < count; i++) {
 		ptr[i] = malloc(page_size);	// FIXME: LEAK
 		if (ptr[i] != NULL)
-			fabricate_onepage_struct((char *) ptr[i]);
+			generate_random_page((char *) ptr[i]);
 	}
 
 	return ptr;
