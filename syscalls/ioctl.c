@@ -30,7 +30,7 @@ static void ioctl_mangle_arg(int childno)
 		break;
 
 	case 1:	shm->a3[childno] = (unsigned long) page_rand;
-		fabricate_onepage_struct(page_rand);
+		generate_random_page(page_rand);
 		break;
 	default: break;
 	}
