@@ -246,7 +246,7 @@ args_done:
 	if (ret < 0) {
 		RED
 		sptr += sprintf(sptr, "= %d", ret);
-		if (errno_saved != 0)
+		if (errno_saved < 0)
 			sptr += sprintf(sptr, " (%s)", strerror(errno_saved));
 		WHITE
 		shm->failures++;
