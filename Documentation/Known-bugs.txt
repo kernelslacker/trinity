@@ -1,3 +1,8 @@
+- Make dependancies still aren't right.
+  Change something like include/constants.h:MAX_NR_CHILDREN
+  This should cause anything including shm.h to rebuild, but notice how nothing
+  in syscalls/ gets rebuilt.
+
 - If you run trinity inside a tmux session, sometimes the tmux session gets killed.
   Not sure yet which syscall is causing this to happen, but it gets a SIGINT.
 - Possibly related, sometimes trinity gets reparented, leading to this sort of thing..
