@@ -126,6 +126,11 @@ WARNINGS:
 
 #######################################################################
 
+Development discussion of trinity occurs at trinity@vger.kernel.org
+As with all vger mailing lists, subscribe by sending 'subscribe trinity'
+in the body of a mail to majordomo@vger.kernel.org
+
+
 Reporting bugs upstream:
 If you find a kernel bug using trinity, first check the list at
 http://www.codemonkey.org.uk/projects/trinity/bugs-found.php
@@ -133,6 +138,10 @@ http://www.codemonkey.org.uk/projects/trinity/bugs-found.php
 You may find that the bug is either already fixed (in which case
 a git commit hash should point to the fix), or there will be a link
 to an existing upstream report on the bug.
+
+If you find something new, report it to the relevant kernel component maintainer,
+CC'd to linux-kernel.  CC'ing trinity@ will also be appreciated, so it
+can be recorded in the 'known bugs' section
 
 ######### Links to similar projects ####################################
 
