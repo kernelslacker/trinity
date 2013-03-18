@@ -10,6 +10,7 @@
 #include <sound/hdspm.h>
 #include <sound/sb16_csp.h>
 #include <sound/sfnt_info.h>
+#include <sound/compress_offload.h>
 
 /* would use this, but the header uses DECLARE_BITMAP() from the kernel */
 /* #include <sound/emu10k1.h> */
@@ -203,6 +204,31 @@ static const struct ioctl sound_ioctls[] = {
 	{ .name = "SNDRV_EMU10K1_IOCTL_ZERO_TRAM_COUNTER", .request = _IOC(_IOC_NONE,'H',0x82,0), },
 	{ .name = "SNDRV_EMU10K1_IOCTL_SINGLE_STEP", .request = _IOC(_IOC_NONE,'H',0x83,0), },
 	{ .name = "SNDRV_EMU10K1_IOCTL_DBG_READ", .request = _IOC(_IOC_NONE,'H',0x84,0), },
+
+	IOCTL(SNDRV_COMPRESS_IOCTL_VERSION),
+	IOCTL(SNDRV_COMPRESS_GET_CAPS),
+	IOCTL(SNDRV_COMPRESS_GET_CODEC_CAPS),
+	IOCTL(SNDRV_COMPRESS_SET_PARAMS),
+	IOCTL(SNDRV_COMPRESS_GET_PARAMS),
+#ifdef SNDRV_COMPRESS_SET_METADATA
+	IOCTL(SNDRV_COMPRESS_SET_METADATA),
+#endif
+#ifdef SNDRV_COMPRESS_GET_METADATA
+	IOCTL(SNDRV_COMPRESS_GET_METADATA),
+#endif
+	IOCTL(SNDRV_COMPRESS_TSTAMP),
+	IOCTL(SNDRV_COMPRESS_AVAIL),
+	IOCTL(SNDRV_COMPRESS_PAUSE),
+	IOCTL(SNDRV_COMPRESS_RESUME),
+	IOCTL(SNDRV_COMPRESS_START),
+	IOCTL(SNDRV_COMPRESS_STOP),
+	IOCTL(SNDRV_COMPRESS_DRAIN),
+#ifdef SNDRV_COMPRESS_NEXT_TRACK
+	IOCTL(SNDRV_COMPRESS_NEXT_TRACK),
+#endif
+#ifdef SNDRV_COMPRESS_PARTIAL_DRAIN
+	IOCTL(SNDRV_COMPRESS_PARTIAL_DRAIN),
+#endif
 };
 
 static const char *const sound_devs[] = {
