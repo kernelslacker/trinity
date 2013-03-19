@@ -32,7 +32,7 @@ static void sanitise_move_pages(int childno)
 		shm->a6[childno] &= ~MPOL_MF_MOVE_ALL;
 	}
 
-	page_alloc = malloc(page_size);
+	page_alloc = (unsigned long *) malloc(page_size);
 	if (page_alloc == NULL)
 		return;
 
