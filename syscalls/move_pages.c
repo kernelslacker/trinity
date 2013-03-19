@@ -21,7 +21,7 @@
 
 static void sanitise_move_pages(int childno)
 {
-	unsigned int *nodes;
+	int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
 	unsigned int count;
