@@ -32,32 +32,45 @@ static struct namelist *names = NULL;
 static uid_t my_uid;
 static gid_t my_gid;
 
-static int ignore_files(const char *file)
+static int ignore_files(const char *path)
 {
-	int i, j;
-	int len, offset = 0;
-	const char *ignored_files[] = {
+	unsigned int i, j;
+	unsigned int pathlen, offset = 0;
+
+	/* These are exact matches. */
+	const char *ignored_paths[] = {
 		".", "..",
 
-		/* boring stuff in /dev */
-		"dmmidi0", "dmmidi1","dmmidi2","dmmidi3",
-		"midi00", "midi01","midi02","midi03",
-		".udev", "log",
+		/* dangerous/noisy/annoying stuff in /dev */
+		"/dev/log", "/dev/mem", "/dev/kmsg",
+		NULL
+	};
 
-		/* Ignore per-process stuff. */
-		"keycreate", "sockcreate", "fscreate", "exec",
-		"current", "coredump_filter", "make-it-fail",
-		"oom_adj", "oom_score_adj",
-		"clear_refs", "loginuid", "sched", "comm", "mem",
-		"task", "autogroup",
+	/* Partial matches. */	//FIXME: This whole function should just use globs to pattern match.
+	const char *ignored_patterns[] = {
 
-		/* ignore cgroup stuff*/
-		"cgroup",
-		NULL };
+		/* dangerous/noisy/annoying per-process stuff. */
+		"coredump_filter", "make-it-fail", "oom_adj", "oom_score_adj",
+		NULL
+	};
 
-	len = strlen(file);
-	for (j = 0; j < len; j++) {
-		if (file[j] == '/')
+	pathlen = strlen(path);
+
+	/* First do the exact matches */
+	for (i = 0; ignored_paths[i]; i++) {
+		if (strlen(ignored_paths[i]) != pathlen) {
+			continue;
+		}
+
+		if (!strcmp(path, ignored_paths[i])) {
+//			printf("Skipping %s\n", path);
+			return 1;
+		}
+	}
+
+	/* Now make sure none of the patterns match the end of the pathname */
+	for (j = 0; j < pathlen; j++) {
+		if (path[j] == '/')
 			offset = j;
 	}
 	offset++;
@@ -65,14 +78,16 @@ static int ignore_files(const char *file)
 	if (offset == 1)
 		return 0;
 
-	for (i = 0; ignored_files[i]; i++) {
-		if (!strcmp(file + offset, ignored_files[i])) {
-//			printf("Skipping %s\n", file);
+	for (i = 0; ignored_patterns[i]; i++) {
+		if (!strcmp(path + offset, ignored_patterns[i])) {
+//			printf("Skipping pattern %s\n", path);
 			return 1;
 		}
 	}
-	if (!strncmp(file + offset, "tty", 3)) {
-//		printf("Skipping %s\n", file);
+
+	/* special case to match tty* until I do globbing */
+	if (!strncmp(path + offset, "tty", 3)) {
+//		printf("Skipping %s\n", path);
 		return 1;
 	}
 	return 0;
