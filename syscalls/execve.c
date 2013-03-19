@@ -18,7 +18,7 @@
 
 static unsigned long ** gen_ptrs_to_crap(void)
 {
-	unsigned long **ptr;
+	void **ptr;
 	unsigned int i;
 	unsigned int count = rand() % 32;
 
@@ -33,7 +33,7 @@ static unsigned long ** gen_ptrs_to_crap(void)
 			generate_random_page((char *) ptr[i]);
 	}
 
-	return ptr;
+	return (unsigned long **) ptr;
 }
 
 void sanitise_execve(__unused__ int childno)
