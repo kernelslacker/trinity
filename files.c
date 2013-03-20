@@ -41,6 +41,9 @@ static int ignore_files(const char *path)
 	const char *ignored_paths[] = {
 		".", "..",
 
+		/* dangerous/noisy/annoying stuff in /proc */
+		"/proc/sysrq-trigger", "/proc/kmem", "/proc/kcore",
+
 		/* dangerous/noisy/annoying stuff in /dev */
 		"/dev/log", "/dev/mem", "/dev/kmsg",
 		NULL
