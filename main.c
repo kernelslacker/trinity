@@ -65,6 +65,18 @@ int check_tainted(void)
 	return ret;
 }
 
+static void oom_score_adj(int adj)
+{
+	FILE *fp;
+
+	fp = fopen("/proc/self/oom_score_adj", "w");
+	if (!fp)
+		return;
+
+	fprintf(fp, "%d", adj);
+	fclose(fp);
+}
+
 #define debugf if (debug == TRUE) printf
 
 static void fork_children(void)
@@ -99,6 +111,8 @@ static void fork_children(void)
 			memset(childname, 0, sizeof(childname));
 			sprintf(childname, "trinity-child%d", pidslot);
 			prctl(PR_SET_NAME, (unsigned long) &childname);
+
+			oom_score_adj(500);
 
 			/* Wait for parent to set our pidslot */
 			while (shm->pids[pidslot] != getpid()) {
