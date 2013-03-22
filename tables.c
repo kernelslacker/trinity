@@ -486,6 +486,9 @@ const char * print_syscall_name(unsigned int callno, bool bitsize)
 {
 	const struct syscalltable *table;
 
+	if (biarch == FALSE)
+		return syscalls[callno].entry->name;
+
 	if (bitsize == FALSE)
 		table = syscalls_64bit;
 	else
