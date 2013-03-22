@@ -213,7 +213,8 @@ static void open_fds(const char *dirpath)
 
 	ret = nftw(dirpath, file_tree_callback, 32, flags);
 	if (ret != 0) {
-		output(0, "Something went wrong during nftw(). Returned %d\n", ret);
+		if (shm->exit_reason != EXIT_SIGINT)
+			output(0, "Something went wrong during nftw(). Returned %d\n", ret);
 		return;
 	}
 
