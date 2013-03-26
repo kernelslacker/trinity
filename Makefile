@@ -81,10 +81,12 @@ clean:
 
 devel:
 	@perl -p -i -e 's/^#CFLAGS \+\= -Werror/CFLAGS += -Werror/' Makefile
+	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh
 	git commit Makefile -m "Enable -Werror"
 
 release:
 	@perl -p -i -e 's/^CFLAGS \+\= -Werror/#CFLAGS += -Werror/' Makefile
+	@perl -p -i -e 's/DEVEL=1/DEVEL=0/' configure.sh
 	git commit Makefile -m "Disable -Werror"
 
 tag:
