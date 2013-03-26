@@ -26,7 +26,12 @@ void close_logfiles(void);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
+#ifndef GIT_VERSION
 #define BUGTXT ANSI_RED "BUG!: " ANSI_WHITE
+#else
+#define BUGTXT ANSI_RED "BUG!: " ANSI_WHITE GIT_VERSION
+#endif
+
 
 #define BUG(bugtxt)	{ printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt); while(1); }
 

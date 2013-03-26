@@ -1,5 +1,6 @@
 #!/bin/bash
-#
+
+DEVEL=1
 
 RED="[1;31m"
 GREEN="[1;32m"
@@ -177,5 +178,11 @@ file_exists linux/btrfs.h USE_BTRFS
 file_exists drm/exynos_drm.h USE_DRM_EXYNOS
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"
+
+#############################################################################################
+if [ "$DEVEL" == "1" ]; then
+  VER=$(git describe)
+  echo "#define GITVERSION \""$VER\" >> config.h
+fi
 
 exit 0
