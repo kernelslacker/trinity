@@ -8,6 +8,7 @@
 #define ANSI_MAGENTA	"[1;35m"
 #define ANSI_CYAN	"[1;36m"
 #define ANSI_WHITE	"[1;37m"
+#define ANSI_RESET	"[0m"
 
 #define RED if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RED);
 #define GREEN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_GREEN);
@@ -16,6 +17,7 @@
 #define MAGENTA if (monochrome == FALSE) sptr += sprintf(sptr, "%s", ANSI_MAGENTA);
 #define CYAN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_CYAN);
 #define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
+#define CRESET if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RESET);
 
 #define MAX_LOGLEVEL 3
 void synclogs(void);
@@ -27,9 +29,9 @@ void close_logfiles(void);
 #define __stringify(x...)       __stringify_1(x)
 
 #ifndef GIT_VERSION
-#define BUGTXT ANSI_RED "BUG!: " ANSI_WHITE
+#define BUGTXT ANSI_RED "BUG!: " ANSI_RESET
 #else
-#define BUGTXT ANSI_RED "BUG!: " ANSI_WHITE GIT_VERSION
+#define BUGTXT ANSI_RED "BUG!: " ANSI_RESET GIT_VERSION
 #endif
 
 
