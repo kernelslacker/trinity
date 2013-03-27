@@ -150,14 +150,14 @@ long mkcall(int childno)
 		if (!NAME)						\
 			goto args_done;					\
 		if (ARGNUM != 1) {					\
-			WHITE						\
+			CRESET						\
 			sptr += sprintf(sptr, ", ");			\
 		}							\
 		if (NAME)						\
 			sptr += sprintf(sptr, "%s=", NAME);		\
 									\
 		if (OLDREG == REG) {					\
-			WHITE						\
+			CRESET						\
 		} else {						\
 			CYAN						\
 		}							\
@@ -168,7 +168,7 @@ long mkcall(int childno)
 			break;						\
 		case ARG_PID:						\
 		case ARG_FD:						\
-			WHITE						\
+			CRESET						\
 			sptr += sprintf(sptr, "%ld", REG);		\
 			break;						\
 		case ARG_UNDEFINED:					\
@@ -190,7 +190,7 @@ long mkcall(int childno)
 				sptr += sprintf(sptr, "0x%lx", REG);	\
 			else						\
 				sptr += sprintf(sptr, "%ld", REG);	\
-			WHITE						\
+			CRESET						\
 			break;						\
 		}							\
 		if (REG == (((unsigned long)page_zeros) & PAGE_MASK))	\
@@ -203,7 +203,7 @@ long mkcall(int childno)
 			sptr += sprintf(sptr, "[page_allocs]");		\
 	}
 
-	WHITE
+	CRESET
 	sptr += sprintf(sptr, "(");
 
 	COLOR_ARG(1, syscalls[call].entry->arg1name, 1<<5, olda1, shm->a1[childno], syscalls[call].entry->arg1type);
@@ -213,7 +213,7 @@ long mkcall(int childno)
 	COLOR_ARG(5, syscalls[call].entry->arg5name, 1<<1, olda5, shm->a5[childno], syscalls[call].entry->arg5type);
 	COLOR_ARG(6, syscalls[call].entry->arg6name, 1<<0, olda6, shm->a6[childno], syscalls[call].entry->arg6type);
 args_done:
-	WHITE
+	CRESET
 	sptr += sprintf(sptr, ") ");
 	*sptr = '\0';
 
@@ -248,12 +248,12 @@ args_done:
 		sptr += sprintf(sptr, "= %d", ret);
 		if (errno_saved < 0)
 			sptr += sprintf(sptr, " (%s)", strerror(errno_saved));
-		WHITE
+		CRESET
 		shm->failures++;
 	} else {
 		GREEN
 		sptr += sprintf(sptr, "= %d", ret);
-		WHITE
+		CRESET
 		shm->successes++;
 	}
 	sptr += sprintf(sptr, "\n");
