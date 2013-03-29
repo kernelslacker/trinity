@@ -1,3 +1,6 @@
+#include "config.h"
+
+#ifdef USE_VHOST
 #include <linux/vhost.h>
 
 #include "trinity.h"
@@ -35,3 +38,4 @@ static const struct ioctl_group vhost_grp = {
 };
 
 REG_IOCTL_GROUP(vhost_grp)
+#endif /* USE_VHOST */

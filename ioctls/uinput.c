@@ -17,7 +17,9 @@ static const struct ioctl uinput_ioctls[] = {
 	IOCTL(UI_SET_FFBIT),
 	IOCTL(UI_SET_PHYS),
 	IOCTL(UI_SET_SWBIT),
+#ifdef UI_SET_PROPBIT
 	IOCTL(UI_SET_PROPBIT),
+#endif
 	IOCTL(UI_BEGIN_FF_UPLOAD),
 	IOCTL(UI_END_FF_UPLOAD),
 	IOCTL(UI_BEGIN_FF_ERASE),

@@ -22,7 +22,9 @@ static const struct ioctl fb_ioctls[] = {
 	IOCTL(FBIOGET_HWCINFO),
 	IOCTL(FBIOPUT_MODEINFO),
 	IOCTL(FBIOGET_DISPINFO),
+#ifdef FBIO_WAITFORVSYNC
 	IOCTL(FBIO_WAITFORVSYNC),
+#endif
 };
 
 static const char *const fb_chardevs[] = {

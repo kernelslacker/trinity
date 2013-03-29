@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(inotify_add_watch, int, fd, const char __user *, pathname, u32, mask)
  */
 #include "sanitise.h"
+#include "compat.h"
 
 #include <sys/inotify.h>
 
