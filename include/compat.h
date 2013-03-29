@@ -482,4 +482,9 @@ struct sockaddr_nfc {
 };
 #endif
 
+/* linux/inotify.h */
+#ifndef IN_EXCL_UNLINK
+#define IN_EXCL_UNLINK	0x04000000	/* exclude events on unlinked objects */
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */

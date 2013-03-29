@@ -10,7 +10,9 @@
 #include <sound/hdspm.h>
 #include <sound/sb16_csp.h>
 #include <sound/sfnt_info.h>
+#ifdef USE_SNDDRV_COMPRESS_OFFLOAD
 #include <sound/compress_offload.h>
+#endif
 
 /* would use this, but the header uses DECLARE_BITMAP() from the kernel */
 /* #include <sound/emu10k1.h> */
@@ -205,6 +207,7 @@ static const struct ioctl sound_ioctls[] = {
 	{ .name = "SNDRV_EMU10K1_IOCTL_SINGLE_STEP", .request = _IOC(_IOC_NONE,'H',0x83,0), },
 	{ .name = "SNDRV_EMU10K1_IOCTL_DBG_READ", .request = _IOC(_IOC_NONE,'H',0x84,0), },
 
+#ifdef USE_SNDDRV_COMPRESS_OFFLOAD
 	IOCTL(SNDRV_COMPRESS_IOCTL_VERSION),
 	IOCTL(SNDRV_COMPRESS_GET_CAPS),
 	IOCTL(SNDRV_COMPRESS_GET_CODEC_CAPS),
@@ -229,6 +232,7 @@ static const struct ioctl sound_ioctls[] = {
 #ifdef SNDRV_COMPRESS_PARTIAL_DRAIN
 	IOCTL(SNDRV_COMPRESS_PARTIAL_DRAIN),
 #endif
+#endif /* USE_SNDDRV_COMPRESS_OFFLOAD */
 };
 
 static const char *const sound_devs[] = {
