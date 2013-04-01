@@ -35,6 +35,7 @@ test:
 MACHINE		= $(shell $(CC) -dumpmachine)
 SYSCALLS_ARCH	= $(shell case "$(MACHINE)" in \
 		  (sh*) echo syscalls/sh/*.c ;; \
+		  (ia64*) echo syscalls/ia64/*.c ;; \
 		  esac)
 
 HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
