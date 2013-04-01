@@ -175,6 +175,7 @@ file_exists linux/if_alg.h USE_IF_ALG
 file_exists linux/rds.h USE_RDS
 file_exists linux/vfio.h USE_VFIO
 file_exists linux/btrfs.h USE_BTRFS
+file_exists drm/drm.h USE_DRM
 file_exists drm/exynos_drm.h USE_DRM_EXYNOS
 file_exists sound/compress_offload.h USE_SNDDRV_COMPRESS_OFFLOAD
 file_exists linux/vhost.h USE_VHOST
