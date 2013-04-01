@@ -33,9 +33,9 @@ test:
 
 
 MACHINE		= $(shell $(CC) -dumpmachine)
-SYSCALLS_ARCH	= $(patsubst %.c,%.o,$(shell case "$(MACHINE)" in \
+SYSCALLS_ARCH	= $(shell case "$(MACHINE)" in \
 		  (sh*) echo syscalls/sh/*.c ;; \
-		  esac))
+		  esac)
 
 HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 
@@ -46,7 +46,7 @@ SRCS		= $(wildcard *.c) \
 
 OBJS		= $(patsubst %.c,%.o,$(wildcard *.c)) \
 		  $(patsubst %.c,%.o,$(wildcard syscalls/*.c)) \
-		  $(SYSCALLS_ARCH) \
+		  $(patsubst %.c,%.o,$(SYSCALLS_ARCH)) \
 		  $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
 
 DEPDIR= .deps
