@@ -1,5 +1,7 @@
 #include "config.h"
 
+#ifdef USE_DRM
+
 #include <stdlib.h>
 #include <inttypes.h>
 
@@ -430,3 +432,5 @@ static const struct ioctl_group drm_grp = {
 };
 
 REG_IOCTL_GROUP(drm_grp)
+
+#endif /* USE_DRM */
