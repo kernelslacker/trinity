@@ -1,13 +1,11 @@
+#ifndef _SYSCALLS_IA64_H
+#define _SYSCALLS_IA64_H 1
+
 /* Syscalls from arch/ia64/kernel/entry.S as of 2.6.31rc2 */
 
 #include "sanitise.h"
-
-#include <fcntl.h>
-#include <signal.h>
-#include <asm/mman.h>
-#include <asm/perfmon.h>
-#include <asm/types.h>
-#include <sys/socket.h>
+#include "syscall.h"
+#include "syscalls/syscalls.h"
 
 struct syscalltable syscalls_ia64[] = {
 	{ .entry = &syscall_ni_syscall },
@@ -309,3 +307,5 @@ struct syscalltable syscalls_ia64[] = {
 	{ .entry = &syscall_pwritev },
 	{ .entry = &syscall_rt_tgsigqueueinfo },
 };
+
+#endif	/* _SYSCALLS_IA64_H */
