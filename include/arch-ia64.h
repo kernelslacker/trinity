@@ -10,3 +10,6 @@
 
 // for __IA64_UL_CONST we need to include:
 #include <asm/types.h>
+
+#define PTRACE_GETFPREGS	0
+#define PTRACE_SETFPREGS	0
