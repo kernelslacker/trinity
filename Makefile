@@ -29,7 +29,7 @@ QUIET_CC = $(Q:@=@echo    '  CC	'$@;)
 all: trinity
 
 test:
-	@if [ ! -f config.h ]; then  echo "[1;31mRun configure.sh first.[1;37m" ; exit; fi
+	@if [ ! -f config.h ]; then  echo "[1;31mRun configure.sh first.[0m" ; exit; fi
 
 
 MACHINE		= $(shell $(CC) -dumpmachine)
