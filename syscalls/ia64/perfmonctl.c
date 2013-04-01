@@ -36,6 +36,6 @@ struct syscall syscall_perfmonctl = {
 	},
 	.arg3name = "arg",
 	.arg3type = ARG_ADDRESS,
-	.arg3name = "count",
+	.arg4name = "count",
 };
 
