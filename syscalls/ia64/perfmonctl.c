@@ -2,6 +2,8 @@
     sys_perfmonctl (int fd, int cmd, void __user *arg, int count)
  */
 
+#include <unistd.h>
+#include <asm/perfmon.h>
 
 #ifndef PFM_CREATE_EVTSETS
 #define PFM_CREATE_EVTSETS 0
