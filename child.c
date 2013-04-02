@@ -146,7 +146,7 @@ static void check_parent_pid(void)
 	//TODO: Emergency logging.
 }
 
-int child_process(int childno)
+static int do_random_syscalls(int childno)
 {
 	pid_t pid = getpid();
 	int ret;
@@ -243,9 +243,16 @@ retry:
 
 		ret = mkcall(childno);
 	}
-
-
 out:
+	return ret;
+}
+
+int child_process(int childno)
+{
+	int ret;
+
+	ret = do_random_syscalls(childno);
+
 	reenable_coredumps();
 
 	return ret;
