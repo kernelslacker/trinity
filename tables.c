@@ -41,24 +41,18 @@ int search_syscall_table(const struct syscalltable *table, unsigned int nr_sysca
 	return -1;
 }
 
-int validate_specific_syscall(const struct syscalltable *table, int call)
+static void validate_specific_syscall(const struct syscalltable *table, int call)
 {
 	if (call != -1) {
-		if (table[call].entry->flags & AVOID_SYSCALL) {
+		if (table[call].entry->flags & AVOID_SYSCALL)
 			printf("%s is marked as AVOID. Skipping\n", table[call].entry->name);
-			return FALSE;
-		}
 
-		if (table[call].entry->flags & NI_SYSCALL) {
+		if (table[call].entry->flags & NI_SYSCALL)
 			printf("%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
-			return FALSE;
-		}
-		if (table[call].entry->num_args == 0) {
+
+		if (table[call].entry->num_args == 0)
 			printf("%s has no arguments. Skipping\n", table[call].entry->name);
-			return FALSE;
-		}
 	}
-	return TRUE;
 }
 
 bool no_syscalls_enabled(void)
@@ -210,15 +204,13 @@ static void toggle_syscall_biarch(char *arg, unsigned char state)
 {
 	int specific_syscall32 = 0;
 	int specific_syscall64 = 0;
-	int ret;
 
 	specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
 
 	/* If we found a 64bit syscall, validate it. */
 	if (specific_syscall64 != -1) {
-		ret = validate_specific_syscall(syscalls_64bit, specific_syscall64);
-		if (ret == FALSE)
-			exit(EXIT_FAILURE);
+		validate_specific_syscall(syscalls_64bit, specific_syscall64);
+
 		if (state == TRUE) {
 			printf("[%d] Marking 64-bit syscall %d (%s) as enabled\n", getpid(), specific_syscall64, arg);
 			syscalls_64bit[specific_syscall64].entry->flags |= ACTIVE;
@@ -231,9 +223,8 @@ static void toggle_syscall_biarch(char *arg, unsigned char state)
 	/* Search for and validate 32bit */
 	specific_syscall32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
 	if (specific_syscall32 != -1) {
-		ret = validate_specific_syscall(syscalls_32bit, specific_syscall32);
-		if (ret == FALSE)
-			exit(EXIT_FAILURE);
+		validate_specific_syscall(syscalls_32bit, specific_syscall32);
+
 		if (state == TRUE) {
 			printf("[%d] Marking 32-bit syscall %d (%s) as enabled\n", getpid(), specific_syscall32, arg);
 			syscalls_32bit[specific_syscall32].entry->flags |= ACTIVE;
@@ -252,7 +243,6 @@ static void toggle_syscall_biarch(char *arg, unsigned char state)
 void toggle_syscall(char *arg, unsigned char state)
 {
 	int specific_syscall = 0;
-	int ret;
 
 	if (biarch == TRUE) {
 		toggle_syscall_biarch(arg, state);
@@ -262,9 +252,8 @@ void toggle_syscall(char *arg, unsigned char state)
 	/* non-biarch case. */
 	specific_syscall = search_syscall_table(syscalls, max_nr_syscalls, arg);
 	if (specific_syscall != -1) {
-		ret = validate_specific_syscall(syscalls, specific_syscall);
-		if (ret == FALSE)
-			exit(EXIT_FAILURE);
+		validate_specific_syscall(syscalls, specific_syscall);
+
 		if (state == TRUE) {
 			printf("[%d] Marking syscall %d (%s) as enabled\n", getpid(), specific_syscall, arg);
 			syscalls[specific_syscall].entry->flags |= ACTIVE;

@@ -114,7 +114,6 @@ extern bool use_64bit;
 
 void setup_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
-int validate_specific_syscall(const struct syscalltable *table, int call);
 void mark_all_syscalls_active(void);
 void toggle_syscall(char *arg, unsigned char state);
 void dump_syscall_tables(void);
