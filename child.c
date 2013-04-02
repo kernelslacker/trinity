@@ -113,12 +113,44 @@ void init_child(int childno)
 		use_fpu();
 }
 
+static void check_parent_pid(void)
+{
+	pid_t pid;
+	unsigned int i;
+
+	if (getppid() == shm->parentpid)
+		return;
+
+	pid = getpid();
+
+	//FIXME: Add locking so only one child does this output.
+	output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED! "
+		"parent pid:%d. Watchdog pid:%d\n",
+		pid, shm->parentpid, shm->watchdog_pid);
+	output(0, BUGTXT "Last syscalls:\n");
+
+	for (i = 0; i < MAX_NR_CHILDREN; i++) {
+		// Skip over 'boring' entries.
+		if ((shm->pids[i] == -1) &&
+		    (shm->previous_syscallno[i] == 0) &&
+		    (shm->child_syscall_count[i] == 0))
+			continue;
+
+		output(0, "[%d]  pid:%d call:%s callno:%d\n",
+			i, shm->pids[i],
+			print_syscall_name(shm->previous_syscallno[i], shm->do32bit[i]),	// FIXME: need previous do32bit
+			shm->child_syscall_count[i]);
+	}
+	shm->exit_reason = EXIT_REPARENT_PROBLEM;
+	exit(EXIT_FAILURE);
+	//TODO: Emergency logging.
+}
+
 int child_process(int childno)
 {
 	pid_t pid = getpid();
 	int ret;
 	unsigned int syscallnr;
-	unsigned int i;
 
 	sigsetjmp(ret_jump, 1);
 
@@ -126,29 +158,7 @@ int child_process(int childno)
 
 	while (shm->exit_reason == STILL_RUNNING) {
 
-		if (getppid() != shm->parentpid) {
-			//FIXME: Add locking so only one child does this output.
-			output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED! "
-				"parent pid:%d. Watchdog pid:%d\n",
-				pid, shm->parentpid, shm->watchdog_pid);
-			output(0, BUGTXT "Last syscalls:\n");
-
-			for (i = 0; i < MAX_NR_CHILDREN; i++) {
-				// Skip over 'boring' entries.
-				if ((shm->pids[i] == -1) &&
-				    (shm->previous_syscallno[i] == 0) &&
-				    (shm->child_syscall_count[i] == 0))
-					continue;
-
-				output(0, "[%d]  pid:%d call:%s callno:%d\n",
-					i, shm->pids[i],
-					print_syscall_name(shm->previous_syscallno[i], shm->do32bit[i]),	// FIXME: need previous do32bit
-					shm->child_syscall_count[i]);
-			}
-			shm->exit_reason = EXIT_REPARENT_PROBLEM;
-			exit(EXIT_FAILURE);
-			//TODO: Emergency logging.
-		}
+		check_parent_pid();
 
 		while (shm->regenerating == TRUE)
 			sleep(1);
