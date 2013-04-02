@@ -1,5 +1,4 @@
-* Rewrite the fd generation code.
-  - Don't generate so many fd's (faster startup)
+* Rewrite the fd code.
   - kill of NR_FILE_FDS
   - open some files in the child too after forking.
     - this requires a child-local fd mapping table.
@@ -8,25 +7,27 @@
   - Could we do the nftw walks in parallel ?
     That would speed up startup a lot.
   - support for multiple victim file parameters
+  - When picking a random fd, instead of treating the pool of fds as one thing,
+    treat it as multiple (/dev, /sys, /proc). And then do a 1-in-3 chance
+    of getting one of those. Right now, because there are 5-6 digits worth of /proc & /sys,
+    they dominate over the /dev entries.
 
-* 'syscall chains'.
+* blacklist filenames for victim path & /proc/self/exe
+  - make sure we don't call unlink() or rmdir() on them
+
+* 'fragments'.
   These are fragments of things that a real program would do.
   For example   open->read->close,  open->mmap->access mem->close
-  The main loop would randomly decide what a child is going to do
-  syscall chains, or random syscalls.
+  The child_process function would randomly decide what a child is going
+  to do fragments, or random syscalls.
 
-* Ability to mark some chains as 'NEEDS_ROOT'.
+* Ability to mark some fragments as 'NEEDS_ROOT'.
   At the same time, rework startup so that if we're root, when we fork
-  children, we decide whether or not to drop privs by looking at chain->flags
-  After completing a root-only chain, we either exit, or run other root-only chains. 
+  children, we decide whether or not to drop privs by looking at fragment->flags
+  After completing a root-only fragment, we either exit, or run other root-only fragments.
 
-* rework ioctl
-  When we have the syscall chains, and NEEDS_ROOT in place..
-  - pick known ioctl at random
-  - lookup the correct /dev/node
-  - ->sanitise routines for each ioctl we know about to get request/argp right.
-  start with: DRM, Networking, ALSA,..
-  After calling ioctl, what then ? More of the same ioctl's for a while before exiting child.
+* ioctl improvements
+  - needs filename globbing for some ioctls
 
 * Destroy structures we allocated during a syscalls ->sanitise in a ->post method.
   - On return from the syscall, we don't call the destructor immediately.
@@ -77,7 +78,7 @@
   Ie, if syscall #1 is going to be a syscall that returns an fd, do a bunch
   of syscalls that work on fd's.
   This will give us a sort of auto-grouping of syscalls.
-  (This might be not really necessary once we have syscall chains)
+  (This might be not really necessary once we have fragments)
 
 * Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
 
@@ -106,7 +107,7 @@
 * -x & -C should build a syscall table & adjust max_nr_syscalls
 
 * allow for multiple -G's (after there is more than 'vm')
-  I might kill off -G. It might be better to just implement chains
+  I might kill off -G. It might be better to just implement fragments 
   that do various VM calls, or various network calls etc etc
 
 * use inotify to check if /proc/sys/kernel/tainted changes instead of polling.
@@ -142,7 +143,7 @@
     child a segfaults
     child b never proceeds, and doesn't get untraced.
 
-* When we fuzz execve, do an extra fork, and exit the child.
+* When we fuzz execve, do an extra fork, sleep for 3 seconds, kill the execve'd pid, and then exit.
 
 * Further syscall annotation improvements
   - There are a few syscalls with duplicate '64' variants.
@@ -156,7 +157,7 @@
 
   - ARG_MODE_T
 
-  -  Finish annotating syscall return types
+  - Finish annotating syscall return types
 
 * Add a way to add a filter to filelist.
   ie, something like --filter-files=*[0-9]* to ignore all files with numbers in them.
@@ -168,3 +169,4 @@
 
 * The unicode junk in page_rand when printed out can sometimes lock up or corrupt the tty.
   Perhaps we should output some reset control code at the beginning of a new line in output()
+
