@@ -322,8 +322,6 @@ void sanitise_setsockopt(int childno)
 	 */
 	if (rand() % 2)
 		shm->a4[childno] = 0;
-
-	shm->a4[childno] = sizeof(int);
 }
 
 struct syscall syscall_setsockopt = {
