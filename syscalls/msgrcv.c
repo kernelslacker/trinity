@@ -14,6 +14,7 @@ struct syscall syscall_msgrcv = {
 	.arg3type = ARG_LEN,
 	.arg4name = "msgtyp",
 	.arg5name = "msgflg",
+	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 3,
 		.values = { MSG_NOERROR, MSG_EXCEPT, MSG_COPY },
