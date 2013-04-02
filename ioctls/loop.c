@@ -28,6 +28,7 @@ static const struct ioctl loop_ioctls[] = {
 
 static const char *const loop_ctrl_devs[] = {
 	"loop-control",
+	//FIXME: Need to glob /dev/loop*
 };
 
 static const struct ioctl_group loop_ctrl_grp = {
