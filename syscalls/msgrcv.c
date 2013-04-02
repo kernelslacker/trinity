@@ -2,7 +2,7 @@
  * SYSCALL_DEFINE5(msgrcv, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz, long, msgtyp, int, msgflg)
  */
 #include <linux/msg.h>
-#include "config.h"
+#include "compat.h"
 #include "sanitise.h"
 
 struct syscall syscall_msgrcv = {
