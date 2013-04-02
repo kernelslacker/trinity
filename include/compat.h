@@ -487,4 +487,8 @@ struct sockaddr_nfc {
 #define IN_EXCL_UNLINK	0x04000000	/* exclude events on unlinked objects */
 #endif
 
+#ifndef MSG_COPY
+#define MSG_COPY        040000
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
