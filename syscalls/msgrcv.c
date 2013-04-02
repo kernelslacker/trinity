@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE5(msgrcv, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz, long, msgtyp, int, msgflg)
  */
+#include <linux/msg.h>
 #include "sanitise.h"
 
 struct syscall syscall_msgrcv = {
@@ -13,4 +14,8 @@ struct syscall syscall_msgrcv = {
 	.arg3type = ARG_LEN,
 	.arg4name = "msgtyp",
 	.arg5name = "msgflg",
+	.arg5list = {
+		.num = 3,
+		.values = { MSG_NOERROR, MSG_EXCEPT, MSG_COPY },
+	},
 };
