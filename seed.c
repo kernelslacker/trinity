@@ -22,9 +22,11 @@ static unsigned int new_seed(void)
 	struct timeval t;
 	unsigned int r;
 
-	gettimeofday(&t, 0);
-
-	r = t.tv_usec * rand();
+	r = rand();
+	if (!(rand() % 1)) {
+		gettimeofday(&t, 0);
+		r |= t.tv_usec;
+	}
 	return r;
 }
 
