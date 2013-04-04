@@ -38,7 +38,16 @@ void dump_pid_slots(void)
 
 int pid_is_valid(pid_t pid)
 {
-	if ((pid > 65535) || (pid < 1)) {
+	pid_t pidmax;
+
+// FIXME: Read this from /proc/sys/kernel/pid_max on startup
+#ifdef __x86_64__
+	pidmax = 4194304;
+#else
+	pidmax = 32768;
+#endif
+
+	if ((pid > pidmax) || (pid < 1)) {
 		output(0, "Sanity check failed! Found pid %d!\n", pid);
 		return FALSE;
 	}
