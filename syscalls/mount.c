@@ -5,6 +5,7 @@
 
 #include <linux/fs.h>
 #include "sanitise.h"
+#include "compat.h"
 
 //TODO: fill out 'type' with something random from /proc/filesystems
 
