@@ -23,7 +23,8 @@ static unsigned int new_seed(void)
 	unsigned int r;
 
 	gettimeofday(&t, 0);
-	r = rand() ^ (t.tv_sec * getpid()) ^ t.tv_usec;
+
+	r = t.tv_usec * rand();
 	return r;
 }
 
