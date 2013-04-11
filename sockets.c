@@ -73,9 +73,14 @@ static const struct protocol protocols[] = {
 	{ "PF_VSOCK",        40 },
 };
 
-static const char * get_proto_name(int proto)
+static const char * get_proto_name(unsigned int proto)
 {
-	return protocols[proto].name;
+	unsigned int i;
+
+	for (i = 0; i < TRINITY_PF_MAX; i++)
+		if (protocols[i].proto == proto)
+			return protocols[i].name;
+	return NULL;
 }
 
 void find_specific_proto(const char *protoarg)
