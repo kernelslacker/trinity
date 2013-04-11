@@ -495,4 +495,8 @@ struct sockaddr_nfc {
 #define MS_SNAP_STABLE	(1<<27)
 #endif
 
+#ifndef MS_NOSEC
+#define MS_NOSEC        (1<<28)
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
