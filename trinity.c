@@ -84,6 +84,30 @@ static int create_shm(void)
 	return 0;
 }
 
+static int setup_tables(void)
+{
+	unsigned int ret;
+
+	/* If we didn't pass -c, or -x, mark all syscalls active. */
+	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE))
+		mark_all_syscalls_active();
+
+	if (desired_group != GROUP_NONE) {
+		ret = setup_syscall_group(desired_group);
+		if (ret == FALSE)
+			return FALSE;
+	}
+
+	if (validate_syscall_tables() == FALSE) {
+		printf("No syscalls were enabled!\n");
+		printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
+		return FALSE;
+	}
+
+	sanity_check_tables();
+
+	return TRUE;
+}
 
 int main(int argc, char* argv[])
 {
@@ -101,16 +125,18 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
-	/* If we didn't pass -c or -x, mark all syscalls active. */
-	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE))
-		mark_all_syscalls_active();
+	if (create_shm())
+		exit(EXIT_FAILURE);
 
-	if (desired_group != GROUP_NONE) {
-		ret = setup_syscall_group(desired_group);
-		if (ret == FALSE) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
+	if (logging == TRUE)
+		open_logfiles();
+
+	/* Set seed in parent thread*/
+	set_seed(0);
+
+	if (setup_tables() == FALSE) {
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	if (show_syscall_list == TRUE) {
@@ -139,24 +165,6 @@ int main(int argc, char* argv[])
 			exit(EXIT_FAILURE);
 		}
 	}
-
-	if (create_shm())
-		exit(EXIT_FAILURE);
-
-	/* Set seed in parent thread*/
-	set_seed(0);
-
-	if (validate_syscall_tables() == FALSE) {
-		printf("No syscalls were enabled!\n");
-		printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
-		goto out;
-	}
-
-	sanity_check_tables();
-
-	if (logging == TRUE)
-		open_logfiles();
-
 
 	if (do_specific_syscall == FALSE) {
 		if (biarch == TRUE)
