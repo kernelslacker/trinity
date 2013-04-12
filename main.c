@@ -23,6 +23,9 @@
 
 static void regenerate(void)
 {
+	if (no_files == TRUE)	/* We don't regenerate sockets */
+		return;
+
 	shm->regenerating = TRUE;
 
 	sleep(1);	/* give children time to finish with fds. */
@@ -366,9 +369,11 @@ void do_main_loop(void)
 		set_seed(0);
 
 		setup_fds();
-		if (files_in_index == 0) {
-			shm->exit_reason = EXIT_NO_FILES;
-			_exit(EXIT_FAILURE);;
+		if (no_files == FALSE) {
+			if (files_in_index == 0) {
+				shm->exit_reason = EXIT_NO_FILES;
+				_exit(EXIT_FAILURE);
+			}
 		}
 
 		main_loop();
