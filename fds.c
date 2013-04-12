@@ -39,10 +39,13 @@ static int get_new_random_fd(void)
 	int fd = 0;
 	int ret;
 
+	i = rand() % 3;
+
 	if (do_specific_proto == TRUE)
 		i = 1;
-	else
-		i = rand() % 3;
+
+	if (no_files == TRUE)
+		i = 1;
 
 	/* Ugly special case.
 	 * Sometimes, we can get here without any fd's setup.
@@ -139,9 +142,11 @@ regen:
 
 void setup_fds(void)
 {
-	open_pipes();
-
 	open_sockets();
+	if (no_files == TRUE)
+		return;
+
+	open_pipes();
 
 	generate_filelist();
 	if (files_in_index == 0)
@@ -152,6 +157,9 @@ void setup_fds(void)
 
 void regenerate_fds(void)
 {
+	if (no_files == TRUE)
+		return;
+
 	close_files();
 	open_files();
 }

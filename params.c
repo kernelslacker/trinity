@@ -31,6 +31,8 @@ bool dangerous = FALSE;
 bool logging = TRUE;
 bool do_syslog = FALSE;
 
+bool no_files = FALSE;
+
 bool user_set_seed = FALSE;
 
 unsigned char desired_group = GROUP_NONE;
@@ -49,6 +51,7 @@ static void usage(void)
 	fprintf(stderr, " --ioctls,-I: list all ioctls.\n");
 	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
 	fprintf(stderr, " --monochrome,-m: don't output ANSI codes\n");
+	fprintf(stderr, " --no_files,-n: Only pass sockets as fd's, not files\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --quiet,-q: less output.\n");
 	fprintf(stderr, " --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
@@ -73,6 +76,7 @@ static const struct option longopts[] = {
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "logging", required_argument, NULL, 'l' },
 	{ "monochrome", no_argument, NULL, 'm' },
+	{ "no_files", no_argument, NULL, 'n' },
 	{ "proto", required_argument, NULL, 'P' },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "syslog", no_argument, NULL, 'S' },
@@ -85,7 +89,7 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "c:C:dDg:hIl:LN:mP:pqs:SV:vx:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:C:dDg:hIl:LN:mnP:pqs:SV:vx:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -141,6 +145,10 @@ void parse_args(int argc, char *argv[])
 
 		case 'm':
 			monochrome = TRUE;
+			break;
+
+		case 'n':
+			no_files = TRUE;
 			break;
 
 		/* Set number of syscalls to do */
