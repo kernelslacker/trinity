@@ -88,8 +88,8 @@ static int setup_tables(void)
 {
 	unsigned int ret;
 
-	/* If we didn't pass -c, or -x, mark all syscalls active. */
-	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE))
+	/* If we didn't pass -c, -x or -r, mark all syscalls active. */
+	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE) && (random_selection == FALSE))
 		mark_all_syscalls_active();
 
 	if (desired_group != GROUP_NONE) {
@@ -97,6 +97,9 @@ static int setup_tables(void)
 		if (ret == FALSE)
 			return FALSE;
 	}
+
+	if (random_selection == TRUE)
+		enable_random_syscalls();
 
 	if (validate_syscall_tables() == FALSE) {
 		printf("No syscalls were enabled!\n");

@@ -115,7 +115,7 @@ extern bool use_64bit;
 void setup_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
 void mark_all_syscalls_active(void);
-void toggle_syscall(char *arg, unsigned char state);
+void toggle_syscall(const char *arg, unsigned char state);
 void dump_syscall_tables(void);
 int setup_syscall_group(unsigned int desired_group);
 int validate_syscall_tables(void);
@@ -124,6 +124,7 @@ int validate_syscall_table_64(void);
 int validate_syscall_table_32(void);
 void sanity_check_tables(void);
 const char * print_syscall_name(unsigned int callno, bool bitsize);
+void enable_random_syscalls(void);
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)
