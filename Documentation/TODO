@@ -170,3 +170,7 @@
 * The unicode junk in page_rand when printed out can sometimes lock up or corrupt the tty.
   Perhaps we should output some reset control code at the beginning of a new line in output()
 
+* Random selection mode
+  Argument to pick 10 syscalls at random to enable.
+  Might narrow down some of the cases that take days to reproduce.
+
