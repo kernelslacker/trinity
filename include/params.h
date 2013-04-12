@@ -25,5 +25,6 @@ extern unsigned char desired_group;
 extern bool user_set_seed;
 extern char *victim_path;
 extern bool no_files;
+extern bool random_selection;
 
 #endif	/* _PARAMS_H */

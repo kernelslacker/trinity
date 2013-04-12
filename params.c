@@ -30,7 +30,7 @@ bool monochrome = FALSE;
 bool dangerous = FALSE;
 bool logging = TRUE;
 bool do_syslog = FALSE;
-
+bool random_selection = FALSE;
 bool no_files = FALSE;
 
 bool user_set_seed = FALSE;
@@ -54,6 +54,7 @@ static void usage(void)
 	fprintf(stderr, " --no_files,-n: Only pass sockets as fd's, not files\n");
 	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
 	fprintf(stderr, " --quiet,-q: less output.\n");
+	fprintf(stderr, " --random,-r: pick 10 syscalls at random and just fuzz those\n");
 	fprintf(stderr, " --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
 	fprintf(stderr, " --verbose,-v: increase output verbosity.\n");
 	fprintf(stderr, " --victims,-V: path to victim files.\n");
@@ -78,6 +79,7 @@ static const struct option longopts[] = {
 	{ "monochrome", no_argument, NULL, 'm' },
 	{ "no_files", no_argument, NULL, 'n' },
 	{ "proto", required_argument, NULL, 'P' },
+	{ "random", no_argument, NULL, 'r' },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "victims", required_argument, NULL, 'V' },
@@ -89,7 +91,7 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "c:C:dDg:hIl:LN:mnP:pqs:SV:vx:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:C:dDg:hIl:LN:mnP:pqrs:SV:vx:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -169,6 +171,10 @@ void parse_args(int argc, char *argv[])
 
 		case 'q':
 			quiet_level++;
+			break;
+
+		case 'r':
+			random_selection = 1;
 			break;
 
 		/* Set seed */

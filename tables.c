@@ -200,7 +200,7 @@ void mark_all_syscalls_active(void)
 	}
 }
 
-static void toggle_syscall_biarch(char *arg, unsigned char state)
+static void toggle_syscall_biarch(const char *arg, unsigned char state)
 {
 	int specific_syscall32 = 0;
 	int specific_syscall64 = 0;
@@ -240,7 +240,7 @@ static void toggle_syscall_biarch(char *arg, unsigned char state)
 	}
 }
 
-void toggle_syscall(char *arg, unsigned char state)
+void toggle_syscall(const char *arg, unsigned char state)
 {
 	int specific_syscall = 0;
 
@@ -484,4 +484,37 @@ const char * print_syscall_name(unsigned int callno, bool bitsize)
 		table = syscalls_32bit;
 
 	return table[callno].entry->name;
+}
+
+// FIXME: in the biarch=TRUE case, we ignore 32bit for now
+static const char * lookup_name(unsigned int num)
+{
+	unsigned int local = num;
+
+	printf("num is %d\n", local);
+
+	if (biarch == TRUE) {
+		return syscalls_64bit[num].entry->name;
+	}
+
+	return syscalls[num].entry->name;
+}
+
+void enable_random_syscalls(void)
+{
+	unsigned int i;
+	unsigned int num;
+	const char *syscallname;
+
+	for (i = 0; i < 10; i++) {
+
+		if (biarch == TRUE)
+			num = rand() % max_nr_64bit_syscalls;
+		else
+			num = rand() % max_nr_syscalls;
+
+		syscallname = lookup_name(num);
+
+		toggle_syscall(syscallname, TRUE);
+	}
 }
