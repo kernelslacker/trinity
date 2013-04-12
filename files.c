@@ -348,7 +348,12 @@ char * generate_pathname(void)
 {
 	char *pathname = get_filename();
 	char *newpath;
-	int len = strlen(pathname);
+	int len;
+
+	if (pathname == NULL)		/* As above, handle -n correctly. */
+		return NULL;
+
+	len = strlen(pathname);
 
 	/* 90% chance of returning an unmangled filename */
 	if ((rand() % 100) > 10)
