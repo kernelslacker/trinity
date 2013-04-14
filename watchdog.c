@@ -174,7 +174,7 @@ static void check_children(void)
 static void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
-	static unsigned long lastcount;
+	static unsigned long lastcount = 0;
 
 	shm->watchdog_pid = getpid();
 	printf("[%d] Watchdog is alive\n", shm->watchdog_pid);
@@ -203,10 +203,11 @@ static void watchdog(void)
 				synclogs();
 
 			if ((quiet_level > 1) && (shm->total_syscalls_done > 1)) {
-				if (shm->total_syscalls_done != lastcount)
+				if (shm->total_syscalls_done - lastcount > 10000) {
 					printf("[watchdog] %ld iterations. [F:%ld S:%ld]\n",
 						shm->total_syscalls_done, shm->failures, shm->successes);
-				lastcount = shm->total_syscalls_done;
+					lastcount = shm->total_syscalls_done;
+				}
 			}
 		}
 
