@@ -230,10 +230,8 @@ static void toggle_syscall_biarch(const char *arg, unsigned char state)
 		validate_specific_syscall(syscalls_64bit, specific_syscall64);
 
 		if (state == TRUE) {
-			printf("[%d] Marking 64-bit syscall %d (%s) as enabled\n", getpid(), specific_syscall64, arg);
 			syscalls_64bit[specific_syscall64].entry->flags |= ACTIVE;
 		} else {
-			printf("[%d] Marking 64-bit syscall %d (%s) as disabled\n", getpid(), specific_syscall64, arg);
 			syscalls_64bit[specific_syscall64].entry->flags &= ~ACTIVE;
 		}
 	}
@@ -244,10 +242,8 @@ static void toggle_syscall_biarch(const char *arg, unsigned char state)
 		validate_specific_syscall(syscalls_32bit, specific_syscall32);
 
 		if (state == TRUE) {
-			printf("[%d] Marking 32-bit syscall %d (%s) as enabled\n", getpid(), specific_syscall32, arg);
 			syscalls_32bit[specific_syscall32].entry->flags |= ACTIVE;
 		} else {
-			printf("[%d] Marking 32-bit syscall %d (%s) as disabled\n", getpid(), specific_syscall32, arg);
 			syscalls_32bit[specific_syscall32].entry->flags &= ~ACTIVE;
 		}
 	}
@@ -255,6 +251,28 @@ static void toggle_syscall_biarch(const char *arg, unsigned char state)
 	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
 		printf("No idea what syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);
+	}
+
+	/* biarch? */
+	if ((specific_syscall64 != -1) && (specific_syscall32 != -1)) {
+		printf("[%d] Marked syscall %s (64bit:%d 32bit:%d) as %sabled.\n",
+			getpid(), arg, specific_syscall64, specific_syscall32,
+			state ? "en" : "dis");
+		return;
+	}
+
+	if (specific_syscall64 != -1) {
+		printf("[%d] Marked 64-bit syscall %s (%d) as %sabled.\n",
+			getpid(), arg, specific_syscall64,
+			state ? "en" : "dis");
+		return;
+	}
+
+	if  (specific_syscall32 != -1) {
+		printf("[%d] Marked 32-bit syscall %s (%d) as %sabled.\n",
+			getpid(), arg, specific_syscall32,
+			state ? "en" : "dis");
+		return;
 	}
 }
 
