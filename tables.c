@@ -55,7 +55,7 @@ static void validate_specific_syscall(const struct syscalltable *table, int call
 	}
 }
 
-static int validate_specific_syscall_silent(const struct syscalltable *table, int call)
+int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 {
 	if (call != -1) {
 		if (table[call].entry->flags & AVOID_SYSCALL)
