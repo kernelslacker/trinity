@@ -199,10 +199,13 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'x':
-			/* First time we see a '-x', set all syscalls to enabled, then selectively disable. */
-			if (do_exclude_syscall == FALSE)
-				mark_all_syscalls_active();
-
+			/* First time we see a '-x', set all syscalls to enabled, then selectively disable.
+			 * Unless we've started enabling them already (with -r)
+			 */
+			if (random_selection == FALSE) {
+				if (do_exclude_syscall == FALSE)
+					mark_all_syscalls_active();
+			}
 			do_exclude_syscall = TRUE;
 			toggle_syscall(optarg, FALSE);
 			break;
