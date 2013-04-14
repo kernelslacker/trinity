@@ -84,11 +84,15 @@ static int create_shm(void)
 	return 0;
 }
 
-static int setup_tables(void)
+
+/* This is run *after* we've parsed params */
+static int munge_tables(void)
 {
 	unsigned int ret;
 
-	/* If we didn't pass -c, -x or -r, mark all syscalls active. */
+	/* By default, all syscall entries will be disabled.
+	 * If we didn't pass -c, -x or -r, mark all syscalls active.
+	 */
 	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE) && (random_selection == FALSE))
 		mark_all_syscalls_active();
 
@@ -134,7 +138,7 @@ int main(int argc, char* argv[])
 	/* Set seed in parent thread*/
 	set_seed(0);
 
-	if (setup_tables() == FALSE) {
+	if (munge_tables() == FALSE) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
