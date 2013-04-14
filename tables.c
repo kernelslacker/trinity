@@ -55,6 +55,21 @@ static void validate_specific_syscall(const struct syscalltable *table, int call
 	}
 }
 
+static int validate_specific_syscall_silent(const struct syscalltable *table, int call)
+{
+	if (call != -1) {
+		if (table[call].entry->flags & AVOID_SYSCALL)
+			return FALSE;
+
+		if (table[call].entry->flags & NI_SYSCALL)
+			return FALSE;
+
+		if (table[call].entry->num_args == 0)
+			return FALSE;
+	}
+	return TRUE;
+}
+
 bool no_syscalls_enabled(void)
 {
 	unsigned int i;
@@ -504,12 +519,28 @@ void enable_random_syscalls(void)
 
 	for (i = 0; i < 10; i++) {
 
+retry:
 		if (biarch == TRUE)
 			num = rand() % max_nr_64bit_syscalls;
 		else
 			num = rand() % max_nr_syscalls;
 
 		syscallname = lookup_name(num);
+		if (!strcmp(syscallname, "ni_syscall (generic)"))
+			goto retry;
+
+		if (biarch == TRUE) {
+			if (validate_specific_syscall_silent(syscalls_64bit, num) == FALSE)
+				goto retry;
+
+			if (validate_specific_syscall_silent(syscalls_32bit, num) == FALSE)
+				goto retry;
+
+		} else {
+			if (validate_specific_syscall_silent(syscalls, num) == FALSE)
+				goto retry;
+
+		}
 
 		toggle_syscall(syscallname, TRUE);
 	}
