@@ -107,7 +107,6 @@ void parse_args(int argc, char *argv[])
 			/* syscalls are all disabled at this point. enable the syscall we care about. */
 			do_specific_syscall = TRUE;
 			toggle_syscall(optarg, TRUE);
-			printf("Enabling syscall %s\n", optarg);
 			break;
 
 		case 'C':
