@@ -489,10 +489,6 @@ const char * print_syscall_name(unsigned int callno, bool bitsize)
 // FIXME: in the biarch=TRUE case, we ignore 32bit for now
 static const char * lookup_name(unsigned int num)
 {
-	unsigned int local = num;
-
-	printf("num is %d\n", local);
-
 	if (biarch == TRUE) {
 		return syscalls_64bit[num].entry->name;
 	}
