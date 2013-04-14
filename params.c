@@ -175,6 +175,7 @@ void parse_args(int argc, char *argv[])
 
 		case 'r':
 			random_selection = 1;
+			enable_random_syscalls();
 			break;
 
 		/* Set seed */

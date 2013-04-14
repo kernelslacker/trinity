@@ -98,9 +98,6 @@ static int setup_tables(void)
 			return FALSE;
 	}
 
-	if (random_selection == TRUE)
-		enable_random_syscalls();
-
 	if (validate_syscall_tables() == FALSE) {
 		printf("No syscalls were enabled!\n");
 		printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
