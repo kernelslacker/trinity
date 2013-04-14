@@ -525,10 +525,6 @@ retry:
 		else
 			num = rand() % max_nr_syscalls;
 
-		syscallname = lookup_name(num);
-		if (!strcmp(syscallname, "ni_syscall (generic)"))
-			goto retry;
-
 		if (biarch == TRUE) {
 			if (validate_specific_syscall_silent(syscalls_64bit, num) == FALSE)
 				goto retry;
@@ -542,6 +538,7 @@ retry:
 
 		}
 
+		syscallname = lookup_name(num);
 		toggle_syscall(syscallname, TRUE);
 	}
 }
