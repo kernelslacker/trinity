@@ -98,13 +98,7 @@ retry:
 		if (!(syscalls[syscallnr].entry->flags & ACTIVE))
 			goto retry;
 
-		if (syscalls[syscallnr].entry->flags & AVOID_SYSCALL)
-			goto retry;
-
-		if (syscalls[syscallnr].entry->num_args == 0)
-			goto retry;
-
-		if (syscalls[syscallnr].entry->flags & NI_SYSCALL)
+		if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE)
 			goto retry;
 
 		/* if we get here, syscallnr is finally valid */
