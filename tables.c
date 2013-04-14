@@ -43,30 +43,33 @@ int search_syscall_table(const struct syscalltable *table, unsigned int nr_sysca
 
 static void validate_specific_syscall(const struct syscalltable *table, int call)
 {
-	if (call != -1) {
-		if (table[call].entry->flags & AVOID_SYSCALL)
-			printf("%s is marked as AVOID. Skipping\n", table[call].entry->name);
+	if (call == -1)
+		return;
 
-		if (table[call].entry->flags & NI_SYSCALL)
-			printf("%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
+	if (table[call].entry->flags & AVOID_SYSCALL)
+		printf("%s is marked as AVOID. Skipping\n", table[call].entry->name);
 
-		if (table[call].entry->num_args == 0)
-			printf("%s has no arguments. Skipping\n", table[call].entry->name);
-	}
+	if (table[call].entry->flags & NI_SYSCALL)
+		printf("%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
+
+	if (table[call].entry->num_args == 0)
+		printf("%s has no arguments. Skipping\n", table[call].entry->name);
 }
 
 int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 {
-	if (call != -1) {
-		if (table[call].entry->flags & AVOID_SYSCALL)
-			return FALSE;
+	if (call == -1)
+		return FALSE;
 
-		if (table[call].entry->flags & NI_SYSCALL)
-			return FALSE;
+	if (table[call].entry->flags & AVOID_SYSCALL)
+		return FALSE;
 
-		if (table[call].entry->num_args == 0)
-			return FALSE;
-	}
+	if (table[call].entry->flags & NI_SYSCALL)
+		return FALSE;
+
+	if (table[call].entry->num_args == 0)
+		return FALSE;
+
 	return TRUE;
 }
 
