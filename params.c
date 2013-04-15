@@ -175,7 +175,7 @@ void parse_args(int argc, char *argv[])
 		case 'r':
 			if (do_exclude_syscall == TRUE) {
 				printf("-r needs to be before any -x options.\n");
-				return;
+				exit(EXIT_FAILURE);
 			}
 			random_selection = 1;
 			enable_random_syscalls();
