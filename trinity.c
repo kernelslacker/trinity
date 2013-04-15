@@ -66,6 +66,27 @@ static int create_shm(void)
 	shm->total_syscalls_done = 1;
 	shm->regenerate = 0;
 
+	memset(shm->pids, EMPTY_PIDSLOT, sizeof(shm->pids));
+
+	shm->parentpid = getpid();
+
+	/* Overwritten later in setup_shm_postargs if user passed -s */
+	shm->seed = new_seed();
+
+	/* Set seed in parent thread */
+	set_seed(0);
+
+	return 0;
+}
+
+static void setup_shm_postargs(void)
+{
+	if (user_set_seed == TRUE) {
+		shm->seed = init_seed(seed);
+		/* Set seed in parent thread */
+		set_seed(0);
+	}
+
 	if (user_specified_children != 0)
 		shm->max_children = user_specified_children;
 	else
@@ -75,15 +96,7 @@ static int create_shm(void)
 		printf("Increase MAX_NR_CHILDREN!\n");
 		exit(EXIT_FAILURE);
 	}
-	memset(shm->pids, EMPTY_PIDSLOT, sizeof(shm->pids));
-
-	shm->parentpid = getpid();
-
-	shm->seed = init_seed(seed);
-
-	return 0;
 }
-
 
 /* This is run *after* we've parsed params */
 static int munge_tables(void)
@@ -127,16 +140,15 @@ int main(int argc, char* argv[])
 
 	setup_syscall_tables();
 
-	parse_args(argc, argv);
-
 	if (create_shm())
 		exit(EXIT_FAILURE);
 
+	parse_args(argc, argv);
+
+	setup_shm_postargs();
+
 	if (logging == TRUE)
 		open_logfiles();
-
-	/* Set seed in parent thread*/
-	set_seed(0);
 
 	if (munge_tables() == FALSE) {
 		ret = EXIT_FAILURE;

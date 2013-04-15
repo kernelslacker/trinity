@@ -17,7 +17,7 @@ static void syslog_seed(int seedparam)
 	closelog();
 }
 
-static unsigned int new_seed(void)
+unsigned int new_seed(void)
 {
 	struct timeval t;
 	unsigned int r;
