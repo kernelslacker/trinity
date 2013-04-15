@@ -121,6 +121,9 @@ static int munge_tables(void)
 		return FALSE;
 	}
 
+	if (random_selection == TRUE)
+		enable_random_syscalls();
+
 	sanity_check_tables();
 
 	return TRUE;

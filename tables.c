@@ -11,6 +11,7 @@
 #include "arch.h"
 #include "arch-syscalls.h"
 #include "syscall.h"
+#include "params.h"
 
 const struct syscalltable *syscalls;
 const struct syscalltable *syscalls_32bit;
@@ -557,12 +558,25 @@ retry:
 			if (validate_specific_syscall_silent(syscalls_32bit, num) == FALSE)
 				goto retry;
 
+			/* If we want just network sockets, don't bother with VM syscalls */
+			if (no_files == TRUE) {
+				if (syscalls_64bit[num].entry->group == GROUP_VM)
+					goto retry;
+				if (syscalls_32bit[num].entry->group == GROUP_VM)
+					goto retry;
+			}
+
 		} else {
 			if (validate_specific_syscall_silent(syscalls, num) == FALSE)
 				goto retry;
 			if (syscalls[num].entry->flags & ACTIVE)
 				goto retry;
 
+			/* If we want just network sockets, don't bother with VM syscalls */
+			if (no_files == TRUE) {
+				if (syscalls[num].entry->group == GROUP_VM)
+					goto retry;
+			}
 		}
 
 		syscallname = lookup_name(num);

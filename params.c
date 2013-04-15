@@ -178,7 +178,6 @@ void parse_args(int argc, char *argv[])
 				exit(EXIT_FAILURE);
 			}
 			random_selection = 1;
-			enable_random_syscalls();
 			break;
 
 		/* Set seed */
