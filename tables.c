@@ -544,7 +544,14 @@ retry:
 			num = rand() % max_nr_syscalls;
 
 		if (biarch == TRUE) {
+
+			if (syscalls_64bit[num].entry->flags & ACTIVE)
+				goto retry;
+
 			if (validate_specific_syscall_silent(syscalls_64bit, num) == FALSE)
+				goto retry;
+
+			if (syscalls_64bit[num].entry->flags & ACTIVE)
 				goto retry;
 
 			if (validate_specific_syscall_silent(syscalls_32bit, num) == FALSE)
@@ -552,6 +559,8 @@ retry:
 
 		} else {
 			if (validate_specific_syscall_silent(syscalls, num) == FALSE)
+				goto retry;
+			if (syscalls[num].entry->flags & ACTIVE)
 				goto retry;
 
 		}
