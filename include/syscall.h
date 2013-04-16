@@ -112,6 +112,7 @@ extern bool use_64bit;
 #define BORING (1<<3)
 #define ACTIVE (1<<4)
 #define NEED_ALARM (1<<5)
+#define DISABLED (1<<6)
 
 void setup_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
@@ -127,6 +128,7 @@ void sanity_check_tables(void);
 const char * print_syscall_name(unsigned int callno, bool bitsize);
 void enable_random_syscalls(void);
 int validate_specific_syscall_silent(const struct syscalltable *table, int call);
+void deactivate_disabled_syscalls(void);
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)
