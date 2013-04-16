@@ -48,7 +48,8 @@ SRCS		= $(wildcard *.c) \
 OBJS		= $(patsubst %.c,%.o,$(wildcard *.c)) \
 		  $(patsubst %.c,%.o,$(wildcard syscalls/*.c)) \
 		  $(patsubst %.c,%.o,$(SYSCALLS_ARCH)) \
-		  $(patsubst %.c,%.o,$(wildcard ioctls/*.c))
+		  $(patsubst %.c,%.o,$(wildcard ioctls/*.c)) \
+		  $(patsubst %.c,%.o,$(wildcard net/*.c))
 
 DEPDIR= .deps
 

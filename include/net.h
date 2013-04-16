@@ -1,6 +1,8 @@
 #ifndef _NET_H
 #define _NET_H 1
 
+#include <netinet/in.h>
+
 extern unsigned int nr_sockets;
 extern unsigned int specific_proto;
 void open_sockets(void);
@@ -15,5 +17,9 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
 #define PROTO_MAX 256
 
 #define PF_NOHINT (-1)
+
+/* ipv4 */
+in_addr_t random_ipv4_address(void);
+void gen_ipv4(unsigned long *addr, unsigned long *addrlen);
 
 #endif	/* _NET_H */
