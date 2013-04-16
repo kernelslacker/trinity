@@ -234,7 +234,7 @@ static void toggle_syscall_biarch(const char *arg, unsigned char state)
 		if (state == TRUE)
 			syscalls_64bit[specific_syscall64].entry->flags |= ACTIVE;
 		else
-			syscalls_64bit[specific_syscall64].entry->flags |= DISABLED;
+			syscalls_64bit[specific_syscall64].entry->flags |= TO_BE_DEACTIVATED;
 	}
 
 	/* Search for and validate 32bit */
@@ -245,7 +245,7 @@ static void toggle_syscall_biarch(const char *arg, unsigned char state)
 		if (state == TRUE)
 			syscalls_32bit[specific_syscall32].entry->flags |= ACTIVE;
 		else
-			syscalls_32bit[specific_syscall32].entry->flags |= DISABLED;
+			syscalls_32bit[specific_syscall32].entry->flags |= TO_BE_DEACTIVATED;
 	}
 
 	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
@@ -297,7 +297,7 @@ void toggle_syscall(const char *arg, unsigned char state)
 	if (state == TRUE)
 		syscalls[specific_syscall].entry->flags |= ACTIVE;
 	else
-		syscalls[specific_syscall].entry->flags |= DISABLED;
+		syscalls[specific_syscall].entry->flags |= TO_BE_DEACTIVATED;
 
 	printf("[%d] Marking syscall %s (%d) as to be %sabled.\n",
 		getpid(), arg, specific_syscall,
@@ -312,14 +312,14 @@ void deactivate_disabled_syscalls(void)
 
 	if (biarch == TRUE) {
 		for_each_64bit_syscall(i) {
-			if (syscalls_64bit[i].entry->flags & DISABLED) {
+			if (syscalls_64bit[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls_64bit[i].entry->flags &= ~ACTIVE;
 				printf("[%d] Marked 64-bit syscall %s (%d) as deactivated.\n",
 					getpid(), syscalls_64bit[i].entry->name, syscalls_64bit[i].entry->number);
 			}
 		}
 		for_each_32bit_syscall(i) {
-			if (syscalls_32bit[i].entry->flags & DISABLED) {
+			if (syscalls_32bit[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls_32bit[i].entry->flags &= ~ACTIVE;
 				printf("[%d] Marked 32-bit syscall %s (%d) as deactivated.\n",
 					getpid(), syscalls_32bit[i].entry->name, syscalls_32bit[i].entry->number);
@@ -328,7 +328,7 @@ void deactivate_disabled_syscalls(void)
 
 	} else {
 		for_each_syscall(i) {
-			if (syscalls[i].entry->flags & DISABLED) {
+			if (syscalls[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls[i].entry->flags &= ~ACTIVE;
 				printf("[%d] Marked syscall %s (%d) as deactivated.\n",
 					getpid(), syscalls[i].entry->name, syscalls[i].entry->number);
@@ -605,9 +605,9 @@ retry:
 				if (syscalls_32bit[num].entry->group == GROUP_VFS)
 					goto retry;
 			}
-			if (syscalls_64bit[num].entry->flags & DISABLED)
+			if (syscalls_64bit[num].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
-			if (syscalls_32bit[num].entry->flags & DISABLED)
+			if (syscalls_32bit[num].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
 
 		} else {
@@ -624,7 +624,7 @@ retry:
 					goto retry;
 			}
 			/* if we've set this to be disabled, don't enable it! */
-			if (syscalls[num].entry->flags & DISABLED)
+			if (syscalls[num].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
 		}
 
