@@ -112,7 +112,7 @@ extern bool use_64bit;
 #define BORING (1<<3)
 #define ACTIVE (1<<4)
 #define NEED_ALARM (1<<5)
-#define DISABLED (1<<6)
+#define TO_BE_DEACTIVATED (1<<6)
 
 void setup_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
