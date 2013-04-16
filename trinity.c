@@ -137,6 +137,8 @@ static int munge_tables(void)
 
 	sanity_check_tables();
 
+	count_syscalls_enabled();
+
 	return TRUE;
 }
 

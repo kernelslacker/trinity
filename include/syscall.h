@@ -129,6 +129,7 @@ const char * print_syscall_name(unsigned int callno, bool bitsize);
 void enable_random_syscalls(void);
 int validate_specific_syscall_silent(const struct syscalltable *table, int call);
 void deactivate_disabled_syscalls(void);
+void count_syscalls_enabled(void);
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)
