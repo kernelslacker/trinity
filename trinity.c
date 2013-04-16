@@ -139,6 +139,9 @@ static int munge_tables(void)
 
 	count_syscalls_enabled();
 
+	if (verbose == TRUE)
+		display_enabled_syscalls();
+
 	return TRUE;
 }
 

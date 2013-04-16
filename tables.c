@@ -601,6 +601,31 @@ static const char * lookup_name(unsigned int num)
 	return syscalls[num].entry->name;
 }
 
+void display_enabled_syscalls(void)
+{
+	unsigned int i;
+
+	if (biarch == TRUE) {
+		for_each_64bit_syscall(i) {
+			if (syscalls_64bit[i].entry->flags & ACTIVE)
+				printf("[%d] 64-bit syscall %s enabled.\n", getpid(), syscalls_64bit[i].entry->name);
+		}
+
+		for_each_32bit_syscall(i) {
+			if (syscalls_32bit[i].entry->flags & ACTIVE)
+				printf("[%d] 32-bit syscall %s enabled.\n", getpid(), syscalls_32bit[i].entry->name);
+		}
+
+	} else {
+		/* non-biarch */
+		for_each_syscall(i) {
+			if (syscalls[i].entry->flags & ACTIVE)
+				printf("[%d] syscall %s enabled.\n", getpid(), syscalls[i].entry->name);
+		}
+	}
+}
+
+
 void enable_random_syscalls(void)
 {
 	unsigned int i;
