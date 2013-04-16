@@ -121,20 +121,19 @@ static int munge_tables(void)
 		return FALSE;
 	}
 
-	if (random_selection == TRUE) {
+	if (random_selection == TRUE)
 		enable_random_syscalls();
-	} else {
 
-		/* If we saw a '-x', set all syscalls to enabled, then selectively disable.
-		 * Unless we've started enabling them already (with -r)
-		 */
 
-		if (do_exclude_syscall == FALSE)
+	/* If we saw a '-x', set all syscalls to enabled, then selectively disable.
+	 * Unless we've started enabling them already (with -r)
+	 */
+	if (do_exclude_syscall == TRUE) {
+		if (random_selection == FALSE)
 			mark_all_syscalls_active();
-	}
 
-	if (do_exclude_syscall == TRUE)
 		deactivate_disabled_syscalls();
+	}
 
 	sanity_check_tables();
 
