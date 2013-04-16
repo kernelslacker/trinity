@@ -199,14 +199,6 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	if (do_specific_syscall == FALSE) {
-		if (biarch == TRUE)
-			output(0, "Fuzzing %d 32-bit syscalls & %d 64-bit syscalls.\n",
-				max_nr_32bit_syscalls, max_nr_64bit_syscalls);
-		else
-			output(0, "Fuzzing %d syscalls.\n", max_nr_syscalls);
-	}
-
 	if (do_specific_proto == TRUE)
 		find_specific_proto(specific_proto_optarg);
 
