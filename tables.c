@@ -74,6 +74,43 @@ int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 	return TRUE;
 }
 
+void count_syscalls_enabled(void)
+{
+	unsigned int i;
+	unsigned int ecount_32 = 0, ecount_64 = 0;
+	unsigned int dcount_32 = 0, dcount_64 = 0;
+
+	if (biarch == TRUE) {
+		for_each_64bit_syscall(i) {
+			if (syscalls_64bit[i].entry->flags & ACTIVE)
+				ecount_64++;
+			else
+				dcount_64++;
+		}
+
+		for_each_32bit_syscall(i) {
+			if (syscalls_32bit[i].entry->flags & ACTIVE)
+				ecount_32++;
+			else
+				dcount_32++;
+		}
+		printf("[%d] 32-bit syscalls: %d enabled, %d disabled.  "
+			"64-bit syscalls: %d enabled, %d disabled.\n",
+			getpid(), ecount_32, dcount_32, ecount_64, dcount_64);
+
+	} else {
+
+		/* non-biarch */
+		for_each_syscall(i) {
+			if (syscalls[i].entry->flags & ACTIVE)
+				ecount_32++;
+			else
+				dcount_32++;
+		}
+		printf("[%d] Enabled %d syscalls. Disabled %d syscalls.\n", getpid(), ecount_32, dcount_32);
+	}
+}
+
 bool no_syscalls_enabled(void)
 {
 	unsigned int i;
