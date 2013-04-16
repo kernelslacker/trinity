@@ -350,14 +350,14 @@ void deactivate_disabled_syscalls(void)
 	if (biarch == TRUE) {
 		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->flags & TO_BE_DEACTIVATED) {
-				syscalls_64bit[i].entry->flags &= ~ACTIVE;
+				syscalls_64bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 				printf("[%d] Marked 64-bit syscall %s (%d) as deactivated.\n",
 					getpid(), syscalls_64bit[i].entry->name, syscalls_64bit[i].entry->number);
 			}
 		}
 		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->flags & TO_BE_DEACTIVATED) {
-				syscalls_32bit[i].entry->flags &= ~ACTIVE;
+				syscalls_32bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 				printf("[%d] Marked 32-bit syscall %s (%d) as deactivated.\n",
 					getpid(), syscalls_32bit[i].entry->name, syscalls_32bit[i].entry->number);
 			}
@@ -366,7 +366,7 @@ void deactivate_disabled_syscalls(void)
 	} else {
 		for_each_syscall(i) {
 			if (syscalls[i].entry->flags & TO_BE_DEACTIVATED) {
-				syscalls[i].entry->flags &= ~ACTIVE;
+				syscalls[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 				printf("[%d] Marked syscall %s (%d) as deactivated.\n",
 					getpid(), syscalls[i].entry->name, syscalls[i].entry->number);
 			}
@@ -608,19 +608,19 @@ void display_enabled_syscalls(void)
 	if (biarch == TRUE) {
 		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->flags & ACTIVE)
-				printf("[%d] 64-bit syscall %s enabled.\n", getpid(), syscalls_64bit[i].entry->name);
+				printf("[%d] 64-bit syscall %d:%s enabled.\n", getpid(), i, syscalls_64bit[i].entry->name);
 		}
 
 		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->flags & ACTIVE)
-				printf("[%d] 32-bit syscall %s enabled.\n", getpid(), syscalls_32bit[i].entry->name);
+				printf("[%d] 32-bit syscall %d:%s enabled.\n", getpid(), i, syscalls_32bit[i].entry->name);
 		}
 
 	} else {
 		/* non-biarch */
 		for_each_syscall(i) {
 			if (syscalls[i].entry->flags & ACTIVE)
-				printf("[%d] syscall %s enabled.\n", getpid(), syscalls[i].entry->name);
+				printf("[%d] syscall %d:%s enabled.\n", getpid(), i, syscalls[i].entry->name);
 		}
 	}
 }
@@ -638,6 +638,58 @@ static bool is_syscall_net_related(const struct syscalltable *table, unsigned in
 
 	return TRUE;
 }
+
+void disable_non_net_syscalls(void)
+{
+	const char *syscallname;
+	unsigned int i;
+
+	printf("Disabling non networking related syscalls\n");
+
+	if (biarch == TRUE) {
+		for_each_64bit_syscall(i) {
+			if (validate_specific_syscall_silent(syscalls_64bit, i) == FALSE)
+				continue;
+
+			if (syscalls_64bit[i].entry->flags & ACTIVE) {
+				if (is_syscall_net_related(syscalls_64bit, i) == FALSE) {
+					syscallname = lookup_name(i);
+					toggle_syscall_biarch(syscallname, FALSE);
+				}
+			}
+		}
+
+		for_each_32bit_syscall(i) {
+			if (validate_specific_syscall_silent(syscalls_32bit, i) == FALSE)
+				continue;
+
+			if (syscalls_32bit[i].entry->flags & ACTIVE) {
+				if (is_syscall_net_related(syscalls_32bit, i) == FALSE) {
+					syscallname = syscalls_32bit[i].entry->name;
+					toggle_syscall_biarch(syscallname, FALSE);
+				}
+			}
+		}
+
+	} else {
+		/* non-biarch */
+		for_each_syscall(i) {
+			if (validate_specific_syscall_silent(syscalls, i) == FALSE)
+				continue;
+
+			if (syscalls[i].entry->flags & ACTIVE) {
+				if (is_syscall_net_related(syscalls, i) == FALSE) {
+					syscallname = lookup_name(i);
+					toggle_syscall(syscallname, FALSE);
+				}
+			}
+		}
+
+	}
+
+	deactivate_disabled_syscalls();
+}
+
 
 void enable_random_syscalls(void)
 {
