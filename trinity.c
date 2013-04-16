@@ -153,7 +153,7 @@ int main(int argc, char* argv[])
 
 	page_size = getpagesize();
 
-	setup_syscall_tables();
+	select_syscall_tables();
 
 	if (create_shm())
 		exit(EXIT_FAILURE);

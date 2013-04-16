@@ -114,7 +114,7 @@ extern bool use_64bit;
 #define NEED_ALARM (1<<5)
 #define TO_BE_DEACTIVATED (1<<6)
 
-void setup_syscall_tables(void);
+void select_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
 void mark_all_syscalls_active(void);
 void toggle_syscall(const char *arg, unsigned char state);
