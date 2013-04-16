@@ -9,4 +9,5 @@ struct syscall syscall_ustat = {
 	.arg1name = "dev",
 	.arg2name = "ubuf",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };
