@@ -25,4 +25,7 @@ void gen_ipv4(unsigned long *addr, unsigned long *addrlen);
 /* ipv6 */
 void gen_ipv6(unsigned long *addr, unsigned long *addrlen);
 
+/* pppox */
+void gen_pppox(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
