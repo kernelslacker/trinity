@@ -626,7 +626,7 @@ void display_enabled_syscalls(void)
 }
 
 /* If we want just network sockets, don't bother with VM/VFS syscalls */
-bool check_group_net(const struct syscalltable *table, unsigned int num)
+static bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
 {
 	if (no_files == FALSE)
 		return TRUE;
@@ -642,8 +642,8 @@ bool check_group_net(const struct syscalltable *table, unsigned int num)
 void enable_random_syscalls(void)
 {
 	unsigned int i;
-	unsigned int num;
 	const char *syscallname;
+	unsigned int call, call32, call64;
 
 	if (random_selection_num == 0) {
 		printf("-r 0 syscalls ? what?\n");
@@ -667,41 +667,44 @@ void enable_random_syscalls(void)
 	for (i = 0; i < random_selection_num; i++) {
 
 retry:
-		if (biarch == TRUE)
-			num = rand() % max_nr_64bit_syscalls;
-		else
-			num = rand() % max_nr_syscalls;
-
 		if (biarch == TRUE) {
+			call64 = rand() % max_nr_64bit_syscalls;
+			syscallname = lookup_name(call64);
+			call32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, syscallname);
 
-			if (validate_specific_syscall_silent(syscalls_64bit, num) == FALSE)
+			if (validate_specific_syscall_silent(syscalls_64bit, call64) == FALSE)
 				goto retry;
-			if (validate_specific_syscall_silent(syscalls_32bit, num) == FALSE)
-				goto retry;
-
-			if (check_group_net(syscalls_64bit, num) == FALSE)
-				goto retry;
-			if (check_group_net(syscalls_32bit, num) == FALSE)
+			if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE)
 				goto retry;
 
-			if (syscalls_64bit[num].entry->flags & TO_BE_DEACTIVATED)
+			if (no_files == TRUE) {
+				if (is_syscall_net_related(syscalls_64bit, call64) == FALSE)
+					goto retry;
+				if (is_syscall_net_related(syscalls_32bit, call32) == FALSE)
+					goto retry;
+			}
+
+			if (syscalls_64bit[call64].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
-			if (syscalls_32bit[num].entry->flags & TO_BE_DEACTIVATED)
+			if (syscalls_32bit[call32].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
 
 		} else {
-			if (validate_specific_syscall_silent(syscalls, num) == FALSE)
+			call = rand() % max_nr_syscalls;
+
+			if (validate_specific_syscall_silent(syscalls, call) == FALSE)
 				goto retry;
 
-			if (check_group_net(syscalls_32bit, num) == FALSE)
-				goto retry;
+			if (no_files == TRUE)
+				if (is_syscall_net_related(syscalls_32bit, call) == FALSE)
+					goto retry;
 
 			/* if we've set this to be disabled, don't enable it! */
-			if (syscalls[num].entry->flags & TO_BE_DEACTIVATED)
+			if (syscalls[call].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
-		}
 
-		syscallname = lookup_name(num);
+			syscallname = lookup_name(call);
+		}
 
 		toggle_syscall(syscallname, TRUE);
 	}
