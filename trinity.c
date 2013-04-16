@@ -128,6 +128,10 @@ static int munge_tables(void)
 		deactivate_disabled_syscalls();
 	}
 
+	/* if we passed -n, make sure there's no VM/VFS syscalls enabled. */
+	if (no_files == TRUE)
+		disable_non_net_syscalls();
+
 	sanity_check_tables();
 
 	count_syscalls_enabled();

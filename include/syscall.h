@@ -131,6 +131,7 @@ int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 void deactivate_disabled_syscalls(void);
 void count_syscalls_enabled(void);
 void display_enabled_syscalls(void);
+void disable_non_net_syscalls(void);
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)
