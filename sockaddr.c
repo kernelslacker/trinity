@@ -15,7 +15,6 @@
 #include <linux/if_packet.h>
 #include <neteconet/ec.h>
 #include <linux/irda.h>
-#include <linux/if_pppox.h>
 #include <linux/can.h>
 #include <linux/tipc.h>
 #include <linux/phonet.h>
@@ -35,23 +34,6 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 #endif
-
-static void gen_unixsock(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_un *unixsock;
-	unsigned int len;
-
-	unixsock = malloc(sizeof(struct sockaddr_un));
-	if (unixsock == NULL)
-		return;
-
-	unixsock->sun_family = PF_UNIX;
-	len = rand() % 20;
-	memset(&page_rand[len], 0, 1);
-	strncpy(unixsock->sun_path, page_rand, len);
-	*addr = (unsigned long) unixsock;
-	*addrlen = sizeof(struct sockaddr_un);
-}
 
 static void gen_ax25(unsigned long *addr, unsigned long *addrlen)
 {
