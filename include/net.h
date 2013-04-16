@@ -22,4 +22,7 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
 in_addr_t random_ipv4_address(void);
 void gen_ipv4(unsigned long *addr, unsigned long *addrlen);
 
+/* ipv6 */
+void gen_ipv6(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
