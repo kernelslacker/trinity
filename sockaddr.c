@@ -88,24 +88,6 @@ static void gen_ipx(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_ipx);
 }
 
-static void gen_ipv6(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_in6 *ipv6;
-
-	ipv6 = malloc(sizeof(struct sockaddr_in6));
-	if (ipv6 == NULL)
-		return;
-
-	ipv6->sin6_family = PF_INET6;
-	ipv6->sin6_addr.s6_addr32[0] = 0;
-	ipv6->sin6_addr.s6_addr32[1] = 0;
-	ipv6->sin6_addr.s6_addr32[2] = 0;
-	ipv6->sin6_addr.s6_addr32[3] = htonl(1);
-	ipv6->sin6_port = rand() % 65535;
-	*addr = (unsigned long) ipv6;
-	*addrlen = sizeof(struct sockaddr_in6);
-}
-
 static void gen_appletalk(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_at *atalk;
