@@ -625,6 +625,19 @@ void display_enabled_syscalls(void)
 	}
 }
 
+/* If we want just network sockets, don't bother with VM/VFS syscalls */
+bool check_group_net(const struct syscalltable *table, unsigned int num)
+{
+	if (no_files == FALSE)
+		return TRUE;
+
+	if (table[num].entry->group == GROUP_VM)
+		return FALSE;
+	if (table[num].entry->group == GROUP_VFS)
+		return FALSE;
+
+	return TRUE;
+}
 
 void enable_random_syscalls(void)
 {
@@ -666,17 +679,11 @@ retry:
 			if (validate_specific_syscall_silent(syscalls_32bit, num) == FALSE)
 				goto retry;
 
-			/* If we want just network sockets, don't bother with VM syscalls */
-			if (no_files == TRUE) {
-				if (syscalls_64bit[num].entry->group == GROUP_VM)
-					goto retry;
-				if (syscalls_32bit[num].entry->group == GROUP_VM)
-					goto retry;
-				if (syscalls_64bit[num].entry->group == GROUP_VFS)
-					goto retry;
-				if (syscalls_32bit[num].entry->group == GROUP_VFS)
-					goto retry;
-			}
+			if (check_group_net(syscalls_64bit, num) == FALSE)
+				goto retry;
+			if (check_group_net(syscalls_32bit, num) == FALSE)
+				goto retry;
+
 			if (syscalls_64bit[num].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
 			if (syscalls_32bit[num].entry->flags & TO_BE_DEACTIVATED)
@@ -686,13 +693,9 @@ retry:
 			if (validate_specific_syscall_silent(syscalls, num) == FALSE)
 				goto retry;
 
-			/* If we want just network sockets, don't bother with VM syscalls */
-			if (no_files == TRUE) {
-				if (syscalls[num].entry->group == GROUP_VFS)
-					goto retry;
-				if (syscalls[num].entry->group == GROUP_VM)
-					goto retry;
-			}
+			if (check_group_net(syscalls_32bit, num) == FALSE)
+				goto retry;
+
 			/* if we've set this to be disabled, don't enable it! */
 			if (syscalls[num].entry->flags & TO_BE_DEACTIVATED)
 				goto retry;
