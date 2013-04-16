@@ -115,15 +115,8 @@ static int munge_tables(void)
 			return FALSE;
 	}
 
-	if (validate_syscall_tables() == FALSE) {
-		printf("No syscalls were enabled!\n");
-		printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
-		return FALSE;
-	}
-
 	if (random_selection == TRUE)
 		enable_random_syscalls();
-
 
 	/* If we saw a '-x', set all syscalls to enabled, then selectively disable.
 	 * Unless we've started enabling them already (with -r)
@@ -141,6 +134,12 @@ static int munge_tables(void)
 
 	if (verbose == TRUE)
 		display_enabled_syscalls();
+
+	if (validate_syscall_tables() == FALSE) {
+		printf("No syscalls were enabled!\n");
+		printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
+		return FALSE;
+	}
 
 	return TRUE;
 }
