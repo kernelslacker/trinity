@@ -404,7 +404,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 	return from;
 }
 
-void setup_syscall_tables(void)
+void select_syscall_tables(void)
 {
 #if defined(__x86_64__)
 	syscalls_64bit = copy_syscall_table(syscalls_x86_64, ARRAY_SIZE(syscalls_x86_64));
