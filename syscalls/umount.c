@@ -9,4 +9,5 @@ struct syscall syscall_umount = {
 	.arg1name = "name",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "flags",
+	.group = GROUP_VFS,
 };

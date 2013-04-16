@@ -9,4 +9,5 @@ struct syscall syscall_syncfs = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

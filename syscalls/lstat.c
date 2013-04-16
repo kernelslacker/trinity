@@ -11,4 +11,5 @@ struct syscall syscall_lstat = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

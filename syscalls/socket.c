@@ -117,6 +117,11 @@ void sanitise_socket(int childno)
 
 
 	case AF_INET6:
+//DEBUG CODE
+		type = SOCK_DGRAM;	// UDP
+		protocol = IPPROTO_UDP;
+		break;
+
 		switch (rand() % 3) {
 		case 0:	type = SOCK_STREAM;	// TCP
 			protocol = 0;

@@ -34,4 +34,5 @@ struct syscall syscall_mount = {
 	},
 	.arg5name = "data",
 	.arg5type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

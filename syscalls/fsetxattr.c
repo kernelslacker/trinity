@@ -25,4 +25,5 @@ struct syscall syscall_fsetxattr = {
 	},
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

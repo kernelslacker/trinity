@@ -16,4 +16,5 @@ struct syscall syscall_renameat = {
 	.arg4name = "newname",
 	.arg4type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

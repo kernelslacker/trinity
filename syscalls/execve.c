@@ -58,4 +58,5 @@ struct syscall syscall_execve = {
 	.arg3name = "envp",
 	.arg3type = ARG_ADDRESS,
 	.sanitise = sanitise_execve,
+	.group = GROUP_VFS,
 };

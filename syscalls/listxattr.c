@@ -12,4 +12,5 @@ struct syscall syscall_listxattr = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",
 	.arg3type = ARG_LEN,
+	.group = GROUP_VFS,
 };

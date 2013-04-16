@@ -14,4 +14,5 @@ struct syscall syscall_chown = {
 	.arg2name = "user",
 	.arg3name = "group",
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_VFS,
 };

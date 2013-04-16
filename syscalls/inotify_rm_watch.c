@@ -10,4 +10,5 @@ struct syscall syscall_inotify_rm_watch = {
 	.arg1type = ARG_FD,
 	.arg2name = "wd",
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

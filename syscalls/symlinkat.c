@@ -14,4 +14,5 @@ struct syscall syscall_symlinkat = {
 	.arg3name = "newname",
 	.arg3type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

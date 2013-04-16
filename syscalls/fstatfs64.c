@@ -16,4 +16,5 @@ struct syscall syscall_fstatfs64 = {
 	.arg3type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

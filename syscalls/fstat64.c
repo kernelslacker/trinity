@@ -14,4 +14,5 @@ struct syscall syscall_fstat64 = {
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_VFS,
 };

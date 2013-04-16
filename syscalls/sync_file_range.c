@@ -54,6 +54,7 @@ struct syscall syscall_sync_file_range = {
 		.values = { SYNC_FILE_RANGE_WAIT_BEFORE, SYNC_FILE_RANGE_WRITE, SYNC_FILE_RANGE_WAIT_AFTER },
         },
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -76,4 +77,5 @@ struct syscall syscall_sync_file_range2 = {
 	.arg4name = "nbytes",
 	.arg4type = ARG_LEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

@@ -12,4 +12,5 @@ struct syscall syscall_readahead = {
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

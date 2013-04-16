@@ -16,4 +16,5 @@ struct syscall syscall_inotify_init1 = {
 		.num = 2,
 		.values = { IN_CLOEXEC , IN_NONBLOCK },
 	},
+	.group = GROUP_VFS,
 };

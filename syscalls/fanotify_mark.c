@@ -74,4 +74,5 @@ struct syscall syscall_fanotify_mark = {
 	.sanitise = sanitise_fanotify_mark,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

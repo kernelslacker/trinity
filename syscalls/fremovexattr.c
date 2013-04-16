@@ -12,4 +12,5 @@ struct syscall syscall_fremovexattr = {
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

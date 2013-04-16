@@ -9,4 +9,5 @@ struct syscall syscall_swapon = {
 	.arg1name = "specialfile",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "swap_flags",
+	.group = GROUP_VFS,
 };

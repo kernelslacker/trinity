@@ -13,4 +13,5 @@ struct syscall syscall_mknodat = {
 	.arg3name = "mode",
 	.arg4name = "dev",
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
