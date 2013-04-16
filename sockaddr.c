@@ -27,10 +27,6 @@
 #include "config.h"
 #include "params.h"	// do_specific_proto
 
-#ifdef USE_IF_ALG
-#include <linux/if_alg.h>
-#endif
-
 static void gen_ax25(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_ax25 *ax25;
@@ -322,28 +318,6 @@ static void gen_phonet(unsigned long *addr, unsigned long *addrlen)
 	*addr = (unsigned long) pn;
 	*addrlen = sizeof(struct sockaddr_pn);
 }
-
-#ifdef USE_IF_ALG
-static void gen_alg(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_alg *alg;
-	unsigned int i;
-
-	alg = malloc(sizeof(struct sockaddr_alg));
-	if (alg == NULL)
-		return;
-
-	alg->salg_family = PF_ALG;
-	for (i = 0; i < 14; i++)
-		alg->salg_type[i] = rand();
-	alg->salg_feat = rand();
-	alg->salg_mask = rand();
-	for (i = 0; i < 64; i++)
-		alg->salg_name[i] = rand();
-	*addr = (unsigned long) alg;
-	*addrlen = sizeof(struct sockaddr_alg);
-}
-#endif
 
 static void gen_nfc(unsigned long *addr, unsigned long *addrlen)
 {

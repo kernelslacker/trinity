@@ -34,4 +34,7 @@ void gen_unixsock(unsigned long *addr, unsigned long *addrlen);
 /* caif */
 void gen_caif(unsigned long *addr, unsigned long *addrlen);
 
+/* alg */
+void gen_alg(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
