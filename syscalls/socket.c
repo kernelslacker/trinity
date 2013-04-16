@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <linux/in.h>
+#include <netinet/in.h>
 #include <linux/irda.h>
 #include <linux/dn.h>
 #include "compat.h"
