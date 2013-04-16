@@ -570,9 +570,26 @@ void enable_random_syscalls(void)
 	unsigned int num;
 	const char *syscallname;
 
-	printf("Enabling 10 random syscalls\n");
+	if (random_selection_num == 0) {
+		printf("-r 0 syscalls ? what?\n");
+		exit(EXIT_FAILURE);
+	}
 
-	for (i = 0; i < 10; i++) {
+	if (biarch == TRUE) {
+		if (random_selection_num > max_nr_64bit_syscalls) {
+			printf("-r val %d out of range (1-%d)\n", random_selection_num, max_nr_64bit_syscalls);
+			exit(EXIT_FAILURE);
+		}
+	} else {
+		if (random_selection_num > max_nr_syscalls) {
+			printf("-r val %d out of range (1-%d)\n", random_selection_num, max_nr_syscalls);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	printf("Enabling %d random syscalls\n", random_selection_num);
+
+	for (i = 0; i < random_selection_num; i++) {
 
 retry:
 		if (biarch == TRUE)
