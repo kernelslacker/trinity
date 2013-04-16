@@ -588,7 +588,7 @@ retry:
 			if (validate_specific_syscall_silent(syscalls_64bit, num) == FALSE)
 				goto retry;
 
-			if (syscalls_64bit[num].entry->flags & ACTIVE)
+			if (syscalls_32bit[num].entry->flags & ACTIVE)
 				goto retry;
 
 			if (validate_specific_syscall_silent(syscalls_32bit, num) == FALSE)
