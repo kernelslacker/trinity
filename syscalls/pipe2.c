@@ -18,4 +18,5 @@ struct syscall syscall_pipe2 = {
 		.num = 3,
 		.values = { O_CLOEXEC, O_NONBLOCK, O_DIRECT },
 	},
+	.group = GROUP_VFS,
 };

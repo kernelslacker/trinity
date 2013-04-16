@@ -11,4 +11,5 @@ struct syscall syscall_newfstat = {
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

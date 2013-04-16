@@ -20,4 +20,5 @@ struct syscall syscall_newfstatat = {
 		.num = 2,
 		.values = { 0, AT_SYMLINK_NOFOLLOW },
 	},
+	.group = GROUP_VFS,
 };

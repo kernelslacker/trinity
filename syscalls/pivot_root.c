@@ -11,4 +11,5 @@ struct syscall syscall_pivot_root = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "put_old",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };
