@@ -12,4 +12,5 @@ struct syscall syscall_chroot = {
 	.arg1name = "filename",
 	.arg1type = ARG_PATHNAME,
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_VFS,
 };

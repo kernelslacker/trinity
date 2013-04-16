@@ -8,4 +8,5 @@ struct syscall syscall_sysctl = {
 	.num_args = 1,
 	.arg1name = "args",
 	.arg1type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

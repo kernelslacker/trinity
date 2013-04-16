@@ -7,4 +7,5 @@ struct syscall syscall_setfsuid16 = {
 	.name = "setfsuid16",
 	.num_args = 1,
 	.arg1name = "uid",
+	.group = GROUP_VFS,
 };
