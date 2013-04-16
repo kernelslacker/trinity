@@ -31,4 +31,7 @@ void gen_pppox(unsigned long *addr, unsigned long *addrlen);
 /* unix */
 void gen_unixsock(unsigned long *addr, unsigned long *addrlen);
 
+/* caif */
+void gen_caif(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */

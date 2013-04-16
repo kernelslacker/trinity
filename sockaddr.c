@@ -27,10 +27,6 @@
 #include "config.h"
 #include "params.h"	// do_specific_proto
 
-#ifdef USE_CAIF
-#include <linux/caif/caif_socket.h>
-#endif
-
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 #endif
@@ -326,32 +322,6 @@ static void gen_phonet(unsigned long *addr, unsigned long *addrlen)
 	*addr = (unsigned long) pn;
 	*addrlen = sizeof(struct sockaddr_pn);
 }
-
-#ifdef USE_CAIF
-static void gen_caif(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_caif *caif;
-	unsigned int i;
-
-	caif = malloc(sizeof(struct sockaddr_caif));
-	if (caif == NULL)
-		return;
-
-	caif->family = PF_CAIF;
-	caif->u.at.type = rand();
-	for (i = 0; i < 16; i++)
-		caif->u.util.service[i] = rand();
-	caif->u.dgm.connection_id = rand();
-	caif->u.dgm.nsapi = rand();
-	caif->u.rfm.connection_id = rand();
-	for (i = 0; i < 16; i++)
-		caif->u.rfm.volume[i] = rand();
-	caif->u.dbg.type = rand();
-	caif->u.dbg.service = rand();
-	*addr = (unsigned long) caif;
-	*addrlen = sizeof(struct sockaddr_caif);
-}
-#endif
 
 #ifdef USE_IF_ALG
 static void gen_alg(unsigned long *addr, unsigned long *addrlen)
