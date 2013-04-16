@@ -124,6 +124,8 @@ void parse_args(int argc, char *argv[])
 		case 'g':
 			if (!strcmp(optarg, "vm"))
 				desired_group = GROUP_VM;
+			if (!strcmp(optarg, "vfs"))
+				desired_group = GROUP_VFS;
 			break;
 
 		/* Show help */

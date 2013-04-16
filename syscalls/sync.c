@@ -6,4 +6,5 @@
 struct syscall syscall_sync = {
 	.name = "sync",
 	.num_args = 0,
+	.group = GROUP_VFS,
 };

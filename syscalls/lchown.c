@@ -10,4 +10,5 @@ struct syscall syscall_lchown = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "user",
 	.arg3name = "group",
+	.group = GROUP_VFS,
 };

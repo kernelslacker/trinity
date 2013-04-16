@@ -19,4 +19,5 @@ struct syscall syscall_fstatat64 = {
 	.arg4name = "flag",
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

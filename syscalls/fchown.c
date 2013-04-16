@@ -15,4 +15,5 @@ struct syscall syscall_fchown = {
 	.arg3name = "group",
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

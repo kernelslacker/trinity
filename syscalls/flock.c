@@ -14,4 +14,5 @@ struct syscall syscall_flock = {
 	.arg2name = "cmd",
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

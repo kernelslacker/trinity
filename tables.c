@@ -564,6 +564,10 @@ retry:
 					goto retry;
 				if (syscalls_32bit[num].entry->group == GROUP_VM)
 					goto retry;
+				if (syscalls_64bit[num].entry->group == GROUP_VFS)
+					goto retry;
+				if (syscalls_32bit[num].entry->group == GROUP_VFS)
+					goto retry;
 			}
 
 		} else {
@@ -574,12 +578,15 @@ retry:
 
 			/* If we want just network sockets, don't bother with VM syscalls */
 			if (no_files == TRUE) {
+				if (syscalls[num].entry->group == GROUP_VFS)
+					goto retry;
 				if (syscalls[num].entry->group == GROUP_VM)
 					goto retry;
 			}
 		}
 
 		syscallname = lookup_name(num);
+
 		toggle_syscall(syscallname, TRUE);
 	}
 }

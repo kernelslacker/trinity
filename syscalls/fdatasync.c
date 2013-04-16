@@ -13,4 +13,5 @@ struct syscall syscall_fdatasync = {
 	.arg1type = ARG_FD,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

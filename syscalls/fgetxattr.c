@@ -17,4 +17,5 @@ struct syscall syscall_fgetxattr = {
 	.arg4type = ARG_LEN,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

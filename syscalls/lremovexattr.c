@@ -10,4 +10,5 @@ struct syscall syscall_lremovexattr = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "name",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

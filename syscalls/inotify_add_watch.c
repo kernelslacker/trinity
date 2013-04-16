@@ -42,4 +42,5 @@ struct syscall syscall_inotify_add_watch = {
 		},
 	},
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

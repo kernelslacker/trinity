@@ -14,4 +14,5 @@ struct syscall syscall_llseek = {
 	.arg3name = "offset_low",
 	.arg4name = "result",
 	.arg5name = "origin",
+	.group = GROUP_VFS,
 };

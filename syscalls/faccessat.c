@@ -16,4 +16,5 @@ struct syscall syscall_faccessat = {
 	.arg3name = "mode",
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

@@ -15,4 +15,5 @@ struct syscall syscall_lgetxattr = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "size",
 	.arg4type = ARG_LEN,
+	.group = GROUP_VFS,
 };

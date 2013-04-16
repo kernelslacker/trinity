@@ -12,4 +12,5 @@ struct syscall syscall_llistxattr = {
 	.arg3name = "size",
 	.arg3type = ARG_LEN,
 	.num_args = 3,
+	.group = GROUP_VFS,
 };

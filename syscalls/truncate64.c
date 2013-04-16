@@ -10,4 +10,5 @@ struct syscall syscall_truncate64 = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "length",
 	.arg2type = ARG_LEN,
+	.group = GROUP_VFS,
 };

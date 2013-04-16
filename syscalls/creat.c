@@ -13,4 +13,5 @@ struct syscall syscall_creat = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "mode",
 	.rettype = RET_FD,
+	.group = GROUP_VFS,
 };

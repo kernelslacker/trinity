@@ -12,4 +12,5 @@ struct syscall syscall_lookup_dcookie = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "len",
 	.arg3type = ARG_LEN,
+	.group = GROUP_VFS,
 };

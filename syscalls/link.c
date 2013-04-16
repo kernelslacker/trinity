@@ -10,4 +10,5 @@ struct syscall syscall_link = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "newname",
 	.arg2type = ARG_PATHNAME,
+	.group = GROUP_VFS,
 };

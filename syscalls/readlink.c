@@ -12,4 +12,5 @@ struct syscall syscall_readlink = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "bufsiz",
 	.arg3type = ARG_LEN,
+	.group = GROUP_VFS,
 };
