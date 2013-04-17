@@ -576,14 +576,14 @@ try_64bit:
 	return TRUE;
 }
 
-const char * print_syscall_name(unsigned int callno, bool bitsize)
+const char * print_syscall_name(unsigned int callno, bool is32bit)
 {
 	const struct syscalltable *table;
 
 	if (biarch == FALSE)
 		return syscalls[callno].entry->name;
 
-	if (bitsize == FALSE)
+	if (is32bit == FALSE)
 		table = syscalls_64bit;
 	else
 		table = syscalls_32bit;
