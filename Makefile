@@ -76,7 +76,7 @@ df = $(DEPDIR)/$(*F)
 	@rm -f $(df).d.tmp
 
 clean:
-	@rm -f *.o syscalls/*.o syscalls/ia64/*.o syscalls/powerpc/*.o ioctls/*.o
+	@rm -f $(OBJS)
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags
