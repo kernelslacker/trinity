@@ -407,7 +407,7 @@ void dump_syscall_tables(void)
 	} else {
 		printf("syscalls: %d\n", max_nr_syscalls);
 		for_each_syscall(i) {
-			printf("%s : ", syscalls[i].entry->name);
+			printf("%d %s : ", syscalls[i].entry->number, syscalls[i].entry->name);
 			show_state(syscalls[i].entry->flags & ACTIVE);
 			if (syscalls[i].entry->flags & AVOID_SYSCALL)
 				printf(" AVOID");
