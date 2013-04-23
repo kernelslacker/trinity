@@ -132,7 +132,7 @@ static void fork_children(void)
 
 			ret = child_process(pidslot);
 
-			output(0, "child %d exiting\n", getpid());
+			output(1, "child %d exiting\n", getpid());
 
 			_exit(ret);
 		}
