@@ -12,6 +12,7 @@
 #include "arch-syscalls.h"
 #include "syscall.h"
 #include "params.h"
+#include "log.h"
 
 const struct syscalltable *syscalls;
 const struct syscalltable *syscalls_32bit;
@@ -628,6 +629,8 @@ void display_enabled_syscalls(void)
 /* If we want just network sockets, don't bother with VM/VFS syscalls */
 static bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
 {
+	unsigned int i;
+
 	if (no_files == FALSE)
 		return TRUE;
 
@@ -635,6 +638,25 @@ static bool is_syscall_net_related(const struct syscalltable *table, unsigned in
 		return FALSE;
 	if (table[num].entry->group == GROUP_VFS)
 		return FALSE;
+
+	for (i = 0; i < table[num].entry->num_args; i++) {
+		switch (i) {
+		case 0:	if (table[num].entry->arg1type == ARG_PATHNAME)
+				return FALSE;
+		case 1:	if (table[num].entry->arg2type == ARG_PATHNAME)
+				return FALSE;
+		case 2:	if (table[num].entry->arg3type == ARG_PATHNAME)
+				return FALSE;
+		case 3:	if (table[num].entry->arg4type == ARG_PATHNAME)
+				return FALSE;
+		case 4:	if (table[num].entry->arg5type == ARG_PATHNAME)
+				return FALSE;
+		case 5:	if (table[num].entry->arg6type == ARG_PATHNAME)
+				return FALSE;
+		default:
+			BUG("impossible!\n");
+		}
+	}
 
 	return TRUE;
 }
