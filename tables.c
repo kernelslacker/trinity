@@ -643,16 +643,22 @@ static bool is_syscall_net_related(const struct syscalltable *table, unsigned in
 		switch (i) {
 		case 0:	if (table[num].entry->arg1type == ARG_PATHNAME)
 				return FALSE;
+			break;
 		case 1:	if (table[num].entry->arg2type == ARG_PATHNAME)
 				return FALSE;
+			break;
 		case 2:	if (table[num].entry->arg3type == ARG_PATHNAME)
 				return FALSE;
+			break;
 		case 3:	if (table[num].entry->arg4type == ARG_PATHNAME)
 				return FALSE;
+			break;
 		case 4:	if (table[num].entry->arg5type == ARG_PATHNAME)
 				return FALSE;
+			break;
 		case 5:	if (table[num].entry->arg6type == ARG_PATHNAME)
 				return FALSE;
+			break;
 		default:
 			BUG("impossible!\n");
 		}
