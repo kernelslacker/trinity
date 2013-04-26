@@ -171,6 +171,10 @@ long mkcall(int childno)
 			CRESET						\
 			sptr += sprintf(sptr, "%ld", REG);		\
 			break;						\
+		case ARG_MODE_T:					\
+			CRESET						\
+			sptr += sprintf(sptr, "%o", (mode_t) REG);	\
+			break;						\
 		case ARG_UNDEFINED:					\
 		case ARG_LEN:						\
 		case ARG_ADDRESS:					\

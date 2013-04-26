@@ -14,6 +14,7 @@ struct syscall syscall_faccessat = {
 	.arg2name = "filename",
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "mode",
+	.arg3type = ARG_MODE_T,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

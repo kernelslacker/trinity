@@ -25,5 +25,6 @@ struct syscall syscall_openat = {
 				O_DSYNC, O_LARGEFILE },
 	},
 	.arg4name = "mode",
+	.arg4type = ARG_MODE_T,
 	.flags = NEED_ALARM,
 };

@@ -13,5 +13,6 @@ struct syscall syscall_access = {
 	.arg1name = "filename",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "mode",
+	.arg2type = ARG_MODE_T,
 	.group = GROUP_VFS,
 };
