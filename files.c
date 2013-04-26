@@ -250,7 +250,7 @@ void generate_filelist(void)
 	/*
 	 * Generate an index of pointers to the filenames
 	 */
-	fileindex = malloc(sizeof(void *) * files_added);
+	fileindex = malloc(sizeof(char *) * files_added);
 
 	node = names;
 	do {
