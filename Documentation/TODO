@@ -7,7 +7,7 @@
   - Could we do the nftw walks in parallel ?
     That would speed up startup a lot.
   - support for multiple victim file parameters
-  - When picking a random fd, instead of treating the pool of fds as one thing,
+  - When picking a random path, instead of treating the pool of paths as one thing,
     treat it as multiple (/dev, /sys, /proc). And then do a 1-in-3 chance
     of getting one of those. Right now, because there are 5-6 digits worth of /proc & /sys,
     they dominate over the /dev entries.
