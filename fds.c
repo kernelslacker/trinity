@@ -70,7 +70,8 @@ retry_file:
 		if (logging == FALSE)
 			ret = fileno(stderr);
 
-		/* get highest logfile fd if logging is enabled */
+		/* if logging is enabled, we want to make sure we skip
+		 * over the logfiles, so get highest logfile fd. */
 		else {
 			file = shm->logfiles[shm->max_children - 1];
 			if (file == NULL) {
