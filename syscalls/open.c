@@ -25,4 +25,5 @@ struct syscall syscall_open = {
 				O_DSYNC, O_LARGEFILE },
 	},
 	.arg3name = "mode",
+	.arg3type = ARG_MODE_T,
 };

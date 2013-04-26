@@ -9,6 +9,7 @@ struct syscall syscall_mknod = {
 	.arg1name = "filename",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "mode",
+	.arg2type = ARG_MODE_T,
 	.arg3name = "dev",
 	.group = GROUP_VFS,
 };

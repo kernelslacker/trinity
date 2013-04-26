@@ -155,8 +155,6 @@
   - more multiplexed syscalls need .sanitise routines to pass the right args.
     - fcntl
 
-  - ARG_MODE_T
-
   - Finish annotating syscall return types
 
 * Add a way to add a filter to filelist.

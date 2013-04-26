@@ -9,4 +9,5 @@ struct syscall syscall_mkdir = {
 	.arg1name = "pathname",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "mode",
+	.arg2type = ARG_MODE_T,
 };
