@@ -52,7 +52,8 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 	const unsigned int *values = NULL;
 	enum argtype argtype = 0;
 	unsigned long sockaddr = 0, sockaddrlen = 0;
-	unsigned int bit, mode = 0, j, count;
+	unsigned int bit, j, count;
+	mode_t mode = 0;
 
 	switch (argnum) {
 	case 1:	argtype = syscalls[call].entry->arg1type;
