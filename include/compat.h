@@ -499,4 +499,13 @@ struct sockaddr_nfc {
 #define MS_NOSEC        (1<<28)
 #endif
 
+/* linux/kvm.h */
+#ifndef KVM_GET_REG_LIST
+struct kvm_reg_list {
+        __u64 n; /* number of regs */
+        __u64 reg[0];
+};
+#define KVM_GET_REG_LIST          _IOWR(KVMIO, 0xb0, struct kvm_reg_list)
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
