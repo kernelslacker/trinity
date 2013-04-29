@@ -348,29 +348,59 @@ char * generate_pathname(void)
 {
 	char *pathname = get_filename();
 	char *newpath;
-	int len;
+	unsigned int len;
+	unsigned int i, chance;
 
 	if (pathname == NULL)		/* As above, handle -n correctly. */
 		return NULL;
 
 	len = strlen(pathname);
 
-	/* 90% chance of returning an unmangled filename */
-	if ((rand() % 100) > 10)
-		return get_filename();
+	chance = rand() % 100;
+	switch (chance) {
 
-	/* Create a bogus filename with junk at the end of an existing one. */
-	newpath = malloc(page_size);	// FIXME: We leak this.
-	if (newpath == NULL)
-		return get_filename();	// give up.
+	case 0 ... 90:
+		/* 90% chance of returning an unmangled filename */
+		if ((rand() % 100) > 10)
+			return get_filename();
 
-	generate_random_page(newpath);
+	case 91 ... 100:
+		/* Create a bogus filename. */
+		newpath = malloc(page_size);	// FIXME: We leak this.
+		if (newpath == NULL)
+			return get_filename();	// give up.
 
-	(void) strncpy(newpath, pathname, len);
+		generate_random_page(newpath);
 
-	/* 50/50 chance of making it look like a dir */
-	if ((rand() % 2) == 0)
-		newpath[len] = '/';
+		/* sometimes, just complete junk. */
+		if (rand() % 2)
+			goto out;
 
-	return newpath;
+		/* Sometimes, pathname + junk */
+		if (rand() % 2)
+			(void) strncpy(newpath, pathname, len);
+		else {
+			/* make it look relative to cwd */
+			newpath[0] = '.';
+			(void) strncpy(newpath + 1, pathname, len);
+		}
+
+		/* Sometimes, remove all /'s */
+		if ((rand() % 2) == 0) {
+			for (i = 0; i < len; i++) {
+				if (newpath[i] == '/')
+					newpath[i] = rand();
+			}
+		}
+out:
+		/* 50/50 chance of making it look like a dir */
+		if ((rand() % 2) == 0) {
+			newpath[len] = '/';
+			newpath[len + 1] = 0;
+		}
+
+		return newpath;
+	default:
+		BUG("Unreachable");
+	}
 }
