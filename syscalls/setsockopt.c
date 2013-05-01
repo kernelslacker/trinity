@@ -185,6 +185,22 @@ void sanitise_setsockopt(int childno)
 	case SOL_PACKET:
 		val = rand() % NR_SOL_PACKET_OPTS;
 		shm->a3[childno] = packet_opts[val];
+
+		/* Adjust length according to operation set. */
+		switch (shm->a3[childno]) {
+		case PACKET_VERSION:
+			page_rand[0] = rand() % 3; /* tpacket versions 1/2/3 */
+			break;
+		case PACKET_TX_RING:
+		case PACKET_RX_RING:
+			if (rand() % 3 == 0)
+				shm->a5[childno] = sizeof(struct tpacket_req3);
+			else
+				shm->a5[childno] = sizeof(struct tpacket_req);
+			break;
+		default:
+			break;
+		}
 		break;
 
 	case SOL_ATM:
