@@ -56,6 +56,7 @@
 #define SOL_IUCV        277
 #define SOL_CAIF        278
 #define SOL_ALG         279
+#define SOL_NFC		280
 
 #define NR_SOL_IP_OPTS 19
 static int ip_opts[NR_SOL_IP_OPTS] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
