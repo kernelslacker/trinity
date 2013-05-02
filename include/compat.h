@@ -265,6 +265,10 @@ enum kcmp_type {
 #define SO_LOCK_FILTER		44
 #endif
 
+#ifndef SO_SELECT_ERR_QUEUE
+#define SO_SELECT_ERR_QUEUE	45
+#endif
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15
