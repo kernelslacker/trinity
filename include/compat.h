@@ -420,6 +420,7 @@ enum kcmp_type {
 #define SCTP_GET_LOCAL_ADDRS    109             /* Get all local address. */
 #define SCTP_SOCKOPT_CONNECTX   110             /* CONNECTX requests. */
 #define SCTP_SOCKOPT_CONNECTX3  111     /* CONNECTX requests (updated) */
+#define SCTP_GET_ASSOC_STATS    112	/* Read only */
 #endif
 
 /* linux/rxrpc.h */
