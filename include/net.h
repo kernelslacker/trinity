@@ -64,5 +64,7 @@ void gen_decnet(unsigned long *addr, unsigned long *addrlen);
 /* llc */
 void gen_llc(unsigned long *addr, unsigned long *addrlen);
 
+/* netlink */
+void gen_netlink(unsigned long *addr, unsigned long *addrlen);
 
 #endif	/* _NET_H */
