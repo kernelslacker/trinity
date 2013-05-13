@@ -80,5 +80,7 @@ void gen_irda(unsigned long *addr, unsigned long *addrlen);
 /* can */
 void gen_can(unsigned long *addr, unsigned long *addrlen);
 
+/* tipc */
+void gen_tipc(unsigned long *addr, unsigned long *addrlen);
 
 #endif	/* _NET_H */
