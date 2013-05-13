@@ -58,4 +58,8 @@ void gen_x25(unsigned long *addr, unsigned long *addrlen);
 /* rose */
 void gen_rose(unsigned long *addr, unsigned long *addrlen);
 
+/* decnet */
+void gen_decnet(unsigned long *addr, unsigned long *addrlen);
+
+
 #endif	/* _NET_H */
