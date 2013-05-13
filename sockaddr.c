@@ -4,7 +4,6 @@
 #include <netinet/in.h>
 #include <linux/if.h>
 #include <linux/if_arp.h>
-#include <linux/irda.h>
 #include <linux/can.h>
 #include <linux/tipc.h>
 #include <linux/phonet.h>
@@ -15,24 +14,6 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
-
-static void gen_irda(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_irda *irda;
-	unsigned int i;
-
-	irda = malloc(sizeof(struct sockaddr_irda));
-	if (irda == NULL)
-		return;
-
-	irda->sir_family = PF_IRDA;
-	irda->sir_lsap_sel = rand();
-	irda->sir_addr = rand();
-	for (i = 0; i < 25; i++)
-		irda->sir_name[i] = rand();
-	*addr = (unsigned long) irda;
-	*addrlen = sizeof(struct sockaddr_irda);
-}
 
 static void gen_can(unsigned long *addr, unsigned long *addrlen)
 {
