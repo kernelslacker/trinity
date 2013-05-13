@@ -2,9 +2,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
-#include <linux/if.h>
-#include <linux/if_arp.h>
-#include <linux/can.h>
 #include <linux/tipc.h>
 #include <linux/phonet.h>
 #include <stdlib.h>
@@ -14,21 +11,6 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
-
-static void gen_can(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_can *can;
-
-	can = malloc(sizeof(struct sockaddr_can));
-	if (can == NULL)
-		return;
-	can->can_family = AF_CAN;
-	can->can_ifindex = rand();
-	can->can_addr.tp.rx_id = rand();
-	can->can_addr.tp.tx_id = rand();
-	*addr = (unsigned long) can;
-	*addrlen = sizeof(struct sockaddr_can);
-}
 
 static void gen_tipc(unsigned long *addr, unsigned long *addrlen)
 {
