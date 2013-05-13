@@ -55,4 +55,7 @@ void gen_atmpvc(unsigned long *addr, unsigned long *addrlen);
 /* x25 */
 void gen_x25(unsigned long *addr, unsigned long *addrlen);
 
+/* rose */
+void gen_rose(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
