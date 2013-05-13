@@ -49,8 +49,9 @@ void gen_ipx(unsigned long *addr, unsigned long *addrlen);
 /* appletalk */
 void gen_appletalk(unsigned long *addr, unsigned long *addrlen);
 
-/* atmpvc */
+/* atm */
 void gen_atmpvc(unsigned long *addr, unsigned long *addrlen);
+void gen_atmsvc(unsigned long *addr, unsigned long *addrlen);
 
 /* x25 */
 void gen_x25(unsigned long *addr, unsigned long *addrlen);
