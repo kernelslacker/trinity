@@ -11,7 +11,6 @@
 #include <linux/can.h>
 #include <linux/tipc.h>
 #include <linux/phonet.h>
-#include <linux/netlink.h>
 #include <stdlib.h>
 #include "sanitise.h"
 #include "compat.h"
@@ -19,21 +18,6 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
-
-static void gen_netlink(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_nl *nl;
-
-	nl = malloc(sizeof(struct sockaddr_nl));
-	if (nl == NULL)
-		return;
-
-	nl->nl_family = PF_NETLINK;
-	nl->nl_pid = rand();
-	nl->nl_groups = rand();
-	*addr = (unsigned long) nl;
-	*addrlen = sizeof(struct sockaddr_nl);
-}
 
 static void gen_packet(unsigned long *addr, unsigned long *addrlen)
 {
