@@ -5,7 +5,6 @@
 #include <linux/atm.h>
 #include <linux/if.h>
 #include <linux/if_arp.h>
-#include <linux/if_packet.h>
 #include <neteconet/ec.h>
 #include <linux/irda.h>
 #include <linux/can.h>
@@ -18,23 +17,6 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
-
-static void gen_packet(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_pkt *pkt;
-	unsigned int i;
-
-	//TODO: See also sockaddr_ll
-	pkt = malloc(sizeof(struct sockaddr_pkt));
-	if (pkt == NULL)
-		return;
-
-	pkt->spkt_family = PF_PACKET;
-	for (i = 0; i < 14; i++)
-		pkt->spkt_device[i] = rand();
-	*addr = (unsigned long) pkt;
-	*addrlen = sizeof(struct sockaddr_pkt);
-}
 
 static void gen_econet(unsigned long *addr, unsigned long *addrlen)
 {
