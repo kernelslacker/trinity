@@ -52,4 +52,7 @@ void gen_appletalk(unsigned long *addr, unsigned long *addrlen);
 /* atmpvc */
 void gen_atmpvc(unsigned long *addr, unsigned long *addrlen);
 
+/* x25 */
+void gen_x25(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
