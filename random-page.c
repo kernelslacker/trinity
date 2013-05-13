@@ -36,7 +36,7 @@ static void fabricate_onepage_struct(char *page)
 void generate_random_page(char *page)
 {
 	unsigned int i;
-	unsigned int type = rand() % 5;
+	unsigned int type = rand() % 6;
 
 	switch (type) {
 	/* return a page of complete trash */
@@ -67,6 +67,12 @@ void generate_random_page(char *page)
 
 	/* return a page of unicode nonsense. */
 	case 4:	gen_unicode_page(page);
+		return;
+
+	/* page of 0's and 1's. */
+	case 5:
+		for (i = 0; i < page_size; i++)
+			page[i++] = (unsigned char)rand() % 1;
 		return;
 
 	default:
