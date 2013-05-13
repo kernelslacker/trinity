@@ -43,4 +43,7 @@ void gen_nfc(unsigned long *addr, unsigned long *addrlen);
 /* ax25 */
 void gen_ax25(unsigned long *addr, unsigned long *addrlen);
 
+/* ipx */
+void gen_ipx(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
