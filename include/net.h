@@ -49,4 +49,7 @@ void gen_ipx(unsigned long *addr, unsigned long *addrlen);
 /* appletalk */
 void gen_appletalk(unsigned long *addr, unsigned long *addrlen);
 
+/* atmpvc */
+void gen_atmpvc(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
