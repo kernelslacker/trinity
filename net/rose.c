@@ -1,0 +1,31 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <linux/rose.h>
+#include <stdlib.h>
+#include "maps.h"	// page_rand
+
+void gen_rose(unsigned long *addr, unsigned long *addrlen)
+{
+	struct sockaddr_rose *rose;
+
+	rose = malloc(sizeof(struct sockaddr_rose));
+	if (rose == NULL)
+		return;
+
+	rose->srose_family = PF_ROSE;
+	rose->srose_addr.rose_addr[0] = rand();
+	rose->srose_addr.rose_addr[1] = rand();
+	rose->srose_addr.rose_addr[2] = rand();
+	rose->srose_addr.rose_addr[3] = rand();
+	rose->srose_addr.rose_addr[4] = rand();
+
+	strncpy(rose->srose_call.ax25_call, page_rand, 7);
+
+	rose->srose_ndigis = rand();
+	strncpy(rose->srose_digi.ax25_call, page_rand+7, 7);
+
+	*addr = (unsigned long) rose;
+	*addrlen = sizeof(struct sockaddr_rose);
+}
