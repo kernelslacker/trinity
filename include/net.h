@@ -37,4 +37,7 @@ void gen_caif(unsigned long *addr, unsigned long *addrlen);
 /* alg */
 void gen_alg(unsigned long *addr, unsigned long *addrlen);
 
+/* nfc */
+void gen_nfc(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
