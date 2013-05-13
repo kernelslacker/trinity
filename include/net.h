@@ -69,4 +69,8 @@ void gen_netlink(unsigned long *addr, unsigned long *addrlen);
 
 /* packet */
 void gen_packet(unsigned long *addr, unsigned long *addrlen);
+
+/* econet */
+void gen_econet(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */

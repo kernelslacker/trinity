@@ -5,7 +5,6 @@
 #include <linux/atm.h>
 #include <linux/if.h>
 #include <linux/if_arp.h>
-#include <neteconet/ec.h>
 #include <linux/irda.h>
 #include <linux/can.h>
 #include <linux/tipc.h>
@@ -17,25 +16,6 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
-
-static void gen_econet(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_ec *ec;
-
-	ec = malloc(sizeof(struct sockaddr_ec));
-	if (ec == NULL)
-		return;
-
-	ec->sec_family = PF_ECONET;
-	ec->port = rand();
-	ec->cb = rand();
-	ec->type = rand();
-	ec->addr.station = rand();
-	ec->addr.net = rand();
-	ec->cookie = rand();
-	*addr = (unsigned long) ec;
-	*addrlen = sizeof(struct sockaddr_ec);
-}
 
 static void gen_atmsvc(unsigned long *addr, unsigned long *addrlen)
 {
