@@ -83,4 +83,7 @@ void gen_can(unsigned long *addr, unsigned long *addrlen);
 /* tipc */
 void gen_tipc(unsigned long *addr, unsigned long *addrlen);
 
+/* phonet */
+void gen_phonet(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
