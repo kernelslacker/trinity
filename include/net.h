@@ -46,4 +46,7 @@ void gen_ax25(unsigned long *addr, unsigned long *addrlen);
 /* ipx */
 void gen_ipx(unsigned long *addr, unsigned long *addrlen);
 
+/* appletalk */
+void gen_appletalk(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
