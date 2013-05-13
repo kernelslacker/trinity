@@ -24,22 +24,6 @@
 #include "config.h"
 #include "params.h"	// do_specific_proto
 
-static void gen_atmpvc(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_atmpvc *atmpvc;
-
-	atmpvc = malloc(sizeof(struct sockaddr_atmpvc));
-	if (atmpvc == NULL)
-		return;
-
-	atmpvc->sap_family = PF_ATMPVC;
-	atmpvc->sap_addr.itf = rand();
-	atmpvc->sap_addr.vpi = rand();
-	atmpvc->sap_addr.vci = rand();
-	*addr = (unsigned long) atmpvc;
-	*addrlen = sizeof(struct sockaddr_atmpvc);
-}
-
 static void gen_x25(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_x25 *x25;
