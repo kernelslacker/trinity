@@ -40,4 +40,7 @@ void gen_alg(unsigned long *addr, unsigned long *addrlen);
 /* nfc */
 void gen_nfc(unsigned long *addr, unsigned long *addrlen);
 
+/* ax25 */
+void gen_ax25(unsigned long *addr, unsigned long *addrlen);
+
 #endif	/* _NET_H */
