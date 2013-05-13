@@ -61,5 +61,8 @@ void gen_rose(unsigned long *addr, unsigned long *addrlen);
 /* decnet */
 void gen_decnet(unsigned long *addr, unsigned long *addrlen);
 
+/* llc */
+void gen_llc(unsigned long *addr, unsigned long *addrlen);
+
 
 #endif	/* _NET_H */
