@@ -3,7 +3,6 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <linux/x25.h>
-#include <linux/ax25.h>
 #include <linux/ipx.h>
 #include <linux/atalk.h>
 #include <linux/atm.h>
@@ -26,21 +25,6 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
-
-static void gen_ax25(unsigned long *addr, unsigned long *addrlen)
-{
-	struct sockaddr_ax25 *ax25;
-
-	ax25 = malloc(sizeof(struct sockaddr_ax25));
-	if (ax25 == NULL)
-		return;
-
-	ax25->sax25_family = PF_AX25;
-	strncpy(ax25->sax25_call.ax25_call, page_rand, 7);
-	ax25->sax25_ndigis = rand();
-	*addr = (unsigned long) ax25;
-	*addrlen = sizeof(struct sockaddr_ax25);
-}
 
 static void gen_ipx(unsigned long *addr, unsigned long *addrlen)
 {
