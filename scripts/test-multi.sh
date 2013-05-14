@@ -24,6 +24,7 @@ do
   for i in `seq 1 $NR_PROCESSES`
   do
     mkdir -p tmp.$i
+    chmod 755 tmp.$i
     pushd tmp.$i
 
     if [ ! -f ../../trinity ]; then
@@ -32,7 +33,7 @@ do
       exit
     fi
 
-    MALLOC_CHECK_=2 ../../trinity -qq -l off -N 999999 &
+    MALLOC_CHECK_=2 ../../trinity -qq -l off -x sendmsg -N 999999 &
 
     popd
 
