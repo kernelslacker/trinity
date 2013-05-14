@@ -94,6 +94,10 @@ static void sanitise_perf_event_open(int childno)
 		case 1: attr->size = get_len();
 		default: break;
 	}
+
+	attr->sample_type = rand() % PERF_SAMPLE_MAX;
+	attr->read_format = rand() % PERF_FORMAT_MAX;
+	attr->exclude_kernel = TRUE;	// FIXME: root-mode
 }
 
 struct syscall syscall_perf_event_open = {
