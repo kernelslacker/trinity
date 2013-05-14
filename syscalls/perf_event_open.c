@@ -20,7 +20,7 @@ static void sanitise_perf_event_open(int childno)
 
 	switch(rand() % 6) {
 		case 0:	hw->type = PERF_TYPE_HARDWARE;
-			switch(rand() % 9) {
+			switch(rand() % 10) {
 				case 0: hw->config=PERF_COUNT_HW_CPU_CYCLES;
 					break;
 				case 1: hw->config=PERF_COUNT_HW_INSTRUCTIONS;
@@ -37,7 +37,9 @@ static void sanitise_perf_event_open(int childno)
 					break;
 				case 7: hw->config=PERF_COUNT_HW_STALLED_CYCLES_BACKEND;
 					break;
-				case 8: hw->config = rand();
+				case 8: hw->config=PERF_COUNT_HW_REF_CPU_CYCLES;
+					break;
+				case 9: hw->config = rand();
 					break;
 				default: break;
 			}
@@ -85,7 +87,7 @@ static void sanitise_perf_event_open(int childno)
 	switch(rand() % 2) {
 		case 0: hw->size = sizeof(struct perf_event_attr);
 			break;
-		case 1: hw->size = rand();
+		case 1: hw->size = get_len();
 		default: break;
 	}
 }
