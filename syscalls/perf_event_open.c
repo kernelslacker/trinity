@@ -5,6 +5,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 #include <linux/perf_event.h>
 #include "sanitise.h"
 #include "compat.h"
@@ -17,6 +18,9 @@ static void sanitise_perf_event_open(int childno)
 
 	shm->a1[childno] = (unsigned long) page_rand;
 	hw = (struct perf_event_attr *) shm->a1[childno];
+
+	/* this makes sure we clear out the reserved fields. */
+	memset(page_rand, 0, sizeof(struct perf_event_attr));
 
 	switch(rand() % 6) {
 		case 0:	hw->type = PERF_TYPE_HARDWARE;
