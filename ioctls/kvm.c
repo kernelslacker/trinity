@@ -1,3 +1,7 @@
+#include "config.h"
+
+#ifdef USE_KVM
+
 #include <linux/ioctl.h>
 #include <linux/kvm.h>
 #include "trinity.h"
@@ -128,3 +132,5 @@ static const struct ioctl_group kvm_grp = {
 };
 
 REG_IOCTL_GROUP(kvm_grp)
+
+#endif	/* USE_KVM */
