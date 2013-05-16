@@ -23,9 +23,19 @@ while [ 1 ]
 do
 for syscall in $(../trinity -L | grep -v Trinity | grep -v syscalls: | grep -v AVOID | grep 64-bit | awk '{ print $4 }' | sort -u)
 do
+	if [ ! -f ../trinity ]; then
+		echo lost!
+		pwd
+		exit
+	fi
+
 	MALLOC_CHECK_=2 ../trinity -q -c $syscall -N 99999 -D -l off -C 64
+
+	chmod 755 ../tmp
+
 	check_tainted
 	echo
 	echo
 done
+check_tainted
 done
