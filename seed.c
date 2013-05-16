@@ -23,7 +23,7 @@ unsigned int new_seed(void)
 	unsigned int r;
 
 	r = rand();
-	if (!(rand() % 1)) {
+	if (!(rand() % 2)) {
 		gettimeofday(&t, 0);
 		r |= t.tv_usec;
 	}
