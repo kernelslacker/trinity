@@ -9,6 +9,7 @@
 #include "compat.h"
 #include "maps.h"
 #include "shm.h"
+#include "net.h"
 #include "config.h"
 #include "syscalls/setsockopt.h"
 
@@ -84,6 +85,7 @@ void sanitise_setsockopt(int childno)
 			shm->a5[childno] = sizeof(struct timeval);
 			break;
 		case SO_ATTACH_FILTER:
+			gen_bpf((unsigned long *) page_rand, NULL);
 			shm->a5[childno] = sizeof(struct sock_fprog);
 			break;
 		default:
