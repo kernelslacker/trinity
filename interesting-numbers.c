@@ -101,7 +101,7 @@ unsigned long get_interesting_value(void)
 
 	low = get_interesting_32bit_value();
 
-	i = rand() % 14;
+	i = rand() % 15;
 
 	switch (i) {
 	case 0: return 0;
