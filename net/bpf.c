@@ -110,9 +110,19 @@ static const uint16_t bpf_misc_vars[] = {
 #define bpf_rand(type) \
 	(bpf_##type##_vars[rand() % ARRAY_SIZE(bpf_##type##_vars)])
 
-static uint16_t gen_bpf_code(void)
+static uint16_t gen_bpf_code(bool last_instr)
 {
 	uint16_t ret = bpf_rand(class);
+
+	if (last_instr) {
+		/* The kernel filter precheck code already tests if
+		 * there's a return instruction as the last one, so
+		 * increase the chance to be accepted and that we
+		 * actually run the generated fuzz filter code.
+		 */
+		if (rand() % 2 == 0)
+			ret = BPF_RET;
+	}
 
 	switch (ret) {
 	case BPF_LD:
@@ -168,7 +178,7 @@ void gen_bpf(unsigned long *addr, unsigned long *addrlen)
 	for (i = 0; i < bpf->len; i++) {
 		memset(&bpf->filter[i], 0, sizeof(bpf->filter[i]));
 
-		bpf->filter[i].code = gen_bpf_code();
+		bpf->filter[i].code = gen_bpf_code(i == bpf->len - 1);
 
 		/* Fill out jump offsets if jmp instruction */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_JMP) {
