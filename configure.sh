@@ -192,6 +192,7 @@ check_header drm/drm.h USE_DRM
 check_header drm/exynos_drm.h USE_DRM_EXYNOS
 check_header sound/compress_offload.h USE_SNDDRV_COMPRESS_OFFLOAD
 check_header linux/vhost.h USE_VHOST
+check_header linux/kvm.h USE_KVM
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"
 
