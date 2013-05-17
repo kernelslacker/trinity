@@ -513,4 +513,60 @@ struct kvm_reg_list {
 #define KVM_GET_REG_LIST          _IOWR(KVMIO, 0xb0, struct kvm_reg_list)
 #endif
 
+#ifndef KVM_S390_UCAS_MAP
+struct kvm_s390_ucas_mapping {
+        __u64 user_addr;
+        __u64 vcpu_addr;
+        __u64 length;
+};
+#define KVM_S390_UCAS_MAP         _IOW(KVMIO, 0x50, struct kvm_s390_ucas_mapping)
+#endif
+
+#ifndef KVM_S390_UCAS_UNMAP
+#define KVM_S390_UCAS_UNMAP       _IOW(KVMIO, 0x51, struct kvm_s390_ucas_mapping)
+#endif
+
+#ifndef KVM_S390_VCPU_FAULT
+#define KVM_S390_VCPU_FAULT       _IOW(KVMIO, 0x52, unsigned long)
+#endif
+
+#ifndef KVM_ASSIGN_SET_INTX_MASK
+#define KVM_ASSIGN_SET_INTX_MASK  _IOW(KVMIO,  0xa4, struct kvm_assigned_pci_dev)
+#endif
+
+#ifndef KVM_SIGNAL_MSI
+struct kvm_msi {
+        __u32 address_lo;
+        __u32 address_hi;
+        __u32 data;
+        __u32 flags;
+        __u8  pad[16];
+};
+#define KVM_SIGNAL_MSI            _IOW(KVMIO,  0xa5, struct kvm_msi)
+#endif
+
+#ifndef KVM_DIRTY_TLB
+struct kvm_dirty_tlb {
+        __u64 bitmap;
+        __u32 num_dirty;
+};
+#define KVM_DIRTY_TLB             _IOW(KVMIO,  0xaa, struct kvm_dirty_tlb)
+#endif
+
+#ifndef KVM_GET_ONE_REG
+struct kvm_one_reg {
+        __u64 id;
+        __u64 addr;
+};
+#define KVM_GET_ONE_REG           _IOW(KVMIO,  0xab, struct kvm_one_reg)
+#endif
+
+#ifndef KVM_SET_ONE_REG
+#define KVM_SET_ONE_REG           _IOW(KVMIO,  0xac, struct kvm_one_reg)
+#endif
+
+#ifndef KVM_KVMCLOCK_CTRL
+#define KVM_KVMCLOCK_CTRL         _IO(KVMIO,   0xad)
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
