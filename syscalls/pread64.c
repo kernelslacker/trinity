@@ -9,7 +9,7 @@ static void sanitise_pread64(int childno)
 
 retry_pos:
 	if ((int) shm->a4[childno] < 0) {
-		shm->a4[childno] = get_reg();
+		shm->a4[childno] = rand64();
 		goto retry_pos;
 	}
 }

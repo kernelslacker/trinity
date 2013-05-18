@@ -123,12 +123,12 @@ long mkcall(int childno)
 	if (shm->do32bit[childno] == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
 
-	olda1 = shm->a1[childno] = get_reg();
-	olda2 = shm->a2[childno] = get_reg();
-	olda3 = shm->a3[childno] = get_reg();
-	olda4 = shm->a4[childno] = get_reg();
-	olda5 = shm->a5[childno] = get_reg();
-	olda6 = shm->a6[childno] = get_reg();
+	olda1 = shm->a1[childno] = rand64();
+	olda2 = shm->a2[childno] = rand64();
+	olda3 = shm->a3[childno] = rand64();
+	olda4 = shm->a4[childno] = rand64();
+	olda5 = shm->a5[childno] = rand64();
+	olda6 = shm->a6[childno] = rand64();
 
 	if (call > max_nr_syscalls)
 		sptr += sprintf(sptr, "%u", call);
