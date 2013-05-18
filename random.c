@@ -1,9 +1,13 @@
+/*
+ * Routines to get randomness/set seeds.
+ */
 #include <syslog.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'
 #include "log.h"
+#include "sanitise.h"
 
 /* The actual seed lives in the shm. This variable is used
  * to store what gets passed in from the command line -s argument */
@@ -49,7 +53,6 @@ unsigned int init_seed(unsigned int seedparam)
 	return seedparam;
 }
 
-
 /* Mix in the pidslot so that all children get different randomness.
  * we can't use the actual pid or anything else 'random' because otherwise reproducing
  * seeds with -s would be much harder to replicate.
@@ -57,7 +60,6 @@ unsigned int init_seed(unsigned int seedparam)
 void set_seed(unsigned int pidslot)
 {
 	srand(shm->seed + (pidslot + 1));
-	srandom(shm->seed + (pidslot + 1));
 	shm->seeds[pidslot] = shm->seed;
 }
 
@@ -89,4 +91,50 @@ void reseed(void)
 
 	if (do_syslog == TRUE)
 		syslog_seed(shm->seed);
+}
+
+unsigned long rand64(void)
+{
+	unsigned long r = 0;
+
+	switch (rand() % 5) {
+
+	/* Sometimes pick a not-so-random number. */
+	case 0:	return get_interesting_value();
+
+	/* limit to RAND_MAX (31 bits) */
+	case 1:	r = rand();
+		break;
+
+	 /* do some gymnastics here to get > RAND_MAX
+	  * Based on very similar routine stolen from iknowthis. Thanks Tavis.
+	  */
+	case 2:
+		r = rand() & rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= rand() & rand();
+#endif
+		break;
+
+	case 3:
+		r = rand() | rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= rand() | rand();
+#endif
+		break;
+
+	case 4:
+		r = rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= rand();
+#endif
+		break;
+
+	default:
+		break;
+	}
+	return r;
 }

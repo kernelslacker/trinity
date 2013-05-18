@@ -13,17 +13,6 @@
 #include "maps.h"
 #include "shm.h"
 
-/*
- * This function gets called before we call ->sanitise routines.
- */
-unsigned long get_reg(void)
-{
-	if ((rand() % 2) == 0)
-		return random();
-
-	return get_interesting_value();
-}
-
 static unsigned int get_cpu(void)
 {
 	int i;
@@ -144,7 +133,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 			return 0;
 		}
 
-		i = random() % high;
+		i = rand64() % high;
 		if (i < low) {
 			i += low;
 			i &= high;
