@@ -138,7 +138,7 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_IRDA:
-		switch (rand() % 2) {
+		switch (rand() % 3) {
 		case 0:	type = SOCK_STREAM;
 			break;
 		case 1:	type = SOCK_SEQPACKET;

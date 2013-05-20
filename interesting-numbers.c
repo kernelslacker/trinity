@@ -3,24 +3,20 @@
 #include "arch.h"
 #include "log.h"	// for BUG
 
-unsigned long get_interesting_32bit_value(void)
+unsigned int get_interesting_32bit_value(void)
 {
-	unsigned int i, bit;
+	unsigned int bit;
 
-	i = rand() % 10;
-
-	switch (i) {
+	switch (rand() % 11) {
 
 	/* rare case, single bit. */
 	case 0:
-		bit = rand() % 63;
+		bit = rand() % 32;
 		return (1L << bit);
 
 	/* common case, return small values*/
 	case 1 ... 7:
-		i = rand() % 8;
-
-		switch (i) {
+		switch (rand() % 8) {
 		case 0:	return 0x00000000;
 		case 1:	return 0x00000001;
 		case 2:	return rand() % 256;
@@ -37,9 +33,7 @@ unsigned long get_interesting_32bit_value(void)
 
 	/* less common case, go crazy */
 	case 8 ... 10:
-		i = rand() % 13;
-
-		switch (i) {
+		switch (rand() % 13) {
 		case 0:	return 0x00010000;
 		case 1:	return 0x40000000;
 		case 2:	return 0x7fffffff;
@@ -81,7 +75,9 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	case 1: return 0x0000800000000000;			// First x86-64 non-canonical addr
 	case 2: return 0xffff800000000000 | (low << 4);		// x86-64 canonical addr range 2 begin
 	case 3: return VDSO_ADDR | (low & 0x0fffff);
-	default: break;
+	default:
+		BUG("unreachable!\n");
+		break;
 	}
 #endif
 
@@ -96,14 +92,11 @@ unsigned long get_interesting_value(void)
 #if __WORDSIZE == 32
 	return get_interesting_32bit_value();
 #else
-	int i;
 	unsigned long low;
 
 	low = get_interesting_32bit_value();
 
-	i = rand() % 15;
-
-	switch (i) {
+	switch (rand() % 16) {
 	case 0: return 0;
 	case 1: return low;
 	case 2: return 0x0000000100000000;
@@ -119,10 +112,8 @@ unsigned long get_interesting_value(void)
 	case 12: return KERNEL_ADDR | (low & 0xffffff);
 	case 13: return MODULE_ADDR | (low & 0xffffff);
 	case 14: return per_arch_interesting_addr(low);
-
-	default:
-		BUG("unreachable!\n");
-		return 0;
+	case 15: return (low << 32);
+	default: break;
 	}
 	BUG("unreachable!\n");
 	return 0;

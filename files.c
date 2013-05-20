@@ -364,7 +364,7 @@ char * generate_pathname(void)
 		if ((rand() % 100) > 10)
 			return get_filename();
 
-	case 91 ... 100:
+	case 91 ... 99:
 		/* Create a bogus filename. */
 		newpath = malloc(page_size);	// FIXME: We leak this.
 		if (newpath == NULL)

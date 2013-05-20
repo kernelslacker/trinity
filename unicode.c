@@ -39,7 +39,7 @@ void gen_unicode_page(char *page)
 
 	while (i < (page_size - zalgolen)) {
 
-		j = rand() % 8;
+		j = rand() % 9;
 
 		switch (j) {
 
