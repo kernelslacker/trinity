@@ -4,6 +4,9 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'
 #include "log.h"
@@ -23,14 +26,20 @@ static void syslog_seed(int seedparam)
 
 unsigned int new_seed(void)
 {
+	int fd;
 	struct timeval t;
 	unsigned int r;
 
-	r = rand();
-	if (!(rand() % 2)) {
-		gettimeofday(&t, 0);
-		r |= t.tv_usec;
+	if ((fd = open("/dev/urandom", O_RDONLY)) < 0 ||
+	    read(fd, &r, sizeof(r)) != sizeof(r)) {
+		r = rand();
+		if (!(rand() % 2)) {
+			gettimeofday(&t, 0);
+			r |= t.tv_usec;
+		}
 	}
+	if (fd >= 0)
+		close(fd);
 	return r;
 }
 
@@ -44,7 +53,7 @@ unsigned int init_seed(unsigned int seedparam)
 	else {
 		seedparam = new_seed();
 
-		printf("Initial random seed from time of day: %u\n", seedparam);
+		printf("Initial random seed: %u\n", seedparam);
 	}
 
 	if (do_syslog == TRUE)
