@@ -504,6 +504,10 @@ struct sockaddr_nfc {
 #define MS_NOSEC        (1<<28)
 #endif
 
+#ifndef MS_BORN
+#define MS_BORN		(1<<29)
+#endif
+
 /* linux/kvm.h */
 #ifndef KVM_GET_REG_LIST
 struct kvm_reg_list {
