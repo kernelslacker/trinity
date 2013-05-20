@@ -23,7 +23,7 @@ void sanitise_setsockopt(int childno)
 
 	/* First we pick a level  */
 
-	switch (rand() % 34) {
+	switch (rand() % 35) {
 	case 0:	level = SOL_IP;	break;
 	case 1:	level = SOL_SOCKET; break;
 	case 2:	level = SOL_TCP; break;
@@ -325,7 +325,7 @@ void sanitise_setsockopt(int childno)
 		break;
 
 	default:
-		shm->a3[childno] = (rand() % 0xff);	/* random operation. */
+		shm->a3[childno] = (rand() % 0x100);	/* random operation. */
 	}
 
 	shm->a2[childno] = level;

@@ -14,7 +14,7 @@ void sanitise_ioctl_sg_io(int childno);
 void generic_sanitise(int childno);
 
 unsigned long get_interesting_value(void);
-unsigned long get_interesting_32bit_value(void);
+unsigned int get_interesting_32bit_value(void);
 unsigned long get_reg(void);
 
 void *get_address(void);

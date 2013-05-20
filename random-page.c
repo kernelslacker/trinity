@@ -7,24 +7,35 @@
 
 static void fabricate_onepage_struct(char *page)
 {
-	void *addr;
-	unsigned int i, j;
+	unsigned int i;
+	void **ptr;
 
-	for (i = 0; i < page_size; i++) {
-		j = rand() % 4;
-		switch (j) {
-		case 0: page[i] = get_interesting_32bit_value();
-			i += sizeof(unsigned long);
-			break;
-		case 1: page[i] = get_interesting_value();
-			i += sizeof(unsigned long long);
-			break;
-		case 2: addr = get_address();
-			page[i] = (unsigned long) addr;
-			i += sizeof(unsigned long);
-			break;
-		case 3: page[i] = (unsigned int) rand() % page_size;
+	for (i = 0; i < page_size; ) {
+		ptr = (void*)&page[i];
+		switch (rand() % 4) {
+		case 0:
 			i += sizeof(unsigned int);
+			if (i > page_size)
+				return;
+			*(unsigned int *)ptr = get_interesting_32bit_value();
+			break;
+		case 1:
+			i += sizeof(unsigned long);
+			if (i > page_size)
+				return;
+			*(unsigned long *)ptr = get_interesting_value();
+			break;
+		case 2:
+			i += sizeof(void *);
+			if (i > page_size)
+				return;
+			*ptr = get_address();
+			break;
+		case 3:
+			i += sizeof(unsigned int);
+			if (i > page_size)
+				return;
+			*(unsigned int *)ptr = rand() % page_size;
 			break;
 		default:
 			BUG("unreachable!\n");
@@ -36,24 +47,23 @@ static void fabricate_onepage_struct(char *page)
 void generate_random_page(char *page)
 {
 	unsigned int i;
-	unsigned int type = rand() % 6;
 
-	switch (type) {
+	switch (rand() % 6) {
 	/* return a page of complete trash */
 	case 0:	/* bytes */
-		for (i = 0; i < page_size; i++)
+		for (i = 0; i < page_size; )
 			page[i++] = (unsigned char)rand();
 		return;
 
-	case 1:	/* ints */
-		for (i = 0; i < (page_size / 2); i++) {
+	case 1:	/* words */
+		for (i = 0; i < (page_size / 2); ) {
 			page[i++] = 0;
 			page[i++] = (unsigned char)rand();
 		}
 		return;
 
-	case 2:	/* longs */
-		for (i = 0; i < (page_size / 4); i++) {
+	case 2:	/* ints */
+		for (i = 0; i < (page_size / 4); ) {
 			page[i++] = 0;
 			page[i++] = 0;
 			page[i++] = 0;
@@ -71,8 +81,8 @@ void generate_random_page(char *page)
 
 	/* page of 0's and 1's. */
 	case 5:
-		for (i = 0; i < page_size; i++)
-			page[i++] = (unsigned char)rand() % 1;
+		for (i = 0; i < page_size; )
+			page[i++] = (unsigned char)rand() % 2;
 		return;
 
 	default:

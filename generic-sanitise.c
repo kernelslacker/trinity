@@ -205,7 +205,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) generate_pathname();
 
 	case ARG_IOVEC:
-		i = (rand() % 4) + 1;
+		i = (rand() % 5) + 1;
 
 		switch (argnum) {
 		case 1:	if (syscalls[call].entry->arg2type == ARG_IOVECLEN)
@@ -223,7 +223,6 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		case 5:	if (syscalls[call].entry->arg6type == ARG_IOVECLEN)
 				shm->a6[childno] = i;
 			break;
-		case 6:
 		default: BUG("impossible\n");
 		}
 		return (unsigned long) alloc_iovec(i);
