@@ -534,8 +534,88 @@ struct kvm_s390_ucas_mapping {
 #define KVM_S390_VCPU_FAULT       _IOW(KVMIO, 0x52, unsigned long)
 #endif
 
+#ifndef KVM_XEN_HVM_CONFIG
+struct kvm_xen_hvm_config {
+	__u32 flags;
+	__u32 msr;
+	__u64 blob_addr_32;
+	__u64 blob_addr_64;
+	__u8 blob_size_32;
+	__u8 blob_size_64;
+	__u8 pad2[30];
+};
+#define KVM_XEN_HVM_CONFIG        _IOW(KVMIO,  0x7a, struct kvm_xen_hvm_config)
+#endif
+
+#ifndef KVM_PPC_GET_PVINFO
+struct kvm_ppc_pvinfo {
+	/* out */
+	__u32 flags;
+	__u32 hcall[4];
+	__u8  pad[108];
+};
+#define KVM_PPC_GET_PVINFO        _IOW(KVMIO,  0xa1, struct kvm_ppc_pvinfo)
+#endif
+
+#ifndef KVM_SET_TSC_KHZ
+#define KVM_SET_TSC_KHZ           _IO(KVMIO,  0xa2)
+#endif
+
+#ifndef KVM_GET_TSC_KHZ
+#define KVM_GET_TSC_KHZ           _IO(KVMIO,  0xa3)
+#endif
+
 #ifndef KVM_ASSIGN_SET_INTX_MASK
 #define KVM_ASSIGN_SET_INTX_MASK  _IOW(KVMIO,  0xa4, struct kvm_assigned_pci_dev)
+#endif
+
+#ifndef KVM_GET_DEBUGREGS
+struct kvm_debugregs {
+	__u64 db[4];
+	__u64 dr6;
+	__u64 dr7;
+	__u64 flags;
+	__u64 reserved[9];
+};
+#define KVM_GET_DEBUGREGS         _IOR(KVMIO,  0xa1, struct kvm_debugregs)
+#define KVM_SET_DEBUGREGS         _IOW(KVMIO,  0xa2, struct kvm_debugregs)
+#endif
+
+#ifndef KVM_ENABLE_CAP
+struct kvm_enable_cap {
+	/* in */
+	__u32 cap;
+	__u32 flags;
+	__u64 args[4];
+	__u8  pad[64];
+};
+#define KVM_ENABLE_CAP            _IOW(KVMIO,  0xa3, struct kvm_enable_cap)
+#endif
+
+#ifndef KVM_GET_XSAVE
+struct kvm_xsave {
+	__u32 region[1024];
+};
+#define KVM_GET_XSAVE             _IOR(KVMIO,  0xa4, struct kvm_xsave)
+#define KVM_SET_XSAVE             _IOW(KVMIO,  0xa5, struct kvm_xsave)
+#endif
+
+#ifndef KVM_GET_XCRS
+#define KVM_MAX_XCRS    16
+struct kvm_xcr {
+	__u32 xcr;
+	__u32 reserved;
+	__u64 value;
+};
+
+struct kvm_xcrs {
+	__u32 nr_xcrs;
+	__u32 flags;
+	struct kvm_xcr xcrs[KVM_MAX_XCRS];
+	__u64 padding[16];
+};
+#define KVM_GET_XCRS              _IOR(KVMIO,  0xa6, struct kvm_xcrs)
+#define KVM_SET_XCRS              _IOW(KVMIO,  0xa7, struct kvm_xcrs)
 #endif
 
 #ifndef KVM_SIGNAL_MSI
