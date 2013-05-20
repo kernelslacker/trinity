@@ -3,6 +3,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <linux/if.h>
+#include <linux/if_ether.h> /* for ETH_ALEN in if_pppox.h */
 #include <linux/if_pppox.h>
 #include <stdlib.h>
 #include "net.h"

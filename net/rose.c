@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <linux/ax25.h> /* for ax25_address in rose.h */
 #include <linux/rose.h>
 #include <stdlib.h>
 #include "maps.h"	// page_rand
