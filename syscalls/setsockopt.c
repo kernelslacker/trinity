@@ -196,9 +196,11 @@ void sanitise_setsockopt(int childno)
 			break;
 		case PACKET_TX_RING:
 		case PACKET_RX_RING:
+#ifdef TPACKET3_HDRLEN
 			if (rand() % 3 == 0)
 				shm->a5[childno] = sizeof(struct tpacket_req3);
 			else
+#endif
 				shm->a5[childno] = sizeof(struct tpacket_req);
 			break;
 		default:
