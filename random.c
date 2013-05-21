@@ -120,7 +120,7 @@ unsigned int rand32(void)
 	/* 0 .. RAND_MAX */
 	case 1:	r = rand();
 		if (rand_bool())
-			r |= (1<<31);
+			r |= (1L << 31);
 		break;
 
 	case 2:	return get_interesting_32bit_value();
@@ -178,5 +178,9 @@ unsigned long rand64(void)
 	default:
 		break;
 	}
+
+	if (rand_bool())
+		r |= (1L << 63);
+
 	return r;
 }
