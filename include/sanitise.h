@@ -3,8 +3,6 @@
 
 #include "syscall.h"
 
-unsigned long rand64(void);
-
 void sanitise_mmap(int childno);
 void sanitise_rt_sigaction(int childno);
 void sanitise_socket(int childno);

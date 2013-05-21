@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"

@@ -4,6 +4,7 @@
 #include <asm/mman.h>
 #include "trinity.h"	// page_size
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 

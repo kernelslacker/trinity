@@ -6,6 +6,7 @@
 #include "trinity.h"	// page_size
 #include "files.h"
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "net.h"

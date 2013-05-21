@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE(pread64)(unsigned int fd, char __user *buf, size_t count, loff_t pos)
  */
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 

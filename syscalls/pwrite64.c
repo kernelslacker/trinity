@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE(pwrite64)(unsigned int fd, const char __user *buf, size_t count, loff_t po>
  */
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 
