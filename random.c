@@ -93,23 +93,42 @@ void reseed(void)
 		syslog_seed(shm->seed);
 }
 
+unsigned int rand_bool(void)
+{
+	return rand() % 2;
+}
+
+unsigned int rand_single_32bit(void)
+{
+	return (1L << (rand() % 32));
+}
+
+unsigned long rand_single_64bit(void)
+{
+	return (1L << (rand() % 64));
+}
+
 unsigned long rand64(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 5) {
+	switch (rand() % 7) {
+
+	/* Just set one bit */
+	case 0:	return rand_single_32bit();
+	case 1:	return rand_single_64bit();
 
 	/* Sometimes pick a not-so-random number. */
-	case 0:	return get_interesting_value();
+	case 2:	return get_interesting_value();
 
 	/* limit to RAND_MAX (31 bits) */
-	case 1:	r = rand();
+	case 3:	r = rand();
 		break;
 
 	 /* do some gymnastics here to get > RAND_MAX
 	  * Based on very similar routine stolen from iknowthis. Thanks Tavis.
 	  */
-	case 2:
+	case 4:
 		r = rand() & rand();
 #if __WORDSIZE == 64
 		r <<= 32;
@@ -117,7 +136,7 @@ unsigned long rand64(void)
 #endif
 		break;
 
-	case 3:
+	case 5:
 		r = rand() | rand();
 #if __WORDSIZE == 64
 		r <<= 32;
@@ -125,7 +144,7 @@ unsigned long rand64(void)
 #endif
 		break;
 
-	case 4:
+	case 6:
 		r = rand();
 #if __WORDSIZE == 64
 		r <<= 32;
@@ -137,9 +156,4 @@ unsigned long rand64(void)
 		break;
 	}
 	return r;
-}
-
-unsigned int rand_bool(void)
-{
-	return rand() % 2;
 }
