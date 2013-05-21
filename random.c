@@ -108,6 +108,29 @@ unsigned long rand_single_64bit(void)
 	return (1L << (rand() % 64));
 }
 
+unsigned int rand32(void)
+{
+	unsigned long r = 0;
+
+	switch (rand() % 3) {
+
+	/* Just set one bit */
+	case 0:	return rand_single_32bit();
+
+	/* 0 .. RAND_MAX */
+	case 1:	r = rand();
+		if (rand_bool())
+			r |= (1<<31);
+		break;
+
+	case 2:	return get_interesting_32bit_value();
+
+	default:
+		break;
+	}
+	return r;
+}
+
 unsigned long rand64(void)
 {
 	unsigned long r = 0;
