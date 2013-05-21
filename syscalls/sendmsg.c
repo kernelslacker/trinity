@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "compat.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 
@@ -26,7 +27,7 @@ static void sanitise_sendmsg(int childno)
 	msg->msg_iovlen = get_len();
 	msg->msg_control = get_address();
 	msg->msg_controllen = get_len();
-	msg->msg_flags = rand();
+	msg->msg_flags = rand32();
 
 	shm->a2[childno] = (unsigned long) msg;
 }
