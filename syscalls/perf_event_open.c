@@ -80,7 +80,7 @@ static int random_event_type(void) {
 			break;
 		case 5: type = PERF_TYPE_BREAKPOINT;
 			break;
-		default: type=rand();
+		default: type = rand();
 			break;
 	}
 	return type;
@@ -170,7 +170,7 @@ static long long random_event_config(long long event_type) {
 		case PERF_TYPE_BREAKPOINT:
 			/* Breakpoint type only valid if config==0 */
 			/* Set it to something else too anyway     */
-			if (rand() % 2) config = rand64();
+			if (rand_bool()) config = rand64();
 			else config = 0;
 			break;
 #endif
@@ -226,25 +226,25 @@ static long long random_sample_type(void) {
 
 	if (rand()%2) return rand();
 
-	if (rand() % 2) sample_type |= PERF_SAMPLE_IP;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_TID;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_TIME;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_ADDR;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_READ;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_CALLCHAIN;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_ID;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_CPU;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_PERIOD;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_STREAM_ID;
-	if (rand() % 2) sample_type |= PERF_SAMPLE_RAW;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_IP;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_TID;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_TIME;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_ADDR;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_READ;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_CALLCHAIN;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_ID;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_CPU;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_PERIOD;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_STREAM_ID;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_RAW;
 #ifdef PERF_SAMPLE_BRANCH_STACK
-	if (rand() % 2) sample_type |= PERF_SAMPLE_BRANCH_STACK;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_BRANCH_STACK;
 #endif
 #ifdef PERF_SAMPLE_REGS_USER
-	if (rand() % 2) sample_type |= PERF_SAMPLE_REGS_USER;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_REGS_USER;
 #endif
 #ifdef PERF_SAMPLE_STACK_USER
-	if (rand() % 2) sample_type |= PERF_SAMPLE_STACK_USER;
+	if (rand_bool()) sample_type |= PERF_SAMPLE_STACK_USER;
 #endif
 
 	return sample_type;
@@ -254,12 +254,12 @@ static long long random_read_format(void) {
 
 	long long read_format = 0;
 
-	if (rand() % 2) return rand();
+	if (rand_bool()) return rand();
 
-	if (rand() % 2) read_format |= PERF_FORMAT_GROUP;
-	if (rand() % 2) read_format |= PERF_FORMAT_ID;
-	if (rand() % 2) read_format |= PERF_FORMAT_TOTAL_TIME_ENABLED;
-	if (rand() % 2) read_format |= PERF_FORMAT_TOTAL_TIME_RUNNING;
+	if (rand_bool()) read_format |= PERF_FORMAT_GROUP;
+	if (rand_bool()) read_format |= PERF_FORMAT_ID;
+	if (rand_bool()) read_format |= PERF_FORMAT_TOTAL_TIME_ENABLED;
+	if (rand_bool()) read_format |= PERF_FORMAT_TOTAL_TIME_RUNNING;
 
 	return read_format;
 }
@@ -279,28 +279,28 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr) {
 	attr->read_format = random_read_format();
 
 	/* Boolean parameters */
-	attr->disabled = rand() % 2;
-	attr->inherit = rand() % 2;
-	attr->pinned = rand() % 2;
-	attr->exclusive = rand() % 2;
-	attr->exclude_user = rand() % 2;
-	attr->exclude_kernel = rand() % 2;
-	attr->exclude_hv = rand() % 2;
-	attr->exclude_idle = rand() % 2;
-	attr->mmap = rand() % 2;
-	attr->comm = rand() % 2;
+	attr->disabled = rand_bool();
+	attr->inherit = rand_bool();
+	attr->pinned = rand_bool();
+	attr->exclusive = rand_bool();
+	attr->exclude_user = rand_bool();
+	attr->exclude_kernel = rand_bool();
+	attr->exclude_hv = rand_bool();
+	attr->exclude_idle = rand_bool();
+	attr->mmap = rand_bool();
+	attr->comm = rand_bool();
 	// freq not relevant
-	attr->inherit_stat = rand() % 2;
-	attr->enable_on_exec = rand() % 2;
-	attr->task = rand() % 2;
-	attr->watermark = rand() % 2;
+	attr->inherit_stat = rand_bool();
+	attr->enable_on_exec = rand_bool();
+	attr->task = rand_bool();
+	attr->watermark = rand_bool();
 	attr->precise_ip = rand() % 4;	// two bits
-	attr->mmap_data = rand() % 2;
-	attr->sample_id_all = rand() % 2;
-	attr->exclude_host = rand() % 2;
-	attr->exclude_guest = rand() % 2;
-	attr->exclude_callchain_kernel = rand() % 2;
-	attr->exclude_callchain_user = rand() % 2;
+	attr->mmap_data = rand_bool();
+	attr->sample_id_all = rand_bool();
+	attr->exclude_host = rand_bool();
+	attr->exclude_guest = rand_bool();
+	attr->exclude_callchain_kernel = rand_bool();
+	attr->exclude_callchain_user = rand_bool();
 
 	attr->wakeup_events = rand();	// also wakeup_watermark
 
@@ -328,28 +328,28 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr) {
 	attr->read_format = random_read_format();
 
 	/* Boolean parameters */
-	attr->disabled = rand() % 2;
-	attr->inherit = rand() % 2;
-	attr->pinned = rand() % 2;
-	attr->exclusive = rand() % 2;
-	attr->exclude_user = rand() % 2;
-	attr->exclude_kernel = rand() % 2;
-	attr->exclude_hv = rand() % 2;
-	attr->exclude_idle = rand() % 2;
-	attr->mmap = rand() % 2;
-	attr->comm = rand() % 2;
+	attr->disabled = rand_bool();
+	attr->inherit = rand_bool();
+	attr->pinned = rand_bool();
+	attr->exclusive = rand_bool();
+	attr->exclude_user = rand_bool();
+	attr->exclude_kernel = rand_bool();
+	attr->exclude_hv = rand_bool();
+	attr->exclude_idle = rand_bool();
+	attr->mmap = rand_bool();
+	attr->comm = rand_bool();
 
-	attr->inherit_stat = rand() % 2;
-	attr->enable_on_exec = rand() % 2;
-	attr->task = rand() % 2;
-	attr->watermark = rand() % 2;
+	attr->inherit_stat = rand_bool();
+	attr->enable_on_exec = rand_bool();
+	attr->task = rand_bool();
+	attr->watermark = rand_bool();
 	attr->precise_ip = rand() % 4;	// two bits
-	attr->mmap_data = rand() % 2;
-	attr->sample_id_all = rand() % 2;
-	attr->exclude_host = rand() % 2;
-	attr->exclude_guest = rand() % 2;
-	attr->exclude_callchain_kernel = rand() % 2;
-	attr->exclude_callchain_user = rand() % 2;
+	attr->mmap_data = rand_bool();
+	attr->sample_id_all = rand_bool();
+	attr->exclude_host = rand_bool();
+	attr->exclude_guest = rand_bool();
+	attr->exclude_callchain_kernel = rand_bool();
+	attr->exclude_callchain_user = rand_bool();
 
 	attr->wakeup_events = rand();	// also wakeup_watermark
 
@@ -369,7 +369,7 @@ static void create_random_event(struct perf_event_attr *attr) {
 	attr->config = random_event_config(attr->type);
 	setup_breakpoints(attr);
 
-	switch(rand() % 2) {
+	switch(rand_bool()) {
 		case 0: attr->size = sizeof(struct perf_event_attr);
 			break;
 		case 1: attr->size = get_len();
@@ -380,9 +380,9 @@ static void create_random_event(struct perf_event_attr *attr) {
 	attr->read_format = random_read_format();
 
 	/* booleans */
-	attr->exclude_user=rand() % 2;
-	attr->exclude_kernel = rand() % 2;	/* doesn't require root unless paranoid set to 2 */
-	attr->exclude_hv = rand() % 2;
+	attr->exclude_user = rand_bool();
+	attr->exclude_kernel = rand_bool();	/* doesn't require root unless paranoid set to 2 */
+	attr->exclude_hv = rand_bool();
 }
 
 static void sanitise_perf_event_open(int childno)
@@ -422,9 +422,9 @@ static void sanitise_perf_event_open(int childno)
 	if (rand()%2) {
 		flags = rand64();
 	} else {
-		if (rand() % 2) flags |= PERF_FLAG_FD_NO_GROUP;
-		if (rand() % 2) flags |= PERF_FLAG_FD_OUTPUT;
-		if (rand() % 2) flags |= PERF_FLAG_PID_CGROUP;
+		if (rand_bool()) flags |= PERF_FLAG_FD_NO_GROUP;
+		if (rand_bool()) flags |= PERF_FLAG_FD_OUTPUT;
+		if (rand_bool()) flags |= PERF_FLAG_PID_CGROUP;
         }
 	shm->a5[childno] = flags;
 
