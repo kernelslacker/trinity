@@ -7,4 +7,6 @@ void set_seed(unsigned int pidslot);
 void reseed(void);
 unsigned int new_seed(void);
 
+unsigned long rand64(void);
+
 #endif	/* _RANDOM_H */
