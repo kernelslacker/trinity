@@ -2,17 +2,14 @@
 #include <stdlib.h>
 #include "arch.h"
 #include "log.h"	// for BUG
+#include "random.h"
 
 unsigned int get_interesting_32bit_value(void)
 {
-	unsigned int bit;
-
 	switch (rand() % 11) {
 
 	/* rare case, single bit. */
-	case 0:
-		bit = rand() % 32;
-		return (1L << bit);
+	case 0:	return rand_single_32bit();
 
 	/* common case, return small values*/
 	case 1 ... 7:
@@ -96,7 +93,7 @@ unsigned long get_interesting_value(void)
 
 	low = get_interesting_32bit_value();
 
-	switch (rand() % 16) {
+	switch (rand() % 17) {
 	case 0: return 0;
 	case 1: return low;
 	case 2: return 0x0000000100000000;
@@ -113,6 +110,7 @@ unsigned long get_interesting_value(void)
 	case 13: return MODULE_ADDR | (low & 0xffffff);
 	case 14: return per_arch_interesting_addr(low);
 	case 15: return (low << 32);
+	case 16: return rand_single_64bit();
 	default: break;
 	}
 	BUG("unreachable!\n");
