@@ -138,3 +138,8 @@ unsigned long rand64(void)
 	}
 	return r;
 }
+
+unsigned int rand_bool(void)
+{
+	return rand() % 2;
+}

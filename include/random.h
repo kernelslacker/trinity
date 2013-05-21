@@ -8,5 +8,6 @@ void reseed(void);
 unsigned int new_seed(void);
 
 unsigned long rand64(void);
+unsigned int rand_bool(void);
 
 #endif	/* _RANDOM_H */
