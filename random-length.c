@@ -9,6 +9,7 @@ unsigned long get_len(void)
 
 	i = get_interesting_value();
 
+	/* short circuit if 0 */
 	if (i == 0)
 		return 0;
 
@@ -28,6 +29,10 @@ unsigned long get_len(void)
 		// Pass through
 		break;
 	}
+
+	/* again, short circuit if 0 */
+	if (i == 0)
+		return 0;
 
 	/* we might get lucky if something is counting ints/longs etc. */
 	if (rand() % 100 < 25) {
