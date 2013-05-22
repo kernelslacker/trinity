@@ -152,9 +152,6 @@
     1. what I did for fcntl[64] in 22b4b44ececaf59f9178f52788e3bcfe92535574
     2. leave the dupes, just for the sake of getting the ->name right.
 
-  - more multiplexed syscalls need .sanitise routines to pass the right args.
-    - fcntl
-
   - Finish annotating syscall return types
 
 * Add a way to add a filter to filelist.
