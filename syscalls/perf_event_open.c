@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <linux/perf_event.h>
-#include <linux/hw_breakpoint.h>
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
