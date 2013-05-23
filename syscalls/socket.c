@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <linux/irda.h>
 #include <linux/dn.h>
+#include <linux/if_ether.h>
 #include "compat.h"
 #include "log.h"
 #include "net.h"
@@ -196,6 +197,12 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_PACKET:
+		protocol = htons(ETH_P_ALL);
+		if (rand() % 8 == 0) {
+			protocol = rand();
+			if (rand() % 2 == 0)
+				protocol = (uint16_t) rand();
+		}
 		switch (rand() % 3) {
 		case 0:	type = SOCK_DGRAM;
 			break;
