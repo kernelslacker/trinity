@@ -75,6 +75,22 @@
 #define PERF_FLAG_PID_CGROUP    (1U << 2) /* pid=cgroup id, per-cpu mode only */
 #endif
 
+/* linux/hw_breakpoint.h */
+enum {
+        HW_BREAKPOINT_LEN_1 = 1,
+        HW_BREAKPOINT_LEN_2 = 2,
+        HW_BREAKPOINT_LEN_4 = 4,
+        HW_BREAKPOINT_LEN_8 = 8,
+};
+
+enum {
+        HW_BREAKPOINT_EMPTY     = 0,
+        HW_BREAKPOINT_R         = 1,
+        HW_BREAKPOINT_W         = 2,
+        HW_BREAKPOINT_RW        = HW_BREAKPOINT_R | HW_BREAKPOINT_W,
+        HW_BREAKPOINT_X         = 4,
+        HW_BREAKPOINT_INVALID   = HW_BREAKPOINT_RW | HW_BREAKPOINT_X,
+};
 
 /* asm-generic/mman-common.h */
 
