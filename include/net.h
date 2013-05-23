@@ -37,6 +37,7 @@ void gen_unixsock(unsigned long *addr, unsigned long *addrlen);
 
 /* bpf */
 void gen_bpf(unsigned long *addr, unsigned long *addrlen);
+void gen_seccomp_bpf(unsigned long *addr, unsigned long *addrlen);
 
 /* caif */
 void gen_caif(unsigned long *addr, unsigned long *addrlen);
