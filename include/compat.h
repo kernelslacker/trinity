@@ -669,4 +669,8 @@ struct kvm_one_reg {
 #define KVM_KVMCLOCK_CTRL         _IO(KVMIO,   0xad)
 #endif
 
+#ifndef EM_ARM
+#define EM_ARM                    40
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
