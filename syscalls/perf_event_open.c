@@ -379,8 +379,10 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr)
 	attr->sample_id_all = rand_bool();
 	attr->exclude_host = rand_bool();
 	attr->exclude_guest = rand_bool();
+#ifdef USE_PERF_EVENT_EXCLUDE_CALLCHAINS
 	attr->exclude_callchain_kernel = rand_bool();
 	attr->exclude_callchain_user = rand_bool();
+#endif
 
 	attr->wakeup_events = rand();	// also wakeup_watermark
 
@@ -428,8 +430,10 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr)
 	attr->sample_id_all = rand_bool();
 	attr->exclude_host = rand_bool();
 	attr->exclude_guest = rand_bool();
+#ifdef USE_PERF_EVENT_EXCLUDE_CALLCHAINS
 	attr->exclude_callchain_kernel = rand_bool();
 	attr->exclude_callchain_user = rand_bool();
+#endif
 
 	attr->wakeup_events = rand();	// also wakeup_watermark
 
