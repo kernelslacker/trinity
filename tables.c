@@ -119,7 +119,7 @@ bool no_syscalls_enabled(void)
 			if (syscalls_32bit[i].entry->flags & ACTIVE)
 				return FALSE;
 		}
-		return TRUE;;
+		return TRUE;
 	}
 
 	/* non-biarch */
