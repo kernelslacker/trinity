@@ -90,6 +90,11 @@ int do_random_syscalls(int childno)
 		// a better way would be to do something in tables.c where we construct
 		// our own syscall table just containing enabled syscalls.
 retry:
+		if (no_syscalls_enabled() == TRUE) {
+			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
+			goto out;
+		}
+
 		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
 
