@@ -111,7 +111,7 @@ long mkcall(int childno)
 {
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
 	unsigned int call = shm->syscallno[childno];
-
+	unsigned int call32, call64;
 	int ret = 0, errno_saved;
 	char string[512], *sptr;
 
@@ -281,7 +281,16 @@ args_done:
 			goto skip_enosys;
 
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n", syscalls[call].entry->name, call);
-		syscalls[call].entry->flags &= ~ACTIVE;
+
+		if (biarch == FALSE) {
+			syscalls[call].entry->flags &= ~ACTIVE;
+		} else {
+			call32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, syscalls[call].entry->name);
+			syscalls_32bit[call32].entry->flags &= ~ACTIVE;
+			call64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, syscalls[call].entry->name);
+			syscalls_64bit[call64].entry->flags &= ~ACTIVE;
+			output(1, "Disabled syscalls 32bit:%d 64bit:%d\n", call32, call64);
+		}
 	}
 
 skip_enosys:
