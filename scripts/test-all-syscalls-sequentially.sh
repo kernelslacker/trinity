@@ -14,24 +14,24 @@ check_tainted()
 if [ ! -d tmp ]; then
   mkdir tmp
 fi
-chmod 755 tmp
-cd tmp
 
 TAINT=$(cat /proc/sys/kernel/tainted)
 
 while [ 1 ]
 do
-for syscall in $(../trinity -L | grep -v Trinity | grep -v syscalls: | grep -v AVOID | grep 64-bit | awk '{ print $4 }' | sort -u)
+for syscall in $(./trinity -L | grep -v Trinity | grep -v syscalls: | grep -v AVOID | grep 64-bit | awk '{ print $4 }' | sort -u)
 do
+	chmod 755 tmp
+	pushd tmp
+
 	if [ ! -f ../trinity ]; then
 		echo lost!
 		pwd
 		exit
 	fi
 
-	MALLOC_CHECK_=2 ../trinity -q -c $syscall -N 99999 -D -l off -C 64
-
-	chmod 755 ../tmp
+	MALLOC_CHECK_=2 ../trinity -q -c $syscall -N 99999 -l off -C 64
+	popd
 
 	check_tainted
 	echo
