@@ -12,6 +12,7 @@
 #include "compat.h"
 #include "log.h"
 #include "net.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "config.h"
@@ -47,7 +48,7 @@ void sanitise_socket(int childno)
 	switch (family) {
 
 	case AF_APPLETALK:
-		switch (rand() % 2) {
+		switch (rand_bool()) {
 		case 0:	type = SOCK_DGRAM;
 			protocol = 0;
 			break;
@@ -74,7 +75,7 @@ void sanitise_socket(int childno)
 #ifdef USE_CAIF
 	case AF_CAIF:
 		protocol = rand() % _CAIFPROTO_MAX;
-		switch (rand() % 2) {
+		switch (rand_bool()) {
 		case 0:	type = SOCK_SEQPACKET;
 			break;
 		case 1:	type = SOCK_STREAM;
@@ -89,7 +90,7 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_DECnet:
-		if (rand() % 2) {
+		if (rand_bool()) {
 			type = SOCK_SEQPACKET;
 			protocol = DNPROTO_NSP;
 		} else {
@@ -100,13 +101,13 @@ void sanitise_socket(int childno)
 	case AF_INET:
 		switch (rand() % 3) {
 		case 0:	type = SOCK_STREAM;	// TCP
-			if ((rand() % 2) == 0)
+			if (rand_bool())
 				protocol = 0;
 			else
 				protocol = IPPROTO_TCP;
 			break;
 		case 1:	type = SOCK_DGRAM;	// UDP
-			if ((rand() % 2) == 0)
+			if (rand_bool())
 				protocol = 0;
 			else
 				protocol = IPPROTO_UDP;
@@ -124,7 +125,7 @@ void sanitise_socket(int childno)
 			protocol = 0;
 			break;
 		case 1:	type = SOCK_DGRAM;	// UDP
-			if ((rand() % 2) == 0)
+			if (rand_bool())
 				protocol = 0;
 			else
 				protocol = IPPROTO_UDP;
@@ -146,7 +147,7 @@ void sanitise_socket(int childno)
 		case 1:	type = SOCK_SEQPACKET;
 			break;
 		case 2:	type = SOCK_DGRAM;
-			switch (rand() % 2) {
+			switch (rand_bool()) {
 			case 0: protocol = IRDAPROTO_ULTRA;
 				break;
 			case 1: protocol = IRDAPROTO_UNITDATA;
@@ -159,7 +160,7 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_LLC:
-		switch (rand() % 2) {
+		switch (rand_bool()) {
 		case 0:	type = SOCK_STREAM;
 			break;
 		case 1:	type = SOCK_DGRAM;
@@ -168,7 +169,7 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_NETLINK:
-		switch (rand() % 2) {
+		switch (rand_bool()) {
 		case 0:	type = SOCK_RAW;
 			break;
 		case 1:	type = SOCK_DGRAM;
@@ -178,7 +179,7 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_NFC:
-		switch (rand() % 2) {
+		switch (rand_bool()) {
 		case 0:	protocol = NFC_SOCKPROTO_LLCP;
 			switch (rand() % 2) {
 			case 0:	type = SOCK_DGRAM;
@@ -201,7 +202,7 @@ void sanitise_socket(int childno)
 		protocol = htons(ETH_P_ALL);
 		if (rand() % 8 == 0) {
 			protocol = rand();
-			if (rand() % 2 == 0)
+			if (rand_bool())
 				protocol = (uint16_t) rand();
 		}
 		switch (rand() % 3) {
@@ -217,7 +218,7 @@ void sanitise_socket(int childno)
 
 	case AF_PHONET:
 		protocol = 0;
-		switch (rand() % 2) {
+		switch (rand_bool()) {
 		case 0:	type = SOCK_DGRAM;
 			break;
 		case 1:	type = SOCK_SEQPACKET;
