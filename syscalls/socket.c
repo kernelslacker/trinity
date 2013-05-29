@@ -8,6 +8,7 @@
 #include <linux/irda.h>
 #include <linux/dn.h>
 #include <linux/if_ether.h>
+#include <linux/netlink.h>
 #include "compat.h"
 #include "log.h"
 #include "net.h"
@@ -173,7 +174,7 @@ void sanitise_socket(int childno)
 		case 1:	type = SOCK_DGRAM;
 		default:break;
 		}
-		protocol = rand() % 32;	// MAX_LINKS
+		protocol = rand() % (NETLINK_CRYPTO + 1);	// Current highest netlink socket.
 		break;
 
 	case AF_NFC:
