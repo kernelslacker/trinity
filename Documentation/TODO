@@ -12,6 +12,12 @@
     of getting one of those. Right now, because there are 5-6 digits worth of /proc & /sys,
     they dominate over the /dev entries.
 
+* Rewrite socket generation.
+  - Organise into (sorted) per-protocol buckets of linked-lists..
+  - Search buckets for dupes before adding.
+  - add a function to lookup a socket from a specific proto for sendmsg etc.
+    (Still occasionally send sockets from random proto's)
+
 * blacklist filenames for victim path & /proc/self/exe
   - make sure we don't call unlink() or rmdir() on them
 
@@ -71,8 +77,6 @@
 * Change regeneration code.
   Instead of every n syscalls, make it happen after 15 minutes.
 
-* Improve socket generation to not generate duplicates.
-
 * Based upon the first syscall the child is going to call, bias the subsequent
   random syscalls to be calls that use the return type from syscall 1.
   Ie, if syscall #1 is going to be a syscall that returns an fd, do a bunch
@@ -81,11 +85,6 @@
   (This might be not really necessary once we have fragments)
 
 * Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
-
-* Store a field in the syscall definition on when it was added upstream.
-  This will allow for things like "just fuzz syscalls added since 2.6.32"
-  It won't be much use on kernels that have them backported, but that's
-  not a big deal. We could do a ENOSYS test.
 
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
@@ -161,7 +160,4 @@
 
 * Add a mode to sequentially go through the whole file list a few hundred files at a time
   instead of picking from the list randomly.
-
-* The unicode junk in page_rand when printed out can sometimes lock up or corrupt the tty.
-  Perhaps we should output some reset control code at the beginning of a new line in output()
 
