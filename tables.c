@@ -574,14 +574,25 @@ try_64bit:
 const char * print_syscall_name(unsigned int callno, bool is32bit)
 {
 	const struct syscalltable *table;
+	unsigned int max;
 
-	if (biarch == FALSE)
-		return syscalls[callno].entry->name;
+	if (biarch == FALSE) {
+		max = max_nr_syscalls;
+		table = syscalls;
+	} else {
+		if (is32bit == FALSE) {
+			max = max_nr_64bit_syscalls;
+			table = syscalls_64bit;
+		} else {
+			max = max_nr_32bit_syscalls;
+			table = syscalls_32bit;
+		}
+	}
 
-	if (is32bit == FALSE)
-		table = syscalls_64bit;
-	else
-		table = syscalls_32bit;
+	if (callno >= max) {
+		printf("Bogus syscall number in %s (%u)\n", __func__, callno);
+		return "invalid-syscall";
+	}
 
 	return table[callno].entry->name;
 }
