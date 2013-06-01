@@ -146,7 +146,7 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 # define TRUE_ARCH		AUDIT_ARCH_X86_64
 #else
 # define TRUE_REG_SYSCALL	((uint32_t) rand()) /* TODO later */
-# define TRUE_ARCH_NR		((uint32_t) rand()) /* TODO later */
+# define TRUE_ARCH		((uint32_t) rand()) /* TODO later */
 #endif
 
 struct seccomp_data {
