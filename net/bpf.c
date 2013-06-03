@@ -338,11 +338,15 @@ void gen_seccomp_bpf(unsigned long *addr, unsigned long *addrlen)
 		return;
 	}
 
+	memset(bpf->filter, 0, bpf->len * sizeof(struct sock_filter));
+
 	seccomp_state = seccomp_choose(seccomp_markov_init);
+
 	for (curr = bpf->filter; avail > 3; ) {
 		used = gen_seccomp_bpf_code(curr);
 		curr  += used;
 		avail -= used;
+
 		seccomp_state = seccomp_choose(seccomp_markov[seccomp_state]);
 	}
 
