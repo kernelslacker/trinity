@@ -32,4 +32,8 @@ extern unsigned int user_specified_children;
 #define max(x, y) ((x) >= (y) ? (x) : (y))
 #define min(x, y) ((x) <= (y) ? (x) : (y))
 
+#ifndef offsetof
+# define offsetof(type, member)	((size_t) &((type *) 0)->member)
+#endif
+
 #endif	/* _TRINITY_H */
