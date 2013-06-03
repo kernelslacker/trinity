@@ -28,10 +28,6 @@
 # define SKF_AD_MAX	56
 #endif
 
-#ifndef offsetof
-# define offsetof(type, member)	((size_t) &((type *) 0)->member)
-#endif
-
 #define syscall_nr	(offsetof(struct seccomp_data, nr))
 #define arch_nr		(offsetof(struct seccomp_data, arch))
 
