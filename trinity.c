@@ -212,6 +212,8 @@ int main(int argc, char* argv[])
 
 	parse_devices();
 
+	pids_init();
+
 	setup_main_signals();
 
 	if (check_tainted() != 0) {
