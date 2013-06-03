@@ -36,17 +36,52 @@ void dump_pid_slots(void)
 		printf("## slot%d: %d\n", i, shm->pids[i]);
 }
 
+static pid_t pidmax;
+
+int read_pid_max(void)
+{
+	unsigned long result;
+	char *end, buf[32];
+	FILE *fp;
+	int rc;
+
+	fp = fopen("/proc/sys/kernel/pid_max", "r");
+	if (!fp) {
+		perror("fopen");
+		return -1;
+	}
+
+	rc = -1;
+	if (!fgets(buf, sizeof(buf), fp))
+		goto out;
+
+	result = strtoul(buf, &end, 10);
+	if (end == buf)
+		goto out;
+
+	pidmax = result;
+	rc = 0;
+out:
+	fclose(fp);
+	return rc;
+}
+
+void pids_init(void)
+{
+	if (read_pid_max()) {
+#ifdef __x86_64__
+		pidmax = 4194304;
+#else
+		pidmax = 32768;
+#endif
+		printf("Couldn't read pid_max from proc\n");
+	}
+
+	printf("Using pid_max = %d\n", pidmax);
+}
+
 int pid_is_valid(pid_t pid)
 {
-	pid_t pidmax;
-
-// FIXME: Read this from /proc/sys/kernel/pid_max on startup
-#ifdef __x86_64__
-	pidmax = 4194304;
-#else
-	pidmax = 32768;
-#endif
-
 	if ((pid > pidmax) || (pid < 1)) {
 		output(0, "Sanity check failed! Found pid %d!\n", pid);
 		return FALSE;

@@ -14,6 +14,7 @@ int find_pid_slot(pid_t mypid);
 bool pidmap_empty(void);
 void dump_pid_slots(void);
 int pid_is_valid(pid_t);
+void pids_init(void);
 
 #define pid_alive(_pid) kill(_pid, 0)
 
