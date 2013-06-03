@@ -6,7 +6,7 @@
 void sanitise_mmap(int childno);
 void sanitise_rt_sigaction(int childno);
 void sanitise_socket(int childno);
-
+void sanitise_prctl(int childno);
 void sanitise_ioctl_sg_io(int childno);
 
 void generic_sanitise(int childno);
