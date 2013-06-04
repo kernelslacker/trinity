@@ -2,9 +2,13 @@
  * SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	 unsigned long, arg4, unsigned long, arg5)
  */
+#include "config.h"
+
 #include <stdlib.h>
 #include <linux/prctl.h>
+#ifdef USE_SECCOMP
 #include <linux/seccomp.h>
+#endif
 #include <sys/prctl.h>
 
 #include "sanitise.h"
@@ -34,12 +38,14 @@ void sanitise_prctl(int childno)
 
 	switch (option) {
 	case PR_SET_SECCOMP:
+#ifdef USE_SECCOMP
 		if (rand() % 3 == SECCOMP_MODE_FILTER) {
 			gen_seccomp_bpf((unsigned long *) page_rand, NULL);
 
 			shm->a2[childno] = SECCOMP_MODE_FILTER;
 			shm->a3[childno] = (unsigned long) page_rand;
 		}
+#endif
 		break;
 	default:
 		break;
