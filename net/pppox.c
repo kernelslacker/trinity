@@ -6,6 +6,7 @@
 #include <linux/if_ether.h> /* for ETH_ALEN in if_pppox.h */
 #include <linux/if_pppox.h>
 #include <stdlib.h>
+#include "config.h"
 #include "net.h"
 #include "sanitise.h"
 
