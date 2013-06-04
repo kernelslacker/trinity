@@ -180,6 +180,16 @@ enum {
 #define SYS_SENDMMSG 20
 #endif
 
+/* linux/netlink.h */
+#ifndef NETLINK_CRYPTO
+#define NETLINK_CRYPTO 21
+#endif
+
+/* linux/prctl.h */
+#ifndef PR_MCE_KILL_GET
+#define PR_MCE_KILL_GET 34
+#endif
+
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO
 #define RDS_CANCEL_SENT_TO              1
