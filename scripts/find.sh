@@ -27,7 +27,7 @@ while [ 1 ];
 do
 
 
-for sc in $(../trinity -L | awk '{ print $4 }' | sort -u)
+for sc in $(../trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $4 }' | sort -u)
 do
   mkdir -p tmp.$i
   pushd tmp.$i
