@@ -248,14 +248,17 @@ args_done:
 
 	sptr = string;
 
-	if (ret < 0) {
+	if (IS_ERR(ret)) {
 		RED
 		sptr += sprintf(sptr, "= %d (%s)", ret, strerror(errno_saved));
 		CRESET
 		shm->failures++;
 	} else {
 		GREEN
-		sptr += sprintf(sptr, "= %d", ret);
+		if (ret > 10000)
+			sptr += sprintf(sptr, "= 0x%x", ret);
+		else
+			sptr += sprintf(sptr, "= %d", ret);
 		CRESET
 		shm->successes++;
 	}
