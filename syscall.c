@@ -259,11 +259,10 @@ args_done:
 		CRESET
 		shm->successes++;
 	}
-	sptr += sprintf(sptr, "\n");
 
 	*sptr = '\0';
 
-	output(2, "%s", string);
+	output(2, "%s\n", string);
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if ((ret == -1) && (errno_saved == ENOSYS)) {
