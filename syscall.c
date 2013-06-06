@@ -69,7 +69,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	int nr = shm->syscallno[childno];
 	unsigned int num_args = syscalls[nr].entry->num_args;
 	unsigned long a1, a2, a3, a4, a5, a6;
-	int ret = 0;
+	unsigned long ret = 0;
 	int pidslot;
 
 	a1 = shm->a1[childno];
@@ -112,7 +112,8 @@ long mkcall(int childno)
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
 	unsigned int call = shm->syscallno[childno];
 	unsigned int call32, call64;
-	int ret = 0, errno_saved;
+	unsigned long ret = 0;
+	int errno_saved;
 	char string[512], *sptr;
 
 	shm->regenerate++;
@@ -250,15 +251,15 @@ args_done:
 
 	if (IS_ERR(ret)) {
 		RED
-		sptr += sprintf(sptr, "= %d (%s)", ret, strerror(errno_saved));
+		sptr += sprintf(sptr, "= %ld (%s)", ret, strerror(errno_saved));
 		CRESET
 		shm->failures++;
 	} else {
 		GREEN
-		if (ret > 10000)
-			sptr += sprintf(sptr, "= 0x%x", ret);
+		if ((unsigned long)ret > 10000)
+			sptr += sprintf(sptr, "= 0x%lx", ret);
 		else
-			sptr += sprintf(sptr, "= %d", ret);
+			sptr += sprintf(sptr, "= %ld", ret);
 		CRESET
 		shm->successes++;
 	}
@@ -268,7 +269,7 @@ args_done:
 	output(2, "%s\n", string);
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
-	if ((ret == -1) && (errno_saved == ENOSYS)) {
+	if ((ret == -1ULL) && (errno_saved == ENOSYS)) {
 
 		/* Futex is awesome, it ENOSYS's depending on arguments. Sigh. */
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
