@@ -19,7 +19,7 @@ TAINT=$(cat /proc/sys/kernel/tainted)
 
 while [ 1 ]
 do
-for syscall in $(./trinity -L | grep -v Trinity | grep -v syscalls: | grep -v AVOID | grep 64-bit | awk '{ print $4 }' | sort -u)
+for syscall in $(./trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $4 }' | sort -u)
 do
 	chmod 755 tmp
 	pushd tmp
