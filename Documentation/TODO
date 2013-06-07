@@ -1,5 +1,5 @@
 * Rewrite the fd code.
-  - kill of NR_FILE_FDS
+  - kill off NR_FILE_FDS
   - open some files in the child too after forking.
     - this requires a child-local fd mapping table.
       Maybe we can then reduce the size of the shared shm->file_fds
@@ -11,6 +11,7 @@
     treat it as multiple (/dev, /sys, /proc). And then do a 1-in-3 chance
     of getting one of those. Right now, because there are 5-6 digits worth of /proc & /sys,
     they dominate over the /dev entries.
+  - more fd 'types' (epoll_create, eventfd, fanotify_init, futex)
 
 * Rewrite socket generation.
   - Organise into (sorted) per-protocol buckets of linked-lists..
