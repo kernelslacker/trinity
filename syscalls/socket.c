@@ -16,6 +16,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "config.h"
+#include "params.h"
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
@@ -41,9 +42,15 @@ static int ax25_protocols[NR_AX25_PROTOS] = {
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void sanitise_socket(int childno)
 {
-        unsigned long family = rand() % PF_MAX;
-        unsigned long type= rand() % TYPE_MAX;
-        unsigned long protocol = rand() % PROTO_MAX;
+	unsigned long family, type, protocol;
+
+	if (do_specific_proto == TRUE)
+		family = specific_proto;
+	else
+		family = rand() % PF_MAX;
+
+	type = rand() % TYPE_MAX;
+	protocol = rand() % PROTO_MAX;
 
 	switch (family) {
 
