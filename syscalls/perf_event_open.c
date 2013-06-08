@@ -6,8 +6,7 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <linux/perf_event.h>
-#include "config.h"
+#include "perf_event.h"
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
@@ -38,11 +37,9 @@ static long long random_cache_config(void)
 	case 5:
 		cache_id = PERF_COUNT_HW_CACHE_BPU;
 		break;
-#ifdef PERF_COUNT_HW_CACHE_NODE	/* 3.0 */
 	case 6:
 		cache_id = PERF_COUNT_HW_CACHE_NODE;
 		break;
-#endif
 	default:
 		cache_id = rand();
 		break;
@@ -137,21 +134,15 @@ static long long random_event_config(long long event_type)
 		case 6:
 			config = PERF_COUNT_HW_BUS_CYCLES;
 			break;
-#ifdef PERF_COUNT_HW_STALLED_CYCLES_FRONTEND	/* added 3.0 */
 		case 7:
 			config = PERF_COUNT_HW_STALLED_CYCLES_FRONTEND;
 			break;
-#endif
-#ifdef PERF_COUNT_HW_STALLED_CYCLES_BACKEND	/* added 3.0 */
 		case 8:
 			config = PERF_COUNT_HW_STALLED_CYCLES_BACKEND;
 			break;
-#endif
-#ifdef PERF_COUNT_HW_REF_CPU_CYCLES	/* added 3.3 */
 		case 9:
 			config = PERF_COUNT_HW_REF_CPU_CYCLES;
 			break;
-#endif
 		default:
 			config = rand64();
 			break;
@@ -180,16 +171,12 @@ static long long random_event_config(long long event_type)
 		case 6:
 			config = PERF_COUNT_SW_PAGE_FAULTS_MAJ;
 			break;
-#ifdef PERF_COUNT_SW_ALIGNMENT_FAULTS	/* since 2.6.33 */
 		case 7:
 			config = PERF_COUNT_SW_ALIGNMENT_FAULTS;
 			break;
-#endif
-#ifdef PERF_COUNT_SW_EMULTATION_FAULTS	/* since 2.6.33 */
 		case 8:
 			config = PERF_COUNT_SW_EMULATION_FAULTS;
 			break;
-#endif
 		default:
 			config = rand64();
 			break;
@@ -209,7 +196,6 @@ static long long random_event_config(long long event_type)
 		/* to make it more likely to be a valid event */
 		config = rand64();
 		break;
-#ifdef PERF_TYPE_BREAKPOINT	/* introduced 2.6.33 */
 	case PERF_TYPE_BREAKPOINT:
 		/* Breakpoint type only valid if config==0 */
 		/* Set it to something else too anyway     */
@@ -218,7 +204,6 @@ static long long random_event_config(long long event_type)
 		else
 			config = 0;
 		break;
-#endif
 
 /* FIXME: value can also be one of the ones found in */
 /* /sys/bus/event_source/devices                     */
@@ -308,18 +293,12 @@ static long long random_sample_type(void)
 		sample_type |= PERF_SAMPLE_STREAM_ID;
 	if (rand_bool())
 		sample_type |= PERF_SAMPLE_RAW;
-#ifdef PERF_SAMPLE_BRANCH_STACK
 	if (rand_bool())
 		sample_type |= PERF_SAMPLE_BRANCH_STACK;
-#endif
-#ifdef PERF_SAMPLE_REGS_USER
 	if (rand_bool())
 		sample_type |= PERF_SAMPLE_REGS_USER;
-#endif
-#ifdef PERF_SAMPLE_STACK_USER
 	if (rand_bool())
 		sample_type |= PERF_SAMPLE_STACK_USER;
-#endif
 
 	return sample_type;
 }
@@ -380,10 +359,8 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr)
 	attr->sample_id_all = rand_bool();
 	attr->exclude_host = rand_bool();
 	attr->exclude_guest = rand_bool();
-#ifdef USE_PERF_EVENT_EXCLUDE_CALLCHAINS
 	attr->exclude_callchain_kernel = rand_bool();
 	attr->exclude_callchain_user = rand_bool();
-#endif
 
 	attr->wakeup_events = rand();	// also wakeup_watermark
 
@@ -431,10 +408,8 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr)
 	attr->sample_id_all = rand_bool();
 	attr->exclude_host = rand_bool();
 	attr->exclude_guest = rand_bool();
-#ifdef USE_PERF_EVENT_EXCLUDE_CALLCHAINS
 	attr->exclude_callchain_kernel = rand_bool();
 	attr->exclude_callchain_user = rand_bool();
-#endif
 
 	attr->wakeup_events = rand();	// also wakeup_watermark
 

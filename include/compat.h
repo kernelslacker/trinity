@@ -42,39 +42,6 @@
 #define F_GETOWN_EX 16
 #endif
 
-
-/* linux/perf_event.h */
-#ifndef PERF_COUNT_HW_STALLED_CYCLES_FRONTEND
-#define PERF_COUNT_HW_STALLED_CYCLES_FRONTEND 7
-#endif
-#ifndef PERF_COUNT_HW_STALLED_CYCLES_BACKEND
-#define PERF_COUNT_HW_STALLED_CYCLES_BACKEND 8
-#endif
-#ifndef PERF_COUNT_HW_REF_CPU_CYCLES
-#define PERF_COUNT_HW_REF_CPU_CYCLES 9
-#endif
-
-#ifndef PERF_COUNT_SW_ALIGNMENT_FAULTS
-#define PERF_COUNT_SW_ALIGNMENT_FAULTS 7
-#endif
-#ifndef PERF_COUNT_SW_EMULATION_FAULTS
-#define PERF_COUNT_SW_EMULATION_FAULTS 8
-#endif
-
-#ifndef PERF_TYPE_BREAKPOINT
-#define PERF_TYPE_BREAKPOINT 5
-#endif
-
-#ifndef PERF_FLAG_FD_NO_GROUP
-#define PERF_FLAG_FD_NO_GROUP   (1U << 0)
-#endif
-#ifndef PERF_FLAG_FD_OUTPUT
-#define PERF_FLAG_FD_OUTPUT     (1U << 1)
-#endif
-#ifndef PERF_FLAG_PID_CGROUP
-#define PERF_FLAG_PID_CGROUP    (1U << 2) /* pid=cgroup id, per-cpu mode only */
-#endif
-
 /* linux/hw_breakpoint.h */
 enum {
         HW_BREAKPOINT_LEN_1 = 1,

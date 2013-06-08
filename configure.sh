@@ -184,32 +184,6 @@ else
 fi
 
 #############################################################################################
-# Does perf_event_attr have exclude_callchain_kernel?
-
-echo -n "[*] Checking if perf_event_attr can use exclude_callchain_kernel.. "
-rm -f "$TMP" || exit 1
-
-cat >"$TMP.c" << EOF
-#include <stdio.h>
-#include <linux/perf_event.h>
-
-int main() {
-	struct perf_event_attr attr;
-	printf("%d\n", attr.exclude_callchain_kernel);
-}
-EOF
-
-${CC} "$TMP.c" -o "$TMP" &>"$TMP.log"
-
-if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $COL_RESET
-	MISSING_DEFS=1
-else
-	echo $GREEN "[YES]" $COL_RESET
-	echo "#define USE_PERF_EVENT_EXCLUDE_CALLCHAINS" >> config.h
-fi
-
-#############################################################################################
 
 check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/if_alg.h USE_IF_ALG
