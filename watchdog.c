@@ -71,6 +71,22 @@ static int check_shm_sanity(void)
 	return SHM_OK;
 }
 
+static void check_main(void)
+{
+	int ret;
+	pid_t pid = shm->parentpid;
+
+	ret = kill(pid, 0);
+	if (ret == -1) {
+		if (errno == ESRCH) {
+			output(0, "[watchdog] main pid %d has disappeared.\n", pid);
+			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
+		} else {
+			output(0, "[watchdog] problem checking on pid %d (%d:%s)\n", pid, errno, strerror(errno));
+		}
+	}
+}
+
 static unsigned int reap_dead_kids()
 {
 	unsigned int i;
@@ -93,7 +109,7 @@ static unsigned int reap_dead_kids()
 				reap_child(pid);
 				reaped++;
 			} else {
-				output(0, "[watchdog] problem running getpgid on pid %d (%d:%s)\n", pid, errno, strerror(errno));
+				output(0, "[watchdog] problem checking on pid %d (%d:%s)\n", pid, errno, strerror(errno));
 			}
 		} else {
 			alive++;
@@ -190,6 +206,8 @@ static void watchdog(void)
 				goto corrupt;
 
 			reap_dead_kids();
+
+			check_main();
 
 			check_children();
 
