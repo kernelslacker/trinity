@@ -27,7 +27,7 @@ do
       chmod 755 tmp.$i
       rm -rf tmp.$i
     fi
-    chmod 755 tmp.$i
+    chmod 755 ../tmp
     mkdir -p tmp.$i
     pushd tmp.$i
 
