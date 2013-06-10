@@ -15,6 +15,7 @@ enum exit_reasons {
 	EXIT_SHM_CORRUPTION = 8,
 	EXIT_REPARENT_PROBLEM = 9,
 	EXIT_NO_FILES = 10,
+	EXIT_MAIN_DISAPPEARED = 11,
 };
 
 #endif	/* _EXIT_H */

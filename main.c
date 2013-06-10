@@ -313,17 +313,18 @@ static void handle_children(void)
 }
 
 static const char *reasons[] = {
-	"Still running",
-	"No more syscalls enabled",
-	"Reached maximum syscall count",
-	"No file descriptors open",
-	"Lost track of a pid slot",
+	"Still running.",
+	"No more syscalls enabled.",
+	"Reached maximum syscall count.",
+	"No file descriptors open.",
+	"Lost track of a pid slot.",
 	"shm corruption - Found a pid out of range.",
 	"ctrl-c",
-	"kernel became tainted",
+	"kernel became tainted.",
 	"SHM was corrupted!",
 	"Child reparenting problem",
-	"No files in file list",
+	"No files in file list.",
+	"Main process disappeared.",
 };
 
 static const char * decode_exit(unsigned int reason)
