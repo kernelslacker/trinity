@@ -269,7 +269,7 @@ args_done:
 	output(2, "%s\n", string);
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
-	if ((ret == -1ULL) && (errno_saved == ENOSYS)) {
+	if ((ret == -1UL) && (errno_saved == ENOSYS)) {
 
 		/* Futex is awesome, it ENOSYS's depending on arguments. Sigh. */
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
