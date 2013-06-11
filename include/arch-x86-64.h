@@ -1,7 +1,7 @@
-#define PAGE_OFFSET	0xffff880000000000L
-#define KERNEL_ADDR	0xffffffff81000000L
-#define MODULE_ADDR	0xffffffffa0000000L
-#define VDSO_ADDR	0xffffffffff600000L
+#define PAGE_OFFSET	0xffff880000000000UL
+#define KERNEL_ADDR	0xffffffff81000000UL
+#define MODULE_ADDR	0xffffffffa0000000UL
+#define VDSO_ADDR	0xffffffffff600000UL
 
 #define TASK_SIZE       (0x800000000000UL - 4096)
 

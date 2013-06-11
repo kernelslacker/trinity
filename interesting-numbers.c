@@ -68,9 +68,9 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	i = rand() % 4;
 
 	switch (i) {
-	case 0: return 0x00007fffffffffff;			// x86-64 canonical addr end.
-	case 1: return 0x0000800000000000;			// First x86-64 non-canonical addr
-	case 2: return 0xffff800000000000 | (low << 4);		// x86-64 canonical addr range 2 begin
+	case 0: return 0x00007fffffffffffUL;			// x86-64 canonical addr end.
+	case 1: return 0x0000800000000000UL;			// First x86-64 non-canonical addr
+	case 2: return 0xffff800000000000UL | (low << 4);		// x86-64 canonical addr range 2 begin
 	case 3: return VDSO_ADDR | (low & 0x0fffff);
 	default:
 		BUG("unreachable!\n");
@@ -96,15 +96,15 @@ unsigned long get_interesting_value(void)
 	switch (rand() % 17) {
 	case 0: return 0;
 	case 1: return low;
-	case 2: return 0x0000000100000000;
-	case 3: return 0x0000000100000000 | low;
-	case 4: return 0x7fffffff00000000;
-	case 5: return 0x8000000000000000;
-	case 6: return 0xffffffff00000000;
-	case 7: return 0x7fffffff00000000 | low;
-	case 8: return 0x8000000000000000 | low;
-	case 9: return 0xffffffff00000000 | low;
-	case 10: return 0xffffffffffffff00 | (rand() % 256);
+	case 2: return 0x0000000100000000UL;
+	case 3: return 0x0000000100000000UL | low;
+	case 4: return 0x7fffffff00000000UL;
+	case 5: return 0x8000000000000000UL;
+	case 6: return 0xffffffff00000000UL;
+	case 7: return 0x7fffffff00000000UL | low;
+	case 8: return 0x8000000000000000UL | low;
+	case 9: return 0xffffffff00000000UL | low;
+	case 10: return 0xffffffffffffff00UL | (rand() % 256);
 	case 11: return PAGE_OFFSET | (low << 4);
 	case 12: return KERNEL_ADDR | (low & 0xffffff);
 	case 13: return MODULE_ADDR | (low & 0xffffff);
