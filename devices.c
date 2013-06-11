@@ -110,8 +110,8 @@ const char *map_dev(dev_t st_rdev, mode_t st_mode)
 	major = MAJOR(st_rdev);
 	minor = MINOR(st_rdev);
 
-	if (S_ISCHR(st_mode))
-		for (i=0; i < chrdevs; ++i)
+	if (S_ISCHR(st_mode)) {
+		for (i = 0; i < chrdevs; ++i) {
 			if (char_devs[i].major == major) {
 				if (strcmp(char_devs[i].name, "misc") == 0) {
 					for (j=0; j < miscdevs; ++j)
@@ -120,10 +120,13 @@ const char *map_dev(dev_t st_rdev, mode_t st_mode)
 				} else
 					return char_devs[i].name;
 			}
-	else if (S_ISBLK(st_mode))
-		for (i=0; i < bldevs; ++i)
+		}
+	} else if (S_ISBLK(st_mode)) {
+		for (i = 0; i < bldevs; ++i) {
 			if (block_devs[i].major == major)
 				return block_devs[i].name;
+		}
+	}
 
 	return NULL;
 }
