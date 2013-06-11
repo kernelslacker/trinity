@@ -87,7 +87,7 @@ static void check_main(void)
 	}
 }
 
-static unsigned int reap_dead_kids()
+static unsigned int reap_dead_kids(void)
 {
 	unsigned int i;
 	unsigned int alive = 0;
