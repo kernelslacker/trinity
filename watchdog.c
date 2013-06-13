@@ -191,6 +191,7 @@ static void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount = 0;
+	bool watchdog_exit = FALSE;
 
 	shm->watchdog_pid = getpid();
 	printf("[%d] Watchdog is alive\n", shm->watchdog_pid);
@@ -198,7 +199,7 @@ static void watchdog(void)
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
 
-	while (shm->exit_reason == STILL_RUNNING) {
+	while (watchdog_exit == FALSE) {
 
 		if (shm->regenerating == FALSE) {
 
@@ -245,6 +246,19 @@ static void watchdog(void)
 				shm->need_reseed = TRUE;
 				shm->reseed_counter = 0;
 			}
+		}
+
+		/* Are we done ? */
+		if (shm->exit_reason != STILL_RUNNING) {
+			/* Give children a chance to exit. */
+			sleep(1);
+
+			/* Are there still children running ? */
+			if (pidmap_empty() == TRUE)
+				watchdog_exit = TRUE;
+			else
+				output(0, "[watchdog] exit_reason=%d, but %d children still running.\n",
+					shm->running_childs);
 		}
 
 		sleep(1);
