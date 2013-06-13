@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <limits.h>
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'
 #include "log.h"
@@ -120,23 +121,63 @@ unsigned long rand_single_64bit(void)
 unsigned int rand32(void)
 {
 	unsigned long r = 0;
+	unsigned int i;
+	unsigned int rounds = rand() % 3;
 
 	switch (rand() % 3) {
-
 	/* Just set one bit */
-	case 0:	return rand_single_32bit();
+	case 0: r = rand_single_32bit();
+		break;
 
 	/* 0 .. RAND_MAX */
-	case 1:	r = rand();
-		if (rand_bool())
-			r |= (1L << 31);
+	case 1: r = rand();
 		break;
 
 	case 2:	return get_interesting_32bit_value();
-
 	default:
 		break;
 	}
+
+	/* now mangle it. */
+	for (i = 0; i < rounds; i++) {
+
+		switch (rand() % 4) {
+
+		case 0: r &= rand();
+			break;
+
+		case 1: r |= rand();
+			break;
+
+		case 2: r >>= (rand() % 31);
+			break;
+
+		case 3: r ^= rand();
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	if (rand_bool())
+		r = INT_MAX - r;
+
+	if (rand_bool())
+		r |= (1L << 31);
+
+	/* limit the size */
+	switch (rand() % 4) {
+	case 0: r &= 0xff;
+		break;
+	case 1: r &= 0xffff;
+		break;
+	case 2: r &= 0xffffff;
+		break;
+	default:
+		break;
+	}
+
 	return r;
 }
 
