@@ -406,6 +406,14 @@ static long long random_sysfs_config(__u32 *type, __u64 *config1) {
 	int i,j;
 	long long c=0,c1=0;
 
+	if (num_pmus==0) {
+		/* For some reason we didn't get initialized */
+		/* Fake it so we don't divide by zero        */
+		*type=rand32();
+		*config1=rand64();
+		return rand64();
+	}
+
 	i=rand()%num_pmus;
 
 	*type=pmus[i].type;
