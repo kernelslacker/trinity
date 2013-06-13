@@ -116,6 +116,13 @@ void check_parent_pid(void)
 {
 	pid_t pid;
 	unsigned int i;
+	static unsigned int parent_check_time = 10;
+
+	parent_check_time--;
+	if (parent_check_time != 0)
+		return;
+
+	parent_check_time = 10;
 
 	if (getppid() == shm->parentpid)
 		return;
