@@ -228,6 +228,7 @@ int main(int argc, char* argv[])
 		/* nothing right now */
 	}
 
+	/* check if we ctrl'c or something went wrong during init. */
 	if (shm->exit_reason != STILL_RUNNING)
 		goto cleanup_fds;
 
@@ -235,6 +236,7 @@ int main(int argc, char* argv[])
 
 	do_main_loop();
 
+	/* Shutting down. */
 	waitpid(shm->watchdog_pid, &childstatus, 0);
 
 	printf("\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
