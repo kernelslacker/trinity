@@ -187,6 +187,43 @@ static void check_children(void)
 	}
 }
 
+static void kill_all_kids(void)
+{
+	/* Wait for all the children to exit. */
+	while (shm->running_childs > 0) {
+		unsigned int i;
+		unsigned int alive;
+
+		/* Make sure there's no dead kids lying around.
+		 * We need to do this in case the oom killer has been killing them,
+		 * otherwise we end up stuck here with no child processes.
+		 */
+		alive = reap_dead_kids();
+		if (alive == 0)
+			return;
+
+		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
+		for_each_pidslot(i) {
+			pid_t pid;
+
+			pid = shm->pids[i];
+			if (pid == EMPTY_PIDSLOT)
+				continue;
+
+			kill(pid, SIGKILL);
+		}
+
+		/* wait a second to give kids a chance to exit. */
+		sleep(1);
+
+		if (check_shm_sanity()) {
+			// FIXME: If we get here, we over-wrote the real exit_reason.
+			// We should have saved that, and handled appropriately.
+			return;
+		}
+	}
+}
+
 static void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
@@ -256,9 +293,11 @@ static void watchdog(void)
 			/* Are there still children running ? */
 			if (pidmap_empty() == TRUE)
 				watchdog_exit = TRUE;
-			else
+			else {
 				output(0, "[watchdog] exit_reason=%d, but %d children still running.\n",
 					shm->exit_reason, shm->running_childs);
+				kill_all_kids();
+			}
 		}
 
 		sleep(1);
@@ -269,41 +308,8 @@ corrupt:
 	while (shm->regenerating == TRUE)
 		sleep(1);
 
-	/* Wait for all the children to exit. */
-	while (shm->running_childs > 0) {
-		unsigned int i;
-		unsigned int alive;
+	kill_all_kids();
 
-		/* Make sure there's no dead kids lying around.
-		 * We need to do this in case the oom killer has been killing them,
-		 * otherwise we end up stuck here with no child processes.
-		 */
-		alive = reap_dead_kids();
-		if (alive == 0)
-			goto out;
-
-		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
-		for_each_pidslot(i) {
-			pid_t pid;
-
-			pid = shm->pids[i];
-			if (pid == EMPTY_PIDSLOT)
-				continue;
-
-			kill(pid, SIGKILL);
-		}
-
-		/* wait a second to give kids a chance to exit. */
-		sleep(1);
-
-		if (check_shm_sanity()) {
-			// FIXME: If we get here, we over-wrote the real exit_reason.
-			// We should have saved that, and handled appropriately.
-			goto out;
-		}
-	}
-
-out:
 	output(0, "[%d] Watchdog exiting\n", getpid());
 
 	_exit(EXIT_SUCCESS);
