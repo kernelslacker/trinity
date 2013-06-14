@@ -258,7 +258,7 @@ static void watchdog(void)
 				watchdog_exit = TRUE;
 			else
 				output(0, "[watchdog] exit_reason=%d, but %d children still running.\n",
-					shm->running_childs);
+					shm->exit_reason, shm->running_childs);
 		}
 
 		sleep(1);
