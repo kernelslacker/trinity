@@ -162,3 +162,10 @@
 * Add a mode to sequentially go through the whole file list a few hundred files at a time
   instead of picking from the list randomly.
 
+* When we've hit a bug once, it's really annoying to keep walking into that same bug.
+  Add some code to actively avoid calling certain syscalls with certain params based
+  on kernel version.
+  (Might be a lot of work, more than it's worth)
+  - also add an override to disable this code.
+
+
