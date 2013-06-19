@@ -229,6 +229,7 @@ static void watchdog(void)
 	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount = 0;
 	bool watchdog_exit = FALSE;
+	int ret = 0;
 
 	shm->watchdog_pid = getpid();
 	printf("[%d] Watchdog is alive\n", shm->watchdog_pid);
@@ -269,8 +270,9 @@ static void watchdog(void)
 
 		/* Only check taint if it was zero on startup */
 		if (ignore_tainted == FALSE) {
-			if (check_tainted() != 0) {
-				output(0, "[watchdog] kernel became tainted! Last seed was %u\n", shm->seed);
+			ret = check_tainted();
+			if (ret != 0) {
+				output(0, "[watchdog] kernel became tainted! (%d) Last seed was %u\n", ret, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
 			}
 		}
