@@ -23,6 +23,10 @@
 #include "shm.h"
 #include "compat.h"
 
+#if F_GETLK64 != F_GETLK
+#define HAVE_LK64
+#endif
+
 void sanitise_fcntl(int childno)
 {
 	switch (shm->a2[childno]) {
@@ -66,7 +70,7 @@ void sanitise_fcntl(int childno)
 	case F_SETLK:
 	case F_SETLKW:
 		break;
-#ifndef __x86_64__
+#ifdef HAVE_LK64
 	case F_GETLK64:
 		break;
 	case F_SETLK64:
@@ -122,7 +126,7 @@ struct syscall syscall_fcntl = {
 	.arg2name = "cmd",
 	.arg2type = ARG_OP,
 	.arg2list = {
-#ifdef __x86_64__
+#ifndef HAVE_LK64
 		.num = 20,
 #else
 		.num = 23,
@@ -130,7 +134,7 @@ struct syscall syscall_fcntl = {
 		.values = { F_DUPFD, F_DUPFD_CLOEXEC, F_GETFD, F_SETFD, F_GETFL, F_SETFL, F_GETLK, F_SETLK,
 		  F_SETLKW, F_GETOWN, F_SETOWN, F_GETOWN_EX, F_SETOWN_EX, F_GETSIG, F_SETSIG, F_GETLEASE,
 		  F_SETLEASE, F_NOTIFY, F_SETPIPE_SZ, F_GETPIPE_SZ,
-#ifndef __x86_64__
+#ifdef HAVE_LK64
 		  F_GETLK64, F_SETLK64, F_SETLKW64,
 #endif
 		},
