@@ -18,6 +18,7 @@
  */
 
 #include <fcntl.h>
+#include <signal.h>
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -90,6 +91,8 @@ void sanitise_fcntl(int childno)
 
 	case F_SETSIG:
 		shm->a3[childno] = (unsigned long) rand32();
+		if (shm->a3[childno] == SIGINT)
+			shm->a3[childno] = 0; /* restore default (SIGIO) */
 		break;
 
 	case F_NOTIFY:
