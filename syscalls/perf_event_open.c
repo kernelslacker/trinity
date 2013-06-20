@@ -672,7 +672,6 @@ static long long random_event_config(__u32 *event_type, __u64 *config1)
 		break;
 
 	case PERF_TYPE_READ_FROM_SYSFS:
-		if (pmus==NULL) init_pmus();
 		config = random_sysfs_config(event_type,config1);
 		break;
 
@@ -1091,5 +1090,6 @@ struct syscall syscall_perf_event_open = {
 		},
 	},
 	.sanitise = sanitise_perf_event_open,
+	.init = init_pmus,
 	.flags = NEED_ALARM,
 };
