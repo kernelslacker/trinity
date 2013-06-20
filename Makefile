@@ -63,14 +63,11 @@ trinity: test $(OBJS) $(HEADERS)
 	$(QUIET_CC)$(CC) $(CFLAGS) -o trinity $(OBJS)
 	@mkdir -p tmp
 
-df = $(DEPDIR)/$(*F)
+df = $(DEPDIR)/$(*D)/$(*F)
 
-# FIXME:
-# Dependancy information for .c files in subdirs seems to be broken.
-# Example: touch include/sanitise.h should cause syscalls/*.c to be rebuilt.
-#
 %.o : %.c
 	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ -c $<
+	@mkdir -p $(DEPDIR)/$(*D)
 	@gcc -MM $(CFLAGS) $*.c > $(df).d
 	@mv -f $(df).d $(df).d.tmp
 	@sed -e 's|.*:|$*.o:|' <$(df).d.tmp > $(df).d
@@ -83,7 +80,7 @@ clean:
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags
-	@rm -f $(DEPDIR)/*.d
+	@rm -rf $(DEPDIR)/*
 
 devel:
 	@perl -p -i -e 's/^#CFLAGS \+\= -Werror/CFLAGS += -Werror/' Makefile
