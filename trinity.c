@@ -183,6 +183,8 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 
+	init_syscalls();
+
 	if (show_ioctl_list == TRUE) {
 		dump_ioctls();
 		goto out;

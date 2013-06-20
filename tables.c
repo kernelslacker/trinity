@@ -106,6 +106,35 @@ void count_syscalls_enabled(void)
 	}
 }
 
+void init_syscalls(void)
+{
+	unsigned int i;
+
+	if (biarch == TRUE) {
+		for_each_64bit_syscall(i) {
+			if (syscalls_64bit[i].entry->flags & ACTIVE)
+				if (syscalls_64bit[i].entry->init)
+					syscalls_64bit[i].entry->init();
+		}
+
+		for_each_32bit_syscall(i) {
+			if (syscalls_32bit[i].entry->flags & ACTIVE)
+				if (syscalls_32bit[i].entry->init)
+					syscalls_32bit[i].entry->init();
+		}
+
+	} else {
+
+		/* non-biarch */
+		for_each_syscall(i) {
+			if (syscalls[i].entry->flags & ACTIVE)
+				if (syscalls[i].entry->init)
+					syscalls[i].entry->init();
+		}
+	}
+}
+
+
 bool no_syscalls_enabled(void)
 {
 	unsigned int i;

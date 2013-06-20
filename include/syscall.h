@@ -32,6 +32,7 @@ struct arglist {
 struct syscall {
 	void (*sanitise)(int childno);
 	void (*post)(int);
+	int (*init)(void);
 
 	unsigned int number;
 	const char name[80];
@@ -132,6 +133,7 @@ void deactivate_disabled_syscalls(void);
 void count_syscalls_enabled(void);
 void display_enabled_syscalls(void);
 void disable_non_net_syscalls(void);
+void init_syscalls(void);
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)
