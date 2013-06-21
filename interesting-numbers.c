@@ -3,6 +3,7 @@
 #include "arch.h"
 #include "log.h"	// for BUG
 #include "random.h"
+#include "trinity.h"	// page_size
 
 unsigned int get_interesting_32bit_value(void)
 {
@@ -30,7 +31,7 @@ unsigned int get_interesting_32bit_value(void)
 
 	/* less common case, go crazy */
 	case 8 ... 10:
-		switch (rand() % 13) {
+		switch (rand() % 14) {
 		case 0:	return 0x00010000;
 		case 1:	return 0x40000000;
 		case 2:	return 0x7fffffff;
@@ -44,6 +45,7 @@ unsigned int get_interesting_32bit_value(void)
 		case 10: return 0xffffe000;
 		case 11: return 0xffffff00 | (rand() % 256);
 		case 12: return 0xffffffff;
+		case 13: return 0xffffffff - page_size;
 		default:
 			BUG("unreachable!\n");
 			return 0;
@@ -93,7 +95,7 @@ unsigned long get_interesting_value(void)
 
 	low = get_interesting_32bit_value();
 
-	switch (rand() % 17) {
+	switch (rand() % 18) {
 	case 0: return 0;
 	case 1: return low;
 	case 2: return 0x0000000100000000UL;
@@ -105,12 +107,13 @@ unsigned long get_interesting_value(void)
 	case 8: return 0x8000000000000000UL | low;
 	case 9: return 0xffffffff00000000UL | low;
 	case 10: return 0xffffffffffffff00UL | (rand() % 256);
-	case 11: return PAGE_OFFSET | (low << 4);
-	case 12: return KERNEL_ADDR | (low & 0xffffff);
-	case 13: return MODULE_ADDR | (low & 0xffffff);
-	case 14: return per_arch_interesting_addr(low);
-	case 15: return (low << 32);
-	case 16: return rand_single_64bit();
+	case 11: return 0xffffffffffffffffUL - page_size;
+	case 12: return PAGE_OFFSET | (low << 4);
+	case 13: return KERNEL_ADDR | (low & 0xffffff);
+	case 14: return MODULE_ADDR | (low & 0xffffff);
+	case 15: return per_arch_interesting_addr(low);
+	case 16: return (low << 32);
+	case 17: return rand_single_64bit();
 	default: break;
 	}
 	BUG("unreachable!\n");
