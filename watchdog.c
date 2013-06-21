@@ -167,9 +167,9 @@ static void check_children(void)
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
 			unsigned int callno = shm->syscallno[i];
-			char fdstr[12];
+			char fdstr[20];
 
-			memset(fdstr, 0, 12);
+			memset(fdstr, 0, sizeof(fdstr));
 
 			/* if the first arg was an fd, find out which one it was. */
 			if (biarch == FALSE) {
