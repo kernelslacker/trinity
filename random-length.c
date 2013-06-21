@@ -2,12 +2,16 @@
 
 #include "trinity.h"	// page_size
 #include "sanitise.h"
+#include "random.h"
 
 unsigned long get_len(void)
 {
 	int i = 0;
 
-	i = get_interesting_value();
+	if (rand_bool())
+		i = get_interesting_value();
+	else
+		i = rand32();
 
 	/* short circuit if 0 */
 	if (i == 0)
