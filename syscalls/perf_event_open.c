@@ -223,9 +223,6 @@ static int init_pmus(void) {
 
 	dir=opendir("/sys/bus/event_source/devices");
 	if (dir==NULL) {
-		fprintf(stderr,"Unable to opendir "
-			"/sys/bus/event_source/devices : %s\n",
-			strerror(errno));
 		return -1;
 	}
 
