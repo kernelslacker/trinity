@@ -21,7 +21,7 @@ static size_t bldevs, chrdevs, miscdevs;
 static void parse_proc_devices(void)
 {
 	FILE *fp;
-	char *name, *line = NULL;
+	char *p, *name, *line = NULL;
 	size_t n = 0;
 	int block, major;
 	void *new;
@@ -35,7 +35,14 @@ static void parse_proc_devices(void)
 	while (getline(&line, &n, fp) >= 0) {
 		if (strcmp("Block devices:\n", line) == 0)
 			block = 1;
-		else if (sscanf(line, "%d %as", &major, &name) == 2) {
+		else if (strcmp("Character devices:\n", line) == 0)
+			block = 0;
+		else if (sscanf(line, "%d %*s", &major) == 1) {
+			if ((p = strrchr(line, ' ')) == NULL)
+				continue;
+			p++;
+			name = strdup(p);
+
 			if (block) {
 				new = realloc(block_devs, (bldevs+1)*sizeof(*block_devs));
 				if (!new) {
