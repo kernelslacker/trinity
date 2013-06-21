@@ -1,3 +1,5 @@
+#define X86 1
+
 #define PAGE_OFFSET	0xffff880000000000UL
 #define KERNEL_ADDR	0xffffffff81000000UL
 #define MODULE_ADDR	0xffffffffa0000000UL
