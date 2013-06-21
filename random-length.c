@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "trinity.h"	// page_size
+#include "arch.h"	// page_size
 #include "sanitise.h"
 #include "random.h"
 

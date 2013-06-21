@@ -11,7 +11,8 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include "trinity.h"	// page_size
+#include "trinity.h"	// __unused__
+#include "arch.h"	// page_size
 #include "sanitise.h"
 #include "shm.h"
 #include "maps.h"	// generate_random_page

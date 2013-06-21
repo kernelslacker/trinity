@@ -36,5 +36,6 @@
 #endif
 
 #define PAGE_MASK (~(page_size - 1))
+extern unsigned int page_size;
 
 #endif  /* _ARCH_H */

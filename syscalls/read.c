@@ -6,7 +6,7 @@
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "trinity.h"
+#include "arch.h"
 
 static void sanitise_read(int childno)
 {

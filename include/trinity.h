@@ -14,8 +14,6 @@ void * alloc_shared(unsigned int size);
 
 void do_main_loop(void);
 
-extern unsigned int page_size;
-
 extern bool biarch;
 
 extern bool ignore_tainted;

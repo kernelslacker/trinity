@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "trinity.h"	// page_size
+#include "arch.h"	// page_size
 #include "sanitise.h"	// interesting_*
 #include "log.h"	// For BUG
 

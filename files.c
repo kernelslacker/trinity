@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 
 #include "trinity.h"	// __unused__
+#include "arch.h"	// page_size
 #include "files.h"
 #include "log.h"
 #include "maps.h"

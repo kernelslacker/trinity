@@ -7,7 +7,8 @@
 
 #include "shm.h"
 #include "maps.h"
-#include "trinity.h"
+#include "trinity.h"	// ARRAY_SIZE
+#include "arch.h"	// page_size
 #include "sanitise.h"
 #include "ioctls.h"
 
