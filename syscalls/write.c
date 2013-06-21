@@ -5,7 +5,7 @@
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "trinity.h"	// page_size
+#include "arch.h"	// page_size
 
 static void sanitise_write(int childno)
 {

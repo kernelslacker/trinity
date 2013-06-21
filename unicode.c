@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include "trinity.h"
+#include "arch.h"
 
 void gen_unicode_page(char *page)
 {

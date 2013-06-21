@@ -3,7 +3,7 @@
  */
 #include <stdlib.h>
 #include <sys/mman.h>
-#include "trinity.h"	// page_size
+#include "arch.h"	// page_size
 #include "sanitise.h"
 #include "compat.h"
 #include "shm.h"
