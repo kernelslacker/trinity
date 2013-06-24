@@ -38,6 +38,8 @@ static void parse_proc_devices(void)
 		else if (strcmp("Character devices:\n", line) == 0)
 			block = 0;
 		else if (sscanf(line, "%d %*s", &major) == 1) {
+			if ((p = strchr(line, '\n')) != NULL)
+				*p = 0;
 			if ((p = strrchr(line, ' ')) == NULL)
 				continue;
 			p++;
