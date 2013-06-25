@@ -181,27 +181,41 @@ unsigned int rand32(void)
 	return r;
 }
 
+static unsigned long randbits(int limit)
+{
+	unsigned int num = rand() % limit / 2;
+	unsigned int i;
+	unsigned long r = 0;
+
+	for (i = 0; i < num; i++)
+		r |= (1 << (rand() % (limit - 1)));
+
+	return r;
+}
+
 unsigned long rand64(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 7) {
+	switch (rand() % 9) {
 
 	/* Just set one bit */
 	case 0:	return rand_single_32bit();
 	case 1:	return rand_single_64bit();
+	case 2:	return randbits(32);
+	case 3:	return randbits(64);
 
 	/* Sometimes pick a not-so-random number. */
-	case 2:	return get_interesting_value();
+	case 4:	return get_interesting_value();
 
 	/* limit to RAND_MAX (31 bits) */
-	case 3:	r = rand();
+	case 5:	r = rand();
 		break;
 
 	 /* do some gymnastics here to get > RAND_MAX
 	  * Based on very similar routine stolen from iknowthis. Thanks Tavis.
 	  */
-	case 4:
+	case 6:
 		r = rand() & rand();
 #if __WORDSIZE == 64
 		r <<= 32;
@@ -209,7 +223,7 @@ unsigned long rand64(void)
 #endif
 		break;
 
-	case 5:
+	case 7:
 		r = rand() | rand();
 #if __WORDSIZE == 64
 		r <<= 32;
@@ -217,7 +231,7 @@ unsigned long rand64(void)
 #endif
 		break;
 
-	case 6:
+	case 8:
 		r = rand();
 #if __WORDSIZE == 64
 		r <<= 32;
