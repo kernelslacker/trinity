@@ -26,6 +26,10 @@ static void regenerate(void)
 	if (no_files == TRUE)	/* We don't regenerate sockets */
 		return;
 
+	/* we're about to exit. */
+	if (shm->spawn_no_more)
+		return;
+
 	shm->regenerating = TRUE;
 
 	sleep(1);	/* give children time to finish with fds. */
@@ -91,6 +95,13 @@ static void fork_children(void)
 
 	while (shm->running_childs < shm->max_children) {
 		int pid = 0;
+
+		if (shm->spawn_no_more == TRUE)
+			return;
+
+		/* a new child means a new seed, or the new child
+		 * will do the same syscalls as the one in the pidslot it's replacing. */
+		reseed();
 
 		/* Find a space for it in the pid map */
 		pidslot = find_pid_slot(EMPTY_PIDSLOT);
@@ -335,16 +346,17 @@ static const char * decode_exit(unsigned int reason)
 static void main_loop(void)
 {
 	while (shm->exit_reason == STILL_RUNNING) {
-		if (shm->running_childs < shm->max_children) {
-			reseed();
-			fork_children();
+
+		if (shm->spawn_no_more == FALSE) {
+			if (shm->running_childs < shm->max_children)
+				fork_children();
+
+			if (shm->regenerate >= REGENERATION_POINT)
+				regenerate();
+
+			if (shm->need_reseed == TRUE)
+				reseed();
 		}
-
-		if (shm->regenerate >= REGENERATION_POINT)
-			regenerate();
-
-		if (shm->need_reseed == TRUE)
-			reseed();
 
 		handle_children();
 	}

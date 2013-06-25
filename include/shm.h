@@ -27,6 +27,7 @@ struct shm_s {
 	pid_t pids[MAX_NR_CHILDREN];
 
 	pid_t last_reaped;
+	bool spawn_no_more;
 
 	unsigned int max_children;
 	unsigned int running_childs;
