@@ -141,7 +141,7 @@ unsigned int rand32(void)
 	/* now mangle it. */
 	for (i = 0; i < rounds; i++) {
 
-		switch (rand() % 4) {
+		switch (rand() % 5) {
 
 		case 0: r &= rand();
 			break;
