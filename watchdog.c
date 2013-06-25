@@ -209,6 +209,8 @@ static void check_children(void)
 
 static void kill_all_kids(void)
 {
+	shm->spawn_no_more = TRUE;
+
 	/* Wait for all the children to exit. */
 	while (shm->running_childs > 0) {
 		unsigned int i;
