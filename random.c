@@ -113,13 +113,49 @@ unsigned int rand_single_bit(unsigned char size)
 	return (1L << (rand() % size));
 }
 
+/*
+ * Based on very similar routine stolen from iknowthis. Thanks Tavis.
+ */
+static unsigned long taviso(void)
+{
+	unsigned long r = 0;
+
+	switch (rand() % 3) {
+	case 0:	r = rand() & rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= rand() & rand();
+#endif
+		break;
+
+	case 1:	r = rand() | rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= rand() | rand();
+#endif
+		break;
+
+	case 2:	r = rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= rand();
+#endif
+		break;
+
+	default:
+		break;
+	}
+
+	return r;
+}
+
 unsigned int rand32(void)
 {
 	unsigned long r = 0;
 	unsigned int i;
 	unsigned int rounds = rand() % 3;
 
-	switch (rand() % 3) {
+	switch (rand() % 4) {
 	/* Just set one bit */
 	case 0: r = rand_single_bit(32);
 		break;
@@ -129,6 +165,10 @@ unsigned int rand32(void)
 		break;
 
 	case 2:	return get_interesting_32bit_value();
+
+	case 3:	r = taviso();
+		break;
+
 	default:
 		break;
 	}
@@ -192,7 +232,7 @@ unsigned long rand64(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 9) {
+	switch (rand() % 7) {
 
 	/* Just set one bit */
 	case 0:	return rand_single_bit(32);
@@ -207,33 +247,8 @@ unsigned long rand64(void)
 	case 5:	r = rand();
 		break;
 
-	 /* do some gymnastics here to get > RAND_MAX
-	  * Based on very similar routine stolen from iknowthis. Thanks Tavis.
-	  */
-	case 6:
-		r = rand() & rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= rand() & rand();
-#endif
+	case 6:	r = taviso();
 		break;
-
-	case 7:
-		r = rand() | rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= rand() | rand();
-#endif
-		break;
-
-	case 8:
-		r = rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= rand();
-#endif
-		break;
-
 	default:
 		break;
 	}
