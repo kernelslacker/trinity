@@ -299,6 +299,9 @@ unsigned long rand64(void)
 	}
 
 	if (rand_bool())
+		r ^= r;
+
+	if (rand_bool())
 		r |= (1L << (__WORDSIZE - 1));
 
 	return r;
