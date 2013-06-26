@@ -168,19 +168,15 @@ unsigned int rand32(void)
 	unsigned int rounds = rand() % 3;
 
 	switch (rand() % 4) {
-	/* Just set one bit */
 	case 0: r = rand_single_bit(32);
 		break;
-
-	/* 0 .. RAND_MAX */
-	case 1: r = rand();
+	case 1:	r = randbits(32);
 		break;
-
-	case 2:	return get_interesting_32bit_value();
-
+	case 2: r = rand();
+		break;
 	case 3:	r = taviso();
 		break;
-
+	case 4:	return get_interesting_32bit_value();
 	default:
 		break;
 	}
