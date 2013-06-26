@@ -161,13 +161,24 @@ static unsigned long taviso(void)
 	return r;
 }
 
+static unsigned long rand8x8(void)
+{
+	unsigned long r = 0UL;
+	unsigned int i;
+
+	for (i = (rand() % 7) + 1; i > 0; --i)
+		r = (r << 8) | rand() % 256;
+
+	return r;
+}
+
 unsigned int rand32(void)
 {
 	unsigned long r = 0;
 	unsigned int i;
 	unsigned int rounds = rand() % 3;
 
-	switch (rand() % 4) {
+	switch (rand() % 6) {
 	case 0: r = rand_single_bit(32);
 		break;
 	case 1:	r = randbits(32);
@@ -176,7 +187,9 @@ unsigned int rand32(void)
 		break;
 	case 3:	r = taviso();
 		break;
-	case 4:	return get_interesting_32bit_value();
+	case 4:	r = rand8x8();
+		break;
+	case 5:	return get_interesting_32bit_value();
 	default:
 		break;
 	}
@@ -245,15 +258,17 @@ unsigned long rand64(void)
 
 	} else {
 		/* 33:64-bit ranges. */
-		switch (rand() % 4) {
+		switch (rand() % 5) {
 		case 0:	r = rand_single_bit(64);
 			break;
 		case 1:	r = randbits(64);
 			break;
 		case 2:	r = taviso();
 			break;
+		case 3:	r = rand8x8();
+			break;
 		/* Sometimes pick a not-so-random number. */
-		case 3:	return get_interesting_value();
+		case 4:	return get_interesting_value();
 		default:
 			break;
 		}
