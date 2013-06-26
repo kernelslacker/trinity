@@ -113,6 +113,18 @@ unsigned int rand_single_bit(unsigned char size)
 	return (1L << (rand() % size));
 }
 
+static unsigned long randbits(int limit)
+{
+	unsigned int num = rand() % limit / 2;
+	unsigned int i;
+	unsigned long r = 0;
+
+	for (i = 0; i < num; i++)
+		r |= (1 << (rand() % (limit - 1)));
+
+	return r;
+}
+
 /*
  * Based on very similar routine stolen from iknowthis. Thanks Tavis.
  */
@@ -212,18 +224,6 @@ unsigned int rand32(void)
 	default:
 		break;
 	}
-
-	return r;
-}
-
-static unsigned long randbits(int limit)
-{
-	unsigned int num = rand() % limit / 2;
-	unsigned int i;
-	unsigned long r = 0;
-
-	for (i = 0; i < num; i++)
-		r |= (1 << (rand() % (limit - 1)));
 
 	return r;
 }
