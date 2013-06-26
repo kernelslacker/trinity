@@ -172,13 +172,26 @@ static unsigned long rand8x8(void)
 	return r;
 }
 
+static unsigned long rept8(unsigned int num)
+{
+	unsigned long r = 0UL;
+	unsigned int i;
+	unsigned char c;
+
+	c = rand() % 256;
+	for (i = rand() % (num - 1) ; i > 0; --i)
+		r = (r << 8) | c;
+
+	return r;
+}
+
 unsigned int rand32(void)
 {
 	unsigned long r = 0;
 	unsigned int i;
 	unsigned int rounds = rand() % 3;
 
-	switch (rand() % 6) {
+	switch (rand() % 7) {
 	case 0: r = rand_single_bit(32);
 		break;
 	case 1:	r = randbits(32);
@@ -189,7 +202,9 @@ unsigned int rand32(void)
 		break;
 	case 4:	r = rand8x8();
 		break;
-	case 5:	return get_interesting_32bit_value();
+	case 5:	r = rept8(4);
+		break;
+	case 6:	return get_interesting_32bit_value();
 	default:
 		break;
 	}
@@ -258,7 +273,7 @@ unsigned long rand64(void)
 
 	} else {
 		/* 33:64-bit ranges. */
-		switch (rand() % 5) {
+		switch (rand() % 6) {
 		case 0:	r = rand_single_bit(64);
 			break;
 		case 1:	r = randbits(64);
@@ -267,8 +282,10 @@ unsigned long rand64(void)
 			break;
 		case 3:	r = rand8x8();
 			break;
+		case 4:	r = rept8(8);
+			break;
 		/* Sometimes pick a not-so-random number. */
-		case 4:	return get_interesting_value();
+		case 5:	return get_interesting_value();
 		default:
 			break;
 		}
