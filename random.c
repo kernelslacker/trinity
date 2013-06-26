@@ -301,6 +301,17 @@ unsigned long rand64(void)
 	if (rand_bool())
 		r ^= r;
 
+	/* increase distribution in MSB */
+	if ((rand() % 10)) {
+		unsigned int i;
+		unsigned int rounds;
+
+		rounds = rand() % 4;
+		for (i = 0; i < rounds; i++)
+			r |= (1L << (__WORDSIZE - (rand() % 256)));
+	}
+
+	/* randomly flip sign bit. */
 	if (rand_bool())
 		r |= (1L << (__WORDSIZE - 1));
 
