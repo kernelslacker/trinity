@@ -232,25 +232,35 @@ unsigned long rand64(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 7) {
+	if (rand_bool()) {
+		/* 32-bit ranges. */
+		switch (rand() % 3) {
+		case 0:	r = rand_single_bit(32);
+			break;
+		case 1:	r = randbits(32);
+			break;
+		case 2:	r = rand32();
+			break;
+		case 3:	r = rand();
+			break;
+		default:
+			break;
+		}
 
-	/* Just set one bit */
-	case 0:	return rand_single_bit(32);
-	case 1:	return rand_single_bit(64);
-	case 2:	return randbits(32);
-	case 3:	return randbits(64);
-
-	/* Sometimes pick a not-so-random number. */
-	case 4:	return get_interesting_value();
-
-	/* limit to RAND_MAX (31 bits) */
-	case 5:	r = rand();
-		break;
-
-	case 6:	r = taviso();
-		break;
-	default:
-		break;
+	} else {
+		/* 33:64-bit ranges. */
+		switch (rand() % 4) {
+		case 0:	r = rand_single_bit(64);
+			break;
+		case 1:	r = randbits(64);
+			break;
+		case 2:	r = taviso();
+			break;
+		/* Sometimes pick a not-so-random number. */
+		case 3:	return get_interesting_value();
+		default:
+			break;
+		}
 	}
 
 	if (rand_bool())
