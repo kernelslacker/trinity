@@ -213,20 +213,24 @@ static unsigned int __rand32(void)
 unsigned int rand32(void)
 {
 	unsigned long r = 0;
-	unsigned int i;
-	unsigned int rounds = rand() % 3;
 
 	r = __rand32();
 
-	/* mangle it. */
-	for (i = 0; i < rounds; i++) {
-		switch (rand() % 2) {
-		case 0: r |= rand();
-			break;
-		case 1: r ^= rand();
-			break;
-		default:
-			break;
+	if (rand_bool()) {
+		unsigned int i;
+		unsigned int rounds;
+
+		/* mangle it. */
+		rounds = rand() % 3;
+		for (i = 0; i < rounds; i++) {
+			switch (rand() % 2) {
+			case 0: r |= rand();
+				break;
+			case 1: r ^= rand();
+				break;
+			default:
+				break;
+			}
 		}
 	}
 
