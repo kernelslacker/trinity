@@ -283,6 +283,19 @@ unsigned long rand64(void)
 		default:
 			break;
 		}
+
+		/* limit the size */
+		switch (rand() % 4) {
+		case 0: r &= 0x000000ffffffffff;
+			break;
+		case 1: r &= 0x0000ffffffffffff;
+			break;
+		case 2: r &= 0x00ffffffffffffff;
+			break;
+		default:
+			break;
+		}
+
 	}
 
 	if (rand_bool())
