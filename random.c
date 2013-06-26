@@ -265,19 +265,21 @@ unsigned long rand64(void)
 
 	} else {
 		/* 33:64-bit ranges. */
-		switch (rand() % 6) {
+		switch (rand() % 7) {
 		case 0:	r = rand_single_bit(64);
 			break;
 		case 1:	r = randbits(64);
 			break;
-		case 2:	r = taviso();
+		case 2:	r = rand32() | rand32() << 31;
 			break;
-		case 3:	r = rand8x8();
+		case 3:	r = taviso();
 			break;
-		case 4:	r = rept8(8);
+		case 4:	r = rand8x8();
+			break;
+		case 5:	r = rept8(8);
 			break;
 		/* Sometimes pick a not-so-random number. */
-		case 5:	return get_interesting_value();
+		case 6:	return get_interesting_value();
 		default:
 			break;
 		}
