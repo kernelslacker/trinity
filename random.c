@@ -261,18 +261,7 @@ unsigned long rand64(void)
 
 	if (rand_bool()) {
 		/* 32-bit ranges. */
-		switch (rand() % 3) {
-		case 0:	r = rand_single_bit(32);
-			break;
-		case 1:	r = randbits(32);
-			break;
-		case 2:	r = rand32();
-			break;
-		case 3:	r = rand();
-			break;
-		default:
-			break;
-		}
+		r = rand32();
 
 	} else {
 		/* 33:64-bit ranges. */
