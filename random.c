@@ -218,23 +218,13 @@ unsigned int rand32(void)
 
 	r = __rand32();
 
-	/* now mangle it. */
+	/* mangle it. */
 	for (i = 0; i < rounds; i++) {
-
-		switch (rand() % 5) {
-
-		case 0: r &= rand();
+		switch (rand() % 2) {
+		case 0: r |= rand();
 			break;
-
-		case 1: r |= rand();
+		case 1: r ^= rand();
 			break;
-
-		case 2: r >>= (rand() % 31);
-			break;
-
-		case 3: r ^= rand();
-			break;
-
 		default:
 			break;
 		}
