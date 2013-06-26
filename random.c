@@ -224,9 +224,9 @@ unsigned int rand32(void)
 		rounds = rand() % 3;
 		for (i = 0; i < rounds; i++) {
 			switch (rand() % 2) {
-			case 0: r |= rand();
+			case 0: r |= __rand32();
 				break;
-			case 1: r ^= rand();
+			case 1: r ^= __rand32();
 				break;
 			default:
 				break;
