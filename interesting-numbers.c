@@ -10,7 +10,7 @@ unsigned int get_interesting_32bit_value(void)
 	switch (rand() % 11) {
 
 	/* rare case, single bit. */
-	case 0:	return rand_single_32bit();
+	case 0:	return rand_single_bit(32);
 
 	/* common case, return small values*/
 	case 1 ... 7:
@@ -113,7 +113,7 @@ unsigned long get_interesting_value(void)
 	case 14: return MODULE_ADDR | (low & 0xffffff);
 	case 15: return per_arch_interesting_addr(low);
 	case 16: return (low << 32);
-	case 17: return rand_single_64bit();
+	case 17: return rand_single_bit(64);
 	default: break;
 	}
 	BUG("unreachable!\n");

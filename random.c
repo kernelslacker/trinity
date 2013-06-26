@@ -108,14 +108,9 @@ unsigned int rand_bool(void)
 	return rand() % 2;
 }
 
-unsigned int rand_single_32bit(void)
+unsigned int rand_single_bit(unsigned char size)
 {
-	return (1L << (rand() % 32));
-}
-
-unsigned long rand_single_64bit(void)
-{
-	return (1L << (rand() % 64));
+	return (1L << (rand() % size));
 }
 
 unsigned int rand32(void)
@@ -126,7 +121,7 @@ unsigned int rand32(void)
 
 	switch (rand() % 3) {
 	/* Just set one bit */
-	case 0: r = rand_single_32bit();
+	case 0: r = rand_single_bit(32);
 		break;
 
 	/* 0 .. RAND_MAX */
@@ -200,8 +195,8 @@ unsigned long rand64(void)
 	switch (rand() % 9) {
 
 	/* Just set one bit */
-	case 0:	return rand_single_32bit();
-	case 1:	return rand_single_64bit();
+	case 0:	return rand_single_bit(32);
+	case 1:	return rand_single_bit(64);
 	case 2:	return randbits(32);
 	case 3:	return randbits(64);
 
