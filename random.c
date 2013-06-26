@@ -185,11 +185,9 @@ static unsigned long rept8(unsigned int num)
 	return r;
 }
 
-unsigned int rand32(void)
+static unsigned int __rand32(void)
 {
 	unsigned long r = 0;
-	unsigned int i;
-	unsigned int rounds = rand() % 3;
 
 	switch (rand() % 7) {
 	case 0: r = rand_single_bit(32);
@@ -208,6 +206,17 @@ unsigned int rand32(void)
 	default:
 		break;
 	}
+
+	return r;
+}
+
+unsigned int rand32(void)
+{
+	unsigned long r = 0;
+	unsigned int i;
+	unsigned int rounds = rand() % 3;
+
+	r = __rand32();
 
 	/* now mangle it. */
 	for (i = 0; i < rounds; i++) {
