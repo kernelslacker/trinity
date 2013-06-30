@@ -16,7 +16,7 @@ struct syscall syscall_msgsnd = {
 	.arg4name = "msgflg",
 	.arg4type = ARG_LIST,
 	.arg4list = {
-		.num = 3,
-		.values = { MSG_NOERROR, MSG_EXCEPT, MSG_COPY },
+		.num = 4,
+		.values = { MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT },
 	},
 };
