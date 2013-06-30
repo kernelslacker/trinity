@@ -57,7 +57,7 @@ int check_tainted(void)
 	char buffer[4];
 
 	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
-	if (!fd)
+	if (fd < 0)
 		return -1;
 	ret = read(fd, buffer, 3);
 	close(fd);
