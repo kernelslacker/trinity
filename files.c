@@ -363,13 +363,13 @@ char * generate_pathname(void)
 	case 0 ... 90:
 		/* 90% chance of returning an unmangled filename */
 		if ((rand() % 100) > 10)
-			return get_filename();
+			return pathname;
 
 	case 91 ... 99:
 		/* Create a bogus filename. */
 		newpath = malloc(page_size);	// FIXME: We leak this.
 		if (newpath == NULL)
-			return get_filename();	// give up.
+			return pathname;	// give up.
 
 		generate_random_page(newpath);
 
