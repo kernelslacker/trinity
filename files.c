@@ -362,8 +362,7 @@ char * generate_pathname(void)
 
 	case 0 ... 90:
 		/* 90% chance of returning an unmangled filename */
-		if ((rand() % 100) > 10)
-			return pathname;
+		return pathname;
 
 	case 91 ... 99:
 		/* Create a bogus filename. */
