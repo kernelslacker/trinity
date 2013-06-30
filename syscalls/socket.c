@@ -47,7 +47,7 @@ void sanitise_socket(int childno)
 	if (do_specific_proto == TRUE)
 		family = specific_proto;
 	else
-		family = rand() % PF_MAX;
+		family = rand() % TRINITY_PF_MAX;
 
 	type = rand() % TYPE_MAX;
 	protocol = rand() % PROTO_MAX;
