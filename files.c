@@ -17,14 +17,14 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "constants.h"
+#include "list.h"
 
 static int files_added = 0;
 char **fileindex;
 unsigned int files_in_index = 0;
 
 struct namelist {
-	struct namelist *prev;
-	struct namelist *next;
+	struct list_head list;
 	char *name;
 };
 
@@ -97,39 +97,27 @@ static int ignore_files(const char *path)
 	return 0;
 }
 
-static struct namelist *list_alloc(void)
-{
-	struct namelist *node;
 
-	node = malloc(sizeof(struct namelist));
-	if (node == NULL)
-		exit(EXIT_FAILURE);
-	memset(node, 0, sizeof(struct namelist));
-	return node;
-}
-
-static void __list_add(struct namelist *new, struct namelist *prev, struct namelist *next)
-{
-	next->prev = new;
-	new->next = next;
-	new->prev = prev;
-	prev->next = new;
-}
-
-static void list_add(struct namelist *list, const char *name)
+static struct namelist * alloc_namenode()
 {
 	struct namelist *newnode;
 
-	newnode = list_alloc();
+	newnode = malloc(sizeof(struct namelist));
+	if (newnode == NULL)
+		exit(EXIT_FAILURE);
 
-	if (list == NULL) {
-		list = names = newnode;
-		list->next = list;
-		list->prev = list;
-	}
+	memset(newnode, 0, sizeof(struct namelist));
+	return newnode;
+}
+
+static void add_to_namelist(const char *name)
+{
+	struct namelist *newnode;
+	struct list_head *list = (struct list_head *) names;
+
+	newnode = alloc_namenode();
 	newnode->name = strdup(name);
-
-	__list_add(newnode, list, list->next);
+	list_add_tail(&newnode->list, list);
 }
 
 static int check_stat_file(const struct stat *sb)
@@ -190,8 +178,7 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, __unused
 	if (shm->exit_reason != STILL_RUNNING)
 		return FTW_STOP;
 
-	list_add(names, fpath);
-	//printf("Adding %s\n", fpath);
+	add_to_namelist(fpath);
 	files_added++;
 
 	return FTW_CONTINUE;
@@ -225,10 +212,14 @@ static void open_fds(const char *dirpath)
 void generate_filelist(void)
 {
 	unsigned int i = 0;
-	struct namelist *node;
+	struct list_head *node = &names->list;
+	struct namelist *nl;
 
 	my_uid = getuid();
 	my_gid = getgid();
+
+	names = alloc_namenode();
+	INIT_LIST_HEAD(&names->list);
 
 	output(1, "Generating file descriptors\n");
 
@@ -253,11 +244,10 @@ void generate_filelist(void)
 	 */
 	fileindex = malloc(sizeof(char *) * files_added);
 
-	node = names;
-	do {
-		fileindex[i++] = node->name;
-		node = node->next;
-	} while (node->next != names);
+	list_for_each(node, &names->list) {
+		nl = (struct namelist *) node;
+		fileindex[i++] = nl->name;
+	}
 	files_in_index = i;
 }
 
