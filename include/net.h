@@ -94,4 +94,7 @@ void gen_tipc(unsigned long *addr, unsigned long *addrlen);
 /* phonet */
 void gen_phonet(unsigned long *addr, unsigned long *addrlen);
 
+/* setsockopt routines */
+void ip_setsockopt(int childno);
+
 #endif	/* _NET_H */
