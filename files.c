@@ -212,7 +212,7 @@ static void open_fds(const char *dirpath)
 void generate_filelist(void)
 {
 	unsigned int i = 0;
-	struct list_head *node = &names->list;
+	struct list_head *node;
 	struct namelist *nl;
 
 	my_uid = getuid();
