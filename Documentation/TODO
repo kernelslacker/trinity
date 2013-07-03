@@ -18,14 +18,14 @@
   - On startup, run with -C64, and you'll see 64 re-seedings as each child starts.
   - Only do the periodic reseed if N syscalls have passed since the last reseed.
 
+* Change regeneration code.
+  Instead of every n syscalls, make it happen after 15 minutes (but with a minimum of n syscalls)
+
 * Rewrite socket generation.
-  - Organise into (sorted) per-protocol buckets of linked-lists..
+  Organise into (sorted) per-protocol buckets of linked-lists..
   - Search buckets for dupes before adding.
   - add a function to lookup a socket from a specific proto for sendmsg etc.
     (Still occasionally send sockets from random proto's)
-
-* blacklist filenames for victim path & /proc/self/exe
-  - make sure we don't call unlink() or rmdir() on them
 
 * 'fragments'.
   These are fragments of things that a real program would do.
@@ -49,13 +49,6 @@
   - some ancillary data needs to be destroyed immediately after the syscall
     (it's pointless keeping around mangled pathnames for eg).
 
-* generic linked list implementation
-  - convert file list usage
-  - memory allocation usage
-
-* file list struct extensions
-  - use count
-
 * Clean up logging.
   - Make -D use a separate debug log file
   - audit printfs and change to output/debugf as necessary
@@ -68,29 +61,35 @@
  - the COLOR_ARG macro in syscall.c:mkcall() has grown into a monster.
    Look at turning it into a function or two.
 
-* watchdog improvements
+* Watchdog improvements
   - in main loop, check watchdog is still alive
-  - check shm->parent_pid still alive in watchdog
   - RT watchdog task ? (needs initial startup as root, and drop privs afterwards).
+  - Clarify shm->parentpid use.
+    In some cases this is 'initial process', and the rest of the time 'forking thread'.
+    Split into two so watchdog monitors only the forking process.
 
-* filename cache.
-  Similar to the socketcache. Create on startup, then on loading, invalidate entries
-  that aren't present (/proc/pid etc).
-  This should improve reproducability in some cases. Right now, when a syscall
-  says "open the 5231st filename in the list", it differs across runs because we're
-  rebuilding the list, and the system state means stuff moves around.
+* filename related issues.
+  - filename cache.
+    Similar to the socketcache. Create on startup, then on loading, invalidate entries
+    that aren't present (/proc/pid etc).
+    This should improve reproducability in some cases. Right now, when a syscall
+    says "open the 5231st filename in the list", it differs across runs because we're
+    rebuilding the list, and the system state means stuff moves around.
+  - Add a way to add a filter to filelist.
+    ie, something like --filter-files=*[0-9]* to ignore all files with numbers in them.
+  - Dump filelist to a logfile. (Perhaps this ties in with the idea above to cache the filelist?)
+  - blacklist filenames for victim path & /proc/self/exe
+    - make sure we don't call unlink() or rmdir() on them
+  - Add a mode to sequentially go through the whole file list a few hundred files at a time
+     instead of picking from the list randomly.
+  - file list struct extensions
+    - use count
 
-* Change regeneration code.
-  Instead of every n syscalls, make it happen after 15 minutes.
-
-* Based upon the first syscall the child is going to call, bias the subsequent
-  random syscalls to be calls that use the return type from syscall 1.
-  Ie, if syscall #1 is going to be a syscall that returns an fd, do a bunch
-  of syscalls that work on fd's.
-  This will give us a sort of auto-grouping of syscalls.
-  (This might be not really necessary once we have fragments)
-
-* Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
+maps.c improvements:
+- convert maps.c linked-list to list.h implementation
+- Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
+- make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
+  in sanitise routines.
 
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
@@ -159,18 +158,9 @@
 
   - Finish annotating syscall return types
 
-* Add a way to add a filter to filelist.
-  ie, something like --filter-files=*[0-9]* to ignore all files with numbers in them.
-
-* Dump filelist to a logfile. (Perhaps this ties in with the idea above to cache the filelist?)
-
-* Add a mode to sequentially go through the whole file list a few hundred files at a time
-  instead of picking from the list randomly.
-
 * When we've hit a bug once, it's really annoying to keep walking into that same bug.
   Add some code to actively avoid calling certain syscalls with certain params based
   on kernel version.
   (Might be a lot of work, more than it's worth)
   - also add an override to disable this code.
-
 
