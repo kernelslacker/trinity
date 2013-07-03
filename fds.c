@@ -36,7 +36,6 @@ static int get_new_random_fd(void)
 	unsigned int i;
 	unsigned int fd_index;
 	int fd = 0;
-	int ret;
 
 	i = rand() % 3;
 
@@ -62,22 +61,8 @@ static int get_new_random_fd(void)
 	switch (i) {
 	case 0:
 retry_file:
-		// FIXME: This whole 'retry' logic is pretty ugly.
-		// We should just figure out the range of randomness we care about.
 		fd_index = rand() % nr_file_fds;
 		fd = shm->file_fds[fd_index];
-
-		if (logging == FALSE)
-			/* avoid stdin/stdout/stderr */
-			ret = fileno(stderr);
-		else {
-			/* if logging is enabled, we want to make sure we skip
-			 * over the logfiles, so get highest logfile fd. */
-			ret = highest_logfile();
-		}
-
-		if (fd <= ret)
-			goto retry_file;
 		break;
 
 	case 1:
