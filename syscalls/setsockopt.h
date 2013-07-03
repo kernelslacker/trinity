@@ -29,6 +29,7 @@
 #include <linux/dccp.h>
 #include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
+#include <linux/mroute.h>
 
 #include "compat.h"
 #include "config.h"
@@ -73,6 +74,9 @@ static int ip_opts[] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
 	IP_MSFILTER,
 	MCAST_JOIN_GROUP, MCAST_BLOCK_SOURCE, MCAST_UNBLOCK_SOURCE, MCAST_LEAVE_GROUP, MCAST_JOIN_SOURCE_GROUP, MCAST_LEAVE_SOURCE_GROUP, MCAST_MSFILTER,
 	IP_MULTICAST_ALL, IP_UNICAST_IF,
+	MRT_INIT, MRT_DONE, MRT_ADD_VIF, MRT_DEL_VIF,
+	MRT_ADD_MFC, MRT_DEL_MFC, MRT_VERSION, MRT_ASSERT,
+	MRT_PIM, MRT_TABLE, MRT_ADD_MFC_PROXY, MRT_DEL_MFC_PROXY,
  };
 
 #define NR_SOL_SOCKET_OPTS ARRAY_SIZE(socket_opts)
