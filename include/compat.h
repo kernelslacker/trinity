@@ -684,4 +684,12 @@ struct kvm_get_htab_fd {
 #define EM_ARM                    40
 #endif
 
+/* linux/mroute.h */
+#ifndef MRT_ADD_MFC_PROXY
+#define MRT_ADD_MFC_PROXY	(MRT_BASE+10)
+#endif
+#ifndef MRT_DEL_MFC_PROXY
+#define MRT_DEL_MFC_PROXY	(MRT_BASE+11)
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
