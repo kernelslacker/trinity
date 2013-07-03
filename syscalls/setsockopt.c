@@ -21,7 +21,11 @@ void sanitise_setsockopt(int childno)
 	unsigned char val;
 
 	shm->a4[childno] = (unsigned long) page_rand;
-	shm->a5[childno] = sizeof(int);	// at the minimum, we want an int (overridden below)
+	// pick a size for optlen. At the minimum, we want an int (overridden below)
+	if (rand_bool())
+		shm->a5[childno] = sizeof(int);
+	else
+		shm->a5[childno] = rand() % 256;
 
 	/* First we pick a level  */
 
