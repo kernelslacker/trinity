@@ -31,10 +31,22 @@ static void open_pipes(void)
 	}
 }
 
+static int rand_file_fd(void)
+{
+	unsigned int fd_index;
+
+	fd_index = rand() % nr_file_fds;
+	return shm->file_fds[fd_index];
+}
+
+static int rand_pipe_fd(void)
+{
+	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
+}
+
 static int get_new_random_fd(void)
 {
 	unsigned int i;
-	unsigned int fd_index;
 	int fd = 0;
 
 	i = rand() % 3;
@@ -57,12 +69,9 @@ static int get_new_random_fd(void)
 	if (nr_file_fds == 0)
 		i = 1;
 
-
 	switch (i) {
 	case 0:
-retry_file:
-		fd_index = rand() % nr_file_fds;
-		fd = shm->file_fds[fd_index];
+		fd = rand_file_fd();
 		break;
 
 	case 1:
@@ -71,16 +80,16 @@ retry_file:
 		 */
 		if (nr_sockets == 0) {
 			if (nr_file_fds > 0)
-				goto retry_file;
+				fd = rand_file_fd();
 			else
-				goto do_pipe;
+				fd = rand_pipe_fd();
+			return fd;
 		}
 		fd = shm->socket_fds[rand() % nr_sockets];
 		break;
 
 	case 2:
-do_pipe:
-		fd = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		fd = rand_pipe_fd();
 		break;
 	default:
 		break;
