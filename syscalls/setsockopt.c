@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <linux/types.h>
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"
@@ -112,6 +113,21 @@ void sanitise_setsockopt(int childno)
 			else
 				shm->a5[childno] = sizeof(struct ip_mreqn);
 			break;
+
+		case MRT_ADD_VIF:
+		case MRT_DEL_VIF:
+			shm->a5[childno] = sizeof(struct vifctl);
+			break;
+		case MRT_ADD_MFC:
+		case MRT_ADD_MFC_PROXY:
+		case MRT_DEL_MFC:
+		case MRT_DEL_MFC_PROXY:
+			shm->a5[childno] = sizeof(struct mfcctl);
+			break;
+		case MRT_TABLE:
+			shm->a5[childno] = sizeof(__u32);
+			break;
+
 		case IP_MSFILTER:
 			//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
 			shm->a5[childno] = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
