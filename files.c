@@ -231,17 +231,16 @@ void generate_filelist(void)
 		open_fds("/sys");
 	}
 
+	if (shm->exit_reason != STILL_RUNNING)
+		return;
+
 	if (files_added == 0) {
 		output(1, "Didn't add any files!!\n");
 		return;
 	}
 
-	if (shm->exit_reason != STILL_RUNNING)
-		return;
+	/* Generate an index of pointers to the filenames */
 
-	/*
-	 * Generate an index of pointers to the filenames
-	 */
 	fileindex = malloc(sizeof(char *) * files_added);
 
 	list_for_each(node, &names->list) {
