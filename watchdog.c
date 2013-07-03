@@ -131,6 +131,8 @@ static unsigned int check_if_fd(unsigned int callno, unsigned int child)
 	/* shortcut, if it's out of range, it's not going to be valid. */
 	if ((unsigned long) shm->a1 > 1024)
 		return FALSE;
+	if ((unsigned long) shm->a1 < 3)
+		return FALSE;
 
 	if (biarch == FALSE) {
 		if (syscalls[callno].entry->arg1type == ARG_FD)
