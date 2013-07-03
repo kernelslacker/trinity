@@ -20,6 +20,7 @@
 #define CRESET if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RESET);
 
 #define MAX_LOGLEVEL 3
+unsigned int highest_logfile(void);
 void synclogs(void);
 void output(unsigned char level, const char *fmt, ...);
 void open_logfiles(void);

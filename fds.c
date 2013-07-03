@@ -35,7 +35,6 @@ static int get_new_random_fd(void)
 {
 	unsigned int i;
 	unsigned int fd_index;
-	FILE *file;
 	int fd = 0;
 	int ret;
 
@@ -63,33 +62,19 @@ static int get_new_random_fd(void)
 	switch (i) {
 	case 0:
 retry_file:
+		// FIXME: This whole 'retry' logic is pretty ugly.
+		// We should just figure out the range of randomness we care about.
 		fd_index = rand() % nr_file_fds;
 		fd = shm->file_fds[fd_index];
 
-		/* avoid stdin/stdout/stderr */
 		if (logging == FALSE)
+			/* avoid stdin/stdout/stderr */
 			ret = fileno(stderr);
-
-		/* if logging is enabled, we want to make sure we skip
-		 * over the logfiles, so get highest logfile fd. */
 		else {
-			file = shm->logfiles[shm->max_children - 1];
-			if (file == NULL) {
-				printf("## WTF, logfile was null!\n");
-				printf("## logfiles: ");
-				for_each_pidslot(i)
-					printf("%p ", shm->logfiles[i]);
-				printf("\n");
-				exit(EXIT_FAILURE);
-			}
-			ret = fileno(file);
-			if (ret == -1) {
-				BUG("fileno failed!");
-				printf("%s", strerror(errno));
-				exit(EXIT_FAILURE);
-			}
+			/* if logging is enabled, we want to make sure we skip
+			 * over the logfiles, so get highest logfile fd. */
+			ret = highest_logfile();
 		}
-
 
 		if (fd <= ret)
 			goto retry_file;
