@@ -337,25 +337,23 @@ enum kcmp_type {
 #ifndef IP_MTU
 #define IP_MTU			14
 #endif
-
 #ifndef IP_FREEBIND
 #define IP_FREEBIND		15
 #endif
-
 #ifndef IP_IPSEC_POLICY
 #define IP_IPSEC_POLICY		16
 #endif
-
 #ifndef IP_XFRM_POLICY
 #define IP_XFRM_POLICY		17
 #endif
-
 #ifndef IP_PASSSEC
 #define IP_PASSSEC		18
 #endif
-
 #ifndef IP_TRANSPARENT
 #define IP_TRANSPARENT		19
+#endif
+#ifndef IP_NODEFRAG
+#define IP_NODEFRAG     22
 #endif
 
 /* linux/in6.h */
