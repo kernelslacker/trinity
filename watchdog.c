@@ -125,6 +125,30 @@ static unsigned int reap_dead_kids(void)
 	return alive;
 }
 
+/* if the first arg was an fd, find out which one it was. */
+static unsigned int check_if_fd(unsigned int callno, unsigned int child)
+{
+	/* shortcut, if it's out of range, it's not going to be valid. */
+	if ((unsigned long) shm->a1 > 1024)
+		return FALSE;
+
+	if (biarch == FALSE) {
+		if (syscalls[callno].entry->arg1type == ARG_FD)
+			return TRUE;
+		return FALSE;
+	}
+
+	/* biarch case */
+	if (shm->do32bit[child] == TRUE) {
+		if (syscalls_32bit[callno].entry->arg1type == ARG_FD)
+			return TRUE;
+	} else {
+		if (syscalls_64bit[callno].entry->arg1type == ARG_FD)
+			return TRUE;
+	}
+
+	return FALSE;
+}
 
 static void check_children(void)
 {
@@ -171,19 +195,8 @@ static void check_children(void)
 
 			memset(fdstr, 0, sizeof(fdstr));
 
-			/* if the first arg was an fd, find out which one it was. */
-			if (biarch == FALSE) {
-				if (syscalls[callno].entry->arg1type == ARG_FD)
-					sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
-			} else {
-				if (shm->do32bit[i] == TRUE) {
-					if (syscalls_32bit[callno].entry->arg1type == ARG_FD)
-						sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
-				} else {
-					if (syscalls_64bit[callno].entry->arg1type == ARG_FD)
-						sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
-				}
-			}
+			if (check_if_fd(callno, i) == TRUE)
+				sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
 
 			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
 				"Stuck in syscall %d:%s%s%s. Sending SIGKILL.\n",
