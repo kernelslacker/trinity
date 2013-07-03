@@ -104,6 +104,32 @@ void ip_setsockopt(int childno)
 		shm->a5[childno] = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
 		shm->a5[childno] |= IP_MSFILTER_SIZE(0);
 		break;
+
+	case IP_BLOCK_SOURCE:
+	case IP_UNBLOCK_SOURCE:
+	case IP_ADD_SOURCE_MEMBERSHIP:
+	case IP_DROP_SOURCE_MEMBERSHIP:
+		shm->a5[childno] = sizeof(struct ip_mreq_source);
+		break;
+
+	case MCAST_JOIN_GROUP:
+	case MCAST_LEAVE_GROUP:
+		shm->a5[childno] = sizeof(struct group_req);
+		break;
+
+	case MCAST_JOIN_SOURCE_GROUP:
+	case MCAST_LEAVE_SOURCE_GROUP:
+	case MCAST_BLOCK_SOURCE:
+	case MCAST_UNBLOCK_SOURCE:
+		shm->a5[childno] = sizeof(struct group_source_req);
+		break;
+
+	case MCAST_MSFILTER:
+		//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
+		shm->a5[childno] = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+		shm->a5[childno] |= GROUP_FILTER_SIZE(0);
+		break;
+
 	default:
 		break;
 	}

@@ -121,9 +121,6 @@ maps.c improvements:
 
 * Try passing a format string as a syscall argument.
 
-* sanitise_setsockopt needs further expansion to cope with things such as
-  those in do_ip_setsockopt
-
 * if a read() blocks and we get a kill from the watchdog, blacklist (close?) that fd/filename.
 
 * Pause on oops.
