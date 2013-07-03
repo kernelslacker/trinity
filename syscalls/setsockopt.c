@@ -30,54 +30,11 @@ void sanitise_setsockopt(int childno)
 	/* First we pick a level  */
 
 	switch (rand() % 35) {
-	case 0:	level = SOL_IP;	break;
-	case 1:	level = SOL_SOCKET; break;
-	case 2:	level = SOL_TCP; break;
-	case 3:	level = SOL_UDP; break;
-	case 4:	level = SOL_IPV6; break;
-	case 5:	level = SOL_ICMPV6; break;
-	case 6:	level = SOL_SCTP; break;
-	case 7:	level = SOL_UDPLITE; break;
-	case 8:	level = SOL_RAW; break;
-	case 9:	level = SOL_IPX; break;
-	case 10: level = SOL_AX25; break;
-	case 11: level = SOL_ATALK; break;
-	case 12: level = SOL_NETROM; break;
-	case 13: level = SOL_ROSE; break;
-	case 14: level = SOL_DECNET; break;
-	case 15: level = SOL_X25; break;
-	case 16: level = SOL_PACKET; break;
-	case 17: level = SOL_ATM; break;
-	case 18: level = SOL_AAL; break;
-	case 19: level = SOL_IRDA; break;
-	case 20: level = SOL_NETBEUI; break;
-	case 21: level = SOL_LLC; break;
-	case 22: level = SOL_DCCP; break;
-	case 23: level = SOL_NETLINK; break;
-	case 24: level = SOL_TIPC; break;
-	case 25: level = SOL_RXRPC; break;
-	case 26: level = SOL_PPPOL2TP; break;
-	case 27: level = SOL_BLUETOOTH; break;
-	case 28: level = SOL_PNPIPE; break;
-	case 29: level = SOL_RDS; break;
-	case 30: level = SOL_IUCV; break;
-	case 31: level = SOL_CAIF; break;
-	case 32: level = SOL_ALG; break;
-	case 33: level = SOL_NFC; break;
-	default:
-		level = rand();
-		break;
-	}
-
-
-	/* Now, use that level to determine which options to set. */
-
-	switch (level) {
-	case SOL_IP:
+	case 0:	level = SOL_IP;
 		ip_setsockopt(childno);
 		break;
 
-	case SOL_SOCKET:
+	case 1:	level = SOL_SOCKET;
 		val = rand() % NR_SOL_SOCKET_OPTS;
 		shm->a3[childno] = socket_opts[val];
 
@@ -98,12 +55,12 @@ void sanitise_setsockopt(int childno)
 		}
 		break;
 
-	case SOL_TCP:
+	case 2:	level = SOL_TCP;
 		val = rand() % NR_SOL_TCP_OPTS;
 		shm->a3[childno] = tcp_opts[val];
 		break;
 
-	case SOL_UDP:
+	case 3:	level = SOL_UDP;
 		val = rand() % NR_SOL_UDP_OPTS;
 		shm->a3[childno] = udp_opts[val];
 
@@ -118,22 +75,22 @@ void sanitise_setsockopt(int childno)
 		}
 		break;
 
-	case SOL_IPV6:
+	case 4:	level = SOL_IPV6;
 		val = rand() % NR_SOL_IPV6_OPTS;
 		shm->a3[childno] = ipv6_opts[val];
 		break;
 
-	case SOL_ICMPV6:
+	case 5:	level = SOL_ICMPV6;
 		val = rand() % NR_SOL_ICMPV6_OPTS;
 		shm->a3[childno] = icmpv6_opts[val];
 		break;
 
-	case SOL_SCTP:
+	case 6:	level = SOL_SCTP;
 		val = rand() % NR_SOL_SCTP_OPTS;
 		shm->a3[childno] = sctp_opts[val];
 		break;
 
-	case SOL_UDPLITE:
+	case 7:	level = SOL_UDPLITE;
 		val = rand() % NR_SOL_UDPLITE_OPTS;
 		shm->a3[childno] = udplite_opts[val];
 
@@ -150,47 +107,47 @@ void sanitise_setsockopt(int childno)
 		default:
 			break;
 		}
-
 		break;
 
-	case SOL_RAW:
+	case 8:	level = SOL_RAW;
 		shm->a3[childno] = ICMP_FILTER;	// that's all (for now?)
 		break;
 
-	case SOL_IPX:
+	case 9:	level = SOL_IPX;
 		shm->a3[childno] = IPX_TYPE;
 		break;
 
-	case SOL_AX25:
+	case 10: level = SOL_AX25;
 		val = rand() % NR_SOL_AX25_OPTS;
 		shm->a3[childno] = ax25_opts[val];
 		break;
 
-	case SOL_ATALK:	/* sock_no_setsockopt */
+	case 11: level = SOL_ATALK;
+		/* sock_no_setsockopt */
 		break;
 
-	case SOL_NETROM:
+	case 12: level = SOL_NETROM;
 		val = rand() % NR_SOL_NETROM_OPTS;
 		shm->a3[childno] = netrom_opts[val];
 		break;
 
-	case SOL_ROSE:
+	case 13: level = SOL_ROSE;
 		val = rand() % NR_SOL_ROSE_OPTS;
 		shm->a3[childno] = rose_opts[val];
 		break;
 
-	case SOL_DECNET:
+	case 14: level = SOL_DECNET;
 		// TODO: set size correctly
 		val = rand() % NR_SOL_DECNET_OPTS;
 		shm->a3[childno] = decnet_opts[val];
 		break;
 
-	case SOL_X25:
+	case 15: level = SOL_X25;
 		page_rand[0] = rand() % 2;	/* Just a bool */
 		shm->a4[childno] = sizeof(int);
 		break;
 
-	case SOL_PACKET:
+	case 16: level = SOL_PACKET;
 		val = rand() % NR_SOL_PACKET_OPTS;
 		shm->a3[childno] = packet_opts[val];
 
@@ -213,55 +170,57 @@ void sanitise_setsockopt(int childno)
 		}
 		break;
 
-	case SOL_ATM:
+	case 17: level = SOL_ATM;
 		val = rand() % NR_SOL_ATM_OPTS;
 		shm->a3[childno] = atm_opts[val];
 		break;
 
-	case SOL_AAL:	/* no setsockopt */
+	case 18: level = SOL_AAL;
+		/* no setsockopt */
 		break;
 
-	case SOL_IRDA:
+	case 19: level = SOL_IRDA;
 		val = rand() % NR_SOL_IRDA_OPTS;
 		shm->a3[childno] = irda_opts[val];
 		break;
 
-	case SOL_NETBEUI:	/* no setsockopt */
+	case 20: level = SOL_NETBEUI;
+		/* no setsockopt */
 		break;
 
-	case SOL_LLC:
+	case 21: level = SOL_LLC;
 		val = rand() % NR_SOL_LLC_OPTS;
 		shm->a3[childno] = llc_opts[val];
 		break;
 
-	case SOL_DCCP:
+	case 22: level = SOL_DCCP;
 		val = rand() % NR_SOL_DCCP_OPTS;
 		shm->a3[childno] = dccp_opts[val];
 		break;
 
-	case SOL_NETLINK:
+	case 23: level = SOL_NETLINK;
 		val = rand() % NR_SOL_NETLINK_OPTS;
 		shm->a3[childno] = netlink_opts[val];
 		break;
 
-	case SOL_TIPC:
+	case 24: level = SOL_TIPC;
 		shm->a4[childno] = sizeof(__u32);
 		val = rand() % NR_SOL_TIPC_OPTS;
 		shm->a3[childno] = tipc_opts[val];
 		break;
 
-	case SOL_RXRPC:
+	case 25: level = SOL_RXRPC;
 		val = rand() % NR_SOL_RXRPC_OPTS;
 		shm->a3[childno] = rxrpc_opts[val];
 		break;
 
-	case SOL_PPPOL2TP:
+	case 26: level = SOL_PPPOL2TP;
 		shm->a4[childno] = sizeof(int);
 		val = rand() % NR_SOL_PPPOL2TP_OPTS;
 		shm->a3[childno] = pppol2tp_opts[val];
 		break;
 
-	case SOL_BLUETOOTH:
+	case 27: level = SOL_BLUETOOTH;
 		switch(rand() % 5) {
 		case 0: level = SOL_HCI; break;
 		case 1: level = SOL_L2CAP; break;
@@ -301,39 +260,45 @@ void sanitise_setsockopt(int childno)
 		}
 		break;
 
-	case SOL_PNPIPE	/* no setsockopt */:
+	case 28: level = SOL_PNPIPE;
+		/* no setsockopt */
 		break;
 
+	case 29: level = SOL_RDS;
 #ifdef USE_RDS
-	case SOL_RDS:
 		val = rand() % NR_SOL_RDS_OPTS;
 		shm->a3[childno] = rds_opts[val];
-		break;
 #endif
+		break;
 
-	case SOL_IUCV:
+
+	case 30: level = SOL_IUCV;
 		val = rand() % NR_SOL_IUCV_OPTS;
 		shm->a3[childno] = iucv_opts[val];
 		shm->a4[childno] = sizeof(int);
 		break;
 
+	case 31: level = SOL_CAIF;
 #ifdef USE_CAIF
-	case SOL_CAIF:
 		val = rand() % NR_SOL_CAIF_OPTS;
 		shm->a3[childno] = caif_opts[val];
-		break;
 #endif
-
-	case SOL_ALG:	/* no setsockopt */
 		break;
 
-	case SOL_NFC:
+	case 32: level = SOL_ALG;
+		/* no setsockopt */
+		break;
+
+	case 33: level = SOL_NFC;
 		//TODO.
 		break;
 
 	default:
+		level = rand();
 		shm->a3[childno] = (rand() % 0x100);	/* random operation. */
+		break;
 	}
+
 
 	shm->a2[childno] = level;
 
