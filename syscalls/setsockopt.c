@@ -11,6 +11,7 @@
 #include "shm.h"
 #include "net.h"
 #include "config.h"
+#include "random.h"
 #include "syscalls/setsockopt.h"
 
 void sanitise_setsockopt(int childno)
@@ -70,6 +71,55 @@ void sanitise_setsockopt(int childno)
 	case SOL_IP:
 		val = rand() % NR_SOL_IP_OPTS;
 		shm->a3[childno] = ip_opts[val];
+		switch (ip_opts[val]) {
+		case IP_PKTINFO:
+		case IP_RECVTTL:
+		case IP_RECVOPTS:
+		case IP_RECVTOS:
+		case IP_RETOPTS:
+		case IP_TOS:
+		case IP_TTL:
+		case IP_HDRINCL:
+		case IP_MTU_DISCOVER:
+		case IP_RECVERR:
+		case IP_ROUTER_ALERT:
+		case IP_FREEBIND:
+		case IP_PASSSEC:
+		case IP_TRANSPARENT:
+		case IP_MINTTL:
+		case IP_NODEFRAG:
+		case IP_UNICAST_IF:
+		case IP_MULTICAST_TTL:
+		case IP_MULTICAST_ALL:
+		case IP_MULTICAST_LOOP:
+		case IP_RECVORIGDSTADDR:
+			if (rand_bool())
+				shm->a5[childno] = sizeof(int);
+			else
+				shm->a5[childno] = sizeof(char);
+			break;
+		case IP_OPTIONS:
+			shm->a5[childno] = rand() % 40;
+			break;
+		case IP_MULTICAST_IF:
+		case IP_ADD_MEMBERSHIP:
+		case IP_DROP_MEMBERSHIP:
+			if (rand_bool())
+				shm->a4[childno] = (unsigned long) page_allocs;
+
+			if (rand_bool())
+				shm->a5[childno] = sizeof(struct in_addr);
+			else
+				shm->a5[childno] = sizeof(struct ip_mreqn);
+			break;
+		case IP_MSFILTER:
+			//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
+			shm->a5[childno] = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+			shm->a5[childno] |= IP_MSFILTER_SIZE(0);
+			break;
+		default:
+			break;
+		}
 		break;
 
 	case SOL_SOCKET:
