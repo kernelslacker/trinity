@@ -131,7 +131,7 @@ static unsigned int check_if_fd(unsigned int callno, unsigned int child)
 	/* shortcut, if it's out of range, it's not going to be valid. */
 	if ((unsigned long) shm->a1 > 1024)
 		return FALSE;
-	if ((unsigned long) shm->a1 < 3)
+	if ((unsigned long) shm->a1 < highest_logfile())
 		return FALSE;
 
 	if (biarch == FALSE) {
