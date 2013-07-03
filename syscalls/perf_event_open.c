@@ -1039,15 +1039,17 @@ static void sanitise_perf_event_open(int childno)
 	/* requires ROOT to select pid that doesn't belong to us */
 	/* pid of 0 means current process */
 	/* pid of -1 means all processes  */
-	pid = 0;
+
 	if (flags & PERF_FLAG_PID_CGROUP) {
 		/* In theory in this case we should pass in */
 		/* a file descriptor from /dev/cgroup       */
 		pid = get_random_fd();
-	} else if (rand() % 2) {
-		pid = 0;
 	} else {
-		pid = get_pid();
+		if (rand_bool()) {
+			pid = 0;
+		} else {
+			pid = get_pid();
+		}
 	}
 	shm->a2[childno] = pid;
 
