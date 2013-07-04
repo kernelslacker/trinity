@@ -99,8 +99,10 @@ void generate_sockets(void)
 
 	while (nr_to_create > 0) {
 
-		if (shm->exit_reason != STILL_RUNNING)
+		if (shm->exit_reason != STILL_RUNNING) {
+			close(cachefile);
 			return;
+		}
 
 		/* Pretend we're child 0 and we've called sys_socket */
 		sanitise_socket(0);
@@ -213,6 +215,7 @@ void open_sockets(void)
 			if (domain != specific_proto) {
 				printf("ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
 				generate_sockets();
+				close(cachefile);
 				return;
 			}
 		}
@@ -231,9 +234,10 @@ regenerate:
 		}
 
 		/* check for ctrl-c */
-		if (shm->exit_reason != STILL_RUNNING)
+		if (shm->exit_reason != STILL_RUNNING) {
+			close(cachefile);
 			return;
-
+		}
 	}
 
 	if (nr_sockets < NR_SOCKET_FDS) {
