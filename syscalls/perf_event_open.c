@@ -323,18 +323,19 @@ static int init_pmus(void) {
 					pmus[pmu_num].formats[format_num].value=
 						strdup(format_value);
 					fclose(fff);
-				}
-				parse_format(format_value,
+
+					parse_format(format_value,
 						&pmus[pmu_num].formats[format_num].field,
 						&pmus[pmu_num].formats[format_num].shift,
 						&pmus[pmu_num].formats[format_num].bits);
-				if (pmus[pmu_num].formats[format_num].bits==64) {
-					pmus[pmu_num].formats[format_num].mask=0xffffffffffffffffULL;
-				} else {
-					pmus[pmu_num].formats[format_num].mask=
-						(1ULL<<pmus[pmu_num].formats[format_num].bits)-1;
+					if (pmus[pmu_num].formats[format_num].bits==64) {
+						pmus[pmu_num].formats[format_num].mask=0xffffffffffffffffULL;
+					} else {
+						pmus[pmu_num].formats[format_num].mask=
+							(1ULL<<pmus[pmu_num].formats[format_num].bits)-1;
+					}
+					format_num++;
 				}
-				format_num++;
 			}
 			closedir(format_dir);
 		}
