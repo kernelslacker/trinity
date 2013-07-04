@@ -304,6 +304,8 @@ static int init_pmus(void) {
 							sizeof(struct format_type));
 			if (pmus[pmu_num].formats==NULL) {
 				pmus[pmu_num].num_formats=0;
+				closedir(dir);
+				closedir(format_dir);
 				return -1;
 			}
 
@@ -369,6 +371,8 @@ static int init_pmus(void) {
 				sizeof(struct generic_event_type));
 			if (pmus[pmu_num].generic_events==NULL) {
 				pmus[pmu_num].num_generic_events=0;
+				closedir(dir);
+				closedir(event_dir);
 				return -1;
 			}
 
