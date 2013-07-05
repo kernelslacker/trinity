@@ -42,12 +42,12 @@ void dump_pid_slots(void)
 			if (pid_alive(shm->pids[i] == -1))
 				RED
 
-			printf("%d ", shm->pids[i]);
+			sptr += sprintf(sptr, "%d ", shm->pids[i]);
 			CRESET
 		sptr += sprintf(sptr, "\n");
 	}
 	*sptr = '\0';
-	printf("%s", string);
+	output(2, "%s", string);
 }
 
 static pid_t pidmax;
