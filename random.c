@@ -286,11 +286,11 @@ unsigned long rand64(void)
 
 		/* limit the size */
 		switch (rand() % 4) {
-		case 0: r &= 0x000000ffffffffff;
+		case 0: r &= 0x000000ffffffffffULL;
 			break;
-		case 1: r &= 0x0000ffffffffffff;
+		case 1: r &= 0x0000ffffffffffffULL;
 			break;
-		case 2: r &= 0x00ffffffffffffff;
+		case 2: r &= 0x00ffffffffffffffULL;
 			break;
 		default:
 			break;
