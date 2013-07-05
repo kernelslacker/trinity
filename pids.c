@@ -28,12 +28,16 @@ bool pidmap_empty(void)
 
 void dump_pid_slots(void)
 {
-	unsigned int i;
+	unsigned int i, j = 0;
 
-	printf("## pids:\n");
+	printf("## pids: (%d active)\n", shm->running_childs);
 
-	for_each_pidslot(i)
-		printf("## slot%d: %d\n", i, shm->pids[i]);
+	for (i = 0; i < shm->max_children; i+=8) {
+		printf("%d-%d: ", j, j+7);
+		for (j = 0; j < 8; j++)
+			printf("%d ", shm->pids[i]);
+		printf("\n");
+	}
 }
 
 static pid_t pidmax;
