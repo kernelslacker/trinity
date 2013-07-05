@@ -249,11 +249,16 @@ int main(int argc, char* argv[])
 cleanup_fds:
 
 	for (i = 0; i < nr_sockets; i++) {
+		int r = 0;
 		struct linger ling = { .l_onoff = FALSE, };
 
 		ling.l_onoff = FALSE;	/* linger active */
-		setsockopt(shm->socket_fds[i], SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
-		shutdown(shm->socket_fds[i], SHUT_RDWR);
+		r = setsockopt(shm->socket_fds[i], SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
+		if (r)
+			perror("setsockopt");
+		r = shutdown(shm->socket_fds[i], SHUT_RDWR);
+		if (r)
+			perror("shutdown");
 		close(shm->socket_fds[i]);
 	}
 
