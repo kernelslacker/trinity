@@ -45,8 +45,8 @@ void dump_pid_slots(void)
 				CRESET
 		}
 		sptr += sprintf(sptr, "\n");
-		*sptr = '\0';
 	}
+	*sptr = '\0';
 	output(2, "%s", string);
 }
 
