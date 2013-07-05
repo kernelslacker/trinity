@@ -97,6 +97,10 @@ static unsigned int reap_dead_kids(void)
 		pid_t pid;
 		int ret;
 
+		/* If something weird has happened, bail immediately. */
+		if (shm->exit_reason != STILL_RUNNING)
+			return shm->running_childs;
+
 		pid = shm->pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			continue;
