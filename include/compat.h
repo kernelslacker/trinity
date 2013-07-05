@@ -14,6 +14,10 @@
 #define O_CLOEXEC       02000000
 #endif
 
+#ifndef O_TMPFILE
+#define O_TMPFILE	020000000
+#endif
+
 #ifndef AT_NO_AUTOMOUNT
 #define AT_NO_AUTOMOUNT 0x800
 #endif
