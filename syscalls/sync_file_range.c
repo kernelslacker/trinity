@@ -4,6 +4,7 @@
  */
 #include <linux/fs.h>
 #include <fcntl.h>
+#include <string.h>
 #include <stdlib.h>
 #include "arch.h"
 #include "sanitise.h"
@@ -29,7 +30,7 @@ retry:
 	if (off >= (0x100000000LL << PAGE_SHIFT))
 		goto retry;
 
-	if (syscall_entry == &syscall_sync_file_range) {
+	if (strcmp("sync_file_range2", syscall_entry->name) == 0) {
 		shm->a2[childno] = off;
 		shm->a3[childno] = nbytes;
 	} else {
