@@ -49,7 +49,8 @@ static void reenable_coredumps(void)
 	prctl(PR_SET_DUMPABLE, TRUE);
 
 	if (setrlimit(RLIMIT_CORE, &oldrlimit) != 0) {
-		printf("Error restoring rlimits to cur:%d max:%d (%s)\n",
+		printf("[%d] Error restoring rlimits to cur:%d max:%d (%s)\n",
+			getpid(),
 			(unsigned int) oldrlimit.rlim_cur,
 			(unsigned int) oldrlimit.rlim_max,
 			strerror(errno));
