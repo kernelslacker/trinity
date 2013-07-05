@@ -25,6 +25,7 @@ void gen_rose(unsigned long *addr, unsigned long *addrlen)
 	strncpy(rose->srose_call.ax25_call, page_rand, 7);
 
 	rose->srose_ndigis = rand();
+
 	strncpy(rose->srose_digi.ax25_call, page_rand+7, 7);
 
 	*addr = (unsigned long) rose;
