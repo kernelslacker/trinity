@@ -353,7 +353,10 @@ enum kcmp_type {
 #define IP_TRANSPARENT		19
 #endif
 #ifndef IP_NODEFRAG
-#define IP_NODEFRAG     22
+#define IP_NODEFRAG		22
+#endif
+#ifndef IP_UNICAST_IF
+#define IP_UNICAST_IF		50
 #endif
 
 /* linux/in6.h */
