@@ -1,4 +1,7 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <signal.h>
 #include "shm.h"
 #include "params.h"	// for 'dangerous'
 #include "pids.h"
@@ -29,15 +32,22 @@ bool pidmap_empty(void)
 void dump_pid_slots(void)
 {
 	unsigned int i, j = 0;
+	char string[512], *sptr = string;
 
-	printf("## pids: (%d active)\n", shm->running_childs);
+	sptr += sprintf(sptr, "## pids: (%d active)\n", shm->running_childs);
 
 	for (i = 0; i < shm->max_children; i+=8) {
-		printf("%d-%d: ", j, j+7);
+		sptr += sprintf(sptr, "%d-%d: ", j, j+7);
 		for (j = 0; j < 8; j++)
-			printf("%d ", shm->pids[i]);
-		printf("\n");
+			if (pid_alive(shm->pids[i] == -1)) {
+				RED
+				printf("%d ", shm->pids[i]);
+				CRESET
+		}
+		sptr += sprintf(sptr, "\n");
+		*sptr = '\0';
 	}
+	output(2, "%s", string);
 }
 
 static pid_t pidmax;
