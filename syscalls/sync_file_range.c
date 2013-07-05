@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 
@@ -21,8 +22,8 @@ static void sanitise_sync_file_range(int childno)
 	loff_t off;
 
 retry:
-	off = rand() & 0xfffffff;
-	nbytes = rand() & 0xfffffff;
+	off = rand64() & 0x0fffffffffffffff;
+	nbytes = rand64() & 0x0fffffffffffffff;
 	endbyte = off + nbytes;
 	if (endbyte < off)
 		goto retry;
