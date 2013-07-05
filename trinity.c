@@ -249,7 +249,7 @@ int main(int argc, char* argv[])
 cleanup_fds:
 
 	for (i = 0; i < nr_sockets; i++) {
-		struct linger ling;
+		struct linger ling = { .l_onoff = FALSE, };
 
 		ling.l_onoff = FALSE;	/* linger active */
 		setsockopt(shm->socket_fds[i], SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
