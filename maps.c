@@ -94,7 +94,7 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 	 */
 	size *= 2;
 
-	tmpmap->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
+	tmpmap->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS|MAP_SHARED, fd, 0);
 
 	if (tmpmap->ptr == MAP_FAILED) {
 		printf("mmap /dev/zero failure\n");
