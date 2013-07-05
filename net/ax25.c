@@ -15,7 +15,7 @@ void gen_ax25(unsigned long *addr, unsigned long *addrlen)
 		return;
 
 	ax25->sax25_family = PF_AX25;
-	strncpy(ax25->sax25_call.ax25_call, page_rand, 7);
+	memcpy(ax25->sax25_call.ax25_call, page_rand, 7);
 	ax25->sax25_ndigis = rand();
 	*addr = (unsigned long) ax25;
 	*addrlen = sizeof(struct sockaddr_ax25);
