@@ -38,16 +38,17 @@ void dump_pid_slots(void)
 
 	for (i = 0; i < shm->max_children; i+=8) {
 		sptr += sprintf(sptr, "%d-%d: ", i, i+7);
-		for (j = 0; j < 8; j++)
+		for (j = 0; j < 8; j++) {
 			if (pid_alive(shm->pids[i] == -1))
 				RED
 
 			sptr += sprintf(sptr, "%d ", shm->pids[i]);
 			CRESET
+		}
 		sptr += sprintf(sptr, "\n");
 	}
 	*sptr = '\0';
-	output(2, "%s", string);
+	printf("%s", string);
 }
 
 static pid_t pidmax;
