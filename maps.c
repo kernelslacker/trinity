@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <malloc.h>
 #include <stdio.h>
@@ -68,8 +69,8 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 		tmpmap = alloc_map();
 
 	fd = open("/dev/zero", O_RDWR);
-	if (!fd) {
-		printf("open /dev/zero failure\n");
+	if (fd < 0) {
+		printf("open /dev/zero failure. %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
