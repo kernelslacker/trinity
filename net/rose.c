@@ -22,11 +22,11 @@ void gen_rose(unsigned long *addr, unsigned long *addrlen)
 	rose->srose_addr.rose_addr[3] = rand();
 	rose->srose_addr.rose_addr[4] = rand();
 
-	strncpy(rose->srose_call.ax25_call, page_rand, 7);
+	memcpy(rose->srose_call.ax25_call, page_rand, 7);
 
 	rose->srose_ndigis = rand();
 
-	strncpy(rose->srose_digi.ax25_call, page_rand+7, 7);
+	memcpy(rose->srose_digi.ax25_call, page_rand + 7, 7);
 
 	*addr = (unsigned long) rose;
 	*addrlen = sizeof(struct sockaddr_rose);
