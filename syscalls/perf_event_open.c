@@ -227,7 +227,7 @@ static int init_pmus(void) {
 	char format_value[BUFSIZ] = "";
 	int type,pmu_num=0,format_num=0,generic_num=0;
 	FILE *fff;
-	int result;
+	int result = -1;
 
 
 	/* Count number of PMUs */
@@ -246,12 +246,12 @@ static int init_pmus(void) {
 		num_pmus++;
 	}
 
-	if (num_pmus<1) return -1;
+	if (num_pmus<1)
+		goto out;
 
 	pmus=calloc(num_pmus,sizeof(struct pmu_type));
-	if (pmus==NULL) {
-		return -1;
-	}
+	if (pmus==NULL)
+		goto out;
 
 	/****************/
 	/* Add each PMU */
@@ -406,12 +406,12 @@ static int init_pmus(void) {
 		pmu_num++;
 	}
 
+	result = 0;
+
+out:
 	closedir(dir);
 
-	(void)result;
-
-	return 0;
-
+	return result;
 }
 
 
