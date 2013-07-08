@@ -100,8 +100,11 @@ static void fork_children(void)
 			return;
 
 		/* a new child means a new seed, or the new child
-		 * will do the same syscalls as the one in the pidslot it's replacing. */
-		reseed();
+		 * will do the same syscalls as the one in the pidslot it's replacing.
+		 * (special case startup, or we reseed unnecessarily)
+		 */
+		if (shm->ready == TRUE)
+			reseed();
 
 		/* Find a space for it in the pid map */
 		pidslot = find_pid_slot(EMPTY_PIDSLOT);
@@ -139,6 +142,9 @@ static void fork_children(void)
 				}
 			}
 
+			/* Wait for all the children to start up. */
+			while (shm->ready == FALSE);
+
 			init_child(pidslot);
 
 			ret = child_process(pidslot);
@@ -156,6 +162,8 @@ static void fork_children(void)
 			return;
 
 	}
+	shm->ready = TRUE;
+
 	debugf("[%d] created enough children\n", getpid());
 }
 

@@ -68,6 +68,8 @@ struct shm_s {
 	/* locks */
 	volatile unsigned char regenerating;
 	volatile unsigned char reaper_lock;
+
+	bool ready;
 };
 extern struct shm_s *shm;
 
