@@ -15,7 +15,6 @@
 
 * Reseeding improvements.
   We reseed way too often right now.
-  - On startup, run with -C64, and you'll see 64 re-seedings as each child starts.
   - Only do the periodic reseed if N syscalls have passed since the last reseed.
 
 * Change regeneration code.
