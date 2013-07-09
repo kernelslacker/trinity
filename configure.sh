@@ -201,7 +201,7 @@ rm -f "$TMP" "$TMP.log" "$TMP.c"
 
 #############################################################################################
 if [ "$DEVEL" == "1" ]; then
-  VER=$(git describe)
+  VER=$(git describe --always)
   echo "#define GITVERSION \""$VER\" >> config.h
 fi
 
