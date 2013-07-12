@@ -225,10 +225,9 @@ args_done:
 
 	output(2, "%s", string);
 
-	if (dopause == TRUE) {
+	/* If we're going to pause, might as well sync pre-syscall */
+	if (dopause == TRUE)
 		synclogs();
-		sleep(1);
-	}
 
 	if (((unsigned long)shm->a1 == (unsigned long) shm) ||
 	    ((unsigned long)shm->a2 == (unsigned long) shm) ||
@@ -267,6 +266,9 @@ args_done:
 	*sptr = '\0';
 
 	output(2, "%s\n", string);
+
+	if (dopause == TRUE)
+		sleep(1);
 
 	/* If the syscall doesn't exist don't bother calling it next time. */
 	if ((ret == -1UL) && (errno_saved == ENOSYS)) {
