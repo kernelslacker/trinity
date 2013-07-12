@@ -260,6 +260,10 @@ unsigned long rand64(void)
 {
 	unsigned long r = 0;
 
+#if __WORDSIZE == 32
+	return rand32();
+#endif
+
 	if (rand_bool()) {
 		/* 32-bit ranges. */
 		r = rand32();
