@@ -25,11 +25,11 @@ do
 
   for i in `seq 1 $NR_PROCESSES`
   do
+    chmod 755 ../tmp
     if [ -d tmp.$i ]; then
       chmod 755 tmp.$i
       rm -rf tmp.$i
     fi
-    chmod 755 ../tmp
     mkdir -p tmp.$i
     pushd tmp.$i
 
