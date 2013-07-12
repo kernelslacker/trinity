@@ -21,6 +21,8 @@ NR_PROCESSES=$(($NR_CPUS * 2))
 
 while [ 1 ];
 do
+  cp ../trinity .
+
   for i in `seq 1 $NR_PROCESSES`
   do
     if [ -d tmp.$i ]; then
@@ -38,7 +40,7 @@ do
     fi
 
     rm -f trinity.socketcache
-    MALLOC_CHECK_=2 ../../trinity -qq -l off -x sendmsg -N 999999 &
+    MALLOC_CHECK_=2 ../trinity -qq -l off -x sendmsg -N 999999 &
 
     popd
 
