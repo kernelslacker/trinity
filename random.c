@@ -13,6 +13,7 @@
 #include "log.h"
 #include "random.h"
 #include "sanitise.h"
+#include "types.h"
 
 /* The actual seed lives in the shm. This variable is used
  * to store what gets passed in from the command line -s argument */
@@ -256,13 +257,9 @@ unsigned int rand32(void)
 	return r;
 }
 
-unsigned long rand64(void)
+u64 rand64(void)
 {
 	unsigned long r = 0;
-
-#if __WORDSIZE == 32
-	return rand32();
-#endif
 
 	if (rand_bool()) {
 		/* 32-bit ranges. */
