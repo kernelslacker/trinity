@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/phonet.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_phonet(unsigned long *addr, unsigned long *addrlen)
 {

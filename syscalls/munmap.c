@@ -5,7 +5,7 @@
 #include "sanitise.h"
 #include "shm.h"
 
-void sanitise_munmap(int childno)
+static void sanitise_munmap(int childno)
 {
 	shm->a2[childno] = page_size;
 }

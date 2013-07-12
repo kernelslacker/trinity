@@ -5,6 +5,7 @@
 #include <linux/dn.h>
 #include <stdlib.h>
 #include "maps.h"
+#include "net.h"
 
 void gen_unixsock(unsigned long *addr, unsigned long *addrlen)
 {

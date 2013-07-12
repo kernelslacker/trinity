@@ -20,6 +20,7 @@ CFLAGS += -Wswitch-default
 CFLAGS += -Wswitch-enum
 CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings
+CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 
 # Only enabled during development.
 CFLAGS += -Werror

@@ -225,4 +225,3 @@ static int iucv_opts[] = {
 static int caif_opts[] = {
 	CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM };
 #endif
-

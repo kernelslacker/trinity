@@ -12,7 +12,7 @@
 # define SPLICE_F_MORE          4       /* Expect more data.  */
 # define SPLICE_F_GIFT          8       /* Pages passed in are a gift.  */
 
-void sanitise_tee(int childno)
+static void sanitise_tee(int childno)
 {
 	if ((rand() % 10) > 0) {
 		shm->a1[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];

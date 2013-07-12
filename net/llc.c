@@ -6,6 +6,7 @@
 #include <linux/if_arp.h>
 #include <linux/llc.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_llc(unsigned long *addr, unsigned long *addrlen)
 {

@@ -10,6 +10,7 @@
 #include "random.h"
 #include "syscall.h"
 #include "log.h"
+#include "params.h"
 
 bool debug = FALSE;
 

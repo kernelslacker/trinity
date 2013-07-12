@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/netlink.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_netlink(unsigned long *addr, unsigned long *addrlen)
 {

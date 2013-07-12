@@ -6,6 +6,7 @@
 #include "params.h"	// for 'dangerous'
 #include "pids.h"
 #include "log.h"
+#include "sanitise.h"
 
 int find_pid_slot(pid_t mypid)
 {
@@ -55,7 +56,7 @@ void dump_pid_slots(void)
 
 static pid_t pidmax;
 
-int read_pid_max(void)
+static int read_pid_max(void)
 {
 	unsigned long result;
 	char *end, buf[32];

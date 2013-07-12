@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <string.h>
 #include "arch.h"
+#include "sanitise.h"
 
 void gen_unicode_page(char *page)
 {

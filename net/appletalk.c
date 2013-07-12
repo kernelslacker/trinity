@@ -4,6 +4,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <linux/atalk.h>
+#include "net.h"
 
 void gen_appletalk(unsigned long *addr, unsigned long *addrlen)
 {

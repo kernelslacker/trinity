@@ -64,7 +64,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	return fd;
 }
 
-void generate_sockets(void)
+static void generate_sockets(void)
 {
 	struct flock fl = {
 		.l_type = F_WRLCK,

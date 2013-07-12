@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/irda.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_irda(unsigned long *addr, unsigned long *addrlen)
 {

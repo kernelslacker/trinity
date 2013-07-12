@@ -3,6 +3,7 @@
 
 #include "arch.h"	// page_size
 #include "sanitise.h"	// interesting_*
+#include "maps.h"
 #include "log.h"	// For BUG
 
 static void fabricate_onepage_struct(char *page)

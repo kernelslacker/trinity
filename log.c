@@ -8,6 +8,7 @@
 #include "params.h"	// logging, monochrome, quiet_level
 #include "shm.h"
 #include "pids.h"
+#include "log.h"
 
 FILE *parentlogfile;
 

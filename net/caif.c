@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <stdlib.h>
 #include "config.h"
+#include "net.h"
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
