@@ -134,7 +134,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 			return 0;
 		}
 
-		i = rand64() % high;
+		i = (unsigned long) rand64() % high;
 		if (i < low) {
 			i += low;
 			i &= high;
