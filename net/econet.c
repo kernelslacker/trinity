@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <neteconet/ec.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_econet(unsigned long *addr, unsigned long *addrlen)
 {

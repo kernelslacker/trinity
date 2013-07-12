@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/dn.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_decnet(unsigned long *addr, unsigned long *addrlen)
 {

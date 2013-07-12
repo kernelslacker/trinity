@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <stdlib.h>
 #include "config.h"
+#include "net.h"
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>

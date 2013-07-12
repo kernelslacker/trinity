@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/if_packet.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_packet(unsigned long *addr, unsigned long *addrlen)
 {

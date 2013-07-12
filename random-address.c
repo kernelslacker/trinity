@@ -11,6 +11,7 @@
 #include "maps.h"
 #include "shm.h"
 
+/*
 static bool within_page(void *addr, void *check)
 {
 	if (addr == check)
@@ -35,6 +36,7 @@ bool validate_address(void *addr)
 
 	return TRUE;
 }
+*/
 
 static void * _get_address(unsigned char null_allowed)
 {

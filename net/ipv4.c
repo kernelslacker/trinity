@@ -3,6 +3,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
+#include "net.h"
 
 in_addr_t random_ipv4_address(void)
 {

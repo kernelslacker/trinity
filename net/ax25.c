@@ -5,6 +5,7 @@
 #include <linux/ax25.h>
 #include <stdlib.h>
 #include "maps.h"	// page_rand
+#include "net.h"
 
 void gen_ax25(unsigned long *addr, unsigned long *addrlen)
 {

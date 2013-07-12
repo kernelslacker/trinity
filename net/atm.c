@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/atm.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_atmpvc(unsigned long *addr, unsigned long *addrlen)
 {

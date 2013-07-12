@@ -15,7 +15,7 @@
 #include "random.h"
 #include "syscalls/setsockopt.h"
 
-void sanitise_setsockopt(int childno)
+static void sanitise_setsockopt(int childno)
 {
 	int level;
 	unsigned char val;

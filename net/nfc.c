@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "config.h"
 #include "compat.h"
+#include "net.h"
 
 void gen_nfc(unsigned long *addr, unsigned long *addrlen)
 {

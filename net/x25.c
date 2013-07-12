@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/x25.h>
 #include <stdlib.h>
+#include "net.h"
 #include "maps.h"	// page_rand
 
 void gen_x25(unsigned long *addr, unsigned long *addrlen)

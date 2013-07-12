@@ -14,7 +14,7 @@
 # define SPLICE_F_MORE          4       /* Expect more data.  */
 # define SPLICE_F_GIFT          8       /* Pages passed in are a gift.  */
 
-void sanitise_splice(int childno)
+static void sanitise_splice(int childno)
 {
 	if ((rand() % 10) < 3)
 		return;

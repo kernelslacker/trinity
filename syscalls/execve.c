@@ -37,7 +37,7 @@ static unsigned long ** gen_ptrs_to_crap(void)
 	return (unsigned long **) ptr;
 }
 
-void sanitise_execve(__unused__ int childno)
+static void sanitise_execve(__unused__ int childno)
 {
 	/* we don't want to block if something tries to read from stdin */
 	fclose(stdin);

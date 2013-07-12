@@ -1,6 +1,7 @@
 #include <linux/unistd.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
+#include <sys/socket.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -11,6 +12,7 @@
 #include "random.h"
 #include "syscall.h"
 #include "log.h"
+#include "net.h"
 
 /**
  * BPF filters are used in networking such as in pf_packet, but also

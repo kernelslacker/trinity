@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/ipx.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_ipx(unsigned long *addr, unsigned long *addrlen)
 {

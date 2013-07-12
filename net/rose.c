@@ -6,6 +6,7 @@
 #include <linux/rose.h>
 #include <stdlib.h>
 #include "maps.h"	// page_rand
+#include "net.h"
 
 void gen_rose(unsigned long *addr, unsigned long *addrlen)
 {

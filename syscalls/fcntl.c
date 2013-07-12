@@ -28,7 +28,7 @@
 #define HAVE_LK64
 #endif
 
-void sanitise_fcntl(int childno)
+static void sanitise_fcntl(int childno)
 {
 	switch (shm->a2[childno]) {
 	/* arg = fd */

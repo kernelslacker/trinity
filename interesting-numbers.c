@@ -3,6 +3,7 @@
 #include "arch.h"
 #include "log.h"	// for BUG
 #include "random.h"
+#include "sanitise.h"
 #include "trinity.h"	// page_size
 
 unsigned int get_interesting_32bit_value(void)

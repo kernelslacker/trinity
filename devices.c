@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <linux/kdev_t.h>
+#include "files.h"
 
 #include "log.h"
 

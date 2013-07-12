@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/can.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_can(unsigned long *addr, unsigned long *addrlen)
 {

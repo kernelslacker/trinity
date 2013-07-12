@@ -98,7 +98,7 @@ static int ignore_files(const char *path)
 }
 
 
-static struct namelist * alloc_namenode()
+static struct namelist * alloc_namenode(void)
 {
 	struct namelist *newnode;
 

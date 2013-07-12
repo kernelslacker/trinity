@@ -6,6 +6,7 @@
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
 #include <stdlib.h>
+#include "net.h"
 
 void gen_ipv6(unsigned long *addr, unsigned long *addrlen)
 {
