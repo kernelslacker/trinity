@@ -40,7 +40,7 @@ do
     fi
 
     rm -f trinity.socketcache
-    MALLOC_CHECK_=2 ../trinity -qq -l off -x sendmsg -N 999999 &
+    MALLOC_CHECK_=2 ../trinity -q -l off -N 999999 &
 
     popd
 
