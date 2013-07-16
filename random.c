@@ -110,7 +110,7 @@ unsigned int rand_bool(void)
 	return rand() % 2;
 }
 
-unsigned int rand_single_bit(unsigned char size)
+static unsigned int rand_single_bit(unsigned char size)
 {
 	return (1L << (rand() % size));
 }
