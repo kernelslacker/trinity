@@ -13,5 +13,5 @@ const char *map_dev(dev_t, mode_t);
 
 extern unsigned int nr_file_fds;
 extern char *victim_path;
-extern char **fileindex;
+extern const char **fileindex;
 extern unsigned int files_in_index;

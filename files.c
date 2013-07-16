@@ -20,12 +20,12 @@
 #include "list.h"
 
 static int files_added = 0;
-char **fileindex;
+const char **fileindex;
 unsigned int files_in_index = 0;
 
 struct namelist {
 	struct list_head list;
-	char *name;
+	const char *name;
 };
 
 static struct namelist *names = NULL;
@@ -254,7 +254,7 @@ static int open_file(void)
 {
 	int fd;
 	int ret;
-	char *filename;
+	const char *filename;
 	int flags;
 	const char *modestr;
 	struct stat sb;
@@ -326,7 +326,7 @@ void close_files(void)
 	nr_file_fds = 0;
 }
 
-char * get_filename(void)
+const char * get_filename(void)
 {
 	if (files_in_index == 0)	/* This can happen if we run with -n. Should we do something else ? */
 		return NULL;
@@ -334,9 +334,9 @@ char * get_filename(void)
 	return fileindex[rand() % files_in_index];
 }
 
-char * generate_pathname(void)
+const char * generate_pathname(void)
 {
-	char *pathname = get_filename();
+	const char *pathname = get_filename();
 	char *newpath;
 	unsigned int len;
 	unsigned int i, chance;

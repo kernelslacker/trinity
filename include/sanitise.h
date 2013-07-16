@@ -22,9 +22,9 @@ struct iovec * alloc_iovec(unsigned int num);
 
 unsigned long get_len(void);
 unsigned int get_pid(void);
-char * get_filename(void);
+const char * get_filename(void);
 int get_random_fd(void);
-char * generate_pathname(void);
+const char * generate_pathname(void);
 
 void gen_unicode_page(char *page);
 
