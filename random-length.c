@@ -8,10 +8,7 @@ unsigned long get_len(void)
 {
 	int i = 0;
 
-	if (rand_bool())
-		i = get_interesting_value();
-	else
-		i = rand32();
+	i = rand32();
 
 	/* short circuit if 0 */
 	if (i == 0)

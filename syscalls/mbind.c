@@ -7,6 +7,7 @@
 #include <linux/mempolicy.h>
 #include "trinity.h"	// page_size
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 
@@ -25,7 +26,7 @@ retry_maxnode:
 	maxnode = shm->a5[childno];
 
 	if (maxnode < 2 || (maxnode) > (page_size * 8)) {
-		shm->a5[childno] = get_interesting_32bit_value();
+		shm->a5[childno] = rand32();
 		goto retry_maxnode;
 	}
 }
