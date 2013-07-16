@@ -136,16 +136,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_UNIX:
-		protocol = PF_UNIX;
-		switch (rand() % 3) {
-		case 0:	type = SOCK_STREAM;
-			break;
-		case 1:	type = SOCK_DGRAM;
-			break;
-		case 2:	type = SOCK_SEQPACKET;
-			break;
-		default:break;
-		}
+		unix_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_X25:
