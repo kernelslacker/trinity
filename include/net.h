@@ -159,5 +159,6 @@ void pnpipe_setsockopt(struct sockopt *so);
 void rds_setsockopt(struct sockopt *so);
 void iucv_setsockopt(struct sockopt *so);
 void caif_setsockopt(struct sockopt *so);
+void alg_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */

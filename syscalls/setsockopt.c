@@ -275,8 +275,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 32: level = SOL_ALG;
-		/* no setsockopt */
+	case 32:
+		alg_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 33: level = SOL_NFC;
