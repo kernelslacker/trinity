@@ -76,6 +76,7 @@ void gen_atmsvc(unsigned long *addr, unsigned long *addrlen);
 
 /* x25 */
 void gen_x25(unsigned long *addr, unsigned long *addrlen);
+void x25_rand_socket(struct proto_type *pt);
 
 /* rose */
 void gen_rose(unsigned long *addr, unsigned long *addrlen);

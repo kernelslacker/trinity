@@ -23,3 +23,9 @@ void gen_x25(unsigned long *addr, unsigned long *addrlen)
 	*addr = (unsigned long) x25;
 	*addrlen = sizeof(struct sockaddr_x25);
 }
+
+void x25_rand_socket(struct proto_type *pt)
+{
+	pt->type = SOCK_SEQPACKET;
+	pt->protocol = 0;
+}
