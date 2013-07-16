@@ -5,6 +5,7 @@
 #include <linux/irda.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 void gen_irda(unsigned long *addr, unsigned long *addrlen)
 {
@@ -22,4 +23,27 @@ void gen_irda(unsigned long *addr, unsigned long *addrlen)
 		irda->sir_name[i] = rand();
 	*addr = (unsigned long) irda;
 	*addrlen = sizeof(struct sockaddr_irda);
+}
+
+void irda_rand_socket(struct proto_type *pt)
+{
+	switch (rand() % 3) {
+
+	case 0: pt->type = SOCK_STREAM;
+		pt->protocol = rand() % PROTO_MAX;
+		break;
+
+	case 1: pt->type = SOCK_SEQPACKET;
+		pt->protocol = rand() % PROTO_MAX;
+		break;
+
+	case 2: pt->type = SOCK_DGRAM;
+		if (rand_bool())
+			pt->protocol = IRDAPROTO_ULTRA;
+		else
+			pt->protocol = IRDAPROTO_UNITDATA;
+		break;
+
+	default:break;
+	}
 }
