@@ -62,6 +62,7 @@ void ax25_rand_socket(struct proto_type *pt);
 
 /* ipx */
 void gen_ipx(unsigned long *addr, unsigned long *addrlen);
+void ipx_rand_socket(struct proto_type *pt);
 
 /* appletalk */
 void gen_appletalk(unsigned long *addr, unsigned long *addrlen);
