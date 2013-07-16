@@ -12,7 +12,7 @@
 
 #ifdef USE_CAIF
 #define NR_SOL_CAIF_OPTS ARRAY_SIZE(caif_opts)
-static const int caif_opts[] = { CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM };
+static const unsigned int caif_opts[] = { CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM };
 #endif
 
 void caif_setsockopt(struct sockopt *so)

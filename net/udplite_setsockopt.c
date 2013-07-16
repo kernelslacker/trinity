@@ -8,7 +8,7 @@
 #define SOL_UDPLITE 136
 
 #define NR_SOL_UDPLITE_OPTS ARRAY_SIZE(udplite_opts)
-static const int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
+static const unsigned int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
 
 void udplite_setsockopt(struct sockopt *so)
 {

@@ -6,7 +6,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_DECNET_OPTS ARRAY_SIZE(decnet_opts)
-static const int decnet_opts[] = {
+static const unsigned int decnet_opts[] = {
 	SO_CONDATA, SO_CONACCESS, SO_PROXYUSR, SO_LINKINFO,
 	DSO_CONDATA, DSO_DISDATA, DSO_CONACCESS, DSO_ACCEPTMODE,
 	DSO_CONACCEPT, DSO_CONREJECT, DSO_LINKINFO, DSO_STREAM,

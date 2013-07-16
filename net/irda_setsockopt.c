@@ -6,7 +6,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_IRDA_OPTS ARRAY_SIZE(irda_opts)
-static const int irda_opts[] = {
+static const unsigned int irda_opts[] = {
 	IRLMP_ENUMDEVICES, IRLMP_IAS_SET, IRLMP_IAS_QUERY, IRLMP_HINTS_SET,
 	IRLMP_QOS_SET, IRLMP_QOS_GET, IRLMP_MAX_SDU_SIZE, IRLMP_IAS_GET,
 	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE };
