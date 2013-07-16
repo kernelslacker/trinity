@@ -93,6 +93,7 @@ void netlink_rand_socket(struct proto_type *pt);
 
 /* packet */
 void gen_packet(unsigned long *addr, unsigned long *addrlen);
+void packet_rand_socket(struct proto_type *pt);
 
 /* econet */
 void gen_econet(unsigned long *addr, unsigned long *addrlen);
