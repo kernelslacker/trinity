@@ -43,9 +43,11 @@ void ip_setsockopt(struct sockopt *so);
 /* ipv6 */
 void ipv6_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void inet6_rand_socket(struct proto_type *pt);
+void inet6_setsockopt(struct sockopt *so);
 
 /* pppox */
 void pppox_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
+void pppol2tp_setsockopt(struct sockopt *so);
 
 /* unix */
 void unix_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
@@ -58,52 +60,65 @@ void gen_seccomp_bpf(unsigned long *addr, unsigned long *addrlen);
 /* caif */
 void caif_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void caif_rand_socket(struct proto_type *pt);
+void caif_setsockopt(struct sockopt *so);
 
 /* alg */
 void alg_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
+void alg_setsockopt(struct sockopt *so);
 
 /* nfc */
 void nfc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void nfc_rand_socket(struct proto_type *pt);
+void nfc_setsockopt(struct sockopt *so);
 
 /* ax25 */
 void ax25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void ax25_rand_socket(struct proto_type *pt);
+void ax25_setsockopt(struct sockopt *so);
 
 /* ipx */
 void ipx_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void ipx_rand_socket(struct proto_type *pt);
+void ipx_setsockopt(struct sockopt *so);
 
 /* appletalk */
 void atalk_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void appletalk_rand_socket(struct proto_type *pt);
+void atalk_setsockopt(struct sockopt *so);
 
 /* atm */
 void atmpvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void atmsvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
+void atm_setsockopt(struct sockopt *so);
 
 /* x25 */
 void x25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void x25_rand_socket(struct proto_type *pt);
+void x25_setsockopt(struct sockopt *so);
 
 /* rose */
 void rose_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
+void rose_setsockopt(struct sockopt *so);
 
 /* decnet */
 void decnet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void decnet_rand_socket(struct proto_type *pt);
+void decnet_setsockopt(struct sockopt *so);
 
 /* llc */
 void llc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void llc_rand_socket(struct proto_type *pt);
+void llc_setsockopt(struct sockopt *so);
 
 /* netlink */
 void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void netlink_rand_socket(struct proto_type *pt);
+void netlink_setsockopt(struct sockopt *so);
 
 /* packet */
 void packet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void packet_rand_socket(struct proto_type *pt);
+void packet_setsockopt(struct sockopt *so);
 
 /* econet */
 void econet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
@@ -111,6 +126,7 @@ void econet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 /* irda */
 void irda_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void irda_rand_socket(struct proto_type *pt);
+void irda_setsockopt(struct sockopt *so);
 
 /* can */
 void can_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
@@ -119,6 +135,7 @@ void can_rand_socket(struct proto_type *pt);
 /* tipc */
 void tipc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
 void tipc_rand_socket(struct proto_type *pt);
+void tipc_setsockopt(struct sockopt *so);
 
 /* phonet */
 void phonet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
@@ -126,40 +143,23 @@ void phonet_rand_socket(struct proto_type *pt);
 
 /* rds */
 void rds_rand_socket(struct proto_type *pt);
+void rds_setsockopt(struct sockopt *so);
 
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
 void tcp_setsockopt(struct sockopt *so);
 void udp_setsockopt(struct sockopt *so);
-void inet6_setsockopt(struct sockopt *so);
+void udplite_setsockopt(struct sockopt *so);
 void icmpv6_setsockopt(struct sockopt *so);
 void sctp_setsockopt(struct sockopt *so);
-void udplite_setsockopt(struct sockopt *so);
 void raw_setsockopt(struct sockopt *so);
-void ipx_setsockopt(struct sockopt *so);
-void ax25_setsockopt(struct sockopt *so);
-void atalk_setsockopt(struct sockopt *so);
 void netrom_setsockopt(struct sockopt *so);
-void rose_setsockopt(struct sockopt *so);
-void decnet_setsockopt(struct sockopt *so);
-void x25_setsockopt(struct sockopt *so);
-void packet_setsockopt(struct sockopt *so);
-void atm_setsockopt(struct sockopt *so);
 void aal_setsockopt(struct sockopt *so);
-void irda_setsockopt(struct sockopt *so);
 void netbeui_setsockopt(struct sockopt *so);
-void llc_setsockopt(struct sockopt *so);
 void dccp_setsockopt(struct sockopt *so);
-void netlink_setsockopt(struct sockopt *so);
-void tipc_setsockopt(struct sockopt *so);
 void rxrpc_setsockopt(struct sockopt *so);
-void pppol2tp_setsockopt(struct sockopt *so);
 void bluetooth_setsockopt(struct sockopt *so);
 void pnpipe_setsockopt(struct sockopt *so);
-void rds_setsockopt(struct sockopt *so);
 void iucv_setsockopt(struct sockopt *so);
-void caif_setsockopt(struct sockopt *so);
-void alg_setsockopt(struct sockopt *so);
-void nfc_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
