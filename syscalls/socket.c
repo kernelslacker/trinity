@@ -107,23 +107,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_NFC:
-		switch (rand_bool()) {
-		case 0:	protocol = NFC_SOCKPROTO_LLCP;
-			switch (rand() % 2) {
-			case 0:	type = SOCK_DGRAM;
-				break;
-			case 1:	type = SOCK_STREAM;
-				break;
-			default: break;
-			}
-			break;
-
-		case 1:	protocol = NFC_SOCKPROTO_RAW;
-			type = SOCK_SEQPACKET;
-			break;
-		default:
-			BUG("impossible.");
-		}
+		nfc_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_PACKET:
