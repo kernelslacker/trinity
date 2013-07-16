@@ -228,11 +228,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 26: level = SOL_PPPOL2TP;
-		shm->a2[childno] = level;
-		shm->a4[childno] = sizeof(int);
-		val = rand() % NR_SOL_PPPOL2TP_OPTS;
-		shm->a3[childno] = pppol2tp_opts[val];
+	case 26:
+		pppol2tp_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 27: level = SOL_BLUETOOTH;

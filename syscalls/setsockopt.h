@@ -17,7 +17,6 @@
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
 #include <linux/if.h>
-#include <linux/if_pppol2tp.h>
 
 #include "compat.h"
 #include "config.h"
@@ -39,11 +38,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_PPPOL2TP_OPTS ARRAY_SIZE(pppol2tp_opts)
-static int pppol2tp_opts[] = {
-	PPPOL2TP_SO_DEBUG, PPPOL2TP_SO_RECVSEQ, PPPOL2TP_SO_SENDSEQ, PPPOL2TP_SO_LNSMODE,
-	PPPOL2TP_SO_REORDERTO };
 
 #define NR_SOL_BLUETOOTH_OPTS ARRAY_SIZE(bluetooth_opts)
 static int bluetooth_opts[] = {

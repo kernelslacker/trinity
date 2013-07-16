@@ -153,5 +153,6 @@ void dccp_setsockopt(struct sockopt *so);
 void netlink_setsockopt(struct sockopt *so);
 void tipc_setsockopt(struct sockopt *so);
 void rxrpc_setsockopt(struct sockopt *so);
+void pppol2tp_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
