@@ -133,5 +133,6 @@ void tcp_setsockopt(struct sockopt *so);
 void udp_setsockopt(struct sockopt *so);
 void inet6_setsockopt(struct sockopt *so);
 void icmpv6_setsockopt(struct sockopt *so);
+void sctp_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
