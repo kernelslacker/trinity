@@ -57,9 +57,6 @@
 #define SOL_ALG         279
 #define SOL_NFC		280
 
-#define NR_SOL_UDP_OPTS ARRAY_SIZE(udp_opts)
-static int udp_opts[] = { UDP_CORK, UDP_ENCAP };
-
 #define NR_SOL_UDPLITE_OPTS ARRAY_SIZE(udplite_opts)
 static int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
 

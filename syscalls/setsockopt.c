@@ -53,20 +53,11 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 3:	level = SOL_UDP;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_UDP_OPTS;
-		shm->a3[childno] = udp_opts[val];
-
-		switch (shm->a3[childno]) {
-		case UDP_CORK:
-			break;
-		case UDP_ENCAP:
-			page_rand[0] = (rand() % 3) + 1;	// Encapsulation types.
-			break;
-		default:
-			break;
-		}
+	case 3:	udp_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 4:	level = SOL_IPV6;
