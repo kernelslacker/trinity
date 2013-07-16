@@ -6,8 +6,9 @@
 
 #include "trinity.h"	// page_size
 #include "arch.h"	// KERNEL_ADDR etc
-#include "sanitise.h"	// interesting_*
 #include "log.h"
+#include "random.h"
+#include "sanitise.h"
 #include "maps.h"
 #include "shm.h"
 
@@ -62,7 +63,7 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	case 5: addr = page_allocs;
 		break;
-	case 6:	addr = (void *) get_interesting_value();
+	case 6:	addr = (void *) rand64();
 		break;
 	case 7: addr = get_map();
 		break;

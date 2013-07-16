@@ -9,6 +9,7 @@
 #include "maps.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "arch.h"	// page_size
+#include "random.h"
 #include "sanitise.h"
 #include "ioctls.h"
 
@@ -98,7 +99,7 @@ static void scsi_sg_io_sanitise(int childno)
 
 	switch (rand() % 3) {
 	case 0: sgio->ioh.dxfer_len = rand() % page_size;	break;
-	case 1: sgio->ioh.dxfer_len = get_interesting_value();	break;
+	case 1: sgio->ioh.dxfer_len = (unsigned int) rand32();	break;
 	case 2: sgio->ioh.dxfer_len = rand() % 512;		break;
 	default: break;
 	}

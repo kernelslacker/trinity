@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <linux/ioctl.h>
 #include <linux/major.h>
+#include "random.h"
 #include "sanitise.h"
 #include "maps.h"
 #include "shm.h"
@@ -26,7 +27,7 @@ static void ioctl_mangle_arg(int childno)
 {
 	/* the argument could mean anything, because ioctl sucks like that. */
 	switch (rand() % 2) {
-	case 0:	shm->a3[childno] = get_interesting_32bit_value();
+	case 0:	shm->a3[childno] = rand32();
 		break;
 
 	case 1:	shm->a3[childno] = (unsigned long) page_rand;

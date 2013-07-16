@@ -2,7 +2,8 @@
 #include <stdlib.h>
 
 #include "arch.h"	// page_size
-#include "sanitise.h"	// interesting_*
+#include "random.h"
+#include "sanitise.h"	// get_address
 #include "maps.h"
 #include "log.h"	// For BUG
 
@@ -18,13 +19,13 @@ static void fabricate_onepage_struct(char *page)
 			i += sizeof(unsigned int);
 			if (i > page_size)
 				return;
-			*(unsigned int *)ptr = get_interesting_32bit_value();
+			*(unsigned int *)ptr = rand32();
 			break;
 		case 1:
 			i += sizeof(unsigned long);
 			if (i > page_size)
 				return;
-			*(unsigned long *)ptr = get_interesting_value();
+			*(unsigned long *)ptr = rand64();
 			break;
 		case 2:
 			i += sizeof(void *);
