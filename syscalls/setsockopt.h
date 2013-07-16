@@ -30,7 +30,6 @@
 #include <linux/rds.h>
 #endif
 
-#define SOL_PNPIPE      275
 #define SOL_RDS         276
 #define SOL_IUCV        277
 #define SOL_CAIF        278

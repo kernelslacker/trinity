@@ -244,10 +244,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-
-	case 28: level = SOL_PNPIPE;
-		shm->a2[childno] = level;
-		/* no setsockopt */
+	case 28:
+		pnpipe_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 29: level = SOL_RDS;
