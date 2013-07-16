@@ -10,7 +10,7 @@
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
 
-void gen_caif(unsigned long *addr, unsigned long *addrlen)
+void caif_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_caif *caif;
 	unsigned int i;

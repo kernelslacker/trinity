@@ -7,7 +7,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 
-void gen_x25(unsigned long *addr, unsigned long *addrlen)
+void x25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_x25 *x25;
 	unsigned int len;

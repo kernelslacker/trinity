@@ -8,7 +8,7 @@
 #include "net.h"
 #include "random.h"
 
-void gen_ax25(unsigned long *addr, unsigned long *addrlen)
+void ax25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_ax25 *ax25;
 

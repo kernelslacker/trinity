@@ -7,7 +7,7 @@
 #include "net.h"
 #include "random.h"
 
-void gen_tipc(unsigned long *addr, unsigned long *addrlen)
+void tipc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_tipc *tipc;
 

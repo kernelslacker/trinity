@@ -7,7 +7,7 @@
 #include "random.h"
 #include "net.h"
 
-void gen_appletalk(unsigned long *addr, unsigned long *addrlen)
+void atalk_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_at *atalk;
 

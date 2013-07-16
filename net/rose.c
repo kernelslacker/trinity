@@ -8,7 +8,7 @@
 #include "maps.h"	// page_rand
 #include "net.h"
 
-void gen_rose(unsigned long *addr, unsigned long *addrlen)
+void rose_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_rose *rose;
 

@@ -7,7 +7,7 @@
 #include "net.h"
 #include "random.h"
 
-void gen_can(unsigned long *addr, unsigned long *addrlen)
+void can_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_can *can;
 
