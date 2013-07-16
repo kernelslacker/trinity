@@ -60,9 +60,6 @@
 #define NR_SOL_UDPLITE_OPTS ARRAY_SIZE(udplite_opts)
 static int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
 
-#define NR_SOL_ICMPV6_OPTS ARRAY_SIZE(icmpv6_opts)
-static int icmpv6_opts[] = { ICMPV6_FILTER };
-
 #define NR_SOL_SCTP_OPTS ARRAY_SIZE(sctp_opts)
 static int sctp_opts[] = {
 	SCTP_RTOINFO, SCTP_ASSOCINFO, SCTP_INITMSG, SCTP_NODELAY,

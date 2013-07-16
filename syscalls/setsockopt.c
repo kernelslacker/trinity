@@ -67,10 +67,11 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 5:	level = SOL_ICMPV6;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_ICMPV6_OPTS;
-		shm->a3[childno] = icmpv6_opts[val];
+	case 5:	icmpv6_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 6:	level = SOL_SCTP;
