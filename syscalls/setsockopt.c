@@ -212,11 +212,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 24: level = SOL_TIPC;
-		shm->a2[childno] = level;
-		shm->a4[childno] = sizeof(__u32);
-		val = rand() % NR_SOL_TIPC_OPTS;
-		shm->a3[childno] = tipc_opts[val];
+	case 24:
+		tipc_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 25: level = SOL_RXRPC;

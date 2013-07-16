@@ -151,5 +151,6 @@ void netbeui_setsockopt(struct sockopt *so);
 void llc_setsockopt(struct sockopt *so);
 void dccp_setsockopt(struct sockopt *so);
 void netlink_setsockopt(struct sockopt *so);
+void tipc_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
