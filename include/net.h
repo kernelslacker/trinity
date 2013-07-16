@@ -41,6 +41,7 @@ void gen_pppox(unsigned long *addr, unsigned long *addrlen);
 
 /* unix */
 void gen_unixsock(unsigned long *addr, unsigned long *addrlen);
+void unix_rand_socket(struct proto_type *pt);
 
 /* bpf */
 void gen_bpf(unsigned long *addr, unsigned long *addrlen);

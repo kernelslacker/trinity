@@ -23,3 +23,18 @@ void gen_unixsock(unsigned long *addr, unsigned long *addrlen)
 	*addr = (unsigned long) unixsock;
 	*addrlen = sizeof(struct sockaddr_un);
 }
+
+void unix_rand_socket(struct proto_type *pt)
+{
+	pt->protocol = PF_UNIX;
+
+	switch (rand() % 3) {
+	case 0: pt->type = SOCK_STREAM;
+		break;
+	case 1: pt->type = SOCK_DGRAM;
+		break;
+	case 2: pt->type = SOCK_SEQPACKET;
+		break;
+	default:break;
+	}
+}
