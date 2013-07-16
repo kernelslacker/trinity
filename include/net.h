@@ -77,6 +77,7 @@ void gen_rose(unsigned long *addr, unsigned long *addrlen);
 
 /* decnet */
 void gen_decnet(unsigned long *addr, unsigned long *addrlen);
+void decnet_rand_socket(struct proto_type *pt);
 
 /* llc */
 void gen_llc(unsigned long *addr, unsigned long *addrlen);
