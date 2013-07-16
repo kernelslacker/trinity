@@ -108,6 +108,7 @@ void can_rand_socket(struct proto_type *pt);
 
 /* tipc */
 void gen_tipc(unsigned long *addr, unsigned long *addrlen);
+void tipc_rand_socket(struct proto_type *pt);
 
 /* phonet */
 void gen_phonet(unsigned long *addr, unsigned long *addrlen);

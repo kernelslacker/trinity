@@ -5,6 +5,7 @@
 #include <linux/tipc.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 void gen_tipc(unsigned long *addr, unsigned long *addrlen)
 {
@@ -26,4 +27,19 @@ void gen_tipc(unsigned long *addr, unsigned long *addrlen)
 	tipc->addr.name.domain = rand();
 	*addr = (unsigned long) tipc;
 	*addrlen = sizeof(struct sockaddr_tipc);
+}
+
+void tipc_rand_socket(struct proto_type *pt)
+{
+	pt->protocol = 0;
+
+	switch (rand() % 3) {
+	case 0: pt->type = SOCK_STREAM;
+		break;
+	case 1: pt->type = SOCK_SEQPACKET;
+		break;
+	case 2: pt->type = SOCK_DGRAM;
+		break;
+	default: break;
+	}
 }
