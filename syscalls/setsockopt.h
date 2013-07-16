@@ -17,7 +17,6 @@
 #include <linux/icmpv6.h>
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
-#include <linux/irda.h>
 #include <linux/if.h>
 #include <linux/llc.h>
 #include <linux/dccp.h>
@@ -49,12 +48,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_IRDA_OPTS ARRAY_SIZE(irda_opts)
-static int irda_opts[] = {
-	IRLMP_ENUMDEVICES, IRLMP_IAS_SET, IRLMP_IAS_QUERY, IRLMP_HINTS_SET,
-	IRLMP_QOS_SET, IRLMP_QOS_GET, IRLMP_MAX_SDU_SIZE, IRLMP_IAS_GET,
-	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE };
 
 #ifndef USE_LLC_OPT_PKTINFO
 #define LLC_OPT_PKTINFO LLC_OPT_UNKNOWN
