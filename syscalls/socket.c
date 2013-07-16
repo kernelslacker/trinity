@@ -118,14 +118,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_PHONET:
-		protocol = 0;
-		switch (rand_bool()) {
-		case 0:	type = SOCK_DGRAM;
-			break;
-		case 1:	type = SOCK_SEQPACKET;
-			break;
-		default: break;
-		}
+		phonet_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_RDS:

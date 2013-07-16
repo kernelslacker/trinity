@@ -5,6 +5,7 @@
 #include <linux/phonet.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 void gen_phonet(unsigned long *addr, unsigned long *addrlen)
 {
@@ -20,4 +21,13 @@ void gen_phonet(unsigned long *addr, unsigned long *addrlen)
 	pn->spn_resource = rand();
 	*addr = (unsigned long) pn;
 	*addrlen = sizeof(struct sockaddr_pn);
+}
+
+void phonet_rand_socket(struct proto_type *pt)
+{
+	pt->protocol = 0;
+	if (rand_bool())
+		pt->type = SOCK_DGRAM;
+	else
+		pt->type = SOCK_SEQPACKET;
 }
