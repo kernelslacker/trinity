@@ -31,7 +31,6 @@
 #include <linux/rds.h>
 #endif
 
-#define SOL_RXRPC       272
 #define SOL_PPPOL2TP    273
 #define SOL_BLUETOOTH   274
 #define SOL_PNPIPE      275
@@ -40,11 +39,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_RXRPC_OPTS ARRAY_SIZE(rxrpc_opts)
-static int rxrpc_opts[] = {
-	RXRPC_USER_CALL_ID, RXRPC_ABORT, RXRPC_ACK, RXRPC_NET_ERROR,
-	RXRPC_BUSY, RXRPC_LOCAL_ERROR, RXRPC_NEW_CALL, RXRPC_ACCEPT };
 
 #define NR_SOL_PPPOL2TP_OPTS ARRAY_SIZE(pppol2tp_opts)
 static int pppol2tp_opts[] = {

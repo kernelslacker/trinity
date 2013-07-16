@@ -220,10 +220,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 25: level = SOL_RXRPC;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_RXRPC_OPTS;
-		shm->a3[childno] = rxrpc_opts[val];
+	case 25:
+		rxrpc_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 26: level = SOL_PPPOL2TP;
