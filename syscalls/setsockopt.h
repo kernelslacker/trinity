@@ -14,7 +14,6 @@
 #include <netatalk/at.h>
 #include <netax25/ax25.h>
 #include <netrose/rose.h>
-#include <netrom/netrom.h>
 #include <linux/dn.h>
 #include <linux/tipc.h>
 #include <linux/icmpv6.h>
@@ -54,10 +53,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_NETROM_OPTS ARRAY_SIZE(netrom_opts)
-static int netrom_opts[] = {
-	NETROM_T1, NETROM_T2, NETROM_N2, NETROM_T4, NETROM_IDLE };
 
 #define NR_SOL_ROSE_OPTS ARRAY_SIZE(rose_opts)
 static int rose_opts[] = {
