@@ -124,8 +124,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_RDS:
-		protocol = 0;
-		type = SOCK_SEQPACKET;
+		rds_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_TIPC:
