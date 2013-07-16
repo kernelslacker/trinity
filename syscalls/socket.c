@@ -79,8 +79,11 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_IPX:
-		type = SOCK_DGRAM;
+		ipx_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
+
 
 	case AF_IRDA:
 		switch (rand() % 3) {

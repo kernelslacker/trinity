@@ -25,3 +25,9 @@ void gen_ipx(unsigned long *addr, unsigned long *addrlen)
 	*addr = (unsigned long) ipx;
 	*addrlen = sizeof(struct sockaddr_ipx);
 }
+
+void ipx_rand_socket(struct proto_type *pt)
+{
+	pt->protocol = rand() % PROTO_MAX;
+	pt->type = SOCK_DGRAM;
+}
