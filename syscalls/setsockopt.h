@@ -13,7 +13,6 @@
 #include <netipx/ipx.h>
 #include <netatalk/at.h>
 #include <netax25/ax25.h>
-#include <linux/tipc.h>
 #include <linux/icmpv6.h>
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
@@ -41,11 +40,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_TIPC_OPTS ARRAY_SIZE(tipc_opts)
-static int tipc_opts[] = {
-	TIPC_IMPORTANCE, TIPC_SRC_DROPPABLE, TIPC_DEST_DROPPABLE, TIPC_CONN_TIMEOUT,
-	TIPC_NODE_RECVQ_DEPTH, TIPC_SOCK_RECVQ_DEPTH };
 
 #define NR_SOL_RXRPC_OPTS ARRAY_SIZE(rxrpc_opts)
 static int rxrpc_opts[] = {
