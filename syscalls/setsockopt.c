@@ -18,7 +18,6 @@
 static void sanitise_setsockopt(int childno)
 {
 	int level;
-	unsigned char val;
 	struct sockopt so;
 
 	shm->a4[childno] = (unsigned long) page_rand;
@@ -268,13 +267,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 31: level = SOL_CAIF;
-#ifdef USE_CAIF
-		shm->a2[childno] = level;
-
-		val = rand() % NR_SOL_CAIF_OPTS;
-		shm->a3[childno] = caif_opts[val];
-#endif
+	case 31:
+		caif_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 32: level = SOL_ALG;
