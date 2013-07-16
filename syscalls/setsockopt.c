@@ -109,9 +109,11 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 11: level = SOL_ATALK;
-		shm->a2[childno] = level;
-		/* sock_no_setsockopt */
+	case 11: atalk_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 12: level = SOL_NETROM;

@@ -138,5 +138,6 @@ void udplite_setsockopt(struct sockopt *so);
 void raw_setsockopt(struct sockopt *so);
 void ipx_setsockopt(struct sockopt *so);
 void ax25_setsockopt(struct sockopt *so);
+void atalk_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
