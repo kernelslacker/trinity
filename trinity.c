@@ -36,6 +36,7 @@
 char *progname = NULL;
 
 unsigned int page_size;
+unsigned int num_online_cpus;
 
 struct shm_s *shm;
 
@@ -159,6 +160,7 @@ int main(int argc, char* argv[])
 	progname = argv[0];
 
 	page_size = getpagesize();
+	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
 	select_syscall_tables();
 
