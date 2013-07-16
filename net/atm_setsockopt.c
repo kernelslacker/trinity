@@ -7,7 +7,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_ATM_OPTS ARRAY_SIZE(atm_opts)
-static int atm_opts[] = {
+static const int atm_opts[] = {
 	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT };
 
 void atm_setsockopt(struct sockopt *so)
