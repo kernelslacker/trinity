@@ -140,10 +140,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 15: level = SOL_X25;
-		shm->a2[childno] = level;
-		page_rand[0] = rand() % 2;	/* Just a bool */
-		shm->a4[childno] = sizeof(int);
+	case 15:
+		x25_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 16: level = SOL_PACKET;
