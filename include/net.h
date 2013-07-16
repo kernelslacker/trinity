@@ -141,5 +141,6 @@ void ax25_setsockopt(struct sockopt *so);
 void atalk_setsockopt(struct sockopt *so);
 void netrom_setsockopt(struct sockopt *so);
 void rose_setsockopt(struct sockopt *so);
+void decnet_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
