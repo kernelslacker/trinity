@@ -148,5 +148,6 @@ void atm_setsockopt(struct sockopt *so);
 void aal_setsockopt(struct sockopt *so);
 void irda_setsockopt(struct sockopt *so);
 void netbeui_setsockopt(struct sockopt *so);
+void llc_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */

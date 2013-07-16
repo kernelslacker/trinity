@@ -18,7 +18,6 @@
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
 #include <linux/if.h>
-#include <linux/llc.h>
 #include <linux/dccp.h>
 #include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
@@ -35,7 +34,6 @@
 #include <linux/rds.h>
 #endif
 
-#define SOL_LLC         268
 #define SOL_DCCP        269
 #define SOL_NETLINK     270
 #define SOL_RXRPC       272
@@ -47,16 +45,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#ifndef USE_LLC_OPT_PKTINFO
-#define LLC_OPT_PKTINFO LLC_OPT_UNKNOWN
-#endif
-
-#define NR_SOL_LLC_OPTS ARRAY_SIZE(llc_opts)
-static int llc_opts[] = {
-	LLC_OPT_RETRY, LLC_OPT_SIZE, LLC_OPT_ACK_TMR_EXP, LLC_OPT_P_TMR_EXP,
-	LLC_OPT_REJ_TMR_EXP, LLC_OPT_BUSY_TMR_EXP, LLC_OPT_TX_WIN, LLC_OPT_RX_WIN,
-	LLC_OPT_PKTINFO };
 
 #define NR_SOL_DCCP_OPTS ARRAY_SIZE(dccp_opts)
 static int dccp_opts[] = {
