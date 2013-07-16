@@ -233,9 +233,12 @@ static void handle_child(pid_t childpid, int childstatus)
 
 			slot = find_pid_slot(childpid);
 			if (slot == PIDSLOT_NOT_FOUND) {
-				printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
-				shm->exit_reason = EXIT_LOST_PID_SLOT;
-				dump_pid_slots();
+				/* If we reaped it, it wouldn't show up, so check that. */
+				if (shm->last_reaped != childpid) {
+					printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
+					shm->exit_reason = EXIT_LOST_PID_SLOT;
+					dump_pid_slots();
+				}
 			} else {
 				debugf("[%d] Child %d exited after %ld syscalls.\n", getpid(), childpid, shm->child_syscall_count[slot]);
 				reap_child(childpid);
