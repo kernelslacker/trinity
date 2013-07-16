@@ -18,10 +18,6 @@
 #include "config.h"
 #include "params.h"
 
-#ifdef USE_CAIF
-#include <linux/caif/caif_socket.h>
-#endif
-
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void sanitise_socket(int childno)
 {
@@ -52,14 +48,9 @@ void sanitise_socket(int childno)
 
 #ifdef USE_CAIF
 	case AF_CAIF:
-		protocol = rand() % _CAIFPROTO_MAX;
-		switch (rand_bool()) {
-		case 0:	type = SOCK_SEQPACKET;
-			break;
-		case 1:	type = SOCK_STREAM;
-			break;
-		default:break;
-		}
+		caif_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 #endif
 
