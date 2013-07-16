@@ -95,9 +95,11 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 9:	level = SOL_IPX;
-		shm->a2[childno] = level;
-		shm->a3[childno] = IPX_TYPE;
+	case 9:	ipx_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 10: level = SOL_AX25;
