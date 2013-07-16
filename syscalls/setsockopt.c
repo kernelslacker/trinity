@@ -180,9 +180,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 20: level = SOL_NETBEUI;
-		shm->a2[childno] = level;
-		/* no setsockopt */
+	case 20:
+		netbeui_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 21: level = SOL_LLC;
