@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "config.h"
 #include "net.h"
+#include "random.h"
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
@@ -31,6 +32,15 @@ void gen_caif(unsigned long *addr, unsigned long *addrlen)
 	caif->u.dbg.service = rand();
 	*addr = (unsigned long) caif;
 	*addrlen = sizeof(struct sockaddr_caif);
+}
+
+void caif_rand_socket(struct proto_type *pt)
+{
+	pt->protocol = rand() % _CAIFPROTO_MAX;
+	if (rand_bool())
+		pt->type = SOCK_SEQPACKET;
+	else
+		pt->type = SOCK_STREAM;
 }
 
 #endif

@@ -46,6 +46,7 @@ void gen_seccomp_bpf(unsigned long *addr, unsigned long *addrlen);
 
 /* caif */
 void gen_caif(unsigned long *addr, unsigned long *addrlen);
+void caif_rand_socket(struct proto_type *pt);
 
 /* alg */
 void gen_alg(unsigned long *addr, unsigned long *addrlen);
