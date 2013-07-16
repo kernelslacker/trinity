@@ -143,5 +143,7 @@ void netrom_setsockopt(struct sockopt *so);
 void rose_setsockopt(struct sockopt *so);
 void decnet_setsockopt(struct sockopt *so);
 void x25_setsockopt(struct sockopt *so);
+void packet_setsockopt(struct sockopt *so);
+
 
 #endif	/* _NET_H */

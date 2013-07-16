@@ -148,28 +148,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 16: level = SOL_PACKET;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_PACKET_OPTS;
-		shm->a3[childno] = packet_opts[val];
-
-		/* Adjust length according to operation set. */
-		switch (shm->a3[childno]) {
-		case PACKET_VERSION:
-			page_rand[0] = rand() % 3; /* tpacket versions 1/2/3 */
-			break;
-		case PACKET_TX_RING:
-		case PACKET_RX_RING:
-#ifdef TPACKET3_HDRLEN
-			if (rand() % 3 == 0)
-				shm->a5[childno] = sizeof(struct tpacket_req3);
-			else
-#endif
-				shm->a5[childno] = sizeof(struct tpacket_req);
-			break;
-		default:
-			break;
-		}
+	case 16:
+		packet_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 17: level = SOL_ATM;
