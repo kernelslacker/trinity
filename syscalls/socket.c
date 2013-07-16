@@ -175,6 +175,10 @@ void sanitise_socket(int childno)
 		}
 		break;
 
+	//TODO;
+/*	case AF_IB:
+		break;
+*/
 	case AF_NETLINK:
 		switch (rand_bool()) {
 		case 0:	type = SOCK_RAW;

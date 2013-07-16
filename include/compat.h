@@ -93,6 +93,14 @@ enum {
 
 
 /* bits/socket.h */
+
+#ifndef AF_IB
+#define AF_IB		27
+#endif
+#ifndef PF_IB
+#define PF_IB          AF_IB
+#endif
+
 #ifndef PF_CAIF
 #define PF_CAIF		37
 #endif
