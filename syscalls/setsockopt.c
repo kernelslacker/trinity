@@ -260,11 +260,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 30: level = SOL_IUCV;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_IUCV_OPTS;
-		shm->a3[childno] = iucv_opts[val];
-		shm->a4[childno] = sizeof(int);
+	case 30:
+		iucv_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 31: level = SOL_CAIF;

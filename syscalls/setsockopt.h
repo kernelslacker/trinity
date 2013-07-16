@@ -26,14 +26,9 @@
 #include <linux/caif/caif_socket.h>
 #endif
 
-#define SOL_IUCV        277
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_IUCV_OPTS ARRAY_SIZE(iucv_opts)
-static int iucv_opts[] = {
-	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE };
 
 #ifdef USE_CAIF
 #define NR_SOL_CAIF_OPTS ARRAY_SIZE(caif_opts)

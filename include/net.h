@@ -157,5 +157,6 @@ void pppol2tp_setsockopt(struct sockopt *so);
 void bluetooth_setsockopt(struct sockopt *so);
 void pnpipe_setsockopt(struct sockopt *so);
 void rds_setsockopt(struct sockopt *so);
+void iucv_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
