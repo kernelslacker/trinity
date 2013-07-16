@@ -113,6 +113,9 @@ void gen_tipc(unsigned long *addr, unsigned long *addrlen);
 void gen_phonet(unsigned long *addr, unsigned long *addrlen);
 void phonet_rand_socket(struct proto_type *pt);
 
+/* rds */
+void rds_rand_socket(struct proto_type *pt);
+
 /* setsockopt routines */
 void ip_setsockopt(int childno);
 
