@@ -55,7 +55,9 @@ void sanitise_socket(int childno)
 #endif
 
 	case AF_CAN:
-		protocol = rand() % 7;	// CAN_NPROTO
+		can_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_DECnet:
