@@ -10,7 +10,6 @@ void reseed(void);
 unsigned int new_seed(void);
 
 unsigned int rand_bool(void);
-unsigned int rand_single_bit(unsigned char size);
 unsigned int rand32(void);
 u64 rand64(void);
 
