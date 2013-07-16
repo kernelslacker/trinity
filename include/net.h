@@ -34,6 +34,7 @@ void inet_rand_socket(struct proto_type *pt);
 
 /* ipv6 */
 void gen_ipv6(unsigned long *addr, unsigned long *addrlen);
+void inet6_rand_socket(struct proto_type *pt);
 
 /* pppox */
 void gen_pppox(unsigned long *addr, unsigned long *addrlen);

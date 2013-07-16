@@ -73,20 +73,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_INET6:
-		switch (rand() % 3) {
-		case 0:	type = SOCK_STREAM;	// TCP
-			protocol = 0;
-			break;
-		case 1:	type = SOCK_DGRAM;	// UDP
-			if (rand_bool())
-				protocol = 0;
-			else
-				protocol = IPPROTO_UDP;
-			break;
-		case 2:	type = SOCK_RAW;
-			break;
-		default:break;
-		}
+		inet6_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_IPX:
