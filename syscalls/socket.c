@@ -12,11 +12,40 @@
 #include "shm.h"
 #include "config.h"
 #include "params.h"
+#include "trinity.h"
+
+struct socket_ptr {
+	unsigned int family;
+	void (*func)(struct proto_type *pt);
+};
+static const struct socket_ptr socketptrs[] = {
+	{ .family = AF_APPLETALK, .func = &atalk_rand_socket },
+	{ .family = AF_AX25, .func = &ax25_rand_socket },
+#ifdef USE_CAIF
+	{ .family = AF_CAIF, .func = &caif_rand_socket },
+#endif
+	{ .family = AF_CAN, .func = &can_rand_socket },
+	{ .family = AF_DECnet, .func = &decnet_rand_socket },
+	{ .family = AF_INET, .func = &inet_rand_socket },
+	{ .family = AF_INET6, .func = &inet6_rand_socket },
+	{ .family = AF_IPX, .func = &ipx_rand_socket },
+	{ .family = AF_IRDA, .func = &irda_rand_socket },
+	{ .family = AF_LLC, .func = &llc_rand_socket },
+	{ .family = AF_NETLINK, .func = &netlink_rand_socket },
+	{ .family = AF_NFC, .func = &nfc_rand_socket },
+//TODO	{ .family = AF_IB, .func = &ib_rand_socket },
+	{ .family = AF_PACKET, .func = &packet_rand_socket },
+	{ .family = AF_PHONET, .func = &phonet_rand_socket },
+	{ .family = AF_RDS, .func = &rds_rand_socket },
+	{ .family = AF_TIPC, .func = &tipc_rand_socket },
+	{ .family = AF_UNIX, .func = &unix_rand_socket },
+	{ .family = AF_X25, .func = &x25_rand_socket },
+};
 
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void sanitise_socket(int childno)
 {
-	unsigned long family;
+	unsigned int family;
 	struct proto_type pt = { .protocol = 0, .type = 0 };
 
 	if (do_specific_proto == TRUE)
@@ -24,88 +53,14 @@ void sanitise_socket(int childno)
 	else
 		family = rand() % TRINITY_PF_MAX;
 
-	switch (family) {
+	if (rand() % 100 > 0) {
+		unsigned int i;
+		for (i = 0; i < ARRAY_SIZE(socketptrs); i++) {
+			if (socketptrs[i].family == family)
+				socketptrs[i].func(&pt);
+		}
 
-	case AF_APPLETALK:
-		atalk_rand_socket(&pt);
-		break;
-
-	case AF_AX25:
-		ax25_rand_socket(&pt);
-		break;
-
-#ifdef USE_CAIF
-	case AF_CAIF:
-		caif_rand_socket(&pt);
-		break;
-#endif
-
-	case AF_CAN:
-		can_rand_socket(&pt);
-		break;
-
-	case AF_DECnet:
-		decnet_rand_socket(&pt);
-		break;
-
-	case AF_INET:
-		inet_rand_socket(&pt);
-		break;
-
-	case AF_INET6:
-		inet6_rand_socket(&pt);
-		break;
-
-	case AF_IPX:
-		ipx_rand_socket(&pt);
-		break;
-
-	case AF_IRDA:
-		irda_rand_socket(&pt);
-		break;
-
-	case AF_LLC:
-		llc_rand_socket(&pt);
-		break;
-
-	//TODO;
-/*	case AF_IB:
-		break;
-*/
-	case AF_NETLINK:
-		netlink_rand_socket(&pt);
-		break;
-
-	case AF_NFC:
-		nfc_rand_socket(&pt);
-		break;
-
-	case AF_PACKET:
-		packet_rand_socket(&pt);
-		break;
-
-	case AF_PHONET:
-		phonet_rand_socket(&pt);
-		break;
-
-	case AF_RDS:
-		rds_rand_socket(&pt);
-		break;
-
-	case AF_TIPC:
-		tipc_rand_socket(&pt);
-		break;
-
-	case AF_UNIX:
-		unix_rand_socket(&pt);
-		break;
-
-	case AF_X25:
-		x25_rand_socket(&pt);
-		break;
-
-
-	default:
+	} else {
 		pt.protocol = rand() % PROTO_MAX;
 
 		switch (rand() % 6) {
@@ -117,8 +72,6 @@ void sanitise_socket(int childno)
 		case 5:	pt.type = SOCK_PACKET;	break;
 		default: break;
 		}
-
-		break;
 	}
 
 	if ((rand() % 100) < 25)
