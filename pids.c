@@ -129,7 +129,7 @@ retry:		i = rand() % shm->max_children;
 	case 1:	pid = 0;
 		break;
 
-	case 2:	if (dangerous == TRUE)	// We don't want root trying to kill init.
+	case 2:	if (dangerous == FALSE)	// We don't want root trying to kill init.
 			pid = 1;
 		break;
 
