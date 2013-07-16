@@ -130,5 +130,6 @@ void rds_rand_socket(struct proto_type *pt);
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
 void tcp_setsockopt(struct sockopt *so);
+void udp_setsockopt(struct sockopt *so);
 
 #endif	/* _NET_H */
