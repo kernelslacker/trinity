@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 
-void gen_ipx(unsigned long *addr, unsigned long *addrlen)
+void ipx_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_ipx *ipx;
 	unsigned int i;

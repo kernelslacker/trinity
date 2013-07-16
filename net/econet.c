@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 
-void gen_econet(unsigned long *addr, unsigned long *addrlen)
+void econet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_ec *ec;
 

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 
-void gen_atmpvc(unsigned long *addr, unsigned long *addrlen)
+void atmpvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_atmpvc *atmpvc;
 
@@ -22,7 +22,7 @@ void gen_atmpvc(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_atmpvc);
 }
 
-void gen_atmsvc(unsigned long *addr, unsigned long *addrlen)
+void atmsvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_atmsvc *atmsvc;
 	unsigned int i;

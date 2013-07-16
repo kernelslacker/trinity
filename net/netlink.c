@@ -7,7 +7,7 @@
 #include "net.h"
 #include "random.h"
 
-void gen_netlink(unsigned long *addr, unsigned long *addrlen)
+void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_nl *nl;
 

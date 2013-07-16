@@ -9,7 +9,7 @@
 #include "net.h"
 #include "random.h"
 
-void gen_ipv6(unsigned long *addr, unsigned long *addrlen)
+void ipv6_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_in6 *ipv6;
 

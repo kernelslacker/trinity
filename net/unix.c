@@ -7,7 +7,7 @@
 #include "maps.h"
 #include "net.h"
 
-void gen_unixsock(unsigned long *addr, unsigned long *addrlen)
+void unix_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_un *unixsock;
 	unsigned int len;

@@ -8,7 +8,7 @@
 #include "net.h"
 #include "random.h"
 
-void gen_packet(unsigned long *addr, unsigned long *addrlen)
+void packet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_pkt *pkt;
 	unsigned int i;

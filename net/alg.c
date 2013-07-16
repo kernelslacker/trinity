@@ -9,7 +9,7 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 
-void gen_alg(unsigned long *addr, unsigned long *addrlen)
+void alg_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_alg *alg;
 	unsigned int i;

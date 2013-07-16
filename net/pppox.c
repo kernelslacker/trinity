@@ -12,7 +12,7 @@
 
 //TODO: Split out each case into separate function.
 
-void gen_pppox(unsigned long *addr, unsigned long *addrlen)
+void pppox_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_pppox *pppox;
 	struct sockaddr_pppol2tp *pppol2tp;

@@ -28,23 +28,23 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 
 	case PF_UNIX:
-		gen_unixsock(addr, addrlen);
+		unix_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_INET:
-		gen_ipv4(addr, addrlen);
+		ipv4_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_AX25:
-		gen_ax25(addr, addrlen);
+		ax25_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_IPX:
-		gen_ipx(addr, addrlen);
+		ipx_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_APPLETALK:
-		gen_appletalk(addr, addrlen);
+		atalk_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_NETROM:
@@ -56,27 +56,27 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 
 	case PF_ATMPVC:
-		gen_atmpvc(addr, addrlen);
+		atmpvc_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_X25:
-		gen_x25(addr, addrlen);
+		x25_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_INET6:
-		gen_ipv6(addr, addrlen);
+		ipv6_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_ROSE:
-		gen_rose(addr, addrlen);
+		rose_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_DECnet:
-		gen_decnet(addr, addrlen);
+		decnet_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_NETBEUI:
-		gen_llc(addr, addrlen);
+		llc_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_SECURITY:
@@ -87,11 +87,11 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 
 	case PF_NETLINK:
-		gen_netlink(addr, addrlen);
+		netlink_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_PACKET:
-		gen_packet(addr, addrlen);
+		packet_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_ASH:
@@ -99,11 +99,11 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 
 	case PF_ECONET:
-		gen_econet(addr, addrlen);
+		econet_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_ATMSVC:
-		gen_atmsvc(addr, addrlen);
+		atmsvc_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_RDS:
@@ -115,11 +115,11 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 
 	case PF_IRDA:
-		gen_irda(addr, addrlen);
+		irda_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_PPPOX:
-		gen_pppox(addr, addrlen);
+		pppox_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_WANPIPE:
@@ -127,15 +127,15 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 
 	case PF_LLC:
-		gen_llc(addr, addrlen);
+		llc_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_CAN:
-		gen_can(addr, addrlen);
+		can_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_TIPC:
-		gen_tipc(addr, addrlen);
+		tipc_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_BLUETOOTH:
@@ -155,7 +155,7 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 		break;
 
 	case PF_PHONET:
-		gen_phonet(addr, addrlen);
+		phonet_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_IEEE802154:
@@ -164,18 +164,18 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf)
 
 #ifdef USE_CAIF
 	case PF_CAIF:
-		gen_caif(addr, addrlen);
+		caif_gen_sockaddr(addr, addrlen);
 		break;
 #endif
 
 #ifdef USE_IF_ALG
 	case PF_ALG:
-		gen_alg(addr, addrlen);
+		alg_gen_sockaddr(addr, addrlen);
 		break;
 #endif
 
 	case PF_NFC:
-		gen_nfc(addr, addrlen);
+		nfc_gen_sockaddr(addr, addrlen);
 		break;
 
 	case PF_VSOCK:

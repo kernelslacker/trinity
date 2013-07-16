@@ -9,7 +9,7 @@
 #include "net.h"
 #include "random.h"
 
-void gen_llc(unsigned long *addr, unsigned long *addrlen)
+void llc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_llc *llc;
 	unsigned int i;

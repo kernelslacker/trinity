@@ -59,7 +59,7 @@ in_addr_t random_ipv4_address(void)
 	return htonl(addr);
 }
 
-void gen_ipv4(unsigned long *addr, unsigned long *addrlen)
+void ipv4_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_in *ipv4;
 
