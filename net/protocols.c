@@ -9,7 +9,7 @@
 
 struct protocol {
 	const char *name;
-	unsigned int proto;
+	const unsigned int proto;
 };
 
 static const struct protocol protocols[] = {
