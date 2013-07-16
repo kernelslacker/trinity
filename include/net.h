@@ -27,10 +27,18 @@ struct proto_type {
 	unsigned int type;
 };
 
+struct sockopt {
+	unsigned int level;
+	unsigned long optname;
+	unsigned long optval;
+	unsigned long optlen;
+};
+
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
 void gen_ipv4(unsigned long *addr, unsigned long *addrlen);
 void inet_rand_socket(struct proto_type *pt);
+void ip_setsockopt(struct sockopt *so);
 
 /* ipv6 */
 void gen_ipv6(unsigned long *addr, unsigned long *addrlen);
@@ -118,8 +126,5 @@ void phonet_rand_socket(struct proto_type *pt);
 
 /* rds */
 void rds_rand_socket(struct proto_type *pt);
-
-/* setsockopt routines */
-void ip_setsockopt(int childno);
 
 #endif	/* _NET_H */
