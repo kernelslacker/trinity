@@ -13,7 +13,6 @@
 #include "net.h"
 #include "config.h"
 #include "random.h"
-#include "syscalls/setsockopt.h"
 
 static void sanitise_setsockopt(int childno)
 {
@@ -283,8 +282,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 33: level = SOL_NFC;
-		//TODO.
+	case 33:
+		nfc_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	default:
