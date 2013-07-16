@@ -266,6 +266,10 @@ enum kcmp_type {
 #define SO_SELECT_ERR_QUEUE	45
 #endif
 
+#ifndef SO_BUSY_POLL
+#define SO_BUSY_POLL		46
+#endif
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15
