@@ -13,11 +13,52 @@
 #include "net.h"
 #include "config.h"
 #include "random.h"
+#include "trinity.h"
+
+struct sso_funcptr {
+	void (*func)(struct sockopt *so);
+};
+
+static const struct sso_funcptr ssoptrs[] = {
+	{ .func = &ip_setsockopt },
+	{ .func = &socket_setsockopt },
+	{ .func = &tcp_setsockopt },
+	{ .func = &udp_setsockopt },
+	{ .func = &inet6_setsockopt },
+	{ .func = &icmpv6_setsockopt },
+	{ .func = &sctp_setsockopt },
+	{ .func = &udplite_setsockopt },
+	{ .func = &raw_setsockopt },
+	{ .func = &ipx_setsockopt },
+	{ .func = &ax25_setsockopt },
+	{ .func = &atalk_setsockopt },
+	{ .func = &netrom_setsockopt },
+	{ .func = &rose_setsockopt },
+	{ .func = &decnet_setsockopt },
+	{ .func = &x25_setsockopt },
+	{ .func = &packet_setsockopt },
+	{ .func = &atm_setsockopt },
+	{ .func = &aal_setsockopt },
+	{ .func = &irda_setsockopt },
+	{ .func = &netbeui_setsockopt },
+	{ .func = &llc_setsockopt },
+	{ .func = &dccp_setsockopt },
+	{ .func = &netlink_setsockopt },
+	{ .func = &tipc_setsockopt },
+	{ .func = &rxrpc_setsockopt },
+	{ .func = &pppol2tp_setsockopt },
+	{ .func = &bluetooth_setsockopt },
+	{ .func = &pnpipe_setsockopt },
+	{ .func = &rds_setsockopt },
+	{ .func = &iucv_setsockopt },
+	{ .func = &caif_setsockopt },
+	{ .func = &alg_setsockopt },
+	{ .func = &nfc_setsockopt },
+};
 
 static void sanitise_setsockopt(int childno)
 {
-	int level;
-	struct sockopt so;
+	struct sockopt so = { 0,0,0,0 };
 
 	so.optval = (unsigned long) page_rand;
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
@@ -26,141 +67,12 @@ static void sanitise_setsockopt(int childno)
 	else
 		so.optlen = rand() % 256;
 
-	/* First we pick a level  */
-
-	switch (rand() % 35) {
-
-	case 0:	ip_setsockopt(&so);
-		break;
-
-	case 1:	socket_setsockopt(&so);
-		break;
-
-	case 2:	tcp_setsockopt(&so);
-		break;
-
-	case 3:	udp_setsockopt(&so);
-		break;
-
-	case 4:	inet6_setsockopt(&so);
-		break;
-
-	case 5:	icmpv6_setsockopt(&so);
-		break;
-
-	case 6:	sctp_setsockopt(&so);
-		break;
-
-	case 7:	udplite_setsockopt(&so);
-		break;
-
-	case 8:	raw_setsockopt(&so);
-		break;
-
-	case 9:	ipx_setsockopt(&so);
-		break;
-
-	case 10: ax25_setsockopt(&so);
-		break;
-
-	case 11: atalk_setsockopt(&so);
-		break;
-
-	case 12:
-		netrom_setsockopt(&so);
-		break;
-
-	case 13:
-		rose_setsockopt(&so);
-		break;
-
-	case 14:
-		decnet_setsockopt(&so);
-		break;
-
-	case 15:
-		x25_setsockopt(&so);
-		break;
-
-	case 16:
-		packet_setsockopt(&so);
-		break;
-
-	case 17:
-		atm_setsockopt(&so);
-		break;
-
-	case 18:
-		aal_setsockopt(&so);
-		break;
-
-	case 19:
-		irda_setsockopt(&so);
-		break;
-
-	case 20:
-		netbeui_setsockopt(&so);
-		break;
-
-	case 21:
-		llc_setsockopt(&so);
-		break;
-
-	case 22:
-		dccp_setsockopt(&so);
-		break;
-
-	case 23:
-		netlink_setsockopt(&so);
-		break;
-
-	case 24:
-		tipc_setsockopt(&so);
-		break;
-
-	case 25:
-		rxrpc_setsockopt(&so);
-		break;
-
-	case 26:
-		pppol2tp_setsockopt(&so);
-		break;
-
-	case 27:
-		bluetooth_setsockopt(&so);
-		break;
-
-	case 28:
-		pnpipe_setsockopt(&so);
-		break;
-
-	case 29:
-		rds_setsockopt(&so);
-		break;
-
-	case 30:
-		iucv_setsockopt(&so);
-		break;
-
-	case 31:
-		caif_setsockopt(&so);
-		break;
-
-	case 32:
-		alg_setsockopt(&so);
-		break;
-
-	case 33:
-		nfc_setsockopt(&so);
-		break;
-
-	default:
-		level = rand();
-		so.level = level;
+	if (rand() % 100 > 0) {
+		ssoptrs[rand() % ARRAY_SIZE(ssoptrs)].func(&so);
+	} else {
+		so.level = rand();
 		so.optname = (rand() % 0x100);	/* random operation. */
-		break;
 	}
-
 
 	/*
 	 * 10% of the time, mangle the options.
