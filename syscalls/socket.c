@@ -130,16 +130,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_TIPC:
-		protocol = 0;
-		switch (rand() % 3) {
-		case 0:	type = SOCK_STREAM;
-			break;
-		case 1:	type = SOCK_SEQPACKET;
-			break;
-		case 2:	type = SOCK_DGRAM;
-			break;
-		default: break;
-		}
+		tipc_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_UNIX:
