@@ -63,7 +63,7 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	case 5: addr = page_allocs;
 		break;
-	case 6:	addr = (void *) rand64();
+	case 6:	addr = (void *)(unsigned long)rand64();
 		break;
 	case 7: addr = get_map();
 		break;
