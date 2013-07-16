@@ -142,9 +142,11 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_X25:
-		type = SOCK_SEQPACKET;
-		protocol = 0;
+		x25_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
+
 
 	default:
 		switch (rand() % 6) {
