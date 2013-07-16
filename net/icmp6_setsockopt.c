@@ -12,7 +12,7 @@ void icmpv6_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_IPV6;
+	so->level = SOL_ICMPV6;
 
 	val = rand() % NR_SOL_ICMPV6_OPTS;
 	so->optname = icmpv6_opts[val];
