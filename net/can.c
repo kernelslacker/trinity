@@ -5,6 +5,7 @@
 #include <linux/can.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 void gen_can(unsigned long *addr, unsigned long *addrlen)
 {
@@ -19,4 +20,10 @@ void gen_can(unsigned long *addr, unsigned long *addrlen)
 	can->can_addr.tp.tx_id = rand();
 	*addr = (unsigned long) can;
 	*addrlen = sizeof(struct sockaddr_can);
+}
+
+void can_rand_socket(struct proto_type *pt)
+{
+	pt->protocol = rand() % 7;  // CAN_NPROTO
+	pt->type = rand() % TYPE_MAX;
 }

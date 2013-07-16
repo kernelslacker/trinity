@@ -95,6 +95,7 @@ void gen_irda(unsigned long *addr, unsigned long *addrlen);
 
 /* can */
 void gen_can(unsigned long *addr, unsigned long *addrlen);
+void can_rand_socket(struct proto_type *pt);
 
 /* tipc */
 void gen_tipc(unsigned long *addr, unsigned long *addrlen);
