@@ -88,9 +88,11 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 8:	level = SOL_RAW;
-		shm->a2[childno] = level;
-		shm->a3[childno] = ICMP_FILTER;	// that's all (for now?)
+	case 8:	raw_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 9:	level = SOL_IPX;
