@@ -129,9 +129,9 @@ static unsigned int reap_dead_kids(void)
 static unsigned int check_if_fd(unsigned int callno, unsigned int child)
 {
 	/* shortcut, if it's out of range, it's not going to be valid. */
-	if ((unsigned long) shm->a1 > 1024)
+	if ((unsigned long) shm->a1[child] > 1024)
 		return FALSE;
-	if ((unsigned long) shm->a1 < highest_logfile())
+	if ((unsigned long) shm->a1[child] < highest_logfile())
 		return FALSE;
 
 	if (biarch == FALSE) {
