@@ -156,10 +156,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 17: level = SOL_ATM;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_ATM_OPTS;
-		shm->a3[childno] = atm_opts[val];
+	case 17:
+		atm_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 18: level = SOL_AAL;

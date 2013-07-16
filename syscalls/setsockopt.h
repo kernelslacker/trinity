@@ -17,8 +17,6 @@
 #include <linux/icmpv6.h>
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
-#include <linux/atmdev.h>
-#include <linux/atm.h>
 #include <linux/irda.h>
 #include <linux/if.h>
 #include <linux/llc.h>
@@ -51,10 +49,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_ATM_OPTS ARRAY_SIZE(atm_opts)
-static int atm_opts[] = {
-	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT };
 
 #define NR_SOL_IRDA_OPTS ARRAY_SIZE(irda_opts)
 static int irda_opts[] = {
