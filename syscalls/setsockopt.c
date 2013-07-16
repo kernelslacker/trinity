@@ -236,46 +236,14 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 27: level = SOL_BLUETOOTH;
-		switch(rand() % 5) {
-		case 0: level = SOL_HCI; break;
-		case 1: level = SOL_L2CAP; break;
-		case 2: level = SOL_SCO; break;
-		case 3: level = SOL_RFCOMM; break;
-		case 4:	/* leave level unchanged */
-			;;
-		default:
-			break;
-		}
-		shm->a2[childno] = level;
-
-		switch (level) {
-		case SOL_HCI:
-			val = rand() % NR_SOL_BLUETOOTH_HCI_OPTS;
-			shm->a3[childno] = bluetooth_hci_opts[val];
-			break;
-
-		case SOL_L2CAP:
-			val = rand() % NR_SOL_BLUETOOTH_L2CAP_OPTS;
-			shm->a3[childno] = bluetooth_l2cap_opts[val];
-			break;
-
-		case SOL_SCO:	/* no options currently */
-			break;
-
-		case SOL_RFCOMM:
-			val = rand() % NR_SOL_BLUETOOTH_RFCOMM_OPTS;
-			shm->a3[childno] = bluetooth_rfcomm_opts[val];
-			break;
-
-		case SOL_BLUETOOTH:
-			val = rand() % NR_SOL_BLUETOOTH_OPTS;
-			shm->a3[childno] = bluetooth_opts[val];
-			break;
-
-		default: break;
-		}
+	case 27:
+		bluetooth_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
+
 
 	case 28: level = SOL_PNPIPE;
 		shm->a2[childno] = level;
