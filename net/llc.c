@@ -7,6 +7,7 @@
 #include <linux/llc.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 void gen_llc(unsigned long *addr, unsigned long *addrlen)
 {
@@ -26,4 +27,13 @@ void gen_llc(unsigned long *addr, unsigned long *addrlen)
 		llc->sllc_mac[i] = rand();
 	*addr = (unsigned long) llc;
 	*addrlen = sizeof(struct sockaddr_llc);
+}
+
+void llc_rand_socket(struct proto_type *pt)
+{
+	pt->protocol = rand() % PROTO_MAX;
+	if (rand_bool())
+		pt->type = SOCK_STREAM;
+	else
+		pt->type = SOCK_DGRAM;
 }

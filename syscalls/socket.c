@@ -91,12 +91,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_LLC:
-		switch (rand_bool()) {
-		case 0:	type = SOCK_STREAM;
-			break;
-		case 1:	type = SOCK_DGRAM;
-		default:break;
-		}
+		llc_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	//TODO;

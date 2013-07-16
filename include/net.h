@@ -84,6 +84,7 @@ void decnet_rand_socket(struct proto_type *pt);
 
 /* llc */
 void gen_llc(unsigned long *addr, unsigned long *addrlen);
+void llc_rand_socket(struct proto_type *pt);
 
 /* netlink */
 void gen_netlink(unsigned long *addr, unsigned long *addrlen);
