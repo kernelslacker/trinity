@@ -164,9 +164,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 18: level = SOL_AAL;
-		shm->a2[childno] = level;
-		/* no setsockopt */
+	case 18:
+		aal_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 19: level = SOL_IRDA;
