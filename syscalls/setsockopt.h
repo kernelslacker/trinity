@@ -30,30 +30,12 @@
 #include <linux/rds.h>
 #endif
 
-#define SOL_PPPOL2TP    273
-#define SOL_BLUETOOTH   274
 #define SOL_PNPIPE      275
 #define SOL_RDS         276
 #define SOL_IUCV        277
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_BLUETOOTH_OPTS ARRAY_SIZE(bluetooth_opts)
-static int bluetooth_opts[] = {
-	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
-	BT_CHANNEL_POLICY };
-
-#define NR_SOL_BLUETOOTH_HCI_OPTS ARRAY_SIZE(bluetooth_hci_opts)
-static int bluetooth_hci_opts[] = {
-	HCI_DATA_DIR, HCI_FILTER, HCI_TIME_STAMP };
-
-#define NR_SOL_BLUETOOTH_L2CAP_OPTS ARRAY_SIZE(bluetooth_l2cap_opts)
-static int bluetooth_l2cap_opts[] = {
-	L2CAP_OPTIONS, L2CAP_LM };
-
-#define NR_SOL_BLUETOOTH_RFCOMM_OPTS ARRAY_SIZE(bluetooth_rfcomm_opts)
-static int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
 #ifdef USE_RDS
 #define NR_SOL_RDS_OPTS ARRAY_SIZE(rds_opts)
