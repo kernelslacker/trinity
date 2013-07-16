@@ -81,24 +81,11 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 7:	level = SOL_UDPLITE;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_UDPLITE_OPTS;
-		shm->a3[childno] = udplite_opts[val];
-
-		switch (shm->a3[childno]) {
-		case UDP_CORK:
-			break;
-		case UDP_ENCAP:
-			page_rand[0] = (rand() % 3) + 1;	// Encapsulation types.
-			break;
-		case UDPLITE_SEND_CSCOV:
-			break;
-		case UDPLITE_RECV_CSCOV:
-			break;
-		default:
-			break;
-		}
+	case 7:	udplite_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 8:	level = SOL_RAW;

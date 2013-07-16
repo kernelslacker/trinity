@@ -41,7 +41,6 @@
 #include <linux/rds.h>
 #endif
 
-#define SOL_UDPLITE     136
 #define SOL_NETBEUI     267
 #define SOL_LLC         268
 #define SOL_DCCP        269
@@ -55,9 +54,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_UDPLITE_OPTS ARRAY_SIZE(udplite_opts)
-static int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
 
 #define NR_SOL_AX25_OPTS ARRAY_SIZE(ax25_opts)
 static int ax25_opts[] = {
