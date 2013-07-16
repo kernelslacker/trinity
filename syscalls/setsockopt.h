@@ -18,7 +18,6 @@
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
 #include <linux/if.h>
-#include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
 
 #include "compat.h"
@@ -33,7 +32,6 @@
 #include <linux/rds.h>
 #endif
 
-#define SOL_NETLINK     270
 #define SOL_RXRPC       272
 #define SOL_PPPOL2TP    273
 #define SOL_BLUETOOTH   274
@@ -43,11 +41,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_NETLINK_OPTS ARRAY_SIZE(netlink_opts)
-static int netlink_opts[] = {
-	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
-	NETLINK_NO_ENOBUFS };
 
 #define NR_SOL_TIPC_OPTS ARRAY_SIZE(tipc_opts)
 static int tipc_opts[] = {
