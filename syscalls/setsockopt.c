@@ -116,17 +116,20 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 12: netrom_setsockopt(&so);
+	case 12:
+		netrom_setsockopt(&so);
 		shm->a2[childno] = so.level;
 		shm->a3[childno] = so.optname;
 		shm->a4[childno] = so.optval;
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 13: level = SOL_ROSE;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_ROSE_OPTS;
-		shm->a3[childno] = rose_opts[val];
+	case 13:
+		rose_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 14: level = SOL_DECNET;
