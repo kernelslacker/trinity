@@ -110,6 +110,8 @@ void sanitise_socket(int childno)
 
 
 	default:
+		pt.protocol = rand() % PROTO_MAX;
+
 		switch (rand() % 6) {
 		case 0:	pt.type = SOCK_DGRAM;	break;
 		case 1:	pt.type = SOCK_STREAM;	break;
