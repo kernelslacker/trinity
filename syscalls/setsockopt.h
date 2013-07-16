@@ -13,7 +13,6 @@
 #include <netipx/ipx.h>
 #include <netatalk/at.h>
 #include <netax25/ax25.h>
-#include <netrose/rose.h>
 #include <linux/dn.h>
 #include <linux/tipc.h>
 #include <linux/icmpv6.h>
@@ -53,11 +52,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_ROSE_OPTS ARRAY_SIZE(rose_opts)
-static int rose_opts[] = {
-	ROSE_DEFER, ROSE_T1, ROSE_T2, ROSE_T3,
-	ROSE_IDLE, ROSE_QBITINCL, ROSE_HOLDBACK };
 
 #define NR_SOL_DECNET_OPTS ARRAY_SIZE(decnet_opts)
 static int decnet_opts[] = {
