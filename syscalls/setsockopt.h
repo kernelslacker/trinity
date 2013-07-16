@@ -18,7 +18,6 @@
 #include <linux/icmp.h>
 #include <linux/if_packet.h>
 #include <linux/if.h>
-#include <linux/dccp.h>
 #include <linux/netlink.h>
 #include <linux/if_pppol2tp.h>
 
@@ -34,7 +33,6 @@
 #include <linux/rds.h>
 #endif
 
-#define SOL_DCCP        269
 #define SOL_NETLINK     270
 #define SOL_RXRPC       272
 #define SOL_PPPOL2TP    273
@@ -45,13 +43,6 @@
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#define NR_SOL_DCCP_OPTS ARRAY_SIZE(dccp_opts)
-static int dccp_opts[] = {
-	DCCP_SOCKOPT_PACKET_SIZE, DCCP_SOCKOPT_SERVICE, DCCP_SOCKOPT_CHANGE_L, DCCP_SOCKOPT_CHANGE_R,
-	DCCP_SOCKOPT_GET_CUR_MPS, DCCP_SOCKOPT_SERVER_TIMEWAIT, DCCP_SOCKOPT_SEND_CSCOV, DCCP_SOCKOPT_RECV_CSCOV,
-	DCCP_SOCKOPT_AVAILABLE_CCIDS, DCCP_SOCKOPT_CCID, DCCP_SOCKOPT_TX_CCID, DCCP_SOCKOPT_RX_CCID,
-	DCCP_SOCKOPT_QPOLICY_ID, DCCP_SOCKOPT_QPOLICY_TXQLEN, DCCP_SOCKOPT_CCID_RX_INFO, DCCP_SOCKOPT_CCID_TX_INFO };
 
 #define NR_SOL_NETLINK_OPTS ARRAY_SIZE(netlink_opts)
 static int netlink_opts[] = {
