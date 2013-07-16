@@ -17,7 +17,7 @@
 void sanitise_socket(int childno)
 {
 	unsigned long family;
-	struct proto_type pt;
+	struct proto_type pt = { .protocol = 0, .type = 0 };
 
 	if (do_specific_proto == TRUE)
 		family = specific_proto;
