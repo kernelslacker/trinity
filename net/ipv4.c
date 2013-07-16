@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 in_addr_t random_ipv4_address(void)
 {
@@ -71,4 +72,29 @@ void gen_ipv4(unsigned long *addr, unsigned long *addrlen)
 	ipv4->sin_port = rand() % 65535;
 	*addr = (unsigned long) ipv4;
 	*addrlen = sizeof(struct sockaddr_in);
+}
+
+void inet_rand_socket(struct proto_type *pt)
+{
+	switch (rand() % 3) {
+	case 0: pt->type = SOCK_STREAM;     // TCP
+		if (rand_bool())
+			pt->protocol = 0;
+		else
+			pt->protocol = IPPROTO_TCP;
+		break;
+
+	case 1: pt->type = SOCK_DGRAM;      // UDP
+		if (rand_bool())
+			pt->protocol = 0;
+		else
+			pt->protocol = IPPROTO_UDP;
+		break;
+
+	case 2: pt->type = SOCK_RAW;
+		pt->protocol = rand() % PROTO_MAX;
+		break;
+
+	default:break;
+	}
 }

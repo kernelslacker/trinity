@@ -30,6 +30,7 @@ struct proto_type {
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
 void gen_ipv4(unsigned long *addr, unsigned long *addrlen);
+void inet_rand_socket(struct proto_type *pt);
 
 /* ipv6 */
 void gen_ipv6(unsigned long *addr, unsigned long *addrlen);
