@@ -7,7 +7,6 @@
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"
-#include "shm.h"
 #include "net.h"
 #include "config.h"
 #include "random.h"
@@ -32,12 +31,14 @@ static int ip_opts[] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
 	MRT_PIM, MRT_TABLE, MRT_ADD_MFC_PROXY, MRT_DEL_MFC_PROXY,
 };
 
-void ip_setsockopt(int childno)
+void ip_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
+	so->level = SOL_IP;
+
 	val = rand() % NR_SOL_IP_OPTS;
-	shm->a3[childno] = ip_opts[val];
+	so->optname = ip_opts[val];
 
 	switch (ip_opts[val]) {
 	case IP_PKTINFO:
@@ -62,72 +63,72 @@ void ip_setsockopt(int childno)
 	case IP_MULTICAST_LOOP:
 	case IP_RECVORIGDSTADDR:
 		if (rand_bool())
-			shm->a5[childno] = sizeof(int);
+			so->optlen = sizeof(int);
 		else
-			shm->a5[childno] = sizeof(char);
+			so->optlen = sizeof(char);
 		break;
 
 	case IP_OPTIONS:
-		shm->a5[childno] = rand() % 40;
+		so->optlen = rand() % 40;
 		break;
 
 	case IP_MULTICAST_IF:
 	case IP_ADD_MEMBERSHIP:
 	case IP_DROP_MEMBERSHIP:
 		if (rand_bool())
-			shm->a4[childno] = (unsigned long) page_allocs;
+			so->optval = (unsigned long) page_allocs;
 
 		if (rand_bool())
-			shm->a5[childno] = sizeof(struct in_addr);
+			so->optlen = sizeof(struct in_addr);
 		else
-			shm->a5[childno] = sizeof(struct ip_mreqn);
+			so->optlen = sizeof(struct ip_mreqn);
 		break;
 
 	case MRT_ADD_VIF:
 	case MRT_DEL_VIF:
-		shm->a5[childno] = sizeof(struct vifctl);
+		so->optlen = sizeof(struct vifctl);
 		break;
 
 	case MRT_ADD_MFC:
 	case MRT_ADD_MFC_PROXY:
 	case MRT_DEL_MFC:
 	case MRT_DEL_MFC_PROXY:
-		shm->a5[childno] = sizeof(struct mfcctl);
+		so->optlen = sizeof(struct mfcctl);
 		break;
 
 	case MRT_TABLE:
-		shm->a5[childno] = sizeof(__u32);
+		so->optlen = sizeof(__u32);
 		break;
 
 	case IP_MSFILTER:
 		//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
-		shm->a5[childno] = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
-		shm->a5[childno] |= IP_MSFILTER_SIZE(0);
+		so->optlen = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+		so->optlen |= IP_MSFILTER_SIZE(0);
 		break;
 
 	case IP_BLOCK_SOURCE:
 	case IP_UNBLOCK_SOURCE:
 	case IP_ADD_SOURCE_MEMBERSHIP:
 	case IP_DROP_SOURCE_MEMBERSHIP:
-		shm->a5[childno] = sizeof(struct ip_mreq_source);
+		so->optlen = sizeof(struct ip_mreq_source);
 		break;
 
 	case MCAST_JOIN_GROUP:
 	case MCAST_LEAVE_GROUP:
-		shm->a5[childno] = sizeof(struct group_req);
+		so->optlen = sizeof(struct group_req);
 		break;
 
 	case MCAST_JOIN_SOURCE_GROUP:
 	case MCAST_LEAVE_SOURCE_GROUP:
 	case MCAST_BLOCK_SOURCE:
 	case MCAST_UNBLOCK_SOURCE:
-		shm->a5[childno] = sizeof(struct group_source_req);
+		so->optlen = sizeof(struct group_source_req);
 		break;
 
 	case MCAST_MSFILTER:
 		//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
-		shm->a5[childno] = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
-		shm->a5[childno] |= GROUP_FILTER_SIZE(0);
+		so->optlen = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+		so->optlen |= GROUP_FILTER_SIZE(0);
 		break;
 
 	default:

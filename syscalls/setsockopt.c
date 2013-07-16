@@ -19,6 +19,7 @@ static void sanitise_setsockopt(int childno)
 {
 	int level;
 	unsigned char val;
+	struct sockopt so;
 
 	shm->a4[childno] = (unsigned long) page_rand;
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
@@ -30,11 +31,16 @@ static void sanitise_setsockopt(int childno)
 	/* First we pick a level  */
 
 	switch (rand() % 35) {
-	case 0:	level = SOL_IP;
-		ip_setsockopt(childno);
+
+	case 0:	ip_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 1:	level = SOL_SOCKET;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_SOCKET_OPTS;
 		shm->a3[childno] = socket_opts[val];
 
@@ -56,11 +62,13 @@ static void sanitise_setsockopt(int childno)
 		break;
 
 	case 2:	level = SOL_TCP;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_TCP_OPTS;
 		shm->a3[childno] = tcp_opts[val];
 		break;
 
 	case 3:	level = SOL_UDP;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_UDP_OPTS;
 		shm->a3[childno] = udp_opts[val];
 
@@ -76,21 +84,25 @@ static void sanitise_setsockopt(int childno)
 		break;
 
 	case 4:	level = SOL_IPV6;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_IPV6_OPTS;
 		shm->a3[childno] = ipv6_opts[val];
 		break;
 
 	case 5:	level = SOL_ICMPV6;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_ICMPV6_OPTS;
 		shm->a3[childno] = icmpv6_opts[val];
 		break;
 
 	case 6:	level = SOL_SCTP;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_SCTP_OPTS;
 		shm->a3[childno] = sctp_opts[val];
 		break;
 
 	case 7:	level = SOL_UDPLITE;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_UDPLITE_OPTS;
 		shm->a3[childno] = udplite_opts[val];
 
@@ -110,44 +122,53 @@ static void sanitise_setsockopt(int childno)
 		break;
 
 	case 8:	level = SOL_RAW;
+		shm->a2[childno] = level;
 		shm->a3[childno] = ICMP_FILTER;	// that's all (for now?)
 		break;
 
 	case 9:	level = SOL_IPX;
+		shm->a2[childno] = level;
 		shm->a3[childno] = IPX_TYPE;
 		break;
 
 	case 10: level = SOL_AX25;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_AX25_OPTS;
 		shm->a3[childno] = ax25_opts[val];
 		break;
 
 	case 11: level = SOL_ATALK;
+		shm->a2[childno] = level;
 		/* sock_no_setsockopt */
 		break;
 
 	case 12: level = SOL_NETROM;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_NETROM_OPTS;
 		shm->a3[childno] = netrom_opts[val];
 		break;
 
 	case 13: level = SOL_ROSE;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_ROSE_OPTS;
 		shm->a3[childno] = rose_opts[val];
 		break;
 
 	case 14: level = SOL_DECNET;
+		shm->a2[childno] = level;
 		// TODO: set size correctly
 		val = rand() % NR_SOL_DECNET_OPTS;
 		shm->a3[childno] = decnet_opts[val];
 		break;
 
 	case 15: level = SOL_X25;
+		shm->a2[childno] = level;
 		page_rand[0] = rand() % 2;	/* Just a bool */
 		shm->a4[childno] = sizeof(int);
 		break;
 
 	case 16: level = SOL_PACKET;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_PACKET_OPTS;
 		shm->a3[childno] = packet_opts[val];
 
@@ -171,50 +192,60 @@ static void sanitise_setsockopt(int childno)
 		break;
 
 	case 17: level = SOL_ATM;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_ATM_OPTS;
 		shm->a3[childno] = atm_opts[val];
 		break;
 
 	case 18: level = SOL_AAL;
+		shm->a2[childno] = level;
 		/* no setsockopt */
 		break;
 
 	case 19: level = SOL_IRDA;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_IRDA_OPTS;
 		shm->a3[childno] = irda_opts[val];
 		break;
 
 	case 20: level = SOL_NETBEUI;
+		shm->a2[childno] = level;
 		/* no setsockopt */
 		break;
 
 	case 21: level = SOL_LLC;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_LLC_OPTS;
 		shm->a3[childno] = llc_opts[val];
 		break;
 
 	case 22: level = SOL_DCCP;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_DCCP_OPTS;
 		shm->a3[childno] = dccp_opts[val];
 		break;
 
 	case 23: level = SOL_NETLINK;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_NETLINK_OPTS;
 		shm->a3[childno] = netlink_opts[val];
 		break;
 
 	case 24: level = SOL_TIPC;
+		shm->a2[childno] = level;
 		shm->a4[childno] = sizeof(__u32);
 		val = rand() % NR_SOL_TIPC_OPTS;
 		shm->a3[childno] = tipc_opts[val];
 		break;
 
 	case 25: level = SOL_RXRPC;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_RXRPC_OPTS;
 		shm->a3[childno] = rxrpc_opts[val];
 		break;
 
 	case 26: level = SOL_PPPOL2TP;
+		shm->a2[childno] = level;
 		shm->a4[childno] = sizeof(int);
 		val = rand() % NR_SOL_PPPOL2TP_OPTS;
 		shm->a3[childno] = pppol2tp_opts[val];
@@ -231,6 +262,7 @@ static void sanitise_setsockopt(int childno)
 		default:
 			break;
 		}
+		shm->a2[childno] = level;
 
 		switch (level) {
 		case SOL_HCI:
@@ -261,10 +293,12 @@ static void sanitise_setsockopt(int childno)
 		break;
 
 	case 28: level = SOL_PNPIPE;
+		shm->a2[childno] = level;
 		/* no setsockopt */
 		break;
 
 	case 29: level = SOL_RDS;
+		shm->a2[childno] = level;
 #ifdef USE_RDS
 		val = rand() % NR_SOL_RDS_OPTS;
 		shm->a3[childno] = rds_opts[val];
@@ -273,6 +307,7 @@ static void sanitise_setsockopt(int childno)
 
 
 	case 30: level = SOL_IUCV;
+		shm->a2[childno] = level;
 		val = rand() % NR_SOL_IUCV_OPTS;
 		shm->a3[childno] = iucv_opts[val];
 		shm->a4[childno] = sizeof(int);
@@ -280,6 +315,8 @@ static void sanitise_setsockopt(int childno)
 
 	case 31: level = SOL_CAIF;
 #ifdef USE_CAIF
+		shm->a2[childno] = level;
+
 		val = rand() % NR_SOL_CAIF_OPTS;
 		shm->a3[childno] = caif_opts[val];
 #endif
@@ -295,13 +332,10 @@ static void sanitise_setsockopt(int childno)
 
 	default:
 		level = rand();
+		shm->a2[childno] = level;
 		shm->a3[childno] = (rand() % 0x100);	/* random operation. */
 		break;
 	}
-
-
-	shm->a2[childno] = level;
-
 
 	/*
 	 * 10% of the time, mangle the options.
