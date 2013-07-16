@@ -39,10 +39,13 @@ static int ax25_protocols[NR_AX25_PROTOS] = {
 	0xF0	/* No layer 3 protocol impl.  */
 };
 
+
+
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void sanitise_socket(int childno)
 {
 	unsigned long family, type, protocol;
+	struct proto_type pt;
 
 	if (do_specific_proto == TRUE)
 		family = specific_proto;
@@ -55,14 +58,9 @@ void sanitise_socket(int childno)
 	switch (family) {
 
 	case AF_APPLETALK:
-		switch (rand_bool()) {
-		case 0:	type = SOCK_DGRAM;
-			protocol = 0;
-			break;
-		case 1:	type = SOCK_RAW;
-			break;
-		default:break;
-		}
+		appletalk_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_AX25:

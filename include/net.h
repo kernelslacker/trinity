@@ -22,6 +22,11 @@ void find_specific_proto(const char *protoarg);
 
 #define PF_NOHINT (-1)
 
+struct proto_type {
+	unsigned int protocol;
+	unsigned int type;
+};
+
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
 void gen_ipv4(unsigned long *addr, unsigned long *addrlen);
@@ -56,6 +61,7 @@ void gen_ipx(unsigned long *addr, unsigned long *addrlen);
 
 /* appletalk */
 void gen_appletalk(unsigned long *addr, unsigned long *addrlen);
+void appletalk_rand_socket(struct proto_type *pt);
 
 /* atm */
 void gen_atmpvc(unsigned long *addr, unsigned long *addrlen);
