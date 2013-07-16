@@ -5,6 +5,7 @@
 #include <linux/dn.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 void gen_decnet(unsigned long *addr, unsigned long *addrlen)
 {
@@ -26,4 +27,15 @@ void gen_decnet(unsigned long *addr, unsigned long *addrlen)
 	dn->sdn_add.a_addr[1] = rand();
 	*addr = (unsigned long) dn;
 	*addrlen = sizeof(struct sockaddr_dn);
+}
+
+void decnet_rand_socket(struct proto_type *pt)
+{
+	if (rand_bool()) {
+		pt->type = SOCK_SEQPACKET;
+		pt->protocol = DNPROTO_NSP;
+	} else {
+		pt->type = SOCK_STREAM;
+		pt->protocol = rand() % PROTO_MAX;
+	}
 }

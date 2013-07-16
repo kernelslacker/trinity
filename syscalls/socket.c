@@ -61,12 +61,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_DECnet:
-		if (rand_bool()) {
-			type = SOCK_SEQPACKET;
-			protocol = DNPROTO_NSP;
-		} else {
-			type = SOCK_STREAM;
-		}
+		decnet_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_INET:
