@@ -252,14 +252,13 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 29: level = SOL_RDS;
-		shm->a2[childno] = level;
-#ifdef USE_RDS
-		val = rand() % NR_SOL_RDS_OPTS;
-		shm->a3[childno] = rds_opts[val];
-#endif
+	case 29:
+		rds_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
-
 
 	case 30: level = SOL_IUCV;
 		shm->a2[childno] = level;

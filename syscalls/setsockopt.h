@@ -26,23 +26,10 @@
 #include <linux/caif/caif_socket.h>
 #endif
 
-#ifdef USE_RDS
-#include <linux/rds.h>
-#endif
-
-#define SOL_RDS         276
 #define SOL_IUCV        277
 #define SOL_CAIF        278
 #define SOL_ALG         279
 #define SOL_NFC		280
-
-#ifdef USE_RDS
-#define NR_SOL_RDS_OPTS ARRAY_SIZE(rds_opts)
-static int rds_opts[] = {
-	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
-	4, /* deprecated RDS_BARRIER 4 */
-	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST };
-#endif
 
 #define NR_SOL_IUCV_OPTS ARRAY_SIZE(iucv_opts)
 static int iucv_opts[] = {
