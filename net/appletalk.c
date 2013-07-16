@@ -23,7 +23,7 @@ void atalk_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_at);
 }
 
-void appletalk_rand_socket(struct proto_type *pt)
+void atalk_rand_socket(struct proto_type *pt)
 {
 	if (rand_bool()) {
 		pt->type = SOCK_DGRAM;

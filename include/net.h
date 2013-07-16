@@ -83,7 +83,7 @@ void ipx_setsockopt(struct sockopt *so);
 
 /* appletalk */
 void atalk_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
-void appletalk_rand_socket(struct proto_type *pt);
+void atalk_rand_socket(struct proto_type *pt);
 void atalk_setsockopt(struct sockopt *so);
 
 /* atm */

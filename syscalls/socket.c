@@ -27,7 +27,7 @@ void sanitise_socket(int childno)
 	switch (family) {
 
 	case AF_APPLETALK:
-		appletalk_rand_socket(&pt);
+		atalk_rand_socket(&pt);
 		break;
 
 	case AF_AX25:
