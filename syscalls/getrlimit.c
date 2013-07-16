@@ -8,19 +8,9 @@
 #include "sanitise.h"
 #include "shm.h"
 
-static void sanitise_getrlimit(int childno)
-{
-	if (rand() % 2 == 0)
-		return;
-
-	/* set "resource" some random value half the time. */
-	shm->a1[childno] = get_interesting_32bit_value();
-}
-
 struct syscall syscall_getrlimit = {
 	.name = "getrlimit",
 	.num_args = 2,
-	.sanitise = sanitise_getrlimit,
 	.arg1name = "resource",
 	.arg1type = ARG_OP,
 	.arg1list = {
