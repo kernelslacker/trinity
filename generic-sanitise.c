@@ -17,12 +17,16 @@
 static unsigned int get_cpu(void)
 {
 	int i;
-	i = rand() % 3;
+	i = rand() % 100;
 
 	switch (i) {
 	case 0: return -1;
 	case 1: return rand() % 4095;
 	case 2: return rand() % 15;
+
+	case 3 ... 99:
+		return rand() % num_online_cpus;
+
 	default:
 		BUG("unreachable!\n");
 		break;
