@@ -39,26 +39,12 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 1:	level = SOL_SOCKET;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_SOCKET_OPTS;
-		shm->a3[childno] = socket_opts[val];
-
-		/* Adjust length according to operation set. */
-		switch (shm->a3[childno]) {
-		case SO_LINGER:	shm->a5[childno] = sizeof(struct linger);
-			break;
-		case SO_RCVTIMEO:
-		case SO_SNDTIMEO:
-			shm->a5[childno] = sizeof(struct timeval);
-			break;
-		case SO_ATTACH_FILTER:
-			gen_bpf((unsigned long *) page_rand, NULL);
-			shm->a5[childno] = sizeof(struct sock_fprog);
-			break;
-		default:
-			break;
-		}
+	case 1:
+		socket_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 2:	level = SOL_TCP;

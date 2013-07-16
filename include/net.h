@@ -127,4 +127,7 @@ void phonet_rand_socket(struct proto_type *pt);
 /* rds */
 void rds_rand_socket(struct proto_type *pt);
 
+/* setsockopt functions */
+void socket_setsockopt(struct sockopt *so);
+
 #endif	/* _NET_H */
