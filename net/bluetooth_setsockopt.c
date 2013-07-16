@@ -6,20 +6,20 @@
 #define SOL_BLUETOOTH 274
 
 #define NR_SOL_BLUETOOTH_OPTS ARRAY_SIZE(bluetooth_opts)
-static const int bluetooth_opts[] = {
+static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
 	BT_CHANNEL_POLICY };
 
 #define NR_SOL_BLUETOOTH_HCI_OPTS ARRAY_SIZE(bluetooth_hci_opts)
-static const int bluetooth_hci_opts[] = {
+static const unsigned int bluetooth_hci_opts[] = {
 	HCI_DATA_DIR, HCI_FILTER, HCI_TIME_STAMP };
 
 #define NR_SOL_BLUETOOTH_L2CAP_OPTS ARRAY_SIZE(bluetooth_l2cap_opts)
-static const int bluetooth_l2cap_opts[] = {
+static const unsigned int bluetooth_l2cap_opts[] = {
 	L2CAP_OPTIONS, L2CAP_LM };
 
 #define NR_SOL_BLUETOOTH_RFCOMM_OPTS ARRAY_SIZE(bluetooth_rfcomm_opts)
-static const int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
+static const unsigned int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
 
 void bluetooth_setsockopt(struct sockopt *so)

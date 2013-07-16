@@ -6,7 +6,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_PACKET_OPTS ARRAY_SIZE(packet_opts)
-static const int packet_opts[] = {
+static const unsigned int packet_opts[] = {
 	PACKET_ADD_MEMBERSHIP, PACKET_DROP_MEMBERSHIP, PACKET_RECV_OUTPUT, 4,   /* Value 4 is still used by obsolete turbo-packet. */
 	PACKET_RX_RING, PACKET_STATISTICS, PACKET_COPY_THRESH, PACKET_AUXDATA,
 	PACKET_ORIGDEV, PACKET_VERSION, PACKET_HDRLEN, PACKET_RESERVE,

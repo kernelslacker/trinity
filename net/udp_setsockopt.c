@@ -6,7 +6,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_UDP_OPTS ARRAY_SIZE(udp_opts)
-static const int udp_opts[] = { UDP_CORK, UDP_ENCAP };
+static const unsigned int udp_opts[] = { UDP_CORK, UDP_ENCAP };
 
 void udp_setsockopt(struct sockopt *so)
 {

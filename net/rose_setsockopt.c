@@ -8,7 +8,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_ROSE_OPTS ARRAY_SIZE(rose_opts)
-static const int rose_opts[] = {
+static const unsigned int rose_opts[] = {
 	ROSE_DEFER, ROSE_T1, ROSE_T2, ROSE_T3,
 	ROSE_IDLE, ROSE_QBITINCL, ROSE_HOLDBACK };
 

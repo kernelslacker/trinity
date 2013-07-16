@@ -6,7 +6,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_ICMPV6_OPTS ARRAY_SIZE(icmpv6_opts)
-static const int icmpv6_opts[] = { ICMPV6_FILTER };
+static const unsigned int icmpv6_opts[] = { ICMPV6_FILTER };
 
 void icmpv6_setsockopt(struct sockopt *so)
 {

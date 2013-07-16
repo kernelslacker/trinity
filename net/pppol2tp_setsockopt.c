@@ -8,7 +8,7 @@
 #define SOL_PPPOL2TP 273
 
 #define NR_SOL_PPPOL2TP_OPTS ARRAY_SIZE(pppol2tp_opts)
-static const int pppol2tp_opts[] = {
+static const unsigned int pppol2tp_opts[] = {
 	PPPOL2TP_SO_DEBUG, PPPOL2TP_SO_RECVSEQ, PPPOL2TP_SO_SENDSEQ, PPPOL2TP_SO_LNSMODE,
 	PPPOL2TP_SO_REORDERTO };
 

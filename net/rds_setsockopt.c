@@ -12,7 +12,7 @@
 
 #ifdef USE_RDS
 #define NR_SOL_RDS_OPTS ARRAY_SIZE(rds_opts)
-static const int rds_opts[] = {
+static const unsigned int rds_opts[] = {
 	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
 	4, /* deprecated RDS_BARRIER 4 */
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST };
