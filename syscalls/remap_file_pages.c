@@ -22,14 +22,14 @@ retry_size:
 	}
 
 retry_pgoff:
-	if (shm->a5[childno] + (shm->a2[childno] >> PAGE_SHIFT) < shm->a5[childno]) {
-		shm->a5[childno] = get_interesting_value();
+	if (shm->a4[childno] + (shm->a2[childno] >> PAGE_SHIFT) < shm->a4[childno]) {
+		shm->a4[childno] = get_interesting_value();
 		goto retry_pgoff;
 	}
 
 retry_pgoff_bits:
-	if (shm->a5[childno] + (shm->a2[childno] >> PAGE_SHIFT) >= (1UL << PTE_FILE_MAX_BITS)) {
-		shm->a5[childno] = (shm->a5[childno] >> 1);
+	if (shm->a4[childno] + (shm->a2[childno] >> PAGE_SHIFT) >= (1UL << PTE_FILE_MAX_BITS)) {
+		shm->a4[childno] = (shm->a4[childno] >> 1);
 		goto retry_pgoff_bits;
 	}
 }
