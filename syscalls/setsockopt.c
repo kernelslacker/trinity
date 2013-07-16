@@ -39,18 +39,18 @@ static void sanitise_setsockopt(int childno)
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 1:
-		socket_setsockopt(&so);
+	case 1:	socket_setsockopt(&so);
 		shm->a2[childno] = so.level;
 		shm->a3[childno] = so.optname;
 		shm->a4[childno] = so.optval;
 		shm->a5[childno] = so.optlen;
 		break;
 
-	case 2:	level = SOL_TCP;
-		shm->a2[childno] = level;
-		val = rand() % NR_SOL_TCP_OPTS;
-		shm->a3[childno] = tcp_opts[val];
+	case 2:	tcp_setsockopt(&so);
+		shm->a2[childno] = so.level;
+		shm->a3[childno] = so.optname;
+		shm->a4[childno] = so.optval;
+		shm->a5[childno] = so.optlen;
 		break;
 
 	case 3:	level = SOL_UDP;
