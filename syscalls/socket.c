@@ -101,13 +101,9 @@ void sanitise_socket(int childno)
 		break;
 */
 	case AF_NETLINK:
-		switch (rand_bool()) {
-		case 0:	type = SOCK_RAW;
-			break;
-		case 1:	type = SOCK_DGRAM;
-		default:break;
-		}
-		protocol = rand() % (NETLINK_CRYPTO + 1);	// Current highest netlink socket.
+		netlink_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 	case AF_NFC:
