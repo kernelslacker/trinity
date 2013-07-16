@@ -5,7 +5,7 @@
 #include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_TIPC_OPTS ARRAY_SIZE(tipc_opts)
-static int tipc_opts[] = {
+static const int tipc_opts[] = {
 	TIPC_IMPORTANCE, TIPC_SRC_DROPPABLE, TIPC_DEST_DROPPABLE, TIPC_CONN_TIMEOUT,
 	TIPC_NODE_RECVQ_DEPTH, TIPC_SOCK_RECVQ_DEPTH };
 

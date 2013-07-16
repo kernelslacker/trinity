@@ -6,7 +6,7 @@
 #define SOL_RXRPC 272
 
 #define NR_SOL_RXRPC_OPTS ARRAY_SIZE(rxrpc_opts)
-static int rxrpc_opts[] = {
+static const int rxrpc_opts[] = {
 	RXRPC_USER_CALL_ID, RXRPC_ABORT, RXRPC_ACK, RXRPC_NET_ERROR,
 	RXRPC_BUSY, RXRPC_LOCAL_ERROR, RXRPC_NEW_CALL, RXRPC_ACCEPT };
 

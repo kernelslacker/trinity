@@ -6,7 +6,7 @@
 #define SOL_IUCV 277
 
 #define NR_SOL_IUCV_OPTS ARRAY_SIZE(iucv_opts)
-static int iucv_opts[] = {
+static const int iucv_opts[] = {
 	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE };
 
 void iucv_setsockopt(struct sockopt *so)
