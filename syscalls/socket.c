@@ -4,10 +4,6 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <linux/irda.h>
-#include <linux/dn.h>
-#include <linux/netlink.h>
 #include "compat.h"
 #include "log.h"
 #include "net.h"
