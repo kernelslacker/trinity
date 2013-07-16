@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include "maps.h"	// page_rand
 #include "net.h"
+#include "random.h"
 
 void gen_ax25(unsigned long *addr, unsigned long *addrlen)
 {
@@ -20,4 +21,36 @@ void gen_ax25(unsigned long *addr, unsigned long *addrlen)
 	ax25->sax25_ndigis = rand();
 	*addr = (unsigned long) ax25;
 	*addrlen = sizeof(struct sockaddr_ax25);
+}
+
+#define NR_AX25_PROTOS 13
+static int ax25_protocols[NR_AX25_PROTOS] = {
+	0x01,   /* ROSE */
+	0x06,   /* Compressed TCP/IP packet   *//* Van Jacobsen (RFC 1144)    */
+	0x07,   /* Uncompressed TCP/IP packet *//* Van Jacobsen (RFC 1144)    */
+	0x08,   /* Segmentation fragment      */
+	0xc3,   /* TEXTNET datagram protocol  */
+	0xc4,   /* Link Quality Protocol      */
+	0xca,   /* Appletalk                  */
+	0xcb,   /* Appletalk ARP              */
+	0xcc,   /* ARPA Internet Protocol     */
+	0xcd,   /* ARPA Address Resolution    */
+	0xce,   /* FlexNet                    */
+	0xcf,   /* NET/ROM                    */
+	0xF0    /* No layer 3 protocol impl.  */
+};
+
+void ax25_rand_socket(struct proto_type *pt)
+{
+	switch (rand() % 3) {
+	case 0: pt->type = SOCK_DGRAM;
+		pt->protocol = 0;
+		break;
+	case 1: pt->type = SOCK_SEQPACKET;
+		pt->protocol = ax25_protocols[rand() % NR_AX25_PROTOS];
+		break;
+	case 2: pt->type = SOCK_RAW;
+		break;
+	default:break;
+	}
 }

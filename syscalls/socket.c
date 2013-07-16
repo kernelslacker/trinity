@@ -22,25 +22,6 @@
 #include <linux/caif/caif_socket.h>
 #endif
 
-#define NR_AX25_PROTOS 13
-static int ax25_protocols[NR_AX25_PROTOS] = {
-	0x01,	/* ROSE */
-	0x06,	/* Compressed TCP/IP packet   *//* Van Jacobsen (RFC 1144)    */
-	0x07,	/* Uncompressed TCP/IP packet *//* Van Jacobsen (RFC 1144)    */
-	0x08,	/* Segmentation fragment      */
-	0xc3,	/* TEXTNET datagram protocol  */
-	0xc4,	/* Link Quality Protocol      */
-	0xca,	/* Appletalk                  */
-	0xcb,	/* Appletalk ARP              */
-	0xcc,	/* ARPA Internet Protocol     */
-	0xcd,	/* ARPA Address Resolution    */
-	0xce,	/* FlexNet                    */
-	0xcf,	/* NET/ROM                    */
-	0xF0	/* No layer 3 protocol impl.  */
-};
-
-
-
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void sanitise_socket(int childno)
 {
@@ -64,17 +45,9 @@ void sanitise_socket(int childno)
 		break;
 
 	case AF_AX25:
-		switch (rand() % 3) {
-		case 0:	type = SOCK_DGRAM;
-			protocol = 0;
-			break;
-		case 1:	type = SOCK_SEQPACKET;
-			protocol = ax25_protocols[rand() % NR_AX25_PROTOS];
-			break;
-		case 2:	type = SOCK_RAW;
-			break;
-		default:break;
-		}
+		ax25_rand_socket(&pt);
+		type = pt.type;
+		protocol = pt.protocol;
 		break;
 
 #ifdef USE_CAIF

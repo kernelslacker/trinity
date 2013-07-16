@@ -55,6 +55,7 @@ void gen_nfc(unsigned long *addr, unsigned long *addrlen);
 
 /* ax25 */
 void gen_ax25(unsigned long *addr, unsigned long *addrlen);
+void ax25_rand_socket(struct proto_type *pt);
 
 /* ipx */
 void gen_ipx(unsigned long *addr, unsigned long *addrlen);
