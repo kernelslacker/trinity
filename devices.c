@@ -14,7 +14,7 @@
 static struct {
 	int major;
 	int minor;
-	char *name;
+	const char *name;
 } *block_devs, *char_devs, *misc_devs;
 
 static size_t bldevs, chrdevs, miscdevs;
