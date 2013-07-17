@@ -253,13 +253,40 @@ static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsign
 	return (unsigned long) sockaddr;
 }
 
+static unsigned long handle_arg_mode_t(void)
+{
+	unsigned int i, j, count, bit;
+	mode_t mode = 0;
+
+	count = rand() % 9;
+
+	for (i = 0; i < count; i++) {
+		bit = rand() % 3;
+		mode |= 1 << bit;
+		j = rand() % 12;
+		switch (j) {
+		case 0: mode |= S_IRUSR; break;
+		case 1: mode |= S_IWUSR; break;
+		case 2: mode |= S_IXUSR; break;
+		case 3: mode |= S_IRGRP; break;
+		case 4: mode |= S_IWGRP; break;
+		case 5: mode |= S_IXGRP; break;
+		case 6: mode |= S_IROTH; break;
+		case 7: mode |= S_IWOTH; break;
+		case 8: mode |= S_IXOTH; break;
+		case 9: mode |= S_ISUID; break;
+		case 10: mode|= S_ISGID; break;
+		case 11: mode|= S_ISVTX; break;
+		default: break;
+		}
+	}
+	return mode;
+}
+
 
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
-	unsigned long i;
 	enum argtype argtype = 0;
-	unsigned int bit, j, count;
-	mode_t mode = 0;
 
 	switch (argnum) {
 	case 1:	argtype = syscalls[call].entry->arg1type;
@@ -328,29 +355,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return handle_arg_sockaddr(childno, call, argnum);
 
 	case ARG_MODE_T:
-		count = rand() % 9;
-
-		for (i = 0; i < count; i++) {
-			bit = rand() % 3;
-			mode |= 1 << bit;
-			j = rand() % 12;
-			switch (j) {
-			case 0: mode |= S_IRUSR; break;
-			case 1: mode |= S_IWUSR; break;
-			case 2: mode |= S_IXUSR; break;
-			case 3: mode |= S_IRGRP; break;
-			case 4: mode |= S_IWGRP; break;
-			case 5: mode |= S_IXGRP; break;
-			case 6: mode |= S_IROTH; break;
-			case 7: mode |= S_IWOTH; break;
-			case 8: mode |= S_IXOTH; break;
-			case 9: mode |= S_ISUID; break;
-			case 10: mode|= S_ISGID; break;
-			case 11: mode|= S_ISVTX; break;
-			default: break;
-			}
-		}
-		return mode;
+		return handle_arg_mode_t();
 
 	default:
 		BUG("unreachable!\n");
