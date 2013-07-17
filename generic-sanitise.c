@@ -178,6 +178,33 @@ static unsigned long handle_arg_randpage(void)
 			return (unsigned long) page_rand;
 }
 
+static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned long argnum)
+{
+	unsigned long i;
+
+	i = (rand() % 5) + 1;
+
+	switch (argnum) {
+	case 1:	if (syscalls[call].entry->arg2type == ARG_IOVECLEN)
+			shm->a2[childno] = i;
+		break;
+	case 2:	if (syscalls[call].entry->arg3type == ARG_IOVECLEN)
+			shm->a3[childno] = i;
+		break;
+	case 3:	if (syscalls[call].entry->arg4type == ARG_IOVECLEN)
+			shm->a4[childno] = i;
+		break;
+	case 4:	if (syscalls[call].entry->arg5type == ARG_IOVECLEN)
+			shm->a5[childno] = i;
+		break;
+	case 5:	if (syscalls[call].entry->arg6type == ARG_IOVECLEN)
+			shm->a6[childno] = i;
+		break;
+	default: BUG("impossible\n");
+	}
+	return (unsigned long) alloc_iovec(i);
+}
+
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
@@ -243,27 +270,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) generate_pathname();
 
 	case ARG_IOVEC:
-		i = (rand() % 5) + 1;
-
-		switch (argnum) {
-		case 1:	if (syscalls[call].entry->arg2type == ARG_IOVECLEN)
-				shm->a2[childno] = i;
-			break;
-		case 2:	if (syscalls[call].entry->arg3type == ARG_IOVECLEN)
-				shm->a3[childno] = i;
-			break;
-		case 3:	if (syscalls[call].entry->arg4type == ARG_IOVECLEN)
-				shm->a4[childno] = i;
-			break;
-		case 4:	if (syscalls[call].entry->arg5type == ARG_IOVECLEN)
-				shm->a5[childno] = i;
-			break;
-		case 5:	if (syscalls[call].entry->arg6type == ARG_IOVECLEN)
-				shm->a6[childno] = i;
-			break;
-		default: BUG("impossible\n");
-		}
-		return (unsigned long) alloc_iovec(i);
+		return handle_arg_iovec(childno, call, argnum);
 
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
