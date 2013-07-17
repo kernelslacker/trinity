@@ -171,7 +171,7 @@ static uint16_t gen_bpf_code(bool last_instr)
 		 * increase the chance to be accepted and that we
 		 * actually run the generated fuzz filter code.
 		 */
-		if (rand() % 2 == 0)
+		if (rand_bool())
 			ret = BPF_RET;
 	}
 
@@ -392,14 +392,14 @@ void gen_bpf(unsigned long *addr, unsigned long *addrlen)
 			bpf->filter[i].jf |= (uint8_t) rand();
 
 		/* Not always fill out k */
-		bpf->filter[i].k = rand() % 2 == 0 ? 0 : (uint32_t) rand();
+		bpf->filter[i].k = rand_bool() == 0 ? 0 : (uint32_t) rand();
 
 		/* Also try to jump into BPF extensions by chance */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_LD ||
 		    BPF_CLASS(bpf->filter[i].code) == BPF_LDX) {
 			if (bpf->filter[i].k > 65000 &&
 			    bpf->filter[i].k < (uint32_t) SKF_AD_OFF) {
-				if (rand() % 2 == 0) {
+				if (rand_bool()) {
 					bpf->filter[i].k = (uint32_t) (SKF_AD_OFF +
 							   rand() % SKF_AD_MAX);
 				}

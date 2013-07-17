@@ -26,7 +26,7 @@ static void ioctl_mangle_cmd(int childno)
 static void ioctl_mangle_arg(int childno)
 {
 	/* the argument could mean anything, because ioctl sucks like that. */
-	switch (rand() % 2) {
+	switch (rand_bool()) {
 	case 0:	shm->a3[childno] = rand32();
 		break;
 

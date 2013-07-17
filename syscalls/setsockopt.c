@@ -85,7 +85,7 @@ static void sanitise_setsockopt(int childno)
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
 	 */
-	if (rand() % 2)
+	if (rand_bool())
 		so.optval = 0;
 
 

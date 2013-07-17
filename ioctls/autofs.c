@@ -6,6 +6,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "ioctls.h"
+#include "random.h"
 
 /* include/linux/auto_dev-ioctl.h */
 /*
@@ -290,7 +291,7 @@ static void autofs_sanitise(const struct ioctl_group *grp, int childno)
 		arg->ioctlfd = get_random_fd();
 		arg->fail.token = rand();
 		arg->fail.status = rand();
-		if (rand() % 2) {
+		if (rand_bool()) {
 			arg->size += 5;
 			arg->path[0] = '/';
 			arg->path[1] = rand();

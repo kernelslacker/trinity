@@ -18,6 +18,7 @@
 #include "sanitise.h"
 #include "constants.h"
 #include "list.h"
+#include "random.h"
 
 static int files_added = 0;
 const char **fileindex;
@@ -362,11 +363,11 @@ const char * generate_pathname(void)
 		generate_random_page(newpath);
 
 		/* sometimes, just complete junk. */
-		if (rand() % 2)
+		if (rand_bool())
 			goto out;
 
 		/* Sometimes, pathname + junk */
-		if (rand() % 2)
+		if (rand_bool())
 			(void) strncpy(newpath, pathname, len);
 		else {
 			/* make it look relative to cwd */
@@ -375,7 +376,7 @@ const char * generate_pathname(void)
 		}
 
 		/* Sometimes, remove all /'s */
-		if ((rand() % 2) == 0) {
+		if (rand_bool()) {
 			for (i = 0; i < len; i++) {
 				if (newpath[i] == '/')
 					newpath[i] = rand();
@@ -383,7 +384,7 @@ const char * generate_pathname(void)
 		}
 out:
 		/* 50/50 chance of making it look like a dir */
-		if ((rand() % 2) == 0) {
+		if (rand_bool()) {
 			newpath[len] = '/';
 			newpath[len + 1] = 0;
 		}

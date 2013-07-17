@@ -137,7 +137,7 @@ unsigned int rand32(void)
 		/* mangle it. */
 		rounds = rand() % 3;
 		for (i = 0; i < rounds; i++) {
-			switch (rand() % 2) {
+			switch (rand_bool()) {
 			case 0: r |= __rand32();
 				break;
 			case 1: r ^= __rand32();

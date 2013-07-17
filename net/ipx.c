@@ -5,6 +5,7 @@
 #include <linux/ipx.h>
 #include <stdlib.h>
 #include "net.h"
+#include "random.h"
 
 void ipx_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
@@ -21,7 +22,7 @@ void ipx_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	for (i = 0; i < 6; i++)
 		ipx->sipx_node[i] = rand();
 	ipx->sipx_type = rand();
-	ipx->sipx_zero = rand() % 2;
+	ipx->sipx_zero = rand_bool();
 	*addr = (unsigned long) ipx;
 	*addrlen = sizeof(struct sockaddr_ipx);
 }

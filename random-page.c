@@ -84,7 +84,7 @@ void generate_random_page(char *page)
 	/* page of 0's and 1's. */
 	case 5:
 		for (i = 0; i < page_size; )
-			page[i++] = (unsigned char)rand() % 2;
+			page[i++] = (unsigned char)rand_bool();
 		return;
 
 	default:
