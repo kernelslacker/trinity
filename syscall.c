@@ -187,7 +187,7 @@ long mkcall(int childno)
 		case ARG_LIST:						\
 		case ARG_RANDPAGE:					\
 		case ARG_CPU:						\
-		case ARG_RANDOM_INT:					\
+		case ARG_RANDOM_LONG:					\
 		case ARG_IOVEC:						\
 		case ARG_IOVECLEN:					\
 		case ARG_SOCKADDR:					\
