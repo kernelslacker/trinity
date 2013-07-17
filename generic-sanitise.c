@@ -135,14 +135,44 @@ static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 	return mask;
 }
 
-
-static unsigned long fill_arg(int childno, int call, int argnum)
+static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 {
 	unsigned long i;
 	unsigned long mask = 0;
 	unsigned int bits;
 	unsigned int num = 0;
 	const unsigned int *values = NULL;
+
+	switch (argnum) {
+	case 1:	num = syscalls[call].entry->arg1list.num;
+		values = syscalls[call].entry->arg1list.values;
+		break;
+	case 2:	num = syscalls[call].entry->arg2list.num;
+		values = syscalls[call].entry->arg2list.values;
+		break;
+	case 3:	num = syscalls[call].entry->arg3list.num;
+		values = syscalls[call].entry->arg3list.values;
+		break;
+	case 4:	num = syscalls[call].entry->arg4list.num;
+		values = syscalls[call].entry->arg4list.values;
+		break;
+	case 5:	num = syscalls[call].entry->arg5list.num;
+		values = syscalls[call].entry->arg5list.values;
+		break;
+	case 6:	num = syscalls[call].entry->arg6list.num;
+		values = syscalls[call].entry->arg6list.values;
+		break;
+	default: break;
+	}
+	bits = rand() % num;	/* num of bits to OR */
+	for (i = 0; i < bits; i++)
+		mask |= values[rand() % num];
+	return mask;
+}
+
+static unsigned long fill_arg(int childno, int call, int argnum)
+{
+	unsigned long i;
 	enum argtype argtype = 0;
 	unsigned long sockaddr = 0, sockaddrlen = 0;
 	unsigned int bit, j, count;
@@ -193,31 +223,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return handle_arg_op(call, argnum);
 
 	case ARG_LIST:
-		switch (argnum) {
-		case 1:	num = syscalls[call].entry->arg1list.num;
-			values = syscalls[call].entry->arg1list.values;
-			break;
-		case 2:	num = syscalls[call].entry->arg2list.num;
-			values = syscalls[call].entry->arg2list.values;
-			break;
-		case 3:	num = syscalls[call].entry->arg3list.num;
-			values = syscalls[call].entry->arg3list.values;
-			break;
-		case 4:	num = syscalls[call].entry->arg4list.num;
-			values = syscalls[call].entry->arg4list.values;
-			break;
-		case 5:	num = syscalls[call].entry->arg5list.num;
-			values = syscalls[call].entry->arg5list.values;
-			break;
-		case 6:	num = syscalls[call].entry->arg6list.num;
-			values = syscalls[call].entry->arg6list.values;
-			break;
-		default: break;
-		}
-		bits = rand() % num;	/* num of bits to OR */
-		for (i=0; i<bits; i++)
-			mask |= values[rand() % num];
-		return mask;
+		return handle_arg_list(call, argnum);
 
 	case ARG_RANDPAGE:
 		if (rand_bool())
