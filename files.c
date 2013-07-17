@@ -135,19 +135,20 @@ static int check_stat_file(const struct stat *sb)
 			set_read = TRUE;
 		if (sb->st_mode & S_IWUSR)
 			set_write = TRUE;
+	}
 
-	} else if (sb->st_gid == my_gid) {
+	if (sb->st_gid == my_gid) {
 		if (sb->st_mode & S_IRGRP)
 			set_read = TRUE;
 		if (sb->st_mode & S_IWGRP)
 			set_write = TRUE;
-
-	} else {
-		if ((sb->st_mode & S_IROTH))
-			set_read = TRUE;
-		if (sb->st_mode & S_IWOTH)
-			set_write = TRUE;
 	}
+
+	if (sb->st_mode & S_IROTH)
+		set_read = TRUE;
+	if (sb->st_mode & S_IWOTH)
+		set_write = TRUE;
+
 
 	if ((set_read | set_write) == 0)
 		return -1;
