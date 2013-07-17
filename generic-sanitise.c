@@ -61,12 +61,54 @@ static unsigned long handle_arg_address(int childno, int call, int argnum)
 	return addr;
 }
 
+static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
+{
+	unsigned long i;
+	unsigned long low = 0, high = 0;
+
+	switch (argnum) {
+	case 1:	low = syscalls[call].entry->low1range;
+		high = syscalls[call].entry->hi1range;
+		break;
+	case 2:	low = syscalls[call].entry->low2range;
+		high = syscalls[call].entry->hi2range;
+		break;
+	case 3:	low = syscalls[call].entry->low3range;
+		high = syscalls[call].entry->hi3range;
+		break;
+	case 4:	low = syscalls[call].entry->low4range;
+		high = syscalls[call].entry->hi4range;
+		break;
+	case 5:	low = syscalls[call].entry->low5range;
+		high = syscalls[call].entry->hi5range;
+		break;
+	case 6:	low = syscalls[call].entry->low6range;
+		high = syscalls[call].entry->hi6range;
+		break;
+	default:
+		BUG("Should never happen.\n");
+		break;
+	}
+
+	if (high == 0) {
+		printf("%s forgets to set hirange!\n", syscalls[call].entry->name);
+		BUG("Fix syscall definition!\n");
+		return 0;
+	}
+
+	i = (unsigned long) rand64() % high;
+	if (i < low) {
+		i += low;
+		i &= high;
+	}
+	return i;
+}
+
 
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
 	unsigned long mask = 0;
-	unsigned long low = 0, high = 0;
 	unsigned int bits;
 	unsigned int num = 0;
 	const unsigned int *values = NULL;
@@ -114,42 +156,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) get_pid();
 
 	case ARG_RANGE:
-		switch (argnum) {
-		case 1:	low = syscalls[call].entry->low1range;
-			high = syscalls[call].entry->hi1range;
-			break;
-		case 2:	low = syscalls[call].entry->low2range;
-			high = syscalls[call].entry->hi2range;
-			break;
-		case 3:	low = syscalls[call].entry->low3range;
-			high = syscalls[call].entry->hi3range;
-			break;
-		case 4:	low = syscalls[call].entry->low4range;
-			high = syscalls[call].entry->hi4range;
-			break;
-		case 5:	low = syscalls[call].entry->low5range;
-			high = syscalls[call].entry->hi5range;
-			break;
-		case 6:	low = syscalls[call].entry->low6range;
-			high = syscalls[call].entry->hi6range;
-			break;
-		default:
-			BUG("Should never happen.\n");
-			break;
-		}
-
-		if (high == 0) {
-			printf("%s forgets to set hirange!\n", syscalls[call].entry->name);
-			BUG("Fix syscall definition!\n");
-			return 0;
-		}
-
-		i = (unsigned long) rand64() % high;
-		if (i < low) {
-			i += low;
-			i &= high;
-		}
-		return i;
+		return handle_arg_range(call, argnum);
 
 	case ARG_OP:	/* Like ARG_LIST, but just a single value. */
 		switch (argnum) {
