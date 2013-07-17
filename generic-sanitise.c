@@ -170,6 +170,14 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 	return mask;
 }
 
+static unsigned long handle_arg_randpage(void)
+{
+		if (rand_bool())
+			return (unsigned long) page_allocs;
+		else
+			return (unsigned long) page_rand;
+}
+
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
@@ -226,10 +234,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return handle_arg_list(call, argnum);
 
 	case ARG_RANDPAGE:
-		if (rand_bool())
-			return (unsigned long) page_allocs;
-		else
-			return (unsigned long) page_rand;
+		return handle_arg_randpage();
 
 	case ARG_CPU:
 		return (unsigned long) get_cpu();
