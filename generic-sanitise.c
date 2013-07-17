@@ -79,7 +79,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) get_len();
 
 	case ARG_ADDRESS:
-		if ((rand() % 2) == 0)
+		if (rand_bool())
 			return (unsigned long) get_address();
 
 		/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
@@ -198,7 +198,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return mask;
 
 	case ARG_RANDPAGE:
-		if ((rand() % 2) == 0)
+		if (rand_bool())
 			return (unsigned long) page_allocs;
 		else
 			return (unsigned long) page_rand;

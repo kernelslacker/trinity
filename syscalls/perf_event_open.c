@@ -810,7 +810,7 @@ static long long random_sample_type(void)
 
 	long long sample_type = 0;
 
-	if (rand() % 2)
+	if (rand_bool())
 		return rand64();
 
 	if (rand_bool())
@@ -850,7 +850,7 @@ static long long random_read_format(void)
 
 	long long read_format = 0;
 
-	if (rand() % 2)
+	if (rand_bool())
 		return rand64();
 
 	if (rand_bool())
@@ -1045,7 +1045,7 @@ static void create_random_event(struct perf_event_attr *attr)
 	attr->wakeup_events=rand32();
 
 	/* Breakpoints are unioned with the config values */
-	if (rand() % 2) {
+	if (rand_bool()) {
 		setup_breakpoints(attr);
 	}
 	else {
@@ -1102,7 +1102,7 @@ static void sanitise_perf_event_open(int childno)
 	/* flags */
 	/* You almost never set these unless you're playing with cgroups */
 	flags = 0;
-	if (rand() % 2) {
+	if (rand_bool()) {
 		flags = rand64();
 	} else {
 		if (rand_bool())

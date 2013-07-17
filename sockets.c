@@ -15,6 +15,7 @@
 #include "net.h"
 #include "log.h"
 #include "params.h"	// victim_path, verbose, do_specific_proto
+#include "random.h"
 
 unsigned int nr_sockets = 0;
 
@@ -41,7 +42,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	nr_sockets++;
 
 	/* Sometimes, listen on created sockets. */
-	if (rand() % 2) {
+	if (rand_bool()) {
 		__unused__ int ret;
 
 		/* fake a sockaddr. */

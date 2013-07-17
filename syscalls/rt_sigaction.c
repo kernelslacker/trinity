@@ -7,14 +7,15 @@
 #include <signal.h>
 #include <stdlib.h>
 #include "sanitise.h"
+#include "random.h"
 #include "shm.h"
 
 void sanitise_rt_sigaction(int childno)
 {
-	if ((rand() % 2) == 0)
+	if (rand_bool())
 		shm->a2[childno] = 0;
 
-	if ((rand() % 2) == 0)
+	if (rand_bool())
 		shm->a3[childno] = 0;
 
 	shm->a4[childno] = sizeof(sigset_t);
