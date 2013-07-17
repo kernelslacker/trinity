@@ -39,7 +39,7 @@ static unsigned long taviso(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 3) {
+	switch (rand() % 4) {
 	case 0:	r = rand() & rand();
 #if __WORDSIZE == 64
 		r <<= 32;
@@ -47,14 +47,21 @@ static unsigned long taviso(void)
 #endif
 		break;
 
-	case 1:	r = rand() | rand();
+	case 1:	r = rand() % rand();
+#if __WORDSIZE == 64
+		r <<= 32;
+		r |= rand() % rand();
+#endif
+		break;
+
+	case 2:	r = rand() | rand();
 #if __WORDSIZE == 64
 		r <<= 32;
 		r |= rand() | rand();
 #endif
 		break;
 
-	case 2:	r = rand();
+	case 3:	r = rand();
 #if __WORDSIZE == 64
 		r <<= 32;
 		r |= rand();
