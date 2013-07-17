@@ -205,6 +205,27 @@ static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned 
 	return (unsigned long) alloc_iovec(i);
 }
 
+static unsigned long handle_arg_len_already_set(int childno, unsigned long argnum)
+{
+	unsigned long r = 0;
+
+	/*
+	 * We already set the len in the ARG_IOVEC/ARG_SOCKADDR case
+	 * So here we just return what we had set there.
+	 */
+	switch (argnum) {
+	case 1:	r = shm->a1[childno]; break;
+	case 2:	r = shm->a2[childno]; break;
+	case 3:	r = shm->a3[childno]; break;
+	case 4:	r = shm->a4[childno]; break;
+	case 5:	r = shm->a5[childno]; break;
+	case 6:	r = shm->a6[childno]; break;
+	default: break;
+	}
+	return r;
+}
+
+
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
@@ -274,16 +295,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
-		switch (argnum) {
-		case 1:	return(shm->a1[childno]);
-		case 2:	return(shm->a2[childno]);
-		case 3:	return(shm->a3[childno]);
-		case 4:	return(shm->a4[childno]);
-		case 5:	return(shm->a5[childno]);
-		case 6:	return(shm->a6[childno]);
-		default: break;
-		}
-		;; // fallthrough
+		return handle_arg_len_already_set(childno, argnum);
 
 	case ARG_SOCKADDR:
 		generate_sockaddr(&sockaddr, &sockaddrlen, PF_NOHINT);
