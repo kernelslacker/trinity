@@ -34,13 +34,39 @@ static unsigned int get_cpu(void)
 	return 0;
 }
 
+static unsigned long handle_arg_address(int childno, int call, int argnum)
+{
+	unsigned long addr = 0;
+
+	if (rand_bool())
+		return (unsigned long) get_address();
+
+	/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
+	 * and munge that instead of returning a new one from get_address() */
+
+	addr = find_previous_arg_address(argnum, call, childno);
+
+	switch (rand() % 4) {
+	case 0:	break;	/* return unmodified */
+	case 1:	addr++;
+		break;
+	case 2:	addr+= sizeof(int);
+		break;
+	case 3:	addr+= sizeof(long);
+		break;
+	default: BUG("unreachable!\n");
+		break;
+	}
+
+	return addr;
+}
+
 
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
 	unsigned long mask = 0;
 	unsigned long low = 0, high = 0;
-	unsigned long addr = 0;
 	unsigned int bits;
 	unsigned int num = 0;
 	const unsigned int *values = NULL;
@@ -79,27 +105,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return (unsigned long) get_len();
 
 	case ARG_ADDRESS:
-		if (rand_bool())
-			return (unsigned long) get_address();
-
-		/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
-		 * and munge that instead of returning a new one from get_address() */
-
-		addr = find_previous_arg_address(argnum, call, childno);
-
-		switch (rand() % 4) {
-		case 0:	break;	/* return unmodified */
-		case 1:	addr++;
-			break;
-		case 2:	addr+= sizeof(int);
-			break;
-		case 3:	addr+= sizeof(long);
-			break;
-		default: BUG("unreachable!\n");
-			break;
-		}
-
-		return addr;
+		return handle_arg_address(childno, call, argnum);
 
 	case ARG_NON_NULL_ADDRESS:
 		return (unsigned long) get_non_null_address();
