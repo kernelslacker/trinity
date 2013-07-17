@@ -225,12 +225,39 @@ static unsigned long handle_arg_len_already_set(int childno, unsigned long argnu
 	return r;
 }
 
+static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsigned long argnum)
+{
+	unsigned long sockaddr = 0, sockaddrlen = 0;
+
+	generate_sockaddr(&sockaddr, &sockaddrlen, PF_NOHINT);
+
+	switch (argnum) {
+	case 1:	if (syscalls[call].entry->arg2type == ARG_SOCKADDRLEN)
+			shm->a2[childno] = sockaddrlen;
+		break;
+	case 2:	if (syscalls[call].entry->arg3type == ARG_SOCKADDRLEN)
+			shm->a3[childno] = sockaddrlen;
+		break;
+	case 3:	if (syscalls[call].entry->arg4type == ARG_SOCKADDRLEN)
+			shm->a4[childno] = sockaddrlen;
+		break;
+	case 4:	if (syscalls[call].entry->arg5type == ARG_SOCKADDRLEN)
+			shm->a5[childno] = sockaddrlen;
+		break;
+	case 5:	if (syscalls[call].entry->arg6type == ARG_SOCKADDRLEN)
+			shm->a6[childno] = sockaddrlen;
+		break;
+	case 6:
+	default: BUG("impossible\n");
+	}
+	return (unsigned long) sockaddr;
+}
+
 
 static unsigned long fill_arg(int childno, int call, int argnum)
 {
 	unsigned long i;
 	enum argtype argtype = 0;
-	unsigned long sockaddr = 0, sockaddrlen = 0;
 	unsigned int bit, j, count;
 	mode_t mode = 0;
 
@@ -298,28 +325,7 @@ static unsigned long fill_arg(int childno, int call, int argnum)
 		return handle_arg_len_already_set(childno, argnum);
 
 	case ARG_SOCKADDR:
-		generate_sockaddr(&sockaddr, &sockaddrlen, PF_NOHINT);
-
-		switch (argnum) {
-		case 1:	if (syscalls[call].entry->arg2type == ARG_SOCKADDRLEN)
-				shm->a2[childno] = sockaddrlen;
-			break;
-		case 2:	if (syscalls[call].entry->arg3type == ARG_SOCKADDRLEN)
-				shm->a3[childno] = sockaddrlen;
-			break;
-		case 3:	if (syscalls[call].entry->arg4type == ARG_SOCKADDRLEN)
-				shm->a4[childno] = sockaddrlen;
-			break;
-		case 4:	if (syscalls[call].entry->arg5type == ARG_SOCKADDRLEN)
-				shm->a5[childno] = sockaddrlen;
-			break;
-		case 5:	if (syscalls[call].entry->arg6type == ARG_SOCKADDRLEN)
-				shm->a6[childno] = sockaddrlen;
-			break;
-		case 6:
-		default: BUG("impossible\n");
-		}
-		return (unsigned long) sockaddr;
+		return handle_arg_sockaddr(childno, call, argnum);
 
 	case ARG_MODE_T:
 		count = rand() % 9;
