@@ -5,7 +5,7 @@
 
 enum argtype {
 	ARG_UNDEFINED = 0,
-	ARG_RANDOM_INT = 1,
+	ARG_RANDOM_LONG = 1,
 	ARG_FD = 2,
 	ARG_LEN = 3,
 	ARG_ADDRESS = 4,
