@@ -22,8 +22,8 @@ void can_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_can);
 }
 
-void can_rand_socket(struct proto_type *pt)
+void can_rand_socket(struct socket_triplet *st)
 {
-	pt->protocol = rand() % 7;  // CAN_NPROTO
-	pt->type = rand() % TYPE_MAX;
+	st->protocol = rand() % 7;  // CAN_NPROTO
+	st->type = rand() % TYPE_MAX;
 }

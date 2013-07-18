@@ -25,23 +25,23 @@ void irda_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_irda);
 }
 
-void irda_rand_socket(struct proto_type *pt)
+void irda_rand_socket(struct socket_triplet *st)
 {
 	switch (rand() % 3) {
 
-	case 0: pt->type = SOCK_STREAM;
-		pt->protocol = rand() % PROTO_MAX;
+	case 0: st->type = SOCK_STREAM;
+		st->protocol = rand() % PROTO_MAX;
 		break;
 
-	case 1: pt->type = SOCK_SEQPACKET;
-		pt->protocol = rand() % PROTO_MAX;
+	case 1: st->type = SOCK_SEQPACKET;
+		st->protocol = rand() % PROTO_MAX;
 		break;
 
-	case 2: pt->type = SOCK_DGRAM;
+	case 2: st->type = SOCK_DGRAM;
 		if (rand_bool())
-			pt->protocol = IRDAPROTO_ULTRA;
+			st->protocol = IRDAPROTO_ULTRA;
 		else
-			pt->protocol = IRDAPROTO_UNITDATA;
+			st->protocol = IRDAPROTO_UNITDATA;
 		break;
 
 	default:break;

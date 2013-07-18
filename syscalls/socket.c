@@ -16,7 +16,7 @@
 
 struct socket_ptr {
 	unsigned int family;
-	void (*func)(struct proto_type *pt);
+	void (*func)(struct socket_triplet *st);
 };
 static const struct socket_ptr socketptrs[] = {
 	{ .family = AF_APPLETALK, .func = &atalk_rand_socket },
@@ -45,8 +45,6 @@ static const struct socket_ptr socketptrs[] = {
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void gen_socket_args(struct socket_triplet *st)
 {
-	struct proto_type pt;	// FIXME: Kill off proto_type, switch to triplet errywhere.
-
 	if (do_specific_proto == TRUE)
 		st->family = specific_proto;
 	else
@@ -55,11 +53,8 @@ void gen_socket_args(struct socket_triplet *st)
 	if (rand() % 100 > 0) {
 		unsigned int i;
 		for (i = 0; i < ARRAY_SIZE(socketptrs); i++) {
-			if (socketptrs[i].family == st->family) {
-				socketptrs[i].func(&pt);
-				st->protocol = pt.protocol;
-				st->type = pt.type;
-			}
+			if (socketptrs[i].family == st->family)
+				socketptrs[i].func(st);
 		}
 
 	} else {

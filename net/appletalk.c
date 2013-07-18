@@ -23,14 +23,14 @@ void atalk_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_at);
 }
 
-void atalk_rand_socket(struct proto_type *pt)
+void atalk_rand_socket(struct socket_triplet *st)
 {
 	if (rand_bool()) {
-		pt->type = SOCK_DGRAM;
-	        pt->protocol = 0;
+		st->type = SOCK_DGRAM;
+	        st->protocol = 0;
 	        return;
 	}
 
-	pt->protocol = rand() % PROTO_MAX;
-	pt->type = SOCK_RAW;
+	st->protocol = rand() % PROTO_MAX;
+	st->type = SOCK_RAW;
 }

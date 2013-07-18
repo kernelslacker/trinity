@@ -23,11 +23,11 @@ void phonet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_pn);
 }
 
-void phonet_rand_socket(struct proto_type *pt)
+void phonet_rand_socket(struct socket_triplet *st)
 {
-	pt->protocol = 0;
+	st->protocol = 0;
 	if (rand_bool())
-		pt->type = SOCK_DGRAM;
+		st->type = SOCK_DGRAM;
 	else
-		pt->type = SOCK_SEQPACKET;
+		st->type = SOCK_SEQPACKET;
 }

@@ -24,8 +24,8 @@ void x25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_x25);
 }
 
-void x25_rand_socket(struct proto_type *pt)
+void x25_rand_socket(struct socket_triplet *st)
 {
-	pt->type = SOCK_SEQPACKET;
-	pt->protocol = 0;
+	st->type = SOCK_SEQPACKET;
+	st->protocol = 0;
 }

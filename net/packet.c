@@ -25,22 +25,22 @@ void packet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_pkt);
 }
 
-void packet_rand_socket(struct proto_type *pt)
+void packet_rand_socket(struct socket_triplet *st)
 {
-	pt->protocol = htons(ETH_P_ALL);
+	st->protocol = htons(ETH_P_ALL);
 
 	if (rand() % 8 == 0) {
-		pt->protocol = rand();
+		st->protocol = rand();
 		if (rand_bool())
-			pt->protocol = (uint16_t) rand();
+			st->protocol = (uint16_t) rand();
 	}
 
 	switch (rand() % 3) {
-	case 0: pt->type = SOCK_DGRAM;
+	case 0: st->type = SOCK_DGRAM;
 		break;
-	case 1: pt->type = SOCK_RAW;
+	case 1: st->type = SOCK_RAW;
 		break;
-	case 2: pt->type = SOCK_PACKET;
+	case 2: st->type = SOCK_PACKET;
 		break;
 	default: break;
 	}
