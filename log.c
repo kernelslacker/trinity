@@ -10,7 +10,7 @@
 #include "pids.h"
 #include "log.h"
 
-FILE *parentlogfile;
+FILE *mainlogfile;
 
 void open_logfiles(void)
 {
@@ -20,8 +20,8 @@ void open_logfiles(void)
 	logfilename = malloc(64);
 	sprintf(logfilename, "trinity.log");
 	unlink(logfilename);
-	parentlogfile = fopen(logfilename, "a");
-	if (!parentlogfile) {
+	mainlogfile = fopen(logfilename, "a");
+	if (!mainlogfile) {
 		printf("## couldn't open logfile %s\n", logfilename);
 		exit(EXIT_FAILURE);
 	}
@@ -54,11 +54,14 @@ static FILE * find_logfile_handle(void)
 	unsigned int j;
 
 	pid = getpid();
-	if (pid == shm->parentpid)
-		return parentlogfile;
+	if (pid == initpid)
+		return mainlogfile;
+
+	if (pid == mainpid)
+		return mainlogfile;
 
 	if (pid == shm->watchdog_pid)
-		return parentlogfile;
+		return mainlogfile;
 
 	i = find_pid_slot(pid);
 	if (i != PIDSLOT_NOT_FOUND)
@@ -117,8 +120,8 @@ void synclogs(void)
 		}
 	}
 
-	(void)fflush(parentlogfile);
-	fsync(fileno(parentlogfile));
+	(void)fflush(mainlogfile);
+	fsync(fileno(mainlogfile));
 }
 
 /*
@@ -163,7 +166,7 @@ void output(unsigned char level, const char *fmt, ...)
 		printf("## child logfile handle was null logging to main!\n");
 		(void)fflush(stdout);
 		for_each_pidslot(j)
-			shm->logfiles[j] = parentlogfile;
+			shm->logfiles[j] = mainlogfile;
 		sleep(5);
 		return;
 	}

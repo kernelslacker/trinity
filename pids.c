@@ -8,6 +8,9 @@
 #include "log.h"
 #include "sanitise.h"
 
+pid_t mainpid;
+pid_t initpid;
+
 int find_pid_slot(pid_t mypid)
 {
 	unsigned int i;

@@ -74,15 +74,14 @@ static int check_shm_sanity(void)
 static void check_main(void)
 {
 	int ret;
-	pid_t pid = shm->parentpid;
 
-	ret = kill(pid, 0);
+	ret = kill(mainpid, 0);
 	if (ret == -1) {
 		if (errno == ESRCH) {
-			output(0, "[watchdog] main pid %d has disappeared.\n", pid);
+			output(0, "[watchdog] main pid %d has disappeared.\n", mainpid);
 			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
 		} else {
-			output(0, "[watchdog] problem checking on pid %d (%d:%s)\n", pid, errno, strerror(errno));
+			output(0, "[watchdog] problem checking on pid %d (%d:%s)\n", mainpid, errno, strerror(errno));
 		}
 	}
 }

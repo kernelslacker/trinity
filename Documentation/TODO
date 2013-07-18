@@ -63,9 +63,6 @@
 * Watchdog improvements
   - in main loop, check watchdog is still alive
   - RT watchdog task ? (needs initial startup as root, and drop privs afterwards).
-  - Clarify shm->parentpid use.
-    In some cases this is 'initial process', and the rest of the time 'forking thread'.
-    Split into two so watchdog monitors only the forking process.
 
 * filename related issues.
   - filename cache.

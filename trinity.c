@@ -69,8 +69,6 @@ static int create_shm(void)
 
 	memset(shm->pids, EMPTY_PIDSLOT, sizeof(shm->pids));
 
-	shm->parentpid = getpid();
-
 	/* Overwritten later in setup_shm_postargs if user passed -s */
 	shm->seed = new_seed();
 
@@ -158,6 +156,8 @@ int main(int argc, char* argv[])
 	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com>\n");
 
 	progname = argv[0];
+
+	initpid = getpid();
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);

@@ -134,10 +134,10 @@ static void fork_children(void)
 			/* Wait for parent to set our pidslot */
 			while (shm->pids[pidslot] != getpid()) {
 				/* Make sure parent is actually alive to wait for us. */
-				ret = pid_alive(shm->parentpid);
+				ret = pid_alive(mainpid);
 				if (ret != 0) {
 					shm->exit_reason = EXIT_SHM_CORRUPTION;
-					printf("[%d] " BUGTXT "parent (%d) went away!\n", getpid(), shm->parentpid);
+					printf("[%d] " BUGTXT "parent (%d) went away!\n", getpid(), mainpid);
 					sleep(20000);
 				}
 			}
@@ -380,14 +380,13 @@ void do_main_loop(void)
 	int childstatus;
 	pid_t pid;
 
-
 	/* do an extra fork so that the watchdog and the children don't share a common parent */
 	fflush(stdout);
 	pid = fork();
 	if (pid == 0) {
 		setup_main_signals();
 
-		shm->parentpid = getpid();
+		mainpid = getpid();
 		output(0, "[%d] Main thread is alive.\n", getpid());
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
 		set_seed(0);
@@ -413,5 +412,5 @@ void do_main_loop(void)
 	/* wait for main loop process to exit. */
 	pid = waitpid(pid, &childstatus, 0);
 
-	shm->parentpid = getpid();
+	mainpid = 0;
 }
