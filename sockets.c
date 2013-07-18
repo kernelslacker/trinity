@@ -9,7 +9,6 @@
 #include <sys/stat.h>
 
 #include "trinity.h"
-#include "sanitise.h"
 #include "constants.h"
 #include "shm.h"
 #include "net.h"
@@ -75,8 +74,6 @@ static void generate_sockets(void)
 	int fd, n;
 	int cachefile;
 	unsigned int nr_to_create = NR_SOCKET_FDS;
-
-	unsigned long domain, type, protocol;
 	unsigned int buffer[3];
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
@@ -100,25 +97,22 @@ static void generate_sockets(void)
 
 	while (nr_to_create > 0) {
 
+		struct socket_triplet st;
+
 		if (shm->exit_reason != STILL_RUNNING) {
 			close(cachefile);
 			return;
 		}
 
-		/* Pretend we're child 0 and we've called sys_socket */
-		sanitise_socket(0);
+		gen_socket_args(&st);
 
-		domain = shm->a1[0];
-		type = shm->a2[0];
-		protocol = shm->a3[0];
-
-		fd = open_socket(domain, type, protocol);
+		fd = open_socket(st.family, st.type, st.protocol);
 		if (fd > -1) {
 			nr_to_create--;
 
-			buffer[0] = domain;
-			buffer[1] = type;
-			buffer[2] = protocol;
+			buffer[0] = st.family;
+			buffer[1] = st.type;
+			buffer[2] = st.protocol;
 			n = write(cachefile, &buffer, sizeof(int) * 3);
 			if (n == -1) {
 				printf("something went wrong writing the cachefile!\n");
