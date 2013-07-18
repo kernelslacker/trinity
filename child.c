@@ -133,7 +133,7 @@ void check_parent_pid(void)
 	//FIXME: Add locking so only one child does this output.
 	output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED! "
 		"parent pid:%d. Watchdog pid:%d\n",
-		pid, mainpid, watchdog_pid);
+		pid, mainpid, shm->watchdog_pid);
 	output(0, BUGTXT "Last syscalls:\n");
 
 	for (i = 0; i < MAX_NR_CHILDREN; i++) {

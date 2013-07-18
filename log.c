@@ -60,7 +60,7 @@ static FILE * find_logfile_handle(void)
 	if (pid == mainpid)
 		return mainlogfile;
 
-	if (pid == watchdog_pid)
+	if (pid == shm->watchdog_pid)
 		return mainlogfile;
 
 	i = find_pid_slot(pid);
