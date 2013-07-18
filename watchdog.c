@@ -54,7 +54,7 @@ static int check_shm_sanity(void)
 	return SHM_OK;
 }
 
-static void check_main(void)
+static int check_main_alive(void)
 {
 	int ret;
 
@@ -71,7 +71,9 @@ static void check_main(void)
 		} else {
 			output(0, "[watchdog] problem checking on pid %d (%d:%s)\n", mainpid, errno, strerror(errno));
 		}
+		return FALSE;
 	}
+	return TRUE;
 }
 
 static unsigned int reap_dead_kids(void)
@@ -265,7 +267,8 @@ static void watchdog(void)
 		if (check_shm_sanity() == SHM_CORRUPT)
 			goto corrupt;
 
-		check_main();
+		if (check_main_alive() == FALSE)
+			goto main_dead;
 
 		if (shm->regenerating == FALSE) {
 
@@ -310,6 +313,7 @@ static void watchdog(void)
 			}
 		}
 
+main_dead:
 		/* Are we done ? */
 		if (shm->exit_reason != STILL_RUNNING) {
 			/* Give children a chance to exit. */
