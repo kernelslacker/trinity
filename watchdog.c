@@ -22,24 +22,6 @@
 
 pid_t watchdog_pid;
 
-static void watchdog(void);
-
-void init_watchdog(void)
-{
-	pid_t pid;
-
-	fflush(stdout);
-	pid = fork();
-
-	if (pid == 0) {
-		watchdog_pid = getpid();
-		watchdog();     // Never returns.
-	} else {
-		watchdog_pid = pid;
-		output(0, "[%d] Started watchdog process, PID is %d\n", getpid(), watchdog_pid);
-	}
-}
-
 static int check_shm_sanity(void)
 {
 	unsigned int i;
@@ -351,4 +333,20 @@ corrupt:
 	output(0, "[%d] Watchdog exiting\n", getpid());
 
 	_exit(EXIT_SUCCESS);
+}
+
+void init_watchdog(void)
+{
+	pid_t pid;
+
+	fflush(stdout);
+	pid = fork();
+
+	if (pid == 0) {
+		watchdog_pid = getpid();
+		watchdog();     // Never returns.
+	} else {
+		watchdog_pid = pid;
+		output(0, "[%d] Started watchdog process, PID is %d\n", getpid(), watchdog_pid);
+	}
 }
