@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <limits.h>
+#include "pids.h"
 #include "random.h"
 #include "sanitise.h"	// interesting_numbers
 #include "types.h"
