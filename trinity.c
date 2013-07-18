@@ -241,7 +241,7 @@ int main(int argc, char* argv[])
 	do_main_loop();
 
 	/* Shutting down. */
-	waitpid(shm->watchdog_pid, &childstatus, 0);
+	waitpid(watchdog_pid, &childstatus, 0);
 
 	printf("\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->total_syscalls_done - 1, shm->successes, shm->failures);

@@ -20,6 +20,8 @@
 #include "log.h"
 #include "child.h"
 
+pid_t watchdog_pid;
+
 static void watchdog(void);
 
 void init_watchdog(void)
@@ -33,10 +35,10 @@ void init_watchdog(void)
 	if (pid == 0)
 		watchdog();     // Never returns.
 
-	while (shm->watchdog_pid == 0)
+	while (watchdog_pid == 0)
 		nanosleep(&ts, NULL);
 
-	output(0, "[%d] Started watchdog process, PID is %d\n", getpid(), shm->watchdog_pid);
+	output(0, "[%d] Started watchdog process, PID is %d\n", getpid(), watchdog_pid);
 }
 
 static int check_shm_sanity(void)
@@ -267,8 +269,8 @@ static void watchdog(void)
 	bool watchdog_exit = FALSE;
 	int ret = 0;
 
-	shm->watchdog_pid = getpid();
-	printf("[%d] Watchdog is alive\n", shm->watchdog_pid);
+	watchdog_pid = getpid();
+	printf("[%d] Watchdog is alive\n", watchdog_pid);
 
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
