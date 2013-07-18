@@ -9,67 +9,61 @@
 #include "net.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "trinity.h"
 
-//FIXME: Change to table driven, instead of switch.
+static void socketcall_socket(unsigned long *args)
+{
+	struct socket_triplet st;
+
+	gen_socket_args(&st);
+
+	args[0] = st.family;
+	args[1] = st.type;
+	args[2] = st.protocol;
+}
+
+struct socketcall_ptr {
+        unsigned int call;
+        void (*func)(unsigned long *args);
+};
+
+static const struct socketcall_ptr socketcallptrs[] = {
+	{ .call = SYS_SOCKET, .func = socketcall_socket },
+//	{ .call = SYS_BIND, .func = socketcall_bind },
+//	{ .call = SYS_CONNECT, .func = socketcall_connect },
+//	{ .call = SYS_LISTEN, .func = socketcall_listen },
+//	{ .call = SYS_ACCEPT, .func = socketcall_accept },
+//	{ .call = SYS_GETSOCKNAME, .func = socketcall_getsockname },
+//	{ .call = SYS_GETPEERNAME, .func = socketcall_getpeername },
+//	{ .call = SYS_SOCKETPAIR, .func = socketcall_socketpair },
+//	{ .call = SYS_SEND, .func = socketcall_send },
+//	{ .call = SYS_RECV, .func = socketcall_recv },
+//	{ .call = SYS_SENDTO, .func = socketcall_sendto },
+//	{ .call = SYS_RECVFROM, .func = socketcall_recvfrom },
+//	{ .call = SYS_SHUTDOWN, .func = socketcall_shutdown },
+//	{ .call = SYS_SETSOCKOPT, .func = socketcall_setsockopt },
+//	{ .call = SYS_GETSOCKOPT, .func = socketcall_getsockopt },
+//	{ .call = SYS_SENDMSG, .func = socketcall_sendmsg },
+//	{ .call = SYS_RECVMSG, .func = socketcall_recvmsg },
+//	{ .call = SYS_ACCEPT4, .func = socketcall_accept },
+//	{ .call = SYS_RECVMMSG, .func = socketcall_recvmmsg },
+//	{ .call = SYS_SENDMMSG, .func = socketcall_sendmmsg },
+};
+
 
 static void sanitise_socketcall(int childno)
 {
-	struct socket_triplet st;
 	unsigned long *args;
+	unsigned int i;
 
 	args = malloc(6 * sizeof(unsigned long));
 
 	shm->a1[childno] = rand() % 20;
+	shm->a1[childno] = SYS_SOCKET;
 
-	switch (shm->a1[childno]) {
-
-	case SYS_SOCKET:
-		gen_socket_args(&st);
-		args[0] = st.family;
-		args[1] = st.type;
-		args[2] = st.protocol;
-		break;
-
-	case SYS_BIND:
-		break;
-	case SYS_CONNECT:
-		break;
-	case SYS_LISTEN:
-		break;
-	case SYS_ACCEPT:
-		break;
-	case SYS_GETSOCKNAME:
-		break;
-	case SYS_GETPEERNAME:
-		break;
-	case SYS_SOCKETPAIR:
-		break;
-	case SYS_SEND:
-		break;
-	case SYS_RECV:
-		break;
-	case SYS_SENDTO:
-		break;
-	case SYS_RECVFROM:
-		break;
-	case SYS_SHUTDOWN:
-		break;
-	case SYS_SETSOCKOPT:
-		break;
-	case SYS_GETSOCKOPT:
-		break;
-	case SYS_SENDMSG:
-		break;
-	case SYS_RECVMSG:
-		break;
-	case SYS_ACCEPT4:
-		break;
-	case SYS_RECVMMSG:
-		break;
-	case SYS_SENDMMSG:
-		break;
-	default:
-		break;
+	for (i = 0; i < ARRAY_SIZE(socketcallptrs); i++) {
+		if (socketcallptrs[i].call == shm->a1[childno])
+			socketcallptrs[i].func(args);
 	}
 
 	shm->a2[childno] = (unsigned long) args;
