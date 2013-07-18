@@ -329,10 +329,6 @@ corrupt:
 		sleep(1);
 
 	kill_all_kids();
-
-	output(0, "[%d] Watchdog exiting\n", getpid());
-
-	_exit(EXIT_SUCCESS);
 }
 
 void init_watchdog(void)
@@ -344,7 +340,10 @@ void init_watchdog(void)
 
 	if (pid == 0) {
 		watchdog_pid = getpid();
-		watchdog();     // Never returns.
+		watchdog();
+		output(0, "[%d] Watchdog exiting\n", watchdog_pid);
+		_exit(EXIT_SUCCESS);
+
 	} else {
 		watchdog_pid = pid;
 		output(0, "[%d] Started watchdog process, PID is %d\n", getpid(), watchdog_pid);
