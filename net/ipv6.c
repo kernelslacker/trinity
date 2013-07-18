@@ -27,22 +27,22 @@ void ipv6_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_in6);
 }
 
-void inet6_rand_socket(struct proto_type *pt)
+void inet6_rand_socket(struct socket_triplet *st)
 {
 	switch (rand() % 3) {
-	case 0: pt->type = SOCK_STREAM;     // TCP
-		pt->protocol = 0;
+	case 0: st->type = SOCK_STREAM;     // TCP
+		st->protocol = 0;
 		break;
 
-	case 1: pt->type = SOCK_DGRAM;      // UDP
+	case 1: st->type = SOCK_DGRAM;      // UDP
 		if (rand_bool())
-			pt->protocol = 0;
+			st->protocol = 0;
 		else
-			pt->protocol = IPPROTO_UDP;
+			st->protocol = IPPROTO_UDP;
 		break;
 
-	case 2: pt->type = SOCK_RAW;
-		pt->protocol = rand() % PROTO_MAX;
+	case 2: st->type = SOCK_RAW;
+		st->protocol = rand() % PROTO_MAX;
 		break;
 
 	default:break;

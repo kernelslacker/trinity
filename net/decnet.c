@@ -29,13 +29,13 @@ void decnet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_dn);
 }
 
-void decnet_rand_socket(struct proto_type *pt)
+void decnet_rand_socket(struct socket_triplet *st)
 {
 	if (rand_bool()) {
-		pt->type = SOCK_SEQPACKET;
-		pt->protocol = DNPROTO_NSP;
+		st->type = SOCK_SEQPACKET;
+		st->protocol = DNPROTO_NSP;
 	} else {
-		pt->type = SOCK_STREAM;
-		pt->protocol = rand() % PROTO_MAX;
+		st->type = SOCK_STREAM;
+		st->protocol = rand() % PROTO_MAX;
 	}
 }

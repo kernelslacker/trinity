@@ -40,16 +40,16 @@ static int ax25_protocols[NR_AX25_PROTOS] = {
 	0xF0    /* No layer 3 protocol impl.  */
 };
 
-void ax25_rand_socket(struct proto_type *pt)
+void ax25_rand_socket(struct socket_triplet *st)
 {
 	switch (rand() % 3) {
-	case 0: pt->type = SOCK_DGRAM;
-		pt->protocol = 0;
+	case 0: st->type = SOCK_DGRAM;
+		st->protocol = 0;
 		break;
-	case 1: pt->type = SOCK_SEQPACKET;
-		pt->protocol = ax25_protocols[rand() % NR_AX25_PROTOS];
+	case 1: st->type = SOCK_SEQPACKET;
+		st->protocol = ax25_protocols[rand() % NR_AX25_PROTOS];
 		break;
-	case 2: pt->type = SOCK_RAW;
+	case 2: st->type = SOCK_RAW;
 		break;
 	default:break;
 	}

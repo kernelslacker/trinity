@@ -22,12 +22,12 @@ void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_nl);
 }
 
-void netlink_rand_socket(struct proto_type *pt)
+void netlink_rand_socket(struct socket_triplet *st)
 {
 	if (rand_bool())
-		pt->type = SOCK_RAW;
+		st->type = SOCK_RAW;
 	else
-		pt->type = SOCK_DGRAM;
+		st->type = SOCK_DGRAM;
 
-	pt->protocol = rand() % (NETLINK_CRYPTO + 1);       // Current highest netlink socket.
+	st->protocol = rand() % (NETLINK_CRYPTO + 1);       // Current highest netlink socket.
 }

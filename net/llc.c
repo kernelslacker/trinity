@@ -29,11 +29,11 @@ void llc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_llc);
 }
 
-void llc_rand_socket(struct proto_type *pt)
+void llc_rand_socket(struct socket_triplet *st)
 {
-	pt->protocol = rand() % PROTO_MAX;
+	st->protocol = rand() % PROTO_MAX;
 	if (rand_bool())
-		pt->type = SOCK_STREAM;
+		st->type = SOCK_STREAM;
 	else
-		pt->type = SOCK_DGRAM;
+		st->type = SOCK_DGRAM;
 }

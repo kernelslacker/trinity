@@ -34,13 +34,13 @@ void caif_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_caif);
 }
 
-void caif_rand_socket(struct proto_type *pt)
+void caif_rand_socket(struct socket_triplet *st)
 {
-	pt->protocol = rand() % _CAIFPROTO_MAX;
+	st->protocol = rand() % _CAIFPROTO_MAX;
 	if (rand_bool())
-		pt->type = SOCK_SEQPACKET;
+		st->type = SOCK_SEQPACKET;
 	else
-		pt->type = SOCK_STREAM;
+		st->type = SOCK_STREAM;
 }
 
 #endif

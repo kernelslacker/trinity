@@ -24,16 +24,16 @@ void unix_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_un);
 }
 
-void unix_rand_socket(struct proto_type *pt)
+void unix_rand_socket(struct socket_triplet *st)
 {
-	pt->protocol = PF_UNIX;
+	st->protocol = PF_UNIX;
 
 	switch (rand() % 3) {
-	case 0: pt->type = SOCK_STREAM;
+	case 0: st->type = SOCK_STREAM;
 		break;
-	case 1: pt->type = SOCK_DGRAM;
+	case 1: st->type = SOCK_DGRAM;
 		break;
-	case 2: pt->type = SOCK_SEQPACKET;
+	case 2: st->type = SOCK_SEQPACKET;
 		break;
 	default:break;
 	}

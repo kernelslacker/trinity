@@ -25,17 +25,17 @@ void nfc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_nfc);
 }
 
-void nfc_rand_socket(struct proto_type *pt)
+void nfc_rand_socket(struct socket_triplet *st)
 {
 	if (rand_bool()) {
-		pt->protocol = NFC_SOCKPROTO_LLCP;
+		st->protocol = NFC_SOCKPROTO_LLCP;
 		if (rand_bool())
-			pt->type = SOCK_DGRAM;
+			st->type = SOCK_DGRAM;
 		else
-			pt->type = SOCK_STREAM;
+			st->type = SOCK_STREAM;
 		return;
 	}
 
-	pt->protocol = NFC_SOCKPROTO_RAW;
-	pt->type = SOCK_SEQPACKET;
+	st->protocol = NFC_SOCKPROTO_RAW;
+	st->type = SOCK_SEQPACKET;
 }
