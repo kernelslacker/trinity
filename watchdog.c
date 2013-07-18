@@ -186,8 +186,13 @@ static void check_children(void)
 
 			memset(fdstr, 0, sizeof(fdstr));
 
-			if (check_if_fd(callno, i) == TRUE)
-				sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
+			if ((int) callno == -1) {
+				output(0, "[watchdog] callno was -1. WTF!\n");
+				shm->exit_reason = EXIT_REACHED_COUNT;
+			} else {
+				if (check_if_fd(callno, i) == TRUE)
+					sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
+			}
 
 			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
 				"Stuck in syscall %d:%s%s%s. Sending SIGKILL.\n",
