@@ -22,9 +22,15 @@ void find_specific_proto(const char *protoarg);
 
 #define PF_NOHINT (-1)
 
-struct proto_type {
-	unsigned int protocol;
+struct socket_triplet {
+	unsigned int family;
 	unsigned int type;
+	unsigned int protocol;
+};
+
+struct proto_type {
+	unsigned int type;
+	unsigned int protocol;
 };
 
 struct sockopt {
@@ -33,6 +39,8 @@ struct sockopt {
 	unsigned long optval;
 	unsigned long optlen;
 };
+
+void gen_socket_args(struct socket_triplet *st);
 
 /* ipv4 */
 in_addr_t random_ipv4_address(void);

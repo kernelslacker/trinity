@@ -3,12 +3,18 @@
  */
 #include <stdlib.h>
 #include <linux/net.h>
+#include <sys/types.h>          /* See NOTES */
+#include <sys/socket.h>
 #include "compat.h"
+#include "net.h"
 #include "sanitise.h"
 #include "shm.h"
 
+//FIXME: Change to table driven, instead of switch.
+
 static void sanitise_socketcall(int childno)
 {
+	struct socket_triplet st;
 	unsigned long *args;
 
 	args = malloc(6 * sizeof(unsigned long));
@@ -16,10 +22,14 @@ static void sanitise_socketcall(int childno)
 	shm->a1[childno] = rand() % 20;
 
 	switch (shm->a1[childno]) {
+
 	case SYS_SOCKET:
-		sanitise_socket(childno);
-		shm->syscallno[childno] = search_syscall_table(syscalls, max_nr_syscalls, "socket");
+		gen_socket_args(&st);
+		args[0] = st.family;
+		args[1] = st.type;
+		args[2] = st.protocol;
 		break;
+
 	case SYS_BIND:
 		break;
 	case SYS_CONNECT:

@@ -43,45 +43,55 @@ static const struct socket_ptr socketptrs[] = {
 };
 
 /* note: also called from generate_sockets() & sanitise_socketcall() */
-void sanitise_socket(int childno)
+void gen_socket_args(struct socket_triplet *st)
 {
-	unsigned int family;
-	struct proto_type pt = { .protocol = 0, .type = 0 };
+	struct proto_type pt;	// FIXME: Kill off proto_type, switch to triplet errywhere.
 
 	if (do_specific_proto == TRUE)
-		family = specific_proto;
+		st->family = specific_proto;
 	else
-		family = rand() % TRINITY_PF_MAX;
+		st->family = rand() % TRINITY_PF_MAX;
 
 	if (rand() % 100 > 0) {
 		unsigned int i;
 		for (i = 0; i < ARRAY_SIZE(socketptrs); i++) {
-			if (socketptrs[i].family == family)
+			if (socketptrs[i].family == st->family) {
 				socketptrs[i].func(&pt);
+				st->protocol = pt.protocol;
+				st->type = pt.type;
+			}
 		}
 
 	} else {
-		pt.protocol = rand() % PROTO_MAX;
+		st->protocol = rand() % PROTO_MAX;
 
 		switch (rand() % 6) {
-		case 0:	pt.type = SOCK_DGRAM;	break;
-		case 1:	pt.type = SOCK_STREAM;	break;
-		case 2:	pt.type = SOCK_SEQPACKET;	break;
-		case 3:	pt.type = SOCK_RAW;	break;
-		case 4:	pt.type = SOCK_RDM;	break;
-		case 5:	pt.type = SOCK_PACKET;	break;
+		case 0:	st->type = SOCK_DGRAM;	break;
+		case 1:	st->type = SOCK_STREAM;	break;
+		case 2:	st->type = SOCK_SEQPACKET;	break;
+		case 3:	st->type = SOCK_RAW;	break;
+		case 4:	st->type = SOCK_RDM;	break;
+		case 5:	st->type = SOCK_PACKET;	break;
 		default: break;
 		}
 	}
 
 	if ((rand() % 100) < 25)
-		pt.type |= SOCK_CLOEXEC;
+		st->type |= SOCK_CLOEXEC;
 	if ((rand() % 100) < 25)
-		pt.type |= SOCK_NONBLOCK;
+		st->type |= SOCK_NONBLOCK;
+}
 
-	shm->a1[childno] = family;
-	shm->a2[childno] = pt.type;
-	shm->a3[childno] = pt.protocol;
+
+static void sanitise_socket(int childno)
+{
+	struct socket_triplet st = { .family = 0, .type = 0, .protocol = 0 };
+
+	gen_socket_args(&st);
+
+	shm->a1[childno] = st.family;
+	shm->a2[childno] = st.type;
+	shm->a3[childno] = st.protocol;
 }
 
 struct syscall syscall_socket = {
