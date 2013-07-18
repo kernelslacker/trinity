@@ -22,6 +22,7 @@ struct shm_s {
 	unsigned int seeds[MAX_NR_CHILDREN];
 	unsigned int reseed_counter;
 
+	pid_t watchdog_pid;
 	pid_t pids[MAX_NR_CHILDREN];
 
 	pid_t last_reaped;
