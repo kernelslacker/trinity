@@ -277,14 +277,14 @@ static void watchdog(void)
 
 	while (watchdog_exit == FALSE) {
 
+		if (check_shm_sanity() == SHM_CORRUPT)
+			goto corrupt;
+
+		check_main();
+
 		if (shm->regenerating == FALSE) {
 
-			if (check_shm_sanity() == SHM_CORRUPT)
-				goto corrupt;
-
 			reap_dead_kids();
-
-			check_main();
 
 			check_children();
 
