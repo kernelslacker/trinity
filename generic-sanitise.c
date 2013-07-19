@@ -131,6 +131,10 @@ static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 		break;
 	default: break;
 	}
+
+	if (num == 0)
+		BUG("ARG_OP with 0 args. What?\n");
+
 	mask |= values[rand() % num];
 	return mask;
 }
