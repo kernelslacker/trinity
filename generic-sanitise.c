@@ -135,6 +135,9 @@ static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 	if (num == 0)
 		BUG("ARG_OP with 0 args. What?\n");
 
+	if (values == NULL)
+		BUG("ARG_OP with no values.\n");
+
 	mask |= values[rand() % num];
 	return mask;
 }
@@ -171,6 +174,9 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 
 	if (num == 0)
 		BUG("ARG_LIST with 0 args. What?\n");
+
+	if (values == NULL)
+		BUG("ARG_LIST with no values.\n");
 
 	bits = rand() % num;	/* num of bits to OR */
 	for (i = 0; i < bits; i++)
