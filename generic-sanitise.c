@@ -164,6 +164,10 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 		break;
 	default: break;
 	}
+
+	if (num == 0)
+		BUG("ARG_LIST with 0 args. What?\n");
+
 	bits = rand() % num;	/* num of bits to OR */
 	for (i = 0; i < bits; i++)
 		mask |= values[rand() % num];
