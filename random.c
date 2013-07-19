@@ -214,7 +214,7 @@ u64 rand64(void)
 	}
 
 	if (rand_bool())
-		r ^= r;
+		r = ~r;
 
 	/* increase distribution in MSB */
 	if ((rand() % 10)) {
