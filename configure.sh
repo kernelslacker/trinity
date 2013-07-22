@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DEVEL=1
+DEVEL=0
 
 RED="[1;31m"
 GREEN="[1;32m"
