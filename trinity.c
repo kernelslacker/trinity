@@ -147,6 +147,32 @@ static int munge_tables(void)
 	return TRUE;
 }
 
+/*
+ * just in case we're not using the test.sh harness, we
+ * change to the tmp dir if it exists.
+ */
+static void change_tmp_dir(void)
+{
+	struct stat sb;
+	const char tmpdir[]="tmp/";
+	int ret;
+
+	/* Check if it exists, bail early if it doesn't */
+	ret = (lstat(tmpdir, &sb));
+	if (ret == -1)
+		return;
+
+	/* Just in case a previous run screwed the perms. */
+	ret = chmod(tmpdir, 0755);
+	if (ret == -1)
+		output(0, "Couldn't chmod %s to 0755.\n", tmpdir);
+
+	ret = chdir(tmpdir);
+	if (ret == -1)
+		output(0, "Couldn't change to %s\n", tmpdir);
+}
+
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -225,12 +251,7 @@ int main(int argc, char* argv[])
 		ignore_tainted = TRUE;
 	}
 
-	/* just in case we're not using the test.sh harness. */
-	chmod("tmp/", 0755);
-	ret = chdir("tmp/");
-	if (!ret) {
-		/* nothing right now */
-	}
+	change_tmp_dir();
 
 	/* check if we ctrl'c or something went wrong during init. */
 	if (shm->exit_reason != STILL_RUNNING)
