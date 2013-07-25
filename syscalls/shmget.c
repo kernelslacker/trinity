@@ -9,16 +9,10 @@
 
 static void post_shmget(int syscallret)
 {
-	struct shmid_ds *shmid_ds;
-
 	if (syscallret == -1)
 		return;
 
-	shmid_ds = malloc(sizeof(struct shmid_ds));
-
-	shmctl(syscallret, IPC_RMID, shmid_ds);
-
-	free(shmid_ds);
+	shmctl(syscallret, IPC_RMID, 0);
 }
 
 struct syscall syscall_shmget = {
