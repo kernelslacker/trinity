@@ -48,9 +48,9 @@ static void parse_proc_devices(void)
 
 			if (block) {
 				new = realloc(block_devs, (bldevs+1)*sizeof(*block_devs));
-				if (!new) {
+				if (!new) {	// FIXME: We should propagate failure up here.
 					free(name);
-					continue;
+					break;
 				}
 				block_devs = new;
 				block_devs[bldevs].major = major;
@@ -61,7 +61,7 @@ static void parse_proc_devices(void)
 				new = realloc(char_devs, (chrdevs+1)*sizeof(*char_devs));
 				if (!new) {
 					free(name);
-					continue;
+					break;
 				}
 				char_devs = new;
 				char_devs[chrdevs].major = major;
