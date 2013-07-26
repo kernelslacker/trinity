@@ -42,6 +42,21 @@ static const struct socket_ptr socketptrs[] = {
 	{ .family = AF_X25, .func = &x25_rand_socket },
 };
 
+static void rand_proto_type(struct socket_triplet *st)
+{
+	st->protocol = rand() % PROTO_MAX;
+
+	switch (rand() % 6) {
+	case 0:	st->type = SOCK_DGRAM;	break;
+	case 1:	st->type = SOCK_STREAM;	break;
+	case 2:	st->type = SOCK_SEQPACKET;	break;
+	case 3:	st->type = SOCK_RAW;	break;
+	case 4:	st->type = SOCK_RDM;	break;
+	case 5:	st->type = SOCK_PACKET;	break;
+	default: break;
+	}
+}
+
 /* note: also called from generate_sockets() & sanitise_socketcall() */
 void gen_socket_args(struct socket_triplet *st)
 {
@@ -53,22 +68,14 @@ void gen_socket_args(struct socket_triplet *st)
 	if (rand() % 100 > 0) {
 		unsigned int i;
 		for (i = 0; i < ARRAY_SIZE(socketptrs); i++) {
-			if (socketptrs[i].family == st->family)
+			if (socketptrs[i].family == st->family) {
 				socketptrs[i].func(st);
+			}
 		}
-
+		/* Couldn't find func, fall back to random. */
+		rand_proto_type(st);
 	} else {
-		st->protocol = rand() % PROTO_MAX;
-
-		switch (rand() % 6) {
-		case 0:	st->type = SOCK_DGRAM;	break;
-		case 1:	st->type = SOCK_STREAM;	break;
-		case 2:	st->type = SOCK_SEQPACKET;	break;
-		case 3:	st->type = SOCK_RAW;	break;
-		case 4:	st->type = SOCK_RDM;	break;
-		case 5:	st->type = SOCK_PACKET;	break;
-		default: break;
-		}
+		rand_proto_type(st);
 	}
 
 	if ((rand() % 100) < 25)
