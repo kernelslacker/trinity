@@ -112,8 +112,8 @@ long mkcall(int childno)
 {
 	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
 	unsigned int call = shm->syscallno[childno];
-	unsigned int call32, call64;
 	unsigned long ret = 0;
+	int call32, call64;
 	int errno_saved;
 	char string[512], *sptr;
 
@@ -292,10 +292,12 @@ args_done:
 			syscalls[call].entry->flags &= ~ACTIVE;
 		} else {
 			call32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, syscalls[call].entry->name);
-			syscalls_32bit[call32].entry->flags &= ~ACTIVE;
+			if (call32 != -1)
+				syscalls_32bit[call32].entry->flags &= ~ACTIVE;
+
 			call64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, syscalls[call].entry->name);
-			syscalls_64bit[call64].entry->flags &= ~ACTIVE;
-			output(1, "Disabled syscalls 32bit:%d 64bit:%d\n", call32, call64);
+			if (call64 != -1)
+				syscalls_64bit[call64].entry->flags &= ~ACTIVE;
 		}
 	}
 
