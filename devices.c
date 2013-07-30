@@ -91,7 +91,7 @@ static void parse_proc_misc(void)
 		new = realloc(misc_devs, (miscdevs+1)*sizeof(*misc_devs));
 		if (!new) {
 			free(name);
-			continue;
+			break;
 		}
 		misc_devs = new;
 		misc_devs[miscdevs].major = 0;
