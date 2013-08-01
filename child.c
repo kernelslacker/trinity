@@ -21,6 +21,7 @@
 #include "signals.h"
 #include "pids.h"
 #include "params.h"	// for 'debug'
+#include "trinity.h"	// ARRAY_SIZE
 
 static struct rlimit oldrlimit;
 
@@ -153,11 +154,29 @@ void check_parent_pid(void)
 	//TODO: Emergency logging.
 }
 
+struct child_funcs {
+	int type;
+	const char *name;
+	int (*func)(int childno);
+};
+
+static const struct child_funcs child_functions[] = {
+	{ .type = CHILD_RANDOM_SYSCALLS, .name = "rand_syscalls", .func = do_random_syscalls },
+};
+
 int child_process(int childno)
 {
 	int ret;
+	unsigned int i;
 
-	ret = do_random_syscalls(childno);
+	i = rand() % ARRAY_SIZE(child_functions);
+
+	output(0, "rand:%d\n", i);
+
+	output(0, "Chose %s for process %d\n", child_functions[i].name, getpid());
+
+	shm->child_type[childno] = child_functions[i].type;
+	ret = child_functions[i].func(childno);
 
 	reenable_coredumps();
 

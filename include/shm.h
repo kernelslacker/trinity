@@ -23,6 +23,7 @@ struct shm_s {
 	unsigned int reseed_counter;
 
 	pid_t pids[MAX_NR_CHILDREN];
+	unsigned char child_type[MAX_NR_CHILDREN];
 
 	pid_t last_reaped;
 	bool spawn_no_more;
