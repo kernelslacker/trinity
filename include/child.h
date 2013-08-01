@@ -15,4 +15,8 @@ void check_parent_pid(void);
 
 int do_random_syscalls(int childno);
 
+enum childtypes {
+	CHILD_RANDOM_SYSCALLS = 1,
+};
+
 #endif	/* _CHILD_H */
