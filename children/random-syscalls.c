@@ -62,7 +62,7 @@ static void choose_syscall_table(int childno)
 	}
 }
 
-int do_random_syscalls(int childno)
+int child_random_syscalls(int childno)
 {
 	pid_t pid = getpid();
 	int ret;
