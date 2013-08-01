@@ -178,7 +178,7 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 	if (values == NULL)
 		BUG("ARG_LIST with no values.\n");
 
-	bits = rand() % num;	/* num of bits to OR */
+	bits = rand() % (num + 1);	/* num of bits to OR */
 	for (i = 0; i < bits; i++)
 		mask |= values[rand() % num];
 	return mask;
