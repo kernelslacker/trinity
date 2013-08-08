@@ -6,6 +6,7 @@
 #include "config.h"
 #include "net.h"
 #include "random.h"
+#include "compat.h"
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
