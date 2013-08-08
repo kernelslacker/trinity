@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "config.h"
 #include "net.h"
+#include "compat.h"
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
