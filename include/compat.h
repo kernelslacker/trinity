@@ -140,6 +140,10 @@ enum {
 #define MSG_WAITFORONE	0x10000
 #endif
 
+#ifndef MSG_CMSG_CLOEXEC
+#define MSG_CMSG_CLOEXEC	0x40000000
+#endif
+
 /* linux/socket.h */
 #ifndef MSG_PROBE
 #define MSG_PROBE 0x10
