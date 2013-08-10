@@ -32,6 +32,12 @@ const char * generate_pathname(void)
 		if (newpath == NULL)
 			return pathname;	// give up.
 
+		/* empty string. */
+		if ((rand() % 100) == 0) {
+			memset(newpath, 0, page_size);
+			goto out;
+		}
+
 		generate_random_page(newpath);
 
 		/* sometimes, just complete junk. */
