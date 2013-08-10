@@ -3,8 +3,18 @@
 	 int, newdfd, const char __user *, newname, int, flags)
  */
 #include <fcntl.h>
-#include "sanitise.h"
+#include <stdlib.h>
 #include "compat.h"
+#include "shm.h"
+#include "sanitise.h"
+
+static void sanitise_linkat(int childno)
+{
+	/* .. If oldpath is relative and olddirfd is the special value AT_FDCWD, then oldpath is
+	 * interpreted relative to the current working directory of the calling process  */
+	if ((rand() % 100) == 0)
+		shm->a1[childno] = AT_FDCWD;
+}
 
 struct syscall syscall_linkat = {
 	.name = "linkat",
@@ -25,4 +35,5 @@ struct syscall syscall_linkat = {
 	},
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.sanitise = sanitise_linkat,
 };
