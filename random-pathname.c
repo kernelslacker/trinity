@@ -12,25 +12,24 @@ const char * generate_pathname(void)
 	const char *pathname = get_filename();
 	char *newpath;
 	unsigned int len;
-	unsigned int i, chance;
+	unsigned int i;
 
 	if (pathname == NULL)		/* As above, handle -n correctly. */
 		return NULL;
 
-	len = strlen(pathname);
+	switch (rand() % 100) {
 
-	chance = rand() % 100;
-	switch (chance) {
-
-	case 0 ... 90:
+	case 0 ... 89:
 		/* 90% chance of returning an unmangled filename */
 		return pathname;
 
-	case 91 ... 99:
+	case 90 ... 99:
 		/* Create a bogus filename. */
 		newpath = malloc(page_size);	// FIXME: We leak this.
 		if (newpath == NULL)
 			return pathname;	// give up.
+
+		len = strlen(pathname);
 
 		/* empty string. */
 		if ((rand() % 100) == 0) {
@@ -50,7 +49,8 @@ const char * generate_pathname(void)
 		else {
 			/* make it look relative to cwd */
 			newpath[0] = '.';
-			(void) strncpy(newpath + 1, pathname, len);
+			newpath[1] = '/';
+			(void) strncpy(newpath + 2, pathname, len);
 		}
 
 		/* Sometimes, remove all /'s */
