@@ -93,12 +93,46 @@ enum {
 
 
 /* bits/socket.h */
+#ifndef PF_RDS
+#define PF_RDS		21
+#endif
+#ifndef AF_RDS
+#define AF_RDS		PF_RDS
+#endif
+
+#ifndef PF_LLC
+#define PF_LLC		26
+#endif
+#ifndef AF_LLC
+#define AF_LLC		PF_LLC
+#endif
 
 #ifndef AF_IB
 #define AF_IB		27
 #endif
 #ifndef PF_IB
 #define PF_IB          AF_IB
+#endif
+
+#ifndef PF_CAN
+#define PF_CAN		29
+#endif
+#ifndef AF_CAN
+#define AF_CAN		PF_CAN
+#endif
+
+#ifndef PF_TIPC
+#define PF_TIPC		30
+#endif
+#ifndef AF_TIPC
+#define AF_TIPC		PF_TIPC
+#endif
+
+#ifndef PF_PHONET
+#define PF_PHONET	35
+#endif
+#ifndef AF_PHONET
+#define AF_PHONET	PF_PHONET
 #endif
 
 #ifndef PF_CAIF
