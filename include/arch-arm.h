@@ -1,16 +1,13 @@
-#define KERNEL_ADDR	0xc0100220
-#define MODULE_ADDR     0xa0000000	//FIXME: Placeholder
-
-#define PAGE_OFFSET 0xC0000000
-#define TASK_SIZE (PAGE_OFFSET)
+#define PAGE_OFFSET		0xC0000000
 /*
  * Alternative possibilities for PAGE_OFFSET:
- * default 0xB0000000 if VMSPLIT_3G_OPT
- * default 0x78000000 if VMSPLIT_2G
  * default 0x40000000 if VMSPLIT_1G
+ * default 0x80000000 if VMSPLIT_2G
  */
+#define TASK_SIZE		(PAGE_OFFSET - 0x01000000)
+#define MODULE_ADDR		(PAGE_OFFSET - 0x00800000)
+#define KERNEL_ADDR		(PAGE_OFFSET + 0x00008000)
 
-#define PAGE_SHIFT 12
+#define PAGE_SHIFT		12
 
-#define PTE_FILE_MAX_BITS 31
-
+#define PTE_FILE_MAX_BITS	29
