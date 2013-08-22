@@ -64,13 +64,51 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	return fd;
 }
 
-static void generate_sockets(void)
+static void lock_cachefile(int cachefile, int type)
 {
 	struct flock fl = {
-		.l_type = F_WRLCK,
+		.l_len = 0,
+		.l_start = 0,
 		.l_whence = SEEK_SET,
 	};
 
+	fl.l_pid = getpid();
+	fl.l_type = type;
+
+	if (verbose)
+		output(2, "waiting on lock for cachefile\n");
+
+	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
+		perror("fcntl F_SETLKW");
+		exit(1);
+	}
+
+	if (verbose)
+		output(2, "took lock for cachefile\n");
+}
+
+static void unlock_cachefile(int cachefile)
+{
+	struct flock fl = {
+		.l_len = 0,
+		.l_start = 0,
+		.l_whence = SEEK_SET,
+	};
+
+	fl.l_pid = getpid();
+	fl.l_type = F_UNLCK;
+
+	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
+		perror("fcntl F_UNLCK F_SETLK ");
+		exit(1);
+	}
+
+	if (verbose)
+		output(2, "dropped lock for cachefile\n");
+}
+
+static void generate_sockets(void)
+{
 	int fd, n;
 	int cachefile;
 	unsigned int nr_to_create = NR_SOCKET_FDS;
@@ -83,17 +121,7 @@ static void generate_sockets(void)
 		exit(EXIT_FAILURE);
 	}
 
-	if (verbose)
-		output(2, "taking writer lock for cachefile\n");
-	fl.l_pid = getpid();
-	fl.l_type = F_WRLCK;
-	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
-		perror("fcntl F_WRLCK F_SETLKW");
-		exit(EXIT_FAILURE);
-	}
-
-	if (verbose)
-		output(2, "took writer lock for cachefile\n");
+	lock_cachefile(cachefile, F_WRLCK);
 
 	while (nr_to_create > 0) {
 
@@ -132,14 +160,8 @@ static void generate_sockets(void)
 	}
 
 done:
-	fl.l_type = F_UNLCK;
-	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
-		perror("fcntl F_SETLK");
-		exit(1);
-	}
+	unlock_cachefile(cachefile);
 
-	if (verbose)
-		output(2, "dropped writer lock for cachefile\n");
 	output(1, "created %d sockets\n", nr_sockets);
 
 	close(cachefile);
@@ -164,11 +186,6 @@ static void close_sockets(void)
 
 void open_sockets(void)
 {
-	struct flock fl = {
-		.l_type = F_WRLCK,
-		.l_whence = SEEK_SET,
-	};
-
 	int cachefile;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
@@ -186,16 +203,7 @@ void open_sockets(void)
 		return;
 	}
 
-	if (verbose)
-		output(2, "taking reader lock for cachefile\n");
-	fl.l_pid = getpid();
-	fl.l_type = F_RDLCK;
-	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
-		perror("fcntl F_RDLCK F_SETLKW");
-		exit(1);
-	}
-	if (verbose)
-		output(2, "took reader lock for cachefile\n");
+	lock_cachefile(cachefile, F_RDLCK);
 
 	while (bytesread != 0) {
 		bytesread = read(cachefile, buffer, sizeof(int) * 3);
@@ -209,8 +217,11 @@ void open_sockets(void)
 		if (do_specific_proto == TRUE) {
 			if (domain != specific_proto) {
 				printf("ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
-				generate_sockets();
+regenerate:
+				unlock_cachefile(cachefile);	/* drop the reader lock. */
 				close(cachefile);
+				unlink(cachefilename);
+				generate_sockets();
 				return;
 			}
 		}
@@ -218,14 +229,8 @@ void open_sockets(void)
 		fd = open_socket(domain, type, protocol);
 		if (fd < 0) {
 			printf("Cachefile is stale. Need to regenerate.\n");
-regenerate:
-			close(cachefile);
-			unlink(cachefilename);
-
 			close_sockets();
-
-			generate_sockets();
-			return;
+			goto regenerate;
 		}
 
 		/* check for ctrl-c */
@@ -242,14 +247,6 @@ regenerate:
 
 	output(1, "%d sockets created based on info from socket cachefile.\n", nr_sockets);
 
-	fl.l_pid = getpid();
-	fl.l_type = F_UNLCK;
-	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
-		perror("fcntl F_UNLCK F_SETLK ");
-		exit(1);
-	}
-
-	if (verbose)
-		output(2, "dropped reader lock for cachefile\n");
+	unlock_cachefile(cachefile);
 	close(cachefile);
 }
