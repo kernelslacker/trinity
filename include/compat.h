@@ -93,6 +93,14 @@ enum {
 
 
 /* bits/socket.h */
+#ifndef SOCK_CLOEXEC
+#define SOCK_CLOEXEC	02000000
+#endif
+
+#ifndef SOCK_NONBLOCK
+#define SOCK_NONBLOCK	04000
+#endif
+
 #ifndef PF_RDS
 #define PF_RDS		21
 #endif
