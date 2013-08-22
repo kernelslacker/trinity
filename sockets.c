@@ -132,31 +132,41 @@ static void generate_sockets(void)
 			return;
 		}
 
-		gen_socket_args(&st);
+		for (st.family = 0; st.family < TRINITY_PF_MAX; st.family++) {
 
-		fd = open_socket(st.family, st.type, st.protocol);
-		if (fd > -1) {
-			nr_to_create--;
+			if (get_proto_name(st.family) == NULL)
+				goto skip;
 
-			buffer[0] = st.family;
-			buffer[1] = st.type;
-			buffer[2] = st.protocol;
-			n = write(cachefile, &buffer, sizeof(int) * 3);
-			if (n == -1) {
-				printf("something went wrong writing the cachefile!\n");
-				exit(EXIT_FAILURE);
+			if (sanitise_socket_triplet(&st) == -1)
+				rand_proto_type(&st);
+
+			fd = open_socket(st.family, st.type, st.protocol);
+			if (fd > -1) {
+				nr_to_create--;
+
+				buffer[0] = st.family;
+				buffer[1] = st.type;
+				buffer[2] = st.protocol;
+				n = write(cachefile, &buffer, sizeof(int) * 3);
+				if (n == -1) {
+					printf("something went wrong writing the cachefile!\n");
+					exit(EXIT_FAILURE);
+				}
+
+				if (nr_to_create == 0)
+					goto done;
+			} else {
+				//printf("Couldn't open family:%d (%s)\n", st.family, get_proto_name(st.family));
 			}
+skip:
 
-			if (nr_to_create == 0)
-				goto done;
+			/* check for ctrl-c */
+			if (shm->exit_reason != STILL_RUNNING)
+				return;
+
+			//FIXME: If we've passed -P and we're spinning here without making progress
+			// then we should abort after a few hundred loops.
 		}
-
-		/* check for ctrl-c */
-		if (shm->exit_reason != STILL_RUNNING)
-			return;
-
-		//FIXME: If we've passed -P and we're spinning here without making progress
-		// then we should abort after a few hundred loops.
 	}
 
 done:

@@ -35,6 +35,8 @@ struct sockopt {
 	unsigned long optlen;
 };
 
+void rand_proto_type(struct socket_triplet *st);
+int sanitise_socket_triplet(struct socket_triplet *st);
 void gen_socket_args(struct socket_triplet *st);
 
 /* ipv4 */

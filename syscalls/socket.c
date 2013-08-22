@@ -42,7 +42,7 @@ static const struct socket_ptr socketptrs[] = {
 	{ .family = AF_X25, .func = &x25_rand_socket },
 };
 
-static void rand_proto_type(struct socket_triplet *st)
+void rand_proto_type(struct socket_triplet *st)
 {
 	st->protocol = rand() % PROTO_MAX;
 
@@ -57,7 +57,22 @@ static void rand_proto_type(struct socket_triplet *st)
 	}
 }
 
-/* note: also called from generate_sockets() & sanitise_socketcall() */
+/* note: also called from generate_sockets() */
+int sanitise_socket_triplet(struct socket_triplet *st)
+{
+	unsigned int i;
+	for (i = 0; i < ARRAY_SIZE(socketptrs); i++) {
+		if (socketptrs[i].family == st->family) {
+			socketptrs[i].func(st);
+			return 0;
+		}
+	}
+
+	/* Couldn't find func, fall back to random. */
+	return -1;
+}
+
+/* note: also called from sanitise_socketcall() */
 void gen_socket_args(struct socket_triplet *st)
 {
 	if (do_specific_proto == TRUE)
@@ -65,19 +80,18 @@ void gen_socket_args(struct socket_triplet *st)
 	else
 		st->family = rand() % TRINITY_PF_MAX;
 
-	if (rand() % 100 > 0) {
-		unsigned int i;
-		for (i = 0; i < ARRAY_SIZE(socketptrs); i++) {
-			if (socketptrs[i].family == st->family) {
-				socketptrs[i].func(st);
-			}
-		}
-		/* Couldn't find func, fall back to random. */
+	/* sometimes, still gen rand crap */
+	if ((rand() % 100) == 0) {
 		rand_proto_type(st);
-	} else {
-		rand_proto_type(st);
+		goto done;
 	}
 
+	/* otherwise.. sanitise based on the family. */
+	if (sanitise_socket_triplet(st) < 0)
+		rand_proto_type(st);	/* Couldn't find func, fall back to random. */
+
+
+done:
 	if ((rand() % 100) < 25)
 		st->type |= SOCK_CLOEXEC;
 	if ((rand() % 100) < 25)
