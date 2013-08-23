@@ -134,6 +134,9 @@ static void generate_sockets(void)
 
 		for (st.family = 0; st.family < TRINITY_PF_MAX; st.family++) {
 
+			if (do_specific_proto == TRUE)
+				st.family = specific_proto;
+
 			if (get_proto_name(st.family) == NULL)
 				goto skip;
 
