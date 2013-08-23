@@ -841,6 +841,10 @@ static long long random_sample_type(void)
 		sample_type |= PERF_SAMPLE_REGS_USER;
 	if (rand_bool())
 		sample_type |= PERF_SAMPLE_STACK_USER;
+	if (rand_bool())
+		sample_type |= PERF_SAMPLE_WEIGHT;
+	if (rand_bool())
+		sample_type |= PERF_SAMPLE_DATA_SRC;
 
 	return sample_type;
 }
@@ -893,6 +897,34 @@ static int random_attr_size(void) {
 	return size;
 }
 
+static long long random_branch_sample_type(void)
+{
+
+	long long branch_sample = 0;
+
+	if (rand() % 2)
+		return rand64();
+
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_USER;
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_KERNEL;
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_HV;
+
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_ANY;
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_ANY_CALL;
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_ANY_RETURN;
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_IND_CALL;
+
+	return branch_sample;
+}
+
+
 static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 						int group_leader)
 {
@@ -944,6 +976,11 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 		/* leave config2 alone for now */
 	}
 
+	/* branch_sample_type not relevant if not sampling */
+
+	/* sample_regs_user not relevant if not sampling */
+
+	/* sample_stack_user not relevant if not sampling */
 }
 
 static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
@@ -999,6 +1036,26 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 		/* breakpoint fields unioned with config fields */
 		/* config1 set earlier */
 	}
+
+	attr->branch_sample_type = random_branch_sample_type();
+
+	/* sample_regs_user is a bitmask of CPU registers to record.     */
+	/* The values come from arch/ARCH/include/uapi/asm/perf_regs.h   */
+	/* Most architectures have fewer than 64 registers...            */
+	switch(rand()%3) {
+		case 0:		attr->sample_regs_user = rand()%16;
+				break;
+		case 1:		attr->sample_regs_user = rand()%64;
+				break;
+		case 2:		attr->sample_regs_user = rand64();
+				break;
+		default:
+				break;
+	}
+
+	/* sample_stack_user is the size of user stack backtrace we want  */
+	/* if we pick too large of a value the kernel in theory truncates */
+	attr->sample_stack_user = rand32();
 
 }
 
