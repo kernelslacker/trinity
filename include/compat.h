@@ -761,4 +761,17 @@ struct kvm_get_htab_fd {
 #define MRT_DEL_MFC_PROXY	(MRT_BASE+11)
 #endif
 
+/* sys/mount.h */
+#ifndef MNT_DETACH
+#define MNT_DETACH		2
+#endif
+
+#ifndef MNT_EXPIRE
+#define MNT_EXPIRE		4
+#endif
+
+#ifndef UMOUNT_NOFOLLOW
+#define UMOUNT_NOFOLLOW		8
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
