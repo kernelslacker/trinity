@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
+#include "compat.h"
 
 void can_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
