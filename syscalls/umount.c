@@ -3,6 +3,7 @@
  */
 #include <sys/mount.h>
 #include "sanitise.h"
+#include "compat.h"
 
 struct syscall syscall_umount = {
 	.name = "umount",
