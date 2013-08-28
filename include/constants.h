@@ -4,6 +4,7 @@
 #define MAX_NR_CHILDREN 64
 
 #define MAX_PIPE_FDS 4
+#define MAX_PERF_FDS 10
 #define NR_SOCKET_FDS 375
 #define NR_FILE_FDS 250
 

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "perf.h"
 #include "shm.h"
 #include "files.h"
 #include "pids.h"
@@ -124,16 +125,18 @@ regen:
 void setup_fds(void)
 {
 	open_sockets();
-	if (no_files == TRUE)
-		return;
 
 	open_pipes();
 
-	generate_filelist();
-	if (files_in_index == 0)
-		return;
+	open_perf_fds();
 
-	open_files();
+	if (no_files == FALSE) {
+		generate_filelist();
+		if (files_in_index == 0)	/* Something bad happened. Crappy -V maybe? */
+			return;			// FIXME: We should log something here probably.
+
+		open_files();
+	}
 }
 
 void regenerate_fds(void)

@@ -1116,7 +1116,7 @@ static void create_random_event(struct perf_event_attr *attr)
 
 }
 
-static void sanitise_perf_event_open(int childno)
+void sanitise_perf_event_open(int childno)
 {
 	struct perf_event_attr *attr;
 	unsigned long flags;
