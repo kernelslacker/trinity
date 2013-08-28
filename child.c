@@ -162,7 +162,9 @@ struct child_funcs {
 
 static const struct child_funcs child_functions[] = {
 	{ .type = CHILD_RANDOM_SYSCALLS, .name = "rand_syscalls", .func = child_random_syscalls },
-//	{ .type = CHILD_OPEN_ALL_FILES, .name = "read_all_files", .func = child_read_all_files },
+#ifdef DEBUG_MULTI
+	{ .type = CHILD_OPEN_ALL_FILES, .name = "read_all_files", .func = child_read_all_files },
+#endif
 };
 
 int child_process(int childno)
@@ -172,7 +174,9 @@ int child_process(int childno)
 
 	i = rand() % ARRAY_SIZE(child_functions);
 
+#ifdef DEBUG_MULTI
 	output(0, "Chose %s for process %d\n", child_functions[i].name, getpid());
+#endif
 
 	shm->child_type[childno] = child_functions[i].type;
 	ret = child_functions[i].func(childno);
