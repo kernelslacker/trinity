@@ -6,7 +6,6 @@
 void sanitise_mmap(int childno);
 void sanitise_rt_sigaction(int childno);
 void sanitise_prctl(int childno);
-void sanitise_ioctl_sg_io(int childno);
 void sanitise_perf_event_open(int childno);
 
 void generic_sanitise(int childno);
