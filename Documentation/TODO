@@ -11,7 +11,7 @@
     treat it as multiple (/dev, /sys, /proc). And then do a 1-in-3 chance
     of getting one of those. Right now, because there are 5-6 digits worth of /proc & /sys,
     they dominate over the /dev entries.
-  - more fd 'types' (epoll_create, eventfd, fanotify_init, futex)
+  - more fd 'types' (eventfd, fanotify_init)
 
 * Reseeding improvements.
   We reseed way too often right now.
