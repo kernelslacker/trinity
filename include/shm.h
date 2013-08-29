@@ -39,6 +39,7 @@ struct shm_s {
 	int socket_fds[NR_SOCKET_FDS];
 	int perf_fds[MAX_PERF_FDS];
 	int epoll_fds[MAX_EPOLL_FDS];
+	int eventfd_fds[MAX_EPOLL_FDS];
 
 	/* state for the syscall currently in progress. */
 	unsigned int previous_syscallno[MAX_NR_CHILDREN];
