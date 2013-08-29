@@ -46,12 +46,17 @@ static int rand_pipe_fd(void)
 	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
 }
 
+static int rand_perf_fd(void)
+{
+	return shm->perf_fds[rand() % MAX_PERF_FDS];
+}
+
 static int get_new_random_fd(void)
 {
 	unsigned int i;
 	int fd = 0;
 
-	i = rand() % 3;
+	i = rand() % 4;
 
 	if (do_specific_proto == TRUE)
 		i = 1;
@@ -93,6 +98,11 @@ static int get_new_random_fd(void)
 	case 2:
 		fd = rand_pipe_fd();
 		break;
+
+	case 3:
+		fd = rand_perf_fd();
+		break;
+
 	default:
 		break;
 	}
