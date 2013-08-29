@@ -3,8 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/epoll.h>
 
 #include "perf.h"
+#include "random.h"
 #include "shm.h"
 #include "files.h"
 #include "pids.h"
@@ -13,8 +15,7 @@
 #include "sanitise.h"
 #include "params.h"
 
-unsigned int nr_file_fds = 0;
-
+/* Pipe FD related functions. */
 static void open_pipes(void)
 {
 	int pipes[2];
@@ -33,6 +34,50 @@ static void open_pipes(void)
 	}
 }
 
+static int rand_pipe_fd(void)
+{
+	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
+}
+
+/* perf related fds (see also perf.c & syscalls/perf_event_open.c) */
+static int rand_perf_fd(void)
+{
+	return shm->perf_fds[rand() % MAX_PERF_FDS];
+}
+
+/* epoll related fds */
+static void open_epoll_fds(void)
+{
+	unsigned int i = 0;
+	int fd = -1;
+
+	while (i < MAX_EPOLL_FDS) {
+
+		switch (rand_bool()) {
+		case 0:	fd = epoll_create(1);
+			break;
+		case 1:	fd = epoll_create1(EPOLL_CLOEXEC);
+			break;
+		default:
+			 break;
+		}
+
+		if (fd != -1) {
+			shm->epoll_fds[i] = fd;
+			output(2, "fd[%d] = epoll\n", shm->epoll_fds[i]);
+			i++;
+		}
+	}
+}
+
+static int rand_epoll_fd(void)
+{
+	return shm->epoll_fds[rand() % MAX_EPOLL_FDS];
+}
+
+/* regular file FDs  */
+unsigned int nr_file_fds = 0;
+
 static int rand_file_fd(void)
 {
 	unsigned int fd_index;
@@ -41,22 +86,13 @@ static int rand_file_fd(void)
 	return shm->file_fds[fd_index];
 }
 
-static int rand_pipe_fd(void)
-{
-	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
-}
-
-static int rand_perf_fd(void)
-{
-	return shm->perf_fds[rand() % MAX_PERF_FDS];
-}
 
 static int get_new_random_fd(void)
 {
 	unsigned int i;
 	int fd = 0;
 
-	i = rand() % 4;
+	i = rand() % 5;
 
 	if (do_specific_proto == TRUE)
 		i = 1;
@@ -103,6 +139,10 @@ static int get_new_random_fd(void)
 		fd = rand_perf_fd();
 		break;
 
+	case 4:
+		fd = rand_epoll_fd();
+		break;
+
 	default:
 		break;
 	}
@@ -139,6 +179,8 @@ void setup_fds(void)
 	open_pipes();
 
 	open_perf_fds();
+
+	open_epoll_fds();
 
 	if (no_files == FALSE) {
 		generate_filelist();
