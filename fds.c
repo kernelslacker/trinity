@@ -116,6 +116,7 @@ static int get_new_random_fd(void)
 	unsigned int i;
 	int fd = 0;
 
+retry:
 	i = rand() % 6;
 
 	if (do_specific_proto == TRUE)
@@ -160,6 +161,9 @@ static int get_new_random_fd(void)
 		break;
 
 	case 3:
+		if (shm->perf_fds[0] == 0)	/* perf unavailable/disabled. */
+			goto retry;
+
 		fd = rand_perf_fd();
 		break;
 

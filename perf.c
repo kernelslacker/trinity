@@ -23,6 +23,9 @@ void open_perf_fds(void)
 			shm->perf_fds[i] = fd;
 			output(2, "fd[%d] = perf\n", shm->perf_fds[i]);
 			i++;
+		} else {
+			if (errno == ENOSYS)
+				return;
 		}
 	}
 }
