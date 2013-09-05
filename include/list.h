@@ -1,6 +1,10 @@
 #ifndef __LIST_H__
 #define __LIST_H__
 
+/*
+ * Simple linked-list routines, based on functions of the same name from the Linux kernel.
+ */
+
 struct list_head {
         struct list_head *next, *prev;
 };
