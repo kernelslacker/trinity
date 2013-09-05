@@ -11,7 +11,11 @@
 #include "arch.h"
 #include "compat.h"
 
+#ifdef __x86_64__
+#define NUM_FLAGS 13
+#else
 #define NUM_FLAGS 12
+#endif
 
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED
@@ -20,9 +24,13 @@ void sanitise_mmap(int childno)
 {
 	unsigned int i;
 	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
-			    MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
-			    MAP_NORESERVE, MAP_POPULATE, MAP_NONBLOCK, MAP_STACK,
-			    MAP_HUGETLB, MAP_UNINITIALIZED };
+			MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
+			MAP_NORESERVE, MAP_POPULATE, MAP_NONBLOCK, MAP_STACK,
+			MAP_HUGETLB, MAP_UNINITIALIZED,
+#ifdef __x86_64__
+			MAP_32BIT,
+#endif
+	};
 	unsigned int numflags = rand() % NUM_FLAGS;
 
 	/* Don't actually set a hint right now, in case we give out
