@@ -32,5 +32,8 @@
 #ifdef __sh__
 #include "syscalls-sh.h"
 #endif
+#ifdef __alpha__
+#include "syscalls-alpha.h"
+#endif
 
 #endif  /* _ARCH_SYSCALLS_H */
