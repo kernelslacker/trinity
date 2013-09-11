@@ -117,6 +117,7 @@ scan:
 	scan-build --use-analyzer=/usr/bin/clang make
 
 coverity:
+	rm -rf cov-int trinity-coverity.tgz
 	cov-build --dir cov-int make
 	tar czvf trinity-coverity.tgz cov-int
 
