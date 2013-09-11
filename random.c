@@ -223,7 +223,7 @@ u64 rand64(void)
 
 		rounds = rand() % 4;
 		for (i = 0; i < rounds; i++)
-			r |= (1L << (__WORDSIZE - (rand() % 8)));
+			r |= (1L << ((__WORDSIZE - 1) - (rand() % 8)));
 	}
 
 	/* randomly flip sign bit. */
