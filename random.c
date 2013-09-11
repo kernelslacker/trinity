@@ -21,6 +21,9 @@ static unsigned int rand_single_bit(unsigned char size)
 	return (1L << (rand() % size));
 }
 
+/*
+ * set N bits, where N= rand(0 - WORDSIZE/2)
+ */
 static unsigned long randbits(int limit)
 {
 	unsigned int num = rand() % limit / 2;
@@ -76,6 +79,9 @@ static unsigned long taviso(void)
 	return r;
 }
 
+/*
+ * Pick 8 random bytes, and concatenate them into a long.
+ */
 static unsigned long rand8x8(void)
 {
 	unsigned long r = 0UL;
@@ -87,6 +93,9 @@ static unsigned long rand8x8(void)
 	return r;
 }
 
+/*
+ * Pick 1 random byte, and repeat it through a long.
+ */
 static unsigned long rept8(unsigned int num)
 {
 	unsigned long r = 0UL;
@@ -100,6 +109,10 @@ static unsigned long rept8(unsigned int num)
 	return r;
 }
 
+/*
+ * "selector" function for 32bit random.
+ * only called from rand32()
+ */
 static unsigned int __rand32(void)
 {
 	unsigned long r = 0;
@@ -125,6 +138,9 @@ static unsigned int __rand32(void)
 	return r;
 }
 
+/*
+ * Generate, and munge a 32bit number.
+ */
 unsigned int rand32(void)
 {
 	unsigned long r = 0;
@@ -149,9 +165,11 @@ unsigned int rand32(void)
 		}
 	}
 
+	/* Sometimes deduct it from INT_MAX */
 	if (rand_bool())
 		r = INT_MAX - r;
 
+	/* Sometimes flip sign */
 	if (rand_bool())
 		r |= (1L << 31);
 
@@ -170,6 +188,9 @@ unsigned int rand32(void)
 	return r;
 }
 
+/*
+ * Generate and munge a 64bit number.
+ */
 u64 rand64(void)
 {
 	unsigned long r = 0;
@@ -210,9 +231,9 @@ u64 rand64(void)
 		default:
 			break;
 		}
-
 	}
 
+	/* Sometimes invert the generated number. */
 	if (rand_bool())
 		r = ~r;
 
