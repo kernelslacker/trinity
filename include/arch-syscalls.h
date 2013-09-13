@@ -35,5 +35,7 @@
 #ifdef __alpha__
 #include "syscalls-alpha.h"
 #endif
-
+#ifdef __aarch64__
+#include "syscalls-aarch64.h"
+#endif
 #endif  /* _ARCH_SYSCALLS_H */
