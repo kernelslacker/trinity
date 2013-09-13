@@ -79,7 +79,7 @@ static const struct ioctl kvm_ioctls[] = {
 	IOCTL(KVM_ALLOCATE_RMA),
 	IOCTL(KVM_PPC_GET_HTAB_FD),
 #endif
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
 	IOCTL(KVM_ARM_SET_DEVICE_ADDR),
 	IOCTL(KVM_ARM_VCPU_INIT),
 #endif

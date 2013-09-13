@@ -501,6 +501,9 @@ void select_syscall_tables(void)
 #elif defined(__sh__)
 	syscalls = copy_syscall_table(syscalls_sh, ARRAY_SIZE(syscalls_sh));
 	max_nr_syscalls = ARRAY_SIZE(syscalls_sh);
+#elif defined(__aarch64__)
+	syscalls = copy_syscall_table(syscalls_aarch64, ARRAY_SIZE(syscalls_aarch64));
+	max_nr_syscalls = ARRAY_SIZE(syscalls_aarch64);
 #else
 #error Unknown architecture.
 #endif

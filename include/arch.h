@@ -36,8 +36,13 @@
 #ifdef __sh__
 #include "arch-sh.h"
 #endif
+
 #ifdef __alpha__
 #include "arch-alpha.h"
+#endif
+
+#ifdef __aarch64__
+#include "arch-aarch64.h"
 #endif
 
 #ifndef SYSCALL_OFFSET
