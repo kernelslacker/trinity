@@ -12,7 +12,7 @@ unsigned int get_interesting_32bit_value(void)
 
 	/* common case, return small values*/
 	case 0 ... 7:
-		switch (rand() % 8) {
+		switch (rand() % 9) {
 		case 0:	return 0x00000000;
 		case 1:	return 0x00000001;
 		case 2:	return rand() % 256;
@@ -20,7 +20,8 @@ unsigned int get_interesting_32bit_value(void)
 		case 4:	return 0x00001000;	// 4096
 		case 5:	return 0x00001001;	// 4097
 		case 6:	return 0x00008000;
-		case 7:	return 0x0000ffff;
+		case 7:	return 0x0000fffe;
+		case 8:	return 0x0000ffff;
 		default:
 			BUG("unreachable!\n");
 			return 0;
@@ -29,21 +30,22 @@ unsigned int get_interesting_32bit_value(void)
 
 	/* less common case, go crazy */
 	case 8 ... 10:
-		switch (rand() % 14) {
+		switch (rand() % 15) {
 		case 0:	return 0x00010000;
-		case 1:	return 0x40000000;
-		case 2:	return 0x7fffffff;
-		case 3:	return 0x80000000;
-		case 4:	return 0x80000001;
-		case 5:	return 0x8fffffff;
-		case 6: return 0xc0000000;
-		case 7:	return 0xf0000000;
-		case 8:	return 0xff000000;
-		case 9:	return 0xffff0000;
-		case 10: return 0xffffe000;
-		case 11: return 0xffffff00 | (rand() % 256);
-		case 12: return 0xffffffff;
-		case 13: return 0xffffffff - page_size;
+		case 1:	return 0x0fffffff;
+		case 2:	return 0x40000000;
+		case 3:	return 0x7fffffff;
+		case 4:	return 0x80000000;
+		case 5:	return 0x80000001;
+		case 6:	return 0x8fffffff;
+		case 7: return 0xc0000000;
+		case 8:	return 0xf0000000;
+		case 9:	return 0xff000000;
+		case 10: return 0xffff0000;
+		case 11: return 0xffffe000;
+		case 12: return 0xffffff00 | (rand() % 256);
+		case 13: return 0xffffffff;
+		case 14: return 0xffffffff - page_size;
 		default:
 			BUG("unreachable!\n");
 			return 0;
