@@ -7,6 +7,10 @@
 void parse_args(int argc, char *argv[]);
 
 extern bool debug;
+
+extern bool do_32_arch;
+extern bool do_64_arch;
+
 extern bool do_specific_syscall;
 extern bool do_exclude_syscall;
 extern unsigned int specific_proto;

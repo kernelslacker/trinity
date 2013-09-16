@@ -100,7 +100,9 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
          what maps got set up etc. Does make things go considerably faster however,
          as it no longer fsync()'s after every syscall
 
---ioctls/-I will dump all available ioctls.
+ --ioctls/-I will dump all available ioctls.
+
+ --arch/-a Explicit selection of 32 or 64 bit variant of system calls.
 
 #######################################################################
 
