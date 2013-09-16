@@ -91,28 +91,25 @@ unsigned long get_interesting_value(void)
 #if __WORDSIZE == 32
 	return get_interesting_32bit_value();
 #else
-	unsigned long low;
+	unsigned long low = 0;
 
-	low = get_interesting_32bit_value();
+	if (rand_bool())
+		low = get_interesting_32bit_value();
 
-	switch (rand() % 17) {
+	switch (rand() % 13) {
 	case 0: return 0;
 	case 1: return low;
-	case 2: return 0x0000000100000000UL;
-	case 3: return 0x0000000100000000UL | low;
-	case 4: return 0x7fffffff00000000UL;
-	case 5: return 0x8000000000000000UL;
-	case 6: return 0xffffffff00000000UL;
-	case 7: return 0x7fffffff00000000UL | low;
-	case 8: return 0x8000000000000000UL | low;
-	case 9: return 0xffffffff00000000UL | low;
-	case 10: return 0xffffffffffffff00UL | (rand() % 256);
-	case 11: return 0xffffffffffffffffUL - page_size;
-	case 12: return PAGE_OFFSET | (low << 4);
-	case 13: return KERNEL_ADDR | (low & 0xffffff);
-	case 14: return MODULE_ADDR | (low & 0xffffff);
-	case 15: return per_arch_interesting_addr(low);
-	case 16: return (low << 32);
+	case 2: return 0x0000000100000000UL | low;
+	case 3: return 0x7fffffff00000000UL | low;
+	case 4: return 0x8000000000000000UL | low;
+	case 5: return 0xffffffff00000000UL | low;
+	case 6: return 0xffffffffffffff00UL | (rand() % 256);
+	case 7: return 0xffffffffffffffffUL - page_size;
+	case 8: return PAGE_OFFSET | (low << 4);
+	case 9: return KERNEL_ADDR | (low & 0xffffff);
+	case 10: return MODULE_ADDR | (low & 0xffffff);
+	case 11: return per_arch_interesting_addr(low);
+	case 12: return (low << 32);
 	default: break;
 	}
 	BUG("unreachable!\n");
