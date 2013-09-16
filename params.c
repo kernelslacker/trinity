@@ -17,6 +17,9 @@ bool debug = FALSE;
 bool do_specific_syscall = FALSE;
 bool do_exclude_syscall = FALSE;
 
+bool do_32_arch = TRUE;
+bool do_64_arch = TRUE;
+
 unsigned int specific_proto = 0;
 unsigned int user_specified_children = 0;
 
@@ -60,8 +63,9 @@ static void usage(void)
 	fprintf(stderr, " --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
 	fprintf(stderr, " --verbose,-v: increase output verbosity.\n");
 	fprintf(stderr, " --victims,-V: path to victim files.\n");
+	fprintf(stderr, " --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.");
 	fprintf(stderr, "\n");
-	fprintf(stderr, " -c#: target specific syscall (takes syscall name as parameter).\n");
+	fprintf(stderr, " -c#,@: target specific syscall (takes syscall name as parameter and @ as architecture. No @ defaults to both archs.).\n");
 	fprintf(stderr, " -N#: do # syscalls then exit.\n");
 	fprintf(stderr, " -p:  pause after syscall.\n");
 	fprintf(stderr, " -s#: use # as random seed.\n");
@@ -86,6 +90,7 @@ static const struct option longopts[] = {
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "victims", required_argument, NULL, 'V' },
 	{ "verbose", no_argument, NULL, 'v' },
+	{ "arch", required_argument, NULL, 'a' },
 	{ NULL, 0, NULL, 0 } };
 
 
@@ -93,7 +98,7 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "c:C:dDg:hIl:LN:mnP:pqr:s:SV:vx:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "a:c:C:dDg:hIl:LN:mnP:pqr:s:SV:vx:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -109,6 +114,19 @@ void parse_args(int argc, char *argv[])
 			/* syscalls are all disabled at this point. enable the syscall we care about. */
 			do_specific_syscall = TRUE;
 			toggle_syscall(optarg, TRUE);
+			break;
+
+		case 'a':
+			/* One of the architectures selected*/
+			do_32_arch = FALSE;
+			do_64_arch = FALSE;
+			if (strcmp(optarg, "64") == 0)
+				do_64_arch = TRUE;
+			else if (strcmp(optarg, "32") == 0)
+				do_32_arch = TRUE;
+			else
+				exit(EXIT_FAILURE);
+
 			break;
 
 		case 'C':

@@ -281,32 +281,87 @@ void mark_all_syscalls_active(void)
 	}
 }
 
+static void check_user_specified_arch(const char *arg, char **arg_name, bool *only_64bit, bool *only_32bit)
+{
+	//Check if the arch is specified
+	char *arg_arch = strstr(arg,",");
+	unsigned long size = 0;
+
+	if (arg_arch  != NULL) {
+		size = (unsigned long)arg_arch - (unsigned long)arg;
+		*arg_name = malloc(size + 1);
+		if (*arg_name == NULL)
+			exit(EXIT_FAILURE);
+		(*arg_name)[size] = 0;
+		memcpy(*arg_name, arg, size);
+
+		//identify architecture
+		if ((only_64bit != NULL) && (only_32bit != NULL)) {
+			if ((strcmp(arg_arch + 1, "64") == 0)) {
+				*only_64bit = TRUE;
+				*only_32bit = FALSE;
+			} else if ((strcmp(arg_arch + 1,"32") == 0)) {
+				*only_64bit = FALSE;
+				*only_32bit = TRUE;
+			} else {
+				printf("No idea what architecture for syscall (%s) is.\n", arg);
+				exit(EXIT_FAILURE);
+			}
+		}
+	} else {
+		*arg_name = (char*)arg;//castaway const.
+	}
+
+
+}
+
+static void clear_check_user_specified_arch(const char *arg, char **arg_name)
+{
+	//Release memory only if we have allocated it
+	if (((char *)arg) != *arg_name) {
+		free(*arg_name);
+		*arg_name = NULL;
+	}
+}
+
 static void toggle_syscall_biarch(const char *arg, unsigned char state)
 {
 	int specific_syscall32 = 0;
 	int specific_syscall64 = 0;
+	char *arg_name = NULL;
+	bool only_32bit = TRUE;
+	bool only_64bit = TRUE;
 
-	specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg);
+	check_user_specified_arch(arg, &arg_name, &only_64bit, &only_32bit);
+
+	specific_syscall64 = search_syscall_table(syscalls_64bit, max_nr_64bit_syscalls, arg_name);
 
 	/* If we found a 64bit syscall, validate it. */
 	if (specific_syscall64 != -1) {
 		validate_specific_syscall(syscalls_64bit, specific_syscall64);
 
-		if (state == TRUE)
+		if ((state == TRUE) && only_64bit && do_64_arch)
 			syscalls_64bit[specific_syscall64].entry->flags |= ACTIVE;
 		else
 			syscalls_64bit[specific_syscall64].entry->flags |= TO_BE_DEACTIVATED;
 	}
 
 	/* Search for and validate 32bit */
-	specific_syscall32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg);
+	specific_syscall32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg_name);
 	if (specific_syscall32 != -1) {
 		validate_specific_syscall(syscalls_32bit, specific_syscall32);
 
-		if (state == TRUE)
+		if ((state == TRUE) && only_32bit && do_32_arch)
 			syscalls_32bit[specific_syscall32].entry->flags |= ACTIVE;
 		else
 			syscalls_32bit[specific_syscall32].entry->flags |= TO_BE_DEACTIVATED;
+	}
+
+	clear_check_user_specified_arch(arg, &arg_name);
+
+	if ((!only_32bit) && (!only_64bit)) {
+		printf("No idea what architecture for syscall (%s) is.\n", arg);
+		exit(EXIT_FAILURE);
 	}
 
 	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
@@ -340,6 +395,7 @@ static void toggle_syscall_biarch(const char *arg, unsigned char state)
 void toggle_syscall(const char *arg, unsigned char state)
 {
 	int specific_syscall = 0;
+	char * arg_name = NULL;
 
 	if (biarch == TRUE) {
 		toggle_syscall_biarch(arg, state);
@@ -347,9 +403,12 @@ void toggle_syscall(const char *arg, unsigned char state)
 	}
 
 	/* non-biarch case. */
-	specific_syscall = search_syscall_table(syscalls, max_nr_syscalls, arg);
+	check_user_specified_arch(arg, &arg_name, NULL, NULL); //We do not care about arch here, just to get rid of arg flags.
+	specific_syscall = search_syscall_table(syscalls, max_nr_syscalls, arg_name);
+	clear_check_user_specified_arch(arg, &arg_name);
+
 	if (specific_syscall == -1) {
-		printf("No idea what syscall (%s) is.\n", arg);
+		printf("No idea what syscall (%s) is.\n", arg_name);
 		exit(EXIT_FAILURE);
 	}
 
