@@ -157,3 +157,14 @@ maps.c improvements:
   (Might be a lot of work, more than it's worth)
   - also add an override to disable this code.
 
+* structured logging.
+  - To begin with, in parallel with existing text based logging.
+  - Basic premise is that we store records of each syscall in a manner that would
+    allow easier replay of logs.
+    - For eg, if a param is an fd, we store the type (socket/file/etc..)
+      as well as a pathname/socket triplet/whatever to create it.
+  - Eventually, kill off the text based logging, and replace it with
+    ./trinity --parselog=mylog.bin
+  - Done correctly, this should allow automated bisecting of replays.
+  - Once bisected, have a tool that can parse the binary log, and generate C.
+
