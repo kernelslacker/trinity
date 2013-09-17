@@ -681,7 +681,7 @@ static long long random_event_config(__u32 *event_type,
 		}
 		break;
 	case PERF_TYPE_SOFTWARE:
-		switch (rand() % 10) {
+		switch (rand() % 11) {
 		case 0:
 			config = PERF_COUNT_SW_CPU_CLOCK;
 			break;
@@ -710,6 +710,9 @@ static long long random_event_config(__u32 *event_type,
 			config = PERF_COUNT_SW_EMULATION_FAULTS;
 			break;
 		case 9:
+			config = PERF_COUNT_SW_DUMMY;
+			break;
+		case 10:
 			config = rand64();
 			break;
 		default:
@@ -845,6 +848,8 @@ static long long random_sample_type(void)
 		sample_type |= PERF_SAMPLE_WEIGHT;
 	if (rand_bool())
 		sample_type |= PERF_SAMPLE_DATA_SRC;
+	if (rand_bool())
+		sample_type |= PERF_SAMPLE_IDENTIFIER;
 
 	return sample_type;
 }
