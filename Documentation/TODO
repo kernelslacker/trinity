@@ -166,6 +166,19 @@ maps.c improvements:
       as well as a pathname/socket triplet/whatever to create it.
   - Eventually, kill off the text based logging, and replace it with
     ./trinity --parselog=mylog.bin
+  - log reseed points. When we do replay, start from those points.
   - Done correctly, this should allow automated bisecting of replays.
+    - Different replay strategies:
+      - replay log in reverse order
+      - replay from last reseed point
+      - replay using actual bisection of reseed points
+      - brute force replay using 1 call at a time from beginning of log + last syscall.
+        (possibly unnecessary if the above strategies are good enough)
   - Once bisected, have a tool that can parse the binary log, and generate C.
+  - Would need a separate binary logfile for each child.
+    Because locking on a shared file would slow things down, and effectively single
+    thread things, unless the children pass things to a separate logger thread, which
+    has its own problems like potentially losing the last N syscalls if we crash)
+    - To begin with, just allow replay/bisect using one child process.
+      Synchronising threads across different runs may be complicated.
 
