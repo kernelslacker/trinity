@@ -12,6 +12,7 @@
     of getting one of those. Right now, because there are 5-6 digits worth of /proc & /sys,
     they dominate over the /dev entries.
   - more fd 'types' (fanotify_init)
+  - Add a parameter to specify only certain fd types.  --fds=sockets,files
 
 * Reseeding improvements.
   We reseed way too often right now.
