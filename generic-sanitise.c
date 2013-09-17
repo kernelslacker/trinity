@@ -186,10 +186,13 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 
 static unsigned long handle_arg_randpage(void)
 {
-		if (rand_bool())
-			return (unsigned long) page_allocs;
-		else
-			return (unsigned long) page_rand;
+	/* Because we pass this to something that might overwrite it,
+	 * and we want page_allocs to remain unmodified, we copy it to page rand instead.
+	 */
+	if (rand_bool())
+		memcpy(page_rand, page_allocs, page_size);
+
+	return (unsigned long) page_rand;
 }
 
 static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned long argnum)
