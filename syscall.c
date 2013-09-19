@@ -33,22 +33,48 @@
 	return (type) (res); \
 } while (0)
 
-static long syscall32(int num_args, unsigned int call,
+long syscall32(int num_args, unsigned int call,
 	unsigned long a1, unsigned long a2, unsigned long a3,
-	unsigned long a4, unsigned long a5, __unused__ unsigned long a6)
+	unsigned long a4, unsigned long a5, unsigned long a6)
 {
 #if defined(__i386__) || defined (__x86_64__)
-	if (num_args < 6) {
+
+	if (num_args <= 6) {
 		long __res;
-		__asm__ volatile ("int $0x80"
+#if defined( __i386__)
+		__asm__ volatile (
+			"pushl %%ebp\n\t"
+			"movl %7, %%ebp\n\t"
+			"int $0x80\n\t"
+			"popl %%ebp\n\t"
 			: "=a" (__res)
-			: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),
-			"d" ((long)(a3)), "S" ((long)(a4)),
-			"D" ((long)(a5)));
+			: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
+			: "%ebp" /* mark EBP reg as dirty */
+			);
+#elif defined(__x86_64__)
+		__asm__ volatile (
+			"pushq %%rbp\n\t"
+			"movq %7, %%rbp\n\t"
+			"int $0x80\n\t"
+			"popq %%rbp\n\t"
+			: "=a" (__res)
+			: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
+			: "%rbp" /* mark EBP reg as dirty */
+			);
+#else
+	//To shut up gcc on unused args. This code should never be reached.
+	__res = 0;
+	UNUSED(num_args);
+	UNUSED(call);
+	UNUSED(a1);
+	UNUSED(a2);
+	UNUSED(a3);
+	UNUSED(a4);
+	UNUSED(a5);
+	UNUSED(a6);
+#endif
 		__syscall_return(long,__res);
-		return __res;
 	}
-/* TODO: 6 arg 32bit x86 syscall goes here.*/
 #else
 
 // TODO: 32-bit syscall entry for non-x86 archs goes here.
