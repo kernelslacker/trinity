@@ -509,17 +509,14 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 	unsigned int n;
 	struct syscall *copy;
 
-	/* FIXME: Use fewer shared maps.
-	 * It's pretty sad that we use a whole page just for a copy of that struct when we
-	 * could fit dozens of them in a page.  This would cut down our /proc/$$/maps a *lot*
-	 */
+	copy = alloc_shared(nr * sizeof(struct syscall));
+	if (copy == NULL)
+		exit(EXIT_FAILURE);
+
 	for (n = 0; n < nr; n++) {
-		copy = alloc_shared(sizeof(struct syscall));
-		if (copy == NULL)
-			exit(EXIT_FAILURE);
-		memcpy(copy, from[n].entry, sizeof(struct syscall));
-		copy->number = n;
-		from[n].entry = copy;
+		memcpy(copy + n , from[n].entry, sizeof(struct syscall));
+		copy[n].number = n;
+		from[n].entry = &copy[n];
 	}
 	return from;
 }
