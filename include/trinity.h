@@ -18,7 +18,6 @@ void do_main_loop(void);
 
 extern bool biarch;
 
-extern bool ignore_tainted;
 int check_tainted(void);
 
 void init_watchdog(void);

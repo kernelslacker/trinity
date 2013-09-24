@@ -48,18 +48,18 @@ static void regenerate(void)
 	shm->regenerating = FALSE;
 }
 
-bool ignore_tainted;
-
 int check_tainted(void)
 {
 	int fd;
-	int ret;
-	char buffer[4];
+	unsigned int ret;
+	char buffer[11];
+
+	buffer[10] = 0; //make sure that we can fit the whole int.
 
 	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
 	if (fd < 0)
 		return -1;
-	ret = read(fd, buffer, 3);
+	ret = read(fd, buffer, 10);
 	close(fd);
 
 	if (ret > 0)

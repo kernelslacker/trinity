@@ -11,7 +11,7 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
-#include "trinity.h"	// ignore_tainted
+#include "trinity.h" //check_taint and biarch
 #include "shm.h"
 #include "files.h"
 #include "syscall.h"
@@ -302,11 +302,11 @@ static void watchdog(void)
 			}
 		}
 
-		/* Only check taint if it was zero on startup */
-		if (ignore_tainted == FALSE) {
+		/* Only check taint if it mask allows it */
+		if (kernel_taint_mask != 0) {
 			ret = check_tainted();
-			if (ret != 0) {
-				output(0, "[watchdog] kernel became tainted! (%d) Last seed was %u\n", ret, shm->seed);
+			if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0) {
+				output(0, "[watchdog] kernel became tainted! (%d/%d) Last seed was %u\n", ret, kernel_taint_initial, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
 			}
 		}

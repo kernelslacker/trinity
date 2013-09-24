@@ -196,6 +196,10 @@ int main(int argc, char* argv[])
 	parse_args(argc, argv);
 	printf("Done parsing arguments.\n");
 
+	if (kernel_taint_mask != (int)0xFFFFFFFF) {
+		printf("Custom kernel taint mask has been specified: 0x%08x (%d).\n", kernel_taint_mask, kernel_taint_mask);
+	}
+
 	setup_shm_postargs();
 
 	if (logging == TRUE)
@@ -246,9 +250,9 @@ int main(int argc, char* argv[])
 
 	setup_main_signals();
 
-	if (check_tainted() != 0) {
-		output(0, "Kernel was tainted on startup. Will keep running if trinity causes an oops.\n");
-		ignore_tainted = TRUE;
+	kernel_taint_initial = check_tainted();
+	if (kernel_taint_initial != 0) {
+		output(0, "Kernel was tainted on startup. Will ignore flags that are already set.\n");
 	}
 
 	change_tmp_dir();
