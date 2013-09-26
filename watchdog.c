@@ -146,6 +146,24 @@ static unsigned int check_if_fd(unsigned int child)
 	return FALSE;
 }
 
+static void stuck_syscall_info(int childno)
+{
+	unsigned int callno = shm->syscallno[childno];
+	char fdstr[20];
+	pid_t pid = shm->pids[childno];
+
+	memset(fdstr, 0, sizeof(fdstr));
+
+	if (check_if_fd(childno) == TRUE)
+		sprintf(fdstr, "(fd = %d)", (unsigned int) shm->a1[childno]);
+
+	output(0, "[%d] Stuck in syscall %d:%s%s%s.\n",
+		pid, callno,
+		print_syscall_name(shm->syscallno[childno], shm->do32bit[childno]),
+		shm->do32bit[childno] ? " (32bit)" : "",
+		fdstr);
+}
+
 static void check_children(void)
 {
 	struct timeval tv;
@@ -186,25 +204,9 @@ static void check_children(void)
 
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
-			unsigned int callno = shm->syscallno[i];
-			char fdstr[20];
-
-			memset(fdstr, 0, sizeof(fdstr));
-
-			if ((int) callno == -1) {
-				output(0, "[watchdog] callno was -1. WTF!\n");
-				shm->exit_reason = EXIT_REACHED_COUNT;
-			} else {
-				if (check_if_fd(i) == TRUE)
-					sprintf(fdstr, "(fd = %d)", (unsigned int) shm->a1[i]);
-			}
-
-			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
-				"Stuck in syscall %d:%s%s%s. Sending SIGKILL.\n",
-				pid, old, now, diff, callno,
-				print_syscall_name(shm->syscallno[i], shm->do32bit[i]),
-				shm->do32bit[i] ? " (32bit)" : "",
-				fdstr);
+			stuck_syscall_info(i);
+			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
+				pid, old, now, diff);
 
 			kill(pid, SIGKILL);
 			break;
