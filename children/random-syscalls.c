@@ -41,9 +41,8 @@ static void choose_syscall_table(int childno)
 			 */
 			shm->do32bit[childno] = FALSE;
 
-// FIXME: I forgot why this got disabled. Revisit.
-//			if (rand() % 100 < 10)
-//				shm->do32bit[childno] = TRUE;
+			if (rand() % 100 < 10)
+				shm->do32bit[childno] = TRUE;
 		}
 
 
