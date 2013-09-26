@@ -2,6 +2,7 @@
  * Call random syscalls with random args.
  */
 
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -12,6 +13,7 @@
 #include "random.h"
 #include "shm.h"
 #include "signals.h"
+#include <string.h>
 #include "pids.h"
 
 /*
@@ -61,13 +63,19 @@ static void choose_syscall_table(int childno)
 	}
 }
 
+extern int sigwas;
+
 int child_random_syscalls(int childno)
 {
 	pid_t pid = getpid();
 	int ret;
 	unsigned int syscallnr;
 
-	sigsetjmp(ret_jump, 1);
+	ret = sigsetjmp(ret_jump, 1);
+	if (ret != 0) {
+		if (sigwas != SIGALRM)
+			output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
+	}
 
 	ret = 0;
 
