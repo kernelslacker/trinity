@@ -115,9 +115,10 @@ static unsigned int reap_dead_kids(void)
 }
 
 /* if the first arg was an fd, find out which one it was. */
-static unsigned int check_if_fd(unsigned int callno, unsigned int child)
+static unsigned int check_if_fd(unsigned int child)
 {
 	unsigned int fd;
+	unsigned callno = shm->syscallno[child];
 
 	/* shortcut, if it's out of range, it's not going to be valid. */
 	fd = shm->a1[child];
@@ -193,7 +194,7 @@ static void check_children(void)
 				output(0, "[watchdog] callno was -1. WTF!\n");
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			} else {
-				if (check_if_fd(callno, i) == TRUE)
+				if (check_if_fd(i) == TRUE)
 					sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
 			}
 
