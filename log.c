@@ -184,12 +184,12 @@ void output(unsigned char level, const char *fmt, ...)
 	/* copy buffer, sans ANSI codes */
 	len = strlen(outputbuf);
 	for (i = 0, j = 0; i < len; i++) {
-		if (outputbuf[i] == '')
+		if (outputbuf[i] == '') {
 			if (outputbuf[i + 2] == '1')
 				i += 6;	// ANSI_COLOUR
 			else
 				i += 3;	// ANSI_RESET
-		else {
+		} else {
 			monobuf[j] = outputbuf[i];
 			j++;
 		}
