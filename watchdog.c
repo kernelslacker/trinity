@@ -196,7 +196,7 @@ static void check_children(void)
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			} else {
 				if (check_if_fd(i) == TRUE)
-					sprintf(fdstr, "(fd = %ld)", shm->a1[i]);
+					sprintf(fdstr, "(fd = %d)", (unsigned int) shm->a1[i]);
 			}
 
 			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). "
