@@ -21,7 +21,9 @@ NR_PROCESSES=$(($NR_CPUS * 2))
 
 while [ 1 ];
 do
+  rm -f trinity
   cp ../trinity .
+  chmod -w trinity
 
   for i in `seq 1 $NR_PROCESSES`
   do
