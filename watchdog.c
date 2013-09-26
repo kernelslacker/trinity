@@ -117,14 +117,15 @@ static unsigned int reap_dead_kids(void)
 /* if the first arg was an fd, find out which one it was. */
 static unsigned int check_if_fd(unsigned int child)
 {
-	unsigned int fd;
+	unsigned int highest;
 	unsigned callno = shm->syscallno[child];
 
 	/* shortcut, if it's out of range, it's not going to be valid. */
-	fd = shm->a1[child];
-	if (fd > 1024)
+	if (shm->a1[child] > 1024)
 		return FALSE;
-	if (fd < highest_logfile())
+
+	highest = highest_logfile();
+	if (shm->a1[child] < highest)
 		return FALSE;
 
 	if (biarch == FALSE) {
