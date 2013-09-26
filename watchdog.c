@@ -115,7 +115,7 @@ static unsigned int reap_dead_kids(void)
 }
 
 /* if the first arg was an fd, find out which one it was. */
-static unsigned int check_if_fd(unsigned int child)
+unsigned int check_if_fd(unsigned int child)
 {
 	unsigned int highest;
 	unsigned callno = shm->syscallno[child];

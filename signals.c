@@ -4,10 +4,13 @@
 
 #include "trinity.h"	// __unused__
 #include "params.h"	// debug
+#include "pids.h"
 #include "signals.h"
 #include "shm.h"
 
 jmp_buf ret_jump;
+
+int sigwas;
 
 static void ctrlc_handler(__unused__ int sig)
 {
@@ -16,11 +19,34 @@ static void ctrlc_handler(__unused__ int sig)
 
 static void sighandler(int sig)
 {
+	int slot;
+
+	sigwas = sig;
+
 	switch (sig) {
 	case SIGALRM:
-		/* if we blocked in read() or similar, we want to avoid doing it again. */
-		shm->fd_lifetime = 0;
+		slot = find_pid_slot(getpid());
+		if (slot == PIDSLOT_NOT_FOUND)
+			_exit(EXIT_SUCCESS);	/* Hell knows what happened, just bail. */
 
+		/* Check if we're blocking because we're stuck on an fd. */
+		if (check_if_fd(slot) == TRUE) {
+
+			/* avoid doing it again from other threads. */
+			shm->fd_lifetime = 0;
+
+			/* TODO: Somehow mark the fd in the parent not to be used again too. */
+
+			/* Nothing we can do, just bail. */
+			_exit(EXIT_SUCCESS);
+		}
+
+		/* Re-arm the alarm. */
+		alarm(1);
+
+		/* TODO: If we get back here after the 10s alarm, we should exit instead of longjmp */
+
+		/* Jump back, maybe we'll make progress. */
 		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
 		break;

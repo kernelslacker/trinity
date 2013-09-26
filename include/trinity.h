@@ -21,6 +21,7 @@ extern bool biarch;
 int check_tainted(void);
 
 void init_watchdog(void);
+unsigned int check_if_fd(unsigned int child);
 
 extern unsigned int user_specified_children;
 
