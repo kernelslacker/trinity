@@ -98,6 +98,8 @@ void init_child(int childno)
 
 	set_seed(childno);
 
+	shm->kill_count[childno] = 0;
+
 	disable_coredumps();
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
