@@ -75,6 +75,11 @@ int child_random_syscalls(int childno)
 	if (ret != 0) {
 		if (sigwas != SIGALRM)
 			output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
+
+		if (shm->kill_count[childno] > 0) {
+			output(1, "[%d] Missed a kill signal, exiting\n", getpid());
+			return 0;
+		}
 	}
 
 	ret = 0;

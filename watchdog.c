@@ -204,26 +204,27 @@ static void check_children(void)
 
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
+			stuck_syscall_info(i);
+			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d)\n",
+				pid, old, now, diff);
+		}
+
+		if (diff >= 30) {
 			int ret;
 
-			stuck_syscall_info(i);
-			output(0, "[watchdog] pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d). Sending SIGKILL.\n",
-				pid, old, now, diff);
-
+			if (shm->kill_count[i] > 1) {
+				output(0, "[watchdog] sending another SIGKILL to pid %d. [kill count:%d] [diff:%d]\n",
+					pid, shm->kill_count[i], diff);
+			} else {
+				output(0, "[watchdog] sending SIGKILL to pid %d. [diff:%d]\n",
+					pid, diff);
+			}
+			shm->kill_count[i]++;
 			ret = kill(pid, SIGKILL);
 			if (ret != 0) {
 				output(0, "[watchdog] couldn't kill pid %d [%s]\n", pid, strerror(errno));
 			}
-			break;
-		}
-
-		/* If it's still around after 60 seconds, we have bigger problems.
-		 * Find out what's going on. */
-
-		if (diff > 60) {
-			output(0, "[watchdog] pid %d hasn't made progress in 60 seconds! (last:%ld now:%ld diff:%d)\n",
-				pid, old, now, diff);
-			shm->tv[i].tv_sec = now;
+			sleep(1);	// give child time to exit.
 		}
 	}
 }
