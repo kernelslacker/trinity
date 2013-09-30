@@ -304,7 +304,7 @@ static void check_user_specified_arch(const char *arg, char **arg_name, bool *on
 				*only_64bit = FALSE;
 				*only_32bit = TRUE;
 			} else {
-				printf("No idea what architecture for syscall (%s) is.\n", arg);
+				printf("Unknown bit width (%s). Choose 32, or 64.\n", arg);
 				exit(EXIT_FAILURE);
 			}
 		}
