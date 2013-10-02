@@ -233,23 +233,25 @@ long mkcall(int childno)
 	if (syscalls[call].entry->sanitise)
 		syscalls[call].entry->sanitise(childno);
 
-	if ((logging == TRUE) && (quiet_level == MAX_LOGLEVEL)) {
-		CRESET
-		sptr += sprintf(sptr, "(");
-		color_arg(call, 1, syscalls[call].entry->arg1name, olda1, shm->a1[childno],
-				syscalls[call].entry->arg1type, &sptr);
-		color_arg(call, 2, syscalls[call].entry->arg2name, olda2, shm->a2[childno],
-				syscalls[call].entry->arg2type, &sptr);
-		color_arg(call, 3, syscalls[call].entry->arg3name, olda3, shm->a3[childno],
-				syscalls[call].entry->arg3type, &sptr);
-		color_arg(call, 4, syscalls[call].entry->arg4name, olda4, shm->a4[childno],
-				syscalls[call].entry->arg4type, &sptr);
-		color_arg(call, 5, syscalls[call].entry->arg5name, olda5, shm->a5[childno],
-				syscalls[call].entry->arg5type, &sptr);
-		color_arg(call, 6, syscalls[call].entry->arg6name, olda6, shm->a6[childno],
-				syscalls[call].entry->arg6type, &sptr);
-	}
+	/* micro-optimization. If we're not logging, and we're quiet, then
+	 * we can skip right over all of this. */
+	if ((logging == FALSE) && (quiet_level < MAX_LOGLEVEL))
+		goto skip_args;
 
+	CRESET
+	sptr += sprintf(sptr, "(");
+	color_arg(call, 1, syscalls[call].entry->arg1name, olda1, shm->a1[childno],
+			syscalls[call].entry->arg1type, &sptr);
+	color_arg(call, 2, syscalls[call].entry->arg2name, olda2, shm->a2[childno],
+			syscalls[call].entry->arg2type, &sptr);
+	color_arg(call, 3, syscalls[call].entry->arg3name, olda3, shm->a3[childno],
+			syscalls[call].entry->arg3type, &sptr);
+	color_arg(call, 4, syscalls[call].entry->arg4name, olda4, shm->a4[childno],
+			syscalls[call].entry->arg4type, &sptr);
+	color_arg(call, 5, syscalls[call].entry->arg5name, olda5, shm->a5[childno],
+			syscalls[call].entry->arg5type, &sptr);
+	color_arg(call, 6, syscalls[call].entry->arg6name, olda6, shm->a6[childno],
+			syscalls[call].entry->arg6type, &sptr);
 	CRESET
 	sptr += sprintf(sptr, ") ");
 	*sptr = '\0';
@@ -259,6 +261,8 @@ long mkcall(int childno)
 	/* If we're going to pause, might as well sync pre-syscall */
 	if (dopause == TRUE)
 		synclogs();
+
+skip_args:
 
 	if (((unsigned long)shm->a1 == (unsigned long) shm) ||
 	    ((unsigned long)shm->a2 == (unsigned long) shm) ||
