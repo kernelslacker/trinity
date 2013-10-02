@@ -22,6 +22,14 @@ struct shm_s {
 	unsigned int seeds[MAX_NR_CHILDREN];
 	unsigned int reseed_counter;
 
+	//Indices of syscall in syscall table that are active. All indices shifted by +1. Empty index equals to 0.
+	int active_syscalls32[MAX_NR_SYSCALL];
+	int active_syscalls64[MAX_NR_SYSCALL];
+	int active_syscalls[MAX_NR_SYSCALL];
+	unsigned int nr_active_syscalls;
+	unsigned int nr_active_32bit_syscalls;
+	unsigned int nr_active_64bit_syscalls;
+
 	pid_t pids[MAX_NR_CHILDREN];
 	unsigned char child_type[MAX_NR_CHILDREN];
 

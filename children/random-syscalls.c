@@ -22,9 +22,15 @@
  * to 'we asked to do a 32bit only syscall' and more.. Hairy.
  */
 
+int *active_syscalls;
+unsigned int nr_active_syscalls;
+
 static void choose_syscall_table(int childno)
 {
-	if (biarch == TRUE) {
+	if (biarch == FALSE) {
+		active_syscalls = shm->active_syscalls;
+		nr_active_syscalls = shm->nr_active_syscalls;
+	} else if (biarch == TRUE) {
 
 		/* First, check that we have syscalls enabled in either table. */
 		if (validate_syscall_table_64() == FALSE) {
@@ -47,12 +53,15 @@ static void choose_syscall_table(int childno)
 				shm->do32bit[childno] = TRUE;
 		}
 
-
 		if (shm->do32bit[childno] == FALSE) {
 			syscalls = syscalls_64bit;
+			nr_active_syscalls = shm->nr_active_64bit_syscalls;
+			active_syscalls = shm->active_syscalls64;
 			max_nr_syscalls = max_nr_64bit_syscalls;
 		} else {
 			syscalls = syscalls_32bit;
+			nr_active_syscalls = shm->nr_active_32bit_syscalls;
+			active_syscalls = shm->active_syscalls32;
 			max_nr_syscalls = max_nr_32bit_syscalls;
 		}
 	}
@@ -97,28 +106,19 @@ int child_random_syscalls(int childno)
 
 		choose_syscall_table(childno);
 
-		//FIXME: This 'loop' here is pretty gross. If we're just fuzzing
-		// a few syscalls, we can spin here for quite a while.
-		// a better way would be to do something in tables.c where we construct
-		// our own syscall table just containing enabled syscalls.
-retry:
-		if (no_syscalls_enabled() == TRUE) {
+		if (nr_active_syscalls == 0) {
+			printf("OOPS: no syscalls enabled\n");
 			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 			goto out;
 		}
 
-		if (shm->exit_reason != STILL_RUNNING)
+		if (shm->exit_reason != STILL_RUNNING) {
+			printf("Main is not running, exiting");
 			goto out;
+		}
 
-		syscallnr = rand() % max_nr_syscalls;
-
-		if (!(syscalls[syscallnr].entry->flags & ACTIVE))
-			goto retry;
-
-		if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE)
-			goto retry;
-
-		/* if we get here, syscallnr is finally valid */
+		syscallnr = rand() % nr_active_syscalls;
+		syscallnr = active_syscalls[syscallnr] - 1;
 
 		shm->syscallno[childno] = syscallnr;
 

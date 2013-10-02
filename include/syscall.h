@@ -35,6 +35,7 @@ struct syscall {
 	int (*init)(void);
 
 	unsigned int number;
+	unsigned int active_number;
 	const char name[80];
 	const unsigned int num_args;
 	unsigned int flags;
@@ -118,7 +119,7 @@ extern bool use_64bit;
 void select_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
 void mark_all_syscalls_active(void);
-void toggle_syscall(const char *arg, unsigned char state);
+void toggle_syscall(const char *arg, bool state);
 void dump_syscall_tables(void);
 int setup_syscall_group(unsigned int desired_group);
 int validate_syscall_tables(void);
