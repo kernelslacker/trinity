@@ -283,8 +283,7 @@ retry:
 	case O_RDWR:    modestr = "read-write"; break;
 	default: modestr = "unknown"; break;
 	}
-	output(2, "[%d] fd[%i] = %s (%s)\n",
-		getpid(), fd, filename, modestr);
+	output(2, "fd[%i] = %s (%s)\n", fd, filename, modestr);
 	return fd;
 }
 

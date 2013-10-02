@@ -177,7 +177,7 @@ int child_process(int childno)
 	i = rand() % ARRAY_SIZE(child_functions);
 
 #ifdef DEBUG_MULTI
-	output(0, "Chose %s for process %d\n", child_functions[i].name, getpid());
+	output(0, "Chose %s.\n", child_functions[i].name);
 #endif
 
 	shm->child_type[childno] = child_functions[i].type;

@@ -89,9 +89,9 @@ void count_syscalls_enabled(void)
 			else
 				dcount_32++;
 		}
-		printf("[%d] 32-bit syscalls: %d enabled, %d disabled.  "
+		printf("[init] 32-bit syscalls: %d enabled, %d disabled.  "
 			"64-bit syscalls: %d enabled, %d disabled.\n",
-			getpid(), ecount_32, dcount_32, ecount_64, dcount_64);
+			ecount_32, dcount_32, ecount_64, dcount_64);
 
 	} else {
 
@@ -102,7 +102,7 @@ void count_syscalls_enabled(void)
 			else
 				dcount_32++;
 		}
-		printf("[%d] Enabled %d syscalls. Disabled %d syscalls.\n", getpid(), ecount_32, dcount_32);
+		printf("Enabled %d syscalls. Disabled %d syscalls.\n", ecount_32, dcount_32);
 	}
 }
 
@@ -371,22 +371,22 @@ static void toggle_syscall_biarch(const char *arg, unsigned char state)
 
 	/* biarch? */
 	if ((specific_syscall64 != -1) && (specific_syscall32 != -1)) {
-		printf("[%d] Marking syscall %s (64bit:%d 32bit:%d) as to be %sabled.\n",
-			getpid(), arg, specific_syscall64, specific_syscall32,
+		printf("Marking syscall %s (64bit:%d 32bit:%d) as to be %sabled.\n",
+			arg, specific_syscall64, specific_syscall32,
 			state ? "en" : "dis");
 		return;
 	}
 
 	if (specific_syscall64 != -1) {
-		printf("[%d] Marking 64-bit syscall %s (%d) as to be %sabled.\n",
-			getpid(), arg, specific_syscall64,
+		printf("Marking 64-bit syscall %s (%d) as to be %sabled.\n",
+			arg, specific_syscall64,
 			state ? "en" : "dis");
 		return;
 	}
 
 	if  (specific_syscall32 != -1) {
-		printf("[%d] Marking 32-bit syscall %s (%d) as to be %sabled.\n",
-			getpid(), arg, specific_syscall32,
+		printf("Marking 32-bit syscall %s (%d) as to be %sabled.\n",
+			arg, specific_syscall32,
 			state ? "en" : "dis");
 		return;
 	}
@@ -419,8 +419,7 @@ void toggle_syscall(const char *arg, unsigned char state)
 	else
 		syscalls[specific_syscall].entry->flags |= TO_BE_DEACTIVATED;
 
-	printf("[%d] Marking syscall %s (%d) as to be %sabled.\n",
-		getpid(), arg, specific_syscall,
+	printf("Marking syscall %s (%d) as to be %sabled.\n", arg, specific_syscall,
 		state ? "en" : "dis");
 }
 
@@ -434,15 +433,15 @@ void deactivate_disabled_syscalls(void)
 		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls_64bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
-				printf("[%d] Marked 64-bit syscall %s (%d) as deactivated.\n",
-					getpid(), syscalls_64bit[i].entry->name, syscalls_64bit[i].entry->number);
+				printf("Marked 64-bit syscall %s (%d) as deactivated.\n",
+					syscalls_64bit[i].entry->name, syscalls_64bit[i].entry->number);
 			}
 		}
 		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls_32bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
-				printf("[%d] Marked 32-bit syscall %s (%d) as deactivated.\n",
-					getpid(), syscalls_32bit[i].entry->name, syscalls_32bit[i].entry->number);
+				printf("Marked 32-bit syscall %s (%d) as deactivated.\n",
+					syscalls_32bit[i].entry->name, syscalls_32bit[i].entry->number);
 			}
 		}
 
@@ -450,8 +449,8 @@ void deactivate_disabled_syscalls(void)
 		for_each_syscall(i) {
 			if (syscalls[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
-				printf("[%d] Marked syscall %s (%d) as deactivated.\n",
-					getpid(), syscalls[i].entry->name, syscalls[i].entry->number);
+				printf("Marked syscall %s (%d) as deactivated.\n",
+					syscalls[i].entry->name, syscalls[i].entry->number);
 			}
 		}
 	}
@@ -702,19 +701,19 @@ void display_enabled_syscalls(void)
 	if (biarch == TRUE) {
 		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->flags & ACTIVE)
-				printf("[%d] 64-bit syscall %d:%s enabled.\n", getpid(), i, syscalls_64bit[i].entry->name);
+				printf("64-bit syscall %d:%s enabled.\n", i, syscalls_64bit[i].entry->name);
 		}
 
 		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->flags & ACTIVE)
-				printf("[%d] 32-bit syscall %d:%s enabled.\n", getpid(), i, syscalls_32bit[i].entry->name);
+				printf("32-bit syscall %d:%s enabled.\n", i, syscalls_32bit[i].entry->name);
 		}
 
 	} else {
 		/* non-biarch */
 		for_each_syscall(i) {
 			if (syscalls[i].entry->flags & ACTIVE)
-				printf("[%d] syscall %d:%s enabled.\n", getpid(), i, syscalls[i].entry->name);
+				printf("syscall %d:%s enabled.\n", i, syscalls[i].entry->name);
 		}
 	}
 }

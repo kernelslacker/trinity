@@ -36,7 +36,7 @@ static void regenerate(void)
 
 	shm->regenerate = 0;
 
-	output(0, "[%d] Regenerating random pages, fd's etc.\n", getpid());
+	output(0, "Regenerating random pages, fd's etc.\n");
 
 	regenerate_fds();
 
@@ -109,7 +109,7 @@ static void fork_children(void)
 		/* Find a space for it in the pid map */
 		pidslot = find_pid_slot(EMPTY_PIDSLOT);
 		if (pidslot == PIDSLOT_NOT_FOUND) {
-			printf("[%d] ## Pid map was full!\n", getpid());
+			printf("## Pid map was full!\n");
 			dump_pid_slots();
 			exit(EXIT_FAILURE);
 		}
@@ -137,7 +137,7 @@ static void fork_children(void)
 				ret = pid_alive(mainpid);
 				if (ret != 0) {
 					shm->exit_reason = EXIT_SHM_CORRUPTION;
-					printf("[%d] " BUGTXT "parent (%d) went away!\n", getpid(), mainpid);
+					printf(BUGTXT "parent (%d) went away!\n", mainpid);
 					sleep(20000);
 				}
 			}
@@ -150,13 +150,13 @@ static void fork_children(void)
 
 			ret = child_process(pidslot);
 
-			output(1, "child %d exiting\n", getpid());
+			output(1, "child exiting.\n");
 
 			_exit(ret);
 		}
 		shm->running_childs++;
-		debugf("[%d] Created child %d in pidslot %d [total:%d/%d]\n",
-			getpid(), shm->pids[pidslot], pidslot,
+		debugf("Created child %d in pidslot %d [total:%d/%d]\n",
+			shm->pids[pidslot], pidslot,
 			shm->running_childs, shm->max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)
@@ -165,7 +165,7 @@ static void fork_children(void)
 	}
 	shm->ready = TRUE;
 
-	debugf("[%d] created enough children\n", getpid());
+	debugf("created enough children\n");
 }
 
 void reap_child(pid_t childpid)
@@ -177,7 +177,7 @@ void reap_child(pid_t childpid)
 	shm->reaper_lock = LOCKED;
 
 	if (childpid == shm->last_reaped) {
-		debugf("[%d] already reaped %d!\n", getpid(), childpid);
+		debugf("already reaped %d!\n", childpid);
 		goto out;
 	}
 
@@ -185,7 +185,7 @@ void reap_child(pid_t childpid)
 	if (i == PIDSLOT_NOT_FOUND)
 		goto out;
 
-	debugf("[%d] Removing pid %d from pidmap.\n", getpid(), childpid);
+	debugf("Removing pid %d from pidmap.\n", childpid);
 	shm->pids[i] = EMPTY_PIDSLOT;
 	shm->running_childs--;
 	shm->tv[i].tv_sec = 0;
@@ -202,7 +202,7 @@ static void handle_child(pid_t childpid, int childstatus)
 
 	switch (childpid) {
 	case 0:
-		//debugf("[%d] Nothing changed. children:%d\n", getpid(), shm->running_childs);
+		//debugf("Nothing changed. children:%d\n", shm->running_childs);
 		break;
 
 	case -1:
@@ -210,15 +210,15 @@ static void handle_child(pid_t childpid, int childstatus)
 			return;
 
 		if (errno == ECHILD) {
-			debugf("[%d] All children exited!\n", getpid());
+			debugf("All children exited!\n");
 			for_each_pidslot(i) {
 				if (shm->pids[i] != EMPTY_PIDSLOT) {
 					if (pid_alive(shm->pids[i]) == -1) {
-						debugf("[%d] Removing %d from pidmap\n", getpid(), shm->pids[i]);
+						debugf("Removing %d from pidmap\n", shm->pids[i]);
 						shm->pids[i] = EMPTY_PIDSLOT;
 						shm->running_childs--;
 					} else {
-						debugf("[%d] %d looks still alive! ignoring.\n", getpid(), shm->pids[i]);
+						debugf("%d looks still alive! ignoring.\n", shm->pids[i]);
 					}
 				}
 			}
@@ -228,7 +228,7 @@ static void handle_child(pid_t childpid, int childstatus)
 		break;
 
 	default:
-		debugf("[%d] Something happened to pid %d\n", getpid(), childpid);
+		debugf("Something happened to pid %d\n", childpid);
 
 		if (WIFEXITED(childstatus)) {
 
@@ -236,12 +236,12 @@ static void handle_child(pid_t childpid, int childstatus)
 			if (slot == PIDSLOT_NOT_FOUND) {
 				/* If we reaped it, it wouldn't show up, so check that. */
 				if (shm->last_reaped != childpid) {
-					printf("[%d] ## Couldn't find pid slot for %d\n", getpid(), childpid);
+					printf("## Couldn't find pid slot for %d\n", childpid);
 					shm->exit_reason = EXIT_LOST_PID_SLOT;
 					dump_pid_slots();
 				}
 			} else {
-				debugf("[%d] Child %d exited after %ld syscalls.\n", getpid(), childpid, shm->child_syscall_count[slot]);
+				debugf("Child %d exited after %ld syscalls.\n", childpid, shm->child_syscall_count[slot]);
 				reap_child(childpid);
 			}
 			break;
@@ -250,18 +250,18 @@ static void handle_child(pid_t childpid, int childstatus)
 
 			switch (WTERMSIG(childstatus)) {
 			case SIGALRM:
-				debugf("[%d] got a alarm signal from pid %d\n", getpid(), childpid);
+				debugf("got a alarm signal from pid %d\n", childpid);
 				break;
 			case SIGFPE:
 			case SIGSEGV:
 			case SIGKILL:
 			case SIGPIPE:
 			case SIGABRT:
-				debugf("[%d] got a signal from pid %d (%s)\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
+				debugf("got a signal from pid %d (%s)\n", childpid, strsignal(WTERMSIG(childstatus)));
 				reap_child(childpid);
 				break;
 			default:
-				debugf("[%d] ** Child got an unhandled signal (%d)\n", getpid(), WTERMSIG(childstatus));
+				debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
 				break;
 			}
 			break;
@@ -270,10 +270,10 @@ static void handle_child(pid_t childpid, int childstatus)
 
 			switch (WSTOPSIG(childstatus)) {
 			case SIGALRM:
-				debugf("[%d] got an alarm signal from pid %d\n", getpid(), childpid);
+				debugf("got an alarm signal from pid %d\n", childpid);
 				break;
 			case SIGSTOP:
-				debugf("[%d] Sending PTRACE_DETACH (and then KILL)\n", getpid());
+				debugf("Sending PTRACE_DETACH (and then KILL)\n");
 				ptrace(PTRACE_DETACH, childpid, NULL, NULL);
 				kill(childpid, SIGKILL);
 				reap_child(childpid);
@@ -283,11 +283,11 @@ static void handle_child(pid_t childpid, int childstatus)
 			case SIGKILL:
 			case SIGPIPE:
 			case SIGABRT:
-				debugf("[%d] Child %d was stopped by %s\n", getpid(), childpid, strsignal(WTERMSIG(childstatus)));
+				debugf("Child %d was stopped by %s\n", childpid, strsignal(WTERMSIG(childstatus)));
 				reap_child(childpid);
 				break;
 			default:
-				debugf("[%d] Child %d was stopped by unhandled signal (%s).\n", getpid(), childpid, strsignal(WSTOPSIG(childstatus)));
+				debugf("Child %d was stopped by unhandled signal (%s).\n", childpid, strsignal(WSTOPSIG(childstatus)));
 				break;
 			}
 			break;
@@ -388,7 +388,7 @@ void do_main_loop(void)
 		setup_main_signals();
 
 		mainpid = getpid();
-		output(0, "[%d] Main thread is alive.\n", getpid());
+		output(0, "Main thread is alive.\n");
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
 		set_seed(0);
 
@@ -406,7 +406,7 @@ void do_main_loop(void)
 		while (pidmap_empty() == FALSE)
 			handle_children();
 
-		printf("[%d] Bailing main loop. Exit reason: %s\n", getpid(), decode_exit(shm->exit_reason));
+		printf("Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
 		_exit(EXIT_SUCCESS);
 	}
 
