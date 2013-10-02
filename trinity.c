@@ -69,6 +69,13 @@ static int create_shm(void)
 
 	memset(shm->pids, EMPTY_PIDSLOT, sizeof(shm->pids));
 
+	shm->nr_active_syscalls = 0;
+	shm->nr_active_32bit_syscalls = 0;
+	shm->nr_active_64bit_syscalls = 0;
+	memset(shm->active_syscalls, 0, sizeof(shm->active_syscalls));
+	memset(shm->active_syscalls32, 0, sizeof(shm->active_syscalls32));
+	memset(shm->active_syscalls64, 0, sizeof(shm->active_syscalls64));
+
 	/* Overwritten later in setup_shm_postargs if user passed -s */
 	shm->seed = new_seed();
 
@@ -105,7 +112,7 @@ static int munge_tables(void)
 	/* By default, all syscall entries will be disabled.
 	 * If we didn't pass -c, -x or -r, mark all syscalls active.
 	 */
-	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE) && (random_selection == FALSE))
+	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE) && (random_selection == FALSE) && (desired_group == GROUP_NONE))
 		mark_all_syscalls_active();
 
 	if (desired_group != GROUP_NONE) {
@@ -123,7 +130,6 @@ static int munge_tables(void)
 	if (do_exclude_syscall == TRUE) {
 		if (random_selection == FALSE)
 			mark_all_syscalls_active();
-
 		deactivate_disabled_syscalls();
 	}
 
