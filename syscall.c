@@ -212,7 +212,6 @@ long mkcall(int childno)
 
 	sptr = string;
 
-	sptr += sprintf(sptr, "[%d] ", getpid());
 	sptr += sprintf(sptr, "[%ld] ", shm->child_syscall_count[childno]);
 	if (shm->do32bit[childno] == TRUE)
 		sptr += sprintf(sptr, "[32BIT] ");
@@ -320,8 +319,8 @@ skip_args:
 		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "sendfile"))
 			goto skip_enosys;
 
-		output(1, "[%d] %s (%d) returned ENOSYS, marking as inactive.\n",
-			getpid(), syscalls[call].entry->name, call);
+		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
+			syscalls[call].entry->name, call);
 
 		if (biarch == FALSE) {
 			syscalls[call].entry->flags &= ~ACTIVE;

@@ -138,11 +138,34 @@ void output(unsigned char level, const char *fmt, ...)
 	int n;
 	FILE *handle;
 	unsigned int len, i, j;
+	pid_t pid;
 	char outputbuf[1024];
 	char monobuf[1024];
+	char *prefix = NULL;
+	char watchdog_prefix[]="[watchdog]";
+	char init_prefix[]="[init]";
+	char main_prefix[]="[main]";
+	char child_prefix[]="[childNN:1234567890]";
+	unsigned int slot;
 
 	if (logging == FALSE && level >= quiet_level)
 		return;
+
+	pid = getpid();
+	if (pid == watchdog_pid)
+		prefix = watchdog_prefix;
+
+	if (pid == initpid)
+		prefix = init_prefix;
+
+	if (pid == mainpid)
+		prefix = main_prefix;
+
+	if (prefix == NULL) {
+		slot = find_pid_slot(pid);
+		sprintf(child_prefix, "[child%d:%d]", slot, pid);
+		prefix = child_prefix;
+	}
 
 	va_start(args, fmt);
 	n = vsnprintf(outputbuf, sizeof(outputbuf), fmt, args);
@@ -154,7 +177,7 @@ void output(unsigned char level, const char *fmt, ...)
 	}
 
 	if (quiet_level > level) {
-		printf("%s", outputbuf);
+		printf("%s %s", prefix, outputbuf);
 		(void)fflush(stdout);
 	}
 
@@ -176,7 +199,7 @@ void output(unsigned char level, const char *fmt, ...)
 	 * any ANSI codes that may be present.
 	 */
 	if (monochrome == TRUE) {
-		fprintf(handle, "%s", outputbuf);
+		fprintf(handle, "%s %s", prefix, outputbuf);
 		(void)fflush(handle);
 		return;
 	}
@@ -196,6 +219,6 @@ void output(unsigned char level, const char *fmt, ...)
 	}
 	monobuf[j] = '\0';
 
-	fprintf(handle, "%s", monobuf);
+	fprintf(handle, "%s %s", prefix, monobuf);
 	(void)fflush(handle);
 }

@@ -275,7 +275,7 @@ static void watchdog(void)
 	bool watchdog_exit = FALSE;
 	int ret = 0;
 
-	printf("[%d] Watchdog is alive\n", watchdog_pid);
+	printf("[watchdog] Watchdog is alive. (pid:%d)\n", watchdog_pid);
 
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
@@ -373,6 +373,6 @@ void init_watchdog(void)
 
 	} else {
 		watchdog_pid = pid;
-		output(0, "[%d] Started watchdog process, PID is %d\n", getpid(), watchdog_pid);
+		output(0, "Started watchdog process, PID is %d\n", watchdog_pid);
 	}
 }

@@ -50,7 +50,7 @@ unsigned int new_seed(void)
 unsigned int init_seed(unsigned int seedparam)
 {
 	if (user_set_seed == TRUE)
-		printf("[%d] Using user passed random seed: %u\n", getpid(), seedparam);
+		printf("Using user passed random seed: %u\n", seedparam);
 	else {
 		seedparam = new_seed();
 
@@ -97,7 +97,7 @@ void reseed(void)
 	/* We are reseeding. */
 	shm->seed = new_seed();
 
-	output(0, "[%d] Random reseed: %u\n", getpid(), shm->seed);
+	output(0, "Random reseed: %u\n", shm->seed);
 
 	if (do_syslog == TRUE)
 		syslog_seed(shm->seed);
