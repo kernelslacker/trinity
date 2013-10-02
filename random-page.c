@@ -50,7 +50,7 @@ void generate_random_page(char *page)
 {
 	unsigned int i;
 
-	switch (rand() % 6) {
+	switch (rand() % 7) {
 	/* return a page of complete trash */
 	case 0:	/* bytes */
 		for (i = 0; i < page_size; )
@@ -85,6 +85,20 @@ void generate_random_page(char *page)
 	case 5:
 		for (i = 0; i < page_size; )
 			page[i++] = (unsigned char)rand_bool();
+		return;
+
+	/* page full of format strings. */
+	case 6:
+		for (i = 0; i < page_size; ) {
+			page[i++] = '%';
+			switch (rand_bool()) {
+			case 0:	page[i++] = 'd';
+				break;
+			case 1:	page[i++] = 's';
+				break;
+			default: break;
+			}
+		}
 		return;
 
 	default:
