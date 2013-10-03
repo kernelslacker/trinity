@@ -899,17 +899,16 @@ try32bit:
 							&activate_syscall32, 32, syscalls_32bit[call32].entry->name);
 			}
 
-
-
-
 		} else {
+			/* non-biarch case */
+
 			call = rand() % max_nr_syscalls;
 
 			if (validate_specific_syscall_silent(syscalls, call) == FALSE)
 				goto retry;
 
 			if (no_files == TRUE)
-				if (is_syscall_net_related(syscalls_32bit, call) == FALSE)
+				if (is_syscall_net_related(syscalls, call) == FALSE)
 					goto retry;
 
 			/* if we've set this to be disabled, don't enable it! */
