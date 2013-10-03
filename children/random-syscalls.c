@@ -107,7 +107,6 @@ int child_random_syscalls(int childno)
 		choose_syscall_table(childno);
 
 		if (nr_active_syscalls == 0) {
-			printf("OOPS: no syscalls enabled\n");
 			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 			goto out;
 		}
@@ -118,7 +117,23 @@ int child_random_syscalls(int childno)
 		}
 
 		syscallnr = rand() % nr_active_syscalls;
+		/* If we got a syscallnr which is not actvie repeat the attempt, since another child has switched that syscall off already.*/
+		if (active_syscalls[syscallnr] == 0)
+			continue;
+
 		syscallnr = active_syscalls[syscallnr] - 1;
+
+		if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE) {
+			if (biarch == FALSE) {
+				deactivate_syscall(syscallnr);
+			} else {
+				if (shm->do32bit[childno] == TRUE)
+					deactivate_syscall32(syscallnr);
+				else
+					deactivate_syscall64(syscallnr);
+			}
+			continue;
+		}
 
 		shm->syscallno[childno] = syscallnr;
 
