@@ -91,17 +91,17 @@ static void activate_syscall_in_table(unsigned int calln, unsigned int *nr_activ
 	}
 }
 
-static void activate_syscall32(unsigned int calln)
+void activate_syscall32(unsigned int calln)
 {
 	activate_syscall_in_table(calln, &shm->nr_active_32bit_syscalls, syscalls_32bit, shm->active_syscalls32);
 }
 
-static void activate_syscall64(unsigned int calln)
+void activate_syscall64(unsigned int calln)
 {
 	activate_syscall_in_table(calln, &shm->nr_active_64bit_syscalls, syscalls_64bit, shm->active_syscalls64);
 }
 
-static void activate_syscall(unsigned int calln)
+void activate_syscall(unsigned int calln)
 {
 	activate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
 }
@@ -109,35 +109,33 @@ static void activate_syscall(unsigned int calln)
 static void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall)
 {
 	struct syscall *call_ptr;
+	unsigned int i;
 
 	call_ptr = table[calln].entry;
 	//Check if the call is activated already, and deactivate it only if needed
-	if (call_ptr->active_number != 0) {
-		*nr_active -= 1;
-		if (call_ptr->active_number == *nr_active) {
-			//simple case, we are in the end
-			active_syscall[*nr_active] = 0;
-		} else {
-			//in the middle
-			active_syscall[call_ptr->active_number - 1] = active_syscall[*nr_active];
-			active_syscall[*nr_active] = 0;
+	if ((call_ptr->active_number != 0) && (*nr_active > 0)) {
+		for (i = call_ptr->active_number - 1; i < *nr_active - 1; i++) {
+			active_syscall[i] = active_syscall[i + 1];
+			table[active_syscall[i] - 1].entry->active_number = i + 1;
 		}
+		//The last step is to erase the last item.
+		active_syscall[*nr_active - 1] = 0;
+		(*nr_active) -= 1;
 		call_ptr->active_number = 0;
 	}
-
 }
 
-static void deactivate_syscall32(unsigned int calln)
+void deactivate_syscall32(unsigned int calln)
 {
 	deactivate_syscall_in_table(calln, &shm->nr_active_32bit_syscalls, syscalls_32bit, shm->active_syscalls32);
 }
 
-static void deactivate_syscall64(unsigned int calln)
+void deactivate_syscall64(unsigned int calln)
 {
 	deactivate_syscall_in_table(calln, &shm->nr_active_64bit_syscalls, syscalls_64bit, shm->active_syscalls64);
 }
 
-static void deactivate_syscall(unsigned int calln)
+void deactivate_syscall(unsigned int calln)
 {
 	deactivate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
 }
