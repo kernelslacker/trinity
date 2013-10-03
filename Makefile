@@ -45,18 +45,18 @@ SYSCALLS_ARCH	= $(shell case "$(MACHINE)" in \
 HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 
 SRCS		= $(wildcard *.c) \
-		  $(wildcard syscalls/*.c) \
-		  $(SYSCALLS_ARCH) \
+		  $(wildcard children/*.c) \
 		  $(wildcard ioctls/*.c) \
 		  $(wildcard net/*.c) \
-		  $(wildcard children/*.c)
+		  $(wildcard syscalls/*.c) \
+		  $(SYSCALLS_ARCH)
 
-OBJS		= $(patsubst %.c,%.o,$(wildcard *.c)) \
-		  $(patsubst %.c,%.o,$(wildcard syscalls/*.c)) \
-		  $(patsubst %.c,%.o,$(SYSCALLS_ARCH)) \
-		  $(patsubst %.c,%.o,$(wildcard ioctls/*.c)) \
-		  $(patsubst %.c,%.o,$(wildcard net/*.c)) \
-		  $(patsubst %.c,%.o,$(wildcard children/*.c))
+OBJS		= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
+		  $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
+		  $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH))) \
+		  $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
+		  $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
+		  $(sort $(patsubst %.c,%.o,$(wildcard children/*.c)))
 
 DEPDIR= .deps
 
