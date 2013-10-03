@@ -303,14 +303,16 @@ void mark_all_syscalls_active(void)
 
 	printf("Marking all syscalls as enabled.\n");
 	if (biarch == TRUE) {
-		for_each_32bit_syscall(i) {
-			syscalls_32bit[i].entry->flags |= ACTIVE;
-			activate_syscall32(i);
-		}
-		for_each_64bit_syscall(i) {
-			syscalls_64bit[i].entry->flags |= ACTIVE;
-			activate_syscall64(i);
-		}
+		if (do_32_arch)
+			for_each_32bit_syscall(i) {
+				syscalls_32bit[i].entry->flags |= ACTIVE;
+				activate_syscall32(i);
+			}
+		if (do_64_arch)
+			for_each_64bit_syscall(i) {
+				syscalls_64bit[i].entry->flags |= ACTIVE;
+				activate_syscall64(i);
+			}
 	} else {
 		for_each_syscall(i) {
 			syscalls[i].entry->flags |= ACTIVE;
