@@ -16,6 +16,7 @@ enum exit_reasons {
 	EXIT_REPARENT_PROBLEM = 9,
 	EXIT_NO_FILES = 10,
 	EXIT_MAIN_DISAPPEARED = 11,
+	EXIT_UID_CHANGED = 12,
 };
 
 #endif	/* _EXIT_H */

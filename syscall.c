@@ -90,6 +90,23 @@ long syscall32(int num_args, unsigned int call,
 	return 0;
 }
 
+static void check_uid(uid_t olduid)
+{
+	uid_t myuid;
+
+	myuid = getuid();
+	if (myuid != olduid) {
+
+		/* unshare() can change us to /proc/sys/kernel/overflowuid */
+		if (myuid == 65534)
+			return;
+
+		output(0, "uid changed! Was: %d, now %d\n", olduid, myuid);
+
+		shm->exit_reason = EXIT_UID_CHANGED;
+		_exit(EXIT_FAILURE);
+	}
+}
 
 static unsigned long do_syscall(int childno, int *errno_saved)
 {
@@ -206,6 +223,7 @@ long mkcall(int childno)
 	unsigned long ret = 0;
 	int errno_saved;
 	char string[512], *sptr;
+	uid_t olduid = getuid();
 
 	shm->regenerate++;
 
@@ -344,6 +362,8 @@ skip_enosys:
 	shm->previous_a4[childno] = shm->a4[childno];
 	shm->previous_a5[childno] = shm->a5[childno];
 	shm->previous_a6[childno] = shm->a6[childno];
+
+	check_uid(olduid);
 
 	return ret;
 }
