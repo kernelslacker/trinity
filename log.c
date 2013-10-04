@@ -194,10 +194,9 @@ void output(unsigned char level, const char *fmt, ...)
 		return;
 	}
 
-	/* If we've specified monochrome, we can just dump the buffer
-	 * into the logfile as is. Otherwise, we need to strip out
-	 * any ANSI codes that may be present.
-	 */
+	/* If we've specified monochrome, we can just dump the buffer into
+	 * the logfile as is, because there shouldn't be any ANSI codes
+	 * in the buffer to be stripped out. */
 	if (monochrome == TRUE) {
 		fprintf(handle, "%s %s", prefix, outputbuf);
 		(void)fflush(handle);
