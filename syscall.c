@@ -199,7 +199,7 @@ static void color_arg(unsigned int call, unsigned int argnum, const char *name, 
 				*sptr += sprintf(*sptr, "0x%lx", reg);
 			else
 				*sptr += sprintf(*sptr, "%ld", reg);
-				CRESETPTR
+			CRESETPTR
 			break;
 		}
 		if (reg == (((unsigned long)page_zeros) & PAGE_MASK))
