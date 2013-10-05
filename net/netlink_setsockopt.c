@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <sys/socket.h> /* old netlink.h is broken */
 #include <linux/netlink.h>
 #include "net.h"
 #include "maps.h"	// page_rand
