@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <linux/netlink.h>
 #include <stdlib.h>
+#include "compat.h"
 #include "net.h"
 #include "random.h"
 
