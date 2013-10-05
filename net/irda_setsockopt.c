@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <sys/socket.h> /* old irda.h is broken */
 #include <linux/irda.h>
 #include "net.h"
 #include "maps.h"	// page_rand
