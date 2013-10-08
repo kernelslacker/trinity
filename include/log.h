@@ -36,6 +36,7 @@ void output_syscall_postfix(unsigned long ret, int errno_saved, bool err);
 
 void open_logfiles(void);
 void close_logfiles(void);
+void debugf(const char *fmt, ...);
 
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
