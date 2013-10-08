@@ -49,15 +49,15 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 		ret = bind(fd, &sa, salen);
 /*		if (ret == -1)
-			printf("bind: %s\n", strerror(errno));
+			debugf("bind: %s\n", strerror(errno));
 		else
-			printf("bind: success!\n");
+			debugf("bind: success!\n");
 */
 		ret = listen(fd, (rand() % 2) + 1);
 /*		if (ret == -1)
-			printf("listen: %s\n", strerror(errno));
+			debugf("listen: %s\n", strerror(errno));
 		else
-			printf("listen: success!\n");
+			debugf("listen: success!\n");
 */
 	}
 

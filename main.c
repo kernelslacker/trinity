@@ -84,8 +84,6 @@ static void oom_score_adj(int adj)
 	fclose(fp);
 }
 
-#define debugf if (debug == TRUE) printf
-
 static void fork_children(void)
 {
 	int pidslot;

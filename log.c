@@ -424,3 +424,14 @@ void output_syscall_postfix(unsigned long ret, int errno_saved, bool err)
 			output_syscall_postfix_success(ret, stdout, monochrome);
 	}
 }
+
+void debugf(const char *fmt, ...)
+{
+	va_list args;
+
+	if (debug == TRUE) {
+		va_start(args, fmt);
+		vprintf(fmt, args);
+		va_end(args);
+	}
+}

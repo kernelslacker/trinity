@@ -38,7 +38,7 @@ int search_syscall_table(const struct syscalltable *table, unsigned int nr_sysca
 	/* search by name */
 	for (i = 0; i < nr_syscalls; i++) {
 		if (strcmp(arg, table[i].entry->name) == 0) {
-			//printf("Found %s at %u\n", table[i].entry->name, i);
+			//debugf("Found %s at %u\n", table[i].entry->name, i);
 			return i;
 		}
 	}

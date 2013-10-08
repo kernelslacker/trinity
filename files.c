@@ -68,7 +68,7 @@ static int ignore_files(const char *path)
 		}
 
 		if (!strcmp(path, ignored_paths[i])) {
-//			printf("Skipping %s\n", path);
+			debugf("Skipping %s\n", path);
 			return 1;
 		}
 	}
@@ -85,14 +85,14 @@ static int ignore_files(const char *path)
 
 	for (i = 0; ignored_patterns[i]; i++) {
 		if (!strcmp(path + offset, ignored_patterns[i])) {
-//			printf("Skipping pattern %s\n", path);
+			debugf("Skipping pattern %s\n", path);
 			return 1;
 		}
 	}
 
 	/* special case to match tty* until I do globbing */
 	if (!strncmp(path + offset, "tty", 3)) {
-//		printf("Skipping %s\n", path);
+		debugf("Skipping %s\n", path);
 		return 1;
 	}
 	return 0;
