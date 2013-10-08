@@ -348,6 +348,7 @@ static const char *reasons[] = {
 	"Child reparenting problem",
 	"No files in file list.",
 	"Main process disappeared.",
+	"UID changed.",
 };
 
 static const char * decode_exit(unsigned int reason)
