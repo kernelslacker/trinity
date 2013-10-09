@@ -54,7 +54,7 @@ void dump_pid_slots(void)
 		sptr += sprintf(sptr, "\n");
 	}
 	*sptr = '\0';
-	printf("%s", string);
+	outputerr("%s", string);
 }
 
 static pid_t pidmax;
@@ -95,7 +95,7 @@ void pids_init(void)
 #else
 		pidmax = 32768;
 #endif
-		printf("Couldn't read pid_max from proc\n");
+		outputerr("Couldn't read pid_max from proc\n");
 	}
 
 	printf("[init] Using pid_max = %d\n", pidmax);

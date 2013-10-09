@@ -91,7 +91,7 @@ static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 	}
 
 	if (high == 0) {
-		printf("%s forgets to set hirange!\n", syscalls[call].entry->name);
+		outputerr("%s forgets to set hirange!\n", syscalls[call].entry->name);
 		BUG("Fix syscall definition!\n");
 		return 0;
 	}

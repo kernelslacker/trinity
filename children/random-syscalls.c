@@ -112,7 +112,7 @@ int child_random_syscalls(int childno)
 		}
 
 		if (shm->exit_reason != STILL_RUNNING) {
-			printf("Main is not running, exiting");
+			outputerr("Main is not running, exiting");
 			goto out;
 		}
 

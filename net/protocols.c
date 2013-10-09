@@ -6,6 +6,7 @@
 #include "trinity.h"
 #include "constants.h"
 #include "net.h"
+#include "log.h"
 
 struct protocol {
 	const char *name;
@@ -89,10 +90,10 @@ void find_specific_proto(const char *protoarg)
 	}
 
 	if (i > TRINITY_PF_MAX) {
-		printf("Protocol unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
+		outputerr("Protocol unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
 		for (i = 0; i < ARRAY_SIZE(protocols); i++)
-			printf("%s ", protocols[i].name);
-		printf("\n");
+			outputerr("%s ", protocols[i].name);
+		outputerr("\n");
 
 		exit(EXIT_FAILURE);
 	}

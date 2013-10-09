@@ -50,7 +50,7 @@ static void reenable_coredumps(void)
 	prctl(PR_SET_DUMPABLE, TRUE);
 
 	if (setrlimit(RLIMIT_CORE, &oldrlimit) != 0) {
-		printf("[%d] Error restoring rlimits to cur:%d max:%d (%s)\n",
+		outputerr("[%d] Error restoring rlimits to cur:%d max:%d (%s)\n",
 			getpid(),
 			(unsigned int) oldrlimit.rlim_cur,
 			(unsigned int) oldrlimit.rlim_max,
@@ -72,7 +72,7 @@ static void set_make_it_fail(void)
 
 	if (write(fd, buf, 1) == -1) {
 		if (errno != EPERM)
-			printf("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
+			outputerr("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
 		else
 			shm->do_make_it_fail = TRUE;
 	}

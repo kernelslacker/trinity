@@ -39,7 +39,7 @@ static struct map * alloc_map(void)
 
 	newmap = malloc(sizeof(struct map));
 	if (!newmap) {
-		printf("Couldn't allocate maps list!\n");
+		outputerr("Couldn't allocate maps list!\n");
 		exit(EXIT_FAILURE);
 	}
 	memset(newmap, 0, sizeof(struct map));
@@ -70,7 +70,7 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 
 	fd = open("/dev/zero", O_RDWR);
 	if (fd < 0) {
-		printf("open /dev/zero failure. %s\n", strerror(errno));
+		outputerr("open /dev/zero failure. %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
@@ -97,7 +97,7 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 	tmpmap->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS|MAP_SHARED, fd, 0);
 
 	if (tmpmap->ptr == MAP_FAILED) {
-		printf("mmap /dev/zero failure\n");
+		outputerr("mmap /dev/zero failure\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -105,7 +105,7 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 
 	tmpmap->name = malloc(80);
 	if (!tmpmap->name) {
-		fprintf(stderr, "malloc() failed in %s().", __func__);
+		outputerr("malloc() failed in %s().", __func__);
 		exit(EXIT_FAILURE);
 	}
 
