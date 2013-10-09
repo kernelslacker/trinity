@@ -185,7 +185,7 @@ int main(int argc, char* argv[])
 	int childstatus;
 	unsigned int i;
 
-	printf("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com>\n");
+	outputstd("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com>\n");
 
 	progname = argv[0];
 
@@ -200,10 +200,10 @@ int main(int argc, char* argv[])
 		exit(EXIT_FAILURE);
 
 	parse_args(argc, argv);
-	printf("Done parsing arguments.\n");
+	outputstd("Done parsing arguments.\n");
 
 	if (kernel_taint_mask != (int)0xFFFFFFFF) {
-		printf("Custom kernel taint mask has been specified: 0x%08x (%d).\n", kernel_taint_mask, kernel_taint_mask);
+		outputstd("Custom kernel taint mask has been specified: 0x%08x (%d).\n", kernel_taint_mask, kernel_taint_mask);
 	}
 
 	setup_shm_postargs();
@@ -274,7 +274,7 @@ int main(int argc, char* argv[])
 	/* Shutting down. */
 	waitpid(watchdog_pid, &childstatus, 0);
 
-	printf("\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
+	output(0, "\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->total_syscalls_done - 1, shm->successes, shm->failures);
 
 	ret = EXIT_SUCCESS;

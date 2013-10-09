@@ -98,7 +98,7 @@ void pids_init(void)
 		outputerr("Couldn't read pid_max from proc\n");
 	}
 
-	printf("[init] Using pid_max = %d\n", pidmax);
+	output(0, "Using pid_max = %d\n", pidmax);
 }
 
 int pid_is_valid(pid_t pid)

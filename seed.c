@@ -50,11 +50,11 @@ unsigned int new_seed(void)
 unsigned int init_seed(unsigned int seedparam)
 {
 	if (user_set_seed == TRUE)
-		printf("Using user passed random seed: %u\n", seedparam);
+		output(0, "Using user passed random seed: %u\n", seedparam);
 	else {
 		seedparam = new_seed();
 
-		printf("Initial random seed: %u\n", seedparam);
+		output(0, "Initial random seed: %u\n", seedparam);
 	}
 
 	if (do_syslog == TRUE)

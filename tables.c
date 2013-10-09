@@ -52,10 +52,10 @@ static void validate_specific_syscall(const struct syscalltable *table, int call
 		return;
 
 	if (table[call].entry->flags & AVOID_SYSCALL)
-		printf("%s is marked as AVOID. Skipping\n", table[call].entry->name);
+		output(0, "%s is marked as AVOID. Skipping\n", table[call].entry->name);
 
 	if (table[call].entry->flags & NI_SYSCALL)
-		printf("%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
+		output(0, "%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
 }
 
 int validate_specific_syscall_silent(const struct syscalltable *table, int call)
@@ -145,12 +145,12 @@ void deactivate_syscall(unsigned int calln)
 void count_syscalls_enabled(void)
 {
 	if (biarch == TRUE) {
-		printf("[init] 32-bit syscalls: %d enabled, %d disabled.  "
+		output(0, "32-bit syscalls: %d enabled, %d disabled.  "
 			"64-bit syscalls: %d enabled, %d disabled.\n",
 			shm->nr_active_32bit_syscalls, max_nr_32bit_syscalls - shm->nr_active_32bit_syscalls,
 			shm->nr_active_64bit_syscalls, max_nr_64bit_syscalls - shm->nr_active_64bit_syscalls);
 	} else {
-		printf("Enabled %d syscalls. Disabled %d syscalls.\n",
+		output(0, "Enabled %d syscalls. Disabled %d syscalls.\n",
 			shm->nr_active_syscalls, max_nr_syscalls - shm->nr_active_syscalls);
 	}
 }
@@ -380,7 +380,7 @@ static void toggle_syscall_biarch_n(int calln, const struct syscalltable *table,
 	}
 
 	if ((arch_bits != 0) && (calln != -1))
-		printf("Marking %d-bit syscall %s (%d) as to be %sabled.\n",
+		output(0, "Marking %d-bit syscall %s (%d) as to be %sabled.\n",
 			arch_bits, arg_name, calln,
 			state ? "en" : "dis");
 }
@@ -415,7 +415,7 @@ static void toggle_syscall_biarch(const char *arg, bool state)
 	}
 
 	if ((specific_syscall64 != -1) && (specific_syscall32 != -1)) {
-		printf("Marking syscall %s (64bit:%d 32bit:%d) as to be %sabled.\n",
+		output(0, "Marking syscall %s (64bit:%d 32bit:%d) as to be %sabled.\n",
 			arg_name, specific_syscall64, specific_syscall32,
 			state ? "en" : "dis");
 		clear_check_user_specified_arch(arg, &arg_name);
@@ -423,7 +423,7 @@ static void toggle_syscall_biarch(const char *arg, bool state)
 	}
 
 	if (specific_syscall64 != -1) {
-		printf("Marking 64-bit syscall %s (%d) as to be %sabled.\n",
+		output(0, "Marking 64-bit syscall %s (%d) as to be %sabled.\n",
 			arg, specific_syscall64,
 			state ? "en" : "dis");
 		clear_check_user_specified_arch(arg, &arg_name);
@@ -431,7 +431,7 @@ static void toggle_syscall_biarch(const char *arg, bool state)
 	}
 
 	if  (specific_syscall32 != -1) {
-		printf("Marking 32-bit syscall %s (%d) as to be %sabled.\n",
+		output(0, "Marking 32-bit syscall %s (%d) as to be %sabled.\n",
 			arg, specific_syscall32,
 			state ? "en" : "dis");
 		clear_check_user_specified_arch(arg, &arg_name);
@@ -456,7 +456,7 @@ static void toggle_syscall_n(int calln, bool state, const char *arg, const char 
 		syscalls[calln].entry->flags |= TO_BE_DEACTIVATED;
 	}
 
-	printf("Marking syscall %s (%d) as to be %sabled.\n",
+	output(0, "Marking syscall %s (%d) as to be %sabled.\n",
 		arg_name, calln,
 		state ? "en" : "dis");
 }
@@ -482,14 +482,14 @@ void deactivate_disabled_syscalls(void)
 {
 	unsigned int i;
 
-	printf("Disabling syscalls marked as disabled by command line options\n");
+	output(0, "Disabling syscalls marked as disabled by command line options\n");
 
 	if (biarch == TRUE) {
 		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls_64bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 				deactivate_syscall64(i);
-				printf("Marked 64-bit syscall %s (%d) as deactivated.\n",
+				output(0, "Marked 64-bit syscall %s (%d) as deactivated.\n",
 					syscalls_64bit[i].entry->name, syscalls_64bit[i].entry->number);
 			}
 		}
@@ -497,7 +497,7 @@ void deactivate_disabled_syscalls(void)
 			if (syscalls_32bit[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls_32bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 				deactivate_syscall32(i);
-				printf("Marked 32-bit syscall %s (%d) as deactivated.\n",
+				output(0, "Marked 32-bit syscall %s (%d) as deactivated.\n",
 					syscalls_32bit[i].entry->name, syscalls_32bit[i].entry->number);
 			}
 		}
@@ -507,7 +507,7 @@ void deactivate_disabled_syscalls(void)
 			if (syscalls[i].entry->flags & TO_BE_DEACTIVATED) {
 				syscalls[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 				deactivate_syscall(i);
-				printf("Marked syscall %s (%d) as deactivated.\n",
+				output(0, "Marked syscall %s (%d) as deactivated.\n",
 					syscalls[i].entry->name, syscalls[i].entry->number);
 			}
 		}
@@ -704,19 +704,19 @@ void display_enabled_syscalls(void)
 	if (biarch == TRUE) {
 		for_each_64bit_syscall(i) {
 			if (syscalls_64bit[i].entry->flags & ACTIVE)
-				printf("64-bit syscall %d:%s enabled.\n", i, syscalls_64bit[i].entry->name);
+				output(0, "64-bit syscall %d:%s enabled.\n", i, syscalls_64bit[i].entry->name);
 		}
 
 		for_each_32bit_syscall(i) {
 			if (syscalls_32bit[i].entry->flags & ACTIVE)
-				printf("32-bit syscall %d:%s enabled.\n", i, syscalls_32bit[i].entry->name);
+				output(0, "32-bit syscall %d:%s enabled.\n", i, syscalls_32bit[i].entry->name);
 		}
 
 	} else {
 		/* non-biarch */
 		for_each_syscall(i) {
 			if (syscalls[i].entry->flags & ACTIVE)
-				printf("syscall %d:%s enabled.\n", i, syscalls[i].entry->name);
+				output(0, "syscall %d:%s enabled.\n", i, syscalls[i].entry->name);
 		}
 	}
 }
@@ -766,7 +766,7 @@ void disable_non_net_syscalls(void)
 {
 	unsigned int i;
 
-	printf("Disabling non networking related syscalls\n");
+	output(0, "Disabling non networking related syscalls\n");
 
 	if (biarch == TRUE) {
 		for_each_64bit_syscall(i) {

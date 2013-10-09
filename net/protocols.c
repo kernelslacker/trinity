@@ -77,7 +77,7 @@ void find_specific_proto(const char *protoarg)
 		for (i = 0; i < ARRAY_SIZE(protocols); i++) {
 			if (strcmp(protoarg, protocols[i].name) == 0) {
 				specific_proto = protocols[i].proto;
-				printf("Proto %s = %d\n", protoarg, specific_proto);
+				output(2, "Proto %s = %d\n", protoarg, specific_proto);
 				break;
 			}
 		}
@@ -98,5 +98,5 @@ void find_specific_proto(const char *protoarg)
 		exit(EXIT_FAILURE);
 	}
 
-	printf("Using protocol %s (%u) for all sockets\n", protocols[i].name, protocols[i].proto);
+	output(2, "Using protocol %s (%u) for all sockets\n", protocols[i].name, protocols[i].proto);
 }

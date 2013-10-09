@@ -76,7 +76,6 @@ extern int sigwas;
 
 int child_random_syscalls(int childno)
 {
-	pid_t pid = getpid();
 	int ret;
 	unsigned int syscallnr;
 
@@ -139,14 +138,10 @@ int child_random_syscalls(int childno)
 
 		if (syscalls_todo) {
 			if (shm->total_syscalls_done >= syscalls_todo) {
-				output(0, "[%d] shm->total_syscalls_done (%d) >= syscalls_todo (%d)\n",
-					pid, shm->total_syscalls_done,syscalls_todo);
+				output(0, "Reached maximum syscall count (todo = %d, done = %d), exiting...\n",
+					syscalls_todo, shm->total_syscalls_done);
 				shm->exit_reason = EXIT_REACHED_COUNT;
 			}
-
-			if (shm->total_syscalls_done == syscalls_todo)
-				printf("[%d] Reached maximum syscall count %ld\n",
-					pid, shm->total_syscalls_done);
 		}
 
 		ret = mkcall(childno);
