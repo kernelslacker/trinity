@@ -10,7 +10,10 @@
 #include "pids.h"
 #include "log.h"
 
+#define BUFSIZE 1024
+
 FILE *mainlogfile;
+bool logfiles_opened = FALSE;
 
 void open_logfiles(void)
 {
@@ -36,6 +39,7 @@ void open_logfiles(void)
 		}
 	}
 	free(logfilename);
+	logfiles_opened = TRUE;
 }
 
 void close_logfiles(void)
@@ -124,6 +128,25 @@ void synclogs(void)
 	fsync(fileno(mainlogfile));
 }
 
+static FILE *robust_find_logfile_handle(void)
+{
+	unsigned int j;
+	FILE *handle = NULL;
+
+	if ((logging == TRUE) && (logfiles_opened)) {
+		handle = find_logfile_handle();
+		if (!handle) {
+			outputerr("## child logfile handle was null logging to main!\n");
+			(void)fflush(stdout);
+			for_each_pidslot(j)
+				shm->logfiles[j] = mainlogfile;
+			sleep(5);
+			handle = find_logfile_handle();
+		}
+	}
+	return handle;
+}
+
 /*
  * level defines whether it gets displayed to the screen with printf.
  * (it always logs).
@@ -139,8 +162,8 @@ void output(unsigned char level, const char *fmt, ...)
 	FILE *handle;
 	unsigned int len, i, j;
 	pid_t pid;
-	char outputbuf[1024];
-	char monobuf[1024];
+	char outputbuf[BUFSIZE];
+	char monobuf[BUFSIZE];
 	char *prefix = NULL;
 	char watchdog_prefix[]="[watchdog]";
 	char init_prefix[]="[init]";
@@ -151,6 +174,7 @@ void output(unsigned char level, const char *fmt, ...)
 	if (logging == FALSE && level >= quiet_level)
 		return;
 
+	/* prefix preparation */
 	pid = getpid();
 	if (pid == watchdog_pid)
 		prefix = watchdog_prefix;
@@ -167,6 +191,7 @@ void output(unsigned char level, const char *fmt, ...)
 		prefix = child_prefix;
 	}
 
+	/* formatting output */
 	va_start(args, fmt);
 	n = vsnprintf(outputbuf, sizeof(outputbuf), fmt, args);
 	va_end(args);
@@ -176,49 +201,43 @@ void output(unsigned char level, const char *fmt, ...)
 		exit(EXIT_FAILURE);
 	}
 
+	/* stdout output if needed */
 	if (quiet_level > level) {
 		printf("%s %s", prefix, outputbuf);
 		(void)fflush(stdout);
 	}
 
+	/* go on with file logs only if enabled */
 	if (logging == FALSE)
 		return;
 
-	handle = find_logfile_handle();
-	if (!handle) {
-		printf("## child logfile handle was null logging to main!\n");
-		(void)fflush(stdout);
-		for_each_pidslot(j)
-			shm->logfiles[j] = mainlogfile;
-		sleep(5);
+	handle = robust_find_logfile_handle();
+	if (!handle)
 		return;
-	}
 
 	/* If we've specified monochrome, we can just dump the buffer into
 	 * the logfile as is, because there shouldn't be any ANSI codes
 	 * in the buffer to be stripped out. */
-	if (monochrome == TRUE) {
-		fprintf(handle, "%s %s", prefix, outputbuf);
-		(void)fflush(handle);
-		return;
-	}
-
-	/* copy buffer, sans ANSI codes */
-	len = strlen(outputbuf);
-	for (i = 0, j = 0; i < len; i++) {
-		if (outputbuf[i] == '') {
-			if (outputbuf[i + 2] == '1')
-				i += 6;	// ANSI_COLOUR
-			else
-				i += 3;	// ANSI_RESET
-		} else {
-			monobuf[j] = outputbuf[i];
-			j++;
+	if (monochrome == FALSE) {
+		/* copy buffer, sans ANSI codes */
+		len = strlen(outputbuf);
+		for (i = 0, j = 0; (i < len) && (i + 2 < BUFSIZE) && (j < BUFSIZE); i++) {
+			if (outputbuf[i] == '') {
+				if (outputbuf[i + 2] == '1')
+					i += 6;	// ANSI_COLOUR
+				else
+					i += 3;	// ANSI_RESET
+			} else {
+				monobuf[j] = outputbuf[i];
+				j++;
+			}
 		}
+		monobuf[j] = '\0';
+		fprintf(handle, "%s %s", prefix, monobuf);
+	} else {
+		fprintf(handle, "%s %s", prefix, outputbuf);
 	}
-	monobuf[j] = '\0';
 
-	fprintf(handle, "%s %s", prefix, monobuf);
 	(void)fflush(handle);
 }
 
