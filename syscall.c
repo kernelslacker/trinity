@@ -148,137 +148,34 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	return ret;
 }
 
-static void color_arg(unsigned int call, unsigned int argnum, const char *name, unsigned long oldreg, unsigned long reg, int type, char **sptr)
-{
-	if (syscalls[call].entry->num_args >= argnum) {
-		if (!name)
-			return;
-
-		if (argnum != 1) {
-			CRESETPTR
-			*sptr += sprintf(*sptr, ", ");
-		}
-		if (name)
-			*sptr += sprintf(*sptr, "%s=", name);
-
-		if (oldreg == reg) {
-			CRESETPTR
-		} else {
-			*sptr += sprintf(*sptr, "%s", ANSI_CYAN);
-		}
-
-		switch (type) {
-		case ARG_PATHNAME:
-			*sptr += sprintf(*sptr, "\"%s\"", (char *) reg);
-			break;
-		case ARG_PID:
-		case ARG_FD:
-			CRESETPTR
-			*sptr += sprintf(*sptr, "%ld", reg);
-			break;
-		case ARG_MODE_T:
-			CRESETPTR
-			*sptr += sprintf(*sptr, "%o", (mode_t) reg);
-			break;
-		case ARG_UNDEFINED:
-		case ARG_LEN:
-		case ARG_ADDRESS:
-		case ARG_NON_NULL_ADDRESS:
-		case ARG_RANGE:
-		case ARG_OP:
-		case ARG_LIST:
-		case ARG_RANDPAGE:
-		case ARG_CPU:
-		case ARG_RANDOM_LONG:
-		case ARG_IOVEC:
-		case ARG_IOVECLEN:
-		case ARG_SOCKADDR:
-		case ARG_SOCKADDRLEN:
-		default:
-			if (reg > 8 * 1024)
-				*sptr += sprintf(*sptr, "0x%lx", reg);
-			else
-				*sptr += sprintf(*sptr, "%ld", reg);
-			CRESETPTR
-			break;
-		}
-		if (reg == (((unsigned long)page_zeros) & PAGE_MASK))
-			*sptr += sprintf(*sptr, "[page_zeros]");
-		if (reg == (((unsigned long)page_rand) & PAGE_MASK))
-			*sptr += sprintf(*sptr, "[page_rand]");
-		if (reg == (((unsigned long)page_0xff) & PAGE_MASK))
-			*sptr += sprintf(*sptr, "[page_0xff]");
-		if (reg == (((unsigned long)page_allocs) & PAGE_MASK))
-			*sptr += sprintf(*sptr, "[page_allocs]");
-	}
-}
-
 /*
  * Generate arguments, print them out, then call the syscall.
  */
 long mkcall(int childno)
 {
-	unsigned long olda1, olda2, olda3, olda4, olda5, olda6;
 	unsigned int call = shm->syscallno[childno];
 	unsigned long ret = 0;
 	int errno_saved;
-	char string[512], *sptr;
 	uid_t olduid = getuid();
 
 	shm->regenerate++;
 
-	sptr = string;
-
-	sptr += sprintf(sptr, "[%ld] ", shm->child_syscall_count[childno]);
-	if (shm->do32bit[childno] == TRUE)
-		sptr += sprintf(sptr, "[32BIT] ");
-
-	olda1 = shm->a1[childno] = (unsigned long)rand64();
-	olda2 = shm->a2[childno] = (unsigned long)rand64();
-	olda3 = shm->a3[childno] = (unsigned long)rand64();
-	olda4 = shm->a4[childno] = (unsigned long)rand64();
-	olda5 = shm->a5[childno] = (unsigned long)rand64();
-	olda6 = shm->a6[childno] = (unsigned long)rand64();
-
-	if (call > max_nr_syscalls)
-		sptr += sprintf(sptr, "%u", call);
-	else
-		sptr += sprintf(sptr, "%s", syscalls[call].entry->name);
+	shm->a1[childno] = (unsigned long)rand64();
+	shm->a2[childno] = (unsigned long)rand64();
+	shm->a3[childno] = (unsigned long)rand64();
+	shm->a4[childno] = (unsigned long)rand64();
+	shm->a5[childno] = (unsigned long)rand64();
+	shm->a6[childno] = (unsigned long)rand64();
 
 	generic_sanitise(childno);
 	if (syscalls[call].entry->sanitise)
 		syscalls[call].entry->sanitise(childno);
 
-	/* micro-optimization. If we're not logging, and we're quiet, then
-	 * we can skip right over all of this. */
-	if ((logging == FALSE) && (quiet_level < MAX_LOGLEVEL))
-		goto skip_args;
-
-	CRESET
-	sptr += sprintf(sptr, "(");
-	color_arg(call, 1, syscalls[call].entry->arg1name, olda1, shm->a1[childno],
-			syscalls[call].entry->arg1type, &sptr);
-	color_arg(call, 2, syscalls[call].entry->arg2name, olda2, shm->a2[childno],
-			syscalls[call].entry->arg2type, &sptr);
-	color_arg(call, 3, syscalls[call].entry->arg3name, olda3, shm->a3[childno],
-			syscalls[call].entry->arg3type, &sptr);
-	color_arg(call, 4, syscalls[call].entry->arg4name, olda4, shm->a4[childno],
-			syscalls[call].entry->arg4type, &sptr);
-	color_arg(call, 5, syscalls[call].entry->arg5name, olda5, shm->a5[childno],
-			syscalls[call].entry->arg5type, &sptr);
-	color_arg(call, 6, syscalls[call].entry->arg6name, olda6, shm->a6[childno],
-			syscalls[call].entry->arg6type, &sptr);
-	CRESET
-	sptr += sprintf(sptr, ") ");
-	*sptr = '\0';
-
-	output(2, "%s", string);
+	output_syscall_prefix(childno, call);
 
 	/* If we're going to pause, might as well sync pre-syscall */
 	if (dopause == TRUE)
 		synclogs();
-
-skip_args:
 
 	if (((unsigned long)shm->a1 == (unsigned long) shm) ||
 	    ((unsigned long)shm->a2 == (unsigned long) shm) ||
@@ -289,7 +186,6 @@ skip_args:
 		BUG("Address of shm ended up in a register!\n");
 	}
 
-
 	/* Some architectures (IA64/MIPS) start their Linux syscalls
 	 * At non-zero, and have other ABIs below.
 	 */
@@ -297,27 +193,12 @@ skip_args:
 
 	ret = do_syscall(childno, &errno_saved);
 
-	sptr = string;
-
-	if (IS_ERR(ret)) {
-		RED
-		sptr += sprintf(sptr, "= %ld (%s)", ret, strerror(errno_saved));
-		CRESET
+	if (IS_ERR(ret))
 		shm->failures++;
-	} else {
-		GREEN
-		if ((unsigned long)ret > 10000)
-			sptr += sprintf(sptr, "= 0x%lx", ret);
-		else
-			sptr += sprintf(sptr, "= %ld", ret);
-		CRESET
+	else
 		shm->successes++;
-	}
 
-	*sptr = '\0';
-
-	output(2, "%s\n", string);
-
+	output_syscall_postfix(ret, errno_saved, IS_ERR(ret));
 	if (dopause == TRUE)
 		sleep(1);
 
