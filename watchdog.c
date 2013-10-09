@@ -188,7 +188,7 @@ static void check_children(void)
 
 		/* if we wrapped, just reset it, we'll pick it up next time around. */
 		if (old > (now + 3)) {
-			printf("child %d wrapped! old=%ld now=%ld\n", i, old, now);
+			output(1, "child %d wrapped! old=%ld now=%ld\n", i, old, now);
 			shm->tv[i].tv_sec = now;
 			continue;
 		}
@@ -275,7 +275,7 @@ static void watchdog(void)
 	bool watchdog_exit = FALSE;
 	int ret = 0;
 
-	printf("[watchdog] Watchdog is alive. (pid:%d)\n", watchdog_pid);
+	output(0, "Watchdog is alive. (pid:%d)\n", watchdog_pid);
 
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
 	(void)signal(SIGSEGV, SIG_DFL);
@@ -303,9 +303,9 @@ static void watchdog(void)
 			if (shm->total_syscalls_done % 1000 == 0)
 				synclogs();
 
-			if ((quiet_level > 1) && (shm->total_syscalls_done > 1)) {
+			if (shm->total_syscalls_done > 1) {
 				if (shm->total_syscalls_done - lastcount > 10000) {
-					printf("[watchdog] %ld iterations. [F:%ld S:%ld]\n",
+					output(0, "%ld iterations. [F:%ld S:%ld]\n",
 						shm->total_syscalls_done, shm->failures, shm->successes);
 					lastcount = shm->total_syscalls_done;
 				}

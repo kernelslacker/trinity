@@ -190,7 +190,7 @@ static void close_sockets(void)
 		fd = shm->socket_fds[i];
 		shm->socket_fds[i] = 0;
 		if (close(fd) != 0) {
-			printf("failed to close socket.(%s)\n", strerror(errno));
+			output(1, "failed to close socket.(%s)\n", strerror(errno));
 		}
 	}
 
@@ -211,7 +211,7 @@ void open_sockets(void)
 
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
-		printf("Couldn't find socket cachefile. Regenerating.\n");
+		output(1, "Couldn't find socket cachefile. Regenerating.\n");
 		generate_sockets();
 		return;
 	}
@@ -229,7 +229,7 @@ void open_sockets(void)
 
 		if (do_specific_proto == TRUE) {
 			if (domain != specific_proto) {
-				printf("ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
+				output(1, "ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
 regenerate:
 				unlock_cachefile(cachefile);	/* drop the reader lock. */
 				close(cachefile);
@@ -241,7 +241,7 @@ regenerate:
 
 		fd = open_socket(domain, type, protocol);
 		if (fd < 0) {
-			printf("Cachefile is stale. Need to regenerate.\n");
+			output(1, "Cachefile is stale. Need to regenerate.\n");
 			close_sockets();
 			goto regenerate;
 		}
@@ -254,7 +254,7 @@ regenerate:
 	}
 
 	if (nr_sockets < NR_SOCKET_FDS) {
-		printf("Insufficient sockets in cachefile (%d). Regenerating.\n", nr_sockets);
+		output(1, "Insufficient sockets in cachefile (%d). Regenerating.\n", nr_sockets);
 		goto regenerate;
 	}
 
