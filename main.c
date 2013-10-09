@@ -109,7 +109,7 @@ static void fork_children(void)
 		/* Find a space for it in the pid map */
 		pidslot = find_pid_slot(EMPTY_PIDSLOT);
 		if (pidslot == PIDSLOT_NOT_FOUND) {
-			printf("## Pid map was full!\n");
+			outputerr("## Pid map was full!\n");
 			dump_pid_slots();
 			exit(EXIT_FAILURE);
 		}
@@ -137,7 +137,7 @@ static void fork_children(void)
 				ret = pid_alive(mainpid);
 				if (ret != 0) {
 					shm->exit_reason = EXIT_SHM_CORRUPTION;
-					printf(BUGTXT "parent (%d) went away!\n", mainpid);
+					outputerr(BUGTXT "parent (%d) went away!\n", mainpid);
 					sleep(20000);
 				}
 			}
@@ -236,7 +236,7 @@ static void handle_child(pid_t childpid, int childstatus)
 			if (slot == PIDSLOT_NOT_FOUND) {
 				/* If we reaped it, it wouldn't show up, so check that. */
 				if (shm->last_reaped != childpid) {
-					printf("## Couldn't find pid slot for %d\n", childpid);
+					outputerr("## Couldn't find pid slot for %d\n", childpid);
 					shm->exit_reason = EXIT_LOST_PID_SLOT;
 					dump_pid_slots();
 				}
@@ -407,7 +407,7 @@ void do_main_loop(void)
 		while (pidmap_empty() == FALSE)
 			handle_children();
 
-		printf("Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
+		outputerr("Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
 		_exit(EXIT_SUCCESS);
 	}
 

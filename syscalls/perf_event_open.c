@@ -15,6 +15,7 @@
 #include "compat.h"
 #include "maps.h"
 #include "shm.h"
+#include "log.h"
 
 #define SYSFS "/sys/bus/event_source/devices/"
 
@@ -97,7 +98,7 @@ static int parse_format(char *string, int *field_type, unsigned long long *mask)
 			if (string[i]=='-') break;
 			if (string[i]==',') break;
 			if ((string[i]<'0') || (string[i]>'9')) {
-				fprintf(stderr,"Unknown format char %c\n",string[i]);
+				outputerr("Unknown format char %c\n", string[i]);
 				return -1;
 			}
 			firstnum*=10;
@@ -119,7 +120,7 @@ static int parse_format(char *string, int *field_type, unsigned long long *mask)
 				if (string[i]=='-') break;
 				if (string[i]==',') break;
 				if ((string[i]<'0') || (string[i]>'9')) {
-					fprintf(stderr,"Unknown format char %c\n",string[i]);
+					outputerr("Unknown format char %c\n", string[i]);
 					return -1;
 				}
 				secondnum*=10;
@@ -238,7 +239,7 @@ static int parse_generic(int pmu, char *value,
 				if (value[ptr]==',') break;
 				if (! ( ((value[ptr]>='0') && (value[ptr]<='9'))
                    			|| ((value[ptr]>='a') && (value[ptr]<='f'))) ) {
-					fprintf(stderr,"Unexpected char %c\n",value[ptr]);
+					outputerr("Unexpected char %c\n", value[ptr]);
 				}
 				temp*=base;
 				if ((value[ptr]>='0') && (value[ptr]<='9')) {

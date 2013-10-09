@@ -19,7 +19,7 @@ unsigned int seed = 0;
 
 static void syslog_seed(int seedparam)
 {
-	fprintf(stderr, "Randomness reseeded to %u\n", seedparam);
+	outputerr("Randomness reseeded to %u\n", seedparam);
 	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
 	syslog(LOG_CRIT, "Randomness reseeded to %u\n", seedparam);
 	closelog();
@@ -86,7 +86,7 @@ void reseed(void)
 	shm->reseed_counter = 0;
 
 	if (getpid() != mainpid) {
-		output(0, "Reseeding should only happen from parent!\n");
+		outputerr("Reseeding should only happen from parent!\n");
 		exit(EXIT_FAILURE);
 	}
 

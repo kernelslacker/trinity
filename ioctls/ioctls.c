@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "trinity.h"	// ARRAY_SIZE
+#include "log.h"
 #include "files.h"
 #include "shm.h"
 #include "ioctls.h"
@@ -20,7 +21,7 @@ void register_ioctl_group(const struct ioctl_group *grp)
 		return;
 
 	if (grps_cnt == ARRAY_SIZE(grps)) {
-		fprintf(stderr, "WARNING: please grow IOCTL_GROUPS_MAX.\n");
+		outputerr("WARNING: please grow IOCTL_GROUPS_MAX.\n");
 		return;
 	}
 
@@ -100,24 +101,24 @@ void dump_ioctls(void)
 
 	for (i=0; i < grps_cnt; ++i) {
 		if (grps[i]->name)
-			printf("- %s:\n", grps[i]->name);
+			outputerr("- %s:\n", grps[i]->name);
 		else if (grps[i]->devtype) {
 			if (grps[i]->devtype == DEV_MISC)
-				printf("- misc devices");
+				outputerr("- misc devices");
 			else if (grps[i]->devtype == DEV_CHAR)
-				printf("- char devices");
+				outputerr("- char devices");
 			else if (grps[i]->devtype == DEV_BLOCK)
-				printf("- block devices");
+				outputerr("- block devices");
 			for (j=0; j < grps[i]->devs_cnt; ++j)
-				printf("%s '%s'",
+				outputerr("%s '%s'",
 					j == 0 ? "" : ",",
 					grps[i]->devs[j]);
-			printf(":\n");
+			outputerr(":\n");
 		} else
-			printf("- <unknown>:\n");
+			outputerr("- <unknown>:\n");
 
 		for (j=0; j < grps[i]->ioctls_cnt; ++j) {
-			printf("  - 0x%08x : %s\n",
+			outputerr("  - 0x%08x : %s\n",
 					grps[i]->ioctls[j].request,
 					grps[i]->ioctls[j].name ? : "");
 		}

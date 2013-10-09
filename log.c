@@ -22,7 +22,7 @@ void open_logfiles(void)
 	unlink(logfilename);
 	mainlogfile = fopen(logfilename, "a");
 	if (!mainlogfile) {
-		printf("## couldn't open logfile %s\n", logfilename);
+		outputerr("## couldn't open logfile %s\n", logfilename);
 		exit(EXIT_FAILURE);
 	}
 
@@ -31,7 +31,7 @@ void open_logfiles(void)
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
 		if (!shm->logfiles[i]) {
-			printf("## couldn't open logfile %s\n", logfilename);
+			outputerr("## couldn't open logfile %s\n", logfilename);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -73,12 +73,12 @@ static FILE * find_logfile_handle(void)
 		if (i != PIDSLOT_NOT_FOUND)
 			return shm->logfiles[i];
 
-		printf("[%d] ## Couldn't find logfile for pid %d\n", getpid(), pid);
+		outputerr("## Couldn't find logfile for pid %d\n", pid);
 		dump_pid_slots();
-		printf("## Logfiles for pids: ");
+		outputerr("## Logfiles for pids: ");
 		for_each_pidslot(j)
-			printf("%p ", shm->logfiles[j]);
-		printf("\n");
+			outputerr("%p ", shm->logfiles[j]);
+		outputerr("\n");
 	}
 	return NULL;
 }
@@ -108,7 +108,7 @@ void synclogs(void)
 	for_each_pidslot(i) {
 		ret = fflush(shm->logfiles[i]);
 		if (ret == EOF) {
-			printf("## logfile flushing failed! %s\n", strerror(errno));
+			outputerr("## logfile flushing failed! %s\n", strerror(errno));
 			continue;
 		}
 
@@ -116,7 +116,7 @@ void synclogs(void)
 		if (fd != -1) {
 			ret = fsync(fd);
 			if (ret != 0)
-				printf("## fsyncing logfile %d failed. %s\n", i, strerror(errno));
+				outputerr("## fsyncing logfile %d failed. %s\n", i, strerror(errno));
 		}
 	}
 
@@ -172,7 +172,7 @@ void output(unsigned char level, const char *fmt, ...)
 	va_end(args);
 
 	if (n < 0) {
-		printf("## Something went wrong in output() [%d]\n", n);
+		outputerr("## Something went wrong in output() [%d]\n", n);
 		exit(EXIT_FAILURE);
 	}
 

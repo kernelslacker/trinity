@@ -116,7 +116,7 @@ static void generate_sockets(void)
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
 	if (cachefile < 0) {
-		printf("Couldn't open cachefile for writing! (%s)\n",
+		outputerr("Couldn't open cachefile for writing! (%s)\n",
 			strerror(errno));
 		exit(EXIT_FAILURE);
 	}
@@ -152,14 +152,14 @@ static void generate_sockets(void)
 				buffer[2] = st.protocol;
 				n = write(cachefile, &buffer, sizeof(int) * 3);
 				if (n == -1) {
-					printf("something went wrong writing the cachefile!\n");
+					outputerr("something went wrong writing the cachefile!\n");
 					exit(EXIT_FAILURE);
 				}
 
 				if (nr_to_create == 0)
 					goto done;
 			} else {
-				//printf("Couldn't open family:%d (%s)\n", st.family, get_proto_name(st.family));
+				//outputerr("Couldn't open family:%d (%s)\n", st.family, get_proto_name(st.family));
 			}
 skip:
 

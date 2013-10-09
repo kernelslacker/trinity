@@ -245,7 +245,7 @@ static void check_syscall(struct syscall *entry)
 	if (entry->num_args > 0) {				\
 		if (entry->num_args > NUMARGS) {		\
 			if (entry->ARGNAME == NULL)  {		\
-				printf("arg %d of %s has no name\n", ARGNUM, entry->name);      \
+				outputerr("arg %d of %s has no name\n", ARGNUM, entry->name);      \
 				exit(EXIT_FAILURE);		\
 			}					\
 		}						\
@@ -265,7 +265,7 @@ static void check_syscall(struct syscall *entry)
 	if (entry->num_args > 0) {				\
 		if (entry->num_args > NUMARGS) {		\
 			if (entry->ARGTYPE == ARG_UNDEFINED) {	\
-				printf("%s has an undefined argument type for arg1 (%s)!\n", entry->name, entry->ARGNAME);	\
+				outputerr("%s has an undefined argument type for arg1 (%s)!\n", entry->name, entry->ARGNAME);	\
 			}					\
 		}						\
 	}							\
@@ -303,7 +303,7 @@ void mark_all_syscalls_active(void)
 {
 	unsigned int i;
 
-	printf("Marking all syscalls as enabled.\n");
+	outputstd("Marking all syscalls as enabled.\n");
 	if (biarch == TRUE) {
 		if (do_32_arch)
 			for_each_32bit_syscall(i) {
@@ -346,7 +346,7 @@ static void check_user_specified_arch(const char *arg, char **arg_name, bool *on
 				*only_64bit = FALSE;
 				*only_32bit = TRUE;
 			} else {
-				printf("Unknown bit width (%s). Choose 32, or 64.\n", arg);
+				outputerr("Unknown bit width (%s). Choose 32, or 64.\n", arg);
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -405,12 +405,12 @@ static void toggle_syscall_biarch(const char *arg, bool state)
 
 
 	if ((!only_32bit) && (!only_64bit)) {
-		printf("No idea what architecture for syscall (%s) is.\n", arg);
+		outputerr("No idea what architecture for syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);
 	}
 
 	if ((specific_syscall64 == -1) && (specific_syscall32 == -1)) {
-		printf("No idea what syscall (%s) is.\n", arg);
+		outputerr("No idea what syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);
 	}
 
@@ -443,7 +443,7 @@ static void toggle_syscall_biarch(const char *arg, bool state)
 static void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_name)
 {
 	if (calln == -1) {
-		printf("No idea what syscall (%s) is.\n", arg);
+		outputerr("No idea what syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);
 	}
 
@@ -517,9 +517,9 @@ void deactivate_disabled_syscalls(void)
 static void show_state(unsigned int state)
 {
 	if (state)
-		printf("Enabled");
+		outputstd("Enabled");
 	else
-		printf("Disabled");
+		outputstd("Disabled");
 }
 
 void dump_syscall_tables(void)
@@ -527,31 +527,31 @@ void dump_syscall_tables(void)
 	unsigned int i;
 
 	if (biarch == TRUE) {
-		printf("32-bit syscalls: %d\n", max_nr_32bit_syscalls);
-		printf("64-bit syscalls: %d\n", max_nr_64bit_syscalls);
+		outputstd("32-bit syscalls: %d\n", max_nr_32bit_syscalls);
+		outputstd("64-bit syscalls: %d\n", max_nr_64bit_syscalls);
 
 		for_each_32bit_syscall(i) {
-			printf("32-bit entrypoint %d %s : ", syscalls_32bit[i].entry->number, syscalls_32bit[i].entry->name);
+			outputstd("32-bit entrypoint %d %s : %s", syscalls_32bit[i].entry->number, syscalls_32bit[i].entry->name);
 			show_state(syscalls_32bit[i].entry->flags & ACTIVE);
 			if (syscalls_32bit[i].entry->flags & AVOID_SYSCALL)
-				printf(" AVOID");
-			printf("\n");
+				outputstd(" AVOID");
+			outputstd("\n");
 		}
 		for_each_64bit_syscall(i) {
-			printf("64-bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
+			outputstd("64-bit entrypoint %d %s : ", syscalls_64bit[i].entry->number, syscalls_64bit[i].entry->name);
 			show_state(syscalls_64bit[i].entry->flags & ACTIVE);
 			if (syscalls_64bit[i].entry->flags & AVOID_SYSCALL)
-				printf(" AVOID");
-			printf("\n");
+				outputstd(" AVOID");
+			outputstd("\n");
 		}
 	} else {
-		printf("syscalls: %d\n", max_nr_syscalls);
+		outputstd("syscalls: %d\n", max_nr_syscalls);
 		for_each_syscall(i) {
-			printf("%d %s : ", syscalls[i].entry->number, syscalls[i].entry->name);
+			outputstd("%d %s : ", syscalls[i].entry->number, syscalls[i].entry->name);
 			show_state(syscalls[i].entry->flags & ACTIVE);
 			if (syscalls[i].entry->flags & AVOID_SYSCALL)
-				printf(" AVOID");
-			printf("\n");
+				outputstd(" AVOID");
+			outputstd("\n");
 		}
 	}
 }
@@ -635,9 +635,9 @@ int setup_syscall_group(unsigned int group)
 		}
 
 		if (shm->nr_active_32bit_syscalls == 0) {
-			printf("No 32-bit syscalls in group\n");
+			outputstd("No 32-bit syscalls in group\n");
 		} else {
-			printf("Found %d 32-bit syscalls in group\n", shm->nr_active_32bit_syscalls);
+			outputstd("Found %d 32-bit syscalls in group\n", shm->nr_active_32bit_syscalls);
 		}
 
 		/* now the 64 bit table*/
@@ -647,10 +647,10 @@ int setup_syscall_group(unsigned int group)
 		}
 
 		if (shm->nr_active_64bit_syscalls == 0) {
-			printf("No 64-bit syscalls in group\n");
+			outputstd("No 64-bit syscalls in group\n");
 			return FALSE;
 		} else {
-			printf("Found %d 64-bit syscalls in group\n", shm->nr_active_64bit_syscalls);
+			outputstd("Found %d 64-bit syscalls in group\n", shm->nr_active_64bit_syscalls);
 		}
 
 	} else {
@@ -661,10 +661,10 @@ int setup_syscall_group(unsigned int group)
 		}
 
 		if (shm->nr_active_syscalls == 0) {
-			printf("No syscalls found in group\n");
+			outputstd("No syscalls found in group\n");
 			return FALSE;
 		} else {
-			printf("Found %d syscalls in group\n", shm->nr_active_syscalls);
+			outputstd("Found %d syscalls in group\n", shm->nr_active_syscalls);
 		}
 	}
 
@@ -690,7 +690,7 @@ const char * print_syscall_name(unsigned int callno, bool is32bit)
 	}
 
 	if (callno >= max) {
-		printf("Bogus syscall number in %s (%u)\n", __func__, callno);
+		outputstd("Bogus syscall number in %s (%u)\n", __func__, callno);
 		return "invalid-syscall";
 	}
 
@@ -818,23 +818,23 @@ void enable_random_syscalls(void)
 	unsigned int call, call32, call64;
 
 	if (random_selection_num == 0) {
-		printf("-r 0 syscalls ? what?\n");
+		outputerr("-r 0 syscalls ? what?\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (biarch == TRUE) {
 		if ((random_selection_num > max_nr_64bit_syscalls) && do_64_arch) {
-			printf("-r val %d out of range (1-%d)\n", random_selection_num, max_nr_64bit_syscalls);
+			outputerr("-r val %d out of range (1-%d)\n", random_selection_num, max_nr_64bit_syscalls);
 			exit(EXIT_FAILURE);
 		}
 	} else {
 		if (random_selection_num > max_nr_syscalls) {
-			printf("-r val %d out of range (1-%d)\n", random_selection_num, max_nr_syscalls);
+			outputerr("-r val %d out of range (1-%d)\n", random_selection_num, max_nr_syscalls);
 			exit(EXIT_FAILURE);
 		}
 	}
 
-	printf("Enabling %d random syscalls\n", random_selection_num);
+	outputerr("Enabling %d random syscalls\n", random_selection_num);
 
 	for (i = 0; i < random_selection_num; i++) {
 

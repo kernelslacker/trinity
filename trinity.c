@@ -99,7 +99,7 @@ static void setup_shm_postargs(void)
 		shm->max_children = sysconf(_SC_NPROCESSORS_ONLN);
 
 	if (shm->max_children > MAX_NR_CHILDREN) {
-		printf("Increase MAX_NR_CHILDREN!\n");
+		outputerr("Increase MAX_NR_CHILDREN!\n");
 		exit(EXIT_FAILURE);
 	}
 }
@@ -145,8 +145,8 @@ static int munge_tables(void)
 		display_enabled_syscalls();
 
 	if (validate_syscall_tables() == FALSE) {
-		printf("No syscalls were enabled!\n");
-		printf("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
+		outputstd("No syscalls were enabled!\n");
+		outputstd("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
 		return FALSE;
 	}
 
@@ -230,17 +230,17 @@ int main(int argc, char* argv[])
 
 	if (getuid() == 0) {
 		if (dangerous == TRUE) {
-			printf("DANGER: RUNNING AS ROOT.\n");
-			printf("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
-			printf("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
-			printf("ctrl-c now unless you really know what you are doing.\n");
+			outputstd("DANGER: RUNNING AS ROOT.\n");
+			outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
+			outputstd("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
+			outputstd("ctrl-c now unless you really know what you are doing.\n");
 			for (i = 10; i > 0; i--) {
-				printf("Continuing in %d seconds.\r", i);
+				outputstd("Continuing in %d seconds.\r", i);
 				(void)fflush(stdout);
 				sleep(1);
 			}
 		} else {
-			printf("Don't run as root (or pass --dangerous if you know what you are doing).\n");
+			outputstd("Don't run as root (or pass --dangerous if you know what you are doing).\n");
 			exit(EXIT_FAILURE);
 		}
 	}

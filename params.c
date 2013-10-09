@@ -54,28 +54,28 @@ bool kernel_taint_param_occured = FALSE;
 
 static void usage(void)
 {
-	fprintf(stderr, "%s\n", progname);
-	fprintf(stderr, " --children,-C: specify number of child processes\n");
-	fprintf(stderr, " --exclude,-x: don't call a specific syscall\n");
-	fprintf(stderr, " --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
-	fprintf(stderr, " --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
-	fprintf(stderr, " --list,-L: list all syscalls known on this architecture.\n");
-	fprintf(stderr, " --ioctls,-I: list all ioctls.\n");
-	fprintf(stderr, " --logging,-l: (off=disable logging).\n");
-	fprintf(stderr, " --monochrome,-m: don't output ANSI codes\n");
-	fprintf(stderr, " --no_files,-n: Only pass sockets as fd's, not files\n");
-	fprintf(stderr, " --proto,-P: specify specific network protocol for sockets.\n");
-	fprintf(stderr, " --quiet,-q: less output.\n");
-	fprintf(stderr, " --random,-r#: pick N syscalls at random and just fuzz those\n");
-	fprintf(stderr, " --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
-	fprintf(stderr, " --verbose,-v: increase output verbosity.\n");
-	fprintf(stderr, " --victims,-V: path to victim files.\n");
-	fprintf(stderr, " --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.");
-	fprintf(stderr, "\n");
-	fprintf(stderr, " -c#,@: target specific syscall (takes syscall name as parameter and optionally 32 or 64 as bit-width. Default:both).\n");
-	fprintf(stderr, " -N#: do # syscalls then exit.\n");
-	fprintf(stderr, " -p:  pause after syscall.\n");
-	fprintf(stderr, " -s#: use # as random seed.\n");
+	outputerr("%s\n", progname);
+	outputerr(" --children,-C: specify number of child processes\n");
+	outputerr(" --exclude,-x: don't call a specific syscall\n");
+	outputerr(" --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
+	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
+	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
+	outputerr(" --ioctls,-I: list all ioctls.\n");
+	outputerr(" --logging,-l: (off=disable logging).\n");
+	outputerr(" --monochrome,-m: don't output ANSI codes\n");
+	outputerr(" --no_files,-n: Only pass sockets as fd's, not files\n");
+	outputerr(" --proto,-P: specify specific network protocol for sockets.\n");
+	outputerr(" --quiet,-q: less output.\n");
+	outputerr(" --random,-r#: pick N syscalls at random and just fuzz those\n");
+	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
+	outputerr(" --verbose,-v: increase output verbosity.\n");
+	outputerr(" --victims,-V: path to victim files.\n");
+	outputerr(" --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.");
+	outputerr("\n");
+	outputerr(" -c#,@: target specific syscall (takes syscall name as parameter and optionally 32 or 64 as bit-width. Default:both).\n");
+	outputerr(" -N#: do # syscalls then exit.\n");
+	outputerr(" -p:  pause after syscall.\n");
+	outputerr(" -s#: use # as random seed.\n");
 	exit(EXIT_SUCCESS);
 }
 
@@ -148,7 +148,7 @@ static void toggle_taint_flag_by_name(char *beg, char *end) {
 	else if (strcmp(name,"OOT_MODULE") == 0)
 		toggle_taint_flag(TAINT_OOT_MODULE);
 	else {
-		printf("Unrecognizable kernel taint flag \"%s\".\n", name);
+		outputerr("Unrecognizable kernel taint flag \"%s\".\n", name);
 		exit(EXIT_FAILURE);
 	}
 }
@@ -181,7 +181,7 @@ void parse_args(int argc, char *argv[])
 			if (opt == '?')
 				exit(EXIT_FAILURE);
 			else
-				printf("opt:%c\n", opt);
+				outputstd("opt:%c\n", opt);
 			return;
 
 		case '\0':
@@ -273,7 +273,7 @@ void parse_args(int argc, char *argv[])
 
 		case 'r':
 			if (do_exclude_syscall == TRUE) {
-				printf("-r needs to be before any -x options.\n");
+				outputerr("-r needs to be before any -x options.\n");
 				exit(EXIT_FAILURE);
 			}
 			random_selection = 1;
