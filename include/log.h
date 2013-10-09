@@ -25,6 +25,8 @@
 unsigned int highest_logfile(void);
 void synclogs(void);
 void output(unsigned char level, const char *fmt, ...);
+void outputerr(const char *fmt, ...);
+void outputstd(const char *fmt, ...);
 void open_logfiles(void);
 void close_logfiles(void);
 

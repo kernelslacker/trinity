@@ -221,3 +221,25 @@ void output(unsigned char level, const char *fmt, ...)
 	fprintf(handle, "%s %s", prefix, monobuf);
 	(void)fflush(handle);
 }
+
+/*
+* Used as a way to consolidated all printf calls if someones one to redirect it to somewhere else.
+* note: this function ignores quiet_level since it main purpose is error output.
+*/
+void outputerr(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+}
+
+void outputstd(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vfprintf(stdout, fmt, args);
+	va_end(args);
+}
