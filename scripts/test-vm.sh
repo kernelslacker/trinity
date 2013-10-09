@@ -1,5 +1,7 @@
 #!/bin/bash
 
+TRINITY_PATH=${TRINITY_PATH:-.}
+
 if [ ! -d tmp ]; then
   mkdir tmp
 fi
@@ -16,7 +18,7 @@ do
   cd tmp.$RND
   for i in `seq 1 $NR_PROCESSES`
   do
-	../../trinity -q -g vm &
+	$TRINITY_PATH/trinity -q -g vm &
   done
   wait
   cd ..

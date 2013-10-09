@@ -5,6 +5,8 @@
 # sendmsg that only occurred after connect was called.
 #
 
+TRINITY_PATH=${TRINITY_PATH:-.}
+
 check_tainted()
 {
     if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
@@ -27,18 +29,18 @@ while [ 1 ];
 do
 
 
-for sc in $(../trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $4 }' | sort -u)
+for sc in $($TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $4 }' | sort -u)
 do
   mkdir -p tmp.$i
   pushd tmp.$i
 
-  if [ ! -f ../../trinity ]; then
+  if [ ! -f $TRINITY_PATH/trinity ]; then
     echo lost!
     pwd
     exit
   fi
 
-  ../../trinity -q -l off -n -c sendmsg -c $sc -C32 -N 999999
+  $TRINITY_PATH/trinity -q -l off -n -c sendmsg -c $sc -C32 -N 999999
 
   popd
 
