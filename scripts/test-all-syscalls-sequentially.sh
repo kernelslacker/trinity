@@ -4,6 +4,7 @@
 # causing trinity to segfault.
 
 TRINITY_PATH=${TRINITY_PATH:-.}
+TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
 check_tainted()
 {
@@ -13,18 +14,14 @@ check_tainted()
     fi
 }
 
-if [ ! -d tmp ]; then
-  mkdir tmp
-fi
-
 TAINT=$(cat /proc/sys/kernel/tainted)
 
 while [ 1 ]
 do
 for syscall in $($TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $4 }' | sort -u)
 do
-	chmod 755 tmp
-	pushd tmp
+	chmod 755 $TRINITY_TMP
+	pushd $TRINITY_TMP
 
 	if [ ! -f $TRINITY_PATH/trinity ]; then
 		echo lost!

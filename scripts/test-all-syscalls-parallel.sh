@@ -1,12 +1,10 @@
 #!/bin/bash
 
 TRINITY_PATH=${TRINITY_PATH:-.}
+TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
-if [ ! -d tmp ]; then
-  mkdir tmp
-fi
-chmod 755 tmp
-cd tmp
+chmod 755 $TRINITY_TMP
+cd $TRINITY_TMP
 
 while [ 1 ];
 do

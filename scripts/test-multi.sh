@@ -1,6 +1,7 @@
 #!/bin/bash
 
 TRINITY_PATH=${TRINITY_PATH:-.}
+TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
 check_tainted()
 {
@@ -10,11 +11,8 @@ check_tainted()
     fi
 }
 
-if [ ! -d tmp ]; then
-  mkdir tmp
-fi
-chmod 755 tmp
-cd tmp
+chmod 755 $TRINITY_TMP
+cd $TRINITY_TMP
 
 TAINT=$(cat /proc/sys/kernel/tainted)
 
@@ -29,7 +27,7 @@ do
 
   for i in `seq 1 $NR_PROCESSES`
   do
-    chmod 755 ../tmp
+    chmod 755 ../$TRINITY_TMP
     if [ -d tmp.$i ]; then
       chmod 755 tmp.$i
       rm -rf tmp.$i
@@ -55,7 +53,7 @@ do
   sleep 1
   check_tainted
 
-  chmod 755 ../tmp
+  chmod 755 ../$TRINITY_TMP
 
   for i in `seq 1 $NR_PROCESSES`
   do

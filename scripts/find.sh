@@ -6,6 +6,7 @@
 #
 
 TRINITY_PATH=${TRINITY_PATH:-.}
+TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
 check_tainted()
 {
@@ -15,11 +16,8 @@ check_tainted()
     fi
 }
 
-if [ ! -d tmp ]; then
-  mkdir tmp
-fi
-chmod 755 tmp
-cd tmp
+chmod 755 $TRINITY_TMP
+cd $TRINITY_TMP
 
 TAINT=$(cat /proc/sys/kernel/tainted)
 
@@ -46,7 +44,7 @@ do
 
   check_tainted
 
-  chmod 755 ../tmp
+  chmod 755 $TRINITY_TMP
 
 done
 
