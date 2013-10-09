@@ -1,5 +1,7 @@
 #!/bin/bash
 
+TRINITY_PATH=${TRINITY_PATH:-.}
+
 check_tainted()
 {
     if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
@@ -22,7 +24,7 @@ NR_PROCESSES=$(($NR_CPUS * 2))
 while [ 1 ];
 do
   rm -f trinity
-  cp ../trinity .
+  cp $TRINITY_PATH/trinity .
   chmod -w trinity
 
   for i in `seq 1 $NR_PROCESSES`
@@ -35,7 +37,7 @@ do
     mkdir -p tmp.$i
     pushd tmp.$i
 
-    if [ ! -f ../../trinity ]; then
+    if [ ! -f $TRINITY_PATH/trinity ]; then
       echo lost!
       pwd
       exit
