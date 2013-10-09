@@ -1,6 +1,8 @@
 #ifndef _LOG_H
 #define _LOG_H 1
 
+#include "types.h"
+
 #define ANSI_RED	"[1;31m"
 #define ANSI_GREEN	"[1;32m"
 #define ANSI_YELLOW	"[1;33m"
@@ -19,7 +21,9 @@
 #define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
 #define CRESET if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RESET);
 
-#define CRESETPTR if (monochrome == FALSE)	*sptr += sprintf(*sptr, "%s", ANSI_RESET);
+#define REDFD if (mono == FALSE)	fprintf(fd, "%s", ANSI_RED);
+#define GREENFD if (mono == FALSE)	fprintf(fd, "%s", ANSI_GREEN);
+#define CRESETFD if (mono == FALSE)	fprintf(fd, "%s", ANSI_RESET);
 
 #define MAX_LOGLEVEL 3
 unsigned int highest_logfile(void);
@@ -27,6 +31,9 @@ void synclogs(void);
 void output(unsigned char level, const char *fmt, ...);
 void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
+void output_syscall_prefix(const unsigned int childno, const unsigned int syscallno);
+void output_syscall_postfix(unsigned long ret, int errno_saved, bool err);
+
 void open_logfiles(void);
 void close_logfiles(void);
 
@@ -38,7 +45,6 @@ void close_logfiles(void);
 #else
 #define BUGTXT ANSI_RED "BUG!: " ANSI_RESET GIT_VERSION
 #endif
-
 
 #define BUG(bugtxt)	{ printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt); while(1); }
 
