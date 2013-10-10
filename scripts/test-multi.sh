@@ -1,6 +1,7 @@
 #!/bin/bash
 
-TRINITY_PATH=${TRINITY_PATH:-.}
+OLDPATH=$(pwd)
+TRINITY_PATH=${TRINITY_PATH:-$OLDPATH}
 TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
 check_tainted()
