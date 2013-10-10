@@ -5,3 +5,5 @@
 #define PAGE_SHIFT 12
 #define PTE_FILE_MAX_BITS 31
 #define SYSCALL_OFFSET 4000
+
+#define SYSCALLS syscalls_mips

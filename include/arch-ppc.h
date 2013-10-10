@@ -22,3 +22,5 @@
 #define PTE_FILE_MAX_BITS	(BITS_PER_LONG - PTE_RPN_SHIFT)
 
 #endif /* __powerpc64__ */
+
+#define SYSCALLS syscalls_ppc

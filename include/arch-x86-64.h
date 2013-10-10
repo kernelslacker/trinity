@@ -11,3 +11,6 @@
 
 #define PTE_FILE_MAX_BITS 32
 
+#define ARCH_IS_BIARCH 1
+#define SYSCALLS32 syscalls_i386
+#define SYSCALLS64 syscalls_x86_64

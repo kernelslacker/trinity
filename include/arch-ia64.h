@@ -13,3 +13,5 @@
 
 #define PTRACE_GETFPREGS	0
 #define PTRACE_SETFPREGS	0
+
+#define SYSCALLS syscalls_ia64
