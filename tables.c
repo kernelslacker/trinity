@@ -16,8 +16,6 @@
 #include "shm.h"
 #include "tables.h"
 
-#define NOTFOUND (unsigned int)-1
-
 unsigned long syscalls_todo = 0;
 
 bool biarch = FALSE;
