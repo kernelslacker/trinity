@@ -384,14 +384,10 @@ void select_syscall_tables(void)
 
 int setup_syscall_group(unsigned int group)
 {
-	unsigned int ret;
-
 	if (biarch == TRUE)
-		ret = setup_syscall_group_biarch(group);
+		return setup_syscall_group_biarch(group);
 	else
-		ret = setup_syscall_group_uniarch(group);
-
-	return ret;
+		return setup_syscall_group_uniarch(group);
 }
 
 const char * print_syscall_name(unsigned int callno, bool is32bit)
