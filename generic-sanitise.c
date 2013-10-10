@@ -13,6 +13,7 @@
 #include "log.h"
 #include "maps.h"
 #include "shm.h"
+#include "tables.h"
 
 static unsigned int get_cpu(void)
 {

@@ -12,6 +12,7 @@
 #include "arch.h" //PAGE_MASK
 #include "maps.h" //pages
 #include "syscall.h" //syscalls
+#include "tables.h"
 
 #define BUFSIZE 1024
 

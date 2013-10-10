@@ -23,6 +23,7 @@
 #include "params.h"
 #include "maps.h"
 #include "trinity.h"
+#include "tables.h"
 
 #define __syscall_return(type, res) \
 	do { \

@@ -19,6 +19,7 @@
 #include "params.h"	// quiet_level
 #include "log.h"
 #include "child.h"
+#include "tables.h"
 
 pid_t watchdog_pid;
 

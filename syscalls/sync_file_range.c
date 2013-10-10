@@ -10,6 +10,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "tables.h"
 
 struct syscall syscall_sync_file_range;
 
