@@ -13,3 +13,5 @@
 #define TASK_SIZE		0x40000000000UL
 
 #define PTE_FILE_MAX_BITS	32
+
+#define SYSCALLS syscalls_alpha

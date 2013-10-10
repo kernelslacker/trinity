@@ -16,3 +16,4 @@
 
 #define PTE_FILE_MAX_BITS 31
 
+#define SYSCALLS syscalls_i386

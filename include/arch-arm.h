@@ -11,3 +11,5 @@
 #define PAGE_SHIFT		12
 
 #define PTE_FILE_MAX_BITS	29
+
+#define SYSCALLS syscalls_arm
