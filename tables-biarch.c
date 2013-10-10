@@ -287,3 +287,20 @@ void mark_all_syscalls_active_biarch(void)
 		}
 	}
 }
+
+void init_syscalls_biarch(void)
+{
+	unsigned int i;
+
+	for_each_64bit_syscall(i) {
+		if (syscalls_64bit[i].entry->flags & ACTIVE)
+			if (syscalls_64bit[i].entry->init)
+				syscalls_64bit[i].entry->init();
+	}
+
+	for_each_32bit_syscall(i) {
+		if (syscalls_32bit[i].entry->flags & ACTIVE)
+			if (syscalls_32bit[i].entry->init)
+				syscalls_32bit[i].entry->init();
+	}
+}

@@ -116,3 +116,14 @@ void mark_all_syscalls_active_uniarch(void)
 		activate_syscall(i);
 	}
 }
+
+void init_syscalls_uniarch(void)
+{
+	unsigned int i;
+
+	for_each_syscall(i) {
+		if (syscalls[i].entry->flags & ACTIVE)
+			if (syscalls[i].entry->init)
+				syscalls[i].entry->init();
+	}
+}
