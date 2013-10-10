@@ -106,3 +106,13 @@ int setup_syscall_group_uniarch(unsigned int group)
 
 	return TRUE;
 }
+
+void mark_all_syscalls_active_uniarch(void)
+{
+	unsigned int i;
+
+	for_each_syscall(i) {
+		syscalls[i].entry->flags |= ACTIVE;
+		activate_syscall(i);
+	}
+}

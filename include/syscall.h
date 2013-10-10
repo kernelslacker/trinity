@@ -125,7 +125,10 @@ void clear_check_user_specified_arch(const char *arg, char **arg_name);
 
 void select_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
+
 void mark_all_syscalls_active(void);
+void mark_all_syscalls_active_uniarch(void);
+void mark_all_syscalls_active_biarch(void);
 
 void toggle_syscall(const char *arg, bool state);
 void toggle_syscall_biarch_n(int calln, const struct syscalltable *table, bool onlyflag, bool doflag, bool state, void (*activate)(unsigned int), int arch_bits, const char *arg_name);
