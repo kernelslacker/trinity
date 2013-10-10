@@ -357,3 +357,18 @@ void dump_syscall_tables_biarch(void)
 		outputstd("\n");
 	}
 }
+
+void display_enabled_syscalls_biarch(void)
+{
+	unsigned int i;
+
+	for_each_64bit_syscall(i) {
+		if (syscalls_64bit[i].entry->flags & ACTIVE)
+			output(0, "64-bit syscall %d:%s enabled.\n", i, syscalls_64bit[i].entry->name);
+	}
+
+	for_each_32bit_syscall(i) {
+		if (syscalls_32bit[i].entry->flags & ACTIVE)
+			output(0, "32-bit syscall %d:%s enabled.\n", i, syscalls_32bit[i].entry->name);
+	}
+}
