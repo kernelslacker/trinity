@@ -1,0 +1,73 @@
+/*
+ * Functions for handling the system call tables.
+ * These functions are only used by architectures that have either 32 or 64 bit syscalls, but not both.
+ */
+
+#include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+#include "trinity.h"	// ARRAY_SIZE, alloc_shared
+#include "arch.h"
+#include "syscall.h"
+#include "params.h"
+#include "log.h"
+#include "shm.h"
+
+const struct syscalltable *syscalls;
+
+unsigned int max_nr_syscalls;
+
+void activate_syscall(unsigned int calln)
+{
+	activate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
+}
+
+void deactivate_syscall(unsigned int calln)
+{
+	deactivate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
+}
+
+void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_name)
+{
+	if (calln == -1) {
+		outputerr("No idea what syscall (%s) is.\n", arg);
+		exit(EXIT_FAILURE);
+	}
+
+	validate_specific_syscall(syscalls, calln);
+
+	if (state == TRUE) {
+		syscalls[calln].entry->flags |= ACTIVE;
+		activate_syscall(calln);
+	} else {
+		syscalls[calln].entry->flags |= TO_BE_DEACTIVATED;
+	}
+
+	output(0, "Marking syscall %s (%d) as to be %sabled.\n",
+		arg_name, calln,
+		state ? "en" : "dis");
+}
+
+
+void enable_random_syscalls_uniarch(void)
+{
+	unsigned int call;
+
+retry:
+	call = rand() % max_nr_syscalls;
+
+	if (validate_specific_syscall_silent(syscalls, call) == FALSE)
+		goto retry;
+
+	if (no_files == TRUE)
+		if (is_syscall_net_related(syscalls, call) == FALSE)
+			goto retry;
+
+	/* if we've set this to be disabled, don't enable it! */
+	if (syscalls[call].entry->flags & TO_BE_DEACTIVATED)
+		goto retry;
+
+	toggle_syscall_n(call, FALSE, syscalls[call].entry->name, syscalls[call].entry->name);
+}

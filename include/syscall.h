@@ -116,10 +116,22 @@ extern bool use_64bit;
 #define NEED_ALARM (1<<5)
 #define TO_BE_DEACTIVATED (1<<6)
 
+void validate_specific_syscall(const struct syscalltable *table, int call);
+void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall);
+void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall);
+
+void check_user_specified_arch(const char *arg, char **arg_name, bool *only_64bit, bool *only_32bit);
+void clear_check_user_specified_arch(const char *arg, char **arg_name);
+
 void select_syscall_tables(void);
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg);
 void mark_all_syscalls_active(void);
+
 void toggle_syscall(const char *arg, bool state);
+void toggle_syscall_biarch_n(int calln, const struct syscalltable *table, bool onlyflag, bool doflag, bool state, void (*activate)(unsigned int), int arch_bits, const char *arg_name);
+void toggle_syscall_biarch(const char *arg, bool state);
+void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_name);
+
 void activate_syscall(unsigned int calln);
 void activate_syscall32(unsigned int calln);
 void activate_syscall64(unsigned int calln);
@@ -134,14 +146,20 @@ int validate_syscall_table_64(void);
 int validate_syscall_table_32(void);
 void sanity_check_tables(void);
 const char * print_syscall_name(unsigned int callno, bool is32bit);
+
 void enable_random_syscalls(void);
+void enable_random_syscalls_biarch(void);
+void enable_random_syscalls_uniarch(void);
+
 int validate_specific_syscall_silent(const struct syscalltable *table, int call);
 void deactivate_disabled_syscalls(void);
 void count_syscalls_enabled(void);
 void display_enabled_syscalls(void);
 void disable_non_net_syscalls(void);
+bool is_syscall_net_related(const struct syscalltable *table, unsigned int num);
 void init_syscalls(void);
 long syscall32(int num_args, unsigned int call, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5, unsigned long a6);
+
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)
