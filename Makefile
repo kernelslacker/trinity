@@ -52,11 +52,11 @@ SRCS		= $(wildcard *.c) \
 		  $(SYSCALLS_ARCH)
 
 OBJS		= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH))) \
+		  $(sort $(patsubst %.c,%.o,$(wildcard children/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard children/*.c)))
+		  $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
+		  $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH)))
 
 DEPDIR= .deps
 
