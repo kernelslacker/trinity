@@ -257,8 +257,6 @@ void check_user_specified_arch(const char *arg, char **arg_name, bool *only_64bi
 	} else {
 		*arg_name = (char*)arg;//castaway const.
 	}
-
-
 }
 
 void clear_check_user_specified_arch(const char *arg, char **arg_name)
