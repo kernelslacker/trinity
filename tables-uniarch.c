@@ -71,3 +71,19 @@ retry:
 
 	toggle_syscall_n(call, FALSE, syscalls[call].entry->name, syscalls[call].entry->name);
 }
+
+void disable_non_net_syscalls_uniarch(void)
+{
+	unsigned int i;
+
+	for_each_syscall(i) {
+		if (validate_specific_syscall_silent(syscalls, i) == FALSE)
+			continue;
+
+		if (syscalls[i].entry->flags & ACTIVE) {
+			if (is_syscall_net_related(syscalls, i) == FALSE) {
+				toggle_syscall_n(i, FALSE, syscalls[i].entry->name, syscalls[i].entry->name);
+			}
+		}
+	}
+}
