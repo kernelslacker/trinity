@@ -167,7 +167,10 @@ void deactivate_disabled_syscalls(void);
 void deactivate_disabled_syscalls_biarch(void);
 void deactivate_disabled_syscalls_uniarch(void);
 void count_syscalls_enabled(void);
+
 void display_enabled_syscalls(void);
+void display_enabled_syscalls_uniarch(void);
+void display_enabled_syscalls_biarch(void);
 
 void disable_non_net_syscalls(void);
 void disable_non_net_syscalls_uniarch(void);

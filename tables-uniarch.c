@@ -158,3 +158,13 @@ void dump_syscall_tables_uniarch(void)
 		outputstd("\n");
 	}
 }
+
+void display_enabled_syscalls_uniarch(void)
+{
+        unsigned int i;
+
+	for_each_syscall(i) {
+		if (syscalls[i].entry->flags & ACTIVE)
+			output(0, "syscall %d:%s enabled.\n", i, syscalls[i].entry->name);
+	}
+}
