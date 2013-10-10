@@ -615,49 +615,12 @@ bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
 
 void disable_non_net_syscalls(void)
 {
-	unsigned int i;
-
 	output(0, "Disabling non networking related syscalls\n");
 
-	if (biarch == TRUE) {
-		for_each_64bit_syscall(i) {
-			if (validate_specific_syscall_silent(syscalls_64bit, i) == FALSE)
-				continue;
-
-			if (syscalls_64bit[i].entry->flags & ACTIVE) {
-				if (is_syscall_net_related(syscalls_64bit, i) == FALSE) {
-					toggle_syscall_biarch_n(i, syscalls_64bit, FALSE, do_64_arch, FALSE,
-								&activate_syscall64, 64, syscalls_64bit[i].entry->name);
-				}
-			}
-		}
-
-		for_each_32bit_syscall(i) {
-			if (validate_specific_syscall_silent(syscalls_32bit, i) == FALSE)
-				continue;
-
-			if (syscalls_32bit[i].entry->flags & ACTIVE) {
-				if (is_syscall_net_related(syscalls_32bit, i) == FALSE) {
-					toggle_syscall_biarch_n(i, syscalls_32bit, FALSE, do_32_arch, FALSE,
-								&activate_syscall32, 32, syscalls_32bit[i].entry->name);
-				}
-			}
-		}
-
-	} else {
-		/* non-biarch */
-		for_each_syscall(i) {
-			if (validate_specific_syscall_silent(syscalls, i) == FALSE)
-				continue;
-
-			if (syscalls[i].entry->flags & ACTIVE) {
-				if (is_syscall_net_related(syscalls, i) == FALSE) {
-					toggle_syscall_n(i, FALSE, syscalls[i].entry->name, syscalls[i].entry->name);
-				}
-			}
-		}
-
-	}
+	if (biarch == TRUE)
+		disable_non_net_syscalls_biarch();
+	else
+		disable_non_net_syscalls_uniarch();
 
 	deactivate_disabled_syscalls();
 }

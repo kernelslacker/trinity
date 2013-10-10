@@ -155,7 +155,11 @@ int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 void deactivate_disabled_syscalls(void);
 void count_syscalls_enabled(void);
 void display_enabled_syscalls(void);
+
 void disable_non_net_syscalls(void);
+void disable_non_net_syscalls_uniarch(void);
+void disable_non_net_syscalls_biarch(void);
+
 bool is_syscall_net_related(const struct syscalltable *table, unsigned int num);
 void init_syscalls(void);
 long syscall32(int num_args, unsigned int call, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5, unsigned long a6);
