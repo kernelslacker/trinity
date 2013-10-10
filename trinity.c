@@ -30,6 +30,7 @@
 #include "signals.h"
 #include "shm.h"
 #include "syscall.h"
+#include "tables.h"
 #include "ioctls.h"
 #include "config.h"	// for VERSION
 

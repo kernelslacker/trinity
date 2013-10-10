@@ -13,6 +13,7 @@
 #include "syscall.h"
 #include "log.h"
 #include "net.h"
+#include "tables.h"
 
 /**
  * BPF filters are used in networking such as in pf_packet, but also

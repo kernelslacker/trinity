@@ -21,6 +21,7 @@
 #include "signals.h"
 #include "pids.h"
 #include "params.h"	// for 'debug'
+#include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
 
 static struct rlimit oldrlimit;

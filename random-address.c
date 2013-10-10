@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "maps.h"
 #include "shm.h"
+#include "tables.h"
 
 /*
 static bool within_page(void *addr, void *check)

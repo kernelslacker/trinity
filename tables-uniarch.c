@@ -14,6 +14,7 @@
 #include "params.h"
 #include "log.h"
 #include "shm.h"
+#include "tables.h"
 
 const struct syscalltable *syscalls;
 

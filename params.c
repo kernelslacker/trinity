@@ -11,6 +11,7 @@
 #include "syscall.h"
 #include "log.h"
 #include "params.h"
+#include "tables.h"
 
 #define TAINT_NAME_LEN 32
 
