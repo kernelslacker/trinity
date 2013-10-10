@@ -28,13 +28,13 @@ do
 
   for i in `seq 1 $NR_PROCESSES`
   do
-    chmod 755 ../$TRINITY_TMP
+    chmod 755 $TRINITY_TMP
     if [ -d tmp.$i ]; then
       chmod 755 tmp.$i
       rm -rf tmp.$i
     fi
     mkdir -p tmp.$i
-    pushd tmp.$i
+    pushd tmp.$i > /dev/null
 
     if [ ! -f $TRINITY_PATH/trinity ]; then
       echo lost!
@@ -45,7 +45,7 @@ do
     rm -f trinity.socketcache
     MALLOC_CHECK_=2 ../trinity -q -l off -N 999999 &
 
-    popd
+    popd > /dev/null
 
     check_tainted
   done
@@ -54,7 +54,7 @@ do
   sleep 1
   check_tainted
 
-  chmod 755 ../$TRINITY_TMP
+  chmod 755 $TRINITY_TMP
 
   for i in `seq 1 $NR_PROCESSES`
   do
