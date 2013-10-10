@@ -241,26 +241,12 @@ void sanity_check_tables(void)
 
 void mark_all_syscalls_active(void)
 {
-	unsigned int i;
-
 	outputstd("Marking all syscalls as enabled.\n");
-	if (biarch == TRUE) {
-		if (do_32_arch)
-			for_each_32bit_syscall(i) {
-				syscalls_32bit[i].entry->flags |= ACTIVE;
-				activate_syscall32(i);
-			}
-		if (do_64_arch)
-			for_each_64bit_syscall(i) {
-				syscalls_64bit[i].entry->flags |= ACTIVE;
-				activate_syscall64(i);
-			}
-	} else {
-		for_each_syscall(i) {
-			syscalls[i].entry->flags |= ACTIVE;
-			activate_syscall(i);
-		}
-	}
+
+	if (biarch == TRUE)
+		mark_all_syscalls_active_biarch();
+	else
+		mark_all_syscalls_active_uniarch();
 }
 
 void check_user_specified_arch(const char *arg, char **arg_name, bool *only_64bit, bool *only_32bit)

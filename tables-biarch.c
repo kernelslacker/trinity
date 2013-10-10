@@ -268,3 +268,22 @@ int setup_syscall_group_biarch(unsigned int group)
 
 	return TRUE;
 }
+
+void mark_all_syscalls_active_biarch(void)
+{
+	unsigned int i;
+
+	if (do_32_arch) {
+		for_each_32bit_syscall(i) {
+			syscalls_32bit[i].entry->flags |= ACTIVE;
+			activate_syscall32(i);
+		}
+	}
+
+	if (do_64_arch) {
+		for_each_64bit_syscall(i) {
+			syscalls_64bit[i].entry->flags |= ACTIVE;
+			activate_syscall64(i);
+		}
+	}
+}
