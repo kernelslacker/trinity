@@ -477,49 +477,14 @@ void select_syscall_tables(void)
 
 int setup_syscall_group(unsigned int group)
 {
-	unsigned int i;
+	unsigned int ret;
 
-	if (biarch == TRUE) {
-		for_each_32bit_syscall(i) {
-			if (syscalls_32bit[i].entry->group == group)
-				activate_syscall32(i);
-		}
+	if (biarch == TRUE)
+		ret = setup_syscall_group_biarch(group);
+	else
+		ret = setup_syscall_group_uniarch(group);
 
-		if (shm->nr_active_32bit_syscalls == 0) {
-			outputstd("No 32-bit syscalls in group\n");
-		} else {
-			outputstd("Found %d 32-bit syscalls in group\n", shm->nr_active_32bit_syscalls);
-		}
-
-		/* now the 64 bit table*/
-		for_each_64bit_syscall(i) {
-			if (syscalls_64bit[i].entry->group == group)
-				activate_syscall64(i);
-		}
-
-		if (shm->nr_active_64bit_syscalls == 0) {
-			outputstd("No 64-bit syscalls in group\n");
-			return FALSE;
-		} else {
-			outputstd("Found %d 64-bit syscalls in group\n", shm->nr_active_64bit_syscalls);
-		}
-
-	} else {
-		/* non-biarch case. */
-		for_each_syscall(i) {
-			if (syscalls[i].entry->group == group)
-				activate_syscall(i);
-		}
-
-		if (shm->nr_active_syscalls == 0) {
-			outputstd("No syscalls found in group\n");
-			return FALSE;
-		} else {
-			outputstd("Found %d syscalls in group\n", shm->nr_active_syscalls);
-		}
-	}
-
-	return TRUE;
+	return ret;
 }
 
 const char * print_syscall_name(unsigned int callno, bool is32bit)

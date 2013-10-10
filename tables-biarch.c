@@ -238,3 +238,33 @@ void disable_non_net_syscalls_biarch(void)
 		}
 	}
 }
+
+int setup_syscall_group_biarch(unsigned int group)
+{
+	unsigned int i;
+
+	for_each_32bit_syscall(i) {
+		if (syscalls_32bit[i].entry->group == group)
+			activate_syscall32(i);
+	}
+
+	if (shm->nr_active_32bit_syscalls == 0)
+		outputstd("No 32-bit syscalls in group\n");
+	else
+		outputstd("Found %d 32-bit syscalls in group\n", shm->nr_active_32bit_syscalls);
+
+	/* now the 64 bit table*/
+	for_each_64bit_syscall(i) {
+		if (syscalls_64bit[i].entry->group == group)
+			activate_syscall64(i);
+	}
+
+	if (shm->nr_active_64bit_syscalls == 0) {
+		outputstd("No 64-bit syscalls in group\n");
+		return FALSE;
+	} else {
+		outputstd("Found %d 64-bit syscalls in group\n", shm->nr_active_64bit_syscalls);
+	}
+
+	return TRUE;
+}

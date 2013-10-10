@@ -87,3 +87,22 @@ void disable_non_net_syscalls_uniarch(void)
 		}
 	}
 }
+
+int setup_syscall_group_uniarch(unsigned int group)
+{
+	unsigned int i;
+
+	for_each_syscall(i) {
+		if (syscalls[i].entry->group == group)
+			activate_syscall(i);
+	}
+
+	if (shm->nr_active_syscalls == 0) {
+		outputstd("No syscalls found in group\n");
+		return FALSE;
+	} else {
+		outputstd("Found %d syscalls in group\n", shm->nr_active_syscalls);
+	}
+
+	return TRUE;
+}

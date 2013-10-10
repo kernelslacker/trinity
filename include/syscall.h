@@ -139,7 +139,11 @@ void deactivate_syscall(unsigned int calln);
 void deactivate_syscall32(unsigned int calln);
 void deactivate_syscall64(unsigned int calln);
 void dump_syscall_tables(void);
+
 int setup_syscall_group(unsigned int desired_group);
+int setup_syscall_group_uniarch(unsigned int desired_group);
+int setup_syscall_group_biarch(unsigned int desired_group);
+
 int validate_syscall_tables(void);
 bool no_syscalls_enabled(void);
 int validate_syscall_table_64(void);
