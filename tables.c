@@ -290,38 +290,12 @@ void toggle_syscall(const char *arg, bool state)
 
 void deactivate_disabled_syscalls(void)
 {
-	unsigned int i;
-
 	output(0, "Disabling syscalls marked as disabled by command line options\n");
 
-	if (biarch == TRUE) {
-		for_each_64bit_syscall(i) {
-			if (syscalls_64bit[i].entry->flags & TO_BE_DEACTIVATED) {
-				syscalls_64bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
-				deactivate_syscall64(i);
-				output(0, "Marked 64-bit syscall %s (%d) as deactivated.\n",
-					syscalls_64bit[i].entry->name, syscalls_64bit[i].entry->number);
-			}
-		}
-		for_each_32bit_syscall(i) {
-			if (syscalls_32bit[i].entry->flags & TO_BE_DEACTIVATED) {
-				syscalls_32bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
-				deactivate_syscall32(i);
-				output(0, "Marked 32-bit syscall %s (%d) as deactivated.\n",
-					syscalls_32bit[i].entry->name, syscalls_32bit[i].entry->number);
-			}
-		}
-
-	} else {
-		for_each_syscall(i) {
-			if (syscalls[i].entry->flags & TO_BE_DEACTIVATED) {
-				syscalls[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
-				deactivate_syscall(i);
-				output(0, "Marked syscall %s (%d) as deactivated.\n",
-					syscalls[i].entry->name, syscalls[i].entry->number);
-			}
-		}
-	}
+	if (biarch == TRUE)
+		deactivate_disabled_syscalls_biarch();
+	else
+		deactivate_disabled_syscalls_uniarch();
 }
 
 static void show_state(unsigned int state)

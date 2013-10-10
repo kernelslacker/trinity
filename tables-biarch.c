@@ -304,3 +304,26 @@ void init_syscalls_biarch(void)
 				syscalls_32bit[i].entry->init();
 	}
 }
+
+void deactivate_disabled_syscalls_biarch(void)
+{
+	unsigned int i;
+
+	for_each_64bit_syscall(i) {
+		if (syscalls_64bit[i].entry->flags & TO_BE_DEACTIVATED) {
+			syscalls_64bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
+			deactivate_syscall64(i);
+			output(0, "Marked 64-bit syscall %s (%d) as deactivated.\n",
+			syscalls_64bit[i].entry->name, syscalls_64bit[i].entry->number);
+		}
+	}
+
+	for_each_32bit_syscall(i) {
+		if (syscalls_32bit[i].entry->flags & TO_BE_DEACTIVATED) {
+			syscalls_32bit[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
+			deactivate_syscall32(i);
+			output(0, "Marked 32-bit syscall %s (%d) as deactivated.\n",
+			syscalls_32bit[i].entry->name, syscalls_32bit[i].entry->number);
+		}
+	}
+}

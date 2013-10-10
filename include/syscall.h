@@ -160,6 +160,8 @@ void enable_random_syscalls_uniarch(void);
 
 int validate_specific_syscall_silent(const struct syscalltable *table, int call);
 void deactivate_disabled_syscalls(void);
+void deactivate_disabled_syscalls_biarch(void);
+void deactivate_disabled_syscalls_uniarch(void);
 void count_syscalls_enabled(void);
 void display_enabled_syscalls(void);
 

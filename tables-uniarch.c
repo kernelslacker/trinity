@@ -127,3 +127,17 @@ void init_syscalls_uniarch(void)
 				syscalls[i].entry->init();
 	}
 }
+
+void deactivate_disabled_syscalls_uniarch(void)
+{
+	unsigned int i;
+
+	for_each_syscall(i) {
+		if (syscalls[i].entry->flags & TO_BE_DEACTIVATED) {
+			syscalls[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
+			deactivate_syscall(i);
+			output(0, "Marked syscall %s (%d) as deactivated.\n",
+			syscalls[i].entry->name, syscalls[i].entry->number);
+		}
+	}
+}
