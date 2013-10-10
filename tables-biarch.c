@@ -327,3 +327,33 @@ void deactivate_disabled_syscalls_biarch(void)
 		}
 	}
 }
+
+void dump_syscall_tables_biarch(void)
+{
+	unsigned int i;
+
+	outputstd("syscalls: %d [32-bit]\n", max_nr_32bit_syscalls);
+	outputstd("syscalls: %d [64-bit]\n", max_nr_64bit_syscalls);
+
+	for_each_32bit_syscall(i) {
+		outputstd("entrypoint %d %s : [32-bit] ",
+			syscalls_32bit[i].entry->number,
+			syscalls_32bit[i].entry->name);
+		show_state(syscalls_32bit[i].entry->flags & ACTIVE);
+
+	if (syscalls_32bit[i].entry->flags & AVOID_SYSCALL)
+		outputstd(" AVOID");
+		outputstd("\n");
+	}
+
+	for_each_64bit_syscall(i) {
+		outputstd("entrypoint %d %s : [64-bit] ",
+			syscalls_64bit[i].entry->number,
+			syscalls_64bit[i].entry->name);
+		show_state(syscalls_64bit[i].entry->flags & ACTIVE);
+		if (syscalls_64bit[i].entry->flags & AVOID_SYSCALL)
+			outputstd(" AVOID");
+
+		outputstd("\n");
+	}
+}
