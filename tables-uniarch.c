@@ -141,3 +141,20 @@ void deactivate_disabled_syscalls_uniarch(void)
 		}
 	}
 }
+
+void dump_syscall_tables_uniarch(void)
+{
+	unsigned int i;
+
+	outputstd("syscalls: %d\n", max_nr_syscalls);
+
+	for_each_syscall(i) {
+		outputstd("entrypoint %d %s : ",
+			syscalls[i].entry->number,
+			syscalls[i].entry->name);
+		show_state(syscalls[i].entry->flags & ACTIVE);
+		if (syscalls[i].entry->flags & AVOID_SYSCALL)
+			outputstd(" AVOID");
+		outputstd("\n");
+	}
+}

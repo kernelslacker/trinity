@@ -141,7 +141,11 @@ void activate_syscall64(unsigned int calln);
 void deactivate_syscall(unsigned int calln);
 void deactivate_syscall32(unsigned int calln);
 void deactivate_syscall64(unsigned int calln);
+
+void show_state(unsigned int state);
 void dump_syscall_tables(void);
+void dump_syscall_tables_uniarch(void);
+void dump_syscall_tables_biarch(void);
 
 int setup_syscall_group(unsigned int desired_group);
 int setup_syscall_group_uniarch(unsigned int desired_group);
