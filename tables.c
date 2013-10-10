@@ -817,11 +817,100 @@ void disable_non_net_syscalls(void)
 	deactivate_disabled_syscalls();
 }
 
+static void enable_random_syscalls_biarch(void)
+{
+	unsigned int call32 = NOTFOUND, call64 = NOTFOUND;
+
+retry:
+
+	//Search for 64 bit version
+	if (do_64_arch) {
+		call64 = rand() % max_nr_64bit_syscalls;
+		if (validate_specific_syscall_silent(syscalls_64bit, call64) == FALSE)
+			goto retry;
+
+		if (no_files == TRUE)
+			if (is_syscall_net_related(syscalls_64bit, call64) == FALSE)
+				goto retry;
+
+		if (syscalls_64bit[call64].entry->flags & TO_BE_DEACTIVATED)
+			goto try32bit;
+
+		if (syscalls_64bit[call64].entry->active_number != 0)
+			goto try32bit;
+
+		// If we got so far, then activate it.
+		toggle_syscall_biarch_n(call64, syscalls_64bit, TRUE, do_64_arch, TRUE,
+							&activate_syscall64, 64, syscalls_64bit[call64].entry->name);
+	}
+
+try32bit:
+	//Search for 32 bit version
+	if (do_32_arch) {
+
+		// FIXME: WTF is going on here?
+		if (do_64_arch) {
+			call32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, syscalls_64bit[call64].entry->name);
+
+			if (syscalls_64bit[call64].entry->flags & TO_BE_DEACTIVATED)
+				call64 = NOTFOUND; //mark as not found in order not to increment i.
+		} else {
+			call32 = rand() % max_nr_32bit_syscalls;
+		}
+
+		if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE) {
+			if (call64 == NOTFOUND)
+				goto retry;
+			else
+				return;
+		}
+
+		if (no_files == TRUE) {
+			if (is_syscall_net_related(syscalls_32bit, call32) == FALSE) {
+				if (call64 == NOTFOUND)
+					goto retry;
+				else
+					return;
+			}
+		}
+
+		if ((syscalls_32bit[call32].entry->flags & TO_BE_DEACTIVATED) || (syscalls_32bit[call32].entry->active_number != 0)) {
+			if (call64 == NOTFOUND)
+				goto retry;
+			else
+				return;
+		}
+
+		//If we got so far, then active it.
+		toggle_syscall_biarch_n(call32, syscalls_32bit, TRUE, do_32_arch, TRUE,
+					&activate_syscall32, 32, syscalls_32bit[call32].entry->name);
+	}
+}
+
+static void enable_random_syscalls_uniarch(void)
+{
+	unsigned int call;
+
+retry:
+	call = rand() % max_nr_syscalls;
+
+	if (validate_specific_syscall_silent(syscalls, call) == FALSE)
+		goto retry;
+
+	if (no_files == TRUE)
+		if (is_syscall_net_related(syscalls, call) == FALSE)
+			goto retry;
+
+	/* if we've set this to be disabled, don't enable it! */
+	if (syscalls[call].entry->flags & TO_BE_DEACTIVATED)
+		goto retry;
+
+	toggle_syscall_n(call, FALSE, syscalls[call].entry->name, syscalls[call].entry->name);
+}
 
 void enable_random_syscalls(void)
 {
 	unsigned int i;
-	unsigned int call, call32, call64;
 
 	if (random_selection_num == 0) {
 		outputerr("-r 0 syscalls ? what?\n");
@@ -843,85 +932,9 @@ void enable_random_syscalls(void)
 	outputerr("Enabling %d random syscalls\n", random_selection_num);
 
 	for (i = 0; i < random_selection_num; i++) {
-
-retry:
-		if (biarch == TRUE) {
-			call64 = NOTFOUND;
-			call32 = NOTFOUND;
-
-			//Search for 64 bit version
-			if (do_64_arch) {
-				call64 = rand() % max_nr_64bit_syscalls;
-				if (validate_specific_syscall_silent(syscalls_64bit, call64) == FALSE)
-					goto retry;
-
-				if (no_files == TRUE)
-					if (is_syscall_net_related(syscalls_64bit, call64) == FALSE)
-						goto retry;
-
-				if ((syscalls_64bit[call64].entry->flags & TO_BE_DEACTIVATED) || (syscalls_64bit[call64].entry->active_number != 0))
-					goto try32bit;
-
-				//If we got so far, then active it.
-				toggle_syscall_biarch_n(call64, syscalls_64bit, TRUE, do_64_arch, TRUE,
-							&activate_syscall64, 64, syscalls_64bit[call64].entry->name);
-			}
-try32bit:
-			//Search for 32 bit version
-			if (do_32_arch) {
-
-				if (do_64_arch) {
-					call32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, syscalls_64bit[call64].entry->name);
-					if (syscalls_64bit[call64].entry->flags & TO_BE_DEACTIVATED)
-						call64 = NOTFOUND; //mark as not found in order not to increment i.
-				} else {
-					call32 = rand() % max_nr_32bit_syscalls;
-				}
-
-				if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE) {
-					if (call64 == NOTFOUND)
-						goto retry;
-					else
-						continue;
-				}
-
-				if (no_files == TRUE)
-					if (is_syscall_net_related(syscalls_32bit, call32) == FALSE) {
-						if (call64 == NOTFOUND)
-							goto retry;
-						else
-							continue;
-					}
-
-				if ((syscalls_32bit[call32].entry->flags & TO_BE_DEACTIVATED) || (syscalls_32bit[call32].entry->active_number != 0)) {
-					if (call64 == NOTFOUND)
-						goto retry;
-					else
-						continue;
-				}
-
-				//If we got so far, then active it.
-				toggle_syscall_biarch_n(call32, syscalls_32bit, TRUE, do_32_arch, TRUE,
-							&activate_syscall32, 32, syscalls_32bit[call32].entry->name);
-			}
-
-		} else {
-			/* non-biarch case */
-
-			call = rand() % max_nr_syscalls;
-
-			if (validate_specific_syscall_silent(syscalls, call) == FALSE)
-				goto retry;
-
-			if (no_files == TRUE)
-				if (is_syscall_net_related(syscalls, call) == FALSE)
-					goto retry;
-
-			/* if we've set this to be disabled, don't enable it! */
-			if (syscalls[call].entry->flags & TO_BE_DEACTIVATED)
-				goto retry;
-
-			toggle_syscall_n(call, FALSE, syscalls[call].entry->name, syscalls[call].entry->name);
-		}
+		if (biarch == TRUE)
+			enable_random_syscalls_biarch();
+		else
+			enable_random_syscalls_uniarch();
 	}
 }
