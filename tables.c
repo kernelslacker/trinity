@@ -315,7 +315,7 @@ void dump_syscall_tables(void)
 		outputstd("syscalls: %d [64-bit]\n", max_nr_64bit_syscalls);
 
 		for_each_32bit_syscall(i) {
-			outputstd("entrypoint %d %s : [32-bit]",
+			outputstd("entrypoint %d %s : [32-bit] ",
 				syscalls_32bit[i].entry->number,
 				syscalls_32bit[i].entry->name);
 			show_state(syscalls_32bit[i].entry->flags & ACTIVE);
@@ -324,7 +324,7 @@ void dump_syscall_tables(void)
 			outputstd("\n");
 		}
 		for_each_64bit_syscall(i) {
-			outputstd("entrypoint %d %s : [64-bit]",
+			outputstd("entrypoint %d %s : [64-bit] ",
 				syscalls_64bit[i].entry->number,
 				syscalls_64bit[i].entry->name);
 			show_state(syscalls_64bit[i].entry->flags & ACTIVE);
