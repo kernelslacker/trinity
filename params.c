@@ -56,12 +56,13 @@ bool kernel_taint_param_occured = FALSE;
 static void usage(void)
 {
 	outputerr("%s\n", progname);
+	outputerr(" --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.");
 	outputerr(" --children,-C: specify number of child processes\n");
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
 	outputerr(" --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
+	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
-	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --logging,-l: (off=disable logging).\n");
 	outputerr(" --monochrome,-m: don't output ANSI codes\n");
 	outputerr(" --no_files,-n: Only pass sockets as fd's, not files\n");
@@ -71,7 +72,6 @@ static void usage(void)
 	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
 	outputerr(" --verbose,-v: increase output verbosity.\n");
 	outputerr(" --victims,-V: path to victim files.\n");
-	outputerr(" --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.");
 	outputerr("\n");
 	outputerr(" -c#,@: target specific syscall (takes syscall name as parameter and optionally 32 or 64 as bit-width. Default:both).\n");
 	outputerr(" -N#: do # syscalls then exit.\n");
