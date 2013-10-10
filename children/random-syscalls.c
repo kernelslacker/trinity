@@ -30,7 +30,7 @@ static void choose_syscall_table(int childno)
 	if (biarch == FALSE) {
 		active_syscalls = shm->active_syscalls;
 		nr_active_syscalls = shm->nr_active_syscalls;
-	} else if (biarch == TRUE) {
+	} else {
 
 		/* First, check that we have syscalls enabled in either table. */
 		if (validate_syscall_table_64() == FALSE) {
