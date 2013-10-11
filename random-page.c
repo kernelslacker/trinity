@@ -99,6 +99,7 @@ void generate_random_page(char *page)
 			default: break;
 			}
 		}
+		page[rand() % page_size] = 0;
 		return;
 
 	default:
