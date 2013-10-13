@@ -14,4 +14,9 @@
 
 #define PTE_FILE_MAX_BITS	32
 
+#define PTRACE_GETREGS		0
+#define PTRACE_GETFPREGS	0
+#define PTRACE_SETREGS		0
+#define PTRACE_SETFPREGS	0
+
 #define SYSCALLS syscalls_alpha
