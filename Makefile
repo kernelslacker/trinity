@@ -107,7 +107,7 @@ tarball:
 	git prune-packed
 	git archive --format=tar.gz --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tgz
 
-install:
+install: trinity
 	install -d -m 755 $(INSTALL_PREFIX)/bin
 	install trinity $(INSTALL_PREFIX)/bin
 
