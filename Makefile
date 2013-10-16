@@ -7,7 +7,10 @@ CC := gcc
 CC := $(CROSS_COMPILE)$(CC)
 LD := $(CROSS_COMPILE)$(LD)
 
-CFLAGS = -Wall -W -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE
+CFLAGS := -Wall -W -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE
+ifneq ($(SYSROOT),)
+CFLAGS += --sysroot=$(SYSROOT)
+endif
 #CFLAGS += $(shell if $(CC) -m32 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-m32"; fi)
 CFLAGS += -Wdeclaration-after-statement
 CFLAGS += -Wformat=2
