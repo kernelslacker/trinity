@@ -10,7 +10,7 @@ fi
 
 MISSING_DEFS=0
 
-[ -z "$CC" ] && CC=cc
+[ -z "$CC" ] && CC=gcc
 
 CC=${CROSS_COMPILE}${CC}
 
