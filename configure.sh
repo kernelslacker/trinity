@@ -2,9 +2,11 @@
 
 DEVEL=0
 
-RED="[1;31m"
-GREEN="[1;32m"
-COL_RESET="[0;m"
+if [ -t 1 ]; then
+	RED="[1;31m"
+	GREEN="[1;32m"
+	COL_RESET="[0;m"
+fi
 
 MISSING_DEFS=0
 
