@@ -276,6 +276,12 @@ static void watchdog(void)
 	bool watchdog_exit = FALSE;
 	int ret = 0;
 
+	while (shm->ready == FALSE) {
+		sleep(1);
+		if (shm->exit_reason != STILL_RUNNING)
+			return;
+	}
+
 	output(0, "Watchdog is alive. (pid:%d)\n", watchdog_pid);
 
 	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
