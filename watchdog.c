@@ -23,6 +23,8 @@
 
 pid_t watchdog_pid;
 
+static unsigned long hiscore = 0;
+
 static int check_shm_sanity(void)
 {
 	unsigned int i;
@@ -302,6 +304,7 @@ static void watchdog(void)
 			goto main_dead;
 
 		if (shm->regenerating == FALSE) {
+			unsigned int i;
 
 			reap_dead_kids();
 
@@ -316,13 +319,21 @@ static void watchdog(void)
 			if (shm->total_syscalls_done % 1000 == 0)
 				synclogs();
 
+			for_each_pidslot(i) {
+				if (shm->child_syscall_count[i] > hiscore)
+					hiscore = shm->child_syscall_count[i];
+			}
+
 			if (shm->total_syscalls_done > 1) {
 				if (shm->total_syscalls_done - lastcount > 10000) {
-					output(0, "%ld iterations. [F:%ld S:%ld]\n",
-						shm->total_syscalls_done, shm->failures, shm->successes);
+					output(0, "%ld iterations. [F:%ld S:%ld HI:%ld]\n",
+						shm->total_syscalls_done,
+						shm->failures, shm->successes,
+						hiscore);
 					lastcount = shm->total_syscalls_done;
 				}
 			}
+
 		}
 
 		/* Only check taint if it mask allows it */
