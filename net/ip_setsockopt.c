@@ -14,6 +14,11 @@
 #include "random.h"
 #include "trinity.h"	// ARRAY_SIZE
 
+/* workaround for <linux/in.h> vs. <netinet/in.h> */
+#ifndef IP_MULTICAST_ALL
+#define IP_MULTICAST_ALL 49
+#endif
+
 #define NR_SOL_IP_OPTS ARRAY_SIZE(ip_opts)
 static const unsigned int ip_opts[] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
 	IP_ROUTER_ALERT, IP_RECVOPTS, IP_RETOPTS, IP_PKTINFO,
