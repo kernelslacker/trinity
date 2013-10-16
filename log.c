@@ -65,7 +65,7 @@ static FILE * find_logfile_handle(void)
 	if (pid == initpid)
 		return mainlogfile;
 
-	if (pid == mainpid)
+	if (pid == shm->mainpid)
 		return mainlogfile;
 
 	if (pid == watchdog_pid)
@@ -252,7 +252,7 @@ void output(unsigned char level, const char *fmt, ...)
 	if (pid == initpid)
 		prefix = init_prefix;
 
-	if (pid == mainpid)
+	if (pid == shm->mainpid)
 		prefix = main_prefix;
 
 	if (prefix == NULL) {

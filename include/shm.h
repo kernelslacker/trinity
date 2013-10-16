@@ -30,6 +30,7 @@ struct shm_s {
 	unsigned int nr_active_32bit_syscalls;
 	unsigned int nr_active_64bit_syscalls;
 
+	pid_t mainpid;
 	pid_t pids[MAX_NR_CHILDREN];
 	unsigned char child_type[MAX_NR_CHILDREN];
 

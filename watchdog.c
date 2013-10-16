@@ -59,10 +59,16 @@ static int check_main_alive(void)
 {
 	int ret;
 
-	ret = kill(mainpid, 0);
+	if (shm->mainpid == 0) {
+		output(0, "main pid was zero!\n");
+		shm->exit_reason = EXIT_MAIN_DISAPPEARED;
+		return FALSE;
+	}
+
+	ret = kill(shm->mainpid, 0);
 	if (ret == -1) {
 		if (errno == ESRCH) {
-			output(0, "main pid %d has disappeared.\n", mainpid);
+			output(0, "main pid %d has disappeared.\n", shm->mainpid);
 			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
 
 			/* if main crashed while regenerating, we'll hang the watchdog,
@@ -70,7 +76,7 @@ static int check_main_alive(void)
 			 */
 			shm->regenerating = FALSE;
 		} else {
-			output(0, "problem checking on pid %d (%d:%s)\n", mainpid, errno, strerror(errno));
+			output(0, "problem checking on pid %d (%d:%s)\n", shm->mainpid, errno, strerror(errno));
 		}
 		return FALSE;
 	}

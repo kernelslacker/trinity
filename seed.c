@@ -85,7 +85,7 @@ void reseed(void)
 	shm->need_reseed = FALSE;
 	shm->reseed_counter = 0;
 
-	if (getpid() != mainpid) {
+	if (getpid() != shm->mainpid) {
 		outputerr("Reseeding should only happen from parent!\n");
 		exit(EXIT_FAILURE);
 	}
