@@ -1,5 +1,9 @@
 #include <stdlib.h>
 #include <sys/socket.h> /* old irda.h is broken */
+
+/* old irda.h does not include something which defines sa_family_t */
+#include <netinet/in.h>
+
 #include <linux/irda.h>
 #include "net.h"
 #include "maps.h"	// page_rand
