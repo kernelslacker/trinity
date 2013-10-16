@@ -132,10 +132,10 @@ static void fork_children(void)
 			/* Wait for parent to set our pidslot */
 			while (shm->pids[pidslot] != getpid()) {
 				/* Make sure parent is actually alive to wait for us. */
-				ret = pid_alive(mainpid);
+				ret = pid_alive(shm->mainpid);
 				if (ret != 0) {
 					shm->exit_reason = EXIT_SHM_CORRUPTION;
-					outputerr(BUGTXT "parent (%d) went away!\n", mainpid);
+					outputerr(BUGTXT "parent (%d) went away!\n", shm->mainpid);
 					sleep(20000);
 				}
 			}
@@ -386,7 +386,7 @@ void do_main_loop(void)
 	if (pid == 0) {
 		setup_main_signals();
 
-		mainpid = getpid();
+		shm->mainpid = getpid();
 		output(0, "Main thread is alive.\n");
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
 		set_seed(0);
