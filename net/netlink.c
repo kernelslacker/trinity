@@ -8,6 +8,17 @@
 #include "net.h"
 #include "random.h"
 
+/* Current highest netlink socket. Supports some older kernels. */
+#ifdef NETLINK_CRYPTO
+#define _NETLINK_MAX NETLINK_CRYPTO
+#else
+	#ifdef NETLINK_RDMA
+	#define _NETLINK_MAX NETLINK_RDMA
+	#else
+		#define _NETLINK_MAX NETLINK_ECRYPTFS
+	#endif /* NETLINK_RDMA */
+#endif /* NETLINK_CRYPTO */
+
 void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 {
 	struct sockaddr_nl *nl;
@@ -30,5 +41,5 @@ void netlink_rand_socket(struct socket_triplet *st)
 	else
 		st->type = SOCK_DGRAM;
 
-	st->protocol = rand() % (NETLINK_CRYPTO + 1);       // Current highest netlink socket.
+	st->protocol = rand() % (_NETLINK_MAX + 1);
 }
