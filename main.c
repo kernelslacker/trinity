@@ -65,6 +65,7 @@ static void fork_children(void)
 
 	while (shm->running_childs < shm->max_children) {
 		int pid = 0;
+		int fd;
 
 		if (shm->spawn_no_more == TRUE)
 			return;
@@ -83,6 +84,10 @@ static void fork_children(void)
 			dump_pid_slots();
 			exit(EXIT_FAILURE);
 		}
+
+		fd = fileno(shm->logfiles[pidslot]);
+		if (ftruncate(fd, 0) == 0)
+			lseek(fd, 0, SEEK_SET);
 
 		(void)alarm(0);
 		fflush(stdout);
