@@ -56,22 +56,20 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .func = &nfc_setsockopt },
 };
 
-static void sanitise_setsockopt(int childno)
+void do_setsockopt(struct sockopt *so)
 {
-	struct sockopt so = { 0,0,0,0 };
-
-	so.optval = (unsigned long) page_rand;
+	so->optval = (unsigned long) page_rand;
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
 	if (rand_bool())
-		so.optlen = sizeof(int);
+		so->optlen = sizeof(int);
 	else
-		so.optlen = rand() % 256;
+		so->optlen = rand() % 256;
 
 	if (rand() % 100 > 0) {
-		ssoptrs[rand() % ARRAY_SIZE(ssoptrs)].func(&so);
+		ssoptrs[rand() % ARRAY_SIZE(ssoptrs)].func(so);
 	} else {
-		so.level = rand();
-		so.optname = (rand() % 0x100);	/* random operation. */
+		so->level = rand();
+		so->optname = (rand() % 0x100);	/* random operation. */
 	}
 
 	/*
@@ -79,15 +77,22 @@ static void sanitise_setsockopt(int childno)
 	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
 	 */
 	if ((rand() % 100) < 10)
-		so.optname |= (1 << (rand() % 32));
+		so->optname |= (1 << (rand() % 32));
 
 
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
 	 */
 	if (rand_bool())
-		so.optval = 0;
+		so->optval = 0;
 
+}
+
+static void sanitise_setsockopt(int childno)
+{
+	struct sockopt so = { 0, 0, 0, 0 };
+
+	do_setsockopt(&so);
 
 	/* copy the generated values to the shm. */
 	shm->a2[childno] = so.level;
