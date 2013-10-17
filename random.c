@@ -173,6 +173,12 @@ unsigned int rand32(void)
 	if (rand_bool())
 		r |= (1L << 31);
 
+	/* we might get lucky if something is counting ints/longs etc. */
+	if (rand() % 100 < 25) {
+		int div = 1 << ((rand() % 4) + 1);	/* 2,4,8 or 16 */
+		r /= div;
+	}
+
 	/* limit the size */
 	switch (rand() % 4) {
 	case 0: r &= 0xff;
