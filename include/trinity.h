@@ -25,6 +25,8 @@ unsigned int check_if_fd(unsigned int child);
 
 extern unsigned int user_specified_children;
 
+void regenerate(void);
+
 #define UNUSED(x) (void)(x)
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
