@@ -19,7 +19,6 @@
 #include "pids.h"
 #include "log.h"
 #include "params.h"
-#include "maps.h"
 
 int check_tainted(void)
 {
