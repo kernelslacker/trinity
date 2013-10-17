@@ -1,7 +1,10 @@
 #ifndef _LOG_H
 #define _LOG_H 1
 
+#include <unistd.h>
 #include "types.h"
+#include "exit.h"
+#include "shm.h"
 
 #define ANSI_RED	"[1;31m"
 #define ANSI_GREEN	"[1;32m"
@@ -47,6 +50,13 @@ void debugf(const char *fmt, ...);
 #define BUGTXT ANSI_RED "BUG!: " ANSI_RESET GIT_VERSION
 #endif
 
-#define BUG(bugtxt)	{ printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt); while(1); }
+#define BUG(bugtxt)	{ \
+	printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt); \
+	while(1) { \
+		if (shm->exit_reason == EXIT_SIGINT) \
+			exit(EXIT_FAILURE);	\
+		sleep(1); \
+	}\
+}
 
 #endif	/* _LOG_H */
