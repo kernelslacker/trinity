@@ -20,55 +20,6 @@
 #include "log.h"
 #include "params.h"
 #include "maps.h"
-#include "net.h"
-
-static void do_sso_sockets(void)
-{
-	struct sockopt so = { 0, 0, 0, 0 };
-	unsigned int i;
-	int fd, ret;
-
-	for (i = 0; i < nr_sockets; i++) {
-		fd = shm->socket_fds[i];
-		do_setsockopt(&so);
-		ret = setsockopt(fd, so.level, so.optname, (void *)so.optval, so.optlen);
-		if (ret == 0)
-			output(1, "Setsockopt(%lx %lx %lx %lx) on fd %d\n",
-				so.level, so.optname, so.optval, so.optlen, fd);
-//		else
-//			output(1, "sso failed %s\n", strerror(errno));
-	}
-}
-
-static void regenerate(void)
-{
-	if (no_files == TRUE)	/* We don't regenerate sockets */
-		return;
-
-	/* we're about to exit. */
-	if (shm->spawn_no_more)
-		return;
-
-	shm->regenerating = TRUE;
-
-	sleep(1);	/* give children time to finish with fds. */
-
-	shm->regenerate = 0;
-
-	output(0, "Regenerating random pages, fd's etc.\n");
-
-	regenerate_fds();
-
-	/* Do random setsockopts on all network sockets. */
-	do_sso_sockets();
-
-	destroy_maps();
-	setup_maps();
-
-	generate_random_page(page_rand);
-
-	shm->regenerating = FALSE;
-}
 
 int check_tainted(void)
 {
@@ -384,6 +335,7 @@ static void main_loop(void)
 			if (shm->running_childs < shm->max_children)
 				fork_children();
 
+			/* Periodic regenation of fd's etc. */
 			if (shm->regenerate >= REGENERATION_POINT)
 				regenerate();
 
