@@ -85,9 +85,11 @@ static void fork_children(void)
 			exit(EXIT_FAILURE);
 		}
 
-		fd = fileno(shm->logfiles[pidslot]);
-		if (ftruncate(fd, 0) == 0)
-			lseek(fd, 0, SEEK_SET);
+		if (logging == TRUE) {
+			fd = fileno(shm->logfiles[pidslot]);
+			if (ftruncate(fd, 0) == 0)
+				lseek(fd, 0, SEEK_SET);
+		}
 
 		(void)alarm(0);
 		fflush(stdout);
