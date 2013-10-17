@@ -25,9 +25,10 @@ static const char *cachefilename="trinity.socketcache";
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
-	int fd;
+	int fd, ret;
 	struct sockaddr sa;
 	socklen_t salen;
+	struct sockopt so = { 0, 0, 0, 0 };
 
 	fd = socket(domain, type, protocol);
 	if (fd == -1)
@@ -40,10 +41,18 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 	nr_sockets++;
 
+	/* Set some random socket options. */
+retry_sso:
+	do_setsockopt(&so);
+	ret = setsockopt(fd, so.level, so.optname, (void *)so.optval, so.optlen);
+	if (ret == 0)
+		output(1, "Setsockopt(%lx %lx %lx %lx) on fd %d\n",
+			so.level, so.optname, so.optval, so.optlen, fd);
+	else
+		goto retry_sso;
+
 	/* Sometimes, listen on created sockets. */
 	if (rand_bool()) {
-		__unused__ int ret;
-
 		/* fake a sockaddr. */
 		generate_sockaddr((unsigned long *) &sa, (unsigned long *) &salen, domain);
 
