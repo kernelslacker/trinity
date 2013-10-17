@@ -51,7 +51,7 @@ void debugf(const char *fmt, ...);
 #endif
 
 #define BUG(bugtxt)	{ \
-	printf("%s:%s:%d %s", __FILE__, __func__, __LINE__, bugtxt); \
+	printf("[%d] %s:%s:%d %s", getpid(), __FILE__, __func__, __LINE__, bugtxt); \
 	while(1) { \
 		if (shm->exit_reason == EXIT_SIGINT) \
 			exit(EXIT_FAILURE);	\
