@@ -37,16 +37,8 @@ unsigned long get_len(void)
 
 	/* we might get lucky if something is counting ints/longs etc. */
 	if (rand() % 100 < 25) {
-		switch (rand() % 3) {
-		case 0:	i /= sizeof(int);
-			break;
-		case 1:	i /= sizeof(long);
-			break;
-		case 2:	i /= sizeof(long long);
-			break;
-		default:
-			break;
-		}
+		int div = 1 << ((rand() % 4) + 1);      /* 2,4,8 or 16 */
+		i /= div;
 	}
 
 	return i;
