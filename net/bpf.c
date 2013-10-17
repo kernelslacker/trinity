@@ -312,7 +312,7 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 			return i;
 	}
 
-	BUG("wrong state");
+	BUG("wrong state\n");
 	return -1;
 }
 
