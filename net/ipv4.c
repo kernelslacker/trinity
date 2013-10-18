@@ -43,8 +43,6 @@ in_addr_t random_ipv4_address(void)
 
 	if (rand() % 100 < 50) {
 		switch (class) {
-		case 4:	addr |= rand() % 0xfffffff;
-			break;
 		case 8:	addr |= rand() % 0xffffff;
 			break;
 		case 12: addr |= rand() % 0xfffff;
