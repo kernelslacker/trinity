@@ -32,8 +32,8 @@ in_addr_t random_ipv4_address(void)
 	case 6:	addr = 0xc0a80000;	/* 192.168.0.0/16 */
 		class = 16;
 		break;
-	case 7:	addr = 0xe0000000;	/* 224.0.0.0/4 (multicast)*/
-		class = 4;
+	case 7:	addr = 0xe0000000;	/* 224.0.0.0/24 (multicast)*/
+		class = 24;
 		break;
 	case 8:	addr = 0xffffffff;	/* 255.255.255.255 */
 		break;
