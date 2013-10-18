@@ -99,6 +99,7 @@ void generate_random_page(char *page)
 			default: break;
 			}
 		}
+		page_size = getpagesize();	// Hack for clang 3.3 false positive.
 		page[rand() % page_size] = 0;
 		return;
 
