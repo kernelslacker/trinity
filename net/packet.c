@@ -29,11 +29,8 @@ void packet_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = htons(ETH_P_ALL);
 
-	if (rand() % 8 == 0) {
-		st->protocol = rand();
-		if (rand_bool())
-			st->protocol = (uint16_t) rand();
-	}
+	if (rand() % 8 == 0)		// FIXME: 8 ? Why?
+		st->protocol = get_random_ether_type();
 
 	switch (rand() % 3) {
 	case 0: st->type = SOCK_DGRAM;

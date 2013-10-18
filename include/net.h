@@ -41,6 +41,9 @@ void rand_proto_type(struct socket_triplet *st);
 int sanitise_socket_triplet(struct socket_triplet *st);
 void gen_socket_args(struct socket_triplet *st);
 
+/* Ethernet */
+int get_random_ether_type(void);
+
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
 void ipv4_gen_sockaddr(unsigned long *addr, unsigned long *addrlen);
