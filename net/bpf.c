@@ -306,7 +306,7 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 	float sum = .0f;
 	float thr = (float) rand() / (float) RAND_MAX;
 
-	for (i = 0; i < STATE_GEN_MAX; ++i) {
+	for (i = 0; i < __STATE_GEN_MAX; ++i) {
 		sum += probs[i];
 		if (sum > thr)
 			return i;
