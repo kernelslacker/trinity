@@ -789,4 +789,9 @@ struct kvm_get_htab_fd {
 #define UMOUNT_NOFOLLOW		8
 #endif
 
+/* if_ether.h */
+#ifndef ETH_P_802_3_MIN
+#define ETH_P_802_3_MIN	0x0600
+#endif
+
 #endif	/* _TRINITY_COMPAT_H */
