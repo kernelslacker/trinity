@@ -1,8 +1,10 @@
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/types.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <linux/mroute.h>
 #include "sanitise.h"
 #include "compat.h"
@@ -34,6 +36,9 @@ static const unsigned int ip_opts[] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
 void ip_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
+	struct ip_mreqn *mr;
+	struct ip_mreq_source *ms;
+	int mcaddr;
 
 	so->level = SOL_IP;
 
@@ -75,13 +80,18 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_MULTICAST_IF:
 	case IP_ADD_MEMBERSHIP:
 	case IP_DROP_MEMBERSHIP:
-		if (rand_bool())
-			so->optval = (unsigned long) page_allocs;
+		mcaddr = 0xe0000000 | rand() % 0xff;
 
-		if (rand_bool())
-			so->optlen = sizeof(struct in_addr);
-		else
-			so->optlen = sizeof(struct ip_mreqn);
+		mr = malloc(sizeof(struct ip_mreqn));
+		if (!mr)
+			break;
+		memset(mr, 0, sizeof(struct ip_mreqn));
+		mr->imr_multiaddr.s_addr = mcaddr;
+		mr->imr_address.s_addr = random_ipv4_address();
+		mr->imr_ifindex = rand32();
+
+		so->optval = (unsigned long) mr;
+		so->optlen = sizeof(struct ip_mreqn);
 		break;
 
 	case MRT_ADD_VIF:
@@ -110,6 +120,17 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_UNBLOCK_SOURCE:
 	case IP_ADD_SOURCE_MEMBERSHIP:
 	case IP_DROP_SOURCE_MEMBERSHIP:
+		mcaddr = 0xe0000000 | rand() % 0xff;
+
+		ms = malloc(sizeof(struct ip_mreq_source));
+		if (!ms)
+			break;
+		memset(ms, 0, sizeof(struct ip_mreq_source));
+		ms->imr_multiaddr.s_addr = mcaddr;
+		ms->imr_interface.s_addr = random_ipv4_address();
+		ms->imr_sourceaddr.s_addr = random_ipv4_address();
+
+		so->optval = (unsigned long) ms;
 		so->optlen = sizeof(struct ip_mreq_source);
 		break;
 
