@@ -2,6 +2,7 @@
 #include <linux/if_ether.h>
 #include "net.h"
 #include "trinity.h"
+#include "compat.h"
 
 static const int ether_types[] = {
 
