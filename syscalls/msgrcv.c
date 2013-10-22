@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE5(msgrcv, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz, long, msgtyp, int, msgflg)
  */
+#include <sys/types.h>
 #include <linux/msg.h>
 #include "compat.h"
 #include "sanitise.h"
