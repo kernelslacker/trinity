@@ -45,6 +45,10 @@
 #include "arch-aarch64.h"
 #endif
 
+#ifdef __hppa__
+#include "arch-parisc.h"
+#endif
+
 #ifndef SYSCALL_OFFSET
 #define SYSCALL_OFFSET 0
 #endif

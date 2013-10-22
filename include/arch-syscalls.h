@@ -38,4 +38,7 @@
 #ifdef __aarch64__
 #include "syscalls-aarch64.h"
 #endif
+#ifdef __hppa__
+#include "syscalls-parisc.h"
+#endif
 #endif  /* _ARCH_SYSCALLS_H */
