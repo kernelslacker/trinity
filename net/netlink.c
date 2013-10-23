@@ -7,6 +7,7 @@
 #include "compat.h"
 #include "net.h"
 #include "random.h"
+#include "sanitise.h"
 
 /* Current highest netlink socket. Supports some older kernels. */
 #ifdef NETLINK_CRYPTO
@@ -28,7 +29,7 @@ void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 		return;
 
 	nl->nl_family = PF_NETLINK;
-	nl->nl_pid = rand();
+	nl->nl_pid = get_pid();
 	nl->nl_groups = rand();
 	*addr = (unsigned long) nl;
 	*addrlen = sizeof(struct sockaddr_nl);
