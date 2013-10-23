@@ -36,9 +36,6 @@ static void sighandler(int sig)
 			shm->fd_lifetime = 0;
 
 			/* TODO: Somehow mark the fd in the parent not to be used again too. */
-
-			/* Nothing we can do, just bail. */
-			_exit(EXIT_SUCCESS);
 		}
 
 		/* Re-arm the alarm. */
