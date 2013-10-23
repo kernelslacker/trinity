@@ -82,6 +82,7 @@ int child_random_syscalls(int childno)
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
+		output(0, "<timed out>\n");	/* Flush out the previous syscall output. */
 		if (sigwas != SIGALRM)
 			output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
 
