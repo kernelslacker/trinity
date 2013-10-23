@@ -15,7 +15,7 @@
 #define NR_SOL_NETLINK_OPTS ARRAY_SIZE(netlink_opts)
 static const unsigned int netlink_opts[] = {
 	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
-	NETLINK_NO_ENOBUFS };
+	NETLINK_NO_ENOBUFS, NETLINK_RX_RING, NETLINK_TX_RING };
 
 void netlink_setsockopt(struct sockopt *so)
 {
