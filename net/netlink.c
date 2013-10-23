@@ -30,7 +30,7 @@ void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 
 	nl->nl_family = PF_NETLINK;
 	nl->nl_pid = get_pid();
-	nl->nl_groups = rand();
+	nl->nl_groups = rand32();
 	*addr = (unsigned long) nl;
 	*addrlen = sizeof(struct sockaddr_nl);
 }
