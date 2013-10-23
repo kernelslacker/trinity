@@ -209,6 +209,10 @@ enum {
 #ifndef NETLINK_CRYPTO
 #define NETLINK_CRYPTO 21
 #endif
+#ifndef NETLINK_RX_RING
+#define NETLINK_RX_RING 6
+#define NETLINK_TX_RING 7
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
