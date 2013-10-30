@@ -58,6 +58,19 @@ static const struct protocol protocols[] = {
 	{ "PF_VSOCK",        40 },
 };
 
+static const struct protocol *lookup_proto(const char *name, unsigned int proto)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(protocols); i++) {
+		if ((name && strcmp(name, protocols[i].name) == 0) ||
+		    (proto != -1u && protocols[i].proto == proto))
+			return &protocols[i];
+	}
+
+	return NULL;
+}
+
 const char * get_proto_name(unsigned int proto)
 {
 	unsigned int i;
@@ -70,33 +83,20 @@ const char * get_proto_name(unsigned int proto)
 
 void find_specific_proto(const char *protoarg)
 {
+	const struct protocol *p;
 	unsigned int i;
 
-	if (specific_proto == 0) {
-		/* we were passed a string */
-		for (i = 0; i < ARRAY_SIZE(protocols); i++) {
-			if (strcmp(protoarg, protocols[i].name) == 0) {
-				specific_proto = protocols[i].proto;
-				output(2, "Proto %s = %d\n", protoarg, specific_proto);
-				break;
-			}
-		}
-	} else {
-		/* we were passed a numeric arg. */
-		for (i = 0; i < ARRAY_SIZE(protocols); i++) {
-			if (specific_proto == protocols[i].proto)
-				break;
-		}
+	p = lookup_proto(protoarg, specific_proto ? : -1u);
+	if (p) {
+		specific_proto = p->proto;
+		output(2, "Using protocol %s (%u) for all sockets\n", p->name, p->proto);
+		return;
 	}
 
-	if (i > ARRAY_SIZE(protocols)) {
-		outputerr("Protocol unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
-		for (i = 0; i < ARRAY_SIZE(protocols); i++)
-			outputerr("%s ", protocols[i].name);
-		outputerr("\n");
+	outputerr("Protocol unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
+	for (i = 0; i < ARRAY_SIZE(protocols); i++)
+		outputerr("%s ", protocols[i].name);
+	outputerr("\n");
 
-		exit(EXIT_FAILURE);
-	}
-
-	output(2, "Using protocol %s (%u) for all sockets\n", protocols[i].name, protocols[i].proto);
+	exit(EXIT_FAILURE);
 }
