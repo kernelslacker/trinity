@@ -15,6 +15,7 @@
 #include "log.h"
 #include "params.h"	// victim_path, verbose, do_specific_proto
 #include "random.h"
+#include "protocols.h"
 
 unsigned int nr_sockets = 0;
 

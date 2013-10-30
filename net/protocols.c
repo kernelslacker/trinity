@@ -5,6 +5,7 @@
 
 #include "trinity.h"
 #include "constants.h"
+#include "protocols.h"
 #include "net.h"
 #include "log.h"
 

@@ -32,6 +32,7 @@
 #include "syscall.h"
 #include "tables.h"
 #include "ioctls.h"
+#include "protocols.h"
 #include "config.h"	// for VERSION
 
 char *progname = NULL;
