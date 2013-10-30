@@ -62,7 +62,7 @@ const char * get_proto_name(unsigned int proto)
 {
 	unsigned int i;
 
-	for (i = 0; i < TRINITY_PF_MAX; i++)
+	for (i = 0; i < ARRAY_SIZE(protocols); i++)
 		if (protocols[i].proto == proto)
 			return protocols[i].name;
 	return NULL;
@@ -83,13 +83,13 @@ void find_specific_proto(const char *protoarg)
 		}
 	} else {
 		/* we were passed a numeric arg. */
-		for (i = 0; i < TRINITY_PF_MAX; i++) {
+		for (i = 0; i < ARRAY_SIZE(protocols); i++) {
 			if (specific_proto == protocols[i].proto)
 				break;
 		}
 	}
 
-	if (i > TRINITY_PF_MAX) {
+	if (i > ARRAY_SIZE(protocols)) {
 		outputerr("Protocol unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
 		for (i = 0; i < ARRAY_SIZE(protocols); i++)
 			outputerr("%s ", protocols[i].name);
