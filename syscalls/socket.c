@@ -12,6 +12,7 @@
 #include "shm.h"
 #include "config.h"
 #include "params.h"
+#include "protocols.h"
 #include "trinity.h"
 
 struct socket_ptr {
@@ -44,14 +45,30 @@ static const struct socket_ptr socketptrs[] = {
 
 void rand_proto_type(struct socket_triplet *st)
 {
+	int n;
+
+	/*
+	 * One special moment on packet sockets. They
+	 * can be created with SOCK_PACKET, so if
+	 * PF_PACKET is disabled, choose some other type.
+	 */
+
 	st->protocol = rand() % PROTO_MAX;
 
-	switch (rand() % 6) {
+	if (st->family == PF_INET && no_protos[PF_PACKET])
+		n = 5;
+	else
+		n = 6;
+
+	switch (rand() % n) {
 	case 0:	st->type = SOCK_DGRAM;	break;
 	case 1:	st->type = SOCK_STREAM;	break;
 	case 2:	st->type = SOCK_SEQPACKET;	break;
 	case 3:	st->type = SOCK_RAW;	break;
 	case 4:	st->type = SOCK_RDM;	break;
+	/*
+	 * Make sure it's last one.
+	 */
 	case 5:	st->type = SOCK_PACKET;	break;
 	default: break;
 	}
@@ -77,8 +94,23 @@ void gen_socket_args(struct socket_triplet *st)
 {
 	if (do_specific_proto == TRUE)
 		st->family = specific_proto;
-	else
+
+	else {
 		st->family = rand() % TRINITY_PF_MAX;
+
+		/*
+		 * If we get a disabled family, try to find
+		 * first next allowed.
+		 */
+		BUG_ON(st->family >= ARRAY_SIZE(no_protos));
+		if (no_protos[st->family]) {
+			st->family = find_next_enabled_proto(st->family);
+			if (st->family == -1u) {
+				outputerr("No available socket family found\n");
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
 
 	/* sometimes, still gen rand crap */
 	if ((rand() % 100) == 0) {
