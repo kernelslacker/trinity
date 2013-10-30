@@ -2,6 +2,7 @@
 #define _PARAMS_H 1
 
 #include "types.h"
+#include "net.h"
 
 #define TAINT_PROPRIETARY_MODULE        0
 #define TAINT_FORCED_MODULE             1
@@ -30,6 +31,7 @@ extern bool do_exclude_syscall;
 extern unsigned int specific_proto;
 extern bool do_specific_proto;
 extern char *specific_proto_optarg;
+extern bool no_protos[TRINITY_PF_MAX];
 extern bool dopause;
 extern bool show_syscall_list;
 extern bool show_ioctl_list;

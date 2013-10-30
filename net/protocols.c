@@ -6,6 +6,7 @@
 #include "trinity.h"
 #include "constants.h"
 #include "protocols.h"
+#include "params.h"
 #include "net.h"
 #include "log.h"
 
@@ -99,5 +100,34 @@ void find_specific_proto(const char *protoarg)
 		outputerr("%s ", protocols[i].name);
 	outputerr("\n");
 
+	exit(EXIT_FAILURE);
+}
+
+void parse_exclude_protos(const char *arg)
+{
+	char *_arg = strdup(arg);
+	const struct protocol *p;
+	char *tok;
+
+	if (!_arg) {
+		outputerr("No free memory\n");
+		exit(EXIT_FAILURE);
+	}
+
+	for (tok = strtok(_arg, ","); tok; tok = strtok(NULL, ",")) {
+		p = lookup_proto(tok, (unsigned int)atoi(tok));
+		if (p) {
+			BUG_ON(p->proto >= ARRAY_SIZE(no_protos));
+			no_protos[p->proto] = TRUE;
+		} else
+			goto err;
+	}
+
+	free(_arg);
+	return;
+
+err:
+	free(_arg);
+	outputerr("Protocol unknown in argument %s\n", arg);
 	exit(EXIT_FAILURE);
 }
