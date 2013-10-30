@@ -9,8 +9,6 @@ void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
 
 /* protocol decoding */
 extern unsigned int specific_proto;
-const char * get_proto_name(unsigned int proto);
-void find_specific_proto(const char *protoarg);
 
 
 /* glibc headers might be older than the kernel, so chances are we know
