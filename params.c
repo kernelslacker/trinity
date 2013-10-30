@@ -10,7 +10,9 @@
 #include "random.h"
 #include "syscall.h"
 #include "log.h"
+#include "net.h"
 #include "params.h"
+#include "protocols.h"
 #include "tables.h"
 
 #define TAINT_NAME_LEN 32
@@ -27,6 +29,7 @@ unsigned int specific_proto = 0;
 unsigned int user_specified_children = 0;
 
 bool do_specific_proto = FALSE;
+bool no_protos[TRINITY_PF_MAX];
 
 bool dopause = FALSE;
 bool show_syscall_list = FALSE;
@@ -67,6 +70,7 @@ static void usage(void)
 	outputerr(" --monochrome,-m: don't output ANSI codes\n");
 	outputerr(" --no_files,-n: Only pass sockets as fd's, not files\n");
 	outputerr(" --proto,-P: specify specific network protocol for sockets.\n");
+	outputerr(" --no_proto,-E: specify network protocols to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
 	outputerr(" --random,-r#: pick N syscalls at random and just fuzz those\n");
 	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
@@ -94,6 +98,7 @@ static const struct option longopts[] = {
 	{ "monochrome", no_argument, NULL, 'm' },
 	{ "no_files", no_argument, NULL, 'n' },
 	{ "proto", required_argument, NULL, 'P' },
+	{ "no_proto", required_argument, NULL, 'E' },
 	{ "random", required_argument, NULL, 'r' },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "syslog", no_argument, NULL, 'S' },
@@ -176,7 +181,7 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "a:c:C:dDg:hIl:LN:mnP:pqr:s:T:SV:vx:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "a:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -266,6 +271,10 @@ void parse_args(int argc, char *argv[])
 			do_specific_proto = 1;
 			specific_proto = strtol(optarg, NULL, 10);
 			specific_proto_optarg = optarg;
+			break;
+
+		case 'E':
+			parse_exclude_protos(optarg);
 			break;
 
 		case 'q':
