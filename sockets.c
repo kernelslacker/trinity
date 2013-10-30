@@ -133,6 +133,19 @@ static void generate_sockets(void)
 
 	lock_cachefile(cachefile, F_WRLCK);
 
+	/*
+	 * Don't loop forever if all protos all are disabled.
+	 */
+	if (!do_specific_proto) {
+		for (n = 0; n < (int)ARRAY_SIZE(no_protos); n++) {
+			if (!no_protos[n])
+				break;
+		}
+
+		if (n >= (int)ARRAY_SIZE(no_protos))
+			nr_to_create = 0;
+	}
+
 	while (nr_to_create > 0) {
 
 		struct socket_triplet st;
@@ -148,6 +161,10 @@ static void generate_sockets(void)
 				st.family = specific_proto;
 
 			if (get_proto_name(st.family) == NULL)
+				goto skip;
+
+			BUG_ON(st.family >= ARRAY_SIZE(no_protos));
+			if (no_protos[st.family])
 				goto skip;
 
 			if (sanitise_socket_triplet(&st) == -1)
@@ -237,16 +254,17 @@ void open_sockets(void)
 		type = buffer[1];
 		protocol = buffer[2];
 
-		if (do_specific_proto == TRUE) {
-			if (domain != specific_proto) {
-				output(1, "ignoring socket cachefile due to specific protocol request, and stale data in cachefile.\n");
+		if ((do_specific_proto == TRUE && domain != specific_proto) ||
+		    (domain < ARRAY_SIZE(no_protos) && no_protos[domain] == TRUE)) {
+			output(1, "ignoring socket cachefile due to specific "
+			       "protocol request (or protocol disabled), "
+			       "and stale data in cachefile.\n");
 regenerate:
 				unlock_cachefile(cachefile);	/* drop the reader lock. */
 				close(cachefile);
 				unlink(cachefilename);
 				generate_sockets();
 				return;
-			}
 		}
 
 		fd = open_socket(domain, type, protocol);

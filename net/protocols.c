@@ -103,6 +103,25 @@ void find_specific_proto(const char *protoarg)
 	exit(EXIT_FAILURE);
 }
 
+unsigned int find_next_enabled_proto(unsigned int from)
+{
+	unsigned int i;
+
+	from %= ARRAY_SIZE(no_protos);
+
+	for (i = from; i < ARRAY_SIZE(no_protos); i++) {
+		if (no_protos[i] == FALSE)
+			return no_protos[i];
+	}
+
+	for (i = 0; i < from; i++) {
+		if (no_protos[i] == FALSE)
+			return no_protos[i];
+	}
+
+	return -1u;
+}
+
 void parse_exclude_protos(const char *arg)
 {
 	char *_arg = strdup(arg);
