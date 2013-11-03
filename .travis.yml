@@ -1,0 +1,9 @@
+language: c
+
+compiler:
+  - gcc
+
+before_script:
+  - ./configure
+
+script: make
