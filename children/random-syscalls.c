@@ -75,6 +75,38 @@ static void choose_syscall_table(int childno)
 
 extern int sigwas;
 
+static unsigned int handle_sigreturn(int childno)
+{
+	static unsigned int count = 0;
+	static unsigned int last = -1;
+
+	if (count > 0)
+		output(1, "<timed out>\n");	/* Flush out the previous syscall output. */
+
+	/* Check if we're making any progress at all. */
+	if (shm->child_syscall_count[childno] == last) {
+		count++;
+		//output(1, "no progress for %d tries.\n", count);
+	} else {
+		count = 0;
+		last = shm->child_syscall_count[childno];
+	}
+	if (count == 3) {
+		output(1, "no progress for 3 tries, exiting child.\n");
+		return 0;
+	}
+
+	if (shm->kill_count[childno] > 0) {
+		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
+		return 0;
+	}
+
+	if (sigwas != SIGALRM)
+		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
+
+	return 1;
+}
+
 int child_random_syscalls(int childno)
 {
 	int ret;
@@ -82,17 +114,10 @@ int child_random_syscalls(int childno)
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
-		output(1, "<timed out>\n");	/* Flush out the previous syscall output. */
-		if (sigwas != SIGALRM)
-			output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
-
-		if (shm->kill_count[childno] > 0) {
-			output(1, "[%d] Missed a kill signal, exiting\n", getpid());
+		if (handle_sigreturn(childno) == 0)
 			return 0;
-		}
+		ret = 0;
 	}
-
-	ret = 0;
 
 	while (shm->exit_reason == STILL_RUNNING) {
 
