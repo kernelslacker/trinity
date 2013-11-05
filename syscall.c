@@ -47,19 +47,7 @@ long syscall32(unsigned int call,
 
 //FIXME: Move the implementations out to arch header files.
 
-#if defined( __i386__)
-	__asm__ volatile (
-		"pushl %%ebp\n\t"
-		"movl %7, %%ebp\n\t"
-		"int $0x80\n\t"
-		"popl %%ebp\n\t"
-		: "=a" (__res)
-		: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
-		: "%ebp" /* mark EBP reg as dirty */
-	);
-	__syscall_return(long, __res);
-
-#elif defined(__x86_64__)
+#if defined(__x86_64__)
 	__asm__ volatile (
 		"pushq %%rbp\n\t"
 		"pushq %%r10\n\t"
