@@ -49,8 +49,9 @@ static void fabricate_onepage_struct(char *page)
 void generate_random_page(char *page)
 {
 	unsigned int i;
+	unsigned int p = 0;
 
-	switch (rand() % 7) {
+	switch (rand() % 8) {
 	/* return a page of complete trash */
 	case 0:	/* bytes */
 		for (i = 0; i < page_size; )
@@ -102,6 +103,52 @@ void generate_random_page(char *page)
 		page_size = getpagesize();	// Hack for clang 3.3 false positive.
 		page[rand() % page_size] = 0;
 		return;
+
+	/* ascii representation of a random number */
+	case 7:
+		switch (rand() % 3) {
+		case 0:
+			switch (rand() % 3) {
+			case 0:	p = sprintf(page_rand, "%lu", rand64());
+				break;
+			case 1:	p = sprintf(page_rand, "%ld", rand64());
+				break;
+			case 2:	p = sprintf(page_rand, "%lx", rand64());
+				break;
+			default: break;
+			}
+			break;
+
+		case 1:
+			switch (rand() % 3) {
+			case 0:	p = sprintf(page_rand, "%u", (unsigned int) rand64());
+				break;
+			case 1:	p = sprintf(page_rand, "%d", (int) rand64());
+				break;
+			case 2:	p = sprintf(page_rand, "%x", (int) rand64());
+				break;
+			default: break;
+			}
+			break;
+
+		case 2:
+			switch (rand() % 3) {
+			case 0:	p = sprintf(page_rand, "%u", (unsigned char) rand64());
+				break;
+			case 1:	p = sprintf(page_rand, "%d", (char) rand64());
+				break;
+			case 2:	p = sprintf(page_rand, "%x", (char) rand64());
+				break;
+			default: break;
+			}
+			break;
+
+		default: break;
+		}
+
+		page_rand[p] = 0;
+
+		break;
 
 	default:
 		BUG("unreachable!\n");
