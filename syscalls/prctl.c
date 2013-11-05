@@ -33,6 +33,9 @@ void sanitise_prctl(int childno)
 {
 	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
 
+// For now, just do SECCOMP, the other options need some attention.
+option = PR_SET_SECCOMP;
+
 	/* Also allow crap by small chance */
 	if (rand() % 100 != 0)
 		shm->a1[childno] = option;
@@ -40,12 +43,12 @@ void sanitise_prctl(int childno)
 	switch (option) {
 	case PR_SET_SECCOMP:
 #ifdef USE_SECCOMP
-		if (rand() % 3 == SECCOMP_MODE_FILTER) {
+//		if (rand() % 3 == SECCOMP_MODE_FILTER) {
 			gen_seccomp_bpf((unsigned long *) page_rand, NULL);
 
 			shm->a2[childno] = SECCOMP_MODE_FILTER;
 			shm->a3[childno] = (unsigned long) page_rand;
-		}
+//		}
 #endif
 		break;
 	default:
@@ -55,7 +58,6 @@ void sanitise_prctl(int childno)
 
 struct syscall syscall_prctl = {
 	.name = "prctl",
-	.flags = AVOID_SYSCALL,
 	.num_args = 5,
 	.arg1name = "option",
 	.arg2name = "arg2",
