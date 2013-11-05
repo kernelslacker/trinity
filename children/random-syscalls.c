@@ -80,7 +80,7 @@ static unsigned int handle_sigreturn(int childno)
 	static unsigned int count = 0;
 	static unsigned int last = -1;
 
-	output(1, "<timed out>\n");	/* Flush out the previous syscall output. */
+	output(2, "<timed out>\n");	/* Flush out the previous syscall output. */
 
 	/* Check if we're making any progress at all. */
 	if (shm->child_syscall_count[childno] == last) {
