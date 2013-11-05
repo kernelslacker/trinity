@@ -132,7 +132,7 @@ void synclogs(void)
 	fsync(fileno(mainlogfile));
 }
 
-static void output_arg(unsigned int call, unsigned int argnum, const char *name, unsigned long oldreg, unsigned long reg, int type, FILE *fd, bool mono)
+static void output_arg(unsigned int call, unsigned int argnum, const char *name, unsigned long reg, int type, FILE *fd, bool mono)
 {
 	if (syscalls[call].entry->num_args >= argnum) {
 		if (!name)
@@ -144,13 +144,6 @@ static void output_arg(unsigned int call, unsigned int argnum, const char *name,
 		}
 		if (name)
 			fprintf(fd, "%s=", name);
-
-		if (oldreg == reg) {
-			CRESETFD
-		} else {
-			if (mono == FALSE)
-				fprintf(fd, "%s", ANSI_CYAN);
-		}
 
 		switch (type) {
 		case ARG_PATHNAME:
@@ -344,17 +337,17 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 
 	CRESETFD
 	fprintf(fd, "(");
-	output_arg(syscallno, 1, syscalls[syscallno].entry->arg1name, shm->previous_a1[childno], shm->a1[childno],
+	output_arg(syscallno, 1, syscalls[syscallno].entry->arg1name, shm->a1[childno],
 			syscalls[syscallno].entry->arg1type, fd, mono);
-	output_arg(syscallno, 2, syscalls[syscallno].entry->arg2name, shm->previous_a2[childno], shm->a2[childno],
+	output_arg(syscallno, 2, syscalls[syscallno].entry->arg2name, shm->a2[childno],
 			syscalls[syscallno].entry->arg2type, fd, mono);
-	output_arg(syscallno, 3, syscalls[syscallno].entry->arg3name, shm->previous_a3[childno], shm->a3[childno],
+	output_arg(syscallno, 3, syscalls[syscallno].entry->arg3name, shm->a3[childno],
 			syscalls[syscallno].entry->arg3type, fd, mono);
-	output_arg(syscallno, 4, syscalls[syscallno].entry->arg4name, shm->previous_a4[childno], shm->a4[childno],
+	output_arg(syscallno, 4, syscalls[syscallno].entry->arg4name, shm->a4[childno],
 			syscalls[syscallno].entry->arg4type, fd, mono);
-	output_arg(syscallno, 5, syscalls[syscallno].entry->arg5name, shm->previous_a5[childno], shm->a5[childno],
+	output_arg(syscallno, 5, syscalls[syscallno].entry->arg5name, shm->a5[childno],
 			syscalls[syscallno].entry->arg5type, fd, mono);
-	output_arg(syscallno, 6, syscalls[syscallno].entry->arg6name, shm->previous_a6[childno], shm->a6[childno],
+	output_arg(syscallno, 6, syscalls[syscallno].entry->arg6name, shm->a6[childno],
 			syscalls[syscallno].entry->arg6type, fd, mono);
 	CRESETFD
 	fprintf(fd, ") ");
