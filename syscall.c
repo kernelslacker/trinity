@@ -55,8 +55,10 @@ long syscall32(int num_args, unsigned int call,
 #elif defined(__x86_64__)
 		__asm__ volatile (
 			"pushq %%rbp\n\t"
+			"pushq %%r10\n\t"
 			"movq %7, %%rbp\n\t"
 			"int $0x80\n\t"
+			"popq %%r10\n\t"
 			"popq %%rbp\n\t"
 			: "=a" (__res)
 			: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
