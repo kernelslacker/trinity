@@ -34,40 +34,41 @@
 	return (type) (res); \
 } while (0)
 
-long syscall32(int num_args, unsigned int call,
+long syscall32(unsigned int call,
 	unsigned long a1, unsigned long a2, unsigned long a3,
 	unsigned long a4, unsigned long a5, unsigned long a6)
 {
 #if defined(__i386__) || defined (__x86_64__)
 
-	if (num_args <= 6) {
-		long __res;
+	long __res;
+
+//FIXME: Move the implementations out to arch header files.
+
 #if defined( __i386__)
-		__asm__ volatile (
-			"pushl %%ebp\n\t"
-			"movl %7, %%ebp\n\t"
-			"int $0x80\n\t"
-			"popl %%ebp\n\t"
-			: "=a" (__res)
-			: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
-			: "%ebp" /* mark EBP reg as dirty */
-			);
+	__asm__ volatile (
+		"pushl %%ebp\n\t"
+		"movl %7, %%ebp\n\t"
+		"int $0x80\n\t"
+		"popl %%ebp\n\t"
+		: "=a" (__res)
+		: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
+		: "%ebp" /* mark EBP reg as dirty */
+	);
 #elif defined(__x86_64__)
-		__asm__ volatile (
-			"pushq %%rbp\n\t"
-			"pushq %%r10\n\t"
-			"movq %7, %%rbp\n\t"
-			"int $0x80\n\t"
-			"popq %%r10\n\t"
-			"popq %%rbp\n\t"
-			: "=a" (__res)
-			: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
-			: "%rbp" /* mark EBP reg as dirty */
-			);
+	__asm__ volatile (
+		"pushq %%rbp\n\t"
+		"pushq %%r10\n\t"
+		"movq %7, %%rbp\n\t"
+		"int $0x80\n\t"
+		"popq %%r10\n\t"
+		"popq %%rbp\n\t"
+		: "=a" (__res)
+		: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6))
+		: "%rbp" /* mark EBP reg as dirty */
+	);
 #else
 	//To shut up gcc on unused args. This code should never be reached.
 	__res = 0;
-	UNUSED(num_args);
 	UNUSED(call);
 	UNUSED(a1);
 	UNUSED(a2);
@@ -76,12 +77,10 @@ long syscall32(int num_args, unsigned int call,
 	UNUSED(a5);
 	UNUSED(a6);
 #endif
-		__syscall_return(long,__res);
-	}
+	__syscall_return(long,__res);
 #else
 
 // TODO: 32-bit syscall entry for non-x86 archs goes here.
-	UNUSED(num_args);
 	UNUSED(call);
 	UNUSED(a1);
 	UNUSED(a2);
@@ -114,7 +113,6 @@ static void check_uid(uid_t olduid)
 static unsigned long do_syscall(int childno, int *errno_saved)
 {
 	int nr = shm->syscallno[childno];
-	unsigned int num_args = syscalls[nr].entry->num_args;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
 	int pidslot;
@@ -141,7 +139,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	if (shm->do32bit[childno] == FALSE)
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 	else
-		ret = syscall32(num_args, nr, a1, a2, a3, a4, a5, a6);
+		ret = syscall32(nr, a1, a2, a3, a4, a5, a6);
 
 	*errno_saved = errno;
 

@@ -105,6 +105,6 @@ struct syscalltable {
 #define NEED_ALARM (1<<5)
 #define TO_BE_DEACTIVATED (1<<6)
 
-long syscall32(int num_args, unsigned int call, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5, unsigned long a6);
+long syscall32(unsigned int call, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5, unsigned long a6);
 
 #endif	/* _TRINITY_SYSCALL_H */
