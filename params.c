@@ -61,6 +61,8 @@ static void usage(void)
 	outputerr("%s\n", progname);
 	outputerr(" --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.\n");
 	outputerr(" --children,-C: specify number of child processes\n");
+	outputerr(" --dangerous,-d: enable dangerous syscalls\n");
+	outputerr(" --debug,-D: enable debug\n");
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
 	outputerr(" --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
 	outputerr(" --ioctls,-I: list all ioctls.\n");
