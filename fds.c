@@ -206,7 +206,9 @@ regen:
 
 void setup_fds(void)
 {
-	open_sockets();
+	/* If we have victim files, don't worry about sockets. */
+	if (victim_path == NULL)
+		open_sockets();
 
 	open_pipes();
 
