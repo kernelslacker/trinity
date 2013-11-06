@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include "compat.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "compat.h"
 
 struct syscall syscall_getrlimit = {
 	.name = "getrlimit",

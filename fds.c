@@ -153,7 +153,7 @@ retry:
 				fd = rand_pipe_fd();
 			return fd;
 		}
-		fd = shm->socket_fds[rand() % nr_sockets];
+		fd = shm->sockets[rand() % nr_sockets].fd;
 		break;
 
 	case 2:

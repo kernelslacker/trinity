@@ -35,7 +35,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	if (fd == -1)
 		return fd;
 
-	shm->socket_fds[nr_sockets] = fd;
+	shm->sockets[nr_sockets].fd = fd;
 
 	output(2, "fd[%i] = domain:%i (%s) type:0x%x protocol:%i\n",
 		fd, domain, get_proto_name(domain), type, protocol);
@@ -214,8 +214,8 @@ static void close_sockets(void)
 	int fd;
 
 	for (i = 0; i < nr_sockets; i++) {
-		fd = shm->socket_fds[i];
-		shm->socket_fds[i] = 0;
+		fd = shm->sockets[i].fd;
+		shm->sockets[i].fd = 0;
 		if (close(fd) != 0) {
 			output(1, "failed to close socket.(%s)\n", strerror(errno));
 		}

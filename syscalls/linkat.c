@@ -4,9 +4,9 @@
  */
 #include <fcntl.h>
 #include <stdlib.h>
-#include "compat.h"
 #include "shm.h"
 #include "sanitise.h"
+#include "compat.h"
 
 static void sanitise_linkat(int childno)
 {

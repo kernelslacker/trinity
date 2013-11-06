@@ -5,8 +5,8 @@
 #include <sys/mman.h>
 #include "arch.h"	// page_size
 #include "sanitise.h"
-#include "compat.h"
 #include "shm.h"
+#include "compat.h"
 
 static void sanitise_madvise(int childno)
 {

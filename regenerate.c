@@ -15,7 +15,7 @@ static void do_sso_sockets(void)
 	int fd, ret;
 
 	for (i = 0; i < nr_sockets; i++) {
-		fd = shm->socket_fds[i];
+		fd = shm->sockets[i].fd;
 		do_setsockopt(&so);
 		ret = setsockopt(fd, so.level, so.optname, (void *)so.optval, so.optlen);
 		if (ret == 0)

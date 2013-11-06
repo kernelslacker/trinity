@@ -12,10 +12,10 @@
 #include "perf_event.h"
 #include "random.h"
 #include "sanitise.h"
-#include "compat.h"
 #include "maps.h"
 #include "shm.h"
 #include "log.h"
+#include "compat.h"
 
 #define SYSFS "/sys/bus/event_source/devices/"
 

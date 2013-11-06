@@ -6,9 +6,10 @@
 
 #include <stdio.h>
 
-#include "types.h"
-#include "exit.h"
 #include "constants.h"
+#include "exit.h"
+#include "net.h"
+#include "types.h"
 
 struct shm_s {
 	unsigned long total_syscalls_done;
@@ -46,10 +47,11 @@ struct shm_s {
 
 	int pipe_fds[MAX_PIPE_FDS*2];
 	int file_fds[NR_FILE_FDS];		/* All children inherit these */
-	int socket_fds[NR_SOCKET_FDS];
 	int perf_fds[MAX_PERF_FDS];
 	int epoll_fds[MAX_EPOLL_FDS];
 	int eventfd_fds[MAX_EPOLL_FDS];
+
+	struct socketinfo sockets[NR_SOCKET_FDS];
 
 	/* state for the syscall currently in progress. */
 	unsigned int previous_syscallno[MAX_NR_CHILDREN];

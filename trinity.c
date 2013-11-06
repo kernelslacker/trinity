@@ -288,13 +288,13 @@ cleanup_fds:
 		struct linger ling = { .l_onoff = FALSE, };
 
 		ling.l_onoff = FALSE;	/* linger active */
-		r = setsockopt(shm->socket_fds[i], SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
+		r = setsockopt(shm->sockets[i].fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
 		if (r)
 			perror("setsockopt");
-		r = shutdown(shm->socket_fds[i], SHUT_RDWR);
+		r = shutdown(shm->sockets[i].fd, SHUT_RDWR);
 		if (r)
 			perror("shutdown");
-		close(shm->socket_fds[i]);
+		close(shm->sockets[i].fd);
 	}
 
 	destroy_maps();
