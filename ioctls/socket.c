@@ -8,7 +8,7 @@ static int socket_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	unsigned i;
 
 	for (i=0; i < nr_sockets; ++i)
-		if (shm->socket_fds[i] == fd)
+		if (shm->sockets[i].fd == fd)
 			return 0;
 
 	return -1;

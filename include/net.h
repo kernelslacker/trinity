@@ -4,8 +4,6 @@
 #include <netinet/in.h>
 
 extern unsigned int nr_sockets;
-void open_sockets(void);
-void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
 
 /* protocol decoding */
 extern unsigned int specific_proto;
@@ -32,6 +30,15 @@ struct sockopt {
 	unsigned long optval;
 	unsigned long optlen;
 };
+
+/* We create one of these per socket fd we open, and store them in shm->sockets */
+struct socketinfo {
+	struct socket_triplet triplet;
+	int fd;
+};
+
+void open_sockets(void);
+void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
 
 void do_setsockopt(struct sockopt *so);
 

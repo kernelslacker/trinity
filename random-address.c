@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <linux/uio.h>
+#include <sys/uio.h>
 
 #include "trinity.h"	// page_size
 #include "arch.h"	// KERNEL_ADDR etc
