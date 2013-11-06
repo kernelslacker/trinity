@@ -36,6 +36,9 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		return fd;
 
 	shm->sockets[nr_sockets].fd = fd;
+	shm->sockets[nr_sockets].triplet.family = domain;
+	shm->sockets[nr_sockets].triplet.type = type;
+	shm->sockets[nr_sockets].triplet.protocol = protocol;
 
 	output(2, "fd[%i] = domain:%i (%s) type:0x%x protocol:%i\n",
 		fd, domain, get_proto_name(domain), type, protocol);
