@@ -13,7 +13,7 @@
 #include "shm.h"
 #include "net.h"
 #include "log.h"
-#include "params.h"	// victim_path, verbose, do_specific_proto
+#include "params.h"	// verbose, do_specific_proto
 #include "random.h"
 #include "protocols.h"
 
@@ -231,10 +231,6 @@ void open_sockets(void)
 	unsigned int buffer[3];
 	int bytesread=-1;
 	int fd;
-
-	/* If we have victim files, don't worry about sockets. */
-	if (victim_path != NULL)
-		return;
 
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
