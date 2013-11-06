@@ -211,17 +211,30 @@ done:
 }
 
 
-static void close_sockets(void)
+void close_sockets(void)
 {
 	unsigned int i;
 	int fd;
+	int r = 0;
+	struct linger ling = { .l_onoff = FALSE, };
 
 	for (i = 0; i < nr_sockets; i++) {
+		/* Grab an fd, and nuke it before someone else uses it. */
 		fd = shm->sockets[i].fd;
 		shm->sockets[i].fd = 0;
-		if (close(fd) != 0) {
+
+		/* disable linger */
+		ling.l_onoff = FALSE;	/* linger active */
+		r = setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
+		if (r)
+			perror("setsockopt");
+
+		r = shutdown(fd, SHUT_RDWR);
+		if (r)
+			perror("shutdown");
+
+		if (close(fd) != 0)
 			output(1, "failed to close socket.(%s)\n", strerror(errno));
-		}
 	}
 
 	nr_sockets = 0;
@@ -290,3 +303,4 @@ regenerate:
 	unlock_cachefile(cachefile);
 	close(cachefile);
 }
+
