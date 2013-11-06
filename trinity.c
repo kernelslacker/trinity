@@ -283,19 +283,7 @@ int main(int argc, char* argv[])
 
 cleanup_fds:
 
-	for (i = 0; i < nr_sockets; i++) {
-		int r = 0;
-		struct linger ling = { .l_onoff = FALSE, };
-
-		ling.l_onoff = FALSE;	/* linger active */
-		r = setsockopt(shm->sockets[i].fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
-		if (r)
-			perror("setsockopt");
-		r = shutdown(shm->sockets[i].fd, SHUT_RDWR);
-		if (r)
-			perror("shutdown");
-		close(shm->sockets[i].fd);
-	}
+	close_sockets();
 
 	destroy_maps();
 

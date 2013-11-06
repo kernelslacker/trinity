@@ -38,6 +38,8 @@ struct socketinfo {
 };
 
 void open_sockets(void);
+void close_sockets(void);
+
 void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
 
 void do_setsockopt(struct sockopt *so);
