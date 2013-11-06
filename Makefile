@@ -111,7 +111,7 @@ install: trinity
 	install -d -m 755 $(INSTALL_PREFIX)/bin
 	install trinity $(INSTALL_PREFIX)/bin
 
-tags:
+tags:	$(SRCS)
 	@ctags -R --exclude=tmp
 
 mirror:
