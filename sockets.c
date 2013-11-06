@@ -234,7 +234,11 @@ void close_sockets(void)
 			perror("shutdown");
 
 		if (close(fd) != 0)
-			output(1, "failed to close socket.(%s)\n", strerror(errno));
+			output(1, "failed to close socket [%d:%d:%d].(%s)\n",
+				shm->sockets[i].triplet.family,
+				shm->sockets[i].triplet.type,
+				shm->sockets[i].triplet.protocol,
+				strerror(errno));
 	}
 
 	nr_sockets = 0;
