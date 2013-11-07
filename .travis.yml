@@ -7,7 +7,7 @@ install:
   - sudo apt-get install bash make
 
 script:
-  - "bash ./configure"
+  - ./configure
 
 script: 
   - make
