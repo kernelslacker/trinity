@@ -10,7 +10,7 @@ script:
   - "bash ./configure"
 
 script: 
-  - gmake
+  - make
 
 # whitelist
 branches:
