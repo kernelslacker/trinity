@@ -3,10 +3,10 @@ language: c
 compiler:
   - gcc
 
-before_script:
-  - bash ./configure
+#before_script:
+#  - "bash ./configure
 
-script: make
+#script: make
 
 # whitelist
 branches:
