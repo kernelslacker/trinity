@@ -6,11 +6,9 @@ compiler:
 install:
   - sudo apt-get install bash make
 
-script:
-  - ./configure
+before_script: "./configure"
 
-script: 
-  - make
+script: make
 
 # whitelist
 branches:
