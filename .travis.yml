@@ -6,7 +6,7 @@ compiler:
 install:
   - sudo apt-get install bash make
 
-before_script: "bash ./configure"
+before_script: "bash ./configure.sh"
 
 script: make
 
