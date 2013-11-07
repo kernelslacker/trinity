@@ -3,10 +3,14 @@ language: c
 compiler:
   - gcc
 
-before_script:
+install:
+  - sudo apt-get install bash make
+
+script:
   - "bash ./configure"
 
-#script: make
+script: 
+  - gmake
 
 # whitelist
 branches:
