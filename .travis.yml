@@ -12,3 +12,10 @@ script: make
 branches:
   only:
     - travis-ci
+
+notifications:
+  email:
+    recipients:
+      - estetus@gmail.com
+    on_success: change
+    on_failure: always
