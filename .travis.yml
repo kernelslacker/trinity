@@ -4,7 +4,7 @@ compiler:
   - gcc
 
 before_script:
-  - ./configure
+  - bash ./configure
 
 script: make
 
