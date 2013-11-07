@@ -1,0 +1,23 @@
+language: c
+
+compiler:
+  - gcc
+
+install:
+  - sudo apt-get install bash make
+
+before_script: "bash ./configure.sh"
+
+script: make
+
+# whitelist
+branches:
+  only:
+    - travis-ci
+
+notifications:
+  email:
+    recipients:
+      - estetus@gmail.com
+    on_success: change
+    on_failure: always
