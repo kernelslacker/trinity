@@ -175,8 +175,8 @@ unsigned int rand32(void)
 
 	/* we might get lucky if something is counting ints/longs etc. */
 	if (rand() % 100 < 25) {
-		int div = 1 << ((rand() % 4) + 1);	/* 2,4,8 or 16 */
-		r /= div;
+		int _div = 1 << ((rand() % 4) + 1);	/* 2,4,8 or 16 */
+		r /= _div;
 	}
 
 	/* limit the size */
