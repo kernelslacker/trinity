@@ -20,7 +20,9 @@ static const unsigned int rds_opts[] = {
 
 void rds_setsockopt(struct sockopt *so)
 {
+#ifdef USE_RDS
 	unsigned char val;
+#endif
 
 	so->level = SOL_RDS;
 #ifdef USE_RDS
