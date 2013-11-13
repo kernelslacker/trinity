@@ -332,6 +332,10 @@ enum kcmp_type {
 #define SO_BUSY_POLL		46
 #endif
 
+#ifndef SO_MAX_PACING_RATE
+#define SO_MAX_PACING_RATE	47
+#endif
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15
