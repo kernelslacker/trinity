@@ -34,14 +34,14 @@
 	return (type) (res); \
 } while (0)
 
+#ifdef ARCH_IS_BIARCH
 /*
- * This routine is for biarch architectures.
- * It does 32 bit syscalls on 64 bit kernel.
+ * This routine does 32 bit syscalls on 64 bit kernel.
  * 32-on-32 will just use syscall() directly from do_syscall() because shm->do32bit is biarch only.
  */
-long syscall32(__unused__ unsigned int call,
-	__unused__ unsigned long a1, __unused__ unsigned long a2, __unused__ unsigned long a3,
-	__unused__ unsigned long a4, __unused__ unsigned long a5, __unused__ unsigned long a6)
+long syscall32(unsigned int call,
+	unsigned long a1, unsigned long a2, unsigned long a3,
+	unsigned long a4, unsigned long a5, unsigned long a6)
 {
 	long __res = 0;
 
@@ -63,13 +63,14 @@ long syscall32(__unused__ unsigned int call,
 
 #else
 	/* non-x86 implementations go here. */
-	#ifdef ARCH_IS_BIARCH
 	#error Implement 32-on-64 syscall in syscall.c:syscall32() for this architecture.
-	#endif
 
 #endif
 	return __res;
 }
+#else
+#define syscall32(a,b,c,d,e,f,g) 0
+#endif /* ARCH_IS_BIARCH */
 
 static void check_uid(uid_t olduid)
 {
