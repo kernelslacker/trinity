@@ -798,6 +798,15 @@ struct kvm_get_htab_fd {
 #endif
 
 /* if_ether.h */
+#ifndef ETH_P_CANFD
+#define ETH_P_CANFD	0x000D
+#endif
+#ifndef ETH_P_CAIF
+#define ETH_P_CAIF	0x00F7
+#endif
+#ifndef ETH_P_802_3_MIN
+#define ETH_P_802_3_MIN	0x0600
+#endif
 #ifndef ETH_P_BATMAN
 #define ETH_P_BATMAN	0x4305
 #endif
@@ -816,6 +825,9 @@ struct kvm_get_htab_fd {
 #ifndef ETH_P_MVRP
 #define ETH_P_MVRP	0x88F5
 #endif
+#ifndef ETH_P_PRP
+#define ETH_P_PRP	0x88FB
+#endif
 #ifndef ETH_P_QINQ1
 #define ETH_P_QINQ1	0x9100
 #endif
@@ -824,15 +836,6 @@ struct kvm_get_htab_fd {
 #endif
 #ifndef ETH_P_QINQ3
 #define ETH_P_QINQ3	0x9300
-#endif
-#ifndef ETH_P_802_3_MIN
-#define ETH_P_802_3_MIN	0x0600
-#endif
-#ifndef ETH_P_CANFD
-#define ETH_P_CANFD	0x000D
-#endif
-#ifndef ETH_P_CAIF
-#define ETH_P_CAIF	0x00F7
 #endif
 
 #endif	/* _TRINITY_COMPAT_H */
