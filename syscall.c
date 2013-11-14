@@ -39,9 +39,9 @@
  * It does 32 bit syscalls on 64 bit kernel.
  * 32-on-32 will just use syscall() directly from do_syscall() because shm->do32bit is biarch only.
  */
-long syscall32(unsigned int call,
-	unsigned long a1, unsigned long a2, unsigned long a3,
-	unsigned long a4, unsigned long a5, unsigned long a6)
+long syscall32(__unused__ unsigned int call,
+	__unused__ unsigned long a1, __unused__ unsigned long a2, __unused__ unsigned long a3,
+	__unused__ unsigned long a4, __unused__ unsigned long a5, __unused__ unsigned long a6)
 {
 	long __res = 0;
 
