@@ -109,11 +109,11 @@ void generate_random_page(char *page)
 		switch (rand() % 3) {
 		case 0:
 			switch (rand() % 3) {
-			case 0:	p = sprintf(page_rand, "%lu", rand64());
+			case 0:	p = sprintf(page_rand, "%lu", (unsigned long) rand64());
 				break;
-			case 1:	p = sprintf(page_rand, "%ld", rand64());
+			case 1:	p = sprintf(page_rand, "%ld", (unsigned long) rand64());
 				break;
-			case 2:	p = sprintf(page_rand, "%lx", rand64());
+			case 2:	p = sprintf(page_rand, "%lx", (unsigned long) rand64());
 				break;
 			default: break;
 			}
