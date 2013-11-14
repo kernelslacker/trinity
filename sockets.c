@@ -219,6 +219,13 @@ void close_sockets(void)
 	struct linger ling = { .l_onoff = FALSE, };
 
 	for (i = 0; i < nr_sockets; i++) {
+
+		//FIXME: This is a workaround for a weird bug where we hang forevre
+		// waiting for bluetooth sockets when we setsockopt.
+		// Hopefully at some point we can remove this when someone figures out what's going on.
+		if (shm->sockets[i].triplet.family == PF_BLUETOOTH)
+			continue;
+
 		/* Grab an fd, and nuke it before someone else uses it. */
 		fd = shm->sockets[i].fd;
 		shm->sockets[i].fd = 0;
