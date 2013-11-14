@@ -723,9 +723,20 @@ static long long random_event_config(__u32 *event_type,
 		break;
 	case PERF_TYPE_TRACEPOINT:
 		/* Actual values to use can be found under */
-		/* debugfs tracing/events// *//*/id        */
-		/* usually a small < 1024 number           */
-		config = rand64();
+		/* debugfs tracing/events/?*?/?*?/id       */
+		/* usually a small < 4096 number           */
+		switch(rand()%2) {
+		case 0:
+			/* Try a value < 4096 */
+			config = rand()&0xfff;
+			break;
+		case 1:
+			config = rand64();
+			break;
+		default:
+			config = rand64();
+			break;
+		}
 		break;
 	case PERF_TYPE_HW_CACHE:
 		config = random_cache_config();
