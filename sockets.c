@@ -231,7 +231,6 @@ void close_sockets(void)
 		shm->sockets[i].fd = 0;
 
 		/* disable linger */
-		ling.l_onoff = FALSE;	/* linger active */
 		r = setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
 		if (r)
 			perror("setsockopt");
