@@ -302,9 +302,12 @@ static unsigned long handle_arg_mode_t(void)
 }
 
 
-static unsigned long fill_arg(int childno, int call, int argnum)
+static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 {
 	enum argtype argtype = 0;
+
+	if (argnum > syscalls[call].entry->num_args)
+		return 0;
 
 	switch (argnum) {
 	case 1:	argtype = syscalls[call].entry->arg1type;
