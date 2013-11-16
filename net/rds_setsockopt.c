@@ -2,13 +2,13 @@
 #include "net.h"
 #include "config.h"
 
+#define SOL_RDS 276
+
 #ifdef USE_RDS
 #include <linux/rds.h>
 
 #include "compat.h"
 #include "trinity.h"	// ARRAY_SIZE
-
-#define SOL_RDS 276
 
 #define NR_SOL_RDS_OPTS ARRAY_SIZE(rds_opts)
 static const unsigned int rds_opts[] = {
