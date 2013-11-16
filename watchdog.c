@@ -240,11 +240,12 @@ static void check_children(void)
 
 static void kill_all_kids(void)
 {
+	unsigned int i;
+
 	shm->spawn_no_more = TRUE;
 
 	/* Wait for all the children to exit. */
 	while (shm->running_childs > 0) {
-		unsigned int i;
 		unsigned int alive;
 
 		/* Make sure there's no dead kids lying around.
@@ -274,6 +275,11 @@ static void kill_all_kids(void)
 			// We should have saved that, and handled appropriately.
 			return;
 		}
+	}
+
+	/* Just to be sure, clear out the pid slots. */
+	for_each_pidslot(i) {
+		shm->pids[i] = EMPTY_PIDSLOT;
 	}
 }
 
