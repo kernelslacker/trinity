@@ -70,7 +70,7 @@ retry:
 	if (syscalls[call].entry->flags & TO_BE_DEACTIVATED)
 		goto retry;
 
-	toggle_syscall_n(call, FALSE, syscalls[call].entry->name, syscalls[call].entry->name);
+	toggle_syscall_n(call, TRUE, syscalls[call].entry->name, syscalls[call].entry->name);
 }
 
 void disable_non_net_syscalls_uniarch(void)
