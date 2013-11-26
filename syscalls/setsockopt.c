@@ -2,6 +2,8 @@
  * SYSCALL_DEFINE5(setsockopt, int, fd, int, level, int, optname, char __user *, optval, int, optlen)
  */
 
+#include <errno.h>
+#include <string.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -9,6 +11,7 @@
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"
+#include "log.h"
 #include "shm.h"
 #include "net.h"
 #include "config.h"
@@ -56,7 +59,10 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .func = &nfc_setsockopt },
 };
 
-void do_setsockopt(struct sockopt *so)
+/*
+ * Call a proto specific setsockopt routine from the table above.
+ */
+static void do_setsockopt(struct sockopt *so)
 {
 	so->optval = (unsigned long) page_rand;
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
@@ -79,13 +85,41 @@ void do_setsockopt(struct sockopt *so)
 	if ((rand() % 100) < 10)
 		so->optname |= (1 << (rand() % 32));
 
-
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
 	 */
 	if (rand_bool())
 		so->optval = 0;
+}
 
+/*
+ * This is called during socket creation at startup, on each socket,
+ * and also periodically from regenerate()
+ */
+void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd)
+{
+	int ret;
+	unsigned int tries = 0;
+
+	/* skip over bluetooth due to weird linger bug */
+	if (triplet->family == PF_BLUETOOTH)
+		return;
+
+retry:
+	do_setsockopt(so);
+
+	ret = setsockopt(fd, so->level, so->optname, (void *)so->optval, so->optlen);
+	if (ret == 0) {
+		output(1, "Setsockopt(%lx %lx %lx %lx) on fd %d [%d:%d:%d]\n",
+			so->level, so->optname, so->optval, so->optlen, fd,
+			triplet->family, triplet->type, triplet->protocol);
+	} else {
+		tries++;
+		if (tries == 100) {
+			return;
+		}
+		goto retry;
+	}
 }
 
 static void sanitise_setsockopt(int childno)
