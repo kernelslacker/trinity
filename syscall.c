@@ -51,8 +51,10 @@ long syscall32(unsigned int call,
 	__asm__ volatile (
 		"pushq %%rbp\n\t"
 		"pushq %%r10\n\t"
+		"pushq %%r11\n\t"
 		"movq %7, %%rbp\n\t"
 		"int $0x80\n\t"
+		"popq %%r11\n\t"
 		"popq %%r10\n\t"
 		"popq %%rbp\n\t"
 		: "=a" (__res)
