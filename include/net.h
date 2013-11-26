@@ -42,7 +42,7 @@ void close_sockets(void);
 
 void generate_sockaddr(unsigned long *addr, unsigned long *addrlen, int pf);
 
-void do_setsockopt(struct sockopt *so);
+void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd);
 
 void rand_proto_type(struct socket_triplet *st);
 int sanitise_socket_triplet(struct socket_triplet *st);

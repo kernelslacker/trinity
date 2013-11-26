@@ -26,7 +26,8 @@ static const char *cachefilename="trinity.socketcache";
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
-	int fd, ret;
+	int fd;
+	__unused__ int ret;
 	struct sockaddr sa;
 	socklen_t salen;
 	struct sockopt so = { 0, 0, 0, 0 };
@@ -45,21 +46,8 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 	nr_sockets++;
 
-	/* skip over bluetooth due to weird linger bug */
-	if (domain == PF_BLUETOOTH)
-		goto skip_sso;
-
 	/* Set some random socket options. */
-retry_sso:
-	do_setsockopt(&so);
-	ret = setsockopt(fd, so.level, so.optname, (void *)so.optval, so.optlen);
-	if (ret == 0)
-		output(1, "Setsockopt(%lx %lx %lx %lx) on fd %d\n",
-			so.level, so.optname, so.optval, so.optlen, fd);
-	else
-		goto retry_sso;
-
-skip_sso:
+	sso_socket(&shm->sockets[nr_sockets].triplet, &so, fd);
 
 	/* Sometimes, listen on created sockets. */
 	if (rand_bool()) {
