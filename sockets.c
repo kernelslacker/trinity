@@ -45,6 +45,10 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 	nr_sockets++;
 
+	/* skip over bluetooth due to weird linger bug */
+	if (domain == PF_BLUETOOTH)
+		goto skip_sso;
+
 	/* Set some random socket options. */
 retry_sso:
 	do_setsockopt(&so);
@@ -54,6 +58,8 @@ retry_sso:
 			so.level, so.optname, so.optval, so.optlen, fd);
 	else
 		goto retry_sso;
+
+skip_sso:
 
 	/* Sometimes, listen on created sockets. */
 	if (rand_bool()) {
