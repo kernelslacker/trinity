@@ -7,7 +7,7 @@
 #include "net.h"
 #include "random.h"
 
-void decnet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void decnet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_dn *dn;
 	unsigned int i;
@@ -25,7 +25,7 @@ void decnet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	dn->sdn_add.a_len = rand() % 2;
 	dn->sdn_add.a_addr[0] = rand();
 	dn->sdn_add.a_addr[1] = rand();
-	*addr = (unsigned long) dn;
+	*addr = (unsigned long *) dn;
 	*addrlen = sizeof(struct sockaddr_dn);
 }
 

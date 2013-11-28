@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 
-void atmpvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void atmpvc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_atmpvc *atmpvc;
 
@@ -18,11 +18,11 @@ void atmpvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	atmpvc->sap_addr.itf = rand();
 	atmpvc->sap_addr.vpi = rand();
 	atmpvc->sap_addr.vci = rand();
-	*addr = (unsigned long) atmpvc;
+	*addr = (unsigned long *) atmpvc;
 	*addrlen = sizeof(struct sockaddr_atmpvc);
 }
 
-void atmsvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void atmsvc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_atmsvc *atmsvc;
 	unsigned int i;
@@ -38,6 +38,6 @@ void atmsvc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 		atmsvc->sas_addr.pub[i] = rand();
 	atmsvc->sas_addr.lij_type = rand();
 	atmsvc->sas_addr.lij_id = rand();
-	*addr = (unsigned long) atmsvc;
+	*addr = (unsigned long *) atmsvc;
 	*addrlen = sizeof(struct sockaddr_atmsvc);
 }

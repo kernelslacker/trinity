@@ -9,7 +9,7 @@
 #include "net.h"
 #include "random.h"
 
-void llc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void llc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_llc *llc;
 	unsigned int i;
@@ -25,7 +25,7 @@ void llc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	llc->sllc_sap = rand();
 	for (i = 0; i < IFHWADDRLEN; i++)
 		llc->sllc_mac[i] = rand();
-	*addr = (unsigned long) llc;
+	*addr = (unsigned long *) llc;
 	*addrlen = sizeof(struct sockaddr_llc);
 }
 

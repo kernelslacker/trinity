@@ -7,7 +7,7 @@
 #include "net.h"
 #include "random.h"
 
-void irda_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void irda_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_irda *irda;
 	unsigned int i;
@@ -21,7 +21,7 @@ void irda_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	irda->sir_addr = rand();
 	for (i = 0; i < 25; i++)
 		irda->sir_name[i] = rand();
-	*addr = (unsigned long) irda;
+	*addr = (unsigned long *) irda;
 	*addrlen = sizeof(struct sockaddr_irda);
 }
 

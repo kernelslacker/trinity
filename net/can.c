@@ -8,7 +8,7 @@
 #include "random.h"
 #include "compat.h"
 
-void can_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void can_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_can *can;
 
@@ -19,7 +19,7 @@ void can_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	can->can_ifindex = rand();
 	can->can_addr.tp.rx_id = rand();
 	can->can_addr.tp.tx_id = rand();
-	*addr = (unsigned long) can;
+	*addr = (unsigned long *) can;
 	*addrlen = sizeof(struct sockaddr_can);
 }
 

@@ -10,6 +10,7 @@
 #include <linux/seccomp.h>
 #endif
 #include <sys/prctl.h>
+#include <sys/socket.h>
 
 #include "sanitise.h"
 #include "net.h"
@@ -32,6 +33,7 @@ static int prctl_opts[NR_PRCTL_OPTS] = {
 void sanitise_prctl(int childno)
 {
 	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
+	struct sockaddr *saddr = NULL;
 
 // For now, just do SECCOMP, the other options need some attention.
 option = PR_SET_SECCOMP;
@@ -44,10 +46,11 @@ option = PR_SET_SECCOMP;
 	case PR_SET_SECCOMP:
 #ifdef USE_SECCOMP
 //		if (rand() % 3 == SECCOMP_MODE_FILTER) {
-			gen_seccomp_bpf((unsigned long *) page_rand, NULL);
-
+// FIXME: This leaks memory, but needs to be cleared
+// after the syscall is done.
+			gen_seccomp_bpf((unsigned long **) saddr, NULL);
 			shm->a2[childno] = SECCOMP_MODE_FILTER;
-			shm->a3[childno] = (unsigned long) page_rand;
+			shm->a3[childno] = (unsigned long) saddr;
 //		}
 #endif
 		break;

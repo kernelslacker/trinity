@@ -11,7 +11,7 @@
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
 
-void caif_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void caif_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_caif *caif;
 	unsigned int i;
@@ -31,7 +31,7 @@ void caif_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 		caif->u.rfm.volume[i] = rand();
 	caif->u.dbg.type = rand();
 	caif->u.dbg.service = rand();
-	*addr = (unsigned long) caif;
+	*addr = (unsigned long *) caif;
 	*addrlen = sizeof(struct sockaddr_caif);
 }
 

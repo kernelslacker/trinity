@@ -8,7 +8,7 @@
 #include "net.h"
 #include "random.h"
 
-void nfc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void nfc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_nfc *nfc;
 
@@ -21,7 +21,7 @@ void nfc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	nfc->dev_idx = rand();
 	nfc->target_idx = rand();
 	nfc->nfc_protocol = rand() % 5;
-	*addr = (unsigned long) nfc;
+	*addr = (unsigned long *) nfc;
 	*addrlen = sizeof(struct sockaddr_nfc);
 }
 

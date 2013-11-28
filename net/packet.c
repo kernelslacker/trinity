@@ -8,7 +8,7 @@
 #include "net.h"
 #include "random.h"
 
-void packet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void packet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_pkt *pkt;
 	unsigned int i;
@@ -21,7 +21,7 @@ void packet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	pkt->spkt_family = PF_PACKET;
 	for (i = 0; i < 14; i++)
 		pkt->spkt_device[i] = rand();
-	*addr = (unsigned long) pkt;
+	*addr = (unsigned long *) pkt;
 	*addrlen = sizeof(struct sockaddr_pkt);
 }
 

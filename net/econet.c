@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 
-void econet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void econet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_ec *ec;
 
@@ -21,6 +21,6 @@ void econet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	ec->addr.station = rand();
 	ec->addr.net = rand();
 	ec->cookie = rand();
-	*addr = (unsigned long) ec;
+	*addr = (unsigned long *) ec;
 	*addrlen = sizeof(struct sockaddr_ec);
 }

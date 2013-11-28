@@ -247,7 +247,7 @@ static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsign
 {
 	unsigned long sockaddr = 0, sockaddrlen = 0;
 
-	generate_sockaddr(&sockaddr, &sockaddrlen, PF_NOHINT);
+	generate_sockaddr((unsigned long **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
 	switch (argnum) {
 	case 1:	if (syscalls[call].entry->arg2type == ARG_SOCKADDRLEN)

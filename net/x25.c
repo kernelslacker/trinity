@@ -7,7 +7,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 
-void x25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void x25_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_x25 *x25;
 	unsigned int len;
@@ -20,7 +20,7 @@ void x25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	len = rand() % 15;
 	memset(&page_rand[len], 0, 1);
 	strncpy(x25->sx25_addr.x25_addr, page_rand, len);
-	*addr = (unsigned long) x25;
+	*addr = (unsigned long *) x25;
 	*addrlen = sizeof(struct sockaddr_x25);
 }
 
