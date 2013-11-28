@@ -8,7 +8,7 @@
 #include "net.h"
 #include "random.h"
 
-void ax25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void ax25_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_ax25 *ax25;
 
@@ -19,7 +19,7 @@ void ax25_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	ax25->sax25_family = PF_AX25;
 	memcpy(ax25->sax25_call.ax25_call, page_rand, 7);
 	ax25->sax25_ndigis = rand();
-	*addr = (unsigned long) ax25;
+	*addr = (unsigned long *) ax25;
 	*addrlen = sizeof(struct sockaddr_ax25);
 }
 

@@ -28,7 +28,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 {
 	int fd;
 	__unused__ int ret;
-	struct sockaddr sa;
+	struct sockaddr *sa = NULL;
 	socklen_t salen;
 	struct sockopt so = { 0, 0, 0, 0 };
 
@@ -52,9 +52,9 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	/* Sometimes, listen on created sockets. */
 	if (rand_bool()) {
 		/* fake a sockaddr. */
-		generate_sockaddr((unsigned long *) &sa, (unsigned long *) &salen, domain);
+		generate_sockaddr((unsigned long **) &sa, (unsigned long *) &salen, domain);
 
-		ret = bind(fd, &sa, salen);
+		ret = bind(fd, sa, salen);
 /*		if (ret == -1)
 			debugf("bind: %s\n", strerror(errno));
 		else
@@ -67,6 +67,8 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 			debugf("listen: success!\n");
 */
 	}
+	if (sa != NULL)
+	  free(sa);
 
 	return fd;
 }

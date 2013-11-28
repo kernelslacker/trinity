@@ -7,7 +7,7 @@
 #include "net.h"
 #include "random.h"
 
-void tipc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void tipc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_tipc *tipc;
 
@@ -25,7 +25,7 @@ void tipc_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	tipc->addr.name.name.type = rand();
 	tipc->addr.name.name.instance = rand();
 	tipc->addr.name.domain = rand();
-	*addr = (unsigned long) tipc;
+	*addr = (unsigned long *) tipc;
 	*addrlen = sizeof(struct sockaddr_tipc);
 }
 

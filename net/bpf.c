@@ -316,7 +316,7 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 	return -1;
 }
 
-void gen_seccomp_bpf(unsigned long *addr, unsigned long *addrlen)
+void gen_seccomp_bpf(unsigned long **addr, unsigned long *addrlen)
 {
 	int avail, used;
 	struct sock_filter *curr;
@@ -350,7 +350,7 @@ void gen_seccomp_bpf(unsigned long *addr, unsigned long *addrlen)
 	}
 
 	if (addrlen != NULL) {
-		*addr = (unsigned long) bpf;
+		*addr = (unsigned long *) bpf;
 		*addrlen = sizeof(struct sock_fprog);
 	}
 }

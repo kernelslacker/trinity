@@ -7,7 +7,7 @@
 #include "net.h"
 #include "random.h"
 
-void phonet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void phonet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_pn *pn;
 
@@ -19,7 +19,7 @@ void phonet_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	pn->spn_obj = rand();
 	pn->spn_dev = rand();
 	pn->spn_resource = rand();
-	*addr = (unsigned long) pn;
+	*addr = (unsigned long *) pn;
 	*addrlen = sizeof(struct sockaddr_pn);
 }
 

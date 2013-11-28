@@ -20,7 +20,7 @@
 	#endif /* NETLINK_RDMA */
 #endif /* NETLINK_CRYPTO */
 
-void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void netlink_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_nl *nl;
 
@@ -31,7 +31,7 @@ void netlink_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 	nl->nl_family = PF_NETLINK;
 	nl->nl_pid = get_pid();
 	nl->nl_groups = rand32();
-	*addr = (unsigned long) nl;
+	*addr = (unsigned long *) nl;
 	*addrlen = sizeof(struct sockaddr_nl);
 }
 

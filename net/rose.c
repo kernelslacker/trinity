@@ -8,7 +8,7 @@
 #include "maps.h"	// page_rand
 #include "net.h"
 
-void rose_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
+void rose_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_rose *rose;
 
@@ -29,6 +29,6 @@ void rose_gen_sockaddr(unsigned long *addr, unsigned long *addrlen)
 
 	memcpy(rose->srose_digi.ax25_call, page_rand + 7, 7);
 
-	*addr = (unsigned long) rose;
+	*addr = (unsigned long *) rose;
 	*addrlen = sizeof(struct sockaddr_rose);
 }
