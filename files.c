@@ -19,6 +19,7 @@
 #include "constants.h"
 #include "list.h"
 #include "random.h"
+#include "utils.h"
 
 static int files_added = 0;
 const char **fileindex;
@@ -98,25 +99,12 @@ static int ignore_files(const char *path)
 	return 0;
 }
 
-
-static struct namelist * alloc_namenode(void)
-{
-	struct namelist *newnode;
-
-	newnode = malloc(sizeof(struct namelist));
-	if (newnode == NULL)
-		exit(EXIT_FAILURE);
-
-	memset(newnode, 0, sizeof(struct namelist));
-	return newnode;
-}
-
 static void add_to_namelist(const char *name)
 {
 	struct namelist *newnode;
 	struct list_head *list = (struct list_head *) names;
 
-	newnode = alloc_namenode();
+	newnode = zmalloc(sizeof(struct namelist));
 	newnode->name = strdup(name);
 	list_add_tail(&newnode->list, list);
 }
@@ -221,7 +209,7 @@ void generate_filelist(void)
 	my_uid = getuid();
 	my_gid = getgid();
 
-	names = alloc_namenode();
+	names = zmalloc(sizeof(struct namelist));
 	INIT_LIST_HEAD(&names->list);
 
 	output(1, "Generating file descriptors\n");
