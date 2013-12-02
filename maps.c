@@ -13,6 +13,7 @@
 #include "maps.h"
 #include "log.h"
 #include "shm.h"
+#include "utils.h"
 
 static unsigned int num_mappings = 0;
 static struct map *maps_list;
@@ -31,19 +32,6 @@ void * alloc_shared(unsigned int size)
 		return NULL;
 
 	return ret;
-}
-
-static struct map * alloc_map(void)
-{
-	struct map *newmap;
-
-	newmap = malloc(sizeof(struct map));
-	if (!newmap) {
-		outputerr("Couldn't allocate maps list!\n");
-		exit(EXIT_FAILURE);
-	}
-	memset(newmap, 0, sizeof(struct map));
-	return newmap;
 }
 
 static void dump_maps(void)
@@ -66,7 +54,7 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 	unsigned long size = 0;
 
 	if (!tmpmap)
-		tmpmap = alloc_map();
+		tmpmap = zmalloc(sizeof(struct map));
 
 	fd = open("/dev/zero", O_RDWR);
 	if (fd < 0) {
@@ -124,7 +112,7 @@ void setup_maps(void)
 {
 	struct map *tmpmap;
 
-	tmpmap = maps_list = alloc_map();
+	tmpmap = maps_list = zmalloc(sizeof(struct map));
 
 	/* Add a bunch of /dev/zero mappings */
 	tmpmap->next = alloc_zero_map(tmpmap, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
