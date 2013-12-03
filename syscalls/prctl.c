@@ -48,7 +48,7 @@ option = PR_SET_SECCOMP;
 //		if (rand() % 3 == SECCOMP_MODE_FILTER) {
 // FIXME: This leaks memory, but needs to be cleared
 // after the syscall is done.
-			gen_seccomp_bpf((unsigned long **) saddr, NULL);
+			gen_seccomp_bpf((unsigned long **) &saddr, NULL);
 			shm->a2[childno] = SECCOMP_MODE_FILTER;
 			shm->a3[childno] = (unsigned long) saddr;
 //		}
