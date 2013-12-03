@@ -147,7 +147,7 @@ void pppox_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[2] = 0;
 			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[3] = random_ipv4_address();
 			pppol2tpv3in6->pppol2tp.addr.sin6_scope_id = rand();
-			*addr = (unsigned long) pppol2tpv3in6;
+			*addr = (unsigned long *) pppol2tpv3in6;
 			*addrlen = sizeof(struct sockaddr_pppol2tpv3in6);
 			}
 #endif
