@@ -9,7 +9,7 @@ void * zmalloc(size_t size)
 
 	p = malloc(size);
 	if (p == NULL) {
-		printf("malloc(%ld) failure.\n", size);
+		printf("malloc(%zu) failure.\n", size);
 		exit(EXIT_FAILURE);
 	}
 
