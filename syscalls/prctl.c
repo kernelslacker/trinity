@@ -17,6 +17,7 @@
 #include "maps.h"
 #include "shm.h"
 #include "compat.h"
+#include "trinity.h"
 
 #define NR_PRCTL_OPTS 28
 static int prctl_opts[NR_PRCTL_OPTS] = {
@@ -29,31 +30,39 @@ static int prctl_opts[NR_PRCTL_OPTS] = {
 	PR_MCE_KILL, PR_MCE_KILL_GET,
 };
 
+
+#ifdef USE_SECCOMP
+static void do_set_seccomp(int childno)
+{
+	struct sockaddr *saddr = NULL;
+
+//	if (rand() % 3 == SECCOMP_MODE_FILTER) {
+
+// FIXME: This leaks memory, but needs to be cleared after the syscall is done.
+		gen_seccomp_bpf((unsigned long **) &saddr, NULL);
+		shm->a2[childno] = SECCOMP_MODE_FILTER;
+		shm->a3[childno] = (unsigned long) saddr;
+//	}
+}
+#else
+static void do_set_seccomp(__unused__ int childno) { }
+#endif
+
 /* We already got a generic_sanitise at this point */
 void sanitise_prctl(int childno)
 {
 	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
-	struct sockaddr *saddr = NULL;
 
 // For now, just do SECCOMP, the other options need some attention.
-option = PR_SET_SECCOMP;
+	option = PR_SET_SECCOMP;
 
-	/* Also allow crap by small chance */
-	if (rand() % 100 != 0)
-		shm->a1[childno] = option;
+	shm->a1[childno] = option;
 
 	switch (option) {
 	case PR_SET_SECCOMP:
-#ifdef USE_SECCOMP
-//		if (rand() % 3 == SECCOMP_MODE_FILTER) {
-// FIXME: This leaks memory, but needs to be cleared
-// after the syscall is done.
-			gen_seccomp_bpf((unsigned long **) &saddr, NULL);
-			shm->a2[childno] = SECCOMP_MODE_FILTER;
-			shm->a3[childno] = (unsigned long) saddr;
-//		}
-#endif
+		do_set_seccomp(childno);
 		break;
+
 	default:
 		break;
 	}
