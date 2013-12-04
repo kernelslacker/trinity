@@ -70,6 +70,8 @@ struct shm_s {
 	unsigned long a5[MAX_NR_CHILDREN];
 	unsigned long a6[MAX_NR_CHILDREN];
 
+	unsigned long retval[MAX_NR_CHILDREN];
+
 	int current_fd;
 	unsigned int fd_lifetime;
 

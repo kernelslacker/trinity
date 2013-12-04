@@ -6,13 +6,14 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include "sanitise.h"
+#include "shm.h"
 
-static void post_shmget(int syscallret)
+static void post_shmget(int childno)
 {
-	if (syscallret == -1)
+	if (shm->retval[childno] == (unsigned long) -1L)
 		return;
 
-	shmctl(syscallret, IPC_RMID, 0);
+	shmctl(shm->retval[childno], IPC_RMID, 0);
 }
 
 struct syscall syscall_shmget = {
