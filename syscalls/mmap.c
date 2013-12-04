@@ -20,6 +20,13 @@
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED
 
+static void do_anon(int childno)
+{
+	/* no fd if anonymous mapping. */
+	shm->a5[childno] = -1;
+	shm->a6[childno] = 0;
+}
+
 void sanitise_mmap(int childno)
 {
 	unsigned int i;
@@ -49,16 +56,12 @@ void sanitise_mmap(int childno)
 	for (i = 0; i < numflags; i++)
 		shm->a4[childno] |= flagvals[rand() % NUM_FLAGS];
 
-	/* no fd if anonymous mapping. */
-	if (shm->a4[childno] & MAP_ANONYMOUS)
-		shm->a5[childno] = -1;
-
-	/* page align non-anonymous mappings. */
-	if (shm->a4[childno] & MAP_ANONYMOUS)
+	if (shm->a4[childno] & MAP_ANONYMOUS) {
+		do_anon(childno);
+	} else {
+		/* page align non-anonymous mappings. */
 		shm->a6[childno] &= PAGE_MASK;
-	else
-		shm->a6[childno] = 0;
-
+	}
 }
 
 struct syscall syscall_mmap = {
