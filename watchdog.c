@@ -57,34 +57,6 @@ static int check_shm_sanity(void)
 	return SHM_OK;
 }
 
-static int check_main_alive(void)
-{
-	int ret;
-
-	if (shm->mainpid == 0) {
-		output(0, "main pid was zero!\n");
-		shm->exit_reason = EXIT_MAIN_DISAPPEARED;
-		return FALSE;
-	}
-
-	ret = kill(shm->mainpid, 0);
-	if (ret == -1) {
-		if (errno == ESRCH) {
-			output(0, "main pid %d has disappeared.\n", shm->mainpid);
-			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
-
-			/* if main crashed while regenerating, we'll hang the watchdog,
-			 * because nothing will ever set it back to FALSE. So we do it ourselves.
-			 */
-			shm->regenerating = FALSE;
-		} else {
-			output(0, "problem checking on pid %d (%d:%s)\n", shm->mainpid, errno, strerror(errno));
-		}
-		return FALSE;
-	}
-	return TRUE;
-}
-
 static unsigned int reap_dead_kids(void)
 {
 	unsigned int i;
@@ -121,6 +93,88 @@ static unsigned int reap_dead_kids(void)
 		output(0, "Reaped %d dead children\n", reaped);
 
 	return alive;
+}
+
+static void kill_all_kids(void)
+{
+	unsigned int i;
+
+	shm->spawn_no_more = TRUE;
+
+	/* Wait for all the children to exit. */
+	while (shm->running_childs > 0) {
+		unsigned int alive;
+
+		/* Make sure there's no dead kids lying around.
+		 * We need to do this in case the oom killer has been killing them,
+		 * otherwise we end up stuck here with no child processes.
+		 */
+		alive = reap_dead_kids();
+		if (alive == 0)
+			return;
+
+		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
+		for_each_pidslot(i) {
+			pid_t pid;
+
+			pid = shm->pids[i];
+			if (pid == EMPTY_PIDSLOT)
+				continue;
+
+			kill(pid, SIGKILL);
+		}
+
+		/* wait a second to give kids a chance to exit. */
+		sleep(1);
+
+		if (check_shm_sanity()) {
+			// FIXME: If we get here, we over-wrote the real exit_reason.
+			// We should have saved that, and handled appropriately.
+			return;
+		}
+	}
+
+	/* Just to be sure, clear out the pid slots. */
+	for_each_pidslot(i) {
+		shm->pids[i] = EMPTY_PIDSLOT;
+	}
+}
+
+static int check_main_alive(void)
+{
+	int ret;
+
+	/* If we're in the process of exiting, wait, and return without checking. */
+	if (shm->exit_reason != STILL_RUNNING) {
+		while (shm->mainpid != 0) {
+			sleep(1);
+			kill_all_kids();
+		}
+		return FALSE;
+	}
+
+	if (shm->mainpid == 0) {
+		output(0, "main pid was zero!\n");
+		shm->exit_reason = EXIT_MAIN_DISAPPEARED;
+		return FALSE;
+	}
+
+	ret = kill(shm->mainpid, 0);
+	if (ret == -1) {
+		if (errno == ESRCH) {
+			output(0, "main pid %d has disappeared.\n", shm->mainpid);
+			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
+
+			/* if main crashed while regenerating, we'll hang the watchdog,
+			 * because nothing will ever set it back to FALSE. So we do it ourselves.
+			 */
+			shm->regenerating = FALSE;
+		} else {
+			output(0, "problem checking on pid %d (%d:%s)\n", shm->mainpid, errno, strerror(errno));
+		}
+		return FALSE;
+	}
+	return TRUE;
 }
 
 /* if the first arg was an fd, find out which one it was. */
@@ -235,51 +289,6 @@ static void check_children(void)
 			}
 			sleep(1);	// give child time to exit.
 		}
-	}
-}
-
-static void kill_all_kids(void)
-{
-	unsigned int i;
-
-	shm->spawn_no_more = TRUE;
-
-	/* Wait for all the children to exit. */
-	while (shm->running_childs > 0) {
-		unsigned int alive;
-
-		/* Make sure there's no dead kids lying around.
-		 * We need to do this in case the oom killer has been killing them,
-		 * otherwise we end up stuck here with no child processes.
-		 */
-		alive = reap_dead_kids();
-		if (alive == 0)
-			return;
-
-		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
-		for_each_pidslot(i) {
-			pid_t pid;
-
-			pid = shm->pids[i];
-			if (pid == EMPTY_PIDSLOT)
-				continue;
-
-			kill(pid, SIGKILL);
-		}
-
-		/* wait a second to give kids a chance to exit. */
-		sleep(1);
-
-		if (check_shm_sanity()) {
-			// FIXME: If we get here, we over-wrote the real exit_reason.
-			// We should have saved that, and handled appropriately.
-			return;
-		}
-	}
-
-	/* Just to be sure, clear out the pid slots. */
-	for_each_pidslot(i) {
-		shm->pids[i] = EMPTY_PIDSLOT;
 	}
 }
 
