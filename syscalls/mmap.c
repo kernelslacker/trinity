@@ -10,6 +10,7 @@
 #include "shm.h"
 #include "arch.h"
 #include "compat.h"
+#include "random.h"
 
 #ifdef __x86_64__
 #define NUM_FLAGS 13
@@ -64,6 +65,21 @@ void sanitise_mmap(int childno)
 	}
 }
 
+static void post_mmap(int childno)
+{
+	char *p;
+
+	p = (void *) shm->retval[childno];
+	if (p == NULL)
+		return;
+
+	/* Sometimes dirty the mapping. */
+	if (rand_bool())
+		p[rand() % page_size] = 1;
+
+	//TODO: Add this to a list for use by subsequent syscalls.
+}
+
 struct syscall syscall_mmap = {
 	.name = "mmap",
 	.num_args = 6,
@@ -90,4 +106,5 @@ struct syscall syscall_mmap = {
 	.arg6type = ARG_LEN,
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
+	.post = post_mmap,
 };
