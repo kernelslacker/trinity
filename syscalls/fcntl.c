@@ -46,6 +46,7 @@ static void sanitise_fcntl(int childno)
 	case F_GETSIG:
 	case F_GETLEASE:
 	case F_GETPIPE_SZ:
+	case F_GETOWNER_UIDS:
 		break;
 
 	case F_SETFD:	/* arg = flags */
@@ -130,13 +131,13 @@ struct syscall syscall_fcntl = {
 	.arg2type = ARG_OP,
 	.arg2list = {
 #ifndef HAVE_LK64
-		.num = 20,
+		.num = 21,
 #else
-		.num = 23,
+		.num = 24,
 #endif
 		.values = { F_DUPFD, F_DUPFD_CLOEXEC, F_GETFD, F_SETFD, F_GETFL, F_SETFL, F_GETLK, F_SETLK,
 		  F_SETLKW, F_GETOWN, F_SETOWN, F_GETOWN_EX, F_SETOWN_EX, F_GETSIG, F_SETSIG, F_GETLEASE,
-		  F_SETLEASE, F_NOTIFY, F_SETPIPE_SZ, F_GETPIPE_SZ,
+		  F_SETLEASE, F_NOTIFY, F_SETPIPE_SZ, F_GETPIPE_SZ, F_GETOWNER_UIDS,
 #ifdef HAVE_LK64
 		  F_GETLK64, F_SETLK64, F_SETLKW64,
 #endif
