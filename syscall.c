@@ -175,6 +175,7 @@ long mkcall(int childno)
 	call += SYSCALL_OFFSET;
 
 	ret = do_syscall(childno, &errno_saved);
+	shm->retval[childno] = ret;
 
 	if (IS_ERR(ret))
 		shm->failures++;
@@ -216,7 +217,7 @@ long mkcall(int childno)
 skip_enosys:
 
 	if (syscalls[call].entry->post)
-	    syscalls[call].entry->post(ret);
+	    syscalls[call].entry->post(childno);
 
 	/* store info for debugging. */
 	shm->previous_syscallno[childno] = shm->syscallno[childno];
