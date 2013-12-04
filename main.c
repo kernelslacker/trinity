@@ -391,4 +391,5 @@ void do_main_loop(void)
 
 	/* wait for main loop process to exit. */
 	pid = waitpid(pid, &childstatus, 0);
+	shm->mainpid = 0;
 }
