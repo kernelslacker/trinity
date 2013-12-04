@@ -46,6 +46,10 @@
 #define F_GETOWN_EX 16
 #endif
 
+#ifndef F_GETOWNER_UIDS
+#define F_GETOWNER_UIDS	17
+#endif
+
 /* linux/hw_breakpoint.h */
 enum {
         HW_BREAKPOINT_LEN_1 = 1,
