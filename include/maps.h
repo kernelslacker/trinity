@@ -18,7 +18,7 @@ struct map {
 };
 void setup_maps(void);
 void destroy_maps(void);
-void * get_map(void);
+struct map * get_map(void);
 void init_buffers(void);
 
 #endif	/* _MAPS_H */
