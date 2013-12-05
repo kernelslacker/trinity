@@ -1,6 +1,8 @@
 #ifndef _MAPS_H
 #define _MAPS_H 1
 
+#include "list.h"
+
 void generate_random_page(char *page);
 
 extern char *page_zeros;
@@ -9,7 +11,7 @@ extern char *page_rand;
 extern char *page_allocs;
 
 struct map {
-	struct map *next;
+	struct list_head list;
 	void *ptr;
 	char *name;
 	unsigned long size;
