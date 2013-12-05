@@ -1,6 +1,8 @@
 #ifndef __LIST_H__
 #define __LIST_H__
 
+#include <stdio.h>
+
 /*
  * Simple linked-list routines, based on functions of the same name from the Linux kernel.
  */
