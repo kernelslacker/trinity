@@ -97,7 +97,10 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 void setup_maps(void)
 {
 	unsigned int i;
-	const unsigned long sizes[] = { 1 * MB, 2 * MB, 4 * MB, 10 * MB, 1 * GB };
+	const unsigned long sizes[] = {
+		1 * MB, 2 * MB, 4 * MB, 10 * MB,
+//		1 * GB,	// disabled for now, due to OOM.
+	};
 
 	maps = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&maps->list);
