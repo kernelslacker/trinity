@@ -48,36 +48,25 @@ static void dump_maps(void)
 	}
 }
 
-static void alloc_zero_map(int prot, const char *name)
+static void alloc_zero_map(unsigned long size, int prot, const char *name)
 {
 	struct map *newnode;
 	struct list_head *list;
-	unsigned long size = 0;
+	int fd;
 
-	/* Pick a random sized mmap. */
-	switch (rand() % 4) {
-	case 0:	size = page_size;
-		break;
-	case 1:	size = 1024 * 1024;
-		break;
-	case 2:	size = 2 * (1024 * 1024);
-		break;
-	case 3:	size = 4 * (1024 * 1024);
-		break;
-	default:
-		break;
-	}
+	fd = open("/dev/zero", O_RDWR);
 
 	/* page_size * 2, so we have a guard page afterwards.
 	 * This is necessary for when we want to test page boundaries.
 	 * see end of _get_address() for details.
 	 */
-	size *= 2;
+//	size *= 2;
+//FIXME: Find a better way to do this.
 
 	newnode = zmalloc(sizeof(struct map));
 	newnode->name = strdup(name);
 	newnode->size = size;
-	newnode->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+	newnode->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
 	if (newnode->ptr == MAP_FAILED) {
 		outputerr("mmap failure\n");
 		exit(EXIT_FAILURE);
@@ -98,16 +87,30 @@ static void alloc_zero_map(int prot, const char *name)
 
 	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
 			num_mappings - 1, name, newnode->ptr, size);
+
+	close(fd);
 }
+
+#define MB (1024 * 1024UL)
+#define GB (1024 * MB)
 
 void setup_maps(void)
 {
+	unsigned int i;
+	const unsigned long sizes[] = { 1 * MB, 2 * MB, 4 * MB, 10 * MB, 1 * GB };
+
 	maps = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&maps->list);
 
-	alloc_zero_map(PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
-	alloc_zero_map(PROT_READ, "PROT_READ");
-	alloc_zero_map(PROT_WRITE, "PROT_WRITE");
+	alloc_zero_map(page_size, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
+	alloc_zero_map(page_size, PROT_READ, "PROT_READ");
+	alloc_zero_map(page_size, PROT_WRITE, "PROT_WRITE");
+
+	for (i = 0; i < ARRAY_SIZE(sizes); i++) {
+		alloc_zero_map(sizes[i], PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
+		alloc_zero_map(sizes[i], PROT_READ, "PROT_READ");
+		alloc_zero_map(sizes[i], PROT_WRITE, "PROT_WRITE");
+	}
 
 	dump_maps();
 }
