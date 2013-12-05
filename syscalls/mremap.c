@@ -51,6 +51,11 @@ static void sanitise_mremap(int childno)
 		p[i] = 1;
 }
 
+static void post_mremap(__unused__ int childno)
+{
+	//FIXME: Need to stash a ptr to the map struct, and update it on success.
+}
+
 struct syscall syscall_mremap = {
 	.name = "mremap",
 	.num_args = 5,
@@ -67,4 +72,5 @@ struct syscall syscall_mremap = {
 	.arg5name = "new_addr",
 	.arg5type = ARG_ADDRESS,
 	.group = GROUP_VM,
+	.post = post_mremap,
 };
