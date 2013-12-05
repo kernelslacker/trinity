@@ -84,7 +84,6 @@
     - use count
 
 maps.c improvements:
-- convert maps.c linked-list to list.h implementation
 - Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
 - make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
   in sanitise routines.

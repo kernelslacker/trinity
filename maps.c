@@ -11,12 +11,13 @@
 #include "trinity.h"	// page_size
 #include "arch.h"
 #include "maps.h"
+#include "list.h"
 #include "log.h"
 #include "shm.h"
 #include "utils.h"
 
 static unsigned int num_mappings = 0;
-static struct map *maps_list;
+static struct map *maps = NULL;
 
 char *page_zeros;
 char *page_0xff;
@@ -36,41 +37,32 @@ void * alloc_shared(unsigned int size)
 
 static void dump_maps(void)
 {
-	struct map *tmpmap = maps_list;
-	unsigned int j;
+	struct map *m;
+	struct list_head *node;
 
 	output(2, "There are %d entries in the map table\n", num_mappings);
 
-	for (j = 0; j < num_mappings; j++) {
-		output(2, " start: %p  name: %s\n", tmpmap->ptr, tmpmap->name);
-		tmpmap = tmpmap->next;
+	list_for_each(node, &maps->list) {
+		m = (struct map *) node;
+		output(2, " start: %p  name: %s\n", m->ptr, m->name);
 	}
 }
 
-static void * alloc_zero_map(struct map *map, int prot, const char *name)
+static void alloc_zero_map(int prot, const char *name)
 {
-	struct map *tmpmap = map;
-	int fd;
+	struct map *newnode;
+	struct list_head *list;
 	unsigned long size = 0;
-
-	if (!tmpmap)
-		tmpmap = zmalloc(sizeof(struct map));
-
-	fd = open("/dev/zero", O_RDWR);
-	if (fd < 0) {
-		outputerr("open /dev/zero failure. %s\n", strerror(errno));
-		exit(EXIT_FAILURE);
-	}
 
 	/* Pick a random sized mmap. */
 	switch (rand() % 4) {
 	case 0:	size = page_size;
 		break;
-	case 1:	size = 1024*1024;
+	case 1:	size = 1024 * 1024;
 		break;
-	case 2:	size = 2 * (1024*1024);
+	case 2:	size = 2 * (1024 * 1024);
 		break;
-	case 3:	size = 4 * (1024*1024);
+	case 3:	size = 4 * (1024 * 1024);
 		break;
 	default:
 		break;
@@ -82,74 +74,77 @@ static void * alloc_zero_map(struct map *map, int prot, const char *name)
 	 */
 	size *= 2;
 
-	tmpmap->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS|MAP_SHARED, fd, 0);
-
-	if (tmpmap->ptr == MAP_FAILED) {
-		outputerr("mmap /dev/zero failure\n");
+	newnode = zmalloc(sizeof(struct map));
+	newnode->name = strdup(name);
+	newnode->size = size;
+	newnode->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+	if (newnode->ptr == MAP_FAILED) {
+		outputerr("mmap failure\n");
 		exit(EXIT_FAILURE);
 	}
 
-	tmpmap->size = size;
-
-	tmpmap->name = malloc(80);
-	if (!tmpmap->name) {
+	newnode->name = malloc(80);
+	if (!newnode->name) {
 		outputerr("malloc() failed in %s().", __func__);
 		exit(EXIT_FAILURE);
 	}
 
-	sprintf(tmpmap->name, "/dev/zero(%s)", name);
+	sprintf(newnode->name, "anon(%s)", name);
+
 	num_mappings++;
 
-	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
-			num_mappings - 1, name, tmpmap->ptr, size);
+	list = &maps->list;
+	list_add_tail(&newnode->list, list);
 
-	if (fd >= 0)
-		close(fd);
-	return tmpmap;
+	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
+			num_mappings - 1, name, newnode->ptr, size);
 }
 
 void setup_maps(void)
 {
-	struct map *tmpmap;
+	maps = zmalloc(sizeof(struct map));
+	INIT_LIST_HEAD(&maps->list);
 
-	tmpmap = maps_list = zmalloc(sizeof(struct map));
+	alloc_zero_map(PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
+	alloc_zero_map(PROT_READ, "PROT_READ");
+	alloc_zero_map(PROT_WRITE, "PROT_WRITE");
 
-	/* Add a bunch of /dev/zero mappings */
-	tmpmap->next = alloc_zero_map(tmpmap, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
-	tmpmap = tmpmap->next;
-
-	tmpmap->next = alloc_zero_map(NULL, PROT_READ, "PROT_READ");
-	tmpmap = tmpmap->next;
-
-	tmpmap->next = alloc_zero_map(NULL, PROT_WRITE, "PROT_WRITE");
-
-	output(2, "Added /dev/zero mappings.\n");
 	dump_maps();
 }
 
+/* Walk the list, get the j'th element */
 void * get_map(void)
 {
-	struct map *tmpmap = maps_list;
-	unsigned int i, j;
+	struct map *m;
+	struct list_head *node;
+	unsigned int i, j = 0;
 
 	i = rand() % num_mappings;
-	for (j = 0; j < i; j++)
-		tmpmap = tmpmap->next;
 
-	return tmpmap->ptr;
+	list_for_each(node, &maps->list) {
+		m = (struct map *) node;
+
+		if (i == j)
+			return m->ptr;
+		j++;
+	}
+	return 0;
 }
 
 void destroy_maps(void)
 {
-	unsigned int i;
-	struct map *thismap = maps_list, *next;
+	struct map *m = maps;
 
-	for (i = 0; i < num_mappings; i++) {
-		next = thismap->next;
-		munmap(thismap->ptr, thismap->size);
-		free(thismap->name);
-		free(thismap);
-		thismap = next;
+	while (!list_empty(&maps->list)) {
+		m = maps;
+
+		munmap(m->ptr, m->size);
+		free(m->name);
+
+		maps = (struct map *) m->list.next;
+
+		list_del(&m->list);
+		free(m);
 	}
 	num_mappings = 0;
 }
