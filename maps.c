@@ -113,7 +113,7 @@ void setup_maps(void)
 }
 
 /* Walk the list, get the j'th element */
-void * get_map(void)
+struct map * get_map(void)
 {
 	struct map *m;
 	struct list_head *node;
@@ -125,7 +125,7 @@ void * get_map(void)
 		m = (struct map *) node;
 
 		if (i == j)
-			return m->ptr;
+			return m;
 		j++;
 	}
 	return 0;

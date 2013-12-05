@@ -43,6 +43,7 @@ bool validate_address(void *addr)
 static void * _get_address(unsigned char null_allowed)
 {
 	int i;
+	struct map *map;
 	void *addr = NULL;
 
 	if (null_allowed == TRUE)
@@ -66,7 +67,8 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	case 6:	addr = (void *)(unsigned long)rand64();
 		break;
-	case 7: addr = get_map();
+	case 7: map = get_map();
+		addr = map->ptr;
 		break;
 	case 8: addr = malloc(page_size * 2);
 		// FIXME: We leak this. This is the address we need to store for later
