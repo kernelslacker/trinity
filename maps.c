@@ -56,13 +56,6 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	fd = open("/dev/zero", O_RDWR);
 
-	/* page_size * 2, so we have a guard page afterwards.
-	 * This is necessary for when we want to test page boundaries.
-	 * see end of _get_address() for details.
-	 */
-//	size *= 2;
-//FIXME: Find a better way to do this.
-
 	newnode = zmalloc(sizeof(struct map));
 	newnode->name = strdup(name);
 	newnode->size = size;
@@ -105,10 +98,17 @@ void setup_maps(void)
 	maps = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&maps->list);
 
-	alloc_zero_map(page_size, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
-	alloc_zero_map(page_size, PROT_READ, "PROT_READ");
-	alloc_zero_map(page_size, PROT_WRITE, "PROT_WRITE");
+	/* page_size * 2, so we have a guard page afterwards.
+	 * This is necessary for when we want to test page boundaries.
+	 * see end of _get_address() for details.
+	 */
+	alloc_zero_map(page_size * 2, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
+	alloc_zero_map(page_size * 2, PROT_READ, "PROT_READ");
+	alloc_zero_map(page_size * 2, PROT_WRITE, "PROT_WRITE");
 
+	/*
+	 * multi megabyte page mappings.
+	 */
 	for (i = 0; i < ARRAY_SIZE(sizes); i++) {
 		alloc_zero_map(sizes[i], PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
 		alloc_zero_map(sizes[i], PROT_READ, "PROT_READ");
