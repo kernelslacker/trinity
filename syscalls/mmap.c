@@ -69,6 +69,8 @@ static void post_mmap(int childno)
 	if (p == MAP_FAILED)
 		return;
 
+	//FIXME: Need to check here for PROT_WRITE when we add per-child mapping list.
+
 	/* Sometimes dirty the mapping. */
 	if (rand_bool())
 		p[rand() % page_size] = 1;
