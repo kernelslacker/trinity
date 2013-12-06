@@ -14,15 +14,18 @@
 #include <sys/prctl.h>
 
 #include "child.h"
-#include "syscall.h"
+#include "list.h"
 #include "log.h"
+#include "maps.h"
+#include "params.h"	// for 'debug'
+#include "pids.h"
 #include "random.h"
 #include "shm.h"
 #include "signals.h"
-#include "pids.h"
-#include "params.h"	// for 'debug'
+#include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// zmalloc
 
 static struct rlimit oldrlimit;
 
@@ -115,6 +118,9 @@ void init_child(int childno)
 
 	if (rand() % 100 < 50)
 		use_fpu();
+
+	shm->mappings[childno] = zmalloc(sizeof(struct map));
+	INIT_LIST_HEAD(&shm->mappings[childno]->list);
 }
 
 void check_parent_pid(void)

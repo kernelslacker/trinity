@@ -81,6 +81,9 @@ struct shm_s {
 	int current_fd;
 	unsigned int fd_lifetime;
 
+	/* per-child mmaps */
+	struct map *mappings[MAX_NR_CHILDREN];
+
 	/* various flags. */
 	bool do32bit[MAX_NR_CHILDREN];
 	bool do_make_it_fail;
