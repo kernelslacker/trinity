@@ -72,6 +72,8 @@ struct shm_s {
 
 	unsigned long retval[MAX_NR_CHILDREN];
 
+	unsigned long scratch[MAX_NR_CHILDREN];
+
 	int current_fd;
 	unsigned int fd_lifetime;
 
