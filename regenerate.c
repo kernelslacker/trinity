@@ -42,8 +42,8 @@ void regenerate(void)
 	/* Do random setsockopts on all network sockets. */
 	do_sso_sockets();
 
-	destroy_maps();
-	setup_maps();
+	destroy_global_mappings();
+	setup_global_mappings();
 
 	generate_random_page(page_rand);
 

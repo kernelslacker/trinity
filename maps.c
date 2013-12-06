@@ -17,7 +17,7 @@
 #include "utils.h"
 
 static unsigned int num_mappings = 0;
-static struct map *maps = NULL;
+static struct map *global_mappings = NULL;
 
 char *page_zeros;
 char *page_0xff;
@@ -35,14 +35,14 @@ void * alloc_shared(unsigned int size)
 	return ret;
 }
 
-static void dump_maps(void)
+static void dump_global_mappings(void)
 {
 	struct map *m;
 	struct list_head *node;
 
 	output(2, "There are %d entries in the map table\n", num_mappings);
 
-	list_for_each(node, &maps->list) {
+	list_for_each(node, &global_mappings->list) {
 		m = (struct map *) node;
 		output(2, " start: %p  name: %s\n", m->ptr, m->name);
 	}
@@ -76,7 +76,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	num_mappings++;
 
-	list = &maps->list;
+	list = &global_mappings->list;
 	list_add_tail(&newnode->list, list);
 
 	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
@@ -88,7 +88,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 #define MB (1024 * 1024UL)
 #define GB (1024 * MB)
 
-void setup_maps(void)
+void setup_global_mappings(void)
 {
 	unsigned int i;
 	const unsigned long sizes[] = {
@@ -96,8 +96,8 @@ void setup_maps(void)
 //		1 * GB,	// disabled for now, due to OOM.
 	};
 
-	maps = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&maps->list);
+	global_mappings = zmalloc(sizeof(struct map));
+	INIT_LIST_HEAD(&global_mappings->list);
 
 	/* page_size * 2, so we have a guard page afterwards.
 	 * This is necessary for when we want to test page boundaries.
@@ -116,7 +116,7 @@ void setup_maps(void)
 		alloc_zero_map(sizes[i], PROT_WRITE, "PROT_WRITE");
 	}
 
-	dump_maps();
+	dump_global_mappings();
 }
 
 /* Walk the list, get the j'th element */
@@ -128,7 +128,7 @@ struct map * get_map(void)
 
 	i = rand() % num_mappings;
 
-	list_for_each(node, &maps->list) {
+	list_for_each(node, &global_mappings->list) {
 		m = (struct map *) node;
 
 		if (i == j)
@@ -138,17 +138,17 @@ struct map * get_map(void)
 	return 0;
 }
 
-void destroy_maps(void)
+void destroy_global_mappings(void)
 {
-	struct map *m = maps;
+	struct map *m = global_mappings;
 
-	while (!list_empty(&maps->list)) {
-		m = maps;
+	while (!list_empty(&global_mappings->list)) {
+		m = global_mappings;
 
 		munmap(m->ptr, m->size);
 		free(m->name);
 
-		maps = (struct map *) m->list.next;
+		global_mappings = (struct map *) m->list.next;
 
 		list_del(&m->list);
 		free(m);
@@ -189,8 +189,8 @@ void init_buffers(void)
 	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
 		page_allocs[i] = (unsigned long) malloc(page_size);
 
-	setup_maps();
+	setup_global_mappings();
 
-	// generate_random_page may end up using maps, so has to be last.
+	// generate_random_page may end up using global_mappings, so has to be last.
 	generate_random_page(page_rand);
 }

@@ -17,9 +17,12 @@ struct map {
 	unsigned long size;
 	int prot;
 };
-void setup_maps(void);
-void destroy_maps(void);
+
+void setup_global_mappings(void);
+void destroy_global_mappings(void);
+
 struct map * get_map(void);
+
 void init_buffers(void);
 
 #endif	/* _MAPS_H */
