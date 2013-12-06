@@ -29,9 +29,7 @@ static void sanitise_mremap(int childno)
 	char *p;
 	unsigned int i;
 
-	shm->a1[childno] &= PAGE_MASK;
-
-	map = get_map();
+	map = (struct map *) shm->a1[childno];
 	shm->scratch[childno] = (unsigned long) map;	/* Save this for ->post */
 
 	shm->a1[childno] = (unsigned long) map->ptr;
