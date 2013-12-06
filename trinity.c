@@ -40,6 +40,61 @@ char *progname = NULL;
 unsigned int page_size;
 unsigned int num_online_cpus;
 
+char *page_zeros;
+char *page_0xff;
+char *page_rand;
+char *page_allocs;
+
+static void init_buffers(void)
+{
+	unsigned int i;
+
+	output(2, "shm is at %p\n", shm);
+
+	page_zeros = memalign(page_size, page_size * 2);
+	if (!page_zeros)
+		exit(EXIT_FAILURE);
+	memset(page_zeros, 0, page_size);
+	output(2, "page_zeros @ %p\n", page_zeros);
+
+	page_0xff = memalign(page_size, page_size * 2);
+	if (!page_0xff)
+		exit(EXIT_FAILURE);
+	memset(page_0xff, 0xff, page_size);
+	output(2, "page_0xff @ %p\n", page_0xff);
+
+	page_rand = memalign(page_size, page_size * 2);
+	if (!page_rand)
+		exit(EXIT_FAILURE);
+	memset(page_rand, 0x55, page_size);	/* overwritten below */
+	output(2, "page_rand @ %p\n", page_rand);
+
+	page_allocs = memalign(page_size, page_size * 2);
+	if (!page_allocs)
+		exit(EXIT_FAILURE);
+	memset(page_allocs, 0xff, page_size);
+	output(2, "page_allocs @ %p\n", page_allocs);
+
+	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
+		page_allocs[i] = (unsigned long) malloc(page_size);
+
+	setup_global_mappings();
+
+	// generate_random_page may end up using global_mappings, so has to be last.
+	generate_random_page(page_rand);
+}
+
+void * alloc_shared(unsigned int size)
+{
+	void *ret;
+
+	ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+	if (ret == MAP_FAILED)
+		return NULL;
+
+	return ret;
+}
+
 struct shm_s *shm;
 
 #define SHM_PROT_PAGES 30
