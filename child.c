@@ -95,10 +95,14 @@ static void use_fpu(void)
 	asm volatile("":"+m" (x));
 }
 
+int this_child = 0;
+
 void init_child(int childno)
 {
 	cpu_set_t set;
 	pid_t pid = getpid();
+
+	this_child = childno;
 
 	set_seed(childno);
 

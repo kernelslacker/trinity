@@ -10,9 +10,11 @@
 #include <sys/stat.h>
 #include "trinity.h"	// page_size
 #include "arch.h"
+#include "child.h"
 #include "maps.h"
 #include "list.h"
 #include "log.h"
+#include "random.h"
 #include "shm.h"
 #include "utils.h"
 
@@ -101,15 +103,16 @@ void setup_global_mappings(void)
 }
 
 /* Walk the list, get the j'th element */
-struct map * get_map(void)
+static struct map * __get_map(struct list_head *head, unsigned int max)
 {
 	struct map *m;
 	struct list_head *node;
+
 	unsigned int i, j = 0;
 
-	i = rand() % num_global_mappings;
+	i = rand() % max;
 
-	list_for_each(node, &global_mappings->list) {
+	list_for_each(node, head) {
 		m = (struct map *) node;
 
 		if (i == j)
@@ -117,6 +120,27 @@ struct map * get_map(void)
 		j++;
 	}
 	return 0;
+}
+
+struct map * get_map(void)
+{
+	struct map *map;
+	bool local = FALSE;
+
+	/* If we're not running in child context, just do global. */
+	if (this_child == 0)
+		return __get_map(&global_mappings->list, num_global_mappings);
+
+	/* Only toss the dice if we actually have local mappings. */
+	if (shm->num_mappings[this_child] > 0)
+		local = rand_bool();
+
+	if (local == TRUE)
+		map = __get_map(&shm->mappings[this_child]->list, shm->num_mappings[this_child]);
+	else
+		map = __get_map(&global_mappings->list, num_global_mappings);
+
+	return map;
 }
 
 void destroy_global_mappings(void)
