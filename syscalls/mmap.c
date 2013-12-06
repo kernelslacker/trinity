@@ -12,6 +12,7 @@
 #include "arch.h"
 #include "compat.h"
 #include "random.h"
+#include "trinity.h"	//ARRAY_SIZE
 #include "utils.h"
 
 #ifdef __x86_64__
@@ -42,14 +43,18 @@ void sanitise_mmap(int childno)
 #endif
 	};
 	unsigned int numflags = rand() % NUM_FLAGS;
+	unsigned long sizes[] = {
+		-1,	/* over-written with page_size below */
+		1 * MB, 2 * MB, 4 * MB, 10 * MB,
+		1 * GB, // disabled for now, due to OOM.
+	};
+
+	sizes[0] = page_size;
 
 	/* Don't actually set a hint right now. */
 	shm->a1[childno] = 0;
 
-	shm->a2[childno] = page_size;
-	if (shm->a2[childno] == 0)
-		shm->a2[childno] = page_size;
-
+	shm->a2[childno] = sizes[rand() % ARRAY_SIZE(sizes)];
 
 	// set additional flags
 	for (i = 0; i < numflags; i++)
