@@ -3,8 +3,6 @@
 
 #include "list.h"
 
-void generate_random_page(char *page);
-
 extern char *page_zeros;
 extern char *page_0xff;
 extern char *page_rand;
@@ -22,7 +20,5 @@ void setup_global_mappings(void);
 void destroy_global_mappings(void);
 
 struct map * get_map(void);
-
-void init_buffers(void);
 
 #endif	/* _MAPS_H */

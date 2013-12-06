@@ -15,7 +15,7 @@
 #include "arch.h"	// page_size
 #include "sanitise.h"
 #include "shm.h"
-#include "maps.h"	// generate_random_page
+#include "random.h"	// generate_random_page
 
 static unsigned long ** gen_ptrs_to_crap(void)
 {

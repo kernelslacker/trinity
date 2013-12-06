@@ -13,4 +13,6 @@ unsigned int rand_bool(void);
 unsigned int rand32(void);
 u64 rand64(void);
 
+void generate_random_page(char *page);
+
 #endif	/* _RANDOM_H */
