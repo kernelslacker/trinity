@@ -12,8 +12,6 @@ extern unsigned int num_online_cpus;
 
 extern char *progname;
 
-void * alloc_shared(unsigned int size);
-
 void do_main_loop(void);
 
 extern bool biarch;
@@ -22,8 +20,6 @@ int check_tainted(void);
 
 void init_watchdog(void);
 unsigned int check_if_fd(unsigned int child);
-
-extern unsigned int user_specified_children;
 
 void regenerate(void);
 
