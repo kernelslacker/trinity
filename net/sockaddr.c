@@ -9,7 +9,7 @@
 #include "maps.h"
 #include "config.h"
 #include "params.h"	// do_specific_proto
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 struct sa_func_entry {
 	unsigned int pf;

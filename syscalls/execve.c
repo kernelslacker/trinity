@@ -11,11 +11,11 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include "trinity.h"	// __unused__
 #include "arch.h"	// page_size
+#include "random.h"	// generate_random_page
 #include "sanitise.h"
 #include "shm.h"
-#include "random.h"	// generate_random_page
+#include "trinity.h"	// __unused__
 
 static unsigned long ** gen_ptrs_to_crap(void)
 {

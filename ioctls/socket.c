@@ -1,7 +1,7 @@
+#include "ioctls.h"
 #include "net.h"
 #include "shm.h"
-#include "trinity.h"
-#include "ioctls.h"
+#include "utils.h"
 
 static int socket_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {

@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include "trinity.h"	// page_size
+#include "utils.h"	// page_size
 #include "sanitise.h"
 #include "arch.h"
 #include "shm.h"

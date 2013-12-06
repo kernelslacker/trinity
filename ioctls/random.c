@@ -1,6 +1,6 @@
 #include <linux/random.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl random_ioctls[] = {

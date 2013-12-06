@@ -3,7 +3,7 @@
 #ifdef USE_VHOST
 #include <linux/vhost.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl vhost_ioctls[] = {

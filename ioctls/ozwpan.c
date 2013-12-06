@@ -1,8 +1,8 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
-#include "trinity.h"
 #include "ioctls.h"
+#include "utils.h"
 
 /* drivers/staging/ozwpan/ozappif.h */
 

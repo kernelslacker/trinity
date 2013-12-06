@@ -7,14 +7,14 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#include "trinity.h"	// ARRAY_SIZE, alloc_shared
 #include "arch.h"
 #include "arch-syscalls.h"
-#include "syscall.h"
-#include "params.h"
 #include "log.h"
+#include "params.h"
+#include "syscall.h"
 #include "shm.h"
 #include "tables.h"
+#include "utils.h"	// ARRAY_SIZE
 
 unsigned long syscalls_todo = 0;
 

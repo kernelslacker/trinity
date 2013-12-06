@@ -3,7 +3,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_NETROM_OPTS ARRAY_SIZE(netrom_opts)
 static const unsigned int netrom_opts[] = {

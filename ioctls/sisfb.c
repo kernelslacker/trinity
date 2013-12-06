@@ -1,8 +1,8 @@
 #include <linux/ioctl.h>
 #include <video/sisfb.h>
 
-#include "trinity.h"
 #include "ioctls.h"
+#include "utils.h"
 
 static const struct ioctl sisfb_ioctls[] = {
 	IOCTL(SISFB_GET_INFO_SIZE),

@@ -3,7 +3,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_DECNET_OPTS ARRAY_SIZE(decnet_opts)
 static const unsigned int decnet_opts[] = {

@@ -3,7 +3,7 @@
 
 #include "shm.h"
 #include "maps.h"
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 #include "random.h"
 

@@ -4,9 +4,9 @@
 
 #include <linux/ioctl.h>
 #include <linux/kvm.h>
-#include "trinity.h"
-#include "ioctls.h"
 #include "compat.h"
+#include "ioctls.h"
+#include "utils.h"
 
 static const struct ioctl kvm_ioctls[] = {
 	IOCTL(KVM_SET_MEMORY_REGION),

@@ -8,14 +8,15 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
-#include "trinity.h"
 #include "constants.h"
-#include "shm.h"
-#include "net.h"
 #include "log.h"
+#include "net.h"
 #include "params.h"	// verbose, do_specific_proto
-#include "random.h"
 #include "protocols.h"
+#include "random.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 unsigned int nr_sockets = 0;
 

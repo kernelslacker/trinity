@@ -8,7 +8,7 @@
 #include <linux/rds.h>
 
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_RDS_OPTS ARRAY_SIZE(rds_opts)
 static const unsigned int rds_opts[] = {

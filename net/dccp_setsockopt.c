@@ -4,7 +4,7 @@
 #include "maps.h"	// page_rand
 #include "compat.h"
 #include "config.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define SOL_DCCP 269
 

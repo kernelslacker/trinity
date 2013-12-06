@@ -2,7 +2,7 @@
 #include <sys/ioctl.h>
 #include <linux/kd.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 #ifndef HAVE_TERMIOS2

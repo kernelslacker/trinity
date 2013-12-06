@@ -1,8 +1,8 @@
 #include <linux/ioctl.h>
 #include <linux/rtc.h>
 
-#include "trinity.h"
 #include "ioctls.h"
+#include "utils.h"
 
 static const struct ioctl rtc_ioctls[] = {
 	IOCTL(RTC_AIE_ON),

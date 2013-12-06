@@ -48,7 +48,7 @@
 #define IOCTL_VMCI_SET_NOTIFY			_IO(7, 0xcb)	/* 1995 */
 /*IOCTL_VMMON_START				_IO(7, 0xd1)*/	/* 2001 */
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl vmci_ioctls[] = {

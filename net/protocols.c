@@ -3,7 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "constants.h"
 #include "protocols.h"
 #include "params.h"

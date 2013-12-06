@@ -6,7 +6,7 @@
 #include <linux/mman.h>
 #include <stdlib.h>
 #include <sys/mman.h>
-#include "trinity.h"	// page_size
+#include "utils.h"	// page_size
 #include "arch.h"
 #include "maps.h"
 #include "random.h"

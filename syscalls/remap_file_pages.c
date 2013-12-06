@@ -3,7 +3,7 @@
 	 unsigned long, prot, unsigned long, pgoff, unsigned long, flags)
  */
 #include <asm/mman.h>
-#include "trinity.h"	// page_size
+#include "utils.h"	// page_size
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"

@@ -17,7 +17,7 @@
 #include "maps.h"
 #include "shm.h"
 #include "compat.h"
-#include "trinity.h"
+#include "utils.h"
 
 #define NR_PRCTL_OPTS 28
 static int prctl_opts[NR_PRCTL_OPTS] = {

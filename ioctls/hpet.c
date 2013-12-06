@@ -1,7 +1,7 @@
 #include <linux/ioctl.h>
 #include <linux/hpet.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl hpet_ioctls[] = {

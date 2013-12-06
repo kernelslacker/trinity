@@ -3,11 +3,11 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "trinity.h"	// ARRAY_SIZE
-#include "log.h"
 #include "files.h"
-#include "shm.h"
 #include "ioctls.h"
+#include "log.h"
+#include "shm.h"
+#include "utils.h"	// ARRAY_SIZE
 
 #define IOCTL_GROUPS_MAX 48
 

@@ -2,7 +2,7 @@
 #include "net.h"
 #include "config.h"
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define SOL_CAIF 278
 

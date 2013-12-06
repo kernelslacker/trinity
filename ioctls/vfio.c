@@ -3,7 +3,7 @@
 #ifdef USE_VFIO
 #include <linux/vfio.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl vfio_ioctls[] = {

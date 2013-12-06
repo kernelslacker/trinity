@@ -1,6 +1,6 @@
 #include <linux/cdrom.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl cdrom_ioctls[] = {

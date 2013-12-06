@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "trinity.h"	// biarch
+#include "arch.h"	// biarch
 #include "child.h"
 #include "syscall.h"
 #include "log.h"

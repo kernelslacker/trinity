@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <linux/btrfs.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl btrfs_control_ioctls[] = {

@@ -1,9 +1,9 @@
 #include <linux/ioctl.h>
 #include <linux/input.h>
 
-#include "shm.h"
-#include "trinity.h"
 #include "ioctls.h"
+#include "shm.h"
+#include "utils.h"
 
 static const struct ioctl input_ioctls[] = {
 	IOCTL(EVIOCGVERSION),
