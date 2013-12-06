@@ -3,7 +3,7 @@
 #include <linux/if_pppol2tp.h>
 #include "net.h"
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define SOL_PPPOL2TP 273
 

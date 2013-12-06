@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 #include "random.h"
 #include "syscall.h"

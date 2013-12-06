@@ -2,7 +2,7 @@
  * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
  */
 #include <asm/mman.h>
-#include "trinity.h"	// page_size
+#include "utils.h"	// page_size
 #include "arch.h"
 #include "maps.h"
 #include "random.h"

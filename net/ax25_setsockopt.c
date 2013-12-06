@@ -3,7 +3,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_AX25_OPTS ARRAY_SIZE(ax25_opts)
 static const unsigned int ax25_opts[] = {

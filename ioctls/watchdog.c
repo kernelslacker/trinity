@@ -1,6 +1,6 @@
 #include <linux/watchdog.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl watchdog_ioctls[] = {

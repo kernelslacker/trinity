@@ -12,7 +12,7 @@
 #include "net.h"
 #include "config.h"
 #include "random.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
 #ifndef IP_MULTICAST_ALL

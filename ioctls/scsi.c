@@ -5,13 +5,13 @@
 #include <scsi/scsi_ioctl.h>
 #include <scsi/sg.h>
 
-#include "shm.h"
-#include "maps.h"
-#include "trinity.h"	// ARRAY_SIZE
 #include "arch.h"	// page_size
+#include "ioctls.h"
+#include "maps.h"
 #include "random.h"
 #include "sanitise.h"
-#include "ioctls.h"
+#include "shm.h"
+#include "utils.h"	// ARRAY_SIZE
 
 #ifndef SCSI_IOCTL_GET_PCI
 #define SCSI_IOCTL_GET_PCI 0x5387

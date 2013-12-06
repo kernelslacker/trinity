@@ -11,15 +11,16 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
-#include "trinity.h" //check_taint and biarch
-#include "shm.h"
-#include "files.h"
-#include "syscall.h"
-#include "pids.h"
-#include "params.h"	// quiet_level
-#include "log.h"
+#include "arch.h" // biarch
 #include "child.h"
+#include "files.h"
+#include "log.h"
+#include "params.h"	// quiet_level
+#include "pids.h"
+#include "shm.h"
+#include "syscall.h"
 #include "tables.h"
+#include "trinity.h" //check_taint
 
 pid_t watchdog_pid;
 

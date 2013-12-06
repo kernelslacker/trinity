@@ -19,8 +19,8 @@
 /* would use this, but the header uses DECLARE_BITMAP() from the kernel */
 /* #include <sound/emu10k1.h> */
 
-#include "trinity.h"
 #include "ioctls.h"
+#include "utils.h"
 
 /* include/sound/hda_hwdep.h */
 struct hda_verb_ioctl {

@@ -1,6 +1,6 @@
 #include <linux/firewire-cdev.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl firewire_ioctls[] = {

@@ -3,7 +3,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_PACKET_OPTS ARRAY_SIZE(packet_opts)
 static const unsigned int packet_opts[] = {

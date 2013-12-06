@@ -328,7 +328,7 @@ enum BinderDriverCommandProtocol {
 };
 
 #include "shm.h"
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl binder_ioctls[] = {

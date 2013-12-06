@@ -1,6 +1,6 @@
 #include <linux/videodev2.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl videodev2_ioctls[] = {

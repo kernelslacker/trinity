@@ -3,7 +3,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_SOCKET_OPTS ARRAY_SIZE(socket_opts)
 static const unsigned int socket_opts[] = { SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_ERROR,

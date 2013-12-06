@@ -1,8 +1,8 @@
 #include <linux/ioctl.h>
 #include <mtd/mtd-abi.h>
 
-#include "trinity.h"
 #include "ioctls.h"
+#include "utils.h"
 
 static const struct ioctl mtd_ioctls[] = {
 	IOCTL(MEMGETINFO),

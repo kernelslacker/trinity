@@ -9,7 +9,7 @@
 #include "net.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "trinity.h"
+#include "utils.h"
 
 static void socketcall_socket(unsigned long *args)
 {

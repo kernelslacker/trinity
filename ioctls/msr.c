@@ -4,7 +4,7 @@
 #define X86_IOC_RDMSR_REGS	_IOWR('c', 0xA0, __u32[8])
 #define X86_IOC_WRMSR_REGS	_IOWR('c', 0xA1, __u32[8])
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl msr_ioctls[] = {

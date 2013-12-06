@@ -1,7 +1,7 @@
 #include <linux/ioctl.h>
 #include <linux/loop.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 /* Intentionally mix the loop and loop-control ioctls. */

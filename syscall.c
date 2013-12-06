@@ -22,8 +22,8 @@
 #include "log.h"
 #include "params.h"
 #include "maps.h"
-#include "trinity.h"
 #include "tables.h"
+#include "utils.h"
 
 #define __syscall_return(type, res) \
 	do { \

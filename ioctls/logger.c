@@ -59,7 +59,7 @@ struct logger_entry {
 #define LOGGER_FLUSH_LOG		_IO(__LOGGERIO, 4) /* flush log */
 
 #include "shm.h"
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 static const struct ioctl logger_ioctls[] = {

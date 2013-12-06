@@ -1,8 +1,8 @@
 #include <linux/ioctl.h>
 #include <linux/rfkill.h>
 
-#include "trinity.h"
 #include "ioctls.h"
+#include "utils.h"
 
 static const struct ioctl rfkill_ioctls[] = {
 	IOCTL(RFKILL_IOCTL_NOINPUT),

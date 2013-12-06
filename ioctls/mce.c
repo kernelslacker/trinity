@@ -1,6 +1,6 @@
 #include <linux/ioctl.h>
 
-#include "trinity.h"
+#include "utils.h"
 #include "ioctls.h"
 
 #define MCE_GET_RECORD_LEN   _IOR('M', 1, int)

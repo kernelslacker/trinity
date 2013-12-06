@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <linux/if_ether.h>
 #include "net.h"
-#include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 static const int ether_types[] = {

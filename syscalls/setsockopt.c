@@ -16,7 +16,7 @@
 #include "net.h"
 #include "config.h"
 #include "random.h"
-#include "trinity.h"
+#include "utils.h"
 
 struct sso_funcptr {
 	void (*func)(struct sockopt *so);

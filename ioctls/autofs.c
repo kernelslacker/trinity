@@ -1,12 +1,12 @@
 #include <linux/limits.h>
 #include <linux/auto_fs4.h>
 
-#include "sanitise.h"
-#include "maps.h"
-#include "shm.h"
-#include "trinity.h"
 #include "ioctls.h"
+#include "maps.h"
 #include "random.h"
+#include "sanitise.h"
+#include "shm.h"
+#include "utils.h"
 
 /* include/linux/auto_dev-ioctl.h */
 /*

@@ -13,7 +13,7 @@
 #include "config.h"
 #include "params.h"
 #include "protocols.h"
-#include "trinity.h"
+#include "utils.h"
 
 struct socket_ptr {
 	unsigned int family;

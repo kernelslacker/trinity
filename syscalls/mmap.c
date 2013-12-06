@@ -12,7 +12,7 @@
 #include "arch.h"
 #include "compat.h"
 #include "random.h"
-#include "trinity.h"	//ARRAY_SIZE
+#include "utils.h"	//ARRAY_SIZE
 #include "utils.h"
 
 #ifdef __x86_64__

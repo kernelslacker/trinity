@@ -2,7 +2,7 @@
 #include <linux/tipc.h>
 #include "net.h"
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_TIPC_OPTS ARRAY_SIZE(tipc_opts)
 static const unsigned int tipc_opts[] = {

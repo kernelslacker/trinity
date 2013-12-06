@@ -2,7 +2,7 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "utils.h"	// ARRAY_SIZE
 
 #define NR_SOL_INET6_OPTS ARRAY_SIZE(inet6_opts)
 static const unsigned int inet6_opts[] = {

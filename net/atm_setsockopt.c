@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include <linux/atmdev.h>
 #include <linux/atm.h>
-#include "net.h"
 #include "maps.h"	// page_rand
+#include "net.h"
+#include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
-#include "trinity.h"	// ARRAY_SIZE
 
 #define NR_SOL_ATM_OPTS ARRAY_SIZE(atm_opts)
 static const unsigned int atm_opts[] = {

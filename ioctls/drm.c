@@ -17,8 +17,8 @@
 #include <drm/radeon_drm.h>
 #include <drm/savage_drm.h>
 
-#include "trinity.h"
 #include "ioctls.h"
+#include "utils.h"
 
 /* Copy-paste relevant stuff from header, as it is buggy. */
 /* #include <drm/sis_drm.h> */
