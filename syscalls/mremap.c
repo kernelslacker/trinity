@@ -75,6 +75,7 @@ struct syscall syscall_mremap = {
 	.num_args = 5,
 	.sanitise = sanitise_mremap,
 	.arg1name = "addr",
+	.arg1type = ARG_MMAP,
 	.arg2name = "old_len",
 	.arg3name = "new_len",
 	.arg4name = "flags",
