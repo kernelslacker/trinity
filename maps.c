@@ -59,6 +59,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	newnode = zmalloc(sizeof(struct map));
 	newnode->name = strdup(name);
 	newnode->size = size;
+	newnode->prot = prot;
 	newnode->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
 	if (newnode->ptr == MAP_FAILED) {
 		outputerr("mmap failure\n");

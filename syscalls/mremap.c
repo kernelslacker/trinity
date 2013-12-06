@@ -45,6 +45,9 @@ static void sanitise_mremap(int childno)
 	}
 
 	/* Sometimes dirty the mapping first. */
+	if (!(map->prot & PROT_WRITE))
+		return;
+
 	if (rand_bool())
 		return;
 
