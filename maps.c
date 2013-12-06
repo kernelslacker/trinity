@@ -69,9 +69,6 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	close(fd);
 }
 
-#define MB (1024 * 1024UL)
-#define GB (1024 * MB)
-
 void setup_global_mappings(void)
 {
 	unsigned int i;

@@ -12,9 +12,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-
-#define MB (1024 * 1024UL)
-#define GB (1024 * MB)
+#include "utils.h"
 
 static unsigned long rand_size(void)
 {
