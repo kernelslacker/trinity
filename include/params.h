@@ -52,4 +52,5 @@ extern int kernel_taint_initial;
 extern int kernel_taint_mask;
 extern bool kernel_taint_param_occured;
 
+extern unsigned int user_specified_children;
 #endif	/* _PARAMS_H */

@@ -11,6 +11,10 @@
 #include "net.h"
 #include "types.h"
 
+void * alloc_shared(unsigned int size);
+int create_shm(void);
+void setup_shm_postargs(void);
+
 struct shm_s {
 	unsigned long total_syscalls_done;
 	unsigned long successes;
