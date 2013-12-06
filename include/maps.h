@@ -15,6 +15,7 @@ struct map {
 	void *ptr;
 	char *name;
 	unsigned long size;
+	int prot;
 };
 void setup_maps(void);
 void destroy_maps(void);
