@@ -83,6 +83,7 @@ struct shm_s {
 
 	/* per-child mmaps */
 	struct map *mappings[MAX_NR_CHILDREN];
+	unsigned int num_mappings[MAX_NR_CHILDREN];
 
 	/* various flags. */
 	bool do32bit[MAX_NR_CHILDREN];

@@ -4,13 +4,15 @@
 	unsigned long, fd, unsigned long, off)
  */
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
-#include "trinity.h"	// page_size
+#include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "arch.h"
 #include "compat.h"
 #include "random.h"
+#include "utils.h"
 
 #ifdef __x86_64__
 #define NUM_FLAGS 13
@@ -64,18 +66,30 @@ void sanitise_mmap(int childno)
 static void post_mmap(int childno)
 {
 	char *p;
+	struct list_head *list;
+	struct map *new;
 
 	p = (void *) shm->retval[childno];
 	if (p == MAP_FAILED)
 		return;
 
-	//FIXME: Need to check here for PROT_WRITE when we add per-child mapping list.
+	new = zmalloc(sizeof(struct map));
+	new->name = strdup("misc");
+	new->size = shm->a2[childno];
+	new->prot = shm->a3[childno];
+	new->ptr = p;
+
+	// Add this to a list for use by subsequent syscalls.
+	list = &shm->mappings[childno]->list;
+	list_add_tail(&new->list, list);
+	shm->num_mappings[childno]++;
 
 	/* Sometimes dirty the mapping. */
+	if (!(new->prot & PROT_WRITE))
+		return;
+
 	if (rand_bool())
 		p[rand() % page_size] = 1;
-
-	//TODO: Add this to a list for use by subsequent syscalls.
 }
 
 struct syscall syscall_mmap = {

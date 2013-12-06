@@ -119,6 +119,7 @@ void init_child(int childno)
 	if (rand() % 100 < 50)
 		use_fpu();
 
+	shm->num_mappings[childno] = 0;
 	shm->mappings[childno] = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&shm->mappings[childno]->list);
 }
