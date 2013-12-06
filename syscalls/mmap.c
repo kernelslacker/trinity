@@ -41,11 +41,7 @@ void sanitise_mmap(int childno)
 	};
 	unsigned int numflags = rand() % NUM_FLAGS;
 
-	/* Don't actually set a hint right now, in case we give out
-	   something that we don't want changed.  One day, we'll recycle
-	   mappings from mmap results and the like here instead.
-	   Right now, ARG_ADDRESS is a bad choice, as it causes page_rand()
-	   to be remapped as unwritable/unreadable, and then we segfault */
+	/* Don't actually set a hint right now. */
 	shm->a1[childno] = 0;
 
 	shm->a2[childno] = page_size;
@@ -85,7 +81,7 @@ struct syscall syscall_mmap = {
 	.num_args = 6,
 	.sanitise = sanitise_mmap,
 	.arg1name = "addr",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_MMAP,
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
 	.arg3name = "prot",

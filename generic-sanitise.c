@@ -344,6 +344,9 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 	case ARG_NON_NULL_ADDRESS:
 		return (unsigned long) get_non_null_address();
 
+	case ARG_MMAP:
+		return (unsigned long) get_map();
+
 	case ARG_PID:
 		return (unsigned long) get_pid();
 

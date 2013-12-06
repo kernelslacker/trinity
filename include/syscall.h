@@ -22,6 +22,7 @@ enum argtype {
 	ARG_IOVECLEN = 15,
 	ARG_SOCKADDR = 16,
 	ARG_SOCKADDRLEN = 17,
+	ARG_MMAP = 18,
 };
 
 struct arglist {
