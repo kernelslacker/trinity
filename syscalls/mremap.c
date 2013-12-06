@@ -5,6 +5,7 @@
  */
 #include <linux/mman.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 #include "trinity.h"	// page_size
 #include "arch.h"
 #include "maps.h"
@@ -31,6 +32,7 @@ static void sanitise_mremap(int childno)
 	shm->a1[childno] &= PAGE_MASK;
 
 	map = get_map();
+	shm->scratch[childno] = (unsigned long) map;	/* Save this for ->post */
 
 	shm->a1[childno] = (unsigned long) map->ptr;
 	shm->a2[childno] = map->size;
@@ -51,9 +53,18 @@ static void sanitise_mremap(int childno)
 		p[i] = 1;
 }
 
-static void post_mremap(__unused__ int childno)
+
+/*
+ * If we successfully remapped a range, we need to update our record of it
+ * so we don't re-use the old address.
+ */
+static void post_mremap(int childno)
 {
-	//FIXME: Need to stash a ptr to the map struct, and update it on success.
+	struct map *map = (struct map *) shm->scratch[childno];
+	void *ptr = (void *) shm->retval[childno];
+
+	if (ptr != MAP_FAILED)
+		map->ptr = ptr;
 }
 
 struct syscall syscall_mremap = {
