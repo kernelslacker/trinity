@@ -4,7 +4,7 @@
 	unsigned long, fd, unsigned long, off)
  */
 #include <stdlib.h>
-#include <asm/mman.h>
+#include <sys/mman.h>
 #include "trinity.h"	// page_size
 #include "sanitise.h"
 #include "shm.h"
@@ -66,7 +66,7 @@ static void post_mmap(int childno)
 	char *p;
 
 	p = (void *) shm->retval[childno];
-	if (p == NULL)
+	if (p == MAP_FAILED)
 		return;
 
 	/* Sometimes dirty the mapping. */
