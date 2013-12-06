@@ -16,7 +16,7 @@
 #include "shm.h"
 #include "utils.h"
 
-static unsigned int num_mappings = 0;
+static unsigned int num_global_mappings = 0;
 static struct map *global_mappings = NULL;
 
 static void dump_global_mappings(void)
@@ -24,7 +24,7 @@ static void dump_global_mappings(void)
 	struct map *m;
 	struct list_head *node;
 
-	output(2, "There are %d entries in the map table\n", num_mappings);
+	output(2, "There are %d entries in the map table\n", num_global_mappings);
 
 	list_for_each(node, &global_mappings->list) {
 		m = (struct map *) node;
@@ -58,13 +58,13 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	sprintf(newnode->name, "anon(%s)", name);
 
-	num_mappings++;
+	num_global_mappings++;
 
 	list = &global_mappings->list;
 	list_add_tail(&newnode->list, list);
 
 	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
-			num_mappings - 1, name, newnode->ptr, size);
+			num_global_mappings - 1, name, newnode->ptr, size);
 
 	close(fd);
 }
@@ -107,7 +107,7 @@ struct map * get_map(void)
 	struct list_head *node;
 	unsigned int i, j = 0;
 
-	i = rand() % num_mappings;
+	i = rand() % num_global_mappings;
 
 	list_for_each(node, &global_mappings->list) {
 		m = (struct map *) node;
@@ -135,5 +135,5 @@ void destroy_global_mappings(void)
 		free(m);
 	}
 
-	num_mappings = 0;
+	num_global_mappings = 0;
 }
