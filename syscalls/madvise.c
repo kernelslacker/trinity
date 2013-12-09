@@ -3,23 +3,28 @@
  */
 #include <stdlib.h>
 #include <sys/mman.h>
-#include "arch.h"	// page_size
+#include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
 
 static void sanitise_madvise(int childno)
 {
-	shm->a2[childno] = rand() % page_size;
+	struct map *map;
+
+	map = (struct map *) shm->a1[childno];
+	shm->scratch[childno] = (unsigned long) map;    /* Save this for ->post */
+
+	shm->a1[childno] = (unsigned long) map->ptr;
+	shm->a2[childno] = map->size;           //TODO: Munge this.
 }
 
 struct syscall syscall_madvise = {
 	.name = "madvise",
 	.num_args = 3,
 	.arg1name = "start",
-	.arg1type = ARG_NON_NULL_ADDRESS,
+	.arg1type = ARG_MMAP,
 	.arg2name = "len_in",
-	.arg2type = ARG_LEN,
 	.arg3name = "advice",
 	.arg3type = ARG_OP,
 	.arg3list = {
