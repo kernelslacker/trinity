@@ -161,3 +161,9 @@ void destroy_global_mappings(void)
 
 	num_global_mappings = 0;
 }
+
+void delete_local_mapping(int childno, struct map *map)
+{
+	list_del(&map->list);
+	shm->num_mappings[childno]--;
+}
