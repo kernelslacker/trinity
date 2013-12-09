@@ -1,27 +1,39 @@
 /*
  * SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
  */
-#include "arch.h"	// page_size
+#include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
 
 static void sanitise_munmap(int childno)
 {
-	shm->a2[childno] = page_size;
+	struct map *map;
+
+	map = (struct map *) shm->a1[childno];
+	shm->scratch[childno] = (unsigned long) map;	/* Save this for ->post */
+
+	shm->a1[childno] = (unsigned long) map->ptr;
+	shm->a2[childno] = map->size;		//TODO: Munge this.
+}
+
+static void post_munmap(int childno)
+{
+	struct map *map = (struct map *) shm->scratch[childno];
+
+	if (shm->retval[childno] != 0)
+		return;
+
+	// TODO: Should we only allow un-munmaping local mmaps?
+	list_del(&map->list);
 }
 
 struct syscall syscall_munmap = {
 	.name = "munmap",
 	.num_args = 2,
 	.arg1name = "addr",
-	.arg1type = ARG_NON_NULL_ADDRESS,
+	.arg1type = ARG_MMAP,
 	.arg2name = "len",
-	.arg2type = ARG_LEN,
 	.group = GROUP_VM,
 	.sanitise = sanitise_munmap,
-
-	/* For now, disable this syscall entirely. We segfault when
-	   we try to unmap things we need. Resurrect this when we
-	   have proper tracking of mappings from other syscalls. */
-	.flags = AVOID_SYSCALL,
+	.post = post_munmap,
 };
