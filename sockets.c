@@ -213,7 +213,7 @@ void close_sockets(void)
 	unsigned int i;
 	int fd;
 	int r = 0;
-	struct linger ling = { .l_onoff = FALSE, };
+	struct linger ling = { .l_onoff = FALSE, .l_linger = 0 };
 
 	for (i = 0; i < nr_sockets; i++) {
 
