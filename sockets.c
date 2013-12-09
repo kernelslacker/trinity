@@ -45,10 +45,10 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	output(2, "fd[%i] = domain:%i (%s) type:0x%x protocol:%i\n",
 		fd, domain, get_proto_name(domain), type, protocol);
 
-	nr_sockets++;
-
 	/* Set some random socket options. */
 	sso_socket(&shm->sockets[nr_sockets].triplet, &so, fd);
+
+	nr_sockets++;
 
 	/* Sometimes, listen on created sockets. */
 	if (rand_bool()) {
