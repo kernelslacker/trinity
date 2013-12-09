@@ -23,4 +23,6 @@ void delete_local_mapping(int childno, struct map *map);
 
 struct map * get_map(void);
 
+struct map * common_set_mmap_ptr_len(int childno);
+
 #endif	/* _MAPS_H */

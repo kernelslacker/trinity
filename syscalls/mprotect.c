@@ -11,14 +11,7 @@
 
 static void sanitise_mprotect(int childno)
 {
-	struct map *map;
-
-	map = (struct map *) shm->a1[childno];
-	shm->a1[childno] = (unsigned long) map->ptr;
-
-	shm->scratch[childno] = (unsigned long) map;	/* Save this for ->post */
-
-	shm->a2[childno] = map->size;
+	(void) common_set_mmap_ptr_len(childno);
 }
 
 /*

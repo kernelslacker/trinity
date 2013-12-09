@@ -27,11 +27,8 @@ static void sanitise_mremap(int childno)
 	char *p;
 	unsigned int i;
 
-	map = (struct map *) shm->a1[childno];
-	shm->scratch[childno] = (unsigned long) map;	/* Save this for ->post */
+	map = common_set_mmap_ptr_len(childno);
 
-	shm->a1[childno] = (unsigned long) map->ptr;
-	shm->a2[childno] = map->size;
 	shm->a3[childno] = map->size;		//TODO: Munge this.
 
 	if (shm->a4[childno] & MREMAP_FIXED) {
