@@ -1,14 +1,20 @@
 /*
  * SYSCALL_DEFINE2(munlock, unsigned long, start, size_t, len)
  */
+#include "maps.h"
 #include "sanitise.h"
+
+static void sanitise_munlock(int childno)
+{
+	(void) common_set_mmap_ptr_len(childno);
+}
 
 struct syscall syscall_munlock = {
 	.name = "munlock",
 	.num_args = 2,
 	.arg1name = "addr",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_MMAP,
 	.arg2name = "len",
-	.arg2type = ARG_LEN,
 	.group = GROUP_VM,
+	.sanitise = sanitise_munlock,
 };
