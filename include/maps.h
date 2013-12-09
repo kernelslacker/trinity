@@ -19,6 +19,8 @@ struct map {
 void setup_global_mappings(void);
 void destroy_global_mappings(void);
 
+void delete_local_mapping(int childno, struct map *map);
+
 struct map * get_map(void);
 
 #endif	/* _MAPS_H */
