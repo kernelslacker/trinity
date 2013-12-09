@@ -167,3 +167,16 @@ void delete_local_mapping(int childno, struct map *map)
 	list_del(&map->list);
 	shm->num_mappings[childno]--;
 }
+
+struct map * common_set_mmap_ptr_len(int childno)
+{
+	struct map *map;
+
+	map = (struct map *) shm->a1[childno];
+	shm->scratch[childno] = (unsigned long) map;    /* Save this for ->post */
+
+	shm->a1[childno] = (unsigned long) map->ptr;
+	shm->a2[childno] = map->size;           //TODO: Munge this.
+
+	return map;
+}

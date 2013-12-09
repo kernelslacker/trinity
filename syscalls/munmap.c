@@ -7,13 +7,7 @@
 
 static void sanitise_munmap(int childno)
 {
-	struct map *map;
-
-	map = (struct map *) shm->a1[childno];
-	shm->scratch[childno] = (unsigned long) map;	/* Save this for ->post */
-
-	shm->a1[childno] = (unsigned long) map->ptr;
-	shm->a2[childno] = map->size;		//TODO: Munge this.
+	(void) common_set_mmap_ptr_len(childno);
 }
 
 static void post_munmap(int childno)

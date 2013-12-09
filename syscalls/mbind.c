@@ -17,14 +17,9 @@
 
 static void sanitise_mbind(int childno)
 {
-	struct map *map;
 	unsigned long maxnode;
 
-	map = (struct map *) shm->a1[childno];
-	shm->scratch[childno] = (unsigned long) map;    /* Save this for ->post */
-
-	shm->a1[childno] = (unsigned long) map->ptr;
-	shm->a2[childno] = map->size;           //TODO: Munge this.
+	(void) common_set_mmap_ptr_len(childno);
 
 retry_maxnode:
 	shm->a5[childno] &= ~((page_size * 8) - 1);
