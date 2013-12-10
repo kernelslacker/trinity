@@ -204,11 +204,13 @@ void parse_args(int argc, char *argv[])
 			/* One of the architectures selected*/
 			do_32_arch = FALSE;
 			do_64_arch = FALSE;
-			if (strcmp(optarg, "64") == 0)
+			if (strcmp(optarg, "64") == 0) {
+				do_32_arch = FALSE;
 				do_64_arch = TRUE;
-			else if (strcmp(optarg, "32") == 0)
+			} else if (strcmp(optarg, "32") == 0) {
 				do_32_arch = TRUE;
-			else {
+				do_64_arch = FALSE;
+			} else {
 				outputstd("can't parse %s\n", optarg);
 				exit(EXIT_FAILURE);
 			}
