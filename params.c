@@ -208,9 +208,10 @@ void parse_args(int argc, char *argv[])
 				do_64_arch = TRUE;
 			else if (strcmp(optarg, "32") == 0)
 				do_32_arch = TRUE;
-			else
+			else {
+				outputstd("can't parse %s\n", optarg);
 				exit(EXIT_FAILURE);
-
+			}
 			break;
 
 		case 'C':
