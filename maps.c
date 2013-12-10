@@ -174,6 +174,11 @@ struct map * common_set_mmap_ptr_len(int childno)
 
 	map = (struct map *) shm->a1[childno];
 	shm->scratch[childno] = (unsigned long) map;    /* Save this for ->post */
+	if (map == NULL) {
+		shm->a1[childno] = 0;
+		shm->a2[childno] = 0;
+		return NULL;
+	}
 
 	shm->a1[childno] = (unsigned long) map->ptr;
 	shm->a2[childno] = map->size;           //TODO: Munge this.
