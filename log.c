@@ -351,8 +351,7 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 			syscalls[syscallno].entry->arg6type, fd, mono);
 	CRESETFD
 	fprintf(fd, ") ");
-	if (fd == stdout)
-		fflush(stdout);
+	fflush(fd);
 }
 
 /* This function is always called from a fuzzing child. */
@@ -384,6 +383,7 @@ static void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE 
 	fprintf(fd, "= %ld (%s)", ret, strerror(errno_saved));
 	CRESETFD
 	fprintf(fd, "\n");
+	fflush(fd);
 }
 
 static void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mono)
@@ -395,6 +395,7 @@ static void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mon
 		fprintf(fd, "= %ld", ret);
 	CRESETFD
 	fprintf(fd, "\n");
+	fflush(fd);
 }
 
 void output_syscall_postfix(unsigned long ret, int errno_saved, bool err)
