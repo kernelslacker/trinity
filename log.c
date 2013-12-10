@@ -351,6 +351,8 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 			syscalls[syscallno].entry->arg6type, fd, mono);
 	CRESETFD
 	fprintf(fd, ") ");
+	if (fd == stdout)
+		fflush(stdout);
 }
 
 /* This function is always called from a fuzzing child. */
