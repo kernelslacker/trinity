@@ -25,4 +25,6 @@ struct map * get_map(void);
 
 struct map * common_set_mmap_ptr_len(int childno);
 
+void dirty_mapping(struct map *map);
+
 #endif	/* _MAPS_H */

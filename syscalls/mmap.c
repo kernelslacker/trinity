@@ -90,11 +90,8 @@ static void post_mmap(int childno)
 	shm->num_mappings[childno]++;
 
 	/* Sometimes dirty the mapping. */
-	if (!(new->prot & PROT_WRITE))
-		return;
-
 	if (rand_bool())
-		p[rand() % page_size] = 1;
+		dirty_mapping(new);
 }
 
 struct syscall syscall_mmap = {

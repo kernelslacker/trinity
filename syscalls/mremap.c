@@ -24,8 +24,6 @@ static unsigned long rand_size(void)
 static void sanitise_mremap(int childno)
 {
 	struct map *map;
-	char *p;
-	unsigned int i;
 
 	map = common_set_mmap_ptr_len(childno);
 
@@ -42,13 +40,8 @@ static void sanitise_mremap(int childno)
 		return;
 
 	if (rand_bool())
-		return;
-
-	p = map->ptr;
-	for (i = 0; i < map->size; i += page_size)
-		p[i] = 1;
+		dirty_mapping(map);
 }
-
 
 /*
  * If we successfully remapped a range, we need to update our record of it
