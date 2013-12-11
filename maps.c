@@ -8,14 +8,14 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "trinity.h"	// page_size
 #include "arch.h"
 #include "child.h"
-#include "maps.h"
 #include "list.h"
 #include "log.h"
+#include "maps.h"
 #include "random.h"
 #include "shm.h"
+#include "trinity.h"	// page_size
 #include "utils.h"
 
 static unsigned int num_global_mappings = 0;
@@ -184,4 +184,24 @@ struct map * common_set_mmap_ptr_len(int childno)
 	shm->a2[childno] = map->size;           //TODO: Munge this.
 
 	return map;
+}
+
+void dirty_mapping(struct map *map)
+{
+	char *p = map->ptr;
+	unsigned int i;
+
+	/* Check mapping is writable. */
+	if (!(map->prot & PROT_WRITE))
+		return;
+
+	if (rand_bool()) {
+		/* Just fault in one page. */
+		p[rand() % page_size] = 1;
+	} else {
+		/* fault in the whole mapping */
+		for (i = 0; i < map->size; i += page_size)
+			p[i] = 1;
+	}
+	//TODO: More access patterns.
 }
