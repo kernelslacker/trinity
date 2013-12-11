@@ -46,7 +46,7 @@ void sanitise_mmap(int childno)
 	unsigned long sizes[] = {
 		-1,	/* over-written with page_size below */
 		1 * MB, 2 * MB, 4 * MB, 10 * MB,
-		1 * GB, // disabled for now, due to OOM.
+		1 * GB,
 	};
 
 	sizes[0] = page_size;
