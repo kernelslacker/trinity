@@ -13,6 +13,7 @@ in_addr_t random_ipv4_address(void)
 
 	switch (rand() % 9) {
 	case 0:	addr = 0;		/* 0.0.0.0 */
+		class = 8;
 		break;
 	case 1:	addr = 0x0a000000;	/* 10.0.0.0/8 */
 		class = 8;
