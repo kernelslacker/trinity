@@ -12,21 +12,20 @@
 
 static void sanitise_remap_file_pages(int childno)
 {
-	(void) common_set_mmap_ptr_len(childno);
+	struct map *map;
+	size_t size;
 
+	map = common_set_mmap_ptr_len(childno);
+
+	/* We just want to remap a part of the mapping. */
+	size = rand() % map->size;
+	shm->a2[childno] = size;
+
+	/* "The prot argument must be specified as 0" */
 	shm->a3[childno] = 0;
 
-retry_pgoff:
-	if (shm->a4[childno] + (shm->a2[childno] >> PAGE_SHIFT) < shm->a4[childno]) {
-		shm->a4[childno] = rand() & (shm->a2[childno] / page_size);
-		goto retry_pgoff;
-	}
-
-retry_pgoff_bits:
-	if (shm->a4[childno] + (shm->a2[childno] >> PAGE_SHIFT) >= (1UL << PTE_FILE_MAX_BITS)) {
-		shm->a4[childno] = (shm->a4[childno] >> 1);
-		goto retry_pgoff_bits;
-	}
+	/* Pick a random pgoff. */
+	shm->a4[childno] = rand() & (size / page_size);
 }
 
 struct syscall syscall_remap_file_pages = {
