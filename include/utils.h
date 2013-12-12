@@ -6,8 +6,6 @@
 #define MB (1024 * 1024UL)
 #define GB (1024 * MB)
 
-void show_backtrace(void);
-
 void * zmalloc(size_t size);
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))

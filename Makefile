@@ -7,7 +7,7 @@ CC := gcc
 CC := $(CROSS_COMPILE)$(CC)
 LD := $(CROSS_COMPILE)$(LD)
 
-CFLAGS := -Wall -W -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -rdynamic
+CFLAGS := -Wall -W -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE
 ifneq ($(SYSROOT),)
 CFLAGS += --sysroot=$(SYSROOT)
 endif
