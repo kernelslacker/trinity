@@ -41,6 +41,10 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	int fd;
 
 	fd = open("/dev/zero", O_RDWR);
+	if (fd == -1) {
+		outputerr("couldn't open /dev/zero\n");
+		exit(EXIT_FAILURE);
+	}
 
 	newnode = zmalloc(sizeof(struct map));
 	newnode->name = strdup(name);
