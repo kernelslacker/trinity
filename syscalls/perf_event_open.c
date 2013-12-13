@@ -863,6 +863,8 @@ static long long random_sample_type(void)
 		sample_type |= PERF_SAMPLE_DATA_SRC;
 	if (rand_bool())
 		sample_type |= PERF_SAMPLE_IDENTIFIER;
+	if (rand_bool())
+		sample_type |= PERF_SAMPLE_TRANSACTION;
 
 	return sample_type;
 }
