@@ -3,7 +3,9 @@ VERSION=1.3pre
 INSTALL_PREFIX ?= $(DESTDIR)
 INSTALL_PREFIX ?= $(HOME)
 
+ifeq ($(CC),"")
 CC := gcc
+endif
 CC := $(CROSS_COMPILE)$(CC)
 LD := $(CROSS_COMPILE)$(LD)
 
@@ -118,7 +120,7 @@ mirror:
 	@git push --mirror git@github.com:kernelslacker/trinity.git
 
 scan:
-	scan-build --use-analyzer=/usr/bin/clang make
+	@scan-build --use-analyzer=/usr/bin/clang make
 
 coverity:
 	rm -rf cov-int trinity-coverity.tgz
