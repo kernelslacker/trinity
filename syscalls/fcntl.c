@@ -37,7 +37,6 @@ static void sanitise_fcntl(int childno)
 	case F_SETLEASE:
 		shm->a3[childno] = (unsigned long) get_random_fd();
 		break;
-		break;
 
 	/* no arg */
 	case F_GETFD:
