@@ -97,7 +97,6 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	int nr = shm->syscallno[childno];
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
-	int pidslot;
 
 	a1 = shm->a1[childno];
 	a2 = shm->a2[childno];
@@ -106,12 +105,9 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	a5 = shm->a5[childno];
 	a6 = shm->a6[childno];
 
-	pidslot = find_pid_slot(getpid());
-	if (pidslot != PIDSLOT_NOT_FOUND) {
-		shm->total_syscalls_done++;
-		shm->child_syscall_count[pidslot]++;
-		(void)gettimeofday(&shm->tv[pidslot], NULL);
-	}
+	shm->total_syscalls_done++;
+	shm->child_syscall_count[childno]++;
+	(void)gettimeofday(&shm->tv[childno], NULL);
 
 	if (syscalls[nr].entry->flags & NEED_ALARM)
 		(void)alarm(1);
