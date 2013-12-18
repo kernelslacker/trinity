@@ -16,15 +16,13 @@
 #include "arch.h"
 #include "shm.h"
 
-//FIXME: This leaks memory.
-// A ->post function should free up the allocations.
+static unsigned int count;
 
 static void sanitise_move_pages(int childno)
 {
 	int *nodes;
 	unsigned long *page_alloc;
-	unsigned int i;
-	unsigned int count;
+	unsigned int i, j;
 
 	// Needs CAP_SYS_NICE to move pages in another process
 	if (getuid() != 0) {
@@ -33,6 +31,7 @@ static void sanitise_move_pages(int childno)
 	}
 
 	page_alloc = (unsigned long *) malloc(page_size);
+	shm->scratch[childno] = (unsigned long) page_alloc;
 	if (page_alloc == NULL)
 		return;
 
@@ -43,8 +42,12 @@ static void sanitise_move_pages(int childno)
 
 	for (i = 0; i < count; i++) {
 		page_alloc[i] = (unsigned long) malloc(page_size);
-		if (!page_alloc[i])
-			return;					// FIXME: MEMORY LEAK
+		if (!page_alloc[i]) {
+			for (j = 0; j < i; j++)
+				free((void *)page_alloc[j]);
+			free(page_alloc);
+			return;
+		}
 		page_alloc[i] &= PAGE_MASK;
 	}
 
@@ -56,6 +59,24 @@ static void sanitise_move_pages(int childno)
 	shm->a4[childno] = (unsigned long) nodes;
 
 	shm->a5[childno] = (unsigned long) malloc(count * sizeof(int));
+}
+
+static void post_move_pages(int childno)
+{
+	unsigned long *page;
+	void *ptr;
+	unsigned int i;
+
+	page = (void *) shm->scratch[childno];
+	if (page == NULL)
+		return;
+
+	for (i = 0; i < count; i++) {
+		ptr = (void *) page[i];
+		free(ptr);
+	}
+
+	free(page);
 }
 
 struct syscall syscall_move_pages = {
@@ -75,4 +96,5 @@ struct syscall syscall_move_pages = {
 	},
 	.group = GROUP_VM,
 	.sanitise = sanitise_move_pages,
+	.post = post_move_pages,
 };
