@@ -23,6 +23,7 @@ static void sanitise_modify_ldt(int childno)
 		/* read the ldt into the memory pointed to by ptr.
 		   The number of bytes read is the smaller of bytecount and the actual size of the ldt. */
 		ldt = malloc(ALLOCSIZE);
+		shm->scratch[childno] = (unsigned long) ldt;
 		if (ldt == NULL)
 			return;
 		shm->a3[childno] = ALLOCSIZE;
@@ -48,8 +49,16 @@ static void sanitise_modify_ldt(int childno)
 	default:
 		break;
 	}
+}
 
-	//FIXME: We leak 'ldt' here. Need to deallocate post-syscall.
+static void post_modify_ldt(int childno)
+{
+	void *ptr;
+
+	ptr = (void *) shm->scratch[childno];
+
+	if (ptr != NULL)
+		free(ptr);
 }
 
 struct syscall syscall_modify_ldt = {
@@ -64,5 +73,6 @@ struct syscall syscall_modify_ldt = {
 	.arg2name = "ptr",
 	.arg3name = "bytecount",
 	.sanitise = sanitise_modify_ldt,
+	.post = post_modify_ldt,
 };
 #endif
