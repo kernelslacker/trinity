@@ -149,7 +149,7 @@ struct map * get_map(void)
 
 void destroy_global_mappings(void)
 {
-	struct map *m = global_mappings;
+	struct map *m;
 
 	while (!list_empty(&global_mappings->list)) {
 		m = global_mappings;
