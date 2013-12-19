@@ -7,10 +7,10 @@
 #include "net.h"
 #include "compat.h"
 
+#define SOL_ALG 279
+
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
-
-#define SOL_ALG 279
 
 void alg_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
@@ -31,9 +31,9 @@ void alg_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	*addr = (unsigned long *) alg;
 	*addrlen = sizeof(struct sockaddr_alg);
 }
+#endif
 
 void alg_setsockopt(struct sockopt *so)
 {
 	so->level = SOL_ALG;
 }
-#endif
