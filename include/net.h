@@ -159,6 +159,7 @@ void phonet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen);
 void phonet_rand_socket(struct socket_triplet *st);
 
 /* rds */
+void rds_gen_sockaddr(unsigned long **addr, unsigned long *addrlen);
 void rds_rand_socket(struct socket_triplet *st);
 void rds_setsockopt(struct sockopt *so);
 
