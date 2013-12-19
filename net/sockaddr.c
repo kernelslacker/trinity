@@ -8,6 +8,7 @@
 #include "net.h"
 #include "maps.h"
 #include "config.h"
+#include "random.h"
 #include "params.h"	// do_specific_proto
 #include "utils.h"	// ARRAY_SIZE
 
@@ -75,7 +76,13 @@ void generate_sockaddr(unsigned long **addr, unsigned long *addrlen, int pf)
 		pf = rand() % TRINITY_PF_MAX;
 
 	for (i = 0; i < ARRAY_SIZE(sa_funcs); i++) {
-		if (sa_funcs[i].pf == (unsigned int) pf)
+		if (sa_funcs[i].pf == (unsigned int) pf) {
 			sa_funcs[i].func(addr, addrlen);
+			return;
+		}
 	}
+
+	/* Make something up for unknown protocols. */
+	*addr = (unsigned long *) page_rand;
+	*addrlen = rand() % 100;
 }
