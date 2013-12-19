@@ -236,9 +236,6 @@ static void check_children(void)
 	pid_t pid;
 	unsigned int i;
 
-	gettimeofday(&tv, NULL);
-	now = tv.tv_sec;
-
 	for_each_pidslot(i) {
 		pid = shm->pids[i];
 
@@ -249,6 +246,9 @@ static void check_children(void)
 
 		if (old == 0)
 			continue;
+
+		gettimeofday(&tv, NULL);
+		now = tv.tv_sec;
 
 		/* if we wrapped, just reset it, we'll pick it up next time around. */
 		if (old > (now + 3)) {
