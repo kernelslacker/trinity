@@ -103,7 +103,7 @@ static void fork_children(void)
 			mask_signals_child();
 
 			memset(childname, 0, sizeof(childname));
-			sprintf(childname, "trinity-child%d", pidslot);
+			sprintf(childname, "trinity-c%d", pidslot);
 			prctl(PR_SET_NAME, (unsigned long) &childname);
 
 			oom_score_adj(500);

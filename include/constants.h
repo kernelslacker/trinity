@@ -1,7 +1,7 @@
 #ifndef _CONSTANTS_H
 #define _CONSTANTS_H 1
 
-#define MAX_NR_CHILDREN 64
+#define MAX_NR_CHILDREN 256
 
 #define MAX_PIPE_FDS 4
 #define MAX_PERF_FDS 10
