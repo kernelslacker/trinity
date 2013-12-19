@@ -6,7 +6,10 @@
 #include "config.h"
 #include "net.h"
 #include "random.h"
+#include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
+
+#define SOL_CAIF 278
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
@@ -44,4 +47,22 @@ void caif_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_STREAM;
 }
 
+static const unsigned int caif_opts[] = { CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM };
+#define NR_SOL_CAIF_OPTS ARRAY_SIZE(caif_opts)
+
+void caif_setsockopt(struct sockopt *so)
+{
+	unsigned char val;
+
+	so->level = SOL_CAIF;
+
+	val = rand() % NR_SOL_CAIF_OPTS;
+	so->optname = caif_opts[val];
+}
+#else
+/* stub if we are built on something without RDS headers */
+void caif_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_CAIF;
+}
 #endif

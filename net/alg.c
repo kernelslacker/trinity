@@ -10,6 +10,8 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 
+#define SOL_ALG 279
+
 void alg_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
 	struct sockaddr_alg *alg;
@@ -30,4 +32,8 @@ void alg_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	*addrlen = sizeof(struct sockaddr_alg);
 }
 
+void alg_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_ALG;
+}
 #endif
