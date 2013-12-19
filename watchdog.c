@@ -155,7 +155,7 @@ static int check_main_alive(void)
 	}
 
 	if (shm->mainpid == 0) {
-		output(0, "main pid was zero!\n");
+		output(0, "main pid was zero! (exit_reason:%d)\n", shm->exit_reason);
 		shm->exit_reason = EXIT_MAIN_DISAPPEARED;
 		return FALSE;
 	}
