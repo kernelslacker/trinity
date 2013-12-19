@@ -83,6 +83,7 @@ static void post_mmap(int childno)
 	new->size = shm->a2[childno];
 	new->prot = shm->a3[childno];
 	new->ptr = p;
+	new->type = MAP_LOCAL;
 
 	// Add this to a list for use by subsequent syscalls.
 	list = &shm->mappings[childno]->list;

@@ -50,6 +50,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	newnode->name = strdup(name);
 	newnode->size = size;
 	newnode->prot = prot;
+	newnode->type = MAP_GLOBAL;
 	newnode->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
 	if (newnode->ptr == MAP_FAILED) {
 		outputerr("mmap failure\n");
@@ -166,10 +167,18 @@ void destroy_global_mappings(void)
 	num_global_mappings = 0;
 }
 
-void delete_local_mapping(int childno, struct map *map)
+static void delete_local_mapping(int childno, struct map *map)
 {
 	list_del(&map->list);
 	shm->num_mappings[childno]--;
+}
+
+void delete_mapping(int childno, struct map *map)
+{
+	if (map->type == MAP_LOCAL)
+		delete_local_mapping(childno, map);
+
+	/* Right now, we don't want to delete MAP_GLOBAL mappings */
 }
 
 struct map * common_set_mmap_ptr_len(int childno)

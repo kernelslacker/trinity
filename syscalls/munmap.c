@@ -17,8 +17,7 @@ static void post_munmap(int childno)
 	if (shm->retval[childno] != 0)
 		return;
 
-	// TODO: Should we only allow un-munmaping local mmaps?
-	delete_local_mapping(childno, map);
+	delete_mapping(childno, map);
 }
 
 struct syscall syscall_munmap = {
