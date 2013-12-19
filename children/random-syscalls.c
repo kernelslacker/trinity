@@ -136,10 +136,8 @@ int child_random_syscalls(int childno)
 			goto out;
 		}
 
-		if (shm->exit_reason != STILL_RUNNING) {
-			outputerr("Main is not running, exiting");
+		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
-		}
 
 		syscallnr = rand() % nr_active_syscalls;
 		/* If we got a syscallnr which is not actvie repeat the attempt, since another child has switched that syscall off already.*/
