@@ -2,8 +2,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
-#include <linux/ipx.h>
 #include <stdlib.h>
+#include <netipx/ipx.h>
 #include "net.h"
 #include "random.h"
 
@@ -31,4 +31,10 @@ void ipx_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = rand() % PROTO_MAX;
 	st->type = SOCK_DGRAM;
+}
+
+void ipx_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_IPX;
+	so->optname = IPX_TYPE;
 }

@@ -1,10 +1,15 @@
+#include <stdlib.h>
+#include <linux/atmdev.h>
+#include <linux/atm.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
-#include <linux/atm.h>
 #include <stdlib.h>
+#include "maps.h"	// page_rand
 #include "net.h"
+#include "utils.h"	// ARRAY_SIZE
+#include "compat.h"
 
 void atmpvc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 {
@@ -40,4 +45,18 @@ void atmsvc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	atmsvc->sas_addr.lij_id = rand();
 	*addr = (unsigned long *) atmsvc;
 	*addrlen = sizeof(struct sockaddr_atmsvc);
+}
+
+#define NR_SOL_ATM_OPTS ARRAY_SIZE(atm_opts)
+static const unsigned int atm_opts[] = {
+	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT };
+
+void atm_setsockopt(struct sockopt *so)
+{
+	unsigned char val;
+
+	so->level = SOL_ATM;
+
+	val = rand() % NR_SOL_ATM_OPTS;
+	so->optname = atm_opts[val];
 }

@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <netatalk/at.h>
 #include <linux/atalk.h>
 #include "random.h"
 #include "net.h"
@@ -33,4 +34,9 @@ void atalk_rand_socket(struct socket_triplet *st)
 
 	st->protocol = rand() % PROTO_MAX;
 	st->type = SOCK_RAW;
+}
+
+void atalk_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_ATALK;
 }
