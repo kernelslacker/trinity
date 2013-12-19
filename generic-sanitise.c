@@ -245,7 +245,8 @@ static unsigned long handle_arg_len_already_set(int childno, unsigned long argnu
 
 static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsigned long argnum)
 {
-	unsigned long sockaddr = 0, sockaddrlen = 0;
+	struct sockaddr *sockaddr = NULL;
+	unsigned long sockaddrlen = 0;
 
 	generate_sockaddr((unsigned long **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
