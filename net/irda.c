@@ -12,7 +12,7 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-void irda_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_irda *irda;
 	unsigned int i;
@@ -26,7 +26,7 @@ void irda_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	irda->sir_addr = rand();
 	for (i = 0; i < 25; i++)
 		irda->sir_name[i] = rand();
-	*addr = (unsigned long *) irda;
+	*addr = (struct sockaddr *) irda;
 	*addrlen = sizeof(struct sockaddr_irda);
 }
 

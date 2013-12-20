@@ -53,7 +53,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	/* Sometimes, listen on created sockets. */
 	if (rand_bool()) {
 		/* fake a sockaddr. */
-		generate_sockaddr((unsigned long **) &sa, (unsigned long *) &salen, domain);
+		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, domain);
 
 		ret = bind(fd, sa, salen);
 /*		if (ret == -1)

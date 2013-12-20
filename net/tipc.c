@@ -9,7 +9,7 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-void tipc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_tipc *tipc;
 
@@ -27,7 +27,7 @@ void tipc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	tipc->addr.name.name.type = rand();
 	tipc->addr.name.name.instance = rand();
 	tipc->addr.name.domain = rand();
-	*addr = (unsigned long *) tipc;
+	*addr = (struct sockaddr *) tipc;
 	*addrlen = sizeof(struct sockaddr_tipc);
 }
 

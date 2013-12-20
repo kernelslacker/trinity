@@ -13,7 +13,7 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-void llc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_llc *llc;
 	unsigned int i;
@@ -29,7 +29,7 @@ void llc_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	llc->sllc_sap = rand();
 	for (i = 0; i < IFHWADDRLEN; i++)
 		llc->sllc_mac[i] = rand();
-	*addr = (unsigned long *) llc;
+	*addr = (struct sockaddr *) llc;
 	*addrlen = sizeof(struct sockaddr_llc);
 }
 

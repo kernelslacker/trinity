@@ -12,7 +12,7 @@
 
 //TODO: Split out each case into separate function.
 
-void pppox_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pppox *pppox;
 	struct sockaddr_pppol2tp *pppol2tp;
@@ -42,7 +42,7 @@ void pppox_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 		pppox->sa_addr.pptp.sin_addr.s_addr = random_ipv4_address();
 #endif
 
-		*addr = (unsigned long *) pppox;
+		*addr = (struct sockaddr *) pppox;
 		*addrlen = sizeof(struct sockaddr_pppox);
 		break;
 
@@ -63,7 +63,7 @@ void pppox_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 			pppol2tp->pppol2tp.s_session = rand();
 			pppol2tp->pppol2tp.d_tunnel = rand();
 			pppol2tp->pppol2tp.d_session = rand();
-			*addr = (unsigned long *) pppol2tp;
+			*addr = (struct sockaddr *) pppol2tp;
 			*addrlen = sizeof(struct sockaddr_pppol2tp);
 			break;
 
@@ -92,7 +92,7 @@ void pppox_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 			pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[2] = 0;
 			pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[3] = htonl(1);
 			pppol2tpin6->pppol2tp.addr.sin6_scope_id = rand();
-			*addr = (unsigned long *) pppol2tpin6;
+			*addr = (struct sockaddr *) pppol2tpin6;
 			*addrlen = sizeof(struct sockaddr_pppol2tpin6);
 			}
 #endif
@@ -116,7 +116,7 @@ void pppox_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 			pppol2tpv3->pppol2tp.s_session = rand();
 			pppol2tpv3->pppol2tp.d_tunnel = rand();
 			pppol2tpv3->pppol2tp.d_session = rand();
-			*addr = (unsigned long *) pppol2tpv3;
+			*addr = (struct sockaddr *) pppol2tpv3;
 			*addrlen = sizeof(struct sockaddr_pppol2tpv3);
 			}
 #endif
@@ -147,7 +147,7 @@ void pppox_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[2] = 0;
 			pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[3] = random_ipv4_address();
 			pppol2tpv3in6->pppol2tp.addr.sin6_scope_id = rand();
-			*addr = (unsigned long *) pppol2tpv3in6;
+			*addr = (struct sockaddr *) pppol2tpv3in6;
 			*addrlen = sizeof(struct sockaddr_pppol2tpv3in6);
 			}
 #endif

@@ -8,7 +8,7 @@
 #include "random.h"
 #include "net.h"
 
-void atalk_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_at *atalk;
 
@@ -20,7 +20,7 @@ void atalk_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	atalk->sat_port = rand();
 	atalk->sat_addr.s_net = rand();
 	atalk->sat_addr.s_node = rand();
-	*addr = (unsigned long*) atalk;
+	*addr = (struct sockaddr *) atalk;
 	*addrlen = sizeof(struct sockaddr_at);
 }
 
