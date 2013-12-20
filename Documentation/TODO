@@ -23,12 +23,12 @@
   - Instead of every n syscalls, make it happen after 15 minutes (but with a minimum of n syscalls)
   - setsockopt on network sockets periodically
 
-* Rewrite socket generation.
-  Organise into (sorted) per-protocol buckets of linked-lists..
-  - Search buckets for dupes before adding.
-  - add a function to lookup a socket from a specific proto for sendmsg etc.
-    (Still occasionally send sockets from random proto's)
-  - store fam/proto at sock creation time for looking up sockets.
+* Networking improvements.
+  - Rewrite socket generation.
+    Organise into (sorted) per-protocol buckets of linked-lists..
+    - Search buckets for dupes before adding.
+  - for syscalls that take a fd and a sockaddr, look up the triplet and match.
+  - Flesh out sockaddr/socket gen for all remaining protocols.
 
 * More child types
   - fragments of things that a real program would do.
@@ -47,22 +47,27 @@
   - Sanitise routines for more ioctls
     - ext4
 
-* Destroy structures we allocated during a syscalls ->sanitise in a ->post method.
+* Improve the ->post routine to walk a list of objects that we allocated during a
+   syscalls ->sanitise in a ->post method.
   - On return from the syscall, we don't call the destructor immediately.
     We pick a small random number, and do N other syscalls before we do the destruction.
     This requires us to create a list of work to be done later, along with a pointer
     to any allocated data.
   - some ancillary data needs to be destroyed immediately after the syscall
     (it's pointless keeping around mangled pathnames for eg).
+    For this, we just destroy it in ->post
+  - Right now ->sanitise routines have to pick either a map, or malloc itself and
+    do the right thing to free it in ->post. By tagging what the allocation type was in
+    generic-sanitise, we can do multiple types.
 
 * Clean up logging.
   - Make -D use a separate debug log file
-  - audit printfs and change to output/debugf as necessary
 
 * Pretty-print improvements.
  - decode fd number -> filename in output
  - decode addresses when printing them out to print 'page_rand+4' instead of a hex address.
  - ->decode_argN functions to print decoded flags etc.
+ - decode maps.
 
 * Watchdog improvements
   - in main loop, check watchdog is still alive
@@ -87,6 +92,8 @@ maps.c improvements:
 - Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
 - make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
   in sanitise routines.
+- munge lengths when handing them out.
+- more access patterns
 
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
@@ -95,23 +102,17 @@ maps.c improvements:
 
 * Perform some checks on return from syscall
   - check padding between struct members is zeroed.
-  - Set regs that should be preserved across syscalls to a known value, and check
-    on return whether any of them got clobbered.
-  - Check for corruption patterns (LIST_DEBUG, SLAB_POISON)
 
-* run children in different namespaces, personalities.
+* munge_process() on child startup
+  - run children in different namespaces, personalities.
+  - unshare
 
 * Output errno distribution on exit
 
-* Store previous syscall results
-
 * if we exit because we become tainted, dump the last 3 syscalls.
-
-* -x & -C should build a syscall table & adjust max_nr_syscalls
+  (useful if we have logging disabled. Needs a ringbuffer).
 
 * allow for multiple -G's (after there is more than 'vm')
-  I might kill off -G. It might be better to just implement fragments 
-  that do various VM calls, or various network calls etc etc
 
 * audit which syscalls never succeed, and write sanitise routines for them
 
@@ -126,9 +127,6 @@ maps.c improvements:
   - parameter for the dir/file randomness bias
 
 * Some of the syscalls marked AVOID are done so for good reason.
-  - Make the VM syscalls work on their own private mappings instead of page_rand
-    Right now, if mremap makes page_rand unreadable for some reason, we segfault.
-
   - Revisit fuzzing ptrace.
     - It's disabled currently because of situations like..
     child a traces child b
@@ -145,12 +143,6 @@ maps.c improvements:
     2. leave the dupes, just for the sake of getting the ->name right.
 
   - Finish annotating syscall return types
-
-* When we've hit a bug once, it's really annoying to keep walking into that same bug.
-  Add some code to actively avoid calling certain syscalls with certain params based
-  on kernel version.
-  (Might be a lot of work, more than it's worth)
-  - also add an override to disable this code.
 
 * structured logging.
   - To begin with, in parallel with existing text based logging.
@@ -176,12 +168,9 @@ maps.c improvements:
     - To begin with, just allow replay/bisect using one child process.
       Synchronising threads across different runs may be complicated.
 
-* affect_child() on child startup
-  - personality
-  - unshare
-
 * Scalability improvements.
-  Remove the 64 child limit, as it's kinda low on big boxes.
+  When running with lots of children, some of them get starved, and the watchdog goes nutty.
+  Not sure if it's worth replacing the arrays in the shm with lists.
 
 * Misc cleanups
   - syscall.c:syscall32()  hide the assembly in a macro in arch-*.h and only do it
@@ -191,16 +180,10 @@ maps.c improvements:
   - Pause on oops.
     Sometimes we might want to read trinity state when we trigger a bad event.
 
-* Reduce segvs.
-  - if we're passing an address we own like page_rand to a syscall, make sure we haven't
-    already done something like munmap'd it, or mprotect'd it.
-    (Will need us to create some structure to document what we've done to an addr on prior syscalls).
-    iknowthis already does something like this with its vma tracking. investigate.
-  - 32bit children seem to nearly always segv
-
 * Blocked child improvements.
   - if we find a blocking fd, check if it's a socket, and shutdown() it. 
     (tricky: we need to do the shutdown in the main process, and then tell other children)
-  - if all children are stuck, just exit.
-    (Haven't seen this happen in a while. still a problem?)
+
+* Backwards compatability improvements.
+  Move some of the ifdef's into header files.
 
