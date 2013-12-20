@@ -12,7 +12,7 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-void rose_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_rose *rose;
 
@@ -33,7 +33,7 @@ void rose_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 
 	memcpy(rose->srose_digi.ax25_call, page_rand + 7, 7);
 
-	*addr = (unsigned long *) rose;
+	*addr = (struct sockaddr *) rose;
 	*addrlen = sizeof(struct sockaddr_rose);
 }
 

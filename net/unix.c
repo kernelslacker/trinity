@@ -7,7 +7,7 @@
 #include "maps.h"
 #include "net.h"
 
-void unix_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_un *unixsock;
 	unsigned int len;
@@ -20,7 +20,7 @@ void unix_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	len = rand() % 20;
 	memset(&page_rand[len], 0, 1);
 	strncpy(unixsock->sun_path, page_rand, len);
-	*addr = (unsigned long *) unixsock;
+	*addr = (struct sockaddr *) unixsock;
 	*addrlen = sizeof(struct sockaddr_un);
 }
 

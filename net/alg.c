@@ -12,7 +12,7 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 
-void alg_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_alg *alg;
 	unsigned int i;
@@ -28,7 +28,7 @@ void alg_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	alg->salg_mask = rand();
 	for (i = 0; i < 64; i++)
 		alg->salg_name[i] = rand();
-	*addr = (unsigned long *) alg;
+	*addr = (struct sockaddr *) alg;
 	*addrlen = sizeof(struct sockaddr_alg);
 }
 #endif

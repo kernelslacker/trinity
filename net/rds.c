@@ -17,7 +17,7 @@ void rds_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_SEQPACKET;
 }
 
-void rds_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *rds;
 
@@ -28,7 +28,7 @@ void rds_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	rds->sin_addr.s_addr = random_ipv4_address();
 	rds->sin_port = rand() % 65535;
 
-	*addr = (unsigned long *) rds;
+	*addr = (struct sockaddr *) rds;
 	*addrlen = sizeof(struct sockaddr_in);
 }
 

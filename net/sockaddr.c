@@ -14,7 +14,7 @@
 
 struct sa_func_entry {
 	unsigned int pf;
-	void (*func)(unsigned long **addr, unsigned long *addrlen);
+	void (*func)(struct sockaddr **addr, socklen_t *addrlen);
 };
 
 static const struct sa_func_entry sa_funcs[] = {
@@ -63,7 +63,7 @@ static const struct sa_func_entry sa_funcs[] = {
 //TODO	{ .pf = PF_VSOCK, .func = &vsock_gen_sockaddr },
 };
 
-void generate_sockaddr(unsigned long **addr, unsigned long *addrlen, int pf)
+void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {
 	unsigned int i;
 
@@ -83,6 +83,6 @@ void generate_sockaddr(unsigned long **addr, unsigned long *addrlen, int pf)
 	}
 
 	/* Make something up for unknown protocols. */
-	*addr = (unsigned long *) page_rand;
+	*addr = (struct sockaddr *) page_rand;
 	*addrlen = rand() % 100;
 }

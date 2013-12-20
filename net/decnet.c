@@ -10,7 +10,7 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-void decnet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_dn *dn;
 	unsigned int i;
@@ -28,7 +28,7 @@ void decnet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	dn->sdn_add.a_len = rand() % 2;
 	dn->sdn_add.a_addr[0] = rand();
 	dn->sdn_add.a_addr[1] = rand();
-	*addr = (unsigned long *) dn;
+	*addr = (struct sockaddr *) dn;
 	*addrlen = sizeof(struct sockaddr_dn);
 }
 

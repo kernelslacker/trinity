@@ -11,7 +11,7 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-void packet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
+void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pkt *pkt;
 	unsigned int i;
@@ -24,7 +24,7 @@ void packet_gen_sockaddr(unsigned long **addr, unsigned long *addrlen)
 	pkt->spkt_family = PF_PACKET;
 	for (i = 0; i < 14; i++)
 		pkt->spkt_device[i] = rand();
-	*addr = (unsigned long *) pkt;
+	*addr = (struct sockaddr *) pkt;
 	*addrlen = sizeof(struct sockaddr_pkt);
 }
 

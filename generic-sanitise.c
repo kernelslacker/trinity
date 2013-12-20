@@ -246,9 +246,9 @@ static unsigned long handle_arg_len_already_set(int childno, unsigned long argnu
 static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsigned long argnum)
 {
 	struct sockaddr *sockaddr = NULL;
-	unsigned long sockaddrlen = 0;
+	socklen_t sockaddrlen = 0;
 
-	generate_sockaddr((unsigned long **)&sockaddr, &sockaddrlen, PF_NOHINT);
+	generate_sockaddr((struct sockaddr **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
 	switch (argnum) {
 	case 1:	if (syscalls[call].entry->arg2type == ARG_SOCKADDRLEN)
