@@ -110,7 +110,7 @@ retry:
 
 	ret = setsockopt(fd, so->level, so->optname, (void *)so->optval, so->optlen);
 	if (ret == 0) {
-		output(1, "Setsockopt(%lx %lx %lx %lx) on fd %d [%d:%d:%d]\n",
+		output(2, "Setsockopt(%lx %lx %lx %lx) on fd %d [%d:%d:%d]\n",
 			so->level, so->optname, so->optval, so->optlen, fd,
 			triplet->family, triplet->type, triplet->protocol);
 	} else {
