@@ -1,3 +1,5 @@
+#pragma once
+
 #define KERNEL_ADDR		0xfffffc0000310000
 /* KERNEL_ADDR is 0xfffffc0001010000 ifndef CONFIG_ALPHA_LEGACY_START_ADDRESS */
 

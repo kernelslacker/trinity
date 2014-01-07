@@ -1,5 +1,4 @@
-#ifndef __LIST_H__
-#define __LIST_H__
+#pragma once
 
 #include <stdio.h>
 
@@ -57,4 +56,3 @@ static inline void list_del(struct list_head *entry)
 #define list_for_each(pos, head) \
          for (pos = (head)->next; pos != (head); pos = pos->next)
 
-#endif

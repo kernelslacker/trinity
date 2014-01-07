@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  * Derived from linux/arch/arm64/include/asm/unistd.h
  */

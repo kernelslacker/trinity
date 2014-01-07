@@ -1,5 +1,4 @@
-#ifndef _TRINITY_TABLES_H
-#define _TRINITY_TABLES_H 1
+#pragma once
 
 #include "types.h"
 #include "syscall.h"
@@ -89,4 +88,3 @@ void init_syscalls_uniarch(void);
 #define for_each_syscall(i) \
 	for (i = 0; i < max_nr_syscalls; i++)
 
-#endif	/* _TRINITY_TABLES_H */

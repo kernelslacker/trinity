@@ -1,3 +1,5 @@
+#pragma once
+
 /* Syscalls from  arch/mips/kernel/scall32-o32.S */
 
 #include "sanitise.h"
@@ -362,4 +364,4 @@ struct syscalltable syscalls_mips[] = {
 		{ .entry = &syscall_process_vm_readv },	/* 4345 */
 		{ .entry = &syscall_process_vm_writev },
 		{ .entry = &syscall_kcmp },
- };
+};

@@ -1,5 +1,4 @@
-#ifndef _PIDS_H
-#define _PIDS_H 1
+#pragma once
 
 #include <sys/types.h>
 #include "types.h"
@@ -19,5 +18,3 @@ int pid_is_valid(pid_t);
 void pids_init(void);
 
 #define pid_alive(_pid) kill(_pid, 0)
-
-#endif	/* _PIDS_H */

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"
@@ -768,4 +770,3 @@ struct syscalltable syscalls_sh[] = {
 	{ .entry = &syscall_process_vm_writev },
 	{ .entry = &syscall_kcmp },
 };
-#endif

@@ -1,5 +1,4 @@
-#ifndef _CHILD_H
-#define _CHILD_H 1
+#pragma once
 
 #include <sys/types.h>
 
@@ -22,5 +21,3 @@ enum childtypes {
 	CHILD_RANDOM_SYSCALLS = 1,
 	CHILD_OPEN_ALL_FILES = 2,
 };
-
-#endif	/* _CHILD_H */

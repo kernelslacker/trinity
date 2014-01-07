@@ -1,5 +1,4 @@
-#ifndef _SANITISE_H
-#define _SANITISE_H 1
+#pragma once
 
 #include "syscall.h"
 
@@ -26,5 +25,3 @@ int get_random_fd(void);
 const char * generate_pathname(void);
 
 void gen_unicode_page(char *page);
-
-#endif	/* _SANITISE_H */

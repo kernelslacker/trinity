@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  * derived from linux/arch/arm/kernel/calls.S
  */

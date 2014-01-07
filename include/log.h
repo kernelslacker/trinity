@@ -1,5 +1,4 @@
-#ifndef _LOG_H
-#define _LOG_H 1
+#pragma once
 
 #include <unistd.h>
 #include "types.h"
@@ -61,4 +60,3 @@ void debugf(const char *fmt, ...);
 
 #define BUG_ON(condition)	do { if ((condition)) BUG(BUGTXT); } while (0)
 
-#endif	/* _LOG_H */

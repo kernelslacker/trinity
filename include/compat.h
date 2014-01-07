@@ -1,5 +1,5 @@
-#ifndef _TRINITY_COMPAT_H
-#define _TRINITY_COMPAT_H 1
+#pragma once
+
 
 /* fcntl.h */
 #ifndef AT_EMPTY_PATH
@@ -841,5 +841,3 @@ struct kvm_get_htab_fd {
 #ifndef ETH_P_QINQ3
 #define ETH_P_QINQ3	0x9300
 #endif
-
-#endif	/* _TRINITY_COMPAT_H */

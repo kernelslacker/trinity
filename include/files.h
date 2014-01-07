@@ -1,3 +1,5 @@
+#pragma once
+
 #include "constants.h"
 #include <sys/stat.h>
 

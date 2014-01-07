@@ -1,3 +1,5 @@
+#pragma once
+
 #define PAGE_OFFSET		0xffffffc000000000UL
 #define TASK_SIZE		(1UL << 39)
 #define MODULE_ADDR		(PAGE_OFFSET - 0x04000000)

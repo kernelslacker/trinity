@@ -1,3 +1,5 @@
+#pragma once
+
 /* Syscalls from arch/powerpc/include/asm/systbl.h as of 2.6.31rc2 */
 
 #include "sanitise.h"

@@ -1,5 +1,4 @@
-#ifndef _PARAMS_H
-#define _PARAMS_H 1
+#pragma once
 
 #include "types.h"
 #include "net.h"
@@ -53,4 +52,3 @@ extern int kernel_taint_mask;
 extern bool kernel_taint_param_occured;
 
 extern unsigned int user_specified_children;
-#endif	/* _PARAMS_H */

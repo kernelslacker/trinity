@@ -1,5 +1,4 @@
-#ifndef _RANDOM_H
-#define _RANDOM_H 1
+#pragma once
 
 #include "types.h"
 
@@ -14,5 +13,3 @@ unsigned int rand32(void);
 u64 rand64(void);
 
 void generate_random_page(char *page);
-
-#endif	/* _RANDOM_H */

@@ -1,3 +1,5 @@
+#pragma once
+
 #ifdef __powerpc64__
 #define KERNEL_ADDR		0xc000000000000000UL
 #define MODULE_ADDR		0xd000000000000000UL

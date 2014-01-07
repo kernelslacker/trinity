@@ -1,5 +1,4 @@
-#ifndef _ARCH_H
-#define _ARCH_H 1
+#pragma once
 
 #include "types.h"
 
@@ -59,5 +58,3 @@
 extern unsigned int page_size;
 
 extern bool biarch;
-
-#endif  /* _ARCH_H */

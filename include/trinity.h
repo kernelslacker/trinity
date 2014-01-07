@@ -1,5 +1,4 @@
-#ifndef _TRINITY_H
-#define _TRINITY_H 1
+#pragma once
 
 extern unsigned int num_online_cpus;
 
@@ -18,5 +17,3 @@ void init_watchdog(void);
 unsigned int check_if_fd(unsigned int child);
 
 void regenerate(void);
-
-#endif	/* _TRINITY_H */
