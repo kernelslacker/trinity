@@ -1,3 +1,5 @@
+#pragma once
+
 /* Syscalls from arch/x86/syscalls/syscall_32.tbl as of 3.8rc1 */
 
 #include "sanitise.h"

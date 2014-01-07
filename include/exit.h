@@ -1,5 +1,4 @@
-#ifndef _EXIT_H
-#define _EXIT_H 1
+#pragma once
 
 extern unsigned char exit_reason;
 
@@ -18,5 +17,3 @@ enum exit_reasons {
 	EXIT_MAIN_DISAPPEARED = 11,
 	EXIT_UID_CHANGED = 12,
 };
-
-#endif	/* _EXIT_H */

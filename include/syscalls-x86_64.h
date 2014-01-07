@@ -1,5 +1,4 @@
-#ifndef _SYSCALLS_x86_64_H
-#define _SYSCALLS_x86_64_H 1
+#pragma once
 
 /* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.8rc1 */
 
@@ -323,5 +322,3 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_kcmp },
 	{ .entry = &syscall_finit_module },
 };
-
-#endif	/* _SYSCALLS_x86_64_H */

@@ -1,3 +1,5 @@
+#pragma once
+
 #ifdef __s390x__
 
 #define KERNEL_ADDR	0UL

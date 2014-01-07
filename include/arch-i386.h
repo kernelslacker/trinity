@@ -1,3 +1,5 @@
+#pragma once
+
 #define X86 1
 
 #define KERNEL_ADDR	0xc0100220

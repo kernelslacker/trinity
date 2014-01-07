@@ -1,3 +1,5 @@
+#pragma once
+
 #define X86 1
 
 #define PAGE_OFFSET	0xffff880000000000UL

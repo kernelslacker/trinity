@@ -1,5 +1,4 @@
-#ifndef _TRINITY_SYSCALL_H
-#define _TRINITY_SYSCALL_H 1
+#pragma once
 
 #include "types.h"
 
@@ -107,5 +106,3 @@ struct syscalltable {
 #define TO_BE_DEACTIVATED (1<<6)
 
 long syscall32(unsigned int call, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5, unsigned long a6);
-
-#endif	/* _TRINITY_SYSCALL_H */

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdint.h>
 
 #if __WORDSIZE == 64

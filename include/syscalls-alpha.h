@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  * The Alpha Linux syscall table in all its gory mess.
  *

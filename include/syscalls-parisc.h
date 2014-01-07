@@ -1,5 +1,4 @@
-#ifndef _SYSCALLS_PARISC_H
-#define _SYSCALLS_PARISC_H 1
+#pragma once
 
 /* Syscalls from arch/parisc/kernel/syscall_table.S as of 3.12-rc6 */
 
@@ -343,5 +342,3 @@ struct syscalltable syscalls_parisc[] = {
 	{ .entry = &syscall_kcmp },
 	{ .entry = &syscall_finit_module },
 };
-
-#endif	/* _SYSCALLS_PARISC_H */

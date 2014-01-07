@@ -1,5 +1,4 @@
-#ifndef _NET_H
-#define _NET_H 1
+#pragma once
 
 #include <sys/types.h>          /* See NOTES */
 #include <sys/socket.h>
@@ -181,5 +180,3 @@ void rxrpc_setsockopt(struct sockopt *so);
 void bluetooth_setsockopt(struct sockopt *so);
 void pnpipe_setsockopt(struct sockopt *so);
 void iucv_setsockopt(struct sockopt *so);
-
-#endif	/* _NET_H */

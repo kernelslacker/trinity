@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  * Performance events:
  *
@@ -11,9 +13,6 @@
  *
  * For licencing details see kernel-base/COPYING
  */
-#ifndef _UAPI_LINUX_PERF_EVENT_H
-#define _UAPI_LINUX_PERF_EVENT_H
-
 #include <linux/types.h>
 #include <linux/ioctl.h>
 #include <asm/byteorder.h>
@@ -811,5 +810,3 @@ struct perf_branch_entry {
 		abort:1,    /* transaction abort */
 		reserved:60;
 };
-
-#endif /* _UAPI_LINUX_PERF_EVENT_H */

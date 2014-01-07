@@ -1,5 +1,4 @@
-#ifndef _CONSTANTS_H
-#define _CONSTANTS_H 1
+#pragma once
 
 #define MAX_NR_CHILDREN 256
 
@@ -13,5 +12,3 @@
 #define REGENERATION_POINT 100000
 
 #define MAX_NR_SYSCALL 1024
-
-#endif	/* _CONSTANTS_H */

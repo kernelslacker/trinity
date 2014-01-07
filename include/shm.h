@@ -1,5 +1,4 @@
-#ifndef _SHM_H
-#define _SHM_H 1
+#pragma once
 
 #include <sys/time.h>
 #include <sys/types.h>
@@ -101,5 +100,3 @@ extern struct shm_s *shm;
 
 #define SHM_OK 0
 #define SHM_CORRUPT 1
-
-#endif	/* _SHM_H */

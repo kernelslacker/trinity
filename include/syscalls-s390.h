@@ -1,5 +1,4 @@
-#ifndef _SYSCALLS_S390_H
-#define _SYSCALLS_S390_H
+#pragma once
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -352,5 +351,3 @@ struct syscalltable syscalls_s390[] = {
 	{ .entry = &syscall_kcmp },
 	{ .entry = &syscall_finit_module },
 };
-
-#endif /* _SYSCALLS_S390_H */

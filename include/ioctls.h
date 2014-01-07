@@ -1,5 +1,4 @@
-#ifndef TRINITY_IOCTLS_H
-#define TRINITY_IOCTLS_H
+#pragma once
 
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -57,4 +56,3 @@ void dump_ioctls(void);
 		register_ioctl_group(&_struct); \
 	}
 
-#endif /* TRINITY_IOCTLS_H */

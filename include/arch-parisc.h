@@ -1,3 +1,5 @@
+#pragma once
+
 // FIXME: depends on kernel bit size, userspace is always 32 bit
 
 #define PAGE_OFFSET 0x10000000

@@ -1,5 +1,4 @@
-#ifndef _SYSCALLS_IA64_H
-#define _SYSCALLS_IA64_H 1
+#pragma once
 
 /* Syscalls from arch/ia64/kernel/entry.S as of 2.6.31rc2 */
 
@@ -307,5 +306,3 @@ struct syscalltable syscalls_ia64[] = {
 	{ .entry = &syscall_pwritev },
 	{ .entry = &syscall_rt_tgsigqueueinfo },
 };
-
-#endif	/* _SYSCALLS_IA64_H */
