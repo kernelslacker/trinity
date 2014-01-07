@@ -1,6 +1,7 @@
 #pragma once
 
 extern unsigned int num_online_cpus;
+extern unsigned int max_children;
 
 #define UNLOCKED 0
 #define LOCKED 1

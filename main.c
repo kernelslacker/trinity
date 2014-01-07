@@ -63,7 +63,7 @@ static void fork_children(void)
 
 	/* Generate children*/
 
-	while (shm->running_childs < shm->max_children) {
+	while (shm->running_childs < max_children) {
 		int pid = 0;
 		int fd;
 
@@ -134,7 +134,7 @@ static void fork_children(void)
 		shm->running_childs++;
 		debugf("Created child %d in pidslot %d [total:%d/%d]\n",
 			shm->pids[pidslot], pidslot,
-			shm->running_childs, shm->max_children);
+			shm->running_childs, max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)
 			return;
@@ -338,7 +338,7 @@ static void main_loop(void)
 	while (shm->exit_reason == STILL_RUNNING) {
 
 		if (shm->spawn_no_more == FALSE) {
-			if (shm->running_childs < shm->max_children)
+			if (shm->running_childs < max_children)
 				fork_children();
 
 			/* Periodic regenation of fd's etc. */

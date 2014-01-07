@@ -6,15 +6,16 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 
-#include "perf.h"
-#include "random.h"
-#include "shm.h"
 #include "files.h"
-#include "pids.h"
-#include "net.h"
 #include "log.h"
-#include "sanitise.h"
+#include "net.h"
 #include "params.h"
+#include "perf.h"
+#include "pids.h"
+#include "random.h"
+#include "sanitise.h"
+#include "shm.h"
+#include "trinity.h"
 
 /* Pipe FD related functions. */
 static void open_pipes(void)
@@ -192,7 +193,7 @@ int get_random_fd(void)
 regen:
 	if (shm->fd_lifetime == 0) {
 		shm->current_fd = get_new_random_fd();
-		shm->fd_lifetime = (rand() % shm->max_children) + 5;
+		shm->fd_lifetime = (rand() % max_children) + 5;
 	} else
 		shm->fd_lifetime--;
 
