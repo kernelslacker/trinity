@@ -8,21 +8,31 @@
 #define MPOL_MF_MOVE    (1<<1)  /* Move pages owned by this process to conform to mapping */
 #define MPOL_MF_MOVE_ALL (1<<2) /* Move every page to conform to mapping */
 
+#include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include "utils.h"	// page_size
-#include "sanitise.h"
 #include "arch.h"
+#include "maps.h"
+#include "random.h"
+#include "sanitise.h"
 #include "shm.h"
+#include "utils.h"	// page_size
 
 static unsigned int count;
 
+#define WAS_MALLOC 1
+#define WAS_MAP 2
+static unsigned char *pagetypes;
+
 static void sanitise_move_pages(int childno)
 {
+	struct map *map;
 	int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i, j;
+
+	pagetypes = zmalloc(page_size);
 
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
@@ -36,14 +46,25 @@ static void sanitise_move_pages(int childno)
 	shm->scratch[childno] = (unsigned long) page_alloc;
 
 	for (i = 0; i < count; i++) {
-		page_alloc[i] = (unsigned long) malloc(page_size);
-		if (!page_alloc[i]) {
-			for (j = 0; j < i; j++)
-				free((void *)page_alloc[j]);
-			free(page_alloc);
-			return;
+		if (rand_bool()) {
+			/* malloc */
+			page_alloc[i] = (unsigned long) malloc(page_size);
+			if (!page_alloc[i]) {
+				for (j = 0; j < i; j++) {
+					if (pagetypes[j] == WAS_MALLOC)
+						free((void *)page_alloc[j]);
+				}
+				free(page_alloc);
+				return;
+			}
+			page_alloc[i] &= PAGE_MASK;
+			pagetypes[i] = WAS_MALLOC;
+		} else {
+			/* mapping. */
+			map = get_map();
+			page_alloc[i] = (unsigned long) map->ptr;
+			pagetypes[i] = WAS_MAP;
 		}
-		page_alloc[i] &= PAGE_MASK;
 	}
 	shm->a3[childno] = (unsigned long) page_alloc;
 
@@ -73,7 +94,8 @@ static void post_move_pages(int childno)
 
 	for (i = 0; i < count; i++) {
 		ptr = (void *) page[i];
-		free(ptr);
+		if (pagetypes[i] == WAS_MALLOC)
+			free(ptr);
 	}
 
 	free(page);
