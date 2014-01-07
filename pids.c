@@ -7,6 +7,7 @@
 #include "pids.h"
 #include "log.h"
 #include "sanitise.h"
+#include "trinity.h"
 
 pid_t initpid;
 
@@ -39,7 +40,7 @@ void dump_pid_slots(void)
 
 	sptr += sprintf(sptr, "## pids: (%d active)\n", shm->running_childs);
 
-	for (i = 0; i < shm->max_children; i+=8) {
+	for (i = 0; i < max_children; i += 8) {
 		sptr += sprintf(sptr, "%d-%d: ", i, i+7);
 		for (j = 0; j < 8; j++) {
 			if (shm->pids[i+j] != EMPTY_PIDSLOT) {
@@ -122,7 +123,7 @@ unsigned int get_pid(void)
 
 	switch (rand() % 3) {
 	case 0:
-retry:		i = rand() % shm->max_children;
+retry:		i = rand() % max_children;
 		pid = shm->pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			goto retry;

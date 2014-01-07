@@ -23,6 +23,7 @@ char *progname = NULL;
 
 unsigned int page_size;
 unsigned int num_online_cpus;
+unsigned int max_children;
 
 char *page_zeros;
 char *page_0xff;
@@ -168,6 +169,16 @@ int main(int argc, char* argv[])
 
 	if (kernel_taint_mask != (int)0xFFFFFFFF) {
 		outputstd("Custom kernel taint mask has been specified: 0x%08x (%d).\n", kernel_taint_mask, kernel_taint_mask);
+	}
+
+	if (user_specified_children != 0)
+		max_children = user_specified_children;
+	else
+		max_children = sysconf(_SC_NPROCESSORS_ONLN);
+
+	if (max_children > MAX_NR_CHILDREN) {
+		outputerr("Increase MAX_NR_CHILDREN!\n");
+		exit(EXIT_FAILURE);
 	}
 
 	setup_shm_postargs();

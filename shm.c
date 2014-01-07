@@ -78,14 +78,4 @@ void setup_shm_postargs(void)
 		/* Set seed in parent thread */
 		set_seed(0);
 	}
-
-	if (user_specified_children != 0)
-		shm->max_children = user_specified_children;
-	else
-		shm->max_children = sysconf(_SC_NPROCESSORS_ONLN);
-
-	if (shm->max_children > MAX_NR_CHILDREN) {
-		outputerr("Increase MAX_NR_CHILDREN!\n");
-		exit(EXIT_FAILURE);
-	}
 }

@@ -13,6 +13,7 @@
 #include "maps.h" //pages
 #include "syscall.h" //syscalls
 #include "tables.h"
+#include "trinity.h"
 
 #define BUFSIZE 1024
 
@@ -99,7 +100,7 @@ unsigned int highest_logfile(void)
 	if (logging == FALSE)
 		return 0;
 
-	file = shm->logfiles[shm->max_children - 1];
+	file = shm->logfiles[max_children - 1];
 	ret = fileno(file);
 
 	return ret;
