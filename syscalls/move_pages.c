@@ -31,9 +31,9 @@ static void sanitise_move_pages(int childno)
 
 	/* setup array of ptrs to pages to move */
 	page_alloc = (unsigned long *) malloc(page_size);
-	shm->scratch[childno] = (unsigned long) page_alloc;
 	if (page_alloc == NULL)
 		return;
+	shm->scratch[childno] = (unsigned long) page_alloc;
 
 	for (i = 0; i < count; i++) {
 		page_alloc[i] = (unsigned long) malloc(page_size);
