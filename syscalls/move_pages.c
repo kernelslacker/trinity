@@ -24,21 +24,16 @@ static void sanitise_move_pages(int childno)
 	unsigned long *page_alloc;
 	unsigned int i, j;
 
-	// Needs CAP_SYS_NICE to move pages in another process
-	if (getuid() != 0) {
-		shm->a1[childno] = 0;
-		shm->a6[childno] &= ~MPOL_MF_MOVE_ALL;
-	}
+	/* number of pages to move */
+	count = rand() % (page_size / sizeof(void *));
+	count = max(1, count);
+	shm->a2[childno] = count;
 
+	/* setup array of ptrs to pages to move */
 	page_alloc = (unsigned long *) malloc(page_size);
 	shm->scratch[childno] = (unsigned long) page_alloc;
 	if (page_alloc == NULL)
 		return;
-
-	count = rand() % (page_size / sizeof(void *));
-	count = max(1, count);
-
-	shm->a2[childno] = count;
 
 	for (i = 0; i < count; i++) {
 		page_alloc[i] = (unsigned long) malloc(page_size);
@@ -50,15 +45,20 @@ static void sanitise_move_pages(int childno)
 		}
 		page_alloc[i] &= PAGE_MASK;
 	}
-
 	shm->a3[childno] = (unsigned long) page_alloc;
 
+	/* nodes = array of ints specifying desired location for each page */
 	nodes = malloc(count * sizeof(int));
 	for (i = 0; i < count; i++)
 		nodes[i] = (int) rand() % 2;
 	shm->a4[childno] = (unsigned long) nodes;
 
-	shm->a5[childno] = (unsigned long) malloc(count * sizeof(int));
+	/* status = array of ints returning status of each page.*/
+	shm->a5[childno] = (unsigned long) zmalloc(count * sizeof(int));
+
+	/* Needs CAP_SYS_NICE */
+	if (getuid() != 0)
+		shm->a6[childno] &= ~MPOL_MF_MOVE_ALL;
 }
 
 static void post_move_pages(int childno)
@@ -83,11 +83,11 @@ struct syscall syscall_move_pages = {
 	.name = "move_pages",
 	.num_args = 6,
 	.arg1name = "pid",
+	.arg1type = ARG_PID,
 	.arg2name = "nr_pages",
 	.arg3name = "pages",
 	.arg4name = "nodes",
 	.arg5name = "status",
-	.arg5type = ARG_ADDRESS,
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
 	.arg6list = {
