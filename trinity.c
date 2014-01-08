@@ -31,6 +31,18 @@ char *page_rand;
 unsigned long *page_allocs;
 unsigned long *page_maps;
 
+static void * __allocbuf(const char *name)
+{
+	void *ptr;
+
+	ptr = memalign(page_size, page_size * 2);
+	if (!ptr)
+		exit(EXIT_FAILURE);
+	memset(ptr, 0, page_size * 2);
+	output(2, "%s @ %p\n", name, ptr);
+	return ptr;
+}
+
 static void init_buffers(void)
 {
 	unsigned int i;
@@ -38,41 +50,21 @@ static void init_buffers(void)
 	output(2, "shm is at %p\n", shm);
 
 	// a page of zeros
-	page_zeros = memalign(page_size, page_size * 2);
-	if (!page_zeros)
-		exit(EXIT_FAILURE);
-	memset(page_zeros, 0, page_size);
-	output(2, "page_zeros @ %p\n", page_zeros);
+	page_zeros = __allocbuf("page_zeros");
 
 	// a page of 0xff
-	page_0xff = memalign(page_size, page_size * 2);
-	if (!page_0xff)
-		exit(EXIT_FAILURE);
-	memset(page_0xff, 0xff, page_size);
-	output(2, "page_0xff @ %p\n", page_0xff);
+	page_0xff = __allocbuf("page_0xff");
 
 	// a page of random crap (overwritten below)
-	page_rand = memalign(page_size, page_size * 2);
-	if (!page_rand)
-		exit(EXIT_FAILURE);
-	memset(page_rand, 0x55, page_size);
-	output(2, "page_rand @ %p\n", page_rand);
+	page_rand = __allocbuf("page_rand");
 
 	// page containing ptrs to mallocs.
-	page_allocs = memalign(page_size, page_size * 2);
-	if (!page_allocs)
-		exit(EXIT_FAILURE);
-	memset(page_allocs, 0xff, page_size);
-	output(2, "page_allocs @ %p\n", page_allocs);
-
+	page_allocs = __allocbuf("page_allocs");
 	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
 		page_allocs[i] = (unsigned long) malloc(page_size);
 
 	// a page of ptrs to mmaps (set up at child init time).
-	page_maps = memalign(page_size, page_size * 2);
-	if (!page_maps)
-		exit(EXIT_FAILURE);
-	output(2, "page_maps @ %p\n", page_maps);
+	page_maps = __allocbuf("page_maps");
 
 	// mmaps that get shared across children.
 	setup_global_mappings();
