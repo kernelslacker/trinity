@@ -257,7 +257,7 @@ void dirty_mapping(struct map *map)
 	if (!(map->prot & PROT_WRITE))
 		return;
 
-	switch (rand() % 3) {
+	switch (rand() % 4) {
 	case 0:
 		/* Just fault in one page. */
 		p[rand() % page_size] = rand();
@@ -272,6 +272,13 @@ void dirty_mapping(struct map *map)
 		for (i = 0; i < map->size; i += (page_size * 2))
 			p[i] = rand();
 		break;
+
+	case 3:
+		/* whole mapping in reverse */
+		for (i = map->size; i > 0; i -= page_size)
+			p[i] = rand();
+		break;
+
 	default:
 		break;
 	}
