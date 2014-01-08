@@ -56,18 +56,16 @@ in_addr_t random_ipv4_address(void)
 		break;
 	}
 
-	if (rand() % 100 < 50) {
-		switch (class) {
-		case 8:	addr |= rand() % 0xffffff;
-			break;
-		case 12: addr |= rand() % 0xfffff;
-			break;
-		case 16: addr |= rand() % 0xffff;
-			break;
-		case 24: addr |= rand() % 0xff;
-			break;
-		default: break;
-		}
+	switch (class) {
+	case 8:	addr |= rand() % 0xffffff;
+		break;
+	case 12: addr |= rand() % 0xfffff;
+		break;
+	case 16: addr |= rand() % 0xffff;
+		break;
+	case 24: addr |= rand() % 0xff;
+		break;
+	default: break;
 	}
 	return htonl(addr);
 }
