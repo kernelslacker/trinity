@@ -13,6 +13,7 @@
 #include <sys/resource.h>
 #include <sys/prctl.h>
 
+#include "arch.h"
 #include "child.h"
 #include "list.h"
 #include "log.h"
@@ -97,6 +98,20 @@ static void use_fpu(void)
 
 int this_child = 0;
 
+static void setup_page_maps(void)
+{
+	struct map *map;
+	unsigned long *page;
+	unsigned int i;
+
+	page = (void *) page_maps;
+
+	for (i = 0; i < page_size / sizeof(unsigned long); i++) {
+		map = get_map();
+		page[i] = (unsigned long) map->ptr;
+	}
+}
+
 void init_child(int childno)
 {
 	cpu_set_t set;
@@ -109,6 +124,8 @@ void init_child(int childno)
 	shm->kill_count[childno] = 0;
 
 	disable_coredumps();
+
+	setup_page_maps();
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
