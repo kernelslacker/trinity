@@ -25,54 +25,6 @@ unsigned int page_size;
 unsigned int num_online_cpus;
 unsigned int max_children;
 
-char *page_zeros;
-char *page_0xff;
-char *page_rand;
-unsigned long *page_allocs;
-unsigned long *page_maps;
-
-static void * __allocbuf(const char *name)
-{
-	void *ptr;
-
-	ptr = memalign(page_size, page_size * 2);
-	if (!ptr)
-		exit(EXIT_FAILURE);
-	memset(ptr, 0, page_size * 2);
-	output(2, "%s @ %p\n", name, ptr);
-	return ptr;
-}
-
-static void init_buffers(void)
-{
-	unsigned int i;
-
-	output(2, "shm is at %p\n", shm);
-
-	// a page of zeros
-	page_zeros = __allocbuf("page_zeros");
-
-	// a page of 0xff
-	page_0xff = __allocbuf("page_0xff");
-
-	// a page of random crap (overwritten below)
-	page_rand = __allocbuf("page_rand");
-
-	// page containing ptrs to mallocs.
-	page_allocs = __allocbuf("page_allocs");
-	for (i = 0; i < (page_size / sizeof(unsigned long *)); i++)
-		page_allocs[i] = (unsigned long) malloc(page_size);
-
-	// a page of ptrs to mmaps (set up at child init time).
-	page_maps = __allocbuf("page_maps");
-
-	// mmaps that get shared across children.
-	setup_global_mappings();
-
-	// generate_random_page may end up using global_mappings, so has to be last.
-	generate_random_page(page_rand);
-}
-
 /* This is run *after* we've parsed params */
 static int munge_tables(void)
 {
@@ -227,7 +179,7 @@ int main(int argc, char* argv[])
 	if (do_specific_proto == TRUE)
 		find_specific_proto(specific_proto_optarg);
 
-	init_buffers();
+	init_shared_pages();
 
 	parse_devices();
 

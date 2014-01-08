@@ -8,6 +8,8 @@ extern char *page_rand;
 extern unsigned long *page_allocs;
 extern unsigned long *page_maps;
 
+void init_shared_pages(void);
+
 #define MAP_GLOBAL 1
 #define MAP_LOCAL 2
 
