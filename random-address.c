@@ -47,9 +47,9 @@ static void * _get_address(unsigned char null_allowed)
 	void *addr = NULL;
 
 	if (null_allowed == TRUE)
-		i = rand() % 9;
+		i = rand() % 10;
 	else
-		i = (rand() % 8) + 1;
+		i = (rand() % 9) + 1;
 
 
 	switch (i) {
@@ -75,6 +75,8 @@ static void * _get_address(unsigned char null_allowed)
 		// freeing, not the potentially munged version below.
 		// tricky. We want to hand the munged version out too, so we might end up
 		// having to split this into alloc_address / get_address.
+		break;
+	case 9:	addr = page_maps;
 		break;
 	default:
 		BUG("unreachable!\n");
