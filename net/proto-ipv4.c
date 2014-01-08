@@ -20,10 +20,18 @@
 #define IP_MULTICAST_ALL 49
 #endif
 
+int previous_ip;
+static unsigned int ip_lifetime = 0;
+
 in_addr_t random_ipv4_address(void)
 {
 	int addr = 0;
 	int class = 0;
+
+	if (ip_lifetime != 0) {
+		ip_lifetime--;
+		return previous_ip;
+	}
 
 	switch (rand() % 9) {
 	case 0:	addr = 0;		/* 0.0.0.0 */
@@ -67,6 +75,10 @@ in_addr_t random_ipv4_address(void)
 		break;
 	default: break;
 	}
+
+	previous_ip = addr;
+	ip_lifetime = 5;
+
 	return htonl(addr);
 }
 
