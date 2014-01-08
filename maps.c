@@ -257,13 +257,22 @@ void dirty_mapping(struct map *map)
 	if (!(map->prot & PROT_WRITE))
 		return;
 
-	if (rand_bool()) {
+	switch (rand() % 3) {
+	case 0:
 		/* Just fault in one page. */
-		p[rand() % page_size] = 1;
-	} else {
-		/* fault in the whole mapping */
+		p[rand() % page_size] = rand();
+		break;
+	case 1:
+		/* fault in the whole mapping. */
 		for (i = 0; i < map->size; i += page_size)
-			p[i] = 1;
+			p[i] = rand();
+		break;
+	case 2:
+		/* every other page. */
+		for (i = 0; i < map->size; i += (page_size * 2))
+			p[i] = rand();
+		break;
+	default:
+		break;
 	}
-	//TODO: More access patterns.
 }
