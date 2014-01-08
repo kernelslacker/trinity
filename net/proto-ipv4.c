@@ -82,7 +82,7 @@ void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	ipv4->sin_family = PF_INET;
 	ipv4->sin_addr.s_addr = random_ipv4_address();
-	ipv4->sin_port = rand() % 65535;
+	ipv4->sin_port = htons(rand() % 65535);
 	*addr = (struct sockaddr *) ipv4;
 	*addrlen = sizeof(struct sockaddr_in);
 }
