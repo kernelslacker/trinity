@@ -22,7 +22,25 @@
   That should be it.
 
 * Adding new sanitise routines
-  TODO
+  syscalls:
+   - First, decide if it's worth adding a sanitise routine at all, or if the generic
+     sanitise routines are good enough, by setting each arguments .arg*type member
+     to an appropriate ARG_*
+   - In cases where the generic routines are either insufficient, or need to be overridden,
+     the .sanitise member of the syscall struct can be pointed to a routine that will
+     run after the generic sanitise routines.
+   - The 'child' parameter of the sanitise function is to be used to index the various
+     per-child arrays in the shm.
+   - Likewise, after the syscall is run, you may need to free up resources allocated
+     in the .sanitise.  You can do this in the .post function.
+     There's an unsigned long in the shm named 'scratch' that may be used to store
+     ptrs to resources etc for retrieval later in .post
+   - Beware of 'over sanitising' and limiting the possibility for boundary conditions
+     to be violated. A syscall that always succeeds is not the goal, you want to be
+     exercising as many error paths as possible.
+
+  ioctls:
+   TODO
 
 * Process model.
   On startup, the first process sets up the shm etc, and then forks two processes.
