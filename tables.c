@@ -391,10 +391,42 @@ void display_enabled_syscalls(void)
 		display_enabled_syscalls_uniarch();
 }
 
+static bool check_for_argtype(const struct syscalltable *table, unsigned int num, unsigned int argtype)
+{
+	unsigned int i;
+
+	for (i = 0; i < table[num].entry->num_args; i++) {
+		switch (i) {
+		case 0:	if (table[num].entry->arg1type == argtype)
+				return FALSE;
+			break;
+		case 1:	if (table[num].entry->arg2type == argtype)
+				return FALSE;
+			break;
+		case 2:	if (table[num].entry->arg3type == argtype)
+				return FALSE;
+			break;
+		case 3:	if (table[num].entry->arg4type == argtype)
+				return FALSE;
+			break;
+		case 4:	if (table[num].entry->arg5type == argtype)
+				return FALSE;
+			break;
+		case 5:	if (table[num].entry->arg6type == argtype)
+				return FALSE;
+			break;
+		default:
+			BUG("impossible!\n");
+		}
+	}
+
+	return TRUE;
+}
+
 /* If we want just network sockets, don't bother with VM/VFS syscalls */
 bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
 {
-	unsigned int i;
+	unsigned int ret = TRUE;
 
 	if (no_files == FALSE)
 		return TRUE;
@@ -404,32 +436,9 @@ bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
 	if (table[num].entry->group == GROUP_VFS)
 		return FALSE;
 
-	for (i = 0; i < table[num].entry->num_args; i++) {
-		switch (i) {
-		case 0:	if (table[num].entry->arg1type == ARG_PATHNAME)
-				return FALSE;
-			break;
-		case 1:	if (table[num].entry->arg2type == ARG_PATHNAME)
-				return FALSE;
-			break;
-		case 2:	if (table[num].entry->arg3type == ARG_PATHNAME)
-				return FALSE;
-			break;
-		case 3:	if (table[num].entry->arg4type == ARG_PATHNAME)
-				return FALSE;
-			break;
-		case 4:	if (table[num].entry->arg5type == ARG_PATHNAME)
-				return FALSE;
-			break;
-		case 5:	if (table[num].entry->arg6type == ARG_PATHNAME)
-				return FALSE;
-			break;
-		default:
-			BUG("impossible!\n");
-		}
-	}
+	ret = check_for_argtype(table, num, ARG_PATHNAME);
 
-	return TRUE;
+	return ret;
 }
 
 void disable_non_net_syscalls(void)
