@@ -21,6 +21,8 @@
 
 char *progname = NULL;
 
+uid_t origuid;
+
 unsigned int page_size;
 unsigned int num_online_cpus;
 unsigned int max_children;
@@ -62,6 +64,8 @@ int main(int argc, char* argv[])
 	progname = argv[0];
 
 	initpid = getpid();
+
+	origuid = getuid();
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
