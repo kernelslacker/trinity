@@ -4,7 +4,26 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <sys/socket.h>
+#include "log.h"
 #include "sanitise.h"
+#include "shm.h"
+
+/*
+static void dump(int childno)
+{
+	struct sockaddr_in *ipv4;
+
+	ipv4 = (struct sockaddr_in *) shm->a2[childno];
+	output(1, "(sin_family=%d sin_addr.s_addr=%d.%d.%d.%d sin_port=%d)\n",
+		ipv4->sin_family,
+		(ipv4->sin_addr.s_addr & 0xff) ,
+		(ipv4->sin_addr.s_addr & 0xff00) >> 8,
+		(ipv4->sin_addr.s_addr & 0xff0000) >> 16,
+		(ipv4->sin_addr.s_addr & 0xff000000) >> 24,
+		ipv4->sin_port);
+}
+*/
 
 struct syscall syscall_bind = {
 	.name = "bind",
@@ -15,6 +34,7 @@ struct syscall syscall_bind = {
 	.arg2type = ARG_SOCKADDR,
 	.arg3name = "addrlen",
 	.arg3type = ARG_SOCKADDRLEN,
+	//.sanitise = dump,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 };
