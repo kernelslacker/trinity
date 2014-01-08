@@ -25,7 +25,7 @@ void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ipv6->sin6_addr.s6_addr32[1] = 0;
 	ipv6->sin6_addr.s6_addr32[2] = 0;
 	ipv6->sin6_addr.s6_addr32[3] = htonl(1);
-	ipv6->sin6_port = rand() % 65535;
+	ipv6->sin6_port = htons(rand() % 65535);
 	*addr = (struct sockaddr *) ipv6;
 	*addrlen = sizeof(struct sockaddr_in6);
 }
