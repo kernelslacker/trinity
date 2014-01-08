@@ -5,7 +5,8 @@
 extern char *page_zeros;
 extern char *page_0xff;
 extern char *page_rand;
-extern char *page_allocs;
+extern unsigned long *page_allocs;
+extern unsigned long *page_maps;
 
 #define MAP_GLOBAL 1
 #define MAP_LOCAL 2
