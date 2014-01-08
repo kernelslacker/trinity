@@ -398,47 +398,41 @@ static bool check_for_argtype(const struct syscalltable *table, unsigned int num
 	for (i = 0; i < table[num].entry->num_args; i++) {
 		switch (i) {
 		case 0:	if (table[num].entry->arg1type == argtype)
-				return FALSE;
+				return TRUE;
 			break;
 		case 1:	if (table[num].entry->arg2type == argtype)
-				return FALSE;
+				return TRUE;
 			break;
 		case 2:	if (table[num].entry->arg3type == argtype)
-				return FALSE;
+				return TRUE;
 			break;
 		case 3:	if (table[num].entry->arg4type == argtype)
-				return FALSE;
+				return TRUE;
 			break;
 		case 4:	if (table[num].entry->arg5type == argtype)
-				return FALSE;
+				return TRUE;
 			break;
 		case 5:	if (table[num].entry->arg6type == argtype)
-				return FALSE;
+				return TRUE;
 			break;
 		default:
 			BUG("impossible!\n");
 		}
 	}
 
-	return TRUE;
+	return FALSE;
 }
 
-/* If we want just network sockets, don't bother with VM/VFS syscalls */
+/* Consider anything with an ARG_FD or ARG_SOCKADDR a network syscall. */
 bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
 {
-	unsigned int ret = TRUE;
-
-	if (no_files == FALSE)
+	if (check_for_argtype(table, num, ARG_FD) == TRUE)
 		return TRUE;
 
-	if (table[num].entry->group == GROUP_VM)
-		return FALSE;
-	if (table[num].entry->group == GROUP_VFS)
-		return FALSE;
+	if (check_for_argtype(table, num, ARG_SOCKADDR) == TRUE)
+		return TRUE;
 
-	ret = check_for_argtype(table, num, ARG_PATHNAME);
-
-	return ret;
+	return FALSE;
 }
 
 void disable_non_net_syscalls(void)
