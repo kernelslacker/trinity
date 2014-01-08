@@ -252,21 +252,24 @@ void dirty_mapping(struct map *map)
 {
 	char *p = map->ptr;
 	unsigned int i;
+	unsigned int num_pages = map->size / page_size;
 
 	/* Check mapping is writable. */
 	if (!(map->prot & PROT_WRITE))
 		return;
 
-	switch (rand() % 4) {
+	switch (rand() % 5) {
 	case 0:
 		/* Just fault in one page. */
 		p[rand() % page_size] = rand();
 		break;
+
 	case 1:
 		/* fault in the whole mapping. */
 		for (i = 0; i < map->size; i += page_size)
 			p[i] = rand();
 		break;
+
 	case 2:
 		/* every other page. */
 		for (i = 0; i < map->size; i += (page_size * 2))
@@ -277,6 +280,12 @@ void dirty_mapping(struct map *map)
 		/* whole mapping in reverse */
 		for (i = map->size; i > 0; i -= page_size)
 			p[i] = rand();
+		break;
+
+	case 4:
+		/* fault in map->size pages. (some may be faulted >once) */
+		for (i = 0; i < num_pages; i++);
+			p[rand() % num_pages] = rand();
 		break;
 
 	default:
