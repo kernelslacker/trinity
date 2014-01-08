@@ -474,3 +474,53 @@ void enable_random_syscalls(void)
 			enable_random_syscalls_uniarch();
 	}
 }
+
+
+/* This is run *after* we've parsed params */
+int munge_tables(void)
+{
+	unsigned int ret;
+
+	/* By default, all syscall entries will be disabled.
+	 * If we didn't pass -c, -x or -r, mark all syscalls active.
+	 */
+	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE) && (random_selection == FALSE) && (desired_group == GROUP_NONE))
+		mark_all_syscalls_active();
+
+	if (desired_group != GROUP_NONE) {
+		ret = setup_syscall_group(desired_group);
+		if (ret == FALSE)
+			return FALSE;
+	}
+
+	if (random_selection == TRUE)
+		enable_random_syscalls();
+
+	/* If we saw a '-x', set all syscalls to enabled, then selectively disable.
+	 * Unless we've started enabling them already (with -r) (or if we specified a group -g)
+	 */
+	if (do_exclude_syscall == TRUE) {
+		if ((random_selection == FALSE) && (desired_group == GROUP_NONE))
+			mark_all_syscalls_active();
+		deactivate_disabled_syscalls();
+	}
+
+	/* if we passed -n, make sure there's no VM/VFS syscalls enabled. */
+	if (no_files == TRUE)
+		disable_non_net_syscalls();
+
+	sanity_check_tables();
+
+	count_syscalls_enabled();
+
+	if (verbose == TRUE)
+		display_enabled_syscalls();
+
+	if (validate_syscall_tables() == FALSE) {
+		outputstd("No syscalls were enabled!\n");
+		outputstd("Use 32bit:%d 64bit:%d\n", use_32bit, use_64bit);
+		return FALSE;
+	}
+
+	return TRUE;
+}
