@@ -159,8 +159,6 @@ int main(int argc, char* argv[])
 	output(0, "\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->total_syscalls_done - 1, shm->successes, shm->failures);
 
-	ret = EXIT_SUCCESS;
-
 cleanup_fds:
 
 	close_sockets();
