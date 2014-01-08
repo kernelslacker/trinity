@@ -32,7 +32,9 @@ static void sanitise_move_pages(int childno)
 	unsigned long *page_alloc;
 	unsigned int i, j;
 
-	pagetypes = zmalloc(page_size);
+	if (pagetypes == NULL)
+		pagetypes = malloc(page_size);
+	memset(pagetypes, 0, page_size);
 
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
