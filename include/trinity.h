@@ -1,5 +1,10 @@
 #pragma once
 
+#include <unistd.h>
+#include <sys/types.h>
+
+extern uid_t origuid;
+
 extern unsigned int num_online_cpus;
 extern unsigned int max_children;
 

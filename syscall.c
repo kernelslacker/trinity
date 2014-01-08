@@ -23,6 +23,7 @@
 #include "params.h"
 #include "maps.h"
 #include "tables.h"
+#include "trinity.h"
 #include "utils.h"
 
 #define __syscall_return(type, res) \
@@ -74,18 +75,18 @@ long syscall32(unsigned int call,
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static void check_uid(uid_t olduid)
+static void check_uid(void)
 {
 	uid_t myuid;
 
 	myuid = getuid();
-	if (myuid != olduid) {
+	if (myuid != origuid) {
 
 		/* unshare() can change us to /proc/sys/kernel/overflowuid */
 		if (myuid == 65534)
 			return;
 
-		output(0, "uid changed! Was: %d, now %d\n", olduid, myuid);
+		output(0, "uid changed! Was: %d, now %d\n", origuid, myuid);
 
 		shm->exit_reason = EXIT_UID_CHANGED;
 		_exit(EXIT_FAILURE);
@@ -135,7 +136,6 @@ long mkcall(int childno)
 	unsigned int call = shm->syscallno[childno];
 	unsigned long ret = 0;
 	int errno_saved;
-	uid_t olduid = getuid();
 
 	shm->regenerate++;
 
@@ -224,7 +224,7 @@ skip_enosys:
 	shm->previous_a5[childno] = shm->a5[childno];
 	shm->previous_a6[childno] = shm->a6[childno];
 
-	check_uid(olduid);
+	check_uid();
 
 	return ret;
 }
