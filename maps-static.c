@@ -49,8 +49,8 @@ void init_shared_pages(void)
 	page_maps = __allocbuf("page_maps");
 
 	// mmaps that get shared across children.
-	setup_global_mappings();
+	setup_shared_mappings();
 
-	// generate_random_page may end up using global_mappings, so has to be last.
+	// generate_random_page may end up using shared_mappings, so has to be last.
 	generate_random_page(page_rand);
 }

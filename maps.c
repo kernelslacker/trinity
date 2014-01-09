@@ -35,9 +35,9 @@ struct map * get_map(void)
 	struct map *map;
 	bool local = FALSE;
 
-	/* If we're not running in child context, just do global. */
+	/* If we're not running in child context, just do shared mappings. */
 	if (this_child == 0)
-		return __get_map(&global_mappings->list, num_global_mappings);
+		return __get_map(&shared_mappings->list, num_shared_mappings);
 
 	/* Only toss the dice if we actually have local mappings. */
 	if (shm->num_mappings[this_child] > 0)
@@ -46,7 +46,7 @@ struct map * get_map(void)
 	if (local == TRUE)
 		map = __get_map(&shm->mappings[this_child]->list, shm->num_mappings[this_child]);
 	else
-		map = __get_map(&global_mappings->list, num_global_mappings);
+		map = __get_map(&shared_mappings->list, num_shared_mappings);
 
 	return map;
 }

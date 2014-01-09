@@ -22,11 +22,11 @@ struct map {
 	unsigned char type;
 };
 
-extern unsigned int num_global_mappings;
-extern struct map *global_mappings;
+extern unsigned int num_shared_mappings;
+extern struct map *shared_mappings;
 
-void setup_global_mappings(void);
-void destroy_global_mappings(void);
+void setup_shared_mappings(void);
+void destroy_shared_mappings(void);
 
 void delete_mapping(int childno, struct map *map);
 

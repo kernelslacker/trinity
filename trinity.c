@@ -167,7 +167,7 @@ cleanup_fds:
 
 	close_sockets();
 
-	destroy_global_mappings();
+	destroy_shared_mappings();
 
 	if (logging == TRUE)
 		close_logfiles();
