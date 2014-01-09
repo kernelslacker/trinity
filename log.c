@@ -35,7 +35,7 @@ void open_logfiles(void)
 	}
 
 	for_each_pidslot(i) {
-		sprintf(logfilename, "trinity-child%d.log", i);
+		sprintf(logfilename, "trinity-child%u.log", i);
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
 		if (!shm->logfiles[i]) {
@@ -156,7 +156,7 @@ static void output_arg(unsigned int call, unsigned int argnum, const char *name,
 		case ARG_PID:
 		case ARG_FD:
 			CRESETFD
-			fprintf(fd, "%ld", reg);
+			fprintf(fd, "%lu", reg);
 			break;
 		case ARG_MODE_T:
 			CRESETFD
@@ -180,7 +180,7 @@ static void output_arg(unsigned int call, unsigned int argnum, const char *name,
 			if (reg > 8 * 1024)
 				fprintf(fd, "0x%lx", reg);
 			else
-				fprintf(fd, "%ld", reg);
+				fprintf(fd, "%lu", reg);
 			CRESETFD
 			break;
 		}
@@ -254,7 +254,7 @@ void output(unsigned char level, const char *fmt, ...)
 		unsigned int slot;
 
 		slot = find_pid_slot(pid);
-		sprintf(child_prefix, "[child%d:%d]", slot, pid);
+		sprintf(child_prefix, "[child%u:%u]", slot, pid);
 		prefix = child_prefix;
 	}
 
@@ -334,7 +334,7 @@ void outputstd(const char *fmt, ...)
 
 static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t pid, const unsigned int syscallno, FILE *fd, bool mono)
 {
-	fprintf(fd, "[child%d:%d] [%ld] %s", childno, pid, shm->child_syscall_count[childno],
+	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid, shm->child_syscall_count[childno],
 			(shm->do32bit[childno] == TRUE) ? "[32BIT] " : "");
 
 	if (syscallno > max_nr_syscalls)
@@ -387,7 +387,7 @@ void output_syscall_prefix(const unsigned int childno, const unsigned int syscal
 static void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono)
 {
 	REDFD
-	fprintf(fd, "= %ld (%s)", ret, strerror(errno_saved));
+	fprintf(fd, "= %lu (%s)", ret, strerror(errno_saved));
 	CRESETFD
 	fprintf(fd, "\n");
 	fflush(fd);
@@ -399,7 +399,7 @@ static void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mon
 	if ((unsigned long)ret > 10000)
 		fprintf(fd, "= 0x%lx", ret);
 	else
-		fprintf(fd, "= %ld", ret);
+		fprintf(fd, "= %lu", ret);
 	CRESETFD
 	fprintf(fd, "\n");
 	fflush(fd);
