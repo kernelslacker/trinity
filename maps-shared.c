@@ -11,17 +11,17 @@
 #include "trinity.h"	// page_size
 #include "utils.h"
 
-unsigned int num_global_mappings = 0;
-struct map *global_mappings = NULL;
+unsigned int num_shared_mappings = 0;
+struct map *shared_mappings = NULL;
 
-static void dump_global_mappings(void)
+static void dump_shared_mappings(void)
 {
 	struct map *m;
 	struct list_head *node;
 
-	output(2, "There are %d entries in the map table\n", num_global_mappings);
+	output(2, "There are %d entries in the map table\n", num_shared_mappings);
 
-	list_for_each(node, &global_mappings->list) {
+	list_for_each(node, &shared_mappings->list) {
 		m = (struct map *) node;
 		output(2, " start: %p  name: %s\n", m->ptr, m->name);
 	}
@@ -58,18 +58,18 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	sprintf(newnode->name, "anon(%s)", name);
 
-	num_global_mappings++;
+	num_shared_mappings++;
 
-	list = &global_mappings->list;
+	list = &shared_mappings->list;
 	list_add_tail(&newnode->list, list);
 
 	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
-			num_global_mappings - 1, name, newnode->ptr, size);
+			num_shared_mappings - 1, name, newnode->ptr, size);
 
 	close(fd);
 }
 
-void setup_global_mappings(void)
+void setup_shared_mappings(void)
 {
 	unsigned int i;
 	const unsigned long sizes[] = {
@@ -77,8 +77,8 @@ void setup_global_mappings(void)
 //		1 * GB,	// disabled for now, due to OOM.
 	};
 
-	global_mappings = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&global_mappings->list);
+	shared_mappings = zmalloc(sizeof(struct map));
+	INIT_LIST_HEAD(&shared_mappings->list);
 
 	/* page_size * 2, so we have a guard page afterwards.
 	 * This is necessary for when we want to test page boundaries.
@@ -97,24 +97,24 @@ void setup_global_mappings(void)
 		alloc_zero_map(sizes[i], PROT_WRITE, "PROT_WRITE");
 	}
 
-	dump_global_mappings();
+	dump_shared_mappings();
 }
 
-void destroy_global_mappings(void)
+void destroy_shared_mappings(void)
 {
 	struct map *m;
 
-	while (!list_empty(&global_mappings->list)) {
-		m = global_mappings;
+	while (!list_empty(&shared_mappings->list)) {
+		m = shared_mappings;
 
 		munmap(m->ptr, m->size);
 		free(m->name);
 
-		global_mappings = (struct map *) m->list.next;
+		shared_mappings = (struct map *) m->list.next;
 
 		list_del(&m->list);
 		free(m);
 	}
 
-	num_global_mappings = 0;
+	num_shared_mappings = 0;
 }
