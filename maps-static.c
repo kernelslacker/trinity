@@ -5,7 +5,6 @@
 #include "log.h"
 #include "maps.h"
 #include "random.h"
-#include "shm.h"
 #include "trinity.h"	// page_size
 #include "utils.h"
 
@@ -31,8 +30,6 @@ static void * __allocbuf(const char *name)
 void init_shared_pages(void)
 {
 	unsigned int i;
-
-	output(2, "shm is at %p\n", shm);
 
 	// a page of zeros
 	page_zeros = __allocbuf("page_zeros");

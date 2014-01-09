@@ -47,8 +47,9 @@ int create_shm(void)
 			SHM_PROT_PAGES * page_size, PROT_NONE);
 
 	shm = p + SHM_PROT_PAGES * page_size;
-
 	memset(shm, 0, sizeof(struct shm_s));
+
+	output(2, "shm is at %p\n", shm);
 
 	shm->total_syscalls_done = 1;
 	shm->regenerate = 0;
