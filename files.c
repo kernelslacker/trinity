@@ -32,7 +32,6 @@ struct namelist {
 
 static struct namelist *names = NULL;
 
-static uid_t my_uid;
 static gid_t my_gid;
 
 static int ignore_files(const char *path)
@@ -118,7 +117,7 @@ static int check_stat_file(const struct stat *sb)
 	if (S_ISLNK(sb->st_mode))
 		return -1;
 
-	if (sb->st_uid == my_uid) {
+	if (sb->st_uid == origuid) {
 		if (sb->st_mode & S_IRUSR)
 			set_read = TRUE;
 		if (sb->st_mode & S_IWUSR)
@@ -206,7 +205,6 @@ void generate_filelist(void)
 	struct list_head *node;
 	struct namelist *nl;
 
-	my_uid = getuid();
 	my_gid = getgid();
 
 	names = zmalloc(sizeof(struct namelist));
