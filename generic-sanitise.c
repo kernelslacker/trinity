@@ -274,12 +274,14 @@ static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsign
 
 static unsigned long handle_arg_mode_t(void)
 {
-	unsigned int i, j, count, bit;
+	unsigned int i, count;
 	mode_t mode = 0;
 
 	count = rand() % 9;
 
 	for (i = 0; i < count; i++) {
+		unsigned int j, bit;
+
 		bit = rand() % 3;
 		mode |= 1 << bit;
 		j = rand() % 12;

@@ -12,9 +12,10 @@ static void do_sso_sockets(void)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
 	unsigned int i;
-	int fd;
 
 	for (i = 0; i < nr_sockets; i++) {
+		int fd;
+
 		fd = shm->sockets[i].fd;
 		sso_socket(&shm->sockets[i].triplet, &so, fd);
 	}

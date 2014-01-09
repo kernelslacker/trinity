@@ -20,7 +20,7 @@
 
 void gen_unicode_page(char *page)
 {
-	unsigned int i = 0, j, l;
+	unsigned int i = 0, l;
 	unsigned int unilen;
 
 	const char unicode1[4] = { 0xb8, 0xe0, 0xe0, 0xaa };
@@ -39,6 +39,7 @@ void gen_unicode_page(char *page)
 	char *ptr = page;
 
 	while (i < (page_size - zalgolen)) {
+		unsigned int j;
 
 		j = rand() % 9;
 

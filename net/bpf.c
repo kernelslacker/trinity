@@ -318,7 +318,7 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 
 void gen_seccomp_bpf(unsigned long **addr, unsigned long *addrlen)
 {
-	int avail, used;
+	int avail;
 	struct sock_filter *curr;
 	struct sock_fprog *bpf = (void *) addr;
 
@@ -342,6 +342,8 @@ void gen_seccomp_bpf(unsigned long **addr, unsigned long *addrlen)
 	seccomp_state = seccomp_choose(seccomp_markov_init);
 
 	for (curr = bpf->filter; avail > 3; ) {
+		int used;
+
 		used = gen_seccomp_bpf_code(curr);
 		curr  += used;
 		avail -= used;

@@ -10,9 +10,10 @@
 static void fabricate_onepage_struct(char *page)
 {
 	unsigned int i;
-	void **ptr;
 
 	for (i = 0; i < page_size; ) {
+		void **ptr;
+
 		ptr = (void*)&page[i];
 		switch (rand() % 4) {
 		case 0:

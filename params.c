@@ -115,11 +115,12 @@ static void toggle_taint_flag(int bit) {
 static void toggle_taint_flag_by_name(char *beg, char *end) {
 	char flagname[TAINT_NAME_LEN];
 	char *name;
-	int maxlen;
 
 	if (end == NULL) {
 		name = beg;
 	} else {
+		int maxlen;
+
 		name = flagname;
 		maxlen = end - beg;
 		if (maxlen > (TAINT_NAME_LEN - 1))

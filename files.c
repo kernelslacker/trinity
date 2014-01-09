@@ -277,7 +277,6 @@ retry:
 void open_files(void)
 {
 	unsigned int i, nr_to_open;
-	int fd;
 
 	if (files_in_index < NR_FILE_FDS)
 		nr_to_open = files_in_index;
@@ -288,6 +287,8 @@ void open_files(void)
 		return;
 
 	for (i = 0; i < nr_to_open; i++) {
+		int fd;
+
 		fd = open_file();
 
 		shm->file_fds[i] = fd;
@@ -298,13 +299,14 @@ void open_files(void)
 void close_files(void)
 {
 	unsigned int i;
-	int fd;
 
 	shm->current_fd = 0;
 	shm->fd_lifetime = 0;
 
 	// FIXME: Does this need locking? At the least, check for NULL fd's
 	for (i = 0; i < nr_file_fds; i++) {
+		int fd;
+
 		fd = shm->file_fds[i];
 		shm->file_fds[i] = 0;
 		if (fd != 0)

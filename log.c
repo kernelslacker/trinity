@@ -60,7 +60,6 @@ static FILE * find_logfile_handle(void)
 {
 	pid_t pid;
 	int i;
-	unsigned int j;
 
 	pid = getpid();
 	if (pid == initpid)
@@ -77,6 +76,8 @@ static FILE * find_logfile_handle(void)
 		return shm->logfiles[i];
 	else {
 		/* try one more time. FIXME: This is awful. */
+		unsigned int j;
+
 		sleep(1);
 		i = find_pid_slot(pid);
 		if (i != PIDSLOT_NOT_FOUND)
@@ -109,12 +110,14 @@ unsigned int highest_logfile(void)
 void synclogs(void)
 {
 	unsigned int i;
-	int fd, ret;
+	int fd;
 
 	if (logging == FALSE)
 		return;
 
 	for_each_pidslot(i) {
+		int ret;
+
 		ret = fflush(shm->logfiles[i]);
 		if (ret == EOF) {
 			outputerr("## logfile flushing failed! %s\n", strerror(errno));
@@ -194,12 +197,13 @@ static void output_arg(unsigned int call, unsigned int argnum, const char *name,
 
 static FILE *robust_find_logfile_handle(void)
 {
-	unsigned int j;
 	FILE *handle = NULL;
 
 	if ((logging == TRUE) && (logfiles_opened)) {
 		handle = find_logfile_handle();
 		if (!handle) {
+			unsigned int j;
+
 			outputerr("## child logfile handle was null logging to main!\n");
 			(void)fflush(stdout);
 			for_each_pidslot(j)
@@ -224,16 +228,13 @@ void output(unsigned char level, const char *fmt, ...)
 	va_list args;
 	int n;
 	FILE *handle;
-	unsigned int len, i, j;
 	pid_t pid;
 	char outputbuf[BUFSIZE];
-	char monobuf[BUFSIZE];
 	char *prefix = NULL;
 	char watchdog_prefix[]="[watchdog]";
 	char init_prefix[]="[init]";
 	char main_prefix[]="[main]";
 	char child_prefix[]="[childNN:1234567890]";
-	unsigned int slot;
 
 	if (logging == FALSE && level >= quiet_level)
 		return;
@@ -250,6 +251,8 @@ void output(unsigned char level, const char *fmt, ...)
 		prefix = main_prefix;
 
 	if (prefix == NULL) {
+		unsigned int slot;
+
 		slot = find_pid_slot(pid);
 		sprintf(child_prefix, "[child%d:%d]", slot, pid);
 		prefix = child_prefix;
@@ -282,6 +285,9 @@ void output(unsigned char level, const char *fmt, ...)
 	 * the logfile as is, because there shouldn't be any ANSI codes
 	 * in the buffer to be stripped out. */
 	if (monochrome == FALSE) {
+		char monobuf[BUFSIZE];
+		unsigned int len, i, j;
+
 		/* copy buffer, sans ANSI codes */
 		len = strlen(outputbuf);
 		for (i = 0, j = 0; (i < len) && (i + 2 < BUFSIZE) && (j < BUFSIZE); i++) {

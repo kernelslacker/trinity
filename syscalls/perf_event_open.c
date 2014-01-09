@@ -58,7 +58,7 @@ static struct pmu_type *pmus=NULL;
 
 static int parse_format(char *string, int *field_type, unsigned long long *mask) {
 
-	int i,firstnum,secondnum,shift,bits;
+	int i, secondnum, bits;
 	char format_string[BUFSIZ];
 
 	*mask=0;
@@ -90,6 +90,7 @@ static int parse_format(char *string, int *field_type, unsigned long long *mask)
 	}
 
 	while(1) {
+		int firstnum, shift;
 
 		/* Read first number */
 		i++;
@@ -198,10 +199,11 @@ static int parse_generic(int pmu, char *value,
 
 	long long c=0,c1=0,c2=0,temp;
 	char field[BUFSIZ];
-	int i,ptr=0;
+	int ptr=0;
 	int base=10;
 
 	while(1) {
+		int i;
 		i=0;
 		while(1) {
 			field[i]=value[ptr];

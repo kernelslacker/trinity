@@ -15,12 +15,13 @@ struct map *shared_mappings = NULL;
 
 static void dump_shared_mappings(void)
 {
-	struct map *m;
 	struct list_head *node;
 
 	output(2, "There are %d entries in the map table\n", num_shared_mappings);
 
 	list_for_each(node, &shared_mappings->list) {
+		struct map *m;
+
 		m = (struct map *) node;
 		output(2, " start: %p  name: %s\n", m->ptr, m->name);
 	}
