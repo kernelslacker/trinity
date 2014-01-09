@@ -8,7 +8,6 @@
 #include "list.h"
 #include "log.h"
 #include "maps.h"
-#include "trinity.h"	// page_size
 #include "utils.h"
 
 unsigned int num_shared_mappings = 0;

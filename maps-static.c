@@ -5,7 +5,6 @@
 #include "log.h"
 #include "maps.h"
 #include "random.h"
-#include "trinity.h"	// page_size
 #include "utils.h"
 
 /* "static" pages. */
