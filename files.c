@@ -117,7 +117,7 @@ static int check_stat_file(const struct stat *sb)
 	if (S_ISLNK(sb->st_mode))
 		return -1;
 
-	if (sb->st_uid == origuid) {
+	if (sb->st_uid == orig_uid) {
 		if (sb->st_mode & S_IRUSR)
 			set_read = TRUE;
 		if (sb->st_mode & S_IWUSR)

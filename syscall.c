@@ -80,13 +80,13 @@ static void check_uid(void)
 	uid_t myuid;
 
 	myuid = getuid();
-	if (myuid != origuid) {
+	if (myuid != orig_uid) {
 
 		/* unshare() can change us to /proc/sys/kernel/overflowuid */
 		if (myuid == 65534)
 			return;
 
-		output(0, "uid changed! Was: %d, now %d\n", origuid, myuid);
+		output(0, "uid changed! Was: %d, now %d\n", orig_uid, myuid);
 
 		shm->exit_reason = EXIT_UID_CHANGED;
 		_exit(EXIT_FAILURE);
