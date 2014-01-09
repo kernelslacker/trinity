@@ -22,6 +22,9 @@ struct map {
 	unsigned char type;
 };
 
+extern unsigned int num_global_mappings;
+extern struct map *global_mappings;
+
 void setup_global_mappings(void);
 void destroy_global_mappings(void);
 
