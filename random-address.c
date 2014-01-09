@@ -155,10 +155,11 @@ unsigned long find_previous_arg_address(unsigned int argnum, unsigned int call, 
 struct iovec * alloc_iovec(unsigned int num)
 {
 	struct iovec *iov;
-	unsigned int i;
 
 	iov = malloc(num * sizeof(struct iovec));
 	if (iov != NULL) {
+		unsigned int i;
+
 		for (i = 0; i < num; i++) {
 			iov[i].iov_base = malloc(page_size);
 			iov[i].iov_len = page_size;

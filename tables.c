@@ -85,11 +85,12 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, cons
 void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall)
 {
 	struct syscall *call_ptr;
-	unsigned int i;
 
 	call_ptr = table[calln].entry;
 	//Check if the call is activated already, and deactivate it only if needed
 	if ((call_ptr->active_number != 0) && (*nr_active > 0)) {
+		unsigned int i;
+
 		for (i = call_ptr->active_number - 1; i < *nr_active - 1; i++) {
 			active_syscall[i] = active_syscall[i + 1];
 			table[active_syscall[i] - 1].entry->active_number = i + 1;
@@ -141,9 +142,9 @@ bool no_syscalls_enabled(void)
 /* Make sure there's at least one syscall enabled. */
 int validate_syscall_tables(void)
 {
-	unsigned int ret;
-
 	if (biarch == TRUE) {
+		unsigned int ret;
+
 		ret = validate_syscall_table_32();
 		ret |= validate_syscall_table_64();
 		return ret;
@@ -231,9 +232,10 @@ void check_user_specified_arch(const char *arg, char **arg_name, bool *only_64bi
 {
 	//Check if the arch is specified
 	char *arg_arch = strstr(arg,",");
-	unsigned long size = 0;
 
 	if (arg_arch  != NULL) {
+		unsigned long size = 0;
+
 		size = (unsigned long)arg_arch - (unsigned long)arg;
 		*arg_name = malloc(size + 1);
 		if (*arg_name == NULL)
@@ -482,8 +484,6 @@ void enable_random_syscalls(void)
 /* This is run *after* we've parsed params */
 int munge_tables(void)
 {
-	unsigned int ret;
-
 	/* By default, all syscall entries will be disabled.
 	 * If we didn't pass -c, -x or -r, mark all syscalls active.
 	 */
@@ -491,6 +491,8 @@ int munge_tables(void)
 		mark_all_syscalls_active();
 
 	if (desired_group != GROUP_NONE) {
+		unsigned int ret;
+
 		ret = setup_syscall_group(desired_group);
 		if (ret == FALSE)
 			return FALSE;

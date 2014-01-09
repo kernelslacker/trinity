@@ -207,10 +207,10 @@ regen:
 
 unsigned int setup_fds(void)
 {
-	int ret;
-
 	/* If we have victim files, don't worry about sockets. */
 	if (victim_path == NULL) {
+		int ret;
+
 		ret = open_sockets();
 		if (ret == FALSE)
 			return FALSE;

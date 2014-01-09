@@ -56,16 +56,12 @@ static void oom_score_adj(int adj)
 	fclose(fp);
 }
 
+/* Generate children*/
 static void fork_children(void)
 {
-	int pidslot;
-	static char childname[17];
-
-	/* Generate children*/
-
 	while (shm->running_childs < max_children) {
+		int pidslot;
 		int pid = 0;
-		int fd;
 
 		if (shm->spawn_no_more == TRUE)
 			return;
@@ -86,6 +82,8 @@ static void fork_children(void)
 		}
 
 		if (logging == TRUE) {
+			int fd;
+
 			fd = fileno(shm->logfiles[pidslot]);
 			if (ftruncate(fd, 0) == 0)
 				lseek(fd, 0, SEEK_SET);
@@ -98,6 +96,7 @@ static void fork_children(void)
 			shm->pids[pidslot] = pid;
 		else {
 			/* Child process. */
+			char childname[17];
 			int ret = 0;
 
 			mask_signals_child();
@@ -174,9 +173,6 @@ out:
 
 static void handle_child(pid_t childpid, int childstatus)
 {
-	unsigned int i;
-	int slot;
-
 	switch (childpid) {
 	case 0:
 		//debugf("Nothing changed. children:%d\n", shm->running_childs);
@@ -187,7 +183,10 @@ static void handle_child(pid_t childpid, int childstatus)
 			return;
 
 		if (errno == ECHILD) {
+			unsigned int i;
+
 			debugf("All children exited!\n");
+
 			for_each_pidslot(i) {
 				if (shm->pids[i] != EMPTY_PIDSLOT) {
 					if (pid_alive(shm->pids[i]) == -1) {
@@ -208,6 +207,8 @@ static void handle_child(pid_t childpid, int childstatus)
 		debugf("Something happened to pid %d\n", childpid);
 
 		if (WIFEXITED(childstatus)) {
+
+			int slot;
 
 			slot = find_pid_slot(childpid);
 			if (slot == PIDSLOT_NOT_FOUND) {

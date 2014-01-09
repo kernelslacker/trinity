@@ -264,7 +264,6 @@ static const char *const autofs_devs[] = {
 
 static void autofs_sanitise(const struct ioctl_group *grp, int childno)
 {
-	int i;
 	struct autofs_dev_ioctl *arg;
 
 	pick_random_ioctl(grp, childno);
@@ -299,6 +298,8 @@ static void autofs_sanitise(const struct ioctl_group *grp, int childno)
 			arg->path[3] = rand();
 			arg->path[4] = 0;
 		} else {
+			int i;
+
 			arg->size += rand();
 			for (i=0; i < 10; ++i)
 				arg->path[i] = rand();

@@ -115,7 +115,7 @@ void parse_devices(void)
 const char *map_dev(dev_t st_rdev, mode_t st_mode)
 {
 	int major, minor;
-	size_t i, j;
+	size_t i;
 
 	major = MAJOR(st_rdev);
 	minor = MINOR(st_rdev);
@@ -124,7 +124,9 @@ const char *map_dev(dev_t st_rdev, mode_t st_mode)
 		for (i = 0; i < chrdevs; ++i) {
 			if (char_devs[i].major == major) {
 				if (strcmp(char_devs[i].name, "misc") == 0) {
-					for (j=0; j < miscdevs; ++j)
+					size_t j;
+
+					for (j = 0; j < miscdevs; ++j)
 						if (misc_devs[j].minor == minor)
 							return misc_devs[j].name;
 				} else

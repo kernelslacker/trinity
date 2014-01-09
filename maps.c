@@ -13,7 +13,6 @@
 /* Walk the list, get the j'th element */
 static struct map * __get_map(struct list_head *head, unsigned int max)
 {
-	struct map *m;
 	struct list_head *node;
 
 	unsigned int i, j = 0;
@@ -21,6 +20,8 @@ static struct map * __get_map(struct list_head *head, unsigned int max)
 	i = rand() % max;
 
 	list_for_each(node, head) {
+		struct map *m;
+
 		m = (struct map *) node;
 
 		if (i == j)

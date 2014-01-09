@@ -13,10 +13,11 @@
 
 void open_perf_fds(void)
 {
-	int fd;
 	unsigned int i = 0;
 
 	while (i < MAX_PERF_FDS) {
+		int fd;
+
 		sanitise_perf_event_open(0);
 		fd = syscall(__NR_perf_event_open, shm->a1[0], shm->a2[0], shm->a3[0], shm->a4[0], shm->a5[0]);
 		if (fd != -1) {

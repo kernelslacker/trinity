@@ -87,7 +87,6 @@ static void sanitise_move_pages(int childno)
 static void post_move_pages(int childno)
 {
 	unsigned long *page;
-	void *ptr;
 	unsigned int i;
 
 	page = (void *) shm->scratch[childno];
@@ -95,6 +94,8 @@ static void post_move_pages(int childno)
 		return;
 
 	for (i = 0; i < count; i++) {
+		void *ptr;
+
 		ptr = (void *) page[i];
 		if (pagetypes[i] == WAS_MALLOC)
 			free(ptr);

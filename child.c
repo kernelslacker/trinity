@@ -100,13 +100,14 @@ int this_child = 0;
 
 static void setup_page_maps(void)
 {
-	struct map *map;
 	unsigned long *page;
 	unsigned int i;
 
 	page = (void *) page_maps;
 
 	for (i = 0; i < page_size / sizeof(unsigned long); i++) {
+		struct map *map;
+
 		map = get_map();
 		page[i] = (unsigned long) map->ptr;
 	}
