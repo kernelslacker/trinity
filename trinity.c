@@ -21,7 +21,7 @@
 
 char *progname = NULL;
 
-uid_t origuid;
+uid_t orig_uid;
 
 unsigned int page_size;
 unsigned int num_online_cpus;
@@ -65,7 +65,7 @@ int main(int argc, char* argv[])
 
 	initpid = getpid();
 
-	origuid = getuid();
+	orig_uid = getuid();
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 
-	if (origuid == 0) {
+	if (orig_uid == 0) {
 		if (dangerous == TRUE) {
 			outputstd("DANGER: RUNNING AS ROOT.\n");
 			outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
