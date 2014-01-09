@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 
-	if (getuid() == 0) {
+	if (origuid == 0) {
 		if (dangerous == TRUE) {
 			outputstd("DANGER: RUNNING AS ROOT.\n");
 			outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
