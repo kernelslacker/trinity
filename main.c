@@ -326,6 +326,7 @@ static const char *reasons[] = {
 	"No files in file list.",
 	"Main process disappeared.",
 	"UID changed.",
+	"Something happened during fd init.",
 };
 
 static const char * decode_exit(unsigned int reason)
@@ -371,7 +372,11 @@ void do_main_loop(void)
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
 		set_seed(0);
 
-		setup_fds();
+		if (setup_fds() == FALSE) {
+			shm->exit_reason = EXIT_FD_INIT_FAILURE;	// FIXME: Later, push this down to multiple EXIT's.
+			_exit(EXIT_FAILURE);
+		}
+
 		if (no_files == FALSE) {
 			if (files_in_index == 0) {
 				shm->exit_reason = EXIT_NO_FILES;

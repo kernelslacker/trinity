@@ -205,11 +205,16 @@ regen:
 	return shm->current_fd;
 }
 
-void setup_fds(void)
+unsigned int setup_fds(void)
 {
+	int ret;
+
 	/* If we have victim files, don't worry about sockets. */
-	if (victim_path == NULL)
-		open_sockets();
+	if (victim_path == NULL) {
+		ret = open_sockets();
+		if (ret == FALSE)
+			return FALSE;
+	}
 
 	open_pipes();
 
@@ -222,10 +227,12 @@ void setup_fds(void)
 	if (no_files == FALSE) {
 		generate_filelist();
 		if (files_in_index == 0)	/* Something bad happened. Crappy -V maybe? */
-			return;			// FIXME: We should log something here probably.
+			return FALSE;		// FIXME: We should log something here probably.
 
 		open_files();
 	}
+
+	return TRUE;
 }
 
 void regenerate_fds(void)

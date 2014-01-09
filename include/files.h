@@ -3,7 +3,7 @@
 #include "constants.h"
 #include <sys/stat.h>
 
-void setup_fds(void);
+unsigned int setup_fds(void);
 
 void generate_filelist(void);
 void open_files(void);
