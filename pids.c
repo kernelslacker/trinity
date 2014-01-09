@@ -38,10 +38,10 @@ void dump_pid_slots(void)
 	unsigned int i, j = 0;
 	char string[512], *sptr = string;
 
-	sptr += sprintf(sptr, "## pids: (%d active)\n", shm->running_childs);
+	sptr += sprintf(sptr, "## pids: (%u active)\n", shm->running_childs);
 
 	for (i = 0; i < max_children; i += 8) {
-		sptr += sprintf(sptr, "%d-%d: ", i, i+7);
+		sptr += sprintf(sptr, "%u-%u: ", i, i+7);
 		for (j = 0; j < 8; j++) {
 			if (shm->pids[i+j] != EMPTY_PIDSLOT) {
 				if (pid_alive(shm->pids[i+j] == -1))
