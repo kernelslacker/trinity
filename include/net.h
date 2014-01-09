@@ -38,7 +38,7 @@ struct socketinfo {
 	int fd;
 };
 
-void open_sockets(void);
+unsigned int open_sockets(void);
 void close_sockets(void);
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
