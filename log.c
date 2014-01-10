@@ -376,23 +376,27 @@ void outputstd(const char *fmt, ...)
 
 static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t pid, const unsigned int syscallno, FILE *fd, bool mono)
 {
+	struct syscall *syscall;
+
+	syscall = syscalls[syscallno].entry;
+
 	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid, shm->child_syscall_count[childno],
 			(shm->do32bit[childno] == TRUE) ? "[32BIT] " : "");
 
 	if (syscallno > max_nr_syscalls)
 		fprintf(fd, "%u", syscallno);
 	else
-		fprintf(fd, "%s", syscalls[syscallno].entry->name);
+		fprintf(fd, "%s", syscall->name);
 
 	CRESETFD
 	fprintf(fd, "(");
 
-	output_arg(1, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(2, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(3, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(4, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(5, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(6, syscalls[syscallno].entry, fd, mono, childno);
+	output_arg(1, syscall, fd, mono, childno);
+	output_arg(2, syscall, fd, mono, childno);
+	output_arg(3, syscall, fd, mono, childno);
+	output_arg(4, syscall, fd, mono, childno);
+	output_arg(5, syscall, fd, mono, childno);
+	output_arg(6, syscall, fd, mono, childno);
 
 	CRESETFD
 	fprintf(fd, ") ");
