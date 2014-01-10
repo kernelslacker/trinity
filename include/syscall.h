@@ -31,8 +31,9 @@ struct arglist {
 
 struct syscall {
 	void (*sanitise)(int childno);
-	void (*post)(int);
+	void (*post)(int childno);
 	int (*init)(void);
+	char * (*decode)(int argnum, int childno);
 
 	unsigned int number;
 	unsigned int active_number;
