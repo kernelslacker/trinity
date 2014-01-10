@@ -97,7 +97,7 @@ void dirty_mapping(struct map *map)
 	switch (rand() % 5) {
 	case 0:
 		/* Just fault in one page. */
-		p[rand() % page_size] = rand();
+		p[rand() % map->size] = rand();
 		break;
 
 	case 1:
