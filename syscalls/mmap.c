@@ -95,10 +95,45 @@ static void post_mmap(int childno)
 		dirty_mapping(new);
 }
 
+static char * decode_mmap(int argnum, int childno)
+{
+	char *buf;
+
+	if (argnum == 3) {
+		int flags = shm->a3[childno];
+		char *p;
+
+		p = buf = zmalloc(80);
+		p += sprintf(buf, "[");
+
+		if (flags == 0) {
+			p += sprintf(p, "PROT_NONE]");
+			return buf;
+		}
+		if (flags & PROT_READ)
+			p += sprintf(p, "PROT_READ|");
+		if (flags & PROT_WRITE)
+			p += sprintf(p, "PROT_WRITE|");
+		if (flags & PROT_EXEC)
+			p += sprintf(p, "PROT_EXEC|");
+		if (flags & PROT_SEM)
+			p += sprintf(p, "PROT_SEM ");
+		p--;
+		sprintf(p, "]");
+
+		return buf;
+	}
+	return NULL;
+}
+
 struct syscall syscall_mmap = {
 	.name = "mmap",
 	.num_args = 6,
+
 	.sanitise = sanitise_mmap,
+	.post = post_mmap,
+	.decode = decode_mmap,
+
 	.arg1name = "addr",
 	.arg1type = ARG_MMAP,
 	.arg2name = "len",
@@ -119,7 +154,7 @@ struct syscall syscall_mmap = {
 	.arg5type = ARG_FD,
 	.arg6name = "off",
 	.arg6type = ARG_LEN,
+
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
-	.post = post_mmap,
 };
