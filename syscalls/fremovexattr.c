@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_fremovexattr = {
+struct syscallentry syscall_fremovexattr = {
 	.name = "fremovexattr",
 	.num_args = 2,
 	.arg1name = "fd",

@@ -11,7 +11,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_eventfd2 = {
+struct syscallentry syscall_eventfd2 = {
 	.name = "eventfd2",
 	.num_args = 2,
 	.arg1name = "count",

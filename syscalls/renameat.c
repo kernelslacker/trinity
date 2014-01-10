@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_renameat = {
+struct syscallentry syscall_renameat = {
 	.name = "renameat",
 	.num_args = 4,
 	.arg1name = "olddfd",

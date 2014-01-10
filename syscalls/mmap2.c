@@ -5,7 +5,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_mmap2 = {
+struct syscallentry syscall_mmap2 = {
 	.name = "mmap2",
 	.num_args = 6,
 	.sanitise = sanitise_mmap,

@@ -21,7 +21,7 @@ void sanitise_rt_sigaction(int childno)
 	shm->a4[childno] = sizeof(sigset_t);
 }
 
-struct syscall syscall_rt_sigaction = {
+struct syscallentry syscall_rt_sigaction = {
 	.name = "rt_sigaction",
 	.num_args = 4,
 	.sanitise = sanitise_rt_sigaction,

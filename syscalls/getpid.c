@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getpid = {
+struct syscallentry syscall_getpid = {
 	.name = "getpid",
 	.num_args = 0,
 	.rettype = RET_PID_T,

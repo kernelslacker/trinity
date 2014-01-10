@@ -6,7 +6,7 @@
 #include <time.h>
 #include "sanitise.h"
 
-struct syscall syscall_timer_settime = {
+struct syscallentry syscall_timer_settime = {
 	.name = "timer_settime",
 	.num_args = 4,
 	.arg1name = "timer_id",

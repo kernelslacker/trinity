@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getsockopt = {
+struct syscallentry syscall_getsockopt = {
 	.name = "getsockopt",
 	.num_args = 5,
 	.arg1name = "fd",

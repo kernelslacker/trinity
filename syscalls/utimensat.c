@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include "sanitise.h"
 
-struct syscall syscall_utimensat = {
+struct syscallentry syscall_utimensat = {
 	.name = "utimensat",
 	.num_args = 4,
 	.arg1name = "dfd",

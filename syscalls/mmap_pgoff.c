@@ -7,7 +7,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_mmap_pgoff = {
+struct syscallentry syscall_mmap_pgoff = {
 	.name = "mmap_pgoff",
 	.num_args = 6,
 	.arg1name = "addr",

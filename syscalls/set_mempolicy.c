@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_set_mempolicy = {
+struct syscallentry syscall_set_mempolicy = {
 	.name = "set_mempolicy",
 	.num_args = 3,
 	.arg1name = "mode",

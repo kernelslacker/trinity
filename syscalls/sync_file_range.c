@@ -12,12 +12,12 @@
 #include "shm.h"
 #include "tables.h"
 
-struct syscall syscall_sync_file_range;
+struct syscallentry syscall_sync_file_range;
 
 static void sanitise_sync_file_range(int childno)
 {
 	unsigned int call = shm->syscallno[childno];
-	struct syscall *syscall_entry = syscalls[call].entry;
+	struct syscallentry *syscall_entry = syscalls[call].entry;
 	long endbyte;
 	loff_t nbytes;
 	loff_t off;
@@ -41,7 +41,7 @@ retry:
 	}
 }
 
-struct syscall syscall_sync_file_range = {
+struct syscallentry syscall_sync_file_range = {
 	.name = "sync_file_range",
 	.num_args = 4,
 	.sanitise = sanitise_sync_file_range,
@@ -64,7 +64,7 @@ struct syscall syscall_sync_file_range = {
  * ARM & PowerPC have different argument order.
  * See edd5cd4a9424f22b0fa08bef5e299d41befd5622 in kernel tree.
  */
-struct syscall syscall_sync_file_range2 = {
+struct syscallentry syscall_sync_file_range2 = {
 	.name = "sync_file_range2",
 	.num_args = 4,
 	.sanitise = sanitise_sync_file_range,

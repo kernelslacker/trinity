@@ -126,7 +126,7 @@ static char * decode_mmap(int argnum, int childno)
 	return NULL;
 }
 
-struct syscall syscall_mmap = {
+struct syscallentry syscall_mmap = {
 	.name = "mmap",
 	.num_args = 6,
 

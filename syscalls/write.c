@@ -16,7 +16,7 @@ static void sanitise_write(int childno)
 		shm->a3[childno] = rand() % page_size;
 }
 
-struct syscall syscall_write = {
+struct syscallentry syscall_write = {
 	.name = "write",
 	.num_args = 3,
 	.sanitise = sanitise_write,

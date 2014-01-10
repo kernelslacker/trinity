@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_mkdirat = {
+struct syscallentry syscall_mkdirat = {
 	.name = "mkdirat",
 	.num_args = 3,
 	.arg1name = "dfd",

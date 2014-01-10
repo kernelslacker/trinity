@@ -49,7 +49,7 @@ static void sanitise_execve(__unused__ int childno)
 	shm->a3[childno] = (unsigned long) gen_ptrs_to_crap();
 }
 
-struct syscall syscall_execve = {
+struct syscallentry syscall_execve = {
 	.name = "execve",
 	.num_args = 3,
 	.arg1name = "name",

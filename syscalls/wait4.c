@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_wait4 = {
+struct syscallentry syscall_wait4 = {
 	.name = "wait4",
 	.num_args = 4,
 	.arg1name = "upid",

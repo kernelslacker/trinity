@@ -7,7 +7,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_inotify_init1 = {
+struct syscallentry syscall_inotify_init1 = {
 	.name = "inotify_init1",
 	.num_args = 1,
 	.arg1name = "flags",

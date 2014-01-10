@@ -8,7 +8,7 @@
 #include <linux/sched.h>
 #include "sanitise.h"
 
-struct syscall syscall_clone2 = {
+struct syscallentry syscall_clone2 = {
 	.name = "clone",
 	.num_args = 6,
 	.flags = AVOID_SYSCALL,

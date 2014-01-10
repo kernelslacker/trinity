@@ -28,7 +28,7 @@ static void sanitise_ptrace(int childno)
 }
 
 
-struct syscall syscall_ptrace = {
+struct syscallentry syscall_ptrace = {
 	.name = "ptrace",
 	.num_args = 4,
 	.arg1name = "request",

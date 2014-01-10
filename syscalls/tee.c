@@ -20,7 +20,7 @@ static void sanitise_tee(int childno)
 	}
 }
 
-struct syscall syscall_tee = {
+struct syscallentry syscall_tee = {
 	.name = "tee",
 	.num_args = 4,
 	.arg1name = "fdin",

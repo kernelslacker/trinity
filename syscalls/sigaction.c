@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sigaction = {
+struct syscallentry syscall_sigaction = {
 	.name = "sigaction",
 	.num_args = 3,
 	.sanitise = sanitise_rt_sigaction,

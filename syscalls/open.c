@@ -7,7 +7,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_open = {
+struct syscallentry syscall_open = {
 	.name = "open",
 	.num_args = 3,
 	.arg1name = "filename",

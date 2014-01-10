@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sigaltstack = {
+struct syscallentry syscall_sigaltstack = {
 	.name = "sigaltstack",
 	.num_args = 3,
 	.arg1name = "uss",

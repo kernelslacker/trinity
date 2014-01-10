@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_timerfd_gettime = {
+struct syscallentry syscall_timerfd_gettime = {
 	.name = "timerfd_gettime",
 	.num_args = 2,
 	.arg1name = "ufd",

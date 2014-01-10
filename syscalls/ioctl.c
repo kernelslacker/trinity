@@ -65,7 +65,7 @@ static void sanitise_ioctl(int childno)
 		generic_sanitise_ioctl(childno);
 }
 
-struct syscall syscall_ioctl = {
+struct syscallentry syscall_ioctl = {
 	.name = "ioctl",
 	.num_args = 3,
 	.arg1name = "fd",

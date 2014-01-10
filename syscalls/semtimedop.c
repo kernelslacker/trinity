@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_semtimedop = {
+struct syscallentry syscall_semtimedop = {
 	.name = "semtimedop",
 	.num_args = 4,
 	.arg1name = "semid",

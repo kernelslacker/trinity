@@ -104,7 +104,7 @@ static void post_move_pages(int childno)
 	free(page);
 }
 
-struct syscall syscall_move_pages = {
+struct syscallentry syscall_move_pages = {
 	.name = "move_pages",
 	.num_args = 6,
 	.arg1name = "pid",

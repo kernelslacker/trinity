@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_unlink = {
+struct syscallentry syscall_unlink = {
 	.name = "unlink",
 	.num_args = 1,
 	.arg1name = "pathname",

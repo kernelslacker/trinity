@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_pciconfig_read = {
+struct syscallentry syscall_pciconfig_read = {
 	.name = "pciconfig_read",
 	.num_args = 5,
 	.arg1name = "bus",

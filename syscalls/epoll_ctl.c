@@ -7,7 +7,7 @@
 #include <sys/epoll.h>
 #include "sanitise.h"
 
-struct syscall syscall_epoll_ctl = {
+struct syscallentry syscall_epoll_ctl = {
 	.name = "epoll_ctl",
 	.num_args = 4,
 	.arg1name = "epfd",

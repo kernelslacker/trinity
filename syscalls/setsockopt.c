@@ -135,7 +135,7 @@ static void sanitise_setsockopt(int childno)
 	shm->a5[childno] = so.optlen;
 }
 
-struct syscall syscall_setsockopt = {
+struct syscallentry syscall_setsockopt = {
 	.name = "setsockopt",
 	.num_args = 5,
 	.arg1name = "fd",

@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_process_vm_readv = {
+struct syscallentry syscall_process_vm_readv = {
 	.name = "process_vm_readv",
 	.num_args = 6,
 	.arg1name = "pid",

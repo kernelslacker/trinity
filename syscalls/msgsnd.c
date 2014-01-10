@@ -6,7 +6,7 @@
 #include "compat.h"
 #include "sanitise.h"
 
-struct syscall syscall_msgsnd = {
+struct syscallentry syscall_msgsnd = {
 	.name = "msgsnd",
 	.num_args = 4,
 	.arg1name = "msqid",

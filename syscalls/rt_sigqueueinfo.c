@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_rt_sigqueueinfo = {
+struct syscallentry syscall_rt_sigqueueinfo = {
 	.name = "rt_sigqueueinfo",
 	.num_args = 3,
 	.arg1name = "pid",

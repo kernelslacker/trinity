@@ -14,7 +14,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_adjtimex = {
+struct syscallentry syscall_adjtimex = {
 	.name = "adjtimex",
 	.num_args = 1,
 	.arg1name = "txc_p",

@@ -16,7 +16,7 @@ static void post_shmget(int childno)
 	shmctl(shm->retval[childno], IPC_RMID, 0);
 }
 
-struct syscall syscall_shmget = {
+struct syscallentry syscall_shmget = {
 	.name = "shmget",
 	.num_args = 3,
 	.arg1name = "key",

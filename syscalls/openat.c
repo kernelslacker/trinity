@@ -5,7 +5,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_openat = {
+struct syscallentry syscall_openat = {
 	.name = "openat",
 	.num_args = 4,
 	.arg1name = "dfd",

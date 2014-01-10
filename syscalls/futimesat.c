@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_futimesat = {
+struct syscallentry syscall_futimesat = {
 	.name = "futimesat",
 	.num_args = 3,
 	.arg1name = "dfd",

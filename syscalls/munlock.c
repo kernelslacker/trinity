@@ -9,7 +9,7 @@ static void sanitise_munlock(int childno)
 	(void) common_set_mmap_ptr_len(childno);
 }
 
-struct syscall syscall_munlock = {
+struct syscallentry syscall_munlock = {
 	.name = "munlock",
 	.num_args = 2,
 	.arg1name = "addr",

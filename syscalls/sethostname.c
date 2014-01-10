@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sethostname = {
+struct syscallentry syscall_sethostname = {
 	.name = "sethostname",
 	.num_args = 2,
 	.flags = CAPABILITY_CHECK,

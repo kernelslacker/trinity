@@ -11,7 +11,7 @@ static void sanitise_mlock(int childno)
 	(void) common_set_mmap_ptr_len(childno);
 }
 
-struct syscall syscall_mlock = {
+struct syscallentry syscall_mlock = {
 	.name = "mlock",
 	.num_args = 2,
 	.arg1name = "addr",

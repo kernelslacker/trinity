@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getresuid = {
+struct syscallentry syscall_getresuid = {
 	.name = "getresuid",
 	.num_args = 3,
 	.arg1name = "ruid",

@@ -7,7 +7,7 @@
 #include <linux/xattr.h>
 #include "sanitise.h"
 
-struct syscall syscall_setxattr = {
+struct syscallentry syscall_setxattr = {
 	.name = "setxattr",
 	.num_args = 5,
 	.arg1name = "pathname",

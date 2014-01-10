@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_timer_delete = {
+struct syscallentry syscall_timer_delete = {
 	.name = "timer_delete",
 	.num_args = 1,
 	.arg1name = "timer_id",

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getgroups16 = {
+struct syscallentry syscall_getgroups16 = {
 	.name = "getgroups16",
 	.num_args = 2,
 	.arg1name = "gidsetsize",

@@ -9,7 +9,7 @@
 #include "sanitise.h"
 #include "shm.h"
 
-struct syscall syscall_sendto = {
+struct syscallentry syscall_sendto = {
 	.name = "sendto",
 	.num_args = 6,
 	.arg1name = "fd",

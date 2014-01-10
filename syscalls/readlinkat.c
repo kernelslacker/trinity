@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_readlinkat = {
+struct syscallentry syscall_readlinkat = {
 	.name = "readlinkat",
 	.num_args = 4,
 	.arg1name = "dfd",

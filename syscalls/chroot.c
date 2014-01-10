@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_chroot = {
+struct syscallentry syscall_chroot = {
 	.name = "chroot",
 	.num_args = 1,
 	.arg1name = "filename",

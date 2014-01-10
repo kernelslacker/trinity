@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_lseek = {
+struct syscallentry syscall_lseek = {
 	.name = "lseek",
 	.num_args = 3,
 	.arg1name = "fd",

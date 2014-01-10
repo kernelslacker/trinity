@@ -25,7 +25,7 @@ static void dump(int childno)
 }
 */
 
-struct syscall syscall_bind = {
+struct syscallentry syscall_bind = {
 	.name = "bind",
 	.num_args = 3,
 	.arg1name = "fd",

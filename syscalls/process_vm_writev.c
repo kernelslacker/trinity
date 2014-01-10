@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_process_vm_writev = {
+struct syscallentry syscall_process_vm_writev = {
 	.name = "process_vm_writev",
 	.num_args = 6,
 	.arg1name = "pid",

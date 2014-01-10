@@ -8,7 +8,7 @@
 #include "compat.h"
 #include "sanitise.h"
 
-struct syscall syscall_recvfrom = {
+struct syscallentry syscall_recvfrom = {
 	.name = "recvfrom",
 	.num_args = 6,
 	.arg1name = "fd",

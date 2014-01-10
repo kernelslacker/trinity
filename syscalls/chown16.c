@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_chown16 = {
+struct syscallentry syscall_chown16 = {
 	.name = "chown",
 	.num_args = 3,
 	.arg1name = "filename",

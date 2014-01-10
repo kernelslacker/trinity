@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_socketpair = {
+struct syscallentry syscall_socketpair = {
 	.name = "socketpair",
 	.num_args = 4,
 	.arg1name = "family",

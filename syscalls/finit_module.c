@@ -6,7 +6,7 @@
 #define MODULE_INIT_IGNORE_MODVERSIONS  1
 #define MODULE_INIT_IGNORE_VERMAGIC     2
 
-struct syscall syscall_finit_module = {
+struct syscallentry syscall_finit_module = {
 	.name = "finit_module",
 	.num_args = 3,
 	.flags = CAPABILITY_CHECK,

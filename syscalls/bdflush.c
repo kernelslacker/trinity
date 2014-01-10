@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_bdflush = {
+struct syscallentry syscall_bdflush = {
 	.name = "bdflush",
 	.num_args = 2,
 	.arg1name = "func",

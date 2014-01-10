@@ -28,7 +28,7 @@ static void sanitise_remap_file_pages(int childno)
 	shm->a4[childno] = rand() & (size / page_size);
 }
 
-struct syscall syscall_remap_file_pages = {
+struct syscallentry syscall_remap_file_pages = {
 	.name = "remap_file_pages",
 	.num_args = 5,
 	.arg1name = "start",

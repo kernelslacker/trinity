@@ -7,7 +7,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_epoll_wait = {
+struct syscallentry syscall_epoll_wait = {
 	.name = "epoll_wait",
 	.num_args = 4,
 	.arg1name = "epfd",

@@ -25,7 +25,7 @@ static void post_mprotect(int childno)
 		map->prot = shm->a3[childno];
 }
 
-struct syscall syscall_mprotect = {
+struct syscallentry syscall_mprotect = {
 	.name = "mprotect",
 	.num_args = 3,
 	.arg1name = "start",

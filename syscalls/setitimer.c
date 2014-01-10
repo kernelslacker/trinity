@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_setitimer = {
+struct syscallentry syscall_setitimer = {
 	.flags = AVOID_SYSCALL,		/* setitimer interferes with alarm() */
 	.name = "setitimer",
 	.num_args = 3,

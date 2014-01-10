@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_select = {
+struct syscallentry syscall_select = {
 	.name = "select",
 	.num_args = 5,
 	.flags = AVOID_SYSCALL, // Confuses the signal state and causes the fuzzer to hang with timeout not firing

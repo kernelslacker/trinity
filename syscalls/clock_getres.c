@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_clock_getres = {
+struct syscallentry syscall_clock_getres = {
 	.name = "clock_getres",
 	.num_args = 2,
 	.arg1name = "which_clock",

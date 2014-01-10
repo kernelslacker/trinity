@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_pwritev = {
+struct syscallentry syscall_pwritev = {
 	.name = "pwritev",
 	.num_args = 5,
 	.arg1name = "fd",

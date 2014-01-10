@@ -11,7 +11,7 @@
  * FUTEX_WAKE_OP also returns ENOSYS
  */
 
-struct syscall syscall_futex = {
+struct syscallentry syscall_futex = {
 	.name = "futex",
 	.num_args = 6,
 	.arg1name = "uaddr",

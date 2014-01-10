@@ -6,7 +6,7 @@
 #include "compat.h"
 #include "sanitise.h"
 
-struct syscall syscall_recvmsg = {
+struct syscallentry syscall_recvmsg = {
 	.name = "recvmsg",
 	.num_args = 3,
 	.arg1name = "fd",

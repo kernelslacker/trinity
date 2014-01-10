@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_writev = {
+struct syscallentry syscall_writev = {
 	.name = "writev",
 	.num_args = 3,
 	.arg1name = "fd",

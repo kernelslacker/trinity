@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getunwind = {
+struct syscallentry syscall_getunwind = {
 	.name = "getunwind",
 	.num_args = 2,
 	.flags = AVOID_SYSCALL, // IA-64 only

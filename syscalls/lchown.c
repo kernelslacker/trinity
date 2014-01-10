@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_lchown = {
+struct syscallentry syscall_lchown = {
 	.name = "lchown",
 	.num_args = 3,
 	.arg1name = "filename",

@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_mq_getsetattr = {
+struct syscallentry syscall_mq_getsetattr = {
 	.name = "mq_getsetattr",
 	.num_args = 3,
 	.arg1name = "mqdes",

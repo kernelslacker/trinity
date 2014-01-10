@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_truncate64 = {
+struct syscallentry syscall_truncate64 = {
 	.name = "truncate64",
 	.num_args = 2,
 	.arg1name = "path",

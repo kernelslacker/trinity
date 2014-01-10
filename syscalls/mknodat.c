@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_mknodat = {
+struct syscallentry syscall_mknodat = {
 	.name = "mknodat",
 	.num_args = 4,
 	.arg1name = "dfd",

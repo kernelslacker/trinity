@@ -31,7 +31,7 @@ static void sanitise_splice(int childno)
 	}
 }
 
-struct syscall syscall_splice = {
+struct syscallentry syscall_splice = {
 	.name = "splice",
 	.num_args = 6,
 	.arg1name = "fd_in",

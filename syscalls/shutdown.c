@@ -4,7 +4,7 @@
 #include <sys/socket.h>
 #include "sanitise.h"
 
-struct syscall syscall_shutdown = {
+struct syscallentry syscall_shutdown = {
 	.name = "shutdown",
 	.num_args = 2,
 	.arg1name = "fd",

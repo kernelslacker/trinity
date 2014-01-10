@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_mq_timedreceive = {
+struct syscallentry syscall_mq_timedreceive = {
 	.name = "mq_timedreceive",
 	.num_args = 5,
 	.arg1name = "mqdes",

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_timer_getoverrun = {
+struct syscallentry syscall_timer_getoverrun = {
 	.name = "timer_getoverrun",
 	.num_args = 1,
 	.arg1name = "timer_id",

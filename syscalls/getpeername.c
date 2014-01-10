@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getpeername = {
+struct syscallentry syscall_getpeername = {
 	.name = "getpeername",
 	.num_args = 3,
 	.arg1name = "fd",

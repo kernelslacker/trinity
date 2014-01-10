@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_quotactl = {
+struct syscallentry syscall_quotactl = {
 	.name = "quotactl",
 	.num_args = 4,
 	.arg1name = "cmd",

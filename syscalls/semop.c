@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_semop = {
+struct syscallentry syscall_semop = {
 	.name = "semop",
 	.num_args = 3,
 	.arg1name = "semid",

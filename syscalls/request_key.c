@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_request_key = {
+struct syscallentry syscall_request_key = {
 	.name = "request_key",
 	.num_args = 4,
 	.arg1name = "_type",

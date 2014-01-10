@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_io_cancel = {
+struct syscallentry syscall_io_cancel = {
 	.name = "io_cancel",
 	.num_args = 3,
 	.arg1name = "ctx_id",

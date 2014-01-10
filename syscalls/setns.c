@@ -4,7 +4,7 @@
 #include <sched.h>
 #include "sanitise.h"
 
-struct syscall syscall_setns= {
+struct syscallentry syscall_setns= {
 	.name = "setns",
 	.num_args = 2,
 	.arg1name = "fd",

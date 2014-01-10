@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_rt_tgsigqueueinfo = {
+struct syscallentry syscall_rt_tgsigqueueinfo = {
 	.name = "rt_tgsigqueueinfo",
 	.num_args = 4,
 	.arg1name = "tgid",

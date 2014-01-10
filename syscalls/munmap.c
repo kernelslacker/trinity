@@ -20,7 +20,7 @@ static void post_munmap(int childno)
 	delete_mapping(childno, map);
 }
 
-struct syscall syscall_munmap = {
+struct syscallentry syscall_munmap = {
 	.name = "munmap",
 	.num_args = 2,
 	.arg1name = "addr",

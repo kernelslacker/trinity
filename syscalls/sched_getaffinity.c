@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sched_getaffinity = {
+struct syscallentry syscall_sched_getaffinity = {
 	.name = "sched_getaffinity",
 	.num_args = 3,
 	.arg1name = "pid",

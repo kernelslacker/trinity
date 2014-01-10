@@ -4,7 +4,7 @@
 #include <linux/sched.h>
 #include "sanitise.h"
 
-struct syscall syscall_unshare = {
+struct syscallentry syscall_unshare = {
 	.name = "unshare",
 	.num_args = 1,
 	.arg1name = "unshare_flags",

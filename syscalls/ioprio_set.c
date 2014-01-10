@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_ioprio_set = {
+struct syscallentry syscall_ioprio_set = {
 	.name = "ioprio_set",
 	.num_args = 3,
 	.arg1name = "which",

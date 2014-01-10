@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_epoll_create = {
+struct syscallentry syscall_epoll_create = {
 	.name = "epoll_create",
 	.num_args = 1,
 	.arg1name = "size",

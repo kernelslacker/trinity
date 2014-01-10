@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_vm86 = {
+struct syscallentry syscall_vm86 = {
 	.name = "vm86",
 	.num_args = 3,
 	.arg1name = "cmd",

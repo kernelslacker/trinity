@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_fchdir = {
+struct syscallentry syscall_fchdir = {
 	.name = "fchdir",
 	.num_args = 1,
 	.arg1name = "fd",

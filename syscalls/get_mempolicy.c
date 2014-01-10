@@ -10,7 +10,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_get_mempolicy = {
+struct syscallentry syscall_get_mempolicy = {
 	.name = "get_mempolicy",
 	.num_args = 5,
 	.arg1name = "policy",

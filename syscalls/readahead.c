@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_readahead = {
+struct syscallentry syscall_readahead = {
 	.name = "readahead",
 	.num_args = 3,
 	.arg1name = "fd",

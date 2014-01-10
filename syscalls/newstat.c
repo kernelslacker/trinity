@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_newstat = {
+struct syscallentry syscall_newstat = {
 	.name = "newstat",
 	.num_args = 2,
 	.arg1name = "filename",

@@ -56,7 +56,7 @@ static void post_mremap(int childno)
 		map->ptr = ptr;
 }
 
-struct syscall syscall_mremap = {
+struct syscallentry syscall_mremap = {
 	.name = "mremap",
 	.num_args = 5,
 	.sanitise = sanitise_mremap,

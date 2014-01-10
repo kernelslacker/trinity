@@ -61,7 +61,7 @@ static void post_modify_ldt(int childno)
 		free(ptr);
 }
 
-struct syscall syscall_modify_ldt = {
+struct syscallentry syscall_modify_ldt = {
 	.name = "modify_ldt",
 	.num_args = 3,
 	.arg1name = "func",

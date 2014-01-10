@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sgetmask = {
+struct syscallentry syscall_sgetmask = {
 	.name = "sgetmask",
 	.num_args = 0,
 };

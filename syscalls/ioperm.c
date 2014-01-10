@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_ioperm = {
+struct syscallentry syscall_ioperm = {
 	.name = "ioperm",
 	.num_args = 3,
 	.arg1name = "from",

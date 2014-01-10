@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_times = {
+struct syscallentry syscall_times = {
 	.name = "times",
 	.num_args = 1,
 	.arg1name = "tbuf",

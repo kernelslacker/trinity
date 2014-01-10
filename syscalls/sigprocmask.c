@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sigprocmask = {
+struct syscallentry syscall_sigprocmask = {
 	.name = "sigprocmask",
 	.num_args = 3,
 	.arg1name = "how",

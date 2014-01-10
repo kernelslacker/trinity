@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_removexattr = {
+struct syscallentry syscall_removexattr = {
 	.name = "removexattr",
 	.num_args = 2,
 	.arg1name = "pathname",

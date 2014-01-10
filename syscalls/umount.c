@@ -5,7 +5,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_umount = {
+struct syscallentry syscall_umount = {
 	.name = "umount",
 	.num_args = 2,
 	.arg1name = "name",
