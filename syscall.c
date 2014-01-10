@@ -133,9 +133,12 @@ static unsigned long do_syscall(int childno, int *errno_saved)
  */
 long mkcall(int childno)
 {
+	struct syscall *syscall;
 	unsigned int call = shm->syscallno[childno];
 	unsigned long ret = 0;
 	int errno_saved;
+
+	syscall = syscalls[call].entry;
 
 	shm->regenerate++;
 
@@ -147,8 +150,8 @@ long mkcall(int childno)
 	shm->a6[childno] = (unsigned long)rand64();
 
 	generic_sanitise(childno);
-	if (syscalls[call].entry->sanitise)
-		syscalls[call].entry->sanitise(childno);
+	if (syscall->sanitise)
+		syscall->sanitise(childno);
 
 	output_syscall_prefix(childno, call);
 
@@ -198,7 +201,7 @@ long mkcall(int childno)
 			goto skip_enosys;
 
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
-			syscalls[call].entry->name, call);
+			syscall->name, call);
 
 		if (biarch == FALSE) {
 			deactivate_syscall(call);
@@ -212,8 +215,8 @@ long mkcall(int childno)
 
 skip_enosys:
 
-	if (syscalls[call].entry->post)
-	    syscalls[call].entry->post(childno);
+	if (syscall->post)
+	    syscall->post(childno);
 
 	/* store info for debugging. */
 	shm->previous_syscallno[childno] = shm->syscallno[childno];
