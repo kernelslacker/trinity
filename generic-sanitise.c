@@ -64,27 +64,30 @@ static unsigned long handle_arg_address(int childno, int call, int argnum)
 
 static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 {
+	struct syscall *syscall;
 	unsigned long i;
 	unsigned long low = 0, high = 0;
 
+	syscall = syscalls[call].entry;
+
 	switch (argnum) {
-	case 1:	low = syscalls[call].entry->low1range;
-		high = syscalls[call].entry->hi1range;
+	case 1:	low = syscall->low1range;
+		high = syscall->hi1range;
 		break;
-	case 2:	low = syscalls[call].entry->low2range;
-		high = syscalls[call].entry->hi2range;
+	case 2:	low = syscall->low2range;
+		high = syscall->hi2range;
 		break;
-	case 3:	low = syscalls[call].entry->low3range;
-		high = syscalls[call].entry->hi3range;
+	case 3:	low = syscall->low3range;
+		high = syscall->hi3range;
 		break;
-	case 4:	low = syscalls[call].entry->low4range;
-		high = syscalls[call].entry->hi4range;
+	case 4:	low = syscall->low4range;
+		high = syscall->hi4range;
 		break;
-	case 5:	low = syscalls[call].entry->low5range;
-		high = syscalls[call].entry->hi5range;
+	case 5:	low = syscall->low5range;
+		high = syscall->hi5range;
 		break;
-	case 6:	low = syscalls[call].entry->low6range;
-		high = syscalls[call].entry->hi6range;
+	case 6:	low = syscall->low6range;
+		high = syscall->hi6range;
 		break;
 	default:
 		BUG("Should never happen.\n");
@@ -92,7 +95,7 @@ static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 	}
 
 	if (high == 0) {
-		outputerr("%s forgets to set hirange!\n", syscalls[call].entry->name);
+		outputerr("%s forgets to set hirange!\n", syscall->name);
 		BUG("Fix syscall definition!\n");
 		return 0;
 	}
@@ -107,28 +110,31 @@ static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 
 static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 {
+	struct syscall *syscall;
 	const unsigned int *values = NULL;
 	unsigned int num = 0;
 	unsigned long mask = 0;
 
+	syscall = syscalls[call].entry;
+
 	switch (argnum) {
-	case 1:	num = syscalls[call].entry->arg1list.num;
-		values = syscalls[call].entry->arg1list.values;
+	case 1:	num = syscall->arg1list.num;
+		values = syscall->arg1list.values;
 		break;
-	case 2:	num = syscalls[call].entry->arg2list.num;
-		values = syscalls[call].entry->arg2list.values;
+	case 2:	num = syscall->arg2list.num;
+		values = syscall->arg2list.values;
 		break;
-	case 3:	num = syscalls[call].entry->arg3list.num;
-		values = syscalls[call].entry->arg3list.values;
+	case 3:	num = syscall->arg3list.num;
+		values = syscall->arg3list.values;
 		break;
-	case 4:	num = syscalls[call].entry->arg4list.num;
-		values = syscalls[call].entry->arg4list.values;
+	case 4:	num = syscall->arg4list.num;
+		values = syscall->arg4list.values;
 		break;
-	case 5:	num = syscalls[call].entry->arg5list.num;
-		values = syscalls[call].entry->arg5list.values;
+	case 5:	num = syscall->arg5list.num;
+		values = syscall->arg5list.values;
 		break;
-	case 6:	num = syscalls[call].entry->arg6list.num;
-		values = syscalls[call].entry->arg6list.values;
+	case 6:	num = syscall->arg6list.num;
+		values = syscall->arg6list.values;
 		break;
 	default: break;
 	}
@@ -145,30 +151,33 @@ static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 
 static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 {
+	struct syscall *syscall;
 	unsigned long i;
 	unsigned long mask = 0;
 	unsigned int bits;
 	unsigned int num = 0;
 	const unsigned int *values = NULL;
 
+	syscall = syscalls[call].entry;
+
 	switch (argnum) {
-	case 1:	num = syscalls[call].entry->arg1list.num;
-		values = syscalls[call].entry->arg1list.values;
+	case 1:	num = syscall->arg1list.num;
+		values = syscall->arg1list.values;
 		break;
-	case 2:	num = syscalls[call].entry->arg2list.num;
-		values = syscalls[call].entry->arg2list.values;
+	case 2:	num = syscall->arg2list.num;
+		values = syscall->arg2list.values;
 		break;
-	case 3:	num = syscalls[call].entry->arg3list.num;
-		values = syscalls[call].entry->arg3list.values;
+	case 3:	num = syscall->arg3list.num;
+		values = syscall->arg3list.values;
 		break;
-	case 4:	num = syscalls[call].entry->arg4list.num;
-		values = syscalls[call].entry->arg4list.values;
+	case 4:	num = syscall->arg4list.num;
+		values = syscall->arg4list.values;
 		break;
-	case 5:	num = syscalls[call].entry->arg5list.num;
-		values = syscalls[call].entry->arg5list.values;
+	case 5:	num = syscall->arg5list.num;
+		values = syscall->arg5list.values;
 		break;
-	case 6:	num = syscalls[call].entry->arg6list.num;
-		values = syscalls[call].entry->arg6list.values;
+	case 6:	num = syscall->arg6list.num;
+		values = syscall->arg6list.values;
 		break;
 	default: break;
 	}
@@ -198,24 +207,27 @@ static unsigned long handle_arg_randpage(void)
 
 static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned long argnum)
 {
+	struct syscall *syscall;
 	unsigned long i;
+
+	syscall = syscalls[call].entry;
 
 	i = (rand() % 5) + 1;
 
 	switch (argnum) {
-	case 1:	if (syscalls[call].entry->arg2type == ARG_IOVECLEN)
+	case 1:	if (syscall->arg2type == ARG_IOVECLEN)
 			shm->a2[childno] = i;
 		break;
-	case 2:	if (syscalls[call].entry->arg3type == ARG_IOVECLEN)
+	case 2:	if (syscall->arg3type == ARG_IOVECLEN)
 			shm->a3[childno] = i;
 		break;
-	case 3:	if (syscalls[call].entry->arg4type == ARG_IOVECLEN)
+	case 3:	if (syscall->arg4type == ARG_IOVECLEN)
 			shm->a4[childno] = i;
 		break;
-	case 4:	if (syscalls[call].entry->arg5type == ARG_IOVECLEN)
+	case 4:	if (syscall->arg5type == ARG_IOVECLEN)
 			shm->a5[childno] = i;
 		break;
-	case 5:	if (syscalls[call].entry->arg6type == ARG_IOVECLEN)
+	case 5:	if (syscall->arg6type == ARG_IOVECLEN)
 			shm->a6[childno] = i;
 		break;
 	default: BUG("impossible\n");
@@ -245,25 +257,28 @@ static unsigned long handle_arg_len_already_set(int childno, unsigned long argnu
 
 static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsigned long argnum)
 {
+	struct syscall *syscall;
 	struct sockaddr *sockaddr = NULL;
 	socklen_t sockaddrlen = 0;
+
+	syscall = syscalls[call].entry;
 
 	generate_sockaddr((struct sockaddr **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
 	switch (argnum) {
-	case 1:	if (syscalls[call].entry->arg2type == ARG_SOCKADDRLEN)
+	case 1:	if (syscall->arg2type == ARG_SOCKADDRLEN)
 			shm->a2[childno] = sockaddrlen;
 		break;
-	case 2:	if (syscalls[call].entry->arg3type == ARG_SOCKADDRLEN)
+	case 2:	if (syscall->arg3type == ARG_SOCKADDRLEN)
 			shm->a3[childno] = sockaddrlen;
 		break;
-	case 3:	if (syscalls[call].entry->arg4type == ARG_SOCKADDRLEN)
+	case 3:	if (syscall->arg4type == ARG_SOCKADDRLEN)
 			shm->a4[childno] = sockaddrlen;
 		break;
-	case 4:	if (syscalls[call].entry->arg5type == ARG_SOCKADDRLEN)
+	case 4:	if (syscall->arg5type == ARG_SOCKADDRLEN)
 			shm->a5[childno] = sockaddrlen;
 		break;
-	case 5:	if (syscalls[call].entry->arg6type == ARG_SOCKADDRLEN)
+	case 5:	if (syscall->arg6type == ARG_SOCKADDRLEN)
 			shm->a6[childno] = sockaddrlen;
 		break;
 	case 6:
@@ -307,23 +322,26 @@ static unsigned long handle_arg_mode_t(void)
 
 static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 {
+	struct syscall *syscall;
 	enum argtype argtype = 0;
 
-	if (argnum > syscalls[call].entry->num_args)
+	syscall = syscalls[call].entry;
+
+	if (argnum > syscall->num_args)
 		return 0;
 
 	switch (argnum) {
-	case 1:	argtype = syscalls[call].entry->arg1type;
+	case 1:	argtype = syscall->arg1type;
 		break;
-	case 2:	argtype = syscalls[call].entry->arg2type;
+	case 2:	argtype = syscall->arg2type;
 		break;
-	case 3:	argtype = syscalls[call].entry->arg3type;
+	case 3:	argtype = syscall->arg3type;
 		break;
-	case 4:	argtype = syscalls[call].entry->arg4type;
+	case 4:	argtype = syscall->arg4type;
 		break;
-	case 5:	argtype = syscalls[call].entry->arg5type;
+	case 5:	argtype = syscall->arg5type;
 		break;
-	case 6:	argtype = syscalls[call].entry->arg6type;
+	case 6:	argtype = syscall->arg6type;
 		break;
 	default:
 		BUG("unreachable!\n");
@@ -395,18 +413,21 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 
 void generic_sanitise(int childno)
 {
+	struct syscall *syscall;
 	unsigned int call = shm->syscallno[childno];
 
-	if (syscalls[call].entry->arg1type != 0)
+	syscall = syscalls[call].entry;
+
+	if (syscall->arg1type != 0)
 		shm->a1[childno] = fill_arg(childno, call, 1);
-	if (syscalls[call].entry->arg2type != 0)
+	if (syscall->arg2type != 0)
 		shm->a2[childno] = fill_arg(childno, call, 2);
-	if (syscalls[call].entry->arg3type != 0)
+	if (syscall->arg3type != 0)
 		shm->a3[childno] = fill_arg(childno, call, 3);
-	if (syscalls[call].entry->arg4type != 0)
+	if (syscall->arg4type != 0)
 		shm->a4[childno] = fill_arg(childno, call, 4);
-	if (syscalls[call].entry->arg5type != 0)
+	if (syscall->arg5type != 0)
 		shm->a5[childno] = fill_arg(childno, call, 5);
-	if (syscalls[call].entry->arg6type != 0)
+	if (syscall->arg6type != 0)
 		shm->a6[childno] = fill_arg(childno, call, 6);
 }
