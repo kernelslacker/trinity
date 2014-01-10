@@ -139,7 +139,7 @@ void synclogs(void)
 static void output_arg(unsigned int argnum, struct syscall *syscall, FILE *fd, bool mono, int childno)
 {
 	int type = 0;
-	const char *name;
+	const char *name = NULL;
 	unsigned long reg;
 
 	switch (argnum) {
