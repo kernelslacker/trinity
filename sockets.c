@@ -130,14 +130,35 @@ static unsigned int valid_proto(unsigned int family)
 
 	famstr = get_proto_name(family);
 
-	if (strncmp(famstr, "PF_UNSPEC", 9) == 0)	/* doesn't make sense */
+	/* Not used for creating sockets. */
+	if (strncmp(famstr, "PF_UNSPEC", 9) == 0)
+		return FALSE;
+	if (strncmp(famstr, "PF_BRIDGE", 9) == 0)
+		return FALSE;
+	if (strncmp(famstr, "PF_SECURITY", 11) == 0)
 		return FALSE;
 
-	if (strncmp(famstr, "PF_BRIDGE", 9) == 0)	/* Not used for creating sockets */
+	/* Not actually implemented (or now removed). */
+	if (strncmp(famstr, "PF_NETBEUI", 10) == 0)
+		return FALSE;
+	if (strncmp(famstr, "PF_ASH", 6) == 0)
+		return FALSE;
+	if (strncmp(famstr, "PF_ECONET", 9) == 0)
+		return FALSE;
+	if (strncmp(famstr, "PF_SNA", 6) == 0)
+		return FALSE;
+	if (strncmp(famstr, "PF_WANPIPE", 10) == 0)
 		return FALSE;
 
-	if (strncmp(famstr, "PF_NETBEUI", 10) == 0)	/* Not actually implemented. */
-		return FALSE;
+	/* Needs root. */
+	if (orig_uid != 0) {
+		if (strncmp(famstr, "PF_KEY", 6) == 0)
+			return FALSE;
+		if (strncmp(famstr, "PF_PACKET", 9) == 0)
+			return FALSE;
+		if (strncmp(famstr, "PF_LLC", 6) == 0)
+			return FALSE;
+	}
 
 	return TRUE;
 }
