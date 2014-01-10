@@ -136,7 +136,7 @@ void synclogs(void)
 	fsync(fileno(mainlogfile));
 }
 
-static void output_arg(unsigned int call, unsigned int argnum, struct syscall *syscall, FILE *fd, bool mono, int childno)
+static void output_arg(unsigned int argnum, struct syscall *syscall, FILE *fd, bool mono, int childno)
 {
 	int type = 0;
 	const char *name;
@@ -170,7 +170,7 @@ static void output_arg(unsigned int call, unsigned int argnum, struct syscall *s
 	default: break;
 	}
 
-	if (syscalls[call].entry->num_args >= argnum) {
+	if (syscall->num_args >= argnum) {
 		if (!name)
 			return;
 
@@ -226,10 +226,10 @@ static void output_arg(unsigned int call, unsigned int argnum, struct syscall *s
 			fprintf(fd, "[page_allocs]");
 	}
 
-	if (syscalls[call].entry->decode != NULL) {
+	if (syscall->decode != NULL) {
 		char *str;
 
-		str = syscalls[call].entry->decode(argnum, childno);
+		str = syscall->decode(argnum, childno);
 		if (str != NULL) {
 			fprintf(fd, "%s", str);
 			free(str);
@@ -387,12 +387,12 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 	CRESETFD
 	fprintf(fd, "(");
 
-	output_arg(syscallno, 1, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(syscallno, 2, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(syscallno, 3, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(syscallno, 4, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(syscallno, 5, syscalls[syscallno].entry, fd, mono, childno);
-	output_arg(syscallno, 6, syscalls[syscallno].entry, fd, mono, childno);
+	output_arg(1, syscalls[syscallno].entry, fd, mono, childno);
+	output_arg(2, syscalls[syscallno].entry, fd, mono, childno);
+	output_arg(3, syscalls[syscallno].entry, fd, mono, childno);
+	output_arg(4, syscalls[syscallno].entry, fd, mono, childno);
+	output_arg(5, syscalls[syscallno].entry, fd, mono, childno);
+	output_arg(6, syscalls[syscallno].entry, fd, mono, childno);
 
 	CRESETFD
 	fprintf(fd, ") ");
