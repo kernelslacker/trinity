@@ -79,6 +79,10 @@ static void check_uid(void)
 {
 	uid_t myuid;
 
+	/* If we were root, then obviously setuid() will change us, so don't even check. */
+	if (orig_uid == 0)
+		return;
+
 	myuid = getuid();
 	if (myuid != orig_uid) {
 
