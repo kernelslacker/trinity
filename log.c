@@ -377,6 +377,7 @@ void outputstd(const char *fmt, ...)
 static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t pid, const unsigned int syscallno, FILE *fd, bool mono)
 {
 	struct syscallentry *entry;
+	unsigned int i;
 
 	entry = syscalls[syscallno].entry;
 
@@ -391,12 +392,8 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 	CRESETFD
 	fprintf(fd, "(");
 
-	output_arg(1, entry, fd, mono, childno);
-	output_arg(2, entry, fd, mono, childno);
-	output_arg(3, entry, fd, mono, childno);
-	output_arg(4, entry, fd, mono, childno);
-	output_arg(5, entry, fd, mono, childno);
-	output_arg(6, entry, fd, mono, childno);
+	for (i = 1; i < entry->num_args + 1; i++)
+		output_arg(i, entry, fd, mono, childno);
 
 	CRESETFD
 	fprintf(fd, ") ");
