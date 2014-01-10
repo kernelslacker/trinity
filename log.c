@@ -387,7 +387,7 @@ void output_syscall_prefix(const unsigned int childno, const unsigned int syscal
 static void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono)
 {
 	REDFD
-	fprintf(fd, "= %lu (%s)", ret, strerror(errno_saved));
+	fprintf(fd, "= %ld (%s)", (long) ret, strerror(errno_saved));
 	CRESETFD
 	fprintf(fd, "\n");
 	fflush(fd);
@@ -399,7 +399,7 @@ static void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mon
 	if ((unsigned long)ret > 10000)
 		fprintf(fd, "= 0x%lx", ret);
 	else
-		fprintf(fd, "= %lu", ret);
+		fprintf(fd, "= %ld", (long) ret);
 	CRESETFD
 	fprintf(fd, "\n");
 	fflush(fd);
