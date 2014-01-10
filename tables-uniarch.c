@@ -32,6 +32,8 @@ void deactivate_syscall(unsigned int calln)
 
 void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_name)
 {
+	struct syscall *syscall = syscalls[calln].entry;
+
 	if (calln == -1) {
 		outputerr("No idea what syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);
@@ -40,10 +42,10 @@ void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_na
 	validate_specific_syscall(syscalls, calln);
 
 	if (state == TRUE) {
-		syscalls[calln].entry->flags |= ACTIVE;
+		syscall->flags |= ACTIVE;
 		activate_syscall(calln);
 	} else {
-		syscalls[calln].entry->flags |= TO_BE_DEACTIVATED;
+		syscall->flags |= TO_BE_DEACTIVATED;
 	}
 
 	output(0, "Marking syscall %s (%d) as to be %sabled.\n",
@@ -55,9 +57,11 @@ void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_na
 void enable_random_syscalls_uniarch(void)
 {
 	unsigned int call;
+	struct syscall *syscall;
 
 retry:
 	call = rand() % max_nr_syscalls;
+	syscall = syscalls[call].entry;
 
 	if (validate_specific_syscall_silent(syscalls, call) == FALSE)
 		goto retry;
@@ -67,24 +71,27 @@ retry:
 			goto retry;
 
 	/* if we've set this to be disabled, don't enable it! */
-	if (syscalls[call].entry->flags & TO_BE_DEACTIVATED)
+	if (syscall->flags & TO_BE_DEACTIVATED)
 		goto retry;
 
-	toggle_syscall_n(call, TRUE, syscalls[call].entry->name, syscalls[call].entry->name);
+	toggle_syscall_n(call, TRUE, syscall->name, syscall->name);
 }
 
 void disable_non_net_syscalls_uniarch(void)
 {
+	struct syscall *syscall;
+
 	unsigned int i;
 
 	for_each_syscall(i) {
+		syscall = syscalls[i].entry;
+
 		if (validate_specific_syscall_silent(syscalls, i) == FALSE)
 			continue;
 
-		if (syscalls[i].entry->flags & ACTIVE) {
-			if (is_syscall_net_related(syscalls, i) == FALSE) {
-				toggle_syscall_n(i, FALSE, syscalls[i].entry->name, syscalls[i].entry->name);
-			}
+		if (syscall->flags & ACTIVE) {
+			if (is_syscall_net_related(syscalls, i) == FALSE)
+				toggle_syscall_n(i, FALSE, syscall->name, syscall->name);
 		}
 	}
 }
@@ -120,41 +127,46 @@ void mark_all_syscalls_active_uniarch(void)
 
 void init_syscalls_uniarch(void)
 {
+	struct syscall *syscall;
+
 	unsigned int i;
 
 	for_each_syscall(i) {
-		if (syscalls[i].entry->flags & ACTIVE)
-			if (syscalls[i].entry->init)
-				syscalls[i].entry->init();
+		syscall = syscalls[i].entry;
+		if (syscall->flags & ACTIVE)
+			if (syscall->init)
+				syscall->init();
 	}
 }
 
 void deactivate_disabled_syscalls_uniarch(void)
 {
+	struct syscall *syscall;
 	unsigned int i;
 
 	for_each_syscall(i) {
-		if (syscalls[i].entry->flags & TO_BE_DEACTIVATED) {
-			syscalls[i].entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
+		syscall = syscalls[i].entry;
+		if (syscall->flags & TO_BE_DEACTIVATED) {
+			syscall->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 			deactivate_syscall(i);
 			output(0, "Marked syscall %s (%d) as deactivated.\n",
-			syscalls[i].entry->name, syscalls[i].entry->number);
+				syscall->name, syscall->number);
 		}
 	}
 }
 
 void dump_syscall_tables_uniarch(void)
 {
+	struct syscall *syscall;
 	unsigned int i;
 
 	outputstd("syscalls: %d\n", max_nr_syscalls);
 
 	for_each_syscall(i) {
-		outputstd("entrypoint %d %s : ",
-			syscalls[i].entry->number,
-			syscalls[i].entry->name);
-		show_state(syscalls[i].entry->flags & ACTIVE);
-		if (syscalls[i].entry->flags & AVOID_SYSCALL)
+		syscall = syscalls[i].entry;
+		outputstd("entrypoint %d %s : ", syscall->number, syscall->name);
+		show_state(syscall->flags & ACTIVE);
+		if (syscall->flags & AVOID_SYSCALL)
 			outputstd(" AVOID");
 		outputstd("\n");
 	}
@@ -162,10 +174,13 @@ void dump_syscall_tables_uniarch(void)
 
 void display_enabled_syscalls_uniarch(void)
 {
+	struct syscall *syscall;
         unsigned int i;
 
 	for_each_syscall(i) {
-		if (syscalls[i].entry->flags & ACTIVE)
-			output(0, "syscall %d:%s enabled.\n", i, syscalls[i].entry->name);
+		syscall = syscalls[i].entry;
+
+		if (syscall->flags & ACTIVE)
+			output(0, "syscall %d:%s enabled.\n", i, syscall->name);
 	}
 }
