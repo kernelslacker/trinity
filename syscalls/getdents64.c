@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getdents64 = {
+struct syscallentry syscall_getdents64 = {
 	.name = "getdents64",
 	.num_args = 3,
 	.arg1name = "fd",

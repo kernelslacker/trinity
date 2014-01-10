@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sched_rr_get_interval = {
+struct syscallentry syscall_sched_rr_get_interval = {
 	.name = "sched_rr_get_interval",
 	.num_args = 2,
 	.arg1name = "pid",

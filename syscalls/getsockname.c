@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getsockname = {
+struct syscallentry syscall_getsockname = {
 	.name = "getsockname",
 	.num_args = 3,
 	.arg1name = "fd",

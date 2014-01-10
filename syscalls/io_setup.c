@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_io_setup = {
+struct syscallentry syscall_io_setup = {
 	.name = "io_setup",
 	.num_args = 2,
 	.arg1name = "nr_events",

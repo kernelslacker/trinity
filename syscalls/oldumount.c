@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_oldumount = {
+struct syscallentry syscall_oldumount = {
 	.name = "oldumount",
 	.num_args = 1,
 	.arg1name = "name",

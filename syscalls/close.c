@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_close = {
+struct syscallentry syscall_close = {
 	.name = "close",
 	.num_args = 1,
 	.arg1name = "fd",

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_nanosleep = {
+struct syscallentry syscall_nanosleep = {
 	.name = "nanosleep",
 	.num_args = 2,
 	.arg1name = "rqtp",

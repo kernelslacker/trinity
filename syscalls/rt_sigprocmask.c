@@ -11,7 +11,7 @@ static void sanitise_rt_sigprocmask(int childno)
 	shm->a4[childno] = sizeof(sigset_t);
 }
 
-struct syscall syscall_rt_sigprocmask = {
+struct syscallentry syscall_rt_sigprocmask = {
 	.name = "rt_sigprocmask",
 	.num_args = 4,
 	.sanitise = sanitise_rt_sigprocmask,

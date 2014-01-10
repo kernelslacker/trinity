@@ -15,7 +15,7 @@ retry_pos:
 	}
 }
 
-struct syscall syscall_pread64 = {
+struct syscallentry syscall_pread64 = {
 	.name = "pread64",
 	.num_args = 4,
 	.sanitise = sanitise_pread64,

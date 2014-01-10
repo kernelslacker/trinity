@@ -9,7 +9,7 @@
 
 //TODO: fill out 'type' with something random from /proc/filesystems
 
-struct syscall syscall_mount = {
+struct syscallentry syscall_mount = {
 	.name = "mount",
 	.num_args = 5,
 	.arg1name = "dev_name",

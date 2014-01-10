@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sched_yield = {
+struct syscallentry syscall_sched_yield = {
 	.name = "sched_yield",
 	.num_args = 0,
 };

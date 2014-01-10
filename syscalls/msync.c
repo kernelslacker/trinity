@@ -18,7 +18,7 @@ static void sanitise_msync(int childno)
 		shm->a3[childno] |= MS_INVALIDATE;
 }
 
-struct syscall syscall_msync = {
+struct syscallentry syscall_msync = {
 	.name = "msync",
 	.num_args = 3,
 	.arg1name = "start",

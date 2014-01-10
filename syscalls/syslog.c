@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_syslog = {
+struct syscallentry syscall_syslog = {
 	.name = "syslog",
 	.num_args = 3,
 	.arg1name = "type",

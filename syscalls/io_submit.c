@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_io_submit = {
+struct syscallentry syscall_io_submit = {
 	.name = "io_submit",
 	.num_args = 3,
 	.arg1name = "ctx_id",

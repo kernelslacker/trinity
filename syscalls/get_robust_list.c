@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_get_robust_list = {
+struct syscallentry syscall_get_robust_list = {
 	.name = "get_robust_list",
 	.num_args = 3,
 	.arg1name = "pid",

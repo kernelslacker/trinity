@@ -69,7 +69,7 @@ void sanitise_prctl(int childno)
 	}
 }
 
-struct syscall syscall_prctl = {
+struct syscallentry syscall_prctl = {
 	.name = "prctl",
 	.num_args = 5,
 	.arg1name = "option",

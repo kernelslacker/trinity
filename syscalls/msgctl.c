@@ -6,7 +6,7 @@
 #include <sys/msg.h>
 #include "sanitise.h"
 
-struct syscall syscall_msgctl = {
+struct syscallentry syscall_msgctl = {
 	.name = "msgctl",
 	.num_args = 3,
 	.arg1name = "msqid",

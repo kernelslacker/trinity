@@ -12,7 +12,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_fanotify_init = {
+struct syscallentry syscall_fanotify_init = {
 	.name = "fanotify_init",
 	.num_args = 2,
 	.arg1name = "flags",

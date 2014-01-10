@@ -136,41 +136,41 @@ void synclogs(void)
 	fsync(fileno(mainlogfile));
 }
 
-static void output_arg(unsigned int argnum, struct syscall *syscall, FILE *fd, bool mono, int childno)
+static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd, bool mono, int childno)
 {
 	int type = 0;
 	const char *name = NULL;
-	unsigned long reg;
+	unsigned long reg = 0;
 
 	switch (argnum) {
-	case 1:	type = syscall->arg1type;
-		name = syscall->arg1name;
+	case 1:	type = entry->arg1type;
+		name = entry->arg1name;
 		reg = shm->a1[childno];
 		break;
-	case 2:	type = syscall->arg2type;
-		name = syscall->arg2name;
+	case 2:	type = entry->arg2type;
+		name = entry->arg2name;
 		reg = shm->a2[childno];
 		break;
-	case 3:	type = syscall->arg3type;
-		name = syscall->arg3name;
+	case 3:	type = entry->arg3type;
+		name = entry->arg3name;
 		reg = shm->a3[childno];
 		break;
-	case 4:	type = syscall->arg4type;
-		name = syscall->arg4name;
+	case 4:	type = entry->arg4type;
+		name = entry->arg4name;
 		reg = shm->a4[childno];
 		break;
-	case 5:	type = syscall->arg5type;
-		name = syscall->arg5name;
+	case 5:	type = entry->arg5type;
+		name = entry->arg5name;
 		reg = shm->a5[childno];
 		break;
-	case 6:	type = syscall->arg6type;
-		name = syscall->arg6name;
+	case 6:	type = entry->arg6type;
+		name = entry->arg6name;
 		reg = shm->a6[childno];
 		break;
 	default: break;
 	}
 
-	if (syscall->num_args >= argnum) {
+	if (entry->num_args >= argnum) {
 		if (!name)
 			return;
 
@@ -226,10 +226,10 @@ static void output_arg(unsigned int argnum, struct syscall *syscall, FILE *fd, b
 			fprintf(fd, "[page_allocs]");
 	}
 
-	if (syscall->decode != NULL) {
+	if (entry->decode != NULL) {
 		char *str;
 
-		str = syscall->decode(argnum, childno);
+		str = entry->decode(argnum, childno);
 		if (str != NULL) {
 			fprintf(fd, "%s", str);
 			free(str);
@@ -376,9 +376,9 @@ void outputstd(const char *fmt, ...)
 
 static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t pid, const unsigned int syscallno, FILE *fd, bool mono)
 {
-	struct syscall *syscall;
+	struct syscallentry *entry;
 
-	syscall = syscalls[syscallno].entry;
+	entry = syscalls[syscallno].entry;
 
 	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid, shm->child_syscall_count[childno],
 			(shm->do32bit[childno] == TRUE) ? "[32BIT] " : "");
@@ -386,17 +386,17 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 	if (syscallno > max_nr_syscalls)
 		fprintf(fd, "%u", syscallno);
 	else
-		fprintf(fd, "%s", syscall->name);
+		fprintf(fd, "%s", entry->name);
 
 	CRESETFD
 	fprintf(fd, "(");
 
-	output_arg(1, syscall, fd, mono, childno);
-	output_arg(2, syscall, fd, mono, childno);
-	output_arg(3, syscall, fd, mono, childno);
-	output_arg(4, syscall, fd, mono, childno);
-	output_arg(5, syscall, fd, mono, childno);
-	output_arg(6, syscall, fd, mono, childno);
+	output_arg(1, entry, fd, mono, childno);
+	output_arg(2, entry, fd, mono, childno);
+	output_arg(3, entry, fd, mono, childno);
+	output_arg(4, entry, fd, mono, childno);
+	output_arg(5, entry, fd, mono, childno);
+	output_arg(6, entry, fd, mono, childno);
 
 	CRESETFD
 	fprintf(fd, ") ");

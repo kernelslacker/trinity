@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_setdomainname = {
+struct syscallentry syscall_setdomainname = {
 	.name = "setdomainname",
 	.num_args = 2,
 	.flags = CAPABILITY_CHECK,

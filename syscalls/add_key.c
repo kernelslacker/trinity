@@ -10,7 +10,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_add_key = {
+struct syscallentry syscall_add_key = {
 	.name = "add_key",
 	.num_args = 5,
 	.arg1name = "_type",

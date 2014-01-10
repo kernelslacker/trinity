@@ -8,7 +8,7 @@
 #define TFD_CLOEXEC 02000000
 #define TFD_NONBLOCK 04000
 
-struct syscall syscall_timerfd_settime = {
+struct syscallentry syscall_timerfd_settime = {
 	.name = "timerfd_settime",
 	.num_args = 4,
 	.arg1name = "ufd",

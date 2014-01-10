@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getcpu = {
+struct syscallentry syscall_getcpu = {
 	.name = "getcpu",
 	.num_args = 3,
 	.arg1name = "cpup",

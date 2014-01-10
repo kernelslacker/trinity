@@ -21,7 +21,7 @@ static void sanitise_mlockall(int childno)
 }
 
 
-struct syscall syscall_mlockall = {
+struct syscallentry syscall_mlockall = {
 	.name = "mlockall",
 	.num_args = 1,
 	.arg1name = "flags",

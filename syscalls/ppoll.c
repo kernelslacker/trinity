@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_ppoll = {
+struct syscallentry syscall_ppoll = {
 	.name = "ppoll",
 	.num_args = 5,
 	.arg1name = "ufds",

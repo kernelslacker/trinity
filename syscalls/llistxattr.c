@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_llistxattr = {
+struct syscallentry syscall_llistxattr = {
 	.name = "llistxattr",
 	.arg1name = "pathname",
 	.arg1type = ARG_PATHNAME,

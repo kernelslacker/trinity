@@ -6,7 +6,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_keyctl = {
+struct syscallentry syscall_keyctl = {
 	.name = "keyctl",
 	.num_args = 5,
 	.arg1name = "cmd",

@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_symlinkat = {
+struct syscallentry syscall_symlinkat = {
 	.name = "symlinkat",
 	.num_args = 3,
 	.arg1name = "oldname",

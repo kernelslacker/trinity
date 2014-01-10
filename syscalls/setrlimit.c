@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_setrlimit = {
+struct syscallentry syscall_setrlimit = {
 	.name = "setrlimit",
 	.num_args = 2,
 	.arg1name = "resource",

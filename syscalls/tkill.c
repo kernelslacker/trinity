@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_tkill = {
+struct syscallentry syscall_tkill = {
 	.name = "tkill",
 	.num_args = 2,
 	.arg1name = "pid",

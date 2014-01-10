@@ -12,7 +12,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_accept4 = {
+struct syscallentry syscall_accept4 = {
 	.name = "accept4",
 	.num_args = 4,
 	.arg1name = "fd",

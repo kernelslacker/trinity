@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_mkdir = {
+struct syscallentry syscall_mkdir = {
 	.name = "mkdir",
 	.num_args = 2,
 	.arg1name = "pathname",

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_flistxattr = {
+struct syscallentry syscall_flistxattr = {
 	.name = "flistxattr",
 	.num_args = 3,
 	.arg1name = "fd",

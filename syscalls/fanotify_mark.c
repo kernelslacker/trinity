@@ -48,7 +48,7 @@ static void sanitise_fanotify_mark(int childno)
 	shm->a3[childno] &= 0xffffffff;
 }
 
-struct syscall syscall_fanotify_mark = {
+struct syscallentry syscall_fanotify_mark = {
 	.name = "fanotify_mark",
 	.num_args = 5,
 	.arg1name = "fanotify_fd",

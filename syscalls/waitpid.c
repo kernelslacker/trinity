@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_waitpid = {
+struct syscallentry syscall_waitpid = {
 	.name = "waitpid",
 	.num_args = 3,
 	.arg1name = "pid",

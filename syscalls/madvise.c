@@ -13,7 +13,7 @@ static void sanitise_madvise(int childno)
 	(void) common_set_mmap_ptr_len(childno);
 }
 
-struct syscall syscall_madvise = {
+struct syscallentry syscall_madvise = {
 	.name = "madvise",
 	.num_args = 3,
 	.arg1name = "start",

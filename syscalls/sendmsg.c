@@ -32,7 +32,7 @@ static void sanitise_sendmsg(int childno)
 	shm->a2[childno] = (unsigned long) msg;
 }
 
-struct syscall syscall_sendmsg = {
+struct syscallentry syscall_sendmsg = {
 	.name = "sendmsg",
 	.num_args = 3,
 	.arg1name = "fd",

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_poll = {
+struct syscallentry syscall_poll = {
 	.name = "poll",
 	.num_args = 3,
 	.arg1name = "ufds",

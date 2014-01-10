@@ -8,7 +8,7 @@
 #include "shm.h"
 #include "compat.h"
 
-struct syscall syscall_getrlimit = {
+struct syscallentry syscall_getrlimit = {
 	.name = "getrlimit",
 	.num_args = 2,
 	.arg1name = "resource",

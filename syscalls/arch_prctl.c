@@ -11,7 +11,7 @@
 #include <asm/prctl.h>
 #include <sys/prctl.h>
 
-struct syscall syscall_arch_prctl = {
+struct syscallentry syscall_arch_prctl = {
 	.name = "arch_prctl",
 	.flags = AVOID_SYSCALL,
 	.num_args = 2,

@@ -33,7 +33,7 @@ retry_maxnode:
 }
 
 
-struct syscall syscall_mbind = {
+struct syscallentry syscall_mbind = {
 	.name = "mbind",
 	.num_args = 6,
 	.arg1name = "start",

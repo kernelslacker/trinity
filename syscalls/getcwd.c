@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getcwd = {
+struct syscallentry syscall_getcwd = {
 	.name = "getcwd",
 	.num_args = 2,
 	.arg1name = "buf",

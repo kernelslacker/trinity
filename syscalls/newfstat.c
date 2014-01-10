@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_newfstat = {
+struct syscallentry syscall_newfstat = {
 	.name = "newfstat",
 	.num_args = 2,
 	.arg1name = "fd",

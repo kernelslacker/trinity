@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_fdatasync = {
+struct syscallentry syscall_fdatasync = {
 	.name = "fdatasync",
 	.num_args = 1,
 	.arg1name = "fd",

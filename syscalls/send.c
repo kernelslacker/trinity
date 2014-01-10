@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include "sanitise.h"
 
-struct syscall syscall_send = {
+struct syscallentry syscall_send = {
 	.name = "send",
 	.num_args = 4,
 	.arg1name = "fd",

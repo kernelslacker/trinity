@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_inotify_rm_watch = {
+struct syscallentry syscall_inotify_rm_watch = {
 	.name = "inotify_rm_watch",
 	.num_args = 2,
 	.arg1name = "fd",

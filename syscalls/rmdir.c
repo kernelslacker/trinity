@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_rmdir = {
+struct syscallentry syscall_rmdir = {
 	.name =  "rmdir",
 	.num_args = 1,
 	.arg1name = "pathname",

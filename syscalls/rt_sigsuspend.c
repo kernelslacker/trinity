@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_rt_sigsuspend = {
+struct syscallentry syscall_rt_sigsuspend = {
 	.name = "rt_sigsuspend",
 	.num_args = 2,
 	.arg1name = "unewset",

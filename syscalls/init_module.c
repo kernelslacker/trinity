@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_init_module = {
+struct syscallentry syscall_init_module = {
 	.name = "init_module",
 	.num_args = 3,
 	.flags = CAPABILITY_CHECK,

@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_fadvise64_64 = {
+struct syscallentry syscall_fadvise64_64 = {
 	.name = "fadvise64",
 	.num_args = 4,
 	.arg1name = "fd",
@@ -23,7 +23,7 @@ struct syscall syscall_fadvise64_64 = {
  * asmlinkage long sys_arm_fadvise64_64(int fd, int advice, loff_t offset, loff_t len)
  * ARM has same as fadvise64 but with other argument order.
  */
-struct syscall syscall_arm_fadvise64_64 = {
+struct syscallentry syscall_arm_fadvise64_64 = {
 	.name = "arm_fadvise64_64",
 	.num_args = 4,
 	.arg1name = "fd",

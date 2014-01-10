@@ -7,7 +7,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_open_by_handle_at = {
+struct syscallentry syscall_open_by_handle_at = {
 	.name = "open_by_handle_at",
 	.num_args = 3,
 	.arg1name = "mountdirfd",

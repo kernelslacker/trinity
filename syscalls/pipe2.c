@@ -7,7 +7,7 @@
 #include "compat.h"
 #include "sanitise.h"
 
-struct syscall syscall_pipe2 = {
+struct syscallentry syscall_pipe2 = {
 	.name = "pipe2",
 	.num_args = 2,
 	.arg1name = "fildes",

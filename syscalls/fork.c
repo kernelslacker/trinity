@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_fork = {
+struct syscallentry syscall_fork = {
 	.name = "fork",
 	.num_args = 1,
 	.flags = AVOID_SYSCALL, // No args to fuzz, confuses fuzzer

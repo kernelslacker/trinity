@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_preadv = {
+struct syscallentry syscall_preadv = {
 	.name = "preadv",
 	.num_args = 5,
 	.arg1name = "fd",

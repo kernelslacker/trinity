@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getxattr = {
+struct syscallentry syscall_getxattr = {
 	.name = "getxattr",
 	.num_args = 4,
 	.arg1name = "pathname",

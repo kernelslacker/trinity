@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sched_getscheduler = {
+struct syscallentry syscall_sched_getscheduler = {
 	.name = "sched_getscheduler",
 	.num_args = 1,
 	.arg1name = "pid",

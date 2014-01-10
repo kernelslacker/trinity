@@ -8,7 +8,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_kexec_load = {
+struct syscallentry syscall_kexec_load = {
 	.name = "kexec_load",
 	.num_args = 4,
 	.flags = CAPABILITY_CHECK,

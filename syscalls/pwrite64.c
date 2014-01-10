@@ -15,7 +15,7 @@ retry_pos:
 	}
 }
 
-struct syscall syscall_pwrite64 = {
+struct syscallentry syscall_pwrite64 = {
 	.name = "pwrite64",
 	.num_args = 4,
 	.sanitise = sanitise_pwrite64,

@@ -5,7 +5,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_timerfd_create = {
+struct syscallentry syscall_timerfd_create = {
 	.name = "timerfd_create",
 	.num_args = 2,
 	.arg1name = "clockid",

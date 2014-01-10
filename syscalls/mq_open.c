@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_mq_open = {
+struct syscallentry syscall_mq_open = {
 	.name = "mq_open",
 	.num_args = 4,
 	.arg1name = "u_name",

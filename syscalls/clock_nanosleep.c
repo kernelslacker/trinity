@@ -11,7 +11,7 @@
 #include <time.h>
 #include "sanitise.h"
 
-struct syscall syscall_clock_nanosleep = {
+struct syscallentry syscall_clock_nanosleep = {
 	.name = "clock_nanosleep",
 	.num_args = 4,
 	.arg1name = "which_clock",

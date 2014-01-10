@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_capget = {
+struct syscallentry syscall_capget = {
 	.name = "capget",
 	.num_args = 2,
 	.arg1name = "header",

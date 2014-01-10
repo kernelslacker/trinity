@@ -142,7 +142,7 @@ static void sanitise_socket(int childno)
 	shm->a3[childno] = st.protocol;
 }
 
-struct syscall syscall_socket = {
+struct syscallentry syscall_socket = {
 	.name = "socket",
 	.num_args = 3,
 	.arg1name = "family",

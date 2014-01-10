@@ -9,7 +9,7 @@
 
 #include "sanitise.h"
 
-struct syscall syscall_epoll_create1 = {
+struct syscallentry syscall_epoll_create1 = {
 	.name = "epoll_create1",
 	.num_args = 1,
 	.arg1name = "flags",

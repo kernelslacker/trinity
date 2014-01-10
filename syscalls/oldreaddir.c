@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_oldreaddir = {
+struct syscallentry syscall_oldreaddir = {
 	.name = "old_readdir",
 	.num_args = 3,
 	.arg1name = "fd",

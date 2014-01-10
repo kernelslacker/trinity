@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_pciconfig_iobase = {
+struct syscallentry syscall_pciconfig_iobase = {
 	.name = "pciconfig_iobase",
 	.num_args = 3,
 	.arg1name = "which",

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_pipe = {
+struct syscallentry syscall_pipe = {
 	.name = "pipe",
 	.num_args = 1,
 	.arg1name = "fildes",

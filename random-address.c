@@ -118,34 +118,34 @@ void * get_non_null_address(void)
 
 unsigned long find_previous_arg_address(unsigned int argnum, unsigned int call, int childno)
 {
-	struct syscall *syscall;
+	struct syscallentry *entry;
 	unsigned long addr = 0;
 
-	syscall = syscalls[call].entry;
+	entry = syscalls[call].entry;
 
 	if (argnum > 1)
-		if ((syscall->arg1type == ARG_ADDRESS) ||
-		    (syscall->arg1type == ARG_NON_NULL_ADDRESS))
+		if ((entry->arg1type == ARG_ADDRESS) ||
+		    (entry->arg1type == ARG_NON_NULL_ADDRESS))
 			addr = shm->a1[childno];
 
 	if (argnum > 2)
-		if ((syscall->arg2type == ARG_ADDRESS) ||
-		    (syscall->arg2type == ARG_NON_NULL_ADDRESS))
+		if ((entry->arg2type == ARG_ADDRESS) ||
+		    (entry->arg2type == ARG_NON_NULL_ADDRESS))
 			addr = shm->a2[childno];
 
 	if (argnum > 3)
-		if ((syscall->arg3type == ARG_ADDRESS) ||
-		    (syscall->arg3type == ARG_NON_NULL_ADDRESS))
+		if ((entry->arg3type == ARG_ADDRESS) ||
+		    (entry->arg3type == ARG_NON_NULL_ADDRESS))
 			addr = shm->a3[childno];
 
 	if (argnum > 4)
-		if ((syscall->arg4type == ARG_ADDRESS) ||
-		    (syscall->arg4type == ARG_NON_NULL_ADDRESS))
+		if ((entry->arg4type == ARG_ADDRESS) ||
+		    (entry->arg4type == ARG_NON_NULL_ADDRESS))
 			addr = shm->a4[childno];
 
 	if (argnum > 5)
-		if ((syscall->arg5type == ARG_ADDRESS) ||
-		    (syscall->arg5type == ARG_NON_NULL_ADDRESS))
+		if ((entry->arg5type == ARG_ADDRESS) ||
+		    (entry->arg5type == ARG_NON_NULL_ADDRESS))
 			addr = shm->a5[childno];
 
 	return addr;

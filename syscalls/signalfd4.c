@@ -7,7 +7,7 @@
 #define SFD_CLOEXEC 02000000
 #define SFD_NONBLOCK 04000
 
-struct syscall syscall_signalfd4 = {
+struct syscallentry syscall_signalfd4 = {
 	.name = "signalfd4",
 	.num_args = 4,
 	.arg1name = "ufd",

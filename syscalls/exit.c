@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_exit = {
+struct syscallentry syscall_exit = {
 	.name = "exit",
 	.num_args = 1,
 	.flags = AVOID_SYSCALL, // No args to fuzz, confuses fuzzer

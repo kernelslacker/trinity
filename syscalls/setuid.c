@@ -10,7 +10,7 @@ static void sanitise_setuid(int childno)
 	shm->a1[childno] = rand32();
 }
 
-struct syscall syscall_setuid = {
+struct syscallentry syscall_setuid = {
 	.name = "setuid",
 	.num_args = 1,
 	.arg1name = "uid",

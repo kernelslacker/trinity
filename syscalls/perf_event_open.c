@@ -1255,7 +1255,7 @@ void sanitise_perf_event_open(int childno)
 	}
 }
 
-struct syscall syscall_perf_event_open = {
+struct syscallentry syscall_perf_event_open = {
 	.name = "perf_event_open",
 	.num_args = 5,
 	.arg1name = "attr_uptr",

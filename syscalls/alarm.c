@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_alarm = {
+struct syscallentry syscall_alarm = {
 	.flags = AVOID_SYSCALL,	/* we rely on a useful alarm for every syscall. */
 	.name = "alarm",
 	.num_args = 1,

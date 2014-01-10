@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_rt_sigtimedwait = {
+struct syscallentry syscall_rt_sigtimedwait = {
 	.name = "rt_sigtimedwait",
 	.num_args = 4,
 	.arg1name = "uthese",

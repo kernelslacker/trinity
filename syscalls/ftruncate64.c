@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_ftruncate64 = {
+struct syscallentry syscall_ftruncate64 = {
 	.name = "ftruncate64",
 	.num_args = 2,
 	.arg1name = "fd",

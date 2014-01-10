@@ -6,7 +6,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_kcmp = {
+struct syscallentry syscall_kcmp = {
 	.name = "kcmp",
 	.num_args = 5,
 	.arg1name = "pid1",

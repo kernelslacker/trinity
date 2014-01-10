@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_rt_sigpending = {
+struct syscallentry syscall_rt_sigpending = {
 	.name = "rt_sigpending",
 	.num_args = 2,
 	.arg1name = "set",

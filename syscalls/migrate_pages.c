@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_migrate_pages = {
+struct syscallentry syscall_migrate_pages = {
 	.name = "migrate_pages",
 	.num_args = 4,
 	.arg1name = "pid",

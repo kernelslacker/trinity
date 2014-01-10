@@ -16,7 +16,7 @@ static void sanitise_linkat(int childno)
 		shm->a1[childno] = AT_FDCWD;
 }
 
-struct syscall syscall_linkat = {
+struct syscallentry syscall_linkat = {
 	.name = "linkat",
 	.num_args = 5,
 	.arg1name = "olddfd",

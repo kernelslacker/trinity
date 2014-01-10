@@ -121,7 +121,7 @@ static void sanitise_fcntl(int childno)
 
 }
 
-struct syscall syscall_fcntl = {
+struct syscallentry syscall_fcntl = {
 	.name = "fcntl",
 	.num_args = 3,
 	.arg1name = "fd",

@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_fgetxattr = {
+struct syscallentry syscall_fgetxattr = {
 	.name = "fgetxattr",
 	.num_args = 4,
 	.arg1name = "fd",

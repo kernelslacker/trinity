@@ -7,7 +7,7 @@
 #include "compat.h"
 #include "sanitise.h"
 
-struct syscall syscall_recv = {
+struct syscallentry syscall_recv = {
 	.name = "recv",
 	.num_args = 4,
 	.arg1name = "fd",

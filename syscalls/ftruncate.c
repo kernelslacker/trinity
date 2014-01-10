@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_ftruncate = {
+struct syscallentry syscall_ftruncate = {
 	.name = "ftruncate",
 	.num_args = 2,
 	.arg1name = "fd",

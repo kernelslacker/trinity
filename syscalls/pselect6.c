@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_pselect6 = {
+struct syscallentry syscall_pselect6 = {
 	.name = "pselect6",
 	.num_args = 6,
 	.flags = AVOID_SYSCALL, // Can cause the fuzzer to hang without timeout firing

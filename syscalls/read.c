@@ -14,7 +14,7 @@ static void sanitise_read(int childno)
 	shm->a3[childno] = rand() % page_size;
 }
 
-struct syscall syscall_read = {
+struct syscallentry syscall_read = {
 	.name = "read",
 	.num_args = 3,
 	.sanitise = sanitise_read,

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_reboot = {
+struct syscallentry syscall_reboot = {
 	.name = "reboot",
 	.num_args = 4,
 	.flags = CAPABILITY_CHECK,

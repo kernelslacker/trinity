@@ -6,7 +6,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_connect = {
+struct syscallentry syscall_connect = {
 	.name = "connect",
 	.num_args = 3,
 	.arg1name = "fd",

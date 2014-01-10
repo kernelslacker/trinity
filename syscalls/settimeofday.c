@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_settimeofday = {
+struct syscallentry syscall_settimeofday = {
 	.name = "settimeofday",
 	.num_args = 2,
 	.arg1name = "tv",

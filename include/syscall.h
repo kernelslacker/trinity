@@ -29,7 +29,7 @@ struct arglist {
 	unsigned int values[32];
 };
 
-struct syscall {
+struct syscallentry {
 	void (*sanitise)(int childno);
 	void (*post)(int childno);
 	int (*init)(void);
@@ -95,7 +95,7 @@ struct syscall {
 #define GROUP_VFS	2
 
 struct syscalltable {
-	struct syscall *entry;
+	struct syscallentry *entry;
 };
 
 #define CAPABILITY_CHECK (1<<0)

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_set_tid_address = {
+struct syscallentry syscall_set_tid_address = {
 	.name = "set_tid_address",
 	.num_args = 1,
 	.arg1name = "tidptr",

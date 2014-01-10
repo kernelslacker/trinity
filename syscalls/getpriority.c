@@ -6,7 +6,7 @@
 #include <sys/resource.h>
 #include "sanitise.h"
 
-struct syscall syscall_getpriority = {
+struct syscallentry syscall_getpriority = {
 	.name = "getpriority",
 	.num_args = 2,
 	.arg1name = "which",

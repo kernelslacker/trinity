@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_setpriority = {
+struct syscallentry syscall_setpriority = {
 	.name = "setpriority",
 	.num_args = 3,
 	.arg1name = "which",

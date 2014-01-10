@@ -16,7 +16,7 @@ static void sanitise_vmsplice(int childno)
 	shm->a3[childno] = rand() % UIO_MAXIOV;
 }
 
-struct syscall syscall_vmsplice = {
+struct syscallentry syscall_vmsplice = {
 	.name = "vmsplice",
 	.num_args = 4,
 	.sanitise = sanitise_vmsplice,

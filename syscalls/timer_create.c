@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_timer_create = {
+struct syscallentry syscall_timer_create = {
 	.name = "timer_create",
 	.num_args = 3,
 	.arg1name = "which_clock",

@@ -10,7 +10,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
-struct syscall syscall_dup3 = {
+struct syscallentry syscall_dup3 = {
 	.name = "dup3",
 	.num_args = 3,
 	.arg1name = "oldfd",

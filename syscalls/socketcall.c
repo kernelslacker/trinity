@@ -69,7 +69,7 @@ static void sanitise_socketcall(int childno)
 	shm->a2[childno] = (unsigned long) args;
 }
 
-struct syscall syscall_socketcall = {
+struct syscallentry syscall_socketcall = {
 	.name = "socketcall",
 	.num_args = 2,
 	.arg1name = "call",

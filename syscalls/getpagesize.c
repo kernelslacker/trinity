@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_getpagesize = {
+struct syscallentry syscall_getpagesize = {
 	.flags = BORING,
 	.name = "getpagesize",
 	.num_args = 0,

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_shmdt = {
+struct syscallentry syscall_shmdt = {
 	.name = "shmdt",
 	.num_args = 1,
 	.arg1name = "shmaddr",

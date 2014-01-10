@@ -6,7 +6,7 @@
 #include <linux/xattr.h>
 #include "sanitise.h"
 
-struct syscall syscall_fsetxattr = {
+struct syscallentry syscall_fsetxattr = {
 	.name = "fsetxattr",
 	.num_args = 5,
 	.arg1name = "fd",

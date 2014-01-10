@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sendfile64 = {
+struct syscallentry syscall_sendfile64 = {
 	.name = "sendfile",
 	.num_args = 4,
 	.arg1name = "out_fd",

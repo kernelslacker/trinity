@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_mq_unlink = {
+struct syscallentry syscall_mq_unlink = {
 	.name = "mq_unlink",
 	.num_args = 1,
 	.arg1name = "u_name",

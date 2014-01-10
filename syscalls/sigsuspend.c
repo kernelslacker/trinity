@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sigsuspend = {
+struct syscallentry syscall_sigsuspend = {
 	.name = "sigsuspend",
 	.num_args = 2,
 	.arg1name = "history0",

@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_pivot_root = {
+struct syscallentry syscall_pivot_root = {
 	.name = "pivot_root",
 	.num_args = 2,
 	.flags = CAPABILITY_CHECK,

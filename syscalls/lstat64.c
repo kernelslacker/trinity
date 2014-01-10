@@ -4,7 +4,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_lstat64 = {
+struct syscallentry syscall_lstat64 = {
 	.name = "lstat64",
 	.num_args = 2,
 	.arg1name = "filename",

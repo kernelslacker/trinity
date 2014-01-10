@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_iopl = {
+struct syscallentry syscall_iopl = {
 	.name = "iopl",
 	.num_args = 2,
 	.arg1name = "level",

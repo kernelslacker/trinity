@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_uselib = {
+struct syscallentry syscall_uselib = {
 	.name = "uselib",
 	.num_args = 1,
 	.arg1name = "library",

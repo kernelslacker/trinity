@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_sysctl = {
+struct syscallentry syscall_sysctl = {
 	.name = "sysctl",
 	.num_args = 1,
 	.arg1name = "args",

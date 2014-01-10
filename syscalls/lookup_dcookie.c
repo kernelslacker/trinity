@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_lookup_dcookie = {
+struct syscallentry syscall_lookup_dcookie = {
 	.name = "lookup_dcookie",
 	.num_args = 3,
 	.flags = CAPABILITY_CHECK,

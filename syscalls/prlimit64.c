@@ -5,7 +5,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_prlimit64 = {
+struct syscallentry syscall_prlimit64 = {
 	.name = "prlimit64",
 	.num_args = 4,
 	.arg1name = "pid",

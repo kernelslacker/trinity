@@ -3,7 +3,7 @@
  */
 #include "sanitise.h"
 
-struct syscall syscall_nfsservctl = {
+struct syscallentry syscall_nfsservctl = {
 	.name = "nfsservctl",
 	.num_args = 3,
 	.arg1name = "cmd",
