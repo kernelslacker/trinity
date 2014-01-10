@@ -37,25 +37,33 @@ int search_syscall_table(const struct syscalltable *table, unsigned int nr_sysca
 
 void validate_specific_syscall(const struct syscalltable *table, int call)
 {
+	struct syscall *syscall;
+
 	if (call == -1)
 		return;
 
-	if (table[call].entry->flags & AVOID_SYSCALL)
-		output(0, "%s is marked as AVOID. Skipping\n", table[call].entry->name);
+	syscall = table[call].entry;
 
-	if (table[call].entry->flags & NI_SYSCALL)
-		output(0, "%s is NI_SYSCALL. Skipping\n", table[call].entry->name);
+	if (syscall->flags & AVOID_SYSCALL)
+		output(0, "%s is marked as AVOID. Skipping\n", syscall->name);
+
+	if (syscall->flags & NI_SYSCALL)
+		output(0, "%s is NI_SYSCALL. Skipping\n", syscall->name);
 }
 
 int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 {
+	struct syscall *syscall;
+
 	if (call == -1)
 		return FALSE;
 
-	if (table[call].entry->flags & AVOID_SYSCALL)
+	syscall = table[call].entry;
+
+	if (syscall->flags & AVOID_SYSCALL)
 		return FALSE;
 
-	if (table[call].entry->flags & NI_SYSCALL)
+	if (syscall->flags & NI_SYSCALL)
 		return FALSE;
 
 	return TRUE;
@@ -63,12 +71,12 @@ int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 
 void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall)
 {
-	struct syscall *call_ptr;
+	struct syscall *syscall;
 
-	call_ptr = table[calln].entry;
+	syscall = table[calln].entry;
 
 	//Check if the call is activated already, and activate it only if needed
-	if (call_ptr->active_number == 0) {
+	if (syscall->active_number == 0) {
 		//Sanity check
 		if ((*nr_active + 1) > MAX_NR_SYSCALL) {
 			output(0, "[tables] MAX_NR_SYSCALL needs to be increased. More syscalls than active table can fit.\n");
@@ -78,27 +86,28 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, cons
 		//save the call no
 		active_syscall[*nr_active] = calln + 1;
 		(*nr_active) += 1;
-		call_ptr->active_number = *nr_active;
+		syscall->active_number = *nr_active;
 	}
 }
 
 void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall)
 {
-	struct syscall *call_ptr;
+	struct syscall *syscall;
 
-	call_ptr = table[calln].entry;
+	syscall = table[calln].entry;
+
 	//Check if the call is activated already, and deactivate it only if needed
-	if ((call_ptr->active_number != 0) && (*nr_active > 0)) {
+	if ((syscall->active_number != 0) && (*nr_active > 0)) {
 		unsigned int i;
 
-		for (i = call_ptr->active_number - 1; i < *nr_active - 1; i++) {
+		for (i = syscall->active_number - 1; i < *nr_active - 1; i++) {
 			active_syscall[i] = active_syscall[i + 1];
 			table[active_syscall[i] - 1].entry->active_number = i + 1;
 		}
 		//The last step is to erase the last item.
 		active_syscall[*nr_active - 1] = 0;
 		(*nr_active) -= 1;
-		call_ptr->active_number = 0;
+		syscall->active_number = 0;
 	}
 }
 
@@ -395,26 +404,28 @@ void display_enabled_syscalls(void)
 
 static bool check_for_argtype(const struct syscalltable *table, unsigned int num, unsigned int argtype)
 {
+	struct syscall *syscall = table[num].entry;
+
 	unsigned int i;
 
-	for (i = 0; i < table[num].entry->num_args; i++) {
+	for (i = 0; i < syscall->num_args; i++) {
 		switch (i) {
-		case 0:	if (table[num].entry->arg1type == argtype)
+		case 0:	if (syscall->arg1type == argtype)
 				return TRUE;
 			break;
-		case 1:	if (table[num].entry->arg2type == argtype)
+		case 1:	if (syscall->arg2type == argtype)
 				return TRUE;
 			break;
-		case 2:	if (table[num].entry->arg3type == argtype)
+		case 2:	if (syscall->arg3type == argtype)
 				return TRUE;
 			break;
-		case 3:	if (table[num].entry->arg4type == argtype)
+		case 3:	if (syscall->arg4type == argtype)
 				return TRUE;
 			break;
-		case 4:	if (table[num].entry->arg5type == argtype)
+		case 4:	if (syscall->arg5type == argtype)
 				return TRUE;
 			break;
-		case 5:	if (table[num].entry->arg6type == argtype)
+		case 5:	if (syscall->arg6type == argtype)
 				return TRUE;
 			break;
 		default:
