@@ -170,59 +170,57 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	default: break;
 	}
 
-	if (entry->num_args >= argnum) {
-
-		if (argnum != 1) {
-			CRESETFD
-			fprintf(fd, ", ");
-		}
-
-		fprintf(fd, "%s=", name);
-
-		switch (type) {
-		case ARG_PATHNAME:
-			fprintf(fd, "\"%s\"", (char *) reg);
-			break;
-		case ARG_PID:
-		case ARG_FD:
-			CRESETFD
-			fprintf(fd, "%lu", reg);
-			break;
-		case ARG_MODE_T:
-			CRESETFD
-			fprintf(fd, "%o", (mode_t) reg);
-			break;
-		case ARG_UNDEFINED:
-		case ARG_LEN:
-		case ARG_ADDRESS:
-		case ARG_NON_NULL_ADDRESS:
-		case ARG_RANGE:
-		case ARG_OP:
-		case ARG_LIST:
-		case ARG_RANDPAGE:
-		case ARG_CPU:
-		case ARG_RANDOM_LONG:
-		case ARG_IOVEC:
-		case ARG_IOVECLEN:
-		case ARG_SOCKADDR:
-		case ARG_SOCKADDRLEN:
-		default:
-			if (reg > 8 * 1024)
-				fprintf(fd, "0x%lx", reg);
-			else
-				fprintf(fd, "%lu", reg);
-			CRESETFD
-			break;
-		}
-		if (reg == (((unsigned long)page_zeros) & PAGE_MASK))
-			fprintf(fd, "[page_zeros]");
-		if (reg == (((unsigned long)page_rand) & PAGE_MASK))
-			fprintf(fd, "[page_rand]");
-		if (reg == (((unsigned long)page_0xff) & PAGE_MASK))
-			fprintf(fd, "[page_0xff]");
-		if (reg == (((unsigned long)page_allocs) & PAGE_MASK))
-			fprintf(fd, "[page_allocs]");
+	if (argnum != 1) {
+		CRESETFD
+		fprintf(fd, ", ");
 	}
+
+	fprintf(fd, "%s=", name);
+
+	switch (type) {
+	case ARG_PATHNAME:
+		fprintf(fd, "\"%s\"", (char *) reg);
+		break;
+	case ARG_PID:
+	case ARG_FD:
+		CRESETFD
+		fprintf(fd, "%lu", reg);
+		break;
+	case ARG_MODE_T:
+		CRESETFD
+		fprintf(fd, "%o", (mode_t) reg);
+		break;
+	case ARG_UNDEFINED:
+	case ARG_LEN:
+	case ARG_ADDRESS:
+	case ARG_NON_NULL_ADDRESS:
+	case ARG_RANGE:
+	case ARG_OP:
+	case ARG_LIST:
+	case ARG_RANDPAGE:
+	case ARG_CPU:
+	case ARG_RANDOM_LONG:
+	case ARG_IOVEC:
+	case ARG_IOVECLEN:
+	case ARG_SOCKADDR:
+	case ARG_SOCKADDRLEN:
+	default:
+		if (reg > 8 * 1024)
+			fprintf(fd, "0x%lx", reg);
+		else
+			fprintf(fd, "%lu", reg);
+		CRESETFD
+		break;
+	}
+
+	if (reg == (((unsigned long)page_zeros) & PAGE_MASK))
+		fprintf(fd, "[page_zeros]");
+	if (reg == (((unsigned long)page_rand) & PAGE_MASK))
+		fprintf(fd, "[page_rand]");
+	if (reg == (((unsigned long)page_0xff) & PAGE_MASK))
+		fprintf(fd, "[page_0xff]");
+	if (reg == (((unsigned long)page_allocs) & PAGE_MASK))
+		fprintf(fd, "[page_allocs]");
 
 	if (entry->decode != NULL) {
 		char *str;
