@@ -171,15 +171,13 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	}
 
 	if (entry->num_args >= argnum) {
-		if (!name)
-			return;
 
 		if (argnum != 1) {
 			CRESETFD
 			fprintf(fd, ", ");
 		}
-		if (name)
-			fprintf(fd, "%s=", name);
+
+		fprintf(fd, "%s=", name);
 
 		switch (type) {
 		case ARG_PATHNAME:
