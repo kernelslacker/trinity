@@ -832,6 +832,9 @@ struct kvm_get_htab_fd {
 #ifndef ETH_P_PRP
 #define ETH_P_PRP	0x88FB
 #endif
+#ifndef ETH_P_TDLS
+#define ETH_P_TDLS	0x890D
+#endif
 #ifndef ETH_P_QINQ1
 #define ETH_P_QINQ1	0x9100
 #endif
@@ -840,4 +843,7 @@ struct kvm_get_htab_fd {
 #endif
 #ifndef ETH_P_QINQ3
 #define ETH_P_QINQ3	0x9300
+#endif
+#ifndef ETH_P_AF_IUCV
+#define ETH_P_AF_IUCV	0xFBFB
 #endif
