@@ -21,20 +21,33 @@
 
 static unsigned int count;
 
+#define NOT_SET 0
 #define WAS_MALLOC 1
 #define WAS_MAP 2
 static unsigned char *pagetypes;
+
+static void free_all_pageallocs(unsigned long *page_alloc)
+{
+	unsigned int i = 0;
+
+	while (pagetypes[i] != NOT_SET) {
+		if (pagetypes[i] == WAS_MALLOC)
+			free((void *)page_alloc[i]);
+		i++;
+	}
+	free(page_alloc);
+}
 
 static void sanitise_move_pages(int childno)
 {
 	struct map *map;
 	int *nodes;
 	unsigned long *page_alloc;
-	unsigned int i, j;
+	unsigned int i;
 
 	if (pagetypes == NULL)
 		pagetypes = malloc(page_size);
-	memset(pagetypes, 0, page_size);
+	memset(pagetypes, NOT_SET, page_size);
 
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
@@ -52,11 +65,7 @@ static void sanitise_move_pages(int childno)
 			/* malloc */
 			page_alloc[i] = (unsigned long) malloc(page_size);
 			if (!page_alloc[i]) {
-				for (j = 0; j < i; j++) {
-					if (pagetypes[j] == WAS_MALLOC)
-						free((void *)page_alloc[j]);
-				}
-				free(page_alloc);
+				free_all_pageallocs(page_alloc);
 				return;
 			}
 			page_alloc[i] &= PAGE_MASK;
@@ -87,21 +96,12 @@ static void sanitise_move_pages(int childno)
 static void post_move_pages(int childno)
 {
 	unsigned long *page;
-	unsigned int i;
 
 	page = (void *) shm->scratch[childno];
 	if (page == NULL)
 		return;
 
-	for (i = 0; i < count; i++) {
-		void *ptr;
-
-		ptr = (void *) page[i];
-		if (pagetypes[i] == WAS_MALLOC)
-			free(ptr);
-	}
-
-	free(page);
+	free_all_pageallocs(page);
 }
 
 struct syscallentry syscall_move_pages = {
