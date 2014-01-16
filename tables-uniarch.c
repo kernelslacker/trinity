@@ -79,11 +79,11 @@ retry:
 
 void disable_non_net_syscalls_uniarch(void)
 {
-	struct syscallentry *entry;
-
 	unsigned int i;
 
 	for_each_syscall(i) {
+		struct syscallentry *entry;
+
 		entry = syscalls[i].entry;
 
 		if (validate_specific_syscall_silent(syscalls, i) == FALSE)
@@ -127,11 +127,11 @@ void mark_all_syscalls_active_uniarch(void)
 
 void init_syscalls_uniarch(void)
 {
-	struct syscallentry *entry;
-
 	unsigned int i;
 
 	for_each_syscall(i) {
+		struct syscallentry *entry;
+
 		entry = syscalls[i].entry;
 		if (entry->flags & ACTIVE)
 			if (entry->init)
@@ -157,12 +157,13 @@ void deactivate_disabled_syscalls_uniarch(void)
 
 void dump_syscall_tables_uniarch(void)
 {
-	struct syscallentry *entry;
 	unsigned int i;
 
 	outputstd("syscalls: %d\n", max_nr_syscalls);
 
 	for_each_syscall(i) {
+		struct syscallentry *entry;
+
 		entry = syscalls[i].entry;
 		outputstd("entrypoint %d %s : ", entry->number, entry->name);
 		show_state(entry->flags & ACTIVE);
@@ -174,10 +175,11 @@ void dump_syscall_tables_uniarch(void)
 
 void display_enabled_syscalls_uniarch(void)
 {
-	struct syscallentry *entry;
         unsigned int i;
 
 	for_each_syscall(i) {
+		struct syscallentry *entry;
+
 		entry = syscalls[i].entry;
 
 		if (entry->flags & ACTIVE)
