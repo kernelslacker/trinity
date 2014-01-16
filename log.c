@@ -213,13 +213,13 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 		break;
 	}
 
-	if (reg == (((unsigned long)page_zeros) & PAGE_MASK))
+	if ((reg & PAGE_MASK) == (unsigned long) page_zeros)
 		fprintf(fd, "[page_zeros]");
-	if (reg == (((unsigned long)page_rand) & PAGE_MASK))
+	if ((reg & PAGE_MASK) == (unsigned long) page_rand)
 		fprintf(fd, "[page_rand]");
-	if (reg == (((unsigned long)page_0xff) & PAGE_MASK))
+	if ((reg & PAGE_MASK) == (unsigned long) page_0xff)
 		fprintf(fd, "[page_0xff]");
-	if (reg == (((unsigned long)page_allocs) & PAGE_MASK))
+	if ((reg & PAGE_MASK) == (unsigned long) page_allocs)
 		fprintf(fd, "[page_allocs]");
 
 	if (entry->decode != NULL) {
