@@ -8,6 +8,7 @@
 #define MPOL_MF_MOVE    (1<<1)  /* Move pages owned by this process to conform to mapping */
 #define MPOL_MF_MOVE_ALL (1<<2) /* Move every page to conform to mapping */
 
+#include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -63,12 +64,11 @@ static void sanitise_move_pages(int childno)
 	for (i = 0; i < count; i++) {
 		if (rand_bool()) {
 			/* malloc */
-			page_alloc[i] = (unsigned long) malloc(page_size);
+			page_alloc[i] = (unsigned long) memalign(page_size, page_size);
 			if (!page_alloc[i]) {
 				free_all_pageallocs(page_alloc);
 				return;
 			}
-			page_alloc[i] &= PAGE_MASK;
 			pagetypes[i] = WAS_MALLOC;
 		} else {
 			/* mapping. */
