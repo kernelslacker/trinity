@@ -42,6 +42,7 @@ static unsigned long randbits(int limit)
 static unsigned long taviso(void)
 {
 	unsigned long r = 0;
+	unsigned long temp;
 
 	switch (rand() % 4) {
 	case 0:	r = rand() & rand();
@@ -51,10 +52,14 @@ static unsigned long taviso(void)
 #endif
 		break;
 
-	case 1:	r = rand() % rand();
+	case 1:	temp = rand();
+		r = rand();
+		if (!temp) r %= temp;
 #if __WORDSIZE == 64
 		r <<= 32;
-		r |= rand() % rand();
+
+		temp = rand();
+		if (!temp) r |= rand() % temp;
 #endif
 		break;
 
