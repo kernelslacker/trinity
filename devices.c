@@ -87,7 +87,7 @@ static void parse_proc_misc(void)
 	if (!fp)
 		return;
 
-	while (fscanf(fp, "%d %as", &minor, &name) == 2) {
+	while (fscanf(fp, "%d %ms", &minor, &name) == 2) {
 		new = realloc(misc_devs, (miscdevs+1)*sizeof(*misc_devs));
 		if (!new) {
 			free(name);
