@@ -35,6 +35,7 @@ static void disable_coredumps(void)
 	struct rlimit limit;
 
 	if (debug == TRUE) {
+		(void)signal(SIGABRT, SIG_DFL);
 		(void)signal(SIGSEGV, SIG_DFL);
 		return;
 	}

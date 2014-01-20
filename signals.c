@@ -82,8 +82,10 @@ void mask_signals_child(void)
 		(void)signal(i, SIG_IGN);
 
 	/* If we are in debug mode, we want segfaults and core dumps */
-	if (debug == TRUE)
+	if (debug == TRUE) {
+		(void)signal(SIGABRT, SIG_DFL);
 		(void)signal(SIGSEGV, SIG_DFL);
+	}
 
 	/* trap ctrl-c */
 	(void)signal(SIGINT, ctrlc_handler);
