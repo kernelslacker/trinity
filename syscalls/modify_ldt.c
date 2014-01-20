@@ -18,6 +18,7 @@ static void sanitise_modify_ldt(int childno)
 	void *ldt;
 	//struct user_desc *desc;
 
+	shm->scratch[childno] = 0;
 	switch (shm->a1[childno]) {
 	case 0:
 		/* read the ldt into the memory pointed to by ptr.
