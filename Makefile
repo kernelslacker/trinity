@@ -69,13 +69,13 @@ DEPDIR= .deps
 -include $(SRCS:%.c=$(DEPDIR)/%.d)
 
 trinity: test $(OBJS) $(HEADERS)
-	$(QUIET_CC)$(CC) $(CFLAGS) -o trinity $(OBJS)
+	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS)
 	@mkdir -p tmp
 
 df = $(DEPDIR)/$(*D)/$(*F)
 
 %.o : %.c
-	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ -c $<
+	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o $@ -c $<
 	@mkdir -p $(DEPDIR)/$(*D)
 	@gcc -MM $(CFLAGS) $*.c > $(df).d
 	@mv -f $(df).d $(df).d.tmp
