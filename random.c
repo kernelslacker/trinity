@@ -54,12 +54,12 @@ static unsigned long taviso(void)
 
 	case 1:	temp = rand();
 		r = rand();
-		if (!temp) r %= temp;
+		if (temp) r %= temp;
 #if __WORDSIZE == 64
 		r <<= 32;
 
 		temp = rand();
-		if (!temp) r |= rand() % temp;
+		if (temp) r |= rand() % temp;
 #endif
 		break;
 
