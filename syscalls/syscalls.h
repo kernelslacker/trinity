@@ -367,3 +367,4 @@ extern struct syscallentry syscall_kcmp;
 extern struct syscallentry syscall_pciconfig_iobase;
 extern struct syscallentry syscall_arm_fadvise64_64;
 extern struct syscallentry syscall_sh_cacheflush;
+extern struct syscallentry syscall_sched_setattr;
