@@ -26,7 +26,6 @@ static void sanitise_munmap(int childno)
 	switch (rand() % 20) {
 	case 0:
 		/* delete the whole mapping. */
-		delete_mapping(childno, map);
 		action = WHOLE;
 		return;
 
