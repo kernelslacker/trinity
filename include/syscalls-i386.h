@@ -359,4 +359,5 @@ struct syscalltable syscalls_i386[] = {
 	{ .entry = &syscall_kcmp },
 	{ .entry = &syscall_finit_module },
 	{ .entry = &syscall_sched_setattr },
+	{ .entry = &syscall_sched_getattr },
 };
