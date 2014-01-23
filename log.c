@@ -190,19 +190,29 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 		CRESETFD
 		fprintf(fd, "%o", (mode_t) reg);
 		break;
-	case ARG_UNDEFINED:
-	case ARG_LEN:
+
 	case ARG_ADDRESS:
 	case ARG_NON_NULL_ADDRESS:
-	case ARG_RANGE:
+	case ARG_IOVEC:
+	case ARG_SOCKADDR:
+		fprintf(fd, "0x%lx", reg);
+		break;
+
+	case ARG_RANDPAGE:
+		fprintf(fd, "0x%lx [page_rand]", reg);
+		break;
+
 	case ARG_OP:
 	case ARG_LIST:
-	case ARG_RANDPAGE:
+		fprintf(fd, "0x%lx", reg);
+		break;
+
+	case ARG_UNDEFINED:
+	case ARG_LEN:
+	case ARG_RANGE:
 	case ARG_CPU:
 	case ARG_RANDOM_LONG:
-	case ARG_IOVEC:
 	case ARG_IOVECLEN:
-	case ARG_SOCKADDR:
 	case ARG_SOCKADDRLEN:
 	default:
 		if (reg > 8 * 1024)
