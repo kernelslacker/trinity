@@ -215,10 +215,13 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
 	default:
-		if (reg > 8 * 1024)
+		if (((long) reg < -16384) || ((long) reg > 16384)) {
+			/* Print everything outside -16384 and 16384 as hex. */
 			fprintf(fd, "0x%lx", reg);
-		else
-			fprintf(fd, "%lu", reg);
+		} else {
+			/* Print everything else as signed decimal. */
+			fprintf(fd, "%ld", (long) reg);
+		}
 		CRESETFD
 		break;
 	}
