@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -94,7 +95,7 @@ void dirty_mapping(struct map *map)
 	if (!(map->prot & PROT_WRITE))
 		return;
 
-	switch (rand() % 5) {
+	switch (rand() % 6) {
 	case 0:
 		/* Just fault in one page. */
 		p[rand() % map->size] = rand();
@@ -124,7 +125,14 @@ void dirty_mapping(struct map *map)
 			p[rand() % (num_pages + 1)] = rand();
 		break;
 
-	default:
+	case 5:
+		/* fault in the last page in a mapping
+		 * Fill it with ascii, in the hope we do something like
+		 * a strlen and go off the end. */
+		memset((void *) p + (map->size - page_size), 'A', page_size);
+		break;
+
+default:
 		break;
 	}
 }
