@@ -184,7 +184,7 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	case ARG_PID:
 	case ARG_FD:
 		CRESETFD
-		fprintf(fd, "%lu", reg);
+		fprintf(fd, "%ld", (long) reg);
 		break;
 	case ARG_MODE_T:
 		CRESETFD
