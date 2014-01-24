@@ -122,25 +122,25 @@ void toggle_syscall_biarch(const char *arg, bool state)
 		output(0, "Marking syscall %s (64bit:%d 32bit:%d) as to be %sabled.\n",
 			arg_name, specific_syscall64, specific_syscall32,
 			state ? "en" : "dis");
-		clear_check_user_specified_arch(arg, &arg_name);
-		return;
+		goto out;
 	}
 
 	if (specific_syscall64 != -1) {
 		output(0, "Marking 64-bit syscall %s (%d) as to be %sabled.\n",
 			arg, specific_syscall64,
 			state ? "en" : "dis");
-		clear_check_user_specified_arch(arg, &arg_name);
-		return;
+		goto out;
 	}
 
 	if  (specific_syscall32 != -1) {
 		output(0, "Marking 32-bit syscall %s (%d) as to be %sabled.\n",
 			arg, specific_syscall32,
 			state ? "en" : "dis");
-		clear_check_user_specified_arch(arg, &arg_name);
-		return;
 	}
+out:
+	clear_check_user_specified_arch(arg, &arg_name);
+	return;
+
 }
 
 void enable_random_syscalls_biarch(void)
