@@ -289,7 +289,13 @@ void toggle_syscall(const char *arg, bool state)
 
 	/* non-biarch case. */
 	check_user_specified_arch(arg, &arg_name, NULL, NULL); //We do not care about arch here, just to get rid of arg flags.
+
 	specific_syscall = search_syscall_table(syscalls, max_nr_syscalls, arg_name);
+	if (specific_syscall == -1) {
+		outputerr("No idea what syscall (%s) is.\n", arg);
+		return;
+	}
+
 	toggle_syscall_n(specific_syscall, state, arg, arg_name);
 	clear_check_user_specified_arch(arg, &arg_name);
 }
