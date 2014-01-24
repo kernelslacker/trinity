@@ -165,7 +165,7 @@ static unsigned int valid_proto(unsigned int family)
 
 static int generate_sockets(void)
 {
-	int fd, n;
+	int fd, n, ret = FALSE;
 	int cachefile;
 	unsigned int nr_to_create = NR_SOCKET_FDS;
 	unsigned int buffer[3];
@@ -196,10 +196,8 @@ static int generate_sockets(void)
 
 		struct socket_triplet st;
 
-		if (shm->exit_reason != STILL_RUNNING) {
-			close(cachefile);
-			return FALSE;
-		}
+		if (shm->exit_reason != STILL_RUNNING)
+			goto out_unlock;
 
 		for (st.family = 0; st.family < TRINITY_PF_MAX; st.family++) {
 
@@ -212,7 +210,7 @@ static int generate_sockets(void)
 			if (valid_proto(st.family) == FALSE) {
 				if (do_specific_proto == TRUE) {
 					outputerr("Can't do protocol %s\n", get_proto_name(st.family));
-					return FALSE;
+					goto out_unlock;
 				} else {
 					goto skip;
 				}
@@ -235,7 +233,7 @@ static int generate_sockets(void)
 				n = write(cachefile, &buffer, sizeof(int) * 3);
 				if (n == -1) {
 					outputerr("something went wrong writing the cachefile!\n");
-					return FALSE;
+					goto out_unlock;
 				}
 
 				if (nr_to_create == 0)
@@ -247,7 +245,7 @@ skip:
 
 			/* check for ctrl-c */
 			if (shm->exit_reason != STILL_RUNNING)
-				return FALSE;
+				goto out_unlock;
 
 			//FIXME: If we've passed -P and we're spinning here without making progress
 			// then we should abort after a few hundred loops.
@@ -255,13 +253,16 @@ skip:
 	}
 
 done:
-	unlock_cachefile(cachefile);
+	ret = TRUE;
 
 	output(1, "created %d sockets\n", nr_sockets);
 
+out_unlock:
+	unlock_cachefile(cachefile);
+
 	close(cachefile);
 
-	return TRUE;
+	return ret;
 }
 
 
