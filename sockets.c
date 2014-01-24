@@ -196,29 +196,33 @@ static int generate_sockets(void)
 
 		struct socket_triplet st;
 
-		if (shm->exit_reason != STILL_RUNNING)
-			goto out_unlock;
-
 		for (st.family = 0; st.family < TRINITY_PF_MAX; st.family++) {
 
-			if (do_specific_proto == TRUE)
+			/* check for ctrl-c again. */
+			if (shm->exit_reason != STILL_RUNNING)
+				goto out_unlock;
+
+			if (do_specific_proto == TRUE) {
 				st.family = specific_proto;
+				//FIXME: If we've passed -P and we're spinning here without making progress
+				// then we should abort after a few hundred loops.
+			}
 
 			if (get_proto_name(st.family) == NULL)
-				goto skip;
+				continue;
 
 			if (valid_proto(st.family) == FALSE) {
 				if (do_specific_proto == TRUE) {
 					outputerr("Can't do protocol %s\n", get_proto_name(st.family));
 					goto out_unlock;
 				} else {
-					goto skip;
+					continue;
 				}
 			}
 
 			BUG_ON(st.family >= ARRAY_SIZE(no_protos));
 			if (no_protos[st.family])
-				goto skip;
+				continue;
 
 			if (sanitise_socket_triplet(&st) == -1)
 				rand_proto_type(&st);
@@ -241,14 +245,6 @@ static int generate_sockets(void)
 			} else {
 				//outputerr("Couldn't open family:%d (%s)\n", st.family, get_proto_name(st.family));
 			}
-skip:
-
-			/* check for ctrl-c */
-			if (shm->exit_reason != STILL_RUNNING)
-				goto out_unlock;
-
-			//FIXME: If we've passed -P and we're spinning here without making progress
-			// then we should abort after a few hundred loops.
 		}
 	}
 
