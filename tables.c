@@ -293,10 +293,12 @@ void toggle_syscall(const char *arg, bool state)
 	specific_syscall = search_syscall_table(syscalls, max_nr_syscalls, arg_name);
 	if (specific_syscall == -1) {
 		outputerr("No idea what syscall (%s) is.\n", arg);
-		return;
+		goto out;
 	}
 
 	toggle_syscall_n(specific_syscall, state, arg, arg_name);
+
+out:
 	clear_check_user_specified_arch(arg, &arg_name);
 }
 
