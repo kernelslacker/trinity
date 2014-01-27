@@ -346,6 +346,10 @@ enum kcmp_type {
 #define SO_MAX_PACING_RATE	47
 #endif
 
+#ifndef SO_BPF_EXTENSIONS
+#define SO_BPF_EXTENSIONS       48
+#endif
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15
