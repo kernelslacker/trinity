@@ -3,8 +3,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-extern uid_t orig_uid;
-
 extern unsigned int num_online_cpus;
 extern unsigned int max_children;
 
@@ -15,7 +13,7 @@ extern unsigned int max_children;
 
 extern char *progname;
 
-void do_main_loop(void);
+void main_loop(void);
 
 int check_tainted(void);
 
