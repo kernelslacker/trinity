@@ -11,14 +11,16 @@
 
 #include "trinity.h"	// __unused__
 #include "arch.h"	// page_size
+#include "constants.h"
 #include "files.h"
+#include "list.h"
 #include "log.h"
 #include "maps.h"
+#include "params.h"
+#include "random.h"
 #include "shm.h"
 #include "sanitise.h"
-#include "constants.h"
-#include "list.h"
-#include "random.h"
+#include "uid.h"
 #include "utils.h"
 
 static int files_added = 0;
@@ -31,8 +33,6 @@ struct namelist {
 };
 
 static struct namelist *names = NULL;
-
-static gid_t my_gid;
 
 static int ignore_files(const char *path)
 {
@@ -113,18 +113,25 @@ static int check_stat_file(const struct stat *sb)
 	int openflag;
 	bool set_read = FALSE;
 	bool set_write = FALSE;
+	uid_t target_uid = orig_uid;
+	gid_t target_gid = orig_gid;
+
+	if (dropprivs == TRUE) {
+		target_uid = nobody_uid;
+		target_gid = nobody_gid;
+	}
 
 	if (S_ISLNK(sb->st_mode))
 		return -1;
 
-	if (sb->st_uid == orig_uid) {
+	if (sb->st_uid == target_uid) {
 		if (sb->st_mode & S_IRUSR)
 			set_read = TRUE;
 		if (sb->st_mode & S_IWUSR)
 			set_write = TRUE;
 	}
 
-	if (sb->st_gid == my_gid) {
+	if (sb->st_gid == target_gid) {
 		if (sb->st_mode & S_IRGRP)
 			set_read = TRUE;
 		if (sb->st_mode & S_IWGRP)
@@ -204,8 +211,6 @@ void generate_filelist(void)
 	unsigned int i = 0;
 	struct list_head *node;
 	struct namelist *nl;
-
-	my_gid = getgid();
 
 	names = zmalloc(sizeof(struct namelist));
 	INIT_LIST_HEAD(&names->list);

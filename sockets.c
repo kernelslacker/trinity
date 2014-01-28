@@ -17,6 +17,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "uid.h"
 #include "utils.h"
 
 unsigned int nr_sockets = 0;
@@ -171,13 +172,10 @@ static int generate_sockets(void)
 	unsigned int buffer[3];
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
-	if (cachefile < 0) {
-		outputerr("Couldn't open cachefile for writing! (%s)\n",
-			strerror(errno));
-		return FALSE;
-	}
-
-	lock_cachefile(cachefile, F_WRLCK);
+	if (cachefile == -1)
+		outputerr("Couldn't open cachefile for writing! (%s)\n", strerror(errno));
+	else
+		lock_cachefile(cachefile, F_WRLCK);
 
 	/*
 	 * Don't loop forever if all protos all are disabled.
@@ -231,13 +229,15 @@ static int generate_sockets(void)
 			if (fd > -1) {
 				nr_to_create--;
 
-				buffer[0] = st.family;
-				buffer[1] = st.type;
-				buffer[2] = st.protocol;
-				n = write(cachefile, &buffer, sizeof(int) * 3);
-				if (n == -1) {
-					outputerr("something went wrong writing the cachefile!\n");
-					goto out_unlock;
+				if (cachefile != -1) {
+					buffer[0] = st.family;
+					buffer[1] = st.type;
+					buffer[2] = st.protocol;
+					n = write(cachefile, &buffer, sizeof(int) * 3);
+					if (n == -1) {
+						outputerr("something went wrong writing the cachefile!\n");
+						goto out_unlock;
+					}
 				}
 
 				if (nr_to_create == 0)
@@ -254,9 +254,10 @@ done:
 	output(1, "created %d sockets\n", nr_sockets);
 
 out_unlock:
-	unlock_cachefile(cachefile);
-
-	close(cachefile);
+	if (cachefile != -1) {
+		unlock_cachefile(cachefile);
+		close(cachefile);
+	}
 
 	return ret;
 }

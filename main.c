@@ -4,10 +4,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/prctl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <sys/ptrace.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "trinity.h"
 #include "child.h"
@@ -335,7 +335,7 @@ static const char * decode_exit(unsigned int reason)
 	return reasons[reason];
 }
 
-static void main_loop(void)
+void main_loop(void)
 {
 	while (shm->exit_reason == STILL_RUNNING) {
 
@@ -353,49 +353,10 @@ static void main_loop(void)
 
 		handle_children();
 	}
-}
 
+	/* Wait until all children have exited. */
+	while (pidmap_empty() == FALSE)
+		handle_children();
 
-void do_main_loop(void)
-{
-	const char taskname[13]="trinity-main";
-	int childstatus;
-	pid_t pid;
-
-	/* do an extra fork so that the watchdog and the children don't share a common parent */
-	fflush(stdout);
-	pid = fork();
-	if (pid == 0) {
-		setup_main_signals();
-
-		shm->mainpid = getpid();
-		output(0, "Main thread is alive.\n");
-		prctl(PR_SET_NAME, (unsigned long) &taskname);
-		set_seed(0);
-
-		if (setup_fds() == FALSE) {
-			shm->exit_reason = EXIT_FD_INIT_FAILURE;	// FIXME: Later, push this down to multiple EXIT's.
-			_exit(EXIT_FAILURE);
-		}
-
-		if (no_files == FALSE) {
-			if (files_in_index == 0) {
-				shm->exit_reason = EXIT_NO_FILES;
-				_exit(EXIT_FAILURE);
-			}
-		}
-
-		main_loop();
-
-		/* Wait until all children have exited. */
-		while (pidmap_empty() == FALSE)
-			handle_children();
-
-		outputerr("Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
-		_exit(EXIT_SUCCESS);
-	}
-
-	/* wait for main loop process to exit. */
-	(void)waitpid(pid, &childstatus, 0);
-	shm->mainpid = 0;
+	outputerr("Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
 }

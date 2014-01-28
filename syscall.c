@@ -24,6 +24,7 @@
 #include "maps.h"
 #include "tables.h"
 #include "trinity.h"
+#include "uid.h"
 #include "utils.h"
 
 #define __syscall_return(type, res) \
@@ -84,8 +85,18 @@ static void check_uid(void)
 		return;
 
 	myuid = getuid();
+
+	/* we should be 'nobody' if we ran with --dropprivs */
+	if (dropprivs == TRUE) {
+		if (myuid == nobody_uid)
+			return;
+		else
+			goto changed;
+	}
+
 	if (myuid != orig_uid) {
 
+changed:
 		/* unshare() can change us to /proc/sys/kernel/overflowuid */
 		if (myuid == 65534)
 			return;

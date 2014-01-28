@@ -38,6 +38,7 @@ extern unsigned char quiet_level;
 extern bool verbose;
 extern bool monochrome;
 extern bool dangerous;
+extern bool dropprivs;
 extern bool do_syslog;
 extern bool logging;
 extern unsigned char desired_group;

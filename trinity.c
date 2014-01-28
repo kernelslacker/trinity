@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -17,11 +18,10 @@
 #include "tables.h"
 #include "ioctls.h"
 #include "protocols.h"
+#include "uid.h"
 #include "config.h"	// for VERSION
 
 char *progname = NULL;
-
-uid_t orig_uid;
 
 unsigned int page_size;
 unsigned int num_online_cpus;
@@ -43,21 +43,22 @@ static void change_tmp_dir(void)
 		return;
 
 	/* Just in case a previous run screwed the perms. */
-	ret = chmod(tmpdir, 0755);
+	ret = chmod(tmpdir, 0777);
 	if (ret == -1)
-		output(0, "Couldn't chmod %s to 0755.\n", tmpdir);
+		output(0, "Couldn't chmod %s to 0777.\n", tmpdir);
 
 	ret = chdir(tmpdir);
 	if (ret == -1)
 		output(0, "Couldn't change to %s\n", tmpdir);
 }
 
-
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
 	int childstatus;
 	unsigned int i;
+	pid_t pid;
+	const char taskname[13]="trinity-main";
 
 	outputstd("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com>\n");
 
@@ -65,7 +66,7 @@ int main(int argc, char* argv[])
 
 	initpid = getpid();
 
-	orig_uid = getuid();
+	init_uids();
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
@@ -119,15 +120,21 @@ int main(int argc, char* argv[])
 			outputstd("DANGER: RUNNING AS ROOT.\n");
 			outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
 			outputstd("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
-			outputstd("ctrl-c now unless you really know what you are doing.\n");
-			for (i = 10; i > 0; i--) {
-				outputstd("Continuing in %d seconds.\r", i);
-				(void)fflush(stdout);
-				sleep(1);
-			}
 		} else {
-			outputstd("Don't run as root (or pass --dangerous if you know what you are doing).\n");
-			exit(EXIT_FAILURE);
+			if (dropprivs == FALSE) {
+				outputstd("Don't run as root (or pass --dangerous, or --dropprivs if you know what you are doing).\n");
+				exit(EXIT_FAILURE);
+			} else {
+				outputstd("--dropprivs is still in development, and really shouldn't be used unless you're helping development. Expect crashes.\n");
+				outputstd("Going to run as user nobody (uid:%d gid:%d)\n", nobody_uid, nobody_gid);
+			}
+		}
+
+		outputstd("ctrl-c now unless you really know what you are doing.\n");
+		for (i = 10; i > 0; i--) {
+			outputstd("Continuing in %d seconds.\r", i);
+			(void)fflush(stdout);
+			sleep(1);
 		}
 	}
 
@@ -155,9 +162,46 @@ int main(int argc, char* argv[])
 
 	init_watchdog();
 
-	do_main_loop();
+	/* do an extra fork so that the watchdog and the children don't share a common parent */
+	fflush(stdout);
+	pid = fork();
+	if (pid == 0) {
+		shm->mainpid = getpid();
 
-	/* Shutting down. */
+		setup_main_signals();
+
+		output(0, "Main thread is alive.\n");
+		prctl(PR_SET_NAME, (unsigned long) &taskname);
+		set_seed(0);
+
+		if (setup_fds() == FALSE) {
+			shm->exit_reason = EXIT_FD_INIT_FAILURE;	// FIXME: Later, push this down to multiple EXIT's.
+			_exit(EXIT_FAILURE);
+		}
+
+		if (no_files == FALSE) {
+			if (files_in_index == 0) {
+				shm->exit_reason = EXIT_NO_FILES;
+				_exit(EXIT_FAILURE);
+			}
+		}
+
+		if (dropprivs == TRUE)	//FIXME: Push down into child processes later.
+			drop_privs();
+
+		main_loop();
+
+		_exit(EXIT_SUCCESS);
+	}
+
+	while (shm->mainpid == 0)
+		sleep(0.1);
+
+	/* wait for main loop process to exit. */
+	(void)waitpid(shm->mainpid, &childstatus, 0);
+	shm->mainpid = 0;
+
+	/* wait for watchdog to exit. */
 	waitpid(watchdog_pid, &childstatus, 0);
 
 	output(0, "\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",

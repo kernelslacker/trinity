@@ -38,6 +38,7 @@ unsigned char quiet_level = 0;
 bool verbose = FALSE;
 bool monochrome = FALSE;
 bool dangerous = FALSE;
+bool dropprivs = FALSE;
 bool logging = TRUE;
 bool do_syslog = FALSE;
 bool random_selection = FALSE;
@@ -62,6 +63,7 @@ static void usage(void)
 	outputerr(" --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.\n");
 	outputerr(" --children,-C: specify number of child processes\n");
 	outputerr(" --debug,-D: enable debug\n");
+	outputerr(" --dropprivs, -X: if run as root, switch to nobody [EXPERIMENTAL]\n");
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
 	outputerr(" --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
 	outputerr(" --ioctls,-I: list all ioctls.\n");
@@ -88,6 +90,7 @@ static void usage(void)
 static const struct option longopts[] = {
 	{ "children", required_argument, NULL, 'C' },
 	{ "dangerous", no_argument, NULL, 'd' },
+	{ "dropprivs", no_argument, NULL, 'X'},
 	{ "debug", no_argument, NULL, 'D' },
 	{ "exclude", required_argument, NULL, 'x' },
 	{ "group", required_argument, NULL, 'g' },
@@ -183,7 +186,7 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "a:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "a:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:X", longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -323,6 +326,10 @@ void parse_args(int argc, char *argv[])
 		case 'x':
 			do_exclude_syscall = TRUE;
 			toggle_syscall(optarg, FALSE);
+			break;
+
+		case 'X':
+			dropprivs = TRUE;
 			break;
 		}
 	}
