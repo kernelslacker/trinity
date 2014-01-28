@@ -224,6 +224,17 @@ void parse_args(int argc, char *argv[])
 
 		case 'C':
 			user_specified_children = strtoll(optarg, NULL, 10);
+			max_children = user_specified_children;
+
+			if (max_children == 0) {
+				outputerr("zero children ? WAT?\n");
+				exit(EXIT_FAILURE);
+			}
+
+			if (max_children > MAX_NR_CHILDREN) {
+				outputerr("Increase MAX_NR_CHILDREN!\n");
+				exit(EXIT_FAILURE);
+			}
 			break;
 
 		case 'd':
@@ -314,6 +325,13 @@ void parse_args(int argc, char *argv[])
 		case 'T':
 			//Load mask for kernel taint flags.
 			process_taint_arg(optarg);
+			if (kernel_taint_mask != (int)0xFFFFFFFF)
+				outputstd("Custom kernel taint mask has been specified: 0x%08x (%d).\n",
+					kernel_taint_mask, kernel_taint_mask);
+
+			kernel_taint_initial = check_tainted();
+			if (kernel_taint_initial != 0)
+				output(0, "Kernel was tainted on startup. Will ignore flags that are already set.\n");
 			break;
 
 		case 'v':
@@ -339,4 +357,6 @@ void parse_args(int argc, char *argv[])
 		quiet_level = MAX_LOGLEVEL;
 
 	quiet_level = MAX_LOGLEVEL - quiet_level;
+
+	outputstd("Done parsing arguments.\n");
 }
