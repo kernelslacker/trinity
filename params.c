@@ -87,6 +87,8 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
+static const char paramstr[] = "a:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:X";
+
 static const struct option longopts[] = {
 	{ "children", required_argument, NULL, 'C' },
 	{ "dangerous", no_argument, NULL, 'd' },
@@ -186,7 +188,7 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "a:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:X", longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, paramstr, longopts, NULL)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
