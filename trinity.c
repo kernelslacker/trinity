@@ -56,7 +56,6 @@ int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
 	int childstatus;
-	unsigned int i;
 	pid_t pid;
 	const char taskname[13]="trinity-main";
 
@@ -115,28 +114,7 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 
-	if (orig_uid == 0) {
-		if (dangerous == TRUE) {
-			outputstd("DANGER: RUNNING AS ROOT.\n");
-			outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
-			outputstd("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
-		} else {
-			if (dropprivs == FALSE) {
-				outputstd("Don't run as root (or pass --dangerous, or --dropprivs if you know what you are doing).\n");
-				exit(EXIT_FAILURE);
-			} else {
-				outputstd("--dropprivs is still in development, and really shouldn't be used unless you're helping development. Expect crashes.\n");
-				outputstd("Going to run as user nobody (uid:%d gid:%d)\n", nobody_uid, nobody_gid);
-			}
-		}
-
-		outputstd("ctrl-c now unless you really know what you are doing.\n");
-		for (i = 10; i > 0; i--) {
-			outputstd("Continuing in %d seconds.\r", i);
-			(void)fflush(stdout);
-			sleep(1);
-		}
-	}
+	do_uid0_check();
 
 	if (do_specific_proto == TRUE)
 		find_specific_proto(specific_proto_optarg);
