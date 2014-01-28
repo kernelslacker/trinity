@@ -7,6 +7,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include "log.h"
+#include "params.h"
 #include "uid.h"
 
 uid_t orig_uid;
@@ -61,4 +62,37 @@ void init_uids(void)
 	}
 	nobody_uid = passwd->pw_uid;
 	nobody_gid = passwd->pw_gid;
+}
+
+
+void do_uid0_check(void)
+{
+	unsigned int i;
+
+	/* if we're already unprivileged, then don't worry. */
+	if (orig_uid != 0)
+		return;
+
+	if (dangerous == TRUE) {
+		outputstd("DANGER: RUNNING AS ROOT.\n");
+		outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
+		outputstd("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
+
+	} else {
+
+		if (dropprivs == FALSE) {
+			outputstd("Don't run as root (or pass --dangerous, or --dropprivs if you know what you are doing).\n");
+			exit(EXIT_FAILURE);
+		} else {
+			outputstd("--dropprivs is still in development, and really shouldn't be used unless you're helping development. Expect crashes.\n");
+			outputstd("Going to run as user nobody (uid:%d gid:%d)\n", nobody_uid, nobody_gid);
+		}
+	}
+
+	outputstd("ctrl-c now unless you really know what you are doing.\n");
+	for (i = 10; i > 0; i--) {
+		outputstd("Continuing in %d seconds.\r", i);
+		(void)fflush(stdout);
+		sleep(1);
+	}
 }

@@ -3,6 +3,7 @@
 void dump_uids(void);
 void drop_privs(void);
 void init_uids(void);
+void do_uid0_check(void);
 
 extern uid_t orig_uid;
 extern gid_t orig_gid;
