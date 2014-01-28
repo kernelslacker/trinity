@@ -194,8 +194,7 @@ int main(int argc, char* argv[])
 		_exit(EXIT_SUCCESS);
 	}
 
-	while (shm->mainpid == 0)
-		sleep(0.1);
+	shm->mainpid = pid;
 
 	/* wait for main loop process to exit. */
 	(void)waitpid(shm->mainpid, &childstatus, 0);
