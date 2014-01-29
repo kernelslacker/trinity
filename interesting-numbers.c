@@ -6,59 +6,58 @@
 #include "sanitise.h"
 #include "trinity.h"	// page_size
 
-unsigned int get_interesting_32bit_value(void)
+static unsigned int plus_minus_two(unsigned int num)
 {
-	switch (rand() % 11) {
-
-	/* common case, return small values*/
-	case 0 ... 7:
-		switch (rand() % 9) {
-		case 0:	return 0x00000000;
-		case 1:	return 0x00000001;
-		case 2:	return rand() % 256;
-		case 3:	return 0x00000fff;	// 4095
-		case 4:	return 0x00001000;	// 4096
-		case 5:	return 0x00001001;	// 4097
-		case 6:	return 0x00008000;
-		case 7:	return 0x0000fffe;
-		case 8:	return 0x0000ffff;
-		default:
-			BUG("unreachable!\n");
-			return 0;
-		}
+	/* Now munge it for off-by-ones. */
+	switch (rand() % 5) {
+	case 0:	num -= 2;
 		break;
-
-	/* less common case, go crazy */
-	case 8 ... 10:
-		switch (rand() % 15) {
-		case 0:	return 0x00010000;
-		case 1:	return 0x0fffffff;
-		case 2:	return 0x40000000;
-		case 3:	return 0x7fffffff;
-		case 4:	return 0x80000000;
-		case 5:	return 0x80000001;
-		case 6:	return 0x8fffffff;
-		case 7: return 0xc0000000;
-		case 8:	return 0xf0000000;
-		case 9:	return 0xff000000;
-		case 10: return 0xffff0000;
-		case 11: return 0xffffe000;
-		case 12: return 0xffffff00 | (rand() % 256);
-		case 13: return 0xffffffff;
-		case 14: return 0xffffffff - page_size;
-		default:
-			BUG("unreachable!\n");
-			return 0;
-		}
+	case 1:	num -= 1;
 		break;
-
+	case 2:	return num;
+	case 3:	num += 1;
+		break;
+	case 4:	num += 2;
+		break;
 	default:
 		BUG("unreachable!\n");
+	}
+	return num;
+}
+
+unsigned int get_interesting_32bit_value(void)
+{
+	unsigned int num;
+
+	switch (rand() % 9) {
+	case 0:	num = 0x00000000;
 		break;
+	case 1:	num = rand() % 256;		// 00-0xff
+		break;
+	case 2:	num = 1 << (rand() % 32);	// set a single bit.
+		break;
+	case 3:	num = 0x8fffffff;
+		break;
+	case 4:	num = 0xff;
+		num = num << (rand() % 31);
+		break;
+	case 5: num = 0xffff0000;
+		break;
+	case 6: num = 0xffffe000;
+		break;
+	case 7: num = 0xffffff00 | (rand() % 256);
+		break;
+	case 8: num = 0xffffffff - page_size;
+		break;
+	case 9: num = 0xffffffff;
+		break;
+	default:
+		BUG("unreachable!\n");
+		return 0;
 	}
 
-	BUG("unreachable!\n");
-	return 0;
+	num = plus_minus_two(num);
+	return num;
 }
 
 #if __WORDSIZE != 32
