@@ -164,8 +164,16 @@ struct iovec * alloc_iovec(unsigned int num)
 		unsigned int i;
 
 		for (i = 0; i < num; i++) {
-			iov[i].iov_base = malloc(page_size);
-			iov[i].iov_len = page_size;
+			if (rand_bool()) {
+				iov[i].iov_base = malloc(page_size);
+				iov[i].iov_len = page_size;
+			} else {
+				struct map *map;
+
+				map = get_map();
+				iov[i].iov_base = map->ptr;
+				iov[i].iov_len = rand() % map->size;
+			}
 		}
 	}
 	return iov;
