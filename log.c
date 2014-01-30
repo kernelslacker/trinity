@@ -138,7 +138,8 @@ void synclogs(void)
 
 static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd, bool mono, int childno)
 {
-	int type = 0;
+	struct map *map;
+	enum argtype type = 0;
 	const char *name = NULL;
 	unsigned long reg = 0;
 
@@ -196,6 +197,10 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	case ARG_SOCKADDR:
 		fprintf(fd, "0x%lx", reg);
 		break;
+
+	case ARG_MMAP:
+		map = (struct map *) reg;
+		fprintf(fd, "0x%p", map->ptr);
 
 	case ARG_RANDPAGE:
 		fprintf(fd, "0x%lx [page_rand]", reg);
