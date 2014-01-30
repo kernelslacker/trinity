@@ -27,10 +27,6 @@ static unsigned int get_cpu(void)
 
 	case 3 ... 99:
 		return rand() % num_online_cpus;
-
-	default:
-		BUG("unreachable!\n");
-		break;
 	}
 	return 0;
 }
@@ -54,8 +50,6 @@ static unsigned long handle_arg_address(int childno, int call, int argnum)
 	case 2:	addr+= sizeof(int);
 		break;
 	case 3:	addr+= sizeof(long);
-		break;
-	default: BUG("unreachable!\n");
 		break;
 	}
 
@@ -88,9 +82,6 @@ static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 		break;
 	case 6:	low = entry->low6range;
 		high = entry->hi6range;
-		break;
-	default:
-		BUG("Should never happen.\n");
 		break;
 	}
 
@@ -136,7 +127,6 @@ static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 	case 6:	num = entry->arg6list.num;
 		values = entry->arg6list.values;
 		break;
-	default: break;
 	}
 
 	if (num == 0)
@@ -179,7 +169,6 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 	case 6:	num = entry->arg6list.num;
 		values = entry->arg6list.values;
 		break;
-	default: break;
 	}
 
 	if (num == 0)
@@ -230,7 +219,6 @@ static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned 
 	case 5:	if (entry->arg6type == ARG_IOVECLEN)
 			shm->a6[childno] = i;
 		break;
-	default: BUG("impossible\n");
 	}
 	return (unsigned long) alloc_iovec(i);
 }
@@ -250,7 +238,6 @@ static unsigned long handle_arg_len_already_set(int childno, unsigned long argnu
 	case 4:	r = shm->a4[childno]; break;
 	case 5:	r = shm->a5[childno]; break;
 	case 6:	r = shm->a6[childno]; break;
-	default: break;
 	}
 	return r;
 }
@@ -282,7 +269,7 @@ static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsign
 			shm->a6[childno] = sockaddrlen;
 		break;
 	case 6:
-	default: BUG("impossible\n");
+		break;
 	}
 	return (unsigned long) sockaddr;
 }
@@ -313,7 +300,6 @@ static unsigned long handle_arg_mode_t(void)
 		case 9: mode |= S_ISUID; break;
 		case 10: mode|= S_ISGID; break;
 		case 11: mode|= S_ISVTX; break;
-		default: break;
 		}
 	}
 	return mode;
@@ -343,9 +329,6 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 		break;
 	case 6:	argtype = entry->arg6type;
 		break;
-	default:
-		BUG("unreachable!\n");
-		return 0;
 	}
 
 	switch (argtype) {
@@ -401,10 +384,6 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 
 	case ARG_MODE_T:
 		return handle_arg_mode_t();
-
-	default:
-		BUG("unreachable!\n");
-		return 0;
 	}
 
 	BUG("unreachable!\n");

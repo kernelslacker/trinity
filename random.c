@@ -76,9 +76,6 @@ static unsigned long taviso(void)
 		r |= rand();
 #endif
 		break;
-
-	default:
-		break;
 	}
 
 	return r;
@@ -136,8 +133,6 @@ static unsigned int __rand32(void)
 	case 5:	r = rept8(4);
 		break;
 	case 6:	return get_interesting_32bit_value();
-	default:
-		break;
 	}
 
 	return r;
@@ -159,14 +154,10 @@ unsigned int rand32(void)
 		/* mangle it. */
 		rounds = rand() % 3;
 		for (i = 0; i < rounds; i++) {
-			switch (rand_bool()) {
-			case 0: r |= __rand32();
-				break;
-			case 1: r ^= __rand32();
-				break;
-			default:
-				break;
-			}
+			if (rand_bool())
+				r |= __rand32();
+			else
+				r ^= __rand32();
 		}
 	}
 
@@ -191,8 +182,6 @@ unsigned int rand32(void)
 	case 1: r &= 0xffff;
 		break;
 	case 2: r &= 0xffffff;
-		break;
-	default:
 		break;
 	}
 
@@ -227,8 +216,6 @@ u64 rand64(void)
 			break;
 		/* Sometimes pick a not-so-random number. */
 		case 6:	return get_interesting_value();
-		default:
-			break;
 		}
 
 		/* limit the size */
@@ -238,8 +225,6 @@ u64 rand64(void)
 		case 1: r &= 0x0000ffffffffffffULL;
 			break;
 		case 2: r &= 0x00ffffffffffffffULL;
-			break;
-		default:
 			break;
 		}
 	}

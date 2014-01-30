@@ -131,8 +131,5 @@ void dirty_mapping(struct map *map)
 		 * a strlen and go off the end. */
 		memset((void *) p + (map->size - page_size), 'A', page_size);
 		break;
-
-default:
-		break;
 	}
 }

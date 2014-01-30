@@ -26,7 +26,7 @@ unsigned long get_len(void)
 		break;
 	case 4:	i &= 0xffffffff;
 		break;
-	default:
+	case 5:
 		// Pass through
 		break;
 	}

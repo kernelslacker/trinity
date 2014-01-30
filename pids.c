@@ -135,9 +135,6 @@ retry:		i = rand() % max_children;
 	case 2:	if (dangerous == FALSE)	// We don't want root trying to kill init.
 			pid = 1;
 		break;
-
-	default:
-		break;
 	}
 
 	return pid;
