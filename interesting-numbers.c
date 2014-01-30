@@ -29,7 +29,7 @@ unsigned int get_interesting_32bit_value(void)
 {
 	unsigned int num;
 
-	switch (rand() % 9) {
+	switch (rand() % 10) {
 	case 0:	num = 0x00000000;
 		break;
 	case 1:	num = rand() % 256;		// 00-0xff
