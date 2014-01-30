@@ -22,7 +22,6 @@ CFLAGS += -Wnested-externs
 CFLAGS += -Wpacked
 CFLAGS += -Wshadow
 CFLAGS += -Wstrict-aliasing=3
-CFLAGS += -Wswitch-default
 CFLAGS += -Wswitch-enum
 CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings

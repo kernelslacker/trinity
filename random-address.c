@@ -78,9 +78,6 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	case 9:	addr = page_maps;
 		break;
-	default:
-		BUG("unreachable!\n");
-		break;
 	}
 
 	/*
@@ -99,7 +96,7 @@ static void * _get_address(unsigned char null_allowed)
 	case 3:	addr += (page_size / 2);
 		break;
 	case 4 ... 99:
-	default: break;
+		break;
 	}
 
 	return addr;

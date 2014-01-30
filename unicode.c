@@ -100,9 +100,6 @@ void gen_unicode_page(char *page)
 			i += thailen;
 			ptr += thailen;
 			break;
-
-		default:
-			break;
 		}
 	}
 

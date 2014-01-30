@@ -55,14 +55,10 @@ static void open_epoll_fds(void)
 
 	while (i < MAX_EPOLL_FDS) {
 
-		switch (rand_bool()) {
-		case 0:	fd = epoll_create(1);
-			break;
-		case 1:	fd = epoll_create1(EPOLL_CLOEXEC);
-			break;
-		default:
-			 break;
-		}
+		if (rand_bool())
+			fd = epoll_create(1);
+		else
+			fd = epoll_create1(EPOLL_CLOEXEC);
 
 		if (fd != -1) {
 			shm->epoll_fds[i] = fd;
@@ -176,8 +172,6 @@ retry:
 		fd = rand_eventfd_fd();
 		break;
 
-	default:
-		break;
 	}
 
 	return fd;

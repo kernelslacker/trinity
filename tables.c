@@ -434,8 +434,6 @@ static bool check_for_argtype(const struct syscalltable *table, unsigned int num
 		case 5:	if (entry->arg6type == argtype)
 				return TRUE;
 			break;
-		default:
-			BUG("impossible!\n");
 		}
 	}
 

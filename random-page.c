@@ -40,9 +40,6 @@ static void fabricate_onepage_struct(char *page)
 				return;
 			*(unsigned int *)ptr = rand() % page_size;
 			break;
-		default:
-			BUG("unreachable!\n");
-			return;
 		}
 	}
 }
@@ -98,7 +95,6 @@ void generate_random_page(char *page)
 				break;
 			case 1:	page[i++] = 's';
 				break;
-			default: break;
 			}
 		}
 		page_size = getpagesize();	// Hack for clang 3.3 false positive.
@@ -116,7 +112,6 @@ void generate_random_page(char *page)
 				break;
 			case 2:	p = sprintf(page_rand, "%lx", (unsigned long) rand64());
 				break;
-			default: break;
 			}
 			break;
 
@@ -128,7 +123,6 @@ void generate_random_page(char *page)
 				break;
 			case 2:	p = sprintf(page_rand, "%x", (int) rand64());
 				break;
-			default: break;
 			}
 			break;
 
@@ -140,19 +134,12 @@ void generate_random_page(char *page)
 				break;
 			case 2:	p = sprintf(page_rand, "%x", (char) rand64());
 				break;
-			default: break;
 			}
 			break;
 
-		default: break;
 		}
 
 		page_rand[p] = 0;
-
 		break;
-
-	default:
-		BUG("unreachable!\n");
-		return;
 	}
 }

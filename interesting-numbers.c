@@ -19,15 +19,13 @@ static unsigned int plus_minus_two(unsigned int num)
 		break;
 	case 4:	num += 2;
 		break;
-	default:
-		BUG("unreachable!\n");
 	}
 	return num;
 }
 
 unsigned int get_interesting_32bit_value(void)
 {
-	unsigned int num;
+	unsigned int num = 0;
 
 	switch (rand() % 10) {
 	case 0:	num = 0x00000000;
@@ -51,9 +49,6 @@ unsigned int get_interesting_32bit_value(void)
 		break;
 	case 9: num = 0xffffffff;
 		break;
-	default:
-		BUG("unreachable!\n");
-		return 0;
 	}
 
 	num = plus_minus_two(num);
@@ -73,9 +68,6 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	case 1: return 0x0000800000000000UL;			// First x86-64 non-canonical addr
 	case 2: return 0xffff800000000000UL | (low << 4);		// x86-64 canonical addr range 2 begin
 	case 3: return VDSO_ADDR | (low & 0x0fffff);
-	default:
-		BUG("unreachable!\n");
-		break;
 	}
 #endif
 
@@ -109,9 +101,8 @@ unsigned long get_interesting_value(void)
 	case 10: return MODULE_ADDR | (low & 0xffffff);
 	case 11: return per_arch_interesting_addr(low);
 	case 12: return (low << 32);
-	default: break;
 	}
-	BUG("unreachable!\n");
-	return 0;
+
+	return low;	// unreachable, but gcc is dumb.
 #endif	/* __WORDSIZE */
 }

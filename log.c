@@ -167,7 +167,6 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 		name = entry->arg6name;
 		reg = shm->a6[childno];
 		break;
-	default: break;
 	}
 
 	if (argnum != 1) {
@@ -214,7 +213,6 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	case ARG_RANDOM_LONG:
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
-	default:
 		if (((long) reg < -16384) || ((long) reg > 16384)) {
 			/* Print everything outside -16384 and 16384 as hex. */
 			fprintf(fd, "0x%lx", reg);
