@@ -32,6 +32,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	struct map *newnode;
 	struct list_head *list;
 	int fd;
+	char buf[10];
 
 	fd = open("/dev/zero", O_RDWR);
 	if (fd == -1) {
@@ -63,8 +64,9 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	list = &shared_mappings->list;
 	list_add_tail(&newnode->list, list);
 
-	output(2, "mapping[%d]: (zeropage %s) %p (%lu bytes)\n",
-			num_shared_mappings - 1, name, newnode->ptr, size);
+	sizeunit(size, buf);
+	output(2, "mapping[%d]: (zeropage %s) %p (%s)\n",
+			num_shared_mappings - 1, name, newnode->ptr, buf);
 
 	close(fd);
 }

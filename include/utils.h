@@ -22,3 +22,5 @@ static inline long IS_ERR(unsigned long x)
 {
 	return IS_ERR_VALUE(x);
 }
+
+void sizeunit(unsigned long size, char *buf);
