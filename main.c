@@ -313,7 +313,7 @@ static void handle_children(void)
 	}
 }
 
-static const char *reasons[] = {
+static const char *reasons[NUM_EXIT_REASONS] = {
 	"Still running.",
 	"No more syscalls enabled.",
 	"Reached maximum syscall count.",
