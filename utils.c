@@ -20,7 +20,7 @@ void * zmalloc(size_t size)
 void sizeunit(unsigned long size, char *buf)
 {
 	if (size < 1024 * 1024) {
-		sprintf(buf, "%ld bytes", size);
+		sprintf(buf, "%lu bytes", size);
 		return;
 	}
 
