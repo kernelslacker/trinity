@@ -19,7 +19,6 @@ static void sanitise_munmap(int childno)
 	unsigned long offset, offsetpagenr;
 
 	map = common_set_mmap_ptr_len(childno);
-	nr_pages = map->size / page_size;
 
 	action = 0;
 
@@ -31,6 +30,7 @@ static void sanitise_munmap(int childno)
 
 	case 1 ... 10:
 		/* unmap a range of the mapping. */
+		nr_pages = map->size / page_size;
 		offsetpagenr = (rand() % nr_pages);
 		offset = offsetpagenr * page_size;
 		shm->a1[childno] = (unsigned long) map->ptr + offset;
