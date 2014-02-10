@@ -20,13 +20,13 @@
 int child_read_all_files(__unused__ int childno)
 {
 	struct stat sb;
-	const char *filename;
 	char *buffer;
 	unsigned int i;
 	int fd;
-	int ret;
 
 	for (i = 0; i < files_in_index; i++) {
+		int ret;
+		const char *filename;
 
 		filename = fileindex[i];
 
