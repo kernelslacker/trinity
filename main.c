@@ -184,6 +184,7 @@ static void handle_child(pid_t childpid, int childstatus)
 
 		if (errno == ECHILD) {
 			unsigned int i;
+			bool seen = FALSE;
 
 			debugf("All children exited!\n");
 
@@ -196,8 +197,11 @@ static void handle_child(pid_t childpid, int childstatus)
 					} else {
 						debugf("%d looks still alive! ignoring.\n", shm->pids[i]);
 					}
+					seen = TRUE;
 				}
 			}
+			if (seen == FALSE)
+				shm->running_childs = 0;
 			break;
 		}
 		output(0, "error! (%s)\n", strerror(errno));
