@@ -92,9 +92,14 @@ static void fork_children(void)
 		(void)alarm(0);
 		fflush(stdout);
 		pid = fork();
-		if (pid != 0)
-			shm->pids[pidslot] = pid;
-		else {
+		if (pid != 0) {
+			if (pid == -1) {
+				output(0, "couldn't create child! (%s)\n", strerror(errno));
+				shm->exit_reason = EXIT_FORK_FAILURE;
+				exit(EXIT_FAILURE);
+			} else
+				shm->pids[pidslot] = pid;
+		} else {
 			/* Child process. */
 			char childname[17];
 			int ret = 0;
@@ -332,6 +337,7 @@ static const char *reasons[NUM_EXIT_REASONS] = {
 	"Main process disappeared.",
 	"UID changed.",
 	"Something happened during fd init.",
+	"fork() failure",
 };
 
 static const char * decode_exit(unsigned int reason)
