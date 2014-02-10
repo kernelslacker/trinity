@@ -148,6 +148,13 @@ static int check_main_alive(void)
 	/* If we're in the process of exiting, wait, and return without checking. */
 	if (shm->exit_reason != STILL_RUNNING) {
 		while (shm->mainpid != 0) {
+			/* make sure it's still alive */
+			ret = kill(shm->mainpid, 0);
+			if (ret != 0) {
+				output(0, "main pid %s has disappeared\n", shm->mainpid);
+				shm->mainpid = 0;
+			}
+
 			sleep(1);
 			kill_all_kids();
 		}
