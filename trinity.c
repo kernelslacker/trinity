@@ -153,11 +153,8 @@ int main(int argc, char* argv[])
 		_exit(EXIT_SUCCESS);
 	}
 
-	shm->mainpid = pid;
-
 	/* wait for main loop process to exit. */
-	(void)waitpid(shm->mainpid, &childstatus, 0);
-	shm->mainpid = 0;
+	(void)waitpid(pid, &childstatus, 0);
 
 	/* wait for watchdog to exit. */
 	waitpid(watchdog_pid, &childstatus, 0);
