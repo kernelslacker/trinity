@@ -138,7 +138,6 @@ void synclogs(void)
 
 static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd, bool mono, int childno)
 {
-	struct map *map;
 	enum argtype type = 0;
 	const char *name = NULL;
 	unsigned long reg = 0;
@@ -199,11 +198,10 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 		break;
 
 	case ARG_MMAP:
-		map = (struct map *) reg;
-		if (map == NULL)
-			fprintf(fd, "<null map>");
-		else
-			fprintf(fd, "0x%p", map->ptr);
+		/* Although generic sanitise has set this to a map struct,
+		 * common_set_mmap_ptr_len() will subsequently set it to the ->ptr
+		 * in the per syscall ->sanitise routine. */
+		fprintf(fd, "%p", (void *) reg);
 		break;
 
 	case ARG_RANDPAGE:
