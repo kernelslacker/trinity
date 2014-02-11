@@ -29,7 +29,7 @@ static struct map * __get_map(struct list_head *head, unsigned int max)
 			return m;
 		j++;
 	}
-	return 0;
+	return NULL;
 }
 
 struct map * get_map(void)
