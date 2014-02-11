@@ -200,7 +200,10 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 
 	case ARG_MMAP:
 		map = (struct map *) reg;
-		fprintf(fd, "0x%p", map->ptr);
+		if (map == NULL)
+			fprintf(fd, "<null map>");
+		else
+			fprintf(fd, "0x%p", map->ptr);
 		break;
 
 	case ARG_RANDPAGE:
