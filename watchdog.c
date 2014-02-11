@@ -141,37 +141,19 @@ static void kill_all_kids(void)
 	}
 }
 
-static int check_main_alive(void)
+static bool __check_main(void)
 {
 	int ret;
 
-	/* If we're in the process of exiting, wait, and return without checking. */
-	if (shm->exit_reason != STILL_RUNNING) {
-		while (shm->mainpid != 0) {
-			/* make sure it's still alive */
-			ret = kill(shm->mainpid, 0);
-			if (ret != 0) {
-				output(0, "main pid %d has disappeared\n", shm->mainpid);
-				shm->mainpid = 0;
-			}
-
-			sleep(1);
-			kill_all_kids();
-		}
+	if (shm->mainpid == 0)
 		return FALSE;
-	}
-
-	if (shm->mainpid == 0) {
-		output(0, "main pid was zero! (exit_reason:%d)\n", shm->exit_reason);
-		shm->exit_reason = EXIT_MAIN_DISAPPEARED;
-		return FALSE;
-	}
 
 	ret = kill(shm->mainpid, 0);
 	if (ret == -1) {
 		if (errno == ESRCH) {
 			output(0, "main pid %d has disappeared.\n", shm->mainpid);
 			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
+			shm->mainpid = 0;
 
 			/* if main crashed while regenerating, we'll hang the watchdog,
 			 * because nothing will ever set it back to FALSE. So we do it ourselves.
@@ -183,6 +165,27 @@ static int check_main_alive(void)
 		return FALSE;
 	}
 	return TRUE;
+}
+
+static int check_main_alive(void)
+{
+	int ret;
+
+	/* If we're in the process of exiting, wait, and return without checking. */
+	if (shm->exit_reason != STILL_RUNNING) {
+		while (shm->mainpid != 0) {
+			/* make sure main is still alive, to wait for kids. */
+			ret = __check_main();
+			if (ret == TRUE) {
+				sleep(1);
+				kill_all_kids();
+			}
+		}
+		return FALSE;
+	}
+
+	ret = __check_main();
+	return ret;
 }
 
 /* if the first arg was an fd, find out which one it was. */
