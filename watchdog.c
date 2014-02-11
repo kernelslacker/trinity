@@ -151,7 +151,7 @@ static int check_main_alive(void)
 			/* make sure it's still alive */
 			ret = kill(shm->mainpid, 0);
 			if (ret != 0) {
-				output(0, "main pid %s has disappeared\n", shm->mainpid);
+				output(0, "main pid %d has disappeared\n", shm->mainpid);
 				shm->mainpid = 0;
 			}
 
