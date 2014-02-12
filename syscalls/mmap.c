@@ -135,7 +135,6 @@ struct syscallentry syscall_mmap = {
 	.decode = decode_mmap,
 
 	.arg1name = "addr",
-	.arg1type = ARG_MMAP,
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
 	.arg3name = "prot",
