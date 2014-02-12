@@ -80,6 +80,10 @@ int main(int argc, char* argv[])
 
 	setup_shm_postargs();
 
+	kernel_taint_initial = check_tainted();
+	if (kernel_taint_initial != 0)
+		output(0, "Kernel was tainted on startup. Will ignore flags that are already set.\n");
+
 	if (logging == TRUE)
 		open_logfiles();
 
