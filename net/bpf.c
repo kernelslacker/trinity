@@ -22,6 +22,8 @@
  *    -- Daniel Borkmann, <borkmann@redhat.com>
  */
 
+static int dump_bpf = 0;
+
 /* Both here likely defined in linux/filter.h already */
 #ifndef SKF_AD_OFF
 # define SKF_AD_OFF	(-0x1000)
@@ -50,6 +52,17 @@ static const uint16_t bpf_class_vars[] = {
 	BPF_LD, BPF_LDX, BPF_ST, BPF_STX, BPF_ALU, BPF_JMP, BPF_RET, BPF_MISC,
 };
 
+static const char *bpf_class_vars_name[] = {
+	[BPF_LD]   = "ld",
+	[BPF_LDX]  = "ldx",
+	[BPF_ST]   = "st",
+	[BPF_STX]  = "stx",
+	[BPF_ALU]  = "alu",
+	[BPF_JMP]  = "jmp",
+	[BPF_RET]  = "ret",
+	[BPF_MISC] = "misc",
+};
+
 #define BPF_SIZE(code)	((code) & 0x18)
 #define	BPF_W		0x00
 #define	BPF_H		0x08
@@ -57,6 +70,12 @@ static const uint16_t bpf_class_vars[] = {
 
 static const uint16_t bpf_size_vars[] = {
 	BPF_W, BPF_H, BPF_B,
+};
+
+static const char *bpf_size_vars_name[] = {
+	[BPF_W] = "w",
+	[BPF_H] = "h",
+	[BPF_B] = "b",
 };
 
 #define BPF_MODE(code)	((code) & 0xe0)
@@ -69,6 +88,15 @@ static const uint16_t bpf_size_vars[] = {
 
 static const uint16_t bpf_mode_vars[] = {
 	BPF_IMM, BPF_ABS, BPF_IND, BPF_MEM, BPF_LEN, BPF_MSH,
+};
+
+static const char *bpf_mode_vars_name[] = {
+	[BPF_IMM] = "imn",
+	[BPF_ABS] = "abs",
+	[BPF_IND] = "ind",
+	[BPF_MEM] = "mem",
+	[BPF_LEN] = "len",
+	[BPF_MSH] = "msh",
 };
 
 #define BPF_OP(code)	((code) & 0xf0)
@@ -89,6 +117,20 @@ static const uint16_t bpf_alu_op_vars[] = {
 	BPF_NEG, BPF_MOD, BPF_XOR,
 };
 
+static const char *bpf_alu_op_vars_name[] = {
+	[BPF_ADD] = "add",
+	[BPF_SUB] = "sub",
+	[BPF_MUL] = "mul",
+	[BPF_DIV] = "div",
+	[BPF_OR]  = "or",
+	[BPF_AND] = "and",
+	[BPF_LSH] = "lsh",
+	[BPF_RSH] = "rsh",
+	[BPF_NEG] = "neg",
+	[BPF_MOD] = "mod",
+	[BPF_XOR] = "xor",
+};
+
 #define	BPF_JA		0x00
 #define	BPF_JEQ		0x10
 #define	BPF_JGT		0x20
@@ -99,6 +141,14 @@ static const uint16_t bpf_jmp_op_vars[] = {
 	BPF_JA, BPF_JEQ, BPF_JGT, BPF_JGE, BPF_JSET,
 };
 
+static const char *bpf_jmp_op_vars_name[] = {
+	[BPF_JA]   = "ja",
+	[BPF_JEQ]  = "jeq",
+	[BPF_JGT]  = "jgt",
+	[BPF_JGE]  = "jge",
+	[BPF_JSET] = "jset",
+};
+
 #define BPF_SRC(code)	((code) & 0x08)
 #define	BPF_K		0x00
 #define	BPF_X		0x08
@@ -107,11 +157,22 @@ static const uint16_t bpf_src_vars[] = {
 	BPF_K, BPF_X,
 };
 
+static const char *bpf_src_vars_name[] = {
+	[BPF_K] = "k",
+	[BPF_X] = "x",
+};
+
 #define BPF_RVAL(code)	((code) & 0x18)
 #define	BPF_A		0x10
 
 static const uint16_t bpf_ret_vars[] = {
 	BPF_A, BPF_K, BPF_X,
+};
+
+static const char *bpf_ret_vars_name[] = {
+	[BPF_A] = "a",
+	[BPF_K] = "k",
+	[BPF_X] = "x",
 };
 
 #define BPF_MISCOP(code) ((code) & 0xf8)
@@ -122,12 +183,49 @@ static const uint16_t bpf_misc_vars[] = {
 	BPF_TAX, BPF_TXA,
 };
 
+static const char *bpf_misc_vars_name[] = {
+	[BPF_TAX] = "tax",
+	[BPF_TXA] = "txa",
+};
+
 #define SECCOMP_RET_KILL	0x00000000U
 #define SECCOMP_RET_TRAP	0x00030000U
 #define SECCOMP_RET_ALLOW	0x7fff0000U
 
 static const uint32_t bpf_seccomp_ret_k_vars[] = {
 	SECCOMP_RET_KILL, SECCOMP_RET_TRAP, SECCOMP_RET_ALLOW,
+};
+
+#define BPF_LDX_B	(BPF_LDX  |   BPF_B)
+#define BPF_LDX_W	(BPF_LDX  |   BPF_W)
+#define BPF_JMP_JA	(BPF_JMP  |  BPF_JA)
+#define BPF_JMP_JEQ	(BPF_JMP  | BPF_JEQ)
+#define BPF_JMP_JGT	(BPF_JMP  | BPF_JGT)
+#define BPF_JMP_JGE	(BPF_JMP  | BPF_JGE)
+#define BPF_JMP_JSET	(BPF_JMP  | BPF_JSET)
+#define BPF_ALU_ADD	(BPF_ALU  | BPF_ADD)
+#define BPF_ALU_SUB	(BPF_ALU  | BPF_SUB)
+#define BPF_ALU_MUL	(BPF_ALU  | BPF_MUL)
+#define BPF_ALU_DIV	(BPF_ALU  | BPF_DIV)
+#define BPF_ALU_MOD	(BPF_ALU  | BPF_MOD)
+#define BPF_ALU_NEG	(BPF_ALU  | BPF_NEG)
+#define BPF_ALU_AND	(BPF_ALU  | BPF_AND)
+#define BPF_ALU_OR	(BPF_ALU  |  BPF_OR)
+#define BPF_ALU_XOR	(BPF_ALU  | BPF_XOR)
+#define BPF_ALU_LSH	(BPF_ALU  | BPF_LSH)
+#define BPF_ALU_RSH	(BPF_ALU  | BPF_RSH)
+#define BPF_MISC_TAX	(BPF_MISC | BPF_TAX)
+#define BPF_MISC_TXA	(BPF_MISC | BPF_TXA)
+#define BPF_LD_B	(BPF_LD   |   BPF_B)
+#define BPF_LD_H	(BPF_LD   |   BPF_H)
+#define BPF_LD_W	(BPF_LD   |   BPF_W)
+
+static const uint32_t bpf_saner_vars[] = {
+	BPF_LDX_B, BPF_LDX_W, BPF_JMP_JA, BPF_JMP_JEQ, BPF_JMP_JGT,
+	BPF_JMP_JGE, BPF_JMP_JSET, BPF_ALU_ADD, BPF_ALU_SUB, BPF_ALU_MUL,
+	BPF_ALU_DIV, BPF_ALU_MOD, BPF_ALU_NEG, BPF_ALU_AND, BPF_ALU_OR,
+	BPF_ALU_XOR, BPF_ALU_LSH, BPF_ALU_RSH, BPF_MISC_TAX, BPF_MISC_TXA,
+	BPF_LD_B, BPF_LD_H, BPF_LD_W, BPF_RET, BPF_ST, BPF_STX,
 };
 
 static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
@@ -162,7 +260,342 @@ struct seccomp_data {
 #define bpf_rand(type) \
 	(bpf_##type##_vars[rand() % ARRAY_SIZE(bpf_##type##_vars)])
 
-static uint16_t gen_bpf_code(bool last_instr)
+static const char * const op_table[] = {
+#define OP(_op, _name)  [_op] = _name
+	OP(BPF_ST,       "st"),
+	OP(BPF_STX,      "stx"),
+	OP(BPF_LD_B,     "ldb"),
+	OP(BPF_LD_H,     "ldh"),
+	OP(BPF_LD_W,     "ld"),
+	OP(BPF_LDX,      "ldx"),
+	OP(BPF_LDX_B,    "ldxb"),
+	OP(BPF_JMP_JA,   "ja"),
+	OP(BPF_JMP_JEQ,  "jeq"),
+	OP(BPF_JMP_JGT,  "jgt"),
+	OP(BPF_JMP_JGE,  "jge"),
+	OP(BPF_JMP_JSET, "jset"),
+	OP(BPF_ALU_ADD,  "add"),
+	OP(BPF_ALU_SUB,  "sub"),
+	OP(BPF_ALU_MUL,  "mul"),
+	OP(BPF_ALU_DIV,  "div"),
+	OP(BPF_ALU_MOD,  "mod"),
+	OP(BPF_ALU_NEG,  "neg"),
+	OP(BPF_ALU_AND,  "and"),
+	OP(BPF_ALU_OR,   "or"),
+	OP(BPF_ALU_XOR,  "xor"),
+	OP(BPF_ALU_LSH,  "lsh"),
+	OP(BPF_ALU_RSH,  "rsh"),
+	OP(BPF_MISC_TAX, "tax"),
+	OP(BPF_MISC_TXA, "txa"),
+	OP(BPF_RET,      "ret"),
+};
+
+static void bpf_disasm(const struct sock_filter f, unsigned int i)
+{
+	const char *op, *fmt;
+	int val = f.k;
+	char buf[256], tmp[128];
+
+	memset(tmp, 0, sizeof(tmp));
+
+	switch (f.code) {
+	case BPF_RET | BPF_K:
+		op = op_table[BPF_RET];
+		fmt = "#%#x";
+		break;
+	case BPF_RET | BPF_A:
+		op = op_table[BPF_RET];
+		fmt = "a";
+		break;
+	case BPF_RET | BPF_X:
+		op = op_table[BPF_RET];
+		fmt = "x";
+		break;
+	case BPF_MISC_TAX:
+		op = op_table[BPF_MISC_TAX];
+		fmt = "";
+		break;
+	case BPF_MISC_TXA:
+		op = op_table[BPF_MISC_TXA];
+		fmt = "";
+		break;
+	case BPF_ST:
+		op = op_table[BPF_ST];
+		fmt = "M[%d]";
+		break;
+	case BPF_STX:
+		op = op_table[BPF_STX];
+		fmt = "M[%d]";
+		break;
+	case BPF_LD_W | BPF_ABS:
+		op = op_table[BPF_LD_W];
+		fmt = "[%d]";
+		break;
+	case BPF_LD_H | BPF_ABS:
+		op = op_table[BPF_LD_H];
+		fmt = "[%d]";
+		break;
+	case BPF_LD_B | BPF_ABS:
+		op = op_table[BPF_LD_B];
+		fmt = "[%d]";
+		break;
+	case BPF_LD_W | BPF_LEN:
+		op = op_table[BPF_LD_W];
+		fmt = "#len";
+		break;
+	case BPF_LD_W | BPF_IND:
+		op = op_table[BPF_LD_W];
+		fmt = "[x+%d]";
+		break;
+	case BPF_LD_H | BPF_IND:
+		op = op_table[BPF_LD_H];
+		fmt = "[x+%d]";
+		break;
+	case BPF_LD_B | BPF_IND:
+		op = op_table[BPF_LD_B];
+		fmt = "[x+%d]";
+		break;
+	case BPF_LD | BPF_IMM:
+		op = op_table[BPF_LD_W];
+		fmt = "#%#x";
+		break;
+	case BPF_LDX | BPF_IMM:
+		op = op_table[BPF_LDX];
+		fmt = "#%#x";
+		break;
+	case BPF_LDX_B | BPF_MSH:
+		op = op_table[BPF_LDX_B];
+		fmt = "4*([%d]&0xf)";
+		break;
+	case BPF_LD | BPF_MEM:
+		op = op_table[BPF_LD_W];
+		fmt = "M[%d]";
+		break;
+	case BPF_LDX | BPF_MEM:
+		op = op_table[BPF_LDX];
+		fmt = "M[%d]";
+		break;
+	case BPF_JMP_JA:
+		op = op_table[BPF_JMP_JA];
+		fmt = "%d";
+		val = i + 1 + f.k;
+		break;
+	case BPF_JMP_JGT | BPF_X:
+		op = op_table[BPF_JMP_JGT];
+		fmt = "x";
+		break;
+	case BPF_JMP_JGT | BPF_K:
+		op = op_table[BPF_JMP_JGT];
+		fmt = "#%#x";
+		break;
+	case BPF_JMP_JGE | BPF_X:
+		op = op_table[BPF_JMP_JGE];
+		fmt = "x";
+		break;
+	case BPF_JMP_JGE | BPF_K:
+		op = op_table[BPF_JMP_JGE];
+		fmt = "#%#x";
+		break;
+	case BPF_JMP_JEQ | BPF_X:
+		op = op_table[BPF_JMP_JEQ];
+		fmt = "x";
+		break;
+	case BPF_JMP_JEQ | BPF_K:
+		op = op_table[BPF_JMP_JEQ];
+		fmt = "#%#x";
+		break;
+	case BPF_JMP_JSET | BPF_X:
+		op = op_table[BPF_JMP_JSET];
+		fmt = "x";
+		break;
+	case BPF_JMP_JSET | BPF_K:
+		op = op_table[BPF_JMP_JSET];
+		fmt = "#%#x";
+		break;
+	case BPF_ALU_NEG:
+		op = op_table[BPF_ALU_NEG];
+		fmt = "";
+		break;
+	case BPF_ALU_LSH | BPF_X:
+		op = op_table[BPF_ALU_LSH];
+		fmt = "x";
+		break;
+	case BPF_ALU_LSH | BPF_K:
+		op = op_table[BPF_ALU_LSH];
+		fmt = "#%d";
+		break;
+	case BPF_ALU_RSH | BPF_X:
+		op = op_table[BPF_ALU_RSH];
+		fmt = "x";
+		break;
+	case BPF_ALU_RSH | BPF_K:
+		op = op_table[BPF_ALU_RSH];
+		fmt = "#%d";
+		break;
+	case BPF_ALU_ADD | BPF_X:
+		op = op_table[BPF_ALU_ADD];
+		fmt = "x";
+		break;
+	case BPF_ALU_ADD | BPF_K:
+		op = op_table[BPF_ALU_ADD];
+		fmt = "#%d";
+		break;
+	case BPF_ALU_SUB | BPF_X:
+		op = op_table[BPF_ALU_SUB];
+		fmt = "x";
+		break;
+	case BPF_ALU_SUB | BPF_K:
+		op = op_table[BPF_ALU_SUB];
+		fmt = "#%d";
+		break;
+	case BPF_ALU_MUL | BPF_X:
+		op = op_table[BPF_ALU_MUL];
+		fmt = "x";
+		break;
+	case BPF_ALU_MUL | BPF_K:
+		op = op_table[BPF_ALU_MUL];
+		fmt = "#%d";
+		break;
+	case BPF_ALU_DIV | BPF_X:
+		op = op_table[BPF_ALU_DIV];
+		fmt = "x";
+		break;
+	case BPF_ALU_DIV | BPF_K:
+		op = op_table[BPF_ALU_DIV];
+		fmt = "#%d";
+		break;
+	case BPF_ALU_MOD | BPF_X:
+		op = op_table[BPF_ALU_MOD];
+		fmt = "x";
+		break;
+	case BPF_ALU_MOD | BPF_K:
+		op = op_table[BPF_ALU_MOD];
+		fmt = "#%d";
+		break;
+	case BPF_ALU_AND | BPF_X:
+		op = op_table[BPF_ALU_AND];
+		fmt = "x";
+		break;
+	case BPF_ALU_AND | BPF_K:
+		op = op_table[BPF_ALU_AND];
+		fmt = "#%#x";
+		break;
+	case BPF_ALU_OR | BPF_X:
+		op = op_table[BPF_ALU_OR];
+		fmt = "x";
+		break;
+	case BPF_ALU_OR | BPF_K:
+		op = op_table[BPF_ALU_OR];
+		fmt = "#%#x";
+		break;
+	case BPF_ALU_XOR | BPF_X:
+		op = op_table[BPF_ALU_XOR];
+		fmt = "x";
+		break;
+	case BPF_ALU_XOR | BPF_K:
+		op = op_table[BPF_ALU_XOR];
+		fmt = "#%#x";
+		break;
+	default:
+		/* Lets decode it step by step. */
+		switch (BPF_CLASS(f.code)) {
+		case BPF_LD:
+		case BPF_LDX:
+		case BPF_ST:
+		case BPF_STX:
+			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s %s",
+				 bpf_class_vars_name[BPF_CLASS(f.code)],
+				 bpf_size_vars_name[BPF_SIZE(f.code)],
+				 bpf_mode_vars_name[BPF_MODE(f.code)],
+				 bpf_src_vars_name[BPF_SRC(f.code)]);
+			goto cont;
+		case BPF_ALU:
+			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s",
+				 bpf_class_vars_name[BPF_CLASS(f.code)],
+				 bpf_alu_op_vars_name[BPF_OP(f.code)],
+				 bpf_src_vars_name[BPF_SRC(f.code)]);
+			goto cont;
+		case BPF_JMP:
+			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s",
+				 bpf_class_vars_name[BPF_CLASS(f.code)],
+				 bpf_jmp_op_vars_name[BPF_OP(f.code)],
+				 bpf_src_vars_name[BPF_SRC(f.code)]);
+			goto cont;
+		case BPF_RET:
+			snprintf(tmp, sizeof(tmp), "inv[%s] %s",
+				 bpf_class_vars_name[BPF_CLASS(f.code)],
+				 bpf_ret_vars_name[BPF_RVAL(f.code)]);
+			goto cont;
+		case BPF_MISC:
+			snprintf(tmp, sizeof(tmp), "inv[%s] %s",
+				 bpf_class_vars_name[BPF_CLASS(f.code)],
+				 bpf_misc_vars_name[BPF_MISCOP(f.code)]);
+			goto cont;
+		default:
+			snprintf(tmp, sizeof(tmp), "inv[??][%u,%u,%u,%u]",
+				 f.code, f.jt, f.jf, f.k);
+		}
+cont:
+		op = tmp;
+		fmt = "%#x";
+		val = f.code;
+		break;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	snprintf(buf, sizeof(buf), fmt, val);
+	buf[sizeof(buf) - 1] = 0;
+
+	if ((BPF_CLASS(f.code) == BPF_JMP && BPF_OP(f.code) != BPF_JA))
+		debugf("l%d:\t%s %s, l%d, l%d\n", i, op, buf,
+			  i + 1 + f.jt, i + 1 + f.jf);
+	else
+		debugf("l%d:\t%s %s\n", i, op, buf);
+}
+
+static void bpf_disasm_all(const struct sock_filter *f, unsigned int len)
+{
+	unsigned int i;
+
+	debugf("---filter-dump-start---\n");
+	for (i = 0; i < len; i++)
+		bpf_disasm(f[i], i);
+	debugf("---filter-dump-end---\n");
+}
+
+static uint16_t gen_bpf_code_less_crazy(bool last_instr)
+{
+	uint16_t ret = bpf_rand(saner);
+
+	if (last_instr)
+		ret = BPF_RET;
+
+	switch (ret) {
+	case BPF_LD:
+	case BPF_LDX:
+		ret |= bpf_rand(mode);
+		break;
+	case BPF_ST:
+	case BPF_STX:
+		break;
+	case BPF_ALU:
+		ret |= bpf_rand(src);
+		break;
+	case BPF_JMP:
+		ret |= bpf_rand(src);
+		break;
+	case BPF_RET:
+		ret |= bpf_rand(ret);
+		break;
+	case BPF_MISC:
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+static uint16_t gen_bpf_code_more_crazy(bool last_instr)
 {
 	uint16_t ret = bpf_rand(class);
 
@@ -181,7 +614,7 @@ static uint16_t gen_bpf_code(bool last_instr)
 	case BPF_LDX:
 	case BPF_ST:
 	case BPF_STX:
-		ret |= bpf_rand(size) | bpf_rand(mode) | bpf_rand(src);
+		ret |= bpf_rand(size) | bpf_rand(mode);
 		break;
 	case BPF_ALU:
 		ret |= bpf_rand(alu_op) | bpf_rand(src);
@@ -193,15 +626,13 @@ static uint16_t gen_bpf_code(bool last_instr)
 		ret |= bpf_rand(ret);
 		break;
 	case BPF_MISC:
-		ret |= bpf_rand(misc);
-		break;
 	default:
-		ret = (uint16_t) rand();
+		ret |= bpf_rand(misc);
 		break;
 	}
 
 	/* Also give it a chance to fuzz some crap into it */
-	if (rand() % 10 == 0)
+	if (rand() % 1000 == 0)
 		ret |= (uint16_t) rand();
 
 	return ret;
@@ -222,10 +653,10 @@ enum {
 
 static const float
 seccomp_markov[__STATE_GEN_MAX][__STATE_GEN_MAX] = {
-	{ .1f,	.5f,	.3f,	.05f,	.05f },
-	{ .1f,	.3f,	.5f,	.05f,	.05f },
-	{ .1f,	.3f,	.5f,	.05f,	.05f },
-	{ .2f,	.2f,	.2f,	.2f,	.2f  },
+	{ .1f,	.5f,	.3f,	.09f,	.01f },
+	{ .1f,	.3f,	.5f,	.09f,	.01f },
+	{ .1f,	.3f,	.5f,	.09f,	.01f },
+	{ .2f,	.2f,	.3f,	.29f,	.01f },
 	{ .2f,	.2f,	.2f,	.2f,	.2f  },
 };
 
@@ -289,12 +720,12 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr)
 		break;
 	}
 
-	/* Also give it a chance to fuzz some crap into it */
-	if (rand() % 10 == 0)
+	/* Also give it a tiny chance to fuzz some crap into it */
+	if (rand() % 10000 == 0)
 		curr[0].code |= (uint16_t) rand();
-	if (rand() % 10 == 0)
+	if (rand() % 10000 == 0)
 		curr[1].code |= (uint16_t) rand();
-	if (rand() % 10 == 0)
+	if (rand() % 10000 == 0)
 		curr[2].code |= (uint16_t) rand();
 
 	return used;
@@ -303,7 +734,7 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr)
 static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 {
 	int i;
-	float sum = .0f;
+	float sum = .001f;
 	float thr = (float) rand() / (float) RAND_MAX;
 
 	for (i = 0; i < __STATE_GEN_MAX; ++i) {
@@ -316,19 +747,24 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 	return -1;
 }
 
-void gen_seccomp_bpf(unsigned long **addr, unsigned long *addrlen)
+void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 {
 	int avail;
 	struct sock_filter *curr;
-	struct sock_fprog *bpf = (void *) addr;
+	struct sock_fprog *bpf = (void *) *addr;
 
-	if (addrlen != NULL) {
+	if (addrlen != NULL && bpf == NULL) {
 		bpf = malloc(sizeof(struct sock_fprog));
 		if (bpf == NULL)
 			return;
 	}
 
-	bpf->len = avail = rand() % BPF_MAXINSNS;
+	bpf->len = avail = rand() % 50;
+	/* Give it from time to time a chance to load big filters as well. */
+	if (rand() % 1000 == 0)
+		bpf->len = avail = rand() % BPF_MAXINSNS;
+	if (bpf->len == 0)
+		bpf->len = avail = 50;
 
 	bpf->filter = malloc(bpf->len * sizeof(struct sock_filter));
 	if (bpf->filter == NULL) {
@@ -351,24 +787,33 @@ void gen_seccomp_bpf(unsigned long **addr, unsigned long *addrlen)
 		seccomp_state = seccomp_choose(seccomp_markov[seccomp_state]);
 	}
 
-	if (addrlen != NULL) {
-		*addr = (unsigned long *) bpf;
+	*addr = (void *) bpf;
+	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
-	}
+
+	if (dump_bpf)
+		bpf_disasm_all(bpf->filter, bpf->len);
 }
 
-void gen_bpf(unsigned long *addr, unsigned long *addrlen)
+void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 {
 	int i;
-	struct sock_fprog *bpf = (void *) addr;
+	struct sock_fprog *bpf = (void *) *addr;
 
-	if (addrlen != NULL) {
+	if (addrlen != NULL && bpf == NULL) {
 		bpf = malloc(sizeof(struct sock_fprog));
 		if (bpf == NULL)
 			return;
 	}
 
-	bpf->len = rand() % BPF_MAXINSNS;
+	bpf->len = rand() % 10;
+	/* Give it from time to time a chance to load big filters as well. */
+	if (rand() % 100 == 0)
+		bpf->len = rand() % 100;
+	if (rand() % 1000 == 0)
+		bpf->len = rand() % BPF_MAXINSNS;
+	if (bpf->len == 0)
+		bpf->len = 50;
 
 	bpf->filter = malloc(bpf->len * sizeof(struct sock_filter));
 	if (bpf->filter == NULL) {
@@ -380,38 +825,54 @@ void gen_bpf(unsigned long *addr, unsigned long *addrlen)
 	for (i = 0; i < bpf->len; i++) {
 		memset(&bpf->filter[i], 0, sizeof(bpf->filter[i]));
 
-		bpf->filter[i].code = gen_bpf_code(i == bpf->len - 1);
+		if (rand() % 100 == 0)
+			bpf->filter[i].code = gen_bpf_code_more_crazy(i == bpf->len - 1);
+		else
+			bpf->filter[i].code = gen_bpf_code_less_crazy(i == bpf->len - 1);
 
 		/* Fill out jump offsets if jmp instruction */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_JMP) {
-			bpf->filter[i].jt = (uint8_t) rand();
-			bpf->filter[i].jf = (uint8_t) rand();
+			bpf->filter[i].jt = (uint8_t) rand() % bpf->len;
+			bpf->filter[i].jf = (uint8_t) rand() % bpf->len;
 		}
 
 		/* Also give it a chance if not BPF_JMP */
-		if (rand() % 10 == 0)
+		if (rand() % 100 == 0)
 			bpf->filter[i].jt |= (uint8_t) rand();
-		if (rand() % 10 == 0)
+		if (rand() % 100 == 0)
 			bpf->filter[i].jf |= (uint8_t) rand();
 
 		/* Not always fill out k */
-		bpf->filter[i].k = rand_bool() == 0 ? 0 : (uint32_t) rand();
+		bpf->filter[i].k = (rand() % 10 == 0 ? 0 : (uint32_t) rand());
 
 		/* Also try to jump into BPF extensions by chance */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_LD ||
 		    BPF_CLASS(bpf->filter[i].code) == BPF_LDX) {
 			if (bpf->filter[i].k > 65000 &&
 			    bpf->filter[i].k < (uint32_t) SKF_AD_OFF) {
-				if (rand_bool()) {
+				if (rand() % 10 == 0) {
 					bpf->filter[i].k = (uint32_t) (SKF_AD_OFF +
 							   rand() % SKF_AD_MAX);
 				}
 			}
 		}
+
+		/* In case of M[] access, kernel checks it anyway,
+		 * so do not go out of bounds.
+		 */
+		if (BPF_CLASS(bpf->filter[i].code) == BPF_ST  ||
+		    BPF_CLASS(bpf->filter[i].code) == BPF_STX ||
+		    (BPF_CLASS(bpf->filter[i].code) == BPF_LD &&
+		     BPF_MODE(bpf->filter[i].code) == BPF_MEM) ||
+		    (BPF_CLASS(bpf->filter[i].code) == BPF_LDX &&
+		     BPF_MODE(bpf->filter[i].code) == BPF_MEM))
+			bpf->filter[i].k = (uint32_t) (rand() % 16);
 	}
 
-	if (addrlen != NULL) {
-		*addr = (unsigned long) bpf;
+	*addr = (void *) bpf;
+	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
-	}
+
+	if (dump_bpf)
+		bpf_disasm_all(bpf->filter, bpf->len);
 }

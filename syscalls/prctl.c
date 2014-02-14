@@ -35,15 +35,14 @@ static int prctl_opts[NR_PRCTL_OPTS] = {
 #ifdef USE_SECCOMP
 static void do_set_seccomp(int childno)
 {
-	struct sockaddr *saddr = NULL;
+	unsigned long *optval = NULL, optlen = 0;
 
-//	if (rand() % 3 == SECCOMP_MODE_FILTER) {
+	bpf_gen_seccomp(&optval, &optlen);
 
-// FIXME: This leaks memory, but needs to be cleared after the syscall is done.
-		gen_seccomp_bpf((unsigned long **) &saddr, NULL);
-		shm->a2[childno] = SECCOMP_MODE_FILTER;
-		shm->a3[childno] = (unsigned long) saddr;
-//	}
+	shm->a2[childno] = SECCOMP_MODE_FILTER;
+	shm->a3[childno] = (unsigned long) optval;
+	shm->a4[childno] = 0;
+	shm->a5[childno] = 0;
 }
 #else
 static void do_set_seccomp(__unused__ int childno) { }

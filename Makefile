@@ -25,6 +25,7 @@ CFLAGS += -Wstrict-aliasing=3
 CFLAGS += -Wswitch-enum
 CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings
+CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 
 # Only enabled during development.

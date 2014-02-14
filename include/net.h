@@ -72,8 +72,8 @@ void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 void unix_rand_socket(struct socket_triplet *st);
 
 /* bpf */
-void gen_bpf(unsigned long *addr, unsigned long *addrlen);
-void gen_seccomp_bpf(unsigned long **addr, unsigned long *addrlen);
+void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
+void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
 
 /* caif */
 void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
