@@ -149,9 +149,6 @@ unsigned long find_previous_arg_address(unsigned int argnum, unsigned int call, 
 }
 
 
-/*
- * iovec's are just special cases of the ARG_ADDRESS's
- */
 struct iovec * alloc_iovec(unsigned int num)
 {
 	struct iovec *iov;
