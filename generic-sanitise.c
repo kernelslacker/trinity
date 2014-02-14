@@ -197,30 +197,30 @@ static unsigned long handle_arg_randpage(void)
 static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned long argnum)
 {
 	struct syscallentry *entry;
-	unsigned long i;
+	unsigned long num_entries;
 
 	entry = syscalls[call].entry;
 
-	i = (rand() % 5) + 1;
+	num_entries = 1 << (rand() % 11);
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_IOVECLEN)
-			shm->a2[childno] = i;
+			shm->a2[childno] = num_entries;
 		break;
 	case 2:	if (entry->arg3type == ARG_IOVECLEN)
-			shm->a3[childno] = i;
+			shm->a3[childno] = num_entries;
 		break;
 	case 3:	if (entry->arg4type == ARG_IOVECLEN)
-			shm->a4[childno] = i;
+			shm->a4[childno] = num_entries;
 		break;
 	case 4:	if (entry->arg5type == ARG_IOVECLEN)
-			shm->a5[childno] = i;
+			shm->a5[childno] = num_entries;
 		break;
 	case 5:	if (entry->arg6type == ARG_IOVECLEN)
-			shm->a6[childno] = i;
+			shm->a6[childno] = num_entries;
 		break;
 	}
-	return (unsigned long) alloc_iovec(i);
+	return (unsigned long) alloc_iovec(num_entries);
 }
 
 static unsigned long handle_arg_len_already_set(int childno, unsigned long argnum)
