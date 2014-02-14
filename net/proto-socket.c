@@ -40,11 +40,15 @@ void socket_setsockopt(struct sockopt *so)
 		so->optlen = sizeof(struct timeval);
 		break;
 
-	case SO_ATTACH_FILTER:
-		gen_bpf((unsigned long *) page_rand, NULL);
-		so->optlen = sizeof(struct sock_fprog);
-		break;
+	case SO_ATTACH_FILTER: {
+		unsigned long *optval = NULL, optlen = 0;
 
+		bpf_gen_filter(&optval, &optlen);
+
+		so->optval = (unsigned long) optval;
+		so->optlen = optlen;
+		break;
+	}
 	default:
 		break;
 	}
