@@ -1208,6 +1208,8 @@ void sanitise_perf_event_open(int childno)
 			flags |= PERF_FLAG_FD_OUTPUT;
 		if (rand_bool())
 			flags |= PERF_FLAG_PID_CGROUP;
+		if (rand_bool())
+			flags |= PERF_FLAG_FD_CLOEXEC;
 	}
 	shm->a5[childno] = flags;
 
