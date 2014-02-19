@@ -73,12 +73,10 @@ int main(int argc, char* argv[])
 
 	select_syscall_tables();
 
-	if (create_shm())
-		exit(EXIT_FAILURE);
-
 	parse_args(argc, argv);
 
-	setup_shm_postargs();
+	if (create_shm())
+		exit(EXIT_FAILURE);
 
 	kernel_taint_initial = check_tainted();
 	if (kernel_taint_initial != 0)
