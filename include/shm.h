@@ -10,7 +10,6 @@
 #include "net.h"
 #include "types.h"
 
-void * alloc_shared(unsigned int size);
 void create_shm(void);
 void init_shm(void);
 

@@ -1,7 +1,23 @@
+#include <sys/mman.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include "utils.h"
+
+
+/*
+ * Use this allocator if you have an object a child writes to that you want
+ * all other processes to see.
+ */
+void * alloc_shared(unsigned int size)
+{
+	void *ret;
+
+	ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+	if (ret == MAP_FAILED)
+		return NULL;
+	return ret;
+}
 
 void * zmalloc(size_t size)
 {
