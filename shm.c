@@ -6,12 +6,14 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/time.h>
 #include "arch.h"
 #include "log.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
+#include "utils.h"
 
 struct shm_s *shm;
 
@@ -26,22 +28,31 @@ void * alloc_shared(unsigned int size)
 	return ret;
 }
 
-static int shm_init(void)
+static void shm_init(void)
 {
+	unsigned int i;
+
 	shm->total_syscalls_done = 1;
-
-	memset(shm->pids, EMPTY_PIDSLOT, sizeof(shm->pids));
-
-	memset(shm->active_syscalls, 0, sizeof(shm->active_syscalls));
-	memset(shm->active_syscalls32, 0, sizeof(shm->active_syscalls32));
-	memset(shm->active_syscalls64, 0, sizeof(shm->active_syscalls64));
 
 	/* Overwritten later in setup_shm_postargs if user passed -s */
 	shm->seed = new_seed();
-
 	/* Set seed in parent thread */
 	set_seed(0);
-	return 0;
+
+	for (i = 0; i < MAX_NR_CHILDREN; i++) {
+
+		shm->pids[i] = EMPTY_PIDSLOT;
+
+		shm->previous_syscallno[i] = -1;
+		shm->syscallno[i] = -1;
+
+		shm->previous_a1[i] = shm->a1[i] = -1;
+		shm->previous_a2[i] = shm->a2[i] = -1;
+		shm->previous_a3[i] = shm->a3[i] = -1;
+		shm->previous_a4[i] = shm->a4[i] = -1;
+		shm->previous_a5[i] = shm->a5[i] = -1;
+		shm->previous_a6[i] = shm->a6[i] = -1;
+	}
 }
 
 #define SHM_PROT_PAGES 30
@@ -50,7 +61,6 @@ int create_shm(void)
 {
 	void *p;
 	unsigned int shm_pages;
-	int ret;
 
 	/* round up shm to nearest page size */
 	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & ~(page_size - 1)) / page_size;
@@ -73,8 +83,46 @@ int create_shm(void)
 	shm = p + SHM_PROT_PAGES * page_size;
 	output(2, "shm is at %p\n", shm);
 
-	ret = shm_init();
-	return ret;
+	shm->child_syscall_count = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+
+	shm->pids = alloc_shared(MAX_NR_CHILDREN * sizeof(pid_t));
+	if (shm->pids == NULL)
+		exit(EXIT_FAILURE);
+
+	shm->tv = zmalloc(MAX_NR_CHILDREN * sizeof(struct timeval));
+
+	shm->previous_syscallno = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned int));
+	shm->syscallno = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned int));
+
+	//FIXME: Maybe a 'struct regs' ?
+	shm->previous_a1 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->previous_a2 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->previous_a3 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->previous_a4 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->previous_a5 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->previous_a6 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+
+	shm->a1 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->a2 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->a3 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->a4 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->a5 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->a6 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+
+	shm->mappings = zmalloc(MAX_NR_CHILDREN * sizeof(struct map *));
+	shm->num_mappings = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned int));
+
+	shm->seeds = zmalloc(MAX_NR_CHILDREN * sizeof(int));
+	shm->child_type = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned char));
+	shm->kill_count = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned char));
+	shm->logfiles = zmalloc(MAX_NR_CHILDREN * sizeof(FILE *));
+	shm->retval = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->scratch = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->do32bit = zmalloc(MAX_NR_CHILDREN * sizeof(bool));
+
+	shm_init();
+
+	return 0;
 }
 
 void setup_shm_postargs(void)
