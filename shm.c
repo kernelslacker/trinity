@@ -34,8 +34,10 @@ static void shm_init(void)
 
 	shm->total_syscalls_done = 1;
 
-	/* Overwritten later in setup_shm_postargs if user passed -s */
-	shm->seed = new_seed();
+	if (user_set_seed == TRUE)
+		shm->seed = init_seed(seed);
+	else
+		shm->seed = new_seed();
 	/* Set seed in parent thread */
 	set_seed(0);
 
@@ -123,13 +125,4 @@ int create_shm(void)
 	shm_init();
 
 	return 0;
-}
-
-void setup_shm_postargs(void)
-{
-	if (user_set_seed == TRUE) {
-		shm->seed = init_seed(seed);
-		/* Set seed in parent thread */
-		set_seed(0);
-	}
 }
