@@ -12,6 +12,7 @@
 
 void * alloc_shared(unsigned int size);
 void create_shm(void);
+void init_shm(void);
 
 struct shm_s {
 	unsigned long total_syscalls_done;

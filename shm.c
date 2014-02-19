@@ -29,9 +29,11 @@ void * alloc_shared(unsigned int size)
 	return ret;
 }
 
-static void shm_init(void)
+void init_shm(void)
 {
 	unsigned int i;
+
+	output(2, "shm is at %p\n", shm);
 
 	shm->total_syscalls_done = 1;
 
@@ -82,7 +84,6 @@ void create_shm(void)
 			SHM_PROT_PAGES * page_size, PROT_NONE);
 
 	shm = p + SHM_PROT_PAGES * page_size;
-	output(2, "shm is at %p\n", shm);
 
 	shm->child_syscall_count = zmalloc(max_children * sizeof(unsigned long));
 
@@ -120,6 +121,4 @@ void create_shm(void)
 	shm->retval = zmalloc(max_children * sizeof(unsigned long));
 	shm->scratch = zmalloc(max_children * sizeof(unsigned long));
 	shm->do32bit = zmalloc(max_children * sizeof(bool));
-
-	shm_init();
 }

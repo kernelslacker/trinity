@@ -77,12 +77,14 @@ int main(int argc, char* argv[])
 
 	create_shm();
 
+	if (logging == TRUE)
+		open_logfiles();
+
+	init_shm();
+
 	kernel_taint_initial = check_tainted();
 	if (kernel_taint_initial != 0)
 		output(0, "Kernel was tainted on startup. Will ignore flags that are already set.\n");
-
-	if (logging == TRUE)
-		open_logfiles();
 
 	if (munge_tables() == FALSE) {
 		ret = EXIT_FAILURE;
