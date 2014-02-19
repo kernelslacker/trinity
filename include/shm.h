@@ -19,11 +19,11 @@ struct shm_s {
 	unsigned long successes;
 	unsigned long failures;
 	unsigned long previous_count;
-	unsigned long child_syscall_count[MAX_NR_CHILDREN];
+	unsigned long *child_syscall_count;
 
 	unsigned long regenerate;
 	unsigned int seed;
-	unsigned int seeds[MAX_NR_CHILDREN];
+	unsigned int *seeds;
 	unsigned int reseed_counter;
 
 	//Indices of syscall in syscall table that are active. All indices shifted by +1. Empty index equals to 0.
@@ -35,17 +35,17 @@ struct shm_s {
 	unsigned int nr_active_64bit_syscalls;
 
 	pid_t mainpid;
-	pid_t pids[MAX_NR_CHILDREN];
-	unsigned char child_type[MAX_NR_CHILDREN];
+	pid_t *pids;
+	unsigned char *child_type;
 
 	pid_t last_reaped;
 	bool spawn_no_more;
-	char kill_count[MAX_NR_CHILDREN];
+	unsigned char *kill_count;
 
 	unsigned int running_childs;
-	struct timeval tv[MAX_NR_CHILDREN];
+	struct timeval *tv;
 
-	FILE *logfiles[MAX_NR_CHILDREN];
+	FILE **logfiles;
 
 	int pipe_fds[MAX_PIPE_FDS*2];
 	int file_fds[NR_FILE_FDS];		/* All children inherit these */
@@ -56,35 +56,35 @@ struct shm_s {
 	struct socketinfo sockets[NR_SOCKET_FDS];
 
 	/* state for the syscall currently in progress. */
-	unsigned int previous_syscallno[MAX_NR_CHILDREN];
-	unsigned long previous_a1[MAX_NR_CHILDREN];
-	unsigned long previous_a2[MAX_NR_CHILDREN];
-	unsigned long previous_a3[MAX_NR_CHILDREN];
-	unsigned long previous_a4[MAX_NR_CHILDREN];
-	unsigned long previous_a5[MAX_NR_CHILDREN];
-	unsigned long previous_a6[MAX_NR_CHILDREN];
+	unsigned int *previous_syscallno;
+	unsigned long *previous_a1;
+	unsigned long *previous_a2;
+	unsigned long *previous_a3;
+	unsigned long *previous_a4;
+	unsigned long *previous_a5;
+	unsigned long *previous_a6;
 
-	unsigned int syscallno[MAX_NR_CHILDREN];
-	unsigned long a1[MAX_NR_CHILDREN];
-	unsigned long a2[MAX_NR_CHILDREN];
-	unsigned long a3[MAX_NR_CHILDREN];
-	unsigned long a4[MAX_NR_CHILDREN];
-	unsigned long a5[MAX_NR_CHILDREN];
-	unsigned long a6[MAX_NR_CHILDREN];
+	unsigned int *syscallno;
+	unsigned long *a1;
+	unsigned long *a2;
+	unsigned long *a3;
+	unsigned long *a4;
+	unsigned long *a5;
+	unsigned long *a6;
 
-	unsigned long retval[MAX_NR_CHILDREN];
+	unsigned long *retval;
 
-	unsigned long scratch[MAX_NR_CHILDREN];
+	unsigned long *scratch;
 
 	int current_fd;
 	unsigned int fd_lifetime;
 
 	/* per-child mmaps */
-	struct map *mappings[MAX_NR_CHILDREN];
-	unsigned int num_mappings[MAX_NR_CHILDREN];
+	struct map **mappings;
+	unsigned int *num_mappings;
 
 	/* various flags. */
-	bool do32bit[MAX_NR_CHILDREN];
+	bool *do32bit;
 	bool do_make_it_fail;
 	bool need_reseed;
 	enum exit_reasons exit_reason;
