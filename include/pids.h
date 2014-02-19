@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
+#include "child.h"
 #include "types.h"
 
 extern pid_t mainpid;

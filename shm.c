@@ -8,12 +8,12 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include "arch.h"
+#include "child.h"
 #include "log.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
-#include "trinity.h"
 #include "utils.h"
 
 struct shm_s *shm;
