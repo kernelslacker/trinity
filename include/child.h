@@ -4,6 +4,8 @@
 
 extern int this_child;
 
+extern unsigned int max_children;
+
 int child_process(int childno);
 long mkcall(int child);
 void do_syscall_from_child(void);

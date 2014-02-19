@@ -6,14 +6,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "trinity.h"	// progname
-#include "random.h"
-#include "syscall.h"
+#include "child.h"
 #include "log.h"
 #include "net.h"
 #include "params.h"
 #include "protocols.h"
+#include "random.h"
+#include "syscall.h"
 #include "tables.h"
+#include "trinity.h"	// progname
 
 #define TAINT_NAME_LEN 32
 
