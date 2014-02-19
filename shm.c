@@ -17,37 +17,6 @@
 
 struct shm_s *shm;
 
-void init_shm(void)
-{
-	unsigned int i;
-
-	output(2, "shm is at %p\n", shm);
-
-	shm->total_syscalls_done = 1;
-
-	if (user_set_seed == TRUE)
-		shm->seed = init_seed(seed);
-	else
-		shm->seed = new_seed();
-	/* Set seed in parent thread */
-	set_seed(0);
-
-	for (i = 0; i < max_children; i++) {
-
-		shm->pids[i] = EMPTY_PIDSLOT;
-
-		shm->previous_syscallno[i] = -1;
-		shm->syscallno[i] = -1;
-
-		shm->previous_a1[i] = shm->a1[i] = -1;
-		shm->previous_a2[i] = shm->a2[i] = -1;
-		shm->previous_a3[i] = shm->a3[i] = -1;
-		shm->previous_a4[i] = shm->a4[i] = -1;
-		shm->previous_a5[i] = shm->a5[i] = -1;
-		shm->previous_a6[i] = shm->a6[i] = -1;
-	}
-}
-
 #define SHM_PROT_PAGES 30
 
 void create_shm(void)
@@ -109,4 +78,35 @@ void create_shm(void)
 	shm->retval = zmalloc(max_children * sizeof(unsigned long));
 	shm->scratch = zmalloc(max_children * sizeof(unsigned long));
 	shm->do32bit = zmalloc(max_children * sizeof(bool));
+}
+
+void init_shm(void)
+{
+	unsigned int i;
+
+	output(2, "shm is at %p\n", shm);
+
+	shm->total_syscalls_done = 1;
+
+	if (user_set_seed == TRUE)
+		shm->seed = init_seed(seed);
+	else
+		shm->seed = new_seed();
+	/* Set seed in parent thread */
+	set_seed(0);
+
+	for (i = 0; i < max_children; i++) {
+
+		shm->pids[i] = EMPTY_PIDSLOT;
+
+		shm->previous_syscallno[i] = -1;
+		shm->syscallno[i] = -1;
+
+		shm->previous_a1[i] = shm->a1[i] = -1;
+		shm->previous_a2[i] = shm->a2[i] = -1;
+		shm->previous_a3[i] = shm->a3[i] = -1;
+		shm->previous_a4[i] = shm->a4[i] = -1;
+		shm->previous_a5[i] = shm->a5[i] = -1;
+		shm->previous_a6[i] = shm->a6[i] = -1;
+	}
 }
