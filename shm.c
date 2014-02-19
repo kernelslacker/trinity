@@ -59,7 +59,7 @@ static void shm_init(void)
 
 #define SHM_PROT_PAGES 30
 
-int create_shm(void)
+void create_shm(void)
 {
 	void *p;
 	unsigned int shm_pages;
@@ -69,10 +69,8 @@ int create_shm(void)
 
 	/* Waste some address space to set up some "protection" near the SHM location. */
 	p = alloc_shared((SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES) * page_size);
-	if (p == NULL) {
-		perror("mmap");
-		return -1;
-	}
+	if (p == NULL)
+		exit(EXIT_FAILURE);
 
 	/* clear whole mapping, including the redzones. */
 	memset(p, 0, shm_pages * page_size);
@@ -123,6 +121,4 @@ int create_shm(void)
 	shm->do32bit = zmalloc(MAX_NR_CHILDREN * sizeof(bool));
 
 	shm_init();
-
-	return 0;
 }

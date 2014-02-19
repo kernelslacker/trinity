@@ -11,7 +11,7 @@
 #include "types.h"
 
 void * alloc_shared(unsigned int size);
-int create_shm(void);
+void create_shm(void);
 
 struct shm_s {
 	unsigned long total_syscalls_done;
