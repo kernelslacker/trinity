@@ -41,7 +41,10 @@ void create_shm(void)
 			SHM_PROT_PAGES * page_size, PROT_NONE);
 
 	shm = p + SHM_PROT_PAGES * page_size;
+}
 
+void create_shm_arrays(void)
+{
 	shm->child_syscall_count = zmalloc(max_children * sizeof(unsigned long));
 
 	shm->pids = alloc_shared(max_children * sizeof(pid_t));

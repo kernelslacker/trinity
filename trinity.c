@@ -73,9 +73,11 @@ int main(int argc, char* argv[])
 
 	select_syscall_tables();
 
+	create_shm();
+
 	parse_args(argc, argv);
 
-	create_shm();
+	create_shm_arrays();
 
 	if (logging == TRUE)
 		open_logfiles();

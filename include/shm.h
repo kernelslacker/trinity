@@ -11,6 +11,7 @@
 #include "types.h"
 
 void create_shm(void);
+void create_shm_arrays(void);
 void init_shm(void);
 
 struct shm_s {
