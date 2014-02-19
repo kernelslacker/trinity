@@ -5,6 +5,7 @@
 #define MB (1024 * 1024UL)
 #define GB (1024 * MB)
 
+void * alloc_shared(unsigned int size);
 void * zmalloc(size_t size);
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))

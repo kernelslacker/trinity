@@ -6,7 +6,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <sys/time.h>
 #include "arch.h"
 #include "child.h"
 #include "log.h"
@@ -17,17 +16,6 @@
 #include "utils.h"
 
 struct shm_s *shm;
-
-void * alloc_shared(unsigned int size)
-{
-	void *ret;
-
-	ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
-	if (ret == MAP_FAILED)
-		return NULL;
-
-	return ret;
-}
 
 void init_shm(void)
 {
