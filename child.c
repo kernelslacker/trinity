@@ -170,7 +170,7 @@ void check_parent_pid(void)
 		pid, shm->mainpid, watchdog_pid);
 	output(0, BUGTXT "Last syscalls:\n");
 
-	for (i = 0; i < shm->running_childs; i++) {
+	for_each_pidslot(i) {
 		// Skip over 'boring' entries.
 		if ((shm->pids[i] == EMPTY_PIDSLOT) &&
 		    (shm->previous_syscallno[i] == 0) &&
