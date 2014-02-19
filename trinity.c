@@ -75,8 +75,7 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
-	if (create_shm())
-		exit(EXIT_FAILURE);
+	create_shm();
 
 	kernel_taint_initial = check_tainted();
 	if (kernel_taint_initial != 0)
