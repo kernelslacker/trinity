@@ -1,7 +1,5 @@
 #pragma once
 
-#define MAX_NR_CHILDREN 256
-
 #define MAX_PIPE_FDS 4
 #define MAX_PERF_FDS 10
 #define MAX_EPOLL_FDS 10

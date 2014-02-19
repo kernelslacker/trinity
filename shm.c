@@ -13,6 +13,7 @@
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
+#include "trinity.h"
 #include "utils.h"
 
 struct shm_s *shm;
@@ -41,7 +42,7 @@ static void shm_init(void)
 	/* Set seed in parent thread */
 	set_seed(0);
 
-	for (i = 0; i < MAX_NR_CHILDREN; i++) {
+	for (i = 0; i < max_children; i++) {
 
 		shm->pids[i] = EMPTY_PIDSLOT;
 
@@ -83,42 +84,42 @@ void create_shm(void)
 	shm = p + SHM_PROT_PAGES * page_size;
 	output(2, "shm is at %p\n", shm);
 
-	shm->child_syscall_count = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->child_syscall_count = zmalloc(max_children * sizeof(unsigned long));
 
-	shm->pids = alloc_shared(MAX_NR_CHILDREN * sizeof(pid_t));
+	shm->pids = alloc_shared(max_children * sizeof(pid_t));
 	if (shm->pids == NULL)
 		exit(EXIT_FAILURE);
 
-	shm->tv = zmalloc(MAX_NR_CHILDREN * sizeof(struct timeval));
+	shm->tv = zmalloc(max_children * sizeof(struct timeval));
 
-	shm->previous_syscallno = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned int));
-	shm->syscallno = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned int));
+	shm->previous_syscallno = zmalloc(max_children * sizeof(unsigned int));
+	shm->syscallno = zmalloc(max_children * sizeof(unsigned int));
 
 	//FIXME: Maybe a 'struct regs' ?
-	shm->previous_a1 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->previous_a2 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->previous_a3 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->previous_a4 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->previous_a5 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->previous_a6 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->previous_a1 = zmalloc(max_children * sizeof(unsigned long));
+	shm->previous_a2 = zmalloc(max_children * sizeof(unsigned long));
+	shm->previous_a3 = zmalloc(max_children * sizeof(unsigned long));
+	shm->previous_a4 = zmalloc(max_children * sizeof(unsigned long));
+	shm->previous_a5 = zmalloc(max_children * sizeof(unsigned long));
+	shm->previous_a6 = zmalloc(max_children * sizeof(unsigned long));
 
-	shm->a1 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->a2 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->a3 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->a4 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->a5 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->a6 = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
+	shm->a1 = zmalloc(max_children * sizeof(unsigned long));
+	shm->a2 = zmalloc(max_children * sizeof(unsigned long));
+	shm->a3 = zmalloc(max_children * sizeof(unsigned long));
+	shm->a4 = zmalloc(max_children * sizeof(unsigned long));
+	shm->a5 = zmalloc(max_children * sizeof(unsigned long));
+	shm->a6 = zmalloc(max_children * sizeof(unsigned long));
 
-	shm->mappings = zmalloc(MAX_NR_CHILDREN * sizeof(struct map *));
-	shm->num_mappings = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned int));
+	shm->mappings = zmalloc(max_children * sizeof(struct map *));
+	shm->num_mappings = zmalloc(max_children * sizeof(unsigned int));
 
-	shm->seeds = zmalloc(MAX_NR_CHILDREN * sizeof(int));
-	shm->child_type = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned char));
-	shm->kill_count = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned char));
-	shm->logfiles = zmalloc(MAX_NR_CHILDREN * sizeof(FILE *));
-	shm->retval = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->scratch = zmalloc(MAX_NR_CHILDREN * sizeof(unsigned long));
-	shm->do32bit = zmalloc(MAX_NR_CHILDREN * sizeof(bool));
+	shm->seeds = zmalloc(max_children * sizeof(int));
+	shm->child_type = zmalloc(max_children * sizeof(unsigned char));
+	shm->kill_count = zmalloc(max_children * sizeof(unsigned char));
+	shm->logfiles = zmalloc(max_children * sizeof(FILE *));
+	shm->retval = zmalloc(max_children * sizeof(unsigned long));
+	shm->scratch = zmalloc(max_children * sizeof(unsigned long));
+	shm->do32bit = zmalloc(max_children * sizeof(bool));
 
 	shm_init();
 }

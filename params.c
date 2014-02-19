@@ -230,11 +230,6 @@ void parse_args(int argc, char *argv[])
 				outputerr("zero children ? WAT?\n");
 				exit(EXIT_FAILURE);
 			}
-
-			if (max_children > MAX_NR_CHILDREN) {
-				outputerr("Increase MAX_NR_CHILDREN!\n");
-				exit(EXIT_FAILURE);
-			}
 			break;
 
 		case 'd':
