@@ -53,7 +53,6 @@ void create_shm(void)
 	shm->previous_syscallno = zmalloc(max_children * sizeof(unsigned int));
 	shm->syscallno = zmalloc(max_children * sizeof(unsigned int));
 
-	//FIXME: Maybe a 'struct regs' ?
 	shm->previous_a1 = zmalloc(max_children * sizeof(unsigned long));
 	shm->previous_a2 = zmalloc(max_children * sizeof(unsigned long));
 	shm->previous_a3 = zmalloc(max_children * sizeof(unsigned long));
