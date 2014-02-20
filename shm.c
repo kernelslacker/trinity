@@ -43,39 +43,39 @@ void create_shm(void)
 
 void create_shm_arrays(void)
 {
-	shm->child_syscall_count = zmalloc(max_children * sizeof(unsigned long));
+	shm->child_syscall_count = alloc_shared(max_children * sizeof(unsigned long));
 
 	shm->pids = alloc_shared(max_children * sizeof(pid_t));
 
 	shm->tv = alloc_shared(max_children * sizeof(struct timeval));
 
-	shm->previous_syscallno = zmalloc(max_children * sizeof(unsigned int));
-	shm->syscallno = zmalloc(max_children * sizeof(unsigned int));
+	shm->previous_syscallno = alloc_shared(max_children * sizeof(unsigned int));
+	shm->syscallno = alloc_shared(max_children * sizeof(unsigned int));
 
-	shm->previous_a1 = zmalloc(max_children * sizeof(unsigned long));
-	shm->previous_a2 = zmalloc(max_children * sizeof(unsigned long));
-	shm->previous_a3 = zmalloc(max_children * sizeof(unsigned long));
-	shm->previous_a4 = zmalloc(max_children * sizeof(unsigned long));
-	shm->previous_a5 = zmalloc(max_children * sizeof(unsigned long));
-	shm->previous_a6 = zmalloc(max_children * sizeof(unsigned long));
+	shm->previous_a1 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->previous_a2 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->previous_a3 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->previous_a4 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->previous_a5 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->previous_a6 = alloc_shared(max_children * sizeof(unsigned long));
 
-	shm->a1 = zmalloc(max_children * sizeof(unsigned long));
-	shm->a2 = zmalloc(max_children * sizeof(unsigned long));
-	shm->a3 = zmalloc(max_children * sizeof(unsigned long));
-	shm->a4 = zmalloc(max_children * sizeof(unsigned long));
-	shm->a5 = zmalloc(max_children * sizeof(unsigned long));
-	shm->a6 = zmalloc(max_children * sizeof(unsigned long));
+	shm->a1 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->a2 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->a3 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->a4 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->a5 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->a6 = alloc_shared(max_children * sizeof(unsigned long));
 
-	shm->mappings = zmalloc(max_children * sizeof(struct map *));
-	shm->num_mappings = zmalloc(max_children * sizeof(unsigned int));
+	shm->mappings = alloc_shared(max_children * sizeof(struct map *));
+	shm->num_mappings = alloc_shared(max_children * sizeof(unsigned int));
 
-	shm->seeds = zmalloc(max_children * sizeof(int));
-	shm->child_type = zmalloc(max_children * sizeof(unsigned char));
-	shm->kill_count = zmalloc(max_children * sizeof(unsigned char));
-	shm->logfiles = zmalloc(max_children * sizeof(FILE *));
-	shm->retval = zmalloc(max_children * sizeof(unsigned long));
-	shm->scratch = zmalloc(max_children * sizeof(unsigned long));
-	shm->do32bit = zmalloc(max_children * sizeof(bool));
+	shm->seeds = alloc_shared(max_children * sizeof(int));
+	shm->child_type = alloc_shared(max_children * sizeof(unsigned char));
+	shm->kill_count = alloc_shared(max_children * sizeof(unsigned char));
+	shm->logfiles = alloc_shared(max_children * sizeof(FILE *));
+	shm->retval = alloc_shared(max_children * sizeof(unsigned long));
+	shm->scratch = alloc_shared(max_children * sizeof(unsigned long));
+	shm->do32bit = alloc_shared(max_children * sizeof(bool));
 }
 
 void init_shm(void)
