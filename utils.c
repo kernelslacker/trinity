@@ -14,8 +14,10 @@ void * alloc_shared(unsigned int size)
 	void *ret;
 
 	ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
-	if (ret == MAP_FAILED)
-		return NULL;
+	if (ret == MAP_FAILED) {
+		printf("mmap %u failure\n", size);
+		exit(EXIT_FAILURE);
+	}
 	return ret;
 }
 
