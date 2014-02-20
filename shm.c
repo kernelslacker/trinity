@@ -51,7 +51,7 @@ void create_shm_arrays(void)
 	if (shm->pids == NULL)
 		exit(EXIT_FAILURE);
 
-	shm->tv = zmalloc(max_children * sizeof(struct timeval));
+	shm->tv = alloc_shared(max_children * sizeof(struct timeval));
 
 	shm->previous_syscallno = zmalloc(max_children * sizeof(unsigned int));
 	shm->syscallno = zmalloc(max_children * sizeof(unsigned int));
