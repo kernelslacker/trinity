@@ -29,8 +29,6 @@ void create_shm(void)
 
 	/* Waste some address space to set up some "protection" near the SHM location. */
 	p = alloc_shared((SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES) * page_size);
-	if (p == NULL)
-		exit(EXIT_FAILURE);
 
 	/* clear whole mapping, including the redzones. */
 	memset(p, 0, shm_pages * page_size);
@@ -48,8 +46,6 @@ void create_shm_arrays(void)
 	shm->child_syscall_count = zmalloc(max_children * sizeof(unsigned long));
 
 	shm->pids = alloc_shared(max_children * sizeof(pid_t));
-	if (shm->pids == NULL)
-		exit(EXIT_FAILURE);
 
 	shm->tv = alloc_shared(max_children * sizeof(struct timeval));
 
