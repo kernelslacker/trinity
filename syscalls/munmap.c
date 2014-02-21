@@ -61,6 +61,8 @@ static void post_munmap(int childno)
 
 	if (action == WHOLE)
 		delete_mapping(childno, map);
+
+	shm->scratch[childno] = 0;
 }
 
 struct syscallentry syscall_munmap = {
