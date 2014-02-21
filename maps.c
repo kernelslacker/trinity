@@ -115,7 +115,7 @@ void dirty_mapping(struct map *map)
 
 	case 3:
 		/* whole mapping in reverse */
-		for (i = map->size; i > 0; i -= page_size)
+		for (i = (map->size - page_size); i > 0; i -= page_size)
 			p[i] = rand();
 		break;
 
