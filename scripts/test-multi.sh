@@ -2,13 +2,7 @@
 
 OLDPATH=$(pwd)
 TRINITY_PATH=${TRINITY_PATH:-$OLDPATH}
-TRINITY_TMP=$(mktemp -d $(pwd)/tmp/trinity.XXXXXX)
-
-if [ $(/usr/bin/id -u) -eq 0 ] ; then
-  DROPPRIVS=--dropprivs
-else
-  DROPPRIVS=""
-fi
+TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
 check_tainted()
 {
@@ -32,26 +26,32 @@ do
   cp $TRINITY_PATH/trinity .
   chmod -w trinity
 
-  chmod 755 $TRINITY_TMP
-  if [ -d tmp ]; then
-    chmod 755 tmp
-    rm -rf tmp
-  fi
-  mkdir -p tmp
-  pushd tmp > /dev/null
+  for i in `seq 1 $NR_PROCESSES`
+  do
+    chmod 755 $TRINITY_TMP
+    if [ -d tmp.$i ]; then
+      chmod 755 tmp.$i
+      rm -rf tmp.$i
+    fi
+    mkdir -p tmp.$i
+    pushd tmp.$i > /dev/null
 
-  if [ ! -f $TRINITY_PATH/trinity ]; then
-    echo lost!
-    pwd
-    exit
-  fi
+    if [ ! -f $TRINITY_PATH/trinity ]; then
+      echo lost!
+      pwd
+      exit
+    fi
 
-  rm -f trinity.socketcache
+    rm -f trinity.socketcache
+    MALLOC_CHECK_=2 ../trinity -q -l off -N 999999 &
 
-  MALLOC_CHECK_=2 ../trinity -q -l off -C $NR_PROCESSES $DROPPRIVS -D
+    popd > /dev/null
 
-  popd > /dev/null
+    check_tainted
+  done
 
+  wait
+  sleep 1
   check_tainted
 
   chmod 755 $TRINITY_TMP
