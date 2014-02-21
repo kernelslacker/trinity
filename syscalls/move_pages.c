@@ -31,6 +31,9 @@ static void free_all_pageallocs(unsigned long *page_alloc)
 {
 	unsigned int i = 0;
 
+	if (pagetypes == NULL)
+		return;
+
 	while (pagetypes[i] != NOT_SET) {
 		if (pagetypes[i] == WAS_MALLOC)
 			free((void *)page_alloc[i]);
