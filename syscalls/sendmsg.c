@@ -8,21 +8,29 @@
 #include "compat.h"
 #include "random.h"
 #include "sanitise.h"
+#include "maps.h"
 #include "shm.h"
 
 static void sanitise_sendmsg(int childno)
 {
 	struct msghdr *msg;
+	struct sockaddr *sa = NULL;
+	socklen_t salen;
 
-	// FIXME: Convert to use generic ARG_IOVEC
         msg = malloc(sizeof(struct msghdr));
+	shm->scratch[childno] = (unsigned long) msg;
+
 	if (msg == NULL) {
+		// just do something weird.
 		shm->a2[childno] = (unsigned long) get_address();
 		return;
 	}
 
-	msg->msg_name = get_address();
-	msg->msg_namelen = get_len();
+	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, rand() % TRINITY_PF_MAX);
+
+	msg->msg_name = sa;
+	msg->msg_namelen = salen;
+
 	msg->msg_iov = get_address();
 	msg->msg_iovlen = get_len();
 	msg->msg_control = get_address();
@@ -30,6 +38,21 @@ static void sanitise_sendmsg(int childno)
 	msg->msg_flags = rand32();
 
 	shm->a2[childno] = (unsigned long) msg;
+}
+
+static void post_sendmsg(int childno)
+{
+	struct msghdr *msg;
+	void *ptr = (void *) shm->scratch[childno];
+
+	if (ptr != NULL) {
+		msg = (struct msghdr *) ptr;
+
+		if (msg->msg_name != page_rand)
+			free(msg->msg_name);	// free sockaddr
+
+		free(ptr);
+	}
 }
 
 struct syscallentry syscall_sendmsg = {
@@ -49,5 +72,6 @@ struct syscallentry syscall_sendmsg = {
 				MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_FASTOPEN, MSG_CMSG_COMPAT },
 	},
 	.sanitise = sanitise_sendmsg,
+	.post = post_sendmsg,
 	.flags = NEED_ALARM,
 };
