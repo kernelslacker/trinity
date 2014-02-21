@@ -54,6 +54,8 @@ static void post_mremap(int childno)
 
 	if (ptr != MAP_FAILED)
 		map->ptr = ptr;
+
+	shm->scratch[childno] = 0;
 }
 
 struct syscallentry syscall_mremap = {
