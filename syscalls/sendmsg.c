@@ -53,6 +53,8 @@ static void post_sendmsg(int childno)
 
 		free(ptr);
 	}
+
+	shm->scratch[childno] = 0;
 }
 
 struct syscallentry syscall_sendmsg = {
