@@ -60,6 +60,8 @@ static void post_modify_ldt(int childno)
 
 	if (ptr != NULL)
 		free(ptr);
+
+	shm->scratch[childno] = 0;
 }
 
 struct syscallentry syscall_modify_ldt = {
