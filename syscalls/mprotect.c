@@ -23,6 +23,8 @@ static void post_mprotect(int childno)
 
 	if (shm->retval[childno] != 0)
 		map->prot = shm->a3[childno];
+
+	shm->scratch[childno] = 0;
 }
 
 struct syscallentry syscall_mprotect = {
