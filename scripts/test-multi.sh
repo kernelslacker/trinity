@@ -37,32 +37,26 @@ do
   cp $TRINITY_PATH/trinity .
   chmod -w trinity
 
-  for i in `seq 1 $NR_PROCESSES`
-  do
-    chmod 755 $TRINITY_TMP
-    if [ -d tmp.$i ]; then
-      chmod 755 tmp.$i
-      rm -rf tmp.$i
-    fi
-    mkdir -p tmp.$i
-    pushd tmp.$i > /dev/null
+  chmod 755 $TRINITY_TMP
+  if [ -d tmp ]; then
+    chmod 755 tmp
+    rm -rf tmp
+  fi
+  mkdir -p tmp
+  pushd tmp > /dev/null
 
-    if [ ! -f $TRINITY_PATH/trinity ]; then
-      echo lost!
-      pwd
-      exit
-    fi
+  if [ ! -f $TRINITY_PATH/trinity ]; then
+    echo lost!
+    pwd
+    exit
+  fi
 
-    rm -f trinity.socketcache
-    MALLOC_CHECK_=2 ../trinity -q -l off -N 999999 $DROPPRIVS &
+  rm -f trinity.socketcache
 
-    popd > /dev/null
+  MALLOC_CHECK_=2 ../trinity -q -l off -C $NR_PROCESSES $DROPPRIVS
 
-    check_tainted
-  done
+  popd > /dev/null
 
-  wait
-  sleep 1
   check_tainted
 
   chmod 755 $TRINITY_TMP
