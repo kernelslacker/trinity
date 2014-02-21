@@ -48,6 +48,10 @@ static void sanitise_move_pages(int childno)
 
 	if (pagetypes == NULL)
 		pagetypes = malloc(page_size);
+
+	if (pagetypes == NULL)	/* if the malloc fails, we are so fucked. oom? */
+		return;
+
 	memset(pagetypes, NOT_SET, page_size);
 
 	/* number of pages to move */
