@@ -4,6 +4,12 @@ OLDPATH=$(pwd)
 TRINITY_PATH=${TRINITY_PATH:-$OLDPATH}
 TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
+if [ $(/usr/bin/id -u) -eq 0 ] ; then
+  DROPPRIVS=--dropprivs
+else
+  DROPPRIVS=""
+fi
+
 check_tainted()
 {
     if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
@@ -43,7 +49,7 @@ do
     fi
 
     rm -f trinity.socketcache
-    MALLOC_CHECK_=2 ../trinity -q -l off -N 999999 &
+    MALLOC_CHECK_=2 ../trinity -q -l off -N 999999 $DROPPRIVS &
 
     popd > /dev/null
 
