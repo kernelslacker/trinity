@@ -97,7 +97,7 @@ void reseed(void)
 	/* We are reseeding. */
 	shm->seed = new_seed();
 
-	output(0, "Random reseed: %u\n", shm->seed);
+//	output(0, "Random reseed: %u\n", shm->seed);
 
 	if (do_syslog == TRUE)
 		syslog_seed(shm->seed);

@@ -29,7 +29,7 @@ CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 
 # Only enabled during development.
-CFLAGS += -Werror
+#CFLAGS += -Werror
 
 V	= @
 Q	= $(V:1=)
