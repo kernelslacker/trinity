@@ -16,7 +16,6 @@ static void sanitise_mincore(int childno)
 
 	len = map->size + (page_size - 1) / page_size;
 	shm->a3[childno] = (unsigned long) malloc(len);
-	shm->scratch[childno] = shm->a3[childno];
 }
 
 static void post_mincore(int childno)
