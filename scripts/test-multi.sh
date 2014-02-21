@@ -53,11 +53,4 @@ do
 
   check_tainted
 
-  chmod 755 $TRINITY_TMP
-
-  for i in `seq 1 $NR_PROCESSES`
-  do
-    rm -rf tmp.$i
-  done
-
 done
