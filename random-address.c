@@ -44,6 +44,7 @@ static void * _get_address(unsigned char null_allowed)
 {
 	int i;
 	struct map *map;
+	size_t len = page_size;
 	void *addr = NULL;
 
 	if (null_allowed == TRUE)
@@ -69,6 +70,7 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	case 7: map = get_map();
 		addr = map->ptr;
+		len = map->size;
 		break;
 	case 8: addr = malloc(page_size * 2);
 		// FIXME: We leak this. This is the address we need to store for later
@@ -87,13 +89,13 @@ static void * _get_address(unsigned char null_allowed)
 	 */
 	i = rand() % 100;
 	switch (i) {
-	case 0:	addr += (page_size - sizeof(char));
+	case 0:	addr += (len - sizeof(char));
 		break;
-	case 1:	addr += (page_size - sizeof(int));
+	case 1:	addr += (len - sizeof(int));
 		break;
-	case 2:	addr += (page_size - sizeof(long));
+	case 2:	addr += (len - sizeof(long));
 		break;
-	case 3:	addr += (page_size / 2);
+	case 3:	addr += (len / 2);
 		break;
 	case 4 ... 99:
 		break;
