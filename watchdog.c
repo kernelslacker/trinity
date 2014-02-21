@@ -29,12 +29,13 @@ static unsigned long hiscore = 0;
 static int check_shm_sanity(void)
 {
 	unsigned int i;
-	pid_t pid;
 
 	if (shm->running_childs == 0)
 		return SHM_OK;
 
 	for_each_pidslot(i) {
+		pid_t pid;
+
 		pid = shm->pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			continue;
@@ -243,10 +244,11 @@ static void check_children(void)
 	struct timeval tv;
 	time_t diff;
 	time_t old, now;
-	pid_t pid;
 	unsigned int i;
 
 	for_each_pidslot(i) {
+		pid_t pid;
+
 		pid = shm->pids[i];
 
 		if (pid == EMPTY_PIDSLOT)
