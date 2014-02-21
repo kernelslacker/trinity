@@ -106,6 +106,8 @@ static void post_move_pages(int childno)
 		return;
 
 	free_all_pageallocs(page);
+
+	shm->scratch[childno] = 0;
 }
 
 struct syscallentry syscall_move_pages = {
