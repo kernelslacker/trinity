@@ -41,7 +41,7 @@ void regenerate(void)
 	regenerate_fds();
 
 	/* Do random setsockopts on all network sockets. */
-	//do_sso_sockets();
+	do_sso_sockets();
 
 	destroy_shared_mappings();
 	setup_shared_mappings();
