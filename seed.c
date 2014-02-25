@@ -35,7 +35,7 @@ unsigned int new_seed(void)
 	    read(fd, &r, sizeof(r)) != sizeof(r)) {
 		r = rand();
 		if (!(rand_bool())) {
-			gettimeofday(&t, 0);
+			gettimeofday(&t, NULL);
 			r |= t.tv_usec;
 		}
 	}
