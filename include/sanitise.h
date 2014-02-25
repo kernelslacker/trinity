@@ -1,6 +1,7 @@
 #pragma once
 
 #include "syscall.h"
+#include "syscalls/syscalls.h"
 
 void sanitise_mmap(int childno);
 void sanitise_rt_sigaction(int childno);
