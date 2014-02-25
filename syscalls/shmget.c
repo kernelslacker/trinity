@@ -13,7 +13,7 @@ static void post_shmget(int childno)
 	if (shm->retval[childno] == (unsigned long) -1L)
 		return;
 
-	shmctl(shm->retval[childno], IPC_RMID, 0);
+	shmctl(shm->retval[childno], IPC_RMID, NULL);
 }
 
 struct syscallentry syscall_shmget = {
