@@ -20,7 +20,7 @@
 #define IP_MULTICAST_ALL 49
 #endif
 
-int previous_ip;
+static int previous_ip;
 static unsigned int ip_lifetime = 0;
 
 in_addr_t random_ipv4_address(void)

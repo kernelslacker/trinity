@@ -17,8 +17,8 @@
 
 #define BUFSIZE 1024
 
-FILE *mainlogfile;
-bool logfiles_opened = FALSE;
+static FILE *mainlogfile;
+static bool logfiles_opened = FALSE;
 
 void open_logfiles(void)
 {

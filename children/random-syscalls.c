@@ -23,8 +23,8 @@
  * to 'we asked to do a 32bit only syscall' and more.. Hairy.
  */
 
-int *active_syscalls;
-unsigned int nr_active_syscalls;
+static int *active_syscalls;
+static unsigned int nr_active_syscalls;
 
 static void choose_syscall_table(int childno)
 {
