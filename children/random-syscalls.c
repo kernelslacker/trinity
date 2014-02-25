@@ -73,8 +73,6 @@ static void choose_syscall_table(int childno)
 	}
 }
 
-extern int sigwas;
-
 static unsigned int handle_sigreturn(int childno)
 {
 	static unsigned int count = 0;
