@@ -23,8 +23,8 @@ static void sanitise_sync_file_range(int childno)
 	loff_t off;
 
 retry:
-	off = rand64() & 0x0fffffffffffffff;
-	nbytes = rand64() & 0x0fffffffffffffff;
+	off = rand64() & 0x0fffffffffffffffUL;
+	nbytes = rand64() & 0x0fffffffffffffffUL;
 	endbyte = off + nbytes;
 	if (endbyte < off)
 		goto retry;
