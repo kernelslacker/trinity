@@ -3,7 +3,7 @@
  *   unsigned long old_len, unsigned long new_len,
  *   unsigned long flags, unsigned long new_addr)
  */
-#include <linux/mman.h>
+
 #include <stdlib.h>
 #include <sys/mman.h>
 #include "utils.h"	// page_size
