@@ -21,7 +21,6 @@ static void * __allocbuf(const char *name)
 	ptr = memalign(page_size, page_size * 2);
 	if (!ptr)
 		exit(EXIT_FAILURE);
-	memset(ptr, 0, page_size * 2);
 	output(2, "%s @ %p\n", name, ptr);
 	return ptr;
 }
@@ -32,9 +31,11 @@ void init_shared_pages(void)
 
 	// a page of zeros
 	page_zeros = __allocbuf("page_zeros");
+	memset(page_zeros, 0, page_size * 2);
 
 	// a page of 0xff
 	page_0xff = __allocbuf("page_0xff");
+	memset(page_0xff, 0xff, page_size * 2);
 
 	// a page of random crap (overwritten below)
 	page_rand = __allocbuf("page_rand");
