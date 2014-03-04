@@ -9,16 +9,17 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#include "trinity.h"
 #include "child.h"
-#include "signals.h"
-#include "shm.h"
 #include "files.h"
-#include "random.h"
-#include "syscall.h"
-#include "pids.h"
+#include "locks.h"
 #include "log.h"
 #include "params.h"
+#include "pids.h"
+#include "random.h"
+#include "shm.h"
+#include "signals.h"
+#include "syscall.h"
+#include "trinity.h"
 
 int check_tainted(void)
 {
@@ -153,9 +154,7 @@ void reap_child(pid_t childpid)
 {
 	int i;
 
-	while (shm->reaper_lock == LOCKED);
-
-	shm->reaper_lock = LOCKED;
+	acquire(&shm->reaper_lock);
 
 	if (childpid == shm->last_reaped) {
 		debugf("already reaped %d!\n", childpid);
@@ -173,7 +172,7 @@ void reap_child(pid_t childpid)
 	shm->last_reaped = childpid;
 
 out:
-	shm->reaper_lock = UNLOCKED;
+	release(&shm->reaper_lock);
 }
 
 static void handle_child(pid_t childpid, int childstatus)

@@ -5,9 +5,6 @@
 
 extern unsigned int num_online_cpus;
 
-#define UNLOCKED 0
-#define LOCKED 1
-
 #define __unused__ __attribute((unused))
 
 extern char *progname;
