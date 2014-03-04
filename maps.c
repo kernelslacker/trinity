@@ -121,7 +121,7 @@ void dirty_mapping(struct map *map)
 
 	case 4:
 		/* fault in map->size pages. (some may be faulted >once) */
-		for (i = 0; i < num_pages; i++);
+		for (i = 0; i < num_pages; i++)
 			p[rand() % (num_pages + 1)] = rand();
 		break;
 
