@@ -56,13 +56,7 @@ static void enable_coredumps(void)
 
 	prctl(PR_SET_DUMPABLE, TRUE);
 
-	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
-		outputerr("[%d] Error restoring rlimits to cur:%d max:%d (%s)\n",
-			getpid(),
-			(unsigned int) limit.rlim_cur,
-			(unsigned int) limit.rlim_max,
-			strerror(errno));
-	}
+	(void) setrlimit(RLIMIT_CORE, &limit);
 }
 static void set_make_it_fail(void)
 {
