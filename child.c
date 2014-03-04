@@ -125,8 +125,6 @@ void init_child(int childno)
 
 	shm->kill_count[childno] = 0;
 
-	disable_coredumps();
-
 	shm->num_mappings[childno] = 0;
 	shm->mappings[childno] = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&shm->mappings[childno]->list);
@@ -145,6 +143,8 @@ void init_child(int childno)
 
 	if (rand() % 100 < 50)
 		use_fpu();
+
+	disable_coredumps();
 }
 
 void check_parent_pid(void)
