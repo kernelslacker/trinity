@@ -28,11 +28,9 @@
 #include "trinity.h"	// ARRAY_SIZE
 #include "utils.h"	// zmalloc
 
-static struct rlimit oldrlimit;
-
 static void disable_coredumps(void)
 {
-	struct rlimit limit;
+	struct rlimit limit = { .rlim_cur = 0, .rlim_max = 0 };
 
 	if (debug == TRUE) {
 		(void)signal(SIGABRT, SIG_DFL);
@@ -40,26 +38,29 @@ static void disable_coredumps(void)
 		return;
 	}
 
-	getrlimit(RLIMIT_CORE, &oldrlimit);
-
-	limit.rlim_cur = 0;
-	limit.rlim_max = oldrlimit.rlim_max;
 	if (setrlimit(RLIMIT_CORE, &limit) != 0)
 		perror( "setrlimit(RLIMIT_CORE)" );
+
+	prctl(PR_SET_DUMPABLE, FALSE);
 }
 
-static void reenable_coredumps(void)
+static void enable_coredumps(void)
 {
+	struct rlimit limit = {
+		.rlim_cur = RLIM_INFINITY,
+		.rlim_max = RLIM_INFINITY
+	};
+
 	if (debug == TRUE)
 		return;
 
 	prctl(PR_SET_DUMPABLE, TRUE);
 
-	if (setrlimit(RLIMIT_CORE, &oldrlimit) != 0) {
+	if (setrlimit(RLIMIT_CORE, &limit) != 0) {
 		outputerr("[%d] Error restoring rlimits to cur:%d max:%d (%s)\n",
 			getpid(),
-			(unsigned int) oldrlimit.rlim_cur,
-			(unsigned int) oldrlimit.rlim_max,
+			(unsigned int) limit.rlim_cur,
+			(unsigned int) limit.rlim_max,
 			strerror(errno));
 	}
 }
@@ -214,7 +215,7 @@ int child_process(int childno)
 	shm->child_type[childno] = child_functions[i].type;
 	ret = child_functions[i].func(childno);
 
-	reenable_coredumps();
+	enable_coredumps();
 
 	return ret;
 }
