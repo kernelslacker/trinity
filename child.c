@@ -127,6 +127,10 @@ void init_child(int childno)
 
 	disable_coredumps();
 
+	shm->num_mappings[childno] = 0;
+	shm->mappings[childno] = zmalloc(sizeof(struct map));
+	INIT_LIST_HEAD(&shm->mappings[childno]->list);
+
 	setup_page_maps();
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
@@ -141,10 +145,6 @@ void init_child(int childno)
 
 	if (rand() % 100 < 50)
 		use_fpu();
-
-	shm->num_mappings[childno] = 0;
-	shm->mappings[childno] = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&shm->mappings[childno]->list);
 }
 
 void check_parent_pid(void)
