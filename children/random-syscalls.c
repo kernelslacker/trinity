@@ -138,7 +138,7 @@ int child_random_syscalls(int childno)
 			goto out;
 
 		syscallnr = rand() % nr_active_syscalls;
-		/* If we got a syscallnr which is not actvie repeat the attempt, since another child has switched that syscall off already.*/
+		/* If we got a syscallnr which is not active repeat the attempt, since another child has switched that syscall off already.*/
 		if (active_syscalls[syscallnr] == 0)
 			continue;
 
