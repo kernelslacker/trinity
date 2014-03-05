@@ -26,18 +26,22 @@
 static int *active_syscalls;
 static unsigned int nr_active_syscalls;
 
-static void choose_syscall_table(int childno)
+static bool choose_syscall_table(void)
 {
+	bool do32 = FALSE;
+
 	if (biarch == FALSE) {
 		active_syscalls = shm->active_syscalls;
 		nr_active_syscalls = shm->nr_active_syscalls;
+		do32 = TRUE;
+
 	} else {
 
 		/* First, check that we have syscalls enabled in either table. */
 		if (validate_syscall_table_64() == FALSE) {
 			use_64bit = FALSE;
 			/* If no 64bit syscalls enabled, force 32bit. */
-			shm->do32bit[childno] = TRUE;
+			do32 = TRUE;
 		}
 
 		if (validate_syscall_table_32() == FALSE)
@@ -45,16 +49,12 @@ static void choose_syscall_table(int childno)
 
 		/* If both tables enabled, pick randomly. */
 		if ((use_64bit == TRUE) && (use_32bit == TRUE)) {
-			/*
-			 * 10% possibility of a 32bit syscall
-			 */
-			shm->do32bit[childno] = FALSE;
-
+			/* 10% possibility of a 32bit syscall */
 			if (rand() % 100 < 10)
-				shm->do32bit[childno] = TRUE;
+				do32 = TRUE;
 		}
 
-		if (shm->do32bit[childno] == FALSE) {
+		if (do32 == FALSE) {
 			syscalls = syscalls_64bit;
 			nr_active_syscalls = shm->nr_active_64bit_syscalls;
 			active_syscalls = shm->active_syscalls64;
@@ -71,6 +71,8 @@ static void choose_syscall_table(int childno)
 		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
 		shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 	}
+
+	return do32;
 }
 
 static unsigned int handle_sigreturn(int childno)
@@ -108,6 +110,7 @@ int child_random_syscalls(int childno)
 {
 	int ret;
 	unsigned int syscallnr;
+	bool do32;
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
@@ -127,7 +130,7 @@ int child_random_syscalls(int childno)
 		if (shm->seed != shm->seeds[childno])
 			set_seed(childno);
 
-		choose_syscall_table(childno);
+		do32 = choose_syscall_table();
 
 		if (nr_active_syscalls == 0) {
 			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
@@ -148,7 +151,7 @@ int child_random_syscalls(int childno)
 			if (biarch == FALSE) {
 				deactivate_syscall(syscallnr);
 			} else {
-				if (shm->do32bit[childno] == TRUE)
+				if (do32 == TRUE)
 					deactivate_syscall32(syscallnr);
 				else
 					deactivate_syscall64(syscallnr);
@@ -156,6 +159,8 @@ int child_random_syscalls(int childno)
 			continue;
 		}
 
+		//TODO: Locking
+		shm->do32bit[childno] = do32;
 		shm->syscallno[childno] = syscallnr;
 
 		if (syscalls_todo) {
