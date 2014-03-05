@@ -55,7 +55,7 @@ char *specific_proto_optarg;
 char *victim_path;
 
 int kernel_taint_initial = 0;
-int kernel_taint_mask = 0xFFFFFFFF;
+unsigned int kernel_taint_mask = 0xFFFFFFFF;
 bool kernel_taint_param_occured = FALSE;
 
 static void usage(void)
@@ -321,7 +321,7 @@ void parse_args(int argc, char *argv[])
 		case 'T':
 			//Load mask for kernel taint flags.
 			process_taint_arg(optarg);
-			if (kernel_taint_mask != (int)0xFFFFFFFF)
+			if (kernel_taint_mask != 0xFFFFFFFF)
 				outputstd("Custom kernel taint mask has been specified: 0x%08x (%d).\n",
 					kernel_taint_mask, kernel_taint_mask);
 			break;
