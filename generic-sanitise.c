@@ -88,7 +88,6 @@ static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 	if (high == 0) {
 		outputerr("%s forgets to set hirange!\n", entry->name);
 		BUG("Fix syscall definition!\n");
-		return 0;
 	}
 
 	i = (unsigned long) rand64() % high;
@@ -387,7 +386,6 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 	}
 
 	BUG("unreachable!\n");
-	return 0x5a5a5a5a;	/* Should never happen */
 }
 
 void generic_sanitise(int childno)
