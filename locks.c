@@ -4,7 +4,7 @@
 void acquire(lock_t *lock)
 {
 	while (*lock == LOCKED)
-		sleep(0.1);
+		usleep(1);
 
 	*lock = LOCKED;
 }
