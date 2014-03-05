@@ -49,7 +49,7 @@ extern bool random_selection;
 extern unsigned int random_selection_num;
 
 extern int kernel_taint_initial;
-extern int kernel_taint_mask;
+extern unsigned int kernel_taint_mask;
 extern bool kernel_taint_param_occured;
 
 extern unsigned int user_specified_children;
