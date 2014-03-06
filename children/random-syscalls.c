@@ -160,10 +160,10 @@ int child_random_syscalls(int childno)
 			continue;
 		}
 
-		acquire(&shm->syscall_lock);
+		lock(&shm->syscall_lock);
 		shm->do32bit[childno] = do32;
 		shm->syscallno[childno] = syscallnr;
-		release(&shm->syscall_lock);
+		unlock(&shm->syscall_lock);
 
 		if (syscalls_todo) {
 			if (shm->total_syscalls_done >= syscalls_todo) {

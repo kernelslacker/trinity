@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include "locks.h"
 
-void acquire(lock_t *lock)
+void lock(lock_t *lock)
 {
 	while (*lock == LOCKED)
 		usleep(1);
@@ -9,7 +9,7 @@ void acquire(lock_t *lock)
 	*lock = LOCKED;
 }
 
-void release(lock_t *lock)
+void unlock(lock_t *lock)
 {
 	*lock = UNLOCKED;
 }

@@ -154,7 +154,7 @@ void reap_child(pid_t childpid)
 {
 	int i;
 
-	acquire(&shm->reaper_lock);
+	lock(&shm->reaper_lock);
 
 	if (childpid == shm->last_reaped) {
 		debugf("already reaped %d!\n", childpid);
@@ -172,7 +172,7 @@ void reap_child(pid_t childpid)
 	shm->last_reaped = childpid;
 
 out:
-	release(&shm->reaper_lock);
+	unlock(&shm->reaper_lock);
 }
 
 static void handle_child(pid_t childpid, int childstatus)
