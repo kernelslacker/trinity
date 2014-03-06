@@ -64,7 +64,7 @@ struct shm_s {
 	unsigned long *previous_a5;
 	unsigned long *previous_a6;
 
-	unsigned int *syscallno;
+	unsigned int *syscallno;	/* protected by syscall_lock */
 	unsigned long *a1;
 	unsigned long *a2;
 	unsigned long *a3;
@@ -84,7 +84,7 @@ struct shm_s {
 	unsigned int *num_mappings;
 
 	/* various flags. */
-	bool *do32bit;
+	bool *do32bit;			/* protected by syscall_lock */
 	bool do_make_it_fail;
 	bool need_reseed;
 	enum exit_reasons exit_reason;
@@ -92,6 +92,7 @@ struct shm_s {
 	/* locks */
 	volatile unsigned char regenerating;
 	volatile unsigned char reaper_lock;
+	volatile unsigned char syscall_lock;
 
 	bool ready;
 };

@@ -14,6 +14,7 @@
 #include "arch.h" // biarch
 #include "child.h"
 #include "files.h"
+#include "locks.h"
 #include "log.h"
 #include "params.h"	// quiet_level
 #include "pids.h"
@@ -193,7 +194,8 @@ static int check_main_alive(void)
 unsigned int check_if_fd(unsigned int child)
 {
 	unsigned int highest;
-	unsigned callno = shm->syscallno[child];
+	unsigned callno;
+	bool do32;
 
 	/* shortcut, if it's out of range, it's not going to be valid. */
 	if (shm->a1[child] > 1024)
@@ -203,6 +205,11 @@ unsigned int check_if_fd(unsigned int child)
 	if (shm->a1[child] < highest)
 		return FALSE;
 
+	acquire(&shm->syscall_lock);
+	callno = shm->syscallno[child];
+	do32 = shm->do32bit[child];
+	release(&shm->syscall_lock);
+
 	if (biarch == FALSE) {
 		if (syscalls[callno].entry->arg1type == ARG_FD)
 			return TRUE;
@@ -210,7 +217,7 @@ unsigned int check_if_fd(unsigned int child)
 	}
 
 	/* biarch case */
-	if (shm->do32bit[child] == TRUE) {
+	if (do32 == TRUE) {
 		if (syscalls_32bit[callno].entry->arg1type == ARG_FD)
 			return TRUE;
 	} else {
