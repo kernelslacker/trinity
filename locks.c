@@ -1,15 +1,15 @@
 #include <unistd.h>
 #include "locks.h"
 
-void lock(lock_t *lock)
+void lock(lock_t *_lock)
 {
-	while (*lock == LOCKED)
+	while (*_lock == LOCKED)
 		usleep(1);
 
-	*lock = LOCKED;
+	*_lock = LOCKED;
 }
 
-void unlock(lock_t *lock)
+void unlock(lock_t *_lock)
 {
-	*lock = UNLOCKED;
+	*_lock = UNLOCKED;
 }
