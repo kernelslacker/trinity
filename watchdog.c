@@ -205,10 +205,10 @@ unsigned int check_if_fd(unsigned int child)
 	if (shm->a1[child] < highest)
 		return FALSE;
 
-	acquire(&shm->syscall_lock);
+	lock(&shm->syscall_lock);
 	callno = shm->syscallno[child];
 	do32 = shm->do32bit[child];
-	release(&shm->syscall_lock);
+	unlock(&shm->syscall_lock);
 
 	if (biarch == FALSE) {
 		if (syscalls[callno].entry->arg1type == ARG_FD)
