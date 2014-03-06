@@ -234,11 +234,11 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'd':
-			dangerous = 1;
+			dangerous = TRUE;
 			break;
 
 		case 'D':
-			debug = 1;
+			debug = TRUE;
 			break;
 
 		case 'g':
@@ -259,7 +259,7 @@ void parse_args(int argc, char *argv[])
 
 		case 'l':
 			if (!strcmp(optarg, "off"))
-				logging = 0;
+				logging = FALSE;
 			break;
 
 		case 'L':
@@ -281,11 +281,11 @@ void parse_args(int argc, char *argv[])
 
 		/* Pause after each syscall */
 		case 'p':
-			dopause = 1;
+			dopause = TRUE;
 			break;
 
 		case 'P':
-			do_specific_proto = 1;
+			do_specific_proto = TRUE;
 			specific_proto = strtol(optarg, NULL, 10);
 			specific_proto_optarg = optarg;
 			break;
@@ -303,7 +303,7 @@ void parse_args(int argc, char *argv[])
 				outputerr("-r needs to be before any -x options.\n");
 				exit(EXIT_FAILURE);
 			}
-			random_selection = 1;
+			random_selection = TRUE;
 			random_selection_num = strtol(optarg, NULL, 10);
 			break;
 
