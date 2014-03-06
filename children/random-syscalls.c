@@ -9,6 +9,7 @@
 #include "arch.h"	// biarch
 #include "child.h"
 #include "syscall.h"
+#include "locks.h"
 #include "log.h"
 #include "random.h"
 #include "shm.h"
@@ -159,9 +160,10 @@ int child_random_syscalls(int childno)
 			continue;
 		}
 
-		//TODO: Locking
+		acquire(&shm->syscall_lock);
 		shm->do32bit[childno] = do32;
 		shm->syscallno[childno] = syscallnr;
+		release(&shm->syscall_lock);
 
 		if (syscalls_todo) {
 			if (shm->total_syscalls_done >= syscalls_todo) {
