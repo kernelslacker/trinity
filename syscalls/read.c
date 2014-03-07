@@ -10,7 +10,7 @@
 
 static void sanitise_read(int childno)
 {
-	shm->a2[childno] = (unsigned long) page_rand;
+	shm->a2[childno] = (unsigned long) get_non_null_address();
 	shm->a3[childno] = rand() % page_size;
 }
 
