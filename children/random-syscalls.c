@@ -141,7 +141,7 @@ int child_random_syscalls(int childno)
 		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
 
-		syscallnr = rand() % nr_active_syscalls;
+		syscallnr = rand() % max_nr_syscalls;
 		/* If we got a syscallnr which is not active repeat the attempt, since another child has switched that syscall off already.*/
 		if (active_syscalls[syscallnr] == 0)
 			continue;
