@@ -25,7 +25,6 @@
  */
 
 static int *active_syscalls;
-static unsigned int nr_active_syscalls;
 
 static bool choose_syscall_table(void)
 {
@@ -33,9 +32,7 @@ static bool choose_syscall_table(void)
 
 	if (biarch == FALSE) {
 		active_syscalls = shm->active_syscalls;
-		nr_active_syscalls = shm->nr_active_syscalls;
 		do32 = TRUE;
-
 	} else {
 
 		/* First, check that we have syscalls enabled in either table. */
@@ -57,12 +54,10 @@ static bool choose_syscall_table(void)
 
 		if (do32 == FALSE) {
 			syscalls = syscalls_64bit;
-			nr_active_syscalls = shm->nr_active_64bit_syscalls;
 			active_syscalls = shm->active_syscalls64;
 			max_nr_syscalls = max_nr_64bit_syscalls;
 		} else {
 			syscalls = syscalls_32bit;
-			nr_active_syscalls = shm->nr_active_32bit_syscalls;
 			active_syscalls = shm->active_syscalls32;
 			max_nr_syscalls = max_nr_32bit_syscalls;
 		}
@@ -132,11 +127,6 @@ int child_random_syscalls(int childno)
 			set_seed(childno);
 
 		do32 = choose_syscall_table();
-
-		if (nr_active_syscalls == 0) {
-			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
-			goto out;
-		}
 
 		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
