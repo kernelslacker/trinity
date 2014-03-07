@@ -76,38 +76,6 @@ long syscall32(unsigned int call,
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static void check_uid(void)
-{
-	uid_t myuid;
-
-	/* If we were root, then obviously setuid() will change us, so don't even check. */
-	if (orig_uid == 0)
-		return;
-
-	myuid = getuid();
-
-	/* we should be 'nobody' if we ran with --dropprivs */
-	if (dropprivs == TRUE) {
-		if (myuid == nobody_uid)
-			return;
-		else
-			goto changed;
-	}
-
-	if (myuid != orig_uid) {
-
-changed:
-		/* unshare() can change us to /proc/sys/kernel/overflowuid */
-		if (myuid == 65534)
-			return;
-
-		output(0, "uid changed! Was: %d, now %d\n", orig_uid, myuid);
-
-		shm->exit_reason = EXIT_UID_CHANGED;
-		_exit(EXIT_FAILURE);
-	}
-}
-
 static unsigned long do_syscall(int childno, int *errno_saved)
 {
 	int nr = shm->syscallno[childno];
