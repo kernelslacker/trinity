@@ -120,8 +120,6 @@ int child_random_syscalls(int childno)
 		if (shm->seed != shm->seeds[childno])
 			set_seed(childno);
 
-		do32 = choose_syscall_table();
-
 		if (no_syscalls_enabled() == TRUE) {
 			output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
 			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
@@ -131,8 +129,12 @@ int child_random_syscalls(int childno)
 		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
 
+		/* Ok, we're doing another syscall, let's pick one. */
+		do32 = choose_syscall_table();
 		syscallnr = rand() % max_nr_syscalls;
-		/* If we got a syscallnr which is not active repeat the attempt, since another child has switched that syscall off already.*/
+
+		/* If we got a syscallnr which is not active repeat the attempt,
+		 * since another child has switched that syscall off already.*/
 		if (active_syscalls[syscallnr] == 0)
 			continue;
 
@@ -150,6 +152,7 @@ int child_random_syscalls(int childno)
 			continue;
 		}
 
+		/* critical section for shm updates. */
 		lock(&shm->syscall_lock);
 		shm->do32bit[childno] = do32;
 		shm->syscallno[childno] = syscallnr;
@@ -163,6 +166,7 @@ int child_random_syscalls(int childno)
 			}
 		}
 
+		/* Do the actual syscall. */
 		ret = mkcall(childno);
 	}
 out:
