@@ -47,6 +47,11 @@ static void * _get_address(unsigned char null_allowed)
 	size_t len = page_size;
 	void *addr = NULL;
 
+	/* Because we get called during startup when we create fd's, we need
+	 * to special case this, as we can't use get_non_null_address at that point */
+	if (getpid() == shm->mainpid)
+		return page_rand;
+
 	if (null_allowed == TRUE)
 		i = rand() % 10;
 	else
