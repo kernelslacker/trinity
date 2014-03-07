@@ -62,12 +62,6 @@ static bool choose_syscall_table(void)
 			max_nr_syscalls = max_nr_32bit_syscalls;
 		}
 	}
-
-	if (no_syscalls_enabled() == TRUE) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
-		shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
-	}
-
 	return do32;
 }
 
@@ -127,6 +121,12 @@ int child_random_syscalls(int childno)
 			set_seed(childno);
 
 		do32 = choose_syscall_table();
+
+		if (no_syscalls_enabled() == TRUE) {
+			output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
+			goto out;
+		}
 
 		if (shm->exit_reason != STILL_RUNNING)
 			goto out;
