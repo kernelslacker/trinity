@@ -1152,12 +1152,14 @@ void sanitise_perf_event_open(int childno)
 	unsigned long flags;
 	pid_t pid;
 	int group_leader=0;
+	void *addr;
 
-	shm->a1[childno] = (unsigned long)page_rand;
-	attr = (struct perf_event_attr *)shm->a1[childno];
+	addr = get_non_null_address();
+	shm->a1[childno] = (unsigned long) addr;
+	attr = (struct perf_event_attr *) addr;
 
 	/* this makes sure we clear out the reserved fields. */
-	memset(page_rand, 0, sizeof(struct perf_event_attr));
+	memset(addr, 0, sizeof(struct perf_event_attr));
 
 	/* cpu */
 	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
