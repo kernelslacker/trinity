@@ -26,15 +26,10 @@ static void ioctl_mangle_cmd(int childno)
 static void ioctl_mangle_arg(int childno)
 {
 	/* the argument could mean anything, because ioctl sucks like that. */
-	switch (rand_bool()) {
-	case 0:	shm->a3[childno] = rand32();
-		break;
-
-	case 1:	shm->a3[childno] = (unsigned long) page_rand;
-		generate_random_page(page_rand);
-		break;
-	default: break;
-	}
+	if (rand_bool())
+		shm->a3[childno] = rand32();
+	else
+		shm->a3[childno] = (unsigned long) get_non_null_address();
 }
 
 static void generic_sanitise_ioctl(int childno)
