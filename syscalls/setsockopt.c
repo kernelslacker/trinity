@@ -64,7 +64,8 @@ static const struct sso_funcptr ssoptrs[] = {
  */
 static void do_setsockopt(struct sockopt *so)
 {
-	so->optval = (unsigned long) page_rand;
+	so->optval = (unsigned long) get_non_null_address();
+
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
 	if (rand_bool())
 		so->optlen = sizeof(int);
