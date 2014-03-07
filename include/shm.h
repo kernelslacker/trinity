@@ -26,7 +26,11 @@ struct shm_s {
 	unsigned int *seeds;
 	unsigned int reseed_counter;
 
-	//Indices of syscall in syscall table that are active. All indices shifted by +1. Empty index equals to 0.
+	/* Indices of syscall in syscall table that are active.
+	 * All indices shifted by +1. Empty index equals to 0.
+	 *
+	 * 'active_syscalls' is only used on uniarch. The other two
+	 * are only used on biarch. FIXME: Make this compile-time somehow? */
 	int active_syscalls32[MAX_NR_SYSCALL];
 	int active_syscalls64[MAX_NR_SYSCALL];
 	int active_syscalls[MAX_NR_SYSCALL];
