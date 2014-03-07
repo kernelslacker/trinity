@@ -76,8 +76,8 @@ void do_uid0_check(void)
 	if (dangerous == TRUE) {
 		outputstd("DANGER: RUNNING AS ROOT.\n");
 		outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
-		outputstd("or similar which could potentially make this machine unbootable without a firmware reset.\n\n");
-
+		outputstd("or similar which could potentially make this machine unbootable without a firmware reset.\n");
+		outputstd("You might want to check out running with --dropprivs (currently experimental).\n\n");
 	} else {
 
 		if (dropprivs == FALSE) {
