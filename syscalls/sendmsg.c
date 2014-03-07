@@ -48,7 +48,7 @@ static void post_sendmsg(int childno)
 	if (ptr != NULL) {
 		msg = (struct msghdr *) ptr;
 
-		if (msg->msg_name != page_rand)
+		if (msg->msg_name != page_rand)	// FIXME: What about other kinds of pages ?
 			free(msg->msg_name);	// free sockaddr
 
 		free(ptr);
