@@ -29,7 +29,8 @@ CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 
 # Only enabled during development.
-CFLAGS += -Werror
+DEVEL	:= $(shell grep VERSION Makefile | head -n1 | grep pre | wc -l)
+CFLAGS  += $(shell if [ $(DEVEL) -eq 1 ] ; then echo "-Werror"; else echo ""; fi)
 
 V	= @
 Q	= $(V:1=)
@@ -92,12 +93,10 @@ clean:
 	@rm -rf $(DEPDIR)/*
 
 devel:
-	@perl -p -i -e 's/^#CFLAGS \+\= -Werror/CFLAGS += -Werror/' Makefile
 	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh
 	git commit Makefile configure.sh -m "Enable -Werror & devel mode"
 
 release:
-	@perl -p -i -e 's/^CFLAGS \+\= -Werror/#CFLAGS += -Werror/' Makefile
 	@perl -p -i -e 's/DEVEL=1/DEVEL=0/' configure.sh
 	git commit Makefile configure.sh -m "Disable -Werror & devel mode"
 
