@@ -27,6 +27,8 @@ static unsigned int count;
 #define WAS_MAP 2
 static unsigned char *pagetypes;
 
+/* After a succesful run, ->post calls this, which frees up
+ * the allocations done by ->sanitise */
 static void free_all_pageallocs(unsigned long *page_alloc)
 {
 	unsigned int i = 0;
@@ -35,6 +37,7 @@ static void free_all_pageallocs(unsigned long *page_alloc)
 		return;
 
 	while (pagetypes[i] != NOT_SET) {
+		/* we only care about freeing mallocs, ignore the mmaps. */
 		if (pagetypes[i] == WAS_MALLOC) {
 			free((void *)page_alloc[i]);
 			page_alloc[i] = 0;
@@ -53,12 +56,7 @@ static void sanitise_move_pages(int childno)
 	unsigned int i;
 
 	if (pagetypes == NULL)
-		pagetypes = malloc(page_size);
-
-	if (pagetypes == NULL)	/* if the malloc fails, we are so fucked. oom? */
-		return;
-
-	memset(pagetypes, NOT_SET, page_size);
+		pagetypes = zmalloc(page_size);	// The implied memset(0) == NOT_SET
 
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
@@ -66,9 +64,7 @@ static void sanitise_move_pages(int childno)
 	shm->a2[childno] = count;
 
 	/* setup array of ptrs to pages to move */
-	page_alloc = (unsigned long *) malloc(page_size);
-	if (page_alloc == NULL)
-		return;
+	page_alloc = (unsigned long *) zmalloc(page_size);
 	shm->scratch[childno] = (unsigned long) page_alloc;
 
 	for (i = 0; i < count; i++) {
