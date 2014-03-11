@@ -11,7 +11,7 @@
 #include "shm.h"
 #include "trinity.h"	// page_size
 
-/* Walk the list, get the j'th element */
+/* Walk a list, get a random element */
 static struct map * __get_map(struct list_head *head, unsigned int max)
 {
 	struct list_head *node;
@@ -32,6 +32,8 @@ static struct map * __get_map(struct list_head *head, unsigned int max)
 	return NULL;
 }
 
+/* Return a pointer a previous mmap() that we did, either during startup,
+ * or from a fuzz result. */
 struct map * get_map(void)
 {
 	struct map *map;
@@ -61,6 +63,7 @@ static void delete_local_mapping(int childno, struct map *map)
 	shm->num_mappings[childno]--;
 }
 
+/* Called from munmap()'s ->post routine. */
 void delete_mapping(int childno, struct map *map)
 {
 	if (map->type == MAP_LOCAL)
@@ -69,6 +72,7 @@ void delete_mapping(int childno, struct map *map)
 	/* Right now, we don't want to delete MAP_GLOBAL mappings */
 }
 
+/* used in several sanitise_* functions. */
 struct map * common_set_mmap_ptr_len(int childno)
 {
 	struct map *map;
@@ -87,13 +91,19 @@ struct map * common_set_mmap_ptr_len(int childno)
 	return map;
 }
 
+/*
+ * Routine to perform various kinds of write operations to a mapping
+ * that we created.
+ */
 void dirty_mapping(struct map *map)
 {
 	char *p = map->ptr;
 	unsigned int i;
 	unsigned int num_pages = map->size / page_size;
 
-	/* Check mapping is writable. */
+	/* Check mapping is writable, or we'll segv.
+	 * TODO: Perhaps we should do that, and trap it, mark it writable,
+	 * then reprotect after we dirtied it ? */
 	if (!(map->prot & PROT_WRITE))
 		return;
 
