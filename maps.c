@@ -37,13 +37,15 @@ struct map * get_map(void)
 	struct map *map;
 	bool local = FALSE;
 
-	/* If we're not running in child context, just do shared mappings. */
-	if (this_child == 0)
-		return __get_map(&shared_mappings->list, num_shared_mappings);
-
-	/* Only toss the dice if we actually have local mappings. */
-	if (shm->num_mappings[this_child] > 0)
-		local = rand_bool();
+	/* We can get called by child processes, and also during startup by
+	 * the main process when it constructs page_rand etc.
+	 * If we're not running in child context, just do shared mappings.
+	 * because main doesn't have any 'local' mappings.
+	 */
+	if (this_child != 0) {
+		if (shm->num_mappings[this_child] > 0)
+			local = rand_bool();
+	}
 
 	if (local == TRUE)
 		map = __get_map(&shm->mappings[this_child]->list, shm->num_mappings[this_child]);
