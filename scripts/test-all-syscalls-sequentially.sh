@@ -3,8 +3,15 @@
 # This is a useful test to run occasionally, to see which syscalls are
 # causing trinity to segfault.
 
-TRINITY_PATH=${TRINITY_PATH:-.}
-TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
+OLDPATH=$(pwd)
+TRINITY_PATH=${TRINITY_PATH:-$OLDPATH}
+
+if [ -d tmp ]; then
+  TRINITY_TMP=$(mktemp -d $(pwd)/tmp/trinity.XXXXXX)
+else
+  TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
+fi
+
 
 check_tainted()
 {
