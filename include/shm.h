@@ -7,6 +7,7 @@
 
 #include "constants.h"
 #include "exit.h"
+#include "locks.h"
 #include "net.h"
 #include "types.h"
 
@@ -95,8 +96,8 @@ struct shm_s {
 
 	/* locks */
 	volatile unsigned char regenerating;
-	volatile unsigned char reaper_lock;
-	volatile unsigned char syscall_lock;
+	lock_t reaper_lock;
+	lock_t syscall_lock;
 
 	bool ready;
 };
