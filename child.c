@@ -126,7 +126,6 @@ void init_child(int childno)
 	cpu_set_t set;
 	pid_t pid = getpid();
 	char childname[17];
-	int ret = 0;
 
 	this_child = childno;
 
@@ -156,6 +155,8 @@ void init_child(int childno)
 
 	/* Wait for parent to set our pidslot */
 	while (shm->pids[childno] != getpid()) {
+		int ret = 0;
+
 		/* Make sure parent is actually alive to wait for us. */
 		ret = pid_alive(shm->mainpid);
 		if (ret != 0) {
