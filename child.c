@@ -109,10 +109,24 @@ static void setup_page_maps(void)
 	}
 }
 
+static void oom_score_adj(int adj)
+{
+	FILE *fp;
+
+	fp = fopen("/proc/self/oom_score_adj", "w");
+	if (!fp)
+		return;
+
+	fprintf(fp, "%d", adj);
+	fclose(fp);
+}
+
 void init_child(int childno)
 {
 	cpu_set_t set;
 	pid_t pid = getpid();
+	char childname[17];
+	int ret = 0;
 
 	this_child = childno;
 
@@ -134,10 +148,33 @@ void init_child(int childno)
 
 	shm->child_syscall_count[childno] = 0;
 
+	memset(childname, 0, sizeof(childname));
+	sprintf(childname, "trinity-c%d", childno);
+	prctl(PR_SET_NAME, (unsigned long) &childname);
+
+	oom_score_adj(500);
+
+	/* Wait for parent to set our pidslot */
+	while (shm->pids[childno] != getpid()) {
+		/* Make sure parent is actually alive to wait for us. */
+		ret = pid_alive(shm->mainpid);
+		if (ret != 0) {
+			shm->exit_reason = EXIT_SHM_CORRUPTION;
+			outputerr(BUGTXT "parent (%d) went away!\n", shm->mainpid);
+			sleep(20000);
+		}
+	}
+
+	/* Wait for all the children to start up. */
+	while (shm->ready == FALSE)
+		sleep(1);
+
 	set_make_it_fail();
 
 	if (rand() % 100 < 50)
 		use_fpu();
+
+	mask_signals_child();
 
 	disable_coredumps();
 }
