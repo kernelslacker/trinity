@@ -331,7 +331,13 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'V':
-			victim_path = strdup(optarg);
+			if (victim_path == NULL) {
+				victim_path = strdup(optarg);
+				break;
+			} else {
+				outputstd("Sorry, only one victim path right now.\n");
+				exit(EXIT_FAILURE);
+			}
 			//FIXME: Later, allow for multiple victim files
 			break;
 
