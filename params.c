@@ -50,9 +50,9 @@ bool user_set_seed = FALSE;
 
 unsigned char desired_group = GROUP_NONE;
 
-char *specific_proto_optarg;
+char *specific_proto_optarg = NULL;
 
-char *victim_path;
+char *victim_path = NULL;
 
 int kernel_taint_initial = 0;
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
