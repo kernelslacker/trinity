@@ -45,18 +45,6 @@ int check_tainted(void)
 	return ret;
 }
 
-static void oom_score_adj(int adj)
-{
-	FILE *fp;
-
-	fp = fopen("/proc/self/oom_score_adj", "w");
-	if (!fp)
-		return;
-
-	fprintf(fp, "%d", adj);
-	fclose(fp);
-}
-
 /* Generate children*/
 static void fork_children(void)
 {
@@ -98,42 +86,16 @@ static void fork_children(void)
 				output(0, "couldn't create child! (%s)\n", strerror(errno));
 				shm->exit_reason = EXIT_FORK_FAILURE;
 				exit(EXIT_FAILURE);
-			} else
+			} else {
 				shm->pids[pidslot] = pid;
+			}
 		} else {
 			/* Child process. */
-			char childname[17];
 			int ret = 0;
 
-			mask_signals_child();
-
-			memset(childname, 0, sizeof(childname));
-			sprintf(childname, "trinity-c%d", pidslot);
-			prctl(PR_SET_NAME, (unsigned long) &childname);
-
-			oom_score_adj(500);
-
-			/* Wait for parent to set our pidslot */
-			while (shm->pids[pidslot] != getpid()) {
-				/* Make sure parent is actually alive to wait for us. */
-				ret = pid_alive(shm->mainpid);
-				if (ret != 0) {
-					shm->exit_reason = EXIT_SHM_CORRUPTION;
-					outputerr(BUGTXT "parent (%d) went away!\n", shm->mainpid);
-					sleep(20000);
-				}
-			}
-
-			/* Wait for all the children to start up. */
-			while (shm->ready == FALSE)
-				sleep(1);
-
 			init_child(pidslot);
-
 			ret = child_process(pidslot);
-
 			output(1, "child exiting.\n");
-
 			_exit(ret);
 		}
 		shm->running_childs++;
