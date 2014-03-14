@@ -3,13 +3,15 @@
 
 void lock(lock_t *_lock)
 {
-	while (*_lock == LOCKED)
+	while (_lock->lock == LOCKED)
 		usleep(1);
 
-	*_lock = LOCKED;
+	_lock->lock = LOCKED;
+	_lock->owner = getpid();
 }
 
 void unlock(lock_t *_lock)
 {
-	*_lock = UNLOCKED;
+	_lock->lock = UNLOCKED;
+	_lock->owner = 0;
 }
