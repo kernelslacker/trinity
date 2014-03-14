@@ -88,7 +88,7 @@ static void fork_children(void)
 
 			init_child(pidslot);
 			ret = child_process(pidslot);
-			output(1, "child exiting.\n");
+			output(1, "child %d exiting.\n", pidslot);
 			_exit(ret);
 		} else {
 			if (pid == -1) {
