@@ -81,15 +81,8 @@ static void fork_children(void)
 		(void)alarm(0);
 		fflush(stdout);
 		pid = fork();
-		if (pid != 0) {
-			if (pid == -1) {
-				output(0, "couldn't create child! (%s)\n", strerror(errno));
-				shm->exit_reason = EXIT_FORK_FAILURE;
-				exit(EXIT_FAILURE);
-			} else {
-				shm->pids[pidslot] = pid;
-			}
-		} else {
+
+		if (pid == 0) {
 			/* Child process. */
 			int ret = 0;
 
@@ -97,8 +90,17 @@ static void fork_children(void)
 			ret = child_process(pidslot);
 			output(1, "child exiting.\n");
 			_exit(ret);
+		} else {
+			if (pid == -1) {
+				output(0, "couldn't create child! (%s)\n", strerror(errno));
+				shm->exit_reason = EXIT_FORK_FAILURE;
+				exit(EXIT_FAILURE);
+			}
 		}
+
+		shm->pids[pidslot] = pid;
 		shm->running_childs++;
+
 		debugf("Created child %d in pidslot %d [total:%d/%d]\n",
 			shm->pids[pidslot], pidslot,
 			shm->running_childs, max_children);
