@@ -8,6 +8,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#if 0
 static void do_sso_sockets(void)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
@@ -20,6 +21,7 @@ static void do_sso_sockets(void)
 		sso_socket(&shm->sockets[i].triplet, &so, fd);
 	}
 }
+#endif
 
 void regenerate(void)
 {
@@ -41,7 +43,15 @@ void regenerate(void)
 	regenerate_fds();
 
 	/* Do random setsockopts on all network sockets. */
-	do_sso_sockets();
+	/* FIXME: Disabled for now.
+	 *
+	 * There's a problem if we have a child doing a read on a socket that blocks
+	 * (like some weirdo ax25 socket for eg). The setsockopt will block on it.
+	 *
+	 * I'm not sure what to do about this problem yet.
+	 * Maybe try waiting for nr_children to drop to zero when need_regenerate == 1 ?
+	 */
+	//do_sso_sockets();
 
 	destroy_shared_mappings();
 	setup_shared_mappings();
