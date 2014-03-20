@@ -7,7 +7,6 @@
 #include <sys/socket.h>
 #include "compat.h"
 #include "sanitise.h"
-#include "shm.h"
 
 struct syscallentry syscall_sendto = {
 	.name = "sendto",
