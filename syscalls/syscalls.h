@@ -153,7 +153,6 @@ extern struct syscallentry syscall_mlockall;
 extern struct syscallentry syscall_mlock;
 extern struct syscallentry syscall_mmap2;
 extern struct syscallentry syscall_mmap;
-extern struct syscallentry syscall_mmap_pgoff;
 extern struct syscallentry syscall_modify_ldt;
 extern struct syscallentry syscall_mount;
 extern struct syscallentry syscall_move_pages;
