@@ -65,9 +65,13 @@ static void sanitise_mmap(int childno)
 	if (shm->a4[childno] & MAP_ANONYMOUS) {
 		do_anon(childno);
 	} else {
-		/* page align non-anonymous mappings. */
-		shm->a6[childno] &= PAGE_MASK;
-		//FIXME: If we get from sys_mmap2, we need to adjust in terms of pages.
+		if (this_syscallname("mmap2", childno) == TRUE) {
+			/* mmap2 counts in 4K units */
+			shm->a6[childno] /= 4096;
+		} else {
+			/* page align non-anonymous mappings. */
+			shm->a6[childno] &= PAGE_MASK;
+		}
 	}
 }
 
