@@ -33,7 +33,7 @@ static void do_anon(int childno)
 	shm->a6[childno] = 0;
 }
 
-void sanitise_mmap(int childno)
+static void sanitise_mmap(int childno)
 {
 	unsigned int i;
 	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
