@@ -49,6 +49,7 @@ struct shm_s {
 
 	unsigned int running_childs;
 	struct timeval *tv;
+	struct timeval taint_tv;
 
 	FILE **logfiles;
 
