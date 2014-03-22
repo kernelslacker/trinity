@@ -3,7 +3,6 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-void sanitise_mmap(int childno);
 void sanitise_rt_sigaction(int childno);
 void sanitise_prctl(int childno);
 void sanitise_perf_event_open(int childno);
