@@ -53,7 +53,6 @@ char *specific_proto_optarg = NULL;
 
 char *victim_path = NULL;
 
-int kernel_taint_initial = 0;
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
 bool kernel_taint_param_occured = FALSE;
 
