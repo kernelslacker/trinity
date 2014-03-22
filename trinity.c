@@ -20,6 +20,7 @@
 #include "protocols.h"
 #include "uid.h"
 #include "config.h"	// for VERSION
+#include "taint.h"
 
 char *progname = NULL;
 
