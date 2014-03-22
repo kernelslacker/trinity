@@ -21,30 +21,6 @@
 #include "syscall.h"
 #include "trinity.h"
 
-int check_tainted(void)
-{
-	int fd;
-	unsigned int ret;
-	char buffer[11];
-
-	buffer[10] = 0; //make sure that we can fit the whole int.
-
-	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
-	if (fd < 0)
-		return -1;
-	ret = read(fd, buffer, 10);
-	close(fd);
-
-	if (ret > 0)
-		ret = atoi(buffer);
-	else {
-		/* We should never fail, but if we do, assume untainted. */
-		ret = 0;
-	}
-
-	return ret;
-}
-
 /* Generate children*/
 static void fork_children(void)
 {

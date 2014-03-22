@@ -11,8 +11,6 @@ extern char *progname;
 
 void main_loop(void);
 
-int check_tainted(void);
-
 void init_watchdog(void);
 unsigned int check_if_fd(unsigned int child);
 

@@ -21,6 +21,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "tables.h"
+#include "taint.h"
 #include "trinity.h" //check_taint
 
 pid_t watchdog_pid;
