@@ -379,6 +379,8 @@ static void watchdog(void)
 		if (kernel_taint_mask != 0) {
 			ret = check_tainted();
 			if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0) {
+				gettimeofday(&shm->taint_tv, NULL);
+
 				output(0, "kernel became tainted! (%d/%d) Last seed was %u\n", ret, kernel_taint_initial, shm->seed);
 				shm->exit_reason = EXIT_KERNEL_TAINTED;
 			}
