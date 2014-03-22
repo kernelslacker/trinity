@@ -12,12 +12,8 @@
 #include "shm.h"
 #include "tables.h"
 
-struct syscallentry syscall_sync_file_range;
-
 static void sanitise_sync_file_range(int childno)
 {
-	unsigned int call = shm->syscallno[childno];
-	struct syscallentry *syscall_entry = syscalls[call].entry;
 	long endbyte;
 	loff_t nbytes;
 	loff_t off;
@@ -32,7 +28,7 @@ retry:
 	if (off >= (0x100000000LL << PAGE_SHIFT))
 		goto retry;
 
-	if (strcmp("sync_file_range2", syscall_entry->name) == 0) {
+	if (this_syscallname("sync_file_range2", childno) == FALSE) {
 		shm->a2[childno] = off;
 		shm->a3[childno] = nbytes;
 	} else {

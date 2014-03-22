@@ -214,3 +214,11 @@ skip_enosys:
 
 	return ret;
 }
+
+bool this_syscallname(const char *thisname, int childno)
+{
+	unsigned int call = shm->syscallno[childno];
+	struct syscallentry *syscall_entry = syscalls[call].entry;
+
+	return strcmp(thisname, syscall_entry->name);
+}
