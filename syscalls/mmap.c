@@ -1,7 +1,9 @@
 /*
  * SYSCALL_DEFINE6(mmap, unsigned long, addr, unsigned long, len,
 	unsigned long, prot, unsigned long, flags,
-	unsigned long, fd, unsigned long, off)
+	unsigned long, fd, unsigned long, offset)
+ *
+ * sys_mmap2 (unsigned long addr, unsigned long len, int prot, int flags, int fd, long pgoff)
  */
 #include <stdlib.h>
 #include <string.h>
@@ -65,6 +67,7 @@ void sanitise_mmap(int childno)
 	} else {
 		/* page align non-anonymous mappings. */
 		shm->a6[childno] &= PAGE_MASK;
+		//FIXME: If we get from sys_mmap2, we need to adjust in terms of pages.
 	}
 }
 
@@ -152,6 +155,38 @@ struct syscallentry syscall_mmap = {
 	.arg5name = "fd",
 	.arg5type = ARG_FD,
 	.arg6name = "off",
+	.arg6type = ARG_LEN,
+
+	.group = GROUP_VM,
+	.flags = NEED_ALARM,
+};
+
+struct syscallentry syscall_mmap2 = {
+	.name = "mmap2",
+	.num_args = 6,
+
+	.sanitise = sanitise_mmap,
+	.post = post_mmap,
+	.decode = decode_mmap,
+
+	.arg1name = "addr",
+	.arg2name = "len",
+	.arg2type = ARG_LEN,
+	.arg3name = "prot",
+	.arg3type = ARG_LIST,
+	.arg3list = {
+		.num = 4,
+		.values = { PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM },
+	},
+	.arg4name = "flags",
+	.arg4type = ARG_OP,
+	.arg4list = {
+		.num = 2,
+		.values = { MAP_SHARED, MAP_PRIVATE },
+	},
+	.arg5name = "fd",
+	.arg5type = ARG_FD,
+	.arg6name = "pgoff",
 	.arg6type = ARG_LEN,
 
 	.group = GROUP_VM,
