@@ -9,6 +9,8 @@
 #include "types.h"
 #include "taint.h"
 
+int kernel_taint_initial = 0;
+
 int check_tainted(void)
 {
 	int fd;

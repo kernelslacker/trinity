@@ -48,7 +48,6 @@ extern bool no_files;
 extern bool random_selection;
 extern unsigned int random_selection_num;
 
-extern int kernel_taint_initial;
 extern unsigned int kernel_taint_mask;
 extern bool kernel_taint_param_occured;
 
