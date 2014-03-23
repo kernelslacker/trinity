@@ -13,12 +13,12 @@
 void sanitise_rt_sigaction(int childno)
 {
 	if (rand_bool())
-		shm->a2[childno] = 0;
+		shm->syscall[childno].a2 = 0;
 
 	if (rand_bool())
-		shm->a3[childno] = 0;
+		shm->syscall[childno].a3 = 0;
 
-	shm->a4[childno] = sizeof(sigset_t);
+	shm->syscall[childno].a4 = sizeof(sigset_t);
 }
 
 struct syscallentry syscall_rt_sigaction = {

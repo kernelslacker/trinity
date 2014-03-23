@@ -9,8 +9,8 @@ static void sanitise_pwrite64(int childno)
 {
 
 retry_pos:
-	if ((int) shm->a4[childno] < 0) {
-		shm->a4[childno] = rand64();
+	if ((int) shm->syscall[childno].a4 < 0) {
+		shm->syscall[childno].a4 = rand64();
 		goto retry_pos;
 	}
 }

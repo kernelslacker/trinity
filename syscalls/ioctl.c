@@ -16,20 +16,20 @@ static void ioctl_mangle_cmd(int childno)
 
 	/* mangle the cmd by ORing up to 4 random bits */
 	for (i=0; i < (unsigned int)(rand() % 4); i++)
-		shm->a2[childno] |= 1L << (rand() % 32);
+		shm->syscall[childno].a2 |= 1L << (rand() % 32);
 
 	/* mangle the cmd by ANDing up to 4 random bits */
 	for (i=0; i < (unsigned int)(rand() % 4); i++)
-		shm->a2[childno] &= 1L << (rand() % 32);
+		shm->syscall[childno].a2 &= 1L << (rand() % 32);
 }
 
 static void ioctl_mangle_arg(int childno)
 {
 	/* the argument could mean anything, because ioctl sucks like that. */
 	if (rand_bool())
-		shm->a3[childno] = rand32();
+		shm->syscall[childno].a3 = rand32();
 	else
-		shm->a3[childno] = (unsigned long) get_non_null_address();
+		shm->syscall[childno].a3 = (unsigned long) get_non_null_address();
 }
 
 static void generic_sanitise_ioctl(int childno)
@@ -47,7 +47,7 @@ static void sanitise_ioctl(int childno)
 	if (rand() % 100 == 0)
 		grp = get_random_ioctl_group();
 	else
-		grp = find_ioctl_group(shm->a1[childno]);
+		grp = find_ioctl_group(shm->syscall[childno].a1);
 
 	if (grp) {
 		ioctl_mangle_arg(childno);

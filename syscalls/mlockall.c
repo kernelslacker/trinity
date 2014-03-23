@@ -11,13 +11,13 @@
 
 static void sanitise_mlockall(int childno)
 {
-	if (shm->a1[childno] != 0)
+	if (shm->syscall[childno].a1 != 0)
 		return;
 
 	if (rand_bool())
-		shm->a1[childno] = MCL_CURRENT;
+		shm->syscall[childno].a1 = MCL_CURRENT;
 	else
-		shm->a1[childno] = MCL_FUTURE;
+		shm->syscall[childno].a1 = MCL_FUTURE;
 }
 
 

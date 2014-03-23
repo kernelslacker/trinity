@@ -204,19 +204,19 @@ static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned 
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_IOVECLEN)
-			shm->a2[childno] = num_entries;
+			shm->syscall[childno].a2 = num_entries;
 		break;
 	case 2:	if (entry->arg3type == ARG_IOVECLEN)
-			shm->a3[childno] = num_entries;
+			shm->syscall[childno].a3 = num_entries;
 		break;
 	case 3:	if (entry->arg4type == ARG_IOVECLEN)
-			shm->a4[childno] = num_entries;
+			shm->syscall[childno].a4 = num_entries;
 		break;
 	case 4:	if (entry->arg5type == ARG_IOVECLEN)
-			shm->a5[childno] = num_entries;
+			shm->syscall[childno].a5 = num_entries;
 		break;
 	case 5:	if (entry->arg6type == ARG_IOVECLEN)
-			shm->a6[childno] = num_entries;
+			shm->syscall[childno].a6 = num_entries;
 		break;
 	}
 	return (unsigned long) alloc_iovec(num_entries);
@@ -231,12 +231,12 @@ static unsigned long handle_arg_len_already_set(int childno, unsigned long argnu
 	 * So here we just return what we had set there.
 	 */
 	switch (argnum) {
-	case 1:	r = shm->a1[childno]; break;
-	case 2:	r = shm->a2[childno]; break;
-	case 3:	r = shm->a3[childno]; break;
-	case 4:	r = shm->a4[childno]; break;
-	case 5:	r = shm->a5[childno]; break;
-	case 6:	r = shm->a6[childno]; break;
+	case 1:	r = shm->syscall[childno].a1; break;
+	case 2:	r = shm->syscall[childno].a2; break;
+	case 3:	r = shm->syscall[childno].a3; break;
+	case 4:	r = shm->syscall[childno].a4; break;
+	case 5:	r = shm->syscall[childno].a5; break;
+	case 6:	r = shm->syscall[childno].a6; break;
 	}
 	return r;
 }
@@ -253,19 +253,19 @@ static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsign
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_SOCKADDRLEN)
-			shm->a2[childno] = sockaddrlen;
+			shm->syscall[childno].a2 = sockaddrlen;
 		break;
 	case 2:	if (entry->arg3type == ARG_SOCKADDRLEN)
-			shm->a3[childno] = sockaddrlen;
+			shm->syscall[childno].a3 = sockaddrlen;
 		break;
 	case 3:	if (entry->arg4type == ARG_SOCKADDRLEN)
-			shm->a4[childno] = sockaddrlen;
+			shm->syscall[childno].a4 = sockaddrlen;
 		break;
 	case 4:	if (entry->arg5type == ARG_SOCKADDRLEN)
-			shm->a5[childno] = sockaddrlen;
+			shm->syscall[childno].a5 = sockaddrlen;
 		break;
 	case 5:	if (entry->arg6type == ARG_SOCKADDRLEN)
-			shm->a6[childno] = sockaddrlen;
+			shm->syscall[childno].a6 = sockaddrlen;
 		break;
 	case 6:
 		break;
@@ -391,20 +391,20 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 void generic_sanitise(int childno)
 {
 	struct syscallentry *entry;
-	unsigned int call = shm->syscallno[childno];
+	unsigned int call = shm->syscall[childno].nr;
 
 	entry = syscalls[call].entry;
 
 	if (entry->arg1type != 0)
-		shm->a1[childno] = fill_arg(childno, call, 1);
+		shm->syscall[childno].a1 = fill_arg(childno, call, 1);
 	if (entry->arg2type != 0)
-		shm->a2[childno] = fill_arg(childno, call, 2);
+		shm->syscall[childno].a2 = fill_arg(childno, call, 2);
 	if (entry->arg3type != 0)
-		shm->a3[childno] = fill_arg(childno, call, 3);
+		shm->syscall[childno].a3 = fill_arg(childno, call, 3);
 	if (entry->arg4type != 0)
-		shm->a4[childno] = fill_arg(childno, call, 4);
+		shm->syscall[childno].a4 = fill_arg(childno, call, 4);
 	if (entry->arg5type != 0)
-		shm->a5[childno] = fill_arg(childno, call, 5);
+		shm->syscall[childno].a5 = fill_arg(childno, call, 5);
 	if (entry->arg6type != 0)
-		shm->a6[childno] = fill_arg(childno, call, 6);
+		shm->syscall[childno].a6 = fill_arg(childno, call, 6);
 }

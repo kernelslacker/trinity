@@ -7,7 +7,7 @@
 
 static void sanitise_set_robust_list(int childno)
 {
-	shm->a2[childno] = sizeof(struct robust_list_head);
+	shm->syscall[childno].a2 = sizeof(struct robust_list_head);
 }
 
 struct syscallentry syscall_set_robust_list = {

@@ -29,11 +29,11 @@ retry:
 		goto retry;
 
 	if (this_syscallname("sync_file_range2", childno) == FALSE) {
-		shm->a2[childno] = off;
-		shm->a3[childno] = nbytes;
+		shm->syscall[childno].a2 = off;
+		shm->syscall[childno].a3 = nbytes;
 	} else {
-		shm->a3[childno] = off;
-		shm->a4[childno] = nbytes;
+		shm->syscall[childno].a3 = off;
+		shm->syscall[childno].a4 = nbytes;
 	}
 }
 

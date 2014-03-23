@@ -22,7 +22,7 @@ static void sanitise_sendmsg(int childno)
 
 	if (msg == NULL) {
 		// just do something weird.
-		shm->a2[childno] = (unsigned long) get_address();
+		shm->syscall[childno].a2 = (unsigned long) get_address();
 		return;
 	}
 
@@ -37,7 +37,7 @@ static void sanitise_sendmsg(int childno)
 	msg->msg_controllen = get_len();
 	msg->msg_flags = rand32();
 
-	shm->a2[childno] = (unsigned long) msg;
+	shm->syscall[childno].a2 = (unsigned long) msg;
 }
 
 static void post_sendmsg(int childno)

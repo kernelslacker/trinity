@@ -12,7 +12,7 @@ static void sanitise_sched_getattr(int childno)
 {
 	unsigned long range = page_size - SCHED_ATTR_SIZE_VER0;
 
-	shm->a3[childno] = (rand() % range) + SCHED_ATTR_SIZE_VER0;
+	shm->syscall[childno].a3 = (rand() % range) + SCHED_ATTR_SIZE_VER0;
 }
 
 struct syscallentry syscall_sched_getattr = {

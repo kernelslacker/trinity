@@ -7,7 +7,7 @@
 
 static void sanitise_setuid(int childno)
 {
-	shm->a1[childno] = rand32();
+	shm->syscall[childno].a1 = rand32();
 }
 
 struct syscallentry syscall_setuid = {

@@ -91,7 +91,7 @@ void pick_random_ioctl(const struct ioctl_group *grp, int childno)
 
 	ioctlnr = rand() % grp->ioctls_cnt;
 
-	shm->a2[childno] = grp->ioctls[ioctlnr].request;
+	shm->syscall[childno].a2 = grp->ioctls[ioctlnr].request;
 }
 
 void dump_ioctls(void)

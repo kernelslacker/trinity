@@ -15,8 +15,8 @@
 static void sanitise_tee(int childno)
 {
 	if ((rand() % 10) > 0) {
-		shm->a1[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		shm->a2[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		shm->syscall[childno].a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		shm->syscall[childno].a2 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
 	}
 }
 

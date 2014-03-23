@@ -61,7 +61,7 @@ static void sanitise_move_pages(int childno)
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
 	count = max(1, count);
-	shm->a2[childno] = count;
+	shm->syscall[childno].a2 = count;
 
 	/* setup array of ptrs to pages to move */
 	page_alloc = (unsigned long *) zmalloc(page_size);
@@ -83,20 +83,20 @@ static void sanitise_move_pages(int childno)
 			pagetypes[i] = WAS_MAP;
 		}
 	}
-	shm->a3[childno] = (unsigned long) page_alloc;
+	shm->syscall[childno].a3 = (unsigned long) page_alloc;
 
 	/* nodes = array of ints specifying desired location for each page */
 	nodes = malloc(count * sizeof(int));
 	for (i = 0; i < count; i++)
 		nodes[i] = (int) rand() % 2;
-	shm->a4[childno] = (unsigned long) nodes;
+	shm->syscall[childno].a4 = (unsigned long) nodes;
 
 	/* status = array of ints returning status of each page.*/
-	shm->a5[childno] = (unsigned long) zmalloc(count * sizeof(int));
+	shm->syscall[childno].a5 = (unsigned long) zmalloc(count * sizeof(int));
 
 	/* Needs CAP_SYS_NICE */
 	if (getuid() != 0)
-		shm->a6[childno] &= ~MPOL_MF_MOVE_ALL;
+		shm->syscall[childno].a6 &= ~MPOL_MF_MOVE_ALL;
 }
 
 static void post_move_pages(int childno)

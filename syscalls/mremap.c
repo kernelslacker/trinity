@@ -27,12 +27,12 @@ static void sanitise_mremap(int childno)
 
 	map = common_set_mmap_ptr_len(childno);
 
-	shm->a3[childno] = map->size;		//TODO: Munge this.
+	shm->syscall[childno].a3 = map->size;		//TODO: Munge this.
 
-	if (shm->a4[childno] & MREMAP_FIXED) {
-		shm->a5[childno] = rand_size();
+	if (shm->syscall[childno].a4 & MREMAP_FIXED) {
+		shm->syscall[childno].a5 = rand_size();
 	} else {
-		shm->a5[childno] = 0;
+		shm->syscall[childno].a5 = 0;
 	}
 
 	/* Sometimes dirty the mapping first. */
@@ -50,7 +50,7 @@ static void sanitise_mremap(int childno)
 static void post_mremap(int childno)
 {
 	struct map *map = (struct map *) shm->scratch[childno];
-	void *ptr = (void *) shm->retval[childno];
+	void *ptr = (void *) shm->syscall[childno].retval;
 
 	if (ptr != MAP_FAILED)
 		map->ptr = ptr;

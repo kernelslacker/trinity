@@ -58,15 +58,15 @@ static void sanitise_socketcall(int childno)
 
 	args = malloc(6 * sizeof(unsigned long));
 
-	shm->a1[childno] = rand() % 20;
-	shm->a1[childno] = SYS_SOCKET;
+	shm->syscall[childno].a1 = rand() % 20;
+	shm->syscall[childno].a1 = SYS_SOCKET;
 
 	for (i = 0; i < ARRAY_SIZE(socketcallptrs); i++) {
-		if (socketcallptrs[i].call == shm->a1[childno])
+		if (socketcallptrs[i].call == shm->syscall[childno].a1)
 			socketcallptrs[i].func(args);
 	}
 
-	shm->a2[childno] = (unsigned long) args;
+	shm->syscall[childno].a2 = (unsigned long) args;
 }
 
 struct syscallentry syscall_socketcall = {

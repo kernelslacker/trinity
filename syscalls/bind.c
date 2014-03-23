@@ -14,7 +14,7 @@ static void dump(int childno)
 {
 	struct sockaddr_in *ipv4;
 
-	ipv4 = (struct sockaddr_in *) shm->a2[childno];
+	ipv4 = (struct sockaddr_in *) shm->syscall[childno].a2;
 	output(1, "(sin_family=%d sin_addr.s_addr=%d.%d.%d.%d sin_port=%d)\n",
 		ipv4->sin_family,
 		(ipv4->sin_addr.s_addr & 0xff000000) >> 24,

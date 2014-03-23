@@ -15,6 +15,18 @@ void create_shm(void);
 void create_shm_arrays(void);
 void init_shm(void);
 
+struct syscallrecord {
+	unsigned int nr;	/* protected by syscall_lock */
+	unsigned long a1;
+	unsigned long a2;
+	unsigned long a3;
+	unsigned long a4;
+	unsigned long a5;
+	unsigned long a6;
+	unsigned long retval;
+	bool do32bit;		/* protected by syscall_lock */
+};
+
 struct shm_s {
 	unsigned long total_syscalls_done;
 	unsigned long successes;
@@ -62,7 +74,7 @@ struct shm_s {
 	struct socketinfo sockets[NR_SOCKET_FDS];
 
 	/* state for the syscall currently in progress. */
-	unsigned int *previous_syscallno;
+	unsigned int *previous_nr;
 	unsigned long *previous_a1;
 	unsigned long *previous_a2;
 	unsigned long *previous_a3;
@@ -70,15 +82,7 @@ struct shm_s {
 	unsigned long *previous_a5;
 	unsigned long *previous_a6;
 
-	unsigned int *syscallno;	/* protected by syscall_lock */
-	unsigned long *a1;
-	unsigned long *a2;
-	unsigned long *a3;
-	unsigned long *a4;
-	unsigned long *a5;
-	unsigned long *a6;
-
-	unsigned long *retval;
+	struct syscallrecord *syscall;	/* FIXME: protect all accesses with syscall_lock */
 
 	unsigned long *scratch;
 
@@ -90,7 +94,6 @@ struct shm_s {
 	unsigned int *num_mappings;
 
 	/* various flags. */
-	bool *do32bit;			/* protected by syscall_lock */
 	bool do_make_it_fail;
 	bool need_reseed;
 	enum exit_reasons exit_reason;

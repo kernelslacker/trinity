@@ -21,13 +21,13 @@ static void sanitise_splice(int childno)
 		return;
 
 	if (rand_bool()) {
-		shm->a1[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		shm->a2[childno] = 0;
+		shm->syscall[childno].a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		shm->syscall[childno].a2 = 0;
 	}
 
 	if (rand_bool()) {
-		shm->a3[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		shm->a4[childno] = 0;
+		shm->syscall[childno].a3 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		shm->syscall[childno].a4 = 0;
 	}
 }
 

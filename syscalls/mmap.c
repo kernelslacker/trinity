@@ -29,8 +29,8 @@
 static void do_anon(int childno)
 {
 	/* no fd if anonymous mapping. */
-	shm->a5[childno] = -1;
-	shm->a6[childno] = 0;
+	shm->syscall[childno].a5 = -1;
+	shm->syscall[childno].a6 = 0;
 }
 
 static void sanitise_mmap(int childno)
@@ -54,25 +54,25 @@ static void sanitise_mmap(int childno)
 	sizes[0] = page_size;
 
 	/* Don't actually set a hint right now. */
-	shm->a1[childno] = 0;
+	shm->syscall[childno].a1 = 0;
 
 	// set additional flags
 	for (i = 0; i < numflags; i++)
-		shm->a4[childno] |= flagvals[rand() % NUM_FLAGS];
+		shm->syscall[childno].a4 |= flagvals[rand() % NUM_FLAGS];
 
-	if (shm->a4[childno] & MAP_ANONYMOUS) {
-		shm->a2[childno] = sizes[rand() % ARRAY_SIZE(sizes)];
+	if (shm->syscall[childno].a4 & MAP_ANONYMOUS) {
+		shm->syscall[childno].a2 = sizes[rand() % ARRAY_SIZE(sizes)];
 		do_anon(childno);
 	} else {
 		if (this_syscallname("mmap2", childno) == TRUE) {
 			/* mmap2 counts in 4K units */
-			shm->a6[childno] /= 4096;
+			shm->syscall[childno].a6 /= 4096;
 		} else {
 			/* page align non-anonymous mappings. */
-			shm->a6[childno] &= PAGE_MASK;
+			shm->syscall[childno].a6 &= PAGE_MASK;
 		}
 
-		shm->a2[childno] = page_size;
+		shm->syscall[childno].a2 = page_size;
 	}
 }
 
@@ -82,14 +82,14 @@ static void post_mmap(int childno)
 	struct list_head *list;
 	struct map *new;
 
-	p = (void *) shm->retval[childno];
+	p = (void *) shm->syscall[childno].retval;
 	if (p == MAP_FAILED)
 		return;
 
 	new = zmalloc(sizeof(struct map));
 	new->name = strdup("misc");
-	new->size = shm->a2[childno];
-	new->prot = shm->a3[childno];
+	new->size = shm->syscall[childno].a2;
+	new->prot = shm->syscall[childno].a3;
 //TODO: store fd if !anon
 	new->ptr = p;
 	new->type = MAP_LOCAL;
@@ -109,7 +109,7 @@ static char * decode_mmap(int argnum, int childno)
 	char *buf;
 
 	if (argnum == 3) {
-		int flags = shm->a3[childno];
+		int flags = shm->syscall[childno].a3;
 		char *p;
 
 		p = buf = zmalloc(80);

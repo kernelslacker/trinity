@@ -77,16 +77,16 @@ struct map * common_set_mmap_ptr_len(int childno)
 {
 	struct map *map;
 
-	map = (struct map *) shm->a1[childno];
+	map = (struct map *) shm->syscall[childno].a1;
 	shm->scratch[childno] = (unsigned long) map;    /* Save this for ->post */
 	if (map == NULL) {
-		shm->a1[childno] = 0;
-		shm->a2[childno] = 0;
+		shm->syscall[childno].a1 = 0;
+		shm->syscall[childno].a2 = 0;
 		return NULL;
 	}
 
-	shm->a1[childno] = (unsigned long) map->ptr;
-	shm->a2[childno] = map->size;           //TODO: Munge this.
+	shm->syscall[childno].a1 = (unsigned long) map->ptr;
+	shm->syscall[childno].a2 = map->size;           //TODO: Munge this.
 
 	return map;
 }

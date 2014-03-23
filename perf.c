@@ -19,7 +19,7 @@ void open_perf_fds(void)
 		int fd;
 
 		sanitise_perf_event_open(0);
-		fd = syscall(__NR_perf_event_open, shm->a1[0], shm->a2[0], shm->a3[0], shm->a4[0], shm->a5[0]);
+		fd = syscall(__NR_perf_event_open, shm->syscall[0].a1, shm->syscall[0].a2, shm->syscall[0].a3, shm->syscall[0].a4, shm->syscall[0].a5);
 		if (fd != -1) {
 			shm->perf_fds[i] = fd;
 			output(2, "fd[%d] = perf\n", shm->perf_fds[i]);

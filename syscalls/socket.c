@@ -137,9 +137,9 @@ static void sanitise_socket(int childno)
 
 	gen_socket_args(&st);
 
-	shm->a1[childno] = st.family;
-	shm->a2[childno] = st.type;
-	shm->a3[childno] = st.protocol;
+	shm->syscall[childno].a1 = st.family;
+	shm->syscall[childno].a2 = st.type;
+	shm->syscall[childno].a3 = st.protocol;
 }
 
 struct syscallentry syscall_socket = {

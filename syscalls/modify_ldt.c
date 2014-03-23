@@ -19,7 +19,7 @@ static void sanitise_modify_ldt(int childno)
 	//struct user_desc *desc;
 
 	shm->scratch[childno] = 0;
-	switch (shm->a1[childno]) {
+	switch (shm->syscall[childno].a1) {
 	case 0:
 		/* read the ldt into the memory pointed to by ptr.
 		   The number of bytes read is the smaller of bytecount and the actual size of the ldt. */
@@ -27,7 +27,7 @@ static void sanitise_modify_ldt(int childno)
 		shm->scratch[childno] = (unsigned long) ldt;
 		if (ldt == NULL)
 			return;
-		shm->a3[childno] = ALLOCSIZE;
+		shm->syscall[childno].a3 = ALLOCSIZE;
 		break;
 
 	case 1:

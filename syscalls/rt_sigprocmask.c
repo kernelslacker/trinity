@@ -8,7 +8,7 @@
 
 static void sanitise_rt_sigprocmask(int childno)
 {
-	shm->a4[childno] = sizeof(sigset_t);
+	shm->syscall[childno].a4 = sizeof(sigset_t);
 }
 
 struct syscallentry syscall_rt_sigprocmask = {

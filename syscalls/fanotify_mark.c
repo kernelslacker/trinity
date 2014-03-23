@@ -42,10 +42,10 @@ static void sanitise_fanotify_mark(int childno)
 
 	// set additional flags
 	for (i = 0; i < numflags; i++)
-		shm->a2[childno] |= flagvals[i];
+		shm->syscall[childno].a2 |= flagvals[i];
 
 	// Set mask
-	shm->a3[childno] &= 0xffffffff;
+	shm->syscall[childno].a3 &= 0xffffffff;
 }
 
 struct syscallentry syscall_fanotify_mark = {

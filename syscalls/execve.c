@@ -43,10 +43,10 @@ static void sanitise_execve(__unused__ int childno)
 	fclose(stdin);
 
 	/* Fabricate argv */
-	shm->a2[childno] = (unsigned long) gen_ptrs_to_crap();
+	shm->syscall[childno].a2 = (unsigned long) gen_ptrs_to_crap();
 
 	/* Fabricate envp */
-	shm->a3[childno] = (unsigned long) gen_ptrs_to_crap();
+	shm->syscall[childno].a3 = (unsigned long) gen_ptrs_to_crap();
 }
 
 struct syscallentry syscall_execve = {

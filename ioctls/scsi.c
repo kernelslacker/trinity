@@ -112,14 +112,14 @@ static void scsi_sg_io_sanitise(int childno)
 	sgio->ioh.usr_ptr = NULL;
 	sgio->ioh.flags |= SG_FLAG_DIRECT_IO;
 
-	shm->a3[childno] = (unsigned long) page_rand;
+	shm->syscall[childno].a3 = (unsigned long) page_rand;
 }
 
 static void scsi_sanitise(const struct ioctl_group *grp, int childno)
 {
 	pick_random_ioctl(grp, childno);
 
-	switch (shm->a2[childno]) {
+	switch (shm->syscall[childno].a2) {
 	case SG_IO:
 		scsi_sg_io_sanitise(childno);
 		break;
