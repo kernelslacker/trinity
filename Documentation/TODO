@@ -162,10 +162,6 @@ maps.c improvements:
     - To begin with, just allow replay/bisect using one child process.
       Synchronising threads across different runs may be complicated.
 
-* Scalability improvements.
-  When running with lots of children, some of them get starved, and the watchdog goes nutty.
-  Not sure if it's worth replacing the arrays in the shm with lists.
-
 * Misc cleanups
   - syscall.c:syscall32()  hide the assembly in a macro in arch-*.h and only do it
      #ifdef HAVE_SYSCALL_32
