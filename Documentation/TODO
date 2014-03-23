@@ -136,12 +136,6 @@ maps.c improvements:
 * When we fuzz execve, do an extra fork, sleep for 3 seconds, kill the execve'd pid, and then exit.
 
 * Further syscall annotation improvements
-  - There are a few syscalls with duplicate '64' variants.
-    They take the same arguments, and vary only in name.
-    Two possibilities.
-    1. what I did for fcntl[64] in 22b4b44ececaf59f9178f52788e3bcfe92535574
-    2. leave the dupes, just for the sake of getting the ->name right.
-
   - Finish annotating syscall return types
 
 * structured logging.
