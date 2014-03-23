@@ -206,13 +206,13 @@ void check_parent_pid(void)
 	for_each_pidslot(i) {
 		// Skip over 'boring' entries.
 		if ((shm->pids[i] == EMPTY_PIDSLOT) &&
-		    (shm->previous_nr[i] == 0) &&
+		    (shm->previous[i].nr == 0) &&
 		    (shm->child_syscall_count[i] == 0))
 			continue;
 
 		output(0, "[%d]  pid:%d call:%s callno:%d\n",
 			i, shm->pids[i],
-			print_syscall_name(shm->previous_nr[i], shm->syscall[i].do32bit),	// FIXME: need previous do32bit
+			print_syscall_name(shm->previous[i].nr, shm->previous[i].do32bit),
 			shm->child_syscall_count[i]);
 	}
 	shm->exit_reason = EXIT_REPARENT_PROBLEM;

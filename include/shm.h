@@ -73,16 +73,8 @@ struct shm_s {
 
 	struct socketinfo sockets[NR_SOCKET_FDS];
 
-	/* state for the syscall currently in progress. */
-	unsigned int *previous_nr;
-	unsigned long *previous_a1;
-	unsigned long *previous_a2;
-	unsigned long *previous_a3;
-	unsigned long *previous_a4;
-	unsigned long *previous_a5;
-	unsigned long *previous_a6;
-
 	struct syscallrecord *syscall;	/* FIXME: protect all accesses with syscall_lock */
+	struct syscallrecord *previous;
 
 	unsigned long *scratch;
 
