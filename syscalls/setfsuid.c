@@ -9,3 +9,15 @@ struct syscallentry syscall_setfsuid = {
 	.arg1name = "uid",
 	.group = GROUP_VFS,
 };
+
+
+/*
+ * SYSCALL_DEFINE1(setfsuid16, old_uid_t, uid)
+ */
+
+struct syscallentry syscall_setfsuid16 = {
+	.name = "setfsuid16",
+	.num_args = 1,
+	.arg1name = "uid",
+	.group = GROUP_VFS,
+};
