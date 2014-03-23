@@ -20,7 +20,7 @@ struct syscallentry syscall_fadvise64 = {
 	.group = GROUP_VFS,
 };
 
-
+#ifndef __arm__
 /*
  * SYSCALL_DEFINE(fadvise64_64)(int fd, loff_t offset, loff_t len, int advice)
  *
@@ -41,12 +41,14 @@ struct syscallentry syscall_fadvise64_64 = {
 	.group = GROUP_VFS,
 };
 
+#else
+
 /*
  * asmlinkage long sys_arm_fadvise64_64(int fd, int advice, loff_t offset, loff_t len)
  * ARM has same as fadvise64 but with other argument order.
  */
 struct syscallentry syscall_arm_fadvise64_64 = {
-	.name = "arm_fadvise64_64",
+	.name = "fadvise64_64",
 	.num_args = 4,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
@@ -57,3 +59,4 @@ struct syscallentry syscall_arm_fadvise64_64 = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 };
+#endif
