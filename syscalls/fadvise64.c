@@ -38,6 +38,7 @@ struct syscallentry syscall_fadvise64_64 = {
 	.arg3type = ARG_LEN,
 	.arg4name = "advice",
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
 
@@ -57,6 +58,7 @@ struct syscallentry syscall_arm_fadvise64_64 = {
 	.arg4name = "len",
 	.arg4type = ARG_LEN,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
 #endif
