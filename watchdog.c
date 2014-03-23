@@ -246,7 +246,7 @@ static void stuck_syscall_info(int childno)
 
 	output(0, "[%d] Stuck in syscall %d:%s%s%s.\n",
 		pid, callno,
-		print_syscall_name(shm->syscallno[childno], shm->do32bit[childno]),
+		print_syscall_name(callno, shm->do32bit[childno]),
 		shm->do32bit[childno] ? " (32bit)" : "",
 		fdstr);
 }
