@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags
  */
+#include <sys/swap.h>
 #include "sanitise.h"
 
 struct syscallentry syscall_swapon = {
@@ -9,6 +10,11 @@ struct syscallentry syscall_swapon = {
 	.arg1name = "path",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "swap_flags",
+	.arg2type = ARG_LIST,
+	.arg2list = {
+		.num = 2,
+		.values = { SWAP_FLAG_PREFER, SWAP_FLAG_DISCARD },
+	},
 	.group = GROUP_VFS,
 };
 
