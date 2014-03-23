@@ -14,6 +14,7 @@ struct syscallentry syscall_fstat64 = {
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
 
