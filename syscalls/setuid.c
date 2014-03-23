@@ -25,4 +25,5 @@ struct syscallentry syscall_setuid16 = {
 	.name = "setuid16",
 	.num_args = 1,
 	.arg1name = "uid",
+	.sanitise = sanitise_setuid,
 };
