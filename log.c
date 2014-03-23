@@ -145,27 +145,27 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	switch (argnum) {
 	case 1:	type = entry->arg1type;
 		name = entry->arg1name;
-		reg = shm->a1[childno];
+		reg = shm->syscall[childno].a1;
 		break;
 	case 2:	type = entry->arg2type;
 		name = entry->arg2name;
-		reg = shm->a2[childno];
+		reg = shm->syscall[childno].a2;
 		break;
 	case 3:	type = entry->arg3type;
 		name = entry->arg3name;
-		reg = shm->a3[childno];
+		reg = shm->syscall[childno].a3;
 		break;
 	case 4:	type = entry->arg4type;
 		name = entry->arg4name;
-		reg = shm->a4[childno];
+		reg = shm->syscall[childno].a4;
 		break;
 	case 5:	type = entry->arg5type;
 		name = entry->arg5name;
-		reg = shm->a5[childno];
+		reg = shm->syscall[childno].a5;
 		break;
 	case 6:	type = entry->arg6type;
 		name = entry->arg6name;
-		reg = shm->a6[childno];
+		reg = shm->syscall[childno].a6;
 		break;
 	}
 
@@ -388,18 +388,18 @@ void outputstd(const char *fmt, ...)
 	va_end(args);
 }
 
-static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t pid, const unsigned int syscallno, FILE *fd, bool mono)
+static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t pid, const unsigned int syscallnr, FILE *fd, bool mono)
 {
 	struct syscallentry *entry;
 	unsigned int i;
 
-	entry = syscalls[syscallno].entry;
+	entry = syscalls[syscallnr].entry;
 
 	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid, shm->child_syscall_count[childno],
-			(shm->do32bit[childno] == TRUE) ? "[32BIT] " : "");
+			(shm->syscall[childno].do32bit == TRUE) ? "[32BIT] " : "");
 
-	if (syscallno > max_nr_syscalls)
-		fprintf(fd, "%u", syscallno);
+	if (syscallnr > max_nr_syscalls)
+		fprintf(fd, "%u", syscallnr);
 	else
 		fprintf(fd, "%s", entry->name);
 
@@ -415,7 +415,7 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 }
 
 /* This function is always called from a fuzzing child. */
-void output_syscall_prefix(const unsigned int childno, const unsigned int syscallno)
+void output_syscall_prefix(const unsigned int childno, const unsigned int syscallnr)
 {
 	FILE *log_handle;
 	pid_t pid;
@@ -430,11 +430,11 @@ void output_syscall_prefix(const unsigned int childno, const unsigned int syscal
 
 	/* do not output any ascii control symbols to files */
 	if ((logging == TRUE) && (log_handle != NULL))
-		output_syscall_prefix_to_fd(childno, pid, syscallno, log_handle, TRUE);
+		output_syscall_prefix_to_fd(childno, pid, syscallnr, log_handle, TRUE);
 
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL)
-		output_syscall_prefix_to_fd(childno, pid, syscallno, stdout, monochrome);
+		output_syscall_prefix_to_fd(childno, pid, syscallnr, stdout, monochrome);
 }
 
 static void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono)

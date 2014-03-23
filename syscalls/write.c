@@ -10,9 +10,9 @@
 static void sanitise_write(int childno)
 {
 	if ((rand() % 100) > 50)
-		shm->a3[childno] = 1;
+		shm->syscall[childno].a3 = 1;
 	else
-		shm->a3[childno] = rand() % page_size;
+		shm->syscall[childno].a3 = rand() % page_size;
 }
 
 struct syscallentry syscall_write = {

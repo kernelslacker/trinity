@@ -130,27 +130,27 @@ unsigned long find_previous_arg_address(unsigned int argnum, unsigned int call, 
 	if (argnum > 1)
 		if ((entry->arg1type == ARG_ADDRESS) ||
 		    (entry->arg1type == ARG_NON_NULL_ADDRESS))
-			addr = shm->a1[childno];
+			addr = shm->syscall[childno].a1;
 
 	if (argnum > 2)
 		if ((entry->arg2type == ARG_ADDRESS) ||
 		    (entry->arg2type == ARG_NON_NULL_ADDRESS))
-			addr = shm->a2[childno];
+			addr = shm->syscall[childno].a2;
 
 	if (argnum > 3)
 		if ((entry->arg3type == ARG_ADDRESS) ||
 		    (entry->arg3type == ARG_NON_NULL_ADDRESS))
-			addr = shm->a3[childno];
+			addr = shm->syscall[childno].a3;
 
 	if (argnum > 4)
 		if ((entry->arg4type == ARG_ADDRESS) ||
 		    (entry->arg4type == ARG_NON_NULL_ADDRESS))
-			addr = shm->a4[childno];
+			addr = shm->syscall[childno].a4;
 
 	if (argnum > 5)
 		if ((entry->arg5type == ARG_ADDRESS) ||
 		    (entry->arg5type == ARG_NON_NULL_ADDRESS))
-			addr = shm->a5[childno];
+			addr = shm->syscall[childno].a5;
 
 	return addr;
 }

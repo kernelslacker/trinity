@@ -15,7 +15,7 @@ static void sanitise_msync(int childno)
        (void) common_set_mmap_ptr_len(childno);
 
 	if (rand_bool())
-		shm->a3[childno] |= MS_INVALIDATE;
+		shm->syscall[childno].a3 |= MS_INVALIDATE;
 }
 
 struct syscallentry syscall_msync = {

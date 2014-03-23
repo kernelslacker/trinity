@@ -1155,7 +1155,7 @@ void sanitise_perf_event_open(int childno)
 	void *addr;
 
 	addr = get_non_null_address();
-	shm->a1[childno] = (unsigned long) addr;
+	shm->syscall[childno].a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
 
 	/* this makes sure we clear out the reserved fields. */
@@ -1168,7 +1168,7 @@ void sanitise_perf_event_open(int childno)
 	switch(rand() % 2) {
 	case 0:
 		/* Any CPU */
-		shm->a3[childno] = -1;
+		shm->syscall[childno].a3 = -1;
 		break;
 	case 1:
 		/* Default to the get_cpu() value */
@@ -1183,13 +1183,13 @@ void sanitise_perf_event_open(int childno)
 	/* was properly set up to be a group master              */
 	switch (rand() % 3) {
 	case 0:
-		shm->a4[childno] = -1;
+		shm->syscall[childno].a4 = -1;
 		group_leader = 1;
 		break;
 	case 1:
 		/* Try to get a previous random perf_event_open() fd  */
 		/* It's unclear whether get_random_fd() would do this */
-		shm->a4[childno] = rand() % 1024;
+		shm->syscall[childno].a4 = rand() % 1024;
 		break;
 	case 2:
 		/* Rely on ARG_FD */
@@ -1213,7 +1213,7 @@ void sanitise_perf_event_open(int childno)
 		if (rand_bool())
 			flags |= PERF_FLAG_FD_CLOEXEC;
 	}
-	shm->a5[childno] = flags;
+	shm->syscall[childno].a5 = flags;
 
 	/* pid */
 	/* requires ROOT to select pid that doesn't belong to us */
@@ -1241,7 +1241,7 @@ void sanitise_perf_event_open(int childno)
 			break;
 		}
 	}
-	shm->a2[childno] = pid;
+	shm->syscall[childno].a2 = pid;
 
 	/* set up attr structure */
 	switch (rand() % 3) {

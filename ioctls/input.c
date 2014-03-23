@@ -53,63 +53,63 @@ static void input_sanitise(const struct ioctl_group *grp, int childno)
 
 	pick_random_ioctl(grp, childno);
 
-	switch (shm->a2[childno]) {
+	switch (shm->syscall[childno].a2) {
 	case EVIOCGNAME(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGNAME(u);
+		shm->syscall[childno].a2 = EVIOCGNAME(u);
 		break;
 	case EVIOCGPHYS(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGPHYS(u);
+		shm->syscall[childno].a2 = EVIOCGPHYS(u);
 		break;
 	case EVIOCGUNIQ(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGUNIQ(u);
+		shm->syscall[childno].a2 = EVIOCGUNIQ(u);
 		break;
 #ifdef EVIOCGPROP
 	case EVIOCGPROP(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGPROP(u);
+		shm->syscall[childno].a2 = EVIOCGPROP(u);
 		break;
 #endif
 #ifdef EVIOCGMTSLOTS
 	case EVIOCGMTSLOTS(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGMTSLOTS(u);
+		shm->syscall[childno].a2 = EVIOCGMTSLOTS(u);
 		break;
 #endif
 	case EVIOCGKEY(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGKEY(u);
+		shm->syscall[childno].a2 = EVIOCGKEY(u);
 		break;
 	case EVIOCGLED(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGLED(u);
+		shm->syscall[childno].a2 = EVIOCGLED(u);
 		break;
 	case EVIOCGSND(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGSND(u);
+		shm->syscall[childno].a2 = EVIOCGSND(u);
 		break;
 	case EVIOCGSW(0):
 		u = rand();
-		shm->a2[childno] = EVIOCGSW(u);
+		shm->syscall[childno].a2 = EVIOCGSW(u);
 		break;
 	case EVIOCGBIT(0,0):
 		u = rand();
 		r = rand();
 		if (u % 10) u %= EV_CNT;
 		if (r % 10) r /= 4;
-		shm->a2[childno] = EVIOCGBIT(u, r);
+		shm->syscall[childno].a2 = EVIOCGBIT(u, r);
 		break;
 	case EVIOCGABS(0):
 		u = rand();
 		if (u % 10) u %= ABS_CNT;
-		shm->a2[childno] = EVIOCGABS(u);
+		shm->syscall[childno].a2 = EVIOCGABS(u);
 		break;
 	case EVIOCSABS(0):
 		u = rand();
 		if (u % 10) u %= ABS_CNT;
-		shm->a2[childno] = EVIOCSABS(u);
+		shm->syscall[childno].a2 = EVIOCSABS(u);
 		break;
 	default:
 		break;

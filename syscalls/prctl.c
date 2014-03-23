@@ -39,10 +39,10 @@ static void do_set_seccomp(int childno)
 
 	bpf_gen_seccomp(&optval, &optlen);
 
-	shm->a2[childno] = SECCOMP_MODE_FILTER;
-	shm->a3[childno] = (unsigned long) optval;
-	shm->a4[childno] = 0;
-	shm->a5[childno] = 0;
+	shm->syscall[childno].a2 = SECCOMP_MODE_FILTER;
+	shm->syscall[childno].a3 = (unsigned long) optval;
+	shm->syscall[childno].a4 = 0;
+	shm->syscall[childno].a5 = 0;
 }
 #else
 static void do_set_seccomp(__unused__ int childno) { }
@@ -56,7 +56,7 @@ void sanitise_prctl(int childno)
 // For now, just do SECCOMP, the other options need some attention.
 	option = PR_SET_SECCOMP;
 
-	shm->a1[childno] = option;
+	shm->syscall[childno].a1 = option;
 
 	switch (option) {
 	case PR_SET_SECCOMP:

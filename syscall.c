@@ -39,7 +39,7 @@
 #ifdef ARCH_IS_BIARCH
 /*
  * This routine does 32 bit syscalls on 64 bit kernel.
- * 32-on-32 will just use syscall() directly from do_syscall() because shm->do32bit is biarch only.
+ * 32-on-32 will just use syscall() directly from do_syscall() because do32bit flag is biarch only.
  */
 long syscall32(unsigned int call,
 	unsigned long a1, unsigned long a2, unsigned long a3,
@@ -78,16 +78,16 @@ long syscall32(unsigned int call,
 
 static unsigned long do_syscall(int childno, int *errno_saved)
 {
-	int nr = shm->syscallno[childno];
+	int nr = shm->syscall[childno].nr;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
 
-	a1 = shm->a1[childno];
-	a2 = shm->a2[childno];
-	a3 = shm->a3[childno];
-	a4 = shm->a4[childno];
-	a5 = shm->a5[childno];
-	a6 = shm->a6[childno];
+	a1 = shm->syscall[childno].a1;
+	a2 = shm->syscall[childno].a2;
+	a3 = shm->syscall[childno].a3;
+	a4 = shm->syscall[childno].a4;
+	a5 = shm->syscall[childno].a5;
+	a6 = shm->syscall[childno].a6;
 
 	shm->total_syscalls_done++;
 	shm->child_syscall_count[childno]++;
@@ -98,7 +98,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 
 	errno = 0;
 
-	if (shm->do32bit[childno] == FALSE)
+	if (shm->syscall[childno].do32bit == FALSE)
 		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
 	else
 		ret = syscall32(nr, a1, a2, a3, a4, a5, a6);
@@ -117,7 +117,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 long mkcall(int childno)
 {
 	struct syscallentry *entry;
-	unsigned int call = shm->syscallno[childno];
+	unsigned int call = shm->syscall[childno].nr;
 	unsigned long ret = 0;
 	int errno_saved;
 
@@ -125,12 +125,12 @@ long mkcall(int childno)
 
 	shm->regenerate++;
 
-	shm->a1[childno] = (unsigned long)rand64();
-	shm->a2[childno] = (unsigned long)rand64();
-	shm->a3[childno] = (unsigned long)rand64();
-	shm->a4[childno] = (unsigned long)rand64();
-	shm->a5[childno] = (unsigned long)rand64();
-	shm->a6[childno] = (unsigned long)rand64();
+	shm->syscall[childno].a1 = (unsigned long) rand64();
+	shm->syscall[childno].a2 = (unsigned long) rand64();
+	shm->syscall[childno].a3 = (unsigned long) rand64();
+	shm->syscall[childno].a4 = (unsigned long) rand64();
+	shm->syscall[childno].a5 = (unsigned long) rand64();
+	shm->syscall[childno].a6 = (unsigned long) rand64();
 
 	generic_sanitise(childno);
 	if (entry->sanitise)
@@ -148,7 +148,7 @@ long mkcall(int childno)
 	call += SYSCALL_OFFSET;
 
 	ret = do_syscall(childno, &errno_saved);
-	shm->retval[childno] = ret;
+	shm->syscall[childno].retval = ret;
 
 	if (IS_ERR(ret))
 		shm->failures++;
@@ -180,7 +180,7 @@ long mkcall(int childno)
 		if (biarch == FALSE) {
 			deactivate_syscall(call);
 		} else {
-			if (shm->do32bit[childno] == TRUE)
+			if (shm->syscall[childno].do32bit == TRUE)
 				deactivate_syscall32(call);
 			else
 				deactivate_syscall64(call);
@@ -193,13 +193,13 @@ skip_enosys:
 	    entry->post(childno);
 
 	/* store info for debugging. */
-	shm->previous_syscallno[childno] = shm->syscallno[childno];
-	shm->previous_a1[childno] = shm->a1[childno];
-	shm->previous_a2[childno] = shm->a2[childno];
-	shm->previous_a3[childno] = shm->a3[childno];
-	shm->previous_a4[childno] = shm->a4[childno];
-	shm->previous_a5[childno] = shm->a5[childno];
-	shm->previous_a6[childno] = shm->a6[childno];
+	shm->previous_nr[childno] = shm->syscall[childno].nr;
+	shm->previous_a1[childno] = shm->syscall[childno].a1;
+	shm->previous_a2[childno] = shm->syscall[childno].a2;
+	shm->previous_a3[childno] = shm->syscall[childno].a3;
+	shm->previous_a4[childno] = shm->syscall[childno].a4;
+	shm->previous_a5[childno] = shm->syscall[childno].a5;
+	shm->previous_a6[childno] = shm->syscall[childno].a6;
 
 	check_uid();
 
@@ -208,7 +208,7 @@ skip_enosys:
 
 bool this_syscallname(const char *thisname, int childno)
 {
-	unsigned int call = shm->syscallno[childno];
+	unsigned int call = shm->syscall[childno].nr;
 	struct syscallentry *syscall_entry = syscalls[call].entry;
 
 	return strcmp(thisname, syscall_entry->name);

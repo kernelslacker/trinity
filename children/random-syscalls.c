@@ -154,8 +154,8 @@ int child_random_syscalls(int childno)
 
 		/* critical section for shm updates. */
 		lock(&shm->syscall_lock);
-		shm->do32bit[childno] = do32;
-		shm->syscallno[childno] = syscallnr;
+		shm->syscall[childno].do32bit = do32;
+		shm->syscall[childno].nr = syscallnr;
 		unlock(&shm->syscall_lock);
 
 		if (syscalls_todo) {

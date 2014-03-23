@@ -12,8 +12,8 @@
 static void sanitise_vmsplice(int childno)
 {
 	if ((rand() % 10) > 0)
-		shm->a1[childno] = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-	shm->a3[childno] = rand() % UIO_MAXIOV;
+		shm->syscall[childno].a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+	shm->syscall[childno].a3 = rand() % UIO_MAXIOV;
 }
 
 struct syscallentry syscall_vmsplice = {

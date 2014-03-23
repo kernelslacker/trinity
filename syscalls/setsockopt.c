@@ -130,10 +130,10 @@ static void sanitise_setsockopt(int childno)
 	do_setsockopt(&so);
 
 	/* copy the generated values to the shm. */
-	shm->a2[childno] = so.level;
-	shm->a3[childno] = so.optname;
-	shm->a4[childno] = so.optval;
-	shm->a5[childno] = so.optlen;
+	shm->syscall[childno].a2 = so.level;
+	shm->syscall[childno].a3 = so.optname;
+	shm->syscall[childno].a4 = so.optval;
+	shm->syscall[childno].a5 = so.optlen;
 }
 
 struct syscallentry syscall_setsockopt = {

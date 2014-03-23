@@ -21,8 +21,8 @@ static void post_mprotect(int childno)
 {
 	struct map *map = (struct map *) shm->scratch[childno];
 
-	if (shm->retval[childno] != 0)
-		map->prot = shm->a3[childno];
+	if (shm->syscall[childno].retval != 0)
+		map->prot = shm->syscall[childno].a3;
 
 	shm->scratch[childno] = 0;
 }

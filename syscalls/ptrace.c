@@ -24,7 +24,7 @@ static void sanitise_ptrace(int childno)
 	 *  but broken is at least better than hanging.
 	 */
 	i  = rand() % shm->running_childs;
-	shm->a2[childno] = shm->pids[i];
+	shm->syscall[childno].a2 = shm->pids[i];
 }
 
 

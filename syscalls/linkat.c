@@ -13,7 +13,7 @@ static void sanitise_linkat(int childno)
 	/* .. If oldpath is relative and olddirfd is the special value AT_FDCWD, then oldpath is
 	 * interpreted relative to the current working directory of the calling process  */
 	if ((rand() % 100) == 0)
-		shm->a1[childno] = AT_FDCWD;
+		shm->syscall[childno].a1 = AT_FDCWD;
 }
 
 struct syscallentry syscall_linkat = {

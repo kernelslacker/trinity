@@ -194,7 +194,7 @@ static int check_main_alive(void)
 /* if the first arg was an fd, find out which one it was. */
 unsigned int check_if_fd(unsigned int child)
 {
-	unsigned int fd = shm->a1[child];
+	unsigned int fd = shm->syscall[child].a1;
 	unsigned int highest;
 	unsigned callno;
 	bool do32;
@@ -208,8 +208,8 @@ unsigned int check_if_fd(unsigned int child)
 		return FALSE;
 
 	lock(&shm->syscall_lock);
-	callno = shm->syscallno[child];
-	do32 = shm->do32bit[child];
+	callno = shm->syscall[child].nr;
+	do32 = shm->syscall[child].do32bit;
 	unlock(&shm->syscall_lock);
 
 	if (biarch == FALSE) {
@@ -236,19 +236,19 @@ unsigned int check_if_fd(unsigned int child)
 
 static void stuck_syscall_info(int childno)
 {
-	unsigned int callno = shm->syscallno[childno];
+	unsigned int callno = shm->syscall[childno].nr;
 	char fdstr[20];
 	pid_t pid = shm->pids[childno];
 
 	memset(fdstr, 0, sizeof(fdstr));
 
 	if (check_if_fd(childno) == TRUE)
-		sprintf(fdstr, "(fd = %d)", (unsigned int) shm->a1[childno]);
+		sprintf(fdstr, "(fd = %d)", (unsigned int) shm->syscall[childno].a1);
 
 	output(0, "[%d] Stuck in syscall %d:%s%s%s.\n",
 		pid, callno,
-		print_syscall_name(callno, shm->do32bit[childno]),
-		shm->do32bit[childno] ? " (32bit)" : "",
+		print_syscall_name(callno, shm->syscall[childno].do32bit),
+		shm->syscall[childno].do32bit ? " (32bit)" : "",
 		fdstr);
 }
 

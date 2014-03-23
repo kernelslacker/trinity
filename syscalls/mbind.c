@@ -22,12 +22,12 @@ static void sanitise_mbind(int childno)
 	(void) common_set_mmap_ptr_len(childno);
 
 retry_maxnode:
-	shm->a5[childno] &= ~((page_size * 8) - 1);
+	shm->syscall[childno].a5 &= ~((page_size * 8) - 1);
 
-	maxnode = shm->a5[childno];
+	maxnode = shm->syscall[childno].a5;
 
 	if (maxnode < 2 || maxnode > (page_size * 8)) {
-		shm->a5[childno] = rand32();
+		shm->syscall[childno].a5 = rand32();
 		goto retry_maxnode;
 	}
 }

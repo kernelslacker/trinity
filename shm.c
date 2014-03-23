@@ -49,8 +49,7 @@ void create_shm_arrays(void)
 
 	shm->tv = alloc_shared(max_children * sizeof(struct timeval));
 
-	shm->previous_syscallno = alloc_shared(max_children * sizeof(unsigned int));
-	shm->syscallno = alloc_shared(max_children * sizeof(unsigned int));
+	shm->previous_nr = alloc_shared(max_children * sizeof(unsigned int));
 
 	shm->previous_a1 = alloc_shared(max_children * sizeof(unsigned long));
 	shm->previous_a2 = alloc_shared(max_children * sizeof(unsigned long));
@@ -59,12 +58,7 @@ void create_shm_arrays(void)
 	shm->previous_a5 = alloc_shared(max_children * sizeof(unsigned long));
 	shm->previous_a6 = alloc_shared(max_children * sizeof(unsigned long));
 
-	shm->a1 = alloc_shared(max_children * sizeof(unsigned long));
-	shm->a2 = alloc_shared(max_children * sizeof(unsigned long));
-	shm->a3 = alloc_shared(max_children * sizeof(unsigned long));
-	shm->a4 = alloc_shared(max_children * sizeof(unsigned long));
-	shm->a5 = alloc_shared(max_children * sizeof(unsigned long));
-	shm->a6 = alloc_shared(max_children * sizeof(unsigned long));
+	shm->syscall = alloc_shared(max_children * sizeof(struct syscallrecord));
 
 	shm->mappings = alloc_shared(max_children * sizeof(struct map *));
 	shm->num_mappings = alloc_shared(max_children * sizeof(unsigned int));
@@ -73,9 +67,7 @@ void create_shm_arrays(void)
 	shm->child_type = alloc_shared(max_children * sizeof(unsigned char));
 	shm->kill_count = alloc_shared(max_children * sizeof(unsigned char));
 	shm->logfiles = alloc_shared(max_children * sizeof(FILE *));
-	shm->retval = alloc_shared(max_children * sizeof(unsigned long));
 	shm->scratch = alloc_shared(max_children * sizeof(unsigned long));
-	shm->do32bit = alloc_shared(max_children * sizeof(bool));
 }
 
 void init_shm(void)
@@ -97,14 +89,15 @@ void init_shm(void)
 
 		shm->pids[i] = EMPTY_PIDSLOT;
 
-		shm->previous_syscallno[i] = -1;
-		shm->syscallno[i] = -1;
+		shm->previous_nr[i] = -1;
 
-		shm->previous_a1[i] = shm->a1[i] = -1;
-		shm->previous_a2[i] = shm->a2[i] = -1;
-		shm->previous_a3[i] = shm->a3[i] = -1;
-		shm->previous_a4[i] = shm->a4[i] = -1;
-		shm->previous_a5[i] = shm->a5[i] = -1;
-		shm->previous_a6[i] = shm->a6[i] = -1;
+		shm->syscall[i].nr = -1;
+
+		shm->previous_a1[i] = shm->syscall[i].a1 = -1;
+		shm->previous_a2[i] = shm->syscall[i].a2 = -1;
+		shm->previous_a3[i] = shm->syscall[i].a3 = -1;
+		shm->previous_a4[i] = shm->syscall[i].a4 = -1;
+		shm->previous_a5[i] = shm->syscall[i].a5 = -1;
+		shm->previous_a6[i] = shm->syscall[i].a6 = -1;
 	}
 }

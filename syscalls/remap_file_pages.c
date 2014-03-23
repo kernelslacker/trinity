@@ -19,13 +19,13 @@ static void sanitise_remap_file_pages(int childno)
 
 	/* We just want to remap a part of the mapping. */
 	size = rand() % map->size;
-	shm->a2[childno] = size;
+	shm->syscall[childno].a2 = size;
 
 	/* "The prot argument must be specified as 0" */
-	shm->a3[childno] = 0;
+	shm->syscall[childno].a3 = 0;
 
 	/* Pick a random pgoff. */
-	shm->a4[childno] = rand() & (size / page_size);
+	shm->syscall[childno].a4 = rand() & (size / page_size);
 }
 
 struct syscallentry syscall_remap_file_pages = {

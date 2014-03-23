@@ -10,8 +10,8 @@
 
 static void sanitise_read(int childno)
 {
-	shm->a2[childno] = (unsigned long) get_non_null_address();
-	shm->a3[childno] = rand() % page_size;
+	shm->syscall[childno].a2 = (unsigned long) get_non_null_address();
+	shm->syscall[childno].a3 = rand() % page_size;
 }
 
 struct syscallentry syscall_read = {

@@ -15,12 +15,12 @@ static void sanitise_mincore(int childno)
 	map = common_set_mmap_ptr_len(childno);
 
 	len = map->size + (page_size - 1) / page_size;
-	shm->a3[childno] = (unsigned long) malloc(len);
+	shm->syscall[childno].a3 = (unsigned long) malloc(len);
 }
 
 static void post_mincore(int childno)
 {
-	free((void *) shm->a3[childno]);
+	free((void *) shm->syscall[childno].a3);
 }
 
 struct syscallentry syscall_mincore = {
