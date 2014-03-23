@@ -16,3 +16,13 @@ struct syscallentry syscall_setuid = {
 	.arg1name = "uid",
 	.sanitise = sanitise_setuid,
 };
+
+/*
+ * SYSCALL_DEFINE1(setuid16, old_uid_t, uid)
+ */
+
+struct syscallentry syscall_setuid16 = {
+	.name = "setuid16",
+	.num_args = 1,
+	.arg1name = "uid",
+};
