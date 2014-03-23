@@ -56,13 +56,12 @@ static void sanitise_mmap(int childno)
 	/* Don't actually set a hint right now. */
 	shm->a1[childno] = 0;
 
-	shm->a2[childno] = sizes[rand() % ARRAY_SIZE(sizes)];
-
 	// set additional flags
 	for (i = 0; i < numflags; i++)
 		shm->a4[childno] |= flagvals[rand() % NUM_FLAGS];
 
 	if (shm->a4[childno] & MAP_ANONYMOUS) {
+		shm->a2[childno] = sizes[rand() % ARRAY_SIZE(sizes)];
 		do_anon(childno);
 	} else {
 		if (this_syscallname("mmap2", childno) == TRUE) {
@@ -72,6 +71,8 @@ static void sanitise_mmap(int childno)
 			/* page align non-anonymous mappings. */
 			shm->a6[childno] &= PAGE_MASK;
 		}
+
+		shm->a2[childno] = page_size;
 	}
 }
 
@@ -89,6 +90,7 @@ static void post_mmap(int childno)
 	new->name = strdup("misc");
 	new->size = shm->a2[childno];
 	new->prot = shm->a3[childno];
+//TODO: store fd if !anon
 	new->ptr = p;
 	new->type = MAP_LOCAL;
 
