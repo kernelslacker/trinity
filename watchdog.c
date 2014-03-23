@@ -194,16 +194,17 @@ static int check_main_alive(void)
 /* if the first arg was an fd, find out which one it was. */
 unsigned int check_if_fd(unsigned int child)
 {
+	unsigned int fd = shm->a1[child];
 	unsigned int highest;
 	unsigned callno;
 	bool do32;
 
 	/* shortcut, if it's out of range, it's not going to be valid. */
-	if (shm->a1[child] > 1024)
+	if (fd > 1024)
 		return FALSE;
 
 	highest = highest_logfile();
-	if (shm->a1[child] < highest)
+	if (fd < highest)
 		return FALSE;
 
 	lock(&shm->syscall_lock);
