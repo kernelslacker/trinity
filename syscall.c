@@ -193,13 +193,14 @@ skip_enosys:
 	    entry->post(childno);
 
 	/* store info for debugging. */
-	shm->previous_nr[childno] = shm->syscall[childno].nr;
-	shm->previous_a1[childno] = shm->syscall[childno].a1;
-	shm->previous_a2[childno] = shm->syscall[childno].a2;
-	shm->previous_a3[childno] = shm->syscall[childno].a3;
-	shm->previous_a4[childno] = shm->syscall[childno].a4;
-	shm->previous_a5[childno] = shm->syscall[childno].a5;
-	shm->previous_a6[childno] = shm->syscall[childno].a6;
+	shm->previous[childno].nr = shm->syscall[childno].nr;
+	shm->previous[childno].a1 = shm->syscall[childno].a1;
+	shm->previous[childno].a2 = shm->syscall[childno].a2;
+	shm->previous[childno].a3 = shm->syscall[childno].a3;
+	shm->previous[childno].a4 = shm->syscall[childno].a4;
+	shm->previous[childno].a5 = shm->syscall[childno].a5;
+	shm->previous[childno].a6 = shm->syscall[childno].a6;
+	shm->previous[childno].do32bit = shm->syscall[childno].do32bit;
 
 	check_uid();
 
