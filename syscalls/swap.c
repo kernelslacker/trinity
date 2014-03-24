@@ -3,6 +3,7 @@
  */
 #include <sys/swap.h>
 #include "sanitise.h"
+#include "compat.h"
 
 struct syscallentry syscall_swapon = {
 	.name = "swapon",
