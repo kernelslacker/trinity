@@ -14,11 +14,6 @@
   - more fd 'types' (fanotify_init)
   - Add a parameter to specify only certain fd types.  --fds=sockets,files
 
-* Reseeding improvements.
-  We reseed way too often right now.
-  - Only do the periodic reseed if N syscalls have passed since the last reseed.
-  - print out the reason for reseeding.
-
 * Change regeneration code.
   - Instead of every n syscalls, make it happen after 15 minutes (but with a minimum of n syscalls)
   - setsockopt on network sockets periodically
@@ -146,12 +141,9 @@ maps.c improvements:
       as well as a pathname/socket triplet/whatever to create it.
   - Eventually, kill off the text based logging, and replace it with
     ./trinity --parselog=mylog.bin
-  - log reseed points. When we do replay, start from those points.
   - Done correctly, this should allow automated bisecting of replays.
     - Different replay strategies:
       - replay log in reverse order
-      - replay from last reseed point
-      - replay using actual bisection of reseed points
       - brute force replay using 1 call at a time from beginning of log + last syscall.
         (possibly unnecessary if the above strategies are good enough)
   - Once bisected, have a tool that can parse the binary log, and generate C.

@@ -388,16 +388,6 @@ static void watchdog(void)
 			}
 		}
 
-		if (shm->need_reseed == FALSE) {
-			shm->reseed_counter++;
-			/* If we haven't reseeded in five minutes, trigger one. */
-			if (shm->reseed_counter == 300) {
-				output(0, "Triggering periodic reseed.\n");
-				shm->need_reseed = TRUE;
-				shm->reseed_counter = 0;
-			}
-		}
-
 main_dead:
 		/* Are we done ? */
 		if (shm->exit_reason != STILL_RUNNING) {

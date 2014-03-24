@@ -295,9 +295,6 @@ void main_loop(void)
 			/* Periodic regenation of fd's etc. */
 			if (shm->regenerate >= REGENERATION_POINT)
 				regenerate();
-
-			if (shm->need_reseed == TRUE)
-				reseed();
 		}
 
 		handle_children();

@@ -37,7 +37,6 @@ struct shm_s {
 	unsigned long regenerate;
 	unsigned int seed;
 	unsigned int *seeds;
-	unsigned int reseed_counter;
 
 	/* Indices of syscall in syscall table that are active.
 	 * All indices shifted by +1. Empty index equals to 0.
@@ -87,7 +86,6 @@ struct shm_s {
 
 	/* various flags. */
 	bool do_make_it_fail;
-	bool need_reseed;
 	enum exit_reasons exit_reason;
 
 	/* locks */
