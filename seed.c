@@ -74,17 +74,15 @@ void set_seed(unsigned int pidslot)
 }
 
 /*
- * Periodically reseed.
+ * Set a new seed in the parent.
+ * Called when a new child starts, so we don't repeat runs across different pids.
+ * We only reseed in the main pid, all the children are expected to periodically
+ * check if the seed changed, and reseed accordingly.
  *
- * We do this so we can log a new seed every now and again, so we can cut down on the
- * amount of time necessary to reproduce a bug.
  * Caveat: Not used if we passed in our own seed with -s
  */
 void reseed(void)
 {
-	shm->need_reseed = FALSE;
-	shm->reseed_counter = 0;
-
 	if (getpid() != shm->mainpid) {
 		outputerr("Reseeding should only happen from parent!\n");
 		exit(EXIT_FAILURE);
