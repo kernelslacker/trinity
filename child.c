@@ -224,28 +224,84 @@ struct child_funcs {
 	int type;
 	const char *name;
 	int (*func)(int childno);
+	unsigned char likelyhood;
 };
 
-static const struct child_funcs child_functions[] = {
-	{ .type = CHILD_RANDOM_SYSCALLS, .name = "rand_syscalls", .func = child_random_syscalls },
-#ifdef DEBUG_MULTI
-	{ .type = CHILD_OPEN_ALL_FILES, .name = "read_all_files", .func = child_read_all_files },
-#endif
+static const struct child_funcs child_ops[] = {
+	{ .type = CHILD_RANDOM_SYSCALLS, .name = "rand_syscalls", .func = child_random_syscalls, 100 },
+//	{ .type = CHILD_OPEN_ALL_FILES, .name = "read_all_files", .func = child_read_all_files },
 };
+
+
+// FIXME: when we have different child ops, we're going to need to redo the progress detector.
+static unsigned int handle_sigreturn(int childno)
+{
+	static unsigned int count = 0;
+	static unsigned int last = -1;
+
+	output(2, "<timed out>\n");     /* Flush out the previous syscall output. */
+
+	/* Check if we're making any progress at all. */
+	if (shm->child_syscall_count[childno] == last) {
+		count++;
+		//output(1, "no progress for %d tries.\n", count);
+	} else {
+		count = 0;
+		last = shm->child_syscall_count[childno];
+	}
+	if (count == 3) {
+		output(1, "no progress for 3 tries, exiting child.\n");
+		return 0;
+	}
+
+	if (shm->kill_count[childno] > 0) {
+		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
+		return 0;
+	}
+
+	if (sigwas != SIGALRM)
+		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
+
+	return 1;
+}
 
 int child_process(int childno)
 {
 	int ret;
 	unsigned int i;
+	const char *lastop = NULL;
 
-	i = rand() % ARRAY_SIZE(child_functions);
+	ret = sigsetjmp(ret_jump, 1);
+	if (ret != 0) {
+		if (handle_sigreturn(childno) == 0)
+			return 0;
+		ret = 0;
+	}
 
-#ifdef DEBUG_MULTI
-	output(0, "Chose %s.\n", child_functions[i].name);
-#endif
+	while (shm->exit_reason == STILL_RUNNING) {
 
-	shm->child_type[childno] = child_functions[i].type;
-	ret = child_functions[i].func(childno);
+		check_parent_pid();
+
+		while (shm->regenerating == TRUE)
+			sleep(1);
+
+		/* If the parent reseeded, we should reflect the latest seed too. */
+		if (shm->seed != shm->seeds[childno])
+			set_seed(childno);
+
+		/* Choose operations for this iteration. */
+		i = rand() % ARRAY_SIZE(child_ops);
+
+		if (rand() % 100 <= child_ops[i].likelyhood) {
+			if (lastop != child_ops[i].name) {
+				output(0, "Chose %s.\n", child_ops[i].name);
+				lastop = child_ops[i].name;
+			}
+
+			shm->child_type[childno] = child_ops[i].type;
+			ret = child_ops[i].func(childno);
+		}
+	}
 
 	enable_coredumps();
 
