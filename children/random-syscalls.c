@@ -1,9 +1,10 @@
 /*
- * Call random syscalls with random args.
+ * Call a single random syscall with random args.
  */
 
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "arch.h"	// biarch
@@ -14,7 +15,6 @@
 #include "random.h"
 #include "shm.h"
 #include "signals.h"
-#include <string.h>
 #include "pids.h"
 #include "tables.h"
 
