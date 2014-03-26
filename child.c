@@ -180,7 +180,7 @@ void init_child(int childno)
 	disable_coredumps();
 }
 
-void check_parent_pid(void)
+static void check_parent_pid(void)
 {
 	pid_t pid;
 	unsigned int i;
