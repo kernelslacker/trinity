@@ -17,6 +17,7 @@
 * Change regeneration code.
   - Instead of every n syscalls, make it happen after 15 minutes (but with a minimum of n syscalls)
   - setsockopt on network sockets periodically
+    Disabled right now, because it causes some socket types to hang.
 
 * Networking improvements.
   - Rewrite socket generation.
@@ -25,22 +26,22 @@
   - for syscalls that take a fd and a sockaddr, look up the triplet and match.
   - Flesh out sockaddr/socket gen for all remaining protocols.
 
-* More child types
-  - fragments of things that a real program would do.
-    For example   open->read->close,  open->mmap->access mem->close
-    The child_process function would randomly decide what a child is going
-    to do fragments, or random syscalls.
-  - Ability to mark some fragments as 'NEEDS_ROOT'.
-    At the same time, rework startup so that if we're root, when we fork
-    children, we decide whether or not to drop privs by looking at fragment->flags
-    After completing a root-only fragment, we either exit, or run other root-only fragments.
+* Flesh out the child ops some more
+  - move away from 'syscall counts' towards 'iteration count'
+  - Add more things that a real program would do.
+    - open->read->close
+    - open->mmap->access mem->close
     - sysctl flipper.
     - pick random elevator alg for all queues
+    - fork-and-dirty mappings 
+  - Ability to mark some ops as 'NEEDS_ROOT'.
+  - Move the drop privs code from main to just before we start a new child.
 
 * ioctl improvements
   - needs filename globbing for some ioctls
   - Sanitise routines for more ioctls
     - ext4
+  - Maybe just make the ioctl's be NEED_ROOT child ops
 
 * Improve the ->post routine to walk a list of objects that we allocated during a
    syscalls ->sanitise in a ->post method.
@@ -55,8 +56,15 @@
     do the right thing to free it in ->post. By tagging what the allocation type was in
     generic-sanitise, we can do multiple types.
 
-* Clean up logging.
+* Some debugging enhancements.
+  - dump_child_state(childno), to debug a specific child. (Dump all a childs shm arrays)
   - Make -D use a separate debug log file
+
+* taint postmortem.
+  - If we have logging disabled, we don't have a clue really what happened if we taint, and exit.
+    Store a ringbuffer of the last few syscalls, and dump it before we exit.
+  - Compare timestamp that taint was noticed at, ignore all later.
+  - Do taint watching in the child loop too.
 
 * Pretty-print improvements.
  - decode fd number -> filename in output
@@ -66,7 +74,7 @@
 
 * Watchdog improvements
   - in main loop, check watchdog is still alive
-  - RT watchdog task ? (needs initial startup as root, and drop privs afterwards).
+  - RT watchdog task ?
 
 * filename related issues.
   - filename cache.
@@ -80,15 +88,26 @@
   - Dump filelist to a logfile. (Perhaps this ties in with the idea above to cache the filelist?)
   - blacklist filenames for victim path & /proc/self/exe
     - make sure we don't call unlink() or rmdir() on them
+    - also need to watch /proc/$$/exe, look up using shm->pids.
   - file list struct extensions
     - use count
 
-maps.c improvements:
-- Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
-- make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
-  in sanitise routines.
-- munge lengths when handing them out.
-- more access patterns
+* --dry-run mode. (need to work around segv's when we do things like mmap->post and register null maps)
+
+* maps.c improvements:
+  - Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
+  - make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
+    in sanitise routines.
+  - munge lengths when handing them out.
+  - more access patterns
+  - mmap files
+    (we do this already, but don't track it properly)
+  - get_map_fragment()
+    - mprotect parts of a map 
+      will need to somehow track what pages are RO/RW etc 
+  - keep track of holes when munmap'd
+    split maps in two ?
+    (store original len, and current len)
 
 * Arch specific TODO
   x86-64: Build both a 64bit and a 32bit executable.
@@ -99,13 +118,11 @@ maps.c improvements:
   - check padding between struct members is zeroed.
 
 * munge_process() on child startup
+  - replace fork() with random clone()
   - run children in different namespaces, personalities.
   - unshare
 
 * Output errno distribution on exit
-
-* if we exit because we become tainted, dump the last 3 syscalls.
-  (useful if we have logging disabled. Needs a ringbuffer).
 
 * allow for multiple -G's (after there is more than 'vm')
 
@@ -127,8 +144,6 @@ maps.c improvements:
     child a traces child b
     child a segfaults
     child b never proceeds, and doesn't get untraced.
-
-* When we fuzz execve, do an extra fork, sleep for 3 seconds, kill the execve'd pid, and then exit.
 
 * Further syscall annotation improvements
   - Finish annotating syscall return types
@@ -168,4 +183,6 @@ maps.c improvements:
 
 * Backwards compatability improvements.
   Move some of the ifdef's into header files.
+
+* make -p take an arg for seconds
 
