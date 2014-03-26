@@ -221,15 +221,13 @@ void check_parent_pid(void)
 }
 
 struct child_funcs {
-	int type;
 	const char *name;
 	int (*func)(int childno);
 	unsigned char likelyhood;
 };
 
 static const struct child_funcs child_ops[] = {
-	{ .type = CHILD_RANDOM_SYSCALLS, .name = "rand_syscalls", .func = child_random_syscalls, 100 },
-//	{ .type = CHILD_OPEN_ALL_FILES, .name = "read_all_files", .func = child_read_all_files },
+	{ .name = "rand_syscalls", .func = child_random_syscalls, .likelyhood = 100 },
 };
 
 
@@ -297,7 +295,6 @@ void child_process(int childno)
 				lastop = child_ops[i].name;
 			}
 
-			shm->child_type[childno] = child_ops[i].type;
 			ret = child_ops[i].func(childno);	// Do we care about the return code ? Right now, no.
 		}
 	}

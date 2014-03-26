@@ -18,8 +18,3 @@ void check_parent_pid(void);
 
 int child_random_syscalls(int childno);
 int child_read_all_files(int childno);
-
-enum childtypes {
-	CHILD_RANDOM_SYSCALLS = 1,
-	CHILD_OPEN_ALL_FILES = 2,
-};

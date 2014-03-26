@@ -52,7 +52,6 @@ struct shm_s {
 
 	pid_t mainpid;
 	pid_t *pids;
-	unsigned char *child_type;
 
 	pid_t last_reaped;
 	bool spawn_no_more;
