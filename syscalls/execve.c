@@ -60,4 +60,5 @@ struct syscallentry syscall_execve = {
 	.arg3type = ARG_ADDRESS,
 	.sanitise = sanitise_execve,
 	.group = GROUP_VFS,
+	.flags = EXTRA_FORK,
 };

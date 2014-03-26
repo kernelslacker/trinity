@@ -105,5 +105,6 @@ struct syscalltable {
 #define ACTIVE (1<<4)
 #define NEED_ALARM (1<<5)
 #define TO_BE_DEACTIVATED (1<<6)
+#define EXTRA_FORK (1<<7)
 
 long syscall32(unsigned int call, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5, unsigned long a6);
