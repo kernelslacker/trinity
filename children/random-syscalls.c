@@ -65,110 +65,57 @@ static bool choose_syscall_table(void)
 	return do32;
 }
 
-static unsigned int handle_sigreturn(int childno)
-{
-	static unsigned int count = 0;
-	static unsigned int last = -1;
-
-	output(2, "<timed out>\n");	/* Flush out the previous syscall output. */
-
-	/* Check if we're making any progress at all. */
-	if (shm->child_syscall_count[childno] == last) {
-		count++;
-		//output(1, "no progress for %d tries.\n", count);
-	} else {
-		count = 0;
-		last = shm->child_syscall_count[childno];
-	}
-	if (count == 3) {
-		output(1, "no progress for 3 tries, exiting child.\n");
-		return 0;
-	}
-
-	if (shm->kill_count[childno] > 0) {
-		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
-		return 0;
-	}
-
-	if (sigwas != SIGALRM)
-		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
-
-	return 1;
-}
-
 int child_random_syscalls(int childno)
 {
 	int ret;
 	unsigned int syscallnr;
 	bool do32;
 
-	ret = sigsetjmp(ret_jump, 1);
-	if (ret != 0) {
-		if (handle_sigreturn(childno) == 0)
-			return 0;
-		ret = 0;
+retry:
+	if (no_syscalls_enabled() == TRUE) {
+		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
+		return 0;
 	}
 
-	while (shm->exit_reason == STILL_RUNNING) {
+	/* Ok, we're doing another syscall, let's pick one. */
+	do32 = choose_syscall_table();
+	syscallnr = rand() % max_nr_syscalls;
 
-		check_parent_pid();
+	/* If we got a syscallnr which is not active repeat the attempt,
+	 * since another child has switched that syscall off already.*/
+	if (active_syscalls[syscallnr] == 0)
+		goto retry;
 
-		while (shm->regenerating == TRUE)
-			sleep(1);
+	syscallnr = active_syscalls[syscallnr] - 1;
 
-		/* If the parent reseeded, we should reflect the latest seed too. */
-		if (shm->seed != shm->seeds[childno])
-			set_seed(childno);
-
-		if (no_syscalls_enabled() == TRUE) {
-			output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
-			shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
-			goto out;
+	if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE) {
+		if (biarch == FALSE) {
+			deactivate_syscall(syscallnr);
+		} else {
+			if (do32 == TRUE)
+				deactivate_syscall32(syscallnr);
+			else
+				deactivate_syscall64(syscallnr);
 		}
-
-		if (shm->exit_reason != STILL_RUNNING)
-			goto out;
-
-		/* Ok, we're doing another syscall, let's pick one. */
-		do32 = choose_syscall_table();
-		syscallnr = rand() % max_nr_syscalls;
-
-		/* If we got a syscallnr which is not active repeat the attempt,
-		 * since another child has switched that syscall off already.*/
-		if (active_syscalls[syscallnr] == 0)
-			continue;
-
-		syscallnr = active_syscalls[syscallnr] - 1;
-
-		if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE) {
-			if (biarch == FALSE) {
-				deactivate_syscall(syscallnr);
-			} else {
-				if (do32 == TRUE)
-					deactivate_syscall32(syscallnr);
-				else
-					deactivate_syscall64(syscallnr);
-			}
-			continue;
-		}
-
-		/* critical section for shm updates. */
-		lock(&shm->syscall_lock);
-		shm->syscall[childno].do32bit = do32;
-		shm->syscall[childno].nr = syscallnr;
-		unlock(&shm->syscall_lock);
-
-		if (syscalls_todo) {
-			if (shm->total_syscalls_done >= syscalls_todo) {
-				output(0, "Reached maximum syscall count (todo = %d, done = %d), exiting...\n",
-					syscalls_todo, shm->total_syscalls_done);
-				shm->exit_reason = EXIT_REACHED_COUNT;
-			}
-		}
-
-		/* Do the actual syscall. */
-		ret = mkcall(childno);
+		goto retry;
 	}
-out:
+
+	/* critical section for shm updates. */
+	lock(&shm->syscall_lock);
+	shm->syscall[childno].do32bit = do32;
+	shm->syscall[childno].nr = syscallnr;
+	unlock(&shm->syscall_lock);
+
+	if (syscalls_todo) {
+		if (shm->total_syscalls_done >= syscalls_todo) {
+			output(0, "Reached maximum syscall count (todo = %d, done = %d), exiting...\n",
+				syscalls_todo, shm->total_syscalls_done);
+			shm->exit_reason = EXIT_REACHED_COUNT;
+		}
+	}
+
+	/* Do the actual syscall. */
+	ret = mkcall(childno);
 	return ret;
 }
