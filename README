@@ -59,7 +59,7 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 ######### options ###############################################
 
  --quiet/-q: reduce verbosity.
-   Specify one to not output register values, or twice to also suppress syscall count,
+   Specify once to not output register values, or twice to also suppress syscall count,
    and just reseed values.
 
  --verbose: increase verbosity.
@@ -90,7 +90,7 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 
  -p: Pause after making a syscall
 
- --children/-C: Number of child processes (Max: 64)
+ --children/-C: Number of child processes.
 
  -x: Exclude a syscall from being called.  Useful when there's a known kernel bug
      you keep hitting that you want to avoid.
