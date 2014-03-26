@@ -60,12 +60,10 @@ static void fork_children(void)
 
 		if (pid == 0) {
 			/* Child process. */
-			int ret = 0;
-
 			init_child(pidslot);
-			ret = child_process(pidslot);
+			child_process(pidslot);
 			output(1, "child %d exiting.\n", pidslot);
-			_exit(ret);
+			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid == -1) {
 				output(0, "couldn't create child! (%s)\n", strerror(errno));

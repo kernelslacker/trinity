@@ -265,7 +265,7 @@ static unsigned int handle_sigreturn(int childno)
 	return 1;
 }
 
-int child_process(int childno)
+void child_process(int childno)
 {
 	int ret;
 	unsigned int i;
@@ -274,8 +274,7 @@ int child_process(int childno)
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
 		if (handle_sigreturn(childno) == 0)
-			return 0;
-		ret = 0;
+			return;	// Exit the child, things are getting too weird.
 	}
 
 	while (shm->exit_reason == STILL_RUNNING) {
@@ -299,11 +298,9 @@ int child_process(int childno)
 			}
 
 			shm->child_type[childno] = child_ops[i].type;
-			ret = child_ops[i].func(childno);
+			ret = child_ops[i].func(childno);	// Do we care about the return code ? Right now, no.
 		}
 	}
 
 	enable_coredumps();
-
-	return ret;
 }
