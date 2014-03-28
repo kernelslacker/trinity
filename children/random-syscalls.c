@@ -67,7 +67,6 @@ static bool choose_syscall_table(void)
 
 int child_random_syscalls(int childno)
 {
-	int ret;
 	unsigned int syscallnr;
 	bool do32;
 
@@ -75,7 +74,7 @@ retry:
 	if (no_syscalls_enabled() == TRUE) {
 		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
 		shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
-		return 0;
+		return FAIL;
 	}
 
 	/* Ok, we're doing another syscall, let's pick one. */
@@ -116,6 +115,7 @@ retry:
 	}
 
 	/* Do the actual syscall. */
-	ret = mkcall(childno);
-	return ret;
+	mkcall(childno);
+
+	return SUCCESS;
 }
