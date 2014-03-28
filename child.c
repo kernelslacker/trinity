@@ -295,7 +295,9 @@ void child_process(int childno)
 				lastop = child_ops[i].name;
 			}
 
-			ret = child_ops[i].func(childno);	// Do we care about the return code ? Right now, no.
+			ret = child_ops[i].func(childno);
+			if (ret == FAIL)
+				return;
 		}
 	}
 

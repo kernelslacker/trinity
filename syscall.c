@@ -114,7 +114,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 /*
  * Generate arguments, print them out, then call the syscall.
  */
-long mkcall(int childno)
+void mkcall(int childno)
 {
 	struct syscallentry *entry;
 	unsigned int call = shm->syscall[childno].nr;
@@ -223,8 +223,6 @@ skip_enosys:
 	shm->previous[childno].do32bit = shm->syscall[childno].do32bit;
 
 	check_uid();
-
-	return ret;
 }
 
 bool this_syscallname(const char *thisname, int childno)
