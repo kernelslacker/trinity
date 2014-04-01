@@ -55,6 +55,9 @@ void init_uids(void)
 	orig_uid = getuid();
 	orig_gid = getgid();
 
+	if (dropprivs == FALSE)
+		return;
+
 	passwd = getpwnam("nobody");
 	if (passwd == NULL) {
 		outputerr("Error getting nobody pwent (%s)\n", strerror(errno));
