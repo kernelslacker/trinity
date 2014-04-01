@@ -66,8 +66,6 @@ int main(int argc, char* argv[])
 
 	initpid = getpid();
 
-	init_uids();
-
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 	max_children = num_online_cpus;	/* possibly overridden in params. */
@@ -79,6 +77,8 @@ int main(int argc, char* argv[])
 	parse_args(argc, argv);
 
 	create_shm_arrays();
+
+	init_uids();
 
 	if (logging == TRUE)
 		open_logfiles();
