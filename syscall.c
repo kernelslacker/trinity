@@ -150,6 +150,7 @@ void mkcall(int childno)
 	/* This is a special case for things like execve, which would replace our
 	 * child process with something unknown to us. We use a 'throwaway' process
 	 * to do the execve in, and let it run for a max of a seconds before we kill it */
+#if 0
 	if (syscalls[call].entry->flags & EXTRA_FORK) {
 		pid_t extrapid;
 
@@ -163,12 +164,14 @@ void mkcall(int childno)
 				sleep(1);
 				kill(extrapid, SIGKILL);
 			}
+			return;
 		}
-	} else {
-		/* common-case, do the syscall in this child process. */
-		ret = do_syscall(childno, &errno_saved);
-		shm->syscall[childno].retval = ret;
 	}
+#endif
+
+	/* common-case, do the syscall in this child process. */
+	ret = do_syscall(childno, &errno_saved);
+	shm->syscall[childno].retval = ret;
 
 	if (IS_ERR(ret))
 		shm->failures++;
