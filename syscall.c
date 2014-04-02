@@ -113,8 +113,11 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 
 /*
  * Generate arguments, print them out, then call the syscall.
+ *
+ * returns a bool that determines whether we can keep doing syscalls
+ * in this child.
  */
-void mkcall(int childno)
+bool mkcall(int childno)
 {
 	struct syscallentry *entry;
 	unsigned int call = shm->syscall[childno].nr;
@@ -164,7 +167,7 @@ void mkcall(int childno)
 				sleep(1);
 				kill(extrapid, SIGKILL);
 			}
-			return;
+			return FALSE;
 		}
 	}
 #endif
@@ -226,6 +229,8 @@ skip_enosys:
 	shm->previous[childno].do32bit = shm->syscall[childno].do32bit;
 
 	check_uid();
+
+	return TRUE;
 }
 
 bool this_syscallname(const char *thisname, int childno)

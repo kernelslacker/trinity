@@ -65,7 +65,7 @@ static bool choose_syscall_table(void)
 	return do32;
 }
 
-int child_random_syscalls(int childno)
+bool child_random_syscalls(int childno)
 {
 	unsigned int syscallnr;
 	bool do32;
@@ -115,7 +115,5 @@ retry:
 	}
 
 	/* Do the actual syscall. */
-	mkcall(childno);
-
-	return SUCCESS;
+	return mkcall(childno);
 }

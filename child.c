@@ -222,7 +222,7 @@ static void check_parent_pid(void)
 
 struct child_funcs {
 	const char *name;
-	int (*func)(int childno);
+	bool (*func)(int childno);
 	unsigned char likelyhood;
 };
 
