@@ -11,7 +11,6 @@
 struct syscallentry syscall_kexec_load = {
 	.name = "kexec_load",
 	.num_args = 4,
-	.flags = CAPABILITY_CHECK,
 	.arg1name = "entry",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "nr_segments",

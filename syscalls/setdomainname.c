@@ -6,7 +6,6 @@
 struct syscallentry syscall_setdomainname = {
 	.name = "setdomainname",
 	.num_args = 2,
-	.flags = CAPABILITY_CHECK,
 	.arg1name = "name",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "len",

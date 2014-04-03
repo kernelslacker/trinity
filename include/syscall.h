@@ -98,13 +98,12 @@ struct syscalltable {
 	struct syscallentry *entry;
 };
 
-#define CAPABILITY_CHECK (1<<0)
-#define AVOID_SYSCALL (1<<1)
-#define NI_SYSCALL (1<<2)
-#define BORING (1<<3)
-#define ACTIVE (1<<4)
-#define NEED_ALARM (1<<5)
-#define TO_BE_DEACTIVATED (1<<6)
-#define EXTRA_FORK (1<<7)
+#define AVOID_SYSCALL (1<<0)
+#define NI_SYSCALL (1<<1)
+#define BORING (1<<2)
+#define ACTIVE (1<<3)
+#define NEED_ALARM (1<<4)
+#define TO_BE_DEACTIVATED (1<<5)
+#define EXTRA_FORK (1<<6)
 
 long syscall32(unsigned int call, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5, unsigned long a6);
