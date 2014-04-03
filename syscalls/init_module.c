@@ -7,7 +7,6 @@
 struct syscallentry syscall_init_module = {
 	.name = "init_module",
 	.num_args = 3,
-	.flags = CAPABILITY_CHECK,
 	.arg1name = "umod",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "len",

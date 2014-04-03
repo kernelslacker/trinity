@@ -9,7 +9,6 @@
 struct syscallentry syscall_finit_module = {
 	.name = "finit_module",
 	.num_args = 3,
-	.flags = CAPABILITY_CHECK,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "uargs",

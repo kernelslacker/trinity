@@ -24,7 +24,6 @@ struct syscallentry syscall_fanotify_init = {
 		},
 	},
 	.arg2name = "event_f_flags",
-	.flags = CAPABILITY_CHECK,
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 };

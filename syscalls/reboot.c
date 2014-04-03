@@ -6,7 +6,6 @@
 struct syscallentry syscall_reboot = {
 	.name = "reboot",
 	.num_args = 4,
-	.flags = CAPABILITY_CHECK,
 	.arg1name = "magic1",
 	.arg2name = "magic2",
 	.arg3name = "cmd",

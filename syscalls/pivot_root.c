@@ -6,7 +6,6 @@
 struct syscallentry syscall_pivot_root = {
 	.name = "pivot_root",
 	.num_args = 2,
-	.flags = CAPABILITY_CHECK,
 	.arg1name = "new_root",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "put_old",
