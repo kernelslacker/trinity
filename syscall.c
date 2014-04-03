@@ -41,7 +41,7 @@
  * This routine does 32 bit syscalls on 64 bit kernel.
  * 32-on-32 will just use syscall() directly from do_syscall() because do32bit flag is biarch only.
  */
-long syscall32(unsigned int call,
+static long syscall32(unsigned int call,
 	unsigned long a1, unsigned long a2, unsigned long a3,
 	unsigned long a4, unsigned long a5, unsigned long a6)
 {
