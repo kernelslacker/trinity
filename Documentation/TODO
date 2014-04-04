@@ -1,3 +1,55 @@
+* Flesh out the child ops some more
+  - move away from 'syscall counts' towards 'iteration count'
+  - Add more things that a real program would do.
+    - add all the ops things like fsx do.
+    - do file ops on a bunch of trinity test files
+    - open->read->close
+    - open->mmap->access mem->close
+    - sysctl flipper.
+    - pick random elevator alg for all queues
+    - fork-and-dirty mappings 
+  - Ability to mark some ops as 'NEEDS_ROOT'.
+  - Move the drop privs code from main to just before we start a new child.
+
+* maps.c improvements:
+  - Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
+  - make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
+    in sanitise routines.
+  - munge lengths when handing them out.
+  - more access patterns
+  - mmap files
+    (we do this already, but don't track it properly)
+  - get_map_fragment()
+    - mprotect parts of a map 
+      will need to somehow track what pages are RO/RW etc 
+  - keep track of holes when munmap'd
+    split maps in two ?
+    (store original len, and current len)
+
+* munge_process() on child startup
+  - replace fork() with random clone()
+  - run children in different namespaces, personalities.
+  - unshare
+
+* ioctl improvements
+  - needs filename globbing for some ioctls
+  - Sanitise routines for more ioctls
+    - ext4
+  - Maybe just make the ioctl's be NEED_ROOT child ops
+
+* Some debugging enhancements.
+  - dump_child_state(childno), to debug a specific child. (Dump all a childs shm arrays)
+  - Make -D use a separate debug log file
+
+* taint postmortem.
+  - If we have logging disabled, we don't have a clue really what happened if we taint, and exit.
+    Store a ringbuffer of the last few syscalls, and dump it before we exit.
+  - Compare timestamp that taint was noticed at, ignore all later.
+  - Do taint watching in the child loop too.
+
+* --dry-run mode.
+   need to work around segv's when we do things like mmap->post and register null maps.
+
 * Rewrite the fd code.
   - kill off NR_FILE_FDS
   - open some files in the child too after forking.
@@ -16,55 +68,6 @@
 
 * Change regeneration code.
   - Instead of every n syscalls, make it happen after 15 minutes (but with a minimum of n syscalls)
-  - setsockopt on network sockets periodically
-    Disabled right now, because it causes some socket types to hang.
-
-* Networking improvements.
-  - Rewrite socket generation.
-    Organise into (sorted) per-protocol buckets of linked-lists..
-    - Search buckets for dupes before adding.
-  - for syscalls that take a fd and a sockaddr, look up the triplet and match.
-  - Flesh out sockaddr/socket gen for all remaining protocols.
-
-* Flesh out the child ops some more
-  - move away from 'syscall counts' towards 'iteration count'
-  - Add more things that a real program would do.
-    - open->read->close
-    - open->mmap->access mem->close
-    - sysctl flipper.
-    - pick random elevator alg for all queues
-    - fork-and-dirty mappings 
-  - Ability to mark some ops as 'NEEDS_ROOT'.
-  - Move the drop privs code from main to just before we start a new child.
-
-* ioctl improvements
-  - needs filename globbing for some ioctls
-  - Sanitise routines for more ioctls
-    - ext4
-  - Maybe just make the ioctl's be NEED_ROOT child ops
-
-* Improve the ->post routine to walk a list of objects that we allocated during a
-   syscalls ->sanitise in a ->post method.
-  - On return from the syscall, we don't call the destructor immediately.
-    We pick a small random number, and do N other syscalls before we do the destruction.
-    This requires us to create a list of work to be done later, along with a pointer
-    to any allocated data.
-  - some ancillary data needs to be destroyed immediately after the syscall
-    (it's pointless keeping around mangled pathnames for eg).
-    For this, we just destroy it in ->post
-  - Right now ->sanitise routines have to pick either a map, or malloc itself and
-    do the right thing to free it in ->post. By tagging what the allocation type was in
-    generic-sanitise, we can do multiple types.
-
-* Some debugging enhancements.
-  - dump_child_state(childno), to debug a specific child. (Dump all a childs shm arrays)
-  - Make -D use a separate debug log file
-
-* taint postmortem.
-  - If we have logging disabled, we don't have a clue really what happened if we taint, and exit.
-    Store a ringbuffer of the last few syscalls, and dump it before we exit.
-  - Compare timestamp that taint was noticed at, ignore all later.
-  - Do taint watching in the child loop too.
 
 * Pretty-print improvements.
  - decode fd number -> filename in output
@@ -85,6 +88,7 @@
     rebuilding the list, and the system state means stuff moves around.
   - Add a way to add a filter to filelist.
     ie, something like --filter-files=*[0-9]* to ignore all files with numbers in them.
+    Maybe also make this a config file parser.
   - Dump filelist to a logfile. (Perhaps this ties in with the idea above to cache the filelist?)
   - blacklist filenames for victim path & /proc/self/exe
     - make sure we don't call unlink() or rmdir() on them
@@ -92,35 +96,31 @@
   - file list struct extensions
     - use count
 
-* --dry-run mode. (need to work around segv's when we do things like mmap->post and register null maps)
+* Networking improvements.
+  - Rewrite socket generation.
+    Organise into (sorted) per-protocol buckets of linked-lists..
+    - Search buckets for dupes before adding.
+  - for syscalls that take a fd and a sockaddr, look up the triplet and match.
+  - Flesh out sockaddr/socket gen for all remaining protocols.
+  - setsockopt on network sockets when we regenerate
+    Disabled right now, because it causes some socket types to hang.
+  - specify an ip of a victim machine (Maybe also config file)
 
-* maps.c improvements:
-  - Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
-  - make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
-    in sanitise routines.
-  - munge lengths when handing them out.
-  - more access patterns
-  - mmap files
-    (we do this already, but don't track it properly)
-  - get_map_fragment()
-    - mprotect parts of a map 
-      will need to somehow track what pages are RO/RW etc 
-  - keep track of holes when munmap'd
-    split maps in two ?
-    (store original len, and current len)
-
-* Arch specific TODO
-  x86-64: Build both a 64bit and a 32bit executable.
-  *: Move arch specific syscalls into syscalls/arch/
-  *: Move addresses in get_interesting_value() to a function in per-arch headers.
+* Improve the ->post routine to walk a list of objects that we allocated during a
+   syscalls ->sanitise in a ->post method.
+  - On return from the syscall, we don't call the destructor immediately.
+    We pick a small random number, and do N other syscalls before we do the destruction.
+    This requires us to create a list of work to be done later, along with a pointer
+    to any allocated data.
+  - some ancillary data needs to be destroyed immediately after the syscall
+    (it's pointless keeping around mangled pathnames for eg).
+    For this, we just destroy it in ->post
+  - Right now ->sanitise routines have to pick either a map, or malloc itself and
+    do the right thing to free it in ->post. By tagging what the allocation type was in
+    generic-sanitise, we can do multiple types.
 
 * Perform some checks on return from syscall
   - check padding between struct members is zeroed.
-
-* munge_process() on child startup
-  - replace fork() with random clone()
-  - run children in different namespaces, personalities.
-  - unshare
 
 * Output errno distribution on exit
 
@@ -129,14 +129,6 @@
 * audit which syscalls never succeed, and write sanitise routines for them
 
 * if a read() blocks and we get a kill from the watchdog, blacklist (close?) that fd/filename.
-
-* config file
-  - specify an ip of a victim machine
-  - exclude file list for (certain sysfs files for eg)
-  - parameter to bias the randomness passed to length parameters.
-    Right now it's hardwired to return 16 bit 70% of the time.
-    (and 32bit in the 64bit path)
-  - parameter for the dir/file randomness bias
 
 * Some of the syscalls marked AVOID are done so for good reason.
   - Revisit fuzzing ptrace.
@@ -172,6 +164,8 @@
 * Misc cleanups
   - syscall.c:syscall32()  hide the assembly in a macro in arch-*.h and only do it
      #ifdef HAVE_SYSCALL_32
+  - Move arch specific syscalls into syscalls/arch/
+  - Move addresses in get_interesting_value() to a function in per-arch headers.
 
 * watch dmesg buffer for interesting kernel messages and halt if necessary. Lockdep for eg.
   - Pause on oops.
@@ -180,9 +174,6 @@
 * Blocked child improvements.
   - if we find a blocking fd, check if it's a socket, and shutdown() it. 
     (tricky: we need to do the shutdown in the main process, and then tell other children)
-
-* Backwards compatability improvements.
-  Move some of the ifdef's into header files.
 
 * make -p take an arg for seconds
 
