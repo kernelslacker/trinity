@@ -10,7 +10,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "utils.h"	// page_size
 
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)

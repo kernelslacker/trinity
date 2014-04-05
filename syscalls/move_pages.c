@@ -18,7 +18,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "utils.h"	// page_size
+#include "utils.h"
 
 static unsigned int count;
 

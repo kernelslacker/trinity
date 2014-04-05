@@ -6,7 +6,6 @@
 
 #include <stdlib.h>
 #include <sys/mman.h>
-#include "utils.h"	// page_size
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
