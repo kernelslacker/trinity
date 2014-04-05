@@ -49,7 +49,7 @@ static void dirty_mapping_reverse(struct map *map)
 		p[i] = rand();
 }
 
-/* fault in a random set of map->size pages. (some may be faulted >once) */
+/* dirty a random set of map->size pages. (some may be faulted >once) */
 static void dirty_random_pages(struct map *map)
 {
 	char *p = map->ptr;
@@ -118,6 +118,18 @@ static void read_mapping_reverse(struct map *map)
 		memcpy(buf, p + i, page_size);
 }
 
+/* fault in a random set of map->size pages. (some may be faulted >once) */
+static void read_random_pages(struct map *map)
+{
+	char *p = map->ptr;
+	unsigned int i;
+	unsigned int num_pages = map->size / page_size;
+	char buf[page_size];
+
+	for (i = 0; i < num_pages; i++)
+		memcpy(buf, p + ((rand() % (num_pages + 1)) * page_size), page_size);
+}
+
 
 /*****************************************************************************/
 
@@ -135,6 +147,7 @@ static const struct faultfn read_faultfns[] = {
 	{ .func = read_whole_mapping },
 	{ .func = read_every_other_page },
 	{ .func = read_mapping_reverse },
+	{ .func = read_random_pages },
 };
 
 /*
