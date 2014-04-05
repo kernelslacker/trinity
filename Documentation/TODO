@@ -16,7 +16,6 @@
   - make sure ARG_ADDRESS only uses addresses from this list, and audit all other mmap/malloc uses
     in sanitise routines.
   - munge lengths when handing them out.
-  - more access patterns
   - mmap files
     (we do this already, but don't track it properly)
   - get_map_fragment()
