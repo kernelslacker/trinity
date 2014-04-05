@@ -108,6 +108,17 @@ static void read_every_other_page(struct map *map)
 		memcpy(buf, p + i, page_size);
 }
 
+static void read_mapping_reverse(struct map *map)
+{
+	char *p = map->ptr;
+	unsigned int i;
+	char buf[page_size];
+
+	for (i = (map->size - page_size); i > 0; i -= page_size)
+		memcpy(buf, p + i, page_size);
+}
+
+
 /*****************************************************************************/
 
 static const struct faultfn write_faultfns[] = {
@@ -123,6 +134,7 @@ static const struct faultfn read_faultfns[] = {
 	{ .func = read_one_page },
 	{ .func = read_whole_mapping },
 	{ .func = read_every_other_page },
+	{ .func = read_mapping_reverse },
 };
 
 /*
