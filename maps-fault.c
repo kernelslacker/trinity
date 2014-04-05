@@ -1,5 +1,5 @@
 /*
- * Routines to dirty mapped pages.
+ * Routines to dirty/fault-in mapped pages.
  */
 
 #include <stdlib.h>
@@ -11,6 +11,9 @@
 #include "maps.h"
 #include "random.h"
 #include "utils.h"
+
+/*****************************************************************************/
+/* dirty page routines */
 
 static void dirty_one_page(struct map *map)
 {
@@ -71,7 +74,23 @@ struct faultfn {
 	void (*func)(struct map *map);
 };
 
-static const struct faultfn faultfns[] = {
+/*****************************************************************************/
+/* routines to fault in pages */
+
+static void read_one_page(struct map *map)
+{
+	char *p = map->ptr;
+	unsigned long offset = (rand() % map->size) & PAGE_MASK;
+	char buf[page_size];
+
+	p += offset;
+	memcpy(buf, p, page_size);
+}
+
+
+/*****************************************************************************/
+
+static const struct faultfn write_faultfns[] = {
 	{ .func = dirty_one_page },
 	{ .func = dirty_whole_mapping },
 	{ .func = dirty_every_other_page },
@@ -80,17 +99,32 @@ static const struct faultfn faultfns[] = {
 	{ .func = dirty_last_page },
 };
 
+static const struct faultfn read_faultfns[] = {
+	{ .func = read_one_page },
+};
+
 /*
  * Routine to perform various kinds of write operations to a mapping
  * that we created.
  */
 void dirty_mapping(struct map *map)
 {
-	/* Check mapping is writable, or we'll segv.
-	 * TODO: Perhaps we should do that, and trap it, mark it writable,
-	 * then reprotect after we dirtied it ? */
-	if (!(map->prot & PROT_WRITE))
-		return;
+	bool rw = rand_bool();
 
-	faultfns[rand() % ARRAY_SIZE(faultfns)].func(map);
+	if (rw == TRUE) {
+		/* Check mapping is writable, or we'll segv.
+		 * TODO: Perhaps we should do that, and trap it, mark it writable,
+		 * then reprotect after we dirtied it ? */
+		if (!(map->prot & PROT_WRITE))
+			return;
+
+		write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
+		return;
+	} else {
+		if (!(map->prot & PROT_READ))
+			return;
+
+		read_faultfns[rand() % ARRAY_SIZE(read_faultfns)].func(map);
+	}
+
 }
