@@ -2,10 +2,10 @@
  * SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf, size_t, count)
  */
 #include <stdlib.h>
+#include "arch.h"	// page_size
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "arch.h"	// page_size
 
 static void sanitise_write(int childno)
 {

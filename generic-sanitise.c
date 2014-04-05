@@ -3,17 +3,18 @@
 #include <unistd.h>
 #include <string.h>
 
-#include "trinity.h"	// page_size
-#include "files.h"
 #include "arch.h"
-#include "random.h"
-#include "sanitise.h"
-#include "syscall.h"
-#include "net.h"
+#include "files.h"
 #include "log.h"
 #include "maps.h"
+#include "net.h"
+#include "random.h"
+#include "random.h"
+#include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "tables.h"
+#include "trinity.h"	// num_online_cpus
 
 static unsigned int get_cpu(void)
 {

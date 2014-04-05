@@ -2,12 +2,12 @@
  * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
  */
 #include <asm/mman.h>
-#include "utils.h"	// page_size
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 
 static void sanitise_mprotect(int childno)
 {

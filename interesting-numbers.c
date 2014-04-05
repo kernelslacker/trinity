@@ -4,7 +4,6 @@
 #include "log.h"	// for BUG
 #include "random.h"
 #include "sanitise.h"
-#include "trinity.h"	// page_size
 
 static unsigned int plus_minus_two(unsigned int num)
 {
