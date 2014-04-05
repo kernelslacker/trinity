@@ -60,7 +60,7 @@ static void dirty_random_pages(struct map *map)
 		p[(rand() % (num_pages + 1)) * page_size] = rand();
 }
 
-/* fault in the last page in a mapping
+/* Dirty the last page in a mapping
  * Fill it with ascii, in the hope we do something like
  * a strlen and go off the end. */
 static void dirty_last_page(struct map *map)
@@ -130,6 +130,15 @@ static void read_random_pages(struct map *map)
 		memcpy(buf, p + ((rand() % (num_pages + 1)) * page_size), page_size);
 }
 
+/* Fault in the last page in a mapping */
+static void read_last_page(struct map *map)
+{
+	char *p = map->ptr;
+	char buf[page_size];
+
+	memcpy(buf, p + (map->size - page_size), page_size);
+}
+
 
 /*****************************************************************************/
 
@@ -148,6 +157,7 @@ static const struct faultfn read_faultfns[] = {
 	{ .func = read_every_other_page },
 	{ .func = read_mapping_reverse },
 	{ .func = read_random_pages },
+	{ .func = read_last_page },
 };
 
 /*
