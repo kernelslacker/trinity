@@ -12,6 +12,10 @@
 #include "random.h"
 #include "utils.h"
 
+struct faultfn {
+	void (*func)(struct map *map);
+};
+
 /*****************************************************************************/
 /* dirty page routines */
 
@@ -70,8 +74,13 @@ static void dirty_last_page(struct map *map)
 	memset((void *) p + (map->size - page_size), 'A', page_size);
 }
 
-struct faultfn {
-	void (*func)(struct map *map);
+static const struct faultfn write_faultfns[] = {
+	{ .func = dirty_one_page },
+	{ .func = dirty_whole_mapping },
+	{ .func = dirty_every_other_page },
+	{ .func = dirty_mapping_reverse },
+	{ .func = dirty_random_pages },
+	{ .func = dirty_last_page },
 };
 
 /*****************************************************************************/
@@ -139,18 +148,6 @@ static void read_last_page(struct map *map)
 	memcpy(buf, p + (map->size - page_size), page_size);
 }
 
-
-/*****************************************************************************/
-
-static const struct faultfn write_faultfns[] = {
-	{ .func = dirty_one_page },
-	{ .func = dirty_whole_mapping },
-	{ .func = dirty_every_other_page },
-	{ .func = dirty_mapping_reverse },
-	{ .func = dirty_random_pages },
-	{ .func = dirty_last_page },
-};
-
 static const struct faultfn read_faultfns[] = {
 	{ .func = read_one_page },
 	{ .func = read_whole_mapping },
@@ -159,6 +156,8 @@ static const struct faultfn read_faultfns[] = {
 	{ .func = read_random_pages },
 	{ .func = read_last_page },
 };
+
+/*****************************************************************************/
 
 /*
  * Routine to perform various kinds of write operations to a mapping
@@ -183,5 +182,4 @@ void dirty_mapping(struct map *map)
 
 		read_faultfns[rand() % ARRAY_SIZE(read_faultfns)].func(map);
 	}
-
 }
