@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.8rc1 */
+/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.15rc1 */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -323,4 +323,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_finit_module },
 	{ .entry = &syscall_sched_setattr },
 	{ .entry = &syscall_sched_getattr },
+	{ .entry = &syscall_renameat2 },
 };

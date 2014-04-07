@@ -368,3 +368,4 @@ extern struct syscallentry syscall_arm_fadvise64_64;
 extern struct syscallentry syscall_sh_cacheflush;
 extern struct syscallentry syscall_sched_setattr;
 extern struct syscallentry syscall_sched_getattr;
+extern struct syscallentry syscall_renameat2;
