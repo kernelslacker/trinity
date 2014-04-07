@@ -50,6 +50,12 @@
 #define F_GETOWNER_UIDS	17
 #endif
 
+#ifndef F_GETLKP
+#define F_GETLKP       36
+#define F_SETLKP       37
+#define F_SETLKPW      38
+#endif
+
 /* linux/hw_breakpoint.h */
 enum {
         HW_BREAKPOINT_LEN_1 = 1,
