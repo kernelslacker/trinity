@@ -84,7 +84,7 @@ struct shm_s {
 	unsigned int *num_mappings;
 
 	/* various flags. */
-	bool do_make_it_fail;
+	bool dont_make_it_fail;
 	enum exit_reasons exit_reason;
 
 	/* locks */

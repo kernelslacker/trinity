@@ -58,25 +58,30 @@ static void enable_coredumps(void)
 
 	(void) setrlimit(RLIMIT_CORE, &limit);
 }
+
 static void set_make_it_fail(void)
 {
 	int fd;
 	const char *buf = "1";
 
-	/* If we failed last time, don't bother trying in future. */
-	if (shm->do_make_it_fail == TRUE)
+	/* If we failed last time, it's probably because we don't
+	 * have fault-injection enabled, so don't bother trying in future.
+	 */
+	if (shm->dont_make_it_fail == TRUE)
 		return;
 
 	fd = open("/proc/self/make-it-fail", O_WRONLY);
-	if (fd == -1)
+	if (fd == -1) {
+		shm->dont_make_it_fail = TRUE;
 		return;
+	}
 
 	if (write(fd, buf, 1) == -1) {
 		if (errno != EPERM)
 			outputerr("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
-		else
-			shm->do_make_it_fail = TRUE;
+		shm->dont_make_it_fail = TRUE;
 	}
+
 	close(fd);
 }
 
