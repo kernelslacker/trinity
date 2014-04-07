@@ -8,6 +8,8 @@
 #define FALLOC_FL_KEEP_SIZE	0x01
 #define FALLOC_FL_PUNCH_HOLE	0x02
 #define FALLOC_FL_NO_HIDE_STALE 0x04
+#define FALLOC_FL_COLLAPSE_RANGE 0x08
+#define FALLOC_FL_ZERO_RANGE 0x10
 
 struct syscallentry syscall_fallocate = {
 	.name = "fallocate",
@@ -17,9 +19,11 @@ struct syscallentry syscall_fallocate = {
 	.arg2name = "mode",
 	.arg2type = ARG_LIST,
 	.arg2list = {
-		.num = 3,
-		.values = { FALLOC_FL_KEEP_SIZE, FALLOC_FL_PUNCH_HOLE,
-			FALLOC_FL_NO_HIDE_STALE,
+		.num = 5,
+		.values = {
+			FALLOC_FL_KEEP_SIZE, FALLOC_FL_PUNCH_HOLE,
+			FALLOC_FL_NO_HIDE_STALE, FALLOC_FL_COLLAPSE_RANGE,
+			FALLOC_FL_ZERO_RANGE,
 		},
 	},
 	.arg3name = "offset",
