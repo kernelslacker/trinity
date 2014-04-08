@@ -151,9 +151,10 @@ retry:
 
 	//Search for 64 bit version
 	if (do_64_arch) {
-		struct syscallentry *entry = syscalls_64bit[call64].entry;
+		struct syscallentry *entry = NULL;
 
 		call64 = rand() % max_nr_64bit_syscalls;
+
 		if (validate_specific_syscall_silent(syscalls_64bit, call64) == FALSE)
 			goto retry;
 
@@ -161,11 +162,17 @@ retry:
 			if (is_syscall_net_related(syscalls_64bit, call64) == FALSE)
 				goto retry;
 
-		if (entry->flags & TO_BE_DEACTIVATED)
-			goto try32bit;
+		entry = syscalls_64bit[call64].entry;
 
-		if (entry->active_number != 0)
+		if (entry->flags & TO_BE_DEACTIVATED) {
+			call64 = NOTFOUND;
 			goto try32bit;
+		}
+
+		if (entry->active_number != 0) {
+			call64 = NOTFOUND;
+			goto try32bit;
+		}
 
 		// If we got so far, then activate it.
 		toggle_syscall_biarch_n(call64, syscalls_64bit, TRUE, do_64_arch, TRUE,
@@ -175,40 +182,34 @@ retry:
 try32bit:
 	//Search for 32 bit version
 	if (do_32_arch) {
-		struct syscallentry *entry = syscalls_32bit[call32].entry;
+		struct syscallentry *entry = NULL;
 
-		// FIXME: WTF is going on here?
+		/* If we enabled a 64bit syscall above, enable its 32-bit counter-part too */
 		if (do_64_arch) {
-			call32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, syscalls_64bit[call64].entry->name);
-
-			if (syscalls_64bit[call64].entry->flags & TO_BE_DEACTIVATED)
-				call64 = NOTFOUND; //mark as not found in order not to increment i.
+			if (call64 == NOTFOUND) {
+				goto just32;
+			} else {
+				call32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, syscalls_64bit[call64].entry->name);
+				if (call32 == NOTFOUND)
+					return;	// syscall is 64-bit only.
+			}
 		} else {
+just32:
 			call32 = rand() % max_nr_32bit_syscalls;
 		}
 
-		if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE) {
-			if (call64 == NOTFOUND)
-				goto retry;
-			else
-				return;
-		}
+		if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE)
+			return;
 
 		if (no_files == TRUE) {
-			if (is_syscall_net_related(syscalls_32bit, call32) == FALSE) {
-				if (call64 == NOTFOUND)
-					goto retry;
-				else
-					return;
-			}
-		}
-
-		if ((entry->flags & TO_BE_DEACTIVATED) || (entry->active_number != 0)) {
-			if (call64 == NOTFOUND)
-				goto retry;
-			else
+			if (is_syscall_net_related(syscalls_32bit, call32) == FALSE)
 				return;
 		}
+
+		entry = syscalls_32bit[call32].entry;
+
+		if ((entry->flags & TO_BE_DEACTIVATED) || (entry->active_number != 0))
+			return;
 
 		//If we got so far, then active it.
 		toggle_syscall_biarch_n(call32, syscalls_32bit, TRUE, do_32_arch, TRUE,
