@@ -88,3 +88,25 @@ struct syscallentry syscall_openat = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
 };
+
+/*
+ * SYSCALL_DEFINE3(open_by_handle_at, int, mountdirfd,
+ *               struct file_handle __user *, handle,
+ *               int, flags)
+ */
+struct syscallentry syscall_open_by_handle_at = {
+	.name = "open_by_handle_at",
+	.num_args = 3,
+	.arg1name = "mountdirfd",
+	.arg1type = ARG_FD,
+	.arg2name = "handle",
+	.arg2type = ARG_ADDRESS,
+	.arg3name = "flags",
+	.arg3type = ARG_OP,
+	.arg3list = {
+		.num = 4,
+		.values = { O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, },
+	},
+	.flags = NEED_ALARM,
+	.sanitise = sanitise_openat,	// For now we only sanitise .flags, which is also arg3
+};
