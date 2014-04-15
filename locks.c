@@ -30,6 +30,7 @@ steal:
 
 void unlock(lock_t *_lock)
 {
+	asm volatile("" ::: "memory");
 	_lock->contention = 0;
 	_lock->lock = UNLOCKED;
 	_lock->owner = 0;
