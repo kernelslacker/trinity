@@ -1,6 +1,3 @@
-/*
- * SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, int, mode)
- */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -33,14 +30,10 @@ static unsigned long get_o_flags(void)
 	return mask;
 }
 
-static void sanitise_open(int childno)
-{
-	unsigned long flags;
-
-	flags = get_o_flags();
-
-	shm->syscall[childno].a2 |= flags;
-}
+/*
+ * SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, int, mode)
+ */
+static void sanitise_open(int childno);
 
 struct syscallentry syscall_open = {
 	.name = "open",
@@ -58,18 +51,20 @@ struct syscallentry syscall_open = {
 	.sanitise = sanitise_open,
 };
 
-static void sanitise_openat(int childno)
+static void sanitise_open(int childno)
 {
 	unsigned long flags;
 
 	flags = get_o_flags();
 
-	shm->syscall[childno].a3 |= flags;
+	shm->syscall[childno].a2 |= flags;
 }
 
 /*
  * SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, int, mode)
  */
+static void sanitise_openat(int childno);
+
 struct syscallentry syscall_openat = {
 	.name = "openat",
 	.num_args = 4,
@@ -88,6 +83,15 @@ struct syscallentry syscall_openat = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
 };
+
+static void sanitise_openat(int childno)
+{
+	unsigned long flags;
+
+	flags = get_o_flags();
+
+	shm->syscall[childno].a3 |= flags;
+}
 
 /*
  * SYSCALL_DEFINE3(open_by_handle_at, int, mountdirfd,
