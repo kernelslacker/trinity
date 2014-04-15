@@ -271,7 +271,6 @@ static unsigned int handle_sigreturn(int childno)
 void child_process(int childno)
 {
 	int ret;
-	const char *lastop = NULL;
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
@@ -280,6 +279,7 @@ void child_process(int childno)
 	}
 
 	while (shm->exit_reason == STILL_RUNNING) {
+		const char *lastop = NULL;
 		unsigned int i;
 
 		check_parent_pid();
