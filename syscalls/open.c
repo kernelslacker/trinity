@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include "files.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -14,7 +15,11 @@ static const unsigned long o_flags[] = {
 	O_PATH, O_DSYNC, O_LARGEFILE, O_TMPFILE,
 };
 
-static unsigned long get_o_flags(void)
+/*
+ * Choose a random number of file flags to OR into the mask.
+ * also used in files.c:open_file()
+ */
+unsigned long get_o_flags(void)
 {
 	unsigned long mask = 0;
 	unsigned long bits;

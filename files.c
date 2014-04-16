@@ -248,8 +248,9 @@ static int open_file(void)
 {
 	int fd;
 	int ret;
+	int tries = 0;
 	const char *filename;
-	int flags;
+	int flags, randflags;
 	const char *modestr;
 	struct stat sb;
 
@@ -263,10 +264,23 @@ retry:
 	if (flags == -1)
 		goto retry;
 
-	fd = open(filename, flags | O_NONBLOCK);
+	/* OR in some random flags. */
+retry_flags:
+	randflags = get_o_flags();
+
+	fd = open(filename, flags | randflags | O_NONBLOCK);
 	if (fd < 0) {
-		output(2, "Couldn't open %s : %s\n", filename, strerror(errno));
-		return fd;
+		/*
+		 * if we failed to open the file, retry with different flags.
+		 * we should eventually succeed, but set an arbitary upper limit of
+		 * 50 tries before just giving up.
+		 */
+		tries++;
+		if (tries == 50) {
+			output(2, "Couldn't open %s : %s\n", filename, strerror(errno));
+			return fd;
+		}
+		goto retry_flags;
 	}
 
 	switch (flags) {
@@ -275,7 +289,7 @@ retry:
 	case O_RDWR:    modestr = "read-write"; break;
 	default: modestr = "unknown"; break;
 	}
-	output(2, "fd[%i] = %s (%s)\n", fd, filename, modestr);
+	output(2, "fd[%i] = %s (%s) flags:%x\n", fd, filename, modestr, randflags);
 	return fd;
 }
 

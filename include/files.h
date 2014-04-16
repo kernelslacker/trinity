@@ -3,6 +3,8 @@
 #include "constants.h"
 #include <sys/stat.h>
 
+unsigned long get_o_flags(void);
+
 unsigned int setup_fds(void);
 
 void generate_filelist(void);
