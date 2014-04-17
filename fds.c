@@ -96,18 +96,6 @@ static int rand_eventfd_fd(void)
 	return shm->eventfd_fds[rand() % MAX_EVENTFD_FDS];
 }
 
-/* regular file FDs  */
-unsigned int nr_file_fds = 0;
-
-static int rand_file_fd(void)
-{
-	unsigned int fd_index;
-
-	fd_index = rand() % nr_file_fds;
-	return shm->file_fds[fd_index];
-}
-
-
 static int get_new_random_fd(void)
 {
 	unsigned int i;

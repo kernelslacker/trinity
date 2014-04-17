@@ -26,6 +26,7 @@
 static int files_added = 0;
 const char **fileindex;
 unsigned int files_in_index = 0;
+unsigned int nr_file_fds = 0;
 
 struct namelist {
 	struct list_head list;
@@ -347,4 +348,12 @@ const char * get_filename(void)
 		return NULL;
 
 	return fileindex[rand() % files_in_index];
+}
+
+int rand_file_fd(void)
+{
+	unsigned int fd_index;
+
+	fd_index = rand() % nr_file_fds;
+	return shm->file_fds[fd_index];
 }

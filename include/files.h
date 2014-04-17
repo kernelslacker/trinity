@@ -10,6 +10,7 @@ unsigned int setup_fds(void);
 int open_files(void);
 void close_files(void);
 void regenerate_fds(void);
+int rand_file_fd(void);
 
 void parse_devices(void);
 const char *map_dev(dev_t, mode_t);
