@@ -350,4 +350,7 @@ struct syscalltable syscalls_s390[] = {
 	{ .entry = &syscall_ni_syscall },
 	{ .entry = &syscall_kcmp },
 	{ .entry = &syscall_finit_module },
+	{ .entry = &syscall_sched_setattr },
+	{ .entry = &syscall_sched_getattr },
+	{ .entry = &syscall_renameat2 },
 };
