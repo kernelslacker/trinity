@@ -18,12 +18,6 @@
 #include "shm.h"
 #include "trinity.h"
 
-/* perf related fds (see also perf.c & syscalls/perf_event_open.c) */
-static int rand_perf_fd(void)
-{
-	return shm->perf_fds[rand() % MAX_PERF_FDS];
-}
-
 /* epoll related fds */
 static void open_epoll_fds(void)
 {
