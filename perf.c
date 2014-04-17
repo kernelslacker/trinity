@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-//#include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <asm/unistd.h>
 
 #include "perf.h"
@@ -31,4 +30,9 @@ void open_perf_fds(void)
 				return;
 		}
 	}
+}
+
+int rand_perf_fd(void)
+{
+	return shm->perf_fds[rand() % MAX_PERF_FDS];
 }
