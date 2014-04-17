@@ -21,16 +21,9 @@ static const unsigned long o_flags[] = {
  */
 unsigned long get_o_flags(void)
 {
-	unsigned long mask = 0;
-	unsigned long bits;
-	unsigned int i, num;
+	unsigned long mask;
 
-	num = ARRAY_SIZE(o_flags);
-
-	bits = rand() % (num + 1);      /* num of bits to OR */
-
-	for (i = 0; i < bits; i++)
-		mask |= o_flags[rand() % num];
+	mask = set_rand_bitmask(ARRAY_SIZE(o_flags), o_flags);
 
 	return mask;
 }
