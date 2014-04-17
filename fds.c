@@ -12,34 +12,11 @@
 #include "params.h"
 #include "perf.h"
 #include "pids.h"
+#include "pipes.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-
-/* Pipe FD related functions. */
-static void open_pipes(void)
-{
-	int pipes[2];
-	unsigned int i;
-
-	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
-		if (pipe(pipes) < 0) {
-			perror("pipe fail.\n");
-			exit(EXIT_FAILURE);
-		}
-		shm->pipe_fds[i] = pipes[0];
-		shm->pipe_fds[i+1] = pipes[1];
-
-		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i]);
-		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i+1]);
-	}
-}
-
-static int rand_pipe_fd(void)
-{
-	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
-}
 
 /* perf related fds (see also perf.c & syscalls/perf_event_open.c) */
 static int rand_perf_fd(void)
