@@ -26,7 +26,7 @@ enum argtype {
 
 struct arglist {
 	unsigned int num;
-	unsigned int values[32];
+	unsigned long values[32];
 };
 
 struct syscallentry {

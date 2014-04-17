@@ -102,7 +102,7 @@ static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 {
 	struct syscallentry *entry;
-	const unsigned int *values = NULL;
+	const unsigned long *values = NULL;
 	unsigned int num = 0;
 	unsigned long mask = 0;
 
@@ -146,7 +146,7 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 	unsigned long mask = 0;
 	unsigned int bits;
 	unsigned int num = 0;
-	const unsigned int *values = NULL;
+	const unsigned long *values = NULL;
 
 	entry = syscalls[call].entry;
 
