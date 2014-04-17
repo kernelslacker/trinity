@@ -206,7 +206,7 @@ static void open_fds(const char *dirpath)
 	output(0, "Added %d filenames from %s\n", files_added - before, dirpath);
 }
 
-void generate_filelist(void)
+static void generate_filelist(void)
 {
 	unsigned int i = 0;
 	struct list_head *node;
@@ -293,9 +293,14 @@ retry_flags:
 	return fd;
 }
 
-void open_files(void)
+int open_files(void)
 {
 	unsigned int i, nr_to_open;
+
+	generate_filelist();
+
+	if (files_in_index == 0)	/* Something bad happened. Crappy -V maybe? */
+		return FALSE;		// FIXME: We should log something here probably.
 
 	if (files_in_index < NR_FILE_FDS)
 		nr_to_open = files_in_index;
@@ -303,7 +308,7 @@ void open_files(void)
 		nr_to_open = NR_FILE_FDS;
 
 	if (fileindex == NULL)	/* this can happen if we ctrl-c'd */
-		return;
+		return FALSE;
 
 	for (i = 0; i < nr_to_open; i++) {
 		int fd;
@@ -313,6 +318,7 @@ void open_files(void)
 		shm->file_fds[i] = fd;
 		nr_file_fds++;
 	}
+	return TRUE;
 }
 
 void close_files(void)

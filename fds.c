@@ -201,10 +201,10 @@ regen:
 
 unsigned int setup_fds(void)
 {
+	int ret = TRUE;
+
 	/* If we have victim files, don't worry about sockets. */
 	if (victim_path == NULL) {
-		int ret;
-
 		ret = open_sockets();
 		if (ret == FALSE)
 			return FALSE;
@@ -218,15 +218,10 @@ unsigned int setup_fds(void)
 
 	open_eventfd_fds();
 
-	if (no_files == FALSE) {
-		generate_filelist();
-		if (files_in_index == 0)	/* Something bad happened. Crappy -V maybe? */
-			return FALSE;		// FIXME: We should log something here probably.
+	if (no_files == FALSE)
+		ret = open_files();
 
-		open_files();
-	}
-
-	return TRUE;
+	return ret;
 }
 
 void regenerate_fds(void)

@@ -7,8 +7,7 @@ unsigned long get_o_flags(void);
 
 unsigned int setup_fds(void);
 
-void generate_filelist(void);
-void open_files(void);
+int open_files(void);
 void close_files(void);
 void regenerate_fds(void);
 
