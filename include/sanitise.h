@@ -7,6 +7,7 @@ void sanitise_rt_sigaction(int childno);
 void sanitise_prctl(int childno);
 void sanitise_perf_event_open(int childno);
 
+unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);
 void generic_sanitise(int childno);
 
 unsigned long get_interesting_value(void);

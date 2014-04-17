@@ -139,12 +139,23 @@ static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
 	return mask;
 }
 
-static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
+unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 {
-	struct syscallentry *entry;
 	unsigned long i;
 	unsigned long mask = 0;
 	unsigned int bits;
+
+	bits = (rand() % num) + 1;	/* num of bits to OR */
+	for (i = 0; i < bits; i++)
+		mask |= values[rand() % num];
+
+	return mask;
+}
+
+static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
+{
+	struct syscallentry *entry;
+	unsigned long mask = 0;
 	unsigned int num = 0;
 	const unsigned long *values = NULL;
 
@@ -177,9 +188,7 @@ static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
 	if (values == NULL)
 		BUG("ARG_LIST with no values.\n");
 
-	bits = rand() % (num + 1);	/* num of bits to OR */
-	for (i = 0; i < bits; i++)
-		mask |= values[rand() % num];
+	mask = set_rand_bitmask(num, values);
 	return mask;
 }
 
