@@ -50,6 +50,9 @@
    need to work around segv's when we do things like mmap->post and register null maps.
 
 * Rewrite the fd code.
+  - register_fd interface for each of the fd-*.c files.
+    setup_fds() iterates over registered fd producers.
+    Then get_new_random_fd should become a lot cleaner.
   - kill off NR_FILE_FDS
   - open some files in the child too after forking.
     - this requires a child-local fd mapping table.
