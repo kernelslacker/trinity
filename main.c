@@ -165,7 +165,7 @@ static void handle_child(pid_t childpid, int childstatus)
 					dump_pid_slots();
 				}
 			} else {
-				debugf("Child %d exited after %ld syscalls.\n", childpid, shm->child_syscall_count[slot]);
+				debugf("Child %d exited after %ld operations.\n", childpid, shm->child_op_count[slot]);
 				reap_child(childpid);
 			}
 			break;

@@ -395,7 +395,7 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const pid_t 
 
 	entry = syscalls[syscallnr].entry;
 
-	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid, shm->child_syscall_count[childno],
+	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid, shm->child_op_count[childno],
 			(shm->syscall[childno].do32bit == TRUE) ? "[32BIT] " : "");
 
 	if (syscallnr > max_nr_syscalls)

@@ -31,10 +31,12 @@ struct shm_s {
 	unsigned long total_syscalls_done;
 	unsigned long successes;
 	unsigned long failures;
-	unsigned long previous_count;
-	unsigned long *child_syscall_count;
 
+	unsigned long previous_op_count;	/* combined total of all children */
+	unsigned long *child_op_count;		/* these are per-child so we can see if
+						   a child is making progress or not. */
 	unsigned long regenerate;
+
 	unsigned int seed;
 	unsigned int *seeds;
 

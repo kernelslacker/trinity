@@ -90,7 +90,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	a6 = shm->syscall[childno].a6;
 
 	shm->total_syscalls_done++;
-	shm->child_syscall_count[childno]++;
+	shm->child_op_count[childno]++;
 	(void)gettimeofday(&shm->tv[childno], NULL);
 
 	if (syscalls[nr].entry->flags & NEED_ALARM)

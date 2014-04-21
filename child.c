@@ -150,7 +150,7 @@ void init_child(int childno)
 		sched_setaffinity(pid, sizeof(set), &set);
 	}
 
-	shm->child_syscall_count[childno] = 0;
+	shm->child_op_count[childno] = 0;
 
 	memset(childname, 0, sizeof(childname));
 	sprintf(childname, "trinity-c%d", childno);
@@ -212,13 +212,13 @@ static void check_parent_pid(void)
 		// Skip over 'boring' entries.
 		if ((shm->pids[i] == EMPTY_PIDSLOT) &&
 		    (shm->previous[i].nr == 0) &&
-		    (shm->child_syscall_count[i] == 0))
+		    (shm->child_op_count[i] == 0))
 			continue;
 
 		output(0, "[%d]  pid:%d call:%s callno:%d\n",
 			i, shm->pids[i],
 			print_syscall_name(shm->previous[i].nr, shm->previous[i].do32bit),
-			shm->child_syscall_count[i]);
+			shm->child_op_count[i]);
 	}
 	shm->exit_reason = EXIT_REPARENT_PROBLEM;
 	exit(EXIT_FAILURE);
@@ -245,12 +245,12 @@ static unsigned int handle_sigreturn(int childno)
 	output(2, "<timed out>\n");     /* Flush out the previous syscall output. */
 
 	/* Check if we're making any progress at all. */
-	if (shm->child_syscall_count[childno] == last) {
+	if (shm->child_op_count[childno] == last) {
 		count++;
 		//output(1, "no progress for %d tries.\n", count);
 	} else {
 		count = 0;
-		last = shm->child_syscall_count[childno];
+		last = shm->child_op_count[childno];
 	}
 	if (count == 3) {
 		output(1, "no progress for 3 tries, exiting child.\n");
