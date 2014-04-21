@@ -262,7 +262,7 @@ static void handle_children(void)
 static const char *reasons[NUM_EXIT_REASONS] = {
 	"Still running.",
 	"No more syscalls enabled.",
-	"Reached maximum syscall count.",
+	"Completed maximum number of operations.",
 	"No file descriptors open.",
 	"Lost track of a pid slot.",
 	"shm corruption - Found a pid out of range.",
