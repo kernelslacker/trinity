@@ -1,5 +1,4 @@
 * Flesh out the child ops some more
-  - move away from 'syscall counts' towards 'iteration count'
   - Add more things that a real program would do.
     - add all the ops things like fsx do.
     - do file ops on a bunch of trinity test files

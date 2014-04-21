@@ -43,7 +43,7 @@ void create_shm(void)
 
 void create_shm_arrays(void)
 {
-	shm->child_syscall_count = alloc_shared(max_children * sizeof(unsigned long));
+	shm->child_op_count = alloc_shared(max_children * sizeof(unsigned long));
 
 	shm->pids = alloc_shared(max_children * sizeof(pid_t));
 

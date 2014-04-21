@@ -51,12 +51,12 @@ static int check_shm_sanity(void)
 	// FIXME: The '500000' is magic, and should be dynamically calculated.
 	// On startup, we should figure out how many getpid()'s per second we can do,
 	// and use that.
-	if (shm->total_syscalls_done - shm->previous_count > 500000) {
+	if (shm->total_syscalls_done - shm->previous_op_count > 500000) {
 		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
-			shm->previous_count, shm->total_syscalls_done);
+			shm->previous_op_count, shm->total_syscalls_done);
 		shm->exit_reason = EXIT_SHM_CORRUPTION;
 	}
-	shm->previous_count = shm->total_syscalls_done;
+	shm->previous_op_count = shm->total_syscalls_done;
 
 	return SHM_OK;
 }
@@ -361,8 +361,8 @@ static void watchdog(void)
 				synclogs();
 
 			for_each_pidslot(i) {
-				if (shm->child_syscall_count[i] > hiscore)
-					hiscore = shm->child_syscall_count[i];
+				if (shm->child_op_count[i] > hiscore)
+					hiscore = shm->child_op_count[i];
 			}
 
 			if (shm->total_syscalls_done > 1) {
