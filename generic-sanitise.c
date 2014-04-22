@@ -210,7 +210,7 @@ static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned 
 
 	entry = syscalls[call].entry;
 
-	num_entries = 1 << (rand() % 11);
+	num_entries = rand() % 256;
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_IOVECLEN)
