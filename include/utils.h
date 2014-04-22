@@ -1,12 +1,18 @@
 #pragma once
 
+#include <sys/mman.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <types.h>
 
 #define MB (1024 * 1024UL)
 #define GB (1024 * MB)
 
 void * alloc_shared(unsigned int size);
-void * zmalloc(size_t size);
+
+void * __zmalloc(size_t size, const char *func);
+#define zmalloc(size)	__zmalloc(size, __func__)
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
