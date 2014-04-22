@@ -21,13 +21,13 @@ void * alloc_shared(unsigned int size)
 	return ret;
 }
 
-void * zmalloc(size_t size)
+void * __zmalloc(size_t size, const char *func)
 {
 	void *p;
 
 	p = malloc(size);
 	if (p == NULL) {
-		printf("malloc(%zu) failure.\n", size);
+		printf("%s: malloc(%zu) failure.\n", func, size);
 		exit(EXIT_FAILURE);
 	}
 
