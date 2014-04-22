@@ -167,6 +167,7 @@ bool mkcall(int childno)
 				sleep(1);
 				kill(extrapid, SIGKILL);
 			}
+			generic_free_arg(childno);
 			return FALSE;
 		}
 	}
@@ -229,6 +230,8 @@ skip_enosys:
 	shm->previous[childno].do32bit = shm->syscall[childno].do32bit;
 
 	check_uid();
+
+	generic_free_arg(childno);
 
 	return TRUE;
 }
