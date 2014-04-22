@@ -1,6 +1,5 @@
 #pragma once
 
-#include "constants.h"
 #include <sys/stat.h>
 
 unsigned long get_o_flags(void);
@@ -19,3 +18,5 @@ extern unsigned int nr_file_fds;
 extern char *victim_path;
 extern const char **fileindex;
 extern unsigned int files_in_index;
+
+#define NR_FILE_FDS 250

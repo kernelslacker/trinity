@@ -4,6 +4,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#define NR_SOCKET_FDS 375
+
 extern unsigned int nr_sockets;
 
 /* protocol decoding */
