@@ -92,7 +92,7 @@ static void sanitise_move_pages(int childno)
 	shm->syscall[childno].a4 = (unsigned long) nodes;
 
 	/* status = array of ints returning status of each page.*/
-	shm->syscall[childno].a5 = (unsigned long) zmalloc(count * sizeof(int));
+	shm->syscall[childno].a5 = (unsigned long) calloc(count, sizeof(int));
 
 	/* Needs CAP_SYS_NICE */
 	if (getuid() != 0)
