@@ -235,7 +235,6 @@ static const struct child_funcs child_ops[] = {
 	{ .name = "rand_syscalls", .func = child_random_syscalls, .likelyhood = 100 },
 };
 
-
 // FIXME: when we have different child ops, we're going to need to redo the progress detector.
 static unsigned int handle_sigreturn(int childno)
 {
@@ -252,8 +251,8 @@ static unsigned int handle_sigreturn(int childno)
 		count = 0;
 		last = shm->child_op_count[childno];
 	}
-	if (count == 3) {
-		output(1, "no progress for 3 tries, exiting child.\n");
+	if (count == 10) {
+		output(1, "no progress for 10 tries, exiting child.\n");
 		return 0;
 	}
 
