@@ -232,24 +232,27 @@ static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned 
 	return (unsigned long) alloc_iovec(num_entries);
 }
 
-static unsigned long handle_arg_len_already_set(int childno, unsigned long argnum)
+static unsigned long get_argval(int childno, unsigned int argnum)
 {
-	unsigned long r = 0;
+	unsigned long val = 0;
 
-	/*
-	 * We already set the len in the ARG_IOVEC/ARG_SOCKADDR case
-	 * So here we just return what we had set there.
-	 */
 	switch (argnum) {
-	case 1:	r = shm->syscall[childno].a1; break;
-	case 2:	r = shm->syscall[childno].a2; break;
-	case 3:	r = shm->syscall[childno].a3; break;
-	case 4:	r = shm->syscall[childno].a4; break;
-	case 5:	r = shm->syscall[childno].a5; break;
-	case 6:	r = shm->syscall[childno].a6; break;
+	case 1:	val = shm->syscall[childno].a1;
+		break;
+	case 2:	val = shm->syscall[childno].a2;
+		break;
+	case 3:	val = shm->syscall[childno].a3;
+		break;
+	case 4:	val = shm->syscall[childno].a4;
+		break;
+	case 5:	val = shm->syscall[childno].a5;
+		break;
+	case 6:	val = shm->syscall[childno].a6;
+		break;
 	}
-	return r;
+	return val;
 }
+
 
 static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsigned long argnum)
 {
@@ -314,16 +317,9 @@ static unsigned long handle_arg_mode_t(void)
 	return mode;
 }
 
-
-static unsigned long fill_arg(int childno, int call, unsigned int argnum)
+static enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 {
-	struct syscallentry *entry;
 	enum argtype argtype = 0;
-
-	entry = syscalls[call].entry;
-
-	if (argnum > entry->num_args)
-		return 0;
 
 	switch (argnum) {
 	case 1:	argtype = entry->arg1type;
@@ -339,6 +335,21 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 	case 6:	argtype = entry->arg6type;
 		break;
 	}
+
+	return argtype;
+}
+
+static unsigned long fill_arg(int childno, int call, unsigned int argnum)
+{
+	struct syscallentry *entry;
+	enum argtype argtype;
+
+	entry = syscalls[call].entry;
+
+	if (argnum > entry->num_args)
+		return 0;
+
+	argtype = get_argtype(entry, argnum);
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
@@ -386,7 +397,9 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
-		return handle_arg_len_already_set(childno, argnum);
+		/* We already set the len in the ARG_IOVEC/ARG_SOCKADDR case
+		 * So here we just return what we had set there. */
+		return get_argval(childno, argnum);
 
 	case ARG_SOCKADDR:
 		return handle_arg_sockaddr(childno, call, argnum);
@@ -417,4 +430,21 @@ void generic_sanitise(int childno)
 		shm->syscall[childno].a5 = fill_arg(childno, call, 5);
 	if (entry->arg6type != 0)
 		shm->syscall[childno].a6 = fill_arg(childno, call, 6);
+}
+
+void generic_free_arg(int childno)
+{
+	struct syscallentry *entry;
+	unsigned int call = shm->syscall[childno].nr;
+	enum argtype argtype;
+	unsigned int i;
+
+	entry = syscalls[call].entry;
+
+	for (i = 1; i <= entry->num_args; i++) {
+		argtype = get_argtype(entry, i);
+
+		if (argtype == ARG_IOVEC)
+			free((void *) get_argval(childno, i));
+	}
 }

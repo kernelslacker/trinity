@@ -160,7 +160,7 @@ struct iovec * alloc_iovec(unsigned int num)
 {
 	struct iovec *iov;
 
-	iov = malloc(num * sizeof(struct iovec));	// FIXME: LEAK
+	iov = malloc(num * sizeof(struct iovec));	/* freed by generic_free_arg */
 	if (iov != NULL) {
 		unsigned int i;
 
