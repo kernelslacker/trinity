@@ -6,9 +6,14 @@
 #include <stdio.h>
 
 #include "constants.h"
+#include "epoll.h"
+#include "eventfd.h"
 #include "exit.h"
+#include "files.h"
 #include "locks.h"
 #include "net.h"
+#include "pipes.h"
+#include "perf.h"
 #include "types.h"
 
 void create_shm(void);
