@@ -117,9 +117,6 @@ install: trinity
 tags:	$(SRCS)
 	@ctags -R --exclude=tmp
 
-mirror:
-	@git push --mirror git@github.com:kernelslacker/trinity.git
-
 scan:
 	@scan-build --use-analyzer=/usr/bin/clang make
 
