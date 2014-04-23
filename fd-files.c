@@ -10,7 +10,6 @@
 #include <sys/stat.h>
 
 #include "trinity.h"	// __unused__
-#include "arch.h"	// page_size
 #include "constants.h"
 #include "files.h"
 #include "list.h"
@@ -161,12 +160,16 @@ static int check_stat_file(const struct stat *sb)
 	return openflag;
 }
 
-static int file_tree_callback(const char *fpath, const struct stat *sb, __unused__ int typeflag, __unused__ struct FTW *ftwbuf)
+static int file_tree_callback(const char *fpath, const struct stat *sb, int typeflag, __unused__ struct FTW *ftwbuf)
 {
+	if (typeflag == FTW_DNR)
+		return FTW_CONTINUE;
 
-	if (ignore_files(fpath)) {
+	if (typeflag == FTW_NS)
+		return FTW_CONTINUE;
+
+	if (ignore_files(fpath))
 		return FTW_SKIP_SUBTREE;
-	}
 
 	// Check we can read it.
 	if (check_stat_file(sb) == -1)
