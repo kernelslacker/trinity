@@ -283,9 +283,6 @@ void child_process(int childno)
 
 		check_parent_pid();
 
-		while (shm->regenerating == TRUE)
-			sleep(1);
-
 		/* If the parent reseeded, we should reflect the latest seed too. */
 		if (shm->seed != shm->seeds[childno])
 			set_seed(childno);

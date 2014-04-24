@@ -157,11 +157,6 @@ static bool __check_main(void)
 			output(0, "main pid %d has disappeared.\n", shm->mainpid);
 			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
 			shm->mainpid = 0;
-
-			/* if main crashed while regenerating, we'll hang the watchdog,
-			 * because nothing will ever set it back to FALSE. So we do it ourselves.
-			 */
-			shm->regenerating = FALSE;
 		} else {
 			output(0, "problem checking on pid %d (%d:%s)\n", shm->mainpid, errno, strerror(errno));
 		}
@@ -338,43 +333,40 @@ static void watchdog(void)
 
 	while (watchdog_exit == FALSE) {
 
+		unsigned int i;
+
 		if (check_shm_sanity() == SHM_CORRUPT)
 			goto corrupt;
 
 		if (check_main_alive() == FALSE)
 			goto main_dead;
 
-		if (shm->regenerating == FALSE) {
-			unsigned int i;
+		reap_dead_kids();
 
-			reap_dead_kids();
+		check_children();
 
-			check_children();
+		if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
+			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
+			shm->exit_reason = EXIT_REACHED_COUNT;
+		}
 
-			if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
-				output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
-				shm->exit_reason = EXIT_REACHED_COUNT;
+		// Periodic log syncing. FIXME: This is kinda ugly, and mostly unnecessary.
+		if (shm->total_syscalls_done % 1000 == 0)
+			synclogs();
+
+		for_each_pidslot(i) {
+			if (shm->child_op_count[i] > hiscore)
+				hiscore = shm->child_op_count[i];
+		}
+
+		if (shm->total_syscalls_done > 1) {
+			if (shm->total_syscalls_done - lastcount > 10000) {
+				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld]\n",
+					shm->total_syscalls_done,
+					shm->failures, shm->successes,
+					hiscore);
+				lastcount = shm->total_syscalls_done;
 			}
-
-			// Periodic log syncing. FIXME: This is kinda ugly, and mostly unnecessary.
-			if (shm->total_syscalls_done % 1000 == 0)
-				synclogs();
-
-			for_each_pidslot(i) {
-				if (shm->child_op_count[i] > hiscore)
-					hiscore = shm->child_op_count[i];
-			}
-
-			if (shm->total_syscalls_done > 1) {
-				if (shm->total_syscalls_done - lastcount > 10000) {
-					output(0, "%ld iterations. [F:%ld S:%ld HI:%ld]\n",
-						shm->total_syscalls_done,
-						shm->failures, shm->successes,
-						hiscore);
-					lastcount = shm->total_syscalls_done;
-				}
-			}
-
 		}
 
 		/* Only check taint if it mask allows it */
@@ -408,10 +400,6 @@ main_dead:
 	}
 
 corrupt:
-	/* We don't want to ever exit before main is waiting for us. */
-	while (shm->regenerating == TRUE)
-		sleep(1);
-
 	kill_all_kids();
 }
 

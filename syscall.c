@@ -126,8 +126,6 @@ bool mkcall(int childno)
 
 	entry = syscalls[call].entry;
 
-	shm->regenerate++;
-
 	shm->syscall[childno].a1 = (unsigned long) rand64();
 	shm->syscall[childno].a2 = (unsigned long) rand64();
 	shm->syscall[childno].a3 = (unsigned long) rand64();
