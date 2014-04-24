@@ -40,8 +40,6 @@ struct shm_s {
 	unsigned long previous_op_count;	/* combined total of all children */
 	unsigned long *child_op_count;		/* these are per-child so we can see if
 						   a child is making progress or not. */
-	unsigned long regenerate;
-
 	unsigned int seed;
 	unsigned int *seeds;
 
@@ -95,7 +93,6 @@ struct shm_s {
 	enum exit_reasons exit_reason;
 
 	/* locks */
-	volatile unsigned char regenerating;
 	lock_t reaper_lock;
 	lock_t syscall_lock;
 

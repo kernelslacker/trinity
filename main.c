@@ -289,10 +289,6 @@ void main_loop(void)
 		if (shm->spawn_no_more == FALSE) {
 			if (shm->running_childs < max_children)
 				fork_children();
-
-			/* Periodic regenation of fd's etc. */
-			if (shm->regenerate >= REGENERATION_POINT)
-				regenerate();
 		}
 
 		handle_children();
