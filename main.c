@@ -285,11 +285,8 @@ static const char * decode_exit(unsigned int reason)
 void main_loop(void)
 {
 	while (shm->exit_reason == STILL_RUNNING) {
-
-		if (shm->spawn_no_more == FALSE) {
-			if (shm->running_childs < max_children)
-				fork_children();
-		}
+		if (shm->running_childs < max_children)
+			fork_children();
 
 		handle_children();
 	}
