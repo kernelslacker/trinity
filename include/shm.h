@@ -14,6 +14,7 @@
 #include "net.h"
 #include "pipes.h"
 #include "perf.h"
+#include "syscall.h"
 #include "types.h"
 
 void create_shm(void);

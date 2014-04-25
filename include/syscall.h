@@ -2,6 +2,8 @@
 
 #include "types.h"
 
+#define MAX_NR_SYSCALL 1024
+
 enum argtype {
 	ARG_UNDEFINED = 0,
 	ARG_RANDOM_LONG = 1,
