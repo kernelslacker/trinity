@@ -4,6 +4,19 @@
 
 #define MAX_NR_SYSCALL 1024
 
+// FIXME: This whole struct should really be locked, not just individual fields.
+struct syscallrecord {
+	unsigned int nr;	/* protected by syscall_lock */
+	unsigned long a1;
+	unsigned long a2;
+	unsigned long a3;
+	unsigned long a4;
+	unsigned long a5;
+	unsigned long a6;
+	unsigned long retval;
+	bool do32bit;		/* protected by syscall_lock */
+};
+
 enum argtype {
 	ARG_UNDEFINED = 0,
 	ARG_RANDOM_LONG = 1,
