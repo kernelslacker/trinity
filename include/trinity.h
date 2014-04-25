@@ -15,3 +15,6 @@ void init_watchdog(void);
 unsigned int check_if_fd(unsigned int child);
 
 void regenerate(void);
+
+#define FAIL 0
+#define SUCCESS 1

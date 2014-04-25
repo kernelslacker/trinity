@@ -3,12 +3,11 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "utils.h"
-#include "constants.h"
+#include "log.h"
+#include "net.h"
 #include "protocols.h"
 #include "params.h"
-#include "net.h"
-#include "log.h"
+#include "utils.h"
 
 struct protocol {
 	const char *name;

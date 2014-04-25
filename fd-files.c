@@ -9,8 +9,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "trinity.h"	// __unused__
-#include "constants.h"
 #include "files.h"
 #include "list.h"
 #include "log.h"
@@ -19,6 +17,7 @@
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
+#include "trinity.h"	// __unused__
 #include "uid.h"
 #include "utils.h"
 
