@@ -156,6 +156,7 @@ int main(int argc, char* argv[])
 
 		main_loop();
 
+		shm->mainpid = 0;
 		_exit(EXIT_SUCCESS);
 	}
 
