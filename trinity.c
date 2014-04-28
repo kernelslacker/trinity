@@ -165,7 +165,7 @@ int main(int argc, char* argv[])
 	/* wait for watchdog to exit. */
 	waitpid(watchdog_pid, &childstatus, 0);
 
-	output(0, "\nRan %ld syscalls. Successes: %ld  Failures: %ld\n",
+	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->total_syscalls_done - 1, shm->successes, shm->failures);
 
 cleanup_fds:
