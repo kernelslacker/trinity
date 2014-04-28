@@ -153,6 +153,11 @@ static bool __check_main(void)
 
 	ret = kill(shm->mainpid, 0);
 	if (ret == -1) {
+		/* Are we already exiting ? */
+		if (shm->exit_reason != STILL_RUNNING)
+			return FALSE;
+
+		/* No. Check what happened. */
 		if (errno == ESRCH) {
 			output(0, "main pid %d has disappeared.\n", shm->mainpid);
 			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
