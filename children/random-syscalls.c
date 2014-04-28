@@ -107,11 +107,8 @@ retry:
 	unlock(&shm->syscall_lock);
 
 	if (syscalls_todo) {
-		if (shm->total_syscalls_done >= syscalls_todo) {
-			output(0, "Reached maximum syscall count (todo = %d, done = %d), exiting...\n",
-				syscalls_todo, shm->total_syscalls_done);
+		if (shm->total_syscalls_done >= syscalls_todo)
 			shm->exit_reason = EXIT_REACHED_COUNT;
-		}
 	}
 
 	/* Do the actual syscall. */
