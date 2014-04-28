@@ -140,7 +140,7 @@ struct syscallentry syscall_fcntl = {
 #ifdef HAVE_LK64
 		  F_GETLK64, F_SETLK64, F_SETLKW64,
 #endif
-		  F_GETLKP, F_SETLKP, F_SETLKPW,
+		  F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW,
 		},
 	},
 	.arg3name = "arg",
