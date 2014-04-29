@@ -27,10 +27,17 @@ void * __zmalloc(size_t size, const char *func)
 
 	p = malloc(size);
 	if (p == NULL) {
+		/* Maybe we mlockall'd everything. Try and undo that, and retry. */
+		munlockall();
+		p = malloc(size);
+		if (p != NULL)
+			goto done;
+
 		printf("%s: malloc(%zu) failure.\n", func, size);
 		exit(EXIT_FAILURE);
 	}
 
+done:
 	memset(p, 0, size);
 	return p;
 }
