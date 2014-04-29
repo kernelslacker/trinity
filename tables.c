@@ -517,10 +517,13 @@ int munge_tables(void)
 		enable_random_syscalls();
 
 	/* If we saw a '-x', set all syscalls to enabled, then selectively disable.
-	 * Unless we've started enabling them already (with -r) (or if we specified a group -g)
+	 * Unless:
+	 * - we've started enabling them already (with -r)
+	 * - or if we specified a group -g
+	 * - we've also specified syscalls with -c
 	 */
 	if (do_exclude_syscall == TRUE) {
-		if ((random_selection == FALSE) && (desired_group == GROUP_NONE))
+		if ((random_selection == FALSE) && (desired_group == GROUP_NONE) && (do_specific_syscall == FALSE))
 			mark_all_syscalls_active();
 		deactivate_disabled_syscalls();
 	}
