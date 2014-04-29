@@ -93,6 +93,7 @@ clean:
 	@rm -f trinity
 	@rm -f tags
 	@rm -rf $(DEPDIR)/*
+	@rm -rf trinity-coverity.tgz cov-int
 
 devel:
 	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh
