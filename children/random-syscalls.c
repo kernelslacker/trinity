@@ -32,7 +32,6 @@ static bool choose_syscall_table(void)
 
 	if (biarch == FALSE) {
 		active_syscalls = shm->active_syscalls;
-		do32 = TRUE;
 	} else {
 
 		/* First, check that we have syscalls enabled in either table. */
