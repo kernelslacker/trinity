@@ -1,11 +1,15 @@
 #!/bin/bash
 #
 # This is an example of how to search for an interaction between
-# two syscalls.   In the example below I was chasing an oops in
-# sendmsg that only occurred after connect was called.
+# two syscalls.   In the example below I was chasing an oops involving
+# futex and another unknown syscall.
+#
+# I wanted to avoid execve, because it just slowed things down, and had
+# already been ruled out.
 #
 
-TRINITY_PATH=${TRINITY_PATH:-.}
+OLDPATH=$(pwd)
+TRINITY_PATH=${TRINITY_PATH:-$OLDPATH}
 TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
 
 check_tainted()
@@ -38,7 +42,7 @@ do
     exit
   fi
 
-  $TRINITY_PATH/trinity -q -l off -n -c sendmsg -c $sc -C32 -N 999999
+  $TRINITY_PATH/trinity -q -l off -c futex -c $sc -x execve -C64 -N 1000000
 
   popd
 
