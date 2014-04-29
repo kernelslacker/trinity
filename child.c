@@ -292,7 +292,7 @@ void child_process(int childno)
 
 		if (rand() % 100 <= child_ops[i].likelyhood) {
 			if (lastop != child_ops[i].name) {
-				output(0, "Chose %s.\n", child_ops[i].name);
+				//output(0, "Chose %s.\n", child_ops[i].name);
 				lastop = child_ops[i].name;
 			}
 
