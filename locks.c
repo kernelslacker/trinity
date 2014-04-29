@@ -24,14 +24,14 @@ void lock(lock_t *_lock)
 
 steal:
 	_lock->contention = 0;
-	_lock->lock = LOCKED;
 	_lock->owner = getpid();
+	_lock->lock = LOCKED;
 }
 
 void unlock(lock_t *_lock)
 {
 	asm volatile("" ::: "memory");
 	_lock->contention = 0;
-	_lock->lock = UNLOCKED;
 	_lock->owner = 0;
+	_lock->lock = UNLOCKED;
 }
