@@ -1,13 +1,7 @@
 #!/bin/bash
 
 . scripts/paths.sh
-
-if [ $(/usr/bin/id -u) -eq 0 ] ; then
-  DROPPRIVS=--dropprivs
-else
-  DROPPRIVS=""
-fi
-
+. scripts/privs.sh
 . scripts/taint.sh
 
 chmod 755 $TRINITY_TMP

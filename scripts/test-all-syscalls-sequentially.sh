@@ -4,6 +4,7 @@
 # causing trinity to segfault.
 
 . scripts/paths.sh
+. scripts/privs.sh
 . scripts/taint.sh
 
 while [ 1 ]
@@ -19,7 +20,7 @@ do
 		exit
 	fi
 
-	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -c $syscall -N 99999 -l off -C 64
+	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -c $syscall -N 99999 -l off -C 64 $DROPPRIVS
 	popd
 
 	check_tainted
