@@ -1,13 +1,6 @@
 #!/bin/bash
 
-OLDPATH=$(pwd)
-TRINITY_PATH=${TRINITY_PATH:-$OLDPATH}
-
-if [ -d tmp ]; then
-  TRINITY_TMP=$(mktemp -d $(pwd)/tmp/trinity.XXXXXX)
-else
-  TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
-fi
+. scripts/paths.sh
 
 if [ $(/usr/bin/id -u) -eq 0 ] ; then
   DROPPRIVS=--dropprivs
