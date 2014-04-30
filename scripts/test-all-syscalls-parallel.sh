@@ -1,9 +1,11 @@
 #!/bin/bash
 
 . scripts/paths.sh
+. scripts/taint.sh
 
 chmod 755 $TRINITY_TMP
 cd $TRINITY_TMP
+
 
 while [ 1 ];
 do
@@ -12,4 +14,5 @@ do
 	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -c $syscall -D &
   done
   wait
+  check_tainted
 done
