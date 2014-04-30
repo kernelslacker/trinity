@@ -1,7 +1,6 @@
 #!/bin/bash
 
-TRINITY_PATH=${TRINITY_PATH:-.}
-TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
+. scripts/paths.sh
 
 chmod 755 $TRINITY_TMP
 cd $TRINITY_TMP
