@@ -1,6 +1,7 @@
 #!/bin/bash
 
 . scripts/paths.sh
+. scripts/privs.sh
 . scripts/taint.sh
 
 chmod 755 $TRINITY_TMP
@@ -23,7 +24,7 @@ do
 		exit
 	fi
 
-	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -l off -c mmap -c $syscall -N 99999 -C 64
+	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -l off -c mmap -c $syscall -N 99999 -C 64 $DROPPRIVS
 	popd > /dev/null
 
 	check_tainted
