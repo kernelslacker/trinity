@@ -8,18 +8,10 @@ else
   DROPPRIVS=""
 fi
 
-check_tainted()
-{
-    if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
-      echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
-      exit
-    fi
-}
+. scripts/taint.sh
 
 chmod 755 $TRINITY_TMP
 cd $TRINITY_TMP
-
-TAINT=$(cat /proc/sys/kernel/tainted)
 
 NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
 NR_PROCESSES=$(($NR_CPUS * 2))
