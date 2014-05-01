@@ -60,7 +60,7 @@ static void sanitise_move_pages(int childno)
 
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
-	count = max(1, count);
+	count = max(1U, count);
 	shm->syscall[childno].a2 = count;
 
 	/* setup array of ptrs to pages to move */
@@ -86,7 +86,7 @@ static void sanitise_move_pages(int childno)
 	shm->syscall[childno].a3 = (unsigned long) page_alloc;
 
 	/* nodes = array of ints specifying desired location for each page */
-	nodes = malloc(count * sizeof(int));
+	nodes = calloc(count, sizeof(int));
 	for (i = 0; i < count; i++)
 		nodes[i] = (int) rand() % 2;
 	shm->syscall[childno].a4 = (unsigned long) nodes;
