@@ -23,9 +23,6 @@ unsigned int nr_sockets = 0;
 
 static const char *cachefilename="trinity.socketcache";
 
-#define MAX_PER_DOMAIN 5
-#define MAX_TRIES_PER_DOMAIN 10
-
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	int fd;
