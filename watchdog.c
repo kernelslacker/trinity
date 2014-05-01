@@ -252,6 +252,15 @@ static void stuck_syscall_info(int childno)
 		fdstr);
 }
 
+static void kill_pid(pid_t pid)
+{
+	int ret;
+
+	ret = kill(pid, SIGKILL);
+	if (ret != 0)
+		output(0, "couldn't kill pid %d [%s]\n", pid, strerror(errno));
+}
+
 static void check_children(void)
 {
 	struct timeval tv;
@@ -301,8 +310,6 @@ static void check_children(void)
 		}
 
 		if (diff >= 30) {
-			int ret;
-
 			if (shm->kill_count[i] > 1) {
 				output(0, "sending another SIGKILL to pid %d. [kill count:%d] [diff:%d]\n",
 					pid, shm->kill_count[i], diff);
@@ -315,10 +322,7 @@ static void check_children(void)
 					output(0, "syscall_lock is held by %d\n", shm->syscall_lock.owner);
 			}
 			shm->kill_count[i]++;
-			ret = kill(pid, SIGKILL);
-			if (ret != 0) {
-				output(0, "couldn't kill pid %d [%s]\n", pid, strerror(errno));
-			}
+			kill_pid(pid);
 			sleep(1);	// give child time to exit.
 		}
 	}
@@ -328,18 +332,21 @@ static void check_children(void)
 
 static void check_lock(lock_t *_lock)
 {
+	pid_t pid = _lock->owner;
+
 	if (_lock->lock != LOCKED)
 		return;
 
 	/* First the easy case. If it's held by a dead pid, release it. */
-	if (!pid_alive(_lock->owner)) {
-		output(0, "Found a lock held by dead pid %d. Freeing.\n", _lock->owner);
+	if (!pid_alive(pid)) {
+		output(0, "Found a lock held by dead pid %d. Freeing.\n", pid);
 		goto unlock;
 	}
 
 	/* If a pid has had a lock a long time, something is up. */
 	if (_lock->contention > STEAL_THRESHOLD) {
 		output(0, "pid %d has held lock for too long. Releasing, and killing.\n");
+		kill_pid(pid);
 		goto unlock;
 	}
 	return;
