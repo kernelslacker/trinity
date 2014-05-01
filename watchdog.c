@@ -28,6 +28,10 @@ pid_t watchdog_pid;
 
 static unsigned long hiscore = 0;
 
+/*
+ * Make sure various entries in the shm look sensible.
+ * We use this to make sure that random syscalls haven't corrupted it.
+ */
 static int check_shm_sanity(void)
 {
 	unsigned int i;
@@ -261,6 +265,12 @@ static void kill_pid(pid_t pid)
 		output(0, "couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
 
+/*
+ * Iterate over each running child process, checking that it is still
+ * making forward progress by comparing the timestamps it recorded before
+ * making its last syscall.
+ * If no progress is being made, send SIGKILLs to it.
+ */
 static void check_children(void)
 {
 	struct timeval tv;
