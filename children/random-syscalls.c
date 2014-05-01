@@ -88,14 +88,7 @@ retry:
 	syscallnr = active_syscalls[syscallnr] - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE) {
-		if (biarch == FALSE) {
-			deactivate_syscall(syscallnr);
-		} else {
-			if (do32 == TRUE)
-				deactivate_syscall32(syscallnr);
-			else
-				deactivate_syscall64(syscallnr);
-		}
+		deactivate_syscall(syscallnr, do32);
 		goto retry;
 	}
 
