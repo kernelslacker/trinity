@@ -121,7 +121,7 @@ bool mkcall(int childno)
 {
 	struct syscallentry *entry;
 	unsigned int call = shm->syscall[childno].nr;
-	struct syscallrecord *syscallrec;
+	struct syscallrecord *syscallrec, *previous;
 	unsigned long ret = 0;
 	int errno_saved;
 
@@ -221,14 +221,15 @@ skip_enosys:
 	    entry->post(childno);
 
 	/* store info for debugging. */
-	shm->previous[childno].nr = syscallrec->nr;
-	shm->previous[childno].a1 = syscallrec->a1;
-	shm->previous[childno].a2 = syscallrec->a2;
-	shm->previous[childno].a3 = syscallrec->a3;
-	shm->previous[childno].a4 = syscallrec->a4;
-	shm->previous[childno].a5 = syscallrec->a5;
-	shm->previous[childno].a6 = syscallrec->a6;
-	shm->previous[childno].do32bit = syscallrec->do32bit;
+	previous = &shm->previous[childno];
+	previous->nr = syscallrec->nr;
+	previous->a1 = syscallrec->a1;
+	previous->a2 = syscallrec->a2;
+	previous->a3 = syscallrec->a3;
+	previous->a4 = syscallrec->a4;
+	previous->a5 = syscallrec->a5;
+	previous->a6 = syscallrec->a6;
+	previous->do32bit = syscallrec->do32bit;
 
 	check_uid();
 
