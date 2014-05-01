@@ -121,17 +121,20 @@ bool mkcall(int childno)
 {
 	struct syscallentry *entry;
 	unsigned int call = shm->syscall[childno].nr;
+	struct syscallrecord *syscallrec;
 	unsigned long ret = 0;
 	int errno_saved;
 
 	entry = syscalls[call].entry;
 
-	shm->syscall[childno].a1 = (unsigned long) rand64();
-	shm->syscall[childno].a2 = (unsigned long) rand64();
-	shm->syscall[childno].a3 = (unsigned long) rand64();
-	shm->syscall[childno].a4 = (unsigned long) rand64();
-	shm->syscall[childno].a5 = (unsigned long) rand64();
-	shm->syscall[childno].a6 = (unsigned long) rand64();
+	syscallrec = &shm->syscall[childno];
+
+	syscallrec->a1 = (unsigned long) rand64();
+	syscallrec->a2 = (unsigned long) rand64();
+	syscallrec->a3 = (unsigned long) rand64();
+	syscallrec->a4 = (unsigned long) rand64();
+	syscallrec->a5 = (unsigned long) rand64();
+	syscallrec->a6 = (unsigned long) rand64();
 
 	generic_sanitise(childno);
 	if (entry->sanitise)
@@ -173,7 +176,7 @@ bool mkcall(int childno)
 
 	/* common-case, do the syscall in this child process. */
 	ret = do_syscall(childno, &errno_saved);
-	shm->syscall[childno].retval = ret;
+	syscallrec->retval = ret;
 
 	if (IS_ERR(ret))
 		shm->failures++;
@@ -205,7 +208,7 @@ bool mkcall(int childno)
 		if (biarch == FALSE) {
 			deactivate_syscall(call);
 		} else {
-			if (shm->syscall[childno].do32bit == TRUE)
+			if (syscallrec->do32bit == TRUE)
 				deactivate_syscall32(call);
 			else
 				deactivate_syscall64(call);
@@ -218,14 +221,14 @@ skip_enosys:
 	    entry->post(childno);
 
 	/* store info for debugging. */
-	shm->previous[childno].nr = shm->syscall[childno].nr;
-	shm->previous[childno].a1 = shm->syscall[childno].a1;
-	shm->previous[childno].a2 = shm->syscall[childno].a2;
-	shm->previous[childno].a3 = shm->syscall[childno].a3;
-	shm->previous[childno].a4 = shm->syscall[childno].a4;
-	shm->previous[childno].a5 = shm->syscall[childno].a5;
-	shm->previous[childno].a6 = shm->syscall[childno].a6;
-	shm->previous[childno].do32bit = shm->syscall[childno].do32bit;
+	shm->previous[childno].nr = syscallrec->nr;
+	shm->previous[childno].a1 = syscallrec->a1;
+	shm->previous[childno].a2 = syscallrec->a2;
+	shm->previous[childno].a3 = syscallrec->a3;
+	shm->previous[childno].a4 = syscallrec->a4;
+	shm->previous[childno].a5 = syscallrec->a5;
+	shm->previous[childno].a6 = syscallrec->a6;
+	shm->previous[childno].do32bit = syscallrec->do32bit;
 
 	check_uid();
 
