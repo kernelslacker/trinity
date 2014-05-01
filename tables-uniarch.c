@@ -25,7 +25,7 @@ void activate_syscall(unsigned int calln)
 	activate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
 }
 
-void deactivate_syscall(unsigned int calln)
+void deactivate_syscall_uniarch(unsigned int calln)
 {
 	deactivate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
 }
@@ -148,7 +148,7 @@ void deactivate_disabled_syscalls_uniarch(void)
 		entry = syscalls[i].entry;
 		if (entry->flags & TO_BE_DEACTIVATED) {
 			entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
-			deactivate_syscall(i);
+			deactivate_syscall_uniarch(i);
 			output(0, "Marked syscall %s (%d) as deactivated.\n",
 				entry->name, entry->number);
 		}

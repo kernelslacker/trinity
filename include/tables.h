@@ -37,7 +37,8 @@ void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_na
 void activate_syscall(unsigned int calln);
 void activate_syscall32(unsigned int calln);
 void activate_syscall64(unsigned int calln);
-void deactivate_syscall(unsigned int calln);
+void deactivate_syscall(unsigned int calln, bool do32bit);
+void deactivate_syscall_uniarch(unsigned int calln);
 void deactivate_syscall32(unsigned int calln);
 void deactivate_syscall64(unsigned int calln);
 

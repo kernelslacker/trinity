@@ -205,14 +205,7 @@ bool mkcall(int childno)
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
 			entry->name, call);
 
-		if (biarch == FALSE) {
-			deactivate_syscall(call);
-		} else {
-			if (syscallrec->do32bit == TRUE)
-				deactivate_syscall32(call);
-			else
-				deactivate_syscall64(call);
-		}
+		deactivate_syscall(call, syscallrec->do32bit);
 	}
 
 skip_enosys:

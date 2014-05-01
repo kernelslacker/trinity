@@ -109,6 +109,18 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, co
 	}
 }
 
+void deactivate_syscall(unsigned int call, bool do32bit)
+{
+	if (biarch == FALSE) {
+		deactivate_syscall_uniarch(call);
+	} else {
+		if (do32bit == TRUE)
+			deactivate_syscall32(call);
+		else
+			deactivate_syscall64(call);
+	}
+}
+
 void count_syscalls_enabled(void)
 {
 	if (biarch == TRUE) {
