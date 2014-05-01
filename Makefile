@@ -80,7 +80,7 @@ df = $(DEPDIR)/$(*D)/$(*F)
 %.o : %.c
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o $@ -c $<
 	@mkdir -p $(DEPDIR)/$(*D)
-	@gcc -MM $(CFLAGS) $*.c > $(df).d
+	@$(CC) -MM $(CFLAGS) $*.c > $(df).d
 	@mv -f $(df).d $(df).d.tmp
 	@sed -e 's|.*:|$*.o:|' <$(df).d.tmp > $(df).d
 	@sed -e 's/.*://' -e 's/\\$$//' < $(df).d.tmp | fmt -1 | \
