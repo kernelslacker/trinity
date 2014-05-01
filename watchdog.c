@@ -296,6 +296,8 @@ static void check_children(void)
 			stuck_syscall_info(i);
 			output(0, "pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d)\n",
 				pid, old, now, diff);
+				if (shm->syscall_lock.lock == LOCKED)
+					output(0, "syscall_lock is held by %d\n", shm->syscall_lock.owner);
 		}
 
 		if (diff >= 30) {
@@ -304,9 +306,13 @@ static void check_children(void)
 			if (shm->kill_count[i] > 1) {
 				output(0, "sending another SIGKILL to pid %d. [kill count:%d] [diff:%d]\n",
 					pid, shm->kill_count[i], diff);
+				if (shm->syscall_lock.lock == LOCKED)
+					output(0, "syscall_lock is held by %d\n", shm->syscall_lock.owner);
 			} else {
 				output(0, "sending SIGKILL to pid %d. [diff:%d]\n",
 					pid, diff);
+				if (shm->syscall_lock.lock == LOCKED)
+					output(0, "syscall_lock is held by %d\n", shm->syscall_lock.owner);
 			}
 			shm->kill_count[i]++;
 			ret = kill(pid, SIGKILL);
@@ -316,6 +322,36 @@ static void check_children(void)
 			sleep(1);	// give child time to exit.
 		}
 	}
+}
+
+#define STEAL_THRESHOLD 100000
+
+static void check_lock(lock_t *_lock)
+{
+	if (_lock->lock != LOCKED)
+		return;
+
+	/* First the easy case. If it's held by a dead pid, release it. */
+	if (!pid_alive(_lock->owner)) {
+		output(0, "Found a lock held by dead pid %d. Freeing.\n", _lock->owner);
+		goto unlock;
+	}
+
+	/* If a pid has had a lock a long time, something is up. */
+	if (_lock->contention > STEAL_THRESHOLD) {
+		output(0, "pid %d has held lock for too long. Releasing, and killing.\n");
+		goto unlock;
+	}
+	return;
+
+unlock:
+	unlock(_lock);
+}
+
+static void check_all_locks(void)
+{
+	check_lock(&shm->reaper_lock);
+	check_lock(&shm->syscall_lock);
 }
 
 static void watchdog(void)
@@ -349,6 +385,8 @@ static void watchdog(void)
 		reap_dead_kids();
 
 		check_children();
+
+		check_all_locks();
 
 		if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
 			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
