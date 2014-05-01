@@ -328,6 +328,11 @@ static void check_children(void)
 	}
 }
 
+/*
+ * Check that the processes holding locks are still alive.
+ * And if they are, ensure they haven't held them for an
+ * excessive length of time.
+ */
 #define STEAL_THRESHOLD 100000
 
 static void check_lock(lock_t *_lock)
@@ -340,19 +345,18 @@ static void check_lock(lock_t *_lock)
 	/* First the easy case. If it's held by a dead pid, release it. */
 	if (!pid_alive(pid)) {
 		output(0, "Found a lock held by dead pid %d. Freeing.\n", pid);
-		goto unlock;
+		unlock(_lock);
+		return;
 	}
 
 	/* If a pid has had a lock a long time, something is up. */
 	if (_lock->contention > STEAL_THRESHOLD) {
 		output(0, "pid %d has held lock for too long. Releasing, and killing.\n");
 		kill_pid(pid);
-		goto unlock;
+		unlock(_lock);
+		return;
 	}
 	return;
-
-unlock:
-	unlock(_lock);
 }
 
 static void check_all_locks(void)
