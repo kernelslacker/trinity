@@ -315,8 +315,6 @@ static void check_children(void)
 			stuck_syscall_info(i);
 			output(0, "pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d)\n",
 				pid, old, now, diff);
-			if (shm->syscall_lock.lock == LOCKED)
-				output(0, "syscall_lock is held by %d\n", shm->syscall_lock.owner);
 			output(0, "sending SIGKILL to pid %d. [diff:%d]\n",
 				pid, diff);
 			shm->kill_count[i]++;
@@ -327,8 +325,6 @@ static void check_children(void)
 		if (diff >= 40) {
 			output(0, "sending another SIGKILL to pid %d. [kill count:%d] [diff:%d]\n",
 				pid, shm->kill_count[i], diff);
-			if (shm->syscall_lock.lock == LOCKED)
-				output(0, "syscall_lock is held by %d\n", shm->syscall_lock.owner);
 			shm->kill_count[i]++;
 			kill_pid(pid);
 		}
