@@ -334,7 +334,6 @@ static void check_children(void)
 			}
 			shm->kill_count[i]++;
 			kill_pid(pid);
-			sleep(1);	// give child time to exit.
 		}
 	}
 }
