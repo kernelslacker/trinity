@@ -313,18 +313,15 @@ static void check_children(void)
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
 			stuck_syscall_info(i);
-			output(0, "pid %d hasn't made progress in 30 seconds! (last:%ld now:%ld diff:%d)\n",
-				pid, old, now, diff);
-			output(0, "sending SIGKILL to pid %d. [diff:%d]\n",
-				pid, diff);
+			output(0, "child %d (pid %d) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
 			shm->kill_count[i]++;
 			kill_pid(pid);
 		}
 
 		/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 		if (diff >= 40) {
-			output(0, "sending another SIGKILL to pid %d. [kill count:%d] [diff:%d]\n",
-				pid, shm->kill_count[i], diff);
+			output(0, "sending another SIGKILL to child %d (pid %d). [kill count:%d] [diff:%d]\n",
+				i, pid, shm->kill_count[i], diff);
 			shm->kill_count[i]++;
 			kill_pid(pid);
 		}
