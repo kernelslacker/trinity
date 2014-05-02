@@ -249,8 +249,8 @@ static void stuck_syscall_info(int childno)
 	if (check_if_fd(childno) == TRUE)
 		sprintf(fdstr, "(fd = %d)", (unsigned int) shm->syscall[childno].a1);
 
-	output(0, "[%d] Stuck in syscall %d:%s%s%s.\n",
-		pid, callno,
+	output(0, "child %d (pid %d) Stuck in syscall %d:%s%s%s.\n",
+		childno, pid, callno,
 		print_syscall_name(callno, shm->syscall[childno].do32bit),
 		shm->syscall[childno].do32bit ? " (32bit)" : "",
 		fdstr);
