@@ -319,7 +319,8 @@ static void check_children(void)
 					output(0, "syscall_lock is held by %d\n", shm->syscall_lock.owner);
 		}
 
-		if (diff >= 30) {
+		/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
+		if (diff >= 40) {
 			if (shm->kill_count[i] > 1) {
 				output(0, "sending another SIGKILL to pid %d. [kill count:%d] [diff:%d]\n",
 					pid, shm->kill_count[i], diff);
