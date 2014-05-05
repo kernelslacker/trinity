@@ -33,13 +33,6 @@ static void sanitise_mremap(int childno)
 	} else {
 		shm->syscall[childno].a5 = 0;
 	}
-
-	/* Sometimes dirty the mapping first. */
-	if (!(map->prot & PROT_WRITE))
-		return;
-
-	if (rand_bool())
-		dirty_mapping(map);
 }
 
 /*
@@ -51,10 +44,16 @@ static void post_mremap(int childno)
 	struct map *map = (struct map *) shm->scratch[childno];
 	void *ptr = (void *) shm->syscall[childno].retval;
 
-	if (ptr != MAP_FAILED)
-		map->ptr = ptr;
+	if (ptr == MAP_FAILED)
+		return;
+
+	map->ptr = ptr;
 
 	shm->scratch[childno] = 0;
+
+	/* Sometimes dirty the mapping first. */
+	if (rand_bool())
+		dirty_mapping(map);
 }
 
 struct syscallentry syscall_mremap = {
