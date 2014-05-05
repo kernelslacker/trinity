@@ -93,10 +93,10 @@ retry:
 	}
 
 	/* critical section for shm updates. */
-	lock(&shm->syscall_lock);
+	lock(&shm->syscall[childno].lock);
 	shm->syscall[childno].do32bit = do32;
 	shm->syscall[childno].nr = syscallnr;
-	unlock(&shm->syscall_lock);
+	unlock(&shm->syscall[childno].lock);
 
 	if (syscalls_todo) {
 		if (shm->total_syscalls_done >= syscalls_todo)

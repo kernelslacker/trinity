@@ -211,10 +211,10 @@ unsigned int check_if_fd(unsigned int child)
 	if (fd < highest)
 		return FALSE;
 
-	lock(&shm->syscall_lock);
+	lock(&shm->syscall[child].lock);
 	callno = shm->syscall[child].nr;
 	do32 = shm->syscall[child].do32bit;
-	unlock(&shm->syscall_lock);
+	unlock(&shm->syscall[child].lock);
 
 	if (biarch == FALSE) {
 		if (syscalls[callno].entry->arg1type == ARG_FD)
@@ -361,8 +361,12 @@ static void check_lock(lock_t *_lock)
 
 static void check_all_locks(void)
 {
+	unsigned int i;
+
 	check_lock(&shm->reaper_lock);
-	check_lock(&shm->syscall_lock);
+
+	for_each_pidslot(i)
+		check_lock(&shm->syscall[i].lock);
 }
 
 static void watchdog(void)
