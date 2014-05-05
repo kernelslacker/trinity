@@ -13,13 +13,6 @@
 #include "shm.h"
 #include "utils.h"
 
-static unsigned long rand_size(void)
-{
-	const unsigned long sizes[] = { 1 * MB, 2 * MB, 4 * MB, 10 * MB, 1 * GB, 2 * GB };
-
-	return sizes[rand() % ARRAY_SIZE(sizes)];
-}
-
 static void sanitise_mremap(int childno)
 {
 	struct map *map;
@@ -29,7 +22,9 @@ static void sanitise_mremap(int childno)
 	shm->syscall[childno].a3 = map->size;		//TODO: Munge this.
 
 	if (shm->syscall[childno].a4 & MREMAP_FIXED) {
-		shm->syscall[childno].a5 = rand_size();
+		shm->syscall[childno].a5 = ((rand() % 256) << (rand() % __WORDSIZE));
+		shm->syscall[childno].a5 += page_size;
+		shm->syscall[childno].a5 &= PAGE_MASK;
 	} else {
 		shm->syscall[childno].a5 = 0;
 	}
@@ -71,7 +66,6 @@ struct syscallentry syscall_mremap = {
 		.values = { MREMAP_MAYMOVE, MREMAP_FIXED },
 	},
 	.arg5name = "new_addr",
-	.arg5type = ARG_ADDRESS,
 	.group = GROUP_VM,
 	.post = post_mremap,
 };
