@@ -61,7 +61,7 @@ static void dirty_random_pages(struct map *map)
 	unsigned int num_pages = map->size / page_size;
 
 	for (i = 0; i < num_pages; i++)
-		p[(rand() % (num_pages + 1)) * page_size] = rand();
+		p[(rand() % num_pages) * page_size] = rand();
 }
 
 /* Dirty the last page in a mapping
@@ -136,7 +136,7 @@ static void read_random_pages(struct map *map)
 	char buf[page_size];
 
 	for (i = 0; i < num_pages; i++)
-		memcpy(buf, p + ((rand() % (num_pages + 1)) * page_size), page_size);
+		memcpy(buf, p + ((rand() % num_pages) * page_size), page_size);
 }
 
 /* Fault in the last page in a mapping */
