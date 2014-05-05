@@ -23,7 +23,7 @@ static void dirty_one_page(struct map *map)
 {
 	char *p = map->ptr;
 
-	p[rand() % map->size] = rand();
+	p[rand() % (map->size - 1)] = rand();
 }
 
 static void dirty_whole_mapping(struct map *map)
@@ -31,7 +31,7 @@ static void dirty_whole_mapping(struct map *map)
 	char *p = map->ptr;
 	unsigned int i;
 
-	for (i = 0; i < map->size; i += page_size)
+	for (i = 0; i < map->size - 1; i += page_size)
 		p[i] = rand();
 }
 
@@ -40,7 +40,7 @@ static void dirty_every_other_page(struct map *map)
 	char *p = map->ptr;
 	unsigned int i;
 
-	for (i = 0; i < map->size; i += (page_size * 2))
+	for (i = 0; i < map->size - 1; i += (page_size * 2))
 		p[i] = rand();
 }
 
@@ -49,7 +49,7 @@ static void dirty_mapping_reverse(struct map *map)
 	char *p = map->ptr;
 	unsigned int i;
 
-	for (i = (map->size - page_size); i > 0; i -= page_size)
+	for (i = ((map->size - 1) - page_size); i > 0; i -= page_size)
 		p[i] = rand();
 }
 
@@ -71,7 +71,7 @@ static void dirty_last_page(struct map *map)
 {
 	char *p = map->ptr;
 
-	memset((void *) p + (map->size - page_size), 'A', page_size);
+	memset((void *) p + ((map->size - 1) - page_size), 'A', page_size);
 }
 
 static const struct faultfn write_faultfns[] = {
@@ -89,7 +89,7 @@ static const struct faultfn write_faultfns[] = {
 static void read_one_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned long offset = (rand() % map->size) & PAGE_MASK;
+	unsigned long offset = (rand() % (map->size - 1)) & PAGE_MASK;
 	char buf[page_size];
 
 	p += offset;
@@ -103,7 +103,7 @@ static void read_whole_mapping(struct map *map)
 	unsigned int i;
 	char buf[page_size];
 
-	for (i = 0; i < map->size; i += page_size)
+	for (i = 0; i < map->size - 1; i += page_size)
 		memcpy(buf, p + i, page_size);
 }
 
@@ -113,7 +113,7 @@ static void read_every_other_page(struct map *map)
 	unsigned int i;
 	char buf[page_size];
 
-	for (i = 0; i < map->size; i += (page_size * 2))
+	for (i = 0; i < map->size - 1; i += (page_size * 2))
 		memcpy(buf, p + i, page_size);
 }
 
@@ -123,7 +123,7 @@ static void read_mapping_reverse(struct map *map)
 	unsigned int i;
 	char buf[page_size];
 
-	for (i = (map->size - page_size); i > 0; i -= page_size)
+	for (i = ((map->size - 1) - page_size); i > 0; i -= page_size)
 		memcpy(buf, p + i, page_size);
 }
 
@@ -145,7 +145,7 @@ static void read_last_page(struct map *map)
 	char *p = map->ptr;
 	char buf[page_size];
 
-	memcpy(buf, p + (map->size - page_size), page_size);
+	memcpy(buf, p + ((map->size - 1) - page_size), page_size);
 }
 
 static const struct faultfn read_faultfns[] = {
