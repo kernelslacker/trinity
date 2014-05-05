@@ -85,9 +85,9 @@ void gen_unicode_page(char *page)
 			}
 			break;
 
-		case 6:	strncpy(ptr, unicode7, 4);
-			i += 4;
-			ptr += 4;
+		case 6:	strncpy(ptr, unicode7, 2);
+			i += 2;
+			ptr += 2;
 			break;
 
 		/* HE COMES. */
