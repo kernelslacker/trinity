@@ -1,12 +1,12 @@
 #pragma once
 
+#include "locks.h"
 #include "types.h"
 
 #define MAX_NR_SYSCALL 1024
 
-// FIXME: This whole struct should really be locked, not just individual fields.
 struct syscallrecord {
-	unsigned int nr;	/* protected by syscall_lock */
+	unsigned int nr;
 	unsigned long a1;
 	unsigned long a2;
 	unsigned long a3;
@@ -14,7 +14,8 @@ struct syscallrecord {
 	unsigned long a5;
 	unsigned long a6;
 	unsigned long retval;
-	bool do32bit;		/* protected by syscall_lock */
+	bool do32bit;
+	lock_t lock;
 };
 
 enum argtype {

@@ -83,7 +83,6 @@ struct shm_s {
 
 	/* locks */
 	lock_t reaper_lock;
-	lock_t syscall_lock;
 
 	bool ready;
 };
