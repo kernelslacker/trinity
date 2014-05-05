@@ -47,7 +47,7 @@ static void dirty_every_other_page(struct map *map)
 static void dirty_mapping_reverse(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
+	int i;
 
 	for (i = ((map->size - 1) - page_size); i > 0; i -= page_size)
 		p[i] = rand();
@@ -120,7 +120,7 @@ static void read_every_other_page(struct map *map)
 static void read_mapping_reverse(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
+	int i;
 	char buf[page_size];
 
 	for (i = ((map->size - 1) - page_size); i > 0; i -= page_size)
