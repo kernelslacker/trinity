@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 struct lock_struct {
 	volatile unsigned char lock;
 	pid_t owner;
