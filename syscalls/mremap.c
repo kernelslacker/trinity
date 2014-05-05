@@ -13,21 +13,29 @@
 #include "shm.h"
 #include "utils.h"
 
+static const unsigned long alignments[] = {
+	1 * MB, 2 * MB, 4 * MB, 8 * MB,
+	10 * MB, 100 * MB,
+	1 * GB, 2 * GB, 4 * GB,
+};
+
 static void sanitise_mremap(int childno)
 {
 	struct map *map;
+	unsigned long newaddr = 0;
+	unsigned long align = alignments[rand() % ARRAY_SIZE(alignments)];
 
 	map = common_set_mmap_ptr_len(childno);
 
 	shm->syscall[childno].a3 = map->size;		//TODO: Munge this.
 
 	if (shm->syscall[childno].a4 & MREMAP_FIXED) {
-		shm->syscall[childno].a5 = ((rand() % 256) << (rand() % __WORDSIZE));
-		shm->syscall[childno].a5 += page_size;
-		shm->syscall[childno].a5 &= PAGE_MASK;
-	} else {
-		shm->syscall[childno].a5 = 0;
+		newaddr = ((rand() % 256) << (rand() % __WORDSIZE));
+		newaddr |= align;
+		newaddr &= ~(align - 1);
 	}
+
+	shm->syscall[childno].a5 = newaddr;
 }
 
 /*
