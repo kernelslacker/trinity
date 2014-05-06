@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/uio.h>
+#include <sys/mman.h>	// mprotect
 
 #include "trinity.h"	// page_size
 #include "arch.h"	// KERNEL_ADDR etc
@@ -12,6 +13,7 @@
 #include "maps.h"
 #include "shm.h"
 #include "tables.h"
+#include "utils.h"
 
 /*
 static bool within_page(void *addr, void *check)
@@ -40,11 +42,60 @@ bool validate_address(void *addr)
 }
 */
 
-static void * _get_address(unsigned char null_allowed)
+void * get_writable_address(unsigned long size)
 {
-	int i;
 	struct map *map;
 	void *addr = NULL;
+	int i;
+
+	/* Because we get called during startup when we create fd's, we need
+	 * to special case this, as we can't use get_non_null_address at that point */
+	if (getpid() == shm->mainpid)
+		return page_rand;
+
+	i = rand() % 7;
+
+	if (size > page_size)
+		i = (rand() % 2) + 5;
+
+	switch (i) {
+	case 0:	addr = page_zeros;
+		break;
+	case 1:	addr = page_0xff;
+		break;
+	case 2:	addr = page_rand;
+		break;
+	case 3: addr = page_allocs;
+		break;
+	case 4:	addr = page_maps;
+		break;
+
+	case 5: map = get_map();
+		addr = map->ptr;
+		mprotect(addr, map->size, PROT_READ|PROT_WRITE);
+
+//		if (rand_bool()) {
+//			addr += map->size;
+//			addr -= size;
+//		}
+		break;
+
+	case 6: addr = zmalloc(size);	// FIXME: We leak this.
+//		if (rand_bool()) {
+//			/* place object at end of page. */
+//			addr += page_size;
+//			addr -= size;
+//		}
+		break;
+	}
+
+	return addr;
+}
+
+static void * _get_address(unsigned char null_allowed)
+{
+	void *addr = NULL;
+	int i;
 
 	/* Because we get called during startup when we create fd's, we need
 	 * to special case this, as we can't use get_non_null_address at that point */
@@ -52,39 +103,21 @@ static void * _get_address(unsigned char null_allowed)
 		return page_rand;
 
 	if (null_allowed == TRUE)
-		i = rand() % 10;
+		i = rand() % 4;
 	else
-		i = (rand() % 9) + 1;
-
+		i = (rand() % 3) + 1;
 
 	switch (i) {
 	case 0: addr = NULL;
 		break;
 	case 1:	addr = (void *) KERNEL_ADDR;
 		break;
-	case 2:	addr = page_zeros;
+	case 2:	addr = (void *)(unsigned long)rand64();
 		break;
-	case 3:	addr = page_0xff;
-		break;
-	case 4:	addr = page_rand;
-		break;
-	case 5: addr = page_allocs;
-		break;
-	case 6:	addr = (void *)(unsigned long)rand64();
-		break;
-	case 7: map = get_map();
-		addr = map->ptr;
-		break;
-	case 8: addr = malloc(page_size * 2);
-		// FIXME: We leak this. This is the address we need to store for later
-		// freeing, not the potentially munged version below.
-		// tricky. We want to hand the munged version out too, so we might end up
-		// having to split this into alloc_address / get_address.
-		break;
-	case 9:	addr = page_maps;
+
+	case 3:	addr = get_writable_address(page_size);
 		break;
 	}
-
 	return addr;
 }
 
@@ -97,7 +130,6 @@ void * get_non_null_address(void)
 {
 	return _get_address(FALSE);
 }
-
 
 unsigned long find_previous_arg_address(unsigned int argnum, unsigned int call, int childno)
 {
