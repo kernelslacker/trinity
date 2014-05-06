@@ -5,15 +5,16 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include "params.h"	// logging, monochrome, quiet_level
-#include "shm.h"
-#include "pids.h"
-#include "log.h"
 #include "arch.h" //PAGE_MASK
+#include "log.h"
 #include "maps.h" //pages
+#include "params.h"	// logging, monochrome, quiet_level
+#include "pids.h"
+#include "shm.h"
 #include "syscall.h" //syscalls
 #include "tables.h"
 #include "trinity.h"
+#include "utils.h"
 
 #define BUFSIZE 1024
 
@@ -25,7 +26,7 @@ void open_logfiles(void)
 	unsigned int i;
 	char *logfilename;
 
-	logfilename = malloc(64);
+	logfilename = zmalloc(64);
 	sprintf(logfilename, "trinity.log");
 	unlink(logfilename);
 	mainlogfile = fopen(logfilename, "a");
