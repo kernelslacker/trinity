@@ -482,13 +482,19 @@ void output_syscall_postfix(unsigned long ret, int errno_saved, bool err)
 	}
 }
 
+/*
+ * debugging output.
+ * This is just a convenience helper to avoid littering the code
+ * with dozens of 'if debug == TRUE' comparisons causing unnecessary nesting.
+ */
 void debugf(const char *fmt, ...)
 {
 	va_list args;
 
-	if (debug == TRUE) {
-		va_start(args, fmt);
-		vprintf(fmt, args);
-		va_end(args);
-	}
+	if (debug == FALSE)
+		return;
+
+	va_start(args, fmt);
+	output(0, fmt, args);
+	va_end(args);
 }
