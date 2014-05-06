@@ -5,11 +5,8 @@
  * On error, -1 is returned and errno is set to indicate the error.
  */
 
-#define EFD_SEMAPHORE 1
-#define EFD_CLOEXEC 02000000
-#define EFD_NONBLOCK 04000
-
 #include "sanitise.h"
+#include "compat.h"
 
 struct syscallentry syscall_eventfd2 = {
 	.name = "eventfd2",
