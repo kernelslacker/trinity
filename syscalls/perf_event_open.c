@@ -1154,7 +1154,7 @@ void sanitise_perf_event_open(int childno)
 	int group_leader=0;
 	void *addr;
 
-	addr = get_non_null_address();
+	addr = get_writable_address(sizeof(struct perf_event_attr));
 	shm->syscall[childno].a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
 
