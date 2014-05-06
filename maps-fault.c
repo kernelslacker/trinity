@@ -12,6 +12,11 @@
 #include "random.h"
 #include "utils.h"
 
+static unsigned int nr_pages(struct map *map)
+{
+	return map->size / page_size;
+}
+
 struct faultfn {
 	void (*func)(struct map *map);
 };
@@ -29,39 +34,57 @@ static void dirty_one_page(struct map *map)
 static void dirty_whole_mapping(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
+	unsigned int i, nr;
 
-	for (i = 0; i < map->size - 1; i += page_size)
-		p[i] = rand();
+	nr = nr_pages(map);
+
+	for (i = 0; i < nr; i++)
+		p[i * page_size] = rand();
 }
 
 static void dirty_every_other_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
+	unsigned int i, nr;
 
-	for (i = 0; i < map->size - 1; i += (page_size * 2))
-		p[i] = rand();
+	nr = nr_pages(map);
+
+	if (rand_bool()) {
+		/* X.X.X.X....  */
+		for (i = 0; i < nr; i++) {
+			p[i * page_size] = rand();
+			i++;
+		}
+	} else {
+		/* .X.X.X.X.... */
+		for (i = 0; i < nr; i++) {
+			i++;
+			p[i * page_size] = rand();
+		}
+	}
 }
 
 static void dirty_mapping_reverse(struct map *map)
 {
 	char *p = map->ptr;
-	int i;
+	unsigned int i, nr;
 
-	for (i = ((map->size - 1) - page_size); i > 0; i -= page_size)
-		p[i] = rand();
+	nr = nr_pages(map);
+
+	for (i = nr; i > 0; i--)
+		p[i * page_size] = rand();
 }
 
 /* dirty a random set of map->size pages. (some may be faulted >once) */
 static void dirty_random_pages(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
-	unsigned int num_pages = map->size / page_size;
+	unsigned int i, nr;
 
-	for (i = 0; i < num_pages; i++)
-		p[(rand() % num_pages) * page_size] = rand();
+	nr = nr_pages(map);
+
+	for (i = 0; i < nr; i++)
+		p[(rand() % nr) * page_size] = rand();
 }
 
 /* Dirty the last page in a mapping
@@ -100,43 +123,61 @@ static void read_one_page(struct map *map)
 static void read_whole_mapping(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
+	unsigned int i, nr;
 	char buf[page_size];
 
-	for (i = 0; i < map->size - 1; i += page_size)
-		memcpy(buf, p + i, page_size);
+	nr = nr_pages(map);
+
+	for (i = 0; i < nr; i++)
+		memcpy(buf, p + (i * page_size), page_size);
 }
 
 static void read_every_other_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
+	unsigned int i, nr;
 	char buf[page_size];
 
-	for (i = 0; i < map->size - 1; i += (page_size * 2))
-		memcpy(buf, p + i, page_size);
+	nr = nr_pages(map);
+
+	if (rand_bool()) {
+		/* X.X.X.X....  */
+		for (i = 0; i < nr; i++) {
+			memcpy(buf, p + (i * page_size), page_size);
+			i++;
+		}
+	} else {
+		/* .X.X.X.X.... */
+		for (i = 0; i < nr; i++) {
+			i++;
+			memcpy(buf, p + (i * page_size), page_size);
+		}
+	}
 }
 
 static void read_mapping_reverse(struct map *map)
 {
 	char *p = map->ptr;
-	int i;
+	unsigned int i, nr;
 	char buf[page_size];
 
-	for (i = ((map->size - 1) - page_size); i > 0; i -= page_size)
-		memcpy(buf, p + i, page_size);
+	nr = nr_pages(map);
+
+	for (i = nr; i > 0; i--)
+		memcpy(buf, p + (i * page_size), page_size);
 }
 
 /* fault in a random set of map->size pages. (some may be faulted >once) */
 static void read_random_pages(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i;
-	unsigned int num_pages = map->size / page_size;
+	unsigned int i, nr;
 	char buf[page_size];
 
-	for (i = 0; i < num_pages; i++)
-		memcpy(buf, p + ((rand() % num_pages) * page_size), page_size);
+	nr = nr_pages(map);
+
+	for (i = 0; i < nr; i++)
+		memcpy(buf, p + ((rand() % nr) * page_size), page_size);
 }
 
 /* Fault in the last page in a mapping */
