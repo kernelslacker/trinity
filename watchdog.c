@@ -240,9 +240,15 @@ unsigned int check_if_fd(unsigned int child)
 
 static void stuck_syscall_info(int childno)
 {
-	unsigned int callno = shm->syscall[childno].nr;
+	unsigned int callno;
 	char fdstr[20];
-	pid_t pid = shm->pids[childno];
+	pid_t pid;
+
+	if (debug == FALSE)
+		return;
+
+	callno = shm->syscall[childno].nr;
+	pid = shm->pids[childno];
 
 	memset(fdstr, 0, sizeof(fdstr));
 
@@ -262,7 +268,7 @@ static void kill_pid(pid_t pid)
 
 	ret = kill(pid, SIGKILL);
 	if (ret != 0)
-		output(0, "couldn't kill pid %d [%s]\n", pid, strerror(errno));
+		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
 
 /*
@@ -313,14 +319,14 @@ static void check_children(void)
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
 			stuck_syscall_info(i);
-			output(0, "child %d (pid %d) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
+			debugf("child %d (pid %d) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
 			shm->kill_count[i]++;
 			kill_pid(pid);
 		}
 
 		/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 		if (diff >= 40) {
-			output(0, "sending another SIGKILL to child %d (pid %d). [kill count:%d] [diff:%d]\n",
+			debugf("sending another SIGKILL to child %d (pid %d). [kill count:%d] [diff:%d]\n",
 				i, pid, shm->kill_count[i], diff);
 			shm->kill_count[i]++;
 			kill_pid(pid);
@@ -348,14 +354,14 @@ static void check_lock(lock_t *_lock)
 		if (errno != ESRCH)
 			return;
 
-		output(0, "Found a lock held by dead pid %d. Freeing.\n", pid);
+		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
 		unlock(_lock);
 		return;
 	}
 
 	/* If a pid has had a lock a long time, something is up. */
 	if (_lock->contention > STEAL_THRESHOLD) {
-		output(0, "pid %d has held lock for too long. Releasing, and killing.\n");
+		debugf("pid %d has held lock for too long. Releasing, and killing.\n");
 		kill_pid(pid);
 		unlock(_lock);
 		return;
