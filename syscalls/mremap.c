@@ -30,7 +30,7 @@ static void sanitise_mremap(int childno)
 	shm->syscall[childno].a3 = map->size;		//TODO: Munge this.
 
 	if (shm->syscall[childno].a4 & MREMAP_FIXED) {
-		newaddr = ((rand() % 256) << (rand() % __WORDSIZE));
+		newaddr = ((rand() % 256) << (rand() % (__WORDSIZE - 8)));
 		newaddr |= align;
 		newaddr &= ~(align - 1);
 	}
