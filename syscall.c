@@ -129,6 +129,7 @@ bool mkcall(int childno)
 
 	syscallrec = &shm->syscall[childno];
 
+	lock(&shm->syscall[childno].lock);
 	syscallrec->a1 = (unsigned long) rand64();
 	syscallrec->a2 = (unsigned long) rand64();
 	syscallrec->a3 = (unsigned long) rand64();
@@ -139,6 +140,8 @@ bool mkcall(int childno)
 	generic_sanitise(childno);
 	if (entry->sanitise)
 		entry->sanitise(childno);
+
+	unlock(&shm->syscall[childno].lock);
 
 	output_syscall_prefix(childno, call);
 
