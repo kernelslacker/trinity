@@ -337,13 +337,17 @@ static void check_children(void)
 
 static void check_lock(lock_t *_lock)
 {
-	pid_t pid = _lock->owner;
+	pid_t pid;
 
 	if (_lock->lock != LOCKED)
 		return;
 
 	/* First the easy case. If it's held by a dead pid, release it. */
-	if (!pid_alive(pid)) {
+	pid = _lock->owner;
+	if (pid_alive(pid) == -1) {
+		if (errno != ESRCH)
+			return;
+
 		output(0, "Found a lock held by dead pid %d. Freeing.\n", pid);
 		unlock(_lock);
 		return;
