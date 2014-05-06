@@ -44,7 +44,6 @@ static void * _get_address(unsigned char null_allowed)
 {
 	int i;
 	struct map *map;
-	size_t len = page_size;
 	void *addr = NULL;
 
 	/* Because we get called during startup when we create fd's, we need
@@ -75,7 +74,6 @@ static void * _get_address(unsigned char null_allowed)
 		break;
 	case 7: map = get_map();
 		addr = map->ptr;
-		len = map->size;
 		break;
 	case 8: addr = malloc(page_size * 2);
 		// FIXME: We leak this. This is the address we need to store for later
@@ -84,25 +82,6 @@ static void * _get_address(unsigned char null_allowed)
 		// having to split this into alloc_address / get_address.
 		break;
 	case 9:	addr = page_maps;
-		break;
-	}
-
-	/*
-	 * Most of the time, we just return the address we got above unmunged.
-	 * But sometimes, we return an address just before the end of the page.
-	 * The idea here is that we might see some bugs that are caused by page boundary failures.
-	 */
-	i = rand() % 100;
-	switch (i) {
-	case 0:	addr += (len - sizeof(char));
-		break;
-	case 1:	addr += (len - sizeof(int));
-		break;
-	case 2:	addr += (len - sizeof(long));
-		break;
-	case 3:	addr += (len / 2);
-		break;
-	case 4 ... 99:
 		break;
 	}
 
