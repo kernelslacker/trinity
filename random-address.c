@@ -15,24 +15,6 @@
 #include "tables.h"
 #include "utils.h"
 
-/*
-bool validate_address(void *addr)
-{
-	if (within_page(addr, shm) == TRUE)
-		return FALSE;
-	if (within_page(addr, page_rand) == TRUE)
-		return FALSE;
-	if (within_page(addr, page_zeros) == TRUE)
-		return FALSE;
-	if (within_page(addr, page_0xff) == TRUE)
-		return FALSE;
-	if (within_page(addr, page_allocs) == TRUE)
-		return FALSE;
-
-	return TRUE;
-}
-*/
-
 void * get_writable_address(unsigned long size)
 {
 	struct map *map;
