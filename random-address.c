@@ -16,15 +16,6 @@
 #include "utils.h"
 
 /*
-static bool within_page(void *addr, void *check)
-{
-	if (addr == check)
-		return TRUE;
-	if ((addr > check) && (addr < (check + page_size)))
-		return TRUE;
-	return FALSE;
-}
-
 bool validate_address(void *addr)
 {
 	if (within_page(addr, shm) == TRUE)
