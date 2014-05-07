@@ -283,4 +283,6 @@ struct syscalltable syscalls_aarch64[] = {
 /* 271 */	{ .entry = &syscall_process_vm_writev },
 /* 272 */	{ .entry = &syscall_kcmp },
 /* 273 */	{ .entry = &syscall_finit_module },
+/* 274 */	{ .entry = &syscall_sched_setattr },
+/* 275 */	{ .entry = &syscall_sched_getattr },
 };
