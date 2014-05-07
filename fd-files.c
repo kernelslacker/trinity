@@ -212,7 +212,7 @@ static void open_fds(const char *dirpath)
 static void generate_filelist(void)
 {
 	unsigned int i = 0;
-	struct list_head *node;
+	struct list_head *node, *tmp;
 	struct namelist *nl;
 
 	names = zmalloc(sizeof(struct namelist));
@@ -238,13 +238,21 @@ static void generate_filelist(void)
 
 	/* Generate an index of pointers to the filenames */
 
-	fileindex = malloc(sizeof(char *) * files_added);
+	fileindex = zmalloc(sizeof(char *) * files_added);
 
-	list_for_each(node, &names->list) {
+	list_for_each_safe(node, tmp, &names->list) {
 		nl = (struct namelist *) node;
 		fileindex[i++] = nl->name;
+
+		/* Destroy the list head, but keep the ->name alloc because
+		 * now the fileindex points to it.
+		 */
+		list_del(&nl->list);
+		free(nl);
 	}
 	files_in_index = i;
+
+	names = NULL;
 }
 
 static int open_file(void)
