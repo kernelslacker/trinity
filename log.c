@@ -490,12 +490,14 @@ void output_syscall_postfix(unsigned long ret, int errno_saved, bool err)
  */
 void debugf(const char *fmt, ...)
 {
+	char debugbuf[256];
 	va_list args;
 
 	if (debug == FALSE)
 		return;
 
 	va_start(args, fmt);
-	output(0, fmt, args);
+	vsprintf(debugbuf, fmt, args);
 	va_end(args);
+	output(0, debugbuf);
 }
