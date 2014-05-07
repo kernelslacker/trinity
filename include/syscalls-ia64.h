@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/ia64/kernel/entry.S as of 2.6.31rc2 */
+/* Syscalls from arch/ia64/kernel/entry.S as of 3.15rc4 */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -305,4 +305,20 @@ struct syscalltable syscalls_ia64[] = {
 	{ .entry = &syscall_preadv },
 	{ .entry = &syscall_pwritev },
 	{ .entry = &syscall_rt_tgsigqueueinfo },
+	{ .entry = &syscall_recvmmsg },
+	{ .entry = &syscall_fanotify_init },
+	{ .entry = &syscall_fanotify_mark },
+	{ .entry = &syscall_prlimit64 },
+	{ .entry = &syscall_name_to_handle_at },
+	{ .entry = &syscall_open_by_handle_at },
+	{ .entry = &syscall_clock_adjtime },
+	{ .entry = &syscall_syncfs },
+	{ .entry = &syscall_setns },
+	{ .entry = &syscall_sendmmsg },
+	{ .entry = &syscall_process_vm_readv },
+	{ .entry = &syscall_process_vm_writev },
+	{ .entry = &syscall_accept4 },
+	{ .entry = &syscall_finit_module },
+	{ .entry = &syscall_sched_setattr },
+	{ .entry = &syscall_sched_getattr },
 };
