@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/parisc/kernel/syscall_table.S as of 3.12-rc6 */
+/* Syscalls from arch/parisc/kernel/syscall_table.S as of 3.15-rc4 */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -341,4 +341,7 @@ struct syscalltable syscalls_parisc[] = {
 	{ .entry = &syscall_process_vm_writev },
 	{ .entry = &syscall_kcmp },
 	{ .entry = &syscall_finit_module },
+	{ .entry = &syscall_sched_setattr },
+	{ .entry = &syscall_sched_getattr },
+	{ .entry = &syscall_utimes },
 };
