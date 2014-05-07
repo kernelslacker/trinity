@@ -364,4 +364,7 @@ struct syscalltable syscalls_mips[] = {
 		{ .entry = &syscall_process_vm_readv },	/* 4345 */
 		{ .entry = &syscall_process_vm_writev },
 		{ .entry = &syscall_kcmp },
+		{ .entry = &syscall_finit_module },
+		{ .entry = &syscall_sched_setattr },
+		{ .entry = &syscall_sched_getattr },	/* 4350 */
 };
