@@ -369,3 +369,4 @@ extern struct syscallentry syscall_sh_cacheflush;
 extern struct syscallentry syscall_sched_setattr;
 extern struct syscallentry syscall_sched_getattr;
 extern struct syscallentry syscall_renameat2;
+extern struct syscallentry syscall_kern_features;
