@@ -17,16 +17,21 @@ endif
 CFLAGS += -Wdeclaration-after-statement
 CFLAGS += -Wformat=2
 CFLAGS += -Winit-self
-CFLAGS += -Wlogical-op
 CFLAGS += -Wnested-externs
 CFLAGS += -Wpacked
 CFLAGS += -Wshadow
-CFLAGS += -Wstrict-aliasing=3
 CFLAGS += -Wswitch-enum
 CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings
 CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
+
+# gcc only.
+CFLAGS += -Wlogical-op
+CFLAGS += -Wstrict-aliasing=3
+
+# Sometimes useful for debugging. more useful with clang than gcc.
+#CFLAGS += -fsanitize=address
 
 # Only enabled during development, and on gcc 4.8+
 CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
