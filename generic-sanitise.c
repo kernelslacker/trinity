@@ -23,10 +23,8 @@ static unsigned int get_cpu(void)
 
 	switch (i) {
 	case 0: return -1;
-	case 1: return rand() % 4095;
-	case 2: return rand() % 15;
-
-	case 3 ... 99:
+	case 1: return rand() % 4096;
+	case 2 ... 99:
 		return rand() % num_online_cpus;
 	}
 	return 0;
