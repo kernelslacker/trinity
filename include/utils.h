@@ -32,6 +32,12 @@ void * __zmalloc(size_t size, const char *func);
 # define offsetof(type, member)	((size_t) &((type *) 0)->member)
 #endif
 
+/*
+ * swap - swap value of @a and @b
+ */
+#define swap(a, b) \
+	do { typeof(a) __tmp = (a); (a) = (b); (b) = __tmp; } while (0)
+
 #define MAX_ERRNO 4095
 #define IS_ERR_VALUE(x) ((x) >= (unsigned long)-MAX_ERRNO)
 static inline long IS_ERR(unsigned long x)
