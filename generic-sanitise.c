@@ -143,7 +143,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	unsigned long mask = 0;
 	unsigned int bits;
 
-	bits = (rand() % num) + 1;	/* num of bits to OR */
+	bits = rand_range(1, num);	/* num of bits to OR */
 	for (i = 0; i < bits; i++)
 		mask |= values[rand() % num];
 
@@ -208,7 +208,7 @@ static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned 
 
 	entry = syscalls[call].entry;
 
-	num_entries = (rand() % 256) +1;
+	num_entries = rand_range(1, 256);
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_IOVECLEN)
