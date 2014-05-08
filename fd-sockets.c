@@ -59,7 +59,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		else
 			debugf("bind: success!\n");
 */
-		ret = listen(fd, (rand() % 2) + 1);
+		ret = listen(fd, rand_range(1, 128));
 /*		if (ret == -1)
 			debugf("listen: %s\n", strerror(errno));
 		else
