@@ -12,6 +12,14 @@
 #include "types.h"
 #include "utils.h"
 
+int rand_range(int min, int max)
+{
+	if (min > max)
+		swap(min, max);
+
+	return min + rand() / (RAND_MAX / (max - min + 1) + 1);
+}
+
 unsigned int rand_bool(void)
 {
 	return rand() % 2;
@@ -90,7 +98,7 @@ static unsigned long rand8x8(void)
 	unsigned long r = 0UL;
 	unsigned int i;
 
-	for (i = (rand() % 7) + 1; i > 0; --i)
+	for (i = rand_range(1, 7); i > 0; --i)
 		r = (r << 8) | rand() % 256;
 
 	return r;
@@ -249,12 +257,4 @@ u64 rand64(void)
 		r |= (1L << (__WORDSIZE - 1));
 
 	return r;
-}
-
-int rand_range(int min, int max)
-{
-	if (min > max)
-		swap(min, max);
-
-	return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }
