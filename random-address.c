@@ -29,7 +29,7 @@ void * get_writable_address(unsigned long size)
 	i = rand() % 7;
 
 	if (size > page_size)
-		i = (rand() % 2) + 5;
+		i = rand_range(5, 6);
 
 	switch (i) {
 	case 0:	addr = page_zeros;
@@ -78,7 +78,7 @@ static void * _get_address(unsigned char null_allowed)
 	if (null_allowed == TRUE)
 		i = rand() % 4;
 	else
-		i = (rand() % 3) + 1;
+		i = rand_range(1, 3);
 
 	switch (i) {
 	case 0: addr = NULL;
