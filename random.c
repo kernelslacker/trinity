@@ -10,6 +10,7 @@
 #include "random.h"
 #include "sanitise.h"	// interesting_numbers
 #include "types.h"
+#include "utils.h"
 
 unsigned int rand_bool(void)
 {
@@ -248,4 +249,12 @@ u64 rand64(void)
 		r |= (1L << (__WORDSIZE - 1));
 
 	return r;
+}
+
+int rand_range(int min, int max)
+{
+	if (min > max)
+		swap(min, max);
+
+	return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }
