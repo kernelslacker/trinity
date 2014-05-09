@@ -252,6 +252,7 @@ static void generate_filelist(void)
 	}
 	files_in_index = i;
 
+	free(names);
 	names = NULL;
 }
 
