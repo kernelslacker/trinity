@@ -295,5 +295,5 @@ void main_loop(void)
 	while (pidmap_empty() == FALSE)
 		handle_children();
 
-	outputerr("Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
+	output(0, "Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
 }
