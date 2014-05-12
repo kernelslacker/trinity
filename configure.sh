@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DEVEL=1
+DEVEL=0
 
 if [ -t 1 ]; then
 	RED="[1;31m"
