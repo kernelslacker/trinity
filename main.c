@@ -62,7 +62,7 @@ static void fork_children(void)
 			/* Child process. */
 			init_child(pidslot);
 			child_process(pidslot);
-			output(1, "child %d exiting.\n", pidslot);
+			debugf("child %d exiting.\n", pidslot);
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid == -1) {
