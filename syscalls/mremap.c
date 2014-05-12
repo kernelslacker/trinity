@@ -23,14 +23,16 @@ static void sanitise_mremap(int childno)
 {
 	struct map *map;
 	unsigned long newaddr = 0;
-	unsigned long align = alignments[rand() % ARRAY_SIZE(alignments)];
 
 	map = common_set_mmap_ptr_len(childno);
 
 	shm->syscall[childno].a3 = map->size;		//TODO: Munge this.
 
 	if (shm->syscall[childno].a4 & MREMAP_FIXED) {
-		newaddr = ((rand() % 256) << (rand() % (__WORDSIZE - 8)));
+		unsigned long align = alignments[rand() % ARRAY_SIZE(alignments)];
+		int shift = (__WORDSIZE / 2) - 1;
+
+		newaddr = rand() % 256 << rand() % shift;
 		newaddr |= align;
 		newaddr &= ~(align - 1);
 	}
