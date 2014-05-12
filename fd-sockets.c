@@ -329,6 +329,8 @@ regenerate:
 				unlock_cachefile(cachefile);	/* drop the reader lock. */
 				close(cachefile);
 				unlink(cachefilename);
+
+				close_sockets();
 				ret = generate_sockets();
 				return ret;
 		}
@@ -336,7 +338,6 @@ regenerate:
 		fd = open_socket(domain, type, protocol);
 		if (fd < 0) {
 			output(1, "Cachefile is stale. Need to regenerate.\n");
-			close_sockets();
 			goto regenerate;
 		}
 
