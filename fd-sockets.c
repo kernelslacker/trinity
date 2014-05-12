@@ -263,7 +263,6 @@ void close_sockets(void)
 {
 	unsigned int i;
 	int fd;
-	int r = 0;
 	struct linger ling = { .l_onoff = FALSE, .l_linger = 0 };
 
 	for (i = 0; i < nr_sockets; i++) {
@@ -279,13 +278,9 @@ void close_sockets(void)
 		shm->sockets[i].fd = 0;
 
 		/* disable linger */
-		r = setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
-		if (r)
-			perror("setsockopt");
+		(void) setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
 
-		r = shutdown(fd, SHUT_RDWR);
-		if (r)
-			perror("shutdown");
+		(void) shutdown(fd, SHUT_RDWR);
 
 		if (close(fd) != 0)
 			output(1, "failed to close socket [%d:%d:%d].(%s)\n",
