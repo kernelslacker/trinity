@@ -107,7 +107,7 @@ devel:
 
 release:
 	@perl -p -i -e 's/DEVEL=1/DEVEL=0/' configure.sh
-	git commit Makefile configure.sh -m "Disable -Werror & devel mode"
+	@git commit Makefile configure.sh -m "Disable -Werror & devel mode"
 
 tag:
 	@git tag -a v$(VERSION) -m "$(VERSION) release."
