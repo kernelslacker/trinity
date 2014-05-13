@@ -103,20 +103,20 @@ clean:
 
 devel:
 	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh
-	git commit Makefile configure.sh -m "Enable -Werror & devel mode"
+	@git commit Makefile configure.sh -m "Enable -Werror & devel mode"
 
 release:
 	@perl -p -i -e 's/DEVEL=1/DEVEL=0/' configure.sh
 	git commit Makefile configure.sh -m "Disable -Werror & devel mode"
 
 tag:
-	git tag -a $(VERSION) -m "$(VERSION) release."
+	@git tag -a $(VERSION) -m "$(VERSION) release."
 
 tarball:
-	git repack -a -d
-	git prune-packed
-	git archive --format=tar --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tar
-	xz -9 trinity-$(VERSION).tar
+	@git repack -a -d
+	@git prune-packed
+	@git archive --format=tar --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tar
+	@xz -9 trinity-$(VERSION).tar
 
 install: trinity
 	install -d -m 755 $(INSTALL_PREFIX)/bin
@@ -129,7 +129,7 @@ scan:
 	@scan-build --use-analyzer=/usr/bin/clang make
 
 coverity:
-	rm -rf cov-int trinity-coverity.tar.xz
-	cov-build --dir cov-int make
-	tar cJvf trinity-coverity.tar.xz cov-int
+	@rm -rf cov-int trinity-coverity.tar.xz
+	@cov-build --dir cov-int make
+	@tar cJvf trinity-coverity.tar.xz cov-int
 
