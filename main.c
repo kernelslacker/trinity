@@ -21,6 +21,19 @@
 #include "syscall.h"
 #include "trinity.h"
 
+/* exit() wrapper to clear the pid before exiting, so the
+ * watchdog doesn't spin forever on a dead pid.
+ */
+void exit_main_fail(void)
+{
+	if (getpid() != shm->mainpid) {
+		printf("wtf, exit_main_fail called from non main pid!\n");
+		return;
+	}
+	shm->mainpid = 0;
+	exit(EXIT_FAILURE);
+}
+
 /* Generate children*/
 static void fork_children(void)
 {
@@ -43,7 +56,7 @@ static void fork_children(void)
 		if (pidslot == PIDSLOT_NOT_FOUND) {
 			outputerr("## Pid map was full!\n");
 			dump_pid_slots();
-			exit(EXIT_FAILURE);
+			exit_main_fail();
 		}
 
 		if (logging == TRUE) {
@@ -68,8 +81,7 @@ static void fork_children(void)
 			if (pid == -1) {
 				output(0, "couldn't create child! (%s)\n", strerror(errno));
 				shm->exit_reason = EXIT_FORK_FAILURE;
-				shm->mainpid = 0;
-				exit(EXIT_FAILURE);
+				exit_main_fail();
 			}
 		}
 

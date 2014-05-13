@@ -5,6 +5,7 @@ extern unsigned int num_online_cpus;
 extern char *progname;
 
 void main_loop(void);
+void exit_main_fail(void);
 
 void init_watchdog(void);
 unsigned int check_if_fd(unsigned int child);

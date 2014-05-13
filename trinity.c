@@ -141,13 +141,13 @@ int main(int argc, char* argv[])
 
 		if (setup_fds() == FALSE) {
 			shm->exit_reason = EXIT_FD_INIT_FAILURE;	// FIXME: Later, push this down to multiple EXIT's.
-			_exit(EXIT_FAILURE);
+			exit_main_fail();
 		}
 
 		if (no_files == FALSE) {
 			if (files_in_index == 0) {
 				shm->exit_reason = EXIT_NO_FILES;
-				_exit(EXIT_FAILURE);
+				exit_main_fail();
 			}
 		}
 

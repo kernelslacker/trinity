@@ -321,7 +321,10 @@ void output(unsigned char level, const char *fmt, ...)
 	va_end(args);
 	if (n < 0) {
 		outputerr("## Something went wrong in output() [%d]\n", n);
-		exit(EXIT_FAILURE);
+		if (getpid() == shm->mainpid)
+			exit_main_fail();
+		else
+			exit(EXIT_FAILURE);
 	}
 
 	/* stdout output if needed */
