@@ -68,6 +68,7 @@ static void fork_children(void)
 			if (pid == -1) {
 				output(0, "couldn't create child! (%s)\n", strerror(errno));
 				shm->exit_reason = EXIT_FORK_FAILURE;
+				shm->mainpid = 0;
 				exit(EXIT_FAILURE);
 			}
 		}
