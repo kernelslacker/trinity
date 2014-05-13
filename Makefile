@@ -110,7 +110,7 @@ release:
 	git commit Makefile configure.sh -m "Disable -Werror & devel mode"
 
 tag:
-	@git tag -a $(VERSION) -m "$(VERSION) release."
+	@git tag -a v$(VERSION) -m "$(VERSION) release."
 
 tarball:
 	@git repack -a -d
