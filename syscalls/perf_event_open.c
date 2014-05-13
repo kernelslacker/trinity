@@ -1089,6 +1089,36 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 
 }
 
+
+/* Creates a global event: one that is not per-process, but system-wide	*/
+/* To be valid must be created with pid=-1 and cpu being a valid CPU.   */
+/* Also usually only root can create these unless                       */
+/*    /proc/sys/kernel/perf_event_paranoid is less than 1.              */
+/* Most custom PMU types (uncore/northbridge/RAPL) are covered here.    */
+
+static void create_mostly_valid_global_event(struct perf_event_attr *attr,
+						int group_leader)
+{
+
+	attr->type = random_event_type();
+	attr->size = random_attr_size();
+	attr->config = random_event_config(&attr->type,
+					&attr->config1,
+					&attr->config2);
+
+	attr->read_format = random_read_format();
+
+	/* Bitfield parameters, mostly boolean */
+	attr->disabled = rand_bool();
+	attr->inherit = rand_bool();
+	if (group_leader) {
+		attr->pinned = rand_bool();
+	}
+
+	/* Not setting most other paramaters */
+	/* As they tend to be not valid in a global event */
+}
+
 /* Creates a completely random event, unlikely to be valid */
 static void create_random_event(struct perf_event_attr *attr)
 {
@@ -1244,7 +1274,7 @@ void sanitise_perf_event_open(int childno)
 	shm->syscall[childno].a2 = pid;
 
 	/* set up attr structure */
-	switch (rand() % 3) {
+	switch (rand() % 4) {
 	case 0:
 		create_mostly_valid_counting_event(attr,group_leader);
 		break;
@@ -1252,6 +1282,9 @@ void sanitise_perf_event_open(int childno)
 		create_mostly_valid_sampling_event(attr,group_leader);
 		break;
 	case 2:
+		create_mostly_valid_global_event(attr,group_leader);
+		break;
+	case 3:
 		create_random_event(attr);
 		break;
 	default:
