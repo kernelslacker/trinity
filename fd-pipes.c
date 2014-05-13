@@ -27,7 +27,7 @@ void open_pipes(void)
 	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
 		if (pipe(pipes) < 0) {
 			perror("pipe fail.\n");
-			exit(EXIT_FAILURE);
+			exit_main_fail();
 		}
 		shm->pipe_fds[i] = pipes[0];
 		shm->pipe_fds[i+1] = pipes[1];

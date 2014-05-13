@@ -94,7 +94,7 @@ static void lock_cachefile(int cachefile, int type)
 
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
 		perror("fcntl F_SETLKW");
-		exit(1);
+		exit_main_fail();
 	}
 
 	if (verbose)
@@ -114,7 +114,7 @@ static void unlock_cachefile(int cachefile)
 
 	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
 		perror("fcntl F_UNLCK F_SETLK ");
-		exit(1);
+		exit_main_fail();
 	}
 
 	if (verbose)
