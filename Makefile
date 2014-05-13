@@ -115,7 +115,8 @@ tag:
 tarball:
 	git repack -a -d
 	git prune-packed
-	git archive --format=tar.gz --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tgz
+	git archive --format=tar --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tar
+	xz -9 trinity-$(VERSION).tar
 
 install: trinity
 	install -d -m 755 $(INSTALL_PREFIX)/bin
