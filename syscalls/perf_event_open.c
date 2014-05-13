@@ -44,9 +44,9 @@ struct pmu_type {
 	struct generic_event_type *generic_events;
 };
 
-static int num_pmus=0;
-
-static struct pmu_type *pmus=NULL;
+/* Not static so other tools can access the PMU data */
+int num_pmus=0;
+struct pmu_type *pmus=NULL;
 
 
 #define FIELD_UNKNOWN	0
