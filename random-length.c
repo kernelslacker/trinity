@@ -18,7 +18,7 @@ unsigned long get_len(void)
 
 	case 0:	i &= 0xff;
 		break;
-	case 1: i &= page_size;
+	case 1: i &= page_size - 1;
 		break;
 	case 2:	i &= 0xffff;
 		break;
