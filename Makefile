@@ -99,7 +99,7 @@ clean:
 	@rm -f trinity
 	@rm -f tags
 	@rm -rf $(DEPDIR)/*
-	@rm -rf trinity-coverity.tgz cov-int
+	@rm -rf trinity-coverity.tar.xz cov-int
 
 devel:
 	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh
@@ -129,7 +129,7 @@ scan:
 	@scan-build --use-analyzer=/usr/bin/clang make
 
 coverity:
-	rm -rf cov-int trinity-coverity.tgz
+	rm -rf cov-int trinity-coverity.tar.xz
 	cov-build --dir cov-int make
-	tar czvf trinity-coverity.tgz cov-int
+	tar cJvf trinity-coverity.tar.xz cov-int
 
