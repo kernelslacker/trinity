@@ -79,9 +79,14 @@ static long syscall32(unsigned int call,
 static unsigned long do_syscall(int childno, int *errno_saved)
 {
 	int nr = shm->syscall[childno].nr;
-	int call = nr + SYSCALL_OFFSET;
+	int call = nr;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
+
+	/* Some architectures (IA64/MIPS) start their Linux syscalls
+	 * At non-zero, and have other ABIs below.
+	 */
+	call += SYSCALL_OFFSET;
 
 	a1 = shm->syscall[childno].a1;
 	a2 = shm->syscall[childno].a2;
@@ -149,11 +154,6 @@ bool mkcall(int childno)
 	/* If we're going to pause, might as well sync pre-syscall */
 	if (dopause == TRUE)
 		synclogs();
-
-	/* Some architectures (IA64/MIPS) start their Linux syscalls
-	 * At non-zero, and have other ABIs below.
-	 */
-	call += SYSCALL_OFFSET;
 
 	/* This is a special case for things like execve, which would replace our
 	 * child process with something unknown to us. We use a 'throwaway' process
