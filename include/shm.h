@@ -14,7 +14,6 @@
 #include "pipes.h"
 #include "perf.h"
 #include "syscall.h"
-#include "trinity.h"
 #include "types.h"
 
 void create_shm(void);

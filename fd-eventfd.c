@@ -17,7 +17,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "trinity.h"
 #include "compat.h"
 
 void open_eventfd_fds(void)

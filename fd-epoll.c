@@ -16,7 +16,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "trinity.h"
 
 void open_epoll_fds(void)
 {
