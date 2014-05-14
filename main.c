@@ -79,6 +79,10 @@ static void fork_children(void)
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid == -1) {
+				/* We failed, wait for a child to exit before retrying. */
+				if (shm->running_childs > 0)
+					return;
+
 				output(0, "couldn't create child! (%s)\n", strerror(errno));
 				shm->exit_reason = EXIT_FORK_FAILURE;
 				exit_main_fail();
