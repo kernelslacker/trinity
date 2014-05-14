@@ -43,10 +43,10 @@ void debugf(const char *fmt, ...);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
-#ifndef GIT_VERSION
+#ifndef GITVERSION
 #define BUGTXT ANSI_RED "BUG!: " ANSI_RESET
 #else
-#define BUGTXT ANSI_RED "BUG!: " ANSI_RESET GIT_VERSION
+#define BUGTXT ANSI_RED "BUG!: " ANSI_RESET GITVERSION
 #endif
 
 #define BUG(bugtxt)	{ \
