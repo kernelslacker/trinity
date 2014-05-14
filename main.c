@@ -10,14 +10,10 @@
 #include <sys/wait.h>
 
 #include "child.h"
-#include "files.h"
-#include "locks.h"
 #include "log.h"
-#include "params.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
-#include "signals.h"
 #include "syscall.h"
 #include "trinity.h"
 
