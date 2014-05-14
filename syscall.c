@@ -79,6 +79,7 @@ static long syscall32(unsigned int call,
 static unsigned long do_syscall(int childno, int *errno_saved)
 {
 	int nr = shm->syscall[childno].nr;
+	int call = nr + SYSCALL_OFFSET;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
 
@@ -99,9 +100,9 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	errno = 0;
 
 	if (shm->syscall[childno].do32bit == FALSE)
-		ret = syscall(nr, a1, a2, a3, a4, a5, a6);
+		ret = syscall(call, a1, a2, a3, a4, a5, a6);
 	else
-		ret = syscall32(nr, a1, a2, a3, a4, a5, a6);
+		ret = syscall32(call, a1, a2, a3, a4, a5, a6);
 
 	*errno_saved = errno;
 
