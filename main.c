@@ -59,14 +59,6 @@ static void fork_children(void)
 			exit_main_fail();
 		}
 
-		if (logging == TRUE) {
-			int fd;
-
-			fd = fileno(shm->logfiles[pidslot]);
-			if (ftruncate(fd, 0) == 0)
-				lseek(fd, 0, SEEK_SET);
-		}
-
 		(void)alarm(0);
 		fflush(stdout);
 		pid = fork();

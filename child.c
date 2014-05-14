@@ -126,6 +126,18 @@ static void oom_score_adj(int adj)
 	fclose(fp);
 }
 
+static void truncate_log(int childno)
+{
+	int fd;
+
+	if (logging == FALSE)
+		return;
+
+	fd = fileno(shm->logfiles[childno]);
+	if (ftruncate(fd, 0) == 0)
+		lseek(fd, 0, SEEK_SET);
+}
+
 void init_child(int childno)
 {
 	cpu_set_t set;
@@ -133,6 +145,8 @@ void init_child(int childno)
 	char childname[17];
 
 	this_child = childno;
+
+	truncate_log(childno);
 
 	set_seed(childno);
 
