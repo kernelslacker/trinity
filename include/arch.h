@@ -50,6 +50,10 @@
 #include "arch-parisc.h"
 #endif
 
+#ifdef __tile__
+#include "arch-tile.h"
+#endif
+
 #ifndef SYSCALL_OFFSET
 #define SYSCALL_OFFSET 0
 #endif

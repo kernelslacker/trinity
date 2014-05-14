@@ -40,3 +40,6 @@
 #ifdef __hppa__
 #include "syscalls-parisc.h"
 #endif
+#ifdef __tile__
+#include "syscalls-tile.h"
+#endif
