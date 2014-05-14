@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#include "trinity.h"	// ARRAY_SIZE, alloc_shared
 #include "arch.h"
 #include "syscall.h"
 #include "params.h"

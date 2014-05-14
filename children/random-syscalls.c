@@ -17,6 +17,7 @@
 #include "signals.h"
 #include "pids.h"
 #include "tables.h"
+#include "trinity.h"
 
 /*
  * This function decides if we're going to be doing a 32bit or 64bit syscall.

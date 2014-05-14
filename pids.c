@@ -7,7 +7,6 @@
 #include "pids.h"
 #include "log.h"
 #include "sanitise.h"
-#include "trinity.h"
 
 pid_t initpid;
 

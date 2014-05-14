@@ -5,7 +5,6 @@
 #include <sys/uio.h>
 #include <sys/mman.h>	// mprotect
 
-#include "trinity.h"	// page_size
 #include "arch.h"	// KERNEL_ADDR etc
 #include "log.h"
 #include "random.h"

@@ -18,7 +18,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "trinity.h"
 
 static int get_new_random_fd(void)
 {
