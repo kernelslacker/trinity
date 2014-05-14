@@ -59,7 +59,6 @@ static void fork_children(void)
 			exit_main_fail();
 		}
 
-		(void)alarm(0);
 		fflush(stdout);
 		pid = fork();
 
