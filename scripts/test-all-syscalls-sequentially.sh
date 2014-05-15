@@ -11,7 +11,6 @@ while [ 1 ]
 do
 for syscall in $($TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $3 }' | sort -u)
 do
-	chmod 755 $TRINITY_TMP
 	pushd $TRINITY_TMP
 
 	if [ ! -f $TRINITY_PATH/trinity ]; then
@@ -21,6 +20,8 @@ do
 	fi
 
 	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -c $syscall -N 1000000 -l off -C 64 $DROPPRIVS -x execve
+
+	chmod 755 $TRINITY_TMP
 	popd
 
 	check_tainted
