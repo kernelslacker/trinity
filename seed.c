@@ -17,14 +17,6 @@
  * to store what gets passed in from the command line -s argument */
 unsigned int seed = 0;
 
-static void syslog_seed(int seedparam)
-{
-	outputerr("Randomness reseeded to %u\n", seedparam);
-	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
-	syslog(LOG_CRIT, "Randomness reseeded to %u\n", seedparam);
-	closelog();
-}
-
 unsigned int new_seed(void)
 {
 	int fd;
@@ -57,8 +49,11 @@ unsigned int init_seed(unsigned int seedparam)
 		output(0, "Initial random seed: %u\n", seedparam);
 	}
 
-	if (do_syslog == TRUE)
-		syslog_seed(seedparam);
+	if (do_syslog == TRUE) {
+		openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
+		syslog(LOG_CRIT, "Initial random seed: %u\n", seedparam);
+		closelog();
+	}
 
 	return seedparam;
 }
@@ -94,9 +89,4 @@ void reseed(void)
 
 	/* We are reseeding. */
 	shm->seed = new_seed();
-
-	output(0, "Random reseed: %u\n", shm->seed);
-
-	if (do_syslog == TRUE)
-		syslog_seed(shm->seed);
 }
