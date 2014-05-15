@@ -379,6 +379,16 @@ static void check_all_locks(void)
 		check_lock(&shm->syscall[i].lock);
 }
 
+static void tainted_postmortem(int taint)
+{
+	shm->exit_reason = EXIT_KERNEL_TAINTED;
+
+	gettimeofday(&shm->taint_tv, NULL);
+
+	output(0, "kernel became tainted! (%d/%d) Last seed was %u\n",
+		taint, kernel_taint_initial, shm->seed);
+}
+
 static void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
@@ -437,16 +447,11 @@ static void watchdog(void)
 			}
 		}
 
-		/* Only check taint if it mask allows it */
+		/* Only check taint if the mask allows it */
 		if (kernel_taint_mask != 0) {
 			ret = check_tainted();
-			if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0) {
-				shm->exit_reason = EXIT_KERNEL_TAINTED;
-
-				gettimeofday(&shm->taint_tv, NULL);
-
-				output(0, "kernel became tainted! (%d/%d) Last seed was %u\n", ret, kernel_taint_initial, shm->seed);
-			}
+			if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0)
+				tainted_postmortem(ret);
 		}
 
 main_dead:
