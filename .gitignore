@@ -6,7 +6,7 @@ logs/
 trinity*.log
 trinity.socketcache
 tmp
-trinity-*.tgz
+trinity-*.tar.xz
 victims
 tags
 config.h
@@ -14,4 +14,4 @@ config.h
 cscope.*
 ncscope.*
 cov-int
-trinity-coverity.tgz
+trinity-coverity.tar.xz
