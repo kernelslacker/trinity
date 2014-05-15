@@ -13,6 +13,5 @@ config.h
 .*.swp
 cscope.*
 ncscope.*
-*.patch
 cov-int
 trinity-coverity.tgz

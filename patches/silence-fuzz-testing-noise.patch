@@ -1,0 +1,297 @@
+From 0267f449b83ad4a85acd3ca4d5386080dfc79c35 Mon Sep 17 00:00:00 2001
+From: Dave Jones <davej@redhat.com>
+Date: Mon, 13 May 2013 16:53:02 -0400
+Subject: [PATCH 12/34] silence fuzz-testing noise
+
+---
+ arch/x86/ia32/sys_ia32.c        |  9 ---------
+ arch/x86/kernel/vm86_32.c       |  9 +++------
+ drivers/gpu/drm/drm_sysfs.c     |  2 --
+ drivers/scsi/scsi_netlink.c     | 10 ++--------
+ kernel/signal.c                 |  1 -
+ net/appletalk/ddp.c             |  5 -----
+ net/can/af_can.c                |  9 ---------
+ net/core/sock.c                 |  7 -------
+ net/irda/af_irda.c              |  6 ++----
+ net/netfilter/ipvs/ip_vs_core.c |  2 --
+ net/rds/bind.c                  |  2 --
+ net/socket.c                    |  2 --
+ sound/pci/hda/hda_codec.c       |  8 +++-----
+ 13 files changed, 10 insertions(+), 62 deletions(-)
+
+diff --git a/arch/x86/ia32/sys_ia32.c b/arch/x86/ia32/sys_ia32.c
+index 8e0ceecdc957..e8071976793c 100644
+--- a/arch/x86/ia32/sys_ia32.c
++++ b/arch/x86/ia32/sys_ia32.c
+@@ -203,15 +203,6 @@ long sys32_fadvise64_64(int fd, __u32 offset_low, __u32 offset_high,
+ 
+ long sys32_vm86_warning(void)
+ {
+-	struct task_struct *me = current;
+-	static char lastcomm[sizeof(me->comm)];
+-
+-	if (strncmp(lastcomm, me->comm, sizeof(lastcomm))) {
+-		compat_printk(KERN_INFO
+-			      "%s: vm86 mode not supported on 64 bit kernel\n",
+-			      me->comm);
+-		strncpy(lastcomm, me->comm, sizeof(lastcomm));
+-	}
+ 	return -ENOSYS;
+ }
+ 
+diff --git a/arch/x86/kernel/vm86_32.c b/arch/x86/kernel/vm86_32.c
+index e8edcf52e069..95147acf071c 100644
+--- a/arch/x86/kernel/vm86_32.c
++++ b/arch/x86/kernel/vm86_32.c
+@@ -138,17 +138,14 @@ struct pt_regs *save_v86_state(struct kernel_vm86_regs *regs)
+ 	 */
+ 	local_irq_enable();
+ 
+-	if (!current->thread.vm86_info) {
+-		pr_alert("no vm86_info: BAD\n");
++	if (!current->thread.vm86_info)
+ 		do_exit(SIGSEGV);
+-	}
++
+ 	set_flags(regs->pt.flags, VEFLAGS, X86_EFLAGS_VIF | current->thread.v86mask);
+ 	tmp = copy_vm86_regs_to_user(&current->thread.vm86_info->regs, regs);
+ 	tmp += put_user(current->thread.screen_bitmap, &current->thread.vm86_info->screen_bitmap);
+-	if (tmp) {
+-		pr_alert("could not access userspace vm86_info\n");
++	if (tmp)
+ 		do_exit(SIGSEGV);
+-	}
+ 
+ 	tss = &per_cpu(init_tss, get_cpu());
+ 	current->thread.sp0 = current->thread.saved_sp0;
+diff --git a/drivers/gpu/drm/drm_sysfs.c b/drivers/gpu/drm/drm_sysfs.c
+index c22c3097c3e8..64a6372fca0c 100644
+--- a/drivers/gpu/drm/drm_sysfs.c
++++ b/drivers/gpu/drm/drm_sysfs.c
+@@ -284,7 +284,6 @@ static ssize_t subconnector_show(struct device *device,
+ 	}
+ 
+ 	if (!prop) {
+-		DRM_ERROR("Unable to find subconnector property\n");
+ 		return 0;
+ 	}
+ 
+@@ -325,7 +324,6 @@ static ssize_t select_subconnector_show(struct device *device,
+ 	}
+ 
+ 	if (!prop) {
+-		DRM_ERROR("Unable to find select subconnector property\n");
+ 		return 0;
+ 	}
+ 
+diff --git a/drivers/scsi/scsi_netlink.c b/drivers/scsi/scsi_netlink.c
+index 109802f776ed..1e8b706967fa 100644
+--- a/drivers/scsi/scsi_netlink.c
++++ b/drivers/scsi/scsi_netlink.c
+@@ -55,11 +55,8 @@ scsi_nl_rcv_msg(struct sk_buff *skb)
+ 
+ 		nlh = nlmsg_hdr(skb);
+ 		if ((nlh->nlmsg_len < (sizeof(*nlh) + sizeof(*hdr))) ||
+-		    (skb->len < nlh->nlmsg_len)) {
+-			printk(KERN_WARNING "%s: discarding partial skb\n",
+-				 __func__);
++		    (skb->len < nlh->nlmsg_len))
+ 			return;
+-		}
+ 
+ 		rlen = NLMSG_ALIGN(nlh->nlmsg_len);
+ 		if (rlen > skb->len)
+@@ -82,11 +79,8 @@ scsi_nl_rcv_msg(struct sk_buff *skb)
+ 			goto next_msg;
+ 		}
+ 
+-		if (nlh->nlmsg_len < (sizeof(*nlh) + hdr->msglen)) {
+-			printk(KERN_WARNING "%s: discarding partial message\n",
+-				 __func__);
++		if (nlh->nlmsg_len < (sizeof(*nlh) + hdr->msglen))
+ 			goto next_msg;
+-		}
+ 
+ 		/*
+ 		 * Deliver message to the appropriate transport
+diff --git a/kernel/signal.c b/kernel/signal.c
+index 6ea13c09ae56..6dfb3b49ad7c 100644
+--- a/kernel/signal.c
++++ b/kernel/signal.c
+@@ -3057,7 +3057,6 @@ static int do_rt_tgsigqueueinfo(pid_t tgid, pid_t pid, int sig, siginfo_t *info)
+ 	if (((info->si_code >= 0 || info->si_code == SI_TKILL)) &&
+ 	    (task_pid_vnr(current) != pid)) {
+ 		/* We used to allow any < 0 si_code */
+-		WARN_ON_ONCE(info->si_code < 0);
+ 		return -EPERM;
+ 	}
+ 	info->si_signo = sig;
+diff --git a/net/appletalk/ddp.c b/net/appletalk/ddp.c
+index 786ee2f83d5f..e6cc543afe59 100644
+--- a/net/appletalk/ddp.c
++++ b/net/appletalk/ddp.c
+@@ -1204,12 +1204,7 @@ static int atalk_connect(struct socket *sock, struct sockaddr *uaddr,
+ 
+ 	if (addr->sat_addr.s_node == ATADDR_BCAST &&
+ 	    !sock_flag(sk, SOCK_BROADCAST)) {
+-#if 1
+-		pr_warn("atalk_connect: %s is broken and did not set SO_BROADCAST.\n",
+-			current->comm);
+-#else
+ 		return -EACCES;
+-#endif
+ 	}
+ 
+ 	lock_sock(sk);
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index a27f8aad9e99..63b85afb1f5f 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -157,15 +157,6 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 
+ 		err = request_module("can-proto-%d", protocol);
+ 
+-		/*
+-		 * In case of error we only print a message but don't
+-		 * return the error code immediately.  Below we will
+-		 * return -EPROTONOSUPPORT
+-		 */
+-		if (err)
+-			printk_ratelimited(KERN_ERR "can: request_module "
+-			       "(can-proto-%d) failed.\n", protocol);
+-
+ 		cp = can_get_proto(protocol);
+ 	}
+ #endif
+diff --git a/net/core/sock.c b/net/core/sock.c
+index 87366a065687..a6c48a2e9f83 100644
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -392,14 +392,7 @@ static int sock_set_timeout(long *timeo_p, char __user *optval, int optlen)
+ 		return -EDOM;
+ 
+ 	if (tv.tv_sec < 0) {
+-		static int warned __read_mostly;
+-
+ 		*timeo_p = 0;
+-		if (warned < 10 && net_ratelimit()) {
+-			warned++;
+-			pr_info("%s: `%s' (pid %d) tries to set negative timeout\n",
+-				__func__, current->comm, task_pid_nr(current));
+-		}
+ 		return 0;
+ 	}
+ 	*timeo_p = MAX_SCHEDULE_TIMEOUT;
+diff --git a/net/irda/af_irda.c b/net/irda/af_irda.c
+index 54747c25c86c..c8522dca57af 100644
+--- a/net/irda/af_irda.c
++++ b/net/irda/af_irda.c
+@@ -504,10 +504,8 @@ static int irda_open_lsap(struct irda_sock *self, int pid)
+ {
+ 	notify_t notify;
+ 
+-	if (self->lsap) {
+-		IRDA_WARNING("%s(), busy!\n", __func__);
++	if (self->lsap)
+ 		return -EBUSY;
+-	}
+ 
+ 	/* Initialize callbacks to be used by the IrDA stack */
+ 	irda_notify_init(&notify);
+@@ -2130,7 +2128,7 @@ static int irda_setsockopt(struct socket *sock, int level, int optname,
+ 				   __func__, opt);
+ 			self->max_sdu_size_rx = opt;
+ 		} else {
+-			IRDA_WARNING("%s: not allowed to set MAXSDUSIZE for this socket type!\n",
++			IRDA_DEBUG(2, "%s: not allowed to set MAXSDUSIZE for this socket type!\n",
+ 				     __func__);
+ 			err = -ENOPROTOOPT;
+ 			goto out;
+diff --git a/net/netfilter/ipvs/ip_vs_core.c b/net/netfilter/ipvs/ip_vs_core.c
+index 4f26ee46b51f..5057562bc48d 100644
+--- a/net/netfilter/ipvs/ip_vs_core.c
++++ b/net/netfilter/ipvs/ip_vs_core.c
+@@ -1969,8 +1969,6 @@ static int __net_init __ip_vs_init(struct net *net)
+ 	if (ip_vs_sync_net_init(net) < 0)
+ 		goto sync_fail;
+ 
+-	printk(KERN_INFO "IPVS: Creating netns size=%zu id=%d\n",
+-			 sizeof(struct netns_ipvs), ipvs->gen);
+ 	return 0;
+ /*
+  * Error handling
+diff --git a/net/rds/bind.c b/net/rds/bind.c
+index a2e6562da751..6294c5b9f259 100644
+--- a/net/rds/bind.c
++++ b/net/rds/bind.c
+@@ -185,8 +185,6 @@ int rds_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
+ 	if (!trans) {
+ 		ret = -EADDRNOTAVAIL;
+ 		rds_remove_bound(rs);
+-		printk_ratelimited(KERN_INFO "RDS: rds_bind() could not find a transport, "
+-				"load rds_tcp or rds_rdma?\n");
+ 		goto out;
+ 	}
+ 
+diff --git a/net/socket.c b/net/socket.c
+index 1f02293cb011..661c38221da8 100644
+--- a/net/socket.c
++++ b/net/socket.c
+@@ -2607,8 +2607,6 @@ int sock_register(const struct net_proto_family *ops)
+ 		err = 0;
+ 	}
+ 	spin_unlock(&net_family_lock);
+-
+-	pr_info("NET: Registered protocol family %d\n", ops->family);
+ 	return err;
+ }
+ EXPORT_SYMBOL(sock_register);
+diff --git a/sound/pci/hda/hda_codec.c b/sound/pci/hda/hda_codec.c
+index 4c20277a6835..324dee2eaef0 100644
+--- a/sound/pci/hda/hda_codec.c
++++ b/sound/pci/hda/hda_codec.c
+@@ -572,12 +572,10 @@ int snd_hda_get_raw_connections(struct hda_codec *codec, hda_nid_t nid,
+ 		}
+ 		range_val = !!(parm & (1 << (shift-1))); /* ranges */
+ 		val = parm & mask;
+-		if (val == 0 && null_count++) {  /* no second chance */
+-			codec_dbg(codec,
+-				  "invalid CONNECT_LIST verb %x[%i]:%x\n",
+-				    nid, i, parm);
++
++		if (val == 0 && null_count++)	/* no second chance */
+ 			return 0;
+-		}
++
+ 		parm >>= shift;
+ 		if (range_val) {
+ 			/* ranges between the previous and this one */
+diff --git a/net/ipv4/raw.c b/net/ipv4/raw.c
+index a9dbe58bdfe7..bd06a009f885 100644
+--- a/net/ipv4/raw.c
++++ b/net/ipv4/raw.c
+@@ -498,8 +498,6 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+ 		if (msg->msg_namelen < sizeof(*usin))
+ 			goto out;
+ 		if (usin->sin_family != AF_INET) {
+-			pr_info_once("%s: %s forgot to set AF_INET. Fix it!\n",
+-				     __func__, current->comm);
+ 			err = -EAFNOSUPPORT;
+ 			if (usin->sin_family)
+ 				goto out;
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index a3fdfa90b0e8..935d0a66fffe 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -6088,8 +6088,6 @@ static int sctp_listen_start(struct sock *sk, int backlog)
+ 		sprintf(alg, "hmac(%s)", sp->sctp_hmac_alg);
+ 		tfm = crypto_alloc_hash(alg, 0, CRYPTO_ALG_ASYNC);
+ 		if (IS_ERR(tfm)) {
+-			net_info_ratelimited("failed to load transform for %s: %ld\n",
+-					     sp->sctp_hmac_alg, PTR_ERR(tfm));
+ 			return -ENOSYS;
+ 		}
+ 		sctp_sk(sk)->hmac = tfm;
+-- 
+1.9.0
+
