@@ -493,7 +493,7 @@ void output_syscall_postfix(unsigned long ret, int errno_saved, bool err)
  */
 void debugf(const char *fmt, ...)
 {
-	char debugbuf[256];
+	char debugbuf[BUFSIZE];
 	va_list args;
 
 	if (debug == FALSE)
