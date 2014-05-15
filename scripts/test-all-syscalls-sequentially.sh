@@ -20,7 +20,7 @@ do
 		exit
 	fi
 
-	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -c $syscall -N 99999 -l off -C 64 $DROPPRIVS
+	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -c $syscall -N 1000000 -l off -C 64 $DROPPRIVS -x execve
 	popd
 
 	check_tainted
