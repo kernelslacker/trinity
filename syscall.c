@@ -206,7 +206,7 @@ bool mkcall(int childno)
 			goto skip_enosys;
 
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
-			entry->name, call);
+			entry->name, call + SYSCALL_OFFSET);
 
 		deactivate_syscall(call, syscallrec->do32bit);
 	}
