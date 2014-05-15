@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <syslog.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -387,6 +388,10 @@ static void tainted_postmortem(int taint)
 
 	output(0, "kernel became tainted! (%d/%d) Last seed was %u\n",
 		taint, kernel_taint_initial, shm->seed);
+
+	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
+	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
+	closelog();
 }
 
 static void watchdog(void)
