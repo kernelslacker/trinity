@@ -111,16 +111,16 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 bool mkcall(int childno)
 {
 	struct syscallentry *entry;
-	unsigned int call = shm->syscall[childno].nr;
 	struct syscallrecord *syscallrec, *previous;
+	unsigned int call;
 	unsigned long ret = 0;
 	int errno_saved;
 
+	syscallrec = &shm->syscall[childno];
+	call = syscallrec->nr;
 	entry = syscalls[call].entry;
 
-	syscallrec = &shm->syscall[childno];
-
-	lock(&shm->syscall[childno].lock);
+	lock(&syscallrec->lock);
 	syscallrec->a1 = (unsigned long) rand64();
 	syscallrec->a2 = (unsigned long) rand64();
 	syscallrec->a3 = (unsigned long) rand64();
@@ -132,7 +132,7 @@ bool mkcall(int childno)
 	if (entry->sanitise)
 		entry->sanitise(childno);
 
-	unlock(&shm->syscall[childno].lock);
+	unlock(&syscallrec->lock);
 
 	output_syscall_prefix(childno, call);
 
@@ -150,7 +150,7 @@ bool mkcall(int childno)
 		extrapid = fork();
 		if (extrapid == 0) {
 			ret = do_syscall(childno, &errno_saved);
-			shm->syscall[childno].retval = ret;
+			syscallrec->retval = ret;
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid_alive(extrapid)) {
