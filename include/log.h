@@ -1,9 +1,10 @@
 #pragma once
 
 #include <unistd.h>
-#include "types.h"
 #include "exit.h"
+#include "params.h"	// monochrome
 #include "shm.h"
+#include "types.h"
 
 #define ANSI_RED	"[1;31m"
 #define ANSI_GREEN	"[1;32m"
