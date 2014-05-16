@@ -34,6 +34,9 @@ static unsigned long handle_arg_address(int childno, int argnum)
 {
 	unsigned long addr = 0;
 
+	if (argnum == 1)
+		return (unsigned long) get_address();
+
 	if (rand_bool())
 		return (unsigned long) get_address();
 
