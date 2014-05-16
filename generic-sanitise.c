@@ -144,14 +144,11 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	return mask;
 }
 
-static unsigned long handle_arg_list(unsigned int call, unsigned long argnum)
+static unsigned long handle_arg_list(struct syscallentry *entry, unsigned long argnum)
 {
-	struct syscallentry *entry;
 	unsigned long mask = 0;
 	unsigned int num = 0;
 	const unsigned long *values = NULL;
-
-	entry = syscalls[call].entry;
 
 	switch (argnum) {
 	case 1:	num = entry->arg1list.num;
@@ -388,7 +385,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return handle_arg_op(entry, argnum);
 
 	case ARG_LIST:
-		return handle_arg_list(call, argnum);
+		return handle_arg_list(entry, argnum);
 
 	case ARG_RANDPAGE:
 		return handle_arg_randpage();
