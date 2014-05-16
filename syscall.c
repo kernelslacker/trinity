@@ -46,13 +46,11 @@ static long syscall32(unsigned int call,
 {
 	long __res = 0;
 
-#if defined(__x86_64__)
+#if defined(DO_32_SYSCALL)
 	DO_32_SYSCALL
 	__syscall_return(long, __res);
 #else
-	/* non-x86 implementations go here. */
-	#error Implement 32-on-64 syscall in syscall.c:syscall32() for this architecture.
-
+	#error Implement 32-on-64 syscall macro for this architecture.
 #endif
 	return __res;
 }
