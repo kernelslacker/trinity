@@ -60,22 +60,25 @@ static long syscall32(unsigned int call,
 
 static unsigned long do_syscall(int childno, int *errno_saved)
 {
-	int nr = shm->syscall[childno].nr;
-	int call = nr;
+	struct syscallrecord *syscallrec;
+	int nr, call;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
+
+	syscallrec = &shm->syscall[childno];
+	nr = syscallrec->nr;
 
 	/* Some architectures (IA64/MIPS) start their Linux syscalls
 	 * At non-zero, and have other ABIs below.
 	 */
-	call += SYSCALL_OFFSET;
+	call = nr + SYSCALL_OFFSET;
 
-	a1 = shm->syscall[childno].a1;
-	a2 = shm->syscall[childno].a2;
-	a3 = shm->syscall[childno].a3;
-	a4 = shm->syscall[childno].a4;
-	a5 = shm->syscall[childno].a5;
-	a6 = shm->syscall[childno].a6;
+	a1 = syscallrec->a1;
+	a2 = syscallrec->a2;
+	a3 = syscallrec->a3;
+	a4 = syscallrec->a4;
+	a5 = syscallrec->a5;
+	a6 = syscallrec->a6;
 
 	shm->total_syscalls_done++;
 	shm->child_op_count[childno]++;
@@ -86,7 +89,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 
 	errno = 0;
 
-	if (shm->syscall[childno].do32bit == FALSE)
+	if (syscallrec->do32bit == FALSE)
 		ret = syscall(call, a1, a2, a3, a4, a5, a6);
 	else
 		ret = syscall32(call, a1, a2, a3, a4, a5, a6);
