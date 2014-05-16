@@ -97,7 +97,7 @@ static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
 	return i;
 }
 
-static unsigned long handle_arg_op(unsigned long call, unsigned long argnum)
+static unsigned long handle_arg_op(unsigned int call, unsigned long argnum)
 {
 	struct syscallentry *entry;
 	const unsigned long *values = NULL;
@@ -150,7 +150,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	return mask;
 }
 
-static unsigned long handle_arg_list(unsigned long call, unsigned long argnum)
+static unsigned long handle_arg_list(unsigned int call, unsigned long argnum)
 {
 	struct syscallentry *entry;
 	unsigned long mask = 0;
@@ -206,7 +206,7 @@ static unsigned long handle_arg_iovec(int childno, unsigned long argnum)
 	struct syscallrecord *syscallrec;
 	struct syscallentry *entry;
 	unsigned long num_entries;
-	unsigned long call;
+	unsigned int call;
 
 	syscallrec = &shm->syscall[childno];
 	call = syscallrec->nr;
@@ -259,7 +259,7 @@ static unsigned long get_argval(int childno, unsigned int argnum)
 }
 
 
-static unsigned long handle_arg_sockaddr(int childno, unsigned long call, unsigned long argnum)
+static unsigned long handle_arg_sockaddr(int childno, unsigned int call, unsigned long argnum)
 {
 	struct syscallrecord *syscallrec;
 	struct syscallentry *entry;
