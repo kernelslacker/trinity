@@ -94,14 +94,11 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 	return i;
 }
 
-static unsigned long handle_arg_op(unsigned int call, unsigned long argnum)
+static unsigned long handle_arg_op(struct syscallentry *entry, unsigned long argnum)
 {
-	struct syscallentry *entry;
 	const unsigned long *values = NULL;
 	unsigned int num = 0;
 	unsigned long mask = 0;
-
-	entry = syscalls[call].entry;
 
 	switch (argnum) {
 	case 1:	num = entry->arg1list.num;
@@ -388,7 +385,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return handle_arg_range(entry, argnum);
 
 	case ARG_OP:	/* Like ARG_LIST, but just a single value. */
-		return handle_arg_op(call, argnum);
+		return handle_arg_op(entry, argnum);
 
 	case ARG_LIST:
 		return handle_arg_list(call, argnum);
