@@ -103,7 +103,7 @@ void * get_non_null_address(void)
 	return _get_address(FALSE);
 }
 
-unsigned long find_previous_arg_address(unsigned int argnum, int childno)
+unsigned long find_previous_arg_address(int childno, unsigned int argnum)
 {
 	struct syscallrecord *syscallrec;
 	struct syscallentry *entry;

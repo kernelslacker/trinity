@@ -17,7 +17,7 @@ unsigned int get_interesting_32bit_value(void);
 void *get_address(void);
 void *get_non_null_address(void);
 void *get_writable_address(unsigned long size);
-unsigned long find_previous_arg_address(unsigned int argnum, int childno);
+unsigned long find_previous_arg_address(int childno, unsigned int argnum);
 struct iovec * alloc_iovec(unsigned int num);
 unsigned long get_len(void);
 unsigned int get_pid(void);

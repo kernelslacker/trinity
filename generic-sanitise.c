@@ -40,7 +40,7 @@ static unsigned long handle_arg_address(int childno, int argnum)
 	/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
 	 * and munge that instead of returning a new one from get_address() */
 
-	addr = find_previous_arg_address(argnum, childno);
+	addr = find_previous_arg_address(childno, argnum);
 
 	switch (rand() % 4) {
 	case 0:	break;	/* return unmodified */
