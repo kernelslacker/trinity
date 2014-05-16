@@ -201,14 +201,15 @@ static unsigned long handle_arg_randpage(void)
 	return (unsigned long) page_rand;
 }
 
-//FIXME: Do we need to pass in call ? Just get it from syscallrec
-static unsigned long handle_arg_iovec(int childno, unsigned long call, unsigned long argnum)
+static unsigned long handle_arg_iovec(int childno, unsigned long argnum)
 {
 	struct syscallrecord *syscallrec;
 	struct syscallentry *entry;
 	unsigned long num_entries;
+	unsigned long call;
 
 	syscallrec = &shm->syscall[childno];
+	call = syscallrec->nr;
 	entry = syscalls[call].entry;
 
 	num_entries = rand_range(1, 256);
@@ -399,7 +400,7 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 		return (unsigned long) generate_pathname();
 
 	case ARG_IOVEC:
-		return handle_arg_iovec(childno, call, argnum);
+		return handle_arg_iovec(childno, argnum);
 
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
