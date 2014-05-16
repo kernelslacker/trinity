@@ -3,7 +3,6 @@
 #include <sys/types.h>
 #include <signal.h>
 #include "shm.h"
-#include "params.h"	// for 'dangerous'
 #include "pids.h"
 #include "log.h"
 #include "sanitise.h"
