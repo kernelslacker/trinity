@@ -55,13 +55,10 @@ static unsigned long handle_arg_address(int childno, int argnum)
 	return addr;
 }
 
-static unsigned long handle_arg_range(unsigned int call, unsigned int argnum)
+static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int argnum)
 {
-	struct syscallentry *entry;
 	unsigned long i;
 	unsigned long low = 0, high = 0;
-
-	entry = syscalls[call].entry;
 
 	switch (argnum) {
 	case 1:	low = entry->low1range;
@@ -388,7 +385,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return (unsigned long) get_pid();
 
 	case ARG_RANGE:
-		return handle_arg_range(call, argnum);
+		return handle_arg_range(entry, argnum);
 
 	case ARG_OP:	/* Like ARG_LIST, but just a single value. */
 		return handle_arg_op(call, argnum);
