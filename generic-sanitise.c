@@ -348,11 +348,15 @@ static enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 	return argtype;
 }
 
-static unsigned long fill_arg(int childno, int call, unsigned int argnum)
+static unsigned long fill_arg(int childno, unsigned int argnum)
 {
+	struct syscallrecord *syscallrec;
 	struct syscallentry *entry;
+	unsigned int call;
 	enum argtype argtype;
 
+	syscallrec = &shm->syscall[childno];
+	call = syscallrec->nr;
 	entry = syscalls[call].entry;
 
 	if (argnum > entry->num_args)
@@ -431,17 +435,17 @@ void generic_sanitise(int childno)
 	entry = syscalls[call].entry;
 
 	if (entry->arg1type != 0)
-		syscallrec->a1 = fill_arg(childno, call, 1);
+		syscallrec->a1 = fill_arg(childno, 1);
 	if (entry->arg2type != 0)
-		syscallrec->a2 = fill_arg(childno, call, 2);
+		syscallrec->a2 = fill_arg(childno, 2);
 	if (entry->arg3type != 0)
-		syscallrec->a3 = fill_arg(childno, call, 3);
+		syscallrec->a3 = fill_arg(childno, 3);
 	if (entry->arg4type != 0)
-		syscallrec->a4 = fill_arg(childno, call, 4);
+		syscallrec->a4 = fill_arg(childno, 4);
 	if (entry->arg5type != 0)
-		syscallrec->a5 = fill_arg(childno, call, 5);
+		syscallrec->a5 = fill_arg(childno, 5);
 	if (entry->arg6type != 0)
-		syscallrec->a6 = fill_arg(childno, call, 6);
+		syscallrec->a6 = fill_arg(childno, 6);
 }
 
 void generic_free_arg(int childno)
