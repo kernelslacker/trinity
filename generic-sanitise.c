@@ -30,7 +30,7 @@ static unsigned int get_cpu(void)
 	return 0;
 }
 
-static unsigned long handle_arg_address(int childno, int call, int argnum)
+static unsigned long handle_arg_address(int childno, int argnum)
 {
 	unsigned long addr = 0;
 
@@ -40,7 +40,7 @@ static unsigned long handle_arg_address(int childno, int call, int argnum)
 	/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
 	 * and munge that instead of returning a new one from get_address() */
 
-	addr = find_previous_arg_address(argnum, call, childno);
+	addr = find_previous_arg_address(argnum, childno);
 
 	switch (rand() % 4) {
 	case 0:	break;	/* return unmodified */
@@ -370,7 +370,7 @@ static unsigned long fill_arg(int childno, int call, unsigned int argnum)
 		return (unsigned long) get_len();
 
 	case ARG_ADDRESS:
-		return handle_arg_address(childno, call, argnum);
+		return handle_arg_address(childno, argnum);
 
 	case ARG_NON_NULL_ADDRESS:
 		return (unsigned long) get_non_null_address();
