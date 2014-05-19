@@ -74,18 +74,20 @@ void delete_mapping(int childno, struct map *map)
 /* used in several sanitise_* functions. */
 struct map * common_set_mmap_ptr_len(int childno)
 {
+	struct syscallrecord *rec;
 	struct map *map;
 
-	map = (struct map *) shm->syscall[childno].a1;
+	rec = &shm->syscall[childno];
+	map = (struct map *) rec->a1;
 	shm->scratch[childno] = (unsigned long) map;    /* Save this for ->post */
 	if (map == NULL) {
-		shm->syscall[childno].a1 = 0;
-		shm->syscall[childno].a2 = 0;
+		rec->a1 = 0;
+		rec->a2 = 0;
 		return NULL;
 	}
 
-	shm->syscall[childno].a1 = (unsigned long) map->ptr;
-	shm->syscall[childno].a2 = map->size;           //TODO: Munge this.
+	rec->a1 = (unsigned long) map->ptr;
+	rec->a2 = map->size;           //TODO: Munge this.
 
 	return map;
 }
