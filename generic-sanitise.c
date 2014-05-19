@@ -246,17 +246,10 @@ static unsigned long get_argval(int childno, unsigned int argnum)
 }
 
 
-static unsigned long handle_arg_sockaddr(int childno, unsigned long argnum)
+static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct syscallrecord *syscallrec, unsigned long argnum)
 {
-	struct syscallrecord *syscallrec;
-	struct syscallentry *entry;
 	struct sockaddr *sockaddr = NULL;
 	socklen_t sockaddrlen = 0;
-	unsigned int call;
-
-	syscallrec = &shm->syscall[childno];
-	call = syscallrec->nr;
-	entry = syscalls[call].entry;
 
 	generate_sockaddr((struct sockaddr **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
@@ -402,7 +395,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return get_argval(childno, argnum);
 
 	case ARG_SOCKADDR:
-		return handle_arg_sockaddr(childno, argnum);
+		return handle_arg_sockaddr(entry, syscallrec, argnum);
 
 	case ARG_MODE_T:
 		return handle_arg_mode_t();
