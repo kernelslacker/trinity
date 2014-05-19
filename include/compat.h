@@ -245,6 +245,20 @@ enum {
 #define PR_MCE_KILL_GET 34
 #endif
 
+#ifndef PR_SET_MM
+#define PR_SET_MM               35
+#define PR_SET_CHILD_SUBREAPER  36
+#define PR_GET_CHILD_SUBREAPER  37
+#define PR_SET_NO_NEW_PRIVS     38
+#define PR_GET_NO_NEW_PRIVS     39
+#define PR_GET_TID_ADDRESS      40
+#endif
+
+#ifndef PR_SET_THP_DISABLE
+#define PR_SET_THP_DISABLE      41
+#define PR_GET_THP_DISABLE      42
+#endif
+
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO
 #define RDS_CANCEL_SENT_TO              1
