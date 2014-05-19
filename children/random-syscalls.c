@@ -67,6 +67,7 @@ static bool choose_syscall_table(void)
 
 bool child_random_syscalls(int childno)
 {
+	struct syscallrecord *rec;
 	unsigned int syscallnr;
 	bool do32;
 
@@ -93,11 +94,12 @@ retry:
 		goto retry;
 	}
 
+	rec = &shm->syscall[childno];
 	/* critical section for shm updates. */
-	lock(&shm->syscall[childno].lock);
-	shm->syscall[childno].do32bit = do32;
-	shm->syscall[childno].nr = syscallnr;
-	unlock(&shm->syscall[childno].lock);
+	lock(&rec->lock);
+	rec->do32bit = do32;
+	rec->nr = syscallnr;
+	unlock(&rec->lock);
 
 	if (syscalls_todo) {
 		if (shm->total_syscalls_done >= syscalls_todo)
