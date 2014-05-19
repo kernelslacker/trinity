@@ -195,16 +195,9 @@ static unsigned long handle_arg_randpage(void)
 	return (unsigned long) page_rand;
 }
 
-static unsigned long handle_arg_iovec(int childno, unsigned long argnum)
+static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscallrecord *syscallrec, unsigned int argnum)
 {
-	struct syscallrecord *syscallrec;
-	struct syscallentry *entry;
 	unsigned long num_entries;
-	unsigned int call;
-
-	syscallrec = &shm->syscall[childno];
-	call = syscallrec->nr;
-	entry = syscalls[call].entry;
 
 	num_entries = rand_range(1, 256);
 
@@ -400,7 +393,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return (unsigned long) generate_pathname();
 
 	case ARG_IOVEC:
-		return handle_arg_iovec(childno, argnum);
+		return handle_arg_iovec(entry, syscallrec, argnum);
 
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
