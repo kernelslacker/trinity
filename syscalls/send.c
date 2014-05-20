@@ -5,11 +5,13 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "compat.h"
+#include "maps.h"
 #include "random.h"
 #include "sanitise.h"
-#include "maps.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
+#include "compat.h"
 
 struct syscallentry syscall_send = {
 	.name = "send",
@@ -98,7 +100,7 @@ static void sanitise_sendmsg(int childno)
 	shm->syscall[childno].a2 = (unsigned long) msg;
 }
 
-static void post_sendmsg(int childno)
+static void post_sendmsg(int childno, __unused__ struct syscallrecord *rec)
 {
 	struct msghdr *msg;
 	void *ptr = (void *) shm->scratch[childno];

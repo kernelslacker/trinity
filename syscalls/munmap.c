@@ -56,11 +56,11 @@ static void sanitise_munmap(int childno)
 	}
 }
 
-static void post_munmap(int childno)
+static void post_munmap(int childno, struct syscallrecord *rec)
 {
 	struct map *map = (struct map *) shm->scratch[childno];
 
-	if (shm->syscall[childno].retval != 0)
+	if (rec->retval != 0)
 		return;
 
 	if (action == WHOLE)

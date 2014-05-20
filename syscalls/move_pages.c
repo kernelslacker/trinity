@@ -18,6 +18,8 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 #include "utils.h"
 
 static unsigned int count;
@@ -102,7 +104,7 @@ static void sanitise_move_pages(int childno)
 		rec->a6 &= ~MPOL_MF_MOVE_ALL;
 }
 
-static void post_move_pages(int childno)
+static void post_move_pages(int childno, __unused__ struct syscallrecord *rec)
 {
 	unsigned long *page;
 

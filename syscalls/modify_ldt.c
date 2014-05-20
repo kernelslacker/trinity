@@ -10,6 +10,8 @@
 #include <asm/ldt.h>
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
 #define ALLOCSIZE LDT_ENTRIES * LDT_ENTRY_SIZE
 
@@ -52,7 +54,7 @@ static void sanitise_modify_ldt(int childno)
 	}
 }
 
-static void post_modify_ldt(int childno)
+static void post_modify_ldt(int childno, __unused__ struct syscallrecord *rec)
 {
 	void *ptr;
 
