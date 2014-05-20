@@ -14,8 +14,8 @@
 #include "arch.h"
 #include "compat.h"
 #include "random.h"
+#include "syscall.h"
 #include "utils.h"	//ARRAY_SIZE
-#include "utils.h"
 
 #ifdef __x86_64__
 #define NUM_FLAGS 13
@@ -26,15 +26,16 @@
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED
 
-static void do_anon(int childno)
+static void do_anon(struct syscallrecord *rec)
 {
 	/* no fd if anonymous mapping. */
-	shm->syscall[childno].a5 = -1;
-	shm->syscall[childno].a6 = 0;
+	rec->a5 = -1;
+	rec->a6 = 0;
 }
 
 static void sanitise_mmap(int childno)
 {
+	struct syscallrecord *rec;
 	unsigned int i;
 	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
 			MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
@@ -51,45 +52,49 @@ static void sanitise_mmap(int childno)
 		1 * GB,
 	};
 
+	rec = &shm->syscall[childno];
+
 	sizes[0] = page_size;
 
 	/* Don't actually set a hint right now. */
-	shm->syscall[childno].a1 = 0;
+	rec->a1 = 0;
 
 	// set additional flags
 	for (i = 0; i < numflags; i++)
-		shm->syscall[childno].a4 |= flagvals[rand() % NUM_FLAGS];
+		rec->a4 |= flagvals[rand() % NUM_FLAGS];
 
-	if (shm->syscall[childno].a4 & MAP_ANONYMOUS) {
-		shm->syscall[childno].a2 = sizes[rand() % ARRAY_SIZE(sizes)];
-		do_anon(childno);
+	if (rec->a4 & MAP_ANONYMOUS) {
+		rec->a2 = sizes[rand() % ARRAY_SIZE(sizes)];
+		do_anon(rec);
 	} else {
 		if (this_syscallname("mmap2", childno) == TRUE) {
 			/* mmap2 counts in 4K units */
-			shm->syscall[childno].a6 /= 4096;
+			rec->a6 /= 4096;
 		} else {
 			/* page align non-anonymous mappings. */
-			shm->syscall[childno].a6 &= PAGE_MASK;
+			rec->a6 &= PAGE_MASK;
 		}
 
-		shm->syscall[childno].a2 = page_size;
+		rec->a2 = page_size;
 	}
 }
 
 static void post_mmap(int childno)
 {
+	struct syscallrecord *rec;
 	char *p;
 	struct list_head *list;
 	struct map *new;
 
-	p = (void *) shm->syscall[childno].retval;
+	rec = &shm->syscall[childno];
+	p = (void *) rec->retval;
 	if (p == MAP_FAILED)
 		return;
 
 	new = zmalloc(sizeof(struct map));
 	new->name = strdup("misc");
-	new->size = shm->syscall[childno].a2;
-	new->prot = shm->syscall[childno].a3;
+	new->size = rec->a2;
+	new->prot = rec->a3;
 //TODO: store fd if !anon
 	new->ptr = p;
 	new->type = MAP_LOCAL;
