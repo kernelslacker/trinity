@@ -9,23 +9,27 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 
 static void sanitise_remap_file_pages(int childno)
 {
+	struct syscallrecord *rec;
 	struct map *map;
 	size_t size;
+
+	rec = &shm->syscall[childno];
 
 	map = common_set_mmap_ptr_len(childno);
 
 	/* We just want to remap a part of the mapping. */
 	size = rand() % map->size;
-	shm->syscall[childno].a2 = size;
+	rec->a2 = size;
 
 	/* "The prot argument must be specified as 0" */
-	shm->syscall[childno].a3 = 0;
+	rec->a3 = 0;
 
 	/* Pick a random pgoff. */
-	shm->syscall[childno].a4 = rand() & (size / page_size);
+	rec->a4 = rand() & (size / page_size);
 }
 
 struct syscallentry syscall_remap_file_pages = {
