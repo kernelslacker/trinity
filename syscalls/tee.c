@@ -1,19 +1,13 @@
 /*
  * SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
  */
+#include <fcntl.h>
 #include <stdlib.h>
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
-
-// FIXME move to compat.h
-# define SPLICE_F_MOVE          1       /* Move pages instead of copying.  */
-# define SPLICE_F_NONBLOCK      2       /* Don't block on the pipe splicing
-                                           (but we may still block on the fd
-                                           we splice from/to).  */
-# define SPLICE_F_MORE          4       /* Expect more data.  */
-# define SPLICE_F_GIFT          8       /* Pages passed in are a gift.  */
+#include "compat.h"
 
 static void sanitise_tee(__unused__ int childno, struct syscallrecord *rec)
 {
