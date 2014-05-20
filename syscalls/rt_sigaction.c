@@ -6,19 +6,24 @@
  */
 #include <signal.h>
 #include <stdlib.h>
-#include "sanitise.h"
 #include "random.h"
+#include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 
 void sanitise_rt_sigaction(int childno)
 {
-	if (rand_bool())
-		shm->syscall[childno].a2 = 0;
+	struct syscallrecord *rec;
+
+	rec = &shm->syscall[childno];
 
 	if (rand_bool())
-		shm->syscall[childno].a3 = 0;
+		rec->a2 = 0;
 
-	shm->syscall[childno].a4 = sizeof(sigset_t);
+	if (rand_bool())
+		rec->a3 = 0;
+
+	rec->a4 = sizeof(sigset_t);
 }
 
 struct syscallentry syscall_rt_sigaction = {
