@@ -50,10 +50,13 @@ static void free_all_pageallocs(unsigned long *page_alloc)
 
 static void sanitise_move_pages(int childno)
 {
+	struct syscallrecord *rec;
 	struct map *map;
 	int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
+
+	rec = &shm->syscall[childno];
 
 	if (pagetypes == NULL)
 		pagetypes = zmalloc(page_size);	// The implied memset(0) == NOT_SET
@@ -61,7 +64,7 @@ static void sanitise_move_pages(int childno)
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
 	count = max(1U, count);
-	shm->syscall[childno].a2 = count;
+	rec->a2 = count;
 
 	/* setup array of ptrs to pages to move */
 	page_alloc = (unsigned long *) zmalloc(page_size);
@@ -83,20 +86,20 @@ static void sanitise_move_pages(int childno)
 			pagetypes[i] = WAS_MAP;
 		}
 	}
-	shm->syscall[childno].a3 = (unsigned long) page_alloc;
+	rec->a3 = (unsigned long) page_alloc;
 
 	/* nodes = array of ints specifying desired location for each page */
 	nodes = calloc(count, sizeof(int));
 	for (i = 0; i < count; i++)
 		nodes[i] = (int) rand() % 2;
-	shm->syscall[childno].a4 = (unsigned long) nodes;
+	rec->a4 = (unsigned long) nodes;
 
 	/* status = array of ints returning status of each page.*/
-	shm->syscall[childno].a5 = (unsigned long) calloc(count, sizeof(int));
+	rec->a5 = (unsigned long) calloc(count, sizeof(int));
 
 	/* Needs CAP_SYS_NICE */
 	if (getuid() != 0)
-		shm->syscall[childno].a6 &= ~MPOL_MF_MOVE_ALL;
+		rec->a6 &= ~MPOL_MF_MOVE_ALL;
 }
 
 static void post_move_pages(int childno)
