@@ -30,12 +30,16 @@
 
 static void sanitise_fcntl(int childno)
 {
-	switch (shm->syscall[childno].a2) {
+	struct syscallrecord *rec;
+
+	rec = &shm->syscall[childno];
+
+	switch (rec->a2) {
 	/* arg = fd */
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
 	case F_SETLEASE:
-		shm->syscall[childno].a3 = (unsigned long) get_random_fd();
+		rec->a3 = (unsigned long) get_random_fd();
 		break;
 
 	/* no arg */
@@ -49,21 +53,21 @@ static void sanitise_fcntl(int childno)
 		break;
 
 	case F_SETFD:	/* arg = flags */
-		shm->syscall[childno].a3 = (unsigned int) rand32();
+		rec->a3 = (unsigned int) rand32();
 		break;
 
 	case F_SETFL:
-		shm->syscall[childno].a3 = 0L;
+		rec->a3 = 0L;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= O_APPEND;
+			rec->a3 |= O_APPEND;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= O_ASYNC;
+			rec->a3 |= O_ASYNC;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= O_DIRECT;
+			rec->a3 |= O_DIRECT;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= O_NOATIME;
+			rec->a3 |= O_NOATIME;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= O_NONBLOCK;
+			rec->a3 |= O_NONBLOCK;
 		break;
 
 	/* arg = (struct flock *) */
@@ -81,7 +85,7 @@ static void sanitise_fcntl(int childno)
 #endif
 
 	case F_SETOWN:
-		shm->syscall[childno].a3 = (unsigned long) get_pid();
+		rec->a3 = (unsigned long) get_pid();
 		break;
 
 	/* arg = struct f_owner_ex *) */
@@ -90,29 +94,29 @@ static void sanitise_fcntl(int childno)
 		break;
 
 	case F_SETSIG:
-		shm->syscall[childno].a3 = (unsigned long) rand32();
-		if (shm->syscall[childno].a3 == SIGINT)
-			shm->syscall[childno].a3 = 0; /* restore default (SIGIO) */
+		rec->a3 = (unsigned long) rand32();
+		if (rec->a3 == SIGINT)
+			rec->a3 = 0; /* restore default (SIGIO) */
 		break;
 
 	case F_NOTIFY:
-		shm->syscall[childno].a3 = 0L;
+		rec->a3 = 0L;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= DN_ACCESS;
+			rec->a3 |= DN_ACCESS;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= DN_MODIFY;
+			rec->a3 |= DN_MODIFY;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= DN_CREATE;
+			rec->a3 |= DN_CREATE;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= DN_DELETE;
+			rec->a3 |= DN_DELETE;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= DN_RENAME;
+			rec->a3 |= DN_RENAME;
 		if (rand_bool())
-			shm->syscall[childno].a3 |= DN_ATTRIB;
+			rec->a3 |= DN_ATTRIB;
 		break;
 
 	case F_SETPIPE_SZ:
-		shm->syscall[childno].a3 = rand32();
+		rec->a3 = rand32();
 		break;
 
 	default:
