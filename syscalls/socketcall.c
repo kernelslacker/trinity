@@ -3,13 +3,14 @@
  */
 #include <stdlib.h>
 #include <linux/net.h>
-#include <sys/types.h>          /* See NOTES */
+#include <sys/types.h>
 #include <sys/socket.h>
-#include "compat.h"
 #include "net.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "utils.h"
+#include "compat.h"
 
 static void socketcall_socket(unsigned long *args)
 {
@@ -53,20 +54,23 @@ static const struct socketcall_ptr socketcallptrs[] = {
 
 static void sanitise_socketcall(int childno)
 {
+	struct syscallrecord *rec;
 	unsigned long *args;
 	unsigned int i;
 
+	rec = &shm->syscall[childno];
+
 	args = malloc(6 * sizeof(unsigned long));
 
-	shm->syscall[childno].a1 = rand() % 20;
-	shm->syscall[childno].a1 = SYS_SOCKET;
+	//rec->a1 = rand() % ARRAY_SIZE(socketcallptrs);
+	rec->a1 = SYS_SOCKET;	//FIXME: Add other options and remove this hardcode.
 
 	for (i = 0; i < ARRAY_SIZE(socketcallptrs); i++) {
-		if (socketcallptrs[i].call == shm->syscall[childno].a1)
+		if (socketcallptrs[i].call == rec->a1)
 			socketcallptrs[i].func(args);
 	}
 
-	shm->syscall[childno].a2 = (unsigned long) args;
+	rec->a2 = (unsigned long) args;
 }
 
 struct syscallentry syscall_socketcall = {
