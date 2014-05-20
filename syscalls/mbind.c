@@ -10,23 +10,27 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)
 
 static void sanitise_mbind(int childno)
 {
+	struct syscallrecord *rec;
 	unsigned long maxnode;
+
+	rec = &shm->syscall[childno];
 
 	(void) common_set_mmap_ptr_len(childno);
 
 retry_maxnode:
-	shm->syscall[childno].a5 &= ~((page_size * 8) - 1);
+	rec->a5 &= ~((page_size * 8) - 1);
 
-	maxnode = shm->syscall[childno].a5;
+	maxnode = rec->a5;
 
 	if (maxnode < 2 || maxnode > (page_size * 8)) {
-		shm->syscall[childno].a5 = rand32();
+		rec->a5 = rand32();
 		goto retry_maxnode;
 	}
 }
