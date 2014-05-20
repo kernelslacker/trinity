@@ -3,13 +3,14 @@
  */
 #include <stdlib.h>
 #include <linux/ptrace.h>
+#include "arch.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 #include "compat.h"
-#include "arch.h"
 
-
-static void sanitise_ptrace(int childno)
+static void sanitise_ptrace(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned int i;
 
@@ -24,7 +25,7 @@ static void sanitise_ptrace(int childno)
 	 *  but broken is at least better than hanging.
 	 */
 	i  = rand() % shm->running_childs;
-	shm->syscall[childno].a2 = shm->pids[i];
+	rec->a2 = shm->pids[i];
 }
 
 

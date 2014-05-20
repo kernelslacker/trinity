@@ -4,10 +4,12 @@
 #include <linux/futex.h>
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_set_robust_list(int childno)
+static void sanitise_set_robust_list(__unused__ int childno, struct syscallrecord *rec)
 {
-	shm->syscall[childno].a2 = sizeof(struct robust_list_head);
+	rec->a2 = sizeof(struct robust_list_head);
 }
 
 struct syscallentry syscall_set_robust_list = {

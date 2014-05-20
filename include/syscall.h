@@ -46,7 +46,7 @@ struct arglist {
 };
 
 struct syscallentry {
-	void (*sanitise)(int childno);
+	void (*sanitise)(int childno, struct syscallrecord *rec);
 	void (*post)(int childno, struct syscallrecord *rec);
 	int (*init)(void);
 	char * (*decode)(int argnum, int childno);

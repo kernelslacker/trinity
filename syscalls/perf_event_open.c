@@ -17,6 +17,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "compat.h"
 
 #define SYSFS "/sys/bus/event_source/devices/"
@@ -1177,16 +1178,13 @@ static void create_random_event(struct perf_event_attr *attr)
 
 }
 
-void sanitise_perf_event_open(int childno)
+void sanitise_perf_event_open(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct perf_event_attr *attr;
 	unsigned long flags;
 	pid_t pid;
 	int group_leader=0;
 	void *addr;
-
-	rec = &shm->syscall[childno];
 
 	addr = get_writable_address(sizeof(struct perf_event_attr));
 	rec->a1 = (unsigned long) addr;

@@ -15,6 +15,7 @@
 #include "random.h"	// generate_random_page
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "trinity.h"	// __unused__
 
 static unsigned long ** gen_ptrs_to_crap(void)
@@ -37,16 +38,16 @@ static unsigned long ** gen_ptrs_to_crap(void)
 	return (unsigned long **) ptr;
 }
 
-static void sanitise_execve(__unused__ int childno)
+static void sanitise_execve(__unused__ int childno, struct syscallrecord *rec)
 {
 	/* we don't want to block if something tries to read from stdin */
 	fclose(stdin);
 
 	/* Fabricate argv */
-	shm->syscall[childno].a2 = (unsigned long) gen_ptrs_to_crap();
+	rec->a2 = (unsigned long) gen_ptrs_to_crap();
 
 	/* Fabricate envp */
-	shm->syscall[childno].a3 = (unsigned long) gen_ptrs_to_crap();
+	rec->a3 = (unsigned long) gen_ptrs_to_crap();
 }
 
 struct syscallentry syscall_execve = {

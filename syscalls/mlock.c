@@ -5,8 +5,10 @@
 #include "maps.h"
 #include "shm.h"
 #include "sanitise.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_mlock(int childno)
+static void sanitise_mlock(int childno, __unused__ struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len(childno);
 }

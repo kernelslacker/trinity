@@ -11,13 +11,10 @@
 #include "shm.h"
 #include "syscall.h"
 
-static void sanitise_remap_file_pages(int childno)
+static void sanitise_remap_file_pages(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct map *map;
 	size_t size;
-
-	rec = &shm->syscall[childno];
 
 	map = common_set_mmap_ptr_len(childno);
 

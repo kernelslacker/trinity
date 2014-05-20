@@ -50,15 +50,12 @@ static void free_all_pageallocs(unsigned long *page_alloc)
 	free(page_alloc);
 }
 
-static void sanitise_move_pages(int childno)
+static void sanitise_move_pages(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct map *map;
 	int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
-
-	rec = &shm->syscall[childno];
 
 	if (pagetypes == NULL)
 		pagetypes = zmalloc(page_size);	// The implied memset(0) == NOT_SET

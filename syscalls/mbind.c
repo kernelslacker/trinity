@@ -15,12 +15,9 @@
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)
 
-static void sanitise_mbind(int childno)
+static void sanitise_mbind(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	unsigned long maxnode;
-
-	rec = &shm->syscall[childno];
 
 	(void) common_set_mmap_ptr_len(childno);
 

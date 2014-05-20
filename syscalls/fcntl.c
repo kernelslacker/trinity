@@ -22,18 +22,16 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 #include "compat.h"
 
 #if F_GETLK64 != F_GETLK
 #define HAVE_LK64
 #endif
 
-static void sanitise_fcntl(int childno)
+static void sanitise_fcntl(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
-
-	rec = &shm->syscall[childno];
-
 	switch (rec->a2) {
 	/* arg = fd */
 	case F_DUPFD:

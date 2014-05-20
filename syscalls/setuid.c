@@ -4,10 +4,12 @@
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_setuid(int childno)
+static void sanitise_setuid(__unused__ int childno, struct syscallrecord *rec)
 {
-	shm->syscall[childno].a1 = rand32();
+	rec->a1 = rand32();
 }
 
 struct syscallentry syscall_setuid = {

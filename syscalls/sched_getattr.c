@@ -5,14 +5,16 @@
 #include "arch.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
 #define SCHED_ATTR_SIZE_VER0	48
 
-static void sanitise_sched_getattr(int childno)
+static void sanitise_sched_getattr(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned long range = page_size - SCHED_ATTR_SIZE_VER0;
 
-	shm->syscall[childno].a3 = (rand() % range) + SCHED_ATTR_SIZE_VER0;
+	rec->a3 = (rand() % range) + SCHED_ATTR_SIZE_VER0;
 }
 
 struct syscallentry syscall_sched_getattr = {

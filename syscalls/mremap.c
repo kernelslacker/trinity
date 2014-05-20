@@ -20,15 +20,12 @@ static const unsigned long alignments[] = {
 	1 * GB, 2 * GB, 4 * GB,
 };
 
-static void sanitise_mremap(int childno)
+static void sanitise_mremap(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct map *map;
 	unsigned long newaddr = 0;
 
 	map = common_set_mmap_ptr_len(childno);
-
-	rec = &shm->syscall[childno];
 
 	rec->a3 = map->size;		//TODO: Munge this.
 

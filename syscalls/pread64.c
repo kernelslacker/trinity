@@ -4,13 +4,14 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "trinity.h"
 
-static void sanitise_pread64(int childno)
+static void sanitise_pread64(__unused__ int childno, struct syscallrecord *rec)
 {
 
 retry_pos:
-	if ((int) shm->syscall[childno].a4 < 0) {
-		shm->syscall[childno].a4 = rand64();
+	if ((int) rec->a4 < 0) {
+		rec->a4 = rand64();
 		goto retry_pos;
 	}
 }

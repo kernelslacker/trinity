@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
 /* flags used for fanotify_modify_mark() */
 #define FAN_MARK_ADD            0x00000001
@@ -32,7 +34,7 @@
 #define FAN_EVENT_ON_CHILD      0x08000000      /* interested in child events */
 #define FAN_CLOSE               (FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE) /* close */
 
-static void sanitise_fanotify_mark(int childno)
+static void sanitise_fanotify_mark(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned int flagvals[5] = { FAN_MARK_DONT_FOLLOW, FAN_MARK_ONLYDIR, FAN_MARK_MOUNT,
 				    FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORED_SURV_MODIFY };
@@ -42,10 +44,10 @@ static void sanitise_fanotify_mark(int childno)
 
 	// set additional flags
 	for (i = 0; i < numflags; i++)
-		shm->syscall[childno].a2 |= flagvals[i];
+		rec->a2 |= flagvals[i];
 
 	// Set mask
-	shm->syscall[childno].a3 &= 0xffffffff;
+	rec->a3 &= 0xffffffff;
 }
 
 struct syscallentry syscall_fanotify_mark = {

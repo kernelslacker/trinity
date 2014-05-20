@@ -52,12 +52,9 @@ static void do_set_seccomp(__unused__ struct syscallrecord *rec) { }
 #endif
 
 /* We already got a generic_sanitise at this point */
-void sanitise_prctl(int childno)
+static void sanitise_prctl(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
-
-	rec = &shm->syscall[childno];
 
 // For now, just do SECCOMP, the other options need some attention.
 	option = PR_SET_SECCOMP;

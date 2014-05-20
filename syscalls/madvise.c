@@ -6,9 +6,11 @@
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 #include "compat.h"
 
-static void sanitise_madvise(int childno)
+static void sanitise_madvise(int childno, __unused__ struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len(childno);
 }

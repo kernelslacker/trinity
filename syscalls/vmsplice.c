@@ -8,12 +8,14 @@
 #include <stdlib.h>
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_vmsplice(int childno)
+static void sanitise_vmsplice(__unused__ int childno, struct syscallrecord *rec)
 {
 	if ((rand() % 10) > 0)
-		shm->syscall[childno].a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-	shm->syscall[childno].a3 = rand() % UIO_MAXIOV;
+		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+	rec->a3 = rand() % UIO_MAXIOV;
 }
 
 struct syscallentry syscall_vmsplice = {

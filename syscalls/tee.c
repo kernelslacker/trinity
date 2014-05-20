@@ -4,7 +4,10 @@
 #include <stdlib.h>
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
+// FIXME move to compat.h
 # define SPLICE_F_MOVE          1       /* Move pages instead of copying.  */
 # define SPLICE_F_NONBLOCK      2       /* Don't block on the pipe splicing
                                            (but we may still block on the fd
@@ -12,11 +15,11 @@
 # define SPLICE_F_MORE          4       /* Expect more data.  */
 # define SPLICE_F_GIFT          8       /* Pages passed in are a gift.  */
 
-static void sanitise_tee(int childno)
+static void sanitise_tee(__unused__ int childno, struct syscallrecord *rec)
 {
 	if ((rand() % 10) > 0) {
-		shm->syscall[childno].a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		shm->syscall[childno].a2 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		rec->a2 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
 	}
 }
 

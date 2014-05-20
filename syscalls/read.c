@@ -3,15 +3,17 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include "arch.h"
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "arch.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_read(int childno)
+static void sanitise_read(__unused__ int childno, struct syscallrecord *rec)
 {
-	shm->syscall[childno].a2 = (unsigned long) get_non_null_address();
-	shm->syscall[childno].a3 = rand() % page_size;
+	rec->a2 = (unsigned long) get_non_null_address();
+	rec->a3 = rand() % page_size;
 }
 
 struct syscallentry syscall_read = {

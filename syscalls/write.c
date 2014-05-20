@@ -6,13 +6,15 @@
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_write(int childno)
+static void sanitise_write(__unused__ int childno, struct syscallrecord *rec)
 {
 	if ((rand() % 100) > 50)
-		shm->syscall[childno].a3 = 1;
+		rec->a3 = 1;
 	else
-		shm->syscall[childno].a3 = rand() % page_size;
+		rec->a3 = rand() % page_size;
 }
 
 struct syscallentry syscall_write = {

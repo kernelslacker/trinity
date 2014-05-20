@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -132,12 +133,9 @@ done:
 }
 
 
-static void sanitise_socket(int childno)
+static void sanitise_socket(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct socket_triplet st = { .family = 0, .type = 0, .protocol = 0 };
-
-	rec = &shm->syscall[childno];
 
 	gen_socket_args(&st);
 

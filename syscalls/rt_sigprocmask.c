@@ -5,10 +5,12 @@
 #include <signal.h>
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_rt_sigprocmask(int childno)
+static void sanitise_rt_sigprocmask(__unused__ int childno, struct syscallrecord *rec)
 {
-	shm->syscall[childno].a4 = sizeof(sigset_t);
+	rec->a4 = sizeof(sigset_t);
 }
 
 struct syscallentry syscall_rt_sigprocmask = {
