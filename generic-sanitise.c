@@ -30,7 +30,7 @@ static unsigned int get_cpu(void)
 	return 0;
 }
 
-static unsigned long handle_arg_address(int childno, int argnum)
+static unsigned long handle_arg_address(int childno, unsigned int argnum)
 {
 	unsigned long addr = 0;
 
@@ -97,7 +97,7 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 	return i;
 }
 
-static unsigned long handle_arg_op(struct syscallentry *entry, unsigned long argnum)
+static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argnum)
 {
 	const unsigned long *values = NULL;
 	unsigned int num = 0;
@@ -147,7 +147,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	return mask;
 }
 
-static unsigned long handle_arg_list(struct syscallentry *entry, unsigned long argnum)
+static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int argnum)
 {
 	unsigned long mask = 0;
 	unsigned int num = 0;
@@ -246,7 +246,7 @@ static unsigned long get_argval(int childno, unsigned int argnum)
 }
 
 
-static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct syscallrecord *syscallrec, unsigned long argnum)
+static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct syscallrecord *syscallrec, unsigned int argnum)
 {
 	struct sockaddr *sockaddr = NULL;
 	socklen_t sockaddrlen = 0;
