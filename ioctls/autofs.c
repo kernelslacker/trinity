@@ -6,6 +6,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "utils.h"
 
 /* include/linux/auto_dev-ioctl.h */
