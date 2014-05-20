@@ -6,6 +6,7 @@
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "trinity.h"
 
 static void sanitise_mincore(int childno)
 {
@@ -18,9 +19,9 @@ static void sanitise_mincore(int childno)
 	shm->syscall[childno].a3 = (unsigned long) malloc(len);
 }
 
-static void post_mincore(int childno)
+static void post_mincore(__unused__ int childno, struct syscallrecord *rec)
 {
-	free((void *) shm->syscall[childno].a3);
+	free((void *) rec->a3);
 }
 
 struct syscallentry syscall_mincore = {

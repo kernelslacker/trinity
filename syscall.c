@@ -200,7 +200,7 @@ bool mkcall(int childno)
 skip_enosys:
 
 	if (entry->post)
-	    entry->post(childno);
+	    entry->post(childno, syscallrec);
 
 	/* store info for debugging. */
 	previous = &shm->previous[childno];

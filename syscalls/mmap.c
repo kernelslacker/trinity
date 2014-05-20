@@ -79,14 +79,12 @@ static void sanitise_mmap(int childno)
 	}
 }
 
-static void post_mmap(int childno)
+static void post_mmap(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	char *p;
 	struct list_head *list;
 	struct map *new;
 
-	rec = &shm->syscall[childno];
 	p = (void *) rec->retval;
 	if (p == MAP_FAILED)
 		return;

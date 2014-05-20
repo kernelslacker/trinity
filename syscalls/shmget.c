@@ -7,13 +7,15 @@
 #include <sys/shm.h>
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 
-static void post_shmget(int childno)
+static void post_shmget(__unused__ int childno, struct syscallrecord *rec)
 {
-	if (shm->syscall[childno].retval == (unsigned long) -1L)
+	if (rec->retval == (unsigned long) -1L)
 		return;
 
-	shmctl(shm->syscall[childno].retval, IPC_RMID, NULL);
+	shmctl(rec->retval, IPC_RMID, NULL);
 }
 
 struct syscallentry syscall_shmget = {

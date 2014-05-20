@@ -7,6 +7,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "utils.h"
 
 static void sanitise_mprotect(int childno)
@@ -17,12 +18,12 @@ static void sanitise_mprotect(int childno)
 /*
  * If we successfully did an mprotect, update our record of the mappings prot bits.
  */
-static void post_mprotect(int childno)
+static void post_mprotect(int childno, struct syscallrecord *rec)
 {
 	struct map *map = (struct map *) shm->scratch[childno];
 
-	if (shm->syscall[childno].retval != 0)
-		map->prot = shm->syscall[childno].a3;
+	if (rec->retval != 0)
+		map->prot = rec->a3;
 
 	shm->scratch[childno] = 0;
 }

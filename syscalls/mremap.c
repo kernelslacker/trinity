@@ -48,10 +48,10 @@ static void sanitise_mremap(int childno)
  * If we successfully remapped a range, we need to update our record of it
  * so we don't re-use the old address.
  */
-static void post_mremap(int childno)
+static void post_mremap(int childno, struct syscallrecord *rec)
 {
 	struct map *map = (struct map *) shm->scratch[childno];
-	void *ptr = (void *) shm->syscall[childno].retval;
+	void *ptr = (void *) rec->retval;
 
 	if (ptr == MAP_FAILED)
 		return;
