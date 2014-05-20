@@ -12,13 +12,14 @@
 #include <sys/prctl.h>
 #include <sys/socket.h>
 
-#include "sanitise.h"
 #include "net.h"
 #include "maps.h"
+#include "sanitise.h"
 #include "shm.h"
-#include "compat.h"
-#include "utils.h"
+#include "syscall.h"
 #include "trinity.h"
+#include "utils.h"
+#include "compat.h"
 
 #define NR_PRCTL_OPTS 36
 static int prctl_opts[NR_PRCTL_OPTS] = {
@@ -35,34 +36,37 @@ static int prctl_opts[NR_PRCTL_OPTS] = {
 
 
 #ifdef USE_SECCOMP
-static void do_set_seccomp(int childno)
+static void do_set_seccomp(struct syscallrecord *rec)
 {
 	unsigned long *optval = NULL, optlen = 0;
 
 	bpf_gen_seccomp(&optval, &optlen);
 
-	shm->syscall[childno].a2 = SECCOMP_MODE_FILTER;
-	shm->syscall[childno].a3 = (unsigned long) optval;
-	shm->syscall[childno].a4 = 0;
-	shm->syscall[childno].a5 = 0;
+	rec->a2 = SECCOMP_MODE_FILTER;
+	rec->a3 = (unsigned long) optval;
+	rec->a4 = 0;
+	rec->a5 = 0;
 }
 #else
-static void do_set_seccomp(__unused__ int childno) { }
+static void do_set_seccomp(__unused__ struct syscallrecord *rec) { }
 #endif
 
 /* We already got a generic_sanitise at this point */
 void sanitise_prctl(int childno)
 {
+	struct syscallrecord *rec;
 	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
+
+	rec = &shm->syscall[childno];
 
 // For now, just do SECCOMP, the other options need some attention.
 	option = PR_SET_SECCOMP;
 
-	shm->syscall[childno].a1 = option;
+	rec->a1 = option;
 
 	switch (option) {
 	case PR_SET_SECCOMP:
-		do_set_seccomp(childno);
+		do_set_seccomp(rec);
 		break;
 
 	default:
