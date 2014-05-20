@@ -22,22 +22,22 @@
 #define SYSFS "/sys/bus/event_source/devices/"
 
 struct generic_event_type {
-	char *name;
-	char *value;
+	const char *name;
+	const char *value;
 	long long config;
 	long long config1;
 	long long config2;
 };
 
 struct format_type {
-	char *name;
-	char *value;
+	const char *name;
+	const char *value;
 	int field;
 	unsigned long long mask;
 };
 
 struct pmu_type {
-	char *name;
+	const char *name;
 	int type;
 	int num_formats;
 	int num_generic_events;
@@ -57,7 +57,7 @@ struct pmu_type *pmus=NULL;
 #define MAX_FIELDS	4
 
 
-static int parse_format(char *string, int *field_type, unsigned long long *mask) {
+static int parse_format(const char *string, int *field_type, unsigned long long *mask) {
 
 	int i, secondnum, bits;
 	char format_string[BUFSIZ];
@@ -161,7 +161,7 @@ static unsigned long long separate_bits(unsigned long long value,
 	return result;
 }
 
-static int update_configs(int pmu, char *field,
+static int update_configs(int pmu, const char *field,
 			long long value,
 			long long *c,
 			long long *c1,
@@ -195,7 +195,7 @@ static int update_configs(int pmu, char *field,
 	return 0;
 }
 
-static int parse_generic(int pmu, char *value,
+static int parse_generic(int pmu, const char *value,
 			long long *config, long long *config1, long long *config2) {
 
 	long long c=0,c1=0,c2=0,temp;
