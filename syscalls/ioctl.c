@@ -4,60 +4,64 @@
 #include <stdlib.h>
 #include <linux/ioctl.h>
 #include <linux/major.h>
+#include "ioctls.h"
+#include "maps.h"
 #include "random.h"
 #include "sanitise.h"
-#include "maps.h"
 #include "shm.h"
-#include "ioctls.h"
+#include "syscall.h"
 
-static void ioctl_mangle_cmd(int childno)
+static void ioctl_mangle_cmd(struct syscallrecord *rec)
 {
 	unsigned int i;
 
 	/* mangle the cmd by ORing up to 4 random bits */
 	for (i=0; i < (unsigned int)(rand() % 4); i++)
-		shm->syscall[childno].a2 |= 1L << (rand() % 32);
+		rec->a2 |= 1L << (rand() % 32);
 
 	/* mangle the cmd by ANDing up to 4 random bits */
 	for (i=0; i < (unsigned int)(rand() % 4); i++)
-		shm->syscall[childno].a2 &= 1L << (rand() % 32);
+		rec->a2 &= 1L << (rand() % 32);
 }
 
-static void ioctl_mangle_arg(int childno)
+static void ioctl_mangle_arg(struct syscallrecord *rec)
 {
 	/* the argument could mean anything, because ioctl sucks like that. */
 	if (rand_bool())
-		shm->syscall[childno].a3 = rand32();
+		rec->a3 = rand32();
 	else
-		shm->syscall[childno].a3 = (unsigned long) get_non_null_address();
+		rec->a3 = (unsigned long) get_non_null_address();
 }
 
-static void generic_sanitise_ioctl(int childno)
+static void generic_sanitise_ioctl(struct syscallrecord *rec)
 {
 	if ((rand() % 50)==0)
-		ioctl_mangle_cmd(childno);
+		ioctl_mangle_cmd(rec);
 
-	ioctl_mangle_arg(childno);
+	ioctl_mangle_arg(rec);
 }
 
 static void sanitise_ioctl(int childno)
 {
+	struct syscallrecord *rec;
 	const struct ioctl_group *grp;
+
+	rec = &shm->syscall[childno];
 
 	if (rand() % 100 == 0)
 		grp = get_random_ioctl_group();
 	else
-		grp = find_ioctl_group(shm->syscall[childno].a1);
+		grp = find_ioctl_group(rec->a1);
 
 	if (grp) {
-		ioctl_mangle_arg(childno);
+		ioctl_mangle_arg(rec);
 
 		grp->sanitise(grp, childno);
 
 		if (rand() % 100 == 0)
-			ioctl_mangle_cmd(childno);
+			ioctl_mangle_cmd(rec);
 	} else
-		generic_sanitise_ioctl(childno);
+		generic_sanitise_ioctl(rec);
 }
 
 struct syscallentry syscall_ioctl = {
