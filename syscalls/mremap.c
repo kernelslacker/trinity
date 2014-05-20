@@ -11,6 +11,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "utils.h"
 
 static const unsigned long alignments[] = {
@@ -21,14 +22,17 @@ static const unsigned long alignments[] = {
 
 static void sanitise_mremap(int childno)
 {
+	struct syscallrecord *rec;
 	struct map *map;
 	unsigned long newaddr = 0;
 
 	map = common_set_mmap_ptr_len(childno);
 
-	shm->syscall[childno].a3 = map->size;		//TODO: Munge this.
+	rec = &shm->syscall[childno];
 
-	if (shm->syscall[childno].a4 & MREMAP_FIXED) {
+	rec->a3 = map->size;		//TODO: Munge this.
+
+	if (rec->a4 & MREMAP_FIXED) {
 		unsigned long align = alignments[rand() % ARRAY_SIZE(alignments)];
 		int shift = (__WORDSIZE / 2) - 1;
 
@@ -37,7 +41,7 @@ static void sanitise_mremap(int childno)
 		newaddr &= ~(align - 1);
 	}
 
-	shm->syscall[childno].a5 = newaddr;
+	rec->a5 = newaddr;
 }
 
 /*
