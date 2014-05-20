@@ -66,6 +66,16 @@
 #define F_OFD_SETLKW      38
 #endif
 
+/* Flags for SPLICE and VMSPLICE.  */
+#ifndef SPLICE_F_MOVE
+# define SPLICE_F_MOVE		1	/* Move pages instead of copying.  */
+# define SPLICE_F_NONBLOCK	2	/* Don't block on the pipe splicing */
+# define SPLICE_F_MORE		4	/* Expect more data.  */
+#endif
+#ifndef SPLICE_F_GIFT
+# define SPLICE_F_GIFT		8	/* Pages passed in are a gift.  */
+#endif
+
 /* linux/hw_breakpoint.h */
 enum {
         HW_BREAKPOINT_LEN_1 = 1,
