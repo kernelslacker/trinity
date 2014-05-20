@@ -10,13 +10,17 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "tables.h"
 
 static void sanitise_sync_file_range(int childno)
 {
+	struct syscallrecord *rec;
 	long endbyte;
 	loff_t nbytes;
 	loff_t off;
+
+	rec = &shm->syscall[childno];
 
 retry:
 	off = rand64() & 0x0fffffffffffffffUL;
@@ -29,11 +33,11 @@ retry:
 		goto retry;
 
 	if (this_syscallname("sync_file_range2", childno) == FALSE) {
-		shm->syscall[childno].a2 = off;
-		shm->syscall[childno].a3 = nbytes;
+		rec->a2 = off;
+		rec->a3 = nbytes;
 	} else {
-		shm->syscall[childno].a3 = off;
-		shm->syscall[childno].a4 = nbytes;
+		rec->a3 = off;
+		rec->a4 = nbytes;
 	}
 }
 
