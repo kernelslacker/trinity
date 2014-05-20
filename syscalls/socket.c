@@ -4,16 +4,17 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "compat.h"
+#include "config.h"
 #include "log.h"
 #include "net.h"
+#include "params.h"
+#include "protocols.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "config.h"
-#include "params.h"
-#include "protocols.h"
+#include "syscall.h"
 #include "utils.h"
+#include "compat.h"
 
 struct socket_ptr {
 	unsigned int family;
@@ -133,13 +134,16 @@ done:
 
 static void sanitise_socket(int childno)
 {
+	struct syscallrecord *rec;
 	struct socket_triplet st = { .family = 0, .type = 0, .protocol = 0 };
+
+	rec = &shm->syscall[childno];
 
 	gen_socket_args(&st);
 
-	shm->syscall[childno].a1 = st.family;
-	shm->syscall[childno].a2 = st.type;
-	shm->syscall[childno].a3 = st.protocol;
+	rec->a1 = st.family;
+	rec->a2 = st.type;
+	rec->a3 = st.protocol;
 }
 
 struct syscallentry syscall_socket = {
