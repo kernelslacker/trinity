@@ -4,9 +4,10 @@
 	size_t, len, unsigned int, flags)
  */
 #include <stdlib.h>
-#include "sanitise.h"
 #include "random.h"
+#include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 
 # define SPLICE_F_MOVE          1       /* Move pages instead of copying.  */
 # define SPLICE_F_NONBLOCK      2       /* Don't block on the pipe splicing
@@ -17,17 +18,21 @@
 
 static void sanitise_splice(int childno)
 {
+	struct syscallrecord *rec;
+
+	rec = &shm->syscall[childno];
+
 	if ((rand() % 10) < 3)
 		return;
 
 	if (rand_bool()) {
-		shm->syscall[childno].a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		shm->syscall[childno].a2 = 0;
+		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		rec->a2 = 0;
 	}
 
 	if (rand_bool()) {
-		shm->syscall[childno].a3 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		shm->syscall[childno].a4 = 0;
+		rec->a3 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		rec->a4 = 0;
 	}
 }
 
