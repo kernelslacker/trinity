@@ -8,15 +8,16 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/types.h>
-#include "sanitise.h"
-#include "compat.h"
-#include "maps.h"
-#include "log.h"
-#include "shm.h"
-#include "net.h"
 #include "config.h"
+#include "log.h"
+#include "maps.h"
+#include "net.h"
 #include "random.h"
+#include "sanitise.h"
+#include "shm.h"
+#include "syscall.h"
 #include "utils.h"
+#include "compat.h"
 
 struct sso_funcptr {
 	void (*func)(struct sockopt *so);
@@ -125,15 +126,18 @@ retry:
 
 static void sanitise_setsockopt(int childno)
 {
+	struct syscallrecord *rec;
 	struct sockopt so = { 0, 0, 0, 0 };
+
+	rec = &shm->syscall[childno];
 
 	do_setsockopt(&so);
 
 	/* copy the generated values to the shm. */
-	shm->syscall[childno].a2 = so.level;
-	shm->syscall[childno].a3 = so.optname;
-	shm->syscall[childno].a4 = so.optval;
-	shm->syscall[childno].a5 = so.optlen;
+	rec->a2 = so.level;
+	rec->a3 = so.optname;
+	rec->a4 = so.optval;
+	rec->a5 = so.optlen;
 }
 
 struct syscallentry syscall_setsockopt = {
