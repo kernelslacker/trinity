@@ -12,15 +12,12 @@
 #define WHOLE 1
 static int action;
 
-static void sanitise_munmap(int childno)
+static void sanitise_munmap(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct map *map;
 	unsigned long len;
 	unsigned long nr_pages;
 	unsigned long offset, offsetpagenr;
-
-	rec = &shm->syscall[childno];
 
 	map = common_set_mmap_ptr_len(childno);
 

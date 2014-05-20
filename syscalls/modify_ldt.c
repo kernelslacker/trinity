@@ -15,13 +15,14 @@
 
 #define ALLOCSIZE LDT_ENTRIES * LDT_ENTRY_SIZE
 
-static void sanitise_modify_ldt(int childno)
+static void sanitise_modify_ldt(int childno, struct syscallrecord *rec)
 {
 	void *ldt;
 	//struct user_desc *desc;
 
 	shm->scratch[childno] = 0;
-	switch (shm->syscall[childno].a1) {
+
+	switch (rec->a1) {
 	case 0:
 		/* read the ldt into the memory pointed to by ptr.
 		   The number of bytes read is the smaller of bytecount and the actual size of the ldt. */
@@ -29,7 +30,7 @@ static void sanitise_modify_ldt(int childno)
 		shm->scratch[childno] = (unsigned long) ldt;
 		if (ldt == NULL)
 			return;
-		shm->syscall[childno].a3 = ALLOCSIZE;
+		rec->a3 = ALLOCSIZE;
 		break;
 
 	case 1:

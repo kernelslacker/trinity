@@ -9,6 +9,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -52,13 +53,10 @@ static const struct socketcall_ptr socketcallptrs[] = {
 };
 
 
-static void sanitise_socketcall(int childno)
+static void sanitise_socketcall(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	unsigned long *args;
 	unsigned int i;
-
-	rec = &shm->syscall[childno];
 
 	args = malloc(6 * sizeof(unsigned long));
 

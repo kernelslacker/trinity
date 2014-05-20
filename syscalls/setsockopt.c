@@ -16,6 +16,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -124,12 +125,9 @@ retry:
 	}
 }
 
-static void sanitise_setsockopt(int childno)
+static void sanitise_setsockopt(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct sockopt so = { 0, 0, 0, 0 };
-
-	rec = &shm->syscall[childno];
 
 	do_setsockopt(&so);
 

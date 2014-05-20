@@ -71,7 +71,7 @@ struct syscallentry syscall_sendto = {
 /*
  * SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
  */
-static void sanitise_sendmsg(int childno)
+static void sanitise_sendmsg(int childno, struct syscallrecord *rec)
 {
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
@@ -82,7 +82,7 @@ static void sanitise_sendmsg(int childno)
 
 	if (msg == NULL) {
 		// just do something weird.
-		shm->syscall[childno].a2 = (unsigned long) get_address();
+		rec->a2 = (unsigned long) get_address();
 		return;
 	}
 
@@ -97,7 +97,7 @@ static void sanitise_sendmsg(int childno)
 	msg->msg_controllen = get_len();
 	msg->msg_flags = rand32();
 
-	shm->syscall[childno].a2 = (unsigned long) msg;
+	rec->a2 = (unsigned long) msg;
 }
 
 static void post_sendmsg(int childno, __unused__ struct syscallrecord *rec)

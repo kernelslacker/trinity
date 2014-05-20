@@ -10,13 +10,10 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 
-void sanitise_rt_sigaction(int childno)
+void sanitise_rt_sigaction(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
-
-	rec = &shm->syscall[childno];
-
 	if (rand_bool())
 		rec->a2 = 0;
 

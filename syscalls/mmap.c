@@ -33,9 +33,8 @@ static void do_anon(struct syscallrecord *rec)
 	rec->a6 = 0;
 }
 
-static void sanitise_mmap(int childno)
+static void sanitise_mmap(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	unsigned int i;
 	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
 			MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
@@ -51,8 +50,6 @@ static void sanitise_mmap(int childno)
 		1 * MB, 2 * MB, 4 * MB, 10 * MB,
 		1 * GB,
 	};
-
-	rec = &shm->syscall[childno];
 
 	sizes[0] = page_size;
 

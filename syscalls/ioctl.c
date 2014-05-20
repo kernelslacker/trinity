@@ -41,12 +41,9 @@ static void generic_sanitise_ioctl(struct syscallrecord *rec)
 	ioctl_mangle_arg(rec);
 }
 
-static void sanitise_ioctl(int childno)
+static void sanitise_ioctl(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	const struct ioctl_group *grp;
-
-	rec = &shm->syscall[childno];
 
 	if (rand() % 100 == 0)
 		grp = get_random_ioctl_group();

@@ -3,9 +3,10 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"
 
-void sanitise_rt_sigaction(int childno);
-void sanitise_prctl(int childno);
-void sanitise_perf_event_open(int childno);
+//FIXME: Fold this into the sigaction file and make static
+void sanitise_rt_sigaction(int childno, struct syscallrecord *rec);
+
+void sanitise_perf_event_open(int childno, struct syscallrecord *rec);
 
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);
 void generic_sanitise(int childno);

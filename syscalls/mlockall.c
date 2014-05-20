@@ -6,16 +6,13 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 
 #define MCL_CURRENT     1
 #define MCL_FUTURE      2
 
-static void sanitise_mlockall(int childno)
+static void sanitise_mlockall(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
-
-	rec = &shm->syscall[childno];
-
 	if (rec->a1 != 0)
 		return;
 

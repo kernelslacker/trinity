@@ -5,17 +5,18 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 
 #define MS_ASYNC        1               /* Sync memory asynchronously.  */
 #define MS_SYNC         4               /* Synchronous memory sync.  */
 #define MS_INVALIDATE   2               /* Invalidate the caches.  */
 
-static void sanitise_msync(int childno)
+static void sanitise_msync(int childno, struct syscallrecord *rec)
 {
        (void) common_set_mmap_ptr_len(childno);
 
 	if (rand_bool())
-		shm->syscall[childno].a3 |= MS_INVALIDATE;
+		rec->a3 |= MS_INVALIDATE;
 }
 
 struct syscallentry syscall_msync = {

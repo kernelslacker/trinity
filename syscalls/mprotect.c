@@ -8,9 +8,10 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "utils.h"
 
-static void sanitise_mprotect(int childno)
+static void sanitise_mprotect(int childno, __unused__ struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len(childno);
 }

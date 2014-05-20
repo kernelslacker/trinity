@@ -6,14 +6,16 @@
 #include <stdlib.h>
 #include "shm.h"
 #include "sanitise.h"
+#include "syscall.h"
+#include "trinity.h"
 #include "compat.h"
 
-static void sanitise_linkat(int childno)
+static void sanitise_linkat(__unused__ int childno, struct syscallrecord *rec)
 {
 	/* .. If oldpath is relative and olddirfd is the special value AT_FDCWD, then oldpath is
 	 * interpreted relative to the current working directory of the calling process  */
 	if ((rand() % 100) == 0)
-		shm->syscall[childno].a1 = AT_FDCWD;
+		rec->a1 = AT_FDCWD;
 }
 
 struct syscallentry syscall_linkat = {

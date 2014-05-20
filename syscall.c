@@ -130,7 +130,7 @@ bool mkcall(int childno)
 
 	generic_sanitise(childno);
 	if (entry->sanitise)
-		entry->sanitise(childno);
+		entry->sanitise(childno, syscallrec);
 
 	unlock(&syscallrec->lock);
 

@@ -13,14 +13,11 @@
 #include "syscall.h"
 #include "tables.h"
 
-static void sanitise_sync_file_range(int childno)
+static void sanitise_sync_file_range(int childno, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	long endbyte;
 	loff_t nbytes;
 	loff_t off;
-
-	rec = &shm->syscall[childno];
 
 retry:
 	off = rand64() & 0x0fffffffffffffffUL;

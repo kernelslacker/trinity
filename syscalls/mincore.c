@@ -6,9 +6,10 @@
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_mincore(int childno)
+static void sanitise_mincore(int childno, struct syscallrecord *rec)
 {
 	struct map *map;
 	unsigned long len;
@@ -16,7 +17,8 @@ static void sanitise_mincore(int childno)
 	map = common_set_mmap_ptr_len(childno);
 
 	len = map->size + (page_size - 1) / page_size;
-	shm->syscall[childno].a3 = (unsigned long) malloc(len);
+
+	rec->a3 = (unsigned long) malloc(len);	// FIXME: LEAK
 }
 
 static void post_mincore(__unused__ int childno, struct syscallrecord *rec)

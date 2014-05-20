@@ -5,6 +5,8 @@
 #include "files.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -31,7 +33,7 @@ unsigned long get_o_flags(void)
 /*
  * SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, int, mode)
  */
-static void sanitise_open(int childno);
+static void sanitise_open(__unused__ int childno, struct syscallrecord *rec);
 
 struct syscallentry syscall_open = {
 	.name = "open",
@@ -49,19 +51,19 @@ struct syscallentry syscall_open = {
 	.sanitise = sanitise_open,
 };
 
-static void sanitise_open(int childno)
+static void sanitise_open(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned long flags;
 
 	flags = get_o_flags();
 
-	shm->syscall[childno].a2 |= flags;
+	rec->a2 |= flags;
 }
 
 /*
  * SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, int, mode)
  */
-static void sanitise_openat(int childno);
+static void sanitise_openat(__unused__ int childno, struct syscallrecord *rec);
 
 struct syscallentry syscall_openat = {
 	.name = "openat",
@@ -82,13 +84,13 @@ struct syscallentry syscall_openat = {
 	.sanitise = sanitise_openat,
 };
 
-static void sanitise_openat(int childno)
+static void sanitise_openat(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned long flags;
 
 	flags = get_o_flags();
 
-	shm->syscall[childno].a3 |= flags;
+	rec->a3 |= flags;
 }
 
 /*

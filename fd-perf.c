@@ -18,8 +18,9 @@ void open_perf_fds(void)
 	while (i < MAX_PERF_FDS) {
 		int fd;
 
-		sanitise_perf_event_open(0);
 		sc = &shm->syscall[0];
+		sanitise_perf_event_open(0, sc);
+
 		fd = syscall(__NR_perf_event_open, sc->a1, sc->a2, sc->a3, sc->a4, sc->a5);
 		if (fd != -1) {
 			shm->perf_fds[i] = fd;
