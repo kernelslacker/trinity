@@ -31,7 +31,7 @@ static struct fd_provider fd_providers[] = {
 	{ .open = &open_pipes, .get = &get_rand_pipe_fd },
 	{ .open = &open_perf_fds, .get = &get_rand_perf_fd },
 	{ .open = &open_epoll_fds, .get = &get_rand_epoll_fd },
-	{ .open = &open_eventfd_fds },
+	{ .open = &open_eventfd_fds, .get = &get_rand_eventfd_fd },
 	{ .open = &open_files },
 };
 
@@ -99,7 +99,7 @@ retry:
 		break;
 
 	case 5:
-		fd = rand_eventfd_fd();
+		fd = get_rand_eventfd_fd();
 		break;
 
 	}
