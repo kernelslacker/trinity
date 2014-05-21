@@ -22,9 +22,8 @@
 #include "uid.h"
 #include "utils.h"
 
-static int files_added = 0;
-const char **fileindex;
 unsigned int files_in_index = 0;
+const char **fileindex;
 unsigned int nr_file_fds = 0;
 
 struct namelist {
@@ -178,7 +177,7 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 		return FTW_STOP;
 
 	add_to_namelist(fpath);
-	files_added++;
+	files_in_index++;
 
 	return FTW_CONTINUE;
 }
@@ -186,7 +185,7 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 
 static void open_fds(const char *dirpath)
 {
-	int before = files_added;
+	int before = files_in_index;
 	int flags = FTW_DEPTH | FTW_ACTIONRETVAL | FTW_MOUNT;
 	int ret;
 
@@ -206,7 +205,7 @@ static void open_fds(const char *dirpath)
 		return;
 	}
 
-	output(0, "Added %d filenames from %s\n", files_added - before, dirpath);
+	output(0, "Added %d filenames from %s\n", files_in_index - before, dirpath);
 }
 
 /* Generate an index of pointers to the filenames */
@@ -217,7 +216,7 @@ static const char ** list_to_index(struct namelist *namelist)
 	const char **index;
 	unsigned int i = 0;
 
-	index = zmalloc(sizeof(char *) * files_added);
+	index = zmalloc(sizeof(char *) * files_in_index);
 
 	list_for_each_safe(node, tmp, &namelist->list) {
 		nl = (struct namelist *) node;
@@ -229,7 +228,6 @@ static const char ** list_to_index(struct namelist *namelist)
 		list_del(&nl->list);
 		free(nl);
 	}
-	files_in_index = i;
 
 	free(names);
 	names = NULL;
@@ -255,7 +253,7 @@ static void generate_filelist(void)
 	if (shm->exit_reason != STILL_RUNNING)
 		return;
 
-	if (files_added == 0) {
+	if (files_in_index == 0) {
 		output(1, "Didn't add any files!!\n");
 		return;
 	}
