@@ -101,11 +101,10 @@ static int ignore_files(const char *path)
 static void add_to_namelist(const char *name)
 {
 	struct namelist *newnode;
-	struct list_head *list = (struct list_head *) names;
 
 	newnode = zmalloc(sizeof(struct namelist));
 	newnode->name = strdup(name);
-	list_add_tail(&newnode->list, list);
+	list_add_tail(&newnode->list, &names->list);
 }
 
 static int check_stat_file(const struct stat *sb)
