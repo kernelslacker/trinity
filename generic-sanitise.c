@@ -432,12 +432,13 @@ void generic_free_arg(int childno)
 {
 	struct syscallentry *entry;
 	unsigned int call = shm->syscall[childno].nr;
-	enum argtype argtype;
 	unsigned int i;
 
 	entry = syscalls[call].entry;
 
 	for (i = 1; i <= entry->num_args; i++) {
+		enum argtype argtype;
+
 		argtype = get_argtype(entry, i);
 
 		if (argtype == ARG_IOVEC)
