@@ -38,7 +38,7 @@ int open_pipes(void)
 	return TRUE;
 }
 
-int rand_pipe_fd(void)
+int get_rand_pipe_fd(void)
 {
 	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
 }
