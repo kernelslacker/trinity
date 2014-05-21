@@ -37,41 +37,13 @@ static struct fd_provider fd_providers[] = {
 
 static int get_new_random_fd(void)
 {
-	unsigned int i;
-	int fd = 0;
+	int fd = -1;
 
-retry:
-	i = rand() % 6;
-
-	switch (i) {
-	case 0:
-		fd = get_rand_file_fd();
-		break;
-
-	case 1:
-		fd = get_rand_socket_fd();
-		break;
-
-	case 2:
-		fd = get_rand_pipe_fd();
-		break;
-
-	case 3:
-		fd = get_rand_perf_fd();
-		break;
-
-	case 4:
-		fd = get_rand_epoll_fd();
-		break;
-
-	case 5:
-		fd = get_rand_eventfd_fd();
-		break;
+	while (fd < 0) {
+		unsigned int i;
+		i = rand() % ARRAY_SIZE(fd_providers);
+		fd = fd_providers[i].get();
 	}
-
-	/* If one of the providers failed, retry with a different one */
-	if (fd < 0)
-		goto retry;
 
 	return fd;
 }
