@@ -67,17 +67,7 @@ retry:
 		break;
 
 	case 1:
-		/* When using victim files, sockets can be 0.
-		 * Use files as a fallback, or pipes if no files are open.
-		 */
-		if (nr_sockets == 0) {
-			if (nr_file_fds > 0)
-				fd = get_rand_file_fd();
-			else
-				fd = get_rand_pipe_fd();
-			return fd;
-		}
-		fd = get_rand_socket_fd();	//TODO; this all goes away when we have dynamic fd reg.
+		fd = get_rand_socket_fd();
 		break;
 
 	case 2:
