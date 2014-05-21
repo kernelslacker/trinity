@@ -370,6 +370,7 @@ int get_rand_socket_fd(void)
 {
 	int fd;
 
+	/* When using victim files, sockets can be 0. */
 	if (nr_sockets == 0)
 		return -1;
 
