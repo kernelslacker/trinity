@@ -42,7 +42,7 @@ struct socketinfo {
 
 int open_sockets(void);
 void close_sockets(void);
-int get_socket_fd(void);
+int get_rand_socket_fd(void);
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 

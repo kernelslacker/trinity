@@ -27,7 +27,7 @@ struct fd_provider {
 };
 
 static struct fd_provider fd_providers[] = {
-	{ .open = &open_sockets, .get = &get_socket_fd },
+	{ .open = &open_sockets, .get = &get_rand_socket_fd },
 	{ .open = &open_pipes, .get = &get_rand_pipe_fd },
 	{ .open = &open_perf_fds },
 	{ .open = &open_epoll_fds },
@@ -77,7 +77,7 @@ retry:
 				fd = get_rand_pipe_fd();
 			return fd;
 		}
-		fd = get_socket_fd();	//TODO; this all goes away when we have dynamic fd reg.
+		fd = get_rand_socket_fd();	//TODO; this all goes away when we have dynamic fd reg.
 		if (fd < 0)
 			goto retry;
 
