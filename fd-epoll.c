@@ -42,7 +42,7 @@ int open_epoll_fds(void)
 	return TRUE;
 }
 
-int rand_epoll_fd(void)
+int get_rand_epoll_fd(void)
 {
 	return shm->epoll_fds[rand() % MAX_EPOLL_FDS];
 }
