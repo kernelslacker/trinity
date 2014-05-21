@@ -21,6 +21,20 @@
 #include "trinity.h"
 #include "utils.h"
 
+struct fd_provider {
+	int (*open)(void);
+	int (*get)(void);
+};
+
+static struct fd_provider fd_providers[] = {
+	{ .open = &open_sockets, .get = &get_socket_fd },
+	{ .open = &open_pipes },
+	{ .open = &open_perf_fds },
+	{ .open = &open_epoll_fds },
+	{ .open = &open_eventfd_fds },
+	{ .open = &open_files },
+};
+
 static int get_new_random_fd(void)
 {
 	unsigned int i;
@@ -63,7 +77,10 @@ retry:
 				fd = rand_pipe_fd();
 			return fd;
 		}
-		fd = shm->sockets[rand() % nr_sockets].fd;
+		fd = get_socket_fd();	//TODO; this all goes away when we have dynamic fd reg.
+		if (fd < 0)
+			goto retry;
+
 		break;
 
 	case 2:
@@ -111,19 +128,6 @@ regen:
 
 	return shm->current_fd;
 }
-
-struct fd_provider {
-	int (*open)(void);
-};
-
-static struct fd_provider fd_providers[] = {
-	{ .open = &open_sockets },
-	{ .open = &open_pipes },
-	{ .open = &open_perf_fds },
-	{ .open = &open_epoll_fds },
-	{ .open = &open_eventfd_fds },
-	{ .open = &open_files },
-};
 
 unsigned int setup_fds(void)
 {

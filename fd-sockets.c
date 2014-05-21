@@ -365,3 +365,15 @@ regenerate:
 
 	return TRUE;
 }
+
+int get_socket_fd(void)
+{
+	int fd;
+
+	if (nr_sockets == 0)
+		return -1;
+
+	fd = shm->sockets[rand() % nr_sockets].fd;
+
+	return fd;
+}
