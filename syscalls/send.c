@@ -102,10 +102,11 @@ static void sanitise_sendmsg(int childno, struct syscallrecord *rec)
 
 static void post_sendmsg(int childno, __unused__ struct syscallrecord *rec)
 {
-	struct msghdr *msg;
 	void *ptr = (void *) shm->scratch[childno];
 
 	if (ptr != NULL) {
+		struct msghdr *msg;
+
 		msg = (struct msghdr *) ptr;
 
 		if (msg->msg_name != page_rand)	// FIXME: What about other kinds of pages ?
