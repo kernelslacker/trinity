@@ -8,8 +8,10 @@
 
 #include "epoll.h"
 #include "eventfd.h"
+#include "fd.h"
 #include "files.h"
 #include "log.h"
+#include "list.h"
 #include "net.h"
 #include "params.h"
 #include "perf.h"
@@ -21,43 +23,77 @@
 #include "trinity.h"
 #include "utils.h"
 
-struct fd_provider {
-	int (*open)(void);
-	int (*get)(void);
-};
+static int num_fd_providers;
 
-static struct fd_provider fd_providers[] = {
-	{ .open = &open_sockets, .get = &get_rand_socket_fd },
-	{ .open = &open_pipes, .get = &get_rand_pipe_fd },
-	{ .open = &open_perf_fds, .get = &get_rand_perf_fd },
-	{ .open = &open_epoll_fds, .get = &get_rand_epoll_fd },
-	{ .open = &open_eventfd_fds, .get = &get_rand_eventfd_fd },
-	{ .open = &open_files, .get = &get_rand_file_fd },
-};
+static struct fd_provider *fd_providers = NULL;
+
+static void add_to_prov_list(struct fd_provider *prov)
+{
+	struct fd_provider *newnode;
+
+	newnode = zmalloc(sizeof(struct fd_provider));
+	newnode->open = prov->open;
+	newnode->get = prov->get;
+	num_fd_providers++;
+
+	if (fd_providers == NULL) {
+		fd_providers = newnode;
+		INIT_LIST_HEAD(&fd_providers->list);
+	} else {
+		list_add_tail(&newnode->list, &fd_providers->list);
+	}
+}
+
+static void setup_fd_providers(void)
+{
+	add_to_prov_list(&socket_fd_provider);
+	add_to_prov_list(&pipes_fd_provider);
+	add_to_prov_list(&perf_fd_provider);
+	add_to_prov_list(&epoll_fd_provider);
+	add_to_prov_list(&eventfd_fd_provider);
+	add_to_prov_list(&file_fd_provider);
+}
 
 unsigned int setup_fds(void)
 {
-	int ret;
-	unsigned int i;
+	struct list_head *node;
 
-	for (i = 0; i < ARRAY_SIZE(fd_providers); i++) {
+	setup_fd_providers();
 
-		ret = fd_providers[i].open();
+	output(0, "Registered %d fd providers.\n", num_fd_providers);
+
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider;
+		int ret;
+
+		provider = (struct fd_provider *) node;
+
+		ret = provider->open();
 		if (ret == FALSE)
-			exit_main_fail();
+			return FALSE;
 	}
 
-	return ret;
+	return TRUE;
 }
 
 static int get_new_random_fd(void)
 {
+	struct list_head *node;
 	int fd = -1;
 
 	while (fd < 0) {
-		unsigned int i;
-		i = rand() % ARRAY_SIZE(fd_providers);
-		fd = fd_providers[i].get();
+		unsigned int i, j = 0;
+		i = rand() % num_fd_providers;
+
+		list_for_each(node, &fd_providers->list) {
+			struct fd_provider *provider;
+
+			if (i == j) {
+				provider = (struct fd_provider *) node;
+				fd = provider->get();
+			}
+			j++;
+		}
 	}
 
 	return fd;

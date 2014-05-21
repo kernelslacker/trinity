@@ -6,21 +6,22 @@
 #include <sys/wait.h>
 
 #include "arch.h"
-#include "trinity.h"
+#include "config.h"	// for VERSION
+#include "fd.h"
 #include "files.h"
+#include "ioctls.h"
 #include "log.h"
 #include "maps.h"
 #include "pids.h"
 #include "params.h"
+#include "protocols.h"
 #include "random.h"
 #include "signals.h"
 #include "shm.h"
 #include "tables.h"
-#include "ioctls.h"
-#include "protocols.h"
-#include "uid.h"
-#include "config.h"	// for VERSION
 #include "taint.h"
+#include "trinity.h"
+#include "uid.h"
 
 char *progname = NULL;
 

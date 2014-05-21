@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "fd.h"
 #include "files.h"
 #include "list.h"
 #include "log.h"
@@ -305,7 +306,7 @@ retry_flags:
 	return fd;
 }
 
-int open_files(void)
+static int open_files(void)
 {
 	unsigned int i, nr_to_open;
 
@@ -364,7 +365,7 @@ const char * get_filename(void)
 	return fileindex[rand() % files_in_index];
 }
 
-int get_rand_file_fd(void)
+static int get_rand_file_fd(void)
 {
 	unsigned int fd_index;
 
@@ -377,3 +378,8 @@ int get_rand_file_fd(void)
 	fd_index = rand() % nr_file_fds;
 	return shm->file_fds[fd_index];
 }
+
+struct fd_provider file_fd_provider = {
+	.open = &open_files,
+	.get = &get_rand_file_fd,
+};

@@ -293,7 +293,7 @@ void close_sockets(void)
 	nr_sockets = 0;
 }
 
-int open_sockets(void)
+static int open_sockets(void)
 {
 	int cachefile;
 	unsigned int domain, type, protocol;
@@ -366,7 +366,7 @@ regenerate:
 	return TRUE;
 }
 
-int get_rand_socket_fd(void)
+static int get_rand_socket_fd(void)
 {
 	int fd;
 
@@ -378,3 +378,8 @@ int get_rand_socket_fd(void)
 
 	return fd;
 }
+
+struct fd_provider socket_fd_provider = {
+	.open = &open_sockets,
+	.get = &get_rand_socket_fd,
+};

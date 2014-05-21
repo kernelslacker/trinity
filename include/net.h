@@ -4,6 +4,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#include "fd.h"
+
 #define NR_SOCKET_FDS 375
 
 extern unsigned int nr_sockets;
@@ -40,9 +42,9 @@ struct socketinfo {
 	int fd;
 };
 
-int open_sockets(void);
 void close_sockets(void);
-int get_rand_socket_fd(void);
+
+struct fd_provider socket_fd_provider;
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 

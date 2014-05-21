@@ -8,6 +8,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 
+#include "fd.h"
 #include "files.h"
 #include "log.h"
 #include "net.h"
@@ -19,7 +20,7 @@
 #include "shm.h"
 #include "trinity.h"
 
-int open_pipes(void)
+static int open_pipes(void)
 {
 	int pipes[2];
 	unsigned int i;
@@ -38,7 +39,12 @@ int open_pipes(void)
 	return TRUE;
 }
 
-int get_rand_pipe_fd(void)
+static int get_rand_pipe_fd(void)
 {
 	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
 }
+
+struct fd_provider pipes_fd_provider = {
+	.open = &open_pipes,
+	.get = &get_rand_pipe_fd,
+};

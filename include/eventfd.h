@@ -1,6 +1,7 @@
 #pragma once
 
-int open_eventfd_fds(void);
-int get_rand_eventfd_fd(void);
+#include "fd.h"
+
+struct fd_provider eventfd_fd_provider;
 
 #define MAX_EVENTFD_FDS 8

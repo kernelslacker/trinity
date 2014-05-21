@@ -5,12 +5,13 @@
 #include <unistd.h>
 #include <asm/unistd.h>
 
+#include "fd.h"
 #include "perf.h"
 #include "shm.h"
 #include "log.h"
 #include "sanitise.h"
 
-int open_perf_fds(void)
+static int open_perf_fds(void)
 {
 	unsigned int i = 0;
 
@@ -40,10 +41,15 @@ int open_perf_fds(void)
 	return TRUE;
 }
 
-int get_rand_perf_fd(void)
+static int get_rand_perf_fd(void)
 {
 	if (shm->perf_fds[0] == 0)	/* perf unavailable/disabled. */
 		return -1;
 
 	return shm->perf_fds[rand() % MAX_PERF_FDS];
 }
+
+struct fd_provider perf_fd_provider = {
+	.open = &open_perf_fds,
+	.get = &get_rand_perf_fd,
+};

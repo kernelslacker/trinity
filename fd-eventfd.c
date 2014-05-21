@@ -9,6 +9,7 @@
 #include <sys/eventfd.h>
 
 #include "eventfd.h"
+#include "fd.h"
 #include "files.h"
 #include "log.h"
 #include "net.h"
@@ -19,7 +20,7 @@
 #include "shm.h"
 #include "compat.h"
 
-int open_eventfd_fds(void)
+static int open_eventfd_fds(void)
 {
 	unsigned int i;
 
@@ -39,7 +40,12 @@ int open_eventfd_fds(void)
 	return TRUE;
 }
 
-int get_rand_eventfd_fd(void)
+static int get_rand_eventfd_fd(void)
 {
 	return shm->eventfd_fds[rand() % MAX_EVENTFD_FDS];
 }
+
+struct fd_provider eventfd_fd_provider = {
+	.open = &open_eventfd_fds,
+	.get = &get_rand_eventfd_fd,
+};

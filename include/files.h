@@ -1,14 +1,13 @@
 #pragma once
 
 #include <sys/stat.h>
+#include "fd.h"
 
 unsigned long get_o_flags(void);
 
-unsigned int setup_fds(void);
+struct fd_provider file_fd_provider;
 
-int open_files(void);
 void close_files(void);
-int get_rand_file_fd(void);
 
 void parse_devices(void);
 const char *map_dev(dev_t, mode_t);
