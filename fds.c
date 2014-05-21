@@ -36,16 +36,14 @@ static void add_to_prov_list(struct fd_provider *prov)
 	newnode->get = prov->get;
 	num_fd_providers++;
 
-	if (fd_providers == NULL) {
-		fd_providers = newnode;
-		INIT_LIST_HEAD(&fd_providers->list);
-	} else {
-		list_add_tail(&newnode->list, &fd_providers->list);
-	}
+	list_add_tail(&newnode->list, &fd_providers->list);
 }
 
 static void setup_fd_providers(void)
 {
+	fd_providers = zmalloc(sizeof(struct fd_provider));
+	INIT_LIST_HEAD(&fd_providers->list);
+
 	add_to_prov_list(&socket_fd_provider);
 	add_to_prov_list(&pipes_fd_provider);
 	add_to_prov_list(&perf_fd_provider);
