@@ -366,7 +366,7 @@ regenerate:
 	return TRUE;
 }
 
-int get_socket_fd(void)
+int get_rand_socket_fd(void)
 {
 	int fd;
 
