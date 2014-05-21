@@ -28,7 +28,7 @@ struct fd_provider {
 
 static struct fd_provider fd_providers[] = {
 	{ .open = &open_sockets, .get = &get_socket_fd },
-	{ .open = &open_pipes },
+	{ .open = &open_pipes, .get = &get_rand_pipe_fd },
 	{ .open = &open_perf_fds },
 	{ .open = &open_epoll_fds },
 	{ .open = &open_eventfd_fds },
@@ -74,7 +74,7 @@ retry:
 			if (nr_file_fds > 0)
 				fd = rand_file_fd();
 			else
-				fd = rand_pipe_fd();
+				fd = get_rand_pipe_fd();
 			return fd;
 		}
 		fd = get_socket_fd();	//TODO; this all goes away when we have dynamic fd reg.
@@ -84,7 +84,7 @@ retry:
 		break;
 
 	case 2:
-		fd = rand_pipe_fd();
+		fd = get_rand_pipe_fd();
 		break;
 
 	case 3:
