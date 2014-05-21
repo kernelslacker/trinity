@@ -2,9 +2,6 @@
 
 #include "syscall.h"
 
-//FIXME: Fold this into the sigaction file and make static
-void sanitise_rt_sigaction(int childno, struct syscallrecord *rec);
-
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);
 void generic_sanitise(int childno);
 void generic_free_arg(int childno);
