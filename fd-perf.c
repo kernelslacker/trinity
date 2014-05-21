@@ -12,10 +12,10 @@
 
 void open_perf_fds(void)
 {
-	struct syscallrecord* sc;
 	unsigned int i = 0;
 
 	while (i < MAX_PERF_FDS) {
+		struct syscallrecord* sc;
 		int fd;
 
 		sc = &shm->syscall[0];
