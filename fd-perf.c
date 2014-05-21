@@ -42,5 +42,8 @@ int open_perf_fds(void)
 
 int get_rand_perf_fd(void)
 {
+	if (shm->perf_fds[0] == 0)	/* perf unavailable/disabled. */
+		return -1;
+
 	return shm->perf_fds[rand() % MAX_PERF_FDS];
 }

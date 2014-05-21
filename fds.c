@@ -78,9 +78,6 @@ retry:
 			return fd;
 		}
 		fd = get_rand_socket_fd();	//TODO; this all goes away when we have dynamic fd reg.
-		if (fd < 0)
-			goto retry;
-
 		break;
 
 	case 2:
@@ -88,9 +85,6 @@ retry:
 		break;
 
 	case 3:
-		if (shm->perf_fds[0] == 0)	/* perf unavailable/disabled. */
-			goto retry;
-
 		fd = get_rand_perf_fd();
 		break;
 
@@ -101,8 +95,11 @@ retry:
 	case 5:
 		fd = get_rand_eventfd_fd();
 		break;
-
 	}
+
+	/* If one of the providers failed, retry with a different one */
+	if (fd < 0)
+		goto retry;
 
 	return fd;
 }
