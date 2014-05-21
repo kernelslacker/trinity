@@ -32,7 +32,7 @@ static struct fd_provider fd_providers[] = {
 	{ .open = &open_perf_fds, .get = &get_rand_perf_fd },
 	{ .open = &open_epoll_fds, .get = &get_rand_epoll_fd },
 	{ .open = &open_eventfd_fds, .get = &get_rand_eventfd_fd },
-	{ .open = &open_files },
+	{ .open = &open_files, .get = &get_rand_file_fd },
 };
 
 static int get_new_random_fd(void)
@@ -63,7 +63,7 @@ retry:
 
 	switch (i) {
 	case 0:
-		fd = rand_file_fd();
+		fd = get_rand_file_fd();
 		break;
 
 	case 1:
@@ -72,7 +72,7 @@ retry:
 		 */
 		if (nr_sockets == 0) {
 			if (nr_file_fds > 0)
-				fd = rand_file_fd();
+				fd = get_rand_file_fd();
 			else
 				fd = get_rand_pipe_fd();
 			return fd;
