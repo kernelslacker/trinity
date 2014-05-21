@@ -134,12 +134,3 @@ unsigned int setup_fds(void)
 
 	return ret;
 }
-
-void regenerate_fds(void)
-{
-	if (no_files == TRUE)
-		return;
-
-	close_files();
-	open_files();
-}
