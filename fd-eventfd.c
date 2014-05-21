@@ -19,7 +19,7 @@
 #include "shm.h"
 #include "compat.h"
 
-void open_eventfd_fds(void)
+int open_eventfd_fds(void)
 {
 	unsigned int i;
 
@@ -31,9 +31,12 @@ void open_eventfd_fds(void)
 	shm->eventfd_fds[5] = eventfd(rand32(), EFD_CLOEXEC | EFD_SEMAPHORE);
 	shm->eventfd_fds[6] = eventfd(rand32(), EFD_NONBLOCK | EFD_SEMAPHORE);
 	shm->eventfd_fds[7] = eventfd(rand32(), EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE);
+	// Check for ENOSYS
 
 	for (i = 0; i < MAX_EVENTFD_FDS; i++)
 		output(2, "fd[%d] = eventfd\n", shm->eventfd_fds[i]);
+
+	return TRUE;
 }
 
 int rand_eventfd_fd(void)

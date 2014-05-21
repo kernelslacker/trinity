@@ -10,7 +10,7 @@
 #include "log.h"
 #include "sanitise.h"
 
-void open_perf_fds(void)
+int open_perf_fds(void)
 {
 	unsigned int i = 0;
 
@@ -27,10 +27,17 @@ void open_perf_fds(void)
 			output(2, "fd[%d] = perf\n", shm->perf_fds[i]);
 			i++;
 		} else {
+			/* If ENOSYS, bail early rather than do MAX_PERF_FDS retries */
 			if (errno == ENOSYS)
-				return;
+				return TRUE;
+
+			/* If we get here we probably generated something invalid and
+			 * perf_event_open threw it out. Go around the loop again.
+			 */
 		}
 	}
+
+	return TRUE;
 }
 
 int rand_perf_fd(void)
