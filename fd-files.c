@@ -209,12 +209,36 @@ static void open_fds(const char *dirpath)
 	output(0, "Added %d filenames from %s\n", files_added - before, dirpath);
 }
 
-static void generate_filelist(void)
+/* Generate an index of pointers to the filenames */
+static const char ** list_to_index(struct namelist *namelist)
 {
-	unsigned int i = 0;
 	struct list_head *node, *tmp;
 	struct namelist *nl;
+	const char **index;
+	unsigned int i = 0;
 
+	index = zmalloc(sizeof(char *) * files_added);
+
+	list_for_each_safe(node, tmp, &namelist->list) {
+		nl = (struct namelist *) node;
+		index[i++] = nl->name;
+
+		/* Destroy the list head, but keep the ->name alloc because
+		 * now the index points to it.
+		 */
+		list_del(&nl->list);
+		free(nl);
+	}
+	files_in_index = i;
+
+	free(names);
+	names = NULL;
+
+	return index;
+}
+
+static void generate_filelist(void)
+{
 	names = zmalloc(sizeof(struct namelist));
 	INIT_LIST_HEAD(&names->list);
 
@@ -235,25 +259,7 @@ static void generate_filelist(void)
 		output(1, "Didn't add any files!!\n");
 		return;
 	}
-
-	/* Generate an index of pointers to the filenames */
-
-	fileindex = zmalloc(sizeof(char *) * files_added);
-
-	list_for_each_safe(node, tmp, &names->list) {
-		nl = (struct namelist *) node;
-		fileindex[i++] = nl->name;
-
-		/* Destroy the list head, but keep the ->name alloc because
-		 * now the fileindex points to it.
-		 */
-		list_del(&nl->list);
-		free(nl);
-	}
-	files_in_index = i;
-
-	free(names);
-	names = NULL;
+	fileindex = list_to_index(names);
 }
 
 static int open_file(void)
