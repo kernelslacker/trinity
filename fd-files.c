@@ -309,6 +309,9 @@ int open_files(void)
 {
 	unsigned int i, nr_to_open;
 
+	if (no_files == TRUE)
+		return TRUE;
+
 	generate_filelist();
 
 	if (files_in_index == 0)	/* Something bad happened. Crappy -V maybe? */
