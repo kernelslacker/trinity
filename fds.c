@@ -18,6 +18,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 
 static int get_new_random_fd(void)
 {
@@ -110,9 +111,21 @@ regen:
 	return shm->current_fd;
 }
 
+struct fd_provider {
+	void (*open)(void);
+};
+
+static struct fd_provider fd_providers[] = {
+	{ .open = &open_pipes },
+	{ .open = &open_perf_fds },
+	{ .open = &open_epoll_fds },
+	{ .open = &open_eventfd_fds },
+};
+
 unsigned int setup_fds(void)
 {
 	int ret = TRUE;
+	unsigned int i;
 
 	/* If we have victim files, don't worry about sockets. */
 	if (victim_path == NULL) {
@@ -121,13 +134,8 @@ unsigned int setup_fds(void)
 			return FALSE;
 	}
 
-	open_pipes();
-
-	open_perf_fds();
-
-	open_epoll_fds();
-
-	open_eventfd_fds();
+	for (i = 0; i < ARRAY_SIZE(fd_providers); i++)
+		fd_providers[i].open();
 
 	if (no_files == FALSE)
 		ret = open_files();
