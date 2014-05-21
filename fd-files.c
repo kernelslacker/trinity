@@ -368,6 +368,12 @@ int get_rand_file_fd(void)
 {
 	unsigned int fd_index;
 
+	if (no_files == TRUE)	// FIXME: This should go away when we have dynamic fd reg
+		return -1;
+
+	if (nr_file_fds == 0)
+		return -1;
+
 	fd_index = rand() % nr_file_fds;
 	return shm->file_fds[fd_index];
 }
