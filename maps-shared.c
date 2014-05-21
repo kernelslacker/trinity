@@ -30,7 +30,6 @@ static void dump_shared_mappings(void)
 static void alloc_zero_map(unsigned long size, int prot, const char *name)
 {
 	struct map *newnode;
-	struct list_head *list;
 	int fd;
 	char buf[10];
 
@@ -61,8 +60,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	num_shared_mappings++;
 
-	list = &shared_mappings->list;
-	list_add_tail(&newnode->list, list);
+	list_add_tail(&newnode->list, &shared_mappings->list);
 
 	sizeunit(size, buf);
 	output(2, "mapping[%d]: (zeropage %s) %p (%s)\n",
