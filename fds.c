@@ -29,7 +29,7 @@ struct fd_provider {
 static struct fd_provider fd_providers[] = {
 	{ .open = &open_sockets, .get = &get_rand_socket_fd },
 	{ .open = &open_pipes, .get = &get_rand_pipe_fd },
-	{ .open = &open_perf_fds },
+	{ .open = &open_perf_fds, .get = &get_rand_perf_fd },
 	{ .open = &open_epoll_fds },
 	{ .open = &open_eventfd_fds },
 	{ .open = &open_files },
@@ -91,7 +91,7 @@ retry:
 		if (shm->perf_fds[0] == 0)	/* perf unavailable/disabled. */
 			goto retry;
 
-		fd = rand_perf_fd();
+		fd = get_rand_perf_fd();
 		break;
 
 	case 4:

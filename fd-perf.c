@@ -40,7 +40,7 @@ int open_perf_fds(void)
 	return TRUE;
 }
 
-int rand_perf_fd(void)
+int get_rand_perf_fd(void)
 {
 	return shm->perf_fds[rand() % MAX_PERF_FDS];
 }
