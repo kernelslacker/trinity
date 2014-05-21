@@ -40,7 +40,7 @@ struct socketinfo {
 	int fd;
 };
 
-unsigned int open_sockets(void);
+int open_sockets(void);
 void close_sockets(void);
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);

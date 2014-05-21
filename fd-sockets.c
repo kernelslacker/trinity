@@ -293,14 +293,19 @@ void close_sockets(void)
 	nr_sockets = 0;
 }
 
-unsigned int open_sockets(void)
+int open_sockets(void)
 {
 	int cachefile;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
-	int bytesread=-1;
+	int bytesread = -1;
 	int fd;
 	int ret;
+
+	/* If we're doing victim files we probably don't care about sockets. */
+	//FIXME: Is this really true ? We might want to sendfile for eg
+	if (victim_path == NULL)
+		return TRUE;
 
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
