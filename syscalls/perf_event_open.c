@@ -12,6 +12,7 @@
 #include <errno.h>
 #include "log.h"
 #include "maps.h"
+#include "perf.h"
 #include "perf_event.h"
 #include "random.h"
 #include "sanitise.h"
