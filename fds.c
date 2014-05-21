@@ -121,6 +121,7 @@ static struct fd_provider fd_providers[] = {
 	{ .open = &open_perf_fds },
 	{ .open = &open_epoll_fds },
 	{ .open = &open_eventfd_fds },
+	{ .open = &open_files },
 };
 
 unsigned int setup_fds(void)
@@ -141,9 +142,6 @@ unsigned int setup_fds(void)
 			exit_main_fail();
 		}
 	}
-
-	if (no_files == FALSE)
-		ret = open_files();
 
 	return ret;
 }
