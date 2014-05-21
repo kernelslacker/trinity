@@ -39,7 +39,7 @@ int open_eventfd_fds(void)
 	return TRUE;
 }
 
-int rand_eventfd_fd(void)
+int get_rand_eventfd_fd(void)
 {
 	return shm->eventfd_fds[rand() % MAX_EVENTFD_FDS];
 }
