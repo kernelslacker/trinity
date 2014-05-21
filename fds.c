@@ -35,6 +35,21 @@ static struct fd_provider fd_providers[] = {
 	{ .open = &open_files, .get = &get_rand_file_fd },
 };
 
+unsigned int setup_fds(void)
+{
+	int ret;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(fd_providers); i++) {
+
+		ret = fd_providers[i].open();
+		if (ret == FALSE)
+			exit_main_fail();
+	}
+
+	return ret;
+}
+
 static int get_new_random_fd(void)
 {
 	int fd = -1;
@@ -68,19 +83,4 @@ regen:
 	}
 
 	return shm->current_fd;
-}
-
-unsigned int setup_fds(void)
-{
-	int ret = TRUE;
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(fd_providers); i++) {
-		ret = fd_providers[i].open();
-		if (ret == FALSE) {
-			exit_main_fail();
-		}
-	}
-
-	return ret;
 }
