@@ -364,7 +364,7 @@ const char * get_filename(void)
 	return fileindex[rand() % files_in_index];
 }
 
-int rand_file_fd(void)
+int get_rand_file_fd(void)
 {
 	unsigned int fd_index;
 
