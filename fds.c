@@ -43,9 +43,6 @@ static int get_new_random_fd(void)
 retry:
 	i = rand() % 6;
 
-	if (do_specific_proto == TRUE)
-		i = 1;
-
 	switch (i) {
 	case 0:
 		fd = get_rand_file_fd();
