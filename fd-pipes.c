@@ -19,7 +19,7 @@
 #include "shm.h"
 #include "trinity.h"
 
-void open_pipes(void)
+int open_pipes(void)
 {
 	int pipes[2];
 	unsigned int i;
@@ -27,7 +27,7 @@ void open_pipes(void)
 	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
 		if (pipe(pipes) < 0) {
 			perror("pipe fail.\n");
-			exit_main_fail();
+			return FALSE;
 		}
 		shm->pipe_fds[i] = pipes[0];
 		shm->pipe_fds[i+1] = pipes[1];
@@ -35,6 +35,7 @@ void open_pipes(void)
 		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i]);
 		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i+1]);
 	}
+	return TRUE;
 }
 
 int rand_pipe_fd(void)

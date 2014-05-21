@@ -1,6 +1,6 @@
 #pragma once
 
-void open_eventfd_fds(void);
+int open_eventfd_fds(void);
 int rand_eventfd_fd(void);
 
 #define MAX_EVENTFD_FDS 8

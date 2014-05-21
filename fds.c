@@ -18,6 +18,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "trinity.h"
 #include "utils.h"
 
 static int get_new_random_fd(void)
@@ -112,7 +113,7 @@ regen:
 }
 
 struct fd_provider {
-	void (*open)(void);
+	int (*open)(void);
 };
 
 static struct fd_provider fd_providers[] = {
@@ -134,8 +135,12 @@ unsigned int setup_fds(void)
 			return FALSE;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(fd_providers); i++)
-		fd_providers[i].open();
+	for (i = 0; i < ARRAY_SIZE(fd_providers); i++) {
+		ret = fd_providers[i].open();
+		if (ret == FALSE) {
+			exit_main_fail();
+		}
+	}
 
 	if (no_files == FALSE)
 		ret = open_files();

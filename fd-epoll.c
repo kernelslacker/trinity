@@ -17,7 +17,7 @@
 #include "sanitise.h"
 #include "shm.h"
 
-void open_epoll_fds(void)
+int open_epoll_fds(void)
 {
 	unsigned int i = 0;
 	int fd = -1;
@@ -33,8 +33,13 @@ void open_epoll_fds(void)
 			shm->epoll_fds[i] = fd;
 			output(2, "fd[%d] = epoll\n", shm->epoll_fds[i]);
 			i++;
+		} else {
+			/* not sure what happened. */
+			output(0, "epoll_create fail: %s\n", strerror(errno));
+			return FALSE;
 		}
 	}
+	return TRUE;
 }
 
 int rand_epoll_fd(void)
