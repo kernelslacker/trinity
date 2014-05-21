@@ -117,6 +117,7 @@ struct fd_provider {
 };
 
 static struct fd_provider fd_providers[] = {
+	{ .open = &open_sockets },
 	{ .open = &open_pipes },
 	{ .open = &open_perf_fds },
 	{ .open = &open_epoll_fds },
@@ -128,13 +129,6 @@ unsigned int setup_fds(void)
 {
 	int ret = TRUE;
 	unsigned int i;
-
-	/* If we have victim files, don't worry about sockets. */
-	if (victim_path == NULL) {
-		ret = open_sockets();
-		if (ret == FALSE)
-			return FALSE;
-	}
 
 	for (i = 0; i < ARRAY_SIZE(fd_providers); i++) {
 		ret = fd_providers[i].open();
