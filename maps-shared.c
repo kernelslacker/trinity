@@ -61,8 +61,13 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	num_shared_mappings++;
 
-	list = &shared_mappings->list;
-	list_add_tail(&newnode->list, list);
+	if (shared_mappings == NULL) {
+		shared_mappings = newnode;
+		INIT_LIST_HEAD(&shared_mappings->list);
+	} else {
+		list = &shared_mappings->list;
+		list_add_tail(&newnode->list, list);
+	}
 
 	sizeunit(size, buf);
 	output(2, "mapping[%d]: (zeropage %s) %p (%s)\n",
@@ -78,9 +83,6 @@ void setup_shared_mappings(void)
 		1 * MB, 2 * MB, 4 * MB, 10 * MB,
 //		1 * GB,	// disabled for now, due to OOM.
 	};
-
-	shared_mappings = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&shared_mappings->list);
 
 	/* page_size * 2, so we have a guard page afterwards.
 	 * This is necessary for when we want to test page boundaries.
