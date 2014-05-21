@@ -304,7 +304,7 @@ static int open_sockets(void)
 
 	/* If we're doing victim files we probably don't care about sockets. */
 	//FIXME: Is this really true ? We might want to sendfile for eg
-	if (victim_path == NULL)
+	if (victim_path != NULL)
 		return TRUE;
 
 	cachefile = open(cachefilename, O_RDONLY);
