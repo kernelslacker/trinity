@@ -9,6 +9,7 @@
 #include <sys/eventfd.h>
 
 #include "epoll.h"
+#include "fd.h"
 #include "log.h"
 #include "net.h"
 #include "params.h"
@@ -17,7 +18,7 @@
 #include "sanitise.h"
 #include "shm.h"
 
-int open_epoll_fds(void)
+static int open_epoll_fds(void)
 {
 	unsigned int i = 0;
 	int fd = -1;
@@ -42,7 +43,12 @@ int open_epoll_fds(void)
 	return TRUE;
 }
 
-int get_rand_epoll_fd(void)
+static int get_rand_epoll_fd(void)
 {
 	return shm->epoll_fds[rand() % MAX_EPOLL_FDS];
 }
+
+struct fd_provider epoll_fd_provider = {
+	.open = &open_epoll_fds,
+	.get = &get_rand_epoll_fd,
+};

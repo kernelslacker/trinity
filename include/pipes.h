@@ -1,6 +1,6 @@
 #pragma once
 
-int open_pipes(void);
-int get_rand_pipe_fd(void);
+#include "fd.h"
+struct fd_provider pipes_fd_provider;
 
 #define MAX_PIPE_FDS 4
