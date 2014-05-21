@@ -305,7 +305,7 @@ retry_flags:
 	case O_RDWR:    modestr = "read-write"; break;
 	default: modestr = "unknown"; break;
 	}
-	output(2, "fd[%i] = %s (%s) flags:%x\n", fd, filename, modestr, randflags);
+	output(2, "fd[%i] = %s (%s) flags:%x\n", fd, filename, modestr, flags | randflags);
 	return fd;
 }
 
