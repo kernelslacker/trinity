@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <limits.h>
+#include "arch.h"
 #include "pids.h"
 #include "random.h"
 #include "sanitise.h"	// interesting_numbers
@@ -185,12 +186,16 @@ unsigned int rand32(void)
 	}
 
 	/* limit the size */
-	switch (rand() % 4) {
+	switch (rand() % 5) {
 	case 0: r &= 0xff;
 		break;
 	case 1: r &= 0xffff;
 		break;
-	case 2: r &= 0xffffff;
+	case 2: r &= PAGE_MASK;
+		break;
+	case 3: r &= 0xffffff;
+		break;
+	case 4:	// do nothing
 		break;
 	}
 
