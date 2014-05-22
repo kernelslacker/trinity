@@ -86,7 +86,7 @@ static void do_setsockopt(struct sockopt *so)
 	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
 	 */
 	if ((rand() % 100) < 10)
-		so->optname |= (1 << (rand() % 32));
+		so->optname |= (1UL << (rand() % 32));
 
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
