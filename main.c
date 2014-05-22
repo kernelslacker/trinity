@@ -22,10 +22,9 @@
  */
 void exit_main_fail(void)
 {
-	if (getpid() != shm->mainpid) {
-		printf("wtf, exit_main_fail called from non main pid!\n");
-		return;
-	}
+	if (getpid() != shm->mainpid)
+		BUG("wtf, exit_main_fail called from non main pid!\n");
+
 	shm->mainpid = 0;
 	exit(EXIT_FAILURE);
 }
