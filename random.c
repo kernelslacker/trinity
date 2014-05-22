@@ -27,7 +27,7 @@ unsigned int rand_bool(void)
 
 static unsigned int rand_single_bit(unsigned char size)
 {
-	return (1L << (rand() % size));
+	return (1UL << (rand() % size));
 }
 
 /*
@@ -35,12 +35,12 @@ static unsigned int rand_single_bit(unsigned char size)
  */
 static unsigned long randbits(int limit)
 {
-	unsigned int num = rand() % limit / 2;
+	unsigned int num = rand() % (limit / 2);
 	unsigned int i;
 	unsigned long r = 0;
 
 	for (i = 0; i < num; i++)
-		r |= (1 << (rand() % (limit - 1)));
+		r |= (1UL << (rand() % (limit - 1)));
 
 	return r;
 }
@@ -249,12 +249,12 @@ u64 rand64(void)
 
 		rounds = rand() % 4;
 		for (i = 0; i < rounds; i++)
-			r |= (1L << ((__WORDSIZE - 1) - (rand() % 8)));
+			r |= (1UL << ((__WORDSIZE - 1) - (rand() % 8)));
 	}
 
 	/* randomly flip sign bit. */
 	if (rand_bool())
-		r |= (1L << (__WORDSIZE - 1));
+		r |= (1UL << (__WORDSIZE - 1));
 
 	return r;
 }
