@@ -25,7 +25,7 @@ void create_shm(void)
 	unsigned int shm_pages;
 
 	/* round up shm to nearest page size */
-	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & ~(page_size - 1)) / page_size;
+	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & PAGE_MASK) / page_size;
 
 	/* Waste some address space to set up some "protection" near the SHM location. */
 	p = alloc_shared((SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES) * page_size);
