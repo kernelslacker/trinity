@@ -33,18 +33,12 @@ static void fabricate_onepage_struct(char *page)
 
 		} else {
 			/* int alignment */
-			unsigned int val;
 
 			i += sizeof(unsigned int);
 			if (i > page_size)
 				return;
 
-			if (rand_bool())
-				val = rand32();
-			else
-				val = rand() % page_size;
-
-			*(unsigned int *)ptr = val;
+			*(unsigned int *)ptr = rand32();
 		}
 	}
 }
