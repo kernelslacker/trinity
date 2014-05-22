@@ -31,7 +31,7 @@ unsigned int get_interesting_32bit_value(void)
 		break;
 	case 1:	num = rand() % 256;		// 00-0xff
 		break;
-	case 2:	num = 1 << (rand() % 32);	// set a single bit.
+	case 2:	num = 1UL << (rand() % 32);	// set a single bit.
 		break;
 	case 3:	num = 0x8fffffff;
 		break;
