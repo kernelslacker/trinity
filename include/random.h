@@ -11,6 +11,6 @@ unsigned int new_seed(void);
 unsigned int rand_bool(void);
 unsigned int rand32(void);
 u64 rand64(void);
-int rand_range(int min, int max);
+unsigned int rand_range(unsigned int min, unsigned int max);
 
 void generate_random_page(char *page);
