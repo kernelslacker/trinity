@@ -17,4 +17,4 @@ extern char *victim_path;
 extern const char **fileindex;
 extern unsigned int files_in_index;
 
-#define NR_FILE_FDS 250
+#define NR_FILE_FDS 250U
