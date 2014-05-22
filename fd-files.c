@@ -321,10 +321,7 @@ static int open_files(void)
 	if (files_in_index == 0)	/* Something bad happened. Crappy -V maybe? */
 		return FALSE;		// FIXME: We should log something here probably.
 
-	if (files_in_index < NR_FILE_FDS)
-		nr_to_open = files_in_index;
-	else
-		nr_to_open = NR_FILE_FDS;
+	nr_to_open = min(files_in_index, NR_FILE_FDS);
 
 	if (fileindex == NULL)	/* this can happen if we ctrl-c'd */
 		return FALSE;
