@@ -15,31 +15,36 @@ static void fabricate_onepage_struct(char *page)
 		void **ptr;
 
 		ptr = (void*)&page[i];
-		switch (rand() % 4) {
-		case 0:
-			i += sizeof(unsigned int);
-			if (i > page_size)
-				return;
-			*(unsigned int *)ptr = rand32();
-			break;
-		case 1:
+
+		/* 4 byte (32bit) 8 byte (64bit) alignment */
+		if (i & ~((__WORDSIZE / 8) - 1)) {
+			unsigned long val;
+
 			i += sizeof(unsigned long);
 			if (i > page_size)
 				return;
-			*(unsigned long *)ptr = rand64();
-			break;
-		case 2:
-			i += sizeof(void *);
-			if (i > page_size)
-				return;
-			*ptr = get_address();
-			break;
-		case 3:
+
+			if (rand_bool())
+				val = rand64();
+			else
+				val = (unsigned long) get_address();
+
+			*(unsigned long *)ptr = val;
+
+		} else {
+			/* int alignment */
+			unsigned int val;
+
 			i += sizeof(unsigned int);
 			if (i > page_size)
 				return;
-			*(unsigned int *)ptr = rand() % page_size;
-			break;
+
+			if (rand_bool())
+				val = rand32();
+			else
+				val = rand() % page_size;
+
+			*(unsigned int *)ptr = val;
 		}
 	}
 }
