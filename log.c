@@ -291,7 +291,7 @@ void output(unsigned char level, const char *fmt, ...)
 	char watchdog_prefix[]="[watchdog]";
 	char init_prefix[]="[init]";
 	char main_prefix[]="[main]";
-	char child_prefix[]="[childNN:1234567890]";
+	char child_prefix[32];
 
 	if (logging == FALSE && level >= quiet_level)
 		return;
@@ -311,7 +311,7 @@ void output(unsigned char level, const char *fmt, ...)
 		unsigned int slot;
 
 		slot = find_pid_slot(pid);
-		sprintf(child_prefix, "[child%u:%u]", slot, pid);
+		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", slot, pid);
 		prefix = child_prefix;
 	}
 
