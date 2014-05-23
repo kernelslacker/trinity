@@ -257,6 +257,9 @@ enum {
 
 #ifndef PR_SET_MM
 #define PR_SET_MM               35
+#endif
+
+#ifndef PR_SET_CHILD_SUBREAPER
 #define PR_SET_CHILD_SUBREAPER  36
 #define PR_GET_CHILD_SUBREAPER  37
 #define PR_SET_NO_NEW_PRIVS     38
