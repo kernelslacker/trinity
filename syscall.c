@@ -176,28 +176,17 @@ bool mkcall(int childno)
 	if (dopause == TRUE)
 		sleep(1);
 
-	/* If the syscall doesn't exist don't bother calling it next time. */
-	if ((ret == -1UL) && (errno_saved == ENOSYS)) {
-
-		/* Futex is awesome, it ENOSYS's depending on arguments. Sigh. */
-		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "futex"))
-			goto skip_enosys;
-
-		/* Unknown ioctls also ENOSYS. */
-		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "ioctl"))
-			goto skip_enosys;
-
-		/* sendfile() may ENOSYS depending on args. */
-		if (call == (unsigned int) search_syscall_table(syscalls, max_nr_syscalls, "sendfile"))
-			goto skip_enosys;
-
+	/*
+	 * If the syscall doesn't exist don't bother calling it next time.
+	 * Some syscalls return ENOSYS depending on their arguments, we mark
+	 * those as IGNORE_ENOSYS and keep calling them.
+	 */
+	if ((ret == -1UL) && (errno_saved == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
 			entry->name, call + SYSCALL_OFFSET);
 
 		deactivate_syscall(call, syscallrec->do32bit);
 	}
-
-skip_enosys:
 
 	if (entry->post)
 	    entry->post(childno, syscallrec);

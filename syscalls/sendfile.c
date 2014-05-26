@@ -14,7 +14,7 @@ struct syscallentry syscall_sendfile = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "count",
 	.arg4type = ARG_LEN,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | IGNORE_ENOSYS,
 };
 
 /*
@@ -32,5 +32,5 @@ struct syscallentry syscall_sendfile64 = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "count",
 	.arg4type = ARG_LEN,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | IGNORE_ENOSYS,
 };

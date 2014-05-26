@@ -70,5 +70,5 @@ struct syscallentry syscall_ioctl = {
 	.arg3name = "arg",
 	.arg3type = ARG_RANDPAGE,
 	.sanitise = sanitise_ioctl,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | IGNORE_ENOSYS,
 };

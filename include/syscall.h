@@ -121,4 +121,5 @@ struct syscalltable {
 #define TO_BE_DEACTIVATED	(1<<4)
 #define NEED_ALARM		(1<<5)
 #define EXTRA_FORK		(1<<6)
+#define IGNORE_ENOSYS		(1<<7)
 
