@@ -1316,5 +1316,5 @@ struct syscallentry syscall_perf_event_open = {
 	},
 	.sanitise = sanitise_perf_event_open,
 	.init = init_pmus,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | IGNORE_ENOSYS,
 };
