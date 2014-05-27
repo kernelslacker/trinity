@@ -173,7 +173,7 @@ bool mkcall(int childno)
 	else
 		shm->successes++;
 
-	output_syscall_postfix(childno, ret);
+	output_syscall_postfix(childno);
 	if (dopause == TRUE)
 		sleep(1);
 
