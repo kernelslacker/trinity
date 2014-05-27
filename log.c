@@ -392,7 +392,7 @@ void outputstd(const char *fmt, ...)
 	va_end(args);
 }
 
-static void output_syscall_prefix_to_fd(const unsigned int childno, FILE *fd, bool mono)
+static void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 {
 	struct syscallentry *entry;
 	struct syscallrecord *rec;
@@ -427,7 +427,7 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, FILE *fd, bo
 }
 
 /* This function is always called from a fuzzing child. */
-void output_syscall_prefix(const unsigned int childno)
+void output_syscall_prefix(int childno)
 {
 	FILE *log_handle;
 
