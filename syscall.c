@@ -60,25 +60,25 @@ static long syscall32(unsigned int call,
 
 static unsigned long do_syscall(int childno)
 {
-	struct syscallrecord *syscallrec;
+	struct syscallrecord *rec;
 	int nr, call;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
 
-	syscallrec = &shm->syscall[childno];
-	nr = syscallrec->nr;
+	rec = &shm->syscall[childno];
+	nr = rec->nr;
 
 	/* Some architectures (IA64/MIPS) start their Linux syscalls
 	 * At non-zero, and have other ABIs below.
 	 */
 	call = nr + SYSCALL_OFFSET;
 
-	a1 = syscallrec->a1;
-	a2 = syscallrec->a2;
-	a3 = syscallrec->a3;
-	a4 = syscallrec->a4;
-	a5 = syscallrec->a5;
-	a6 = syscallrec->a6;
+	a1 = rec->a1;
+	a2 = rec->a2;
+	a3 = rec->a3;
+	a4 = rec->a4;
+	a5 = rec->a5;
+	a6 = rec->a6;
 
 	shm->total_syscalls_done++;
 	shm->child_op_count[childno]++;
@@ -89,12 +89,12 @@ static unsigned long do_syscall(int childno)
 
 	errno = 0;
 
-	if (syscallrec->do32bit == FALSE)
+	if (rec->do32bit == FALSE)
 		ret = syscall(call, a1, a2, a3, a4, a5, a6);
 	else
 		ret = syscall32(call, a1, a2, a3, a4, a5, a6);
 
-	syscallrec->errno_post = errno;
+	rec->errno_post = errno;
 
 	if (syscalls[nr].entry->flags & NEED_ALARM)
 		(void)alarm(0);
@@ -111,27 +111,27 @@ static unsigned long do_syscall(int childno)
 bool mkcall(int childno)
 {
 	struct syscallentry *entry;
-	struct syscallrecord *syscallrec, *previous;
+	struct syscallrecord *rec, *previous;
 	unsigned int call;
 	unsigned long ret = 0;
 
-	syscallrec = &shm->syscall[childno];
-	call = syscallrec->nr;
+	rec = &shm->syscall[childno];
+	call = rec->nr;
 	entry = syscalls[call].entry;
 
-	lock(&syscallrec->lock);
-	syscallrec->a1 = (unsigned long) rand64();
-	syscallrec->a2 = (unsigned long) rand64();
-	syscallrec->a3 = (unsigned long) rand64();
-	syscallrec->a4 = (unsigned long) rand64();
-	syscallrec->a5 = (unsigned long) rand64();
-	syscallrec->a6 = (unsigned long) rand64();
+	lock(&rec->lock);
+	rec->a1 = (unsigned long) rand64();
+	rec->a2 = (unsigned long) rand64();
+	rec->a3 = (unsigned long) rand64();
+	rec->a4 = (unsigned long) rand64();
+	rec->a5 = (unsigned long) rand64();
+	rec->a6 = (unsigned long) rand64();
 
 	generic_sanitise(childno);
 	if (entry->sanitise)
-		entry->sanitise(childno, syscallrec);
+		entry->sanitise(childno, rec);
 
-	unlock(&syscallrec->lock);
+	unlock(&rec->lock);
 
 	output_syscall_prefix(childno);
 
@@ -150,7 +150,7 @@ bool mkcall(int childno)
 		if (extrapid == 0) {
 			ret = do_syscall(childno, &errno_saved);
 			/* We should never get here. */
-			syscallrec->retval = ret;
+			rec->retval = ret;
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid_alive(extrapid)) {
@@ -166,7 +166,7 @@ bool mkcall(int childno)
 
 	/* common-case, do the syscall in this child process. */
 	ret = do_syscall(childno);
-	syscallrec->retval = ret;
+	rec->retval = ret;
 
 	if (IS_ERR(ret))
 		shm->failures++;
@@ -182,26 +182,26 @@ bool mkcall(int childno)
 	 * Some syscalls return ENOSYS depending on their arguments, we mark
 	 * those as IGNORE_ENOSYS and keep calling them.
 	 */
-	if ((ret == -1UL) && (syscallrec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
+	if ((ret == -1UL) && (rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
 			entry->name, call + SYSCALL_OFFSET);
 
-		deactivate_syscall(call, syscallrec->do32bit);
+		deactivate_syscall(call, rec->do32bit);
 	}
 
 	if (entry->post)
-	    entry->post(childno, syscallrec);
+	    entry->post(childno, rec);
 
 	/* store info for debugging. */
 	previous = &shm->previous[childno];
-	previous->nr = syscallrec->nr;
-	previous->a1 = syscallrec->a1;
-	previous->a2 = syscallrec->a2;
-	previous->a3 = syscallrec->a3;
-	previous->a4 = syscallrec->a4;
-	previous->a5 = syscallrec->a5;
-	previous->a6 = syscallrec->a6;
-	previous->do32bit = syscallrec->do32bit;
+	previous->nr = rec->nr;
+	previous->a1 = rec->a1;
+	previous->a2 = rec->a2;
+	previous->a3 = rec->a3;
+	previous->a4 = rec->a4;
+	previous->a5 = rec->a5;
+	previous->a6 = rec->a6;
+	previous->do32bit = rec->do32bit;
 
 	check_uid();
 
