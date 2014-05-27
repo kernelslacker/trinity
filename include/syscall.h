@@ -14,6 +14,7 @@ struct syscallrecord {
 	unsigned long a5;
 	unsigned long a6;
 	unsigned long retval;
+	int errno_post;	/* what errno was after the syscall. */
 	bool do32bit;
 	lock_t lock;
 };
