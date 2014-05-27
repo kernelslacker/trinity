@@ -150,6 +150,7 @@ bool mkcall(int childno)
 		extrapid = fork();
 		if (extrapid == 0) {
 			ret = do_syscall(childno, &errno_saved);
+			/* We should never get here. */
 			syscallrec->retval = ret;
 			_exit(EXIT_SUCCESS);
 		} else {
@@ -157,6 +158,7 @@ bool mkcall(int childno)
 				sleep(1);
 				kill(extrapid, SIGKILL);
 			}
+			//FIXME: Why would we only do this once ?
 			generic_free_arg(childno);
 			return FALSE;
 		}
