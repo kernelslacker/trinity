@@ -134,7 +134,7 @@ bool mkcall(int childno)
 
 	unlock(&syscallrec->lock);
 
-	output_syscall_prefix(childno, call);
+	output_syscall_prefix(childno);
 
 	/* If we're going to pause, might as well sync pre-syscall */
 	if (dopause == TRUE)
