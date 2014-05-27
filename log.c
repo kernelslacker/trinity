@@ -464,13 +464,14 @@ static void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mon
 	fflush(fd);
 }
 
-void output_syscall_postfix(int childno, unsigned long ret)
+void output_syscall_postfix(int childno)
 {
 	struct syscallrecord *rec;
 	FILE *log_handle;
-	bool err = IS_ERR(ret);
+	bool err;
 
 	rec = &shm->syscall[childno];
+	err = IS_ERR(rec->retval);
 
 	/* Exit if should not continue at all. */
 	if (logging == FALSE && quiet_level < MAX_LOGLEVEL)
@@ -481,14 +482,14 @@ void output_syscall_postfix(int childno, unsigned long ret)
 
 	if (err) {
 		if ((logging == TRUE) && (log_handle != NULL))
-			output_syscall_postfix_err(ret, rec->errno_post, log_handle, TRUE);
+			output_syscall_postfix_err(rec->retval, rec->errno_post, log_handle, TRUE);
 		if (quiet_level == MAX_LOGLEVEL)
-			output_syscall_postfix_err(ret, rec->errno_post, stdout, monochrome);
+			output_syscall_postfix_err(rec->retval, rec->errno_post, stdout, monochrome);
 	} else {
 		if ((logging == TRUE) && (log_handle != NULL))
-			output_syscall_postfix_success(ret, log_handle, TRUE);
+			output_syscall_postfix_success(rec->retval, log_handle, TRUE);
 		if (quiet_level == MAX_LOGLEVEL)
-			output_syscall_postfix_success(ret, stdout, monochrome);
+			output_syscall_postfix_success(rec->retval, stdout, monochrome);
 	}
 }
 
