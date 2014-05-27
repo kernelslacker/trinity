@@ -392,18 +392,23 @@ void outputstd(const char *fmt, ...)
 	va_end(args);
 }
 
-static void output_syscall_prefix_to_fd(const unsigned int childno, const unsigned int syscallnr, FILE *fd, bool mono)
+static void output_syscall_prefix_to_fd(const unsigned int childno, FILE *fd, bool mono)
 {
 	struct syscallentry *entry;
-	unsigned int i;
+	struct syscallrecord *rec;
 	pid_t pid;
+	unsigned int i;
+	unsigned int syscallnr;
 
+	rec = &shm->syscall[childno];
+	syscallnr = rec->nr;
 	entry = syscalls[syscallnr].entry;
 
 	pid = getpid();
 
-	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid, shm->child_op_count[childno],
-			(shm->syscall[childno].do32bit == TRUE) ? "[32BIT] " : "");
+	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid,
+			shm->child_op_count[childno],
+			(rec->do32bit == TRUE) ? "[32BIT] " : "");
 
 	if (syscallnr > max_nr_syscalls)
 		fprintf(fd, "%u", syscallnr);
@@ -425,7 +430,6 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const unsign
 void output_syscall_prefix(const unsigned int childno)
 {
 	FILE *log_handle;
-	unsigned int syscallnr = shm->syscall[childno].nr;
 
 	/* Exit if should not continue at all. */
 	if (logging == FALSE && quiet_level < MAX_LOGLEVEL)
@@ -436,11 +440,11 @@ void output_syscall_prefix(const unsigned int childno)
 
 	/* do not output any ascii control symbols to files */
 	if ((logging == TRUE) && (log_handle != NULL))
-		output_syscall_prefix_to_fd(childno, syscallnr, log_handle, TRUE);
+		output_syscall_prefix_to_fd(childno, log_handle, TRUE);
 
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL)
-		output_syscall_prefix_to_fd(childno, syscallnr, stdout, monochrome);
+		output_syscall_prefix_to_fd(childno, stdout, monochrome);
 }
 
 static void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono)
