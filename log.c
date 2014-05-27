@@ -422,9 +422,10 @@ static void output_syscall_prefix_to_fd(const unsigned int childno, const unsign
 }
 
 /* This function is always called from a fuzzing child. */
-void output_syscall_prefix(const unsigned int childno, const unsigned int syscallnr)
+void output_syscall_prefix(const unsigned int childno)
 {
 	FILE *log_handle;
+	unsigned int syscallnr = shm->syscall[childno].nr;
 
 	/* Exit if should not continue at all. */
 	if (logging == FALSE && quiet_level < MAX_LOGLEVEL)
