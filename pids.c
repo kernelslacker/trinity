@@ -40,20 +40,21 @@ void dump_pid_slots(void)
 	sptr += sprintf(sptr, "## pids: (%u active)\n", shm->running_childs);
 
 	for (i = 0; i < max_children; i += 8) {
-		sptr += sprintf(sptr, "%u-%u: ", i, i+7);
+		sptr += sprintf(sptr, "%u-%u: ", i, i + 7);
 		for (j = 0; j < 8; j++) {
-			if (shm->pids[i+j] != EMPTY_PIDSLOT) {
-				if (pid_alive(shm->pids[i+j] == -1))
+			if (shm->pids[i + j] != EMPTY_PIDSLOT) {
+				if (pid_alive(shm->pids[i + j] == -1))
 					RED
 			}
 
-			sptr += sprintf(sptr, "%d ", shm->pids[i+j]);
+			sptr += sprintf(sptr, "%d ", shm->pids[i + j]);
 			CRESET
 		}
 		sptr += sprintf(sptr, "\n");
+		*sptr = '\0';
+		outputerr("%s", string);
+		sptr = string;
 	}
-	*sptr = '\0';
-	outputerr("%s", string);
 }
 
 static pid_t pidmax;
