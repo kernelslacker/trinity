@@ -174,7 +174,7 @@ bool mkcall(int childno)
 	else
 		shm->successes++;
 
-	output_syscall_postfix(ret, errno_saved, IS_ERR(ret));
+	output_syscall_postfix(ret, errno_saved);
 	if (dopause == TRUE)
 		sleep(1);
 
