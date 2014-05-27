@@ -116,10 +116,12 @@ bool mkcall(int childno)
 	unsigned long ret = 0;
 
 	rec = &shm->syscall[childno];
+
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
 	lock(&rec->lock);
+	rec->state = PREP;
 	rec->a1 = (unsigned long) rand64();
 	rec->a2 = (unsigned long) rand64();
 	rec->a3 = (unsigned long) rand64();
@@ -150,6 +152,7 @@ bool mkcall(int childno)
 		if (extrapid == 0) {
 			ret = do_syscall(childno, &errno_saved);
 			/* We should never get here. */
+			rec->state = GOING_AWAY;
 			rec->retval = ret;
 			_exit(EXIT_SUCCESS);
 		} else {
@@ -162,11 +165,18 @@ bool mkcall(int childno)
 			return FALSE;
 		}
 	}
-#endif
 
 	/* common-case, do the syscall in this child process. */
+#endif
+
+	rec->state = BEFORE;
 	ret = do_syscall(childno);
+
+	/* We returned! */
+	lock(&rec->lock);
+	rec->state = AFTER;
 	rec->retval = ret;
+	unlock(&rec->lock);
 
 	if (IS_ERR(ret))
 		shm->failures++;
