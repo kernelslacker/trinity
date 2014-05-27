@@ -58,7 +58,7 @@ static long syscall32(unsigned int call,
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static unsigned long do_syscall(int childno, int *errno_saved)
+static unsigned long do_syscall(int childno)
 {
 	struct syscallrecord *syscallrec;
 	int nr, call;
@@ -94,7 +94,7 @@ static unsigned long do_syscall(int childno, int *errno_saved)
 	else
 		ret = syscall32(call, a1, a2, a3, a4, a5, a6);
 
-	*errno_saved = errno;
+	syscallrec->errno_post = errno;
 
 	if (syscalls[nr].entry->flags & NEED_ALARM)
 		(void)alarm(0);
@@ -114,7 +114,6 @@ bool mkcall(int childno)
 	struct syscallrecord *syscallrec, *previous;
 	unsigned int call;
 	unsigned long ret = 0;
-	int errno_saved;
 
 	syscallrec = &shm->syscall[childno];
 	call = syscallrec->nr;
@@ -166,7 +165,7 @@ bool mkcall(int childno)
 #endif
 
 	/* common-case, do the syscall in this child process. */
-	ret = do_syscall(childno, &errno_saved);
+	ret = do_syscall(childno);
 	syscallrec->retval = ret;
 
 	if (IS_ERR(ret))
@@ -174,7 +173,7 @@ bool mkcall(int childno)
 	else
 		shm->successes++;
 
-	output_syscall_postfix(ret, errno_saved);
+	output_syscall_postfix(childno, ret);
 	if (dopause == TRUE)
 		sleep(1);
 
@@ -183,7 +182,7 @@ bool mkcall(int childno)
 	 * Some syscalls return ENOSYS depending on their arguments, we mark
 	 * those as IGNORE_ENOSYS and keep calling them.
 	 */
-	if ((ret == -1UL) && (errno_saved == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
+	if ((ret == -1UL) && (syscallrec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
 			entry->name, call + SYSCALL_OFFSET);
 
