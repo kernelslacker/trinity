@@ -158,6 +158,8 @@ void init_child(int childno)
 
 	setup_page_maps();
 
+	shm->syscall[childno].state = UNKNOWN;
+
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
 		CPU_SET(childno, &set);

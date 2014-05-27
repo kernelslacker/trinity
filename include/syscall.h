@@ -5,6 +5,14 @@
 
 #define MAX_NR_SYSCALL 1024
 
+enum syscallstate {
+	UNKNOWN,	/* new child */
+	PREP,		/* doing sanitize */
+	BEFORE,		/* about to do syscall */
+	GOING_AWAY,	/* used when we don't expect to come back (execve for eg) */
+	AFTER,		/* returned from doing syscall. */
+};
+
 struct syscallrecord {
 	unsigned int nr;
 	unsigned long a1;
@@ -17,6 +25,7 @@ struct syscallrecord {
 	int errno_post;	/* what errno was after the syscall. */
 	bool do32bit;
 	lock_t lock;
+	enum syscallstate state;
 };
 
 enum argtype {
