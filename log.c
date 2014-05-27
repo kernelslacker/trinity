@@ -464,9 +464,10 @@ static void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mon
 	fflush(fd);
 }
 
-void output_syscall_postfix(unsigned long ret, int errno_saved, bool err)
+void output_syscall_postfix(unsigned long ret, int errno_saved)
 {
 	FILE *log_handle;
+	bool err = IS_ERR(ret);
 
 	/* Exit if should not continue at all. */
 	if (logging == FALSE && quiet_level < MAX_LOGLEVEL)

@@ -35,7 +35,7 @@ void output(unsigned char level, const char *fmt, ...);
 void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
 void output_syscall_prefix(const unsigned int childno);
-void output_syscall_postfix(unsigned long ret, int errno_saved, bool err);
+void output_syscall_postfix(unsigned long ret, int errno_saved);
 
 void open_logfiles(void);
 void close_logfiles(void);
