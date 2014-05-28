@@ -33,22 +33,22 @@ void exit_main_fail(void)
 static void fork_children(void)
 {
 	while (shm->running_childs < max_children) {
-		int pidslot;
+		int childno;
 		int pid = 0;
 
 		if (shm->spawn_no_more == TRUE)
 			return;
 
 		/* a new child means a new seed, or the new child
-		 * will do the same syscalls as the one in the pidslot it's replacing.
+		 * will do the same syscalls as the one in the child it's replacing.
 		 * (special case startup, or we reseed unnecessarily)
 		 */
 		if (shm->ready == TRUE)
 			reseed();
 
 		/* Find a space for it in the pid map */
-		pidslot = find_pid_slot(EMPTY_PIDSLOT);
-		if (pidslot == PIDSLOT_NOT_FOUND) {
+		childno = find_pid_slot(EMPTY_PIDSLOT);
+		if (childno == PIDSLOT_NOT_FOUND) {
 			outputerr("## Pid map was full!\n");
 			dump_pid_slots();
 			exit_main_fail();
@@ -59,9 +59,9 @@ static void fork_children(void)
 
 		if (pid == 0) {
 			/* Child process. */
-			init_child(pidslot);
-			child_process(pidslot);
-			debugf("child %d exiting.\n", pidslot);
+			init_child(childno);
+			child_process(childno);
+			debugf("child %d exiting.\n", childno);
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid == -1) {
@@ -75,11 +75,11 @@ static void fork_children(void)
 			}
 		}
 
-		shm->pids[pidslot] = pid;
+		shm->pids[childno] = pid;
 		shm->running_childs++;
 
-		debugf("Created child %d in pidslot %d [total:%d/%d]\n",
-			shm->pids[pidslot], pidslot,
+		debugf("Created child %d in childno %d [total:%d/%d]\n",
+			shm->pids[childno], childno,
 			shm->running_childs, max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)

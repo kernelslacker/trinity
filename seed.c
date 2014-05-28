@@ -58,14 +58,14 @@ unsigned int init_seed(unsigned int seedparam)
 	return seedparam;
 }
 
-/* Mix in the pidslot so that all children get different randomness.
+/* Mix in the childno so that all children get different randomness.
  * we can't use the actual pid or anything else 'random' because otherwise reproducing
  * seeds with -s would be much harder to replicate.
  */
-void set_seed(unsigned int pidslot)
+void set_seed(unsigned int childno)
 {
-	srand(shm->seed + (pidslot + 1));
-	shm->seeds[pidslot] = shm->seed;
+	srand(shm->seed + (childno + 1));
+	shm->seeds[childno] = shm->seed;
 }
 
 /*
