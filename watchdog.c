@@ -12,7 +12,6 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
-#include "arch.h" // biarch
 #include "child.h"
 #include "files.h"
 #include "locks.h"
@@ -201,6 +200,7 @@ static int check_main_alive(void)
 unsigned int check_if_fd(unsigned int child)
 {
 	struct syscallrecord *rec;
+	struct syscallentry *entry;
 	unsigned int fd;
 	unsigned int highest;
 	unsigned callno;
@@ -222,20 +222,10 @@ unsigned int check_if_fd(unsigned int child)
 	if (fd < highest)
 		return FALSE;
 
-	if (biarch == FALSE) {
-		if (syscalls[callno].entry->arg1type == ARG_FD)
-			return TRUE;
-		return FALSE;
-	}
+	entry = get_syscall_entry(callno, do32);
 
-	/* biarch case */
-	if (do32 == TRUE) {
-		if (syscalls_32bit[callno].entry->arg1type == ARG_FD)
-			return TRUE;
-	} else {
-		if (syscalls_64bit[callno].entry->arg1type == ARG_FD)
-			return TRUE;
-	}
+	if (entry->arg1type == ARG_FD)
+		return TRUE;
 
 	return FALSE;
 }

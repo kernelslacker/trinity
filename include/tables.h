@@ -83,6 +83,8 @@ void init_syscalls_uniarch(void);
 
 int munge_tables(void);
 
+struct syscallentry * get_syscall_entry(unsigned int calln, bool do32);
+
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)
 #define for_each_64bit_syscall(i) \
