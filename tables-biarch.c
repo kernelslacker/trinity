@@ -67,7 +67,10 @@ int validate_syscall_table_32(void)
 	return use_32bit;
 }
 
-void toggle_syscall_biarch_n(int calln, const struct syscalltable *table, bool onlyflag, bool doflag, bool state, void (*activate)(unsigned int), int arch_bits, const char *arg_name)
+static void toggle_syscall_biarch_n(int calln, const struct syscalltable *table,
+				    bool onlyflag, bool doflag, bool state,
+				    void (*activate)(unsigned int),
+				    int arch_bits, const char *arg_name)
 {
 	if (calln != -1) {
 		struct syscallentry *entry = table[calln].entry;
