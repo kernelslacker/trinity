@@ -72,7 +72,7 @@ static FILE * find_logfile_handle(void)
 	if (pid == watchdog_pid)
 		return mainlogfile;
 
-	i = find_pid_slot(pid);
+	i = find_childno(pid);
 	if (i != PIDSLOT_NOT_FOUND)
 		return shm->logfiles[i];
 	else {
@@ -80,12 +80,12 @@ static FILE * find_logfile_handle(void)
 		unsigned int j;
 
 		sleep(1);
-		i = find_pid_slot(pid);
+		i = find_childno(pid);
 		if (i != PIDSLOT_NOT_FOUND)
 			return shm->logfiles[i];
 
 		outputerr("## Couldn't find logfile for pid %d\n", pid);
-		dump_pid_slots();
+		dump_childnos();
 		outputerr("## Logfiles for pids: ");
 		for_each_child(j)
 			outputerr("%p ", shm->logfiles[j]);
@@ -315,7 +315,7 @@ void output(unsigned char level, const char *fmt, ...)
 	if (prefix == NULL) {
 		unsigned int slot;
 
-		slot = find_pid_slot(pid);
+		slot = find_childno(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", slot, pid);
 		prefix = child_prefix;
 		shm->logdirty[slot] = TRUE;

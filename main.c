@@ -47,10 +47,10 @@ static void fork_children(void)
 			reseed();
 
 		/* Find a space for it in the pid map */
-		childno = find_pid_slot(EMPTY_PIDSLOT);
+		childno = find_childno(EMPTY_PIDSLOT);
 		if (childno == PIDSLOT_NOT_FOUND) {
 			outputerr("## Pid map was full!\n");
-			dump_pid_slots();
+			dump_childnos();
 			exit_main_fail();
 		}
 
@@ -102,7 +102,7 @@ void reap_child(pid_t childpid)
 		goto out;
 	}
 
-	i = find_pid_slot(childpid);
+	i = find_childno(childpid);
 	if (i == PIDSLOT_NOT_FOUND)
 		goto out;
 
@@ -159,13 +159,13 @@ static void handle_child(pid_t childpid, int childstatus)
 
 			int slot;
 
-			slot = find_pid_slot(childpid);
+			slot = find_childno(childpid);
 			if (slot == PIDSLOT_NOT_FOUND) {
 				/* If we reaped it, it wouldn't show up, so check that. */
 				if (shm->last_reaped != childpid) {
 					outputerr("## Couldn't find pid slot for %d\n", childpid);
 					shm->exit_reason = EXIT_LOST_PID_SLOT;
-					dump_pid_slots();
+					dump_childnos();
 				}
 			} else {
 				debugf("Child %d exited after %ld operations.\n", childpid, shm->child_op_count[slot]);
