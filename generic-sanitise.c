@@ -195,7 +195,7 @@ static unsigned long handle_arg_randpage(void)
 	return (unsigned long) page_rand;
 }
 
-static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscallrecord *syscallrec, unsigned int argnum)
+static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	unsigned long num_entries;
 
@@ -203,19 +203,19 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_IOVECLEN)
-			syscallrec->a2 = num_entries;
+			rec->a2 = num_entries;
 		break;
 	case 2:	if (entry->arg3type == ARG_IOVECLEN)
-			syscallrec->a3 = num_entries;
+			rec->a3 = num_entries;
 		break;
 	case 3:	if (entry->arg4type == ARG_IOVECLEN)
-			syscallrec->a4 = num_entries;
+			rec->a4 = num_entries;
 		break;
 	case 4:	if (entry->arg5type == ARG_IOVECLEN)
-			syscallrec->a5 = num_entries;
+			rec->a5 = num_entries;
 		break;
 	case 5:	if (entry->arg6type == ARG_IOVECLEN)
-			syscallrec->a6 = num_entries;
+			rec->a6 = num_entries;
 		break;
 	}
 	return (unsigned long) alloc_iovec(num_entries);
@@ -223,30 +223,30 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 
 static unsigned long get_argval(int childno, unsigned int argnum)
 {
-	struct syscallrecord *syscallrec;
+	struct syscallrecord *rec;
 	unsigned long val = 0;
 
-	syscallrec = &shm->syscall[childno];
+	rec = &shm->syscall[childno];
 
 	switch (argnum) {
-	case 1:	val = syscallrec->a1;
+	case 1:	val = rec->a1;
 		break;
-	case 2:	val = syscallrec->a2;
+	case 2:	val = rec->a2;
 		break;
-	case 3:	val = syscallrec->a3;
+	case 3:	val = rec->a3;
 		break;
-	case 4:	val = syscallrec->a4;
+	case 4:	val = rec->a4;
 		break;
-	case 5:	val = syscallrec->a5;
+	case 5:	val = rec->a5;
 		break;
-	case 6:	val = syscallrec->a6;
+	case 6:	val = rec->a6;
 		break;
 	}
 	return val;
 }
 
 
-static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct syscallrecord *syscallrec, unsigned int argnum)
+static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	struct sockaddr *sockaddr = NULL;
 	socklen_t sockaddrlen = 0;
@@ -255,19 +255,19 @@ static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct sysc
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_SOCKADDRLEN)
-			syscallrec->a2 = sockaddrlen;
+			rec->a2 = sockaddrlen;
 		break;
 	case 2:	if (entry->arg3type == ARG_SOCKADDRLEN)
-			syscallrec->a3 = sockaddrlen;
+			rec->a3 = sockaddrlen;
 		break;
 	case 3:	if (entry->arg4type == ARG_SOCKADDRLEN)
-			syscallrec->a4 = sockaddrlen;
+			rec->a4 = sockaddrlen;
 		break;
 	case 4:	if (entry->arg5type == ARG_SOCKADDRLEN)
-			syscallrec->a5 = sockaddrlen;
+			rec->a5 = sockaddrlen;
 		break;
 	case 5:	if (entry->arg6type == ARG_SOCKADDRLEN)
-			syscallrec->a6 = sockaddrlen;
+			rec->a6 = sockaddrlen;
 		break;
 	case 6:
 		break;
@@ -330,13 +330,13 @@ static enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 
 static unsigned long fill_arg(int childno, unsigned int argnum)
 {
-	struct syscallrecord *syscallrec;
+	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	unsigned int call;
 	enum argtype argtype;
 
-	syscallrec = &shm->syscall[childno];
-	call = syscallrec->nr;
+	rec = &shm->syscall[childno];
+	call = rec->nr;
 	entry = syscalls[call].entry;
 
 	if (argnum > entry->num_args)
@@ -386,7 +386,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return (unsigned long) generate_pathname();
 
 	case ARG_IOVEC:
-		return handle_arg_iovec(entry, syscallrec, argnum);
+		return handle_arg_iovec(entry, rec, argnum);
 
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
@@ -395,7 +395,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return get_argval(childno, argnum);
 
 	case ARG_SOCKADDR:
-		return handle_arg_sockaddr(entry, syscallrec, argnum);
+		return handle_arg_sockaddr(entry, rec, argnum);
 
 	case ARG_MODE_T:
 		return handle_arg_mode_t();
@@ -406,26 +406,26 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 
 void generic_sanitise(int childno)
 {
-	struct syscallrecord *syscallrec;
+	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	unsigned int call;
 
-	syscallrec = &shm->syscall[childno];
-	call = syscallrec->nr;
+	rec = &shm->syscall[childno];
+	call = rec->nr;
 	entry = syscalls[call].entry;
 
 	if (entry->arg1type != 0)
-		syscallrec->a1 = fill_arg(childno, 1);
+		rec->a1 = fill_arg(childno, 1);
 	if (entry->arg2type != 0)
-		syscallrec->a2 = fill_arg(childno, 2);
+		rec->a2 = fill_arg(childno, 2);
 	if (entry->arg3type != 0)
-		syscallrec->a3 = fill_arg(childno, 3);
+		rec->a3 = fill_arg(childno, 3);
 	if (entry->arg4type != 0)
-		syscallrec->a4 = fill_arg(childno, 4);
+		rec->a4 = fill_arg(childno, 4);
 	if (entry->arg5type != 0)
-		syscallrec->a5 = fill_arg(childno, 5);
+		rec->a5 = fill_arg(childno, 5);
 	if (entry->arg6type != 0)
-		syscallrec->a6 = fill_arg(childno, 6);
+		rec->a6 = fill_arg(childno, 6);
 }
 
 void generic_free_arg(int childno)
