@@ -208,19 +208,19 @@ unsigned int check_if_fd(unsigned int child)
 
 	syscallrec = &shm->syscall[child];
 
-	/* shortcut, if it's out of range, it's not going to be valid. */
+	lock(&syscallrec->lock);
 	fd = syscallrec->a1;
+	callno = syscallrec->nr;
+	do32 = syscallrec->do32bit;
+	unlock(&syscallrec->lock);
+
+	/* shortcut, if it's out of range, it's not going to be valid. */
 	if (fd > 1024)
 		return FALSE;
 
 	highest = highest_logfile();
 	if (fd < highest)
 		return FALSE;
-
-	lock(&syscallrec->lock);
-	callno = syscallrec->nr;
-	do32 = syscallrec->do32bit;
-	unlock(&syscallrec->lock);
 
 	if (biarch == FALSE) {
 		if (syscalls[callno].entry->arg1type == ARG_FD)
