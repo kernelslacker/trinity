@@ -10,7 +10,7 @@ extern pid_t watchdog_pid;
 
 #define for_each_child(i)	for (i = 0; i < max_children; i++)
 
-#define PIDSLOT_NOT_FOUND -1
+#define CHILD_NOT_FOUND -1
 #define EMPTY_PIDSLOT -1
 int find_childno(pid_t mypid);
 bool pidmap_empty(void);

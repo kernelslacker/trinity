@@ -48,7 +48,7 @@ static void fork_children(void)
 
 		/* Find a space for it in the pid map */
 		childno = find_childno(EMPTY_PIDSLOT);
-		if (childno == PIDSLOT_NOT_FOUND) {
+		if (childno == CHILD_NOT_FOUND) {
 			outputerr("## Pid map was full!\n");
 			dump_childnos();
 			exit_main_fail();
@@ -103,7 +103,7 @@ void reap_child(pid_t childpid)
 	}
 
 	i = find_childno(childpid);
-	if (i == PIDSLOT_NOT_FOUND)
+	if (i == CHILD_NOT_FOUND)
 		goto out;
 
 	debugf("Removing pid %d from pidmap.\n", childpid);
@@ -160,7 +160,7 @@ static void handle_child(pid_t childpid, int childstatus)
 			int slot;
 
 			slot = find_childno(childpid);
-			if (slot == PIDSLOT_NOT_FOUND) {
+			if (slot == CHILD_NOT_FOUND) {
 				/* If we reaped it, it wouldn't show up, so check that. */
 				if (shm->last_reaped != childpid) {
 					outputerr("## Couldn't find pid slot for %d\n", childpid);
