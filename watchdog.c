@@ -305,7 +305,7 @@ static void check_children(void)
 
 		/* if we're way off, we're comparing garbage. Reset it. */
 		if (diff > 1000) {
-			output(0, "huge delta! pid slot %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
+			output(0, "huge delta! child %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
 			shm->tv[i].tv_sec = now;
 			continue;
 		}

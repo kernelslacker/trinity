@@ -157,10 +157,10 @@ static void handle_child(pid_t childpid, int childstatus)
 
 		if (WIFEXITED(childstatus)) {
 
-			int slot;
+			int childno;
 
-			slot = find_childno(childpid);
-			if (slot == CHILD_NOT_FOUND) {
+			childno = find_childno(childpid);
+			if (childno == CHILD_NOT_FOUND) {
 				/* If we reaped it, it wouldn't show up, so check that. */
 				if (shm->last_reaped != childpid) {
 					outputerr("## Couldn't find %d in list of pids.\n", childpid);
@@ -168,7 +168,8 @@ static void handle_child(pid_t childpid, int childstatus)
 					dump_childnos();
 				}
 			} else {
-				debugf("Child %d exited after %ld operations.\n", childpid, shm->child_op_count[slot]);
+				debugf("Child %d exited after %ld operations.\n",
+					childpid, shm->child_op_count[childno]);
 				reap_child(childpid);
 			}
 			break;
@@ -267,7 +268,7 @@ static const char *reasons[NUM_EXIT_REASONS] = {
 	"No more syscalls enabled.",
 	"Completed maximum number of operations.",
 	"No file descriptors open.",
-	"Lost track of a pid slot.",
+	"Lost track of a child.",
 	"shm corruption - Found a pid out of range.",
 	"ctrl-c",
 	"kernel became tainted.",

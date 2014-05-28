@@ -19,18 +19,18 @@ static void ctrlc_handler(__unused__ int sig)
 
 static void sighandler(int sig)
 {
-	int slot;
+	int childno;
 
 	sigwas = sig;
 
 	switch (sig) {
 	case SIGALRM:
-		slot = find_childno(getpid());
-		if (slot == CHILD_NOT_FOUND)
+		childno = find_childno(getpid());
+		if (childno == CHILD_NOT_FOUND)
 			_exit(EXIT_SUCCESS);	/* Hell knows what happened, just bail. */
 
 		/* Check if we're blocking because we're stuck on an fd. */
-		if (check_if_fd(slot) == TRUE) {
+		if (check_if_fd(childno) == TRUE) {
 
 			/* avoid doing it again from other threads. */
 			shm->fd_lifetime = 0;
