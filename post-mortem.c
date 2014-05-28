@@ -25,14 +25,14 @@ static void dump_syscall_rec(int childno, int fd)
 		/* haven't finished setting up, so don't dump. */
 		break;
 	case BEFORE:
-		output_syscall_prefix(childno);
+		output_syscall_prefix_to_fd(childno, fd, TRUE);
 		break;
 	case AFTER:
-		output_syscall_prefix(childno);
+		output_syscall_prefix_to_fd(childno, fd, TRUE);
 		output_syscall_postfix(childno);
 		break;
 	case GOING_AWAY:
-		output_syscall_prefix(childno);
+		output_syscall_prefix_to_fd(childno, fd, TRUE);
 		break;
 	}
 }
