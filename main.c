@@ -163,8 +163,8 @@ static void handle_child(pid_t childpid, int childstatus)
 			if (slot == CHILD_NOT_FOUND) {
 				/* If we reaped it, it wouldn't show up, so check that. */
 				if (shm->last_reaped != childpid) {
-					outputerr("## Couldn't find pid slot for %d\n", childpid);
-					shm->exit_reason = EXIT_LOST_PID_SLOT;
+					outputerr("## Couldn't find %d in list of pids.\n", childpid);
+					shm->exit_reason = EXIT_LOST_CHILD;
 					dump_childnos();
 				}
 			} else {
