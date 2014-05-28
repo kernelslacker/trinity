@@ -19,6 +19,7 @@
 #include "log.h"
 #include "params.h"	// quiet_level
 #include "pids.h"
+#include "post-mortem.h"
 #include "shm.h"
 #include "syscall.h"
 #include "tables.h"
@@ -384,20 +385,6 @@ static void check_all_locks(void)
 
 	for_each_pidslot(i)
 		check_lock(&shm->syscall[i].lock);
-}
-
-static void tainted_postmortem(int taint)
-{
-	shm->exit_reason = EXIT_KERNEL_TAINTED;
-
-	gettimeofday(&shm->taint_tv, NULL);
-
-	output(0, "kernel became tainted! (%d/%d) Last seed was %u\n",
-		taint, kernel_taint_initial, shm->seed);
-
-	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
-	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
-	closelog();
 }
 
 static void watchdog(void)
