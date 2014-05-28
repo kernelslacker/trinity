@@ -176,7 +176,7 @@ void init_child(int childno)
 
 	oom_score_adj(500);
 
-	/* Wait for parent to set our pidslot */
+	/* Wait for parent to set our childno */
 	while (shm->pids[childno] != getpid()) {
 		int ret = 0;
 
