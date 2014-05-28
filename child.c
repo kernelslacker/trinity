@@ -130,6 +130,8 @@ static void truncate_log(int childno)
 {
 	int fd;
 
+	shm->logdirty[childno] = FALSE;
+
 	if (logging == FALSE)
 		return;
 
