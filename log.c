@@ -456,7 +456,7 @@ void output_syscall_prefix(int childno)
 		output_syscall_prefix_to_fd(childno, stdout, monochrome);
 }
 
-static void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono)
+void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono)
 {
 	REDFD
 	fprintf(fd, "= %ld (%s)", (long) ret, strerror(errno_saved));
@@ -465,7 +465,7 @@ static void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE 
 	fflush(fd);
 }
 
-static void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mono)
+void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mono)
 {
 	GREENFD
 	if ((unsigned long)ret > 10000)

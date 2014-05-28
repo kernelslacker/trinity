@@ -29,7 +29,11 @@ static void dump_syscall_rec(int childno, int fd)
 		break;
 	case AFTER:
 		output_syscall_prefix_to_fd(childno, fd, TRUE);
-		output_syscall_postfix(childno);
+		err = IS_ERR(rec->retval);
+		if (err)
+			output_syscall_postfix_err(rec->retval, rec->errno_post, fd, TRUE);
+		else
+			output_syscall_postfix_success(rec->retval, fd, TRUE);
 		break;
 	case GOING_AWAY:
 		output_syscall_prefix_to_fd(childno, fd, TRUE);
