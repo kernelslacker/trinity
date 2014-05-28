@@ -119,6 +119,11 @@ void synclogs(void)
 	for_each_pidslot(i) {
 		int ret;
 
+		if (shm->logdirty[i] == FALSE)
+			continue;
+
+		shm->logdirty[i] = FALSE;
+
 		ret = fflush(shm->logfiles[i]);
 		if (ret == EOF) {
 			outputerr("## logfile flushing failed! %s\n", strerror(errno));
@@ -313,6 +318,7 @@ void output(unsigned char level, const char *fmt, ...)
 		slot = find_pid_slot(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", slot, pid);
 		prefix = child_prefix;
+		shm->logdirty[slot] = TRUE;
 	}
 
 	/* formatting output */

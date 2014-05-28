@@ -58,6 +58,7 @@ void create_shm_arrays(void)
 	shm->seeds = alloc_shared(max_children * sizeof(int));
 	shm->kill_count = alloc_shared(max_children * sizeof(unsigned char));
 	shm->logfiles = alloc_shared(max_children * sizeof(FILE *));
+	shm->logdirty = alloc_shared(max_children * sizeof(bool));
 	shm->scratch = alloc_shared(max_children * sizeof(unsigned long));
 }
 
