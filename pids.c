@@ -10,7 +10,7 @@
 
 pid_t initpid;
 
-int find_pid_slot(pid_t mypid)
+int find_childno(pid_t mypid)
 {
 	unsigned int i;
 
@@ -32,7 +32,7 @@ bool pidmap_empty(void)
 	return TRUE;
 }
 
-void dump_pid_slots(void)
+void dump_childnos(void)
 {
 	unsigned int i, j = 0;
 	char string[512], *sptr = string;

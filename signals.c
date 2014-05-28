@@ -25,7 +25,7 @@ static void sighandler(int sig)
 
 	switch (sig) {
 	case SIGALRM:
-		slot = find_pid_slot(getpid());
+		slot = find_childno(getpid());
 		if (slot == PIDSLOT_NOT_FOUND)
 			_exit(EXIT_SUCCESS);	/* Hell knows what happened, just bail. */
 
