@@ -16,13 +16,13 @@ static int open_perf_fds(void)
 	unsigned int i = 0;
 
 	while (i < MAX_PERF_FDS) {
-		struct syscallrecord* sc;
+		struct syscallrecord *rec;
 		int fd;
 
-		sc = &shm->syscall[0];
-		sanitise_perf_event_open(0, sc);
+		rec = &shm->syscall[0];
+		sanitise_perf_event_open(0, rec);
 
-		fd = syscall(__NR_perf_event_open, sc->a1, sc->a2, sc->a3, sc->a4, sc->a5);
+		fd = syscall(__NR_perf_event_open, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5);
 		if (fd != -1) {
 			shm->perf_fds[i] = fd;
 			output(2, "fd[%d] = perf\n", shm->perf_fds[i]);
