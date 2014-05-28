@@ -40,7 +40,7 @@ static int check_shm_sanity(void)
 	if (shm->running_childs == 0)
 		return SHM_OK;
 
-	for_each_pidslot(i) {
+	for_each_child(i) {
 		pid_t pid;
 
 		pid = shm->pids[i];
@@ -72,7 +72,7 @@ static unsigned int reap_dead_kids(void)
 	unsigned int alive = 0;
 	unsigned int reaped = 0;
 
-	for_each_pidslot(i) {
+	for_each_child(i) {
 		pid_t pid;
 		int ret;
 
@@ -123,7 +123,7 @@ static void kill_all_kids(void)
 			return;
 
 		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
-		for_each_pidslot(i) {
+		for_each_child(i) {
 			pid_t pid;
 
 			pid = shm->pids[i];
@@ -144,7 +144,7 @@ static void kill_all_kids(void)
 	}
 
 	/* Just to be sure, clear out the pid slots. */
-	for_each_pidslot(i) {
+	for_each_child(i) {
 		shm->pids[i] = EMPTY_PIDSLOT;
 	}
 }
@@ -278,7 +278,7 @@ static void check_children(void)
 	time_t old, now;
 	unsigned int i;
 
-	for_each_pidslot(i) {
+	for_each_child(i) {
 		pid_t pid;
 
 		pid = shm->pids[i];
@@ -369,7 +369,7 @@ static void check_all_locks(void)
 
 	check_lock(&shm->reaper_lock);
 
-	for_each_pidslot(i)
+	for_each_child(i)
 		check_lock(&shm->syscall[i].lock);
 }
 
@@ -416,7 +416,7 @@ static void watchdog(void)
 		if (shm->total_syscalls_done % 1000 == 0)
 			synclogs();
 
-		for_each_pidslot(i) {
+		for_each_child(i) {
 			if (shm->child_op_count[i] > hiscore)
 				hiscore = shm->child_op_count[i];
 		}
