@@ -73,7 +73,7 @@ static FILE * find_logfile_handle(void)
 		return mainlogfile;
 
 	i = find_childno(pid);
-	if (i != PIDSLOT_NOT_FOUND)
+	if (i != CHILD_NOT_FOUND)
 		return shm->logfiles[i];
 	else {
 		/* try one more time. FIXME: This is awful. */
@@ -81,7 +81,7 @@ static FILE * find_logfile_handle(void)
 
 		sleep(1);
 		i = find_childno(pid);
-		if (i != PIDSLOT_NOT_FOUND)
+		if (i != CHILD_NOT_FOUND)
 			return shm->logfiles[i];
 
 		outputerr("## Couldn't find logfile for pid %d\n", pid);

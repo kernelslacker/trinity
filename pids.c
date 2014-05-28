@@ -18,7 +18,7 @@ int find_childno(pid_t mypid)
 		if (shm->pids[i] == mypid)
 			return i;
 	}
-	return PIDSLOT_NOT_FOUND;
+	return CHILD_NOT_FOUND;
 }
 
 bool pidmap_empty(void)
