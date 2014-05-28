@@ -313,12 +313,12 @@ void output(unsigned char level, const char *fmt, ...)
 		prefix = main_prefix;
 
 	if (prefix == NULL) {
-		unsigned int slot;
+		unsigned int childno;
 
-		slot = find_childno(pid);
-		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", slot, pid);
+		childno = find_childno(pid);
+		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", childno, pid);
 		prefix = child_prefix;
-		shm->logdirty[slot] = TRUE;
+		shm->logdirty[childno] = TRUE;
 	}
 
 	/* formatting output */
