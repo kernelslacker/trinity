@@ -233,10 +233,6 @@ unsigned int check_if_fd(unsigned int child)
 		if (syscalls_32bit[callno].entry->arg1type == ARG_FD)
 			return TRUE;
 	} else {
-		if (callno > max_nr_64bit_syscalls) {
-			output(0, "Weird, child:%d callno:%d (64bit max:%d)\n", child, callno, max_nr_64bit_syscalls);
-			return FALSE;
-		}
 		if (syscalls_64bit[callno].entry->arg1type == ARG_FD)
 			return TRUE;
 	}
