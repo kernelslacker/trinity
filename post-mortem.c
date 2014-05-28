@@ -1,5 +1,9 @@
-#include <syslog.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <syslog.h>
 #include "log.h"
 #include "pids.h"
 #include "shm.h"
@@ -7,7 +11,7 @@
 #include "post-mortem.h"
 
 #if 0
-static void dump_syscall_rec(int childno)
+static void dump_syscall_rec(int childno, int fd)
 {
 	struct syscallrecord *rec;
 
@@ -35,11 +39,20 @@ static void dump_syscall_rec(int childno)
 
 static void dump_syscall_records(void)
 {
+	int fd;
 	unsigned int i;
 
-	for_each_child(i) {
-		dump_syscall_rec(i);
+	fd = open("trinity-post-mortem.log", O_WRONLY);
+	if (fd < 0) {
+		outputerr("Failed to write post mortem log (%s)\n", strerrror(errno));
+		return;
 	}
+
+	for_each_child(i) {
+		dump_syscall_rec(i, fd);
+	}
+
+	close(fd);
 }
 #endif
 
