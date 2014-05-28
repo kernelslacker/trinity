@@ -31,7 +31,7 @@ void deactivate_syscall_uniarch(unsigned int calln)
 
 void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_name)
 {
-	struct syscallentry *entry = syscalls[calln].entry;
+	struct syscallentry *entry;
 
 	if (calln == -1) {
 		outputerr("No idea what syscall (%s) is.\n", arg);
@@ -39,6 +39,8 @@ void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_na
 	}
 
 	validate_specific_syscall(syscalls, calln);
+
+	entry = syscalls[calln].entry;
 
 	if (state == TRUE) {
 		entry->flags |= ACTIVE;
