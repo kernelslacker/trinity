@@ -398,7 +398,10 @@ void outputstd(const char *fmt, ...)
 	va_end(args);
 }
 
-static void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
+/*
+ * Used from output_syscall_prefix, and also from postmortem dumper
+ */
+void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 {
 	struct syscallentry *entry;
 	struct syscallrecord *rec;

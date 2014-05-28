@@ -36,6 +36,7 @@ void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
 void output_syscall_prefix(int childno);
 void output_syscall_postfix(int childno);
+void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono);
 
 void open_logfiles(void);
 void close_logfiles(void);
