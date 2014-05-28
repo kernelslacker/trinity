@@ -35,7 +35,7 @@ void open_logfiles(void)
 		exit(EXIT_FAILURE);
 	}
 
-	for_each_pidslot(i) {
+	for_each_child(i) {
 		sprintf(logfilename, "trinity-child%u.log", i);
 		unlink(logfilename);
 		shm->logfiles[i] = fopen(logfilename, "a");
@@ -52,7 +52,7 @@ void close_logfiles(void)
 {
 	unsigned int i;
 
-	for_each_pidslot(i)
+	for_each_child(i)
 		if (shm->logfiles[i] != NULL)
 			fclose(shm->logfiles[i]);
 }
@@ -87,7 +87,7 @@ static FILE * find_logfile_handle(void)
 		outputerr("## Couldn't find logfile for pid %d\n", pid);
 		dump_pid_slots();
 		outputerr("## Logfiles for pids: ");
-		for_each_pidslot(j)
+		for_each_child(j)
 			outputerr("%p ", shm->logfiles[j]);
 		outputerr("\n");
 	}
@@ -116,7 +116,7 @@ void synclogs(void)
 	if (logging == FALSE)
 		return;
 
-	for_each_pidslot(i) {
+	for_each_child(i) {
 		int ret;
 
 		if (shm->logdirty[i] == FALSE)
@@ -268,7 +268,7 @@ static FILE *robust_find_logfile_handle(void)
 
 			outputerr("## child logfile handle was null logging to main!\n");
 			(void)fflush(stdout);
-			for_each_pidslot(j)
+			for_each_child(j)
 				shm->logfiles[j] = mainlogfile;
 			sleep(5);
 			handle = find_logfile_handle();

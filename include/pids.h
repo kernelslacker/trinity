@@ -8,7 +8,7 @@ extern pid_t mainpid;
 extern pid_t initpid;
 extern pid_t watchdog_pid;
 
-#define for_each_pidslot(i)	for (i = 0; i < max_children; i++)
+#define for_each_child(i)	for (i = 0; i < max_children; i++)
 
 #define PIDSLOT_NOT_FOUND -1
 #define EMPTY_PIDSLOT -1

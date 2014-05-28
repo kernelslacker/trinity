@@ -37,7 +37,7 @@ static void dump_syscall_records(void)
 {
 	unsigned int i;
 
-	for_each_pidslot(i) {
+	for_each_child(i) {
 		dump_syscall_rec(i);
 	}
 }
