@@ -200,19 +200,19 @@ static int check_main_alive(void)
 /* if the first arg was an fd, find out which one it was. */
 unsigned int check_if_fd(unsigned int child)
 {
-	struct syscallrecord *syscallrec;
+	struct syscallrecord *rec;
 	unsigned int fd;
 	unsigned int highest;
 	unsigned callno;
 	bool do32;
 
-	syscallrec = &shm->syscall[child];
+	rec = &shm->syscall[child];
 
-	lock(&syscallrec->lock);
-	fd = syscallrec->a1;
-	callno = syscallrec->nr;
-	do32 = syscallrec->do32bit;
-	unlock(&syscallrec->lock);
+	lock(&rec->lock);
+	fd = rec->a1;
+	callno = rec->nr;
+	do32 = rec->do32bit;
+	unlock(&rec->lock);
 
 	/* shortcut, if it's out of range, it's not going to be valid. */
 	if (fd > 1024)
@@ -246,7 +246,7 @@ unsigned int check_if_fd(unsigned int child)
 
 static void stuck_syscall_info(int childno)
 {
-	struct syscallrecord *syscallrec;
+	struct syscallrecord *rec;
 	unsigned int callno;
 	char fdstr[20];
 	pid_t pid;
@@ -254,19 +254,19 @@ static void stuck_syscall_info(int childno)
 	if (debug == FALSE)
 		return;
 
-	syscallrec = &shm->syscall[childno];
-	callno = syscallrec->nr;
+	rec = &shm->syscall[childno];
+	callno = rec->nr;
 	pid = shm->pids[childno];
 
 	memset(fdstr, 0, sizeof(fdstr));
 
 	if (check_if_fd(childno) == TRUE)
-		sprintf(fdstr, "(fd = %d)", (unsigned int) syscallrec->a1);
+		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
 
 	output(0, "child %d (pid %d) Stuck in syscall %d:%s%s%s.\n",
 		childno, pid, callno,
-		print_syscall_name(callno, syscallrec->do32bit),
-		syscallrec->do32bit ? " (32bit)" : "",
+		print_syscall_name(callno, rec->do32bit),
+		rec->do32bit ? " (32bit)" : "",
 		fdstr);
 }
 
