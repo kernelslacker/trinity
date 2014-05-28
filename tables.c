@@ -559,3 +559,19 @@ int munge_tables(void)
 
 	return TRUE;
 }
+
+/*
+ * return a ptr to a syscall table entry, allowing calling code to be
+ * ignorant about things like biarch.
+ */
+struct syscallentry * get_syscall_entry(unsigned int callno, bool do32)
+{
+	if (biarch == FALSE)
+		return syscalls[callno].entry;
+
+	/* biarch case */
+	if (do32 == TRUE)
+		return syscalls_32bit[callno].entry;
+	else
+		return syscalls_64bit[callno].entry;
+}
