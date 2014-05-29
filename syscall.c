@@ -193,10 +193,18 @@ bool mkcall(int childno)
 	 * those as IGNORE_ENOSYS and keep calling them.
 	 */
 	if ((ret == -1UL) && (rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
+		lock(&shm->syscalltable_lock);
+
+		/* check another thread didn't already do this. */
+		if (!(entry->flags & ACTIVE))
+			goto already_done;
+
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
 			entry->name, call + SYSCALL_OFFSET);
 
 		deactivate_syscall(call, rec->do32bit);
+already_done:
+		unlock(&shm->syscalltable_lock);
 	}
 
 	if (entry->post)
