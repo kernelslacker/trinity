@@ -368,6 +368,7 @@ static void check_all_locks(void)
 	unsigned int i;
 
 	check_lock(&shm->reaper_lock);
+	check_lock(&shm->syscalltable_lock);
 
 	for_each_child(i)
 		check_lock(&shm->syscall[i].lock);
