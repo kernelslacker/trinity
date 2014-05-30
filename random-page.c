@@ -7,7 +7,7 @@
 #include "random.h"
 #include "sanitise.h"	// get_address
 #include "maps.h"
-#include "log.h"	// For BUG
+#include "log.h"
 
 char *page_rand;
 
