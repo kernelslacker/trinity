@@ -83,7 +83,7 @@ static unsigned long do_syscall(int childno)
 
 	shm->total_syscalls_done++;
 	shm->child_op_count[childno]++;
-	(void)gettimeofday(&shm->tv[childno], NULL);
+	(void)gettimeofday(&rec->tv, NULL);
 
 	needalarm = syscalls[nr].entry->flags & NEED_ALARM;
 	if (needalarm)

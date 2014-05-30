@@ -55,7 +55,6 @@ struct shm_s {
 
 	/* various per-child data */
 	unsigned char *kill_count;
-	struct timeval *tv;
 	struct timeval taint_tv;
 
 	/* log file related stuff */

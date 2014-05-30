@@ -272,13 +272,15 @@ static void check_children(void)
 
 	for_each_child(i) {
 		pid_t pid;
+		struct timeval *tvptr;
 
 		pid = shm->pids[i];
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		old = shm->tv[i].tv_sec;
+		tvptr = &shm->syscall[i].tv;
+		old = tvptr->tv_sec;
 
 		if (old == 0)
 			continue;
@@ -289,7 +291,7 @@ static void check_children(void)
 		/* if we wrapped, just reset it, we'll pick it up next time around. */
 		if (old > (now + 3)) {
 			output(1, "child %u wrapped! old=%lu now=%lu\n", i, old, now);
-			shm->tv[i].tv_sec = now;
+			tvptr->tv_sec = now;
 			continue;
 		}
 
@@ -298,7 +300,7 @@ static void check_children(void)
 		/* if we're way off, we're comparing garbage. Reset it. */
 		if (diff > 1000) {
 			output(0, "huge delta! child %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
-			shm->tv[i].tv_sec = now;
+			tvptr->tv_sec = now;
 			continue;
 		}
 
