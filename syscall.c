@@ -220,6 +220,7 @@ already_done:
 	previous->a5 = rec->a5;
 	previous->a6 = rec->a6;
 	previous->do32bit = rec->do32bit;
+	previous->state = DONE;
 
 	check_uid();
 

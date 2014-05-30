@@ -24,6 +24,7 @@ static void dump_syscall_rec(int childno, int fd, struct syscallrecord *rec)
 		output_syscall_prefix_to_fd(childno, fd, TRUE);
 		break;
 	case AFTER:
+	case DONE:
 		output_syscall_prefix_to_fd(childno, fd, TRUE);
 		err = IS_ERR(rec->retval);
 		if (err)
