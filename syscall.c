@@ -196,7 +196,7 @@ bool mkcall(int childno)
 		lock(&shm->syscalltable_lock);
 
 		/* check another thread didn't already do this. */
-		if (!(entry->flags & ACTIVE))
+		if (entry->active_number == 0)
 			goto already_done;
 
 		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
