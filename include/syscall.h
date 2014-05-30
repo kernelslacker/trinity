@@ -11,6 +11,7 @@ enum syscallstate {
 	BEFORE,		/* about to do syscall */
 	GOING_AWAY,	/* used when we don't expect to come back (execve for eg) */
 	AFTER,		/* returned from doing syscall. */
+	DONE,		/* moved to previous */
 };
 
 struct syscallrecord {
