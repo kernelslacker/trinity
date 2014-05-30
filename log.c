@@ -237,14 +237,8 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 		break;
 	}
 
-	if ((reg & PAGE_MASK) == (unsigned long) page_zeros)
-		fprintf(fd, "[page_zeros]");
 	if ((reg & PAGE_MASK) == (unsigned long) page_rand)
 		fprintf(fd, "[page_rand]");
-	if ((reg & PAGE_MASK) == (unsigned long) page_0xff)
-		fprintf(fd, "[page_0xff]");
-	if ((reg & PAGE_MASK) == (unsigned long) page_allocs)
-		fprintf(fd, "[page_allocs]");
 
 	if (entry->decode != NULL) {
 		char *str;

@@ -112,7 +112,9 @@ int main(int argc, char* argv[])
 	if (do_specific_proto == TRUE)
 		find_specific_proto(specific_proto_optarg);
 
-	init_shared_pages();
+	setup_shared_mappings();
+
+	init_page_rand();
 
 	parse_devices();
 

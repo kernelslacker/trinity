@@ -99,21 +99,6 @@ static void use_fpu(void)
 
 int this_child = 0;
 
-static void setup_page_maps(void)
-{
-	unsigned long *page;
-	unsigned int i;
-
-	page = (void *) page_maps;
-
-	for (i = 0; i < page_size / sizeof(unsigned long); i++) {
-		struct map *map;
-
-		map = get_map();
-		page[i] = (unsigned long) map->ptr;
-	}
-}
-
 static void oom_score_adj(int adj)
 {
 	FILE *fp;
@@ -158,7 +143,7 @@ void init_child(int childno)
 	shm->mappings[childno] = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&shm->mappings[childno]->list);
 
-	setup_page_maps();
+	generate_random_page(page_rand);
 
 	shm->syscall[childno].state = UNKNOWN;
 

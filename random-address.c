@@ -25,24 +25,16 @@ void * get_writable_address(unsigned long size)
 	if (getpid() == shm->mainpid)
 		return page_rand;
 
-	i = rand() % 7;
+	i = rand() % 3;
 
 	if (size > page_size)
-		i = rand_range(5, 6);
+		i = rand_range(2, 3);
 
 	switch (i) {
-	case 0:	addr = page_zeros;
-		break;
-	case 1:	addr = page_0xff;
-		break;
-	case 2:	addr = page_rand;
-		break;
-	case 3: addr = page_allocs;
-		break;
-	case 4:	addr = page_maps;
+	case 0:	addr = page_rand;
 		break;
 
-	case 5: map = get_map();
+	case 1: map = get_map();
 		addr = map->ptr;
 		mprotect(addr, map->size, PROT_READ|PROT_WRITE);
 
@@ -52,7 +44,7 @@ void * get_writable_address(unsigned long size)
 //		}
 		break;
 
-	case 6: addr = zmalloc(size);	// FIXME: We leak this.
+	case 2: addr = zmalloc(size);	// FIXME: We leak this.
 //		if (rand_bool()) {
 //			/* place object at end of page. */
 //			addr += page_size;

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "arch.h"	// page_size
 #include "random.h"
@@ -48,21 +49,34 @@ void generate_random_page(char *page)
 	unsigned int i;
 	unsigned int p = 0;
 
-	switch (rand() % 8) {
+	switch (rand() % 11) {
+
+	case 0:
+		memset(page, 0, page_size);
+		return;
+
+	case 1:
+		memset(page, 0xff, page_size);
+		return;
+
+	case 2:
+		memset(page, 0, page_size);
+		return;
+
 	/* return a page of complete trash */
-	case 0:	/* bytes */
+	case 3:	/* bytes */
 		for (i = 0; i < page_size; )
 			page[i++] = (unsigned char)rand();
 		return;
 
-	case 1:	/* words */
+	case 4:	/* words */
 		for (i = 0; i < (page_size / 2); ) {
 			page[i++] = 0;
 			page[i++] = (unsigned char)rand();
 		}
 		return;
 
-	case 2:	/* ints */
+	case 5:	/* ints */
 		for (i = 0; i < (page_size / 4); ) {
 			page[i++] = 0;
 			page[i++] = 0;
@@ -72,21 +86,21 @@ void generate_random_page(char *page)
 		return;
 
 	/* return a page that looks kinda like a struct */
-	case 3:	fabricate_onepage_struct(page);
+	case 6:	fabricate_onepage_struct(page);
 		return;
 
 	/* return a page of unicode nonsense. */
-	case 4:	gen_unicode_page(page);
+	case 7:	gen_unicode_page(page);
 		return;
 
 	/* page of 0's and 1's. */
-	case 5:
+	case 8:
 		for (i = 0; i < page_size; )
 			page[i++] = (unsigned char)rand_bool();
 		return;
 
 	/* page full of format strings. */
-	case 6:
+	case 9:
 		for (i = 0; i < page_size; ) {
 			page[i++] = '%';
 			switch (rand_bool()) {
@@ -101,7 +115,7 @@ void generate_random_page(char *page)
 		return;
 
 	/* ascii representation of a random number */
-	case 7:
+	case 10:
 		switch (rand() % 3) {
 		case 0:
 			switch (rand() % 3) {

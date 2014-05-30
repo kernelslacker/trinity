@@ -186,12 +186,6 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 
 static unsigned long handle_arg_randpage(void)
 {
-	/* Because we pass this to something that might overwrite it,
-	 * and we want page_allocs to remain unmodified, we copy it to page rand instead.
-	 */
-	if (rand_bool())
-		memcpy(page_rand, page_allocs, page_size);
-
 	return (unsigned long) page_rand;
 }
 

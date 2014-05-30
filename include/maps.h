@@ -2,13 +2,9 @@
 
 #include "list.h"
 
-extern char *page_zeros;
-extern char *page_0xff;
 extern char *page_rand;
-extern unsigned long *page_allocs;
-extern unsigned long *page_maps;
 
-void init_shared_pages(void);
+void init_page_rand(void);
 
 #define MAP_GLOBAL 1
 #define MAP_LOCAL 2

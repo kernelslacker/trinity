@@ -34,7 +34,7 @@ const char * generate_pathname(void)
 		goto out;
 	}
 
-	generate_random_page(newpath);
+	generate_random_page(newpath);	// FIXME: we only want a subset (ascii basically)
 
 	/* sometimes, just complete junk. */
 	if (rand_bool())
