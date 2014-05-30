@@ -63,7 +63,7 @@ void generate_random_page(char *page)
 		return;
 
 	case 2:
-		memset(page, 0, page_size);
+		memset(page, rand() % 0xff, page_size);
 		return;
 
 	/* return a page of complete trash */
