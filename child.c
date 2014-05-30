@@ -233,9 +233,16 @@ static void periodic_work(void)
 	if (periodic_counter < 10)
 		return;
 
-	check_parent_pid();
+	/* Every ten iterations. */
+	if (!(periodic_counter % 10))
+		check_parent_pid();
 
-	periodic_counter = 0;
+	/* Every hundred iterations. */
+	if (!(periodic_counter % 100))
+		generate_random_page(page_rand);
+
+	if (periodic_counter == 100)
+		periodic_counter = 0;
 }
 
 struct child_funcs {
