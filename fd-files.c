@@ -318,8 +318,11 @@ static int open_files(void)
 
 	generate_filelist();
 
-	if (files_in_index == 0)	/* Something bad happened. Crappy -V maybe? */
-		return FALSE;		// FIXME: We should log something here probably.
+	if (files_in_index == 0) {
+		/* Something bad happened. Crappy -V maybe? */
+		shm->exit_reason = EXIT_NO_FILES;
+		return FALSE;
+	}
 
 	nr_to_open = min(files_in_index, NR_FILE_FDS);
 

@@ -143,15 +143,10 @@ int main(int argc, char* argv[])
 		set_seed(0);
 
 		if (setup_fds() == FALSE) {
-			shm->exit_reason = EXIT_FD_INIT_FAILURE;	// FIXME: Later, push this down to multiple EXIT's.
-			exit_main_fail();
-		}
+			if (shm->exit_reason != STILL_RUNNING)
+				shm->exit_reason = EXIT_FD_INIT_FAILURE;	// FIXME: Later, push this down to multiple EXIT's.
 
-		if (no_files == FALSE) {
-			if (files_in_index == 0) {
-				shm->exit_reason = EXIT_NO_FILES;
-				exit_main_fail();
-			}
+			exit_main_fail();
 		}
 
 		if (dropprivs == TRUE)	//FIXME: Push down into child processes later.
