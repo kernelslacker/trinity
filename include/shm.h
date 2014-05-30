@@ -21,13 +21,18 @@ void create_shm_arrays(void);
 void init_shm(void);
 
 struct shm_s {
+	/* Various statistics. TODO: Move to separate struct */
 	unsigned long total_syscalls_done;
 	unsigned long successes;
 	unsigned long failures;
+	unsigned int running_childs;
 
+	/* Counts to tell if we're making progress or not. */
 	unsigned long previous_op_count;	/* combined total of all children */
 	unsigned long *child_op_count;		/* these are per-child so we can see if
 						   a child is making progress or not. */
+
+	/* rng related state */
 	unsigned int seed;
 	unsigned int *seeds;
 
@@ -35,7 +40,7 @@ struct shm_s {
 	 * All indices shifted by +1. Empty index equals to 0.
 	 *
 	 * 'active_syscalls' is only used on uniarch. The other two
-	 * are only used on biarch. FIXME: Make this compile-time somehow? */
+	 * are only used on biarch. */
 	int active_syscalls32[MAX_NR_SYSCALL];
 	int active_syscalls64[MAX_NR_SYSCALL];
 	int active_syscalls[MAX_NR_SYSCALL];
@@ -43,48 +48,49 @@ struct shm_s {
 	unsigned int nr_active_32bit_syscalls;
 	unsigned int nr_active_64bit_syscalls;
 
+	/* pids */
 	pid_t mainpid;
 	pid_t *pids;
-
 	pid_t last_reaped;
-	bool spawn_no_more;
-	unsigned char *kill_count;
 
-	unsigned int running_childs;
+	/* various per-child data */
+	unsigned char *kill_count;
 	struct timeval *tv;
 	struct timeval taint_tv;
 
+	/* log file related stuff */
 	FILE **logfiles;
 	bool *logdirty;
 
+	/* file descriptors, created in main, inherited in children */
 	int pipe_fds[MAX_PIPE_FDS*2];
-	int file_fds[NR_FILE_FDS];		/* All children inherit these */
+	int file_fds[NR_FILE_FDS];
 	int perf_fds[MAX_PERF_FDS];
 	int epoll_fds[MAX_EPOLL_FDS];
 	int eventfd_fds[MAX_EPOLL_FDS];
-
 	struct socketinfo sockets[NR_SOCKET_FDS];
+	int current_fd;
+	unsigned int fd_lifetime;
 
+	/* The actual syscall records each child uses. */
 	struct syscallrecord *syscall;
 	struct syscallrecord *previous;
 
+	/* used by sanitize routines as tmp storage. */
 	unsigned long *scratch;
-
-	int current_fd;
-	unsigned int fd_lifetime;
 
 	/* per-child mmaps */
 	struct map **mappings;
 	unsigned int *num_mappings;
 
-	/* various flags. */
-	bool dont_make_it_fail;
-	enum exit_reasons exit_reason;
-
 	/* locks */
 	lock_t reaper_lock;
 	lock_t syscalltable_lock;
 
+	/* various flags. */
+	enum exit_reasons exit_reason;
+	bool dont_make_it_fail;
+	bool spawn_no_more;
 	bool ready;
 };
 extern struct shm_s *shm;
