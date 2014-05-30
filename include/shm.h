@@ -1,8 +1,5 @@
 #pragma once
 
-#include <sys/time.h>
-#include <sys/types.h>
-
 #include <stdio.h>
 
 #include "epoll.h"
