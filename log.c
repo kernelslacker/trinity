@@ -405,7 +405,6 @@ void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 {
 	struct syscallentry *entry;
 	struct syscallrecord *rec;
-	pid_t pid;
 	unsigned int i;
 	unsigned int syscallnr;
 
@@ -413,9 +412,7 @@ void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 	syscallnr = rec->nr;
 	entry = syscalls[syscallnr].entry;
 
-	pid = getpid();
-
-	fprintf(fd, "[child%u:%u] [%lu] %s", childno, pid,
+	fprintf(fd, "[child%u:%u] [%lu] %s", childno, shm->pids[childno],
 			shm->child_op_count[childno],
 			(rec->do32bit == TRUE) ? "[32BIT] " : "");
 
