@@ -64,6 +64,7 @@ static unsigned long do_syscall(int childno)
 	int nr, call;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
+	bool needalarm;
 
 	rec = &shm->syscall[childno];
 	nr = rec->nr;
@@ -84,7 +85,8 @@ static unsigned long do_syscall(int childno)
 	shm->child_op_count[childno]++;
 	(void)gettimeofday(&shm->tv[childno], NULL);
 
-	if (syscalls[nr].entry->flags & NEED_ALARM)
+	needalarm = syscalls[nr].entry->flags & NEED_ALARM;
+	if (needalarm)
 		(void)alarm(1);
 
 	errno = 0;
@@ -96,7 +98,7 @@ static unsigned long do_syscall(int childno)
 
 	rec->errno_post = errno;
 
-	if (syscalls[nr].entry->flags & NEED_ALARM)
+	if (needalarm)
 		(void)alarm(0);
 
 	return ret;
