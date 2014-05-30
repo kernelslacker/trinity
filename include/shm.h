@@ -82,6 +82,7 @@ struct shm_s {
 	/* locks */
 	lock_t reaper_lock;
 	lock_t syscalltable_lock;
+	lock_t buglock;
 
 	/* various flags. */
 	enum exit_reasons exit_reason;
