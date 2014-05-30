@@ -199,8 +199,10 @@ bool mkcall(int childno)
 		if (entry->active_number == 0)
 			goto already_done;
 
-		output(1, "%s (%d) returned ENOSYS, marking as inactive.\n",
-			entry->name, call + SYSCALL_OFFSET);
+		output(1, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
+			entry->name,
+			call + SYSCALL_OFFSET,
+			rec->do32bit == TRUE ? ":[32BIT]" : "");
 
 		deactivate_syscall(call, rec->do32bit);
 already_done:
