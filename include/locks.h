@@ -15,3 +15,5 @@ typedef struct lock_struct lock_t;
 
 void lock(lock_t *_lock);
 void unlock(lock_t *_lock);
+
+void check_all_locks(void);
