@@ -62,7 +62,6 @@ static unsigned long do_syscall(int childno)
 {
 	struct syscallrecord *rec;
 	int nr, call;
-	unsigned long a1, a2, a3, a4, a5, a6;
 	unsigned long ret = 0;
 	bool needalarm;
 
@@ -73,13 +72,6 @@ static unsigned long do_syscall(int childno)
 	 * At non-zero, and have other ABIs below.
 	 */
 	call = nr + SYSCALL_OFFSET;
-
-	a1 = rec->a1;
-	a2 = rec->a2;
-	a3 = rec->a3;
-	a4 = rec->a4;
-	a5 = rec->a5;
-	a6 = rec->a6;
 
 	shm->total_syscalls_done++;
 	shm->child_op_count[childno]++;
@@ -92,9 +84,9 @@ static unsigned long do_syscall(int childno)
 	errno = 0;
 
 	if (rec->do32bit == FALSE)
-		ret = syscall(call, a1, a2, a3, a4, a5, a6);
+		ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 	else
-		ret = syscall32(call, a1, a2, a3, a4, a5, a6);
+		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 
 	rec->errno_post = errno;
 
