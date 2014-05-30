@@ -49,7 +49,9 @@ static int check_shm_sanity(void)
 			continue;
 
 		if (pid_is_valid(pid) == FALSE) {
-			shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
+			if (shm->exit_reason == STILL_RUNNING)
+				shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
+
 			return SHM_CORRUPT;
 		}
 	}
@@ -137,11 +139,8 @@ static void kill_all_kids(void)
 		/* wait a second to give kids a chance to exit. */
 		sleep(1);
 
-		if (check_shm_sanity()) {
-			// FIXME: If we get here, we over-wrote the real exit_reason.
-			// We should have saved that, and handled appropriately.
+		if (check_shm_sanity())
 			return;
-		}
 	}
 
 	/* Just to be sure, clear out the pid slots. */
