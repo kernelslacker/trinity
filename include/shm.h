@@ -65,7 +65,7 @@ struct shm_s {
 
 	struct socketinfo sockets[NR_SOCKET_FDS];
 
-	struct syscallrecord *syscall;	/* FIXME: protect all accesses with syscall_lock */
+	struct syscallrecord *syscall;
 	struct syscallrecord *previous;
 
 	unsigned long *scratch;
