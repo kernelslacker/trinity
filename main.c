@@ -109,7 +109,7 @@ void reap_child(pid_t childpid)
 	debugf("Removing pid %d from pidmap.\n", childpid);
 	shm->pids[i] = EMPTY_PIDSLOT;
 	shm->running_childs--;
-	shm->tv[i].tv_sec = 0;
+	shm->syscall[i].tv.tv_sec = 0;
 	shm->last_reaped = childpid;
 
 out:

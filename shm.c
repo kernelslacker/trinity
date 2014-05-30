@@ -47,8 +47,6 @@ void create_shm_arrays(void)
 
 	shm->pids = alloc_shared(max_children * sizeof(pid_t));
 
-	shm->tv = alloc_shared(max_children * sizeof(struct timeval));
-
 	shm->syscall = alloc_shared(max_children * sizeof(struct syscallrecord));
 	shm->previous = alloc_shared(max_children * sizeof(struct syscallrecord));
 
