@@ -104,7 +104,7 @@ static void post_mmap(int childno, struct syscallrecord *rec)
 		dirty_mapping(new);
 }
 
-static char * decode_mmap(int argnum, int childno)
+static char * decode_mmap(int childno, int argnum)
 {
 	char *buf;
 

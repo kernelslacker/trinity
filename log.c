@@ -249,7 +249,7 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	if (entry->decode != NULL) {
 		char *str;
 
-		str = entry->decode(argnum, childno);
+		str = entry->decode(childno, argnum);
 		if (str != NULL) {
 			fprintf(fd, "%s", str);
 			free(str);
