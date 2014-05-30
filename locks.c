@@ -1,7 +1,11 @@
+#include <errno.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include "locks.h"
+#include "log.h"
+#include "pids.h"
+#include "utils.h"
 
 void lock(lock_t *_lock)
 {
@@ -21,4 +25,50 @@ void unlock(lock_t *_lock)
 	_lock->contention = 0;
 	_lock->owner = 0;
 	_lock->lock = UNLOCKED;
+}
+
+/*
+ * Check that the processes holding locks are still alive.
+ * And if they are, ensure they haven't held them for an
+ * excessive length of time.
+ */
+#define STEAL_THRESHOLD 100000
+
+static void check_lock(lock_t *_lock)
+{
+	pid_t pid;
+
+	if (_lock->lock != LOCKED)
+		return;
+
+	/* First the easy case. If it's held by a dead pid, release it. */
+	pid = _lock->owner;
+	if (pid_alive(pid) == -1) {
+		if (errno != ESRCH)
+			return;
+
+		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
+		unlock(_lock);
+		return;
+	}
+
+	/* If a pid has had a lock a long time, something is up. */
+	if (_lock->contention > STEAL_THRESHOLD) {
+		debugf("pid %d has held lock for too long. Releasing, and killing.\n");
+		kill_pid(pid);
+		unlock(_lock);
+		return;
+	}
+	return;
+}
+
+void check_all_locks(void)
+{
+	unsigned int i;
+
+	check_lock(&shm->reaper_lock);
+	check_lock(&shm->syscalltable_lock);
+
+	for_each_child(i)
+		check_lock(&shm->syscall[i].lock);
 }

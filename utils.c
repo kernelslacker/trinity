@@ -1,9 +1,11 @@
+#include <errno.h>
 #include <sys/mman.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "log.h"
 #include "utils.h"
-
 
 /*
  * Use this allocator if you have an object a child writes to that you want
@@ -55,4 +57,13 @@ void sizeunit(unsigned long size, char *buf)
 	}
 
 	sprintf(buf, "%ldGB", ((size / 1024) / 1024) / 1024);
+}
+
+void kill_pid(pid_t pid)
+{
+	int ret;
+
+	ret = kill(pid, SIGKILL);
+	if (ret != 0)
+		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
