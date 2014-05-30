@@ -4,8 +4,6 @@
 
 extern char *page_rand;
 
-void init_page_rand(void);
-
 #define MAP_GLOBAL 1
 #define MAP_LOCAL 2
 
