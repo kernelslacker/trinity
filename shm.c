@@ -77,8 +77,7 @@ void init_shm(void)
 	/* Set seed in parent thread */
 	set_seed(0);
 
-	for (i = 0; i < max_children; i++) {
-
+	for_each_child(i) {
 		shm->pids[i] = EMPTY_PIDSLOT;
 
 		shm->previous[i].nr = shm->syscall[i].nr = -1;
