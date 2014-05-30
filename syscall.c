@@ -88,7 +88,12 @@ static unsigned long do_syscall(int childno)
 	else
 		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 
+	/* We returned! */
+	lock(&rec->lock);
 	rec->errno_post = errno;
+	rec->retval = ret;
+	rec->state = AFTER;
+	unlock(&rec->lock);
 
 	if (needalarm)
 		(void)alarm(0);
@@ -165,12 +170,6 @@ bool mkcall(int childno)
 
 	rec->state = BEFORE;
 	ret = do_syscall(childno);
-
-	/* We returned! */
-	lock(&rec->lock);
-	rec->state = AFTER;
-	rec->retval = ret;
-	unlock(&rec->lock);
 
 	if (IS_ERR(ret))
 		shm->failures++;
