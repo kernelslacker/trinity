@@ -52,7 +52,7 @@ void generate_random_page(char *page)
 	unsigned int i;
 	unsigned int p = 0;
 
-	switch (rand() % 11) {
+	switch (rand() % 9) {
 
 	case 0:
 		memset(page, 0, page_size);
@@ -66,44 +66,26 @@ void generate_random_page(char *page)
 		memset(page, rand() % 0xff, page_size);
 		return;
 
-	/* return a page of complete trash */
-	case 3:	/* bytes */
+	case 3:
 		for (i = 0; i < page_size; )
 			page[i++] = (unsigned char)rand();
 		return;
 
-	case 4:	/* words */
-		for (i = 0; i < (page_size / 2); ) {
-			page[i++] = 0;
-			page[i++] = (unsigned char)rand();
-		}
-		return;
-
-	case 5:	/* ints */
-		for (i = 0; i < (page_size / 4); ) {
-			page[i++] = 0;
-			page[i++] = 0;
-			page[i++] = 0;
-			page[i++] = (unsigned char)rand();
-		}
-		return;
-
-	/* return a page that looks kinda like a struct */
-	case 6:	fabricate_onepage_struct(page);
-		return;
-
-	/* return a page of unicode nonsense. */
-	case 7:	gen_unicode_page(page);
-		return;
-
-	/* page of 0's and 1's. */
-	case 8:
+	case 4:
 		for (i = 0; i < page_size; )
 			page[i++] = (unsigned char)rand_bool();
 		return;
 
+	/* return a page that looks kinda like a struct */
+	case 5:	fabricate_onepage_struct(page);
+		return;
+
+	/* return a page of unicode nonsense. */
+	case 6:	gen_unicode_page(page);
+		return;
+
 	/* page full of format strings. */
-	case 9:
+	case 7:
 		for (i = 0; i < page_size; ) {
 			page[i++] = '%';
 			switch (rand_bool()) {
@@ -118,7 +100,7 @@ void generate_random_page(char *page)
 		return;
 
 	/* ascii representation of a random number */
-	case 10:
+	case 8:
 		switch (rand() % 3) {
 		case 0:
 			switch (rand() % 3) {
