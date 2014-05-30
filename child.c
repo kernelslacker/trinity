@@ -263,7 +263,7 @@ static const struct child_funcs child_ops[] = {
 };
 
 // FIXME: when we have different child ops, we're going to need to redo the progress detector.
-static unsigned int handle_sigreturn(int childno)
+static bool handle_sigreturn(int childno)
 {
 	static unsigned int count = 0;
 	static unsigned int last = -1;
@@ -280,18 +280,18 @@ static unsigned int handle_sigreturn(int childno)
 	}
 	if (count == 10) {
 		output(1, "no progress for 10 tries, exiting child.\n");
-		return 0;
+		return FALSE;
 	}
 
 	if (shm->kill_count[childno] > 0) {
 		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
-		return 0;
+		return FALSE;
 	}
 
 	if (sigwas != SIGALRM)
 		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
 
-	return 1;
+	return TRUE;
 }
 
 void child_process(int childno)
@@ -301,7 +301,7 @@ void child_process(int childno)
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
-		if (handle_sigreturn(childno) == 0)
+		if (handle_sigreturn(childno) == FALSE)
 			return;	// Exit the child, things are getting too weird.
 	}
 

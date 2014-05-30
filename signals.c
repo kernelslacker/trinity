@@ -41,8 +41,6 @@ static void sighandler(int sig)
 		/* Re-arm the alarm. */
 		alarm(1);
 
-		/* TODO: If we get back here after the 10s alarm, we should exit instead of longjmp */
-
 		/* Jump back, maybe we'll make progress. */
 		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
