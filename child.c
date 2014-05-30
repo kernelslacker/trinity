@@ -198,12 +198,17 @@ static void check_parent_pid(void)
 
 	pid = getpid();
 
-	//FIXME: Add locking so only one child does this output.
+	lock(&shm->buglock);
+
+	if (shm->exit_reason == EXIT_REPARENT_PROBLEM)
+		goto out;
+
 	output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED! "
 		"parent pid:%d. Watchdog pid:%d\n",
 		pid, shm->mainpid, watchdog_pid);
 	output(0, BUGTXT "Last syscalls:\n");
 
+	//TODO: replace all this with calls to postmortem()
 	for_each_child(i) {
 		// Skip over 'boring' entries.
 		if ((shm->pids[i] == EMPTY_PIDSLOT) &&
@@ -217,8 +222,10 @@ static void check_parent_pid(void)
 			shm->child_op_count[i]);
 	}
 	shm->exit_reason = EXIT_REPARENT_PROBLEM;
+
+out:
+	unlock(&shm->buglock);
 	exit(EXIT_FAILURE);
-	//TODO: Emergency logging.
 }
 
 /*
