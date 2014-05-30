@@ -192,13 +192,6 @@ static void check_parent_pid(void)
 {
 	pid_t pid;
 	unsigned int i;
-	static unsigned int parent_check_time = 10;
-
-	parent_check_time--;
-	if (parent_check_time != 0)
-		return;
-
-	parent_check_time = 10;
 
 	if (getppid() == shm->mainpid)
 		return;
@@ -226,6 +219,23 @@ static void check_parent_pid(void)
 	shm->exit_reason = EXIT_REPARENT_PROBLEM;
 	exit(EXIT_FAILURE);
 	//TODO: Emergency logging.
+}
+
+/*
+ * Here we call various functions that perform checks/changes that
+ * we don't want to happen on every iteration of the child loop.
+ */
+static void periodic_work(void)
+{
+	static unsigned int periodic_counter = 0;
+
+	periodic_counter++;
+	if (periodic_counter < 10)
+		return;
+
+	check_parent_pid();
+
+	periodic_counter = 0;
 }
 
 struct child_funcs {
@@ -284,7 +294,7 @@ void child_process(int childno)
 	while (shm->exit_reason == STILL_RUNNING) {
 		unsigned int i;
 
-		check_parent_pid();
+		periodic_work();
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
 		if (shm->seed != shm->seeds[childno])
