@@ -14,3 +14,5 @@ u64 rand64(void);
 unsigned int rand_range(unsigned int min, unsigned int max);
 
 void generate_random_page(char *page);
+
+void init_page_rand(void);
