@@ -337,26 +337,6 @@ static int open_files(void)
 	return TRUE;
 }
 
-void close_files(void)
-{
-	unsigned int i;
-
-	shm->current_fd = 0;
-	shm->fd_lifetime = 0;
-
-	// FIXME: Does this need locking? At the least, check for NULL fd's
-	for (i = 0; i < nr_file_fds; i++) {
-		int fd;
-
-		fd = shm->file_fds[i];
-		shm->file_fds[i] = 0;
-		if (fd != 0)
-			close(fd);
-	}
-
-	nr_file_fds = 0;
-}
-
 const char * get_filename(void)
 {
 	if (files_in_index == 0)	/* This can happen if we run with -n. Should we do something else ? */
