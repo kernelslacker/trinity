@@ -11,12 +11,8 @@
 #include "post-mortem.h"
 
 #if 0
-static void dump_syscall_rec(int childno, int fd)
+static void dump_syscall_rec(int childno, int fd, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
-
-	rec = &shm->syscall[childno];
-
 	switch (rec->state) {
 	case UNKNOWN:
 		/* new child, so nothing to dump. */
@@ -53,7 +49,8 @@ static void dump_syscall_records(void)
 	}
 
 	for_each_child(i) {
-		dump_syscall_rec(i, fd);
+		dump_syscall_rec(i, fd, &shm->previous[childno]);
+		dump_syscall_rec(i, fd, &shm->syscall[childno]);
 	}
 
 	close(fd);
