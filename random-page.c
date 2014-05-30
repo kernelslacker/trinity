@@ -1,12 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
 
 #include "arch.h"	// page_size
 #include "random.h"
 #include "sanitise.h"	// get_address
 #include "maps.h"
 #include "log.h"	// For BUG
+
+char *page_rand;
 
 static void fabricate_onepage_struct(char *page)
 {
@@ -155,4 +158,15 @@ void generate_random_page(char *page)
 		page_rand[p] = 0;
 		break;
 	}
+}
+
+void init_page_rand(void)
+{
+	page_rand = (char *) memalign(page_size, page_size * 2);
+	if (!page_rand)
+		exit(EXIT_FAILURE);
+
+	output(2, "page_rand @ %p\n", page_rand);
+
+	generate_random_page(page_rand);
 }
