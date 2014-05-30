@@ -85,7 +85,7 @@ static unsigned int reap_dead_kids(void)
 		/* If it disappeared, reap it. */
 		if (ret == -1) {
 			if (errno == ESRCH) {
-				output(0, "pid %d has disappeared (oom-killed maybe?). Reaping.\n", pid);
+				output(0, "pid %d has disappeared. Reaping.\n", pid);
 				reap_child(pid);
 				reaped++;
 			} else {
