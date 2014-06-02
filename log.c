@@ -407,7 +407,7 @@ void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 	entry = get_syscall_entry(syscallnr, rec->do32bit);
 
 	fprintf(fd, "[child%u:%u] [%lu] %s", childno, shm->pids[childno],
-			rec->opcount,
+			rec->op_nr,
 			(rec->do32bit == TRUE) ? "[32BIT] " : "");
 
 	fprintf(fd, "%s", entry->name);
