@@ -410,11 +410,7 @@ void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 			shm->child_op_count[childno],
 			(rec->do32bit == TRUE) ? "[32BIT] " : "");
 
-	//FIXME: Max = 0 outside child
-	if (syscallnr > max_nr_syscalls)
-		fprintf(fd, "%u", syscallnr);
-	else
-		fprintf(fd, "%s", entry->name);
+	fprintf(fd, "%s", entry->name);
 
 	CRESETFD
 	fprintf(fd, "(");
