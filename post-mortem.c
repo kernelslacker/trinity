@@ -12,6 +12,7 @@
 #include "post-mortem.h"
 #include "utils.h"
 
+#if 0
 static void dump_syscall_rec(int childno, FILE *fd, struct syscallrecord *rec)
 {
 	int err;
@@ -59,6 +60,7 @@ static void dump_syscall_records(void)
 
 	fclose(fd);
 }
+#endif
 
 void tainted_postmortem(int taint)
 {
@@ -73,5 +75,5 @@ void tainted_postmortem(int taint)
 	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
 	closelog();
 
-	dump_syscall_records();
+//	dump_syscall_records();
 }
