@@ -1,6 +1,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <syslog.h>
@@ -9,10 +10,12 @@
 #include "shm.h"
 #include "taint.h"
 #include "post-mortem.h"
+#include "utils.h"
 
-#if 0
-static void dump_syscall_rec(int childno, int fd, struct syscallrecord *rec)
+static void dump_syscall_rec(int childno, FILE *fd, struct syscallrecord *rec)
 {
+	int err;
+
 	switch (rec->state) {
 	case UNKNOWN:
 		/* new child, so nothing to dump. */
@@ -40,23 +43,22 @@ static void dump_syscall_rec(int childno, int fd, struct syscallrecord *rec)
 
 static void dump_syscall_records(void)
 {
-	int fd;
+	FILE *fd;
 	unsigned int i;
 
-	fd = open("trinity-post-mortem.log", O_WRONLY);
-	if (fd < 0) {
-		outputerr("Failed to write post mortem log (%s)\n", strerrror(errno));
+	fd = fopen("trinity-post-mortem.log", "w");
+	if (!fd) {
+		outputerr("Failed to write post mortem log (%s)\n", strerror(errno));
 		return;
 	}
 
 	for_each_child(i) {
-		dump_syscall_rec(i, fd, &shm->previous[childno]);
-		dump_syscall_rec(i, fd, &shm->syscall[childno]);
+		dump_syscall_rec(i, fd, &shm->previous[i]);
+		dump_syscall_rec(i, fd, &shm->syscall[i]);
 	}
 
-	close(fd);
+	fclose(fd);
 }
-#endif
 
 void tainted_postmortem(int taint)
 {
@@ -70,4 +72,6 @@ void tainted_postmortem(int taint)
 	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
 	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
 	closelog();
+
+	dump_syscall_records();
 }
