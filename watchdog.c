@@ -365,8 +365,8 @@ static void watchdog(void)
 			synclogs();
 
 		for_each_child(i) {
-			if (shm->child_op_count[i] > hiscore)
-				hiscore = shm->child_op_count[i];
+			if (shm->syscall[i].opcount > hiscore)
+				hiscore = shm->syscall[i].opcount;
 		}
 
 		if (shm->total_syscalls_done > 1) {
