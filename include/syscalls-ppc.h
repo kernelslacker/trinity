@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/powerpc/include/asm/systbl.h as of 2.6.31rc2 */
+/* Syscalls from arch/powerpc/include/asm/systbl.h as of 3.15-rc8 */
 
 #include "sanitise.h"
 
@@ -367,4 +367,5 @@ struct syscalltable syscalls_ppc[] = {
 	{ .entry = &syscall_kcmp },
 	{ .entry = &syscall_sched_setattr },
 	{ .entry = &syscall_sched_getattr },
+	{ .entry = &syscall_renameat2 },
 };
