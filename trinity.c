@@ -23,8 +23,6 @@
 #include "trinity.h"
 #include "uid.h"
 
-#include "post-mortem.h"
-
 char *progname = NULL;
 
 unsigned int page_size;
@@ -179,8 +177,6 @@ cleanup_fds:
 		close_logfiles();
 
 out:
-
-	tainted_postmortem(0);
 
 	exit(ret);
 }
