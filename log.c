@@ -404,12 +404,13 @@ void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 
 	rec = &shm->syscall[childno];
 	syscallnr = rec->nr;
-	entry = syscalls[syscallnr].entry;
+	entry = get_syscall_entry(syscallnr, rec->do32bit);		//FIXME: Only works for 1:1 callnr:offsets
 
 	fprintf(fd, "[child%u:%u] [%lu] %s", childno, shm->pids[childno],
 			shm->child_op_count[childno],
 			(rec->do32bit == TRUE) ? "[32BIT] " : "");
 
+	//FIXME: Max = 0 outside child
 	if (syscallnr > max_nr_syscalls)
 		fprintf(fd, "%u", syscallnr);
 	else
