@@ -169,7 +169,7 @@ static void handle_child(pid_t childpid, int childstatus)
 				}
 			} else {
 				debugf("Child %d exited after %ld operations.\n",
-					childpid, shm->child_op_count[childno]);
+					childpid, shm->syscall[childno].opcount);
 				reap_child(childpid);
 			}
 			break;

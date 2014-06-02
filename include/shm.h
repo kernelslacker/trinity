@@ -26,8 +26,6 @@ struct shm_s {
 
 	/* Counts to tell if we're making progress or not. */
 	unsigned long previous_op_count;	/* combined total of all children */
-	unsigned long *child_op_count;		/* these are per-child so we can see if
-						   a child is making progress or not. */
 
 	/* rng related state */
 	unsigned int seed;
