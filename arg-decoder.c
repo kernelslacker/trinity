@@ -166,19 +166,18 @@ void output_syscall_prefix(int childno)
 
 	render_syscall_prefix(childno, buffer);
 
-	/* Exit if should not continue at all. */
-	if (logging == TRUE) {
-		log_handle = robust_find_logfile_handle();
-
-		/* TODO: strip out ascii control symbols in buffer for files
-		 * refactor the stripping code in output() */
-		if (log_handle != NULL)
-			flushbuffer(buffer, log_handle);
-	}
-
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL)
 		flushbuffer(buffer, stdout);
+
+	/* Exit if should not continue at all. */
+	if (logging == TRUE) {
+		log_handle = robust_find_logfile_handle();
+		if (log_handle != NULL) {
+			strip_ansi(buffer);
+			flushbuffer(buffer, log_handle);
+		}
+	}
 }
 
 static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
@@ -210,12 +209,14 @@ void output_syscall_postfix(int childno)
 
 	render_syscall_postfix(rec, buffer);
 
-	if (logging == TRUE) {
-		log_handle = robust_find_logfile_handle();
-		if (log_handle != NULL)
-			flushbuffer(buffer, log_handle);
-	}
-
 	if (quiet_level == MAX_LOGLEVEL)
 		flushbuffer(buffer, stdout);
+
+	if (logging == TRUE) {
+		log_handle = robust_find_logfile_handle();
+		if (log_handle != NULL) {
+			strip_ansi(buffer);
+			flushbuffer(buffer, log_handle);
+		}
+	}
 }

@@ -167,6 +167,33 @@ FILE *robust_find_logfile_handle(void)
 	return handle;
 }
 
+void strip_ansi(char *ansibuf)
+{
+	char *from = ansibuf, *to = ansibuf;
+	unsigned int len, i;
+
+	/* If we've specified monochrome, we won't have any ANSI codes
+	 * in the buffer to be stripped out. */
+	if (monochrome == TRUE)
+		return;
+
+	/* copy buffer, sans ANSI codes */
+	len = strlen(ansibuf);
+
+	for (i = 0; (i < len) && (i + 2 < BUFSIZE); i++) {
+		*to = from[i];
+		if (from[i] == '') {
+			if (from[i + 2] == '1')
+				i += 6;	// ANSI_COLOUR
+			else
+				i += 3;	// ANSI_RESET
+		} else {
+			to++;
+		}
+	}
+	*to = 0;
+}
+
 /*
  * level defines whether it gets displayed to the screen with printf.
  * (it always logs).
@@ -237,31 +264,9 @@ void output(unsigned char level, const char *fmt, ...)
 	if (!handle)
 		return;
 
-	/* If we've specified monochrome, we can just dump the buffer into
-	 * the logfile as is, because there shouldn't be any ANSI codes
-	 * in the buffer to be stripped out. */
-	if (monochrome == FALSE) {
-		char monobuf[BUFSIZE];
-		unsigned int len, i, j;
+	strip_ansi(outputbuf);
 
-		/* copy buffer, sans ANSI codes */
-		len = strlen(outputbuf);
-		for (i = 0, j = 0; (i < len) && (i + 2 < BUFSIZE) && (j < BUFSIZE); i++) {
-			if (outputbuf[i] == '') {
-				if (outputbuf[i + 2] == '1')
-					i += 6;	// ANSI_COLOUR
-				else
-					i += 3;	// ANSI_RESET
-			} else {
-				monobuf[j] = outputbuf[i];
-				j++;
-			}
-		}
-		monobuf[j] = '\0';
-		fprintf(handle, "%s %s", prefix, monobuf);
-	} else {
-		fprintf(handle, "%s %s", prefix, outputbuf);
-	}
+	fprintf(handle, "%s %s", prefix, outputbuf);
 
 	(void)fflush(handle);
 }

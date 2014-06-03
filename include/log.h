@@ -20,6 +20,9 @@ extern char ANSI_RESET[];
 FILE *robust_find_logfile_handle(void);
 unsigned int highest_logfile(void);
 void synclogs(void);
+
+void strip_ansi(char *ansibuf);
+
 void output(unsigned char level, const char *fmt, ...);
 void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
