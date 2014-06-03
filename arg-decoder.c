@@ -168,7 +168,6 @@ void output_syscall_prefix(int childno)
 
 	/* Exit if should not continue at all. */
 	if (logging == TRUE) {
-		/* Find the log file handle */
 		log_handle = robust_find_logfile_handle();
 
 		/* TODO: strip out ascii control symbols in buffer for files
@@ -212,7 +211,6 @@ void output_syscall_postfix(int childno)
 	render_syscall_postfix(rec, buffer);
 
 	if (logging == TRUE) {
-		/* Find the log file handle */
 		log_handle = robust_find_logfile_handle();
 		if (log_handle != NULL)
 			flushbuffer(buffer, log_handle);
