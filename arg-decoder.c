@@ -136,7 +136,7 @@ static void render_syscall_prefix(int childno, char *buffer)
 
 	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", childno, shm->pids[childno],
 			rec->op_nr,
-			(rec->do32bit == TRUE) ? "[32BIT] " : "");
+			rec->do32bit == TRUE ? "[32BIT] " : "");
 
 	sptr += sprintf(sptr, "%s%s(", entry->name, ANSI_RESET);
 
