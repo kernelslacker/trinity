@@ -33,6 +33,8 @@ struct syscallrecord {
 	bool do32bit;
 	lock_t lock;
 	enum syscallstate state;
+	char prebuffer[1024];	/* TODO: Maybe shrink ? */
+	char postbuffer[128];
 };
 
 enum argtype {

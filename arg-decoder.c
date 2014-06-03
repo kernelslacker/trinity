@@ -12,11 +12,12 @@
 #include "tables.h"
 #include "utils.h"
 
-static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd, bool mono, int childno)
+static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry *entry, int childno)
 {
-	enum argtype type = 0;
+	char *sptr = buffer;
 	const char *name = NULL;
 	unsigned long reg = 0;
+	enum argtype type = 0;
 
 	switch (argnum) {
 	case 1:	type = entry->arg1type;
@@ -46,47 +47,47 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	}
 
 	if (argnum != 1) {
-		CRESETFD
-		fprintf(fd, ", ");
+		CRESET
+		sptr += sprintf(sptr, ", ");
 	}
 
-	fprintf(fd, "%s=", name);
+	sptr += sprintf(sptr, "%s=", name);
 
 	switch (type) {
 	case ARG_PATHNAME:
-		fprintf(fd, "\"%s\"", (char *) reg);
+		sptr += sprintf(sptr, "\"%s\"", (char *) reg);
 		break;
 	case ARG_PID:
 	case ARG_FD:
-		CRESETFD
-		fprintf(fd, "%ld", (long) reg);
+		CRESET
+		sptr += sprintf(sptr, "%ld", (long) reg);
 		break;
 	case ARG_MODE_T:
-		CRESETFD
-		fprintf(fd, "%o", (mode_t) reg);
+		CRESET
+		sptr += sprintf(sptr, "%o", (mode_t) reg);
 		break;
 
 	case ARG_ADDRESS:
 	case ARG_NON_NULL_ADDRESS:
 	case ARG_IOVEC:
 	case ARG_SOCKADDR:
-		fprintf(fd, "0x%lx", reg);
+		sptr += sprintf(sptr, "0x%lx", reg);
 		break;
 
 	case ARG_MMAP:
 		/* Although generic sanitise has set this to a map struct,
 		 * common_set_mmap_ptr_len() will subsequently set it to the ->ptr
 		 * in the per syscall ->sanitise routine. */
-		fprintf(fd, "%p", (void *) reg);
+		sptr += sprintf(sptr, "%p", (void *) reg);
 		break;
 
 	case ARG_RANDPAGE:
-		fprintf(fd, "0x%lx [page_rand]", reg);
+		sptr += sprintf(sptr, "0x%lx [page_rand]", reg);
 		break;
 
 	case ARG_OP:
 	case ARG_LIST:
-		fprintf(fd, "0x%lx", reg);
+		sptr += sprintf(sptr, "0x%lx", reg);
 		break;
 
 	case ARG_UNDEFINED:
@@ -98,36 +99,39 @@ static void output_arg(unsigned int argnum, struct syscallentry *entry, FILE *fd
 	case ARG_SOCKADDRLEN:
 		if (((long) reg < -16384) || ((long) reg > 16384)) {
 			/* Print everything outside -16384 and 16384 as hex. */
-			fprintf(fd, "0x%lx", reg);
+			sptr += sprintf(sptr, "0x%lx", reg);
 		} else {
 			/* Print everything else as signed decimal. */
-			fprintf(fd, "%ld", (long) reg);
+			sptr += sprintf(sptr, "%ld", (long) reg);
 		}
-		CRESETFD
+		CRESET
 		break;
 	}
 
 	if ((reg & PAGE_MASK) == (unsigned long) page_rand)
-		fprintf(fd, "[page_rand]");
+		sptr += sprintf(sptr, "[page_rand]");
 
 	if (entry->decode != NULL) {
 		char *str;
 
 		str = entry->decode(childno, argnum);
 		if (str != NULL) {
-			fprintf(fd, "%s", str);
+			sptr += sprintf(sptr, "%s", str);
 			free(str);
 		}
 	}
+
+	return sptr;
 }
 
 /*
  * Used from output_syscall_prefix, and also from postmortem dumper
  */
-void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
+static void render_syscall_prefix(int childno, char *buffer)
 {
 	struct syscallentry *entry;
 	struct syscallrecord *rec;
+	char *sptr = buffer;
 	unsigned int i;
 	unsigned int syscallnr;
 
@@ -135,90 +139,110 @@ void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono)
 	syscallnr = rec->nr;
 	entry = get_syscall_entry(syscallnr, rec->do32bit);
 
-	fprintf(fd, "[child%u:%u] [%lu] %s", childno, shm->pids[childno],
+	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", childno, shm->pids[childno],
 			rec->op_nr,
 			(rec->do32bit == TRUE) ? "[32BIT] " : "");
 
-	fprintf(fd, "%s", entry->name);
+	sptr += sprintf(sptr, "%s", entry->name);
 
-	CRESETFD
-	fprintf(fd, "(");
+	CRESET
+	sptr += sprintf(sptr, "(");
 
 	for (i = 1; i < entry->num_args + 1; i++)
-		output_arg(i, entry, fd, mono, childno);
+		sptr = render_arg(sptr, i, entry, childno);
 
-	CRESETFD
-	fprintf(fd, ") ");
+	CRESET
+	sptr += sprintf(sptr, ") ");
+}
+
+static void flushbuffer(char *buffer, FILE *fd)
+{
+	fprintf(fd, "%s", buffer);
 	fflush(fd);
 }
 
 /* This function is always called from a fuzzing child. */
 void output_syscall_prefix(int childno)
 {
+	struct syscallrecord *rec;
+	char *buffer;
 	FILE *log_handle;
 
+	rec = &shm->syscall[childno];
+	buffer = rec->prebuffer;
+
+	memset(buffer, 0, sizeof(rec->prebuffer));	// TODO: optimize to only strip ending
+
+	render_syscall_prefix(childno, buffer);
+
 	/* Exit if should not continue at all. */
-	if (logging == FALSE && quiet_level < MAX_LOGLEVEL)
-		return;
+	if (logging == TRUE) {
+		/* Find the log file handle */
+		log_handle = robust_find_logfile_handle();
 
-	/* Find the log file handle */
-	log_handle = robust_find_logfile_handle();
-
-	/* do not output any ascii control symbols to files */
-	if ((logging == TRUE) && (log_handle != NULL))
-		output_syscall_prefix_to_fd(childno, log_handle, TRUE);
+		/* TODO: strip out ascii control symbols in buffer for files
+		 * refactor the stripping code in output() */
+		if (log_handle != NULL)
+			flushbuffer(buffer, log_handle);
+	}
 
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL)
-		output_syscall_prefix_to_fd(childno, stdout, monochrome);
+		flushbuffer(buffer, stdout);
 }
 
-void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono)
+static void output_syscall_postfix_err(char *buffer, unsigned long ret, int errno_saved)
 {
-	REDFD
-	fprintf(fd, "= %ld (%s)", (long) ret, strerror(errno_saved));
-	CRESETFD
-	fprintf(fd, "\n");
-	fflush(fd);
+	char *sptr = buffer;
+
+	RED
+	sptr += sprintf(sptr, "= %ld (%s)", (long) ret, strerror(errno_saved));
+	CRESET
+	sptr += sprintf(sptr, "\n");
 }
 
-void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mono)
+static void output_syscall_postfix_success(char *buffer, unsigned long ret)
 {
-	GREENFD
+	char *sptr = buffer;
+
+	GREEN
 	if ((unsigned long)ret > 10000)
-		fprintf(fd, "= 0x%lx", ret);
+		sptr += sprintf(sptr, "= 0x%lx", ret);
 	else
-		fprintf(fd, "= %ld", (long) ret);
-	CRESETFD
-	fprintf(fd, "\n");
-	fflush(fd);
+		sptr += sprintf(sptr, "= %ld", (long) ret);
+	CRESET
+	sptr += sprintf(sptr, "\n");
+}
+
+static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
+{
+	if (IS_ERR(rec->retval))
+		output_syscall_postfix_err(buffer, rec->retval, rec->errno_post);
+	else
+		output_syscall_postfix_success(buffer, rec->retval);
 }
 
 void output_syscall_postfix(int childno)
 {
 	struct syscallrecord *rec;
 	FILE *log_handle;
-	bool err;
+	char *buffer;
 
 	rec = &shm->syscall[childno];
-	err = IS_ERR(rec->retval);
 
-	/* Exit if should not continue at all. */
-	if (logging == FALSE && quiet_level < MAX_LOGLEVEL)
-		return;
+	buffer = rec->postbuffer;
 
-	/* Find the log file handle */
-	log_handle = robust_find_logfile_handle();
+	memset(buffer, 0, sizeof(rec->postbuffer));	// TODO: optimize to only strip ending post render.
 
-	if (err) {
-		if ((logging == TRUE) && (log_handle != NULL))
-			output_syscall_postfix_err(rec->retval, rec->errno_post, log_handle, TRUE);
-		if (quiet_level == MAX_LOGLEVEL)
-			output_syscall_postfix_err(rec->retval, rec->errno_post, stdout, monochrome);
-	} else {
-		if ((logging == TRUE) && (log_handle != NULL))
-			output_syscall_postfix_success(rec->retval, log_handle, TRUE);
-		if (quiet_level == MAX_LOGLEVEL)
-			output_syscall_postfix_success(rec->retval, stdout, monochrome);
+	render_syscall_postfix(rec, buffer);
+
+	if (logging == TRUE) {
+		/* Find the log file handle */
+		log_handle = robust_find_logfile_handle();
+		if (log_handle != NULL)
+			flushbuffer(buffer, log_handle);
 	}
+
+	if (quiet_level == MAX_LOGLEVEL)
+		flushbuffer(buffer, stdout);
 }
