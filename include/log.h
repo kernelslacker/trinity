@@ -6,14 +6,14 @@
 #include "shm.h"
 #include "types.h"
 
-#define ANSI_RED	"[1;31m"
-#define ANSI_GREEN	"[1;32m"
-#define ANSI_YELLOW	"[1;33m"
-#define ANSI_BLUE	"[1;34m"
-#define ANSI_MAGENTA	"[1;35m"
-#define ANSI_CYAN	"[1;36m"
-#define ANSI_WHITE	"[1;37m"
-#define ANSI_RESET	"[0m"
+extern char ANSI_RED[];
+extern char ANSI_GREEN[];
+extern char ANSI_YELLOW[];
+extern char ANSI_BLUE[];
+extern char ANSI_MAGENTA[];
+extern char ANSI_CYAN[];
+extern char ANSI_WHITE[];
+extern char ANSI_RESET[];
 
 #define RED if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RED);
 #define GREEN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_GREEN);
@@ -42,13 +42,13 @@ void debugf(const char *fmt, ...);
 #define __stringify(x...)       __stringify_1(x)
 
 #ifndef GITVERSION
-#define BUGTXT ANSI_RED "BUG!: " ANSI_RESET
+#define BUGTXT "BUG!: "
 #else
-#define BUGTXT ANSI_RED "BUG!: " ANSI_RESET GITVERSION
+#define BUGTXT "BUG!: " GITVERSION
 #endif
 
 #define BUG(bugtxt)	{ \
-	printf("[%d] %s:%s:%d %s", getpid(), __FILE__, __func__, __LINE__, bugtxt); \
+	printf("[%d] %s:%s:%d %s%s%s", getpid(), __FILE__, __func__, __LINE__, ANSI_RED, bugtxt, ANSI_RESET); \
 	while(1) { \
 		if (shm->exit_reason == EXIT_SIGINT) \
 			exit(EXIT_FAILURE);	\
