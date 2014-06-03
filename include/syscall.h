@@ -5,6 +5,9 @@
 #include "locks.h"
 #include "types.h"
 
+#define PREBUFFER_LEN	1024
+#define POSTBUFFER_LEN	128
+
 #define MAX_NR_SYSCALL 1024
 
 enum syscallstate {
@@ -33,8 +36,8 @@ struct syscallrecord {
 	bool do32bit;
 	lock_t lock;
 	enum syscallstate state;
-	char prebuffer[1024];	/* TODO: Maybe shrink ? */
-	char postbuffer[128];
+	char prebuffer[PREBUFFER_LEN];
+	char postbuffer[POSTBUFFER_LEN];
 };
 
 enum argtype {

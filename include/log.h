@@ -21,7 +21,7 @@ FILE *robust_find_logfile_handle(void);
 unsigned int highest_logfile(void);
 void synclogs(void);
 
-void strip_ansi(char *ansibuf);
+void strip_ansi(char *ansibuf, unsigned int buflen);
 
 void output(unsigned char level, const char *fmt, ...);
 void outputerr(const char *fmt, ...);
