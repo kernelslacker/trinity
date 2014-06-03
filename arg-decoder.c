@@ -152,34 +152,6 @@ static void flushbuffer(char *buffer, FILE *fd)
 	fflush(fd);
 }
 
-/* This function is always called from a fuzzing child. */
-void output_syscall_prefix(int childno)
-{
-	struct syscallrecord *rec;
-	char *buffer;
-	FILE *log_handle;
-
-	rec = &shm->syscall[childno];
-	buffer = rec->prebuffer;
-
-	memset(buffer, 0, sizeof(rec->prebuffer));	// TODO: optimize to only strip ending
-
-	render_syscall_prefix(childno, buffer);
-
-	/* Output to stdout only if -q param is not specified */
-	if (quiet_level == MAX_LOGLEVEL)
-		flushbuffer(buffer, stdout);
-
-	/* Exit if should not continue at all. */
-	if (logging == TRUE) {
-		log_handle = robust_find_logfile_handle();
-		if (log_handle != NULL) {
-			strip_ansi(buffer, PREBUFFER_LEN);
-			flushbuffer(buffer, log_handle);
-		}
-	}
-}
-
 static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
 {
 	char *sptr = buffer;
@@ -195,28 +167,45 @@ static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
 	}
 }
 
-void output_syscall_postfix(int childno)
+static void __output_syscall(char *buffer, unsigned int len)
 {
-	struct syscallrecord *rec;
-	FILE *log_handle;
-	char *buffer;
-
-	rec = &shm->syscall[childno];
-
-	buffer = rec->postbuffer;
-
-	memset(buffer, 0, sizeof(rec->postbuffer));	// TODO: optimize to only strip ending post render.
-
-	render_syscall_postfix(rec, buffer);
-
+	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL)
 		flushbuffer(buffer, stdout);
 
+	/* Exit if should not continue at all. */
 	if (logging == TRUE) {
+		FILE *log_handle;
+
 		log_handle = robust_find_logfile_handle();
 		if (log_handle != NULL) {
-			strip_ansi(buffer, POSTBUFFER_LEN);
+			strip_ansi(buffer, len);
 			flushbuffer(buffer, log_handle);
 		}
 	}
+}
+
+/* This function is always called from a fuzzing child. */
+void output_syscall_prefix(int childno)
+{
+	struct syscallrecord *rec = &shm->syscall[childno];
+	char *buffer = rec->prebuffer;
+
+	memset(buffer, 0, PREBUFFER_LEN);	// TODO: optimize to only strip ending
+
+	render_syscall_prefix(childno, buffer);
+
+	__output_syscall(buffer, PREBUFFER_LEN);
+}
+
+void output_syscall_postfix(int childno)
+{
+	struct syscallrecord *rec = &shm->syscall[childno];
+	char *buffer = rec->postbuffer;
+
+	memset(buffer, 0, POSTBUFFER_LEN);	// TODO: optimize to only strip ending post render.
+
+	render_syscall_postfix(rec, buffer);
+
+	__output_syscall(buffer, POSTBUFFER_LEN);
 }
