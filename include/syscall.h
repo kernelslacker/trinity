@@ -5,7 +5,7 @@
 #include "locks.h"
 #include "types.h"
 
-#define PREBUFFER_LEN	1024
+#define PREBUFFER_LEN	4096 * 6
 #define POSTBUFFER_LEN	128
 
 #define MAX_NR_SYSCALL 1024
