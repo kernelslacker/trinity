@@ -167,7 +167,7 @@ FILE *robust_find_logfile_handle(void)
 	return handle;
 }
 
-void strip_ansi(char *ansibuf)
+void strip_ansi(char *ansibuf, unsigned int buflen)
 {
 	char *from = ansibuf, *to = ansibuf;
 	unsigned int len, i;
@@ -180,7 +180,7 @@ void strip_ansi(char *ansibuf)
 	/* copy buffer, sans ANSI codes */
 	len = strlen(ansibuf);
 
-	for (i = 0; (i < len) && (i + 2 < BUFSIZE); i++) {
+	for (i = 0; (i < len) && (i + 2 < buflen); i++) {
 		*to = from[i];
 		if (from[i] == '') {
 			if (from[i + 2] == '1')
@@ -264,7 +264,7 @@ void output(unsigned char level, const char *fmt, ...)
 	if (!handle)
 		return;
 
-	strip_ansi(outputbuf);
+	strip_ansi(outputbuf, BUFSIZE);
 
 	fprintf(handle, "%s %s", prefix, outputbuf);
 

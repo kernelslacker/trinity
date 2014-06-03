@@ -174,7 +174,7 @@ void output_syscall_prefix(int childno)
 	if (logging == TRUE) {
 		log_handle = robust_find_logfile_handle();
 		if (log_handle != NULL) {
-			strip_ansi(buffer);
+			strip_ansi(buffer, PREBUFFER_LEN);
 			flushbuffer(buffer, log_handle);
 		}
 	}
@@ -215,7 +215,7 @@ void output_syscall_postfix(int childno)
 	if (logging == TRUE) {
 		log_handle = robust_find_logfile_handle();
 		if (log_handle != NULL) {
-			strip_ansi(buffer);
+			strip_ansi(buffer, POSTBUFFER_LEN);
 			flushbuffer(buffer, log_handle);
 		}
 	}
