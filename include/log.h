@@ -15,16 +15,8 @@ extern char ANSI_CYAN[];
 extern char ANSI_WHITE[];
 extern char ANSI_RESET[];
 
-#define RED if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RED);
-#define GREEN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_GREEN);
-#define YELLOW if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_YELLOW);
-#define BLUE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_BLUE);
-#define MAGENTA if (monochrome == FALSE) sptr += sprintf(sptr, "%s", ANSI_MAGENTA);
-#define CYAN if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_CYAN);
-#define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
-#define CRESET if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RESET);
-
 #define MAX_LOGLEVEL 3
+
 FILE *robust_find_logfile_handle(void);
 unsigned int highest_logfile(void);
 void synclogs(void);

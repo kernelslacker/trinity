@@ -44,11 +44,10 @@ void dump_childnos(void)
 		for (j = 0; j < 8; j++) {
 			if (shm->pids[i + j] != EMPTY_PIDSLOT) {
 				if (pid_alive(shm->pids[i + j] == -1))
-					RED
+					sptr += sprintf(sptr, "%s", ANSI_RED);
 			}
 
-			sptr += sprintf(sptr, "%d ", shm->pids[i + j]);
-			CRESET
+			sptr += sprintf(sptr, "%d %s", shm->pids[i + j], ANSI_RESET);
 		}
 		sptr += sprintf(sptr, "\n");
 		*sptr = '\0';
