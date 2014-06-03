@@ -195,6 +195,14 @@ void parse_args(int argc, char *argv[])
 
 		case 'm':
 			monochrome = TRUE;
+			memset(&ANSI_RED, 0, 1);
+			memset(&ANSI_GREEN, 0, 1);
+			memset(&ANSI_YELLOW, 0, 1);
+			memset(&ANSI_BLUE, 0, 1);
+			memset(&ANSI_MAGENTA, 0, 1);
+			memset(&ANSI_CYAN, 0, 1);
+			memset(&ANSI_WHITE, 0, 1);
+			memset(&ANSI_RESET, 0, 1);
 			break;
 
 		case 'n':
