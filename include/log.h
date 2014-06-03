@@ -29,6 +29,7 @@
 #define CRESETFD if (mono == FALSE)	fprintf(fd, "%s", ANSI_RESET);
 
 #define MAX_LOGLEVEL 3
+FILE *robust_find_logfile_handle(void);
 unsigned int highest_logfile(void);
 void synclogs(void);
 void output(unsigned char level, const char *fmt, ...);
