@@ -46,10 +46,8 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 		break;
 	}
 
-	if (argnum != 1) {
-		CRESET
-		sptr += sprintf(sptr, ", ");
-	}
+	if (argnum != 1)
+		sptr += sprintf(sptr, "%s, ", ANSI_RESET);
 
 	sptr += sprintf(sptr, "%s=", name);
 
@@ -59,12 +57,10 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 		break;
 	case ARG_PID:
 	case ARG_FD:
-		CRESET
-		sptr += sprintf(sptr, "%ld", (long) reg);
+		sptr += sprintf(sptr, "%s%ld", ANSI_RESET, (long) reg);
 		break;
 	case ARG_MODE_T:
-		CRESET
-		sptr += sprintf(sptr, "%o", (mode_t) reg);
+		sptr += sprintf(sptr, "%s%o", ANSI_RESET, (mode_t) reg);
 		break;
 
 	case ARG_ADDRESS:
@@ -99,12 +95,11 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 	case ARG_SOCKADDRLEN:
 		if (((long) reg < -16384) || ((long) reg > 16384)) {
 			/* Print everything outside -16384 and 16384 as hex. */
-			sptr += sprintf(sptr, "0x%lx", reg);
+			sptr += sprintf(sptr, "0x%lx%s", reg, ANSI_RESET);
 		} else {
 			/* Print everything else as signed decimal. */
-			sptr += sprintf(sptr, "%ld", (long) reg);
+			sptr += sprintf(sptr, "%ld%s", (long) reg, ANSI_RESET);
 		}
-		CRESET
 		break;
 	}
 
@@ -143,16 +138,12 @@ static void render_syscall_prefix(int childno, char *buffer)
 			rec->op_nr,
 			(rec->do32bit == TRUE) ? "[32BIT] " : "");
 
-	sptr += sprintf(sptr, "%s", entry->name);
-
-	CRESET
-	sptr += sprintf(sptr, "(");
+	sptr += sprintf(sptr, "%s%s(", entry->name, ANSI_RESET);
 
 	for (i = 1; i < entry->num_args + 1; i++)
 		sptr = render_arg(sptr, i, entry, childno);
 
-	CRESET
-	sptr += sprintf(sptr, ") ");
+	sptr += sprintf(sptr, "%s) ", ANSI_RESET);
 }
 
 static void flushbuffer(char *buffer, FILE *fd)
@@ -195,23 +186,18 @@ static void output_syscall_postfix_err(char *buffer, unsigned long ret, int errn
 {
 	char *sptr = buffer;
 
-	RED
-	sptr += sprintf(sptr, "= %ld (%s)", (long) ret, strerror(errno_saved));
-	CRESET
-	sptr += sprintf(sptr, "\n");
+	sptr += sprintf(sptr, "%s= %ld (%s)%s\n",
+			ANSI_RED, (long) ret, strerror(errno_saved), ANSI_RESET);
 }
 
 static void output_syscall_postfix_success(char *buffer, unsigned long ret)
 {
 	char *sptr = buffer;
 
-	GREEN
 	if ((unsigned long)ret > 10000)
-		sptr += sprintf(sptr, "= 0x%lx", ret);
+		sptr += sprintf(sptr, "%s= 0x%lx%s\n", ANSI_GREEN, ret, ANSI_RESET);
 	else
-		sptr += sprintf(sptr, "= %ld", (long) ret);
-	CRESET
-	sptr += sprintf(sptr, "\n");
+		sptr += sprintf(sptr, "= %ld\n", (long) ret);
 }
 
 static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
