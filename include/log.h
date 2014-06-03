@@ -24,10 +24,6 @@
 #define WHITE if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_WHITE);
 #define CRESET if (monochrome == FALSE)	sptr += sprintf(sptr, "%s", ANSI_RESET);
 
-#define REDFD if (mono == FALSE)	fprintf(fd, "%s", ANSI_RED);
-#define GREENFD if (mono == FALSE)	fprintf(fd, "%s", ANSI_GREEN);
-#define CRESETFD if (mono == FALSE)	fprintf(fd, "%s", ANSI_RESET);
-
 #define MAX_LOGLEVEL 3
 FILE *robust_find_logfile_handle(void);
 unsigned int highest_logfile(void);
@@ -37,9 +33,6 @@ void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
 void output_syscall_prefix(int childno);
 void output_syscall_postfix(int childno);
-void output_syscall_prefix_to_fd(int childno, FILE *fd, bool mono);
-void output_syscall_postfix_err(unsigned long ret, int errno_saved, FILE *fd, bool mono);
-void output_syscall_postfix_success(unsigned long ret, FILE *fd, bool mono);
 
 void open_logfiles(void);
 void close_logfiles(void);
