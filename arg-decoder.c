@@ -182,30 +182,19 @@ void output_syscall_prefix(int childno)
 		flushbuffer(buffer, stdout);
 }
 
-static void output_syscall_postfix_err(char *buffer, unsigned long ret, int errno_saved)
-{
-	char *sptr = buffer;
-
-	sptr += sprintf(sptr, "%s= %ld (%s)%s\n",
-			ANSI_RED, (long) ret, strerror(errno_saved), ANSI_RESET);
-}
-
-static void output_syscall_postfix_success(char *buffer, unsigned long ret)
-{
-	char *sptr = buffer;
-
-	if ((unsigned long)ret > 10000)
-		sptr += sprintf(sptr, "%s= 0x%lx%s\n", ANSI_GREEN, ret, ANSI_RESET);
-	else
-		sptr += sprintf(sptr, "= %ld\n", (long) ret);
-}
-
 static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
 {
-	if (IS_ERR(rec->retval))
-		output_syscall_postfix_err(buffer, rec->retval, rec->errno_post);
-	else
-		output_syscall_postfix_success(buffer, rec->retval);
+	char *sptr = buffer;
+
+	if (IS_ERR(rec->retval)) {
+		sptr += sprintf(sptr, "%s= %ld (%s)%s\n",
+			ANSI_RED, (long) rec->retval, strerror(rec->errno_post), ANSI_RESET);
+	} else {
+		if ((unsigned long) rec->retval > 10000)
+			sptr += sprintf(sptr, "%s= 0x%lx%s\n", ANSI_GREEN, rec->retval, ANSI_RESET);
+		else
+			sptr += sprintf(sptr, "%s = %ld%s\n", ANSI_GREEN, (long) rec->retval, ANSI_RESET);
+	}
 }
 
 void output_syscall_postfix(int childno)
