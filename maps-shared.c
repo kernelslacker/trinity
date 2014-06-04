@@ -102,15 +102,14 @@ void setup_shared_mappings(void)
 
 void destroy_shared_mappings(void)
 {
+	struct list_head *node, *tmp;
 	struct map *m;
 
-	while (!list_empty(&shared_mappings->list)) {
-		m = shared_mappings;
+	list_for_each_safe(node, tmp, &shared_mappings->list) {
+		m = (struct map *) node;
 
 		munmap(m->ptr, m->size);
 		free(m->name);
-
-		shared_mappings = (struct map *) m->list.next;
 
 		list_del(&m->list);
 		free(m);
