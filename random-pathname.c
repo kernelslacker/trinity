@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "arch.h"
 #include "log.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
+
+#define MAX_PATH_LEN 4096
 
 const char * generate_pathname(void)
 {
@@ -22,7 +23,7 @@ const char * generate_pathname(void)
 		return pathname;
 
 	/* Create a bogus filename. */
-	newpath = malloc(page_size);	// FIXME: We leak this.
+	newpath = malloc(MAX_PATH_LEN);	// FIXME: We leak this.
 	if (newpath == NULL)
 		return pathname;	// give up.
 
@@ -30,11 +31,12 @@ const char * generate_pathname(void)
 
 	/* empty string. */
 	if ((rand() % 100) == 0) {
-		memset(newpath, 0, page_size);
+		memset(newpath, 0, MAX_PATH_LEN);
 		goto out;
 	}
 
-	generate_random_page(newpath);	// FIXME: we only want a subset (ascii basically)
+	generate_random_page(page_rand);
+	memcpy(newpath, page_rand, MAX_PATH_LEN);	// FIXME: we only want a subset (ascii basically)
 
 	/* sometimes, just complete junk. */
 	if (rand_bool())
