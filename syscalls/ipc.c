@@ -24,4 +24,5 @@ struct syscallentry syscall_ipc = {
 	.arg5name = "ptr",
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "fifth",
+	.flags = IGNORE_ENOSYS,
 };
