@@ -21,4 +21,5 @@ struct syscallentry syscall_msgrcv = {
 		.num = 4,
 		.values = { MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT },
 	},
+	.flags = IGNORE_ENOSYS,
 };
