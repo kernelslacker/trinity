@@ -92,6 +92,7 @@ static void fork_children(void)
 
 void reap_child(pid_t childpid)
 {
+	struct childdata *child;
 	int i;
 
 	lock(&shm->reaper_lock);
@@ -106,9 +107,10 @@ void reap_child(pid_t childpid)
 		goto out;
 
 	debugf("Removing pid %d from pidmap.\n", childpid);
-	shm->children[i].pid = EMPTY_PIDSLOT;
+	child = &shm->children[i];
+	child->pid = EMPTY_PIDSLOT;
+	child->syscall.tv.tv_sec = 0;
 	shm->running_childs--;
-	shm->children[i].syscall.tv.tv_sec = 0;
 	shm->last_reaped = childpid;
 
 out:
@@ -127,19 +129,22 @@ static void handle_child(pid_t childpid, int childstatus)
 			return;
 
 		if (errno == ECHILD) {
+			struct childdata *child;
 			unsigned int i;
 			bool seen = FALSE;
 
 			debugf("All children exited!\n");
 
 			for_each_child(i) {
-				if (shm->children[i].pid != EMPTY_PIDSLOT) {
-					if (pid_alive(shm->children[i].pid) == -1) {
-						debugf("Removing %d from pidmap\n", shm->children[i].pid);
-						shm->children[i].pid = EMPTY_PIDSLOT;
+				child = &shm->children[i];
+
+				if (child->pid != EMPTY_PIDSLOT) {
+					if (pid_alive(child->pid) == -1) {
+						debugf("Removing %d from pidmap\n", child->pid);
+						child->pid = EMPTY_PIDSLOT;
 						shm->running_childs--;
 					} else {
-						debugf("%d looks still alive! ignoring.\n", shm->children[i].pid);
+						debugf("%d looks still alive! ignoring.\n", child->pid);
 					}
 					seen = TRUE;
 				}
