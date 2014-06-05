@@ -232,17 +232,18 @@ unsigned int check_if_fd(unsigned int child)
 
 static void stuck_syscall_info(int childno)
 {
+	struct childdata *child;
 	struct syscallrecord *rec;
 	unsigned int callno;
 	char fdstr[20];
-	pid_t pid;
 
 	if (debug == FALSE)
 		return;
 
-	rec = &shm->children[childno].syscall;
+	child = &shm->children[childno];
+
+	rec = &child->syscall;
 	callno = rec->nr;
-	pid = shm->children[childno].pid;
 
 	memset(fdstr, 0, sizeof(fdstr));
 
@@ -250,7 +251,7 @@ static void stuck_syscall_info(int childno)
 		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
 
 	output(0, "child %d (pid %d) Stuck in syscall %d:%s%s%s.\n",
-		childno, pid, callno,
+		childno, child->pid, callno,
 		print_syscall_name(callno, rec->do32bit),
 		rec->do32bit ? " (32bit)" : "",
 		fdstr);
@@ -270,15 +271,18 @@ static void check_children(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		pid_t pid;
+		struct childdata *child;
 		struct timeval *tvptr;
+		pid_t pid;
 
-		pid = shm->children[i].pid;
+		child = &shm->children[i];
+
+		pid = child->pid;
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		tvptr = &shm->children[i].syscall.tv;
+		tvptr = &child->syscall.tv;
 		old = tvptr->tv_sec;
 
 		if (old == 0)
@@ -307,15 +311,15 @@ static void check_children(void)
 		if (diff == 30) {
 			stuck_syscall_info(i);
 			debugf("child %d (pid %d) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
-			shm->children[i].kill_count++;
+			child->kill_count++;
 			kill_pid(pid);
 		}
 
 		/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 		if (diff >= 40) {
 			debugf("sending another SIGKILL to child %d (pid %d). [kill count:%d] [diff:%d]\n",
-				i, pid, shm->children[i].kill_count, diff);
-			shm->children[i].kill_count++;
+				i, pid, child->kill_count, diff);
+			child->kill_count++;
 			kill_pid(pid);
 		}
 	}
@@ -365,8 +369,10 @@ static void watchdog(void)
 			synclogs();
 
 		for_each_child(i) {
-			if (shm->children[i].syscall.op_nr > hiscore)
-				hiscore = shm->children[i].syscall.op_nr;
+			struct syscallrecord *rec = &shm->children[i].syscall;
+
+			if (rec->op_nr > hiscore)
+				hiscore = rec->op_nr;
 		}
 
 		if (shm->total_syscalls_done > 1) {
