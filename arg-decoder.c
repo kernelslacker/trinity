@@ -14,35 +14,38 @@
 
 static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry *entry, int childno)
 {
+	struct syscallrecord *rec;
 	char *sptr = buffer;
 	const char *name = NULL;
 	unsigned long reg = 0;
 	enum argtype type = 0;
 
+	rec = &shm->children[childno].syscall;
+
 	switch (argnum) {
 	case 1:	type = entry->arg1type;
 		name = entry->arg1name;
-		reg = shm->syscall[childno].a1;
+		reg = rec->a1;
 		break;
 	case 2:	type = entry->arg2type;
 		name = entry->arg2name;
-		reg = shm->syscall[childno].a2;
+		reg = rec->a2;
 		break;
 	case 3:	type = entry->arg3type;
 		name = entry->arg3name;
-		reg = shm->syscall[childno].a3;
+		reg = rec->a3;
 		break;
 	case 4:	type = entry->arg4type;
 		name = entry->arg4name;
-		reg = shm->syscall[childno].a4;
+		reg = rec->a4;
 		break;
 	case 5:	type = entry->arg5type;
 		name = entry->arg5name;
-		reg = shm->syscall[childno].a5;
+		reg = rec->a5;
 		break;
 	case 6:	type = entry->arg6type;
 		name = entry->arg6name;
-		reg = shm->syscall[childno].a6;
+		reg = rec->a6;
 		break;
 	}
 
@@ -130,11 +133,11 @@ static void render_syscall_prefix(int childno, char *buffer)
 	unsigned int i;
 	unsigned int syscallnr;
 
-	rec = &shm->syscall[childno];
+	rec = &shm->children[childno].syscall;
 	syscallnr = rec->nr;
 	entry = get_syscall_entry(syscallnr, rec->do32bit);
 
-	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", childno, shm->pids[childno],
+	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", childno, shm->children[childno].pid,
 			rec->op_nr,
 			rec->do32bit == TRUE ? "[32BIT] " : "");
 
@@ -188,7 +191,7 @@ static void __output_syscall(char *buffer, unsigned int len)
 /* This function is always called from a fuzzing child. */
 void output_syscall_prefix(int childno)
 {
-	struct syscallrecord *rec = &shm->syscall[childno];
+	struct syscallrecord *rec = &shm->children[childno].syscall;
 	char *buffer = rec->prebuffer;
 
 	memset(buffer, 0, PREBUFFER_LEN);	// TODO: optimize to only strip ending
@@ -200,7 +203,7 @@ void output_syscall_prefix(int childno)
 
 void output_syscall_postfix(int childno)
 {
-	struct syscallrecord *rec = &shm->syscall[childno];
+	struct syscallrecord *rec = &shm->children[childno].syscall;
 	char *buffer = rec->postbuffer;
 
 	memset(buffer, 0, POSTBUFFER_LEN);	// TODO: optimize to only strip ending post render.

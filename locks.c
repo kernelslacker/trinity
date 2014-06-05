@@ -70,5 +70,5 @@ void check_all_locks(void)
 	check_lock(&shm->syscalltable_lock);
 
 	for_each_child(i)
-		check_lock(&shm->syscall[i].lock);
+		check_lock(&shm->children[i].syscall.lock);
 }

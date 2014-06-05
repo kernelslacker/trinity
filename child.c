@@ -115,12 +115,12 @@ static void truncate_log(int childno)
 {
 	int fd;
 
-	shm->logdirty[childno] = FALSE;
+	shm->children[childno].logdirty = FALSE;
 
 	if (logging == FALSE)
 		return;
 
-	fd = fileno(shm->logfiles[childno]);
+	fd = fileno(shm->children[childno].logfile);
 	if (ftruncate(fd, 0) == 0)
 		lseek(fd, 0, SEEK_SET);
 }
@@ -137,15 +137,15 @@ void init_child(int childno)
 
 	set_seed(childno);
 
-	shm->kill_count[childno] = 0;
+	shm->children[childno].kill_count = 0;
 
-	shm->num_mappings[childno] = 0;
-	shm->mappings[childno] = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&shm->mappings[childno]->list);
+	shm->children[childno].num_mappings = 0;
+	shm->children[childno].mappings = zmalloc(sizeof(struct map));
+	INIT_LIST_HEAD(&shm->children[childno].mappings->list);
 
 	generate_random_page(page_rand);
 
-	shm->syscall[childno].state = UNKNOWN;
+	shm->children[childno].syscall.state = UNKNOWN;
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
@@ -153,7 +153,7 @@ void init_child(int childno)
 		sched_setaffinity(pid, sizeof(set), &set);
 	}
 
-	shm->syscall[childno].op_nr = 0;
+	shm->children[childno].syscall.op_nr = 0;
 
 	memset(childname, 0, sizeof(childname));
 	sprintf(childname, "trinity-c%d", childno);
@@ -162,7 +162,7 @@ void init_child(int childno)
 	oom_score_adj(500);
 
 	/* Wait for parent to set our childno */
-	while (shm->pids[childno] != getpid()) {
+	while (shm->children[childno].pid != getpid()) {
 		int ret = 0;
 
 		/* Make sure parent is actually alive to wait for us. */
@@ -211,15 +211,15 @@ static void check_parent_pid(void)
 	//TODO: replace all this with calls to postmortem()
 	for_each_child(i) {
 		// Skip over 'boring' entries.
-		if ((shm->pids[i] == EMPTY_PIDSLOT) &&
-		    (shm->previous[i].nr == 0) &&
-		    (shm->syscall[i].op_nr == 0))
+		if ((shm->children[i].pid == EMPTY_PIDSLOT) &&
+		    (shm->children[i].previous.nr == 0) &&
+		    (shm->children[i].syscall.op_nr == 0))
 			continue;
 
 		output(0, "[%d]  pid:%d call:%s callno:%d\n",
-			i, shm->pids[i],
-			print_syscall_name(shm->previous[i].nr, shm->previous[i].do32bit),
-			shm->syscall[i].op_nr);
+			i, shm->children[i].pid,
+			print_syscall_name(shm->children[i].previous.nr, shm->children[i].previous.do32bit),
+			shm->children[i].syscall.op_nr);
 	}
 	shm->exit_reason = EXIT_REPARENT_PROBLEM;
 
@@ -265,25 +265,28 @@ static const struct child_funcs child_ops[] = {
 // FIXME: when we have different child ops, we're going to need to redo the progress detector.
 static bool handle_sigreturn(int childno)
 {
+	struct syscallrecord *rec;
 	static unsigned int count = 0;
 	static unsigned int last = -1;
+
+	rec = &shm->children[childno].syscall;
 
 	output(2, "<timed out>\n");     /* Flush out the previous syscall output. */
 
 	/* Check if we're making any progress at all. */
-	if (shm->syscall[childno].op_nr == last) {
+	if (shm->children[childno].syscall.op_nr == last) {
 		count++;
 		//output(1, "no progress for %d tries.\n", count);
 	} else {
 		count = 0;
-		last = shm->syscall[childno].op_nr;
+		last = rec->op_nr;
 	}
 	if (count == 10) {
 		output(1, "no progress for 10 tries, exiting child.\n");
 		return FALSE;
 	}
 
-	if (shm->kill_count[childno] > 0) {
+	if (shm->children[childno].kill_count > 0) {
 		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
 		return FALSE;
 	}
@@ -311,7 +314,7 @@ void child_process(int childno)
 		periodic_work();
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
-		if (shm->seed != shm->seeds[childno])
+		if (shm->seed != shm->children[childno].seed)
 			set_seed(childno);
 
 		/* Choose operations for this iteration. */

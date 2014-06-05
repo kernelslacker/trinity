@@ -268,7 +268,7 @@ static void autofs_sanitise(const struct ioctl_group *grp, int childno)
 	struct syscallrecord *rec;
 	struct autofs_dev_ioctl *arg;
 
-	rec = &shm->syscall[childno];
+	rec = &shm->children[childno].syscall;
 
 	pick_random_ioctl(grp, childno);
 

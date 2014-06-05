@@ -94,7 +94,7 @@ retry:
 		goto retry;
 	}
 
-	rec = &shm->syscall[childno];
+	rec = &shm->children[childno].syscall;
 	/* critical section for shm updates. */
 	lock(&rec->lock);
 	rec->do32bit = do32;

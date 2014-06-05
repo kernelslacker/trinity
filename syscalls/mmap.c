@@ -95,9 +95,9 @@ static void post_mmap(int childno, struct syscallrecord *rec)
 	new->type = MAP_LOCAL;
 
 	// Add this to a list for use by subsequent syscalls.
-	list = &shm->mappings[childno]->list;
+	list = &shm->children[childno].mappings->list;
 	list_add_tail(&new->list, list);
-	shm->num_mappings[childno]++;
+	shm->children[childno].num_mappings++;
 
 	/* Sometimes dirty the mapping. */
 	if (rand_bool())
@@ -109,7 +109,7 @@ static char * decode_mmap(int childno, int argnum)
 	char *buf;
 
 	if (argnum == 3) {
-		int flags = shm->syscall[childno].a3;
+		int flags = shm->children[childno].syscall.a3;
 		char *p;
 
 		p = buf = zmalloc(80);

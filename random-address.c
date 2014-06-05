@@ -102,7 +102,7 @@ unsigned long find_previous_arg_address(int childno, unsigned int argnum)
 	unsigned long addr = 0;
 	unsigned int call;
 
-	rec = &shm->syscall[childno];
+	rec = &shm->children[childno].syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 

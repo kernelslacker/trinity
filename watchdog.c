@@ -44,7 +44,7 @@ static int check_shm_sanity(void)
 	for_each_child(i) {
 		pid_t pid;
 
-		pid = shm->pids[i];
+		pid = shm->children[i].pid;
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -79,7 +79,7 @@ static unsigned int reap_dead_kids(void)
 		pid_t pid;
 		int ret;
 
-		pid = shm->pids[i];
+		pid = shm->children[i].pid;
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -129,7 +129,7 @@ static void kill_all_kids(void)
 		for_each_child(i) {
 			pid_t pid;
 
-			pid = shm->pids[i];
+			pid = shm->children[i].pid;
 			if (pid == EMPTY_PIDSLOT)
 				continue;
 
@@ -145,7 +145,7 @@ static void kill_all_kids(void)
 
 	/* Just to be sure, clear out the pid slots. */
 	for_each_child(i) {
-		shm->pids[i] = EMPTY_PIDSLOT;
+		shm->children[i].pid = EMPTY_PIDSLOT;
 	}
 }
 
@@ -206,7 +206,7 @@ unsigned int check_if_fd(unsigned int child)
 	unsigned callno;
 	bool do32;
 
-	rec = &shm->syscall[child];
+	rec = &shm->children[child].syscall;
 
 	lock(&rec->lock);
 	fd = rec->a1;
@@ -240,9 +240,9 @@ static void stuck_syscall_info(int childno)
 	if (debug == FALSE)
 		return;
 
-	rec = &shm->syscall[childno];
+	rec = &shm->children[childno].syscall;
 	callno = rec->nr;
-	pid = shm->pids[childno];
+	pid = shm->children[childno].pid;
 
 	memset(fdstr, 0, sizeof(fdstr));
 
@@ -273,12 +273,12 @@ static void check_children(void)
 		pid_t pid;
 		struct timeval *tvptr;
 
-		pid = shm->pids[i];
+		pid = shm->children[i].pid;
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		tvptr = &shm->syscall[i].tv;
+		tvptr = &shm->children[i].syscall.tv;
 		old = tvptr->tv_sec;
 
 		if (old == 0)
@@ -307,15 +307,15 @@ static void check_children(void)
 		if (diff == 30) {
 			stuck_syscall_info(i);
 			debugf("child %d (pid %d) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
-			shm->kill_count[i]++;
+			shm->children[i].kill_count++;
 			kill_pid(pid);
 		}
 
 		/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 		if (diff >= 40) {
 			debugf("sending another SIGKILL to child %d (pid %d). [kill count:%d] [diff:%d]\n",
-				i, pid, shm->kill_count[i], diff);
-			shm->kill_count[i]++;
+				i, pid, shm->children[i].kill_count, diff);
+			shm->children[i].kill_count++;
 			kill_pid(pid);
 		}
 	}
@@ -365,8 +365,8 @@ static void watchdog(void)
 			synclogs();
 
 		for_each_child(i) {
-			if (shm->syscall[i].op_nr > hiscore)
-				hiscore = shm->syscall[i].op_nr;
+			if (shm->children[i].syscall.op_nr > hiscore)
+				hiscore = shm->children[i].syscall.op_nr;
 		}
 
 		if (shm->total_syscalls_done > 1) {

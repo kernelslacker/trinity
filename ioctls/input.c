@@ -53,7 +53,7 @@ static void input_sanitise(const struct ioctl_group *grp, int childno)
 	struct syscallrecord *rec;
 	unsigned int u, r;
 
-	rec = &shm->syscall[childno];
+	rec = &shm->children[childno].syscall;
 
 	pick_random_ioctl(grp, childno);
 

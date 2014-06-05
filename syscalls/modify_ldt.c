@@ -20,14 +20,14 @@ static void sanitise_modify_ldt(int childno, struct syscallrecord *rec)
 	void *ldt;
 	//struct user_desc *desc;
 
-	shm->scratch[childno] = 0;
+	shm->children[childno].scratch = 0;
 
 	switch (rec->a1) {
 	case 0:
 		/* read the ldt into the memory pointed to by ptr.
 		   The number of bytes read is the smaller of bytecount and the actual size of the ldt. */
 		ldt = malloc(ALLOCSIZE);
-		shm->scratch[childno] = (unsigned long) ldt;
+		shm->children[childno].scratch = (unsigned long) ldt;
 		if (ldt == NULL)
 			return;
 		rec->a3 = ALLOCSIZE;
@@ -59,12 +59,12 @@ static void post_modify_ldt(int childno, __unused__ struct syscallrecord *rec)
 {
 	void *ptr;
 
-	ptr = (void *) shm->scratch[childno];
+	ptr = (void *) shm->children[childno].scratch;
 
 	if (ptr != NULL)
 		free(ptr);
 
-	shm->scratch[childno] = 0;
+	shm->children[childno].scratch = 0;
 }
 
 struct syscallentry syscall_modify_ldt = {
