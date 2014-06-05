@@ -79,8 +79,7 @@ static void fork_children(void)
 		shm->running_childs++;
 
 		debugf("Created child %d in childno %d [total:%d/%d]\n",
-			shm->children[childno].pid, childno,
-			shm->running_childs, max_children);
+			pid, childno, shm->running_childs, max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)
 			return;
