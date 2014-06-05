@@ -42,14 +42,16 @@ void dump_childnos(void)
 	for (i = 0; i < max_children; i += 8) {
 		sptr += sprintf(sptr, "%u-%u: ", i, i + 7);
 		for (j = 0; j < 8; j++) {
-			unsigned int index = i + j;
+			struct childdata *child;
 
-			if (shm->children[index].pid != EMPTY_PIDSLOT) {
-				if (pid_alive(shm->children[index].pid == -1))
+			child = &shm->children[i + j];
+
+			if (child->pid != EMPTY_PIDSLOT) {
+				if (pid_alive(child->pid == -1))
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 			}
 
-			sptr += sprintf(sptr, "%d %s", shm->children[index].pid, ANSI_RESET);
+			sptr += sprintf(sptr, "%d %s", child->pid, ANSI_RESET);
 		}
 		sptr += sprintf(sptr, "\n");
 		*sptr = '\0';
