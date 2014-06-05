@@ -98,7 +98,7 @@ static FILE * find_logfile_handle(void)
 		dump_childnos();
 		outputerr("## Logfiles for pids: ");
 		for_each_child(j)
-			outputerr("%p ", shm->children[i].logfile);
+			outputerr("%p ", shm->children[j].logfile);
 		outputerr("\n");
 	}
 	return NULL;
