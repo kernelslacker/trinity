@@ -62,15 +62,21 @@ void init_shm(void)
 	set_seed(0);
 
 	for_each_child(i) {
-		shm->children[i].pid = EMPTY_PIDSLOT;
+		struct childdata *child = &shm->children[i];
+		struct syscallrecord *syscall, *previous;
 
-		shm->children[i].previous.nr = shm->children[i].syscall.nr = -1;
+		syscall = &child->syscall;
+		previous = &child->previous;
 
-		shm->children[i].previous.a1 = shm->children[i].syscall.a1 = -1;
-		shm->children[i].previous.a2 = shm->children[i].syscall.a2 = -1;
-		shm->children[i].previous.a3 = shm->children[i].syscall.a3 = -1;
-		shm->children[i].previous.a4 = shm->children[i].syscall.a4 = -1;
-		shm->children[i].previous.a5 = shm->children[i].syscall.a5 = -1;
-		shm->children[i].previous.a6 = shm->children[i].syscall.a6 = -1;
+		child->pid = EMPTY_PIDSLOT;
+
+		previous->nr = syscall->nr = -1;
+
+		previous->a1 = syscall->a1 = -1;
+		previous->a2 = syscall->a2 = -1;
+		previous->a3 = syscall->a3 = -1;
+		previous->a4 = syscall->a4 = -1;
+		previous->a5 = syscall->a5 = -1;
+		previous->a6 = syscall->a6 = -1;
 	}
 }
