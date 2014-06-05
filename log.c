@@ -41,10 +41,12 @@ void open_logfiles(void)
 	}
 
 	for_each_child(i) {
+		struct childdata *child = &shm->children[i];
+
 		sprintf(logfilename, "trinity-child%u.log", i);
 		unlink(logfilename);
-		shm->children[i].logfile = fopen(logfilename, "a");
-		if (!shm->children[i].logfile) {
+		child->logfile = fopen(logfilename, "a");
+		if (!child->logfile) {
 			outputerr("## couldn't open logfile %s\n", logfilename);
 			exit(EXIT_FAILURE);
 		}
@@ -57,9 +59,12 @@ void close_logfiles(void)
 {
 	unsigned int i;
 
-	for_each_child(i)
-		if (shm->children[i].logfile != NULL)
-			fclose(shm->children[i].logfile);
+	for_each_child(i) {
+		struct childdata *child = &shm->children[i];
+
+		if (child->logfile != NULL)
+			fclose(child->logfile);
+	}
 }
 
 static FILE * find_logfile_handle(void)
@@ -122,20 +127,21 @@ void synclogs(void)
 		return;
 
 	for_each_child(i) {
+		struct childdata *child = &shm->children[i];
 		int ret;
 
-		if (shm->children[i].logdirty == FALSE)
+		if (child->logdirty == FALSE)
 			continue;
 
-		shm->children[i].logdirty = FALSE;
+		child->logdirty = FALSE;
 
-		ret = fflush(shm->children[i].logfile);
+		ret = fflush(child->logfile);
 		if (ret == EOF) {
 			outputerr("## logfile flushing failed! %s\n", strerror(errno));
 			continue;
 		}
 
-		fd = fileno(shm->children[i].logfile);
+		fd = fileno(child->logfile);
 		if (fd != -1) {
 			ret = fsync(fd);
 			if (ret != 0)
