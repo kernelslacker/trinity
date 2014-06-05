@@ -420,10 +420,8 @@ void display_enabled_syscalls(void)
 		display_enabled_syscalls_uniarch();
 }
 
-static bool check_for_argtype(const struct syscalltable *table, unsigned int num, unsigned int argtype)
+static bool check_for_argtype(struct syscallentry *entry, unsigned int argtype)
 {
-	struct syscallentry *entry = table[num].entry;
-
 	unsigned int i;
 
 	for (i = 0; i < entry->num_args; i++) {
@@ -455,10 +453,12 @@ static bool check_for_argtype(const struct syscalltable *table, unsigned int num
 /* Consider anything with an ARG_FD or ARG_SOCKADDR a network syscall. */
 bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
 {
-	if (check_for_argtype(table, num, ARG_FD) == TRUE)
+	struct syscallentry *entry = table[num].entry;
+
+	if (check_for_argtype(entry, ARG_FD) == TRUE)
 		return TRUE;
 
-	if (check_for_argtype(table, num, ARG_SOCKADDR) == TRUE)
+	if (check_for_argtype(entry, ARG_SOCKADDR) == TRUE)
 		return TRUE;
 
 	return FALSE;
