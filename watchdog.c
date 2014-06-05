@@ -265,14 +265,12 @@ static void stuck_syscall_info(int childno)
  */
 static void check_children(void)
 {
-	struct timeval tv;
-	time_t diff;
-	time_t old, now;
 	unsigned int i;
 
 	for_each_child(i) {
 		struct childdata *child;
-		struct timeval *tvptr;
+		struct timeval tv, *tvptr;
+		time_t diff, old, now;
 		pid_t pid;
 
 		child = &shm->children[i];
