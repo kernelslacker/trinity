@@ -75,11 +75,11 @@ static void fork_children(void)
 			}
 		}
 
-		shm->pids[childno] = pid;
+		shm->children[childno].pid = pid;
 		shm->running_childs++;
 
 		debugf("Created child %d in childno %d [total:%d/%d]\n",
-			shm->pids[childno], childno,
+			shm->children[childno].pid, childno,
 			shm->running_childs, max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)
@@ -107,9 +107,9 @@ void reap_child(pid_t childpid)
 		goto out;
 
 	debugf("Removing pid %d from pidmap.\n", childpid);
-	shm->pids[i] = EMPTY_PIDSLOT;
+	shm->children[i].pid = EMPTY_PIDSLOT;
 	shm->running_childs--;
-	shm->syscall[i].tv.tv_sec = 0;
+	shm->children[i].syscall.tv.tv_sec = 0;
 	shm->last_reaped = childpid;
 
 out:
@@ -134,13 +134,13 @@ static void handle_child(pid_t childpid, int childstatus)
 			debugf("All children exited!\n");
 
 			for_each_child(i) {
-				if (shm->pids[i] != EMPTY_PIDSLOT) {
-					if (pid_alive(shm->pids[i]) == -1) {
-						debugf("Removing %d from pidmap\n", shm->pids[i]);
-						shm->pids[i] = EMPTY_PIDSLOT;
+				if (shm->children[i].pid != EMPTY_PIDSLOT) {
+					if (pid_alive(shm->children[i].pid) == -1) {
+						debugf("Removing %d from pidmap\n", shm->children[i].pid);
+						shm->children[i].pid = EMPTY_PIDSLOT;
 						shm->running_childs--;
 					} else {
-						debugf("%d looks still alive! ignoring.\n", shm->pids[i]);
+						debugf("%d looks still alive! ignoring.\n", shm->children[i].pid);
 					}
 					seen = TRUE;
 				}
@@ -169,7 +169,7 @@ static void handle_child(pid_t childpid, int childstatus)
 				}
 			} else {
 				debugf("Child %d exited after %ld operations.\n",
-					childpid, shm->syscall[childno].op_nr);
+					childpid, shm->children[childno].syscall.op_nr);
 				reap_child(childpid);
 			}
 			break;
@@ -249,7 +249,7 @@ static void handle_children(void)
 	 */
 	for_each_child(i) {
 
-		pid = shm->pids[i];
+		pid = shm->children[i].pid;
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;

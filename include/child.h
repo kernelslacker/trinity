@@ -1,7 +1,9 @@
 #pragma once
 
+#include <stdio.h>
 #include <sys/types.h>
 #include <types.h>
+#include "syscall.h"
 
 extern int this_child;
 
@@ -17,3 +19,28 @@ void reap_child(pid_t childpid);
 
 bool child_random_syscalls(int childno);
 int child_read_all_files(int childno);
+
+void create_child_structs(void);
+
+struct childdata {
+	/* The actual syscall records each child uses. */
+	struct syscallrecord syscall;
+	struct syscallrecord previous;
+
+	/* log file related stuff */
+	FILE *logfile;
+	bool logdirty;
+
+	/* per-child mmaps */
+	struct map *mappings;
+	unsigned int num_mappings;
+
+	/* used by sanitize routines as tmp storage. */
+	unsigned long scratch;
+
+	unsigned int seed;
+
+	pid_t pid;
+
+	unsigned char kill_count;
+};

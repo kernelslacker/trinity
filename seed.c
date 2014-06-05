@@ -65,7 +65,7 @@ unsigned int init_seed(unsigned int seedparam)
 void set_seed(unsigned int childno)
 {
 	srand(shm->seed + (childno + 1));
-	shm->seeds[childno] = shm->seed;
+	shm->children[childno].seed = shm->seed;
 }
 
 /*

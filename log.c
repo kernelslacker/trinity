@@ -43,8 +43,8 @@ void open_logfiles(void)
 	for_each_child(i) {
 		sprintf(logfilename, "trinity-child%u.log", i);
 		unlink(logfilename);
-		shm->logfiles[i] = fopen(logfilename, "a");
-		if (!shm->logfiles[i]) {
+		shm->children[i].logfile = fopen(logfilename, "a");
+		if (!shm->children[i].logfile) {
 			outputerr("## couldn't open logfile %s\n", logfilename);
 			exit(EXIT_FAILURE);
 		}
@@ -58,8 +58,8 @@ void close_logfiles(void)
 	unsigned int i;
 
 	for_each_child(i)
-		if (shm->logfiles[i] != NULL)
-			fclose(shm->logfiles[i]);
+		if (shm->children[i].logfile != NULL)
+			fclose(shm->children[i].logfile);
 }
 
 static FILE * find_logfile_handle(void)
@@ -79,7 +79,7 @@ static FILE * find_logfile_handle(void)
 
 	i = find_childno(pid);
 	if (i != CHILD_NOT_FOUND)
-		return shm->logfiles[i];
+		return shm->children[i].logfile;
 	else {
 		/* try one more time. FIXME: This is awful. */
 		unsigned int j;
@@ -87,13 +87,13 @@ static FILE * find_logfile_handle(void)
 		sleep(1);
 		i = find_childno(pid);
 		if (i != CHILD_NOT_FOUND)
-			return shm->logfiles[i];
+			return shm->children[i].logfile;
 
 		outputerr("## Couldn't find logfile for pid %d\n", pid);
 		dump_childnos();
 		outputerr("## Logfiles for pids: ");
 		for_each_child(j)
-			outputerr("%p ", shm->logfiles[j]);
+			outputerr("%p ", shm->children[i].logfile);
 		outputerr("\n");
 	}
 	return NULL;
@@ -107,7 +107,7 @@ unsigned int highest_logfile(void)
 	if (logging == FALSE)
 		return 0;
 
-	file = shm->logfiles[max_children - 1];
+	file = shm->children[max_children - 1].logfile;
 	ret = fileno(file);
 
 	return ret;
@@ -124,18 +124,18 @@ void synclogs(void)
 	for_each_child(i) {
 		int ret;
 
-		if (shm->logdirty[i] == FALSE)
+		if (shm->children[i].logdirty == FALSE)
 			continue;
 
-		shm->logdirty[i] = FALSE;
+		shm->children[i].logdirty = FALSE;
 
-		ret = fflush(shm->logfiles[i]);
+		ret = fflush(shm->children[i].logfile);
 		if (ret == EOF) {
 			outputerr("## logfile flushing failed! %s\n", strerror(errno));
 			continue;
 		}
 
-		fd = fileno(shm->logfiles[i]);
+		fd = fileno(shm->children[i].logfile);
 		if (fd != -1) {
 			ret = fsync(fd);
 			if (ret != 0)
@@ -159,7 +159,7 @@ FILE *robust_find_logfile_handle(void)
 			outputerr("## child logfile handle was null logging to main!\n");
 			(void)fflush(stdout);
 			for_each_child(j)
-				shm->logfiles[j] = mainlogfile;
+				shm->children[j].logfile = mainlogfile;
 			sleep(5);
 			handle = find_logfile_handle();
 		}
@@ -235,7 +235,7 @@ void output(unsigned char level, const char *fmt, ...)
 		childno = find_childno(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", childno, pid);
 		prefix = child_prefix;
-		shm->logdirty[childno] = TRUE;
+		shm->children[childno].logdirty = TRUE;
 	}
 
 	/* formatting output */

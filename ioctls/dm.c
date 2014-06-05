@@ -36,8 +36,8 @@ static void dm_sanitise(const struct ioctl_group *grp, int childno)
 
 	pick_random_ioctl(grp, childno);
 
-	shm->syscall[childno].a3 = (unsigned long) page_rand;
-	dm = (struct dm_ioctl *)shm->syscall[childno].a3;
+	shm->children[childno].syscall.a3 = (unsigned long) page_rand;
+	dm = (struct dm_ioctl *)shm->children[childno].syscall.a3;
 
 	/* set a sensible version to get past the initial checks */
 	dm->version[0] = DM_VERSION_MAJOR;

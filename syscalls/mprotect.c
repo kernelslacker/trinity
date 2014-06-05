@@ -21,12 +21,12 @@ static void sanitise_mprotect(int childno, __unused__ struct syscallrecord *rec)
  */
 static void post_mprotect(int childno, struct syscallrecord *rec)
 {
-	struct map *map = (struct map *) shm->scratch[childno];
+	struct map *map = (struct map *) shm->children[childno].scratch;
 
 	if (rec->retval != 0)
 		map->prot = rec->a3;
 
-	shm->scratch[childno] = 0;
+	shm->children[childno].scratch = 0;
 }
 
 struct syscallentry syscall_mprotect = {

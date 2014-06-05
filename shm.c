@@ -41,21 +41,9 @@ void create_shm(void)
 	shm = p + SHM_PROT_PAGES * page_size;
 }
 
-void create_shm_arrays(void)
+void create_child_structs(void)
 {
-	shm->pids = alloc_shared(max_children * sizeof(pid_t));
-
-	shm->syscall = alloc_shared(max_children * sizeof(struct syscallrecord));
-	shm->previous = alloc_shared(max_children * sizeof(struct syscallrecord));
-
-	shm->mappings = alloc_shared(max_children * sizeof(struct map *));
-	shm->num_mappings = alloc_shared(max_children * sizeof(unsigned int));
-
-	shm->seeds = alloc_shared(max_children * sizeof(int));
-	shm->kill_count = alloc_shared(max_children * sizeof(unsigned char));
-	shm->logfiles = alloc_shared(max_children * sizeof(FILE *));
-	shm->logdirty = alloc_shared(max_children * sizeof(bool));
-	shm->scratch = alloc_shared(max_children * sizeof(unsigned long));
+	shm->children = alloc_shared(max_children * sizeof(struct childdata));
 }
 
 void init_shm(void)
@@ -74,15 +62,15 @@ void init_shm(void)
 	set_seed(0);
 
 	for_each_child(i) {
-		shm->pids[i] = EMPTY_PIDSLOT;
+		shm->children[i].pid = EMPTY_PIDSLOT;
 
-		shm->previous[i].nr = shm->syscall[i].nr = -1;
+		shm->children[i].previous.nr = shm->children[i].syscall.nr = -1;
 
-		shm->previous[i].a1 = shm->syscall[i].a1 = -1;
-		shm->previous[i].a2 = shm->syscall[i].a2 = -1;
-		shm->previous[i].a3 = shm->syscall[i].a3 = -1;
-		shm->previous[i].a4 = shm->syscall[i].a4 = -1;
-		shm->previous[i].a5 = shm->syscall[i].a5 = -1;
-		shm->previous[i].a6 = shm->syscall[i].a6 = -1;
+		shm->children[i].previous.a1 = shm->children[i].syscall.a1 = -1;
+		shm->children[i].previous.a2 = shm->children[i].syscall.a2 = -1;
+		shm->children[i].previous.a3 = shm->children[i].syscall.a3 = -1;
+		shm->children[i].previous.a4 = shm->children[i].syscall.a4 = -1;
+		shm->children[i].previous.a5 = shm->children[i].syscall.a5 = -1;
+		shm->children[i].previous.a6 = shm->children[i].syscall.a6 = -1;
 	}
 }

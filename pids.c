@@ -15,7 +15,7 @@ int find_childno(pid_t mypid)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (shm->pids[i] == mypid)
+		if (shm->children[i].pid == mypid)
 			return i;
 	}
 	return CHILD_NOT_FOUND;
@@ -26,7 +26,7 @@ bool pidmap_empty(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (shm->pids[i] != EMPTY_PIDSLOT)
+		if (shm->children[i].pid != EMPTY_PIDSLOT)
 			return FALSE;
 	}
 	return TRUE;
@@ -42,12 +42,12 @@ void dump_childnos(void)
 	for (i = 0; i < max_children; i += 8) {
 		sptr += sprintf(sptr, "%u-%u: ", i, i + 7);
 		for (j = 0; j < 8; j++) {
-			if (shm->pids[i + j] != EMPTY_PIDSLOT) {
-				if (pid_alive(shm->pids[i + j] == -1))
+			if (shm->children[i + j].pid != EMPTY_PIDSLOT) {
+				if (pid_alive(shm->children[i + j].pid == -1))
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 			}
 
-			sptr += sprintf(sptr, "%d %s", shm->pids[i + j], ANSI_RESET);
+			sptr += sprintf(sptr, "%d %s", shm->children[i + j].pid, ANSI_RESET);
 		}
 		sptr += sprintf(sptr, "\n");
 		*sptr = '\0';
@@ -123,7 +123,7 @@ unsigned int get_pid(void)
 	switch (rand() % 3) {
 	case 0:
 retry:		i = rand() % max_children;
-		pid = shm->pids[i];
+		pid = shm->children[i].pid;
 		if (pid == EMPTY_PIDSLOT)
 			goto retry;
 		break;
