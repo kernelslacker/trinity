@@ -44,10 +44,12 @@ const char * generate_pathname(void)
 	if (rand_bool())
 		(void) strncpy(newpath, pathname, len);
 	else {
-		/* make it look relative to cwd */
-		newpath[0] = '.';
-		newpath[1] = '/';
-		(void) strncpy(newpath + 2, pathname, len);
+		if (len < MAX_PATH_LEN - 2) {
+			/* make it look relative to cwd */
+			newpath[0] = '.';
+			newpath[1] = '/';
+			(void) strncpy(newpath + 2, pathname, len);
+		}
 	}
 
 	/* Sometimes, remove all /'s */
