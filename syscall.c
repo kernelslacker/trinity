@@ -73,8 +73,6 @@ static unsigned long do_syscall(int childno)
 	 */
 	call = nr + SYSCALL_OFFSET;
 
-	shm->total_syscalls_done++;
-
 	needalarm = syscalls[nr].entry->flags & NEED_ALARM;
 	if (needalarm)
 		(void)alarm(1);
@@ -87,6 +85,8 @@ static unsigned long do_syscall(int childno)
 		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 
 	/* We returned! */
+	shm->total_syscalls_done++;
+
 	lock(&rec->lock);
 	(void)gettimeofday(&rec->tv, NULL);
 
