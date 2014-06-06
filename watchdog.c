@@ -296,7 +296,7 @@ static void check_children(void)
 			diff = now - old;
 
 		/* if we wrapped, just reset it, we'll pick it up next time around. */
-		if (old > (now + 3)) {
+		if (diff > 2145) {	/* max adjtime offset. */
 			output(1, "child %u wrapped! old=%lu now=%lu\n", i, old, now);
 			rec->tv.tv_sec = now;
 			continue;
