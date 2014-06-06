@@ -277,6 +277,14 @@ static bool handle_sigreturn(int childno)
 
 	rec = &child->syscall;
 
+	/* Check if we're blocked because we were stuck on an fd. */
+	if (check_if_fd(childno) == TRUE) {
+		/* avoid doing it again from other threads. */
+		shm->fd_lifetime = 0;
+
+		/* TODO: Somehow mark the fd in the parent not to be used again too. */
+	}
+
 	output(2, "<timed out>\n");     /* Flush out the previous syscall output. */
 
 	/* Check if we're making any progress at all. */

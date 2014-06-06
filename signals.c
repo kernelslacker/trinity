@@ -29,15 +29,6 @@ static void sighandler(int sig)
 		if (childno == CHILD_NOT_FOUND)
 			_exit(EXIT_SUCCESS);	/* Hell knows what happened, just bail. */
 
-		/* Check if we're blocking because we're stuck on an fd. */
-		if (check_if_fd(childno) == TRUE) {
-
-			/* avoid doing it again from other threads. */
-			shm->fd_lifetime = 0;
-
-			/* TODO: Somehow mark the fd in the parent not to be used again too. */
-		}
-
 		/* Re-arm the alarm. */
 		alarm(1);
 
