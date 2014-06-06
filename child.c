@@ -277,6 +277,8 @@ static bool handle_sigreturn(int childno)
 
 	rec = &child->syscall;
 
+	bust_lock(&rec->lock);
+
 	/* Check if we're blocked because we were stuck on an fd. */
 	if (check_if_fd(childno) == TRUE) {
 		/* avoid doing it again from other threads. */
