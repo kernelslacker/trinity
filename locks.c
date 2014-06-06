@@ -59,9 +59,14 @@ void lock(lock_t *_lock)
 
 	while (_lock->lock == LOCKED) {
 		if (_lock->owner == pid) {
+			int childno;
+
 			debugf("lol, already have lock!\n");
+			childno = find_childno(pid);
+			shm->children[childno].dontkillme = TRUE;
 			sleep(3);
 			show_backtrace();
+			shm->children[childno].dontkillme = FALSE;
 			return;
 		}
 
