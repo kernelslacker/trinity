@@ -55,7 +55,17 @@ void check_all_locks(void)
 
 void lock(lock_t *_lock)
 {
+	pid_t pid = getpid();
+
 	while (_lock->lock == LOCKED) {
+		/* This is pretty horrible. But if we call lock()
+		 * from the watchdog code, and a child is hogging a lock
+		 * (or worse, a dead child), we'll never call check_lock()
+		 * from the watchdog loop because we'll be stuck here.
+		 */
+		if (pid == watchdog_pid)
+			check_lock(_lock);
+
 		_lock->contention++;
 		usleep(1);
 	}
