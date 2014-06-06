@@ -62,8 +62,10 @@ const char * generate_pathname(void)
 out:
 	/* 50/50 chance of making it look like a dir */
 	if (rand_bool()) {
-		newpath[len] = '/';
-		newpath[len + 1] = 0;
+		if (len <= MAX_PATH_LEN - 2) {
+			newpath[len] = '/';
+			newpath[len + 1] = 0;
+		}
 	}
 
 	return newpath;
