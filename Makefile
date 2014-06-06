@@ -26,6 +26,9 @@ CFLAGS += -Wwrite-strings
 CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 
+# needed for show_backtrace() to work correctly.
+CFLAGS += -rdynamic
+
 # gcc only.
 CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
