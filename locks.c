@@ -60,6 +60,8 @@ void lock(lock_t *_lock)
 	while (_lock->lock == LOCKED) {
 		if (_lock->owner == pid) {
 			debugf("lol, already have lock!\n");
+			sleep(3);
+			show_backtrace();
 			return;
 		}
 
