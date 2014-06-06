@@ -43,4 +43,6 @@ struct childdata {
 	pid_t pid;
 
 	unsigned char kill_count;
+
+	bool dontkillme;	/* provide temporary protection from the watchdog. */
 };
