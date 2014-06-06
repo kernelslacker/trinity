@@ -83,7 +83,7 @@ void lock(lock_t *_lock)
 	}
 
 	_lock->contention = 0;
-	_lock->owner = getpid();
+	_lock->owner = pid;
 	_lock->lock = LOCKED;
 }
 
