@@ -5,6 +5,7 @@
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 #define MAX_PATH_LEN 4096
 
@@ -35,6 +36,9 @@ const char * generate_pathname(void)
 	/* sometimes, just complete junk. */
 	if (rand_bool())
 		goto out;
+
+	if (len > MAX_PATH_LEN)
+		len = MAX_PATH_LEN;
 
 	/* Sometimes, pathname + junk */
 	if (rand_bool())
