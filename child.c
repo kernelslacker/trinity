@@ -126,6 +126,24 @@ static void truncate_log(int childno)
 		lseek(fd, 0, SEEK_SET);
 }
 
+/*
+ * Wipe out any state left from a previous child running in this slot.
+ * Right now the logfile entry is the only persistent thing across instances.
+ */
+static void reinit_child(struct childdata *child)
+{
+	memset(&child->syscall, 0, sizeof(struct syscallrecord));
+	memset(&child->previous, 0, sizeof(struct syscallrecord));
+
+	child->logdirty = FALSE;
+	child->mappings = NULL;
+	child->num_mappings = 0;
+	child->scratch = 0;
+	child->seed = 0;
+	child->kill_count = 0;
+	child->dontkillme = FALSE;
+}
+
 void init_child(int childno)
 {
 	struct childdata *child = &shm->children[childno];
@@ -135,27 +153,22 @@ void init_child(int childno)
 
 	this_child = childno;
 
+	reinit_child(child);
+
 	truncate_log(childno);
 
 	set_seed(childno);
 
-	child->kill_count = 0;
-
-	child->num_mappings = 0;
 	child->mappings = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&child->mappings->list);
 
 	generate_random_page(page_rand);
-
-	child->syscall.state = UNKNOWN;
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
 		CPU_SET(childno, &set);
 		sched_setaffinity(pid, sizeof(set), &set);
 	}
-
-	child->syscall.op_nr = 0;
 
 	memset(childname, 0, sizeof(childname));
 	sprintf(childname, "trinity-c%d", childno);
