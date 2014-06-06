@@ -98,11 +98,12 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 	case ARG_SOCKADDRLEN:
 		if (((long) reg < -16384) || ((long) reg > 16384)) {
 			/* Print everything outside -16384 and 16384 as hex. */
-			sptr += sprintf(sptr, "0x%lx%s", reg, ANSI_RESET);
+			sptr += sprintf(sptr, "0x%lx", reg);
 		} else {
 			/* Print everything else as signed decimal. */
-			sptr += sprintf(sptr, "%ld%s", (long) reg, ANSI_RESET);
+			sptr += sprintf(sptr, "%ld", (long) reg);
 		}
+		sptr += sprintf(sptr, "%s", ANSI_RESET);
 		break;
 	}
 
@@ -161,14 +162,16 @@ static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
 	char *sptr = buffer;
 
 	if (IS_ERR(rec->retval)) {
-		sptr += sprintf(sptr, "%s= %ld (%s)%s\n",
-			ANSI_RED, (long) rec->retval, strerror(rec->errno_post), ANSI_RESET);
+		sptr += sprintf(sptr, "%s= %ld (%s)",
+			ANSI_RED, (long) rec->retval, strerror(rec->errno_post));
 	} else {
+		sptr += sprintf(sptr, "%s= ", ANSI_GREEN);
 		if ((unsigned long) rec->retval > 10000)
-			sptr += sprintf(sptr, "%s= 0x%lx%s\n", ANSI_GREEN, rec->retval, ANSI_RESET);
+			sptr += sprintf(sptr, "0x%lx", rec->retval);
 		else
-			sptr += sprintf(sptr, "%s = %ld%s\n", ANSI_GREEN, (long) rec->retval, ANSI_RESET);
+			sptr += sprintf(sptr, "%ld", (long) rec->retval);
 	}
+	sptr += sprintf(sptr, "%s\n", ANSI_RESET);
 }
 
 static void __output_syscall(char *buffer, unsigned int len)
