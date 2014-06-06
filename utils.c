@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "log.h"
+#include "pids.h"
 #include "utils.h"
 
 /*
@@ -63,6 +64,11 @@ void sizeunit(unsigned long size, char *buf)
 void kill_pid(pid_t pid)
 {
 	int ret;
+	int childno;
+
+	childno = find_childno(pid);
+	if (shm->children[childno].dontkillme == TRUE)
+		return;
 
 	ret = kill(pid, SIGKILL);
 	if (ret != 0)
