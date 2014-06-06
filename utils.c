@@ -75,14 +75,15 @@ void kill_pid(pid_t pid)
 		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
 
+#define BACKTRACE_SIZE 100
+
 void show_backtrace(void)
 {
 	unsigned int j, nptrs;
-#define SIZE 100
-	void *buffer[SIZE];
+	void *buffer[BACKTRACE_SIZE];
 	char **strings;
 
-	nptrs = backtrace(buffer, SIZE);
+	nptrs = backtrace(buffer, BACKTRACE_SIZE);
 
 	strings = backtrace_symbols(buffer, nptrs);
 	if (strings == NULL) {
