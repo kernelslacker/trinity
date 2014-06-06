@@ -29,12 +29,6 @@ const char * generate_pathname(void)
 
 	len = strlen(pathname);
 
-	/* empty string. */
-	if ((rand() % 100) == 0) {
-		memset(newpath, 0, MAX_PATH_LEN);
-		goto out;
-	}
-
 	generate_random_page(page_rand);
 	memcpy(newpath, page_rand, MAX_PATH_LEN);	// FIXME: we only want a subset (ascii basically)
 
