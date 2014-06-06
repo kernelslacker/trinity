@@ -148,7 +148,7 @@ static void render_syscall_prefix(int childno, char *buffer)
 	for (i = 1; i < entry->num_args + 1; i++)
 		sptr = render_arg(sptr, i, entry, childno);
 
-	sptr += sprintf(sptr, "%s) ", ANSI_RESET);
+	(void) sprintf(sptr, "%s) ", ANSI_RESET);
 }
 
 static void flushbuffer(char *buffer, FILE *fd)
@@ -171,7 +171,7 @@ static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
 		else
 			sptr += sprintf(sptr, "%ld", (long) rec->retval);
 	}
-	sptr += sprintf(sptr, "%s\n", ANSI_RESET);
+	(void) sprintf(sptr, "%s\n", ANSI_RESET);
 }
 
 static void __output_syscall(char *buffer, unsigned int len)
