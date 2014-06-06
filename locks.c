@@ -58,6 +58,11 @@ void lock(lock_t *_lock)
 	pid_t pid = getpid();
 
 	while (_lock->lock == LOCKED) {
+		if (_lock->owner == pid) {
+			debugf("lol, already have lock!\n");
+			return;
+		}
+
 		/* This is pretty horrible. But if we call lock()
 		 * from the watchdog code, and a child is hogging a lock
 		 * (or worse, a dead child), we'll never call check_lock()
