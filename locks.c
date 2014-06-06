@@ -28,6 +28,22 @@ void unlock(lock_t *_lock)
 }
 
 /*
+ * Release a lock we already hold.
+ *
+ * This function should be used sparingly. It's pretty much never something
+ * that you'll need, just for rare occasions like when we return from a
+ * signal handler with a lock held.
+ */
+void bust_lock(lock_t *_lock)
+{
+	if (_lock->lock != LOCKED)
+		return;
+	if (getpid() != _lock->owner)
+		return;
+	unlock(_lock);
+}
+
+/*
  * Check that the processes holding locks are still alive.
  * And if they are, ensure they haven't held them for an
  * excessive length of time.

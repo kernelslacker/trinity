@@ -17,3 +17,5 @@ void lock(lock_t *_lock);
 void unlock(lock_t *_lock);
 
 void check_all_locks(void);
+
+void bust_lock(lock_t *_lock);
