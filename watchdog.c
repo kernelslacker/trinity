@@ -290,14 +290,17 @@ static void check_children(void)
 		gettimeofday(&tv, NULL);
 		now = tv.tv_sec;
 
+		if (old > now)
+			diff = old - now;
+		else
+			diff = now - old;
+
 		/* if we wrapped, just reset it, we'll pick it up next time around. */
 		if (old > (now + 3)) {
 			output(1, "child %u wrapped! old=%lu now=%lu\n", i, old, now);
 			rec->tv.tv_sec = now;
 			continue;
 		}
-
-		diff = now - old;
 
 		/* if we're way off, we're comparing garbage. Reset it. */
 		if (diff > 1000) {
