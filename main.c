@@ -299,9 +299,16 @@ void main_loop(void)
 		handle_children();
 	}
 
+	/* if the pid map is corrupt, we can't trust that we'll
+	 * ever successfully finish pidmap_empty, so skip it */
+	if ((shm->exit_reason == EXIT_LOST_CHILD) ||
+	    (shm->exit_reason == EXIT_SHM_CORRUPTION))
+		goto dont_wait;
+
 	/* Wait until all children have exited. */
 	while (pidmap_empty() == FALSE)
 		handle_children();
 
+dont_wait:
 	output(0, "Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
 }
