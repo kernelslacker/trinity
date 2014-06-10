@@ -14,7 +14,6 @@ const char * generate_pathname(void)
 	const char *pathname = get_filename();
 	char *newpath;
 	unsigned int len;
-	unsigned int i;
 
 	if (pathname == NULL)		/* handle -n correctly. */
 		return NULL;
@@ -52,13 +51,6 @@ const char * generate_pathname(void)
 		}
 	}
 
-	/* Sometimes, remove all /'s */
-	if (rand_bool()) {
-		for (i = 0; i < len; i++) {
-			if (newpath[i] == '/')
-				newpath[i] = rand();
-		}
-	}
 out:
 	/* 50/50 chance of making it look like a dir */
 	if (rand_bool()) {
