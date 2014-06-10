@@ -1,5 +1,23 @@
 /*
  * Routines to get/set seeds.
+ *
+ * On startup, the main process either generates a seed via new_seed()
+ * or gets one passed in by the -s parameter.
+ *
+ * Example: we have four children, and our initial seed is 10000.
+ * When we fork children, each child uses this seed + its child number
+ * as its own personal seed. So the child seeds are 10001, 10002, 10003, 10004.
+ * If a child segfaults, we need to get a new seed, or we'll end up just
+ * redoing the same system calls. If our new seed is 20000, we now have children
+ * with seeds 10001, 20002, 10003, 10004.  This out-of-sync situation is
+ * a problem if we should happen to cause an oops, because we have two separate
+ * 'main' seeds in play.  So when we segfault, and main regenerates a new seed,
+ * we make sure the other children take notice and have them reseed to the
+ * new seed. We then end up with 20001, 20002, 20003, 20004.
+ *
+ * The net result is we end up reseeding quite a lot (and the chance of a child
+ * segfaulting increases as the child count goes up. Such is life when we
+ * deal with multi-threaded rand consumers.
  */
 #include <syslog.h>
 #include <unistd.h>
