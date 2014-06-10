@@ -12,11 +12,8 @@
 #include "post-mortem.h"
 #include "utils.h"
 
-#if 0
-static void dump_syscall_rec(int childno, FILE *fd, struct syscallrecord *rec)
+static void dump_syscall_rec(FILE *fd, struct syscallrecord *rec)
 {
-	int err;
-
 	switch (rec->state) {
 	case UNKNOWN:
 		/* new child, so nothing to dump. */
@@ -25,19 +22,12 @@ static void dump_syscall_rec(int childno, FILE *fd, struct syscallrecord *rec)
 		/* haven't finished setting up, so don't dump. */
 		break;
 	case BEFORE:
-		output_syscall_prefix_to_fd(childno, fd, TRUE);
+		fprintf(fd, "%s\n", rec->prebuffer);
 		break;
 	case AFTER:
 	case DONE:
-		output_syscall_prefix_to_fd(childno, fd, TRUE);
-		err = IS_ERR(rec->retval);
-		if (err)
-			output_syscall_postfix_err(rec->retval, rec->errno_post, fd, TRUE);
-		else
-			output_syscall_postfix_success(rec->retval, fd, TRUE);
-		break;
 	case GOING_AWAY:
-		output_syscall_prefix_to_fd(childno, fd, TRUE);
+		fprintf(fd, "%s%s\n", rec->prebuffer, rec->postbuffer);
 		break;
 	}
 }
@@ -54,13 +44,12 @@ static void dump_syscall_records(void)
 	}
 
 	for_each_child(i) {
-		dump_syscall_rec(i, fd, &shm->previous[i]);
-		dump_syscall_rec(i, fd, &shm->syscall[i]);
+//		dump_syscall_rec(fd, &shm->children[i].previous);
+		dump_syscall_rec(fd, &shm->children[i].syscall);
 	}
 
 	fclose(fd);
 }
-#endif
 
 void tainted_postmortem(int taint)
 {
@@ -75,5 +64,5 @@ void tainted_postmortem(int taint)
 	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
 	closelog();
 
-//	dump_syscall_records();
+	dump_syscall_records();
 }
