@@ -143,7 +143,7 @@ static void read_mapping_reverse(struct map *map)
 	unsigned int i, nr;
 	char buf[page_size];
 
-	nr = nr_pages(map);
+	nr = nr_pages(map) - 1;
 
 	for (i = nr; i > 0; i--)
 		memcpy(buf, p + (i * page_size), page_size);
