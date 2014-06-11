@@ -16,7 +16,7 @@ void create_shm(void);
 void init_shm(void);
 
 struct shm_s {
-	struct childdata *children;
+	struct childdata **children;
 
 	/* Various statistics. TODO: Move to separate struct */
 	unsigned long total_syscalls_done;

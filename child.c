@@ -113,7 +113,7 @@ static void oom_score_adj(int adj)
 
 static void truncate_log(int childno)
 {
-	struct childdata *child = &shm->children[childno];
+	struct childdata *child = shm->children[childno];
 	int fd;
 
 	child->logdirty = FALSE;
@@ -146,7 +146,7 @@ static void reinit_child(struct childdata *child)
 
 void init_child(int childno)
 {
-	struct childdata *child = &shm->children[childno];
+	struct childdata *child = shm->children[childno];
 	cpu_set_t set;
 	pid_t pid = getpid();
 	char childname[17];
@@ -226,7 +226,7 @@ static void check_parent_pid(void)
 
 	//TODO: replace all this with calls to postmortem()
 	for_each_child(i) {
-		child = &shm->children[i];
+		child = shm->children[i];
 
 		// Skip over 'boring' entries.
 		if ((child->pid == EMPTY_PIDSLOT) &&
@@ -283,7 +283,7 @@ static const struct child_funcs child_ops[] = {
 // FIXME: when we have different child ops, we're going to need to redo the progress detector.
 static bool handle_sigreturn(int childno)
 {
-	struct childdata *child = &shm->children[childno];
+	struct childdata *child = shm->children[childno];
 	struct syscallrecord *rec;
 	static unsigned int count = 0;
 	static unsigned int last = -1;
@@ -343,7 +343,7 @@ void child_process(int childno)
 		periodic_work();
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
-		if (shm->seed != shm->children[childno].seed)
+		if (shm->seed != shm->children[childno]->seed)
 			set_seed(childno);
 
 		/* Choose operations for this iteration. */

@@ -50,7 +50,7 @@ void check_all_locks(void)
 	check_lock(&shm->syscalltable_lock);
 
 	for_each_child(i)
-		check_lock(&shm->children[i].syscall.lock);
+		check_lock(&shm->children[i]->syscall.lock);
 }
 
 void lock(lock_t *_lock)
@@ -63,10 +63,10 @@ void lock(lock_t *_lock)
 
 			debugf("lol, already have lock!\n");
 			childno = find_childno(pid);
-			shm->children[childno].dontkillme = TRUE;
+			shm->children[childno]->dontkillme = TRUE;
 			sleep(3);
 			show_backtrace();
-			shm->children[childno].dontkillme = FALSE;
+			shm->children[childno]->dontkillme = FALSE;
 			return;
 		}
 

@@ -220,7 +220,7 @@ static unsigned long get_argval(int childno, unsigned int argnum)
 	struct syscallrecord *rec;
 	unsigned long val = 0;
 
-	rec = &shm->children[childno].syscall;
+	rec = &shm->children[childno]->syscall;
 
 	switch (argnum) {
 	case 1:	val = rec->a1;
@@ -329,7 +329,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 	unsigned int call;
 	enum argtype argtype;
 
-	rec = &shm->children[childno].syscall;
+	rec = &shm->children[childno]->syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
@@ -404,7 +404,7 @@ void generic_sanitise(int childno)
 	struct syscallentry *entry;
 	unsigned int call;
 
-	rec = &shm->children[childno].syscall;
+	rec = &shm->children[childno]->syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
@@ -425,7 +425,7 @@ void generic_sanitise(int childno)
 void generic_free_arg(int childno)
 {
 	struct syscallentry *entry;
-	unsigned int call = shm->children[childno].syscall.nr;
+	unsigned int call = shm->children[childno]->syscall.nr;
 	unsigned int i;
 
 	entry = syscalls[call].entry;

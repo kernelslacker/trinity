@@ -15,7 +15,7 @@ int find_childno(pid_t mypid)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (shm->children[i].pid == mypid)
+		if (shm->children[i]->pid == mypid)
 			return i;
 	}
 	return CHILD_NOT_FOUND;
@@ -26,7 +26,7 @@ bool pidmap_empty(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (shm->children[i].pid != EMPTY_PIDSLOT)
+		if (shm->children[i]->pid != EMPTY_PIDSLOT)
 			return FALSE;
 	}
 	return TRUE;
@@ -44,7 +44,7 @@ void dump_childnos(void)
 		for (j = 0; j < 8; j++) {
 			struct childdata *child;
 
-			child = &shm->children[i + j];
+			child = shm->children[i + j];
 
 			if (child->pid == EMPTY_PIDSLOT) {
 				sptr += sprintf(sptr, "[empty] ");
@@ -130,7 +130,7 @@ unsigned int get_pid(void)
 	switch (rand() % 3) {
 	case 0:
 retry:		i = rand() % max_children;
-		pid = shm->children[i].pid;
+		pid = shm->children[i]->pid;
 		if (pid == EMPTY_PIDSLOT)
 			goto retry;
 		break;

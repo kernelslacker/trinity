@@ -41,7 +41,7 @@ void open_logfiles(void)
 	}
 
 	for_each_child(i) {
-		struct childdata *child = &shm->children[i];
+		struct childdata *child = shm->children[i];
 
 		sprintf(logfilename, "trinity-child%u.log", i);
 		unlink(logfilename);
@@ -60,7 +60,7 @@ void close_logfiles(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		struct childdata *child = &shm->children[i];
+		struct childdata *child = shm->children[i];
 
 		if (child->logfile != NULL)
 			fclose(child->logfile);
@@ -84,7 +84,7 @@ static FILE * find_logfile_handle(void)
 
 	i = find_childno(pid);
 	if (i != CHILD_NOT_FOUND)
-		return shm->children[i].logfile;
+		return shm->children[i]->logfile;
 	else {
 		/* try one more time. FIXME: This is awful. */
 		unsigned int j;
@@ -92,13 +92,13 @@ static FILE * find_logfile_handle(void)
 		sleep(1);
 		i = find_childno(pid);
 		if (i != CHILD_NOT_FOUND)
-			return shm->children[i].logfile;
+			return shm->children[i]->logfile;
 
 		outputerr("## Couldn't find logfile for pid %d\n", pid);
 		dump_childnos();
 		outputerr("## Logfiles for pids: ");
 		for_each_child(j)
-			outputerr("%p ", shm->children[j].logfile);
+			outputerr("%p ", shm->children[j]->logfile);
 		outputerr("\n");
 	}
 	return NULL;
@@ -112,7 +112,7 @@ unsigned int highest_logfile(void)
 	if (logging == FALSE)
 		return 0;
 
-	file = shm->children[max_children - 1].logfile;
+	file = shm->children[max_children - 1]->logfile;
 	ret = fileno(file);
 
 	return ret;
@@ -127,7 +127,7 @@ void synclogs(void)
 		return;
 
 	for_each_child(i) {
-		struct childdata *child = &shm->children[i];
+		struct childdata *child = shm->children[i];
 		int ret;
 
 		if (child->logdirty == FALSE)
@@ -165,7 +165,7 @@ FILE *robust_find_logfile_handle(void)
 			outputerr("## child logfile handle was null logging to main!\n");
 			(void)fflush(stdout);
 			for_each_child(j)
-				shm->children[j].logfile = mainlogfile;
+				shm->children[j]->logfile = mainlogfile;
 			sleep(5);
 			handle = find_logfile_handle();
 		}
@@ -241,7 +241,7 @@ void output(unsigned char level, const char *fmt, ...)
 		childno = find_childno(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", childno, pid);
 		prefix = child_prefix;
-		shm->children[childno].logdirty = TRUE;
+		shm->children[childno]->logdirty = TRUE;
 	}
 
 	/* formatting output */

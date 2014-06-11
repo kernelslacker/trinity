@@ -48,7 +48,7 @@ static void sanitise_mremap(int childno, struct syscallrecord *rec)
  */
 static void post_mremap(int childno, struct syscallrecord *rec)
 {
-	struct map *map = (struct map *) shm->children[childno].scratch;
+	struct map *map = (struct map *) shm->children[childno]->scratch;
 	void *ptr = (void *) rec->retval;
 
 	if (ptr == MAP_FAILED)
@@ -56,7 +56,7 @@ static void post_mremap(int childno, struct syscallrecord *rec)
 
 	map->ptr = ptr;
 
-	shm->children[childno].scratch = 0;
+	shm->children[childno]->scratch = 0;
 
 	/* Sometimes dirty the mapping first. */
 	if (rand_bool())

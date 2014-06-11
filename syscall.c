@@ -65,7 +65,7 @@ static unsigned long do_syscall(int childno)
 	unsigned long ret = 0;
 	bool needalarm;
 
-	rec = &shm->children[childno].syscall;
+	rec = &shm->children[childno]->syscall;
 	nr = rec->nr;
 
 	/* Some architectures (IA64/MIPS) start their Linux syscalls
@@ -115,7 +115,7 @@ bool mkcall(int childno)
 	unsigned int call;
 	unsigned long ret = 0;
 
-	rec = &shm->children[childno].syscall;
+	rec = &shm->children[childno]->syscall;
 
 	call = rec->nr;
 	entry = syscalls[call].entry;
@@ -207,7 +207,7 @@ already_done:
 	    entry->post(childno, rec);
 
 	/* store info for debugging. */
-	previous = &shm->children[childno].previous;
+	previous = &shm->children[childno]->previous;
 	previous->nr = rec->nr;
 	previous->a1 = rec->a1;
 	previous->a2 = rec->a2;
@@ -227,7 +227,7 @@ already_done:
 
 bool this_syscallname(const char *thisname, int childno)
 {
-	unsigned int call = shm->children[childno].syscall.nr;
+	unsigned int call = shm->children[childno]->syscall.nr;
 	struct syscallentry *syscall_entry = syscalls[call].entry;
 
 	return strcmp(thisname, syscall_entry->name);
