@@ -84,6 +84,9 @@ static unsigned int reap_dead_kids(void)
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
+		if (pid_is_valid(pid) == FALSE)
+			continue;
+
 		ret = kill(pid, 0);
 		/* If it disappeared, reap it. */
 		if (ret == -1) {
