@@ -151,6 +151,19 @@ void init_child(int childno)
 	pid_t pid = getpid();
 	char childname[17];
 
+	/* Wait for parent to set our childno */
+	while (child->pid != getpid()) {
+		int ret = 0;
+
+		/* Make sure parent is actually alive to wait for us. */
+		ret = pid_alive(shm->mainpid);
+		if (ret != 0) {
+			shm->exit_reason = EXIT_SHM_CORRUPTION;
+			outputerr(BUGTXT "parent (%d) went away!\n", shm->mainpid);
+			sleep(20000);
+		}
+	}
+
 	this_child = childno;
 
 	reinit_child(child);
@@ -175,19 +188,6 @@ void init_child(int childno)
 	prctl(PR_SET_NAME, (unsigned long) &childname);
 
 	oom_score_adj(500);
-
-	/* Wait for parent to set our childno */
-	while (child->pid != getpid()) {
-		int ret = 0;
-
-		/* Make sure parent is actually alive to wait for us. */
-		ret = pid_alive(shm->mainpid);
-		if (ret != 0) {
-			shm->exit_reason = EXIT_SHM_CORRUPTION;
-			outputerr(BUGTXT "parent (%d) went away!\n", shm->mainpid);
-			sleep(20000);
-		}
-	}
 
 	/* Wait for all the children to start up. */
 	while (shm->ready == FALSE)
