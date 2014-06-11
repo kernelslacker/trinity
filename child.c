@@ -152,7 +152,7 @@ void init_child(int childno)
 	char childname[17];
 
 	/* Wait for parent to set our childno */
-	while (child->pid != getpid()) {
+	while (child->pid != pid) {
 		int ret = 0;
 
 		/* Make sure parent is actually alive to wait for us. */
