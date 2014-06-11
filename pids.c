@@ -54,9 +54,9 @@ void dump_childnos(void)
 
 				if (pid_alive(child->pid == -1))
 					sptr += sprintf(sptr, "%s", ANSI_RED);
-			}
 
-			sptr += sprintf(sptr, "%d %s", child->pid, ANSI_RESET);
+				sptr += sprintf(sptr, "%d %s", child->pid, ANSI_RESET);
+			}
 		}
 		sptr += sprintf(sptr, "\n");
 		*sptr = '\0';
