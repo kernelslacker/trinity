@@ -49,6 +49,7 @@ static int check_shm_sanity(void)
 			continue;
 
 		if (pid_is_valid(pid) == FALSE) {
+			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
 			if (shm->exit_reason == STILL_RUNNING)
 				shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
 
