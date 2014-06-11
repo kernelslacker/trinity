@@ -43,7 +43,12 @@ void create_shm(void)
 
 void create_child_structs(void)
 {
-	shm->children = alloc_shared(max_children * sizeof(struct childdata));
+	unsigned int i;
+
+	shm->children = alloc_shared(max_children * sizeof(struct childdata *));
+
+	for_each_child(i)
+		shm->children[i] = (struct childdata *) alloc_shared(sizeof(struct childdata));
 }
 
 void init_shm(void)
@@ -62,7 +67,7 @@ void init_shm(void)
 	set_seed(0);
 
 	for_each_child(i) {
-		struct childdata *child = &shm->children[i];
+		struct childdata *child = shm->children[i];
 		struct syscallrecord *syscall, *previous;
 
 		syscall = &child->syscall;

@@ -25,7 +25,7 @@ static void sanitise_ptrace(__unused__ int childno, struct syscallrecord *rec)
 	 *  but broken is at least better than hanging.
 	 */
 	i  = rand() % shm->running_childs;
-	rec->a2 = shm->children[i].pid;
+	rec->a2 = shm->children[i]->pid;
 }
 
 

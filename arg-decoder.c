@@ -20,7 +20,7 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 	unsigned long reg = 0;
 	enum argtype type = 0;
 
-	rec = &shm->children[childno].syscall;
+	rec = &shm->children[childno]->syscall;
 
 	switch (argnum) {
 	case 1:	type = entry->arg1type;
@@ -128,7 +128,7 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
  */
 static void render_syscall_prefix(int childno, char *buffer)
 {
-	struct childdata *child = &shm->children[childno];
+	struct childdata *child = shm->children[childno];
 	struct syscallentry *entry;
 	struct syscallrecord *rec;
 	char *sptr = buffer;
@@ -195,7 +195,7 @@ static void __output_syscall(char *buffer, unsigned int len)
 /* This function is always called from a fuzzing child. */
 void output_syscall_prefix(int childno)
 {
-	struct syscallrecord *rec = &shm->children[childno].syscall;
+	struct syscallrecord *rec = &shm->children[childno]->syscall;
 	char *buffer = rec->prebuffer;
 
 	memset(buffer, 0, PREBUFFER_LEN);	// TODO: optimize to only strip ending
@@ -207,7 +207,7 @@ void output_syscall_prefix(int childno)
 
 void output_syscall_postfix(int childno)
 {
-	struct syscallrecord *rec = &shm->children[childno].syscall;
+	struct syscallrecord *rec = &shm->children[childno]->syscall;
 	char *buffer = rec->postbuffer;
 
 	memset(buffer, 0, POSTBUFFER_LEN);	// TODO: optimize to only strip ending post render.

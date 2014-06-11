@@ -44,8 +44,8 @@ static void dump_syscall_records(void)
 	}
 
 	for_each_child(i) {
-		dump_syscall_rec(fd, &shm->children[i].previous);
-		dump_syscall_rec(fd, &shm->children[i].syscall);
+		dump_syscall_rec(fd, &shm->children[i]->previous);
+		dump_syscall_rec(fd, &shm->children[i]->syscall);
 		fprintf(fd, "\n");
 	}
 

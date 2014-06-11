@@ -44,12 +44,13 @@ struct map * get_map(void)
 	 * because main doesn't have any 'local' mappings.
 	 */
 	if (this_child != 0) {
-		if (shm->children[this_child].num_mappings > 0)
+		if (shm->children[this_child]->num_mappings > 0)
 			local = rand_bool();
 	}
 
+	//FIXME: cache child ptr.
 	if (local == TRUE)
-		map = __get_map(&shm->children[this_child].mappings->list, shm->children[this_child].num_mappings);
+		map = __get_map(&shm->children[this_child]->mappings->list, shm->children[this_child]->num_mappings);
 	else
 		map = __get_map(&shared_mappings->list, num_shared_mappings);
 
@@ -59,7 +60,7 @@ struct map * get_map(void)
 static void delete_local_mapping(int childno, struct map *map)
 {
 	list_del(&map->list);
-	shm->children[childno].num_mappings--;
+	shm->children[childno]->num_mappings--;
 }
 
 /* Called from munmap()'s ->post routine. */
@@ -77,9 +78,9 @@ struct map * common_set_mmap_ptr_len(int childno)
 	struct syscallrecord *rec;
 	struct map *map;
 
-	rec = &shm->children[childno].syscall;
+	rec = &shm->children[childno]->syscall;
 	map = (struct map *) rec->a1;
-	shm->children[childno].scratch = (unsigned long) map;    /* Save this for ->post */
+	shm->children[childno]->scratch = (unsigned long) map;    /* Save this for ->post */
 	if (map == NULL) {
 		rec->a1 = 0;
 		rec->a2 = 0;

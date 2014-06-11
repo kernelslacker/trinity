@@ -78,7 +78,7 @@ static void sanitise_sendmsg(int childno, struct syscallrecord *rec)
 	socklen_t salen;
 
         msg = malloc(sizeof(struct msghdr));
-	shm->children[childno].scratch = (unsigned long) msg;
+	shm->children[childno]->scratch = (unsigned long) msg;
 
 	if (msg == NULL) {
 		// just do something weird.
@@ -102,7 +102,7 @@ static void sanitise_sendmsg(int childno, struct syscallrecord *rec)
 
 static void post_sendmsg(int childno, __unused__ struct syscallrecord *rec)
 {
-	void *ptr = (void *) shm->children[childno].scratch;
+	void *ptr = (void *) shm->children[childno]->scratch;
 
 	if (ptr != NULL) {
 		struct msghdr *msg;
@@ -115,7 +115,7 @@ static void post_sendmsg(int childno, __unused__ struct syscallrecord *rec)
 		free(ptr);
 	}
 
-	shm->children[childno].scratch = 0;
+	shm->children[childno]->scratch = 0;
 }
 
 struct syscallentry syscall_sendmsg = {

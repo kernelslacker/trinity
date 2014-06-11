@@ -67,7 +67,7 @@ static void sanitise_move_pages(int childno, struct syscallrecord *rec)
 
 	/* setup array of ptrs to pages to move */
 	page_alloc = (unsigned long *) zmalloc(page_size);
-	shm->children[childno].scratch = (unsigned long) page_alloc;
+	shm->children[childno]->scratch = (unsigned long) page_alloc;
 
 	for (i = 0; i < count; i++) {
 		if (rand_bool()) {
@@ -105,13 +105,13 @@ static void post_move_pages(int childno, __unused__ struct syscallrecord *rec)
 {
 	unsigned long *page;
 
-	page = (void *) shm->children[childno].scratch;
+	page = (void *) shm->children[childno]->scratch;
 	if (page == NULL)
 		return;
 
 	free_all_pageallocs(page);
 
-	shm->children[childno].scratch = 0;
+	shm->children[childno]->scratch = 0;
 }
 
 struct syscallentry syscall_move_pages = {

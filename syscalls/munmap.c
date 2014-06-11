@@ -55,7 +55,7 @@ static void sanitise_munmap(int childno, struct syscallrecord *rec)
 
 static void post_munmap(int childno, struct syscallrecord *rec)
 {
-	struct map *map = (struct map *) shm->children[childno].scratch;
+	struct map *map = (struct map *) shm->children[childno]->scratch;
 
 	if (rec->retval != 0)
 		return;
@@ -63,7 +63,7 @@ static void post_munmap(int childno, struct syscallrecord *rec)
 	if (action == WHOLE)
 		delete_mapping(childno, map);
 
-	shm->children[childno].scratch = 0;
+	shm->children[childno]->scratch = 0;
 }
 
 struct syscallentry syscall_munmap = {

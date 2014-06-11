@@ -44,7 +44,7 @@ static int check_shm_sanity(void)
 	for_each_child(i) {
 		pid_t pid;
 
-		pid = shm->children[i].pid;
+		pid = shm->children[i]->pid;
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -80,7 +80,7 @@ static unsigned int reap_dead_kids(void)
 		pid_t pid;
 		int ret;
 
-		pid = shm->children[i].pid;
+		pid = shm->children[i]->pid;
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -133,7 +133,7 @@ static void kill_all_kids(void)
 		for_each_child(i) {
 			pid_t pid;
 
-			pid = shm->children[i].pid;
+			pid = shm->children[i]->pid;
 			if (pid == EMPTY_PIDSLOT)
 				continue;
 
@@ -149,7 +149,7 @@ static void kill_all_kids(void)
 
 	/* Just to be sure, clear out the pid slots. */
 	for_each_child(i) {
-		shm->children[i].pid = EMPTY_PIDSLOT;
+		shm->children[i]->pid = EMPTY_PIDSLOT;
 	}
 }
 
@@ -210,7 +210,7 @@ unsigned int check_if_fd(unsigned int child)
 	unsigned callno;
 	bool do32;
 
-	rec = &shm->children[child].syscall;
+	rec = &shm->children[child]->syscall;
 
 	lock(&rec->lock);
 	fd = rec->a1;
@@ -244,7 +244,7 @@ static void stuck_syscall_info(int childno)
 	if (debug == FALSE)
 		return;
 
-	child = &shm->children[childno];
+	child = shm->children[childno];
 
 	rec = &child->syscall;
 	callno = rec->nr;
@@ -278,7 +278,7 @@ static void check_children(void)
 		time_t diff, old, now;
 		pid_t pid;
 
-		child = &shm->children[i];
+		child = shm->children[i];
 		rec = &child->syscall;
 
 		pid = child->pid;
@@ -375,7 +375,7 @@ static void watchdog(void)
 			synclogs();
 
 		for_each_child(i) {
-			struct syscallrecord *rec = &shm->children[i].syscall;
+			struct syscallrecord *rec = &shm->children[i]->syscall;
 
 			if (rec->op_nr > hiscore)
 				hiscore = rec->op_nr;
