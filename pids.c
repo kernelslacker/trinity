@@ -106,10 +106,8 @@ void pids_init(void)
 
 int pid_is_valid(pid_t pid)
 {
-	if ((pid > pidmax) || (pid < 1)) {
-		output(0, "Sanity check failed! Found pid %d!\n", pid);
+	if ((pid > pidmax) || (pid < 1))
 		return FALSE;
-	}
 
 	return TRUE;
 }
