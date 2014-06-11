@@ -49,6 +49,9 @@ void dump_childnos(void)
 			if (child->pid == EMPTY_PIDSLOT) {
 				sptr += sprintf(sptr, "[empty] ");
 			} else {
+				if (pid_is_valid(child->pid) == FALSE)
+					sptr += sprintf(sptr, "%s", ANSI_RED);
+
 				if (pid_alive(child->pid == -1))
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 			}
