@@ -259,7 +259,7 @@ static void handle_children(void)
 			continue;
 
 		if (pid_is_valid(pid) == FALSE)	/* If we find something invalid, we just ignore */
-			return;			/* it and leave it to the watchdog to clean up. */
+			continue;		/* it and leave it to the watchdog to clean up. */
 
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 		if (pid != 0)
