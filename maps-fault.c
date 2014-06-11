@@ -60,7 +60,7 @@ static void dirty_mapping_reverse(struct map *map)
 	char *p = map->ptr;
 	unsigned int i, nr;
 
-	nr = nr_pages(map);
+	nr = nr_pages(map) - 1;
 
 	for (i = nr; i > 0; i--)
 		p[i * page_size] = rand();
