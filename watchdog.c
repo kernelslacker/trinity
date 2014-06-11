@@ -88,11 +88,11 @@ static unsigned int reap_dead_kids(void)
 		/* If it disappeared, reap it. */
 		if (ret == -1) {
 			if (errno == ESRCH) {
-				output(0, "pid %d has disappeared. Reaping.\n", pid);
+				output(0, "pid %u has disappeared. Reaping.\n", pid);
 				reap_child(pid);
 				reaped++;
 			} else {
-				output(0, "problem checking on pid %d (%d:%s)\n", pid, errno, strerror(errno));
+				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
 			}
 		} else {
 			alive++;
@@ -165,11 +165,11 @@ static bool __check_main(void)
 
 		/* No. Check what happened. */
 		if (errno == ESRCH) {
-			output(0, "main pid %d has disappeared.\n", shm->mainpid);
+			output(0, "main pid %u has disappeared.\n", shm->mainpid);
 			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
 			shm->mainpid = 0;
 		} else {
-			output(0, "problem checking on pid %d (%d:%s)\n", shm->mainpid, errno, strerror(errno));
+			output(0, "problem checking on pid %u (%d:%s)\n", shm->mainpid, errno, strerror(errno));
 		}
 		return FALSE;
 	}
@@ -251,7 +251,7 @@ static void stuck_syscall_info(int childno)
 	if (check_if_fd(childno) == TRUE)
 		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
 
-	output(0, "child %d (pid %d) Stuck in syscall %d:%s%s%s.\n",
+	output(0, "child %d (pid %u) Stuck in syscall %d:%s%s%s.\n",
 		childno, child->pid, callno,
 		print_syscall_name(callno, rec->do32bit),
 		rec->do32bit ? " (32bit)" : "",
@@ -313,14 +313,14 @@ static void check_children(void)
 		/* After 30 seconds of no progress, send a kill signal. */
 		if (diff == 30) {
 			stuck_syscall_info(i);
-			debugf("child %d (pid %d) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
+			debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
 			child->kill_count++;
 			kill_pid(pid);
 		}
 
 		/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 		if (diff >= 40) {
-			debugf("sending another SIGKILL to child %d (pid %d). [kill count:%d] [diff:%d]\n",
+			debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
 				i, pid, child->kill_count, diff);
 			child->kill_count++;
 			kill_pid(pid);
