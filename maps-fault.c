@@ -45,23 +45,14 @@ static void dirty_whole_mapping(struct map *map)
 static void dirty_every_other_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i, nr;
+	unsigned int i, nr, first;
 
 	nr = nr_pages(map);
 
-	if (rand_bool()) {
-		/* X.X.X.X....  */
-		for (i = 0; i < nr; i++) {
-			p[i * page_size] = rand();
-			i++;
-		}
-	} else {
-		/* .X.X.X.X.... */
-		for (i = 0; i < nr; i++) {
-			i++;
-			p[i * page_size] = rand();
-		}
-	}
+	first = rand_bool();
+
+	for (i = first; i < nr; i+=2)
+		p[i * page_size] = rand();
 }
 
 static void dirty_mapping_reverse(struct map *map)
