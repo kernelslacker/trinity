@@ -28,7 +28,7 @@ void * get_writable_address(unsigned long size)
 	i = rand() % 3;
 
 	if (size > page_size)
-		i = rand_range(2, 3);
+		i = rand_range(1, 2);
 
 	switch (i) {
 	case 0:	addr = page_rand;
