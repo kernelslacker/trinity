@@ -126,24 +126,15 @@ static void read_whole_mapping(struct map *map)
 static void read_every_other_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i, nr;
+	unsigned int i, nr, first;
 	char buf[page_size];
 
 	nr = nr_pages(map);
 
-	if (rand_bool()) {
-		/* X.X.X.X....  */
-		for (i = 0; i < nr; i++) {
-			memcpy(buf, p + (i * page_size), page_size);
-			i++;
-		}
-	} else {
-		/* .X.X.X.X.... */
-		for (i = 0; i < nr; i++) {
-			i++;
-			memcpy(buf, p + (i * page_size), page_size);
-		}
-	}
+	first = rand_bool();
+
+	for (i = first; i < nr; i+=2)
+		memcpy(buf, p + (i * page_size), page_size);
 }
 
 static void read_mapping_reverse(struct map *map)
