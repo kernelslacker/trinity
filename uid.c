@@ -24,7 +24,7 @@ void dump_uids(void)
 	getresuid(&uid, &euid, &suid);
 	getresgid(&gid, &egid, &sgid);
 
-	outputstd("initial uid:%d gid:%d euid:%d egid:%d suid:%d sgid:%d\n",
+	outputstd("initial uid:%u gid:%u euid:%u egid:%u suid:%u sgid:%u\n",
 		uid, gid, euid, egid, suid, sgid);
 }
 
@@ -45,7 +45,7 @@ void drop_privs(void)
 		exit(EXIT_FAILURE);
 	}
 
-	outputstd("set uid to %d and gid to %d (nobody)\n", nobody_uid, nobody_gid);
+	outputstd("set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
 }
 
 void init_uids(void)
@@ -125,7 +125,7 @@ changed:
 		if (myuid == 65534)
 			return;
 
-		output(0, "uid changed! Was: %d, now %d\n", orig_uid, myuid);
+		output(0, "uid changed! Was: %u, now %u\n", orig_uid, myuid);
 
 		shm->exit_reason = EXIT_UID_CHANGED;
 		_exit(EXIT_FAILURE);
