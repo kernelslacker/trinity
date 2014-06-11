@@ -46,7 +46,9 @@ void dump_childnos(void)
 
 			child = &shm->children[i + j];
 
-			if (child->pid != EMPTY_PIDSLOT) {
+			if (child->pid == EMPTY_PIDSLOT) {
+				sptr += sprintf(sptr, "[empty] ");
+			} else {
 				if (pid_alive(child->pid == -1))
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 			}
