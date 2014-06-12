@@ -11,7 +11,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-struct map* map;
+static struct map* map;
 
 static void sanitise_mprotect(int childno, __unused__ struct syscallrecord *rec)
 {
