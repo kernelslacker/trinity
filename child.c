@@ -283,7 +283,7 @@ static bool handle_sigreturn(void)
 {
 	struct syscallrecord *rec;
 	static unsigned int count = 0;
-	static unsigned int last = -1;
+	static unsigned int last = 0;
 
 	rec = &this_child->syscall;
 
