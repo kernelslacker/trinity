@@ -270,7 +270,7 @@ static void periodic_work(void)
 
 struct child_funcs {
 	const char *name;
-	bool (*func)(int childno);
+	bool (*func)(void);
 	unsigned char likelyhood;
 };
 
@@ -352,7 +352,7 @@ void child_process(int childno)
 				lastop = child_ops[i].name;
 			}
 
-			ret = child_ops[i].func(childno);
+			ret = child_ops[i].func();
 			if (ret == FAIL)
 				return;
 		}
