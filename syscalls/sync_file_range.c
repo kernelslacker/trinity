@@ -12,8 +12,9 @@
 #include "shm.h"
 #include "syscall.h"
 #include "tables.h"
+#include "trinity.h"
 
-static void sanitise_sync_file_range(int childno, struct syscallrecord *rec)
+static void sanitise_sync_file_range(__unused__ int childno, struct syscallrecord *rec)
 {
 	long endbyte;
 	loff_t nbytes;
@@ -29,7 +30,7 @@ retry:
 	if (off >= (0x100000000LL << PAGE_SHIFT))
 		goto retry;
 
-	if (this_syscallname("sync_file_range2", childno) == FALSE) {
+	if (this_syscallname("sync_file_range2") == FALSE) {
 		rec->a2 = off;
 		rec->a3 = nbytes;
 	} else {
