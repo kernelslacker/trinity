@@ -80,7 +80,6 @@ struct map * common_set_mmap_ptr_len(int childno)
 
 	rec = &shm->children[childno]->syscall;
 	map = (struct map *) rec->a1;
-	shm->children[childno]->scratch = (unsigned long) map;    /* Save this for ->post */
 	if (map == NULL) {
 		rec->a1 = 0;
 		rec->a2 = 0;

@@ -35,9 +35,6 @@ struct childdata {
 	struct map *mappings;
 	unsigned int num_mappings;
 
-	/* used by sanitize routines as tmp storage. */
-	unsigned long scratch;
-
 	unsigned int seed;
 
 	pid_t pid;

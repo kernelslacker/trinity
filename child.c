@@ -138,7 +138,6 @@ static void reinit_child(struct childdata *child)
 	child->logdirty = FALSE;
 	child->mappings = NULL;
 	child->num_mappings = 0;
-	child->scratch = 0;
 	child->seed = 0;
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
