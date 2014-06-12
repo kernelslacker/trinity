@@ -105,7 +105,7 @@ static void post_mmap(struct syscallrecord *rec)
 		dirty_mapping(new);
 }
 
-static char * decode_mmap(struct syscallrecord *rec, int argnum)
+static char * decode_mmap(struct syscallrecord *rec, unsigned int argnum)
 {
 	char *buf;
 
