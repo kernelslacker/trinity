@@ -7,7 +7,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_set_robust_list(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_set_robust_list(struct syscallrecord *rec)
 {
 	rec->a2 = sizeof(struct robust_list_head);
 }

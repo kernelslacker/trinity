@@ -133,7 +133,7 @@ done:
 }
 
 
-static void sanitise_socket(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_socket(struct syscallrecord *rec)
 {
 	struct socket_triplet st = { .family = 0, .type = 0, .protocol = 0 };
 

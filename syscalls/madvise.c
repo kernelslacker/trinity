@@ -10,7 +10,7 @@
 #include "trinity.h"
 #include "compat.h"
 
-static void sanitise_madvise(__unused__ int childno, __unused__ struct syscallrecord *rec)
+static void sanitise_madvise(__unused__ struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len();
 }

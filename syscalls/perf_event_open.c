@@ -1179,7 +1179,7 @@ static void create_random_event(struct perf_event_attr *attr)
 
 }
 
-void sanitise_perf_event_open(__unused__ int childno, struct syscallrecord *rec)
+void sanitise_perf_event_open(struct syscallrecord *rec)
 {
 	struct perf_event_attr *attr;
 	unsigned long flags;

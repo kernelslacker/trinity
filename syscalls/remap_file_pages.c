@@ -12,7 +12,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_remap_file_pages(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_remap_file_pages(struct syscallrecord *rec)
 {
 	struct map *map;
 	size_t size;

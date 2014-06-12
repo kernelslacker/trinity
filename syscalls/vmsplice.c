@@ -11,7 +11,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_vmsplice(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_vmsplice(struct syscallrecord *rec)
 {
 	if ((rand() % 10) > 0)
 		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];

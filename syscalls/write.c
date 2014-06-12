@@ -9,7 +9,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_write(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_write(struct syscallrecord *rec)
 {
 	if ((rand() % 100) > 50)
 		rec->a3 = 1;

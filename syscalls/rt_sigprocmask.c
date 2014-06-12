@@ -8,7 +8,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_rt_sigprocmask(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 {
 	rec->a4 = sizeof(sigset_t);
 }

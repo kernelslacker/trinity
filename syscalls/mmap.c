@@ -34,7 +34,7 @@ static void do_anon(struct syscallrecord *rec)
 	rec->a6 = 0;
 }
 
-static void sanitise_mmap(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_mmap(struct syscallrecord *rec)
 {
 	unsigned int i;
 	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,

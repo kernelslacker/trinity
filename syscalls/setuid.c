@@ -7,7 +7,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_setuid(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_setuid(struct syscallrecord *rec)
 {
 	rec->a1 = rand32();
 }

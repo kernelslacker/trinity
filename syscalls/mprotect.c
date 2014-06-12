@@ -13,7 +13,7 @@
 
 static struct map* map;
 
-static void sanitise_mprotect(__unused__ int childno, __unused__ struct syscallrecord *rec)
+static void sanitise_mprotect(__unused__ struct syscallrecord *rec)
 {
 	map = common_set_mmap_ptr_len();
 }

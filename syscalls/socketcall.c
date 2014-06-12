@@ -53,7 +53,7 @@ static const struct socketcall_ptr socketcallptrs[] = {
 };
 
 
-static void sanitise_socketcall(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_socketcall(struct syscallrecord *rec)
 {
 	unsigned long *args;
 	unsigned int i;

@@ -8,7 +8,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_mlock(__unused__ int childno, __unused__ struct syscallrecord *rec)
+static void sanitise_mlock(__unused__ struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len();
 }

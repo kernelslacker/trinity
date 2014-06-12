@@ -33,7 +33,7 @@ unsigned long get_o_flags(void)
 /*
  * SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, int, mode)
  */
-static void sanitise_open(__unused__ int childno, struct syscallrecord *rec);
+static void sanitise_open(struct syscallrecord *rec);
 
 struct syscallentry syscall_open = {
 	.name = "open",
@@ -51,7 +51,7 @@ struct syscallentry syscall_open = {
 	.sanitise = sanitise_open,
 };
 
-static void sanitise_open(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_open(struct syscallrecord *rec)
 {
 	unsigned long flags;
 
@@ -63,7 +63,7 @@ static void sanitise_open(__unused__ int childno, struct syscallrecord *rec)
 /*
  * SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, int, mode)
  */
-static void sanitise_openat(__unused__ int childno, struct syscallrecord *rec);
+static void sanitise_openat(struct syscallrecord *rec);
 
 struct syscallentry syscall_openat = {
 	.name = "openat",
@@ -84,7 +84,7 @@ struct syscallentry syscall_openat = {
 	.sanitise = sanitise_openat,
 };
 
-static void sanitise_openat(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_openat(struct syscallrecord *rec)
 {
 	unsigned long flags;
 

@@ -12,7 +12,7 @@
 #include "trinity.h"
 #include "compat.h"
 
-static void sanitise_splice(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_splice(struct syscallrecord *rec)
 {
 	if ((rand() % 10) < 3)
 		return;

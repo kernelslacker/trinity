@@ -24,7 +24,7 @@
 
 static unsigned int count;
 
-static void sanitise_move_pages(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_move_pages(struct syscallrecord *rec)
 {
 	struct map *map;
 	int *nodes;
