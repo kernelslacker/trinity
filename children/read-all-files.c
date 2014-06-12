@@ -15,9 +15,8 @@
 #include "files.h"
 #include "log.h"
 #include "random.h"
-#include "trinity.h"	// __unused__
 
-int child_read_all_files(__unused__ int childno)
+int child_read_all_files(void)
 {
 	struct stat sb;
 	char *buffer;

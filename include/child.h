@@ -15,8 +15,8 @@ void init_child(int childno);
 
 void reap_child(pid_t childpid);
 
-bool child_random_syscalls(int childno);
-int child_read_all_files(int childno);
+bool child_random_syscalls(void);
+int child_read_all_files(void);
 
 void create_child_structs(void);
 
