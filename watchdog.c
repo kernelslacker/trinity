@@ -201,16 +201,13 @@ static int check_main_alive(void)
 }
 
 /* if the first arg was an fd, find out which one it was. */
-unsigned int check_if_fd(unsigned int child)
+unsigned int check_if_fd(struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	unsigned int fd;
 	unsigned int highest;
 	unsigned callno;
 	bool do32;
-
-	rec = &shm->children[child]->syscall;
 
 	lock(&rec->lock);
 	fd = rec->a1;
@@ -251,7 +248,7 @@ static void stuck_syscall_info(int childno)
 
 	memset(fdstr, 0, sizeof(fdstr));
 
-	if (check_if_fd(childno) == TRUE)
+	if (check_if_fd(rec) == TRUE)
 		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
 
 	output(0, "child %d (pid %u) Stuck in syscall %d:%s%s%s.\n",
