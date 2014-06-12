@@ -56,17 +56,17 @@ struct map * get_map(void)
 	return map;
 }
 
-static void delete_local_mapping(int childno, struct map *map)
+static void delete_local_mapping(struct map *map)
 {
 	list_del(&map->list);
-	shm->children[childno]->num_mappings--;
+	this_child->num_mappings--;
 }
 
 /* Called from munmap()'s ->post routine. */
-void delete_mapping(int childno, struct map *map)
+void delete_mapping(struct map *map)
 {
 	if (map->type == MAP_LOCAL)
-		delete_local_mapping(childno, map);
+		delete_local_mapping(map);
 
 	/* Right now, we don't want to delete MAP_GLOBAL mappings */
 }
