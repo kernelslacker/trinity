@@ -36,6 +36,7 @@ static struct map * __get_map(struct list_head *head, unsigned int max)
 struct map * get_map(void)
 {
 	struct map *map;
+	struct childdata *child;
 	bool local = FALSE;
 
 	/* We can get called by child processes, and also during startup by
@@ -44,13 +45,14 @@ struct map * get_map(void)
 	 * because main doesn't have any 'local' mappings.
 	 */
 	if (this_child != 0) {
-		if (shm->children[this_child]->num_mappings > 0)
+		child = shm->children[this_child];
+
+		if (child->num_mappings > 0)
 			local = rand_bool();
 	}
 
-	//FIXME: cache child ptr.
 	if (local == TRUE)
-		map = __get_map(&shm->children[this_child]->mappings->list, shm->children[this_child]->num_mappings);
+		map = __get_map(&child->mappings->list, child->num_mappings);
 	else
 		map = __get_map(&shared_mappings->list, num_shared_mappings);
 
