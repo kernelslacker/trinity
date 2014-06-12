@@ -155,8 +155,9 @@ static void flushbuffer(char *buffer, FILE *fd)
 	fflush(fd);
 }
 
-static void render_syscall_postfix(struct syscallrecord *rec, char *buffer)
+static void render_syscall_postfix(struct syscallrecord *rec)
 {
+	char *buffer = rec->postbuffer;
 	char *sptr = buffer;
 
 	if (IS_ERR(rec->retval)) {
@@ -210,7 +211,7 @@ void output_syscall_postfix(void)
 
 	memset(buffer, 0, POSTBUFFER_LEN);	// TODO: optimize to only strip ending post render.
 
-	render_syscall_postfix(rec, buffer);
+	render_syscall_postfix(rec);
 
 	__output_syscall(buffer, POSTBUFFER_LEN);
 }
