@@ -26,15 +26,6 @@
 #include "uid.h"
 #include "utils.h"
 
-#define __syscall_return(type, res) \
-	do { \
-	if ((unsigned long)(res) >= (unsigned long)(-125)) { \
-		errno = -(res); \
-		res = -1; \
-	} \
-	return (type) (res); \
-} while (0)
-
 #ifdef ARCH_IS_BIARCH
 /*
  * This routine does 32 bit syscalls on 64 bit kernel.
