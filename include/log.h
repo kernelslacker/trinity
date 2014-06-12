@@ -4,6 +4,7 @@
 #include "exit.h"
 #include "params.h"	// monochrome
 #include "shm.h"
+#include "syscall.h"
 #include "types.h"
 
 extern char ANSI_RED[];
@@ -26,8 +27,8 @@ void strip_ansi(char *ansibuf, unsigned int buflen);
 void output(unsigned char level, const char *fmt, ...);
 void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
-void output_syscall_prefix(void);
-void output_syscall_postfix(void);
+void output_syscall_prefix(struct syscallrecord *rec);
+void output_syscall_postfix(struct syscallrecord *rec);
 
 void open_logfiles(void);
 void close_logfiles(void);
