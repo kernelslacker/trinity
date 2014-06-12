@@ -12,9 +12,8 @@
 #include "tables.h"
 #include "utils.h"
 
-static char * render_arg(struct syscallrecord *rec, char *buffer, unsigned int argnum, struct syscallentry *entry)
+static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int argnum, struct syscallentry *entry)
 {
-	char *sptr = buffer;
 	const char *name = NULL;
 	unsigned long reg = 0;
 	enum argtype type = 0;
