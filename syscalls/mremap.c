@@ -48,7 +48,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
  * If we successfully remapped a range, we need to update our record of it
  * so we don't re-use the old address.
  */
-static void post_mremap(__unused__ int childno, struct syscallrecord *rec)
+static void post_mremap(struct syscallrecord *rec)
 {
 	void *ptr = (void *) rec->retval;
 

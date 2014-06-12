@@ -19,7 +19,7 @@
  *        and keep track of them using handle_child ?
  */
 
-static void post_fork(__unused__ int childno, struct syscallrecord *rec)
+static void post_fork(struct syscallrecord *rec)
 {
 	pid_t pid;
 

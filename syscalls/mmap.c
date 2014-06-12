@@ -77,7 +77,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	}
 }
 
-static void post_mmap(__unused__ int childno, struct syscallrecord *rec)
+static void post_mmap(struct syscallrecord *rec)
 {
 	char *p;
 	struct list_head *list;

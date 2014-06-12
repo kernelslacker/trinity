@@ -98,7 +98,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) msg;
 }
 
-static void post_sendmsg(__unused__ int childno, __unused__ struct syscallrecord *rec)
+static void post_sendmsg(__unused__ struct syscallrecord *rec)
 {
 	if (msg != NULL) {
 		if (msg->msg_name != page_rand)	// FIXME: What about other kinds of pages ?

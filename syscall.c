@@ -204,7 +204,7 @@ already_done:
 	}
 
 	if (entry->post)
-	    entry->post(childno, rec);
+	    entry->post(rec);
 
 	/* store info for debugging. */
 	previous = &this_child->previous;

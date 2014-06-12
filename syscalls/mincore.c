@@ -21,7 +21,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) malloc(len);	// FIXME: LEAK
 }
 
-static void post_mincore(__unused__ int childno, struct syscallrecord *rec)
+static void post_mincore(struct syscallrecord *rec)
 {
 	free((void *) rec->a3);
 }

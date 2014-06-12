@@ -21,7 +21,7 @@ static void sanitise_mprotect(__unused__ struct syscallrecord *rec)
 /*
  * If we successfully did an mprotect, update our record of the mappings prot bits.
  */
-static void post_mprotect(__unused__ int childno, struct syscallrecord *rec)
+static void post_mprotect(struct syscallrecord *rec)
 {
 	if (rec->retval != 0)
 		map->prot = rec->a3;
