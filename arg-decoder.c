@@ -12,7 +12,7 @@
 #include "tables.h"
 #include "utils.h"
 
-static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry *entry, int childno)
+static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry *entry)
 {
 	struct syscallrecord *rec;
 	char *sptr = buffer;
@@ -20,7 +20,7 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 	unsigned long reg = 0;
 	enum argtype type = 0;
 
-	rec = &shm->children[childno]->syscall;
+	rec = &this_child->syscall;
 
 	switch (argnum) {
 	case 1:	type = entry->arg1type;
@@ -146,7 +146,7 @@ static void render_syscall_prefix(int childno, char *buffer)
 	sptr += sprintf(sptr, "%s%s(", entry->name, ANSI_RESET);
 
 	for (i = 1; i < entry->num_args + 1; i++)
-		sptr = render_arg(sptr, i, entry, childno);
+		sptr = render_arg(sptr, i, entry);
 
 	(void) sprintf(sptr, "%s) ", ANSI_RESET);
 }
