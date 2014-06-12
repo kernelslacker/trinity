@@ -59,7 +59,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 		rec->a6 &= ~MPOL_MF_MOVE_ALL;
 }
 
-static void post_move_pages(__unused__ int childno, struct syscallrecord *rec)
+static void post_move_pages(struct syscallrecord *rec)
 {
 	free((void *) rec->a3);
 	free((void *) rec->a4);

@@ -54,7 +54,7 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 	}
 }
 
-static void post_modify_ldt(__unused__ int childno, __unused__ struct syscallrecord *rec)
+static void post_modify_ldt(__unused__ struct syscallrecord *rec)
 {
 	free(ldt);
 }

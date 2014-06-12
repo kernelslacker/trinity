@@ -10,7 +10,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void post_shmget(__unused__ int childno, struct syscallrecord *rec)
+static void post_shmget(struct syscallrecord *rec)
 {
 	if (rec->retval == (unsigned long) -1L)
 		return;

@@ -55,7 +55,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	}
 }
 
-static void post_munmap(__unused__ int childno, struct syscallrecord *rec)
+static void post_munmap(struct syscallrecord *rec)
 {
 	if (rec->retval != 0)
 		return;
