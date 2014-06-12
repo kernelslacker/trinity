@@ -319,14 +319,12 @@ static enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 	return argtype;
 }
 
-static unsigned long fill_arg(__unused__ int childno, unsigned int argnum)
+static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 {
-	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	unsigned int call;
 	enum argtype argtype;
 
-	rec = &this_child->syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
@@ -395,7 +393,7 @@ static unsigned long fill_arg(__unused__ int childno, unsigned int argnum)
 	BUG("unreachable!\n");
 }
 
-void generic_sanitise(int childno)
+void generic_sanitise(__unused__ int childno)
 {
 	struct syscallrecord *rec;
 	struct syscallentry *entry;
@@ -406,17 +404,17 @@ void generic_sanitise(int childno)
 	entry = syscalls[call].entry;
 
 	if (entry->arg1type != 0)
-		rec->a1 = fill_arg(childno, 1);
+		rec->a1 = fill_arg(rec, 1);
 	if (entry->arg2type != 0)
-		rec->a2 = fill_arg(childno, 2);
+		rec->a2 = fill_arg(rec, 2);
 	if (entry->arg3type != 0)
-		rec->a3 = fill_arg(childno, 3);
+		rec->a3 = fill_arg(rec, 3);
 	if (entry->arg4type != 0)
-		rec->a4 = fill_arg(childno, 4);
+		rec->a4 = fill_arg(rec, 4);
 	if (entry->arg5type != 0)
-		rec->a5 = fill_arg(childno, 5);
+		rec->a5 = fill_arg(rec, 5);
 	if (entry->arg6type != 0)
-		rec->a6 = fill_arg(childno, 6);
+		rec->a6 = fill_arg(rec, 6);
 }
 
 void generic_free_arg(void)
