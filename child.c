@@ -97,7 +97,7 @@ static void use_fpu(void)
 	asm volatile("":"+m" (x));
 }
 
-int this_child = 0;
+struct childdata *this_child = NULL;
 
 static void oom_score_adj(int adj)
 {
@@ -162,7 +162,7 @@ void init_child(int childno)
 		}
 	}
 
-	this_child = childno;
+	this_child = child;
 
 	reinit_child(child);
 

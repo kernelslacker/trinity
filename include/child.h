@@ -5,8 +5,6 @@
 #include <types.h>
 #include "syscall.h"
 
-extern int this_child;
-
 extern unsigned int max_children;
 
 void child_process(int childno);
@@ -43,3 +41,5 @@ struct childdata {
 
 	bool dontkillme;	/* provide temporary protection from the watchdog. */
 };
+
+extern struct childdata *this_child;
