@@ -9,12 +9,12 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_mincore(int childno, struct syscallrecord *rec)
+static void sanitise_mincore(__unused__ int childno, struct syscallrecord *rec)
 {
 	struct map *map;
 	unsigned long len;
 
-	map = common_set_mmap_ptr_len(childno);
+	map = common_set_mmap_ptr_len();
 
 	len = map->size + (page_size - 1) / page_size;
 

@@ -10,13 +10,14 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 
-static void sanitise_remap_file_pages(int childno, struct syscallrecord *rec)
+static void sanitise_remap_file_pages(__unused__ int childno, struct syscallrecord *rec)
 {
 	struct map *map;
 	size_t size;
 
-	map = common_set_mmap_ptr_len(childno);
+	map = common_set_mmap_ptr_len();
 
 	/* We just want to remap a part of the mapping. */
 	size = rand() % map->size;

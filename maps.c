@@ -72,12 +72,12 @@ void delete_mapping(struct map *map)
 }
 
 /* used in several sanitise_* functions. */
-struct map * common_set_mmap_ptr_len(int childno)
+struct map * common_set_mmap_ptr_len(void)
 {
 	struct syscallrecord *rec;
 	struct map *map;
 
-	rec = &shm->children[childno]->syscall;
+	rec = &this_child->syscall;
 	map = (struct map *) rec->a1;
 	if (map == NULL) {
 		rec->a1 = 0;
