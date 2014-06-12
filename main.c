@@ -60,7 +60,7 @@ static void fork_children(void)
 		if (pid == 0) {
 			/* Child process. */
 			init_child(childno);
-			child_process(childno);
+			child_process();
 			debugf("child %d exiting.\n", childno);
 			_exit(EXIT_SUCCESS);
 		} else {
