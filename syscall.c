@@ -23,7 +23,6 @@
 #include "params.h"
 #include "maps.h"
 #include "tables.h"
-#include "trinity.h"
 #include "uid.h"
 #include "utils.h"
 
@@ -109,7 +108,7 @@ static unsigned long do_syscall(void)
  * returns a bool that determines whether we can keep doing syscalls
  * in this child.
  */
-bool mkcall(__unused__ int childno)
+bool mkcall(void)
 {
 	struct syscallentry *entry;
 	struct syscallrecord *rec, *previous;
