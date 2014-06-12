@@ -67,19 +67,17 @@ struct syscallentry syscall_sendto = {
 	.flags = NEED_ALARM,
 };
 
+static struct msghdr *msg;
 
 /*
  * SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
  */
-static void sanitise_sendmsg(int childno, struct syscallrecord *rec)
+static void sanitise_sendmsg(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
 
         msg = malloc(sizeof(struct msghdr));
-	shm->children[childno]->scratch = (unsigned long) msg;
-
 	if (msg == NULL) {
 		// just do something weird.
 		rec->a2 = (unsigned long) get_address();
@@ -100,22 +98,13 @@ static void sanitise_sendmsg(int childno, struct syscallrecord *rec)
 	rec->a2 = (unsigned long) msg;
 }
 
-static void post_sendmsg(int childno, __unused__ struct syscallrecord *rec)
+static void post_sendmsg(__unused__ int childno, __unused__ struct syscallrecord *rec)
 {
-	void *ptr = (void *) shm->children[childno]->scratch;
-
-	if (ptr != NULL) {
-		struct msghdr *msg;
-
-		msg = (struct msghdr *) ptr;
-
+	if (msg != NULL) {
 		if (msg->msg_name != page_rand)	// FIXME: What about other kinds of pages ?
 			free(msg->msg_name);	// free sockaddr
-
-		free(ptr);
+		free(msg);
 	}
-
-	shm->children[childno]->scratch = 0;
 }
 
 struct syscallentry syscall_sendmsg = {
