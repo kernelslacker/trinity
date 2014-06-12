@@ -80,10 +80,10 @@ unsigned int init_seed(unsigned int seedparam)
  * we can't use the actual pid or anything else 'random' because otherwise reproducing
  * seeds with -s would be much harder to replicate.
  */
-void set_seed(unsigned int childno)
+void set_seed(struct childdata *child)
 {
-	srand(shm->seed + (childno + 1));
-	shm->children[childno]->seed = shm->seed;
+	srand(shm->seed + (child->num + 1));
+	child->seed = shm->seed;
 }
 
 /*

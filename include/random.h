@@ -1,10 +1,11 @@
 #pragma once
 
+#include "child.h"
 #include "types.h"
 
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
-void set_seed(unsigned int pidslot);
+void set_seed(struct childdata *child);
 void reseed(void);
 unsigned int new_seed(void);
 
