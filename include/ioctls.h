@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <sys/stat.h>
+#include "syscall.h"
 
 struct ioctl {
 	const char *name;
@@ -19,7 +20,7 @@ struct ioctl_group {
 
 	/* Non-NULL sanitise routine for this ioctl group. Initialize to
 	 * "pick_random_ioctl" to pick one random ioctl. */
-	void (*sanitise)(const struct ioctl_group *, int childno);
+	void (*sanitise)(const struct ioctl_group *, struct syscallrecord *rec);
 
 	/* Plug the available ioctls here. */
 	const struct ioctl *ioctls;
@@ -44,7 +45,7 @@ const struct ioctl_group *find_ioctl_group(int fd);
 
 const struct ioctl_group *get_random_ioctl_group(void);
 
-void pick_random_ioctl(const struct ioctl_group *, int childno);
+void pick_random_ioctl(const struct ioctl_group *, struct syscallrecord *rec);
 
 void dump_ioctls(void);
 

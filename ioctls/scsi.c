@@ -76,11 +76,11 @@ struct sgio {
 	unsigned char sense[252];
 };
 
-static void scsi_sg_io_sanitise(int childno)
+static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 {
 	struct sgio *sgio;
 
-	sgio = (struct sgio *) page_rand;
+	sgio = (struct sgio *) page_rand;	// FIXME: Do we always want to use page_rand ?
 
 	sgio->cmd[0] = 0x12;
 	sgio->cmd[3] = 0x2;
@@ -112,16 +112,16 @@ static void scsi_sg_io_sanitise(int childno)
 	sgio->ioh.usr_ptr = NULL;
 	sgio->ioh.flags |= SG_FLAG_DIRECT_IO;
 
-	shm->children[childno]->syscall.a3 = (unsigned long) page_rand;
+	rec->a3 = (unsigned long) page_rand;
 }
 
-static void scsi_sanitise(const struct ioctl_group *grp, int childno)
+static void scsi_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
-	pick_random_ioctl(grp, childno);
+	pick_random_ioctl(grp, rec);
 
-	switch (shm->children[childno]->syscall.a2) {
+	switch (rec->a2) {
 	case SG_IO:
-		scsi_sg_io_sanitise(childno);
+		scsi_sg_io_sanitise(rec);
 		break;
 	default:
 		break;

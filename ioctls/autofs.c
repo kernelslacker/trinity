@@ -263,14 +263,11 @@ static const char *const autofs_devs[] = {
 	"autofs",
 };
 
-static void autofs_sanitise(const struct ioctl_group *grp, int childno)
+static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct autofs_dev_ioctl *arg;
 
-	rec = &shm->children[childno]->syscall;
-
-	pick_random_ioctl(grp, childno);
+	pick_random_ioctl(grp, rec);
 
 	rec->a3 = (unsigned long) page_rand;
 
