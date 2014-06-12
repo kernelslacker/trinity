@@ -30,7 +30,7 @@ static unsigned int get_cpu(void)
 	return 0;
 }
 
-static unsigned long handle_arg_address(int childno, unsigned int argnum)
+static unsigned long handle_arg_address(struct syscallrecord *rec, unsigned int argnum)
 {
 	unsigned long addr = 0;
 
@@ -43,7 +43,7 @@ static unsigned long handle_arg_address(int childno, unsigned int argnum)
 	/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
 	 * and munge that instead of returning a new one from get_address() */
 
-	addr = find_previous_arg_address(childno, argnum);
+	addr = find_previous_arg_address(rec, argnum);
 
 	switch (rand() % 4) {
 	case 0:	break;	/* return unmodified */
@@ -319,7 +319,7 @@ static enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 	return argtype;
 }
 
-static unsigned long fill_arg(int childno, unsigned int argnum)
+static unsigned long fill_arg(__unused__ int childno, unsigned int argnum)
 {
 	struct syscallrecord *rec;
 	struct syscallentry *entry;
@@ -347,7 +347,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 		return (unsigned long) get_len();
 
 	case ARG_ADDRESS:
-		return handle_arg_address(childno, argnum);
+		return handle_arg_address(rec, argnum);
 
 	case ARG_NON_NULL_ADDRESS:
 		return (unsigned long) get_non_null_address();
