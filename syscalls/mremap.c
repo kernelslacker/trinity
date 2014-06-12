@@ -12,7 +12,10 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "utils.h"
+
+struct map *map;
 
 static const unsigned long alignments[] = {
 	1 * MB, 2 * MB, 4 * MB, 8 * MB,
@@ -22,7 +25,6 @@ static const unsigned long alignments[] = {
 
 static void sanitise_mremap(int childno, struct syscallrecord *rec)
 {
-	struct map *map;
 	unsigned long newaddr = 0;
 
 	map = common_set_mmap_ptr_len(childno);
@@ -46,17 +48,14 @@ static void sanitise_mremap(int childno, struct syscallrecord *rec)
  * If we successfully remapped a range, we need to update our record of it
  * so we don't re-use the old address.
  */
-static void post_mremap(int childno, struct syscallrecord *rec)
+static void post_mremap(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct map *map = (struct map *) shm->children[childno]->scratch;
 	void *ptr = (void *) rec->retval;
 
 	if (ptr == MAP_FAILED)
 		return;
 
 	map->ptr = ptr;
-
-	shm->children[childno]->scratch = 0;
 
 	/* Sometimes dirty the mapping first. */
 	if (rand_bool())
