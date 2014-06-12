@@ -205,9 +205,9 @@ void output_syscall_prefix(int childno)
 	__output_syscall(buffer, PREBUFFER_LEN);
 }
 
-void output_syscall_postfix(int childno)
+void output_syscall_postfix(void)
 {
-	struct syscallrecord *rec = &shm->children[childno]->syscall;
+	struct syscallrecord *rec = &this_child->syscall;
 	char *buffer = rec->postbuffer;
 
 	memset(buffer, 0, POSTBUFFER_LEN);	// TODO: optimize to only strip ending post render.
