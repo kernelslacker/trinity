@@ -145,3 +145,11 @@ struct syscalltable {
 #define EXTRA_FORK		(1<<6)
 #define IGNORE_ENOSYS		(1<<7)
 
+#define __syscall_return(type, res) \
+	do { \
+	if ((unsigned long)(res) >= (unsigned long)(-125)) { \
+		errno = -(res); \
+		res = -1; \
+	} \
+	return (type) (res); \
+} while (0)
