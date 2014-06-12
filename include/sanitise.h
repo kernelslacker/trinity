@@ -4,7 +4,7 @@
 
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);
 void generic_sanitise(int childno);
-void generic_free_arg(int childno);
+void generic_free_arg(void);
 
 unsigned long get_interesting_value(void);
 unsigned int get_interesting_32bit_value(void);

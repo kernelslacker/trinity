@@ -161,7 +161,7 @@ bool mkcall(int childno)
 				kill(extrapid, SIGKILL);
 			}
 			//FIXME: Why would we only do this once ?
-			generic_free_arg(childno);
+			generic_free_arg();
 			return FALSE;
 		}
 	}
@@ -220,7 +220,7 @@ already_done:
 
 	check_uid();
 
-	generic_free_arg(childno);
+	generic_free_arg();
 
 	return TRUE;
 }
