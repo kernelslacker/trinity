@@ -393,13 +393,11 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 	BUG("unreachable!\n");
 }
 
-void generic_sanitise(__unused__ int childno)
+void generic_sanitise(struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	unsigned int call;
 
-	rec = &this_child->syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
