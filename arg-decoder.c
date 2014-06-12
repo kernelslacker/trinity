@@ -113,7 +113,7 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 	if (entry->decode != NULL) {
 		char *str;
 
-		str = entry->decode(childno, argnum);
+		str = entry->decode(rec, argnum);
 		if (str != NULL) {
 			sptr += sprintf(sptr, "%s", str);
 			free(str);

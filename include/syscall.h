@@ -71,7 +71,7 @@ struct syscallentry {
 	void (*sanitise)(int childno, struct syscallrecord *rec);
 	void (*post)(int childno, struct syscallrecord *rec);
 	int (*init)(void);
-	char * (*decode)(int childno, int argnum);
+	char * (*decode)(struct syscallrecord *rec, int argnum);
 
 	unsigned int number;
 	unsigned int active_number;
