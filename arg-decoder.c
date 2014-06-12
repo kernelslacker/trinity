@@ -126,20 +126,19 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 /*
  * Used from output_syscall_prefix, and also from postmortem dumper
  */
-static void render_syscall_prefix(int childno, char *buffer)
+static void render_syscall_prefix(char *buffer)
 {
-	struct childdata *child = shm->children[childno];
 	struct syscallentry *entry;
 	struct syscallrecord *rec;
 	char *sptr = buffer;
 	unsigned int i;
 	unsigned int syscallnr;
 
-	rec = &child->syscall;
+	rec = &this_child->syscall;
 	syscallnr = rec->nr;
 	entry = get_syscall_entry(syscallnr, rec->do32bit);
 
-	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", childno, child->pid,
+	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", this_child->num, this_child->pid,
 			rec->op_nr,
 			rec->do32bit == TRUE ? "[32BIT] " : "");
 
@@ -193,14 +192,14 @@ static void __output_syscall(char *buffer, unsigned int len)
 }
 
 /* This function is always called from a fuzzing child. */
-void output_syscall_prefix(int childno)
+void output_syscall_prefix(void)
 {
-	struct syscallrecord *rec = &shm->children[childno]->syscall;
+	struct syscallrecord *rec = &this_child->syscall;
 	char *buffer = rec->prebuffer;
 
 	memset(buffer, 0, PREBUFFER_LEN);	// TODO: optimize to only strip ending
 
-	render_syscall_prefix(childno, buffer);
+	render_syscall_prefix(buffer);
 
 	__output_syscall(buffer, PREBUFFER_LEN);
 }
