@@ -215,12 +215,9 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 	return (unsigned long) alloc_iovec(num_entries);
 }
 
-static unsigned long get_argval(int childno, unsigned int argnum)
+static unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 {
-	struct syscallrecord *rec;
 	unsigned long val = 0;
-
-	rec = &shm->children[childno]->syscall;
 
 	switch (argnum) {
 	case 1:	val = rec->a1;
@@ -329,7 +326,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 	unsigned int call;
 	enum argtype argtype;
 
-	rec = &shm->children[childno]->syscall;
+	rec = &this_child->syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
@@ -386,7 +383,7 @@ static unsigned long fill_arg(int childno, unsigned int argnum)
 	case ARG_SOCKADDRLEN:
 		/* We already set the len in the ARG_IOVEC/ARG_SOCKADDR case
 		 * So here we just return what we had set there. */
-		return get_argval(childno, argnum);
+		return get_argval(rec, argnum);
 
 	case ARG_SOCKADDR:
 		return handle_arg_sockaddr(entry, rec, argnum);
@@ -404,7 +401,7 @@ void generic_sanitise(int childno)
 	struct syscallentry *entry;
 	unsigned int call;
 
-	rec = &shm->children[childno]->syscall;
+	rec = &this_child->syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
@@ -422,11 +419,15 @@ void generic_sanitise(int childno)
 		rec->a6 = fill_arg(childno, 6);
 }
 
-void generic_free_arg(int childno)
+void generic_free_arg(void)
 {
+	struct syscallrecord *rec;
 	struct syscallentry *entry;
-	unsigned int call = shm->children[childno]->syscall.nr;
-	unsigned int i;
+	unsigned int i, call;
+
+	rec = &this_child->syscall;
+
+	call = rec->nr;
 
 	entry = syscalls[call].entry;
 
@@ -436,6 +437,6 @@ void generic_free_arg(int childno)
 		argtype = get_argtype(entry, i);
 
 		if (argtype == ARG_IOVEC)
-			free((void *) get_argval(childno, i));
+			free((void *) get_argval(rec, i));
 	}
 }
