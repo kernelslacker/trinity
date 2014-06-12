@@ -24,41 +24,12 @@
 
 static unsigned int count;
 
-#define NOT_SET 0
-#define WAS_MALLOC 1
-#define WAS_MAP 2
-static unsigned char *pagetypes;
-
-/* After a succesful run, ->post calls this, which frees up
- * the allocations done by ->sanitise */
-static void free_all_pageallocs(unsigned long *page_alloc)
-{
-	unsigned int i = 0;
-
-	if (pagetypes == NULL)
-		return;
-
-	while (pagetypes[i] != NOT_SET) {
-		/* we only care about freeing mallocs, ignore the mmaps. */
-		if (pagetypes[i] == WAS_MALLOC) {
-			free((void *)page_alloc[i]);
-			page_alloc[i] = 0;
-			pagetypes[i] = NOT_SET;
-		}
-		i++;
-	}
-	free(page_alloc);
-}
-
 static void sanitise_move_pages(int childno, struct syscallrecord *rec)
 {
 	struct map *map;
 	int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
-
-	if (pagetypes == NULL)
-		pagetypes = zmalloc(page_size);	// The implied memset(0) == NOT_SET
 
 	/* number of pages to move */
 	count = rand() % (page_size / sizeof(void *));
@@ -70,20 +41,8 @@ static void sanitise_move_pages(int childno, struct syscallrecord *rec)
 	shm->children[childno]->scratch = (unsigned long) page_alloc;
 
 	for (i = 0; i < count; i++) {
-		if (rand_bool()) {
-			/* malloc */
-			page_alloc[i] = (unsigned long) memalign(page_size, page_size);
-			if (!page_alloc[i]) {
-				free_all_pageallocs(page_alloc);
-				return;
-			}
-			pagetypes[i] = WAS_MALLOC;
-		} else {
-			/* mapping. */
-			map = get_map();
-			page_alloc[i] = (unsigned long) map->ptr;
-			pagetypes[i] = WAS_MAP;
-		}
+		map = get_map();
+		page_alloc[i] = (unsigned long) map->ptr;
 	}
 	rec->a3 = (unsigned long) page_alloc;
 
@@ -109,7 +68,7 @@ static void post_move_pages(int childno, __unused__ struct syscallrecord *rec)
 	if (page == NULL)
 		return;
 
-	free_all_pageallocs(page);
+	free(page);
 
 	shm->children[childno]->scratch = 0;
 }
