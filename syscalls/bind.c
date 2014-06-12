@@ -10,11 +10,11 @@
 #include "shm.h"
 
 /*
-static void dump(int childno)
+static void dump(struct syscallrecord *rec)
 {
 	struct sockaddr_in *ipv4;
 
-	ipv4 = (struct sockaddr_in *) shm->syscall[childno].a2;
+	ipv4 = (struct sockaddr_in *) rec->a2;
 	output(1, "(sin_family=%d sin_addr.s_addr=%d.%d.%d.%d sin_port=%d)\n",
 		ipv4->sin_family,
 		(ipv4->sin_addr.s_addr & 0xff000000) >> 24,
