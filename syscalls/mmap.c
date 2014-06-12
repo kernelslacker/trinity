@@ -105,12 +105,12 @@ static void post_mmap(int childno, struct syscallrecord *rec)
 		dirty_mapping(new);
 }
 
-static char * decode_mmap(int childno, int argnum)
+static char * decode_mmap(struct syscallrecord *rec, int argnum)
 {
 	char *buf;
 
 	if (argnum == 3) {
-		int flags = shm->children[childno]->syscall.a3;
+		int flags = rec->a3;
 		char *p;
 
 		p = buf = zmalloc(80);
