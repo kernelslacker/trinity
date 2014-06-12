@@ -7,7 +7,7 @@
 
 extern unsigned int max_children;
 
-void child_process(int childno);
+void child_process(void);
 bool mkcall(void);
 void do_syscall_from_child(void);
 

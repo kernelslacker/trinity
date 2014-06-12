@@ -323,7 +323,7 @@ static bool handle_sigreturn(void)
 	return TRUE;
 }
 
-void child_process(__unused__ int childno)
+void child_process(void)
 {
 	const char *lastop = NULL;
 	int ret;
