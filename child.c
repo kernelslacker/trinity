@@ -162,6 +162,8 @@ void init_child(int childno)
 
 	this_child = child;
 
+	child->num = childno;
+
 	reinit_child(child);
 
 	truncate_log();
