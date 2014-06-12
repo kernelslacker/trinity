@@ -12,15 +12,12 @@
 #include "tables.h"
 #include "utils.h"
 
-static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry *entry)
+static char * render_arg(struct syscallrecord *rec, char *buffer, unsigned int argnum, struct syscallentry *entry)
 {
-	struct syscallrecord *rec;
 	char *sptr = buffer;
 	const char *name = NULL;
 	unsigned long reg = 0;
 	enum argtype type = 0;
-
-	rec = &this_child->syscall;
 
 	switch (argnum) {
 	case 1:	type = entry->arg1type;
@@ -144,7 +141,7 @@ static void render_syscall_prefix(struct syscallrecord *rec)
 	sptr += sprintf(sptr, "%s%s(", entry->name, ANSI_RESET);
 
 	for (i = 1; i < entry->num_args + 1; i++)
-		sptr = render_arg(sptr, i, entry);
+		sptr = render_arg(rec, sptr, i, entry);
 
 	(void) sprintf(sptr, "%s) ", ANSI_RESET);
 }
