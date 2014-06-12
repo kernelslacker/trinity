@@ -64,7 +64,7 @@ void init_shm(void)
 	else
 		shm->seed = new_seed();
 	/* Set seed in parent thread */
-	set_seed(0);
+	set_seed(NULL);
 
 	for_each_child(i) {
 		struct childdata *child = shm->children[i];
