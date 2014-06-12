@@ -65,9 +65,6 @@ static void post_move_pages(int childno, __unused__ struct syscallrecord *rec)
 	unsigned long *page;
 
 	page = (void *) shm->children[childno]->scratch;
-	if (page == NULL)
-		return;
-
 	free(page);
 
 	shm->children[childno]->scratch = 0;
