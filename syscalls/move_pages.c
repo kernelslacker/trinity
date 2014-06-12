@@ -24,7 +24,7 @@
 
 static unsigned int count;
 
-static void sanitise_move_pages(int childno, struct syscallrecord *rec)
+static void sanitise_move_pages(__unused__ int childno, struct syscallrecord *rec)
 {
 	struct map *map;
 	int *nodes;
@@ -38,7 +38,6 @@ static void sanitise_move_pages(int childno, struct syscallrecord *rec)
 
 	/* setup array of ptrs to pages to move */
 	page_alloc = (unsigned long *) zmalloc(page_size);
-	shm->children[childno]->scratch = (unsigned long) page_alloc;
 
 	for (i = 0; i < count; i++) {
 		map = get_map();
@@ -60,14 +59,11 @@ static void sanitise_move_pages(int childno, struct syscallrecord *rec)
 		rec->a6 &= ~MPOL_MF_MOVE_ALL;
 }
 
-static void post_move_pages(int childno, __unused__ struct syscallrecord *rec)
+static void post_move_pages(__unused__ int childno, struct syscallrecord *rec)
 {
-	unsigned long *page;
-
-	page = (void *) shm->children[childno]->scratch;
-	free(page);
-
-	shm->children[childno]->scratch = 0;
+	free((void *) rec->a3);
+	free((void *) rec->a4);
+	free((void *) rec->a5);
 }
 
 struct syscallentry syscall_move_pages = {
