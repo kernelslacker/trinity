@@ -77,7 +77,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	}
 }
 
-static void post_mmap(int childno, struct syscallrecord *rec)
+static void post_mmap(__unused__ int childno, struct syscallrecord *rec)
 {
 	char *p;
 	struct list_head *list;
@@ -96,9 +96,9 @@ static void post_mmap(int childno, struct syscallrecord *rec)
 	new->type = MAP_LOCAL;
 
 	// Add this to a list for use by subsequent syscalls.
-	list = &shm->children[childno]->mappings->list;
+	list = &this_child->mappings->list;
 	list_add_tail(&new->list, list);
-	shm->children[childno]->num_mappings++;
+	this_child->num_mappings++;
 
 	/* Sometimes dirty the mapping. */
 	if (rand_bool())
