@@ -15,6 +15,7 @@
 #include "compat.h"
 #include "random.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "utils.h"	//ARRAY_SIZE
 
 #ifdef __x86_64__
@@ -33,7 +34,7 @@ static void do_anon(struct syscallrecord *rec)
 	rec->a6 = 0;
 }
 
-static void sanitise_mmap(int childno, struct syscallrecord *rec)
+static void sanitise_mmap(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned int i;
 	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
@@ -64,7 +65,7 @@ static void sanitise_mmap(int childno, struct syscallrecord *rec)
 		rec->a2 = sizes[rand() % ARRAY_SIZE(sizes)];
 		do_anon(rec);
 	} else {
-		if (this_syscallname("mmap2", childno) == TRUE) {
+		if (this_syscallname("mmap2") == TRUE) {
 			/* mmap2 counts in 4K units */
 			rec->a6 /= 4096;
 		} else {

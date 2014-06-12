@@ -22,4 +22,4 @@ const char * generate_pathname(void);
 
 void gen_unicode_page(char *page);
 
-bool this_syscallname(const char *thisname, int childno);
+bool this_syscallname(const char *thisname);

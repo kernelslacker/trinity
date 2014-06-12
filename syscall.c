@@ -225,9 +225,9 @@ already_done:
 	return TRUE;
 }
 
-bool this_syscallname(const char *thisname, int childno)
+bool this_syscallname(const char *thisname)
 {
-	unsigned int call = shm->children[childno]->syscall.nr;
+	unsigned int call = this_child->syscall.nr;
 	struct syscallentry *syscall_entry = syscalls[call].entry;
 
 	return strcmp(thisname, syscall_entry->name);
