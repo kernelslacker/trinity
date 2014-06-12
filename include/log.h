@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unistd.h>
+#include "config.h"
 #include "exit.h"
 #include "params.h"	// monochrome
 #include "shm.h"
@@ -37,11 +38,7 @@ void debugf(const char *fmt, ...);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
-#ifndef GITVERSION
-#define BUGTXT "BUG!: "
-#else
-#define BUGTXT "BUG!: " GITVERSION
-#endif
+#define BUGTXT "BUG!: " VERSION
 
 #define BUG(bugtxt)	{ \
 	printf("[%d] %s:%s:%d %s%s%s", getpid(), __FILE__, __func__, __LINE__, ANSI_RED, bugtxt, ANSI_RESET); \

@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
 	pid_t pid;
 	const char taskname[13]="trinity-main";
 
-	outputstd("Trinity v" __stringify(VERSION) "  Dave Jones <davej@redhat.com>\n");
+	outputstd("Trinity " VERSION "  Dave Jones <davej@redhat.com>\n");
 
 	progname = argv[0];
 
