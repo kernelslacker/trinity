@@ -53,20 +53,27 @@ void check_all_locks(void)
 		check_lock(&shm->children[i]->syscall.lock);
 }
 
+static void set_dontkillme(pid_t pid, bool state)
+{
+	int childno;
+
+	childno = find_childno(pid);
+	if (childno == CHILD_NOT_FOUND)		/* possible, we might be the watchdog for example */
+		return;
+	shm->children[childno]->dontkillme = state;
+}
+
 void lock(lock_t *_lock)
 {
 	pid_t pid = getpid();
 
 	while (_lock->lock == LOCKED) {
 		if (_lock->owner == pid) {
-			int childno;
-
 			debugf("lol, already have lock!\n");
-			childno = find_childno(pid);
-			shm->children[childno]->dontkillme = TRUE;
+			set_dontkillme(pid, TRUE);
 			sleep(3);
 			show_backtrace();
-			shm->children[childno]->dontkillme = FALSE;
+			set_dontkillme(pid, FALSE);
 			return;
 		}
 
