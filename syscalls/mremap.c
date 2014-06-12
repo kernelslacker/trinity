@@ -23,11 +23,11 @@ static const unsigned long alignments[] = {
 	1 * GB, 2 * GB, 4 * GB,
 };
 
-static void sanitise_mremap(int childno, struct syscallrecord *rec)
+static void sanitise_mremap(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned long newaddr = 0;
 
-	map = common_set_mmap_ptr_len(childno);
+	map = common_set_mmap_ptr_len();
 
 	rec->a3 = map->size;		//TODO: Munge this.
 

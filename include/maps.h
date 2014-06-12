@@ -26,6 +26,6 @@ void delete_mapping(struct map *map);
 
 struct map * get_map(void);
 
-struct map * common_set_mmap_ptr_len(int childno);
+struct map * common_set_mmap_ptr_len(void);
 
 void dirty_mapping(struct map *map);

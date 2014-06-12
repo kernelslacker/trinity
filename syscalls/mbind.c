@@ -11,15 +11,16 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)
 
-static void sanitise_mbind(int childno, struct syscallrecord *rec)
+static void sanitise_mbind(__unused__ int childno, struct syscallrecord *rec)
 {
 	unsigned long maxnode;
 
-	(void) common_set_mmap_ptr_len(childno);
+	(void) common_set_mmap_ptr_len();
 
 retry_maxnode:
 	rec->a5 &= ~((page_size * 8) - 1);

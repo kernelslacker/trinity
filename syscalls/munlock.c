@@ -6,9 +6,9 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_munlock(int childno, __unused__ struct syscallrecord *rec)
+static void sanitise_munlock(__unused__ int childno, __unused__ struct syscallrecord *rec)
 {
-	(void) common_set_mmap_ptr_len(childno);
+	(void) common_set_mmap_ptr_len();
 }
 
 struct syscallentry syscall_munlock = {
