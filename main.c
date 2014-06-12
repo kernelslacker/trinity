@@ -117,6 +117,50 @@ out:
 	unlock(&shm->reaper_lock);
 }
 
+static void handle_childsig(int childpid, int childstatus, int stop)
+{
+	int __sig;
+
+	if (stop == TRUE)
+		__sig = WSTOPSIG(childstatus);
+	else
+		__sig = WTERMSIG(childstatus);
+
+	switch (__sig) {
+	case SIGSTOP:
+		if (stop != TRUE)
+			return;
+		debugf("Sending PTRACE_DETACH (and then KILL)\n");
+		ptrace(PTRACE_DETACH, childpid, NULL, NULL);
+		kill(childpid, SIGKILL);
+		reap_child(childpid);
+		return;
+
+	case SIGALRM:
+		debugf("got a alarm signal from pid %d\n", childpid);
+		break;
+	case SIGFPE:
+	case SIGSEGV:
+	case SIGKILL:
+	case SIGPIPE:
+	case SIGABRT:
+		if (stop == TRUE)
+			debugf("Child %d was stopped by %s\n", childpid, strsignal(WSTOPSIG(childstatus)));
+		else
+			debugf("got a signal from pid %d (%s)\n", childpid, strsignal(WTERMSIG(childstatus)));
+		reap_child(childpid);
+		return;
+
+	default:
+		if (stop == TRUE)
+			debugf("Child %d was stopped by unhandled signal (%s).\n", childpid, strsignal(WSTOPSIG(childstatus)));
+		else
+			debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
+		return;
+	}
+}
+
+
 static void handle_child(pid_t childpid, int childstatus)
 {
 	switch (childpid) {
@@ -129,13 +173,14 @@ static void handle_child(pid_t childpid, int childstatus)
 			return;
 
 		if (errno == ECHILD) {
-			struct childdata *child;
 			unsigned int i;
 			bool seen = FALSE;
 
 			debugf("All children exited!\n");
 
 			for_each_child(i) {
+				struct childdata *child;
+
 				child = shm->children[i];
 
 				if (child->pid != EMPTY_PIDSLOT) {
@@ -179,51 +224,9 @@ static void handle_child(pid_t childpid, int childstatus)
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
-
-			switch (WTERMSIG(childstatus)) {
-			case SIGALRM:
-				debugf("got a alarm signal from pid %d\n", childpid);
-				break;
-			case SIGFPE:
-			case SIGSEGV:
-			case SIGKILL:
-			case SIGPIPE:
-			case SIGABRT:
-				debugf("got a signal from pid %d (%s)\n", childpid, strsignal(WTERMSIG(childstatus)));
-				reap_child(childpid);
-				break;
-			default:
-				debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
-				break;
-			}
-			break;
-
+			handle_childsig(childpid, childstatus, FALSE);
 		} else if (WIFSTOPPED(childstatus)) {
-
-			switch (WSTOPSIG(childstatus)) {
-			case SIGALRM:
-				debugf("got an alarm signal from pid %d\n", childpid);
-				break;
-			case SIGSTOP:
-				debugf("Sending PTRACE_DETACH (and then KILL)\n");
-				ptrace(PTRACE_DETACH, childpid, NULL, NULL);
-				kill(childpid, SIGKILL);
-				reap_child(childpid);
-				break;
-			case SIGFPE:
-			case SIGSEGV:
-			case SIGKILL:
-			case SIGPIPE:
-			case SIGABRT:
-				debugf("Child %d was stopped by %s\n", childpid, strsignal(WTERMSIG(childstatus)));
-				reap_child(childpid);
-				break;
-			default:
-				debugf("Child %d was stopped by unhandled signal (%s).\n", childpid, strsignal(WSTOPSIG(childstatus)));
-				break;
-			}
-			break;
-
+			handle_childsig(childpid, childstatus, TRUE);
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
 		} else {
