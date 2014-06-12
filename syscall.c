@@ -207,7 +207,7 @@ already_done:
 	    entry->post(childno, rec);
 
 	/* store info for debugging. */
-	previous = &shm->children[childno]->previous;
+	previous = &this_child->previous;
 	previous->nr = rec->nr;
 	previous->a1 = rec->a1;
 	previous->a2 = rec->a2;
