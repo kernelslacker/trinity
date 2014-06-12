@@ -15,21 +15,20 @@
 
 #define ALLOCSIZE LDT_ENTRIES * LDT_ENTRY_SIZE
 
-static void sanitise_modify_ldt(int childno, struct syscallrecord *rec)
-{
-	void *ldt;
-	//struct user_desc *desc;
+static void *ldt;
 
-	shm->children[childno]->scratch = 0;
+static void sanitise_modify_ldt(__unused__ int childno, struct syscallrecord *rec)
+{
+	//struct user_desc *desc;
 
 	switch (rec->a1) {
 	case 0:
 		/* read the ldt into the memory pointed to by ptr.
 		   The number of bytes read is the smaller of bytecount and the actual size of the ldt. */
 		ldt = malloc(ALLOCSIZE);
-		shm->children[childno]->scratch = (unsigned long) ldt;
 		if (ldt == NULL)
 			return;
+		rec->a2 = (unsigned long) ldt;
 		rec->a3 = ALLOCSIZE;
 		break;
 
@@ -55,16 +54,9 @@ static void sanitise_modify_ldt(int childno, struct syscallrecord *rec)
 	}
 }
 
-static void post_modify_ldt(int childno, __unused__ struct syscallrecord *rec)
+static void post_modify_ldt(__unused__ int childno, __unused__ struct syscallrecord *rec)
 {
-	void *ptr;
-
-	ptr = (void *) shm->children[childno]->scratch;
-
-	if (ptr != NULL)
-		free(ptr);
-
-	shm->children[childno]->scratch = 0;
+	free(ldt);
 }
 
 struct syscallentry syscall_modify_ldt = {
