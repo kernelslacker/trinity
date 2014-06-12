@@ -15,7 +15,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-struct map *map;
+static struct map *map;
 
 static const unsigned long alignments[] = {
 	1 * MB, 2 * MB, 4 * MB, 8 * MB,
