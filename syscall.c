@@ -135,7 +135,7 @@ bool mkcall(void)
 
 	unlock(&rec->lock);
 
-	output_syscall_prefix();
+	output_syscall_prefix(rec);
 
 	/* If we're going to pause, might as well sync pre-syscall */
 	if (dopause == TRUE)
@@ -177,7 +177,7 @@ bool mkcall(void)
 	else
 		shm->successes++;
 
-	output_syscall_postfix();
+	output_syscall_postfix(rec);
 	if (dopause == TRUE)
 		sleep(1);
 

@@ -191,10 +191,12 @@ static void __output_syscall(char *buffer, unsigned int len)
 	}
 }
 
-/* This function is always called from a fuzzing child. */
-void output_syscall_prefix(void)
+/* These next two functions are always called from mkcall by a fuzzing child.
+ * They render the buffer, and output it (to both stdout and logs).
+ * Other contexts (like post-mortem directly use the buffers).
+ */
+void output_syscall_prefix(struct syscallrecord *rec)
 {
-	struct syscallrecord *rec = &this_child->syscall;
 	char *buffer = rec->prebuffer;
 
 	memset(buffer, 0, PREBUFFER_LEN);	// TODO: optimize to only strip ending
@@ -204,9 +206,8 @@ void output_syscall_prefix(void)
 	__output_syscall(buffer, PREBUFFER_LEN);
 }
 
-void output_syscall_postfix(void)
+void output_syscall_postfix(struct syscallrecord *rec)
 {
-	struct syscallrecord *rec = &this_child->syscall;
 	char *buffer = rec->postbuffer;
 
 	memset(buffer, 0, POSTBUFFER_LEN);	// TODO: optimize to only strip ending post render.
