@@ -129,7 +129,7 @@ bool mkcall(int childno)
 	rec->a5 = (unsigned long) rand64();
 	rec->a6 = (unsigned long) rand64();
 
-	generic_sanitise(childno);
+	generic_sanitise(rec);
 	if (entry->sanitise)
 		entry->sanitise(rec);
 
