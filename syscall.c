@@ -58,14 +58,14 @@ static long syscall32(unsigned int call,
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static unsigned long do_syscall(int childno)
+static unsigned long do_syscall(void)
 {
 	struct syscallrecord *rec;
 	int nr, call;
 	unsigned long ret = 0;
 	bool needalarm;
 
-	rec = &shm->children[childno]->syscall;
+	rec = &this_child->syscall;
 	nr = rec->nr;
 
 	/* Some architectures (IA64/MIPS) start their Linux syscalls
@@ -115,7 +115,7 @@ bool mkcall(int childno)
 	unsigned int call;
 	unsigned long ret = 0;
 
-	rec = &shm->children[childno]->syscall;
+	rec = &this_child->syscall;
 
 	call = rec->nr;
 	entry = syscalls[call].entry;
@@ -150,7 +150,7 @@ bool mkcall(int childno)
 
 		extrapid = fork();
 		if (extrapid == 0) {
-			ret = do_syscall(childno, &errno_saved);
+			ret = do_syscall();
 			/* We should never get here. */
 			rec->state = GOING_AWAY;
 			rec->retval = ret;
@@ -170,7 +170,7 @@ bool mkcall(int childno)
 #endif
 
 	rec->state = BEFORE;
-	ret = do_syscall(childno);
+	ret = do_syscall();
 
 	if (IS_ERR(ret))
 		shm->failures++;
