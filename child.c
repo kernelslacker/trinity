@@ -111,17 +111,16 @@ static void oom_score_adj(int adj)
 	fclose(fp);
 }
 
-static void truncate_log(int childno)
+static void truncate_log(void)
 {
-	struct childdata *child = shm->children[childno];
 	int fd;
 
-	child->logdirty = FALSE;
+	this_child->logdirty = FALSE;
 
 	if (logging == FALSE)
 		return;
 
-	fd = fileno(child->logfile);
+	fd = fileno(this_child->logfile);
 	if (ftruncate(fd, 0) == 0)
 		lseek(fd, 0, SEEK_SET);
 }
@@ -166,7 +165,7 @@ void init_child(int childno)
 
 	reinit_child(child);
 
-	truncate_log(childno);
+	truncate_log();
 
 	set_seed(childno);
 
