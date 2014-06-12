@@ -107,5 +107,5 @@ retry:
 	}
 
 	/* Do the actual syscall. */
-	return mkcall(childno);
+	return mkcall();
 }
