@@ -61,7 +61,7 @@ static void post_munmap(__unused__ int childno, struct syscallrecord *rec)
 		return;
 
 	if (action == WHOLE)
-		delete_mapping(childno, map);
+		delete_mapping(map);
 }
 
 struct syscallentry syscall_munmap = {

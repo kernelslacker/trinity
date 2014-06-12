@@ -22,7 +22,7 @@ extern struct map *shared_mappings;
 void setup_shared_mappings(void);
 void destroy_shared_mappings(void);
 
-void delete_mapping(int childno, struct map *map);
+void delete_mapping(struct map *map);
 
 struct map * get_map(void);
 
