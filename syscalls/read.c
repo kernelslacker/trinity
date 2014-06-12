@@ -10,7 +10,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_read(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_read(struct syscallrecord *rec)
 {
 	rec->a2 = (unsigned long) get_non_null_address();
 	rec->a3 = rand() % page_size;

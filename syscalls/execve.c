@@ -38,7 +38,7 @@ static unsigned long ** gen_ptrs_to_crap(void)
 	return (unsigned long **) ptr;
 }
 
-static void sanitise_execve(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_execve(struct syscallrecord *rec)
 {
 	/* we don't want to block if something tries to read from stdin */
 	fclose(stdin);

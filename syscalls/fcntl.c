@@ -30,7 +30,7 @@
 #define HAVE_LK64
 #endif
 
-static void sanitise_fcntl(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_fcntl(struct syscallrecord *rec)
 {
 	switch (rec->a2) {
 	/* arg = fd */

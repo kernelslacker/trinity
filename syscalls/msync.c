@@ -12,7 +12,7 @@
 #define MS_SYNC         4               /* Synchronous memory sync.  */
 #define MS_INVALIDATE   2               /* Invalidate the caches.  */
 
-static void sanitise_msync(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_msync(struct syscallrecord *rec)
 {
        (void) common_set_mmap_ptr_len();
 

@@ -10,7 +10,7 @@
 #include "trinity.h"
 #include "compat.h"
 
-static void sanitise_linkat(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_linkat(struct syscallrecord *rec)
 {
 	/* .. If oldpath is relative and olddirfd is the special value AT_FDCWD, then oldpath is
 	 * interpreted relative to the current working directory of the calling process  */

@@ -131,7 +131,7 @@ bool mkcall(int childno)
 
 	generic_sanitise(childno);
 	if (entry->sanitise)
-		entry->sanitise(childno, rec);
+		entry->sanitise(rec);
 
 	unlock(&rec->lock);
 

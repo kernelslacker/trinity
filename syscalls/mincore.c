@@ -9,7 +9,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_mincore(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_mincore(struct syscallrecord *rec)
 {
 	struct map *map;
 	unsigned long len;

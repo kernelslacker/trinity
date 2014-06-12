@@ -34,7 +34,7 @@
 #define FAN_EVENT_ON_CHILD      0x08000000      /* interested in child events */
 #define FAN_CLOSE               (FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE) /* close */
 
-static void sanitise_fanotify_mark(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_fanotify_mark(struct syscallrecord *rec)
 {
 	unsigned int flagvals[5] = { FAN_MARK_DONT_FOLLOW, FAN_MARK_ONLYDIR, FAN_MARK_MOUNT,
 				    FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORED_SURV_MODIFY };

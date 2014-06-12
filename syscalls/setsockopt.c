@@ -125,7 +125,7 @@ retry:
 	}
 }
 
-static void sanitise_setsockopt(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_setsockopt(struct syscallrecord *rec)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
 

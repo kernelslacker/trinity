@@ -17,7 +17,7 @@
 
 static void *ldt;
 
-static void sanitise_modify_ldt(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_modify_ldt(struct syscallrecord *rec)
 {
 	//struct user_desc *desc;
 

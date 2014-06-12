@@ -16,7 +16,7 @@
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)
 
-static void sanitise_mbind(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_mbind(struct syscallrecord *rec)
 {
 	unsigned long maxnode;
 

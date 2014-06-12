@@ -14,7 +14,7 @@
 #include "tables.h"
 #include "trinity.h"
 
-static void sanitise_sync_file_range(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_sync_file_range(struct syscallrecord *rec)
 {
 	long endbyte;
 	loff_t nbytes;

@@ -10,7 +10,7 @@
 #include "trinity.h"
 #include "compat.h"
 
-static void sanitise_ptrace(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_ptrace(struct syscallrecord *rec)
 {
 	unsigned int i;
 

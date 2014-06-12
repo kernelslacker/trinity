@@ -15,7 +15,7 @@ static int action;
 
 static struct map *map;
 
-static void sanitise_munmap(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_munmap(struct syscallrecord *rec)
 {
 	unsigned long len;
 	unsigned long nr_pages;

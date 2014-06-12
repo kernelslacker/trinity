@@ -72,7 +72,7 @@ static struct msghdr *msg;
 /*
  * SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
  */
-static void sanitise_sendmsg(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_sendmsg(struct syscallrecord *rec)
 {
 	struct sockaddr *sa = NULL;
 	socklen_t salen;

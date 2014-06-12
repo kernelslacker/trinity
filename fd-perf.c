@@ -20,7 +20,7 @@ static int open_perf_fds(void)
 		int fd;
 
 		rec = &shm->children[0]->syscall;
-		sanitise_perf_event_open(0, rec);
+		sanitise_perf_event_open(rec);
 
 		fd = syscall(__NR_perf_event_open, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5);
 		if (fd != -1) {

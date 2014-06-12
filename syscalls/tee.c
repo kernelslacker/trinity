@@ -9,7 +9,7 @@
 #include "trinity.h"
 #include "compat.h"
 
-static void sanitise_tee(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_tee(struct syscallrecord *rec)
 {
 	if ((rand() % 10) > 0) {
 		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];

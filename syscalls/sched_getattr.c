@@ -10,7 +10,7 @@
 
 #define SCHED_ATTR_SIZE_VER0	48
 
-static void sanitise_sched_getattr(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_sched_getattr(struct syscallrecord *rec)
 {
 	unsigned long range = page_size - SCHED_ATTR_SIZE_VER0;
 

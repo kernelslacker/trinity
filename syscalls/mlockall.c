@@ -11,7 +11,7 @@
 #define MCL_CURRENT     1
 #define MCL_FUTURE      2
 
-static void sanitise_mlockall(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_mlockall(struct syscallrecord *rec)
 {
 	if (rec->a1 != 0)
 		return;

@@ -6,7 +6,7 @@
 #include "shm.h"
 #include "trinity.h"
 
-static void sanitise_pread64(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_pread64(struct syscallrecord *rec)
 {
 
 retry_pos:

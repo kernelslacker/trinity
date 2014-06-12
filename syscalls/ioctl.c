@@ -42,7 +42,7 @@ static void generic_sanitise_ioctl(struct syscallrecord *rec)
 	ioctl_mangle_arg(rec);
 }
 
-static void sanitise_ioctl(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_ioctl(struct syscallrecord *rec)
 {
 	const struct ioctl_group *grp;
 

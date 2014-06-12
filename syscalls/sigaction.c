@@ -12,7 +12,7 @@
 #include "syscall.h"
 #include "trinity.h"
 
-static void sanitise_rt_sigaction(__unused__ int childno, struct syscallrecord *rec)
+static void sanitise_rt_sigaction(struct syscallrecord *rec)
 {
 	if (rand_bool())
 		rec->a2 = 0;
