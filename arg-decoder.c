@@ -126,15 +126,14 @@ static char * render_arg(char *buffer, unsigned int argnum, struct syscallentry 
 /*
  * Used from output_syscall_prefix, and also from postmortem dumper
  */
-static void render_syscall_prefix(char *buffer)
+static void render_syscall_prefix(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
-	struct syscallrecord *rec;
+	char *buffer = rec->prebuffer;
 	char *sptr = buffer;
 	unsigned int i;
 	unsigned int syscallnr;
 
-	rec = &this_child->syscall;
 	syscallnr = rec->nr;
 	entry = get_syscall_entry(syscallnr, rec->do32bit);
 
@@ -199,7 +198,7 @@ void output_syscall_prefix(void)
 
 	memset(buffer, 0, PREBUFFER_LEN);	// TODO: optimize to only strip ending
 
-	render_syscall_prefix(buffer);
+	render_syscall_prefix(rec);
 
 	__output_syscall(buffer, PREBUFFER_LEN);
 }
