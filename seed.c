@@ -82,6 +82,11 @@ unsigned int init_seed(unsigned int seedparam)
  */
 void set_seed(struct childdata *child)
 {
+	if (child == NULL) {
+		/* not in child context, must be main. */
+		srand(shm->seed);
+		return;
+	}
 	srand(shm->seed + (child->num + 1));
 	child->seed = shm->seed;
 }
