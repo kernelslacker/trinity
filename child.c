@@ -277,7 +277,7 @@ static const struct child_funcs child_ops[] = {
 };
 
 // FIXME: when we have different child ops, we're going to need to redo the progress detector.
-static bool handle_sigreturn(int childno)
+static bool handle_sigreturn(void)
 {
 	struct syscallrecord *rec;
 	static unsigned int count = 0;
@@ -288,7 +288,7 @@ static bool handle_sigreturn(int childno)
 	bust_lock(&rec->lock);
 
 	/* Check if we're blocked because we were stuck on an fd. */
-	if (check_if_fd(childno) == TRUE) {
+	if (check_if_fd(rec) == TRUE) {
 		/* avoid doing it again from other threads. */
 		shm->fd_lifetime = 0;
 
@@ -328,7 +328,7 @@ void child_process(int childno)
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
-		if (handle_sigreturn(childno) == FALSE)
+		if (handle_sigreturn() == FALSE)
 			return;	// Exit the child, things are getting too weird.
 	}
 
