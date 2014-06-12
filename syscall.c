@@ -202,7 +202,7 @@ already_done:
 
 	check_uid();
 
-	generic_free_arg();
+	generic_free_arg(rec);
 
 	return TRUE;
 }

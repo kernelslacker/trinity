@@ -415,13 +415,10 @@ void generic_sanitise(struct syscallrecord *rec)
 		rec->a6 = fill_arg(rec, 6);
 }
 
-void generic_free_arg(void)
+void generic_free_arg(struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	unsigned int i, call;
-
-	rec = &this_child->syscall;
 
 	call = rec->nr;
 
