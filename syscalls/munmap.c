@@ -8,13 +8,15 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 
 #define WHOLE 1
 static int action;
 
+static struct map *map;
+
 static void sanitise_munmap(int childno, struct syscallrecord *rec)
 {
-	struct map *map;
 	unsigned long len;
 	unsigned long nr_pages;
 	unsigned long offset, offsetpagenr;
@@ -53,17 +55,13 @@ static void sanitise_munmap(int childno, struct syscallrecord *rec)
 	}
 }
 
-static void post_munmap(int childno, struct syscallrecord *rec)
+static void post_munmap(__unused__ int childno, struct syscallrecord *rec)
 {
-	struct map *map = (struct map *) shm->children[childno]->scratch;
-
 	if (rec->retval != 0)
 		return;
 
 	if (action == WHOLE)
 		delete_mapping(childno, map);
-
-	shm->children[childno]->scratch = 0;
 }
 
 struct syscallentry syscall_munmap = {
