@@ -23,6 +23,7 @@
 #include "params.h"
 #include "maps.h"
 #include "tables.h"
+#include "trinity.h"
 #include "uid.h"
 #include "utils.h"
 
@@ -108,7 +109,7 @@ static unsigned long do_syscall(void)
  * returns a bool that determines whether we can keep doing syscalls
  * in this child.
  */
-bool mkcall(int childno)
+bool mkcall(__unused__ int childno)
 {
 	struct syscallentry *entry;
 	struct syscallrecord *rec, *previous;
@@ -135,7 +136,7 @@ bool mkcall(int childno)
 
 	unlock(&rec->lock);
 
-	output_syscall_prefix(childno);
+	output_syscall_prefix();
 
 	/* If we're going to pause, might as well sync pre-syscall */
 	if (dopause == TRUE)
