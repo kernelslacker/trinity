@@ -104,14 +104,12 @@ static bool is_arg_address(enum argtype argtype)
 	return FALSE;
 }
 
-unsigned long find_previous_arg_address(int childno, unsigned int argnum)
+unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int argnum)
 {
-	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	unsigned long addr = 0;
 	unsigned int call;
 
-	rec = &shm->children[childno]->syscall;
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
