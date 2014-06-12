@@ -168,7 +168,7 @@ void init_child(int childno)
 
 	truncate_log();
 
-	set_seed(childno);
+	set_seed(this_child);
 
 	child->mappings = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&child->mappings->list);
@@ -323,7 +323,7 @@ static bool handle_sigreturn(void)
 	return TRUE;
 }
 
-void child_process(int childno)
+void child_process(__unused__ int childno)
 {
 	const char *lastop = NULL;
 	int ret;
@@ -341,7 +341,7 @@ void child_process(int childno)
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
 		if (shm->seed != this_child->seed)
-			set_seed(childno);
+			set_seed(this_child);
 
 		/* Choose operations for this iteration. */
 		i = rand() % ARRAY_SIZE(child_ops);
