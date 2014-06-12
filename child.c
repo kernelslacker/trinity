@@ -340,7 +340,7 @@ void child_process(int childno)
 		periodic_work();
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
-		if (shm->seed != shm->children[childno]->seed)
+		if (shm->seed != this_child->seed)
 			set_seed(childno);
 
 		/* Choose operations for this iteration. */
