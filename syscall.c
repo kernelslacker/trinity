@@ -2,15 +2,9 @@
  * Functions for actually doing the system calls.
  */
 
-#include <fcntl.h>
 #include <errno.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/ptrace.h>
 #include <sys/syscall.h>
-#include <sys/wait.h>
 
 #include "arch.h"
 #include "child.h"
@@ -18,10 +12,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
-#include "pids.h"
 #include "log.h"
-#include "params.h"
-#include "maps.h"
 #include "tables.h"
 #include "uid.h"
 #include "utils.h"
