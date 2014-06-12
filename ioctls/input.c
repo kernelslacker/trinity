@@ -48,14 +48,11 @@ static const char *const input_devs[] = {
 	"input",
 };
 
-static void input_sanitise(const struct ioctl_group *grp, int childno)
+static void input_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	unsigned int u, r;
 
-	rec = &shm->children[childno]->syscall;
-
-	pick_random_ioctl(grp, childno);
+	pick_random_ioctl(grp, rec);
 
 	switch (rec->a2) {
 	case EVIOCGNAME(0):

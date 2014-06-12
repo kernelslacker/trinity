@@ -10,6 +10,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 
 static void ioctl_mangle_cmd(struct syscallrecord *rec)
 {
@@ -41,7 +42,7 @@ static void generic_sanitise_ioctl(struct syscallrecord *rec)
 	ioctl_mangle_arg(rec);
 }
 
-static void sanitise_ioctl(int childno, struct syscallrecord *rec)
+static void sanitise_ioctl(__unused__ int childno, struct syscallrecord *rec)
 {
 	const struct ioctl_group *grp;
 
@@ -53,7 +54,7 @@ static void sanitise_ioctl(int childno, struct syscallrecord *rec)
 	if (grp) {
 		ioctl_mangle_arg(rec);
 
-		grp->sanitise(grp, childno);
+		grp->sanitise(grp, rec);
 
 		if (rand() % 100 == 0)
 			ioctl_mangle_cmd(rec);
