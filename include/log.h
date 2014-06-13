@@ -38,16 +38,13 @@ void debugf(const char *fmt, ...);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
+#define unreachable() do { } while (1)
+
+extern void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno);
+
 #define BUG(bugtxt)	{ \
-	printf("BUG!: %s\n", VERSION); \
-	printf("[%d] %s:%s:%d %s%s%s", getpid(), __FILE__, __func__, __LINE__, ANSI_RED, bugtxt, ANSI_RESET); \
-	show_backtrace();	\
-	while(1) { \
-		if (shm->exit_reason == EXIT_SIGINT) \
-			exit(EXIT_FAILURE);	\
-		sleep(1); \
-	}\
+	__BUG(bugtxt, __FILE__, __func__, __LINE__); \
+	unreachable(); \
 }
 
 #define BUG_ON(condition)	do { if ((condition)) BUG(__stringify(condition)); } while (0)
-
