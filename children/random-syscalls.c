@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "locks.h"
 #include "log.h"
+#include "params.h"	// dopause
 #include "random.h"
 #include "shm.h"
 #include "signals.h"
@@ -106,6 +107,24 @@ retry:
 			shm->exit_reason = EXIT_REACHED_COUNT;
 	}
 
-	/* Do the actual syscall. */
-	return mkcall();
+	/* Generate arguments, print them out */
+
+	generate_syscall_args(rec);
+	output_syscall_prefix(rec);
+
+	/* If we're going to pause, might as well sync pre-syscall */
+	if (dopause == TRUE)
+		synclogs();
+
+	do_syscall(rec);
+
+	/* we're back. Output what happened, and clean up */
+	output_syscall_postfix(rec);
+
+	if (dopause == TRUE)
+		sleep(1);
+
+	handle_syscall_ret(rec);
+
+	return TRUE;
 }

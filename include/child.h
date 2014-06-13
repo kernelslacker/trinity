@@ -8,7 +8,6 @@
 extern unsigned int max_children;
 
 void child_process(void);
-bool mkcall(void);
 
 void set_dontkillme(pid_t pid, bool state);
 

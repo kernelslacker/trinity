@@ -8,7 +8,6 @@
 
 #include "arch.h"
 #include "child.h"
-#include "params.h"	// dopause
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -81,7 +80,7 @@ static void __do_syscall(struct syscallrecord *rec)
 		(void)alarm(0);
 }
 
-static void generate_syscall_args(struct syscallrecord *rec)
+void generate_syscall_args(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
 
@@ -103,7 +102,7 @@ static void generate_syscall_args(struct syscallrecord *rec)
 	unlock(&rec->lock);
 }
 
-static void do_syscall(struct syscallrecord *rec)
+void do_syscall(struct syscallrecord *rec)
 {
 	/* This is a special case for things like execve, which would replace our
 	 * child process with something unknown to us. We use a 'throwaway' process
@@ -140,7 +139,7 @@ static void do_syscall(struct syscallrecord *rec)
 		shm->successes++;
 }
 
-static void handle_syscall_ret(struct syscallrecord *rec)
+void handle_syscall_ret(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
 	struct syscallrecord *previous;
@@ -189,35 +188,4 @@ already_done:
 	check_uid();
 
 	generic_free_arg(rec);
-}
-
-/*
- * Generate arguments, print them out, then call the syscall.
- *
- * returns a bool that determines whether we can keep doing syscalls
- * in this child.
- */
-bool mkcall(void)
-{
-	struct syscallrecord *rec;
-
-	rec = &this_child->syscall;
-
-	generate_syscall_args(rec);
-	output_syscall_prefix(rec);
-
-	/* If we're going to pause, might as well sync pre-syscall */
-	if (dopause == TRUE)
-		synclogs();
-
-	do_syscall(rec);
-
-	output_syscall_postfix(rec);
-
-	if (dopause == TRUE)
-		sleep(1);
-
-	handle_syscall_ret(rec);
-
-	return TRUE;
 }

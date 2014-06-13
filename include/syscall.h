@@ -153,3 +153,7 @@ struct syscalltable {
 	} \
 	return (type) (res); \
 } while (0)
+
+void generate_syscall_args(struct syscallrecord *rec);
+void do_syscall(struct syscallrecord *rec);
+void handle_syscall_ret(struct syscallrecord *rec);
