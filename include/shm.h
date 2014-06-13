@@ -68,6 +68,7 @@ struct shm_s {
 	bool dont_make_it_fail;
 	bool spawn_no_more;
 	bool ready;
+	bool postmortem_in_progress;
 };
 extern struct shm_s *shm;
 

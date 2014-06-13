@@ -54,6 +54,8 @@ static void dump_syscall_records(void)
 
 void tainted_postmortem(int taint)
 {
+	shm->postmortem_in_progress = TRUE;
+
 	shm->exit_reason = EXIT_KERNEL_TAINTED;
 
 	gettimeofday(&shm->taint_tv, NULL);
@@ -66,4 +68,6 @@ void tainted_postmortem(int taint)
 	closelog();
 
 	dump_syscall_records();
+
+	shm->postmortem_in_progress = FALSE;
 }
