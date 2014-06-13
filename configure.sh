@@ -200,8 +200,13 @@ rm -f "$TMP" "$TMP.log" "$TMP.c"
 
 #############################################################################################
 if [ "$DEVEL" == "1" ]; then
-  VER=$(git describe --always)
-  echo "#define VERSION \""$VER\" >> config.h
+  if [ ! -f /usr/bin/git ]; then
+    echo -n "#define " >> config.h
+    grep VERSION= Makefile | sed 's/=/ /' >> config.h
+  else
+    VER=$(git describe --always)
+    echo "#define VERSION \""$VER\" >> config.h
+  fi
 else
   echo -n "#define " >> config.h
   grep VERSION= Makefile | sed 's/=/ /' >> config.h
