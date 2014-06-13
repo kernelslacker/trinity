@@ -130,14 +130,13 @@ void do_syscall(struct syscallrecord *rec)
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
-	if (entry->flags & EXTRA_FORK) {
-		do_extrafork(rec);
-		return;
-	}
-
-	/* common-case, do the syscall in this child process. */
 	rec->state = BEFORE;
-	__do_syscall(rec);
+
+	if (entry->flags & EXTRA_FORK)
+		do_extrafork(rec);
+	else
+		 /* common-case, do the syscall in this child process. */
+		__do_syscall(rec);
 
 	if (IS_ERR(rec->retval))
 		shm->failures++;
