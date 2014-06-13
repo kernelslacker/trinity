@@ -28,6 +28,23 @@
 #include "trinity.h"	// ARRAY_SIZE
 #include "utils.h"	// zmalloc
 
+struct childdata *this_child = NULL;
+
+struct child_funcs {
+	const char *name;
+	bool (*func)(void);
+	unsigned char likelyhood;
+};
+
+static const struct child_funcs child_ops[] = {
+	{ .name = "rand_syscalls", .func = child_random_syscalls, .likelyhood = 100 },
+};
+
+/*
+ * For the child processes, we don't want core dumps (unless we're running with -D)
+ * This is because it's not uncommon for us to get segfaults etc when we're doing
+ * syscalls with garbage for arguments.
+ */
 static void disable_coredumps(void)
 {
 	struct rlimit limit = { .rlim_cur = 0, .rlim_max = 0 };
@@ -44,6 +61,10 @@ static void disable_coredumps(void)
 	prctl(PR_SET_DUMPABLE, FALSE);
 }
 
+/*
+ * We reenable core dumps when we're about to exit a child.
+ * TODO: Maybe narrow the disable/enable pair to just around do_syscall ?
+ */
 static void enable_coredumps(void)
 {
 	struct rlimit limit = {
@@ -59,6 +80,10 @@ static void enable_coredumps(void)
 	(void) setrlimit(RLIMIT_CORE, &limit);
 }
 
+/*
+ * Enable the kernels fault-injection code for our child process.
+ * (Assumes you've set everything else up by hand).
+ */
 static void set_make_it_fail(void)
 {
 	int fd;
@@ -97,8 +122,11 @@ static void use_fpu(void)
 	asm volatile("":"+m" (x));
 }
 
-struct childdata *this_child = NULL;
-
+/*
+ * Tweak the oom_score_adj setting for our child so that there's a higher
+ * chance that the oom-killer kills our processes rather than something
+ * more important.
+ */
 static void oom_score_adj(int adj)
 {
 	FILE *fp;
@@ -111,6 +139,11 @@ static void oom_score_adj(int adj)
 	fclose(fp);
 }
 
+/*
+ * Reset a log file contents.
+ * If we successfully exited and respawned, we don't care about what
+ * happened last time.
+ */
 static void truncate_log(void)
 {
 	int fd;
@@ -140,6 +173,9 @@ static void reinit_child(struct childdata *child)
 	child->dontkillme = FALSE;
 }
 
+/*
+ * Called from the fork_children loop in the main process.
+ */
 void init_child(int childno)
 {
 	struct childdata *child = shm->children[childno];
@@ -201,6 +237,10 @@ void init_child(int childno)
 	disable_coredumps();
 }
 
+/*
+ * Sanity check to make sure that the main process is still around
+ * to wait for us.
+ */
 static void check_parent_pid(void)
 {
 	struct childdata *child;
@@ -268,17 +308,12 @@ static void periodic_work(void)
 		periodic_counter = 0;
 }
 
-struct child_funcs {
-	const char *name;
-	bool (*func)(void);
-	unsigned char likelyhood;
-};
-
-static const struct child_funcs child_ops[] = {
-	{ .name = "rand_syscalls", .func = child_random_syscalls, .likelyhood = 100 },
-};
-
-// FIXME: when we have different child ops, we're going to need to redo the progress detector.
+/*
+ * We jump here on return from a signal. We do all the stuff here that we
+ * otherwise couldn't do in a signal handler.
+ *
+ * FIXME: when we have different child ops, we're going to need to redo the progress detector.
+ */
 static bool handle_sigreturn(void)
 {
 	struct syscallrecord *rec;
@@ -287,6 +322,7 @@ static bool handle_sigreturn(void)
 
 	rec = &this_child->syscall;
 
+	/* If we held a lock before the signal happened, drop it. */
 	bust_lock(&rec->lock);
 
 	/* Check if we're blocked because we were stuck on an fd. */
@@ -323,6 +359,11 @@ static bool handle_sigreturn(void)
 	return TRUE;
 }
 
+/*
+ * This is the child main loop, entered after init_child has completed
+ * from the fork_children() loop.
+ * We also re-enter it from the signal handler code if something happened.
+ */
 void child_process(void)
 {
 	const char *lastop = NULL;
