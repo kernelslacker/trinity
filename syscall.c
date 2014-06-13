@@ -91,9 +91,9 @@ void do_syscall(struct syscallrecord *rec)
 
 		extrapid = fork();
 		if (extrapid == 0) {
-			__do_syscall();
-			/* We should never get here. */
 			rec->state = GOING_AWAY;
+			__do_syscall(rec);
+			/* We should never get here. */
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid_alive(extrapid)) {
