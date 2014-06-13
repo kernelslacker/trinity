@@ -33,30 +33,11 @@ static unsigned long hiscore = 0;
 /*
  * Make sure various entries in the shm look sensible.
  * We use this to make sure that random syscalls haven't corrupted it.
+ *
+ * Note: reap_dead_kids will also check the pids for sanity.
  */
-static int check_shm_sanity(void)
+static int shm_is_corrupt(void)
 {
-	unsigned int i;
-
-	if (shm->running_childs == 0)
-		return SHM_OK;
-
-	for_each_child(i) {
-		pid_t pid;
-
-		pid = shm->children[i]->pid;
-		if (pid == EMPTY_PIDSLOT)
-			continue;
-
-		if (pid_is_valid(pid) == FALSE) {
-			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
-			if (shm->exit_reason == STILL_RUNNING)
-				shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
-
-			return SHM_CORRUPT;
-		}
-	}
-
 	// FIXME: The '500000' is magic, and should be dynamically calculated.
 	// On startup, we should figure out how many getpid()'s per second we can do,
 	// and use that.
@@ -64,10 +45,11 @@ static int check_shm_sanity(void)
 		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
 			shm->previous_op_count, shm->total_syscalls_done);
 		shm->exit_reason = EXIT_SHM_CORRUPTION;
+		return TRUE;
 	}
 	shm->previous_op_count = shm->total_syscalls_done;
 
-	return SHM_OK;
+	return FALSE;
 }
 
 static unsigned int reap_dead_kids(void)
@@ -84,8 +66,12 @@ static unsigned int reap_dead_kids(void)
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		if (pid_is_valid(pid) == FALSE)
-			continue;
+		if (pid_is_valid(pid) == FALSE) {
+			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
+			if (shm->exit_reason == STILL_RUNNING)
+				shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
+			return 0;
+		}
 
 		ret = kill(pid, 0);
 		/* If it disappeared, reap it. */
@@ -143,7 +129,7 @@ static void kill_all_kids(void)
 		/* wait a second to give kids a chance to exit. */
 		sleep(1);
 
-		if (check_shm_sanity())
+		if (shm_is_corrupt() == TRUE)
 			return;
 	}
 
@@ -350,7 +336,7 @@ static void watchdog(void)
 
 		unsigned int i;
 
-		if (check_shm_sanity() == SHM_CORRUPT)
+		if (shm_is_corrupt() == TRUE)
 			goto corrupt;
 
 		if (check_main_alive() == FALSE)
