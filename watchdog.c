@@ -201,7 +201,11 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 	do32 = rec->do32bit;
 	unlock(&rec->lock);
 
-	/* shortcut, if it's out of range, it's not going to be valid. */
+	entry = get_syscall_entry(callno, do32);
+	if (entry->arg1type != ARG_FD)
+		return FALSE;
+
+	/* if it's out of range, it's not going to be valid. */
 	if (fd > 1024)
 		return FALSE;
 
@@ -209,12 +213,7 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 	if (fd < highest)
 		return FALSE;
 
-	entry = get_syscall_entry(callno, do32);
-
-	if (entry->arg1type == ARG_FD)
-		return TRUE;
-
-	return FALSE;
+	return TRUE;
 }
 
 static void stuck_syscall_info(struct childdata *child)
