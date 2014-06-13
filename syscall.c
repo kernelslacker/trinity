@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 
 #include "arch.h"
@@ -99,6 +100,9 @@ void do_syscall(struct syscallrecord *rec)
 
 		extrapid = fork();
 		if (extrapid == 0) {
+			char childname[]="trinity-subchild";
+			prctl(PR_SET_NAME, (unsigned long) &childname);
+
 			rec->state = GOING_AWAY;
 			__do_syscall(rec);
 			/* We should never get here. */
