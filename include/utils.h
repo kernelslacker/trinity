@@ -48,5 +48,3 @@ static inline long IS_ERR(unsigned long x)
 void sizeunit(unsigned long size, char *buf);
 
 void kill_pid(pid_t pid);
-
-void show_backtrace(void);

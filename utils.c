@@ -1,5 +1,4 @@
 #include <errno.h>
-#include <execinfo.h>
 #include <sys/mman.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -73,26 +72,4 @@ void kill_pid(pid_t pid)
 	ret = kill(pid, SIGKILL);
 	if (ret != 0)
 		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
-}
-
-#define BACKTRACE_SIZE 100
-
-void show_backtrace(void)
-{
-	unsigned int j, nptrs;
-	void *buffer[BACKTRACE_SIZE];
-	char **strings;
-
-	nptrs = backtrace(buffer, BACKTRACE_SIZE);
-
-	strings = backtrace_symbols(buffer, nptrs);
-	if (strings == NULL) {
-		perror("backtrace_symbols");
-		return;
-	}
-
-	for (j = 0; j < nptrs; j++)
-		output(0, "%s\n", strings[j]);
-
-	free(strings);
 }
