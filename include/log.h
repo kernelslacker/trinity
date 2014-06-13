@@ -7,6 +7,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "types.h"
+#include "utils.h"
 
 extern char ANSI_RED[];
 extern char ANSI_GREEN[];
@@ -42,6 +43,7 @@ void debugf(const char *fmt, ...);
 
 #define BUG(bugtxt)	{ \
 	printf("[%d] %s:%s:%d %s%s%s", getpid(), __FILE__, __func__, __LINE__, ANSI_RED, bugtxt, ANSI_RESET); \
+	show_backtrace();	\
 	while(1) { \
 		if (shm->exit_reason == EXIT_SIGINT) \
 			exit(EXIT_FAILURE);	\
