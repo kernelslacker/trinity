@@ -54,11 +54,14 @@ static void dump_syscall_records(void)
 
 void tainted_postmortem(int taint)
 {
+	struct timeval taint_tv;
+
 	shm->postmortem_in_progress = TRUE;
 
-	shm->exit_reason = EXIT_KERNEL_TAINTED;
+	//TODO: Sort syscall rec output by timeval, and mark when we detected taint_tv.
+	gettimeofday(&taint_tv, NULL);
 
-	gettimeofday(&shm->taint_tv, NULL);
+	shm->exit_reason = EXIT_KERNEL_TAINTED;
 
 	output(0, "kernel became tainted! (%d/%d) Last seed was %u\n",
 		taint, kernel_taint_initial, shm->seed);

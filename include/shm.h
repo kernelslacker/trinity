@@ -46,8 +46,6 @@ struct shm_s {
 	pid_t mainpid;
 	pid_t last_reaped;
 
-	struct timeval taint_tv;
-
 	/* file descriptors, created in main, inherited in children */
 	int pipe_fds[MAX_PIPE_FDS*2];
 	int file_fds[NR_FILE_FDS];
