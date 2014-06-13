@@ -96,10 +96,10 @@ void do_syscall(struct syscallrecord *rec)
 			/* We should never get here. */
 			_exit(EXIT_SUCCESS);
 		} else {
-			if (pid_alive(extrapid)) {
-				sleep(1);
-				kill(extrapid, SIGKILL);
-			}
+			while (rec->state != GOING_AWAY)
+				usleep(1);
+
+			kill(extrapid, SIGKILL);
 			generic_free_arg();
 			return;
 		}
