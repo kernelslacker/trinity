@@ -416,4 +416,16 @@ void child_process(void)
 	}
 
 	enable_coredumps();
+
+	/* If we're exiting because we tainted, wait here for it to be done. */
+	while (shm->postmortem_in_progress == TRUE) {
+		/* Make sure the main process & watchdog are still around. */
+		if (pid_alive(shm->mainpid) == -1)
+			return;
+
+		if (pid_alive(watchdog_pid) == -1)
+			return;
+
+		usleep(1);
+	}
 }
