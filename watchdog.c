@@ -276,6 +276,10 @@ static void check_child_progress(struct childdata *child)
 	else
 		diff = now - old;
 
+	/* hopefully the common case. */
+	if (diff < 30)
+		return;
+
 	/* if we wrapped, just reset it, we'll pick it up next time around. */
 	if (diff > 2145) {	/* max adjtime offset. */
 		output(1, "child %u wrapped! old=%lu now=%lu\n", child->num, old, now);
