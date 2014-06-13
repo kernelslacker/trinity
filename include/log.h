@@ -38,9 +38,8 @@ void debugf(const char *fmt, ...);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
-#define BUGTXT "BUG!: " VERSION
-
 #define BUG(bugtxt)	{ \
+	printf("BUG!: " VERSION); \
 	printf("[%d] %s:%s:%d %s%s%s", getpid(), __FILE__, __func__, __LINE__, ANSI_RED, bugtxt, ANSI_RESET); \
 	show_backtrace();	\
 	while(1) { \
