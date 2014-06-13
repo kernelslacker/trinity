@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/syscall.h>
 
 #include "arch.h"
@@ -82,11 +83,18 @@ static void __do_syscall(struct syscallrecord *rec)
 
 void do_syscall(struct syscallrecord *rec)
 {
+#if 0
+	struct syscallentry *entry;
+	unsigned int call;
+
 	/* This is a special case for things like execve, which would replace our
 	 * child process with something unknown to us. We use a 'throwaway' process
 	 * to do the execve in, and let it run for a max of a seconds before we kill it */
-#if 0
-	if (syscalls[call].entry->flags & EXTRA_FORK) {
+
+	call = rec->nr;
+	entry = syscalls[call].entry;
+
+	if (entry->flags & EXTRA_FORK) {
 		pid_t extrapid;
 
 		extrapid = fork();
@@ -100,14 +108,13 @@ void do_syscall(struct syscallrecord *rec)
 				usleep(1);
 
 			kill(extrapid, SIGKILL);
-			generic_free_arg();
+			generic_free_arg(rec);
 			return;
 		}
 	}
-
-	/* common-case, do the syscall in this child process. */
 #endif
 
+	/* common-case, do the syscall in this child process. */
 	rec->state = BEFORE;
 	__do_syscall(rec);
 
