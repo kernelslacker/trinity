@@ -3,7 +3,6 @@
 #include <unistd.h>
 #include "config.h"
 #include "exit.h"
-#include "params.h"	// monochrome
 #include "shm.h"
 #include "syscall.h"
 #include "types.h"
