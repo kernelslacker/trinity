@@ -50,5 +50,5 @@ void debugf(const char *fmt, ...);
 	}\
 }
 
-#define BUG_ON(condition)	do { if ((condition)) BUG(BUGTXT); } while (0)
+#define BUG_ON(condition)	do { if ((condition)) BUG(__stringify(condition)); } while (0)
 
