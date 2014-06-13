@@ -34,17 +34,3 @@ void output_syscall_postfix(struct syscallrecord *rec);
 void open_logfiles(void);
 void close_logfiles(void);
 void debugf(const char *fmt, ...);
-
-#define __stringify_1(x...)     #x
-#define __stringify(x...)       __stringify_1(x)
-
-#define unreachable() do { } while (1)
-
-extern void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno);
-
-#define BUG(bugtxt)	{ \
-	__BUG(bugtxt, __FILE__, __func__, __LINE__); \
-	unreachable(); \
-}
-
-#define BUG_ON(condition)	do { if ((condition)) BUG(__stringify(condition)); } while (0)

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "arch.h"
+#include "debug.h"
 #include "files.h"
 #include "log.h"
 #include "maps.h"

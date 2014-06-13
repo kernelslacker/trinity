@@ -7,13 +7,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "utils.h"
-#include "compat.h"
-#include "random.h"
-#include "syscall.h"
+#include "debug.h"
 #include "log.h"
 #include "net.h"
+#include "random.h"
+#include "syscall.h"
 #include "tables.h"
+#include "utils.h"
+#include "compat.h"
 
 /**
  * BPF filters are used in networking such as in pf_packet, but also
