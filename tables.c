@@ -578,3 +578,16 @@ struct syscallentry * get_syscall_entry(unsigned int callno, bool do32)
 	else
 		return syscalls_64bit[offset].entry;
 }
+
+/*
+ * Check the name of the syscall we're in the ->sanitise of.
+ * This is useful for syscalls where we have a common ->sanitise
+ * for multiple syscallentry's. (mmap/mmap2, sync_file_range/sync_file_range2)
+ */
+bool this_syscallname(const char *thisname)
+{
+	unsigned int call = this_child->syscall.nr;
+	struct syscallentry *syscall_entry = syscalls[call].entry;
+
+	return strcmp(thisname, syscall_entry->name);
+}
