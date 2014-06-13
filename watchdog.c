@@ -297,17 +297,21 @@ static void check_child_progress(struct childdata *child)
 		stuck_syscall_info(child);
 		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
 				child->num, pid);
-		child->kill_count++;
-		kill_pid(pid);
+		goto kill;
 	}
 
 	/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 	if (diff >= 40) {
 		debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
 			child->num, pid, child->kill_count, diff);
-		child->kill_count++;
-		kill_pid(pid);
+		goto kill;
 	}
+
+	return;
+
+kill:
+	child->kill_count++;
+	kill_pid(pid);
 }
 
 static void watchdog(void)
