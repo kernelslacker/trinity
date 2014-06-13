@@ -8,6 +8,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "params.h"	// dopause
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
