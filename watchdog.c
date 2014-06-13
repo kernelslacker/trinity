@@ -217,17 +217,14 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 	return FALSE;
 }
 
-static void stuck_syscall_info(int childno)
+static void stuck_syscall_info(struct childdata *child)
 {
-	struct childdata *child;
 	struct syscallrecord *rec;
 	unsigned int callno;
 	char fdstr[20];
 
 	if (debug == FALSE)
 		return;
-
-	child = shm->children[childno];
 
 	rec = &child->syscall;
 	callno = rec->nr;
@@ -238,7 +235,7 @@ static void stuck_syscall_info(int childno)
 		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
 
 	output(0, "child %d (pid %u) Stuck in syscall %d:%s%s%s.\n",
-		childno, child->pid, callno,
+		child->num, child->pid, callno,
 		print_syscall_name(callno, rec->do32bit),
 		rec->do32bit ? " (32bit)" : "",
 		fdstr);
@@ -297,7 +294,7 @@ static void check_child_progress(struct childdata *child)
 
 	/* After 30 seconds of no progress, send a kill signal. */
 	if (diff == 30) {
-		stuck_syscall_info(child->num);	//FIXME: convert to child *
+		stuck_syscall_info(child);
 		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
 				child->num, pid);
 		child->kill_count++;
