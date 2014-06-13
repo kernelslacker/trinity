@@ -85,50 +85,55 @@ static void __do_syscall(struct syscallrecord *rec)
 		(void)alarm(0);
 }
 
+/* This is a special case for things like execve, which would replace our
+ * child process with something unknown to us. We use a 'throwaway' process
+ * to do the execve in, and let it run for a max of a seconds before we kill it
+ */
+static void do_extrafork(struct syscallrecord *rec)
+{
+	pid_t pid = 0;
+	pid_t extrapid;
+
+	extrapid = fork();
+	if (extrapid == 0) {
+		/* grand-child */
+		char childname[]="trinity-subchild";
+		prctl(PR_SET_NAME, (unsigned long) &childname);
+
+		rec->state = GOING_AWAY;
+		__do_syscall(rec);
+		/* We should never get here. */
+		_exit(EXIT_SUCCESS);
+	}
+
+	/* child */
+	while (rec->state != GOING_AWAY)
+		usleep(1);
+
+	while (pid == 0) {
+		int childstatus;
+
+		pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+		if (pid != 0)
+			return;
+		if (pid_alive(extrapid) == TRUE)
+			kill(extrapid, SIGKILL);
+	}
+}
+
+
 void do_syscall(struct syscallrecord *rec)
 {
-//#if 0
 	struct syscallentry *entry;
 	unsigned int call;
-
-	/* This is a special case for things like execve, which would replace our
-	 * child process with something unknown to us. We use a 'throwaway' process
-	 * to do the execve in, and let it run for a max of a seconds before we kill it */
 
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
 	if (entry->flags & EXTRA_FORK) {
-		pid_t extrapid;
-
-		extrapid = fork();
-		if (extrapid == 0) {
-			char childname[]="trinity-subchild";
-			prctl(PR_SET_NAME, (unsigned long) &childname);
-
-			rec->state = GOING_AWAY;
-			__do_syscall(rec);
-			/* We should never get here. */
-			_exit(EXIT_SUCCESS);
-		} else {
-			int childstatus;
-			pid_t pid = 0;
-
-			while (rec->state != GOING_AWAY)
-				usleep(1);
-
-			while (pid == 0) {
-				pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-				if (pid != 0)
-					return;
-				if (pid_alive(extrapid) == TRUE)
-					kill(extrapid, SIGKILL);
-			}
-			generic_free_arg(rec);
-			return;
-		}
+		do_extrafork(rec);
+		return;
 	}
-//#endif
 
 	/* common-case, do the syscall in this child process. */
 	rec->state = BEFORE;
