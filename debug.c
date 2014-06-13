@@ -40,9 +40,14 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 	show_backtrace();
 
 	/* Now spin indefinitely (but allow ctrl-c) */
+
+	set_dontkillme(getpid(), TRUE);
+
 	while (1) {
-		if (shm->exit_reason == EXIT_SIGINT)
+		if (shm->exit_reason == EXIT_SIGINT) {
+			set_dontkillme(getpid(), FALSE);
 			exit(EXIT_FAILURE);
+		}
 		sleep(1);
 	}
 }
