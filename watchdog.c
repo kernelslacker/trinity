@@ -245,72 +245,67 @@ static void stuck_syscall_info(int childno)
 }
 
 /*
- * Iterate over each running child process, checking that it is still
- * making forward progress by comparing the timestamps it recorded before
- * making its last syscall.
+ * Check that a child is making forward progress by comparing the timestamps it
+ * recorded before making its last syscall.
  * If no progress is being made, send SIGKILLs to it.
  */
-static void check_children(void)
+static void check_child_progress(struct childdata *child)
 {
-	unsigned int i;
+	struct syscallrecord *rec;
+	struct timeval tv;
+	time_t diff, old, now;
+	pid_t pid;
 
-	for_each_child(i) {
-		struct childdata *child;
-		struct syscallrecord *rec;
-		struct timeval tv;
-		time_t diff, old, now;
-		pid_t pid;
+	pid = child->pid;
 
-		child = shm->children[i];
-		rec = &child->syscall;
+	if (pid == EMPTY_PIDSLOT)
+		return;
 
-		pid = child->pid;
+	rec = &child->syscall;
 
-		if (pid == EMPTY_PIDSLOT)
-			continue;
+	old = rec->tv.tv_sec;
 
-		old = rec->tv.tv_sec;
+	if (old == 0)
+		return;
 
-		if (old == 0)
-			continue;
+	gettimeofday(&tv, NULL);
+	now = tv.tv_sec;
 
-		gettimeofday(&tv, NULL);
-		now = tv.tv_sec;
+	if (old > now)
+		diff = old - now;
+	else
+		diff = now - old;
 
-		if (old > now)
-			diff = old - now;
-		else
-			diff = now - old;
+	/* if we wrapped, just reset it, we'll pick it up next time around. */
+	if (diff > 2145) {	/* max adjtime offset. */
+		output(1, "child %u wrapped! old=%lu now=%lu\n", child->num, old, now);
+		rec->tv.tv_sec = now;
+		return;
+	}
 
-		/* if we wrapped, just reset it, we'll pick it up next time around. */
-		if (diff > 2145) {	/* max adjtime offset. */
-			output(1, "child %u wrapped! old=%lu now=%lu\n", i, old, now);
-			rec->tv.tv_sec = now;
-			continue;
-		}
+	/* if we're way off, we're comparing garbage. Reset it. */
+	if (diff > 1000) {
+		output(0, "huge delta! child %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n",
+				child->num, pid, old, now, diff);
+		rec->tv.tv_sec = now;
+		return;
+	}
 
-		/* if we're way off, we're comparing garbage. Reset it. */
-		if (diff > 1000) {
-			output(0, "huge delta! child %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n", i, pid, old, now, diff);
-			rec->tv.tv_sec = now;
-			continue;
-		}
+	/* After 30 seconds of no progress, send a kill signal. */
+	if (diff == 30) {
+		stuck_syscall_info(child->num);	//FIXME: convert to child *
+		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
+				child->num, pid);
+		child->kill_count++;
+		kill_pid(pid);
+	}
 
-		/* After 30 seconds of no progress, send a kill signal. */
-		if (diff == 30) {
-			stuck_syscall_info(i);
-			debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n", i, pid);
-			child->kill_count++;
-			kill_pid(pid);
-		}
-
-		/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
-		if (diff >= 40) {
-			debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
-				i, pid, child->kill_count, diff);
-			child->kill_count++;
-			kill_pid(pid);
-		}
+	/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
+	if (diff >= 40) {
+		debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
+			child->num, pid, child->kill_count, diff);
+		child->kill_count++;
+		kill_pid(pid);
 	}
 }
 
@@ -344,8 +339,6 @@ static void watchdog(void)
 
 		reap_dead_kids();
 
-		check_children();
-
 		check_all_locks();
 
 		if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
@@ -358,7 +351,10 @@ static void watchdog(void)
 			synclogs();
 
 		for_each_child(i) {
-			struct syscallrecord *rec = &shm->children[i]->syscall;
+			struct childdata *child = shm->children[i];
+			struct syscallrecord *rec = &child->syscall;
+
+			check_child_progress(child);
 
 			if (rec->op_nr > hiscore)
 				hiscore = rec->op_nr;
