@@ -41,14 +41,12 @@ static long syscall32(unsigned int call,
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static unsigned long do_syscall(void)
+static void __do_syscall(struct syscallrecord *rec)
 {
-	struct syscallrecord *rec;
 	int nr, call;
 	unsigned long ret = 0;
 	bool needalarm;
 
-	rec = &this_child->syscall;
 	nr = rec->nr;
 
 	/* Some architectures (IA64/MIPS) start their Linux syscalls
@@ -81,29 +79,15 @@ static unsigned long do_syscall(void)
 
 	if (needalarm)
 		(void)alarm(0);
-
-	return ret;
 }
 
-/*
- * Generate arguments, print them out, then call the syscall.
- *
- * returns a bool that determines whether we can keep doing syscalls
- * in this child.
- */
-bool mkcall(void)
+static void generate_syscall_args(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
-	struct syscallrecord *rec, *previous;
-	unsigned int call;
-	unsigned long ret = 0;
-
-	rec = &this_child->syscall;
-
-	call = rec->nr;
-	entry = syscalls[call].entry;
 
 	lock(&rec->lock);
+
+	entry = syscalls[rec->nr].entry;
 	rec->state = PREP;
 	rec->a1 = (unsigned long) rand64();
 	rec->a2 = (unsigned long) rand64();
@@ -117,13 +101,10 @@ bool mkcall(void)
 		entry->sanitise(rec);
 
 	unlock(&rec->lock);
+}
 
-	output_syscall_prefix(rec);
-
-	/* If we're going to pause, might as well sync pre-syscall */
-	if (dopause == TRUE)
-		synclogs();
-
+static void do_syscall(struct syscallrecord *rec)
+{
 	/* This is a special case for things like execve, which would replace our
 	 * child process with something unknown to us. We use a 'throwaway' process
 	 * to do the execve in, and let it run for a max of a seconds before we kill it */
@@ -133,19 +114,17 @@ bool mkcall(void)
 
 		extrapid = fork();
 		if (extrapid == 0) {
-			ret = do_syscall();
+			__do_syscall();
 			/* We should never get here. */
 			rec->state = GOING_AWAY;
-			rec->retval = ret;
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid_alive(extrapid)) {
 				sleep(1);
 				kill(extrapid, SIGKILL);
 			}
-			//FIXME: Why would we only do this once ?
 			generic_free_arg();
-			return FALSE;
+			return;
 		}
 	}
 
@@ -153,23 +132,29 @@ bool mkcall(void)
 #endif
 
 	rec->state = BEFORE;
-	ret = do_syscall();
+	__do_syscall(rec);
 
-	if (IS_ERR(ret))
+	if (IS_ERR(rec->retval))
 		shm->failures++;
 	else
 		shm->successes++;
+}
 
-	output_syscall_postfix(rec);
-	if (dopause == TRUE)
-		sleep(1);
+static void handle_syscall_ret(struct syscallrecord *rec)
+{
+	struct syscallentry *entry;
+	struct syscallrecord *previous;
+	unsigned int call;
 
 	/*
 	 * If the syscall doesn't exist don't bother calling it next time.
 	 * Some syscalls return ENOSYS depending on their arguments, we mark
 	 * those as IGNORE_ENOSYS and keep calling them.
 	 */
-	if ((ret == -1UL) && (rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
+	call = rec->nr;
+	entry = syscalls[call].entry;
+
+	if ((rec->retval == -1UL) && (rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
 		lock(&shm->syscalltable_lock);
 
 		/* check another thread didn't already do this. */
@@ -204,9 +189,39 @@ already_done:
 	check_uid();
 
 	generic_free_arg(rec);
+}
+
+/*
+ * Generate arguments, print them out, then call the syscall.
+ *
+ * returns a bool that determines whether we can keep doing syscalls
+ * in this child.
+ */
+bool mkcall(void)
+{
+	struct syscallrecord *rec;
+
+	rec = &this_child->syscall;
+
+	generate_syscall_args(rec);
+	output_syscall_prefix(rec);
+
+	/* If we're going to pause, might as well sync pre-syscall */
+	if (dopause == TRUE)
+		synclogs();
+
+	do_syscall(rec);
+
+	output_syscall_postfix(rec);
+
+	if (dopause == TRUE)
+		sleep(1);
+
+	handle_syscall_ret(rec);
 
 	return TRUE;
 }
+
 
 bool this_syscallname(const char *thisname)
 {
