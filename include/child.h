@@ -11,6 +11,8 @@ void child_process(void);
 bool mkcall(void);
 void do_syscall_from_child(void);
 
+void set_dontkillme(pid_t pid, bool state);
+
 void init_child(int childno);
 
 void reap_child(pid_t childpid);

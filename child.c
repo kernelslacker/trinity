@@ -41,6 +41,22 @@ static const struct child_funcs child_ops[] = {
 };
 
 /*
+ * Provide temporary immunity from the watchdog.
+ * This is useful if we're going to do something that might take
+ * longer than the time the watchdog is prepared to wait, especially if
+ * we're doing something critical, like handling a lock, or dumping a log.
+ */
+void set_dontkillme(pid_t pid, bool state)
+{
+	int childno;
+
+	childno = find_childno(pid);
+	if (childno == CHILD_NOT_FOUND)		/* possible, we might be the watchdog for example */
+		return;
+	shm->children[childno]->dontkillme = state;
+}
+
+/*
  * For the child processes, we don't want core dumps (unless we're running with -D)
  * This is because it's not uncommon for us to get segfaults etc when we're doing
  * syscalls with garbage for arguments.

@@ -53,16 +53,6 @@ void check_all_locks(void)
 		check_lock(&shm->children[i]->syscall.lock);
 }
 
-static void set_dontkillme(pid_t pid, bool state)
-{
-	int childno;
-
-	childno = find_childno(pid);
-	if (childno == CHILD_NOT_FOUND)		/* possible, we might be the watchdog for example */
-		return;
-	shm->children[childno]->dontkillme = state;
-}
-
 void lock(lock_t *_lock)
 {
 	pid_t pid = getpid();
