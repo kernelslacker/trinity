@@ -23,3 +23,5 @@ const char * generate_pathname(void);
 void gen_unicode_page(char *page);
 
 bool this_syscallname(const char *thisname);
+
+void generate_syscall_args(struct syscallrecord *rec);

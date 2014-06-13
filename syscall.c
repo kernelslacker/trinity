@@ -80,28 +80,6 @@ static void __do_syscall(struct syscallrecord *rec)
 		(void)alarm(0);
 }
 
-void generate_syscall_args(struct syscallrecord *rec)
-{
-	struct syscallentry *entry;
-
-	lock(&rec->lock);
-
-	entry = syscalls[rec->nr].entry;
-	rec->state = PREP;
-	rec->a1 = (unsigned long) rand64();
-	rec->a2 = (unsigned long) rand64();
-	rec->a3 = (unsigned long) rand64();
-	rec->a4 = (unsigned long) rand64();
-	rec->a5 = (unsigned long) rand64();
-	rec->a6 = (unsigned long) rand64();
-
-	generic_sanitise(rec);
-	if (entry->sanitise)
-		entry->sanitise(rec);
-
-	unlock(&rec->lock);
-}
-
 void do_syscall(struct syscallrecord *rec)
 {
 	/* This is a special case for things like execve, which would replace our

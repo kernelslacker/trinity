@@ -9,14 +9,15 @@
 
 #include "arch.h"	// biarch
 #include "child.h"
-#include "syscall.h"
 #include "locks.h"
 #include "log.h"
 #include "params.h"	// dopause
+#include "pids.h"
 #include "random.h"
 #include "shm.h"
 #include "signals.h"
-#include "pids.h"
+#include "sanitise.h"
+#include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
 
