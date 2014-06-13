@@ -291,5 +291,5 @@ void parse_args(int argc, char *argv[])
 
 	quiet_level = MAX_LOGLEVEL - quiet_level;
 
-	outputstd("Done parsing arguments.\n");
+	output(1, "Done parsing arguments.\n");
 }
