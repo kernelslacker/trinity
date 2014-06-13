@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
+#include "debug.h"
 #include "log.h"
 #include "net.h"
 #include "maps.h"

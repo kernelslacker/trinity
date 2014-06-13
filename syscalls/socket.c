@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "config.h"
+#include "debug.h"
 #include "log.h"
 #include "net.h"
 #include "params.h"

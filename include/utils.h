@@ -48,3 +48,8 @@ static inline long IS_ERR(unsigned long x)
 void sizeunit(unsigned long size, char *buf);
 
 void kill_pid(pid_t pid);
+
+#define __stringify_1(x...)     #x
+#define __stringify(x...)       __stringify_1(x)
+
+#define unreachable() do { } while (1)

@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 
 #include "child.h"
+#include "debug.h"
 #include "log.h"
 #include "pids.h"
 #include "random.h"

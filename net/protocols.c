@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "debug.h"
 #include "log.h"
 #include "net.h"
 #include "protocols.h"
