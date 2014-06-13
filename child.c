@@ -207,7 +207,7 @@ void init_child(int childno)
 		ret = pid_alive(shm->mainpid);
 		if (ret != 0) {
 			shm->exit_reason = EXIT_SHM_CORRUPTION;
-			outputerr(BUGTXT "parent (%d) went away!\n", shm->mainpid);
+			outputerr("BUG!: parent (%d) went away!\n", shm->mainpid);
 			sleep(20000);
 		}
 	}
@@ -273,10 +273,10 @@ static void check_parent_pid(void)
 	if (shm->exit_reason == EXIT_REPARENT_PROBLEM)
 		goto out;
 
-	output(0, BUGTXT "CHILD (pid:%d) GOT REPARENTED! "
+	output(0, "BUG!: CHILD (pid:%d) GOT REPARENTED! "
 		"parent pid:%d. Watchdog pid:%d\n",
 		pid, shm->mainpid, watchdog_pid);
-	output(0, BUGTXT "Last syscalls:\n");
+	output(0, "BUG!: Last syscalls:\n");
 
 	//TODO: replace all this with calls to postmortem()
 	for_each_child(i) {
