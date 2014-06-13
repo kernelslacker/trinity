@@ -284,14 +284,6 @@ static void check_child_progress(struct childdata *child)
 		return;
 	}
 
-	/* if we're way off, we're comparing garbage. Reset it. */
-	if (diff > 1000) {
-		output(0, "huge delta! child %d [%d]: old:%ld now:%ld diff:%d.  Setting to now.\n",
-				child->num, pid, old, now, diff);
-		rec->tv.tv_sec = now;
-		return;
-	}
-
 	/* After 30 seconds of no progress, send a kill signal. */
 	if (diff == 30) {
 		stuck_syscall_info(child);
