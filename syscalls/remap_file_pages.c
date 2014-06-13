@@ -10,6 +10,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "tables.h"
 #include "trinity.h"
 
 static void sanitise_remap_file_pages(struct syscallrecord *rec)

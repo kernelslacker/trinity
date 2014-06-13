@@ -15,6 +15,7 @@
 #include "compat.h"
 #include "random.h"
 #include "syscall.h"
+#include "tables.h"
 #include "trinity.h"
 #include "utils.h"	//ARRAY_SIZE
 
