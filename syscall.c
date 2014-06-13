@@ -7,9 +7,12 @@
 #include <signal.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "arch.h"
 #include "child.h"
+#include "pids.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -84,7 +87,7 @@ static void __do_syscall(struct syscallrecord *rec)
 
 void do_syscall(struct syscallrecord *rec)
 {
-#if 0
+//#if 0
 	struct syscallentry *entry;
 	unsigned int call;
 
@@ -108,15 +111,24 @@ void do_syscall(struct syscallrecord *rec)
 			/* We should never get here. */
 			_exit(EXIT_SUCCESS);
 		} else {
+			int childstatus;
+			pid_t pid = 0;
+
 			while (rec->state != GOING_AWAY)
 				usleep(1);
 
-			kill(extrapid, SIGKILL);
+			while (pid == 0) {
+				pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+				if (pid != 0)
+					return;
+				if (pid_alive(extrapid) == TRUE)
+					kill(extrapid, SIGKILL);
+			}
 			generic_free_arg(rec);
 			return;
 		}
 	}
-#endif
+//#endif
 
 	/* common-case, do the syscall in this child process. */
 	rec->state = BEFORE;
