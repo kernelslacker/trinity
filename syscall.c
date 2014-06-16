@@ -102,14 +102,12 @@ static void do_extrafork(struct syscallrecord *rec)
 
 		rec->state = GOING_AWAY;
 		__do_syscall(rec);
-		/* We should never get here. */
+		/* if this was for eg. an successful execve, we should never get here.
+		 * if it failed though... */
 		_exit(EXIT_SUCCESS);
 	}
 
 	/* child */
-	while (rec->state != GOING_AWAY)
-		usleep(1);
-
 	while (pid == 0) {
 		int childstatus;
 
