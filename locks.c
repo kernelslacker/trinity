@@ -78,6 +78,12 @@ void lock(lock_t *_lock)
 
 		_lock->contention++;
 		usleep(1);
+
+		/* if something bad happened, like main/watchdog crashed,
+		 * we don't want to spin forever, so just get out.
+		 */
+		if (shm->exit_reason != STILL_RUNNING)
+			_exit(EXIT_FAILURE);
 	}
 
 	_lock->contention = 0;
