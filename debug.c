@@ -4,6 +4,7 @@
 
 #include <execinfo.h>
 #include <stdio.h>
+#include "child.h"
 #include "config.h"
 #include "debug.h"
 #include "log.h"
@@ -51,3 +52,20 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 		sleep(1);
 	}
 }
+
+void dump_childdata(struct childdata *child)
+{
+	output(0, "syscall: %p\n", child->syscall);
+	output(0, "previous syscall: %p\n", child->previous);
+
+	output(0, "logfile: %p (dirty:%d)\n", child->logfile, child->logdirty);
+
+	output(0, "mappings: %p (num:%d)\n", child->mappings, child->num_mappings);
+
+	output(0, "seed: %ld\n", child->seed);
+	output(0, "pid: %d\n", child->pid);
+	output(0, "childnum: %d\n", child->num);
+
+	output(0, "killcount: %d\n", child->kill_count);
+	output(0, "dontkillme: %d\n", child->dontkillme);
+};
