@@ -318,7 +318,12 @@ dont_wait:
 	output(0, "Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
 }
 
+/*
+ * Something potentially bad happened. Alert all processes by setting appropriate shm vars.
+ * (not always 'bad', reaching max count for eg is one example).
+ */
 void panic(int reason)
 {
+	shm->spawn_no_more = TRUE;
 	shm->exit_reason = reason;
 }
