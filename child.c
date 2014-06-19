@@ -206,7 +206,7 @@ void init_child(int childno)
 		/* Make sure parent is actually alive to wait for us. */
 		ret = pid_alive(shm->mainpid);
 		if (ret != 0) {
-			shm->exit_reason = EXIT_SHM_CORRUPTION;
+			panic(EXIT_SHM_CORRUPTION);
 			outputerr("BUG!: parent (%d) went away!\n", shm->mainpid);
 			sleep(20000);
 		}
@@ -293,7 +293,7 @@ static void check_parent_pid(void)
 			print_syscall_name(child->previous.nr, child->previous.do32bit),
 			child->syscall.op_nr);
 	}
-	shm->exit_reason = EXIT_REPARENT_PROBLEM;
+	panic(EXIT_REPARENT_PROBLEM);
 
 out:
 	unlock(&shm->buglock);

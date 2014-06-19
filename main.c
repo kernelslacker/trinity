@@ -71,7 +71,7 @@ static void fork_children(void)
 					return;
 
 				output(0, "couldn't create child! (%s)\n", strerror(errno));
-				shm->exit_reason = EXIT_FORK_FAILURE;
+				panic(EXIT_FORK_FAILURE);
 				exit_main_fail();
 			}
 		}
@@ -215,7 +215,7 @@ static void handle_child(pid_t childpid, int childstatus)
 				/* If we reaped it, it wouldn't show up, so check that. */
 				if (shm->last_reaped != childpid) {
 					outputerr("## Couldn't find %d in list of pids.\n", childpid);
-					shm->exit_reason = EXIT_LOST_CHILD;
+					panic(EXIT_LOST_CHILD);
 					dump_childnos();
 				}
 			} else {
@@ -316,4 +316,9 @@ void main_loop(void)
 
 dont_wait:
 	output(0, "Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
+}
+
+void panic(int reason)
+{
+	shm->exit_reason = reason;
 }

@@ -45,7 +45,7 @@ static int shm_is_corrupt(void)
 	if (shm->total_syscalls_done - shm->previous_op_count > 500000) {
 		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
 			shm->previous_op_count, shm->total_syscalls_done);
-		shm->exit_reason = EXIT_SHM_CORRUPTION;
+		panic(EXIT_SHM_CORRUPTION);
 		return TRUE;
 	}
 	shm->previous_op_count = shm->total_syscalls_done;
@@ -70,7 +70,7 @@ static unsigned int reap_dead_kids(void)
 		if (pid_is_valid(pid) == FALSE) {
 			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
 			if (shm->exit_reason == STILL_RUNNING)
-				shm->exit_reason = EXIT_PID_OUT_OF_RANGE;
+				panic(EXIT_PID_OUT_OF_RANGE);
 			dump_childdata(shm->children[i]);
 			return 0;
 		}
@@ -157,7 +157,7 @@ static bool __check_main(void)
 		/* No. Check what happened. */
 		if (errno == ESRCH) {
 			output(0, "main pid %u has disappeared.\n", shm->mainpid);
-			shm->exit_reason = EXIT_MAIN_DISAPPEARED;
+			panic(EXIT_MAIN_DISAPPEARED);
 			shm->mainpid = 0;
 		} else {
 			output(0, "problem checking on pid %u (%d:%s)\n", shm->mainpid, errno, strerror(errno));
@@ -341,7 +341,7 @@ static void watchdog(void)
 
 		if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
 			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
-			shm->exit_reason = EXIT_REACHED_COUNT;
+			panic(EXIT_REACHED_COUNT);
 		}
 
 		// Periodic log syncing. FIXME: This is kinda ugly, and mostly unnecessary.
