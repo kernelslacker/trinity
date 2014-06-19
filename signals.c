@@ -14,7 +14,7 @@ int sigwas;
 
 static void ctrlc_handler(__unused__ int sig)
 {
-	shm->exit_reason = EXIT_SIGINT;
+	panic(EXIT_SIGINT);
 }
 
 static void sighandler(int sig)

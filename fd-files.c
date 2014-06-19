@@ -320,7 +320,7 @@ static int open_files(void)
 
 	if (files_in_index == 0) {
 		/* Something bad happened. Crappy -V maybe? */
-		shm->exit_reason = EXIT_NO_FILES;
+		panic(EXIT_NO_FILES);
 		return FALSE;
 	}
 

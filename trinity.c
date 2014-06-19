@@ -144,7 +144,7 @@ int main(int argc, char* argv[])
 
 		if (setup_fds() == FALSE) {
 			if (shm->exit_reason != STILL_RUNNING)
-				shm->exit_reason = EXIT_FD_INIT_FAILURE;	// FIXME: Later, push this down to multiple EXIT's.
+				panic(EXIT_FD_INIT_FAILURE);	// FIXME: Later, push this down to multiple EXIT's.
 
 			exit_main_fail();
 		}

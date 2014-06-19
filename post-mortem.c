@@ -9,6 +9,7 @@
 #include "pids.h"
 #include "shm.h"
 #include "taint.h"
+#include "trinity.h"
 #include "post-mortem.h"
 #include "utils.h"
 
@@ -61,7 +62,7 @@ void tainted_postmortem(int taint)
 	//TODO: Sort syscall rec output by timeval, and mark when we detected taint_tv.
 	gettimeofday(&taint_tv, NULL);
 
-	shm->exit_reason = EXIT_KERNEL_TAINTED;
+	panic(EXIT_KERNEL_TAINTED);
 
 	output(0, "kernel became tainted! (%d/%d) Last seed was %u\n",
 		taint, kernel_taint_initial, shm->seed);

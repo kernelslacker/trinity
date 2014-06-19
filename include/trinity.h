@@ -12,6 +12,8 @@ void exit_main_fail(void);
 void init_watchdog(void);
 unsigned int check_if_fd(struct syscallrecord *rec);
 
+void panic(int reason);
+
 #define __unused__ __attribute((unused))
 
 #define FAIL 0

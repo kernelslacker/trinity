@@ -8,6 +8,7 @@
 #include <grp.h>
 #include "log.h"
 #include "params.h"
+#include "trinity.h"
 #include "uid.h"
 
 uid_t orig_uid;
@@ -127,7 +128,7 @@ changed:
 
 		output(0, "uid changed! Was: %u, now %u\n", orig_uid, myuid);
 
-		shm->exit_reason = EXIT_UID_CHANGED;
+		panic(EXIT_UID_CHANGED);
 		_exit(EXIT_FAILURE);
 	}
 }
