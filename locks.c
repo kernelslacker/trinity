@@ -80,8 +80,10 @@ void lock(lock_t *_lock)
 			 * if something bad happened, like main/watchdog crashed,
 			 * we don't want to spin forever, so just get out.
 			 */
-			if (shm->exit_reason != STILL_RUNNING)
+			if ((shm->exit_reason != STILL_RUNNING) &&
+			    (shm->exit_reason != EXIT_REACHED_COUNT)) {
 				_exit(EXIT_FAILURE);
+			}
 		}
 
 		_lock->contention++;
