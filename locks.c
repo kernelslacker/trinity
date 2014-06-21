@@ -73,17 +73,19 @@ void lock(lock_t *_lock)
 		 * (or worse, a dead child), we'll never call check_lock()
 		 * from the watchdog loop because we'll be stuck here.
 		 */
-		if (pid == watchdog_pid)
+		if (pid == watchdog_pid) {
 			check_lock(_lock);
+		} else {
+			/* Ok, we're a child pid.
+			 * if something bad happened, like main/watchdog crashed,
+			 * we don't want to spin forever, so just get out.
+			 */
+			if (shm->exit_reason != STILL_RUNNING)
+				_exit(EXIT_FAILURE);
+		}
 
 		_lock->contention++;
 		usleep(1);
-
-		/* if something bad happened, like main/watchdog crashed,
-		 * we don't want to spin forever, so just get out.
-		 */
-		if (shm->exit_reason != STILL_RUNNING)
-			_exit(EXIT_FAILURE);
 	}
 
 	_lock->contention = 0;
