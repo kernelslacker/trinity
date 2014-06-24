@@ -60,18 +60,21 @@ static unsigned int reap_dead_kids(void)
 	unsigned int reaped = 0;
 
 	for_each_child(i) {
+		struct childdata *child;
 		pid_t pid;
 		int ret;
 
-		pid = shm->children[i]->pid;
+		child = shm->children[i];
+		pid = child->pid;
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
 		if (pid_is_valid(pid) == FALSE) {
 			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
+
 			if (shm->exit_reason == STILL_RUNNING)
 				panic(EXIT_PID_OUT_OF_RANGE);
-			dump_childdata(shm->children[i]);
+			dump_childdata(child);
 			return 0;
 		}
 
