@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "log.h"
 #include "shm.h"
+#include "syscall.h"
 
 #define BACKTRACE_SIZE 100
 
@@ -53,10 +54,27 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 	}
 }
 
+static void dump_syscallrec(struct syscallrecord *rec)
+{
+	output(0, " tv.tvsec=%d tv.usec=%d\n", rec->tv.tv_sec, rec->tv.tv_usec);
+	output(0, " nr:%d a1:%lx a2:%lx a3:%lx a4:%lx a5:%lx a6:%lx retval:%ld errno_post:%d\n",
+		rec->nr, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6, rec->retval, rec->errno_post);
+	output(0, " op_nr:%lx do32bit:%d\n", rec->op_nr, rec->do32bit);
+	output(0, " lock:%d {owner:%d contention:%ld)\n", rec->lock.lock, rec->lock.owner, rec->lock.contention);
+	output(0, " state:%d\n", rec->state);
+	output(0, " prebuffer : %p (len:%d)\n", rec->prebuffer, strlen(rec->prebuffer));
+	output(0, " -> %s\n", rec->prebuffer);
+	output(0, " postbuffer : %p (len:%d)\n", rec->postbuffer, strlen(rec->postbuffer));
+	output(0, " -> %s\n", rec->postbuffer);
+}
+
 void dump_childdata(struct childdata *child)
 {
-	output(0, "syscall: %p\n", child->syscall);
-	output(0, "previous syscall: %p\n", child->previous);
+	output(0, "child struct @%p\n", child);
+	output(0, "syscall: %p\n", &child->syscall);
+	dump_syscallrec(&child->syscall);
+	output(0, "previous syscall: %p\n", &child->previous);
+	dump_syscallrec(&child->previous);
 
 	output(0, "logfile: %p (dirty:%d)\n", child->logfile, child->logdirty);
 
@@ -68,4 +86,5 @@ void dump_childdata(struct childdata *child)
 
 	output(0, "killcount: %d\n", child->kill_count);
 	output(0, "dontkillme: %d\n", child->dontkillme);
+	output(0, "\n");
 };
