@@ -36,22 +36,20 @@
   - Maybe just make the ioctl's be NEED_ROOT child ops
 
 * Some debugging enhancements.
-  - dump_child_state(childno), to debug a specific child. (Dump all a childs shm arrays)
   - Make -D use a separate debug log file
+  - if we have a large number of children, we use up a lot of fd's for
+    the log files. Instead of keeping them all open, reopen them as needed.
 
-* taint postmortem.
-  - If we have logging disabled, we don't have a clue really what happened if we taint, and exit.
-    Store a ringbuffer of the last few syscalls, and dump it before we exit.
+* postmortem improvements
+  - change child->syscall / ->previous to be a ringbuffer of syscallrecord structs.
   - Compare timestamp that taint was noticed at, ignore all later.
-  - Do taint watching in the child loop too.
+
+* Do taint watching in the child loop too.
 
 * --dry-run mode.
    need to work around segv's when we do things like mmap->post and register null maps.
 
 * Rewrite the fd code.
-  - register_fd interface for each of the fd-*.c files.
-    setup_fds() iterates over registered fd producers.
-    Then get_new_random_fd should become a lot cleaner.
   - kill off NR_FILE_FDS
   - open some files in the child too after forking.
     - this requires a child-local fd mapping table.
@@ -163,8 +161,6 @@
       Synchronising threads across different runs may be complicated.
 
 * Misc cleanups
-  - syscall.c:syscall32()  hide the assembly in a macro in arch-*.h and only do it
-     #ifdef HAVE_SYSCALL_32
   - Move arch specific syscalls into syscalls/arch/
   - Move addresses in get_interesting_value() to a function in per-arch headers.
 
