@@ -70,11 +70,17 @@ static unsigned int reap_dead_kids(void)
 			continue;
 
 		if (pid_is_valid(pid) == FALSE) {
+			static bool once = FALSE;
+
+			if (once != FALSE)
+				return 0;
+
 			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
 
 			if (shm->exit_reason == STILL_RUNNING)
 				panic(EXIT_PID_OUT_OF_RANGE);
 			dump_childdata(child);
+			once = TRUE;
 			return 0;
 		}
 
