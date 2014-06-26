@@ -283,9 +283,7 @@ static void check_parent_pid(void)
 		child = shm->children[i];
 
 		// Skip over 'boring' entries.
-		if ((child->pid == EMPTY_PIDSLOT) &&
-		    (child->previous.nr == 0) &&
-		    (child->syscall.op_nr == 0))
+		if (child->pid == EMPTY_PIDSLOT)
 			continue;
 
 		output(0, "[%d]  pid:%d call:%s callno:%d\n",
