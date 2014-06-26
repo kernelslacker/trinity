@@ -394,8 +394,14 @@ main_dead:
 			if (pidmap_empty() == TRUE)
 				watchdog_exit = TRUE;
 			else {
-				output(0, "exit_reason=%d, but %d children still running.\n",
-					shm->exit_reason, shm->running_childs);
+				static unsigned int last = 0;
+
+				if (last != shm->running_childs) {
+					last = shm->running_childs;
+
+					output(0, "exit_reason=%d, but %d children still running.\n",
+						shm->exit_reason, shm->running_childs);
+				}
 				kill_all_kids();
 			}
 		}
