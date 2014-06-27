@@ -156,25 +156,6 @@ static void oom_score_adj(int adj)
 }
 
 /*
- * Reset a log file contents.
- * If we successfully exited and respawned, we don't care about what
- * happened last time.
- */
-static void truncate_log(void)
-{
-	int fd;
-
-	this_child->logdirty = FALSE;
-
-	if (logging == FALSE)
-		return;
-
-	fd = fileno(this_child->logfile);
-	if (ftruncate(fd, 0) == 0)
-		lseek(fd, 0, SEEK_SET);
-}
-
-/*
  * Wipe out any state left from a previous child running in this slot.
  * Right now the logfile entry is the only persistent thing across instances.
  */
@@ -218,7 +199,7 @@ void init_child(int childno)
 
 	reinit_child(child);
 
-	truncate_log();
+	open_child_logfile(child);
 
 	set_seed(this_child);
 

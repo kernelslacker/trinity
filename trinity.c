@@ -81,8 +81,10 @@ int main(int argc, char* argv[])
 
 	init_uids();
 
+	change_tmp_dir();
+
 	if (logging == TRUE)
-		open_logfiles();
+		open_main_logfile();
 
 	init_shm();
 
@@ -121,8 +123,6 @@ int main(int argc, char* argv[])
 	pids_init();
 
 	setup_main_signals();
-
-	change_tmp_dir();
 
 	/* check if we ctrl'c or something went wrong during init. */
 	if (shm->exit_reason != STILL_RUNNING)
@@ -174,7 +174,7 @@ cleanup_fds:
 	destroy_shared_mappings();
 
 	if (logging == TRUE)
-		close_logfiles();
+		close_logfile(&mainlogfile);
 
 out:
 
