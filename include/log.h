@@ -31,6 +31,10 @@ void outputstd(const char *fmt, ...);
 void output_syscall_prefix(struct syscallrecord *rec);
 void output_syscall_postfix(struct syscallrecord *rec);
 
-void open_logfiles(void);
-void close_logfiles(void);
+FILE *mainlogfile;
+void open_main_logfile(void);
+void close_logfile(FILE **handle);
+
+void open_child_logfile(struct childdata *child);
+
 void debugf(const char *fmt, ...);

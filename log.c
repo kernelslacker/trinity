@@ -23,48 +23,55 @@ char ANSI_CYAN[] = "[1;36m";
 char ANSI_WHITE[] = "[1;37m";
 char ANSI_RESET[] = "[0m";
 
-static FILE *mainlogfile;
+FILE *mainlogfile;
+
 static bool logfiles_opened = FALSE;
 
-void open_logfiles(void)
+static FILE *open_logfile(const char *logfilename)
 {
-	unsigned int i;
-	char *logfilename;
+	FILE *file;
 
-	logfilename = zmalloc(64);
-	sprintf(logfilename, "trinity.log");
 	unlink(logfilename);
-	mainlogfile = fopen(logfilename, "a");
-	if (!mainlogfile) {
+
+	file = fopen(logfilename, "w");
+	if (!file)
 		outputerr("## couldn't open logfile %s\n", logfilename);
-		exit(EXIT_FAILURE);
-	}
 
-	for_each_child(i) {
-		struct childdata *child = shm->children[i];
-
-		sprintf(logfilename, "trinity-child%u.log", i);
-		unlink(logfilename);
-		child->logfile = fopen(logfilename, "a");
-		if (!child->logfile) {
-			outputerr("## couldn't open logfile %s\n", logfilename);
-			exit(EXIT_FAILURE);
-		}
-	}
-	free(logfilename);
-	logfiles_opened = TRUE;
+	return file;
 }
 
-void close_logfiles(void)
+void open_main_logfile(void)
 {
-	unsigned int i;
+	mainlogfile = open_logfile("trinity.log");
+	if (!mainlogfile)
+		exit(EXIT_FAILURE);
 
-	for_each_child(i) {
-		struct childdata *child = shm->children[i];
+	logfiles_opened = TRUE;	//FIXME: This is a bit crap
+}
 
-		if (child->logfile != NULL)
-			fclose(child->logfile);
-	}
+void open_child_logfile(struct childdata *child)
+{
+	char *logfilename;
+
+	if (logging == FALSE)
+		return;
+
+	logfilename = zmalloc(64);
+	sprintf(logfilename, "trinity-child%u.log", child->num);
+
+	child->logfile = open_logfile(logfilename);
+	if (!child->logfile)
+		exit(EXIT_FAILURE);
+
+	free(logfilename);
+
+	child->logdirty = FALSE;
+}
+
+void close_logfile(FILE **filehandle)
+{
+	fclose(*filehandle);
+	*filehandle = NULL;
 }
 
 static FILE * find_logfile_handle(void)
