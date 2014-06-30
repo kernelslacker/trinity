@@ -16,4 +16,6 @@ unsigned int rand_range(unsigned int min, unsigned int max);
 
 void generate_random_page(char *page);
 
+void check_page_rand_redzone(void);
+
 void init_page_rand(void);

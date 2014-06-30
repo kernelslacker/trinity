@@ -118,6 +118,7 @@ retry:
 		synclogs();
 
 	do_syscall(rec);
+	check_page_rand_redzone();
 
 	/* we're back. Output what happened, and clean up */
 	output_syscall_postfix(rec);
