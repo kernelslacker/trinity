@@ -4,6 +4,7 @@
 #include <malloc.h>
 
 #include "arch.h"	// page_size
+#include "debug.h"
 #include "random.h"
 #include "sanitise.h"	// get_address
 #include "maps.h"
@@ -46,6 +47,25 @@ static void fabricate_onepage_struct(char *page)
 		}
 	}
 }
+
+void check_page_rand_redzone(void)
+{
+	unsigned int i;
+
+	if (page_rand[page_size] == 0)
+		return;
+
+	output(0, "Something stomped the rand page guard page at %p!\n", page_rand + page_size);
+
+	for (i = 0; i < page_size; i++) {
+		if (page_rand[page_size + i] != 0)
+			printf ("%d: %x\n", i, page_rand[page_size + i]);
+	}
+
+	dump_childdata(this_child);
+	sleep(60);
+}
+
 
 void generate_random_page(char *page)
 {
@@ -149,6 +169,8 @@ void init_page_rand(void)
 		exit(EXIT_FAILURE);
 
 	output(2, "page_rand @ %p\n", page_rand);
+
+	memset(page_rand + page_size, 0, page_size);
 
 	generate_random_page(page_rand);
 }
