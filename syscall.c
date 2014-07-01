@@ -147,10 +147,6 @@ static void check_retval_documented(struct syscallrecord *rec, struct syscallent
 	struct errnos *errnos;
 	unsigned int i;
 
-	/* only check syscalls that completed. */
-	if (rec->state != AFTER)
-		return;
-
 	/* Only check syscalls we've documented so far. */
 	errnos = &entry->errnos;
 	if (errnos->num == 0)
@@ -224,9 +220,11 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	entry = syscalls[call].entry;
 
 	if (rec->retval == -1UL) {
-		check_retval_documented(rec, entry);
-
-		deactivate_enosys(rec, entry, call);
+		/* only check syscalls that completed. */
+		if (rec->state == AFTER) {
+			check_retval_documented(rec, entry);
+			deactivate_enosys(rec, entry, call);
+		}
 	}
 
 	if (entry->post)
