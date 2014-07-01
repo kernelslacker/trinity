@@ -157,7 +157,7 @@ static void check_retval_documented(struct syscallrecord *rec, struct syscallent
 
 	/* Only check syscalls we've documented so far. */
 	retvals = &entry->retvals;
-	if (retvals == NULL)
+	if (retvals->num == 0)
 		return;
 
 	lock(&shm->syscalltable_lock);
