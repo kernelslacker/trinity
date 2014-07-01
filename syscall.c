@@ -142,6 +142,53 @@ void do_syscall(struct syscallrecord *rec)
 		shm->successes++;
 }
 
+static void check_retval_documented(struct syscallrecord *rec, struct syscallentry *entry)
+{
+	struct retvals *retvals;
+	unsigned int i;
+
+	/* only check syscalls that completed. */
+	if (rec->state != AFTER)
+		return;
+
+	/* we're only checking the error values */
+	if (rec->retval != (unsigned long) -1)
+		return;
+
+	/* Only check syscalls we've documented so far. */
+	retvals = &entry->retvals;
+	if (retvals == NULL)
+		return;
+
+	lock(&shm->syscalltable_lock);
+
+	/* Check against the list of known return values. */
+	for (i = 0; i < retvals->num; i++) {
+		if (rec->errno_post == retvals->values[i])
+			goto out;
+	}
+
+	/* if we get here, we have a return value we don't know.
+	 * find space for it, and store it so we don't warn again */
+
+	if (retvals->values[i] == 0) {
+		retvals->values[i] = rec->errno_post;
+		retvals->num++;
+
+		//TODO: if this was the 32bit syscall, we should adjust the 64bit one too.
+		// and vice-versa.
+
+		//output(0, "%s%s\n", rec->prebuffer, rec->postbuffer);
+		output(0, "%s%s returned an undocumented return value (%d:%s)\n",
+			entry->name,
+			rec->do32bit == TRUE ? ":[32BIT]" : "",
+			rec->errno_post, strerror(rec->errno_post));
+	}
+
+out:
+	unlock(&shm->syscalltable_lock);
+}
+
 void handle_syscall_ret(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
@@ -155,6 +202,8 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	 */
 	call = rec->nr;
 	entry = syscalls[call].entry;
+
+	check_retval_documented(rec, entry);
 
 	if ((rec->retval == -1UL) && (rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
 		lock(&shm->syscalltable_lock);
