@@ -9,6 +9,7 @@
  *
  * TODO: Redirect stdin/stdout.
  */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "arch.h"	// page_size
@@ -62,4 +63,13 @@ struct syscallentry syscall_execve = {
 	.sanitise = sanitise_execve,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
+	.retvals = {
+		.num = 17,
+		.values = {
+			E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,
+			EMFILE, ENOENT, ENOEXEC, ENOMEM, ENOTDIR, EPERM, ETXTBSY,
+			/* currently undocumented in man page. */
+			ENAMETOOLONG, ENXIO,
+		},
+	},
 };

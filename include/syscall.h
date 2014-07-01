@@ -67,6 +67,11 @@ struct arglist {
 	unsigned long values[32];
 };
 
+struct retvals {
+	unsigned int num;
+	int values[32];
+};
+
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);
 	void (*post)(struct syscallrecord *rec);
@@ -115,6 +120,8 @@ struct syscallentry {
 
 	const unsigned int group;
 	const int rettype;
+
+	struct retvals retvals;
 };
 
 #define RET_BORING		-1
