@@ -111,20 +111,6 @@ static FILE * find_logfile_handle(void)
 	return NULL;
 }
 
-unsigned int highest_logfile(void)
-{
-	FILE *file;
-	int ret;
-
-	if (logging == FALSE)
-		return 0;
-
-	file = shm->children[max_children - 1]->logfile;
-	ret = fileno(file);
-
-	return ret;
-}
-
 void synclogs(void)
 {
 	unsigned int i;

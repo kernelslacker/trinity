@@ -321,7 +321,7 @@ static bool handle_sigreturn(void)
 	bust_lock(&rec->lock);
 
 	/* Check if we're blocked because we were stuck on an fd. */
-	if (check_if_fd(rec) == TRUE) {
+	if (check_if_fd(this_child, rec) == TRUE) {
 		/* avoid doing it again from other threads. */
 		shm->fd_lifetime = 0;
 

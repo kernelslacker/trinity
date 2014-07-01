@@ -20,7 +20,6 @@ extern char ANSI_RESET[];
 #define MAX_LOGLEVEL 3
 
 FILE *robust_find_logfile_handle(void);
-unsigned int highest_logfile(void);
 void synclogs(void);
 
 void strip_ansi(char *ansibuf, unsigned int buflen);
