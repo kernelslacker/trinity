@@ -77,6 +77,8 @@ static unsigned int reap_dead_kids(void)
 
 			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
 
+			dump_childnos();
+
 			if (shm->exit_reason == STILL_RUNNING)
 				panic(EXIT_PID_OUT_OF_RANGE);
 			dump_childdata(child);
