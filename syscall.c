@@ -151,10 +151,6 @@ static void check_retval_documented(struct syscallrecord *rec, struct syscallent
 	if (rec->state != AFTER)
 		return;
 
-	/* we're only checking the error values */
-	if (rec->retval != (unsigned long) -1)
-		return;
-
 	/* Only check syscalls we've documented so far. */
 	errnos = &entry->errnos;
 	if (errnos->num == 0)
@@ -196,7 +192,7 @@ out:
  */
 static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, unsigned int call)
 {
-	if ((rec->retval == -1UL) && (rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
+	if ((rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
 		lock(&shm->syscalltable_lock);
 
 		/* check another thread didn't already do this. */
@@ -223,9 +219,11 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
-	check_retval_documented(rec, entry);
+	if (rec->retval == -1UL) {
+		check_retval_documented(rec, entry);
 
-	deactivate_enosys(rec, entry, call);
+		deactivate_enosys(rec, entry, call);
+	}
 
 	if (entry->post)
 	    entry->post(rec);
