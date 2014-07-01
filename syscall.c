@@ -189,22 +189,13 @@ out:
 	unlock(&shm->syscalltable_lock);
 }
 
-void handle_syscall_ret(struct syscallrecord *rec)
+/*
+ * If the syscall doesn't exist don't bother calling it next time.
+ * Some syscalls return ENOSYS depending on their arguments, we mark
+ * those as IGNORE_ENOSYS and keep calling them.
+ */
+static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, unsigned int call)
 {
-	struct syscallentry *entry;
-	struct syscallrecord *previous;
-	unsigned int call;
-
-	/*
-	 * If the syscall doesn't exist don't bother calling it next time.
-	 * Some syscalls return ENOSYS depending on their arguments, we mark
-	 * those as IGNORE_ENOSYS and keep calling them.
-	 */
-	call = rec->nr;
-	entry = syscalls[call].entry;
-
-	check_retval_documented(rec, entry);
-
 	if ((rec->retval == -1UL) && (rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
 		lock(&shm->syscalltable_lock);
 
@@ -221,6 +212,20 @@ void handle_syscall_ret(struct syscallrecord *rec)
 already_done:
 		unlock(&shm->syscalltable_lock);
 	}
+}
+
+void handle_syscall_ret(struct syscallrecord *rec)
+{
+	struct syscallentry *entry;
+	struct syscallrecord *previous;
+	unsigned int call;
+
+	call = rec->nr;
+	entry = syscalls[call].entry;
+
+	check_retval_documented(rec, entry);
+
+	deactivate_enosys(rec, entry, call);
 
 	if (entry->post)
 	    entry->post(rec);
