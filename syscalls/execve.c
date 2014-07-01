@@ -63,7 +63,7 @@ struct syscallentry syscall_execve = {
 	.sanitise = sanitise_execve,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
-	.retvals = {
+	.errnos = {
 		.num = 17,
 		.values = {
 			E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,

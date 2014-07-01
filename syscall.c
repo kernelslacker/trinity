@@ -144,7 +144,7 @@ void do_syscall(struct syscallrecord *rec)
 
 static void check_retval_documented(struct syscallrecord *rec, struct syscallentry *entry)
 {
-	struct retvals *retvals;
+	struct errnos *errnos;
 	unsigned int i;
 
 	/* only check syscalls that completed. */
@@ -156,24 +156,24 @@ static void check_retval_documented(struct syscallrecord *rec, struct syscallent
 		return;
 
 	/* Only check syscalls we've documented so far. */
-	retvals = &entry->retvals;
-	if (retvals->num == 0)
+	errnos = &entry->errnos;
+	if (errnos->num == 0)
 		return;
 
 	lock(&shm->syscalltable_lock);
 
 	/* Check against the list of known return values. */
-	for (i = 0; i < retvals->num; i++) {
-		if (rec->errno_post == retvals->values[i])
+	for (i = 0; i < errnos->num; i++) {
+		if (rec->errno_post == errnos->values[i])
 			goto out;
 	}
 
 	/* if we get here, we have a return value we don't know.
 	 * find space for it, and store it so we don't warn again */
 
-	if (retvals->values[i] == 0) {
-		retvals->values[i] = rec->errno_post;
-		retvals->num++;
+	if (errnos->values[i] == 0) {
+		errnos->values[i] = rec->errno_post;
+		errnos->num++;
 
 		//TODO: if this was the 32bit syscall, we should adjust the 64bit one too.
 		// and vice-versa.
