@@ -30,8 +30,10 @@ CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS += -rdynamic
 
 # gcc only.
+ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
+endif
 
 # Sometimes useful for debugging. more useful with clang than gcc.
 #CFLAGS += -fsanitize=address
