@@ -27,7 +27,7 @@ CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 
 # needed for show_backtrace() to work correctly.
-CFLAGS += -rdynamic
+LDFLAGS += -rdynamic
 
 # gcc only.
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
