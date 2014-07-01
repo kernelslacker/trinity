@@ -1,5 +1,6 @@
 #pragma once
 
+#include "child.h"
 #include "syscall.h"
 
 extern unsigned int num_online_cpus;
@@ -10,7 +11,7 @@ void main_loop(void);
 void exit_main_fail(void);
 
 void init_watchdog(void);
-unsigned int check_if_fd(struct syscallrecord *rec);
+unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec);
 
 void panic(int reason);
 

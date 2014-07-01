@@ -198,11 +198,10 @@ static int check_main_alive(void)
 }
 
 /* if the first arg was an fd, find out which one it was. */
-unsigned int check_if_fd(struct syscallrecord *rec)
+unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
 	unsigned int fd;
-	unsigned int highest;
 	unsigned callno;
 	bool do32;
 
@@ -220,8 +219,7 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 	if (fd > 1024)
 		return FALSE;
 
-	highest = highest_logfile();
-	if (fd < highest)
+	if (fd <= (unsigned int) fileno(child->logfile))
 		return FALSE;
 
 	return TRUE;
@@ -241,7 +239,7 @@ static void stuck_syscall_info(struct childdata *child)
 
 	memset(fdstr, 0, sizeof(fdstr));
 
-	if (check_if_fd(rec) == TRUE)
+	if (check_if_fd(child, rec) == TRUE)
 		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
 
 	output(0, "child %d (pid %u) Stuck in syscall %d:%s%s%s.\n",
