@@ -192,22 +192,26 @@ out:
  */
 static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, unsigned int call)
 {
-	if ((rec->errno_post == ENOSYS) && !(entry->flags & IGNORE_ENOSYS)) {
-		lock(&shm->syscalltable_lock);
+	if (rec->errno_post != ENOSYS)
+		return;
 
-		/* check another thread didn't already do this. */
-		if (entry->active_number == 0)
-			goto already_done;
+	if (entry->flags & IGNORE_ENOSYS)
+		return;
 
-		output(1, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
-			entry->name,
-			call + SYSCALL_OFFSET,
-			rec->do32bit == TRUE ? ":[32BIT]" : "");
+	lock(&shm->syscalltable_lock);
 
-		deactivate_syscall(call, rec->do32bit);
+	/* check another thread didn't already do this. */
+	if (entry->active_number == 0)
+		goto already_done;
+
+	output(1, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
+		entry->name,
+		call + SYSCALL_OFFSET,
+		rec->do32bit == TRUE ? ":[32BIT]" : "");
+
+	deactivate_syscall(call, rec->do32bit);
 already_done:
-		unlock(&shm->syscalltable_lock);
-	}
+	unlock(&shm->syscalltable_lock);
 }
 
 void handle_syscall_ret(struct syscallrecord *rec)
