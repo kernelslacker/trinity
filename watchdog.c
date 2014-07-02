@@ -221,6 +221,9 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 	if (fd > 1024)
 		return FALSE;
 
+	if (child->logfile == NULL)
+		return FALSE;
+
 	if (fd <= (unsigned int) fileno(child->logfile))
 		return FALSE;
 
