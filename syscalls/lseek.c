@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "sanitise.h"
+#include "compat.h"
 
 struct syscallentry syscall_lseek = {
 	.name = "lseek",

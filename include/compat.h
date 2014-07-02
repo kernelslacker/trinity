@@ -910,3 +910,11 @@ struct kvm_get_htab_fd {
 #ifndef SWAP_FLAG_DISCARD
 #define SWAP_FLAG_DISCARD 0x10000
 #endif
+
+/* unistd.h */
+#ifndef SEEK_DATA
+#define SEEK_DATA 3
+#endif
+#ifndef SEEK_HOLE
+#define SEEK_HOLE 4
+#endif
