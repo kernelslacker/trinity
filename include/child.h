@@ -18,8 +18,6 @@ void reap_child(pid_t childpid);
 bool child_random_syscalls(void);
 int child_read_all_files(void);
 
-void create_child_structs(void);
-
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
