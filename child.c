@@ -277,7 +277,7 @@ static void check_parent_pid(void)
 
 out:
 	unlock(&shm->buglock);
-	exit(EXIT_FAILURE);
+	_exit(EXIT_FAILURE);
 }
 
 /*
