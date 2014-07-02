@@ -35,7 +35,7 @@ static void check_lock(lock_t *_lock)
 
 	/* If a pid has had a lock a long time, something is up. */
 	if (_lock->contention > STEAL_THRESHOLD) {
-		debugf("pid %d has held lock for too long. Releasing, and killing.\n");
+		debugf("pid %d has held lock for too long. Releasing, and killing.\n", pid);
 		kill_pid(pid);
 		unlock(_lock);
 		return;
