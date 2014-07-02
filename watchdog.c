@@ -292,15 +292,18 @@ static void check_child_progress(struct childdata *child)
 		stuck_syscall_info(child);
 		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
 				child->num, pid);
-		goto kill;
+		child->kill_count++;
+		kill_pid(pid);
 	}
 
 	/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
-	if (diff >= 40) {
-		debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
-			child->num, pid, child->kill_count, diff);
-		goto kill;
-	}
+	if (diff < 40)
+		return;
+
+	debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
+		child->num, pid, child->kill_count, diff);
+	child->kill_count++;
+	kill_pid(pid);
 
 	/* if we wrapped, just reset it, we'll pick it up next time around. */
 	if (diff > 2145) {	/* max adjtime offset. */
@@ -308,12 +311,6 @@ static void check_child_progress(struct childdata *child)
 		rec->tv.tv_sec = now;
 		return;
 	}
-
-	return;
-
-kill:
-	child->kill_count++;
-	kill_pid(pid);
 }
 
 static void watchdog(void)
