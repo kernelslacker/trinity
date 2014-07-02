@@ -240,9 +240,7 @@ void init_child(int childno)
  */
 static void check_parent_pid(void)
 {
-	struct childdata *child;
 	pid_t pid, ppid;
-	unsigned int i;
 
 	ppid = getppid();
 	if (ppid == shm->mainpid)
