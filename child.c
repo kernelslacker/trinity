@@ -241,10 +241,11 @@ void init_child(int childno)
 static void check_parent_pid(void)
 {
 	struct childdata *child;
-	pid_t pid;
+	pid_t pid, ppid;
 	unsigned int i;
 
-	if (getppid() == shm->mainpid)
+	ppid = getppid();
+	if (ppid == shm->mainpid)
 		return;
 
 	pid = getpid();
@@ -255,8 +256,8 @@ static void check_parent_pid(void)
 		goto out;
 
 	output(0, "BUG!: CHILD (pid:%d) GOT REPARENTED! "
-		"parent pid:%d. Watchdog pid:%d\n",
-		pid, shm->mainpid, watchdog_pid);
+		"main pid:%d. ppid=%d Watchdog pid:%d\n",
+		pid, shm->mainpid, ppid, watchdog_pid);
 	output(0, "BUG!: Last syscalls:\n");
 
 	//TODO: replace all this with calls to postmortem()
