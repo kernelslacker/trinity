@@ -77,8 +77,6 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
-	create_child_structs();
-
 	init_uids();
 
 	change_tmp_dir();

@@ -41,16 +41,6 @@ void create_shm(void)
 	shm = p + SHM_PROT_PAGES * page_size;
 }
 
-void create_child_structs(void)
-{
-	unsigned int i;
-
-	shm->children = alloc_shared(max_children * sizeof(struct childdata *));
-
-	for_each_child(i)
-		shm->children[i] = (struct childdata *) alloc_shared(sizeof(struct childdata));
-}
-
 void init_shm(void)
 {
 	unsigned int i;
@@ -66,9 +56,14 @@ void init_shm(void)
 	/* Set seed in parent thread */
 	set_seed(NULL);
 
+	shm->children = alloc_shared(max_children * sizeof(struct childdata *));
+
 	for_each_child(i) {
-		struct childdata *child = shm->children[i];
+		struct childdata *child;
 		struct syscallrecord *syscall, *previous;
+
+		child = alloc_shared(sizeof(struct childdata));
+		shm->children[i] = child;
 
 		syscall = &child->syscall;
 		previous = &child->previous;
