@@ -277,19 +277,6 @@ static void check_parent_pid(void)
 
 	output(0, "BUG!: Last syscalls:\n");
 
-	//TODO: replace all this with calls to postmortem()
-	for_each_child(i) {
-		child = shm->children[i];
-
-		// Skip over 'boring' entries.
-		if (child->pid == EMPTY_PIDSLOT)
-			continue;
-
-		output(0, "[%d]  pid:%d call:%s callno:%d\n",
-			i, child->pid,
-			print_syscall_name(child->previous.nr, child->previous.do32bit),
-			child->syscall.op_nr);
-	}
 	panic(EXIT_REPARENT_PROBLEM);
 
 out:
