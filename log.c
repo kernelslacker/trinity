@@ -70,6 +70,9 @@ void open_child_logfile(struct childdata *child)
 
 void close_logfile(FILE **filehandle)
 {
+	if (*filehandle == NULL)
+		return;
+
 	fclose(*filehandle);
 	*filehandle = NULL;
 }
