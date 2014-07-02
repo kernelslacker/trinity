@@ -60,23 +60,13 @@ void init_shm(void)
 
 	for_each_child(i) {
 		struct childdata *child;
-		struct syscallrecord *syscall, *previous;
 
 		child = alloc_shared(sizeof(struct childdata));
 		shm->children[i] = child;
 
-		syscall = &child->syscall;
-		previous = &child->previous;
+		memset(&child->syscall, 0, sizeof(struct syscallrecord));
+		memset(&child->previous, 0, sizeof(struct syscallrecord));
 
 		child->pid = EMPTY_PIDSLOT;
-
-		previous->nr = syscall->nr = -1;
-
-		previous->a1 = syscall->a1 = -1;
-		previous->a2 = syscall->a2 = -1;
-		previous->a3 = syscall->a3 = -1;
-		previous->a4 = syscall->a4 = -1;
-		previous->a5 = syscall->a5 = -1;
-		previous->a6 = syscall->a6 = -1;
 	}
 }
