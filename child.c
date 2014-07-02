@@ -273,8 +273,6 @@ static void check_parent_pid(void)
 	if (pid_alive(shm->mainpid) == -1)
 		output(0, "main pid %d is dead.\n", shm->mainpid);
 
-	output(0, "BUG!: Last syscalls:\n");
-
 	panic(EXIT_REPARENT_PROBLEM);
 
 out:
