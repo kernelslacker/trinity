@@ -272,6 +272,9 @@ static void check_parent_pid(void)
 		"main pid:%d. ppid=%d Watchdog pid:%d\n",
 		pid, shm->mainpid, ppid, watchdog_pid);
 
+	if (pid_alive(shm->mainpid) == -1)
+		output(0, "main pid %d is dead.\n", shm->mainpid);
+
 	output(0, "BUG!: Last syscalls:\n");
 
 	//TODO: replace all this with calls to postmortem()
