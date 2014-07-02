@@ -62,8 +62,8 @@ void lock(lock_t *_lock)
 		if (_lock->owner == pid) {
 			debugf("lol, already have lock!\n");
 			set_dontkillme(pid, TRUE);
-			sleep(3);
 			show_backtrace();
+			sleep(3);
 			set_dontkillme(pid, FALSE);
 			return;
 		}
