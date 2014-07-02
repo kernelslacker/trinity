@@ -13,7 +13,7 @@
  * And if they are, ensure they haven't held them for an
  * excessive length of time.
  */
-#define STEAL_THRESHOLD 100000
+#define STEAL_THRESHOLD 1000000
 
 static void check_lock(lock_t *_lock)
 {
