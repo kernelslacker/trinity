@@ -250,6 +250,19 @@ static void check_parent_pid(void)
 
 	pid = getpid();
 
+	/* TODO: it'd be neat to do stuff inside pidns's, but right now
+	 * we shit ourselves when we exit and get reparented to pid 1
+	 */
+	if (pid == ppid) {
+		debugf("pid became ppid! exiting child.\n");
+		_exit(EXIT_FAILURE);
+	}
+
+	if (ppid == 0) {
+		debugf("ppid == 0. pidns? exiting child.\n");
+		_exit(EXIT_FAILURE);;
+	}
+
 	lock(&shm->buglock);
 
 	if (shm->exit_reason == EXIT_REPARENT_PROBLEM)
@@ -258,6 +271,7 @@ static void check_parent_pid(void)
 	output(0, "BUG!: CHILD (pid:%d) GOT REPARENTED! "
 		"main pid:%d. ppid=%d Watchdog pid:%d\n",
 		pid, shm->mainpid, ppid, watchdog_pid);
+
 	output(0, "BUG!: Last syscalls:\n");
 
 	//TODO: replace all this with calls to postmortem()
