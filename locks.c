@@ -90,9 +90,9 @@ void lock(lock_t *_lock)
 		usleep(1);
 	}
 
+	_lock->lock = LOCKED;
 	_lock->contention = 0;
 	_lock->owner = pid;
-	_lock->lock = LOCKED;
 }
 
 void unlock(lock_t *_lock)
