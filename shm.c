@@ -22,23 +22,34 @@ struct shm_s *shm;
 void create_shm(void)
 {
 	void *p;
+	void *redbefore, *redafter;
 	unsigned int shm_pages;
+	unsigned int wholesize;
 
 	/* round up shm to nearest page size */
 	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & PAGE_MASK) / page_size;
+	wholesize = SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES;
 
 	/* Waste some address space to set up some "protection" near the SHM location. */
-	p = alloc_shared((SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES) * page_size);
+	p = alloc_shared(wholesize * page_size);
 
-	/* clear whole mapping, including the redzones. */
-	memset(p, 0, shm_pages * page_size);
+	redbefore = p;
+	redafter = p + (SHM_PROT_PAGES + shm_pages) * page_size;
+
+	/* set the redzones. */
+	memset(redbefore, 0x77, SHM_PROT_PAGES * page_size);
+	memset(redafter, 0x88, SHM_PROT_PAGES * page_size);
 
 	/* set the redzones to PROT_NONE */
-	mprotect(p, SHM_PROT_PAGES * page_size, PROT_NONE);
-	mprotect(p + (SHM_PROT_PAGES + shm_pages) * page_size,
-			SHM_PROT_PAGES * page_size, PROT_NONE);
+	mprotect(redbefore, SHM_PROT_PAGES * page_size, PROT_NONE);
+	mprotect(redafter, SHM_PROT_PAGES * page_size, PROT_NONE);
 
-	shm = p + SHM_PROT_PAGES * page_size;
+	/* clear the whole shm. */
+	shm = p + (SHM_PROT_PAGES * page_size);
+	memset(shm, 0, shm_pages * page_size);
+	printf("shm: redzone:%p. shmdata:%p. redzone:%p end:%p.\n",
+		redbefore, shm, redafter,
+		p + (wholesize * page_size));
 }
 
 void init_shm(void)
