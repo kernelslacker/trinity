@@ -28,10 +28,10 @@ void create_shm(void)
 
 	/* round up shm to nearest page size */
 	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & PAGE_MASK) / page_size;
-	wholesize = SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES;
+	wholesize = (SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES) * page_size;
 
 	/* Waste some address space to set up some "protection" near the SHM location. */
-	p = alloc_shared(wholesize * page_size);
+	p = alloc_shared(wholesize);
 
 	redbefore = p;
 	redafter = p + (SHM_PROT_PAGES + shm_pages) * page_size;
@@ -48,8 +48,7 @@ void create_shm(void)
 	shm = p + (SHM_PROT_PAGES * page_size);
 	memset(shm, 0, shm_pages * page_size);
 	printf("shm: redzone:%p. shmdata:%p. redzone:%p end:%p.\n",
-		redbefore, shm, redafter,
-		p + (wholesize * page_size));
+		redbefore, shm, redafter, p + wholesize);
 }
 
 void init_shm(void)
