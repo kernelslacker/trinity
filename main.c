@@ -289,6 +289,7 @@ static const char *reasons[NUM_EXIT_REASONS] = {
 	"UID changed.",
 	"Something happened during fd init.",
 	"fork() failure",
+	"some kind of locking catastrophe",
 };
 
 static const char * decode_exit(unsigned int reason)

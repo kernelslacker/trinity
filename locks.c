@@ -6,6 +6,7 @@
 #include "locks.h"
 #include "log.h"
 #include "pids.h"
+#include "trinity.h"
 #include "utils.h"
 
 /*
@@ -62,6 +63,7 @@ void lock(lock_t *_lock)
 		if (_lock->owner == pid) {
 			debugf("lol, already have lock!\n");
 			show_backtrace();
+			panic(EXIT_LOCKING_CATASTROPHE);
 			_exit(EXIT_FAILURE);
 		}
 
