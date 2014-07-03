@@ -63,7 +63,6 @@ void lock(lock_t *_lock)
 			debugf("lol, already have lock!\n");
 			set_dontkillme(pid, TRUE);
 			show_backtrace();
-			sleep(3);
 			set_dontkillme(pid, FALSE);
 			return;
 		}
