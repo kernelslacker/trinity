@@ -19,18 +19,22 @@ void show_backtrace(void)
 	void *buffer[BACKTRACE_SIZE];
 	char **strings;
 
+	set_dontkillme(getpid(), FALSE);
+
 	nptrs = backtrace(buffer, BACKTRACE_SIZE);
 
 	strings = backtrace_symbols(buffer, nptrs);
 	if (strings == NULL) {
 		perror("backtrace_symbols");
-		return;
+		goto out;
 	}
 
 	for (j = 0; j < nptrs; j++)
 		output(0, "%s\n", strings[j]);
 
 	free(strings);
+out:
+	set_dontkillme(getpid(), TRUE);
 }
 
 void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno)
