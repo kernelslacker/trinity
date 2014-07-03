@@ -62,7 +62,7 @@ void lock(lock_t *_lock)
 		if (_lock->owner == pid) {
 			debugf("lol, already have lock!\n");
 			show_backtrace();
-			return;
+			_exit(EXIT_FAILURE);
 		}
 
 		/* This is pretty horrible. But if we call lock()
