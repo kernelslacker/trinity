@@ -256,8 +256,8 @@ static void check_parent_pid(void)
 		_exit(EXIT_FAILURE);
 	}
 
-	if (ppid == 0) {
-		debugf("ppid == 0. pidns? exiting child.\n");
+	if (ppid < 2) {
+		debugf("ppid == %d. pidns? exiting child.\n", ppid);
 		_exit(EXIT_FAILURE);;
 	}
 
