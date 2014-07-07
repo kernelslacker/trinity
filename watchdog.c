@@ -244,8 +244,11 @@ static void stuck_syscall_info(struct childdata *child)
 	do32 = rec->do32bit;
 	callno = rec->nr;
 
-	if (check_if_fd(child, rec) == TRUE)
-		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
+	/* we can only be 'stuck' if we're still doing the syscall. */
+	if (rec->state == BEFORE) {
+		if (check_if_fd(child, rec) == TRUE)
+			sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
+	}
 
 	unlock(&rec->lock);
 
