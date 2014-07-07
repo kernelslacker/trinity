@@ -322,12 +322,14 @@ static bool handle_sigreturn(void)
 	bust_lock(&rec->lock);
 
 	/* Check if we're blocked because we were stuck on an fd. */
+	lock(&rec->lock);
 	if (check_if_fd(this_child, rec) == TRUE) {
 		/* avoid doing it again from other threads. */
 		shm->fd_lifetime = 0;
 
 		/* TODO: Somehow mark the fd in the parent not to be used again too. */
 	}
+	unlock(&rec->lock);
 
 	output(2, "<timed out>\n");     /* Flush out the previous syscall output. */
 

@@ -199,21 +199,16 @@ static int check_main_alive(void)
 	return ret;
 }
 
-/* if the first arg was an fd, find out which one it was. */
+/* if the first arg was an fd, find out which one it was.
+ * Call with syscallrecord lock held. */
 unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
 	unsigned int fd;
-	unsigned callno;
-	bool do32;
 
-	lock(&rec->lock);
 	fd = rec->a1;
-	callno = rec->nr;
-	do32 = rec->do32bit;
-	unlock(&rec->lock);
 
-	entry = get_syscall_entry(callno, do32);
+	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry->arg1type != ARG_FD)
 		return FALSE;
 
@@ -235,22 +230,29 @@ static void stuck_syscall_info(struct childdata *child)
 	struct syscallrecord *rec;
 	unsigned int callno;
 	char fdstr[20];
+	bool do32;
 
 	if (debug == FALSE)
 		return;
 
-	rec = &child->syscall;
-	callno = rec->nr;
-
 	memset(fdstr, 0, sizeof(fdstr));
+
+	rec = &child->syscall;
+
+	lock(&rec->lock);
+
+	do32 = rec->do32bit;
+	callno = rec->nr;
 
 	if (check_if_fd(child, rec) == TRUE)
 		sprintf(fdstr, "(fd = %d)", (unsigned int) rec->a1);
 
+	unlock(&rec->lock);
+
 	output(0, "child %d (pid %u) Stuck in syscall %d:%s%s%s.\n",
 		child->num, child->pid, callno,
-		print_syscall_name(callno, rec->do32bit),
-		rec->do32bit ? " (32bit)" : "",
+		print_syscall_name(callno, do32),
+		do32 ? " (32bit)" : "",
 		fdstr);
 }
 
