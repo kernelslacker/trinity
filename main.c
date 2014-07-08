@@ -292,9 +292,9 @@ static const char *reasons[NUM_EXIT_REASONS] = {
 	"some kind of locking catastrophe",
 };
 
-const char * decode_exit(unsigned int reason)
+const char * decode_exit(void)
 {
-	return reasons[reason];
+	return reasons[shm->exit_reason];
 }
 
 void main_loop(void)
@@ -317,7 +317,7 @@ void main_loop(void)
 		handle_children();
 
 dont_wait:
-	output(0, "Bailing main loop. Exit reason: %s\n", decode_exit(shm->exit_reason));
+	output(0, "Bailing main loop because %s.\n", decode_exit());
 }
 
 /*

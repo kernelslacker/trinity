@@ -429,7 +429,7 @@ void init_watchdog(void)
 		watchdog_pid = getpid();
 		watchdog();
 		output(0, "[%d] Watchdog exiting because %s.\n",
-			watchdog_pid, decode_exit(shm->exit_reason));
+			watchdog_pid, decode_exit());
 		_exit(EXIT_SUCCESS);
 
 	} else {
