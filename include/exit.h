@@ -22,3 +22,5 @@ enum exit_reasons {
 
 	NUM_EXIT_REASONS = 16
 };
+
+const char * decode_exit(unsigned int reason);
