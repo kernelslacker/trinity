@@ -329,6 +329,7 @@ static void watchdog(void)
 	int ret = 0;
 
 	while (shm->ready == FALSE) {
+		usleep(1);
 		if (shm->exit_reason != STILL_RUNNING)
 			return;
 	}
