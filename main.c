@@ -292,7 +292,7 @@ static const char *reasons[NUM_EXIT_REASONS] = {
 	"some kind of locking catastrophe",
 };
 
-static const char * decode_exit(unsigned int reason)
+const char * decode_exit(unsigned int reason)
 {
 	return reasons[reason];
 }
