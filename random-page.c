@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,20 +51,22 @@ static void fabricate_onepage_struct(char *page)
 
 void check_page_rand_redzone(void)
 {
-	unsigned int i;
+	FILE *fd;
 
 	if (page_rand[page_size] == 0)
 		return;
 
 	output(0, "Something stomped the rand page guard page at %p!\n", page_rand + page_size);
 
-	for (i = 0; i < page_size; i++) {
-		if (page_rand[page_size + i] != 0)
-			printf ("%d: %x\n", i, page_rand[page_size + i]);
+	fd = fopen("trinity-pagerand.log", "w");
+	if (!fd) {
+		outputerr("Failed to dump page_rand log (%s)\n", strerror(errno));
+		return;
 	}
 
-	dump_childdata(this_child);
-	sleep(60);
+	fwrite(page_rand, page_size, 2, fd);
+
+	fclose(fd);
 }
 
 
