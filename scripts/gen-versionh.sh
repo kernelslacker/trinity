@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 HEADER="include/version.h"
 
