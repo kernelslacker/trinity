@@ -10,6 +10,7 @@
 #include "log.h"
 #include "shm.h"
 #include "syscall.h"
+#include "version.h"
 
 #define BACKTRACE_SIZE 100
 
