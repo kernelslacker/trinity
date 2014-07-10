@@ -42,4 +42,7 @@ else
 fi
 
 # FIXME: Delete this after 1.5
-sed -i '/VERSION/d' config.h
+C=$(grep VERSION config.h | wc -l)
+if [ "$C" != 0 ]; then
+  sed -i '/VERSION/d' config.h
+fi
