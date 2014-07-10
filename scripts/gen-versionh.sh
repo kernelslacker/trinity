@@ -1,14 +1,18 @@
 #!/bin/sh
 
+HEADER="include/version.h"
+
 hdr()
 {
- echo "#pragma once" > version.h
- echo "/* This file is auto-generated */" >> version.h
+ echo "#pragma once" > $HEADER
+ echo "/* This file is auto-generated */" >> $HEADER
 }
 
+# FIXME: remove one day (post 1.5?)
+rm -f version.h
 
-if [ -f version.h ]; then
-OLD=$(grep VERSION version.h | head -n1 | sed 's/"//g' | awk '{ print $3 }')
+if [ -f $HEADER ]; then
+OLD=$(grep VERSION $HEADER | head -n1 | sed 's/"//g' | awk '{ print $3 }')
 else
 OLD=""
 fi
@@ -22,8 +26,8 @@ makefilever()
 VER=$(grep VERSION= Makefile| head -n1| sed 's/=/ /' | sed 's/"//g' | awk '{print $2}')
   if [ "$OLD" != "$VER" ]; then
     hdr
-    echo -n "#define " >> version.h
-    echo $VER >> version.h
+    echo -n "#define " >> $HEADER
+    echo $VER >> $HEADER
   fi
 }
 
@@ -34,7 +38,7 @@ if [ "$DEVEL" == "1" ]; then
     VER=$(git describe --always)
     if [ "$OLD" != "$VER" ]; then
       hdr
-      echo "#define VERSION \""$VER\" >> version.h
+      echo "#define VERSION \""$VER\" >> $HEADER
     fi
   fi
 else
