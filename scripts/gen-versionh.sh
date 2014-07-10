@@ -40,3 +40,6 @@ if [ "$DEVEL" == "1" ]; then
 else
   makefilever
 fi
+
+# FIXME: Delete this after 1.5
+sed -i '/VERSION/d' config.h
