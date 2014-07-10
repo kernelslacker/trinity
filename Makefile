@@ -51,6 +51,9 @@ QUIET_CC = $(Q:@=@echo    '  CC	'$@;)
 
 all: trinity
 
+version:
+	@scripts/gen-versionh.sh
+
 test:
 	@if [ ! -f config.h ]; then  echo "[1;31mRun configure.sh first.[0m" ; exit; fi
 
@@ -82,7 +85,7 @@ DEPDIR= .deps
 
 -include $(SRCS:%.c=$(DEPDIR)/%.d)
 
-trinity: test $(OBJS) $(HEADERS)
+trinity: version test $(OBJS) $(HEADERS)
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS)
 	@mkdir -p tmp
 
@@ -105,6 +108,7 @@ clean:
 	@rm -f tags
 	@rm -rf $(DEPDIR)/*
 	@rm -rf trinity-coverity.tar.xz cov-int
+	@rm -f version.h
 
 devel:
 	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh

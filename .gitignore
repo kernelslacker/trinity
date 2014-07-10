@@ -10,6 +10,7 @@ trinity-*.tar.xz
 victims
 tags
 config.h
+version.h
 .*.swp
 cscope.*
 ncscope.*

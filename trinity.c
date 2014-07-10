@@ -22,6 +22,7 @@
 #include "taint.h"
 #include "trinity.h"
 #include "uid.h"
+#include "version.h"
 
 char *progname = NULL;
 

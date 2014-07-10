@@ -199,20 +199,6 @@ check_header linux/vhost.h USE_VHOST
 rm -f "$TMP" "$TMP.log" "$TMP.c"
 
 #############################################################################################
-if [ "$DEVEL" == "1" ]; then
-  if [ ! -f /usr/bin/git ]; then
-    echo -n "#define " >> config.h
-    grep VERSION= Makefile | sed 's/=/ /' >> config.h
-  else
-    VER=$(git describe --always)
-    echo "#define VERSION \""$VER\" >> config.h
-  fi
-else
-  echo -n "#define " >> config.h
-  grep VERSION= Makefile | sed 's/=/ /' >> config.h
-fi
-
-#############################################################################################
 
 if [ "$MISSING_DEFS" == "1" ]; then
   echo "[-] Some header definitions were missing. This is not fatal."
