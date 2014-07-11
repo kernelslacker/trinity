@@ -26,8 +26,7 @@ makefilever()
 VER=$(grep VERSION= Makefile| head -n1| sed 's/=/ /' | sed 's/"//g' | awk '{print $2}')
   if [ "$OLD" != "$VER" ]; then
     hdr
-    echo -n "#define " >> $HEADER
-    echo $VER >> $HEADER
+    echo "#define VERSION \""$VER\" >> $HEADER
   fi
 }
 
