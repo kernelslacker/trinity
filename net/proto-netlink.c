@@ -29,9 +29,7 @@ void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;
 
-	nl = malloc(sizeof(struct sockaddr_nl));
-	if (nl == NULL)
-		return;
+	nl = zmalloc(sizeof(struct sockaddr_nl));
 
 	nl->nl_family = PF_NETLINK;
 	nl->nl_pid = get_pid();
