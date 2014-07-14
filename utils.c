@@ -21,6 +21,8 @@ void * alloc_shared(unsigned int size)
 		printf("mmap %u failure\n", size);
 		exit(EXIT_FAILURE);
 	}
+	/* poison, to force users to set it to something sensible. */
+	memset(ret, rand(), size);
 	return ret;
 }
 
