@@ -16,9 +16,7 @@ void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_rose *rose;
 
-	rose = malloc(sizeof(struct sockaddr_rose));
-	if (rose == NULL)
-		return;
+	rose = zmalloc(sizeof(struct sockaddr_rose));
 
 	rose->srose_family = PF_ROSE;
 	rose->srose_addr.rose_addr[0] = rand();
