@@ -11,6 +11,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 struct syscallentry syscall_send = {
@@ -77,12 +78,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
 
-        msg = malloc(sizeof(struct msghdr));
-	if (msg == NULL) {
-		// just do something weird.
-		rec->a2 = (unsigned long) get_address();
-		return;
-	}
+	msg = zmalloc(sizeof(struct msghdr));
 
 	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, rand() % TRINITY_PF_MAX);
 
