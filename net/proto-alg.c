@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "config.h"
 #include "net.h"
+#include "utils.h"
 #include "compat.h"
 
 #define SOL_ALG 279
@@ -17,9 +18,7 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_alg *alg;
 	unsigned int i;
 
-	alg = malloc(sizeof(struct sockaddr_alg));
-	if (alg == NULL)
-		return;
+	alg = zmalloc(sizeof(struct sockaddr_alg));
 
 	alg->salg_family = PF_ALG;
 	for (i = 0; i < 14; i++)
