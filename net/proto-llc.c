@@ -18,9 +18,8 @@ void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_llc *llc;
 	unsigned int i;
 
-	llc = malloc(sizeof(struct sockaddr_llc));
-	if (llc == NULL)
-		return;
+	llc = zmalloc(sizeof(struct sockaddr_llc));
+
 	llc->sllc_family = AF_LLC;
 	llc->sllc_arphrd = ARPHRD_ETHER;
 	llc->sllc_test = rand();
