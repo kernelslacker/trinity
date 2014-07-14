@@ -17,9 +17,7 @@ void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	unsigned int i;
 
 	//TODO: See also sockaddr_ll
-	pkt = malloc(sizeof(struct sockaddr_pkt));
-	if (pkt == NULL)
-		return;
+	pkt = zmalloc(sizeof(struct sockaddr_pkt));
 
 	pkt->spkt_family = PF_PACKET;
 	for (i = 0; i < 14; i++)
