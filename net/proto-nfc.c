@@ -7,15 +7,14 @@
 #include "compat.h"
 #include "net.h"
 #include "random.h"
+#include "utils.h"
 
 void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nfc *nfc;
 
 	// TODO: See also sockaddr_nfc_llcp
-	nfc = malloc(sizeof(struct sockaddr_nfc));
-	if (nfc == NULL)
-		return;
+	nfc = zmalloc(sizeof(struct sockaddr_nfc));
 
 	nfc->sa_family = PF_NFC;
 	nfc->dev_idx = rand();
