@@ -6,15 +6,14 @@
 #include <stdlib.h>
 #include "maps.h"
 #include "net.h"
+#include "utils.h"
 
 void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_un *unixsock;
 	unsigned int len;
 
-	unixsock = malloc(sizeof(struct sockaddr_un));
-	if (unixsock == NULL)
-		return;
+	unixsock = zmalloc(sizeof(struct sockaddr_un));
 
 	unixsock->sun_family = PF_UNIX;
 	len = rand() % 20;
