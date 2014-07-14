@@ -86,9 +86,7 @@ void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *ipv4;
 
-	ipv4 = malloc(sizeof(struct sockaddr_in));
-	if (ipv4 == NULL)
-		return;
+	ipv4 = zmalloc(sizeof(struct sockaddr_in));
 
 	ipv4->sin_family = PF_INET;
 	ipv4->sin_addr.s_addr = random_ipv4_address();
@@ -190,10 +188,7 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_DROP_MEMBERSHIP:
 		mcaddr = 0xe0000000 | rand() % 0xff;
 
-		mr = malloc(sizeof(struct ip_mreqn));
-		if (!mr)
-			break;
-		memset(mr, 0, sizeof(struct ip_mreqn));
+		mr = zmalloc(sizeof(struct ip_mreqn));
 		mr->imr_multiaddr.s_addr = mcaddr;
 		mr->imr_address.s_addr = random_ipv4_address();
 		mr->imr_ifindex = rand32();
@@ -230,10 +225,7 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_DROP_SOURCE_MEMBERSHIP:
 		mcaddr = 0xe0000000 | rand() % 0xff;
 
-		ms = malloc(sizeof(struct ip_mreq_source));
-		if (!ms)
-			break;
-		memset(ms, 0, sizeof(struct ip_mreq_source));
+		ms = zmalloc(sizeof(struct ip_mreq_source));
 		ms->imr_multiaddr.s_addr = mcaddr;
 		ms->imr_interface.s_addr = random_ipv4_address();
 		ms->imr_sourceaddr.s_addr = random_ipv4_address();
