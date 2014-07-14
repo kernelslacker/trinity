@@ -62,7 +62,7 @@ static void fork_children(void)
 			/* Child process. */
 			init_child(childno);
 			child_process();
-			debugf("child %d exiting.\n", childno);
+			debugf("child %d %d exiting.\n", childno, getpid());
 			close_logfile(&this_child->logfile);
 			_exit(EXIT_SUCCESS);
 		} else {
