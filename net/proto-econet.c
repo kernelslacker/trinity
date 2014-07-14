@@ -5,14 +5,13 @@
 #include <neteconet/ec.h>
 #include <stdlib.h>
 #include "net.h"
+#include "utils.h"
 
 void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ec *ec;
 
-	ec = malloc(sizeof(struct sockaddr_ec));
-	if (ec == NULL)
-		return;
+	ec = zmalloc(sizeof(struct sockaddr_ec));
 
 	ec->sec_family = PF_ECONET;
 	ec->port = rand();
