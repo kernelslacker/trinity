@@ -14,9 +14,7 @@ void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ax25 *ax25;
 
-	ax25 = malloc(sizeof(struct sockaddr_ax25));
-	if (ax25 == NULL)
-		return;
+	ax25 = zmalloc(sizeof(struct sockaddr_ax25));
 
 	ax25->sax25_family = PF_AX25;
 	memcpy(ax25->sax25_call.ax25_call, page_rand, 7);
