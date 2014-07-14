@@ -754,11 +754,8 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	struct sock_filter *curr;
 	struct sock_fprog *bpf = (void *) *addr;
 
-	if (addrlen != NULL && bpf == NULL) {
-		bpf = malloc(sizeof(struct sock_fprog));
-		if (bpf == NULL)
-			return;
-	}
+	if (addrlen != NULL && bpf == NULL)
+		bpf = zmalloc(sizeof(struct sock_fprog));
 
 	bpf->len = avail = rand() % 50;
 	/* Give it from time to time a chance to load big filters as well. */
@@ -767,14 +764,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	if (bpf->len == 0)
 		bpf->len = avail = 50;
 
-	bpf->filter = malloc(bpf->len * sizeof(struct sock_filter));
-	if (bpf->filter == NULL) {
-		if (addrlen != NULL)
-			free(bpf);
-		return;
-	}
-
-	memset(bpf->filter, 0, bpf->len * sizeof(struct sock_filter));
+	bpf->filter = zmalloc(bpf->len * sizeof(struct sock_filter));
 
 	seccomp_state = seccomp_choose(seccomp_markov_init);
 
@@ -801,11 +791,8 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	int i;
 	struct sock_fprog *bpf = (void *) *addr;
 
-	if (addrlen != NULL && bpf == NULL) {
-		bpf = malloc(sizeof(struct sock_fprog));
-		if (bpf == NULL)
-			return;
-	}
+	if (addrlen != NULL && bpf == NULL)
+		bpf = zmalloc(sizeof(struct sock_fprog));
 
 	bpf->len = rand() % 10;
 	/* Give it from time to time a chance to load big filters as well. */
@@ -816,16 +803,9 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	if (bpf->len == 0)
 		bpf->len = 50;
 
-	bpf->filter = malloc(bpf->len * sizeof(struct sock_filter));
-	if (bpf->filter == NULL) {
-		if (addrlen != NULL)
-			free(bpf);
-		return;
-	}
+	bpf->filter = zmalloc(bpf->len * sizeof(struct sock_filter));
 
 	for (i = 0; i < bpf->len; i++) {
-		memset(&bpf->filter[i], 0, sizeof(bpf->filter[i]));
-
 		if (rand() % 100 == 0)
 			bpf->filter[i].code = gen_bpf_code_more_crazy(i == bpf->len - 1);
 		else
