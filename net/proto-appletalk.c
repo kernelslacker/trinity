@@ -7,14 +7,13 @@
 #include <linux/atalk.h>
 #include "random.h"
 #include "net.h"
+#include "utils.h"
 
 void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_at *atalk;
 
-	atalk = malloc(sizeof(struct sockaddr_at));
-	if (atalk == NULL)
-		return;
+	atalk = zmalloc(sizeof(struct sockaddr_at));
 
 	atalk->sat_family = PF_APPLETALK;
 	atalk->sat_port = rand();
