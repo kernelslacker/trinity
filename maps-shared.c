@@ -50,11 +50,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 		exit(EXIT_FAILURE);
 	}
 
-	newnode->name = malloc(80);
-	if (!newnode->name) {
-		outputerr("malloc() failed in %s().", __func__);
-		exit(EXIT_FAILURE);
-	}
+	newnode->name = zmalloc(80);
 
 	sprintf(newnode->name, "anon(%s)", name);
 
