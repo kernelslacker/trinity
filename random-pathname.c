@@ -23,23 +23,10 @@ const char * generate_pathname(void)
 		return pathname;
 
 	/* Create a bogus filename. */
-	newpath = malloc(MAX_PATH_LEN);	// FIXME: We leak this.
-	if (newpath == NULL)
-		return pathname;	// give up.
+	newpath = zmalloc(MAX_PATH_LEN);	// FIXME: We leak this.
 
 	len = strlen(pathname);
 
-	generate_random_page(page_rand);
-	memcpy(newpath, page_rand, MAX_PATH_LEN);	// FIXME: we only want a subset (ascii basically)
-
-	/* sometimes, just complete junk. */
-	if (rand_bool())
-		goto out;
-
-	if (len > MAX_PATH_LEN)
-		len = MAX_PATH_LEN;
-
-	/* Sometimes, pathname + junk */
 	if (rand_bool())
 		(void) strncpy(newpath, pathname, len);
 	else {
@@ -51,7 +38,6 @@ const char * generate_pathname(void)
 		}
 	}
 
-out:
 	/* 50/50 chance of making it look like a dir */
 	if (rand_bool()) {
 		if (len <= MAX_PATH_LEN - 2) {
