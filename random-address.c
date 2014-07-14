@@ -140,18 +140,17 @@ unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int 
 struct iovec * alloc_iovec(unsigned int num)
 {
 	struct iovec *iov;
+	unsigned int i;
 
-	iov = malloc(num * sizeof(struct iovec));	/* freed by generic_free_arg */
-	if (iov != NULL) {
-		unsigned int i;
+	iov = zmalloc(num * sizeof(struct iovec));	/* freed by generic_free_arg */
 
-		for (i = 0; i < num; i++) {
-			struct map *map;
+	for (i = 0; i < num; i++) {
+		struct map *map;
 
-			map = get_map();
-			iov[i].iov_base = map->ptr;
-			iov[i].iov_len = rand() % map->size;
-		}
+		map = get_map();
+		iov[i].iov_base = map->ptr;
+		iov[i].iov_len = rand() % map->size;
 	}
+
 	return iov;
 }
