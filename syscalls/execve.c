@@ -18,6 +18,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"	// __unused__
+#include "utils.h"
 
 static unsigned long ** gen_ptrs_to_crap(void)
 {
@@ -26,14 +27,11 @@ static unsigned long ** gen_ptrs_to_crap(void)
 	unsigned int count = rand() % 32;
 
 	/* Fabricate argv */
-	ptr = malloc(count * sizeof(void *));	// FIXME: LEAK
-	if (ptr == NULL)
-		return NULL;
+	ptr = zmalloc(count * sizeof(void *));	// FIXME: LEAK
 
 	for (i = 0; i < count; i++) {
-		ptr[i] = malloc(page_size);	// FIXME: LEAK
-		if (ptr[i] != NULL)
-			generate_random_page((char *) ptr[i]);
+		ptr[i] = zmalloc(page_size);	// FIXME: LEAK
+		generate_random_page((char *) ptr[i]);
 	}
 
 	return (unsigned long **) ptr;
