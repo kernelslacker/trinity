@@ -82,8 +82,14 @@ unsigned int init_seed(unsigned int seedparam)
  */
 void set_seed(struct childdata *child)
 {
+	/* if no shm yet, we must be the init process. */
+	if (shm == NULL) {
+		srand(new_seed());
+		return;
+	}
+
+	/* if not in child context, we must be main. */
 	if (child == NULL) {
-		/* not in child context, must be main. */
 		srand(shm->seed);
 		return;
 	}
