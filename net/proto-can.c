@@ -6,15 +6,15 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
+#include "utils.h"
 #include "compat.h"
 
 void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_can *can;
 
-	can = malloc(sizeof(struct sockaddr_can));
-	if (can == NULL)
-		return;
+	can = zmalloc(sizeof(struct sockaddr_can));
+
 	can->can_family = AF_CAN;
 	can->can_ifindex = rand();
 	can->can_addr.tp.rx_id = rand();
