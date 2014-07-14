@@ -58,7 +58,7 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 	unsigned long *args;
 	unsigned int i;
 
-	args = malloc(6 * sizeof(unsigned long));
+	args = zmalloc(6 * sizeof(unsigned long));
 
 	//rec->a1 = rand() % ARRAY_SIZE(socketcallptrs);
 	rec->a1 = SYS_SOCKET;	//FIXME: Add other options and remove this hardcode.
