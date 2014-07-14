@@ -16,19 +16,40 @@
 static void sanitise_remap_file_pages(struct syscallrecord *rec)
 {
 	struct map *map;
-	size_t size;
+	size_t size, offset;
+	size_t start = 0;
 
 	map = common_set_mmap_ptr_len();
 
+	if (rand_bool()) {
+		start = rand() % map->size;
+		start &= PAGE_MASK;
+		rec->a1 += start;
+	}
+
 	/* We just want to remap a part of the mapping. */
-	size = rand() % map->size;
+	if (rand_bool())
+		size = page_size;
+	else {
+		size = rand() % map->size;
+
+		/* if we screwed with the start, we need to take it
+		 * into account so we don't go off the end.
+		 */
+		if (start != 0)
+			size -= start;
+	}
 	rec->a2 = size;
 
 	/* "The prot argument must be specified as 0" */
 	rec->a3 = 0;
 
 	/* Pick a random pgoff. */
-	rec->a4 = rand() & (size / page_size);
+	if (rand_bool())
+		offset = rand() & (size / page_size);
+	else
+		offset = 0;
+	rec->a4 = offset;
 }
 
 struct syscallentry syscall_remap_file_pages = {
