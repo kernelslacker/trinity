@@ -12,6 +12,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "utils.h"
 
 #define ALLOCSIZE LDT_ENTRIES * LDT_ENTRY_SIZE
 
@@ -25,9 +26,7 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 	case 0:
 		/* read the ldt into the memory pointed to by ptr.
 		   The number of bytes read is the smaller of bytecount and the actual size of the ldt. */
-		ldt = malloc(ALLOCSIZE);
-		if (ldt == NULL)
-			return;
+		ldt = zmalloc(ALLOCSIZE);
 		rec->a2 = (unsigned long) ldt;
 		rec->a3 = ALLOCSIZE;
 		break;
