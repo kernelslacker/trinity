@@ -21,9 +21,8 @@ void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *rds;
 
-	rds = malloc(sizeof(struct sockaddr_in));
-	if (rds == NULL)
-		return;
+	rds = zmalloc(sizeof(struct sockaddr_in));
+
 	rds->sin_family = AF_INET;
 	rds->sin_addr.s_addr = random_ipv4_address();
 	rds->sin_port = rand() % 65535;
