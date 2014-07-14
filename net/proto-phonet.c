@@ -6,14 +6,13 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
+#include "utils.h"
 
 void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pn *pn;
 
-	pn = malloc(sizeof(struct sockaddr_pn));
-	if (pn == NULL)
-		return;
+	pn = zmalloc(sizeof(struct sockaddr_pn));
 
 	pn->spn_family = PF_PHONET;
 	pn->spn_obj = rand();
