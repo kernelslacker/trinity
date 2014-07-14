@@ -66,7 +66,7 @@ void init_shm(void)
 	/* Set seed in parent thread */
 	set_seed(NULL);
 
-	shm->children = alloc_shared(max_children * sizeof(struct childdata *));
+	shm->children = zmalloc(max_children * sizeof(struct childdata *));
 
 	for_each_child(i) {
 		struct childdata *child;
