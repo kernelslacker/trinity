@@ -16,9 +16,7 @@ void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in6 *ipv6;
 
-	ipv6 = malloc(sizeof(struct sockaddr_in6));
-	if (ipv6 == NULL)
-		return;
+	ipv6 = zmalloc(sizeof(struct sockaddr_in6));
 
 	ipv6->sin6_family = PF_INET6;
 	ipv6->sin6_addr.s6_addr32[0] = 0;
