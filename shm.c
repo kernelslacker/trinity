@@ -78,5 +78,7 @@ void init_shm(void)
 		memset(&child->previous, 0, sizeof(struct syscallrecord));
 
 		child->pid = EMPTY_PIDSLOT;
+
+		child->logfile = NULL;
 	}
 }
