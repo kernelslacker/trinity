@@ -9,6 +9,7 @@
 #include "config.h"
 #include "net.h"
 #include "sanitise.h"
+#include "utils.h"
 
 //TODO: Split out each case into separate function.
 
@@ -24,9 +25,7 @@ void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	switch (proto) {
 
 	case PX_PROTO_OE:
-		pppox = malloc(sizeof(struct sockaddr_pppox));
-		if (pppox == NULL)
-			return;
+		pppox = zmalloc(sizeof(struct sockaddr_pppox));
 
 		pppox->sa_family = PF_PPPOX;
 		pppox->sa_protocol = proto;
@@ -50,9 +49,7 @@ void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		switch (rand() % 4) {
 
 		case 0:	/* PPPoL2TP */
-			pppol2tp = malloc(sizeof(struct sockaddr_pppol2tp));
-			if (pppol2tp == NULL)
-				return;
+			pppol2tp = zmalloc(sizeof(struct sockaddr_pppol2tp));
 
 			pppol2tp->sa_family = PF_PPPOX;
 			pppol2tp->sa_protocol = proto;
@@ -72,9 +69,7 @@ void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 			{
 			struct sockaddr_pppol2tpin6 *pppol2tpin6;
 
-			pppol2tpin6 = malloc(sizeof(struct sockaddr_pppol2tpin6));
-			if (pppol2tpin6 == NULL)
-				return;
+			pppol2tpin6 = zmalloc(sizeof(struct sockaddr_pppol2tpin6));
 
 			pppol2tpin6->sa_family = PF_PPPOX;
 			pppol2tpin6->sa_protocol = proto;
@@ -103,9 +98,7 @@ void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 			{
 			struct sockaddr_pppol2tpv3 *pppol2tpv3;
 
-			pppol2tpv3 = malloc(sizeof(struct sockaddr_pppol2tpv3));
-			if (pppol2tpv3 == NULL)
-				return;
+			pppol2tpv3 = zmalloc(sizeof(struct sockaddr_pppol2tpv3));
 
 			pppol2tpv3->sa_family = PF_PPPOX;
 			pppol2tpv3->sa_protocol = proto;
@@ -127,9 +120,7 @@ void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 			{
 			struct sockaddr_pppol2tpv3in6 *pppol2tpv3in6;
 
-			pppol2tpv3in6 = malloc(sizeof(struct sockaddr_pppol2tpv3in6));
-			if (pppol2tpv3in6 == NULL)
-				return;
+			pppol2tpv3in6 = zmalloc(sizeof(struct sockaddr_pppol2tpv3in6));
 
 			pppol2tpv3in6->sa_family = PF_PPPOX;
 			pppol2tpv3in6->sa_protocol = proto;
