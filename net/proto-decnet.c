@@ -15,9 +15,7 @@ void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_dn *dn;
 	unsigned int i;
 
-	dn = malloc(sizeof(struct sockaddr_dn));
-	if (dn == NULL)
-		return;
+	dn = zmalloc(sizeof(struct sockaddr_dn));
 
 	dn->sdn_family = PF_DECnet;
 	dn->sdn_flags = rand();
