@@ -8,6 +8,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_mincore(struct syscallrecord *rec)
 {
@@ -18,7 +19,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 
 	len = map->size + (page_size - 1) / page_size;
 
-	rec->a3 = (unsigned long) malloc(len);	// FIXME: LEAK
+	rec->a3 = (unsigned long) zmalloc(len);	// FIXME: LEAK
 }
 
 static void post_mincore(struct syscallrecord *rec)
