@@ -7,15 +7,14 @@
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "random.h"
+#include "utils.h"
 
 void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_x25 *x25;
 	unsigned int len;
 
-	x25 = malloc(sizeof(struct sockaddr_x25));
-	if (x25 == NULL)
-		return;
+	x25 = zmalloc(sizeof(struct sockaddr_x25));
 
 	x25->sx25_family = PF_X25;
 	len = rand() % 15;
