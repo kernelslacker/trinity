@@ -13,9 +13,8 @@ void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_tipc *tipc;
 
-	tipc = malloc(sizeof(struct sockaddr_tipc));
-	if (tipc == NULL)
-		return;
+	tipc = zmalloc(sizeof(struct sockaddr_tipc));
+
 	tipc->family = AF_TIPC;
 	tipc->addrtype = rand();
 	tipc->scope = rand();
