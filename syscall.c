@@ -230,14 +230,7 @@ void handle_syscall_ret(struct syscallrecord *rec)
 
 	/* store info for debugging. */
 	previous = &this_child->previous;
-	previous->nr = rec->nr;
-	previous->a1 = rec->a1;
-	previous->a2 = rec->a2;
-	previous->a3 = rec->a3;
-	previous->a4 = rec->a4;
-	previous->a5 = rec->a5;
-	previous->a6 = rec->a6;
-	previous->do32bit = rec->do32bit;
+	memcpy(previous, rec, sizeof(struct syscallrecord));
 	previous->state = DONE;
 
 	check_uid();
