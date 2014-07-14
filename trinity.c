@@ -72,6 +72,8 @@ int main(int argc, char* argv[])
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 	max_children = num_online_cpus;	/* possibly overridden in params. */
 
+	set_seed(0);
+
 	select_syscall_tables();
 
 	create_shm();
