@@ -17,9 +17,7 @@ void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_irda *irda;
 	unsigned int i;
 
-	irda = malloc(sizeof(struct sockaddr_irda));
-	if (irda == NULL)
-		return;
+	irda = zmalloc(sizeof(struct sockaddr_irda));
 
 	irda->sir_family = PF_IRDA;
 	irda->sir_lsap_sel = rand();
