@@ -6,15 +6,14 @@
 #include <netipx/ipx.h>
 #include "net.h"
 #include "random.h"
+#include "utils.h"
 
 void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ipx *ipx;
 	unsigned int i;
 
-	ipx = malloc(sizeof(struct sockaddr_ipx));
-	if (ipx == NULL)
-		return;
+	ipx = zmalloc(sizeof(struct sockaddr_ipx));
 
 	ipx->sipx_family = PF_IPX;
 	ipx->sipx_port = rand();
