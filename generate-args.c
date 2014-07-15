@@ -98,38 +98,44 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 	return i;
 }
 
+static void get_num_and_values(struct syscallentry *entry, unsigned int argnum,
+		unsigned int *num, const unsigned long **values)
+{
+	switch (argnum) {
+	case 1:	*num = entry->arg1list.num;
+		*values = entry->arg1list.values;
+		break;
+	case 2:	*num = entry->arg2list.num;
+		*values = entry->arg2list.values;
+		break;
+	case 3:	*num = entry->arg3list.num;
+		*values = entry->arg3list.values;
+		break;
+	case 4:	*num = entry->arg4list.num;
+		*values = entry->arg4list.values;
+		break;
+	case 5:	*num = entry->arg5list.num;
+		*values = entry->arg5list.values;
+		break;
+	case 6:	*num = entry->arg6list.num;
+		*values = entry->arg6list.values;
+		break;
+	}
+
+	if (num == 0)
+		BUG("ARG_OP/LIST with 0 args. What?\n");
+
+	if (values == NULL)
+		BUG("ARG_OP/LIST with no values.\n");
+}
+
 static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argnum)
 {
 	const unsigned long *values = NULL;
 	unsigned int num = 0;
 	unsigned long mask = 0;
 
-	switch (argnum) {
-	case 1:	num = entry->arg1list.num;
-		values = entry->arg1list.values;
-		break;
-	case 2:	num = entry->arg2list.num;
-		values = entry->arg2list.values;
-		break;
-	case 3:	num = entry->arg3list.num;
-		values = entry->arg3list.values;
-		break;
-	case 4:	num = entry->arg4list.num;
-		values = entry->arg4list.values;
-		break;
-	case 5:	num = entry->arg5list.num;
-		values = entry->arg5list.values;
-		break;
-	case 6:	num = entry->arg6list.num;
-		values = entry->arg6list.values;
-		break;
-	}
-
-	if (num == 0)
-		BUG("ARG_OP with 0 args. What?\n");
-
-	if (values == NULL)
-		BUG("ARG_OP with no values.\n");
+	get_num_and_values(entry, argnum, &num, &values);
 
 	mask |= values[rand() % num];
 	return mask;
@@ -154,32 +160,7 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 	unsigned int num = 0;
 	const unsigned long *values = NULL;
 
-	switch (argnum) {
-	case 1:	num = entry->arg1list.num;
-		values = entry->arg1list.values;
-		break;
-	case 2:	num = entry->arg2list.num;
-		values = entry->arg2list.values;
-		break;
-	case 3:	num = entry->arg3list.num;
-		values = entry->arg3list.values;
-		break;
-	case 4:	num = entry->arg4list.num;
-		values = entry->arg4list.values;
-		break;
-	case 5:	num = entry->arg5list.num;
-		values = entry->arg5list.values;
-		break;
-	case 6:	num = entry->arg6list.num;
-		values = entry->arg6list.values;
-		break;
-	}
-
-	if (num == 0)
-		BUG("ARG_LIST with 0 args. What?\n");
-
-	if (values == NULL)
-		BUG("ARG_LIST with no values.\n");
+	get_num_and_values(entry, argnum, &num, &values);
 
 	mask = set_rand_bitmask(num, values);
 	return mask;
