@@ -26,7 +26,6 @@ static unsigned int count;
 
 static void sanitise_move_pages(struct syscallrecord *rec)
 {
-	struct map *map;
 	int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
@@ -40,6 +39,8 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	page_alloc = (unsigned long *) zmalloc(page_size);
 
 	for (i = 0; i < count; i++) {
+		struct map *map;
+
 		map = get_map();
 		page_alloc[i] = (unsigned long) map->ptr;
 	}
