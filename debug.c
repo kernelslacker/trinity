@@ -4,10 +4,12 @@
 
 #include <execinfo.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include "child.h"
 #include "config.h"
 #include "debug.h"
 #include "log.h"
+#include "params.h"
 #include "shm.h"
 #include "syscall.h"
 #include "version.h"
@@ -93,3 +95,24 @@ void dump_childdata(struct childdata *child)
 	output(0, "dontkillme: %d\n", child->dontkillme);
 	output(0, "\n");
 };
+
+/*
+ * debugging output.
+ * This is just a convenience helper to avoid littering the code
+ * with dozens of 'if debug == TRUE' comparisons causing unnecessary nesting.
+ */
+#define BUFSIZE 1024
+
+void debugf(const char *fmt, ...)
+{
+	char debugbuf[BUFSIZE];
+	va_list args;
+
+	if (debug == FALSE)
+		return;
+
+	va_start(args, fmt);
+	vsprintf(debugbuf, fmt, args);
+	va_end(args);
+	output(0, debugbuf);
+}
