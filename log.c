@@ -294,22 +294,3 @@ void outputstd(const char *fmt, ...)
 	vfprintf(stdout, fmt, args);
 	va_end(args);
 }
-
-/*
- * debugging output.
- * This is just a convenience helper to avoid littering the code
- * with dozens of 'if debug == TRUE' comparisons causing unnecessary nesting.
- */
-void debugf(const char *fmt, ...)
-{
-	char debugbuf[BUFSIZE];
-	va_list args;
-
-	if (debug == FALSE)
-		return;
-
-	va_start(args, fmt);
-	vsprintf(debugbuf, fmt, args);
-	va_end(args);
-	output(0, debugbuf);
-}
