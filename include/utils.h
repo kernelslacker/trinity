@@ -53,3 +53,5 @@ void kill_pid(pid_t pid);
 #define __stringify(x...)       __stringify_1(x)
 
 #define unreachable() do { } while (1)
+
+unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);

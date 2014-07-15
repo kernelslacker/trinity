@@ -144,19 +144,6 @@ static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argn
 	return op;
 }
 
-unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
-{
-	unsigned long i;
-	unsigned long mask = 0;
-	unsigned int bits;
-
-	bits = rand_range(1, num);	/* num of bits to OR */
-	for (i = 0; i < bits; i++)
-		mask |= values[rand() % num];
-
-	return mask;
-}
-
 /*
  * OR a random number of bits from the list of values into a bitmask, and return it.
  */
