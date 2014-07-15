@@ -75,7 +75,7 @@ void generate_random_page(char *page)
 	unsigned int i;
 	unsigned int p = 0;
 
-	switch (rand() % 9) {
+	switch (rand() % 8) {
 
 	case 0:
 		memset(page, 0, page_size);
@@ -103,12 +103,8 @@ void generate_random_page(char *page)
 	case 5:	fabricate_onepage_struct(page);
 		return;
 
-	/* return a page of unicode nonsense. */
-	case 6:	gen_unicode_page(page);
-		return;
-
 	/* page full of format strings. */
-	case 7:
+	case 6:
 		for (i = 0; i < page_size; ) {
 			page[i++] = '%';
 			switch (rand_bool()) {
@@ -123,7 +119,7 @@ void generate_random_page(char *page)
 		return;
 
 	/* ascii representation of a random number */
-	case 8:
+	case 7:
 		switch (rand() % 3) {
 		case 0:
 			switch (rand() % 3) {
