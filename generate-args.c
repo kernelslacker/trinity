@@ -129,16 +129,19 @@ static void get_num_and_values(struct syscallentry *entry, unsigned int argnum,
 		BUG("ARG_OP/LIST with no values.\n");
 }
 
+/*
+ * Get a single entry from the list of values.
+ */
 static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argnum)
 {
 	const unsigned long *values = NULL;
 	unsigned int num = 0;
-	unsigned long mask = 0;
+	unsigned long op = 0;
 
 	get_num_and_values(entry, argnum, &num, &values);
 
-	mask |= values[rand() % num];
-	return mask;
+	op = values[rand() % num];
+	return op;
 }
 
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
@@ -154,6 +157,9 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	return mask;
 }
 
+/*
+ * OR a random number of bits from the list of values into a bitmask, and return it.
+ */
 static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int argnum)
 {
 	unsigned long mask = 0;
