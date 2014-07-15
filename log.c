@@ -114,6 +114,26 @@ static FILE * find_logfile_handle(void)
 	return NULL;
 }
 
+FILE *robust_find_logfile_handle(void)
+{
+	FILE *handle = NULL;
+
+	if ((logging == TRUE) && (logfiles_opened)) {
+		handle = find_logfile_handle();
+		if (!handle) {
+			unsigned int j;
+
+			outputerr("## child logfile handle was null logging to main!\n");
+			(void)fflush(stdout);
+			for_each_child(j)
+				shm->children[j]->logfile = mainlogfile;
+			sleep(5);
+			handle = find_logfile_handle();
+		}
+	}
+	return handle;
+}
+
 void synclogs(void)
 {
 	unsigned int i;
@@ -147,26 +167,6 @@ void synclogs(void)
 
 	(void)fflush(mainlogfile);
 	fsync(fileno(mainlogfile));
-}
-
-FILE *robust_find_logfile_handle(void)
-{
-	FILE *handle = NULL;
-
-	if ((logging == TRUE) && (logfiles_opened)) {
-		handle = find_logfile_handle();
-		if (!handle) {
-			unsigned int j;
-
-			outputerr("## child logfile handle was null logging to main!\n");
-			(void)fflush(stdout);
-			for_each_child(j)
-				shm->children[j]->logfile = mainlogfile;
-			sleep(5);
-			handle = find_logfile_handle();
-		}
-	}
-	return handle;
 }
 
 void strip_ansi(char *ansibuf, unsigned int buflen)
