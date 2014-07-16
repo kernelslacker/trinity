@@ -12,7 +12,7 @@
 
 static void sanitise_write(struct syscallrecord *rec)
 {
-	if ((rand() % 100) > 50)
+	if (rand_bool())
 		rec->a3 = 1;
 	else
 		rec->a3 = rand() % page_size;
