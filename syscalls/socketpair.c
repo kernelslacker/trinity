@@ -18,7 +18,7 @@ static void post_socketpair(struct syscallrecord *rec)
 	//TODO: on success we should put the fd's that
 	// were created into a child-local fd array.
 
-	ptr = (void *) rec->a1;
+	ptr = (void *) rec->a4;
 	free(ptr);
 }
 
