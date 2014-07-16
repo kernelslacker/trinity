@@ -1,7 +1,26 @@
 /*
  * SYSCALL_DEFINE4(socketpair, int, family, int, type, int, protocol, int __user *, usockvec)
  */
+#include <stdlib.h>
+#include <sys/socket.h>
 #include "sanitise.h"
+
+static void sanitise_socketpair(struct syscallrecord *rec)
+{
+	rec->a1 = AF_UNIX;
+	rec->a4 = (unsigned long) malloc(sizeof(int) * 2);
+}
+
+static void post_socketpair(struct syscallrecord *rec)
+{
+	void *ptr;
+
+	//TODO: on success we should put the fd's that
+	// were created into a child-local fd array.
+
+	ptr = (void *) rec->a1;
+	free(ptr);
+}
 
 struct syscallentry syscall_socketpair = {
 	.name = "socketpair",
@@ -11,4 +30,6 @@ struct syscallentry syscall_socketpair = {
 	.arg3name = "protocol",
 	.arg4name = "usockvec",
 	.arg4type = ARG_ADDRESS,
+	.sanitise = sanitise_socketpair,
+	.post = post_socketpair,
 };
