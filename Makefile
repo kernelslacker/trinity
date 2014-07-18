@@ -62,6 +62,7 @@ MACHINE		= $(shell $(CC) -dumpmachine)
 SYSCALLS_ARCH	= $(shell case "$(MACHINE)" in \
 		  (sh*) echo syscalls/sh/*.c ;; \
 		  (ia64*) echo syscalls/ia64/*.c ;; \
+		  (ppc*) echo syscalls/ppc/*.c ;; \
 		  (sparc*) echo syscalls/sparc/*.c ;; \
 		  esac)
 
