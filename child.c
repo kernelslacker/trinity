@@ -226,7 +226,7 @@ void init_child(int childno)
 
 	set_make_it_fail();
 
-	if (rand() % 100 < 50)
+	if (rand_bool())
 		use_fpu();
 
 	mask_signals_child();
