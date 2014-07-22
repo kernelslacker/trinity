@@ -89,7 +89,6 @@ static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int arg
 	case ARG_LEN:
 	case ARG_RANGE:
 	case ARG_CPU:
-	case ARG_RANDOM_LONG:
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
 		if (((long) reg < -16384) || ((long) reg > 16384)) {

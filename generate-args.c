@@ -310,7 +310,6 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
-	case ARG_RANDOM_LONG:
 		return (unsigned long) rand64();
 
 	case ARG_FD:
