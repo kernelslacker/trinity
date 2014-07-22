@@ -77,20 +77,9 @@ void close_logfile(FILE **filehandle)
 	*filehandle = NULL;
 }
 
-static FILE * __find_logfile_handle(void)
+static FILE * __find_logfile_handle(pid_t pid)
 {
-	pid_t pid;
 	int i;
-
-	pid = getpid();
-	if (pid == initpid)
-		return mainlogfile;
-
-	if (pid == shm->mainpid)
-		return mainlogfile;
-
-	if (pid == watchdog_pid)
-		return mainlogfile;
 
 	i = find_childno(pid);
 	if (i != CHILD_NOT_FOUND)
@@ -119,7 +108,19 @@ FILE *find_logfile_handle(void)
 	FILE *handle = NULL;
 
 	if ((logging == TRUE) && (logfiles_opened)) {
-		handle = __find_logfile_handle();
+		pid_t pid;
+
+		pid = getpid();
+		if (pid == initpid)
+			return mainlogfile;
+
+		if (pid == shm->mainpid)
+			return mainlogfile;
+
+		if (pid == watchdog_pid)
+			return mainlogfile;
+
+		handle = __find_logfile_handle(pid);
 		if (!handle) {
 			unsigned int j;
 
@@ -128,7 +129,7 @@ FILE *find_logfile_handle(void)
 			for_each_child(j)
 				shm->children[j]->logfile = mainlogfile;
 			sleep(5);
-			handle = __find_logfile_handle();
+			handle = __find_logfile_handle(pid);
 		}
 	}
 	return handle;
