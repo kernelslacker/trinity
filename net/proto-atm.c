@@ -6,7 +6,6 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include "maps.h"	// page_rand
 #include "net.h"
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"

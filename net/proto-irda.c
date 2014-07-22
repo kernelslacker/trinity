@@ -7,7 +7,6 @@
 #include <linux/irda.h>
 #include <stdlib.h>
 #include "net.h"
-#include "maps.h"	// page_rand
 #include "random.h"
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
