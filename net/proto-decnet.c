@@ -4,7 +4,6 @@
 #include <netinet/in.h>
 #include <linux/dn.h>
 #include <stdlib.h>
-#include "maps.h"	// page_rand
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// ARRAY_SIZE

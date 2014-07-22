@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <linux/icmpv6.h>
 #include "net.h"
-#include "maps.h"	// page_rand
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
