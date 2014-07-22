@@ -42,7 +42,6 @@ struct syscallrecord {
 
 enum argtype {
 	ARG_UNDEFINED,
-	ARG_RANDOM_LONG,
 	ARG_FD,
 	ARG_LEN,
 	ARG_ADDRESS,
