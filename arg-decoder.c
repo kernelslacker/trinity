@@ -178,7 +178,7 @@ static void __output_syscall(char *buffer, unsigned int len)
 	if (logging == TRUE) {
 		FILE *log_handle;
 
-		log_handle = robust_find_logfile_handle();
+		log_handle = find_logfile_handle();
 		if (log_handle != NULL) {
 			strip_ansi(buffer, len);
 			flushbuffer(buffer, log_handle);

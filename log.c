@@ -77,7 +77,7 @@ void close_logfile(FILE **filehandle)
 	*filehandle = NULL;
 }
 
-static FILE * find_logfile_handle(void)
+static FILE * __find_logfile_handle(void)
 {
 	pid_t pid;
 	int i;
@@ -114,12 +114,12 @@ static FILE * find_logfile_handle(void)
 	return NULL;
 }
 
-FILE *robust_find_logfile_handle(void)
+FILE *find_logfile_handle(void)
 {
 	FILE *handle = NULL;
 
 	if ((logging == TRUE) && (logfiles_opened)) {
-		handle = find_logfile_handle();
+		handle = __find_logfile_handle();
 		if (!handle) {
 			unsigned int j;
 
@@ -128,7 +128,7 @@ FILE *robust_find_logfile_handle(void)
 			for_each_child(j)
 				shm->children[j]->logfile = mainlogfile;
 			sleep(5);
-			handle = find_logfile_handle();
+			handle = __find_logfile_handle();
 		}
 	}
 	return handle;
@@ -262,7 +262,7 @@ void output(unsigned char level, const char *fmt, ...)
 	if (logging == FALSE)
 		return;
 
-	handle = robust_find_logfile_handle();
+	handle = find_logfile_handle();
 	if (!handle)
 		return;
 
