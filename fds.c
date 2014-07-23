@@ -88,6 +88,7 @@ static int get_new_random_fd(void)
 			if (i == j) {
 				provider = (struct fd_provider *) node;
 				fd = provider->get();
+				break;
 			}
 			j++;
 		}
