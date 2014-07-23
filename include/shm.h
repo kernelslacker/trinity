@@ -52,7 +52,7 @@ struct shm_s {
 	int file_fds[NR_FILE_FDS];
 	int perf_fds[MAX_PERF_FDS];
 	int epoll_fds[MAX_EPOLL_FDS];
-	int eventfd_fds[MAX_EPOLL_FDS];
+	int eventfd_fds[MAX_EVENTFD_FDS];
 	int timerfd_fds[MAX_TIMERFD_FDS];
 	struct socketinfo sockets[NR_SOCKET_FDS];
 	int current_fd;
