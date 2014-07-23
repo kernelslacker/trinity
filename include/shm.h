@@ -10,6 +10,7 @@
 #include "pipes.h"
 #include "perf.h"
 #include "syscall.h"
+#include "timerfd.h"
 #include "types.h"
 
 void create_shm(void);
@@ -52,6 +53,7 @@ struct shm_s {
 	int perf_fds[MAX_PERF_FDS];
 	int epoll_fds[MAX_EPOLL_FDS];
 	int eventfd_fds[MAX_EPOLL_FDS];
+	int timerfd_fds[MAX_TIMERFD_FDS];
 	struct socketinfo sockets[NR_SOCKET_FDS];
 	int current_fd;
 	unsigned int fd_lifetime;
