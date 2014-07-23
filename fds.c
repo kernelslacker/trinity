@@ -48,6 +48,7 @@ static void setup_fd_providers(void)
 	add_to_prov_list(&epoll_fd_provider);
 	add_to_prov_list(&eventfd_fd_provider);
 	add_to_prov_list(&file_fd_provider);
+	add_to_prov_list(&timerfd_fd_provider);
 }
 
 unsigned int setup_fds(void)
