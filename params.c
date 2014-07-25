@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "bdevs.h"
 #include "child.h"
 #include "log.h"
 #include "net.h"
@@ -60,6 +61,7 @@ static void usage(void)
 {
 	outputerr("%s\n", progname);
 	outputerr(" --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.\n");
+	outputerr(" --bdev, -b <node>:  Add /dev node to list of block devices to use for destructive tests..\n");
 	outputerr(" --children,-C: specify number of child processes\n");
 	outputerr(" --debug,-D: enable debug\n");
 	outputerr(" --dropprivs, -X: if run as root, switch to nobody [EXPERIMENTAL]\n");
@@ -86,9 +88,10 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:X";
+static const char paramstr[] = "a:b:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:X";
 
 static const struct option longopts[] = {
+	{ "bdev", required_argument, NULL, 'b' },
 	{ "children", required_argument, NULL, 'C' },
 	{ "dangerous", no_argument, NULL, 'd' },
 	{ "dropprivs", no_argument, NULL, 'X'},
@@ -127,6 +130,13 @@ void parse_args(int argc, char *argv[])
 
 		case '\0':
 			return;
+
+		case 'b':
+			init_dev_list();
+			process_dev_param(optarg);
+			dump_dev_list();
+			outputstd("--bdev doesn't do anything useful yet.\n");
+			exit(EXIT_SUCCESS);
 
 		case 'c':
 			/* syscalls are all disabled at this point. enable the syscall we care about. */
