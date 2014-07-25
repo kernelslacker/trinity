@@ -48,7 +48,7 @@ static void stat_dev(char *name)
 	add_to_bdevlist(name);
 }
 
-void process_dev_param(char *optarg)
+void process_bdev_param(char *optarg)
 {
 	unsigned int len, i;
 	char *str = optarg;
@@ -67,13 +67,13 @@ void process_dev_param(char *optarg)
 	stat_dev(str);
 }
 
-void init_dev_list(void)
+void init_bdev_list(void)
 {
 	bdevs = zmalloc(sizeof(struct bdevlist));
 	INIT_LIST_HEAD(&bdevs->list);
 }
 
-void dump_dev_list(void)
+void dump_bdev_list(void)
 {
 	struct list_head *node;
 	struct bdevlist *nl;

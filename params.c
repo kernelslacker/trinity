@@ -132,9 +132,9 @@ void parse_args(int argc, char *argv[])
 			return;
 
 		case 'b':
-			init_dev_list();
-			process_dev_param(optarg);
-			dump_dev_list();
+			init_bdev_list();
+			process_bdev_param(optarg);
+			dump_bdev_list();
 			outputstd("--bdev doesn't do anything useful yet.\n");
 			exit(EXIT_SUCCESS);
 
