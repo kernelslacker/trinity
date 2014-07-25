@@ -70,7 +70,7 @@ static void __do_syscall(struct syscallrecord *rec)
 		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 
 	/* We returned! */
-	shm->total_syscalls_done++;
+	shm->stats.total_syscalls_done++;
 
 	lock(&rec->lock);
 	(void)gettimeofday(&rec->tv, NULL);
@@ -135,9 +135,9 @@ void do_syscall(struct syscallrecord *rec)
 		__do_syscall(rec);
 
 	if (IS_ERR(rec->retval))
-		shm->failures++;
+		shm->stats.failures++;
 	else
-		shm->successes++;
+		shm->stats.successes++;
 }
 
 static void check_retval_documented(struct syscallrecord *rec, struct syscallentry *entry)

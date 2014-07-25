@@ -9,6 +9,7 @@
 #include "net.h"
 #include "pipes.h"
 #include "perf.h"
+#include "stats.h"
 #include "syscall.h"
 #include "timerfd.h"
 #include "types.h"
@@ -19,14 +20,9 @@ void init_shm(void);
 struct shm_s {
 	struct childdata **children;
 
-	/* Various statistics. TODO: Move to separate struct */
-	unsigned long total_syscalls_done;
-	unsigned long successes;
-	unsigned long failures;
-	unsigned int running_childs;
+	struct stats_s stats;
 
-	/* Counts to tell if we're making progress or not. */
-	unsigned long previous_op_count;	/* combined total of all children */
+	unsigned int running_childs;
 
 	/* rng related state */
 	unsigned int seed;
