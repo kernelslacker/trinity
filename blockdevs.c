@@ -19,13 +19,12 @@ static struct bdevlist *bdevs = NULL;
 static void add_to_bdevlist(const char *name)
 {
 	struct bdevlist *newnode;
-	struct list_head *list = (struct list_head *) bdevs;
 
 	//TODO: Check if it's a valid /dev node (also check if passed without leading "/dev/")
 
 	newnode = zmalloc(sizeof(struct bdevlist));
 	newnode->name = strdup(name);
-	list_add_tail(&newnode->list, list);
+	list_add_tail(&newnode->list, &bdevs->list);
 	nr_blockdevs++;
 }
 
