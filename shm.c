@@ -57,7 +57,7 @@ void init_shm(void)
 
 	output(2, "shm is at %p\n", shm);
 
-	shm->total_syscalls_done = 1;
+	shm->stats.total_syscalls_done = 1;
 
 	if (user_set_seed == TRUE)
 		shm->seed = init_seed(seed);

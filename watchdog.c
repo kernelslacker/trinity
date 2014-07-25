@@ -42,13 +42,13 @@ static int shm_is_corrupt(void)
 	// FIXME: The '500000' is magic, and should be dynamically calculated.
 	// On startup, we should figure out how many getpid()'s per second we can do,
 	// and use that.
-	if (shm->total_syscalls_done - shm->previous_op_count > 500000) {
+	if (shm->stats.total_syscalls_done - shm->stats.previous_op_count > 500000) {
 		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
-			shm->previous_op_count, shm->total_syscalls_done);
+			shm->stats.previous_op_count, shm->stats.total_syscalls_done);
 		panic(EXIT_SHM_CORRUPTION);
 		return TRUE;
 	}
-	shm->previous_op_count = shm->total_syscalls_done;
+	shm->stats.previous_op_count = shm->stats.total_syscalls_done;
 
 	return FALSE;
 }
@@ -353,13 +353,13 @@ static void watchdog(void)
 
 		check_all_locks();
 
-		if (syscalls_todo && (shm->total_syscalls_done >= syscalls_todo)) {
+		if (syscalls_todo && (shm->stats.total_syscalls_done >= syscalls_todo)) {
 			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
 			panic(EXIT_REACHED_COUNT);
 		}
 
 		// Periodic log syncing. FIXME: This is kinda ugly, and mostly unnecessary.
-		if (shm->total_syscalls_done % 1000 == 0)
+		if (shm->stats.total_syscalls_done % 1000 == 0)
 			synclogs();
 
 		for_each_child(i) {
@@ -372,13 +372,13 @@ static void watchdog(void)
 				hiscore = rec->op_nr;
 		}
 
-		if (shm->total_syscalls_done > 1) {
-			if (shm->total_syscalls_done - lastcount > 10000) {
+		if (shm->stats.total_syscalls_done > 1) {
+			if (shm->stats.total_syscalls_done - lastcount > 10000) {
 				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld]\n",
-					shm->total_syscalls_done,
-					shm->failures, shm->successes,
+					shm->stats.total_syscalls_done,
+					shm->stats.failures, shm->stats.successes,
 					hiscore);
-				lastcount = shm->total_syscalls_done;
+				lastcount = shm->stats.total_syscalls_done;
 			}
 		}
 
