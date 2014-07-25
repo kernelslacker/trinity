@@ -91,6 +91,7 @@ static void usage(void)
 static const char paramstr[] = "a:b:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:X";
 
 static const struct option longopts[] = {
+	{ "arch", required_argument, NULL, 'a' },
 	{ "bdev", required_argument, NULL, 'b' },
 	{ "children", required_argument, NULL, 'C' },
 	{ "dangerous", no_argument, NULL, 'd' },
@@ -105,14 +106,13 @@ static const struct option longopts[] = {
 	{ "logging", required_argument, NULL, 'l' },
 	{ "monochrome", no_argument, NULL, 'm' },
 	{ "no_files", no_argument, NULL, 'n' },
-	{ "proto", required_argument, NULL, 'P' },
 	{ "no_proto", required_argument, NULL, 'E' },
-	{ "random", required_argument, NULL, 'r' },
+	{ "proto", required_argument, NULL, 'P' },
 	{ "quiet", no_argument, NULL, 'q' },
+	{ "random", required_argument, NULL, 'r' },
 	{ "syslog", no_argument, NULL, 'S' },
-	{ "victims", required_argument, NULL, 'V' },
 	{ "verbose", no_argument, NULL, 'v' },
-	{ "arch", required_argument, NULL, 'a' },
+	{ "victims", required_argument, NULL, 'V' },
 	{ NULL, 0, NULL, 0 } };
 
 void parse_args(int argc, char *argv[])
