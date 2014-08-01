@@ -29,10 +29,21 @@ void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 void inet6_rand_socket(struct socket_triplet *st)
 {
-	switch (rand() % 3) {
-	case 0: st->type = SOCK_STREAM;     // TCP
-		st->protocol = 0;
-		break;
+	switch (rand() % 4) {
+	case 0: st->type = SOCK_STREAM;     // TCP/SCTP
+		switch (rand() % 3) {
+		case 0:
+			st->protocol = 0;
+			break;
+		case 1:
+			st->protocol = IPPROTO_TCP;
+			break;
+		case 2:
+			st->protocol = IPPROTO_SCTP;
+			break;
+		default:
+			break;
+		}
 
 	case 1: st->type = SOCK_DGRAM;      // UDP
 		if (rand_bool())
@@ -41,11 +52,19 @@ void inet6_rand_socket(struct socket_triplet *st)
 			st->protocol = IPPROTO_UDP;
 		break;
 
-	case 2: st->type = SOCK_RAW;
+	case 2: st->type = SOCK_SEQPACKET;      // SCTP
+		if (rand_bool())
+			st->protocol = 0;
+		else
+			st->protocol = IPPROTO_SCTP;
+		break;
+
+	case 3: st->type = SOCK_RAW;
 		st->protocol = rand() % PROTO_MAX;
 		break;
 
-	default:break;
+	default:
+		break;
 	}
 }
 
