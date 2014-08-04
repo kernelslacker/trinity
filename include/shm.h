@@ -11,6 +11,7 @@
 #include "perf.h"
 #include "stats.h"
 #include "syscall.h"
+#include "testfile.h"
 #include "timerfd.h"
 #include "types.h"
 
@@ -50,6 +51,7 @@ struct shm_s {
 	int epoll_fds[MAX_EPOLL_FDS];
 	int eventfd_fds[MAX_EVENTFD_FDS];
 	int timerfd_fds[MAX_TIMERFD_FDS];
+	int testfile_fds[MAX_TESTFILE_FDS];
 	struct socketinfo sockets[NR_SOCKET_FDS];
 	int current_fd;
 	unsigned int fd_lifetime;
