@@ -44,6 +44,7 @@ void inet6_rand_socket(struct socket_triplet *st)
 		default:
 			break;
 		}
+		break;
 
 	case 1: st->type = SOCK_DGRAM;      // UDP
 		if (rand_bool())
