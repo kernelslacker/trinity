@@ -15,6 +15,7 @@ static int open_testfile(unsigned int i)
 {
 	FILE *file;
 	char *filename;
+	int fd = -1;
 
 	filename = zmalloc(64);
 	sprintf(filename, "trinity-testfile%d", i);
@@ -24,10 +25,12 @@ static int open_testfile(unsigned int i)
 	file = fopen(filename, "w");
 	if (!file)
 		outputerr("Couldn't open testfile %d for writing.\n", i);
+	else
+		fd = fileno(file);
 
 	free(filename);
 
-	return fileno(file);
+	return fd;
 }
 
 static int open_testfile_fds(void)
