@@ -15,16 +15,41 @@
 #include "sanitise.h"
 #include "testfile.h"
 
+static int open_with_fopen(char *filename, int i)
+{
+	FILE *file;
+	int fd = -1;
+
+	file = fopen(filename, "w");
+	if (!file)
+		outputerr("Couldn't fopen() testfile %d for writing.\n", i);
+	else {
+		fd = fileno(file);
+		output(2, "fd[%d] = fopen(testfile%d)\n", fd, i);
+	}
+	return fd;
+}
+
+static int open_with_open(char *filename, int flags, int i)
+{
+	int fd;
+
+	unlink(filename);
+
+	fd = open(filename, O_CREAT | flags, 0666);
+	if (fd == -1)
+		outputerr("Couldn't open testfile %d for writing.\n", i);
+	else
+		output(2, "fd[%d] = open(testfile%d, flags:%x)\n", fd, i, flags);	//TODO: decode flags
+
+	return fd;
+}
+
 static int open_testfile(unsigned int i)
 {
 	char *filename;
 	int fd;
 	int flags = 0;
-
-	filename = zmalloc(64);
-	sprintf(filename, "trinity-testfile%d", i);
-
-	unlink(filename);
 
 	if (rand_bool())
 		flags |= O_DIRECT;
@@ -35,11 +60,13 @@ static int open_testfile(unsigned int i)
 	if (rand_bool())
 		flags |= O_SYNC;
 
-	fd = open(filename, O_CREAT | flags, 0666);
-	if (fd == -1)
-		outputerr("Couldn't open testfile %d for writing.\n", i);
+	filename = zmalloc(64);
+	sprintf(filename, "trinity-testfile%d", i);
+
+	if (rand_bool())
+		fd = open_with_fopen(filename, i);
 	else
-		output(2, "fd[%d] = testfile%d (flags:%x)\n", fd, i, flags);	//TODO: decode flags
+		fd = open_with_open(filename, flags, i);
 
 	free(filename);
 
