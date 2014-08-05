@@ -41,11 +41,12 @@ static int open_testfile_fds(void)
 		int fd;
 
 		fd = open_testfile(i + 1);
-		if (fd != -1) {
-			shm->testfile_fds[i] = fd;
-			output(2, "fd[%d] = testfile%d\n", fd, i + 1);
-			i++;
-		}
+		if (fd == -1)
+			return FALSE;
+
+		shm->testfile_fds[i] = fd;
+		output(2, "fd[%d] = testfile%d\n", fd, i + 1);
+		i++;
 	}
 
 	return TRUE;
