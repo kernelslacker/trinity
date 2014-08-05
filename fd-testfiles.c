@@ -11,6 +11,7 @@
 #include "fd.h"
 #include "shm.h"
 #include "log.h"
+#include "random.h"
 #include "sanitise.h"
 #include "testfile.h"
 
@@ -18,15 +19,27 @@ static int open_testfile(unsigned int i)
 {
 	char *filename;
 	int fd;
+	int flags = 0;
 
 	filename = zmalloc(64);
 	sprintf(filename, "trinity-testfile%d", i);
 
 	unlink(filename);
 
-	fd = open(filename, O_CREAT, 0666);
+	if (rand_bool())
+		flags |= O_DIRECT;
+
+	if (rand_bool())
+		flags |= O_DSYNC;
+
+	if (rand_bool())
+		flags |= O_SYNC;
+
+	fd = open(filename, O_CREAT | flags, 0666);
 	if (fd == -1)
 		outputerr("Couldn't open testfile %d for writing.\n", i);
+	else
+		output(2, "fd[%d] = testfile%d (flags:%x)\n", fd, i, flags);	//TODO: decode flags
 
 	free(filename);
 
@@ -45,7 +58,6 @@ static int open_testfile_fds(void)
 			return FALSE;
 
 		shm->testfile_fds[i] = fd;
-		output(2, "fd[%d] = testfile%d\n", fd, i + 1);
 		i++;
 	}
 
