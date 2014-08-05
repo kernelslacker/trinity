@@ -945,6 +945,8 @@ static long long random_branch_sample_type(void)
 		branch_sample |= PERF_SAMPLE_BRANCH_ANY_RETURN;
 	if (rand_bool())
 		branch_sample |= PERF_SAMPLE_BRANCH_IND_CALL;
+	if (rand_bool())
+		branch_sample |= PERF_SAMPLE_BRANCH_COND;
 
 	/* Transactional Memory Types */
 	if (rand_bool())
@@ -998,6 +1000,8 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->exclude_guest = rand_bool();
 	attr->exclude_callchain_kernel = rand_bool();
 	attr->exclude_callchain_user = rand_bool();
+	attr->mmap2 = rand_bool();
+	attr->comm_exec = rand_bool();
 
 	/* wakeup events not relevant */
 
@@ -1059,6 +1063,8 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->exclude_guest = rand_bool();
 	attr->exclude_callchain_kernel = rand_bool();
 	attr->exclude_callchain_user = rand_bool();
+	attr->mmap2 = rand_bool();
+	attr->comm_exec = rand_bool();
 
 	attr->wakeup_events = rand32();
 
@@ -1161,6 +1167,8 @@ static void create_random_event(struct perf_event_attr *attr)
 	attr->exclude_guest = rand_bool();
 	attr->exclude_callchain_kernel = rand_bool();
 	attr->exclude_callchain_user = rand_bool();
+	attr->mmap2 = rand_bool();
+	attr->comm_exec = rand_bool();
 
 	attr->wakeup_events=rand32();
 
