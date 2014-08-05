@@ -1,9 +1,12 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <asm/unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "fd.h"
 #include "shm.h"
@@ -13,20 +16,17 @@
 
 static int open_testfile(unsigned int i)
 {
-	FILE *file;
 	char *filename;
-	int fd = -1;
+	int fd;
 
 	filename = zmalloc(64);
 	sprintf(filename, "trinity-testfile%d", i);
 
 	unlink(filename);
 
-	file = fopen(filename, "w");
-	if (!file)
+	fd = open(filename, O_CREAT, 0666);
+	if (fd == -1)
 		outputerr("Couldn't open testfile %d for writing.\n", i);
-	else
-		fd = fileno(file);
 
 	free(filename);
 
