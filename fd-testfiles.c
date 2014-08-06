@@ -34,10 +34,15 @@ static int open_testfile(unsigned int i)
 	filename = zmalloc(64);
 	sprintf(filename, "trinity-testfile%d", i);
 
-	if (rand_bool())
+	if (rand_bool()) {
 		fd = open_with_fopen(filename, O_RDWR);
-	else
+		if (fd != -1)
+			output(2, "fd[%d] = fopen(\"%s\", O_RDWR)\n", fd, filename);
+	} else {
 		fd = open(filename, O_CREAT | flags, 0666);
+		if (fd != -1)
+			output(2, "fd[%d] = open(\"%s\", flags:%x)\n", fd, filename, flags);	//TODO: decode flags
+	}
 
 	free(filename);
 
