@@ -46,31 +46,62 @@ static char get_interesting_8bit_value(void)
 	return num;
 }
 
-unsigned int get_interesting_32bit_value(void)
+static int get_interesting_16bit_value(void)
 {
-	unsigned int num = 0;
+	int num = 0;
 
-	switch (rand() % 10) {
+	switch (rand() % 8) {
 	case 0:	num = 0;
 		break;
 	case 1:	num = get_interesting_8bit_value();
 		break;
-	case 2:	num = 1UL << (rand() % 32);	// set a single bit.
+	case 2:	num = -32768;
 		break;
-	case 3:	num = 0x8fffffff;
+	case 3:	num = -129;
 		break;
-	case 4:	num = 0xff;
+	case 4:	num = 255;
+		break;
+	case 5:	num = 32767;
+		break;
+	case 6:	num = 1UL << (rand() % 15);
+		break;
+	case 7:	num = rand() % 0xffff;
+		break;
+	}
+
+	return num;
+}
+
+unsigned int get_interesting_32bit_value(void)
+{
+	unsigned int num = 0;
+
+	switch (rand() % 11) {
+	case 0:	num = 0;
+		break;
+
+	case 1:	num = get_interesting_8bit_value();
+		break;
+
+	case 2:	num = get_interesting_16bit_value();
+		break;
+
+	case 3:	num = 1UL << (rand() % 32);	// set a single bit.
+		break;
+	case 4:	num = 0x8fffffff;
+		break;
+	case 5:	num = 0xff;
 		num = num << (rand() % 31);
 		break;
-	case 5: num = 0xffff0000;
+	case 6: num = 0xffff0000;
 		break;
-	case 6: num = 0xffffe000;
+	case 7: num = 0xffffe000;
 		break;
-	case 7: num = 0xffffff00 | (rand() % 256);
+	case 8: num = 0xffffff00 | (rand() % 256);
 		break;
-	case 8: num = 0xffffffff - page_size;
+	case 9: num = 0xffffffff - page_size;
 		break;
-	case 9: num = 0xffffffff;
+	case 10: num = 0xffffffff;
 		break;
 	}
 
