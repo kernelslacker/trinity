@@ -358,10 +358,6 @@ static void watchdog(void)
 			panic(EXIT_REACHED_COUNT);
 		}
 
-		// Periodic log syncing. FIXME: This is kinda ugly, and mostly unnecessary.
-		if (shm->stats.total_syscalls_done % 1000 == 0)
-			synclogs();
-
 		for_each_child(i) {
 			struct childdata *child = shm->children[i];
 			struct syscallrecord *rec = &child->syscall;
