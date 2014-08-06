@@ -260,6 +260,26 @@ static void generate_filelist(void)
 	fileindex = list_to_index(names);
 }
 
+int open_with_fopen(const char *filename, int flags)
+{
+	FILE *file;
+	int fd = -1;
+	char mode[3];
+
+	switch (flags) {
+	case O_RDONLY:  strncpy(mode, "r", 1);  break;
+	case O_WRONLY:  strncpy(mode, "w", 1); break;
+	case O_RDWR:    strncpy(mode, "w+", 2); break;
+	}
+	mode[2] = 0;
+
+	file = fopen(filename, mode);
+	if (file)
+		fd = fileno(file);
+
+	return fd;
+}
+
 static int open_file(void)
 {
 	int fd;
@@ -269,6 +289,7 @@ static int open_file(void)
 	int flags, randflags;
 	const char *modestr;
 	struct stat sb;
+	bool opened_with_fopen = FALSE;
 
 retry:
 	filename = get_filename();
@@ -282,9 +303,15 @@ retry:
 
 	/* OR in some random flags. */
 retry_flags:
-	randflags = get_o_flags();
 
-	fd = open(filename, flags | randflags | O_NONBLOCK);
+	if (rand_bool()) {
+		randflags = get_o_flags();
+		fd = open(filename, flags | randflags | O_NONBLOCK);
+	} else {
+		fd = open_with_fopen(filename, flags);
+		opened_with_fopen = TRUE;
+	}
+
 	if (fd < 0) {
 		/*
 		 * if we failed to open the file, retry with different flags.
@@ -305,7 +332,10 @@ retry_flags:
 	case O_RDWR:    modestr = "read-write"; break;
 	default: modestr = "unknown"; break;
 	}
-	output(2, "fd[%i] = %s (%s) flags:%x\n", fd, filename, modestr, flags | randflags);
+	if (opened_with_fopen == FALSE)
+		output(2, "fd[%i] = open %s (%s) flags:%x\n", fd, filename, modestr, flags | randflags);
+	else
+		output(2, "fd[%i] = fopen %s (%s) flags:%x\n", fd, filename, modestr, flags);
 	return fd;
 }
 
