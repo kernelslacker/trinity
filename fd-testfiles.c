@@ -37,7 +37,7 @@ static int open_testfile(unsigned int i)
 	if (rand_bool())
 		fd = open_with_fopen(filename, O_RDWR);
 	else
-		fd = open(filename, O_CREAT | flags);
+		fd = open(filename, O_CREAT | flags, 0666);
 
 	free(filename);
 
