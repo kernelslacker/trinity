@@ -22,14 +22,38 @@ static unsigned int plus_minus_two(unsigned int num)
 	return num;
 }
 
+static char get_interesting_8bit_value(void)
+{
+	char num = 0;
+
+	switch (rand() % 7) {
+	case 0:	num = -128;
+		break;
+	case 1:	num = -1;
+		break;
+	case 2:	num = 0;
+		break;
+	case 3:	num = 1;
+		break;
+	case 4:	num = 1UL << (rand() % 7);
+		break;
+	case 5:	num = 127;
+		break;
+	case 6:	num = rand() % 256;		// 00-0xff
+		break;
+	}
+
+	return num;
+}
+
 unsigned int get_interesting_32bit_value(void)
 {
 	unsigned int num = 0;
 
 	switch (rand() % 10) {
-	case 0:	num = 0x00000000;
+	case 0:	num = 0;
 		break;
-	case 1:	num = rand() % 256;		// 00-0xff
+	case 1:	num = get_interesting_8bit_value();
 		break;
 	case 2:	num = 1UL << (rand() % 32);	// set a single bit.
 		break;
