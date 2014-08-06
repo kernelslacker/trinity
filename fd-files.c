@@ -267,11 +267,17 @@ int open_with_fopen(const char *filename, int flags)
 	char mode[3];
 
 	switch (flags) {
-	case O_RDONLY:  strncpy(mode, "r", 1);  break;
-	case O_WRONLY:  strncpy(mode, "w", 1); break;
-	case O_RDWR:    strncpy(mode, "w+", 2); break;
+	case O_RDONLY:  mode[0] = 'r';
+			mode[1] = 0;
+			break;
+	case O_WRONLY:  mode[0] = 'w';
+			mode[1] = 0;
+			break;
+	case O_RDWR:    mode[0] = 'w';
+			mode[1] = '+';
+			mode[2] = 0;
+			break;
 	}
-	mode[2] = 0;
 
 	file = fopen(filename, mode);
 	if (file)
