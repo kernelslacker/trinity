@@ -15,4 +15,6 @@ extern char *victim_path;
 extern const char **fileindex;
 extern unsigned int files_in_index;
 
+int open_with_fopen(const char *filename, int flags);
+
 #define NR_FILE_FDS 250U
