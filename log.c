@@ -143,37 +143,30 @@ FILE *find_logfile_handle(void)
 	return handle;
 }
 
+/*
+ * Flush any pending log writes to disk.
+ * Only to be called from child context.
+ */
 void synclogs(void)
 {
-	unsigned int i;
 	int fd;
 
 	if (logging == FALSE)
 		return;
 
-	for_each_child(i) {
-		struct childdata *child = shm->children[i];
-		int ret;
+	if (this_child->logdirty == FALSE)
+		return;
 
-		if (child->logdirty == FALSE)
-			continue;
+	fflush(this_child->logfile);
+	fd = fileno(this_child->logfile);
+	if (fd != -1)
+		(void) fsync(fd);
 
-		child->logdirty = FALSE;
+	this_child->logdirty = FALSE;
 
-		ret = fflush(child->logfile);
-		if (ret == EOF) {
-			outputerr("## logfile flushing failed! %s\n", strerror(errno));
-			continue;
-		}
-
-		fd = fileno(child->logfile);
-		if (fd != -1) {
-			ret = fsync(fd);
-			if (ret != 0)
-				outputerr("## fsyncing logfile %d failed. %s\n", i, strerror(errno));
-		}
-	}
-
+	/* If we're flushing the child log, may as well flush
+	 * any other logs while we're writing to disk.
+	 */
 	(void)fflush(mainlogfile);
 	fsync(fileno(mainlogfile));
 }
