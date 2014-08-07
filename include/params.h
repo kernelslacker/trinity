@@ -52,3 +52,6 @@ extern unsigned int kernel_taint_mask;
 extern bool kernel_taint_param_occured;
 
 extern unsigned int user_specified_children;
+
+extern int server_port;
+extern char server_addr[INET6_ADDRSTRLEN];
