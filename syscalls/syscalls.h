@@ -371,3 +371,4 @@ extern struct syscallentry syscall_sched_getattr;
 extern struct syscallentry syscall_renameat2;
 extern struct syscallentry syscall_kern_features;
 extern struct syscallentry syscall_getrandom;
+extern struct syscallentry syscall_seccomp;

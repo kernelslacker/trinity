@@ -325,4 +325,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_renameat2 },
 	{ .entry = &syscall_getrandom },
+	{ .entry = &syscall_seccomp },
 };
