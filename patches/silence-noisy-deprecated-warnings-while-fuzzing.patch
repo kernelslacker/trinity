@@ -1,23 +1,4 @@
-From 0583d7458bac3f7c9c8a78675a1efef4cb19d489 Mon Sep 17 00:00:00 2001
-From: Dave Jones <davej@redhat.com>
-Date: Mon, 13 May 2013 16:52:41 -0400
-Subject: [PATCH 11/34] silence noisy 'deprecated' warnings while fuzzing
-
----
- drivers/usb/core/sysfs.c            |  7 -------
- fs/hugetlbfs/inode.c                |  8 +-------
- fs/proc/task_mmu.c                  |  5 -----
- fs/stat.c                           | 10 ----------
- kernel/sysctl_binary.c              | 10 ----------
- mm/backing-dev.c                    |  2 --
- mm/vmscan.c                         |  5 -----
- net/ax25/af_ax25.c                  | 10 ----------
- net/core/sock.c                     |  8 --------
- net/ipv6/ndisc.c                    | 10 ----------
- net/netfilter/nf_conntrack_helper.c |  4 ----
- net/sctp/socket.c                   | 20 --------------------
- net/socket.c                        |  9 +--------
- 13 files changed, 2 insertions(+), 106 deletions(-)
+silence noisy 'deprecated' warnings while fuzzing
 
 diff --git a/drivers/usb/core/sysfs.c b/drivers/usb/core/sysfs.c
 index 1236c6011c70..bab0a1916d8f 100644
@@ -314,6 +295,20 @@ index abf56b2a14f9..1f02293cb011 100644
  
  	err = security_socket_create(family, type, protocol, kern);
  	if (err)
--- 
-1.9.0
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index 321697da2863..96b0f00f975d 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -2205,12 +2205,6 @@ static int sctp_setsockopt_events(struct sock *sk, char __user *optval,
+	if (copy_from_user(&sctp_sk(sk)->subscribe, optval, optlen))
+		return -EFAULT;
 
+-	if (sctp_sk(sk)->subscribe.sctp_data_io_event)
+-		pr_warn_ratelimited(DEPRECATED "%s (pid %d) "
+-				    "Requested SCTP_SNDRCVINFO event.\n"
+-				    "Use SCTP_RCVINFO through SCTP_RECVRCVINFO option instead.\n",
+-				    current->comm, task_pid_nr(current));
+-
+	/* At the time when a user app subscribes to SCTP_SENDER_DRY_EVENT,
+	 * if there is no data to be sent or retransmit, the stack will
+	 * immediately send up this notification.
