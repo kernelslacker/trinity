@@ -5,6 +5,7 @@
 #include <linux/if.h>
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
+#include <arpa/inet.h>
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
@@ -14,6 +15,7 @@
 void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in6 *ipv6;
+	struct in6_addr serv_addr;
 
 	ipv6 = zmalloc(sizeof(struct sockaddr_in6));
 
@@ -23,6 +25,18 @@ void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ipv6->sin6_addr.s6_addr32[2] = 0;
 	ipv6->sin6_addr.s6_addr32[3] = htonl(1);
 	ipv6->sin6_port = htons(rand() % 65535);
+
+	/* Client side if we supplied server_addr */
+	if (inet_pton(PF_INET6, server_addr, &serv_addr) == 1)
+		ipv6->sin6_addr = serv_addr;
+	/* Server side if we supplied port without addr, so listen on in6addr_any */
+	else if (server_port != 0)
+		ipv6->sin6_addr = in6addr_any;
+
+	/* Fuzz from port to (port + 100) if supplied */
+	if (server_port != 0)
+		ipv6->sin6_port = htons(server_port + rand() % 100);
+
 	*addr = (struct sockaddr *) ipv6;
 	*addrlen = sizeof(struct sockaddr_in6);
 }

@@ -57,6 +57,9 @@ char *victim_path = NULL;
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
 bool kernel_taint_param_occured = FALSE;
 
+int server_port = 0;
+char server_addr[INET6_ADDRSTRLEN] = "\0";
+
 static void usage(void)
 {
 	outputerr("%s\n", progname);
@@ -77,6 +80,8 @@ static void usage(void)
 	outputerr(" --no_proto,-E: specify network protocols to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
 	outputerr(" --random,-r#: pick N syscalls at random and just fuzz those\n");
+	outputerr(" --server_addr: supply an IPv4 or IPv6 address to connect, no need for server side.\n");
+	outputerr(" --server_port: supply an server port to listen or connect, will fuzz between port to (port + 100)\n");
 	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
 	outputerr(" --verbose,-v: increase output verbosity.\n");
 	outputerr(" --victims,-V: path to victim files.\n");
@@ -110,6 +115,8 @@ static const struct option longopts[] = {
 	{ "proto", required_argument, NULL, 'P' },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
+	{ "server_addr", required_argument, NULL, 0 },
+	{ "server_port", required_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
 	{ "victims", required_argument, NULL, 'V' },
@@ -118,17 +125,15 @@ static const struct option longopts[] = {
 void parse_args(int argc, char *argv[])
 {
 	int opt;
+	int opt_index = 0;
 
-	while ((opt = getopt_long(argc, argv, paramstr, longopts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, paramstr, longopts, &opt_index)) != -1) {
 		switch (opt) {
 		default:
 			if (opt == '?')
 				exit(EXIT_FAILURE);
 			else
 				outputstd("opt:%c\n", opt);
-			return;
-
-		case '\0':
 			return;
 
 		case 'b':
@@ -293,6 +298,18 @@ void parse_args(int argc, char *argv[])
 
 		case 'X':
 			dropprivs = TRUE;
+			break;
+
+		case 0:
+			/*
+			 * FIXME: It's really hard to find two reasonable short
+			 * names since S s P p all have been used. Use long
+			 * options before we fix this issue.
+			*/
+			if (strcmp("server_addr", longopts[opt_index].name) == 0)
+				strcpy(server_addr, optarg);
+			if (strcmp("server_port", longopts[opt_index].name) == 0)
+				server_port = atoi(optarg);
 			break;
 		}
 	}
