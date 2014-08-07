@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.15rc1 */
+/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.16+ */
 
 #include "sanitise.h"
 #include "syscall.h"

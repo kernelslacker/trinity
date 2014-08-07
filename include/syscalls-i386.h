@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/x86/syscalls/syscall_32.tbl as of 3.8rc1 */
+/* Syscalls from arch/x86/syscalls/syscall_32.tbl as of 3.16+ */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -362,4 +362,5 @@ struct syscalltable syscalls_i386[] = {
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_renameat2 },
 	{ .entry = &syscall_seccomp },
+	{ .entry = &syscall_getrandom },
 };
