@@ -27,7 +27,6 @@ static const char *cachefilename="trinity.socketcache";
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	int fd;
-	__unused__ int ret;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
 	struct sockopt so = { 0, 0, 0, 0 };
@@ -51,21 +50,15 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 	/* Sometimes, listen on created sockets. */
 	if (rand_bool()) {
+		int ret;
+
 		/* fake a sockaddr. */
 		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, domain);
 
 		ret = bind(fd, sa, salen);
-/*		if (ret == -1)
-			debugf("bind: %s\n", strerror(errno));
-		else
-			debugf("bind: success!\n");
-*/
-		ret = listen(fd, rand_range(1, 128));
-/*		if (ret == -1)
-			debugf("listen: %s\n", strerror(errno));
-		else
-			debugf("listen: success!\n");
-*/
+		if (ret != -1) {
+			(void) listen(fd, rand_range(1, 128));
+		}
 	}
 
 	/* If we didn't have a function for this sockaddr type, we would
