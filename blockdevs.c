@@ -76,10 +76,11 @@ void init_bdev_list(void)
 void dump_bdev_list(void)
 {
 	struct list_head *node;
-	struct bdevlist *nl;
 
 	printf("Found %u block devices.\n", nr_blockdevs);
 	list_for_each(node, &bdevs->list) {
+		struct bdevlist *nl;
+
 		nl = (struct bdevlist *) node;
 		printf("%s\n", nl->name);
 	}
