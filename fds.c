@@ -10,6 +10,7 @@
 #include "files.h"
 #include "log.h"
 #include "list.h"
+#include "memfd.h"
 #include "net.h"
 #include "params.h"
 #include "perf.h"
@@ -51,6 +52,7 @@ static void setup_fd_providers(void)
 	add_to_prov_list(&file_fd_provider);
 	add_to_prov_list(&timerfd_fd_provider);
 	add_to_prov_list(&testfile_fd_provider);
+	add_to_prov_list(&memfd_fd_provider);
 }
 
 unsigned int setup_fds(void)

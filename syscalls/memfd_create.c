@@ -3,10 +3,8 @@
  */
 
 #include "sanitise.h"
+#include "memfd.h"
 #include "compat.h"
-
-#define MFD_CLOEXEC             0x0001U
-#define MFD_ALLOW_SEALING       0x0002U
 
 struct syscallentry syscall_memfd_create = {
 	.name = "memfd_create",

@@ -6,6 +6,7 @@
 #include "exit.h"
 #include "files.h"
 #include "locks.h"
+#include "memfd.h"
 #include "net.h"
 #include "pipes.h"
 #include "perf.h"
@@ -52,6 +53,7 @@ struct shm_s {
 	int eventfd_fds[MAX_EVENTFD_FDS];
 	int timerfd_fds[MAX_TIMERFD_FDS];
 	int testfile_fds[MAX_TESTFILE_FDS];
+	int memfd_fds[MAX_MEMFD_FDS];
 	struct socketinfo sockets[NR_SOCKET_FDS];
 	int current_fd;
 	unsigned int fd_lifetime;
