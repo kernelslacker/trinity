@@ -372,3 +372,5 @@ extern struct syscallentry syscall_renameat2;
 extern struct syscallentry syscall_kern_features;
 extern struct syscallentry syscall_getrandom;
 extern struct syscallentry syscall_seccomp;
+extern struct syscallentry syscall_memfd_create;
+
