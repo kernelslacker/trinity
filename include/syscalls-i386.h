@@ -363,4 +363,5 @@ struct syscalltable syscalls_i386[] = {
 	{ .entry = &syscall_renameat2 },
 	{ .entry = &syscall_seccomp },
 	{ .entry = &syscall_getrandom },
+	{ .entry = &syscall_memfd_create },
 };
