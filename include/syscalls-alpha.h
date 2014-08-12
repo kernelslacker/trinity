@@ -3,7 +3,7 @@
 /*
  * The Alpha Linux syscall table in all its gory mess.
  *
- * Derived from linux/arch/alpha/include/asm/unistd.h
+ * Derived from arch/alpha/include/uapi/asm/unistd.h
  */
 
 #include "sanitise.h"
