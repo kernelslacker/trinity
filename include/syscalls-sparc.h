@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/sparc/kernel/systbls_{32,64}.S as of 2.6.31rc2 */
+/* Syscalls from arch/sparc/kernel/systbls_{32,64}.S as of 3.16+ */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -352,4 +352,5 @@ struct syscalltable syscalls_sparc[] = {
 	{ .entry = &syscall_finit_module },
 	{ .entry = &syscall_sched_setattr },
 	{ .entry = &syscall_sched_getattr },
+	{ .entry = &syscall_renameat2 },
 };
