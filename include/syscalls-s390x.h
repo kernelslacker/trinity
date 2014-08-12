@@ -1,5 +1,7 @@
 #pragma once
 
+/* from arch/s390/kernel/syscalls.S */
+
 #include "sanitise.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"
