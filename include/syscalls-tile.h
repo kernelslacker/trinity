@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * Derived from linux/arch/tile/include/asm/unistd.h
+ * Derived from arch/tile/include/asm/unistd.h
  */
 
 #include "sanitise.h"
@@ -285,4 +285,7 @@ struct syscalltable syscalls_tile[] = {
 /* 273 */      { .entry = &syscall_finit_module },
 /* 274 */      { .entry = &syscall_sched_setattr },
 /* 275 */      { .entry = &syscall_sched_getattr },
+/* 276 */      { .entry = &syscall_renameat2 },
+/* 277 */      { .entry = &syscall_seccomp },
+/* 278 */      { .entry = &syscall_getrandom },
 };
