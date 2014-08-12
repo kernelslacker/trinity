@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * derived from linux/arch/arm/kernel/calls.S
+ * derived from arch/arm/kernel/calls.S
  */
 
 #include "sanitise.h"
@@ -389,4 +389,12 @@ struct syscalltable syscalls_arm[] = {
 		{ .entry = &syscall_process_vm_readv },
 		{ .entry = &syscall_process_vm_writev },
 		{ .entry = &syscall_ni_syscall },	/* reserved for sys_kcmp */
+		{ .entry = &syscall_kcmp },
+		{ .entry = &syscall_finit_module },
+/* 380 */	{ .entry = &syscall_sched_setattr },
+		{ .entry = &syscall_sched_getattr },
+		{ .entry = &syscall_renameat2 },
+		{ .entry = &syscall_seccomp },
+		{ .entry = &syscall_getrandom },
+/* 385 */	{ .entry = &syscall_memfd_create },
 };
