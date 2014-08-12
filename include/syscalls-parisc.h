@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/parisc/kernel/syscall_table.S as of 3.15-rc4 */
+/* Syscalls from arch/parisc/kernel/syscall_table.S as of 3.16+ */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -344,4 +344,5 @@ struct syscalltable syscalls_parisc[] = {
 	{ .entry = &syscall_sched_setattr },
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_utimes },
+	{ .entry = &syscall_renameat2 },
 };
