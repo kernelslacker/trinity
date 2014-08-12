@@ -1,7 +1,8 @@
 #pragma once
 
 /*
- * Derived from linux/arch/arm64/include/asm/unistd.h
+ * Derived from arch/arm64/include/asm/unistd.h
+ * (inherits from include/uapi/asm-generic/unistd.h)
  */
 
 #include "sanitise.h"
@@ -285,4 +286,7 @@ struct syscalltable syscalls_aarch64[] = {
 /* 273 */	{ .entry = &syscall_finit_module },
 /* 274 */	{ .entry = &syscall_sched_setattr },
 /* 275 */	{ .entry = &syscall_sched_getattr },
+/* 276 */	{ .entry = &syscall_renameat2 },
+/* 277 */	{ .entry = &syscall_seccomp },
+/* 278 */	{ .entry = &syscall_getrandom },
 };
