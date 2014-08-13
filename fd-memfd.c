@@ -63,6 +63,7 @@ static int get_rand_memfd_fd(void)
 
 struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
+	.enabled = TRUE,
 	.open = &open_memfd_fds,
 	.get = &get_rand_memfd_fd,
 };

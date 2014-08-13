@@ -47,6 +47,7 @@ static int get_rand_eventfd_fd(void)
 
 struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
+	.enabled = TRUE,
 	.open = &open_eventfd_fds,
 	.get = &get_rand_eventfd_fd,
 };

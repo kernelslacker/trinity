@@ -50,6 +50,7 @@ static int get_rand_epoll_fd(void)
 
 struct fd_provider epoll_fd_provider = {
 	.name = "epoll",
+	.enabled = TRUE,
 	.open = &open_epoll_fds,
 	.get = &get_rand_epoll_fd,
 };
