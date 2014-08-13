@@ -313,8 +313,13 @@ void parse_args(int argc, char *argv[])
 			 * names since S s P p all have been used. Use long
 			 * options before we fix this issue.
 			*/
-			if (strcmp("server_addr", longopts[opt_index].name) == 0)
-				strcpy(server_addr, optarg);
+			if (strcmp("server_addr", longopts[opt_index].name) == 0) {
+				unsigned int optarglen = strlen(optarg);
+				unsigned int len = min((unsigned int)sizeof(server_addr), optarglen);
+
+				strncpy(server_addr, optarg, len);
+			}
+
 			if (strcmp("server_port", longopts[opt_index].name) == 0)
 				server_port = atoi(optarg);
 
