@@ -148,7 +148,7 @@ int main(int argc, char* argv[])
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
 		set_seed(0);
 
-		if (setup_fds() == FALSE) {
+		if (open_fds() == FALSE) {
 			if (shm->exit_reason != STILL_RUNNING)
 				panic(EXIT_FD_INIT_FAILURE);	// FIXME: Later, push this down to multiple EXIT's.
 

@@ -183,7 +183,7 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 }
 
 
-static void open_fds(const char *dirpath)
+static void open_fds_from_path(const char *dirpath)
 {
 	int before = files_in_index;
 	int flags = FTW_DEPTH | FTW_ACTIONRETVAL | FTW_MOUNT;
@@ -243,11 +243,11 @@ static void generate_filelist(void)
 	output(1, "Generating file descriptors\n");
 
 	if (victim_path != NULL) {
-		open_fds(victim_path);
+		open_fds_from_path(victim_path);
 	} else {
-		open_fds("/dev");
-		open_fds("/proc");
-		open_fds("/sys");
+		open_fds_from_path("/dev");
+		open_fds_from_path("/proc");
+		open_fds_from_path("/sys");
 	}
 
 	if (shm->exit_reason != STILL_RUNNING)

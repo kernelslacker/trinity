@@ -57,7 +57,7 @@ void setup_fd_providers(void)
 	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }
 
-unsigned int setup_fds(void)
+unsigned int open_fds(void)
 {
 	struct list_head *node;
 
