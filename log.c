@@ -255,7 +255,7 @@ void output(unsigned char level, const char *fmt, ...)
 	}
 
 	/* stdout output if needed */
-	if (quiet_level > level) {
+	if (quiet_level >= level) {
 		printf("%s %s", prefix, outputbuf);
 		(void)fflush(stdout);
 	}
