@@ -4,7 +4,7 @@
 
 void setup_fd_providers(void);
 
-unsigned int setup_fds(void);
+unsigned int open_fds(void);
 
 struct fd_provider {
         struct list_head list;
