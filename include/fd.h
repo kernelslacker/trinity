@@ -2,6 +2,8 @@
 
 #include "list.h"
 
+void setup_fd_providers(void);
+
 unsigned int setup_fds(void);
 
 struct fd_provider {

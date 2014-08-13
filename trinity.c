@@ -78,6 +78,11 @@ int main(int argc, char* argv[])
 
 	create_shm();
 
+	/* We do this before the parse_args because --fds will need to
+	 * operate on it when implemented.
+	 */
+	setup_fd_providers();
+
 	parse_args(argc, argv);
 
 	init_uids();

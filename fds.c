@@ -39,7 +39,7 @@ static void add_to_prov_list(struct fd_provider *prov)
 	list_add_tail(&newnode->list, &fd_providers->list);
 }
 
-static void setup_fd_providers(void)
+void setup_fd_providers(void)
 {
 	fd_providers = zmalloc(sizeof(struct fd_provider));
 	INIT_LIST_HEAD(&fd_providers->list);
@@ -53,15 +53,13 @@ static void setup_fd_providers(void)
 	add_to_prov_list(&timerfd_fd_provider);
 	add_to_prov_list(&testfile_fd_provider);
 	add_to_prov_list(&memfd_fd_provider);
+
+	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }
 
 unsigned int setup_fds(void)
 {
 	struct list_head *node;
-
-	setup_fd_providers();
-
-	output(0, "Registered %d fd providers.\n", num_fd_providers);
 
 	list_for_each(node, &fd_providers->list) {
 		struct fd_provider *provider;
