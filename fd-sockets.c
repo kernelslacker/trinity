@@ -373,7 +373,7 @@ static int get_rand_socket_fd(void)
 	return fd;
 }
 
-struct fd_provider socket_fd_provider = {
+const struct fd_provider socket_fd_provider = {
 	.name = "sockets",
 	.enabled = TRUE,
 	.open = &open_sockets,

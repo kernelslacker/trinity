@@ -44,7 +44,7 @@ static int get_rand_pipe_fd(void)
 	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
 }
 
-struct fd_provider pipes_fd_provider = {
+const struct fd_provider pipes_fd_provider = {
 	.name = "pipes",
 	.enabled = TRUE,
 	.open = &open_pipes,

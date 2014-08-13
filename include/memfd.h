@@ -7,6 +7,6 @@
 
 #include "fd.h"
 
-struct fd_provider memfd_fd_provider;
+const struct fd_provider memfd_fd_provider;
 
 #define MAX_MEMFD_FDS 4

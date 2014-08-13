@@ -49,7 +49,7 @@ static int get_rand_perf_fd(void)
 	return shm->perf_fds[rand() % MAX_PERF_FDS];
 }
 
-struct fd_provider perf_fd_provider = {
+const struct fd_provider perf_fd_provider = {
 	.name = "perf",
 	.enabled = TRUE,
 	.open = &open_perf_fds,
