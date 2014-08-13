@@ -1,6 +1,7 @@
 #pragma once
 
 #include "list.h"
+#include "types.h"
 
 void setup_fd_providers(void);
 
@@ -13,4 +14,5 @@ struct fd_provider {
 	const char *name;
         int (*open)(void);
         int (*get)(void);
+	bool enabled;
 };
