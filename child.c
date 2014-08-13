@@ -157,7 +157,6 @@ static void oom_score_adj(int adj)
 
 /*
  * Wipe out any state left from a previous child running in this slot.
- * Right now the logfile entry is the only persistent thing across instances.
  */
 static void reinit_child(struct childdata *child)
 {
