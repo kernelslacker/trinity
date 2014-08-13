@@ -23,7 +23,8 @@
 #include "testfile.h"
 #include "utils.h"
 
-static int num_fd_providers;
+static unsigned int num_fd_providers;
+static unsigned int num_fd_providers_enabled = 0;
 
 static struct fd_provider *fd_providers = NULL;
 
@@ -32,6 +33,8 @@ static void add_to_prov_list(struct fd_provider *prov)
 	struct fd_provider *newnode;
 
 	newnode = zmalloc(sizeof(struct fd_provider));
+	newnode->name = strdup(prov->name);
+	newnode->enabled = prov->enabled;
 	newnode->open = prov->open;
 	newnode->get = prov->get;
 	num_fd_providers++;
@@ -67,10 +70,17 @@ unsigned int open_fds(void)
 
 		provider = (struct fd_provider *) node;
 
+		if (provider->enabled == FALSE)
+			continue;
+
 		ret = provider->open();
 		if (ret == FALSE)
 			return FALSE;
+
+		num_fd_providers_enabled++;
 	}
+
+	output(0, "Enabled %d fd providers.\n", num_fd_providers_enabled);
 
 	return TRUE;
 }
@@ -80,15 +90,25 @@ static int get_new_random_fd(void)
 	struct list_head *node;
 	int fd = -1;
 
+	/* short-cut if we've disabled everything. */
+	if (num_fd_providers_enabled == 0)
+		return -1;
+
 	while (fd < 0) {
-		unsigned int i, j = 0;
+		unsigned int i, j;
+retry:
 		i = rand() % num_fd_providers;
+		j = 0;
 
 		list_for_each(node, &fd_providers->list) {
 			struct fd_provider *provider;
 
 			if (i == j) {
 				provider = (struct fd_provider *) node;
+
+				if (provider->enabled == FALSE)	// FIXME: Better would be to just remove disabled providers from the list.
+					goto retry;
+
 				fd = provider->get();
 				break;
 			}
@@ -119,4 +139,45 @@ regen:
 	}
 
 	return shm->current_fd;
+}
+
+static void disable_fds_param(char *str)
+{
+	struct list_head *node;
+	struct fd_provider *provider;
+
+	list_for_each(node, &fd_providers->list) {
+
+		provider = (struct fd_provider *) node;
+		if (strcmp(provider->name, str) == 0) {
+			provider->enabled = FALSE;
+			outputstd("Disabled fd provider %s\n", str);
+			return;
+		}
+	}
+
+	outputstd("Unknown --disable-fds parameter \"%s\"\n", str);
+	disable_fd_usage();
+	exit(EXIT_FAILURE);
+}
+
+void process_disable_fds_param(char *optarg)
+{
+	unsigned int len, i;
+	char *str = optarg;
+
+	len = strlen(optarg);
+
+	/* Check if there are any commas. If so, split them into multiple params,
+	 * validating them as we go.
+	 */
+	for (i = 0; i < len; i++) {
+		if (optarg[i] == ',') {
+			optarg[i] = 0;
+			disable_fds_param(str);
+			str = optarg + i + 1;
+		}
+	}
+	if (str < optarg + len)
+		disable_fds_param(str);
 }
