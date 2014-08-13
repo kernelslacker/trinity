@@ -264,7 +264,7 @@ int open_with_fopen(const char *filename, int flags)
 {
 	FILE *file;
 	int fd = -1;
-	char mode[3];
+	char mode[3]="   ";
 
 	switch (flags) {
 	case O_RDONLY:  mode[0] = 'r';
