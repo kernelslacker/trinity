@@ -3,7 +3,7 @@
 #include "fd.h"
 #include "syscall.h"
 
-struct fd_provider perf_fd_provider;
+const struct fd_provider perf_fd_provider;
 
 void sanitise_perf_event_open(struct syscallrecord *rec);
 

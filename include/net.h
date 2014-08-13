@@ -46,7 +46,7 @@ struct socketinfo {
 
 void close_sockets(void);
 
-struct fd_provider socket_fd_provider;
+const struct fd_provider socket_fd_provider;
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 

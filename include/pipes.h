@@ -1,6 +1,6 @@
 #pragma once
 
 #include "fd.h"
-struct fd_provider pipes_fd_provider;
+const struct fd_provider pipes_fd_provider;
 
 #define MAX_PIPE_FDS 4

@@ -48,7 +48,7 @@ static int get_rand_epoll_fd(void)
 	return shm->epoll_fds[rand() % MAX_EPOLL_FDS];
 }
 
-struct fd_provider epoll_fd_provider = {
+const struct fd_provider epoll_fd_provider = {
 	.name = "epoll",
 	.enabled = TRUE,
 	.open = &open_epoll_fds,

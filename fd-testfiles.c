@@ -72,7 +72,7 @@ static int get_rand_testfile_fd(void)
 	return shm->testfile_fds[rand() % MAX_TESTFILE_FDS];
 }
 
-struct fd_provider testfile_fd_provider = {
+const struct fd_provider testfile_fd_provider = {
 	.name = "testfile",
 	.enabled = TRUE,
 	.open = &open_testfile_fds,

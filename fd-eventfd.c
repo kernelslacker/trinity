@@ -45,7 +45,7 @@ static int get_rand_eventfd_fd(void)
 	return shm->eventfd_fds[rand() % MAX_EVENTFD_FDS];
 }
 
-struct fd_provider eventfd_fd_provider = {
+const struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
 	.enabled = TRUE,
 	.open = &open_eventfd_fds,

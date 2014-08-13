@@ -47,7 +47,7 @@ static int get_rand_timerfd_fd(void)
 	return shm->timerfd_fds[rand() % MAX_TIMERFD_FDS];
 }
 
-struct fd_provider timerfd_fd_provider = {
+const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
 	.enabled = TRUE,
 	.open = &open_timerfd_fds,

@@ -28,7 +28,7 @@ static unsigned int num_fd_providers_enabled = 0;
 
 static struct fd_provider *fd_providers = NULL;
 
-static void add_to_prov_list(struct fd_provider *prov)
+static void add_to_prov_list(const struct fd_provider *prov)
 {
 	struct fd_provider *newnode;
 
