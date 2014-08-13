@@ -161,7 +161,12 @@ static void oom_score_adj(int adj)
 static void reinit_child(struct childdata *child)
 {
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
+	child->syscall.prebuffer = zmalloc(PREBUFFER_LEN);
+	child->syscall.postbuffer = zmalloc(POSTBUFFER_LEN);
+
 	memset(&child->previous, 0, sizeof(struct syscallrecord));
+	child->previous.prebuffer = zmalloc(PREBUFFER_LEN);
+	child->previous.postbuffer = zmalloc(POSTBUFFER_LEN);
 
 	child->num_mappings = 0;
 	child->seed = 0;
