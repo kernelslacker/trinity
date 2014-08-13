@@ -374,6 +374,7 @@ static int get_rand_socket_fd(void)
 }
 
 struct fd_provider socket_fd_provider = {
+	.name = "sockets",
 	.open = &open_sockets,
 	.get = &get_rand_socket_fd,
 };

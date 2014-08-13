@@ -45,6 +45,7 @@ static int get_rand_pipe_fd(void)
 }
 
 struct fd_provider pipes_fd_provider = {
+	.name = "pipes",
 	.open = &open_pipes,
 	.get = &get_rand_pipe_fd,
 };
