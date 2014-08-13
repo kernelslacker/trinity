@@ -50,6 +50,7 @@ static int get_rand_perf_fd(void)
 }
 
 struct fd_provider perf_fd_provider = {
+	.name = "perf",
 	.open = &open_perf_fds,
 	.get = &get_rand_perf_fd,
 };

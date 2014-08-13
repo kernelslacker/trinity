@@ -399,6 +399,7 @@ static int get_rand_file_fd(void)
 }
 
 struct fd_provider file_fd_provider = {
+	.name = "pseudo",	// FIXME: Use separate providers for dev/sysfs/procfs
 	.open = &open_files,
 	.get = &get_rand_file_fd,
 };
