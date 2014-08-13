@@ -63,7 +63,6 @@
     of getting one of those. Right now, because there are 5-6 digits worth of /proc & /sys,
     they dominate over the /dev entries.
   - more fd 'types' (fanotify_init)
-  - Add a parameter to specify only certain fd types.  --fds=sockets,files
 
 * Change regeneration code.
   - Instead of every n syscalls, make it happen after 15 minutes (but with a minimum of n syscalls)
