@@ -353,4 +353,6 @@ struct syscalltable syscalls_sparc[] = {
 	{ .entry = &syscall_sched_setattr },
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_renameat2 },
+	{ .entry = &syscall_seccomp },
+	{ .entry = &syscall_getrandom },
 };
