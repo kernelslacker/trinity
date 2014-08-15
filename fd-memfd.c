@@ -26,6 +26,9 @@
 #ifdef __i386__
 #define SYS_memfd_create 356
 #endif
+#ifdef __sparc__
+#define SYS_memfd_create 348
+#endif
 #endif
 
 static int memfd_create(const char *uname, unsigned int flag)
