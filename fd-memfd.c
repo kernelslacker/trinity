@@ -7,9 +7,9 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 
-#include "memfd.h"
 #include "fd.h"
 #include "log.h"
+#include "memfd.h"
 #include "net.h"
 #include "params.h"
 #include "pids.h"
@@ -17,19 +17,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
-
-// FIXME: Keep all this here until glibc supports it.
-#ifndef SYS_memfd_create
-#ifdef __x86_64__
-#define SYS_memfd_create 319
-#endif
-#ifdef __i386__
-#define SYS_memfd_create 356
-#endif
-#ifdef __sparc__
-#define SYS_memfd_create 348
-#endif
-#endif
 
 static int memfd_create(const char *uname, unsigned int flag)
 {

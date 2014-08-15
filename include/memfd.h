@@ -10,3 +10,16 @@
 const struct fd_provider memfd_fd_provider;
 
 #define MAX_MEMFD_FDS 4
+
+// FIXME: Keep all this here until glibc supports it.
+#ifndef SYS_memfd_create
+#ifdef __x86_64__
+#define SYS_memfd_create 319
+#endif
+#ifdef __i386__
+#define SYS_memfd_create 356
+#endif
+#ifdef __sparc__
+#define SYS_memfd_create 348
+#endif
+#endif
