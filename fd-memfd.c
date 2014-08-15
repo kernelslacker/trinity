@@ -33,7 +33,11 @@
 
 static int memfd_create(const char *uname, unsigned int flag)
 {
+#ifdef SYS_memfd_create
 	return syscall(SYS_memfd_create, uname, flag);
+#else
+	return -ENOSYS;
+#endif
 }
 
 static int open_memfd_fds(void)
