@@ -161,23 +161,23 @@ static void disable_fds_param(char *str)
 	exit(EXIT_FAILURE);
 }
 
-void process_disable_fds_param(char *optarg)
+void process_disable_fds_param(char *param)
 {
 	unsigned int len, i;
-	char *str = optarg;
+	char *str = param;
 
-	len = strlen(optarg);
+	len = strlen(param);
 
 	/* Check if there are any commas. If so, split them into multiple params,
 	 * validating them as we go.
 	 */
 	for (i = 0; i < len; i++) {
-		if (optarg[i] == ',') {
-			optarg[i] = 0;
+		if (param[i] == ',') {
+			param[i] = 0;
 			disable_fds_param(str);
-			str = optarg + i + 1;
+			str = param + i + 1;
 		}
 	}
-	if (str < optarg + len)
+	if (str < param + len)
 		disable_fds_param(str);
 }
