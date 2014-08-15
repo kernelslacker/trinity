@@ -213,14 +213,14 @@ static const char ** list_to_index(struct namelist *namelist)
 {
 	struct list_head *node, *tmp;
 	struct namelist *nl;
-	const char **index;
+	const char **findex;
 	unsigned int i = 0;
 
-	index = zmalloc(sizeof(char *) * files_in_index);
+	findex = zmalloc(sizeof(char *) * files_in_index);
 
 	list_for_each_safe(node, tmp, &namelist->list) {
 		nl = (struct namelist *) node;
-		index[i++] = nl->name;
+		findex[i++] = nl->name;
 
 		/* Destroy the list head, but keep the ->name alloc because
 		 * now the index points to it.
@@ -232,7 +232,7 @@ static const char ** list_to_index(struct namelist *namelist)
 	free(names);
 	names = NULL;
 
-	return index;
+	return findex;
 }
 
 static void generate_filelist(void)
