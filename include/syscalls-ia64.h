@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/ia64/kernel/entry.S as of 3.16+ */
+/* Syscalls from arch/ia64/kernel/entry.S as of 3.17rc1 */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -323,4 +323,5 @@ struct syscalltable syscalls_ia64[] = {
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_renameat2 },
 	{ .entry = &syscall_getrandom },
+	{ .entry = &syscall_memfd_create },
 };

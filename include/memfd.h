@@ -22,4 +22,7 @@ const struct fd_provider memfd_fd_provider;
 #ifdef __sparc__
 #define SYS_memfd_create 348
 #endif
+#ifdef __ia64__
+#define SYS_memfd_create 1340
+#endif
 #endif
