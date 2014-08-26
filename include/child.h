@@ -5,19 +5,6 @@
 #include <types.h>
 #include "syscall.h"
 
-extern unsigned int max_children;
-
-void child_process(void);
-
-void set_dontkillme(pid_t pid, bool state);
-
-void init_child(int childno);
-
-void reap_child(pid_t childpid);
-
-bool child_random_syscalls(void);
-int child_read_all_files(void);
-
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
@@ -43,3 +30,15 @@ struct childdata {
 };
 
 extern struct childdata *this_child;
+extern unsigned int max_children;
+
+void init_child(struct childdata *child, int childno);
+
+void child_process(void);
+
+void set_dontkillme(pid_t pid, bool state);
+
+void reap_child(pid_t childpid);
+
+bool child_random_syscalls(void);
+int child_read_all_files(void);

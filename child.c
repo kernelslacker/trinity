@@ -176,9 +176,8 @@ static void reinit_child(struct childdata *child)
 /*
  * Called from the fork_children loop in the main process.
  */
-void init_child(int childno)
+void init_child(struct childdata *child, int childno)
 {
-	struct childdata *child = shm->children[childno];
 	cpu_set_t set;
 	pid_t pid = getpid();
 	char childname[17];
