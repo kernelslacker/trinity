@@ -3,7 +3,6 @@
 #include <unistd.h>
 
 #include "trinity.h"	// __unused__
-#include "params.h"	// debug
 #include "pids.h"
 #include "signals.h"
 #include "shm.h"
@@ -71,7 +70,7 @@ void mask_signals_child(void)
 		(void)signal(i, SIG_IGN);
 
 	/* If we are in debug mode, we want segfaults and core dumps */
-	if (debug == TRUE) {
+	if (shm->debug == TRUE) {
 		(void)signal(SIGABRT, SIG_DFL);
 		(void)signal(SIGSEGV, SIG_DFL);
 	}

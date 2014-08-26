@@ -18,8 +18,7 @@
 #include "taint.h"
 #include "trinity.h"	// progname
 
-bool debug = FALSE;
-
+bool set_debug = FALSE;
 bool do_specific_syscall = FALSE;
 bool do_exclude_syscall = FALSE;
 
@@ -187,7 +186,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'D':
-			debug = TRUE;
+			set_debug = TRUE;
 			break;
 
 		case 'g':

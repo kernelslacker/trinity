@@ -75,5 +75,12 @@ struct shm_s {
 	bool spawn_no_more;
 	bool ready;
 	bool postmortem_in_progress;
+
+	/* global debug flag.
+	 * This is in the shm so we can do things like gdb to the main pid,
+	 * and have the children automatically take notice.
+	 * This can be useful if for some reason we don't want to gdb to the child.
+	 */
+	bool debug;
 };
 extern struct shm_s *shm;
