@@ -18,7 +18,6 @@
 #include "list.h"
 #include "log.h"
 #include "maps.h"
-#include "params.h"	// for 'debug'
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -65,7 +64,7 @@ static void disable_coredumps(void)
 {
 	struct rlimit limit = { .rlim_cur = 0, .rlim_max = 0 };
 
-	if (debug == TRUE) {
+	if (shm->debug == TRUE) {
 		(void)signal(SIGABRT, SIG_DFL);
 		(void)signal(SIGSEGV, SIG_DFL);
 		return;
@@ -88,7 +87,7 @@ static void enable_coredumps(void)
 		.rlim_max = RLIM_INFINITY
 	};
 
-	if (debug == TRUE)
+	if (shm->debug == TRUE)
 		return;
 
 	prctl(PR_SET_DUMPABLE, TRUE);

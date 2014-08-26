@@ -108,7 +108,7 @@ void debugf(const char *fmt, ...)
 	char debugbuf[BUFSIZE];
 	va_list args;
 
-	if (debug == FALSE)
+	if (shm->debug == FALSE)
 		return;
 
 	va_start(args, fmt);

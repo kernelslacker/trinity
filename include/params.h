@@ -20,7 +20,7 @@
 /* command line args. */
 void parse_args(int argc, char *argv[]);
 
-extern bool debug;
+extern bool set_debug;
 
 extern bool do_32_arch;
 extern bool do_64_arch;

@@ -232,7 +232,7 @@ static void stuck_syscall_info(struct childdata *child)
 	char fdstr[20];
 	bool do32;
 
-	if (debug == FALSE)
+	if (shm->debug == FALSE)
 		return;
 
 	memset(fdstr, 0, sizeof(fdstr));
