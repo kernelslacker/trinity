@@ -60,8 +60,13 @@ static void fork_children(void)
 
 		if (pid == 0) {
 			/* Child process. */
-			init_child(childno);
+
+			struct childdata *child = shm->children[childno];
+
+			init_child(child, childno);
+
 			child_process();
+
 			debugf("child %d %d exiting.\n", childno, getpid());
 			close_logfile(&this_child->logfile);
 			_exit(EXIT_SUCCESS);
