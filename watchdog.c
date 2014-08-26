@@ -190,6 +190,8 @@ static int check_main_alive(void)
 			if (ret == TRUE) {
 				sleep(1);
 				kill_all_kids();
+			} else {
+				shm->mainpid = 0;
 			}
 		}
 		return FALSE;
