@@ -86,7 +86,8 @@ struct map * common_set_mmap_ptr_len(void)
 	}
 
 	rec->a1 = (unsigned long) map->ptr;
-	rec->a2 = map->size;           //TODO: Munge this.
+	rec->a2 = rand() % map->size;
+	rec->a2 &= PAGE_MASK;
 
 	return map;
 }
