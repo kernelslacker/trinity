@@ -31,7 +31,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 {
 	struct map *newnode;
 	int fd;
-	char buf[10];
+	char buf[11];
 
 	fd = open("/dev/zero", O_RDWR);
 	if (fd == -1) {
