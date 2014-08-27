@@ -50,11 +50,19 @@ done:
 
 void sizeunit(unsigned long size, char *buf)
 {
-	if (size < 1024 * 1024) {
+	/* non kilobyte aligned size? */
+	if (size & 1023) {
 		sprintf(buf, "%lu bytes", size);
 		return;
 	}
 
+	/* < 1MB ? */
+	if (size < (1024 * 1024)) {
+		sprintf(buf, "%luKB", size / 1024);
+		return;
+	}
+
+	/* < 1GB ? */
 	if (size < (1024 * 1024 * 1024)) {
 		sprintf(buf, "%ldMB", (size / 1024) / 1024);
 		return;
