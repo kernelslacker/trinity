@@ -355,4 +355,7 @@ struct syscalltable syscalls_s390x[] = {
 	{ .entry = &syscall_sched_setattr },
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_renameat2 },
+	{ .entry = &syscall_seccomp },
+	{ .entry = &syscall_getrandom },
+	{ .entry = &syscall_memfd_create },
 };
