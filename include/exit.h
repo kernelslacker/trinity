@@ -19,8 +19,9 @@ enum exit_reasons {
 	EXIT_FD_INIT_FAILURE = 13,
 	EXIT_FORK_FAILURE = 14,
 	EXIT_LOCKING_CATASTROPHE = 15,
+	EXIT_LOGFILE_OPEN_ERROR = 16,
 
-	NUM_EXIT_REASONS = 16
+	NUM_EXIT_REASONS = 17
 };
 
 const char * decode_exit(void);
