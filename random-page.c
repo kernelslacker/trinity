@@ -145,11 +145,11 @@ void generate_random_page(char *page)
 
 		case 2:
 			switch (rand() % 3) {
-			case 0:	p = sprintf(page, "%u", (unsigned char) rand32());
+			case 0:	p = sprintf(page, "%u", (unsigned char) rand());
 				break;
-			case 1:	p = sprintf(page, "%d", (char) rand32());
+			case 1:	p = sprintf(page, "%d", (char) rand());
 				break;
-			case 2:	p = sprintf(page, "%x", (char) rand32());
+			case 2:	p = sprintf(page, "%x", (char) rand());
 				break;
 			}
 			break;
