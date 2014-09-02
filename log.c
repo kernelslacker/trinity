@@ -60,8 +60,10 @@ void open_child_logfile(struct childdata *child)
 	sprintf(logfilename, "trinity-child%u.log", child->num);
 
 	child->logfile = open_logfile(logfilename);
-	if (!child->logfile)
+	if (!child->logfile) {
+		shm->exit_reason = EXIT_LOGFILE_OPEN_ERROR;
 		exit(EXIT_FAILURE);
+	}
 
 	free(logfilename);
 

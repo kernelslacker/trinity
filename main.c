@@ -295,6 +295,7 @@ static const char *reasons[NUM_EXIT_REASONS] = {
 	"Something happened during fd init.",
 	"fork() failure",
 	"some kind of locking catastrophe",
+	"error while opening logfiles",
 };
 
 const char * decode_exit(void)
