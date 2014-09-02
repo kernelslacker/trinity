@@ -134,22 +134,22 @@ void generate_random_page(char *page)
 
 		case 1:
 			switch (rand() % 3) {
-			case 0:	p = sprintf(page, "%u", (unsigned int) rand64());
+			case 0:	p = sprintf(page, "%u", (unsigned int) rand32());
 				break;
-			case 1:	p = sprintf(page, "%d", (int) rand64());
+			case 1:	p = sprintf(page, "%d", (int) rand32());
 				break;
-			case 2:	p = sprintf(page, "%x", (int) rand64());
+			case 2:	p = sprintf(page, "%x", (int) rand32());
 				break;
 			}
 			break;
 
 		case 2:
 			switch (rand() % 3) {
-			case 0:	p = sprintf(page, "%u", (unsigned char) rand64());
+			case 0:	p = sprintf(page, "%u", (unsigned char) rand32());
 				break;
-			case 1:	p = sprintf(page, "%d", (char) rand64());
+			case 1:	p = sprintf(page, "%d", (char) rand32());
 				break;
-			case 2:	p = sprintf(page, "%x", (char) rand64());
+			case 2:	p = sprintf(page, "%x", (char) rand32());
 				break;
 			}
 			break;
