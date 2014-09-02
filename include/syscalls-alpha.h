@@ -517,4 +517,7 @@ struct syscalltable syscalls_alpha[] = {
 /* 505 */	{ .entry = &syscall_process_vm_writev },
 /* 506 */	{ .entry = &syscall_kcmp },
 /* 507 */	{ .entry = &syscall_finit_module },
+/* 508 */	{ .entry = &syscall_sched_setattr },
+/* 509 */	{ .entry = &syscall_sched_getattr },
+/* 510 */	{ .entry = &syscall_renameat2 },
 };
