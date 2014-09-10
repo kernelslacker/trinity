@@ -51,6 +51,7 @@ static int open_testfile_fds(void)
 {
 	char *filename;
 	unsigned int i = 1;
+	unsigned int fails = 0;
 
 	filename = zmalloc(64);
 
@@ -63,6 +64,12 @@ static int open_testfile_fds(void)
 		if (fd != -1) {
 			shm->testfile_fds[i - 1] = fd;
 			i++;
+			fails = 0;
+		} else {
+			fails++;
+			if (fails == 100) {
+				output(2, "testfile creation is failing a lot. last error:%s\n", strerror(errno));
+			}
 		}
 	}
 
