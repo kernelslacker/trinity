@@ -45,8 +45,9 @@ struct syscallentry syscall_mbind = {
 	.arg3name = "mode",
 	.arg3type = ARG_LIST,
 	.arg3list = {
-		.num = 4,
-		.values = { MPOL_DEFAULT, MPOL_BIND, MPOL_INTERLEAVE, MPOL_PREFERRED },
+		.num = 6,
+		.values = { MPOL_DEFAULT, MPOL_BIND, MPOL_INTERLEAVE, MPOL_PREFERRED,
+			MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES },
 	},
 
 	.arg4name = "nmask",
@@ -60,8 +61,8 @@ struct syscallentry syscall_mbind = {
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
 	.arg6list = {
-		.num = 2,
-		.values = { MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES },
+		.num = 3,
+		.values = { MPOL_MF_STRICT, MPOL_MF_MOVE, MPOL_MF_MOVE_ALL, },
 	},
 	.sanitise = sanitise_mbind,
 	.group = GROUP_VM,
