@@ -60,11 +60,10 @@ static int open_testfile_fds(void)
 		sprintf(filename, "trinity-testfile%d", i);
 
 		fd = open_testfile(filename);
-		if (fd == -1)
-			return FALSE;
-
-		shm->testfile_fds[i - 1] = fd;
-		i++;
+		if (fd != -1) {
+			shm->testfile_fds[i - 1] = fd;
+			i++;
+		}
 	}
 
 	free(filename);
