@@ -22,7 +22,6 @@ static int open_testfile(char *filename)
 	int flags = 0;
 
 	/* file might be around from an earlier run, nuke it. */
-	(void) chmod(filename, 0666);
 	(void) unlink(filename);
 
 	if (rand_bool())
