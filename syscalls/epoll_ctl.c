@@ -19,6 +19,7 @@ static void sanitise_epoll_ctl(struct syscallrecord *rec)
 	struct epoll_event *ep;
 
 	ep = zmalloc(sizeof(struct epoll_event));
+	ep->data.fd = get_random_fd();
 	ep->events = set_rand_bitmask(ARRAY_SIZE(epoll_flags), epoll_flags);
 	rec->a4 = (unsigned long) ep;
 }
