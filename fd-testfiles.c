@@ -16,9 +16,8 @@
 #include "sanitise.h"
 #include "testfile.h"
 
-static int open_testfile(unsigned int i)
+static int open_testfile(char *filename)
 {
-	char *filename;
 	int fd;
 	int flags = 0;
 
@@ -31,9 +30,6 @@ static int open_testfile(unsigned int i)
 	if (rand_bool())
 		flags |= O_SYNC;
 
-	filename = zmalloc(64);
-	sprintf(filename, "trinity-testfile%d", i);
-
 	if (rand_bool()) {
 		fd = open_with_fopen(filename, O_RDWR);
 		if (fd != -1)
@@ -44,26 +40,30 @@ static int open_testfile(unsigned int i)
 			output(2, "fd[%d] = open(\"%s\", flags:%x)\n", fd, filename, flags);	//TODO: decode flags
 	}
 
-	free(filename);
-
 	return fd;
 }
 
 static int open_testfile_fds(void)
 {
-	unsigned int i = 0;
+	char *filename;
+	unsigned int i = 1;
+
+	filename = zmalloc(64);
 
 	while (i < MAX_TESTFILE_FDS) {
 		int fd;
 
-		fd = open_testfile(i + 1);
+		sprintf(filename, "trinity-testfile%d", i);
+
+		fd = open_testfile(filename);
 		if (fd == -1)
 			return FALSE;
 
-		shm->testfile_fds[i] = fd;
+		shm->testfile_fds[i - 1] = fd;
 		i++;
 	}
 
+	free(filename);
 	return TRUE;
 }
 
