@@ -6,6 +6,27 @@
  */
 #include <sys/epoll.h>
 #include "sanitise.h"
+#include "utils.h"
+
+static const unsigned long epoll_flags[] = {
+	EPOLLIN, EPOLLOUT, EPOLLRDHUP, EPOLLPRI,
+	EPOLLERR, EPOLLHUP, EPOLLET, EPOLLONESHOT,
+	EPOLLWAKEUP,
+};
+
+static void sanitise_epoll_ctl(struct syscallrecord *rec)
+{
+	struct epoll_event *ep;
+
+	ep = zmalloc(sizeof(struct epoll_event));
+	ep->events = set_rand_bitmask(ARRAY_SIZE(epoll_flags), epoll_flags);
+	rec->a4 = (unsigned long) ep;
+}
+
+static void post_epoll_ctl(struct syscallrecord *rec)
+{
+	free((void *)rec->a4);
+}
 
 struct syscallentry syscall_epoll_ctl = {
 	.name = "epoll_ctl",
@@ -21,7 +42,8 @@ struct syscallentry syscall_epoll_ctl = {
 	.arg3name = "fd",
 	.arg3type = ARG_FD,
 	.arg4name = "event",
-	.arg4type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_epoll_ctl,
+	.post = post_epoll_ctl,
 };
