@@ -17,8 +17,9 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
+#include "trinity.h"
 
-static int memfd_create(const char *uname, unsigned int flag)
+static int memfd_create(__unused__ const char *uname, __unused__ unsigned int flag)
 {
 #ifdef SYS_memfd_create
 	return syscall(SYS_memfd_create, uname, flag);
