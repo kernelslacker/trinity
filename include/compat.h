@@ -918,3 +918,8 @@ struct kvm_get_htab_fd {
 #ifndef SEEK_HOLE
 #define SEEK_HOLE 4
 #endif
+
+/* sys/epoll.h */
+#ifndef EPOLLWAKEUP
+#define EPOLLWAKEUP (1u << 29)
+#endif

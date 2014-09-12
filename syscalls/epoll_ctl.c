@@ -7,6 +7,7 @@
 #include <sys/epoll.h>
 #include "sanitise.h"
 #include "utils.h"
+#include "compat.h"
 
 static const unsigned long epoll_flags[] = {
 	EPOLLIN, EPOLLOUT, EPOLLRDHUP, EPOLLPRI,
