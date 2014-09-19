@@ -4,8 +4,8 @@
 
 extern char *page_rand;
 
-#define MAP_GLOBAL 1
-#define MAP_LOCAL 2
+#define TRINITY_MAP_GLOBAL 1
+#define TRINITY_MAP_LOCAL 2
 
 struct map {
 	struct list_head list;
