@@ -16,9 +16,9 @@ MISSING_DEFS=0
 # expand tilde
 CC="$(eval echo ${CROSS_COMPILE}${CC})"
 
-CFLAGS=""
+CFLAGS="${CFLAGS}"
 if [ "${SYSROOT}xx" != "xx" ]; then
-	CFLAGS="$(eval echo --sysroot=${SYSROOT} )"
+	CFLAGS="${CFLAGS} $(eval echo --sysroot=${SYSROOT} )"
 fi
 
 echo "#pragma once" > $CONFIGH
