@@ -43,7 +43,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	newnode->name = strdup(name);
 	newnode->size = size;
 	newnode->prot = prot;
-	newnode->type = MAP_GLOBAL;
+	newnode->type = TRINITY_MAP_GLOBAL;
 	newnode->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
 	if (newnode->ptr == MAP_FAILED) {
 		outputerr("mmap failure\n");

@@ -65,10 +65,10 @@ static void delete_local_mapping(struct map *map)
 /* Called from munmap()'s ->post routine. */
 void delete_mapping(struct map *map)
 {
-	if (map->type == MAP_LOCAL)
+	if (map->type == TRINITY_MAP_LOCAL)
 		delete_local_mapping(map);
 
-	/* Right now, we don't want to delete MAP_GLOBAL mappings */
+	/* Right now, we don't want to delete TRINITY_MAP_GLOBAL mappings */
 }
 
 /* used in several sanitise_* functions. */
