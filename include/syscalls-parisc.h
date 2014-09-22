@@ -345,4 +345,7 @@ struct syscalltable syscalls_parisc[] = {
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_utimes },
 	{ .entry = &syscall_renameat2 },
+	{ .entry = &syscall_seccomp },
+	{ .entry = &syscall_getrandom },
+	{ .entry = &syscall_memfd_create },
 };
