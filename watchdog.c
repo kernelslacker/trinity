@@ -35,10 +35,12 @@ static unsigned long hiscore = 0;
  * Make sure various entries in the shm look sensible.
  * We use this to make sure that random syscalls haven't corrupted it.
  *
- * Note: reap_dead_kids will also check the pids for sanity.
+ * also check the pids for sanity.
  */
 static int shm_is_corrupt(void)
 {
+	unsigned int i;
+
 	// FIXME: The '500000' is magic, and should be dynamically calculated.
 	// On startup, we should figure out how many getpid()'s per second we can do,
 	// and use that.
@@ -50,13 +52,43 @@ static int shm_is_corrupt(void)
 	}
 	shm->stats.previous_op_count = shm->stats.total_syscalls_done;
 
+	for_each_child(i) {
+		struct childdata *child;
+		pid_t pid;
+
+		child = shm->children[i];
+		pid = child->pid;
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+
+		if (pid_is_valid(pid) == FALSE) {
+			static bool once = FALSE;
+
+			if (once != FALSE)
+				return TRUE;
+
+			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
+
+			dump_childnos();
+
+			if (shm->exit_reason == STILL_RUNNING)
+				panic(EXIT_PID_OUT_OF_RANGE);
+			dump_childdata(child);
+			once = TRUE;
+			return TRUE;
+		}
+	}
+
 	return FALSE;
 }
 
-static unsigned int reap_dead_kids(void)
+/* Make sure there's no dead kids lying around.
+ * We need to do this in case the oom killer has been killing them,
+ * otherwise we end up stuck with no child processes.
+ */
+static void reap_dead_kids(void)
 {
 	unsigned int i;
-	unsigned int alive = 0;
 	unsigned int reaped = 0;
 
 	for_each_child(i) {
@@ -69,22 +101,9 @@ static unsigned int reap_dead_kids(void)
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		if (pid_is_valid(pid) == FALSE) {
-			static bool once = FALSE;
-
-			if (once != FALSE)
-				return 0;
-
-			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
-
-			dump_childnos();
-
-			if (shm->exit_reason == STILL_RUNNING)
-				panic(EXIT_PID_OUT_OF_RANGE);
-			dump_childdata(child);
-			once = TRUE;
-			return 0;
-		}
+		/* if we find corruption, just skip over it. */
+		if (pid_is_valid(pid) == FALSE)
+			continue;
 
 		ret = kill(pid, 0);
 		/* If it disappeared, reap it. */
@@ -96,18 +115,14 @@ static unsigned int reap_dead_kids(void)
 			} else {
 				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
 			}
-		} else {
-			alive++;
 		}
 
 		if (shm->running_childs == 0)
-			return 0;
+			return;
 	}
 
 	if (reaped != 0)
 		output(0, "Reaped %d dead children\n", reaped);
-
-	return alive;
 }
 
 static void kill_all_kids(void)
@@ -116,17 +131,10 @@ static void kill_all_kids(void)
 
 	shm->spawn_no_more = TRUE;
 
+	reap_dead_kids();
+
 	/* Wait for all the children to exit. */
 	while (shm->running_childs > 0) {
-		unsigned int alive;
-
-		/* Make sure there's no dead kids lying around.
-		 * We need to do this in case the oom killer has been killing them,
-		 * otherwise we end up stuck here with no child processes.
-		 */
-		alive = reap_dead_kids();
-		if (alive == 0)
-			return;
 
 		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
 		for_each_child(i) {
@@ -136,20 +144,20 @@ static void kill_all_kids(void)
 			if (pid == EMPTY_PIDSLOT)
 				continue;
 
+			/* if we find corruption, just skip over it. */
+			if (pid_is_valid(pid) == FALSE)
+				continue;
+
 			kill(pid, SIGKILL);
 		}
 
 		/* wait a second to give kids a chance to exit. */
 		sleep(1);
-
-		if (shm_is_corrupt() == TRUE)
-			return;
 	}
 
 	/* Just to be sure, clear out the pid slots. */
-	for_each_child(i) {
+	for_each_child(i)
 		shm->children[i]->pid = EMPTY_PIDSLOT;
-	}
 }
 
 static bool __check_main(void)
@@ -328,7 +336,6 @@ static void watchdog(void)
 	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount = 0;
 	bool watchdog_exit = FALSE;
-	int ret = 0;
 
 	while (shm->ready == FALSE) {
 		usleep(1);
@@ -343,6 +350,7 @@ static void watchdog(void)
 
 	while (watchdog_exit == FALSE) {
 
+		int ret = 0;
 		unsigned int i;
 
 		if (shm_is_corrupt() == TRUE)
