@@ -128,11 +128,10 @@ static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int arg
 /*
  * Used from output_syscall_prefix, and also from postmortem dumper
  */
-static void render_syscall_prefix(struct syscallrecord *rec)
+static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *bufferstart)
 {
 	struct syscallentry *entry;
-	char *buffer = rec->prebuffer;
-	char *sptr = buffer;
+	char *sptr = bufferstart;
 	unsigned int i;
 	unsigned int syscallnr;
 
@@ -149,7 +148,9 @@ static void render_syscall_prefix(struct syscallrecord *rec)
 		sptr = render_arg(rec, sptr, i, entry);
 	}
 
-	(void) sprintf(sptr, "%s) ", ANSI_RESET);
+	sptr += sprintf(sptr, "%s) ", ANSI_RESET);
+
+	return sptr - bufferstart;
 }
 
 static void flushbuffer(char *buffer, FILE *fd)
@@ -158,10 +159,9 @@ static void flushbuffer(char *buffer, FILE *fd)
 	fflush(fd);
 }
 
-static void render_syscall_postfix(struct syscallrecord *rec)
+static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *bufferstart)
 {
-	char *buffer = rec->postbuffer;
-	char *sptr = buffer;
+	char *sptr = bufferstart;
 
 	if (IS_ERR(rec->retval)) {
 		sptr += sprintf(sptr, "%s= %ld (%s)",
@@ -173,7 +173,9 @@ static void render_syscall_postfix(struct syscallrecord *rec)
 		else
 			sptr += sprintf(sptr, "%ld", (long) rec->retval);
 	}
-	(void) sprintf(sptr, "%s\n", ANSI_RESET);
+	sptr += sprintf(sptr, "%s\n", ANSI_RESET);
+
+	return sptr - bufferstart;
 }
 
 static void __output_syscall(char *buffer, unsigned int len)
@@ -200,22 +202,36 @@ static void __output_syscall(char *buffer, unsigned int len)
  */
 void output_syscall_prefix(struct syscallrecord *rec)
 {
-	char *buffer = rec->prebuffer;
+	char *buffer;
+	unsigned int len;
 
-	memset(buffer, 0, PREBUFFER_LEN);	// TODO: optimize to only strip ending
+	buffer = zmalloc(PREBUFFER_LEN);
 
-	render_syscall_prefix(rec);
+	len = render_syscall_prefix(rec, buffer);
 
-	__output_syscall(buffer, PREBUFFER_LEN);
+	/* copy child-local buffer to shm, and zero out trailing bytes */
+	memcpy(rec->prebuffer, buffer, len);
+	memset(rec->prebuffer + len, 0, PREBUFFER_LEN - len);
+
+	free(buffer);
+
+	__output_syscall(rec->prebuffer, PREBUFFER_LEN);
 }
 
 void output_syscall_postfix(struct syscallrecord *rec)
 {
-	char *buffer = rec->postbuffer;
+	char *buffer;
+	unsigned int len;
 
-	memset(buffer, 0, POSTBUFFER_LEN);	// TODO: optimize to only strip ending post render.
+	buffer = zmalloc(POSTBUFFER_LEN);
 
-	render_syscall_postfix(rec);
+	len = render_syscall_postfix(rec, buffer);
 
-	__output_syscall(buffer, POSTBUFFER_LEN);
+	/* copy child-local buffer to shm, and zero out trailing bytes */
+	memcpy(rec->postbuffer, buffer, len);
+	memset(rec->postbuffer + len, 0, POSTBUFFER_LEN - len);
+
+	free(buffer);
+
+	__output_syscall(rec->postbuffer, POSTBUFFER_LEN);
 }
