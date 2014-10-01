@@ -178,7 +178,7 @@ static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *buff
 	return sptr - bufferstart;
 }
 
-static void __output_syscall(char *buffer, unsigned int len)
+static void output_rendered_buffer(char *buffer, unsigned int len)
 {
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL)
@@ -214,7 +214,7 @@ void output_syscall_prefix(struct syscallrecord *rec)
 	memcpy(rec->prebuffer, buffer, len);
 	memset(rec->prebuffer + len, 0, PREBUFFER_LEN - len);
 
-	__output_syscall(rec->prebuffer, PREBUFFER_LEN);
+	output_rendered_buffer(rec->prebuffer, PREBUFFER_LEN);
 }
 
 void output_syscall_postfix(struct syscallrecord *rec)
@@ -231,5 +231,5 @@ void output_syscall_postfix(struct syscallrecord *rec)
 	memcpy(rec->postbuffer, buffer, len);
 	memset(rec->postbuffer + len, 0, POSTBUFFER_LEN - len);
 
-	__output_syscall(rec->postbuffer, POSTBUFFER_LEN);
+	output_rendered_buffer(rec->postbuffer, POSTBUFFER_LEN);
 }
