@@ -46,7 +46,7 @@ struct shm_s {
 	pid_t last_reaped;
 
 	/* file descriptors, created in main, inherited in children */
-	int pipe_fds[MAX_PIPE_FDS*2];
+	int pipe_fds[MAX_PIPE_FDS];
 	int file_fds[NR_FILE_FDS];
 	int perf_fds[MAX_PERF_FDS];
 	int epoll_fds[MAX_EPOLL_FDS];
