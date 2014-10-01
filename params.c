@@ -43,7 +43,6 @@ bool logging = TRUE;
 bool do_syslog = FALSE;
 bool random_selection = FALSE;
 unsigned int random_selection_num;
-bool no_files = FALSE;
 
 bool user_set_seed = FALSE;
 
@@ -80,7 +79,6 @@ static void usage(void)
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
 	outputerr(" --logging,-l: (off=disable logging).\n");
 	outputerr(" --monochrome,-m: don't output ANSI codes\n");
-	outputerr(" --no_files,-n: Only pass sockets as fd's, not files\n");
 	outputerr(" --proto,-P: specify specific network protocol for sockets.\n");
 	outputerr(" --no_proto,-E: specify network protocols to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
@@ -98,7 +96,7 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:b:c:C:dDg:hIl:LN:mnP:E:pqr:s:T:SV:vx:X";
+static const char paramstr[] = "a:b:c:C:dDg:hIl:LN:mP:E:pqr:s:T:SV:vx:X";
 
 static const struct option longopts[] = {
 	{ "arch", required_argument, NULL, 'a' },
@@ -117,7 +115,6 @@ static const struct option longopts[] = {
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "logging", required_argument, NULL, 'l' },
 	{ "monochrome", no_argument, NULL, 'm' },
-	{ "no_files", no_argument, NULL, 'n' },
 	{ "no_proto", required_argument, NULL, 'E' },
 	{ "proto", required_argument, NULL, 'P' },
 	{ "quiet", no_argument, NULL, 'q' },
@@ -225,10 +222,6 @@ void parse_args(int argc, char *argv[])
 			memset(&ANSI_CYAN, 0, 1);
 			memset(&ANSI_WHITE, 0, 1);
 			memset(&ANSI_RESET, 0, 1);
-			break;
-
-		case 'n':
-			no_files = TRUE;
 			break;
 
 		/* Set number of syscalls to do */

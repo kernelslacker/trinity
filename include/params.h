@@ -44,7 +44,6 @@ extern bool logging;
 extern unsigned char desired_group;
 extern bool user_set_seed;
 extern char *victim_path;
-extern bool no_files;
 extern bool random_selection;
 extern unsigned int random_selection_num;
 

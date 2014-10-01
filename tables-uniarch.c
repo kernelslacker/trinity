@@ -67,10 +67,6 @@ retry:
 	if (validate_specific_syscall_silent(syscalls, call) == FALSE)
 		goto retry;
 
-	if (no_files == TRUE)
-		if (is_syscall_net_related(syscalls, call) == FALSE)
-			goto retry;
-
 	/* if we've set this to be disabled, don't enable it! */
 	if (entry->flags & TO_BE_DEACTIVATED)
 		goto retry;
@@ -78,24 +74,6 @@ retry:
 	toggle_syscall_n(call, TRUE, entry->name, entry->name);
 }
 
-void disable_non_net_syscalls_uniarch(void)
-{
-	unsigned int i;
-
-	for_each_syscall(i) {
-		struct syscallentry *entry;
-
-		entry = syscalls[i].entry;
-
-		if (validate_specific_syscall_silent(syscalls, i) == FALSE)
-			continue;
-
-		if (entry->flags & ACTIVE) {
-			if (is_syscall_net_related(syscalls, i) == FALSE)
-				toggle_syscall_n(i, FALSE, entry->name, entry->name);
-		}
-	}
-}
 
 int setup_syscall_group_uniarch(unsigned int group)
 {
