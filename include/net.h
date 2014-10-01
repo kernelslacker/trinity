@@ -50,7 +50,7 @@ const struct fd_provider socket_fd_provider;
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 
-void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd);
+void do_setsockopt(struct sockopt *so);
 
 void rand_proto_type(struct socket_triplet *st);
 int sanitise_socket_triplet(struct socket_triplet *st);

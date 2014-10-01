@@ -24,6 +24,32 @@ unsigned int nr_sockets = 0;
 
 static const char *cachefilename="trinity.socketcache";
 
+static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd)
+{
+	int ret;
+	unsigned int tries = 0;
+
+	/* skip over bluetooth due to weird linger bug */
+	if (triplet->family == PF_BLUETOOTH)
+		return;
+
+retry:
+	do_setsockopt(so);
+
+	ret = setsockopt(fd, so->level, so->optname, (void *)so->optval, so->optlen);
+	if (ret == 0) {
+		output(2, "setsockopt(%lx %lx %lx %lx) on fd %d [%d:%d:%d]\n",
+			so->level, so->optname, so->optval, so->optlen, fd,
+			triplet->family, triplet->type, triplet->protocol);
+	} else {
+		tries++;
+		if (tries == 100)
+			return;
+
+		goto retry;
+	}
+}
+
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	int fd;
