@@ -12,7 +12,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#define BUFSIZE 1024
+#define BUFSIZE 1024	// decoded syscall args are fprintf'd directly, this is for everything else.
 
 char ANSI_RED[] = "[1;31m";
 char ANSI_GREEN[] = "[1;32m";
