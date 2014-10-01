@@ -419,62 +419,6 @@ void display_enabled_syscalls(void)
 		display_enabled_syscalls_uniarch();
 }
 
-static bool check_for_argtype(struct syscallentry *entry, unsigned int argtype)
-{
-	unsigned int i;
-
-	for_each_arg(i) {
-		switch (i) {
-		case 1:	if (entry->arg1type == argtype)
-				return TRUE;
-			break;
-		case 2:	if (entry->arg2type == argtype)
-				return TRUE;
-			break;
-		case 3:	if (entry->arg3type == argtype)
-				return TRUE;
-			break;
-		case 4:	if (entry->arg4type == argtype)
-				return TRUE;
-			break;
-		case 5:	if (entry->arg5type == argtype)
-				return TRUE;
-			break;
-		case 6:	if (entry->arg6type == argtype)
-				return TRUE;
-			break;
-		}
-	}
-
-	return FALSE;
-}
-
-/* Consider anything with an ARG_FD or ARG_SOCKADDR a network syscall. */
-bool is_syscall_net_related(const struct syscalltable *table, unsigned int num)
-{
-	struct syscallentry *entry = table[num].entry;
-
-	if (check_for_argtype(entry, ARG_FD) == TRUE)
-		return TRUE;
-
-	if (check_for_argtype(entry, ARG_SOCKADDR) == TRUE)
-		return TRUE;
-
-	return FALSE;
-}
-
-void disable_non_net_syscalls(void)
-{
-	output(0, "Disabling non networking related syscalls\n");
-
-	if (biarch == TRUE)
-		disable_non_net_syscalls_biarch();
-	else
-		disable_non_net_syscalls_uniarch();
-
-	deactivate_disabled_syscalls();
-}
-
 void enable_random_syscalls(void)
 {
 	unsigned int i;
@@ -538,10 +482,6 @@ int munge_tables(void)
 			mark_all_syscalls_active();
 		deactivate_disabled_syscalls();
 	}
-
-	/* if we passed -n, make sure there's no VM/VFS syscalls enabled. */
-	if (no_files == TRUE)
-		disable_non_net_syscalls();
 
 	sanity_check_tables();
 

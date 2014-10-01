@@ -160,10 +160,6 @@ retry:
 		if (validate_specific_syscall_silent(syscalls_64bit, call64) == FALSE)
 			goto retry;
 
-		if (no_files == TRUE)
-			if (is_syscall_net_related(syscalls_64bit, call64) == FALSE)
-				goto retry;
-
 		entry = syscalls_64bit[call64].entry;
 
 		if (entry->flags & TO_BE_DEACTIVATED) {
@@ -203,11 +199,6 @@ just32:
 		if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE)
 			return;
 
-		if (no_files == TRUE) {
-			if (is_syscall_net_related(syscalls_32bit, call32) == FALSE)
-				return;
-		}
-
 		entry = syscalls_32bit[call32].entry;
 
 		if ((entry->flags & TO_BE_DEACTIVATED) || (entry->active_number != 0))
@@ -216,40 +207,6 @@ just32:
 		//If we got so far, then active it.
 		toggle_syscall_biarch_n(call32, syscalls_32bit, TRUE, do_32_arch, TRUE,
 					&activate_syscall32, 32, entry->name);
-	}
-}
-
-void disable_non_net_syscalls_biarch(void)
-{
-	struct syscallentry *entry;
-	unsigned int i;
-
-	for_each_64bit_syscall(i) {
-		entry = syscalls_64bit[i].entry;
-
-		if (validate_specific_syscall_silent(syscalls_64bit, i) == FALSE)
-			continue;
-
-		if (entry->flags & ACTIVE) {
-			if (is_syscall_net_related(syscalls_64bit, i) == FALSE) {
-				toggle_syscall_biarch_n(i, syscalls_64bit, FALSE, do_64_arch, FALSE,
-					&activate_syscall64, 64, entry->name);
-			}
-		}
-	}
-
-	for_each_32bit_syscall(i) {
-		entry = syscalls_32bit[i].entry;
-
-		if (validate_specific_syscall_silent(syscalls_32bit, i) == FALSE)
-			continue;
-
-		if (entry->flags & ACTIVE) {
-			if (is_syscall_net_related(syscalls_32bit, i) == FALSE) {
-				toggle_syscall_biarch_n(i, syscalls_32bit, FALSE, do_32_arch, FALSE,
-					&activate_syscall32, 32, entry->name);
-			}
-		}
 	}
 }
 

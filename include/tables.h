@@ -71,12 +71,6 @@ void display_enabled_syscalls(void);
 void display_enabled_syscalls_uniarch(void);
 void display_enabled_syscalls_biarch(void);
 
-void disable_non_net_syscalls(void);
-void disable_non_net_syscalls_uniarch(void);
-void disable_non_net_syscalls_biarch(void);
-
-bool is_syscall_net_related(const struct syscalltable *table, unsigned int num);
-
 void init_syscalls(void);
 void init_syscalls_biarch(void);
 void init_syscalls_uniarch(void);
