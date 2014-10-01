@@ -187,9 +187,9 @@ static void __output_syscall(char *buffer, unsigned int len)
 	}
 }
 
-/* These next two functions are always called from mkcall by a fuzzing child.
+/* These next two functions are always called from child_random_syscalls() by a fuzzing child.
  * They render the buffer, and output it (to both stdout and logs).
- * Other contexts (like post-mortem directly use the buffers).
+ * Other contexts (like post-mortem) directly use the buffers.
  */
 void output_syscall_prefix(struct syscallrecord *rec)
 {
