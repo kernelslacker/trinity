@@ -59,9 +59,9 @@ bool kernel_taint_param_occured = FALSE;
 int server_port = 0;
 char server_addr[INET6_ADDRSTRLEN] = "\0";
 
-void disable_fd_usage(void)
+void enable_disable_fd_usage(void)
 {
-	outputerr(" --disable-fds= {sockets,pipes,perf,epoll,eventfd,pseudo,timerfd,testfile,memfd}\n");
+	outputerr(" --enable-fds/--disable-fds= {sockets,pipes,perf,epoll,eventfd,pseudo,timerfd,testfile,memfd}\n");
 }
 
 static void usage(void)
@@ -73,7 +73,7 @@ static void usage(void)
 	outputerr(" --debug,-D: enable debug\n");
 	outputerr(" --dropprivs, -X: if run as root, switch to nobody [EXPERIMENTAL]\n");
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
-	disable_fd_usage();
+	enable_disable_fd_usage();
 	outputerr(" --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
 	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
@@ -108,6 +108,7 @@ static const struct option longopts[] = {
 	{ "dropprivs", no_argument, NULL, 'X'},
 	{ "debug", no_argument, NULL, 'D' },
 	{ "disable-fds", required_argument, NULL, 0 },
+	{ "enable-fds", required_argument, NULL, 0 },
 	{ "exclude", required_argument, NULL, 'x' },
 	{ "group", required_argument, NULL, 'g' },
 	{ "kernel_taint", required_argument, NULL, 'T' },
@@ -323,7 +324,10 @@ void parse_args(int argc, char *argv[])
 				server_port = atoi(optarg);
 
 			if (strcmp("disable-fds", longopts[opt_index].name) == 0)
-				process_disable_fds_param(optarg);
+				process_fds_param(optarg, FALSE);
+
+			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
+				process_fds_param(optarg, TRUE);
 
 			break;
 		}
