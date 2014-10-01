@@ -63,8 +63,13 @@ static const struct sso_funcptr ssoptrs[] = {
 
 /*
  * Call a proto specific setsockopt routine from the table above.
+ *
+ * Called from random setsockopt() syscalls, and also during socket
+ * creation on startup from sso_socket()
+ *
+ * TODO: pass in the proto, so we can match it to the right .func
  */
-static void do_setsockopt(struct sockopt *so)
+void do_setsockopt(struct sockopt *so)
 {
 	so->optval = (unsigned long) get_non_null_address();
 
@@ -93,36 +98,6 @@ static void do_setsockopt(struct sockopt *so)
 	 */
 	if (rand_bool())
 		so->optval = 0;
-}
-
-/*
- * This is called during socket creation at startup, on each socket,
- * and also periodically from regenerate()
- */
-void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd)
-{
-	int ret;
-	unsigned int tries = 0;
-
-	/* skip over bluetooth due to weird linger bug */
-	if (triplet->family == PF_BLUETOOTH)
-		return;
-
-retry:
-	do_setsockopt(so);
-
-	ret = setsockopt(fd, so->level, so->optname, (void *)so->optval, so->optlen);
-	if (ret == 0) {
-		output(2, "Setsockopt(%lx %lx %lx %lx) on fd %d [%d:%d:%d]\n",
-			so->level, so->optname, so->optval, so->optlen, fd,
-			triplet->family, triplet->type, triplet->protocol);
-	} else {
-		tries++;
-		if (tries == 100) {
-			return;
-		}
-		goto retry;
-	}
 }
 
 static void sanitise_setsockopt(struct syscallrecord *rec)
