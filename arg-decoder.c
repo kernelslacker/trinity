@@ -138,7 +138,7 @@ static void render_syscall_prefix(struct syscallrecord *rec)
 
 	sptr += sprintf(sptr, "%s%s(", entry->name, ANSI_RESET);
 
-	for (i = 1; i < entry->num_args + 1; i++)
+	for (i = 1; i <= entry->num_args; i++)
 		sptr = render_arg(rec, sptr, i, entry);
 
 	(void) sprintf(sptr, "%s) ", ANSI_RESET);
