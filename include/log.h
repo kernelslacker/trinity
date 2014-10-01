@@ -22,7 +22,7 @@ extern char ANSI_RESET[];
 FILE *find_logfile_handle(void);
 void synclogs(void);
 
-void strip_ansi(char *ansibuf, unsigned int buflen);
+void strip_ansi(char *ansibuf);
 
 void output(unsigned char level, const char *fmt, ...);
 void outputerr(const char *fmt, ...);
