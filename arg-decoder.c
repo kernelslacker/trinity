@@ -202,10 +202,11 @@ static void __output_syscall(char *buffer, unsigned int len)
  */
 void output_syscall_prefix(struct syscallrecord *rec)
 {
-	char *buffer;
+	static char *buffer = NULL;
 	unsigned int len;
 
-	buffer = zmalloc(PREBUFFER_LEN);
+	if (buffer == NULL)
+		buffer = zmalloc(PREBUFFER_LEN);
 
 	len = render_syscall_prefix(rec, buffer);
 
@@ -213,25 +214,22 @@ void output_syscall_prefix(struct syscallrecord *rec)
 	memcpy(rec->prebuffer, buffer, len);
 	memset(rec->prebuffer + len, 0, PREBUFFER_LEN - len);
 
-	free(buffer);
-
 	__output_syscall(rec->prebuffer, PREBUFFER_LEN);
 }
 
 void output_syscall_postfix(struct syscallrecord *rec)
 {
-	char *buffer;
+	static char *buffer = NULL;
 	unsigned int len;
 
-	buffer = zmalloc(POSTBUFFER_LEN);
+	if (buffer == NULL)
+		buffer = zmalloc(POSTBUFFER_LEN);
 
 	len = render_syscall_postfix(rec, buffer);
 
 	/* copy child-local buffer to shm, and zero out trailing bytes */
 	memcpy(rec->postbuffer, buffer, len);
 	memset(rec->postbuffer + len, 0, POSTBUFFER_LEN - len);
-
-	free(buffer);
 
 	__output_syscall(rec->postbuffer, POSTBUFFER_LEN);
 }
