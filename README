@@ -9,12 +9,22 @@ Trinity: Linux system call fuzzer.
 		Now I am become Death, the destroyer of worlds."
 
 
+#######################################################################
 
-Warning: This program may seriously corrupt your files, including any of those
-that may be writable on mounted network file shares.  It may create network
-packets that may cause disruption on your local network.
-Run at your own risk.
+WARNINGS:
+* This program may seriously corrupt your files, including any of those
+  that may be writable on mounted network file shares.  It may create network
+  packets that may cause disruption on your local network.
 
+* Trinity may generate the right selection of syscalls to start sending random network
+  packets to other hosts. While every effort is made to restrict this to IP addresses
+  on local lans, multicast & broadcast, care should be taken to not allow the
+  packets it generates to go out onto the internet.
+
+  Run at your own risk.
+
+
+#######################################################################
 
 System call fuzzers aren't a particularly new idea.   As far back as 1991,
 people have written apps that bomb syscall inputs with garbage data,
@@ -44,7 +54,7 @@ The intelligence features include:
   one of the flags, just to make things more interesting.
 
 - If a system call only takes a range of values, the random value
-  passed is ensured to fit within that range.
+  passed is biased to usually fit within that range.
 
 
 Trinity logs it's output to a files (1 for each child process), and fsync's
@@ -94,9 +104,11 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 
  -x: Exclude a syscall from being called.  Useful when there's a known kernel bug
      you keep hitting that you want to avoid.
+     Can be specified multiple times.
 
  -cN: do syscall N with random inputs.
-      Good for concentrating on a certain syscall, if for eg, you just added one.
+     Good for concentrating on a certain syscall, if for eg, you just added one.
+     Can be specified multiple times.
 
  --group/-g vm
    Just call VM related syscalls
@@ -125,31 +137,9 @@ Turn off logging, and suppress most output to run as fast as possible. Use 16 ch
 
 #######################################################################
 
-WARNINGS:
-* Trinity may generate the right selection of syscalls to start sending random network
-  packets to other hosts. While every effort is made to restrict this to IP addresses
-  on local lans, multicast & broadcast, care should be taken to not allow the
-  packets it generates to go out onto the internet.
-
-
-#######################################################################
-
 Development discussion of trinity occurs at trinity@vger.kernel.org
 As with all vger mailing lists, subscribe by sending 'subscribe trinity'
 in the body of a mail to majordomo@vger.kernel.org
-
-
-Reporting bugs upstream:
-If you find a kernel bug using trinity, first check the list at
-http://www.codemonkey.org.uk/projects/trinity/bugs-found.php
-
-You may find that the bug is either already fixed (in which case
-a git commit hash should point to the fix), or there will be a link
-to an existing upstream report on the bug.
-
-If you find something new, report it to the relevant kernel component maintainer,
-CC'd to linux-kernel.  CC'ing trinity@ will also be appreciated, so it
-can be recorded in the 'known bugs' section
 
 ######### Links to similar projects ####################################
 
