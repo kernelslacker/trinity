@@ -37,8 +37,7 @@ static void do_anon(struct syscallrecord *rec)
 
 static void sanitise_mmap(struct syscallrecord *rec)
 {
-	unsigned int i;
-	unsigned int flagvals[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
+	unsigned long mmap_flags[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
 			MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
 			MAP_NORESERVE, MAP_POPULATE, MAP_NONBLOCK, MAP_STACK,
 			MAP_HUGETLB, MAP_UNINITIALIZED,
@@ -46,7 +45,6 @@ static void sanitise_mmap(struct syscallrecord *rec)
 			MAP_32BIT,
 #endif
 	};
-	unsigned int numflags = rand() % NUM_FLAGS;
 	unsigned long sizes[] = {
 		-1,	/* over-written with page_size below */
 		1 * MB, 2 * MB, 4 * MB, 10 * MB,
@@ -59,8 +57,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	rec->a1 = 0;
 
 	// set additional flags
-	for (i = 0; i < numflags; i++)
-		rec->a4 |= flagvals[rand() % NUM_FLAGS];
+	rec->a4 = set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
 
 	if (rec->a4 & MAP_ANONYMOUS) {
 		rec->a2 = sizes[rand() % ARRAY_SIZE(sizes)];
