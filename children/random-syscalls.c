@@ -72,6 +72,7 @@ bool child_random_syscalls(void)
 	struct syscallrecord *rec;
 	unsigned int syscallnr;
 	bool do32;
+	unsigned int len;
 
 retry:
 	if (no_syscalls_enabled() == TRUE) {
@@ -113,14 +114,26 @@ retry:
 	generate_syscall_args(rec);
 	output_syscall_prefix(rec);
 
+	/* Sanity check: Make sure the length of the buffer remains
+	 * constant across the syscall.
+	 */
+	len = strlen(rec->prebuffer);
+
 	/* If we're going to pause, might as well sync pre-syscall */
 	if (dopause == TRUE)
 		synclogs();
 
 	do_syscall(rec);
+
+	/* post syscall sanity checks. */
+	if (len != strlen(rec->prebuffer)) {
+		output(0, "Sanity check failed: prebuffer length changed from %d to %d.\n",
+			len, strlen(rec->prebuffer));
+	}
+
 	check_page_rand_redzone();
 
-	/* we're back. Output what happened, and clean up */
+	/* Output the syscall result, and clean up */
 	output_syscall_postfix(rec);
 
 	if (dopause == TRUE)
