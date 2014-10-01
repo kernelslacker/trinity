@@ -1,6 +1,7 @@
 /* Pipe FD related functions. */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,22 +21,34 @@
 #include "shm.h"
 #include "trinity.h"
 
-static int open_pipes(void)
+static unsigned int offset = 0;
+
+static void open_pipe_pair(unsigned int flags)
 {
 	int pipes[2];
-	unsigned int i;
 
-	for (i = 0; i < MAX_PIPE_FDS; i+=2) {
-		if (pipe(pipes) < 0) {
-			perror("pipe fail.\n");
-			return FALSE;
-		}
-		shm->pipe_fds[i] = pipes[0];
-		shm->pipe_fds[i+1] = pipes[1];
-
-		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i]);
-		output(2, "fd[%d] = pipe\n", shm->pipe_fds[i+1]);
+	if (pipe2(pipes, flags) < 0) {
+		perror("pipe fail.\n");
+		return;
 	}
+
+	shm->pipe_fds[offset] = pipes[0];
+	shm->pipe_fds[offset + 1] = pipes[1];
+
+	output(2, "fd[%d] = pipe([reader] flags:%x)\n", pipes[0], flags);
+	output(2, "fd[%d] = pipe([writer] flags:%x)\n", pipes[1], flags);
+
+	offset += 2;
+}
+
+
+static int open_pipes(void)
+{
+	open_pipe_pair(0);
+	open_pipe_pair(O_NONBLOCK);
+	open_pipe_pair(O_CLOEXEC);
+	open_pipe_pair(O_NONBLOCK | O_CLOEXEC);
+
 	return TRUE;
 }
 
