@@ -144,15 +144,14 @@ void init_syscalls(void)
 
 bool no_syscalls_enabled(void)
 {
-	if (biarch == TRUE) {
-		if ((shm->nr_active_32bit_syscalls == 0) && (shm->nr_active_64bit_syscalls == 0))
-			return TRUE;
-		else
-			return FALSE;
-	}
+	unsigned int total;
 
-	/* non-biarch */
-	if (shm->nr_active_syscalls == 0)
+	if (biarch == TRUE)
+		total = shm->nr_active_32bit_syscalls + shm->nr_active_64bit_syscalls;
+	else
+		total = shm->nr_active_syscalls;
+
+	if (total == 0)
 		return TRUE;
 	else
 		return FALSE;
