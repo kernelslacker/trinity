@@ -424,24 +424,24 @@ static bool check_for_argtype(struct syscallentry *entry, unsigned int argtype)
 {
 	unsigned int i;
 
-	for (i = 0; i < entry->num_args; i++) {
+	for_each_arg(i) {
 		switch (i) {
-		case 0:	if (entry->arg1type == argtype)
+		case 1:	if (entry->arg1type == argtype)
 				return TRUE;
 			break;
-		case 1:	if (entry->arg2type == argtype)
+		case 2:	if (entry->arg2type == argtype)
 				return TRUE;
 			break;
-		case 2:	if (entry->arg3type == argtype)
+		case 3:	if (entry->arg3type == argtype)
 				return TRUE;
 			break;
-		case 3:	if (entry->arg4type == argtype)
+		case 4:	if (entry->arg4type == argtype)
 				return TRUE;
 			break;
-		case 4:	if (entry->arg5type == argtype)
+		case 5:	if (entry->arg5type == argtype)
 				return TRUE;
 			break;
-		case 5:	if (entry->arg6type == argtype)
+		case 6:	if (entry->arg6type == argtype)
 				return TRUE;
 			break;
 		}
