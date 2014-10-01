@@ -137,6 +137,26 @@ regen:
 	return shm->current_fd;
 }
 
+static void enable_fds_param(char *str)
+{
+	struct list_head *node;
+	struct fd_provider *provider;
+
+	list_for_each(node, &fd_providers->list) {
+
+		provider = (struct fd_provider *) node;
+		if (strcmp(provider->name, str) == 0) {
+			provider->enabled = TRUE;
+			outputstd("Enabled fd provider %s\n", str);
+			return;
+		}
+	}
+
+	outputstd("Unknown --enable-fds parameter \"%s\"\n", str);
+	enable_disable_fd_usage();
+	exit(EXIT_FAILURE);
+}
+
 static void disable_fds_param(char *str)
 {
 	struct list_head *node;
@@ -153,16 +173,26 @@ static void disable_fds_param(char *str)
 	}
 
 	outputstd("Unknown --disable-fds parameter \"%s\"\n", str);
-	disable_fd_usage();
+	enable_disable_fd_usage();
 	exit(EXIT_FAILURE);
 }
 
-void process_disable_fds_param(char *param)
+void process_fds_param(char *param, bool enable)
 {
+	struct list_head *node;
+	struct fd_provider *provider;
 	unsigned int len, i;
 	char *str = param;
 
 	len = strlen(param);
+
+	if (enable == TRUE) {
+		/* First, pass through and mark everything disabled. */
+		list_for_each(node, &fd_providers->list) {
+			provider = (struct fd_provider *) node;
+			provider->enabled = FALSE;
+		}
+	}
 
 	/* Check if there are any commas. If so, split them into multiple params,
 	 * validating them as we go.
@@ -170,10 +200,17 @@ void process_disable_fds_param(char *param)
 	for (i = 0; i < len; i++) {
 		if (param[i] == ',') {
 			param[i] = 0;
-			disable_fds_param(str);
+			if (enable == TRUE)
+				enable_fds_param(str);
+			else
+				disable_fds_param(str);
 			str = param + i + 1;
 		}
 	}
-	if (str < param + len)
-		disable_fds_param(str);
+	if (str < param + len) {
+		if (enable == TRUE)
+			enable_fds_param(str);
+		else
+			disable_fds_param(str);
+	}
 }
