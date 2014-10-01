@@ -12,44 +12,8 @@
 #include "tables.h"
 #include "utils.h"
 
-static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int argnum, struct syscallentry *entry)
+static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 {
-	const char *name = NULL;
-	unsigned long reg = 0;
-	enum argtype type = 0;
-
-	switch (argnum) {
-	case 1:	type = entry->arg1type;
-		name = entry->arg1name;
-		reg = rec->a1;
-		break;
-	case 2:	type = entry->arg2type;
-		name = entry->arg2name;
-		reg = rec->a2;
-		break;
-	case 3:	type = entry->arg3type;
-		name = entry->arg3name;
-		reg = rec->a3;
-		break;
-	case 4:	type = entry->arg4type;
-		name = entry->arg4name;
-		reg = rec->a4;
-		break;
-	case 5:	type = entry->arg5type;
-		name = entry->arg5name;
-		reg = rec->a5;
-		break;
-	case 6:	type = entry->arg6type;
-		name = entry->arg6name;
-		reg = rec->a6;
-		break;
-	}
-
-	if (argnum != 1)
-		sptr += sprintf(sptr, "%s, ", ANSI_RESET);
-
-	sptr += sprintf(sptr, "%s=", name);
-
 	switch (type) {
 	case ARG_PATHNAME:
 		sptr += sprintf(sptr, "\"%s\"", (char *) reg);
@@ -104,6 +68,49 @@ static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int arg
 
 	if ((reg & PAGE_MASK) == (unsigned long) page_rand)
 		sptr += sprintf(sptr, "[page_rand]");
+
+	return sptr;
+}
+
+static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int argnum, struct syscallentry *entry)
+{
+	const char *name = NULL;
+	unsigned long reg = 0;
+	enum argtype type = 0;
+
+	switch (argnum) {
+	case 1:	type = entry->arg1type;
+		name = entry->arg1name;
+		reg = rec->a1;
+		break;
+	case 2:	type = entry->arg2type;
+		name = entry->arg2name;
+		reg = rec->a2;
+		break;
+	case 3:	type = entry->arg3type;
+		name = entry->arg3name;
+		reg = rec->a3;
+		break;
+	case 4:	type = entry->arg4type;
+		name = entry->arg4name;
+		reg = rec->a4;
+		break;
+	case 5:	type = entry->arg5type;
+		name = entry->arg5name;
+		reg = rec->a5;
+		break;
+	case 6:	type = entry->arg6type;
+		name = entry->arg6name;
+		reg = rec->a6;
+		break;
+	}
+
+	if (argnum != 1)
+		sptr += sprintf(sptr, "%s, ", ANSI_RESET);
+
+	sptr += sprintf(sptr, "%s=", name);
+
+	sptr = decode_argtype(sptr, reg, type);
 
 	if (entry->decode != NULL) {
 		char *str;
