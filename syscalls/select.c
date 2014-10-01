@@ -2,19 +2,67 @@
  * SYSCALL_DEFINE5(select, int, n, fd_set __user *, inp, fd_set __user *, outp,
 	fd_set __user *, exp, struct timeval __user *, tvp)
  */
+#include <sys/time.h>
+       #include <stdio.h>
+       #include <stdlib.h>
+       #include <sys/types.h>
+       #include <unistd.h>
+
+#include "random.h"
 #include "sanitise.h"
+#include "utils.h"
+
+static void sanitise_select(struct syscallrecord *rec)
+{
+	unsigned int i;
+
+	struct timeval *tv;
+	fd_set *rfds, *wfds, *exfds;
+
+	rec->a1 = rand32() % 1024;
+
+	rfds = zmalloc(sizeof(fd_set));
+	wfds = zmalloc(sizeof(fd_set));
+	exfds = zmalloc(sizeof(fd_set));
+
+	FD_ZERO(rfds);
+	FD_ZERO(wfds);
+	FD_ZERO(exfds);
+
+	/* set some random fd's. */
+	for (i = 0; i < rand32() % 10; i++) {
+		FD_SET(rand32() % 1024, rfds);
+		FD_SET(rand32() % 1024, wfds);
+		FD_SET(rand32() % 1024, exfds);
+	}
+
+	rec->a2 = (unsigned long) rfds;
+	rec->a3 = (unsigned long) wfds;
+	rec->a4 = (unsigned long) exfds;
+
+	/* Set a really short timeout */
+	tv = zmalloc(sizeof(struct timeval));
+	tv->tv_sec = 0;
+	tv->tv_usec = 10;
+	rec->a5 = (unsigned long) tv;
+}
+
+static void post_select(struct syscallrecord *rec)
+{
+	free((void *) rec->a2);
+	free((void *) rec->a3);
+	free((void *) rec->a4);
+	free((void *) rec->a5);
+}
 
 struct syscallentry syscall_select = {
 	.name = "select",
 	.num_args = 5,
-	.flags = AVOID_SYSCALL, // Confuses the signal state and causes the fuzzer to hang with timeout not firing
 	.arg1name = "n",
 	.arg2name = "inp",
-	.arg2type = ARG_ADDRESS,
 	.arg3name = "outp",
-	.arg3type = ARG_ADDRESS,
 	.arg4name = "exp",
-	.arg4type = ARG_ADDRESS,
 	.arg5name = "tvp",
-	.arg5type = ARG_ADDRESS,
+	.sanitise = sanitise_select,
+	.post = post_select,
 };
