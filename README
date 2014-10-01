@@ -69,8 +69,7 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 ######### options ###############################################
 
  --quiet/-q: reduce verbosity.
-   Specify once to not output register values, or twice to also suppress syscall count,
-   and just reseed values.
+   Specify once to not output register values, or twice to also suppress syscall count.
 
  --verbose: increase verbosity.
 
@@ -110,8 +109,8 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
      Good for concentrating on a certain syscall, if for eg, you just added one.
      Can be specified multiple times.
 
- --group/-g vm
-   Just call VM related syscalls
+ --group/-g
+   Used to specify enabling a group of syscalls. Current groups defined are 'vm' and 'vfs'.
 
  --logging/-l off: This disables logging. Useful if you have a serial console, though you
          will likely lose any information about what system call was being called,

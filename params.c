@@ -73,7 +73,7 @@ static void usage(void)
 	outputerr(" --dropprivs, -X: if run as root, switch to nobody [EXPERIMENTAL]\n");
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
 	enable_disable_fd_usage();
-	outputerr(" --group,-g: only run syscalls from a certain group (So far just 'vm').\n");
+	outputerr(" --group,-g = {vfs,vm}: only run syscalls from a certain group.\n");
 	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
