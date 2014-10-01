@@ -173,7 +173,7 @@ void synclogs(void)
 	fsync(fileno(mainlogfile));
 }
 
-void strip_ansi(char *ansibuf, unsigned int buflen)
+void strip_ansi(char *ansibuf)
 {
 	char *from = ansibuf, *to = ansibuf;
 	unsigned int len, i;
@@ -183,10 +183,13 @@ void strip_ansi(char *ansibuf, unsigned int buflen)
 	if (monochrome == TRUE)
 		return;
 
-	/* copy buffer, sans ANSI codes */
-	len = strlen(ansibuf);
+	/* because we look ahead two bytes as we scan the buffer,
+	 * we only want to scan a maximum of buffer len - 2 bytes
+	 * to avoid reading past the end.
+	 */
+	len = strlen(ansibuf) - 2;
 
-	for (i = 0; (i < len) && (i + 2 < buflen); i++) {
+	for (i = 0; i < len; i++) {
 		*to = from[i];
 		if (from[i] == '') {
 			if (from[i + 2] == '1')
@@ -197,6 +200,10 @@ void strip_ansi(char *ansibuf, unsigned int buflen)
 			to++;
 		}
 	}
+
+	/* copy the trailing 2 bytes */
+	*to++ = from[i++];
+	*to++ = from[i];
 	*to = 0;
 }
 
@@ -270,7 +277,7 @@ void output(unsigned char level, const char *fmt, ...)
 	if (!handle)
 		return;
 
-	strip_ansi(outputbuf, BUFSIZE);
+	strip_ansi(outputbuf);
 
 	fprintf(handle, "%s %s", prefix, outputbuf);
 
