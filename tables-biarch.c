@@ -216,7 +216,7 @@ int setup_syscall_group_biarch(unsigned int group)
 
 	for_each_32bit_syscall(i) {
 		if (syscalls_32bit[i].entry->group == group)
-			activate_syscall32(i);
+			toggle_syscall(syscalls_32bit[i].entry->name, TRUE);
 	}
 
 	if (shm->nr_active_32bit_syscalls == 0)
@@ -227,7 +227,7 @@ int setup_syscall_group_biarch(unsigned int group)
 	/* now the 64 bit table*/
 	for_each_64bit_syscall(i) {
 		if (syscalls_64bit[i].entry->group == group)
-			activate_syscall64(i);
+			toggle_syscall(syscalls_64bit[i].entry->name, TRUE);
 	}
 
 	if (shm->nr_active_64bit_syscalls == 0) {
