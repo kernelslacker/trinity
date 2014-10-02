@@ -501,6 +501,9 @@ enum kcmp_type {
 #ifndef IP_UNICAST_IF
 #define IP_UNICAST_IF		50
 #endif
+#ifndef IPPROTO_BEETPH
+#define IPPROTO_BEETPH		94
+#endif
 
 /* linux/in6.h */
 #ifndef IPV6_FLOWINFO

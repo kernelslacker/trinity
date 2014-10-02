@@ -110,46 +110,36 @@ void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 void inet_rand_socket(struct socket_triplet *st)
 {
+	unsigned long ipprotos[] = {
+		IPPROTO_IP, IPPROTO_ICMP, IPPROTO_IGMP, IPPROTO_IPIP,
+		IPPROTO_TCP, IPPROTO_EGP, IPPROTO_PUP, IPPROTO_UDP,
+		IPPROTO_IDP, IPPROTO_TP, IPPROTO_DCCP, IPPROTO_IPV6,
+		IPPROTO_RSVP, IPPROTO_GRE, IPPROTO_ESP, IPPROTO_AH,
+		IPPROTO_MTP, IPPROTO_BEETPH, IPPROTO_ENCAP, IPPROTO_PIM,
+		IPPROTO_COMP, IPPROTO_SCTP, IPPROTO_UDPLITE, IPPROTO_RAW,
+	};
+#define NR_IPPROTOS ARRAY_SIZE(ipprotos)
+	unsigned char val;
+
+	val = rand() % NR_IPPROTOS;
+	st->protocol = ipprotos[val];
+
+	//TODO: Match the type to the proto instead of being rand
+
 	switch (rand() % 4) {
 	case 0: st->type = SOCK_STREAM;     // TCP/SCTP
-		switch (rand() % 3) {
-		case 0:
-			st->protocol = 0;
-			break;
-		case 1:
-			st->protocol = IPPROTO_TCP;
-			break;
-		case 2:
-			st->protocol = IPPROTO_SCTP;
-			break;
-		default:
-			break;
-		}
 		break;
-
 	case 1: st->type = SOCK_DGRAM;      // UDP
-		if (rand_bool())
-			st->protocol = 0;
-		else
-			st->protocol = IPPROTO_UDP;
 		break;
-
 	case 2: st->type = SOCK_SEQPACKET;      // SCTP
-		if (rand_bool())
-			st->protocol = 0;
-		else
-			st->protocol = IPPROTO_SCTP;
 		break;
-
 	case 3: st->type = SOCK_RAW;
-		st->protocol = rand() % PROTO_MAX;
-		break;
-
-	default:
 		break;
 	}
+
 }
 
+//TODO: Pair the sizeof's of the associated arrays
 #define NR_SOL_IP_OPTS ARRAY_SIZE(ip_opts)
 static const unsigned int ip_opts[] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
 	IP_ROUTER_ALERT, IP_RECVOPTS, IP_RETOPTS, IP_PKTINFO,
