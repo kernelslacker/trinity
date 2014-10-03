@@ -23,8 +23,10 @@
  */
 void exit_main_fail(void)
 {
-	if (getpid() != shm->mainpid)
+	if (getpid() != shm->mainpid) {
+		show_backtrace();
 		BUG("wtf, exit_main_fail called from non main pid!\n");
+	}
 
 	shm->mainpid = 0;
 	exit(EXIT_FAILURE);
