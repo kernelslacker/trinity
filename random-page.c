@@ -58,7 +58,7 @@ void check_page_rand_redzone(void)
 
 	output(0, "Something stomped the rand page guard page at %p!\n", page_rand + page_size);
 
-	fd = fopen("trinity-pagerand.log", "w");
+	fd = fopen("/tmp/trinity-pagerand.log", "w");
 	if (!fd) {
 		outputerr("Failed to dump page_rand log (%s)\n", strerror(errno));
 		return;
