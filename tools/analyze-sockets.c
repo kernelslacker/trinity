@@ -176,7 +176,7 @@ static void open_sockets(void)
 	close(cachefile);
 }
 
-int main(int argc, char* argv[])
+int main(__attribute((unused)) int argc, __attribute((unused)) char* argv[])
 {
 	 open_sockets();
 }
