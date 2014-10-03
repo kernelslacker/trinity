@@ -52,8 +52,13 @@ static void fabricate_onepage_struct(char *page)
 void check_page_rand_redzone(void)
 {
 	FILE *fd;
+	unsigned int i;
+	char total = 0;
 
-	if (page_rand[page_size] == 0)
+	for (i = 0; i < page_size; i++)
+		total |= page_rand[page_size + i];
+
+	if (total == 0)
 		return;
 
 	output(0, "Something stomped the rand page guard page at %p!\n", page_rand + page_size);
