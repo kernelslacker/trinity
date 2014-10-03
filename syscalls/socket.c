@@ -9,7 +9,7 @@
 #include "log.h"
 #include "net.h"
 #include "params.h"
-#include "protocols.h"
+#include "domains.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -58,7 +58,7 @@ void rand_proto_type(struct socket_triplet *st)
 
 	st->protocol = rand() % PROTO_MAX;
 
-	if (st->family == PF_INET && no_protos[PF_PACKET])
+	if (st->family == PF_INET && no_domains[PF_PACKET])
 		n = 5;
 	else
 		n = 6;
@@ -95,8 +95,8 @@ int sanitise_socket_triplet(struct socket_triplet *st)
 /* note: also called from sanitise_socketcall() */
 void gen_socket_args(struct socket_triplet *st)
 {
-	if (do_specific_proto == TRUE)
-		st->family = specific_proto;
+	if (do_specific_domain == TRUE)
+		st->family = specific_domain;
 
 	else {
 		st->family = rand() % TRINITY_PF_MAX;
@@ -105,9 +105,9 @@ void gen_socket_args(struct socket_triplet *st)
 		 * If we get a disabled family, try to find
 		 * first next allowed.
 		 */
-		BUG_ON(st->family >= ARRAY_SIZE(no_protos));
-		if (no_protos[st->family]) {
-			st->family = find_next_enabled_proto(st->family);
+		BUG_ON(st->family >= ARRAY_SIZE(no_domains));
+		if (no_domains[st->family]) {
+			st->family = find_next_enabled_domain(st->family);
 			if (st->family == -1u) {
 				outputerr("No available socket family found\n");
 				exit(EXIT_FAILURE);

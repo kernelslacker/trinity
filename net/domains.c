@@ -6,16 +6,16 @@
 #include "debug.h"
 #include "log.h"
 #include "net.h"
-#include "protocols.h"
+#include "domains.h"
 #include "params.h"
 #include "utils.h"
 
-struct protocol {
+struct domain {
 	const char *name;
-	const unsigned int proto;
+	const unsigned int domain;
 };
 
-static const struct protocol protocols[] = {
+static const struct domain domains[] = {
 	{ "PF_UNSPEC",       0 },
 	{ "PF_LOCAL",        1 },
 	{ "PF_UNIX",         PF_LOCAL },
@@ -60,72 +60,72 @@ static const struct protocol protocols[] = {
 	{ "PF_VSOCK",        40 },
 };
 
-static const struct protocol *lookup_proto(const char *name, unsigned int proto)
+static const struct domain *lookup_domain(const char *name, unsigned int domain)
 {
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(protocols); i++) {
-		if ((name && strcmp(name, protocols[i].name) == 0) ||
-		    (proto != -1u && protocols[i].proto == proto))
-			return &protocols[i];
+	for (i = 0; i < ARRAY_SIZE(domains); i++) {
+		if ((name && strcmp(name, domains[i].name) == 0) ||
+		    (domain != -1u && domains[i].domain == domain))
+			return &domains[i];
 	}
 
 	return NULL;
 }
 
-const char * get_proto_name(unsigned int proto)
+const char * get_domain_name(unsigned int domain)
 {
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(protocols); i++)
-		if (protocols[i].proto == proto)
-			return protocols[i].name;
+	for (i = 0; i < ARRAY_SIZE(domains); i++)
+		if (domains[i].domain == domain)
+			return domains[i].name;
 	return NULL;
 }
 
-void find_specific_proto(const char *protoarg)
+void find_specific_domain(const char *domainarg)
 {
-	const struct protocol *p;
+	const struct domain *p;
 	unsigned int i;
 
-	p = lookup_proto(protoarg, specific_proto ? : -1u);
+	p = lookup_domain(domainarg, specific_domain ? : -1u);
 	if (p) {
-		specific_proto = p->proto;
-		output(2, "Using protocol %s (%u) for all sockets\n", p->name, p->proto);
+		specific_domain = p->domain;
+		output(2, "Using domain %s (%u) for all sockets\n", p->name, p->domain);
 		return;
 	}
 
-	outputerr("Protocol unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
-	for (i = 0; i < ARRAY_SIZE(protocols); i++)
-		outputerr("%s ", protocols[i].name);
+	outputerr("Domain unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
+	for (i = 0; i < ARRAY_SIZE(domains); i++)
+		outputerr("%s ", domains[i].name);
 	outputerr("\n");
 
 	exit(EXIT_FAILURE);
 }
 
-unsigned int find_next_enabled_proto(unsigned int from)
+unsigned int find_next_enabled_domain(unsigned int from)
 {
 	unsigned int i;
 
-	from %= ARRAY_SIZE(no_protos);
+	from %= ARRAY_SIZE(no_domains);
 
-	for (i = from; i < ARRAY_SIZE(no_protos); i++) {
-		if (no_protos[i] == FALSE)
-			return no_protos[i];
+	for (i = from; i < ARRAY_SIZE(no_domains); i++) {
+		if (no_domains[i] == FALSE)
+			return no_domains[i];
 	}
 
 	for (i = 0; i < from; i++) {
-		if (no_protos[i] == FALSE)
-			return no_protos[i];
+		if (no_domains[i] == FALSE)
+			return no_domains[i];
 	}
 
 	return -1u;
 }
 
-void parse_exclude_protos(const char *arg)
+void parse_exclude_domains(const char *arg)
 {
 	char *_arg = strdup(arg);
-	const struct protocol *p;
+	const struct domain *p;
 	char *tok;
 
 	if (!_arg) {
@@ -134,10 +134,10 @@ void parse_exclude_protos(const char *arg)
 	}
 
 	for (tok = strtok(_arg, ","); tok; tok = strtok(NULL, ",")) {
-		p = lookup_proto(tok, (unsigned int)atoi(tok));
+		p = lookup_domain(tok, (unsigned int)atoi(tok));
 		if (p) {
-			BUG_ON(p->proto >= ARRAY_SIZE(no_protos));
-			no_protos[p->proto] = TRUE;
+			BUG_ON(p->domain >= ARRAY_SIZE(no_domains));
+			no_domains[p->domain] = TRUE;
 		} else
 			goto err;
 	}
@@ -147,6 +147,6 @@ void parse_exclude_protos(const char *arg)
 
 err:
 	free(_arg);
-	outputerr("Protocol unknown in argument %s\n", arg);
+	outputerr("Domain unknown in argument %s\n", arg);
 	exit(EXIT_FAILURE);
 }

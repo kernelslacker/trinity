@@ -14,7 +14,7 @@
 #include "maps.h"
 #include "pids.h"
 #include "params.h"
-#include "protocols.h"
+#include "domains.h"
 #include "random.h"
 #include "signals.h"
 #include "shm.h"
@@ -117,8 +117,8 @@ int main(int argc, char* argv[])
 
 	do_uid0_check();
 
-	if (do_specific_proto == TRUE)
-		find_specific_proto(specific_proto_optarg);
+	if (do_specific_domain == TRUE)
+		find_specific_domain(specific_domain_optarg);
 
 	setup_shared_mappings();
 
