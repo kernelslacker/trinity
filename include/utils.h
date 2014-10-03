@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <types.h>
 
 #define MB (1024 * 1024UL)
 #define GB (1024 * MB)
