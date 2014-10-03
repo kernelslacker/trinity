@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "arch.h"
-#include "log.h"	// for BUG
 #include "random.h"
 #include "sanitise.h"
 
