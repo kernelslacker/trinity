@@ -140,9 +140,7 @@ static const char *decode_type(unsigned int type)
 }
 
 
-static const char *cachefilename="trinity.socketcache";
-
-static void open_sockets(void)
+static void open_sockets(char *cachefilename)
 {
 	int cachefile;
 	unsigned int family, type, protocol;
@@ -176,7 +174,12 @@ static void open_sockets(void)
 	close(cachefile);
 }
 
-int main(__attribute((unused)) int argc, __attribute((unused)) char* argv[])
+int main(int argc, char* argv[])
 {
-	 open_sockets();
+	if (argc < 1) {
+		printf("Pass filename of socket file as argument.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	open_sockets(argv[1]);
 }
