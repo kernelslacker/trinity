@@ -27,10 +27,10 @@ extern bool do_64_arch;
 
 extern bool do_specific_syscall;
 extern bool do_exclude_syscall;
-extern unsigned int specific_proto;
-extern bool do_specific_proto;
-extern char *specific_proto_optarg;
-extern bool no_protos[TRINITY_PF_MAX];
+extern unsigned int specific_domain;
+extern bool do_specific_domain;
+extern char *specific_domain_optarg;
+extern bool no_domains[TRINITY_PF_MAX];
 extern bool dopause;
 extern bool show_syscall_list;
 extern bool show_ioctl_list;

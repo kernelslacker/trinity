@@ -9,7 +9,7 @@
 #include "maps.h"
 #include "config.h"
 #include "random.h"
-#include "params.h"	// do_specific_proto
+#include "params.h"	// do_specific_domain
 #include "utils.h"	// ARRAY_SIZE
 
 struct sa_func_entry {
@@ -68,8 +68,8 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	unsigned int i;
 
 	/* If we want sockets of a specific type, we'll want sockaddrs that match. */
-	if (do_specific_proto == TRUE)
-		pf = specific_proto;
+	if (do_specific_domain == TRUE)
+		pf = specific_domain;
 
 	/* If we got no hint passed down, pick a random proto. */
 	if (pf == -1)

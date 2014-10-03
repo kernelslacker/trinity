@@ -12,8 +12,8 @@
 #include "log.h"
 #include "net.h"
 #include "maps.h"
-#include "params.h"	// verbose, do_specific_proto
-#include "protocols.h"
+#include "params.h"	// verbose, do_specific_domain
+#include "domains.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -67,7 +67,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	shm->sockets[nr_sockets].triplet.protocol = protocol;
 
 	output(2, "fd[%i] = domain:%i (%s) type:0x%x protocol:%i\n",
-		fd, domain, get_proto_name(domain), type, protocol);
+		fd, domain, get_domain_name(domain), type, protocol);
 
 	/* Set some random socket options. */
 	sso_socket(&shm->sockets[nr_sockets].triplet, &so, fd);
@@ -145,7 +145,7 @@ static unsigned int valid_proto(unsigned int family)
 {
 	const char *famstr;
 
-	famstr = get_proto_name(family);
+	famstr = get_domain_name(family);
 
 	/* Not used for creating sockets. */
 	if (strncmp(famstr, "PF_UNSPEC", 9) == 0)
@@ -194,15 +194,15 @@ static int generate_sockets(void)
 		lock_cachefile(cachefile, F_WRLCK);
 
 	/*
-	 * Don't loop forever if all protos all are disabled.
+	 * Don't loop forever if all domains all are disabled.
 	 */
-	if (!do_specific_proto) {
-		for (n = 0; n < (int)ARRAY_SIZE(no_protos); n++) {
-			if (!no_protos[n])
+	if (!do_specific_domain) {
+		for (n = 0; n < (int)ARRAY_SIZE(no_domains); n++) {
+			if (!no_domains[n])
 				break;
 		}
 
-		if (n >= (int)ARRAY_SIZE(no_protos))
+		if (n >= (int)ARRAY_SIZE(no_domains))
 			nr_to_create = 0;
 	}
 
@@ -216,26 +216,26 @@ static int generate_sockets(void)
 			if (shm->exit_reason != STILL_RUNNING)
 				goto out_unlock;
 
-			if (do_specific_proto == TRUE) {
-				st.family = specific_proto;
+			if (do_specific_domain == TRUE) {
+				st.family = specific_domain;
 				//FIXME: If we've passed -P and we're spinning here without making progress
 				// then we should abort after a few hundred loops.
 			}
 
-			if (get_proto_name(st.family) == NULL)
+			if (get_domain_name(st.family) == NULL)
 				continue;
 
 			if (valid_proto(st.family) == FALSE) {
-				if (do_specific_proto == TRUE) {
-					outputerr("Can't do protocol %s\n", get_proto_name(st.family));
+				if (do_specific_domain == TRUE) {
+					outputerr("Can't do protocol %s\n", get_domain_name(st.family));
 					goto out_unlock;
 				} else {
 					continue;
 				}
 			}
 
-			BUG_ON(st.family >= ARRAY_SIZE(no_protos));
-			if (no_protos[st.family])
+			BUG_ON(st.family >= ARRAY_SIZE(no_domains));
+			if (no_domains[st.family])
 				continue;
 
 			if (sanitise_socket_triplet(&st) == -1)
@@ -259,7 +259,7 @@ static int generate_sockets(void)
 				if (nr_to_create == 0)
 					goto done;
 			} else {
-				//outputerr("Couldn't open family:%d (%s)\n", st.family, get_proto_name(st.family));
+				//outputerr("Couldn't open family:%d (%s)\n", st.family, get_domain_name(st.family));
 			}
 		}
 	}
@@ -345,8 +345,8 @@ static int open_sockets(void)
 		type = buffer[1];
 		protocol = buffer[2];
 
-		if ((do_specific_proto == TRUE && domain != specific_proto) ||
-		    (domain < ARRAY_SIZE(no_protos) && no_protos[domain] == TRUE)) {
+		if ((do_specific_domain == TRUE && domain != specific_domain) ||
+		    (domain < ARRAY_SIZE(no_domains) && no_domains[domain] == TRUE)) {
 			output(1, "ignoring socket cachefile due to specific "
 			       "protocol request (or protocol disabled), "
 			       "and stale data in cachefile.\n");

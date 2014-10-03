@@ -11,7 +11,7 @@
 #include "log.h"
 #include "net.h"
 #include "params.h"
-#include "protocols.h"
+#include "domains.h"
 #include "random.h"
 #include "syscall.h"
 #include "tables.h"
@@ -25,11 +25,11 @@ bool do_exclude_syscall = FALSE;
 bool do_32_arch = TRUE;
 bool do_64_arch = TRUE;
 
-unsigned int specific_proto = 0;
+unsigned int specific_domain = 0;
 unsigned int user_specified_children = 0;
 
-bool do_specific_proto = FALSE;
-bool no_protos[TRINITY_PF_MAX];
+bool do_specific_domain = FALSE;
+bool no_domains[TRINITY_PF_MAX];
 
 bool dopause = FALSE;
 bool show_syscall_list = FALSE;
@@ -48,7 +48,7 @@ bool user_set_seed = FALSE;
 
 unsigned char desired_group = GROUP_NONE;
 
-char *specific_proto_optarg = NULL;
+char *specific_domain_optarg = NULL;
 
 char *victim_path = NULL;
 
@@ -79,8 +79,8 @@ static void usage(void)
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
 	outputerr(" --logging,-l: (off=disable logging).\n");
 	outputerr(" --monochrome,-m: don't output ANSI codes\n");
-	outputerr(" --proto,-P: specify specific network protocol for sockets.\n");
-	outputerr(" --no_proto,-E: specify network protocols to be excluded from testing.\n");
+	outputerr(" --domain,-P: specify specific network domain for sockets.\n");	//FIXME: P used to be 'proto' pick something better.
+	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
 	outputerr(" --random,-r#: pick N syscalls at random and just fuzz those\n");
 	outputerr(" --server_addr: supply an IPv4 or IPv6 address to connect, no need for server side.\n");
@@ -115,8 +115,8 @@ static const struct option longopts[] = {
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "logging", required_argument, NULL, 'l' },
 	{ "monochrome", no_argument, NULL, 'm' },
-	{ "no_proto", required_argument, NULL, 'E' },
-	{ "proto", required_argument, NULL, 'P' },
+	{ "no_domain", required_argument, NULL, 'E' },
+	{ "domain", required_argument, NULL, 'P' },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
 	{ "server_addr", required_argument, NULL, 0 },
@@ -235,13 +235,13 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'P':
-			do_specific_proto = TRUE;
-			specific_proto = strtol(optarg, NULL, 10);
-			specific_proto_optarg = optarg;
+			do_specific_domain = TRUE;
+			specific_domain = strtol(optarg, NULL, 10);
+			specific_domain_optarg = optarg;
 			break;
 
 		case 'E':
-			parse_exclude_protos(optarg);
+			parse_exclude_domains(optarg);
 			break;
 
 		case 'q':

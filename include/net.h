@@ -11,7 +11,7 @@
 extern unsigned int nr_sockets;
 
 /* protocol decoding */
-extern unsigned int specific_proto;
+extern unsigned int specific_domain;
 
 extern int server_port;
 extern char server_addr[INET6_ADDRSTRLEN];
