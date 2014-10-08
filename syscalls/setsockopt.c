@@ -36,7 +36,9 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .func = &raw_setsockopt },
 	{ .func = &ipx_setsockopt },
 	{ .func = &ax25_setsockopt },
+#ifdef USE_APPLETALK
 	{ .func = &atalk_setsockopt },
+#endif
 	{ .func = &netrom_setsockopt },
 	{ .func = &rose_setsockopt },
 	{ .func = &decnet_setsockopt },
