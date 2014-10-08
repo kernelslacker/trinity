@@ -197,6 +197,7 @@ check_header linux/kvm.h USE_KVM
 check_header linux/seccomp.h USE_SECCOMP
 check_header linux/vhost.h USE_VHOST
 check_header execinfo.h USE_BACKTRACE
+check_header netatalk/at.h USE_APPLETALK
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"
 

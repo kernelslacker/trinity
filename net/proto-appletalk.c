@@ -1,3 +1,6 @@
+#include "config.h"
+
+#ifdef USE_APPLETALK
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -39,3 +42,4 @@ void atalk_setsockopt(struct sockopt *so)
 {
 	so->level = SOL_ATALK;
 }
+#endif

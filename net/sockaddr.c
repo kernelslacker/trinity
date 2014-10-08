@@ -23,7 +23,9 @@ static const struct sa_func_entry sa_funcs[] = {
 	{ .pf = PF_INET, .func = &ipv4_gen_sockaddr },
 	{ .pf = PF_AX25, .func = &ax25_gen_sockaddr },
 	{ .pf = PF_IPX, .func = &ipx_gen_sockaddr },
+#ifdef USE_APPLETALK
 	{ .pf = PF_APPLETALK, .func = &atalk_gen_sockaddr },
+#endif
 //TODO	{ .pf = PF_NETROM, .func = &netrom_gen_sockaddr },
 //TODO	{ .pf = PF_BRIDGE, .func = &bridge_gen_sockaddr },
 	{ .pf = PF_ATMPVC, .func = &atmpvc_gen_sockaddr },
