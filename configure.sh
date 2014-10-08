@@ -196,6 +196,7 @@ check_header sound/compress_offload.h USE_SNDDRV_COMPRESS_OFFLOAD
 check_header linux/kvm.h USE_KVM
 check_header linux/seccomp.h USE_SECCOMP
 check_header linux/vhost.h USE_VHOST
+check_header execinfo.h USE_BACKTRACE
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"
 
