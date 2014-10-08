@@ -2,11 +2,14 @@
  * Various routines useful for debugging.
  */
 
+#include "config.h"
+
+#ifdef USE_BACKTRACE
 #include <execinfo.h>
+#endif
 #include <stdio.h>
 #include <stdarg.h>
 #include "child.h"
-#include "config.h"
 #include "debug.h"
 #include "log.h"
 #include "params.h"
@@ -18,6 +21,7 @@
 
 void show_backtrace(void)
 {
+#ifdef USE_BACKTRACE
 	unsigned int j, nptrs;
 	void *buffer[BACKTRACE_SIZE];
 	char **strings;
@@ -38,6 +42,7 @@ void show_backtrace(void)
 	free(strings);
 out:
 	set_dontkillme(getpid(), TRUE);
+#endif
 }
 
 void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno)
