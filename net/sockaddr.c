@@ -33,7 +33,9 @@ static const struct sa_func_entry sa_funcs[] = {
 #ifdef USE_IPV6
 	{ .pf = PF_INET6, .func = &ipv6_gen_sockaddr },
 #endif
+#ifdef USE_ROSE
 	{ .pf = PF_ROSE, .func = &rose_gen_sockaddr },
+#endif
 	{ .pf = PF_DECnet, .func = &decnet_gen_sockaddr },
 	{ .pf = PF_NETBEUI, .func = &llc_gen_sockaddr },
 //TODO	{ .pf = PF_SECURITY, .func = &security_gen_sockaddr },
