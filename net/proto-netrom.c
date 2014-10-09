@@ -1,3 +1,6 @@
+#include "config.h"
+
+#ifdef USE_NETROM
 #include <stdlib.h>
 #include <netrom/netrom.h>
 #include "net.h"
@@ -17,3 +20,4 @@ void netrom_setsockopt(struct sockopt *so)
 	val = rand() % NR_SOL_NETROM_OPTS;
 	so->optname = netrom_opts[val];
 }
+#endif
