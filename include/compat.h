@@ -908,6 +908,9 @@ struct kvm_get_htab_fd {
 #ifndef SCHED_DEADLINE
 #define SCHED_DEADLINE 6
 #endif
+#ifndef SCHED_IDLE
+#define SCHED_IDLE 5
+#endif
 
 /* sys/swap.h */
 #ifndef SWAP_FLAG_DISCARD
