@@ -109,7 +109,7 @@ clean:
 	@rm -f tags
 	@rm -rf $(DEPDIR)/*
 	@rm -rf trinity-coverity.tar.xz cov-int
-	@rm -f version.h
+	@rm -f include/version.h
 
 devel:
 	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh
