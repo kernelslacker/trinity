@@ -1,3 +1,6 @@
+#include "config.h"
+
+#ifdef USE_IPV6
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -101,3 +104,4 @@ void inet6_setsockopt(struct sockopt *so)
 	val = rand() % NR_SOL_INET6_OPTS;
 	so->optname = inet6_opts[val];
 }
+#endif
