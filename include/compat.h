@@ -24,6 +24,10 @@
 #define O_CLOEXEC       02000000
 #endif
 
+#ifndef O_LARGEFILE
+#define O_LARGEFILE	00100000
+#endif
+
 #ifndef O_TMPFILE
 #define O_TMPFILE	020000000
 #endif
