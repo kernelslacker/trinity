@@ -33,7 +33,9 @@ static const struct socket_ptr socketptrs[] = {
 	{ .family = AF_CAN, .func = &can_rand_socket },
 	{ .family = AF_DECnet, .func = &decnet_rand_socket },
 	{ .family = AF_INET, .func = &inet_rand_socket },
+#ifdef USE_IPV6
 	{ .family = AF_INET6, .func = &inet6_rand_socket },
+#endif
 	{ .family = AF_IPX, .func = &ipx_rand_socket },
 	{ .family = AF_IRDA, .func = &irda_rand_socket },
 	{ .family = AF_LLC, .func = &llc_rand_socket },

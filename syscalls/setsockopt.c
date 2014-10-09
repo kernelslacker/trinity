@@ -29,7 +29,9 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .func = &socket_setsockopt },
 	{ .func = &tcp_setsockopt },
 	{ .func = &udp_setsockopt },
+#ifdef USE_IPV6
 	{ .func = &inet6_setsockopt },
+#endif
 #ifdef USE_IPV6
 	{ .func = &icmpv6_setsockopt },
 #endif
