@@ -1,3 +1,6 @@
+#include "config.h"
+
+#ifdef USE_IPV6
 #include <stdlib.h>
 #include <linux/icmpv6.h>
 #include "net.h"
@@ -16,3 +19,4 @@ void icmpv6_setsockopt(struct sockopt *so)
 	val = rand() % NR_SOL_ICMPV6_OPTS;
 	so->optname = icmpv6_opts[val];
 }
+#endif
