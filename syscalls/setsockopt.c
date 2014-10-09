@@ -46,7 +46,9 @@ static const struct sso_funcptr ssoptrs[] = {
 #ifdef USE_NETROM
 	{ .func = &netrom_setsockopt },
 #endif
+#ifdef USE_ROSE
 	{ .func = &rose_setsockopt },
+#endif
 	{ .func = &decnet_setsockopt },
 	{ .func = &x25_setsockopt },
 	{ .func = &packet_setsockopt },

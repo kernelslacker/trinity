@@ -205,6 +205,7 @@ check_header linux/vhost.h USE_VHOST
 check_header execinfo.h USE_BACKTRACE
 check_header netatalk/at.h USE_APPLETALK
 check_header netrom/netrom.h USE_NETROM
+check_header netrose/rose.h USE_ROSE
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"
 
