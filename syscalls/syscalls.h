@@ -374,4 +374,5 @@ extern struct syscallentry syscall_getrandom;
 extern struct syscallentry syscall_seccomp;
 extern struct syscallentry syscall_memfd_create;
 extern struct syscallentry syscall_kexec_file_load;
+extern struct syscallentry syscall_bpf;
 

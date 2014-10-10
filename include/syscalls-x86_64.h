@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.16+ */
+/* Syscalls from arch/x86/syscalls/syscall_64.tbl as of 3.17+ */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -328,4 +328,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_seccomp },
 	{ .entry = &syscall_memfd_create },
 	{ .entry = &syscall_kexec_file_load },
+	{ .entry = &syscall_bpf },
 };
