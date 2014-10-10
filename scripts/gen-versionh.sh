@@ -12,9 +12,9 @@ hdr()
 rm -f version.h
 
 if [ -f $HEADER ]; then
-OLD=$(grep VERSION $HEADER | head -n1 | sed 's/"//g' | awk '{ print $3 }')
+  OLD=$(grep VERSION $HEADER | head -n1 | sed 's/"//g' | awk '{ print $3 }')
 else
-OLD=""
+  OLD=""
 fi
 
 DEVEL=$(grep VERSION Makefile | head -n1 | grep pre | wc -l)
@@ -23,7 +23,7 @@ DEVEL=$(grep VERSION Makefile | head -n1 | grep pre | wc -l)
 # get the version number from the makefile.
 makefilever()
 {
-VER=$(grep VERSION= Makefile | sed -re '1 s/.*=.*"(.*)".*/\1/')
+  VER=$(grep VERSION= Makefile | sed -re '1 s/.*=.*"(.*)".*/\1/')
   if [ "$OLD" != "$VER" ]; then
     hdr
     echo "#define VERSION \""$VER\" >> $HEADER
@@ -32,7 +32,7 @@ VER=$(grep VERSION= Makefile | sed -re '1 s/.*=.*"(.*)".*/\1/')
 
 if [ "$DEVEL" == "1" ]; then
   if [ ! -f /usr/bin/git ]; then
-   makefilever
+    makefilever
   else
     VER=$(git describe --always)
     if [ "$OLD" != "$VER" ]; then
