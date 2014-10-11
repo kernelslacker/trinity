@@ -30,11 +30,12 @@ makefilever()
   fi
 }
 
+GIT=`which git 2>/dev/null`
 if [ "$DEVEL" == "1" ]; then
-  if [ ! -f /usr/bin/git ]; then
+  if [ ! -f ${GIT} ]; then
     makefilever
   else
-    VER=$(git describe --always)
+    VER=$(${GIT} describe --always)
     if [ "$OLD" != "$VER" ]; then
       hdr
       echo "#define VERSION \""$VER\" >> $HEADER
