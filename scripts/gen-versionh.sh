@@ -23,7 +23,7 @@ DEVEL=$(grep VERSION Makefile | head -n1 | grep pre | wc -l)
 # get the version number from the makefile.
 makefilever()
 {
-VER=$(grep VERSION= Makefile| head -n1| sed 's/=/ /' | sed 's/"//g' | awk '{print $2}')
+VER=$(grep VERSION= Makefile | sed -re '1 s/.*=.*"(.*)".*/\1/')
   if [ "$OLD" != "$VER" ]; then
     hdr
     echo "#define VERSION \""$VER\" >> $HEADER
