@@ -123,22 +123,6 @@ index 09d9591b7708..0bc4491c642a 100644
  
  	*lenp = 2;
  	*ppos += *lenp;
-diff --git a/mm/vmscan.c b/mm/vmscan.c
-index 32c661d66a45..dd8c1cffb88e 100644
---- a/mm/vmscan.c
-+++ b/mm/vmscan.c
-@@ -3730,11 +3730,6 @@ void check_move_unevictable_pages(struct page **pages, int nr_pages)
- 
- static void warn_scan_unevictable_pages(void)
- {
--	printk_once(KERN_WARNING
--		    "%s: The scan_unevictable_pages sysctl/node-interface has been "
--		    "disabled for lack of a legitimate use case.  If you have "
--		    "one, please send an email to linux-mm@kvack.org.\n",
--		    current->comm);
- }
- 
- /*
 diff --git a/net/ax25/af_ax25.c b/net/ax25/af_ax25.c
 index c35c3f48fc0f..3e605e64c797 100644
 --- a/net/ax25/af_ax25.c
