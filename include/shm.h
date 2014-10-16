@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arch.h"
 #include "child.h"
 #include "epoll.h"
 #include "eventfd.h"
@@ -40,6 +41,12 @@ struct shm_s {
 	unsigned int nr_active_syscalls;
 	unsigned int nr_active_32bit_syscalls;
 	unsigned int nr_active_64bit_syscalls;
+
+#ifdef ARCH_IS_BIARCH
+	/* Check that 32bit emulation is available. */
+	unsigned int syscalls32_succeeded;
+	unsigned int syscalls32_attempted;
+#endif
 
 	/* pids */
 	pid_t mainpid;
