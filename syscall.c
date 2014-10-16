@@ -34,12 +34,43 @@ static long syscall32(unsigned int call,
 	long __res = 0;
 
 #if defined(DO_32_SYSCALL)
+	/* If we have CONFIG_IA32_EMULATION unset, we will segfault.
+	 * Detect this case, and force 64-bit only.
+	 */
+	if (shm->syscalls32_succeeded == FALSE) {
+		if (shm->syscalls32_attempted >= (max_children * 2)) {
+			unsigned int i;
+
+			lock(&shm->syscalltable_lock);
+
+			/* check another thread didn't already do this. */
+			if (shm->nr_active_32bit_syscalls == 0)
+				goto already_done;
+
+			output(0, "Tried %d 32-bit syscalls unsuccessfully. Disabling all 32-bit syscalls.\n",
+					shm->syscalls32_attempted);
+
+			for (i = 0; i < max_nr_32bit_syscalls; i++) {
+				struct syscallentry *entry = syscalls[i].entry;
+
+				if (entry->active_number != 0)
+					deactivate_syscall(i, TRUE);
+			}
+already_done:
+			unlock(&shm->syscalltable_lock);
+		}
+
+		shm->syscalls32_attempted++;
+	}
+
 	DO_32_SYSCALL
 
 	if ((unsigned long)(__res) >= (unsigned long)(-133)) {
 		errno = -(__res);
 		__res = -1;
 	}
+
+	shm->syscalls32_succeeded = TRUE;
 
 #else
 	#error Implement 32-on-64 syscall macro for this architecture.
