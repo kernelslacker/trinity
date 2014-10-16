@@ -35,7 +35,12 @@ static long syscall32(unsigned int call,
 
 #if defined(DO_32_SYSCALL)
 	DO_32_SYSCALL
-	__syscall_return(long, __res);
+
+	if ((unsigned long)(__res) >= (unsigned long)(-133)) {
+		errno = -(__res);
+		__res = -1;
+	}
+
 #else
 	#error Implement 32-on-64 syscall macro for this architecture.
 #endif
