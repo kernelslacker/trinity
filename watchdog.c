@@ -136,6 +136,8 @@ static void kill_all_kids(void)
 	/* Wait for all the children to exit. */
 	while (shm->running_childs > 0) {
 
+		int children_seen = 0;
+
 		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
 		for_each_child(i) {
 			pid_t pid;
@@ -149,6 +151,8 @@ static void kill_all_kids(void)
 			if (pid_is_valid(pid) == FALSE)
 				continue;
 
+			children_seen++;
+
 			ret = kill(pid, SIGKILL);
 			/* check we don't have anything stale in the pidlist */
 			if (ret == -1) {
@@ -156,6 +160,9 @@ static void kill_all_kids(void)
 					reap_child(pid);
 			}
 		}
+
+		if (children_seen == 0)
+			shm->running_childs = 0;
 
 		/* Check that no dead children hold locks. */
 		check_all_locks();
