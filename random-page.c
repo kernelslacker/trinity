@@ -51,7 +51,7 @@ static void fabricate_onepage_struct(char *page)
 
 void check_page_rand_redzone(void)
 {
-	int fd;
+	FILE *fd;
 	unsigned int i;
 	char total = 0;
 	char filename[] = "/tmp/trinity-pagerand-XXXXXX";
@@ -64,17 +64,17 @@ void check_page_rand_redzone(void)
 
 	output(0, "Something stomped the rand page guard page at %p!\n", page_rand + page_size);
 
-	fd = mkstemp(filename);
-	if (fd == -1) {
-		perror("Failed to mkstemp page_rand log");
+	sprintf(filename, "/tmp/trinity-pagerand-%d", getpid());
+	fd = fopen(filename, "w");
+	if (!fd) {
+		perror("Failed to open randpage log");
 		return;
 	}
 	output(0, "Dumped page_rand and guard page to %s\n", filename);
 
-	if (write(fd, page_rand, page_size * 2) == -1)
-		perror("failed to write page_rand log");
+	fwrite(page_rand, page_size, 2, fd);
 
-	close(fd);
+	fclose(fd);
 }
 
 
