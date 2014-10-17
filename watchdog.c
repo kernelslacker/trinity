@@ -340,7 +340,7 @@ static void check_child_progress(struct childdata *child)
 	kill_pid(pid);
 
 	/* if we wrapped, just reset it, we'll pick it up next time around. */
-	if (diff > 2145) {	/* max adjtime offset. */
+	if (diff > 2146) {	/* max adjtime offset, + the 1 second since last time. */
 		output(1, "child %u wrapped! old=%lu now=%lu\n", child->num, old, now);
 		rec->tv.tv_sec = now;
 		return;
