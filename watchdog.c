@@ -139,6 +139,7 @@ static void kill_all_kids(void)
 		/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
 		for_each_child(i) {
 			pid_t pid;
+			int ret;
 
 			pid = shm->children[i]->pid;
 			if (pid == EMPTY_PIDSLOT)
@@ -148,7 +149,12 @@ static void kill_all_kids(void)
 			if (pid_is_valid(pid) == FALSE)
 				continue;
 
-			kill(pid, SIGKILL);
+			ret = kill(pid, SIGKILL);
+			/* check we don't have anything stale in the pidlist */
+			if (ret == -1) {
+				if (errno == ESRCH)
+					reap_child(pid);
+			}
 		}
 
 		/* Check that no dead children hold locks. */
