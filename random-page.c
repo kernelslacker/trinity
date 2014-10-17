@@ -113,12 +113,12 @@ void generate_random_page(char *page)
 
 	/* page full of format strings. */
 	case 6:
-		for (i = 0; i < page_size; ) {
-			page[i++] = '%';
+		for (i = 0; i < page_size; i += 2) {
+			page[i] = '%';
 			switch (rand_bool()) {
-			case 0:	page[i++] = 'd';
+			case 0:	page[i + 1] = 'd';
 				break;
-			case 1:	page[i++] = 's';
+			case 1:	page[i + 1] = 's';
 				break;
 			}
 		}
