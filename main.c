@@ -71,6 +71,7 @@ static void fork_children(void)
 
 			debugf("child %d %d exiting.\n", childno, getpid());
 			close_logfile(&this_child->logfile);
+			reap_child(child->pid);
 			_exit(EXIT_SUCCESS);
 		} else {
 			if (pid == -1) {
@@ -219,14 +220,7 @@ static void handle_child(pid_t childpid, int childstatus)
 			int childno;
 
 			childno = find_childno(childpid);
-			if (childno == CHILD_NOT_FOUND) {
-				/* If we reaped it, it wouldn't show up, so check that. */
-				if (shm->last_reaped != childpid) {
-					outputerr("## Couldn't find %d in list of pids.\n", childpid);
-					panic(EXIT_LOST_CHILD);
-					dump_childnos();
-				}
-			} else {
+			if (childno != CHILD_NOT_FOUND) {
 				debugf("Child %d exited after %ld operations.\n",
 					childpid, shm->children[childno]->syscall.op_nr);
 				reap_child(childpid);
