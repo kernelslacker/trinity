@@ -151,6 +151,9 @@ static void kill_all_kids(void)
 			kill(pid, SIGKILL);
 		}
 
+		/* Check that no dead children hold locks. */
+		check_all_locks();
+
 		/* wait a second to give kids a chance to exit. */
 		sleep(1);
 	}
