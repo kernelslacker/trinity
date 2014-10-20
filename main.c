@@ -100,6 +100,17 @@ static void fork_children(void)
 	debugf("created enough children\n");
 }
 
+/*
+ * reap_child: Remove all references to a running child.
+ *
+ * This can get called from three possible places.
+ * 1. A child calls this itself just before it exits to clear out
+ *    its child struct in the shm.
+ * 2. From the watchdog if it finds reference to a pid that no longer exists.
+ * 3. From the main pid if it gets a SIGBUS or SIGSTOP from the child.
+ *
+ * The reaper lock protects against these happening at the same time.
+ */
 void reap_child(pid_t childpid)
 {
 	struct childdata *child;
