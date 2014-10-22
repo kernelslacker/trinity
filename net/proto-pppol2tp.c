@@ -21,5 +21,5 @@ void pppol2tp_setsockopt(struct sockopt *so)
 	val = rand() % NR_SOL_PPPOL2TP_OPTS;
 	so->optname = pppol2tp_opts[val];
 
-	so->optval = sizeof(int);
+	so->optlen = sizeof(int);
 }
