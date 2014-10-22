@@ -3,14 +3,15 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include "sanitise.h"
-#include "compat.h"
-#include "net.h"
-#include "maps.h"
+#include "arch.h"
 #include "config.h"
-#include "random.h"
+#include "maps.h"
+#include "net.h"
 #include "params.h"	// do_specific_domain
+#include "random.h"
+#include "sanitise.h"
 #include "utils.h"	// ARRAY_SIZE
+#include "compat.h"
 
 struct sa_func_entry {
 	unsigned int pf;
@@ -89,6 +90,6 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	}
 
 	/* Make something up for unknown protocols. */
-	*addr = (struct sockaddr *) get_writable_address(100);
-	*addrlen = rand() % 100;
+	*addr = (struct sockaddr *) zmalloc(page_size);
+	*addrlen = rand() % page_size;
 }

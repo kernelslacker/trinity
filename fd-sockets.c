@@ -11,7 +11,6 @@
 #include "debug.h"
 #include "log.h"
 #include "net.h"
-#include "maps.h"
 #include "params.h"	// verbose, do_specific_domain
 #include "domains.h"
 #include "random.h"
@@ -86,11 +85,6 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 			(void) listen(fd, rand_range(1, 128));
 		}
 	}
-
-	/* If we didn't have a function for this sockaddr type, we would
-	 * have returned page_rand, so don't free() it or we segv. */
-	if (sa == (struct sockaddr *) page_rand)
-		return fd;
 
 	if (sa != NULL)
 		free(sa);
