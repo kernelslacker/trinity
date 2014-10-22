@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "arch.h"	// page_size
-#include "random.h"	// generate_random_page
+#include "random.h"	// generate_rand_bytes
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -31,7 +31,7 @@ static unsigned long ** gen_ptrs_to_crap(void)
 
 	for (i = 0; i < count; i++) {
 		ptr[i] = zmalloc(page_size);	// FIXME: LEAK
-		generate_random_page((char *) ptr[i]);
+		generate_rand_bytes((unsigned char *) ptr[i], rand() % page_size);
 	}
 
 	return (unsigned long **) ptr;
