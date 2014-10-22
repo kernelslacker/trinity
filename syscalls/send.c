@@ -97,7 +97,8 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 static void post_sendmsg(__unused__ struct syscallrecord *rec)
 {
 	if (msg != NULL) {
-		// FIXME: msg->msg_name (sockaddr) is leaked.
+		if (msg->msg_name != page_rand)	// FIXME: What about other kinds of pages ?
+			free(msg->msg_name);	// free sockaddr
 		free(msg);
 	}
 }
