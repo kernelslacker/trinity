@@ -51,7 +51,6 @@ enum argtype {
 	ARG_RANGE,
 	ARG_OP,
 	ARG_LIST,
-	ARG_RANDPAGE,
 	ARG_CPU,
 	ARG_PATHNAME,
 	ARG_IOVEC,

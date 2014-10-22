@@ -40,10 +40,6 @@ static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 		sptr += sprintf(sptr, "%p", (void *) reg);
 		break;
 
-	case ARG_RANDPAGE:
-		sptr += sprintf(sptr, "0x%lx [page_rand]", reg);
-		break;
-
 	case ARG_OP:
 	case ARG_LIST:
 		sptr += sprintf(sptr, "0x%lx", reg);
