@@ -89,6 +89,6 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	}
 
 	/* Make something up for unknown protocols. */
-	*addr = (struct sockaddr *) page_rand;
+	*addr = (struct sockaddr *) get_writable_address(100);
 	*addrlen = rand() % 100;
 }
