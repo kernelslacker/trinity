@@ -38,10 +38,10 @@ struct map * get_map(void)
 	struct map *map;
 	bool local = FALSE;
 
-	/* We can get called by child processes, and also during startup by
-	 * the main process when it constructs page_rand etc.
-	 * If we're not running in child context, just do shared mappings.
+	/* If we're not running in child context, just do shared mappings.
 	 * because main doesn't have any 'local' mappings.
+	 * FIXME: do we still need this? Are we still calling this from main
+	 * since the removal of page_rand  ?
 	 */
 	if (this_child != NULL) {
 		if (this_child->num_mappings > 0)

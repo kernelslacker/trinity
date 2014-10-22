@@ -19,12 +19,6 @@ void * get_writable_address(unsigned long size)
 	struct map *map;
 	void *addr = NULL;
 
-	/* Because we get called during startup when we create fd's, we need
-	 * to special case this, as we can't use get_non_null_address at that point */
-	//FIXME: This sucks, and needs to go away when page_rand dies.
-	if (getpid() == shm->mainpid)
-		return page_rand;
-
 retry:
 	map = get_map();
 
@@ -41,11 +35,6 @@ static void * _get_address(unsigned char null_allowed)
 {
 	void *addr = NULL;
 	int i;
-
-	/* Because we get called during startup when we create fd's, we need
-	 * to special case this, as we can't use get_non_null_address at that point */
-	if (getpid() == shm->mainpid)
-		return page_rand;
 
 	if (null_allowed == TRUE)
 		i = rand() % 4;

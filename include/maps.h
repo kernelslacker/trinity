@@ -2,8 +2,6 @@
 
 #include "list.h"
 
-extern char *page_rand;
-
 #define TRINITY_MAP_GLOBAL 1
 #define TRINITY_MAP_LOCAL 2
 
