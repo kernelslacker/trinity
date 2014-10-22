@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/types.h>
+#include "arch.h"
 #include "config.h"
 #include "log.h"
 #include "maps.h"
@@ -81,7 +82,10 @@ static const struct sso_funcptr ssoptrs[] = {
  */
 void do_setsockopt(struct sockopt *so)
 {
-	so->optval = (unsigned long) get_non_null_address();
+	/* get a page for the optval to live in.
+	 * TODO: push this down into the per-proto .func calls
+	 */
+	so->optval = (unsigned long) get_writable_address(page_size);
 
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
 	if (rand_bool())
