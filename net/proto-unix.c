@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include "maps.h"
 #include "net.h"
+#include "random.h"
 #include "utils.h"
 
 void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -17,7 +18,7 @@ void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	unixsock->sun_family = PF_UNIX;
 	len = rand() % 20;
-	strncpy(unixsock->sun_path, page_rand, len);	// TODO: generate_rand_bytes()
+	generate_rand_bytes((unsigned char *)unixsock->sun_path, len);
 	*addr = (struct sockaddr *) unixsock;
 	*addrlen = sizeof(struct sockaddr_un);
 }
