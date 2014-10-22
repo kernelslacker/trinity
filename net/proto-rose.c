@@ -9,7 +9,6 @@
 #include <linux/ax25.h> /* for ax25_address in rose.h */
 #include <netrose/rose.h>
 #include <stdlib.h>
-#include "maps.h"	// page_rand
 #include "net.h"
 #include "maps.h"	// page_rand
 #include "utils.h"	// ARRAY_SIZE
