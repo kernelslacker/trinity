@@ -4,7 +4,6 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <netax25/ax25.h>
-#include "maps.h"	// page_rand
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// ARRAY_SIZE
@@ -17,7 +16,7 @@ void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ax25 = zmalloc(sizeof(struct sockaddr_ax25));
 
 	ax25->sax25_family = PF_AX25;
-	memcpy(ax25->sax25_call.ax25_call, page_rand, 7);
+	generate_rand_bytes((unsigned char *) ax25->sax25_call.ax25_call, 7);
 	ax25->sax25_ndigis = rand();
 	*addr = (struct sockaddr *) ax25;
 	*addrlen = sizeof(struct sockaddr_ax25);
