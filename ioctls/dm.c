@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "ioctls.h"
 #include "random.h"
+#include "sanitise.h"
 
 static const struct ioctl dm_ioctls[] = {
 	IOCTL(DM_VERSION),
@@ -36,7 +37,7 @@ static void dm_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 
 	pick_random_ioctl(grp, rec);
 
-	rec->a3 = (unsigned long) page_rand;
+	rec->a3 = (unsigned long) get_address();
 	dm = (struct dm_ioctl *) rec->a3;
 
 	/* set a sensible version to get past the initial checks */
