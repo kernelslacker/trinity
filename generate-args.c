@@ -159,11 +159,6 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 	return mask;
 }
 
-static unsigned long handle_arg_randpage(void)
-{
-	return (unsigned long) page_rand;
-}
-
 static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	unsigned long num_entries;
@@ -340,9 +335,6 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	case ARG_LIST:
 		return handle_arg_list(entry, argnum);
-
-	case ARG_RANDPAGE:
-		return handle_arg_randpage();
 
 	case ARG_CPU:
 		return (unsigned long) get_cpu();
