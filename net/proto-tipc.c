@@ -59,5 +59,5 @@ void tipc_setsockopt(struct sockopt *so)
 	val = rand() % NR_SOL_TIPC_OPTS;
 	so->optname = tipc_opts[val];
 
-	so->optval = sizeof(__u32);
+	so->optlen = sizeof(__u32);
 }
