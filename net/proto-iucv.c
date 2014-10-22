@@ -18,5 +18,5 @@ void iucv_setsockopt(struct sockopt *so)
 	val = rand() % NR_SOL_IUCV_OPTS;
 	so->optname = iucv_opts[val];
 
-	so->optval = sizeof(int);
+	so->optlen = sizeof(int);
 }
