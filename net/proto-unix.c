@@ -17,8 +17,7 @@ void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	unixsock->sun_family = PF_UNIX;
 	len = rand() % 20;
-	memset(&page_rand[len], 0, 1);
-	strncpy(unixsock->sun_path, page_rand, len);
+	strncpy(unixsock->sun_path, page_rand, len);	// TODO: generate_rand_bytes()
 	*addr = (struct sockaddr *) unixsock;
 	*addrlen = sizeof(struct sockaddr_un);
 }
