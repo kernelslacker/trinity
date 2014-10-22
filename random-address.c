@@ -18,40 +18,21 @@ void * get_writable_address(unsigned long size)
 {
 	struct map *map;
 	void *addr = NULL;
-	int i;
 
 	/* Because we get called during startup when we create fd's, we need
 	 * to special case this, as we can't use get_non_null_address at that point */
+	//FIXME: This sucks, and needs to go away when page_rand dies.
 	if (getpid() == shm->mainpid)
 		return page_rand;
 
-	i = rand() % 3;
+retry:
+	map = get_map();
 
-	if (size > page_size)
-		i = rand_range(1, 2);
+	if (map->size < size)
+		goto retry;
 
-	switch (i) {
-	case 0:	addr = page_rand;
-		break;
-
-	case 1: map = get_map();
-		addr = map->ptr;
-		mprotect(addr, map->size, PROT_READ|PROT_WRITE);
-
-//		if (rand_bool()) {
-//			addr += map->size;
-//			addr -= size;
-//		}
-		break;
-
-	case 2: addr = zmalloc(size);	// FIXME: We leak this.
-//		if (rand_bool()) {
-//			/* place object at end of page. */
-//			addr += page_size;
-//			addr -= size;
-//		}
-		break;
-	}
+	addr = map->ptr;
+	mprotect(addr, map->size, PROT_READ | PROT_WRITE);
 
 	return addr;
 }
