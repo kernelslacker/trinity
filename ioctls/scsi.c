@@ -80,7 +80,7 @@ static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 {
 	struct sgio *sgio;
 
-	sgio = (struct sgio *) page_rand;	// FIXME: Do we always want to use page_rand ?
+	sgio = (struct sgio *) get_address();
 
 	sgio->cmd[0] = 0x12;
 	sgio->cmd[3] = 0x2;
@@ -112,7 +112,7 @@ static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 	sgio->ioh.usr_ptr = NULL;
 	sgio->ioh.flags |= SG_FLAG_DIRECT_IO;
 
-	rec->a3 = (unsigned long) page_rand;
+	rec->a3 = (unsigned long) get_address();
 }
 
 static void scsi_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
