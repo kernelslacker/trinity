@@ -208,12 +208,11 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_DROP_MEMBERSHIP:
 		mcaddr = 0xe0000000 | rand() % 0xff;
 
-		mr = zmalloc(sizeof(struct ip_mreqn));
+		mr = (struct ip_mreqn *) so->optval;
 		mr->imr_multiaddr.s_addr = mcaddr;
 		mr->imr_address.s_addr = random_ipv4_address();
 		mr->imr_ifindex = rand32();
 
-		so->optval = (unsigned long) mr;
 		so->optlen = sizeof(struct ip_mreqn);
 		break;
 
@@ -245,12 +244,11 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_DROP_SOURCE_MEMBERSHIP:
 		mcaddr = 0xe0000000 | rand() % 0xff;
 
-		ms = zmalloc(sizeof(struct ip_mreq_source));
+		ms = (struct ip_mreq_source *) so->optval;
 		ms->imr_multiaddr.s_addr = mcaddr;
 		ms->imr_interface.s_addr = random_ipv4_address();
 		ms->imr_sourceaddr.s_addr = random_ipv4_address();
 
-		so->optval = (unsigned long) ms;
 		so->optlen = sizeof(struct ip_mreq_source);
 		break;
 
