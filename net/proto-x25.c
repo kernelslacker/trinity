@@ -31,8 +31,12 @@ void x25_rand_socket(struct socket_triplet *st)
 
 void x25_setsockopt(struct sockopt *so)
 {
+	unsigned int *optval;
+
 	so->level = SOL_X25;
 
-	page_rand[0] = rand_bool();
-	so->optval = sizeof(int);
+	optval = (unsigned int *) so->optval;
+	*optval = rand_bool();
+
+	so->optlen = sizeof(int);
 }
