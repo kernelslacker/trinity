@@ -6,7 +6,6 @@
 #include <linux/if_ether.h>
 #include <stdlib.h>
 #include "net.h"
-#include "maps.h"	// page_rand
 #include "random.h"
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
@@ -55,8 +54,11 @@ static const unsigned int packet_opts[] = {
 void packet_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
+	char *optval;
 
 	so->level = SOL_PACKET;
+
+	optval = (char *) so->optval;
 
 	val = rand() % NR_SOL_PACKET_OPTS;
 	so->optname = packet_opts[val];
@@ -64,7 +66,7 @@ void packet_setsockopt(struct sockopt *so)
 	/* Adjust length according to operation set. */
 	switch (so->optname) {
 	case PACKET_VERSION:
-		page_rand[0] = rand() % 3; /* tpacket versions 1/2/3 */
+		optval[0] = rand() % 3; /* tpacket versions 1/2/3 */
 		break;
 
 	case PACKET_TX_RING:
