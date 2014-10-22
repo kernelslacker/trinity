@@ -203,8 +203,6 @@ void init_child(struct childdata *child, int childno)
 	child->mappings = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&child->mappings->list);
 
-	generate_random_page(page_rand);
-
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
 		CPU_ZERO(&set);
 		CPU_SET(childno, &set);
@@ -292,10 +290,6 @@ static void periodic_work(void)
 	/* Every ten iterations. */
 	if (!(periodic_counter % 10))
 		check_parent_pid();
-
-	/* Every hundred iterations. */
-	if (!(periodic_counter % 100))
-		generate_random_page(page_rand);
 
 	if (periodic_counter == 100)
 		periodic_counter = 0;

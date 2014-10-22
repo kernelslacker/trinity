@@ -62,7 +62,7 @@ static void fabricate_onepage_struct(char *page)
 	}
 }
 
-void generate_random_page(char *page)
+static void generate_random_page(char *page)
 {
 	unsigned int i;
 	unsigned int p = 0;

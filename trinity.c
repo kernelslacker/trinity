@@ -122,8 +122,6 @@ int main(int argc, char* argv[])
 
 	setup_shared_mappings();
 
-	init_page_rand();
-
 	parse_devices();
 
 	pids_init();

@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include "arch.h"	//PAGE_MASK
 #include "log.h"
-#include "maps.h"	// page_rand
 #include "params.h"	// logging, monochrome, quiet_level
 #include "pids.h"
 #include "shm.h"
@@ -61,9 +60,6 @@ static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 		sptr += sprintf(sptr, "%s", ANSI_RESET);
 		break;
 	}
-
-	if ((reg & PAGE_MASK) == (unsigned long) page_rand)
-		sptr += sprintf(sptr, "[page_rand]");
 
 	return sptr;
 }

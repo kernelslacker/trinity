@@ -131,8 +131,6 @@ retry:
 			len, strlen(rec->prebuffer));
 	}
 
-	check_page_rand_redzone();
-
 	/* Output the syscall result, and clean up */
 	output_syscall_postfix(rec);
 
