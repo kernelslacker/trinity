@@ -13,6 +13,15 @@
 #include "types.h"
 #include "utils.h"
 
+void generate_rand_bytes(unsigned char *ptr, unsigned int len)
+{
+	unsigned int i;
+
+	for (i = 0; i < len; i++) {
+		ptr[i] = rand();
+	}
+}
+
 unsigned int rand_range(unsigned int min, unsigned int max)
 {
 	if (min > max)
