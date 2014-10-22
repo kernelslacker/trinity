@@ -1,9 +1,9 @@
 #include <stdlib.h>
 #include <linux/udp.h>
 #include "net.h"
-#include "maps.h"	// page_rand
-#include "compat.h"
+#include "random.h"
 #include "utils.h"	// ARRAY_SIZE
+#include "compat.h"
 
 #define SOL_UDPLITE 136
 
@@ -12,6 +12,7 @@ static const unsigned int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_C
 
 void udplite_setsockopt(struct sockopt *so)
 {
+	char *optval;
 	unsigned char val;
 
 	so->level = SOL_UDPLITE;
@@ -23,7 +24,8 @@ void udplite_setsockopt(struct sockopt *so)
 	case UDP_CORK:
 		break;
 	case UDP_ENCAP:
-		page_rand[0] = (rand() % 3) + 1;        // Encapsulation types.
+		optval = (char *) so->optval;
+		optval[0] = rand_range(1, 3);        // Encapsulation types.
 		break;
 	case UDPLITE_SEND_CSCOV:
 		break;
