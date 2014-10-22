@@ -310,7 +310,9 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
-		return (unsigned long) rand64();
+		if (rand_bool())
+			return (unsigned long) rand64();
+		return (unsigned long) get_writable_address(page_size);
 
 	case ARG_FD:
 		return get_random_fd();
