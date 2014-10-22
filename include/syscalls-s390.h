@@ -358,4 +358,5 @@ struct syscalltable syscalls_s390[] = {
 	{ .entry = &syscall_seccomp },
 	{ .entry = &syscall_getrandom },
 	{ .entry = &syscall_memfd_create },
+	{ .entry = &syscall_bpf },
 };
