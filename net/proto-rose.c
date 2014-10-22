@@ -10,7 +10,6 @@
 #include <netrose/rose.h>
 #include <stdlib.h>
 #include "net.h"
-#include "maps.h"	// page_rand
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
@@ -27,11 +26,9 @@ void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	rose->srose_addr.rose_addr[3] = rand();
 	rose->srose_addr.rose_addr[4] = rand();
 
-	memcpy(rose->srose_call.ax25_call, page_rand, 7);
+	generate_rand_bytes((unsigned char *) rose->srose_call.ax25_call, 7 * 2);
 
 	rose->srose_ndigis = rand();
-
-	memcpy(rose->srose_digi.ax25_call, page_rand + 7, 7);
 
 	*addr = (struct sockaddr *) rose;
 	*addrlen = sizeof(struct sockaddr_rose);
