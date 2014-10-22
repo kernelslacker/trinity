@@ -269,7 +269,7 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 
 	pick_random_ioctl(grp, rec);
 
-	rec->a3 = (unsigned long) page_rand;
+	rec->a3 = (unsigned long) get_address();
 
 	switch (rec->a2) {
 	case AUTOFS_DEV_IOCTL_VERSION:
