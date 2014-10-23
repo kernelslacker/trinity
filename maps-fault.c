@@ -31,3 +31,11 @@ void dirty_mapping(struct map *map)
 		random_map_readfn(map);
 	}
 }
+
+void dirty_random_mapping(void)
+{
+	struct map *map;
+
+	map = get_map();
+	dirty_mapping(map);
+}
