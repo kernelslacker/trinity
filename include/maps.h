@@ -27,3 +27,10 @@ struct map * get_map(void);
 struct map * common_set_mmap_ptr_len(void);
 
 void dirty_mapping(struct map *map);
+
+struct faultfn {
+	void (*func)(struct map *map);
+};
+
+void random_map_readfn(struct map *map);
+void random_map_writefn(struct map *map);
