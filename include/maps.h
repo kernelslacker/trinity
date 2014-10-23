@@ -27,6 +27,7 @@ struct map * get_map(void);
 struct map * common_set_mmap_ptr_len(void);
 
 void dirty_mapping(struct map *map);
+void dirty_random_mapping(void);
 
 struct faultfn {
 	void (*func)(struct map *map);
