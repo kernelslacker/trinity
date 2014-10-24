@@ -32,7 +32,12 @@ static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int f
 	if (triplet->family == PF_BLUETOOTH)
 		return;
 
+	so->optval = 0;
+
 retry:
+	if (so->optval != 0)
+		free((void *) so->optval);
+
 	do_setsockopt(so);
 
 	ret = setsockopt(fd, so->level, so->optname, (void *)so->optval, so->optlen);
@@ -42,11 +47,12 @@ retry:
 			triplet->family, triplet->type, triplet->protocol);
 	} else {
 		tries++;
-		if (tries == 100)
-			return;
-
-		goto retry;
+		if (tries != 100)
+			goto retry;
 	}
+
+	if (so->optval != 0)
+		free((void *) so->optval);
 }
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
