@@ -51,7 +51,7 @@ void init_child_mappings(struct childdata *child)
 	 * Note we're only copying pointers here, the actual mmaps
 	 * will be faulted into the child when they get accessed.
 	 */
-	list_for_each(node, &shared_mappings->list) {
+	list_for_each(node, &initial_mappings->list) {
 		struct map *m, *new;
 
 		m = (struct map *) node;
