@@ -27,6 +27,7 @@ retry:
 
 	addr = map->ptr;
 	mprotect(addr, map->size, PROT_READ | PROT_WRITE);
+	map->prot = PROT_READ | PROT_WRITE;
 
 	return addr;
 }
