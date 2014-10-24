@@ -1195,12 +1195,9 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	int group_leader=0;
 	void *addr;
 
-	addr = get_writable_address(sizeof(struct perf_event_attr));
+	addr = zmalloc(sizeof(struct perf_event_attr));
 	rec->a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
-
-	/* this makes sure we clear out the reserved fields. */
-	memset(addr, 0, sizeof(struct perf_event_attr));
 
 	/* cpu */
 	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
@@ -1303,6 +1300,11 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	}
 }
 
+static void post_perf_event_open(struct syscallrecord *rec)
+{
+	free((void *) rec->a1);
+}
+
 struct syscallentry syscall_perf_event_open = {
 	.name = "perf_event_open",
 	.num_args = 5,
@@ -1323,6 +1325,7 @@ struct syscallentry syscall_perf_event_open = {
 		},
 	},
 	.sanitise = sanitise_perf_event_open,
+	.post = post_perf_event_open,
 	.init = init_pmus,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 };
