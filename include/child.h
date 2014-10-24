@@ -33,6 +33,7 @@ extern struct childdata *this_child;
 extern unsigned int max_children;
 
 void init_child(struct childdata *child, int childno);
+void init_child_mappings(struct childdata *child);
 
 void child_process(void);
 
