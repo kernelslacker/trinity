@@ -37,7 +37,7 @@ struct map * get_map(void)
 
 /*
  * Set up a childs local mapping list.
- * A child inherits the global mappings, and will add to them
+ * A child inherits the initial mappings, and will add to them
  * when it successfully completes mmap() calls.
  */
 void init_child_mappings(struct childdata *child)
@@ -47,7 +47,7 @@ void init_child_mappings(struct childdata *child)
 	child->mappings = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&child->mappings->list);
 
-	/* Copy the global mapping list to the child.
+	/* Copy the initial mapping list to the child.
 	 * Note we're only copying pointers here, the actual mmaps
 	 * will be faulted into the child when they get accessed.
 	 */
