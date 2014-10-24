@@ -200,8 +200,7 @@ void init_child(struct childdata *child, int childno)
 
 	set_seed(this_child);
 
-	child->mappings = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&child->mappings->list);
+	init_child_mappings(child);
 
 	dirty_random_mapping();
 
