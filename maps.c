@@ -22,14 +22,11 @@ struct map * get_map(void)
 
 	unsigned int i, j = 0;
 
-	/* FIXME: We still call this from one place in the main process.
-	 * The code that creates sockets calls into do_setsockopt which
-	 * wants a writable mapping.
-	 * We used to cheat around this and just pass page_rand, but now
-	 * we have to pass something realistic.
-	 *
-	 * It's unfortunate, because get_map was a lot simpler with just one list.
-	 * I'll think up some better solution for this later.
+	/*
+	 * Some of the fd providers need weird mappings on startup.
+	 * (fd-perf for eg), these are called from the main process,
+	 * and hence don't have a valid this_child, so we address the
+	 * initial mappings list directly.
 	 */
 	if (this_child == NULL) {
 		list = &initial_mappings->list;
