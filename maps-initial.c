@@ -1,3 +1,10 @@
+/*
+ * These routines create initial mmaps in the main process that every
+ * child process will end up inheriting.
+ *
+ * Children will copy the whole initial_mappings list to their own
+ * private copies, and then perform operations upon them.
+ */
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
