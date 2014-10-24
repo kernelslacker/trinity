@@ -61,7 +61,10 @@ void init_child_mappings(struct childdata *child)
 		new->name = strdup(m->name);
 		new->size = m->size;
 		new->prot = m->prot;
-		new->type = TRINITY_MAP_LOCAL;
+		/* We leave type as 'INITIAL' until we change the mapping
+		 * by mprotect/mremap/munmap etc..
+		 */
+		new->type = TRINITY_MAP_INITIAL;
 
 		list_add_tail(&new->list, &this_child->mappings->list);
 		this_child->num_mappings++;
