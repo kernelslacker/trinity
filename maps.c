@@ -50,19 +50,13 @@ struct map * get_map(void)
 	return map;
 }
 
-static void delete_local_mapping(struct map *map)
-{
-	list_del(&map->list);
-	this_child->num_mappings--;
-}
-
 /* Called from munmap()'s ->post routine. */
 void delete_mapping(struct map *map)
 {
-	if (map->type == TRINITY_MAP_LOCAL)
-		delete_local_mapping(map);
-
-	/* Right now, we don't want to delete TRINITY_MAP_GLOBAL mappings */
+	if (map->type == TRINITY_MAP_LOCAL) {
+		list_del(&map->list);
+		this_child->num_mappings--;
+	}
 }
 
 /* used in several sanitise_* functions. */
