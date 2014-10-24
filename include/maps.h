@@ -14,11 +14,11 @@ struct map {
 	unsigned char type;
 };
 
-extern unsigned int num_shared_mappings;
-extern struct map *shared_mappings;
+extern unsigned int num_initial_mappings;
+extern struct map *initial_mappings;
 
-void setup_shared_mappings(void);
-void destroy_shared_mappings(void);
+void setup_initial_mappings(void);
+void destroy_initial_mappings(void);
 
 void delete_mapping(struct map *map);
 

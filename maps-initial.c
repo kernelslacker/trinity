@@ -10,16 +10,16 @@
 #include "maps.h"
 #include "utils.h"
 
-unsigned int num_shared_mappings = 0;
-struct map *shared_mappings = NULL;
+unsigned int num_initial_mappings = 0;
+struct map *initial_mappings = NULL;
 
-static void dump_shared_mappings(void)
+static void dump_initial_mappings(void)
 {
 	struct list_head *node;
 
-	output(2, "There are %d entries in the map table\n", num_shared_mappings);
+	output(2, "There are %d entries in the map table\n", num_initial_mappings);
 
-	list_for_each(node, &shared_mappings->list) {
+	list_for_each(node, &initial_mappings->list) {
 		struct map *m;
 
 		m = (struct map *) node;
@@ -54,18 +54,18 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	sprintf(newnode->name, "anon(%s)", name);
 
-	num_shared_mappings++;
+	num_initial_mappings++;
 
-	list_add_tail(&newnode->list, &shared_mappings->list);
+	list_add_tail(&newnode->list, &initial_mappings->list);
 
 	sizeunit(size, buf);
 	output(2, "mapping[%d]: (zeropage %s) %p (%s)\n",
-			num_shared_mappings - 1, name, newnode->ptr, buf);
+			num_initial_mappings - 1, name, newnode->ptr, buf);
 
 	close(fd);
 }
 
-void setup_shared_mappings(void)
+void setup_initial_mappings(void)
 {
 	unsigned int i;
 	const unsigned long sizes[] = {
@@ -73,8 +73,8 @@ void setup_shared_mappings(void)
 //		1 * GB,	// disabled for now, due to OOM.
 	};
 
-	shared_mappings = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&shared_mappings->list);
+	initial_mappings = zmalloc(sizeof(struct map));
+	INIT_LIST_HEAD(&initial_mappings->list);
 
 	/* page_size * 2, so we have a guard page afterwards.
 	 * This is necessary for when we want to test page boundaries.
@@ -93,15 +93,15 @@ void setup_shared_mappings(void)
 		alloc_zero_map(sizes[i], PROT_WRITE, "PROT_WRITE");
 	}
 
-	dump_shared_mappings();
+	dump_initial_mappings();
 }
 
-void destroy_shared_mappings(void)
+void destroy_initial_mappings(void)
 {
 	struct list_head *node, *tmp;
 	struct map *m;
 
-	list_for_each_safe(node, tmp, &shared_mappings->list) {
+	list_for_each_safe(node, tmp, &initial_mappings->list) {
 		m = (struct map *) node;
 
 		munmap(m->ptr, m->size);
@@ -111,5 +111,5 @@ void destroy_shared_mappings(void)
 		free(m);
 	}
 
-	num_shared_mappings = 0;
+	num_initial_mappings = 0;
 }

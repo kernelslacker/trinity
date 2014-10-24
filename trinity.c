@@ -120,7 +120,7 @@ int main(int argc, char* argv[])
 	if (do_specific_domain == TRUE)
 		find_specific_domain(specific_domain_optarg);
 
-	setup_shared_mappings();
+	setup_initial_mappings();
 
 	parse_devices();
 
@@ -175,7 +175,7 @@ cleanup_fds:
 
 	close_sockets();
 
-	destroy_shared_mappings();
+	destroy_initial_mappings();
 
 	if (logging == TRUE)
 		close_logfile(&mainlogfile);
