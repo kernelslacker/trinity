@@ -125,6 +125,11 @@ void dirty_mapping(struct map *map)
 	}
 }
 
+/*
+ * Pick a random mapping, and perform some r/w op on it.
+ * Called from child on child init, and also periodically
+ * from periodic_work()
+ */
 void dirty_random_mapping(void)
 {
 	struct map *map;
