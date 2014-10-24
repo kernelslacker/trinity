@@ -38,15 +38,9 @@ struct map * get_map(void)
 	struct map *map;
 	bool local = FALSE;
 
-	/* If we're not running in child context, just do shared mappings.
-	 * because main doesn't have any 'local' mappings.
-	 * FIXME: do we still need this? Are we still calling this from main
-	 * since the removal of page_rand  ?
-	 */
-	if (this_child != NULL) {
-		if (this_child->num_mappings > 0)
-			local = rand_bool();
-	}
+	/* If a child hasn't done any mmaps yet, we won't have any local maps. */
+	if (this_child->num_mappings > 0)
+		local = rand_bool();
 
 	if (local == TRUE)
 		map = __get_map(&this_child->mappings->list, this_child->num_mappings);
