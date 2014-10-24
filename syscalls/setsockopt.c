@@ -85,7 +85,7 @@ void do_setsockopt(struct sockopt *so)
 	/* get a page for the optval to live in.
 	 * TODO: push this down into the per-proto .func calls
 	 */
-	so->optval = (unsigned long) get_writable_address(page_size);
+	so->optval = (unsigned long) zmalloc(page_size);
 
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
 	if (rand_bool())
@@ -110,8 +110,10 @@ void do_setsockopt(struct sockopt *so)
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
 	 */
-	if (rand_bool())
+	if (rand_bool()) {
+		free((void *) so->optval);
 		so->optval = 0;
+	}
 }
 
 static void sanitise_setsockopt(struct syscallrecord *rec)
@@ -127,6 +129,11 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	rec->a5 = so.optlen;
 }
 
+static void post_setsockopt(struct syscallrecord *rec)
+{
+	free((void *) rec->a4);
+}
+
 struct syscallentry syscall_setsockopt = {
 	.name = "setsockopt",
 	.num_args = 5,
@@ -135,8 +142,8 @@ struct syscallentry syscall_setsockopt = {
 	.arg2name = "level",
 	.arg3name = "optname",
 	.arg4name = "optval",
-	.arg4type = ARG_ADDRESS,
 	.arg5name = "optlen",
 	.sanitise = sanitise_setsockopt,
+	.post = post_setsockopt,
 	.flags = NEED_ALARM,
 };
