@@ -17,13 +17,31 @@
  */
 struct map * get_map(void)
 {
-	struct list_head *node;
+	struct list_head *node, *list;
+	unsigned int num;
 
 	unsigned int i, j = 0;
 
-	i = rand() % this_child->num_mappings;
+	/* FIXME: We still call this from one place in the main process.
+	 * The code that creates sockets calls into do_setsockopt which
+	 * wants a writable mapping.
+	 * We used to cheat around this and just pass page_rand, but now
+	 * we have to pass something realistic.
+	 *
+	 * It's unfortunate, because get_map was a lot simpler with just one list.
+	 * I'll think up some better solution for this later.
+	 */
+	if (this_child == NULL) {
+		list = &initial_mappings->list;
+		num = num_initial_mappings;
+	} else {
+		list = &this_child->mappings->list;
+		num = this_child->num_mappings;
+	}
 
-	list_for_each(node, &this_child->mappings->list) {
+	i = rand() % num;
+
+	list_for_each(node, list) {
 		struct map *m;
 
 		m = (struct map *) node;
