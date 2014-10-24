@@ -41,9 +41,6 @@ struct map * get_map(void)
 	map = __get_map(&this_child->mappings->list, this_child->num_mappings);
 	return map;
 }
-       #include <sys/types.h>
-       #include <unistd.h>
-
 
 /*
  * Set up a childs local mapping list.
