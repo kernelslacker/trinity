@@ -11,16 +11,19 @@
 #include "shm.h"
 #include "utils.h"
 
-/* Walk a list, get a random element */
-static struct map * __get_map(struct list_head *head, unsigned int max)
+/*
+ * Return a pointer a previous mmap() that we did, either during startup,
+ * or from a fuzz result.
+ */
+struct map * get_map(void)
 {
 	struct list_head *node;
 
 	unsigned int i, j = 0;
 
-	i = rand() % max;
+	i = rand() % this_child->num_mappings;
 
-	list_for_each(node, head) {
+	list_for_each(node, &this_child->mappings->list) {
 		struct map *m;
 
 		m = (struct map *) node;
@@ -30,16 +33,6 @@ static struct map * __get_map(struct list_head *head, unsigned int max)
 		j++;
 	}
 	return NULL;
-}
-
-/* Return a pointer a previous mmap() that we did, either during startup,
- * or from a fuzz result. */
-struct map * get_map(void)
-{
-	struct map *map;
-
-	map = __get_map(&this_child->mappings->list, this_child->num_mappings);
-	return map;
 }
 
 /*
