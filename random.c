@@ -25,9 +25,10 @@ static unsigned char rand_ascii(void)
 void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
+	bool choice = rand_bool();
 
 	for (i = 0; i < len; i++) {
-		if (rand_bool()) {
+		if (choice) {
 			/* Complete garbage. */
 			ptr[i] = rand();
 		} else {
