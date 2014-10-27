@@ -20,17 +20,19 @@
 #include "trinity.h"	// __unused__
 #include "utils.h"
 
-static unsigned long ** gen_ptrs_to_crap(void)
+static unsigned int argvcount;
+static unsigned int envpcount;
+
+static unsigned long ** gen_ptrs_to_crap(unsigned int count)
 {
 	void **ptr;
 	unsigned int i;
-	unsigned int count = rand() % 32;
 
 	/* Fabricate argv */
-	ptr = zmalloc(count * sizeof(void *));	// FIXME: LEAK
+	ptr = zmalloc(count * sizeof(void *));
 
 	for (i = 0; i < count; i++) {
-		ptr[i] = zmalloc(page_size);	// FIXME: LEAK
+		ptr[i] = zmalloc(page_size);
 		generate_rand_bytes((unsigned char *) ptr[i], rand() % page_size);
 	}
 
@@ -43,10 +45,31 @@ static void sanitise_execve(struct syscallrecord *rec)
 	fclose(stdin);
 
 	/* Fabricate argv */
-	rec->a2 = (unsigned long) gen_ptrs_to_crap();
+	argvcount = rand() % 32;
+	rec->a2 = (unsigned long) gen_ptrs_to_crap(argvcount);
 
 	/* Fabricate envp */
-	rec->a3 = (unsigned long) gen_ptrs_to_crap();
+	envpcount = rand() % 32;
+	rec->a3 = (unsigned long) gen_ptrs_to_crap(envpcount);
+}
+
+/* if execve succeeds, we'll never get back here, so this only
+ * has to worry about the case where execve returned a failure.
+ */
+static void post_execve(struct syscallrecord *rec)
+{
+	void **ptr;
+	unsigned int i;
+
+	ptr = (void **) rec->a2;
+	for (i = 0; i < argvcount; i++)
+		free(ptr[i]);
+	free(ptr);
+
+	ptr = (void **) rec->a3;
+	for (i = 0; i < envpcount; i++)
+		free(ptr[i]);
+	free(ptr);
 }
 
 struct syscallentry syscall_execve = {
@@ -59,6 +82,7 @@ struct syscallentry syscall_execve = {
 	.arg3name = "envp",
 	.arg3type = ARG_ADDRESS,
 	.sanitise = sanitise_execve,
+	.post = post_execve,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
 	.errnos = {
