@@ -22,6 +22,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscalls.h"
 #include "syscall.h"
 #include "trinity.h"
 #include "compat.h"
@@ -29,6 +30,24 @@
 #if F_GETLK64 != F_GETLK
 #define HAVE_LK64
 #endif
+
+unsigned int random_fcntl_setfl_flags(void)
+{
+	unsigned int val = 0;
+
+	if (rand_bool())
+		val |= O_APPEND;
+	if (rand_bool())
+		val |= O_ASYNC;
+	if (rand_bool())
+		val |= O_DIRECT;
+	if (rand_bool())
+		val |= O_NOATIME;
+	if (rand_bool())
+		val |= O_NONBLOCK;
+
+	return val;
+}
 
 static void sanitise_fcntl(struct syscallrecord *rec)
 {
@@ -55,17 +74,7 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		break;
 
 	case F_SETFL:
-		rec->a3 = 0L;
-		if (rand_bool())
-			rec->a3 |= O_APPEND;
-		if (rand_bool())
-			rec->a3 |= O_ASYNC;
-		if (rand_bool())
-			rec->a3 |= O_DIRECT;
-		if (rand_bool())
-			rec->a3 |= O_NOATIME;
-		if (rand_bool())
-			rec->a3 |= O_NONBLOCK;
+		rec->a3 = (unsigned long) random_fcntl_setfl_flags();
 		break;
 
 	/* arg = (struct flock *) */
