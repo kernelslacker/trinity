@@ -75,8 +75,12 @@ static const struct ioctl kvm_ioctls[] = {
 #if defined(__powerpc__)
 	IOCTL(KVM_PPC_GET_SMMU_INFO),
 	IOCTL(KVM_PPC_ALLOCATE_HTAB),
+#if defined(KVM_CREATE_SPAPR_TCE)
 	IOCTL(KVM_CREATE_SPAPR_TCE),
+#endif
+#if defined(KVM_ALLOCATE_RMA)
 	IOCTL(KVM_ALLOCATE_RMA),
+#endif
 	IOCTL(KVM_PPC_GET_HTAB_FD),
 #endif
 #if defined(__arm__) || defined(__aarch64__)
