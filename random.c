@@ -13,12 +13,27 @@
 #include "types.h"
 #include "utils.h"
 
+static unsigned char rand_ascii(void)
+{
+	unsigned char c;
+
+	c = 32 + rand() % (0x7f - 32);
+
+	return c;
+}
+
 void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
 
 	for (i = 0; i < len; i++) {
-		ptr[i] = rand();
+		if (rand_bool()) {
+			/* Complete garbage. */
+			ptr[i] = rand();
+		} else {
+			/* printable text strings. */
+			ptr[i] = rand_ascii();
+		}
 	}
 }
 
