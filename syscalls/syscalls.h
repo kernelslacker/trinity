@@ -376,3 +376,4 @@ extern struct syscallentry syscall_memfd_create;
 extern struct syscallentry syscall_kexec_file_load;
 extern struct syscallentry syscall_bpf;
 
+unsigned int random_fcntl_setfl_flags(void);
