@@ -22,18 +22,34 @@ static unsigned char rand_ascii(void)
 	return c;
 }
 
+static unsigned char rand_ascii_nums(void)
+{
+	unsigned char c;
+
+	c = '0' + rand() % 10;
+
+	return c;
+}
+
 void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
-	bool choice = rand_bool();
+	unsigned char choice = rand() % 3;
 
 	for (i = 0; i < len; i++) {
-		if (choice) {
+		switch (choice) {
+		case 0:
 			/* Complete garbage. */
 			ptr[i] = rand();
-		} else {
+			break;
+		case 1:
 			/* printable text strings. */
 			ptr[i] = rand_ascii();
+			break;
+		case 2:
+			/* numbers */
+			ptr[i] = rand_ascii_nums();
+			break;
 		}
 	}
 }
