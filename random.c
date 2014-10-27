@@ -13,24 +13,6 @@
 #include "types.h"
 #include "utils.h"
 
-static unsigned char rand_ascii(void)
-{
-	unsigned char c;
-
-	c = 32 + rand() % (0x7f - 32);
-
-	return c;
-}
-
-static unsigned char rand_ascii_nums(void)
-{
-	unsigned char c;
-
-	c = '0' + rand() % 10;
-
-	return c;
-}
-
 void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
@@ -44,11 +26,11 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			break;
 		case 1:
 			/* printable text strings. */
-			ptr[i] = rand_ascii();
+			ptr[i] = 32 + rand() % (0x7f - 32);
 			break;
 		case 2:
 			/* numbers */
-			ptr[i] = rand_ascii_nums();
+			ptr[i] = '0' + rand() % 10;
 			break;
 		}
 	}
