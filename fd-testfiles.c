@@ -10,10 +10,11 @@
 
 #include "fd.h"
 #include "files.h"
-#include "shm.h"
 #include "log.h"
 #include "random.h"
 #include "sanitise.h"
+#include "shm.h"
+#include "syscalls/syscalls.h"
 #include "testfile.h"
 
 static int open_testfile(char *filename)
@@ -37,6 +38,7 @@ static int open_testfile(char *filename)
 		fd = open_with_fopen(filename, O_RDWR);
 		if (fd != -1)
 			output(2, "fd[%d] = fopen(\"%s\", O_RDWR)\n", fd, filename);
+		fcntl(fd, F_SETFL, random_fcntl_setfl_flags());
 	} else {
 		fd = open(filename, O_CREAT | flags, 0666);
 		if (fd != -1)
