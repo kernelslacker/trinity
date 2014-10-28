@@ -18,6 +18,7 @@
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
+#include "syscalls/syscalls.h"
 #include "trinity.h"	// __unused__
 #include "uid.h"
 #include "utils.h"
@@ -288,13 +289,14 @@ int open_with_fopen(const char *filename, int flags)
 
 static int open_file(void)
 {
+	const char *filename;
+	const char *modestr;
+	struct stat sb;
 	int fd;
 	int ret;
 	int tries = 0;
-	const char *filename;
+	int fcntl_flags;
 	int flags, randflags;
-	const char *modestr;
-	struct stat sb;
 	bool opened_with_fopen = FALSE;
 
 retry:
@@ -315,6 +317,8 @@ retry_flags:
 		fd = open(filename, flags | randflags | O_NONBLOCK);
 	} else {
 		fd = open_with_fopen(filename, flags);
+		fcntl_flags = random_fcntl_setfl_flags();
+		fcntl(fd, F_SETFL, fcntl_flags);
 		opened_with_fopen = TRUE;
 	}
 
@@ -341,7 +345,8 @@ retry_flags:
 	if (opened_with_fopen == FALSE)
 		output(2, "fd[%i] = open %s (%s) flags:%x\n", fd, filename, modestr, flags | randflags);
 	else
-		output(2, "fd[%i] = fopen %s (%s) flags:%x\n", fd, filename, modestr, flags);
+		output(2, "fd[%i] = fopen %s (%s) flags:%x fcntl_flags:%x\n",
+				fd, filename, modestr, flags, fcntl_flags);
 	return fd;
 }
 
