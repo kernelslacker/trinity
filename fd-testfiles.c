@@ -52,7 +52,7 @@ static int open_testfile_fds(void)
 
 	filename = zmalloc(64);
 
-	while (i < MAX_TESTFILE_FDS) {
+	while (i <= MAX_TESTFILE_FDS) {
 		int fd;
 
 		sprintf(filename, "trinity-testfile%d", i);
