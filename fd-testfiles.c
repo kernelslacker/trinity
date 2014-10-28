@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "syscalls/syscalls.h"
 #include "testfile.h"
+#include "utils.h"
 
 static int open_testfile(char *filename)
 {
@@ -30,16 +31,10 @@ static int open_testfile(char *filename)
 			output(2, "fd[%d] = fopen(\"%s\", O_RDWR)\n", fd, filename);
 		fcntl(fd, F_SETFL, random_fcntl_setfl_flags());
 	} else {
+		const unsigned long open_flags[] = { O_DIRECT, O_DSYNC, O_SYNC, };
 		int flags = 0;
 
-		if (rand_bool())
-			flags |= O_DIRECT;
-
-		if (rand_bool())
-			flags |= O_DSYNC;
-
-		if (rand_bool())
-			flags |= O_SYNC;
+		flags = set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);;
 
 		fd = open(filename, O_CREAT | flags, 0666);
 		if (fd != -1)
