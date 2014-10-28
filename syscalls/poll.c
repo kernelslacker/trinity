@@ -2,6 +2,7 @@
  * sys_poll(struct pollfd __user *ufds, unsigned int nfds, int timeout);
  */
 #include <poll.h>
+#include "random.h"
 #include "sanitise.h"
 #include "utils.h"
 

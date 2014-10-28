@@ -44,6 +44,26 @@ unsigned int rand_range(unsigned int min, unsigned int max)
 	return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }
 
+/*
+ * OR a random number of bits into a mask.
+ * Used by ARG_LIST generation, and get_o_flags()
+ */
+unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
+{
+	unsigned long i;
+	unsigned long mask = 0;
+	unsigned int bits;
+
+	bits = rand_range(0, num);      /* num of bits to OR */
+	if (bits == 0)
+		return mask;
+
+	for (i = 0; i < bits; i++)
+		mask |= values[rand() % num];
+
+	return mask;
+}
+
 unsigned int rand_bool(void)
 {
 	return rand() % 2;

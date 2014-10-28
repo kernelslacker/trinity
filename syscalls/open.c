@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include "files.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
