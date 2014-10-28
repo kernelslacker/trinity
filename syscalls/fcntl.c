@@ -25,28 +25,20 @@
 #include "syscalls.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 #if F_GETLK64 != F_GETLK
 #define HAVE_LK64
 #endif
 
+static const unsigned long fcntl_o_flags[] = {
+	O_APPEND, O_ASYNC, O_DIRECT, O_NOATIME, O_NONBLOCK,
+};
+
 unsigned int random_fcntl_setfl_flags(void)
 {
-	unsigned int val = 0;
-
-	if (rand_bool())
-		val |= O_APPEND;
-	if (rand_bool())
-		val |= O_ASYNC;
-	if (rand_bool())
-		val |= O_DIRECT;
-	if (rand_bool())
-		val |= O_NOATIME;
-	if (rand_bool())
-		val |= O_NONBLOCK;
-
-	return val;
+	return set_rand_bitmask(ARRAY_SIZE(fcntl_o_flags), fcntl_o_flags);
 }
 
 static void sanitise_fcntl(struct syscallrecord *rec)
