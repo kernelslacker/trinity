@@ -86,24 +86,3 @@ void kill_pid(pid_t pid)
 	if (ret != 0)
 		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
-
-/*
- * OR a random number of bits into a mask.
- * Used by ARG_LIST generation, and get_o_flags()
- */
-unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
-{
-	unsigned long i;
-	unsigned long mask = 0;
-	unsigned int bits;
-
-	bits = rand_range(0, num);      /* num of bits to OR */
-	if (bits == 0)
-		return mask;
-
-	for (i = 0; i < bits; i++)
-		mask |= values[rand() % num];
-
-	return mask;
-}
-
