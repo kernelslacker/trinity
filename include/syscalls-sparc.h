@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/sparc/kernel/systbls_{32,64}.S as of 3.16+ */
+/* Syscalls from arch/sparc/kernel/systbls_{32,64}.S */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -356,4 +356,5 @@ struct syscalltable syscalls_sparc[] = {
 	{ .entry = &syscall_seccomp },
 	{ .entry = &syscall_getrandom },
 	{ .entry = &syscall_memfd_create },
+	{ .entry = &syscall_bpf },
 };
