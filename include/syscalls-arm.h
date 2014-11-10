@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * derived from arch/arm/kernel/calls.S
+ * derived from arch/arm/include/uapi/asm/unistd.h
  */
 
 #include "sanitise.h"
@@ -397,4 +397,5 @@ struct syscalltable syscalls_arm[] = {
 		{ .entry = &syscall_seccomp },
 		{ .entry = &syscall_getrandom },
 /* 385 */	{ .entry = &syscall_memfd_create },
+		{ .entry = &syscall_bpf },
 };
