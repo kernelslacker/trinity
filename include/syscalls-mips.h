@@ -369,4 +369,7 @@ struct syscalltable syscalls_mips[] = {
 		{ .entry = &syscall_sched_getattr },	/* 4350 */
 		{ .entry = &syscall_renameat2 },
 		{ .entry = &syscall_seccomp },
+		{ .entry = &syscall_getrandom },
+		{ .entry = &syscall_memfd_create },
+		{ .entry = &syscall_bpf },		/* 4355 */
 };
