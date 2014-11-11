@@ -37,7 +37,7 @@ static void dm_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 
 	pick_random_ioctl(grp, rec);
 
-	rec->a3 = (unsigned long) get_address();
+	rec->a3 = (unsigned long) get_writable_address(sizeof(struct dm_ioctl));
 	dm = (struct dm_ioctl *) rec->a3;
 
 	/* set a sensible version to get past the initial checks */
