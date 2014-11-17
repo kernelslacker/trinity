@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/parisc/kernel/syscall_table.S as of 3.16+ */
+/* Syscalls from arch/parisc/kernel/syscall_table.S */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -348,4 +348,5 @@ struct syscalltable syscalls_parisc[] = {
 	{ .entry = &syscall_seccomp },
 	{ .entry = &syscall_getrandom },
 	{ .entry = &syscall_memfd_create },
+	{ .entry = &syscall_bpf },
 };
