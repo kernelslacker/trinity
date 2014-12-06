@@ -388,7 +388,6 @@ struct syscalltable syscalls_arm[] = {
 /* 375 */	{ .entry = &syscall_setns },
 		{ .entry = &syscall_process_vm_readv },
 		{ .entry = &syscall_process_vm_writev },
-		{ .entry = &syscall_ni_syscall },	/* reserved for sys_kcmp */
 		{ .entry = &syscall_kcmp },
 		{ .entry = &syscall_finit_module },
 /* 380 */	{ .entry = &syscall_sched_setattr },
