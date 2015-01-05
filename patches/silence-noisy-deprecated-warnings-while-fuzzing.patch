@@ -1,10 +1,13 @@
-silence noisy 'deprecated' warnings while fuzzing
+From b8bcb7a15ae1c4a878874dc25402c314734e5424 Mon Sep 17 00:00:00 2001
+From: Dave Jones <davej@redhat.com>
+Date: Mon, 13 May 2013 16:52:41 -0400
+Subject: [PATCH 10/44] silence noisy 'deprecated' warnings while fuzzing
 
 diff --git a/drivers/usb/core/sysfs.c b/drivers/usb/core/sysfs.c
-index 1236c6011c70..bab0a1916d8f 100644
+index d26973844a4d..bf34697d50c2 100644
 --- a/drivers/usb/core/sysfs.c
 +++ b/drivers/usb/core/sysfs.c
-@@ -400,13 +400,6 @@ static const char auto_string[] = "auto";
+@@ -392,13 +392,6 @@ static const char auto_string[] = "auto";
  
  static void warn_level(void)
  {
@@ -19,17 +22,16 @@ index 1236c6011c70..bab0a1916d8f 100644
  
  static ssize_t level_show(struct device *dev, struct device_attribute *attr,
 diff --git a/fs/hugetlbfs/inode.c b/fs/hugetlbfs/inode.c
-index e19d4c0cacae..3bf259b16d53 100644
+index 5eba47f593f8..43b90af80006 100644
 --- a/fs/hugetlbfs/inode.c
 +++ b/fs/hugetlbfs/inode.c
-@@ -968,13 +968,7 @@ struct file *hugetlb_file_setup(const char *name, size_t size,
+@@ -966,12 +966,7 @@ struct file *hugetlb_file_setup(const char *name, size_t size,
  
  	if (creat_flags == HUGETLB_SHMFS_INODE && !can_do_hugetlb_shm()) {
  		*user = current_user();
 -		if (user_shm_lock(size, *user)) {
 -			task_lock(current);
--			printk_once(KERN_WARNING
--				"%s (%d): Using mlock ulimits for SHM_HUGETLB is deprecated\n",
+-			pr_warn_once("%s (%d): Using mlock ulimits for SHM_HUGETLB is deprecated\n",
 -				current->comm, current->pid);
 -			task_unlock(current);
 -		} else {
@@ -38,19 +40,20 @@ index e19d4c0cacae..3bf259b16d53 100644
  			return ERR_PTR(-EPERM);
  		}
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index 442177b1119a..ce743b0ca749 100644
+index 246eae84b13b..869945b9ceea 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
-@@ -807,8 +807,6 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
+@@ -843,9 +843,6 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
  
  	if (type == CLEAR_REFS_SOFT_DIRTY) {
  		soft_dirty_cleared = true;
--		pr_warn_once("The pagemap bits 55-60 has changed their meaning! "
--				"See the linux/Documentation/vm/pagemap.txt for details.\n");
+-		pr_warn_once("The pagemap bits 55-60 has changed their meaning!"
+-			     " See the linux/Documentation/vm/pagemap.txt for "
+-			     "details.\n");
  	}
  
  	task = get_proc_task(file_inode(file));
-@@ -1227,9 +1225,6 @@ out:
+@@ -1322,9 +1319,6 @@ out:
  
  static int pagemap_open(struct inode *inode, struct file *file)
  {
@@ -83,10 +86,10 @@ index ae0c3cef9927..50d2010c3895 100644
  	memset(&tmp, 0, sizeof(struct __old_kernel_stat));
  	tmp.st_dev = old_encode_dev(stat->dev);
 diff --git a/kernel/sysctl_binary.c b/kernel/sysctl_binary.c
-index 653cbbd9e7ad..8338a2bbac33 100644
+index 7e7746a42a62..6fb00bbc5eb7 100644
 --- a/kernel/sysctl_binary.c
 +++ b/kernel/sysctl_binary.c
-@@ -1348,8 +1348,6 @@ static ssize_t binary_sysctl(const int *name, int nlen,
+@@ -1349,8 +1349,6 @@ static ssize_t binary_sysctl(const int *name, int nlen,
  
  static void deprecated_sysctl_warning(const int *name, int nlen)
  {
@@ -95,7 +98,7 @@ index 653cbbd9e7ad..8338a2bbac33 100644
  	/*
  	 * CTL_KERN/KERN_VERSION is used by older glibc and cannot
  	 * ever go away.
-@@ -1357,14 +1355,6 @@ static void deprecated_sysctl_warning(const int *name, int nlen)
+@@ -1358,14 +1356,6 @@ static void deprecated_sysctl_warning(const int *name, int nlen)
  	if (name[0] == CTL_KERN && name[1] == KERN_VERSION)
  		return;
  
@@ -111,10 +114,10 @@ index 653cbbd9e7ad..8338a2bbac33 100644
  }
  
 diff --git a/mm/backing-dev.c b/mm/backing-dev.c
-index 09d9591b7708..0bc4491c642a 100644
+index 0ae0df55000b..f07e8eacafbd 100644
 --- a/mm/backing-dev.c
 +++ b/mm/backing-dev.c
-@@ -667,8 +667,6 @@ int pdflush_proc_obsolete(struct ctl_table *table, int write,
+@@ -659,8 +659,6 @@ int pdflush_proc_obsolete(struct ctl_table *table, int write,
  
  	if (copy_to_user(buffer, kbuf, sizeof(kbuf)))
  		return -EFAULT;
@@ -124,7 +127,7 @@ index 09d9591b7708..0bc4491c642a 100644
  	*lenp = 2;
  	*ppos += *lenp;
 diff --git a/net/ax25/af_ax25.c b/net/ax25/af_ax25.c
-index c35c3f48fc0f..3e605e64c797 100644
+index ca049a7c9287..5052e4cc0c10 100644
 --- a/net/ax25/af_ax25.c
 +++ b/net/ax25/af_ax25.c
 @@ -1209,9 +1209,6 @@ static int __must_check ax25_connect(struct socket *sock,
@@ -152,7 +155,7 @@ index c35c3f48fc0f..3e605e64c797 100644
  				res = -EFAULT;
  				break;
 diff --git a/net/core/sock.c b/net/core/sock.c
-index 664ee4295b6f..87366a065687 100644
+index 1c7a33db1314..b9cfe362105e 100644
 --- a/net/core/sock.c
 +++ b/net/core/sock.c
 @@ -412,14 +412,6 @@ static int sock_set_timeout(long *timeo_p, char __user *optval, int optlen)
@@ -171,10 +174,10 @@ index 664ee4295b6f..87366a065687 100644
  
  #define SK_FLAGS_TIMESTAMP ((1UL << SOCK_TIMESTAMP) | (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE))
 diff --git a/net/ipv6/ndisc.c b/net/ipv6/ndisc.c
-index 09a22f4f36c9..c9953e5a94b1 100644
+index 682866777d53..3e4b13e39560 100644
 --- a/net/ipv6/ndisc.c
 +++ b/net/ipv6/ndisc.c
-@@ -1632,16 +1632,6 @@ static struct notifier_block ndisc_netdev_notifier = {
+@@ -1669,16 +1669,6 @@ static struct notifier_block ndisc_netdev_notifier = {
  static void ndisc_warn_deprecated_sysctl(struct ctl_table *ctl,
  					 const char *func, const char *dev_name)
  {
@@ -192,7 +195,7 @@ index 09a22f4f36c9..c9953e5a94b1 100644
  
  int ndisc_ifinfo_sysctl_change(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 diff --git a/net/netfilter/nf_conntrack_helper.c b/net/netfilter/nf_conntrack_helper.c
-index 5b3eae7d4c9a..7973a49ffdf9 100644
+index bd9d31537905..f2fdf02f0a94 100644
 --- a/net/netfilter/nf_conntrack_helper.c
 +++ b/net/netfilter/nf_conntrack_helper.c
 @@ -212,10 +212,6 @@ int __nf_ct_try_assign_helper(struct nf_conn *ct, struct nf_conn *tmpl,
@@ -207,10 +210,23 @@ index 5b3eae7d4c9a..7973a49ffdf9 100644
  		}
  	}
 diff --git a/net/sctp/socket.c b/net/sctp/socket.c
-index fee06b99a4da..a3fdfa90b0e8 100644
+index 2625eccb77d5..22b42bac16b0 100644
 --- a/net/sctp/socket.c
 +++ b/net/sctp/socket.c
-@@ -3021,11 +3021,6 @@ static int sctp_setsockopt_maxseg(struct sock *sk, char __user *optval, unsigned
+@@ -2205,12 +2205,6 @@ static int sctp_setsockopt_events(struct sock *sk, char __user *optval,
+ 	if (copy_from_user(&sctp_sk(sk)->subscribe, optval, optlen))
+ 		return -EFAULT;
+ 
+-	if (sctp_sk(sk)->subscribe.sctp_data_io_event)
+-		pr_warn_ratelimited(DEPRECATED "%s (pid %d) "
+-				    "Requested SCTP_SNDRCVINFO event.\n"
+-				    "Use SCTP_RCVINFO through SCTP_RECVRCVINFO option instead.\n",
+-				    current->comm, task_pid_nr(current));
+-
+ 	/* At the time when a user app subscribes to SCTP_SENDER_DRY_EVENT,
+ 	 * if there is no data to be sent or retransmit, the stack will
+ 	 * immediately send up this notification.
+@@ -3091,11 +3085,6 @@ static int sctp_setsockopt_maxseg(struct sock *sk, char __user *optval, unsigned
  	int val;
  
  	if (optlen == sizeof(int)) {
@@ -222,7 +238,7 @@ index fee06b99a4da..a3fdfa90b0e8 100644
  		if (copy_from_user(&val, optval, optlen))
  			return -EFAULT;
  		params.assoc_id = 0;
-@@ -3282,11 +3277,6 @@ static int sctp_setsockopt_maxburst(struct sock *sk,
+@@ -3352,11 +3341,6 @@ static int sctp_setsockopt_maxburst(struct sock *sk,
  	int assoc_id = 0;
  
  	if (optlen == sizeof(int)) {
@@ -234,7 +250,7 @@ index fee06b99a4da..a3fdfa90b0e8 100644
  		if (copy_from_user(&val, optval, optlen))
  			return -EFAULT;
  	} else if (optlen == sizeof(struct sctp_assoc_value)) {
-@@ -5252,11 +5242,6 @@ static int sctp_getsockopt_maxseg(struct sock *sk, int len,
+@@ -5405,11 +5389,6 @@ static int sctp_getsockopt_maxseg(struct sock *sk, int len,
  	struct sctp_association *asoc;
  
  	if (len == sizeof(int)) {
@@ -246,7 +262,7 @@ index fee06b99a4da..a3fdfa90b0e8 100644
  		params.assoc_id = 0;
  	} else if (len >= sizeof(struct sctp_assoc_value)) {
  		len = sizeof(struct sctp_assoc_value);
-@@ -5347,11 +5332,6 @@ static int sctp_getsockopt_maxburst(struct sock *sk, int len,
+@@ -5500,11 +5479,6 @@ static int sctp_getsockopt_maxburst(struct sock *sk, int len,
  	struct sctp_association *asoc;
  
  	if (len == sizeof(int)) {
@@ -259,10 +275,10 @@ index fee06b99a4da..a3fdfa90b0e8 100644
  	} else if (len >= sizeof(struct sctp_assoc_value)) {
  		len = sizeof(struct sctp_assoc_value);
 diff --git a/net/socket.c b/net/socket.c
-index abf56b2a14f9..1f02293cb011 100644
+index a2c33a4dc7ba..77029279ace0 100644
 --- a/net/socket.c
 +++ b/net/socket.c
-@@ -1263,15 +1263,8 @@ int __sock_create(struct net *net, int family, int type, int protocol,
+@@ -1244,15 +1244,8 @@ int __sock_create(struct net *net, int family, int type, int protocol,
  	   This uglymoron is moved from INET layer to here to avoid
  	   deadlock in module load.
  	 */
@@ -279,20 +295,3 @@ index abf56b2a14f9..1f02293cb011 100644
  
  	err = security_socket_create(family, type, protocol, kern);
  	if (err)
-diff --git a/net/sctp/socket.c b/net/sctp/socket.c
-index 321697da2863..96b0f00f975d 100644
---- a/net/sctp/socket.c
-+++ b/net/sctp/socket.c
-@@ -2205,12 +2205,6 @@ static int sctp_setsockopt_events(struct sock *sk, char __user *optval,
-	if (copy_from_user(&sctp_sk(sk)->subscribe, optval, optlen))
-		return -EFAULT;
-
--	if (sctp_sk(sk)->subscribe.sctp_data_io_event)
--		pr_warn_ratelimited(DEPRECATED "%s (pid %d) "
--				    "Requested SCTP_SNDRCVINFO event.\n"
--				    "Use SCTP_RCVINFO through SCTP_RECVRCVINFO option instead.\n",
--				    current->comm, task_pid_nr(current));
--
-	/* At the time when a user app subscribes to SCTP_SENDER_DRY_EVENT,
-	 * if there is no data to be sent or retransmit, the stack will
-	 * immediately send up this notification.

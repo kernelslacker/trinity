@@ -1,23 +1,7 @@
-From 0267f449b83ad4a85acd3ca4d5386080dfc79c35 Mon Sep 17 00:00:00 2001
+From 2683419e05ab227cd24a5859db044fe3941d6574 Mon Sep 17 00:00:00 2001
 From: Dave Jones <davej@redhat.com>
 Date: Mon, 13 May 2013 16:53:02 -0400
-Subject: [PATCH 12/34] silence fuzz-testing noise
-
----
- arch/x86/ia32/sys_ia32.c        |  9 ---------
- arch/x86/kernel/vm86_32.c       |  9 +++------
- drivers/gpu/drm/drm_sysfs.c     |  2 --
- drivers/scsi/scsi_netlink.c     | 10 ++--------
- kernel/signal.c                 |  1 -
- net/appletalk/ddp.c             |  5 -----
- net/can/af_can.c                |  9 ---------
- net/core/sock.c                 |  7 -------
- net/irda/af_irda.c              |  6 ++----
- net/netfilter/ipvs/ip_vs_core.c |  2 --
- net/rds/bind.c                  |  2 --
- net/socket.c                    |  2 --
- sound/pci/hda/hda_codec.c       |  8 +++-----
- 13 files changed, 10 insertions(+), 62 deletions(-)
+Subject: [PATCH 11/44] silence fuzz-testing noise
 
 diff --git a/arch/x86/ia32/sys_ia32.c b/arch/x86/ia32/sys_ia32.c
 index 8e0ceecdc957..e8071976793c 100644
@@ -65,10 +49,10 @@ index e8edcf52e069..95147acf071c 100644
  	tss = &per_cpu(init_tss, get_cpu());
  	current->thread.sp0 = current->thread.saved_sp0;
 diff --git a/drivers/gpu/drm/drm_sysfs.c b/drivers/gpu/drm/drm_sysfs.c
-index c22c3097c3e8..64a6372fca0c 100644
+index cc3d6d6d67e0..306b3a9189b9 100644
 --- a/drivers/gpu/drm/drm_sysfs.c
 +++ b/drivers/gpu/drm/drm_sysfs.c
-@@ -284,7 +284,6 @@ static ssize_t subconnector_show(struct device *device,
+@@ -285,7 +285,6 @@ static ssize_t subconnector_show(struct device *device,
  	}
  
  	if (!prop) {
@@ -76,7 +60,7 @@ index c22c3097c3e8..64a6372fca0c 100644
  		return 0;
  	}
  
-@@ -325,7 +324,6 @@ static ssize_t select_subconnector_show(struct device *device,
+@@ -326,7 +325,6 @@ static ssize_t select_subconnector_show(struct device *device,
  	}
  
  	if (!prop) {
@@ -115,10 +99,10 @@ index 109802f776ed..1e8b706967fa 100644
  		/*
  		 * Deliver message to the appropriate transport
 diff --git a/kernel/signal.c b/kernel/signal.c
-index 6ea13c09ae56..6dfb3b49ad7c 100644
+index 16a305295256..e1ebea3db6e7 100644
 --- a/kernel/signal.c
 +++ b/kernel/signal.c
-@@ -3057,7 +3057,6 @@ static int do_rt_tgsigqueueinfo(pid_t tgid, pid_t pid, int sig, siginfo_t *info)
+@@ -3044,7 +3044,6 @@ static int do_rt_tgsigqueueinfo(pid_t tgid, pid_t pid, int sig, siginfo_t *info)
  	if (((info->si_code >= 0 || info->si_code == SI_TKILL)) &&
  	    (task_pid_vnr(current) != pid)) {
  		/* We used to allow any < 0 si_code */
@@ -127,7 +111,7 @@ index 6ea13c09ae56..6dfb3b49ad7c 100644
  	}
  	info->si_signo = sig;
 diff --git a/net/appletalk/ddp.c b/net/appletalk/ddp.c
-index 786ee2f83d5f..e6cc543afe59 100644
+index 0d0766ea5ab1..4362a4404078 100644
 --- a/net/appletalk/ddp.c
 +++ b/net/appletalk/ddp.c
 @@ -1204,12 +1204,7 @@ static int atalk_connect(struct socket *sock, struct sockaddr *uaddr,
@@ -144,10 +128,10 @@ index 786ee2f83d5f..e6cc543afe59 100644
  
  	lock_sock(sk);
 diff --git a/net/can/af_can.c b/net/can/af_can.c
-index a27f8aad9e99..63b85afb1f5f 100644
+index 66e08040ced7..8cd31fd8ff8b 100644
 --- a/net/can/af_can.c
 +++ b/net/can/af_can.c
-@@ -157,15 +157,6 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+@@ -154,15 +154,6 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
  
  		err = request_module("can-proto-%d", protocol);
  
@@ -164,7 +148,7 @@ index a27f8aad9e99..63b85afb1f5f 100644
  	}
  #endif
 diff --git a/net/core/sock.c b/net/core/sock.c
-index 87366a065687..a6c48a2e9f83 100644
+index 1c7a33db1314..b981f9108eb5 100644
 --- a/net/core/sock.c
 +++ b/net/core/sock.c
 @@ -392,14 +392,7 @@ static int sock_set_timeout(long *timeo_p, char __user *optval, int optlen)
@@ -182,36 +166,49 @@ index 87366a065687..a6c48a2e9f83 100644
  		return 0;
  	}
  	*timeo_p = MAX_SCHEDULE_TIMEOUT;
+diff --git a/net/ipv4/raw.c b/net/ipv4/raw.c
+index 0bb68df5055d..65772ffdde12 100644
+--- a/net/ipv4/raw.c
++++ b/net/ipv4/raw.c
+@@ -518,8 +518,6 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+ 		if (msg->msg_namelen < sizeof(*usin))
+ 			goto out;
+ 		if (usin->sin_family != AF_INET) {
+-			pr_info_once("%s: %s forgot to set AF_INET. Fix it!\n",
+-				     __func__, current->comm);
+ 			err = -EAFNOSUPPORT;
+ 			if (usin->sin_family)
+ 				goto out;
 diff --git a/net/irda/af_irda.c b/net/irda/af_irda.c
-index 54747c25c86c..c8522dca57af 100644
+index 568edc72d737..fa19e6ef5ff3 100644
 --- a/net/irda/af_irda.c
 +++ b/net/irda/af_irda.c
-@@ -504,10 +504,8 @@ static int irda_open_lsap(struct irda_sock *self, int pid)
+@@ -494,10 +494,8 @@ static int irda_open_lsap(struct irda_sock *self, int pid)
  {
  	notify_t notify;
  
 -	if (self->lsap) {
--		IRDA_WARNING("%s(), busy!\n", __func__);
+-		net_warn_ratelimited("%s(), busy!\n", __func__);
 +	if (self->lsap)
  		return -EBUSY;
 -	}
  
  	/* Initialize callbacks to be used by the IrDA stack */
  	irda_notify_init(&notify);
-@@ -2130,7 +2128,7 @@ static int irda_setsockopt(struct socket *sock, int level, int optname,
- 				   __func__, opt);
+@@ -2105,8 +2103,6 @@ static int irda_setsockopt(struct socket *sock, int level, int optname,
+ 				 __func__, opt);
  			self->max_sdu_size_rx = opt;
  		} else {
--			IRDA_WARNING("%s: not allowed to set MAXSDUSIZE for this socket type!\n",
-+			IRDA_DEBUG(2, "%s: not allowed to set MAXSDUSIZE for this socket type!\n",
- 				     __func__);
+-			net_warn_ratelimited("%s: not allowed to set MAXSDUSIZE for this socket type!\n",
+-					     __func__);
  			err = -ENOPROTOOPT;
  			goto out;
+ 		}
 diff --git a/net/netfilter/ipvs/ip_vs_core.c b/net/netfilter/ipvs/ip_vs_core.c
-index 4f26ee46b51f..5057562bc48d 100644
+index 990decba1fe4..ce9887ca8109 100644
 --- a/net/netfilter/ipvs/ip_vs_core.c
 +++ b/net/netfilter/ipvs/ip_vs_core.c
-@@ -1969,8 +1969,6 @@ static int __net_init __ip_vs_init(struct net *net)
+@@ -1975,8 +1975,6 @@ static int __net_init __ip_vs_init(struct net *net)
  	if (ip_vs_sync_net_init(net) < 0)
  		goto sync_fail;
  
@@ -233,11 +230,24 @@ index a2e6562da751..6294c5b9f259 100644
  		goto out;
  	}
  
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index 2625eccb77d5..2678af5c129d 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -6312,8 +6312,6 @@ static int sctp_listen_start(struct sock *sk, int backlog)
+ 		sprintf(alg, "hmac(%s)", sp->sctp_hmac_alg);
+ 		tfm = crypto_alloc_hash(alg, 0, CRYPTO_ALG_ASYNC);
+ 		if (IS_ERR(tfm)) {
+-			net_info_ratelimited("failed to load transform for %s: %ld\n",
+-					     sp->sctp_hmac_alg, PTR_ERR(tfm));
+ 			return -ENOSYS;
+ 		}
+ 		sctp_sk(sk)->hmac = tfm;
 diff --git a/net/socket.c b/net/socket.c
-index 1f02293cb011..661c38221da8 100644
+index a2c33a4dc7ba..326e4a9ebcd9 100644
 --- a/net/socket.c
 +++ b/net/socket.c
-@@ -2607,8 +2607,6 @@ int sock_register(const struct net_proto_family *ops)
+@@ -2592,8 +2592,6 @@ int sock_register(const struct net_proto_family *ops)
  		err = 0;
  	}
  	spin_unlock(&net_family_lock);
@@ -246,11 +256,26 @@ index 1f02293cb011..661c38221da8 100644
  	return err;
  }
  EXPORT_SYMBOL(sock_register);
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+index 6da7532893a1..d4588654ee68 100644
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -4723,10 +4723,6 @@ static int selinux_nlmsg_perm(struct sock *sk, struct sk_buff *skb)
+ 	err = selinux_nlmsg_lookup(sksec->sclass, nlh->nlmsg_type, &perm);
+ 	if (err) {
+ 		if (err == -EINVAL) {
+-			printk(KERN_WARNING
+-			       "SELinux: unrecognized netlink message:"
+-			       " protocol=%hu nlmsg_type=%hu sclass=%hu\n",
+-			       sk->sk_protocol, nlh->nlmsg_type, sksec->sclass);
+ 			if (!selinux_enforcing || security_get_allow_unknown())
+ 				err = 0;
+ 		}
 diff --git a/sound/pci/hda/hda_codec.c b/sound/pci/hda/hda_codec.c
-index 4c20277a6835..324dee2eaef0 100644
+index 2fe86d2e1b09..7643b0e7c6da 100644
 --- a/sound/pci/hda/hda_codec.c
 +++ b/sound/pci/hda/hda_codec.c
-@@ -572,12 +572,10 @@ int snd_hda_get_raw_connections(struct hda_codec *codec, hda_nid_t nid,
+@@ -581,12 +581,10 @@ int snd_hda_get_raw_connections(struct hda_codec *codec, hda_nid_t nid,
  		}
  		range_val = !!(parm & (1 << (shift-1))); /* ranges */
  		val = parm & mask;
@@ -266,44 +291,3 @@ index 4c20277a6835..324dee2eaef0 100644
  		parm >>= shift;
  		if (range_val) {
  			/* ranges between the previous and this one */
-diff --git a/net/ipv4/raw.c b/net/ipv4/raw.c
-index a9dbe58bdfe7..bd06a009f885 100644
---- a/net/ipv4/raw.c
-+++ b/net/ipv4/raw.c
-@@ -498,8 +498,6 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
- 		if (msg->msg_namelen < sizeof(*usin))
- 			goto out;
- 		if (usin->sin_family != AF_INET) {
--			pr_info_once("%s: %s forgot to set AF_INET. Fix it!\n",
--				     __func__, current->comm);
- 			err = -EAFNOSUPPORT;
- 			if (usin->sin_family)
- 				goto out;
-diff --git a/net/sctp/socket.c b/net/sctp/socket.c
-index a3fdfa90b0e8..935d0a66fffe 100644
---- a/net/sctp/socket.c
-+++ b/net/sctp/socket.c
-@@ -6088,8 +6088,6 @@ static int sctp_listen_start(struct sock *sk, int backlog)
- 		sprintf(alg, "hmac(%s)", sp->sctp_hmac_alg);
- 		tfm = crypto_alloc_hash(alg, 0, CRYPTO_ALG_ASYNC);
- 		if (IS_ERR(tfm)) {
--			net_info_ratelimited("failed to load transform for %s: %ld\n",
--					     sp->sctp_hmac_alg, PTR_ERR(tfm));
- 			return -ENOSYS;
- 		}
- 		sctp_sk(sk)->hmac = tfm;
-diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
-index c603b20356ad..2ce54858002e 100644
---- a/security/selinux/hooks.c
-+++ b/security/selinux/hooks.c
-@@ -4725,10 +4725,6 @@ static int selinux_nlmsg_perm(struct sock *sk, struct sk_buff *skb)
-	err = selinux_nlmsg_lookup(sksec->sclass, nlh->nlmsg_type, &perm);
-	if (err) {
-		if (err == -EINVAL) {
--			printk(KERN_WARNING
--			       "SELinux: unrecognized netlink message:"
--			       " protocol=%hu nlmsg_type=%hu sclass=%hu\n",
--			       sk->sk_protocol, nlh->nlmsg_type, sksec->sclass);
-			if (!selinux_enforcing || security_get_allow_unknown())
-				err = 0;
-		}
