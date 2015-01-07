@@ -103,9 +103,13 @@ static void generate_random_page(char *page)
 		switch (rand() % 3) {
 		case 0:
 			switch (rand() % 3) {
-			case 0:	p = sprintf(page, "%lu", (unsigned long) rand64());
+			case 0:	p = sprintf(page, "%s%lu",
+					rand_bool() ? "-" : "",
+					(unsigned long) rand64());
 				break;
-			case 1:	p = sprintf(page, "%ld", (unsigned long) rand64());
+			case 1:	p = sprintf(page, "%s%ld",
+					rand_bool() ? "-" : "",
+					(unsigned long) rand64());
 				break;
 			case 2:	p = sprintf(page, "%lx", (unsigned long) rand64());
 				break;
@@ -114,9 +118,13 @@ static void generate_random_page(char *page)
 
 		case 1:
 			switch (rand() % 3) {
-			case 0:	p = sprintf(page, "%u", (unsigned int) rand32());
+			case 0:	p = sprintf(page, "%s%u",
+					rand_bool() ? "-" : "",
+					(unsigned int) rand32());
 				break;
-			case 1:	p = sprintf(page, "%d", (int) rand32());
+			case 1:	p = sprintf(page, "%s%d",
+					rand_bool() ? "-" : "",
+					(int) rand32());
 				break;
 			case 2:	p = sprintf(page, "%x", (int) rand32());
 				break;
@@ -125,9 +133,13 @@ static void generate_random_page(char *page)
 
 		case 2:
 			switch (rand() % 3) {
-			case 0:	p = sprintf(page, "%u", (unsigned char) rand());
+			case 0:	p = sprintf(page, "%s%u",
+					rand_bool() ? "-" : "",
+					(unsigned char) rand());
 				break;
-			case 1:	p = sprintf(page, "%d", (char) rand());
+			case 1:	p = sprintf(page, "%s%d",
+					rand_bool() ? "-" : "",
+					(char) rand());
 				break;
 			case 2:	p = sprintf(page, "%x", (char) rand());
 				break;
