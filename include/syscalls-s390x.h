@@ -359,4 +359,6 @@ struct syscalltable syscalls_s390x[] = {
 	{ .entry = &syscall_getrandom },
 	{ .entry = &syscall_memfd_create },
 	{ .entry = &syscall_bpf },
+	{ .entry = &syscall_ni_syscall },	// TODO: syscall_s390_pci_mmio_write
+	{ .entry = &syscall_ni_syscall },	// TODO: syscall_s390_pci_mmio_read
 };
