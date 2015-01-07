@@ -140,19 +140,6 @@ void parse_args(int argc, char *argv[])
 				outputstd("opt:%c\n", opt);
 			return;
 
-		case 'b':
-			init_bdev_list();
-			process_bdev_param(optarg);
-			dump_bdev_list();
-			outputstd("--bdev doesn't do anything useful yet.\n");
-			exit(EXIT_SUCCESS);
-
-		case 'c':
-			/* syscalls are all disabled at this point. enable the syscall we care about. */
-			do_specific_syscall = TRUE;
-			toggle_syscall(optarg, TRUE);
-			break;
-
 		case 'a':
 			/* One of the architectures selected*/
 			do_32_arch = FALSE;
@@ -167,6 +154,19 @@ void parse_args(int argc, char *argv[])
 				outputstd("can't parse %s\n", optarg);
 				exit(EXIT_FAILURE);
 			}
+			break;
+
+		case 'b':
+			init_bdev_list();
+			process_bdev_param(optarg);
+			dump_bdev_list();
+			outputstd("--bdev doesn't do anything useful yet.\n");
+			exit(EXIT_SUCCESS);
+
+		case 'c':
+			/* syscalls are all disabled at this point. enable the syscall we care about. */
+			do_specific_syscall = TRUE;
+			toggle_syscall(optarg, TRUE);
 			break;
 
 		case 'C':
