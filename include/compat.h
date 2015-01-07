@@ -400,6 +400,10 @@ enum kcmp_type {
 #define SO_BPF_EXTENSIONS       48
 #endif
 
+#ifndef SO_INCOMING_CPU
+#define SO_INCOMING_CPU		49
+#endif
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15
