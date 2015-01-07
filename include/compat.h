@@ -15,6 +15,9 @@
 #ifndef AT_EMPTY_PATH
 #define AT_EMPTY_PATH           0x1000
 #endif
+#ifndef AT_SYMLINK_NOFOLLOW
+#define AT_SYMLINK_NOFOLLOW	0x100
+#endif
 
 #ifndef O_PATH
 #define O_PATH        010000000 /* Resolve pathname but do not open file.  */

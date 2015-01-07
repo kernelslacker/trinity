@@ -19,6 +19,7 @@
 #include "syscall.h"
 #include "trinity.h"	// __unused__
 #include "utils.h"
+#include "compat.h"
 
 static unsigned int argvcount;
 static unsigned int envpcount;
@@ -53,23 +54,45 @@ static void sanitise_execve(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) gen_ptrs_to_crap(envpcount);
 }
 
+static void sanitise_execveat(struct syscallrecord *rec)
+{
+	/* we don't want to block if something tries to read from stdin */
+	fclose(stdin);
+
+	/* Fabricate argv */
+	argvcount = rand() % 32;
+	rec->a3 = (unsigned long) gen_ptrs_to_crap(argvcount);
+
+	/* Fabricate envp */
+	envpcount = rand() % 32;
+	rec->a4 = (unsigned long) gen_ptrs_to_crap(envpcount);
+}
+
 /* if execve succeeds, we'll never get back here, so this only
  * has to worry about the case where execve returned a failure.
  */
-static void post_execve(struct syscallrecord *rec)
+
+static void free_execve_ptrs(void **argv, void **envp)
 {
-	void **ptr;
 	unsigned int i;
 
-	ptr = (void **) rec->a2;
 	for (i = 0; i < argvcount; i++)
-		free(ptr[i]);
-	free(ptr);
+		free(argv[i]);
+	free(argv);
 
-	ptr = (void **) rec->a3;
 	for (i = 0; i < envpcount; i++)
-		free(ptr[i]);
-	free(ptr);
+		free(envp[i]);
+	free(envp);
+}
+
+static void post_execve(struct syscallrecord *rec)
+{
+	free_execve_ptrs((void **) rec->a2, (void **) rec->a3);
+}
+
+static void post_execveat(struct syscallrecord *rec)
+{
+	free_execve_ptrs((void **) rec->a3, (void **) rec->a4);
 }
 
 struct syscallentry syscall_execve = {
@@ -83,6 +106,38 @@ struct syscallentry syscall_execve = {
 	.arg3type = ARG_ADDRESS,
 	.sanitise = sanitise_execve,
 	.post = post_execve,
+	.group = GROUP_VFS,
+	.flags = EXTRA_FORK,
+	.errnos = {
+		.num = 17,
+		.values = {
+			E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,
+			EMFILE, ENOENT, ENOEXEC, ENOMEM, ENOTDIR, EPERM, ETXTBSY,
+			/* currently undocumented in man page. */
+			ENAMETOOLONG, ENXIO,
+		},
+	},
+};
+
+struct syscallentry syscall_execveat = {
+	.name = "execveat",
+	.num_args = 5,
+	.arg1name = "fd",
+	.arg1type = ARG_FD,
+	.arg2name = "name",
+	.arg2type = ARG_PATHNAME,
+	.arg3name = "argv",
+	.arg3type = ARG_ADDRESS,
+	.arg4name = "envp",
+	.arg4type = ARG_ADDRESS,
+	.arg5name = "flags",
+	.arg5type = ARG_LIST,
+	.arg5list = {
+		.num = 2,
+		.values = { AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW },
+	},
+	.sanitise = sanitise_execveat,
+	.post = post_execveat,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
 	.errnos = {
