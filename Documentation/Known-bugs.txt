@@ -1,3 +1,11 @@
+- render_arg occasionally scribbles past the end of the postbuffer.
+  This becomes more obvious when trinity is run with MALLOC_PERTURB_ set.
+
+- getrandom syscall can block, and the watchdog can't kill it.
+  Might need a ->sanitise routine to prevent blocking ops.
+
+- -c execve seems to always pass the same junk as args.
+
 - -r and -c don't seem to work together
 
 - when we randomly call personality, the child stops logging.
@@ -20,5 +28,4 @@
 
 - occasionally trinity fails to startup because we've leaked so much ipc stuff.
   cleanup on startup. (scripts/clean-ipc.sh in the meantime)
-
 
