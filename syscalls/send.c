@@ -35,11 +35,7 @@ static void sanitise_send(struct syscallrecord *rec)
 
 static void post_send(struct syscallrecord *rec)
 {
-	void *ptr = (void *) rec->a2;
-
-	if (ptr != NULL)
-		free(ptr);
-	rec->a2 = 0L;
+	freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_send = {
@@ -96,13 +92,12 @@ struct syscallentry syscall_sendto = {
 	.flags = NEED_ALARM,
 };
 
-static struct msghdr *msg;
-
 /*
  * SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
  */
 static void sanitise_sendmsg(struct syscallrecord *rec)
 {
+	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
 
@@ -124,9 +119,11 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 
 static void post_sendmsg(__unused__ struct syscallrecord *rec)
 {
+	struct msghdr *msg = (struct msghdr *) rec->a2;
+
 	if (msg != NULL) {
 		free(msg->msg_name);	// free sockaddr
-		free(msg);
+		freeptr(&rec->a2);
 	}
 }
 

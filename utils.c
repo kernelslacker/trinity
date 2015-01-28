@@ -86,3 +86,12 @@ void kill_pid(pid_t pid)
 	if (ret != 0)
 		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
+
+void freeptr(unsigned long *p)
+{
+	void *ptr = (void *) p;
+
+	if (ptr != NULL)
+		free(ptr);
+	*p = 0L;
+}

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include "sanitise.h"
+#include "utils.h"
 
 static void sanitise_socketpair(struct syscallrecord *rec)
 {
@@ -13,13 +14,10 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 
 static void post_socketpair(struct syscallrecord *rec)
 {
-	void *ptr;
-
 	//TODO: on success we should put the fd's that
 	// were created into a child-local fd array.
 
-	ptr = (void *) rec->a4;
-	free(ptr);
+	freeptr(&rec->a4);
 }
 
 struct syscallentry syscall_socketpair = {

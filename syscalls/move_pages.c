@@ -62,9 +62,9 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 
 static void post_move_pages(struct syscallrecord *rec)
 {
-	free((void *) rec->a3);
-	free((void *) rec->a4);
-	free((void *) rec->a5);
+	freeptr(&rec->a3);
+	freeptr(&rec->a4);
+	freeptr(&rec->a5);
 }
 
 struct syscallentry syscall_move_pages = {

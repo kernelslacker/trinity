@@ -24,7 +24,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 
 static void post_mincore(struct syscallrecord *rec)
 {
-	free((void *) rec->a3);
+	freeptr(&rec->a3);
 }
 
 struct syscallentry syscall_mincore = {
