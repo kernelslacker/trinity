@@ -16,11 +16,10 @@
 
 #define ALLOCSIZE LDT_ENTRIES * LDT_ENTRY_SIZE
 
-static void *ldt;
-
 static void sanitise_modify_ldt(struct syscallrecord *rec)
 {
 	//struct user_desc *desc;
+	void *ldt;
 
 	switch (rec->a1) {
 	case 0:
@@ -32,6 +31,7 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		break;
 
 	case 1:
+		rec->a2 = 0L;
 		/* modify one ldt entry.
 		 * ptr points to a user_desc structure
 		 * bytecount must equal the size of this structure. */
@@ -49,14 +49,14 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 	*/
 		break;
 	default:
+		rec->a2 = 0L;
 		break;
 	}
 }
 
 static void post_modify_ldt(__unused__ struct syscallrecord *rec)
 {
-	free(ldt);
-	ldt = NULL;
+	freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_modify_ldt = {

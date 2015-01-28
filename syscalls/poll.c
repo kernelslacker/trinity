@@ -30,7 +30,7 @@ static void sanitise_poll(struct syscallrecord *rec)
 
 static void post_poll(struct syscallrecord *rec)
 {
-	free((void *) rec->a1);
+	freeptr(&rec->a1);
 }
 
 struct syscallentry syscall_poll = {

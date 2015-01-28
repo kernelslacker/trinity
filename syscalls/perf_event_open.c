@@ -1302,7 +1302,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 static void post_perf_event_open(struct syscallrecord *rec)
 {
-	free((void *) rec->a1);
+	freeptr(&rec->a1);
 }
 
 struct syscallentry syscall_perf_event_open = {

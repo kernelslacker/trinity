@@ -131,7 +131,7 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 
 static void post_setsockopt(struct syscallrecord *rec)
 {
-	free((void *) rec->a4);
+	freeptr(&rec->a4);
 }
 
 struct syscallentry syscall_setsockopt = {
