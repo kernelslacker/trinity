@@ -16,21 +16,24 @@
 
 static void sanitise_send(struct syscallrecord *rec)
 {
+	unsigned int size;
 	void *ptr;
 
-	ptr = malloc(page_size);
+	if (rand_bool())
+		size = 1;
+	else
+		size = rand() % page_size;
+
+	ptr = malloc(size);
 	if (ptr == NULL)
 		return;
-	rec->a2 = (unsigned long) ptr;
 
-	if (rand_bool())
-		rec->a3 = 1;
-	else
-		rec->a3 = rand() % page_size;
+	rec->a2 = (unsigned long) ptr;
+	rec->a3 = size;
 
 	// TODO: only use this as a fallback, and actually have
 	// some per-proto generators here.
-	generate_rand_bytes(ptr, rec->a3);
+	generate_rand_bytes(ptr, size);
 }
 
 static void post_send(struct syscallrecord *rec)
