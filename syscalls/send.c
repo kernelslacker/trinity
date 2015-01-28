@@ -14,15 +14,41 @@
 #include "utils.h"
 #include "compat.h"
 
+static void sanitise_send(struct syscallrecord *rec)
+{
+	void *ptr;
+
+	ptr = malloc(page_size);
+	if (ptr == NULL)
+		return;
+	rec->a2 = (unsigned long) ptr;
+
+	if (rand_bool())
+		rec->a3 = 1;
+	else
+		rec->a3 = rand() % page_size;
+
+	// TODO: only use this as a fallback, and actually have
+	// some per-proto generators here.
+	generate_rand_bytes(ptr, rec->a3);
+}
+
+static void post_send(struct syscallrecord *rec)
+{
+	void *ptr = (void *) rec->a2;
+
+	if (ptr != NULL)
+		free(ptr);
+	rec->a2 = 0L;
+}
+
 struct syscallentry syscall_send = {
 	.name = "send",
 	.num_args = 4,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "buff",
-	.arg2type = ARG_ADDRESS,
 	.arg3name = "len",
-	.arg3type = ARG_LEN,
 	.arg4name = "flags",
         .arg4type = ARG_LIST,
 	.arg4list = {
@@ -34,6 +60,8 @@ struct syscallentry syscall_send = {
 			    MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT,
 		},
 	},
+	.sanitise = sanitise_send,
+	.post = post_send,
 };
 
 
