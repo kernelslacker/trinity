@@ -9,19 +9,34 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_write(struct syscallrecord *rec)
 {
+	unsigned int size;
+	void *ptr;
+
 	if (rand_bool())
-		rec->a3 = 1;
+		size = 1;
 	else
-		rec->a3 = rand() % page_size;
+		size = rand() % page_size;
+
+	ptr = malloc(size);
+	if (ptr == NULL)
+		return;
+
+	rec->a2 = (unsigned long) ptr;
+	rec->a3 = size;
+}
+
+static void post_write(struct syscallrecord *rec)
+{
+	freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_write = {
 	.name = "write",
 	.num_args = 3,
-	.sanitise = sanitise_write,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "buf",
@@ -29,6 +44,8 @@ struct syscallentry syscall_write = {
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_write,
+	.post     = post_write,
 };
 
 /*
@@ -54,6 +71,7 @@ struct syscallentry syscall_writev = {
 
 static void sanitise_pwrite64(struct syscallrecord *rec)
 {
+	sanitise_write(rec);
 
 retry_pos:
 	if ((int) rec->a4 < 0) {
@@ -65,7 +83,6 @@ retry_pos:
 struct syscallentry syscall_pwrite64 = {
 	.name = "pwrite64",
 	.num_args = 4,
-	.sanitise = sanitise_pwrite64,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "buf",
@@ -74,6 +91,8 @@ struct syscallentry syscall_pwrite64 = {
 	.arg3type = ARG_LEN,
 	.arg4name = "pos",
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_pwrite64,
+	.post     = post_write,
 };
 
 
