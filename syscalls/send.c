@@ -93,6 +93,8 @@ struct syscallentry syscall_sendto = {
 	.arg6name = "addr_len",
 	.arg6type = ARG_SOCKADDRLEN,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_send,
+	.post = post_send,
 };
 
 /*
