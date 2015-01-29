@@ -25,6 +25,8 @@ static void sanitise_write(struct syscallrecord *rec)
 	if (ptr == NULL)
 		return;
 
+	generate_rand_bytes(ptr, size);
+
 	rec->a2 = (unsigned long) ptr;
 	rec->a3 = size;
 }
