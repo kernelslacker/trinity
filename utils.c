@@ -89,7 +89,7 @@ void kill_pid(pid_t pid)
 
 void freeptr(unsigned long *p)
 {
-	void *ptr = (void *) p;
+	void *ptr = (void *) *p;
 
 	if (ptr != NULL)
 		free(ptr);
