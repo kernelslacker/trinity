@@ -2,6 +2,7 @@ VERSION="1.5pre"
 
 INSTALL_PREFIX ?= $(DESTDIR)
 INSTALL_PREFIX ?= $(HOME)
+NR_CPUS := $(shell grep ^processor /proc/cpuinfo | /usr/bin/wc -l)
 
 ifeq ($(CC),"")
 CC := gcc
@@ -140,6 +141,6 @@ scan:
 
 coverity:
 	@rm -rf cov-int trinity-coverity.tar.xz
-	@cov-build --dir cov-int make
+	@cov-build --dir cov-int make -j $(NR_CPUS)
 	@tar cJvf trinity-coverity.tar.xz cov-int
 
