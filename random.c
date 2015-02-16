@@ -90,51 +90,6 @@ static unsigned long randbits(int limit)
 }
 
 /*
- * Based on very similar routine stolen from iknowthis. Thanks Tavis.
- */
-static unsigned long taviso(void)
-{
-	unsigned long r = 0;
-	unsigned long temp;
-
-	switch (rand() % 4) {
-	case 0:	r = rand() & rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= rand() & rand();
-#endif
-		break;
-
-	case 1:	temp = rand();
-		r = rand();
-		if (temp) r %= temp;
-#if __WORDSIZE == 64
-		r <<= 32;
-
-		temp = rand();
-		if (temp) r |= rand() % temp;
-#endif
-		break;
-
-	case 2:	r = rand() | rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= rand() | rand();
-#endif
-		break;
-
-	case 3:	r = rand();
-#if __WORDSIZE == 64
-		r <<= 32;
-		r |= rand();
-#endif
-		break;
-	}
-
-	return r;
-}
-
-/*
  * Pick 8 random bytes, and concatenate them into a long.
  */
 static unsigned long rand8x8(void)
@@ -172,20 +127,18 @@ static unsigned int __rand32(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 7) {
+	switch (rand() % 6) {
 	case 0: r = rand_single_bit(32);
 		break;
 	case 1:	r = randbits(32);
 		break;
 	case 2: r = rand();
 		break;
-	case 3:	r = taviso();
+	case 3:	r = rand8x8();
 		break;
-	case 4:	r = rand8x8();
+	case 4:	r = rept8(4);
 		break;
-	case 5:	r = rept8(4);
-		break;
-	case 6:	return get_interesting_32bit_value();
+	case 5:	return get_interesting_32bit_value();
 	}
 
 	return r;
@@ -258,21 +211,19 @@ u64 rand64(void)
 
 	} else {
 		/* 33:64-bit ranges. */
-		switch (rand() % 7) {
+		switch (rand() % 6) {
 		case 0:	r = rand_single_bit(64);
 			break;
 		case 1:	r = randbits(64);
 			break;
 		case 2:	r = rand32() | rand32() << 31;
 			break;
-		case 3:	r = taviso();
+		case 3:	r = rand8x8();
 			break;
-		case 4:	r = rand8x8();
-			break;
-		case 5:	r = rept8(8);
+		case 4:	r = rept8(8);
 			break;
 		/* Sometimes pick a not-so-random number. */
-		case 6:	return get_interesting_value();
+		case 5:	return get_interesting_value();
 		}
 
 		/* limit the size */
