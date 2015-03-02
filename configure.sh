@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DEVEL=1
+DEVEL=0
 CONFIGH="config.h"
 
 if [ -t 1 ]; then
