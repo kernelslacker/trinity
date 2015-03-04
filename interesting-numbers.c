@@ -20,28 +20,15 @@ static unsigned int plus_minus_two(unsigned int num)
 	return num;
 }
 
-static char get_interesting_8bit_value(void)
+static unsigned char get_interesting_8bit_value(void)
 {
-	char num = 0;
-
-	switch (rand() % 7) {
-	case 0:	num = -128;
-		break;
-	case 1:	num = -1;
-		break;
-	case 2:	num = 0;
-		break;
-	case 3:	num = 1;
-		break;
-	case 4:	num = 1UL << (rand() % 7);
-		break;
-	case 5:	num = 127;
-		break;
-	case 6:	num = rand() % 256;		// 00-0xff
-		break;
+	switch (rand() % 5) {
+	case 0: return 1;					// one
+	case 1: return 0xff;				// max
+	case 2: return 1UL << (rand() & 7);	// 2^n (1 -> 128)
+	case 3: return rand() & 0xff;		// 0 -> 0xff
+	default: return 0;					// zero
 	}
-
-	return num;
 }
 
 static int get_interesting_16bit_value(void)
@@ -103,7 +90,8 @@ unsigned int get_interesting_32bit_value(void)
 		break;
 	}
 
-	num = plus_minus_two(num);
+	num = rand() & 0xf ? num : plus_minus_two(num);	// 1 in 16 call plus_minus_two
+
 	return num;
 }
 
