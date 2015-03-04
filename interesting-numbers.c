@@ -95,20 +95,20 @@ unsigned long get_interesting_value(void)
 	low = (rand() & 0xf) ? low : plus_minus_two(low);	// 1 in 16 call plus_minus_two
 #if __WORDSIZE != 32
 
-	switch (rand() % 13) {
-	case 0: return 0;
-	case 1: return low;
-	case 2: return 0x0000000100000000UL | low;
-	case 3: return 0x7fffffff00000000UL | low;
-	case 4: return 0x8000000000000000UL | low;
-	case 5: return 0xffffffff00000000UL | low;
-	case 6: return 0xffffffffffffff00UL | (rand() % 256);
-	case 7: return 0xffffffffffffffffUL - page_size;
-	case 8: return PAGE_OFFSET | (low << 4);
-	case 9: return KERNEL_ADDR | (low & 0xffffff);
-	case 10: return MODULE_ADDR | (low & 0xffffff);
-	case 11: return per_arch_interesting_addr(low);
-	case 12: return (low << 32);
+	if (rand_bool()) {	// FIXME: This should likely be less aggressive than 50/50
+		switch (rand() % 11) {
+		case 0: return 0x0000000100000000UL | low;
+		case 1: return 0x7fffffff00000000UL | low;
+		case 2: return 0x8000000000000000UL | low;
+		case 3: return 0xffffffff00000000UL | low;
+		case 4: return 0xffffffffffffff00UL | (rand() & 0xff);
+		case 5: return 0xffffffffffffffffUL - page_size;
+		case 6: return PAGE_OFFSET | (low << 4);
+		case 7: return KERNEL_ADDR | (low & 0xffffff);
+		case 8: return MODULE_ADDR | (low & 0xffffff);
+		case 9: return per_arch_interesting_addr(low);
+		case 10: return (low << 32);
+		}
 	}
 
 #endif	/* __WORDSIZE */
