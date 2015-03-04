@@ -35,22 +35,20 @@ static int get_interesting_16bit_value(void)
 {
 	int num = 0;
 
-	switch (rand() % 8) {
+	switch (rand() % 7) {
 	case 0:	num = 0;
 		break;
-	case 1:	num = get_interesting_8bit_value();
+	case 1:	num = -32768;
 		break;
-	case 2:	num = -32768;
+	case 2:	num = -129;
 		break;
-	case 3:	num = -129;
+	case 3:	num = 255;
 		break;
-	case 4:	num = 255;
+	case 4:	num = 32767;
 		break;
-	case 5:	num = 32767;
+	case 5:	num = 1UL << (rand() % 15);
 		break;
-	case 6:	num = 1UL << (rand() % 15);
-		break;
-	case 7:	num = rand() % 0xffff;
+	case 6:	num = rand() % 0xffff;
 		break;
 	}
 
@@ -61,36 +59,27 @@ unsigned int get_interesting_32bit_value(void)
 {
 	unsigned int num = 0;
 
-	switch (rand() % 11) {
+	switch (rand() % 9) {
 	case 0:	num = 0;
 		break;
-
-	case 1:	num = get_interesting_8bit_value();
+	case 1:	num = 1UL << (rand() % 32);	// set a single bit.
 		break;
-
-	case 2:	num = get_interesting_16bit_value();
+	case 2:	num = 0x8fffffff;
 		break;
-
-	case 3:	num = 1UL << (rand() % 32);	// set a single bit.
-		break;
-	case 4:	num = 0x8fffffff;
-		break;
-	case 5:	num = 0xff;
+	case 3:	num = 0xff;
 		num = num << (rand() % 31);
 		break;
-	case 6: num = 0xffff0000;
+	case 4: num = 0xffff0000;
 		break;
-	case 7: num = 0xffffe000;
+	case 5: num = 0xffffe000;
 		break;
-	case 8: num = 0xffffff00 | (rand() % 256);
+	case 6: num = 0xffffff00 | (rand() % 256);
 		break;
-	case 9: num = 0xffffffff - page_size;
+	case 7: num = 0xffffffff - page_size;
 		break;
-	case 10: num = 0xffffffff;
+	case 8: num = 0xffffffff;
 		break;
 	}
-
-	num = rand() & 0xf ? num : plus_minus_two(num);	// 1 in 16 call plus_minus_two
 
 	return num;
 }
@@ -119,13 +108,19 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 
 unsigned long get_interesting_value(void)
 {
-#if __WORDSIZE == 32
-	return get_interesting_32bit_value();
-#else
 	unsigned long low = 0;
 
-	if (rand_bool())
-		low = get_interesting_32bit_value();
+	switch (rand() % 3) {
+	case 0:	low = get_interesting_8bit_value();
+		break;
+	case 1:	low = get_interesting_16bit_value();
+		break;
+	case 2: low = get_interesting_32bit_value();
+		break;
+	}
+
+	low = (rand() & 0xf) ? low : plus_minus_two(low);	// 1 in 16 call plus_minus_two
+#if __WORDSIZE != 32
 
 	switch (rand() % 13) {
 	case 0: return 0;
@@ -143,6 +138,6 @@ unsigned long get_interesting_value(void)
 	case 12: return (low << 32);
 	}
 
-	return low;	// unreachable, but gcc is dumb.
 #endif	/* __WORDSIZE */
+	return low;
 }
