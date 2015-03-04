@@ -43,31 +43,18 @@ static unsigned short get_interesting_16bit_value(void)
 
 static unsigned int get_interesting_32bit_value(void)
 {
-	unsigned int num = 0;
-
-	switch (rand() % 9) {
-	case 0:	num = 0;
-		break;
-	case 1:	num = 1UL << (rand() % 32);	// set a single bit.
-		break;
-	case 2:	num = 0x8fffffff;
-		break;
-	case 3:	num = 0xff;
-		num = num << (rand() % 31);
-		break;
-	case 4: num = 0xffff0000;
-		break;
-	case 5: num = 0xffffe000;
-		break;
-	case 6: num = 0xffffff00 | (rand() % 256);
-		break;
-	case 7: num = 0xffffffff - page_size;
-		break;
-	case 8: num = 0xffffffff;
-		break;
+	switch (rand() % 10) {
+	case 0: return 0x80000000 >> (rand() & 0x1f);	// 2^n (1 -> 0x10000)
+	case 1: return rand();							// 0 -> RAND_MAX (likely 0x7fffffff)
+	case 2: return 0xff << (rand() % 25);
+	case 3: return 0xffff0000;
+	case 4: return 0xffffe000;
+	case 5: return 0xffffff00 | (rand() & 0xff);
+	case 6: return 0xffffffff - page_size;
+	case 7: return page_size;
+	case 8: return page_size * ((rand() % (0xffffffff/page_size)) + 1);
+	default: return 0xffffffff;						// max
 	}
-
-	return num;
 }
 
 #if __WORDSIZE != 32
