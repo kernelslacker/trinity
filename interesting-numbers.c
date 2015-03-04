@@ -31,28 +31,14 @@ static unsigned char get_interesting_8bit_value(void)
 	}
 }
 
-static int get_interesting_16bit_value(void)
+static unsigned short get_interesting_16bit_value(void)
 {
-	int num = 0;
-
-	switch (rand() % 7) {
-	case 0:	num = 0;
-		break;
-	case 1:	num = -32768;
-		break;
-	case 2:	num = -129;
-		break;
-	case 3:	num = 255;
-		break;
-	case 4:	num = 32767;
-		break;
-	case 5:	num = 1UL << (rand() % 15);
-		break;
-	case 6:	num = rand() % 0xffff;
-		break;
+	switch (rand() % 4) {
+	case 0: return 0x8000 >> (rand() & 7);		// 2^n (0x100 -> 0x8000)
+	case 1: return rand() & 0xffff;				// 0 -> 0xffff
+	case 2: return 0xff00 | (rand() & 0xff);	// 0xff00 -> 0xffff
+	default: return 0xffff;						// max
 	}
-
-	return num;
 }
 
 static unsigned int get_interesting_32bit_value(void)
