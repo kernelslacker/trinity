@@ -7,15 +7,14 @@
 static unsigned int plus_minus_two(unsigned int num)
 {
 	/* Now munge it for off-by-ones. */
-	switch (rand() % 5) {
+	switch (rand() % 4) {
 	case 0:	num -= 2;
 		break;
 	case 1:	num -= 1;
 		break;
-	case 2:	return num;
-	case 3:	num += 1;
+	case 2:	num += 1;
 		break;
-	case 4:	num += 2;
+	case 3:	num += 2;
 		break;
 	}
 	return num;
