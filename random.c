@@ -138,7 +138,7 @@ static unsigned int __rand32(void)
 		break;
 	case 4:	r = rept8(4);
 		break;
-	case 5:	return get_interesting_32bit_value();
+	case 5:	return get_interesting_value();
 	}
 
 	return r;

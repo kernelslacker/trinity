@@ -6,7 +6,6 @@ void generic_sanitise(struct syscallrecord *rec);
 void generic_free_arg(struct syscallrecord *rec);
 
 unsigned long get_interesting_value(void);
-unsigned int get_interesting_32bit_value(void);
 
 void *get_address(void);
 void *get_non_null_address(void);

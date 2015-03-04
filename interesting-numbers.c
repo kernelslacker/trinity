@@ -55,7 +55,7 @@ static int get_interesting_16bit_value(void)
 	return num;
 }
 
-unsigned int get_interesting_32bit_value(void)
+static unsigned int get_interesting_32bit_value(void)
 {
 	unsigned int num = 0;
 
