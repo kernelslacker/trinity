@@ -90,20 +90,6 @@ static unsigned long randbits(int limit)
 }
 
 /*
- * Pick 8 random bytes, and concatenate them into a long.
- */
-static unsigned long rand8x8(void)
-{
-	unsigned long r = 0UL;
-	unsigned int i;
-
-	for (i = rand_range(1, 7); i > 0; --i)
-		r = (r << 8) | rand() % 256;
-
-	return r;
-}
-
-/*
  * Pick 1 random byte, and repeat it through a long.
  */
 static unsigned long rept8(unsigned int num)
@@ -127,18 +113,16 @@ static unsigned int __rand32(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 6) {
+	switch (rand() % 5) {
 	case 0: r = rand_single_bit(32);
 		break;
 	case 1:	r = randbits(32);
 		break;
 	case 2: r = RAND_32();
 		break;
-	case 3:	r = rand8x8();
+	case 3:	r = rept8(4);
 		break;
-	case 4:	r = rept8(4);
-		break;
-	case 5:	return get_interesting_value();
+	case 4:	return get_interesting_value();
 	}
 
 	return r;
@@ -211,19 +195,17 @@ u64 rand64(void)
 
 	} else {
 		/* 33:64-bit ranges. */
-		switch (rand() % 6) {
+		switch (rand() % 5) {
 		case 0:	r = rand_single_bit(64);
 			break;
 		case 1:	r = randbits(64);
 			break;
 		case 2:	r = RAND_64();
 			break;
-		case 3:	r = rand8x8();
-			break;
-		case 4:	r = rept8(8);
+		case 3:	r = rept8(8);
 			break;
 		/* Sometimes pick a not-so-random number. */
-		case 5:	return get_interesting_value();
+		case 4:	return get_interesting_value();
 		}
 
 		/* limit the size */
