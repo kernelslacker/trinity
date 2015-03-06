@@ -52,7 +52,7 @@ int child_read_all_files(void)
 //		if (ret != -1)
 //			output(0, "%s:%s\n", filename, buffer);
 
-		if (rand_bool())
+		if (RAND_BOOL())
 			sleep(1);
 
 		free(buffer);

@@ -95,7 +95,7 @@ unsigned long get_interesting_value(void)
 	low = (rand() & 0xf) ? low : plus_minus_two(low);	// 1 in 16 call plus_minus_two
 #if __WORDSIZE != 32
 
-	if (rand_bool()) {	// FIXME: This should likely be less aggressive than 50/50
+	if (RAND_BOOL()) {	// FIXME: This should likely be less aggressive than 50/50
 		switch (rand() % 11) {
 		case 0: return 0x0000000100000000UL | low;
 		case 1: return 0x7fffffff00000000UL | low;

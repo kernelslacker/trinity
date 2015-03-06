@@ -37,7 +37,7 @@ static unsigned long handle_arg_address(struct syscallrecord *rec, unsigned int 
 	if (argnum == 1)
 		return (unsigned long) get_address();
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		return (unsigned long) get_address();
 
 	/* Half the time, we look to see if earlier args were also ARG_ADDRESS,
@@ -304,7 +304,7 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
-		if (rand_bool())
+		if (RAND_BOOL())
 			return (unsigned long) rand64();
 		return (unsigned long) get_writable_address(page_size);
 

@@ -58,7 +58,7 @@ static void post_mremap(struct syscallrecord *rec)
 	map->ptr = ptr;
 
 	/* Sometimes dirty the mapping first. */
-	if (rand_bool())
+	if (RAND_BOOL())
 		dirty_mapping(map);
 }
 

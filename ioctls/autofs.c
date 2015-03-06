@@ -291,7 +291,7 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 		arg->ioctlfd = get_random_fd();
 		arg->fail.token = rand();
 		arg->fail.status = rand();
-		if (rand_bool()) {
+		if (RAND_BOOL()) {
 			arg->size += 5;
 			arg->path[0] = '/';
 			arg->path[1] = rand();

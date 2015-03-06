@@ -21,14 +21,14 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 
 	map = common_set_mmap_ptr_len();
 
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		start = rand() % map->size;
 		start &= PAGE_MASK;
 		rec->a1 += start;
 	}
 
 	/* We just want to remap a part of the mapping. */
-	if (rand_bool())
+	if (RAND_BOOL())
 		size = page_size;
 	else {
 		size = rand() % map->size;
@@ -45,7 +45,7 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	rec->a3 = 0;
 
 	/* Pick a random pgoff. */
-	if (rand_bool())
+	if (RAND_BOOL())
 		offset = rand() & (size / page_size);
 	else
 		offset = 0;

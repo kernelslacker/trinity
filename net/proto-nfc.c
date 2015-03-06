@@ -26,9 +26,9 @@ void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 void nfc_rand_socket(struct socket_triplet *st)
 {
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		st->protocol = NFC_SOCKPROTO_LLCP;
-		if (rand_bool())
+		if (RAND_BOOL())
 			st->type = SOCK_DGRAM;
 		else
 			st->type = SOCK_STREAM;

@@ -43,7 +43,7 @@ static void read_every_other_page(struct map *map)
 
 	nr = nr_pages(map);
 
-	first = rand_bool();
+	first = RAND_BOOL();
 
 	for (i = first; i < nr; i+=2)
 		memcpy(buf, p + (i * page_size), page_size);

@@ -31,7 +31,7 @@ void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 void decnet_rand_socket(struct socket_triplet *st)
 {
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		st->type = SOCK_SEQPACKET;
 		st->protocol = DNPROTO_NSP;
 	} else {

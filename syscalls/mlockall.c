@@ -16,7 +16,7 @@ static void sanitise_mlockall(struct syscallrecord *rec)
 	if (rec->a1 != 0)
 		return;
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		rec->a1 = MCL_CURRENT;
 	else
 		rec->a1 = MCL_FUTURE;

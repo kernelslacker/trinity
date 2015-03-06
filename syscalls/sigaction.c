@@ -14,10 +14,10 @@
 
 static void sanitise_rt_sigaction(struct syscallrecord *rec)
 {
-	if (rand_bool())
+	if (RAND_BOOL())
 		rec->a2 = 0;
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		rec->a3 = 0;
 
 	rec->a4 = sizeof(sigset_t);

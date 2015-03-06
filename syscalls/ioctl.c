@@ -28,7 +28,7 @@ static void ioctl_mangle_cmd(struct syscallrecord *rec)
 static void ioctl_mangle_arg(struct syscallrecord *rec)
 {
 	/* the argument could mean anything, because ioctl sucks like that. */
-	if (rand_bool())
+	if (RAND_BOOL())
 		rec->a3 = rand32();
 	else
 		rec->a3 = (unsigned long) get_non_null_address();

@@ -312,7 +312,7 @@ retry:
 	/* OR in some random flags. */
 retry_flags:
 
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		randflags = get_o_flags();
 		fd = open(filename, flags | randflags | O_NONBLOCK);
 	} else {

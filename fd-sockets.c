@@ -80,7 +80,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	nr_sockets++;
 
 	/* Sometimes, listen on created sockets. */
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		int ret;
 
 		/* fake a sockaddr. */

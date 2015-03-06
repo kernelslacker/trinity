@@ -40,7 +40,7 @@ void irda_rand_socket(struct socket_triplet *st)
 		break;
 
 	case 2: st->type = SOCK_DGRAM;
-		if (rand_bool())
+		if (RAND_BOOL())
 			st->protocol = IRDAPROTO_ULTRA;
 		else
 			st->protocol = IRDAPROTO_UNITDATA;

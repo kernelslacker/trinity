@@ -755,7 +755,7 @@ static long long random_event_config(__u32 *event_type,
 	case PERF_TYPE_BREAKPOINT:
 		/* Breakpoint type only valid if config==0 */
 		/* Set it to something else too anyway     */
-		if (rand_bool())
+		if (RAND_BOOL())
 			config = rand64();
 		else
 			config = 0;
@@ -831,46 +831,46 @@ static long long random_sample_type(void)
 
 	long long sample_type = 0;
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		return rand64();
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_IP;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_TID;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_TIME;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_ADDR;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_READ;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_CALLCHAIN;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_ID;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_CPU;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_PERIOD;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_STREAM_ID;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_RAW;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_BRANCH_STACK;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_REGS_USER;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_STACK_USER;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_WEIGHT;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_DATA_SRC;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_IDENTIFIER;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_TRANSACTION;
-	if (rand_bool())
+	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_REGS_INTR;
 
 	return sample_type;
@@ -881,16 +881,16 @@ static long long random_read_format(void)
 
 	long long read_format = 0;
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		return rand64();
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		read_format |= PERF_FORMAT_GROUP;
-	if (rand_bool())
+	if (RAND_BOOL())
 		read_format |= PERF_FORMAT_ID;
-	if (rand_bool())
+	if (RAND_BOOL())
 		read_format |= PERF_FORMAT_TOTAL_TIME_ENABLED;
-	if (rand_bool())
+	if (RAND_BOOL())
 		read_format |= PERF_FORMAT_TOTAL_TIME_RUNNING;
 
 	return read_format;
@@ -934,30 +934,30 @@ static long long random_branch_sample_type(void)
 	if (rand() % 2)
 		return rand64();
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_USER;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_KERNEL;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_HV;
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_ANY;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_ANY_CALL;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_ANY_RETURN;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_IND_CALL;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_COND;
 
 	/* Transactional Memory Types */
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_ABORT_TX;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_IN_TX;
-	if (rand_bool())
+	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_NO_TX;
 
 	return branch_sample;
@@ -980,32 +980,32 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->read_format = random_read_format();
 
 	/* Bitfield parameters, mostly boolean */
-	attr->disabled = rand_bool();
-	attr->inherit = rand_bool();
+	attr->disabled = RAND_BOOL();
+	attr->inherit = RAND_BOOL();
 	if (group_leader) {
-		attr->pinned = rand_bool();
+		attr->pinned = RAND_BOOL();
 	}
-	attr->exclusive = rand_bool();
-	attr->exclude_user = rand_bool();
-	attr->exclude_kernel = rand_bool();
-	attr->exclude_hv = rand_bool();
-	attr->exclude_idle = rand_bool();
-	attr->mmap = rand_bool();
-	attr->comm = rand_bool();
-	attr->freq = rand_bool();
-	attr->inherit_stat = rand_bool();
-	attr->enable_on_exec = rand_bool();
-	attr->task = rand_bool();
-	attr->watermark = rand_bool();
+	attr->exclusive = RAND_BOOL();
+	attr->exclude_user = RAND_BOOL();
+	attr->exclude_kernel = RAND_BOOL();
+	attr->exclude_hv = RAND_BOOL();
+	attr->exclude_idle = RAND_BOOL();
+	attr->mmap = RAND_BOOL();
+	attr->comm = RAND_BOOL();
+	attr->freq = RAND_BOOL();
+	attr->inherit_stat = RAND_BOOL();
+	attr->enable_on_exec = RAND_BOOL();
+	attr->task = RAND_BOOL();
+	attr->watermark = RAND_BOOL();
 	attr->precise_ip = rand() % 4;	// two bits
-	attr->mmap_data = rand_bool();
-	attr->sample_id_all = rand_bool();
-	attr->exclude_host = rand_bool();
-	attr->exclude_guest = rand_bool();
-	attr->exclude_callchain_kernel = rand_bool();
-	attr->exclude_callchain_user = rand_bool();
-	attr->mmap2 = rand_bool();
-	attr->comm_exec = rand_bool();
+	attr->mmap_data = RAND_BOOL();
+	attr->sample_id_all = RAND_BOOL();
+	attr->exclude_host = RAND_BOOL();
+	attr->exclude_guest = RAND_BOOL();
+	attr->exclude_callchain_kernel = RAND_BOOL();
+	attr->exclude_callchain_user = RAND_BOOL();
+	attr->mmap2 = RAND_BOOL();
+	attr->comm_exec = RAND_BOOL();
 
 	/* wakeup events not relevant */
 
@@ -1040,35 +1040,35 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->read_format = random_read_format();
 
 	/* Bitfield parameters, mostly boolean */
-	attr->disabled = rand_bool();
-	attr->inherit = rand_bool();
+	attr->disabled = RAND_BOOL();
+	attr->inherit = RAND_BOOL();
 	/* only group leaders can be pinned */
 	if (group_leader) {
-		attr->pinned = rand_bool();
+		attr->pinned = RAND_BOOL();
 	} else {
 		attr->pinned = 0;
 	}
-	attr->exclusive = rand_bool();
-	attr->exclude_user = rand_bool();
-	attr->exclude_kernel = rand_bool();
-	attr->exclude_hv = rand_bool();
-	attr->exclude_idle = rand_bool();
-	attr->mmap = rand_bool();
-	attr->comm = rand_bool();
-	attr->freq = rand_bool();
-	attr->inherit_stat = rand_bool();
-	attr->enable_on_exec = rand_bool();
-	attr->task = rand_bool();
-	attr->watermark = rand_bool();
+	attr->exclusive = RAND_BOOL();
+	attr->exclude_user = RAND_BOOL();
+	attr->exclude_kernel = RAND_BOOL();
+	attr->exclude_hv = RAND_BOOL();
+	attr->exclude_idle = RAND_BOOL();
+	attr->mmap = RAND_BOOL();
+	attr->comm = RAND_BOOL();
+	attr->freq = RAND_BOOL();
+	attr->inherit_stat = RAND_BOOL();
+	attr->enable_on_exec = RAND_BOOL();
+	attr->task = RAND_BOOL();
+	attr->watermark = RAND_BOOL();
 	attr->precise_ip = rand() % 4;	// two bits
-	attr->mmap_data = rand_bool();
-	attr->sample_id_all = rand_bool();
-	attr->exclude_host = rand_bool();
-	attr->exclude_guest = rand_bool();
-	attr->exclude_callchain_kernel = rand_bool();
-	attr->exclude_callchain_user = rand_bool();
-	attr->mmap2 = rand_bool();
-	attr->comm_exec = rand_bool();
+	attr->mmap_data = RAND_BOOL();
+	attr->sample_id_all = RAND_BOOL();
+	attr->exclude_host = RAND_BOOL();
+	attr->exclude_guest = RAND_BOOL();
+	attr->exclude_callchain_kernel = RAND_BOOL();
+	attr->exclude_callchain_user = RAND_BOOL();
+	attr->mmap2 = RAND_BOOL();
+	attr->comm_exec = RAND_BOOL();
 
 	attr->wakeup_events = rand32();
 
@@ -1122,10 +1122,10 @@ static void create_mostly_valid_global_event(struct perf_event_attr *attr,
 	attr->read_format = random_read_format();
 
 	/* Bitfield parameters, mostly boolean */
-	attr->disabled = rand_bool();
-	attr->inherit = rand_bool();
+	attr->disabled = RAND_BOOL();
+	attr->inherit = RAND_BOOL();
 	if (group_leader) {
-		attr->pinned = rand_bool();
+		attr->pinned = RAND_BOOL();
 	}
 
 	/* Not setting most other paramaters */
@@ -1149,35 +1149,35 @@ static void create_random_event(struct perf_event_attr *attr)
 	attr->read_format = random_read_format();
 
 	/* bitfields */
-	attr->disabled = rand_bool();
-	attr->inherit = rand_bool();
-	attr->pinned = rand_bool();
-	attr->exclusive = rand_bool();
-	attr->exclude_user = rand_bool();
-	attr->exclude_kernel = rand_bool();
-	attr->exclude_hv = rand_bool();
-	attr->exclude_idle = rand_bool();
-	attr->mmap = rand_bool();
-	attr->comm = rand_bool();
-	attr->freq = rand_bool();
-	attr->inherit_stat = rand_bool();
-	attr->enable_on_exec = rand_bool();
-	attr->task = rand_bool();
-	attr->watermark = rand_bool();
+	attr->disabled = RAND_BOOL();
+	attr->inherit = RAND_BOOL();
+	attr->pinned = RAND_BOOL();
+	attr->exclusive = RAND_BOOL();
+	attr->exclude_user = RAND_BOOL();
+	attr->exclude_kernel = RAND_BOOL();
+	attr->exclude_hv = RAND_BOOL();
+	attr->exclude_idle = RAND_BOOL();
+	attr->mmap = RAND_BOOL();
+	attr->comm = RAND_BOOL();
+	attr->freq = RAND_BOOL();
+	attr->inherit_stat = RAND_BOOL();
+	attr->enable_on_exec = RAND_BOOL();
+	attr->task = RAND_BOOL();
+	attr->watermark = RAND_BOOL();
 	attr->precise_ip = rand() % 4;
-	attr->mmap_data = rand_bool();
-	attr->sample_id_all = rand_bool();
-	attr->exclude_host = rand_bool();
-	attr->exclude_guest = rand_bool();
-	attr->exclude_callchain_kernel = rand_bool();
-	attr->exclude_callchain_user = rand_bool();
-	attr->mmap2 = rand_bool();
-	attr->comm_exec = rand_bool();
+	attr->mmap_data = RAND_BOOL();
+	attr->sample_id_all = RAND_BOOL();
+	attr->exclude_host = RAND_BOOL();
+	attr->exclude_guest = RAND_BOOL();
+	attr->exclude_callchain_kernel = RAND_BOOL();
+	attr->exclude_callchain_user = RAND_BOOL();
+	attr->mmap2 = RAND_BOOL();
+	attr->comm_exec = RAND_BOOL();
 
 	attr->wakeup_events=rand32();
 
 	/* Breakpoints are unioned with the config values */
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		setup_breakpoints(attr);
 	}
 	else {
@@ -1243,16 +1243,16 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	/* flags */
 	/* You almost never set these unless you're playing with cgroups */
 	flags = 0;
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		flags = rand64();
 	} else {
-		if (rand_bool())
+		if (RAND_BOOL())
 			flags |= PERF_FLAG_FD_NO_GROUP;
-		if (rand_bool())
+		if (RAND_BOOL())
 			flags |= PERF_FLAG_FD_OUTPUT;
-		if (rand_bool())
+		if (RAND_BOOL())
 			flags |= PERF_FLAG_PID_CGROUP;
-		if (rand_bool())
+		if (RAND_BOOL())
 			flags |= PERF_FLAG_FD_CLOEXEC;
 	}
 	rec->a5 = flags;

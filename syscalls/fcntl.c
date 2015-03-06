@@ -100,17 +100,17 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 
 	case F_NOTIFY:
 		rec->a3 = 0L;
-		if (rand_bool())
+		if (RAND_BOOL())
 			rec->a3 |= DN_ACCESS;
-		if (rand_bool())
+		if (RAND_BOOL())
 			rec->a3 |= DN_MODIFY;
-		if (rand_bool())
+		if (RAND_BOOL())
 			rec->a3 |= DN_CREATE;
-		if (rand_bool())
+		if (RAND_BOOL())
 			rec->a3 |= DN_DELETE;
-		if (rand_bool())
+		if (RAND_BOOL())
 			rec->a3 |= DN_RENAME;
-		if (rand_bool())
+		if (RAND_BOOL())
 			rec->a3 |= DN_ATTRIB;
 		break;
 

@@ -39,7 +39,7 @@ void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 void caif_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = rand() % _CAIFPROTO_MAX;
-	if (rand_bool())
+	if (RAND_BOOL())
 		st->type = SOCK_SEQPACKET;
 	else
 		st->type = SOCK_STREAM;

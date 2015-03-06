@@ -17,12 +17,12 @@ static void sanitise_splice(struct syscallrecord *rec)
 	if (ONE_IN(3))
 		return;
 
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
 		rec->a2 = 0;
 	}
 
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		rec->a3 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
 		rec->a4 = 0;
 	}

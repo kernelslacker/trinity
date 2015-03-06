@@ -606,7 +606,7 @@ static uint16_t gen_bpf_code_more_crazy(bool last_instr)
 		 * increase the chance to be accepted and that we
 		 * actually run the generated fuzz filter code.
 		 */
-		if (rand_bool())
+		if (RAND_BOOL())
 			ret = BPF_RET;
 	}
 

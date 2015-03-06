@@ -99,7 +99,7 @@ static void post_mmap(struct syscallrecord *rec)
 	this_child->num_mappings++;
 
 	/* Sometimes dirty the mapping. */
-	if (rand_bool())
+	if (RAND_BOOL())
 		dirty_mapping(new);
 }
 

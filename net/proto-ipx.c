@@ -21,7 +21,7 @@ void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	for (i = 0; i < 6; i++)
 		ipx->sipx_node[i] = rand();
 	ipx->sipx_type = rand();
-	ipx->sipx_zero = rand_bool();
+	ipx->sipx_zero = RAND_BOOL();
 	*addr = (struct sockaddr *) ipx;
 	*addrlen = sizeof(struct sockaddr_ipx);
 }

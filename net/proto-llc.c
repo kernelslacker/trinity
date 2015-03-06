@@ -34,7 +34,7 @@ void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 void llc_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = rand() % PROTO_MAX;
-	if (rand_bool())
+	if (RAND_BOOL())
 		st->type = SOCK_STREAM;
 	else
 		st->type = SOCK_DGRAM;

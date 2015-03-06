@@ -88,7 +88,7 @@ void do_setsockopt(struct sockopt *so)
 	so->optval = (unsigned long) zmalloc(page_size);
 
 	// pick a size for optlen. At the minimum, we want an int (overridden below)
-	if (rand_bool())
+	if (RAND_BOOL())
 		so->optlen = sizeof(int);
 	else
 		so->optlen = rand() % 256;
@@ -110,7 +110,7 @@ void do_setsockopt(struct sockopt *so)
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
 	 */
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		free((void *) so->optval);
 		so->optval = 0;
 	}

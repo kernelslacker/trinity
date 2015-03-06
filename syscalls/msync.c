@@ -16,7 +16,7 @@ static void sanitise_msync(struct syscallrecord *rec)
 {
        (void) common_set_mmap_ptr_len();
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		rec->a3 |= MS_INVALIDATE;
 }
 

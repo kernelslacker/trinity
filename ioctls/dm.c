@@ -46,7 +46,7 @@ static void dm_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 	dm->version[2] = DM_VERSION_PATCHLEVEL;
 
 	/* clear one of these strings to pass some kernel validation */
-	if (rand_bool())
+	if (RAND_BOOL())
 		dm->name[0] = 0;
 	else
 		dm->uuid[0] = 0;

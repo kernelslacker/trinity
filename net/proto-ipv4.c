@@ -193,7 +193,7 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_MULTICAST_ALL:
 	case IP_MULTICAST_LOOP:
 	case IP_RECVORIGDSTADDR:
-		if (rand_bool())
+		if (RAND_BOOL())
 			so->optlen = sizeof(int);
 		else
 			so->optlen = sizeof(char);

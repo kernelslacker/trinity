@@ -64,14 +64,14 @@ void inet6_rand_socket(struct socket_triplet *st)
 		break;
 
 	case 1: st->type = SOCK_DGRAM;      // UDP
-		if (rand_bool())
+		if (RAND_BOOL())
 			st->protocol = 0;
 		else
 			st->protocol = IPPROTO_UDP;
 		break;
 
 	case 2: st->type = SOCK_SEQPACKET;      // SCTP
-		if (rand_bool())
+		if (RAND_BOOL())
 			st->protocol = 0;
 		else
 			st->protocol = IPPROTO_SCTP;

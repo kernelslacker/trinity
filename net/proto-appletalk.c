@@ -28,7 +28,7 @@ void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 void atalk_rand_socket(struct socket_triplet *st)
 {
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		st->type = SOCK_DGRAM;
 	        st->protocol = 0;
 	        return;

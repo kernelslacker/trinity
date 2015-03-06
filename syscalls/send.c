@@ -19,7 +19,7 @@ static void sanitise_send(struct syscallrecord *rec)
 	unsigned int size;
 	void *ptr;
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		size = 1;
 	else
 		size = rand() % page_size;

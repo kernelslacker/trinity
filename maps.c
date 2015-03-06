@@ -120,7 +120,7 @@ struct map * common_set_mmap_ptr_len(void)
  */
 void dirty_mapping(struct map *map)
 {
-	bool rw = rand_bool();
+	bool rw = RAND_BOOL();
 
 	if (rw == TRUE) {
 		/* Check mapping is writable, or we'll segv.

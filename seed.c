@@ -44,7 +44,7 @@ unsigned int new_seed(void)
 	if ((fd = open("/dev/urandom", O_RDONLY)) < 0 ||
 	    read(fd, &r, sizeof(r)) != sizeof(r)) {
 		r = rand();
-		if (!(rand_bool())) {
+		if (!(RAND_BOOL())) {
 			gettimeofday(&t, NULL);
 			r |= t.tv_usec;
 		}

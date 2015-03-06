@@ -25,7 +25,7 @@ static int open_epoll_fds(void)
 
 	while (i < MAX_EPOLL_FDS) {
 
-		if (rand_bool())
+		if (RAND_BOOL())
 			fd = epoll_create(1);
 		else
 			fd = epoll_create1(EPOLL_CLOEXEC);

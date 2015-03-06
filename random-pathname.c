@@ -27,7 +27,7 @@ const char * generate_pathname(void)
 
 	len = strlen(pathname);
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		(void) strncpy(newpath, pathname, len);
 	else {
 		if (len < MAX_PATH_LEN - 2) {
@@ -39,7 +39,7 @@ const char * generate_pathname(void)
 	}
 
 	/* 50/50 chance of making it look like a dir */
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		if (len <= MAX_PATH_LEN - 2) {
 			newpath[len] = '/';
 			newpath[len + 1] = 0;

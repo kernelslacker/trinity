@@ -25,7 +25,7 @@ static int open_testfile(char *filename)
 	/* file might be around from an earlier run, nuke it. */
 	(void) unlink(filename);
 
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		fd = open_with_fopen(filename, O_RDWR);
 		if (fd != -1)
 			output(2, "fd[%d] = fopen(\"%s\", O_RDWR)\n", fd, filename);

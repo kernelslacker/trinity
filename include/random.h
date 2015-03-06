@@ -13,7 +13,7 @@
 #error "Unexpected RAND_MAX value. Please add support."
 #endif
 
-#define rand_bool()				(rand() & 1)
+#define RAND_BOOL()				(rand() & 1)
 #define RAND_BYTE()				(rand() & 0xff)
 
 extern unsigned int seed;

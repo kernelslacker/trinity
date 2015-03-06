@@ -222,7 +222,7 @@ void init_child(struct childdata *child, int childno)
 
 	set_make_it_fail();
 
-	if (rand_bool())
+	if (RAND_BOOL())
 		use_fpu();
 
 	mask_signals_child();

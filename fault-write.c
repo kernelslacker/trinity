@@ -31,7 +31,7 @@ static void fabricate_onepage_struct(char *page)
 			if (i > page_size)
 				return;
 
-			if (rand_bool())
+			if (RAND_BOOL())
 				val = rand64();
 			else
 				val = (unsigned long) get_address();
@@ -76,7 +76,7 @@ static void generate_random_page(char *page)
 
 	case 4:
 		for (i = 0; i < page_size; )
-			page[i++] = (unsigned char)rand_bool();
+			page[i++] = (unsigned char)RAND_BOOL();
 		return;
 
 	/* return a page that looks kinda like a struct */
@@ -87,7 +87,7 @@ static void generate_random_page(char *page)
 	case 6:
 		for (i = 0; i < page_size; i += 2) {
 			page[i] = '%';
-			switch (rand_bool()) {
+			switch (RAND_BOOL()) {
 			case 0:	page[i + 1] = 'd';
 				break;
 			case 1:	page[i + 1] = 's';
@@ -104,11 +104,11 @@ static void generate_random_page(char *page)
 		case 0:
 			switch (rand() % 3) {
 			case 0:	p = sprintf(page, "%s%lu",
-					rand_bool() ? "-" : "",
+					RAND_BOOL() ? "-" : "",
 					(unsigned long) rand64());
 				break;
 			case 1:	p = sprintf(page, "%s%ld",
-					rand_bool() ? "-" : "",
+					RAND_BOOL() ? "-" : "",
 					(unsigned long) rand64());
 				break;
 			case 2:	p = sprintf(page, "%lx", (unsigned long) rand64());
@@ -119,11 +119,11 @@ static void generate_random_page(char *page)
 		case 1:
 			switch (rand() % 3) {
 			case 0:	p = sprintf(page, "%s%u",
-					rand_bool() ? "-" : "",
+					RAND_BOOL() ? "-" : "",
 					(unsigned int) rand32());
 				break;
 			case 1:	p = sprintf(page, "%s%d",
-					rand_bool() ? "-" : "",
+					RAND_BOOL() ? "-" : "",
 					(int) rand32());
 				break;
 			case 2:	p = sprintf(page, "%x", (int) rand32());
@@ -134,11 +134,11 @@ static void generate_random_page(char *page)
 		case 2:
 			switch (rand() % 3) {
 			case 0:	p = sprintf(page, "%s%u",
-					rand_bool() ? "-" : "",
+					RAND_BOOL() ? "-" : "",
 					(unsigned char) rand());
 				break;
 			case 1:	p = sprintf(page, "%s%d",
-					rand_bool() ? "-" : "",
+					RAND_BOOL() ? "-" : "",
 					(char) rand());
 				break;
 			case 2:	p = sprintf(page, "%x", (char) rand());
@@ -179,7 +179,7 @@ static void dirty_every_other_page(struct map *map)
 
 	nr = nr_pages(map);
 
-	first = rand_bool();
+	first = RAND_BOOL();
 
 	for (i = first; i < nr; i+=2)
 		p[i * page_size] = rand();

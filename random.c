@@ -162,7 +162,7 @@ u64 rand64(void)
 {
 	unsigned long r = 0;
 
-	if (rand_bool()) {
+	if (RAND_BOOL()) {
 		/* 32-bit ranges. */
 		r = rand32();
 
