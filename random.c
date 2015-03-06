@@ -130,7 +130,7 @@ unsigned int rand32(void)
 
 	/* Sometimes flip sign */
 	if (rand_bool())
-		r |= (1L << 31);
+		r = ~r + 1;
 
 	/* we might get lucky if something is counting ints/longs etc. */
 	if (ONE_IN(4)) {
@@ -206,9 +206,9 @@ u64 rand64(void)
 			r |= (1UL << ((__WORDSIZE - 1) - (rand() % 8)));
 	}
 
-	/* randomly flip sign bit. */
+	/* Sometimes flip sign */
 	if (rand_bool())
-		r |= (1UL << (__WORDSIZE - 1));
+		r = ~r + 1;
 
 	return r;
 }
