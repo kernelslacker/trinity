@@ -125,11 +125,11 @@ unsigned int rand32(void)
 	}
 
 	/* Sometimes deduct it from INT_MAX */
-	if (rand_bool())
+	if (ONE_IN(25))
 		r = INT_MAX - r;
 
 	/* Sometimes flip sign */
-	if (rand_bool())
+	if (ONE_IN(25))
 		r = ~r + 1;
 
 	/* we might get lucky if something is counting ints/longs etc. */
@@ -193,11 +193,11 @@ u64 rand64(void)
 	}
 
 	/* Sometimes invert the generated number. */
-	if (rand_bool())
+	if (ONE_IN(25))
 		r = ~r;
 
 	/* increase distribution in MSB */
-	if ((rand() % 10)) {
+	if (ONE_IN(10)) {
 		unsigned int i;
 		unsigned int rounds;
 
@@ -207,7 +207,7 @@ u64 rand64(void)
 	}
 
 	/* Sometimes flip sign */
-	if (rand_bool())
+	if (ONE_IN(25))
 		r = ~r + 1;
 
 	return r;
