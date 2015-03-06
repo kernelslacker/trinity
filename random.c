@@ -64,11 +64,6 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	return mask;
 }
 
-unsigned int rand_bool(void)
-{
-	return rand() % 2;
-}
-
 /*
  * Pick a random power of two between 2^0 and 2^(__WORDSIZE-1)
  */
