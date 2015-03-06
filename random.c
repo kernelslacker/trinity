@@ -106,10 +106,9 @@ static unsigned long rept_byte(void)
 }
 
 /*
- * "selector" function for 32bit random.
- * only called from rand32()
+ * Generate, and munge a 32bit number.
  */
-static unsigned int __rand32(void)
+unsigned int rand32(void)
 {
 	unsigned long r = 0;
 
@@ -123,32 +122,6 @@ static unsigned int __rand32(void)
 	case 3:	r = rept_byte();
 		break;
 	case 4:	return get_interesting_value();
-	}
-
-	return r;
-}
-
-/*
- * Generate, and munge a 32bit number.
- */
-unsigned int rand32(void)
-{
-	unsigned long r = 0;
-
-	r = __rand32();
-
-	if (rand_bool()) {
-		unsigned int i;
-		unsigned int rounds;
-
-		/* mangle it. */
-		rounds = rand() % 3;
-		for (i = 0; i < rounds; i++) {
-			if (rand_bool())
-				r |= __rand32();
-			else
-				r ^= __rand32();
-		}
 	}
 
 	/* Sometimes deduct it from INT_MAX */
