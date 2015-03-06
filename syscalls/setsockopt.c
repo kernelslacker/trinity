@@ -95,7 +95,7 @@ void do_setsockopt(struct sockopt *so)
 
 	if (ONE_IN(100)) {
 		so->level = rand();
-		so->optname = (rand() % 0x100);	/* random operation. */
+		so->optname = RAND_BYTE();	/* random operation. */
 	} else {
 		ssoptrs[rand() % ARRAY_SIZE(ssoptrs)].func(so);
 	}

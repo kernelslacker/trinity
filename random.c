@@ -22,7 +22,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 		switch (choice) {
 		case 0:
 			/* Complete garbage. */
-			ptr[i] = rand();
+			ptr[i] = RAND_BYTE();
 			break;
 		case 1:
 			/* printable text strings. */
@@ -99,7 +99,7 @@ static unsigned long rept8(unsigned int num)
 	unsigned int i;
 	unsigned char c;
 
-	c = rand() % 256;
+	c = RAND_BYTE();
 	for (i = rand() % (num - 1) ; i > 0; --i)
 		r = (r << 8) | c;
 

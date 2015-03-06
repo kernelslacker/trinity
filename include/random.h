@@ -14,6 +14,7 @@
 #endif
 
 #define rand_bool()				(rand() & 1)
+#define RAND_BYTE()				(rand() & 0xff)
 
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);

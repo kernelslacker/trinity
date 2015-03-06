@@ -66,7 +66,7 @@ static void generate_random_page(char *page)
 		return;
 
 	case 2:
-		memset(page, rand() % 0xff, page_size);
+		memset(page, RAND_BYTE(), page_size);
 		return;
 
 	case 3:

@@ -35,7 +35,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
 		unsigned long align = alignments[rand() % ARRAY_SIZE(alignments)];
 		unsigned int shift = (__WORDSIZE / 2) - 1;
 
-		newaddr = rand() % 256;
+		newaddr = RAND_BYTE();
 		newaddr <<= shift;
 		newaddr |= align;
 		newaddr &= ~(align - 1);

@@ -562,7 +562,7 @@ static long long random_cache_config(void)
 		cache_id = PERF_COUNT_HW_CACHE_NODE;
 		break;
 	case 7:
-		cache_id = rand() % 256;
+		cache_id = RAND_BYTE();
 		break;
 	default:
 		cache_id = 0;
@@ -580,7 +580,7 @@ static long long random_cache_config(void)
 		hw_cache_op_id = PERF_COUNT_HW_CACHE_OP_PREFETCH;
 		break;
 	case 3:
-		hw_cache_op_id = rand() % 256;
+		hw_cache_op_id = RAND_BYTE();
 		break;
 	default:
 		hw_cache_op_id = 0;
@@ -595,7 +595,7 @@ static long long random_cache_config(void)
 		hw_cache_op_result_id = PERF_COUNT_HW_CACHE_RESULT_MISS;
 		break;
 	case 2:
-		hw_cache_op_result_id = rand() % 256;
+		hw_cache_op_result_id = RAND_BYTE();
 		break;
 	default:
 		hw_cache_op_result_id = 0;
