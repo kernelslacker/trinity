@@ -37,7 +37,7 @@ unsigned long get_len(void)
 
 	/* we might get lucky if something is counting ints/longs etc. */
 	if (ONE_IN(4)) {
-		int _div = 1 << rand_range(1, 4);	/* 2,4,8 or 16 */
+		int _div = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
 		i /= _div;
 	}
 

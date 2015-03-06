@@ -40,7 +40,7 @@ static void * _get_address(unsigned char null_allowed)
 	if (null_allowed == TRUE)
 		i = rand() % 4;
 	else
-		i = rand_range(1, 3);
+		i = RAND_RANGE(1, 3);
 
 	switch (i) {
 	case 0: addr = NULL;

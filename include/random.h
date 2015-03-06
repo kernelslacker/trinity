@@ -15,6 +15,7 @@
 
 #define RAND_BOOL()				(rand() & 1)
 #define RAND_BYTE()				(rand() & 0xff)
+#define RAND_RANGE(min, max)	(min + rand() / (RAND_MAX / (max - min + 1) + 1))
 
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
@@ -25,6 +26,5 @@ unsigned int new_seed(void);
 void generate_rand_bytes(unsigned char *ptr, unsigned int len);
 unsigned int rand32(void);
 u64 rand64(void);
-unsigned int rand_range(unsigned int min, unsigned int max);
 unsigned long rand_single_bit(unsigned char size);
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);

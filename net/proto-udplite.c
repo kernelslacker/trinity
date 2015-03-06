@@ -25,7 +25,7 @@ void udplite_setsockopt(struct sockopt *so)
 		break;
 	case UDP_ENCAP:
 		optval = (char *) so->optval;
-		optval[0] = rand_range(1, 3);        // Encapsulation types.
+		optval[0] = RAND_RANGE(1, 3);        // Encapsulation types.
 		break;
 	case UDPLITE_SEND_CSCOV:
 		break;

@@ -125,7 +125,10 @@ int get_random_fd(void)
 regen:
 	if (shm->fd_lifetime == 0) {
 		shm->current_fd = get_new_random_fd();
-		shm->fd_lifetime = rand_range(5, max_children);
+		if (max_children > 5)
+			shm->fd_lifetime = RAND_RANGE(5, max_children);
+		else
+			shm->fd_lifetime = RAND_RANGE(max_children, 5);
 	} else
 		shm->fd_lifetime--;
 

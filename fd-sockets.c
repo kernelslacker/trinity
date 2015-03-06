@@ -88,7 +88,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 		ret = bind(fd, sa, salen);
 		if (ret != -1) {
-			(void) listen(fd, rand_range(1, 128));
+			(void) listen(fd, RAND_RANGE(1, 128));
 		}
 	}
 

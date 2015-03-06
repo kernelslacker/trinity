@@ -162,7 +162,7 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 {
 	unsigned long num_entries;
 
-	num_entries = rand_range(1, 256);
+	num_entries = RAND_RANGE(1, 256);
 
 	switch (argnum) {
 	case 1:	if (entry->arg2type == ARG_IOVECLEN)

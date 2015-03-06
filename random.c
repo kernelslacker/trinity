@@ -36,14 +36,6 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	}
 }
 
-unsigned int rand_range(unsigned int min, unsigned int max)
-{
-	if (min > max)
-		swap(min, max);
-
-	return min + rand() / (RAND_MAX / (max - min + 1) + 1);
-}
-
 /*
  * OR a random number of bits into a mask.
  * Used by ARG_LIST generation, and get_o_flags()
@@ -54,7 +46,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	unsigned long mask = 0;
 	unsigned int bits;
 
-	bits = rand_range(0, num);      /* num of bits to OR */
+	bits = RAND_RANGE(0, num);      /* num of bits to OR */
 	if (bits == 0)
 		return mask;
 
@@ -134,7 +126,7 @@ unsigned int rand32(void)
 
 	/* we might get lucky if something is counting ints/longs etc. */
 	if (ONE_IN(4)) {
-		int _div = 1 << rand_range(1, 4);	/* 2,4,8 or 16 */
+		int _div = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
 		r /= _div;
 	}
 
