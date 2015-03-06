@@ -69,8 +69,14 @@ unsigned int rand_bool(void)
 	return rand() % 2;
 }
 
-static unsigned int rand_single_bit(unsigned char size)
+/*
+ * Pick a random power of two between 2^0 and 2^(__WORDSIZE-1)
+ */
+unsigned long rand_single_bit(unsigned char size)
 {
+	if (size > __WORDSIZE)
+		size = __WORDSIZE;
+
 	return (1UL << (rand() % size));
 }
 

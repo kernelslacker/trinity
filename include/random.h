@@ -24,4 +24,5 @@ unsigned int rand_bool(void);
 unsigned int rand32(void);
 u64 rand64(void);
 unsigned int rand_range(unsigned int min, unsigned int max);
+unsigned long rand_single_bit(unsigned char size);
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);
