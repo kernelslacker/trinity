@@ -93,16 +93,15 @@ static unsigned long randbits(int limit)
 /*
  * Pick 1 random byte, and repeat it through a long.
  */
-static unsigned long rept8(unsigned int num)
+static unsigned long rept_byte(void)
 {
-	unsigned long r = 0UL;
-	unsigned int i;
-	unsigned char c;
+	unsigned long r = RAND_BYTE();
 
-	c = RAND_BYTE();
-	for (i = rand() % (num - 1) ; i > 0; --i)
-		r = (r << 8) | c;
-
+	r = (r << 8) | r;
+	r = (r << 16) | r;
+#if __WORDSIZE == 64
+	r = (r << 32) | r;
+#endif
 	return r;
 }
 
@@ -121,7 +120,7 @@ static unsigned int __rand32(void)
 		break;
 	case 2: r = RAND_32();
 		break;
-	case 3:	r = rept8(4);
+	case 3:	r = rept_byte();
 		break;
 	case 4:	return get_interesting_value();
 	}
@@ -203,7 +202,7 @@ u64 rand64(void)
 			break;
 		case 2:	r = RAND_64();
 			break;
-		case 3:	r = rept8(8);
+		case 3:	r = rept_byte();
 			break;
 		/* Sometimes pick a not-so-random number. */
 		case 4:	return get_interesting_value();
