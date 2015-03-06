@@ -132,7 +132,7 @@ static unsigned int __rand32(void)
 		break;
 	case 1:	r = randbits(32);
 		break;
-	case 2: r = rand();
+	case 2: r = RAND_32();
 		break;
 	case 3:	r = rand8x8();
 		break;
@@ -216,7 +216,7 @@ u64 rand64(void)
 			break;
 		case 1:	r = randbits(64);
 			break;
-		case 2:	r = rand32() | rand32() << 31;
+		case 2:	r = RAND_64();
 			break;
 		case 3:	r = rand8x8();
 			break;

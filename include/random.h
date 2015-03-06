@@ -1,9 +1,17 @@
 #pragma once
 
+#include <stdlib.h>
 #include "child.h"
 #include "types.h"
 
 #define ONE_IN(x)				((rand() % x) == 0)	// limit of RAND_MAX-1
+
+#if RAND_MAX == 0x7FFFFFFF
+#define RAND_32()				((rand() << 1) | (rand() & 1))
+#define RAND_64()				(((0ULL | rand()) << 33) | ((0ULL | rand()) << 2) | (rand() & 0x3))
+#else
+#error "Unexpected RAND_MAX value. Please add support."
+#endif
 
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
