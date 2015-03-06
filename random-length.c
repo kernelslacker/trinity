@@ -36,7 +36,7 @@ unsigned long get_len(void)
 		return 0;
 
 	/* we might get lucky if something is counting ints/longs etc. */
-	if (rand() % 100 < 25) {
+	if (ONE_IN(4)) {
 		int _div = 1 << rand_range(1, 4);	/* 2,4,8 or 16 */
 		i /= _div;
 	}

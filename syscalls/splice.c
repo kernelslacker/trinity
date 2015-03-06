@@ -14,7 +14,7 @@
 
 static void sanitise_splice(struct syscallrecord *rec)
 {
-	if ((rand() % 10) < 3)
+	if (ONE_IN(3))
 		return;
 
 	if (rand_bool()) {

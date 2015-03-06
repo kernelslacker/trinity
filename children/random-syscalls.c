@@ -50,7 +50,7 @@ static bool choose_syscall_table(void)
 		/* If both tables enabled, pick randomly. */
 		if ((use_64bit == TRUE) && (use_32bit == TRUE)) {
 			/* 10% possibility of a 32bit syscall */
-			if (rand() % 100 < 10)
+			if (ONE_IN(10))
 				do32 = TRUE;
 		}
 

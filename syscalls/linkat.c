@@ -4,6 +4,7 @@
  */
 #include <fcntl.h>
 #include <stdlib.h>
+#include "random.h"
 #include "shm.h"
 #include "sanitise.h"
 #include "syscall.h"
@@ -14,7 +15,7 @@ static void sanitise_linkat(struct syscallrecord *rec)
 {
 	/* .. If oldpath is relative and olddirfd is the special value AT_FDCWD, then oldpath is
 	 * interpreted relative to the current working directory of the calling process  */
-	if ((rand() % 100) == 0)
+	if (ONE_IN(100))
 		rec->a1 = AT_FDCWD;
 }
 

@@ -633,7 +633,7 @@ static uint16_t gen_bpf_code_more_crazy(bool last_instr)
 	}
 
 	/* Also give it a chance to fuzz some crap into it */
-	if (rand() % 1000 == 0)
+	if (ONE_IN(1000))
 		ret |= (uint16_t) rand();
 
 	return ret;
@@ -689,7 +689,7 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr)
 		used = 3;
 		memcpy(curr, validate_arch, sizeof(validate_arch));
 		/* Randomize architecture */
-		if (rand() % 3 == 0)
+		if (ONE_IN(3))
 			curr[0].k = bpf_rand(seccomp_jmp_arch);
 		else
 			curr[0].k = TRUE_ARCH;
@@ -707,7 +707,7 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr)
 	case STATE_GEN_KILL_PROCESS:
 		used = 1;
 		memcpy(curr, kill_process, sizeof(kill_process));
-		if (rand() % 3 == 0)
+		if (ONE_IN(3))
 			/* Variate between seccomp ret values */
 			curr[0].k = bpf_rand(seccomp_ret_k);
 		break;
@@ -722,11 +722,11 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr)
 	}
 
 	/* Also give it a tiny chance to fuzz some crap into it */
-	if (rand() % 10000 == 0)
+	if (ONE_IN(10000))
 		curr[0].code |= (uint16_t) rand();
-	if (rand() % 10000 == 0)
+	if (ONE_IN(10000))
 		curr[1].code |= (uint16_t) rand();
-	if (rand() % 10000 == 0)
+	if (ONE_IN(10000))
 		curr[2].code |= (uint16_t) rand();
 
 	return used;
@@ -759,7 +759,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 
 	bpf->len = avail = rand() % 50;
 	/* Give it from time to time a chance to load big filters as well. */
-	if (rand() % 1000 == 0)
+	if (ONE_IN(1000))
 		bpf->len = avail = rand() % BPF_MAXINSNS;
 	if (bpf->len == 0)
 		bpf->len = avail = 50;
@@ -796,9 +796,9 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 
 	bpf->len = rand() % 10;
 	/* Give it from time to time a chance to load big filters as well. */
-	if (rand() % 100 == 0)
+	if (ONE_IN(100))
 		bpf->len = rand() % 100;
-	if (rand() % 1000 == 0)
+	if (ONE_IN(1000))
 		bpf->len = rand() % BPF_MAXINSNS;
 	if (bpf->len == 0)
 		bpf->len = 50;
@@ -806,7 +806,7 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	bpf->filter = zmalloc(bpf->len * sizeof(struct sock_filter));
 
 	for (i = 0; i < bpf->len; i++) {
-		if (rand() % 100 == 0)
+		if (ONE_IN(100))
 			bpf->filter[i].code = gen_bpf_code_more_crazy(i == bpf->len - 1);
 		else
 			bpf->filter[i].code = gen_bpf_code_less_crazy(i == bpf->len - 1);
@@ -818,20 +818,20 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 		}
 
 		/* Also give it a chance if not BPF_JMP */
-		if (rand() % 100 == 0)
+		if (ONE_IN(100))
 			bpf->filter[i].jt |= (uint8_t) rand();
-		if (rand() % 100 == 0)
+		if (ONE_IN(100))
 			bpf->filter[i].jf |= (uint8_t) rand();
 
 		/* Not always fill out k */
-		bpf->filter[i].k = (rand() % 10 == 0 ? 0 : (uint32_t) rand());
+		bpf->filter[i].k = ((ONE_IN(10)) ? 0 : (uint32_t) rand());
 
 		/* Also try to jump into BPF extensions by chance */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_LD ||
 		    BPF_CLASS(bpf->filter[i].code) == BPF_LDX) {
 			if (bpf->filter[i].k > 65000 &&
 			    bpf->filter[i].k < (uint32_t) SKF_AD_OFF) {
-				if (rand() % 10 == 0) {
+				if (ONE_IN(10)) {
 					bpf->filter[i].k = (uint32_t) (SKF_AD_OFF +
 							   rand() % SKF_AD_MAX);
 				}

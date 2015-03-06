@@ -93,18 +93,18 @@ void do_setsockopt(struct sockopt *so)
 	else
 		so->optlen = rand() % 256;
 
-	if (rand() % 100 > 0) {
-		ssoptrs[rand() % ARRAY_SIZE(ssoptrs)].func(so);
-	} else {
+	if (ONE_IN(100)) {
 		so->level = rand();
 		so->optname = (rand() % 0x100);	/* random operation. */
+	} else {
+		ssoptrs[rand() % ARRAY_SIZE(ssoptrs)].func(so);
 	}
 
 	/*
 	 * 10% of the time, mangle the options.
 	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
 	 */
-	if ((rand() % 100) < 10)
+	if (ONE_IN(10))
 		so->optname |= (1UL << (rand() % 32));
 
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.

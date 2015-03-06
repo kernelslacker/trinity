@@ -19,7 +19,7 @@ const char * generate_pathname(void)
 		return NULL;
 
 	/* 90% chance of returning an unmangled filename */
-	if ((rand() % 100) < 90)
+	if (!ONE_IN(10))
 		return pathname;
 
 	/* Create a bogus filename. */

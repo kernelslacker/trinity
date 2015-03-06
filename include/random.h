@@ -3,6 +3,8 @@
 #include "child.h"
 #include "types.h"
 
+#define ONE_IN(x)				((rand() % x) == 0)	// limit of RAND_MAX-1
+
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
 void set_seed(struct childdata *child);

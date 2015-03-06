@@ -120,7 +120,7 @@ void gen_socket_args(struct socket_triplet *st)
 	}
 
 	/* sometimes, still gen rand crap */
-	if ((rand() % 100) == 0) {
+	if (ONE_IN(100)) {
 		rand_proto_type(st);
 		goto done;
 	}
@@ -131,9 +131,9 @@ void gen_socket_args(struct socket_triplet *st)
 
 
 done:
-	if ((rand() % 100) < 25)
+	if (ONE_IN(4))
 		st->type |= SOCK_CLOEXEC;
-	if ((rand() % 100) < 25)
+	if (ONE_IN(4))
 		st->type |= SOCK_NONBLOCK;
 }
 

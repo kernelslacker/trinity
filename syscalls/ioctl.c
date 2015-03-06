@@ -36,7 +36,7 @@ static void ioctl_mangle_arg(struct syscallrecord *rec)
 
 static void generic_sanitise_ioctl(struct syscallrecord *rec)
 {
-	if ((rand() % 50)==0)
+	if (ONE_IN(50))
 		ioctl_mangle_cmd(rec);
 
 	ioctl_mangle_arg(rec);
@@ -46,7 +46,7 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 {
 	const struct ioctl_group *grp;
 
-	if (rand() % 100 == 0)
+	if (ONE_IN(100))
 		grp = get_random_ioctl_group();
 	else
 		grp = find_ioctl_group(rec->a1);
@@ -56,7 +56,7 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 
 		grp->sanitise(grp, rec);
 
-		if (rand() % 100 == 0)
+		if (ONE_IN(100))
 			ioctl_mangle_cmd(rec);
 	} else
 		generic_sanitise_ioctl(rec);
