@@ -29,7 +29,7 @@ static int open_testfile(char *filename)
 		fd = open_with_fopen(filename, O_RDWR);
 		if (fd != -1)
 			output(2, "fd[%d] = fopen(\"%s\", O_RDWR)\n", fd, filename);
-		fcntl(fd, F_SETFL, random_fcntl_setfl_flags());
+		(void) fcntl(fd, F_SETFL, random_fcntl_setfl_flags());
 	} else {
 		const unsigned long open_flags[] = { O_DIRECT, O_DSYNC, O_SYNC, };
 		int flags = 0;
