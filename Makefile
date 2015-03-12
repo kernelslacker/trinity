@@ -137,7 +137,7 @@ tags:	$(SRCS)
 	@ctags -R --exclude=tmp
 
 scan:
-	@scan-build --use-analyzer=/usr/bin/clang make
+	@scan-build --use-analyzer=/usr/bin/clang make -j $(NR_CPUS)
 
 coverity:
 	@rm -rf cov-int trinity-coverity.tar.xz
