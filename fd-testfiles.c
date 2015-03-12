@@ -55,7 +55,7 @@ static int open_testfile_fds(void)
 	while (i <= MAX_TESTFILE_FDS) {
 		int fd;
 
-		sprintf(filename, "trinity-testfile%d", i);
+		sprintf(filename, "trinity-testfile%u", i);
 
 		fd = open_testfile(filename);
 		if (fd != -1) {
