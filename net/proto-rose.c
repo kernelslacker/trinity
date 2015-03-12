@@ -27,7 +27,7 @@ void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	rose->srose_addr.rose_addr[3] = rand();
 	rose->srose_addr.rose_addr[4] = rand();
 
-	generate_rand_bytes((unsigned char *) rose->srose_call.ax25_call, 7 * 2);
+	generate_rand_bytes((unsigned char *) rose->srose_call.ax25_call, sizeof(ax25_address));
 
 	rose->srose_ndigis = rand();
 
