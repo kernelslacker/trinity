@@ -181,6 +181,8 @@ u64 rand64(void)
 			break;
 		case 2: r &= 0x00ffffffffffffffULL;
 			break;
+		default: /* no limiting. */
+			break;
 		}
 	}
 
