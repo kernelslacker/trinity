@@ -1,6 +1,7 @@
 #include <sys/vt.h>
 #include <sys/ioctl.h>
 #include <linux/kd.h>
+#include <linux/serial.h>
 
 #include "utils.h"
 #include "ioctls.h"
