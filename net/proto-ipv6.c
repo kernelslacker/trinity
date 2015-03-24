@@ -18,11 +18,12 @@
 
 static void gen_random_ipv6_address(struct in6_addr *v6)
 {
-	in_addr_t v4 = random_ipv4_address();
+	in_addr_t v4;
 
 	switch (rand() % 9) {
 	case 0:
 		/* deprecated ipv4 style ::v4 */
+		v4 = random_ipv4_address();
 		v6->s6_addr32[0] = 0;
 		v6->s6_addr32[1] = 0;
 		v6->s6_addr32[2] = 0;
@@ -30,6 +31,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 		break;
 	case 1:
 		/* v4 in v6 ::ffff:0:0/96 */
+		v4 = random_ipv4_address();
 		v6->s6_addr32[0] = 0;
 		v6->s6_addr32[1] = 0;
 		v6->s6_addr32[2] = 0xffffffff;
@@ -52,6 +54,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 	case 4:
 		/* 2002::/16 "6to4" */
 		inet_pton(AF_INET6, "2002::", v6);
+		v4 = random_ipv4_address();
 		v6->s6_addr32[3] = htonl(v4);
 		break;
 	case 5:
