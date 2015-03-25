@@ -31,10 +31,8 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 		break;
 	case 1:
 		/* v4 in v6 ::ffff:0:0/96 */
+		inet_pton(AF_INET6, "::ffff:0:0", v6);
 		v4 = random_ipv4_address();
-		v6->s6_addr32[0] = 0;
-		v6->s6_addr32[1] = 0;
-		v6->s6_addr32[2] = 0xffffffff;
 		v6->s6_addr32[3] = htonl(v4);
 		break;
 	case 2:
