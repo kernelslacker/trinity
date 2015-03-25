@@ -20,7 +20,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 {
 	in_addr_t v4;
 
-	switch (rand() % 9) {
+	switch (rand() % 10) {
 	case 0:
 		/* deprecated ipv4 style ::v4 */
 		v4 = random_ipv4_address();
@@ -36,32 +36,38 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 		v6->s6_addr32[3] = htonl(v4);
 		break;
 	case 2:
+		/* stateless IP/ICMP translation (SIIT) ::ffff:0:0:0/96 */
+		inet_pton(AF_INET6, "::ffff:0:0:0", v6);
+		v4 = random_ipv4_address();
+		v6->s6_addr32[3] = htonl(v4);
+		break;
+	case 3:
 		/* ::1/128 loopback */
 		inet_pton(AF_INET6, "::1", v6);
 		break;
-	case 3:
+	case 4:
 		/* ::/128 unspecified */
 		inet_pton(AF_INET6, "::", v6);
 		break;
-	case 4:
+	case 5:
 		/* 2002::/16 "6to4" */
 		inet_pton(AF_INET6, "2002::", v6);
 		v4 = random_ipv4_address();
 		v6->s6_addr32[3] = htonl(v4);
 		break;
-	case 5:
+	case 6:
 		/* fe80::/10 link-local */
 		inet_pton(AF_INET6, "fe80::", v6);
 		break;
-	case 6:
+	case 7:
 		/* fc00::/7  unique local address (ULA) */
 		inet_pton(AF_INET6, "fc00::", v6);
 		break;
-	case 7:
+	case 8:
 		/* 64:ff9b::/96 "Well known" prefix */
 		inet_pton(AF_INET6, "64:ff9b::", v6);
 		break;
-	case 8:
+	case 9:
 		/* 0100::/64 remotely triggered blackhole */
 		inet_pton(AF_INET6, "0100::", v6);
 		break;
