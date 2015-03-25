@@ -54,7 +54,8 @@ static in_addr_t new_ipv4_addr(void)
 
 	inet_pton(AF_INET, p, &v4);
 
-	v4 |= htonl(rand() % addresses[entry].classmask);
+	if (addresses[entry].classmask != SLASH32)
+		v4 |= htonl(rand() % addresses[entry].classmask);
 
 	return v4;
 }
