@@ -23,54 +23,40 @@
 static int previous_ip;
 static unsigned int ip_lifetime = 0;
 
+struct addrtext {
+	const char *name;
+	int classmask;
+};
+
+#define SLASH8 0xffffff
+#define SLASH12 0xfffff
+#define SLASH16 0xffff
+#define SLASH24 0xff
+#define SLASH32 0
+
 static in_addr_t new_ipv4_addr(void)
 {
-	int addr = 0;
-	int class = 0;
+	in_addr_t v4;
+	const struct addrtext addresses[] = {
+		{ "0.0.0.0", SLASH8 },
+		{ "10.0.0.0", SLASH8 },
+		{ "127.0.0.0", SLASH8 },
+		{ "169.254.0.0", SLASH16 },	/* link-local */
+		{ "172.16.0.0", SLASH12 },
+		{ "192.88.99.0", SLASH24 },	/* 6to4 anycast */
+		{ "192.168.0.0", SLASH16 },
+		{ "224.0.0.0", SLASH24 },	/* multi-cast */
+		{ "255.255.255.255", SLASH32 },
+	};
 
-	switch (rand() % 9) {
-	case 0:	addr = 0;		/* 0.0.0.0 */
-		class = 8;
-		break;
-	case 1:	addr = 0x0a000000;	/* 10.0.0.0/8 */
-		class = 8;
-		break;
-	case 2:	addr = 0x7f000001;	/* 127.0.0.0/8 */
-		class = 8;
-		break;
-	case 3:	addr = 0xa9fe0000;	/* 169.254.0.0/16 (link-local) */
-		class = 16;
-		break;
-	case 4:	addr = 0xac100000;	/* 172.16.0.0/12 */
-		class = 12;
-		break;
-	case 5:	addr = 0xc0586300;	/* 192.88.99.0/24 (6to4 anycast) */
-		class = 24;
-		break;
-	case 6:	addr = 0xc0a80000;	/* 192.168.0.0/16 */
-		class = 16;
-		break;
-	case 7:	addr = 0xe0000000;	/* 224.0.0.0/24 (multicast)*/
-		class = 24;
-		break;
-	case 8:	addr = 0xffffffff;	/* 255.255.255.255 */
-		break;
-	default:
-		break;
-	}
+	int entry = rand() % ARRAY_SIZE(addresses);
+	const char *p = addresses[entry].name;
 
-	switch (class) {
-	case 8:	addr |= rand() % 0xffffff;
-		break;
-	case 12: addr |= rand() % 0xfffff;
-		break;
-	case 16: addr |= rand() % 0xffff;
-		break;
-	case 24: addr |= rand() % 0xff;
-		break;
-	default: break;
-	}
-	return addr;
+	inet_pton(AF_INET, p, &v4);
+
+	v4 |= htonl(rand() % addresses[entry].classmask);
+
+	return v4;
 }
 
 in_addr_t random_ipv4_address(void)
@@ -87,7 +73,7 @@ in_addr_t random_ipv4_address(void)
 	previous_ip = addr;
 	ip_lifetime = 5;
 
-	return htonl(addr);
+	return addr;
 }
 
 void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
