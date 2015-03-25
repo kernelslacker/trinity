@@ -16,61 +16,46 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
+struct addrtext {
+	const char *name;
+};
+
 static void gen_random_ipv6_address(struct in6_addr *v6)
 {
-	in_addr_t v4;
+	const char *p;
 
-	switch (rand() % 10) {
-	case 0:
-		/* deprecated ipv4 style ::v4 */
+	if (RAND_BOOL()) {
+		/* v4 in v6 somehow. */
+
+		in_addr_t v4;
+		const struct addrtext v4_in_v6_addresses[] = {
+			{ "::" },		/* deprecated ipv4 style ::v4 */
+			{ "::ffff:0:0" },	/* v4 in v6 ::ffff:0:0/96 */
+			{ "::ffff:0:0:0" },	/* stateless IP/ICMP translation (SIIT) ::ffff:0:0:0/96 */
+			{ "2002::" },		/* 2002::/16 "6to4" */
+		};
+		p = v4_in_v6_addresses[rand() % ARRAY_SIZE(v4_in_v6_addresses)].name;
+
 		v4 = random_ipv4_address();
-		v6->s6_addr32[0] = 0;
-		v6->s6_addr32[1] = 0;
-		v6->s6_addr32[2] = 0;
+
+
+		inet_pton(AF_INET6, p, v6);
 		v6->s6_addr32[3] = htonl(v4);
-		break;
-	case 1:
-		/* v4 in v6 ::ffff:0:0/96 */
-		inet_pton(AF_INET6, "::ffff:0:0", v6);
-		v4 = random_ipv4_address();
-		v6->s6_addr32[3] = htonl(v4);
-		break;
-	case 2:
-		/* stateless IP/ICMP translation (SIIT) ::ffff:0:0:0/96 */
-		inet_pton(AF_INET6, "::ffff:0:0:0", v6);
-		v4 = random_ipv4_address();
-		v6->s6_addr32[3] = htonl(v4);
-		break;
-	case 3:
-		/* ::1/128 loopback */
-		inet_pton(AF_INET6, "::1", v6);
-		break;
-	case 4:
-		/* ::/128 unspecified */
-		inet_pton(AF_INET6, "::", v6);
-		break;
-	case 5:
-		/* 2002::/16 "6to4" */
-		inet_pton(AF_INET6, "2002::", v6);
-		v4 = random_ipv4_address();
-		v6->s6_addr32[3] = htonl(v4);
-		break;
-	case 6:
-		/* fe80::/10 link-local */
-		inet_pton(AF_INET6, "fe80::", v6);
-		break;
-	case 7:
-		/* fc00::/7  unique local address (ULA) */
-		inet_pton(AF_INET6, "fc00::", v6);
-		break;
-	case 8:
-		/* 64:ff9b::/96 "Well known" prefix */
-		inet_pton(AF_INET6, "64:ff9b::", v6);
-		break;
-	case 9:
-		/* 0100::/64 remotely triggered blackhole */
-		inet_pton(AF_INET6, "0100::", v6);
-		break;
+
+	} else {
+		/* actual v6 addresses. */
+
+		const struct addrtext v6_addresses[] = {
+			{ "::1" },		/* ::1/128 loopback */
+			{ "::" },		/* ::/128 unspecified */
+			{ "fe80::" },		/* fe80::/10 link-local */
+			{ "fc00::" },		/* fc00::/7  unique local address (ULA) */
+			{ "64:ff9b::" },	/* 64:ff9b::/96 "Well known" prefix */
+			{ "0100::" },		/* 0100::/64 remotely triggered blackhole */
+		};
+		p = v6_addresses[rand() % ARRAY_SIZE(v6_addresses)].name;
+
+		inet_pton(AF_INET6, p, v6);
 	}
 }
 
