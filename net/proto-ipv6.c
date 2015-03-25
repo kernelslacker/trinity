@@ -34,12 +34,11 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 			{ "::ffff:0:0:0" },	/* stateless IP/ICMP translation (SIIT) ::ffff:0:0:0/96 */
 			{ "2002::" },		/* 2002::/16 "6to4" */
 		};
+
 		p = v4_in_v6_addresses[rand() % ARRAY_SIZE(v4_in_v6_addresses)].name;
+		inet_pton(AF_INET6, p, v6);
 
 		v4 = random_ipv4_address();
-
-
-		inet_pton(AF_INET6, p, v6);
 		v6->s6_addr32[3] = htonl(v4);
 
 	} else {
@@ -53,8 +52,8 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 			{ "64:ff9b::" },	/* 64:ff9b::/96 "Well known" prefix */
 			{ "0100::" },		/* 0100::/64 remotely triggered blackhole */
 		};
-		p = v6_addresses[rand() % ARRAY_SIZE(v6_addresses)].name;
 
+		p = v6_addresses[rand() % ARRAY_SIZE(v6_addresses)].name;
 		inet_pton(AF_INET6, p, v6);
 	}
 }
