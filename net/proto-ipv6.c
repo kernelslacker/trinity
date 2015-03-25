@@ -39,17 +39,11 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 		break;
 	case 2:
 		/* ::1/128 loopback */
-		v6->s6_addr32[0] = 0;
-		v6->s6_addr32[1] = 0;
-		v6->s6_addr32[2] = 0;
-		v6->s6_addr32[3] = htonl(1);
+		inet_pton(AF_INET6, "::1", v6);
 		break;
 	case 3:
 		/* ::/128 unspecified */
-		v6->s6_addr32[0] = 0;
-		v6->s6_addr32[1] = 0;
-		v6->s6_addr32[2] = 0;
-		v6->s6_addr32[3] = 0;
+		inet_pton(AF_INET6, "::", v6);
 		break;
 	case 4:
 		/* 2002::/16 "6to4" */
