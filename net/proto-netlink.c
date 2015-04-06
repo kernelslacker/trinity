@@ -31,7 +31,7 @@ void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	nl = zmalloc(sizeof(struct sockaddr_nl));
 
 	nl->nl_family = PF_NETLINK;
-	nl->nl_pid = get_pid();
+	nl->nl_pid = rand32();
 	nl->nl_groups = rand32();
 	*addr = (struct sockaddr *) nl;
 	*addrlen = sizeof(struct sockaddr_nl);
