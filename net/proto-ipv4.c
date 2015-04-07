@@ -113,10 +113,9 @@ void inet_rand_socket(struct socket_triplet *st)
 		IPPROTO_MTP, IPPROTO_BEETPH, IPPROTO_ENCAP, IPPROTO_PIM,
 		IPPROTO_COMP, IPPROTO_SCTP, IPPROTO_UDPLITE, IPPROTO_RAW,
 	};
-#define NR_IPPROTOS ARRAY_SIZE(ipprotos)
 	unsigned char val;
 
-	val = rand() % NR_IPPROTOS;
+	val = rand() % ARRAY_SIZE(ipprotos);
 	st->protocol = ipprotos[val];
 
 	//TODO: Match the type to the proto instead of being rand
@@ -135,7 +134,6 @@ void inet_rand_socket(struct socket_triplet *st)
 }
 
 //TODO: Pair the sizeof's of the associated arrays
-#define NR_SOL_IP_OPTS ARRAY_SIZE(ip_opts)
 static const unsigned int ip_opts[] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
 	IP_ROUTER_ALERT, IP_RECVOPTS, IP_RETOPTS, IP_PKTINFO,
 	IP_PKTOPTIONS, IP_MTU_DISCOVER, IP_RECVERR, IP_RECVTTL,
@@ -163,7 +161,7 @@ void ip_setsockopt(struct sockopt *so)
 
 	so->level = SOL_IP;
 
-	val = rand() % NR_SOL_IP_OPTS;
+	val = rand() % ARRAY_SIZE(ip_opts);
 	so->optname = ip_opts[val];
 
 	switch (ip_opts[val]) {
