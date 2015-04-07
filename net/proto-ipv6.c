@@ -127,7 +127,6 @@ void inet6_rand_socket(struct socket_triplet *st)
 	}
 }
 
-#define NR_SOL_INET6_OPTS ARRAY_SIZE(inet6_opts)
 static const unsigned int inet6_opts[] = {
 	IPV6_ADDRFORM, IPV6_2292PKTINFO, IPV6_2292HOPOPTS, IPV6_2292DSTOPTS,
 	IPV6_2292RTHDR, IPV6_2292PKTOPTIONS, IPV6_CHECKSUM, IPV6_2292HOPLIMIT,
@@ -154,7 +153,7 @@ void inet6_setsockopt(struct sockopt *so)
 
 	so->level = SOL_IPV6;
 
-	val = rand() % NR_SOL_INET6_OPTS;
+	val = rand() % ARRAY_SIZE(inet6_opts);
 	so->optname = inet6_opts[val];
 }
 #endif
