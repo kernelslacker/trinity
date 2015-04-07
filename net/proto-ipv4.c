@@ -103,22 +103,49 @@ void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_in);
 }
 
+struct ipproto {
+	unsigned int proto;
+	unsigned int type;
+};
+
 void inet_rand_socket(struct socket_triplet *st)
 {
-	unsigned long ipprotos[] = {
-		IPPROTO_IP, IPPROTO_ICMP, IPPROTO_IGMP, IPPROTO_IPIP,
-		IPPROTO_TCP, IPPROTO_EGP, IPPROTO_PUP, IPPROTO_UDP,
-		IPPROTO_IDP, IPPROTO_TP, IPPROTO_DCCP, IPPROTO_IPV6,
-		IPPROTO_RSVP, IPPROTO_GRE, IPPROTO_ESP, IPPROTO_AH,
-		IPPROTO_MTP, IPPROTO_BEETPH, IPPROTO_ENCAP, IPPROTO_PIM,
-		IPPROTO_COMP, IPPROTO_SCTP, IPPROTO_UDPLITE, IPPROTO_RAW,
+	struct ipproto ipprotos[] = {
+		{ .proto = IPPROTO_IP, .type = SOCK_RAW },
+		{ .proto = IPPROTO_ICMP, },
+		{ .proto = IPPROTO_IGMP, },
+		{ .proto = IPPROTO_IPIP, },
+		{ .proto = IPPROTO_TCP, .type = SOCK_STREAM },
+		{ .proto = IPPROTO_EGP, },
+		{ .proto = IPPROTO_PUP, },
+		{ .proto = IPPROTO_UDP, .type = SOCK_DGRAM },
+		{ .proto = IPPROTO_IDP, },
+		{ .proto = IPPROTO_TP, },
+		{ .proto = IPPROTO_DCCP, .type = SOCK_DCCP },
+		{ .proto = IPPROTO_IPV6, },
+		{ .proto = IPPROTO_RSVP, },
+		{ .proto = IPPROTO_GRE, },
+		{ .proto = IPPROTO_ESP, },
+		{ .proto = IPPROTO_AH, },
+		{ .proto = IPPROTO_MTP, },
+		{ .proto = IPPROTO_BEETPH, },
+		{ .proto = IPPROTO_ENCAP, },
+		{ .proto = IPPROTO_PIM, },
+		{ .proto = IPPROTO_COMP, },
+		{ .proto = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
+		{ .proto = IPPROTO_UDPLITE, },
+		{ .proto = IPPROTO_RAW, .type = SOCK_RAW },
 	};
 	unsigned char val;
 
 	val = rand() % ARRAY_SIZE(ipprotos);
-	st->protocol = ipprotos[val];
+	st->protocol = ipprotos[val].proto;
+	if (ipprotos[val].type != 0) {
+		st->type = ipprotos[val].type;
+		return;
+	}
 
-	//TODO: Match the type to the proto instead of being rand
+	//TODO: Fill out the rest of the array, then nuke this next bit..
 
 	switch (rand() % 4) {
 	case 0: st->type = SOCK_STREAM;     // TCP/SCTP
