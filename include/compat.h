@@ -526,6 +526,38 @@ enum kcmp_type {
 #define IPV6_FLOWINFO 11
 #endif
 
+#ifndef IPV6_FLOWLABEL_MGR
+#define IPV6_FLOWLABEL_MGR      32
+#define IPV6_FLOWINFO_SEND      33
+#endif
+
+#ifndef IPV6_RECVPATHMTU
+#define IPV6_RECVPATHMTU        60
+#define IPV6_PATHMTU            61
+#define IPV6_DONTFRAG           62
+#endif
+
+#ifndef IP6T_SO_GET_REVISION_MATCH
+#define IP6T_SO_GET_REVISION_MATCH   68
+#define IP6T_SO_GET_REVISION_TARGET  69
+#define IP6T_SO_ORIGINAL_DST         80
+#endif
+
+#ifndef IPV6_AUTOFLOWLABEL
+#define IPV6_AUTOFLOWLABEL      70
+#define IPV6_ADDR_PREFERENCES   72
+#endif
+
+#ifndef IPV6_MINHOPCOUNT
+#define IPV6_MINHOPCOUNT        73
+#define IPV6_ORIGDSTADDR        74
+#define IPV6_RECVORIGDSTADDR    IPV6_ORIGDSTADDR
+#define IPV6_TRANSPARENT        75
+#define IPV6_UNICAST_IF         76
+#endif
+
+
+
 /* asm/resource.h */
 #ifndef RLIMIT_RTTIME
 #define RLIMIT_RTTIME		15
