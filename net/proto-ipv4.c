@@ -111,7 +111,7 @@ struct ipproto {
 void inet_rand_socket(struct socket_triplet *st)
 {
 	struct ipproto ipprotos[] = {
-		{ .proto = IPPROTO_IP, .type = SOCK_RAW },
+		{ .proto = IPPROTO_IP, },
 		{ .proto = IPPROTO_ICMP, },
 		{ .proto = IPPROTO_IGMP, },
 		{ .proto = IPPROTO_IPIP, },
@@ -133,31 +133,17 @@ void inet_rand_socket(struct socket_triplet *st)
 		{ .proto = IPPROTO_PIM, },
 		{ .proto = IPPROTO_COMP, },
 		{ .proto = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
-		{ .proto = IPPROTO_UDPLITE, },
-		{ .proto = IPPROTO_RAW, .type = SOCK_RAW },
+		{ .proto = IPPROTO_UDPLITE, .type = SOCK_DGRAM },
+		{ .proto = IPPROTO_RAW, },
 	};
 	unsigned char val;
 
 	val = rand() % ARRAY_SIZE(ipprotos);
 	st->protocol = ipprotos[val].proto;
-	if (ipprotos[val].type != 0) {
+	if (ipprotos[val].type != 0)
 		st->type = ipprotos[val].type;
-		return;
-	}
-
-	//TODO: Fill out the rest of the array, then nuke this next bit..
-
-	switch (rand() % 4) {
-	case 0: st->type = SOCK_STREAM;     // TCP/SCTP
-		break;
-	case 1: st->type = SOCK_DGRAM;      // UDP
-		break;
-	case 2: st->type = SOCK_SEQPACKET;      // SCTP
-		break;
-	case 3: st->type = SOCK_RAW;
-		break;
-	}
-
+	else
+		st->type = SOCK_RAW;
 }
 
 //TODO: Pair the sizeof's of the associated arrays
