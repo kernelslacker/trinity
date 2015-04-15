@@ -6,7 +6,7 @@
 
 cd $TRINITY_TMP
 
-NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
+NR_CPUS=$(nproc)
 NR_PROCESSES=$(($NR_CPUS * 2))
 
 while [ 1 ];

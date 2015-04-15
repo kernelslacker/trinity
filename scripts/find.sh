@@ -25,7 +25,7 @@ cd $TRINITY_TMP
 
 TAINT=$(cat /proc/sys/kernel/tainted)
 
-NR_CPUS=`grep ^processor /proc/cpuinfo | /usr/bin/wc -l`
+NR_CPUS=$(nproc)
 
 while [ 1 ];
 do
