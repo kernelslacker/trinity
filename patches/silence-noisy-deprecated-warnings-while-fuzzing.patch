@@ -295,3 +295,27 @@ index a2c33a4dc7ba..77029279ace0 100644
  
  	err = security_socket_create(family, type, protocol, kern);
  	if (err)
+diff --git a/net/dccp/proto.c b/net/dccp/proto.c
+index e171b780b499..7023d9183c9f 100644
+--- a/net/dccp/proto.c
++++ b/net/dccp/proto.c
+@@ -497,11 +497,9 @@ static int do_dccp_setsockopt(struct sock *sk, int level, int optname,
+ 
+ 	switch (optname) {
+ 	case DCCP_SOCKOPT_PACKET_SIZE:
+-		DCCP_WARN("sockopt(PACKET_SIZE) is deprecated: fix your app\n");
+ 		return 0;
+ 	case DCCP_SOCKOPT_CHANGE_L:
+ 	case DCCP_SOCKOPT_CHANGE_R:
+-		DCCP_WARN("sockopt(CHANGE_L/R) is deprecated: fix your app\n");
+ 		return 0;
+ 	case DCCP_SOCKOPT_CCID:
+ 	case DCCP_SOCKOPT_RX_CCID:
+@@ -624,7 +622,6 @@ static int do_dccp_getsockopt(struct sock *sk, int level, int optname,
+ 
+ 	switch (optname) {
+ 	case DCCP_SOCKOPT_PACKET_SIZE:
+-		DCCP_WARN("sockopt(PACKET_SIZE) is deprecated: fix your app\n");
+ 		return 0;
+ 	case DCCP_SOCKOPT_SERVICE:
+ 		return dccp_getsockopt_service(sk, len,
