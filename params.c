@@ -60,7 +60,7 @@ char server_addr[INET6_ADDRSTRLEN] = "\0";
 
 void enable_disable_fd_usage(void)
 {
-	outputerr(" --enable-fds/--disable-fds= {sockets,pipes,perf,epoll,eventfd,pseudo,timerfd,testfile,memfd}\n");
+	outputerr(" --enable-fds/--disable-fds= {sockets,pipes,perf,epoll,eventfd,pseudo,timerfd,testfile,memfd,drm}\n");
 }
 
 static void usage(void)

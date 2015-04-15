@@ -2,6 +2,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "drm_fds.h"
 #include "epoll.h"
 #include "eventfd.h"
 #include "exit.h"
@@ -61,6 +62,7 @@ struct shm_s {
 	int timerfd_fds[MAX_TIMERFD_FDS];
 	int testfile_fds[MAX_TESTFILE_FDS];
 	int memfd_fds[MAX_MEMFD_FDS];
+	int drm_fds[MAX_DRM_FDS];
 	struct socketinfo sockets[NR_SOCKET_FDS];
 	int current_fd;
 	unsigned int fd_lifetime;

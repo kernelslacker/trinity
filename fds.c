@@ -56,6 +56,7 @@ void setup_fd_providers(void)
 	add_to_prov_list(&timerfd_fd_provider);
 	add_to_prov_list(&testfile_fd_provider);
 	add_to_prov_list(&memfd_fd_provider);
+	add_to_prov_list(&drm_fd_provider);
 
 	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }
