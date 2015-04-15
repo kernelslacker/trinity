@@ -124,8 +124,6 @@ tag:
 	@git tag -a v$(VERSION) -m "$(VERSION) release."
 
 tarball:
-	@git repack -a -d
-	@git prune-packed
 	@git archive --format=tar --prefix=trinity-$(VERSION)/ HEAD > trinity-$(VERSION).tar
 	@xz -9 trinity-$(VERSION).tar
 
