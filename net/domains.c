@@ -97,7 +97,7 @@ void find_specific_domain(const char *domainarg)
 		return;
 	}
 
-	outputerr("Domain unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX);
+	outputerr("Domain unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX - 1);
 	for (i = 0; i < ARRAY_SIZE(domains); i++)
 		outputerr("%s ", domains[i].name);
 	outputerr("\n");
