@@ -46,6 +46,7 @@ static const struct domain domains[] = {
 	{ "PF_PPPOX",        24 },
 	{ "PF_WANPIPE",      25 },
 	{ "PF_LLC",          26 },
+	{ "PF_MPLS",         28 },
 	{ "PF_CAN",          29 },
 	{ "PF_TIPC",         30 },
 	{ "PF_BLUETOOTH",    31 },
