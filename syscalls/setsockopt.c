@@ -120,9 +120,17 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
 	struct socketinfo *si;
-	si = (struct socketinfo *) rec->a1;
+	int fd;
 
-	rec->a1 = si->fd;
+	if (ONE_IN(1000)) {
+		fd = get_random_fd();
+	} else {
+		si = (struct socketinfo *) rec->a1;
+		fd = si->fd;
+	}
+
+	rec->a1 = fd;
+
 	// TODO, pass the si->triplet down.
 	do_setsockopt(&so);
 
