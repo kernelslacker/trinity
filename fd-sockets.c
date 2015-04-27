@@ -180,12 +180,29 @@ static unsigned int valid_proto(unsigned int family)
 	return TRUE;
 }
 
+static bool write_socket_to_cache(int cachefile, struct socket_triplet *st)
+{
+	unsigned int buffer[3];
+	int n;
+
+	if (cachefile != -1) {
+		buffer[0] = st->family;
+		buffer[1] = st->type;
+		buffer[2] = st->protocol;
+		n = write(cachefile, &buffer, sizeof(int) * 3);
+		if (n == -1) {
+			outputerr("something went wrong writing the cachefile!\n");
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
 static int generate_sockets(void)
 {
 	int fd, n, ret = FALSE;
 	int cachefile;
 	unsigned int nr_to_create = NR_SOCKET_FDS;
-	unsigned int buffer[3];
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
 	if (cachefile == -1)
@@ -243,19 +260,10 @@ static int generate_sockets(void)
 
 			fd = open_socket(st.family, st.type, st.protocol);
 			if (fd > -1) {
+				if (write_socket_to_cache(cachefile, &st) == FALSE)
+					goto out_unlock;
+
 				nr_to_create--;
-
-				if (cachefile != -1) {
-					buffer[0] = st.family;
-					buffer[1] = st.type;
-					buffer[2] = st.protocol;
-					n = write(cachefile, &buffer, sizeof(int) * 3);
-					if (n == -1) {
-						outputerr("something went wrong writing the cachefile!\n");
-						goto out_unlock;
-					}
-				}
-
 				if (nr_to_create == 0)
 					goto done;
 			} else {
