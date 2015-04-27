@@ -407,6 +407,15 @@ static int get_rand_socket_fd(void)
 	return fd;
 }
 
+struct socketinfo * get_rand_socketinfo(void)
+{
+	/* When using victim files, sockets can be 0. */
+	if (nr_sockets == 0)
+		return NULL;
+
+	return &shm->sockets[rand() % nr_sockets];
+}
+
 const struct fd_provider socket_fd_provider = {
 	.name = "sockets",
 	.enabled = TRUE,

@@ -48,6 +48,8 @@ void close_sockets(void);
 
 const struct fd_provider socket_fd_provider;
 
+struct socketinfo * get_rand_socketinfo(void);
+
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 
 void do_setsockopt(struct sockopt *so);

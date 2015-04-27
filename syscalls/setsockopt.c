@@ -119,7 +119,11 @@ void do_setsockopt(struct sockopt *so)
 static void sanitise_setsockopt(struct syscallrecord *rec)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
+	struct socketinfo *si;
+	si = (struct socketinfo *) rec->a1;
 
+	rec->a1 = si->fd;
+	// TODO, pass the si->triplet down.
 	do_setsockopt(&so);
 
 	/* copy the generated values to the shm. */
@@ -138,7 +142,7 @@ struct syscallentry syscall_setsockopt = {
 	.name = "setsockopt",
 	.num_args = 5,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "level",
 	.arg3name = "optname",
 	.arg4name = "optval",

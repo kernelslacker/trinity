@@ -355,6 +355,9 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	case ARG_MODE_T:
 		return handle_arg_mode_t();
+
+	case ARG_SOCKETINFO:
+		return (unsigned long) get_rand_socketinfo();
 	}
 
 	BUG("unreachable!\n");
