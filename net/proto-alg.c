@@ -13,20 +13,39 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 
+static const char *hashes[] = {
+	"md5", "sha1",
+};
+
 void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_alg *alg;
-	unsigned int i;
+	unsigned int i, type;
+	const char *types[] = { "aead", "hash", "rng", "skcipher", };
 
 	alg = zmalloc(sizeof(struct sockaddr_alg));
 
 	alg->salg_family = PF_ALG;
-	for (i = 0; i < 14; i++)
-		alg->salg_type[i] = rand();
+
+	type = rand() % 4;
+	strncpy((char *)alg->salg_type, types[type], strlen(types[type]));
+
+	switch (type) {
+	case 0:	
+		break;
+	case 1:	
+		i = rand() % ARRAY_SIZE(hashes);
+		strncpy((char *)alg->salg_name, hashes[i], strlen(hashes[i]));
+		break;
+	case 2:	
+		break;
+	case 3:
+		break;
+	}
+
 	alg->salg_feat = rand();
 	alg->salg_mask = rand();
-	for (i = 0; i < 64; i++)
-		alg->salg_name[i] = rand();
+
 	*addr = (struct sockaddr *) alg;
 	*addrlen = sizeof(struct sockaddr_alg);
 }
