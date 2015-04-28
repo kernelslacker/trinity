@@ -113,6 +113,25 @@ static const struct sso_funcptr ssoptrs[] = {
 };
 
 /*
+ * We do this if for eg, we've ended up being passed
+ * an fd that isn't a socket (ie, triplet==NULL).
+ * It can also happen if we land on an sso func that
+ * isn't implemented for a particular family yet.
+ */
+static void do_random_sso(struct sockopt *so)
+{
+	int i;
+
+again:
+	i = rand() % ARRAY_SIZE(ssoptrs);
+
+	if (ssoptrs[i].func == NULL)
+		goto again;
+
+	ssoptrs[i].func(so);
+}
+
+/*
  * Call a proto specific setsockopt routine from the table above.
  *
  * Called from random setsockopt() syscalls, and also during socket
@@ -136,17 +155,22 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		so->level = rand();
 		so->optname = RAND_BYTE();	/* random operation. */
 	} else {
-		unsigned int i;
-		for (i = 0; i < ARRAY_SIZE(ssoptrs); i++) {
-			if (ssoptrs[i].family == triplet->family) {
-				if (ssoptrs[i].func != NULL)
-					ssoptrs[i].func(so);
-				else	// unimplented yet, or no sso for this family.
-					goto out;
+		if (triplet != NULL) {
+			unsigned int i;
+			for (i = 0; i < ARRAY_SIZE(ssoptrs); i++) {
+				if (ssoptrs[i].family == triplet->family) {
+					if (ssoptrs[i].func != NULL)
+						ssoptrs[i].func(so);
+					else	// unimplented yet, or no sso for this family.
+						do_random_sso(so);
+				}
 			}
+		} else {
+			// fd probably isn't a socket.
+			do_random_sso(so);
 		}
 	}
-out:
+
 	/*
 	 * 10% of the time, mangle the options.
 	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
