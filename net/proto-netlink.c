@@ -47,9 +47,6 @@ void netlink_rand_socket(struct socket_triplet *st)
 	st->protocol = rand() % (_NETLINK_MAX + 1);
 }
 
-
-#define SOL_NETLINK 270
-
 #define NR_SOL_NETLINK_OPTS ARRAY_SIZE(netlink_opts)
 static const unsigned int netlink_opts[] = {
 	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,

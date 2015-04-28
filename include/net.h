@@ -189,3 +189,21 @@ void rxrpc_setsockopt(struct sockopt *so);
 void bluetooth_setsockopt(struct sockopt *so);
 void pnpipe_setsockopt(struct sockopt *so);
 void iucv_setsockopt(struct sockopt *so);
+
+/* protocol definitions */
+#define SOL_TCP 6
+#define SOL_SCTP 132
+#define SOL_UDPLITE 136
+#define SOL_NETBEUI 267
+#define SOL_LLC 268
+#define SOL_DCCP 269
+#define SOL_NETLINK 270
+#define SOL_RXRPC 272
+#define SOL_PPPOL2TP 273
+#define SOL_BLUETOOTH 274
+#define SOL_PNPIPE 275
+#define SOL_RDS 276
+#define SOL_IUCV 277
+#define SOL_CAIF 278
+#define SOL_ALG 279
+#define SOL_NFC 280

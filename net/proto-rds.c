@@ -2,8 +2,6 @@
 #include "net.h"
 #include "config.h"
 
-#define SOL_RDS 276
-
 #ifdef USE_RDS
 #include <linux/rds.h>
 #endif

@@ -39,8 +39,6 @@ void nfc_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_SEQPACKET;
 }
 
-#define SOL_NFC 280
-
 void nfc_setsockopt(struct sockopt *so)
 {
 	so->level = SOL_NFC;

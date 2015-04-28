@@ -5,8 +5,6 @@
 #include "config.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define SOL_DCCP 269
-
 #define NR_SOL_DCCP_OPTS ARRAY_SIZE(dccp_opts)
 static const unsigned int dccp_opts[] = {
 	DCCP_SOCKOPT_PACKET_SIZE, DCCP_SOCKOPT_SERVICE, DCCP_SOCKOPT_CHANGE_L, DCCP_SOCKOPT_CHANGE_R,

@@ -5,8 +5,6 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-#define SOL_UDPLITE 136
-
 #define NR_SOL_UDPLITE_OPTS ARRAY_SIZE(udplite_opts)
 static const unsigned int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
 

@@ -4,8 +4,6 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define SOL_TCP 6
-
 #define NR_SOL_TCP_OPTS ARRAY_SIZE(tcp_opts)
 static const unsigned int tcp_opts[] = { TCP_NODELAY, TCP_MAXSEG, TCP_CORK, TCP_KEEPIDLE,
 	TCP_KEEPINTVL, TCP_KEEPCNT, TCP_SYNCNT, TCP_LINGER2,

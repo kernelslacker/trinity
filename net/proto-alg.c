@@ -8,8 +8,6 @@
 #include "utils.h"
 #include "compat.h"
 
-#define SOL_ALG 279
-
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 

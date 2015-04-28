@@ -3,8 +3,6 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define SOL_SCTP 132
-
 #define NR_SOL_SCTP_OPTS ARRAY_SIZE(sctp_opts)
 static const unsigned int sctp_opts[] = {
 	SCTP_RTOINFO, SCTP_ASSOCINFO, SCTP_INITMSG, SCTP_NODELAY,

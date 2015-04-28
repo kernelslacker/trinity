@@ -3,8 +3,6 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define SOL_BLUETOOTH 274
-
 #define NR_SOL_BLUETOOTH_OPTS ARRAY_SIZE(bluetooth_opts)
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,

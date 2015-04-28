@@ -3,8 +3,6 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define SOL_IUCV 277
-
 #define NR_SOL_IUCV_OPTS ARRAY_SIZE(iucv_opts)
 static const unsigned int iucv_opts[] = {
 	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE };

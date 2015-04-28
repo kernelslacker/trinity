@@ -9,8 +9,6 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-#define SOL_CAIF 278
-
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
 

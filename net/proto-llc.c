@@ -40,8 +40,6 @@ void llc_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_DGRAM;
 }
 
-#define SOL_LLC 268
-
 #ifndef USE_LLC_OPT_PKTINFO
 #define LLC_OPT_PKTINFO LLC_OPT_UNKNOWN
 #endif

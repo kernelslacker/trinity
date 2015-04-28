@@ -3,8 +3,6 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define SOL_RXRPC 272
-
 #define NR_SOL_RXRPC_OPTS ARRAY_SIZE(rxrpc_opts)
 static const unsigned int rxrpc_opts[] = {
 	RXRPC_USER_CALL_ID, RXRPC_ABORT, RXRPC_ACK, RXRPC_NET_ERROR,
