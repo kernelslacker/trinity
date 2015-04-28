@@ -20,7 +20,7 @@ static const char *hashes[] = {
 void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_alg *alg;
-	unsigned int i, type;
+	unsigned int i, type, len;
 	const char *types[] = { "aead", "hash", "rng", "skcipher", };
 
 	alg = zmalloc(sizeof(struct sockaddr_alg));
@@ -28,14 +28,16 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	alg->salg_family = PF_ALG;
 
 	type = rand() % 4;
-	strncpy((char *)alg->salg_type, types[type], strlen(types[type]));
+	len = min(strlen(types[type]), sizeof(alg->salg_type));
+	strncpy((char *)alg->salg_type, types[type], len);
 
 	switch (type) {
 	case 0:	
 		break;
 	case 1:	
 		i = rand() % ARRAY_SIZE(hashes);
-		strncpy((char *)alg->salg_name, hashes[i], strlen(hashes[i]));
+		len = min(strlen(hashes[i]), sizeof(alg->salg_type));
+		strncpy((char *)alg->salg_name, hashes[i], len);
 		break;
 	case 2:	
 		break;
