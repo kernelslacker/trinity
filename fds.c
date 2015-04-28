@@ -144,9 +144,9 @@ regen:
 static void enable_fds_param(char *str)
 {
 	struct list_head *node;
-	struct fd_provider *provider;
 
 	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider;
 
 		provider = (struct fd_provider *) node;
 		if (strcmp(provider->name, str) == 0) {
@@ -164,9 +164,9 @@ static void enable_fds_param(char *str)
 static void disable_fds_param(char *str)
 {
 	struct list_head *node;
-	struct fd_provider *provider;
 
 	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider;
 
 		provider = (struct fd_provider *) node;
 		if (strcmp(provider->name, str) == 0) {
@@ -183,16 +183,18 @@ static void disable_fds_param(char *str)
 
 void process_fds_param(char *param, bool enable)
 {
-	struct list_head *node;
-	struct fd_provider *provider;
 	unsigned int len, i;
 	char *str = param;
 
 	len = strlen(param);
 
 	if (enable == TRUE) {
+		struct list_head *node;
+
 		/* First, pass through and mark everything disabled. */
 		list_for_each(node, &fd_providers->list) {
+			struct fd_provider *provider;
+
 			provider = (struct fd_provider *) node;
 			provider->enabled = FALSE;
 		}
