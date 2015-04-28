@@ -119,7 +119,7 @@ static const struct sso_funcptr ssoptrs[] = {
  * creation on startup from sso_socket()
  *
  */
-void do_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
 	/* get a page for the optval to live in.
 	 * TODO: push this down into the per-proto .func calls
@@ -136,11 +136,17 @@ void do_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet
 		so->level = rand();
 		so->optname = RAND_BYTE();	/* random operation. */
 	} else {
-		int randsso = rand() % ARRAY_SIZE(ssoptrs);
-		if (ssoptrs[randsso].func != NULL)
-			ssoptrs[randsso].func(so);
+		unsigned int i;
+		for (i = 0; i < ARRAY_SIZE(ssoptrs); i++) {
+			if (ssoptrs[i].family == triplet->family) {
+				if (ssoptrs[i].func != NULL)
+					ssoptrs[i].func(so);
+				else	// unimplented yet, or no sso for this family.
+					goto out;
+			}
+		}
 	}
-
+out:
 	/*
 	 * 10% of the time, mangle the options.
 	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
