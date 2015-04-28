@@ -185,15 +185,16 @@ static bool write_socket_to_cache(int cachefile, struct socket_triplet *st)
 	unsigned int buffer[3];
 	int n;
 
-	if (cachefile != -1) {
-		buffer[0] = st->family;
-		buffer[1] = st->type;
-		buffer[2] = st->protocol;
-		n = write(cachefile, &buffer, sizeof(int) * 3);
-		if (n == -1) {
-			outputerr("something went wrong writing the cachefile!\n");
-			return FALSE;
-		}
+	if (cachefile == -1)
+		return FALSE;
+
+	buffer[0] = st->family;
+	buffer[1] = st->type;
+	buffer[2] = st->protocol;
+	n = write(cachefile, &buffer, sizeof(int) * 3);
+	if (n == -1) {
+		outputerr("something went wrong writing the cachefile!\n");
+		return FALSE;
 	}
 	return TRUE;
 }
