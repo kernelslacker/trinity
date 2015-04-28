@@ -1,4 +1,4 @@
-VERSION="1.5"
+VERSION="1.6pre"
 
 INSTALL_PREFIX ?= $(DESTDIR)
 INSTALL_PREFIX ?= $(HOME)
@@ -111,14 +111,6 @@ clean:
 	@rm -rf $(DEPDIR)/*
 	@rm -rf trinity-coverity.tar.xz cov-int
 	@rm -f include/version.h
-
-devel:
-	@perl -p -i -e 's/DEVEL=0/DEVEL=1/' configure.sh
-	@git commit Makefile configure.sh -m "Enable -Werror & devel mode"
-
-release:
-	@perl -p -i -e 's/DEVEL=1/DEVEL=0/' configure.sh
-	@git commit Makefile configure.sh -m "Disable -Werror & devel mode"
 
 tag:
 	@git tag -a v$(VERSION) -m "$(VERSION) release."
