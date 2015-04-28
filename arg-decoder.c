@@ -13,6 +13,8 @@
 
 static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 {
+	struct socketinfo *si;
+
 	switch (type) {
 	case ARG_PATHNAME:
 		sptr += sprintf(sptr, "\"%s\"", (char *) reg);
@@ -58,6 +60,12 @@ static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 			sptr += sprintf(sptr, "%ld", (long) reg);
 		}
 		sptr += sprintf(sptr, "%s", ANSI_RESET);
+		break;
+
+	case ARG_SOCKETINFO:
+		si = (struct socketinfo *) reg;
+		if (si != NULL)
+			sptr += sprintf(sptr, "fd:%d", si->fd);
 		break;
 	}
 
