@@ -8,8 +8,11 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/types.h>
-#include "arch.h"
+#include <linux/tipc.h>
+#include <netinet/udp.h>
+#include <netipx/ipx.h>
 #include "config.h"
+#include "arch.h"
 #include "log.h"
 #include "maps.h"
 #include "net.h"
@@ -21,55 +24,92 @@
 #include "utils.h"
 #include "compat.h"
 
-struct sso_funcptr {
+struct ip_sso_funcptr {
 	void (*func)(struct sockopt *so);
 };
 
-static const struct sso_funcptr ssoptrs[] = {
-	{ .func = &ip_setsockopt },
-	{ .func = &socket_setsockopt },
+static const struct ip_sso_funcptr ip_ssoptrs[] = {
 	{ .func = &tcp_setsockopt },
 	{ .func = &udp_setsockopt },
-#ifdef USE_IPV6
-	{ .func = &inet6_setsockopt },
-#endif
 #ifdef USE_IPV6
 	{ .func = &icmpv6_setsockopt },
 #endif
 	{ .func = &sctp_setsockopt },
 	{ .func = &udplite_setsockopt },
 	{ .func = &raw_setsockopt },
-	{ .func = &ipx_setsockopt },
-	{ .func = &ax25_setsockopt },
-#ifdef USE_APPLETALK
-	{ .func = &atalk_setsockopt },
-#endif
-#ifdef USE_NETROM
-	{ .func = &netrom_setsockopt },
-#endif
-#ifdef USE_ROSE
-	{ .func = &rose_setsockopt },
-#endif
-	{ .func = &decnet_setsockopt },
-	{ .func = &x25_setsockopt },
-	{ .func = &packet_setsockopt },
 	{ .func = &atm_setsockopt },
 	{ .func = &aal_setsockopt },
-	{ .func = &irda_setsockopt },
-	{ .func = &netbeui_setsockopt },
-	{ .func = &llc_setsockopt },
 	{ .func = &dccp_setsockopt },
-	{ .func = &netlink_setsockopt },
-	{ .func = &tipc_setsockopt },
-	{ .func = &rxrpc_setsockopt },
 	{ .func = &pppol2tp_setsockopt },
-	{ .func = &bluetooth_setsockopt },
 	{ .func = &pnpipe_setsockopt },
-	{ .func = &rds_setsockopt },
-	{ .func = &iucv_setsockopt },
-	{ .func = &caif_setsockopt },
-	{ .func = &alg_setsockopt },
-	{ .func = &nfc_setsockopt },
+	{ .func = &socket_setsockopt },
+	{ .func = &ip_setsockopt },
+};
+
+static void ip_sso_demultiplexer(struct sockopt *so)
+{
+	//TODO: Later, be smarter, and look up the rest of the triplet.
+	int randsso = rand() % ARRAY_SIZE(ip_ssoptrs);
+	if (ip_ssoptrs[randsso].func != NULL)
+		ip_ssoptrs[randsso].func(so);
+}
+
+struct sso_funcptr {
+	unsigned int family;
+	void (*func)(struct sockopt *so);
+};
+
+static const struct sso_funcptr ssoptrs[] = {
+	{ .family = AF_UNIX, .func = NULL },
+	{ .family = AF_INET, .func = &ip_sso_demultiplexer },
+	{ .family = AF_AX25, .func = &ax25_setsockopt },
+	{ .family = AF_IPX, .func = &ipx_setsockopt },
+#ifdef USE_APPLETALK
+	{ .family = AF_APPLETALK, .func = &atalk_setsockopt },
+#endif
+#ifdef USE_NETROM
+	{ .family = AF_NETROM, .func = &netrom_setsockopt },
+#endif
+	{ .family = AF_BRIDGE, .func = NULL },
+	{ .family = AF_ATMPVC, .func = NULL },
+	{ .family = AF_X25, .func = &x25_setsockopt },
+#ifdef USE_IPV6
+	{ .family = AF_INET6, .func = &inet6_setsockopt },
+#endif
+#ifdef USE_ROSE
+	{ .family = AF_ROSE, .func = &rose_setsockopt },
+#endif
+	{ .family = AF_DECnet, .func = &decnet_setsockopt },
+	{ .family = AF_NETBEUI, .func = &netbeui_setsockopt },
+	{ .family = AF_SECURITY, .func = NULL },
+	{ .family = AF_KEY, .func = NULL },
+	{ .family = AF_NETLINK, .func = &netlink_setsockopt },
+	{ .family = AF_PACKET, .func = &packet_setsockopt },
+	{ .family = AF_ASH, .func = NULL },
+	{ .family = AF_ECONET, .func = NULL },
+	{ .family = AF_ATMSVC, .func = NULL },
+	{ .family = AF_RDS, .func = &rds_setsockopt },
+	{ .family = AF_SNA, .func = NULL },
+	{ .family = AF_IRDA, .func = &irda_setsockopt },
+	{ .family = AF_PPPOX, .func = NULL },
+	{ .family = AF_WANPIPE, .func = NULL },
+	{ .family = AF_LLC, .func = &llc_setsockopt },
+	{ .family = AF_IB, .func = NULL },
+	{ .family = AF_MPLS, .func = NULL },
+	{ .family = AF_CAN, .func = NULL },
+	{ .family = AF_TIPC, .func = &tipc_setsockopt },
+	{ .family = AF_BLUETOOTH, .func = &bluetooth_setsockopt },
+	{ .family = AF_IUCV, .func = &iucv_setsockopt },
+	{ .family = AF_RXRPC, .func = &rxrpc_setsockopt },
+	{ .family = AF_ISDN, .func = NULL },
+	{ .family = AF_PHONET, .func = NULL },
+	{ .family = AF_IEEE802154, .func = NULL },
+#ifdef USE_CAIF
+	{ .family = AF_CAIF, .func = &caif_setsockopt },
+#endif
+	{ .family = AF_ALG, .func = &alg_setsockopt },
+	{ .family = AF_NFC, .func = &nfc_setsockopt },
+	{ .family = AF_VSOCK, .func = NULL },
 };
 
 /*
@@ -96,7 +136,9 @@ void do_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet
 		so->level = rand();
 		so->optname = RAND_BYTE();	/* random operation. */
 	} else {
-		ssoptrs[rand() % ARRAY_SIZE(ssoptrs)].func(so);
+		int randsso = rand() % ARRAY_SIZE(ssoptrs);
+		if (ssoptrs[randsso].func != NULL)
+			ssoptrs[randsso].func(so);
 	}
 
 	/*

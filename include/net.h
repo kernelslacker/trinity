@@ -207,3 +207,7 @@ void iucv_setsockopt(struct sockopt *so);
 #define SOL_CAIF 278
 #define SOL_ALG 279
 #define SOL_NFC 280
+
+#ifndef AF_MPLS
+#define AF_MPLS 28
+#endif
