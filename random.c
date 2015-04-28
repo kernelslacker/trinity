@@ -17,6 +17,8 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
 	unsigned char choice = rand() % 3;
+	unsigned int startoffset = 0, remain, runlen;
+	unsigned char separator;
 
 	switch (choice) {
 	case 0:
@@ -30,9 +32,39 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			ptr[i] = 32 + rand() % (0x7f - 32);
 		break;
 	case 2:
-		/* numbers */
-		for (i = 0; i < len; i++)
-			ptr[i] = '0' + rand() % 10;
+		/* numbers (for now, decimal only) */
+		if (RAND_BOOL())
+			separator = ',';
+		else
+			separator = ' ';
+
+		remain = len;
+
+		while (remain > 0) {
+			/* Sometimes make the numbers be negative. */
+			if (RAND_BOOL()) {
+				ptr[startoffset++] = '-';
+				remain--;
+				if (remain <= 0)
+					break;
+			}
+
+			/* At most make this run 10 chars. */
+			runlen = min(remain, (unsigned int) rand() % 10);
+
+			for (i = startoffset; i < startoffset + runlen; i++)
+				ptr[i] = '0' + rand() % 10;
+
+			startoffset += runlen;
+			remain -= runlen;
+
+			/* insert commas and/or spaces */
+			if (remain > 0) {
+				ptr[i++] = separator;
+				startoffset++;
+				remain--;
+			}
+		}
 		break;
 	}
 }
