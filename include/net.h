@@ -52,7 +52,7 @@ struct socketinfo * get_rand_socketinfo(void);
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 
-void do_setsockopt(struct sockopt *so);
+void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 
 void rand_proto_type(struct socket_triplet *st);
 int sanitise_socket_triplet(struct socket_triplet *st);

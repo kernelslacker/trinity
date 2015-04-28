@@ -78,9 +78,8 @@ static const struct sso_funcptr ssoptrs[] = {
  * Called from random setsockopt() syscalls, and also during socket
  * creation on startup from sso_socket()
  *
- * TODO: pass in the proto, so we can match it to the right .func
  */
-void do_setsockopt(struct sockopt *so)
+void do_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	/* get a page for the optval to live in.
 	 * TODO: push this down into the per-proto .func calls
@@ -120,6 +119,7 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
 	struct socketinfo *si;
+	struct socket_triplet *triplet = NULL;
 	int fd;
 
 	if (ONE_IN(1000)) {
@@ -127,12 +127,12 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	} else {
 		si = (struct socketinfo *) rec->a1;
 		fd = si->fd;
+		triplet = &si->triplet;
 	}
 
 	rec->a1 = fd;
 
-	// TODO, pass the si->triplet down.
-	do_setsockopt(&so);
+	do_setsockopt(&so, triplet);
 
 	/* copy the generated values to the shm. */
 	rec->a2 = so.level;

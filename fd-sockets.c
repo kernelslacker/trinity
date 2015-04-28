@@ -38,7 +38,7 @@ retry:
 	if (so->optval != 0)
 		free((void *) so->optval);
 
-	do_setsockopt(so);
+	do_setsockopt(so, triplet);
 
 	ret = setsockopt(fd, so->level, so->optname, (void *)so->optval, so->optlen);
 	if (ret == 0) {
