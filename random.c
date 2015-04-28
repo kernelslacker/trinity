@@ -18,21 +18,22 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	unsigned int i;
 	unsigned char choice = rand() % 3;
 
-	for (i = 0; i < len; i++) {
-		switch (choice) {
-		case 0:
-			/* Complete garbage. */
+	switch (choice) {
+	case 0:
+		/* Complete garbage. */
+		for (i = 0; i < len; i++)
 			ptr[i] = RAND_BYTE();
-			break;
-		case 1:
-			/* printable text strings. */
+		break;
+	case 1:
+		/* printable text strings. */
+		for (i = 0; i < len; i++)
 			ptr[i] = 32 + rand() % (0x7f - 32);
-			break;
-		case 2:
-			/* numbers */
+		break;
+	case 2:
+		/* numbers */
+		for (i = 0; i < len; i++)
 			ptr[i] = '0' + rand() % 10;
-			break;
-		}
+		break;
 	}
 }
 
