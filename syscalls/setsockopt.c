@@ -25,25 +25,37 @@
 #include "compat.h"
 
 struct ip_sso_funcptr {
+	unsigned int proto;
 	void (*func)(struct sockopt *so);
 };
 
 static const struct ip_sso_funcptr ip_ssoptrs[] = {
-	{ .func = &tcp_setsockopt },
-	{ .func = &udp_setsockopt },
+	{ .proto = IPPROTO_IP, .func = &ip_setsockopt },
+	{ .proto = IPPROTO_ICMP, .func = NULL },
+	{ .proto = IPPROTO_IGMP, .func = NULL },
+	{ .proto = IPPROTO_IPIP, .func = NULL },
+	{ .proto = IPPROTO_TCP, .func = &tcp_setsockopt },
+	{ .proto = IPPROTO_EGP, .func = NULL },
+	{ .proto = IPPROTO_PUP, .func = NULL },
+	{ .proto = IPPROTO_UDP, .func = &udp_setsockopt },
+	{ .proto = IPPROTO_IDP, .func = NULL },
+	{ .proto = IPPROTO_TP, .func = NULL },
+	{ .proto = IPPROTO_DCCP, .func = &dccp_setsockopt },
 #ifdef USE_IPV6
-	{ .func = &icmpv6_setsockopt },
+	{ .proto = IPPROTO_IPV6, .func = &icmpv6_setsockopt },
 #endif
-	{ .func = &sctp_setsockopt },
-	{ .func = &udplite_setsockopt },
-	{ .func = &raw_setsockopt },
-	{ .func = &atm_setsockopt },
-	{ .func = &aal_setsockopt },
-	{ .func = &dccp_setsockopt },
-	{ .func = &pppol2tp_setsockopt },
-	{ .func = &pnpipe_setsockopt },
-	{ .func = &socket_setsockopt },
-	{ .func = &ip_setsockopt },
+	{ .proto = IPPROTO_RSVP, .func = NULL },
+	{ .proto = IPPROTO_GRE, .func = NULL },
+	{ .proto = IPPROTO_ESP, .func = NULL },
+	{ .proto = IPPROTO_AH, .func = NULL },
+	{ .proto = IPPROTO_MTP, .func = NULL },
+	{ .proto = IPPROTO_BEETPH, .func = NULL },
+	{ .proto = IPPROTO_ENCAP, .func = NULL },
+	{ .proto = IPPROTO_PIM, .func = NULL },
+	{ .proto = IPPROTO_COMP, .func = NULL },
+	{ .proto = IPPROTO_SCTP, .func = &sctp_setsockopt },
+	{ .proto = IPPROTO_UDPLITE, .func = &udplite_setsockopt },
+	{ .proto = IPPROTO_RAW, .func = &raw_setsockopt },
 };
 
 static void ip_sso_demultiplexer(struct sockopt *so)
@@ -111,6 +123,15 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_NFC, .func = &nfc_setsockopt },
 	{ .family = AF_VSOCK, .func = NULL },
 };
+
+// TODO: Wildcard match
+//	{ .func = &socket_setsockopt },
+//
+//TODO: How shall we match these ?
+//	{ .func = &atm_setsockopt },
+//	{ .func = &aal_setsockopt },
+//	{ .func = &pppol2tp_setsockopt },
+//	{ .func = &pnpipe_setsockopt },
 
 /*
  * We do this if for eg, we've ended up being passed
