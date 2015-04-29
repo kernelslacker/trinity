@@ -150,6 +150,20 @@ static void do_random_sso(struct sockopt *so)
 	ssoptrs[i].func(so);
 }
 
+static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(ssoptrs); i++) {
+		if (ssoptrs[i].family == triplet->family) {
+			if (ssoptrs[i].func != NULL)
+				ssoptrs[i].func(so);
+			else    // unimplented yet, or no sso for this family.
+				do_random_sso(so);
+		}
+	}
+}
+
 /*
  * Call a proto specific setsockopt routine from the table above.
  *
@@ -175,15 +189,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		so->optname = RAND_BYTE();	/* random operation. */
 	} else {
 		if (triplet != NULL) {
-			unsigned int i;
-			for (i = 0; i < ARRAY_SIZE(ssoptrs); i++) {
-				if (ssoptrs[i].family == triplet->family) {
-					if (ssoptrs[i].func != NULL)
-						ssoptrs[i].func(so);
-					else	// unimplented yet, or no sso for this family.
-						do_random_sso(so);
-				}
-			}
+			call_sso_ptr(so, triplet);
 		} else {
 			// fd probably isn't a socket.
 			do_random_sso(so);
