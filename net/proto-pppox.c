@@ -5,11 +5,13 @@
 #include <linux/if.h>
 #include <linux/if_ether.h> /* for ETH_ALEN in if_pppox.h */
 #include <linux/if_pppox.h>
+#include <linux/if_pppol2tp.h>
 #include <stdlib.h>
 #include "config.h"
 #include "net.h"
 #include "sanitise.h"
 #include "utils.h"
+#include "compat.h"
 
 //TODO: Split out each case into separate function.
 
@@ -158,4 +160,19 @@ void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	default:
 		break;
 	}
+}
+
+#define NR_SOL_PPPOL2TP_OPTS ARRAY_SIZE(pppol2tp_opts)
+static const unsigned int pppol2tp_opts[] = {
+	PPPOL2TP_SO_DEBUG, PPPOL2TP_SO_RECVSEQ, PPPOL2TP_SO_SENDSEQ, PPPOL2TP_SO_LNSMODE,
+	PPPOL2TP_SO_REORDERTO };
+
+void pppol2tp_setsockopt(struct sockopt *so)
+{
+	unsigned char val;
+
+	val = rand() % NR_SOL_PPPOL2TP_OPTS;
+	so->optname = pppol2tp_opts[val];
+
+	so->optlen = sizeof(int);
 }
