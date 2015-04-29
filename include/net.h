@@ -183,7 +183,6 @@ void icmpv6_setsockopt(struct sockopt *so);
 void sctp_setsockopt(struct sockopt *so);
 void raw_setsockopt(struct sockopt *so);
 void netrom_setsockopt(struct sockopt *so);
-void aal_setsockopt(struct sockopt *so);
 void netbeui_setsockopt(struct sockopt *so);
 void dccp_setsockopt(struct sockopt *so);
 void rxrpc_setsockopt(struct sockopt *so);
