@@ -9,6 +9,11 @@
 #include "sanitise.h"
 #include "shm.h"
 
+static void sanitise_bind(struct syscallrecord *rec)
+{
+	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+}
+
 /*
 static void dump(struct syscallrecord *rec)
 {
@@ -29,7 +34,7 @@ struct syscallentry syscall_bind = {
 	.name = "bind",
 	.num_args = 3,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "umyaddr",
 	.arg2type = ARG_SOCKADDR,
 	.arg3name = "addrlen",
@@ -37,4 +42,5 @@ struct syscallentry syscall_bind = {
 	//.sanitise = dump,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_bind,
 };
