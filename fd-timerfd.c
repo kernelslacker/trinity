@@ -21,6 +21,10 @@ static int open_timerfd_fds(void)
 	unsigned int i;
 
 	shm->timerfd_fds[0] = timerfd_create(CLOCK_REALTIME, 0);
+	if (shm->timerfd_fds[0] == -1)
+		if (errno == ENOSYS)
+			return FALSE;
+
 	shm->timerfd_fds[1] = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK);
 	shm->timerfd_fds[2] = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
 	shm->timerfd_fds[3] = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
@@ -29,8 +33,6 @@ static int open_timerfd_fds(void)
 	shm->timerfd_fds[5] = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
 	shm->timerfd_fds[6] = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
 	shm->timerfd_fds[7] = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-
-	// TODO: Check for ENOSYS
 
 	for (i = 0; i < MAX_TIMERFD_FDS; i++)
 		output(2, "fd[%d] = timerfd\n", shm->timerfd_fds[i]);
