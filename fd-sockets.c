@@ -14,6 +14,7 @@
 #include "params.h"	// verbose, do_specific_domain
 #include "domains.h"
 #include "random.h"
+#include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "uid.h"
@@ -415,6 +416,14 @@ struct socketinfo * get_rand_socketinfo(void)
 		return NULL;
 
 	return &shm->sockets[rand() % nr_sockets];
+}
+
+int generic_fd_from_socketinfo(struct socketinfo *si)
+{
+	if (ONE_IN(1000))
+		return get_random_fd();
+	else
+		return si->fd;
 }
 
 const struct fd_provider socket_fd_provider = {
