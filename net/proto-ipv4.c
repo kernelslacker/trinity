@@ -146,23 +146,65 @@ void inet_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_RAW;
 }
 
-//TODO: Pair the sizeof's of the associated arrays
-static const unsigned int ip_opts[] = { IP_TOS, IP_TTL, IP_HDRINCL, IP_OPTIONS,
-	IP_ROUTER_ALERT, IP_RECVOPTS, IP_RETOPTS, IP_PKTINFO,
-	IP_PKTOPTIONS, IP_MTU_DISCOVER, IP_RECVERR, IP_RECVTTL,
-	IP_RECVTOS, IP_MTU, IP_FREEBIND, IP_IPSEC_POLICY,
-	IP_XFRM_POLICY, IP_PASSSEC, IP_TRANSPARENT,
-	IP_ORIGDSTADDR, IP_MINTTL, IP_NODEFRAG,
-	IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_MULTICAST_LOOP,
-	IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP,
-	IP_UNBLOCK_SOURCE, IP_BLOCK_SOURCE,
-	IP_ADD_SOURCE_MEMBERSHIP, IP_DROP_SOURCE_MEMBERSHIP,
-	IP_MSFILTER,
-	MCAST_JOIN_GROUP, MCAST_BLOCK_SOURCE, MCAST_UNBLOCK_SOURCE, MCAST_LEAVE_GROUP, MCAST_JOIN_SOURCE_GROUP, MCAST_LEAVE_SOURCE_GROUP, MCAST_MSFILTER,
-	IP_MULTICAST_ALL, IP_UNICAST_IF,
-	MRT_INIT, MRT_DONE, MRT_ADD_VIF, MRT_DEL_VIF,
-	MRT_ADD_MFC, MRT_DEL_MFC, MRT_VERSION, MRT_ASSERT,
-	MRT_PIM, MRT_TABLE, MRT_ADD_MFC_PROXY, MRT_DEL_MFC_PROXY,
+struct ip_option {
+	unsigned int name;
+	unsigned int len;
+};
+
+static const struct ip_option ip_opts[] = {
+	{ .name = IP_TOS, .len = sizeof(int) },
+	{ .name = IP_TTL, .len = sizeof(int) },
+	{ .name = IP_HDRINCL, .len = sizeof(int) },
+	{ .name = IP_OPTIONS, .len = sizeof(int) },
+	{ .name = IP_ROUTER_ALERT, .len = sizeof(int) },
+	{ .name = IP_RECVOPTS, .len = sizeof(int) },
+	{ .name = IP_RETOPTS, .len = sizeof(int) },
+	{ .name = IP_PKTINFO, .len = sizeof(int) },
+	{ .name = IP_PKTOPTIONS, .len = sizeof(int) },
+	{ .name = IP_MTU_DISCOVER, .len = sizeof(int) },
+	{ .name = IP_RECVERR, .len = sizeof(int) },
+	{ .name = IP_RECVTTL, .len = sizeof(int) },
+	{ .name = IP_RECVTOS, .len = sizeof(int) },
+	{ .name = IP_MTU, .len = sizeof(int) },
+	{ .name = IP_FREEBIND, .len = sizeof(int) },
+	{ .name = IP_IPSEC_POLICY, .len = sizeof(int) },
+	{ .name = IP_XFRM_POLICY, .len = sizeof(int) },
+	{ .name = IP_PASSSEC, .len = sizeof(int) },
+	{ .name = IP_TRANSPARENT, .len = sizeof(int) },
+	{ .name = IP_ORIGDSTADDR, .len = sizeof(int) },
+	{ .name = IP_MINTTL, .len = sizeof(int) },
+	{ .name = IP_NODEFRAG, .len = sizeof(int) },
+	{ .name = IP_MULTICAST_IF, .len = sizeof(struct ip_mreqn) },
+	{ .name = IP_MULTICAST_TTL, .len = sizeof(int) },
+	{ .name = IP_MULTICAST_LOOP, .len = sizeof(int) },
+	{ .name = IP_ADD_MEMBERSHIP, .len = sizeof(struct ip_mreqn) },
+	{ .name = IP_DROP_MEMBERSHIP, .len = sizeof(struct ip_mreqn) },
+	{ .name = IP_UNBLOCK_SOURCE, .len = sizeof(struct ip_mreq_source) },
+	{ .name = IP_BLOCK_SOURCE, .len = sizeof(struct ip_mreq_source) },
+	{ .name = IP_ADD_SOURCE_MEMBERSHIP, .len = sizeof(struct ip_mreq_source) },
+	{ .name = IP_DROP_SOURCE_MEMBERSHIP, .len = sizeof(struct ip_mreq_source) },
+	{ .name = IP_MSFILTER, .len = sizeof(int) },
+	{ .name = MCAST_JOIN_GROUP, .len = sizeof(struct group_req) },
+	{ .name = MCAST_BLOCK_SOURCE, .len = sizeof(struct group_source_req) },
+	{ .name = MCAST_UNBLOCK_SOURCE, .len = sizeof(struct group_source_req) },
+	{ .name = MCAST_LEAVE_GROUP, .len = sizeof(struct group_req) },
+	{ .name = MCAST_JOIN_SOURCE_GROUP, .len = sizeof(struct group_source_req) },
+	{ .name = MCAST_LEAVE_SOURCE_GROUP, .len = sizeof(struct group_source_req) },
+	{ .name = MCAST_MSFILTER, .len = sizeof(int) },
+	{ .name = IP_MULTICAST_ALL, .len = sizeof(int) },
+	{ .name = IP_UNICAST_IF, .len = sizeof(int) },
+	{ .name = MRT_INIT, .len = sizeof(int) },
+	{ .name = MRT_DONE, .len = sizeof(int) },
+	{ .name = MRT_ADD_VIF, .len = sizeof(struct vifctl) },
+	{ .name = MRT_DEL_VIF, .len = sizeof(struct vifctl) },
+	{ .name = MRT_ADD_MFC, .len = sizeof(struct mfcctl) },
+	{ .name = MRT_DEL_MFC, .len = sizeof(struct mfcctl) },
+	{ .name = MRT_VERSION, .len = sizeof(int) },
+	{ .name = MRT_ASSERT, .len = sizeof(int) },
+	{ .name = MRT_PIM, .len = sizeof(int) },
+	{ .name = MRT_TABLE, .len = sizeof(__u32) },
+	{ .name = MRT_ADD_MFC_PROXY, .len = sizeof(struct mfcctl) },
+	{ .name = MRT_DEL_MFC_PROXY, .len = sizeof(struct mfcctl) },
 };
 
 void ip_setsockopt(struct sockopt *so)
@@ -173,36 +215,10 @@ void ip_setsockopt(struct sockopt *so)
 	int mcaddr;
 
 	val = rand() % ARRAY_SIZE(ip_opts);
-	so->optname = ip_opts[val];
+	so->optname = ip_opts[val].name;
+	so->optlen = ip_opts[val].len;
 
-	switch (ip_opts[val]) {
-	case IP_PKTINFO:
-	case IP_RECVTTL:
-	case IP_RECVOPTS:
-	case IP_RECVTOS:
-	case IP_RETOPTS:
-	case IP_TOS:
-	case IP_TTL:
-	case IP_HDRINCL:
-	case IP_MTU_DISCOVER:
-	case IP_RECVERR:
-	case IP_ROUTER_ALERT:
-	case IP_FREEBIND:
-	case IP_PASSSEC:
-	case IP_TRANSPARENT:
-	case IP_MINTTL:
-	case IP_NODEFRAG:
-	case IP_UNICAST_IF:
-	case IP_MULTICAST_TTL:
-	case IP_MULTICAST_ALL:
-	case IP_MULTICAST_LOOP:
-	case IP_RECVORIGDSTADDR:
-		if (RAND_BOOL())
-			so->optlen = sizeof(int);
-		else
-			so->optlen = sizeof(char);
-		break;
-
+	switch (so->optname) {
 	case IP_OPTIONS:
 		so->optlen = rand() % 40;
 		break;
@@ -216,24 +232,6 @@ void ip_setsockopt(struct sockopt *so)
 		mr->imr_multiaddr.s_addr = mcaddr;
 		mr->imr_address.s_addr = random_ipv4_address();
 		mr->imr_ifindex = rand32();
-
-		so->optlen = sizeof(struct ip_mreqn);
-		break;
-
-	case MRT_ADD_VIF:
-	case MRT_DEL_VIF:
-		so->optlen = sizeof(struct vifctl);
-		break;
-
-	case MRT_ADD_MFC:
-	case MRT_ADD_MFC_PROXY:
-	case MRT_DEL_MFC:
-	case MRT_DEL_MFC_PROXY:
-		so->optlen = sizeof(struct mfcctl);
-		break;
-
-	case MRT_TABLE:
-		so->optlen = sizeof(__u32);
 		break;
 
 	case IP_MSFILTER:
@@ -252,20 +250,6 @@ void ip_setsockopt(struct sockopt *so)
 		ms->imr_multiaddr.s_addr = mcaddr;
 		ms->imr_interface.s_addr = random_ipv4_address();
 		ms->imr_sourceaddr.s_addr = random_ipv4_address();
-
-		so->optlen = sizeof(struct ip_mreq_source);
-		break;
-
-	case MCAST_JOIN_GROUP:
-	case MCAST_LEAVE_GROUP:
-		so->optlen = sizeof(struct group_req);
-		break;
-
-	case MCAST_JOIN_SOURCE_GROUP:
-	case MCAST_LEAVE_SOURCE_GROUP:
-	case MCAST_BLOCK_SOURCE:
-	case MCAST_UNBLOCK_SOURCE:
-		so->optlen = sizeof(struct group_source_req);
 		break;
 
 	case MCAST_MSFILTER:
