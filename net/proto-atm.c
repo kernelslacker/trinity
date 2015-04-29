@@ -42,7 +42,6 @@ void atmsvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_atmsvc);
 }
 
-#define NR_SOL_ATM_OPTS ARRAY_SIZE(atm_opts)
 static const unsigned int atm_opts[] = {
 	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT };
 
@@ -52,6 +51,6 @@ void atm_setsockopt(struct sockopt *so)
 
 	so->level = SOL_ATM;
 
-	val = rand() % NR_SOL_ATM_OPTS;
+	val = rand() % ARRAY_SIZE(atm_opts);
 	so->optname = atm_opts[val];
 }
