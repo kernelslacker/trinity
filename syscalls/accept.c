@@ -4,19 +4,26 @@
  * On success, these system calls return a nonnegative integer that is a descriptor for the accepted socket.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include "net.h"
 #include "sanitise.h"
+
+static void sanitise_accept(struct syscallrecord *rec)
+{
+	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+}
 
 struct syscallentry syscall_accept = {
 	.name = "accept",
 	.num_args = 3,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "upeer_sockaddr",
 	.arg2type = ARG_SOCKADDR,
 	.arg3name = "upeer_addrlen",
 	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_accept,
 };
 
 
@@ -28,9 +35,6 @@ struct syscallentry syscall_accept = {
  * On error, -1 is returned, and errno is set appropriately.
  *
  */
-
-#define SOCK_CLOEXEC 02000000
-#define SOCK_NONBLOCK 04000
 
 struct syscallentry syscall_accept4 = {
 	.name = "accept4",
