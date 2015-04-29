@@ -47,15 +47,15 @@ void netlink_rand_socket(struct socket_triplet *st)
 	st->protocol = rand() % (_NETLINK_MAX + 1);
 }
 
-#define NR_SOL_NETLINK_OPTS ARRAY_SIZE(netlink_opts)
 static const unsigned int netlink_opts[] = {
 	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
-	NETLINK_NO_ENOBUFS, NETLINK_RX_RING, NETLINK_TX_RING };
+	NETLINK_NO_ENOBUFS, NETLINK_RX_RING, NETLINK_TX_RING,
+};
 
 void netlink_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_NETLINK_OPTS;
+	val = rand() % ARRAY_SIZE(netlink_opts);
 	so->optname = netlink_opts[val];
 }

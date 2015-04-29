@@ -33,14 +33,14 @@ void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 static const unsigned int rds_opts[] = {
 	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
 	4, /* deprecated RDS_BARRIER 4 */
-	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST };
-#define NR_SOL_RDS_OPTS ARRAY_SIZE(rds_opts)
+	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST,
+};
 
 void rds_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_RDS_OPTS;
+	val = rand() % ARRAY_SIZE(rds_opts);
 	so->optname = rds_opts[val];
 }
 

@@ -5,15 +5,16 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-#define NR_SOL_UDPLITE_OPTS ARRAY_SIZE(udplite_opts)
-static const unsigned int udplite_opts[] = { UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV };
+static const unsigned int udplite_opts[] = {
+	UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV,
+};
 
 void udplite_setsockopt(struct sockopt *so)
 {
 	char *optval;
 	unsigned char val;
 
-	val = rand() % NR_SOL_UDPLITE_OPTS;
+	val = rand() % ARRAY_SIZE(udplite_opts);
 	so->optname = udplite_opts[val];
 
 	switch (so->optname) {

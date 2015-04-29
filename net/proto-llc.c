@@ -44,17 +44,16 @@ void llc_rand_socket(struct socket_triplet *st)
 #define LLC_OPT_PKTINFO LLC_OPT_UNKNOWN
 #endif
 
-#define NR_SOL_LLC_OPTS ARRAY_SIZE(llc_opts)
 static const unsigned int llc_opts[] = {
 	LLC_OPT_RETRY, LLC_OPT_SIZE, LLC_OPT_ACK_TMR_EXP, LLC_OPT_P_TMR_EXP,
 	LLC_OPT_REJ_TMR_EXP, LLC_OPT_BUSY_TMR_EXP, LLC_OPT_TX_WIN, LLC_OPT_RX_WIN,
-	LLC_OPT_PKTINFO
+	LLC_OPT_PKTINFO,
 };
 
 void llc_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_LLC_OPTS;
+	val = rand() % ARRAY_SIZE(llc_opts);
 	so->optname = llc_opts[val];
 }

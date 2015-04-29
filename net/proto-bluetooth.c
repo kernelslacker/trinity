@@ -3,20 +3,19 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define NR_SOL_BLUETOOTH_OPTS ARRAY_SIZE(bluetooth_opts)
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
-	BT_CHANNEL_POLICY };
+	BT_CHANNEL_POLICY
+};
 
-#define NR_SOL_BLUETOOTH_HCI_OPTS ARRAY_SIZE(bluetooth_hci_opts)
 static const unsigned int bluetooth_hci_opts[] = {
-	HCI_DATA_DIR, HCI_FILTER, HCI_TIME_STAMP };
+	HCI_DATA_DIR, HCI_FILTER, HCI_TIME_STAMP
+};
 
-#define NR_SOL_BLUETOOTH_L2CAP_OPTS ARRAY_SIZE(bluetooth_l2cap_opts)
 static const unsigned int bluetooth_l2cap_opts[] = {
-	L2CAP_OPTIONS, L2CAP_LM };
+	L2CAP_OPTIONS, L2CAP_LM
+};
 
-#define NR_SOL_BLUETOOTH_RFCOMM_OPTS ARRAY_SIZE(bluetooth_rfcomm_opts)
 static const unsigned int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
 
@@ -37,12 +36,12 @@ void bluetooth_setsockopt(struct sockopt *so)
 
 	switch (so->level) {
 	case SOL_HCI:
-		val = rand() % NR_SOL_BLUETOOTH_HCI_OPTS;
+		val = rand() % ARRAY_SIZE(bluetooth_hci_opts);
 		so->optname = bluetooth_hci_opts[val];
 		break;
 
 	case SOL_L2CAP:
-		val = rand() % NR_SOL_BLUETOOTH_L2CAP_OPTS;
+		val = rand() % ARRAY_SIZE(bluetooth_l2cap_opts);
 		so->optname = bluetooth_l2cap_opts[val];
 		break;
 
@@ -50,12 +49,12 @@ void bluetooth_setsockopt(struct sockopt *so)
 		break;
 
 	case SOL_RFCOMM:
-		val = rand() % NR_SOL_BLUETOOTH_RFCOMM_OPTS;
+		val = rand() % ARRAY_SIZE(bluetooth_rfcomm_opts);
 		so->optname = bluetooth_rfcomm_opts[val];
 		break;
 
 	case SOL_BLUETOOTH:
-		val = rand() % NR_SOL_BLUETOOTH_OPTS;
+		val = rand() % ARRAY_SIZE(bluetooth_opts);
 		so->optname = bluetooth_opts[val];
 		break;
 

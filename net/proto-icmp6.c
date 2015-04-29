@@ -7,14 +7,13 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define NR_SOL_ICMPV6_OPTS ARRAY_SIZE(icmpv6_opts)
 static const unsigned int icmpv6_opts[] = { ICMPV6_FILTER };
 
 void icmpv6_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_ICMPV6_OPTS;
+	val = rand() % ARRAY_SIZE(icmpv6_opts);
 	so->optname = icmpv6_opts[val];
 }
 #endif

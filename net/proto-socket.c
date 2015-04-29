@@ -4,8 +4,8 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define NR_SOL_SOCKET_OPTS ARRAY_SIZE(socket_opts)
-static const unsigned int socket_opts[] = { SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_ERROR,
+static const unsigned int socket_opts[] = {
+	SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_ERROR,
 	SO_DONTROUTE, SO_BROADCAST, SO_SNDBUF, SO_RCVBUF,
 	SO_SNDBUFFORCE, SO_RCVBUFFORCE, SO_KEEPALIVE, SO_OOBINLINE,
 	SO_NO_CHECK, SO_PRIORITY, SO_LINGER, SO_BSDCOMPAT,
@@ -16,7 +16,8 @@ static const unsigned int socket_opts[] = { SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_
 	SO_PASSSEC, SO_TIMESTAMPNS, SO_MARK, SO_TIMESTAMPING,
 	SO_PROTOCOL, SO_DOMAIN, SO_RXQ_OVFL, SO_WIFI_STATUS,
 	SO_PEEK_OFF, SO_NOFCS, SO_LOCK_FILTER, SO_SELECT_ERR_QUEUE,
-	SO_BUSY_POLL, SO_MAX_PACING_RATE, SO_BPF_EXTENSIONS, SO_INCOMING_CPU };
+	SO_BUSY_POLL, SO_MAX_PACING_RATE, SO_BPF_EXTENSIONS, SO_INCOMING_CPU,
+};
 
 void socket_setsockopt(struct sockopt *so)
 {
@@ -24,7 +25,7 @@ void socket_setsockopt(struct sockopt *so)
 
 	so->level = SOL_SOCKET;
 
-	val = rand() % NR_SOL_SOCKET_OPTS;
+	val = rand() % ARRAY_SIZE(socket_opts);
 	so->optname = socket_opts[val];
 
 	/* Adjust length according to operation set. */

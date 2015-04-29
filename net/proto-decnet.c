@@ -40,7 +40,6 @@ void decnet_rand_socket(struct socket_triplet *st)
 	}
 }
 
-#define NR_SOL_DECNET_OPTS ARRAY_SIZE(decnet_opts)
 static const unsigned int decnet_opts[] = {
 	SO_CONDATA, SO_CONACCESS, SO_PROXYUSR, SO_LINKINFO,
 	DSO_CONDATA, DSO_DISDATA, DSO_CONACCESS, DSO_ACCEPTMODE,
@@ -53,9 +52,8 @@ void decnet_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_DECNET_OPTS;
+	val = rand() % ARRAY_SIZE(decnet_opts);
 	so->optname = decnet_opts[val];
 
 	// TODO: set optlen correctly
-
 }

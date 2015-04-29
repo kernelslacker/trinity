@@ -50,16 +50,16 @@ void irda_rand_socket(struct socket_triplet *st)
 	}
 }
 
-#define NR_SOL_IRDA_OPTS ARRAY_SIZE(irda_opts)
 static const unsigned int irda_opts[] = {
 	IRLMP_ENUMDEVICES, IRLMP_IAS_SET, IRLMP_IAS_QUERY, IRLMP_HINTS_SET,
 	IRLMP_QOS_SET, IRLMP_QOS_GET, IRLMP_MAX_SDU_SIZE, IRLMP_IAS_GET,
-	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE };
+	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE
+};
 
 void irda_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_IRDA_OPTS;
+	val = rand() % ARRAY_SIZE(irda_opts);
 	so->optname = irda_opts[val];
 }

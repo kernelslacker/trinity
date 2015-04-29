@@ -35,16 +35,16 @@ void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_rose);
 }
 
-#define NR_SOL_ROSE_OPTS ARRAY_SIZE(rose_opts)
 static const unsigned int rose_opts[] = {
 	ROSE_DEFER, ROSE_T1, ROSE_T2, ROSE_T3,
-	ROSE_IDLE, ROSE_QBITINCL, ROSE_HOLDBACK };
+	ROSE_IDLE, ROSE_QBITINCL, ROSE_HOLDBACK,
+};
 
 void rose_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_ROSE_OPTS;
+	val = rand() % ARRAY_SIZE(rose_opts);
 	so->optname = rose_opts[val];
 }
 #endif

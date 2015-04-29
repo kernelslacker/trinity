@@ -43,14 +43,15 @@ void caif_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_STREAM;
 }
 
-static const unsigned int caif_opts[] = { CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM };
-#define NR_SOL_CAIF_OPTS ARRAY_SIZE(caif_opts)
+static const unsigned int caif_opts[] = {
+	CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM
+};
 
 void caif_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_CAIF_OPTS;
+	val = rand() % ARRAY_SIZE(caif_opts);
 	so->optname = caif_opts[val];
 }
 #else

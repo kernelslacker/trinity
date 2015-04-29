@@ -43,13 +43,13 @@ void packet_rand_socket(struct socket_triplet *st)
 	}
 }
 
-#define NR_SOL_PACKET_OPTS ARRAY_SIZE(packet_opts)
 static const unsigned int packet_opts[] = {
 	PACKET_ADD_MEMBERSHIP, PACKET_DROP_MEMBERSHIP, PACKET_RECV_OUTPUT, 4,   /* Value 4 is still used by obsolete turbo-packet. */
 	PACKET_RX_RING, PACKET_STATISTICS, PACKET_COPY_THRESH, PACKET_AUXDATA,
 	PACKET_ORIGDEV, PACKET_VERSION, PACKET_HDRLEN, PACKET_RESERVE,
 	PACKET_TX_RING, PACKET_LOSS, PACKET_VNET_HDR, PACKET_TX_TIMESTAMP,
-	PACKET_TIMESTAMP, PACKET_FANOUT };
+	PACKET_TIMESTAMP, PACKET_FANOUT,
+};
 
 void packet_setsockopt(struct sockopt *so)
 {
@@ -58,7 +58,7 @@ void packet_setsockopt(struct sockopt *so)
 
 	optval = (char *) so->optval;
 
-	val = rand() % NR_SOL_PACKET_OPTS;
+	val = rand() % ARRAY_SIZE(packet_opts);
 	so->optname = packet_opts[val];
 
 	/* Adjust length according to operation set. */

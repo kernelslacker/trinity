@@ -5,15 +5,16 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-#define NR_SOL_UDP_OPTS ARRAY_SIZE(udp_opts)
-static const unsigned int udp_opts[] = { UDP_CORK, UDP_ENCAP };
+static const unsigned int udp_opts[] = {
+	UDP_CORK, UDP_ENCAP
+};
 
 void udp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 	char *optval;
 
-	val = rand() % NR_SOL_UDP_OPTS;
+	val = rand() % ARRAY_SIZE(udp_opts);
 	so->optname = udp_opts[val];
 
 	switch (so->optname) {

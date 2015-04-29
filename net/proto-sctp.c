@@ -3,7 +3,6 @@
 #include "compat.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define NR_SOL_SCTP_OPTS ARRAY_SIZE(sctp_opts)
 static const unsigned int sctp_opts[] = {
 	SCTP_RTOINFO, SCTP_ASSOCINFO, SCTP_INITMSG, SCTP_NODELAY,
 	SCTP_AUTOCLOSE, SCTP_SET_PEER_PRIMARY_ADDR, SCTP_PRIMARY_ADDR, SCTP_ADAPTATION_LAYER,
@@ -15,12 +14,13 @@ static const unsigned int sctp_opts[] = {
 	SCTP_GET_ASSOC_NUMBER, SCTP_GET_ASSOC_ID_LIST, SCTP_AUTO_ASCONF, SCTP_PEER_ADDR_THLDS,
 	SCTP_SOCKOPT_BINDX_ADD, SCTP_SOCKOPT_BINDX_REM, SCTP_SOCKOPT_PEELOFF, SCTP_SOCKOPT_CONNECTX_OLD,
 	SCTP_GET_PEER_ADDRS, SCTP_GET_LOCAL_ADDRS, SCTP_SOCKOPT_CONNECTX, SCTP_SOCKOPT_CONNECTX3,
-	SCTP_GET_ASSOC_STATS };
+	SCTP_GET_ASSOC_STATS,
+};
 
 void sctp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % NR_SOL_SCTP_OPTS;
+	val = rand() % ARRAY_SIZE(sctp_opts);
 	so->optname = sctp_opts[val];
 }
