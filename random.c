@@ -18,6 +18,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	unsigned int i;
 	unsigned char choice = rand() % 3;
 	unsigned int startoffset = 0, remain, runlen;
+	unsigned char separators[3] = { ' ', '-', '\0' };
 	unsigned char separator;
 
 	switch (choice) {
@@ -33,10 +34,8 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 		break;
 	case 2:
 		/* numbers (for now, decimal only) */
-		if (RAND_BOOL())
-			separator = ',';
-		else
-			separator = ' ';
+
+		separator = separators[rand() % 3];
 
 		remain = len;
 
