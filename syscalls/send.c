@@ -27,10 +27,10 @@ static void sanitise_send(struct syscallrecord *rec)
 		size = rand() % page_size;
 
 	ptr = malloc(size);
+	rec->a2 = (unsigned long) ptr;
 	if (ptr == NULL)
 		return;
 
-	rec->a2 = (unsigned long) ptr;
 	rec->a3 = size;
 
 	// TODO: only use this as a fallback, and actually have
