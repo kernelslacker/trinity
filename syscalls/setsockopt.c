@@ -106,7 +106,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_IUCV, .func = &iucv_setsockopt },
 	{ .family = AF_RXRPC, .func = &rxrpc_setsockopt },
 	{ .family = AF_ISDN, .func = NULL },
-	{ .family = AF_PHONET, .func = NULL },
+	{ .family = AF_PHONET, .func = &pnpipe_setsockopt },
 	{ .family = AF_IEEE802154, .func = NULL },
 #ifdef USE_CAIF
 	{ .family = AF_CAIF, .func = &caif_setsockopt },
@@ -119,7 +119,6 @@ static const struct sso_funcptr ssoptrs[] = {
 //TODO: How shall we match these ?
 //	{ .func = &atm_setsockopt },
 //	{ .func = &aal_setsockopt },
-//	{ .func = &pnpipe_setsockopt },
 
 /*
  * We do this if for eg, we've ended up being passed
