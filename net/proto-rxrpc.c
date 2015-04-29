@@ -12,8 +12,6 @@ void rxrpc_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_RXRPC;
-
 	val = rand() % NR_SOL_RXRPC_OPTS;
 	so->optname = rxrpc_opts[val];
 }

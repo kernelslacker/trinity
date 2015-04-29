@@ -54,8 +54,6 @@ void atm_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_ATM;
-
 	val = rand() % ARRAY_SIZE(atm_opts);
 	so->optname = atm_opts[val];
 }

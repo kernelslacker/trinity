@@ -65,8 +65,6 @@ void ax25_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_AX25;
-
 	val = rand() % NR_SOL_AX25_OPTS;
 	so->optname = ax25_opts[val];
 }

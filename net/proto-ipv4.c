@@ -172,8 +172,6 @@ void ip_setsockopt(struct sockopt *so)
 	struct ip_mreq_source *ms;
 	int mcaddr;
 
-	so->level = SOL_IP;
-
 	val = rand() % ARRAY_SIZE(ip_opts);
 	so->optname = ip_opts[val];
 

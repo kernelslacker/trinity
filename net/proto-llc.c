@@ -55,8 +55,6 @@ void llc_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_LLC;
-
 	val = rand() % NR_SOL_LLC_OPTS;
 	so->optname = llc_opts[val];
 }

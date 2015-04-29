@@ -16,8 +16,6 @@ void dccp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_DCCP;
-
 	val = rand() % NR_SOL_DCCP_OPTS;
 	so->optname = dccp_opts[val];
 }

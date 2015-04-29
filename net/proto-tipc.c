@@ -54,8 +54,6 @@ void tipc_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_TIPC;
-
 	val = rand() % NR_SOL_TIPC_OPTS;
 	so->optname = tipc_opts[val];
 

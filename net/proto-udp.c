@@ -13,8 +13,6 @@ void udp_setsockopt(struct sockopt *so)
 	unsigned char val;
 	char *optval;
 
-	so->level = SOL_UDP;
-
 	val = rand() % NR_SOL_UDP_OPTS;
 	so->optname = udp_opts[val];
 

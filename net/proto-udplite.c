@@ -13,8 +13,6 @@ void udplite_setsockopt(struct sockopt *so)
 	char *optval;
 	unsigned char val;
 
-	so->level = SOL_UDPLITE;
-
 	val = rand() % NR_SOL_UDPLITE_OPTS;
 	so->optname = udplite_opts[val];
 

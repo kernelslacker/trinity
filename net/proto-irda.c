@@ -60,8 +60,6 @@ void irda_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_IRDA;
-
 	val = rand() % NR_SOL_IRDA_OPTS;
 	so->optname = irda_opts[val];
 }

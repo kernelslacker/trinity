@@ -21,8 +21,6 @@ void sctp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_SCTP;
-
 	val = rand() % NR_SOL_SCTP_OPTS;
 	so->optname = sctp_opts[val];
 }

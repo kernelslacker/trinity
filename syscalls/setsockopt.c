@@ -11,7 +11,17 @@
 #include <linux/tipc.h>
 #include <netinet/udp.h>
 #include <netipx/ipx.h>
+#include <netax25/ax25.h>
 #include "config.h"
+#ifdef USE_APPLETALK
+#include <netatalk/at.h>
+#endif
+#ifdef USE_NETROM
+#include <netrom/netrom.h>
+#endif
+#ifdef USE_ROSE
+#include <netrose/rose.h>
+#endif
 #include "arch.h"
 #include "log.h"
 #include "maps.h"
@@ -26,23 +36,24 @@
 
 struct ip_sso_funcptr {
 	unsigned int proto;
+	unsigned int sol;
 	void (*func)(struct sockopt *so);
 };
 
 static const struct ip_sso_funcptr ip_ssoptrs[] = {
-	{ .proto = IPPROTO_IP, .func = &ip_setsockopt },
+	{ .proto = IPPROTO_IP, .sol = SOL_IP, .func = &ip_setsockopt },
 	{ .proto = IPPROTO_ICMP, .func = NULL },
 	{ .proto = IPPROTO_IGMP, .func = NULL },
 	{ .proto = IPPROTO_IPIP, .func = NULL },
-	{ .proto = IPPROTO_TCP, .func = &tcp_setsockopt },
+	{ .proto = IPPROTO_TCP, .sol = SOL_TCP, .func = &tcp_setsockopt },
 	{ .proto = IPPROTO_EGP, .func = NULL },
 	{ .proto = IPPROTO_PUP, .func = NULL },
-	{ .proto = IPPROTO_UDP, .func = &udp_setsockopt },
+	{ .proto = IPPROTO_UDP, .sol = SOL_UDP, .func = &udp_setsockopt },
 	{ .proto = IPPROTO_IDP, .func = NULL },
 	{ .proto = IPPROTO_TP, .func = NULL },
-	{ .proto = IPPROTO_DCCP, .func = &dccp_setsockopt },
+	{ .proto = IPPROTO_DCCP, .sol = SOL_DCCP, .func = &dccp_setsockopt },
 #ifdef USE_IPV6
-	{ .proto = IPPROTO_IPV6, .func = &icmpv6_setsockopt },
+	{ .proto = IPPROTO_IPV6, .sol = SOL_ICMPV6, .func = &icmpv6_setsockopt },
 #endif
 	{ .proto = IPPROTO_RSVP, .func = NULL },
 	{ .proto = IPPROTO_GRE, .func = NULL },
@@ -53,66 +64,67 @@ static const struct ip_sso_funcptr ip_ssoptrs[] = {
 	{ .proto = IPPROTO_ENCAP, .func = NULL },
 	{ .proto = IPPROTO_PIM, .func = NULL },
 	{ .proto = IPPROTO_COMP, .func = NULL },
-	{ .proto = IPPROTO_SCTP, .func = &sctp_setsockopt },
-	{ .proto = IPPROTO_UDPLITE, .func = &udplite_setsockopt },
-	{ .proto = IPPROTO_RAW, .func = &raw_setsockopt },
+	{ .proto = IPPROTO_SCTP, .sol = SOL_SCTP, .func = &sctp_setsockopt },
+	{ .proto = IPPROTO_UDPLITE, .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
+	{ .proto = IPPROTO_RAW, .sol = SOL_RAW, .func = &raw_setsockopt },
 };
 
 struct sso_funcptr {
 	unsigned int family;
+	unsigned int sol;
 	void (*func)(struct sockopt *so);
 };
 
 static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_UNIX, .func = NULL },
 	{ .family = AF_INET, .func = NULL },	// special cased below.
-	{ .family = AF_AX25, .func = &ax25_setsockopt },
-	{ .family = AF_IPX, .func = &ipx_setsockopt },
+	{ .family = AF_AX25, .sol = SOL_AX25, .func = &ax25_setsockopt },
+	{ .family = AF_IPX, .sol = SOL_IPX, .func = &ipx_setsockopt },
 #ifdef USE_APPLETALK
-	{ .family = AF_APPLETALK, .func = &atalk_setsockopt },
+	{ .family = AF_APPLETALK, .sol = SOL_ATALK, .func = NULL },
 #endif
 #ifdef USE_NETROM
-	{ .family = AF_NETROM, .func = &netrom_setsockopt },
+	{ .family = AF_NETROM, .sol = SOL_NETROM, .func = &netrom_setsockopt },
 #endif
 	{ .family = AF_BRIDGE, .func = NULL },
-	{ .family = AF_ATMPVC, .func = &atm_setsockopt },
-	{ .family = AF_X25, .func = &x25_setsockopt },
+	{ .family = AF_ATMPVC, .sol = SOL_ATM, .func = &atm_setsockopt },
+	{ .family = AF_X25, .sol = SOL_X25, .func = &x25_setsockopt },
 #ifdef USE_IPV6
-	{ .family = AF_INET6, .func = &inet6_setsockopt },
+	{ .family = AF_INET6, .sol = SOL_IPV6, .func = &inet6_setsockopt },
 #endif
 #ifdef USE_ROSE
-	{ .family = AF_ROSE, .func = &rose_setsockopt },
+	{ .family = AF_ROSE, .sol = SOL_ROSE, .func = &rose_setsockopt },
 #endif
-	{ .family = AF_DECnet, .func = &decnet_setsockopt },
-	{ .family = AF_NETBEUI, .func = &netbeui_setsockopt },
+	{ .family = AF_DECnet, .sol = SOL_DECNET, .func = &decnet_setsockopt },
+	{ .family = AF_NETBEUI, .sol = SOL_NETBEUI, .func = NULL },
 	{ .family = AF_SECURITY, .func = NULL },
 	{ .family = AF_KEY, .func = NULL },
-	{ .family = AF_NETLINK, .func = &netlink_setsockopt },
-	{ .family = AF_PACKET, .func = &packet_setsockopt },
+	{ .family = AF_NETLINK, .sol = SOL_NETLINK, .func = &netlink_setsockopt },
+	{ .family = AF_PACKET, .sol = SOL_PACKET, .func = &packet_setsockopt },
 	{ .family = AF_ASH, .func = NULL },
 	{ .family = AF_ECONET, .func = NULL },
-	{ .family = AF_ATMSVC, .func = &atm_setsockopt },
-	{ .family = AF_RDS, .func = &rds_setsockopt },
+	{ .family = AF_ATMSVC, SOL_ATM, .func = &atm_setsockopt },
+	{ .family = AF_RDS, .sol = SOL_RDS, .func = &rds_setsockopt },
 	{ .family = AF_SNA, .func = NULL },
-	{ .family = AF_IRDA, .func = &irda_setsockopt },
-	{ .family = AF_PPPOX, .func = &pppol2tp_setsockopt },
+	{ .family = AF_IRDA, .sol = SOL_IRDA, .func = &irda_setsockopt },
+	{ .family = AF_PPPOX, .sol = SOL_PPPOL2TP, .func = &pppol2tp_setsockopt },
 	{ .family = AF_WANPIPE, .func = NULL },
-	{ .family = AF_LLC, .func = &llc_setsockopt },
+	{ .family = AF_LLC, .sol = SOL_LLC, .func = &llc_setsockopt },
 	{ .family = AF_IB, .func = NULL },
 	{ .family = AF_MPLS, .func = NULL },
 	{ .family = AF_CAN, .func = NULL },
-	{ .family = AF_TIPC, .func = &tipc_setsockopt },
-	{ .family = AF_BLUETOOTH, .func = &bluetooth_setsockopt },
-	{ .family = AF_IUCV, .func = &iucv_setsockopt },
-	{ .family = AF_RXRPC, .func = &rxrpc_setsockopt },
+	{ .family = AF_TIPC, .sol = SOL_TIPC, .func = &tipc_setsockopt },
+	{ .family = AF_BLUETOOTH, .sol = SOL_BLUETOOTH, .func = &bluetooth_setsockopt },
+	{ .family = AF_IUCV, .sol = SOL_IUCV, .func = &iucv_setsockopt },
+	{ .family = AF_RXRPC, .sol = SOL_RXRPC, .func = &rxrpc_setsockopt },
 	{ .family = AF_ISDN, .func = NULL },
-	{ .family = AF_PHONET, .func = &pnpipe_setsockopt },
+	{ .family = AF_PHONET, .sol = SOL_PNPIPE, .func = NULL },
 	{ .family = AF_IEEE802154, .func = NULL },
 #ifdef USE_CAIF
-	{ .family = AF_CAIF, .func = &caif_setsockopt },
+	{ .family = AF_CAIF, .sol = SOL_CAIF, .func = &caif_setsockopt },
 #endif
-	{ .family = AF_ALG, .func = &alg_setsockopt },
-	{ .family = AF_NFC, .func = &nfc_setsockopt },
+	{ .family = AF_ALG, .sol = SOL_ALG, .func = NULL },
+	{ .family = AF_NFC, .sol = SOL_NFC, .func = NULL },
 	{ .family = AF_VSOCK, .func = NULL },
 };
 
@@ -130,10 +142,13 @@ retry:
 	switch (rand() % 3) {
 	case 0:	/* do a random protocol, even if it doesn't match this socket. */
 		i = rand() % ARRAY_SIZE(ssoptrs);
-		if (ssoptrs[i].func != NULL)
+		if (ssoptrs[i].func != NULL) {
+			// TODO: Also pick from ip_ssoptrs.
+			so->level = ssoptrs[i].sol;
 			ssoptrs[i].func(so);
-		else
+		} else {
 			goto retry;
+		}
 		break;
 
 	case 1:	/* Last resort: Generic socket options. */
@@ -154,6 +169,7 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 	for (i = 0; i < ARRAY_SIZE(ssoptrs); i++) {
 		if (ssoptrs[i].family == triplet->family) {
 			if (ssoptrs[i].func != NULL) {
+				so->level = ssoptrs[i].sol;
 				ssoptrs[i].func(so);
 				return;
 			} else {	// unimplemented yet, or no sso for this family.
@@ -171,6 +187,7 @@ static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet
 	for (i = 0; i < ARRAY_SIZE(ip_ssoptrs); i++) {
 		if (ip_ssoptrs[i].proto == triplet->protocol) {
 			if (ip_ssoptrs[i].func != NULL) {
+				so->level = ip_ssoptrs[i].sol;
 				ip_ssoptrs[i].func(so);
 				return;
 			} else {	// unimplemented yet, or no sso for this proto.

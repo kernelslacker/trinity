@@ -50,8 +50,3 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_alg);
 }
 #endif
-
-void alg_setsockopt(struct sockopt *so)
-{
-	so->level = SOL_ALG;
-}

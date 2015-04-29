@@ -16,8 +16,6 @@ void tcp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_TCP;
-
 	val = rand() % NR_SOL_TCP_OPTS;
 	so->optname = tcp_opts[val];
 }

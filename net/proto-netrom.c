@@ -15,8 +15,6 @@ void netrom_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_NETROM;
-
 	val = rand() % NR_SOL_NETROM_OPTS;
 	so->optname = netrom_opts[val];
 }

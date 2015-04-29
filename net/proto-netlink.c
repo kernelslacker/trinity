@@ -56,8 +56,6 @@ void netlink_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_NETLINK;
-
 	val = rand() % NR_SOL_NETLINK_OPTS;
 	so->optname = netlink_opts[val];
 }

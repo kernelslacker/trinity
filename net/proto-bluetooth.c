@@ -24,8 +24,6 @@ void bluetooth_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_BLUETOOTH;
-
 	switch(rand() % 5) {
 	case 0: so->level = SOL_HCI; break;
 	case 1: so->level = SOL_L2CAP; break;

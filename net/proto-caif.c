@@ -50,15 +50,12 @@ void caif_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_CAIF;
-
 	val = rand() % NR_SOL_CAIF_OPTS;
 	so->optname = caif_opts[val];
 }
 #else
-/* stub if we are built on something without RDS headers */
+/* stub if we are built on something without CAIF headers */
 void caif_setsockopt(struct sockopt *so)
 {
-	so->level = SOL_CAIF;
 }
 #endif

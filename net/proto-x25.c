@@ -32,8 +32,6 @@ void x25_setsockopt(struct sockopt *so)
 {
 	unsigned int *optval;
 
-	so->level = SOL_X25;
-
 	optval = (unsigned int *) so->optval;
 	*optval = RAND_BOOL();
 

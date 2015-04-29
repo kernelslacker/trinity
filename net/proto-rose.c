@@ -44,8 +44,6 @@ void rose_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_ROSE;
-
 	val = rand() % NR_SOL_ROSE_OPTS;
 	so->optname = rose_opts[val];
 }

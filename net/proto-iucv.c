@@ -11,8 +11,6 @@ void iucv_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_IUCV;
-
 	val = rand() % NR_SOL_IUCV_OPTS;
 	so->optname = iucv_opts[val];
 

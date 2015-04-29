@@ -34,6 +34,5 @@ void ipx_rand_socket(struct socket_triplet *st)
 
 void ipx_setsockopt(struct sockopt *so)
 {
-	so->level = SOL_IPX;
 	so->optname = IPX_TYPE;
 }

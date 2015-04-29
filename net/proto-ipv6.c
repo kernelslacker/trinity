@@ -151,8 +151,6 @@ void inet6_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_IPV6;
-
 	val = rand() % ARRAY_SIZE(inet6_opts);
 	so->optname = inet6_opts[val];
 }

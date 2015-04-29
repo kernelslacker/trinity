@@ -53,8 +53,6 @@ void decnet_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_DECNET;
-
 	val = rand() % NR_SOL_DECNET_OPTS;
 	so->optname = decnet_opts[val];
 

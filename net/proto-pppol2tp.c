@@ -14,8 +14,6 @@ void pppol2tp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_PPPOL2TP;
-
 	val = rand() % NR_SOL_PPPOL2TP_OPTS;
 	so->optname = pppol2tp_opts[val];
 

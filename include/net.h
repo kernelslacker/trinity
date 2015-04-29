@@ -92,12 +92,10 @@ void caif_setsockopt(struct sockopt *so);
 
 /* alg */
 void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void alg_setsockopt(struct sockopt *so);
 
 /* nfc */
 void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 void nfc_rand_socket(struct socket_triplet *st);
-void nfc_setsockopt(struct sockopt *so);
 
 /* ax25 */
 void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
@@ -112,7 +110,6 @@ void ipx_setsockopt(struct sockopt *so);
 /* appletalk */
 void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 void atalk_rand_socket(struct socket_triplet *st);
-void atalk_setsockopt(struct sockopt *so);
 
 /* atm */
 void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
@@ -183,11 +180,9 @@ void icmpv6_setsockopt(struct sockopt *so);
 void sctp_setsockopt(struct sockopt *so);
 void raw_setsockopt(struct sockopt *so);
 void netrom_setsockopt(struct sockopt *so);
-void netbeui_setsockopt(struct sockopt *so);
 void dccp_setsockopt(struct sockopt *so);
 void rxrpc_setsockopt(struct sockopt *so);
 void bluetooth_setsockopt(struct sockopt *so);
-void pnpipe_setsockopt(struct sockopt *so);
 void iucv_setsockopt(struct sockopt *so);
 
 /* protocol definitions */

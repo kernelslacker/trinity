@@ -38,8 +38,3 @@ void nfc_rand_socket(struct socket_triplet *st)
 	st->protocol = NFC_SOCKPROTO_RAW;
 	st->type = SOCK_SEQPACKET;
 }
-
-void nfc_setsockopt(struct sockopt *so)
-{
-	so->level = SOL_NFC;
-}

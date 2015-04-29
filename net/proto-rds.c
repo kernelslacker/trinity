@@ -40,8 +40,6 @@ void rds_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	so->level = SOL_RDS;
-
 	val = rand() % NR_SOL_RDS_OPTS;
 	so->optname = rds_opts[val];
 }
@@ -50,6 +48,5 @@ void rds_setsockopt(struct sockopt *so)
 /* stub if we are built on something without RDS headers */
 void rds_setsockopt(struct sockopt *so)
 {
-	so->level = SOL_RDS;
 }
 #endif	/* USE_RDS */

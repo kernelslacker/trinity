@@ -56,8 +56,6 @@ void packet_setsockopt(struct sockopt *so)
 	unsigned char val;
 	char *optval;
 
-	so->level = SOL_PACKET;
-
 	optval = (char *) so->optval;
 
 	val = rand() % NR_SOL_PACKET_OPTS;
