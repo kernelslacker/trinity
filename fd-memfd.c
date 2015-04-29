@@ -5,14 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/epoll.h>
 
 #include "fd.h"
 #include "log.h"
 #include "memfd.h"
-#include "net.h"
-#include "params.h"
-#include "pids.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
