@@ -62,13 +62,15 @@ static const struct domain domains[] = {
 	{ "PF_VSOCK",        40 },
 };
 
-static const struct domain *lookup_domain(const char *name, unsigned int domain)
+static const struct domain *lookup_domain(const char *name)
 {
 	unsigned int i;
 
+	if (!name)
+		return NULL;
+
 	for (i = 0; i < ARRAY_SIZE(domains); i++) {
-		if ((name && strcmp(name, domains[i].name) == 0) ||
-		    (domain != -1u && domains[i].domain == domain))
+		if (strncmp(name, domains[i].name, strlen(domains[i].name)) == 0)
 			return &domains[i];
 	}
 
@@ -90,14 +92,14 @@ void find_specific_domain(const char *domainarg)
 	const struct domain *p;
 	unsigned int i;
 
-	p = lookup_domain(domainarg, specific_domain ? : -1u);
+	p = lookup_domain(domainarg);
 	if (p) {
 		specific_domain = p->domain;
-		output(2, "Using domain %s (%u) for all sockets\n", p->name, p->domain);
+		output(2, "Using domain %s for all sockets\n", p->name);
 		return;
 	}
 
-	outputerr("Domain unknown. Pass a numeric value [0-%d] or one of ", TRINITY_PF_MAX - 1);
+	outputerr("Domain unknown. Pass one of ");
 	for (i = 0; i < ARRAY_SIZE(domains); i++)
 		outputerr("%s ", domains[i].name);
 	outputerr("\n");
@@ -136,7 +138,7 @@ void parse_exclude_domains(const char *arg)
 	}
 
 	for (tok = strtok(_arg, ","); tok; tok = strtok(NULL, ",")) {
-		p = lookup_domain(tok, (unsigned int)atoi(tok));
+		p = lookup_domain(tok);
 		if (p) {
 			BUG_ON(p->domain >= ARRAY_SIZE(no_domains));
 			no_domains[p->domain] = TRUE;
