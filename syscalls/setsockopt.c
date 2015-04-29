@@ -134,12 +134,10 @@ static void do_random_sso(struct sockopt *so)
 
 	i = rand() % ARRAY_SIZE(ssoptrs);
 
-	if (ssoptrs[i].func == NULL) {
-		socket_setsockopt(so);
-		return;
-	}
-
-	ssoptrs[i].func(so);
+	if (ssoptrs[i].func != NULL)
+		ssoptrs[i].func(so);
+	else
+		socket_setsockopt(so);	// Last resort: Generic socket options.
 }
 
 static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
