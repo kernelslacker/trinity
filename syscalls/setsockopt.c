@@ -191,8 +191,13 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		so->optlen = rand() % 256;
 
 	if (ONE_IN(100)) {
-		so->level = rand();
-		so->optname = RAND_BYTE();	/* random operation. */
+		if (RAND_BOOL()) {
+			so->level = rand();
+			so->optname = RAND_BYTE();	/* completely random operation. */
+		} else {
+			// Fall back to generic socket options.
+			socket_setsockopt(so);
+		}
 	} else {
 		if (triplet != NULL) {
 			if (triplet->family == AF_INET) {
