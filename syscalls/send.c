@@ -19,6 +19,8 @@ static void sanitise_send(struct syscallrecord *rec)
 	unsigned int size;
 	void *ptr;
 
+	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+
 	if (RAND_BOOL())
 		size = 1;
 	else
@@ -45,7 +47,7 @@ struct syscallentry syscall_send = {
 	.name = "send",
 	.num_args = 4,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "buff",
 	.arg3name = "len",
 	.arg4name = "flags",
@@ -93,7 +95,7 @@ struct syscallentry syscall_sendto = {
 	.arg6name = "addr_len",
 	.arg6type = ARG_SOCKADDRLEN,
 	.flags = NEED_ALARM,
-	.sanitise = sanitise_send,
+	.sanitise = sanitise_send,	// same as send
 	.post = post_send,
 };
 
@@ -105,6 +107,8 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
+
+	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	msg = zmalloc(sizeof(struct msghdr));
 
@@ -136,7 +140,7 @@ struct syscallentry syscall_sendmsg = {
 	.name = "sendmsg",
 	.num_args = 3,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "msg",
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
@@ -156,11 +160,16 @@ struct syscallentry syscall_sendmsg = {
  * SYSCALL_DEFINE4(sendmmsg, int, fd, struct mmsghdr __user *, mmsg,
  *	unsigned int, vlen, unsigned int, flags)
  */
+static void sanitise_sendmmsg(struct syscallrecord *rec)
+{
+	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+}
+
 struct syscallentry syscall_sendmmsg = {
 	.name = "sendmmsg",
 	.num_args = 4,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "mmsg",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "vlen",
@@ -176,4 +185,5 @@ struct syscallentry syscall_sendmmsg = {
 			    MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_FASTOPEN, MSG_CMSG_COMPAT },
 	},
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_sendmmsg,
 };
