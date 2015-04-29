@@ -124,9 +124,6 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_VSOCK, .func = NULL },
 };
 
-// TODO: Wildcard match
-//	{ .func = &socket_setsockopt },
-//
 //TODO: How shall we match these ?
 //	{ .func = &atm_setsockopt },
 //	{ .func = &aal_setsockopt },
@@ -143,11 +140,12 @@ static void do_random_sso(struct sockopt *so)
 {
 	int i;
 
-again:
 	i = rand() % ARRAY_SIZE(ssoptrs);
 
-	if (ssoptrs[i].func == NULL)
-		goto again;
+	if (ssoptrs[i].func == NULL) {
+		socket_setsockopt(so);
+		return;
+	}
 
 	ssoptrs[i].func(so);
 }
