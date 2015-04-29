@@ -5,14 +5,20 @@
  */
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "compat.h"
+#include "net.h"
 #include "sanitise.h"
+#include "compat.h"
+
+static void sanitise_recv(struct syscallrecord *rec)
+{
+	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+}
 
 struct syscallentry syscall_recv = {
 	.name = "recv",
 	.num_args = 4,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "ubuf",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",
@@ -28,6 +34,7 @@ struct syscallentry syscall_recv = {
 			    MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
 	},
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_recv,
 };
 
 
@@ -40,7 +47,7 @@ struct syscallentry syscall_recvfrom = {
 	.name = "recvfrom",
 	.num_args = 6,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "ubuf",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",
@@ -60,6 +67,7 @@ struct syscallentry syscall_recvfrom = {
 	.arg6name = "addr_len",
 	.arg6type = ARG_SOCKADDRLEN,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_recv,	// same as recv
 };
 
 
@@ -70,7 +78,7 @@ struct syscallentry syscall_recvmsg = {
 	.name = "recvmsg",
 	.num_args = 3,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "msg",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "flags",
@@ -84,6 +92,7 @@ struct syscallentry syscall_recvmsg = {
 			    MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_FASTOPEN, MSG_CMSG_COMPAT },
 	},
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_recv,	// same as recv
 };
 
 /*
@@ -95,7 +104,7 @@ struct syscallentry syscall_recvmmsg = {
 	.name = "recvmmsg",
 	.num_args = 5,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "mmsg",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "vlen",
@@ -113,4 +122,5 @@ struct syscallentry syscall_recvmmsg = {
 	.arg5name = "timeout",
 	.arg5type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_recv,	// same as recv
 };
