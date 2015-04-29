@@ -20,7 +20,7 @@ static int create_inotify(unsigned int i, int flags)
 
 	fd = inotify_init1(flags);
 	if (fd != -1) {
-		output(2, "fd[%d] = inotify(%d)\n", fd);
+		output(2, "fd[%d] = inotify(%d)\n", fd, flags);
 		shm->inotify_fds[i] = fd;
 		return TRUE;
 	} else {
