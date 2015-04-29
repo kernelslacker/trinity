@@ -58,14 +58,6 @@ static const struct ip_sso_funcptr ip_ssoptrs[] = {
 	{ .proto = IPPROTO_RAW, .func = &raw_setsockopt },
 };
 
-static void ip_sso_demultiplexer(struct sockopt *so)
-{
-	//TODO: Later, be smarter, and look up the rest of the triplet.
-	int randsso = rand() % ARRAY_SIZE(ip_ssoptrs);
-	if (ip_ssoptrs[randsso].func != NULL)
-		ip_ssoptrs[randsso].func(so);
-}
-
 struct sso_funcptr {
 	unsigned int family;
 	void (*func)(struct sockopt *so);
@@ -73,7 +65,7 @@ struct sso_funcptr {
 
 static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_UNIX, .func = NULL },
-	{ .family = AF_INET, .func = &ip_sso_demultiplexer },
+	{ .family = AF_INET, .func = NULL },	// special cased below.
 	{ .family = AF_AX25, .func = &ax25_setsockopt },
 	{ .family = AF_IPX, .func = &ipx_setsockopt },
 #ifdef USE_APPLETALK
@@ -158,7 +150,7 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 		if (ssoptrs[i].family == triplet->family) {
 			if (ssoptrs[i].func != NULL)
 				ssoptrs[i].func(so);
-			else    // unimplented yet, or no sso for this family.
+			else	// unimplented yet, or no sso for this family.
 				do_random_sso(so);
 		}
 	}
@@ -189,7 +181,14 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		so->optname = RAND_BYTE();	/* random operation. */
 	} else {
 		if (triplet != NULL) {
-			call_sso_ptr(so, triplet);
+			if (triplet->family == AF_INET) {
+				//TODO: Later, be smarter, and look up the rest of the triplet.
+				int randsso = rand() % ARRAY_SIZE(ip_ssoptrs);
+				if (ip_ssoptrs[randsso].func != NULL)
+					ip_ssoptrs[randsso].func(so);
+			} else {
+				call_sso_ptr(so, triplet);
+			}
 		} else {
 			// fd probably isn't a socket.
 			do_random_sso(so);
