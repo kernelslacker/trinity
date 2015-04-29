@@ -40,7 +40,7 @@ struct syscallentry syscall_accept4 = {
 	.name = "accept4",
 	.num_args = 4,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "upeer_sockaddr",
 	.arg2type = ARG_SOCKADDR,
 	.arg3name = "upeer_addrlen",
@@ -53,4 +53,5 @@ struct syscallentry syscall_accept4 = {
 	},
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_accept,	// use same as accept.
 };
