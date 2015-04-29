@@ -33,7 +33,7 @@ static int open_epoll_fds(void)
 			i++;
 		} else {
 			/* not sure what happened. */
-			output(0, "epoll_create fail: %s\n", strerror(errno));
+			output(0, "open_epoll_fds fail: %s\n", strerror(errno));
 			return FALSE;
 		}
 	}
