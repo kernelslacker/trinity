@@ -156,7 +156,7 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 			if (ssoptrs[i].func != NULL) {
 				ssoptrs[i].func(so);
 				return;
-			} else {	// unimplented yet, or no sso for this family.
+			} else {	// unimplemented yet, or no sso for this family.
 				do_random_sso(so);
 				return;
 			}
@@ -173,7 +173,7 @@ static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet
 			if (ip_ssoptrs[i].func != NULL) {
 				ip_ssoptrs[i].func(so);
 				return;
-			} else {	// unimplented yet, or no sso for this proto.
+			} else {	// unimplemented yet, or no sso for this proto.
 				do_random_sso(so);
 				return;
 			}
