@@ -32,16 +32,23 @@ makefilever()
 
 GIT=`which git 2>/dev/null`
 if [ "$DEVEL" == "1" ]; then
-  if [ ! -z ${GIT} -a -f ${GIT} -a -d ${0%/*}/../.git ]; then
-    VER=$(${GIT} describe --always)
-    if [ "$OLD" != "$VER" ]; then
-      hdr
-      echo "#define VERSION \""$VER\" >> $HEADER
+  if [ ! -z ${GIT} ]; then
+    if [ -f ${GIT} -a -d ${0%/*}/../.git ]; then
+      VER=$(${GIT} describe --always)
+      if [ "$OLD" != "$VER" ]; then
+	hdr
+	echo "#define VERSION \""$VER\" >> $HEADER
+      fi
+    else
+      # can't find .git
+      makefilever
     fi
   else
+    # No git installed.
     makefilever
   fi
 else
+  # devel=0 : release version.
   makefilever
 fi
 
