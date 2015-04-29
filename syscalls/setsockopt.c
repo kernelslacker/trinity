@@ -156,6 +156,20 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 	}
 }
 
+static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(ip_ssoptrs); i++) {
+		if (ip_ssoptrs[i].proto == triplet->protocol) {
+			if (ip_ssoptrs[i].func != NULL)
+				ip_ssoptrs[i].func(so);
+			else	// unimplented yet, or no sso for this proto.
+				do_random_sso(so);
+		}
+	}
+}
+
 /*
  * Call a proto specific setsockopt routine from the table above.
  *
@@ -182,10 +196,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	} else {
 		if (triplet != NULL) {
 			if (triplet->family == AF_INET) {
-				//TODO: Later, be smarter, and look up the rest of the triplet.
-				int randsso = rand() % ARRAY_SIZE(ip_ssoptrs);
-				if (ip_ssoptrs[randsso].func != NULL)
-					ip_ssoptrs[randsso].func(so);
+				call_inet_sso_ptr(so, triplet);
 			} else {
 				call_sso_ptr(so, triplet);
 			}
