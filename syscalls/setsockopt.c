@@ -130,14 +130,27 @@ static const struct sso_funcptr ssoptrs[] = {
  */
 static void do_random_sso(struct sockopt *so)
 {
-	int i;
+	unsigned int i;
 
-	i = rand() % ARRAY_SIZE(ssoptrs);
+retry:
+	switch (rand() % 3) {
+	case 0:	/* do a random protocol, even if it doesn't match this socket. */
+		i = rand() % ARRAY_SIZE(ssoptrs);
+		if (ssoptrs[i].func != NULL)
+			ssoptrs[i].func(so);
+		else
+			goto retry;
+		break;
 
-	if (ssoptrs[i].func != NULL)
-		ssoptrs[i].func(so);
-	else
-		socket_setsockopt(so);	// Last resort: Generic socket options.
+	case 1:	/* Last resort: Generic socket options. */
+		socket_setsockopt(so);
+		break;
+
+	case 2:	/* completely random operation. */
+		so->level = rand();
+		so->optname = RAND_BYTE();
+		break;
+	}
 }
 
 static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
@@ -189,13 +202,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		so->optlen = rand() % 256;
 
 	if (ONE_IN(100)) {
-		if (RAND_BOOL()) {
-			so->level = rand();
-			so->optname = RAND_BYTE();	/* completely random operation. */
-		} else {
-			// Fall back to generic socket options.
-			socket_setsockopt(so);
-		}
+		do_random_sso(so);
 	} else {
 		if (triplet != NULL) {
 			if (triplet->family == AF_INET) {
