@@ -95,7 +95,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_RDS, .func = &rds_setsockopt },
 	{ .family = AF_SNA, .func = NULL },
 	{ .family = AF_IRDA, .func = &irda_setsockopt },
-	{ .family = AF_PPPOX, .func = NULL },
+	{ .family = AF_PPPOX, .func = &pppol2tp_setsockopt },
 	{ .family = AF_WANPIPE, .func = NULL },
 	{ .family = AF_LLC, .func = &llc_setsockopt },
 	{ .family = AF_IB, .func = NULL },
@@ -119,7 +119,6 @@ static const struct sso_funcptr ssoptrs[] = {
 //TODO: How shall we match these ?
 //	{ .func = &atm_setsockopt },
 //	{ .func = &aal_setsockopt },
-//	{ .func = &pppol2tp_setsockopt },
 //	{ .func = &pnpipe_setsockopt },
 
 /*
