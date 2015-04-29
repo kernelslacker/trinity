@@ -42,8 +42,13 @@ void atmsvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_atmsvc);
 }
 
+// TODO: If anyone gives a crap about ATM, we could do better
+// here and separate the pvc and svc ops.
+// Personally, I couldn't care less, so throw everything in the same array
+// just to make this simpler.
 static const unsigned int atm_opts[] = {
-	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT };
+	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT,
+};
 
 void atm_setsockopt(struct sockopt *so)
 {

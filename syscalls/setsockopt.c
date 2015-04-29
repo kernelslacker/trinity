@@ -75,7 +75,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_NETROM, .func = &netrom_setsockopt },
 #endif
 	{ .family = AF_BRIDGE, .func = NULL },
-	{ .family = AF_ATMPVC, .func = NULL },
+	{ .family = AF_ATMPVC, .func = &atm_setsockopt },
 	{ .family = AF_X25, .func = &x25_setsockopt },
 #ifdef USE_IPV6
 	{ .family = AF_INET6, .func = &inet6_setsockopt },
@@ -91,7 +91,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_PACKET, .func = &packet_setsockopt },
 	{ .family = AF_ASH, .func = NULL },
 	{ .family = AF_ECONET, .func = NULL },
-	{ .family = AF_ATMSVC, .func = NULL },
+	{ .family = AF_ATMSVC, .func = &atm_setsockopt },
 	{ .family = AF_RDS, .func = &rds_setsockopt },
 	{ .family = AF_SNA, .func = NULL },
 	{ .family = AF_IRDA, .func = &irda_setsockopt },
@@ -115,10 +115,6 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_NFC, .func = &nfc_setsockopt },
 	{ .family = AF_VSOCK, .func = NULL },
 };
-
-//TODO: How shall we match these ?
-//	{ .func = &atm_setsockopt },
-//	{ .func = &aal_setsockopt },
 
 /*
  * We do this if for eg, we've ended up being passed
