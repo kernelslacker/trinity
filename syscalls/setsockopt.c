@@ -139,11 +139,10 @@ static void do_random_sso(struct sockopt *so)
 	unsigned int i;
 
 retry:
-	switch (rand() % 3) {
+	switch (rand() % 4) {
 	case 0:	/* do a random protocol, even if it doesn't match this socket. */
 		i = rand() % ARRAY_SIZE(ssoptrs);
 		if (ssoptrs[i].func != NULL) {
-			// TODO: Also pick from ip_ssoptrs.
 			so->level = ssoptrs[i].sol;
 			ssoptrs[i].func(so);
 		} else {
@@ -151,11 +150,21 @@ retry:
 		}
 		break;
 
-	case 1:	/* Last resort: Generic socket options. */
+	case 1:	/* do a random IP protocol, even if it doesn't match this socket. */
+		i = rand() % ARRAY_SIZE(ip_ssoptrs);
+		if (ip_ssoptrs[i].func != NULL) {
+			so->level = ip_ssoptrs[i].sol;
+			ip_ssoptrs[i].func(so);
+		} else {
+			goto retry;
+		}
+		break;
+
+	case 2:	/* Last resort: Generic socket options. */
 		socket_setsockopt(so);
 		break;
 
-	case 2:	/* completely random operation. */
+	case 3:	/* completely random operation. */
 		so->level = rand();
 		so->optname = RAND_BYTE();
 		break;
