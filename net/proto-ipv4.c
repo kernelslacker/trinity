@@ -146,11 +146,6 @@ void inet_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_RAW;
 }
 
-struct ip_option {
-	unsigned int name;
-	unsigned int len;
-};
-
 static const struct ip_option ip_opts[] = {
 	{ .name = IP_TOS, .len = sizeof(int) },
 	{ .name = IP_TTL, .len = sizeof(int) },

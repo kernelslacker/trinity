@@ -91,24 +91,67 @@ void inet6_rand_socket(struct socket_triplet *st)
 	inet_rand_socket(st);
 }
 
-static const unsigned int inet6_opts[] = {
-	IPV6_ADDRFORM, IPV6_2292PKTINFO, IPV6_2292HOPOPTS, IPV6_2292DSTOPTS,
-	IPV6_2292RTHDR, IPV6_2292PKTOPTIONS, IPV6_CHECKSUM, IPV6_2292HOPLIMIT,
-	IPV6_NEXTHOP, IPV6_AUTHHDR, IPV6_FLOWINFO, IPV6_UNICAST_HOPS,
-	IPV6_MULTICAST_IF, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP, IPV6_ADD_MEMBERSHIP,
-	IPV6_DROP_MEMBERSHIP, IPV6_ROUTER_ALERT, IPV6_MTU_DISCOVER, IPV6_MTU,
-	IPV6_RECVERR, IPV6_V6ONLY, IPV6_JOIN_ANYCAST, IPV6_LEAVE_ANYCAST,
-	IPV6_FLOWLABEL_MGR, IPV6_FLOWINFO_SEND, IPV6_IPSEC_POLICY, IPV6_XFRM_POLICY,
-	MCAST_JOIN_GROUP, MCAST_BLOCK_SOURCE, MCAST_UNBLOCK_SOURCE, MCAST_LEAVE_GROUP,
-	MCAST_JOIN_SOURCE_GROUP, MCAST_LEAVE_SOURCE_GROUP, MCAST_MSFILTER,
-	IPV6_RECVPKTINFO, IPV6_PKTINFO, IPV6_RECVHOPLIMIT, IPV6_HOPLIMIT,
-	IPV6_RECVHOPOPTS, IPV6_HOPOPTS, IPV6_RTHDRDSTOPTS, IPV6_RECVRTHDR,
-	IPV6_RTHDR, IPV6_RECVDSTOPTS, IPV6_DSTOPTS, IPV6_RECVPATHMTU,
-	IPV6_PATHMTU, IPV6_DONTFRAG,
-	IPV6_RECVTCLASS, IPV6_TCLASS,
-	IP6T_SO_GET_REVISION_MATCH, IP6T_SO_GET_REVISION_TARGET, IP6T_SO_ORIGINAL_DST,
-	IPV6_AUTOFLOWLABEL, IPV6_ADDR_PREFERENCES,
-	IPV6_MINHOPCOUNT, IPV6_ORIGDSTADDR, IPV6_TRANSPARENT, IPV6_UNICAST_IF
+static const struct ip_option inet6_opts[] = {
+	{ .name = IPV6_ADDRFORM, .len = sizeof(int) },
+	{ .name = IPV6_2292PKTINFO, .len = sizeof(int) },
+	{ .name = IPV6_2292HOPOPTS, .len = sizeof(int) },
+	{ .name = IPV6_2292DSTOPTS, .len = sizeof(int) },
+	{ .name = IPV6_2292RTHDR, .len = sizeof(int) },
+	{ .name = IPV6_2292PKTOPTIONS, .len = sizeof(int) },
+	{ .name = IPV6_CHECKSUM, .len = sizeof(int) },
+	{ .name = IPV6_2292HOPLIMIT, .len = sizeof(int) },
+	{ .name = IPV6_NEXTHOP, .len = sizeof(int) },
+	{ .name = IPV6_AUTHHDR, .len = sizeof(int) },
+	{ .name = IPV6_FLOWINFO, .len = sizeof(int) },
+	{ .name = IPV6_UNICAST_HOPS, .len = sizeof(int) },
+	{ .name = IPV6_MULTICAST_IF, .len = sizeof(int) },
+	{ .name = IPV6_MULTICAST_HOPS, .len = sizeof(int) },
+	{ .name = IPV6_MULTICAST_LOOP, .len = sizeof(int) },
+	{ .name = IPV6_ADD_MEMBERSHIP, .len = sizeof(int) },
+	{ .name = IPV6_DROP_MEMBERSHIP, .len = sizeof(int) },
+	{ .name = IPV6_ROUTER_ALERT, .len = sizeof(int) },
+	{ .name = IPV6_MTU_DISCOVER, .len = sizeof(int) },
+	{ .name = IPV6_MTU, .len = sizeof(int) },
+	{ .name = IPV6_RECVERR, .len = sizeof(int) },
+	{ .name = IPV6_V6ONLY, .len = sizeof(int) },
+	{ .name = IPV6_JOIN_ANYCAST, .len = sizeof(int) },
+	{ .name = IPV6_LEAVE_ANYCAST, .len = sizeof(int) },
+	{ .name = IPV6_FLOWLABEL_MGR, .len = sizeof(int) },
+	{ .name = IPV6_FLOWINFO_SEND, .len = sizeof(int) },
+	{ .name = IPV6_IPSEC_POLICY, .len = sizeof(int) },
+	{ .name = IPV6_XFRM_POLICY, .len = sizeof(int) },
+	{ .name = MCAST_JOIN_GROUP, .len = sizeof(int) },
+	{ .name = MCAST_BLOCK_SOURCE, .len = sizeof(int) },
+	{ .name = MCAST_UNBLOCK_SOURCE, .len = sizeof(int) },
+	{ .name = MCAST_LEAVE_GROUP, .len = sizeof(int) },
+	{ .name = MCAST_JOIN_SOURCE_GROUP, .len = sizeof(int) },
+	{ .name = MCAST_LEAVE_SOURCE_GROUP, .len = sizeof(int) },
+	{ .name = MCAST_MSFILTER, .len = sizeof(int) },
+	{ .name = IPV6_RECVPKTINFO, .len = sizeof(int) },
+	{ .name = IPV6_PKTINFO, .len = sizeof(int) },
+	{ .name = IPV6_RECVHOPLIMIT, .len = sizeof(int) },
+	{ .name = IPV6_HOPLIMIT, .len = sizeof(int) },
+	{ .name = IPV6_RECVHOPOPTS, .len = sizeof(int) },
+	{ .name = IPV6_HOPOPTS, .len = sizeof(int) },
+	{ .name = IPV6_RTHDRDSTOPTS, .len = sizeof(int) },
+	{ .name = IPV6_RECVRTHDR, .len = sizeof(int) },
+	{ .name = IPV6_RTHDR, .len = sizeof(int) },
+	{ .name = IPV6_RECVDSTOPTS, .len = sizeof(int) },
+	{ .name = IPV6_DSTOPTS, .len = sizeof(int) },
+	{ .name = IPV6_RECVPATHMTU, .len = sizeof(int) },
+	{ .name = IPV6_PATHMTU, .len = sizeof(int) },
+	{ .name = IPV6_DONTFRAG, .len = sizeof(int) },
+	{ .name = IPV6_RECVTCLASS, .len = sizeof(int) },
+	{ .name = IPV6_TCLASS, .len = sizeof(int) },
+	{ .name = IP6T_SO_GET_REVISION_MATCH, .len = sizeof(int) },
+	{ .name = IP6T_SO_GET_REVISION_TARGET, .len = sizeof(int) },
+	{ .name = IP6T_SO_ORIGINAL_DST, .len = sizeof(int) },
+	{ .name = IPV6_AUTOFLOWLABEL, .len = sizeof(int) },
+	{ .name = IPV6_ADDR_PREFERENCES, .len = sizeof(int) },
+	{ .name = IPV6_MINHOPCOUNT, .len = sizeof(int) },
+	{ .name = IPV6_ORIGDSTADDR, .len = sizeof(int) },
+	{ .name = IPV6_TRANSPARENT, .len = sizeof(int) },
+	{ .name = IPV6_UNICAST_IF, .len = sizeof(int) },
 };
 
 void inet6_setsockopt(struct sockopt *so)
@@ -116,6 +159,7 @@ void inet6_setsockopt(struct sockopt *so)
 	unsigned char val;
 
 	val = rand() % ARRAY_SIZE(inet6_opts);
-	so->optname = inet6_opts[val];
+	so->optname = inet6_opts[val].name;
+	so->optlen = inet6_opts[val].len;
 }
 #endif
