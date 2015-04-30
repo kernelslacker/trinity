@@ -6,11 +6,14 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <netinet/ip6.h>
+#include <linux/in6.h>	// needed for in6_flowlabel_req
 #include <linux/if.h>
+#include <linux/ipv6.h>	// needed for ipv6_opt_hdr
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
+#include "arch.h"
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// ARRAY_SIZE
@@ -107,16 +110,16 @@ static const struct ip_option inet6_opts[] = {
 	{ .name = IPV6_MULTICAST_IF, },
 	{ .name = IPV6_MULTICAST_HOPS, },
 	{ .name = IPV6_MULTICAST_LOOP, },
-	{ .name = IPV6_ADD_MEMBERSHIP, },
-	{ .name = IPV6_DROP_MEMBERSHIP, },
+	{ .name = IPV6_ADD_MEMBERSHIP, .len = sizeof(struct ipv6_mreq) },
+	{ .name = IPV6_DROP_MEMBERSHIP, .len = sizeof(struct ipv6_mreq) },
 	{ .name = IPV6_ROUTER_ALERT, },
 	{ .name = IPV6_MTU_DISCOVER, },
 	{ .name = IPV6_MTU, },
 	{ .name = IPV6_RECVERR, },
 	{ .name = IPV6_V6ONLY, },
-	{ .name = IPV6_JOIN_ANYCAST, },
-	{ .name = IPV6_LEAVE_ANYCAST, },
-	{ .name = IPV6_FLOWLABEL_MGR, },
+	{ .name = IPV6_JOIN_ANYCAST, .len = sizeof(struct ipv6_mreq) },
+	{ .name = IPV6_LEAVE_ANYCAST, .len = sizeof(struct ipv6_mreq) },
+	{ .name = IPV6_FLOWLABEL_MGR, .len = sizeof(struct in6_flowlabel_req) },
 	{ .name = IPV6_FLOWINFO_SEND, },
 	{ .name = IPV6_IPSEC_POLICY, },
 	{ .name = IPV6_XFRM_POLICY, },
@@ -128,7 +131,7 @@ static const struct ip_option inet6_opts[] = {
 	{ .name = MCAST_LEAVE_SOURCE_GROUP, .len = sizeof(struct group_source_req) },
 	{ .name = MCAST_MSFILTER, },
 	{ .name = IPV6_RECVPKTINFO, },
-	{ .name = IPV6_PKTINFO, },
+	{ .name = IPV6_PKTINFO, .len = sizeof(struct in6_pktinfo) },
 	{ .name = IPV6_RECVHOPLIMIT, },
 	{ .name = IPV6_HOPLIMIT, },
 	{ .name = IPV6_RECVHOPOPTS, },
@@ -164,5 +167,27 @@ void inet6_setsockopt(struct sockopt *so)
 		so->optlen = sizeof(int);
 	else
 		so->optlen = inet6_opts[val].len;
+
+	switch (so->optname) {
+	case IPV6_HOPOPTS:
+	case IPV6_RTHDRDSTOPTS:
+	case IPV6_RTHDR:
+	case IPV6_DSTOPTS:
+		so->optlen = sizeof(struct ipv6_opt_hdr);
+		so->optlen += rand() % ((8 * 255) - so->optlen);
+		so->optlen &= ~0x7;
+		break;
+	case IPV6_2292PKTOPTIONS:
+		if (RAND_BOOL())
+			so->optlen = 0;	// update
+		else
+			so->optlen = rand() % 64*1024;
+		break;
+	case IPV6_IPSEC_POLICY:
+	case IPV6_XFRM_POLICY:
+		so->optlen = rand() % page_size;
+		break;
+
+	}
 }
 #endif
