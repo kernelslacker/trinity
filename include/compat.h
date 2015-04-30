@@ -453,6 +453,15 @@ enum kcmp_type {
 #define TCP_FASTOPEN		23
 #endif
 
+#ifndef TCP_TIMESTAMP
+#define TCP_TIMESTAMP		24
+#endif
+
+#ifndef TCP_NOTSENT_LOWAT
+#define TCP_NOTSENT_LOWAT	25
+#endif
+
+
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15
