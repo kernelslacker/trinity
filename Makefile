@@ -11,6 +11,13 @@ CC := $(CROSS_COMPILE)$(CC)
 LD := $(CROSS_COMPILE)$(LD)
 
 CFLAGS += -Wall -W -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -D__linux__
+
+# Only enabled during development, and on gcc 4.8+
+CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
+CPP_MINOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f2)
+DEVEL	:= $(shell grep VERSION Makefile | head -n1 | grep pre | wc -l)
+CFLAGS	+= $(shell if [ $(CPP_MAJOR) -eq 4 -a $(CPP_MINOR) -ge 8 -a $(DEVEL) -eq 1 ] ; then echo "-Werror"; else echo ""; fi)
+
 ifneq ($(SYSROOT),)
 CFLAGS += --sysroot=$(SYSROOT)
 endif
@@ -34,16 +41,11 @@ LDFLAGS += -rdynamic
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
+CFLAGS += $(shell if [ $(DEVEL) -eq 0 ]; then echo "-Wno-maybe-uninitialized"; else echo ""; fi)
 endif
 
 # Sometimes useful for debugging. more useful with clang than gcc.
 #CFLAGS += -fsanitize=address
-
-# Only enabled during development, and on gcc 4.8+
-CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
-CPP_MINOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f2)
-DEVEL	:= $(shell grep VERSION Makefile | head -n1 | grep pre | wc -l)
-CFLAGS	+= $(shell if [ $(CPP_MAJOR) -eq 4 -a $(CPP_MINOR) -ge 8 -a $(DEVEL) -eq 1 ] ; then echo "-Werror"; else echo ""; fi)
 
 V	= @
 Q	= $(V:1=)
