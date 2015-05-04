@@ -82,16 +82,19 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 	/* Sometimes, listen on created sockets. */
 	if (RAND_BOOL()) {
-		int ret;
+		int ret, one = 1;
 
 		/* fake a sockaddr. */
 		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, domain);
 
+		ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+		if (ret != -1)
+			goto skip_bind;
 		ret = bind(fd, sa, salen);
-		if (ret != -1) {
+		if (ret != -1)
 			(void) listen(fd, RAND_RANGE(1, 128));
-		}
 	}
+skip_bind:
 
 	if (sa != NULL)
 		free(sa);
