@@ -9,6 +9,7 @@
 #include "domains.h"
 #include "params.h"
 #include "utils.h"
+#include "compat.h"
 
 struct domain {
 	const char *name;
