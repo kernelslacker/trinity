@@ -20,6 +20,7 @@
 #include "syscall.h"
 #include "trinity.h"
 #include "compat.h"
+#include <time.h>
 
 #define SYSFS "/sys/bus/event_source/devices/"
 
@@ -900,7 +901,7 @@ static int random_attr_size(void) {
 
 	int size=0;
 
-	switch(rand() % 9) {
+	switch(rand() % 10) {
 	case 0:	size = PERF_ATTR_SIZE_VER0;
 		break;
 	case 1: size = PERF_ATTR_SIZE_VER1;
@@ -911,13 +912,15 @@ static int random_attr_size(void) {
 		break;
 	case 4: size = PERF_ATTR_SIZE_VER4;
 		break;
-	case 5: size = sizeof(struct perf_event_attr);
+	case 5: size = PERF_ATTR_SIZE_VER5;
 		break;
-	case 6: size = rand32();
+	case 6: size = sizeof(struct perf_event_attr);
 		break;
-	case 7:	size = get_len();
+	case 7: size = rand32();
 		break;
-	case 8: size = 0;
+	case 8:	size = get_len();
+		break;
+	case 9: size = 0;
 		break;
 	default:
 		break;
@@ -951,6 +954,8 @@ static long long random_branch_sample_type(void)
 		branch_sample |= PERF_SAMPLE_BRANCH_IND_CALL;
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_COND;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_CALL_STACK;
 
 	/* Transactional Memory Types */
 	if (RAND_BOOL())
@@ -1006,6 +1011,7 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->exclude_callchain_user = RAND_BOOL();
 	attr->mmap2 = RAND_BOOL();
 	attr->comm_exec = RAND_BOOL();
+	attr->use_clockid = RAND_BOOL();
 
 	/* wakeup events not relevant */
 
@@ -1069,6 +1075,7 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->exclude_callchain_user = RAND_BOOL();
 	attr->mmap2 = RAND_BOOL();
 	attr->comm_exec = RAND_BOOL();
+	attr->use_clockid = RAND_BOOL();
 
 	attr->wakeup_events = rand32();
 
@@ -1099,6 +1106,24 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	/* sample_stack_user is the size of user stack backtrace we want  */
 	/* if we pick too large of a value the kernel in theory truncates */
 	attr->sample_stack_user = rand32();
+
+	if (attr->use_clockid) {
+		switch(rand()%6) {
+			case 0:	attr->clockid = CLOCK_MONOTONIC;
+				break;
+			case 1: attr->clockid = CLOCK_MONOTONIC_RAW;
+				break;
+			case 2: attr->clockid = CLOCK_REALTIME;
+				break;
+			case 3: attr->clockid = CLOCK_BOOTTIME;
+				break;
+			/* Most possible values < 32 */
+			case 4: attr->clockid = RAND_BYTE();
+				break;
+			case 5:	attr->clockid = rand();
+				break;
+		}
+	}
 
 }
 
