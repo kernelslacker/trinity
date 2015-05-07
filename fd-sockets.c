@@ -56,6 +56,20 @@ retry:
 		free((void *) so->optval);
 }
 
+static void add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol, bool accepted)
+{
+	shm->sockets[nr_sockets].fd = fd;
+	shm->sockets[nr_sockets].triplet.family = domain;
+	shm->sockets[nr_sockets].triplet.type = type;
+	shm->sockets[nr_sockets].triplet.protocol = protocol;
+
+	output(2, "fd[%i] = domain:%u (%s) type:0x%u protocol:%u %s\n",
+		fd, domain, get_domain_name(domain), type, protocol,
+		accepted ? "[accepted]" : "");
+
+	nr_sockets++;
+}
+
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	int fd;
@@ -67,18 +81,10 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	if (fd == -1)
 		return fd;
 
-	shm->sockets[nr_sockets].fd = fd;
-	shm->sockets[nr_sockets].triplet.family = domain;
-	shm->sockets[nr_sockets].triplet.type = type;
-	shm->sockets[nr_sockets].triplet.protocol = protocol;
-
-	output(2, "fd[%i] = domain:%i (%s) type:0x%x protocol:%i\n",
-		fd, domain, get_domain_name(domain), type, protocol);
+	add_socket(fd, domain, type, protocol, FALSE);
 
 	/* Set some random socket options. */
 	sso_socket(&shm->sockets[nr_sockets].triplet, &so, fd);
-
-	nr_sockets++;
 
 	/* Sometimes, listen on created sockets. */
 	if (RAND_BOOL()) {
@@ -90,9 +96,14 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 		if (ret != -1)
 			goto skip_bind;
+
 		ret = bind(fd, sa, salen);
 		if (ret != -1)
 			(void) listen(fd, RAND_RANGE(1, 128));
+
+//		ret = accept4(fd, sa, &salen, SOCK_NONBLOCK);
+//		if (ret != -1)
+//			add_socket(ret, domain, type, protocol, TRUE);
 	}
 skip_bind:
 
