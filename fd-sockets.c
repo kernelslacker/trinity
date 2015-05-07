@@ -429,7 +429,7 @@ struct socketinfo * get_rand_socketinfo(void)
 	if (nr_sockets == 0)
 		return NULL;
 
-	return &shm->sockets[rand() % nr_sockets];
+	return shm->sockets + (rand() % nr_sockets);
 }
 
 int generic_fd_from_socketinfo(struct socketinfo *si)
