@@ -16,8 +16,8 @@
 
 static void sanitise_send(struct syscallrecord *rec)
 {
-	unsigned int size;
 	void *ptr;
+	unsigned int size;
 
 	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
 
@@ -75,7 +75,7 @@ struct syscallentry syscall_sendto = {
 	.name = "sendto",
 	.num_args = 6,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "buff",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "len",
