@@ -434,10 +434,11 @@ struct socketinfo * get_rand_socketinfo(void)
 
 int generic_fd_from_socketinfo(struct socketinfo *si)
 {
-	if (ONE_IN(1000))
-		return get_random_fd();
-	else
-		return si->fd;
+	if (si != NULL) {
+		if (!(ONE_IN(1000)))
+			return si->fd;
+	}
+	return get_random_fd();
 }
 
 const struct fd_provider socket_fd_provider = {
