@@ -17,6 +17,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+#include "tables.h"
 #include "trinity.h"	// __unused__
 #include "utils.h"
 #include "compat.h"
@@ -42,30 +43,26 @@ static unsigned long ** gen_ptrs_to_crap(unsigned int count)
 
 static void sanitise_execve(struct syscallrecord *rec)
 {
+	unsigned long **argv, **envp;
+
 	/* we don't want to block if something tries to read from stdin */
 	fclose(stdin);
 
 	/* Fabricate argv */
 	argvcount = rand() % 32;
-	rec->a2 = (unsigned long) gen_ptrs_to_crap(argvcount);
+	argv = gen_ptrs_to_crap(argvcount);
 
 	/* Fabricate envp */
 	envpcount = rand() % 32;
-	rec->a3 = (unsigned long) gen_ptrs_to_crap(envpcount);
-}
+	envp = gen_ptrs_to_crap(envpcount);
 
-static void sanitise_execveat(struct syscallrecord *rec)
-{
-	/* we don't want to block if something tries to read from stdin */
-	fclose(stdin);
-
-	/* Fabricate argv */
-	argvcount = rand() % 32;
-	rec->a3 = (unsigned long) gen_ptrs_to_crap(argvcount);
-
-	/* Fabricate envp */
-	envpcount = rand() % 32;
-	rec->a4 = (unsigned long) gen_ptrs_to_crap(envpcount);
+	if (this_syscallname("execve") == FALSE) {
+		rec->a2 = (unsigned long) argv;
+		rec->a3 = (unsigned long) envp;
+	} else {
+		rec->a3 = (unsigned long) argv;
+		rec->a4 = (unsigned long) envp;
+	}
 }
 
 /* if execve succeeds, we'll never get back here, so this only
@@ -136,7 +133,7 @@ struct syscallentry syscall_execveat = {
 		.num = 2,
 		.values = { AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW },
 	},
-	.sanitise = sanitise_execveat,
+	.sanitise = sanitise_execve,
 	.post = post_execveat,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
