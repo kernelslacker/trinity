@@ -146,7 +146,7 @@ void inet_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_RAW;
 }
 
-static const struct ip_option ip_opts[] = {
+static const struct sock_option ip_opts[] = {
 	{ .name = IP_TOS, },
 	{ .name = IP_TTL, },
 	{ .name = IP_HDRINCL, },

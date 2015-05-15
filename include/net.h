@@ -31,7 +31,7 @@ struct socket_triplet {
 	unsigned int protocol;
 };
 
-struct ip_option {
+struct sock_option {
 	unsigned int name;
 	unsigned int len;
 };

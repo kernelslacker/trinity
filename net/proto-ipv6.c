@@ -94,7 +94,7 @@ void inet6_rand_socket(struct socket_triplet *st)
 	inet_rand_socket(st);
 }
 
-static const struct ip_option inet6_opts[] = {
+static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_ADDRFORM, },
 	{ .name = IPV6_2292PKTINFO, },
 	{ .name = IPV6_2292HOPOPTS, },
