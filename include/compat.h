@@ -461,6 +461,10 @@ enum kcmp_type {
 #define TCP_NOTSENT_LOWAT	25
 #endif
 
+#ifndef TCP_CC_INFO
+#define TCP_CC_INFO		26
+#endif
+
 
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
