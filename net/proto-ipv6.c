@@ -163,9 +163,12 @@ void inet6_setsockopt(struct sockopt *so)
 
 	val = rand() % ARRAY_SIZE(inet6_opts);
 	so->optname = inet6_opts[val].name;
-	if (inet6_opts[val].len == 0)
-		so->optlen = sizeof(int);
-	else
+	if (inet6_opts[val].len == 0) {
+		if (RAND_BOOL())
+			so->optlen = sizeof(char);
+		else
+			so->optlen = sizeof(int);
+	} else
 		so->optlen = inet6_opts[val].len;
 
 	switch (so->optname) {
