@@ -129,6 +129,21 @@ static const struct sso_funcptr ssoptrs[] = {
 };
 
 /*
+ * If we have a .len set, use it.
+ * If not, pick some random size.
+ */
+unsigned int get_so_len(unsigned int len)
+{
+	if (len != 0)
+		return len;
+
+	if (RAND_BOOL())
+		return sizeof(char);
+	else
+		return sizeof(int);
+}
+
+/*
  * We do this if for eg, we've ended up being passed
  * an fd that isn't a socket (ie, triplet==NULL).
  * It can also happen if we land on an sso func that

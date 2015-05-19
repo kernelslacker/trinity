@@ -58,6 +58,7 @@ int generic_fd_from_socketinfo(struct socketinfo *si);
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 
+unsigned int get_so_len(unsigned int len);
 void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 
 void rand_proto_type(struct socket_triplet *st);
