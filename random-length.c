@@ -8,6 +8,14 @@ unsigned long get_len(void)
 {
 	int i = 0;
 
+	if (RAND_BOOL()) {
+		switch (rand() % 3) {
+		case 0:	return sizeof(char);
+		case 1:	return sizeof(int);
+		case 2:	return sizeof(long);
+		}
+	}
+
 	i = rand32();
 
 	/* short circuit if 0 */
@@ -15,7 +23,6 @@ unsigned long get_len(void)
 		return 0;
 
 	switch (rand() % 6) {
-
 	case 0:	i &= 0xff;
 		break;
 	case 1: i &= page_size - 1;
