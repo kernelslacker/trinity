@@ -212,7 +212,7 @@ void ip_setsockopt(struct sockopt *so)
 
 	val = rand() % ARRAY_SIZE(ip_opts);
 	so->optname = ip_opts[val].name;
-	so->optlen = get_so_len(ip_opts[val].len);
+	so->optlen = sockoptlen(ip_opts[val].len);
 
 	switch (so->optname) {
 	case IP_OPTIONS:

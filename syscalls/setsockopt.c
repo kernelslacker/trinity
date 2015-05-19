@@ -132,7 +132,7 @@ static const struct sso_funcptr ssoptrs[] = {
  * If we have a .len set, use it.
  * If not, pick some random size.
  */
-unsigned int get_so_len(unsigned int len)
+unsigned int sockoptlen(unsigned int len)
 {
 	if (len != 0)
 		return len;
