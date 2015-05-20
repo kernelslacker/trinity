@@ -236,11 +236,11 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 */
 	so->optval = (unsigned long) zmalloc(page_size);
 
-	// pick a size for optlen. At the minimum, we want an int (overridden below)
-	if (RAND_BOOL())
-		so->optlen = sizeof(int);
-	else
-		so->optlen = rand() % 256;
+	/* At the minimum, we want len to be a char or int.
+	 * It gets (overridden below in the per-proto sso->func, so this
+	 * is just for the unannotated protocols.
+	 */
+	so->optlen = sockoptlen(0);
 
 	if (ONE_IN(100)) {
 		do_random_sso(so);
