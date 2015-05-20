@@ -117,6 +117,11 @@ static void __do_syscall(struct syscallrecord *rec)
 	rec->state = AFTER;
 	unlock(&rec->lock);
 
+	if (IS_ERR(ret))
+		shm->stats.failures++;
+	else
+		shm->stats.successes++;
+
 	if (needalarm)
 		(void)alarm(0);
 }
@@ -140,6 +145,7 @@ static void do_extrafork(struct syscallrecord *rec)
 		__do_syscall(rec);
 		/* if this was for eg. an successful execve, we should never get here.
 		 * if it failed though... */
+		shm->stats.failures++;
 		_exit(EXIT_SUCCESS);
 	}
 
@@ -151,6 +157,7 @@ static void do_extrafork(struct syscallrecord *rec)
 		if (pid_alive(extrapid) == TRUE)
 			kill(extrapid, SIGKILL);
 	}
+	shm->stats.successes++;
 }
 
 
@@ -169,11 +176,6 @@ void do_syscall(struct syscallrecord *rec)
 	else
 		 /* common-case, do the syscall in this child process. */
 		__do_syscall(rec);
-
-	if (IS_ERR(rec->retval))
-		shm->stats.failures++;
-	else
-		shm->stats.successes++;
 }
 
 static void check_retval_documented(struct syscallrecord *rec, struct syscallentry *entry)
