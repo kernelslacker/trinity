@@ -997,3 +997,8 @@ struct kvm_get_htab_fd {
 #ifndef EPOLLWAKEUP
 #define EPOLLWAKEUP (1u << 29)
 #endif
+
+/* time.h */
+#ifndef CLOCK_BOOTTIME
+#define CLOCK_BOOTTIME 7
+#endif
