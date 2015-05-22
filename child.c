@@ -176,6 +176,7 @@ void init_child(struct childdata *child, int childno)
 	cpu_set_t set;
 	pid_t pid = getpid();
 	char childname[17];
+	unsigned int cpudest;
 
 	/* Wait for parent to set our childno */
 	while (child->pid != pid) {
@@ -205,8 +206,12 @@ void init_child(struct childdata *child, int childno)
 	dirty_random_mapping();
 
 	if (sched_getaffinity(pid, sizeof(set), &set) == 0) {
+		if ((unsigned int) childno > num_online_cpus)
+			cpudest = childno % num_online_cpus;
+		else
+			cpudest = childno;
 		CPU_ZERO(&set);
-		CPU_SET(childno, &set);
+		CPU_SET(cpudest, &set);
 		sched_setaffinity(pid, sizeof(set), &set);
 	}
 
