@@ -227,17 +227,27 @@ static void dirty_last_page(struct map *map)
 	memset((void *) p + ((map->size - 1) - page_size), 'A', page_size);
 }
 
-static const struct faultfn write_faultfns[] = {
+static const struct faultfn write_faultfns_single[] = {
 	{ .func = dirty_one_page },
+	{ .func = dirty_first_page },
+};
+
+static const struct faultfn write_faultfns[] = {
 	{ .func = dirty_whole_mapping },
 	{ .func = dirty_every_other_page },
 	{ .func = dirty_mapping_reverse },
 	{ .func = dirty_random_pages },
-	{ .func = dirty_first_page },
 	{ .func = dirty_last_page },
 };
 
 void random_map_writefn(struct map *map)
 {
-	write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
+	if (map->size == page_size)
+		write_faultfns[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+	else {
+		if (RAND_BOOL())
+			write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
+		else
+			write_faultfns[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+	}
 }
