@@ -41,11 +41,8 @@ static int shm_is_corrupt(void)
 {
 	unsigned int i;
 
-	// FIXME: The '500000' is magic, and should be dynamically calculated.
-	// On startup, we should figure out how many getpid()'s per second we can do,
-	// and use that.
-	if (shm->stats.total_syscalls_done - shm->stats.previous_op_count > 500000) {
-		output(0, "Execcount increased dramatically! (old:%ld new:%ld):\n",
+	if (shm->stats.total_syscalls_done < shm->stats.previous_op_count) {
+		output(0, "Execcount went backwards! (old:%ld new:%ld):\n",
 			shm->stats.previous_op_count, shm->stats.total_syscalls_done);
 		panic(EXIT_SHM_CORRUPTION);
 		return TRUE;
