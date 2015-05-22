@@ -95,6 +95,13 @@ static int ignore_files(const char *path)
 		debugf("Skipping %s\n", path);
 		return 1;
 	}
+
+	/* seriously though, I should add globbing */
+	if (!strncmp(path + offset, "sd", 2)) {
+		debugf("Skipping %s\n", path);
+		return 1;
+	}
+
 	return 0;
 }
 
