@@ -174,6 +174,11 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 		return;
 
 	default:
+		if (__sig >= SIGRTMIN) {
+			debugf("Child %d got RT signal (%d). Ignoring.\n", childpid, __sig);
+			return;
+		}
+
 		if (stop == TRUE)
 			debugf("Child %d was stopped by unhandled signal (%s).\n", childpid, strsignal(WSTOPSIG(childstatus)));
 		else
