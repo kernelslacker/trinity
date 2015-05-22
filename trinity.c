@@ -55,6 +55,40 @@ static void change_tmp_dir(void)
 		output(0, "Couldn't change to %s\n", tmpdir);
 }
 
+static int set_exit_code(enum exit_reasons reason)
+{
+	int ret = EXIT_SUCCESS;
+
+	switch (reason) {
+	case EXIT_NO_SYSCALLS_ENABLED:
+	case EXIT_NO_FDS:
+	case EXIT_LOST_CHILD:
+	case EXIT_PID_OUT_OF_RANGE:
+	case EXIT_KERNEL_TAINTED:
+	case EXIT_SHM_CORRUPTION:
+	case EXIT_REPARENT_PROBLEM:
+	case EXIT_NO_FILES:
+	case EXIT_MAIN_DISAPPEARED:
+	case EXIT_UID_CHANGED:
+	case EXIT_LOCKING_CATASTROPHE:
+	case EXIT_FORK_FAILURE:
+	case EXIT_FD_INIT_FAILURE:
+	case EXIT_LOGFILE_OPEN_ERROR:
+		ret = EXIT_FAILURE;
+		break;
+
+	default:
+	/* the next are just to shut up -Werror=switch-enum
+	 * pragma's are just as ugly imo. */
+	case STILL_RUNNING:
+	case EXIT_REACHED_COUNT:
+	case EXIT_SIGINT:
+	case NUM_EXIT_REASONS:
+		break;
+	}
+	return ret;
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -180,6 +214,7 @@ cleanup_fds:
 	if (logging == TRUE)
 		close_logfile(&mainlogfile);
 
+	ret = set_exit_code(shm->exit_reason);
 out:
 
 	exit(ret);
