@@ -183,6 +183,10 @@ static void check_retval_documented(struct syscallrecord *rec, struct syscallent
 	struct errnos *errnos;
 	unsigned int i;
 
+	/* Just return silently if ENOSYS, we'll disable it immediately afterwards. */
+	if (rec->errno_post == ENOSYS)
+		return;
+
 	/* Only check syscalls we've documented so far. */
 	errnos = &entry->errnos;
 	if (errnos->num == 0)
