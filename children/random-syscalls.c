@@ -9,6 +9,7 @@
 
 #include "arch.h"	// biarch
 #include "child.h"
+#include "debug.h"
 #include "locks.h"
 #include "log.h"
 #include "params.h"	// dopause
@@ -129,6 +130,9 @@ retry:
 	if (len != strlen(rec->prebuffer)) {
 		output(0, "Sanity check failed: prebuffer length changed from %d to %d.\n",
 			len, strlen(rec->prebuffer));
+		dump_childnos();
+		dump_childdata(this_child);
+		panic(EXIT_PID_OUT_OF_RANGE);
 	}
 
 	/* Output the syscall result, and clean up */
