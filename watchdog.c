@@ -287,7 +287,7 @@ static void stuck_syscall_info(struct childdata *child)
  * recorded before making its last syscall.
  * If no progress is being made, send SIGKILLs to it.
  */
-static void check_child_progress(struct childdata *child)
+static bool is_child_making_progress(struct childdata *child)
 {
 	struct syscallrecord *rec;
 	struct timeval tv;
@@ -297,14 +297,15 @@ static void check_child_progress(struct childdata *child)
 	pid = child->pid;
 
 	if (pid == EMPTY_PIDSLOT)
-		return;
+		return TRUE;
 
 	rec = &child->syscall;
 
 	old = rec->tv.tv_sec;
 
+	/* haven't done anything yet. */
 	if (old == 0)
-		return;
+		return TRUE;
 
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec;
@@ -316,7 +317,7 @@ static void check_child_progress(struct childdata *child)
 
 	/* hopefully the common case. */
 	if (diff < 30)
-		return;
+		return TRUE;
 
 	/* After 30 seconds of no progress, send a kill signal. */
 	if (diff == 30) {
@@ -329,7 +330,7 @@ static void check_child_progress(struct childdata *child)
 
 	/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 	if (diff < 40)
-		return;
+		return FALSE;
 
 	debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
 		child->num, pid, child->kill_count, diff);
@@ -345,8 +346,8 @@ static void check_child_progress(struct childdata *child)
 		/* if we did wrap, just reset it, we'll pick it up next time around. */
 		output(1, "child %u wrapped! old=%lu now=%lu\n", child->num, old, now);
 		rec->tv.tv_sec = now;
-		return;
 	}
+	return FALSE;
 }
 
 static void watchdog(void)
@@ -370,6 +371,7 @@ static void watchdog(void)
 
 		int ret = 0;
 		unsigned int i;
+		unsigned int stall_count = 0;
 
 		if (shm_is_corrupt() == TRUE)
 			goto corrupt;
@@ -390,7 +392,8 @@ static void watchdog(void)
 			struct childdata *child = shm->children[i];
 			struct syscallrecord *rec = &child->syscall;
 
-			check_child_progress(child);
+			if (is_child_making_progress(child) == FALSE)
+				stall_count++;
 
 			if (rec->op_nr > hiscore)
 				hiscore = rec->op_nr;
@@ -398,10 +401,10 @@ static void watchdog(void)
 
 		if (shm->stats.total_syscalls_done > 1) {
 			if (shm->stats.total_syscalls_done - lastcount > 10000) {
-				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld]\n",
+				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld STALLED:%d]\n",
 					shm->stats.total_syscalls_done,
 					shm->stats.failures, shm->stats.successes,
-					hiscore);
+					hiscore, stall_count);
 				lastcount = shm->stats.total_syscalls_done;
 			}
 		}
