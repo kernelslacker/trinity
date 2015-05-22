@@ -86,13 +86,6 @@ void init_child_mappings(struct childdata *child)
 	}
 }
 
-/* Called from munmap()'s ->post routine. */
-void delete_mapping(struct map *map)
-{
-	list_del(&map->list);
-	this_child->num_mappings--;
-}
-
 /* used in several sanitise_* functions. */
 struct map * common_set_mmap_ptr_len(void)
 {

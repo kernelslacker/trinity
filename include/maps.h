@@ -20,8 +20,6 @@ extern struct map *initial_mappings;
 void setup_initial_mappings(void);
 void destroy_initial_mappings(void);
 
-void delete_mapping(struct map *map);
-
 struct map * get_map(void);
 
 struct map * common_set_mmap_ptr_len(void);

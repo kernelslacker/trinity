@@ -60,8 +60,10 @@ static void post_munmap(struct syscallrecord *rec)
 	if (rec->retval != 0)
 		return;
 
-	if (action == WHOLE)
-		delete_mapping(map);
+	if (action == WHOLE) {
+		list_del(&map->list);
+		this_child->num_mappings--;
+	}
 }
 
 struct syscallentry syscall_munmap = {
