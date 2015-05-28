@@ -243,11 +243,11 @@ static const struct faultfn write_faultfns[] = {
 void random_map_writefn(struct map *map)
 {
 	if (map->size == page_size)
-		write_faultfns[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+		write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
 	else {
 		if (RAND_BOOL())
 			write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
 		else
-			write_faultfns[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+			write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
 	}
 }
