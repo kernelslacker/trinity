@@ -243,24 +243,28 @@ static unsigned long handle_arg_mode_t(void)
 	count = rand() % 9;
 
 	for (i = 0; i < count; i++) {
-		unsigned int j, bit;
+		unsigned int j;
 
-		bit = rand() % 3;
-		mode |= 1 << bit;
-		j = rand() % 12;
+		j = rand() % 15;
 		switch (j) {
-		case 0: mode |= S_IRUSR; break;
-		case 1: mode |= S_IWUSR; break;
-		case 2: mode |= S_IXUSR; break;
-		case 3: mode |= S_IRGRP; break;
-		case 4: mode |= S_IWGRP; break;
-		case 5: mode |= S_IXGRP; break;
-		case 6: mode |= S_IROTH; break;
-		case 7: mode |= S_IWOTH; break;
-		case 8: mode |= S_IXOTH; break;
-		case 9: mode |= S_ISUID; break;
-		case 10: mode|= S_ISGID; break;
-		case 11: mode|= S_ISVTX; break;
+		case  0: mode |= S_IRWXU; break;
+		case  1: mode |= S_IRUSR; break;
+		case  2: mode |= S_IWUSR; break;
+		case  3: mode |= S_IXUSR; break;
+
+		case  4: mode |= S_IRWXG; break;
+		case  5: mode |= S_IRGRP; break;
+		case  6: mode |= S_IWGRP; break;
+		case  7: mode |= S_IXGRP; break;
+
+		case  8: mode |= S_IRWXO; break;
+		case  9: mode |= S_IROTH; break;
+		case 10: mode |= S_IWOTH; break;
+		case 11: mode |= S_IXOTH; break;
+
+		case 12: mode |= S_ISUID; break;
+		case 13: mode |= S_ISGID; break;
+		case 14: mode |= S_ISVTX; break;
 		}
 	}
 	return mode;
