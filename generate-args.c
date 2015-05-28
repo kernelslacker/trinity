@@ -238,7 +238,7 @@ static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct sysc
 static unsigned long handle_arg_mode_t(void)
 {
 	unsigned int i, count;
-	mode_t mode = 0;
+	mode_t mode = 0, op = 0;
 
 	count = rand() % 9;
 
@@ -247,25 +247,29 @@ static unsigned long handle_arg_mode_t(void)
 
 		j = rand() % 15;
 		switch (j) {
-		case  0: mode |= S_IRWXU; break;
-		case  1: mode |= S_IRUSR; break;
-		case  2: mode |= S_IWUSR; break;
-		case  3: mode |= S_IXUSR; break;
+		case  0: op = S_IRWXU; break;
+		case  1: op = S_IRUSR; break;
+		case  2: op = S_IWUSR; break;
+		case  3: op = S_IXUSR; break;
 
-		case  4: mode |= S_IRWXG; break;
-		case  5: mode |= S_IRGRP; break;
-		case  6: mode |= S_IWGRP; break;
-		case  7: mode |= S_IXGRP; break;
+		case  4: op = S_IRWXG; break;
+		case  5: op = S_IRGRP; break;
+		case  6: op = S_IWGRP; break;
+		case  7: op = S_IXGRP; break;
 
-		case  8: mode |= S_IRWXO; break;
-		case  9: mode |= S_IROTH; break;
-		case 10: mode |= S_IWOTH; break;
-		case 11: mode |= S_IXOTH; break;
+		case  8: op = S_IRWXO; break;
+		case  9: op = S_IROTH; break;
+		case 10: op = S_IWOTH; break;
+		case 11: op = S_IXOTH; break;
 
-		case 12: mode |= S_ISUID; break;
-		case 13: mode |= S_ISGID; break;
-		case 14: mode |= S_ISVTX; break;
+		case 12: op = S_ISUID; break;
+		case 13: op = S_ISGID; break;
+		case 14: op = S_ISVTX; break;
 		}
+		if (RAND_BOOL())
+			mode |= op;
+		else
+			mode &= ~op;
 	}
 	return mode;
 }
