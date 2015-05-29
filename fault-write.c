@@ -224,7 +224,7 @@ static void dirty_last_page(struct map *map)
 {
 	char *p = map->ptr;
 
-	memset((void *) p + ((map->size - 1) - page_size), 'A', page_size);
+	memset((void *) p + (map->size - page_size), 'A', page_size);
 }
 
 static const struct faultfn write_faultfns_single[] = {
