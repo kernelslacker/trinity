@@ -32,7 +32,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	rec->a3 = map->size;		//TODO: Munge this.
 
 	if (rec->a4 & MREMAP_FIXED) {
-		unsigned long align = alignments[rand() % ARRAY_SIZE(alignments)];
+		unsigned long align = RAND_ARRAY(alignments);
 		unsigned int shift = (__WORDSIZE / 2) - 1;
 
 		newaddr = RAND_BYTE();
