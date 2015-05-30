@@ -57,9 +57,9 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TP(struct sockaddr **addr, socklen_t *add
 	*addrlen = sizeof(struct sockaddr_pppol2tp);
 }
 
-#ifdef USE_PPPOL2TPIN6
 static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(struct sockaddr **addr, socklen_t *addrlen)
 {
+#ifdef USE_PPPOL2TPIN6
 	struct sockaddr_pppol2tpin6 *pppol2tpin6;
 
 	pppol2tpin6 = zmalloc(sizeof(struct sockaddr_pppol2tpin6));
@@ -82,8 +82,8 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(struct sockaddr **addr, socklen_t *
 	pppol2tpin6->pppol2tp.addr.sin6_scope_id = rand();
 	*addr = (struct sockaddr *) pppol2tpin6;
 	*addrlen = sizeof(struct sockaddr_pppol2tpin6);
-}
 #endif
+}
 
 static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3(struct sockaddr **addr, socklen_t *addrlen)
 {
