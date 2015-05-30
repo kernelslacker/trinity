@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include <stdlib.h>
 #include "net.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -54,6 +54,6 @@ void atm_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(atm_opts);
+	val = RAND_ARRAY(atm_opts);
 	so->optname = atm_opts[val];
 }
