@@ -9,7 +9,7 @@
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 
@@ -56,6 +56,6 @@ void netlink_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(netlink_opts);
+	val = RAND_ARRAY(netlink_opts);
 	so->optname = netlink_opts[val];
 }
