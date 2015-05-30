@@ -7,7 +7,7 @@
 #endif
 
 #include "compat.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 
 void rds_rand_socket(struct socket_triplet *st)
 {
@@ -40,7 +40,7 @@ void rds_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(rds_opts);
+	val = RAND_ARRAY(rds_opts);
 	so->optname = rds_opts[val];
 }
 
