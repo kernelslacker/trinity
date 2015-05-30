@@ -54,7 +54,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	rec->a4 = set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
 
 	if (rec->a4 & MAP_ANONYMOUS) {
-		rec->a2 = sizes[rand() % ARRAY_SIZE(sizes)];
+		rec->a2 = RAND_ARRAY(sizes);
 		do_anon(rec);
 	} else {
 		if (this_syscallname("mmap2") == TRUE) {
