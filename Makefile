@@ -73,6 +73,7 @@ HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard sys
 
 SRCS		= $(wildcard *.c) \
 		  $(wildcard children/*.c) \
+		  $(wildcard fds/*.c) \
 		  $(wildcard ioctls/*.c) \
 		  $(wildcard net/*.c) \
 		  $(wildcard syscalls/*.c) \
@@ -80,6 +81,7 @@ SRCS		= $(wildcard *.c) \
 
 OBJS		= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard children/*.c))) \
+		  $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
