@@ -2,7 +2,7 @@
 #include <linux/udp.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 static const unsigned int udplite_opts[] = {
@@ -14,7 +14,7 @@ void udplite_setsockopt(struct sockopt *so)
 	char *optval;
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(udplite_opts);
+	val = RAND_ARRAY(udplite_opts);
 	so->optname = udplite_opts[val];
 
 	switch (so->optname) {
