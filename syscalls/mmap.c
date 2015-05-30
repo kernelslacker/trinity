@@ -19,12 +19,6 @@
 #include "trinity.h"
 #include "utils.h"	//ARRAY_SIZE
 
-#ifdef __x86_64__
-#define NUM_FLAGS 13
-#else
-#define NUM_FLAGS 12
-#endif
-
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED
 
@@ -37,12 +31,12 @@ static void do_anon(struct syscallrecord *rec)
 
 static void sanitise_mmap(struct syscallrecord *rec)
 {
-	unsigned long mmap_flags[NUM_FLAGS] = { MAP_FIXED, MAP_ANONYMOUS,
-			MAP_GROWSDOWN, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_LOCKED,
-			MAP_NORESERVE, MAP_POPULATE, MAP_NONBLOCK, MAP_STACK,
-			MAP_HUGETLB, MAP_UNINITIALIZED,
+	unsigned long mmap_flags[] = {
+		MAP_FIXED, MAP_ANONYMOUS, MAP_GROWSDOWN, MAP_DENYWRITE,
+		MAP_EXECUTABLE, MAP_LOCKED, MAP_NORESERVE, MAP_POPULATE,
+		MAP_NONBLOCK, MAP_STACK, MAP_HUGETLB, MAP_UNINITIALIZED,
 #ifdef __x86_64__
-			MAP_32BIT,
+		MAP_32BIT,
 #endif
 	};
 	unsigned long sizes[] = {
