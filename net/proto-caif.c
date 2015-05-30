@@ -6,7 +6,7 @@
 #include "config.h"
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 #ifdef USE_CAIF
@@ -51,7 +51,7 @@ void caif_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(caif_opts);
+	val = RAND_ARRAY(caif_opts);
 	so->optname = caif_opts[val];
 }
 #else
