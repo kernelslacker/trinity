@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -58,7 +58,7 @@ void packet_setsockopt(struct sockopt *so)
 
 	optval = (char *) so->optval;
 
-	val = rand() % ARRAY_SIZE(packet_opts);
+	val = RAND_ARRAY(packet_opts);
 	so->optname = packet_opts[val];
 
 	/* Adjust length according to operation set. */
