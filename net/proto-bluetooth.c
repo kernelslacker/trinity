@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "compat.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
@@ -36,12 +36,12 @@ void bluetooth_setsockopt(struct sockopt *so)
 
 	switch (so->level) {
 	case SOL_HCI:
-		val = rand() % ARRAY_SIZE(bluetooth_hci_opts);
+		val = RAND_ARRAY(bluetooth_hci_opts);
 		so->optname = bluetooth_hci_opts[val];
 		break;
 
 	case SOL_L2CAP:
-		val = rand() % ARRAY_SIZE(bluetooth_l2cap_opts);
+		val = RAND_ARRAY(bluetooth_l2cap_opts);
 		so->optname = bluetooth_l2cap_opts[val];
 		break;
 
@@ -49,12 +49,12 @@ void bluetooth_setsockopt(struct sockopt *so)
 		break;
 
 	case SOL_RFCOMM:
-		val = rand() % ARRAY_SIZE(bluetooth_rfcomm_opts);
+		val = RAND_ARRAY(bluetooth_rfcomm_opts);
 		so->optname = bluetooth_rfcomm_opts[val];
 		break;
 
 	case SOL_BLUETOOTH:
-		val = rand() % ARRAY_SIZE(bluetooth_opts);
+		val = RAND_ARRAY(bluetooth_opts);
 		so->optname = bluetooth_opts[val];
 		break;
 
