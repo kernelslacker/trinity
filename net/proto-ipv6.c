@@ -38,7 +38,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 			{ "2002::" },		/* 2002::/16 "6to4" */
 		};
 
-		p = v4_in_v6_addresses[rand() % ARRAY_SIZE(v4_in_v6_addresses)].name;
+		p = RAND_ELEMENT(v4_in_v6_addresses, name);
 		inet_pton(AF_INET6, p, v6);
 
 		v4 = random_ipv4_address();
@@ -56,7 +56,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 			{ "0100::" },		/* 0100::/64 remotely triggered blackhole */
 		};
 
-		p = v6_addresses[rand() % ARRAY_SIZE(v6_addresses)].name;
+		p = RAND_ELEMENT(v6_addresses, name);
 		inet_pton(AF_INET6, p, v6);
 	}
 }
