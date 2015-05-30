@@ -9,7 +9,7 @@
 #include "config.h"
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -54,6 +54,6 @@ void llc_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(llc_opts);
+	val = RAND_ARRAY(llc_opts);
 	so->optname = llc_opts[val];
 }
