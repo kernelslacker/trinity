@@ -134,28 +134,20 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6(struct sockaddr **addr, socklen_t
 #endif
 }
 
+struct ppp_funcptr {
+	void (*func)(struct sockaddr **addr, socklen_t *addrlen);
+};
+
 static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 {
-	switch (rand() % 4) {
-	case 0:	/* PPPoL2TP */
-		pppox_PX_PROTO_OL2TP_PPPoL2TP(addr, addrlen);
-		break;
+	const struct ppp_funcptr pppox_px_protos[] = {
+		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TP },
+		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TPin6 },
+		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TPv3 },
+		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6 },
+	};
 
-	case 1:	/* PPPoL2TPin6*/
-		pppox_PX_PROTO_OL2TP_PPPoL2TPin6(addr, addrlen);
-		break;
-
-	case 2:	/* PPPoL2TPv3*/
-		pppox_PX_PROTO_OL2TP_PPPoL2TPv3(addr, addrlen);
-		break;
-
-	case 3:	/* PPPoL2TPv3in6 */
-		pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6(addr, addrlen);
-		break;
-
-	default:
-		break;
-	}
+	pppox_px_protos[rand() % ARRAY_SIZE(pppox_px_protos)].func(addr, addrlen);
 }
 
 void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
