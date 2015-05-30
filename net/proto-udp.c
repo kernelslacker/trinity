@@ -2,7 +2,7 @@
 #include <netinet/udp.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 static const unsigned int udp_opts[] = {
@@ -14,7 +14,7 @@ void udp_setsockopt(struct sockopt *so)
 	unsigned char val;
 	char *optval;
 
-	val = rand() % ARRAY_SIZE(udp_opts);
+	val = RAND_ARRAY(udp_opts);
 	so->optname = udp_opts[val];
 
 	switch (so->optname) {
