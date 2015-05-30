@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -54,7 +54,7 @@ void tipc_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(tipc_opts);
+	val = RAND_ARRAY(tipc_opts);
 	so->optname = tipc_opts[val];
 
 	so->optlen = sizeof(__u32);
