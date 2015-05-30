@@ -57,6 +57,34 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TP(struct sockaddr **addr, socklen_t *add
 	*addrlen = sizeof(struct sockaddr_pppol2tp);
 }
 
+#ifdef USE_PPPOL2TPIN6
+static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(struct sockaddr **addr, socklen_t *addrlen)
+{
+	struct sockaddr_pppol2tpin6 *pppol2tpin6;
+
+	pppol2tpin6 = zmalloc(sizeof(struct sockaddr_pppol2tpin6));
+
+	pppol2tpin6->sa_family = PF_PPPOX;
+	pppol2tpin6->sa_protocol = rand() % 3;
+	pppol2tpin6->pppol2tp.pid = get_pid();
+	pppol2tpin6->pppol2tp.fd = get_random_fd();
+	pppol2tpin6->pppol2tp.s_tunnel = rand();
+	pppol2tpin6->pppol2tp.s_session = rand();
+	pppol2tpin6->pppol2tp.d_tunnel = rand();
+	pppol2tpin6->pppol2tp.d_session = rand();
+	pppol2tpin6->pppol2tp.addr.sin6_family = AF_INET6;
+	pppol2tpin6->pppol2tp.addr.sin6_port = rand();
+	pppol2tpin6->pppol2tp.addr.sin6_flowinfo = rand();
+	pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[0] = 0;
+	pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[1] = 0;
+	pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[2] = 0;
+	pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[3] = htonl(1);
+	pppol2tpin6->pppol2tp.addr.sin6_scope_id = rand();
+	*addr = (struct sockaddr *) pppol2tpin6;
+	*addrlen = sizeof(struct sockaddr_pppol2tpin6);
+}
+#endif
+
 static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 {
 	switch (rand() % 4) {
@@ -65,32 +93,7 @@ static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 		break;
 
 	case 1:	/* PPPoL2TPin6*/
-#ifdef USE_PPPOL2TPIN6
-		{
-		struct sockaddr_pppol2tpin6 *pppol2tpin6;
-
-		pppol2tpin6 = zmalloc(sizeof(struct sockaddr_pppol2tpin6));
-
-		pppol2tpin6->sa_family = PF_PPPOX;
-		pppol2tpin6->sa_protocol = rand() % 3;
-		pppol2tpin6->pppol2tp.pid = get_pid();
-		pppol2tpin6->pppol2tp.fd = get_random_fd();
-		pppol2tpin6->pppol2tp.s_tunnel = rand();
-		pppol2tpin6->pppol2tp.s_session = rand();
-		pppol2tpin6->pppol2tp.d_tunnel = rand();
-		pppol2tpin6->pppol2tp.d_session = rand();
-		pppol2tpin6->pppol2tp.addr.sin6_family = AF_INET6;
-		pppol2tpin6->pppol2tp.addr.sin6_port = rand();
-		pppol2tpin6->pppol2tp.addr.sin6_flowinfo = rand();
-		pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[0] = 0;
-		pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[1] = 0;
-		pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[2] = 0;
-		pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[3] = htonl(1);
-		pppol2tpin6->pppol2tp.addr.sin6_scope_id = rand();
-		*addr = (struct sockaddr *) pppol2tpin6;
-		*addrlen = sizeof(struct sockaddr_pppol2tpin6);
-		}
-#endif
+		pppox_PX_PROTO_OL2TP_PPPoL2TPin6(addr, addrlen);
 		break;
 
 	case 2:	/* PPPoL2TPv3*/
