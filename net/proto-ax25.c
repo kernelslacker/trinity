@@ -6,7 +6,7 @@
 #include <netax25/ax25.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -65,6 +65,6 @@ void ax25_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(ax25_opts);
+	val = RAND_ARRAY(ax25_opts);
 	so->optname = ax25_opts[val];
 }
