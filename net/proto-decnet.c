@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -52,7 +52,7 @@ void decnet_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(decnet_opts);
+	val = RAND_ARRAY(decnet_opts);
 	so->optname = decnet_opts[val];
 
 	// TODO: set optlen correctly
