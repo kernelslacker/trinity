@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "compat.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 
 static const unsigned int sctp_opts[] = {
 	SCTP_RTOINFO, SCTP_ASSOCINFO, SCTP_INITMSG, SCTP_NODELAY,
@@ -21,6 +21,6 @@ void sctp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(sctp_opts);
+	val = RAND_ARRAY(sctp_opts);
 	so->optname = sctp_opts[val];
 }
