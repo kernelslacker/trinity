@@ -171,7 +171,7 @@ void pppol2tp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(pppol2tp_opts);
+	val = RAND_ARRAY(pppol2tp_opts);
 	so->optname = pppol2tp_opts[val];
 
 	so->optlen = sizeof(int);
