@@ -520,4 +520,7 @@ struct syscalltable syscalls_alpha[] = {
 /* 508 */	{ .entry = &syscall_sched_setattr },
 /* 509 */	{ .entry = &syscall_sched_getattr },
 /* 510 */	{ .entry = &syscall_renameat2 },
+/* 511 */	{ .entry = &syscall_getrandom },
+/* 512 */	{ .entry = &syscall_memfd_create },
+/* 513 */	{ .entry = &syscall_execveat },
 };
