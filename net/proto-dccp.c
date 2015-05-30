@@ -3,7 +3,7 @@
 #include "net.h"
 #include "compat.h"
 #include "config.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 
 static const unsigned int dccp_opts[] = {
 	DCCP_SOCKOPT_PACKET_SIZE, DCCP_SOCKOPT_SERVICE, DCCP_SOCKOPT_CHANGE_L, DCCP_SOCKOPT_CHANGE_R,
@@ -16,6 +16,6 @@ void dccp_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(dccp_opts);
+	val = RAND_ARRAY(dccp_opts);
 	so->optname = dccp_opts[val];
 }
