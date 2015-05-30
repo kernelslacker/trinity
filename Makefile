@@ -75,6 +75,7 @@ SRCS		= $(wildcard *.c) \
 		  $(wildcard children/*.c) \
 		  $(wildcard fds/*.c) \
 		  $(wildcard ioctls/*.c) \
+		  $(wildcard mm/*.c) \
 		  $(wildcard net/*.c) \
 		  $(wildcard syscalls/*.c) \
 		  $(SYSCALLS_ARCH)
@@ -83,6 +84,7 @@ OBJS		= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard children/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
+		  $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
 		  $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH)))
