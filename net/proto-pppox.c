@@ -141,10 +141,10 @@ struct ppp_funcptr {
 static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 {
 	const struct ppp_funcptr pppox_px_protos[] = {
-		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TP },
-		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TPin6 },
-		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TPv3 },
-		{ . func = pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6 },
+		{ .func = pppox_PX_PROTO_OL2TP_PPPoL2TP },
+		{ .func = pppox_PX_PROTO_OL2TP_PPPoL2TPin6 },
+		{ .func = pppox_PX_PROTO_OL2TP_PPPoL2TPv3 },
+		{ .func = pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6 },
 	};
 
 	pppox_px_protos[rand() % ARRAY_SIZE(pppox_px_protos)].func(addr, addrlen);
