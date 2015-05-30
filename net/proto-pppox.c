@@ -152,28 +152,15 @@ static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 
 void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
-	unsigned int proto;
-
-	proto = rand() % 3;
-
-	switch (proto) {
-
-	case PX_PROTO_OE:
-		pppox_PX_PROTO_OE(addr, addrlen);
-		break;
-
-	case PX_PROTO_OL2TP:
-		pppox_PX_PROTO_OL2TP(addr, addrlen);
-
+	const struct ppp_funcptr pppox_protos[] = {
+		{ .func = pppox_PX_PROTO_OE },
+		{ .func = pppox_PX_PROTO_OL2TP },
 #ifdef USE_PPPOX_PPTP
-	case PX_PROTO_PPTP:
-		//FIXME: What do we do here?
-		break;
+//		{ .func = pppox_PX_PROTO_PPTP },	// TBD
 #endif
+	};
 
-	default:
-		break;
-	}
+	pppox_protos[rand() % ARRAY_SIZE(pppox_protos)].func(addr, addrlen);
 }
 
 static const unsigned int pppol2tp_opts[] = {
