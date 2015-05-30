@@ -2,7 +2,7 @@
 #include <linux/filter.h>
 #include "net.h"
 #include "compat.h"
-#include "utils.h"	// ARRAY_SIZE
+#include "utils.h"	// RAND_ARRAY
 
 static const unsigned int socket_opts[] = {
 	SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_ERROR,
@@ -25,7 +25,7 @@ void socket_setsockopt(struct sockopt *so)
 
 	so->level = SOL_SOCKET;
 
-	val = rand() % ARRAY_SIZE(socket_opts);
+	val = RAND_ARRAY(socket_opts);
 	so->optname = socket_opts[val];
 
 	/* Adjust length according to operation set. */
