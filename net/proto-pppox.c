@@ -85,6 +85,28 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(struct sockaddr **addr, socklen_t *
 }
 #endif
 
+static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3(struct sockaddr **addr, socklen_t *addrlen)
+{
+#ifdef USE_PPPOL2TPV3
+	struct sockaddr_pppol2tpv3 *pppol2tpv3;
+
+	pppol2tpv3 = zmalloc(sizeof(struct sockaddr_pppol2tpv3));
+
+	pppol2tpv3->sa_family = PF_PPPOX;
+	pppol2tpv3->sa_protocol = rand() % 3;
+	pppol2tpv3->pppol2tp.pid = get_pid();
+	pppol2tpv3->pppol2tp.fd = get_random_fd();
+	pppol2tpv3->pppol2tp.addr.sin_addr.s_addr = random_ipv4_address();
+	pppol2tpv3->pppol2tp.s_tunnel = rand();
+	pppol2tpv3->pppol2tp.s_session = rand();
+	pppol2tpv3->pppol2tp.d_tunnel = rand();
+	pppol2tpv3->pppol2tp.d_session = rand();
+	*addr = (struct sockaddr *) pppol2tpv3;
+	*addrlen = sizeof(struct sockaddr_pppol2tpv3);
+#endif
+}
+
+
 static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 {
 	switch (rand() % 4) {
@@ -97,25 +119,7 @@ static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 		break;
 
 	case 2:	/* PPPoL2TPv3*/
-#ifdef USE_PPPOL2TPV3
-		{
-		struct sockaddr_pppol2tpv3 *pppol2tpv3;
-
-		pppol2tpv3 = zmalloc(sizeof(struct sockaddr_pppol2tpv3));
-
-		pppol2tpv3->sa_family = PF_PPPOX;
-		pppol2tpv3->sa_protocol = rand() % 3;
-		pppol2tpv3->pppol2tp.pid = get_pid();
-		pppol2tpv3->pppol2tp.fd = get_random_fd();
-		pppol2tpv3->pppol2tp.addr.sin_addr.s_addr = random_ipv4_address();
-		pppol2tpv3->pppol2tp.s_tunnel = rand();
-		pppol2tpv3->pppol2tp.s_session = rand();
-		pppol2tpv3->pppol2tp.d_tunnel = rand();
-		pppol2tpv3->pppol2tp.d_session = rand();
-		*addr = (struct sockaddr *) pppol2tpv3;
-		*addrlen = sizeof(struct sockaddr_pppol2tpv3);
-		}
-#endif
+		pppox_PX_PROTO_OL2TP_PPPoL2TPv3(addr, addrlen);
 		break;
 
 	case 3:	/* PPPoL2TPv3in6 */
