@@ -54,3 +54,6 @@ void freeptr(unsigned long *p);
 #define __stringify(x...)       __stringify_1(x)
 
 #define unreachable() do { } while (1)
+
+#define RAND_ELEMENT(_array, _element) \
+	_array[rand() % ARRAY_SIZE(_array)]._element;
