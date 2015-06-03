@@ -450,15 +450,27 @@ void enable_random_syscalls(void)
 	}
 }
 
+/* By default, all syscall entries will be disabled.
+ * If we didn't pass -c, -x, -r, or -g then mark all syscalls active.
+ */
+static void decide_if_active(void)
+{
+	if (do_specific_syscall == TRUE)
+		return;
+	if (do_exclude_syscall == TRUE)
+		return;
+	if (random_selection == TRUE)
+		return;
+	if (desired_group != GROUP_NONE)
+		return;
+
+	mark_all_syscalls_active();
+}
 
 /* This is run *after* we've parsed params */
 int munge_tables(void)
 {
-	/* By default, all syscall entries will be disabled.
-	 * If we didn't pass -c, -x or -r, mark all syscalls active.
-	 */
-	if ((do_specific_syscall == FALSE) && (do_exclude_syscall == FALSE) && (random_selection == FALSE) && (desired_group == GROUP_NONE))
-		mark_all_syscalls_active();
+	decide_if_active();
 
 	if (desired_group != GROUP_NONE) {
 		unsigned int ret;
