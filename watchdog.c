@@ -337,16 +337,6 @@ static bool is_child_making_progress(struct childdata *child)
 	child->kill_count++;
 	kill_pid(pid);
 
-	/* Check if we wrapped. Difference should be no more than the max adjtime
-	 * offset, + the 1 second since last time, but sometimes it does happen
-	 * if we don't get scheduled in time on a busy machine. So build in an
-	 * extra 30 seconds to be sure.
-	 */
-	if (diff > 2145 + 30) {
-		/* if we did wrap, just reset it, we'll pick it up next time around. */
-		output(1, "child %u wrapped! old=%lu now=%lu\n", child->num, old, now);
-		rec->tv.tv_sec = now;
-	}
 	return FALSE;
 }
 
