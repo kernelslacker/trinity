@@ -17,7 +17,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
 	unsigned char choice = rand() % 3;
-	unsigned int startoffset = 0, remain, runlen;
+	unsigned int startoffset = 0, remain;
 	unsigned char separators[3] = { ' ', '-', '\0' };
 	unsigned char separator;
 
@@ -40,6 +40,8 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 		remain = len;
 
 		while (remain > 0) {
+			unsigned int runlen;
+
 			/* Sometimes make the numbers be negative. */
 			if (RAND_BOOL()) {
 				ptr[startoffset++] = '-';
