@@ -44,6 +44,9 @@ void dump_childnos(void)
 		for (j = 0; j < 8; j++) {
 			struct childdata *child;
 
+			if (i + j > max_children)
+				break;
+
 			child = shm->children[i + j];
 
 			if (child->pid == EMPTY_PIDSLOT) {
