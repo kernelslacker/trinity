@@ -84,7 +84,6 @@ static void read_last_page(struct map *map)
 }
 
 static const struct faultfn read_faultfns[] = {
-	{ .func = read_one_page },
 	{ .func = read_whole_mapping },
 	{ .func = read_every_other_page },
 	{ .func = read_mapping_reverse },
@@ -94,5 +93,12 @@ static const struct faultfn read_faultfns[] = {
 
 void random_map_readfn(struct map *map)
 {
-	read_faultfns[rand() % ARRAY_SIZE(read_faultfns)].func(map);
+	if (map->size == page_size)
+		read_one_page(map);
+	else {
+		if (RAND_BOOL())
+			read_one_page(map);
+		else
+			read_faultfns[rand() % ARRAY_SIZE(read_faultfns)].func(map);
+	}
 }
