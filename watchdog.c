@@ -17,6 +17,7 @@
 #include "files.h"
 #include "locks.h"
 #include "log.h"
+#include "random.h"
 #include "params.h"	// quiet_level
 #include "pids.h"
 #include "post-mortem.h"
@@ -340,6 +341,31 @@ static bool is_child_making_progress(struct childdata *child)
 	return FALSE;
 }
 
+/*
+ * If we call this, all children are stalled. Randomly kill a few.
+ */
+static void stall_genocide(void)
+{
+	unsigned int killed = 0;
+	unsigned int i;
+
+	//TODO: We should temporarily stop forking new children too.
+
+	for_each_child(i) {
+		struct childdata *child = shm->children[i];
+
+		if (RAND_BOOL()) {
+			int ret;
+
+			ret = kill(child->pid, SIGKILL);
+			if (ret == 0)
+				killed++;
+		}
+		if (killed == (max_children / 4))
+			break;
+	}
+}
+
 static void watchdog(void)
 {
 	static const char watchdogname[17]="trinity-watchdog";
@@ -388,6 +414,9 @@ static void watchdog(void)
 			if (rec->op_nr > hiscore)
 				hiscore = rec->op_nr;
 		}
+
+		if (stall_count == shm->running_childs)
+			stall_genocide();
 
 		if (shm->stats.total_syscalls_done > 1) {
 			if (shm->stats.total_syscalls_done - lastcount > 10000) {
