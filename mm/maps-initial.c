@@ -83,13 +83,9 @@ void setup_initial_mappings(void)
 	initial_mappings = zmalloc(sizeof(struct map));
 	INIT_LIST_HEAD(&initial_mappings->list);
 
-	/* page_size * 2, so we have a guard page afterwards.
-	 * This is necessary for when we want to test page boundaries.
-	 * see end of _get_address() for details.
-	 */
-	alloc_zero_map(page_size * 2, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
-	alloc_zero_map(page_size * 2, PROT_READ, "PROT_READ");
-	alloc_zero_map(page_size * 2, PROT_WRITE, "PROT_WRITE");
+	alloc_zero_map(page_size, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
+	alloc_zero_map(page_size, PROT_READ, "PROT_READ");
+	alloc_zero_map(page_size, PROT_WRITE, "PROT_WRITE");
 
 	/*
 	 * multi megabyte page mappings.
