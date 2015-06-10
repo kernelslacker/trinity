@@ -80,7 +80,7 @@ static void read_last_page(struct map *map)
 	char *p = map->ptr;
 	char buf[page_size];
 
-	memcpy(buf, p + ((map->size - 1) - page_size), page_size);
+	memcpy(buf, p + (map->size - page_size), page_size);
 }
 
 static const struct faultfn read_faultfns[] = {
