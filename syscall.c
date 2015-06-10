@@ -100,10 +100,12 @@ static void __do_syscall(struct syscallrecord *rec)
 
 	errno = 0;
 
+	shm_ro();
 	if (rec->do32bit == FALSE)
 		ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 	else
 		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+	shm_rw();
 
 	/* We returned! */
 	shm->stats.total_syscalls_done++;

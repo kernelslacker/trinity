@@ -22,6 +22,9 @@
 void create_shm(void);
 void init_shm(void);
 
+void shm_ro(void);
+void shm_rw(void);
+
 struct shm_s {
 	struct childdata **children;
 

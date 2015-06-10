@@ -383,6 +383,8 @@ void child_process(void)
 			return;	// Exit the child, things are getting too weird.
 	}
 
+	shm_rw();
+
 	while (shm->exit_reason == STILL_RUNNING) {
 		unsigned int i;
 

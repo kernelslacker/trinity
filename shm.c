@@ -37,6 +37,16 @@ void create_shm(void)
 	printf("shm:%p-%p (%d pages)\n", shm, shm + shm_size - 1, nr_shm_pages);
 }
 
+void shm_ro(void)
+{
+	mprotect(shm, shm_size, PROT_READ);
+}
+
+void shm_rw(void)
+{
+	mprotect(shm, shm_size, PROT_READ|PROT_WRITE);
+}
+
 void init_shm(void)
 {
 	unsigned int i;
