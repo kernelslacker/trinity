@@ -19,36 +19,22 @@ struct shm_s *shm;
 
 #define SHM_PROT_PAGES 30
 
+unsigned int shm_size;
+
 void create_shm(void)
 {
-	void *p;
-	void *redbefore, *redafter;
-	unsigned int shm_pages;
-	unsigned int wholesize;
+	unsigned int nr_shm_pages;
 
 	/* round up shm to nearest page size */
-	shm_pages = ((sizeof(struct shm_s) + page_size - 1) & PAGE_MASK) / page_size;
-	wholesize = (SHM_PROT_PAGES + shm_pages + SHM_PROT_PAGES) * page_size;
+	shm_size = (sizeof(struct shm_s) + page_size - 1) & PAGE_MASK;
+	nr_shm_pages = shm_size / page_size;
 
 	/* Waste some address space to set up some "protection" near the SHM location. */
-	p = alloc_shared(wholesize);
-
-	redbefore = p;
-	redafter = p + (SHM_PROT_PAGES + shm_pages) * page_size;
-
-	/* set the redzones. */
-	memset(redbefore, 0x77, SHM_PROT_PAGES * page_size);
-	memset(redafter, 0x88, SHM_PROT_PAGES * page_size);
-
-	/* set the redzones to PROT_NONE */
-	mprotect(redbefore, SHM_PROT_PAGES * page_size, PROT_NONE);
-	mprotect(redafter, SHM_PROT_PAGES * page_size, PROT_NONE);
+	shm = alloc_shared(shm_size);
 
 	/* clear the whole shm. */
-	shm = p + (SHM_PROT_PAGES * page_size);
-	memset(shm, 0, shm_pages * page_size);
-	printf("shm: redzone:%p. shmdata:%p. redzone:%p end:%p.\n",
-		redbefore, shm, redafter, p + wholesize);
+	memset(shm, 0, shm_size);
+	printf("shm:%p-%p (%d pages)\n", shm, shm + shm_size - 1, nr_shm_pages);
 }
 
 void init_shm(void)
