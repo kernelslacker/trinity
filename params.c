@@ -187,6 +187,10 @@ void parse_args(int argc, char *argv[])
 			set_debug = TRUE;
 			break;
 
+		case 'E':
+			parse_exclude_domains(optarg);
+			break;
+
 		case 'g':
 			if (!strcmp(optarg, "vm"))
 				desired_group = GROUP_VM;
@@ -238,10 +242,6 @@ void parse_args(int argc, char *argv[])
 			do_specific_domain = TRUE;
 			specific_domain = strtol(optarg, NULL, 10);
 			specific_domain_optarg = optarg;
-			break;
-
-		case 'E':
-			parse_exclude_domains(optarg);
 			break;
 
 		case 'q':
