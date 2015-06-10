@@ -205,8 +205,6 @@ static const struct sock_option ip_opts[] = {
 void ip_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
-	struct ip_mreq *mr;
-	struct ip_mreqn *mrn;
 	struct ip_mreq_source *ms;
 	int mcaddr;
 
@@ -224,12 +222,16 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_DROP_MEMBERSHIP:
 		mcaddr = 0xe0000000 | rand() % 0xff;
 		if (RAND_BOOL()) {
+			struct ip_mreqn *mrn;
+
 			mrn = (struct ip_mreqn *) so->optval;
 			mrn->imr_multiaddr.s_addr = htonl(mcaddr);
 			mrn->imr_address.s_addr = random_ipv4_address();
 			mrn->imr_ifindex = rand32();
 			so->optlen = sizeof(struct ip_mreqn);
 		} else {
+			struct ip_mreq *mr;
+
 			mr = (struct ip_mreq *) so->optval;
 			mr->imr_multiaddr.s_addr = htonl(mcaddr);
 			mr->imr_interface.s_addr = random_ipv4_address();
