@@ -74,6 +74,9 @@ bool child_random_syscalls(void)
 	unsigned int syscallnr;
 	bool do32;
 	unsigned int len;
+	unsigned long a1, a2, a3;
+	time_t old;
+	pid_t oldpid;
 
 retry:
 	if (no_syscalls_enabled() == TRUE) {
@@ -113,6 +116,12 @@ retry:
 	/* Generate arguments, print them out */
 
 	generate_syscall_args(rec);
+
+	a1 = rec->a1;
+	a2 = rec->a2;
+	a3 = rec->a3;
+	oldpid = this_child->pid;
+
 	output_syscall_prefix(rec);
 
 	/* Sanity check: Make sure the length of the buffer remains
@@ -124,12 +133,31 @@ retry:
 	if (dopause == TRUE)
 		synclogs();
 
+	old = rec->tv.tv_sec;
 	do_syscall(rec);
+
+	if (this_child->pid == 0) {
+		output(0, "Sanity check failed. my pid became zero after syscall:%d(%lx, %lx, %lx)  was:%d\n",
+				syscallnr, a1, a2, a3, oldpid);
+			dump_childnos();
+			dump_childdata(this_child);
+			panic(EXIT_PID_OUT_OF_RANGE);
+	}
+
+	if (old != 0) {
+		if (rec->tv.tv_sec - old > 60) {
+			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%d(%lx, %lx, %lx)  was:%lx now:%lx.\n",
+				syscallnr, a1, a2, a3, old, rec->tv.tv_sec);
+			dump_childnos();
+			dump_childdata(this_child);
+			panic(EXIT_PID_OUT_OF_RANGE);
+		}
+	}
 
 	/* post syscall sanity checks. */
 	if (len != strlen(rec->prebuffer)) {
-		output(0, "Sanity check failed: prebuffer length changed from %d to %d.\n",
-			len, strlen(rec->prebuffer));
+		output(0, "Sanity check failed: prebuffer length changed from %d to %d after syscall:%d(%lx, %lx, %lx).\n",
+			len, strlen(rec->prebuffer), syscallnr, a1, a2, a3);
 		dump_childnos();
 		dump_childdata(this_child);
 		panic(EXIT_PID_OUT_OF_RANGE);
