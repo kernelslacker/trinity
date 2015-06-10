@@ -423,7 +423,7 @@ static void watchdog(void)
 				char stalltxt[]=" STALLED:XXXX";
 
 				if (stall_count > 0)
-					sprintf(stalltxt, " STALLED:%d", stall_count);
+					sprintf(stalltxt, " STALLED:%u", stall_count);
 				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s]\n",
 					shm->stats.total_syscalls_done,
 					shm->stats.failures, shm->stats.successes,
