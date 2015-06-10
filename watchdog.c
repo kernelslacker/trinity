@@ -401,10 +401,15 @@ static void watchdog(void)
 
 		if (shm->stats.total_syscalls_done > 1) {
 			if (shm->stats.total_syscalls_done - lastcount > 10000) {
-				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld STALLED:%d]\n",
+				char stalltxt[]=" STALLED:XXXX";
+
+				if (stall_count > 0)
+					sprintf(stalltxt, " STALLED:%d", stall_count);
+				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s]\n",
 					shm->stats.total_syscalls_done,
 					shm->stats.failures, shm->stats.successes,
-					hiscore, stall_count);
+					hiscore,
+					stall_count ? stalltxt : "");
 				lastcount = shm->stats.total_syscalls_done;
 			}
 		}
