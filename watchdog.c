@@ -453,7 +453,10 @@ void init_watchdog(void)
 	pid = fork();
 
 	if (pid == 0) {
+		__unused__ int ret = nice(-20);
+
 		watchdog_pid = getpid();
+
 		watchdog();
 		output(0, "[%d] Watchdog exiting because %s.\n",
 			watchdog_pid, decode_exit());
