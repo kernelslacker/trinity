@@ -70,7 +70,7 @@ static void fork_children(void)
 			child_process();
 
 			debugf("child %d %d exiting.\n", childno, getpid());
-			close_logfile(&this_child->logfile);
+			shutdown_child_logging(this_child);
 			reap_child(child->pid);
 			_exit(EXIT_SUCCESS);
 		} else {

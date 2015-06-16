@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unistd.h>
+#include "child.h"
 #include "config.h"
 #include "exit.h"
 #include "shm.h"
@@ -37,6 +38,8 @@ void close_logfile(FILE **handle);
 
 void init_logging(void);
 void shutdown_logging(void);
+void init_child_logging(struct childdata *child);
+void shutdown_child_logging(struct childdata *child);
 
 void open_child_logfile(struct childdata *child);
 

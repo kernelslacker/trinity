@@ -195,3 +195,25 @@ void shutdown_logging(void)
 		return;
 	}
 }
+
+void init_child_logging(struct childdata *child)
+{
+	switch (logging) {
+	case LOGGING_DISABLED:
+		return;
+	case LOGGING_FILES:
+		open_child_logfile(child);
+		return;
+	}
+}
+
+void shutdown_child_logging(struct childdata *child)
+{
+	switch (logging) {
+	case LOGGING_DISABLED:
+		return;
+	case LOGGING_FILES:
+		close_logfile(&child->logfile);
+		return;
+	}
+}

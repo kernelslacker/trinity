@@ -213,7 +213,7 @@ void init_child(struct childdata *child, int childno)
 
 	reinit_child(child);
 
-	open_child_logfile(child);
+	init_child_logging(child);
 
 	set_seed(this_child);
 
