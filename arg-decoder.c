@@ -146,12 +146,6 @@ static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *buffe
 	return sptr - bufferstart;
 }
 
-static void flushbuffer(char *buffer, FILE *fd)
-{
-	fprintf(fd, "%s", buffer);
-	fflush(fd);
-}
-
 static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *bufferstart)
 {
 	char *sptr = bufferstart;
@@ -169,24 +163,6 @@ static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *buff
 	sptr += sprintf(sptr, "%s\n", ANSI_RESET);
 
 	return sptr - bufferstart;
-}
-
-static void output_rendered_buffer(char *buffer)
-{
-	/* Output to stdout only if -q param is not specified */
-	if (quiet_level == MAX_LOGLEVEL)
-		flushbuffer(buffer, stdout);
-
-	/* Exit if should not continue at all. */
-	if (logging == TRUE) {
-		FILE *log_handle;
-
-		log_handle = find_logfile_handle();
-		if (log_handle != NULL) {
-			strip_ansi(buffer);
-			flushbuffer(buffer, log_handle);
-		}
-	}
 }
 
 /* These next two functions are always called from child_random_syscalls() by a fuzzing child.

@@ -29,6 +29,7 @@ void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
 void output_syscall_prefix(struct syscallrecord *rec);
 void output_syscall_postfix(struct syscallrecord *rec);
+void output_rendered_buffer(char *buffer);
 
 FILE *mainlogfile;
 void open_main_logfile(void);
