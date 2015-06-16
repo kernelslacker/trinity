@@ -308,17 +308,13 @@ void outputstd(const char *fmt, ...)
 
 
 // TODO: combine the below with output()
-static void flushbuffer(char *buffer, FILE *fd)
-{
-	fprintf(fd, "%s", buffer);
-	fflush(fd);
-}
-
 void output_rendered_buffer(char *buffer)
 {
 	/* Output to stdout only if -q param is not specified */
-	if (quiet_level == MAX_LOGLEVEL)
-		flushbuffer(buffer, stdout);
+	if (quiet_level == MAX_LOGLEVEL) {
+		fprintf(stdout, "%s", buffer);
+		fflush(stdout);
+	}
 
 	/* Exit if should not continue at all. */
 	if (logging == TRUE) {
@@ -327,7 +323,8 @@ void output_rendered_buffer(char *buffer)
 		log_handle = find_logfile_handle();
 		if (log_handle != NULL) {
 			strip_ansi(buffer);
-			flushbuffer(buffer, log_handle);
+			fprintf(log_handle, "%s", buffer);
+			fflush(log_handle);
 		}
 	}
 }
