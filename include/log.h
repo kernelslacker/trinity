@@ -38,3 +38,8 @@ void close_logfile(FILE **handle);
 void open_child_logfile(struct childdata *child);
 
 void debugf(const char *fmt, ...);
+
+enum {
+	LOGGING_DISABLED,
+	LOGGING_FILES,
+};

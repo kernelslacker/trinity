@@ -40,7 +40,7 @@ extern bool monochrome;
 extern bool dangerous;
 extern bool dropprivs;
 extern bool do_syslog;
-extern bool logging;
+extern int logging;
 extern unsigned char desired_group;
 extern bool user_set_seed;
 extern char *victim_path;

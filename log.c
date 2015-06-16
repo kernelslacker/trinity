@@ -42,6 +42,9 @@ static FILE *open_logfile(const char *logfilename)
 
 void open_main_logfile(void)
 {
+	if (logging == LOGGING_DISABLED)
+		return;
+
 	mainlogfile = open_logfile("trinity.log");
 	if (!mainlogfile)
 		exit(EXIT_FAILURE);
@@ -53,7 +56,7 @@ void open_child_logfile(struct childdata *child)
 {
 	char *logfilename;
 
-	if (logging == FALSE)
+	if (logging == LOGGING_DISABLED)
 		return;
 
 	logfilename = zmalloc(64);
@@ -72,6 +75,9 @@ void open_child_logfile(struct childdata *child)
 
 void close_logfile(FILE **filehandle)
 {
+	if (logging == LOGGING_DISABLED)
+		return;
+
 	if (*filehandle == NULL)
 		return;
 
@@ -126,22 +132,26 @@ static FILE * find_child_logfile_handle(pid_t pid)
 FILE *find_logfile_handle(void)
 {
 	FILE *handle = NULL;
+	pid_t pid;
 
-	if ((logging == TRUE) && (logfiles_opened)) {
-		pid_t pid;
+	if (logging == LOGGING_DISABLED)
+		return NULL;
 
-		pid = getpid();
-		if (pid == initpid)
-			return mainlogfile;
+	if (!logfiles_opened)
+		return NULL;
 
-		if (pid == shm->mainpid)
-			return mainlogfile;
+	pid = getpid();
+	if (pid == initpid)
+		return mainlogfile;
 
-		if (pid == watchdog_pid)
-			return mainlogfile;
+	if (pid == shm->mainpid)
+		return mainlogfile;
 
-		handle = find_child_logfile_handle(pid);
-	}
+	if (pid == watchdog_pid)
+		return mainlogfile;
+
+	handle = find_child_logfile_handle(pid);
+
 	return handle;
 }
 
@@ -153,7 +163,7 @@ void synclogs(void)
 {
 	int fd;
 
-	if (logging == FALSE)
+	if (logging == LOGGING_DISABLED)
 		return;
 
 	if (this_child->logdirty == FALSE)
@@ -228,7 +238,7 @@ void output(unsigned char level, const char *fmt, ...)
 	char main_prefix[]="[main]";
 	char child_prefix[32];
 
-	if (logging == FALSE && level >= quiet_level)
+	if (logging == LOGGING_DISABLED && level >= quiet_level)
 		return;
 
 	/* prefix preparation */
@@ -270,7 +280,7 @@ void output(unsigned char level, const char *fmt, ...)
 	}
 
 	/* go on with file logs only if enabled */
-	if (logging == FALSE)
+	if (logging == LOGGING_FILES)
 		return;
 
 	handle = find_logfile_handle();
@@ -310,6 +320,8 @@ void outputstd(const char *fmt, ...)
 // TODO: combine the below with output()
 void output_rendered_buffer(char *buffer)
 {
+	FILE *log_handle;
+
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL) {
 		fprintf(stdout, "%s", buffer);
@@ -317,14 +329,13 @@ void output_rendered_buffer(char *buffer)
 	}
 
 	/* Exit if should not continue at all. */
-	if (logging == TRUE) {
-		FILE *log_handle;
+	if (logging == LOGGING_DISABLED)
+		return;
 
-		log_handle = find_logfile_handle();
-		if (log_handle != NULL) {
-			strip_ansi(buffer);
-			fprintf(log_handle, "%s", buffer);
-			fflush(log_handle);
-		}
+	log_handle = find_logfile_handle();
+	if (log_handle != NULL) {
+		strip_ansi(buffer);
+		fprintf(log_handle, "%s", buffer);
+		fflush(log_handle);
 	}
 }

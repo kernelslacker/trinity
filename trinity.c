@@ -123,8 +123,7 @@ int main(int argc, char* argv[])
 
 	change_tmp_dir();
 
-	if (logging == TRUE)
-		open_main_logfile();
+	open_main_logfile();
 
 	init_shm();
 
@@ -211,8 +210,7 @@ cleanup_fds:
 
 	destroy_initial_mappings();
 
-	if (logging == TRUE)
-		close_logfile(&mainlogfile);
+	close_logfile(&mainlogfile);
 
 	ret = set_exit_code(shm->exit_reason);
 out:

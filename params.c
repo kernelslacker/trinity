@@ -39,7 +39,6 @@ bool verbose = FALSE;
 bool monochrome = FALSE;
 bool dangerous = FALSE;
 bool dropprivs = FALSE;
-bool logging = TRUE;
 bool do_syslog = FALSE;
 bool random_selection = FALSE;
 unsigned int random_selection_num;
@@ -51,6 +50,8 @@ unsigned char desired_group = GROUP_NONE;
 char *specific_domain_optarg = NULL;
 
 char *victim_path = NULL;
+
+int logging = LOGGING_FILES;
 
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
 bool kernel_taint_param_occured = FALSE;
@@ -208,8 +209,8 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'l':
-			if (!strcmp(optarg, "off"))
-				logging = FALSE;
+			if (!strncmp(optarg, "off", 3))
+				logging = LOGGING_DISABLED;
 			break;
 
 		case 'L':
