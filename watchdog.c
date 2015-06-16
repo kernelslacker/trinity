@@ -246,9 +246,10 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 
 		if (fd <= (unsigned int) fileno(child->logfile))
 			return FALSE;
+		return TRUE;
 	}
 
-	return TRUE;
+	return FALSE;
 }
 
 static void stuck_syscall_info(struct childdata *child)
