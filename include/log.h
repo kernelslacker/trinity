@@ -35,6 +35,9 @@ FILE *mainlogfile;
 void open_main_logfile(void);
 void close_logfile(FILE **handle);
 
+void init_logging(void);
+void shutdown_logging(void);
+
 void open_child_logfile(struct childdata *child);
 
 void debugf(const char *fmt, ...);

@@ -173,3 +173,25 @@ void output_rendered_buffer(char *buffer)
 		fflush(log_handle);
 	}
 }
+
+void init_logging(void)
+{
+	switch (logging) {
+	case LOGGING_DISABLED:
+		return;
+	case LOGGING_FILES:
+		open_main_logfile();
+		return;
+	}
+}
+
+void shutdown_logging(void)
+{
+	switch (logging) {
+	case LOGGING_DISABLED:
+		return;
+	case LOGGING_FILES:
+		close_logfile(&mainlogfile);
+		return;
+	}
+}
