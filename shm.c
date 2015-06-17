@@ -69,6 +69,10 @@ void init_shm(void)
 
 	shm->children = zmalloc(max_children * sizeof(struct childdata *));
 
+	/* We allocate the childdata structs as shared mappings, because
+	 * the watchdog process needs to peek into each childs syscall records
+	 * to make sure they are making progress.
+	 */
 	for_each_child(i) {
 		struct childdata *child;
 
