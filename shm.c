@@ -39,12 +39,14 @@ void create_shm(void)
 
 void shm_ro(void)
 {
-	mprotect(shm, shm_size, PROT_READ);
+	if (shm->debug == TRUE)
+		mprotect(shm, shm_size, PROT_READ);
 }
 
 void shm_rw(void)
 {
-	mprotect(shm, shm_size, PROT_READ|PROT_WRITE);
+	if (shm->debug == TRUE)
+		mprotect(shm, shm_size, PROT_READ|PROT_WRITE);
 }
 
 void init_shm(void)
