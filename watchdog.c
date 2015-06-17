@@ -376,9 +376,23 @@ static void watchdog(void)
 	bool watchdog_exit = FALSE;
 
 	while (shm->ready == FALSE) {
-		usleep(1);
-		if (shm->exit_reason != STILL_RUNNING)
-			return;
+		unsigned int counter = 0;
+
+		while (shm->mainpid == 0) {
+
+			if (check_main_alive() == FALSE)
+				counter++;
+
+			if (counter == 1000) {
+				output(0, "Can't find main at %d\n", shm->mainpid);
+				return;
+			}
+
+			if (shm->exit_reason != STILL_RUNNING)
+				return;
+
+			usleep(1);
+		}
 	}
 
 	output(0, "Watchdog is alive. (pid:%d)\n", watchdog_pid);
