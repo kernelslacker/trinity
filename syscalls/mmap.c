@@ -22,6 +22,21 @@
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED
 
+static long sizes[] = {
+	-1,	/* over-written with page_size below */
+	1 * MB, 2 * MB, 4 * MB, 10 * MB,
+	1 * GB,
+};
+
+static int init_mmap(void)
+{
+	if (sizes[0] != -1)
+		return 0;
+
+	sizes[0] = page_size;
+	return 0;
+}
+
 static void do_anon(struct syscallrecord *rec)
 {
 	/* no fd if anonymous mapping. */
@@ -39,13 +54,6 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		MAP_32BIT,
 #endif
 	};
-	unsigned long sizes[] = {
-		-1,	/* over-written with page_size below */
-		1 * MB, 2 * MB, 4 * MB, 10 * MB,
-		1 * GB,
-	};
-
-	sizes[0] = page_size;
 
 	/* Don't actually set a hint right now. */
 	rec->a1 = 0;
@@ -158,6 +166,7 @@ struct syscallentry syscall_mmap = {
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
+	.init = init_mmap,
 };
 
 struct syscallentry syscall_mmap2 = {
@@ -190,4 +199,5 @@ struct syscallentry syscall_mmap2 = {
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
+	.init = init_mmap,
 };
