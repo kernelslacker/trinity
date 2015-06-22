@@ -2,6 +2,7 @@
  * Shared mapping creation.
  */
 
+#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -52,6 +53,7 @@ void shm_rw(void)
 void init_shm(void)
 {
 	unsigned int i;
+	unsigned int childptrslen;
 
 	output(2, "shm is at %p\n", shm);
 
@@ -67,7 +69,13 @@ void init_shm(void)
 	/* Set seed in parent thread */
 	set_seed(NULL);
 
-	shm->children = zmalloc(max_children * sizeof(struct childdata *));
+	childptrslen = max_children * sizeof(struct childdata *);
+	/* round up to page size */
+	childptrslen += page_size - 1;
+	childptrslen &= PAGE_MASK;
+
+	shm->children = memalign(page_size, childptrslen);
+	memset(shm->children, 0, childptrslen);
 
 	/* We allocate the childdata structs as shared mappings, because
 	 * the watchdog process needs to peek into each childs syscall records
@@ -86,4 +94,5 @@ void init_shm(void)
 
 		child->logfile = NULL;
 	}
+	mprotect(shm->children, childptrslen, PROT_READ);
 }
