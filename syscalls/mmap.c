@@ -24,8 +24,8 @@
 
 static long sizes[] = {
 	-1,	/* over-written with page_size below */
-	1 * MB, 2 * MB, 4 * MB, 10 * MB,
-	1 * GB,
+	MB(1), MB(2), MB(4), MB(10),
+	GB(1),
 };
 
 static int init_mmap(void)

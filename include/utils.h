@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MB (1024 * 1024UL)
-#define GB (1024 * MB)
+#define MB(_x) (_x * 1024UL * 1024UL)
+#define GB(_x) (_x * 1024UL * MB(1))
 
 void * alloc_shared(unsigned int size);
 

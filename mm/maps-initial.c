@@ -76,8 +76,8 @@ void setup_initial_mappings(void)
 {
 	unsigned int i;
 	const unsigned long sizes[] = {
-		1 * MB, 2 * MB, 4 * MB, 10 * MB,
-//		1 * GB,	// disabled for now, due to OOM.
+		MB(1), MB(2), MB(4), MB(10),
+//		GB(1),	// disabled for now, due to OOM.
 	};
 
 	initial_mappings = zmalloc(sizeof(struct map));

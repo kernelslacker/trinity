@@ -18,9 +18,9 @@
 static struct map *map;
 
 static const unsigned long alignments[] = {
-	1 * MB, 2 * MB, 4 * MB, 8 * MB,
-	10 * MB, 100 * MB,
-	1 * GB, 2 * GB, 4 * GB,
+	MB(1), MB(2), MB(4), MB(4),
+	MB(10), MB(100),
+	GB(1), GB(2), GB(4),
 };
 
 static void sanitise_mremap(struct syscallrecord *rec)
