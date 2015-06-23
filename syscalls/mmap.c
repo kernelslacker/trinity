@@ -30,10 +30,44 @@ static long sizes[] = {
 
 static int init_mmap(void)
 {
+	FILE *fp;
+	char *buffer;
+	size_t n = 0;
+
 	if (sizes[0] != -1)
 		return 0;
 
 	sizes[0] = page_size;
+
+	fp = fopen("/proc/meminfo", "r");
+	if (!fp)
+		return -1;
+
+	buffer = malloc(4096);
+	if (!buffer) {
+		fclose(fp);
+		return -1;
+	}
+
+	while (getline(&buffer, &n, fp) >= 0) {
+		unsigned int free;
+
+		if (sscanf(buffer, "MemFree:         %u", &free) == 1) {
+			unsigned long freegb;
+
+			freegb = free / 1024;
+
+			if (freegb < GB(8UL)) {
+				printf("Free memory: %.2fGB\n", (double) freegb / 1024);
+				printf("Low on memory, disabling mmaping of 1GB pages\n");
+				sizes[5] = page_size;
+				return 0;
+			}
+		}
+	}
+
+	free(buffer);
+	fclose(fp);
 	return 0;
 }
 
