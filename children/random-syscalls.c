@@ -137,8 +137,9 @@ retry:
 	do_syscall(rec);
 
 	if (this_child->pid == 0) {
-		output(0, "Sanity check failed. my pid became zero after syscall:%d(%lx, %lx, %lx)  was:%d\n",
-				syscallnr, a1, a2, a3, oldpid);
+		output(0, "Sanity check failed. my pid became zero after syscall:%s(%lx, %lx, %lx)  was:%d\n",
+				print_syscall_name(rec->nr, rec->do32bit),
+				a1, a2, a3, oldpid);
 			dump_childnos();
 			dump_childdata(this_child);
 			panic(EXIT_PID_OUT_OF_RANGE);
@@ -146,8 +147,9 @@ retry:
 
 	if (old != 0) {
 		if (rec->tv.tv_sec - old > 60) {
-			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%d(%lx, %lx, %lx)  was:%lx now:%lx.\n",
-				syscallnr, a1, a2, a3, old, rec->tv.tv_sec);
+			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%s(%lx, %lx, %lx)  was:%lx now:%lx.\n",
+				print_syscall_name(rec->nr, rec->do32bit),
+				a1, a2, a3, old, rec->tv.tv_sec);
 			dump_childnos();
 			dump_childdata(this_child);
 			panic(EXIT_PID_OUT_OF_RANGE);
@@ -156,8 +158,10 @@ retry:
 
 	/* post syscall sanity checks. */
 	if (len != strlen(rec->prebuffer)) {
-		output(0, "Sanity check failed: prebuffer length changed from %d to %d after syscall:%d(%lx, %lx, %lx).\n",
-			len, strlen(rec->prebuffer), syscallnr, a1, a2, a3);
+		output(0, "Sanity check failed: prebuffer length changed from %d to %d after syscall:%s(%lx, %lx, %lx).\n",
+			len, strlen(rec->prebuffer),
+			print_syscall_name(rec->nr, rec->do32bit),
+			a1, a2, a3);
 		dump_childnos();
 		dump_childdata(this_child);
 		panic(EXIT_PID_OUT_OF_RANGE);
