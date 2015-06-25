@@ -538,6 +538,9 @@ enum kcmp_type {
 #ifndef IP_CHECKSUM
 #define IP_CHECKSUM		23
 #endif
+#ifndef IP_BIND_ADDRESS_NO_PORT
+#define IP_BIND_ADDRESS_NO_PORT	24
+#endif
 #ifndef IP_MULTICAST_ALL
 #define IP_MULTICAST_ALL	49
 #endif
