@@ -465,6 +465,10 @@ enum kcmp_type {
 #define TCP_CC_INFO		26
 #endif
 
+#ifndef TCP_SAVE_SYN
+#define TCP_SAVE_SYN		27
+#define TCP_SAVED_SYN		28
+#endif
 
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
