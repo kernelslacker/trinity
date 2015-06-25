@@ -256,6 +256,9 @@ enum {
 #define NETLINK_RX_RING 6
 #define NETLINK_TX_RING 7
 #endif
+#ifndef NETLINK_LISTEN_ALL_NSID
+#define NETLINK_LISTEN_ALL_NSID 8
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
