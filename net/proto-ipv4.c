@@ -169,6 +169,7 @@ static const struct sock_option ip_opts[] = {
 	{ .name = IP_ORIGDSTADDR, },
 	{ .name = IP_MINTTL, },
 	{ .name = IP_NODEFRAG, },
+	{ .name = IP_CHECKSUM, },
 	{ .name = IP_MULTICAST_IF, .len = sizeof(struct ip_mreqn) },
 	{ .name = IP_MULTICAST_TTL, },
 	{ .name = IP_MULTICAST_LOOP, },
