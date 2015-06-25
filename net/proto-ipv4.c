@@ -135,6 +135,7 @@ void inet_rand_socket(struct socket_triplet *st)
 		{ .proto = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
 		{ .proto = IPPROTO_UDPLITE, .type = SOCK_DGRAM },
 		{ .proto = IPPROTO_RAW, },
+		{ .proto = IPPROTO_MPLS, },
 	};
 	unsigned char val;
 

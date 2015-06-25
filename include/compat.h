@@ -556,6 +556,9 @@ enum kcmp_type {
 #ifndef IPPROTO_BEETPH
 #define IPPROTO_BEETPH		94
 #endif
+#ifndef IPPROTO_MPLS
+#define IPPROTO_MPLS		137
+#endif
 
 /* linux/in6.h */
 #ifndef IPV6_FLOWINFO

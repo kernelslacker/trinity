@@ -67,6 +67,7 @@ static const struct ip_sso_funcptr ip_ssoptrs[] = {
 	{ .proto = IPPROTO_SCTP, .sol = SOL_SCTP, .func = &sctp_setsockopt },
 	{ .proto = IPPROTO_UDPLITE, .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
 	{ .proto = IPPROTO_RAW, .sol = SOL_RAW, .func = &raw_setsockopt },
+	{ .proto = IPPROTO_MPLS, .func = NULL },
 };
 
 struct sso_funcptr {
