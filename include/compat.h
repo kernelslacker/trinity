@@ -259,6 +259,9 @@ enum {
 #ifndef NETLINK_LISTEN_ALL_NSID
 #define NETLINK_LISTEN_ALL_NSID 8
 #endif
+#ifndef NETLINK_LIST_MEMBERSHIPS
+#define NETLINK_LIST_MEMBERSHIPS 9
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
