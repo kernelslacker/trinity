@@ -53,11 +53,11 @@ static int init_mmap(void)
 		unsigned int free;
 
 		if (sscanf(buffer, "MemFree:         %u", &free) == 1) {
-			unsigned long freegb;
+			unsigned long long freegb;
 
 			freegb = free / 1024;
 
-			if (freegb < GB(8UL)) {
+			if (freegb < GB(8ULL)) {
 				printf("Free memory: %.2fGB\n", (double) freegb / 1024);
 				printf("Low on memory, disabling mmaping of 1GB pages\n");
 				sizes[5] = page_size;
