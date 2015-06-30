@@ -161,7 +161,7 @@ static void open_sockets(char *cachefilename)
 		type = buffer[1];
 		protocol = buffer[2];
 
-		printf("family:%s type:%s protocol:%s (%d)\n",
+		printf("family:%s type:%s protocol:%s (%u)\n",
 			get_family_name(family),
 			decode_type(type),
 			get_proto_name(family, protocol), protocol);
@@ -169,7 +169,7 @@ static void open_sockets(char *cachefilename)
 
 	}
 
-	printf("%d entries in socket cachefile.\n", nr_sockets);
+	printf("%u entries in socket cachefile.\n", nr_sockets);
 
 	close(cachefile);
 }
