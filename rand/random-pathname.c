@@ -35,6 +35,7 @@ const char * generate_pathname(void)
 			newpath[0] = '.';
 			newpath[1] = '/';
 			(void) strncpy(newpath + 2, pathname, len);
+			len += 2;
 		}
 	}
 
