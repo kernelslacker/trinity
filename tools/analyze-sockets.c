@@ -183,4 +183,6 @@ int main(int argc, char* argv[])
 	}
 
 	open_sockets(argv[1]);
+
+	exit(EXIT_SUCCESS);
 }
