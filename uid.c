@@ -95,7 +95,7 @@ void do_uid0_check(void)
 
 	outputstd("ctrl-c now unless you really know what you are doing.\n");
 	for (i = 10; i > 0; i--) {
-		outputstd("Continuing in %d seconds.\r", i);
+		outputstd("Continuing in %u seconds.\r", i);
 		(void)fflush(stdout);
 		sleep(1);
 	}
