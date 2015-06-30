@@ -46,7 +46,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			if (RAND_BOOL()) {
 				ptr[startoffset++] = '-';
 				remain--;
-				if (remain <= 0)
+				if (remain == 0)
 					break;
 			}
 
