@@ -1018,6 +1018,9 @@ struct kvm_get_htab_fd {
 #endif
 
 /* time.h */
+#ifndef CLOCK_MONOTONIC_RAW
+#define CLOCK_MONOTONIC_RAW 4
+#endif
 #ifndef CLOCK_BOOTTIME
 #define CLOCK_BOOTTIME 7
 #endif
