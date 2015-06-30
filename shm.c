@@ -35,7 +35,7 @@ void create_shm(void)
 
 	/* clear the whole shm. */
 	memset(shm, 0, shm_size);
-	printf("shm:%p-%p (%d pages)\n", shm, shm + shm_size - 1, nr_shm_pages);
+	printf("shm:%p-%p (%u pages)\n", shm, shm + shm_size - 1, nr_shm_pages);
 }
 
 void shm_ro(void)
