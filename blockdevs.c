@@ -7,7 +7,7 @@
 #include "types.h"
 #include "utils.h"
 
-static int nr_blockdevs = 0;
+static unsigned int nr_blockdevs = 0;
 
 struct bdevlist {
 	struct list_head list;
