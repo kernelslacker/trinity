@@ -143,7 +143,6 @@ static const char *decode_type(unsigned int type)
 static void open_sockets(char *cachefilename)
 {
 	int cachefile;
-	unsigned int family, type, protocol;
 	unsigned int buffer[3];
 	int bytesread = -1;
 	unsigned int nr_sockets = 0;
@@ -153,6 +152,8 @@ static void open_sockets(char *cachefilename)
 		return;
 
 	while (bytesread != 0) {
+		unsigned int family, type, protocol;
+
 		bytesread = read(cachefile, buffer, sizeof(int) * 3);
 		if (bytesread == 0)
 			break;
