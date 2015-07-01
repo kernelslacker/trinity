@@ -94,14 +94,8 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 
 static void post_ppoll(struct syscallrecord *rec)
 {
-	void *ptr;
-
-	ptr = (void *) rec->a1;
-	if (ptr != NULL)
-		free(ptr);
-
-	ptr = (void *) rec->a4;
-	free(ptr);
+	freeptr(&rec->a1);
+	freeptr(&rec->a4);
 }
 
 struct syscallentry syscall_ppoll = {
