@@ -84,13 +84,8 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 		fds[i].revents = rand_events();
 	}
 
-	ts = malloc(sizeof(struct timespec));
+	ts = zmalloc(sizeof(struct timespec));
 	rec->a3 = (unsigned long) ts;
-	if (ts == NULL) {
-		/* if we set ts to null, ppoll will block indefinitely */
-		rec->a3 = 1;
-		return;
-	}
 	ts->tv_sec = 1;
 	ts->tv_nsec = 0;
 
