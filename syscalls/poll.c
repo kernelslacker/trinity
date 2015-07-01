@@ -51,15 +51,6 @@ struct syscallentry syscall_poll = {
 	.post = post_poll,
 };
 
-static short rand_events(void)
-{
-	unsigned long r;
-
-	r = set_rand_bitmask(ARRAY_SIZE(poll_events), poll_events);
-
-	return r;
-}
-
 /*
  * SYSCALL_DEFINE5(ppoll, struct pollfd __user *, ufds, unsigned int, nfds,
 	 struct timespec __user *, tsp, const sigset_t __user *, sigmask, size_t, sigsetsize)
@@ -69,20 +60,12 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 {
 	struct pollfd *fds;
 	struct timespec *ts;
-	unsigned int num = rand() % 1024;
-	unsigned int i;
 
 	sanitise_poll(rec);
 
 	fds = (struct pollfd *) rec->a1;
 	if (fds == NULL)
 		return;
-
-	for (i = 0 ; i < num; i++) {
-		fds[i].fd = get_random_fd();
-		fds[i].events = rand_events();
-		fds[i].revents = rand_events();
-	}
 
 	ts = zmalloc(sizeof(struct timespec));
 	rec->a3 = (unsigned long) ts;
