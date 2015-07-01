@@ -1,27 +1,31 @@
 /*
  * sys_poll(struct pollfd __user *ufds, unsigned int nfds, int timeout);
  */
-#include <poll.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <asm/poll.h>
 #include "random.h"
 #include "sanitise.h"
 #include "utils.h"
+
+static const unsigned long poll_events[] = {
+	POLLIN, POLLPRI, POLLOUT, POLLERR,
+	POLLHUP, POLLNVAL, POLLRDBAND, POLLWRNORM,
+	POLLWRBAND, POLLMSG, POLLREMOVE, POLLRDHUP,
+	POLLFREE, POLL_BUSY_LOOP,
+};
 
 static void sanitise_poll(struct syscallrecord *rec)
 {
 	struct pollfd *pollfd;
 	unsigned int i;
 	unsigned int num_fds = rand() % 10;
-	unsigned long flags[] = {
-		POLLIN, POLLPRI, POLLOUT, POLLRDHUP,
-		POLLERR, POLLHUP, POLLNVAL, POLLRDNORM,
-		POLLRDBAND, POLLWRNORM, POLLWRBAND, POLLMSG
-	};
 
 	pollfd = zmalloc(num_fds * sizeof(struct pollfd));
 
 	for (i = 0; i < num_fds; i++) {
 		pollfd[i].fd = get_random_fd();
-		pollfd[i].events = set_rand_bitmask(ARRAY_SIZE(flags), flags);
+		pollfd[i].events = set_rand_bitmask(ARRAY_SIZE(poll_events), poll_events);
 	}
 
 	rec->a1 = (unsigned long) pollfd;
@@ -45,4 +49,76 @@ struct syscallentry syscall_poll = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_poll,
 	.post = post_poll,
+};
+
+static short rand_events(void)
+{
+	unsigned long r;
+
+	r = set_rand_bitmask(ARRAY_SIZE(poll_events), poll_events);
+
+	return r;
+}
+
+/*
+ * SYSCALL_DEFINE5(ppoll, struct pollfd __user *, ufds, unsigned int, nfds,
+	 struct timespec __user *, tsp, const sigset_t __user *, sigmask, size_t, sigsetsize)
+ */
+
+static void sanitise_ppoll(struct syscallrecord *rec)
+{
+	struct pollfd *fds;
+	struct timespec *ts;
+	unsigned int num = rand() % 1024;
+	unsigned int i;
+
+	sanitise_poll(rec);
+
+	fds = (struct pollfd *) rec->a1;
+	if (fds == NULL)
+		return;
+
+	for (i = 0 ; i < num; i++) {
+		fds[i].fd = get_random_fd();
+		fds[i].events = rand_events();
+		fds[i].revents = rand_events();
+	}
+
+	ts = malloc(sizeof(struct timespec));
+	rec->a3 = (unsigned long) ts;
+	if (ts == NULL) {
+		/* if we set ts to null, ppoll will block indefinitely */
+		rec->a3 = 1;
+		return;
+	}
+	ts->tv_sec = 1;
+	ts->tv_nsec = 0;
+
+	rec->a5 = sizeof(sigset_t);
+}
+
+static void post_ppoll(struct syscallrecord *rec)
+{
+	void *ptr;
+
+	ptr = (void *) rec->a1;
+	if (ptr != NULL)
+		free(ptr);
+
+	ptr = (void *) rec->a4;
+	free(ptr);
+}
+
+struct syscallentry syscall_ppoll = {
+	.name = "ppoll",
+	.num_args = 5,
+	.arg1name = "ufds",
+	.arg2name = "nfds",
+	.arg3name= "tsp",
+	.arg4name = "sigmask",
+	.arg4type = ARG_ADDRESS,
+	.arg5name = "sigsetsize",
+	.flags = NEED_ALARM,
+	.sanitise = sanitise_ppoll,
+	.post = post_ppoll,
 };
