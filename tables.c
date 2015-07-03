@@ -123,21 +123,21 @@ void deactivate_syscall(unsigned int call, bool do32bit)
 
 void count_syscalls_enabled(void)
 {
-	char enablednr[20];
-
 	if (biarch == TRUE) {
-		memset(enablednr, 0, sizeof(enablednr));
+		char enabledstr[20];
+
+		memset(enabledstr, 0, sizeof(enabledstr));
 
 		if (shm->nr_active_32bit_syscalls != 0)
-			sprintf(enablednr, "%d enabled, %d",
+			sprintf(enabledstr, "%d enabled, %d",
 				shm->nr_active_32bit_syscalls,
 				max_nr_32bit_syscalls - shm->nr_active_32bit_syscalls);
 		else
-			sprintf(enablednr, "all");
+			sprintf(enabledstr, "all");
 
 		output(0, "32-bit syscalls: %s disabled.  "
 			"64-bit syscalls: %d enabled, %d disabled.\n",
-			enablednr,
+			enabledstr,
 			shm->nr_active_64bit_syscalls, max_nr_64bit_syscalls - shm->nr_active_64bit_syscalls);
 	} else {
 		output(0, "Enabled %d syscalls. Disabled %d syscalls.\n",
