@@ -125,8 +125,10 @@ void count_syscalls_enabled(void)
 {
 	if (biarch == TRUE) {
 		char enabledstr[20];
+		char disabledstr[20];
 
 		memset(enabledstr, 0, sizeof(enabledstr));
+		memset(disabledstr, 0, sizeof(disabledstr));
 
 		if (shm->nr_active_32bit_syscalls != 0)
 			sprintf(enabledstr, "%d enabled, %d",
@@ -135,10 +137,15 @@ void count_syscalls_enabled(void)
 		else
 			sprintf(enabledstr, "all");
 
+		if ((max_nr_64bit_syscalls - shm->nr_active_64bit_syscalls) != 0)
+			sprintf(disabledstr, ", %d disabled",
+				max_nr_64bit_syscalls - shm->nr_active_64bit_syscalls);
+
 		output(0, "32-bit syscalls: %s disabled.  "
-			"64-bit syscalls: %d enabled, %d disabled.\n",
+			"64-bit syscalls: %d enabled%s.\n",
 			enabledstr,
-			shm->nr_active_64bit_syscalls, max_nr_64bit_syscalls - shm->nr_active_64bit_syscalls);
+			shm->nr_active_64bit_syscalls,
+			disabledstr);
 	} else {
 		output(0, "Enabled %d syscalls. Disabled %d syscalls.\n",
 			shm->nr_active_syscalls, max_nr_syscalls - shm->nr_active_syscalls);
