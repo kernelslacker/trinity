@@ -36,8 +36,10 @@ static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int f
 	so->optval = 0;
 
 retry:
-	if (so->optval != 0)
+	if (so->optval != 0) {
 		free((void *) so->optval);
+		so->optval = 0;
+	}
 
 	do_setsockopt(so, triplet);
 
