@@ -21,12 +21,9 @@ static const unsigned int socket_opts[] = {
 
 void socket_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
 	so->level = SOL_SOCKET;
 
-	val = RAND_ARRAY(socket_opts);
-	so->optname = socket_opts[val];
+	so->optname = RAND_ARRAY(socket_opts);
 
 	/* Adjust length according to operation set. */
 	switch (so->optname) {

@@ -50,10 +50,7 @@ static const unsigned int decnet_opts[] = {
 
 void decnet_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(decnet_opts);
-	so->optname = decnet_opts[val];
+	so->optname = RAND_ARRAY(decnet_opts);
 
 	// TODO: set optlen correctly
 }

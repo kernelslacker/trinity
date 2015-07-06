@@ -38,10 +38,7 @@ static const unsigned int rds_opts[] = {
 
 void rds_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(rds_opts);
-	so->optname = rds_opts[val];
+	so->optname = RAND_ARRAY(rds_opts);
 }
 
 #else

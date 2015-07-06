@@ -42,9 +42,6 @@ static const unsigned int rose_opts[] = {
 
 void rose_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(rose_opts);
-	so->optname = rose_opts[val];
+	so->optname = RAND_ARRAY(rose_opts);
 }
 #endif

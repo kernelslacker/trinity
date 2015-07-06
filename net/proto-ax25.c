@@ -63,8 +63,5 @@ static const unsigned int ax25_opts[] = {
 
 void ax25_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(ax25_opts);
-	so->optname = ax25_opts[val];
+	so->optname = RAND_ARRAY(ax25_opts);
 }

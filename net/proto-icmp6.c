@@ -11,9 +11,6 @@ static const unsigned int icmpv6_opts[] = { ICMPV6_FILTER };
 
 void icmpv6_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(icmpv6_opts);
-	so->optname = icmpv6_opts[val];
+	so->optname = RAND_ARRAY(icmpv6_opts);
 }
 #endif

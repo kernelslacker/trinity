@@ -21,8 +21,6 @@ static const unsigned int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
 void bluetooth_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
 	switch(rand() % 5) {
 	case 0: so->level = SOL_HCI; break;
 	case 1: so->level = SOL_L2CAP; break;
@@ -36,26 +34,22 @@ void bluetooth_setsockopt(struct sockopt *so)
 
 	switch (so->level) {
 	case SOL_HCI:
-		val = RAND_ARRAY(bluetooth_hci_opts);
-		so->optname = bluetooth_hci_opts[val];
+		so->optname = RAND_ARRAY(bluetooth_hci_opts);
 		break;
 
 	case SOL_L2CAP:
-		val = RAND_ARRAY(bluetooth_l2cap_opts);
-		so->optname = bluetooth_l2cap_opts[val];
+		so->optname = RAND_ARRAY(bluetooth_l2cap_opts);
 		break;
 
 	case SOL_SCO:   /* no options currently */
 		break;
 
 	case SOL_RFCOMM:
-		val = RAND_ARRAY(bluetooth_rfcomm_opts);
-		so->optname = bluetooth_rfcomm_opts[val];
+		so->optname = RAND_ARRAY(bluetooth_rfcomm_opts);
 		break;
 
 	case SOL_BLUETOOTH:
-		val = RAND_ARRAY(bluetooth_opts);
-		so->optname = bluetooth_opts[val];
+		so->optname = RAND_ARRAY(bluetooth_opts);
 		break;
 
 	default: break;

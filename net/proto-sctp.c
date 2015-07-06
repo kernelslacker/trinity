@@ -19,8 +19,5 @@ static const unsigned int sctp_opts[] = {
 
 void sctp_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(sctp_opts);
-	so->optname = sctp_opts[val];
+	so->optname = RAND_ARRAY(sctp_opts);
 }

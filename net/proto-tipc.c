@@ -52,10 +52,7 @@ static const unsigned int tipc_opts[] = {
 
 void tipc_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(tipc_opts);
-	so->optname = tipc_opts[val];
+	so->optname = RAND_ARRAY(tipc_opts);
 
 	so->optlen = sizeof(__u32);
 }

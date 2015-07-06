@@ -52,8 +52,5 @@ static const unsigned int atm_opts[] = {
 
 void atm_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(atm_opts);
-	so->optname = atm_opts[val];
+	so->optname = RAND_ARRAY(atm_opts);
 }

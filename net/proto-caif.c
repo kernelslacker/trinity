@@ -49,10 +49,7 @@ static const unsigned int caif_opts[] = {
 
 void caif_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(caif_opts);
-	so->optname = caif_opts[val];
+	so->optname = RAND_ARRAY(caif_opts);
 }
 #else
 /* stub if we are built on something without CAIF headers */

@@ -169,10 +169,7 @@ static const unsigned int pppol2tp_opts[] = {
 
 void pppol2tp_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(pppol2tp_opts);
-	so->optname = pppol2tp_opts[val];
+	so->optname = RAND_ARRAY(pppol2tp_opts);
 
 	so->optlen = sizeof(int);
 }

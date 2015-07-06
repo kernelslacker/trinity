@@ -11,11 +11,9 @@ static const unsigned int udp_opts[] = {
 
 void udp_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
 	char *optval;
 
-	val = RAND_ARRAY(udp_opts);
-	so->optname = udp_opts[val];
+	so->optname = RAND_ARRAY(udp_opts);
 
 	switch (so->optname) {
 	case UDP_CORK:

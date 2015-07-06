@@ -14,8 +14,5 @@ static const unsigned int dccp_opts[] = {
 
 void dccp_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(dccp_opts);
-	so->optname = dccp_opts[val];
+	so->optname = RAND_ARRAY(dccp_opts);
 }

@@ -52,8 +52,5 @@ static const unsigned int llc_opts[] = {
 
 void llc_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(llc_opts);
-	so->optname = llc_opts[val];
+	so->optname = RAND_ARRAY(llc_opts);
 }

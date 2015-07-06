@@ -53,13 +53,11 @@ static const unsigned int packet_opts[] = {
 
 void packet_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
 	char *optval;
 
 	optval = (char *) so->optval;
 
-	val = RAND_ARRAY(packet_opts);
-	so->optname = packet_opts[val];
+	so->optname = RAND_ARRAY(packet_opts);
 
 	/* Adjust length according to operation set. */
 	switch (so->optname) {

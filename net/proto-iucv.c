@@ -9,10 +9,7 @@ static const unsigned int iucv_opts[] = {
 
 void iucv_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(iucv_opts);
-	so->optname = iucv_opts[val];
+	so->optname = RAND_ARRAY(iucv_opts);
 
 	so->optlen = sizeof(int);
 }

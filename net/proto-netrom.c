@@ -13,9 +13,6 @@ static const unsigned int netrom_opts[] = {
 
 void netrom_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(netrom_opts);
-	so->optname = netrom_opts[val];
+	so->optname = RAND_ARRAY(netrom_opts);
 }
 #endif

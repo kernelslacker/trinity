@@ -16,8 +16,5 @@ static const unsigned int tcp_opts[] = {
 
 void tcp_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(tcp_opts);
-	so->optname = tcp_opts[val];
+	so->optname = RAND_ARRAY(tcp_opts);
 }

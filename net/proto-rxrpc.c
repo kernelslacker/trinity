@@ -10,8 +10,5 @@ static const unsigned int rxrpc_opts[] = {
 
 void rxrpc_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(rxrpc_opts);
-	so->optname = rxrpc_opts[val];
+	so->optname = RAND_ARRAY(rxrpc_opts);
 }

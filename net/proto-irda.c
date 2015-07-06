@@ -58,8 +58,5 @@ static const unsigned int irda_opts[] = {
 
 void irda_setsockopt(struct sockopt *so)
 {
-	unsigned char val;
-
-	val = RAND_ARRAY(irda_opts);
-	so->optname = irda_opts[val];
+	so->optname = RAND_ARRAY(irda_opts);
 }
