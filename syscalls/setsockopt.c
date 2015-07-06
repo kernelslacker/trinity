@@ -232,6 +232,8 @@ static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet
  */
 void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
+	so->optname = 0;
+
 	/* get a page for the optval to live in.
 	 * TODO: push this down into the per-proto .func calls
 	 */
