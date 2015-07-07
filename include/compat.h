@@ -1024,3 +1024,8 @@ struct kvm_get_htab_fd {
 #ifndef CLOCK_BOOTTIME
 #define CLOCK_BOOTTIME 7
 #endif
+
+/* asm-generic/poll.h */
+#ifndef POLLFREE
+#define POLLFREE 0x4000
+#endif

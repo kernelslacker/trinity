@@ -7,6 +7,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "utils.h"
+#include "compat.h"
 
 static const unsigned long poll_events[] = {
 	POLLIN, POLLPRI, POLLOUT, POLLERR,
