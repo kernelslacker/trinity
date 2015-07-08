@@ -289,4 +289,7 @@ struct syscalltable syscalls_aarch64[] = {
 /* 276 */	{ .entry = &syscall_renameat2 },
 /* 277 */	{ .entry = &syscall_seccomp },
 /* 278 */	{ .entry = &syscall_getrandom },
+/* 279 */	{ .entry = &syscall_memfd_create },
+/* 280 */	{ .entry = &syscall_bpf },
+/* 281 */	{ .entry = &syscall_execveat },
 };
