@@ -23,6 +23,7 @@ void set_seed(struct childdata *child);
 void reseed(void);
 unsigned int new_seed(void);
 
+bool init_random(void);
 void generate_rand_bytes(unsigned char *ptr, unsigned int len);
 unsigned int rand32(void);
 u64 rand64(void);

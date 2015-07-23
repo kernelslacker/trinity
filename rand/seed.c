@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include "shm.h"
@@ -30,28 +31,54 @@
 #include "pids.h"
 #include "log.h"
 #include "random.h"
+#include "utils.h"
+
+static int urandomfd;
 
 /* The actual seed lives in the shm. This variable is used
  * to store what gets passed in from the command line -s argument */
 unsigned int seed = 0;
 
-unsigned int new_seed(void)
+static int fallbackseed(void)
 {
-	int fd;
 	struct timeval t;
 	unsigned int r;
 
-	if ((fd = open("/dev/urandom", O_RDONLY)) < 0 ||
-	    read(fd, &r, sizeof(r)) != sizeof(r)) {
-		r = rand();
-		if (!(RAND_BOOL())) {
-			gettimeofday(&t, NULL);
-			r |= t.tv_usec;
-		}
+	//printf("Fell back to gtod seed! errno:%s\n", strerror(errno));
+	r = rand();
+	if (!(RAND_BOOL())) {
+		gettimeofday(&t, NULL);
+		r |= t.tv_usec;
 	}
-	if (fd >= 0)
-		close(fd);
 	return r;
+}
+
+unsigned int new_seed(void)
+{
+	unsigned int r, bits;
+
+	if (urandomfd == -1)
+		return fallbackseed();
+
+	if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
+		return fallbackseed();
+
+	if (read(urandomfd, &bits, sizeof(bits)) != sizeof(bits))
+		return fallbackseed();
+
+	//printf("new seed:%u\n", r);
+
+	return r;
+}
+
+bool init_random(void)
+{
+	urandomfd = open("/dev/urandom", O_RDONLY);
+	if (urandomfd == -1) {
+		printf("urandom: %s\n", strerror(errno));
+		return FALSE;
+	}
+	return TRUE;
 }
 
 /*
@@ -90,6 +117,7 @@ void set_seed(struct childdata *child)
 
 	/* if not in child context, we must be main. */
 	if (child == NULL) {
+//		printf("Setting shm seed:%u\n", shm->seed);
 		srand(shm->seed);
 		return;
 	}
