@@ -38,6 +38,8 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		strncpy((char *)alg->salg_name, hashes[i], len);
 		break;
 	case 2:	
+		snprintf((char *)alg->salg_type, 8, "skcipher");
+		snprintf((char *)alg->salg_name, 8, "cbc(aes)");
 		break;
 	case 3:
 		break;
