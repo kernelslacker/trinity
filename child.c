@@ -374,7 +374,6 @@ static bool handle_sigreturn(void)
  */
 void child_process(void)
 {
-	const char *lastop = NULL;
 	int ret;
 
 	ret = sigsetjmp(ret_jump, 1);
@@ -386,6 +385,7 @@ void child_process(void)
 	shm_rw();
 
 	while (shm->exit_reason == STILL_RUNNING) {
+		const char *lastop = NULL;
 		unsigned int i;
 
 		periodic_work();
