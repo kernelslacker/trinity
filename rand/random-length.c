@@ -9,10 +9,11 @@ unsigned long get_len(void)
 	int i = 0;
 
 	if (RAND_BOOL()) {
-		switch (rand() % 3) {
+		switch (rand() % 4) {
 		case 0:	return sizeof(char);
 		case 1:	return sizeof(int);
 		case 2:	return sizeof(long);
+		case 3: return page_size;
 		}
 	}
 
