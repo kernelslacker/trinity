@@ -378,6 +378,11 @@ static void watchdog(void)
 	while (shm->ready == FALSE) {
 		unsigned int counter = 0;
 
+		if (shm->mainpid != 0) {
+			if (check_main_alive() == FALSE)
+				return;
+		}
+
 		while (shm->mainpid == 0) {
 
 			if (check_main_alive() == FALSE)
