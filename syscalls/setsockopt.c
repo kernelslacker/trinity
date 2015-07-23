@@ -35,39 +35,38 @@
 #include "compat.h"
 
 struct ip_sso_funcptr {
-	unsigned int proto;
 	unsigned int sol;
 	void (*func)(struct sockopt *so);
 };
 
 static const struct ip_sso_funcptr ip_ssoptrs[] = {
-	{ .proto = IPPROTO_IP, .sol = SOL_IP, .func = &ip_setsockopt },
-	{ .proto = IPPROTO_ICMP, .func = NULL },
-	{ .proto = IPPROTO_IGMP, .func = NULL },
-	{ .proto = IPPROTO_IPIP, .func = NULL },
-	{ .proto = IPPROTO_TCP, .sol = SOL_TCP, .func = &tcp_setsockopt },
-	{ .proto = IPPROTO_EGP, .func = NULL },
-	{ .proto = IPPROTO_PUP, .func = NULL },
-	{ .proto = IPPROTO_UDP, .sol = SOL_UDP, .func = &udp_setsockopt },
-	{ .proto = IPPROTO_IDP, .func = NULL },
-	{ .proto = IPPROTO_TP, .func = NULL },
-	{ .proto = IPPROTO_DCCP, .sol = SOL_DCCP, .func = &dccp_setsockopt },
+	[IPPROTO_IP] = { .sol = SOL_IP, .func = &ip_setsockopt },
+	[IPPROTO_ICMP] = { .func = NULL },
+	[IPPROTO_IGMP] = { .func = NULL },
+	[IPPROTO_IPIP] = { .func = NULL },
+	[IPPROTO_TCP] = { .sol = SOL_TCP, .func = &tcp_setsockopt },
+	[IPPROTO_EGP] = { .func = NULL },
+	[IPPROTO_PUP] = { .func = NULL },
+	[IPPROTO_UDP] = { .sol = SOL_UDP, .func = &udp_setsockopt },
+	[IPPROTO_IDP] = { .func = NULL },
+	[IPPROTO_TP] = { .func = NULL },
+	[IPPROTO_DCCP] = { .sol = SOL_DCCP, .func = &dccp_setsockopt },
 #ifdef USE_IPV6
-	{ .proto = IPPROTO_IPV6, .sol = SOL_ICMPV6, .func = &icmpv6_setsockopt },
+	[IPPROTO_IPV6] = { .sol = SOL_ICMPV6, .func = &icmpv6_setsockopt },
 #endif
-	{ .proto = IPPROTO_RSVP, .func = NULL },
-	{ .proto = IPPROTO_GRE, .func = NULL },
-	{ .proto = IPPROTO_ESP, .func = NULL },
-	{ .proto = IPPROTO_AH, .func = NULL },
-	{ .proto = IPPROTO_MTP, .func = NULL },
-	{ .proto = IPPROTO_BEETPH, .func = NULL },
-	{ .proto = IPPROTO_ENCAP, .func = NULL },
-	{ .proto = IPPROTO_PIM, .func = NULL },
-	{ .proto = IPPROTO_COMP, .func = NULL },
-	{ .proto = IPPROTO_SCTP, .sol = SOL_SCTP, .func = &sctp_setsockopt },
-	{ .proto = IPPROTO_UDPLITE, .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
-	{ .proto = IPPROTO_RAW, .sol = SOL_RAW, .func = &raw_setsockopt },
-	{ .proto = IPPROTO_MPLS, .func = NULL },
+	[IPPROTO_RSVP] = { .func = NULL },
+	[IPPROTO_GRE] = { .func = NULL },
+	[IPPROTO_ESP] = { .func = NULL },
+	[IPPROTO_AH] = { .func = NULL },
+	[IPPROTO_MTP] = { .func = NULL },
+	[IPPROTO_BEETPH] = { .func = NULL },
+	[IPPROTO_ENCAP] = { .func = NULL },
+	[IPPROTO_PIM] = { .func = NULL },
+	[IPPROTO_COMP] = { .func = NULL },
+	[IPPROTO_SCTP] = { .sol = SOL_SCTP, .func = &sctp_setsockopt },
+	[IPPROTO_UDPLITE] = { .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
+	[IPPROTO_RAW] = { .sol = SOL_RAW, .func = &raw_setsockopt },
+	[IPPROTO_MPLS] = { .func = NULL },
 };
 
 struct sso_funcptr {
@@ -207,19 +206,15 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 
 static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 {
-	unsigned int i;
+	int proto = triplet->protocol;
 
-	for (i = 0; i < ARRAY_SIZE(ip_ssoptrs); i++) {
-		if (ip_ssoptrs[i].proto == triplet->protocol) {
-			if (ip_ssoptrs[i].func != NULL) {
-				so->level = ip_ssoptrs[i].sol;
-				ip_ssoptrs[i].func(so);
-				return;
-			} else {	// unimplemented yet, or no sso for this proto.
-				do_random_sso(so);
-				return;
-			}
-		}
+	if (ip_ssoptrs[proto].func != NULL) {
+		so->level = ip_ssoptrs[proto].sol;
+		ip_ssoptrs[proto].func(so);
+		return;
+	} else {	// unimplemented yet, or no sso for this proto.
+		do_random_sso(so);
+		return;
 	}
 }
 
