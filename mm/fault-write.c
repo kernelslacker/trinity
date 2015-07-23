@@ -25,16 +25,22 @@ static void fabricate_onepage_struct(char *page)
 
 		/* 4 byte (32bit) 8 byte (64bit) alignment */
 		if (i & ~((__WORDSIZE / 8) - 1)) {
-			unsigned long val;
+			unsigned long val = 0;
 
 			i += sizeof(unsigned long);
 			if (i > page_size)
 				return;
 
-			if (RAND_BOOL())
-				val = rand64();
-			else
-				val = (unsigned long) get_address();
+			switch (rand() % 4) {
+			case 0:	val = rand64();
+				break;
+			case 1:	val = (unsigned long) get_address();
+				break;
+			case 2:	val = (unsigned long) ptr;
+				break;
+			case 3:	val = get_len();
+				break;
+			}
 
 			*(unsigned long *)ptr = val;
 
