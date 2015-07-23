@@ -75,6 +75,11 @@ void init_shm(void)
 	childptrslen &= PAGE_MASK;
 
 	shm->children = memalign(page_size, childptrslen);
+	if (shm->children == NULL) {
+		printf("Failed to allocate child structures.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	memset(shm->children, 0, childptrslen);
 
 	/* We allocate the childdata structs as shared mappings, because
