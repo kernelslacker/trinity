@@ -66,8 +66,11 @@ unsigned int new_seed(void)
 	if (read(urandomfd, &bits, sizeof(bits)) != sizeof(bits))
 		return fallbackseed();
 
-	//printf("new seed:%u\n", r);
+	bits %= 31;
+	bits = max(bits, 8U);
+	r &= ((1 << bits) -1);
 
+	//printf("new seed:%u\n", r);
 	return r;
 }
 
