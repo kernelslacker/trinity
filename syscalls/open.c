@@ -31,11 +31,39 @@ unsigned long get_o_flags(void)
 	return mask;
 }
 
+static void sanitise_open(struct syscallrecord *rec)
+{
+	unsigned long flags;
+
+	flags = get_o_flags();
+
+	rec->a2 |= flags;
+
+	if (rec->a2 & O_CREAT)
+		rec->a3 = 0666;
+
+	if (rec->a2 & O_TMPFILE)
+		rec->a3 = 0666;
+}
+
+static void sanitise_openat(struct syscallrecord *rec)
+{
+	unsigned long flags;
+
+	flags = get_o_flags();
+
+	rec->a3 |= flags;
+
+	if (rec->a3 & O_CREAT)
+		rec->a4 = 0666;
+
+	if (rec->a3 & O_TMPFILE)
+		rec->a4 = 0666;
+}
+
 /*
  * SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, int, mode)
  */
-static void sanitise_open(struct syscallrecord *rec);
-
 struct syscallentry syscall_open = {
 	.name = "open",
 	.num_args = 3,
@@ -52,20 +80,9 @@ struct syscallentry syscall_open = {
 	.sanitise = sanitise_open,
 };
 
-static void sanitise_open(struct syscallrecord *rec)
-{
-	unsigned long flags;
-
-	flags = get_o_flags();
-
-	rec->a2 |= flags;
-}
-
 /*
  * SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, int, mode)
  */
-static void sanitise_openat(struct syscallrecord *rec);
-
 struct syscallentry syscall_openat = {
 	.name = "openat",
 	.num_args = 4,
@@ -84,15 +101,6 @@ struct syscallentry syscall_openat = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
 };
-
-static void sanitise_openat(struct syscallrecord *rec)
-{
-	unsigned long flags;
-
-	flags = get_o_flags();
-
-	rec->a3 |= flags;
-}
 
 /*
  * SYSCALL_DEFINE3(open_by_handle_at, int, mountdirfd,
