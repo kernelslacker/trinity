@@ -85,6 +85,8 @@ void setup_main_signals(void)
 	/* we want default behaviour for child process signals */
 	(void)signal(SIGFPE, SIG_DFL);
 	(void)signal(SIGCHLD, SIG_DFL);
+	(void)signal(SIGABRT, SIG_DFL);
+	(void)signal(SIGSEGV, SIG_DFL);
 
 	(void)signal(SIGINT, ctrlc_handler);
 }
