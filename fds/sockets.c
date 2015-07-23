@@ -88,6 +88,9 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 	nr_sockets++;
 
+	if (nr_sockets == NR_SOCKET_FDS)
+		goto skip_bind;
+
 	/* Sometimes, listen on created sockets. */
 	if (RAND_BOOL()) {
 		int ret, one = 1;
