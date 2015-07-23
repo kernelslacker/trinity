@@ -418,14 +418,21 @@ void generate_syscall_args(struct syscallrecord *rec)
 
 	lock(&rec->lock);
 
+	//TODO: instead of rand64() do a rand arg type
 	entry = syscalls[rec->nr].entry;
 	rec->state = PREP;
-	rec->a1 = (unsigned long) rand64();
-	rec->a2 = (unsigned long) rand64();
-	rec->a3 = (unsigned long) rand64();
-	rec->a4 = (unsigned long) rand64();
-	rec->a5 = (unsigned long) rand64();
-	rec->a6 = (unsigned long) rand64();
+	if (entry->arg1type == ARG_UNDEFINED)
+		rec->a1 = (unsigned long) rand64();
+	if (entry->arg2type == ARG_UNDEFINED)
+		rec->a2 = (unsigned long) rand64();
+	if (entry->arg3type == ARG_UNDEFINED)
+		rec->a3 = (unsigned long) rand64();
+	if (entry->arg4type == ARG_UNDEFINED)
+		rec->a4 = (unsigned long) rand64();
+	if (entry->arg5type == ARG_UNDEFINED)
+		rec->a5 = (unsigned long) rand64();
+	if (entry->arg6type == ARG_UNDEFINED)
+		rec->a6 = (unsigned long) rand64();
 
 	generic_sanitise(rec);
 	if (entry->sanitise)
