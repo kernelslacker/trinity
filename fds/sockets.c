@@ -242,51 +242,49 @@ static int generate_sockets(void)
 	}
 
 	while (nr_to_create > 0) {
-
 		struct socket_triplet st;
 
-		for (st.family = 0; st.family < TRINITY_PF_MAX; st.family++) {
+		st.family = rand() % TRINITY_PF_MAX;
 
-			/* check for ctrl-c again. */
-			if (shm->exit_reason != STILL_RUNNING)
+		/* check for ctrl-c again. */
+		if (shm->exit_reason != STILL_RUNNING)
+			goto out_unlock;
+
+		if (do_specific_domain == TRUE) {
+			st.family = specific_domain;
+			//FIXME: If we've passed -P and we're spinning here without making progress
+			// then we should abort after a few hundred loops.
+		}
+
+		if (get_domain_name(st.family) == NULL)
+			continue;
+
+		if (valid_proto(st.family) == FALSE) {
+			if (do_specific_domain == TRUE) {
+				outputerr("Can't do protocol %s\n", get_domain_name(st.family));
+				goto out_unlock;
+			} else {
+				continue;
+			}
+		}
+
+		BUG_ON(st.family >= ARRAY_SIZE(no_domains));
+		if (no_domains[st.family])
+			continue;
+
+		if (sanitise_socket_triplet(&st) == -1)
+			rand_proto_type(&st);
+
+		fd = open_socket(st.family, st.type, st.protocol);
+		if (fd > -1) {
+			if (write_socket_to_cache(cachefile, &st) == FALSE)
 				goto out_unlock;
 
-			if (do_specific_domain == TRUE) {
-				st.family = specific_domain;
-				//FIXME: If we've passed -P and we're spinning here without making progress
-				// then we should abort after a few hundred loops.
-			}
-
-			if (get_domain_name(st.family) == NULL)
-				continue;
-
-			if (valid_proto(st.family) == FALSE) {
-				if (do_specific_domain == TRUE) {
-					outputerr("Can't do protocol %s\n", get_domain_name(st.family));
-					goto out_unlock;
-				} else {
-					continue;
-				}
-			}
-
-			BUG_ON(st.family >= ARRAY_SIZE(no_domains));
-			if (no_domains[st.family])
-				continue;
-
-			if (sanitise_socket_triplet(&st) == -1)
-				rand_proto_type(&st);
-
-			fd = open_socket(st.family, st.type, st.protocol);
-			if (fd > -1) {
-				if (write_socket_to_cache(cachefile, &st) == FALSE)
-					goto out_unlock;
-
-				nr_to_create--;
-				if (nr_to_create == 0)
-					goto done;
-			} else {
-				//outputerr("Couldn't open family:%d (%s)\n", st.family, get_domain_name(st.family));
-			}
+			nr_to_create--;
+			if (nr_to_create == 0)
+				goto done;
+		} else {
+			//outputerr("Couldn't open family:%d (%s)\n", st.family, get_domain_name(st.family));
 		}
 	}
 
