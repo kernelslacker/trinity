@@ -68,8 +68,6 @@ static void add_socket(int fd, unsigned int domain, unsigned int type, unsigned 
 	output(2, "fd[%i] = domain:%u (%s) type:0x%u protocol:%u %s\n",
 		fd, domain, get_domain_name(domain), type, protocol,
 		accepted ? "[accepted]" : "");
-
-	nr_sockets++;
 }
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
@@ -88,6 +86,8 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	/* Set some random socket options. */
 	sso_socket(&shm->sockets[nr_sockets].triplet, &so, fd);
 
+	nr_sockets++;
+
 	/* Sometimes, listen on created sockets. */
 	if (RAND_BOOL()) {
 		int ret, one = 1;
@@ -104,8 +104,10 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 			(void) listen(fd, RAND_RANGE(1, 128));
 
 //		ret = accept4(fd, sa, &salen, SOCK_NONBLOCK);
-//		if (ret != -1)
+//		if (ret != -1) {
 //			add_socket(ret, domain, type, protocol, TRUE);
+//			nr_sockets++;
+//		}
 	}
 skip_bind:
 
@@ -220,7 +222,6 @@ static int generate_sockets(void)
 {
 	int fd, n, ret = FALSE;
 	int cachefile;
-	unsigned int nr_to_create = NR_SOCKET_FDS;
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
 	if (cachefile == -1)
@@ -238,10 +239,10 @@ static int generate_sockets(void)
 		}
 
 		if (n >= (int)ARRAY_SIZE(no_domains))
-			nr_to_create = 0;
+			goto done;
 	}
 
-	while (nr_to_create > 0) {
+	while (nr_sockets < NR_SOCKET_FDS) {
 		struct socket_triplet st;
 
 		st.family = rand() % TRINITY_PF_MAX;
@@ -279,10 +280,6 @@ static int generate_sockets(void)
 		if (fd > -1) {
 			if (write_socket_to_cache(cachefile, &st) == FALSE)
 				goto out_unlock;
-
-			nr_to_create--;
-			if (nr_to_create == 0)
-				goto done;
 		} else {
 			//outputerr("Couldn't open family:%d (%s)\n", st.family, get_domain_name(st.family));
 		}
