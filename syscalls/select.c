@@ -31,9 +31,9 @@ static void sanitise_select(struct syscallrecord *rec)
 
 	/* set some random fd's. */
 	for (i = 0; i < rand32() % 10; i++) {
-		FD_SET(rand32() % 1024, rfds);
-		FD_SET(rand32() % 1024, wfds);
-		FD_SET(rand32() % 1024, exfds);
+		FD_SET(rand32() % (__NFDBITS - 1), rfds);
+		FD_SET(rand32() % (__NFDBITS - 1), wfds);
+		FD_SET(rand32() % (__NFDBITS - 1), exfds);
 	}
 
 	rec->a2 = (unsigned long) rfds;
