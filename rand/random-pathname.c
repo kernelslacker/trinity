@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "log.h"
-#include "maps.h"
 #include "random.h"
 #include "sanitise.h"
 #include "utils.h"
