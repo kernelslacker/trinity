@@ -68,18 +68,15 @@ unsigned int open_fds(void)
 
 	list_for_each(node, &fd_providers->list) {
 		struct fd_provider *provider;
-		int ret;
 
 		provider = (struct fd_provider *) node;
 
 		if (provider->enabled == FALSE)
 			continue;
 
-		ret = provider->open();
-		if (ret == FALSE)
-			return FALSE;
-
-		num_fd_providers_enabled++;
+		provider->enabled = provider->open();
+		if (provider->enabled == TRUE)
+			num_fd_providers_enabled++;
 	}
 
 	output(0, "Enabled %d fd providers.\n", num_fd_providers_enabled);
