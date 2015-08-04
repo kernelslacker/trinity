@@ -146,6 +146,8 @@ retry:
 	}
 
 	if (old != 0) {
+		// FIXME: Should factor in loadavg here, as with enough pids, a child can exceed 60s
+		//  without getting scheduled.
 		if (rec->tv.tv_sec - old > 60) {
 			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%s(%lx, %lx, %lx)  was:%lx now:%lx.\n",
 				print_syscall_name(syscallnr, do32),
