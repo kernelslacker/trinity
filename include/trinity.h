@@ -4,6 +4,7 @@
 #include "syscall.h"
 
 extern unsigned int num_online_cpus;
+extern bool no_bind_to_cpu;
 
 extern char *progname;
 

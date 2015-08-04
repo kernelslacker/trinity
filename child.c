@@ -173,6 +173,9 @@ static void bind_child_to_cpu(struct childdata *child)
 	cpu_set_t set;
 	unsigned int cpudest;
 
+	if (no_bind_to_cpu == TRUE)
+		return;
+
 	if (sched_getaffinity(child->pid, sizeof(set), &set) != 0)
 		return;
 

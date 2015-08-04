@@ -28,6 +28,7 @@ char *progname = NULL;
 
 unsigned int page_size;
 unsigned int num_online_cpus;
+bool no_bind_to_cpu;
 unsigned int max_children;
 
 /*
@@ -177,6 +178,8 @@ int main(int argc, char* argv[])
 		shm->mainpid = getpid();
 
 		setup_main_signals();
+
+		no_bind_to_cpu = RAND_BOOL();
 
 		output(0, "Main thread is alive.\n");
 		prctl(PR_SET_NAME, (unsigned long) &taskname);
