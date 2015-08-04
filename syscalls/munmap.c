@@ -25,13 +25,13 @@ static void sanitise_munmap(struct syscallrecord *rec)
 
 	action = 0;
 
-	switch (rand() % 20) {
-	case 0:
+	if (ONE_IN(20) == TRUE) {
 		/* delete the whole mapping. */
 		action = WHOLE;
 		return;
+	}
 
-	case 1 ... 10:
+	if (RAND_BOOL()) {
 		/* unmap a range of the mapping. */
 		nr_pages = map->size / page_size;
 		offsetpagenr = (rand() % nr_pages);
@@ -41,17 +41,11 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		len = (rand() % (nr_pages - offsetpagenr)) + 1;
 		len *= page_size;
 		rec->a2 = len;
-		return;
-
-	case 11 ... 19:
+	} else {
 		/* just unmap 1 page of the mapping. */
 		rec->a1 = (unsigned long) map->ptr;
 		rec->a1 += (rand() % map->size) & PAGE_MASK;
 		rec->a2 = page_size;
-		return;
-
-	default:
-		break;
 	}
 }
 
