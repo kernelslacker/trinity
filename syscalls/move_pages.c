@@ -49,7 +49,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	/* nodes = array of ints specifying desired location for each page */
 	nodes = calloc(count, sizeof(int));
 	for (i = 0; i < count; i++)
-		nodes[i] = (int) rand() % 2;
+		nodes[i] = (int) RAND_BOOL();
 	rec->a4 = (unsigned long) nodes;
 
 	/* status = array of ints returning status of each page.*/
