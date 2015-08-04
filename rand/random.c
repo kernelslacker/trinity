@@ -16,12 +16,11 @@
 void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
-	unsigned char choice = rand() % 3;
 	unsigned int startoffset = 0, remain;
 	unsigned char separators[3] = { ' ', '-', '\0' };
 	unsigned char separator;
 
-	switch (choice) {
+	switch (rand() % 3) {
 	case 0:
 		/* Complete garbage. */
 		for (i = 0; i < len; i++)
