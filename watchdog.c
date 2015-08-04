@@ -396,7 +396,7 @@ static void watchdog(void)
 			if (shm->exit_reason != STILL_RUNNING)
 				return;
 
-			usleep(1);
+			sleep(1);
 		}
 	}
 
