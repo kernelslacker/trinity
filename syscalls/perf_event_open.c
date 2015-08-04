@@ -934,7 +934,7 @@ static long long random_branch_sample_type(void)
 
 	long long branch_sample = 0;
 
-	if (rand() % 2)
+	if (RAND_BOOL())
 		return rand64();
 
 	if (RAND_BOOL())
@@ -1232,16 +1232,12 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
 	/* -1 means all CPUs */
 
-	switch(rand() % 2) {
-	case 0:
+	if (RAND_BOOL()) {
 		/* Any CPU */
 		rec->a3 = -1;
-		break;
-	case 1:
+	} else {
 		/* Default to the get_cpu() value */
 		/* set by ARG_CPU                 */
-	default:
-		break;
 	}
 
 	/* group_fd */
