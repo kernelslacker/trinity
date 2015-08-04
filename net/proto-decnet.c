@@ -22,7 +22,7 @@ void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	dn->sdn_objnamel = rand() % 16;
 	for (i = 0; i < dn->sdn_objnamel; i++)
 		dn->sdn_objname[i] = rand();
-	dn->sdn_add.a_len = rand() % 2;
+	dn->sdn_add.a_len = RAND_BOOL();
 	dn->sdn_add.a_addr[0] = rand();
 	dn->sdn_add.a_addr[1] = rand();
 	*addr = (struct sockaddr *) dn;
