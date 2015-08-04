@@ -97,7 +97,7 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:b:c:C:dDg:hIl:LN:mP:E:pqr:s:T:SV:vx:X";
+static const char paramstr[] = "a:b:c:C:dDE:g:hIl:LmN:P:pqr:s:ST:V:vx:X";
 
 static const struct option longopts[] = {
 	{ "arch", required_argument, NULL, 'a' },
