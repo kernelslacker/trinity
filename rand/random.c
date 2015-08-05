@@ -17,7 +17,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
 	unsigned int startoffset = 0, remain;
-	unsigned char separators[] = { ' ', '-', '\0', };
+	unsigned char separators[] = { ':', ',', '.', ' ', '-', '\0', };
 	unsigned char separator;
 
 	switch (rand() % 3) {
