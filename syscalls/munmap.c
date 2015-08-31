@@ -17,10 +17,6 @@ static struct map *map;
 
 static void sanitise_munmap(struct syscallrecord *rec)
 {
-	unsigned long len;
-	unsigned long nr_pages;
-	unsigned long offset, offsetpagenr;
-
 	map = common_set_mmap_ptr_len();
 
 	action = 0;
@@ -33,8 +29,12 @@ static void sanitise_munmap(struct syscallrecord *rec)
 
 	if (RAND_BOOL()) {
 		/* unmap a range of the mapping. */
+		unsigned long nr_pages;
+		unsigned long offset, offsetpagenr;
+		unsigned long len;
+
 		nr_pages = map->size / page_size;
-		offsetpagenr = (rand() % nr_pages);
+		offsetpagenr = rand() % nr_pages;
 		offset = offsetpagenr * page_size;
 		rec->a1 = (unsigned long) map->ptr + offset;
 
@@ -43,6 +43,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		rec->a2 = len;
 	} else {
 		/* just unmap 1 page of the mapping. */
+
 		rec->a1 = (unsigned long) map->ptr;
 		rec->a1 += (rand() % map->size) & PAGE_MASK;
 		rec->a2 = page_size;
