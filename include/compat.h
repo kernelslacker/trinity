@@ -280,6 +280,9 @@ enum {
 #ifndef PR_SET_NO_NEW_PRIVS
 #define PR_SET_NO_NEW_PRIVS     38
 #define PR_GET_NO_NEW_PRIVS     39
+#endif
+
+#ifndef PR_GET_TID_ADDRESS
 #define PR_GET_TID_ADDRESS      40
 #endif
 
