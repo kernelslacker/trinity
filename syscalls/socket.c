@@ -45,7 +45,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_NETLINK] = { .func = &netlink_rand_socket },
 	[AF_PACKET] = { .func = &packet_rand_socket },
 	[AF_ASH] = { .func = NULL },
-	[AF_ECONET] = {  },	// DEAD
+	[AF_ECONET] = { .func = NULL },	// DEAD
 	[AF_ATMSVC] = { .func = NULL },
 	[AF_RDS] = { .func = &rds_rand_socket },
 	[AF_SNA] = { .func = NULL },
