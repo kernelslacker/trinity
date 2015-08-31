@@ -388,7 +388,6 @@ void child_process(void)
 	shm_rw();
 
 	while (shm->exit_reason == STILL_RUNNING) {
-		const char *lastop = NULL;
 		unsigned int i;
 
 		periodic_work();
@@ -401,6 +400,8 @@ void child_process(void)
 		i = rand() % ARRAY_SIZE(child_ops);
 
 		if (rand() % 100 <= child_ops[i].likelyhood) {
+			const char *lastop = NULL;
+
 			if (lastop != child_ops[i].name) {
 				//output(0, "Chose %s.\n", child_ops[i].name);
 				lastop = child_ops[i].name;
