@@ -262,6 +262,9 @@ enum {
 #ifndef NETLINK_LIST_MEMBERSHIPS
 #define NETLINK_LIST_MEMBERSHIPS 9
 #endif
+#ifndef NETLINK_CAP_ACK
+#define NETLINK_CAP_ACK 10
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET

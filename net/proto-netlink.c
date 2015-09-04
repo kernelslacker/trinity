@@ -50,7 +50,7 @@ void netlink_rand_socket(struct socket_triplet *st)
 static const unsigned int netlink_opts[] = {
 	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
 	NETLINK_NO_ENOBUFS, NETLINK_RX_RING, NETLINK_TX_RING, NETLINK_LISTEN_ALL_NSID,
-	NETLINK_LIST_MEMBERSHIPS,
+	NETLINK_LIST_MEMBERSHIPS, NETLINK_CAP_ACK,
 };
 
 void netlink_setsockopt(struct sockopt *so)
