@@ -47,7 +47,7 @@ static int ignore_files(const char *path)
 		"/proc/sysrq-trigger", "/proc/kmem", "/proc/kcore",
 
 		/* dangerous/noisy/annoying stuff in /dev */
-		"/dev/log", "/dev/mem", "/dev/kmsg",
+		"/dev/log", "/dev/mem", "/dev/kmsg", "/dev/kmem",
 		NULL
 	};
 
