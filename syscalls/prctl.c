@@ -36,6 +36,7 @@ static int prctl_opts[] = {
 #ifdef __mips__
 	GET_FP_MODE, SET_FP_MODE,
 #endif
+	PR_CAP_AMBIENT,
 };
 #define NR_PRCTL_OPTS ARRAY_SIZE(prctl_opts)
 

@@ -306,6 +306,11 @@ enum {
 #endif
 #endif
 
+#ifndef PR_CAP_AMBIENT
+#define PR_CAP_AMBIENT		47
+#endif
+
+
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO
 #define RDS_CANCEL_SENT_TO              1
