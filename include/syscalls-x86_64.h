@@ -330,4 +330,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_kexec_file_load },
 	{ .entry = &syscall_bpf },
 	{ .entry = &syscall_execveat },
+	{ .entry = &syscall_userfaultfd },
 };
