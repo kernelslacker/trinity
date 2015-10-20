@@ -4,6 +4,7 @@
 	const char __user *, _callout_info,
 	key_serial_t, destringid)
  */
+#include <linux/keyctl.h>
 #include "sanitise.h"
 
 struct syscallentry syscall_request_key = {
@@ -16,4 +17,14 @@ struct syscallentry syscall_request_key = {
 	.arg3name = "_callout_info",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "destringid",
+	.arg4type = ARG_OP,
+	.arg4list = {
+		.num = 8,
+		.values = {
+			KEY_SPEC_THREAD_KEYRING, KEY_SPEC_PROCESS_KEYRING,
+			KEY_SPEC_SESSION_KEYRING, KEY_SPEC_USER_KEYRING,
+			KEY_SPEC_USER_SESSION_KEYRING, KEY_SPEC_GROUP_KEYRING,
+			KEY_SPEC_REQKEY_AUTH_KEY, KEY_SPEC_REQUESTOR_KEYRING,
+		},
+	},
 };
