@@ -1,6 +1,8 @@
 #pragma once
 
+#include "child.h"
 #include "list.h"
+#include "syscall.h"
 #include "types.h"
 
 void setup_fd_providers(void);
@@ -16,3 +18,5 @@ struct fd_provider {
         int (*get)(void);
 	bool enabled;
 };
+
+unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec);
