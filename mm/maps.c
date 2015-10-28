@@ -17,10 +17,8 @@
  */
 struct map * get_map(void)
 {
-	struct list_head *node, *list;
-	unsigned int num;
-
-	unsigned int i, j = 0;
+	struct map *map;
+	bool global;
 
 	/*
 	 * Some of the fd providers need weird mappings on startup.
@@ -28,26 +26,14 @@ struct map * get_map(void)
 	 * and hence don't have a valid this_child, so we address the
 	 * initial mappings list directly.
 	 */
-	if (this_child == NULL) {
-		list = &initial_mappings->list;
-		num = num_initial_mappings;
-	} else {
-		list = &this_child->mappings->list;
-		num = this_child->num_mappings;
-	}
+	if (this_child == NULL)
+		global = OBJ_GLOBAL;
+	else
+		global = OBJ_LOCAL;
 
-	i = rand() % num;
+	map = (struct map *) get_random_object(OBJ_MMAP, global);
 
-	list_for_each(node, list) {
-		struct map *m;
-
-		m = (struct map *) node;
-
-		if (i == j)
-			return m;
-		j++;
-	}
-	return NULL;
+	return map;
 }
 
 /*
@@ -55,34 +41,32 @@ struct map * get_map(void)
  * A child inherits the initial mappings, and will add to them
  * when it successfully completes mmap() calls.
  */
-void init_child_mappings(struct childdata *child)
+void init_child_mappings(void)
 {
 	struct list_head *node;
 
-	child->mappings = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&child->mappings->list);
+	init_object_lists(OBJ_LOCAL);
 
 	/* Copy the initial mapping list to the child.
 	 * Note we're only copying pointers here, the actual mmaps
 	 * will be faulted into the child when they get accessed.
 	 */
 	list_for_each(node, &initial_mappings->list) {
-		struct map *m, *new;
+		struct map *m, *newmap;
+		struct object *newobj;
 
 		m = (struct map *) node;
 
-		new = zmalloc(sizeof(struct map));
-		new->ptr = m->ptr;
-		new->name = strdup(m->name);
-		new->size = m->size;
-		new->prot = m->prot;
+		newobj = alloc_object(m->ptr);
+		newmap = (struct map *) newobj;
+		newmap->name = strdup(m->name);
+		newmap->size = m->size;
+		newmap->prot = m->prot;
 		/* We leave type as 'INITIAL' until we change the mapping
 		 * by mprotect/mremap/munmap etc..
 		 */
-		new->type = TRINITY_MAP_INITIAL;
-
-		list_add_tail(&new->list, &this_child->mappings->list);
-		this_child->num_mappings++;
+		newmap->type = TRINITY_MAP_INITIAL;
+		add_object(newobj, OBJ_LOCAL, OBJ_MMAP);
 	}
 }
 

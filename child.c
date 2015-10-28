@@ -162,7 +162,6 @@ static void reinit_child(struct childdata *child)
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
 	memset(&child->previous, 0, sizeof(struct syscallrecord));
 
-	child->num_mappings = 0;
 	child->seed = 0;
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
@@ -220,7 +219,7 @@ void init_child(struct childdata *child, int childno)
 
 	set_seed(this_child);
 
-	init_child_mappings(child);
+	init_child_mappings();
 
 	dirty_random_mapping();
 

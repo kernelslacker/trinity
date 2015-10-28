@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "arch.h"
 #include "compat.h"
+#include "objects.h"
 #include "random.h"
 #include "syscall.h"
 #include "tables.h"
@@ -110,8 +111,8 @@ static void sanitise_mmap(struct syscallrecord *rec)
 static void post_mmap(struct syscallrecord *rec)
 {
 	char *p;
-	struct list_head *list;
 	struct map *new;
+	struct object *newobj;
 
 	p = (void *) rec->retval;
 	if (p == MAP_FAILED)
@@ -126,9 +127,8 @@ static void post_mmap(struct syscallrecord *rec)
 	new->type = TRINITY_MAP_CHILD;
 
 	// Add this to a list for use by subsequent syscalls.
-	list = &this_child->mappings->list;
-	list_add_tail(&new->list, list);
-	this_child->num_mappings++;
+	newobj = (struct object *) new;
+	add_object(newobj, OBJ_LOCAL, OBJ_MMAP);
 
 	/* Sometimes dirty the mapping. */
 	if (RAND_BOOL())

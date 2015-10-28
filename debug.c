@@ -90,7 +90,8 @@ void dump_childdata(struct childdata *child)
 
 	output(0, "logfile: %p (dirty:%d)\n", child->logfile, child->logdirty);
 
-	output(0, "mappings: %p (num:%d)\n", child->mappings, child->num_mappings);
+	output(0, "objects: %p\n", child->objects);
+	//TODO: dump each objhead
 
 	output(0, "seed: %ld\n", child->seed);
 	output(0, "pid: %d\n", child->pid);

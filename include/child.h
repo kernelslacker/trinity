@@ -17,10 +17,6 @@ struct childdata {
 
 	struct objhead objects[MAX_OBJECT_TYPES];
 
-	/* per-child mmaps */
-	struct map *mappings;
-	unsigned int num_mappings;
-
 	unsigned int seed;
 
 	pid_t pid;
@@ -36,7 +32,7 @@ extern struct childdata *this_child;
 extern unsigned int max_children;
 
 void init_child(struct childdata *child, int childno);
-void init_child_mappings(struct childdata *child);
+void init_child_mappings(void);
 
 void child_process(void);
 

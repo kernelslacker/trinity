@@ -56,8 +56,8 @@ static void post_munmap(struct syscallrecord *rec)
 		return;
 
 	if (action == WHOLE) {
-		list_del(&map->list);
-		this_child->num_mappings--;
+		struct object *obj = (struct object *) map;
+		destroy_object(obj, OBJ_LOCAL, OBJ_MMAP);
 	}
 }
 
