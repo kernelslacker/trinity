@@ -4,39 +4,38 @@
 #include "trinity.h"
 #include "utils.h"
 
-struct object * alloc_object(void *ptr, enum objecttype type)
+struct object * alloc_object(void *ptr)
 {
 	struct object *obj;
 
 	obj = zmalloc(sizeof(struct object));
 
-	obj->type = type;
 	obj->ptr = ptr;
 
 	return obj;
 }
 
-void add_object(struct object *obj, bool global)
+void add_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
 
 	if (global == OBJ_GLOBAL)
-		head = &shm->global_objects[obj->type];
+		head = &shm->global_objects[type];
 	else
-		head = &this_child->objects[obj->type];
+		head = &this_child->objects[type];
 
 	list_add(obj->list, head->list);
 	head->num_entries++;
 }
 
-void destroy_object(struct object *obj, bool global)
+void destroy_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
 
 	if (global == OBJ_GLOBAL)
-		head = &shm->global_objects[obj->type];
+		head = &shm->global_objects[type];
 	else
-		head = &this_child->objects[obj->type];
+		head = &this_child->objects[type];
 
 	list_del(obj->list);
 

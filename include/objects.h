@@ -12,7 +12,6 @@ struct object {
 	struct list_head *list;
 	void *ptr;
 	void (*destroy)(void *ptr);
-	enum objecttype type;
 	bool dereferencable;
 };
 
@@ -24,6 +23,6 @@ struct objhead {
 #define OBJ_GLOBAL 0
 #define OBJ_LOCAL 1
 
-struct object * alloc_object(void *ptr, enum objecttype type);
-void add_object(struct object *obj, bool global);
-void destroy_object(struct object *obj, bool global);
+struct object * alloc_object(void *ptr);
+void add_object(struct object *obj, bool global, enum objecttype type);
+void destroy_object(struct object *obj, bool global, enum objecttype type);
