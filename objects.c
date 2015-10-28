@@ -45,3 +45,18 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 
 	free(obj);
 }
+
+void init_object_lists(bool global)
+{
+	struct objhead *head;
+	unsigned int i;
+
+	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
+		if (global == OBJ_GLOBAL)
+			head = &shm->global_objects[i];
+		else
+			head = &this_child->objects[i];
+
+		INIT_LIST_HEAD(head->list);
+	}
+}
