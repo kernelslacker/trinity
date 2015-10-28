@@ -16,23 +16,24 @@ struct object * alloc_object(void *ptr, enum objecttype type)
 	return obj;
 }
 
-void add_to_global_objects(struct object *obj)
+void add_object(struct object *obj, bool global)
 {
-	list_add(obj->list, shm->global_objects[obj->type].list);
-	shm->global_objects[obj->type].num_entries++;
-}
+	struct objhead *head;
 
-void add_to_child_objects(struct object *obj)
-{
-	list_add(obj->list, this_child->objects[obj->type].list);
-	this_child->objects[obj->type].num_entries++;
+	if (global == OBJ_GLOBAL)
+		head = &shm->global_objects[obj->type];
+	else
+		head = &this_child->objects[obj->type];
+
+	list_add(obj->list, head->list);
+	head->num_entries++;
 }
 
 void destroy_object(struct object *obj, bool global)
 {
 	struct objhead *head;
 
-	if (global == TRUE)
+	if (global == OBJ_GLOBAL)
 		head = &shm->global_objects[obj->type];
 	else
 		head = &this_child->objects[obj->type];
