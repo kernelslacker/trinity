@@ -41,7 +41,7 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 
 	head->num_entries--;
 
-	obj->destroy(obj->ptr);
+	head->destroy(obj);
 
 	free(obj);
 }

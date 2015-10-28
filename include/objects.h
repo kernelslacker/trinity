@@ -11,12 +11,12 @@ enum objecttype {
 struct object {
 	struct list_head *list;
 	void *ptr;
-	void (*destroy)(void *ptr);
 };
 
 struct objhead {
 	struct list_head *list;
 	unsigned int num_entries;
+	void (*destroy)(void *ptr);
 };
 
 #define OBJ_GLOBAL 0
