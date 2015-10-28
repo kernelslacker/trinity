@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <types.h>
+#include "objects.h"
 #include "syscall.h"
 
 struct childdata {
@@ -13,6 +14,8 @@ struct childdata {
 	/* log file related stuff */
 	FILE *logfile;
 	bool logdirty;
+
+	struct object objects[MAX_OBJECT_TYPES];
 
 	/* per-child mmaps */
 	struct map *mappings;

@@ -57,6 +57,9 @@ struct shm_s {
 	pid_t mainpid;
 	pid_t last_reaped;
 
+	/* generic object cache*/
+	struct object global_objects[MAX_OBJECT_TYPES];
+
 	/* file descriptors, created in main, inherited in children */
 	int pipe_fds[MAX_PIPE_FDS];
 	int file_fds[NR_FILE_FDS];
