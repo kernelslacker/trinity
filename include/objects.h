@@ -27,3 +27,4 @@ struct object * alloc_object(void *ptr);
 void add_object(struct object *obj, bool global, enum objecttype type);
 void destroy_object(struct object *obj, bool global, enum objecttype type);
 void init_object_lists(bool global);
+struct object * get_random_object(enum objecttype type, bool global);

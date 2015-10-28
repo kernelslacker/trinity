@@ -60,3 +60,30 @@ void init_object_lists(bool global)
 		INIT_LIST_HEAD(head->list);
 	}
 }
+
+struct object * get_random_object(enum objecttype type, bool global)
+{
+	struct objhead *head;
+	struct list_head *node, *list;
+	unsigned int i, j = 0;
+
+	if (global == OBJ_GLOBAL)
+		head = &shm->global_objects[type];
+	else
+		head = &this_child->objects[type];
+
+	list = head->list;
+
+	i = rand() % head->num_entries;
+
+	list_for_each(node, list) {
+		struct object *m;
+
+		m = (struct object *) node;
+
+		if (i == j)
+			return m;
+		j++;
+	}
+	return NULL;
+}
