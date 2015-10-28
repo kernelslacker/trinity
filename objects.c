@@ -24,7 +24,7 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 	else
 		head = &this_child->objects[type];
 
-	list_add(obj->list, head->list);
+	list_add_tail(obj->list, head->list);
 	head->num_entries++;
 }
 
