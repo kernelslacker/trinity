@@ -12,7 +12,6 @@ struct object {
 	struct list_head *list;
 	void *ptr;
 	void (*destroy)(void *ptr);
-	bool dereferencable;
 };
 
 struct objhead {
