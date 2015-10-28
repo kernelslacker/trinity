@@ -1,6 +1,7 @@
 #pragma once
 
 #include "list.h"
+#include "maps.h"
 #include "trinity.h"
 
 enum objecttype {
@@ -10,7 +11,9 @@ enum objecttype {
 
 struct object {
 	struct list_head *list;
-	void *ptr;
+	union {
+		struct map map;
+	};
 };
 
 struct objhead {

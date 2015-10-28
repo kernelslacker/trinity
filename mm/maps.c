@@ -52,20 +52,20 @@ void init_child_mappings(void)
 	 * will be faulted into the child when they get accessed.
 	 */
 	list_for_each(node, &initial_mappings->list) {
-		struct map *m, *newmap;
+		struct map *m;
 		struct object *newobj;
 
 		m = (struct map *) node;
 
-		newobj = alloc_object(m->ptr);
-		newmap = (struct map *) newobj;
-		newmap->name = strdup(m->name);
-		newmap->size = m->size;
-		newmap->prot = m->prot;
+		newobj = zmalloc(sizeof(struct object));
+		newobj->map.ptr = m->ptr;
+		newobj->map.name = strdup(m->name);
+		newobj->map.size = m->size;
+		newobj->map.prot = m->prot;
 		/* We leave type as 'INITIAL' until we change the mapping
 		 * by mprotect/mremap/munmap etc..
 		 */
-		newmap->type = TRINITY_MAP_INITIAL;
+		newobj->map.type = TRINITY_MAP_INITIAL;
 		add_object(newobj, OBJ_LOCAL, OBJ_MMAP);
 	}
 }

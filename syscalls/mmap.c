@@ -111,28 +111,26 @@ static void sanitise_mmap(struct syscallrecord *rec)
 static void post_mmap(struct syscallrecord *rec)
 {
 	char *p;
-	struct map *new;
-	struct object *newobj;
+	struct object *new;
 
 	p = (void *) rec->retval;
 	if (p == MAP_FAILED)
 		return;
 
-	new = zmalloc(sizeof(struct map));
-	new->name = strdup("misc");
-	new->size = rec->a2;
-	new->prot = rec->a3;
+	new = zmalloc(sizeof(struct object));
+	new->map.name = strdup("misc");
+	new->map.size = rec->a2;
+	new->map.prot = rec->a3;
 //TODO: store fd if !anon
-	new->ptr = p;
-	new->type = TRINITY_MAP_CHILD;
+	new->map.ptr = p;
+	new->map.type = TRINITY_MAP_CHILD;
 
 	// Add this to a list for use by subsequent syscalls.
-	newobj = (struct object *) new;
-	add_object(newobj, OBJ_LOCAL, OBJ_MMAP);
+	add_object(new, OBJ_LOCAL, OBJ_MMAP);
 
 	/* Sometimes dirty the mapping. */
 	if (RAND_BOOL())
-		dirty_mapping(new);
+		dirty_mapping(&new->map);
 }
 
 static char * decode_mmap(struct syscallrecord *rec, unsigned int argnum)
