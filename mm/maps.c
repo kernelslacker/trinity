@@ -43,15 +43,17 @@ struct map * get_map(void)
  */
 void init_child_mappings(void)
 {
-	struct list_head *node;
+	struct list_head *globallist, *node;
 
 	init_object_lists(OBJ_LOCAL);
+
+	globallist = shm->global_objects[OBJ_MMAP].list;
 
 	/* Copy the initial mapping list to the child.
 	 * Note we're only copying pointers here, the actual mmaps
 	 * will be faulted into the child when they get accessed.
 	 */
-	list_for_each(node, &initial_mappings->list) {
+	list_for_each(node, globallist) {
 		struct map *m;
 		struct object *newobj;
 

@@ -17,16 +17,17 @@
 #include "maps.h"
 #include "utils.h"
 
-unsigned int num_initial_mappings = 0;
-struct map *initial_mappings = NULL;
-
 static void dump_initial_mappings(void)
 {
-	struct list_head *node;
+	struct list_head *node, *list;
+	struct objhead *head;
 
-	output(2, "There are %d entries in the map table\n", num_initial_mappings);
+	head = &shm->global_objects[OBJ_MMAP];
+	list = head->list;
 
-	list_for_each(node, &initial_mappings->list) {
+	output(2, "There are %d entries in the map table\n", head->num_entries);
+
+	list_for_each(node, list) {
 		struct map *m;
 
 		m = (struct map *) node;
@@ -36,7 +37,8 @@ static void dump_initial_mappings(void)
 
 static void alloc_zero_map(unsigned long size, int prot, const char *name)
 {
-	struct map *newnode;
+	struct objhead *head;
+	struct object *new;
 	int fd;
 	char buf[11];
 
@@ -46,28 +48,28 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 		exit(EXIT_FAILURE);
 	}
 
-	newnode = zmalloc(sizeof(struct map));
-	newnode->name = strdup(name);
-	newnode->size = size;
-	newnode->prot = prot;
-	newnode->type = TRINITY_MAP_INITIAL;
-	newnode->ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
-	if (newnode->ptr == MAP_FAILED) {
+	new = zmalloc(sizeof(struct object));
+	new->map.name = strdup(name);
+	new->map.size = size;
+	new->map.prot = prot;
+	new->map.type = TRINITY_MAP_INITIAL;
+	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
+	if (new->map.ptr == MAP_FAILED) {
 		outputerr("mmap failure\n");
 		exit(EXIT_FAILURE);
 	}
 
-	newnode->name = zmalloc(80);
+	new->map.name = zmalloc(80);
 
-	sprintf(newnode->name, "anon(%s)", name);
+	sprintf(new->map.name, "anon(%s)", name);
 
-	num_initial_mappings++;
+	head = &shm->global_objects[OBJ_MMAP];
 
-	list_add_tail(&newnode->list, &initial_mappings->list);
+	add_object(new, OBJ_GLOBAL, OBJ_MMAP);
 
 	sizeunit(size, buf);
 	output(2, "mapping[%d]: (zeropage %s) %p (%s)\n",
-			num_initial_mappings - 1, name, newnode->ptr, buf);
+			head->num_entries - 1, name, new->map.ptr, buf);
 
 	close(fd);
 }
@@ -80,8 +82,7 @@ void setup_initial_mappings(void)
 //		GB(1),	// disabled for now, due to OOM.
 	};
 
-	initial_mappings = zmalloc(sizeof(struct map));
-	INIT_LIST_HEAD(&initial_mappings->list);
+	init_object_lists(OBJ_GLOBAL);
 
 	alloc_zero_map(page_size, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
 	alloc_zero_map(page_size, PROT_READ, "PROT_READ");
@@ -101,18 +102,21 @@ void setup_initial_mappings(void)
 
 void destroy_initial_mappings(void)
 {
-	struct list_head *node, *tmp;
+	struct list_head *node, *list, *tmp;
+	struct objhead *head;
 	struct map *m;
 
-	list_for_each_safe(node, tmp, &initial_mappings->list) {
+	head = &shm->global_objects[OBJ_MMAP];
+	list = head->list;
+
+	list_for_each_safe(node, tmp, list) {
 		m = (struct map *) node;
 
 		munmap(m->ptr, m->size);
 		free(m->name);
 
-		list_del(&m->list);
-		free(m);
+		destroy_object((struct object *) m, OBJ_GLOBAL, OBJ_MMAP);
 	}
 
-	num_initial_mappings = 0;
+	head->num_entries = 0;
 }
