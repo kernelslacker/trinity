@@ -19,21 +19,29 @@ struct object * alloc_object(void *ptr, enum objecttype type)
 void add_to_global_objects(struct object *obj)
 {
 	list_add(obj->list, shm->global_objects[obj->type].list);
+	shm->global_objects[obj->type].num_entries++;
 }
 
 void add_to_child_objects(struct object *obj)
 {
 	list_add(obj->list, this_child->objects[obj->type].list);
+	this_child->objects[obj->type].num_entries++;
 }
 
-void destroy_object(struct object *obj)
+void destroy_object(struct object *obj, bool global)
 {
-	// Remove it from the list first so nothing else uses it.
+	struct objhead *head;
+
+	if (global == TRUE)
+		head = &shm->global_objects[obj->type];
+	else
+		head = &this_child->objects[obj->type];
+
 	list_del(obj->list);
 
-	// Call the destructor
+	head->num_entries--;
+
 	obj->destroy(obj->ptr);
 
-	// free obj
 	free(obj);
 }

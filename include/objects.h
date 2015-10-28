@@ -16,7 +16,12 @@ struct object {
 	bool dereferencable;
 };
 
+struct objhead {
+	struct list_head *list;
+	unsigned int num_entries;
+};
+
 struct object * alloc_object(void *ptr, enum objecttype type);
 void add_to_global_objects(struct object *obj);
 void add_to_child_objects(struct object *obj);
-void destroy_object(struct object *obj);
+void destroy_object(struct object *obj, bool global);

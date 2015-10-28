@@ -15,7 +15,7 @@ struct childdata {
 	FILE *logfile;
 	bool logdirty;
 
-	struct object objects[MAX_OBJECT_TYPES];
+	struct objhead objects[MAX_OBJECT_TYPES];
 
 	/* per-child mmaps */
 	struct map *mappings;
