@@ -17,6 +17,7 @@
  */
 struct map * get_map(void)
 {
+	struct object *obj;
 	struct map *map;
 	bool global;
 
@@ -31,7 +32,8 @@ struct map * get_map(void)
 	else
 		global = OBJ_LOCAL;
 
-	map = (struct map *) get_random_object(OBJ_MMAP, global);
+	obj = get_random_object(OBJ_MMAP, global);
+	map = &obj->map;
 
 	return map;
 }
