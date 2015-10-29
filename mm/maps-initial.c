@@ -28,10 +28,12 @@ static void dump_initial_mappings(void)
 	output(2, "There are %d entries in the map table\n", head->num_entries);
 
 	list_for_each(node, list) {
+		struct object *obj;
 		struct map *m;
 
-		m = (struct map *) node;
-		output(2, " start: %p  name: %s\n", m->ptr, m->name);
+		obj = (struct object *) node;
+		m = &obj->map;
+		output(2, " start: %p size:%d  name: %s\n", m->ptr, m->size, m->name);
 	}
 }
 
