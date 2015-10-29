@@ -6,7 +6,6 @@
 #define TRINITY_MAP_CHILD 2
 
 struct map {
-	struct list_head list;
 	void *ptr;
 	char *name;
 	unsigned long size;
