@@ -31,6 +31,7 @@ unsigned int user_specified_children = 0;
 bool do_specific_domain = FALSE;
 bool no_domains[TRINITY_PF_MAX];
 
+bool dry_run = FALSE;
 bool show_syscall_list = FALSE;
 bool show_ioctl_list = FALSE;
 unsigned char quiet_level = 0;
@@ -105,6 +106,7 @@ static const struct option longopts[] = {
 	{ "dropprivs", no_argument, NULL, 'X'},
 	{ "debug", no_argument, NULL, 'D' },
 	{ "disable-fds", required_argument, NULL, 0 },
+	{ "dry-run", no_argument, NULL, 0 },
 	{ "enable-fds", required_argument, NULL, 0 },
 	{ "exclude", required_argument, NULL, 'x' },
 	{ "group", required_argument, NULL, 'g' },
@@ -315,6 +317,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, TRUE);
+
+			if (strcmp("dry-run", longopts[opt_index].name) == 0)
+				dry_run = TRUE;
 
 			break;
 		}
