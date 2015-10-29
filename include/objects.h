@@ -19,7 +19,7 @@ struct object {
 struct objhead {
 	struct list_head *list;
 	unsigned int num_entries;
-	void (*destroy)(void *ptr);
+	void (*destroy)(struct object *obj);
 };
 
 #define OBJ_GLOBAL 0
