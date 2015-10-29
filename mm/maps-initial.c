@@ -105,13 +105,13 @@ void destroy_initial_mappings(void)
 {
 	struct list_head *node, *list, *tmp;
 	struct objhead *head;
-	struct map *m;
 
 	head = &shm->global_objects[OBJ_MMAP];
 	list = head->list;
 
 	list_for_each_safe(node, tmp, list) {
 		struct object *obj;
+		struct map *m;
 
 		obj = (struct object *) node;
 		m = &obj->map;
@@ -119,7 +119,7 @@ void destroy_initial_mappings(void)
 		munmap(m->ptr, m->size);
 		free(m->name);
 
-		destroy_object((struct object *) m, OBJ_GLOBAL, OBJ_MMAP);
+		destroy_object(obj, OBJ_GLOBAL, OBJ_MMAP);
 	}
 
 	head->num_entries = 0;
