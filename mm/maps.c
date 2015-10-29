@@ -38,6 +38,15 @@ struct map * get_map(void)
 	return map;
 }
 
+static void map_destructor(struct object *obj)
+{
+	struct map *map;
+
+	map = &obj->map;
+	printf("Freeing %s\n", map->name);
+	free(map->name);
+}
+
 /*
  * Set up a childs local mapping list.
  * A child inherits the initial mappings, and will add to them
@@ -46,8 +55,12 @@ struct map * get_map(void)
 void init_child_mappings(void)
 {
 	struct list_head *globallist, *node;
+	struct objhead *head;
 
 	init_object_lists(OBJ_LOCAL);
+
+	head = &this_child->objects[OBJ_MMAP];
+	head->destroy = &map_destructor;
 
 	globallist = shm->global_objects[OBJ_MMAP].list;
 
