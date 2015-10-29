@@ -31,7 +31,6 @@ unsigned int user_specified_children = 0;
 bool do_specific_domain = FALSE;
 bool no_domains[TRINITY_PF_MAX];
 
-bool dopause = FALSE;
 bool show_syscall_list = FALSE;
 bool show_ioctl_list = FALSE;
 unsigned char quiet_level = 0;
@@ -92,12 +91,11 @@ static void usage(void)
 	outputerr("\n");
 	outputerr(" -c#,@: target specific syscall (takes syscall name as parameter and optionally 32 or 64 as bit-width. Default:both).\n");
 	outputerr(" -N#: do # syscalls then exit.\n");
-	outputerr(" -p:  pause after syscall.\n");
 	outputerr(" -s#: use # as random seed.\n");
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:b:c:C:dDE:g:hIl:LmN:P:pqr:s:ST:V:vx:X";
+static const char paramstr[] = "a:b:c:C:dDE:g:hIl:LmN:P:qr:s:ST:V:vx:X";
 
 static const struct option longopts[] = {
 	{ "arch", required_argument, NULL, 'a' },
@@ -232,11 +230,6 @@ void parse_args(int argc, char *argv[])
 		/* Set number of syscalls to do */
 		case 'N':
 			syscalls_todo = strtoll(optarg, NULL, 10);
-			break;
-
-		/* Pause after each syscall */
-		case 'p':
-			dopause = TRUE;
 			break;
 
 		case 'P':

@@ -12,7 +12,6 @@
 #include "debug.h"
 #include "locks.h"
 #include "log.h"
-#include "params.h"	// dopause
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -129,10 +128,6 @@ retry:
 	 */
 	len = strlen(rec->prebuffer);
 
-	/* If we're going to pause, might as well sync pre-syscall */
-	if (dopause == TRUE)
-		synclogs();
-
 	old = rec->tv.tv_sec;
 	do_syscall(rec);
 
@@ -171,9 +166,6 @@ retry:
 
 	/* Output the syscall result, and clean up */
 	output_syscall_postfix(rec);
-
-	if (dopause == TRUE)
-		sleep(1);
 
 	handle_syscall_ret(rec);
 

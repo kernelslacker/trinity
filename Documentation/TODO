@@ -228,7 +228,6 @@
   - if we find a blocking fd, check if it's a socket, and shutdown() it.
     (tricky: we need to do the shutdown in the main process, and then tell other children)
 
-* make -p take an arg for seconds
 
 * things to check.
   - execve occasionally returns -ESRCH. Why ?
