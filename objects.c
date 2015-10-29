@@ -13,7 +13,7 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 	else
 		head = &this_child->objects[type];
 
-	list_add_tail(obj->list, head->list);
+	list_add_tail(&obj->list, head->list);
 	head->num_entries++;
 }
 
@@ -26,7 +26,7 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 	else
 		head = &this_child->objects[type];
 
-	list_del(obj->list);
+	list_del(&obj->list);
 
 	head->num_entries--;
 
@@ -46,6 +46,7 @@ void init_object_lists(bool global)
 		else
 			head = &this_child->objects[i];
 
+		head->list = zmalloc(sizeof(struct object));
 		INIT_LIST_HEAD(head->list);
 	}
 }

@@ -10,7 +10,7 @@ enum objecttype {
 };
 
 struct object {
-	struct list_head *list;
+	struct list_head list;
 	union {
 		struct map map;
 	};
