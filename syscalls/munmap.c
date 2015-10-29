@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "utils.h"
 
 #define WHOLE 1
 static int action;
@@ -56,7 +57,7 @@ static void post_munmap(struct syscallrecord *rec)
 		return;
 
 	if (action == WHOLE) {
-		struct object *obj = (struct object *) map;
+		struct object *obj = container_of(map, struct object, map);
 		destroy_object(obj, OBJ_LOCAL, OBJ_MMAP);
 	}
 }
