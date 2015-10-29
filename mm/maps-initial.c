@@ -51,7 +51,6 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	}
 
 	new = zmalloc(sizeof(struct object));
-	new->map.name = strdup(name);
 	new->map.size = size;
 	new->map.prot = prot;
 	new->map.type = TRINITY_MAP_INITIAL;
@@ -112,7 +111,10 @@ void destroy_initial_mappings(void)
 	list = head->list;
 
 	list_for_each_safe(node, tmp, list) {
-		m = (struct map *) node;
+		struct object *obj;
+
+		obj = (struct object *) node;
+		m = &obj->map;
 
 		munmap(m->ptr, m->size);
 		free(m->name);

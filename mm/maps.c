@@ -55,9 +55,10 @@ void init_child_mappings(void)
 	 */
 	list_for_each(node, globallist) {
 		struct map *m;
-		struct object *newobj;
+		struct object *globalobj, *newobj;
 
-		m = (struct map *) node;
+		globalobj = (struct object *) node;
+		m = &globalobj->map;
 
 		newobj = zmalloc(sizeof(struct object));
 		newobj->map.ptr = m->ptr;
