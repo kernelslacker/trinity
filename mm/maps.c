@@ -43,7 +43,6 @@ static void map_destructor(struct object *obj)
 	struct map *map;
 
 	map = &obj->map;
-	printf("Freeing %s\n", map->name);
 	free(map->name);
 }
 
