@@ -61,7 +61,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_IUCV] = { .func = NULL },
 	[AF_RXRPC] = { .func = NULL },
 	[AF_ISDN] = { .func = NULL },
-	[AF_PHONET] = { .func = NULL },
+	[AF_PHONET] = { .func = &phonet_rand_socket },
 	[AF_IEEE802154] = { .func = NULL },
 #ifdef USE_CAIF
 	[AF_CAIF] = { .func = &caif_rand_socket },
