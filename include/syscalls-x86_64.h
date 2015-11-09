@@ -331,4 +331,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_bpf },
 	{ .entry = &syscall_execveat },
 	{ .entry = &syscall_userfaultfd },
+	{ .entry = &syscall_membarrier },
 };

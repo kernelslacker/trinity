@@ -382,4 +382,5 @@ struct syscalltable syscalls_i386[] = {
 	{ .entry = &syscall_recvmsg },
 	{ .entry = &syscall_shutdown },
 	{ .entry = &syscall_userfaultfd },
+	{ .entry = &syscall_membarrier },
 };

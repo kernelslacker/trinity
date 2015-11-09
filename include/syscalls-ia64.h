@@ -326,4 +326,5 @@ struct syscalltable syscalls_ia64[] = {
 	{ .entry = &syscall_memfd_create },
 	{ .entry = &syscall_bpf },
 	{ .entry = &syscall_userfaultfd },
+	{ .entry = &syscall_membarrier },
 };
