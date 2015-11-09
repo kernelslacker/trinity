@@ -383,4 +383,5 @@ struct syscalltable syscalls_i386[] = {
 	{ .entry = &syscall_shutdown },
 	{ .entry = &syscall_userfaultfd },
 	{ .entry = &syscall_membarrier },
+	{ .entry = &syscall_mlock2 },
 };

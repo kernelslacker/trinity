@@ -22,3 +22,24 @@ struct syscallentry syscall_mlock = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,
 };
+
+/*
+ * SYSCALL_DEFINE3(mlock2, unsigned long, start, size_t, len, int, flags)
+ */
+
+#define MLOCK_ONFAULT   0x01
+
+struct syscallentry syscall_mlock2 = {
+	.name = "mlock2",
+	.num_args = 2,
+	.arg1name = "start",
+	.arg1type = ARG_MMAP,
+	.arg2name = "len",
+	.arg3name = "flags",
+	.arg3type = ARG_LIST,
+	.arg3list = {
+		.num = MLOCK_ONFAULT,
+	},
+	.group = GROUP_VM,
+	.sanitise = sanitise_mlock,
+};

@@ -332,4 +332,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_execveat },
 	{ .entry = &syscall_userfaultfd },
 	{ .entry = &syscall_membarrier },
+	{ .entry = &syscall_mlock2 },
 };
