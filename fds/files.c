@@ -303,7 +303,7 @@ static int open_file(void)
 	int ret;
 	int tries = 0;
 	int fcntl_flags;
-	int flags, randflags;
+	int flags, randflags = 0;
 	bool opened_with_fopen = FALSE;
 
 retry:
