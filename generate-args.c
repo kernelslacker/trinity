@@ -317,6 +317,16 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 		return (unsigned long) get_writable_address(page_size);
 
 	case ARG_FD:
+		if (RAND_BOOL()) {
+			unsigned int i;
+			/* If this is the 2nd or more ARG_FD, make it unique */
+			for (i = 0; i < argnum; i++) {
+				enum argtype arg;
+				arg = get_argtype(entry, i);
+				if (arg == ARG_FD)
+					return get_new_random_fd();
+			}
+		}
 		return get_random_fd();
 
 	case ARG_LEN:

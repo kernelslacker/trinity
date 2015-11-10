@@ -84,7 +84,7 @@ unsigned int open_fds(void)
 	return TRUE;
 }
 
-static int get_new_random_fd(void)
+int get_new_random_fd(void)
 {
 	struct list_head *node;
 	int fd = -1;
