@@ -16,7 +16,7 @@ CFLAGS += -Wall -W -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_S
 CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
 CPP_MINOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f2)
 DEVEL	:= $(shell grep VERSION Makefile | head -n1 | grep pre | wc -l)
-CFLAGS	+= $(shell if [ $(CPP_MAJOR) -eq 4 -a $(CPP_MINOR) -ge 9 -a $(DEVEL) -eq 1 ] ; then echo "-Werror"; else echo ""; fi)
+CFLAGS	+= $(shell if [ $(CPP_MAJOR) -eq 5 -a $(CPP_MINOR) -ge 1 -a $(DEVEL) -eq 1 ] ; then echo "-Werror"; else echo ""; fi)
 
 ifneq ($(SYSROOT),)
 CFLAGS += --sysroot=$(SYSROOT)
