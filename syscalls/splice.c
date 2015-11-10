@@ -12,22 +12,6 @@
 #include "trinity.h"
 #include "compat.h"
 
-static void sanitise_splice(struct syscallrecord *rec)
-{
-	if (ONE_IN(3))
-		return;
-
-	if (RAND_BOOL()) {
-		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		rec->a2 = 0;
-	}
-
-	if (RAND_BOOL()) {
-		rec->a3 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		rec->a4 = 0;
-	}
-}
-
 struct syscallentry syscall_splice = {
 	.name = "splice",
 	.num_args = 6,
@@ -47,6 +31,5 @@ struct syscallentry syscall_splice = {
 		.num = 4,
 		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
 	},
-	.sanitise = sanitise_splice,
 	.flags = NEED_ALARM,
 };
