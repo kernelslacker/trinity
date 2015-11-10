@@ -21,4 +21,5 @@ struct fd_provider {
 
 unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec);
 
+int get_random_fd(void);
 int get_new_random_fd(void);

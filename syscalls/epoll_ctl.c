@@ -5,6 +5,7 @@
  * When an error occurs, epoll_ctl() returns -1 and errno is set appropriately.
  */
 #include <sys/epoll.h>
+#include "fd.h"
 #include "sanitise.h"
 #include "random.h"
 #include "utils.h"

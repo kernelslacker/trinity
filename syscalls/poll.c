@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <asm/poll.h>
+#include "fd.h"
 #include "random.h"
 #include "sanitise.h"
 #include "utils.h"
