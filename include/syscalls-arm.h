@@ -398,4 +398,6 @@ struct syscalltable syscalls_arm[] = {
 /* 385 */	{ .entry = &syscall_memfd_create },
 		{ .entry = &syscall_bpf },
 		{ .entry = &syscall_execveat },
+		{ .entry = &syscall_userfaultfd },
+		{ .entry = &syscall_membarrier },
 };
