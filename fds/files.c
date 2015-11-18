@@ -321,7 +321,7 @@ retry_flags:
 
 	if (RAND_BOOL()) {
 		randflags = get_o_flags();
-		fd = open(filename, flags | randflags | O_NONBLOCK);
+		fd = open(filename, flags | randflags | O_NONBLOCK, 0666);
 	} else {
 		fd = open_with_fopen(filename, flags);
 		fcntl_flags = random_fcntl_setfl_flags();
