@@ -80,7 +80,7 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 static void post_ppoll(struct syscallrecord *rec)
 {
 	freeptr(&rec->a1);
-	freeptr(&rec->a4);
+	freeptr(&rec->a3);
 }
 
 struct syscallentry syscall_ppoll = {
