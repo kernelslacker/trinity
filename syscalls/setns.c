@@ -15,9 +15,6 @@ struct syscallentry syscall_setns= {
 	.arg1type = ARG_FD,
 	.arg2name = "nstype",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 4,
-		.values = setns_types,
-	},
+	.arg2list = ARGLIST(setns_types),
 	.flags = NEED_ALARM,
 };

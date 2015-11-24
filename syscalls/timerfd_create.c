@@ -18,14 +18,8 @@ struct syscallentry syscall_timerfd_create = {
 	.num_args = 2,
 	.arg1name = "clockid",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 2,
-		.values = timerfd_create_clockids,
-	},
+	.arg1list = ARGLIST(timerfd_create_clockids),
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 2,
-		.values = timerfd_create_flags,
-	},
+	.arg2list = ARGLIST(timerfd_create_flags),
 };

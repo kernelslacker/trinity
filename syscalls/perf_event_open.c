@@ -1347,10 +1347,7 @@ struct syscallentry syscall_perf_event_open = {
 	.arg4type = ARG_FD,
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 3,
-		.values = perf_event_open_flags,
-	},
+	.arg5list = ARGLIST(perf_event_open_flags),
 	.sanitise = sanitise_perf_event_open,
 	.post = post_perf_event_open,
 	.init = init_pmus,

@@ -29,9 +29,6 @@ struct syscallentry syscall_pipe2 = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 3,
-		.values = pipe2_flags,
-	},
+	.arg2list = ARGLIST(pipe2_flags),
 	.group = GROUP_VFS,
 };

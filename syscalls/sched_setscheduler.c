@@ -17,10 +17,7 @@ struct syscallentry syscall_sched_setscheduler = {
 	.arg1type = ARG_PID,
 	.arg2name = "policy",
 	.arg2type = ARG_OP,
-	.arg2list = {
-		.num = 6,
-		.values = sched_setscheduler_policies,
-	},
+	.arg2list = ARGLIST(sched_setscheduler_policies),
 	.arg3name = "param",
 	.arg3type = ARG_ADDRESS,
 };

@@ -31,10 +31,7 @@ struct syscallentry syscall_mount = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 29,
-		.values = mount_flags,
-	},
+	.arg4list = ARGLIST(mount_flags),
 	.arg5name = "data",
 	.arg5type = ARG_ADDRESS,
 	.group = GROUP_VFS,

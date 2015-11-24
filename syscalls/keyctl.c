@@ -20,10 +20,7 @@ struct syscallentry syscall_keyctl = {
 	.num_args = 5,
 	.arg1name = "cmd",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 21,
-		.values = keyctl_cmds,
-	},
+	.arg1list = ARGLIST(keyctl_cmds),
 	.arg2name = "arg2",
 	.arg3name = "arg3",
 	.arg4name = "arg4",

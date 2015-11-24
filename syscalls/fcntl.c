@@ -141,14 +141,7 @@ struct syscallentry syscall_fcntl = {
 	.arg1type = ARG_FD,
 	.arg2name = "cmd",
 	.arg2type = ARG_OP,
-	.arg2list = {
-#ifndef HAVE_LK64
-		.num = 23,
-#else
-		.num = 27,
-#endif
-		.values = fcntl_flags,
-	},
+	.arg2list = ARGLIST(fcntl_flags),
 	.arg3name = "arg",
 	.rettype = RET_FD,	//FIXME: Needs to mutate somehow depending on 'cmd'
 	.flags = NEED_ALARM,

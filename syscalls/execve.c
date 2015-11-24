@@ -133,10 +133,7 @@ struct syscallentry syscall_execveat = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 2,
-		.values = execveat_flags,
-	},
+	.arg5list = ARGLIST(execveat_flags),
 	.sanitise = sanitise_execve,
 	.post = post_execveat,
 	.group = GROUP_VFS,

@@ -60,10 +60,7 @@ struct syscallentry syscall_send = {
 	.arg3name = "len",
 	.arg4name = "flags",
         .arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 20,
-		.values = sendflags,
-	},
+	.arg4list = ARGLIST(sendflags),
 	.sanitise = sanitise_send,
 	.post = post_send,
 };
@@ -85,10 +82,7 @@ struct syscallentry syscall_sendto = {
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 20,
-		.values = sendflags,
-	},
+	.arg4list = ARGLIST(sendflags),
 	.arg5name = "addr",
 	.arg5type = ARG_SOCKADDR,
 	.arg6name = "addr_len",
@@ -143,10 +137,7 @@ struct syscallentry syscall_sendmsg = {
 	.arg2name = "msg",
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
-	.arg3list = {
-		.num = 20,
-		.values = sendflags,
-	},
+	.arg3list = ARGLIST(sendflags),
 	.sanitise = sanitise_sendmsg,
 	.post = post_sendmsg,
 	.flags = NEED_ALARM,
@@ -171,10 +162,7 @@ struct syscallentry syscall_sendmmsg = {
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 20,
-		.values = sendflags,
-	},
+	.arg4list = ARGLIST(sendflags),
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_sendmmsg,
 };

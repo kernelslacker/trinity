@@ -19,10 +19,7 @@ struct syscallentry syscall_futex = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "op",
 	.arg2type = ARG_OP,
-	.arg2list = {
-		.num = 13,
-		.values = futex_ops,
-	},
+	.arg2list = ARGLIST(futex_ops),
 	.arg3name = "val",
 	.arg4name = "utime",
 	.arg4type = ARG_ADDRESS,

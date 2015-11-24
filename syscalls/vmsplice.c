@@ -34,10 +34,7 @@ struct syscallentry syscall_vmsplice = {
 	.arg3type = ARG_IOVECLEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 4,
-		.values = vmsplice_flags,
-	},
+	.arg4list = ARGLIST(vmsplice_flags),
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
 };

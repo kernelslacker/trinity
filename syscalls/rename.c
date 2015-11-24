@@ -58,10 +58,7 @@ struct syscallentry syscall_renameat2 = {
 	.arg4type = ARG_PATHNAME,
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 2,
-		.values = renameat2_flags,
-	},
+	.arg5list = ARGLIST(renameat2_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

@@ -19,10 +19,7 @@ struct syscallentry syscall_lseek = {
 	.arg2name = "offset",
 	.arg3name = "whence",
 	.arg3type = ARG_OP,
-	.arg3list = {
-		.num = 5,
-		.values = lseek_whences,
-	},
+	.arg3list = ARGLIST(lseek_whences),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

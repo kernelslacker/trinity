@@ -40,10 +40,7 @@ struct syscallentry syscall_mprotect = {
 	.arg2name = "len",
 	.arg3name = "prot",
 	.arg3type = ARG_LIST,
-	.arg3list = {
-		.num = 6,
-		.values = mprotect_prots,
-	},
+	.arg3list = ARGLIST(mprotect_prots),
 	.sanitise = sanitise_mprotect,
 	.group = GROUP_VM,
 	.post = post_mprotect,

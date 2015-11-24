@@ -20,10 +20,7 @@ struct syscallentry syscall_kcmp = {
 	.arg2type = ARG_PID,
 	.arg3name = "type",
 	.arg3type = ARG_OP,
-	.arg3list = {
-		.num = KCMP_TYPES,
-		.values = kcmp_types,
-	},
+	.arg3list = ARGLIST(kcmp_types),
 	.arg4name = "idx1",
 	.arg5name = "idx2",
 };

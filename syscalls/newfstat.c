@@ -38,9 +38,6 @@ struct syscallentry syscall_newfstatat = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "flag",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 2,
-		.values = newfstatat_flags,
-	},
+	.arg4list = ARGLIST(newfstatat_flags),
 	.group = GROUP_VFS,
 };

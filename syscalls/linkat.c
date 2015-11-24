@@ -36,10 +36,7 @@ struct syscallentry syscall_linkat = {
 	.arg4type = ARG_PATHNAME,
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 2,
-		.values = linkat_flags,
-	},
+	.arg5list = ARGLIST(linkat_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_linkat,

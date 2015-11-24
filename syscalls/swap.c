@@ -16,13 +16,9 @@ struct syscallentry syscall_swapon = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "swap_flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 2,
-		.values = swapon_flags,
-	},
+	.arg2list = ARGLIST(swapon_flags),
 	.group = GROUP_VFS,
 };
-
 
 /*
  * SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)

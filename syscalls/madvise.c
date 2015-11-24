@@ -30,10 +30,7 @@ struct syscallentry syscall_madvise = {
 	.arg2name = "len_in",
 	.arg3name = "advice",
 	.arg3type = ARG_OP,
-	.arg3list = {
-		.num = 14,
-		.values = madvise_advices,
-	},
+	.arg3list = ARGLIST(madvise_advices),
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,
 };

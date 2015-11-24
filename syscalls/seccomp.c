@@ -31,16 +31,10 @@ struct syscallentry syscall_seccomp = {
 	.num_args = 3,
 	.arg1name = "op",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 2,
-		.values = seccomp_ops,
-	},
+	.arg1list = ARGLIST(seccomp_ops),
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 1,
-		.values= seccomp_flags,
-	},
+	.arg2list = ARGLIST(seccomp_flags),
 	.arg3name = "uargs",
 	.arg3type = ARG_ADDRESS,
 	.sanitise = sanitise_seccomp,

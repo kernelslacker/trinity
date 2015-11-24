@@ -66,10 +66,7 @@ struct syscallentry syscall_remap_file_pages = {
 	.arg4name = "pgoff",
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 1,
-		.values = remap_file_pages_flags,
-	},
+	.arg5list = ARGLIST(remap_file_pages_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_remap_file_pages,
 };

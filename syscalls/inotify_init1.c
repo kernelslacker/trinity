@@ -16,9 +16,6 @@ struct syscallentry syscall_inotify_init1 = {
 	.num_args = 1,
 	.arg1name = "flags",
 	.arg1type = ARG_LIST,
-	.arg1list = {
-		.num = 2,
-		.values = inotify_init1_flags,
-	},
+	.arg1list = ARGLIST(inotify_init1_flags),
 	.group = GROUP_VFS,
 };

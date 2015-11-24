@@ -21,10 +21,7 @@ struct syscallentry syscall_arch_prctl = {
 	.num_args = 2,
 	.arg1name = "code",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 4,
-		.values = arch_prctl_flags,
-	},
+	.arg1list = ARGLIST(arch_prctl_flags),
 	.arg2name = "addr",
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_BORING,

@@ -37,9 +37,6 @@ struct syscallentry syscall_signalfd4 = {
 	.arg3name = "sizemask",
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 2,
-		.values = signalfd4_flags,
-	},
+	.arg4list = ARGLIST(signalfd4_flags),
 	.flags = NEED_ALARM,
 };

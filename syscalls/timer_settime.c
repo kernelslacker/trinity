@@ -16,10 +16,7 @@ struct syscallentry syscall_timer_settime = {
 	.arg1name = "timer_id",
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 1,
-		.values = timer_settime_flags,
-	},
+	.arg2list = ARGLIST(timer_settime_flags),
 	.arg3name = "new_setting",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "old_setting",

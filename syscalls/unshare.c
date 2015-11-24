@@ -15,8 +15,5 @@ struct syscallentry syscall_unshare = {
 	.num_args = 1,
 	.arg1name = "unshare_flags",
 	.arg1type = ARG_LIST,
-	.arg1list = {
-		.num = 12,
-		.values = unshare_flags,
-	},
+	.arg1list = ARGLIST(unshare_flags),
 };

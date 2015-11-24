@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include "locks.h"
 #include "types.h"
+#include "utils.h"
 
 #define PREBUFFER_LEN	4096 * 6
 #define POSTBUFFER_LEN	128
@@ -65,6 +66,12 @@ struct arglist {
 	unsigned int num;
 	unsigned long *values;
 };
+
+#define ARGLIST(vals)		\
+{				\
+	.num = ARRAY_SIZE(vals),\
+	.values = vals,		\
+}
 
 struct errnos {
 	unsigned int num;

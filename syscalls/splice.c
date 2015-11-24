@@ -31,9 +31,6 @@ struct syscallentry syscall_splice = {
 	.arg5type = ARG_LEN,
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
-	.arg6list = {
-		.num = 4,
-		.values = splice_flags,
-	},
+	.arg6list = ARGLIST(splice_flags),
 	.flags = NEED_ALARM,
 };

@@ -24,10 +24,7 @@ struct syscallentry syscall_clone = {
 	.flags = AVOID_SYSCALL,
 	.arg1name = "clone_flags",
 	.arg1type = ARG_LIST,
-	.arg1list = {
-		.num = 23,
-		.values = clone_flags,
-	},
+	.arg1list = ARGLIST(clone_flags),
 	.arg2name = "newsp",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "parent_tid",
@@ -54,10 +51,7 @@ struct syscallentry syscall_clone2 = {
 	.flags = AVOID_SYSCALL,
 	.arg1name = "flags",
 	.arg1type = ARG_LIST,
-	.arg1list = {
-		.num = 23,
-		.values = clone_flags,
-	},
+	.arg1list = ARGLIST(clone_flags),
 	.arg2name = "ustack_base",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "ustack_size",

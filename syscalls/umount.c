@@ -16,9 +16,6 @@ struct syscallentry syscall_umount = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 4,
-		.values = umount_flags,
-	},
+	.arg2list = ARGLIST(umount_flags),
 	.group = GROUP_VFS,
 };

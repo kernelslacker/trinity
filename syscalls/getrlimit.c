@@ -20,10 +20,7 @@ struct syscallentry syscall_getrlimit = {
 	.num_args = 2,
 	.arg1name = "resource",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 16,
-		.values = getrlimit_resources,
-	},
+	.arg1list = ARGLIST(getrlimit_resources),
 	.arg2name = "rlim",
 	.arg2type = ARG_ADDRESS,
 };

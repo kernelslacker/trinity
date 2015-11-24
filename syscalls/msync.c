@@ -32,10 +32,7 @@ struct syscallentry syscall_msync = {
 	.arg2name = "len",
 	.arg3name = "flags",
 	.arg3type = ARG_OP,
-	.arg3list = {
-		.num = 2,
-		.values = msync_flags,
-	},
+	.arg3list = ARGLIST(msync_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_msync,
 };

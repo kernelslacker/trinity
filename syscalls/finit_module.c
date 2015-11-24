@@ -19,8 +19,5 @@ struct syscallentry syscall_finit_module = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
-	.arg3list = {
-		.num = 2,
-		.values = finit_module_flags,
-	},
+	.arg3list = ARGLIST(finit_module_flags),
 };

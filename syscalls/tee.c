@@ -32,10 +32,7 @@ struct syscallentry syscall_tee = {
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 4,
-		.values = tee_flags,
-	},
+	.arg4list = ARGLIST(tee_flags),
 	.sanitise = sanitise_tee,
 	.flags = NEED_ALARM,
 };

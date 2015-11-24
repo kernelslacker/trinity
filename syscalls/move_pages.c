@@ -82,10 +82,7 @@ struct syscallentry syscall_move_pages = {
 	.arg5name = "status",
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
-	.arg6list = {
-		.num = 2,
-		.values = move_pages_flags,
-	},
+	.arg6list = ARGLIST(move_pages_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_move_pages,
 	.post = post_move_pages,

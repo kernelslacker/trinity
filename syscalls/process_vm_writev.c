@@ -24,8 +24,5 @@ struct syscallentry syscall_process_vm_writev = {
 	.arg5type = ARG_IOVECLEN,
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
-	.arg6list = {
-		.num = 1,
-		.values = process_vm_writev_flags,
-	},
+	.arg6list = ARGLIST(process_vm_writev_flags),
 };

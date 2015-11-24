@@ -29,9 +29,6 @@ struct syscallentry syscall_get_mempolicy = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 3,
-		.values = get_mempolicy_flags,
-	},
+	.arg5list = ARGLIST(get_mempolicy_flags),
 	.rettype = RET_ZERO_SUCCESS,
 };

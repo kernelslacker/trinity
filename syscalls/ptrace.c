@@ -43,10 +43,7 @@ struct syscallentry syscall_ptrace = {
 	.num_args = 4,
 	.arg1name = "request",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 25,
-		.values = ptrace_reqs,
-	},
+	.arg1list = ARGLIST(ptrace_reqs),
 	.arg2name = "pid",
 	.arg3name = "addr",
 	.arg3type = ARG_ADDRESS,

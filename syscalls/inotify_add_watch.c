@@ -24,10 +24,7 @@ struct syscallentry syscall_inotify_add_watch = {
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "mask",
 	.arg3type = ARG_LIST,
-	.arg3list = {
-		.num = 21,
-		.values = inotify_add_watch_masks,
-	},
+	.arg3list = ARGLIST(inotify_add_watch_masks),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

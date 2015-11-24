@@ -25,10 +25,7 @@ struct syscallentry syscall_fallocate = {
 	.arg1type = ARG_FD,
 	.arg2name = "mode",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 6,
-		.values = fallocate_modes,
-	},
+	.arg2list = ARGLIST(fallocate_modes),
 	.arg3name = "offset",
 	.arg3type = ARG_LEN,
 	.arg4name = "len",

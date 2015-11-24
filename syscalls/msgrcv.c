@@ -21,9 +21,6 @@ struct syscallentry syscall_msgrcv = {
 	.arg4name = "msgtyp",
 	.arg5name = "msgflg",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 4,
-		.values = msgrcv_flags,
-	},
+	.arg5list = ARGLIST(msgrcv_flags),
 	.flags = IGNORE_ENOSYS,
 };

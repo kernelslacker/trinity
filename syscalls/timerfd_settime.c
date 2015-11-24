@@ -19,10 +19,7 @@ struct syscallentry syscall_timerfd_settime = {
 	.arg1type = ARG_FD,
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 2,
-		.values = timerfd_settime_flags,
-	},
+	.arg2list = ARGLIST(timerfd_settime_flags),
 	.arg3name = "utmr",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "otmr",

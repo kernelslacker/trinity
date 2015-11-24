@@ -25,9 +25,6 @@ struct syscallentry syscall_name_to_handle_at = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "flag",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 6,
-		.values = name_to_handle_at_flags,
-	},
+	.arg5list = ARGLIST(name_to_handle_at_flags),
 	.flags = NEED_ALARM,
 };

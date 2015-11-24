@@ -25,8 +25,5 @@ struct syscallentry syscall_request_key = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "destringid",
 	.arg4type = ARG_OP,
-	.arg4list = {
-		.num = 8,
-		.values = request_key_ids,
-	},
+	.arg4list = ARGLIST(request_key_ids),
 };

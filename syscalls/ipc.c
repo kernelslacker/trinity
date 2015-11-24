@@ -16,10 +16,7 @@ struct syscallentry syscall_ipc = {
 	.num_args = 6,
 	.arg1name = "call",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 12,
-		.values = ipc_calls,
-	},
+	.arg1list = ARGLIST(ipc_calls),
 	.arg2name = "first",
 	.arg3name = "second",
 	.arg4name = "third",

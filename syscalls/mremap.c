@@ -76,10 +76,7 @@ struct syscallentry syscall_mremap = {
 	.arg3name = "new_len",
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 2,
-		.values = mremap_flags,
-	},
+	.arg4list = ARGLIST(mremap_flags),
 	.arg5name = "new_addr",
 	.group = GROUP_VM,
 	.post = post_mremap,

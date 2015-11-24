@@ -23,8 +23,5 @@ struct syscallentry syscall_kexec_load = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 2,
-		.values = kexec_load_flags,
-	},
+	.arg4list = ARGLIST(kexec_load_flags),
 };

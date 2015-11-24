@@ -20,9 +20,6 @@ struct syscallentry syscall_utimensat = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 1,
-		.values = utimensat_flags,
-	},
+	.arg4list = ARGLIST(utimensat_flags),
 	.flags = NEED_ALARM,
 };

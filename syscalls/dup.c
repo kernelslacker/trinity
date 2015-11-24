@@ -58,10 +58,7 @@ struct syscallentry syscall_dup3 = {
 	.arg2type = ARG_FD,
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
-	.arg3list = {
-		.num = 1,
-		.values = dup3_flags,
-	},
+	.arg3list = ARGLIST(dup3_flags),
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 };

@@ -22,10 +22,7 @@ struct syscallentry syscall_fanotify_init = {
 	.num_args = 2,
 	.arg1name = "flags",
 	.arg1type = ARG_LIST,
-	.arg1list = {
-		.num = 7,
-		.values = fanotify_init_flags,
-	},
+	.arg1list = ARGLIST(fanotify_init_flags),
 	.arg2name = "event_f_flags",
 	.rettype = RET_FD,
 	.group = GROUP_VFS,

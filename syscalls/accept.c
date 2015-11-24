@@ -51,10 +51,7 @@ struct syscallentry syscall_accept4 = {
 	.arg3type = ARG_SOCKADDRLEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-	.arg4list = {
-		.num = 2,
-		.values = accept4_flags,
-	},
+	.arg4list = ARGLIST(accept4_flags),
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_accept,	// use same as accept.

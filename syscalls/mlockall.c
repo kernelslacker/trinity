@@ -31,10 +31,7 @@ struct syscallentry syscall_mlockall = {
 	.num_args = 1,
 	.arg1name = "flags",
 	.arg1type = ARG_LIST,
-	.arg1list = {
-		.num = 2,
-		.values = mlockall_flags,
-	},
+	.arg1list = ARGLIST(mlockall_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlockall,
 };

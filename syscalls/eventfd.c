@@ -37,9 +37,6 @@ struct syscallentry syscall_eventfd2 = {
 	.arg1type = ARG_LEN,
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 3,
-		.values = eventfd2_flags,
-	},
+	.arg2list = ARGLIST(eventfd2_flags),
 	.rettype = RET_FD,
 };

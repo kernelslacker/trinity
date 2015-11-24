@@ -21,10 +21,7 @@ struct syscallentry syscall_bpf = {
 
 	.arg1name = "cmd",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 6,
-		.values = bpf_flags,
-	},
+	.arg1list = ARGLIST(bpf_flags),
 	.arg2name = "uattr",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",

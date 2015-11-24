@@ -43,10 +43,7 @@ struct syscallentry syscall_epoll_ctl = {
 	.arg1type = ARG_FD,
 	.arg2name = "op",
 	.arg2type = ARG_OP,
-	.arg2list = {
-		.num = 3,
-		.values = epoll_ctl_ops,
-	},
+	.arg2list = ARGLIST(epoll_ctl_ops),
 	.arg3name = "fd",
 	.arg3type = ARG_FD,
 	.arg4name = "event",

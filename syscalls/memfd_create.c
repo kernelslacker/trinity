@@ -17,8 +17,5 @@ struct syscallentry syscall_memfd_create = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "flag",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 2,
-		.values = memfd_create_flags,
-	},
+	.arg2list = ARGLIST(memfd_create_flags),
 };

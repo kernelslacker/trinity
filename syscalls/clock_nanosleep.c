@@ -24,16 +24,10 @@ struct syscallentry syscall_clock_nanosleep = {
 	.num_args = 4,
 	.arg1name = "which_clock",
 	.arg1type = ARG_OP,
-	.arg1list = {
-		.num = 3,
-		.values = clock_nanosleep_which,
-	},
+	.arg1list = ARGLIST(clock_nanosleep_which),
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-	.arg2list = {
-		.num = 1,
-		.values = clock_nanosleep_flags,
-	},
+	.arg2list = ARGLIST(clock_nanosleep_flags),
 	.arg3name = "rqtp",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "rmtp",

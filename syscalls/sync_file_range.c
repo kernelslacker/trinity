@@ -54,10 +54,7 @@ struct syscallentry syscall_sync_file_range = {
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
-        .arg4list = {
-		.num = 3,
-		.values = sync_file_range_flags,
-        },
+	.arg4list = ARGLIST(sync_file_range_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
@@ -74,10 +71,7 @@ struct syscallentry syscall_sync_file_range2 = {
 	.arg1type = ARG_FD,
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
-        .arg2list = {
-		.num = 3,
-		.values = sync_file_range_flags,
-	},
+	.arg2list = ARGLIST(sync_file_range_flags),
 	.arg3name = "offset",
 	.arg4name = "nbytes",
 	.arg4type = ARG_LEN,

@@ -53,10 +53,7 @@ struct syscallentry syscall_syslog = {
 	.num_args = 3,
 	.arg1name = "type",
 	.arg1type = ARG_LIST,
-	.arg1list = {
-		.num = 11,
-		.values = syslog_types,
-	},
+	.arg1list = ARGLIST(syslog_types),
 	.arg2name = "buf",
 	.arg2type = ARG_MMAP,
 	.arg3name = "len",

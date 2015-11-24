@@ -66,16 +66,10 @@ struct syscallentry syscall_fanotify_mark = {
 	.arg1type = ARG_FD,
 	.arg2name = "flags",
 	.arg2type = ARG_OP,
-	.arg2list = {
-		.num = 3,
-		.values = fanotify_mark_flags,
-	},
+	.arg2list = ARGLIST(fanotify_mark_flags),
 	.arg3name = "mask",
 	.arg3type = ARG_LIST,
-	.arg3list = {
-		.num = 7,
-		.values = fanotify_mark_mask,
-	},
+	.arg3list = ARGLIST(fanotify_mark_mask),
 	.arg4name = "dfd",
 	.arg4type = ARG_FD,
 	.arg5name = "pathname",

@@ -24,9 +24,6 @@ struct syscallentry syscall_lsetxattr = {
 	.arg4type = ARG_LEN,
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
-	.arg5list = {
-		.num = 2,
-		.values = lsetxattr_flags,
-	},
+	.arg5list = ARGLIST(lsetxattr_flags),
 	.group = GROUP_VFS,
 };

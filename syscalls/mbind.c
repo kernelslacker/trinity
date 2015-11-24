@@ -52,10 +52,7 @@ struct syscallentry syscall_mbind = {
 
 	.arg3name = "mode",
 	.arg3type = ARG_LIST,
-	.arg3list = {
-		.num = 6,
-		.values = mbind_modes,
-	},
+	.arg3list = ARGLIST(mbind_modes),
 
 	.arg4name = "nmask",
 	.arg4type = ARG_ADDRESS,
@@ -67,10 +64,8 @@ struct syscallentry syscall_mbind = {
 
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
-	.arg6list = {
-		.num = 3,
-		.values = mbind_flags,
-	},
+	.arg6list = ARGLIST(mbind_flags),
+
 	.sanitise = sanitise_mbind,
 	.group = GROUP_VM,
 };
