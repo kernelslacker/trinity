@@ -15,6 +15,13 @@ static void sanitise_madvise(__unused__ struct syscallrecord *rec)
 	(void) common_set_mmap_ptr_len();
 }
 
+static unsigned long madvise_advices[] = {
+	MADV_NORMAL, MADV_RANDOM, MADV_SEQUENTIAL, MADV_WILLNEED,
+	MADV_DONTNEED, MADV_REMOVE, MADV_DONTFORK, MADV_DOFORK,
+	MADV_MERGEABLE, MADV_UNMERGEABLE, MADV_HUGEPAGE, MADV_NOHUGEPAGE,
+	MADV_DONTDUMP, MADV_DODUMP,
+};
+
 struct syscallentry syscall_madvise = {
 	.name = "madvise",
 	.num_args = 3,
@@ -25,10 +32,7 @@ struct syscallentry syscall_madvise = {
 	.arg3type = ARG_OP,
 	.arg3list = {
 		.num = 14,
-		.values = { MADV_NORMAL, MADV_RANDOM, MADV_SEQUENTIAL, MADV_WILLNEED,
-			    MADV_DONTNEED, MADV_REMOVE, MADV_DONTFORK, MADV_DOFORK,
-			    MADV_MERGEABLE, MADV_UNMERGEABLE, MADV_HUGEPAGE, MADV_NOHUGEPAGE,
-			    MADV_DONTDUMP, MADV_DODUMP, },
+		.values = madvise_advices,
 	},
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,

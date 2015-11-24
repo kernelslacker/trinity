@@ -43,6 +43,14 @@ static void post_send(struct syscallrecord *rec)
 	freeptr(&rec->a2);
 }
 
+static unsigned long sendflags[] = {
+	MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
+	MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
+	MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
+	MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
+	MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT,
+};
+
 struct syscallentry syscall_send = {
 	.name = "send",
 	.num_args = 4,
@@ -54,12 +62,7 @@ struct syscallentry syscall_send = {
         .arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT,
-		},
+		.values = sendflags,
 	},
 	.sanitise = sanitise_send,
 	.post = post_send,
@@ -84,11 +87,7 @@ struct syscallentry syscall_sendto = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
+		.values = sendflags,
 	},
 	.arg5name = "addr",
 	.arg5type = ARG_SOCKADDR,
@@ -146,11 +145,7 @@ struct syscallentry syscall_sendmsg = {
 	.arg3type = ARG_LIST,
 	.arg3list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_FASTOPEN, MSG_CMSG_COMPAT },
+		.values = sendflags,
 	},
 	.sanitise = sanitise_sendmsg,
 	.post = post_sendmsg,
@@ -178,11 +173,7 @@ struct syscallentry syscall_sendmmsg = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_FASTOPEN, MSG_CMSG_COMPAT },
+		.values = sendflags,
 	},
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_sendmmsg,

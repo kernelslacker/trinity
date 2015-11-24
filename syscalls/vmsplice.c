@@ -18,6 +18,10 @@ static void sanitise_vmsplice(struct syscallrecord *rec)
 	rec->a3 = rand() % UIO_MAXIOV;
 }
 
+static unsigned long vmsplice_flags[] = {
+	SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT,
+};
+
 struct syscallentry syscall_vmsplice = {
 	.name = "vmsplice",
 	.num_args = 4,
@@ -32,7 +36,7 @@ struct syscallentry syscall_vmsplice = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 4,
-		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
+		.values = vmsplice_flags,
 	},
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,

@@ -5,6 +5,13 @@
 #include <linux/futex.h>
 #include "sanitise.h"
 
+static unsigned long futex_ops[] = {
+	FUTEX_WAIT, FUTEX_WAKE, FUTEX_FD, FUTEX_REQUEUE,
+	FUTEX_CMP_REQUEUE, FUTEX_WAKE_OP, FUTEX_LOCK_PI, FUTEX_UNLOCK_PI,
+	FUTEX_TRYLOCK_PI, FUTEX_WAIT_BITSET, FUTEX_WAKE_BITSET, FUTEX_WAIT_REQUEUE_PI,
+	FUTEX_CMP_REQUEUE_PI,
+};
+
 struct syscallentry syscall_futex = {
 	.name = "futex",
 	.num_args = 6,
@@ -14,11 +21,7 @@ struct syscallentry syscall_futex = {
 	.arg2type = ARG_OP,
 	.arg2list = {
 		.num = 13,
-		.values = { FUTEX_WAIT, FUTEX_WAKE, FUTEX_FD, FUTEX_REQUEUE,
-			FUTEX_CMP_REQUEUE, FUTEX_WAKE_OP, FUTEX_LOCK_PI, FUTEX_UNLOCK_PI,
-			FUTEX_TRYLOCK_PI, FUTEX_WAIT_BITSET, FUTEX_WAKE_BITSET, FUTEX_WAIT_REQUEUE_PI,
-			FUTEX_CMP_REQUEUE_PI,
-		},
+		.values = futex_ops,
 	},
 	.arg3name = "val",
 	.arg4name = "utime",

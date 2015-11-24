@@ -6,6 +6,11 @@
 #include "sanitise.h"
 #include "compat.h"
 
+static unsigned long lseek_whences[] = {
+	SEEK_SET, SEEK_CUR, SEEK_END, SEEK_DATA,
+	SEEK_HOLE,
+};
+
 struct syscallentry syscall_lseek = {
 	.name = "lseek",
 	.num_args = 3,
@@ -16,7 +21,7 @@ struct syscallentry syscall_lseek = {
 	.arg3type = ARG_OP,
 	.arg3list = {
 		.num = 5,
-		.values = { SEEK_SET, SEEK_CUR, SEEK_END, SEEK_DATA, SEEK_HOLE, },
+		.values = lseek_whences,
 	},
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

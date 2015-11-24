@@ -7,6 +7,10 @@
 
 #include "sanitise.h"
 
+static unsigned long inotify_init1_flags[] = {
+	IN_CLOEXEC , IN_NONBLOCK,
+};
+
 struct syscallentry syscall_inotify_init1 = {
 	.name = "inotify_init1",
 	.num_args = 1,
@@ -14,7 +18,7 @@ struct syscallentry syscall_inotify_init1 = {
 	.arg1type = ARG_LIST,
 	.arg1list = {
 		.num = 2,
-		.values = { IN_CLOEXEC , IN_NONBLOCK },
+		.values = inotify_init1_flags,
 	},
 	.group = GROUP_VFS,
 };

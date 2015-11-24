@@ -7,6 +7,11 @@
 #include "sanitise.h"
 #include "compat.h"
 
+static unsigned long name_to_handle_at_flags[] = {
+	AT_FDCWD, AT_SYMLINK_NOFOLLOW, AT_REMOVEDIR, AT_SYMLINK_FOLLOW,
+	AT_NO_AUTOMOUNT, AT_EMPTY_PATH,
+};
+
 struct syscallentry syscall_name_to_handle_at = {
 	.name = "name_to_handle_at",
 	.num_args = 5,
@@ -22,7 +27,7 @@ struct syscallentry syscall_name_to_handle_at = {
 	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 6,
-		.values = { AT_FDCWD, AT_SYMLINK_NOFOLLOW, AT_REMOVEDIR, AT_SYMLINK_FOLLOW, AT_NO_AUTOMOUNT, AT_EMPTY_PATH },
+		.values = name_to_handle_at_flags,
 	},
 	.flags = NEED_ALARM,
 };

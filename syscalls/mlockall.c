@@ -22,6 +22,9 @@ static void sanitise_mlockall(struct syscallrecord *rec)
 		rec->a1 = MCL_FUTURE;
 }
 
+static unsigned long mlockall_flags[] = {
+	MCL_CURRENT, MCL_FUTURE,
+};
 
 struct syscallentry syscall_mlockall = {
 	.name = "mlockall",
@@ -30,7 +33,7 @@ struct syscallentry syscall_mlockall = {
 	.arg1type = ARG_LIST,
 	.arg1list = {
 		.num = 2,
-		.values = { MCL_CURRENT, MCL_FUTURE },
+		.values = mlockall_flags,
 	},
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlockall,

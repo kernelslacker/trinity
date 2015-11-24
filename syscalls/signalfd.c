@@ -23,6 +23,10 @@ struct syscallentry syscall_signalfd = {
 #define SFD_CLOEXEC 02000000
 #define SFD_NONBLOCK 04000
 
+static unsigned long signalfd4_flags[] = {
+	SFD_CLOEXEC, SFD_NONBLOCK,
+};
+
 struct syscallentry syscall_signalfd4 = {
 	.name = "signalfd4",
 	.num_args = 4,
@@ -35,7 +39,7 @@ struct syscallentry syscall_signalfd4 = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 2,
-		.values = { SFD_CLOEXEC , SFD_NONBLOCK },
+		.values = signalfd4_flags,
 	},
 	.flags = NEED_ALARM,
 };

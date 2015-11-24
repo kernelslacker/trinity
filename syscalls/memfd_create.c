@@ -6,6 +6,10 @@
 #include "memfd.h"
 #include "compat.h"
 
+static unsigned long memfd_create_flags[] = {
+	MFD_CLOEXEC, MFD_ALLOW_SEALING,
+};
+
 struct syscallentry syscall_memfd_create = {
 	.name = "memfd_create",
 	.num_args = 2,
@@ -15,6 +19,6 @@ struct syscallentry syscall_memfd_create = {
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 2,
-		.values = { MFD_CLOEXEC, MFD_ALLOW_SEALING },
+		.values = memfd_create_flags,
 	},
 };

@@ -6,6 +6,10 @@
 #include "compat.h"
 #include "sanitise.h"
 
+static unsigned long msgsnd_flags[] = {
+	MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT,
+};
+
 struct syscallentry syscall_msgsnd = {
 	.name = "msgsnd",
 	.num_args = 4,
@@ -18,6 +22,6 @@ struct syscallentry syscall_msgsnd = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 4,
-		.values = { MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT },
+		.values = msgsnd_flags,
 	},
 };

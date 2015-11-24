@@ -41,6 +41,10 @@ struct syscallentry syscall_renameat = {
 #define RENAME_NOREPLACE        (1 << 0)        /* Don't overwrite target */
 #define RENAME_EXCHANGE         (1 << 1)        /* Exchange source and dest */
 
+static unsigned long renameat2_flags[] = {
+	RENAME_NOREPLACE, RENAME_EXCHANGE,
+};
+
 struct syscallentry syscall_renameat2 = {
 	.name = "renameat2",
 	.num_args = 5,
@@ -56,7 +60,7 @@ struct syscallentry syscall_renameat2 = {
 	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 2,
-		.values = { RENAME_NOREPLACE, RENAME_EXCHANGE },
+		.values = renameat2_flags,
 	},
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

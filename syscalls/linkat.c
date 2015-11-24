@@ -19,6 +19,10 @@ static void sanitise_linkat(struct syscallrecord *rec)
 		rec->a1 = AT_FDCWD;
 }
 
+static unsigned long linkat_flags[] = {
+	AT_SYMLINK_FOLLOW , AT_EMPTY_PATH,
+};
+
 struct syscallentry syscall_linkat = {
 	.name = "linkat",
 	.num_args = 5,
@@ -34,7 +38,7 @@ struct syscallentry syscall_linkat = {
 	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 2,
-		.values = { AT_SYMLINK_FOLLOW , AT_EMPTY_PATH },
+		.values = linkat_flags,
 	},
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

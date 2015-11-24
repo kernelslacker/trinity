@@ -52,6 +52,10 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	rec->a4 = offset;
 }
 
+static unsigned long remap_file_pages_flags[] = {
+	MAP_NONBLOCK,
+};
+
 struct syscallentry syscall_remap_file_pages = {
 	.name = "remap_file_pages",
 	.num_args = 5,
@@ -64,7 +68,7 @@ struct syscallentry syscall_remap_file_pages = {
 	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 1,
-		.values = { MAP_NONBLOCK },
+		.values = remap_file_pages_flags,
 	},
 	.group = GROUP_VM,
 	.sanitise = sanitise_remap_file_pages,

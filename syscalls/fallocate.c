@@ -12,6 +12,12 @@
 #define FALLOC_FL_ZERO_RANGE 0x10
 #define FALLOC_FL_INSERT_RANGE 0x20
 
+static unsigned long fallocate_modes[] = {
+	FALLOC_FL_KEEP_SIZE, FALLOC_FL_PUNCH_HOLE,
+	FALLOC_FL_NO_HIDE_STALE, FALLOC_FL_COLLAPSE_RANGE,
+	FALLOC_FL_ZERO_RANGE, FALLOC_FL_INSERT_RANGE,
+};
+
 struct syscallentry syscall_fallocate = {
 	.name = "fallocate",
 	.num_args = 4,
@@ -21,11 +27,7 @@ struct syscallentry syscall_fallocate = {
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 6,
-		.values = {
-			FALLOC_FL_KEEP_SIZE, FALLOC_FL_PUNCH_HOLE,
-			FALLOC_FL_NO_HIDE_STALE, FALLOC_FL_COLLAPSE_RANGE,
-			FALLOC_FL_ZERO_RANGE, FALLOC_FL_INSERT_RANGE,
-		},
+		.values = fallocate_modes,
 	},
 	.arg3name = "offset",
 	.arg3type = ARG_LEN,

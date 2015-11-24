@@ -164,6 +164,14 @@ static char * decode_mmap(struct syscallrecord *rec, unsigned int argnum)
 	return NULL;
 }
 
+static unsigned long mmap_prots[] = {
+	PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM,
+};
+
+static unsigned long mmap_flags[] = {
+	MAP_SHARED, MAP_PRIVATE,
+};
+
 struct syscallentry syscall_mmap = {
 	.name = "mmap",
 	.num_args = 6,
@@ -179,13 +187,13 @@ struct syscallentry syscall_mmap = {
 	.arg3type = ARG_LIST,
 	.arg3list = {
 		.num = 4,
-		.values = { PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM },
+		.values = mmap_prots,
 	},
 	.arg4name = "flags",
 	.arg4type = ARG_OP,
 	.arg4list = {
 		.num = 2,
-		.values = { MAP_SHARED, MAP_PRIVATE },
+		.values = mmap_flags,
 	},
 	.arg5name = "fd",
 	.arg5type = ARG_FD,
@@ -212,13 +220,13 @@ struct syscallentry syscall_mmap2 = {
 	.arg3type = ARG_LIST,
 	.arg3list = {
 		.num = 4,
-		.values = { PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM },
+		.values = mmap_prots,
 	},
 	.arg4name = "flags",
 	.arg4type = ARG_OP,
 	.arg4list = {
 		.num = 2,
-		.values = { MAP_SHARED, MAP_PRIVATE },
+		.values = mmap_flags,
 	},
 	.arg5name = "fd",
 	.arg5type = ARG_FD,

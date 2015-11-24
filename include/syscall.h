@@ -63,7 +63,7 @@ enum argtype {
 
 struct arglist {
 	unsigned int num;
-	unsigned long values[32];
+	unsigned long *values;
 };
 
 struct errnos {

@@ -59,6 +59,10 @@ static void post_modify_ldt(__unused__ struct syscallrecord *rec)
 	freeptr(&rec->a2);
 }
 
+static unsigned long modify_ldt_funcs[] = {
+	0, 1,
+};
+
 struct syscallentry syscall_modify_ldt = {
 	.name = "modify_ldt",
 	.num_args = 3,
@@ -66,7 +70,7 @@ struct syscallentry syscall_modify_ldt = {
 	.arg1type = ARG_OP,
 	.arg1list = {
 		.num = 2,
-		.values = { 0, 1 },
+		.values = modify_ldt_funcs,
 	},
 	.arg2name = "ptr",
 	.arg3name = "bytecount",

@@ -10,6 +10,11 @@ enum bpf_cmd {
 
 // TODO: sanitize = allocate a page, and use bpf_gen_filter to generate something legit.
 
+static unsigned long bpf_flags[] = {
+	BPF_MAP_CREATE, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM,
+	BPF_MAP_GET_NEXT_KEY, BPF_PROG_LOAD,
+};
+
 struct syscallentry syscall_bpf = {
 	.name = "bpf",
 	.num_args = 3,
@@ -18,10 +23,7 @@ struct syscallentry syscall_bpf = {
 	.arg1type = ARG_OP,
 	.arg1list = {
 		.num = 6,
-		.values = {
-			BPF_MAP_CREATE, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM,
-			BPF_MAP_GET_NEXT_KEY, BPF_PROG_LOAD,
-		},
+		.values = bpf_flags,
 	},
 	.arg2name = "uattr",
 	.arg2type = ARG_ADDRESS,

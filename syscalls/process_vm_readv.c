@@ -5,6 +5,10 @@
  */
 #include "sanitise.h"
 
+static unsigned long process_vm_readv_flags[] = {
+	0,	// currently no flags defined, mbz
+};
+
 struct syscallentry syscall_process_vm_readv = {
 	.name = "process_vm_readv",
 	.num_args = 6,
@@ -22,6 +26,6 @@ struct syscallentry syscall_process_vm_readv = {
 	.arg6type = ARG_LIST,
 	.arg6list = {
 		.num = 1,
-		.values = { 0 },
+		.values = process_vm_readv_flags,
 	},
 };

@@ -26,6 +26,10 @@ struct syscallentry syscall_epoll_create = {
 
 #define EPOLL_CLOEXEC 02000000
 
+static unsigned long epoll_create_flags[] = {
+	EPOLL_CLOEXEC,
+};
+
 struct syscallentry syscall_epoll_create1 = {
 	.name = "epoll_create1",
 	.num_args = 1,
@@ -33,7 +37,7 @@ struct syscallentry syscall_epoll_create1 = {
 	.arg1type = ARG_LIST,
 	.arg1list = {
 		.num = 1,
-		.values = { EPOLL_CLOEXEC },
+		.values = epoll_create_flags,
 	},
 	.rettype = RET_FD,
 };

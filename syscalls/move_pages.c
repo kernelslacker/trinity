@@ -67,6 +67,10 @@ static void post_move_pages(struct syscallrecord *rec)
 	freeptr(&rec->a5);
 }
 
+static unsigned long move_pages_flags[] = {
+	MPOL_MF_MOVE, MPOL_MF_MOVE_ALL,
+};
+
 struct syscallentry syscall_move_pages = {
 	.name = "move_pages",
 	.num_args = 6,
@@ -80,7 +84,7 @@ struct syscallentry syscall_move_pages = {
 	.arg6type = ARG_LIST,
 	.arg6list = {
 		.num = 2,
-		.values = { MPOL_MF_MOVE, MPOL_MF_MOVE_ALL },
+		.values = move_pages_flags,
 	},
 	.group = GROUP_VM,
 	.sanitise = sanitise_move_pages,

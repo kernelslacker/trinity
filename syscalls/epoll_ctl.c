@@ -32,6 +32,10 @@ static void post_epoll_ctl(struct syscallrecord *rec)
 	free((void *)rec->a4);
 }
 
+static unsigned long epoll_ctl_ops[] = {
+	EPOLL_CTL_ADD, EPOLL_CTL_MOD, EPOLL_CTL_DEL,
+};
+
 struct syscallentry syscall_epoll_ctl = {
 	.name = "epoll_ctl",
 	.num_args = 4,
@@ -41,7 +45,7 @@ struct syscallentry syscall_epoll_ctl = {
 	.arg2type = ARG_OP,
 	.arg2list = {
 		.num = 3,
-		.values = { EPOLL_CTL_ADD, EPOLL_CTL_MOD, EPOLL_CTL_DEL },
+		.values = epoll_ctl_ops,
 	},
 	.arg3name = "fd",
 	.arg3type = ARG_FD,

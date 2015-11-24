@@ -12,6 +12,11 @@
 
 #include "sanitise.h"
 
+static unsigned long fanotify_init_flags[] = {
+	FAN_CLOEXEC , FAN_NONBLOCK, FAN_UNLIMITED_QUEUE , FAN_UNLIMITED_MARKS,
+	FAN_CLASS_NOTIF, FAN_CLASS_CONTENT, FAN_CLASS_PRE_CONTENT,
+};
+
 struct syscallentry syscall_fanotify_init = {
 	.name = "fanotify_init",
 	.num_args = 2,
@@ -19,9 +24,7 @@ struct syscallentry syscall_fanotify_init = {
 	.arg1type = ARG_LIST,
 	.arg1list = {
 		.num = 7,
-		.values = { FAN_CLOEXEC , FAN_NONBLOCK, FAN_UNLIMITED_QUEUE , FAN_UNLIMITED_MARKS,
-				FAN_CLASS_NOTIF, FAN_CLASS_CONTENT, FAN_CLASS_PRE_CONTENT
-		},
+		.values = fanotify_init_flags,
 	},
 	.arg2name = "event_f_flags",
 	.rettype = RET_FD,

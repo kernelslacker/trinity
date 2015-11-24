@@ -39,6 +39,10 @@ retry:
 	}
 }
 
+static unsigned long sync_file_range_flags[] = {
+	SYNC_FILE_RANGE_WAIT_BEFORE, SYNC_FILE_RANGE_WRITE, SYNC_FILE_RANGE_WAIT_AFTER,
+};
+
 struct syscallentry syscall_sync_file_range = {
 	.name = "sync_file_range",
 	.num_args = 4,
@@ -52,7 +56,7 @@ struct syscallentry syscall_sync_file_range = {
 	.arg4type = ARG_LIST,
         .arg4list = {
 		.num = 3,
-		.values = { SYNC_FILE_RANGE_WAIT_BEFORE, SYNC_FILE_RANGE_WRITE, SYNC_FILE_RANGE_WAIT_AFTER },
+		.values = sync_file_range_flags,
         },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
@@ -72,7 +76,7 @@ struct syscallentry syscall_sync_file_range2 = {
 	.arg2type = ARG_LIST,
         .arg2list = {
 		.num = 3,
-		.values = { SYNC_FILE_RANGE_WAIT_BEFORE, SYNC_FILE_RANGE_WRITE, SYNC_FILE_RANGE_WAIT_AFTER },
+		.values = sync_file_range_flags,
 	},
 	.arg3name = "offset",
 	.arg4name = "nbytes",

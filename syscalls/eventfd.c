@@ -26,6 +26,10 @@ struct syscallentry syscall_eventfd = {
 #include "sanitise.h"
 #include "compat.h"
 
+static unsigned long eventfd2_flags[] = {
+	EFD_CLOEXEC, EFD_NONBLOCK, EFD_SEMAPHORE,
+};
+
 struct syscallentry syscall_eventfd2 = {
 	.name = "eventfd2",
 	.num_args = 2,
@@ -35,7 +39,7 @@ struct syscallentry syscall_eventfd2 = {
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 3,
-		.values = { EFD_CLOEXEC, EFD_NONBLOCK, EFD_SEMAPHORE },
+		.values = eventfd2_flags,
 	},
 	.rettype = RET_FD,
 };

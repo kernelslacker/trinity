@@ -36,6 +36,10 @@ struct syscallentry syscall_accept = {
  *
  */
 
+static unsigned long accept4_flags[] = {
+	SOCK_NONBLOCK, SOCK_CLOEXEC,
+};
+
 struct syscallentry syscall_accept4 = {
 	.name = "accept4",
 	.num_args = 4,
@@ -49,7 +53,7 @@ struct syscallentry syscall_accept4 = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 2,
-		.values = { SOCK_NONBLOCK, SOCK_CLOEXEC },
+		.values = accept4_flags,
 	},
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,

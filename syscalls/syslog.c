@@ -34,6 +34,20 @@ static void sanitise_syslog(struct syscallrecord *rec)
 	rec->a3 &= PAGE_MASK;
 }
 
+static unsigned long syslog_types[] = {
+	SYSLOG_ACTION_CLOSE,
+	SYSLOG_ACTION_OPEN,
+	SYSLOG_ACTION_READ,
+	SYSLOG_ACTION_READ_CLEAR,
+	SYSLOG_ACTION_READ_ALL,
+	SYSLOG_ACTION_CLEAR,
+	SYSLOG_ACTION_CONSOLE_OFF,
+	SYSLOG_ACTION_CONSOLE_ON,
+	SYSLOG_ACTION_CONSOLE_LEVEL,
+	SYSLOG_ACTION_SIZE_UNREAD,
+	SYSLOG_ACTION_SIZE_BUFFER,
+};
+
 struct syscallentry syscall_syslog = {
 	.name = "syslog",
 	.num_args = 3,
@@ -41,19 +55,7 @@ struct syscallentry syscall_syslog = {
 	.arg1type = ARG_LIST,
 	.arg1list = {
 		.num = 11,
-		.values = {
-			SYSLOG_ACTION_CLOSE,
-			SYSLOG_ACTION_OPEN,
-			SYSLOG_ACTION_READ,
-			SYSLOG_ACTION_READ_CLEAR,
-			SYSLOG_ACTION_READ_ALL,
-			SYSLOG_ACTION_CLEAR,
-			SYSLOG_ACTION_CONSOLE_OFF,
-			SYSLOG_ACTION_CONSOLE_ON,
-			SYSLOG_ACTION_CONSOLE_LEVEL,
-			SYSLOG_ACTION_SIZE_UNREAD,
-			SYSLOG_ACTION_SIZE_BUFFER,
-		},
+		.values = syslog_types,
 	},
 	.arg2name = "buf",
 	.arg2type = ARG_MMAP,

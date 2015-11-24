@@ -50,6 +50,15 @@ static void sanitise_fanotify_mark(struct syscallrecord *rec)
 	rec->a3 &= 0xffffffff;
 }
 
+static unsigned long fanotify_mark_flags[] = {
+	FAN_MARK_ADD, FAN_MARK_REMOVE, FAN_MARK_FLUSH,
+};
+
+static unsigned long fanotify_mark_mask[] = {
+	FAN_ACCESS, FAN_MODIFY, FAN_CLOSE, FAN_OPEN,
+	FAN_OPEN_PERM, FAN_ACCESS_PERM, FAN_EVENT_ON_CHILD,
+};
+
 struct syscallentry syscall_fanotify_mark = {
 	.name = "fanotify_mark",
 	.num_args = 5,
@@ -59,15 +68,13 @@ struct syscallentry syscall_fanotify_mark = {
 	.arg2type = ARG_OP,
 	.arg2list = {
 		.num = 3,
-		.values = { FAN_MARK_ADD, FAN_MARK_REMOVE, FAN_MARK_FLUSH },
+		.values = fanotify_mark_flags,
 	},
 	.arg3name = "mask",
 	.arg3type = ARG_LIST,
 	.arg3list = {
 		.num = 7,
-		.values = { FAN_ACCESS, FAN_MODIFY, FAN_CLOSE, FAN_OPEN,
-			    FAN_OPEN_PERM, FAN_ACCESS_PERM,
-			    FAN_EVENT_ON_CHILD },
+		.values = fanotify_mark_mask,
 	},
 	.arg4name = "dfd",
 	.arg4type = ARG_FD,

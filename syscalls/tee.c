@@ -17,6 +17,10 @@ static void sanitise_tee(struct syscallrecord *rec)
 	}
 }
 
+static unsigned long tee_flags[] = {
+	SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT,
+};
+
 struct syscallentry syscall_tee = {
 	.name = "tee",
 	.num_args = 4,
@@ -30,7 +34,7 @@ struct syscallentry syscall_tee = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 4,
-		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
+		.values = tee_flags,
 	},
 	.sanitise = sanitise_tee,
 	.flags = NEED_ALARM,

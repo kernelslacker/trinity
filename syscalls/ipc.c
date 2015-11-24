@@ -5,6 +5,12 @@
 #include <linux/ipc.h>
 #include "sanitise.h"
 
+static unsigned long ipc_calls[] = {
+	SEMOP, SEMGET, SEMCTL, SEMTIMEDOP,
+	MSGSND, MSGRCV, MSGGET, MSGCTL,
+	SHMAT, SHMDT, SHMGET, SHMCTL,
+};
+
 struct syscallentry syscall_ipc = {
 	.name = "ipc",
 	.num_args = 6,
@@ -12,11 +18,7 @@ struct syscallentry syscall_ipc = {
 	.arg1type = ARG_OP,
 	.arg1list = {
 		.num = 12,
-		.values = {
-			SEMOP, SEMGET, SEMCTL, SEMTIMEDOP,
-			MSGSND, MSGRCV, MSGGET, MSGCTL,
-			SHMAT, SHMDT, SHMGET, SHMCTL,
-		},
+		.values = ipc_calls,
 	},
 	.arg2name = "first",
 	.arg3name = "second",

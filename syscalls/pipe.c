@@ -18,6 +18,10 @@ struct syscallentry syscall_pipe = {
  * SYSCALL_DEFINE2(pipe2, int __user *, fildes, int, flags)
  */
 
+static unsigned long pipe2_flags[] = {
+	O_CLOEXEC, O_NONBLOCK, O_DIRECT,
+};
+
 struct syscallentry syscall_pipe2 = {
 	.name = "pipe2",
 	.num_args = 2,
@@ -27,7 +31,7 @@ struct syscallentry syscall_pipe2 = {
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 3,
-		.values = { O_CLOEXEC, O_NONBLOCK, O_DIRECT },
+		.values = pipe2_flags,
 	},
 	.group = GROUP_VFS,
 };

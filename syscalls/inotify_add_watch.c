@@ -6,6 +6,15 @@
 
 #include <sys/inotify.h>
 
+static unsigned long inotify_add_watch_masks[] = {
+	IN_ACCESS, IN_MODIFY, IN_ATTRIB, IN_CLOSE_WRITE,
+	IN_CLOSE_NOWRITE, IN_OPEN, IN_MOVED_FROM, IN_MOVED_TO,
+	IN_CREATE, IN_DELETE, IN_DELETE_SELF, IN_MOVE_SELF,
+	IN_UNMOUNT, IN_Q_OVERFLOW, IN_IGNORED, IN_ONLYDIR,
+	IN_DONT_FOLLOW, IN_EXCL_UNLINK, IN_MASK_ADD, IN_ISDIR,
+	IN_ONESHOT,
+};
+
 struct syscallentry syscall_inotify_add_watch = {
 	.name = "inotify_add_watch",
 	.num_args = 3,
@@ -17,29 +26,7 @@ struct syscallentry syscall_inotify_add_watch = {
 	.arg3type = ARG_LIST,
 	.arg3list = {
 		.num = 21,
-		.values = {
-			IN_ACCESS,
-			IN_MODIFY,
-			IN_ATTRIB,
-			IN_CLOSE_WRITE,
-			IN_CLOSE_NOWRITE,
-			IN_OPEN,
-			IN_MOVED_FROM,
-			IN_MOVED_TO,
-			IN_CREATE,
-			IN_DELETE,
-			IN_DELETE_SELF,
-			IN_MOVE_SELF,
-			IN_UNMOUNT,
-			IN_Q_OVERFLOW,
-			IN_IGNORED,
-			IN_ONLYDIR,
-			IN_DONT_FOLLOW,
-			IN_EXCL_UNLINK,
-			IN_MASK_ADD,
-			IN_ISDIR,
-			IN_ONESHOT,
-		},
+		.values = inotify_add_watch_masks,
 	},
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

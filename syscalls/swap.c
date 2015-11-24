@@ -5,6 +5,10 @@
 #include "sanitise.h"
 #include "compat.h"
 
+static unsigned long swapon_flags[] = {
+	SWAP_FLAG_PREFER, SWAP_FLAG_DISCARD,
+};
+
 struct syscallentry syscall_swapon = {
 	.name = "swapon",
 	.num_args = 2,
@@ -14,7 +18,7 @@ struct syscallentry syscall_swapon = {
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 2,
-		.values = { SWAP_FLAG_PREFER, SWAP_FLAG_DISCARD },
+		.values = swapon_flags,
 	},
 	.group = GROUP_VFS,
 };

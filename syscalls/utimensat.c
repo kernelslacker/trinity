@@ -5,6 +5,10 @@
 #include <fcntl.h>
 #include "sanitise.h"
 
+static unsigned long utimensat_flags[] = {
+	AT_SYMLINK_NOFOLLOW,
+};
+
 struct syscallentry syscall_utimensat = {
 	.name = "utimensat",
 	.num_args = 4,
@@ -18,7 +22,7 @@ struct syscallentry syscall_utimensat = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 1,
-		.values = { AT_SYMLINK_NOFOLLOW },
+		.values = utimensat_flags,
 	},
 	.flags = NEED_ALARM,
 };

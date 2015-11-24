@@ -12,6 +12,10 @@
 #include "trinity.h"
 #include "compat.h"
 
+static unsigned long splice_flags[] = {
+	SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT,
+};
+
 struct syscallentry syscall_splice = {
 	.name = "splice",
 	.num_args = 6,
@@ -29,7 +33,7 @@ struct syscallentry syscall_splice = {
 	.arg6type = ARG_LIST,
 	.arg6list = {
 		.num = 4,
-		.values = { SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT },
+		.values = splice_flags,
 	},
 	.flags = NEED_ALARM,
 };

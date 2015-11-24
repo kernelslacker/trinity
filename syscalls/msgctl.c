@@ -6,6 +6,11 @@
 #include <sys/msg.h>
 #include "sanitise.h"
 
+static unsigned long msgctl_cmds[] = {
+	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
+	MSG_INFO, MSG_STAT,
+};
+
 struct syscallentry syscall_msgctl = {
 	.name = "msgctl",
 	.num_args = 3,
@@ -14,8 +19,7 @@ struct syscallentry syscall_msgctl = {
 	.arg2type = ARG_OP,
 	.arg2list = {
 		.num = 6,
-		.values = { IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
-			    MSG_INFO, MSG_STAT },
+		.values = msgctl_cmds,
 	},
 	.arg3name = "buf",
 	.arg3type = ARG_ADDRESS,

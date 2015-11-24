@@ -6,6 +6,10 @@
 #include "compat.h"
 #include "sanitise.h"
 
+static unsigned long msgrcv_flags[] = {
+	MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT,
+};
+
 struct syscallentry syscall_msgrcv = {
 	.name = "msgrcv",
 	.num_args = 5,
@@ -19,7 +23,7 @@ struct syscallentry syscall_msgrcv = {
 	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 4,
-		.values = { MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT },
+		.values = msgrcv_flags,
 	},
 	.flags = IGNORE_ENOSYS,
 };

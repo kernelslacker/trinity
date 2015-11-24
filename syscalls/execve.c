@@ -116,6 +116,10 @@ struct syscallentry syscall_execve = {
 	},
 };
 
+static unsigned long execveat_flags[] = {
+	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW,
+};
+
 struct syscallentry syscall_execveat = {
 	.name = "execveat",
 	.num_args = 5,
@@ -131,7 +135,7 @@ struct syscallentry syscall_execveat = {
 	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 2,
-		.values = { AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW },
+		.values = execveat_flags,
 	},
 	.sanitise = sanitise_execve,
 	.post = post_execveat,

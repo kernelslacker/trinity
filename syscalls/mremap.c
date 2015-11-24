@@ -62,6 +62,10 @@ static void post_mremap(struct syscallrecord *rec)
 		dirty_mapping(map);
 }
 
+static unsigned long mremap_flags[] = {
+	MREMAP_MAYMOVE, MREMAP_FIXED,
+};
+
 struct syscallentry syscall_mremap = {
 	.name = "mremap",
 	.num_args = 5,
@@ -74,7 +78,7 @@ struct syscallentry syscall_mremap = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 2,
-		.values = { MREMAP_MAYMOVE, MREMAP_FIXED },
+		.values = mremap_flags,
 	},
 	.arg5name = "new_addr",
 	.group = GROUP_VM,

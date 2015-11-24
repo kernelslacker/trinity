@@ -8,6 +8,10 @@
 #define TFD_CLOEXEC 02000000
 #define TFD_NONBLOCK 04000
 
+static unsigned long timerfd_settime_flags[] = {
+	TFD_NONBLOCK, TFD_CLOEXEC
+};
+
 struct syscallentry syscall_timerfd_settime = {
 	.name = "timerfd_settime",
 	.num_args = 4,
@@ -17,7 +21,7 @@ struct syscallentry syscall_timerfd_settime = {
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 2,
-		.values = { TFD_NONBLOCK, TFD_CLOEXEC },
+		.values = timerfd_settime_flags,
 	},
 	.arg3name = "utmr",
 	.arg3type = ARG_ADDRESS,

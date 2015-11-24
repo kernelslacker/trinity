@@ -11,6 +11,14 @@
 #include <time.h>
 #include "sanitise.h"
 
+static unsigned long clock_nanosleep_which[] = {
+	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
+};
+
+static unsigned long clock_nanosleep_flags[] = {
+	TIMER_ABSTIME,
+};
+
 struct syscallentry syscall_clock_nanosleep = {
 	.name = "clock_nanosleep",
 	.num_args = 4,
@@ -18,13 +26,13 @@ struct syscallentry syscall_clock_nanosleep = {
 	.arg1type = ARG_OP,
 	.arg1list = {
 		.num = 3,
-		.values = { CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID },
+		.values = clock_nanosleep_which,
 	},
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 1,
-		.values = { TIMER_ABSTIME },
+		.values = clock_nanosleep_flags,
 	},
 	.arg3name = "rqtp",
 	.arg3type = ARG_ADDRESS,

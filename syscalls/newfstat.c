@@ -22,6 +22,11 @@ struct syscallentry syscall_newfstat = {
 #include <fcntl.h>
 #include "sanitise.h"
 
+static unsigned long newfstatat_flags[] = {
+	0,	// FIXME: WAT?
+	AT_SYMLINK_NOFOLLOW,
+};
+
 struct syscallentry syscall_newfstatat = {
 	.name = "newfstatat",
 	.num_args = 4,
@@ -35,7 +40,7 @@ struct syscallentry syscall_newfstatat = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 2,
-		.values = { 0, AT_SYMLINK_NOFOLLOW },
+		.values = newfstatat_flags,
 	},
 	.group = GROUP_VFS,
 };

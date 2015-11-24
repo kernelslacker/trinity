@@ -11,6 +11,10 @@
 #include <asm/prctl.h>
 #include <sys/prctl.h>
 
+static unsigned long arch_prctl_flags[] = {
+	ARCH_SET_FS, ARCH_GET_FS, ARCH_SET_GS, ARCH_GET_GS
+};
+
 struct syscallentry syscall_arch_prctl = {
 	.name = "arch_prctl",
 	.flags = AVOID_SYSCALL,
@@ -19,7 +23,7 @@ struct syscallentry syscall_arch_prctl = {
 	.arg1type = ARG_OP,
 	.arg1list = {
 		.num = 4,
-		.values = { ARCH_SET_FS, ARCH_GET_FS, ARCH_SET_GS, ARCH_GET_GS },
+		.values = arch_prctl_flags,
 	},
 	.arg2name = "addr",
 	.arg2type = ARG_ADDRESS,

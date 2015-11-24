@@ -18,6 +18,14 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 	}
 }
 
+static unsigned long seccomp_ops[] = {
+	SECCOMP_SET_MODE_STRICT, SECCOMP_SET_MODE_FILTER,
+};
+
+static unsigned long seccomp_flags[] = {
+	SECCOMP_FILTER_FLAG_TSYNC,
+};
+
 struct syscallentry syscall_seccomp = {
 	.name = "seccomp",
 	.num_args = 3,
@@ -25,13 +33,13 @@ struct syscallentry syscall_seccomp = {
 	.arg1type = ARG_OP,
 	.arg1list = {
 		.num = 2,
-		.values = { SECCOMP_SET_MODE_STRICT, SECCOMP_SET_MODE_FILTER },
+		.values = seccomp_ops,
 	},
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
 	.arg2list = {
 		.num = 1,
-		.values= { SECCOMP_FILTER_FLAG_TSYNC },
+		.values= seccomp_flags,
 	},
 	.arg3name = "uargs",
 	.arg3type = ARG_ADDRESS,

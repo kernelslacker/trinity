@@ -14,6 +14,14 @@ static void sanitise_recv(struct syscallrecord *rec)
 	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
 }
 
+static unsigned long recv_flags[] = {
+	MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
+	MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
+	MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
+	MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
+	MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT,
+};
+
 struct syscallentry syscall_recv = {
 	.name = "recv",
 	.num_args = 4,
@@ -27,11 +35,7 @@ struct syscallentry syscall_recv = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
+		.values = recv_flags,
 	},
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_recv,
@@ -56,11 +60,7 @@ struct syscallentry syscall_recvfrom = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT },
+		.values = recv_flags,
 	},
 	.arg5name = "addr",
 	.arg5type = ARG_SOCKADDR,
@@ -85,11 +85,7 @@ struct syscallentry syscall_recvmsg = {
 	.arg3type = ARG_LIST,
 	.arg3list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_FASTOPEN, MSG_CMSG_COMPAT },
+		.values = recv_flags,
 	},
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_recv,	// same as recv
@@ -113,11 +109,7 @@ struct syscallentry syscall_recvmmsg = {
 	.arg4type = ARG_LIST,
 	.arg4list = {
 		.num = 20,
-		.values = { MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
-			    MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
-			    MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
-			    MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
-			    MSG_WAITFORONE, MSG_CMSG_CLOEXEC, MSG_FASTOPEN, MSG_CMSG_COMPAT },
+		.values = recv_flags,
 	},
 	.arg5name = "timeout",
 	.arg5type = ARG_ADDRESS,

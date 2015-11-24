@@ -10,6 +10,10 @@
 
 #include "sanitise.h"
 
+static unsigned long kexec_file_load_flags[] = {
+	KEXEC_FILE_UNLOAD, KEXEC_FILE_ON_CRASH, KEXEC_FILE_NO_INITRAMFS,
+};
+
 struct syscallentry syscall_kexec_file_load = {
 	.name = "kexec_file_load",
 	.num_args = 5,
@@ -24,10 +28,7 @@ struct syscallentry syscall_kexec_file_load = {
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
 	.arg5list = {
-		.num = 2,
-		.values = {
-			KEXEC_FILE_UNLOAD, KEXEC_FILE_ON_CRASH,
-			KEXEC_FILE_NO_INITRAMFS,
-		},
+		.num = 3,
+		.values = kexec_file_load_flags,
 	},
 };

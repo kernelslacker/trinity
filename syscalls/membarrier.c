@@ -21,6 +21,10 @@ enum membarrier_cmd {
 	MEMBARRIER_CMD_SHARED = (1 << 0),
 };
 
+static unsigned long membarrier_cmds[] = {
+	MEMBARRIER_CMD_QUERY, MEMBARRIER_CMD_SHARED,
+};
+
 struct syscallentry syscall_membarrier = {
 	.name = "membarrier",
 	.num_args = 2,
@@ -28,7 +32,7 @@ struct syscallentry syscall_membarrier = {
 	.arg1name = "cmd",
 	.arg1list = {
 		.num = 2,
-		.values = { MEMBARRIER_CMD_QUERY, MEMBARRIER_CMD_SHARED },
+		.values = membarrier_cmds,
 	},
 	.arg2name = "flags",
 	.sanitise = sanitise_membarrier,

@@ -6,6 +6,10 @@
 #include <sys/resource.h>
 #include "sanitise.h"
 
+static unsigned long getpriority_which[] = {
+	PRIO_PROCESS, PRIO_PGRP, PRIO_USER,
+};
+
 struct syscallentry syscall_getpriority = {
 	.name = "getpriority",
 	.num_args = 2,
@@ -13,7 +17,7 @@ struct syscallentry syscall_getpriority = {
 	.arg1type = ARG_OP,
 	.arg1list = {
 		.num = 3,
-		.values = { PRIO_PROCESS, PRIO_PGRP, PRIO_USER },
+		.values = getpriority_which,
 	},
 	.arg2name = "who",
 	.arg2type = ARG_PID,

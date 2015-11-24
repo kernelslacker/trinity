@@ -27,6 +27,11 @@ static void post_mprotect(struct syscallrecord *rec)
 		map->prot = rec->a3;
 }
 
+static unsigned long mprotect_prots[] = {
+	PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM,
+	PROT_GROWSDOWN, PROT_GROWSUP,
+};
+
 struct syscallentry syscall_mprotect = {
 	.name = "mprotect",
 	.num_args = 3,
@@ -37,7 +42,7 @@ struct syscallentry syscall_mprotect = {
 	.arg3type = ARG_LIST,
 	.arg3list = {
 		.num = 6,
-		.values = { PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM, PROT_GROWSDOWN, PROT_GROWSUP },
+		.values = mprotect_prots,
 	},
 	.sanitise = sanitise_mprotect,
 	.group = GROUP_VM,

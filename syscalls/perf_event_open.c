@@ -1330,6 +1330,10 @@ static void post_perf_event_open(struct syscallrecord *rec)
 	freeptr(&rec->a1);
 }
 
+static unsigned long perf_event_open_flags[] = {
+	PERF_FLAG_FD_NO_GROUP, PERF_FLAG_FD_OUTPUT, PERF_FLAG_PID_CGROUP,
+};
+
 struct syscallentry syscall_perf_event_open = {
 	.name = "perf_event_open",
 	.num_args = 5,
@@ -1345,9 +1349,7 @@ struct syscallentry syscall_perf_event_open = {
 	.arg5type = ARG_LIST,
 	.arg5list = {
 		.num = 3,
-		.values = {
-			PERF_FLAG_FD_NO_GROUP, PERF_FLAG_FD_OUTPUT, PERF_FLAG_PID_CGROUP
-		},
+		.values = perf_event_open_flags,
 	},
 	.sanitise = sanitise_perf_event_open,
 	.post = post_perf_event_open,
