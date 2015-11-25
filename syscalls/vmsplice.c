@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <sys/uio.h>
 #include <stdlib.h>
+#include "pipes.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -14,7 +15,8 @@
 static void sanitise_vmsplice(struct syscallrecord *rec)
 {
 	if ((rand() % 10) > 0)
-		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		rec->a1 = get_rand_pipe_fd();
+
 	rec->a3 = rand() % UIO_MAXIOV;
 }
 

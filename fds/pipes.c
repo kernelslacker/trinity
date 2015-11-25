@@ -16,10 +16,9 @@
 #include "shm.h"
 #include "trinity.h"
 
-static unsigned int offset = 0;
-
 static void open_pipe_pair(unsigned int flags)
 {
+	struct object *obj;
 	int pipes[2];
 
 	if (pipe2(pipes, flags) < 0) {
@@ -27,13 +26,16 @@ static void open_pipe_pair(unsigned int flags)
 		return;
 	}
 
-	shm->pipe_fds[offset] = pipes[0];
-	shm->pipe_fds[offset + 1] = pipes[1];
+	obj = zmalloc(sizeof(struct object));
+	obj->pipefd = pipes[0];
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
+
+	obj = zmalloc(sizeof(struct object));
+	obj->pipefd = pipes[1];
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
 	output(2, "fd[%d] = pipe([reader] flags:%x)\n", pipes[0], flags);
 	output(2, "fd[%d] = pipe([writer] flags:%x)\n", pipes[1], flags);
-
-	offset += 2;
 }
 
 
@@ -47,9 +49,13 @@ static int open_pipes(void)
 	return TRUE;
 }
 
-static int get_rand_pipe_fd(void)
+int get_rand_pipe_fd(void)
 {
-	return shm->pipe_fds[rand() % MAX_PIPE_FDS];
+	struct object *obj;
+
+	obj = get_random_object(OBJ_FD_PIPE, OBJ_GLOBAL);
+
+	return obj->pipefd;
 }
 
 const struct fd_provider pipes_fd_provider = {

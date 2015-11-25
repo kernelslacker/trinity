@@ -3,6 +3,7 @@
  */
 #include <fcntl.h>
 #include <stdlib.h>
+#include "pipes.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -12,8 +13,8 @@
 static void sanitise_tee(struct syscallrecord *rec)
 {
 	if ((rand() % 10) > 0) {
-		rec->a1 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
-		rec->a2 = shm->pipe_fds[rand() % MAX_PIPE_FDS];
+		rec->a1 = get_rand_pipe_fd();
+		rec->a2 = get_rand_pipe_fd();
 	}
 }
 

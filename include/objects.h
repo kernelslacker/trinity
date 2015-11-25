@@ -6,6 +6,7 @@
 
 enum objecttype {
 	OBJ_MMAP,
+	OBJ_FD_PIPE,
 	MAX_OBJECT_TYPES,
 };
 
@@ -13,6 +14,8 @@ struct object {
 	struct list_head list;
 	union {
 		struct map map;
+
+		int pipefd;
 	};
 };
 
