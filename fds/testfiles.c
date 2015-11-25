@@ -47,19 +47,23 @@ static int open_testfile(char *filename)
 static int open_testfile_fds(void)
 {
 	char *filename;
-	unsigned int i = 1;
+	unsigned int i = 0;
 	unsigned int fails = 0;
 
 	filename = zmalloc(64);
 
-	while (i <= MAX_TESTFILE_FDS) {
+	while (i < MAX_TESTFILE_FDS) {
+		struct object *obj;
 		int fd;
 
 		sprintf(filename, "trinity-testfile%u", i);
 
 		fd = open_testfile(filename);
 		if (fd != -1) {
-			shm->testfile_fds[i - 1] = fd;
+			obj = alloc_object();
+			obj->testfilefd = fd;
+			add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
+
 			i++;
 			fails = 0;
 		} else {
@@ -76,7 +80,14 @@ static int open_testfile_fds(void)
 
 static int get_rand_testfile_fd(void)
 {
-	return shm->testfile_fds[rand() % MAX_TESTFILE_FDS];
+	struct object *obj;
+
+	/* check if testfilefd's unavailable/disabled. */
+	if (shm->global_objects[OBJ_FD_TESTFILE].num_entries == 0)
+		return -1;
+
+	obj = get_random_object(OBJ_FD_TESTFILE, OBJ_GLOBAL);
+	return obj->testfilefd;
 }
 
 const struct fd_provider testfile_fd_provider = {
