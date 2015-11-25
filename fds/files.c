@@ -379,7 +379,7 @@ static int open_files(void)
 
 		fd = open_file();
 
-		obj = zmalloc(sizeof(struct object));
+		obj = alloc_object();
 		obj->filefd = fd;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_FILE);
 	}

@@ -26,11 +26,11 @@ static void open_pipe_pair(unsigned int flags)
 		return;
 	}
 
-	obj = zmalloc(sizeof(struct object));
+	obj = alloc_object();
 	obj->pipefd = pipes[0];
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
-	obj = zmalloc(sizeof(struct object));
+	obj = alloc_object();
 	obj->pipefd = pipes[1];
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 

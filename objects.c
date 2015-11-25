@@ -4,6 +4,11 @@
 #include "trinity.h"
 #include "utils.h"
 
+struct object * alloc_object(void)
+{
+	return zmalloc(sizeof(struct object));
+}
+
 void add_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;

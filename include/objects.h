@@ -31,7 +31,7 @@ struct objhead {
 #define OBJ_GLOBAL 0
 #define OBJ_LOCAL 1
 
-struct object * alloc_object(void *ptr);
+struct object * alloc_object(void);
 void add_object(struct object *obj, bool global, enum objecttype type);
 void destroy_object(struct object *obj, bool global, enum objecttype type);
 void init_object_lists(bool global);
