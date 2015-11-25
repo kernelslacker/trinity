@@ -19,7 +19,7 @@
 static int open_eventfd_fds(void)
 {
 	unsigned int i;
-	unsigned long flags[] = {
+	unsigned int flags[] = {
 		0,
 		EFD_NONBLOCK,
 		EFD_NONBLOCK | EFD_SEMAPHORE,
