@@ -58,36 +58,44 @@ retry:
 		free((void *) so->optval);
 }
 
-static void add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol, bool accepted)
+static struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol, bool accepted)
 {
-	shm->sockets[nr_sockets].fd = fd;
-	shm->sockets[nr_sockets].triplet.family = domain;
-	shm->sockets[nr_sockets].triplet.type = type;
-	shm->sockets[nr_sockets].triplet.protocol = protocol;
+	struct object *obj;
+
+	obj = alloc_object();
+
+	obj->sockinfo.fd = fd;
+	obj->sockinfo.triplet.family = domain;
+	obj->sockinfo.triplet.type = type;
+	obj->sockinfo.triplet.protocol = protocol;
+
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_SOCKET);
 
 	output(2, "fd[%i] = domain:%u (%s) type:0x%u protocol:%u %s\n",
 		fd, domain, get_domain_name(domain), type, protocol,
 		accepted ? "[accepted]" : "");
+
+	return obj;
 }
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
-	int fd;
+	struct object *obj;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
 	struct sockopt so = { 0, 0, 0, 0 };
+	int fd;
 
 	fd = socket(domain, type, protocol);
 	if (fd == -1)
 		return fd;
 
-	add_socket(fd, domain, type, protocol, FALSE);
+	obj = add_socket(fd, domain, type, protocol, FALSE);
 
 	/* Set some random socket options. */
-	sso_socket(&shm->sockets[nr_sockets].triplet, &so, fd);
+	sso_socket(&obj->sockinfo.triplet, &so, fd);
 
 	nr_sockets++;
-
 	if (nr_sockets == NR_SOCKET_FDS)
 		goto skip_bind;
 
@@ -108,7 +116,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 //		ret = accept4(fd, sa, &salen, SOCK_NONBLOCK);
 //		if (ret != -1) {
-//			add_socket(ret, domain, type, protocol, TRUE);
+//			obj = add_socket(ret, domain, type, protocol, TRUE);
 //			nr_sockets++;
 //		}
 	}
@@ -305,21 +313,28 @@ out_unlock:
 
 void close_sockets(void)
 {
-	unsigned int i;
 	int fd;
 	struct linger ling = { .l_onoff = FALSE, .l_linger = 0 };
+	struct list_head *globallist, *node;
 
-	for (i = 0; i < nr_sockets; i++) {
+	globallist = shm->global_objects[OBJ_FD_SOCKET].list;
+
+	list_for_each(node, globallist) {
+		struct object *obj;
+		struct socketinfo *si;
+
+		obj = (struct object *) node;
+		si = &obj->sockinfo;
 
 		//FIXME: This is a workaround for a weird bug where we hang forevre
 		// waiting for bluetooth sockets when we setsockopt.
 		// Hopefully at some point we can remove this when someone figures out what's going on.
-		if (shm->sockets[i].triplet.family == PF_BLUETOOTH)
+		if (si->triplet.family == PF_BLUETOOTH)
 			continue;
 
 		/* Grab an fd, and nuke it before someone else uses it. */
-		fd = shm->sockets[i].fd;
-		shm->sockets[i].fd = 0;
+		fd = si->fd;
+		si->fd = 0;
 
 		/* disable linger */
 		(void) setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
@@ -328,9 +343,9 @@ void close_sockets(void)
 
 		if (close(fd) != 0)
 			output(1, "failed to close socket [%d:%d:%d].(%s)\n",
-				shm->sockets[i].triplet.family,
-				shm->sockets[i].triplet.type,
-				shm->sockets[i].triplet.protocol,
+				si->triplet.family,
+				si->triplet.type,
+				si->triplet.protocol,
 				strerror(errno));
 	}
 
@@ -410,26 +425,27 @@ regenerate:
 	return TRUE;
 }
 
-static int get_rand_socket_fd(void)
-{
-	int fd;
-
-	/* When using victim files, sockets can be 0. */
-	if (nr_sockets == 0)
-		return -1;
-
-	fd = shm->sockets[rand() % nr_sockets].fd;
-
-	return fd;
-}
-
 struct socketinfo * get_rand_socketinfo(void)
 {
+	struct object *obj;
+
 	/* When using victim files, sockets can be 0. */
-	if (nr_sockets == 0)
+	if (shm->global_objects[OBJ_FD_SOCKET].num_entries == 0)
 		return NULL;
 
-	return shm->sockets + (rand() % nr_sockets);
+	obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
+	return &obj->sockinfo;
+}
+
+static int get_rand_socket_fd(void)
+{
+	struct socketinfo *sockinfo;
+
+	sockinfo = get_rand_socketinfo();
+	if (sockinfo == NULL)
+		return -1;
+
+	return sockinfo->fd;
 }
 
 int generic_fd_from_socketinfo(struct socketinfo *si)

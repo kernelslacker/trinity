@@ -60,8 +60,7 @@ struct shm_s {
 	/* generic object cache*/
 	struct objhead global_objects[MAX_OBJECT_TYPES];
 
-	/* file descriptors, created in main, inherited in children */
-	struct socketinfo sockets[NR_SOCKET_FDS];
+	/* file descriptor info */
 	int current_fd;
 	unsigned int fd_lifetime;
 

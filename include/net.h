@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 
 #include "fd.h"
+#include "socketinfo.h"
 
 #define NR_SOCKET_FDS 375
 
@@ -25,12 +26,6 @@ extern char server_addr[INET6_ADDRSTRLEN];
 
 #define PF_NOHINT (-1)
 
-struct socket_triplet {
-	unsigned int family;
-	unsigned int type;
-	unsigned int protocol;
-};
-
 struct sock_option {
 	unsigned int name;
 	unsigned int len;
@@ -41,12 +36,6 @@ struct sockopt {
 	unsigned long optname;
 	unsigned long optval;
 	unsigned long optlen;
-};
-
-/* We create one of these per socket fd we open, and store them in shm->sockets */
-struct socketinfo {
-	struct socket_triplet triplet;
-	int fd;
 };
 
 void close_sockets(void);

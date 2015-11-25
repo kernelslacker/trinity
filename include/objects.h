@@ -2,6 +2,7 @@
 
 #include "list.h"
 #include "maps.h"
+#include "socketinfo.h"
 #include "trinity.h"
 
 enum objecttype {
@@ -16,6 +17,7 @@ enum objecttype {
 	OBJ_FD_MEMFD,
 	OBJ_FD_DRM,
 	OBJ_FD_INOTIFY,
+	OBJ_FD_SOCKET,
 	MAX_OBJECT_TYPES,
 };
 
@@ -43,6 +45,8 @@ struct object {
 		int drmfd;
 
 		int inotifyfd;
+
+		struct socketinfo sockinfo;
 	};
 };
 
