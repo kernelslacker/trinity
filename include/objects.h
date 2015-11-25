@@ -9,6 +9,7 @@ enum objecttype {
 	OBJ_FD_PIPE,
 	OBJ_FD_FILE,
 	OBJ_FD_PERF,
+	OBJ_FD_EPOLL,
 	MAX_OBJECT_TYPES,
 };
 
@@ -22,6 +23,8 @@ struct object {
 		int filefd;
 
 		int perffd;
+
+		int epollfd;
 	};
 };
 

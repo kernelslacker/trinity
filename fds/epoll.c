@@ -27,8 +27,13 @@ static int open_epoll_fds(void)
 			fd = epoll_create1(EPOLL_CLOEXEC);
 
 		if (fd != -1) {
-			shm->epoll_fds[i] = fd;
-			output(2, "fd[%d] = epoll\n", shm->epoll_fds[i]);
+			struct object *obj;
+
+			obj = alloc_object();
+			obj->perffd = fd;
+			add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
+
+			output(2, "fd[%d] = epoll\n", fd);
 			i++;
 		} else {
 			/* not sure what happened. */
@@ -41,7 +46,10 @@ static int open_epoll_fds(void)
 
 static int get_rand_epoll_fd(void)
 {
-	return shm->epoll_fds[rand() % MAX_EPOLL_FDS];
+	struct object *obj;
+
+	obj = get_random_object(OBJ_FD_EPOLL, OBJ_GLOBAL);
+	return obj->epollfd;
 }
 
 const struct fd_provider epoll_fd_provider = {
