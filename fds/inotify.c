@@ -14,48 +14,49 @@
 #include "sanitise.h"
 #include "shm.h"
 
-static int create_inotify(unsigned int i, int flags)
-{
-	int fd;
-
-	fd = inotify_init1(flags);
-	if (fd != -1) {
-		output(2, "fd[%d] = inotify(%d)\n", fd, flags);
-		shm->inotify_fds[i] = fd;
-		return TRUE;
-	} else {
-		output(0, "create_inotify fail: %s\n", strerror(errno));
-		return FALSE;
-	}
-}
-
 static int open_inotify_fds(void)
 {
-	int ret;
+	struct object *obj;
+	unsigned int i;
+	int fd;
+	int flags[] = {
+		0,
+		IN_NONBLOCK,
+		IN_CLOEXEC,
+		IN_NONBLOCK | IN_CLOEXEC,
+	};
 
-	shm->inotify_fds[0] = inotify_init();
-	ret = create_inotify(1, 0);
-	if (ret == FALSE)
+	fd = inotify_init();
+	if (fd < 0)
 		return FALSE;
 
-	ret = create_inotify(2, IN_NONBLOCK);
-	if (ret == FALSE)
-		return FALSE;
+	obj = alloc_object();
+	obj->inotifyfd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
 
-	ret = create_inotify(3, IN_CLOEXEC);
-	if (ret == FALSE)
-		return FALSE;
+	for (i = 0; i < ARRAY_SIZE(flags); i++) {
+		fd = inotify_init1(flags[i]);
+		if (fd < 0)
+			return FALSE;
 
-	ret = create_inotify(4, IN_NONBLOCK | IN_CLOEXEC);
-	if (ret == FALSE)
-		return FALSE;
+		obj = alloc_object();
+		obj->inotifyfd = fd;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
+	}
 
 	return TRUE;
 }
 
 static int get_rand_inotify_fd(void)
 {
-	return shm->inotify_fds[rand() % MAX_INOTIFY_FDS];
+	struct object *obj;
+
+	/* check if inotifyfd unavailable/disabled. */
+	if (shm->global_objects[OBJ_FD_INOTIFY].num_entries == 0)
+		return -1;
+
+	obj = get_random_object(OBJ_FD_INOTIFY, OBJ_GLOBAL);
+	return obj->inotifyfd;
 }
 
 const struct fd_provider inotify_fd_provider = {

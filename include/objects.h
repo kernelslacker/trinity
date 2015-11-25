@@ -15,6 +15,7 @@ enum objecttype {
 	OBJ_FD_TESTFILE,
 	OBJ_FD_MEMFD,
 	OBJ_FD_DRM,
+	OBJ_FD_INOTIFY,
 	MAX_OBJECT_TYPES,
 };
 
@@ -40,6 +41,8 @@ struct object {
 		int memfd;
 
 		int drmfd;
+
+		int inotifyfd;
 	};
 };
 

@@ -61,7 +61,6 @@ struct shm_s {
 	struct objhead global_objects[MAX_OBJECT_TYPES];
 
 	/* file descriptors, created in main, inherited in children */
-	int inotify_fds[MAX_INOTIFY_FDS];
 	struct socketinfo sockets[NR_SOCKET_FDS];
 	int current_fd;
 	unsigned int fd_lifetime;
