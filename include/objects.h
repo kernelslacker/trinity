@@ -10,6 +10,7 @@ enum objecttype {
 	OBJ_FD_FILE,
 	OBJ_FD_PERF,
 	OBJ_FD_EPOLL,
+	OBJ_FD_EVENTFD,
 	MAX_OBJECT_TYPES,
 };
 
@@ -25,6 +26,8 @@ struct object {
 		int perffd;
 
 		int epollfd;
+
+		int eventfd;
 	};
 };
 

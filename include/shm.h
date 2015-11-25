@@ -61,7 +61,6 @@ struct shm_s {
 	struct objhead global_objects[MAX_OBJECT_TYPES];
 
 	/* file descriptors, created in main, inherited in children */
-	int eventfd_fds[MAX_EVENTFD_FDS];
 	int timerfd_fds[MAX_TIMERFD_FDS];
 	int testfile_fds[MAX_TESTFILE_FDS];
 	int memfd_fds[MAX_MEMFD_FDS];

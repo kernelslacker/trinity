@@ -19,26 +19,45 @@
 static int open_eventfd_fds(void)
 {
 	unsigned int i;
+	unsigned long flags[] = {
+		0,
+		EFD_NONBLOCK,
+		EFD_NONBLOCK | EFD_SEMAPHORE,
+		EFD_CLOEXEC,
+		EFD_CLOEXEC  | EFD_NONBLOCK,
+		EFD_CLOEXEC  | EFD_SEMAPHORE,
+		EFD_CLOEXEC  | EFD_NONBLOCK | EFD_SEMAPHORE,
+		EFD_SEMAPHORE,
+	};
 
-	shm->eventfd_fds[0] = eventfd(rand32(), 0);
-	shm->eventfd_fds[1] = eventfd(rand32(), EFD_CLOEXEC);
-	shm->eventfd_fds[2] = eventfd(rand32(), EFD_NONBLOCK);
-	shm->eventfd_fds[3] = eventfd(rand32(), EFD_SEMAPHORE);
-	shm->eventfd_fds[4] = eventfd(rand32(), EFD_CLOEXEC | EFD_NONBLOCK);
-	shm->eventfd_fds[5] = eventfd(rand32(), EFD_CLOEXEC | EFD_SEMAPHORE);
-	shm->eventfd_fds[6] = eventfd(rand32(), EFD_NONBLOCK | EFD_SEMAPHORE);
-	shm->eventfd_fds[7] = eventfd(rand32(), EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE);
-	// Check for ENOSYS
+	for (i = 0; i < ARRAY_SIZE(flags); i++) {
+		struct object *obj;
+		int fd;
 
-	for (i = 0; i < MAX_EVENTFD_FDS; i++)
-		output(2, "fd[%d] = eventfd\n", shm->eventfd_fds[i]);
+		fd = eventfd(rand32(), flags[i]);
+		if (fd < 0)
+			continue;
+
+		obj = alloc_object();
+		obj->eventfd = fd;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_EVENTFD);
+
+		output(2, "fd[%d] = eventfd\n", fd);
+	}
 
 	return TRUE;
 }
 
 static int get_rand_eventfd_fd(void)
 {
-	return shm->eventfd_fds[rand() % MAX_EVENTFD_FDS];
+	struct object *obj;
+
+	/* check if eventfd unavailable/disabled. */
+	if (shm->global_objects[OBJ_FD_EVENTFD].num_entries == 0)
+		return -1;
+
+	obj = get_random_object(OBJ_FD_EVENTFD, OBJ_GLOBAL);
+	return obj->eventfd;
 }
 
 const struct fd_provider eventfd_fd_provider = {
