@@ -10,8 +10,6 @@
 #include "compat.h"
 #include "trinity.h"
 
-static unsigned fd_count;
-
 #ifdef USE_DRM
 
 #include <dirent.h>
@@ -56,6 +54,17 @@ static int create_dumb(__unused__ int fd)
 #endif
 }
 
+static void add_drm_obj(int fd)
+{
+	struct object *obj;
+
+	obj = alloc_object();
+	obj->drmfd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_DRM);
+
+	output(2, "fd[%d] = drm\n", fd);
+}
+
 static int open_drm_fds(void)
 {
 	unsigned int i;
@@ -82,35 +91,23 @@ static int open_drm_fds(void)
 		buf[sizeof(buf)-1] = '\0';
 
 		fd = open(buf, O_RDWR);
-		if (fd < 0) {
+		if (fd < 0)
 			continue;
-		}
-		shm->drm_fds[fd_count++] = fd;
 
-		if (fd_count >= MAX_DRM_FDS)
-			break;
+		add_drm_obj(fd);
 
 		dfd = create_dumb(fd);
-		if (dfd < 0) {
+		if (dfd < 0)
 			continue;
-		}
-		shm->drm_fds[fd_count++] = dfd;
 
-		if (fd_count >= MAX_DRM_FDS)
-			break;
+		add_drm_obj(dfd);
 	}
 
 	if (dir)
 		closedir(dir);
 
-	for (i = 0; i < MAX_DRM_FDS; i++) {
-		if (shm->drm_fds[i] > 0) {
-			output(2, "fd[%d] = drm\n", shm->drm_fds[i]);
-		}
-	}
-
 done:
-	if (fd_count == 0)
+	if (shm->global_objects[OBJ_FD_DRM].num_entries == 0)
 		drm_fd_provider.enabled = FALSE;
 
 	return TRUE;
@@ -124,12 +121,14 @@ static int open_drm_fds(void) { return TRUE; }
 
 static int get_rand_drm_fd(void)
 {
-	// We should not be called when fd_count is zero, but avoid div-by-zero
-	// just in case.
-	if (fd_count > 0)
-		return shm->drm_fds[rand() % fd_count];
-	else
+	struct object *obj;
+
+	/* check if drm unavailable/disabled. */
+	if (shm->global_objects[OBJ_FD_DRM].num_entries == 0)
 		return -1;
+
+	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);
+	return obj->drmfd;
 }
 
 struct fd_provider drm_fd_provider = {
