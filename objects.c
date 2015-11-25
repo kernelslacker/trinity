@@ -6,7 +6,10 @@
 
 struct object * alloc_object(void)
 {
-	return zmalloc(sizeof(struct object));
+	struct object *obj;
+	obj = zmalloc(sizeof(struct object));
+	INIT_LIST_HEAD(&obj->list);
+	return obj;
 }
 
 void add_object(struct object *obj, bool global, enum objecttype type)
