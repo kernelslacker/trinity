@@ -16,33 +16,53 @@
 #include "shm.h"
 #include "compat.h"
 
-static int open_timerfd_fds(void)
+static int __open_timerfd_fds(int clockid)
 {
 	unsigned int i;
+	unsigned int flags[] = {
+		0,
+		TFD_NONBLOCK,
+		TFD_CLOEXEC,
+		TFD_NONBLOCK | TFD_CLOEXEC,
+	};
 
-	shm->timerfd_fds[0] = timerfd_create(CLOCK_REALTIME, 0);
-	if (shm->timerfd_fds[0] == -1)
-		if (errno == ENOSYS)
-			return FALSE;
+	for (i = 0; i < ARRAY_SIZE(flags); i++) {
+		struct object *obj;
+		int fd;
 
-	shm->timerfd_fds[1] = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK);
-	shm->timerfd_fds[2] = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
-	shm->timerfd_fds[3] = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
+		fd = timerfd_create(clockid, flags[i]);
+		if (fd == -1)
+			if (errno == ENOSYS)
+				return FALSE;
 
-	shm->timerfd_fds[4] = timerfd_create(CLOCK_MONOTONIC, 0);
-	shm->timerfd_fds[5] = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
-	shm->timerfd_fds[6] = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
-	shm->timerfd_fds[7] = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-
-	for (i = 0; i < MAX_TIMERFD_FDS; i++)
-		output(2, "fd[%d] = timerfd\n", shm->timerfd_fds[i]);
-
+		obj = alloc_object();
+		obj->timerfd = fd;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_TIMERFD);
+		output(2, "fd[%d] = timerfd\n", fd);
+	}
 	return TRUE;
+}
+
+static int open_timerfd_fds(void)
+{
+	int ret;
+	ret = __open_timerfd_fds(CLOCK_REALTIME);
+	if (ret != FALSE)
+		ret = __open_timerfd_fds(CLOCK_MONOTONIC);
+
+	return ret;
 }
 
 static int get_rand_timerfd_fd(void)
 {
-	return shm->timerfd_fds[rand() % MAX_TIMERFD_FDS];
+	struct object *obj;
+
+	/* check if timerfd unavailable/disabled. */
+	if (shm->global_objects[OBJ_FD_TIMERFD].num_entries == 0)
+		return -1;
+
+	obj = get_random_object(OBJ_FD_TIMERFD, OBJ_GLOBAL);
+	return obj->timerfd;
 }
 
 const struct fd_provider timerfd_fd_provider = {

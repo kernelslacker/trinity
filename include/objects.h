@@ -11,6 +11,7 @@ enum objecttype {
 	OBJ_FD_PERF,
 	OBJ_FD_EPOLL,
 	OBJ_FD_EVENTFD,
+	OBJ_FD_TIMERFD,
 	MAX_OBJECT_TYPES,
 };
 
@@ -28,6 +29,8 @@ struct object {
 		int epollfd;
 
 		int eventfd;
+
+		int timerfd;
 	};
 };
 
