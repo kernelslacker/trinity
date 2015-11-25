@@ -112,10 +112,7 @@ struct syscallentry syscall_execve = {
 	.post = post_execve,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
-	.errnos = {
-		.num = 17,
-		.values = execve_errnos,
-	},
+	.errnos = ERRNOS(execve_errnos),
 };
 
 static unsigned long execveat_flags[] = {
@@ -140,8 +137,5 @@ struct syscallentry syscall_execveat = {
 	.post = post_execveat,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
-	.errnos = {
-		.num = 17,
-		.values = execve_errnos,
-	},
+	.errnos = ERRNOS(execve_errnos),
 };

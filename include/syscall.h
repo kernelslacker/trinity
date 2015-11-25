@@ -78,6 +78,12 @@ struct errnos {
 	int *values;
 };
 
+#define ERRNOS(vals)		\
+{				\
+	.num = ARRAY_SIZE(vals),\
+	.values = vals,		\
+}
+
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);
 	void (*post)(struct syscallrecord *rec);

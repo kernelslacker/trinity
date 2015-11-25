@@ -31,9 +31,6 @@ struct syscallentry syscall_getrandom = {
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(getrandom_flags),
-	.errnos = {
-		.num = 4,
-		.values = getrandom_errnos,
-	},
+	.errnos = ERRNOS(getrandom_errnos),
 	.sanitise = sanitise_getrandom,
 };
