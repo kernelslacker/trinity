@@ -25,7 +25,6 @@
 
 unsigned int files_in_index = 0;
 const char **fileindex;
-unsigned int nr_file_fds = 0;
 
 struct namelist {
 	struct list_head list;
@@ -375,12 +374,14 @@ static int open_files(void)
 		return FALSE;
 
 	for (i = 0; i < nr_to_open; i++) {
+		struct object *obj;
 		int fd;
 
 		fd = open_file();
 
-		shm->file_fds[i] = fd;
-		nr_file_fds++;
+		obj = zmalloc(sizeof(struct object));
+		obj->filefd = fd;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_FILE);
 	}
 	return TRUE;
 }
@@ -395,13 +396,13 @@ const char * get_filename(void)
 
 static int get_rand_file_fd(void)
 {
-	unsigned int fd_index;
+	struct object *obj;
 
-	if (nr_file_fds == 0)
+	if (shm->global_objects[OBJ_FD_FILE].num_entries == 0)
 		return -1;
 
-	fd_index = rand() % nr_file_fds;
-	return shm->file_fds[fd_index];
+	obj = get_random_object(OBJ_FD_FILE, OBJ_GLOBAL);
+	return obj->filefd;
 }
 
 const struct fd_provider file_fd_provider = {
