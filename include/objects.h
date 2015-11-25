@@ -13,6 +13,7 @@ enum objecttype {
 	OBJ_FD_EVENTFD,
 	OBJ_FD_TIMERFD,
 	OBJ_FD_TESTFILE,
+	OBJ_FD_MEMFD,
 	MAX_OBJECT_TYPES,
 };
 
@@ -34,6 +35,8 @@ struct object {
 		int timerfd;
 
 		int testfilefd;
+
+		int memfd;
 	};
 };
 

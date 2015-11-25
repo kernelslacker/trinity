@@ -27,18 +27,29 @@ static int memfd_create(__unused__ const char *uname, __unused__ unsigned int fl
 static int open_memfd_fds(void)
 {
 	unsigned int i;
-	unsigned int count = 0;
+	unsigned int flags[] = {
+		0,
+		MFD_CLOEXEC,
+		MFD_CLOEXEC | MFD_ALLOW_SEALING,
+		MFD_ALLOW_SEALING,
+	};
 
-	shm->memfd_fds[0] = memfd_create("memfd1", 0);
-	shm->memfd_fds[1] = memfd_create("memfd2", MFD_CLOEXEC);
-	shm->memfd_fds[2] = memfd_create("memfd3", MFD_CLOEXEC | MFD_ALLOW_SEALING);
-	shm->memfd_fds[3] = memfd_create("memfd4", MFD_ALLOW_SEALING);
+	for (i = 0; i < ARRAY_SIZE(flags); i++) {
+		struct object *obj;
+		char namestr[] = "memfdN";
+		int fd;
 
-	for (i = 0; i < MAX_MEMFD_FDS; i++) {
-		if (shm->memfd_fds[i] > 0) {
-			output(2, "fd[%d] = memfd\n", shm->memfd_fds[i]);
-			count++;
-		}
+		sprintf(namestr, "memfd%d", i + 1);
+
+		fd = memfd_create(namestr, flags[i]);
+		if (fd < 0)
+			continue;
+
+		obj = alloc_object();
+		obj->memfd = fd;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
+
+		output(2, "fd[%d] = memfd\n", fd);
 	}
 
 	//FIXME: right now, returning FALSE means "abort everything", not
@@ -49,7 +60,14 @@ static int open_memfd_fds(void)
 
 static int get_rand_memfd_fd(void)
 {
-	return shm->memfd_fds[rand() % MAX_MEMFD_FDS];
+	struct object *obj;
+
+	/* check if eventfd unavailable/disabled. */
+	if (shm->global_objects[OBJ_FD_MEMFD].num_entries == 0)
+		return -1;
+
+	obj = get_random_object(OBJ_FD_MEMFD, OBJ_GLOBAL);
+	return obj->memfd;
 }
 
 const struct fd_provider memfd_fd_provider = {
