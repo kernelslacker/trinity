@@ -92,6 +92,13 @@ static void post_execveat(struct syscallrecord *rec)
 	free_execve_ptrs((void **) rec->a3, (void **) rec->a4);
 }
 
+static int execve_errnos[] = {
+	E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,
+	EMFILE, ENOENT, ENOEXEC, ENOMEM, ENOTDIR, EPERM, ETXTBSY,
+	/* currently undocumented in man page. */
+	ENAMETOOLONG, ENXIO,
+};
+
 struct syscallentry syscall_execve = {
 	.name = "execve",
 	.num_args = 3,
@@ -107,12 +114,7 @@ struct syscallentry syscall_execve = {
 	.flags = EXTRA_FORK,
 	.errnos = {
 		.num = 17,
-		.values = {
-			E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,
-			EMFILE, ENOENT, ENOEXEC, ENOMEM, ENOTDIR, EPERM, ETXTBSY,
-			/* currently undocumented in man page. */
-			ENAMETOOLONG, ENXIO,
-		},
+		.values = execve_errnos,
 	},
 };
 
@@ -140,11 +142,6 @@ struct syscallentry syscall_execveat = {
 	.flags = EXTRA_FORK,
 	.errnos = {
 		.num = 17,
-		.values = {
-			E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,
-			EMFILE, ENOENT, ENOEXEC, ENOMEM, ENOTDIR, EPERM, ETXTBSY,
-			/* currently undocumented in man page. */
-			ENAMETOOLONG, ENXIO,
-		},
+		.values = execve_errnos,
 	},
 };

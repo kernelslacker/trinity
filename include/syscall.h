@@ -75,7 +75,7 @@ struct arglist {
 
 struct errnos {
 	unsigned int num;
-	int values[32];
+	int *values;
 };
 
 struct syscallentry {
