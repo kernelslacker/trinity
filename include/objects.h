@@ -8,6 +8,7 @@ enum objecttype {
 	OBJ_MMAP,
 	OBJ_FD_PIPE,
 	OBJ_FD_FILE,
+	OBJ_FD_PERF,
 	MAX_OBJECT_TYPES,
 };
 
@@ -19,6 +20,8 @@ struct object {
 		int pipefd;
 
 		int filefd;
+
+		int perffd;
 	};
 };
 

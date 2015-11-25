@@ -24,8 +24,13 @@ static int open_perf_fds(void)
 
 		fd = syscall(__NR_perf_event_open, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5);
 		if (fd != -1) {
-			shm->perf_fds[i] = fd;
-			output(2, "fd[%d] = perf\n", shm->perf_fds[i]);
+			struct object *obj;
+
+			obj = alloc_object();
+			obj->perffd = fd;
+			add_object(obj, OBJ_GLOBAL, OBJ_FD_PERF);
+
+			output(2, "fd[%d] = perf\n", fd);
 			i++;
 		} else {
 			/* If ENOSYS, bail early rather than do MAX_PERF_FDS retries */
@@ -43,10 +48,14 @@ static int open_perf_fds(void)
 
 static int get_rand_perf_fd(void)
 {
-	if (shm->perf_fds[0] == 0)	/* perf unavailable/disabled. */
+	struct object *obj;
+
+	/* check if perf unavailable/disabled. */
+	if (shm->global_objects[OBJ_FD_PERF].num_entries == 0)
 		return -1;
 
-	return shm->perf_fds[rand() % MAX_PERF_FDS];
+	obj = get_random_object(OBJ_FD_PERF, OBJ_GLOBAL);
+	return obj->perffd;
 }
 
 const struct fd_provider perf_fd_provider = {
