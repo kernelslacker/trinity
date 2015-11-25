@@ -73,53 +73,8 @@ void close_logfile(FILE **filehandle)
 	*filehandle = NULL;
 }
 
-static FILE * find_child_logfile_handle(pid_t pid)
-{
-	int i;
-	unsigned int j;
-	FILE *log = NULL;
-
-	i = find_childno(pid);
-	if (i != CHILD_NOT_FOUND) {
-		log = shm->children[i]->logfile;
-	} else {
-		/* This is pretty ugly, and should never happen,
-		 * but try again a second later, in case we're racing setup/teardown.
-		 * FIXME: We may not even need this now that we have proper locking; test it.
-		 */
-		sleep(1);
-		i = find_childno(pid);
-		if (i == CHILD_NOT_FOUND) {
-			outputerr("Couldn't find child for pid %d\n", pid);
-			return mainlogfile;
-		}
-		log = shm->children[i]->logfile;
-
-	}
-
-	if (log != NULL)
-		return log;
-
-	/* if the logfile hadn't been set, log to main. */
-	shm->children[i]->logfile = mainlogfile;
-	outputerr("## child %d logfile handle was null logging to main!\n", i);
-
-	outputerr("## Couldn't find logfile for pid %d\n", pid);
-	dump_childnos();
-	outputerr("## Logfiles for pids: ");
-	for_each_child(j)
-		outputerr("%p ", shm->children[j]->logfile);
-	outputerr("\n");
-
-	(void)fflush(stdout);
-
-	sleep(5);
-	return mainlogfile;
-}
-
 FILE *find_logfile_handle(void)
 {
-	FILE *handle = NULL;
 	pid_t pid;
 
 	if (logging == LOGGING_DISABLED)
@@ -138,9 +93,10 @@ FILE *find_logfile_handle(void)
 	if (pid == watchdog_pid)
 		return mainlogfile;
 
-	handle = find_child_logfile_handle(pid);
+	if (this_child != NULL)
+		return this_child->logfile;
 
-	return handle;
+	return NULL;
 }
 
 /*
