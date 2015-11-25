@@ -157,6 +157,8 @@ int main(int argc, char* argv[])
 	if (do_specific_domain == TRUE)
 		find_specific_domain(specific_domain_optarg);
 
+	init_object_lists(OBJ_GLOBAL);
+
 	setup_initial_mappings();
 
 	parse_devices();

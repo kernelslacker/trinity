@@ -83,8 +83,6 @@ void setup_initial_mappings(void)
 //		GB(1),	// disabled for now, due to OOM.
 	};
 
-	init_object_lists(OBJ_GLOBAL);
-
 	alloc_zero_map(page_size, PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
 	alloc_zero_map(page_size, PROT_READ, "PROT_READ");
 	alloc_zero_map(page_size, PROT_WRITE, "PROT_WRITE");
