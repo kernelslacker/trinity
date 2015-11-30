@@ -448,7 +448,7 @@ static int get_rand_socket_fd(void)
 	return sockinfo->fd;
 }
 
-int generic_fd_from_socketinfo(struct socketinfo *si)
+int fd_from_socketinfo(struct socketinfo *si)
 {
 	if (si != NULL) {
 		if (!(ONE_IN(1000)))

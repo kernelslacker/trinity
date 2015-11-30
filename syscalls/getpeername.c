@@ -6,7 +6,7 @@
 
 static void sanitise_getpeername(struct syscallrecord *rec)
 {
-	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 }
 
 struct syscallentry syscall_getpeername = {

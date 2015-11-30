@@ -19,7 +19,7 @@ static void sanitise_send(struct syscallrecord *rec)
 	void *ptr;
 	unsigned int size;
 
-	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	if (RAND_BOOL())
 		size = 1;
@@ -101,7 +101,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
 
-	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	msg = zmalloc(sizeof(struct msghdr));
 
@@ -148,7 +148,7 @@ struct syscallentry syscall_sendmsg = {
  */
 static void sanitise_sendmmsg(struct syscallrecord *rec)
 {
-	rec->a1 = generic_fd_from_socketinfo((struct socketinfo *) rec->a1);
+	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 }
 
 struct syscallentry syscall_sendmmsg = {
