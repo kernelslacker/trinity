@@ -265,6 +265,9 @@ enum {
 #ifndef NETLINK_CAP_ACK
 #define NETLINK_CAP_ACK 10
 #endif
+#ifndef NETLINK_SOCK_DIAG
+#define NETLINK_SOCK_DIAG 4
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
