@@ -169,7 +169,7 @@ int main(int argc, char* argv[])
 
 	/* check if we ctrl'c or something went wrong during init. */
 	if (shm->exit_reason != STILL_RUNNING)
-		goto cleanup_fds;
+		goto abort_early;
 
 	init_watchdog();
 
@@ -199,6 +199,8 @@ int main(int argc, char* argv[])
 
 		main_loop();
 
+		close_sockets();
+
 		shm->mainpid = 0;
 		_exit(EXIT_SUCCESS);
 	}
@@ -212,9 +214,7 @@ int main(int argc, char* argv[])
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.total_syscalls_done - 1, shm->stats.successes, shm->stats.failures);
 
-cleanup_fds:
-
-	close_sockets();
+abort_early:
 
 	destroy_initial_mappings();
 
