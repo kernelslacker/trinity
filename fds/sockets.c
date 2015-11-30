@@ -430,7 +430,7 @@ struct socketinfo * get_rand_socketinfo(void)
 	struct object *obj;
 
 	/* When using victim files, sockets can be 0. */
-	if (shm->global_objects[OBJ_FD_SOCKET].num_entries == 0)
+	if (no_objects(OBJ_FD_SOCKET) == TRUE)
 		return NULL;
 
 	obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);

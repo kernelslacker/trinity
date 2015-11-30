@@ -91,3 +91,10 @@ struct object * get_random_object(enum objecttype type, bool global)
 	}
 	return NULL;
 }
+
+bool no_objects(enum objecttype type)
+{
+	if (shm->global_objects[type].num_entries == 0)
+		return TRUE;
+	return FALSE;
+}

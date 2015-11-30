@@ -83,7 +83,7 @@ static int get_rand_testfile_fd(void)
 	struct object *obj;
 
 	/* check if testfilefd's unavailable/disabled. */
-	if (shm->global_objects[OBJ_FD_TESTFILE].num_entries == 0)
+	if (no_objects(OBJ_FD_TESTFILE) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TESTFILE, OBJ_GLOBAL);

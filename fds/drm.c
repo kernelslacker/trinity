@@ -107,7 +107,7 @@ static int open_drm_fds(void)
 		closedir(dir);
 
 done:
-	if (shm->global_objects[OBJ_FD_DRM].num_entries == 0)
+	if (no_objects(OBJ_FD_DRM) == TRUE)
 		drm_fd_provider.enabled = FALSE;
 
 	return TRUE;
@@ -124,7 +124,7 @@ static int get_rand_drm_fd(void)
 	struct object *obj;
 
 	/* check if drm unavailable/disabled. */
-	if (shm->global_objects[OBJ_FD_DRM].num_entries == 0)
+	if (no_objects(OBJ_FD_DRM) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);

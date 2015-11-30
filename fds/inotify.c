@@ -52,7 +52,7 @@ static int get_rand_inotify_fd(void)
 	struct object *obj;
 
 	/* check if inotifyfd unavailable/disabled. */
-	if (shm->global_objects[OBJ_FD_INOTIFY].num_entries == 0)
+	if (no_objects(OBJ_FD_INOTIFY) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_INOTIFY, OBJ_GLOBAL);

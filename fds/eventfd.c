@@ -53,7 +53,7 @@ static int get_rand_eventfd_fd(void)
 	struct object *obj;
 
 	/* check if eventfd unavailable/disabled. */
-	if (shm->global_objects[OBJ_FD_EVENTFD].num_entries == 0)
+	if (no_objects(OBJ_FD_EVENTFD) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_EVENTFD, OBJ_GLOBAL);
