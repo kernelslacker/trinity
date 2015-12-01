@@ -53,13 +53,14 @@ static int open_testfile_fds(void)
 	filename = zmalloc(64);
 
 	while (i < MAX_TESTFILE_FDS) {
-		struct object *obj;
 		int fd;
 
 		sprintf(filename, "trinity-testfile%u", i);
 
 		fd = open_testfile(filename);
 		if (fd != -1) {
+			struct object *obj;
+
 			obj = alloc_object();
 			obj->testfilefd = fd;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
