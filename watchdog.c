@@ -230,12 +230,20 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 	struct syscallentry *entry;
 	unsigned int fd;
 
-	fd = rec->a1;
-
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
-	if (entry->arg1type != ARG_FD)
-		return FALSE;
 
+	if (entry->arg1type == ARG_FD) {
+		fd = rec->a1;
+		goto got_fd;
+	}
+
+	if (entry->arg1type == ARG_SOCKETINFO) {
+		fd = fd_from_socketinfo((struct socketinfo *) rec->a1);
+		goto got_fd;
+	}
+	return FALSE;
+
+got_fd:
 	/* if it's out of range, it's not going to be valid. */
 	if (fd > 1024)
 		return FALSE;
