@@ -238,7 +238,8 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 	}
 
 	if (entry->arg1type == ARG_SOCKETINFO) {
-		fd = fd_from_socketinfo((struct socketinfo *) rec->a1);
+		/* post syscall, a1 is actually the fd, not the socketinfo */
+		fd = rec->a1;
 		goto got_fd;
 	}
 	return FALSE;
