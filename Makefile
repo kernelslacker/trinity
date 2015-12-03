@@ -10,7 +10,7 @@ endif
 CC := $(CROSS_COMPILE)$(CC)
 LD := $(CROSS_COMPILE)$(LD)
 
-CFLAGS += -Wall -W -g -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -D__linux__
+CFLAGS += -Wall -W -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -D__linux__
 
 # Only enabled during development, and on gcc 4.9+
 CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
@@ -42,7 +42,6 @@ ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
 CFLAGS += $(shell if [ $(DEVEL) -eq 0 ]; then echo "-Wno-maybe-uninitialized"; else echo ""; fi)
-CFLAGS += $(shell if [ $(DEVEL) -eq 0 ]; then echo "-O2"; else echo "-Og"; fi)
 endif
 
 # Sometimes useful for debugging. more useful with clang than gcc.
