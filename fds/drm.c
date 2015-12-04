@@ -67,7 +67,6 @@ static void add_drm_obj(int fd)
 
 static int open_drm_fds(void)
 {
-	unsigned int i;
 	int fd, dfd;
 	DIR *dir;
 	struct dirent *entry;
