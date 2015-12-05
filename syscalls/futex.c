@@ -3,7 +3,25 @@
 	 struct timespec __user *, utime, u32 __user *, uaddr2, u32, val3)
  */
 #include <linux/futex.h>
+#include <limits.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <inttypes.h>
+#include "random.h"
 #include "sanitise.h"
+
+#define FUTEX_UNLOCKED (0)
+#define FUTEX_LOCKED (!FUTEX_UNLOCKED)
+#define NFUTEXES (5 * num_online_cpus)
+
+/* not related to shm locks */
+static struct __lock {
+	uint32_t futex;
+	pid_t owner_pid;
+} *locks = NULL;
 
 static unsigned long futex_ops[] = {
 	FUTEX_WAIT, FUTEX_WAKE, FUTEX_FD, FUTEX_REQUEUE,
@@ -16,6 +34,208 @@ static unsigned long futex_ops[] = {
 	FUTEX_WAIT_BITSET_PRIVATE, FUTEX_WAKE_BITSET_PRIVATE,
 	FUTEX_WAIT_REQUEUE_PI_PRIVATE,
 };
+
+static inline bool futex_pi_cmd(int cmd)
+{
+	switch (cmd) {
+	case FUTEX_LOCK_PI:
+	case FUTEX_LOCK_PI_PRIVATE:
+	case FUTEX_TRYLOCK_PI:
+	case FUTEX_TRYLOCK_PI_PRIVATE:
+	case FUTEX_UNLOCK_PI:
+	case FUTEX_UNLOCK_PI_PRIVATE:
+	case FUTEX_CMP_REQUEUE_PI:
+	case FUTEX_CMP_REQUEUE_PI_PRIVATE:
+	case FUTEX_WAIT_REQUEUE_PI:
+	case FUTEX_WAIT_REQUEUE_PI_PRIVATE:
+		return TRUE;
+	default:
+		return FALSE;
+	}
+}
+
+static inline uint32_t
+__cmpxchg(uint32_t *uaddr, uint32_t oldval, uint32_t newval)
+{
+	return __sync_val_compare_and_swap(uaddr, oldval, newval);
+}
+
+static bool futex_trylock_or_wait(struct __lock *lock, struct syscallrecord *rec)
+{
+	int status = lock->futex;
+
+	if (status == FUTEX_UNLOCKED) {
+		status = __cmpxchg(&lock->futex, FUTEX_UNLOCKED, FUTEX_LOCKED);
+		if (status == FUTEX_UNLOCKED) {
+			/*
+			 * Boring scenario: uncontended lock, acquired it in
+			 * userspace; so do whatever trinity was going to do
+			 * anyway in the first place.
+			 */
+			lock->owner_pid = getpid();
+			return TRUE;
+		}
+	}
+
+	/*
+	 * The lock condition could have raced by the time we are here, but
+	 * whatever, this is a fuzzy tester and a concurrency is part of the mix.
+	 * For the FUTEX_LOCK_PI, we'd be setting the waiters bit.
+	 */
+	if (!futex_pi_cmd(rec->a2) && RAND_BOOL()) {
+		rec->a2 = RAND_BOOL() ? FUTEX_WAIT : FUTEX_WAIT_PRIVATE;
+		rec->a3 = FUTEX_LOCKED;
+	} else
+		rec->a2 = FUTEX_LOCK_PI;
+
+	return FALSE;
+}
+
+static inline void futex_unlock(struct __lock *lock)
+{
+	int status = lock->futex;
+
+	if (status == FUTEX_LOCKED) {
+		lock->owner_pid = 0;
+		__cmpxchg(&lock->futex, FUTEX_LOCKED, FUTEX_UNLOCKED);
+
+		/*
+		 * Blindly wakeup anyone blocked waiting on the lock.
+		 *
+		 * Could perfectly well be a bogus wakeup; don't even bother
+		 * checking return val...
+		 */
+		syscall(SYS_futex, &lock->futex, FUTEX_WAKE, 1, NULL, 0, 0);
+		syscall(SYS_futex, &lock->futex, FUTEX_UNLOCK_PI, 1, NULL, 0, 0);
+	}
+}
+
+static int init_futex(void)
+{
+	if (!locks) {
+		locks = calloc(NFUTEXES, sizeof(struct __lock));
+		if (!locks)
+			return -1;
+	}
+
+	return 0;
+}
+
+static inline int random_futex_wake_op(void)
+{
+	const unsigned int op_flags[] = {
+		FUTEX_OP_SET, FUTEX_OP_ADD, FUTEX_OP_OR,
+		FUTEX_OP_ANDN, FUTEX_OP_XOR,
+	};
+	const unsigned int cmp_flags[] = {
+		FUTEX_OP_CMP_EQ, FUTEX_OP_CMP_NE, FUTEX_OP_CMP_LT,
+		FUTEX_OP_CMP_LE, FUTEX_OP_CMP_GT, FUTEX_OP_CMP_GE,
+	};
+
+	return op_flags[RAND_RANGE(0, ARRAY_SIZE(op_flags)) - 1] |
+		cmp_flags[RAND_RANGE(0, ARRAY_SIZE(cmp_flags)) - 1];
+}
+
+/*
+ * Roughly half the calls will use the generic arguments,
+ * with the occasional exception of using CLOCK_REALTIME,
+ * when applicable to the correct cmd (avoid -ENOSYS).
+ *
+ * The other half can perform anyone of the following
+ * operations, each with a ~25% chance, acting on at most
+ * two uaddresses from a small pool selected randomly.
+ *
+ * (1) Perform a pseudo trylock/unlock. Contended scenarios
+ * involve immediately blocking or doing a pi lock.
+ *
+ * (2) Wait/requeue, which pairs with one of the below wakes.
+
+ * (3) WAKE_OP, or,
+ * (4) a regular wake or directly requeueing.
+ */
+static void sanitise_futex(struct syscallrecord *rec)
+{
+	struct __lock *lock, *lock2;
+
+	if (RAND_BOOL() && futex_pi_cmd(rec->a2))
+		setpriority(PRIO_PROCESS, 0,
+			    RAND_RANGE(PRIO_MIN, PRIO_MAX - 1));
+
+	if (RAND_BOOL())
+		goto out_setclock;
+
+	lock = &locks[RAND_RANGE(0, NFUTEXES - 1)];
+	lock2 = &locks[RAND_RANGE(0, NFUTEXES - 1)];
+	rec->a1 = (unsigned long) &lock->futex; /* uaddr */
+		  /* ^^ no, we do not have 64-bit futexes :P */
+	rec->a5 = (unsigned long) &lock2->futex; /* uaddr2 */
+
+	switch (rand() % 4) {
+	case 0:
+		if (futex_trylock_or_wait(lock, rec))
+			futex_unlock(lock);
+		break;
+	case 1:
+		rec->a2 = FUTEX_WAIT_REQUEUE_PI;
+		rec->a3 = 0;
+		break;
+	case 2:
+		rec->a2 = FUTEX_WAKE_OP;
+		rec->a3 = 1;
+		rec->a6 = random_futex_wake_op();
+		break;
+	case 3:
+		if (RAND_BOOL()) {
+			rec->a2 = FUTEX_WAKE;
+		} else  {
+			rec->a2 = FUTEX_CMP_REQUEUE_PI;
+		}
+
+		/*
+		 * In the case of cmp requeue_pi, val (nr_wakeups) should
+		 * normally be 1, but be naughty.
+		 */
+		rec->a3 = INT_MAX;
+		break;
+	default:
+		break;
+	}
+
+out_setclock:
+	switch (rec->a2) {
+	case FUTEX_WAIT_BITSET:
+	case FUTEX_WAIT_BITSET_PRIVATE:
+	case FUTEX_WAIT_REQUEUE_PI:
+	case FUTEX_WAIT_REQUEUE_PI_PRIVATE:
+		if (RAND_BOOL())
+			rec->a2 |= FUTEX_CLOCK_REALTIME;
+		break;
+	default:
+		break;
+	}
+}
+
+static void post_futex(struct syscallrecord *rec)
+{
+	unsigned int i;
+	struct __lock *lock = NULL;
+
+	/*
+	 * Restore back to original priority; only useful
+	 * if root, otherwise the prio cannot be set back
+	 * (lowered) to zero.
+	 */
+	if (futex_pi_cmd(rec->a2))
+		setpriority(PRIO_PROCESS, 0, 0);
+
+	for (i = 0; i < NFUTEXES; i++) {
+		if (locks[i].owner_pid != getpid())
+			continue;
+
+		lock = &locks[i];
+		futex_unlock(lock);
+	}
+}
 
 struct syscallentry syscall_futex = {
 	.name = "futex",
@@ -33,4 +253,7 @@ struct syscallentry syscall_futex = {
 	.arg6name = "val3",
 	.rettype = RET_FD,		// FIXME: Needs to mutate depending on 'op' value
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
+	.sanitise = sanitise_futex,
+	.init = init_futex,
+	.post = post_futex,
 };

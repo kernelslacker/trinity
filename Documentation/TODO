@@ -165,7 +165,6 @@
 * if a read() blocks and we get a kill from the watchdog, blacklist (close?) that fd/filename.
 
 * Various syscall improvements.
-  - Create futexes on startup and make syscalls/futex.c use them.
   - brk could be smarter about existing brk
   - Revisit fuzzing ptrace.
     - It's disabled currently because of situations like..
