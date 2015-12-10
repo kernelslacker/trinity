@@ -1,0 +1,17 @@
+global tmp=UINT_MAX - 10000;
+probe kernel.function("snd_ctl_open")
+{
+        if(!tmp) next;
+
+        $card->last_numid=tmp;
+        printf("done, card->last_numid=%d\n", $card->last_numid);
+        exit();
+}
+
+probe kernel.statement("*@sound/core/control.c:59")
+{
+        if(!tmp) next;
+        printf("done, card->last_numid=%d\n", $card->last_numid);
+        exit();
+}
+
