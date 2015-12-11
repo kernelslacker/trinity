@@ -689,7 +689,7 @@ static long long random_event_config(__u32 *event_type,
 		}
 		break;
 	case PERF_TYPE_SOFTWARE:
-		switch (rand() % 11) {
+		switch (rand() % 12) {
 		case 0:
 			config = PERF_COUNT_SW_CPU_CLOCK;
 			break;
@@ -721,6 +721,9 @@ static long long random_event_config(__u32 *event_type,
 			config = PERF_COUNT_SW_DUMMY;
 			break;
 		case 10:
+			config = PERF_COUNT_SW_BPF_OUTPUT;
+			break;
+		case 11:
 			config = rand64();
 			break;
 		default:
@@ -956,6 +959,10 @@ static long long random_branch_sample_type(void)
 		branch_sample |= PERF_SAMPLE_BRANCH_COND;
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_CALL_STACK;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_IND_JUMP;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_CALL;
 
 	/* Transactional Memory Types */
 	if (RAND_BOOL())
@@ -1012,6 +1019,7 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->mmap2 = RAND_BOOL();
 	attr->comm_exec = RAND_BOOL();
 	attr->use_clockid = RAND_BOOL();
+	attr->context_switch = RAND_BOOL();
 
 	/* wakeup events not relevant */
 
@@ -1076,6 +1084,7 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->mmap2 = RAND_BOOL();
 	attr->comm_exec = RAND_BOOL();
 	attr->use_clockid = RAND_BOOL();
+	attr->context_switch = RAND_BOOL();
 
 	attr->wakeup_events = rand32();
 
