@@ -120,14 +120,14 @@ void dirty_mapping(struct map *map)
 		/* Check mapping is writable, or we'll segv.
 		 * TODO: Perhaps we should do that, and trap it, mark it writable,
 		 * then reprotect after we dirtied it ? */
-		if (!(map->prot & PROT_WRITE))
+		if (map->prot & ~PROT_WRITE)
 			return;
 
 		random_map_writefn(map);
 		return;
 
 	} else {
-		if (!(map->prot & PROT_READ))
+		if (map->prot & ~PROT_READ)
 			return;
 
 		random_map_readfn(map);
