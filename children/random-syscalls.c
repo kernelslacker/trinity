@@ -74,15 +74,36 @@ static void fail_sanity(void)
 	panic(EXIT_PID_OUT_OF_RANGE);
 }
 
+static void check_sanity(struct syscallrecord *rec, struct syscallrecord *stash)
+{
+	unsigned int len;
+
+	if (stash->tv.tv_sec != 0) {
+		// FIXME: Should factor in loadavg here, as with enough pids, a child can exceed 60s
+		//  without getting scheduled.
+		if (rec->tv.tv_sec - stash->tv.tv_sec > 60) {
+			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%s(%lx, %lx, %lx)  was:%lx now:%lx.\n",
+				print_syscall_name(stash->nr, stash->do32bit),
+				stash->a1, stash->a2, stash->a3, stash->tv.tv_sec, rec->tv.tv_sec);
+			fail_sanity();
+		}
+	}
+
+	len = strlen(stash->prebuffer);
+	if (len != strlen(rec->prebuffer)) {
+		output(0, "Sanity check failed: prebuffer length changed from %d to %d after syscall:%s(%lx, %lx, %lx).\n",
+			len, strlen(rec->prebuffer),
+			print_syscall_name(stash->nr, stash->do32bit),
+			stash->a1, stash->a2, stash->a3);
+		fail_sanity();
+	}
+}
+
 bool child_random_syscalls(void)
 {
-	struct syscallrecord *rec;
+	struct syscallrecord *rec, *stash;
 	unsigned int syscallnr;
 	bool do32;
-	unsigned int len;
-	unsigned long a1, a2, a3;
-	time_t old;
-	pid_t oldpid;
 
 retry:
 	if (no_syscalls_enabled() == TRUE) {
@@ -125,50 +146,19 @@ retry:
 
 	output_syscall_prefix(rec);
 
-	/* we stash this stuff in local vars in case something stomps the rec struct */
-	a1 = rec->a1;
-	a2 = rec->a2;
-	a3 = rec->a3;
-	oldpid = this_child->pid;
-	/* Sanity check: Make sure the length of the buffer remains
-	 * constant across the syscall.
-	 */
-	len = strlen(rec->prebuffer);
-	old = rec->tv.tv_sec;
+	/* we stash a copy of this stuff in case something stomps the rec struct */
+	stash = zmalloc(sizeof(struct syscallrecord));
+	memcpy(stash, rec, sizeof(struct syscallrecord));
 
 	do_syscall(rec);
 
-	/* post syscall sanity checks. */
-	if (this_child->pid == 0) {
-		output(0, "Sanity check failed. my pid became zero after syscall:%s(%lx, %lx, %lx)  was:%d\n",
-			print_syscall_name(syscallnr, do32),
-			a1, a2, a3, oldpid);
-		fail_sanity();
-	}
+	check_sanity(rec, stash);
 
-	if (old != 0) {
-		// FIXME: Should factor in loadavg here, as with enough pids, a child can exceed 60s
-		//  without getting scheduled.
-		if (rec->tv.tv_sec - old > 60) {
-			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%s(%lx, %lx, %lx)  was:%lx now:%lx.\n",
-				print_syscall_name(syscallnr, do32),
-				a1, a2, a3, old, rec->tv.tv_sec);
-			fail_sanity();
-		}
-	}
-
-	if (len != strlen(rec->prebuffer)) {
-		output(0, "Sanity check failed: prebuffer length changed from %d to %d after syscall:%s(%lx, %lx, %lx).\n",
-			len, strlen(rec->prebuffer),
-			print_syscall_name(syscallnr, do32),
-			a1, a2, a3);
-		fail_sanity();
-	}
-
-	/* Output the syscall result, and clean up */
 	output_syscall_postfix(rec);
 
 	handle_syscall_ret(rec);
+
+	free(stash);
 
 	return TRUE;
 }
