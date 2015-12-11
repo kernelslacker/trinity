@@ -18,21 +18,15 @@ static void ctrlc_handler(__unused__ int sig)
 
 static void sighandler(int sig)
 {
-	int childno;
-
 	sigwas = sig;
 
 	switch (sig) {
 	case SIGALRM:
-		childno = find_childno(getpid());
-		if (childno == CHILD_NOT_FOUND)
-			_exit(EXIT_SUCCESS);	/* Hell knows what happened, just bail. */
-
 		/* Re-arm the alarm. */
 		alarm(1);
+		(void)signal(sig, sighandler);
 
 		/* Jump back, maybe we'll make progress. */
-		(void)signal(sig, sighandler);
 		siglongjmp(ret_jump, 1);
 		break;
 
