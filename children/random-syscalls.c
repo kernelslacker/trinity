@@ -133,11 +133,11 @@ retry:
 
 	if (this_child->pid == 0) {
 		output(0, "Sanity check failed. my pid became zero after syscall:%s(%lx, %lx, %lx)  was:%d\n",
-				print_syscall_name(syscallnr, do32),
-				a1, a2, a3, oldpid);
-			dump_childnos();
-			dump_childdata(this_child);
-			panic(EXIT_PID_OUT_OF_RANGE);
+			print_syscall_name(syscallnr, do32),
+			a1, a2, a3, oldpid);
+		dump_childnos();
+		dump_childdata(this_child);
+		panic(EXIT_PID_OUT_OF_RANGE);
 	}
 
 	if (old != 0) {
