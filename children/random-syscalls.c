@@ -99,9 +99,8 @@ static void check_sanity(struct syscallrecord *rec, struct syscallrecord *stash)
 	}
 }
 
-bool child_random_syscalls(void)
+static bool set_syscall_nr(struct syscallrecord *rec)
 {
-	struct syscallrecord *rec, *stash;
 	unsigned int syscallnr;
 	bool do32;
 
@@ -128,7 +127,6 @@ retry:
 		goto retry;
 	}
 
-	rec = &this_child->syscall;
 	/* critical section for shm updates. */
 	lock(&rec->lock);
 	rec->do32bit = do32;
@@ -138,7 +136,20 @@ retry:
 	if (syscalls_todo) {
 		if (shm->stats.total_syscalls_done >= syscalls_todo)
 			shm->exit_reason = EXIT_REACHED_COUNT;
+		return FAIL;
 	}
+
+	return TRUE;
+}
+
+bool child_random_syscalls(void)
+{
+	struct syscallrecord *rec, *stash;
+
+	rec = &this_child->syscall;
+
+	if (set_syscall_nr(rec) == FAIL)
+		return FAIL;
 
 	/* Generate arguments, print them out */
 
