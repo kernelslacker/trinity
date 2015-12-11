@@ -380,11 +380,11 @@ void child_process(void)
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
+		shm_rw();
+
 		if (handle_sigreturn() == FALSE)
 			return;	// Exit the child, things are getting too weird.
 	}
-
-	shm_rw();
 
 	while (shm->exit_reason == STILL_RUNNING) {
 		unsigned int i;
