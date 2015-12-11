@@ -67,6 +67,13 @@ static bool choose_syscall_table(void)
 	return do32;
 }
 
+static void fail_sanity(void)
+{
+	dump_childnos();
+	dump_childdata(this_child);
+	panic(EXIT_PID_OUT_OF_RANGE);
+}
+
 bool child_random_syscalls(void)
 {
 	struct syscallrecord *rec;
@@ -116,28 +123,27 @@ retry:
 
 	generate_syscall_args(rec);
 
+	output_syscall_prefix(rec);
+
+	/* we stash this stuff in local vars in case something stomps the rec struct */
 	a1 = rec->a1;
 	a2 = rec->a2;
 	a3 = rec->a3;
 	oldpid = this_child->pid;
-
-	output_syscall_prefix(rec);
-
 	/* Sanity check: Make sure the length of the buffer remains
 	 * constant across the syscall.
 	 */
 	len = strlen(rec->prebuffer);
-
 	old = rec->tv.tv_sec;
+
 	do_syscall(rec);
 
+	/* post syscall sanity checks. */
 	if (this_child->pid == 0) {
 		output(0, "Sanity check failed. my pid became zero after syscall:%s(%lx, %lx, %lx)  was:%d\n",
 			print_syscall_name(syscallnr, do32),
 			a1, a2, a3, oldpid);
-		dump_childnos();
-		dump_childdata(this_child);
-		panic(EXIT_PID_OUT_OF_RANGE);
+		fail_sanity();
 	}
 
 	if (old != 0) {
@@ -147,21 +153,16 @@ retry:
 			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%s(%lx, %lx, %lx)  was:%lx now:%lx.\n",
 				print_syscall_name(syscallnr, do32),
 				a1, a2, a3, old, rec->tv.tv_sec);
-			dump_childnos();
-			dump_childdata(this_child);
-			panic(EXIT_PID_OUT_OF_RANGE);
+			fail_sanity();
 		}
 	}
 
-	/* post syscall sanity checks. */
 	if (len != strlen(rec->prebuffer)) {
 		output(0, "Sanity check failed: prebuffer length changed from %d to %d after syscall:%s(%lx, %lx, %lx).\n",
 			len, strlen(rec->prebuffer),
 			print_syscall_name(syscallnr, do32),
 			a1, a2, a3);
-		dump_childnos();
-		dump_childdata(this_child);
-		panic(EXIT_PID_OUT_OF_RANGE);
+		fail_sanity();
 	}
 
 	/* Output the syscall result, and clean up */
