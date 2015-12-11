@@ -255,10 +255,8 @@ got_fd:
 
 		if (fd <= (unsigned int) fileno(child->logfile))
 			return FALSE;
-		return TRUE;
 	}
-
-	return FALSE;
+	return TRUE;
 }
 
 static void stuck_syscall_info(struct childdata *child)
