@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <stdlib.h>
 #include "config.h"
+#include "random.h"
 #include "net.h"
 #include "utils.h"
 #include "compat.h"
@@ -235,8 +236,8 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	}
 	strcpy((char *)alg->salg_name, algos[algo]);
 
-	alg->salg_feat = rand();
-	alg->salg_mask = rand();
+	alg->salg_feat = rand32();
+	alg->salg_mask = rand32();
 
 	*addr = (struct sockaddr *) alg;
 	*addrlen = sizeof(struct sockaddr_alg);
