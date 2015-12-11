@@ -232,19 +232,15 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 
-	if (entry->arg1type == ARG_FD) {
-		fd = rec->a1;
-		goto got_fd;
-	}
+	if ((entry->arg1type != ARG_FD) &&
+	    (entry->arg1type != ARG_SOCKETINFO))
+	    return FALSE;
 
-	if (entry->arg1type == ARG_SOCKETINFO) {
-		/* post syscall, a1 is actually the fd, not the socketinfo */
-		fd = rec->a1;
-		goto got_fd;
-	}
-	return FALSE;
+	/* in the SOCKETINFO case, post syscall, a1 is actually the fd,
+	 * not the socketinfo.  In ARG_FD a1=fd.
+	 */
+	fd = rec->a1;
 
-got_fd:
 	/* if it's out of range, it's not going to be valid. */
 	if (fd > 1024)
 		return FALSE;
