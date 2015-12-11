@@ -208,7 +208,7 @@ static const char *algos[] = {
 void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_alg *alg;
-	unsigned int i, type, len;
+	unsigned int type;
 	const char *types[] = { "aead", "hash", "rng", "skcipher", };
 	unsigned int algo;
 
@@ -220,20 +220,20 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	strcpy((char *)alg->salg_type, types[type]);
 
 	switch (type) {
-	case 0:	
+	// aead
+	case 0:	algo = rand() % ARRAY_SIZE(algos);
 		break;
-	case 1:	
-		i = rand() % ARRAY_SIZE(hashes);
-		len = min(strlen(hashes[i]), sizeof(alg->salg_type));
-		strncpy((char *)alg->salg_name, hashes[i], len);
+	// hash
+	case 1:	algo = rand() % ARRAY_SIZE(hashes);
 		break;
-	case 2:	
-		algo = rand() % ARRAY_SIZE(algos);
-		strcpy((char *)alg->salg_name, algos[algo]);
+	// rng
+	case 2:	algo = rand() % ARRAY_SIZE(algos);
 		break;
-	case 3:
+	// skcipher
+	case 3:	algo = rand() % ARRAY_SIZE(algos);
 		break;
 	}
+	strcpy((char *)alg->salg_name, algos[algo]);
 
 	alg->salg_feat = rand();
 	alg->salg_mask = rand();
