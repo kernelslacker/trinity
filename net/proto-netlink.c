@@ -4,6 +4,7 @@
 /* For sa_family_t needed by <linux/netlink.h> */
 #include <netinet/in.h>
 #include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <stdlib.h>
 #include "compat.h"
 #include "net.h"
@@ -27,12 +28,22 @@
 void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;
+	const unsigned long nl_groups[] = {
+		RTNLGRP_NONE, RTNLGRP_LINK, RTNLGRP_NOTIFY, RTNLGRP_NEIGH,
+		RTNLGRP_TC, RTNLGRP_IPV4_IFADDR, RTNLGRP_IPV4_MROUTE, RTNLGRP_IPV4_ROUTE,
+		RTNLGRP_IPV4_RULE, RTNLGRP_IPV6_IFADDR, RTNLGRP_IPV6_MROUTE, RTNLGRP_IPV6_ROUTE,
+		RTNLGRP_IPV6_IFINFO, RTNLGRP_DECnet_IFADDR, RTNLGRP_NOP2, RTNLGRP_DECnet_ROUTE,
+		RTNLGRP_DECnet_RULE, RTNLGRP_NOP4, RTNLGRP_IPV6_PREFIX, RTNLGRP_IPV6_RULE,
+		RTNLGRP_ND_USEROPT, RTNLGRP_PHONET_IFADDR, RTNLGRP_PHONET_ROUTE, RTNLGRP_DCB,
+		RTNLGRP_IPV4_NETCONF, RTNLGRP_IPV6_NETCONF, RTNLGRP_MDB, RTNLGRP_MPLS_ROUTE,
+		RTNLGRP_NSID,
+	};
 
 	nl = zmalloc(sizeof(struct sockaddr_nl));
 
 	nl->nl_family = PF_NETLINK;
-	nl->nl_pid = rand32();
-	nl->nl_groups = rand32();
+	nl->nl_pid = 0; // destination is always kernel
+	nl->nl_groups = set_rand_bitmask(ARRAY_SIZE(nl_groups), nl_groups);
 	*addr = (struct sockaddr *) nl;
 	*addrlen = sizeof(struct sockaddr_nl);
 }
