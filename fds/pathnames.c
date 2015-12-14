@@ -13,6 +13,7 @@
 #include "log.h"
 #include "params.h"
 #include "pathnames.h"
+#include "random.h"
 #include "shm.h"
 #include "uid.h"
 #include "utils.h"
@@ -268,4 +269,47 @@ const char * get_filename(void)
 		return NULL;
 
 	return fileindex[rand() % files_in_index];
+}
+
+#define MAX_PATH_LEN 4096
+
+const char * generate_pathname(void)
+{
+	const char *pathname = get_filename();
+	char *newpath;
+	unsigned int len;
+
+	if (pathname == NULL)		/* handle -n correctly. */
+		return NULL;
+
+	/* 90% chance of returning an unmangled filename */
+	if (!ONE_IN(10))
+		return pathname;
+
+	/* Create a bogus filename. */
+	newpath = zmalloc(MAX_PATH_LEN);	// FIXME: We leak this.
+
+	len = strlen(pathname);
+
+	if (RAND_BOOL())
+		(void) strncpy(newpath, pathname, len);
+	else {
+		if (len < MAX_PATH_LEN - 2) {
+			/* make it look relative to cwd */
+			newpath[0] = '.';
+			newpath[1] = '/';
+			(void) strncpy(newpath + 2, pathname, len);
+			len += 2;
+		}
+	}
+
+	/* 50/50 chance of making it look like a dir */
+	if (RAND_BOOL()) {
+		if (len <= MAX_PATH_LEN - 2) {
+			newpath[len] = '/';
+			newpath[len + 1] = 0;
+		}
+	}
+
+	return newpath;
 }
