@@ -9,18 +9,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "fd.h"
-#include "files.h"
-#include "list.h"
+#include "exit.h"
 #include "log.h"
-#include "maps.h"
 #include "params.h"
 #include "pathnames.h"
-#include "random.h"
 #include "shm.h"
-#include "sanitise.h"
-#include "syscalls/syscalls.h"
-#include "trinity.h"	// __unused__
 #include "uid.h"
 #include "utils.h"
 

@@ -9,6 +9,7 @@
 #include "log.h"
 #include "maps.h"
 #include "net.h"
+#include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"

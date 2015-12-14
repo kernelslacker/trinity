@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
 #include "utils.h"

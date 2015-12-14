@@ -7,20 +7,13 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "exit.h"
 #include "fd.h"
 #include "files.h"
-#include "list.h"
 #include "log.h"
-#include "maps.h"
 #include "pathnames.h"
-#include "params.h"
 #include "random.h"
-#include "shm.h"
-#include "sanitise.h"
 #include "syscalls/syscalls.h"
-#include "trinity.h"	// __unused__
-#include "uid.h"
-#include "utils.h"
 
 int open_with_fopen(const char *filename, int flags)
 {
