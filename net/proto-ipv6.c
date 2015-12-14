@@ -27,6 +27,12 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 {
 	const char *p;
 
+	/* 50% of the time, just do localhost */
+	if (RAND_BOOL()) {
+		inet_pton(AF_INET6, "::1", v6);
+		return;
+	}
+
 	if (RAND_BOOL()) {
 		/* v4 in v6 somehow. */
 
@@ -48,7 +54,6 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 		/* actual v6 addresses. */
 
 		const struct addrtext v6_addresses[] = {
-			{ "::1" },		/* ::1/128 loopback */
 			{ "::" },		/* ::/128 unspecified */
 			{ "fe80::" },		/* fe80::/10 link-local */
 			{ "fc00::" },		/* fc00::/7  unique local address (ULA) */

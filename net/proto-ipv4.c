@@ -64,6 +64,10 @@ in_addr_t random_ipv4_address(void)
 {
 	int addr;
 
+	/* 50% of the time, just do localhost. */
+	if (RAND_BOOL())
+		return 0x7f000001;
+
 	if (ip_lifetime != 0) {
 		ip_lifetime--;
 		return previous_ip;
