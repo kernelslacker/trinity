@@ -14,6 +14,7 @@
 #include "child.h"
 #include "files.h"
 #include "log.h"
+#include "pathnames.h"
 #include "random.h"
 
 int child_read_all_files(void)
