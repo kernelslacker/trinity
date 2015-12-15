@@ -12,18 +12,27 @@ struct object * alloc_object(void)
 	return obj;
 }
 
-void add_object(struct object *obj, bool global, enum objecttype type)
+static struct objhead * get_objhead(bool global, enum objecttype type)
 {
 	struct objhead *head;
-	struct childdata *child;
 
 	if (global == OBJ_GLOBAL)
 		head = &shm->global_objects[type];
 	else {
+		struct childdata *child;
+
 		child = this_child();
 		head = &child->objects[type];
 	}
+	return head;
+}
 
+
+void add_object(struct object *obj, bool global, enum objecttype type)
+{
+	struct objhead *head;
+
+	head = get_objhead(global, type);
 	if (head->list == NULL) {
 		head->list = zmalloc(sizeof(struct object));
 		INIT_LIST_HEAD(head->list);
@@ -36,17 +45,10 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 void destroy_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
-	struct childdata *child;
-
-	if (global == OBJ_GLOBAL)
-		head = &shm->global_objects[type];
-	else {
-		child = this_child();
-		head = &child->objects[type];
-	}
 
 	list_del(&obj->list);
 
+	head = get_objhead(global, type);
 	head->num_entries--;
 
 	if (head->destroy != NULL)
@@ -58,17 +60,10 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 void init_object_lists(bool global)
 {
 	struct objhead *head;
-	struct childdata *child;
 	unsigned int i;
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
-		if (global == OBJ_GLOBAL)
-			head = &shm->global_objects[i];
-		else {
-			child = this_child();
-			head = &child->objects[i];
-		}
-
+		head = get_objhead(global, i);
 		head->list = NULL;
 		head->num_entries = 0;
 	}
@@ -78,15 +73,9 @@ struct object * get_random_object(enum objecttype type, bool global)
 {
 	struct objhead *head;
 	struct list_head *node, *list;
-	struct childdata *child;
 	unsigned int i, j = 0;
 
-	if (global == OBJ_GLOBAL)
-		head = &shm->global_objects[type];
-	else {
-		child = this_child();
-		head = &child->objects[type];
-	}
+	head = get_objhead(global, type);
 
 	list = head->list;
 
