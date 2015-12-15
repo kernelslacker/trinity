@@ -166,6 +166,9 @@ void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 void rds_rand_socket(struct socket_triplet *st);
 void rds_setsockopt(struct sockopt *so);
 
+/* bluetooth */
+void bluetooth_rand_socket(struct socket_triplet *st);
+
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
 void tcp_setsockopt(struct sockopt *so);

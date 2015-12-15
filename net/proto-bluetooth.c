@@ -55,3 +55,24 @@ void bluetooth_setsockopt(struct sockopt *so)
 	default: break;
 	}
 }
+
+#define BTPROTO_L2CAP   0
+#define BTPROTO_HCI     1
+#define BTPROTO_SCO     2
+#define BTPROTO_RFCOMM  3
+#define BTPROTO_BNEP    4
+#define BTPROTO_CMTP    5
+#define BTPROTO_HIDP    6
+#define BTPROTO_AVDTP   7
+
+void bluetooth_rand_socket(struct socket_triplet *st)
+{
+	int bt_protos[] = {
+		BTPROTO_L2CAP, BTPROTO_HCI, BTPROTO_SCO, BTPROTO_RFCOMM,
+		BTPROTO_BNEP, BTPROTO_CMTP, BTPROTO_HIDP, BTPROTO_AVDTP,
+	};
+	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_RAW, SOCK_SEQPACKET };
+
+	st->protocol = RAND_ARRAY(bt_protos);
+	st->type = RAND_ARRAY(types);
+}
