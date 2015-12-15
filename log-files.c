@@ -75,6 +75,7 @@ void close_logfile(FILE **filehandle)
 
 FILE *find_logfile_handle(void)
 {
+	struct childdata *child;
 	pid_t pid;
 
 	if (logging == LOGGING_DISABLED)
@@ -93,8 +94,9 @@ FILE *find_logfile_handle(void)
 	if (pid == watchdog_pid)
 		return mainlogfile;
 
-	if (this_child != NULL)
-		return this_child->logfile;
+	child = this_child();
+	if (child != NULL)
+		return child->logfile;
 
 	return NULL;
 }
@@ -105,20 +107,22 @@ FILE *find_logfile_handle(void)
  */
 void synclogs(void)
 {
+	struct childdata *child;
 	int fd;
 
 	if (logging == LOGGING_DISABLED)
 		return;
 
-	if (this_child->logdirty == FALSE)
+	child = this_child();
+	if (child->logdirty == FALSE)
 		return;
 
-	fflush(this_child->logfile);
-	fd = fileno(this_child->logfile);
+	fflush(child->logfile);
+	fd = fileno(child->logfile);
 	if (fd != -1)
 		(void) fsync(fd);
 
-	this_child->logdirty = FALSE;
+	child->logdirty = FALSE;
 
 	/* If we're flushing the child log, may as well flush
 	 * any other logs while we're writing to disk.

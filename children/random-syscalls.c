@@ -69,8 +69,10 @@ static bool choose_syscall_table(void)
 
 static void fail_sanity(void)
 {
+	struct childdata *child = this_child();
+
 	dump_childnos();
-	dump_childdata(this_child);
+	dump_childdata(child);
 	panic(EXIT_PID_OUT_OF_RANGE);
 }
 
@@ -145,9 +147,10 @@ retry:
 
 bool child_random_syscalls(void)
 {
+	struct childdata *child = this_child();
 	struct syscallrecord *rec, *stash;
 
-	rec = &this_child->syscall;
+	rec = &child->syscall;
 
 	if (set_syscall_nr(rec) == FAIL)
 		return FAIL;

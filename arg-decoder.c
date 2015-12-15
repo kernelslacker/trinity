@@ -124,6 +124,7 @@ static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int arg
 static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *bufferstart)
 {
 	struct syscallentry *entry;
+	struct childdata *child = this_child();
 	char *sptr = bufferstart;
 	unsigned int i;
 	unsigned int syscallnr;
@@ -131,7 +132,7 @@ static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *buffe
 	syscallnr = rec->nr;
 	entry = get_syscall_entry(syscallnr, rec->do32bit);
 
-	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", this_child->num, this_child->pid,
+	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s", child->num, child->pid,
 			rec->op_nr,
 			rec->do32bit == TRUE ? "[32BIT] " : "");
 

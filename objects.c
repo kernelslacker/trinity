@@ -15,11 +15,14 @@ struct object * alloc_object(void)
 void add_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
+	struct childdata *child;
 
 	if (global == OBJ_GLOBAL)
 		head = &shm->global_objects[type];
-	else
-		head = &this_child->objects[type];
+	else {
+		child = this_child();
+		head = &child->objects[type];
+	}
 
 	if (head->list == NULL) {
 		head->list = zmalloc(sizeof(struct object));
@@ -33,11 +36,14 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 void destroy_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
+	struct childdata *child;
 
 	if (global == OBJ_GLOBAL)
 		head = &shm->global_objects[type];
-	else
-		head = &this_child->objects[type];
+	else {
+		child = this_child();
+		head = &child->objects[type];
+	}
 
 	list_del(&obj->list);
 
@@ -52,13 +58,16 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 void init_object_lists(bool global)
 {
 	struct objhead *head;
+	struct childdata *child;
 	unsigned int i;
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
 		if (global == OBJ_GLOBAL)
 			head = &shm->global_objects[i];
-		else
-			head = &this_child->objects[i];
+		else {
+			child = this_child();
+			head = &child->objects[i];
+		}
 
 		head->list = NULL;
 		head->num_entries = 0;
@@ -69,12 +78,15 @@ struct object * get_random_object(enum objecttype type, bool global)
 {
 	struct objhead *head;
 	struct list_head *node, *list;
+	struct childdata *child;
 	unsigned int i, j = 0;
 
 	if (global == OBJ_GLOBAL)
 		head = &shm->global_objects[type];
-	else
-		head = &this_child->objects[type];
+	else {
+		child = this_child();
+		head = &child->objects[type];
+	}
 
 	list = head->list;
 

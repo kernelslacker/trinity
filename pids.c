@@ -10,6 +10,18 @@
 
 pid_t initpid;
 
+struct childdata * this_child(void)
+{
+	pid_t mypid = getpid();
+	unsigned int i;
+
+	for_each_child(i) {
+		if (shm->children[i]->pid == mypid)
+			return shm->children[i];
+	}
+	return NULL;
+}
+
 int find_childno(pid_t mypid)
 {
 	unsigned int i;

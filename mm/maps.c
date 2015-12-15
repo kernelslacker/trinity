@@ -19,6 +19,7 @@ struct map * get_map(void)
 {
 	struct object *obj;
 	struct map *map;
+	struct childdata *child = this_child();
 	bool global;
 
 	/*
@@ -27,7 +28,7 @@ struct map * get_map(void)
 	 * and hence don't have a valid this_child, so we address the
 	 * initial mappings list directly.
 	 */
-	if (this_child == NULL)
+	if (child == NULL)
 		global = OBJ_GLOBAL;
 	else
 		global = OBJ_LOCAL;
@@ -55,10 +56,11 @@ void init_child_mappings(void)
 {
 	struct list_head *globallist, *node;
 	struct objhead *head;
+	struct childdata *child = this_child();
 
 	init_object_lists(OBJ_LOCAL);
 
-	head = &this_child->objects[OBJ_MMAP];
+	head = &child->objects[OBJ_MMAP];
 	head->destroy = &map_destructor;
 
 	globallist = shm->global_objects[OBJ_MMAP].list;
@@ -92,8 +94,9 @@ struct map * common_set_mmap_ptr_len(void)
 {
 	struct syscallrecord *rec;
 	struct map *map;
+	struct childdata *child = this_child();
 
-	rec = &this_child->syscall;
+	rec = &child->syscall;
 	map = (struct map *) rec->a1;
 	if (map == NULL) {
 		rec->a1 = 0;

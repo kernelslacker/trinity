@@ -569,7 +569,8 @@ struct syscallentry * get_syscall_entry(unsigned int callno, bool do32)
  */
 bool this_syscallname(const char *thisname)
 {
-	unsigned int call = this_child->syscall.nr;
+	struct childdata *child = this_child();
+	unsigned int call = child->syscall.nr;
 	struct syscallentry *syscall_entry = syscalls[call].entry;
 
 	return strcmp(thisname, syscall_entry->name);

@@ -28,8 +28,9 @@ struct childdata {
 	bool dontkillme;	/* provide temporary protection from the watchdog. */
 };
 
-extern struct childdata *this_child;
 extern unsigned int max_children;
+
+struct childdata * this_child(void);
 
 void init_child(struct childdata *child, int childno);
 void init_child_mappings(void);

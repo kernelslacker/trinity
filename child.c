@@ -27,8 +27,6 @@
 #include "trinity.h"	// ARRAY_SIZE
 #include "utils.h"	// zmalloc
 
-struct childdata *this_child = NULL;
-
 struct child_funcs {
 	const char *name;
 	bool (*func)(void);
@@ -209,15 +207,13 @@ void init_child(struct childdata *child, int childno)
 		}
 	}
 
-	this_child = child;
-
 	child->num = childno;
 
 	reinit_child(child);
 
 	init_child_logging(child);
 
-	set_seed(this_child);
+	set_seed(this_child());
 
 	init_child_mappings();
 
@@ -324,18 +320,19 @@ static void periodic_work(void)
  */
 static bool handle_sigreturn(void)
 {
+	struct childdata *child = this_child();
 	struct syscallrecord *rec;
 	static unsigned int count = 0;
 	static unsigned int last = 0;
 
-	rec = &this_child->syscall;
+	rec = &child->syscall;
 
 	/* If we held a lock before the signal happened, drop it. */
 	bust_lock(&rec->lock);
 
 	/* Check if we're blocked because we were stuck on an fd. */
 	lock(&rec->lock);
-	if (check_if_fd(this_child, rec) == TRUE) {
+	if (check_if_fd(child, rec) == TRUE) {
 		/* avoid doing it again from other threads. */
 		shm->fd_lifetime = 0;
 
@@ -358,7 +355,7 @@ static bool handle_sigreturn(void)
 		return FALSE;
 	}
 
-	if (this_child->kill_count > 0) {
+	if (child->kill_count > 0) {
 		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
 		return FALSE;
 	}
@@ -387,13 +384,14 @@ void child_process(void)
 	}
 
 	while (shm->exit_reason == STILL_RUNNING) {
+		struct childdata *child = this_child();
 		unsigned int i;
 
 		periodic_work();
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
-		if (shm->seed != this_child->seed)
-			set_seed(this_child);
+		if (shm->seed != child->seed)
+			set_seed(child);
 
 		/* Choose operations for this iteration. */
 		i = rand() % ARRAY_SIZE(child_ops);
