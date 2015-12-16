@@ -373,6 +373,7 @@ static bool handle_sigreturn(void)
  */
 void child_process(void)
 {
+	struct childdata *child;
 	int ret;
 
 	ret = sigsetjmp(ret_jump, 1);
@@ -383,8 +384,9 @@ void child_process(void)
 			return;	// Exit the child, things are getting too weird.
 	}
 
+	child = this_child();
+
 	while (shm->exit_reason == STILL_RUNNING) {
-		struct childdata *child = this_child();
 		unsigned int i;
 
 		periodic_work();
