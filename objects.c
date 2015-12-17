@@ -59,10 +59,11 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 
 void init_object_lists(bool global)
 {
-	struct objhead *head;
 	unsigned int i;
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
+		struct objhead *head;
+
 		head = get_objhead(global, i);
 		head->list = NULL;
 		head->num_entries = 0;
