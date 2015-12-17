@@ -32,24 +32,18 @@ retry:
 	return addr;
 }
 
-static void * _get_address(bool null_allowed)
+void * get_non_null_address(void)
 {
-	if (null_allowed == TRUE) {
-		if (ONE_IN(100))
-			return NULL;
-	}
-
+	//TODO: use different sizes.
 	return get_writable_address(page_size);
 }
 
 void * get_address(void)
 {
-	return _get_address(TRUE);
-}
+	if (ONE_IN(100))
+		return NULL;
 
-void * get_non_null_address(void)
-{
-	return _get_address(FALSE);
+	return get_non_null_address();
 }
 
 static bool is_arg_address(enum argtype argtype)
