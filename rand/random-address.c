@@ -32,28 +32,14 @@ retry:
 	return addr;
 }
 
-static void * _get_address(unsigned char null_allowed)
+static void * _get_address(bool null_allowed)
 {
-	void *addr = NULL;
-	int i;
-
-	if (null_allowed == TRUE)
-		i = rand() % 4;
-	else
-		i = RAND_RANGE(1, 3);
-
-	switch (i) {
-	case 0: addr = NULL;
-		break;
-	case 1:	addr = (void *) KERNEL_ADDR;
-		break;
-	case 2:	addr = (void *)(unsigned long)rand64();
-		break;
-
-	case 3:	addr = get_writable_address(page_size);
-		break;
+	if (null_allowed == TRUE) {
+		if (ONE_IN(100))
+			return NULL;
 	}
-	return addr;
+
+	return get_writable_address(page_size);
 }
 
 void * get_address(void)
