@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "compat.h"
+#include "random.h"
 #include "utils.h"	// RAND_ARRAY
 
 static const unsigned int sctp_opts[] = {
