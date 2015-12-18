@@ -34,8 +34,9 @@ retry:
 
 void * get_non_null_address(void)
 {
-	//TODO: use different sizes.
-	return get_writable_address(page_size);
+	unsigned long size = RAND_ARRAY(mapping_sizes);
+
+	return get_writable_address(size);
 }
 
 void * get_address(void)
