@@ -132,8 +132,7 @@ static inline int random_futex_wake_op(void)
 		FUTEX_OP_CMP_LE, FUTEX_OP_CMP_GT, FUTEX_OP_CMP_GE,
 	};
 
-	return op_flags[RAND_RANGE(0, ARRAY_SIZE(op_flags)) - 1] |
-		cmp_flags[RAND_RANGE(0, ARRAY_SIZE(cmp_flags)) - 1];
+	return RAND_ARRAY(op_flags) | RAND_ARRAY(cmp_flags);
 }
 
 /*
