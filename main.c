@@ -96,8 +96,6 @@ static void fork_children(void)
 
 	}
 	shm->ready = TRUE;
-
-	debugf("created enough children\n");
 }
 
 /*
@@ -127,7 +125,6 @@ void reap_child(pid_t childpid)
 	if (i == CHILD_NOT_FOUND)
 		goto out;
 
-	debugf("Removing pid %d from pidmap.\n", childpid);
 	child = shm->children[i];
 	child->pid = EMPTY_PIDSLOT;
 	child->syscall.tv.tv_sec = 0;
@@ -141,6 +138,9 @@ out:
 static void handle_childsig(int childpid, int childstatus, int stop)
 {
 	int __sig;
+	int childno;
+
+	childno = find_childno(childpid);
 
 	if (stop == TRUE)
 		__sig = WSTOPSIG(childstatus);
@@ -158,7 +158,7 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 		return;
 
 	case SIGALRM:
-		debugf("got a alarm signal from pid %d\n", childpid);
+		debugf("got a alarm signal from child %d (pid %d)\n", childno, childpid);
 		break;
 	case SIGFPE:
 	case SIGSEGV:
@@ -167,9 +167,11 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 	case SIGABRT:
 	case SIGBUS:
 		if (stop == TRUE)
-			debugf("Child %d was stopped by %s\n", childpid, strsignal(WSTOPSIG(childstatus)));
+			debugf("Child %d (pid %d) was stopped by %s\n",
+					childno, childpid, strsignal(WSTOPSIG(childstatus)));
 		else
-			debugf("got a signal from pid %d (%s)\n", childpid, strsignal(WTERMSIG(childstatus)));
+			debugf("got a signal from child %d (pid %d) (%s)\n",
+					childno, childpid, strsignal(WTERMSIG(childstatus)));
 		reap_child(childpid);
 		return;
 
@@ -212,7 +214,6 @@ static void handle_child(pid_t childpid, int childstatus)
 
 				if (child->pid != EMPTY_PIDSLOT) {
 					if (pid_alive(child->pid) == -1) {
-						debugf("Removing %d from pidmap\n", child->pid);
 						child->pid = EMPTY_PIDSLOT;
 						shm->running_childs--;
 					} else {
@@ -229,16 +230,14 @@ static void handle_child(pid_t childpid, int childstatus)
 		break;
 
 	default:
-		debugf("Something happened to pid %d\n", childpid);
-
 		if (WIFEXITED(childstatus)) {
 
 			int childno;
 
 			childno = find_childno(childpid);
 			if (childno != CHILD_NOT_FOUND) {
-				debugf("Child %d exited after %ld operations.\n",
-					childpid, shm->children[childno]->syscall.op_nr);
+				debugf("Child %d (pid %d) exited after %ld operations.\n",
+					childno, childpid, shm->children[childno]->syscall.op_nr);
 				reap_child(childpid);
 			}
 			break;
@@ -249,8 +248,6 @@ static void handle_child(pid_t childpid, int childstatus)
 			handle_childsig(childpid, childstatus, TRUE);
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
-		} else {
-			output(0, "erk, wtf\n");
 		}
 	}
 }
