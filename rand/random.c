@@ -147,7 +147,7 @@ unsigned int rand32(void)
 		break;
 	case 1:	r = randbits(32);
 		break;
-	case 2: r = RAND_32();
+	case 2: r = rnd();
 		break;
 	case 3:	r = rept_byte();
 		break;
@@ -203,7 +203,7 @@ u64 rand64(void)
 			break;
 		case 1:	r = randbits(64);
 			break;
-		case 2:	r = RAND_64();
+		case 2:	r = (0ULL | rnd()) << 32 | rnd();
 			break;
 		case 3:	r = rept_byte();
 			break;

@@ -6,17 +6,10 @@
 
 int rnd(void);
 
-#define ONE_IN(x)				((rnd() % x) == 0)	// limit of RAND_MAX-1
+#define ONE_IN(x)		((rnd() % x) == 0)	// limit of RAND_MAX-1
 
-#if RAND_MAX == 0x7FFFFFFF
-#define RAND_32()				rnd()
-#define RAND_64()				(((0ULL | rnd()) << 33) | ((0ULL | rnd()) << 2) | (rnd() & 0x3))
-#else
-#error "Unexpected RAND_MAX value. Please add support."
-#endif
-
-#define RAND_BOOL()				(rnd() & 1)
-#define RAND_BYTE()				(rnd() & 0xff)
+#define RAND_BOOL()		(rnd() & 1)
+#define RAND_BYTE()		(rnd() & 0xff)
 #define RAND_RANGE(min, max)	(min + rnd() / (RAND_MAX / (max - min + 1) + 1))
 
 extern unsigned int seed;
