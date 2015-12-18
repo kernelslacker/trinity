@@ -24,7 +24,7 @@ static void sanitise_send(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		size = 1;
 	else
-		size = rand() % page_size;
+		size = rnd() % page_size;
 
 	ptr = malloc(size);
 	rec->a2 = (unsigned long) ptr;
@@ -105,7 +105,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 
 	msg = zmalloc(sizeof(struct msghdr));
 
-	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, rand() % TRINITY_PF_MAX);
+	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, rnd() % TRINITY_PF_MAX);
 
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;

@@ -19,9 +19,9 @@ void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	atalk = zmalloc(sizeof(struct sockaddr_at));
 
 	atalk->sat_family = PF_APPLETALK;
-	atalk->sat_port = rand();
-	atalk->sat_addr.s_net = rand();
-	atalk->sat_addr.s_node = rand();
+	atalk->sat_port = rnd();
+	atalk->sat_addr.s_net = rnd();
+	atalk->sat_addr.s_node = rnd();
 	*addr = (struct sockaddr *) atalk;
 	*addrlen = sizeof(struct sockaddr_at);
 }
@@ -34,7 +34,7 @@ void atalk_rand_socket(struct socket_triplet *st)
 	        return;
 	}
 
-	st->protocol = rand() % PROTO_MAX;
+	st->protocol = rnd() % PROTO_MAX;
 	st->type = SOCK_RAW;
 }
 #endif

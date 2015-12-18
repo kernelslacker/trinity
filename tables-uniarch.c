@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "params.h"
 #include "log.h"
+#include "random.h"
 #include "shm.h"
 #include "tables.h"
 
@@ -61,7 +62,7 @@ void enable_random_syscalls_uniarch(void)
 	struct syscallentry *entry;
 
 retry:
-	call = rand() % max_nr_syscalls;
+	call = rnd() % max_nr_syscalls;
 	entry = syscalls[call].entry;
 
 	if (validate_specific_syscall_silent(syscalls, call) == FALSE)

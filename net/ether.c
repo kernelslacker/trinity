@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <linux/if_ether.h>
 #include "net.h"
+#include "random.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -38,5 +39,5 @@ static const int ether_types[] = {
 
 int get_random_ether_type(void)
 {
-	return ether_types[rand() % NR_ETHER_TYPES];
+	return ether_types[rnd() % NR_ETHER_TYPES];
 }

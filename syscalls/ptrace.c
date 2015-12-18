@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <linux/ptrace.h>
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -24,7 +25,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	 * Or at least, that's the theory. In reality, this is currently causing 'no such process' errors.
 	 *  but broken is at least better than hanging.
 	 */
-	i  = rand() % shm->running_childs;
+	i  = rnd() % shm->running_childs;
 	rec->a2 = shm->children[i]->pid;
 }
 

@@ -80,7 +80,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 
 	/* If we got no hint passed down, pick a random proto. */
 	if (pf == -1)
-		pf = rand() % TRINITY_PF_MAX;
+		pf = rnd() % TRINITY_PF_MAX;
 
 	for (i = 0; i < ARRAY_SIZE(sa_funcs); i++) {
 		if (sa_funcs[i].pf == (unsigned int) pf) {
@@ -91,5 +91,5 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 
 	/* Make something up for unknown protocols. */
 	*addr = (struct sockaddr *) zmalloc(page_size);
-	*addrlen = rand() % page_size;
+	*addrlen = rnd() % page_size;
 }

@@ -268,7 +268,7 @@ const char * get_filename(void)
 	if (files_in_index == 0)	/* This can happen if we run with -n. Should we do something else ? */
 		return NULL;
 
-	return fileindex[rand() % files_in_index];
+	return fileindex[rnd() % files_in_index];
 }
 
 #define MAX_PATH_LEN 4096

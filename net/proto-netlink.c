@@ -55,10 +55,10 @@ void netlink_rand_socket(struct socket_triplet *st)
 	else
 		st->type = SOCK_DGRAM;
 
-	st->protocol = rand() % (_NETLINK_MAX + 1);
+	st->protocol = rnd() % (_NETLINK_MAX + 1);
 
 	if (st->protocol == NETLINK_SOCK_DIAG)
-		st->type = rand() % 136;
+		st->type = rnd() % 136;
 }
 
 static const unsigned int netlink_opts[] = {

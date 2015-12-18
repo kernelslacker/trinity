@@ -31,7 +31,7 @@ static void fabricate_onepage_struct(char *page)
 			if (i > page_size)
 				return;
 
-			switch (rand() % 4) {
+			switch (rnd() % 4) {
 			case 0:	val = rand64();
 				break;
 			case 1:	val = (unsigned long) get_address();
@@ -61,7 +61,7 @@ static void generate_random_page(char *page)
 	unsigned int i;
 	unsigned int p = 0;
 
-	switch (rand() % 8) {
+	switch (rnd() % 8) {
 
 	case 0:
 		memset(page, 0, page_size);
@@ -77,7 +77,7 @@ static void generate_random_page(char *page)
 
 	case 3:
 		for (i = 0; i < page_size; )
-			page[i++] = (unsigned char)rand();
+			page[i++] = (unsigned char)rnd();
 		return;
 
 	case 4:
@@ -101,14 +101,14 @@ static void generate_random_page(char *page)
 			}
 		}
 		page_size = getpagesize();	// Hack for clang 3.3 false positive.
-		page[rand() % page_size] = 0;
+		page[rnd() % page_size] = 0;
 		return;
 
 	/* ascii representation of a random number */
 	case 7:
-		switch (rand() % 3) {
+		switch (rnd() % 3) {
 		case 0:
-			switch (rand() % 3) {
+			switch (rnd() % 3) {
 			case 0:	p = sprintf(page, "%s%lu",
 					RAND_BOOL() ? "-" : "",
 					(unsigned long) rand64());
@@ -123,7 +123,7 @@ static void generate_random_page(char *page)
 			break;
 
 		case 1:
-			switch (rand() % 3) {
+			switch (rnd() % 3) {
 			case 0:	p = sprintf(page, "%s%u",
 					RAND_BOOL() ? "-" : "",
 					(unsigned int) rand32());
@@ -138,16 +138,16 @@ static void generate_random_page(char *page)
 			break;
 
 		case 2:
-			switch (rand() % 3) {
+			switch (rnd() % 3) {
 			case 0:	p = sprintf(page, "%s%u",
 					RAND_BOOL() ? "-" : "",
-					(unsigned char) rand());
+					(unsigned char) rnd());
 				break;
 			case 1:	p = sprintf(page, "%s%d",
 					RAND_BOOL() ? "-" : "",
-					(char) rand());
+					(char) rnd());
 				break;
-			case 2:	p = sprintf(page, "%x", (char) rand());
+			case 2:	p = sprintf(page, "%x", (char) rnd());
 				break;
 			}
 			break;
@@ -164,7 +164,7 @@ static void dirty_one_page(struct map *map)
 {
 	char *p = map->ptr;
 
-	p[rand() % (map->size - 1)] = rand();
+	p[rnd() % (map->size - 1)] = rnd();
 }
 
 static void dirty_whole_mapping(struct map *map)
@@ -175,7 +175,7 @@ static void dirty_whole_mapping(struct map *map)
 	nr = nr_pages(map);
 
 	for (i = 0; i < nr; i++)
-		p[i * page_size] = rand();
+		p[i * page_size] = rnd();
 }
 
 static void dirty_every_other_page(struct map *map)
@@ -188,7 +188,7 @@ static void dirty_every_other_page(struct map *map)
 	first = RAND_BOOL();
 
 	for (i = first; i < nr; i+=2)
-		p[i * page_size] = rand();
+		p[i * page_size] = rnd();
 }
 
 static void dirty_mapping_reverse(struct map *map)
@@ -199,7 +199,7 @@ static void dirty_mapping_reverse(struct map *map)
 	nr = nr_pages(map) - 1;
 
 	for (i = nr; i > 0; i--)
-		p[i * page_size] = rand();
+		p[i * page_size] = rnd();
 }
 
 /* dirty a random set of map->size pages. (some may be faulted >once) */
@@ -211,7 +211,7 @@ static void dirty_random_pages(struct map *map)
 	nr = nr_pages(map);
 
 	for (i = 0; i < nr; i++)
-		p[(rand() % nr) * page_size] = rand();
+		p[(rnd() % nr) * page_size] = rnd();
 }
 
 /*
@@ -250,14 +250,14 @@ void random_map_writefn(struct map *map)
 {
 	if (map->size == page_size) {
 		mprotect(map->ptr, page_size, PROT_READ|PROT_WRITE);
-		write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+		write_faultfns_single[rnd() % ARRAY_SIZE(write_faultfns_single)].func(map);
 	} else {
 		if (RAND_BOOL()) {
 			mprotect(map->ptr, map->size, PROT_READ|PROT_WRITE);
-			write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
+			write_faultfns[rnd() % ARRAY_SIZE(write_faultfns)].func(map);
 		} else {
 			mprotect(map->ptr, page_size, PROT_READ|PROT_WRITE);
-			write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+			write_faultfns_single[rnd() % ARRAY_SIZE(write_faultfns_single)].func(map);
 		}
 	}
 }

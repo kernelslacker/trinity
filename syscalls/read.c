@@ -14,7 +14,7 @@
 static void sanitise_read(struct syscallrecord *rec)
 {
 	rec->a2 = (unsigned long) get_non_null_address();
-	rec->a3 = rand() % page_size;
+	rec->a3 = rnd() % page_size;
 }
 
 struct syscallentry syscall_read = {
@@ -53,7 +53,7 @@ struct syscallentry syscall_readv = {
 
 static void sanitise_pread64(struct syscallrecord *rec)
 {
-	rec->a3 = rand() % page_size;
+	rec->a3 = rnd() % page_size;
 
 retry_pos:
 	if ((int) rec->a4 < 0) {

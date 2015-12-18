@@ -1,5 +1,6 @@
 #include "list.h"
 #include "objects.h"
+#include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -80,7 +81,7 @@ struct object * get_random_object(enum objecttype type, bool global)
 
 	list = head->list;
 
-	i = rand() % head->num_entries;
+	i = rnd() % head->num_entries;
 
 	list_for_each(node, list) {
 		struct object *m;

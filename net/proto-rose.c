@@ -21,15 +21,15 @@ void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	rose = zmalloc(sizeof(struct sockaddr_rose));
 
 	rose->srose_family = PF_ROSE;
-	rose->srose_addr.rose_addr[0] = rand();
-	rose->srose_addr.rose_addr[1] = rand();
-	rose->srose_addr.rose_addr[2] = rand();
-	rose->srose_addr.rose_addr[3] = rand();
-	rose->srose_addr.rose_addr[4] = rand();
+	rose->srose_addr.rose_addr[0] = rnd();
+	rose->srose_addr.rose_addr[1] = rnd();
+	rose->srose_addr.rose_addr[2] = rnd();
+	rose->srose_addr.rose_addr[3] = rnd();
+	rose->srose_addr.rose_addr[4] = rnd();
 
 	generate_rand_bytes((unsigned char *) rose->srose_call.ax25_call, sizeof(ax25_address));
 
-	rose->srose_ndigis = rand();
+	rose->srose_ndigis = rnd();
 
 	*addr = (struct sockaddr *) rose;
 	*addrlen = sizeof(struct sockaddr_rose);

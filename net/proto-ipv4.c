@@ -49,13 +49,13 @@ static in_addr_t new_ipv4_addr(void)
 		{ "255.255.255.255", SLASH32 },
 	};
 
-	int entry = rand() % ARRAY_SIZE(addresses);
+	int entry = rnd() % ARRAY_SIZE(addresses);
 	const char *p = addresses[entry].name;
 
 	inet_pton(AF_INET, p, &v4);
 
 	if (addresses[entry].classmask != SLASH32)
-		v4 |= htonl(rand() % addresses[entry].classmask);
+		v4 |= htonl(rnd() % addresses[entry].classmask);
 
 	return v4;
 }
@@ -90,7 +90,7 @@ void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	ipv4->sin_family = PF_INET;
 	ipv4->sin_addr.s_addr = random_ipv4_address();
-	ipv4->sin_port = htons(rand() % 65535);
+	ipv4->sin_port = htons(rnd() % 65535);
 
 	/* Client side if we supplied server_addr */
 	if (inet_pton(PF_INET, server_addr, &serv_addr) == 1)
@@ -101,7 +101,7 @@ void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	/* Fuzz from port to (port + 100) if supplied */
 	if (server_port != 0)
-		ipv4->sin_port = htons(server_port + rand() % 100);
+		ipv4->sin_port = htons(server_port + rnd() % 100);
 
 	*addr = (struct sockaddr *) ipv4;
 	*addrlen = sizeof(struct sockaddr_in);
@@ -143,7 +143,7 @@ void inet_rand_socket(struct socket_triplet *st)
 	};
 	unsigned char val;
 
-	val = rand() % ARRAY_SIZE(ipprotos);
+	val = rnd() % ARRAY_SIZE(ipprotos);
 	st->protocol = ipprotos[val].proto;
 	if (ipprotos[val].type != 0)
 		st->type = ipprotos[val].type;
@@ -215,19 +215,19 @@ void ip_setsockopt(struct sockopt *so)
 	struct ip_mreq_source *ms;
 	int mcaddr;
 
-	val = rand() % ARRAY_SIZE(ip_opts);
+	val = rnd() % ARRAY_SIZE(ip_opts);
 	so->optname = ip_opts[val].name;
 	so->optlen = sockoptlen(ip_opts[val].len);
 
 	switch (so->optname) {
 	case IP_OPTIONS:
-		so->optlen = rand() % 40;
+		so->optlen = rnd() % 40;
 		break;
 
 	case IP_MULTICAST_IF:
 	case IP_ADD_MEMBERSHIP:
 	case IP_DROP_MEMBERSHIP:
-		mcaddr = 0xe0000000 | rand() % 0xff;
+		mcaddr = 0xe0000000 | rnd() % 0xff;
 		if (RAND_BOOL()) {
 			struct ip_mreqn *mrn;
 
@@ -248,7 +248,7 @@ void ip_setsockopt(struct sockopt *so)
 
 	case IP_MSFILTER:
 		//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
-		so->optlen = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+		so->optlen = rnd() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
 		so->optlen |= IP_MSFILTER_SIZE(0);
 		break;
 
@@ -256,7 +256,7 @@ void ip_setsockopt(struct sockopt *so)
 	case IP_UNBLOCK_SOURCE:
 	case IP_ADD_SOURCE_MEMBERSHIP:
 	case IP_DROP_SOURCE_MEMBERSHIP:
-		mcaddr = 0xe0000000 | rand() % 0xff;
+		mcaddr = 0xe0000000 | rnd() % 0xff;
 
 		ms = (struct ip_mreq_source *) so->optval;
 		ms->imr_multiaddr.s_addr = mcaddr;
@@ -266,7 +266,7 @@ void ip_setsockopt(struct sockopt *so)
 
 	case MCAST_MSFILTER:
 		//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
-		so->optlen = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+		so->optlen = rnd() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
 		so->optlen |= GROUP_FILTER_SIZE(0);
 		break;
 

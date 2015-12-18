@@ -14,6 +14,7 @@
 
 #include "net.h"
 #include "maps.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -60,7 +61,7 @@ static void do_set_seccomp(__unused__ struct syscallrecord *rec) { }
 /* We already got a generic_sanitise at this point */
 static void sanitise_prctl(struct syscallrecord *rec)
 {
-	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
+	int option = prctl_opts[rnd() % NR_PRCTL_OPTS];
 
 // For now, just do SECCOMP, the other options need some attention.
 	option = PR_SET_SECCOMP;

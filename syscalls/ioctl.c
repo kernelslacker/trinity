@@ -17,12 +17,12 @@ static void ioctl_mangle_cmd(struct syscallrecord *rec)
 	unsigned int i;
 
 	/* mangle the cmd by ORing up to 4 random bits */
-	for (i=0; i < (unsigned int)(rand() % 4); i++)
-		rec->a2 |= 1L << (rand() % 32);
+	for (i=0; i < (unsigned int)(rnd() % 4); i++)
+		rec->a2 |= 1L << (rnd() % 32);
 
 	/* mangle the cmd by ANDing up to 4 random bits */
-	for (i=0; i < (unsigned int)(rand() % 4); i++)
-		rec->a2 &= 1L << (rand() % 32);
+	for (i=0; i < (unsigned int)(rnd() % 4); i++)
+		rec->a2 &= 1L << (rnd() % 32);
 }
 
 static void ioctl_mangle_arg(struct syscallrecord *rec)

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include "arch.h"
 #include "maps.h"
+#include "random.h"
 #include "sanitise.h"
 
 #define SYSLOG_ACTION_CLOSE          0
@@ -30,7 +31,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) map->ptr;
-	rec->a3 = rand() % map->size;
+	rec->a3 = rnd() % map->size;
 	rec->a3 &= PAGE_MASK;
 }
 

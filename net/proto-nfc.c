@@ -17,9 +17,9 @@ void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	nfc = zmalloc(sizeof(struct sockaddr_nfc));
 
 	nfc->sa_family = PF_NFC;
-	nfc->dev_idx = rand();
-	nfc->target_idx = rand();
-	nfc->nfc_protocol = rand() % 5;
+	nfc->dev_idx = rnd();
+	nfc->target_idx = rnd();
+	nfc->nfc_protocol = rnd() % 5;
 	*addr = (struct sockaddr *) nfc;
 	*addrlen = sizeof(struct sockaddr_nfc);
 }

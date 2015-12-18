@@ -396,9 +396,9 @@ void child_process(void)
 			set_seed(child);
 
 		/* Choose operations for this iteration. */
-		i = rand() % ARRAY_SIZE(child_ops);
+		i = rnd() % ARRAY_SIZE(child_ops);
 
-		if (rand() % 100 <= child_ops[i].likelyhood) {
+		if (rnd() % 100 <= child_ops[i].likelyhood) {
 			const char *lastop = NULL;
 
 			if (lastop != child_ops[i].name) {

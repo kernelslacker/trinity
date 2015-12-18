@@ -170,7 +170,7 @@ static void sanitise_futex(struct syscallrecord *rec)
 		  /* ^^ no, we do not have 64-bit futexes :P */
 	rec->a5 = (unsigned long) &lock2->futex; /* uaddr2 */
 
-	switch (rand() % 4) {
+	switch (rnd() % 4) {
 	case 0:
 		if (futex_trylock_or_wait(lock, rec))
 			futex_unlock(lock);

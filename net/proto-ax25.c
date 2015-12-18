@@ -17,7 +17,7 @@ void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	ax25->sax25_family = PF_AX25;
 	generate_rand_bytes((unsigned char *) ax25->sax25_call.ax25_call, 7);
-	ax25->sax25_ndigis = rand();
+	ax25->sax25_ndigis = rnd();
 	*addr = (struct sockaddr *) ax25;
 	*addrlen = sizeof(struct sockaddr_ax25);
 }
@@ -41,12 +41,12 @@ static int ax25_protocols[NR_AX25_PROTOS] = {
 
 void ax25_rand_socket(struct socket_triplet *st)
 {
-	switch (rand() % 3) {
+	switch (rnd() % 3) {
 	case 0: st->type = SOCK_DGRAM;
 		st->protocol = 0;
 		break;
 	case 1: st->type = SOCK_SEQPACKET;
-		st->protocol = ax25_protocols[rand() % NR_AX25_PROTOS];
+		st->protocol = ax25_protocols[rnd() % NR_AX25_PROTOS];
 		break;
 	case 2: st->type = SOCK_RAW;
 		break;

@@ -20,13 +20,13 @@
 static unsigned int get_cpu(void)
 {
 	int i;
-	i = rand() % 100;
+	i = rnd() % 100;
 
 	switch (i) {
 	case 0: return -1;
-	case 1: return rand() % 4096;
+	case 1: return rnd() % 4096;
 	case 2 ... 99:
-		return rand() % num_online_cpus;
+		return rnd() % num_online_cpus;
 	}
 	return 0;
 }
@@ -46,7 +46,7 @@ static unsigned long handle_arg_address(struct syscallrecord *rec, unsigned int 
 
 	addr = find_previous_arg_address(rec, argnum);
 
-	switch (rand() % 4) {
+	switch (rnd() % 4) {
 	case 0:	break;	/* return unmodified */
 	case 1:	addr++;
 		break;
@@ -140,7 +140,7 @@ static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argn
 
 	get_num_and_values(entry, argnum, &num, &values);
 
-	op = values[rand() % num];
+	op = values[rnd() % num];
 	return op;
 }
 
@@ -241,12 +241,12 @@ static unsigned long handle_arg_mode_t(void)
 	unsigned int i, count;
 	mode_t mode = 0, op = 0;
 
-	count = rand() % 9;
+	count = rnd() % 9;
 
 	for (i = 0; i < count; i++) {
 		unsigned int j;
 
-		j = rand() % 15;
+		j = rnd() % 15;
 		switch (j) {
 		case  0: op = S_IRWXU; break;
 		case  1: op = S_IRUSR; break;

@@ -101,7 +101,7 @@ struct iovec * alloc_iovec(unsigned int num)
 
 		map = get_map();
 		iov[i].iov_base = map->ptr;
-		iov[i].iov_len = rand() % map->size;
+		iov[i].iov_len = rnd() % map->size;
 	}
 
 	return iov;

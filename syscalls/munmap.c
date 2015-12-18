@@ -35,18 +35,18 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		unsigned long len;
 
 		nr_pages = map->size / page_size;
-		offsetpagenr = rand() % nr_pages;
+		offsetpagenr = rnd() % nr_pages;
 		offset = offsetpagenr * page_size;
 		rec->a1 = (unsigned long) map->ptr + offset;
 
-		len = (rand() % (nr_pages - offsetpagenr)) + 1;
+		len = (rnd() % (nr_pages - offsetpagenr)) + 1;
 		len *= page_size;
 		rec->a2 = len;
 	} else {
 		/* just unmap 1 page of the mapping. */
 
 		rec->a1 = (unsigned long) map->ptr;
-		rec->a1 += (rand() % map->size) & PAGE_MASK;
+		rec->a1 += (rnd() % map->size) & PAGE_MASK;
 		rec->a2 = page_size;
 	}
 }

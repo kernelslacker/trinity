@@ -21,19 +21,19 @@ void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	llc->sllc_family = AF_LLC;
 	llc->sllc_arphrd = ARPHRD_ETHER;
-	llc->sllc_test = rand();
-	llc->sllc_xid = rand();
-	llc->sllc_ua = rand();
-	llc->sllc_sap = rand();
+	llc->sllc_test = rnd();
+	llc->sllc_xid = rnd();
+	llc->sllc_ua = rnd();
+	llc->sllc_sap = rnd();
 	for (i = 0; i < IFHWADDRLEN; i++)
-		llc->sllc_mac[i] = rand();
+		llc->sllc_mac[i] = rnd();
 	*addr = (struct sockaddr *) llc;
 	*addrlen = sizeof(struct sockaddr_llc);
 }
 
 void llc_rand_socket(struct socket_triplet *st)
 {
-	st->protocol = rand() % PROTO_MAX;
+	st->protocol = rnd() % PROTO_MAX;
 	if (RAND_BOOL())
 		st->type = SOCK_STREAM;
 	else

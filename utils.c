@@ -23,7 +23,7 @@ void * alloc_shared(unsigned int size)
 		exit(EXIT_FAILURE);
 	}
 	/* poison, to force users to set it to something sensible. */
-	memset(ret, rand(), size);
+	memset(ret, rnd(), size);
 	return ret;
 }
 

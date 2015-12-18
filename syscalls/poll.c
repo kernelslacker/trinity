@@ -21,7 +21,7 @@ static void sanitise_poll(struct syscallrecord *rec)
 {
 	struct pollfd *pollfd;
 	unsigned int i;
-	unsigned int num_fds = rand() % 10;
+	unsigned int num_fds = rnd() % 10;
 
 	pollfd = zmalloc(num_fds * sizeof(struct pollfd));
 

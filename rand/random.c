@@ -13,6 +13,11 @@
 #include "types.h"
 #include "utils.h"
 
+int rnd(void)
+{
+	return rand();
+}
+
 void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
@@ -20,7 +25,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	unsigned char separators[] = { ':', ',', '.', ' ', '-', '\0', };
 	unsigned char separator;
 
-	switch (rand() % 3) {
+	switch (rnd() % 3) {
 	case 0:
 		/* Complete garbage. */
 		for (i = 0; i < len; i++)
@@ -29,12 +34,12 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	case 1:
 		/* printable text strings. */
 		for (i = 0; i < len; i++)
-			ptr[i] = 32 + rand() % (0x7f - 32);
+			ptr[i] = 32 + rnd() % (0x7f - 32);
 		break;
 	case 2:
 		/* numbers (for now, decimal only) */
 
-		separator = separators[rand() % sizeof(separators)];
+		separator = separators[rnd() % sizeof(separators)];
 
 		remain = len;
 
@@ -50,10 +55,10 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			}
 
 			/* At most make this run 10 chars. */
-			runlen = min(remain, (unsigned int) rand() % 10);
+			runlen = min(remain, (unsigned int) rnd() % 10);
 
 			for (i = startoffset; i < startoffset + runlen; i++)
-				ptr[i] = '0' + rand() % 10;
+				ptr[i] = '0' + rnd() % 10;
 
 			startoffset += runlen;
 			remain -= runlen;
@@ -84,7 +89,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 		return mask;
 
 	for (i = 0; i < bits; i++)
-		mask |= values[rand() % num];
+		mask |= values[rnd() % num];
 
 	return mask;
 }
@@ -97,7 +102,7 @@ unsigned long rand_single_bit(unsigned char size)
 	if (size > __WORDSIZE)
 		size = __WORDSIZE;
 
-	return (1UL << (rand() % size));
+	return (1UL << (rnd() % size));
 }
 
 /*
@@ -105,12 +110,12 @@ unsigned long rand_single_bit(unsigned char size)
  */
 static unsigned long randbits(int limit)
 {
-	unsigned int num = rand() % (limit / 2);
+	unsigned int num = rnd() % (limit / 2);
 	unsigned int i;
 	unsigned long r = 0;
 
 	for (i = 0; i < num; i++)
-		r |= (1UL << (rand() % (limit - 1)));
+		r |= (1UL << (rnd() % (limit - 1)));
 
 	return r;
 }
@@ -137,7 +142,7 @@ unsigned int rand32(void)
 {
 	unsigned long r = 0;
 
-	switch (rand() % 5) {
+	switch (rnd() % 5) {
 	case 0: r = rand_single_bit(32);
 		break;
 	case 1:	r = randbits(32);
@@ -164,7 +169,7 @@ unsigned int rand32(void)
 	}
 
 	/* limit the size */
-	switch (rand() % 5) {
+	switch (rnd() % 5) {
 	case 0: r &= 0xff;
 		break;
 	case 1: r &= 0xffff;
@@ -193,7 +198,7 @@ u64 rand64(void)
 
 	} else {
 		/* 33:64-bit ranges. */
-		switch (rand() % 5) {
+		switch (rnd() % 5) {
 		case 0:	r = rand_single_bit(64);
 			break;
 		case 1:	r = randbits(64);
@@ -207,7 +212,7 @@ u64 rand64(void)
 		}
 
 		/* limit the size */
-		switch (rand() % 4) {
+		switch (rnd() % 4) {
 		case 0: r &= 0x000000ffffffffffULL;
 			break;
 		case 1: r &= 0x0000ffffffffffffULL;
@@ -228,9 +233,9 @@ u64 rand64(void)
 		unsigned int i;
 		unsigned int rounds;
 
-		rounds = rand() % 4;
+		rounds = rnd() % 4;
 		for (i = 0; i < rounds; i++)
-			r |= (1UL << ((__WORDSIZE - 1) - (rand() % 8)));
+			r |= (1UL << ((__WORDSIZE - 1) - (rnd() % 8)));
 	}
 
 	/* Sometimes flip sign */

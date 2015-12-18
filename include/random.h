@@ -17,6 +17,8 @@
 #define RAND_BYTE()				(rand() & 0xff)
 #define RAND_RANGE(min, max)	(min + rand() / (RAND_MAX / (max - min + 1) + 1))
 
+int rnd(void);
+
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
 void set_seed(struct childdata *child);

@@ -7,6 +7,7 @@
 #include <sys/uio.h>
 #include <stdlib.h>
 #include "pipes.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -14,10 +15,10 @@
 
 static void sanitise_vmsplice(struct syscallrecord *rec)
 {
-	if ((rand() % 10) > 0)
+	if ((rnd() % 10) > 0)
 		rec->a1 = get_rand_pipe_fd();
 
-	rec->a3 = rand() % UIO_MAXIOV;
+	rec->a3 = rnd() % UIO_MAXIOV;
 }
 
 static unsigned long vmsplice_flags[] = {

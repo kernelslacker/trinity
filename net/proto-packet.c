@@ -20,7 +20,7 @@ void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	pkt->spkt_family = PF_PACKET;
 	for (i = 0; i < 14; i++)
-		pkt->spkt_device[i] = rand();
+		pkt->spkt_device[i] = rnd();
 	*addr = (struct sockaddr *) pkt;
 	*addrlen = sizeof(struct sockaddr_pkt);
 }
@@ -32,7 +32,7 @@ void packet_rand_socket(struct socket_triplet *st)
 	if (ONE_IN(8))		// FIXME: 8 ? Why?
 		st->protocol = get_random_ether_type();
 
-	switch (rand() % 3) {
+	switch (rnd() % 3) {
 	case 0: st->type = SOCK_DGRAM;
 		break;
 	case 1: st->type = SOCK_RAW;
@@ -62,7 +62,7 @@ void packet_setsockopt(struct sockopt *so)
 	/* Adjust length according to operation set. */
 	switch (so->optname) {
 	case PACKET_VERSION:
-		optval[0] = rand() % 3; /* tpacket versions 1/2/3 */
+		optval[0] = rnd() % 3; /* tpacket versions 1/2/3 */
 		break;
 
 	case PACKET_TX_RING:

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "net.h"
 #include "compat.h"
+#include "random.h"
 #include "utils.h"	// RAND_ARRAY
 
 static const unsigned int bluetooth_opts[] = {
@@ -21,7 +22,7 @@ static const unsigned int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
 void bluetooth_setsockopt(struct sockopt *so)
 {
-	switch(rand() % 5) {
+	switch(rnd() % 5) {
 	case 0: so->level = SOL_HCI; break;
 	case 1: so->level = SOL_L2CAP; break;
 	case 2: so->level = SOL_SCO; break;

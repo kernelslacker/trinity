@@ -19,24 +19,24 @@ void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	irda = zmalloc(sizeof(struct sockaddr_irda));
 
 	irda->sir_family = PF_IRDA;
-	irda->sir_lsap_sel = rand();
-	irda->sir_addr = rand();
+	irda->sir_lsap_sel = rnd();
+	irda->sir_addr = rnd();
 	for (i = 0; i < 25; i++)
-		irda->sir_name[i] = rand();
+		irda->sir_name[i] = rnd();
 	*addr = (struct sockaddr *) irda;
 	*addrlen = sizeof(struct sockaddr_irda);
 }
 
 void irda_rand_socket(struct socket_triplet *st)
 {
-	switch (rand() % 3) {
+	switch (rnd() % 3) {
 
 	case 0: st->type = SOCK_STREAM;
-		st->protocol = rand() % PROTO_MAX;
+		st->protocol = rnd() % PROTO_MAX;
 		break;
 
 	case 1: st->type = SOCK_SEQPACKET;
-		st->protocol = rand() % PROTO_MAX;
+		st->protocol = rnd() % PROTO_MAX;
 		break;
 
 	case 2: st->type = SOCK_DGRAM;

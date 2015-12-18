@@ -81,14 +81,14 @@ void rand_proto_type(struct socket_triplet *st)
 	 * PF_PACKET is disabled, choose some other type.
 	 */
 
-	st->protocol = rand() % PROTO_MAX;
+	st->protocol = rnd() % PROTO_MAX;
 
 	if (st->family == PF_INET && no_domains[PF_PACKET])
 		n = 5;
 	else
 		n = 6;
 
-	switch (rand() % n) {
+	switch (rnd() % n) {
 	case 0:	st->type = SOCK_DGRAM;	break;
 	case 1:	st->type = SOCK_STREAM;	break;
 	case 2:	st->type = SOCK_SEQPACKET;	break;
@@ -125,7 +125,7 @@ void gen_socket_args(struct socket_triplet *st)
 		st->family = specific_domain;
 
 	else {
-		st->family = rand() % TRINITY_PF_MAX;
+		st->family = rnd() % TRINITY_PF_MAX;
 
 		/*
 		 * If we get a disabled family, try to find

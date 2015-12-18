@@ -45,7 +45,7 @@ static int fallbackseed(void)
 	unsigned int r;
 
 	//printf("Fell back to gtod seed! errno:%s\n", strerror(errno));
-	r = rand();
+	r = rnd();
 	if (!(RAND_BOOL())) {
 		gettimeofday(&t, NULL);
 		r |= t.tv_usec;

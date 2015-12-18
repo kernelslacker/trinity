@@ -87,7 +87,7 @@ static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 
 	sgio->ioh.interface_id = 'S';
 
-	switch (rand() % 4) {
+	switch (rnd() % 4) {
 	case 0:	sgio->ioh.dxfer_direction = SG_DXFER_NONE;	break;
 	case 1:	sgio->ioh.dxfer_direction = SG_DXFER_TO_DEV;	break;
 	case 2:	sgio->ioh.dxfer_direction = SG_DXFER_FROM_DEV;	break;
@@ -97,10 +97,10 @@ static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 
 	sgio->ioh.dxferp = sgio->data;
 
-	switch (rand() % 3) {
-	case 0: sgio->ioh.dxfer_len = rand() % page_size;	break;
+	switch (rnd() % 3) {
+	case 0: sgio->ioh.dxfer_len = rnd() % page_size;	break;
 	case 1: sgio->ioh.dxfer_len = (unsigned int) rand32();	break;
-	case 2: sgio->ioh.dxfer_len = rand() % 512;		break;
+	case 2: sgio->ioh.dxfer_len = rnd() % 512;		break;
 	default: break;
 	}
 

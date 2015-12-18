@@ -11,7 +11,7 @@ static void sanitise_membarrier(struct syscallrecord *rec)
 	// proofing, we'll leak something random occasionally.
 	// 0 the rest of the time, or we just EINVAL
 	if (ONE_IN(1000))
-		rec->a2 = 1 << (rand() % 4);
+		rec->a2 = 1 << (rnd() % 4);
 	else
 		rec->a2 = 0;
 }

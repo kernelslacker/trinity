@@ -16,7 +16,7 @@ void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	unixsock = zmalloc(sizeof(struct sockaddr_un));
 
 	unixsock->sun_family = PF_UNIX;
-	len = rand() % 20;
+	len = rnd() % 20;
 	generate_rand_bytes((unsigned char *)unixsock->sun_path, len);
 	*addr = (struct sockaddr *) unixsock;
 	*addrlen = sizeof(struct sockaddr_un);
@@ -26,7 +26,7 @@ void unix_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = PF_UNIX;
 
-	switch (rand() % 3) {
+	switch (rnd() % 3) {
 	case 0: st->type = SOCK_STREAM;
 		break;
 	case 1: st->type = SOCK_DGRAM;

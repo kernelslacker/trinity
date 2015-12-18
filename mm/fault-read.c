@@ -15,7 +15,7 @@ static unsigned int nr_pages(struct map *map)
 static void read_one_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned long offset = (rand() % (map->size - 1)) & PAGE_MASK;
+	unsigned long offset = (rnd() % (map->size - 1)) & PAGE_MASK;
 	char buf[page_size];
 
 	p += offset;
@@ -71,7 +71,7 @@ static void read_random_pages(struct map *map)
 	nr = nr_pages(map);
 
 	for (i = 0; i < nr; i++)
-		memcpy(buf, p + ((rand() % nr) * page_size), page_size);
+		memcpy(buf, p + ((rnd() % nr) * page_size), page_size);
 }
 
 /* Fault in the last page in a mapping */
@@ -99,6 +99,6 @@ void random_map_readfn(struct map *map)
 		if (RAND_BOOL())
 			read_one_page(map);
 		else
-			read_faultfns[rand() % ARRAY_SIZE(read_faultfns)].func(map);
+			read_faultfns[rnd() % ARRAY_SIZE(read_faultfns)].func(map);
 	}
 }

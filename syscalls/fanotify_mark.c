@@ -3,6 +3,7 @@
 	__u64 mask, int dfd, const char  __user * pathname)
  */
 #include <stdlib.h>
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -40,7 +41,7 @@ static void sanitise_fanotify_mark(struct syscallrecord *rec)
 				    FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORED_SURV_MODIFY };
 
 	unsigned int i;
-	unsigned int numflags = rand() % 5;
+	unsigned int numflags = rnd() % 5;
 
 	// set additional flags
 	for (i = 0; i < numflags; i++)

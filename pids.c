@@ -2,11 +2,12 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <signal.h>
-#include "shm.h"
+#include "log.h"
 #include "params.h"	// dangerous
 #include "pids.h"
-#include "log.h"
+#include "random.h"
 #include "sanitise.h"
+#include "shm.h"
 
 pid_t initpid;
 
@@ -142,9 +143,9 @@ unsigned int get_pid(void)
 	if (shm->running_childs == 0)
 		return 0;
 
-	switch (rand() % 3) {
+	switch (rnd() % 3) {
 	case 0:
-retry:		i = rand() % max_children;
+retry:		i = rnd() % max_children;
 		pid = shm->children[i]->pid;
 		if (pid == EMPTY_PIDSLOT)
 			goto retry;

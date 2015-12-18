@@ -6,6 +6,7 @@
 #include "files.h"
 #include "ioctls.h"
 #include "log.h"
+#include "random.h"
 #include "shm.h"
 #include "utils.h"	// ARRAY_SIZE
 
@@ -82,14 +83,14 @@ const struct ioctl_group *get_random_ioctl_group(void)
 	if (grps_cnt == 0)
 		return NULL;
 
-	return grps[rand() % grps_cnt];
+	return grps[rnd() % grps_cnt];
 }
 
 void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	int ioctlnr;
 
-	ioctlnr = rand() % grp->ioctls_cnt;
+	ioctlnr = rnd() % grp->ioctls_cnt;
 
 	rec->a2 = grp->ioctls[ioctlnr].request;
 }

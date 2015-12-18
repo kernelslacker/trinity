@@ -22,7 +22,7 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	map = common_set_mmap_ptr_len();
 
 	if (RAND_BOOL()) {
-		start = rand() % map->size;
+		start = rnd() % map->size;
 		start &= PAGE_MASK;
 		rec->a1 += start;
 	}
@@ -31,7 +31,7 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		size = page_size;
 	else {
-		size = rand() % map->size;
+		size = rnd() % map->size;
 
 		/* if we screwed with the start, we need to take it
 		 * into account so we don't go off the end.
@@ -46,7 +46,7 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 
 	/* Pick a random pgoff. */
 	if (RAND_BOOL())
-		offset = rand() & (size / page_size);
+		offset = rnd() & (size / page_size);
 	else
 		offset = 0;
 	rec->a4 = offset;

@@ -17,14 +17,14 @@ void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	dn = zmalloc(sizeof(struct sockaddr_dn));
 
 	dn->sdn_family = PF_DECnet;
-	dn->sdn_flags = rand();
-	dn->sdn_objnum = rand();
-	dn->sdn_objnamel = rand() % 16;
+	dn->sdn_flags = rnd();
+	dn->sdn_objnum = rnd();
+	dn->sdn_objnamel = rnd() % 16;
 	for (i = 0; i < dn->sdn_objnamel; i++)
-		dn->sdn_objname[i] = rand();
+		dn->sdn_objname[i] = rnd();
 	dn->sdn_add.a_len = RAND_BOOL();
-	dn->sdn_add.a_addr[0] = rand();
-	dn->sdn_add.a_addr[1] = rand();
+	dn->sdn_add.a_addr[0] = rnd();
+	dn->sdn_add.a_addr[1] = rnd();
 	*addr = (struct sockaddr *) dn;
 	*addrlen = sizeof(struct sockaddr_dn);
 }
@@ -36,7 +36,7 @@ void decnet_rand_socket(struct socket_triplet *st)
 		st->protocol = DNPROTO_NSP;
 	} else {
 		st->type = SOCK_STREAM;
-		st->protocol = rand() % PROTO_MAX;
+		st->protocol = rnd() % PROTO_MAX;
 	}
 }
 

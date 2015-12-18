@@ -154,9 +154,9 @@ static void do_random_sso(struct sockopt *so)
 	unsigned int i;
 
 retry:
-	switch (rand() % 4) {
+	switch (rnd() % 4) {
 	case 0:	/* do a random protocol, even if it doesn't match this socket. */
-		i = rand() % ARRAY_SIZE(ssoptrs);
+		i = rnd() % ARRAY_SIZE(ssoptrs);
 		if (ssoptrs[i].func != NULL) {
 			so->level = ssoptrs[i].sol;
 			ssoptrs[i].func(so);
@@ -166,7 +166,7 @@ retry:
 		break;
 
 	case 1:	/* do a random IP protocol, even if it doesn't match this socket. */
-		i = rand() % ARRAY_SIZE(ip_ssoptrs);
+		i = rnd() % ARRAY_SIZE(ip_ssoptrs);
 		if (ip_ssoptrs[i].func != NULL) {
 			so->level = ip_ssoptrs[i].sol;
 			ip_ssoptrs[i].func(so);
@@ -180,7 +180,7 @@ retry:
 		break;
 
 	case 3:	/* completely random operation. */
-		so->level = rand();
+		so->level = rnd();
 		so->optname = RAND_BYTE();
 		break;
 	}
@@ -260,7 +260,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
 	 */
 	if (ONE_IN(10))
-		so->optname |= (1UL << (rand() % 32));
+		so->optname |= (1UL << (rnd() % 32));
 
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
