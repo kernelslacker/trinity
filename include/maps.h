@@ -16,6 +16,9 @@ struct map {
 extern unsigned int num_initial_mappings;
 extern struct map *initial_mappings;
 
+#define NR_MAPPING_SIZES 6
+extern unsigned long mapping_sizes[NR_MAPPING_SIZES];
+
 void setup_initial_mappings(void);
 void destroy_initial_mappings(void);
 

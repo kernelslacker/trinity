@@ -23,51 +23,6 @@
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED
 
-static long sizes[] = {
-	-1,	/* over-written with page_size below */
-	MB(1), MB(2), MB(4), MB(10),
-	GB(1),
-};
-
-static int init_mmap(void)
-{
-	FILE *fp;
-	char *buffer;
-	size_t n = 0;
-
-	if (sizes[0] != -1)
-		return 0;
-
-	sizes[0] = page_size;
-
-	fp = fopen("/proc/meminfo", "r");
-	if (!fp)
-		return -1;
-
-	buffer = malloc(4096);
-	if (!buffer) {
-		fclose(fp);
-		return -1;
-	}
-
-	while (getline(&buffer, &n, fp) >= 0) {
-		unsigned long long free;
-
-		if (sscanf(buffer, "MemFree:         %llu", &free) == 1) {
-			if ((free * 1024) < GB(8ULL)) {
-				printf("Free memory: %.2fGB\n", (double) free / 1024 / 1024);
-				printf("Low on memory, disabling mmaping of 1GB pages\n");
-				sizes[5] = page_size;
-				return 0;
-			}
-		}
-	}
-
-	free(buffer);
-	fclose(fp);
-	return 0;
-}
-
 static void do_anon(struct syscallrecord *rec)
 {
 	/* no fd if anonymous mapping. */
@@ -93,7 +48,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	rec->a4 = set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
 
 	if (rec->a4 & MAP_ANONYMOUS) {
-		rec->a2 = RAND_ARRAY(sizes);
+		rec->a2 = RAND_ARRAY(mapping_sizes);
 		do_anon(rec);
 	} else {
 		if (this_syscallname("mmap2") == TRUE) {
@@ -196,7 +151,6 @@ struct syscallentry syscall_mmap = {
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
-	.init = init_mmap,
 };
 
 struct syscallentry syscall_mmap2 = {
@@ -223,5 +177,4 @@ struct syscallentry syscall_mmap2 = {
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
-	.init = init_mmap,
 };
