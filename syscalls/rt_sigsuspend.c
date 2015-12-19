@@ -9,5 +9,5 @@ struct syscallentry syscall_rt_sigsuspend = {
 	.arg1name = "unewset",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "sigsetsize",
-	.flags = NEED_ALARM,
+	.flags = AVOID_SYSCALL,
 };
