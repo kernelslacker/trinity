@@ -256,7 +256,7 @@ static int generate_sockets(void)
 	while (nr_sockets < NR_SOCKET_FDS) {
 		struct socket_triplet st;
 
-		st.family = rand() % TRINITY_PF_MAX;
+		st.family = rnd() % TRINITY_PF_MAX;
 
 		/* check for ctrl-c again. */
 		if (shm->exit_reason != STILL_RUNNING)

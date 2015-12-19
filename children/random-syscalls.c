@@ -115,7 +115,7 @@ retry:
 
 	/* Ok, we're doing another syscall, let's pick one. */
 	do32 = choose_syscall_table();
-	syscallnr = rand() % max_nr_syscalls;
+	syscallnr = rnd() % max_nr_syscalls;
 
 	/* If we got a syscallnr which is not active repeat the attempt,
 	 * since another child has switched that syscall off already.*/

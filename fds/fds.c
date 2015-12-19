@@ -96,7 +96,7 @@ int get_new_random_fd(void)
 	while (fd < 0) {
 		unsigned int i, j;
 retry:
-		i = rand() % num_fd_providers;
+		i = rnd() % num_fd_providers;
 		j = 0;
 
 		list_for_each(node, &fd_providers->list) {
