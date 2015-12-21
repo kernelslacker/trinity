@@ -1,3 +1,5 @@
+#include "config.h"
+#ifdef USE_NVME
 #include <linux/ioctl.h>
 #include <linux/nvme.h>
 
@@ -37,3 +39,4 @@ static const struct ioctl_group nvme_grp_block = {
 };
 
 REG_IOCTL_GROUP(nvme_grp_block);
+#endif
