@@ -206,8 +206,6 @@ void init_child(struct childdata *child, int childno)
 		}
 	}
 
-	child->num = childno;
-
 	reinit_child(child);
 
 	set_seed(this_child());
