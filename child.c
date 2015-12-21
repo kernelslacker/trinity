@@ -211,8 +211,6 @@ void init_child(struct childdata *child, int childno)
 
 	reinit_child(child);
 
-	init_child_logging(child);
-
 	set_seed(this_child());
 
 	init_child_mappings();

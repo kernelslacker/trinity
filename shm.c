@@ -97,7 +97,7 @@ void init_shm(void)
 
 		child->pid = EMPTY_PIDSLOT;
 
-		child->logfile = NULL;
+		init_child_logging(child);
 	}
 	mprotect(shm->children, childptrslen, PROT_READ);
 }
