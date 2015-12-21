@@ -30,7 +30,7 @@ static int open_epoll_fds(void)
 			struct object *obj;
 
 			obj = alloc_object();
-			obj->perffd = fd;
+			obj->epollfd = fd;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
 
 			output(2, "fd[%d] = epoll\n", fd);
