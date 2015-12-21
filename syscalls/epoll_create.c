@@ -4,7 +4,22 @@
  * On success, returns a nonnegative file descriptor.
  * On error, -1 is returned, and errno is set to indicate the error.
  */
+#include "objects.h"
 #include "sanitise.h"
+#include "utils.h"
+
+static void post_epoll_create(struct syscallrecord *rec)
+{
+	struct object *new;
+	int fd = rec->retval;
+
+	if (fd == -1)
+		return;
+
+	new = zmalloc(sizeof(struct object));
+	new->epollfd = fd;
+	add_object(new, OBJ_LOCAL, OBJ_FD_EPOLL);
+}
 
 struct syscallentry syscall_epoll_create = {
 	.name = "epoll_create",
@@ -12,6 +27,7 @@ struct syscallentry syscall_epoll_create = {
 	.arg1name = "size",
 	.arg1type = ARG_LEN,
 	.rettype = RET_FD,
+	.post = post_epoll_create,
 };
 
 /*
@@ -37,4 +53,5 @@ struct syscallentry syscall_epoll_create1 = {
 	.arg1type = ARG_LIST,
 	.arg1list = ARGLIST(epoll_create_flags),
 	.rettype = RET_FD,
+	.post = post_epoll_create,
 };
