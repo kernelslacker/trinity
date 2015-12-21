@@ -93,7 +93,6 @@ void init_shm(void)
 		shm->children[i] = child;
 
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));
-		memset(&child->previous, 0, sizeof(struct syscallrecord));
 
 		child->pid = EMPTY_PIDSLOT;
 

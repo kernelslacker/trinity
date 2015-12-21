@@ -158,7 +158,6 @@ static void oom_score_adj(int adj)
 static void reinit_child(struct childdata *child)
 {
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
-	memset(&child->previous, 0, sizeof(struct syscallrecord));
 
 	child->seed = 0;
 	child->kill_count = 0;

@@ -259,8 +259,6 @@ already_done:
 void handle_syscall_ret(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
-	struct syscallrecord *previous;
-	struct childdata *child = this_child();
 	unsigned int call;
 
 	call = rec->nr;
@@ -276,11 +274,6 @@ void handle_syscall_ret(struct syscallrecord *rec)
 
 	if (entry->post)
 	    entry->post(rec);
-
-	/* store info for debugging. */
-	previous = &child->previous;
-	memcpy(previous, rec, sizeof(struct syscallrecord));
-	previous->state = DONE;
 
 	check_uid();
 

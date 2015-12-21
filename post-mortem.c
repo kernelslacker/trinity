@@ -26,7 +26,6 @@ static void dump_syscall_rec(FILE *fd, struct syscallrecord *rec)
 		fprintf(fd, "%s\n", rec->prebuffer);
 		break;
 	case AFTER:
-	case DONE:
 	case GOING_AWAY:
 		fprintf(fd, "%s%s\n", rec->prebuffer, rec->postbuffer);
 		break;
@@ -45,7 +44,6 @@ static void dump_syscall_records(void)
 	}
 
 	for_each_child(i) {
-		dump_syscall_rec(fd, &shm->children[i]->previous);
 		dump_syscall_rec(fd, &shm->children[i]->syscall);
 		fprintf(fd, "\n");
 	}

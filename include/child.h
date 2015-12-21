@@ -9,7 +9,6 @@
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
-	struct syscallrecord previous;
 
 	/* log file related stuff */
 	FILE *logfile;

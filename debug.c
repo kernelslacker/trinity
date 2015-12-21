@@ -85,8 +85,6 @@ void dump_childdata(struct childdata *child)
 	output(0, "child struct @%p\n", child);
 	output(0, "syscall: %p\n", &child->syscall);
 	dump_syscallrec(&child->syscall);
-	output(0, "previous syscall: %p\n", &child->previous);
-	dump_syscallrec(&child->previous);
 
 	output(0, "logfile: %p (dirty:%d)\n", child->logfile, child->logdirty);
 
