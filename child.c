@@ -340,8 +340,6 @@ static bool handle_sigreturn(void)
 	}
 	unlock(&rec->lock);
 
-	output(2, "<timed out>\n");     /* Flush out the previous syscall output. */
-
 	/* Check if we're making any progress at all. */
 	if (rec->op_nr == last) {
 		count++;
