@@ -10,16 +10,26 @@
 #include "fd.h"
 #include "files.h"
 #include "log.h"
+#include "objects.h"
 #include "pipes.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 
+static void pipefd_destructor(struct object *obj)
+{
+	close(obj->pipefd);
+}
+
 static void open_pipe_pair(unsigned int flags)
 {
+	struct objhead *head;
 	struct object *obj;
 	int pipes[2];
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
+	head->destroy = &pipefd_destructor;
 
 	if (pipe2(pipes, flags) < 0) {
 		perror("pipe fail.\n");
