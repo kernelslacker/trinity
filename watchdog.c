@@ -374,39 +374,8 @@ static void stall_genocide(void)
 
 static void watchdog(void)
 {
-	static const char watchdogname[17]="trinity-watchdog";
 	static unsigned long lastcount = 0;
 	bool watchdog_exit = FALSE;
-
-	while (shm->ready == FALSE) {
-		unsigned int counter = 0;
-
-		if (shm->mainpid != 0) {
-			if (check_main_alive() == FALSE)
-				return;
-		}
-
-		while (shm->mainpid == 0) {
-
-			if (check_main_alive() == FALSE)
-				counter++;
-
-			if (counter == 1000) {
-				output(0, "Can't find main at %d\n", shm->mainpid);
-				return;
-			}
-
-			if (shm->exit_reason != STILL_RUNNING)
-				return;
-
-			sleep(1);
-		}
-	}
-
-	output(0, "Watchdog is alive. (pid:%d)\n", watchdog_pid);
-
-	prctl(PR_SET_NAME, (unsigned long) &watchdogname);
-	(void)signal(SIGSEGV, SIG_DFL);
 
 	while (watchdog_exit == FALSE) {
 
@@ -494,6 +463,35 @@ corrupt:
 	kill_all_kids();
 }
 
+static bool wait_for_watchdog(void)
+{
+	while (shm->ready == FALSE) {
+		unsigned int counter = 0;
+
+		if (shm->mainpid != 0) {
+			if (check_main_alive() == FALSE)
+				return FALSE;
+		}
+
+		while (shm->mainpid == 0) {
+
+			if (check_main_alive() == FALSE)
+				counter++;
+
+			if (counter == 1000) {
+				output(0, "Can't find main at %d\n", shm->mainpid);
+				return FALSE;
+			}
+
+			if (shm->exit_reason != STILL_RUNNING)
+				return FALSE;
+
+			sleep(1);
+		}
+	}
+	return TRUE;
+}
+
 void init_watchdog(void)
 {
 	pid_t pid;
@@ -502,9 +500,18 @@ void init_watchdog(void)
 	pid = fork();
 
 	if (pid == 0) {
+		const char watchdogname[17]="trinity-watchdog";
 		__unused__ int ret = nice(-20);
 
 		watchdog_pid = getpid();
+
+		if (wait_for_watchdog() == FALSE)
+			return;
+
+		output(0, "Watchdog is alive. (pid:%d)\n", watchdog_pid);
+
+		prctl(PR_SET_NAME, (unsigned long) &watchdogname);
+		(void)signal(SIGSEGV, SIG_DFL);
 
 		watchdog();
 		output(0, "[%d] Watchdog exiting because %s.\n",
