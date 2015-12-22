@@ -10,14 +10,24 @@
 #include "epoll.h"
 #include "fd.h"
 #include "log.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 
+static void epoll_destructor(struct object *obj)
+{
+	close(obj->epollfd);
+}
+
 static int open_epoll_fds(void)
 {
+	struct objhead *head;
 	unsigned int i = 0;
 	int fd = -1;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EPOLL);
+	head->destroy = &epoll_destructor;
 
 	while (i < MAX_EPOLL_FDS) {
 
