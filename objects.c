@@ -120,3 +120,39 @@ void destroy_objects(enum objecttype type, bool global)
 
 	head->num_entries = 0;
 }
+
+/*
+ * Think of this as a poor mans garbage collector, to prevent
+ * us from exhausting all the available fd's in the system etc.
+ */
+void prune_objects(enum objecttype type, bool global)
+{
+	struct objhead *head;
+	unsigned int num_to_prune;
+
+	/* We don't want to over-prune things and growing a little
+	 * bit past the ->max is fine, we'll clean it up next time.
+	 */
+	if (!(ONE_IN(10)))
+		return;
+
+	head = get_objhead(global, type);
+	num_to_prune = rand() % head->max_entries;
+
+	while (num_to_prune > 0) {
+		struct list_head *node, *list, *tmp;
+
+		list = head->list;
+
+		list_for_each_safe(node, tmp, list) {
+			struct object *obj;
+
+			if (ONE_IN(10)) {
+				obj = (struct object *) node;
+				destroy_object(obj, global, type);
+				num_to_prune--;
+				//TODO: log something
+			}
+		}
+	}
+}

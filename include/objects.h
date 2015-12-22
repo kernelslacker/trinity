@@ -53,6 +53,7 @@ struct object {
 struct objhead {
 	struct list_head *list;
 	unsigned int num_entries;
+	unsigned int max_entries;
 	void (*destroy)(struct object *obj);
 };
 
@@ -67,3 +68,4 @@ void init_object_lists(bool global);
 struct object * get_random_object(enum objecttype type, bool global);
 bool no_objects(enum objecttype type);
 struct objhead * get_objhead(bool global, enum objecttype type);
+void prune_objects(enum objecttype type, bool global);
