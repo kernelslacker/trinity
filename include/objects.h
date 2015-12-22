@@ -63,7 +63,7 @@ struct objhead {
 struct object * alloc_object(void);
 void add_object(struct object *obj, bool global, enum objecttype type);
 void destroy_object(struct object *obj, bool global, enum objecttype type);
-void destroy_objects(enum objecttype type, bool global);
+void destroy_global_objects(void);
 void init_object_lists(bool global);
 struct object * get_random_object(enum objecttype type, bool global);
 bool no_objects(enum objecttype type);

@@ -43,21 +43,6 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 	head->num_entries++;
 }
 
-void destroy_object(struct object *obj, bool global, enum objecttype type)
-{
-	struct objhead *head;
-
-	list_del(&obj->list);
-
-	head = get_objhead(global, type);
-	head->num_entries--;
-
-	if (head->destroy != NULL)
-		head->destroy(obj);
-
-	free(obj);
-}
-
 void init_object_lists(bool global)
 {
 	unsigned int i;
@@ -102,7 +87,28 @@ bool no_objects(enum objecttype type)
 	return FALSE;
 }
 
-void destroy_objects(enum objecttype type, bool global)
+/*
+ * Call the destructor for this object, and then release it.
+ */
+void destroy_object(struct object *obj, bool global, enum objecttype type)
+{
+	struct objhead *head;
+
+	list_del(&obj->list);
+
+	head = get_objhead(global, type);
+	head->num_entries--;
+
+	if (head->destroy != NULL)
+		head->destroy(obj);
+
+	free(obj);
+}
+
+/*
+ * Destroy a whole list of objects.
+ */
+static void destroy_objects(enum objecttype type, bool global)
 {
 	struct list_head *node, *list, *tmp;
 	struct objhead *head;
@@ -119,6 +125,20 @@ void destroy_objects(enum objecttype type, bool global)
 	}
 
 	head->num_entries = 0;
+}
+
+/* Destroy all the global objects.
+ *
+ * We close this before quitting. All OBJ_LOCAL's got destroyed
+ * when the children exited, leaving just these OBJ_GLOBALs
+ * to clean up.
+ */
+void destroy_global_objects(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < MAX_OBJECT_TYPES; i++)
+		destroy_objects(i, OBJ_GLOBAL);
 }
 
 /*

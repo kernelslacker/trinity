@@ -216,7 +216,7 @@ int main(int argc, char* argv[])
 
 abort_early:
 
-	destroy_objects(OBJ_GLOBAL, OBJ_MMAP);
+	destroy_global_objects();
 
 	shutdown_logging();
 
