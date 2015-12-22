@@ -13,7 +13,7 @@ struct object * alloc_object(void)
 	return obj;
 }
 
-static struct objhead * get_objhead(bool global, enum objecttype type)
+struct objhead * get_objhead(bool global, enum objecttype type)
 {
 	struct objhead *head;
 
