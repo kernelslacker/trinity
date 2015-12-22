@@ -17,28 +17,6 @@
 #include "maps.h"
 #include "utils.h"
 
-static void dump_initial_mappings(void)
-{
-	struct list_head *node, *list;
-	struct objhead *head;
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP);
-	list = head->list;
-
-	output(2, "There are %d entries in the map table\n", head->num_entries);
-
-	list_for_each(node, list) {
-		struct object *obj;
-		struct map *m;
-		char buf[11];
-
-		obj = (struct object *) node;
-		m = &obj->map;
-		sizeunit(m->size, buf);
-		output(2, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
-	}
-}
-
 static void alloc_zero_map(unsigned long size, int prot, const char *name)
 {
 	struct object *new;
@@ -129,5 +107,5 @@ void setup_initial_mappings(void)
 		alloc_zero_map(mapping_sizes[i], PROT_WRITE, "PROT_WRITE");
 	}
 
-	dump_initial_mappings();
+	dump_objects(OBJ_GLOBAL, OBJ_MMAP);
 }

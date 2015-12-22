@@ -1,9 +1,83 @@
 #include "list.h"
+#include "log.h"
 #include "objects.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+void dump_objects(bool global, enum objecttype type)
+{
+	struct list_head *node, *list;
+	struct objhead *head;
+
+	head = get_objhead(global, type);
+	list = head->list;
+
+	// TODO: objhead->name
+	output(0, "There are %d entries in the %d list (@%p).\n",
+			head->num_entries, type, list);
+
+	list_for_each(node, list) {
+		struct object *obj;
+		struct map *m;
+		char buf[11];
+
+		obj = (struct object *) node;
+
+		//TODO: Having object.c have knowledge of each object type is kinda
+		// gross. Have some kind of ->dump operation in the objhead maybe?
+
+		switch (type) {
+		case OBJ_MMAP:
+			m = &obj->map;
+			sizeunit(m->size, buf);
+			output(0, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
+			break;
+		case OBJ_FD_PIPE:
+			output(0, "pipefd:%d\n", obj->pipefd);
+			break;
+		case OBJ_FD_FILE:
+			output(0, "filefd:%d\n", obj->filefd);
+			break;
+		case OBJ_FD_PERF:
+			output(0, "perffd:%d\n", obj->perffd);
+			break;
+		case OBJ_FD_EPOLL:
+			output(0, "epollfd:%d\n", obj->epollfd);
+			break;
+		case OBJ_FD_EVENTFD:
+			output(0, "eventfd:%d\n", obj->eventfd);
+			break;
+		case OBJ_FD_TIMERFD:
+			output(0, "timerfd:%d\n", obj->timerfd);
+			break;
+		case OBJ_FD_TESTFILE:
+			output(0, "testfilefd:%d\n", obj->testfilefd);
+			break;
+		case OBJ_FD_MEMFD:
+			output(0, "memfd:%d\n", obj->memfd);
+			break;
+		case OBJ_FD_DRM:
+			output(0, "drmfd:%d\n", obj->drmfd);
+			break;
+		case OBJ_FD_INOTIFY:
+			output(0, "inotifyfd:%d\n", obj->inotifyfd);
+			break;
+		case OBJ_FD_SOCKET:
+			output(0, "socket (fam:%d type:%d protocol:%d) fd:%d\n",
+				obj->sockinfo.triplet.family,
+				obj->sockinfo.triplet.type,
+				obj->sockinfo.triplet.protocol,
+				obj->sockinfo.fd);
+			break;
+		case MAX_OBJECT_TYPES:
+		default:
+			break;
+		}
+	}
+}
+
 
 struct object * alloc_object(void)
 {
