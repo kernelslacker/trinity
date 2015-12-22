@@ -125,15 +125,12 @@ void destroy_objects(enum objecttype type, bool global)
  * Think of this as a poor mans garbage collector, to prevent
  * us from exhausting all the available fd's in the system etc.
  */
-void prune_objects(enum objecttype type, bool global)
+static void __prune_objects(enum objecttype type, bool global)
 {
 	struct objhead *head;
 	unsigned int num_to_prune;
 
-	/* We don't want to over-prune things and growing a little
-	 * bit past the ->max is fine, we'll clean it up next time.
-	 */
-	if (!(ONE_IN(10)))
+	if (RAND_BOOL())
 		return;
 
 	head = get_objhead(global, type);
@@ -159,5 +156,22 @@ void prune_objects(enum objecttype type, bool global)
 				//TODO: log something
 			}
 		}
+	}
+}
+
+void prune_objects(void)
+{
+	unsigned int i;
+
+	/* We don't want to over-prune things and growing a little
+	 * bit past the ->max is fine, we'll clean it up next time.
+	 */
+	if (!(ONE_IN(10)))
+		return;
+
+	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
+		__prune_objects(i, OBJ_LOCAL);
+		// For now, we're only pruning local objects.
+		// __prune_objects(i, OBJ_GLOBAL);
 	}
 }
