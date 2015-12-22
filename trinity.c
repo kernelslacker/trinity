@@ -157,19 +157,7 @@ int main(int argc, char* argv[])
 	if (do_specific_domain == TRUE)
 		find_specific_domain(specific_domain_optarg);
 
-	init_object_lists(OBJ_GLOBAL);
-
-	setup_initial_mappings();
-
-	parse_devices();
-
 	pids_init();
-
-	setup_main_signals();
-
-	/* check if we ctrl'c or something went wrong during init. */
-	if (shm->exit_reason != STILL_RUNNING)
-		goto abort_early;
 
 	init_watchdog();
 
@@ -178,6 +166,12 @@ int main(int argc, char* argv[])
 	pid = fork();
 	if (pid == 0) {
 		shm->mainpid = getpid();
+
+		init_object_lists(OBJ_GLOBAL);
+
+		setup_initial_mappings();
+
+		parse_devices();
 
 		setup_main_signals();
 
@@ -199,6 +193,8 @@ int main(int argc, char* argv[])
 
 		main_loop();
 
+		destroy_global_objects();
+
 		shm->mainpid = 0;
 		_exit(EXIT_SUCCESS);
 	}
@@ -211,10 +207,6 @@ int main(int argc, char* argv[])
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.total_syscalls_done - 1, shm->stats.successes, shm->stats.failures);
-
-abort_early:
-
-	destroy_global_objects();
 
 	shutdown_logging();
 
