@@ -51,8 +51,19 @@ void init_object_lists(bool global)
 		struct objhead *head;
 
 		head = get_objhead(global, i);
+
 		head->list = NULL;
 		head->num_entries = 0;
+
+		/*
+		 * child lists can inherit properties from global lists.
+		 */
+		if (global == OBJ_LOCAL) {
+			struct objhead *globalhead;
+			globalhead = get_objhead(OBJ_GLOBAL, i);
+			head->max_entries = globalhead->max_entries;
+			head->destroy = globalhead->destroy;
+		}
 	}
 }
 
