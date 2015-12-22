@@ -39,7 +39,7 @@ struct map * get_map(void)
 	return map;
 }
 
-static void map_destructor(struct object *obj)
+void map_destructor(struct object *obj)
 {
 	struct map *map;
 

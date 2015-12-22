@@ -19,6 +19,9 @@ extern struct map *initial_mappings;
 #define NR_MAPPING_SIZES 6
 extern unsigned long mapping_sizes[NR_MAPPING_SIZES];
 
+struct object;
+void map_destructor(struct object *obj);
+
 void setup_initial_mappings(void);
 void destroy_initial_mappings(void);
 

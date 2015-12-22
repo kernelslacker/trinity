@@ -115,7 +115,11 @@ out_close:
 
 void setup_initial_mappings(void)
 {
+	struct objhead *head;
 	unsigned int i;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP);
+	head->destroy = &map_destructor;
 
 	setup_mapping_sizes();
 
