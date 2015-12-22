@@ -18,6 +18,7 @@
 #include "random.h"
 #include "signals.h"
 #include "shm.h"
+#include "futex.h"
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
@@ -172,6 +173,8 @@ int main(int argc, char* argv[])
 		setup_initial_mappings();
 
 		parse_devices();
+
+		create_futexes();
 
 		setup_main_signals();
 

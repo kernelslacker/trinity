@@ -12,16 +12,13 @@
 #include <inttypes.h>
 #include "random.h"
 #include "sanitise.h"
+#include "maps.h"
+#include "futex.h"
+#include "log.h"
 
 #define FUTEX_UNLOCKED (0)
 #define FUTEX_LOCKED (!FUTEX_UNLOCKED)
 #define NFUTEXES (5 * num_online_cpus)
-
-/* not related to shm locks */
-static struct __lock {
-	uint32_t futex;
-	pid_t owner_pid;
-} *locks = NULL;
 
 static unsigned long futex_ops[] = {
 	FUTEX_WAIT, FUTEX_WAKE, FUTEX_FD, FUTEX_REQUEUE,
@@ -52,6 +49,78 @@ static inline bool futex_pi_cmd(int cmd)
 	default:
 		return FALSE;
 	}
+}
+
+struct __lock * get_random_lock(void)
+{
+	struct object *obj;
+	bool global;
+
+	/*
+	 * If a child creates a futex, it should add it to OBJ_LOCAL
+	 * list instead, because if it segfaults, we'll end up with
+	 * a stale address in a global list.
+	 */
+	if (this_child() == NULL)
+		global = OBJ_GLOBAL;
+	else
+		global = OBJ_LOCAL;
+
+	obj = get_random_object(OBJ_FUTEX, global);
+	return &obj->lock;
+}
+
+static uint32_t * get_futex_mmap(void)
+{
+	struct object *obj;
+	struct map *map;
+	bool global;
+
+	/*
+	 * If a child creates a futex, it should add it to OBJ_LOCAL
+	 * list instead, because if it segfaults, we'll end up with
+	 * a stale address in a global list.
+	 */
+	if (this_child() == NULL)
+		global = OBJ_GLOBAL;
+	else
+		global = OBJ_LOCAL;
+
+	obj = get_random_object(OBJ_MMAP, global);
+	map = &obj->map;
+
+	return (uint32_t *)map->ptr;
+
+}
+
+/*
+ * Ok, so futexes aren't actually created/destroyed, at least not in the
+ * traditional way, such how we handle fds.
+ *
+ * However, create a special area in the shared memory playground dedicated
+ * to futexes; such that we have "clean" (zero-initialized) list of aligned
+ * 32-bit uaddresses to provide to futex(2).
+ */
+static inline void futex_init_lock(struct __lock *lock)
+{
+	lock->futex = 0;
+	lock->owner_pid = 0;
+}
+
+void create_futexes(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < NFUTEXES; i++) {
+		struct object *obj = alloc_object();
+		struct __lock *lock = &obj->lock;
+
+		futex_init_lock(lock);
+		add_object(obj, OBJ_GLOBAL, OBJ_FUTEX);
+		output(0, "futex[%u] uaddr: %p\n", i, &lock->futex);
+	}
+
+	output(0, "Reserved/initialized %d futexes.\n", NFUTEXES);
 }
 
 static inline uint32_t
@@ -108,17 +177,6 @@ static inline void futex_unlock(struct __lock *lock)
 		syscall(SYS_futex, &lock->futex, FUTEX_WAKE, 1, NULL, 0, 0);
 		syscall(SYS_futex, &lock->futex, FUTEX_UNLOCK_PI, 1, NULL, 0, 0);
 	}
-}
-
-static int init_futex(void)
-{
-	if (!locks) {
-		locks = calloc(NFUTEXES, sizeof(struct __lock));
-		if (!locks)
-			return -1;
-	}
-
-	return 0;
 }
 
 static inline int random_futex_wake_op(void)
@@ -186,25 +244,35 @@ done:
  */
 static void sanitise_futex(struct syscallrecord *rec)
 {
-	struct __lock *lock, *lock2;
+	struct __lock *lock1, *lock2;
 
 	if (RAND_BOOL() && futex_pi_cmd(rec->a2))
 		setpriority(PRIO_PROCESS, 0,
 			    RAND_RANGE(PRIO_MIN, PRIO_MAX - 1));
 
-	if (RAND_BOOL())
-		goto out_setclock;
+	/*
+	 * We can either use one of our reserved futexes, or grab an
+	 * address from the mmap playground -- which spices things up
+	 * from a memory point of view, but should still be pretty
+	 * trivial for the actual futex subsystem.
+	 */
+	if (RAND_BOOL()) {
+		lock1 = get_random_lock();
+		lock2 = get_random_lock();
 
-	lock = &locks[RAND_RANGE(0, NFUTEXES - 1)];
-	lock2 = &locks[RAND_RANGE(0, NFUTEXES - 1)];
-	rec->a1 = (unsigned long) &lock->futex; /* uaddr */
-		  /* ^^ no, we do not have 64-bit futexes :P */
-	rec->a5 = (unsigned long) &lock2->futex; /* uaddr2 */
+		rec->a1 = (unsigned long) lock1->futex; /* uaddr */
+		/* ^^ no, we do not have 64-bit futexes :P */
+		rec->a5 = (unsigned long) lock2->futex; /* uaddr2 */
+	} else {
+		rec->a1 = (unsigned long) get_futex_mmap();
+		rec->a5 = (unsigned long) get_futex_mmap();
+		goto out_setclock;
+	}
 
 	switch (rnd() % 4) {
 	case 0:
-		if (futex_trylock_or_wait(lock, rec))
-			futex_unlock(lock);
+		if (futex_trylock_or_wait(lock1, rec))
+			futex_unlock(lock1);
 		break;
 	case 1:
 		rec->a2 = FUTEX_WAIT_REQUEUE_PI;
@@ -253,9 +321,6 @@ out_setclock:
 
 static void post_futex(struct syscallrecord *rec)
 {
-	unsigned int i;
-	struct __lock *lock = NULL;
-
 	/*
 	 * Restore back to original priority; only useful
 	 * if root, otherwise the prio cannot be set back
@@ -264,14 +329,6 @@ static void post_futex(struct syscallrecord *rec)
 	if (futex_pi_cmd(rec->a2))
 		setpriority(PRIO_PROCESS, 0, 0);
 
-	for (i = 0; i < NFUTEXES; i++) {
-		if (locks[i].owner_pid != getpid())
-			continue;
-
-		lock = &locks[i];
-		futex_unlock(lock);
-	}
-
 	(void)toggle_futex_fail_inj(TRUE);
 }
 
@@ -279,7 +336,6 @@ struct syscallentry syscall_futex = {
 	.name = "futex",
 	.num_args = 6,
 	.arg1name = "uaddr",
-	.arg1type = ARG_ADDRESS,
 	.arg2name = "op",
 	.arg2type = ARG_OP,
 	.arg2list = ARGLIST(futex_ops),
@@ -292,6 +348,5 @@ struct syscallentry syscall_futex = {
 	.rettype = RET_FD,		// FIXME: Needs to mutate depending on 'op' value
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex,
-	.init = init_futex,
 	.post = post_futex,
 };

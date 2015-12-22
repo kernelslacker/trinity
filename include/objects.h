@@ -4,6 +4,7 @@
 #include "maps.h"
 #include "socketinfo.h"
 #include "trinity.h"
+#include "futex.h"
 
 enum objecttype {
 	OBJ_MMAP,
@@ -18,6 +19,7 @@ enum objecttype {
 	OBJ_FD_DRM,
 	OBJ_FD_INOTIFY,
 	OBJ_FD_SOCKET,
+	OBJ_FUTEX,
 	MAX_OBJECT_TYPES,
 };
 
@@ -47,6 +49,8 @@ struct object {
 		int inotifyfd;
 
 		struct socketinfo sockinfo;
+
+		struct __lock lock; /* futex */
 	};
 };
 
