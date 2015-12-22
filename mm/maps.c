@@ -59,8 +59,6 @@ void init_child_mappings(void)
 	struct objhead *head;
 	struct childdata *child = this_child();
 
-	init_object_lists(OBJ_LOCAL);
-
 	head = &child->objects[OBJ_MMAP];
 	head->destroy = &map_destructor;
 

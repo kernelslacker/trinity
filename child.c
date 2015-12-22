@@ -210,6 +210,8 @@ void init_child(struct childdata *child, int childno)
 
 	set_seed(this_child());
 
+	init_object_lists(OBJ_LOCAL);
+
 	init_child_mappings();
 
 	dirty_random_mapping();
