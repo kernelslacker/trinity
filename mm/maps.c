@@ -44,6 +44,7 @@ static void map_destructor(struct object *obj)
 	struct map *map;
 
 	map = &obj->map;
+	munmap(map->ptr, map->size);
 	free(map->name);
 }
 
