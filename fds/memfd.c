@@ -9,6 +9,7 @@
 #include "fd.h"
 #include "log.h"
 #include "memfd.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -24,8 +25,14 @@ static int memfd_create(__unused__ const char *uname, __unused__ unsigned int fl
 #endif
 }
 
+static void memfd_destructor(struct object *obj)
+{
+	close(obj->memfd);
+}
+
 static int open_memfd_fds(void)
 {
+	struct objhead *head;
 	unsigned int i;
 	unsigned int flags[] = {
 		0,
@@ -33,6 +40,9 @@ static int open_memfd_fds(void)
 		MFD_CLOEXEC | MFD_ALLOW_SEALING,
 		MFD_ALLOW_SEALING,
 	};
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD);
+	head->destroy = &memfd_destructor;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
