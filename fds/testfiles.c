@@ -11,6 +11,7 @@
 #include "fd.h"
 #include "files.h"
 #include "log.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -18,9 +19,18 @@
 #include "testfile.h"
 #include "utils.h"
 
+static void testfile_destructor(struct object *obj)
+{
+	close(obj->testfilefd);
+}
+
 static int open_testfile(char *filename)
 {
+	struct objhead *head;
 	int fd;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
+	head->destroy = &testfile_destructor;
 
 	/* file might be around from an earlier run, nuke it. */
 	(void) unlink(filename);
