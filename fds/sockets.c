@@ -9,10 +9,11 @@
 #include <sys/stat.h>
 
 #include "debug.h"
+#include "domains.h"
 #include "log.h"
 #include "net.h"
+#include "objects.h"
 #include "params.h"	// verbose, do_specific_domain
-#include "domains.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -352,8 +353,16 @@ void close_sockets(void)
 	nr_sockets = 0;
 }
 
+static void socket_destructor(struct object *obj)
+{
+	struct socketinfo *si = &obj->sockinfo;
+
+	close(si->fd);
+}
+
 static int open_sockets(void)
 {
+	struct objhead *head;
 	int cachefile;
 	unsigned int domain, type, protocol;
 	unsigned int buffer[3];
@@ -365,6 +374,9 @@ static int open_sockets(void)
 	//FIXME: Is this really true ? We might want to sendfile for eg
 	if (victim_path != NULL)
 		return TRUE;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
+	head->destroy = &socket_destructor;
 
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {
