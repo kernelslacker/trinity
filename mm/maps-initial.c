@@ -138,13 +138,8 @@ void destroy_initial_mappings(void)
 
 	list_for_each_safe(node, tmp, list) {
 		struct object *obj;
-		struct map *m;
 
 		obj = (struct object *) node;
-		m = &obj->map;
-
-		munmap(m->ptr, m->size);
-		free(m->name);
 
 		destroy_object(obj, OBJ_GLOBAL, OBJ_MMAP);
 	}
