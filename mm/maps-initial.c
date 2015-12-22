@@ -30,19 +30,19 @@ static void dump_initial_mappings(void)
 	list_for_each(node, list) {
 		struct object *obj;
 		struct map *m;
+		char buf[11];
 
 		obj = (struct object *) node;
 		m = &obj->map;
-		output(2, " start: %p size:%d  name: %s\n", m->ptr, m->size, m->name);
+		sizeunit(m->size, buf);
+		output(2, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
 	}
 }
 
 static void alloc_zero_map(unsigned long size, int prot, const char *name)
 {
-	struct objhead *head;
 	struct object *new;
 	int fd;
-	char buf[11];
 
 	fd = open("/dev/zero", O_RDWR);
 	if (fd == -1) {
@@ -64,13 +64,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	sprintf(new->map.name, "anon(%s)", name);
 
-	head = &shm->global_objects[OBJ_MMAP];
-
 	add_object(new, OBJ_GLOBAL, OBJ_MMAP);
-
-	sizeunit(size, buf);
-	output(2, "mapping[%d]: (zeropage %s) %p (%s)\n",
-			head->num_entries - 1, name, new->map.ptr, buf);
 
 	close(fd);
 }
