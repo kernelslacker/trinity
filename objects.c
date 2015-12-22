@@ -41,6 +41,12 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 
 	list_add_tail(&obj->list, head->list);
 	head->num_entries++;
+
+	/* if we just added something to a child list, check
+	 * to see if we need to do some pruning.
+	 */
+	if (global == OBJ_LOCAL)
+		prune_objects();
 }
 
 void init_object_lists(bool global)
