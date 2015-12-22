@@ -10,12 +10,19 @@
 #include "inotify.h"
 #include "fd.h"
 #include "log.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 
+static void inotify_destructor(struct object *obj)
+{
+	close(obj->inotifyfd);
+}
+
 static int open_inotify_fds(void)
 {
+	struct objhead *head;
 	struct object *obj;
 	unsigned int i;
 	int fd;
@@ -25,6 +32,9 @@ static int open_inotify_fds(void)
 		IN_CLOEXEC,
 		IN_NONBLOCK | IN_CLOEXEC,
 	};
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_INOTIFY);
+	head->destroy = &inotify_destructor;
 
 	fd = inotify_init();
 	if (fd < 0)
