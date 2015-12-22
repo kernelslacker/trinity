@@ -216,7 +216,7 @@ int main(int argc, char* argv[])
 
 abort_early:
 
-	destroy_initial_mappings();
+	destroy_objects(OBJ_GLOBAL, OBJ_MMAP);
 
 	shutdown_logging();
 

@@ -23,7 +23,6 @@ struct object;
 void map_destructor(struct object *obj);
 
 void setup_initial_mappings(void);
-void destroy_initial_mappings(void);
 
 struct map * get_map(void);
 

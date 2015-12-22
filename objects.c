@@ -101,3 +101,22 @@ bool no_objects(enum objecttype type)
 		return TRUE;
 	return FALSE;
 }
+
+void destroy_objects(enum objecttype type, bool global)
+{
+	struct list_head *node, *list, *tmp;
+	struct objhead *head;
+
+	head = get_objhead(global, type);
+	list = head->list;
+
+	list_for_each_safe(node, tmp, list) {
+		struct object *obj;
+
+		obj = (struct object *) node;
+
+		destroy_object(obj, global, type);
+	}
+
+	head->num_entries = 0;
+}

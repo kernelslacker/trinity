@@ -131,22 +131,3 @@ void setup_initial_mappings(void)
 
 	dump_initial_mappings();
 }
-
-void destroy_initial_mappings(void)
-{
-	struct list_head *node, *list, *tmp;
-	struct objhead *head;
-
-	head = &shm->global_objects[OBJ_MMAP];
-	list = head->list;
-
-	list_for_each_safe(node, tmp, list) {
-		struct object *obj;
-
-		obj = (struct object *) node;
-
-		destroy_object(obj, OBJ_GLOBAL, OBJ_MMAP);
-	}
-
-	head->num_entries = 0;
-}
