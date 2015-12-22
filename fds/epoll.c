@@ -58,7 +58,7 @@ static int get_rand_epoll_fd(void)
 {
 	struct object *obj;
 
-	if (no_objects(OBJ_FD_EPOLL) == TRUE)
+	if (objects_empty(OBJ_FD_EPOLL) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_EPOLL, OBJ_GLOBAL);

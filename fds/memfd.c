@@ -73,7 +73,7 @@ static int get_rand_memfd_fd(void)
 	struct object *obj;
 
 	/* check if eventfd unavailable/disabled. */
-	if (no_objects(OBJ_FD_MEMFD) == TRUE)
+	if (objects_empty(OBJ_FD_MEMFD) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_MEMFD, OBJ_GLOBAL);

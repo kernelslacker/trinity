@@ -68,7 +68,7 @@ static int get_rand_timerfd_fd(void)
 	struct object *obj;
 
 	/* check if timerfd unavailable/disabled. */
-	if (no_objects(OBJ_FD_TIMERFD) == TRUE)
+	if (objects_empty(OBJ_FD_TIMERFD) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TIMERFD, OBJ_GLOBAL);

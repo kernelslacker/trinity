@@ -94,7 +94,7 @@ static int get_rand_testfile_fd(void)
 	struct object *obj;
 
 	/* check if testfilefd's unavailable/disabled. */
-	if (no_objects(OBJ_FD_TESTFILE) == TRUE)
+	if (objects_empty(OBJ_FD_TESTFILE) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TESTFILE, OBJ_GLOBAL);

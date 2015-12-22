@@ -61,7 +61,7 @@ static int get_rand_perf_fd(void)
 	struct object *obj;
 
 	/* check if perf unavailable/disabled. */
-	if (no_objects(OBJ_FD_PERF) == TRUE)
+	if (objects_empty(OBJ_FD_PERF) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_PERF, OBJ_GLOBAL);

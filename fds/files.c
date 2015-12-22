@@ -148,7 +148,7 @@ static int get_rand_file_fd(void)
 {
 	struct object *obj;
 
-	if (no_objects(OBJ_FD_FILE) == TRUE)
+	if (objects_empty(OBJ_FD_FILE) == TRUE)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_FILE, OBJ_GLOBAL);
