@@ -7,6 +7,7 @@ struct syscallentry syscall_inotify_init = {
 	.name = "inotify_init",
 	.num_args = 0,
 	.group = GROUP_VFS,
+	.rettype = RET_FD,
 };
 
 /*
@@ -29,4 +30,5 @@ struct syscallentry syscall_inotify_init1 = {
 	.arg1type = ARG_LIST,
 	.arg1list = ARGLIST(inotify_init1_flags),
 	.group = GROUP_VFS,
+	.rettype = RET_FD,
 };
