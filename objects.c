@@ -159,7 +159,11 @@ static void __prune_objects(enum objecttype type, bool global)
 	if (head->max_entries == 0)
 		return;
 
-	num_to_prune = rand() % head->max_entries;
+	/* only prune full lists. */
+	if (head->num_entries < head->max_entries)
+		return;
+
+	num_to_prune = rand() % head->num_entries;
 
 	while (num_to_prune > 0) {
 		struct list_head *node, *list, *tmp;
