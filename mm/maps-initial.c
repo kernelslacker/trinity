@@ -22,7 +22,7 @@ static void dump_initial_mappings(void)
 	struct list_head *node, *list;
 	struct objhead *head;
 
-	head = &shm->global_objects[OBJ_MMAP];
+	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP);
 	list = head->list;
 
 	output(2, "There are %d entries in the map table\n", head->num_entries);

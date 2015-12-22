@@ -57,9 +57,8 @@ void init_child_mappings(void)
 {
 	struct list_head *globallist, *node;
 	struct objhead *head;
-	struct childdata *child = this_child();
 
-	head = &child->objects[OBJ_MMAP];
+	head = get_objhead(OBJ_LOCAL, OBJ_MMAP);
 	head->destroy = &map_destructor;
 
 	globallist = shm->global_objects[OBJ_MMAP].list;
