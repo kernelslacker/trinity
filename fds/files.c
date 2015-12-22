@@ -11,6 +11,7 @@
 #include "fd.h"
 #include "files.h"
 #include "log.h"
+#include "objects.h"
 #include "pathnames.h"
 #include "random.h"
 #include "syscalls/syscalls.h"
@@ -104,9 +105,18 @@ retry_flags:
 	return fd;
 }
 
+static void filefd_destructor(struct object *obj)
+{
+	close(obj->filefd);
+}
+
 static int open_files(void)
 {
+	struct objhead *head;
 	unsigned int i, nr_to_open;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FILE);
+	head->destroy = &filefd_destructor;
 
 	generate_filelist();
 
