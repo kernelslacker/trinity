@@ -137,6 +137,11 @@ void prune_objects(enum objecttype type, bool global)
 		return;
 
 	head = get_objhead(global, type);
+
+	/* 0 = don't ever prune. */
+	if (head->max_entries == 0)
+		return;
+
 	num_to_prune = rand() % head->max_entries;
 
 	while (num_to_prune > 0) {
