@@ -50,7 +50,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 		exit(EXIT_FAILURE);
 	}
 
-	new = zmalloc(sizeof(struct object));
+	new = alloc_object();
 	new->map.size = size;
 	new->map.prot = prot;
 	new->map.type = TRINITY_MAP_INITIAL;

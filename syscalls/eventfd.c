@@ -18,7 +18,7 @@ static void post_eventfd_create(struct syscallrecord *rec)
 	if (fd == -1)
 		return;
 
-	new = zmalloc(sizeof(struct object));
+	new = alloc_object();
 	new->eventfd = fd;
 	add_object(new, OBJ_LOCAL, OBJ_FD_EVENTFD);
 }

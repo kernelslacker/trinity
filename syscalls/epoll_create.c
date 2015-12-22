@@ -16,7 +16,7 @@ static void post_epoll_create(struct syscallrecord *rec)
 	if (fd == -1)
 		return;
 
-	new = zmalloc(sizeof(struct object));
+	new = alloc_object();
 	new->epollfd = fd;
 	add_object(new, OBJ_LOCAL, OBJ_FD_EPOLL);
 }

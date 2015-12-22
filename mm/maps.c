@@ -76,7 +76,7 @@ void init_child_mappings(void)
 		globalobj = (struct object *) node;
 		m = &globalobj->map;
 
-		newobj = zmalloc(sizeof(struct object));
+		newobj = alloc_object();
 		newobj->map.ptr = m->ptr;
 		newobj->map.name = strdup(m->name);
 		newobj->map.size = m->size;

@@ -72,7 +72,7 @@ static void post_mmap(struct syscallrecord *rec)
 	if (p == MAP_FAILED)
 		return;
 
-	new = zmalloc(sizeof(struct object));
+	new = alloc_object();
 	new->map.name = strdup("misc");
 	new->map.size = rec->a2;
 	new->map.prot = rec->a3;
