@@ -344,10 +344,7 @@ static int open_sockets(void)
 {
 	struct objhead *head;
 	int cachefile;
-	unsigned int domain, type, protocol;
-	unsigned int buffer[3];
 	int bytesread = -1;
-	int fd;
 	int ret;
 
 	/* If we're doing victim files we probably don't care about sockets. */
@@ -368,6 +365,10 @@ static int open_sockets(void)
 	lock_cachefile(cachefile, F_RDLCK);
 
 	while (bytesread != 0) {
+		unsigned int domain, type, protocol;
+		unsigned int buffer[3];
+		int fd;
+
 		bytesread = read(cachefile, buffer, sizeof(int) * 3);
 		if (bytesread == 0)
 			break;
