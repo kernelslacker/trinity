@@ -6,14 +6,24 @@
 #include <asm/unistd.h>
 
 #include "fd.h"
+#include "objects.h"
 #include "perf.h"
 #include "shm.h"
 #include "log.h"
 #include "sanitise.h"
 
+static void perffd_destructor(struct object *obj)
+{
+	close(obj->perffd);
+}
+
 static int open_perf_fds(void)
 {
+	struct objhead *head;
 	unsigned int i = 0;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
+	head->destroy = &perffd_destructor;
 
 	while (i < MAX_PERF_FDS) {
 		struct syscallrecord *rec;
