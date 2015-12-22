@@ -4,6 +4,7 @@
 #include "fd.h"
 #include "log.h"
 #include "memfd.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -23,6 +24,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <drm/drm.h>
+
+static void drmfd_destructor(struct object *obj)
+{
+	close(obj->drmfd);
+}
 
 static int create_dumb(__unused__ int fd)
 {
@@ -67,10 +73,14 @@ static void add_drm_obj(int fd)
 
 static int open_drm_fds(void)
 {
+	struct objhead *head;
 	int fd, dfd;
 	DIR *dir;
 	struct dirent *entry;
 	char buf[128];
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DRM);
+	head->destroy = &drmfd_destructor;
 
 	dir = opendir("/dev/dri/");
 	if (!dir)
