@@ -463,7 +463,7 @@ corrupt:
 	kill_all_kids();
 }
 
-static bool wait_for_watchdog(void)
+static bool wait_for_shmready(void)
 {
 	while (shm->ready == FALSE) {
 		unsigned int counter = 0;
@@ -505,7 +505,7 @@ void init_watchdog(void)
 
 		watchdog_pid = getpid();
 
-		if (wait_for_watchdog() == FALSE)
+		if (wait_for_shmready() == FALSE)
 			return;
 
 		output(0, "Watchdog is alive. (pid:%d)\n", watchdog_pid);
