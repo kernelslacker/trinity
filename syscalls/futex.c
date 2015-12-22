@@ -202,6 +202,8 @@ static void sanitise_futex(struct syscallrecord *rec)
 
 out_setclock:
 	switch (rec->a2) {
+	case FUTEX_WAIT:
+	case FUTEX_WAIT_PRIVATE:
 	case FUTEX_WAIT_BITSET:
 	case FUTEX_WAIT_BITSET_PRIVATE:
 	case FUTEX_WAIT_REQUEUE_PI:
