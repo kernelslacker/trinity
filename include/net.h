@@ -38,8 +38,6 @@ struct sockopt {
 	unsigned long optlen;
 };
 
-void close_sockets(void);
-
 const struct fd_provider socket_fd_provider;
 
 struct socketinfo * get_rand_socketinfo(void);

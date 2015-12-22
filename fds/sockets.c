@@ -311,53 +311,33 @@ out_unlock:
 	return ret;
 }
 
-
-void close_sockets(void)
-{
-	int fd;
-	struct linger ling = { .l_onoff = FALSE, .l_linger = 0 };
-	struct list_head *globallist, *node;
-
-	globallist = shm->global_objects[OBJ_FD_SOCKET].list;
-
-	list_for_each(node, globallist) {
-		struct object *obj;
-		struct socketinfo *si;
-
-		obj = (struct object *) node;
-		si = &obj->sockinfo;
-
-		//FIXME: This is a workaround for a weird bug where we hang forevre
-		// waiting for bluetooth sockets when we setsockopt.
-		// Hopefully at some point we can remove this when someone figures out what's going on.
-		if (si->triplet.family == PF_BLUETOOTH)
-			continue;
-
-		/* Grab an fd, and nuke it before someone else uses it. */
-		fd = si->fd;
-		si->fd = 0;
-
-		/* disable linger */
-		(void) setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
-
-		(void) shutdown(fd, SHUT_RDWR);
-
-		if (close(fd) != 0)
-			output(1, "failed to close socket [%d:%d:%d].(%s)\n",
-				si->triplet.family,
-				si->triplet.type,
-				si->triplet.protocol,
-				strerror(errno));
-	}
-
-	nr_sockets = 0;
-}
-
 static void socket_destructor(struct object *obj)
 {
 	struct socketinfo *si = &obj->sockinfo;
+	struct linger ling = { .l_onoff = FALSE, .l_linger = 0 };
+	int fd;
 
-	close(si->fd);
+	//FIXME: This is a workaround for a weird bug where we hang forevre
+	// waiting for bluetooth sockets when we setsockopt.
+	// Hopefully at some point we can remove this when someone figures out what's going on.
+	if (si->triplet.family == PF_BLUETOOTH)
+		return;
+
+	/* Grab an fd, and nuke it before someone else uses it. */
+	fd = si->fd;
+	si->fd = 0;
+
+	/* disable linger */
+	(void) setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
+
+	(void) shutdown(fd, SHUT_RDWR);
+
+	if (close(fd) != 0)
+		output(1, "failed to close socket [%d:%d:%d].(%s)\n",
+			si->triplet.family,
+			si->triplet.type,
+			si->triplet.protocol,
+			strerror(errno));
 }
 
 static int open_sockets(void)
@@ -406,7 +386,6 @@ regenerate:
 				close(cachefile);
 				unlink(cachefilename);
 
-				close_sockets();
 				ret = generate_sockets();
 				return ret;
 		}

@@ -199,8 +199,6 @@ int main(int argc, char* argv[])
 
 		main_loop();
 
-		close_sockets();
-
 		shm->mainpid = 0;
 		_exit(EXIT_SUCCESS);
 	}
