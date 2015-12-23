@@ -360,6 +360,9 @@ static void stall_genocide(void)
 	for_each_child(i) {
 		struct childdata *child = shm->children[i];
 
+		if (child->pid == EMPTY_PIDSLOT)
+			continue;
+
 		if (RAND_BOOL()) {
 			int ret;
 
