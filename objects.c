@@ -155,13 +155,16 @@ struct object * get_random_object(enum objecttype type, bool global)
 {
 	struct objhead *head;
 	struct list_head *node, *list;
-	unsigned int i, j = 0;
+	unsigned int i, j = 0, n;
 
 	head = get_objhead(global, type);
 
 	list = head->list;
 
-	i = rnd() % head->num_entries;
+	n = head->num_entries;
+	if (n == 0)
+		return NULL;
+	i = rnd() % n;
 
 	list_for_each(node, list) {
 		struct object *m;
