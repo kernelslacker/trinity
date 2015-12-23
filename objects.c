@@ -264,9 +264,9 @@ static void __prune_objects(enum objecttype type, bool global)
 		list = head->list;
 
 		list_for_each_safe(node, tmp, list) {
-			struct object *obj;
-
 			if (ONE_IN(10)) {
+				struct object *obj;
+
 				obj = (struct object *) node;
 				destroy_object(obj, global, type);
 				num_to_prune--;
