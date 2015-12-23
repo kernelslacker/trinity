@@ -9,7 +9,7 @@
 
 static void sanitise_msgrcv(struct syscallrecord *rec)
 {
-	rec->a3 = rand() % MSGMAX;
+	rec->a3 = rnd() % MSGMAX;
 }
 
 static unsigned long msgrcv_flags[] = {
