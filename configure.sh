@@ -197,6 +197,31 @@ else
 fi
 
 #############################################################################################
+# Do glibc headers provides nvme ioctls
+
+echo -n "[*] Checking if glibc headers provide nvme ioctls.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <sys/ioctl.h>
+#include <linux/nvme.h>
+
+int main(int argc, char* argv[])
+{
+	unsigned int foo = NVME_IOCTL_IO_CMD;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_NVME 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/if_alg.h USE_IF_ALG
@@ -213,7 +238,6 @@ check_header execinfo.h USE_BACKTRACE
 check_header netatalk/at.h USE_APPLETALK
 check_header netrom/netrom.h USE_NETROM
 check_header netrose/rose.h USE_ROSE
-check_header linux/nvme.h USE_NVME
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"
 
