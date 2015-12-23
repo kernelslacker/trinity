@@ -271,6 +271,9 @@ enum {
 #ifndef RTNLGRP_MPLS_ROUTE
 #define RTNLGRP_MPLS_ROUTE 27
 #endif
+#ifndef RTNLGRP_NSID
+#define RTNLGRP_NSID 28
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
