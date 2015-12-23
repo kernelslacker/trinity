@@ -329,7 +329,7 @@ static void post_futex(struct syscallrecord *rec)
 	if (futex_pi_cmd(rec->a2))
 		setpriority(PRIO_PROCESS, 0, 0);
 
-	(void)toggle_futex_fail_inj(TRUE);
+	(void)toggle_futex_fail_inj(FALSE);
 }
 
 struct syscallentry syscall_futex = {
