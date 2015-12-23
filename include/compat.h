@@ -268,6 +268,9 @@ enum {
 #ifndef NETLINK_SOCK_DIAG
 #define NETLINK_SOCK_DIAG 4
 #endif
+#ifndef RTNLGRP_MPLS_ROUTE
+#define RTNLGRP_MPLS_ROUTE 27
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
