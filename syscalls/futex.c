@@ -67,6 +67,8 @@ struct __lock * get_random_lock(void)
 		global = OBJ_LOCAL;
 
 	obj = get_random_object(OBJ_FUTEX, global);
+	if (!obj)
+		obj = get_random_object(OBJ_MMAP, OBJ_GLOBAL);
 	return &obj->lock;
 }
 
@@ -87,8 +89,10 @@ static uint32_t * get_futex_mmap(void)
 		global = OBJ_LOCAL;
 
 	obj = get_random_object(OBJ_MMAP, global);
-	map = &obj->map;
+	if (!obj)
+		obj = get_random_object(OBJ_MMAP, OBJ_GLOBAL);
 
+	map = &obj->map;
 	return (uint32_t *)map->ptr;
 
 }
