@@ -1,6 +1,6 @@
 #pragma once
 
-#include <sys/time.h>
+#include <time.h>
 #include <sys/types.h>
 #include "locks.h"
 #include "types.h"
@@ -20,7 +20,7 @@ enum syscallstate {
 };
 
 struct syscallrecord {
-	struct timeval tv;
+	struct timespec tp;
 	unsigned int nr;
 	unsigned long a1;
 	unsigned long a2;

@@ -68,7 +68,7 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 
 void dump_syscallrec(struct syscallrecord *rec)
 {
-	output(0, " tv.tvsec=%d tv.usec=%d\n", rec->tv.tv_sec, rec->tv.tv_usec);
+	output(0, " tp.tv_sec=%d tp.tv_nsec=%ld\n", rec->tp.tv_sec, rec->tp.tv_nsec);
 	output(0, " nr:%d a1:%lx a2:%lx a3:%lx a4:%lx a5:%lx a6:%lx retval:%ld errno_post:%d\n",
 		rec->nr, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6, rec->retval, rec->errno_post);
 	output(0, " op_nr:%lx do32bit:%d\n", rec->op_nr, rec->do32bit);

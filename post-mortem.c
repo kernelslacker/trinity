@@ -53,12 +53,12 @@ static void dump_syscall_records(void)
 
 void tainted_postmortem(int taint)
 {
-	struct timeval taint_tv;
+	struct timespec taint_tp;
 
 	shm->postmortem_in_progress = TRUE;
 
-	//TODO: Sort syscall rec output by timeval, and mark when we detected taint_tv.
-	gettimeofday(&taint_tv, NULL);
+	//TODO: Sort syscall rec output by timespec, and mark when we detected taint_tp.
+	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
 
 	panic(EXIT_KERNEL_TAINTED);
 

@@ -297,7 +297,7 @@ static void stuck_syscall_info(struct childdata *child)
 static bool is_child_making_progress(struct childdata *child)
 {
 	struct syscallrecord *rec;
-	struct timeval tv;
+	struct timespec tp;
 	time_t diff, old, now;
 	pid_t pid;
 
@@ -308,14 +308,14 @@ static bool is_child_making_progress(struct childdata *child)
 
 	rec = &child->syscall;
 
-	old = rec->tv.tv_sec;
+	old = rec->tp.tv_sec;
 
 	/* haven't done anything yet. */
 	if (old == 0)
 		return TRUE;
 
-	gettimeofday(&tv, NULL);
-	now = tv.tv_sec;
+	clock_gettime(CLOCK_MONOTONIC, &tp);
+	now = tp.tv_sec;
 
 	if (old > now)
 		diff = old - now;

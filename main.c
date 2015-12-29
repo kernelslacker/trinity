@@ -127,7 +127,7 @@ void reap_child(pid_t childpid)
 
 	child = shm->children[i];
 	child->pid = EMPTY_PIDSLOT;
-	child->syscall.tv.tv_sec = 0;
+	child->syscall.tp = (struct timespec){};
 	shm->running_childs--;
 	shm->last_reaped = childpid;
 

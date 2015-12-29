@@ -80,13 +80,13 @@ static void check_sanity(struct syscallrecord *rec, struct syscallrecord *stash)
 {
 	unsigned int len;
 
-	if (stash->tv.tv_sec != 0) {
+	if (stash->tp.tv_sec != 0) {
 		// FIXME: Should factor in loadavg here, as with enough pids, a child can exceed 60s
 		//  without getting scheduled.
-		if (rec->tv.tv_sec - stash->tv.tv_sec > 60) {
-			output(0, "Sanity check failed. Something stomped on rec->tv after syscall:%s(%lx, %lx, %lx)  was:%lx now:%lx.\n",
+		if (rec->tp.tv_sec - stash->tp.tv_sec > 60) {
+			output(0, "Sanity check failed. Something stomped on rec->tp after syscall:%s(%lx, %lx, %lx)  was:%lx now:%lx.\n",
 				print_syscall_name(stash->nr, stash->do32bit),
-				stash->a1, stash->a2, stash->a3, stash->tv.tv_sec, rec->tv.tv_sec);
+				stash->a1, stash->a2, stash->a3, stash->tp.tv_sec, rec->tp.tv_sec);
 			fail_sanity();
 		}
 	}
