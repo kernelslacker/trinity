@@ -3,6 +3,7 @@
 #include <linux/ioctl.h>
 #include <linux/nvme.h>
 
+#include "compat.h"
 #include "utils.h"
 #include "ioctls.h"
 

@@ -268,6 +268,18 @@ enum {
 #ifndef NETLINK_SOCK_DIAG
 #define NETLINK_SOCK_DIAG 4
 #endif
+#ifndef RTNLGRP_DCB
+#define RTNLGRP_DCB 23
+#endif
+#ifndef RTNLGRP_IPV4_NETCONF
+#define RTNLGRP_IPV4_NETCONF 24
+#endif
+#ifndef RTNLGRP_IPV6_NETCONF
+#define RTNLGRP_IPV6_NETCONF 25
+#endif
+#ifndef RTNLGRP_MDB
+#define RTNLGRP_MDB 26
+#endif
 #ifndef RTNLGRP_MPLS_ROUTE
 #define RTNLGRP_MPLS_ROUTE 27
 #endif
@@ -1054,4 +1066,9 @@ struct kvm_get_htab_fd {
 #endif
 #ifndef POLL_BUSY_LOOP
 #define POLL_BUSY_LOOP 0x8000
+#endif
+
+/* linux/nvme_ioctl.h */
+#ifndef NVME_IOCTL_RESET
+#define NVME_IOCTL_RESET _IO('N', 0x44)
 #endif
