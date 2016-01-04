@@ -37,6 +37,9 @@ CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 # needed for show_backtrace() to work correctly.
 LDFLAGS += -rdynamic
 
+# glibc versions before 2.17 for clock_gettime
+LDLIBS += -lrt
+
 # gcc only.
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op
@@ -96,7 +99,7 @@ DEPDIR= .deps
 -include $(SRCS:%.c=$(DEPDIR)/%.d)
 
 trinity: version test $(OBJS) $(HEADERS)
-	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS)
+	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS) $(LDLIBS)
 	@mkdir -p tmp
 
 df = $(DEPDIR)/$(*D)/$(*F)
