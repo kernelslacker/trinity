@@ -49,7 +49,7 @@ static int open_memfd_fds(void)
 		char namestr[] = "memfdN";
 		int fd;
 
-		sprintf(namestr, "memfd%d", i + 1);
+		sprintf(namestr, "memfd%u", i + 1);
 
 		fd = memfd_create(namestr, flags[i]);
 		if (fd < 0)
