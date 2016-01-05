@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
+#include "types.h"
 
 struct lock_struct {
 	volatile unsigned char lock;
@@ -16,6 +17,6 @@ typedef struct lock_struct lock_t;
 void lock(lock_t *_lock);
 void unlock(lock_t *_lock);
 
-void check_all_locks(void);
+bool check_all_locks(void);
 
 void bust_lock(lock_t *_lock);

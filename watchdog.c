@@ -163,7 +163,8 @@ static void kill_all_kids(void)
 			shm->running_childs = 0;
 
 		/* Check that no dead children hold locks. */
-		check_all_locks();
+		while (check_all_locks() == TRUE)
+			reap_dead_kids();
 
 		/* wait a second to give kids a chance to exit. */
 		sleep(1);
@@ -392,9 +393,8 @@ static void watchdog(void)
 		if (check_main_alive() == FALSE)
 			goto main_dead;
 
-		reap_dead_kids();
-
-		check_all_locks();
+		while (check_all_locks() == TRUE)
+			reap_dead_kids();
 
 		if (syscalls_todo && (shm->stats.total_syscalls_done >= syscalls_todo)) {
 			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);

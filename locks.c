@@ -16,43 +16,55 @@
  */
 #define STEAL_THRESHOLD 1000000
 
-static void check_lock(lock_t *_lock)
+static bool check_lock(lock_t *_lock)
 {
 	pid_t pid;
 
 	if (_lock->lock != LOCKED)
-		return;
+		return FALSE;
 
 	/* First the easy case. If it's held by a dead pid, release it. */
 	pid = _lock->owner;
 	if (pid_alive(pid) == -1) {
 		if (errno != ESRCH)
-			return;
+			return TRUE;
 
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
-		unlock(_lock);
-		return;
+		goto unlock;
 	}
 
+	//FIXME: Remove the whole stealing mechanism.
 	/* If a pid has had a lock a long time, something is up. */
 	if (_lock->contention > STEAL_THRESHOLD) {
 		debugf("pid %d has held lock for too long. Releasing, and killing.\n", pid);
 		kill_pid(pid);
-		unlock(_lock);
-		return;
+		goto unlock;
 	}
-	return;
+	return FALSE;
+unlock:
+	unlock(_lock);
+	return TRUE;
 }
 
-void check_all_locks(void)
+/* returns TRUE if something is awry */
+bool check_all_locks(void)
 {
 	unsigned int i;
+	bool ret = FALSE;
 
 	check_lock(&shm->reaper_lock);
 	check_lock(&shm->syscalltable_lock);
 
-	for_each_child(i)
-		check_lock(&shm->children[i]->syscall.lock);
+	for_each_child(i) {
+		bool x;
+
+		x = check_lock(&shm->children[i]->syscall.lock);
+		ret |= x;
+		if (x == TRUE) {
+			dump_childdata(shm->children[i]);
+		}
+	}
+	return ret;
 }
 
 void lock(lock_t *_lock)
