@@ -59,7 +59,7 @@ static void fabricate_onepage_struct(char *page)
 static void generate_random_page(char *page)
 {
 	unsigned int i;
-	unsigned int p = 0;
+	char *p;
 
 	switch (rnd() % 8) {
 
@@ -106,55 +106,38 @@ static void generate_random_page(char *page)
 
 	/* ascii representation of a random number */
 	case 7:
-		switch (rnd() % 3) {
-		case 0:
+		p = page;
+
+		if (RAND_BOOL()) {
+			/* hex */
 			switch (rnd() % 3) {
-			case 0:	p = sprintf(page, "%s%lu",
-					RAND_BOOL() ? "-" : "",
-					(unsigned long) rand64());
+			case 0:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
 				break;
-			case 1:	p = sprintf(page, "%s%ld",
-					RAND_BOOL() ? "-" : "",
-					(unsigned long) rand64());
+			case 1:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
 				break;
-			case 2:	p = sprintf(page, "%lx", (unsigned long) rand64());
+			case 2:	p += sprintf(p, "0x%x", (int) rand32());
 				break;
 			}
 			break;
+		} else {
+			/* decimal */
 
-		case 1:
+			/* perhaps negative ?*/
+			if (RAND_BOOL())
+				p += sprintf(p, "-");
+
 			switch (rnd() % 3) {
-			case 0:	p = sprintf(page, "%s%u",
-					RAND_BOOL() ? "-" : "",
-					(unsigned int) rand32());
+			case 0:	p += sprintf(p, "%lu", (unsigned long) rand64());
 				break;
-			case 1:	p = sprintf(page, "%s%d",
-					RAND_BOOL() ? "-" : "",
-					(int) rand32());
+			case 1:	p += sprintf(p, "%u", (unsigned int) rand32());
 				break;
-			case 2:	p = sprintf(page, "%x", (int) rand32());
+			case 2:	p += sprintf(p, "%u", (unsigned char) rnd());
 				break;
 			}
 			break;
-
-		case 2:
-			switch (rnd() % 3) {
-			case 0:	p = sprintf(page, "%s%u",
-					RAND_BOOL() ? "-" : "",
-					(unsigned char) rnd());
-				break;
-			case 1:	p = sprintf(page, "%s%d",
-					RAND_BOOL() ? "-" : "",
-					(char) rnd());
-				break;
-			case 2:	p = sprintf(page, "%x", (char) rnd());
-				break;
-			}
-			break;
-
 		}
 
-		page[p] = 0;
+		*p = 0;
 		break;
 	}
 }
