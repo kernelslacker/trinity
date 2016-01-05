@@ -12,7 +12,8 @@ struct lock_struct {
 typedef struct lock_struct lock_t;
 
 #define UNLOCKED 0
-#define LOCKED 1
+#define LOCKING 1
+#define LOCKED 2
 
 void lock(lock_t *_lock);
 void unlock(lock_t *_lock);

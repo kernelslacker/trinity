@@ -20,6 +20,7 @@ static bool check_lock(lock_t *_lock)
 {
 	pid_t pid;
 
+	/* We don't care about unlocked or locking-in-progress */
 	if (_lock->lock != LOCKED)
 		return FALSE;
 
@@ -71,7 +72,7 @@ void lock(lock_t *_lock)
 {
 	pid_t pid = getpid();
 
-	while (_lock->lock == LOCKED) {
+	while (_lock->lock != UNLOCKED) {
 		if (_lock->owner == pid) {
 			debugf("lol, already have lock!\n");
 			show_backtrace();
@@ -101,9 +102,10 @@ void lock(lock_t *_lock)
 		usleep(1);
 	}
 
-	_lock->lock = LOCKED;
+	_lock->lock = LOCKING;
 	_lock->contention = 0;
 	_lock->owner = pid;
+	_lock->lock = LOCKED;
 }
 
 void unlock(lock_t *_lock)
@@ -123,7 +125,7 @@ void unlock(lock_t *_lock)
  */
 void bust_lock(lock_t *_lock)
 {
-	if (_lock->lock != LOCKED)
+	if (_lock->lock == UNLOCKED)
 		return;
 	if (getpid() != _lock->owner)
 		return;
