@@ -57,12 +57,12 @@ static int open_testfile(char *filename)
 static int open_testfile_fds(void)
 {
 	char *filename;
-	unsigned int i = 0;
+	unsigned int i = 1;
 	unsigned int fails = 0;
 
 	filename = zmalloc(64);
 
-	while (i < MAX_TESTFILE_FDS) {
+	while (i <= MAX_TESTFILE_FDS) {
 		int fd;
 
 		sprintf(filename, "trinity-testfile%u", i);
