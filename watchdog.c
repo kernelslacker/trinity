@@ -5,7 +5,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
-#include <syslog.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
