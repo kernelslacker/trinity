@@ -17,3 +17,5 @@ extern void __BUG(const char *bugtxt, const char *filename, const char *funcname
 
 void dump_childdata(struct childdata *child);
 void dump_syscallrec(struct syscallrecord *rec);
+
+void syslogf(const char *fmt, ...);

@@ -9,6 +9,7 @@
 #endif
 #include <stdio.h>
 #include <stdarg.h>
+#include <syslog.h>
 #include "child.h"
 #include "debug.h"
 #include "log.h"
@@ -119,4 +120,22 @@ void debugf(const char *fmt, ...)
 	vsprintf(debugbuf, fmt, args);
 	va_end(args);
 	output(0, debugbuf);
+}
+
+/* This is a bit crappy, wrapping a varargs fn with another,
+ * but this saves us having to do the openlog/closelog for every
+ * case where we want to write a message.
+ */
+void syslogf(const char *fmt, ...)
+{
+	char debugbuf[BUFSIZE];
+	va_list args;
+
+	va_start(args, fmt);
+	vsprintf(debugbuf, fmt, args);
+	va_end(args);
+
+	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
+	syslog(LOG_CRIT, "%s", debugbuf);
+	closelog();
 }
