@@ -118,7 +118,6 @@ static void generate_random_page(char *page)
 			case 2:	p += sprintf(p, "0x%x", (int) rand32());
 				break;
 			}
-			break;
 		} else {
 			/* decimal */
 
@@ -134,7 +133,6 @@ static void generate_random_page(char *page)
 			case 2:	p += sprintf(p, "%u", (unsigned char) rnd());
 				break;
 			}
-			break;
 		}
 
 		*p = 0;
