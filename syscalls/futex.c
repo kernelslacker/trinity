@@ -197,9 +197,10 @@ static inline int random_futex_wake_op(void)
 	return RAND_ARRAY(op_flags) | RAND_ARRAY(cmp_flags);
 }
 
-static int toggle_futex_fail_inj(bool on)
+static int toggle_futex_fail_inj(__unused__ bool on)
 {
 	int err = 0;
+#if 0
 
 	if (access("/proc/self/make-it-fail", W_OK) == -1)
 		goto done;
@@ -226,6 +227,7 @@ static int toggle_futex_fail_inj(bool on)
 	err = system("echo Y > /sys/kernel/debug/fail_futex/task-filter");
 	err = system("echo 1 > /sys/kernel/debug/fail_futex/times");
 done:
+#endif
 	return err;
 }
 
