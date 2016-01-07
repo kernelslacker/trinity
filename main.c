@@ -263,23 +263,13 @@ static void handle_child(pid_t childpid, int childstatus)
 static void handle_children(void)
 {
 	unsigned int i;
-	int childstatus;
-	pid_t pid;
 
 	if (shm->running_childs == 0)
 		return;
 
-	/* First, we wait for *any* child to wake us up. */
-	pid = waitpid(-1, &childstatus, WUNTRACED | WCONTINUED);
-
-	/* We were awoken, handle it. */
-	handle_child(pid, childstatus);
-
-	/* While we're awake, let's see if the other children need attention.
-	 * We do this instead of just waitpid(-1) again so that there's no way
-	 * for any one child to starve the others of attention.
-	 */
 	for_each_child(i) {
+		int childstatus;
+		pid_t pid;
 
 		pid = shm->children[i]->pid;
 
@@ -290,8 +280,7 @@ static void handle_children(void)
 			continue;		/* it and leave it to the watchdog to clean up. */
 
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		if (pid != 0)
-			handle_child(pid, childstatus);
+		handle_child(pid, childstatus);
 	}
 }
 
@@ -327,6 +316,8 @@ void main_loop(void)
 			fork_children();
 
 		handle_children();
+
+		sleep(1);
 	}
 
 	/* if the pid map is corrupt, we can't trust that we'll
