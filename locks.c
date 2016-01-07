@@ -56,15 +56,9 @@ bool check_all_locks(void)
 	check_lock(&shm->reaper_lock);
 	check_lock(&shm->syscalltable_lock);
 
-	for_each_child(i) {
-		bool x;
+	for_each_child(i)
+		ret = check_lock(&shm->children[i]->syscall.lock);
 
-		x = check_lock(&shm->children[i]->syscall.lock);
-		ret |= x;
-		if (x == TRUE) {
-			dump_childdata(shm->children[i]);
-		}
-	}
 	return ret;
 }
 
