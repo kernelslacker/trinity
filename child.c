@@ -38,9 +38,9 @@ static const struct child_funcs child_ops[] = {
 };
 
 /*
- * Provide temporary immunity from the watchdog.
+ * Provide temporary immunity from the reaper
  * This is useful if we're going to do something that might take
- * longer than the time the watchdog is prepared to wait, especially if
+ * longer than the time the reaper is prepared to wait, especially if
  * we're doing something critical, like handling a lock, or dumping a log.
  */
 void set_dontkillme(pid_t pid, bool state)
@@ -48,7 +48,7 @@ void set_dontkillme(pid_t pid, bool state)
 	int childno;
 
 	childno = find_childno(pid);
-	if (childno == CHILD_NOT_FOUND)		/* possible, we might be the watchdog for example */
+	if (childno == CHILD_NOT_FOUND)		/* possible, we might be the mainpid */
 		return;
 	shm->children[childno]->dontkillme = state;
 }
@@ -272,8 +272,8 @@ static void check_parent_pid(void)
 		goto out;
 
 	output(0, "BUG!: CHILD (pid:%d) GOT REPARENTED! "
-		"main pid:%d. ppid=%d Watchdog pid:%d\n",
-		pid, shm->mainpid, ppid, watchdog_pid);
+		"main pid:%d. ppid=%d\n",
+		pid, shm->mainpid, ppid);
 
 	if (pid_alive(shm->mainpid) == -1)
 		output(0, "main pid %d is dead.\n", shm->mainpid);
@@ -411,11 +411,8 @@ void child_process(void)
 
 	/* If we're exiting because we tainted, wait here for it to be done. */
 	while (shm->postmortem_in_progress == TRUE) {
-		/* Make sure the main process & watchdog are still around. */
+		/* Make sure the main process is still around. */
 		if (pid_alive(shm->mainpid) == -1)
-			return;
-
-		if (pid_alive(watchdog_pid) == -1)
 			return;
 
 		usleep(1);

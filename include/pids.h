@@ -6,7 +6,6 @@
 
 extern pid_t mainpid;
 extern pid_t initpid;
-extern pid_t watchdog_pid;
 
 #define for_each_child(i)	for (i = 0; i < max_children; i++)
 

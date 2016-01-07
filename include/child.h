@@ -24,7 +24,7 @@ struct childdata {
 
 	unsigned char kill_count;
 
-	bool dontkillme;	/* provide temporary protection from the watchdog. */
+	bool dontkillme;	/* provide temporary protection from the reaper. */
 };
 
 extern unsigned int max_children;

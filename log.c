@@ -55,7 +55,7 @@ void strip_ansi(char *ansibuf)
  * level defines whether it gets displayed to the screen with printf.
  * (it always logs).
  *   0 = everything, even all the registers
- *   1 = Watchdog prints syscall count
+ *   1 = prints syscall count
  *   2 = Just the reseed values
  *
  */
@@ -67,7 +67,6 @@ void output(unsigned char level, const char *fmt, ...)
 	pid_t pid;
 	char outputbuf[BUFSIZE];
 	char *prefix = NULL;
-	char watchdog_prefix[]="[watchdog]";
 	char init_prefix[]="[init]";
 	char main_prefix[]="[main]";
 	char child_prefix[32];
@@ -77,8 +76,6 @@ void output(unsigned char level, const char *fmt, ...)
 
 	/* prefix preparation */
 	pid = getpid();
-	if (pid == watchdog_pid)
-		prefix = watchdog_prefix;
 
 	if (pid == initpid)
 		prefix = init_prefix;
@@ -101,10 +98,7 @@ void output(unsigned char level, const char *fmt, ...)
 	va_end(args);
 	if (n < 0) {
 		outputerr("## Something went wrong in output() [%d]\n", n);
-		if (getpid() == shm->mainpid)
-			exit_main_fail();
-		else
-			exit(EXIT_FAILURE);
+		exit(EXIT_FAILURE);
 	}
 
 	/* stdout output if needed */

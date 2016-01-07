@@ -75,15 +75,16 @@ void lock(lock_t *_lock)
 		}
 
 		/* This is pretty horrible. But if we call lock()
-		 * from the watchdog code, and a child is hogging a lock
-		 * (or worse, a dead child), we'll never call check_lock()
-		 * from the watchdog loop because we'll be stuck here.
+		 * from stuck_syscall_info(), and a child is hogging a lock
+		 * (or worse, a dead child), we'll deadlock, because main won't
+		 *  ever get back, and subsequently check_lock().
+		 * So we add an extra explicit check here.
 		 */
-		if (pid == watchdog_pid) {
+		if (pid == shm->mainpid) {
 			check_lock(_lock);
 		} else {
 			/* Ok, we're a child pid.
-			 * if something bad happened, like main/watchdog crashed,
+			 * if something bad happened, like main crashed,
 			 * we don't want to spin forever, so just get out.
 			 */
 			if ((shm->exit_reason != STILL_RUNNING) &&

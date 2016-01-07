@@ -43,13 +43,13 @@
    TODO
 
 * Process model.
-  On startup, the first process sets up the shm etc, and then forks two processes.
+  On startup, the first process sets up the shm etc, and then enters
+  the 'main' loop (see main.c), which is responsible for..
 
-  1. The 'main' process (see main.c), which is responsible for..
-     - initial opening of sockets/fd's.  See sockets.c/fds.c/files.c
-     - forking new children See fork_children()
-     - handling those children.  See handle_child()
-
-  2. A 'watchdog' process that makes sure the child processes are making progress,
-     and assorted other 'periodic' tasks.  All this lives in watchdog.c
+  - initial opening of sockets/fd's.  See sockets.c/fds.c/files.c
+  - forking new children See fork_children()
+  - handling those children.  See handle_child()
+  - makes sure the child processes are making progress,
+  - Checks to see if the kernel has become tainted.
+  - assorted other 'periodic' tasks.
 

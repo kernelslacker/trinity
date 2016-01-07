@@ -64,8 +64,9 @@ struct shm_s {
 	int current_fd;
 	unsigned int fd_lifetime;
 
-	/* main<>watchdog mutex, for reap_child()
-	 *  provides exclusion so they don't both try at the same time. */
+	/* for reap_child()
+	 * Used to provide exclusion so main/watchdog don't both try at the same time. */
+	//TODO: Still needed?
 	lock_t reaper_lock;
 
 	/* to protect from multiple child processes from

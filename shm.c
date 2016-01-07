@@ -85,6 +85,7 @@ void init_shm(void)
 	/* We allocate the childdata structs as shared mappings, because
 	 * the watchdog process needs to peek into each childs syscall records
 	 * to make sure they are making progress.
+	 //FIXME: No longer true.
 	 */
 	for_each_child(i) {
 		struct childdata *child;

@@ -91,9 +91,6 @@ FILE *find_logfile_handle(void)
 	if (pid == shm->mainpid)
 		return mainlogfile;
 
-	if (pid == watchdog_pid)
-		return mainlogfile;
-
 	child = this_child();
 	if (child != NULL)
 		return child->logfile;
