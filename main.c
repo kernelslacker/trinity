@@ -620,7 +620,6 @@ const char * decode_exit(void)
 
 static void check_child_progressing(void)
 {
-	static unsigned long lastcount = 0;
 	unsigned int stall_count = 0;
 	unsigned int i;
 
@@ -639,6 +638,8 @@ static void check_child_progressing(void)
 		stall_genocide();
 
 	if (shm->stats.total_syscalls_done > 1) {
+		static unsigned long lastcount = 0;
+
 		if (shm->stats.total_syscalls_done - lastcount > 10000) {
 			char stalltxt[]=" STALLED:XXXX";
 
