@@ -237,6 +237,32 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 	return TRUE;
 }
 
+static char get_pid_state(pid_t target)
+{
+	FILE *fp;
+	size_t n = 0;
+	char *line = NULL;
+	char filename[80];
+	pid_t pid;
+	char *procname = zmalloc(100);
+	char state = '?';
+
+	sprintf(filename, "/proc/%d/stat", target);
+
+	fp = fopen(filename, "r");
+	if (!fp)
+		goto fail_open;
+
+	if (getline(&line, &n, fp) != -1)
+		sscanf(line, "%d %s %c", &pid, procname, &state);
+
+	fclose(fp);
+
+fail_open:
+	free(procname);
+	return state;
+}
+
 static void stuck_syscall_info(struct childdata *child)
 {
 	struct syscallrecord *rec;
@@ -283,6 +309,7 @@ static bool is_child_making_progress(struct childdata *child)
 	struct timespec tp;
 	time_t diff, old, now;
 	pid_t pid;
+	char state;
 
 	pid = child->pid;
 
@@ -308,6 +335,13 @@ static bool is_child_making_progress(struct childdata *child)
 	/* hopefully the common case. */
 	if (diff < 30)
 		return TRUE;
+
+	/* if we're blocked in uninteruptible sleep, SIGKILL won't help. */
+	state = get_pid_state(child->pid);
+	if (state == 'D') {
+		//debugf("child %d (pid %u) is blocked in D state\n", child->num, pid);
+		return FALSE;
+	}
 
 	/* After 30 seconds of no progress, send a kill signal. */
 	if (diff == 30) {
