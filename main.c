@@ -250,7 +250,8 @@ static void stuck_syscall_info(struct childdata *child)
 
 	rec = &child->syscall;
 
-	lock(&rec->lock);
+	if (trylock(&rec->lock) == FALSE)
+		return;
 
 	do32 = rec->do32bit;
 	callno = rec->nr;
