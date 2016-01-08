@@ -15,6 +15,7 @@ typedef struct lock_struct lock_t;
 #define LOCKING 1
 #define LOCKED 2
 
+bool trylock(lock_t *_lock);
 void lock(lock_t *_lock);
 void unlock(lock_t *_lock);
 

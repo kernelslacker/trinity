@@ -62,6 +62,23 @@ bool check_all_locks(void)
 	return ret;
 }
 
+static void __lock(lock_t *_lock)
+{
+	_lock->lock = LOCKING;
+	_lock->contention = 0;
+	_lock->owner = getpid();
+	_lock->lock = LOCKED;
+}
+
+bool trylock(lock_t *_lock)
+{
+	if (_lock->lock == UNLOCKED) {
+		__lock(_lock);
+		return TRUE;
+	}
+	return FALSE;
+}
+
 void lock(lock_t *_lock)
 {
 	pid_t pid = getpid();
@@ -96,11 +113,7 @@ void lock(lock_t *_lock)
 		_lock->contention++;
 		usleep(1);
 	}
-
-	_lock->lock = LOCKING;
-	_lock->contention = 0;
-	_lock->owner = pid;
-	_lock->lock = LOCKED;
+	__lock(_lock);
 }
 
 void unlock(lock_t *_lock)
