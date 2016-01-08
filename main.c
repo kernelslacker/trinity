@@ -273,8 +273,6 @@ static void stuck_syscall_info(struct childdata *child)
 	if (shm->debug == FALSE)
 		return;
 
-	memset(fdstr, 0, sizeof(fdstr));
-
 	rec = &child->syscall;
 
 	if (trylock(&rec->lock) == FALSE)
@@ -282,6 +280,8 @@ static void stuck_syscall_info(struct childdata *child)
 
 	do32 = rec->do32bit;
 	callno = rec->nr;
+
+	memset(fdstr, 0, sizeof(fdstr));
 
 	/* we can only be 'stuck' if we're still doing the syscall. */
 	if (rec->state == BEFORE) {
