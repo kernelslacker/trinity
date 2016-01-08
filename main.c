@@ -101,6 +101,7 @@ void reap_child(pid_t childpid)
 
 	child = shm->children[i];
 	child->syscall.tp = (struct timespec){};
+	unlock(&child->syscall.lock);
 	shm->running_childs--;
 	shm->last_reaped = childpid;
 	// FIXME: we do this last because things go walking children
