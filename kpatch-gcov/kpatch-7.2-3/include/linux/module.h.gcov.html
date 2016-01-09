@@ -1,0 +1,756 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - include/linux/module.h</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">include/linux</a> - module.h<span style="font-size: 80%;"> (source / <a href="module.h.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">5</td>
+            <td class="headerCovTableEntry">5</td>
+            <td class="headerCovTableEntryHi">100.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntryHi">-</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : #ifndef _LINUX_MODULE_H</a>
+<span class="lineNum">       2 </span>            : #define _LINUX_MODULE_H
+<span class="lineNum">       3 </span>            : /*
+<span class="lineNum">       4 </span>            :  * Dynamic loading of modules into the kernel.
+<span class="lineNum">       5 </span>            :  *
+<span class="lineNum">       6 </span>            :  * Rewritten by Richard Henderson &lt;rth@tamu.edu&gt; Dec 1996
+<span class="lineNum">       7 </span>            :  * Rewritten again by Rusty Russell, 2002
+<span class="lineNum">       8 </span>            :  */
+<span class="lineNum">       9 </span>            : #include &lt;linux/list.h&gt;
+<span class="lineNum">      10 </span>            : #include &lt;linux/stat.h&gt;
+<span class="lineNum">      11 </span>            : #include &lt;linux/compiler.h&gt;
+<span class="lineNum">      12 </span>            : #include &lt;linux/cache.h&gt;
+<span class="lineNum">      13 </span>            : #include &lt;linux/kmod.h&gt;
+<span class="lineNum">      14 </span>            : #include &lt;linux/elf.h&gt;
+<span class="lineNum">      15 </span>            : #include &lt;linux/stringify.h&gt;
+<span class="lineNum">      16 </span>            : #include &lt;linux/kobject.h&gt;
+<span class="lineNum">      17 </span>            : #include &lt;linux/moduleparam.h&gt;
+<span class="lineNum">      18 </span>            : #include &lt;linux/tracepoint.h&gt;
+<span class="lineNum">      19 </span>            : #include &lt;linux/export.h&gt;
+<span class="lineNum">      20 </span>            : 
+<span class="lineNum">      21 </span>            : #include &lt;linux/percpu.h&gt;
+<span class="lineNum">      22 </span>            : #include &lt;asm/module.h&gt;
+<span class="lineNum">      23 </span>            : 
+<span class="lineNum">      24 </span>            : /* In stripped ARM and x86-64 modules, ~ is surprisingly rare. */
+<span class="lineNum">      25 </span>            : #define MODULE_SIG_STRING &quot;~Module signature appended~\n&quot;
+<span class="lineNum">      26 </span>            : 
+<span class="lineNum">      27 </span>            : /* Not Yet Implemented */
+<span class="lineNum">      28 </span>            : #define MODULE_SUPPORTED_DEVICE(name)
+<span class="lineNum">      29 </span>            : 
+<span class="lineNum">      30 </span>            : #define MODULE_NAME_LEN MAX_PARAM_PREFIX_LEN
+<span class="lineNum">      31 </span>            : 
+<span class="lineNum">      32 </span>            : struct modversion_info
+<span class="lineNum">      33 </span>            : {
+<span class="lineNum">      34 </span>            :         unsigned long crc;
+<span class="lineNum">      35 </span>            :         char name[MODULE_NAME_LEN];
+<span class="lineNum">      36 </span>            : };
+<span class="lineNum">      37 </span>            : 
+<span class="lineNum">      38 </span>            : struct module;
+<span class="lineNum">      39 </span>            : 
+<span class="lineNum">      40 </span>            : struct module_kobject {
+<span class="lineNum">      41 </span>            :         struct kobject kobj;
+<span class="lineNum">      42 </span>            :         struct module *mod;
+<span class="lineNum">      43 </span>            :         struct kobject *drivers_dir;
+<span class="lineNum">      44 </span>            :         struct module_param_attrs *mp;
+<span class="lineNum">      45 </span>            : };
+<span class="lineNum">      46 </span>            : 
+<span class="lineNum">      47 </span>            : struct module_attribute {
+<span class="lineNum">      48 </span>            :         struct attribute attr;
+<span class="lineNum">      49 </span>            :         ssize_t (*show)(struct module_attribute *, struct module_kobject *,
+<span class="lineNum">      50 </span>            :                         char *);
+<span class="lineNum">      51 </span>            :         ssize_t (*store)(struct module_attribute *, struct module_kobject *,
+<span class="lineNum">      52 </span>            :                          const char *, size_t count);
+<span class="lineNum">      53 </span>            :         void (*setup)(struct module *, const char *);
+<span class="lineNum">      54 </span>            :         int (*test)(struct module *);
+<span class="lineNum">      55 </span>            :         void (*free)(struct module *);
+<span class="lineNum">      56 </span>            : };
+<span class="lineNum">      57 </span>            : 
+<span class="lineNum">      58 </span>            : struct module_version_attribute {
+<span class="lineNum">      59 </span>            :         struct module_attribute mattr;
+<span class="lineNum">      60 </span>            :         const char *module_name;
+<span class="lineNum">      61 </span>            :         const char *version;
+<span class="lineNum">      62 </span>            : } __attribute__ ((__aligned__(sizeof(void *))));
+<span class="lineNum">      63 </span>            : 
+<span class="lineNum">      64 </span>            : extern ssize_t __modver_version_show(struct module_attribute *,
+<span class="lineNum">      65 </span>            :                                      struct module_kobject *, char *);
+<span class="lineNum">      66 </span>            : 
+<span class="lineNum">      67 </span>            : extern struct module_attribute module_uevent;
+<span class="lineNum">      68 </span>            : 
+<span class="lineNum">      69 </span>            : /* These are either module local, or the kernel's dummy ones. */
+<span class="lineNum">      70 </span>            : extern int init_module(void);
+<span class="lineNum">      71 </span>            : extern void cleanup_module(void);
+<span class="lineNum">      72 </span>            : 
+<span class="lineNum">      73 </span>            : /* Archs provide a method of finding the correct exception table. */
+<span class="lineNum">      74 </span>            : struct exception_table_entry;
+<span class="lineNum">      75 </span>            : 
+<span class="lineNum">      76 </span>            : const struct exception_table_entry *
+<span class="lineNum">      77 </span>            : search_extable(const struct exception_table_entry *first,
+<span class="lineNum">      78 </span>            :                const struct exception_table_entry *last,
+<span class="lineNum">      79 </span>            :                unsigned long value);
+<span class="lineNum">      80 </span>            : void sort_extable(struct exception_table_entry *start,
+<span class="lineNum">      81 </span>            :                   struct exception_table_entry *finish);
+<span class="lineNum">      82 </span>            : void sort_main_extable(void);
+<span class="lineNum">      83 </span>            : void trim_init_extable(struct module *m);
+<span class="lineNum">      84 </span>            : 
+<span class="lineNum">      85 </span>            : #ifdef MODULE
+<span class="lineNum">      86 </span>            : #define MODULE_GENERIC_TABLE(gtype,name)                        \
+<span class="lineNum">      87 </span>            : extern const struct gtype##_id __mod_##gtype##_table            \
+<span class="lineNum">      88 </span>            :   __attribute__ ((unused, alias(__stringify(name))))
+<span class="lineNum">      89 </span>            : 
+<span class="lineNum">      90 </span>            : #else  /* !MODULE */
+<span class="lineNum">      91 </span>            : #define MODULE_GENERIC_TABLE(gtype,name)
+<span class="lineNum">      92 </span>            : #endif
+<span class="lineNum">      93 </span>            : 
+<span class="lineNum">      94 </span>            : /* Generic info of form tag = &quot;info&quot; */
+<span class="lineNum">      95 </span>            : #define MODULE_INFO(tag, info) __MODULE_INFO(tag, tag, info)
+<span class="lineNum">      96 </span>            : 
+<span class="lineNum">      97 </span>            : /* For userspace: you can also call me... */
+<span class="lineNum">      98 </span>            : #define MODULE_ALIAS(_alias) MODULE_INFO(alias, _alias)
+<span class="lineNum">      99 </span>            : 
+<span class="lineNum">     100 </span>            : /* Soft module dependencies. See man modprobe.d for details.
+<span class="lineNum">     101 </span>            :  * Example: MODULE_SOFTDEP(&quot;pre: module-foo module-bar post: module-baz&quot;)
+<span class="lineNum">     102 </span>            :  */
+<span class="lineNum">     103 </span>            : #define MODULE_SOFTDEP(_softdep) MODULE_INFO(softdep, _softdep)
+<span class="lineNum">     104 </span>            : 
+<span class="lineNum">     105 </span>            : /*
+<span class="lineNum">     106 </span>            :  * The following license idents are currently accepted as indicating free
+<span class="lineNum">     107 </span>            :  * software modules
+<span class="lineNum">     108 </span>            :  *
+<span class="lineNum">     109 </span>            :  *      &quot;GPL&quot;                         [GNU Public License v2 or later]
+<span class="lineNum">     110 </span>            :  *      &quot;GPL v2&quot;                      [GNU Public License v2]
+<span class="lineNum">     111 </span>            :  *      &quot;GPL and additional rights&quot;   [GNU Public License v2 rights and more]
+<span class="lineNum">     112 </span>            :  *      &quot;Dual BSD/GPL&quot;                        [GNU Public License v2
+<span class="lineNum">     113 </span>            :  *                                       or BSD license choice]
+<span class="lineNum">     114 </span>            :  *      &quot;Dual MIT/GPL&quot;                        [GNU Public License v2
+<span class="lineNum">     115 </span>            :  *                                       or MIT license choice]
+<span class="lineNum">     116 </span>            :  *      &quot;Dual MPL/GPL&quot;                        [GNU Public License v2
+<span class="lineNum">     117 </span>            :  *                                       or Mozilla license choice]
+<span class="lineNum">     118 </span>            :  *
+<span class="lineNum">     119 </span>            :  * The following other idents are available
+<span class="lineNum">     120 </span>            :  *
+<span class="lineNum">     121 </span>            :  *      &quot;Proprietary&quot;                 [Non free products]
+<span class="lineNum">     122 </span>            :  *
+<span class="lineNum">     123 </span>            :  * There are dual licensed components, but when running with Linux it is the
+<span class="lineNum">     124 </span>            :  * GPL that is relevant so this is a non issue. Similarly LGPL linked with GPL
+<span class="lineNum">     125 </span>            :  * is a GPL combined work.
+<span class="lineNum">     126 </span>            :  *
+<span class="lineNum">     127 </span>            :  * This exists for several reasons
+<span class="lineNum">     128 </span>            :  * 1.   So modinfo can show license info for users wanting to vet their setup 
+<span class="lineNum">     129 </span>            :  *      is free
+<span class="lineNum">     130 </span>            :  * 2.   So the community can ignore bug reports including proprietary modules
+<span class="lineNum">     131 </span>            :  * 3.   So vendors can do likewise based on their own policies
+<span class="lineNum">     132 </span>            :  */
+<span class="lineNum">     133 </span>            : #define MODULE_LICENSE(_license) MODULE_INFO(license, _license)
+<span class="lineNum">     134 </span>            : 
+<span class="lineNum">     135 </span>            : /*
+<span class="lineNum">     136 </span>            :  * Author(s), use &quot;Name &lt;email&gt;&quot; or just &quot;Name&quot;, for multiple
+<span class="lineNum">     137 </span>            :  * authors use multiple MODULE_AUTHOR() statements/lines.
+<span class="lineNum">     138 </span>            :  */
+<span class="lineNum">     139 </span>            : #define MODULE_AUTHOR(_author) MODULE_INFO(author, _author)
+<span class="lineNum">     140 </span>            :   
+<span class="lineNum">     141 </span>            : /* What your module does. */
+<span class="lineNum">     142 </span>            : #define MODULE_DESCRIPTION(_description) MODULE_INFO(description, _description)
+<span class="lineNum">     143 </span>            : 
+<span class="lineNum">     144 </span>            : #define MODULE_DEVICE_TABLE(type,name)          \
+<span class="lineNum">     145 </span>            :   MODULE_GENERIC_TABLE(type##_device,name)
+<span class="lineNum">     146 </span>            : 
+<span class="lineNum">     147 </span>            : /* Version of form [&lt;epoch&gt;:]&lt;version&gt;[-&lt;extra-version&gt;].
+<span class="lineNum">     148 </span>            :    Or for CVS/RCS ID version, everything but the number is stripped.
+<span class="lineNum">     149 </span>            :   &lt;epoch&gt;: A (small) unsigned integer which allows you to start versions
+<span class="lineNum">     150 </span>            :            anew. If not mentioned, it's zero.  eg. &quot;2:1.0&quot; is after
+<span class="lineNum">     151 </span>            :            &quot;1:2.0&quot;.
+<span class="lineNum">     152 </span>            :   &lt;version&gt;: The &lt;version&gt; may contain only alphanumerics and the
+<span class="lineNum">     153 </span>            :            character `.'.  Ordered by numeric sort for numeric parts,
+<span class="lineNum">     154 </span>            :            ascii sort for ascii parts (as per RPM or DEB algorithm).
+<span class="lineNum">     155 </span>            :   &lt;extraversion&gt;: Like &lt;version&gt;, but inserted for local
+<span class="lineNum">     156 </span>            :            customizations, eg &quot;rh3&quot; or &quot;rusty1&quot;.
+<span class="lineNum">     157 </span>            : 
+<span class="lineNum">     158 </span>            :   Using this automatically adds a checksum of the .c files and the
+<span class="lineNum">     159 </span>            :   local headers in &quot;srcversion&quot;.
+<span class="lineNum">     160 </span>            : */
+<span class="lineNum">     161 </span>            : 
+<span class="lineNum">     162 </span>            : #if defined(MODULE) || !defined(CONFIG_SYSFS)
+<span class="lineNum">     163 </span>            : #define MODULE_VERSION(_version) MODULE_INFO(version, _version)
+<span class="lineNum">     164 </span>            : #else
+<span class="lineNum">     165 </span>            : #define MODULE_VERSION(_version)                                        \
+<span class="lineNum">     166 </span>            :         static struct module_version_attribute ___modver_attr = {       \
+<span class="lineNum">     167 </span>            :                 .mattr  = {                                             \
+<span class="lineNum">     168 </span>            :                         .attr   = {                                     \
+<span class="lineNum">     169 </span>            :                                 .name   = &quot;version&quot;,                  \
+<span class="lineNum">     170 </span>            :                                 .mode   = S_IRUGO,                      \
+<span class="lineNum">     171 </span>            :                         },                                              \
+<span class="lineNum">     172 </span>            :                         .show   = __modver_version_show,                \
+<span class="lineNum">     173 </span>            :                 },                                                      \
+<span class="lineNum">     174 </span>            :                 .module_name    = KBUILD_MODNAME,                       \
+<span class="lineNum">     175 </span>            :                 .version        = _version,                             \
+<span class="lineNum">     176 </span>            :         };                                                              \
+<span class="lineNum">     177 </span>            :         static const struct module_version_attribute                    \
+<span class="lineNum">     178 </span>            :         __used __attribute__ ((__section__ (&quot;__modver&quot;)))             \
+<span class="lineNum">     179 </span>            :         * __moduleparam_const __modver_attr = &amp;___modver_attr
+<span class="lineNum">     180 </span>            : #endif
+<span class="lineNum">     181 </span>            : 
+<span class="lineNum">     182 </span>            : /* Optional firmware file (or files) needed by the module
+<span class="lineNum">     183 </span>            :  * format is simply firmware file name.  Multiple firmware
+<span class="lineNum">     184 </span>            :  * files require multiple MODULE_FIRMWARE() specifiers */
+<span class="lineNum">     185 </span>            : #define MODULE_FIRMWARE(_firmware) MODULE_INFO(firmware, _firmware)
+<span class="lineNum">     186 </span>            : 
+<span class="lineNum">     187 </span>            : /* Given an address, look for it in the exception tables */
+<span class="lineNum">     188 </span>            : const struct exception_table_entry *search_exception_tables(unsigned long add);
+<span class="lineNum">     189 </span>            : 
+<span class="lineNum">     190 </span>            : struct notifier_block;
+<span class="lineNum">     191 </span>            : 
+<span class="lineNum">     192 </span>            : #ifdef CONFIG_MODULES
+<span class="lineNum">     193 </span>            : 
+<span class="lineNum">     194 </span>            : extern int modules_disabled; /* for sysctl */
+<span class="lineNum">     195 </span>            : /* Get/put a kernel symbol (calls must be symmetric) */
+<span class="lineNum">     196 </span>            : void *__symbol_get(const char *symbol);
+<span class="lineNum">     197 </span>            : void *__symbol_get_gpl(const char *symbol);
+<span class="lineNum">     198 </span>            : #define symbol_get(x) ((typeof(&amp;x))(__symbol_get(VMLINUX_SYMBOL_STR(x))))
+<span class="lineNum">     199 </span>            : 
+<span class="lineNum">     200 </span>            : /* modules using other modules: kdb wants to see this. */
+<span class="lineNum">     201 </span>            : struct module_use {
+<span class="lineNum">     202 </span>            :         struct list_head source_list;
+<span class="lineNum">     203 </span>            :         struct list_head target_list;
+<span class="lineNum">     204 </span>            :         struct module *source, *target;
+<span class="lineNum">     205 </span>            : };
+<span class="lineNum">     206 </span>            : 
+<span class="lineNum">     207 </span>            : enum module_state {
+<span class="lineNum">     208 </span>            :         MODULE_STATE_LIVE,      /* Normal state. */
+<span class="lineNum">     209 </span>            :         MODULE_STATE_COMING,    /* Full formed, running module_init. */
+<span class="lineNum">     210 </span>            :         MODULE_STATE_GOING,     /* Going away. */
+<span class="lineNum">     211 </span>            :         MODULE_STATE_UNFORMED,  /* Still setting it up. */
+<span class="lineNum">     212 </span>            : };
+<span class="lineNum">     213 </span>            : 
+<span class="lineNum">     214 </span>            : /**
+<span class="lineNum">     215 </span>            :  * struct module_ref - per cpu module reference counts
+<span class="lineNum">     216 </span>            :  * @incs: number of module get on this cpu
+<span class="lineNum">     217 </span>            :  * @decs: number of module put on this cpu
+<span class="lineNum">     218 </span>            :  *
+<span class="lineNum">     219 </span>            :  * We force an alignment on 8 or 16 bytes, so that alloc_percpu()
+<span class="lineNum">     220 </span>            :  * put @incs/@decs in same cache line, with no extra memory cost,
+<span class="lineNum">     221 </span>            :  * since alloc_percpu() is fine grained.
+<span class="lineNum">     222 </span>            :  */
+<span class="lineNum">     223 </span>            : struct module_ref {
+<span class="lineNum">     224 </span>            :         unsigned long incs;
+<span class="lineNum">     225 </span>            :         unsigned long decs;
+<span class="lineNum">     226 </span>            : } __attribute((aligned(2 * sizeof(unsigned long))));
+<span class="lineNum">     227 </span>            : 
+<span class="lineNum">     228 </span>            : struct module
+<span class="lineNum">     229 </span>            : {
+<span class="lineNum">     230 </span>            :         enum module_state state;
+<span class="lineNum">     231 </span>            : 
+<span class="lineNum">     232 </span>            :         /* Member of list of modules */
+<span class="lineNum">     233 </span>            :         struct list_head list;
+<span class="lineNum">     234 </span>            : 
+<span class="lineNum">     235 </span>            :         /* Unique handle for this module */
+<span class="lineNum">     236 </span>            :         char name[MODULE_NAME_LEN];
+<span class="lineNum">     237 </span>            : 
+<span class="lineNum">     238 </span>            :         /* Sysfs stuff. */
+<span class="lineNum">     239 </span>            :         struct module_kobject mkobj;
+<span class="lineNum">     240 </span>            :         struct module_attribute *modinfo_attrs;
+<span class="lineNum">     241 </span>            :         const char *version;
+<span class="lineNum">     242 </span>            :         const char *srcversion;
+<span class="lineNum">     243 </span>            :         struct kobject *holders_dir;
+<span class="lineNum">     244 </span>            : 
+<span class="lineNum">     245 </span>            :         /* Exported symbols */
+<span class="lineNum">     246 </span>            :         const struct kernel_symbol *syms;
+<span class="lineNum">     247 </span>            :         const unsigned long *crcs;
+<span class="lineNum">     248 </span>            :         unsigned int num_syms;
+<span class="lineNum">     249 </span>            : 
+<span class="lineNum">     250 </span>            :         /* Kernel parameters. */
+<span class="lineNum">     251 </span>            :         struct kernel_param *kp;
+<span class="lineNum">     252 </span>            :         unsigned int num_kp;
+<span class="lineNum">     253 </span>            : 
+<span class="lineNum">     254 </span>            :         /* GPL-only exported symbols. */
+<span class="lineNum">     255 </span>            :         unsigned int num_gpl_syms;
+<span class="lineNum">     256 </span>            :         const struct kernel_symbol *gpl_syms;
+<span class="lineNum">     257 </span>            :         const unsigned long *gpl_crcs;
+<span class="lineNum">     258 </span>            : 
+<span class="lineNum">     259 </span>            : #ifdef CONFIG_UNUSED_SYMBOLS
+<span class="lineNum">     260 </span>            :         /* unused exported symbols. */
+<span class="lineNum">     261 </span>            :         const struct kernel_symbol *unused_syms;
+<span class="lineNum">     262 </span>            :         const unsigned long *unused_crcs;
+<span class="lineNum">     263 </span>            :         unsigned int num_unused_syms;
+<span class="lineNum">     264 </span>            : 
+<span class="lineNum">     265 </span>            :         /* GPL-only, unused exported symbols. */
+<span class="lineNum">     266 </span>            :         unsigned int num_unused_gpl_syms;
+<span class="lineNum">     267 </span>            :         const struct kernel_symbol *unused_gpl_syms;
+<span class="lineNum">     268 </span>            :         const unsigned long *unused_gpl_crcs;
+<span class="lineNum">     269 </span>            : #endif
+<span class="lineNum">     270 </span>            : 
+<span class="lineNum">     271 </span>            : #ifdef CONFIG_MODULE_SIG
+<span class="lineNum">     272 </span>            :         /* Signature was verified. */
+<span class="lineNum">     273 </span>            :         bool sig_ok;
+<span class="lineNum">     274 </span>            : #endif
+<span class="lineNum">     275 </span>            : 
+<span class="lineNum">     276 </span>            :         /* symbols that will be GPL-only in the near future. */
+<span class="lineNum">     277 </span>            :         const struct kernel_symbol *gpl_future_syms;
+<span class="lineNum">     278 </span>            :         const unsigned long *gpl_future_crcs;
+<span class="lineNum">     279 </span>            :         unsigned int num_gpl_future_syms;
+<span class="lineNum">     280 </span>            : 
+<span class="lineNum">     281 </span>            :         /* Exception table */
+<span class="lineNum">     282 </span>            :         unsigned int num_exentries;
+<span class="lineNum">     283 </span>            :         struct exception_table_entry *extable;
+<span class="lineNum">     284 </span>            : 
+<span class="lineNum">     285 </span>            :         /* Startup function. */
+<span class="lineNum">     286 </span>            :         int (*init)(void);
+<span class="lineNum">     287 </span>            : 
+<span class="lineNum">     288 </span>            :         /* If this is non-NULL, vfree after init() returns */
+<span class="lineNum">     289 </span>            :         void *module_init;
+<span class="lineNum">     290 </span>            : 
+<span class="lineNum">     291 </span>            :         /* Here is the actual code + data, vfree'd on unload. */
+<span class="lineNum">     292 </span>            :         void *module_core;
+<span class="lineNum">     293 </span>            : 
+<span class="lineNum">     294 </span>            :         /* Here are the sizes of the init and core sections */
+<span class="lineNum">     295 </span>            :         unsigned int init_size, core_size;
+<span class="lineNum">     296 </span>            : 
+<span class="lineNum">     297 </span>            :         /* The size of the executable code in each section.  */
+<span class="lineNum">     298 </span>            :         unsigned int init_text_size, core_text_size;
+<span class="lineNum">     299 </span>            : 
+<span class="lineNum">     300 </span>            :         /* Size of RO sections of the module (text+rodata) */
+<span class="lineNum">     301 </span>            :         unsigned int init_ro_size, core_ro_size;
+<span class="lineNum">     302 </span>            : 
+<span class="lineNum">     303 </span>            :         /* Arch-specific module values */
+<span class="lineNum">     304 </span>            :         struct mod_arch_specific arch;
+<span class="lineNum">     305 </span>            : 
+<span class="lineNum">     306 </span>            :         unsigned int taints;    /* same bits as kernel:tainted */
+<span class="lineNum">     307 </span>            : 
+<span class="lineNum">     308 </span>            : #ifdef CONFIG_GENERIC_BUG
+<span class="lineNum">     309 </span>            :         /* Support for BUG */
+<span class="lineNum">     310 </span>            :         unsigned num_bugs;
+<span class="lineNum">     311 </span>            :         struct list_head bug_list;
+<span class="lineNum">     312 </span>            :         struct bug_entry *bug_table;
+<span class="lineNum">     313 </span>            : #endif
+<span class="lineNum">     314 </span>            : 
+<span class="lineNum">     315 </span>            : #ifdef CONFIG_KALLSYMS
+<span class="lineNum">     316 </span>            :         /*
+<span class="lineNum">     317 </span>            :          * We keep the symbol and string tables for kallsyms.
+<span class="lineNum">     318 </span>            :          * The core_* fields below are temporary, loader-only (they
+<span class="lineNum">     319 </span>            :          * could really be discarded after module init).
+<span class="lineNum">     320 </span>            :          */
+<span class="lineNum">     321 </span>            :         Elf_Sym *symtab, *core_symtab;
+<span class="lineNum">     322 </span>            :         unsigned int num_symtab, core_num_syms;
+<span class="lineNum">     323 </span>            :         char *strtab, *core_strtab;
+<span class="lineNum">     324 </span>            : 
+<span class="lineNum">     325 </span>            :         /* Section attributes */
+<span class="lineNum">     326 </span>            :         struct module_sect_attrs *sect_attrs;
+<span class="lineNum">     327 </span>            : 
+<span class="lineNum">     328 </span>            :         /* Notes attributes */
+<span class="lineNum">     329 </span>            :         struct module_notes_attrs *notes_attrs;
+<span class="lineNum">     330 </span>            : #endif
+<span class="lineNum">     331 </span>            : 
+<span class="lineNum">     332 </span>            :         /* The command line arguments (may be mangled).  People like
+<span class="lineNum">     333 </span>            :            keeping pointers to this stuff */
+<span class="lineNum">     334 </span>            :         char *args;
+<span class="lineNum">     335 </span>            : 
+<span class="lineNum">     336 </span>            : #ifdef CONFIG_SMP
+<span class="lineNum">     337 </span>            :         /* Per-cpu data. */
+<span class="lineNum">     338 </span>            :         void __percpu *percpu;
+<span class="lineNum">     339 </span>            :         unsigned int percpu_size;
+<span class="lineNum">     340 </span>            : #endif
+<span class="lineNum">     341 </span>            : 
+<span class="lineNum">     342 </span>            : #ifdef CONFIG_TRACEPOINTS
+<span class="lineNum">     343 </span>            :         unsigned int num_tracepoints;
+<span class="lineNum">     344 </span>            :         struct tracepoint * const *tracepoints_ptrs;
+<span class="lineNum">     345 </span>            : #endif
+<span class="lineNum">     346 </span>            : #ifdef HAVE_JUMP_LABEL
+<span class="lineNum">     347 </span>            :         struct jump_entry *jump_entries;
+<span class="lineNum">     348 </span>            :         unsigned int num_jump_entries;
+<span class="lineNum">     349 </span>            : #endif
+<span class="lineNum">     350 </span>            : #ifdef CONFIG_TRACING
+<span class="lineNum">     351 </span>            :         unsigned int num_trace_bprintk_fmt;
+<span class="lineNum">     352 </span>            :         const char **trace_bprintk_fmt_start;
+<span class="lineNum">     353 </span>            : #endif
+<span class="lineNum">     354 </span>            : #ifdef CONFIG_EVENT_TRACING
+<span class="lineNum">     355 </span>            :         struct ftrace_event_call **trace_events;
+<span class="lineNum">     356 </span>            :         unsigned int num_trace_events;
+<span class="lineNum">     357 </span>            : #endif
+<span class="lineNum">     358 </span>            : #ifdef CONFIG_FTRACE_MCOUNT_RECORD
+<span class="lineNum">     359 </span>            :         unsigned int num_ftrace_callsites;
+<span class="lineNum">     360 </span>            :         unsigned long *ftrace_callsites;
+<span class="lineNum">     361 </span>            : #endif
+<span class="lineNum">     362 </span>            : 
+<span class="lineNum">     363 </span>            : #ifdef CONFIG_MODULE_UNLOAD
+<span class="lineNum">     364 </span>            :         /* What modules depend on me? */
+<span class="lineNum">     365 </span>            :         struct list_head source_list;
+<span class="lineNum">     366 </span>            :         /* What modules do I depend on? */
+<span class="lineNum">     367 </span>            :         struct list_head target_list;
+<span class="lineNum">     368 </span>            : 
+<span class="lineNum">     369 </span>            :         /* Who is waiting for us to be unloaded */
+<span class="lineNum">     370 </span>            :         struct task_struct *waiter;
+<span class="lineNum">     371 </span>            : 
+<span class="lineNum">     372 </span>            :         /* Destruction function. */
+<span class="lineNum">     373 </span>            :         void (*exit)(void);
+<span class="lineNum">     374 </span>            : 
+<span class="lineNum">     375 </span>            :         struct module_ref __percpu *refptr;
+<span class="lineNum">     376 </span>            : #endif
+<span class="lineNum">     377 </span>            : 
+<span class="lineNum">     378 </span>            : #ifdef CONFIG_CONSTRUCTORS
+<span class="lineNum">     379 </span>            :         /* Constructor functions. */
+<span class="lineNum">     380 </span>            :         ctor_fn_t *ctors;
+<span class="lineNum">     381 </span>            :         unsigned int num_ctors;
+<span class="lineNum">     382 </span>            : #endif
+<span class="lineNum">     383 </span>            : };
+<span class="lineNum">     384 </span>            : #ifndef MODULE_ARCH_INIT
+<span class="lineNum">     385 </span>            : #define MODULE_ARCH_INIT {}
+<span class="lineNum">     386 </span>            : #endif
+<span class="lineNum">     387 </span>            : 
+<span class="lineNum">     388 </span>            : extern struct mutex module_mutex;
+<span class="lineNum">     389 </span>            : 
+<span class="lineNum">     390 </span>            : /* FIXME: It'd be nice to isolate modules during init, too, so they
+<span class="lineNum">     391 </span>            :    aren't used before they (may) fail.  But presently too much code
+<span class="lineNum">     392 </span>            :    (IDE &amp; SCSI) require entry into the module during init.*/
+<span class="lineNum">     393 </span>            : static inline int module_is_live(struct module *mod)
+<span class="lineNum">     394 </span>            : {
+<span class="lineNum">     395 </span><span class="lineCov">        152 :         return mod-&gt;state != MODULE_STATE_GOING;</span>
+<span class="lineNum">     396 </span>            : }
+<span class="lineNum">     397 </span>            : 
+<span class="lineNum">     398 </span>            : struct module *__module_text_address(unsigned long addr);
+<span class="lineNum">     399 </span>            : struct module *__module_address(unsigned long addr);
+<span class="lineNum">     400 </span>            : bool is_module_address(unsigned long addr);
+<span class="lineNum">     401 </span>            : bool is_module_percpu_address(unsigned long addr);
+<span class="lineNum">     402 </span>            : bool is_module_text_address(unsigned long addr);
+<span class="lineNum">     403 </span>            : 
+<span class="lineNum">     404 </span>            : static inline int within_module_core(unsigned long addr, const struct module *mod)
+<span class="lineNum">     405 </span>            : {
+<span class="lineNum">     406 </span><span class="lineCov">       3612 :         return (unsigned long)mod-&gt;module_core &lt;= addr &amp;&amp;</span>
+<span class="lineNum">     407 </span><span class="lineCov">        997 :                addr &lt; (unsigned long)mod-&gt;module_core + mod-&gt;core_size;</span>
+<span class="lineNum">     408 </span>            : }
+<span class="lineNum">     409 </span>            : 
+<span class="lineNum">     410 </span>            : static inline int within_module_init(unsigned long addr, const struct module *mod)
+<span class="lineNum">     411 </span>            : {
+<span class="lineNum">     412 </span><span class="lineCov">       4462 :         return (unsigned long)mod-&gt;module_init &lt;= addr &amp;&amp;</span>
+<span class="lineNum">     413 </span><span class="lineCov">       2211 :                addr &lt; (unsigned long)mod-&gt;module_init + mod-&gt;init_size;</span>
+<span class="lineNum">     414 </span>            : }
+<span class="lineNum">     415 </span>            : 
+<span class="lineNum">     416 </span>            : /* Search for module by name: must hold module_mutex. */
+<span class="lineNum">     417 </span>            : struct module *find_module(const char *name);
+<span class="lineNum">     418 </span>            : 
+<span class="lineNum">     419 </span>            : struct symsearch {
+<span class="lineNum">     420 </span>            :         const struct kernel_symbol *start, *stop;
+<span class="lineNum">     421 </span>            :         const unsigned long *crcs;
+<span class="lineNum">     422 </span>            :         enum {
+<span class="lineNum">     423 </span>            :                 NOT_GPL_ONLY,
+<span class="lineNum">     424 </span>            :                 GPL_ONLY,
+<span class="lineNum">     425 </span>            :                 WILL_BE_GPL_ONLY,
+<span class="lineNum">     426 </span>            :         } licence;
+<span class="lineNum">     427 </span>            :         bool unused;
+<span class="lineNum">     428 </span>            : };
+<span class="lineNum">     429 </span>            : 
+<span class="lineNum">     430 </span>            : /* Search for an exported symbol by name. */
+<span class="lineNum">     431 </span>            : const struct kernel_symbol *find_symbol(const char *name,
+<span class="lineNum">     432 </span>            :                                         struct module **owner,
+<span class="lineNum">     433 </span>            :                                         const unsigned long **crc,
+<span class="lineNum">     434 </span>            :                                         bool gplok,
+<span class="lineNum">     435 </span>            :                                         bool warn);
+<span class="lineNum">     436 </span>            : 
+<span class="lineNum">     437 </span>            : /* Walk the exported symbol table */
+<span class="lineNum">     438 </span>            : bool each_symbol_section(bool (*fn)(const struct symsearch *arr,
+<span class="lineNum">     439 </span>            :                                     struct module *owner,
+<span class="lineNum">     440 </span>            :                                     void *data), void *data);
+<span class="lineNum">     441 </span>            : 
+<span class="lineNum">     442 </span>            : /* Returns 0 and fills in value, defined and namebuf, or -ERANGE if
+<span class="lineNum">     443 </span>            :    symnum out of range. */
+<span class="lineNum">     444 </span>            : int module_get_kallsym(unsigned int symnum, unsigned long *value, char *type,
+<span class="lineNum">     445 </span>            :                         char *name, char *module_name, int *exported);
+<span class="lineNum">     446 </span>            : 
+<span class="lineNum">     447 </span>            : /* Look for this name: can be of form module:name. */
+<span class="lineNum">     448 </span>            : unsigned long module_kallsyms_lookup_name(const char *name);
+<span class="lineNum">     449 </span>            : 
+<span class="lineNum">     450 </span>            : int module_kallsyms_on_each_symbol(int (*fn)(void *, const char *,
+<span class="lineNum">     451 </span>            :                                              struct module *, unsigned long),
+<span class="lineNum">     452 </span>            :                                    void *data);
+<span class="lineNum">     453 </span>            : 
+<span class="lineNum">     454 </span>            : extern void __module_put_and_exit(struct module *mod, long code)
+<span class="lineNum">     455 </span>            :         __attribute__((noreturn));
+<span class="lineNum">     456 </span>            : #define module_put_and_exit(code) __module_put_and_exit(THIS_MODULE, code);
+<span class="lineNum">     457 </span>            : 
+<span class="lineNum">     458 </span>            : #ifdef CONFIG_MODULE_UNLOAD
+<span class="lineNum">     459 </span>            : unsigned long module_refcount(struct module *mod);
+<span class="lineNum">     460 </span>            : void __symbol_put(const char *symbol);
+<span class="lineNum">     461 </span>            : #define symbol_put(x) __symbol_put(VMLINUX_SYMBOL_STR(x))
+<span class="lineNum">     462 </span>            : void symbol_put_addr(void *addr);
+<span class="lineNum">     463 </span>            : 
+<span class="lineNum">     464 </span>            : /* Sometimes we know we already have a refcount, and it's easier not
+<span class="lineNum">     465 </span>            :    to handle the error case (which only happens with rmmod --wait). */
+<span class="lineNum">     466 </span>            : extern void __module_get(struct module *module);
+<span class="lineNum">     467 </span>            : 
+<span class="lineNum">     468 </span>            : /* This is the Right Way to get a module: if it fails, it's being removed,
+<span class="lineNum">     469 </span>            :  * so pretend it's not there. */
+<span class="lineNum">     470 </span>            : extern bool try_module_get(struct module *module);
+<span class="lineNum">     471 </span>            : 
+<span class="lineNum">     472 </span>            : extern void module_put(struct module *module);
+<span class="lineNum">     473 </span>            : 
+<span class="lineNum">     474 </span>            : #else /*!CONFIG_MODULE_UNLOAD*/
+<span class="lineNum">     475 </span>            : static inline int try_module_get(struct module *module)
+<span class="lineNum">     476 </span>            : {
+<span class="lineNum">     477 </span>            :         return !module || module_is_live(module);
+<span class="lineNum">     478 </span>            : }
+<span class="lineNum">     479 </span>            : static inline void module_put(struct module *module)
+<span class="lineNum">     480 </span>            : {
+<span class="lineNum">     481 </span>            : }
+<span class="lineNum">     482 </span>            : static inline void __module_get(struct module *module)
+<span class="lineNum">     483 </span>            : {
+<span class="lineNum">     484 </span>            : }
+<span class="lineNum">     485 </span>            : #define symbol_put(x) do { } while(0)
+<span class="lineNum">     486 </span>            : #define symbol_put_addr(p) do { } while(0)
+<span class="lineNum">     487 </span>            : 
+<span class="lineNum">     488 </span>            : #endif /* CONFIG_MODULE_UNLOAD */
+<span class="lineNum">     489 </span>            : int ref_module(struct module *a, struct module *b);
+<span class="lineNum">     490 </span>            : 
+<span class="lineNum">     491 </span>            : /* This is a #define so the string doesn't get put in every .o file */
+<span class="lineNum">     492 </span>            : #define module_name(mod)                        \
+<span class="lineNum">     493 </span>            : ({                                              \
+<span class="lineNum">     494 </span>            :         struct module *__mod = (mod);           \
+<span class="lineNum">     495 </span>            :         __mod ? __mod-&gt;name : &quot;kernel&quot;;            \
+<span class="lineNum">     496 </span>            : })
+<span class="lineNum">     497 </span>            : 
+<span class="lineNum">     498 </span>            : /* For kallsyms to ask for address resolution.  namebuf should be at
+<span class="lineNum">     499 </span>            :  * least KSYM_NAME_LEN long: a pointer to namebuf is returned if
+<span class="lineNum">     500 </span>            :  * found, otherwise NULL. */
+<span class="lineNum">     501 </span>            : const char *module_address_lookup(unsigned long addr,
+<span class="lineNum">     502 </span>            :                             unsigned long *symbolsize,
+<span class="lineNum">     503 </span>            :                             unsigned long *offset,
+<span class="lineNum">     504 </span>            :                             char **modname,
+<span class="lineNum">     505 </span>            :                             char *namebuf);
+<span class="lineNum">     506 </span>            : int lookup_module_symbol_name(unsigned long addr, char *symname);
+<span class="lineNum">     507 </span>            : int lookup_module_symbol_attrs(unsigned long addr, unsigned long *size, unsigned long *offset, char *modname, char *name);
+<span class="lineNum">     508 </span>            : 
+<span class="lineNum">     509 </span>            : /* For extable.c to search modules' exception tables. */
+<span class="lineNum">     510 </span>            : const struct exception_table_entry *search_module_extables(unsigned long addr);
+<span class="lineNum">     511 </span>            : 
+<span class="lineNum">     512 </span>            : int register_module_notifier(struct notifier_block * nb);
+<span class="lineNum">     513 </span>            : int unregister_module_notifier(struct notifier_block * nb);
+<span class="lineNum">     514 </span>            : 
+<span class="lineNum">     515 </span>            : extern void print_modules(void);
+<span class="lineNum">     516 </span>            : 
+<span class="lineNum">     517 </span>            : bool check_module_rhelversion(struct module *mod, char *version);
+<span class="lineNum">     518 </span>            : 
+<span class="lineNum">     519 </span>            : #else /* !CONFIG_MODULES... */
+<span class="lineNum">     520 </span>            : 
+<span class="lineNum">     521 </span>            : /* Given an address, look for it in the exception tables. */
+<span class="lineNum">     522 </span>            : static inline const struct exception_table_entry *
+<span class="lineNum">     523 </span>            : search_module_extables(unsigned long addr)
+<span class="lineNum">     524 </span>            : {
+<span class="lineNum">     525 </span>            :         return NULL;
+<span class="lineNum">     526 </span>            : }
+<span class="lineNum">     527 </span>            : 
+<span class="lineNum">     528 </span>            : static inline struct module *__module_address(unsigned long addr)
+<span class="lineNum">     529 </span>            : {
+<span class="lineNum">     530 </span>            :         return NULL;
+<span class="lineNum">     531 </span>            : }
+<span class="lineNum">     532 </span>            : 
+<span class="lineNum">     533 </span>            : static inline struct module *__module_text_address(unsigned long addr)
+<span class="lineNum">     534 </span>            : {
+<span class="lineNum">     535 </span>            :         return NULL;
+<span class="lineNum">     536 </span>            : }
+<span class="lineNum">     537 </span>            : 
+<span class="lineNum">     538 </span>            : static inline bool is_module_address(unsigned long addr)
+<span class="lineNum">     539 </span>            : {
+<span class="lineNum">     540 </span>            :         return false;
+<span class="lineNum">     541 </span>            : }
+<span class="lineNum">     542 </span>            : 
+<span class="lineNum">     543 </span>            : static inline bool is_module_percpu_address(unsigned long addr)
+<span class="lineNum">     544 </span>            : {
+<span class="lineNum">     545 </span>            :         return false;
+<span class="lineNum">     546 </span>            : }
+<span class="lineNum">     547 </span>            : 
+<span class="lineNum">     548 </span>            : static inline bool is_module_text_address(unsigned long addr)
+<span class="lineNum">     549 </span>            : {
+<span class="lineNum">     550 </span>            :         return false;
+<span class="lineNum">     551 </span>            : }
+<span class="lineNum">     552 </span>            : 
+<span class="lineNum">     553 </span>            : /* Get/put a kernel symbol (calls should be symmetric) */
+<span class="lineNum">     554 </span>            : #define symbol_get(x) ({ extern typeof(x) x __attribute__((weak)); &amp;(x); })
+<span class="lineNum">     555 </span>            : #define symbol_put(x) do { } while(0)
+<span class="lineNum">     556 </span>            : #define symbol_put_addr(x) do { } while(0)
+<span class="lineNum">     557 </span>            : 
+<span class="lineNum">     558 </span>            : static inline void __module_get(struct module *module)
+<span class="lineNum">     559 </span>            : {
+<span class="lineNum">     560 </span>            : }
+<span class="lineNum">     561 </span>            : 
+<span class="lineNum">     562 </span>            : static inline int try_module_get(struct module *module)
+<span class="lineNum">     563 </span>            : {
+<span class="lineNum">     564 </span>            :         return 1;
+<span class="lineNum">     565 </span>            : }
+<span class="lineNum">     566 </span>            : 
+<span class="lineNum">     567 </span>            : static inline void module_put(struct module *module)
+<span class="lineNum">     568 </span>            : {
+<span class="lineNum">     569 </span>            : }
+<span class="lineNum">     570 </span>            : 
+<span class="lineNum">     571 </span>            : #define module_name(mod) &quot;kernel&quot;
+<span class="lineNum">     572 </span>            : 
+<span class="lineNum">     573 </span>            : /* For kallsyms to ask for address resolution.  NULL means not found. */
+<span class="lineNum">     574 </span>            : static inline const char *module_address_lookup(unsigned long addr,
+<span class="lineNum">     575 </span>            :                                           unsigned long *symbolsize,
+<span class="lineNum">     576 </span>            :                                           unsigned long *offset,
+<span class="lineNum">     577 </span>            :                                           char **modname,
+<span class="lineNum">     578 </span>            :                                           char *namebuf)
+<span class="lineNum">     579 </span>            : {
+<span class="lineNum">     580 </span>            :         return NULL;
+<span class="lineNum">     581 </span>            : }
+<span class="lineNum">     582 </span>            : 
+<span class="lineNum">     583 </span>            : static inline int lookup_module_symbol_name(unsigned long addr, char *symname)
+<span class="lineNum">     584 </span>            : {
+<span class="lineNum">     585 </span>            :         return -ERANGE;
+<span class="lineNum">     586 </span>            : }
+<span class="lineNum">     587 </span>            : 
+<span class="lineNum">     588 </span>            : static inline int lookup_module_symbol_attrs(unsigned long addr, unsigned long *size, unsigned long *offset, char *modname, char *name)
+<span class="lineNum">     589 </span>            : {
+<span class="lineNum">     590 </span>            :         return -ERANGE;
+<span class="lineNum">     591 </span>            : }
+<span class="lineNum">     592 </span>            : 
+<span class="lineNum">     593 </span>            : static inline int module_get_kallsym(unsigned int symnum, unsigned long *value,
+<span class="lineNum">     594 </span>            :                                         char *type, char *name,
+<span class="lineNum">     595 </span>            :                                         char *module_name, int *exported)
+<span class="lineNum">     596 </span>            : {
+<span class="lineNum">     597 </span>            :         return -ERANGE;
+<span class="lineNum">     598 </span>            : }
+<span class="lineNum">     599 </span>            : 
+<span class="lineNum">     600 </span>            : static inline unsigned long module_kallsyms_lookup_name(const char *name)
+<span class="lineNum">     601 </span>            : {
+<span class="lineNum">     602 </span>            :         return 0;
+<span class="lineNum">     603 </span>            : }
+<span class="lineNum">     604 </span>            : 
+<span class="lineNum">     605 </span>            : static inline int module_kallsyms_on_each_symbol(int (*fn)(void *, const char *,
+<span class="lineNum">     606 </span>            :                                                            struct module *,
+<span class="lineNum">     607 </span>            :                                                            unsigned long),
+<span class="lineNum">     608 </span>            :                                                  void *data)
+<span class="lineNum">     609 </span>            : {
+<span class="lineNum">     610 </span>            :         return 0;
+<span class="lineNum">     611 </span>            : }
+<span class="lineNum">     612 </span>            : 
+<span class="lineNum">     613 </span>            : static inline int register_module_notifier(struct notifier_block * nb)
+<span class="lineNum">     614 </span>            : {
+<span class="lineNum">     615 </span>            :         /* no events will happen anyway, so this can always succeed */
+<span class="lineNum">     616 </span>            :         return 0;
+<span class="lineNum">     617 </span>            : }
+<span class="lineNum">     618 </span>            : 
+<span class="lineNum">     619 </span>            : static inline int unregister_module_notifier(struct notifier_block * nb)
+<span class="lineNum">     620 </span>            : {
+<span class="lineNum">     621 </span>            :         return 0;
+<span class="lineNum">     622 </span>            : }
+<span class="lineNum">     623 </span>            : 
+<span class="lineNum">     624 </span>            : #define module_put_and_exit(code) do_exit(code)
+<span class="lineNum">     625 </span>            : 
+<span class="lineNum">     626 </span>            : static inline void print_modules(void)
+<span class="lineNum">     627 </span>            : {
+<span class="lineNum">     628 </span>            : }
+<span class="lineNum">     629 </span>            : 
+<span class="lineNum">     630 </span>            : static inline bool check_module_rhelversion(struct module *mod, char *version)
+<span class="lineNum">     631 </span>            : {
+<span class="lineNum">     632 </span>            :         return false;
+<span class="lineNum">     633 </span>            : }
+<span class="lineNum">     634 </span>            : 
+<span class="lineNum">     635 </span>            : #endif /* CONFIG_MODULES */
+<span class="lineNum">     636 </span>            : 
+<span class="lineNum">     637 </span>            : #ifdef CONFIG_SYSFS
+<span class="lineNum">     638 </span>            : extern struct kset *module_kset;
+<span class="lineNum">     639 </span>            : extern struct kobj_type module_ktype;
+<span class="lineNum">     640 </span>            : extern int module_sysfs_initialized;
+<span class="lineNum">     641 </span>            : #endif /* CONFIG_SYSFS */
+<span class="lineNum">     642 </span>            : 
+<span class="lineNum">     643 </span>            : #define symbol_request(x) try_then_request_module(symbol_get(x), &quot;symbol:&quot; #x)
+<span class="lineNum">     644 </span>            : 
+<span class="lineNum">     645 </span>            : /* BELOW HERE ALL THESE ARE OBSOLETE AND WILL VANISH */
+<span class="lineNum">     646 </span>            : 
+<span class="lineNum">     647 </span>            : #define __MODULE_STRING(x) __stringify(x)
+<span class="lineNum">     648 </span>            : 
+<span class="lineNum">     649 </span>            : #ifdef CONFIG_DEBUG_SET_MODULE_RONX
+<span class="lineNum">     650 </span>            : extern void set_all_modules_text_rw(void);
+<span class="lineNum">     651 </span>            : extern void set_all_modules_text_ro(void);
+<span class="lineNum">     652 </span>            : #else
+<span class="lineNum">     653 </span>            : static inline void set_all_modules_text_rw(void) { }
+<span class="lineNum">     654 </span>            : static inline void set_all_modules_text_ro(void) { }
+<span class="lineNum">     655 </span>            : #endif
+<span class="lineNum">     656 </span>            : 
+<span class="lineNum">     657 </span>            : #ifdef CONFIG_GENERIC_BUG
+<span class="lineNum">     658 </span>            : void module_bug_finalize(const Elf_Ehdr *, const Elf_Shdr *,
+<span class="lineNum">     659 </span>            :                          struct module *);
+<span class="lineNum">     660 </span>            : void module_bug_cleanup(struct module *);
+<span class="lineNum">     661 </span>            : 
+<span class="lineNum">     662 </span>            : #else   /* !CONFIG_GENERIC_BUG */
+<span class="lineNum">     663 </span>            : 
+<span class="lineNum">     664 </span>            : static inline void module_bug_finalize(const Elf_Ehdr *hdr,
+<span class="lineNum">     665 </span>            :                                         const Elf_Shdr *sechdrs,
+<span class="lineNum">     666 </span>            :                                         struct module *mod)
+<span class="lineNum">     667 </span>            : {
+<span class="lineNum">     668 </span>            : }
+<span class="lineNum">     669 </span>            : static inline void module_bug_cleanup(struct module *mod) {}
+<span class="lineNum">     670 </span>            : #endif  /* CONFIG_GENERIC_BUG */
+<span class="lineNum">     671 </span>            : 
+<span class="lineNum">     672 </span>            : #endif /* _LINUX_MODULE_H */
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

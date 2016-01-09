@@ -1,0 +1,698 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - kernel/stop_machine.c</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../index.html">top level</a> - <a href="index.html">kernel</a> - stop_machine.c<span style="font-size: 80%;"> (source / <a href="stop_machine.c.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">107</td>
+            <td class="headerCovTableEntry">171</td>
+            <td class="headerCovTableEntryLo">62.6 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">13</td>
+            <td class="headerCovTableEntry">20</td>
+            <td class="headerCovTableEntryLo">65.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /*</a>
+<span class="lineNum">       2 </span>            :  * kernel/stop_machine.c
+<span class="lineNum">       3 </span>            :  *
+<span class="lineNum">       4 </span>            :  * Copyright (C) 2008, 2005     IBM Corporation.
+<span class="lineNum">       5 </span>            :  * Copyright (C) 2008, 2005     Rusty Russell rusty@rustcorp.com.au
+<span class="lineNum">       6 </span>            :  * Copyright (C) 2010           SUSE Linux Products GmbH
+<span class="lineNum">       7 </span>            :  * Copyright (C) 2010           Tejun Heo &lt;tj@kernel.org&gt;
+<span class="lineNum">       8 </span>            :  *
+<span class="lineNum">       9 </span>            :  * This file is released under the GPLv2 and any later version.
+<span class="lineNum">      10 </span>            :  */
+<span class="lineNum">      11 </span>            : #include &lt;linux/completion.h&gt;
+<span class="lineNum">      12 </span>            : #include &lt;linux/cpu.h&gt;
+<span class="lineNum">      13 </span>            : #include &lt;linux/init.h&gt;
+<span class="lineNum">      14 </span>            : #include &lt;linux/kthread.h&gt;
+<span class="lineNum">      15 </span>            : #include &lt;linux/export.h&gt;
+<span class="lineNum">      16 </span>            : #include &lt;linux/percpu.h&gt;
+<span class="lineNum">      17 </span>            : #include &lt;linux/sched.h&gt;
+<span class="lineNum">      18 </span>            : #include &lt;linux/stop_machine.h&gt;
+<span class="lineNum">      19 </span>            : #include &lt;linux/interrupt.h&gt;
+<span class="lineNum">      20 </span>            : #include &lt;linux/kallsyms.h&gt;
+<span class="lineNum">      21 </span>            : #include &lt;linux/smpboot.h&gt;
+<span class="lineNum">      22 </span>            : #include &lt;linux/atomic.h&gt;
+<span class="lineNum">      23 </span>            : #include &lt;linux/lglock.h&gt;
+<span class="lineNum">      24 </span>            : 
+<span class="lineNum">      25 </span>            : /*
+<span class="lineNum">      26 </span>            :  * Structure to determine completion condition and record errors.  May
+<span class="lineNum">      27 </span>            :  * be shared by works on different cpus.
+<span class="lineNum">      28 </span>            :  */
+<span class="lineNum">      29 </span>            : struct cpu_stop_done {
+<span class="lineNum">      30 </span>            :         atomic_t                nr_todo;        /* nr left to execute */
+<span class="lineNum">      31 </span>            :         bool                    executed;       /* actually executed? */
+<span class="lineNum">      32 </span>            :         int                     ret;            /* collected return value */
+<span class="lineNum">      33 </span>            :         struct completion       completion;     /* fired if nr_todo reaches 0 */
+<span class="lineNum">      34 </span>            : };
+<span class="lineNum">      35 </span>            : 
+<span class="lineNum">      36 </span>            : /* the actual stopper, one per every possible cpu, enabled on online cpus */
+<span class="lineNum">      37 </span>            : struct cpu_stopper {
+<span class="lineNum">      38 </span>            :         spinlock_t              lock;
+<span class="lineNum">      39 </span>            :         bool                    enabled;        /* is this stopper enabled? */
+<span class="lineNum">      40 </span>            :         struct list_head        works;          /* list of pending works */
+<span class="lineNum">      41 </span>            : };
+<span class="lineNum">      42 </span>            : 
+<span class="lineNum">      43 </span>            : static DEFINE_PER_CPU(struct cpu_stopper, cpu_stopper);
+<span class="lineNum">      44 </span>            : static DEFINE_PER_CPU(struct task_struct *, cpu_stopper_task);
+<span class="lineNum">      45 </span>            : static bool stop_machine_initialized = false;
+<span class="lineNum">      46 </span>            : 
+<span class="lineNum">      47 </span>            : /*
+<span class="lineNum">      48 </span>            :  * Avoids a race between stop_two_cpus and global stop_cpus, where
+<span class="lineNum">      49 </span>            :  * the stoppers could get queued up in reverse order, leading to
+<span class="lineNum">      50 </span>            :  * system deadlock. Using an lglock means stop_two_cpus remains
+<span class="lineNum">      51 </span>            :  * relatively cheap.
+<span class="lineNum">      52 </span>            :  */
+<a name="53"><span class="lineNum">      53 </span>            : DEFINE_STATIC_LGLOCK(stop_cpus_lock);</a>
+<span class="lineNum">      54 </span>            : 
+<span class="lineNum">      55 </span><span class="lineCov">     706656 : static void cpu_stop_init_done(struct cpu_stop_done *done, unsigned int nr_todo)</span>
+<span class="lineNum">      56 </span>            : {
+<span class="lineNum">      57 </span><span class="lineCov">     706656 :         memset(done, 0, sizeof(*done));</span>
+<span class="lineNum">      58 </span><span class="lineCov">     706656 :         atomic_set(&amp;done-&gt;nr_todo, nr_todo);</span>
+<span class="lineNum">      59 </span><span class="lineCov">     706656 :         init_completion(&amp;done-&gt;completion);</span>
+<span class="lineNum">      60 </span><span class="lineCov">     706657 : }</span>
+<a name="61"><span class="lineNum">      61 </span>            : </a>
+<span class="lineNum">      62 </span>            : /* signal completion unless @done is NULL */
+<span class="lineNum">      63 </span><span class="lineCov">     707590 : static void cpu_stop_signal_done(struct cpu_stop_done *done, bool executed)</span>
+<span class="lineNum">      64 </span>            : {
+<span class="lineNum">      65 </span><span class="lineCov">     707590 :         if (done) {</span>
+<span class="lineNum">      66 </span><span class="lineCov">     707104 :                 if (executed)</span>
+<span class="lineNum">      67 </span><span class="lineCov">     707047 :                         done-&gt;executed = true;</span>
+<span class="lineNum">      68 </span><span class="lineCov">    1414263 :                 if (atomic_dec_and_test(&amp;done-&gt;nr_todo))</span>
+<span class="lineNum">      69 </span><span class="lineCov">     706657 :                         complete(&amp;done-&gt;completion);</span>
+<span class="lineNum">      70 </span>            :         }
+<span class="lineNum">      71 </span><span class="lineCov">     707645 : }</span>
+<a name="72"><span class="lineNum">      72 </span>            : </a>
+<span class="lineNum">      73 </span>            : /* queue @work to @stopper.  if offline, @work is completed immediately */
+<span class="lineNum">      74 </span><span class="lineCov">     707729 : static void cpu_stop_queue_work(unsigned int cpu, struct cpu_stop_work *work)</span>
+<span class="lineNum">      75 </span>            : {
+<span class="lineNum">      76 </span><span class="lineCov">     707729 :         struct cpu_stopper *stopper = &amp;per_cpu(cpu_stopper, cpu);</span>
+<span class="lineNum">      77 </span><span class="lineCov">     707729 :         struct task_struct *p = per_cpu(cpu_stopper_task, cpu);</span>
+<span class="lineNum">      78 </span>            : 
+<span class="lineNum">      79 </span>            :         unsigned long flags;
+<span class="lineNum">      80 </span>            : 
+<span class="lineNum">      81 </span><span class="lineCov">     707729 :         spin_lock_irqsave(&amp;stopper-&gt;lock, flags);</span>
+<span class="lineNum">      82 </span>            : 
+<span class="lineNum">      83 </span><span class="lineCov">     707730 :         if (stopper-&gt;enabled) {</span>
+<span class="lineNum">      84 </span><span class="lineCov">     707730 :                 list_add_tail(&amp;work-&gt;list, &amp;stopper-&gt;works);</span>
+<span class="lineNum">      85 </span><span class="lineCov">     707730 :                 wake_up_process(p);</span>
+<span class="lineNum">      86 </span>            :         } else
+<span class="lineNum">      87 </span><span class="lineNoCov">          0 :                 cpu_stop_signal_done(work-&gt;done, false);</span>
+<span class="lineNum">      88 </span>            : 
+<span class="lineNum">      89 </span><span class="lineCov">     707729 :         spin_unlock_irqrestore(&amp;stopper-&gt;lock, flags);</span>
+<span class="lineNum">      90 </span><span class="lineCov">     707729 : }</span>
+<span class="lineNum">      91 </span>            : 
+<span class="lineNum">      92 </span>            : /**
+<span class="lineNum">      93 </span>            :  * stop_one_cpu - stop a cpu
+<span class="lineNum">      94 </span>            :  * @cpu: cpu to stop
+<span class="lineNum">      95 </span>            :  * @fn: function to execute
+<span class="lineNum">      96 </span>            :  * @arg: argument to @fn
+<span class="lineNum">      97 </span>            :  *
+<span class="lineNum">      98 </span>            :  * Execute @fn(@arg) on @cpu.  @fn is run in a process context with
+<span class="lineNum">      99 </span>            :  * the highest priority preempting any task on the cpu and
+<span class="lineNum">     100 </span>            :  * monopolizing it.  This function returns after the execution is
+<span class="lineNum">     101 </span>            :  * complete.
+<span class="lineNum">     102 </span>            :  *
+<span class="lineNum">     103 </span>            :  * This function doesn't guarantee @cpu stays online till @fn
+<span class="lineNum">     104 </span>            :  * completes.  If @cpu goes down in the middle, execution may happen
+<span class="lineNum">     105 </span>            :  * partially or fully on different cpus.  @fn should either be ready
+<span class="lineNum">     106 </span>            :  * for that or the caller should ensure that @cpu stays online until
+<span class="lineNum">     107 </span>            :  * this function completes.
+<span class="lineNum">     108 </span>            :  *
+<span class="lineNum">     109 </span>            :  * CONTEXT:
+<span class="lineNum">     110 </span>            :  * Might sleep.
+<span class="lineNum">     111 </span>            :  *
+<span class="lineNum">     112 </span>            :  * RETURNS:
+<span class="lineNum">     113 </span>            :  * -ENOENT if @fn(@arg) was not executed because @cpu was offline;
+<a name="114"><span class="lineNum">     114 </span>            :  * otherwise, the return value of @fn.</a>
+<span class="lineNum">     115 </span>            :  */
+<span class="lineNum">     116 </span><span class="lineCov">     706637 : int stop_one_cpu(unsigned int cpu, cpu_stop_fn_t fn, void *arg)</span>
+<span class="lineNum">     117 </span>            : {
+<span class="lineNum">     118 </span>            :         struct cpu_stop_done done;
+<span class="lineNum">     119 </span><span class="lineCov">     706637 :         struct cpu_stop_work work = { .fn = fn, .arg = arg, .done = &amp;done };</span>
+<span class="lineNum">     120 </span>            : 
+<span class="lineNum">     121 </span><span class="lineCov">     706637 :         cpu_stop_init_done(&amp;done, 1);</span>
+<span class="lineNum">     122 </span><span class="lineCov">     706638 :         cpu_stop_queue_work(cpu, &amp;work);</span>
+<span class="lineNum">     123 </span><span class="lineCov">     706637 :         wait_for_completion(&amp;done.completion);</span>
+<span class="lineNum">     124 </span><span class="lineCov">     706638 :         return done.executed ? done.ret : -ENOENT;</span>
+<span class="lineNum">     125 </span>            : }
+<span class="lineNum">     126 </span>            : 
+<span class="lineNum">     127 </span>            : /* This controls the threads on each CPU. */
+<span class="lineNum">     128 </span>            : enum multi_stop_state {
+<span class="lineNum">     129 </span>            :         /* Dummy starting state for thread. */
+<span class="lineNum">     130 </span>            :         MULTI_STOP_NONE,
+<span class="lineNum">     131 </span>            :         /* Awaiting everyone to be scheduled. */
+<span class="lineNum">     132 </span>            :         MULTI_STOP_PREPARE,
+<span class="lineNum">     133 </span>            :         /* Disable interrupts. */
+<span class="lineNum">     134 </span>            :         MULTI_STOP_DISABLE_IRQ,
+<span class="lineNum">     135 </span>            :         /* Run the function */
+<span class="lineNum">     136 </span>            :         MULTI_STOP_RUN,
+<span class="lineNum">     137 </span>            :         /* Exit */
+<span class="lineNum">     138 </span>            :         MULTI_STOP_EXIT,
+<span class="lineNum">     139 </span>            : };
+<span class="lineNum">     140 </span>            : 
+<span class="lineNum">     141 </span>            : struct multi_stop_data {
+<span class="lineNum">     142 </span>            :         int                     (*fn)(void *);
+<span class="lineNum">     143 </span>            :         void                    *data;
+<span class="lineNum">     144 </span>            :         /* Like num_online_cpus(), but hotplug cpu uses us, so we need this. */
+<span class="lineNum">     145 </span>            :         unsigned int            num_threads;
+<span class="lineNum">     146 </span>            :         const struct cpumask    *active_cpus;
+<span class="lineNum">     147 </span>            : 
+<span class="lineNum">     148 </span>            :         enum multi_stop_state   state;
+<span class="lineNum">     149 </span>            :         atomic_t                thread_ack;
+<span class="lineNum">     150 </span>            : };
+<span class="lineNum">     151 </span>            : 
+<span class="lineNum">     152 </span>            : static void set_state(struct multi_stop_data *msdata,
+<span class="lineNum">     153 </span>            :                       enum multi_stop_state newstate)
+<a name="154"><span class="lineNum">     154 </span>            : {</a>
+<span class="lineNum">     155 </span>            :         /* Reset ack counter. */
+<span class="lineNum">     156 </span><span class="lineCov">         95 :         atomic_set(&amp;msdata-&gt;thread_ack, msdata-&gt;num_threads);</span>
+<span class="lineNum">     157 </span><span class="lineCov">         95 :         smp_wmb();</span>
+<span class="lineNum">     158 </span><span class="lineCov">         95 :         msdata-&gt;state = newstate;</span>
+<span class="lineNum">     159 </span>            : }
+<span class="lineNum">     160 </span>            : 
+<span class="lineNum">     161 </span>            : /* Last one to ack a state moves to the next state. */
+<span class="lineNum">     162 </span>            : static void ack_state(struct multi_stop_data *msdata)
+<span class="lineNum">     163 </span>            : {
+<span class="lineNum">     164 </span><span class="lineCov">       2763 :         if (atomic_dec_and_test(&amp;msdata-&gt;thread_ack))</span>
+<span class="lineNum">     165 </span><span class="lineCov">         76 :                 set_state(msdata, msdata-&gt;state + 1);</span>
+<span class="lineNum">     166 </span>            : }
+<span class="lineNum">     167 </span>            : 
+<span class="lineNum">     168 </span>            : /* This is the cpu_stop function which stops the CPU. */
+<span class="lineNum">     169 </span><span class="lineCov">        579 : static int multi_cpu_stop(void *data)</span>
+<span class="lineNum">     170 </span>            : {
+<span class="lineNum">     171 </span><span class="lineCov">        579 :         struct multi_stop_data *msdata = data;</span>
+<span class="lineNum">     172 </span><span class="lineCov">        579 :         enum multi_stop_state curstate = MULTI_STOP_NONE;</span>
+<span class="lineNum">     173 </span><span class="lineCov">        579 :         int cpu = smp_processor_id(), err = 0;</span>
+<span class="lineNum">     174 </span>            :         unsigned long flags;
+<span class="lineNum">     175 </span>            :         bool is_active;
+<span class="lineNum">     176 </span>            : 
+<span class="lineNum">     177 </span>            :         /*
+<span class="lineNum">     178 </span>            :          * When called from stop_machine_from_inactive_cpu(), irq might
+<span class="lineNum">     179 </span>            :          * already be disabled.  Save the state and restore it on exit.
+<span class="lineNum">     180 </span>            :          */
+<span class="lineNum">     181 </span><span class="lineCov">        578 :         local_save_flags(flags);</span>
+<span class="lineNum">     182 </span>            : 
+<span class="lineNum">     183 </span><span class="lineCov">        578 :         if (!msdata-&gt;active_cpus)</span>
+<span class="lineNum">     184 </span><span class="lineCov">       1139 :                 is_active = cpu == cpumask_first(cpu_online_mask);</span>
+<span class="lineNum">     185 </span>            :         else
+<span class="lineNum">     186 </span><span class="lineNoCov">          0 :                 is_active = cpumask_test_cpu(cpu, msdata-&gt;active_cpus);</span>
+<span class="lineNum">     187 </span>            : 
+<span class="lineNum">     188 </span>            :         /* Simple state machine */
+<span class="lineNum">     189 </span>            :         do {
+<span class="lineNum">     190 </span>            :                 /* Chill out and ensure we re-read multi_stop_state. */
+<span class="lineNum">     191 </span>            :                 cpu_relax();
+<span class="lineNum">     192 </span><span class="lineCov">     179873 :                 if (msdata-&gt;state != curstate) {</span>
+<span class="lineNum">     193 </span><span class="lineCov">       1290 :                         curstate = msdata-&gt;state;</span>
+<span class="lineNum">     194 </span><span class="lineCov">       1290 :                         switch (curstate) {</span>
+<span class="lineNum">     195 </span>            :                         case MULTI_STOP_DISABLE_IRQ:
+<span class="lineNum">     196 </span>            :                                 local_irq_disable();
+<span class="lineNum">     197 </span>            :                                 hard_irq_disable();
+<span class="lineNum">     198 </span>            :                                 break;
+<span class="lineNum">     199 </span>            :                         case MULTI_STOP_RUN:
+<span class="lineNum">     200 </span><span class="lineCov">        319 :                                 if (is_active)</span>
+<span class="lineNum">     201 </span><span class="lineCov">         19 :                                         err = msdata-&gt;fn(msdata-&gt;data);</span>
+<span class="lineNum">     202 </span>            :                                 break;
+<span class="lineNum">     203 </span>            :                         default:
+<span class="lineNum">     204 </span>            :                                 break;
+<span class="lineNum">     205 </span>            :                         }
+<span class="lineNum">     206 </span>            :                         ack_state(msdata);
+<span class="lineNum">     207 </span>            :                 }
+<span class="lineNum">     208 </span><span class="lineCov">     180131 :         } while (curstate != MULTI_STOP_EXIT);</span>
+<span class="lineNum">     209 </span>            : 
+<span class="lineNum">     210 </span><span class="lineCov">        780 :         local_irq_restore(flags);</span>
+<span class="lineNum">     211 </span><span class="lineCov">        461 :         return err;</span>
+<span class="lineNum">     212 </span>            : }
+<span class="lineNum">     213 </span>            : 
+<span class="lineNum">     214 </span>            : /**
+<span class="lineNum">     215 </span>            :  * stop_two_cpus - stops two cpus
+<span class="lineNum">     216 </span>            :  * @cpu1: the cpu to stop
+<span class="lineNum">     217 </span>            :  * @cpu2: the other cpu to stop
+<span class="lineNum">     218 </span>            :  * @fn: function to execute
+<span class="lineNum">     219 </span>            :  * @arg: argument to @fn
+<span class="lineNum">     220 </span>            :  *
+<span class="lineNum">     221 </span>            :  * Stops both the current and specified CPU and runs @fn on one of them.
+<span class="lineNum">     222 </span>            :  *
+<span class="lineNum">     223 </span>            :  * returns when both are completed.
+<span class="lineNum">     224 </span>            :  */
+<span class="lineNum">     225 </span><span class="lineNoCov">          0 : int stop_two_cpus(unsigned int cpu1, unsigned int cpu2, cpu_stop_fn_t fn, void *arg)</span>
+<span class="lineNum">     226 </span>            : {
+<span class="lineNum">     227 </span>            :         struct cpu_stop_done done;
+<span class="lineNum">     228 </span>            :         struct cpu_stop_work work1, work2;
+<span class="lineNum">     229 </span>            :         struct multi_stop_data msdata;
+<span class="lineNum">     230 </span>            : 
+<span class="lineNum">     231 </span><span class="lineNoCov">          0 :         preempt_disable();</span>
+<span class="lineNum">     232 </span><span class="lineNoCov">          0 :         msdata = (struct multi_stop_data){</span>
+<span class="lineNum">     233 </span>            :                 .fn = fn,
+<span class="lineNum">     234 </span>            :                 .data = arg,
+<span class="lineNum">     235 </span>            :                 .num_threads = 2,
+<span class="lineNum">     236 </span>            :                 .active_cpus = cpumask_of(cpu1),
+<span class="lineNum">     237 </span>            :         };
+<span class="lineNum">     238 </span>            : 
+<span class="lineNum">     239 </span><span class="lineNoCov">          0 :         work1 = work2 = (struct cpu_stop_work){</span>
+<span class="lineNum">     240 </span>            :                 .fn = multi_cpu_stop,
+<span class="lineNum">     241 </span>            :                 .arg = &amp;msdata,
+<span class="lineNum">     242 </span>            :                 .done = &amp;done
+<span class="lineNum">     243 </span>            :         };
+<span class="lineNum">     244 </span>            : 
+<span class="lineNum">     245 </span><span class="lineNoCov">          0 :         cpu_stop_init_done(&amp;done, 2);</span>
+<span class="lineNum">     246 </span>            :         set_state(&amp;msdata, MULTI_STOP_PREPARE);
+<span class="lineNum">     247 </span>            : 
+<span class="lineNum">     248 </span>            :         /*
+<span class="lineNum">     249 </span>            :          * If we observe both CPUs active we know _cpu_down() cannot yet have
+<span class="lineNum">     250 </span>            :          * queued its stop_machine works and therefore ours will get executed
+<span class="lineNum">     251 </span>            :          * first. Or its not either one of our CPUs that's getting unplugged,
+<span class="lineNum">     252 </span>            :          * in which case we don't care.
+<span class="lineNum">     253 </span>            :          *
+<span class="lineNum">     254 </span>            :          * This relies on the stopper workqueues to be FIFO.
+<span class="lineNum">     255 </span>            :          */
+<span class="lineNum">     256 </span><span class="lineNoCov">          0 :         if (!cpu_active(cpu1) || !cpu_active(cpu2)) {</span>
+<span class="lineNum">     257 </span><span class="lineNoCov">          0 :                 preempt_enable();</span>
+<span class="lineNum">     258 </span><span class="lineNoCov">          0 :                 return -ENOENT;</span>
+<span class="lineNum">     259 </span>            :         }
+<span class="lineNum">     260 </span>            : 
+<span class="lineNum">     261 </span><span class="lineNoCov">          0 :         lg_double_lock(&amp;stop_cpus_lock, cpu1, cpu2);</span>
+<span class="lineNum">     262 </span><span class="lineNoCov">          0 :         cpu_stop_queue_work(cpu1, &amp;work1);</span>
+<span class="lineNum">     263 </span><span class="lineNoCov">          0 :         cpu_stop_queue_work(cpu2, &amp;work2);</span>
+<span class="lineNum">     264 </span><span class="lineNoCov">          0 :         lg_double_unlock(&amp;stop_cpus_lock, cpu1, cpu2);</span>
+<span class="lineNum">     265 </span>            : 
+<span class="lineNum">     266 </span><span class="lineNoCov">          0 :         preempt_enable();</span>
+<span class="lineNum">     267 </span>            : 
+<span class="lineNum">     268 </span><span class="lineNoCov">          0 :         wait_for_completion(&amp;done.completion);</span>
+<span class="lineNum">     269 </span><span class="lineNoCov">          0 :         return done.executed ? done.ret : -ENOENT;</span>
+<span class="lineNum">     270 </span>            : }
+<span class="lineNum">     271 </span>            : 
+<span class="lineNum">     272 </span>            : /**
+<span class="lineNum">     273 </span>            :  * stop_one_cpu_nowait - stop a cpu but don't wait for completion
+<span class="lineNum">     274 </span>            :  * @cpu: cpu to stop
+<span class="lineNum">     275 </span>            :  * @fn: function to execute
+<span class="lineNum">     276 </span>            :  * @arg: argument to @fn
+<span class="lineNum">     277 </span>            :  *
+<span class="lineNum">     278 </span>            :  * Similar to stop_one_cpu() but doesn't wait for completion.  The
+<span class="lineNum">     279 </span>            :  * caller is responsible for ensuring @work_buf is currently unused
+<span class="lineNum">     280 </span>            :  * and will remain untouched until stopper starts executing @fn.
+<span class="lineNum">     281 </span>            :  *
+<span class="lineNum">     282 </span>            :  * CONTEXT:
+<a name="283"><span class="lineNum">     283 </span>            :  * Don't care.</a>
+<span class="lineNum">     284 </span>            :  */
+<span class="lineNum">     285 </span><span class="lineCov">        484 : void stop_one_cpu_nowait(unsigned int cpu, cpu_stop_fn_t fn, void *arg,</span>
+<span class="lineNum">     286 </span>            :                         struct cpu_stop_work *work_buf)
+<span class="lineNum">     287 </span>            : {
+<span class="lineNum">     288 </span><span class="lineCov">        484 :         *work_buf = (struct cpu_stop_work){ .fn = fn, .arg = arg, };</span>
+<span class="lineNum">     289 </span><span class="lineCov">        484 :         cpu_stop_queue_work(cpu, work_buf);</span>
+<span class="lineNum">     290 </span><span class="lineCov">        484 : }</span>
+<span class="lineNum">     291 </span>            : 
+<span class="lineNum">     292 </span>            : /* static data for stop_cpus */
+<span class="lineNum">     293 </span>            : static DEFINE_MUTEX(stop_cpus_mutex);
+<a name="294"><span class="lineNum">     294 </span>            : static DEFINE_PER_CPU(struct cpu_stop_work, stop_cpus_work);</a>
+<span class="lineNum">     295 </span>            : 
+<span class="lineNum">     296 </span><span class="lineCov">         19 : static void queue_stop_cpus_work(const struct cpumask *cpumask,</span>
+<span class="lineNum">     297 </span>            :                                  cpu_stop_fn_t fn, void *arg,
+<span class="lineNum">     298 </span>            :                                  struct cpu_stop_done *done)
+<span class="lineNum">     299 </span>            : {
+<span class="lineNum">     300 </span>            :         struct cpu_stop_work *work;
+<span class="lineNum">     301 </span>            :         unsigned int cpu;
+<span class="lineNum">     302 </span>            : 
+<span class="lineNum">     303 </span>            :         /* initialize works and done */
+<span class="lineNum">     304 </span><span class="lineCov">       1273 :         for_each_cpu(cpu, cpumask) {</span>
+<span class="lineNum">     305 </span><span class="lineCov">        608 :                 work = &amp;per_cpu(stop_cpus_work, cpu);</span>
+<span class="lineNum">     306 </span><span class="lineCov">        608 :                 work-&gt;fn = fn;</span>
+<span class="lineNum">     307 </span><span class="lineCov">        608 :                 work-&gt;arg = arg;</span>
+<span class="lineNum">     308 </span><span class="lineCov">        608 :                 work-&gt;done = done;</span>
+<span class="lineNum">     309 </span>            :         }
+<span class="lineNum">     310 </span>            : 
+<span class="lineNum">     311 </span>            :         /*
+<span class="lineNum">     312 </span>            :          * Disable preemption while queueing to avoid getting
+<span class="lineNum">     313 </span>            :          * preempted by a stopper which might wait for other stoppers
+<span class="lineNum">     314 </span>            :          * to enter @fn which can lead to deadlock.
+<span class="lineNum">     315 </span>            :          */
+<span class="lineNum">     316 </span><span class="lineCov">         19 :         lg_global_lock(&amp;stop_cpus_lock);</span>
+<span class="lineNum">     317 </span><span class="lineCov">       1273 :         for_each_cpu(cpu, cpumask)</span>
+<span class="lineNum">     318 </span><span class="lineCov">        608 :                 cpu_stop_queue_work(cpu, &amp;per_cpu(stop_cpus_work, cpu));</span>
+<span class="lineNum">     319 </span><span class="lineCov">         19 :         lg_global_unlock(&amp;stop_cpus_lock);</span>
+<a name="320"><span class="lineNum">     320 </span><span class="lineCov">         19 : }</span></a>
+<span class="lineNum">     321 </span>            : 
+<span class="lineNum">     322 </span><span class="lineCov">         19 : static int __stop_cpus(const struct cpumask *cpumask,</span>
+<span class="lineNum">     323 </span>            :                        cpu_stop_fn_t fn, void *arg)
+<span class="lineNum">     324 </span>            : {
+<span class="lineNum">     325 </span>            :         struct cpu_stop_done done;
+<span class="lineNum">     326 </span>            : 
+<span class="lineNum">     327 </span><span class="lineCov">         19 :         cpu_stop_init_done(&amp;done, cpumask_weight(cpumask));</span>
+<span class="lineNum">     328 </span><span class="lineCov">         19 :         queue_stop_cpus_work(cpumask, fn, arg, &amp;done);</span>
+<span class="lineNum">     329 </span><span class="lineCov">         19 :         wait_for_completion(&amp;done.completion);</span>
+<span class="lineNum">     330 </span><span class="lineCov">         19 :         return done.executed ? done.ret : -ENOENT;</span>
+<span class="lineNum">     331 </span>            : }
+<span class="lineNum">     332 </span>            : 
+<span class="lineNum">     333 </span>            : /**
+<span class="lineNum">     334 </span>            :  * stop_cpus - stop multiple cpus
+<span class="lineNum">     335 </span>            :  * @cpumask: cpus to stop
+<span class="lineNum">     336 </span>            :  * @fn: function to execute
+<span class="lineNum">     337 </span>            :  * @arg: argument to @fn
+<span class="lineNum">     338 </span>            :  *
+<span class="lineNum">     339 </span>            :  * Execute @fn(@arg) on online cpus in @cpumask.  On each target cpu,
+<span class="lineNum">     340 </span>            :  * @fn is run in a process context with the highest priority
+<span class="lineNum">     341 </span>            :  * preempting any task on the cpu and monopolizing it.  This function
+<span class="lineNum">     342 </span>            :  * returns after all executions are complete.
+<span class="lineNum">     343 </span>            :  *
+<span class="lineNum">     344 </span>            :  * This function doesn't guarantee the cpus in @cpumask stay online
+<span class="lineNum">     345 </span>            :  * till @fn completes.  If some cpus go down in the middle, execution
+<span class="lineNum">     346 </span>            :  * on the cpu may happen partially or fully on different cpus.  @fn
+<span class="lineNum">     347 </span>            :  * should either be ready for that or the caller should ensure that
+<span class="lineNum">     348 </span>            :  * the cpus stay online until this function completes.
+<span class="lineNum">     349 </span>            :  *
+<span class="lineNum">     350 </span>            :  * All stop_cpus() calls are serialized making it safe for @fn to wait
+<span class="lineNum">     351 </span>            :  * for all cpus to start executing it.
+<span class="lineNum">     352 </span>            :  *
+<span class="lineNum">     353 </span>            :  * CONTEXT:
+<span class="lineNum">     354 </span>            :  * Might sleep.
+<span class="lineNum">     355 </span>            :  *
+<span class="lineNum">     356 </span>            :  * RETURNS:
+<span class="lineNum">     357 </span>            :  * -ENOENT if @fn(@arg) was not executed at all because all cpus in
+<span class="lineNum">     358 </span>            :  * @cpumask were offline; otherwise, 0 if all executions of @fn
+<a name="359"><span class="lineNum">     359 </span>            :  * returned 0, any non zero return value if any returned non zero.</a>
+<span class="lineNum">     360 </span>            :  */
+<span class="lineNum">     361 </span><span class="lineCov">         19 : int stop_cpus(const struct cpumask *cpumask, cpu_stop_fn_t fn, void *arg)</span>
+<span class="lineNum">     362 </span>            : {
+<span class="lineNum">     363 </span>            :         int ret;
+<span class="lineNum">     364 </span>            : 
+<span class="lineNum">     365 </span>            :         /* static works are used, process one request at a time */
+<span class="lineNum">     366 </span><span class="lineCov">         19 :         mutex_lock(&amp;stop_cpus_mutex);</span>
+<span class="lineNum">     367 </span><span class="lineCov">         19 :         ret = __stop_cpus(cpumask, fn, arg);</span>
+<span class="lineNum">     368 </span><span class="lineCov">         19 :         mutex_unlock(&amp;stop_cpus_mutex);</span>
+<span class="lineNum">     369 </span><span class="lineCov">         19 :         return ret;</span>
+<span class="lineNum">     370 </span>            : }
+<span class="lineNum">     371 </span>            : 
+<span class="lineNum">     372 </span>            : /**
+<span class="lineNum">     373 </span>            :  * try_stop_cpus - try to stop multiple cpus
+<span class="lineNum">     374 </span>            :  * @cpumask: cpus to stop
+<span class="lineNum">     375 </span>            :  * @fn: function to execute
+<span class="lineNum">     376 </span>            :  * @arg: argument to @fn
+<span class="lineNum">     377 </span>            :  *
+<span class="lineNum">     378 </span>            :  * Identical to stop_cpus() except that it fails with -EAGAIN if
+<span class="lineNum">     379 </span>            :  * someone else is already using the facility.
+<span class="lineNum">     380 </span>            :  *
+<span class="lineNum">     381 </span>            :  * CONTEXT:
+<span class="lineNum">     382 </span>            :  * Might sleep.
+<span class="lineNum">     383 </span>            :  *
+<span class="lineNum">     384 </span>            :  * RETURNS:
+<span class="lineNum">     385 </span>            :  * -EAGAIN if someone else is already stopping cpus, -ENOENT if
+<span class="lineNum">     386 </span>            :  * @fn(@arg) was not executed at all because all cpus in @cpumask were
+<span class="lineNum">     387 </span>            :  * offline; otherwise, 0 if all executions of @fn returned 0, any non
+<a name="388"><span class="lineNum">     388 </span>            :  * zero return value if any returned non zero.</a>
+<span class="lineNum">     389 </span>            :  */
+<span class="lineNum">     390 </span><span class="lineNoCov">          0 : int try_stop_cpus(const struct cpumask *cpumask, cpu_stop_fn_t fn, void *arg)</span>
+<span class="lineNum">     391 </span>            : {
+<span class="lineNum">     392 </span>            :         int ret;
+<span class="lineNum">     393 </span>            : 
+<span class="lineNum">     394 </span>            :         /* static works are used, process one request at a time */
+<span class="lineNum">     395 </span><span class="lineNoCov">          0 :         if (!mutex_trylock(&amp;stop_cpus_mutex))</span>
+<span class="lineNum">     396 </span>            :                 return -EAGAIN;
+<span class="lineNum">     397 </span><span class="lineNoCov">          0 :         ret = __stop_cpus(cpumask, fn, arg);</span>
+<span class="lineNum">     398 </span><span class="lineNoCov">          0 :         mutex_unlock(&amp;stop_cpus_mutex);</span>
+<span class="lineNum">     399 </span><span class="lineNoCov">          0 :         return ret;</span>
+<a name="400"><span class="lineNum">     400 </span>            : }</a>
+<span class="lineNum">     401 </span>            : 
+<span class="lineNum">     402 </span><span class="lineCov">    1415273 : static int cpu_stop_should_run(unsigned int cpu)</span>
+<span class="lineNum">     403 </span>            : {
+<span class="lineNum">     404 </span><span class="lineCov">    1415273 :         struct cpu_stopper *stopper = &amp;per_cpu(cpu_stopper, cpu);</span>
+<span class="lineNum">     405 </span>            :         unsigned long flags;
+<span class="lineNum">     406 </span>            :         int run;
+<span class="lineNum">     407 </span>            : 
+<span class="lineNum">     408 </span><span class="lineCov">    1415273 :         spin_lock_irqsave(&amp;stopper-&gt;lock, flags);</span>
+<span class="lineNum">     409 </span><span class="lineCov">    2830650 :         run = !list_empty(&amp;stopper-&gt;works);</span>
+<span class="lineNum">     410 </span><span class="lineCov">    1415325 :         spin_unlock_irqrestore(&amp;stopper-&gt;lock, flags);</span>
+<span class="lineNum">     411 </span><span class="lineCov">    1415297 :         return run;</span>
+<a name="412"><span class="lineNum">     412 </span>            : }</a>
+<span class="lineNum">     413 </span>            : 
+<span class="lineNum">     414 </span><span class="lineCov">     707711 : static void cpu_stopper_thread(unsigned int cpu)</span>
+<span class="lineNum">     415 </span>            : {
+<span class="lineNum">     416 </span><span class="lineCov">     707711 :         struct cpu_stopper *stopper = &amp;per_cpu(cpu_stopper, cpu);</span>
+<span class="lineNum">     417 </span>            :         struct cpu_stop_work *work;
+<span class="lineNum">     418 </span>            :         int ret;
+<span class="lineNum">     419 </span>            : 
+<span class="lineNum">     420 </span>            : repeat:
+<span class="lineNum">     421 </span><span class="lineCov">    1415345 :         work = NULL;</span>
+<span class="lineNum">     422 </span><span class="lineCov">    1415345 :         spin_lock_irq(&amp;stopper-&gt;lock);</span>
+<span class="lineNum">     423 </span><span class="lineCov">    2830562 :         if (!list_empty(&amp;stopper-&gt;works)) {</span>
+<span class="lineNum">     424 </span><span class="lineCov">     707690 :                 work = list_first_entry(&amp;stopper-&gt;works,</span>
+<span class="lineNum">     425 </span>            :                                         struct cpu_stop_work, list);
+<span class="lineNum">     426 </span><span class="lineCov">     707690 :                 list_del_init(&amp;work-&gt;list);</span>
+<span class="lineNum">     427 </span>            :         }
+<span class="lineNum">     428 </span><span class="lineCov">    1415275 :         spin_unlock_irq(&amp;stopper-&gt;lock);</span>
+<span class="lineNum">     429 </span>            : 
+<span class="lineNum">     430 </span><span class="lineCov">    1415313 :         if (work) {</span>
+<span class="lineNum">     431 </span><span class="lineCov">     707703 :                 cpu_stop_fn_t fn = work-&gt;fn;</span>
+<span class="lineNum">     432 </span><span class="lineCov">     707703 :                 void *arg = work-&gt;arg;</span>
+<span class="lineNum">     433 </span><span class="lineCov">     707703 :                 struct cpu_stop_done *done = work-&gt;done;</span>
+<span class="lineNum">     434 </span>            :                 char ksym_buf[KSYM_NAME_LEN] __maybe_unused;
+<span class="lineNum">     435 </span>            : 
+<span class="lineNum">     436 </span>            :                 /* cpu stop callbacks are not allowed to sleep */
+<span class="lineNum">     437 </span><span class="lineCov">     707703 :                 preempt_disable();</span>
+<span class="lineNum">     438 </span>            : 
+<span class="lineNum">     439 </span><span class="lineCov">     707704 :                 ret = fn(arg);</span>
+<span class="lineNum">     440 </span><span class="lineCov">     707585 :                 if (ret)</span>
+<span class="lineNum">     441 </span><span class="lineNoCov">          0 :                         done-&gt;ret = ret;</span>
+<span class="lineNum">     442 </span>            : 
+<span class="lineNum">     443 </span>            :                 /* restore preemption and check it's still balanced */
+<span class="lineNum">     444 </span><span class="lineCov">     707585 :                 preempt_enable();</span>
+<span class="lineNum">     445 </span><span class="lineCov">     707572 :                 WARN_ONCE(preempt_count(),</span>
+<span class="lineNum">     446 </span>            :                           &quot;cpu_stop: %s(%p) leaked preempt count\n&quot;,
+<span class="lineNum">     447 </span>            :                           kallsyms_lookup((unsigned long)fn, NULL, NULL, NULL,
+<span class="lineNum">     448 </span>            :                                           ksym_buf), arg);
+<span class="lineNum">     449 </span>            : 
+<span class="lineNum">     450 </span><span class="lineCov">     707572 :                 cpu_stop_signal_done(done, true);</span>
+<span class="lineNum">     451 </span>            :                 goto repeat;
+<span class="lineNum">     452 </span>            :         }
+<span class="lineNum">     453 </span><span class="lineCov">     707610 : }</span>
+<span class="lineNum">     454 </span>            : 
+<a name="455"><span class="lineNum">     455 </span>            : extern void sched_set_stop_task(int cpu, struct task_struct *stop);</a>
+<span class="lineNum">     456 </span>            : 
+<span class="lineNum">     457 </span><span class="lineNoCov">          0 : static void cpu_stop_create(unsigned int cpu)</span>
+<span class="lineNum">     458 </span>            : {
+<span class="lineNum">     459 </span><span class="lineNoCov">          0 :         sched_set_stop_task(cpu, per_cpu(cpu_stopper_task, cpu));</span>
+<a name="460"><span class="lineNum">     460 </span><span class="lineNoCov">          0 : }</span></a>
+<span class="lineNum">     461 </span>            : 
+<span class="lineNum">     462 </span><span class="lineNoCov">          0 : static void cpu_stop_park(unsigned int cpu)</span>
+<span class="lineNum">     463 </span>            : {
+<span class="lineNum">     464 </span><span class="lineNoCov">          0 :         struct cpu_stopper *stopper = &amp;per_cpu(cpu_stopper, cpu);</span>
+<span class="lineNum">     465 </span>            :         struct cpu_stop_work *work;
+<span class="lineNum">     466 </span>            :         unsigned long flags;
+<span class="lineNum">     467 </span>            : 
+<span class="lineNum">     468 </span>            :         /* drain remaining works */
+<span class="lineNum">     469 </span><span class="lineNoCov">          0 :         spin_lock_irqsave(&amp;stopper-&gt;lock, flags);</span>
+<span class="lineNum">     470 </span><span class="lineNoCov">          0 :         list_for_each_entry(work, &amp;stopper-&gt;works, list)</span>
+<span class="lineNum">     471 </span><span class="lineNoCov">          0 :                 cpu_stop_signal_done(work-&gt;done, false);</span>
+<span class="lineNum">     472 </span><span class="lineNoCov">          0 :         stopper-&gt;enabled = false;</span>
+<span class="lineNum">     473 </span><span class="lineNoCov">          0 :         spin_unlock_irqrestore(&amp;stopper-&gt;lock, flags);</span>
+<a name="474"><span class="lineNum">     474 </span><span class="lineNoCov">          0 : }</span></a>
+<span class="lineNum">     475 </span>            : 
+<span class="lineNum">     476 </span><span class="lineNoCov">          0 : static void cpu_stop_unpark(unsigned int cpu)</span>
+<span class="lineNum">     477 </span>            : {
+<span class="lineNum">     478 </span><span class="lineNoCov">          0 :         struct cpu_stopper *stopper = &amp;per_cpu(cpu_stopper, cpu);</span>
+<span class="lineNum">     479 </span>            : 
+<span class="lineNum">     480 </span><span class="lineNoCov">          0 :         spin_lock_irq(&amp;stopper-&gt;lock);</span>
+<span class="lineNum">     481 </span><span class="lineNoCov">          0 :         stopper-&gt;enabled = true;</span>
+<span class="lineNum">     482 </span><span class="lineNoCov">          0 :         spin_unlock_irq(&amp;stopper-&gt;lock);</span>
+<span class="lineNum">     483 </span><span class="lineNoCov">          0 : }</span>
+<span class="lineNum">     484 </span>            : 
+<span class="lineNum">     485 </span>            : static struct smp_hotplug_thread cpu_stop_threads = {
+<span class="lineNum">     486 </span>            :         .store                  = &amp;cpu_stopper_task,
+<span class="lineNum">     487 </span>            :         .thread_should_run      = cpu_stop_should_run,
+<span class="lineNum">     488 </span>            :         .thread_fn              = cpu_stopper_thread,
+<span class="lineNum">     489 </span>            :         .thread_comm            = &quot;migration/%u&quot;,
+<span class="lineNum">     490 </span>            :         .create                 = cpu_stop_create,
+<span class="lineNum">     491 </span>            :         .setup                  = cpu_stop_unpark,
+<span class="lineNum">     492 </span>            :         .park                   = cpu_stop_park,
+<span class="lineNum">     493 </span>            :         .pre_unpark             = cpu_stop_unpark,
+<span class="lineNum">     494 </span>            :         .selfparking            = true,
+<a name="495"><span class="lineNum">     495 </span>            : };</a>
+<span class="lineNum">     496 </span>            : 
+<span class="lineNum">     497 </span><span class="lineNoCov">          0 : static int __init cpu_stop_init(void)</span>
+<span class="lineNum">     498 </span>            : {
+<span class="lineNum">     499 </span>            :         unsigned int cpu;
+<span class="lineNum">     500 </span>            : 
+<span class="lineNum">     501 </span><span class="lineNoCov">          0 :         for_each_possible_cpu(cpu) {</span>
+<span class="lineNum">     502 </span><span class="lineNoCov">          0 :                 struct cpu_stopper *stopper = &amp;per_cpu(cpu_stopper, cpu);</span>
+<span class="lineNum">     503 </span>            : 
+<span class="lineNum">     504 </span><span class="lineNoCov">          0 :                 spin_lock_init(&amp;stopper-&gt;lock);</span>
+<span class="lineNum">     505 </span><span class="lineNoCov">          0 :                 INIT_LIST_HEAD(&amp;stopper-&gt;works);</span>
+<span class="lineNum">     506 </span>            :         }
+<span class="lineNum">     507 </span>            : 
+<span class="lineNum">     508 </span><span class="lineNoCov">          0 :         BUG_ON(smpboot_register_percpu_thread(&amp;cpu_stop_threads));</span>
+<span class="lineNum">     509 </span><span class="lineNoCov">          0 :         stop_machine_initialized = true;</span>
+<span class="lineNum">     510 </span><span class="lineNoCov">          0 :         return 0;</span>
+<span class="lineNum">     511 </span>            : }
+<span class="lineNum">     512 </span>            : early_initcall(cpu_stop_init);
+<span class="lineNum">     513 </span>            : 
+<span class="lineNum">     514 </span>            : #ifdef CONFIG_STOP_MACHINE
+<span class="lineNum">     515 </span>            : 
+<span class="lineNum">     516 </span><span class="lineCov">         19 : int __stop_machine(int (*fn)(void *), void *data, const struct cpumask *cpus)</span>
+<span class="lineNum">     517 </span>            : {
+<span class="lineNum">     518 </span><span class="lineCov">         38 :         struct multi_stop_data msdata = {</span>
+<span class="lineNum">     519 </span>            :                 .fn = fn,
+<span class="lineNum">     520 </span>            :                 .data = data,
+<span class="lineNum">     521 </span><span class="lineCov">         19 :                 .num_threads = num_online_cpus(),</span>
+<span class="lineNum">     522 </span>            :                 .active_cpus = cpus,
+<span class="lineNum">     523 </span>            :         };
+<span class="lineNum">     524 </span>            : 
+<span class="lineNum">     525 </span><span class="lineCov">         19 :         if (!stop_machine_initialized) {</span>
+<span class="lineNum">     526 </span>            :                 /*
+<span class="lineNum">     527 </span>            :                  * Handle the case where stop_machine() is called
+<span class="lineNum">     528 </span>            :                  * early in boot before stop_machine() has been
+<span class="lineNum">     529 </span>            :                  * initialized.
+<span class="lineNum">     530 </span>            :                  */
+<span class="lineNum">     531 </span>            :                 unsigned long flags;
+<span class="lineNum">     532 </span>            :                 int ret;
+<span class="lineNum">     533 </span>            : 
+<span class="lineNum">     534 </span><span class="lineNoCov">          0 :                 WARN_ON_ONCE(msdata.num_threads != 1);</span>
+<span class="lineNum">     535 </span>            : 
+<span class="lineNum">     536 </span><span class="lineNoCov">          0 :                 local_irq_save(flags);</span>
+<span class="lineNum">     537 </span>            :                 hard_irq_disable();
+<span class="lineNum">     538 </span><span class="lineNoCov">          0 :                 ret = (*fn)(data);</span>
+<span class="lineNum">     539 </span><span class="lineNoCov">          0 :                 local_irq_restore(flags);</span>
+<span class="lineNum">     540 </span>            : 
+<span class="lineNum">     541 </span><span class="lineNoCov">          0 :                 return ret;</span>
+<span class="lineNum">     542 </span>            :         }
+<span class="lineNum">     543 </span>            : 
+<span class="lineNum">     544 </span>            :         /* Set the initial state and stop all online cpus. */
+<span class="lineNum">     545 </span>            :         set_state(&amp;msdata, MULTI_STOP_PREPARE);
+<span class="lineNum">     546 </span><span class="lineCov">         19 :         return stop_cpus(cpu_online_mask, multi_cpu_stop, &amp;msdata);</span>
+<a name="547"><span class="lineNum">     547 </span>            : }</a>
+<span class="lineNum">     548 </span>            : 
+<span class="lineNum">     549 </span><span class="lineCov">         19 : int stop_machine(int (*fn)(void *), void *data, const struct cpumask *cpus)</span>
+<span class="lineNum">     550 </span>            : {
+<span class="lineNum">     551 </span>            :         int ret;
+<span class="lineNum">     552 </span>            : 
+<span class="lineNum">     553 </span>            :         /* No CPUs can come up or down during this. */
+<span class="lineNum">     554 </span><span class="lineCov">         19 :         get_online_cpus();</span>
+<span class="lineNum">     555 </span><span class="lineCov">         19 :         ret = __stop_machine(fn, data, cpus);</span>
+<span class="lineNum">     556 </span><span class="lineCov">         19 :         put_online_cpus();</span>
+<span class="lineNum">     557 </span><span class="lineCov">         19 :         return ret;</span>
+<span class="lineNum">     558 </span>            : }
+<span class="lineNum">     559 </span>            : EXPORT_SYMBOL_GPL(stop_machine);
+<span class="lineNum">     560 </span>            : 
+<span class="lineNum">     561 </span>            : /**
+<span class="lineNum">     562 </span>            :  * stop_machine_from_inactive_cpu - stop_machine() from inactive CPU
+<span class="lineNum">     563 </span>            :  * @fn: the function to run
+<span class="lineNum">     564 </span>            :  * @data: the data ptr for the @fn()
+<span class="lineNum">     565 </span>            :  * @cpus: the cpus to run the @fn() on (NULL = any online cpu)
+<span class="lineNum">     566 </span>            :  *
+<span class="lineNum">     567 </span>            :  * This is identical to stop_machine() but can be called from a CPU which
+<span class="lineNum">     568 </span>            :  * is not active.  The local CPU is in the process of hotplug (so no other
+<span class="lineNum">     569 </span>            :  * CPU hotplug can start) and not marked active and doesn't have enough
+<span class="lineNum">     570 </span>            :  * context to sleep.
+<span class="lineNum">     571 </span>            :  *
+<span class="lineNum">     572 </span>            :  * This function provides stop_machine() functionality for such state by
+<span class="lineNum">     573 </span>            :  * using busy-wait for synchronization and executing @fn directly for local
+<span class="lineNum">     574 </span>            :  * CPU.
+<span class="lineNum">     575 </span>            :  *
+<span class="lineNum">     576 </span>            :  * CONTEXT:
+<span class="lineNum">     577 </span>            :  * Local CPU is inactive.  Temporarily stops all active CPUs.
+<span class="lineNum">     578 </span>            :  *
+<span class="lineNum">     579 </span>            :  * RETURNS:
+<span class="lineNum">     580 </span>            :  * 0 if all executions of @fn returned 0, any non zero return value if any
+<span class="lineNum">     581 </span>            :  * returned non zero.
+<span class="lineNum">     582 </span>            :  */
+<span class="lineNum">     583 </span><span class="lineNoCov">          0 : int stop_machine_from_inactive_cpu(int (*fn)(void *), void *data,</span>
+<span class="lineNum">     584 </span>            :                                   const struct cpumask *cpus)
+<span class="lineNum">     585 </span>            : {
+<span class="lineNum">     586 </span><span class="lineNoCov">          0 :         struct multi_stop_data msdata = { .fn = fn, .data = data,</span>
+<span class="lineNum">     587 </span>            :                                             .active_cpus = cpus };
+<span class="lineNum">     588 </span>            :         struct cpu_stop_done done;
+<span class="lineNum">     589 </span>            :         int ret;
+<span class="lineNum">     590 </span>            : 
+<span class="lineNum">     591 </span>            :         /* Local CPU must be inactive and CPU hotplug in progress. */
+<span class="lineNum">     592 </span><span class="lineNoCov">          0 :         BUG_ON(cpu_active(raw_smp_processor_id()));</span>
+<span class="lineNum">     593 </span><span class="lineNoCov">          0 :         msdata.num_threads = num_active_cpus() + 1;     /* +1 for local */</span>
+<span class="lineNum">     594 </span>            : 
+<span class="lineNum">     595 </span>            :         /* No proper task established and can't sleep - busy wait for lock. */
+<span class="lineNum">     596 </span><span class="lineNoCov">          0 :         while (!mutex_trylock(&amp;stop_cpus_mutex))</span>
+<span class="lineNum">     597 </span>            :                 cpu_relax();
+<span class="lineNum">     598 </span>            : 
+<span class="lineNum">     599 </span>            :         /* Schedule work on other CPUs and execute directly for local CPU */
+<span class="lineNum">     600 </span>            :         set_state(&amp;msdata, MULTI_STOP_PREPARE);
+<span class="lineNum">     601 </span><span class="lineNoCov">          0 :         cpu_stop_init_done(&amp;done, num_active_cpus());</span>
+<span class="lineNum">     602 </span><span class="lineNoCov">          0 :         queue_stop_cpus_work(cpu_active_mask, multi_cpu_stop, &amp;msdata,</span>
+<span class="lineNum">     603 </span>            :                              &amp;done);
+<span class="lineNum">     604 </span><span class="lineNoCov">          0 :         ret = multi_cpu_stop(&amp;msdata);</span>
+<span class="lineNum">     605 </span>            : 
+<span class="lineNum">     606 </span>            :         /* Busy wait for completion. */
+<span class="lineNum">     607 </span><span class="lineNoCov">          0 :         while (!completion_done(&amp;done.completion))</span>
+<span class="lineNum">     608 </span>            :                 cpu_relax();
+<span class="lineNum">     609 </span>            : 
+<span class="lineNum">     610 </span><span class="lineNoCov">          0 :         mutex_unlock(&amp;stop_cpus_mutex);</span>
+<span class="lineNum">     611 </span><span class="lineNoCov">          0 :         return ret ?: done.ret;</span>
+<span class="lineNum">     612 </span>            : }
+<span class="lineNum">     613 </span>            : 
+<span class="lineNum">     614 </span>            : #endif  /* CONFIG_STOP_MACHINE */
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

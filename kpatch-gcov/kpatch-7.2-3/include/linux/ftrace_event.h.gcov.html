@@ -1,0 +1,470 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - include/linux/ftrace_event.h</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">include/linux</a> - ftrace_event.h<span style="font-size: 80%;"> (source / <a href="ftrace_event.h.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">1</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntryHi">-</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : #ifndef _LINUX_FTRACE_EVENT_H</a>
+<span class="lineNum">       2 </span>            : #define _LINUX_FTRACE_EVENT_H
+<span class="lineNum">       3 </span>            : 
+<span class="lineNum">       4 </span>            : #include &lt;linux/ring_buffer.h&gt;
+<span class="lineNum">       5 </span>            : #include &lt;linux/trace_seq.h&gt;
+<span class="lineNum">       6 </span>            : #include &lt;linux/percpu.h&gt;
+<span class="lineNum">       7 </span>            : #include &lt;linux/hardirq.h&gt;
+<span class="lineNum">       8 </span>            : #include &lt;linux/perf_event.h&gt;
+<span class="lineNum">       9 </span>            : 
+<span class="lineNum">      10 </span>            : struct trace_array;
+<span class="lineNum">      11 </span>            : struct trace_buffer;
+<span class="lineNum">      12 </span>            : struct tracer;
+<span class="lineNum">      13 </span>            : struct dentry;
+<span class="lineNum">      14 </span>            : 
+<span class="lineNum">      15 </span>            : struct trace_print_flags {
+<span class="lineNum">      16 </span>            :         unsigned long           mask;
+<span class="lineNum">      17 </span>            :         const char              *name;
+<span class="lineNum">      18 </span>            : };
+<span class="lineNum">      19 </span>            : 
+<span class="lineNum">      20 </span>            : struct trace_print_flags_u64 {
+<span class="lineNum">      21 </span>            :         unsigned long long      mask;
+<span class="lineNum">      22 </span>            :         const char              *name;
+<span class="lineNum">      23 </span>            : };
+<span class="lineNum">      24 </span>            : 
+<span class="lineNum">      25 </span>            : const char *ftrace_print_flags_seq(struct trace_seq *p, const char *delim,
+<span class="lineNum">      26 </span>            :                                    unsigned long flags,
+<span class="lineNum">      27 </span>            :                                    const struct trace_print_flags *flag_array);
+<span class="lineNum">      28 </span>            : 
+<span class="lineNum">      29 </span>            : const char *ftrace_print_symbols_seq(struct trace_seq *p, unsigned long val,
+<span class="lineNum">      30 </span>            :                                      const struct trace_print_flags *symbol_array);
+<span class="lineNum">      31 </span>            : 
+<span class="lineNum">      32 </span>            : #if BITS_PER_LONG == 32
+<span class="lineNum">      33 </span>            : const char *ftrace_print_symbols_seq_u64(struct trace_seq *p,
+<span class="lineNum">      34 </span>            :                                          unsigned long long val,
+<span class="lineNum">      35 </span>            :                                          const struct trace_print_flags_u64
+<span class="lineNum">      36 </span>            :                                                                  *symbol_array);
+<span class="lineNum">      37 </span>            : #endif
+<span class="lineNum">      38 </span>            : 
+<span class="lineNum">      39 </span>            : const char *ftrace_print_hex_seq(struct trace_seq *p,
+<span class="lineNum">      40 </span>            :                                  const unsigned char *buf, int len);
+<span class="lineNum">      41 </span>            : 
+<span class="lineNum">      42 </span>            : struct trace_iterator;
+<span class="lineNum">      43 </span>            : struct trace_event;
+<span class="lineNum">      44 </span>            : 
+<span class="lineNum">      45 </span>            : int ftrace_raw_output_prep(struct trace_iterator *iter,
+<span class="lineNum">      46 </span>            :                            struct trace_event *event);
+<span class="lineNum">      47 </span>            : 
+<span class="lineNum">      48 </span>            : /*
+<span class="lineNum">      49 </span>            :  * The trace entry - the most basic unit of tracing. This is what
+<span class="lineNum">      50 </span>            :  * is printed in the end as a single line in the trace output, such as:
+<span class="lineNum">      51 </span>            :  *
+<span class="lineNum">      52 </span>            :  *     bash-15816 [01]   235.197585: idle_cpu &lt;- irq_enter
+<span class="lineNum">      53 </span>            :  */
+<span class="lineNum">      54 </span>            : struct trace_entry {
+<span class="lineNum">      55 </span>            :         unsigned short          type;
+<span class="lineNum">      56 </span>            :         unsigned char           flags;
+<span class="lineNum">      57 </span>            :         unsigned char           preempt_count;
+<span class="lineNum">      58 </span>            :         int                     pid;
+<span class="lineNum">      59 </span>            : };
+<span class="lineNum">      60 </span>            : 
+<span class="lineNum">      61 </span>            : #define FTRACE_MAX_EVENT                                                \
+<span class="lineNum">      62 </span>            :         ((1 &lt;&lt; (sizeof(((struct trace_entry *)0)-&gt;type) * 8)) - 1)
+<span class="lineNum">      63 </span>            : 
+<span class="lineNum">      64 </span>            : /*
+<span class="lineNum">      65 </span>            :  * Trace iterator - used by printout routines who present trace
+<span class="lineNum">      66 </span>            :  * results to users and which routines might sleep, etc:
+<span class="lineNum">      67 </span>            :  */
+<span class="lineNum">      68 </span>            : struct trace_iterator {
+<span class="lineNum">      69 </span>            :         struct trace_array      *tr;
+<span class="lineNum">      70 </span>            :         struct tracer           *trace;
+<span class="lineNum">      71 </span>            :         struct trace_buffer     *trace_buffer;
+<span class="lineNum">      72 </span>            :         void                    *private;
+<span class="lineNum">      73 </span>            :         int                     cpu_file;
+<span class="lineNum">      74 </span>            :         struct mutex            mutex;
+<span class="lineNum">      75 </span>            :         struct ring_buffer_iter **buffer_iter;
+<span class="lineNum">      76 </span>            :         unsigned long           iter_flags;
+<span class="lineNum">      77 </span>            : 
+<span class="lineNum">      78 </span>            :         /* trace_seq for __print_flags() and __print_symbolic() etc. */
+<span class="lineNum">      79 </span>            :         struct trace_seq        tmp_seq;
+<span class="lineNum">      80 </span>            : 
+<span class="lineNum">      81 </span>            :         cpumask_var_t           started;
+<span class="lineNum">      82 </span>            : 
+<span class="lineNum">      83 </span>            :         /* it's true when current open file is snapshot */
+<span class="lineNum">      84 </span>            :         bool                    snapshot;
+<span class="lineNum">      85 </span>            : 
+<span class="lineNum">      86 </span>            :         /* The below is zeroed out in pipe_read */
+<span class="lineNum">      87 </span>            :         struct trace_seq        seq;
+<span class="lineNum">      88 </span>            :         struct trace_entry      *ent;
+<span class="lineNum">      89 </span>            :         unsigned long           lost_events;
+<span class="lineNum">      90 </span>            :         int                     leftover;
+<span class="lineNum">      91 </span>            :         int                     ent_size;
+<span class="lineNum">      92 </span>            :         int                     cpu;
+<span class="lineNum">      93 </span>            :         u64                     ts;
+<span class="lineNum">      94 </span>            : 
+<span class="lineNum">      95 </span>            :         loff_t                  pos;
+<span class="lineNum">      96 </span>            :         long                    idx;
+<span class="lineNum">      97 </span>            : 
+<span class="lineNum">      98 </span>            :         /* All new field here will be zeroed out in pipe_read */
+<span class="lineNum">      99 </span>            : };
+<span class="lineNum">     100 </span>            : 
+<span class="lineNum">     101 </span>            : enum trace_iter_flags {
+<span class="lineNum">     102 </span>            :         TRACE_FILE_LAT_FMT      = 1,
+<span class="lineNum">     103 </span>            :         TRACE_FILE_ANNOTATE     = 2,
+<span class="lineNum">     104 </span>            :         TRACE_FILE_TIME_IN_NS   = 4,
+<span class="lineNum">     105 </span>            : };
+<span class="lineNum">     106 </span>            : 
+<span class="lineNum">     107 </span>            : 
+<span class="lineNum">     108 </span>            : typedef enum print_line_t (*trace_print_func)(struct trace_iterator *iter,
+<span class="lineNum">     109 </span>            :                                       int flags, struct trace_event *event);
+<span class="lineNum">     110 </span>            : 
+<span class="lineNum">     111 </span>            : struct trace_event_functions {
+<span class="lineNum">     112 </span>            :         trace_print_func        trace;
+<span class="lineNum">     113 </span>            :         trace_print_func        raw;
+<span class="lineNum">     114 </span>            :         trace_print_func        hex;
+<span class="lineNum">     115 </span>            :         trace_print_func        binary;
+<span class="lineNum">     116 </span>            : };
+<span class="lineNum">     117 </span>            : 
+<span class="lineNum">     118 </span>            : struct trace_event {
+<span class="lineNum">     119 </span>            :         struct hlist_node               node;
+<span class="lineNum">     120 </span>            :         struct list_head                list;
+<span class="lineNum">     121 </span>            :         int                             type;
+<span class="lineNum">     122 </span>            :         struct trace_event_functions    *funcs;
+<span class="lineNum">     123 </span>            : };
+<span class="lineNum">     124 </span>            : 
+<span class="lineNum">     125 </span>            : extern int register_ftrace_event(struct trace_event *event);
+<span class="lineNum">     126 </span>            : extern int unregister_ftrace_event(struct trace_event *event);
+<span class="lineNum">     127 </span>            : 
+<span class="lineNum">     128 </span>            : /* Return values for print_line callback */
+<span class="lineNum">     129 </span>            : enum print_line_t {
+<span class="lineNum">     130 </span>            :         TRACE_TYPE_PARTIAL_LINE = 0,    /* Retry after flushing the seq */
+<span class="lineNum">     131 </span>            :         TRACE_TYPE_HANDLED      = 1,
+<span class="lineNum">     132 </span>            :         TRACE_TYPE_UNHANDLED    = 2,    /* Relay to other output functions */
+<span class="lineNum">     133 </span>            :         TRACE_TYPE_NO_CONSUME   = 3     /* Handled but ask to not consume */
+<span class="lineNum">     134 </span>            : };
+<span class="lineNum">     135 </span>            : 
+<span class="lineNum">     136 </span>            : void tracing_generic_entry_update(struct trace_entry *entry,
+<span class="lineNum">     137 </span>            :                                   unsigned long flags,
+<span class="lineNum">     138 </span>            :                                   int pc);
+<span class="lineNum">     139 </span>            : struct ftrace_event_file;
+<span class="lineNum">     140 </span>            : 
+<span class="lineNum">     141 </span>            : struct ring_buffer_event *
+<span class="lineNum">     142 </span>            : trace_event_buffer_lock_reserve(struct ring_buffer **current_buffer,
+<span class="lineNum">     143 </span>            :                                 struct ftrace_event_file *ftrace_file,
+<span class="lineNum">     144 </span>            :                                 int type, unsigned long len,
+<span class="lineNum">     145 </span>            :                                 unsigned long flags, int pc);
+<span class="lineNum">     146 </span>            : struct ring_buffer_event *
+<span class="lineNum">     147 </span>            : trace_current_buffer_lock_reserve(struct ring_buffer **current_buffer,
+<span class="lineNum">     148 </span>            :                                   int type, unsigned long len,
+<span class="lineNum">     149 </span>            :                                   unsigned long flags, int pc);
+<span class="lineNum">     150 </span>            : void trace_current_buffer_unlock_commit(struct ring_buffer *buffer,
+<span class="lineNum">     151 </span>            :                                         struct ring_buffer_event *event,
+<span class="lineNum">     152 </span>            :                                         unsigned long flags, int pc);
+<span class="lineNum">     153 </span>            : void trace_buffer_unlock_commit(struct ring_buffer *buffer,
+<span class="lineNum">     154 </span>            :                                 struct ring_buffer_event *event,
+<span class="lineNum">     155 </span>            :                                 unsigned long flags, int pc);
+<span class="lineNum">     156 </span>            : void trace_buffer_unlock_commit_regs(struct ring_buffer *buffer,
+<span class="lineNum">     157 </span>            :                                      struct ring_buffer_event *event,
+<span class="lineNum">     158 </span>            :                                      unsigned long flags, int pc,
+<span class="lineNum">     159 </span>            :                                      struct pt_regs *regs);
+<span class="lineNum">     160 </span>            : void trace_current_buffer_discard_commit(struct ring_buffer *buffer,
+<span class="lineNum">     161 </span>            :                                          struct ring_buffer_event *event);
+<span class="lineNum">     162 </span>            : 
+<span class="lineNum">     163 </span>            : void tracing_record_cmdline(struct task_struct *tsk);
+<span class="lineNum">     164 </span>            : 
+<span class="lineNum">     165 </span>            : struct event_filter;
+<span class="lineNum">     166 </span>            : 
+<span class="lineNum">     167 </span>            : enum trace_reg {
+<span class="lineNum">     168 </span>            :         TRACE_REG_REGISTER,
+<span class="lineNum">     169 </span>            :         TRACE_REG_UNREGISTER,
+<span class="lineNum">     170 </span>            : #ifdef CONFIG_PERF_EVENTS
+<span class="lineNum">     171 </span>            :         TRACE_REG_PERF_REGISTER,
+<span class="lineNum">     172 </span>            :         TRACE_REG_PERF_UNREGISTER,
+<span class="lineNum">     173 </span>            :         TRACE_REG_PERF_OPEN,
+<span class="lineNum">     174 </span>            :         TRACE_REG_PERF_CLOSE,
+<span class="lineNum">     175 </span>            :         TRACE_REG_PERF_ADD,
+<span class="lineNum">     176 </span>            :         TRACE_REG_PERF_DEL,
+<span class="lineNum">     177 </span>            : #endif
+<span class="lineNum">     178 </span>            : };
+<span class="lineNum">     179 </span>            : 
+<span class="lineNum">     180 </span>            : struct ftrace_event_call;
+<span class="lineNum">     181 </span>            : 
+<span class="lineNum">     182 </span>            : struct ftrace_event_class {
+<span class="lineNum">     183 </span>            :         char                    *system;
+<span class="lineNum">     184 </span>            :         void                    *probe;
+<span class="lineNum">     185 </span>            : #ifdef CONFIG_PERF_EVENTS
+<span class="lineNum">     186 </span>            :         void                    *perf_probe;
+<span class="lineNum">     187 </span>            : #endif
+<span class="lineNum">     188 </span>            :         int                     (*reg)(struct ftrace_event_call *event,
+<span class="lineNum">     189 </span>            :                                        enum trace_reg type, void *data);
+<span class="lineNum">     190 </span>            :         int                     (*define_fields)(struct ftrace_event_call *);
+<span class="lineNum">     191 </span>            :         struct list_head        *(*get_fields)(struct ftrace_event_call *);
+<span class="lineNum">     192 </span>            :         struct list_head        fields;
+<span class="lineNum">     193 </span>            :         int                     (*raw_init)(struct ftrace_event_call *);
+<span class="lineNum">     194 </span>            : };
+<span class="lineNum">     195 </span>            : 
+<span class="lineNum">     196 </span>            : extern int ftrace_event_reg(struct ftrace_event_call *event,
+<span class="lineNum">     197 </span>            :                             enum trace_reg type, void *data);
+<span class="lineNum">     198 </span>            : 
+<span class="lineNum">     199 </span>            : enum {
+<span class="lineNum">     200 </span>            :         TRACE_EVENT_FL_FILTERED_BIT,
+<span class="lineNum">     201 </span>            :         TRACE_EVENT_FL_CAP_ANY_BIT,
+<span class="lineNum">     202 </span>            :         TRACE_EVENT_FL_NO_SET_FILTER_BIT,
+<span class="lineNum">     203 </span>            :         TRACE_EVENT_FL_IGNORE_ENABLE_BIT,
+<span class="lineNum">     204 </span>            :         TRACE_EVENT_FL_WAS_ENABLED_BIT,
+<span class="lineNum">     205 </span>            : };
+<span class="lineNum">     206 </span>            : 
+<span class="lineNum">     207 </span>            : /*
+<span class="lineNum">     208 </span>            :  * Event flags:
+<span class="lineNum">     209 </span>            :  *  FILTERED      - The event has a filter attached
+<span class="lineNum">     210 </span>            :  *  CAP_ANY       - Any user can enable for perf
+<span class="lineNum">     211 </span>            :  *  NO_SET_FILTER - Set when filter has error and is to be ignored
+<span class="lineNum">     212 </span>            :  *  IGNORE_ENABLE - For ftrace internal events, do not enable with debugfs file
+<span class="lineNum">     213 </span>            :  *  WAS_ENABLED   - Set and stays set when an event was ever enabled
+<span class="lineNum">     214 </span>            :  *                    (used for module unloading, if a module event is enabled,
+<span class="lineNum">     215 </span>            :  *                     it is best to clear the buffers that used it).
+<span class="lineNum">     216 </span>            :  */
+<span class="lineNum">     217 </span>            : enum {
+<span class="lineNum">     218 </span>            :         TRACE_EVENT_FL_FILTERED         = (1 &lt;&lt; TRACE_EVENT_FL_FILTERED_BIT),
+<span class="lineNum">     219 </span>            :         TRACE_EVENT_FL_CAP_ANY          = (1 &lt;&lt; TRACE_EVENT_FL_CAP_ANY_BIT),
+<span class="lineNum">     220 </span>            :         TRACE_EVENT_FL_NO_SET_FILTER    = (1 &lt;&lt; TRACE_EVENT_FL_NO_SET_FILTER_BIT),
+<span class="lineNum">     221 </span>            :         TRACE_EVENT_FL_IGNORE_ENABLE    = (1 &lt;&lt; TRACE_EVENT_FL_IGNORE_ENABLE_BIT),
+<span class="lineNum">     222 </span>            :         TRACE_EVENT_FL_WAS_ENABLED      = (1 &lt;&lt; TRACE_EVENT_FL_WAS_ENABLED_BIT),
+<span class="lineNum">     223 </span>            : };
+<span class="lineNum">     224 </span>            : 
+<span class="lineNum">     225 </span>            : struct ftrace_event_call {
+<span class="lineNum">     226 </span>            :         struct list_head        list;
+<span class="lineNum">     227 </span>            :         struct ftrace_event_class *class;
+<span class="lineNum">     228 </span>            :         char                    *name;
+<span class="lineNum">     229 </span>            :         struct trace_event      event;
+<span class="lineNum">     230 </span>            :         const char              *print_fmt;
+<span class="lineNum">     231 </span>            :         struct event_filter     *filter;
+<span class="lineNum">     232 </span>            :         struct list_head        *files;
+<span class="lineNum">     233 </span>            :         void                    *mod;
+<span class="lineNum">     234 </span>            :         void                    *data;
+<span class="lineNum">     235 </span>            :         /*
+<span class="lineNum">     236 </span>            :          *   bit 0:             filter_active
+<span class="lineNum">     237 </span>            :          *   bit 1:             allow trace by non root (cap any)
+<span class="lineNum">     238 </span>            :          *   bit 2:             failed to apply filter
+<span class="lineNum">     239 </span>            :          *   bit 3:             ftrace internal event (do not enable)
+<span class="lineNum">     240 </span>            :          *   bit 4:             Event was enabled by module
+<span class="lineNum">     241 </span>            :          */
+<span class="lineNum">     242 </span>            :         int                     flags; /* static flags of different events */
+<span class="lineNum">     243 </span>            : 
+<span class="lineNum">     244 </span>            : #ifdef CONFIG_PERF_EVENTS
+<span class="lineNum">     245 </span>            :         int                             perf_refcount;
+<span class="lineNum">     246 </span>            :         struct hlist_head __percpu      *perf_events;
+<span class="lineNum">     247 </span>            : #endif
+<span class="lineNum">     248 </span>            : };
+<span class="lineNum">     249 </span>            : 
+<span class="lineNum">     250 </span>            : struct trace_array;
+<span class="lineNum">     251 </span>            : struct ftrace_subsystem_dir;
+<span class="lineNum">     252 </span>            : 
+<span class="lineNum">     253 </span>            : enum {
+<span class="lineNum">     254 </span>            :         FTRACE_EVENT_FL_ENABLED_BIT,
+<span class="lineNum">     255 </span>            :         FTRACE_EVENT_FL_RECORDED_CMD_BIT,
+<span class="lineNum">     256 </span>            :         FTRACE_EVENT_FL_SOFT_MODE_BIT,
+<span class="lineNum">     257 </span>            :         FTRACE_EVENT_FL_SOFT_DISABLED_BIT,
+<span class="lineNum">     258 </span>            : };
+<span class="lineNum">     259 </span>            : 
+<span class="lineNum">     260 </span>            : /*
+<span class="lineNum">     261 </span>            :  * Ftrace event file flags:
+<span class="lineNum">     262 </span>            :  *  ENABLED       - The event is enabled
+<span class="lineNum">     263 </span>            :  *  RECORDED_CMD  - The comms should be recorded at sched_switch
+<span class="lineNum">     264 </span>            :  *  SOFT_MODE     - The event is enabled/disabled by SOFT_DISABLED
+<span class="lineNum">     265 </span>            :  *  SOFT_DISABLED - When set, do not trace the event (even though its
+<span class="lineNum">     266 </span>            :  *                   tracepoint may be enabled)
+<span class="lineNum">     267 </span>            :  */
+<span class="lineNum">     268 </span>            : enum {
+<span class="lineNum">     269 </span>            :         FTRACE_EVENT_FL_ENABLED         = (1 &lt;&lt; FTRACE_EVENT_FL_ENABLED_BIT),
+<span class="lineNum">     270 </span>            :         FTRACE_EVENT_FL_RECORDED_CMD    = (1 &lt;&lt; FTRACE_EVENT_FL_RECORDED_CMD_BIT),
+<span class="lineNum">     271 </span>            :         FTRACE_EVENT_FL_SOFT_MODE       = (1 &lt;&lt; FTRACE_EVENT_FL_SOFT_MODE_BIT),
+<span class="lineNum">     272 </span>            :         FTRACE_EVENT_FL_SOFT_DISABLED   = (1 &lt;&lt; FTRACE_EVENT_FL_SOFT_DISABLED_BIT),
+<span class="lineNum">     273 </span>            : };
+<span class="lineNum">     274 </span>            : 
+<span class="lineNum">     275 </span>            : struct ftrace_event_file {
+<span class="lineNum">     276 </span>            :         struct list_head                list;
+<span class="lineNum">     277 </span>            :         struct ftrace_event_call        *event_call;
+<span class="lineNum">     278 </span>            :         struct dentry                   *dir;
+<span class="lineNum">     279 </span>            :         struct trace_array              *tr;
+<span class="lineNum">     280 </span>            :         struct ftrace_subsystem_dir     *system;
+<span class="lineNum">     281 </span>            : 
+<span class="lineNum">     282 </span>            :         /*
+<span class="lineNum">     283 </span>            :          * 32 bit flags:
+<span class="lineNum">     284 </span>            :          *   bit 0:             enabled
+<span class="lineNum">     285 </span>            :          *   bit 1:             enabled cmd record
+<span class="lineNum">     286 </span>            :          *   bit 2:             enable/disable with the soft disable bit
+<span class="lineNum">     287 </span>            :          *   bit 3:             soft disabled
+<span class="lineNum">     288 </span>            :          *
+<span class="lineNum">     289 </span>            :          * Note: The bits must be set atomically to prevent races
+<span class="lineNum">     290 </span>            :          * from other writers. Reads of flags do not need to be in
+<span class="lineNum">     291 </span>            :          * sync as they occur in critical sections. But the way flags
+<span class="lineNum">     292 </span>            :          * is currently used, these changes do not affect the code
+<span class="lineNum">     293 </span>            :          * except that when a change is made, it may have a slight
+<span class="lineNum">     294 </span>            :          * delay in propagating the changes to other CPUs due to
+<span class="lineNum">     295 </span>            :          * caching and such. Which is mostly OK ;-)
+<span class="lineNum">     296 </span>            :          */
+<span class="lineNum">     297 </span>            :         unsigned long           flags;
+<span class="lineNum">     298 </span>            :         atomic_t                sm_ref; /* soft-mode reference counter */
+<span class="lineNum">     299 </span>            : };
+<span class="lineNum">     300 </span>            : 
+<span class="lineNum">     301 </span>            : #define __TRACE_EVENT_FLAGS(name, value)                                \
+<span class="lineNum">     302 </span>            :         static int __init trace_init_flags_##name(void)                 \
+<span class="lineNum">     303 </span>            :         {                                                               \
+<span class="lineNum">     304 </span>            :                 event_##name.flags = value;                             \
+<span class="lineNum">     305 </span>            :                 return 0;                                               \
+<span class="lineNum">     306 </span>            :         }                                                               \
+<span class="lineNum">     307 </span>            :         early_initcall(trace_init_flags_##name);
+<span class="lineNum">     308 </span>            : 
+<span class="lineNum">     309 </span>            : #define PERF_MAX_TRACE_SIZE     2048
+<span class="lineNum">     310 </span>            : 
+<span class="lineNum">     311 </span>            : #define MAX_FILTER_STR_VAL      256     /* Should handle KSYM_SYMBOL_LEN */
+<span class="lineNum">     312 </span>            : 
+<span class="lineNum">     313 </span>            : extern void destroy_preds(struct ftrace_event_call *call);
+<span class="lineNum">     314 </span>            : extern int filter_match_preds(struct event_filter *filter, void *rec);
+<span class="lineNum">     315 </span>            : extern int filter_current_check_discard(struct ring_buffer *buffer,
+<span class="lineNum">     316 </span>            :                                         struct ftrace_event_call *call,
+<span class="lineNum">     317 </span>            :                                         void *rec,
+<span class="lineNum">     318 </span>            :                                         struct ring_buffer_event *event);
+<span class="lineNum">     319 </span>            : 
+<span class="lineNum">     320 </span>            : enum {
+<span class="lineNum">     321 </span>            :         FILTER_OTHER = 0,
+<span class="lineNum">     322 </span>            :         FILTER_STATIC_STRING,
+<span class="lineNum">     323 </span>            :         FILTER_DYN_STRING,
+<span class="lineNum">     324 </span>            :         FILTER_PTR_STRING,
+<span class="lineNum">     325 </span>            :         FILTER_TRACE_FN,
+<span class="lineNum">     326 </span>            : };
+<span class="lineNum">     327 </span>            : 
+<span class="lineNum">     328 </span>            : #define EVENT_STORAGE_SIZE 128
+<span class="lineNum">     329 </span>            : extern struct mutex event_storage_mutex;
+<span class="lineNum">     330 </span>            : extern char event_storage[EVENT_STORAGE_SIZE];
+<span class="lineNum">     331 </span>            : 
+<span class="lineNum">     332 </span>            : extern int trace_event_raw_init(struct ftrace_event_call *call);
+<span class="lineNum">     333 </span>            : extern int trace_define_field(struct ftrace_event_call *call, const char *type,
+<span class="lineNum">     334 </span>            :                               const char *name, int offset, int size,
+<span class="lineNum">     335 </span>            :                               int is_signed, int filter_type);
+<span class="lineNum">     336 </span>            : extern int trace_add_event_call(struct ftrace_event_call *call);
+<span class="lineNum">     337 </span>            : extern int trace_remove_event_call(struct ftrace_event_call *call);
+<span class="lineNum">     338 </span>            : 
+<span class="lineNum">     339 </span>            : #define is_signed_type(type)    (((type)(-1)) &lt; (type)1)
+<span class="lineNum">     340 </span>            : 
+<span class="lineNum">     341 </span>            : int trace_set_clr_event(const char *system, const char *event, int set);
+<span class="lineNum">     342 </span>            : 
+<span class="lineNum">     343 </span>            : /*
+<span class="lineNum">     344 </span>            :  * The double __builtin_constant_p is because gcc will give us an error
+<span class="lineNum">     345 </span>            :  * if we try to allocate the static variable to fmt if it is not a
+<span class="lineNum">     346 </span>            :  * constant. Even with the outer if statement optimizing out.
+<span class="lineNum">     347 </span>            :  */
+<span class="lineNum">     348 </span>            : #define event_trace_printk(ip, fmt, args...)                            \
+<span class="lineNum">     349 </span>            : do {                                                                    \
+<span class="lineNum">     350 </span>            :         __trace_printk_check_format(fmt, ##args);                       \
+<span class="lineNum">     351 </span>            :         tracing_record_cmdline(current);                                \
+<span class="lineNum">     352 </span>            :         if (__builtin_constant_p(fmt)) {                                \
+<span class="lineNum">     353 </span>            :                 static const char *trace_printk_fmt                     \
+<span class="lineNum">     354 </span>            :                   __attribute__((section(&quot;__trace_printk_fmt&quot;))) =    \
+<span class="lineNum">     355 </span>            :                         __builtin_constant_p(fmt) ? fmt : NULL;         \
+<span class="lineNum">     356 </span>            :                                                                         \
+<span class="lineNum">     357 </span>            :                 __trace_bprintk(ip, trace_printk_fmt, ##args);          \
+<span class="lineNum">     358 </span>            :         } else                                                          \
+<span class="lineNum">     359 </span>            :                 __trace_printk(ip, fmt, ##args);                        \
+<span class="lineNum">     360 </span>            : } while (0)
+<span class="lineNum">     361 </span>            : 
+<span class="lineNum">     362 </span>            : #ifdef CONFIG_PERF_EVENTS
+<span class="lineNum">     363 </span>            : struct perf_event;
+<span class="lineNum">     364 </span>            : 
+<span class="lineNum">     365 </span>            : DECLARE_PER_CPU(struct pt_regs, perf_trace_regs);
+<span class="lineNum">     366 </span>            : 
+<span class="lineNum">     367 </span>            : extern int  perf_trace_init(struct perf_event *event);
+<span class="lineNum">     368 </span>            : extern void perf_trace_destroy(struct perf_event *event);
+<span class="lineNum">     369 </span>            : extern int  perf_trace_add(struct perf_event *event, int flags);
+<span class="lineNum">     370 </span>            : extern void perf_trace_del(struct perf_event *event, int flags);
+<span class="lineNum">     371 </span>            : extern int  ftrace_profile_set_filter(struct perf_event *event, int event_id,
+<span class="lineNum">     372 </span>            :                                      char *filter_str);
+<span class="lineNum">     373 </span>            : extern void ftrace_profile_free_filter(struct perf_event *event);
+<span class="lineNum">     374 </span>            : extern void *perf_trace_buf_prepare(int size, unsigned short type,
+<span class="lineNum">     375 </span>            :                                     struct pt_regs **regs, int *rctxp);
+<span class="lineNum">     376 </span>            : 
+<span class="lineNum">     377 </span>            : static inline void
+<span class="lineNum">     378 </span>            : perf_trace_buf_submit(void *raw_data, int size, int rctx, u64 addr,
+<span class="lineNum">     379 </span>            :                        u64 count, struct pt_regs *regs, void *head,
+<span class="lineNum">     380 </span>            :                        struct task_struct *task)
+<span class="lineNum">     381 </span>            : {
+<span class="lineNum">     382 </span><span class="lineNoCov">          0 :         perf_tp_event(addr, count, raw_data, size, regs, head, rctx, task);</span>
+<span class="lineNum">     383 </span>            : }
+<span class="lineNum">     384 </span>            : #endif
+<span class="lineNum">     385 </span>            : 
+<span class="lineNum">     386 </span>            : #endif /* _LINUX_FTRACE_EVENT_H */
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

@@ -1,0 +1,330 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - arch/x86/kernel/module.c</title>
+  <link rel="stylesheet" type="text/css" href="../../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../../index.html">top level</a> - <a href="index.html">arch/x86/kernel</a> - module.c<span style="font-size: 80%;"> (source / <a href="module.c.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">51</td>
+            <td class="headerCovTableEntry">72</td>
+            <td class="headerCovTableEntryLo">70.8 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">4</td>
+            <td class="headerCovTableEntry">4</td>
+            <td class="headerCovTableEntryHi">100.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /*  Kernel module help for x86.</a>
+<span class="lineNum">       2 </span>            :     Copyright (C) 2001 Rusty Russell.
+<span class="lineNum">       3 </span>            : 
+<span class="lineNum">       4 </span>            :     This program is free software; you can redistribute it and/or modify
+<span class="lineNum">       5 </span>            :     it under the terms of the GNU General Public License as published by
+<span class="lineNum">       6 </span>            :     the Free Software Foundation; either version 2 of the License, or
+<span class="lineNum">       7 </span>            :     (at your option) any later version.
+<span class="lineNum">       8 </span>            : 
+<span class="lineNum">       9 </span>            :     This program is distributed in the hope that it will be useful,
+<span class="lineNum">      10 </span>            :     but WITHOUT ANY WARRANTY; without even the implied warranty of
+<span class="lineNum">      11 </span>            :     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+<span class="lineNum">      12 </span>            :     GNU General Public License for more details.
+<span class="lineNum">      13 </span>            : 
+<span class="lineNum">      14 </span>            :     You should have received a copy of the GNU General Public License
+<span class="lineNum">      15 </span>            :     along with this program; if not, write to the Free Software
+<span class="lineNum">      16 </span>            :     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+<span class="lineNum">      17 </span>            : */
+<span class="lineNum">      18 </span>            : 
+<span class="lineNum">      19 </span>            : #define pr_fmt(fmt) KBUILD_MODNAME &quot;: &quot; fmt
+<span class="lineNum">      20 </span>            : 
+<span class="lineNum">      21 </span>            : #include &lt;linux/moduleloader.h&gt;
+<span class="lineNum">      22 </span>            : #include &lt;linux/elf.h&gt;
+<span class="lineNum">      23 </span>            : #include &lt;linux/vmalloc.h&gt;
+<span class="lineNum">      24 </span>            : #include &lt;linux/fs.h&gt;
+<span class="lineNum">      25 </span>            : #include &lt;linux/string.h&gt;
+<span class="lineNum">      26 </span>            : #include &lt;linux/kernel.h&gt;
+<span class="lineNum">      27 </span>            : #include &lt;linux/bug.h&gt;
+<span class="lineNum">      28 </span>            : #include &lt;linux/mm.h&gt;
+<span class="lineNum">      29 </span>            : #include &lt;linux/gfp.h&gt;
+<span class="lineNum">      30 </span>            : #include &lt;linux/jump_label.h&gt;
+<span class="lineNum">      31 </span>            : 
+<span class="lineNum">      32 </span>            : #include &lt;asm/page.h&gt;
+<span class="lineNum">      33 </span>            : #include &lt;asm/pgtable.h&gt;
+<span class="lineNum">      34 </span>            : 
+<span class="lineNum">      35 </span>            : #if 0
+<span class="lineNum">      36 </span>            : #define DEBUGP(fmt, ...)                                \
+<span class="lineNum">      37 </span>            :         printk(KERN_DEBUG fmt, ##__VA_ARGS__)
+<span class="lineNum">      38 </span>            : #else
+<span class="lineNum">      39 </span>            : #define DEBUGP(fmt, ...)                                \
+<span class="lineNum">      40 </span>            : do {                                                    \
+<span class="lineNum">      41 </span>            :         if (0)                                          \
+<span class="lineNum">      42 </span>            :                 printk(KERN_DEBUG fmt, ##__VA_ARGS__);  \
+<span class="lineNum">      43 </span>            : } while (0)
+<a name="44"><span class="lineNum">      44 </span>            : #endif</a>
+<span class="lineNum">      45 </span>            : 
+<span class="lineNum">      46 </span><span class="lineCov">         12 : void *module_alloc(unsigned long size)</span>
+<span class="lineNum">      47 </span>            : {
+<span class="lineNum">      48 </span><span class="lineCov">         12 :         if (PAGE_ALIGN(size) &gt; MODULES_LEN)</span>
+<span class="lineNum">      49 </span>            :                 return NULL;
+<span class="lineNum">      50 </span><span class="lineCov">         12 :         return __vmalloc_node_range(size, 1, MODULES_VADDR, MODULES_END,</span>
+<span class="lineNum">      51 </span><span class="lineCov">         12 :                                 GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL_EXEC,</span>
+<span class="lineNum">      52 </span><span class="lineCov">         12 :                                 -1, __builtin_return_address(0));</span>
+<span class="lineNum">      53 </span>            : }
+<span class="lineNum">      54 </span>            : 
+<span class="lineNum">      55 </span>            : #ifdef CONFIG_X86_32
+<span class="lineNum">      56 </span>            : int apply_relocate(Elf32_Shdr *sechdrs,
+<span class="lineNum">      57 </span>            :                    const char *strtab,
+<span class="lineNum">      58 </span>            :                    unsigned int symindex,
+<span class="lineNum">      59 </span>            :                    unsigned int relsec,
+<span class="lineNum">      60 </span>            :                    struct module *me)
+<span class="lineNum">      61 </span>            : {
+<span class="lineNum">      62 </span>            :         unsigned int i;
+<span class="lineNum">      63 </span>            :         Elf32_Rel *rel = (void *)sechdrs[relsec].sh_addr;
+<span class="lineNum">      64 </span>            :         Elf32_Sym *sym;
+<span class="lineNum">      65 </span>            :         uint32_t *location;
+<span class="lineNum">      66 </span>            : 
+<span class="lineNum">      67 </span>            :         DEBUGP(&quot;Applying relocate section %u to %u\n&quot;,
+<span class="lineNum">      68 </span>            :                relsec, sechdrs[relsec].sh_info);
+<span class="lineNum">      69 </span>            :         for (i = 0; i &lt; sechdrs[relsec].sh_size / sizeof(*rel); i++) {
+<span class="lineNum">      70 </span>            :                 /* This is where to make the change */
+<span class="lineNum">      71 </span>            :                 location = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr
+<span class="lineNum">      72 </span>            :                         + rel[i].r_offset;
+<span class="lineNum">      73 </span>            :                 /* This is the symbol it is referring to.  Note that all
+<span class="lineNum">      74 </span>            :                    undefined symbols have been resolved.  */
+<span class="lineNum">      75 </span>            :                 sym = (Elf32_Sym *)sechdrs[symindex].sh_addr
+<span class="lineNum">      76 </span>            :                         + ELF32_R_SYM(rel[i].r_info);
+<span class="lineNum">      77 </span>            : 
+<span class="lineNum">      78 </span>            :                 switch (ELF32_R_TYPE(rel[i].r_info)) {
+<span class="lineNum">      79 </span>            :                 case R_386_32:
+<span class="lineNum">      80 </span>            :                         /* We add the value into the location given */
+<span class="lineNum">      81 </span>            :                         *location += sym-&gt;st_value;
+<span class="lineNum">      82 </span>            :                         break;
+<span class="lineNum">      83 </span>            :                 case R_386_PC32:
+<span class="lineNum">      84 </span>            :                         /* Add the value, subtract its position */
+<span class="lineNum">      85 </span>            :                         *location += sym-&gt;st_value - (uint32_t)location;
+<span class="lineNum">      86 </span>            :                         break;
+<span class="lineNum">      87 </span>            :                 default:
+<span class="lineNum">      88 </span>            :                         pr_err(&quot;%s: Unknown relocation: %u\n&quot;,
+<span class="lineNum">      89 </span>            :                                me-&gt;name, ELF32_R_TYPE(rel[i].r_info));
+<span class="lineNum">      90 </span>            :                         return -ENOEXEC;
+<span class="lineNum">      91 </span>            :                 }
+<span class="lineNum">      92 </span>            :         }
+<span class="lineNum">      93 </span>            :         return 0;
+<a name="94"><span class="lineNum">      94 </span>            : }</a>
+<span class="lineNum">      95 </span>            : #else /*X86_64*/
+<span class="lineNum">      96 </span><span class="lineCov">        149 : int apply_relocate_add(Elf64_Shdr *sechdrs,</span>
+<span class="lineNum">      97 </span>            :                    const char *strtab,
+<span class="lineNum">      98 </span>            :                    unsigned int symindex,
+<span class="lineNum">      99 </span>            :                    unsigned int relsec,
+<span class="lineNum">     100 </span>            :                    struct module *me)
+<span class="lineNum">     101 </span>            : {
+<span class="lineNum">     102 </span>            :         unsigned int i;
+<span class="lineNum">     103 </span><span class="lineCov">        149 :         Elf64_Rela *rel = (void *)sechdrs[relsec].sh_addr;</span>
+<span class="lineNum">     104 </span>            :         Elf64_Sym *sym;
+<span class="lineNum">     105 </span>            :         void *loc;
+<span class="lineNum">     106 </span>            :         u64 val;
+<span class="lineNum">     107 </span><span class="lineCov">        149 :         bool rhel70 = check_module_rhelversion(me, &quot;7.0&quot;);</span>
+<span class="lineNum">     108 </span><span class="lineCov">        149 :         bool warned = false;</span>
+<span class="lineNum">     109 </span>            : 
+<span class="lineNum">     110 </span>            :         DEBUGP(&quot;Applying relocate section %u to %u\n&quot;,
+<span class="lineNum">     111 </span>            :                relsec, sechdrs[relsec].sh_info);
+<span class="lineNum">     112 </span>            : 
+<span class="lineNum">     113 </span><span class="lineCov">       1994 :         for (i = 0; i &lt; sechdrs[relsec].sh_size / sizeof(*rel); i++) {</span>
+<span class="lineNum">     114 </span>            :                 Elf64_Sym kstack_sym;
+<span class="lineNum">     115 </span><span class="lineCov">       1696 :                 bool apply_kstack_fixup = false;</span>
+<span class="lineNum">     116 </span>            :                 const char *symname;
+<span class="lineNum">     117 </span>            : 
+<span class="lineNum">     118 </span>            :                 /* This is where to make the change */
+<span class="lineNum">     119 </span><span class="lineCov">       3392 :                 loc = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr</span>
+<span class="lineNum">     120 </span><span class="lineCov">       3392 :                         + rel[i].r_offset;</span>
+<span class="lineNum">     121 </span>            : 
+<span class="lineNum">     122 </span>            :                 /* This is the symbol it is referring to.  Note that all
+<span class="lineNum">     123 </span>            :                    undefined symbols have been resolved.  */
+<span class="lineNum">     124 </span><span class="lineCov">       3392 :                 sym = (Elf64_Sym *)sechdrs[symindex].sh_addr</span>
+<span class="lineNum">     125 </span><span class="lineCov">       3392 :                         + ELF64_R_SYM(rel[i].r_info);</span>
+<span class="lineNum">     126 </span><span class="lineCov">       1696 :                 symname = strtab + sym-&gt;st_name;</span>
+<span class="lineNum">     127 </span>            : 
+<span class="lineNum">     128 </span>            :                 DEBUGP(&quot;symname %s type %d st_value %Lx r_addend %Lx loc %Lx\n&quot;,
+<span class="lineNum">     129 </span>            :                        symname, (int)ELF64_R_TYPE(rel[i].r_info),
+<span class="lineNum">     130 </span>            :                        sym-&gt;st_value, rel[i].r_addend, (u64)loc);
+<span class="lineNum">     131 </span>            : 
+<span class="lineNum">     132 </span><span class="lineCov">       1696 :                 if (rhel70 &amp;&amp; !strcmp(symname, &quot;kernel_stack&quot;)) {</span>
+<span class="lineNum">     133 </span><span class="lineNoCov">          0 :                         if (!warned)</span>
+<span class="lineNum">     134 </span><span class="lineNoCov">          0 :                                 printk(KERN_INFO &quot;%s: applying kernel_stack fix up\n&quot;,</span>
+<span class="lineNum">     135 </span><span class="lineNoCov">          0 :                                         me-&gt;name);</span>
+<span class="lineNum">     136 </span>            :                         apply_kstack_fixup = true;
+<span class="lineNum">     137 </span>            :                         warned = true;
+<span class="lineNum">     138 </span>            :                 }
+<span class="lineNum">     139 </span>            : 
+<span class="lineNum">     140 </span>            :                 /* kernel_stack is referenced to access current_thread_info in
+<span class="lineNum">     141 </span>            :                  * a variety of places... if we're loading a module which
+<span class="lineNum">     142 </span>            :                  * expects an 8K stack, fix up the symbol reference to look
+<span class="lineNum">     143 </span>            :                  * at a second copy. Nobody should be using this symbol for
+<span class="lineNum">     144 </span>            :                  * any other purpose.
+<span class="lineNum">     145 </span>            :                  */
+<span class="lineNum">     146 </span><span class="lineCov">       1696 :                 if (apply_kstack_fixup) {</span>
+<span class="lineNum">     147 </span>            :                         const struct kernel_symbol *ksym2;
+<span class="lineNum">     148 </span><span class="lineNoCov">          0 :                         ksym2 = find_symbol(&quot;__kernel_stack_70__&quot;,</span>
+<span class="lineNum">     149 </span>            :                                             NULL, NULL, true, true);
+<span class="lineNum">     150 </span><span class="lineNoCov">          0 :                         if (!IS_ERR(ksym2)) {</span>
+<span class="lineNum">     151 </span><span class="lineNoCov">          0 :                                 kstack_sym.st_value = ksym2-&gt;value;</span>
+<span class="lineNum">     152 </span><span class="lineNoCov">          0 :                                 sym = &amp;kstack_sym;</span>
+<span class="lineNum">     153 </span>            :                         } else
+<span class="lineNum">     154 </span><span class="lineNoCov">          0 :                                 return PTR_ERR(ksym2) ?: -ENOEXEC;</span>
+<span class="lineNum">     155 </span>            :                 }
+<span class="lineNum">     156 </span>            : 
+<span class="lineNum">     157 </span><span class="lineCov">       1696 :                 val = sym-&gt;st_value + rel[i].r_addend;</span>
+<span class="lineNum">     158 </span>            : 
+<span class="lineNum">     159 </span><span class="lineCov">       1696 :                 switch (ELF64_R_TYPE(rel[i].r_info)) {</span>
+<span class="lineNum">     160 </span>            :                 case R_X86_64_NONE:
+<span class="lineNum">     161 </span>            :                         break;
+<span class="lineNum">     162 </span>            :                 case R_X86_64_64:
+<span class="lineNum">     163 </span><span class="lineCov">        309 :                         *(u64 *)loc = val;</span>
+<span class="lineNum">     164 </span><span class="lineCov">        309 :                         break;</span>
+<span class="lineNum">     165 </span>            :                 case R_X86_64_32:
+<span class="lineNum">     166 </span><span class="lineNoCov">          0 :                         *(u32 *)loc = val;</span>
+<span class="lineNum">     167 </span><span class="lineNoCov">          0 :                         if (val != *(u32 *)loc)</span>
+<span class="lineNum">     168 </span>            :                                 goto overflow;
+<span class="lineNum">     169 </span>            :                         break;
+<span class="lineNum">     170 </span>            :                 case R_X86_64_32S:
+<span class="lineNum">     171 </span><span class="lineCov">        296 :                         *(s32 *)loc = val;</span>
+<span class="lineNum">     172 </span><span class="lineCov">        296 :                         if ((s64)val != *(s32 *)loc)</span>
+<span class="lineNum">     173 </span>            :                                 goto overflow;
+<span class="lineNum">     174 </span>            :                         break;
+<span class="lineNum">     175 </span>            :                 case R_X86_64_PC32:
+<span class="lineNum">     176 </span><span class="lineCov">       1046 :                         val -= (u64)loc;</span>
+<span class="lineNum">     177 </span><span class="lineCov">       1046 :                         *(u32 *)loc = val;</span>
+<span class="lineNum">     178 </span>            : #if 0
+<span class="lineNum">     179 </span>            :                         if ((s64)val != *(s32 *)loc)
+<span class="lineNum">     180 </span>            :                                 goto overflow;
+<span class="lineNum">     181 </span>            : #endif
+<span class="lineNum">     182 </span><span class="lineCov">       1046 :                         break;</span>
+<span class="lineNum">     183 </span>            :                 default:
+<span class="lineNum">     184 </span><span class="lineNoCov">          0 :                         pr_err(&quot;%s: Unknown rela relocation: %llu\n&quot;,</span>
+<span class="lineNum">     185 </span>            :                                me-&gt;name, ELF64_R_TYPE(rel[i].r_info));
+<span class="lineNum">     186 </span><span class="lineNoCov">          0 :                         return -ENOEXEC;</span>
+<span class="lineNum">     187 </span>            :                 }
+<span class="lineNum">     188 </span>            :         }
+<span class="lineNum">     189 </span>            :         return 0;
+<span class="lineNum">     190 </span>            : 
+<span class="lineNum">     191 </span>            : overflow:
+<span class="lineNum">     192 </span><span class="lineNoCov">          0 :         pr_err(&quot;overflow in relocation type %d val %Lx\n&quot;,</span>
+<span class="lineNum">     193 </span>            :                (int)ELF64_R_TYPE(rel[i].r_info), val);
+<span class="lineNum">     194 </span><span class="lineNoCov">          0 :         pr_err(&quot;`%s' likely not compiled with -mcmodel=kernel\n&quot;,</span>
+<span class="lineNum">     195 </span>            :                me-&gt;name);
+<span class="lineNum">     196 </span><span class="lineNoCov">          0 :         return -ENOEXEC;</span>
+<span class="lineNum">     197 </span>            : }
+<a name="198"><span class="lineNum">     198 </span>            : #endif</a>
+<span class="lineNum">     199 </span>            : 
+<span class="lineNum">     200 </span><span class="lineCov">          6 : int module_finalize(const Elf_Ehdr *hdr,</span>
+<span class="lineNum">     201 </span>            :                     const Elf_Shdr *sechdrs,
+<span class="lineNum">     202 </span>            :                     struct module *me)
+<span class="lineNum">     203 </span>            : {
+<span class="lineNum">     204 </span><span class="lineCov">          6 :         const Elf_Shdr *s, *text = NULL, *alt = NULL, *locks = NULL,</span>
+<span class="lineNum">     205 </span><span class="lineCov">          6 :                 *para = NULL;</span>
+<span class="lineNum">     206 </span><span class="lineCov">          6 :         char *secstrings = (void *)hdr + sechdrs[hdr-&gt;e_shstrndx].sh_offset;</span>
+<span class="lineNum">     207 </span>            : 
+<span class="lineNum">     208 </span><span class="lineCov">        442 :         for (s = sechdrs; s &lt; sechdrs + hdr-&gt;e_shnum; s++) {</span>
+<span class="lineNum">     209 </span><span class="lineCov">        436 :                 if (!strcmp(&quot;.text&quot;, secstrings + s-&gt;sh_name))</span>
+<span class="lineNum">     210 </span><span class="lineCov">          6 :                         text = s;</span>
+<span class="lineNum">     211 </span><span class="lineCov">        436 :                 if (!strcmp(&quot;.altinstructions&quot;, secstrings + s-&gt;sh_name))</span>
+<span class="lineNum">     212 </span><span class="lineNoCov">          0 :                         alt = s;</span>
+<span class="lineNum">     213 </span><span class="lineCov">        436 :                 if (!strcmp(&quot;.smp_locks&quot;, secstrings + s-&gt;sh_name))</span>
+<span class="lineNum">     214 </span><span class="lineCov">          1 :                         locks = s;</span>
+<span class="lineNum">     215 </span><span class="lineCov">        436 :                 if (!strcmp(&quot;.parainstructions&quot;, secstrings + s-&gt;sh_name))</span>
+<span class="lineNum">     216 </span><span class="lineNoCov">          0 :                         para = s;</span>
+<span class="lineNum">     217 </span>            :         }
+<span class="lineNum">     218 </span>            : 
+<span class="lineNum">     219 </span><span class="lineCov">          6 :         if (alt) {</span>
+<span class="lineNum">     220 </span>            :                 /* patch .altinstructions */
+<span class="lineNum">     221 </span><span class="lineNoCov">          0 :                 void *aseg = (void *)alt-&gt;sh_addr;</span>
+<span class="lineNum">     222 </span><span class="lineNoCov">          0 :                 apply_alternatives(aseg, aseg + alt-&gt;sh_size);</span>
+<span class="lineNum">     223 </span>            :         }
+<span class="lineNum">     224 </span><span class="lineCov">          6 :         if (locks &amp;&amp; text) {</span>
+<span class="lineNum">     225 </span><span class="lineCov">          1 :                 void *lseg = (void *)locks-&gt;sh_addr;</span>
+<span class="lineNum">     226 </span><span class="lineCov">          1 :                 void *tseg = (void *)text-&gt;sh_addr;</span>
+<span class="lineNum">     227 </span><span class="lineCov">          2 :                 alternatives_smp_module_add(me, me-&gt;name,</span>
+<span class="lineNum">     228 </span><span class="lineCov">          1 :                                             lseg, lseg + locks-&gt;sh_size,</span>
+<span class="lineNum">     229 </span><span class="lineCov">          1 :                                             tseg, tseg + text-&gt;sh_size);</span>
+<span class="lineNum">     230 </span>            :         }
+<span class="lineNum">     231 </span>            : 
+<span class="lineNum">     232 </span><span class="lineCov">          6 :         if (para) {</span>
+<span class="lineNum">     233 </span><span class="lineNoCov">          0 :                 void *pseg = (void *)para-&gt;sh_addr;</span>
+<span class="lineNum">     234 </span><span class="lineNoCov">          0 :                 apply_paravirt(pseg, pseg + para-&gt;sh_size);</span>
+<span class="lineNum">     235 </span>            :         }
+<span class="lineNum">     236 </span>            : 
+<span class="lineNum">     237 </span>            :         /* make jump label nops */
+<span class="lineNum">     238 </span><span class="lineCov">          6 :         jump_label_apply_nops(me);</span>
+<span class="lineNum">     239 </span>            : 
+<span class="lineNum">     240 </span><span class="lineCov">          6 :         return 0;</span>
+<a name="241"><span class="lineNum">     241 </span>            : }</a>
+<span class="lineNum">     242 </span>            : 
+<span class="lineNum">     243 </span><span class="lineCov">          4 : void module_arch_cleanup(struct module *mod)</span>
+<span class="lineNum">     244 </span>            : {
+<span class="lineNum">     245 </span><span class="lineCov">          4 :         alternatives_smp_module_del(mod);</span>
+<span class="lineNum">     246 </span><span class="lineCov">          4 : }</span>
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

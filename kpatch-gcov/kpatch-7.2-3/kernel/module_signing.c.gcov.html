@@ -1,0 +1,346 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - kernel/module_signing.c</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../index.html">top level</a> - <a href="index.html">kernel</a> - module_signing.c<span style="font-size: 80%;"> (source / <a href="module_signing.c.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">85</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">4</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /* Module signature checker</a>
+<span class="lineNum">       2 </span>            :  *
+<span class="lineNum">       3 </span>            :  * Copyright (C) 2012 Red Hat, Inc. All Rights Reserved.
+<span class="lineNum">       4 </span>            :  * Written by David Howells (dhowells@redhat.com)
+<span class="lineNum">       5 </span>            :  *
+<span class="lineNum">       6 </span>            :  * This program is free software; you can redistribute it and/or
+<span class="lineNum">       7 </span>            :  * modify it under the terms of the GNU General Public Licence
+<span class="lineNum">       8 </span>            :  * as published by the Free Software Foundation; either version
+<span class="lineNum">       9 </span>            :  * 2 of the Licence, or (at your option) any later version.
+<span class="lineNum">      10 </span>            :  */
+<span class="lineNum">      11 </span>            : 
+<span class="lineNum">      12 </span>            : #include &lt;linux/kernel.h&gt;
+<span class="lineNum">      13 </span>            : #include &lt;linux/err.h&gt;
+<span class="lineNum">      14 </span>            : #include &lt;crypto/public_key.h&gt;
+<span class="lineNum">      15 </span>            : #include &lt;crypto/hash.h&gt;
+<span class="lineNum">      16 </span>            : #include &lt;keys/asymmetric-type.h&gt;
+<span class="lineNum">      17 </span>            : #include &lt;keys/system_keyring.h&gt;
+<span class="lineNum">      18 </span>            : #include &quot;module-internal.h&quot;
+<span class="lineNum">      19 </span>            : 
+<span class="lineNum">      20 </span>            : /*
+<span class="lineNum">      21 </span>            :  * Module signature information block.
+<span class="lineNum">      22 </span>            :  *
+<span class="lineNum">      23 </span>            :  * The constituents of the signature section are, in order:
+<span class="lineNum">      24 </span>            :  *
+<span class="lineNum">      25 </span>            :  *      - Signer's name
+<span class="lineNum">      26 </span>            :  *      - Key identifier
+<span class="lineNum">      27 </span>            :  *      - Signature data
+<span class="lineNum">      28 </span>            :  *      - Information block
+<span class="lineNum">      29 </span>            :  */
+<span class="lineNum">      30 </span>            : struct module_signature {
+<span class="lineNum">      31 </span>            :         u8      algo;           /* Public-key crypto algorithm [enum pkey_algo] */
+<span class="lineNum">      32 </span>            :         u8      hash;           /* Digest algorithm [enum hash_algo] */
+<span class="lineNum">      33 </span>            :         u8      id_type;        /* Key identifier type [enum pkey_id_type] */
+<span class="lineNum">      34 </span>            :         u8      signer_len;     /* Length of signer's name */
+<span class="lineNum">      35 </span>            :         u8      key_id_len;     /* Length of key identifier */
+<span class="lineNum">      36 </span>            :         u8      __pad[3];
+<span class="lineNum">      37 </span>            :         __be32  sig_len;        /* Length of signature data */
+<span class="lineNum">      38 </span>            : };
+<span class="lineNum">      39 </span>            : 
+<span class="lineNum">      40 </span>            : /*
+<a name="41"><span class="lineNum">      41 </span>            :  * Digest the module contents.</a>
+<span class="lineNum">      42 </span>            :  */
+<span class="lineNum">      43 </span><span class="lineNoCov">          0 : static struct public_key_signature *mod_make_digest(enum hash_algo hash,</span>
+<span class="lineNum">      44 </span>            :                                                     const void *mod,
+<span class="lineNum">      45 </span>            :                                                     unsigned long modlen)
+<span class="lineNum">      46 </span>            : {
+<span class="lineNum">      47 </span>            :         struct public_key_signature *pks;
+<span class="lineNum">      48 </span>            :         struct crypto_shash *tfm;
+<span class="lineNum">      49 </span>            :         struct shash_desc *desc;
+<span class="lineNum">      50 </span>            :         size_t digest_size, desc_size;
+<span class="lineNum">      51 </span>            :         int ret;
+<span class="lineNum">      52 </span>            : 
+<span class="lineNum">      53 </span>            :         pr_devel(&quot;==&gt;%s()\n&quot;, __func__);
+<span class="lineNum">      54 </span>            :         
+<span class="lineNum">      55 </span>            :         /* Allocate the hashing algorithm we're going to need and find out how
+<span class="lineNum">      56 </span>            :          * big the hash operational data will be.
+<span class="lineNum">      57 </span>            :          */
+<span class="lineNum">      58 </span><span class="lineNoCov">          0 :         tfm = crypto_alloc_shash(hash_algo_name[hash], 0, 0);</span>
+<span class="lineNum">      59 </span><span class="lineNoCov">          0 :         if (IS_ERR(tfm))</span>
+<span class="lineNum">      60 </span><span class="lineNoCov">          0 :                 return (PTR_ERR(tfm) == -ENOENT) ? ERR_PTR(-ENOPKG) : ERR_CAST(tfm);</span>
+<span class="lineNum">      61 </span>            : 
+<span class="lineNum">      62 </span><span class="lineNoCov">          0 :         desc_size = crypto_shash_descsize(tfm) + sizeof(*desc);</span>
+<span class="lineNum">      63 </span><span class="lineNoCov">          0 :         digest_size = crypto_shash_digestsize(tfm);</span>
+<span class="lineNum">      64 </span>            : 
+<span class="lineNum">      65 </span>            :         /* We allocate the hash operational data storage on the end of our
+<span class="lineNum">      66 </span>            :          * context data and the digest output buffer on the end of that.
+<span class="lineNum">      67 </span>            :          */
+<span class="lineNum">      68 </span><span class="lineNoCov">          0 :         ret = -ENOMEM;</span>
+<span class="lineNum">      69 </span><span class="lineNoCov">          0 :         pks = kzalloc(digest_size + sizeof(*pks) + desc_size, GFP_KERNEL);</span>
+<span class="lineNum">      70 </span><span class="lineNoCov">          0 :         if (!pks)</span>
+<span class="lineNum">      71 </span>            :                 goto error_no_pks;
+<span class="lineNum">      72 </span>            : 
+<span class="lineNum">      73 </span><span class="lineNoCov">          0 :         pks-&gt;pkey_hash_algo  = hash;</span>
+<span class="lineNum">      74 </span><span class="lineNoCov">          0 :         pks-&gt;digest          = (u8 *)pks + sizeof(*pks) + desc_size;</span>
+<span class="lineNum">      75 </span><span class="lineNoCov">          0 :         pks-&gt;digest_size     = digest_size;</span>
+<span class="lineNum">      76 </span>            : 
+<span class="lineNum">      77 </span><span class="lineNoCov">          0 :         desc = (void *)pks + sizeof(*pks);</span>
+<span class="lineNum">      78 </span><span class="lineNoCov">          0 :         desc-&gt;tfm   = tfm;</span>
+<span class="lineNum">      79 </span><span class="lineNoCov">          0 :         desc-&gt;flags = CRYPTO_TFM_REQ_MAY_SLEEP;</span>
+<span class="lineNum">      80 </span>            : 
+<span class="lineNum">      81 </span><span class="lineNoCov">          0 :         ret = crypto_shash_init(desc);</span>
+<span class="lineNum">      82 </span><span class="lineNoCov">          0 :         if (ret &lt; 0)</span>
+<span class="lineNum">      83 </span>            :                 goto error;
+<span class="lineNum">      84 </span>            : 
+<span class="lineNum">      85 </span><span class="lineNoCov">          0 :         ret = crypto_shash_finup(desc, mod, modlen, pks-&gt;digest);</span>
+<span class="lineNum">      86 </span><span class="lineNoCov">          0 :         if (ret &lt; 0)</span>
+<span class="lineNum">      87 </span>            :                 goto error;
+<span class="lineNum">      88 </span>            : 
+<span class="lineNum">      89 </span>            :         crypto_free_shash(tfm);
+<span class="lineNum">      90 </span>            :         pr_devel(&quot;&lt;==%s() = ok\n&quot;, __func__);
+<span class="lineNum">      91 </span><span class="lineNoCov">          0 :         return pks;</span>
+<span class="lineNum">      92 </span>            : 
+<span class="lineNum">      93 </span>            : error:
+<span class="lineNum">      94 </span><span class="lineNoCov">          0 :         kfree(pks);</span>
+<span class="lineNum">      95 </span>            : error_no_pks:
+<span class="lineNum">      96 </span>            :         crypto_free_shash(tfm);
+<span class="lineNum">      97 </span>            :         pr_devel(&quot;&lt;==%s() = %d\n&quot;, __func__, ret);
+<span class="lineNum">      98 </span><span class="lineNoCov">          0 :         return ERR_PTR(ret);</span>
+<span class="lineNum">      99 </span>            : }
+<span class="lineNum">     100 </span>            : 
+<span class="lineNum">     101 </span>            : /*
+<span class="lineNum">     102 </span>            :  * Extract an MPI array from the signature data.  This represents the actual
+<span class="lineNum">     103 </span>            :  * signature.  Each raw MPI is prefaced by a BE 2-byte value indicating the
+<span class="lineNum">     104 </span>            :  * size of the MPI in bytes.
+<span class="lineNum">     105 </span>            :  *
+<a name="106"><span class="lineNum">     106 </span>            :  * RSA signatures only have one MPI, so currently we only read one.</a>
+<span class="lineNum">     107 </span>            :  */
+<span class="lineNum">     108 </span><span class="lineNoCov">          0 : static int mod_extract_mpi_array(struct public_key_signature *pks,</span>
+<span class="lineNum">     109 </span>            :                                  const void *data, size_t len)
+<span class="lineNum">     110 </span>            : {
+<span class="lineNum">     111 </span>            :         size_t nbytes;
+<span class="lineNum">     112 </span>            :         MPI mpi;
+<span class="lineNum">     113 </span>            : 
+<span class="lineNum">     114 </span><span class="lineNoCov">          0 :         if (len &lt; 3)</span>
+<span class="lineNum">     115 </span>            :                 return -EBADMSG;
+<span class="lineNum">     116 </span><span class="lineNoCov">          0 :         nbytes = ((const u8 *)data)[0] &lt;&lt; 8 | ((const u8 *)data)[1];</span>
+<span class="lineNum">     117 </span><span class="lineNoCov">          0 :         data += 2;</span>
+<span class="lineNum">     118 </span><span class="lineNoCov">          0 :         len -= 2;</span>
+<span class="lineNum">     119 </span><span class="lineNoCov">          0 :         if (len != nbytes)</span>
+<span class="lineNum">     120 </span>            :                 return -EBADMSG;
+<span class="lineNum">     121 </span>            : 
+<span class="lineNum">     122 </span><span class="lineNoCov">          0 :         mpi = mpi_read_raw_data(data, nbytes);</span>
+<span class="lineNum">     123 </span><span class="lineNoCov">          0 :         if (!mpi)</span>
+<span class="lineNum">     124 </span>            :                 return -ENOMEM;
+<span class="lineNum">     125 </span><span class="lineNoCov">          0 :         pks-&gt;mpi[0] = mpi;</span>
+<span class="lineNum">     126 </span><span class="lineNoCov">          0 :         pks-&gt;nr_mpi = 1;</span>
+<span class="lineNum">     127 </span>            :         return 0;
+<span class="lineNum">     128 </span>            : }
+<span class="lineNum">     129 </span>            : 
+<span class="lineNum">     130 </span>            : /*
+<a name="131"><span class="lineNum">     131 </span>            :  * Request an asymmetric key.</a>
+<span class="lineNum">     132 </span>            :  */
+<span class="lineNum">     133 </span><span class="lineNoCov">          0 : static struct key *request_asymmetric_key(const char *signer, size_t signer_len,</span>
+<span class="lineNum">     134 </span>            :                                           const u8 *key_id, size_t key_id_len)
+<span class="lineNum">     135 </span>            : {
+<span class="lineNum">     136 </span>            :         key_ref_t key;
+<span class="lineNum">     137 </span>            :         size_t i;
+<span class="lineNum">     138 </span>            :         char *id, *q;
+<span class="lineNum">     139 </span>            : 
+<span class="lineNum">     140 </span>            :         pr_devel(&quot;==&gt;%s(,%zu,,%zu)\n&quot;, __func__, signer_len, key_id_len);
+<span class="lineNum">     141 </span>            : 
+<span class="lineNum">     142 </span>            :         /* Construct an identifier. */
+<span class="lineNum">     143 </span><span class="lineNoCov">          0 :         id = kmalloc(signer_len + 2 + key_id_len * 2 + 1, GFP_KERNEL);</span>
+<span class="lineNum">     144 </span><span class="lineNoCov">          0 :         if (!id)</span>
+<span class="lineNum">     145 </span>            :                 return ERR_PTR(-ENOKEY);
+<span class="lineNum">     146 </span>            : 
+<span class="lineNum">     147 </span><span class="lineNoCov">          0 :         memcpy(id, signer, signer_len);</span>
+<span class="lineNum">     148 </span>            : 
+<span class="lineNum">     149 </span><span class="lineNoCov">          0 :         q = id + signer_len;</span>
+<span class="lineNum">     150 </span><span class="lineNoCov">          0 :         *q++ = ':';</span>
+<span class="lineNum">     151 </span><span class="lineNoCov">          0 :         *q++ = ' ';</span>
+<span class="lineNum">     152 </span><span class="lineNoCov">          0 :         for (i = 0; i &lt; key_id_len; i++) {</span>
+<span class="lineNum">     153 </span><span class="lineNoCov">          0 :                 *q++ = hex_asc[*key_id &gt;&gt; 4];</span>
+<span class="lineNum">     154 </span><span class="lineNoCov">          0 :                 *q++ = hex_asc[*key_id++ &amp; 0x0f];</span>
+<span class="lineNum">     155 </span>            :         }
+<span class="lineNum">     156 </span>            : 
+<span class="lineNum">     157 </span><span class="lineNoCov">          0 :         *q = 0;</span>
+<span class="lineNum">     158 </span>            : 
+<span class="lineNum">     159 </span><span class="lineNoCov">          0 :         pr_debug(&quot;Look up: \&quot;%s\&quot;\n&quot;, id);</span>
+<span class="lineNum">     160 </span>            : 
+<span class="lineNum">     161 </span>            : #ifdef CONFIG_SYSTEM_BLACKLIST_KEYRING
+<span class="lineNum">     162 </span><span class="lineNoCov">          0 :         key = keyring_search(make_key_ref(system_blacklist_keyring, 1),</span>
+<span class="lineNum">     163 </span>            :                                    &amp;key_type_asymmetric, id);
+<span class="lineNum">     164 </span><span class="lineNoCov">          0 :         if (!IS_ERR(key)) {</span>
+<span class="lineNum">     165 </span>            :                 /* module is signed with a cert in the blacklist.  reject */
+<span class="lineNum">     166 </span><span class="lineNoCov">          0 :                 pr_err(&quot;Module key '%s' is in blacklist\n&quot;, id);</span>
+<span class="lineNum">     167 </span>            :                 key_ref_put(key);
+<span class="lineNum">     168 </span><span class="lineNoCov">          0 :                 kfree(id);</span>
+<span class="lineNum">     169 </span><span class="lineNoCov">          0 :                 return ERR_PTR(-EKEYREJECTED);</span>
+<span class="lineNum">     170 </span>            :         }
+<span class="lineNum">     171 </span>            : #endif
+<span class="lineNum">     172 </span>            : 
+<span class="lineNum">     173 </span><span class="lineNoCov">          0 :         key = keyring_search(make_key_ref(system_trusted_keyring, 1),</span>
+<span class="lineNum">     174 </span>            :                              &amp;key_type_asymmetric, id);
+<span class="lineNum">     175 </span><span class="lineNoCov">          0 :         if (IS_ERR(key))</span>
+<span class="lineNum">     176 </span><span class="lineNoCov">          0 :                 pr_warn(&quot;Request for unknown module key '%s' err %ld\n&quot;,</span>
+<span class="lineNum">     177 </span>            :                         id, PTR_ERR(key));
+<span class="lineNum">     178 </span><span class="lineNoCov">          0 :         kfree(id);</span>
+<span class="lineNum">     179 </span>            : 
+<span class="lineNum">     180 </span><span class="lineNoCov">          0 :         if (IS_ERR(key)) {</span>
+<span class="lineNum">     181 </span>            :                 switch (PTR_ERR(key)) {
+<span class="lineNum">     182 </span>            :                         /* Hide some search errors */
+<span class="lineNum">     183 </span>            :                 case -EACCES:
+<span class="lineNum">     184 </span>            :                 case -ENOTDIR:
+<span class="lineNum">     185 </span>            :                 case -EAGAIN:
+<span class="lineNum">     186 </span>            :                         return ERR_PTR(-ENOKEY);
+<span class="lineNum">     187 </span>            :                 default:
+<span class="lineNum">     188 </span>            :                         return ERR_CAST(key);
+<span class="lineNum">     189 </span>            :                 }
+<span class="lineNum">     190 </span>            :         }
+<span class="lineNum">     191 </span>            : 
+<span class="lineNum">     192 </span><span class="lineNoCov">          0 :         pr_devel(&quot;&lt;==%s() = 0 [%x]\n&quot;, __func__, key_serial(key_ref_to_ptr(key)));</span>
+<span class="lineNum">     193 </span><span class="lineNoCov">          0 :         return key_ref_to_ptr(key);</span>
+<span class="lineNum">     194 </span>            : }
+<span class="lineNum">     195 </span>            : 
+<span class="lineNum">     196 </span>            : /*
+<a name="197"><span class="lineNum">     197 </span>            :  * Verify the signature on a module.</a>
+<span class="lineNum">     198 </span>            :  */
+<span class="lineNum">     199 </span><span class="lineNoCov">          0 : int mod_verify_sig(const void *mod, unsigned long *_modlen)</span>
+<span class="lineNum">     200 </span>            : {
+<span class="lineNum">     201 </span>            :         struct public_key_signature *pks;
+<span class="lineNum">     202 </span>            :         struct module_signature ms;
+<span class="lineNum">     203 </span>            :         struct key *key;
+<span class="lineNum">     204 </span>            :         const void *sig;
+<span class="lineNum">     205 </span><span class="lineNoCov">          0 :         size_t modlen = *_modlen, sig_len;</span>
+<span class="lineNum">     206 </span>            :         int ret;
+<span class="lineNum">     207 </span>            : 
+<span class="lineNum">     208 </span>            :         pr_devel(&quot;==&gt;%s(,%zu)\n&quot;, __func__, modlen);
+<span class="lineNum">     209 </span>            : 
+<span class="lineNum">     210 </span><span class="lineNoCov">          0 :         if (modlen &lt;= sizeof(ms))</span>
+<span class="lineNum">     211 </span>            :                 return -EBADMSG;
+<span class="lineNum">     212 </span>            : 
+<span class="lineNum">     213 </span><span class="lineNoCov">          0 :         memcpy(&amp;ms, mod + (modlen - sizeof(ms)), sizeof(ms));</span>
+<span class="lineNum">     214 </span><span class="lineNoCov">          0 :         modlen -= sizeof(ms);</span>
+<span class="lineNum">     215 </span>            : 
+<span class="lineNum">     216 </span><span class="lineNoCov">          0 :         sig_len = be32_to_cpu(ms.sig_len);</span>
+<span class="lineNum">     217 </span><span class="lineNoCov">          0 :         if (sig_len &gt;= modlen)</span>
+<span class="lineNum">     218 </span>            :                 return -EBADMSG;
+<span class="lineNum">     219 </span><span class="lineNoCov">          0 :         modlen -= sig_len;</span>
+<span class="lineNum">     220 </span><span class="lineNoCov">          0 :         if ((size_t)ms.signer_len + ms.key_id_len &gt;= modlen)</span>
+<span class="lineNum">     221 </span>            :                 return -EBADMSG;
+<span class="lineNum">     222 </span><span class="lineNoCov">          0 :         modlen -= (size_t)ms.signer_len + ms.key_id_len;</span>
+<span class="lineNum">     223 </span>            : 
+<span class="lineNum">     224 </span><span class="lineNoCov">          0 :         *_modlen = modlen;</span>
+<span class="lineNum">     225 </span><span class="lineNoCov">          0 :         sig = mod + modlen;</span>
+<span class="lineNum">     226 </span>            : 
+<span class="lineNum">     227 </span>            :         /* For the moment, only support RSA and X.509 identifiers */
+<span class="lineNum">     228 </span><span class="lineNoCov">          0 :         if (ms.algo != PKEY_ALGO_RSA ||</span>
+<span class="lineNum">     229 </span>            :             ms.id_type != PKEY_ID_X509)
+<span class="lineNum">     230 </span>            :                 return -ENOPKG;
+<span class="lineNum">     231 </span>            : 
+<span class="lineNum">     232 </span><span class="lineNoCov">          0 :         if (ms.hash &gt;= PKEY_HASH__LAST ||</span>
+<span class="lineNum">     233 </span><span class="lineNoCov">          0 :             !hash_algo_name[ms.hash])</span>
+<span class="lineNum">     234 </span>            :                 return -ENOPKG;
+<span class="lineNum">     235 </span>            : 
+<span class="lineNum">     236 </span><span class="lineNoCov">          0 :         key = request_asymmetric_key(sig, ms.signer_len,</span>
+<span class="lineNum">     237 </span>            :                                      sig + ms.signer_len, ms.key_id_len);
+<span class="lineNum">     238 </span><span class="lineNoCov">          0 :         if (IS_ERR(key))</span>
+<span class="lineNum">     239 </span><span class="lineNoCov">          0 :                 return PTR_ERR(key);</span>
+<span class="lineNum">     240 </span>            : 
+<span class="lineNum">     241 </span><span class="lineNoCov">          0 :         pks = mod_make_digest(ms.hash, mod, modlen);</span>
+<span class="lineNum">     242 </span><span class="lineNoCov">          0 :         if (IS_ERR(pks)) {</span>
+<span class="lineNum">     243 </span><span class="lineNoCov">          0 :                 ret = PTR_ERR(pks);</span>
+<span class="lineNum">     244 </span><span class="lineNoCov">          0 :                 goto error_put_key;</span>
+<span class="lineNum">     245 </span>            :         }
+<span class="lineNum">     246 </span>            : 
+<span class="lineNum">     247 </span><span class="lineNoCov">          0 :         ret = mod_extract_mpi_array(pks, sig + ms.signer_len + ms.key_id_len,</span>
+<span class="lineNum">     248 </span>            :                                     sig_len);
+<span class="lineNum">     249 </span><span class="lineNoCov">          0 :         if (ret &lt; 0)</span>
+<span class="lineNum">     250 </span>            :                 goto error_free_pks;
+<span class="lineNum">     251 </span>            : 
+<span class="lineNum">     252 </span><span class="lineNoCov">          0 :         ret = verify_signature(key, pks);</span>
+<span class="lineNum">     253 </span>            :         pr_devel(&quot;verify_signature() = %d\n&quot;, ret);
+<span class="lineNum">     254 </span>            : 
+<span class="lineNum">     255 </span>            : error_free_pks:
+<span class="lineNum">     256 </span><span class="lineNoCov">          0 :         mpi_free(pks-&gt;rsa.s);</span>
+<span class="lineNum">     257 </span><span class="lineNoCov">          0 :         kfree(pks);</span>
+<span class="lineNum">     258 </span>            : error_put_key:
+<span class="lineNum">     259 </span><span class="lineNoCov">          0 :         key_put(key);</span>
+<span class="lineNum">     260 </span>            :         pr_devel(&quot;&lt;==%s() = %d\n&quot;, __func__, ret);
+<span class="lineNum">     261 </span><span class="lineNoCov">          0 :         return ret;     </span>
+<span class="lineNum">     262 </span>            : }
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

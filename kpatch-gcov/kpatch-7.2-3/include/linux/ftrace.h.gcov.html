@@ -1,0 +1,908 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - include/linux/ftrace.h</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">include/linux</a> - ftrace.h<span style="font-size: 80%;"> (source / <a href="ftrace.h.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">19</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">3</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /*</a>
+<span class="lineNum">       2 </span>            :  * Ftrace header.  For implementation details beyond the random comments
+<span class="lineNum">       3 </span>            :  * scattered below, see: Documentation/trace/ftrace-design.txt
+<span class="lineNum">       4 </span>            :  */
+<span class="lineNum">       5 </span>            : 
+<span class="lineNum">       6 </span>            : #ifndef _LINUX_FTRACE_H
+<span class="lineNum">       7 </span>            : #define _LINUX_FTRACE_H
+<span class="lineNum">       8 </span>            : 
+<span class="lineNum">       9 </span>            : #include &lt;linux/trace_clock.h&gt;
+<span class="lineNum">      10 </span>            : #include &lt;linux/kallsyms.h&gt;
+<span class="lineNum">      11 </span>            : #include &lt;linux/linkage.h&gt;
+<span class="lineNum">      12 </span>            : #include &lt;linux/bitops.h&gt;
+<span class="lineNum">      13 </span>            : #include &lt;linux/ptrace.h&gt;
+<span class="lineNum">      14 </span>            : #include &lt;linux/ktime.h&gt;
+<span class="lineNum">      15 </span>            : #include &lt;linux/sched.h&gt;
+<span class="lineNum">      16 </span>            : #include &lt;linux/types.h&gt;
+<span class="lineNum">      17 </span>            : #include &lt;linux/init.h&gt;
+<span class="lineNum">      18 </span>            : #include &lt;linux/fs.h&gt;
+<span class="lineNum">      19 </span>            : 
+<span class="lineNum">      20 </span>            : #include &lt;asm/ftrace.h&gt;
+<span class="lineNum">      21 </span>            : 
+<span class="lineNum">      22 </span>            : /*
+<span class="lineNum">      23 </span>            :  * If the arch supports passing the variable contents of
+<span class="lineNum">      24 </span>            :  * function_trace_op as the third parameter back from the
+<span class="lineNum">      25 </span>            :  * mcount call, then the arch should define this as 1.
+<span class="lineNum">      26 </span>            :  */
+<span class="lineNum">      27 </span>            : #ifndef ARCH_SUPPORTS_FTRACE_OPS
+<span class="lineNum">      28 </span>            : #define ARCH_SUPPORTS_FTRACE_OPS 0
+<span class="lineNum">      29 </span>            : #endif
+<span class="lineNum">      30 </span>            : 
+<span class="lineNum">      31 </span>            : /*
+<span class="lineNum">      32 </span>            :  * If the arch's mcount caller does not support all of ftrace's
+<span class="lineNum">      33 </span>            :  * features, then it must call an indirect function that
+<span class="lineNum">      34 </span>            :  * does. Or at least does enough to prevent any unwelcomed side effects.
+<span class="lineNum">      35 </span>            :  */
+<span class="lineNum">      36 </span>            : #if !ARCH_SUPPORTS_FTRACE_OPS
+<span class="lineNum">      37 </span>            : # define FTRACE_FORCE_LIST_FUNC 1
+<span class="lineNum">      38 </span>            : #else
+<span class="lineNum">      39 </span>            : # define FTRACE_FORCE_LIST_FUNC 0
+<span class="lineNum">      40 </span>            : #endif
+<span class="lineNum">      41 </span>            : 
+<span class="lineNum">      42 </span>            : 
+<span class="lineNum">      43 </span>            : struct module;
+<span class="lineNum">      44 </span>            : struct ftrace_hash;
+<span class="lineNum">      45 </span>            : 
+<span class="lineNum">      46 </span>            : #ifdef CONFIG_FUNCTION_TRACER
+<span class="lineNum">      47 </span>            : 
+<span class="lineNum">      48 </span>            : extern int ftrace_enabled;
+<span class="lineNum">      49 </span>            : extern int
+<span class="lineNum">      50 </span>            : ftrace_enable_sysctl(struct ctl_table *table, int write,
+<span class="lineNum">      51 </span>            :                      void __user *buffer, size_t *lenp,
+<span class="lineNum">      52 </span>            :                      loff_t *ppos);
+<span class="lineNum">      53 </span>            : 
+<span class="lineNum">      54 </span>            : struct ftrace_ops;
+<span class="lineNum">      55 </span>            : 
+<span class="lineNum">      56 </span>            : typedef void (*ftrace_func_t)(unsigned long ip, unsigned long parent_ip,
+<span class="lineNum">      57 </span>            :                               struct ftrace_ops *op, struct pt_regs *regs);
+<span class="lineNum">      58 </span>            : 
+<span class="lineNum">      59 </span>            : /*
+<span class="lineNum">      60 </span>            :  * FTRACE_OPS_FL_* bits denote the state of ftrace_ops struct and are
+<span class="lineNum">      61 </span>            :  * set in the flags member.
+<span class="lineNum">      62 </span>            :  *
+<span class="lineNum">      63 </span>            :  * ENABLED - set/unset when ftrace_ops is registered/unregistered
+<span class="lineNum">      64 </span>            :  * GLOBAL  - set manualy by ftrace_ops user to denote the ftrace_ops
+<span class="lineNum">      65 </span>            :  *           is part of the global tracers sharing the same filter
+<span class="lineNum">      66 </span>            :  *           via set_ftrace_* debugfs files.
+<span class="lineNum">      67 </span>            :  * DYNAMIC - set when ftrace_ops is registered to denote dynamically
+<span class="lineNum">      68 </span>            :  *           allocated ftrace_ops which need special care
+<span class="lineNum">      69 </span>            :  * CONTROL - set manualy by ftrace_ops user to denote the ftrace_ops
+<span class="lineNum">      70 </span>            :  *           could be controled by following calls:
+<span class="lineNum">      71 </span>            :  *             ftrace_function_local_enable
+<span class="lineNum">      72 </span>            :  *             ftrace_function_local_disable
+<span class="lineNum">      73 </span>            :  * SAVE_REGS - The ftrace_ops wants regs saved at each function called
+<span class="lineNum">      74 </span>            :  *            and passed to the callback. If this flag is set, but the
+<span class="lineNum">      75 </span>            :  *            architecture does not support passing regs
+<span class="lineNum">      76 </span>            :  *            (CONFIG_DYNAMIC_FTRACE_WITH_REGS is not defined), then the
+<span class="lineNum">      77 </span>            :  *            ftrace_ops will fail to register, unless the next flag
+<span class="lineNum">      78 </span>            :  *            is set.
+<span class="lineNum">      79 </span>            :  * SAVE_REGS_IF_SUPPORTED - This is the same as SAVE_REGS, but if the
+<span class="lineNum">      80 </span>            :  *            handler can handle an arch that does not save regs
+<span class="lineNum">      81 </span>            :  *            (the handler tests if regs == NULL), then it can set
+<span class="lineNum">      82 </span>            :  *            this flag instead. It will not fail registering the ftrace_ops
+<span class="lineNum">      83 </span>            :  *            but, the regs field will be NULL if the arch does not support
+<span class="lineNum">      84 </span>            :  *            passing regs to the handler.
+<span class="lineNum">      85 </span>            :  *            Note, if this flag is set, the SAVE_REGS flag will automatically
+<span class="lineNum">      86 </span>            :  *            get set upon registering the ftrace_ops, if the arch supports it.
+<span class="lineNum">      87 </span>            :  * RECURSION_SAFE - The ftrace_ops can set this to tell the ftrace infrastructure
+<span class="lineNum">      88 </span>            :  *            that the call back has its own recursion protection. If it does
+<span class="lineNum">      89 </span>            :  *            not set this, then the ftrace infrastructure will add recursion
+<span class="lineNum">      90 </span>            :  *            protection for the caller.
+<span class="lineNum">      91 </span>            :  * STUB   - The ftrace_ops is just a place holder.
+<span class="lineNum">      92 </span>            :  * INITIALIZED - The ftrace_ops has already been initialized (first use time
+<span class="lineNum">      93 </span>            :  *            register_ftrace_function() is called, it will initialized the ops)
+<span class="lineNum">      94 </span>            :  */
+<span class="lineNum">      95 </span>            : enum {
+<span class="lineNum">      96 </span>            :         FTRACE_OPS_FL_ENABLED                   = 1 &lt;&lt; 0,
+<span class="lineNum">      97 </span>            :         FTRACE_OPS_FL_GLOBAL                    = 1 &lt;&lt; 1,
+<span class="lineNum">      98 </span>            :         FTRACE_OPS_FL_DYNAMIC                   = 1 &lt;&lt; 2,
+<span class="lineNum">      99 </span>            :         FTRACE_OPS_FL_CONTROL                   = 1 &lt;&lt; 3,
+<span class="lineNum">     100 </span>            :         FTRACE_OPS_FL_SAVE_REGS                 = 1 &lt;&lt; 4,
+<span class="lineNum">     101 </span>            :         FTRACE_OPS_FL_SAVE_REGS_IF_SUPPORTED    = 1 &lt;&lt; 5,
+<span class="lineNum">     102 </span>            :         FTRACE_OPS_FL_RECURSION_SAFE            = 1 &lt;&lt; 6,
+<span class="lineNum">     103 </span>            :         FTRACE_OPS_FL_STUB                      = 1 &lt;&lt; 7,
+<span class="lineNum">     104 </span>            :         FTRACE_OPS_FL_INITIALIZED               = 1 &lt;&lt; 8,
+<span class="lineNum">     105 </span>            : };
+<span class="lineNum">     106 </span>            : 
+<span class="lineNum">     107 </span>            : struct ftrace_ops {
+<span class="lineNum">     108 </span>            :         ftrace_func_t                   func;
+<span class="lineNum">     109 </span>            :         struct ftrace_ops               *next;
+<span class="lineNum">     110 </span>            :         unsigned long                   flags;
+<span class="lineNum">     111 </span>            :         int __percpu                    *disabled;
+<span class="lineNum">     112 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE
+<span class="lineNum">     113 </span>            :         struct ftrace_hash              *notrace_hash;
+<span class="lineNum">     114 </span>            :         struct ftrace_hash              *filter_hash;
+<span class="lineNum">     115 </span>            :         struct mutex                    regex_lock;
+<span class="lineNum">     116 </span>            : #endif
+<span class="lineNum">     117 </span>            : };
+<span class="lineNum">     118 </span>            : 
+<span class="lineNum">     119 </span>            : /*
+<span class="lineNum">     120 </span>            :  * Type of the current tracing.
+<span class="lineNum">     121 </span>            :  */
+<span class="lineNum">     122 </span>            : enum ftrace_tracing_type_t {
+<span class="lineNum">     123 </span>            :         FTRACE_TYPE_ENTER = 0, /* Hook the call of the function */
+<span class="lineNum">     124 </span>            :         FTRACE_TYPE_RETURN,     /* Hook the return of the function */
+<span class="lineNum">     125 </span>            : };
+<span class="lineNum">     126 </span>            : 
+<span class="lineNum">     127 </span>            : /* Current tracing type, default is FTRACE_TYPE_ENTER */
+<span class="lineNum">     128 </span>            : extern enum ftrace_tracing_type_t ftrace_tracing_type;
+<span class="lineNum">     129 </span>            : 
+<span class="lineNum">     130 </span>            : /*
+<span class="lineNum">     131 </span>            :  * The ftrace_ops must be a static and should also
+<span class="lineNum">     132 </span>            :  * be read_mostly.  These functions do modify read_mostly variables
+<span class="lineNum">     133 </span>            :  * so use them sparely. Never free an ftrace_op or modify the
+<span class="lineNum">     134 </span>            :  * next pointer after it has been registered. Even after unregistering
+<span class="lineNum">     135 </span>            :  * it, the next pointer may still be used internally.
+<span class="lineNum">     136 </span>            :  */
+<span class="lineNum">     137 </span>            : int register_ftrace_function(struct ftrace_ops *ops);
+<span class="lineNum">     138 </span>            : int unregister_ftrace_function(struct ftrace_ops *ops);
+<span class="lineNum">     139 </span>            : void clear_ftrace_function(void);
+<span class="lineNum">     140 </span>            : 
+<span class="lineNum">     141 </span>            : /**
+<span class="lineNum">     142 </span>            :  * ftrace_function_local_enable - enable controlled ftrace_ops on current cpu
+<span class="lineNum">     143 </span>            :  *
+<span class="lineNum">     144 </span>            :  * This function enables tracing on current cpu by decreasing
+<span class="lineNum">     145 </span>            :  * the per cpu control variable.
+<span class="lineNum">     146 </span>            :  * It must be called with preemption disabled and only on ftrace_ops
+<span class="lineNum">     147 </span>            :  * registered with FTRACE_OPS_FL_CONTROL. If called without preemption
+<a name="148"><span class="lineNum">     148 </span>            :  * disabled, this_cpu_ptr will complain when CONFIG_DEBUG_PREEMPT is enabled.</a>
+<span class="lineNum">     149 </span>            :  */
+<span class="lineNum">     150 </span><span class="lineNoCov">          0 : static inline void ftrace_function_local_enable(struct ftrace_ops *ops)</span>
+<span class="lineNum">     151 </span>            : {
+<span class="lineNum">     152 </span><span class="lineNoCov">          0 :         if (WARN_ON_ONCE(!(ops-&gt;flags &amp; FTRACE_OPS_FL_CONTROL)))</span>
+<span class="lineNum">     153 </span><span class="lineNoCov">          0 :                 return;</span>
+<span class="lineNum">     154 </span>            : 
+<span class="lineNum">     155 </span><span class="lineNoCov">          0 :         (*this_cpu_ptr(ops-&gt;disabled))--;</span>
+<span class="lineNum">     156 </span>            : }
+<span class="lineNum">     157 </span>            : 
+<span class="lineNum">     158 </span>            : /**
+<span class="lineNum">     159 </span>            :  * ftrace_function_local_disable - enable controlled ftrace_ops on current cpu
+<span class="lineNum">     160 </span>            :  *
+<span class="lineNum">     161 </span>            :  * This function enables tracing on current cpu by decreasing
+<span class="lineNum">     162 </span>            :  * the per cpu control variable.
+<span class="lineNum">     163 </span>            :  * It must be called with preemption disabled and only on ftrace_ops
+<span class="lineNum">     164 </span>            :  * registered with FTRACE_OPS_FL_CONTROL. If called without preemption
+<a name="165"><span class="lineNum">     165 </span>            :  * disabled, this_cpu_ptr will complain when CONFIG_DEBUG_PREEMPT is enabled.</a>
+<span class="lineNum">     166 </span>            :  */
+<span class="lineNum">     167 </span><span class="lineNoCov">          0 : static inline void ftrace_function_local_disable(struct ftrace_ops *ops)</span>
+<span class="lineNum">     168 </span>            : {
+<span class="lineNum">     169 </span><span class="lineNoCov">          0 :         if (WARN_ON_ONCE(!(ops-&gt;flags &amp; FTRACE_OPS_FL_CONTROL)))</span>
+<span class="lineNum">     170 </span><span class="lineNoCov">          0 :                 return;</span>
+<span class="lineNum">     171 </span>            : 
+<span class="lineNum">     172 </span><span class="lineNoCov">          0 :         (*this_cpu_ptr(ops-&gt;disabled))++;</span>
+<span class="lineNum">     173 </span>            : }
+<span class="lineNum">     174 </span>            : 
+<span class="lineNum">     175 </span>            : /**
+<span class="lineNum">     176 </span>            :  * ftrace_function_local_disabled - returns ftrace_ops disabled value
+<span class="lineNum">     177 </span>            :  *                                  on current cpu
+<span class="lineNum">     178 </span>            :  *
+<span class="lineNum">     179 </span>            :  * This function returns value of ftrace_ops::disabled on current cpu.
+<span class="lineNum">     180 </span>            :  * It must be called with preemption disabled and only on ftrace_ops
+<span class="lineNum">     181 </span>            :  * registered with FTRACE_OPS_FL_CONTROL. If called without preemption
+<a name="182"><span class="lineNum">     182 </span>            :  * disabled, this_cpu_ptr will complain when CONFIG_DEBUG_PREEMPT is enabled.</a>
+<span class="lineNum">     183 </span>            :  */
+<span class="lineNum">     184 </span><span class="lineNoCov">          0 : static inline int ftrace_function_local_disabled(struct ftrace_ops *ops)</span>
+<span class="lineNum">     185 </span>            : {
+<span class="lineNum">     186 </span><span class="lineNoCov">          0 :         WARN_ON_ONCE(!(ops-&gt;flags &amp; FTRACE_OPS_FL_CONTROL));</span>
+<span class="lineNum">     187 </span><span class="lineNoCov">          0 :         return *this_cpu_ptr(ops-&gt;disabled);</span>
+<span class="lineNum">     188 </span>            : }
+<span class="lineNum">     189 </span>            : 
+<span class="lineNum">     190 </span>            : extern void ftrace_stub(unsigned long a0, unsigned long a1,
+<span class="lineNum">     191 </span>            :                         struct ftrace_ops *op, struct pt_regs *regs);
+<span class="lineNum">     192 </span>            : 
+<span class="lineNum">     193 </span>            : #else /* !CONFIG_FUNCTION_TRACER */
+<span class="lineNum">     194 </span>            : /*
+<span class="lineNum">     195 </span>            :  * (un)register_ftrace_function must be a macro since the ops parameter
+<span class="lineNum">     196 </span>            :  * must not be evaluated.
+<span class="lineNum">     197 </span>            :  */
+<span class="lineNum">     198 </span>            : #define register_ftrace_function(ops) ({ 0; })
+<span class="lineNum">     199 </span>            : #define unregister_ftrace_function(ops) ({ 0; })
+<span class="lineNum">     200 </span>            : static inline int ftrace_nr_registered_ops(void)
+<span class="lineNum">     201 </span>            : {
+<span class="lineNum">     202 </span>            :         return 0;
+<span class="lineNum">     203 </span>            : }
+<span class="lineNum">     204 </span>            : static inline void clear_ftrace_function(void) { }
+<span class="lineNum">     205 </span>            : static inline void ftrace_kill(void) { }
+<span class="lineNum">     206 </span>            : #endif /* CONFIG_FUNCTION_TRACER */
+<span class="lineNum">     207 </span>            : 
+<span class="lineNum">     208 </span>            : #ifdef CONFIG_STACK_TRACER
+<span class="lineNum">     209 </span>            : extern int stack_tracer_enabled;
+<span class="lineNum">     210 </span>            : int
+<span class="lineNum">     211 </span>            : stack_trace_sysctl(struct ctl_table *table, int write,
+<span class="lineNum">     212 </span>            :                    void __user *buffer, size_t *lenp,
+<span class="lineNum">     213 </span>            :                    loff_t *ppos);
+<span class="lineNum">     214 </span>            : #endif
+<span class="lineNum">     215 </span>            : 
+<span class="lineNum">     216 </span>            : struct ftrace_func_command {
+<span class="lineNum">     217 </span>            :         struct list_head        list;
+<span class="lineNum">     218 </span>            :         char                    *name;
+<span class="lineNum">     219 </span>            :         int                     (*func)(struct ftrace_hash *hash,
+<span class="lineNum">     220 </span>            :                                         char *func, char *cmd,
+<span class="lineNum">     221 </span>            :                                         char *params, int enable);
+<span class="lineNum">     222 </span>            : };
+<span class="lineNum">     223 </span>            : 
+<span class="lineNum">     224 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE
+<span class="lineNum">     225 </span>            : 
+<span class="lineNum">     226 </span>            : int ftrace_arch_code_modify_prepare(void);
+<span class="lineNum">     227 </span>            : int ftrace_arch_code_modify_post_process(void);
+<span class="lineNum">     228 </span>            : 
+<span class="lineNum">     229 </span>            : void ftrace_bug(int err, unsigned long ip);
+<span class="lineNum">     230 </span>            : 
+<span class="lineNum">     231 </span>            : struct seq_file;
+<span class="lineNum">     232 </span>            : 
+<span class="lineNum">     233 </span>            : struct ftrace_probe_ops {
+<span class="lineNum">     234 </span>            :         void                    (*func)(unsigned long ip,
+<span class="lineNum">     235 </span>            :                                         unsigned long parent_ip,
+<span class="lineNum">     236 </span>            :                                         void **data);
+<span class="lineNum">     237 </span>            :         int                     (*init)(struct ftrace_probe_ops *ops,
+<span class="lineNum">     238 </span>            :                                         unsigned long ip, void **data);
+<span class="lineNum">     239 </span>            :         void                    (*free)(struct ftrace_probe_ops *ops,
+<span class="lineNum">     240 </span>            :                                         unsigned long ip, void **data);
+<span class="lineNum">     241 </span>            :         int                     (*print)(struct seq_file *m,
+<span class="lineNum">     242 </span>            :                                          unsigned long ip,
+<span class="lineNum">     243 </span>            :                                          struct ftrace_probe_ops *ops,
+<span class="lineNum">     244 </span>            :                                          void *data);
+<span class="lineNum">     245 </span>            : };
+<span class="lineNum">     246 </span>            : 
+<span class="lineNum">     247 </span>            : extern int
+<span class="lineNum">     248 </span>            : register_ftrace_function_probe(char *glob, struct ftrace_probe_ops *ops,
+<span class="lineNum">     249 </span>            :                               void *data);
+<span class="lineNum">     250 </span>            : extern void
+<span class="lineNum">     251 </span>            : unregister_ftrace_function_probe(char *glob, struct ftrace_probe_ops *ops,
+<span class="lineNum">     252 </span>            :                                 void *data);
+<span class="lineNum">     253 </span>            : extern void
+<span class="lineNum">     254 </span>            : unregister_ftrace_function_probe_func(char *glob, struct ftrace_probe_ops *ops);
+<span class="lineNum">     255 </span>            : extern void unregister_ftrace_function_probe_all(char *glob);
+<span class="lineNum">     256 </span>            : 
+<span class="lineNum">     257 </span>            : extern int ftrace_text_reserved(void *start, void *end);
+<span class="lineNum">     258 </span>            : 
+<span class="lineNum">     259 </span>            : extern int ftrace_nr_registered_ops(void);
+<span class="lineNum">     260 </span>            : 
+<span class="lineNum">     261 </span>            : /*
+<span class="lineNum">     262 </span>            :  * The dyn_ftrace record's flags field is split into two parts.
+<span class="lineNum">     263 </span>            :  * the first part which is '0-FTRACE_REF_MAX' is a counter of
+<span class="lineNum">     264 </span>            :  * the number of callbacks that have registered the function that
+<span class="lineNum">     265 </span>            :  * the dyn_ftrace descriptor represents.
+<span class="lineNum">     266 </span>            :  *
+<span class="lineNum">     267 </span>            :  * The second part is a mask:
+<span class="lineNum">     268 </span>            :  *  ENABLED - the function is being traced
+<span class="lineNum">     269 </span>            :  *  REGS    - the record wants the function to save regs
+<span class="lineNum">     270 </span>            :  *  REGS_EN - the function is set up to save regs.
+<span class="lineNum">     271 </span>            :  *
+<span class="lineNum">     272 </span>            :  * When a new ftrace_ops is registered and wants a function to save
+<span class="lineNum">     273 </span>            :  * pt_regs, the rec-&gt;flag REGS is set. When the function has been
+<span class="lineNum">     274 </span>            :  * set up to save regs, the REG_EN flag is set. Once a function
+<span class="lineNum">     275 </span>            :  * starts saving regs it will do so until all ftrace_ops are removed
+<span class="lineNum">     276 </span>            :  * from tracing that function.
+<span class="lineNum">     277 </span>            :  */
+<span class="lineNum">     278 </span>            : enum {
+<span class="lineNum">     279 </span>            :         FTRACE_FL_ENABLED       = (1UL &lt;&lt; 29),
+<span class="lineNum">     280 </span>            :         FTRACE_FL_REGS          = (1UL &lt;&lt; 30),
+<span class="lineNum">     281 </span>            :         FTRACE_FL_REGS_EN       = (1UL &lt;&lt; 31)
+<span class="lineNum">     282 </span>            : };
+<span class="lineNum">     283 </span>            : 
+<span class="lineNum">     284 </span>            : #define FTRACE_FL_MASK          (0x7UL &lt;&lt; 29)
+<span class="lineNum">     285 </span>            : #define FTRACE_REF_MAX          ((1UL &lt;&lt; 29) - 1)
+<span class="lineNum">     286 </span>            : 
+<span class="lineNum">     287 </span>            : struct dyn_ftrace {
+<span class="lineNum">     288 </span>            :         union {
+<span class="lineNum">     289 </span>            :                 unsigned long           ip; /* address of mcount call-site */
+<span class="lineNum">     290 </span>            :                 struct dyn_ftrace       *freelist;
+<span class="lineNum">     291 </span>            :         };
+<span class="lineNum">     292 </span>            :         unsigned long           flags;
+<span class="lineNum">     293 </span>            :         struct dyn_arch_ftrace          arch;
+<span class="lineNum">     294 </span>            : };
+<span class="lineNum">     295 </span>            : 
+<span class="lineNum">     296 </span>            : int ftrace_force_update(void);
+<span class="lineNum">     297 </span>            : int ftrace_set_filter_ip(struct ftrace_ops *ops, unsigned long ip,
+<span class="lineNum">     298 </span>            :                          int remove, int reset);
+<span class="lineNum">     299 </span>            : int ftrace_set_filter(struct ftrace_ops *ops, unsigned char *buf,
+<span class="lineNum">     300 </span>            :                        int len, int reset);
+<span class="lineNum">     301 </span>            : int ftrace_set_notrace(struct ftrace_ops *ops, unsigned char *buf,
+<span class="lineNum">     302 </span>            :                         int len, int reset);
+<span class="lineNum">     303 </span>            : void ftrace_set_global_filter(unsigned char *buf, int len, int reset);
+<span class="lineNum">     304 </span>            : void ftrace_set_global_notrace(unsigned char *buf, int len, int reset);
+<span class="lineNum">     305 </span>            : void ftrace_free_filter(struct ftrace_ops *ops);
+<span class="lineNum">     306 </span>            : 
+<span class="lineNum">     307 </span>            : int register_ftrace_command(struct ftrace_func_command *cmd);
+<span class="lineNum">     308 </span>            : int unregister_ftrace_command(struct ftrace_func_command *cmd);
+<span class="lineNum">     309 </span>            : 
+<span class="lineNum">     310 </span>            : enum {
+<span class="lineNum">     311 </span>            :         FTRACE_UPDATE_CALLS             = (1 &lt;&lt; 0),
+<span class="lineNum">     312 </span>            :         FTRACE_DISABLE_CALLS            = (1 &lt;&lt; 1),
+<span class="lineNum">     313 </span>            :         FTRACE_UPDATE_TRACE_FUNC        = (1 &lt;&lt; 2),
+<span class="lineNum">     314 </span>            :         FTRACE_START_FUNC_RET           = (1 &lt;&lt; 3),
+<span class="lineNum">     315 </span>            :         FTRACE_STOP_FUNC_RET            = (1 &lt;&lt; 4),
+<span class="lineNum">     316 </span>            : };
+<span class="lineNum">     317 </span>            : 
+<span class="lineNum">     318 </span>            : /*
+<span class="lineNum">     319 </span>            :  * The FTRACE_UPDATE_* enum is used to pass information back
+<span class="lineNum">     320 </span>            :  * from the ftrace_update_record() and ftrace_test_record()
+<span class="lineNum">     321 </span>            :  * functions. These are called by the code update routines
+<span class="lineNum">     322 </span>            :  * to find out what is to be done for a given function.
+<span class="lineNum">     323 </span>            :  *
+<span class="lineNum">     324 </span>            :  *  IGNORE           - The function is already what we want it to be
+<span class="lineNum">     325 </span>            :  *  MAKE_CALL        - Start tracing the function
+<span class="lineNum">     326 </span>            :  *  MODIFY_CALL      - Stop saving regs for the function
+<span class="lineNum">     327 </span>            :  *  MODIFY_CALL_REGS - Start saving regs for the function
+<span class="lineNum">     328 </span>            :  *  MAKE_NOP         - Stop tracing the function
+<span class="lineNum">     329 </span>            :  */
+<span class="lineNum">     330 </span>            : enum {
+<span class="lineNum">     331 </span>            :         FTRACE_UPDATE_IGNORE,
+<span class="lineNum">     332 </span>            :         FTRACE_UPDATE_MAKE_CALL,
+<span class="lineNum">     333 </span>            :         FTRACE_UPDATE_MODIFY_CALL,
+<span class="lineNum">     334 </span>            :         FTRACE_UPDATE_MODIFY_CALL_REGS,
+<span class="lineNum">     335 </span>            :         FTRACE_UPDATE_MAKE_NOP,
+<span class="lineNum">     336 </span>            : };
+<span class="lineNum">     337 </span>            : 
+<span class="lineNum">     338 </span>            : enum {
+<span class="lineNum">     339 </span>            :         FTRACE_ITER_FILTER      = (1 &lt;&lt; 0),
+<span class="lineNum">     340 </span>            :         FTRACE_ITER_NOTRACE     = (1 &lt;&lt; 1),
+<span class="lineNum">     341 </span>            :         FTRACE_ITER_PRINTALL    = (1 &lt;&lt; 2),
+<span class="lineNum">     342 </span>            :         FTRACE_ITER_DO_HASH     = (1 &lt;&lt; 3),
+<span class="lineNum">     343 </span>            :         FTRACE_ITER_HASH        = (1 &lt;&lt; 4),
+<span class="lineNum">     344 </span>            :         FTRACE_ITER_ENABLED     = (1 &lt;&lt; 5),
+<span class="lineNum">     345 </span>            : };
+<span class="lineNum">     346 </span>            : 
+<span class="lineNum">     347 </span>            : void arch_ftrace_update_code(int command);
+<span class="lineNum">     348 </span>            : 
+<span class="lineNum">     349 </span>            : struct ftrace_rec_iter;
+<span class="lineNum">     350 </span>            : 
+<span class="lineNum">     351 </span>            : struct ftrace_rec_iter *ftrace_rec_iter_start(void);
+<span class="lineNum">     352 </span>            : struct ftrace_rec_iter *ftrace_rec_iter_next(struct ftrace_rec_iter *iter);
+<span class="lineNum">     353 </span>            : struct dyn_ftrace *ftrace_rec_iter_record(struct ftrace_rec_iter *iter);
+<span class="lineNum">     354 </span>            : 
+<span class="lineNum">     355 </span>            : #define for_ftrace_rec_iter(iter)               \
+<span class="lineNum">     356 </span>            :         for (iter = ftrace_rec_iter_start();    \
+<span class="lineNum">     357 </span>            :              iter;                              \
+<span class="lineNum">     358 </span>            :              iter = ftrace_rec_iter_next(iter))
+<span class="lineNum">     359 </span>            : 
+<span class="lineNum">     360 </span>            : 
+<span class="lineNum">     361 </span>            : int ftrace_update_record(struct dyn_ftrace *rec, int enable);
+<span class="lineNum">     362 </span>            : int ftrace_test_record(struct dyn_ftrace *rec, int enable);
+<span class="lineNum">     363 </span>            : void ftrace_run_stop_machine(int command);
+<span class="lineNum">     364 </span>            : unsigned long ftrace_location(unsigned long ip);
+<span class="lineNum">     365 </span>            : 
+<span class="lineNum">     366 </span>            : extern ftrace_func_t ftrace_trace_function;
+<span class="lineNum">     367 </span>            : 
+<span class="lineNum">     368 </span>            : int ftrace_regex_open(struct ftrace_ops *ops, int flag,
+<span class="lineNum">     369 </span>            :                   struct inode *inode, struct file *file);
+<span class="lineNum">     370 </span>            : ssize_t ftrace_filter_write(struct file *file, const char __user *ubuf,
+<span class="lineNum">     371 </span>            :                             size_t cnt, loff_t *ppos);
+<span class="lineNum">     372 </span>            : ssize_t ftrace_notrace_write(struct file *file, const char __user *ubuf,
+<span class="lineNum">     373 </span>            :                              size_t cnt, loff_t *ppos);
+<span class="lineNum">     374 </span>            : int ftrace_regex_release(struct inode *inode, struct file *file);
+<span class="lineNum">     375 </span>            : 
+<span class="lineNum">     376 </span>            : void __init
+<span class="lineNum">     377 </span>            : ftrace_set_early_filter(struct ftrace_ops *ops, char *buf, int enable);
+<span class="lineNum">     378 </span>            : 
+<span class="lineNum">     379 </span>            : /* defined in arch */
+<span class="lineNum">     380 </span>            : extern int ftrace_ip_converted(unsigned long ip);
+<span class="lineNum">     381 </span>            : extern int ftrace_dyn_arch_init(void *data);
+<span class="lineNum">     382 </span>            : extern void ftrace_replace_code(int enable);
+<span class="lineNum">     383 </span>            : extern int ftrace_update_ftrace_func(ftrace_func_t func);
+<span class="lineNum">     384 </span>            : extern void ftrace_caller(void);
+<span class="lineNum">     385 </span>            : extern void ftrace_regs_caller(void);
+<span class="lineNum">     386 </span>            : extern void ftrace_call(void);
+<span class="lineNum">     387 </span>            : extern void ftrace_regs_call(void);
+<span class="lineNum">     388 </span>            : extern void mcount_call(void);
+<span class="lineNum">     389 </span>            : 
+<span class="lineNum">     390 </span>            : void ftrace_modify_all_code(int command);
+<span class="lineNum">     391 </span>            : 
+<span class="lineNum">     392 </span>            : #ifndef FTRACE_ADDR
+<span class="lineNum">     393 </span>            : #define FTRACE_ADDR ((unsigned long)ftrace_caller)
+<span class="lineNum">     394 </span>            : #endif
+<span class="lineNum">     395 </span>            : 
+<span class="lineNum">     396 </span>            : #ifndef FTRACE_REGS_ADDR
+<span class="lineNum">     397 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
+<span class="lineNum">     398 </span>            : # define FTRACE_REGS_ADDR ((unsigned long)ftrace_regs_caller)
+<span class="lineNum">     399 </span>            : #else
+<span class="lineNum">     400 </span>            : # define FTRACE_REGS_ADDR FTRACE_ADDR
+<span class="lineNum">     401 </span>            : #endif
+<span class="lineNum">     402 </span>            : #endif
+<span class="lineNum">     403 </span>            : 
+<span class="lineNum">     404 </span>            : #ifdef CONFIG_FUNCTION_GRAPH_TRACER
+<span class="lineNum">     405 </span>            : extern void ftrace_graph_caller(void);
+<span class="lineNum">     406 </span>            : extern int ftrace_enable_ftrace_graph_caller(void);
+<span class="lineNum">     407 </span>            : extern int ftrace_disable_ftrace_graph_caller(void);
+<span class="lineNum">     408 </span>            : #else
+<span class="lineNum">     409 </span>            : static inline int ftrace_enable_ftrace_graph_caller(void) { return 0; }
+<span class="lineNum">     410 </span>            : static inline int ftrace_disable_ftrace_graph_caller(void) { return 0; }
+<span class="lineNum">     411 </span>            : #endif
+<span class="lineNum">     412 </span>            : 
+<span class="lineNum">     413 </span>            : /**
+<span class="lineNum">     414 </span>            :  * ftrace_make_nop - convert code into nop
+<span class="lineNum">     415 </span>            :  * @mod: module structure if called by module load initialization
+<span class="lineNum">     416 </span>            :  * @rec: the mcount call site record
+<span class="lineNum">     417 </span>            :  * @addr: the address that the call site should be calling
+<span class="lineNum">     418 </span>            :  *
+<span class="lineNum">     419 </span>            :  * This is a very sensitive operation and great care needs
+<span class="lineNum">     420 </span>            :  * to be taken by the arch.  The operation should carefully
+<span class="lineNum">     421 </span>            :  * read the location, check to see if what is read is indeed
+<span class="lineNum">     422 </span>            :  * what we expect it to be, and then on success of the compare,
+<span class="lineNum">     423 </span>            :  * it should write to the location.
+<span class="lineNum">     424 </span>            :  *
+<span class="lineNum">     425 </span>            :  * The code segment at @rec-&gt;ip should be a caller to @addr
+<span class="lineNum">     426 </span>            :  *
+<span class="lineNum">     427 </span>            :  * Return must be:
+<span class="lineNum">     428 </span>            :  *  0 on success
+<span class="lineNum">     429 </span>            :  *  -EFAULT on error reading the location
+<span class="lineNum">     430 </span>            :  *  -EINVAL on a failed compare of the contents
+<span class="lineNum">     431 </span>            :  *  -EPERM  on error writing to the location
+<span class="lineNum">     432 </span>            :  * Any other value will be considered a failure.
+<span class="lineNum">     433 </span>            :  */
+<span class="lineNum">     434 </span>            : extern int ftrace_make_nop(struct module *mod,
+<span class="lineNum">     435 </span>            :                            struct dyn_ftrace *rec, unsigned long addr);
+<span class="lineNum">     436 </span>            : 
+<span class="lineNum">     437 </span>            : /**
+<span class="lineNum">     438 </span>            :  * ftrace_make_call - convert a nop call site into a call to addr
+<span class="lineNum">     439 </span>            :  * @rec: the mcount call site record
+<span class="lineNum">     440 </span>            :  * @addr: the address that the call site should call
+<span class="lineNum">     441 </span>            :  *
+<span class="lineNum">     442 </span>            :  * This is a very sensitive operation and great care needs
+<span class="lineNum">     443 </span>            :  * to be taken by the arch.  The operation should carefully
+<span class="lineNum">     444 </span>            :  * read the location, check to see if what is read is indeed
+<span class="lineNum">     445 </span>            :  * what we expect it to be, and then on success of the compare,
+<span class="lineNum">     446 </span>            :  * it should write to the location.
+<span class="lineNum">     447 </span>            :  *
+<span class="lineNum">     448 </span>            :  * The code segment at @rec-&gt;ip should be a nop
+<span class="lineNum">     449 </span>            :  *
+<span class="lineNum">     450 </span>            :  * Return must be:
+<span class="lineNum">     451 </span>            :  *  0 on success
+<span class="lineNum">     452 </span>            :  *  -EFAULT on error reading the location
+<span class="lineNum">     453 </span>            :  *  -EINVAL on a failed compare of the contents
+<span class="lineNum">     454 </span>            :  *  -EPERM  on error writing to the location
+<span class="lineNum">     455 </span>            :  * Any other value will be considered a failure.
+<span class="lineNum">     456 </span>            :  */
+<span class="lineNum">     457 </span>            : extern int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr);
+<span class="lineNum">     458 </span>            : 
+<span class="lineNum">     459 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
+<span class="lineNum">     460 </span>            : /**
+<span class="lineNum">     461 </span>            :  * ftrace_modify_call - convert from one addr to another (no nop)
+<span class="lineNum">     462 </span>            :  * @rec: the mcount call site record
+<span class="lineNum">     463 </span>            :  * @old_addr: the address expected to be currently called to
+<span class="lineNum">     464 </span>            :  * @addr: the address to change to
+<span class="lineNum">     465 </span>            :  *
+<span class="lineNum">     466 </span>            :  * This is a very sensitive operation and great care needs
+<span class="lineNum">     467 </span>            :  * to be taken by the arch.  The operation should carefully
+<span class="lineNum">     468 </span>            :  * read the location, check to see if what is read is indeed
+<span class="lineNum">     469 </span>            :  * what we expect it to be, and then on success of the compare,
+<span class="lineNum">     470 </span>            :  * it should write to the location.
+<span class="lineNum">     471 </span>            :  *
+<span class="lineNum">     472 </span>            :  * The code segment at @rec-&gt;ip should be a caller to @old_addr
+<span class="lineNum">     473 </span>            :  *
+<span class="lineNum">     474 </span>            :  * Return must be:
+<span class="lineNum">     475 </span>            :  *  0 on success
+<span class="lineNum">     476 </span>            :  *  -EFAULT on error reading the location
+<span class="lineNum">     477 </span>            :  *  -EINVAL on a failed compare of the contents
+<span class="lineNum">     478 </span>            :  *  -EPERM  on error writing to the location
+<span class="lineNum">     479 </span>            :  * Any other value will be considered a failure.
+<span class="lineNum">     480 </span>            :  */
+<span class="lineNum">     481 </span>            : extern int ftrace_modify_call(struct dyn_ftrace *rec, unsigned long old_addr,
+<span class="lineNum">     482 </span>            :                               unsigned long addr);
+<span class="lineNum">     483 </span>            : #else
+<span class="lineNum">     484 </span>            : /* Should never be called */
+<span class="lineNum">     485 </span>            : static inline int ftrace_modify_call(struct dyn_ftrace *rec, unsigned long old_addr,
+<span class="lineNum">     486 </span>            :                                      unsigned long addr)
+<span class="lineNum">     487 </span>            : {
+<span class="lineNum">     488 </span>            :         return -EINVAL;
+<span class="lineNum">     489 </span>            : }
+<span class="lineNum">     490 </span>            : #endif
+<span class="lineNum">     491 </span>            : 
+<span class="lineNum">     492 </span>            : /* May be defined in arch */
+<span class="lineNum">     493 </span>            : extern int ftrace_arch_read_dyn_info(char *buf, int size);
+<span class="lineNum">     494 </span>            : 
+<span class="lineNum">     495 </span>            : extern int skip_trace(unsigned long ip);
+<span class="lineNum">     496 </span>            : extern void ftrace_module_init(struct module *mod);
+<span class="lineNum">     497 </span>            : 
+<span class="lineNum">     498 </span>            : extern void ftrace_disable_daemon(void);
+<span class="lineNum">     499 </span>            : extern void ftrace_enable_daemon(void);
+<span class="lineNum">     500 </span>            : #else /* CONFIG_DYNAMIC_FTRACE */
+<span class="lineNum">     501 </span>            : static inline int skip_trace(unsigned long ip) { return 0; }
+<span class="lineNum">     502 </span>            : static inline int ftrace_force_update(void) { return 0; }
+<span class="lineNum">     503 </span>            : static inline void ftrace_disable_daemon(void) { }
+<span class="lineNum">     504 </span>            : static inline void ftrace_enable_daemon(void) { }
+<span class="lineNum">     505 </span>            : static inline void ftrace_release_mod(struct module *mod) {}
+<span class="lineNum">     506 </span>            : static inline void ftrace_module_init(struct module *mod) {}
+<span class="lineNum">     507 </span>            : static inline __init int register_ftrace_command(struct ftrace_func_command *cmd)
+<span class="lineNum">     508 </span>            : {
+<span class="lineNum">     509 </span>            :         return -EINVAL;
+<span class="lineNum">     510 </span>            : }
+<span class="lineNum">     511 </span>            : static inline __init int unregister_ftrace_command(char *cmd_name)
+<span class="lineNum">     512 </span>            : {
+<span class="lineNum">     513 </span>            :         return -EINVAL;
+<span class="lineNum">     514 </span>            : }
+<span class="lineNum">     515 </span>            : static inline int ftrace_text_reserved(void *start, void *end)
+<span class="lineNum">     516 </span>            : {
+<span class="lineNum">     517 </span>            :         return 0;
+<span class="lineNum">     518 </span>            : }
+<span class="lineNum">     519 </span>            : static inline unsigned long ftrace_location(unsigned long ip)
+<span class="lineNum">     520 </span>            : {
+<span class="lineNum">     521 </span>            :         return 0;
+<span class="lineNum">     522 </span>            : }
+<span class="lineNum">     523 </span>            : 
+<span class="lineNum">     524 </span>            : /*
+<span class="lineNum">     525 </span>            :  * Again users of functions that have ftrace_ops may not
+<span class="lineNum">     526 </span>            :  * have them defined when ftrace is not enabled, but these
+<span class="lineNum">     527 </span>            :  * functions may still be called. Use a macro instead of inline.
+<span class="lineNum">     528 </span>            :  */
+<span class="lineNum">     529 </span>            : #define ftrace_regex_open(ops, flag, inod, file) ({ -ENODEV; })
+<span class="lineNum">     530 </span>            : #define ftrace_set_early_filter(ops, buf, enable) do { } while (0)
+<span class="lineNum">     531 </span>            : #define ftrace_set_filter_ip(ops, ip, remove, reset) ({ -ENODEV; })
+<span class="lineNum">     532 </span>            : #define ftrace_set_filter(ops, buf, len, reset) ({ -ENODEV; })
+<span class="lineNum">     533 </span>            : #define ftrace_set_notrace(ops, buf, len, reset) ({ -ENODEV; })
+<span class="lineNum">     534 </span>            : #define ftrace_free_filter(ops) do { } while (0)
+<span class="lineNum">     535 </span>            : 
+<span class="lineNum">     536 </span>            : static inline ssize_t ftrace_filter_write(struct file *file, const char __user *ubuf,
+<span class="lineNum">     537 </span>            :                             size_t cnt, loff_t *ppos) { return -ENODEV; }
+<span class="lineNum">     538 </span>            : static inline ssize_t ftrace_notrace_write(struct file *file, const char __user *ubuf,
+<span class="lineNum">     539 </span>            :                              size_t cnt, loff_t *ppos) { return -ENODEV; }
+<span class="lineNum">     540 </span>            : static inline loff_t ftrace_regex_lseek(struct file *file, loff_t offset, int whence)
+<span class="lineNum">     541 </span>            : {
+<span class="lineNum">     542 </span>            :         return -ENODEV;
+<span class="lineNum">     543 </span>            : }
+<span class="lineNum">     544 </span>            : static inline int
+<span class="lineNum">     545 </span>            : ftrace_regex_release(struct inode *inode, struct file *file) { return -ENODEV; }
+<span class="lineNum">     546 </span>            : #endif /* CONFIG_DYNAMIC_FTRACE */
+<span class="lineNum">     547 </span>            : 
+<span class="lineNum">     548 </span>            : loff_t ftrace_filter_lseek(struct file *file, loff_t offset, int whence);
+<span class="lineNum">     549 </span>            : 
+<span class="lineNum">     550 </span>            : /* totally disable ftrace - can not re-enable after this */
+<span class="lineNum">     551 </span>            : void ftrace_kill(void);
+<span class="lineNum">     552 </span>            : 
+<span class="lineNum">     553 </span>            : static inline void tracer_disable(void)
+<span class="lineNum">     554 </span>            : {
+<span class="lineNum">     555 </span>            : #ifdef CONFIG_FUNCTION_TRACER
+<span class="lineNum">     556 </span>            :         ftrace_enabled = 0;
+<span class="lineNum">     557 </span>            : #endif
+<span class="lineNum">     558 </span>            : }
+<span class="lineNum">     559 </span>            : 
+<span class="lineNum">     560 </span>            : /*
+<span class="lineNum">     561 </span>            :  * Ftrace disable/restore without lock. Some synchronization mechanism
+<span class="lineNum">     562 </span>            :  * must be used to prevent ftrace_enabled to be changed between
+<span class="lineNum">     563 </span>            :  * disable/restore.
+<span class="lineNum">     564 </span>            :  */
+<span class="lineNum">     565 </span>            : static inline int __ftrace_enabled_save(void)
+<span class="lineNum">     566 </span>            : {
+<span class="lineNum">     567 </span>            : #ifdef CONFIG_FUNCTION_TRACER
+<span class="lineNum">     568 </span><span class="lineNoCov">          0 :         int saved_ftrace_enabled = ftrace_enabled;</span>
+<span class="lineNum">     569 </span><span class="lineNoCov">          0 :         ftrace_enabled = 0;</span>
+<span class="lineNum">     570 </span>            :         return saved_ftrace_enabled;
+<span class="lineNum">     571 </span>            : #else
+<span class="lineNum">     572 </span>            :         return 0;
+<span class="lineNum">     573 </span>            : #endif
+<span class="lineNum">     574 </span>            : }
+<span class="lineNum">     575 </span>            : 
+<span class="lineNum">     576 </span>            : static inline void __ftrace_enabled_restore(int enabled)
+<span class="lineNum">     577 </span>            : {
+<span class="lineNum">     578 </span>            : #ifdef CONFIG_FUNCTION_TRACER
+<span class="lineNum">     579 </span><span class="lineNoCov">          0 :         ftrace_enabled = enabled;</span>
+<span class="lineNum">     580 </span>            : #endif
+<span class="lineNum">     581 </span>            : }
+<span class="lineNum">     582 </span>            : 
+<span class="lineNum">     583 </span>            : #ifndef HAVE_ARCH_CALLER_ADDR
+<span class="lineNum">     584 </span>            : # ifdef CONFIG_FRAME_POINTER
+<span class="lineNum">     585 </span>            : #  define CALLER_ADDR0 ((unsigned long)__builtin_return_address(0))
+<span class="lineNum">     586 </span>            : #  define CALLER_ADDR1 ((unsigned long)__builtin_return_address(1))
+<span class="lineNum">     587 </span>            : #  define CALLER_ADDR2 ((unsigned long)__builtin_return_address(2))
+<span class="lineNum">     588 </span>            : #  define CALLER_ADDR3 ((unsigned long)__builtin_return_address(3))
+<span class="lineNum">     589 </span>            : #  define CALLER_ADDR4 ((unsigned long)__builtin_return_address(4))
+<span class="lineNum">     590 </span>            : #  define CALLER_ADDR5 ((unsigned long)__builtin_return_address(5))
+<span class="lineNum">     591 </span>            : #  define CALLER_ADDR6 ((unsigned long)__builtin_return_address(6))
+<span class="lineNum">     592 </span>            : # else
+<span class="lineNum">     593 </span>            : #  define CALLER_ADDR0 ((unsigned long)__builtin_return_address(0))
+<span class="lineNum">     594 </span>            : #  define CALLER_ADDR1 0UL
+<span class="lineNum">     595 </span>            : #  define CALLER_ADDR2 0UL
+<span class="lineNum">     596 </span>            : #  define CALLER_ADDR3 0UL
+<span class="lineNum">     597 </span>            : #  define CALLER_ADDR4 0UL
+<span class="lineNum">     598 </span>            : #  define CALLER_ADDR5 0UL
+<span class="lineNum">     599 </span>            : #  define CALLER_ADDR6 0UL
+<span class="lineNum">     600 </span>            : # endif
+<span class="lineNum">     601 </span>            : #endif /* ifndef HAVE_ARCH_CALLER_ADDR */
+<span class="lineNum">     602 </span>            : 
+<span class="lineNum">     603 </span>            : #ifdef CONFIG_IRQSOFF_TRACER
+<span class="lineNum">     604 </span>            :   extern void time_hardirqs_on(unsigned long a0, unsigned long a1);
+<span class="lineNum">     605 </span>            :   extern void time_hardirqs_off(unsigned long a0, unsigned long a1);
+<span class="lineNum">     606 </span>            : #else
+<span class="lineNum">     607 </span>            :   static inline void time_hardirqs_on(unsigned long a0, unsigned long a1) { }
+<span class="lineNum">     608 </span>            :   static inline void time_hardirqs_off(unsigned long a0, unsigned long a1) { }
+<span class="lineNum">     609 </span>            : #endif
+<span class="lineNum">     610 </span>            : 
+<span class="lineNum">     611 </span>            : #ifdef CONFIG_PREEMPT_TRACER
+<span class="lineNum">     612 </span>            :   extern void trace_preempt_on(unsigned long a0, unsigned long a1);
+<span class="lineNum">     613 </span>            :   extern void trace_preempt_off(unsigned long a0, unsigned long a1);
+<span class="lineNum">     614 </span>            : #else
+<span class="lineNum">     615 </span>            : /*
+<span class="lineNum">     616 </span>            :  * Use defines instead of static inlines because some arches will make code out
+<span class="lineNum">     617 </span>            :  * of the CALLER_ADDR, when we really want these to be a real nop.
+<span class="lineNum">     618 </span>            :  */
+<span class="lineNum">     619 </span>            : # define trace_preempt_on(a0, a1) do { } while (0)
+<span class="lineNum">     620 </span>            : # define trace_preempt_off(a0, a1) do { } while (0)
+<span class="lineNum">     621 </span>            : #endif
+<span class="lineNum">     622 </span>            : 
+<span class="lineNum">     623 </span>            : #ifdef CONFIG_FTRACE_MCOUNT_RECORD
+<span class="lineNum">     624 </span>            : extern void ftrace_init(void);
+<span class="lineNum">     625 </span>            : #else
+<span class="lineNum">     626 </span>            : static inline void ftrace_init(void) { }
+<span class="lineNum">     627 </span>            : #endif
+<span class="lineNum">     628 </span>            : 
+<span class="lineNum">     629 </span>            : /*
+<span class="lineNum">     630 </span>            :  * Structure that defines an entry function trace.
+<span class="lineNum">     631 </span>            :  */
+<span class="lineNum">     632 </span>            : struct ftrace_graph_ent {
+<span class="lineNum">     633 </span>            :         unsigned long func; /* Current function */
+<span class="lineNum">     634 </span>            :         int depth;
+<span class="lineNum">     635 </span>            : };
+<span class="lineNum">     636 </span>            : 
+<span class="lineNum">     637 </span>            : /*
+<span class="lineNum">     638 </span>            :  * Structure that defines a return function trace.
+<span class="lineNum">     639 </span>            :  */
+<span class="lineNum">     640 </span>            : struct ftrace_graph_ret {
+<span class="lineNum">     641 </span>            :         unsigned long func; /* Current function */
+<span class="lineNum">     642 </span>            :         unsigned long long calltime;
+<span class="lineNum">     643 </span>            :         unsigned long long rettime;
+<span class="lineNum">     644 </span>            :         /* Number of functions that overran the depth limit for current task */
+<span class="lineNum">     645 </span>            :         unsigned long overrun;
+<span class="lineNum">     646 </span>            :         int depth;
+<span class="lineNum">     647 </span>            : };
+<span class="lineNum">     648 </span>            : 
+<span class="lineNum">     649 </span>            : /* Type of the callback handlers for tracing function graph*/
+<span class="lineNum">     650 </span>            : typedef void (*trace_func_graph_ret_t)(struct ftrace_graph_ret *); /* return */
+<span class="lineNum">     651 </span>            : typedef int (*trace_func_graph_ent_t)(struct ftrace_graph_ent *); /* entry */
+<span class="lineNum">     652 </span>            : 
+<span class="lineNum">     653 </span>            : #ifdef CONFIG_FUNCTION_GRAPH_TRACER
+<span class="lineNum">     654 </span>            : 
+<span class="lineNum">     655 </span>            : /* for init task */
+<span class="lineNum">     656 </span>            : #define INIT_FTRACE_GRAPH               .ret_stack = NULL,
+<span class="lineNum">     657 </span>            : 
+<span class="lineNum">     658 </span>            : /*
+<span class="lineNum">     659 </span>            :  * Stack of return addresses for functions
+<span class="lineNum">     660 </span>            :  * of a thread.
+<span class="lineNum">     661 </span>            :  * Used in struct thread_info
+<span class="lineNum">     662 </span>            :  */
+<span class="lineNum">     663 </span>            : struct ftrace_ret_stack {
+<span class="lineNum">     664 </span>            :         unsigned long ret;
+<span class="lineNum">     665 </span>            :         unsigned long func;
+<span class="lineNum">     666 </span>            :         unsigned long long calltime;
+<span class="lineNum">     667 </span>            :         unsigned long long subtime;
+<span class="lineNum">     668 </span>            :         unsigned long fp;
+<span class="lineNum">     669 </span>            : };
+<span class="lineNum">     670 </span>            : 
+<span class="lineNum">     671 </span>            : /*
+<span class="lineNum">     672 </span>            :  * Primary handler of a function return.
+<span class="lineNum">     673 </span>            :  * It relays on ftrace_return_to_handler.
+<span class="lineNum">     674 </span>            :  * Defined in entry_32/64.S
+<span class="lineNum">     675 </span>            :  */
+<span class="lineNum">     676 </span>            : extern void return_to_handler(void);
+<span class="lineNum">     677 </span>            : 
+<span class="lineNum">     678 </span>            : extern int
+<span class="lineNum">     679 </span>            : ftrace_push_return_trace(unsigned long ret, unsigned long func, int *depth,
+<span class="lineNum">     680 </span>            :                          unsigned long frame_pointer);
+<span class="lineNum">     681 </span>            : 
+<span class="lineNum">     682 </span>            : /*
+<span class="lineNum">     683 </span>            :  * Sometimes we don't want to trace a function with the function
+<span class="lineNum">     684 </span>            :  * graph tracer but we want them to keep traced by the usual function
+<span class="lineNum">     685 </span>            :  * tracer if the function graph tracer is not configured.
+<span class="lineNum">     686 </span>            :  */
+<span class="lineNum">     687 </span>            : #define __notrace_funcgraph             notrace
+<span class="lineNum">     688 </span>            : 
+<span class="lineNum">     689 </span>            : /*
+<span class="lineNum">     690 </span>            :  * We want to which function is an entrypoint of a hardirq.
+<span class="lineNum">     691 </span>            :  * That will help us to put a signal on output.
+<span class="lineNum">     692 </span>            :  */
+<span class="lineNum">     693 </span>            : #define __irq_entry              __attribute__((__section__(&quot;.irqentry.text&quot;)))
+<span class="lineNum">     694 </span>            : 
+<span class="lineNum">     695 </span>            : /* Limits of hardirq entrypoints */
+<span class="lineNum">     696 </span>            : extern char __irqentry_text_start[];
+<span class="lineNum">     697 </span>            : extern char __irqentry_text_end[];
+<span class="lineNum">     698 </span>            : 
+<span class="lineNum">     699 </span>            : #define FTRACE_RETFUNC_DEPTH 50
+<span class="lineNum">     700 </span>            : #define FTRACE_RETSTACK_ALLOC_SIZE 32
+<span class="lineNum">     701 </span>            : extern int register_ftrace_graph(trace_func_graph_ret_t retfunc,
+<span class="lineNum">     702 </span>            :                                 trace_func_graph_ent_t entryfunc);
+<span class="lineNum">     703 </span>            : 
+<span class="lineNum">     704 </span>            : extern bool ftrace_graph_is_dead(void);
+<span class="lineNum">     705 </span>            : extern void ftrace_graph_stop(void);
+<span class="lineNum">     706 </span>            : 
+<span class="lineNum">     707 </span>            : /* The current handlers in use */
+<span class="lineNum">     708 </span>            : extern trace_func_graph_ret_t ftrace_graph_return;
+<span class="lineNum">     709 </span>            : extern trace_func_graph_ent_t ftrace_graph_entry;
+<span class="lineNum">     710 </span>            : 
+<span class="lineNum">     711 </span>            : extern void unregister_ftrace_graph(void);
+<span class="lineNum">     712 </span>            : 
+<span class="lineNum">     713 </span>            : extern void ftrace_graph_init_task(struct task_struct *t);
+<span class="lineNum">     714 </span>            : extern void ftrace_graph_exit_task(struct task_struct *t);
+<span class="lineNum">     715 </span>            : extern void ftrace_graph_init_idle_task(struct task_struct *t, int cpu);
+<span class="lineNum">     716 </span>            : 
+<span class="lineNum">     717 </span>            : static inline int task_curr_ret_stack(struct task_struct *t)
+<span class="lineNum">     718 </span>            : {
+<span class="lineNum">     719 </span>            :         return t-&gt;curr_ret_stack;
+<span class="lineNum">     720 </span>            : }
+<span class="lineNum">     721 </span>            : 
+<span class="lineNum">     722 </span>            : static inline void pause_graph_tracing(void)
+<span class="lineNum">     723 </span>            : {
+<span class="lineNum">     724 </span><span class="lineNoCov">          0 :         atomic_inc(&amp;current-&gt;tracing_graph_pause);</span>
+<span class="lineNum">     725 </span>            : }
+<span class="lineNum">     726 </span>            : 
+<span class="lineNum">     727 </span>            : static inline void unpause_graph_tracing(void)
+<span class="lineNum">     728 </span>            : {
+<span class="lineNum">     729 </span><span class="lineNoCov">          0 :         atomic_dec(&amp;current-&gt;tracing_graph_pause);</span>
+<span class="lineNum">     730 </span>            : }
+<span class="lineNum">     731 </span>            : #else /* !CONFIG_FUNCTION_GRAPH_TRACER */
+<span class="lineNum">     732 </span>            : 
+<span class="lineNum">     733 </span>            : #define __notrace_funcgraph
+<span class="lineNum">     734 </span>            : #define __irq_entry
+<span class="lineNum">     735 </span>            : #define INIT_FTRACE_GRAPH
+<span class="lineNum">     736 </span>            : 
+<span class="lineNum">     737 </span>            : static inline void ftrace_graph_init_task(struct task_struct *t) { }
+<span class="lineNum">     738 </span>            : static inline void ftrace_graph_exit_task(struct task_struct *t) { }
+<span class="lineNum">     739 </span>            : static inline void ftrace_graph_init_idle_task(struct task_struct *t, int cpu) { }
+<span class="lineNum">     740 </span>            : 
+<span class="lineNum">     741 </span>            : static inline int register_ftrace_graph(trace_func_graph_ret_t retfunc,
+<span class="lineNum">     742 </span>            :                           trace_func_graph_ent_t entryfunc)
+<span class="lineNum">     743 </span>            : {
+<span class="lineNum">     744 </span>            :         return -1;
+<span class="lineNum">     745 </span>            : }
+<span class="lineNum">     746 </span>            : static inline void unregister_ftrace_graph(void) { }
+<span class="lineNum">     747 </span>            : 
+<span class="lineNum">     748 </span>            : static inline int task_curr_ret_stack(struct task_struct *tsk)
+<span class="lineNum">     749 </span>            : {
+<span class="lineNum">     750 </span>            :         return -1;
+<span class="lineNum">     751 </span>            : }
+<span class="lineNum">     752 </span>            : 
+<span class="lineNum">     753 </span>            : static inline void pause_graph_tracing(void) { }
+<span class="lineNum">     754 </span>            : static inline void unpause_graph_tracing(void) { }
+<span class="lineNum">     755 </span>            : #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
+<span class="lineNum">     756 </span>            : 
+<span class="lineNum">     757 </span>            : #ifdef CONFIG_TRACING
+<span class="lineNum">     758 </span>            : 
+<span class="lineNum">     759 </span>            : /* flags for current-&gt;trace */
+<span class="lineNum">     760 </span>            : enum {
+<span class="lineNum">     761 </span>            :         TSK_TRACE_FL_TRACE_BIT  = 0,
+<span class="lineNum">     762 </span>            :         TSK_TRACE_FL_GRAPH_BIT  = 1,
+<span class="lineNum">     763 </span>            : };
+<span class="lineNum">     764 </span>            : enum {
+<span class="lineNum">     765 </span>            :         TSK_TRACE_FL_TRACE      = 1 &lt;&lt; TSK_TRACE_FL_TRACE_BIT,
+<span class="lineNum">     766 </span>            :         TSK_TRACE_FL_GRAPH      = 1 &lt;&lt; TSK_TRACE_FL_GRAPH_BIT,
+<span class="lineNum">     767 </span>            : };
+<span class="lineNum">     768 </span>            : 
+<span class="lineNum">     769 </span>            : static inline void set_tsk_trace_trace(struct task_struct *tsk)
+<span class="lineNum">     770 </span>            : {
+<span class="lineNum">     771 </span><span class="lineNoCov">          0 :         set_bit(TSK_TRACE_FL_TRACE_BIT, &amp;tsk-&gt;trace);</span>
+<span class="lineNum">     772 </span>            : }
+<span class="lineNum">     773 </span>            : 
+<span class="lineNum">     774 </span>            : static inline void clear_tsk_trace_trace(struct task_struct *tsk)
+<span class="lineNum">     775 </span>            : {
+<span class="lineNum">     776 </span><span class="lineNoCov">          0 :         clear_bit(TSK_TRACE_FL_TRACE_BIT, &amp;tsk-&gt;trace);</span>
+<span class="lineNum">     777 </span>            : }
+<span class="lineNum">     778 </span>            : 
+<span class="lineNum">     779 </span>            : static inline int test_tsk_trace_trace(struct task_struct *tsk)
+<span class="lineNum">     780 </span>            : {
+<span class="lineNum">     781 </span><span class="lineNoCov">          0 :         return tsk-&gt;trace &amp; TSK_TRACE_FL_TRACE;</span>
+<span class="lineNum">     782 </span>            : }
+<span class="lineNum">     783 </span>            : 
+<span class="lineNum">     784 </span>            : static inline void set_tsk_trace_graph(struct task_struct *tsk)
+<span class="lineNum">     785 </span>            : {
+<span class="lineNum">     786 </span>            :         set_bit(TSK_TRACE_FL_GRAPH_BIT, &amp;tsk-&gt;trace);
+<span class="lineNum">     787 </span>            : }
+<span class="lineNum">     788 </span>            : 
+<span class="lineNum">     789 </span>            : static inline void clear_tsk_trace_graph(struct task_struct *tsk)
+<span class="lineNum">     790 </span>            : {
+<span class="lineNum">     791 </span>            :         clear_bit(TSK_TRACE_FL_GRAPH_BIT, &amp;tsk-&gt;trace);
+<span class="lineNum">     792 </span>            : }
+<span class="lineNum">     793 </span>            : 
+<span class="lineNum">     794 </span>            : static inline int test_tsk_trace_graph(struct task_struct *tsk)
+<span class="lineNum">     795 </span>            : {
+<span class="lineNum">     796 </span>            :         return tsk-&gt;trace &amp; TSK_TRACE_FL_GRAPH;
+<span class="lineNum">     797 </span>            : }
+<span class="lineNum">     798 </span>            : 
+<span class="lineNum">     799 </span>            : enum ftrace_dump_mode;
+<span class="lineNum">     800 </span>            : 
+<span class="lineNum">     801 </span>            : extern enum ftrace_dump_mode ftrace_dump_on_oops;
+<span class="lineNum">     802 </span>            : 
+<span class="lineNum">     803 </span>            : extern void disable_trace_on_warning(void);
+<span class="lineNum">     804 </span>            : extern int __disable_trace_on_warning;
+<span class="lineNum">     805 </span>            : 
+<span class="lineNum">     806 </span>            : #ifdef CONFIG_PREEMPT
+<span class="lineNum">     807 </span>            : #define INIT_TRACE_RECURSION            .trace_recursion = 0,
+<span class="lineNum">     808 </span>            : #endif
+<span class="lineNum">     809 </span>            : 
+<span class="lineNum">     810 </span>            : #else /* CONFIG_TRACING */
+<span class="lineNum">     811 </span>            : static inline void  disable_trace_on_warning(void) { }
+<span class="lineNum">     812 </span>            : #endif /* CONFIG_TRACING */
+<span class="lineNum">     813 </span>            : 
+<span class="lineNum">     814 </span>            : #ifndef INIT_TRACE_RECURSION
+<span class="lineNum">     815 </span>            : #define INIT_TRACE_RECURSION
+<span class="lineNum">     816 </span>            : #endif
+<span class="lineNum">     817 </span>            : 
+<span class="lineNum">     818 </span>            : #ifdef CONFIG_FTRACE_SYSCALLS
+<span class="lineNum">     819 </span>            : 
+<span class="lineNum">     820 </span>            : unsigned long arch_syscall_addr(int nr);
+<span class="lineNum">     821 </span>            : 
+<span class="lineNum">     822 </span>            : #endif /* CONFIG_FTRACE_SYSCALLS */
+<span class="lineNum">     823 </span>            : 
+<span class="lineNum">     824 </span>            : #endif /* _LINUX_FTRACE_H */
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

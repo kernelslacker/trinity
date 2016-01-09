@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - arch/x86/include/asm/ftrace.h</title>
+  <link rel="stylesheet" type="text/css" href="../../../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../../../index.html">top level</a> - <a href="index.html">arch/x86/include/asm</a> - ftrace.h<span style="font-size: 80%;"> (source / <a href="ftrace.h.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">1</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntryHi">-</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : #ifndef _ASM_X86_FTRACE_H</a>
+<span class="lineNum">       2 </span>            : #define _ASM_X86_FTRACE_H
+<span class="lineNum">       3 </span>            : 
+<span class="lineNum">       4 </span>            : #ifdef __ASSEMBLY__
+<span class="lineNum">       5 </span>            : 
+<span class="lineNum">       6 </span>            :         /* skip is set if the stack was already partially adjusted */
+<span class="lineNum">       7 </span>            :         .macro MCOUNT_SAVE_FRAME skip=0
+<span class="lineNum">       8 </span>            :          /*
+<span class="lineNum">       9 </span>            :           * We add enough stack to save all regs.
+<span class="lineNum">      10 </span>            :           */
+<span class="lineNum">      11 </span>            :         subq $(SS+8-\skip), %rsp
+<span class="lineNum">      12 </span>            :         movq %rax, RAX(%rsp)
+<span class="lineNum">      13 </span>            :         movq %rcx, RCX(%rsp)
+<span class="lineNum">      14 </span>            :         movq %rdx, RDX(%rsp)
+<span class="lineNum">      15 </span>            :         movq %rsi, RSI(%rsp)
+<span class="lineNum">      16 </span>            :         movq %rdi, RDI(%rsp)
+<span class="lineNum">      17 </span>            :         movq %r8, R8(%rsp)
+<span class="lineNum">      18 </span>            :         movq %r9, R9(%rsp)
+<span class="lineNum">      19 </span>            :          /* Move RIP to its proper location */
+<span class="lineNum">      20 </span>            :         movq SS+8(%rsp), %rdx
+<span class="lineNum">      21 </span>            :         movq %rdx, RIP(%rsp)
+<span class="lineNum">      22 </span>            :         .endm
+<span class="lineNum">      23 </span>            : 
+<span class="lineNum">      24 </span>            :         .macro MCOUNT_RESTORE_FRAME skip=0
+<span class="lineNum">      25 </span>            :         movq R9(%rsp), %r9
+<span class="lineNum">      26 </span>            :         movq R8(%rsp), %r8
+<span class="lineNum">      27 </span>            :         movq RDI(%rsp), %rdi
+<span class="lineNum">      28 </span>            :         movq RSI(%rsp), %rsi
+<span class="lineNum">      29 </span>            :         movq RDX(%rsp), %rdx
+<span class="lineNum">      30 </span>            :         movq RCX(%rsp), %rcx
+<span class="lineNum">      31 </span>            :         movq RAX(%rsp), %rax
+<span class="lineNum">      32 </span>            :         addq $(SS+8-\skip), %rsp
+<span class="lineNum">      33 </span>            :         .endm
+<span class="lineNum">      34 </span>            : 
+<span class="lineNum">      35 </span>            : #endif
+<span class="lineNum">      36 </span>            : 
+<span class="lineNum">      37 </span>            : #ifdef CONFIG_FUNCTION_TRACER
+<span class="lineNum">      38 </span>            : #ifdef CC_USING_FENTRY
+<span class="lineNum">      39 </span>            : # define MCOUNT_ADDR            ((long)(__fentry__))
+<span class="lineNum">      40 </span>            : #else
+<span class="lineNum">      41 </span>            : # define MCOUNT_ADDR            ((long)(mcount))
+<span class="lineNum">      42 </span>            : #endif
+<span class="lineNum">      43 </span>            : #define MCOUNT_INSN_SIZE        5 /* sizeof mcount call */
+<span class="lineNum">      44 </span>            : 
+<span class="lineNum">      45 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE
+<span class="lineNum">      46 </span>            : #define ARCH_SUPPORTS_FTRACE_OPS 1
+<span class="lineNum">      47 </span>            : #endif
+<span class="lineNum">      48 </span>            : 
+<span class="lineNum">      49 </span>            : #ifndef __ASSEMBLY__
+<span class="lineNum">      50 </span>            : extern void mcount(void);
+<span class="lineNum">      51 </span>            : extern atomic_t modifying_ftrace_code;
+<span class="lineNum">      52 </span>            : extern void __fentry__(void);
+<span class="lineNum">      53 </span>            : 
+<span class="lineNum">      54 </span>            : static inline unsigned long ftrace_call_adjust(unsigned long addr)
+<span class="lineNum">      55 </span>            : {
+<span class="lineNum">      56 </span>            :         /*
+<span class="lineNum">      57 </span>            :          * addr is the address of the mcount call instruction.
+<span class="lineNum">      58 </span>            :          * recordmcount does the necessary offset calculation.
+<span class="lineNum">      59 </span>            :          */
+<span class="lineNum">      60 </span>            :         return addr;
+<span class="lineNum">      61 </span>            : }
+<span class="lineNum">      62 </span>            : 
+<span class="lineNum">      63 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE
+<span class="lineNum">      64 </span>            : 
+<span class="lineNum">      65 </span>            : struct dyn_arch_ftrace {
+<span class="lineNum">      66 </span>            :         /* No extra data needed for x86 */
+<span class="lineNum">      67 </span>            : };
+<span class="lineNum">      68 </span>            : 
+<span class="lineNum">      69 </span>            : int ftrace_int3_handler(struct pt_regs *regs);
+<span class="lineNum">      70 </span>            : 
+<span class="lineNum">      71 </span>            : #endif /*  CONFIG_DYNAMIC_FTRACE */
+<span class="lineNum">      72 </span>            : #endif /* __ASSEMBLY__ */
+<span class="lineNum">      73 </span>            : #endif /* CONFIG_FUNCTION_TRACER */
+<span class="lineNum">      74 </span>            : 
+<span class="lineNum">      75 </span>            : 
+<span class="lineNum">      76 </span>            : #if !defined(__ASSEMBLY__) &amp;&amp; !defined(COMPILE_OFFSETS)
+<span class="lineNum">      77 </span>            : 
+<span class="lineNum">      78 </span>            : #if defined(CONFIG_FTRACE_SYSCALLS) &amp;&amp; defined(CONFIG_IA32_EMULATION)
+<span class="lineNum">      79 </span>            : #include &lt;asm/compat.h&gt;
+<span class="lineNum">      80 </span>            : 
+<span class="lineNum">      81 </span>            : /*
+<span class="lineNum">      82 </span>            :  * Because ia32 syscalls do not map to x86_64 syscall numbers
+<span class="lineNum">      83 </span>            :  * this screws up the trace output when tracing a ia32 task.
+<span class="lineNum">      84 </span>            :  * Instead of reporting bogus syscalls, just do not trace them.
+<span class="lineNum">      85 </span>            :  *
+<span class="lineNum">      86 </span>            :  * If the user realy wants these, then they should use the
+<span class="lineNum">      87 </span>            :  * raw syscall tracepoints with filtering.
+<span class="lineNum">      88 </span>            :  */
+<span class="lineNum">      89 </span>            : #define ARCH_TRACE_IGNORE_COMPAT_SYSCALLS 1
+<span class="lineNum">      90 </span>            : static inline bool arch_trace_is_compat_syscall(struct pt_regs *regs)
+<span class="lineNum">      91 </span>            : {
+<span class="lineNum">      92 </span><span class="lineNoCov">          0 :         if (is_compat_task())</span>
+<span class="lineNum">      93 </span>            :                 return true;
+<span class="lineNum">      94 </span>            :         return false;
+<span class="lineNum">      95 </span>            : }
+<span class="lineNum">      96 </span>            : #endif /* CONFIG_FTRACE_SYSCALLS &amp;&amp; CONFIG_IA32_EMULATION */
+<span class="lineNum">      97 </span>            : #endif /* !__ASSEMBLY__  &amp;&amp; !COMPILE_OFFSETS */
+<span class="lineNum">      98 </span>            : 
+<span class="lineNum">      99 </span>            : #endif /* _ASM_X86_FTRACE_H */
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

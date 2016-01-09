@@ -1,0 +1,692 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - kernel/module.c - functions</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../index.html">top level</a> - <a href="index.html">kernel</a> - module.c<span style="font-size: 80%;"> (<a href="module.c.gcov.html">source</a> / functions)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">1049</td>
+            <td class="headerCovTableEntry">1472</td>
+            <td class="headerCovTableEntryLo">71.3 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">111</td>
+            <td class="headerCovTableEntry">153</td>
+            <td class="headerCovTableEntryLo">72.5 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <center>
+  <table width="60%" cellpadding=1 cellspacing=1 border=0>
+    <tr><td><br></td></tr>
+    <tr>
+      <td width="80%" class="tableHead">Function Name <span class="tableHeadSort"><a href="module.c.func.html"><img src="../updown.png" width=10 height=14 alt="Sort by function name" title="Sort by function name" border=0></a></span></td>
+      <td width="20%" class="tableHead">Hit count <span class="tableHeadSort"><img src="../glass.png" width=10 height=14 alt="Sort by hit count" title="Sort by hit count" border=0></span></td>
+    </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1072">module_put</a></td>
+              <td class="coverFnHi">8081845</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1053">try_module_get</a></td>
+              <td class="coverFnHi">7323030</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1042">__module_get</a></td>
+              <td class="coverFnHi">706682</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#437">cmp_name</a></td>
+              <td class="coverFnHi">88009</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3666">module_get_kallsym</a></td>
+              <td class="coverFnHi">44947</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2316">is_exported</a></td>
+              <td class="coverFnHi">44943</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#858">module_refcount</a></td>
+              <td class="coverFnHi">6773</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3791">m_show</a></td>
+              <td class="coverFnHi">6740</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#981">print_unload_info</a></td>
+              <td class="coverFnHi">6740</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3781">m_next</a></td>
+              <td class="coverFnHi">6361</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#445">find_symbol_in_section</a></td>
+              <td class="coverFnHi">1403</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2332">elf_type.isra.17</a></td>
+              <td class="coverFnHi">856</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3522">__module_text_address</a></td>
+              <td class="coverFnHi">440</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3903">__module_address</a></td>
+              <td class="coverFnHi">440</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3929">is_module_text_address</a></td>
+              <td class="coverFnHi">440</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3786">m_stop</a></td>
+              <td class="coverFnHi">388</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3775">m_start</a></td>
+              <td class="coverFnHi">388</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3750">module_flags</a></td>
+              <td class="coverFnHi">324</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1111">module_flags_taint.isra.7</a></td>
+              <td class="coverFnHi">324</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2149">get_offset.isra.33</a></td>
+              <td class="coverFnHi">251</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2141">arch_mod_section_prepend</a></td>
+              <td class="coverFnHi">251</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2255">next_string</a></td>
+              <td class="coverFnHi">182</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#319">each_symbol_section</a></td>
+              <td class="coverFnHi">173</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#463">find_symbol</a></td>
+              <td class="coverFnHi">173</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#401">check_symbol</a></td>
+              <td class="coverFnHi">167</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1244">check_version.isra.26</a></td>
+              <td class="coverFnHi">167</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#766">ref_module</a></td>
+              <td class="coverFnHi">161</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1376">resolve_symbol_wait</a></td>
+              <td class="coverFnHi">161</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1339">resolve_symbol.isra.28</a></td>
+              <td class="coverFnHi">161</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#121">check_module_rhelversion</a></td>
+              <td class="coverFnHi">149</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#250">find_sec</a></td>
+              <td class="coverFnHi">126</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3530">is_arm_mapping_symbol</a></td>
+              <td class="coverFnHi">94</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#272">section_objs</a></td>
+              <td class="coverFnHi">78</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2273">get_modinfo.isra.16</a></td>
+              <td class="coverFnHi">42</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#726">already_uses</a></td>
+              <td class="coverFnHi">15</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1934">module_free</a></td>
+              <td class="coverFnHi">14</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1826">set_section_ro_nx</a></td>
+              <td class="coverFnHi">12</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3582">module_address_lookup</a></td>
+              <td class="coverFnHi">12</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2500">module_alloc_update_bounds</a></td>
+              <td class="coverFnHi">12</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3536">get_ksymbol</a></td>
+              <td class="coverFnHi">12</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1826">set_all_modules_text_ro</a></td>
+              <td class="coverFnHi">11</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1826">set_all_modules_text_rw</a></td>
+              <td class="coverFnHi">11</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1826">unset_module_init_ro_nx</a></td>
+              <td class="coverFnHi">10</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#489">find_module_all</a></td>
+              <td class="coverFnHi">10</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2623">copy_module_from_fd.isra.30</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2377">add_kallsyms</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#121">setup_modinfo_rhelversion</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#234">load_module</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#121">modinfo_rhelversion_exists</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1402">add_notes_attrs.isra.29</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2478">dynamic_debug_setup</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1690">mod_sysfs_init</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2685">rewrite_section_headers</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#546">percpu_modcopy.isra.24</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3231">add_unformed_module</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2377">layout_symtab</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3498">SYSC_finit_module</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#268">find_module_sections</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3498">SyS_finit_module</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#234">set_license</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#234">check_modinfo</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3021">module_frob_arch_sections</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1287">check_modstruct_version</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1304">same_magic</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#698">modinfo_srcversion_exists</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2576">elf_header_check.isra.23</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#543">setup_load_info</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1621">add_usage_links</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3218">may_init_module</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#697">setup_modinfo_version</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2164">layout_sections</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3094">post_relocation</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1724">mod_sysfs_setup</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2111">apply_relocations</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3069">alloc_module_percpu.isra.27</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3029">layout_and_allocate</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2019">verify_export_symbols</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#234">check_module_license_and_versions</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#697">modinfo_version_exists</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2544">module_sig_check</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1402">add_sect_attrs</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3131">do_init_module</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2899">move_module</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#698">setup_modinfo_srcversion</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2052">simplify_symbols</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2287">setup_modinfo</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#708">module_unload_init</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1648">module_add_modinfo_attrs</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3263">complete_formation.isra.31</a></td>
+              <td class="coverFnHi">6</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#220">strong_try_module_get</a></td>
+              <td class="coverFnHi">5</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#747">add_module_usage</a></td>
+              <td class="coverFnHi">5</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1811">__unlink_module</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1523">free_notes_attrs</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1033">show_refcnt</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#788">module_unload_free</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#121">free_modinfo_rhelversion</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1826">unset_module_core_ro_nx</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1636">del_usage_links</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1427">free_sect_attrs</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#121">free_module</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1596">mod_sysfs_fini</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#829">__try_stop_module</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#505">SYSC_delete_module</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1133">show_initstate</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#844">try_stop_module</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1797">mod_sysfs_teardown</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1674">module_remove_modinfo_attrs</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#903">SyS_delete_module</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1490">remove_sect_attrs</a></td>
+              <td class="coverFnHi">4</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3832">modules_open</a></td>
+              <td class="coverFnHi">3</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#192">register_module_notifier</a></td>
+              <td class="coverFnHi">1</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#242">__module_put_and_exit</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#234">try_to_force_load</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#698">show_modinfo_srcversion</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3478">SyS_init_module</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1004">__symbol_put</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#516">percpu_modalloc</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1171">show_coresize</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1157">store_uevent</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3853">search_module_extables</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2596">copy_module_from_user.isra.22</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1017">symbol_put_addr</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3728">module_kallsyms_on_each_symbol</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#888">wait_for_zero_refcount</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#698">free_modinfo_srcversion</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1998">__symbol_get</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1939">module_arch_cleanup</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3961">print_modules</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3612">lookup_module_symbol_name</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1180">show_initsize</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#505">module_kallsyms_lookup_name</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3885">is_module_address</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3087">module_finalize</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3637">lookup_module_symbol_attrs</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#538">module_deallocate.isra.32</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1824">set_page_attributes</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3111">finished_loading</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#503">find_module</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#147">param_set_bool_enable_only</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#117">find_module_ext</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1419">module_sect_show</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3478">SYSC_init_module</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1512">module_notes_read</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#1189">show_taint</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#697">free_modinfo_version</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#121">show_modinfo_rhelversion</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#2495">module_alloc</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#564">is_module_percpu_address</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3691">mod_find_symname</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#198">unregister_module_notifier</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3983">module_layout</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#3844">proc_modules_init</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+    <tr>
+              <td class="coverFn"><a href="module.c.gcov.html#697">show_modinfo_version</a></td>
+              <td class="coverFnLo">0</td>
+            </tr>
+  </table>
+  <br>
+  </center>
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>
