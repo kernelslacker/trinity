@@ -256,6 +256,14 @@ already_done:
 	unlock(&shm->syscalltable_lock);
 }
 
+static void generic_post(const enum argtype type, unsigned long reg)
+{
+	void *ptr = (void *) reg;
+
+	if ((type == ARG_PATHNAME) && (ptr != NULL))
+		free(ptr);
+}
+
 void handle_syscall_ret(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
@@ -271,6 +279,13 @@ void handle_syscall_ret(struct syscallrecord *rec)
 			deactivate_enosys(rec, entry, call);
 		}
 	}
+
+	generic_post(entry->arg1type, rec->a1);
+	generic_post(entry->arg2type, rec->a2);
+	generic_post(entry->arg3type, rec->a3);
+	generic_post(entry->arg4type, rec->a4);
+	generic_post(entry->arg5type, rec->a5);
+	generic_post(entry->arg6type, rec->a6);
 
 	if (entry->post)
 	    entry->post(rec);

@@ -284,10 +284,10 @@ const char * generate_pathname(void)
 
 	/* 90% chance of returning an unmangled filename */
 	if (!ONE_IN(10))
-		return pathname;
+		return strdup(pathname);
 
 	/* Create a bogus filename. */
-	newpath = zmalloc(MAX_PATH_LEN);	// FIXME: We leak this.
+	newpath = zmalloc(MAX_PATH_LEN);
 
 	len = strlen(pathname);
 
