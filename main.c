@@ -606,9 +606,10 @@ const char * decode_exit(void)
 	return reasons[shm->exit_reason];
 }
 
+static unsigned int stall_count = 0;
+
 static void check_child_progressing(void)
 {
-	unsigned int stall_count = 0;
 	unsigned int i;
 
 	for_each_child(i) {
@@ -624,7 +625,10 @@ static void check_child_progressing(void)
 
 	if (stall_count == shm->running_childs)
 		stall_genocide();
+}
 
+static void print_stats(void)
+{
 	if (shm->stats.total_syscalls_done > 1) {
 		static unsigned long lastcount = 0;
 
@@ -672,6 +676,8 @@ void main_loop(void)
 			if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0)
 				tainted_postmortem(ret);
 		}
+
+		print_stats();
 
 		/* We used to waitpid() here without WNOHANG, but now that main_loop()
 		 * is doing the work the watchdog used to, we need to periodically wake up
