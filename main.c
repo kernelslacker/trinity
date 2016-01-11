@@ -88,11 +88,6 @@ void reap_child(pid_t childpid)
 	struct childdata *child;
 	int i;
 
-	if (childpid == shm->last_reaped) {	// FIXME: Probably not needed now.
-		debugf("already reaped %d!\n", childpid);
-		return;
-	}
-
 	i = find_childno(childpid);
 	if (i == CHILD_NOT_FOUND)
 		return;
@@ -101,7 +96,6 @@ void reap_child(pid_t childpid)
 	child->syscall.tp = (struct timespec){};
 	unlock(&child->syscall.lock);
 	shm->running_childs--;
-	shm->last_reaped = childpid;
 	child->pid = EMPTY_PIDSLOT;
 }
 

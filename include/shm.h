@@ -55,7 +55,6 @@ struct shm_s {
 
 	/* pids */
 	pid_t mainpid;
-	pid_t last_reaped;
 
 	/* generic object cache*/
 	struct objhead global_objects[MAX_OBJECT_TYPES];
