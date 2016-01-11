@@ -608,7 +608,7 @@ const char * decode_exit(void)
 
 static unsigned int stall_count = 0;
 
-static void check_child_progressing(void)
+static void check_children_progressing(void)
 {
 	unsigned int i;
 
@@ -668,7 +668,7 @@ void main_loop(void)
 			panic(EXIT_REACHED_COUNT);
 		}
 
-		check_child_progressing();
+		check_children_progressing();
 
 		/* Only check taint if the mask allows it */
 		if (kernel_taint_mask != 0) {
