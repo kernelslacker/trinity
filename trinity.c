@@ -174,7 +174,6 @@ int main(int argc, char* argv[])
 
 	output(0, "Main thread is alive.\n");
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
-	set_seed(0);
 
 	if (open_fds() == FALSE) {
 		if (shm->exit_reason != STILL_RUNNING)
