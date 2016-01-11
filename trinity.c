@@ -172,7 +172,6 @@ int main(int argc, char* argv[])
 
 	no_bind_to_cpu = RAND_BOOL();
 
-	output(0, "Main thread is alive.\n");
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
 	if (open_fds() == FALSE) {
