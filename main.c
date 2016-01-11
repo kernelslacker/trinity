@@ -390,12 +390,43 @@ static void stall_genocide(void)
 	}
 }
 
+static bool spawn_child(int childno)
+{
+	int pid = 0;
+
+	fflush(stdout);
+	pid = fork();
+
+	if (pid == 0) {
+		/* Child process. */
+		struct childdata *child = shm->children[childno];
+
+		init_child(child, childno);
+
+		child_process();
+
+		shutdown_child_logging(child);
+
+		debugf("child %d %d exiting.\n", childno, getpid());
+		_exit(EXIT_SUCCESS);
+	} else {
+		if (pid == -1)
+			return FALSE;
+	}
+
+	shm->children[childno]->pid = pid;
+	shm->running_childs++;
+
+	debugf("Created child %d (pid:%d) [total:%d/%d]\n",
+		childno, pid, shm->running_childs, max_children);
+	return TRUE;
+}
+
 /* Generate children*/
 static void fork_children(void)
 {
 	while (shm->running_childs < max_children) {
 		int childno;
-		int pid = 0;
 
 		if (shm->spawn_no_more == TRUE)
 			return;
@@ -415,42 +446,18 @@ static void fork_children(void)
 			exit(EXIT_FAILURE);
 		}
 
-		fflush(stdout);
-		pid = fork();
+		if (spawn_child(childno) < 0) {
+			/* We failed, wait for a child to exit before retrying. */
+			if (shm->running_childs > 0)
+				return;
 
-		if (pid == 0) {
-			/* Child process. */
-
-			struct childdata *child = shm->children[childno];
-
-			init_child(child, childno);
-
-			child_process();
-
-			debugf("child %d %d exiting.\n", childno, getpid());
-			shutdown_child_logging(child);
-			_exit(EXIT_SUCCESS);
-		} else {
-			if (pid == -1) {
-				/* We failed, wait for a child to exit before retrying. */
-				if (shm->running_childs > 0)
-					return;
-
-				output(0, "couldn't create child! (%s)\n", strerror(errno));
-				panic(EXIT_FORK_FAILURE);
-				exit(EXIT_FAILURE);
-			}
+			output(0, "couldn't create child! (%s)\n", strerror(errno));
+			panic(EXIT_FORK_FAILURE);
+			exit(EXIT_FAILURE);
 		}
-
-		shm->children[childno]->pid = pid;
-		shm->running_childs++;
-
-		debugf("Created child %d (pid:%d) [total:%d/%d]\n",
-			childno, pid, shm->running_childs, max_children);
 
 		if (shm->exit_reason != STILL_RUNNING)
 			return;
-
 	}
 	shm->ready = TRUE;
 }
