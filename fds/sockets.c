@@ -347,11 +347,6 @@ static int open_sockets(void)
 	int bytesread = -1;
 	int ret;
 
-	/* If we're doing victim files we probably don't care about sockets. */
-	//FIXME: Is this really true ? We might want to sendfile for eg
-	if (victim_path != NULL)
-		return TRUE;
-
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
 	head->destroy = &socket_destructor;
 
