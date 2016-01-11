@@ -111,14 +111,12 @@ int main(int argc, char* argv[])
 	if (init_random() == FALSE)
 		exit(EXIT_FAILURE);
 
-	set_seed(0);
-
 	select_syscall_tables();
 
 	create_shm();
 
 	/* We do this before the parse_args because --fds will need to
-	 * operate on it when implemented.
+	 * operate on the providers list when implemented.
 	 */
 	setup_fd_providers();
 

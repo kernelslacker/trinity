@@ -66,7 +66,7 @@ void init_shm(void)
 		shm->seed = init_seed(seed);
 	else
 		shm->seed = new_seed();
-	/* Set seed in parent thread */
+	/* Set seed in main process. */
 	set_seed(NULL);
 
 	childptrslen = max_children * sizeof(struct childdata *);
