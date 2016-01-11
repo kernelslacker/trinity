@@ -248,6 +248,7 @@ static char get_pid_state(struct childdata *child)
 	if (getline(&line, &n, child->pidstatfile) != -1)
 		sscanf(line, "%d %s %c", &pid, procname, &state);
 
+	free(line);
 	free(procname);
 	return state;
 }
