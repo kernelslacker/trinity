@@ -190,8 +190,6 @@ int main(int argc, char* argv[])
 
 	destroy_global_objects();
 
-	mainpid = 0;
-
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.total_syscalls_done - 1, shm->stats.successes, shm->stats.failures);
 
