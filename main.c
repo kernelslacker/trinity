@@ -218,28 +218,36 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 	return TRUE;
 }
 
-static char get_pid_state(pid_t target)
+/*
+ * This is only ever used by the main process, so we cache the FILE ptr
+ * for each child there, to save having to constantly reopen it.
+ */
+static FILE * open_child_pidstat(pid_t target)
 {
 	FILE *fp;
-	size_t n = 0;
-	char *line = NULL;
 	char filename[80];
-	pid_t pid;
-	char *procname = zmalloc(100);
-	char state = '?';
 
 	sprintf(filename, "/proc/%d/stat", target);
 
 	fp = fopen(filename, "r");
-	if (!fp)
-		goto fail_open;
 
-	if (getline(&line, &n, fp) != -1)
+	return fp;
+}
+
+static char get_pid_state(struct childdata *child)
+{
+	size_t n = 0;
+	char *line = NULL;
+	pid_t pid;
+	char state = '?';
+	char *procname = zmalloc(100);
+
+	if (getpid() != mainpid)
+		BUG("get_pid_state can only be called from main!\n");
+
+	if (getline(&line, &n, child->pidstatfile) != -1)
 		sscanf(line, "%d %s %c", &pid, procname, &state);
 
-	fclose(fp);
-
-fail_open:
 	free(procname);
 	return state;
 }
@@ -322,7 +330,7 @@ static bool is_child_making_progress(struct childdata *child)
 		return TRUE;
 
 	/* if we're blocked in uninteruptible sleep, SIGKILL won't help. */
-	state = get_pid_state(child->pid);
+	state = get_pid_state(child);
 	if (state == 'D') {
 		//debugf("child %d (pid %u) is blocked in D state\n", child->num, pid);
 		return FALSE;
@@ -378,14 +386,13 @@ static void stall_genocide(void)
 static bool spawn_child(int childno)
 {
 	int pid = 0;
+	struct childdata *child = shm->children[childno];
 
 	fflush(stdout);
 	pid = fork();
 
 	if (pid == 0) {
 		/* Child process. */
-		struct childdata *child = shm->children[childno];
-
 		init_child(child, childno);
 
 		child_process();
@@ -399,7 +406,8 @@ static bool spawn_child(int childno)
 			return FALSE;
 	}
 
-	shm->children[childno]->pid = pid;
+	child->pid = pid;
+	child->pidstatfile = open_child_pidstat(child->pid);
 	shm->running_childs++;
 
 	debugf("Created child %d (pid:%d) [total:%d/%d]\n",
@@ -449,10 +457,12 @@ static void fork_children(void)
 
 static void handle_childsig(int childpid, int childstatus, int stop)
 {
+	struct childdata *child;
 	int __sig;
 	int childno;
 
 	childno = find_childno(childpid);
+	child = shm->children[childno];
 
 	if (stop == TRUE)
 		__sig = WSTOPSIG(childstatus);
@@ -485,6 +495,9 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 			debugf("got a signal from child %d (pid %d) (%s)\n",
 					childno, childpid, strsignal(WTERMSIG(childstatus)));
 		reap_child(childpid);
+
+		fclose(child->pidstatfile);
+		child->pidstatfile = NULL;
 		return;
 
 	default:
@@ -548,9 +561,12 @@ static void handle_child(pid_t childpid, int childstatus)
 
 			childno = find_childno(childpid);
 			if (childno != CHILD_NOT_FOUND) {
+				struct childdata *child = shm->children[childno];
 				debugf("Child %d (pid %d) exited after %ld operations.\n",
-					childno, childpid, shm->children[childno]->syscall.op_nr);
+					childno, childpid, child->syscall.op_nr);
 				reap_child(childpid);
+				fclose(child->pidstatfile);
+				child->pidstatfile = NULL;
 			}
 			break;
 

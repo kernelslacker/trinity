@@ -14,6 +14,9 @@ struct childdata {
 	FILE *logfile;
 	bool logdirty;
 
+	/* ONLY to be read by main. */
+	FILE *pidstatfile;
+
 	struct objhead objects[MAX_OBJECT_TYPES];
 
 	unsigned int seed;
