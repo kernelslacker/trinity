@@ -64,11 +64,6 @@ struct shm_s {
 	int current_fd;
 	unsigned int fd_lifetime;
 
-	/* for reap_child()
-	 * Used to provide exclusion so main/watchdog don't both try at the same time. */
-	//TODO: Still needed?
-	lock_t reaper_lock;
-
 	/* to protect from multiple child processes from
 	 * trying to disable the same syscall at the same time. */
 	lock_t syscalltable_lock;

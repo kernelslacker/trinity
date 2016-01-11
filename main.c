@@ -88,34 +88,21 @@ void reap_child(pid_t childpid)
 	struct childdata *child;
 	int i;
 
-	lock(&shm->reaper_lock);
-
-	if (childpid == shm->last_reaped) {
+	if (childpid == shm->last_reaped) {	// FIXME: Probably not needed now.
 		debugf("already reaped %d!\n", childpid);
-		goto out;
+		return;
 	}
 
 	i = find_childno(childpid);
 	if (i == CHILD_NOT_FOUND)
-		goto out;
+		return;
 
 	child = shm->children[i];
 	child->syscall.tp = (struct timespec){};
 	unlock(&child->syscall.lock);
 	shm->running_childs--;
 	shm->last_reaped = childpid;
-	// FIXME: we do this last because things go walking children
-	// looking for EMPTY_PIDSLOT, and it's not really EMPTY until
-	// we've cleaned it out.
-	//
-	// we could really use some locking here.
-	//  this was easier when we had a global pidslot array.
-	//  now we'd need a lock that spans all child structs. ew.
-	//  Later: experiment with moving the pids back out of the child struct.
 	child->pid = EMPTY_PIDSLOT;
-
-out:
-	unlock(&shm->reaper_lock);
 }
 
 /* Make sure there's no dead kids lying around.

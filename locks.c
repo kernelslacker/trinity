@@ -53,7 +53,6 @@ bool check_all_locks(void)
 	unsigned int i;
 	bool ret = FALSE;
 
-	check_lock(&shm->reaper_lock);
 	check_lock(&shm->syscalltable_lock);
 
 	for_each_child(i)
