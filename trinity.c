@@ -25,6 +25,8 @@
 #include "uid.h"
 #include "version.h"
 
+pid_t mainpid;
+
 char *progname = NULL;
 
 unsigned int page_size;
@@ -158,7 +160,7 @@ int main(int argc, char* argv[])
 
 	pids_init();
 
-	shm->mainpid = getpid();
+	mainpid = getpid();
 
 	init_object_lists(OBJ_GLOBAL);
 
@@ -190,7 +192,7 @@ int main(int argc, char* argv[])
 
 	destroy_global_objects();
 
-	shm->mainpid = 0;
+	mainpid = 0;
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.total_syscalls_done - 1, shm->stats.successes, shm->stats.failures);

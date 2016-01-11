@@ -88,7 +88,7 @@ FILE *find_logfile_handle(void)
 	if (pid == initpid)
 		return mainlogfile;
 
-	if (pid == shm->mainpid)
+	if (pid == mainpid)
 		return mainlogfile;
 
 	child = this_child();

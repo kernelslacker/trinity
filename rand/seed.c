@@ -139,7 +139,7 @@ void set_seed(struct childdata *child)
  */
 void reseed(void)
 {
-	if (getpid() != shm->mainpid) {
+	if (getpid() != mainpid) {
 		outputerr("Reseeding should only happen from parent!\n");
 		exit(EXIT_FAILURE);
 	}

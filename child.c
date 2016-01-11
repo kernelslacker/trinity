@@ -198,10 +198,10 @@ void init_child(struct childdata *child, int childno)
 		int ret = 0;
 
 		/* Make sure parent is actually alive to wait for us. */
-		ret = pid_alive(shm->mainpid);
+		ret = pid_alive(mainpid);
 		if (ret != 0) {
 			panic(EXIT_SHM_CORRUPTION);
-			outputerr("BUG!: parent (%d) went away!\n", shm->mainpid);
+			outputerr("BUG!: parent (%d) went away!\n", mainpid);
 			sleep(20000);
 		}
 	}
@@ -248,7 +248,7 @@ static void check_parent_pid(void)
 	pid_t pid, ppid;
 
 	ppid = getppid();
-	if (ppid == shm->mainpid)
+	if (ppid == mainpid)
 		return;
 
 	pid = getpid();
@@ -273,10 +273,10 @@ static void check_parent_pid(void)
 
 	output(0, "BUG!: CHILD (pid:%d) GOT REPARENTED! "
 		"main pid:%d. ppid=%d\n",
-		pid, shm->mainpid, ppid);
+		pid, mainpid, ppid);
 
-	if (pid_alive(shm->mainpid) == -1)
-		output(0, "main pid %d is dead.\n", shm->mainpid);
+	if (pid_alive(mainpid) == -1)
+		output(0, "main pid %d is dead.\n", mainpid);
 
 	panic(EXIT_REPARENT_PROBLEM);
 
@@ -412,7 +412,7 @@ void child_process(void)
 	/* If we're exiting because we tainted, wait here for it to be done. */
 	while (shm->postmortem_in_progress == TRUE) {
 		/* Make sure the main process is still around. */
-		if (pid_alive(shm->mainpid) == -1)
+		if (pid_alive(mainpid) == -1)
 			return;
 
 		usleep(1);

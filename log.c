@@ -80,7 +80,7 @@ void output(unsigned char level, const char *fmt, ...)
 	if (pid == initpid)
 		prefix = init_prefix;
 
-	if (pid == shm->mainpid)
+	if (pid == mainpid)
 		prefix = main_prefix;
 
 	if (prefix == NULL) {

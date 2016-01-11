@@ -52,10 +52,6 @@ struct shm_s {
 	unsigned int syscalls32_succeeded;
 	unsigned int syscalls32_attempted;
 #endif
-
-	/* pids */
-	pid_t mainpid;
-
 	/* generic object cache*/
 	struct objhead global_objects[MAX_OBJECT_TYPES];
 

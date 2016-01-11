@@ -96,7 +96,7 @@ void lock(lock_t *_lock)
 		 *  ever get back, and subsequently check_lock().
 		 * So we add an extra explicit check here.
 		 */
-		if (pid == shm->mainpid) {
+		if (pid == mainpid) {
 			check_lock(_lock);
 		} else {
 			/* Ok, we're a child pid.
