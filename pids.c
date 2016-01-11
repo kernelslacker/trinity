@@ -9,8 +9,6 @@
 #include "sanitise.h"
 #include "shm.h"
 
-pid_t initpid;
-
 struct childdata * this_child(void)
 {
 	pid_t mypid = getpid();

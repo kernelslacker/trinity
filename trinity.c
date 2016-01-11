@@ -102,7 +102,7 @@ int main(int argc, char* argv[])
 
 	progname = argv[0];
 
-	initpid = getpid();
+	mainpid = getpid();
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
@@ -159,8 +159,6 @@ int main(int argc, char* argv[])
 		find_specific_domain(specific_domain_optarg);
 
 	pids_init();
-
-	mainpid = getpid();
 
 	init_object_lists(OBJ_GLOBAL);
 

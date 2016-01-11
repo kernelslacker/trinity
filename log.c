@@ -67,7 +67,6 @@ void output(unsigned char level, const char *fmt, ...)
 	pid_t pid;
 	char outputbuf[BUFSIZE];
 	char *prefix = NULL;
-	char init_prefix[]="[init]";
 	char main_prefix[]="[main]";
 	char child_prefix[32];
 
@@ -77,13 +76,9 @@ void output(unsigned char level, const char *fmt, ...)
 	/* prefix preparation */
 	pid = getpid();
 
-	if (pid == initpid)
-		prefix = init_prefix;
-
 	if (pid == mainpid)
 		prefix = main_prefix;
-
-	if (prefix == NULL) {
+	else if (prefix == NULL) {
 		unsigned int childno;
 
 		childno = find_childno(pid);

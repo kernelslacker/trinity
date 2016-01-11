@@ -85,9 +85,6 @@ FILE *find_logfile_handle(void)
 		return NULL;
 
 	pid = getpid();
-	if (pid == initpid)
-		return mainlogfile;
-
 	if (pid == mainpid)
 		return mainlogfile;
 
