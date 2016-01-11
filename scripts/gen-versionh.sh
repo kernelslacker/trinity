@@ -8,9 +8,6 @@ hdr()
  echo "/* This file is auto-generated */" >> $HEADER
 }
 
-# FIXME: remove one day (post 1.5?)
-rm -f version.h
-
 if [ -f $HEADER ]; then
   OLD=$(grep VERSION $HEADER | head -n1 | sed 's/"//g' | awk '{ print $3 }')
 else
@@ -50,10 +47,4 @@ if [ "$DEVEL" == "1" ]; then
 else
   # devel=0 : release version.
   makefilever
-fi
-
-# FIXME: Delete this after 1.5
-C=$(grep VERSION config.h | wc -l)
-if [ "$C" != 0 ]; then
-  sed -i '/VERSION/d' config.h
 fi
