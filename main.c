@@ -387,8 +387,11 @@ static void stall_genocide(void)
 
 static bool spawn_child(int childno)
 {
-	int pid = 0;
 	struct childdata *child = shm->children[childno];
+	int pid = 0;
+
+	/* Wipe out any state left from a previous child running in this slot. */
+	clean_childdata(child);
 
 	fflush(stdout);
 	pid = fork();
@@ -408,6 +411,7 @@ static bool spawn_child(int childno)
 			return FALSE;
 	}
 
+	/* Child won't get out of init_child until we write the pid */
 	child->pid = pid;
 	child->pidstatfile = open_child_pidstat(child->pid);
 	shm->running_childs++;

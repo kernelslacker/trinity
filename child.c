@@ -155,11 +155,12 @@ static void oom_score_adj(int adj)
 /*
  * Wipe out any state left from a previous child running in this slot.
  */
-static void reinit_child(struct childdata *child)
+void clean_childdata(struct childdata *child)
 {
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
-
+	child->logdirty = FALSE;
 	child->seed = 0;
+	child->pid = EMPTY_PIDSLOT;
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
 }
@@ -205,8 +206,6 @@ void init_child(struct childdata *child, int childno)
 			sleep(20000);
 		}
 	}
-
-	reinit_child(child);
 
 	set_seed(this_child());
 
