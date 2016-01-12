@@ -6,7 +6,6 @@
 struct lock_struct {
 	volatile unsigned char lock;
 	pid_t owner;
-	unsigned long contention;
 };
 
 typedef struct lock_struct lock_t;

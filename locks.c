@@ -31,20 +31,10 @@ static bool check_lock(lock_t *_lock)
 			return TRUE;
 
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
-		goto unlock;
-	}
-
-	//FIXME: Remove the whole stealing mechanism.
-	/* If a pid has had a lock a long time, something is up. */
-	if (_lock->contention > STEAL_THRESHOLD) {
-		debugf("pid %d has held lock for too long. Releasing, and killing.\n", pid);
-		kill_pid(pid);
-		goto unlock;
+		unlock(_lock);
+		return TRUE;
 	}
 	return FALSE;
-unlock:
-	unlock(_lock);
-	return TRUE;
 }
 
 /* returns TRUE if something is awry */
@@ -64,7 +54,6 @@ bool check_all_locks(void)
 static void __lock(lock_t *_lock)
 {
 	_lock->lock = LOCKING;
-	_lock->contention = 0;
 	_lock->owner = getpid();
 	_lock->lock = LOCKED;
 }
@@ -109,7 +98,6 @@ void lock(lock_t *_lock)
 			}
 		}
 
-		_lock->contention++;
 		usleep(1);
 	}
 	__lock(_lock);
@@ -118,7 +106,6 @@ void lock(lock_t *_lock)
 void unlock(lock_t *_lock)
 {
 	asm volatile("" ::: "memory");
-	_lock->contention = 0;
 	_lock->owner = 0;
 	_lock->lock = UNLOCKED;
 }
