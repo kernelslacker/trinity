@@ -73,7 +73,7 @@ static void fail_sanity(void)
 
 	dump_childnos();
 	dump_childdata(child);
-	panic(EXIT_PID_OUT_OF_RANGE);
+	panic(EXIT_SHM_CORRUPTION);
 }
 
 static void check_sanity(struct syscallrecord *rec, struct syscallrecord *stash)
