@@ -163,6 +163,7 @@ void clean_childdata(struct childdata *child)
 	child->pid = EMPTY_PIDSLOT;
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
+	child->xcpu_count = 0;
 }
 
 static void bind_child_to_cpu(struct childdata *child)
@@ -367,18 +368,21 @@ static bool handle_sigreturn(void)
  */
 void child_process(void)
 {
-	struct childdata *child;
+	struct childdata *child = this_child();
 	int ret;
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
 		shm_rw();
 
+		if (child->xcpu_count == 100) {
+			debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n", child->num, child->pid);
+			return;
+		}
+
 		if (handle_sigreturn() == FALSE)
 			return;	// Exit the child, things are getting too weird.
 	}
-
-	child = this_child();
 
 	while (shm->exit_reason == STILL_RUNNING) {
 		unsigned int i;

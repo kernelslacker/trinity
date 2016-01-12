@@ -25,6 +25,8 @@ struct childdata {
 
 	unsigned int num;
 
+	unsigned char xcpu_count;
+
 	unsigned char kill_count;
 
 	bool dontkillme;	/* provide temporary protection from the reaper. */
