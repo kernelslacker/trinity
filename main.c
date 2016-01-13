@@ -632,11 +632,13 @@ const char * decode_exit(void)
 	return reasons[shm->exit_reason];
 }
 
-static unsigned int stall_count = 0;
+static unsigned int stall_count;
 
 static void check_children_progressing(void)
 {
 	unsigned int i;
+
+	stall_count = 0;
 
 	for_each_child(i) {
 		struct childdata *child = shm->children[i];
