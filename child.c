@@ -169,11 +169,12 @@ static void bind_child_to_cpu(struct childdata *child)
 {
 	cpu_set_t set;
 	unsigned int cpudest;
+	pid_t pid = pids[child->num];
 
 	if (no_bind_to_cpu == TRUE)
 		return;
 
-	if (sched_getaffinity(pids[child->num], sizeof(set), &set) != 0)
+	if (sched_getaffinity(pid, sizeof(set), &set) != 0)
 		return;
 
 	if (child->num > num_online_cpus)
@@ -183,7 +184,7 @@ static void bind_child_to_cpu(struct childdata *child)
 
 	CPU_ZERO(&set);
 	CPU_SET(cpudest, &set);
-	sched_setaffinity(pids[child->num], sizeof(set), &set);
+	sched_setaffinity(pid, sizeof(set), &set);
 }
 
 /*
