@@ -163,8 +163,6 @@ void clean_childdata(struct childdata *child)
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
 	child->xcpu_count = 0;
-	//TODO: move out of this function
-	pids[child->num] = EMPTY_PIDSLOT;
 }
 
 static void bind_child_to_cpu(struct childdata *child)
