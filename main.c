@@ -49,7 +49,7 @@ static int shm_is_corrupt(void)
 
 		child = shm->children[i];
 		pid = pids[i];
-		if (pids[i] == EMPTY_PIDSLOT)
+		if (pid == EMPTY_PIDSLOT)
 			continue;
 
 		if (pid_is_valid(pid) == FALSE) {
@@ -366,13 +366,14 @@ static void stall_genocide(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (pids[i] == EMPTY_PIDSLOT)
+		pid_t pid = pids[i];
+		if (pid == EMPTY_PIDSLOT)
 			continue;
 
 		if (RAND_BOOL()) {
 			int ret;
 
-			ret = kill(pids[i], SIGKILL);
+			ret = kill(pid, SIGKILL);
 			if (ret == 0)
 				killed++;
 		}
@@ -535,12 +536,13 @@ static void handle_child(pid_t childpid, int childstatus)
 			debugf("All children exited!\n");
 
 			for_each_child(i) {
-				if (pids[i] != EMPTY_PIDSLOT) {
-					if (pid_alive(pids[i]) == -1) {
-						pids[i] = EMPTY_PIDSLOT;
+				pid_t pid = pids[i];
+				if (pid != EMPTY_PIDSLOT) {
+					if (pid_alive(pid) == -1) {
+						pid = EMPTY_PIDSLOT;
 						shm->running_childs--;
 					} else {
-						debugf("%d looks still alive! ignoring.\n", pids[i]);
+						debugf("%d looks still alive! ignoring.\n", pid);
 					}
 					seen = TRUE;
 				}
