@@ -95,8 +95,6 @@ void init_shm(void)
 
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));
 
-		child->pid = EMPTY_PIDSLOT;
-
 		child->num = i;
 
 		init_child_logging(child);

@@ -160,10 +160,11 @@ void clean_childdata(struct childdata *child)
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
 	child->logdirty = FALSE;
 	child->seed = 0;
-	child->pid = EMPTY_PIDSLOT;
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
 	child->xcpu_count = 0;
+	//TODO: move out of this function
+	pids[child->num] = EMPTY_PIDSLOT;
 }
 
 static void bind_child_to_cpu(struct childdata *child)
@@ -174,7 +175,7 @@ static void bind_child_to_cpu(struct childdata *child)
 	if (no_bind_to_cpu == TRUE)
 		return;
 
-	if (sched_getaffinity(child->pid, sizeof(set), &set) != 0)
+	if (sched_getaffinity(pids[child->num], sizeof(set), &set) != 0)
 		return;
 
 	if (child->num > num_online_cpus)
@@ -184,7 +185,7 @@ static void bind_child_to_cpu(struct childdata *child)
 
 	CPU_ZERO(&set);
 	CPU_SET(cpudest, &set);
-	sched_setaffinity(child->pid, sizeof(set), &set);
+	sched_setaffinity(pids[child->num], sizeof(set), &set);
 }
 
 /*
@@ -196,7 +197,7 @@ void init_child(struct childdata *child, int childno)
 	char childname[17];
 
 	/* Wait for parent to set our childno */
-	while (child->pid != pid) {
+	while (pids[childno] != pid) {
 		int ret = 0;
 
 		/* Make sure parent is actually alive to wait for us. */
@@ -376,7 +377,7 @@ void child_process(void)
 		shm_rw();
 
 		if (child->xcpu_count == 100) {
-			debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n", child->num, child->pid);
+			debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n", child->num, pids[child->num]);
 			return;
 		}
 

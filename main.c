@@ -48,8 +48,8 @@ static int shm_is_corrupt(void)
 		pid_t pid;
 
 		child = shm->children[i];
-		pid = child->pid;
-		if (pid == EMPTY_PIDSLOT)
+		pid = pids[i];
+		if (pids[i] == EMPTY_PIDSLOT)
 			continue;
 
 		if (pid_is_valid(pid) == FALSE) {
@@ -96,7 +96,7 @@ void reap_child(pid_t childpid)
 	child->syscall.tp = (struct timespec){};
 	unlock(&child->syscall.lock);
 	shm->running_childs--;
-	child->pid = EMPTY_PIDSLOT;
+	pids[i] = EMPTY_PIDSLOT;
 }
 
 /* Make sure there's no dead kids lying around.
@@ -109,12 +109,10 @@ static void reap_dead_kids(void)
 	unsigned int reaped = 0;
 
 	for_each_child(i) {
-		struct childdata *child;
 		pid_t pid;
 		int ret;
 
-		child = shm->children[i];
-		pid = child->pid;
+		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -159,7 +157,7 @@ static void kill_all_kids(void)
 		pid_t pid;
 		int ret;
 
-		pid = shm->children[i]->pid;
+		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -287,7 +285,7 @@ static void stuck_syscall_info(struct childdata *child)
 	unlock(&rec->lock);
 
 	output(0, "child %d (pid %u) Stuck in syscall %d:%s%s%s.\n",
-		child->num, child->pid, callno,
+		child->num, pids[child->num], callno,
 		print_syscall_name(callno, do32),
 		do32 ? " (32bit)" : "",
 		fdstr);
@@ -306,7 +304,7 @@ static bool is_child_making_progress(struct childdata *child)
 	pid_t pid;
 	char state;
 
-	pid = child->pid;
+	pid = pids[child->num];
 
 	if (pid == EMPTY_PIDSLOT)
 		return TRUE;
@@ -368,15 +366,13 @@ static void stall_genocide(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		struct childdata *child = shm->children[i];
-
-		if (child->pid == EMPTY_PIDSLOT)
+		if (pids[i] == EMPTY_PIDSLOT)
 			continue;
 
 		if (RAND_BOOL()) {
 			int ret;
 
-			ret = kill(child->pid, SIGKILL);
+			ret = kill(pids[i], SIGKILL);
 			if (ret == 0)
 				killed++;
 		}
@@ -412,8 +408,8 @@ static bool spawn_child(int childno)
 	}
 
 	/* Child won't get out of init_child until we write the pid */
-	child->pid = pid;
-	child->pidstatfile = open_child_pidstat(child->pid);
+	pids[childno] = pid;
+	child->pidstatfile = open_child_pidstat(pid);
 	shm->running_childs++;
 
 	debugf("Created child %d (pid:%d) [total:%d/%d]\n",
@@ -539,16 +535,12 @@ static void handle_child(pid_t childpid, int childstatus)
 			debugf("All children exited!\n");
 
 			for_each_child(i) {
-				struct childdata *child;
-
-				child = shm->children[i];
-
-				if (child->pid != EMPTY_PIDSLOT) {
-					if (pid_alive(child->pid) == -1) {
-						child->pid = EMPTY_PIDSLOT;
+				if (pids[i] != EMPTY_PIDSLOT) {
+					if (pid_alive(pids[i]) == -1) {
+						pids[i] = EMPTY_PIDSLOT;
 						shm->running_childs--;
 					} else {
-						debugf("%d looks still alive! ignoring.\n", child->pid);
+						debugf("%d looks still alive! ignoring.\n", pids[i]);
 					}
 					seen = TRUE;
 				}
@@ -597,7 +589,7 @@ static void handle_children(void)
 		int childstatus;
 		pid_t pid;
 
-		pid = shm->children[i]->pid;
+		pid = pids[i];
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;

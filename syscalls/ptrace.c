@@ -13,8 +13,6 @@
 
 static void sanitise_ptrace(struct syscallrecord *rec)
 {
-	unsigned int i;
-
 	/* We must be careful to not give out ARG_PID to ptrace,
 	 * because we might end up tracing the parent process, or screen/tmux,
 	 * or god knows what else that we don't control, but are allowed to trace.
@@ -25,8 +23,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	 * Or at least, that's the theory. In reality, this is currently causing 'no such process' errors.
 	 *  but broken is at least better than hanging.
 	 */
-	i  = rnd() % shm->running_childs;
-	rec->a2 = shm->children[i]->pid;
+	rec->a2 = get_pid();
 }
 
 static unsigned long ptrace_reqs[] = {

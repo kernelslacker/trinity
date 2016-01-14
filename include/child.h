@@ -21,8 +21,6 @@ struct childdata {
 
 	unsigned int seed;
 
-	pid_t pid;
-
 	unsigned int num;
 
 	unsigned char xcpu_count;

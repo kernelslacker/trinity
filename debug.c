@@ -93,7 +93,6 @@ void dump_childdata(struct childdata *child)
 	//TODO: dump each objhead
 
 	output(0, "seed: %ld\n", child->seed);
-	output(0, "pid: %d\n", child->pid);
 	output(0, "childnum: %d\n", child->num);
 
 	output(0, "killcount: %d\n", child->kill_count);

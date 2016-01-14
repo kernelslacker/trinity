@@ -9,13 +9,15 @@
 #include "sanitise.h"
 #include "shm.h"
 
+pid_t *pids;
+
 struct childdata * this_child(void)
 {
 	pid_t mypid = getpid();
 	unsigned int i;
 
 	for_each_child(i) {
-		if (shm->children[i]->pid == mypid)
+		if (pids[i] == mypid)
 			return shm->children[i];
 	}
 	return NULL;
@@ -26,7 +28,7 @@ int find_childno(pid_t mypid)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (shm->children[i]->pid == mypid)
+		if (pids[i] == mypid)
 			return i;
 	}
 	return CHILD_NOT_FOUND;
@@ -37,7 +39,7 @@ bool pidmap_empty(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (shm->children[i]->pid != EMPTY_PIDSLOT)
+		if (pids[i] != EMPTY_PIDSLOT)
 			return FALSE;
 	}
 	return TRUE;
@@ -60,16 +62,17 @@ void dump_childnos(void)
 
 			child = shm->children[i + j];
 
-			if (child->pid == EMPTY_PIDSLOT) {
+			if (pids[child->num] == EMPTY_PIDSLOT) {
 				sptr += sprintf(sptr, "[empty] ");
 			} else {
-				if (pid_is_valid(child->pid) == FALSE)
+				pid_t pid = pids[child->num];
+				if (pid_is_valid(pid) == FALSE)
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 
-				if (pid_alive(child->pid == -1))
+				if (pid_alive(pid == -1))
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 
-				sptr += sprintf(sptr, "%u %s", child->pid, ANSI_RESET);
+				sptr += sprintf(sptr, "%u %s", pid, ANSI_RESET);
 			}
 		}
 		sptr += sprintf(sptr, "\n");
@@ -111,6 +114,8 @@ out:
 
 void pids_init(void)
 {
+	unsigned int i;
+
 	if (read_pid_max()) {
 #ifdef __x86_64__
 		pidmax = 4194304;
@@ -121,6 +126,10 @@ void pids_init(void)
 	}
 
 	output(0, "Using pid_max = %d\n", pidmax);
+
+	pids = alloc_shared(max_children * sizeof(int));
+	for_each_child(i)
+		pids[i] = EMPTY_PIDSLOT;
 }
 
 int pid_is_valid(pid_t pid)
@@ -144,7 +153,7 @@ unsigned int get_pid(void)
 	switch (rnd() % 3) {
 	case 0:
 retry:		i = rnd() % max_children;
-		pid = shm->children[i]->pid;
+		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			goto retry;
 		break;

@@ -4,6 +4,7 @@
 #include "child.h"
 #include "types.h"
 
+extern pid_t *pids;
 extern pid_t mainpid;
 
 #define for_each_child(i)	for (i = 0; i < max_children; i++)
