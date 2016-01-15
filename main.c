@@ -583,10 +583,33 @@ static void handle_child(pid_t childpid, int childstatus)
 static void handle_children(void)
 {
 	unsigned int i;
+	sigset_t mask;
+	sigset_t orig_mask;
+	struct timespec timeout = { .tv_sec = 1 };
+	int ret;
 
 	if (shm->running_childs == 0)
 		return;
 
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGCHLD);
+
+	if (sigprocmask(SIG_BLOCK, &mask, &orig_mask) < 0) {
+		perror ("sigprocmask");
+		return;
+	}
+
+	ret = sigtimedwait(&mask, NULL, &timeout);
+	if (ret < 0) {
+		// timeout, go do something else.
+		if (errno == EAGAIN) {
+			return;
+		}
+	}
+
+	/* If we get this far, we either got EINTR, a SIGCHLD, or some other signal.
+	 * in either case, let's see if the children have anything going on
+	 */
 	for_each_child(i) {
 		int childstatus;
 		pid_t pid;
@@ -700,13 +723,6 @@ void main_loop(void)
 		}
 
 		print_stats();
-
-		/* We used to waitpid() here without WNOHANG, but now that main_loop()
-		 * is doing the work the watchdog used to, we need to periodically wake up
-		 * so instead, we just sleep for a short while.
-		 * TODO: Try sigtimedwait
-		 */
-		sleep(1);
 	}
 
 	/* if the pid map is corrupt, we can't trust that we'll
