@@ -404,8 +404,11 @@ static bool spawn_child(int childno)
 		debugf("child %d %d exiting.\n", childno, getpid());
 		_exit(EXIT_SUCCESS);
 	} else {
-		if (pid == -1)
+		if (pid == -1) {
+			debugf("Couldn't fork a new child in pidslot %d. errno:%s\n",
+					childno, strerror(errno));
 			return FALSE;
+		}
 	}
 
 	/* Child won't get out of init_child until we write the pid */
@@ -416,6 +419,14 @@ static bool spawn_child(int childno)
 	debugf("Created child %d (pid:%d) [total:%d/%d]\n",
 		childno, pid, shm->running_childs, max_children);
 	return TRUE;
+}
+
+static void replace_child(int childno)
+{
+	if (shm->exit_reason != STILL_RUNNING)
+		return;
+
+	while (spawn_child(childno) == FALSE);
 }
 
 /* Generate children*/
@@ -443,11 +454,7 @@ static void fork_children(void)
 		}
 
 		if (spawn_child(childno) == FALSE) {
-			/* We failed, wait for a child to exit before retrying. */
-			if (shm->running_childs > 0)
-				return;
-
-			output(0, "couldn't create child! (%s)\n", strerror(errno));
+			outputerr("Couldn't fork initial children!\n");
 			panic(EXIT_FORK_FAILURE);
 			exit(EXIT_FAILURE);
 		}
@@ -479,7 +486,10 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 		debugf("Sending PTRACE_DETACH (and then KILL)\n");
 		ptrace(PTRACE_DETACH, childpid, NULL, NULL);
 		kill(childpid, SIGKILL);
+		//FIXME: Won't we create a zombie here?
 		reap_child(childpid);
+		replace_child(childno);
+
 		return;
 
 	case SIGALRM:
@@ -501,6 +511,8 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 
 		fclose(child->pidstatfile);
 		child->pidstatfile = NULL;
+
+		replace_child(childno);
 		return;
 
 	default:
@@ -541,6 +553,7 @@ static void handle_child(pid_t childpid, int childstatus)
 					if (pid_alive(pid) == -1) {
 						pids[i] = EMPTY_PIDSLOT;
 						shm->running_childs--;
+						replace_child(i);
 					} else {
 						debugf("%d looks still alive! ignoring.\n", pid);
 					}
@@ -567,6 +580,8 @@ static void handle_child(pid_t childpid, int childstatus)
 				reap_child(childpid);
 				fclose(child->pidstatfile);
 				child->pidstatfile = NULL;
+
+				replace_child(childno);
 			}
 			break;
 
@@ -696,9 +711,9 @@ void main_loop(void)
 {
 	int ret = 0;
 
+	fork_children();
+
 	while (shm->exit_reason == STILL_RUNNING) {
-		if (shm->running_childs < max_children)
-			fork_children();
 
 		handle_children();
 
