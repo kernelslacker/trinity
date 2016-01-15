@@ -442,7 +442,7 @@ static void fork_children(void)
 			exit(EXIT_FAILURE);
 		}
 
-		if (spawn_child(childno) < 0) {
+		if (spawn_child(childno) == FALSE) {
 			/* We failed, wait for a child to exit before retrying. */
 			if (shm->running_childs > 0)
 				return;
