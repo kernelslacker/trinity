@@ -539,7 +539,7 @@ static void handle_child(pid_t childpid, int childstatus)
 				pid_t pid = pids[i];
 				if (pid != EMPTY_PIDSLOT) {
 					if (pid_alive(pid) == -1) {
-						pid = EMPTY_PIDSLOT;
+						pids[i] = EMPTY_PIDSLOT;
 						shm->running_childs--;
 					} else {
 						debugf("%d looks still alive! ignoring.\n", pid);
