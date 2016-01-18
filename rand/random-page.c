@@ -58,8 +58,14 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	unsigned int startoffset = 0, remain;
 	unsigned char separators[] = { ':', ',', '.', ' ', '-', '\0', };
 	unsigned char separator;
+	unsigned int randrange = 10;
 
-	switch (rnd() % 10) {
+	/* If we only have a small buffer, don't do
+	 * the longer generators. */
+	if (len < 16)
+		randrange = 6;
+
+	switch (rnd() % randrange) {
 	case 0:
 		/* Complete garbage. */
 		for (i = 0; i < len; i++)
