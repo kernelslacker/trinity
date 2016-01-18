@@ -18,62 +18,6 @@ int rnd(void)
 	return rand();
 }
 
-void generate_rand_bytes(unsigned char *ptr, unsigned int len)
-{
-	unsigned int i;
-	unsigned int startoffset = 0, remain;
-	unsigned char separators[] = { ':', ',', '.', ' ', '-', '\0', };
-	unsigned char separator;
-
-	switch (rnd() % 3) {
-	case 0:
-		/* Complete garbage. */
-		for (i = 0; i < len; i++)
-			ptr[i] = RAND_BYTE();
-		break;
-	case 1:
-		/* printable text strings. */
-		for (i = 0; i < len; i++)
-			ptr[i] = 32 + rnd() % (0x7f - 32);
-		break;
-	case 2:
-		/* numbers (for now, decimal only) */
-
-		separator = separators[rnd() % sizeof(separators)];
-
-		remain = len;
-
-		while (remain > 0) {
-			unsigned int runlen;
-
-			/* Sometimes make the numbers be negative. */
-			if (RAND_BOOL()) {
-				ptr[startoffset++] = '-';
-				remain--;
-				if (remain == 0)
-					break;
-			}
-
-			/* At most make this run 10 chars. */
-			runlen = min(remain, (unsigned int) rnd() % 10);
-
-			for (i = startoffset; i < startoffset + runlen; i++)
-				ptr[i] = '0' + rnd() % 10;
-
-			startoffset += runlen;
-			remain -= runlen;
-
-			/* insert commas and/or spaces */
-			if (remain > 0) {
-				ptr[i++] = separator;
-				startoffset++;
-				remain--;
-			}
-		}
-		break;
-	}
-}
-
 /*
  * OR a random number of bits into a mask.
  * Used by ARG_LIST generation, and get_o_flags()

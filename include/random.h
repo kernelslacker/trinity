@@ -20,6 +20,7 @@ unsigned int new_seed(void);
 
 bool init_random(void);
 void generate_rand_bytes(unsigned char *ptr, unsigned int len);
+void generate_random_page(char *page);
 unsigned int rand32(void);
 u64 rand64(void);
 unsigned long rand_single_bit(unsigned char size);
