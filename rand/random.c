@@ -128,7 +128,7 @@ unsigned int rand32(void)
 {
 	unsigned long r = 0;
 
-	switch (rnd() % 5) {
+	switch (rnd() % 6) {
 	case 0: r = rand_single_bit(32);
 		break;
 	case 1:	r = randbits(32);
@@ -138,6 +138,7 @@ unsigned int rand32(void)
 	case 3:	r = rept_byte();
 		break;
 	case 4:	return get_interesting_value();
+	case 5:	return rand16();
 	}
 
 	/* Sometimes deduct it from INT_MAX */
