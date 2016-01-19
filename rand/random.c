@@ -80,6 +80,47 @@ static unsigned long rept_byte(void)
 }
 
 /*
+ * Generate, and munge a 16bit number.
+ */
+unsigned short rand16(void)
+{
+	unsigned short r = 0;
+
+	switch (rnd() % 4) {
+	case 0: r = rand_single_bit(16);
+		break;
+	case 1:	r = randbits(16);
+		break;
+	case 2: r = rnd();
+		break;
+	case 3:	r = rnd() | (rnd() << 8);
+		break;
+	}
+
+	/* Sometimes flip sign */
+	if (ONE_IN(25))
+		r = ~r + 1;
+
+	if (ONE_IN(4)) {
+		int _div = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
+		r /= _div;
+	}
+
+	/* limit the size */
+	switch (rnd() % 4) {
+	case 0: r &= 0xff;
+		break;
+	case 1: r &= 0xffff;
+		break;
+	case 2: r &= PAGE_MASK;
+		break;
+	case 3:	// do nothing
+		break;
+	}
+	return r;
+}
+
+/*
  * Generate, and munge a 32bit number.
  */
 unsigned int rand32(void)

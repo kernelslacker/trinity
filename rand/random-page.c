@@ -6,18 +6,17 @@
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
+//FIXME: Double check on 32bit
 static void fabricate_struct(char *p, unsigned int len)
 {
-	unsigned int i;
+	unsigned int i = 0;
 
-	for (i = 0; i < len; ) {
-		void **ptr;
+	while (i < len) {
+		void **ptr = (void*) &p[i];
 
-		ptr = (void*) &p[i];
-
-		/* 4 byte (32bit) 8 byte (64bit) alignment */
-		if (i & ~((__WORDSIZE / 8) - 1)) {
+		if (RAND_BOOL() && IS_ALIGNED(i, 8)) {
 			unsigned long val = 0;
 
 			i += sizeof(unsigned long);
@@ -36,15 +35,36 @@ static void fabricate_struct(char *p, unsigned int len)
 			}
 
 			*(unsigned long *)ptr = val;
+			continue;
+		}
 
-		} else {
-			/* int alignment */
-
+		if (RAND_BOOL() && IS_ALIGNED(i, 4)) {
 			i += sizeof(unsigned int);
 			if (i > len)
 				return;
 
 			*(unsigned int *)ptr = rand32();
+			continue;
+		}
+
+		if (RAND_BOOL() && IS_ALIGNED(i, 2)) {
+			if (RAND_BOOL()) {
+				/* one u16 */
+				i += sizeof(unsigned short);
+				if (i > len)
+					return;
+
+				*(unsigned short *)ptr = rand16();
+			} else {
+				/* two u8's */
+				for (int j = 0; j < 2; j++) {
+					i += sizeof(unsigned char);
+					if (i > len)
+						return;
+				}
+				*(unsigned char *)ptr = RAND_BYTE();
+			}
+			continue;
 		}
 	}
 }

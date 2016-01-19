@@ -63,3 +63,5 @@ void freeptr(unsigned long *p);
 	_array[rnd() % ARRAY_SIZE(_array)]._element
 
 #define RAND_ARRAY(_array) _array[rnd() % ARRAY_SIZE(_array)]
+
+#define IS_ALIGNED(x, a)	(((x) & ((typeof(x))(a) - 1)) == 0)
