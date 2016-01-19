@@ -179,36 +179,39 @@ u64 rand64(void)
 {
 	unsigned long r = 0;
 
-	if (RAND_BOOL()) {
-		/* 32-bit ranges. */
-		r = rand32();
+	switch (rnd() % 7) {
+	/* 16-bit ranges */
+	case 0:	r = rand16();
+		break;
 
-	} else {
-		/* 33:64-bit ranges. */
-		switch (rnd() % 5) {
-		case 0:	r = rand_single_bit(64);
-			break;
-		case 1:	r = randbits(64);
-			break;
-		case 2:	r = (0ULL | rnd()) << 32 | rnd();
-			break;
-		case 3:	r = rept_byte();
-			break;
-		/* Sometimes pick a not-so-random number. */
-		case 4:	return get_interesting_value();
-		}
+	/* 32-bit ranges. */
+	case 1:	r = rand32();
+		break;
 
-		/* limit the size */
-		switch (rnd() % 4) {
-		case 0: r &= 0x000000ffffffffffULL;
-			break;
-		case 1: r &= 0x0000ffffffffffffULL;
-			break;
-		case 2: r &= 0x00ffffffffffffffULL;
-			break;
-		default: /* no limiting. */
-			break;
-		}
+	/* 33:64-bit ranges. */
+	case 2:	r = rand_single_bit(64);
+		break;
+	case 3:	r = randbits(64);
+		break;
+	case 4:	r = (0ULL | rnd()) << 32 | rnd();
+		break;
+	case 5:	r = rept_byte();
+		break;
+
+	/* Sometimes pick a not-so-random number. */
+	case 6:	return get_interesting_value();
+	}
+
+	/* limit the size */
+	switch (rnd() % 4) {
+	case 0: r &= 0x000000ffffffffffULL;
+		break;
+	case 1: r &= 0x0000ffffffffffffULL;
+		break;
+	case 2: r &= 0x00ffffffffffffffULL;
+		break;
+	default: /* no limiting. */
+		break;
 	}
 
 	/* Sometimes invert the generated number. */
