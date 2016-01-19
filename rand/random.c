@@ -111,7 +111,7 @@ unsigned short rand16(void)
 	switch (rnd() % 4) {
 	case 0: r &= 0xff;
 		break;
-	case 1: r &= 0xffff;
+	case 1: r &= 0xfff;
 		break;
 	case 2: r &= PAGE_MASK;
 		break;
