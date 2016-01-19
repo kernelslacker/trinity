@@ -15,9 +15,12 @@ static void fabricate_struct(char *p, unsigned int len)
 
 	while (i < len) {
 		void **ptr = (void*) &p[i];
+		unsigned long val = 0;
 
-		if (RAND_BOOL() && IS_ALIGNED(i, 8)) {
-			unsigned long val = 0;
+		switch (rnd() % 3) {
+		case 0:
+			if (!IS_ALIGNED(i, 8))
+				break;
 
 			i += sizeof(unsigned long);
 			if (i > len)
@@ -35,19 +38,23 @@ static void fabricate_struct(char *p, unsigned int len)
 			}
 
 			*(unsigned long *)ptr = val;
-			continue;
-		}
+			break;
 
-		if (RAND_BOOL() && IS_ALIGNED(i, 4)) {
+		case 1:
+			if (!IS_ALIGNED(i, 4))
+				break;
+
 			i += sizeof(unsigned int);
 			if (i > len)
 				return;
 
 			*(unsigned int *)ptr = rand32();
-			continue;
-		}
+			break;
 
-		if (RAND_BOOL() && IS_ALIGNED(i, 2)) {
+		case 2:
+			if (!IS_ALIGNED(i, 2))
+				break;
+
 			if (RAND_BOOL()) {
 				/* one u16 */
 				i += sizeof(unsigned short);
@@ -64,7 +71,7 @@ static void fabricate_struct(char *p, unsigned int len)
 				}
 				*(unsigned char *)ptr = RAND_BYTE();
 			}
-			continue;
+			break;
 		}
 	}
 }
