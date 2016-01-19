@@ -84,6 +84,11 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	 * the longer generators. */
 	if (len < 16)
 		randrange = 6;
+	else {
+		/* Make sure we're always dealing with an even number */
+		if (len & 1)
+			len--;
+	}
 
 	switch (rnd() % randrange) {
 	case 0:
