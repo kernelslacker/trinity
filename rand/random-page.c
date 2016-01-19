@@ -7,21 +7,21 @@
 #include "random.h"
 #include "sanitise.h"
 
-static void fabricate_onepage_struct(char *page)
+static void fabricate_struct(char *p, unsigned int len)
 {
 	unsigned int i;
 
-	for (i = 0; i < page_size; ) {
+	for (i = 0; i < len; ) {
 		void **ptr;
 
-		ptr = (void*) &page[i];
+		ptr = (void*) &p[i];
 
 		/* 4 byte (32bit) 8 byte (64bit) alignment */
 		if (i & ~((__WORDSIZE / 8) - 1)) {
 			unsigned long val = 0;
 
 			i += sizeof(unsigned long);
-			if (i > page_size)
+			if (i > len)
 				return;
 
 			switch (rnd() % 4) {
@@ -41,7 +41,7 @@ static void fabricate_onepage_struct(char *page)
 			/* int alignment */
 
 			i += sizeof(unsigned int);
-			if (i > page_size)
+			if (i > len)
 				return;
 
 			*(unsigned int *)ptr = rand32();
@@ -162,9 +162,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 
 	/* return something that looks kinda like a struct */
 	case 8:
-		if (len >= page_size)
-			fabricate_onepage_struct((char *)ptr);
-		//FIXME: Do something better here if 'else'
+		fabricate_struct((char *)ptr, len);
 		return;
 
 	/* format strings. */
