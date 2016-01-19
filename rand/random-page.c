@@ -82,7 +82,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 
 	/* If we only have a small buffer, don't do
 	 * the longer generators. */
-	if (len < 16)
+	if (len < 20)
 		randrange = 6;
 	else {
 		/* Make sure we're always dealing with an even number */
