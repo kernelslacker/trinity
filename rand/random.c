@@ -84,7 +84,7 @@ static unsigned long rept_byte(void)
  */
 unsigned short rand16(void)
 {
-	unsigned short r = 0;
+	unsigned short r = 0, r2;
 
 	switch (rnd() % 4) {
 	case 0: r = rand_single_bit(16);
@@ -93,7 +93,8 @@ unsigned short rand16(void)
 		break;
 	case 2: r = rnd();
 		break;
-	case 3:	r = rnd() | (rnd() << 8);
+	case 3:	r2 = rnd() & 0xff;
+		r = r2 | r2 << 8;
 		break;
 	}
 
