@@ -182,7 +182,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 				break;
 			}
 		}
-		ptr[len] = 0;
+		ptr[len-1] = 0;
 		break;
 
 	/* return something that looks kinda like a struct */
