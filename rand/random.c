@@ -86,14 +86,17 @@ unsigned short rand16(void)
 {
 	unsigned short r = 0, r2;
 
-	switch (rnd() % 4) {
-	case 0: r = rand_single_bit(16);
+	switch (rnd() % 5) {
+	case 0:	r = RAND_BYTE();
 		break;
-	case 1:	r = randbits(16);
+
+	case 1: r = rand_single_bit(16);
 		break;
-	case 2: r = rnd();
+	case 2:	r = randbits(16);
 		break;
-	case 3:	r2 = rnd() & 0xff;
+	case 3: r = rnd();
+		break;
+	case 4:	r2 = rnd() & 0xff;
 		r = r2 | r2 << 8;
 		break;
 	}
@@ -128,17 +131,23 @@ unsigned int rand32(void)
 {
 	unsigned long r = 0;
 
-	switch (rnd() % 6) {
-	case 0: r = rand_single_bit(32);
+	switch (rnd() % 7) {
+	case 0:	r = RAND_BYTE();
 		break;
-	case 1:	r = randbits(32);
+
+	case 1:	r = rand16();
 		break;
-	case 2: r = rnd();
+
+	case 2: r = rand_single_bit(32);
 		break;
-	case 3:	r = rept_byte();
+	case 3:	r = randbits(32);
 		break;
-	case 4:	return get_interesting_value();
-	case 5:	return rand16();
+	case 4: r = rnd();
+		break;
+	case 5:	r = rept_byte();
+		break;
+
+	case 6:	return get_interesting_value();
 	}
 
 	/* Sometimes deduct it from INT_MAX */
@@ -179,27 +188,32 @@ u64 rand64(void)
 {
 	unsigned long r = 0;
 
-	switch (rnd() % 7) {
+	switch (rnd() % 8) {
+
+	/* 8-bit ranges */
+	case 0:	r = RAND_BYTE();
+		break;
+
 	/* 16-bit ranges */
-	case 0:	r = rand16();
+	case 1:	r = rand16();
 		break;
 
 	/* 32-bit ranges. */
-	case 1:	r = rand32();
+	case 2:	r = rand32();
 		break;
 
 	/* 33:64-bit ranges. */
-	case 2:	r = rand_single_bit(64);
+	case 3:	r = rand_single_bit(64);
 		break;
-	case 3:	r = randbits(64);
+	case 4:	r = randbits(64);
 		break;
-	case 4:	r = (0ULL | rnd()) << 32 | rnd();
+	case 5:	r = (0ULL | rnd()) << 32 | rnd();
 		break;
-	case 5:	r = rept_byte();
+	case 6:	r = rept_byte();
 		break;
 
 	/* Sometimes pick a not-so-random number. */
-	case 6:	return get_interesting_value();
+	case 7:	return get_interesting_value();
 	}
 
 	/* limit the size */
