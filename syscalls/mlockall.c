@@ -10,20 +10,23 @@
 
 #define MCL_CURRENT     1
 #define MCL_FUTURE      2
+#define MCL_ONFAULT	4
 
 static void sanitise_mlockall(struct syscallrecord *rec)
 {
 	if (rec->a1 != 0)
 		return;
 
-	if (RAND_BOOL())
-		rec->a1 = MCL_CURRENT;
-	else
-		rec->a1 = MCL_FUTURE;
+	/*
+	 * There are two invalid bit patterns for MCL flags, 0, and MCL_ONFAULT
+	 * alone.  All other combinations should be valid.
+	 */
+	while (rec->a1 == 0 || rec->a1 == MCL_ONFAULT)
+		rec->a1 = (RAND_BYTE() & 0x07);
 }
 
 static unsigned long mlockall_flags[] = {
-	MCL_CURRENT, MCL_FUTURE,
+	MCL_CURRENT, MCL_FUTURE, MCL_ONFAULT,
 };
 
 struct syscallentry syscall_mlockall = {
