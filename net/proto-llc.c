@@ -31,7 +31,7 @@ void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_llc);
 }
 
-void llc_rand_socket(struct socket_triplet *st)
+static void llc_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = rnd() % PROTO_MAX;
 	if (RAND_BOOL())
@@ -54,3 +54,8 @@ void llc_setsockopt(struct sockopt *so)
 {
 	so->optname = RAND_ARRAY(llc_opts);
 }
+
+struct netproto proto_llc = {
+	.name = "llc",
+	.socket = llc_rand_socket,
+};

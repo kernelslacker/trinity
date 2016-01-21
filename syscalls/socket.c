@@ -52,7 +52,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_IRDA] = { .func = NULL },
 	[AF_PPPOX] = { .func = NULL },
 	[AF_WANPIPE] = { .func = NULL },
-	[AF_LLC] = { .func = &llc_rand_socket },
+	[AF_LLC] = { .func = NULL },
 	[AF_IB] = { .func = NULL },
 	[AF_MPLS] = { .func = NULL },
 	[AF_CAN] = { .func = &can_rand_socket },
