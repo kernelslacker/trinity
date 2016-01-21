@@ -74,6 +74,9 @@ void dump_objects(bool global, enum objecttype type)
 		case OBJ_FD_USERFAULTFD:
 			output(0, "userfaultfd:%d\n", obj->userfaultfd);
 			break;
+		case OBJ_FD_FANOTIFY:
+			output(0, "fanotify:%d\n", obj->fanotifyfd);\
+			break;
 		case OBJ_FUTEX:
 			output(0, "futex: %lx owner:%d\n",
 				obj->lock.futex, obj->lock.owner_pid);

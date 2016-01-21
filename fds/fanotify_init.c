@@ -39,7 +39,7 @@ static int open_fanotify_fds(void)
 	struct objhead *head;
 	unsigned int i;
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FANOTIFY);
 	head->destroy = &fanotifyfd_destructor;
 
 	for (i = 0; i < NR_INOTIFYFDS; i++) {
@@ -55,7 +55,7 @@ static int open_fanotify_fds(void)
 
 		obj = alloc_object();
 		obj->fanotifyfd = fd;
-		add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_FANOTIFY);
 
 		output(2, "fd[%d] = fanotify_init\n", fd);
 	}
@@ -71,10 +71,10 @@ static int get_rand_fanotifyfd(void)
 	struct object *obj;
 
 	/* check if eventfd unavailable/disabled. */
-	if (objects_empty(OBJ_FD_USERFAULTFD) == TRUE)
+	if (objects_empty(OBJ_FD_FANOTIFY) == TRUE)
 		return -1;
 
-	obj = get_random_object(OBJ_FD_USERFAULTFD, OBJ_GLOBAL);
+	obj = get_random_object(OBJ_FD_FANOTIFY, OBJ_GLOBAL);
 	return obj->fanotifyfd;
 }
 
