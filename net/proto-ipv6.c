@@ -162,9 +162,11 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_UNICAST_IF, },
 };
 
-void inet6_setsockopt(struct sockopt *so)
+static void inet6_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
+
+	so->level = SOL_IPV6;
 
 	val = rnd() % ARRAY_SIZE(inet6_opts);
 	so->optname = inet6_opts[val].name;
@@ -196,6 +198,7 @@ void inet6_setsockopt(struct sockopt *so)
 struct netproto proto_inet6 = {
 	.name = "inet6",
 	.socket = inet6_rand_socket,
+	.setsockopt = inet6_setsockopt,
 };
 
 #endif

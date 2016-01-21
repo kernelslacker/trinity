@@ -90,7 +90,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_ATMPVC, .func = NULL },
 	{ .family = AF_X25, .func = NULL },
 #ifdef USE_IPV6
-	{ .family = AF_INET6, .sol = SOL_IPV6, .func = &inet6_setsockopt },
+	{ .family = AF_INET6, .func = NULL },
 #endif
 #ifdef USE_ROSE
 	{ .family = AF_ROSE, .sol = SOL_ROSE, .func = &rose_setsockopt },
