@@ -130,7 +130,7 @@ void rose_setsockopt(struct sockopt *so);
 
 /* decnet */
 void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void decnet_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_decnet;
 void decnet_setsockopt(struct sockopt *so);
 
 /* llc */

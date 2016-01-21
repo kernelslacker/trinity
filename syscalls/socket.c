@@ -38,7 +38,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_INET6] = { .func = NULL },
 #endif
 	[AF_ROSE] = { .func = NULL },
-	[AF_DECnet] = { .func = &decnet_rand_socket },
+	[AF_DECnet] = { .func = NULL },
 	[AF_NETBEUI] = { .func = NULL },
 	[AF_SECURITY] = { .func = NULL },
 	[AF_KEY] = { .func = NULL },

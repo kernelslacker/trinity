@@ -29,7 +29,7 @@ void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_dn);
 }
 
-void decnet_rand_socket(struct socket_triplet *st)
+static void decnet_rand_socket(struct socket_triplet *st)
 {
 	if (RAND_BOOL()) {
 		st->type = SOCK_SEQPACKET;
@@ -54,3 +54,8 @@ void decnet_setsockopt(struct sockopt *so)
 
 	// TODO: set optlen correctly
 }
+
+struct netproto proto_decnet = {
+	.name = "decnet",
+	.socket = decnet_rand_socket,
+};
