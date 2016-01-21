@@ -22,7 +22,7 @@ void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_un);
 }
 
-void unix_rand_socket(struct socket_triplet *st)
+static void unix_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = PF_UNIX;
 
@@ -36,3 +36,8 @@ void unix_rand_socket(struct socket_triplet *st)
 	default:break;
 	}
 }
+
+struct netproto proto_unix = {
+	.name = "unix",
+	.socket = unix_rand_socket,
+};

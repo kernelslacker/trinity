@@ -82,7 +82,7 @@ void pppol2tp_setsockopt(struct sockopt *so);
 
 /* unix */
 void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void unix_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_unix;
 
 /* bpf */
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
