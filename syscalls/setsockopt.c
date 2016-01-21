@@ -69,65 +69,6 @@ static const struct ip_sso_funcptr ip_ssoptrs[] = {
 	[IPPROTO_MPLS] = { .func = NULL },
 };
 
-struct sso_funcptr {
-	unsigned int family;
-	unsigned int sol;
-	void (*func)(struct sockopt *so);
-};
-
-static const struct sso_funcptr ssoptrs[] = {
-	{ .family = AF_UNIX, .func = NULL },
-	{ .family = AF_INET, .func = NULL },	// special cased below.
-	{ .family = AF_AX25, .func = NULL },
-	{ .family = AF_IPX, .func = NULL },
-#ifdef USE_APPLETALK
-	{ .family = AF_APPLETALK, .func = NULL },
-#endif
-#ifdef USE_NETROM
-	{ .family = AF_NETROM, .func = NULL },
-#endif
-	{ .family = AF_BRIDGE, .func = NULL },
-	{ .family = AF_ATMPVC, .func = NULL },
-	{ .family = AF_X25, .func = NULL },
-#ifdef USE_IPV6
-	{ .family = AF_INET6, .func = NULL },
-#endif
-#ifdef USE_ROSE
-	{ .family = AF_ROSE, .func = NULL },
-#endif
-	{ .family = AF_DECnet, .func = NULL },
-	{ .family = AF_NETBEUI, .func = NULL },
-	{ .family = AF_SECURITY, .func = NULL },
-	{ .family = AF_KEY, .func = NULL },
-	{ .family = AF_NETLINK, .func = NULL },
-	{ .family = AF_PACKET, .func = NULL },
-	{ .family = AF_ASH, .func = NULL },
-	{ .family = AF_ECONET, .func = NULL },
-	{ .family = AF_ATMSVC, .func = NULL },
-	{ .family = AF_RDS, .func = NULL },
-	{ .family = AF_SNA, .func = NULL },
-	{ .family = AF_IRDA, .func = NULL },
-	{ .family = AF_PPPOX, .func = NULL },
-	{ .family = AF_WANPIPE, .func = NULL },
-	{ .family = AF_LLC, .func = NULL },
-	{ .family = AF_IB, .func = NULL },
-	{ .family = AF_MPLS, .func = NULL },
-	{ .family = AF_CAN, .func = NULL },
-	{ .family = AF_TIPC, .func = NULL },
-	{ .family = AF_BLUETOOTH, .func = NULL },
-	{ .family = AF_IUCV, .func = NULL },
-	{ .family = AF_RXRPC, .func = NULL },
-	{ .family = AF_ISDN, .func = NULL },
-	{ .family = AF_PHONET, .func = NULL },
-	{ .family = AF_IEEE802154, .func = NULL },
-#ifdef USE_CAIF
-	{ .family = AF_CAIF, .func = NULL },
-#endif
-	{ .family = AF_ALG, .func = NULL },
-	{ .family = AF_NFC, .func = NULL },
-	{ .family = AF_VSOCK, .func = NULL },
-};
-
 /*
  * If we have a .len set, use it.
  * If not, pick some random size.
@@ -152,23 +93,20 @@ unsigned int sockoptlen(unsigned int len)
 static void do_random_sso(struct sockopt *so)
 {
 	unsigned int i;
+	const struct netproto *proto;
 
 retry:
 	switch (rnd() % 4) {
 	case 0:	/* do a random protocol, even if it doesn't match this socket. */
-		i = rnd() % ARRAY_SIZE(ssoptrs);
-		if (ssoptrs[i].func != NULL) {
-			so->level = ssoptrs[i].sol;
-			ssoptrs[i].func(so);
-		} else {
-			// Eventually this will be the common case.
-			const struct netproto *proto = net_protocols[i].proto;
-			if (proto != NULL)
+		i = rnd() % PF_MAX;
+		proto = net_protocols[i].proto;
+		if (proto != NULL) {
+			if (proto->setsockopt != NULL) {
 				proto->setsockopt(so);
-			else
-				goto retry;
+				return;
+			}
 		}
-		break;
+		goto retry;
 
 	case 1:	/* do a random IP protocol, even if it doesn't match this socket. */
 		i = rnd() % ARRAY_SIZE(ip_ssoptrs);
@@ -193,24 +131,18 @@ retry:
 
 static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 {
-	unsigned int i;
+	const struct netproto *proto;
 
-	for (i = 0; i < ARRAY_SIZE(ssoptrs); i++) {
-		if (ssoptrs[i].family == triplet->family) {
-			if (ssoptrs[i].func != NULL) {
-				so->level = ssoptrs[i].sol;
-				ssoptrs[i].func(so);
-				return;
-			} else {	// unimplemented yet, or no sso for this family.
-				const struct netproto *proto = net_protocols[i].proto;
-				if (proto != NULL)
-					proto->setsockopt(so);
-				else
-					do_random_sso(so);
-				return;
-			}
+	proto = net_protocols[triplet->family].proto;
+
+	if (proto != NULL) {
+		if (proto->setsockopt != NULL) {
+			proto->setsockopt(so);
+			return;
 		}
 	}
+
+	do_random_sso(so);
 }
 
 static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
