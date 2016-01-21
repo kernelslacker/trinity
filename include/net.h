@@ -121,7 +121,6 @@ extern struct netproto proto_atm;
 /* x25 */
 void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_x25;
-void x25_setsockopt(struct sockopt *so);
 
 /* rose */
 void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

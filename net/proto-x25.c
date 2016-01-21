@@ -28,9 +28,11 @@ static void x25_rand_socket(struct socket_triplet *st)
 	st->protocol = 0;
 }
 
-void x25_setsockopt(struct sockopt *so)
+static void x25_setsockopt(struct sockopt *so)
 {
 	unsigned int *optval;
+
+	so->level = SOL_X25;
 
 	optval = (unsigned int *) so->optval;
 	*optval = RAND_BOOL();
@@ -41,4 +43,5 @@ void x25_setsockopt(struct sockopt *so)
 struct netproto proto_x25 = {
 	.name = "x25",
 	.socket = x25_rand_socket,
+	.setsockopt = x25_setsockopt,
 };
