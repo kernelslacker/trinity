@@ -123,7 +123,7 @@ extern struct netproto proto_x25;
 
 /* rose */
 void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void rose_setsockopt(struct sockopt *so);
+extern struct netproto proto_rose;
 
 /* decnet */
 void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

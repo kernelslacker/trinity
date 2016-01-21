@@ -93,7 +93,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_INET6, .func = NULL },
 #endif
 #ifdef USE_ROSE
-	{ .family = AF_ROSE, .sol = SOL_ROSE, .func = &rose_setsockopt },
+	{ .family = AF_ROSE, .func = NULL },
 #endif
 	{ .family = AF_DECnet, .sol = SOL_DECNET, .func = &decnet_setsockopt },
 	{ .family = AF_NETBEUI, .sol = SOL_NETBEUI, .func = NULL },
