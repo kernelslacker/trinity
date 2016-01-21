@@ -19,6 +19,7 @@ enum objecttype {
 	OBJ_FD_DRM,
 	OBJ_FD_INOTIFY,
 	OBJ_FD_SOCKET,
+	OBJ_FD_USERFAULTFD,
 	OBJ_FUTEX,
 	MAX_OBJECT_TYPES,
 };
@@ -47,6 +48,8 @@ struct object {
 		int drmfd;
 
 		int inotifyfd;
+
+		int userfaultfd;
 
 		struct socketinfo sockinfo;
 
