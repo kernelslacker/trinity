@@ -25,7 +25,7 @@ void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_pkt);
 }
 
-void packet_rand_socket(struct socket_triplet *st)
+static void packet_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = htons(ETH_P_ALL);
 
@@ -78,3 +78,8 @@ void packet_setsockopt(struct sockopt *so)
 		break;
 	}
 }
+
+struct netproto proto_packet = {
+	.name = "packet",
+	.socket = packet_rand_socket,
+};

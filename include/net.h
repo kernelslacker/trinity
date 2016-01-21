@@ -145,7 +145,7 @@ void netlink_setsockopt(struct sockopt *so);
 
 /* packet */
 void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void packet_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_packet;
 void packet_setsockopt(struct sockopt *so);
 
 /* econet */
