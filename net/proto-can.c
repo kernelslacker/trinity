@@ -23,8 +23,13 @@ void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_can);
 }
 
-void can_rand_socket(struct socket_triplet *st)
+static void can_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = rnd() % 7;  // CAN_NPROTO
 	st->type = rnd() % TYPE_MAX;
 }
+
+struct netproto proto_can = {
+	.name = "can",
+	.socket = can_rand_socket,
+};

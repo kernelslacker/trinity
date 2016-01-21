@@ -158,7 +158,7 @@ void irda_setsockopt(struct sockopt *so);
 
 /* can */
 void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void can_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_can;
 
 /* tipc */
 void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

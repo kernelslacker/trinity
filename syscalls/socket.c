@@ -55,7 +55,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_LLC] = { .func = NULL },
 	[AF_IB] = { .func = NULL },
 	[AF_MPLS] = { .func = NULL },
-	[AF_CAN] = { .func = &can_rand_socket },
+	[AF_CAN] = { .func = NULL },
 	[AF_TIPC] = { .func = &tipc_rand_socket },
 	[AF_BLUETOOTH] = { .func = &bluetooth_rand_socket },
 	[AF_IUCV] = { .func = NULL },
