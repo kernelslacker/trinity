@@ -175,6 +175,8 @@ extern struct netproto proto_bluetooth;
 
 extern struct netproto proto_netrom;
 
+extern struct netproto proto_netbeui;
+
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
 void tcp_setsockopt(struct sockopt *so);
