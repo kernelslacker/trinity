@@ -47,17 +47,15 @@ static const unsigned int caif_opts[] = {
 	CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM
 };
 
-void caif_setsockopt(struct sockopt *so)
+static void caif_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_CAIF;
+
 	so->optname = RAND_ARRAY(caif_opts);
 }
 struct netproto proto_caif = {
 	.name = "caif",
 	.socket = caif_rand_socket,
+	.setsockopt = caif_setsockopt,
 };
-#else
-/* stub if we are built on something without CAIF headers */
-void caif_setsockopt(struct sockopt *so)
-{
-}
 #endif

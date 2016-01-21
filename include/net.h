@@ -91,7 +91,6 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
 /* caif */
 void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_caif;
-void caif_setsockopt(struct sockopt *so);
 
 /* alg */
 void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
