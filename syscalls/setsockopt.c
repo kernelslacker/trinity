@@ -78,7 +78,7 @@ struct sso_funcptr {
 static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_UNIX, .func = NULL },
 	{ .family = AF_INET, .func = NULL },	// special cased below.
-	{ .family = AF_AX25, .sol = SOL_AX25, .func = &ax25_setsockopt },
+	{ .family = AF_AX25, .func = NULL },
 	{ .family = AF_IPX, .sol = SOL_IPX, .func = &ipx_setsockopt },
 #ifdef USE_APPLETALK
 	{ .family = AF_APPLETALK, .sol = SOL_ATALK, .func = NULL },
@@ -161,7 +161,12 @@ retry:
 			so->level = ssoptrs[i].sol;
 			ssoptrs[i].func(so);
 		} else {
-			goto retry;
+			// Eventually this will be the common case.
+			const struct netproto *proto = net_protocols[i].proto;
+			if (proto != NULL)
+				proto->setsockopt(so);
+			else
+				goto retry;
 		}
 		break;
 
@@ -197,7 +202,11 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 				ssoptrs[i].func(so);
 				return;
 			} else {	// unimplemented yet, or no sso for this family.
-				do_random_sso(so);
+				const struct netproto *proto = net_protocols[i].proto;
+				if (proto != NULL)
+					proto->setsockopt(so);
+				else
+					do_random_sso(so);
 				return;
 			}
 		}

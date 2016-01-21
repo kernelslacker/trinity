@@ -41,6 +41,7 @@ struct sockopt {
 struct netproto {
 	const char *name;
 	void (*socket)(struct socket_triplet *st);
+	void (*setsockopt)(struct sockopt *so);
 };
 
 struct protoptr {
@@ -103,7 +104,6 @@ extern struct netproto proto_nfc;
 /* ax25 */
 void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_ax25;
-void ax25_setsockopt(struct sockopt *so);
 
 /* ipx */
 void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

@@ -61,12 +61,14 @@ static const unsigned int ax25_opts[] = {
 	SO_BINDTODEVICE
 };
 
-void ax25_setsockopt(struct sockopt *so)
+static void ax25_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_AX25;
 	so->optname = RAND_ARRAY(ax25_opts);
 }
 
 struct netproto proto_ax25 = {
 	.name = "ax25",
 	.socket = ax25_rand_socket,
+	.setsockopt = ax25_setsockopt,
 };
