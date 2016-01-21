@@ -34,7 +34,7 @@ void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_caif);
 }
 
-void caif_rand_socket(struct socket_triplet *st)
+static void caif_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = rnd() % _CAIFPROTO_MAX;
 	if (RAND_BOOL())
@@ -51,6 +51,10 @@ void caif_setsockopt(struct sockopt *so)
 {
 	so->optname = RAND_ARRAY(caif_opts);
 }
+struct netproto proto_caif = {
+	.name = "caif",
+	.socket = caif_rand_socket,
+};
 #else
 /* stub if we are built on something without CAIF headers */
 void caif_setsockopt(struct sockopt *so)

@@ -64,7 +64,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_PHONET] = { .func = NULL },
 	[AF_IEEE802154] = { .func = NULL },
 #ifdef USE_CAIF
-	[AF_CAIF] = { .func = &caif_rand_socket },
+	[AF_CAIF] = { .func = NULL },
 #endif
 	[AF_ALG] = { .func = NULL },
 	[AF_NFC] = { .func = &nfc_rand_socket },
