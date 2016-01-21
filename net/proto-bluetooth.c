@@ -66,7 +66,7 @@ void bluetooth_setsockopt(struct sockopt *so)
 #define BTPROTO_HIDP    6
 #define BTPROTO_AVDTP   7
 
-void bluetooth_rand_socket(struct socket_triplet *st)
+static void bluetooth_rand_socket(struct socket_triplet *st)
 {
 	int bt_protos[] = {
 		BTPROTO_L2CAP, BTPROTO_HCI, BTPROTO_SCO, BTPROTO_RFCOMM,
@@ -77,3 +77,8 @@ void bluetooth_rand_socket(struct socket_triplet *st)
 	st->protocol = RAND_ARRAY(bt_protos);
 	st->type = RAND_ARRAY(types);
 }
+
+struct netproto proto_bluetooth = {
+	.name = "bluetooth",
+	.socket = bluetooth_rand_socket,
+};

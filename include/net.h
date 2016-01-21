@@ -175,7 +175,7 @@ extern struct netproto proto_rds;
 void rds_setsockopt(struct sockopt *so);
 
 /* bluetooth */
-void bluetooth_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_bluetooth;
 
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
