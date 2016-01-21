@@ -57,7 +57,7 @@ static int open_fanotify_fds(void)
 		obj->fanotifyfd = fd;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_FANOTIFY);
 
-		output(2, "fd[%d] = fanotify_init\n", fd);
+		output(2, "fd[%d] = fanotify_init(%lx, %lx)\n", fd, flags, eventflags);
 	}
 
 	//FIXME: right now, returning FALSE means "abort everything", not
