@@ -20,8 +20,10 @@ static const unsigned int bluetooth_l2cap_opts[] = {
 static const unsigned int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
 
-void bluetooth_setsockopt(struct sockopt *so)
+static void bluetooth_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_BLUETOOTH;
+
 	switch(rnd() % 5) {
 	case 0: so->level = SOL_HCI; break;
 	case 1: so->level = SOL_L2CAP; break;
@@ -81,4 +83,5 @@ static void bluetooth_rand_socket(struct socket_triplet *st)
 struct netproto proto_bluetooth = {
 	.name = "bluetooth",
 	.socket = bluetooth_rand_socket,
+	.setsockopt = bluetooth_setsockopt,
 };

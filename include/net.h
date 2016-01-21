@@ -181,7 +181,6 @@ void sctp_setsockopt(struct sockopt *so);
 void raw_setsockopt(struct sockopt *so);
 void dccp_setsockopt(struct sockopt *so);
 void rxrpc_setsockopt(struct sockopt *so);
-void bluetooth_setsockopt(struct sockopt *so);
 void iucv_setsockopt(struct sockopt *so);
 
 /* protocol definitions */
