@@ -465,13 +465,11 @@ static void fork_children(void)
 	shm->ready = TRUE;
 }
 
-static void handle_childsig(int childpid, int childstatus, int stop)
+static void handle_childsig(int childno, int childpid, int childstatus, int stop)
 {
 	struct childdata *child;
 	int __sig;
-	int childno;
 
-	childno = find_childno(childpid);
 	child = shm->children[childno];
 
 	if (stop == TRUE)
@@ -489,7 +487,6 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 		//FIXME: Won't we create a zombie here?
 		reap_child(childpid);
 		replace_child(childno);
-
 		return;
 
 	case SIGALRM:
@@ -530,7 +527,7 @@ static void handle_childsig(int childpid, int childstatus, int stop)
 }
 
 
-static void handle_child(pid_t childpid, int childstatus)
+static void handle_child(int childno, pid_t childpid, int childstatus)
 {
 	switch (childpid) {
 	case 0:
@@ -569,26 +566,21 @@ static void handle_child(pid_t childpid, int childstatus)
 
 	default:
 		if (WIFEXITED(childstatus)) {
+			struct childdata *child = shm->children[childno];
 
-			int childno;
+			debugf("Child %d (pid %d) exited after %ld operations.\n",
+				childno, childpid, child->syscall.op_nr);
+			reap_child(childpid);
+			fclose(child->pidstatfile);
+			child->pidstatfile = NULL;
 
-			childno = find_childno(childpid);
-			if (childno != CHILD_NOT_FOUND) {
-				struct childdata *child = shm->children[childno];
-				debugf("Child %d (pid %d) exited after %ld operations.\n",
-					childno, childpid, child->syscall.op_nr);
-				reap_child(childpid);
-				fclose(child->pidstatfile);
-				child->pidstatfile = NULL;
-
-				replace_child(childno);
-			}
+			replace_child(childno);
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
-			handle_childsig(childpid, childstatus, FALSE);
+			handle_childsig(childno, childpid, childstatus, FALSE);
 		} else if (WIFSTOPPED(childstatus)) {
-			handle_childsig(childpid, childstatus, TRUE);
+			handle_childsig(childno, childpid, childstatus, TRUE);
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
 		}
@@ -635,7 +627,7 @@ static void handle_children(void)
 			continue;
 
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		handle_child(pid, childstatus);
+		handle_child(i, pid, childstatus);
 	}
 }
 
