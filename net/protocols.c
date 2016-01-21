@@ -22,5 +22,6 @@ const struct protoptr net_protocols[PF_MAX] = {
 	[PF_IRDA] = { .proto = &proto_irda },
 	[PF_LLC] = { .proto = &proto_llc },
 	[PF_CAN] = { .proto = &proto_can },
+	[PF_TIPC] = { .proto = &proto_tipc },
 	[PF_NETLINK] = { .proto = &proto_netlink },
 };

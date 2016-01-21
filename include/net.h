@@ -162,7 +162,7 @@ extern struct netproto proto_can;
 
 /* tipc */
 void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void tipc_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_tipc;
 void tipc_setsockopt(struct sockopt *so);
 
 /* phonet */

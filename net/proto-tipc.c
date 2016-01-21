@@ -30,7 +30,7 @@ void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_tipc);
 }
 
-void tipc_rand_socket(struct socket_triplet *st)
+static void tipc_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = 0;
 
@@ -56,3 +56,8 @@ void tipc_setsockopt(struct sockopt *so)
 
 	so->optlen = sizeof(__u32);
 }
+
+struct netproto proto_tipc = {
+	.name = "tipc",
+	.socket = tipc_rand_socket,
+};
