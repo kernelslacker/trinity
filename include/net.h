@@ -73,7 +73,7 @@ void ip_setsockopt(struct sockopt *so);
 
 /* ipv6 */
 void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void inet6_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_inet6;
 void inet6_setsockopt(struct sockopt *so);
 
 /* pppox */
