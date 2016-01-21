@@ -68,7 +68,7 @@ int get_random_ether_type(void);
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
 void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void inet_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_ipv4;
 void ip_setsockopt(struct sockopt *so);
 
 /* ipv6 */

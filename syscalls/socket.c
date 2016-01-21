@@ -24,7 +24,7 @@ struct socket_ptr {
 
 static const struct socket_ptr socketptrs[] = {
 	[AF_UNIX] = { .func = NULL },
-	[AF_INET] = { .func = &inet_rand_socket },
+	[AF_INET] = { .func = NULL },
 	[AF_AX25] = { .func = &ax25_rand_socket },
 	[AF_IPX] = { .func = &ipx_rand_socket },
 #ifdef USE_APPLETALK

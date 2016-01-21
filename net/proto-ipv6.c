@@ -96,7 +96,7 @@ void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 void inet6_rand_socket(struct socket_triplet *st)
 {
 	// Use the same socket generator as ipv4
-	inet_rand_socket(st);
+	proto_ipv4.socket(st);
 }
 
 static const struct sock_option inet6_opts[] = {

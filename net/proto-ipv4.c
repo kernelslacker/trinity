@@ -112,7 +112,7 @@ struct ipproto {
 	unsigned int type;
 };
 
-void inet_rand_socket(struct socket_triplet *st)
+static void inet_rand_socket(struct socket_triplet *st)
 {
 	struct ipproto ipprotos[] = {
 		{ .proto = IPPROTO_IP, },
@@ -274,3 +274,8 @@ void ip_setsockopt(struct sockopt *so)
 		break;
 	}
 }
+
+struct netproto proto_ipv4 = {
+	.name = "ipv4",
+	.socket = inet_rand_socket,
+};
