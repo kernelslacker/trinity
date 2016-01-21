@@ -109,7 +109,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_IRDA, .func = NULL },
 	{ .family = AF_PPPOX, .func = NULL },
 	{ .family = AF_WANPIPE, .func = NULL },
-	{ .family = AF_LLC, .sol = SOL_LLC, .func = &llc_setsockopt },
+	{ .family = AF_LLC, .func = NULL },
 	{ .family = AF_IB, .func = NULL },
 	{ .family = AF_MPLS, .func = NULL },
 	{ .family = AF_CAN, .func = NULL },
