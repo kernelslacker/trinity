@@ -94,6 +94,7 @@ extern struct netproto proto_caif;
 
 /* alg */
 void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
+extern struct netproto proto_alg;
 
 /* nfc */
 void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

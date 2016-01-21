@@ -242,4 +242,15 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addr = (struct sockaddr *) alg;
 	*addrlen = sizeof(struct sockaddr_alg);
 }
+
+static void alg_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_ALG;
+}
+
+struct netproto proto_alg = {
+	.name = "alg",
+//	.socket = alg_rand_socket,
+	.setsockopt = alg_setsockopt,
+};
 #endif
