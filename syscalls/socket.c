@@ -18,59 +18,6 @@
 #include "utils.h"
 #include "compat.h"
 
-struct socket_ptr {
-	void (*func)(struct socket_triplet *st);
-};
-
-static const struct socket_ptr socketptrs[] = {
-	[AF_UNIX] = { .func = NULL },
-	[AF_INET] = { .func = NULL },
-	[AF_AX25] = { .func = NULL },
-	[AF_IPX] = { .func = NULL },
-#ifdef USE_APPLETALK
-	[AF_APPLETALK] = { .func = NULL },
-#endif
-	[AF_NETROM] = { .func = NULL },
-	[AF_BRIDGE] = { .func = NULL },
-	[AF_ATMPVC] = { .func = NULL },
-	[AF_X25] = { .func = NULL },
-#ifdef USE_IPV6
-	[AF_INET6] = { .func = NULL },
-#endif
-	[AF_ROSE] = { .func = NULL },
-	[AF_DECnet] = { .func = NULL },
-	[AF_NETBEUI] = { .func = NULL },
-	[AF_SECURITY] = { .func = NULL },
-	[AF_KEY] = { .func = NULL },
-	[AF_NETLINK] = { .func = NULL },
-	[AF_PACKET] = { .func = NULL },
-	[AF_ASH] = { .func = NULL },
-	[AF_ECONET] = { .func = NULL },	// DEAD
-	[AF_ATMSVC] = { .func = NULL },
-	[AF_RDS] = { .func = NULL },
-	[AF_SNA] = { .func = NULL },
-	[AF_IRDA] = { .func = NULL },
-	[AF_PPPOX] = { .func = NULL },
-	[AF_WANPIPE] = { .func = NULL },
-	[AF_LLC] = { .func = NULL },
-	[AF_IB] = { .func = NULL },
-	[AF_MPLS] = { .func = NULL },
-	[AF_CAN] = { .func = NULL },
-	[AF_TIPC] = { .func = NULL },
-	[AF_BLUETOOTH] = { .func = NULL },
-	[AF_IUCV] = { .func = NULL },
-	[AF_RXRPC] = { .func = NULL },
-	[AF_ISDN] = { .func = NULL },
-	[AF_PHONET] = { .func = NULL },
-	[AF_IEEE802154] = { .func = NULL },
-#ifdef USE_CAIF
-	[AF_CAIF] = { .func = NULL },
-#endif
-	[AF_ALG] = { .func = NULL },
-	[AF_NFC] = { .func = NULL },
-	[AF_VSOCK] = { .func = NULL },
-};
-
 void rand_proto_type(struct socket_triplet *st)
 {
 	int n;
@@ -105,19 +52,11 @@ void rand_proto_type(struct socket_triplet *st)
 /* note: also called from generate_sockets() */
 int sanitise_socket_triplet(struct socket_triplet *st)
 {
-	unsigned int i;
+	const struct netproto *proto;
 
-	i = st->family;
-
-	if (socketptrs[i].func != NULL) {
-		socketptrs[i].func(st);
-		return 0;
-	} else {
-		// Eventually this will be the common case.
-		const struct netproto *proto = net_protocols[i].proto;
-		if (proto != NULL)
-			proto->socket(st);
-	}
+	proto = net_protocols[st->family].proto;
+	if (proto != NULL)
+		proto->socket(st);
 
 	/* Couldn't find func, fall back to random. */
 	return -1;
