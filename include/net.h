@@ -78,7 +78,7 @@ extern struct netproto proto_inet6;
 
 /* pppox */
 void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void pppol2tp_setsockopt(struct sockopt *so);
+extern struct netproto proto_pppol2tp;
 
 /* unix */
 void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

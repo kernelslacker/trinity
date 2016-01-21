@@ -168,9 +168,16 @@ static const unsigned int pppol2tp_opts[] = {
 	PPPOL2TP_SO_DEBUG, PPPOL2TP_SO_RECVSEQ, PPPOL2TP_SO_SENDSEQ, PPPOL2TP_SO_LNSMODE,
 	PPPOL2TP_SO_REORDERTO };
 
-void pppol2tp_setsockopt(struct sockopt *so)
+static void pppol2tp_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_PPPOL2TP;
 	so->optname = RAND_ARRAY(pppol2tp_opts);
 
 	so->optlen = sizeof(int);
 }
+
+struct netproto proto_pppol2tp = {
+	.name = "pppol2tp",
+//	.socket = pppol2tp_rand_socket,
+	.setsockopt = pppol2tp_setsockopt,
+};
