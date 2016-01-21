@@ -37,14 +37,16 @@ static const unsigned int rds_opts[] = {
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST,
 };
 
-void rds_setsockopt(struct sockopt *so)
+static void rds_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_RDS;
 	so->optname = RAND_ARRAY(rds_opts);
 }
 
 struct netproto proto_rds = {
 	.name = "rds",
 	.socket = rds_rand_socket,
+	.setsockopt = rds_setsockopt,
 };
 #else
 /* stub if we are built on something without RDS headers */

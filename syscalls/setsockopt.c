@@ -104,7 +104,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_ASH, .func = NULL },
 	{ .family = AF_ECONET, .func = NULL },
 	{ .family = AF_ATMSVC, .func = NULL },
-	{ .family = AF_RDS, .sol = SOL_RDS, .func = &rds_setsockopt },
+	{ .family = AF_RDS, .func = NULL },
 	{ .family = AF_SNA, .func = NULL },
 	{ .family = AF_IRDA, .sol = SOL_IRDA, .func = &irda_setsockopt },
 	{ .family = AF_PPPOX, .sol = SOL_PPPOL2TP, .func = &pppol2tp_setsockopt },

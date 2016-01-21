@@ -166,7 +166,6 @@ extern struct netproto proto_phonet;
 /* rds */
 void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_rds;
-void rds_setsockopt(struct sockopt *so);
 
 /* bluetooth */
 extern struct netproto proto_bluetooth;
