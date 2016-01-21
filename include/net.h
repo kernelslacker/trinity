@@ -112,7 +112,7 @@ void ipx_setsockopt(struct sockopt *so);
 
 /* appletalk */
 void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void atalk_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_appletalk;
 
 /* atm */
 void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

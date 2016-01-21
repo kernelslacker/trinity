@@ -26,7 +26,7 @@ void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_at);
 }
 
-void atalk_rand_socket(struct socket_triplet *st)
+static void atalk_rand_socket(struct socket_triplet *st)
 {
 	if (RAND_BOOL()) {
 		st->type = SOCK_DGRAM;
@@ -37,4 +37,9 @@ void atalk_rand_socket(struct socket_triplet *st)
 	st->protocol = rnd() % PROTO_MAX;
 	st->type = SOCK_RAW;
 }
+
+struct netproto proto_appletalk = {
+	.name = "appletalk",
+	.socket = atalk_rand_socket,
+};
 #endif

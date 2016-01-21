@@ -28,7 +28,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_AX25] = { .func = NULL },
 	[AF_IPX] = { .func = NULL },
 #ifdef USE_APPLETALK
-	[AF_APPLETALK] = { .func = &atalk_rand_socket },
+	[AF_APPLETALK] = { .func = NULL },
 #endif
 	[AF_NETROM] = { .func = NULL },
 	[AF_BRIDGE] = { .func = NULL },
