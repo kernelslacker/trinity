@@ -38,6 +38,16 @@ struct sockopt {
 	unsigned long optlen;
 };
 
+struct netproto {
+	const char *name;
+	void (*socket)(struct socket_triplet *st);
+};
+
+struct protoptr {
+	struct netproto *proto;
+};
+extern const struct protoptr net_protocols[PF_MAX];
+
 const struct fd_provider socket_fd_provider;
 
 struct socketinfo * get_rand_socketinfo(void);
@@ -129,8 +139,8 @@ void llc_rand_socket(struct socket_triplet *st);
 void llc_setsockopt(struct sockopt *so);
 
 /* netlink */
+extern struct netproto proto_netlink;
 void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void netlink_rand_socket(struct socket_triplet *st);
 void netlink_setsockopt(struct sockopt *so);
 
 /* packet */

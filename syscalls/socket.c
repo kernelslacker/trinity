@@ -42,7 +42,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_NETBEUI] = { .func = NULL },
 	[AF_SECURITY] = { .func = NULL },
 	[AF_KEY] = { .func = NULL },
-	[AF_NETLINK] = { .func = &netlink_rand_socket },
+	[AF_NETLINK] = { .func = NULL },
 	[AF_PACKET] = { .func = &packet_rand_socket },
 	[AF_ASH] = { .func = NULL },
 	[AF_ECONET] = { .func = NULL },	// DEAD
@@ -112,6 +112,11 @@ int sanitise_socket_triplet(struct socket_triplet *st)
 	if (socketptrs[i].func != NULL) {
 		socketptrs[i].func(st);
 		return 0;
+	} else {
+		// Eventually this will be the common case.
+		const struct netproto *proto = net_protocols[i].proto;
+		if (proto != NULL)
+			proto->socket(st);
 	}
 
 	/* Couldn't find func, fall back to random. */

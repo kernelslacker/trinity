@@ -48,7 +48,7 @@ void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_nl);
 }
 
-void netlink_rand_socket(struct socket_triplet *st)
+static void netlink_rand_socket(struct socket_triplet *st)
 {
 	if (RAND_BOOL())
 		st->type = SOCK_RAW;
@@ -71,3 +71,8 @@ void netlink_setsockopt(struct sockopt *so)
 {
 	so->optname = RAND_ARRAY(netlink_opts);
 }
+
+struct netproto proto_netlink = {
+	.name = "netlink",
+	.socket = netlink_rand_socket,
+};
