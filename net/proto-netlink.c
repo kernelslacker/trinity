@@ -67,12 +67,14 @@ static const unsigned int netlink_opts[] = {
 	NETLINK_LIST_MEMBERSHIPS, NETLINK_CAP_ACK,
 };
 
-void netlink_setsockopt(struct sockopt *so)
+static void netlink_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_NETLINK;
 	so->optname = RAND_ARRAY(netlink_opts);
 }
 
 struct netproto proto_netlink = {
 	.name = "netlink",
 	.socket = netlink_rand_socket,
+	.setsockopt = netlink_setsockopt,
 };

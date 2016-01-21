@@ -137,7 +137,6 @@ void llc_setsockopt(struct sockopt *so);
 /* netlink */
 extern struct netproto proto_netlink;
 void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void netlink_setsockopt(struct sockopt *so);
 
 /* packet */
 void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

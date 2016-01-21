@@ -99,7 +99,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_NETBEUI, .func = NULL },
 	{ .family = AF_SECURITY, .func = NULL },
 	{ .family = AF_KEY, .func = NULL },
-	{ .family = AF_NETLINK, .sol = SOL_NETLINK, .func = &netlink_setsockopt },
+	{ .family = AF_NETLINK, .func = NULL },
 	{ .family = AF_PACKET, .sol = SOL_PACKET, .func = &packet_setsockopt },
 	{ .family = AF_ASH, .func = NULL },
 	{ .family = AF_ECONET, .func = NULL },
