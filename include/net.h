@@ -102,7 +102,7 @@ void nfc_rand_socket(struct socket_triplet *st);
 
 /* ax25 */
 void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void ax25_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_ax25;
 void ax25_setsockopt(struct sockopt *so);
 
 /* ipx */

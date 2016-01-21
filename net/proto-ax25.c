@@ -39,7 +39,7 @@ static int ax25_protocols[NR_AX25_PROTOS] = {
 	0xF0    /* No layer 3 protocol impl.  */
 };
 
-void ax25_rand_socket(struct socket_triplet *st)
+static void ax25_rand_socket(struct socket_triplet *st)
 {
 	switch (rnd() % 3) {
 	case 0: st->type = SOCK_DGRAM;
@@ -65,3 +65,8 @@ void ax25_setsockopt(struct sockopt *so)
 {
 	so->optname = RAND_ARRAY(ax25_opts);
 }
+
+struct netproto proto_ax25 = {
+	.name = "ax25",
+	.socket = ax25_rand_socket,
+};
