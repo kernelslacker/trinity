@@ -23,7 +23,7 @@ void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_pn);
 }
 
-void phonet_rand_socket(struct socket_triplet *st)
+static void phonet_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = 0;
 	if (RAND_BOOL())
@@ -31,3 +31,8 @@ void phonet_rand_socket(struct socket_triplet *st)
 	else
 		st->type = SOCK_SEQPACKET;
 }
+
+struct netproto proto_phonet = {
+	.name = "phonet",
+	.socket = phonet_rand_socket,
+};

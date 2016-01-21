@@ -167,7 +167,7 @@ void tipc_setsockopt(struct sockopt *so);
 
 /* phonet */
 void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void phonet_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_phonet;
 
 /* rds */
 void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

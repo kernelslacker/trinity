@@ -24,5 +24,6 @@ const struct protoptr net_protocols[PF_MAX] = {
 	[PF_CAN] = { .proto = &proto_can },
 	[PF_TIPC] = { .proto = &proto_tipc },
 	[PF_BLUETOOTH] = { .proto = &proto_bluetooth },
+	[PF_PHONET] = { .proto = &proto_phonet },
 	[PF_NETLINK] = { .proto = &proto_netlink },
 };
