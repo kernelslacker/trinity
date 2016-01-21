@@ -29,5 +29,8 @@ const struct protoptr net_protocols[PF_MAX] = {
 	[PF_CAIF] = { .proto = &proto_caif },
 #endif
 	[PF_NFC] = { .proto = &proto_nfc },
+#ifdef USE_NETROM
+	[PF_NETROM] = { .proto = &proto_netrom },
+#endif
 	[PF_NETLINK] = { .proto = &proto_netlink },
 };

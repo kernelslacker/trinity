@@ -84,7 +84,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_APPLETALK, .func = NULL },
 #endif
 #ifdef USE_NETROM
-	{ .family = AF_NETROM, .sol = SOL_NETROM, .func = &netrom_setsockopt },
+	{ .family = AF_NETROM, .func = NULL },
 #endif
 	{ .family = AF_BRIDGE, .func = NULL },
 	{ .family = AF_ATMPVC, .sol = SOL_ATM, .func = &atm_setsockopt },

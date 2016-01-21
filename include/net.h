@@ -176,6 +176,8 @@ void rds_setsockopt(struct sockopt *so);
 /* bluetooth */
 extern struct netproto proto_bluetooth;
 
+extern struct netproto proto_netrom;
+
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
 void tcp_setsockopt(struct sockopt *so);
@@ -184,7 +186,6 @@ void udplite_setsockopt(struct sockopt *so);
 void icmpv6_setsockopt(struct sockopt *so);
 void sctp_setsockopt(struct sockopt *so);
 void raw_setsockopt(struct sockopt *so);
-void netrom_setsockopt(struct sockopt *so);
 void dccp_setsockopt(struct sockopt *so);
 void rxrpc_setsockopt(struct sockopt *so);
 void bluetooth_setsockopt(struct sockopt *so);
