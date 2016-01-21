@@ -24,7 +24,7 @@ void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_nfc);
 }
 
-void nfc_rand_socket(struct socket_triplet *st)
+static void nfc_rand_socket(struct socket_triplet *st)
 {
 	if (RAND_BOOL()) {
 		st->protocol = NFC_SOCKPROTO_LLCP;
@@ -38,3 +38,8 @@ void nfc_rand_socket(struct socket_triplet *st)
 	st->protocol = NFC_SOCKPROTO_RAW;
 	st->type = SOCK_SEQPACKET;
 }
+
+struct netproto proto_nfc = {
+	.name = "nfc",
+	.socket = nfc_rand_socket,
+};

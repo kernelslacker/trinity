@@ -67,7 +67,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_CAIF] = { .func = NULL },
 #endif
 	[AF_ALG] = { .func = NULL },
-	[AF_NFC] = { .func = &nfc_rand_socket },
+	[AF_NFC] = { .func = NULL },
 	[AF_VSOCK] = { .func = NULL },
 };
 

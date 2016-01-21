@@ -98,7 +98,7 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 
 /* nfc */
 void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void nfc_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_nfc;
 
 /* ax25 */
 void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
