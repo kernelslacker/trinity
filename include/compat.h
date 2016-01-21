@@ -115,6 +115,9 @@ enum {
 #define MAP_STACK 0x20000
 #endif
 
+#ifndef MADV_FREE
+#define MADV_FREE 8
+#endif
 #ifndef MADV_MERGEABLE
 #define MADV_MERGEABLE 12
 #endif
