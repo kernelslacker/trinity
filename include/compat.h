@@ -460,6 +460,15 @@ enum kcmp_type {
 #define SO_INCOMING_CPU		49
 #endif
 
+#ifndef SO_ATTACH_BPF
+#define SO_ATTACH_BPF		50
+#endif
+
+#ifndef SO_ATTACH_REUSEPORT_CBPF
+#define SO_ATTACH_REUSEPORT_CBPF 51
+#define SO_ATTACH_REUSEPORT_EBPF 52
+#endif
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15
