@@ -175,6 +175,8 @@ extern struct netproto proto_iucv;
 
 extern struct netproto proto_rxrpc;
 
+extern struct netproto proto_phonet;
+
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
 void tcp_setsockopt(struct sockopt *so);

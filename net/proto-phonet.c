@@ -32,7 +32,13 @@ static void phonet_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_SEQPACKET;
 }
 
+static void phonet_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_PNPIPE;
+}
+
 struct netproto proto_phonet = {
 	.name = "phonet",
 	.socket = phonet_rand_socket,
+	.setsockopt = phonet_setsockopt,
 };

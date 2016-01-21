@@ -118,7 +118,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_IUCV, .func = NULL },
 	{ .family = AF_RXRPC, .func = NULL },
 	{ .family = AF_ISDN, .func = NULL },
-	{ .family = AF_PHONET, .sol = SOL_PNPIPE, .func = NULL },
+	{ .family = AF_PHONET, .func = NULL },
 	{ .family = AF_IEEE802154, .func = NULL },
 #ifdef USE_CAIF
 	{ .family = AF_CAIF, .sol = SOL_CAIF, .func = &caif_setsockopt },
