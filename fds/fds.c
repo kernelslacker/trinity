@@ -6,6 +6,7 @@
 
 #include "epoll.h"
 #include "eventfd.h"
+#include "fanotify.h"
 #include "fd.h"
 #include "files.h"
 #include "log.h"
@@ -60,6 +61,7 @@ void setup_fd_providers(void)
 	add_to_prov_list(&drm_fd_provider);
 	add_to_prov_list(&inotify_fd_provider);
 	add_to_prov_list(&userfaultfd_provider);
+	add_to_prov_list(&fanotify_fd_provider);
 
 	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }

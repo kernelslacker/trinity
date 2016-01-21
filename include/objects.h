@@ -51,6 +51,8 @@ struct object {
 
 		int userfaultfd;
 
+		int fanotifyfd;
+
 		struct socketinfo sockinfo;
 
 		struct __lock lock; /* futex */

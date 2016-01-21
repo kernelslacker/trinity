@@ -11,13 +11,21 @@
 #define FAN_UNLIMITED_MARKS	0x00000020
 
 #include <fcntl.h>
+#include "fanotify.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 unsigned long fanotify_init_flags[] = {
 	FAN_CLOEXEC , FAN_NONBLOCK, FAN_UNLIMITED_QUEUE , FAN_UNLIMITED_MARKS,
 	FAN_CLASS_NOTIF, FAN_CLASS_CONTENT, FAN_CLASS_PRE_CONTENT,
 };
+
+unsigned long get_fanotify_init_flags(void)
+{
+	return RAND_ARRAY(fanotify_init_flags);
+}
+
 
 static unsigned long fanotify_event_flags_base[] = {
 	O_RDONLY, O_WRONLY, O_RDWR,
@@ -28,7 +36,7 @@ static unsigned long fanotify_event_flags_extra[] = {
 	O_NOATIME, O_NONBLOCK, O_SYNC,
 };
 
-static unsigned long set_fanotify_init_event_flags(void)
+unsigned long get_fanotify_init_event_flags(void)
 {
 	unsigned long flags;
 
@@ -40,7 +48,7 @@ static unsigned long set_fanotify_init_event_flags(void)
 
 static void sanitise_fanotify_init(struct syscallrecord *rec)
 {
-	rec->a2 = set_fanotify_init_event_flags();
+	rec->a2 = get_fanotify_init_event_flags();
 }
 
 struct syscallentry syscall_fanotify_init = {
