@@ -8,9 +8,17 @@ static const unsigned int iucv_opts[] = {
 	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE
 };
 
-void iucv_setsockopt(struct sockopt *so)
+static void iucv_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_IUCV;
+
 	so->optname = RAND_ARRAY(iucv_opts);
 
 	so->optlen = sizeof(int);
 }
+
+struct netproto proto_iucv = {
+	.name = "iucv",
+//	.socket = iucv_rand_socket,
+	.setsockopt = iucv_setsockopt,
+};

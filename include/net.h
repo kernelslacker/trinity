@@ -171,6 +171,8 @@ extern struct netproto proto_netrom;
 
 extern struct netproto proto_netbeui;
 
+extern struct netproto proto_iucv;
+
 /* setsockopt functions */
 void socket_setsockopt(struct sockopt *so);
 void tcp_setsockopt(struct sockopt *so);
@@ -181,7 +183,7 @@ void sctp_setsockopt(struct sockopt *so);
 void raw_setsockopt(struct sockopt *so);
 void dccp_setsockopt(struct sockopt *so);
 void rxrpc_setsockopt(struct sockopt *so);
-void iucv_setsockopt(struct sockopt *so);
+
 
 /* protocol definitions */
 #define SOL_TCP 6
