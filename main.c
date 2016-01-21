@@ -465,7 +465,7 @@ static void fork_children(void)
 	shm->ready = TRUE;
 }
 
-static void handle_childsig(int childno, int childpid, int childstatus, int stop)
+static void handle_childsig(int childno, int childstatus, int stop)
 {
 	struct childdata *child;
 	int __sig;
@@ -482,15 +482,15 @@ static void handle_childsig(int childno, int childpid, int childstatus, int stop
 		if (stop != TRUE)
 			return;
 		debugf("Sending PTRACE_DETACH (and then KILL)\n");
-		ptrace(PTRACE_DETACH, childpid, NULL, NULL);
-		kill(childpid, SIGKILL);
+		ptrace(PTRACE_DETACH, pids[childno], NULL, NULL);
+		kill(pids[childno], SIGKILL);
 		//FIXME: Won't we create a zombie here?
-		reap_child(childpid);
+		reap_child(pids[childno]);
 		replace_child(childno);
 		return;
 
 	case SIGALRM:
-		debugf("got a alarm signal from child %d (pid %d)\n", childno, childpid);
+		debugf("got a alarm signal from child %d (pid %d)\n", childno, pids[childno]);
 		break;
 	case SIGFPE:
 	case SIGSEGV:
@@ -500,11 +500,11 @@ static void handle_childsig(int childno, int childpid, int childstatus, int stop
 	case SIGBUS:
 		if (stop == TRUE)
 			debugf("Child %d (pid %d) was stopped by %s\n",
-					childno, childpid, strsignal(WSTOPSIG(childstatus)));
+					childno, pids[childno], strsignal(WSTOPSIG(childstatus)));
 		else
 			debugf("got a signal from child %d (pid %d) (%s)\n",
-					childno, childpid, strsignal(WTERMSIG(childstatus)));
-		reap_child(childpid);
+					childno, pids[childno], strsignal(WTERMSIG(childstatus)));
+		reap_child(pids[childno]);
 
 		fclose(child->pidstatfile);
 		child->pidstatfile = NULL;
@@ -514,12 +514,12 @@ static void handle_childsig(int childno, int childpid, int childstatus, int stop
 
 	default:
 		if (__sig >= SIGRTMIN) {
-			debugf("Child %d got RT signal (%d). Ignoring.\n", childpid, __sig);
+			debugf("Child %d got RT signal (%d). Ignoring.\n", pids[childno], __sig);
 			return;
 		}
 
 		if (stop == TRUE)
-			debugf("Child %d was stopped by unhandled signal (%s).\n", childpid, strsignal(WSTOPSIG(childstatus)));
+			debugf("Child %d was stopped by unhandled signal (%s).\n", pids[childno], strsignal(WSTOPSIG(childstatus)));
 		else
 			debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
 		return;
@@ -578,9 +578,9 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
-			handle_childsig(childno, childpid, childstatus, FALSE);
+			handle_childsig(childno, childstatus, FALSE);
 		} else if (WIFSTOPPED(childstatus)) {
-			handle_childsig(childno, childpid, childstatus, TRUE);
+			handle_childsig(childno, childstatus, TRUE);
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
 		}
