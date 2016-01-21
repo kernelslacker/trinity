@@ -38,8 +38,14 @@ static void atalk_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_RAW;
 }
 
+static void atalk_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_ATALK;
+}
+
 struct netproto proto_appletalk = {
 	.name = "appletalk",
 	.socket = atalk_rand_socket,
+	.setsockopt = atalk_setsockopt,
 };
 #endif
