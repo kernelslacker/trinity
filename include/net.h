@@ -171,7 +171,7 @@ void phonet_rand_socket(struct socket_triplet *st);
 
 /* rds */
 void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void rds_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_rds;
 void rds_setsockopt(struct sockopt *so);
 
 /* bluetooth */

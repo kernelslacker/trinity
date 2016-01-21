@@ -10,7 +10,7 @@
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY
 
-void rds_rand_socket(struct socket_triplet *st)
+static void rds_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = 0;
 	st->type = SOCK_SEQPACKET;
@@ -42,6 +42,10 @@ void rds_setsockopt(struct sockopt *so)
 	so->optname = RAND_ARRAY(rds_opts);
 }
 
+struct netproto proto_rds = {
+	.name = "rds",
+	.socket = rds_rand_socket,
+};
 #else
 /* stub if we are built on something without RDS headers */
 void rds_setsockopt(struct sockopt *so)

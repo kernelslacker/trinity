@@ -47,7 +47,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_ASH] = { .func = NULL },
 	[AF_ECONET] = { .func = NULL },	// DEAD
 	[AF_ATMSVC] = { .func = NULL },
-	[AF_RDS] = { .func = &rds_rand_socket },
+	[AF_RDS] = { .func = NULL },
 	[AF_SNA] = { .func = NULL },
 	[AF_IRDA] = { .func = &irda_rand_socket },
 	[AF_PPPOX] = { .func = NULL },
