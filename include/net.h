@@ -108,7 +108,6 @@ extern struct netproto proto_ax25;
 /* ipx */
 void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_ipx;
-void ipx_setsockopt(struct sockopt *so);
 
 /* appletalk */
 void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

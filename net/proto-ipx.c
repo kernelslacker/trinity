@@ -32,12 +32,14 @@ static void ipx_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_DGRAM;
 }
 
-void ipx_setsockopt(struct sockopt *so)
+static void ipx_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_IPX;
 	so->optname = IPX_TYPE;
 }
 
 struct netproto proto_ipx = {
 	.name = "ipx",
 	.socket = ipx_rand_socket,
+	.setsockopt = ipx_setsockopt,
 };

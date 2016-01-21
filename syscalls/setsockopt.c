@@ -79,7 +79,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_UNIX, .func = NULL },
 	{ .family = AF_INET, .func = NULL },	// special cased below.
 	{ .family = AF_AX25, .func = NULL },
-	{ .family = AF_IPX, .sol = SOL_IPX, .func = &ipx_setsockopt },
+	{ .family = AF_IPX, .func = NULL },
 #ifdef USE_APPLETALK
 	{ .family = AF_APPLETALK, .sol = SOL_ATALK, .func = NULL },
 #endif
