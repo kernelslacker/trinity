@@ -26,7 +26,7 @@ void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_ipx);
 }
 
-void ipx_rand_socket(struct socket_triplet *st)
+static void ipx_rand_socket(struct socket_triplet *st)
 {
 	st->protocol = rnd() % PROTO_MAX;
 	st->type = SOCK_DGRAM;
@@ -36,3 +36,8 @@ void ipx_setsockopt(struct sockopt *so)
 {
 	so->optname = IPX_TYPE;
 }
+
+struct netproto proto_ipx = {
+	.name = "ipx",
+	.socket = ipx_rand_socket,
+};

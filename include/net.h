@@ -107,7 +107,7 @@ void ax25_setsockopt(struct sockopt *so);
 
 /* ipx */
 void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void ipx_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_ipx;
 void ipx_setsockopt(struct sockopt *so);
 
 /* appletalk */
