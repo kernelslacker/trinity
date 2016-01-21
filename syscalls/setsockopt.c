@@ -124,7 +124,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_CAIF, .func = NULL },
 #endif
 	{ .family = AF_ALG, .func = NULL },
-	{ .family = AF_NFC, .sol = SOL_NFC, .func = NULL },
+	{ .family = AF_NFC, .func = NULL },
 	{ .family = AF_VSOCK, .func = NULL },
 };
 

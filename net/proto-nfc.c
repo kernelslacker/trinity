@@ -39,7 +39,13 @@ static void nfc_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_SEQPACKET;
 }
 
+static void nfc_setsockopt(struct sockopt *so)
+{
+	so->level = SOL_NFC;
+}
+
 struct netproto proto_nfc = {
 	.name = "nfc",
 	.socket = nfc_rand_socket,
+	.setsockopt = nfc_setsockopt,
 };
