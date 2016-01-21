@@ -87,7 +87,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_NETROM, .func = NULL },
 #endif
 	{ .family = AF_BRIDGE, .func = NULL },
-	{ .family = AF_ATMPVC, .sol = SOL_ATM, .func = &atm_setsockopt },
+	{ .family = AF_ATMPVC, .func = NULL },
 	{ .family = AF_X25, .sol = SOL_X25, .func = &x25_setsockopt },
 #ifdef USE_IPV6
 	{ .family = AF_INET6, .sol = SOL_IPV6, .func = &inet6_setsockopt },
@@ -103,7 +103,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_PACKET, .sol = SOL_PACKET, .func = &packet_setsockopt },
 	{ .family = AF_ASH, .func = NULL },
 	{ .family = AF_ECONET, .func = NULL },
-	{ .family = AF_ATMSVC, SOL_ATM, .func = &atm_setsockopt },
+	{ .family = AF_ATMSVC, .func = NULL },
 	{ .family = AF_RDS, .sol = SOL_RDS, .func = &rds_setsockopt },
 	{ .family = AF_SNA, .func = NULL },
 	{ .family = AF_IRDA, .sol = SOL_IRDA, .func = &irda_setsockopt },

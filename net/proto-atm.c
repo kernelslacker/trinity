@@ -51,7 +51,14 @@ static const unsigned int atm_opts[] = {
 	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT,
 };
 
-void atm_setsockopt(struct sockopt *so)
+static void atm_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_ATM;
 	so->optname = RAND_ARRAY(atm_opts);
 }
+
+struct netproto proto_atm = {
+	.name = "atm",
+//	.socket = atm_rand_socket,
+	.setsockopt = atm_setsockopt,
+};
