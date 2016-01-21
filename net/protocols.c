@@ -36,4 +36,6 @@ const struct protoptr net_protocols[PF_MAX] = {
 #ifdef USE_ROSE
 	[PF_ROSE] = { .proto = &proto_rose },
 #endif
+	[PF_ATMPVC] = { .proto = &proto_atm },
+	[PF_ATMSVC] = { .proto = &proto_atm },
 };
