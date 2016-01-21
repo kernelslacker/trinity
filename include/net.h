@@ -128,7 +128,6 @@ extern struct netproto proto_rose;
 /* decnet */
 void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_decnet;
-void decnet_setsockopt(struct sockopt *so);
 
 /* llc */
 void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

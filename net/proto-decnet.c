@@ -48,8 +48,9 @@ static const unsigned int decnet_opts[] = {
 	DSO_SERVICES, DSO_INFO
 };
 
-void decnet_setsockopt(struct sockopt *so)
+static void decnet_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_DECNET;
 	so->optname = RAND_ARRAY(decnet_opts);
 
 	// TODO: set optlen correctly
@@ -58,4 +59,5 @@ void decnet_setsockopt(struct sockopt *so)
 struct netproto proto_decnet = {
 	.name = "decnet",
 	.socket = decnet_rand_socket,
+	.setsockopt = decnet_setsockopt,
 };
