@@ -141,7 +141,6 @@ void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 /* packet */
 void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_packet;
-void packet_setsockopt(struct sockopt *so);
 
 /* econet */
 void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

@@ -51,9 +51,11 @@ static const unsigned int packet_opts[] = {
 	PACKET_TIMESTAMP, PACKET_FANOUT,
 };
 
-void packet_setsockopt(struct sockopt *so)
+static void packet_setsockopt(struct sockopt *so)
 {
 	char *optval;
+
+	so->level = SOL_PACKET;
 
 	optval = (char *) so->optval;
 
@@ -82,4 +84,5 @@ void packet_setsockopt(struct sockopt *so)
 struct netproto proto_packet = {
 	.name = "packet",
 	.socket = packet_rand_socket,
+	.setsockopt = packet_setsockopt,
 };
