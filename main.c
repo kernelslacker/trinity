@@ -465,7 +465,7 @@ static void fork_children(void)
 	shm->ready = TRUE;
 }
 
-static void handle_childsig(int childno, int childstatus, int stop)
+static void handle_childsig(int childno, int childstatus, bool stop)
 {
 	struct childdata *child;
 	int __sig;
