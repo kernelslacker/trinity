@@ -9,7 +9,15 @@ static const unsigned int rxrpc_opts[] = {
 	RXRPC_BUSY, RXRPC_LOCAL_ERROR, RXRPC_NEW_CALL, RXRPC_ACCEPT,
 };
 
-void rxrpc_setsockopt(struct sockopt *so)
+static void rxrpc_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_RXRPC;
+
 	so->optname = RAND_ARRAY(rxrpc_opts);
 }
+
+struct netproto proto_rxrpc = {
+	.name = "rxrpc",
+//	.socket = rxrpc_rand_socket,
+	.setsockopt = rxrpc_setsockopt,
+};

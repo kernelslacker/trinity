@@ -41,4 +41,5 @@ const struct protoptr net_protocols[PF_MAX] = {
 	[PF_NETBEUI] = { .proto = &proto_netbeui },
 	[PF_PPPOX] = { .proto = &proto_pppol2tp },
 	[PF_IUCV] = { .proto = &proto_iucv },
+	[PF_RXRPC] = { .proto = &proto_rxrpc },
 };

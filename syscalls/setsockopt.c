@@ -116,7 +116,7 @@ static const struct sso_funcptr ssoptrs[] = {
 	{ .family = AF_TIPC, .func = NULL },
 	{ .family = AF_BLUETOOTH, .func = NULL },
 	{ .family = AF_IUCV, .func = NULL },
-	{ .family = AF_RXRPC, .sol = SOL_RXRPC, .func = &rxrpc_setsockopt },
+	{ .family = AF_RXRPC, .func = NULL },
 	{ .family = AF_ISDN, .func = NULL },
 	{ .family = AF_PHONET, .sol = SOL_PNPIPE, .func = NULL },
 	{ .family = AF_IEEE802154, .func = NULL },
