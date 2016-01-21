@@ -10,5 +10,6 @@ const struct protoptr net_protocols[PF_MAX] = {
 #ifdef USE_APPLETALK
 	[PF_APPLETALK] = { .proto = &proto_appletalk },
 #endif
+	[PF_X25] = { .proto = &proto_x25 },
 	[PF_NETLINK] = { .proto = &proto_netlink },
 };

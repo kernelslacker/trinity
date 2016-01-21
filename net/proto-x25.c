@@ -22,7 +22,7 @@ void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_x25);
 }
 
-void x25_rand_socket(struct socket_triplet *st)
+static void x25_rand_socket(struct socket_triplet *st)
 {
 	st->type = SOCK_SEQPACKET;
 	st->protocol = 0;
@@ -37,3 +37,8 @@ void x25_setsockopt(struct sockopt *so)
 
 	so->optlen = sizeof(int);
 }
+
+struct netproto proto_x25 = {
+	.name = "x25",
+	.socket = x25_rand_socket,
+};

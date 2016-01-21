@@ -121,7 +121,7 @@ void atm_setsockopt(struct sockopt *so);
 
 /* x25 */
 void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void x25_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_x25;
 void x25_setsockopt(struct sockopt *so);
 
 /* rose */

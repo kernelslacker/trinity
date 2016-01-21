@@ -33,7 +33,7 @@ static const struct socket_ptr socketptrs[] = {
 	[AF_NETROM] = { .func = NULL },
 	[AF_BRIDGE] = { .func = NULL },
 	[AF_ATMPVC] = { .func = NULL },
-	[AF_X25] = { .func = &x25_rand_socket },
+	[AF_X25] = { .func = NULL },
 #ifdef USE_IPV6
 	[AF_INET6] = { .func = &inet6_rand_socket },
 #endif
