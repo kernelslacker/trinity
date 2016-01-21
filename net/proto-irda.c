@@ -56,12 +56,14 @@ static const unsigned int irda_opts[] = {
 	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE
 };
 
-void irda_setsockopt(struct sockopt *so)
+static void irda_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_IRDA;
 	so->optname = RAND_ARRAY(irda_opts);
 }
 
 struct netproto proto_irda = {
 	.name = "irda",
 	.socket = irda_rand_socket,
+	.setsockopt = irda_setsockopt,
 };
