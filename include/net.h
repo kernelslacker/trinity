@@ -155,7 +155,6 @@ extern struct netproto proto_can;
 /* tipc */
 void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_tipc;
-void tipc_setsockopt(struct sockopt *so);
 
 /* phonet */
 void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

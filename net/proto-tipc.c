@@ -50,8 +50,10 @@ static const unsigned int tipc_opts[] = {
 	TIPC_NODE_RECVQ_DEPTH, TIPC_SOCK_RECVQ_DEPTH,
 };
 
-void tipc_setsockopt(struct sockopt *so)
+static void tipc_setsockopt(struct sockopt *so)
 {
+	so->level = SOL_TIPC;
+
 	so->optname = RAND_ARRAY(tipc_opts);
 
 	so->optlen = sizeof(__u32);
@@ -60,4 +62,5 @@ void tipc_setsockopt(struct sockopt *so)
 struct netproto proto_tipc = {
 	.name = "tipc",
 	.socket = tipc_rand_socket,
+	.setsockopt = tipc_setsockopt,
 };
