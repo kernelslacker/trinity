@@ -19,5 +19,6 @@ const struct protoptr net_protocols[PF_MAX] = {
 #ifdef USE_RDS
 	[PF_RDS] = { .proto = &proto_rds },
 #endif
+	[PF_IRDA] = { .proto = &proto_irda },
 	[PF_NETLINK] = { .proto = &proto_netlink },
 };

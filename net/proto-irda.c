@@ -27,7 +27,7 @@ void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_irda);
 }
 
-void irda_rand_socket(struct socket_triplet *st)
+static void irda_rand_socket(struct socket_triplet *st)
 {
 	switch (rnd() % 3) {
 
@@ -60,3 +60,8 @@ void irda_setsockopt(struct sockopt *so)
 {
 	so->optname = RAND_ARRAY(irda_opts);
 }
+
+struct netproto proto_irda = {
+	.name = "irda",
+	.socket = irda_rand_socket,
+};

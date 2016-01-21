@@ -153,7 +153,7 @@ void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 
 /* irda */
 void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void irda_rand_socket(struct socket_triplet *st);
+extern struct netproto proto_irda;
 void irda_setsockopt(struct sockopt *so);
 
 /* can */
