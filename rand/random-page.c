@@ -82,10 +82,9 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	char *p;
 	unsigned int i;
-	unsigned int startoffset = 0, remain;
 	unsigned char separators[] = { ':', ',', '.', ' ', '-', '\0', };
 	unsigned char separator;
-	unsigned int randrange = 10;
+	unsigned int randrange = 9;
 
 	/* If we only have a small buffer, don't do
 	 * the longer generators. */
@@ -122,83 +121,54 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			ptr[i] = 32 + rnd() % (0x7f - 32);
 		break;
 
-//FIXME: consolidate case 6 & 7
-
 	case 6:
-		/* numbers (for now, decimal only) */
+		/* ascii representation of random numbers */
 		separator = separators[rnd() % sizeof(separators)];
 
-		remain = len;
-
-		while (remain > 0) {
-			unsigned int runlen;
-
-			/* Sometimes make the numbers be negative. */
-			if (RAND_BOOL()) {
-				ptr[startoffset++] = '-';
-				remain--;
-				if (remain == 0)
-					break;
-			}
-
-			/* At most make this run 10 chars. */
-			runlen = min(remain, (unsigned int) rnd() % 10);
-
-			for (i = startoffset; i < startoffset + runlen; i++)
-				ptr[i] = '0' + rnd() % 10;
-
-			startoffset += runlen;
-			remain -= runlen;
-
-			/* insert commas and/or spaces */
-			if (remain > 0) {
-				ptr[i++] = separator;
-				startoffset++;
-				remain--;
-			}
-		}
-		break;
-
-	/* ascii representation of a random number */
-	case 7:
 		p = (char *) ptr;
 
-		if (RAND_BOOL()) {
-			/* hex */
-			switch (rnd() % 3) {
-			case 0:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
-				break;
-			case 1:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
-				break;
-			case 2:	p += sprintf(p, "0x%x", (int) rand32());
-				break;
-			}
-		} else {
-			/* decimal */
+		while (p < (char *)(ptr + (len-22))) {		// 22 is the longest case below + separator.
+			if (RAND_BOOL()) {
+				/* hex */
+				switch (rnd() % 3) {
+				case 0:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
+					break;
+				case 1:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
+					break;
+				case 2:	p += sprintf(p, "0x%x", (int) rand32());
+					break;
+				}
+			} else {
+				/* decimal */
 
-			/* perhaps negative ?*/
-			if (RAND_BOOL())
-				p += sprintf(p, "-");
+				/* perhaps negative ?*/
+				if (RAND_BOOL())
+					p += sprintf(p, "-");
 
-			switch (rnd() % 3) {
-			case 0:	p += sprintf(p, "%lu", (unsigned long) rand64());
-				break;
-			case 1:	p += sprintf(p, "%u", (unsigned int) rand32());
-				break;
-			case 2:	p += sprintf(p, "%u", (unsigned char) rnd());
-				break;
+				switch (rnd() % 3) {
+				case 0:	p += sprintf(p, "%lu", (unsigned long) rand64());
+					break;
+				case 1:	p += sprintf(p, "%u", (unsigned int) rand32());
+					break;
+				case 2:	p += sprintf(p, "%u", (unsigned char) rnd());
+					break;
+				}
 			}
+
+			/* insert commas and/or spaces */
+			*p = separator;
+			p++;
 		}
 		ptr[len-1] = 0;
 		break;
 
 	/* return something that looks kinda like a struct */
-	case 8:
+	case 7:
 		fabricate_struct((char *)ptr, len);
 		return;
 
 	/* format strings. */
-	case 9:
+	case 8:
 		for (i = 0; i < len; i += 2) {
 			ptr[i] = '%';
 			switch (RAND_BOOL()) {
