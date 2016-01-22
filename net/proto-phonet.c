@@ -32,7 +32,7 @@ static void phonet_rand_socket(struct socket_triplet *st)
 		st->type = SOCK_SEQPACKET;
 }
 
-static void phonet_setsockopt(struct sockopt *so)
+static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_PNPIPE;
 }

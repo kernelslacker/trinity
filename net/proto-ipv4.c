@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <netinet/udp.h>
 #include <stdlib.h>
 #include <string.h>
 #include <linux/types.h>
@@ -209,7 +210,7 @@ static const struct sock_option ip_opts[] = {
 	{ .name = MRT_DEL_MFC_PROXY, .len = sizeof(struct mfcctl) },
 };
 
-void ip_setsockopt(struct sockopt *so)
+static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned char val;
 	struct ip_mreq_source *ms;
@@ -275,7 +276,69 @@ void ip_setsockopt(struct sockopt *so)
 	}
 }
 
+
+struct ip_sso_funcptr {
+	unsigned int sol;
+	void (*func)(struct sockopt *so, struct socket_triplet *triplet);
+};
+
+static const struct ip_sso_funcptr ip_ssoptrs[] = {
+	[IPPROTO_IP] = { .func = &ip_setsockopt },
+	[IPPROTO_ICMP] = { .func = NULL },
+	[IPPROTO_IGMP] = { .func = NULL },
+	[IPPROTO_IPIP] = { .func = NULL },
+	[IPPROTO_TCP] = { .sol = SOL_TCP, .func = &tcp_setsockopt },
+	[IPPROTO_EGP] = { .func = NULL },
+	[IPPROTO_PUP] = { .func = NULL },
+	[IPPROTO_UDP] = { .sol = SOL_UDP, .func = &udp_setsockopt },
+	[IPPROTO_IDP] = { .func = NULL },
+	[IPPROTO_TP] = { .func = NULL },
+	[IPPROTO_DCCP] = { .sol = SOL_DCCP, .func = &dccp_setsockopt },
+#ifdef USE_IPV6
+	[IPPROTO_IPV6] = { .sol = SOL_ICMPV6, .func = &icmpv6_setsockopt },
+#endif
+	[IPPROTO_RSVP] = { .func = NULL },
+	[IPPROTO_GRE] = { .func = NULL },
+	[IPPROTO_ESP] = { .func = NULL },
+	[IPPROTO_AH] = { .func = NULL },
+	[IPPROTO_MTP] = { .func = NULL },
+	[IPPROTO_BEETPH] = { .func = NULL },
+	[IPPROTO_ENCAP] = { .func = NULL },
+	[IPPROTO_PIM] = { .func = NULL },
+	[IPPROTO_COMP] = { .func = NULL },
+	[IPPROTO_SCTP] = { .sol = SOL_SCTP, .func = &sctp_setsockopt },
+	[IPPROTO_UDPLITE] = { .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
+	[IPPROTO_RAW] = { .sol = SOL_RAW, .func = &raw_setsockopt },
+	[IPPROTO_MPLS] = { .func = NULL },
+};
+
+static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
+{
+	int proto = triplet->protocol;
+
+	if (ip_ssoptrs[proto].func != NULL) {
+		if (ip_ssoptrs[proto].sol != 0)
+			so->level = ip_ssoptrs[proto].sol;
+		ip_ssoptrs[proto].func(so, triplet);
+		return;
+	}
+
+	// unimplemented yet, or no sso for this proto.
+	ip_setsockopt(so, triplet);
+}
+
+static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
+{
+	so->level = SOL_IP;
+
+	if (RAND_BOOL())
+		ip_setsockopt(so, triplet);
+	else
+		call_inet_sso_ptr(so, triplet);
+}
+
 struct netproto proto_ipv4 = {
 	.name = "ipv4",
 	.socket = inet_rand_socket,
+	.setsockopt = inet_setsockopt,
 };

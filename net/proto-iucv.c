@@ -8,7 +8,7 @@ static const unsigned int iucv_opts[] = {
 	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE
 };
 
-static void iucv_setsockopt(struct sockopt *so)
+static void iucv_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_IUCV;
 

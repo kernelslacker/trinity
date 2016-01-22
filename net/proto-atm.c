@@ -51,7 +51,7 @@ static const unsigned int atm_opts[] = {
 	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT,
 };
 
-static void atm_setsockopt(struct sockopt *so)
+static void atm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ATM;
 	so->optname = RAND_ARRAY(atm_opts);

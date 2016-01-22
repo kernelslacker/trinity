@@ -162,7 +162,7 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_UNICAST_IF, },
 };
 
-static void inet6_setsockopt(struct sockopt *so)
+static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned char val;
 

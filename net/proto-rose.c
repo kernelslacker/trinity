@@ -40,7 +40,7 @@ static const unsigned int rose_opts[] = {
 	ROSE_IDLE, ROSE_QBITINCL, ROSE_HOLDBACK,
 };
 
-static void rose_setsockopt(struct sockopt *so)
+static void rose_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ROSE;
 	so->optname = RAND_ARRAY(rose_opts);

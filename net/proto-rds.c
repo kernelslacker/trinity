@@ -37,7 +37,7 @@ static const unsigned int rds_opts[] = {
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST,
 };
 
-static void rds_setsockopt(struct sockopt *so)
+static void rds_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_RDS;
 	so->optname = RAND_ARRAY(rds_opts);

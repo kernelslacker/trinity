@@ -38,7 +38,7 @@ static void atalk_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_RAW;
 }
 
-static void atalk_setsockopt(struct sockopt *so)
+static void atalk_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ATALK;
 }

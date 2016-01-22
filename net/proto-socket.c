@@ -21,7 +21,7 @@ static const unsigned int socket_opts[] = {
 	SO_ATTACH_BPF, SO_ATTACH_REUSEPORT_CBPF, SO_ATTACH_REUSEPORT_EBPF,
 };
 
-void socket_setsockopt(struct sockopt *so)
+void socket_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_SOCKET;
 

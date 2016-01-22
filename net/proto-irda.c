@@ -56,7 +56,7 @@ static const unsigned int irda_opts[] = {
 	IRLMP_IAS_DEL, IRLMP_HINT_MASK_SET, IRLMP_WAITDEVICE
 };
 
-static void irda_setsockopt(struct sockopt *so)
+static void irda_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_IRDA;
 	so->optname = RAND_ARRAY(irda_opts);

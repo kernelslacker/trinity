@@ -51,7 +51,7 @@ static const unsigned int packet_opts[] = {
 	PACKET_TIMESTAMP, PACKET_FANOUT,
 };
 
-static void packet_setsockopt(struct sockopt *so)
+static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	char *optval;
 

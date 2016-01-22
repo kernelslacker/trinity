@@ -48,7 +48,7 @@ static const unsigned int decnet_opts[] = {
 	DSO_SERVICES, DSO_INFO
 };
 
-static void decnet_setsockopt(struct sockopt *so)
+static void decnet_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_DECNET;
 	so->optname = RAND_ARRAY(decnet_opts);

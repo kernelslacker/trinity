@@ -9,7 +9,7 @@ static const unsigned int udp_opts[] = {
 	UDP_CORK, UDP_ENCAP
 };
 
-void udp_setsockopt(struct sockopt *so)
+void udp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	char *optval;
 

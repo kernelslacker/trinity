@@ -9,7 +9,7 @@ static const unsigned int udplite_opts[] = {
 	UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV,
 };
 
-void udplite_setsockopt(struct sockopt *so)
+void udplite_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	char *optval;
 

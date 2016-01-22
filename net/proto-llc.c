@@ -50,7 +50,7 @@ static const unsigned int llc_opts[] = {
 	LLC_OPT_PKTINFO,
 };
 
-static void llc_setsockopt(struct sockopt *so)
+static void llc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_LLC;
 	so->optname = RAND_ARRAY(llc_opts);

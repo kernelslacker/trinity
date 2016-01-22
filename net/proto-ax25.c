@@ -61,7 +61,7 @@ static const unsigned int ax25_opts[] = {
 	SO_BINDTODEVICE
 };
 
-static void ax25_setsockopt(struct sockopt *so)
+static void ax25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_AX25;
 	so->optname = RAND_ARRAY(ax25_opts);

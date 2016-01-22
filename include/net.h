@@ -41,7 +41,7 @@ struct sockopt {
 struct netproto {
 	const char *name;
 	void (*socket)(struct socket_triplet *st);
-	void (*setsockopt)(struct sockopt *so);
+	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
 };
 
 struct protoptr {
@@ -70,7 +70,6 @@ int get_random_ether_type(void);
 in_addr_t random_ipv4_address(void);
 void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_ipv4;
-void ip_setsockopt(struct sockopt *so);
 
 /* ipv6 */
 void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
@@ -178,14 +177,14 @@ extern struct netproto proto_rxrpc;
 extern struct netproto proto_phonet;
 
 /* setsockopt functions */
-void socket_setsockopt(struct sockopt *so);
-void tcp_setsockopt(struct sockopt *so);
-void udp_setsockopt(struct sockopt *so);
-void udplite_setsockopt(struct sockopt *so);
-void icmpv6_setsockopt(struct sockopt *so);
-void sctp_setsockopt(struct sockopt *so);
-void raw_setsockopt(struct sockopt *so);
-void dccp_setsockopt(struct sockopt *so);
+void socket_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void tcp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void udp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void udplite_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void icmpv6_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void sctp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void raw_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void dccp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 
 
 /* protocol definitions */

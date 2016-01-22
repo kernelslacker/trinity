@@ -32,7 +32,7 @@ static void ipx_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_DGRAM;
 }
 
-static void ipx_setsockopt(struct sockopt *so)
+static void ipx_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_IPX;
 	so->optname = IPX_TYPE;

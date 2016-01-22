@@ -39,7 +39,7 @@ static void nfc_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_SEQPACKET;
 }
 
-static void nfc_setsockopt(struct sockopt *so)
+static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_NFC;
 }

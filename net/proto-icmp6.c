@@ -10,7 +10,7 @@
 
 static const unsigned int icmpv6_opts[] = { ICMPV6_FILTER };
 
-void icmpv6_setsockopt(struct sockopt *so)
+void icmpv6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->optname = RAND_ARRAY(icmpv6_opts);
 }

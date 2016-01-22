@@ -67,7 +67,7 @@ static const unsigned int netlink_opts[] = {
 	NETLINK_LIST_MEMBERSHIPS, NETLINK_CAP_ACK,
 };
 
-static void netlink_setsockopt(struct sockopt *so)
+static void netlink_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_NETLINK;
 	so->optname = RAND_ARRAY(netlink_opts);

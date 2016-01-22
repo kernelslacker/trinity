@@ -47,7 +47,7 @@ static const unsigned int caif_opts[] = {
 	CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM
 };
 
-static void caif_setsockopt(struct sockopt *so)
+static void caif_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_CAIF;
 

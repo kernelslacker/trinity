@@ -50,7 +50,7 @@ static const unsigned int tipc_opts[] = {
 	TIPC_NODE_RECVQ_DEPTH, TIPC_SOCK_RECVQ_DEPTH,
 };
 
-static void tipc_setsockopt(struct sockopt *so)
+static void tipc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_TIPC;
 

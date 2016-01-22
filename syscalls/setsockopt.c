@@ -34,41 +34,6 @@
 #include "utils.h"
 #include "compat.h"
 
-struct ip_sso_funcptr {
-	unsigned int sol;
-	void (*func)(struct sockopt *so);
-};
-
-static const struct ip_sso_funcptr ip_ssoptrs[] = {
-	[IPPROTO_IP] = { .sol = SOL_IP, .func = &ip_setsockopt },
-	[IPPROTO_ICMP] = { .func = NULL },
-	[IPPROTO_IGMP] = { .func = NULL },
-	[IPPROTO_IPIP] = { .func = NULL },
-	[IPPROTO_TCP] = { .sol = SOL_TCP, .func = &tcp_setsockopt },
-	[IPPROTO_EGP] = { .func = NULL },
-	[IPPROTO_PUP] = { .func = NULL },
-	[IPPROTO_UDP] = { .sol = SOL_UDP, .func = &udp_setsockopt },
-	[IPPROTO_IDP] = { .func = NULL },
-	[IPPROTO_TP] = { .func = NULL },
-	[IPPROTO_DCCP] = { .sol = SOL_DCCP, .func = &dccp_setsockopt },
-#ifdef USE_IPV6
-	[IPPROTO_IPV6] = { .sol = SOL_ICMPV6, .func = &icmpv6_setsockopt },
-#endif
-	[IPPROTO_RSVP] = { .func = NULL },
-	[IPPROTO_GRE] = { .func = NULL },
-	[IPPROTO_ESP] = { .func = NULL },
-	[IPPROTO_AH] = { .func = NULL },
-	[IPPROTO_MTP] = { .func = NULL },
-	[IPPROTO_BEETPH] = { .func = NULL },
-	[IPPROTO_ENCAP] = { .func = NULL },
-	[IPPROTO_PIM] = { .func = NULL },
-	[IPPROTO_COMP] = { .func = NULL },
-	[IPPROTO_SCTP] = { .sol = SOL_SCTP, .func = &sctp_setsockopt },
-	[IPPROTO_UDPLITE] = { .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
-	[IPPROTO_RAW] = { .sol = SOL_RAW, .func = &raw_setsockopt },
-	[IPPROTO_MPLS] = { .func = NULL },
-};
-
 /*
  * If we have a .len set, use it.
  * If not, pick some random size.
@@ -90,7 +55,7 @@ unsigned int sockoptlen(unsigned int len)
  * It can also happen if we land on an sso func that
  * isn't implemented for a particular family yet.
  */
-static void do_random_sso(struct sockopt *so)
+static void do_random_sso(struct sockopt *so, struct socket_triplet *triplet)
 {
 	unsigned int i;
 	const struct netproto *proto;
@@ -102,24 +67,19 @@ retry:
 		proto = net_protocols[i].proto;
 		if (proto != NULL) {
 			if (proto->setsockopt != NULL) {
-				proto->setsockopt(so);
+				proto->setsockopt(so, triplet);
 				return;
 			}
 		}
 		goto retry;
 
 	case 1:	/* do a random IP protocol, even if it doesn't match this socket. */
-		i = rnd() % ARRAY_SIZE(ip_ssoptrs);
-		if (ip_ssoptrs[i].func != NULL) {
-			so->level = ip_ssoptrs[i].sol;
-			ip_ssoptrs[i].func(so);
-		} else {
-			goto retry;
-		}
+		proto = net_protocols[PF_INET].proto;
+		proto->setsockopt(so, triplet);
 		break;
 
 	case 2:	/* Last resort: Generic socket options. */
-		socket_setsockopt(so);
+		socket_setsockopt(so, triplet);
 		break;
 
 	case 3:	/* completely random operation. */
@@ -137,26 +97,12 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 
 	if (proto != NULL) {
 		if (proto->setsockopt != NULL) {
-			proto->setsockopt(so);
+			proto->setsockopt(so, triplet);
 			return;
 		}
 	}
 
-	do_random_sso(so);
-}
-
-static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
-{
-	int proto = triplet->protocol;
-
-	if (ip_ssoptrs[proto].func != NULL) {
-		so->level = ip_ssoptrs[proto].sol;
-		ip_ssoptrs[proto].func(so);
-		return;
-	} else {	// unimplemented yet, or no sso for this proto.
-		do_random_sso(so);
-		return;
-	}
+	do_random_sso(so, triplet);
 }
 
 /*
@@ -182,17 +128,13 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	so->optlen = sockoptlen(0);
 
 	if (ONE_IN(100)) {
-		do_random_sso(so);
+		do_random_sso(so, triplet);
 	} else {
 		if (triplet != NULL) {
-			if (triplet->family == AF_INET) {
-				call_inet_sso_ptr(so, triplet);
-			} else {
-				call_sso_ptr(so, triplet);
-			}
+			call_sso_ptr(so, triplet);
 		} else {
 			// fd probably isn't a socket.
-			do_random_sso(so);
+			do_random_sso(so, triplet);
 		}
 	}
 

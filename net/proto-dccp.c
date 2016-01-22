@@ -13,7 +13,7 @@ static const unsigned int dccp_opts[] = {
 	DCCP_SOCKOPT_QPOLICY_ID, DCCP_SOCKOPT_QPOLICY_TXQLEN, DCCP_SOCKOPT_CCID_RX_INFO, DCCP_SOCKOPT_CCID_TX_INFO
 };
 
-void dccp_setsockopt(struct sockopt *so)
+void dccp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->optname = RAND_ARRAY(dccp_opts);
 }

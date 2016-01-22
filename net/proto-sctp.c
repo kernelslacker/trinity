@@ -18,7 +18,7 @@ static const unsigned int sctp_opts[] = {
 	SCTP_GET_ASSOC_STATS,
 };
 
-void sctp_setsockopt(struct sockopt *so)
+void sctp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->optname = RAND_ARRAY(sctp_opts);
 }

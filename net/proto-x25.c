@@ -28,7 +28,7 @@ static void x25_rand_socket(struct socket_triplet *st)
 	st->protocol = 0;
 }
 
-static void x25_setsockopt(struct sockopt *so)
+static void x25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned int *optval;
 

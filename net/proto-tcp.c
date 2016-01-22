@@ -15,7 +15,7 @@ static const unsigned int tcp_opts[] = {
 	TCP_NOTSENT_LOWAT, TCP_CC_INFO, TCP_SAVE_SYN, TCP_SAVED_SYN,
 };
 
-void tcp_setsockopt(struct sockopt *so)
+void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->optname = RAND_ARRAY(tcp_opts);
 }

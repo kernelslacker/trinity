@@ -1,6 +1,6 @@
 #include "net.h"
 
-static void netbeui_setsockopt(struct sockopt *so)
+static void netbeui_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_NETBEUI;
 }

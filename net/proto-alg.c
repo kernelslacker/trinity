@@ -243,7 +243,7 @@ void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_alg);
 }
 
-static void alg_setsockopt(struct sockopt *so)
+static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ALG;
 }
