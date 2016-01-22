@@ -51,6 +51,9 @@ static int open_perf_fds(void)
 			 * perf_event_open threw it out. Go around the loop again.
 			 */
 		}
+
+		if (shm->exit_reason != STILL_RUNNING)
+			return FALSE;
 	}
 
 	return TRUE;
