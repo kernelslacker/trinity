@@ -67,6 +67,8 @@ static const unsigned int netlink_opts[] = {
 	NETLINK_LIST_MEMBERSHIPS, NETLINK_CAP_ACK,
 };
 
+#define SOL_NETLINK 270
+
 static void netlink_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_NETLINK;
