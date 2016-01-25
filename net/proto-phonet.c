@@ -9,7 +9,7 @@
 #include "utils.h"
 #include "compat.h"
 
-void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pn *pn;
 
@@ -41,4 +41,5 @@ struct netproto proto_phonet = {
 	.name = "phonet",
 	.socket = phonet_rand_socket,
 	.setsockopt = phonet_setsockopt,
+	.gen_sockaddr = phonet_gen_sockaddr,
 };
