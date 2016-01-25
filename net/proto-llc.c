@@ -50,6 +50,9 @@ static const unsigned int llc_opts[] = {
 	LLC_OPT_PKTINFO,
 };
 
+#define SOL_NETBEUI 267
+#define SOL_LLC 268
+
 static void llc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_LLC;
