@@ -8,7 +8,7 @@
 #include "random.h"
 #include "utils.h"
 
-void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ec *ec;
 
@@ -24,3 +24,8 @@ void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addr = (struct sockaddr *) ec;
 	*addrlen = sizeof(struct sockaddr_ec);
 }
+
+struct netproto proto_econet = {
+	.name = "econet",
+	.gen_sockaddr = econet_gen_sockaddr,
+};

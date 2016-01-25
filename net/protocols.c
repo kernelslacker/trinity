@@ -16,6 +16,7 @@ const struct protoptr net_protocols[PF_MAX] = {
 #endif
 	[PF_DECnet] = { .proto = &proto_decnet },
 	[PF_PACKET] = { .proto = &proto_packet },
+	[PF_ECONET] = { .proto = &proto_econet },
 #ifdef USE_RDS
 	[PF_RDS] = { .proto = &proto_rds },
 #endif
