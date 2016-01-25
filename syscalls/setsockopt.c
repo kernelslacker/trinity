@@ -2,37 +2,10 @@
  * SYSCALL_DEFINE5(setsockopt, int, fd, int, level, int, optname, char __user *, optval, int, optlen)
  */
 
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <linux/types.h>
-#include <linux/tipc.h>
-#include <netinet/udp.h>
-#include <netipx/ipx.h>
-#include <netax25/ax25.h>
-#include "config.h"
-#ifdef USE_APPLETALK
-#include <netatalk/at.h>
-#endif
-#ifdef USE_NETROM
-#include <netrom/netrom.h>
-#endif
-#ifdef USE_ROSE
-#include <netrose/rose.h>
-#endif
 #include "arch.h"
-#include "log.h"
-#include "maps.h"
 #include "net.h"
 #include "random.h"
-#include "sanitise.h"
-#include "shm.h"
-#include "syscall.h"
-#include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 
 /*
  * If we have a .len set, use it.
