@@ -3,15 +3,11 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include "arch.h"
-#include "config.h"
-#include "maps.h"
+#include "arch.h"	// page_size
 #include "net.h"
 #include "params.h"	// do_specific_domain
 #include "random.h"
-#include "sanitise.h"
 #include "utils.h"	// ARRAY_SIZE
-#include "compat.h"
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {
