@@ -66,7 +66,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 	}
 }
 
-void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in6 *ipv6;
 	struct in6_addr serv_addr;
@@ -199,6 +199,6 @@ struct netproto proto_inet6 = {
 	.name = "inet6",
 	.socket = inet6_rand_socket,
 	.setsockopt = inet6_setsockopt,
+	.gen_sockaddr = ipv6_gen_sockaddr,
 };
-
 #endif
