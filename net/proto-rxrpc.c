@@ -9,6 +9,8 @@ static const unsigned int rxrpc_opts[] = {
 	RXRPC_BUSY, RXRPC_LOCAL_ERROR, RXRPC_NEW_CALL, RXRPC_ACCEPT,
 };
 
+#define SOL_RXRPC 272
+
 static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_RXRPC;
