@@ -12,7 +12,7 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_llc *llc;
 	unsigned int i;
@@ -56,8 +56,20 @@ static void llc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = RAND_ARRAY(llc_opts);
 }
 
+static void netbeui_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+{
+	so->level = SOL_NETBEUI;
+}
+
 struct netproto proto_llc = {
 	.name = "llc",
 	.socket = llc_rand_socket,
 	.setsockopt = llc_setsockopt,
+	.gen_sockaddr = llc_gen_sockaddr,
+};
+
+struct netproto proto_netbeui = {
+	.name = "netbeui",
+	.setsockopt = netbeui_setsockopt,
+	.gen_sockaddr = llc_gen_sockaddr,
 };

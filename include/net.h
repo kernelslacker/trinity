@@ -110,8 +110,6 @@ extern struct netproto proto_rose;
 
 extern struct netproto proto_decnet;
 
-/* llc */
-void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_llc;
 
 /* netlink */
