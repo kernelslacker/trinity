@@ -121,5 +121,4 @@ void dccp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 #define SOL_SCTP 132
 #define SOL_UDPLITE 136
 #define SOL_DCCP 269
-#define SOL_ALG 279
 #define SOL_NFC 280
