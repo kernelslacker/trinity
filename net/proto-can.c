@@ -9,7 +9,7 @@
 #include "utils.h"
 #include "compat.h"
 
-void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_can *can;
 
@@ -32,4 +32,5 @@ static void can_rand_socket(struct socket_triplet *st)
 struct netproto proto_can = {
 	.name = "can",
 	.socket = can_rand_socket,
+	.gen_sockaddr = can_gen_sockaddr,
 };
