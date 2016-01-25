@@ -72,6 +72,7 @@ static const struct sa_func_entry sa_funcs[] = {
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {
+	const struct netproto *proto;
 	unsigned int i;
 
 	/* If we want sockets of a specific type, we'll want sockaddrs that match. */
@@ -82,6 +83,16 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	if (pf == -1)
 		pf = rnd() % TRINITY_PF_MAX;
 
+	proto = net_protocols[pf].proto;
+	if (proto != NULL) {
+		if (proto->gen_sockaddr != NULL) {
+			// eventually the common case.
+			proto->gen_sockaddr(addr, addrlen);
+			return;
+		}
+	}
+
+	/* fallback case for the array above. will go away soon.*/
 	for (i = 0; i < ARRAY_SIZE(sa_funcs); i++) {
 		if (sa_funcs[i].pf == (unsigned int) pf) {
 			sa_funcs[i].func(addr, addrlen);

@@ -42,6 +42,7 @@ struct netproto {
 	const char *name;
 	void (*socket)(struct socket_triplet *st);
 	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
+	void (*gen_sockaddr)(struct sockaddr **addr, socklen_t *addrlen);
 };
 
 struct protoptr {
