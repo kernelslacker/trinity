@@ -80,8 +80,6 @@ extern struct netproto proto_inet6;
 void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_pppol2tp;
 
-/* unix */
-void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_unix;
 
 /* bpf */

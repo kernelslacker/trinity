@@ -8,7 +8,7 @@
 #include "random.h"
 #include "utils.h"
 
-void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_un *unixsock;
 	unsigned int len;
@@ -40,4 +40,5 @@ static void unix_rand_socket(struct socket_triplet *st)
 struct netproto proto_unix = {
 	.name = "unix",
 	.socket = unix_rand_socket,
+	.gen_sockaddr = unix_gen_sockaddr,
 };
