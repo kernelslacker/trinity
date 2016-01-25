@@ -14,7 +14,7 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_rose *rose;
 
@@ -49,5 +49,6 @@ struct netproto proto_rose = {
 	.name = "rose",
 	//     .socket = rose_rand_socket,
 	.setsockopt = rose_setsockopt,
+	.gen_sockaddr = rose_gen_sockaddr,
 };
 #endif

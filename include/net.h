@@ -106,8 +106,6 @@ extern struct netproto proto_atmsvc;
 
 extern struct netproto proto_x25;
 
-/* rose */
-void rose_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_rose;
 
 /* decnet */
