@@ -82,7 +82,7 @@ in_addr_t random_ipv4_address(void)
 	return addr;
 }
 
-void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *ipv4;
 	struct in_addr serv_addr;
@@ -341,4 +341,5 @@ struct netproto proto_ipv4 = {
 	.name = "ipv4",
 	.socket = inet_rand_socket,
 	.setsockopt = inet_setsockopt,
+	.gen_sockaddr = ipv4_gen_sockaddr,
 };
