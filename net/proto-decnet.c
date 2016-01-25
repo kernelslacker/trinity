@@ -9,7 +9,7 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_dn *dn;
 	unsigned int i;
@@ -60,4 +60,5 @@ struct netproto proto_decnet = {
 	.name = "decnet",
 	.socket = decnet_rand_socket,
 	.setsockopt = decnet_setsockopt,
+	.gen_sockaddr = decnet_gen_sockaddr,
 };

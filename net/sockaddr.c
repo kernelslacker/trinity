@@ -22,7 +22,6 @@ static const struct sa_func_entry sa_funcs[] = {
 //TODO	{ .pf = PF_UNSPEC, .func = &unspec_gen_sockaddr },
 //TODO	{ .pf = PF_NETROM, .func = &netrom_gen_sockaddr },
 //TODO	{ .pf = PF_BRIDGE, .func = &bridge_gen_sockaddr },
-	{ .pf = PF_DECnet, .func = &decnet_gen_sockaddr },
 	{ .pf = PF_NETBEUI, .func = &llc_gen_sockaddr },
 //TODO	{ .pf = PF_SECURITY, .func = &security_gen_sockaddr },
 //TODO	{ .pf = PF_KEY, .func = &key_gen_sockaddr },
