@@ -1,6 +1,6 @@
 #pragma once
 
-#include <sys/types.h>          /* See NOTES */
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 
