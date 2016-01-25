@@ -27,8 +27,8 @@ extern char server_addr[INET6_ADDRSTRLEN];
 #define PF_NOHINT (-1)
 
 struct sock_option {
-	unsigned int name;
-	unsigned int len;
+	const unsigned int name;
+	const unsigned int len;
 };
 
 struct sockopt {
