@@ -19,6 +19,7 @@ static const unsigned int bluetooth_l2cap_opts[] = {
 
 static const unsigned int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
+#define SOL_BLUETOOTH 274
 
 static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
