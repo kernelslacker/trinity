@@ -112,9 +112,7 @@ extern struct netproto proto_decnet;
 
 extern struct netproto proto_llc;
 
-/* netlink */
 extern struct netproto proto_netlink;
-void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 
 /* packet */
 void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

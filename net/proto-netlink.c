@@ -25,7 +25,7 @@
 	#endif /* NETLINK_RDMA */
 #endif /* NETLINK_CRYPTO */
 
-void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;
 	const unsigned long nl_groups[] = {
@@ -77,4 +77,5 @@ struct netproto proto_netlink = {
 	.name = "netlink",
 	.socket = netlink_rand_socket,
 	.setsockopt = netlink_setsockopt,
+	.gen_sockaddr = netlink_gen_sockaddr,
 };
