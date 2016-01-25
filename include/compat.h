@@ -168,6 +168,10 @@ enum {
 #define PF_IB          AF_IB
 #endif
 
+#ifndef PF_MPLS
+#define PF_MPLS		28
+#endif
+
 #ifndef PF_CAN
 #define PF_CAN		29
 #endif
