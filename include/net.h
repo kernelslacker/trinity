@@ -134,8 +134,6 @@ extern struct netproto proto_tipc;
 void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_phonet;
 
-/* rds */
-void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_rds;
 
 /* bluetooth */

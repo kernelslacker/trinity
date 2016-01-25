@@ -16,7 +16,7 @@ static void rds_rand_socket(struct socket_triplet *st)
 	st->type = SOCK_SEQPACKET;
 }
 
-void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *rds;
 
@@ -47,6 +47,7 @@ struct netproto proto_rds = {
 	.name = "rds",
 	.socket = rds_rand_socket,
 	.setsockopt = rds_setsockopt,
+	.gen_sockaddr = rds_gen_sockaddr,
 };
 #else
 /* stub if we are built on something without RDS headers */
