@@ -99,8 +99,6 @@ extern struct netproto proto_nfc;
 
 extern struct netproto proto_ax25;
 
-/* ipx */
-void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_ipx;
 
 /* appletalk */

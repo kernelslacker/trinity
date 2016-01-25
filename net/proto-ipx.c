@@ -8,7 +8,7 @@
 #include "random.h"
 #include "utils.h"
 
-void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ipx *ipx;
 	unsigned int i;
@@ -42,4 +42,5 @@ struct netproto proto_ipx = {
 	.name = "ipx",
 	.socket = ipx_rand_socket,
 	.setsockopt = ipx_setsockopt,
+	.gen_sockaddr = ipx_gen_sockaddr,
 };
