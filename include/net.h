@@ -114,8 +114,6 @@ extern struct netproto proto_llc;
 
 extern struct netproto proto_netlink;
 
-/* packet */
-void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_packet;
 
 /* econet */

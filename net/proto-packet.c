@@ -10,7 +10,7 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pkt *pkt;
 	unsigned int i;
@@ -85,4 +85,5 @@ struct netproto proto_packet = {
 	.name = "packet",
 	.socket = packet_rand_socket,
 	.setsockopt = packet_setsockopt,
+	.gen_sockaddr = packet_gen_sockaddr,
 };
