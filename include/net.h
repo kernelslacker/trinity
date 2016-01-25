@@ -97,8 +97,6 @@ extern struct netproto proto_alg;
 void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_nfc;
 
-/* ax25 */
-void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_ax25;
 
 /* ipx */

@@ -9,7 +9,7 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ax25 *ax25;
 
@@ -71,4 +71,5 @@ struct netproto proto_ax25 = {
 	.name = "ax25",
 	.socket = ax25_rand_socket,
 	.setsockopt = ax25_setsockopt,
+	.gen_sockaddr = ax25_gen_sockaddr,
 };
