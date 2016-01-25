@@ -81,8 +81,6 @@ extern struct netproto proto_unix;
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
 void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
 
-/* caif */
-void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_caif;
 
 /* alg */

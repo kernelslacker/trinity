@@ -12,7 +12,7 @@
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
 
-void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_caif *caif;
 	unsigned int i;
@@ -57,5 +57,6 @@ struct netproto proto_caif = {
 	.name = "caif",
 	.socket = caif_rand_socket,
 	.setsockopt = caif_setsockopt,
+	.gen_sockaddr = caif_gen_sockaddr,
 };
 #endif
