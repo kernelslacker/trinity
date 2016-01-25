@@ -73,8 +73,6 @@ extern struct netproto proto_ipv4;
 
 extern struct netproto proto_inet6;
 
-/* pppox */
-void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_pppol2tp;
 
 extern struct netproto proto_unix;
