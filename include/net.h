@@ -114,10 +114,3 @@ void icmpv6_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void sctp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void raw_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void dccp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
-
-
-/* protocol definitions */
-#define SOL_TCP 6
-#define SOL_SCTP 132
-#define SOL_UDPLITE 136
-#define SOL_DCCP 269

@@ -282,6 +282,11 @@ struct ip_sso_funcptr {
 	void (*func)(struct sockopt *so, struct socket_triplet *triplet);
 };
 
+#define SOL_TCP 6
+#define SOL_SCTP 132
+#define SOL_UDPLITE 136
+#define SOL_DCCP 269
+
 static const struct ip_sso_funcptr ip_ssoptrs[] = {
 	[IPPROTO_IP] = { .func = &ip_setsockopt },
 	[IPPROTO_ICMP] = { .func = NULL },
