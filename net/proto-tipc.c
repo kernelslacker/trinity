@@ -9,7 +9,7 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_tipc *tipc;
 
@@ -63,4 +63,5 @@ struct netproto proto_tipc = {
 	.name = "tipc",
 	.socket = tipc_rand_socket,
 	.setsockopt = tipc_setsockopt,
+	.gen_sockaddr = tipc_gen_sockaddr,
 };

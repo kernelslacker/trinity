@@ -120,8 +120,6 @@ extern struct netproto proto_irda;
 
 extern struct netproto proto_can;
 
-/* tipc */
-void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_tipc;
 
 /* phonet */
