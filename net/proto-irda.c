@@ -11,7 +11,7 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_irda *irda;
 	unsigned int i;
@@ -66,4 +66,5 @@ struct netproto proto_irda = {
 	.name = "irda",
 	.socket = irda_rand_socket,
 	.setsockopt = irda_setsockopt,
+	.gen_sockaddr = irda_gen_sockaddr,
 };

@@ -26,7 +26,6 @@ static const struct sa_func_entry sa_funcs[] = {
 //TODO	{ .pf = PF_KEY, .func = &key_gen_sockaddr },
 //TODO	{ .pf = PF_ASH, .func = &ash_gen_sockaddr },
 //TODO	{ .pf = PF_SNA, .func = &sna_gen_sockaddr },
-	{ .pf = PF_IRDA, .func = &irda_gen_sockaddr },
 	{ .pf = PF_PPPOX, .func = &pppox_gen_sockaddr },
 //TODO	{ .pf = PF_WANPIPE, .func = &wanpipe_gen_sockaddr },
 	{ .pf = PF_CAN, .func = &can_gen_sockaddr },

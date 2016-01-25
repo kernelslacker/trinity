@@ -118,8 +118,6 @@ extern struct netproto proto_packet;
 
 extern struct netproto proto_econet;
 
-/* irda */
-void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_irda;
 
 /* can */
