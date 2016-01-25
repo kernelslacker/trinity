@@ -32,9 +32,6 @@ static const struct sa_func_entry sa_funcs[] = {
 //TODO	{ .pf = PF_RXRPC, .func = &rxrpc_gen_sockaddr },
 //TODO	{ .pf = PF_ISDN, .func = &isdn_gen_sockaddr },
 //TODO	{ .pf = PF_IEEE802154, .func = &ieee802154_gen_sockaddr },
-#ifdef USE_IF_ALG
-	{ .pf = PF_ALG, .func = &alg_gen_sockaddr },
-#endif
 	{ .pf = PF_NFC, .func = &nfc_gen_sockaddr },
 //TODO	{ .pf = PF_VSOCK, .func = &vsock_gen_sockaddr },
 };

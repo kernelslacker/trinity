@@ -83,8 +83,6 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
 
 extern struct netproto proto_caif;
 
-/* alg */
-void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_alg;
 
 /* nfc */

@@ -206,7 +206,7 @@ static const char *algos[] = {
 	"zlib",
 };
 
-void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_alg *alg;
 	unsigned int type;
@@ -252,5 +252,6 @@ struct netproto proto_alg = {
 	.name = "alg",
 //	.socket = alg_rand_socket,
 	.setsockopt = alg_setsockopt,
+	.gen_sockaddr = alg_gen_sockaddr,
 };
 #endif
