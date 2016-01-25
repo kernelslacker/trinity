@@ -13,33 +13,9 @@
 #include "utils.h"	// ARRAY_SIZE
 #include "compat.h"
 
-struct sa_func_entry {
-	unsigned int pf;
-	void (*func)(struct sockaddr **addr, socklen_t *addrlen);
-};
-
-static const struct sa_func_entry sa_funcs[] = {
-//TODO	{ .pf = PF_UNSPEC, .func = &unspec_gen_sockaddr },
-//TODO	{ .pf = PF_NETROM, .func = &netrom_gen_sockaddr },
-//TODO	{ .pf = PF_BRIDGE, .func = &bridge_gen_sockaddr },
-//TODO	{ .pf = PF_SECURITY, .func = &security_gen_sockaddr },
-//TODO	{ .pf = PF_KEY, .func = &key_gen_sockaddr },
-//TODO	{ .pf = PF_ASH, .func = &ash_gen_sockaddr },
-//TODO	{ .pf = PF_SNA, .func = &sna_gen_sockaddr },
-//TODO	{ .pf = PF_WANPIPE, .func = &wanpipe_gen_sockaddr },
-//TODO	{ .pf = PF_BLUETOOTH, .func = &bluetooth_gen_sockaddr },
-//TODO	{ .pf = PF_IUCV, .func = &iucv_gen_sockaddr },
-//TODO	{ .pf = PF_RXRPC, .func = &rxrpc_gen_sockaddr },
-//TODO	{ .pf = PF_ISDN, .func = &isdn_gen_sockaddr },
-//TODO	{ .pf = PF_IEEE802154, .func = &ieee802154_gen_sockaddr },
-	{ .pf = PF_NFC, .func = &nfc_gen_sockaddr },
-//TODO	{ .pf = PF_VSOCK, .func = &vsock_gen_sockaddr },
-};
-
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {
 	const struct netproto *proto;
-	unsigned int i;
 
 	/* If we want sockets of a specific type, we'll want sockaddrs that match. */
 	if (do_specific_domain == TRUE)
@@ -52,16 +28,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	proto = net_protocols[pf].proto;
 	if (proto != NULL) {
 		if (proto->gen_sockaddr != NULL) {
-			// eventually the common case.
 			proto->gen_sockaddr(addr, addrlen);
-			return;
-		}
-	}
-
-	/* fallback case for the array above. will go away soon.*/
-	for (i = 0; i < ARRAY_SIZE(sa_funcs); i++) {
-		if (sa_funcs[i].pf == (unsigned int) pf) {
-			sa_funcs[i].func(addr, addrlen);
 			return;
 		}
 	}

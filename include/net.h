@@ -69,73 +69,43 @@ int get_random_ether_type(void);
 
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
+
 extern struct netproto proto_ipv4;
-
 extern struct netproto proto_inet6;
-
 extern struct netproto proto_pppol2tp;
-
 extern struct netproto proto_unix;
+extern struct netproto proto_caif;
+extern struct netproto proto_alg;
+extern struct netproto proto_nfc;
+extern struct netproto proto_ax25;
+extern struct netproto proto_ipx;
+extern struct netproto proto_appletalk;
+extern struct netproto proto_atmpvc;
+extern struct netproto proto_atmsvc;
+extern struct netproto proto_x25;
+extern struct netproto proto_rose;
+extern struct netproto proto_decnet;
+extern struct netproto proto_llc;
+extern struct netproto proto_netlink;
+extern struct netproto proto_packet;
+extern struct netproto proto_econet;
+extern struct netproto proto_irda;
+extern struct netproto proto_can;
+extern struct netproto proto_tipc;
+extern struct netproto proto_phonet;
+extern struct netproto proto_rds;
+extern struct netproto proto_bluetooth;
+extern struct netproto proto_netrom;
+extern struct netproto proto_netbeui;
+extern struct netproto proto_iucv;
+extern struct netproto proto_rxrpc;
+extern struct netproto proto_phonet;
 
 /* bpf */
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
 void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
 
-extern struct netproto proto_caif;
-
-extern struct netproto proto_alg;
-
-/* nfc */
-void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-extern struct netproto proto_nfc;
-
-extern struct netproto proto_ax25;
-
-extern struct netproto proto_ipx;
-
-extern struct netproto proto_appletalk;
-
-extern struct netproto proto_atmpvc;
-extern struct netproto proto_atmsvc;
-
-extern struct netproto proto_x25;
-
-extern struct netproto proto_rose;
-
-extern struct netproto proto_decnet;
-
-extern struct netproto proto_llc;
-
-extern struct netproto proto_netlink;
-
-extern struct netproto proto_packet;
-
-extern struct netproto proto_econet;
-
-extern struct netproto proto_irda;
-
-extern struct netproto proto_can;
-
-extern struct netproto proto_tipc;
-
-extern struct netproto proto_phonet;
-
-extern struct netproto proto_rds;
-
-/* bluetooth */
-extern struct netproto proto_bluetooth;
-
-extern struct netproto proto_netrom;
-
-extern struct netproto proto_netbeui;
-
-extern struct netproto proto_iucv;
-
-extern struct netproto proto_rxrpc;
-
-extern struct netproto proto_phonet;
-
-/* setsockopt functions */
+/* ip setsockopt functions */
 void socket_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void tcp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void udp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);

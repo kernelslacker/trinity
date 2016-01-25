@@ -9,7 +9,7 @@
 #include "random.h"
 #include "utils.h"
 
-void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nfc *nfc;
 
@@ -48,4 +48,5 @@ struct netproto proto_nfc = {
 	.name = "nfc",
 	.socket = nfc_rand_socket,
 	.setsockopt = nfc_setsockopt,
+	.gen_sockaddr = nfc_gen_sockaddr,
 };
