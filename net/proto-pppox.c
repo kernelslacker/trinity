@@ -168,6 +168,8 @@ static const unsigned int pppol2tp_opts[] = {
 	PPPOL2TP_SO_DEBUG, PPPOL2TP_SO_RECVSEQ, PPPOL2TP_SO_SENDSEQ, PPPOL2TP_SO_LNSMODE,
 	PPPOL2TP_SO_REORDERTO };
 
+#define SOL_PPPOL2TP 273
+
 static void pppol2tp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_PPPOL2TP;
