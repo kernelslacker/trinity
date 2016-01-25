@@ -106,8 +106,6 @@ extern struct netproto proto_appletalk;
 extern struct netproto proto_atmpvc;
 extern struct netproto proto_atmsvc;
 
-/* x25 */
-void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_x25;
 
 /* rose */

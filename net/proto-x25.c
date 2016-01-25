@@ -8,7 +8,7 @@
 #include "random.h"
 #include "utils.h"
 
-void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_x25 *x25;
 	unsigned int len;
@@ -44,4 +44,5 @@ struct netproto proto_x25 = {
 	.name = "x25",
 	.socket = x25_rand_socket,
 	.setsockopt = x25_setsockopt,
+	.gen_sockaddr = x25_gen_sockaddr,
 };
