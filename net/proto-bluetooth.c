@@ -80,7 +80,7 @@ static void bluetooth_rand_socket(struct socket_triplet *st)
 	st->type = RAND_ARRAY(types);
 }
 
-struct netproto proto_bluetooth = {
+const struct netproto proto_bluetooth = {
 	.name = "bluetooth",
 	.socket = bluetooth_rand_socket,
 	.setsockopt = bluetooth_setsockopt,

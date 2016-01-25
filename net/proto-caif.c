@@ -53,7 +53,7 @@ static void caif_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 
 	so->optname = RAND_ARRAY(caif_opts);
 }
-struct netproto proto_caif = {
+const struct netproto proto_caif = {
 	.name = "caif",
 	.socket = caif_rand_socket,
 	.setsockopt = caif_setsockopt,

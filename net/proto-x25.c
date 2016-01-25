@@ -40,7 +40,7 @@ static void x25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optlen = sizeof(int);
 }
 
-struct netproto proto_x25 = {
+const struct netproto proto_x25 = {
 	.name = "x25",
 	.socket = x25_rand_socket,
 	.setsockopt = x25_setsockopt,

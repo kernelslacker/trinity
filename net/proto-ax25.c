@@ -67,7 +67,7 @@ static void ax25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optname = RAND_ARRAY(ax25_opts);
 }
 
-struct netproto proto_ax25 = {
+const struct netproto proto_ax25 = {
 	.name = "ax25",
 	.socket = ax25_rand_socket,
 	.setsockopt = ax25_setsockopt,

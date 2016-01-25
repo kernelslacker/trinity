@@ -43,7 +43,7 @@ static void atalk_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	so->level = SOL_ATALK;
 }
 
-struct netproto proto_appletalk = {
+const struct netproto proto_appletalk = {
 	.name = "appletalk",
 	.socket = atalk_rand_socket,
 	.setsockopt = atalk_setsockopt,

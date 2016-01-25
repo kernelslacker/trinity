@@ -337,7 +337,7 @@ static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		call_inet_sso_ptr(so, triplet);
 }
 
-struct netproto proto_ipv4 = {
+const struct netproto proto_ipv4 = {
 	.name = "ipv4",
 	.socket = inet_rand_socket,
 	.setsockopt = inet_setsockopt,

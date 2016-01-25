@@ -62,7 +62,7 @@ static void irda_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optname = RAND_ARRAY(irda_opts);
 }
 
-struct netproto proto_irda = {
+const struct netproto proto_irda = {
 	.name = "irda",
 	.socket = irda_rand_socket,
 	.setsockopt = irda_setsockopt,

@@ -73,7 +73,7 @@ static void netlink_setsockopt(struct sockopt *so, __unused__ struct socket_trip
 	so->optname = RAND_ARRAY(netlink_opts);
 }
 
-struct netproto proto_netlink = {
+const struct netproto proto_netlink = {
 	.name = "netlink",
 	.socket = netlink_rand_socket,
 	.setsockopt = netlink_setsockopt,

@@ -56,7 +56,7 @@ static void decnet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	// TODO: set optlen correctly
 }
 
-struct netproto proto_decnet = {
+const struct netproto proto_decnet = {
 	.name = "decnet",
 	.socket = decnet_rand_socket,
 	.setsockopt = decnet_setsockopt,

@@ -17,7 +17,7 @@ static void iucv_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optlen = sizeof(int);
 }
 
-struct netproto proto_iucv = {
+const struct netproto proto_iucv = {
 	.name = "iucv",
 //	.socket = iucv_rand_socket,
 	.setsockopt = iucv_setsockopt,

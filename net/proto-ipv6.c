@@ -195,7 +195,7 @@ static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	}
 }
 
-struct netproto proto_inet6 = {
+const struct netproto proto_inet6 = {
 	.name = "inet6",
 	.socket = inet6_rand_socket,
 	.setsockopt = inet6_setsockopt,

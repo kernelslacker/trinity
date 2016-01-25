@@ -37,7 +37,7 @@ static void unix_rand_socket(struct socket_triplet *st)
 	}
 }
 
-struct netproto proto_unix = {
+const struct netproto proto_unix = {
 	.name = "unix",
 	.socket = unix_rand_socket,
 	.gen_sockaddr = unix_gen_sockaddr,

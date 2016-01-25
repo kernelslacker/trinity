@@ -25,7 +25,7 @@ static void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_ec);
 }
 
-struct netproto proto_econet = {
+const struct netproto proto_econet = {
 	.name = "econet",
 	.gen_sockaddr = econet_gen_sockaddr,
 };

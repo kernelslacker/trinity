@@ -248,7 +248,7 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->level = SOL_ALG;
 }
 
-struct netproto proto_alg = {
+const struct netproto proto_alg = {
 	.name = "alg",
 //	.socket = alg_rand_socket,
 	.setsockopt = alg_setsockopt,

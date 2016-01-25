@@ -38,7 +38,7 @@ static void ipx_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = IPX_TYPE;
 }
 
-struct netproto proto_ipx = {
+const struct netproto proto_ipx = {
 	.name = "ipx",
 	.socket = ipx_rand_socket,
 	.setsockopt = ipx_setsockopt,

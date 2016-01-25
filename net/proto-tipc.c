@@ -59,7 +59,7 @@ static void tipc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optlen = sizeof(__u32);
 }
 
-struct netproto proto_tipc = {
+const struct netproto proto_tipc = {
 	.name = "tipc",
 	.socket = tipc_rand_socket,
 	.setsockopt = tipc_setsockopt,

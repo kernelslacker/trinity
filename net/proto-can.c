@@ -29,7 +29,7 @@ static void can_rand_socket(struct socket_triplet *st)
 	st->type = rnd() % TYPE_MAX;
 }
 
-struct netproto proto_can = {
+const struct netproto proto_can = {
 	.name = "can",
 	.socket = can_rand_socket,
 	.gen_sockaddr = can_gen_sockaddr,

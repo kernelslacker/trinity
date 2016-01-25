@@ -61,14 +61,14 @@ static void netbeui_setsockopt(struct sockopt *so, __unused__ struct socket_trip
 	so->level = SOL_NETBEUI;
 }
 
-struct netproto proto_llc = {
+const struct netproto proto_llc = {
 	.name = "llc",
 	.socket = llc_rand_socket,
 	.setsockopt = llc_setsockopt,
 	.gen_sockaddr = llc_gen_sockaddr,
 };
 
-struct netproto proto_netbeui = {
+const struct netproto proto_netbeui = {
 	.name = "netbeui",
 	.setsockopt = netbeui_setsockopt,
 	.gen_sockaddr = llc_gen_sockaddr,

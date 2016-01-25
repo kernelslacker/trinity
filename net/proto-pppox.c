@@ -176,7 +176,7 @@ static void pppol2tp_setsockopt(struct sockopt *so, __unused__ struct socket_tri
 	so->optlen = sizeof(int);
 }
 
-struct netproto proto_pppol2tp = {
+const struct netproto proto_pppol2tp = {
 	.name = "pppol2tp",
 //	.socket = pppol2tp_rand_socket,
 	.setsockopt = pppol2tp_setsockopt,

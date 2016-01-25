@@ -81,7 +81,7 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	}
 }
 
-struct netproto proto_packet = {
+const struct netproto proto_packet = {
 	.name = "packet",
 	.socket = packet_rand_socket,
 	.setsockopt = packet_setsockopt,

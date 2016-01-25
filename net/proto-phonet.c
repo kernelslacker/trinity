@@ -37,7 +37,7 @@ static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	so->level = SOL_PNPIPE;
 }
 
-struct netproto proto_phonet = {
+const struct netproto proto_phonet = {
 	.name = "phonet",
 	.socket = phonet_rand_socket,
 	.setsockopt = phonet_setsockopt,

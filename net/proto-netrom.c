@@ -18,7 +18,7 @@ static void netrom_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	so->optname = RAND_ARRAY(netrom_opts);
 }
 
-struct netproto proto_netrom = {
+const struct netproto proto_netrom = {
 	.name = "netrom",
 //	.socket = netrom_rand_socket,
 	.setsockopt = netrom_setsockopt,

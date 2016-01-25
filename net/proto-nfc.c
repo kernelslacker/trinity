@@ -44,7 +44,7 @@ static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->level = SOL_NFC;
 }
 
-struct netproto proto_nfc = {
+const struct netproto proto_nfc = {
 	.name = "nfc",
 	.socket = nfc_rand_socket,
 	.setsockopt = nfc_setsockopt,

@@ -16,7 +16,7 @@ static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	so->optname = RAND_ARRAY(rxrpc_opts);
 }
 
-struct netproto proto_rxrpc = {
+const struct netproto proto_rxrpc = {
 	.name = "rxrpc",
 //	.socket = rxrpc_rand_socket,
 	.setsockopt = rxrpc_setsockopt,

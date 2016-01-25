@@ -57,13 +57,13 @@ static void atm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = RAND_ARRAY(atm_opts);
 }
 
-struct netproto proto_atmpvc = {
+const struct netproto proto_atmpvc = {
 	.name = "atmpvc",
 //	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,
 	.gen_sockaddr = atmpvc_gen_sockaddr,
 };
-struct netproto proto_atmsvc = {
+const struct netproto proto_atmsvc = {
 	.name = "atmsvc",
 //	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,

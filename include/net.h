@@ -46,7 +46,7 @@ struct netproto {
 };
 
 struct protoptr {
-	struct netproto *proto;
+	const struct netproto *proto;
 };
 extern const struct protoptr net_protocols[PF_MAX];
 
@@ -70,36 +70,36 @@ int get_random_ether_type(void);
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
 
-extern struct netproto proto_ipv4;
-extern struct netproto proto_inet6;
-extern struct netproto proto_pppol2tp;
-extern struct netproto proto_unix;
-extern struct netproto proto_caif;
-extern struct netproto proto_alg;
-extern struct netproto proto_nfc;
-extern struct netproto proto_ax25;
-extern struct netproto proto_ipx;
-extern struct netproto proto_appletalk;
-extern struct netproto proto_atmpvc;
-extern struct netproto proto_atmsvc;
-extern struct netproto proto_x25;
-extern struct netproto proto_rose;
-extern struct netproto proto_decnet;
-extern struct netproto proto_llc;
-extern struct netproto proto_netlink;
-extern struct netproto proto_packet;
-extern struct netproto proto_econet;
-extern struct netproto proto_irda;
-extern struct netproto proto_can;
-extern struct netproto proto_tipc;
-extern struct netproto proto_phonet;
-extern struct netproto proto_rds;
-extern struct netproto proto_bluetooth;
-extern struct netproto proto_netrom;
-extern struct netproto proto_netbeui;
-extern struct netproto proto_iucv;
-extern struct netproto proto_rxrpc;
-extern struct netproto proto_phonet;
+extern const struct netproto proto_ipv4;
+extern const struct netproto proto_inet6;
+extern const struct netproto proto_pppol2tp;
+extern const struct netproto proto_unix;
+extern const struct netproto proto_caif;
+extern const struct netproto proto_alg;
+extern const struct netproto proto_nfc;
+extern const struct netproto proto_ax25;
+extern const struct netproto proto_ipx;
+extern const struct netproto proto_appletalk;
+extern const struct netproto proto_atmpvc;
+extern const struct netproto proto_atmsvc;
+extern const struct netproto proto_x25;
+extern const struct netproto proto_rose;
+extern const struct netproto proto_decnet;
+extern const struct netproto proto_llc;
+extern const struct netproto proto_netlink;
+extern const struct netproto proto_packet;
+extern const struct netproto proto_econet;
+extern const struct netproto proto_irda;
+extern const struct netproto proto_can;
+extern const struct netproto proto_tipc;
+extern const struct netproto proto_phonet;
+extern const struct netproto proto_rds;
+extern const struct netproto proto_bluetooth;
+extern const struct netproto proto_netrom;
+extern const struct netproto proto_netbeui;
+extern const struct netproto proto_iucv;
+extern const struct netproto proto_rxrpc;
+extern const struct netproto proto_phonet;
 
 /* bpf */
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);

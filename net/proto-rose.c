@@ -45,7 +45,7 @@ static void rose_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->level = SOL_ROSE;
 	so->optname = RAND_ARRAY(rose_opts);
 }
-struct netproto proto_rose = {
+const struct netproto proto_rose = {
 	.name = "rose",
 	//     .socket = rose_rand_socket,
 	.setsockopt = rose_setsockopt,
