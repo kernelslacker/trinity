@@ -103,10 +103,8 @@ extern struct netproto proto_ipx;
 
 extern struct netproto proto_appletalk;
 
-/* atm */
-void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-void atmsvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
-extern struct netproto proto_atm;
+extern struct netproto proto_atmpvc;
+extern struct netproto proto_atmsvc;
 
 /* x25 */
 void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);

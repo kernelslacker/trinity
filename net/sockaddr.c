@@ -22,7 +22,6 @@ static const struct sa_func_entry sa_funcs[] = {
 //TODO	{ .pf = PF_UNSPEC, .func = &unspec_gen_sockaddr },
 //TODO	{ .pf = PF_NETROM, .func = &netrom_gen_sockaddr },
 //TODO	{ .pf = PF_BRIDGE, .func = &bridge_gen_sockaddr },
-	{ .pf = PF_ATMPVC, .func = &atmpvc_gen_sockaddr },
 	{ .pf = PF_X25, .func = &x25_gen_sockaddr },
 #ifdef USE_IPV6
 	{ .pf = PF_INET6, .func = &ipv6_gen_sockaddr },
@@ -38,7 +37,6 @@ static const struct sa_func_entry sa_funcs[] = {
 	{ .pf = PF_PACKET, .func = &packet_gen_sockaddr },
 //TODO	{ .pf = PF_ASH, .func = &ash_gen_sockaddr },
 	{ .pf = PF_ECONET, .func = &econet_gen_sockaddr },
-	{ .pf = PF_ATMSVC, .func = &atmsvc_gen_sockaddr },
 	{ .pf = PF_RDS, .func = &rds_gen_sockaddr },
 //TODO	{ .pf = PF_SNA, .func = &sna_gen_sockaddr },
 	{ .pf = PF_IRDA, .func = &irda_gen_sockaddr },
