@@ -20,9 +20,6 @@ struct sa_func_entry {
 
 static const struct sa_func_entry sa_funcs[] = {
 //TODO	{ .pf = PF_UNSPEC, .func = &unspec_gen_sockaddr },
-#ifdef USE_APPLETALK
-	{ .pf = PF_APPLETALK, .func = &atalk_gen_sockaddr },
-#endif
 //TODO	{ .pf = PF_NETROM, .func = &netrom_gen_sockaddr },
 //TODO	{ .pf = PF_BRIDGE, .func = &bridge_gen_sockaddr },
 	{ .pf = PF_ATMPVC, .func = &atmpvc_gen_sockaddr },

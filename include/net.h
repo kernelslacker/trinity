@@ -101,8 +101,6 @@ extern struct netproto proto_ax25;
 
 extern struct netproto proto_ipx;
 
-/* appletalk */
-void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen);
 extern struct netproto proto_appletalk;
 
 /* atm */

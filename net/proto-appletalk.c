@@ -12,7 +12,7 @@
 #include "net.h"
 #include "utils.h"
 
-void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_at *atalk;
 
@@ -47,5 +47,6 @@ struct netproto proto_appletalk = {
 	.name = "appletalk",
 	.socket = atalk_rand_socket,
 	.setsockopt = atalk_setsockopt,
+	.gen_sockaddr = atalk_gen_sockaddr,
 };
 #endif
