@@ -40,3 +40,5 @@ void random_map_readfn(struct map *map);
 void random_map_writefn(struct map *map);
 
 unsigned long get_rand_mmap_flags(void);
+
+void mmap_fd(int fd, const char *name, size_t len, int prot);

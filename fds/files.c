@@ -97,44 +97,6 @@ static void filefd_destructor(struct object *obj)
 	close(obj->filefd);
 }
 
-static void mmap_fd(int fd, const char *name, size_t len, int prot)
-{
-	struct object *obj;
-	off_t offset;
-	int retries = 0;
-
-	/* Create an MMAP of the same fd. */
-	obj = alloc_object();
-	obj->map.name = strdup(name);
-	obj->map.size = len;
-
-retry_mmap:
-	if (len == 0) {
-		offset = 0;
-		obj->map.size = page_size;
-	} else
-		offset = (rnd() % obj->map.size) & PAGE_MASK;
-
-	obj->map.prot = prot;
-	obj->map.type = MMAPED_FILE;
-	obj->map.ptr = mmap(NULL, len, prot, get_rand_mmap_flags(), fd, offset);
-	if (obj->map.ptr == MAP_FAILED) {
-		retries++;
-		if (retries == 100) {
-			free(obj->map.name);
-			free(obj);
-			return;
-		} else
-			goto retry_mmap;
-	}
-
-	/* TODO: maybe later make a separate cache ?
-	 * Otherwise, these are going to dominate get_map()
-	 */
-	add_object(obj, OBJ_GLOBAL, OBJ_MMAP);
-	return;
-}
-
 static int open_files(void)
 {
 	struct objhead *head;
