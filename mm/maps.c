@@ -151,7 +151,7 @@ void dirty_random_mapping(void)
 /*
  * Set up a mmap object for an fd we already opened.
  */
-void mmap_fd(int fd, const char *name, size_t len, int prot)
+void mmap_fd(int fd, const char *name, size_t len, int prot, bool global)
 {
 	struct object *obj;
 	off_t offset;
@@ -185,6 +185,6 @@ retry_mmap:
 	/* TODO: maybe later make a separate cache ?
 	 * Otherwise, these are going to dominate get_map()
 	 */
-	add_object(obj, OBJ_GLOBAL, OBJ_MMAP);
+	add_object(obj, global, OBJ_MMAP);
 	return;
 }

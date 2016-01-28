@@ -1,5 +1,6 @@
 #pragma once
 
+#include "types.h"
 #include "list.h"
 
 #define INITIAL_ANON 1
@@ -41,4 +42,4 @@ void random_map_writefn(struct map *map);
 
 unsigned long get_rand_mmap_flags(void);
 
-void mmap_fd(int fd, const char *name, size_t len, int prot);
+void mmap_fd(int fd, const char *name, size_t len, int prot, bool global);
