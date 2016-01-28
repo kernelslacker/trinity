@@ -82,7 +82,7 @@ void init_child_mappings(void)
 		/* We leave type as 'INITIAL' until we change the mapping
 		 * by mprotect/mremap/munmap etc..
 		 */
-		newobj->map.type = TRINITY_MAP_INITIAL;
+		newobj->map.type = INITIAL_ANON;
 		add_object(newobj, OBJ_LOCAL, OBJ_MMAP);
 	}
 }

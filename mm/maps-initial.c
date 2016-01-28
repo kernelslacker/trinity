@@ -31,7 +31,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	new = alloc_object();
 	new->map.size = size;
 	new->map.prot = prot;
-	new->map.type = TRINITY_MAP_INITIAL;
+	new->map.type = INITIAL_ANON;
 	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
 	if (new->map.ptr == MAP_FAILED) {
 		outputerr("mmap failure\n");

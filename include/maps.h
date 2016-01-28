@@ -2,8 +2,8 @@
 
 #include "list.h"
 
-#define TRINITY_MAP_INITIAL 1
-#define TRINITY_MAP_CHILD 2
+#define INITIAL_ANON 1
+#define CHILD_ANON 2
 #define MMAPED_FILE 3
 
 struct map {

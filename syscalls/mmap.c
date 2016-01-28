@@ -92,7 +92,7 @@ static void post_mmap(struct syscallrecord *rec)
 	new->map.prot = rec->a3;
 //TODO: store fd if !anon
 	new->map.ptr = p;
-	new->map.type = TRINITY_MAP_CHILD;
+	new->map.type = CHILD_ANON;
 
 	// Add this to a list for use by subsequent syscalls.
 	add_object(new, OBJ_LOCAL, OBJ_MMAP);
