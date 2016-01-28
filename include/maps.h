@@ -4,6 +4,7 @@
 
 #define TRINITY_MAP_INITIAL 1
 #define TRINITY_MAP_CHILD 2
+#define MMAPED_FILE 3
 
 struct map {
 	void *ptr;
@@ -37,3 +38,5 @@ struct faultfn {
 
 void random_map_readfn(struct map *map);
 void random_map_writefn(struct map *map);
+
+unsigned long get_rand_mmap_flags(void);

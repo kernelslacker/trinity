@@ -42,27 +42,14 @@ int open_with_fopen(const char *filename, int flags)
 	return fd;
 }
 
-static int open_file(void)
+static int open_file(const char *filename, int flags)
 {
-	const char *filename;
 	const char *modestr;
-	struct stat sb;
 	int fd;
-	int ret;
 	int tries = 0;
 	int fcntl_flags = 0;
-	int flags, randflags = 0;
+	int randflags = 0;
 	bool opened_with_fopen = FALSE;
-
-retry:
-	filename = get_filename();
-	ret = lstat(filename, &sb);
-	if (ret == -1)
-		goto retry;
-
-	flags = check_stat_file(&sb);
-	if (flags == -1)
-		goto retry;
 
 	/* OR in some random flags. */
 retry_flags:
@@ -110,6 +97,44 @@ static void filefd_destructor(struct object *obj)
 	close(obj->filefd);
 }
 
+static void mmap_fd(int fd, const char *name, size_t len, int prot)
+{
+	struct object *obj;
+	off_t offset;
+	int retries = 0;
+
+	/* Create an MMAP of the same fd. */
+	obj = alloc_object();
+	obj->map.name = strdup(name);
+	obj->map.size = len;
+
+retry_mmap:
+	if (len == 0) {
+		offset = 0;
+		obj->map.size = page_size;
+	} else
+		offset = (rnd() % obj->map.size) & PAGE_MASK;
+
+	obj->map.prot = prot;
+	obj->map.type = MMAPED_FILE;
+	obj->map.ptr = mmap(NULL, len, prot, get_rand_mmap_flags(), fd, offset);
+	if (obj->map.ptr == MAP_FAILED) {
+		retries++;
+		if (retries == 100) {
+			free(obj->map.name);
+			free(obj);
+			return;
+		} else
+			goto retry_mmap;
+	}
+
+	/* TODO: maybe later make a separate cache ?
+	 * Otherwise, these are going to dominate get_map()
+	 */
+	add_object(obj, OBJ_GLOBAL, OBJ_MMAP);
+	return;
+}
+
 static int open_files(void)
 {
 	struct objhead *head;
@@ -132,15 +157,50 @@ static int open_files(void)
 		return FALSE;
 
 	for (i = 0; i < nr_to_open; i++) {
+		struct stat sb;
+		const char *filename;
 		struct object *obj;
-		int fd;
+		int fd = -1;
+		int ret;
+		int flags;
 
-		fd = open_file();
+		do {
+			filename = get_filename();
+
+			ret = lstat(filename, &sb);
+			if (ret == -1)
+				continue;
+
+			flags = check_stat_file(&sb);
+			if (flags == -1)
+				continue;
+
+			fd = open_file(filename, flags);
+		} while (fd == -1);
 
 		obj = alloc_object();
 		obj->filefd = fd;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_FILE);
+
+		/* convert O_ open flags to mmap prot flags */
+		switch (flags) {
+		case O_RDONLY:
+			flags = PROT_READ;
+			break;
+		case O_WRONLY:
+			flags = PROT_WRITE;
+			break;
+		case O_RDWR:
+			flags = PROT_READ|PROT_WRITE;
+			break;
+		default:
+			break;
+		}
+
+		mmap_fd(fd, filename, sb.st_size, flags);
 	}
+
+	dump_objects(OBJ_GLOBAL, OBJ_MMAP);
 	return TRUE;
 }
 

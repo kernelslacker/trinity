@@ -30,9 +30,15 @@ static void do_anon(struct syscallrecord *rec)
 	rec->a6 = 0;
 }
 
-static void sanitise_mmap(struct syscallrecord *rec)
+unsigned long mmap_excl_flags[] = {
+	MAP_SHARED, MAP_PRIVATE,
+};
+
+unsigned long get_rand_mmap_flags(void)
 {
-	unsigned long mmap_flags[] = {
+	unsigned long flags;
+
+	const unsigned long mmap_flags[] = {
 		MAP_FIXED, MAP_ANONYMOUS, MAP_GROWSDOWN, MAP_DENYWRITE,
 		MAP_EXECUTABLE, MAP_LOCKED, MAP_NORESERVE, MAP_POPULATE,
 		MAP_NONBLOCK, MAP_STACK, MAP_HUGETLB, MAP_UNINITIALIZED,
@@ -41,11 +47,19 @@ static void sanitise_mmap(struct syscallrecord *rec)
 #endif
 	};
 
+	flags = RAND_ARRAY(mmap_excl_flags);
+	flags |= set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
+
+	return flags;
+}
+
+static void sanitise_mmap(struct syscallrecord *rec)
+{
 	/* Don't actually set a hint right now. */
 	rec->a1 = 0;
 
-	// set additional flags
-	rec->a4 = set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
+	/* this over-rides the ARG_OP in the syscall struct */
+	rec->a4 = get_rand_mmap_flags();
 
 	if (rec->a4 & MAP_ANONYMOUS) {
 		rec->a2 = RAND_ARRAY(mapping_sizes);
@@ -123,10 +137,6 @@ static unsigned long mmap_prots[] = {
 	PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM,
 };
 
-static unsigned long mmap_flags[] = {
-	MAP_SHARED, MAP_PRIVATE,
-};
-
 struct syscallentry syscall_mmap = {
 	.name = "mmap",
 	.num_args = 6,
@@ -143,7 +153,7 @@ struct syscallentry syscall_mmap = {
 	.arg3list = ARGLIST(mmap_prots),
 	.arg4name = "flags",
 	.arg4type = ARG_OP,
-	.arg4list = ARGLIST(mmap_flags),
+	.arg4list = ARGLIST(mmap_excl_flags),
 	.arg5name = "fd",
 	.arg5type = ARG_FD,
 	.arg6name = "off",
@@ -169,7 +179,7 @@ struct syscallentry syscall_mmap2 = {
 	.arg3list = ARGLIST(mmap_prots),
 	.arg4name = "flags",
 	.arg4type = ARG_OP,
-	.arg4list = ARGLIST(mmap_flags),
+	.arg4list = ARGLIST(mmap_excl_flags),
 	.arg5name = "fd",
 	.arg5type = ARG_FD,
 	.arg6name = "pgoff",
