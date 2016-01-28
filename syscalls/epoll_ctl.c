@@ -11,10 +11,14 @@
 #include "utils.h"
 #include "compat.h"
 
+#ifndef EPOLLEXCLUSIVE
+#define EPOLLEXCLUSIVE (1 << 28)
+#endif
+
 static const unsigned long epoll_flags[] = {
 	EPOLLIN, EPOLLOUT, EPOLLRDHUP, EPOLLPRI,
 	EPOLLERR, EPOLLHUP, EPOLLET, EPOLLONESHOT,
-	EPOLLWAKEUP,
+	EPOLLWAKEUP, EPOLLEXCLUSIVE,
 };
 
 static void sanitise_epoll_ctl(struct syscallrecord *rec)
