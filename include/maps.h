@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "list.h"
+#include "object-types.h"
 
 #define INITIAL_ANON 1
 #define CHILD_ANON 2
@@ -42,4 +43,4 @@ void random_map_writefn(struct map *map);
 
 unsigned long get_rand_mmap_flags(void);
 
-void mmap_fd(int fd, const char *name, size_t len, int prot, bool global);
+void mmap_fd(int fd, const char *name, size_t len, int prot, bool global, enum objecttype type);

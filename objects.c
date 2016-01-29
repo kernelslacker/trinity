@@ -30,6 +30,7 @@ void dump_objects(bool global, enum objecttype type)
 
 		switch (type) {
 		case OBJ_MMAP_ANON:
+		case OBJ_MMAP_FILE:
 			m = &obj->map;
 			sizeunit(m->size, buf);
 			output(0, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
