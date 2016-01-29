@@ -95,7 +95,7 @@ static void post_mmap(struct syscallrecord *rec)
 	new->map.type = CHILD_ANON;
 
 	// Add this to a list for use by subsequent syscalls.
-	add_object(new, OBJ_LOCAL, OBJ_MMAP);
+	add_object(new, OBJ_LOCAL, OBJ_MMAP_ANON);
 
 	/* Sometimes dirty the mapping. */
 	if (RAND_BOOL())

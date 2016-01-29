@@ -29,7 +29,7 @@ void dump_objects(bool global, enum objecttype type)
 		// gross. Have some kind of ->dump operation in the objhead maybe?
 
 		switch (type) {
-		case OBJ_MMAP:
+		case OBJ_MMAP_ANON:
 			m = &obj->map;
 			sizeunit(m->size, buf);
 			output(0, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);

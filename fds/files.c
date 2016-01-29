@@ -162,7 +162,7 @@ static int open_files(void)
 		mmap_fd(fd, filename, sb.st_size, flags, OBJ_GLOBAL);
 	}
 
-//	dump_objects(OBJ_GLOBAL, OBJ_MMAP);
+//	dump_objects(OBJ_GLOBAL, OBJ_MMAP_ANON);
 	return TRUE;
 }
 

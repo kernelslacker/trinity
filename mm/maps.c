@@ -20,6 +20,7 @@ struct map * get_map(void)
 	struct object *obj;
 	struct childdata *child = this_child();
 	bool global;
+	enum objecttype type;
 
 	/*
 	 * Some of the fd providers need weird mappings on startup.
@@ -32,7 +33,9 @@ struct map * get_map(void)
 	else
 		global = OBJ_LOCAL;
 
-	obj = get_random_object(OBJ_MMAP, global);
+	type = OBJ_MMAP_ANON;
+
+	obj = get_random_object(type, global);
 	if (obj == NULL)
 		return NULL;
 
@@ -58,10 +61,10 @@ void init_child_mappings(void)
 	struct list_head *globallist, *node;
 	struct objhead *head;
 
-	head = get_objhead(OBJ_LOCAL, OBJ_MMAP);
+	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
 	head->destroy = &map_destructor;
 
-	globallist = shm->global_objects[OBJ_MMAP].list;
+	globallist = shm->global_objects[OBJ_MMAP_ANON].list;
 
 	/* Copy the initial mapping list to the child.
 	 * Note we're only copying pointers here, the actual mmaps
@@ -83,7 +86,7 @@ void init_child_mappings(void)
 		 * by mprotect/mremap/munmap etc..
 		 */
 		newobj->map.type = INITIAL_ANON;
-		add_object(newobj, OBJ_LOCAL, OBJ_MMAP);
+		add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
 	}
 }
 
@@ -185,6 +188,6 @@ retry_mmap:
 	/* TODO: maybe later make a separate cache ?
 	 * Otherwise, these are going to dominate get_map()
 	 */
-	add_object(obj, global, OBJ_MMAP);
+	add_object(obj, global, OBJ_MMAP_ANON);
 	return;
 }

@@ -42,7 +42,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	sprintf(new->map.name, "anon(%s)", name);
 
-	add_object(new, OBJ_GLOBAL, OBJ_MMAP);
+	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
 
 	close(fd);
 }
@@ -96,7 +96,7 @@ void setup_initial_mappings(void)
 	struct objhead *head;
 	unsigned int i;
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP);
+	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
 	head->destroy = &map_destructor;
 
 	setup_mapping_sizes();
@@ -107,5 +107,5 @@ void setup_initial_mappings(void)
 		alloc_zero_map(mapping_sizes[i], PROT_WRITE, "PROT_WRITE");
 	}
 
-	dump_objects(OBJ_GLOBAL, OBJ_MMAP);
+	dump_objects(OBJ_GLOBAL, OBJ_MMAP_ANON);
 }

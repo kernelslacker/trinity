@@ -7,7 +7,7 @@
 #include "futex.h"
 
 enum objecttype {
-	OBJ_MMAP,
+	OBJ_MMAP_ANON,
 	OBJ_FD_PIPE,
 	OBJ_FD_FILE,
 	OBJ_FD_PERF,
