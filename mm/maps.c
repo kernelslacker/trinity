@@ -151,6 +151,9 @@ void dirty_random_mapping(void)
 	struct map *map;
 
 	map = get_map();
+	if (map == NULL)
+		return;
+
 	dirty_mapping(map);
 }
 
