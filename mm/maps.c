@@ -17,7 +17,7 @@
  */
 struct map * get_map(void)
 {
-	struct object *obj;
+	struct object *obj = NULL;
 	struct childdata *child = this_child();
 	bool global;
 	enum objecttype type;
@@ -33,14 +33,14 @@ struct map * get_map(void)
 	else
 		global = OBJ_LOCAL;
 
-	if (RAND_BOOL())
-		type = OBJ_MMAP_ANON;
-	else
-		type = OBJ_MMAP_FILE;
+	while (obj == NULL) {
+		if (RAND_BOOL())
+			type = OBJ_MMAP_ANON;
+		else
+			type = OBJ_MMAP_FILE;
 
-	obj = get_random_object(type, global);
-	if (obj == NULL)
-		return NULL;
+		obj = get_random_object(type, global);
+	}
 
 	return &obj->map;
 }
@@ -151,8 +151,6 @@ void dirty_random_mapping(void)
 	struct map *map;
 
 	map = get_map();
-	if (map == NULL)
-		return;
 
 	dirty_mapping(map);
 }

@@ -25,9 +25,6 @@ retry:	tries++;
 		return NULL;
 
 	map = get_map();
-	if (map == NULL)
-		goto retry;
-
 	if (map->size < size)
 		goto retry;
 
@@ -103,9 +100,8 @@ struct iovec * alloc_iovec(unsigned int num)
 	iov = zmalloc(num * sizeof(struct iovec));	/* freed by generic_free_arg */
 
 	for (i = 0; i < num; i++) {
-		struct map *map;
+		struct map *map = get_map();
 
-		map = get_map();
 		iov[i].iov_base = map->ptr;
 		iov[i].iov_len = rnd() % map->size;
 	}
