@@ -18,7 +18,6 @@
 struct map * get_map(void)
 {
 	struct object *obj;
-	struct map *map;
 	struct childdata *child = this_child();
 	bool global;
 
@@ -34,9 +33,10 @@ struct map * get_map(void)
 		global = OBJ_LOCAL;
 
 	obj = get_random_object(OBJ_MMAP, global);
-	map = &obj->map;
+	if (obj == NULL)
+		return NULL;
 
-	return map;
+	return &obj->map;
 }
 
 void map_destructor(struct object *obj)
