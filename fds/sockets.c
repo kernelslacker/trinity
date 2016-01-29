@@ -372,8 +372,13 @@ static int open_sockets(void)
 		type = buffer[1];
 		protocol = buffer[2];
 
+		if (domain > TRINITY_PF_MAX) {
+			output(1, "cachefile contained invalid domain %u\n", domain);
+			goto regenerate;
+		}
+
 		if ((do_specific_domain == TRUE && domain != specific_domain) ||
-		    (domain < ARRAY_SIZE(no_domains) && no_domains[domain] == TRUE)) {
+		    (no_domains[domain] == TRUE)) {
 			output(1, "ignoring socket cachefile due to specific "
 			       "protocol request (or protocol disabled), "
 			       "and stale data in cachefile.\n");
