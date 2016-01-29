@@ -21,6 +21,8 @@ void * get_writable_address(unsigned long size)
 
 retry:
 	map = get_map();
+	if (map == NULL)
+		goto retry;
 
 	if (map->size < size)
 		goto retry;
