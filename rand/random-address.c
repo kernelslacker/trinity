@@ -18,8 +18,12 @@ void * get_writable_address(unsigned long size)
 {
 	struct map *map;
 	void *addr = NULL;
+	int tries = 0;
 
-retry:
+retry:	tries++;
+	if (tries == 100)
+		return NULL;
+
 	map = get_map();
 	if (map == NULL)
 		goto retry;
