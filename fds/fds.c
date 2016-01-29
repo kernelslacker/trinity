@@ -49,12 +49,12 @@ void setup_fd_providers(void)
 	fd_providers = zmalloc(sizeof(struct fd_provider));
 	INIT_LIST_HEAD(&fd_providers->list);
 
+	add_to_prov_list(&file_fd_provider);
 	add_to_prov_list(&socket_fd_provider);
 	add_to_prov_list(&pipes_fd_provider);
 	add_to_prov_list(&perf_fd_provider);
 	add_to_prov_list(&epoll_fd_provider);
 	add_to_prov_list(&eventfd_fd_provider);
-	add_to_prov_list(&file_fd_provider);
 	add_to_prov_list(&timerfd_fd_provider);
 	add_to_prov_list(&testfile_fd_provider);
 	add_to_prov_list(&memfd_fd_provider);
