@@ -123,10 +123,11 @@ static int open_files(void)
 		const char *filename;
 		struct object *obj;
 		int fd = -1;
-		int ret;
 		int flags;
 
 		do {
+			int ret;
+
 			filename = get_filename();
 
 			ret = lstat(filename, &sb);
