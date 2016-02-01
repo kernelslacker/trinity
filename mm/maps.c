@@ -20,7 +20,7 @@ struct map * get_map(void)
 	struct object *obj = NULL;
 	struct childdata *child = this_child();
 	bool global;
-	enum objecttype type;
+	enum objecttype type = 0;
 
 	/*
 	 * Some of the fd providers need weird mappings on startup.
@@ -34,10 +34,14 @@ struct map * get_map(void)
 		global = OBJ_LOCAL;
 
 	while (obj == NULL) {
-		if (RAND_BOOL())
-			type = OBJ_MMAP_ANON;
-		else
-			type = OBJ_MMAP_FILE;
+		switch (rnd() % 3) {
+		case 0:	type = OBJ_MMAP_ANON;
+			break;
+		case 1:	type = OBJ_MMAP_FILE;
+			break;
+		case 2:	type = OBJ_MMAP_TESTFILE;
+			break;
+		}
 
 		obj = get_random_object(type, global);
 	}

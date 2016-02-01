@@ -77,6 +77,9 @@ static int open_testfile_fds(void)
 
 			i++;
 			fails = 0;
+
+			mmap_fd(fd, filename, page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
+
 		} else {
 			fails++;
 			if (fails == 100) {
@@ -84,6 +87,8 @@ static int open_testfile_fds(void)
 			}
 		}
 	}
+
+	dump_objects(OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
 
 	free(filename);
 	return TRUE;
