@@ -88,7 +88,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 
 	/* If we only have a small buffer, don't do
 	 * the longer generators. */
-	if (len < 20)
+	if (len < 24)
 		randrange = 6;
 	else {
 		/* Make sure we're always dealing with an even number */
@@ -127,7 +127,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 
 		p = (char *) ptr;
 
-		while (p < (char *)(ptr + (len-22))) {		// 22 is the longest case below + separator.
+		while (p < (char *)(ptr + (len-23))) {		// 23 is the longest case below + separator.
 			if (RAND_BOOL()) {
 				/* hex */
 				switch (rnd() % 3) {
