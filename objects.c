@@ -83,6 +83,11 @@ void dump_objects(bool global, enum objecttype type)
 			output(0, "futex: %lx owner:%d\n",
 				obj->lock.futex, obj->lock.owner_pid);
 			break;
+		case OBJ_SYSV_SHM:
+			output(0, "sysv_shm: id:%u size:%d flags:%x ptr:%p\n",
+				obj->sysv_shm.id, obj->sysv_shm.size,
+				obj->sysv_shm.flags, obj->sysv_shm.ptr);
+			break;
 		case MAX_OBJECT_TYPES:
 		default:
 			break;

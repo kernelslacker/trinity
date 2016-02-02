@@ -1088,3 +1088,12 @@ struct kvm_get_htab_fd {
 #ifndef NVME_IOCTL_RESET
 #define NVME_IOCTL_RESET _IO('N', 0x44)
 #endif
+
+/* linux/shm.h */
+#ifndef SHM_HUGE_SHIFT
+#define SHM_HUGE_SHIFT  26
+#endif
+#ifndef SHM_HUGE_2MB
+#define SHM_HUGE_2MB	(21 << SHM_HUGE_SHIFT)
+#define SHM_HUGE_1GB	(30 << SHM_HUGE_SHIFT)
+#endif

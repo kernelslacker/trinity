@@ -18,6 +18,7 @@
 #include "random.h"
 #include "signals.h"
 #include "shm.h"
+#include "sysv-shm.h"
 #include "futex.h"
 #include "tables.h"
 #include "taint.h"
@@ -164,7 +165,10 @@ int main(int argc, char* argv[])
 
 	parse_devices();
 
+	/* FIXME: Some better object construction method needed. */
 	create_futexes();
+	create_sysv_shms();
+
 
 	setup_main_signals();
 

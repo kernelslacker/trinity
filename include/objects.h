@@ -6,6 +6,7 @@
 #include "futex.h"
 #include "object-types.h"
 #include "maps.h"
+#include "sysv-shm.h"
 
 struct object {
 	struct list_head list;
@@ -39,6 +40,8 @@ struct object {
 		struct socketinfo sockinfo;
 
 		struct __lock lock; /* futex */
+
+		struct sysv_shm sysv_shm;
 	};
 };
 
