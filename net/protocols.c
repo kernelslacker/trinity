@@ -1,6 +1,7 @@
 #include <sys/socket.h>
 #include "config.h"
 #include "net.h"
+#include "compat.h"
 
 const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_UNIX] = { .proto = &proto_unix },
@@ -43,5 +44,7 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_PPPOX] = { .proto = &proto_pppol2tp },
 	[PF_IUCV] = { .proto = &proto_iucv },
 	[PF_RXRPC] = { .proto = &proto_rxrpc },
+#ifdef USE_IF_ALG
 	[PF_ALG] = { .proto = &proto_alg },
+#endif
 };
