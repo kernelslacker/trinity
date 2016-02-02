@@ -730,6 +730,12 @@ void main_loop(void)
 		}
 
 		print_stats();
+
+		/* This should never happen, but just to catch corner cases, like if
+		 * fork() failed when we tried to replace a child.
+		 */
+		if (shm->running_childs < max_children)
+			fork_children();
 	}
 
 	/* if the pid map is corrupt, we can't trust that we'll
