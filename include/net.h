@@ -48,7 +48,7 @@ struct netproto {
 struct protoptr {
 	const struct netproto *proto;
 };
-extern const struct protoptr net_protocols[PF_MAX];
+extern const struct protoptr net_protocols[TRINITY_PF_MAX];
 
 const struct fd_provider socket_fd_provider;
 
