@@ -372,7 +372,7 @@ static int open_sockets(void)
 		type = buffer[1];
 		protocol = buffer[2];
 
-		if (domain > TRINITY_PF_MAX) {
+		if (domain >= TRINITY_PF_MAX) {
 			output(1, "cachefile contained invalid domain %u\n", domain);
 			goto regenerate;
 		}
