@@ -48,17 +48,21 @@ static const char *algos[] = {
 	"authenc(hmac(sha1),cbc(aes))",
 	"authenc(hmac(sha1),cbc(des))",
 	"authenc(hmac(sha1),cbc(des3_ede))",
+	"authenc(hmac(sha1),ctr(aes))"
 	"authenc(hmac(sha1),ecb(cipher_null))",
 	"authenc(hmac(sha224),cbc(des))",
 	"authenc(hmac(sha224),cbc(des3_ede))",
 	"authenc(hmac(sha256),cbc(aes))",
 	"authenc(hmac(sha256),cbc(des))",
 	"authenc(hmac(sha256),cbc(des3_ede))",
+	"authenc(hmac(sha256),ctr(aes))"
 	"authenc(hmac(sha384),cbc(des))",
 	"authenc(hmac(sha384),cbc(des3_ede))",
+	"authenc(hmac(sha384),ctr(aes))"
 	"authenc(hmac(sha512),cbc(aes))",
 	"authenc(hmac(sha512),cbc(des))",
 	"authenc(hmac(sha512),cbc(des3_ede))",
+	"authenc(hmac(sha512),ctr(aes))"
 	"cbc(aes)",
 	"cbc(anubis)",
 	"cbc(blowfish)",
