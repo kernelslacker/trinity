@@ -121,10 +121,11 @@ void init_syscalls_uniarch(void)
 
 void deactivate_disabled_syscalls_uniarch(void)
 {
-	struct syscallentry *entry;
 	unsigned int i;
 
 	for_each_syscall(i) {
+		struct syscallentry *entry;
+
 		entry = syscalls[i].entry;
 		if (entry->flags & TO_BE_DEACTIVATED) {
 			entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
