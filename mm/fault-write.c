@@ -82,9 +82,9 @@ static void dirty_first_page(struct map *map)
  * a strlen and go off the end. */
 static void dirty_last_page(struct map *map)
 {
-	char *p = map->ptr;
+	char *p = map->ptr + map->size - page_size;
 
-	memset((void *) p + (map->size - page_size), 'A', page_size);
+	memset((void *) p, 'A', page_size);
 }
 
 static const struct faultfn write_faultfns_single[] = {
