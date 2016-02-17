@@ -186,7 +186,7 @@ unsigned int rand32(void)
  */
 u64 rand64(void)
 {
-	unsigned long r = 0;
+	u64 r = 0;
 
 	switch (rnd() % 8) {
 
@@ -207,7 +207,7 @@ u64 rand64(void)
 		break;
 	case 4:	r = randbits(64);
 		break;
-	case 5:	r = (0ULL | rnd()) << 32 | rnd();
+	case 5:	r = (u64) rnd() << 32 | rnd();
 		break;
 	case 6:	r = rept_byte();
 		break;
