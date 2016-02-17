@@ -103,7 +103,7 @@ void output(unsigned char level, const char *fmt, ...)
 	}
 
 	/* go on with file logs only if enabled */
-	if (logging == LOGGING_FILES)
+	if (logging == LOGGING_DISABLED)
 		return;
 
 	handle = find_logfile_handle();
