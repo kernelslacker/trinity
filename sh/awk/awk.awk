@@ -2,6 +2,7 @@
 
 # Author: chuhu@redhat.com
 # Parse the taskfile with restraint support and param support
+# Usage: awk -v e_file=taskfile -v e_tag=recipe|guestrecipe -f awk.awk
 
 function execute(cmd){
 	#system(cmd);
@@ -13,6 +14,7 @@ function execute(cmd){
 
 function parse_equation(line,is_key){
 	split(line,dest,"=");	
+	#for (v in dest) printf("%s\n",dest[v]);
 	if(is_key)
 		return dest[1];
 	return dest[2];
@@ -48,18 +50,20 @@ function oparse_taskfile(filename,algn){
 	param_content=""
 	git_url=""
 	while(getline var < filename){
-		split(var,pr," ");
+		split(var,pr,"\" ");
 		len=length(pr)
 		tname=pr[len];
 		for(s=1;s<=len;s++){
 			node=parse_restraint(pr[s],"\t\t\t\t"algn)
-			#pc=match_equation(pr[s]);
 			if(length(node)>0)
 				giturl=node;
 			else{
+				#force to remove the "
+				gsub("\"","",pr[s]);
 				pc=parse_taskparam(pr[s],algn);
-				if(length(pc)>0)
+				if(length(pc)>0){
 					param_content=param_content"\n"pc;
+				}
 			}
 		}
 		tc=gettask(tname,param_content,giturl,"\t\t\t"algn);
