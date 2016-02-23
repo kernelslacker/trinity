@@ -11,11 +11,7 @@
 
 /*
  * Check that the processes holding locks are still alive.
- * And if they are, ensure they haven't held them for an
- * excessive length of time.
  */
-#define STEAL_THRESHOLD 1000000
-
 static bool check_lock(lock_t *_lock)
 {
 	pid_t pid;
