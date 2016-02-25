@@ -63,20 +63,12 @@ void setup_fd_providers(void)
 	add_to_prov_list(&userfaultfd_provider);
 	add_to_prov_list(&fanotify_fd_provider);
 
-	/*
-	 * TODO: Randomize the order in which we initialize things.
-	 * Right now for eg, when an fd provider also needs an existing
-	 * fd it only has the 'already initialized' providers to choose from,
-	 * and for those early in the list, that sucks.
-	 *
-	 * It might also catch some bugs in some providers where we're assuming
-	 * that we've already initialized some fd's.
-	 */
-
 	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }
 
-unsigned int open_fds(void)
+static unsigned int num_fd_providers_initialized = 0;
+
+static void __open_fds(bool do_rand)
 {
 	struct list_head *node;
 
@@ -85,17 +77,40 @@ unsigned int open_fds(void)
 
 		provider = (struct fd_provider *) node;
 
+		/* disabled on cmdline */
 		if (provider->enabled == FALSE)
 			continue;
 
+		/* already done */
+		if (provider->initialized == TRUE)
+			continue;
+
+		if (do_rand == TRUE) {
+			/* to mix up init order */
+			if (RAND_BOOL())
+				continue;
+		}
+
 		provider->enabled = provider->open();
 		if (provider->enabled == TRUE) {
-			num_fd_providers_enabled++;
 			provider->initialized = TRUE;
+			num_fd_providers_initialized++;
+			num_fd_providers_enabled++;
 		}
 	}
+}
 
-	output(0, "Enabled %d fd providers.\n", num_fd_providers_enabled);
+unsigned int open_fds(void)
+{
+	/* Open half the providers randomly */
+	while (num_fd_providers_initialized < (num_fd_providers / 2))
+		__open_fds(TRUE);
+
+	/* Now open any leftovers */
+	__open_fds(FALSE);
+
+	output(0, "Enabled %d fd providers: initialized:%d.\n",
+		num_fd_providers_enabled, num_fd_providers_initialized);
 
 	return TRUE;
 }
