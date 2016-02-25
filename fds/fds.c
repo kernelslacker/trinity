@@ -63,6 +63,16 @@ void setup_fd_providers(void)
 	add_to_prov_list(&userfaultfd_provider);
 	add_to_prov_list(&fanotify_fd_provider);
 
+	/*
+	 * TODO: Randomize the order in which we initialize things.
+	 * Right now for eg, when an fd provider also needs an existing
+	 * fd it only has the 'already initialized' providers to choose from,
+	 * and for those early in the list, that sucks.
+	 *
+	 * It might also catch some bugs in some providers where we're assuming
+	 * that we've already initialized some fd's.
+	 */
+
 	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }
 
@@ -79,8 +89,10 @@ unsigned int open_fds(void)
 			continue;
 
 		provider->enabled = provider->open();
-		if (provider->enabled == TRUE)
+		if (provider->enabled == TRUE) {
 			num_fd_providers_enabled++;
+			provider->initialized = TRUE;
+		}
 	}
 
 	output(0, "Enabled %d fd providers.\n", num_fd_providers_enabled);
@@ -110,6 +122,10 @@ retry:
 				provider = (struct fd_provider *) node;
 
 				if (provider->enabled == FALSE)	// FIXME: Better would be to just remove disabled providers from the list.
+					goto retry;
+
+				// Hasn't been run yet.
+				if (provider->initialized == FALSE)
 					goto retry;
 
 				fd = provider->get();

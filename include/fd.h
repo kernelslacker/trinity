@@ -17,6 +17,7 @@ struct fd_provider {
         int (*open)(void);
         int (*get)(void);
 	bool enabled;
+	bool initialized;
 };
 
 unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec);
