@@ -21,6 +21,7 @@ static int open_perf_fds(void)
 {
 	struct objhead *head;
 	unsigned int i = 0;
+	unsigned int perm_count = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
 	head->destroy = &perffd_destructor;
@@ -43,13 +44,25 @@ static int open_perf_fds(void)
 			output(2, "fd[%d] = perf\n", fd);
 			i++;
 		} else {
-			/* If ENOSYS, bail early rather than do MAX_PERF_FDS retries */
-			if (errno == ENOSYS)
-				return TRUE;
+			switch (errno) {
+			case ENOSYS:
+				/* If ENOSYS, bail early rather than do MAX_PERF_FDS retries */
+				return FALSE;
 
-			/* If we get here we probably generated something invalid and
-			 * perf_event_open threw it out. Go around the loop again.
-			 */
+			case EINVAL:
+				/* If we get here we probably generated something invalid and
+				 * perf_event_open threw it out. Go around the loop again.
+				 */
+				continue;
+
+			case EACCES:
+				perm_count++;
+			}
+		}
+
+		if (perm_count > 1000) {
+			output(2, "Couldn't open enough perf events, got EPERM too much. Giving up.\n");
+			return FALSE;
 		}
 
 		if (shm->exit_reason != STILL_RUNNING)
