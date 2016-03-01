@@ -8,9 +8,15 @@
 #include "syscall.h"
 #include "trinity.h"
 
+#ifndef MCL_CURRENT
 #define MCL_CURRENT     1
+#endif
+#ifndef MCL_FUTURE
 #define MCL_FUTURE      2
+#endif
+#ifndef MCL_ONFAULT
 #define MCL_ONFAULT	4
+#endif
 
 static void sanitise_mlockall(struct syscallrecord *rec)
 {
