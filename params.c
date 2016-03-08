@@ -32,6 +32,7 @@ bool do_specific_domain = FALSE;
 bool no_domains[TRINITY_PF_MAX];
 
 bool dry_run = FALSE;
+bool show_unannotated = FALSE;
 bool show_syscall_list = FALSE;
 bool show_ioctl_list = FALSE;
 unsigned char quiet_level = 0;
@@ -122,6 +123,7 @@ static const struct option longopts[] = {
 	{ "random", required_argument, NULL, 'r' },
 	{ "server_addr", required_argument, NULL, 0 },
 	{ "server_port", required_argument, NULL, 0 },
+	{ "show-unannotated", no_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
 	{ "victims", required_argument, NULL, 'V' },
@@ -320,6 +322,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("dry-run", longopts[opt_index].name) == 0)
 				dry_run = TRUE;
+
+			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
+				show_unannotated = TRUE;
 
 			break;
 		}

@@ -145,12 +145,17 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 
-	init_syscalls();
-
 	if (show_ioctl_list == TRUE) {
 		dump_ioctls();
 		goto out;
 	}
+
+	if (show_unannotated == TRUE) {
+		show_unannotated_args();
+		goto out;
+	}
+
+	init_syscalls();
 
 	do_uid0_check();
 

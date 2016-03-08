@@ -32,6 +32,7 @@ extern bool do_specific_domain;
 extern char *specific_domain_optarg;
 extern bool no_domains[TRINITY_PF_MAX];
 extern bool dry_run;
+extern bool show_unannotated;
 extern bool show_syscall_list;
 extern bool show_ioctl_list;
 extern unsigned char quiet_level;
