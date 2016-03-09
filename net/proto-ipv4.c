@@ -10,6 +10,7 @@
 #include <linux/mroute.h>
 #include <net/if.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
+#include <linux/netfilter_bridge/ebtables.h>
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"
@@ -212,6 +213,8 @@ static const struct sock_option ip_opts[] = {
 	{ .name = MRT_DEL_MFC_PROXY, .len = sizeof(struct mfcctl) },
 	{ .name = IPT_SO_SET_REPLACE, },
 	{ .name = IPT_SO_SET_ADD_COUNTERS, },
+	{ .name = EBT_SO_SET_ENTRIES, },
+	{ .name = EBT_SO_SET_COUNTERS, },
 };
 
 static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
