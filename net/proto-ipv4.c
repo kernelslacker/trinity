@@ -8,6 +8,8 @@
 #include <linux/types.h>
 #include <arpa/inet.h>
 #include <linux/mroute.h>
+#include <net/if.h>
+#include <linux/netfilter_ipv4/ip_tables.h>
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"
@@ -208,6 +210,8 @@ static const struct sock_option ip_opts[] = {
 	{ .name = MRT_TABLE, .len = sizeof(__u32) },
 	{ .name = MRT_ADD_MFC_PROXY, .len = sizeof(struct mfcctl) },
 	{ .name = MRT_DEL_MFC_PROXY, .len = sizeof(struct mfcctl) },
+	{ .name = IPT_SO_SET_REPLACE, },
+	{ .name = IPT_SO_SET_ADD_COUNTERS, },
 };
 
 static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
