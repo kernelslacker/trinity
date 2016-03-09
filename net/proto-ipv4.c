@@ -12,6 +12,7 @@
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_bridge/ebtables.h>
 #include <linux/netfilter_arp/arp_tables.h>
+#include <linux/netfilter/ipset/ip_set.h>
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"
@@ -218,6 +219,7 @@ static const struct sock_option ip_opts[] = {
 	{ .name = EBT_SO_SET_COUNTERS, },
 	{ .name = ARPT_SO_SET_REPLACE, },
 	{ .name = ARPT_SO_SET_ADD_COUNTERS, },
+	{ .name = SO_IP_SET, },	/* ugh, demux's based upon data */
 };
 
 static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
