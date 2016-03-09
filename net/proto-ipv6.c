@@ -11,6 +11,7 @@
 #include <linux/ipv6.h>	// needed for ipv6_opt_hdr
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
+#include <linux/netfilter_ipv6/ip6_tables.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include "arch.h"
@@ -160,6 +161,8 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_ORIGDSTADDR, },
 	{ .name = IPV6_TRANSPARENT, },
 	{ .name = IPV6_UNICAST_IF, },
+	{ .name = IP6T_SO_SET_REPLACE, },
+	{ .name = IP6T_SO_SET_ADD_COUNTERS, },
 };
 
 static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
