@@ -13,6 +13,7 @@
 #include <linux/netfilter_bridge/ebtables.h>
 #include <linux/netfilter_arp/arp_tables.h>
 #include <linux/netfilter/ipset/ip_set.h>
+#include <linux/ip_vs.h>
 #include "sanitise.h"
 #include "compat.h"
 #include "maps.h"
@@ -220,6 +221,22 @@ static const struct sock_option ip_opts[] = {
 	{ .name = ARPT_SO_SET_REPLACE, },
 	{ .name = ARPT_SO_SET_ADD_COUNTERS, },
 	{ .name = SO_IP_SET, },	/* ugh, demux's based upon data */
+	{ .name = IP_VS_SO_SET_NONE, },
+	{ .name = IP_VS_SO_SET_INSERT, },
+	{ .name = IP_VS_SO_SET_ADD, },
+	{ .name = IP_VS_SO_SET_EDIT, },
+	{ .name = IP_VS_SO_SET_DEL, },
+	{ .name = IP_VS_SO_SET_FLUSH, },
+	{ .name = IP_VS_SO_SET_LIST, },
+	{ .name = IP_VS_SO_SET_ADDDEST, },
+	{ .name = IP_VS_SO_SET_DELDEST, },
+	{ .name = IP_VS_SO_SET_EDITDEST, },
+	{ .name = IP_VS_SO_SET_TIMEOUT, },
+	{ .name = IP_VS_SO_SET_STARTDAEMON, },
+	{ .name = IP_VS_SO_SET_STOPDAEMON, },
+	{ .name = IP_VS_SO_SET_RESTORE, },
+	{ .name = IP_VS_SO_SET_SAVE, },
+	{ .name = IP_VS_SO_SET_ZERO, },
 };
 
 static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
