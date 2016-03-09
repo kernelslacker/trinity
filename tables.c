@@ -377,7 +377,7 @@ static void show_unannotated_biarch(void)
 	unsigned int i, j;
 	unsigned int count = 0;
 
-/*	for_each_32bit_syscall(i) {
+	for_each_32bit_syscall(i) {
 		entry = syscalls_32bit[i].entry;
 		count = 0;
 
@@ -410,35 +410,39 @@ static void show_unannotated_biarch(void)
 		if (count != 0)
 			printf("%s has %u unannotated arguments\n", entry->name, count);
 	}
-*/
+
+	printf("\n");
+
 	for_each_64bit_syscall(i) {
 		entry = syscalls_64bit[i].entry;
 		count = 0;
 
 		for (j = 1; j <= entry->num_args; j++) {
-			if (j == 1) {
-				if (entry->arg1type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 2) {
-				if (entry->arg2type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 3) {
-				if (entry->arg3type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 4) {
-				if (entry->arg4type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 5) {
-				if (entry->arg5type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 6) {
-				if (entry->arg6type == ARG_UNDEFINED)
-					count++;
+			if (search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, entry->name) == -1) {
+				if (j == 1) {
+					if (entry->arg1type == ARG_UNDEFINED)
+						count++;
+				}
+				if (j == 2) {
+					if (entry->arg2type == ARG_UNDEFINED)
+						count++;
+				}
+				if (j == 3) {
+					if (entry->arg3type == ARG_UNDEFINED)
+						count++;
+				}
+				if (j == 4) {
+					if (entry->arg4type == ARG_UNDEFINED)
+						count++;
+				}
+				if (j == 5) {
+					if (entry->arg5type == ARG_UNDEFINED)
+						count++;
+				}
+				if (j == 6) {
+					if (entry->arg6type == ARG_UNDEFINED)
+						count++;
+				}
 			}
 		}
 		if (count != 0)
