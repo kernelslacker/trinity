@@ -208,7 +208,7 @@ static void init_child(struct childdata *child, int childno)
 		}
 	}
 
-	set_seed(this_child());
+	set_seed(child);
 
 	init_object_lists(OBJ_LOCAL);
 
