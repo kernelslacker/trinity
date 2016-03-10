@@ -394,10 +394,7 @@ static bool spawn_child(int childno)
 	pid = fork();
 
 	if (pid == 0) {
-		/* Child process. */
-		init_child(child, childno);
-
-		child_process();
+		child_process(child, childno);
 
 		shutdown_child_logging(child);
 

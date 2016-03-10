@@ -36,10 +36,9 @@ struct childdata * this_child(void);
 
 void clean_childdata(struct childdata *child);
 
-void init_child(struct childdata *child, int childno);
 void init_child_mappings(void);
 
-void child_process(void);
+void child_process(struct childdata *child, int childno);
 
 void set_dontkillme(pid_t pid, bool state);
 

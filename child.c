@@ -190,7 +190,7 @@ static void bind_child_to_cpu(struct childdata *child)
 /*
  * Called from the fork_children loop in the main process.
  */
-void init_child(struct childdata *child, int childno)
+static void init_child(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
 	char childname[17];
@@ -366,10 +366,11 @@ static bool handle_sigreturn(void)
  * from the fork_children() loop.
  * We also re-enter it from the signal handler code if something happened.
  */
-void child_process(void)
+void child_process(struct childdata *child, int childno)
 {
-	struct childdata *child = this_child();
 	int ret;
+
+	init_child(child, childno);
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
