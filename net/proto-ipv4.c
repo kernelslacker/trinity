@@ -8,7 +8,7 @@
 #include <linux/types.h>
 #include <arpa/inet.h>
 #include <linux/mroute.h>
-#include <net/if.h>
+#include <linux/if.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_bridge/ebtables.h>
 #include <linux/netfilter_arp/arp_tables.h>
