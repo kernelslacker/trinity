@@ -1097,3 +1097,8 @@ struct kvm_get_htab_fd {
 #define SHM_HUGE_2MB	(21 << SHM_HUGE_SHIFT)
 #define SHM_HUGE_1GB	(30 << SHM_HUGE_SHIFT)
 #endif
+
+/* bits/shm.h */
+#ifndef SHM_NORESERVE
+# define SHM_NORESERVE 010000
+#endif
