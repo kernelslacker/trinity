@@ -396,8 +396,6 @@ static bool spawn_child(int childno)
 	if (pid == 0) {
 		child_process(child, childno);
 
-		shutdown_child_logging(child);
-
 		debugf("child %d %d exiting.\n", childno, getpid());
 		_exit(EXIT_SUCCESS);
 	} else {

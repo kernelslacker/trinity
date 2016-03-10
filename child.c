@@ -378,11 +378,11 @@ void child_process(struct childdata *child, int childno)
 
 		if (child->xcpu_count == 100) {
 			debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n", child->num, pids[child->num]);
-			return;
+			goto out;
 		}
 
 		if (handle_sigreturn() == FALSE)
-			return;	// Exit the child, things are getting too weird.
+			goto out;	// Exit the child, things are getting too weird.
 	}
 
 	while (shm->exit_reason == STILL_RUNNING) {
@@ -407,7 +407,7 @@ void child_process(struct childdata *child, int childno)
 
 			ret = child_ops[i].func();
 			if (ret == FAIL)
-				return;
+				goto out;
 		}
 	}
 
@@ -417,8 +417,11 @@ void child_process(struct childdata *child, int childno)
 	while (shm->postmortem_in_progress == TRUE) {
 		/* Make sure the main process is still around. */
 		if (pid_alive(mainpid) == -1)
-			return;
+			goto out;
 
 		usleep(1);
 	}
+
+out:
+	shutdown_child_logging(child);
 }
