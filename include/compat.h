@@ -1102,3 +1102,8 @@ struct kvm_get_htab_fd {
 #ifndef SHM_NORESERVE
 # define SHM_NORESERVE 010000
 #endif
+
+/* netfilter/ipset/ipset.h */
+#ifndef SO_IP_SET
+#define SO_IP_SET 83
+#endif
