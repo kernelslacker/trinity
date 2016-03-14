@@ -95,7 +95,6 @@ static void __open_fds(bool do_rand)
 		if (provider->enabled == TRUE) {
 			provider->initialized = TRUE;
 			num_fd_providers_initialized++;
-			num_fd_providers_enabled++;
 		}
 	}
 }
@@ -103,7 +102,7 @@ static void __open_fds(bool do_rand)
 unsigned int open_fds(void)
 {
 	/* Open half the providers randomly */
-	while (num_fd_providers_initialized < (num_fd_providers / 2))
+	while (num_fd_providers_initialized < (num_fd_providers_enabled / 2))
 		__open_fds(TRUE);
 
 	/* Now open any leftovers */
@@ -185,6 +184,7 @@ static void enable_fds_param(char *str)
 		if (strcmp(provider->name, str) == 0) {
 			provider->enabled = TRUE;
 			outputstd("Enabled fd provider %s\n", str);
+			num_fd_providers_enabled++;
 			return;
 		}
 	}
@@ -205,6 +205,7 @@ static void disable_fds_param(char *str)
 		if (strcmp(provider->name, str) == 0) {
 			provider->enabled = FALSE;
 			outputstd("Disabled fd provider %s\n", str);
+			num_fd_providers_enabled--;
 			return;
 		}
 	}
@@ -233,6 +234,9 @@ void process_fds_param(char *param, bool enable)
 			provider = (struct fd_provider *) node;
 			provider->enabled = FALSE;
 		}
+		num_fd_providers_enabled = 0;
+	} else {
+		num_fd_providers_enabled = num_fd_providers;
 	}
 
 	/* Check if there are any commas. If so, split them into multiple params,
