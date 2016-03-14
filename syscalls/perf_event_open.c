@@ -1260,8 +1260,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 		break;
 	case 1:
 		/* Try to get a previous random perf_event_open() fd  */
-		/* It's unclear whether get_random_fd() would do this */
-		rec->a4 = rnd() % 1024;
+		rec->a4 = get_rand_perf_fd();
 		break;
 	case 2:
 		/* Rely on ARG_FD */

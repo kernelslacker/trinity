@@ -72,7 +72,7 @@ static int open_perf_fds(void)
 	return TRUE;
 }
 
-static int get_rand_perf_fd(void)
+int get_rand_perf_fd(void)
 {
 	struct object *obj;
 
