@@ -65,6 +65,10 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		rec->a2 = RAND_ARRAY(mapping_sizes);
 		do_anon(rec);
 	} else {
+		rec->a5 = get_random_fd();
+		if (rec->a5 == (unsigned long) -1)
+			rec->a5 = 0;
+
 		if (this_syscallname("mmap2") == TRUE) {
 			/* mmap2 counts in 4K units */
 			rec->a6 /= 4096;
