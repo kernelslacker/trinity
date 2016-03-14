@@ -89,9 +89,16 @@ const struct ioctl_group *get_random_ioctl_group(void)
 
 static unsigned long random_ioctl_arg(void)
 {
-	if (RAND_BOOL())
+	if (RAND_BOOL()) {
 		return (unsigned long) rand64();
-	return (unsigned long) get_writable_address(page_size);
+	} else {
+		void *page;
+
+		page = get_writable_address(page_size);
+		generate_random_page(page);
+
+		return (unsigned long) page;
+	}
 }
 
 void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
