@@ -32,24 +32,53 @@ void register_ioctl_group(const struct ioctl_group *grp)
 	++grps_cnt;
 }
 
+static const struct ioctl_group * match_ioctl(int fd, struct stat *stbuf, int matchcount)
+{
+	int i;
+
+retry:
+	for (i = 0; i < grps_cnt; ++i) {
+		if (grps[i]->fd_test) {
+			if (grps[i]->fd_test(fd, stbuf) == 0) {
+				/* if this is the only match, just do it. */
+				if (matchcount == 1) {
+					return grps[i];
+				} else {
+					if (RAND_BOOL())
+						return grps[i];
+				}
+			}
+		}
+	}
+
+	// If we get here we failed the RAND_BOOL too many times.
+	goto retry;
+}
+
 const struct ioctl_group *find_ioctl_group(int fd)
 {
 	const char *devname;
 	struct stat stbuf;
 	int i;
 	size_t j;
+	int matchcount = 0;
 
 	if (fstat(fd, &stbuf) < 0)
 		return NULL;
 
-	for (i=0; i < grps_cnt; ++i) {
+	/* Find out if >1 ioctl with an fd_test matches this fd type. */
+	for (i = 0; i < grps_cnt; ++i) {
 		if (grps[i]->fd_test) {
 			if (grps[i]->fd_test(fd, &stbuf) == 0)
-				return grps[i];
-			else
-				continue;
+				matchcount++;
 		}
+	}
 
+	if (matchcount > 0)
+		return match_ioctl(fd, &stbuf, matchcount);
+
+	/* We don't have an fd_test, so try matching on type & devname */
+	for (i = 0; i < grps_cnt; ++i) {
 		switch (grps[i]->devtype) {
 		case DEV_MISC:
 			/* fall through. misc devices are char devices. */
