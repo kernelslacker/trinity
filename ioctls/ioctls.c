@@ -41,13 +41,6 @@ const struct ioctl_group *find_ioctl_group(int fd)
 	if (fstat(fd, &stbuf) < 0)
 		return NULL;
 
-	if (stbuf.st_rdev == 0)
-		return NULL;
-
-	devname = map_dev(stbuf.st_rdev, stbuf.st_mode);
-	if (!devname)
-		return NULL;
-
 	for (i=0; i < grps_cnt; ++i) {
 		if (grps[i]->fd_test) {
 			if (grps[i]->fd_test(fd, &stbuf) == 0)
@@ -69,6 +62,13 @@ const struct ioctl_group *find_ioctl_group(int fd)
 			break;
 		default: break;
 		}
+
+		if (stbuf.st_rdev == 0)
+			return NULL;
+
+		devname = map_dev(stbuf.st_rdev, stbuf.st_mode);
+		if (!devname)
+			return NULL;
 
 		for (j=0; j < grps[i]->devs_cnt; ++j)
 			if (strcmp(devname, grps[i]->devs[j]) == 0)
