@@ -237,6 +237,12 @@ static void init_child(struct childdata *child, int childno)
 	mask_signals_child();
 
 	disable_coredumps();
+
+	if (RAND_BOOL()) {
+		int ret = unshare(CLONE_NEWUSER);
+		if (ret != 0)
+			output(0, "couldn't unshare: %s\n", strerror(errno));
+	}
 }
 
 /*
