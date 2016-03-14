@@ -7,6 +7,7 @@
 #include "ioctls.h"
 #include "log.h"
 #include "random.h"
+#include "sanitise.h"
 #include "shm.h"
 #include "utils.h"	// ARRAY_SIZE
 
@@ -86,6 +87,13 @@ const struct ioctl_group *get_random_ioctl_group(void)
 	return grps[rnd() % grps_cnt];
 }
 
+static unsigned long random_ioctl_arg(void)
+{
+	if (RAND_BOOL())
+		return (unsigned long) rand64();
+	return (unsigned long) get_writable_address(page_size);
+}
+
 void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	int ioctlnr;
@@ -93,6 +101,10 @@ void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 	ioctlnr = rnd() % grp->ioctls_cnt;
 
 	rec->a2 = grp->ioctls[ioctlnr].request;
+	rec->a3 = random_ioctl_arg();
+	rec->a4 = random_ioctl_arg();
+	rec->a5 = random_ioctl_arg();
+	rec->a6 = random_ioctl_arg();
 }
 
 void dump_ioctls(void)
