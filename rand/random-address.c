@@ -17,6 +17,7 @@
 void * get_writable_address(unsigned long size)
 {
 	struct map *map;
+	struct object *obj;
 	void *addr = NULL;
 	int tries = 0;
 
@@ -24,13 +25,21 @@ retry:	tries++;
 	if (tries == 100)
 		return NULL;
 
-	map = get_map();
-	if (map->size < size)
-		goto retry;
+	if (RAND_BOOL()) {
+		map = get_map();
+		if (map->size < size)
+			goto retry;
 
-	addr = map->ptr;
-	mprotect(addr, map->size, PROT_READ | PROT_WRITE);
-	map->prot = PROT_READ | PROT_WRITE;
+		addr = map->ptr;
+		map->prot = PROT_READ | PROT_WRITE;
+	} else {
+		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
+		if (obj->sysv_shm.size < size)
+			goto retry;
+		addr = obj->sysv_shm.ptr;
+	}
+
+	mprotect(addr, size, PROT_READ | PROT_WRITE);
 
 	return addr;
 }
