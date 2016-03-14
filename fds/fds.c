@@ -214,10 +214,12 @@ static void disable_fds_param(char *str)
 	exit(EXIT_FAILURE);
 }
 
+//TODO: prevent --enable and --disable being passed at the same time.
 void process_fds_param(char *param, bool enable)
 {
 	unsigned int len, i;
-	char *str = param;
+	char *str_orig = strdup(param);
+	char *str = str_orig;
 
 	len = strlen(param);
 
@@ -237,19 +239,20 @@ void process_fds_param(char *param, bool enable)
 	 * validating them as we go.
 	 */
 	for (i = 0; i < len; i++) {
-		if (param[i] == ',') {
-			param[i] = 0;
+		if (str[i] == ',') {
+			str[i] = 0;
 			if (enable == TRUE)
 				enable_fds_param(str);
 			else
 				disable_fds_param(str);
-			str = param + i + 1;
+			str = str_orig + i + 1;
 		}
 	}
-	if (str < param + len) {
+	if (str < str_orig + len) {
 		if (enable == TRUE)
 			enable_fds_param(str);
 		else
 			disable_fds_param(str);
 	}
+	free(str_orig);
 }
