@@ -22,6 +22,7 @@
 #include "taint.h"
 #include "trinity.h"
 
+static void handle_child(int childno, pid_t childpid, int childstatus);
 
 static unsigned long hiscore = 0;
 
@@ -111,6 +112,7 @@ static void reap_dead_kids(void)
 	for_each_child(i) {
 		pid_t pid;
 		int ret;
+		int childstatus;
 
 		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
@@ -131,6 +133,9 @@ static void reap_dead_kids(void)
 				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
 			}
 		}
+
+		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+		handle_child(i, pid, childstatus);
 
 		if (shm->running_childs == 0)
 			return;
@@ -518,7 +523,6 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		return;
 	}
 }
-
 
 static void handle_child(int childno, pid_t childpid, int childstatus)
 {
