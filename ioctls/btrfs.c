@@ -1,3 +1,5 @@
+#include "config.h"
+#ifdef USE_BTRFS_IOCTL
 #include <stdio.h>
 #include <linux/fs.h>
 
@@ -121,3 +123,4 @@ static const struct ioctl_group btrfs_grp = {
 };
 
 REG_IOCTL_GROUP(btrfs_grp)
+#endif /* USE_BTRFS_IOCTL */
