@@ -221,6 +221,10 @@ enum {
 #define AF_VSOCK PF_VSOCK
 #endif
 
+#ifndef PF_KCM
+#define PF_KCM		41
+#endif
+
 #ifndef NFC_SOCKPROTO_RAW
 #define NFC_SOCKPROTO_RAW	0
 #endif
