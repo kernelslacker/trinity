@@ -151,12 +151,16 @@ static void inet_rand_socket(struct socket_triplet *st)
 	};
 	unsigned char val;
 
+	/* half the time, use raw sockets */
+	st->type = SOCK_RAW;
+	if (RAND_BOOL())
+		return;
+
+	/* The rest of the time, use the correct type if present. */
 	val = rnd() % ARRAY_SIZE(ipprotos);
 	st->protocol = ipprotos[val].proto;
 	if (ipprotos[val].type != 0)
 		st->type = ipprotos[val].type;
-	else
-		st->type = SOCK_RAW;
 }
 
 static const struct sock_option ip_opts[] = {
