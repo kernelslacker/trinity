@@ -123,6 +123,10 @@ int get_new_random_fd(void)
 	if (num_fd_providers_enabled == 0)
 		return -1;
 
+	/* if nothing has initialized yet, bail */
+	if (num_fd_providers_initialized == 0)
+		return -1;
+
 	while (fd < 0) {
 		unsigned int i, j;
 retry:
