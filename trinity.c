@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-	max_children = num_online_cpus;	/* possibly overridden in params. */
+	max_children = num_online_cpus * 4;	/* possibly overridden in params. */
 
 	if (init_random() == FALSE)
 		exit(EXIT_FAILURE);
