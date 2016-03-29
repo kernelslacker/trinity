@@ -96,7 +96,7 @@ static int execve_errnos[] = {
 	E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,
 	EMFILE, ENOENT, ENOEXEC, ENOMEM, ENOTDIR, EPERM, ETXTBSY,
 	/* currently undocumented in man page. */
-	ENAMETOOLONG, ENXIO,
+	ENAMETOOLONG, ENXIO, EBADF,
 };
 
 struct syscallentry syscall_execve = {
