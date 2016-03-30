@@ -4,8 +4,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <linux/in.h>
+#include <linux/l2tp.h>
 #include <net/if_packet.h>
+#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -105,6 +106,7 @@ static const char * get_proto_name(unsigned int family, unsigned int  proto)
 		{ "IPPROTO_SCTP", IPPROTO_SCTP },
 		{ "IPPROTO_UDPLITE", IPPROTO_UDPLITE },
 		{ "IPPROTO_RAW", IPPROTO_RAW },
+		{ "IPPROTO_L2TP", IPPROTO_L2TP },
 	};
 
 	switch (family) {
