@@ -238,10 +238,14 @@ static void init_child(struct childdata *child, int childno)
 
 	disable_coredumps();
 
-	if (RAND_BOOL()) {
-		int ret = unshare(CLONE_NEWUSER);
-		if (ret != 0)
-			output(0, "couldn't unshare: %s\n", strerror(errno));
+	if (shm->unshare_perm_err == FALSE) {
+		if (RAND_BOOL()) {
+			int ret = unshare(CLONE_NEWUSER);
+			if (ret != 0)
+				output(0, "couldn't unshare: %s\n", strerror(errno));
+			if (ret == -EPERM)
+				shm->unshare_perm_err = TRUE;
+		}
 	}
 }
 

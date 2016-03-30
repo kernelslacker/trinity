@@ -79,5 +79,8 @@ struct shm_s {
 	 * This can be useful if for some reason we don't want to gdb to the child.
 	 */
 	bool debug;
+
+	/* set to true if a child hits an EPERM trying to unshare() */
+	bool unshare_perm_err;
 };
 extern struct shm_s *shm;
