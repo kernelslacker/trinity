@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 
 #include "fd.h"
+#include "syscall.h"
 #include "socketinfo.h"
 
 #define NR_SOCKET_FDS 375
@@ -43,6 +44,7 @@ struct netproto {
 	void (*socket)(struct socket_triplet *st);
 	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
 	void (*gen_sockaddr)(struct sockaddr **addr, socklen_t *addrlen);
+	void (*send)(struct socket_triplet *st, struct syscallrecord *rec);
 };
 
 struct protoptr {

@@ -16,11 +16,26 @@
 
 static void sanitise_send(struct syscallrecord *rec)
 {
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	const struct netproto *proto;
 	void *ptr;
 	unsigned int size;
 
-	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+	rec->a1 = fd_from_socketinfo(si);
 
+//	printf("Sending to family:%d type:%d proto:%d\n",
+//		si->triplet.family, si->triplet.type, si->triplet.protocol);
+
+	proto = net_protocols[si->triplet.family].proto;
+	if (proto != NULL) {
+		if (proto->send != NULL)
+			proto->send(&si->triplet, rec);
+		return;
+	}
+
+	/* The rest of this function is only used as a fallback, if the per-proto
+	 * send()'s aren't implemented.
+	 */
 	if (RAND_BOOL())
 		size = 1;
 	else
@@ -33,8 +48,6 @@ static void sanitise_send(struct syscallrecord *rec)
 
 	rec->a3 = size;
 
-	// TODO: only use this as a fallback, and actually have
-	// some per-proto generators here.
 	generate_rand_bytes(ptr, size);
 }
 
