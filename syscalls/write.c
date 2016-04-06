@@ -116,3 +116,30 @@ struct syscallentry syscall_pwritev = {
 	.arg5name = "pos_h",
 	.flags = NEED_ALARM,
 };
+
+/*
+ * SYSCALL_DEFINE5(pwritev2, unsigned long, fd, const struct iovec __user *, vec,
+	 unsigned long, vlen, unsigned long, pos_l, unsigned long, pos_h,
+	 int, flags)
+ */
+
+static unsigned long pwritev2_flags[] = {
+	0,	// none as of v4.6
+};
+
+struct syscallentry syscall_pwritev2 = {
+	.name = "pwritev2",
+	.num_args = 6,
+	.arg1name = "fd",
+	.arg1type = ARG_FD,
+	.arg2name = "vec",
+	.arg2type = ARG_IOVEC,
+	.arg3name = "vlen",
+	.arg3type = ARG_IOVECLEN,
+	.arg4name = "pos_l",
+	.arg5name = "pos_h",
+	.arg6name = "flags",
+	.arg6type = ARG_LIST,
+	.arg6list = ARGLIST(pwritev2_flags),
+	.flags = NEED_ALARM,
+};
