@@ -236,6 +236,10 @@ enum {
 #define MSG_WAITFORONE	0x10000
 #endif
 
+#ifndef MSG_BATCH
+#define MSG_BATCH 0x40000
+#endif
+
 #ifndef MSG_CMSG_CLOEXEC
 #define MSG_CMSG_CLOEXEC	0x40000000
 #endif

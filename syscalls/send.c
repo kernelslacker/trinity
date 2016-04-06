@@ -62,6 +62,7 @@ static unsigned long sendflags[] = {
 	MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
 	MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
 	MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT,
+	MSG_BATCH,
 };
 
 struct syscallentry syscall_send = {
