@@ -22,6 +22,7 @@ static int open_perf_fds(void)
 	struct objhead *head;
 	unsigned int i = 0;
 	unsigned int perm_count = 0;
+	unsigned int inval_count = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
 	head->destroy = &perffd_destructor;
@@ -52,8 +53,9 @@ static int open_perf_fds(void)
 			case EINVAL:
 				/* If we get here we probably generated something invalid and
 				 * perf_event_open threw it out. Go around the loop again.
+				 * OR its LXCore throwing us in an endless loop.
 				 */
-				continue;
+				inval_count++;
 
 			case EACCES:
 				perm_count++;
@@ -62,6 +64,11 @@ static int open_perf_fds(void)
 
 		if (perm_count > 1000) {
 			output(2, "Couldn't open enough perf events, got EPERM too much. Giving up.\n");
+			return FALSE;
+		}
+
+		if (inval_count > 10000) {
+			output(2, "couldn't open enough perf events, got EINVAL too much. Giving up.\n");
 			return FALSE;
 		}
 
