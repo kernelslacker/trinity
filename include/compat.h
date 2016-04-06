@@ -477,6 +477,10 @@ enum kcmp_type {
 #define SO_ATTACH_REUSEPORT_EBPF 52
 #endif
 
+#ifndef SO_CNX_ADVICE
+#define SO_CNX_ADVICE 53
+#endif
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15

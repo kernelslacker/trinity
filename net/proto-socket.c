@@ -19,6 +19,7 @@ static const unsigned int socket_opts[] = {
 	SO_PEEK_OFF, SO_NOFCS, SO_LOCK_FILTER, SO_SELECT_ERR_QUEUE,
 	SO_BUSY_POLL, SO_MAX_PACING_RATE, SO_BPF_EXTENSIONS, SO_INCOMING_CPU,
 	SO_ATTACH_BPF, SO_ATTACH_REUSEPORT_CBPF, SO_ATTACH_REUSEPORT_EBPF,
+	SO_CNX_ADVICE,
 };
 
 void socket_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
