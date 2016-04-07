@@ -23,14 +23,14 @@ static void sanitise_send(struct syscallrecord *rec)
 
 	rec->a1 = fd_from_socketinfo(si);
 
-//	printf("Sending to family:%d type:%d proto:%d\n",
-//		si->triplet.family, si->triplet.type, si->triplet.protocol);
-
 	proto = net_protocols[si->triplet.family].proto;
 	if (proto != NULL) {
-		if (proto->send != NULL)
+		if (proto->send != NULL) {
 			proto->send(&si->triplet, rec);
-		return;
+//		printf("Sending to family:%d type:%d proto:%d\n",
+//			si->triplet.family, si->triplet.type, si->triplet.protocol);
+			return;
+		}
 	}
 
 	/* The rest of this function is only used as a fallback, if the per-proto
