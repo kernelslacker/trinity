@@ -111,6 +111,7 @@ static const char * get_proto_name(unsigned int family, unsigned int proto)
 	};
 
 	const struct protocol netlink_proto[] = {
+		{ "NETLINK_ROUTE", NETLINK_ROUTE },
 		{ "NETLINK_UNUSED", NETLINK_UNUSED },
 		{ "NETLINK_USERSOCK", NETLINK_USERSOCK },
 		{ "NETLINK_FIREWALL", NETLINK_FIREWALL },
