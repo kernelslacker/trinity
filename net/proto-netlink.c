@@ -43,7 +43,7 @@ static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	nl->nl_family = PF_NETLINK;
 	nl->nl_pid = 0; // destination is always kernel
-	nl->nl_groups = set_rand_bitmask(ARRAY_SIZE(nl_groups), nl_groups);
+	nl->nl_groups = RAND_ARRAY(nl_groups);
 	*addr = (struct sockaddr *) nl;
 	*addrlen = sizeof(struct sockaddr_nl);
 }
