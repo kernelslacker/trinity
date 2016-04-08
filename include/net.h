@@ -44,7 +44,7 @@ struct netproto {
 	void (*socket)(struct socket_triplet *st);
 	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
 	void (*gen_sockaddr)(struct sockaddr **addr, socklen_t *addrlen);
-	void (*send)(struct socket_triplet *st, struct syscallrecord *rec);
+	void (*gen_packet)(struct socket_triplet *st, void **ptr, size_t *len);
 };
 
 struct protoptr {

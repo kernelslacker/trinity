@@ -19,14 +19,15 @@ static void sanitise_send(struct syscallrecord *rec)
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	const struct netproto *proto;
 	void *ptr;
-	unsigned int size;
+	size_t size;
 
 	rec->a1 = fd_from_socketinfo(si);
 
 	proto = net_protocols[si->triplet.family].proto;
 	if (proto != NULL) {
-		if (proto->send != NULL) {
-			proto->send(&si->triplet, rec);
+		if (proto->gen_packet != NULL) {
+			ptr = &rec->a2;
+			proto->gen_packet(&si->triplet, ptr, &rec->a3);
 //		printf("Sending to family:%d type:%d proto:%d\n",
 //			si->triplet.family, si->triplet.type, si->triplet.protocol);
 			return;
