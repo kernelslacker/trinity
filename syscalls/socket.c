@@ -56,8 +56,10 @@ int sanitise_socket_triplet(struct socket_triplet *st)
 
 	proto = net_protocols[st->family].proto;
 	if (proto != NULL) {
-		if (proto->socket != NULL)
+		if (proto->socket != NULL) {
 			proto->socket(st);
+			return 0;
+		}
 	}
 
 	/* Couldn't find func, fall back to random. */
