@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <linux/l2tp.h>
+#include <linux/netlink.h>
 #include <net/if_packet.h>
 #include <netinet/in.h>
 #include <sys/types.h>
@@ -77,7 +78,7 @@ static const char * get_family_name(unsigned int family)
 	return NULL;
 }
 
-static const char * get_proto_name(unsigned int family, unsigned int  proto)
+static const char * get_proto_name(unsigned int family, unsigned int proto)
 {
 	unsigned int i;
 
@@ -109,11 +110,40 @@ static const char * get_proto_name(unsigned int family, unsigned int  proto)
 		{ "IPPROTO_L2TP", IPPROTO_L2TP },
 	};
 
+	const struct protocol netlink_proto[] = {
+		{ "NETLINK_UNUSED", NETLINK_UNUSED },
+		{ "NETLINK_USERSOCK", NETLINK_USERSOCK },
+		{ "NETLINK_FIREWALL", NETLINK_FIREWALL },
+		{ "NETLINK_SOCK_DIAG", NETLINK_SOCK_DIAG },
+		{ "NETLINK_NFLOG", NETLINK_NFLOG },
+		{ "NETLINK_XFRM", NETLINK_XFRM },
+		{ "NETLINK_SELINUX", NETLINK_SELINUX },
+		{ "NETLINK_ISCSI", NETLINK_ISCSI },
+		{ "NETLINK_AUDIT", NETLINK_AUDIT },
+		{ "NETLINK_FIB_LOOKUP", NETLINK_FIB_LOOKUP },
+		{ "NETLINK_CONNECTOR", NETLINK_CONNECTOR },
+		{ "NETLINK_NETFILTER", NETLINK_NETFILTER },
+		{ "NETLINK_IP6_FW", NETLINK_IP6_FW },
+		{ "NETLINK_DNRTMSG", NETLINK_DNRTMSG },
+		{ "NETLINK_KOBJECT_UEVENT", NETLINK_KOBJECT_UEVENT },
+		{ "NETLINK_GENERIC", NETLINK_GENERIC },
+		{ "NETLINK_SCSITRANSPORT", NETLINK_SCSITRANSPORT },
+		{ "NETLINK_ECRYPTFS", NETLINK_ECRYPTFS },
+		{ "NETLINK_RDMA", NETLINK_RDMA },
+		{ "NETLINK_CRYPTO", NETLINK_CRYPTO },
+	};
+
 	switch (family) {
 	case AF_INET:
 		for (i = 0; i < ARRAY_SIZE(ip_protocols); i++)
 			if (ip_protocols[i].proto == proto)
 				return ip_protocols[i].name;
+		break;
+	case AF_NETLINK:
+		for (i = 0; i < ARRAY_SIZE(netlink_proto); i++) {
+			if (netlink_proto[i].proto == proto)
+				return netlink_proto[i].name;
+		}
 		break;
 	}
 
