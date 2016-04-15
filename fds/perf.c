@@ -44,6 +44,12 @@ static int open_perf_fds(void)
 
 			output(2, "fd[%d] = perf\n", fd);
 			i++;
+
+			/* any time we succeed, reset the failure counts.
+			 * They're only there for the cases where we hit them repeatedly.
+			 */
+			inval_count = 0;
+			perm_count = 0;
 		} else {
 			switch (errno) {
 			case ENOSYS:
