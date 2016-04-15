@@ -94,7 +94,7 @@ void reap_child(pid_t childpid)
 		return;
 
 	child = shm->children[i];
-	child->syscall.tp = (struct timespec){};
+	child->tp = (struct timespec){};
 	unlock(&child->syscall.lock);
 	shm->running_childs--;
 	pids[i] = EMPTY_PIDSLOT;
@@ -303,7 +303,6 @@ static void stuck_syscall_info(struct childdata *child)
  */
 static bool is_child_making_progress(struct childdata *child)
 {
-	struct syscallrecord *rec;
 	struct timespec tp;
 	time_t diff, old, now;
 	pid_t pid;
@@ -314,9 +313,7 @@ static bool is_child_making_progress(struct childdata *child)
 	if (pid == EMPTY_PIDSLOT)
 		return TRUE;
 
-	rec = &child->syscall;
-
-	old = rec->tp.tv_sec;
+	old = child->tp.tv_sec;
 
 	/* haven't done anything yet. */
 	if (old == 0)

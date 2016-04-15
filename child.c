@@ -415,6 +415,8 @@ void child_process(struct childdata *child, int childno)
 				lastop = child_ops[i].name;
 			}
 
+			clock_gettime(CLOCK_MONOTONIC, &child->tp);
+
 			ret = child_ops[i].func();
 			if (ret == FAIL)
 				goto out;

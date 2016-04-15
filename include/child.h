@@ -19,6 +19,9 @@ struct childdata {
 
 	struct objhead objects[MAX_OBJECT_TYPES];
 
+	/* last time the child made progress. */
+	struct timespec tp;
+
 	unsigned int seed;
 
 	unsigned int num;

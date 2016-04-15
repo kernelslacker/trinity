@@ -20,7 +20,6 @@ enum syscallstate {
 };
 
 struct syscallrecord {
-	struct timespec tp;
 	unsigned int nr;
 	unsigned long a1;
 	unsigned long a2;

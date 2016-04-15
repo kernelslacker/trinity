@@ -118,8 +118,6 @@ static void __do_syscall(struct syscallrecord *rec)
 	shm->stats.total_syscalls_done++;
 
 	lock(&rec->lock);
-	clock_gettime(CLOCK_MONOTONIC, &rec->tp);
-
 	rec->op_nr++;
 	rec->errno_post = errno;
 	rec->retval = ret;
