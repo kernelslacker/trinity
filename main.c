@@ -555,7 +555,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			struct childdata *child = shm->children[childno];
 
 			debugf("Child %d (pid %d) exited after %ld operations.\n",
-				childno, childpid, child->syscall.op_nr);
+				childno, childpid, child->op_nr);
 			reap_child(shm->children[childno]);
 			fclose(child->pidstatfile);
 			child->pidstatfile = NULL;
@@ -652,13 +652,12 @@ static void check_children_progressing(void)
 
 	for_each_child(i) {
 		struct childdata *child = shm->children[i];
-		struct syscallrecord *rec = &child->syscall;
 
 		if (is_child_making_progress(child) == FALSE)
 			stall_count++;
 
-		if (rec->op_nr > hiscore)
-			hiscore = rec->op_nr;
+		if (child->op_nr > hiscore)
+			hiscore = child->op_nr;
 	}
 
 	if (stall_count == shm->running_childs)

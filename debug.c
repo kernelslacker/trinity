@@ -71,7 +71,7 @@ void dump_syscallrec(struct syscallrecord *rec)
 {
 	output(0, " nr:%d a1:%lx a2:%lx a3:%lx a4:%lx a5:%lx a6:%lx retval:%ld errno_post:%d\n",
 		rec->nr, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6, rec->retval, rec->errno_post);
-	output(0, " op_nr:%lx do32bit:%d\n", rec->op_nr, rec->do32bit);
+	output(0, " do32bit:%d\n", rec->do32bit);
 	output(0, " lock:%d {owner:%d)\n", rec->lock.lock, rec->lock.owner);
 	output(0, " state:%d\n", rec->state);
 	output(0, " prebuffer : %p (len:%d)\n", rec->prebuffer, strlen(rec->prebuffer));
@@ -83,6 +83,9 @@ void dump_syscallrec(struct syscallrecord *rec)
 void dump_childdata(struct childdata *child)
 {
 	output(0, "child struct @%p\n", child);
+
+	output(0, " op_nr:%lx\n", child->op_nr);
+
 	output(0, "syscall: %p\n", &child->syscall);
 	dump_syscallrec(&child->syscall);
 

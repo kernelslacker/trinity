@@ -164,6 +164,7 @@ void clean_childdata(struct childdata *child)
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
 	child->xcpu_count = 0;
+	child->op_nr = 0;
 }
 
 static void bind_child_to_cpu(struct childdata *child)
@@ -349,12 +350,12 @@ static bool handle_sigreturn(void)
 	unlock(&rec->lock);
 
 	/* Check if we're making any progress at all. */
-	if (rec->op_nr == last) {
+	if (child->op_nr == last) {
 		count++;
 		//output(1, "no progress for %d tries.\n", count);
 	} else {
 		count = 0;
-		last = rec->op_nr;
+		last = child->op_nr;
 	}
 	if (count == 10) {
 		output(1, "no progress for 10 tries, exiting child.\n");
@@ -428,6 +429,9 @@ void child_process(struct childdata *child, int childno)
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 		ret = op(child);
+
+		child->op_nr++;
+
 		if (ret == FAIL)
 			goto out;
 	}

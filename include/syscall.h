@@ -30,8 +30,6 @@ struct syscallrecord {
 	unsigned long retval;
 	int errno_post;	/* what errno was after the syscall. */
 
-	unsigned long op_nr;	/* used to tell if we're making progress. */
-
 	bool do32bit;
 	lock_t lock;
 	enum syscallstate state;

@@ -21,6 +21,7 @@ struct childdata {
 
 	/* last time the child made progress. */
 	struct timespec tp;
+	unsigned long op_nr;
 
 	unsigned int seed;
 
