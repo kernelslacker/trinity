@@ -95,6 +95,8 @@ static void __open_fds(bool do_rand)
 		if (provider->enabled == TRUE) {
 			provider->initialized = TRUE;
 			num_fd_providers_initialized++;
+		} else {
+			num_fd_providers_enabled--;
 		}
 	}
 }
