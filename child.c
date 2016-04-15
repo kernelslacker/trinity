@@ -376,6 +376,8 @@ static bool handle_sigreturn(void)
  * from the fork_children() loop.
  * We also re-enter it from the signal handler code if something happened.
  */
+#define NEW_OP_COUNT 1000
+
 void child_process(struct childdata *child, int childno)
 {
 	int ret;
@@ -396,7 +398,8 @@ void child_process(struct childdata *child, int childno)
 	}
 
 	while (shm->exit_reason == STILL_RUNNING) {
-		unsigned int i;
+		unsigned int loops = NEW_OP_COUNT;
+		bool (*op)(struct childdata *child) = NULL;
 
 		periodic_work();
 
@@ -404,23 +407,28 @@ void child_process(struct childdata *child, int childno)
 		if (shm->seed != child->seed)
 			set_seed(child);
 
-		/* Choose operations for this iteration. */
-		i = rnd() % ARRAY_SIZE(child_ops);
+		/* Every NEW_OP_COUNT potentially pick a new childop. */
+		if (loops == NEW_OP_COUNT) {
+			while (op == NULL) {
+				unsigned int i;
 
-		if (rnd() % 100 <= child_ops[i].likelyhood) {
-			const char *lastop = NULL;
+				i = rnd() % ARRAY_SIZE(child_ops);
 
-			if (lastop != child_ops[i].name) {
-				//output(0, "Chose %s.\n", child_ops[i].name);
-				lastop = child_ops[i].name;
+				if (rnd() % 100 <= child_ops[i].likelyhood) {
+					if (op != child_ops[i].func) {
+						//output(0, "Chose %s.\n", child_ops[i].name);
+						op = child_ops[i].func;
+					}
+				}
 			}
-
-			clock_gettime(CLOCK_MONOTONIC, &child->tp);
-
-			ret = child_ops[i].func(child);
-			if (ret == FAIL)
-				goto out;
 		}
+
+		/* timestamp, and do the childop */
+		clock_gettime(CLOCK_MONOTONIC, &child->tp);
+
+		ret = op(child);
+		if (ret == FAIL)
+			goto out;
 	}
 
 	enable_coredumps();
