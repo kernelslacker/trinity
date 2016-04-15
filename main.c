@@ -84,20 +84,12 @@ static int shm_is_corrupt(void)
  *
  * The reaper lock protects against these happening at the same time.
  */
-void reap_child(pid_t childpid)
+void reap_child(struct childdata *child)
 {
-	struct childdata *child;
-	int i;
-
-	i = find_childno(childpid);
-	if (i == CHILD_NOT_FOUND)
-		return;
-
-	child = shm->children[i];
 	child->tp = (struct timespec){};
 	unlock(&child->syscall.lock);
 	shm->running_childs--;
-	pids[i] = EMPTY_PIDSLOT;
+	pids[child->num] = EMPTY_PIDSLOT;
 }
 
 /* Make sure there's no dead kids lying around.
@@ -127,7 +119,7 @@ static void reap_dead_kids(void)
 		if (ret == -1) {
 			if (errno == ESRCH) {
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
-				reap_child(pid);
+				reap_child(shm->children[i]);
 				reaped++;
 			} else {
 				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
@@ -176,7 +168,7 @@ static void kill_all_kids(void)
 		/* check we don't have anything stale in the pidlist */
 		if (ret == -1) {
 			if (errno == ESRCH)
-				reap_child(pid);
+				reap_child(shm->children[i]);
 		}
 	}
 
@@ -480,7 +472,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		ptrace(PTRACE_DETACH, pids[childno], NULL, NULL);
 		kill(pids[childno], SIGKILL);
 		//FIXME: Won't we create a zombie here?
-		reap_child(pids[childno]);
+		reap_child(shm->children[childno]);
 		replace_child(childno);
 		return;
 
@@ -499,7 +491,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		else
 			debugf("got a signal from child %d (pid %d) (%s)\n",
 					childno, pids[childno], strsignal(WTERMSIG(childstatus)));
-		reap_child(pids[childno]);
+		reap_child(shm->children[childno]);
 
 		fclose(child->pidstatfile);
 		child->pidstatfile = NULL;
@@ -536,7 +528,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			unsigned int i;
 			bool seen = FALSE;
 
-			debugf("All children exited!\n");
+			debugf("All children exited (childpid:%u)!\n", childpid);
 
 			for_each_child(i) {
 				pid_t pid = pids[i];
@@ -564,7 +556,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 
 			debugf("Child %d (pid %d) exited after %ld operations.\n",
 				childno, childpid, child->syscall.op_nr);
-			reap_child(childpid);
+			reap_child(shm->children[childno]);
 			fclose(child->pidstatfile);
 			child->pidstatfile = NULL;
 
