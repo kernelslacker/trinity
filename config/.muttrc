@@ -1,0 +1,145 @@
+# Set mail from header
+set use_from=yes
+set realname='Chunyu Hu'
+set from='Chunyu Hu <chuhu@redhat.com>'
+set imap_user = "chuhu@redhat.com"
+set imap_pass = "1qaz@wsX"
+set smtp_url = "smtp://smtp.corp.redhat.com:25"
+set smtp_pass = "1qaz@wsX"
+set sendmail = "/usr/bin/msmtp"
+set folder = "imaps://mail.corp.redhat.com:993"
+set spoolfile = "+INBOX"
+set postponed = "Drafts"
+set record = "Sent Mail"
+set imap_check_subscribed
+#set hostname = gmail.com
+set hostname = redhat.com
+set mail_check = 120
+set timeout = 300
+set imap_keepalive = 300
+set header_cache=~/.mutt/cache/headers
+set message_cachedir=~/.mutt/cache/bodies
+set certificate_file=~/.mutt/certificates
+set editor = "vim"
+set move = no
+set include
+set sort = 'threads'
+set sort_aux = 'reverse-last-date-received'
+set auto_tag = yes
+ignore "Authentication-Results:"
+ignore "DomainKey-Signature:"
+ignore "DKIM-Signature:"
+hdr_order Date From To Cc
+alternative_order text/plain text/html *
+auto_view text/html
+bind editor <Tab> complete-query
+bind editor ^T complete
+bind editor <space> noop
+
+subscribe linux-mm@kvack.org
+subscribe linux-kernel@vger.kernel.org
+subscribe crash-utility@redhat.com
+subscribe kexec@lists.fedoraproject.org
+subscribe kexec@lists.infradead.org
+subscribe ltp@lists.linux.it
+
+macro index,pager y "<enter-command>unset trash\n <delete-message>" "Gmail archive message" 
+macro index,pager d "<enter-command>set trash=\"imaps://imap.googlemail.com/[GMail]/Bin\"\n <delete-message>" "Gmail delete message" 
+macro index,pager gi "<change-folder>=INBOX<enter>" "Go to inbox" 
+macro index,pager ga "<change-folder>=[Gmail]/All Mail<enter>" "Go to all mail" 
+macro index,pager gs "<change-folder>=[Gmail]/Starred<enter>" "Go to starred messages" 
+macro index,pager gd "<change-folder>=[Gmail]/Drafts<enter>" "Go to drafts"
+macro index,pager gq "<change-folder>=QE/kernel-qe<enter>" "Go to kernel-qe list"
+macro index,pager gt "<change-folder>=QE/kernel-general-qe<enter>" "Go to our team list"
+macro index,pager gk "<change-folder>=DEV/rhkernel-list<enter>" "Go to rhkernel-list"
+macro index,pager gl "<change-folder>=inbox/kernelqa/lead<enter>" "Go to ltp"
+macro index,pager ge "<change-folder>=ORG-ANN/eng-china<enter>" "Go to eng-china"
+alias noreply Coursera <noreply@coursera.org>
+
+
+# Key bindings
+bind index gg first-entry
+bind index G last-entry
+bind index \cf next-page
+bind index \cb previous-page
+bind index \Cx sync-mailbox
+bind index r display-message
+bind index R group-reply
+bind index = parent-message
+
+bind pager j next-line
+bind pager k previous-line
+bind pager <Up> previous-line
+bind pager <Down> next-line
+bind pager gg top
+bind pager G bottom
+bind pager n next-entry
+bind pager p previous-entry
+bind pager = parent-message
+bind pager N search-next
+
+bind index,pager L group-reply
+bind index,pager S resend-message
+
+bind generic zt current-top
+bind generic zb current-bottom
+bind generic zz current-middle
+bind editor <space> noop
+
+# basic colors
+color normal        white           black
+color error         red             black
+color tilde         white           black
+color message       cyan            black
+color markers       red             black
+color attachment    brightred       black
+color search        brightmagenta   black
+color status        brightwhite     black
+color indicator     white           blue
+color tree          magenta         black   # arrows in threads
+
+
+# 邮件内容页面邮件头部分高亮
+
+# color header        brightcyan      default         "^"
+color hdrdefault    brightblue      black
+color header        brightgreen     black         "^(From)"
+color header        brightyellow    black         "^(Subject)"
+
+# highlight the patch color
+color   body     red            black    "^-.*"
+color   body     green          black    "^[+].*"
+color   body     brightwhite    black    "^diff --git.*"
+color   body     brightwhite    black    "^index [a-f0-9].*"
+color   body     brightwhite    black    "^\-\-\- a.*"
+color   body     brightwhite    black    "^[\+]{3} b.*"
+color   body     brightyellow   black    "^@@.*"
+color   body     brightmagenta  black    "^(Signed-off-by).*"
+color   body     brightmagenta  black    "^(Reported-by).*"
+color   body     brightmagenta  black    "^(Suggested-by).*"
+color   body     brightmagenta  black    "^(Acked-by).*"
+color   body     brightmagenta  black    "^(Reviewed-by).*"
+color   body     brightmagenta  black    "^\-\-\-$"
+# color   body     brightmagenta  black    "^(Cc).*"
+# color   body     brightmagenta  black    "^(CC).*" color   body     white          black    "^( \#define).*" color   body     white          black    "^( \#include).*" color   body     white          black    "^( \#if).*" color   body     white          black    "^( \#el).*"
+color   body     white          black    "^( \#endif).*"
+
+# optional highlightling
+color   body    green           black    "LGTM"
+color   body    brightmagenta   black    "-- Commit Summary --"
+color   body    brightmagenta   black    "-- File Changes --"
+color   body    brightmagenta   black    "-- Patch Links --"
+color   body    green           black    "^Merged #.*"
+color   body    red             black    "^Closed #.*"
+color   body    brightblue      black    "^Reply to this email.*"
+
+# 引文起始符号设置
+# set quote_regexp = "^([ ]t]*[|>:}#])+"
+set quote_regexp = "^([ \t]*[>])+"
+
+# 嵌套引文不同层的颜色
+color quoted        blue            black
+color quoted1       magenta         black
+color quoted2       cyan            black
+color quoted3       yellow          black
+color quoted4       red             black
