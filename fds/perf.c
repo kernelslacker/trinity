@@ -62,9 +62,11 @@ static int open_perf_fds(void)
 				 * OR its LXCore throwing us in an endless loop.
 				 */
 				inval_count++;
+				break;
 
 			case EACCES:
 				perm_count++;
+				break;
 			}
 		}
 
