@@ -29,7 +29,7 @@
 
 struct child_funcs {
 	const char *name;
-	bool (*func)(void);
+	bool (*func)(struct childdata *child);
 	unsigned char likelyhood;
 };
 
@@ -417,7 +417,7 @@ void child_process(struct childdata *child, int childno)
 
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
-			ret = child_ops[i].func();
+			ret = child_ops[i].func(child);
 			if (ret == FAIL)
 				goto out;
 		}
