@@ -34,7 +34,7 @@ struct child_funcs {
 };
 
 static const struct child_funcs child_ops[] = {
-	{ .name = "rand_syscalls", .func = child_random_syscalls, .likelyhood = 100 },
+	{ .name = "rand_syscall", .func = random_syscall, .likelyhood = 100 },
 };
 
 /*

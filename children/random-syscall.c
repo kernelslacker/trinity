@@ -134,7 +134,7 @@ retry:
 	return TRUE;
 }
 
-bool child_random_syscalls(struct childdata *child)
+bool random_syscall(struct childdata *child)
 {
 	struct syscallrecord *rec, *stash;
 
