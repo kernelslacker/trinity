@@ -17,7 +17,7 @@
 #include "pathnames.h"
 #include "random.h"
 
-int child_read_all_files(void)
+bool read_all_files(__unused__ struct childdata *child)
 {
 	struct stat sb;
 	char *buffer;
@@ -60,5 +60,5 @@ int child_read_all_files(void)
 
 		close(fd);
 	}
-	return 0;
+	return TRUE;
 }

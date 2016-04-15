@@ -47,5 +47,6 @@ void set_dontkillme(pid_t pid, bool state);
 
 void reap_child(struct childdata *child);
 
+/* Childops */
 bool random_syscall(struct childdata *child);
-int child_read_all_files(void);
+bool read_all_files(struct childdata *child);
