@@ -30,24 +30,22 @@ bool read_all_files(__unused__ struct childdata *child)
 
 		filename = fileindex[i];
 
+		fd = open(filename, O_RDONLY | O_NONBLOCK);
+		if (fd == -1)
+			continue;
+
 		ret = (lstat(filename, &sb));
 		if (ret == -1)
-			continue;
+			goto closeout;
 
 		if (sb.st_size == 0)
 			sb.st_size = page_size;
 
 		buffer = malloc(sb.st_size);
 		if (!buffer)
-			continue;
+			goto closeout;
 
 		memset(buffer, 0, sb.st_size);
-
-		fd = open(filename, O_RDONLY | O_NONBLOCK);
-		if (fd == -1) {
-			free(buffer);
-			continue;
-		}
 
 		ret = read(fd, buffer, sb.st_size);
 //		if (ret != -1)
@@ -57,7 +55,7 @@ bool read_all_files(__unused__ struct childdata *child)
 			sleep(1);
 
 		free(buffer);
-
+closeout:
 		close(fd);
 	}
 	return TRUE;
