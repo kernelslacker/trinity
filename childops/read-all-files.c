@@ -44,7 +44,7 @@ bool read_all_files(__unused__ struct childdata *child)
 		memset(buffer, 0, sb.st_size);
 
 		fd = open(filename, O_RDONLY | O_NONBLOCK);
-		if (!fd) {
+		if (fd == -1) {
 			free(buffer);
 			continue;
 		}
