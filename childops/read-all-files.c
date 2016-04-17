@@ -34,7 +34,7 @@ bool read_all_files(__unused__ struct childdata *child)
 		if (fd == -1)
 			continue;
 
-		ret = (lstat(filename, &sb));
+		ret = (fstat(fd, &sb));
 		if (ret == -1)
 			goto closeout;
 
