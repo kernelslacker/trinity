@@ -411,6 +411,8 @@ void child_process(struct childdata *child, int childno)
 
 		/* Every NEW_OP_COUNT potentially pick a new childop. */
 		if (loops == NEW_OP_COUNT) {
+			op = NULL;
+
 			while (op == NULL) {
 				unsigned int i;
 
