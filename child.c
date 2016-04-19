@@ -165,6 +165,7 @@ void clean_childdata(struct childdata *child)
 	child->dontkillme = FALSE;
 	child->xcpu_count = 0;
 	child->op_nr = 0;
+	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }
 
 static void bind_child_to_cpu(struct childdata *child)
