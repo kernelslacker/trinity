@@ -125,7 +125,7 @@ retry:
 	unlock(&rec->lock);
 
 	if (syscalls_todo) {
-		if (shm->stats.total_syscalls_done >= syscalls_todo) {
+		if (shm->stats.op_count >= syscalls_todo) {
 			shm->exit_reason = EXIT_REACHED_COUNT;
 			return FAIL;
 		}

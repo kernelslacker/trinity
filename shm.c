@@ -60,7 +60,7 @@ void init_shm(void)
 	if (set_debug == TRUE)
 		shm->debug = TRUE;
 
-	shm->stats.total_syscalls_done = 1;
+	shm->stats.op_count = 1;
 
 	if (user_set_seed == TRUE)
 		shm->seed = init_seed(seed);

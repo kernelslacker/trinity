@@ -36,13 +36,13 @@ static int shm_is_corrupt(void)
 {
 	unsigned int i;
 
-	if (shm->stats.total_syscalls_done < shm->stats.previous_op_count) {
+	if (shm->stats.op_count < shm->stats.previous_op_count) {
 		output(0, "Execcount went backwards! (old:%ld new:%ld):\n",
-			shm->stats.previous_op_count, shm->stats.total_syscalls_done);
+			shm->stats.previous_op_count, shm->stats.op_count);
 		panic(EXIT_SHM_CORRUPTION);
 		return TRUE;
 	}
-	shm->stats.previous_op_count = shm->stats.total_syscalls_done;
+	shm->stats.previous_op_count = shm->stats.op_count;
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -666,20 +666,20 @@ static void check_children_progressing(void)
 
 static void print_stats(void)
 {
-	if (shm->stats.total_syscalls_done > 1) {
+	if (shm->stats.op_count > 1) {
 		static unsigned long lastcount = 0;
 
-		if (shm->stats.total_syscalls_done - lastcount > 10000) {
+		if (shm->stats.op_count - lastcount > 10000) {
 			char stalltxt[]=" STALLED:XXXX";
 
 			if (stall_count > 0)
 				sprintf(stalltxt, " STALLED:%u", stall_count);
 			output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s]\n",
-				shm->stats.total_syscalls_done,
+				shm->stats.op_count,
 				shm->stats.failures, shm->stats.successes,
 				hiscore,
 				stall_count ? stalltxt : "");
-			lastcount = shm->stats.total_syscalls_done;
+			lastcount = shm->stats.op_count;
 		}
 	}
 }
@@ -700,7 +700,7 @@ void main_loop(void)
 		while (check_all_locks() == TRUE)
 			reap_dead_kids();
 
-		if (syscalls_todo && (shm->stats.total_syscalls_done >= syscalls_todo)) {
+		if (syscalls_todo && (shm->stats.op_count >= syscalls_todo)) {
 			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
 			panic(EXIT_REACHED_COUNT);
 		}

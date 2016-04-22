@@ -3,7 +3,7 @@
 /* Various statistics. */
 
 struct stats_s {
-	unsigned long total_syscalls_done;
+	unsigned long op_count;
 	unsigned long successes;
 	unsigned long failures;
 

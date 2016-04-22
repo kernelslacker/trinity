@@ -196,7 +196,7 @@ int main(int argc, char* argv[])
 	destroy_global_objects();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
-		shm->stats.total_syscalls_done - 1, shm->stats.successes, shm->stats.failures);
+		shm->stats.op_count - 1, shm->stats.successes, shm->stats.failures);
 
 	shutdown_logging();
 

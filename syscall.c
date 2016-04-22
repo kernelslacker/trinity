@@ -115,7 +115,7 @@ static void __do_syscall(struct syscallrecord *rec)
 	}
 
 	/* We returned! */
-	shm->stats.total_syscalls_done++;
+	shm->stats.op_count++;
 
 	lock(&rec->lock);
 	rec->errno_post = errno;
