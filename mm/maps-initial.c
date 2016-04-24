@@ -49,7 +49,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 unsigned long mapping_sizes[NR_MAPPING_SIZES] = {
 	-1,	/* over-written with page_size below */
-	MB(1), MB(2), MB(4), MB(10),
+	MB(1), MB(2), MB(4),
 	GB(1),
 };
 
