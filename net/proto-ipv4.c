@@ -321,7 +321,7 @@ struct ip_sso_funcptr {
 #define SOL_UDPLITE 136
 #define SOL_DCCP 269
 
-static const struct ip_sso_funcptr ip_ssoptrs[] = {
+static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 	[IPPROTO_IP] = { .func = &ip_setsockopt },
 	[IPPROTO_ICMP] = { .func = NULL },
 	[IPPROTO_IGMP] = { .func = NULL },
