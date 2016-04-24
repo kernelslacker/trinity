@@ -64,9 +64,7 @@ already_done:
 		shm->syscalls32_attempted++;
 	}
 
-	shm_ro();
 	DO_32_SYSCALL
-	shm_rw();
 
 	if ((unsigned long)(__res) >= (unsigned long)(-133)) {
 		errno = -(__res);
@@ -104,9 +102,7 @@ static void __do_syscall(struct syscallrecord *rec)
 			(void)alarm(1);
 
 		if (rec->do32bit == FALSE) {
-			shm_ro();
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
-			shm_rw();
 		} else {
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 		}

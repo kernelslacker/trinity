@@ -391,8 +391,6 @@ void child_process(struct childdata *child, int childno)
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
-		shm_rw();
-
 		if (child->xcpu_count == 100) {
 			debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n", child->num, pids[child->num]);
 			goto out;
