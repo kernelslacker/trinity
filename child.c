@@ -18,6 +18,7 @@
 #include "list.h"
 #include "log.h"
 #include "maps.h"
+#include "params.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -25,6 +26,7 @@
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
+#include "uid.h"
 #include "utils.h"	// zmalloc
 
 struct child_funcs {
@@ -241,7 +243,7 @@ static void init_child(struct childdata *child, int childno)
 	mask_signals_child();
 
 	disable_coredumps();
-
+/*
 	if (shm->unshare_perm_err == FALSE) {
 		if (RAND_BOOL()) {
 			int ret = unshare(CLONE_NEWUSER);
@@ -251,6 +253,9 @@ static void init_child(struct childdata *child, int childno)
 				shm->unshare_perm_err = TRUE;
 		}
 	}
+*/
+	if (dropprivs == TRUE)
+		drop_privs();
 }
 
 /*

@@ -188,9 +188,6 @@ int main(int argc, char* argv[])
 		_exit(EXIT_FAILURE);
 	}
 
-	if (dropprivs == TRUE)	//FIXME: Push down into child processes later.
-		drop_privs();
-
 	main_loop();
 
 	destroy_global_objects();
