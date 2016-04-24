@@ -6,6 +6,12 @@
 #include "objects.h"
 #include "syscall.h"
 
+/* Childops */
+enum childtype {
+	CHILD_RAND_SYSCALL,
+	CHILD_READ_ALL_FILES,
+};
+
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
@@ -30,6 +36,8 @@ struct childdata {
 	unsigned char xcpu_count;
 
 	unsigned char kill_count;
+
+	enum childtype type;
 
 	bool dontkillme;	/* provide temporary protection from the reaper. */
 };

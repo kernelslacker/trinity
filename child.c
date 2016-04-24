@@ -31,11 +31,12 @@ struct child_funcs {
 	const char *name;
 	bool (*func)(struct childdata *child);
 	unsigned char likelyhood;
+	enum childtype type;
 };
 
 static const struct child_funcs child_ops[] = {
-	{ .name = "rand_syscall", .func = random_syscall, .likelyhood = 100 },
-//	{ .name = "read_all_files", .func = read_all_files, .likelyhood = 10 },
+	{ .name = "rand_syscall", .func = random_syscall, .likelyhood = 100, .type = CHILD_RAND_SYSCALL },
+//	{ .name = "read_all_files", .func = read_all_files, .likelyhood = 10, .type = CHILD_READ_ALL_FILES },
 };
 
 /*
@@ -423,6 +424,7 @@ void child_process(struct childdata *child, int childno)
 					if (op != child_ops[i].func) {
 						//output(0, "Chose %s.\n", child_ops[i].name);
 						op = child_ops[i].func;
+						child->type = child_ops[i].type;
 						loops = NEW_OP_COUNT;
 					}
 				}

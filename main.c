@@ -343,8 +343,8 @@ static bool is_child_making_progress(struct childdata *child)
 	if (diff < 40)
 		return FALSE;
 
-	debugf("sending another SIGKILL to child %d (pid %u). [kill count:%d] [diff:%d]\n",
-		child->num, pid, child->kill_count, diff);
+	debugf("sending another SIGKILL to child %d (pid:%u type:%u). [kill count:%d] [diff:%d]\n",
+		child->num, pid, child->type, child->kill_count, diff);
 	child->kill_count++;
 	kill_pid(pid);
 
@@ -554,8 +554,8 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 		if (WIFEXITED(childstatus)) {
 			struct childdata *child = shm->children[childno];
 
-			debugf("Child %d (pid %d) exited after %ld operations.\n",
-				childno, childpid, child->op_nr);
+			debugf("Child %d (pid:%u type:%u) exited after %ld operations.\n",
+				childno, childpid, child->type, child->op_nr);
 			reap_child(shm->children[childno]);
 			fclose(child->pidstatfile);
 			child->pidstatfile = NULL;
