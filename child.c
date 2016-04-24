@@ -379,10 +379,12 @@ static bool handle_sigreturn(void)
  * from the fork_children() loop.
  * We also re-enter it from the signal handler code if something happened.
  */
-#define NEW_OP_COUNT 1000
+#define NEW_OP_COUNT 10000
 
 void child_process(struct childdata *child, int childno)
 {
+	bool (*op)(struct childdata *child);
+	unsigned int loops;
 	int ret;
 
 	init_child(child, childno);
@@ -400,10 +402,10 @@ void child_process(struct childdata *child, int childno)
 			goto out;	// Exit the child, things are getting too weird.
 	}
 
-	while (shm->exit_reason == STILL_RUNNING) {
-		unsigned int loops = NEW_OP_COUNT;
-		bool (*op)(struct childdata *child) = NULL;
+	op = NULL;
+	loops = NEW_OP_COUNT;
 
+	while (shm->exit_reason == STILL_RUNNING) {
 		periodic_work();
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
@@ -423,6 +425,7 @@ void child_process(struct childdata *child, int childno)
 					if (op != child_ops[i].func) {
 						//output(0, "Chose %s.\n", child_ops[i].name);
 						op = child_ops[i].func;
+						loops = NEW_OP_COUNT;
 					}
 				}
 			}
@@ -437,6 +440,8 @@ void child_process(struct childdata *child, int childno)
 
 		if (ret == FAIL)
 			goto out;
+
+		loops--;
 	}
 
 	enable_coredumps();
