@@ -385,7 +385,7 @@ static bool handle_sigreturn(void)
  * from the fork_children() loop.
  * We also re-enter it from the signal handler code if something happened.
  */
-#define NEW_OP_COUNT 10000
+#define NEW_OP_COUNT 100000
 
 void child_process(struct childdata *child, int childno)
 {
