@@ -355,6 +355,13 @@ static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet
 {
 	int proto = triplet->protocol;
 
+	/* we might have gotten here from a non-IP socket, (see setsockopt.c
+	 * Make sure we don't run past the end of the array above
+	 * Don't adjust the actual triplet though, because it's what the real socket is.
+	 */
+	if (proto > IPPROTO_MAX)
+		proto = rnd() % IPPROTO_MAX;
+
 	if (ip_ssoptrs[proto].func != NULL) {
 		if (ip_ssoptrs[proto].sol != 0)
 			so->level = ip_ssoptrs[proto].sol;
