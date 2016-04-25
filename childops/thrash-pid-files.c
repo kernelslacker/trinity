@@ -33,8 +33,10 @@ static void read_pid_files(pid_t pid, char *buffer)
 		return;
 
 	ret = read(fd, buffer, page_size);
-	if (ret < 0)
+	if (ret < 0) {
+		close(fd);
 		return;
+	}
 
 	close(fd);
 }
@@ -52,10 +54,14 @@ bool thrash_pidfiles(__unused__ struct childdata *child)
 		if (pid != EMPTY_PIDSLOT)
 			read_pid_files(pid, buffer);
 
-		if (shm->exit_reason != STILL_RUNNING)
+		if (shm->exit_reason != STILL_RUNNING) {
+			free(buffer);
 			return FALSE;
+		}
 
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
 	}
+
+	free(buffer);
 	return TRUE;
 }
