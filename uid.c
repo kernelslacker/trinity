@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <grp.h>
+#include "child.h"
 #include "log.h"
 #include "params.h"
 #include "trinity.h"
@@ -29,7 +30,7 @@ void dump_uids(void)
 		uid, gid, euid, egid, suid, sgid);
 }
 
-void drop_privs(void)
+void drop_privs(struct childdata *child)
 {
 	if (setresgid(nobody_gid, nobody_gid, nobody_gid) < 0) {
 		output(0, "Error setting nobody gid (%s)\n", strerror(errno));
@@ -47,6 +48,7 @@ void drop_privs(void)
 	}
 
 	output(0, "set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
+	child->dropped_privs = TRUE;
 }
 
 void init_uids(void)

@@ -184,6 +184,7 @@ void clean_childdata(struct childdata *child)
 	child->dontkillme = FALSE;
 	child->xcpu_count = 0;
 	child->op_nr = 0;
+	child->dropped_privs = FALSE;
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }
 
@@ -271,7 +272,7 @@ static void init_child(struct childdata *child, int childno)
 	}
 */
 	if (dropprivs == TRUE)
-		drop_privs();
+		drop_privs(child);
 }
 
 /*

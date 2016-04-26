@@ -41,6 +41,8 @@ struct childdata {
 	enum childtype type;
 
 	bool dontkillme;	/* provide temporary protection from the reaper. */
+
+	bool dropped_privs;
 };
 
 extern unsigned int max_children;
