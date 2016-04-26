@@ -401,17 +401,22 @@ static bool handle_sigreturn(void)
 static void * set_new_op(struct childdata *child)
 {
 	bool (*op)(struct childdata *child) = NULL;
+	const struct child_funcs *ops;
+	size_t len;
+
+	ops = child_ops;
+	len = ARRAY_SIZE(child_ops);
 
 	while (op == NULL) {
 		unsigned int i;
 
-		i = rnd() % ARRAY_SIZE(child_ops);
+		i = rnd() % len;
 
-		if (rnd() % 100 <= child_ops[i].likelyhood) {
-			if (op != child_ops[i].func) {
-				//output(0, "Chose %s.\n", child_ops[i].name);
-				op = child_ops[i].func;
-				child->type = child_ops[i].type;
+		if (rnd() % 100 <= ops[i].likelyhood) {
+			if (op != ops[i].func) {
+				//output(0, "Chose %s.\n", ops[i].name);
+				op = ops[i].func;
+				child->type = ops[i].type;
 			}
 		}
 	}
