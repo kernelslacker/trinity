@@ -397,6 +397,27 @@ static bool handle_sigreturn(void)
 	return TRUE;
 }
 
+
+static void * set_new_op(struct childdata *child)
+{
+	bool (*op)(struct childdata *child) = NULL;
+
+	while (op == NULL) {
+		unsigned int i;
+
+		i = rnd() % ARRAY_SIZE(child_ops);
+
+		if (rnd() % 100 <= child_ops[i].likelyhood) {
+			if (op != child_ops[i].func) {
+				//output(0, "Chose %s.\n", child_ops[i].name);
+				op = child_ops[i].func;
+				child->type = child_ops[i].type;
+			}
+		}
+	}
+	return op;
+}
+
 /*
  * This is the child main loop, entered after init_child has completed
  * from the fork_children() loop.
@@ -435,22 +456,8 @@ void child_process(struct childdata *child, int childno)
 
 		/* Every NEW_OP_COUNT potentially pick a new childop. */
 		if (loops == NEW_OP_COUNT) {
-			op = NULL;
-
-			while (op == NULL) {
-				unsigned int i;
-
-				i = rnd() % ARRAY_SIZE(child_ops);
-
-				if (rnd() % 100 <= child_ops[i].likelyhood) {
-					if (op != child_ops[i].func) {
-						//output(0, "Chose %s.\n", child_ops[i].name);
-						op = child_ops[i].func;
-						child->type = child_ops[i].type;
-						loops = NEW_OP_COUNT;
-					}
-				}
-			}
+			op = set_new_op(child);
+			loops = NEW_OP_COUNT;
 		}
 
 		/* timestamp, and do the childop */
