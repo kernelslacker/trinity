@@ -11,6 +11,7 @@ enum childtype {
 	CHILD_RAND_SYSCALL,
 	CHILD_READ_ALL_FILES,
 	CHILD_THRASH_PID,
+	CHILD_ROOT_DROP_PRIVS,
 };
 
 struct childdata {
@@ -63,3 +64,4 @@ void reap_child(struct childdata *child);
 bool random_syscall(struct childdata *child);
 bool read_all_files(struct childdata *child);
 bool thrash_pidfiles(struct childdata *child);
+bool drop_privs(struct childdata *child);

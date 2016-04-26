@@ -29,11 +29,17 @@
 #include "uid.h"
 #include "utils.h"	// zmalloc
 
+enum childflags {
+	NONE,
+	ONESHOT,
+};
+
 struct child_funcs {
 	const char *name;
 	bool (*func)(struct childdata *child);
 	unsigned char likelyhood;
 	enum childtype type;
+	unsigned int flags;
 };
 
 static const struct child_funcs child_ops[] = {
@@ -57,6 +63,15 @@ static const struct child_funcs child_ops[] = {
 	},
 };
 
+static const struct child_funcs root_child_ops[] = {
+	{
+		.name = "drop_privs",
+		.func = drop_privs,
+		.likelyhood = 90,
+		.type = CHILD_ROOT_DROP_PRIVS,
+		.flags = ONESHOT,
+	},
+};
 /*
  * Provide temporary immunity from the reaper
  * This is useful if we're going to do something that might take
@@ -271,8 +286,8 @@ static void init_child(struct childdata *child, int childno)
 		}
 	}
 */
-	if (dropprivs == TRUE)
-		drop_privs(child);
+	if (orig_uid == 0)
+		child->dropped_privs = FALSE;
 }
 
 /*
@@ -398,29 +413,27 @@ static bool handle_sigreturn(void)
 }
 
 
-static void * set_new_op(struct childdata *child)
+static const struct child_funcs * set_new_op(struct childdata *child)
 {
-	bool (*op)(struct childdata *child) = NULL;
-	const struct child_funcs *ops;
-	size_t len;
+	const struct child_funcs *ops = child_ops;
+	size_t len = ARRAY_SIZE(child_ops);
 
-	ops = child_ops;
-	len = ARRAY_SIZE(child_ops);
-
-	while (op == NULL) {
-		unsigned int i;
-
-		i = rnd() % len;
-
-		if (rnd() % 100 <= ops[i].likelyhood) {
-			if (op != ops[i].func) {
-				//output(0, "Chose %s.\n", ops[i].name);
-				op = ops[i].func;
-				child->type = ops[i].type;
-			}
+	if (orig_uid == 0) {
+		if (child->dropped_privs == FALSE) {
+			ops = root_child_ops;
+			len = ARRAY_SIZE(root_child_ops);
 		}
 	}
-	return op;
+
+	while (1) {
+		unsigned int i = rnd() % len;
+
+		if (rnd() % 100 <= ops[i].likelyhood) {
+			//output(0, "Chose %s.\n", ops[i].name);
+			child->type = ops[i].type;
+			return ops;
+		}
+	}
 }
 
 /*
@@ -432,6 +445,7 @@ static void * set_new_op(struct childdata *child)
 
 void child_process(struct childdata *child, int childno)
 {
+	const struct child_funcs *ops;
 	bool (*op)(struct childdata *child);
 	unsigned int loops;
 	int ret;
@@ -450,7 +464,8 @@ void child_process(struct childdata *child, int childno)
 	}
 
 	op = NULL;
-	loops = NEW_OP_COUNT;
+	ops = NULL;
+	loops = 0;
 
 	while (shm->exit_reason == STILL_RUNNING) {
 		periodic_work();
@@ -460,8 +475,9 @@ void child_process(struct childdata *child, int childno)
 			set_seed(child);
 
 		/* Every NEW_OP_COUNT potentially pick a new childop. */
-		if (loops == NEW_OP_COUNT) {
-			op = set_new_op(child);
+		if (loops == 0) {
+			ops = set_new_op(child);
+			op = ops->func;
 			loops = NEW_OP_COUNT;
 		}
 
@@ -476,6 +492,9 @@ void child_process(struct childdata *child, int childno)
 			goto out;
 
 		loops--;
+
+		if (ops->flags & ONESHOT)
+			loops = 0;
 	}
 
 	enable_coredumps();

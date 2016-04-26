@@ -7,6 +7,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include "child.h"
+#include "debug.h"
 #include "log.h"
 #include "params.h"
 #include "trinity.h"
@@ -30,7 +31,7 @@ void dump_uids(void)
 		uid, gid, euid, egid, suid, sgid);
 }
 
-void drop_privs(struct childdata *child)
+bool drop_privs(struct childdata *child)
 {
 	if (setresgid(nobody_gid, nobody_gid, nobody_gid) < 0) {
 		output(0, "Error setting nobody gid (%s)\n", strerror(errno));
@@ -38,8 +39,7 @@ void drop_privs(struct childdata *child)
 	}
 
 	if (setgroups(0, NULL) == -1) {
-		output(0, "Error dropping supplemental groups (%s)\n", strerror(errno));
-		exit(EXIT_FAILURE);
+		;
 	}
 
 	if (setresuid(nobody_uid, nobody_uid, nobody_uid) < 0) {
@@ -47,8 +47,9 @@ void drop_privs(struct childdata *child)
 		exit(EXIT_FAILURE);
 	}
 
-	output(0, "set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
+//	debugf("set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
 	child->dropped_privs = TRUE;
+	return TRUE;
 }
 
 void init_uids(void)

@@ -3,7 +3,6 @@
 #include "child.h"
 
 void dump_uids(void);
-void drop_privs(struct childdata *child);
 void init_uids(void);
 void do_uid0_check(void);
 void check_uid(void);
