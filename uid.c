@@ -32,21 +32,21 @@ void dump_uids(void)
 void drop_privs(void)
 {
 	if (setresgid(nobody_gid, nobody_gid, nobody_gid) < 0) {
-		outputerr("Error setting nobody gid (%s)\n", strerror(errno));
+		output(0, "Error setting nobody gid (%s)\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
 	if (setgroups(0, NULL) == -1) {
-		outputerr("Error dropping supplemental groups (%s)\n", strerror(errno));
+		output(0, "Error dropping supplemental groups (%s)\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
 	if (setresuid(nobody_uid, nobody_uid, nobody_uid) < 0) {
-		outputerr("Error setting nobody uid (%s)\n", strerror(errno));
+		output(0, "Error setting nobody uid (%s)\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
-	outputstd("set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
+	output(0, "set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
 }
 
 void init_uids(void)
