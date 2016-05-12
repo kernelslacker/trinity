@@ -259,6 +259,9 @@ static void stuck_syscall_info(struct childdata *child)
 	if (shm->debug == FALSE)
 		return;
 
+	if (child->type != CHILD_RAND_SYSCALL)
+		return;
+
 	rec = &child->syscall;
 
 	if (trylock(&rec->lock) == FALSE)
