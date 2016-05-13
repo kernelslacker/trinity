@@ -5,6 +5,7 @@
  * Children will copy the whole initial_mappings list to their own
  * private copies, and then perform operations upon them.
  */
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +35,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	new->map.type = INITIAL_ANON;
 	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
 	if (new->map.ptr == MAP_FAILED) {
-		outputerr("mmap failure\n");
+		outputerr("mmap failure:%s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
