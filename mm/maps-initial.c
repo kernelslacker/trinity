@@ -23,6 +23,9 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	struct object *new;
 	int fd;
 
+	if (size == 0)
+		return;
+
 	fd = open("/dev/zero", O_RDWR);
 	if (fd == -1) {
 		outputerr("couldn't open /dev/zero\n");
@@ -84,7 +87,7 @@ static void setup_mapping_sizes(void)
 	}
 
 	//FIXME
-	mapping_sizes[4] = page_size;
+	mapping_sizes[4] = 0;
 
 out_free:
 	free(buffer);
