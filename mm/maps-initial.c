@@ -84,7 +84,7 @@ static void setup_mapping_sizes(void)
 	}
 
 	//FIXME
-	mapping_sizes[5] = page_size;
+	mapping_sizes[4] = page_size;
 
 out_free:
 	free(buffer);
