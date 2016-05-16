@@ -25,8 +25,10 @@
 #include "userfaultfd.h"
 #include "utils.h"
 
-static unsigned int num_fd_providers;
-static unsigned int num_fd_providers_enabled = 0;
+static unsigned int num_fd_providers;			// num in list.
+static unsigned int num_fd_providers_to_enable = 0;	// num of --fd-enable= params
+static unsigned int num_fd_providers_enabled = 0;	// final num we enabled.
+static unsigned int num_fd_providers_initialized = 0;	// num we called ->init on
 
 static struct fd_provider *fd_providers = NULL;
 
@@ -66,8 +68,6 @@ void setup_fd_providers(void)
 	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }
 
-static unsigned int num_fd_providers_initialized = 0;
-
 static void __open_fds(bool do_rand)
 {
 	struct list_head *node;
@@ -95,8 +95,7 @@ static void __open_fds(bool do_rand)
 		if (provider->enabled == TRUE) {
 			provider->initialized = TRUE;
 			num_fd_providers_initialized++;
-		} else {
-			num_fd_providers_enabled--;
+			num_fd_providers_enabled++;
 		}
 	}
 }
@@ -104,7 +103,7 @@ static void __open_fds(bool do_rand)
 unsigned int open_fds(void)
 {
 	/* Open half the providers randomly */
-	while (num_fd_providers_initialized < (num_fd_providers_enabled / 2))
+	while (num_fd_providers_initialized < (num_fd_providers_to_enable / 2))
 		__open_fds(TRUE);
 
 	/* Now open any leftovers */
@@ -132,7 +131,7 @@ int get_new_random_fd(void)
 	while (fd < 0) {
 		unsigned int i, j;
 retry:
-		i = rnd() % num_fd_providers;
+		i = rnd() % num_fd_providers;			// FIXME: after below fixme, this should be num_fd_providers_initialized
 		j = 0;
 
 		list_for_each(node, &fd_providers->list) {
@@ -190,7 +189,7 @@ static void enable_fds_param(char *str)
 		if (strcmp(provider->name, str) == 0) {
 			provider->enabled = TRUE;
 			outputstd("Enabled fd provider %s\n", str);
-			num_fd_providers_enabled++;
+			num_fd_providers_to_enable++;
 			return;
 		}
 	}
@@ -211,7 +210,6 @@ static void disable_fds_param(char *str)
 		if (strcmp(provider->name, str) == 0) {
 			provider->enabled = FALSE;
 			outputstd("Disabled fd provider %s\n", str);
-			num_fd_providers_enabled--;
 			return;
 		}
 	}
@@ -240,9 +238,6 @@ void process_fds_param(char *param, bool enable)
 			provider = (struct fd_provider *) node;
 			provider->enabled = FALSE;
 		}
-		num_fd_providers_enabled = 0;
-	} else {
-		num_fd_providers_enabled = num_fd_providers;
 	}
 
 	/* Check if there are any commas. If so, split them into multiple params,
