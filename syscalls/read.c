@@ -10,6 +10,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "compat.h"
 
 static void sanitise_read(struct syscallrecord *rec)
 {
@@ -101,7 +102,7 @@ struct syscallentry syscall_preadv = {
 	 int, flags)
  */
 static unsigned long preadv2_flags[] = {
-	0,	// No values defined as of v4.6
+	RWF_HIPRI, RWF_DSYNC, RWF_SYNC,
 };
 
 struct syscallentry syscall_preadv2 = {

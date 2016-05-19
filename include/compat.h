@@ -1067,12 +1067,19 @@ struct kvm_get_htab_fd {
 #define SWAP_FLAG_DISCARD 0x10000
 #endif
 
-/* unistd.h */
+/* linux/fs.h */
 #ifndef SEEK_DATA
 #define SEEK_DATA 3
 #endif
 #ifndef SEEK_HOLE
 #define SEEK_HOLE 4
+#endif
+#ifndef RWF_HIPRI
+#define RWF_HIPRI 0x00000001 /* high priority request, poll if possible */
+#endif
+#ifndef RWF_DSYNC
+#define RWF_DSYNC 0x00000002 /* per-IO O_DSYNC */
+#define RWF_SYNC  0x00000004 /* per-IO O_SYNC */
 #endif
 
 /* sys/epoll.h */

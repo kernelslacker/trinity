@@ -10,6 +10,7 @@
 #include "syscall.h"
 #include "trinity.h"
 #include "utils.h"
+#include "compat.h"
 
 static void sanitise_write(struct syscallrecord *rec)
 {
@@ -124,7 +125,7 @@ struct syscallentry syscall_pwritev = {
  */
 
 static unsigned long pwritev2_flags[] = {
-	0,	// none as of v4.6
+	RWF_HIPRI, RWF_DSYNC, RWF_SYNC,
 };
 
 struct syscallentry syscall_pwritev2 = {
