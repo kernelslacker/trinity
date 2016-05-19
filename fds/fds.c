@@ -64,8 +64,6 @@ void setup_fd_providers(void)
 	add_to_prov_list(&inotify_fd_provider);
 	add_to_prov_list(&userfaultfd_provider);
 	add_to_prov_list(&fanotify_fd_provider);
-
-	output(0, "Registered %d fd providers.\n", num_fd_providers);
 }
 
 static void __open_fds(bool do_rand)
@@ -109,8 +107,8 @@ unsigned int open_fds(void)
 	/* Now open any leftovers */
 	__open_fds(FALSE);
 
-	output(0, "Enabled %d fd providers: initialized:%d.\n",
-		num_fd_providers_enabled, num_fd_providers_initialized);
+	output(0, "Enabled %d/%d fd providers. initialized:%d.\n",
+		num_fd_providers_enabled, num_fd_providers, num_fd_providers_initialized);
 
 	return TRUE;
 }
