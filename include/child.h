@@ -56,7 +56,7 @@ void init_child_mappings(void);
 
 void child_process(struct childdata *child, int childno);
 
-void set_dontkillme(pid_t pid, bool state);
+void set_dontkillme(struct childdata *child, bool state);
 
 void reap_child(struct childdata *child);
 

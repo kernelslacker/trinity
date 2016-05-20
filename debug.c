@@ -23,11 +23,12 @@
 void show_backtrace(void)
 {
 #ifdef USE_BACKTRACE
+	struct childdata *child = this_child();
 	unsigned int j, nptrs;
 	void *buffer[BACKTRACE_SIZE];
 	char **strings;
 
-	set_dontkillme(getpid(), FALSE);
+	set_dontkillme(child, FALSE);
 
 	nptrs = backtrace(buffer, BACKTRACE_SIZE);
 
@@ -42,12 +43,14 @@ void show_backtrace(void)
 
 	free(strings);
 out:
-	set_dontkillme(getpid(), TRUE);
+	set_dontkillme(child, TRUE);
 #endif
 }
 
 void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno)
 {
+	struct childdata *child = this_child();
+
 	printf("BUG!: %s%s%s\n", ANSI_RED, bugtxt, ANSI_RESET);
 	printf("BUG!: %s\n", VERSION);
 	printf("BUG!: [%d] %s:%s:%u\n", getpid(), filename, funcname, lineno);
@@ -56,11 +59,11 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 
 	/* Now spin indefinitely (but allow ctrl-c) */
 
-	set_dontkillme(getpid(), TRUE);
+	set_dontkillme(child, TRUE);
 
 	while (1) {
 		if (shm->exit_reason == EXIT_SIGINT) {
-			set_dontkillme(getpid(), FALSE);
+			set_dontkillme(child, FALSE);
 			exit(EXIT_FAILURE);
 		}
 		sleep(1);

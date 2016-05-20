@@ -78,14 +78,11 @@ static const struct child_funcs root_child_ops[] = {
  * longer than the time the reaper is prepared to wait, especially if
  * we're doing something critical, like handling a lock, or dumping a log.
  */
-void set_dontkillme(pid_t pid, bool state)
+void set_dontkillme(struct childdata *child, bool state)
 {
-	int childno;
-
-	childno = find_childno(pid);
-	if (childno == CHILD_NOT_FOUND)		/* possible, we might be the mainpid */
+	if (child == NULL)	/* possible, we might be the mainpid */
 		return;
-	shm->children[childno]->dontkillme = state;
+	child->dontkillme = state;
 }
 
 /*
