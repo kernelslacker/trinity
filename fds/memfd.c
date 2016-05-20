@@ -80,9 +80,11 @@ static int get_rand_memfd_fd(void)
 	return obj->memfd;
 }
 
-const struct fd_provider memfd_fd_provider = {
+static const struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
 	.enabled = TRUE,
 	.open = &open_memfd_fds,
 	.get = &get_rand_memfd_fd,
 };
+
+REG_FD_PROV(memfd_fd_provider);

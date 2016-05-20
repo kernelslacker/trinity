@@ -78,9 +78,11 @@ static int get_rand_fanotifyfd(void)
 	return obj->fanotifyfd;
 }
 
-const struct fd_provider fanotify_fd_provider = {
+static const struct fd_provider fanotify_fd_provider = {
 	.name = "fanotify",
 	.enabled = TRUE,
 	.open = &open_fanotify_fds,
 	.get = &get_rand_fanotifyfd,
 };
+
+REG_FD_PROV(fanotify_fd_provider);

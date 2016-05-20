@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include "epoll.h"
-#include "eventfd.h"
 #include "fanotify.h"
 #include "fd.h"
 #include "files.h"
@@ -32,10 +31,14 @@ static unsigned int num_fd_providers_initialized = 0;	// num we called ->init on
 
 static struct fd_provider *fd_providers = NULL;
 
-static void add_to_prov_list(const struct fd_provider *prov)
+void register_fd_provider(const struct fd_provider *prov)
 {
 	struct fd_provider *newnode;
 
+	if (fd_providers == NULL) {
+		fd_providers = zmalloc(sizeof(struct fd_provider));
+		INIT_LIST_HEAD(&fd_providers->list);
+	}
 	newnode = zmalloc(sizeof(struct fd_provider));
 	newnode->name = strdup(prov->name);
 	newnode->enabled = prov->enabled;
@@ -44,26 +47,6 @@ static void add_to_prov_list(const struct fd_provider *prov)
 	num_fd_providers++;
 
 	list_add_tail(&newnode->list, &fd_providers->list);
-}
-
-void setup_fd_providers(void)
-{
-	fd_providers = zmalloc(sizeof(struct fd_provider));
-	INIT_LIST_HEAD(&fd_providers->list);
-
-	add_to_prov_list(&file_fd_provider);
-	add_to_prov_list(&socket_fd_provider);
-	add_to_prov_list(&pipes_fd_provider);
-	add_to_prov_list(&perf_fd_provider);
-	add_to_prov_list(&epoll_fd_provider);
-	add_to_prov_list(&eventfd_fd_provider);
-	add_to_prov_list(&timerfd_fd_provider);
-	add_to_prov_list(&testfile_fd_provider);
-	add_to_prov_list(&memfd_fd_provider);
-	add_to_prov_list(&drm_fd_provider);
-	add_to_prov_list(&inotify_fd_provider);
-	add_to_prov_list(&userfaultfd_provider);
-	add_to_prov_list(&fanotify_fd_provider);
 }
 
 static void __open_fds(bool do_rand)

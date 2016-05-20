@@ -5,10 +5,6 @@
 #define MFD_ALLOW_SEALING       0x0002U
 #endif
 
-#include "fd.h"
-
-const struct fd_provider memfd_fd_provider;
-
 // FIXME: Keep all this here until glibc supports it.
 #ifndef SYS_memfd_create
 #ifdef __x86_64__

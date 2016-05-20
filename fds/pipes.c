@@ -73,9 +73,11 @@ int get_rand_pipe_fd(void)
 	return obj->pipefd;
 }
 
-const struct fd_provider pipes_fd_provider = {
+static const struct fd_provider pipes_fd_provider = {
 	.name = "pipes",
 	.enabled = TRUE,
 	.open = &open_pipes,
 	.get = &get_rand_pipe_fd,
 };
+
+REG_FD_PROV(pipes_fd_provider);

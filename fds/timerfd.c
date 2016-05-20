@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include <sys/timerfd.h>
 
-#include "timerfd.h"
 #include "fd.h"
 #include "files.h"
 #include "log.h"
@@ -75,9 +74,11 @@ static int get_rand_timerfd_fd(void)
 	return obj->timerfd;
 }
 
-const struct fd_provider timerfd_fd_provider = {
+static const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
 	.enabled = TRUE,
 	.open = &open_timerfd_fds,
 	.get = &get_rand_timerfd_fd,
 };
+
+REG_FD_PROV(timerfd_fd_provider);

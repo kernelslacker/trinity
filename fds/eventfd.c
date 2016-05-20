@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include <sys/eventfd.h>
 
-#include "eventfd.h"
 #include "fd.h"
 #include "files.h"
 #include "log.h"
@@ -70,9 +69,11 @@ static int get_rand_eventfd_fd(void)
 	return obj->eventfd;
 }
 
-const struct fd_provider eventfd_fd_provider = {
+static const struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
 	.enabled = TRUE,
 	.open = &open_eventfd_fds,
 	.get = &get_rand_eventfd_fd,
 };
+
+REG_FD_PROV(eventfd_fd_provider);

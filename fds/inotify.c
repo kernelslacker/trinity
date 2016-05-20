@@ -69,9 +69,11 @@ static int get_rand_inotify_fd(void)
 	return obj->inotifyfd;
 }
 
-const struct fd_provider inotify_fd_provider = {
+static const struct fd_provider inotify_fd_provider = {
 	.name = "inotify",
 	.enabled = TRUE,
 	.open = &open_inotify_fds,
 	.get = &get_rand_inotify_fd,
 };
+
+REG_FD_PROV(inotify_fd_provider);

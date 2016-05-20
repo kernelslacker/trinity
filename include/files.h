@@ -5,8 +5,6 @@
 
 unsigned long get_o_flags(void);
 
-const struct fd_provider file_fd_provider;
-
 void parse_devices(void);
 const char *map_dev(dev_t, mode_t);
 

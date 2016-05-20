@@ -2,9 +2,7 @@
 
 #include "arch.h"
 #include "child.h"
-#include "drm_fds.h"
 #include "epoll.h"
-#include "eventfd.h"
 #include "exit.h"
 #include "files.h"
 #include "inotify.h"
@@ -16,7 +14,6 @@
 #include "stats.h"
 #include "syscall.h"
 #include "testfile.h"
-#include "timerfd.h"
 #include "types.h"
 
 void create_shm(void);

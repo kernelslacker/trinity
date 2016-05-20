@@ -1,9 +1,5 @@
 #pragma once
 
-#include "fd.h"
-
-const struct fd_provider fanotify_fd_provider;
-
 unsigned long get_fanotify_init_flags(void);
 
 unsigned long get_fanotify_init_event_flags(void);

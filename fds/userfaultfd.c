@@ -78,9 +78,11 @@ static int get_rand_userfaultfd(void)
 	return obj->userfaultfd;
 }
 
-const struct fd_provider userfaultfd_provider = {
+static const struct fd_provider userfaultfd_provider = {
 	.name = "userfaultfd",
 	.enabled = TRUE,
 	.open = &open_userfaultfds,
 	.get = &get_rand_userfaultfd,
 };
+
+REG_FD_PROV(userfaultfd_provider);

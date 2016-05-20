@@ -178,9 +178,11 @@ static int get_rand_file_fd(void)
 	return obj->filefd;
 }
 
-const struct fd_provider file_fd_provider = {
+static const struct fd_provider file_fd_provider = {
 	.name = "pseudo",	// FIXME: Use separate providers for dev/sysfs/procfs
 	.enabled = TRUE,
 	.open = &open_files,
 	.get = &get_rand_file_fd,
 };
+
+REG_FD_PROV(file_fd_provider);

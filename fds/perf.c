@@ -99,9 +99,11 @@ int get_rand_perf_fd(void)
 	return obj->perffd;
 }
 
-const struct fd_provider perf_fd_provider = {
+static const struct fd_provider perf_fd_provider = {
 	.name = "perf",
 	.enabled = TRUE,
 	.open = &open_perf_fds,
 	.get = &get_rand_perf_fd,
 };
+
+REG_FD_PROV(perf_fd_provider);

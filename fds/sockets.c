@@ -449,9 +449,11 @@ int fd_from_socketinfo(struct socketinfo *si)
 	return get_random_fd();
 }
 
-const struct fd_provider socket_fd_provider = {
+static const struct fd_provider socket_fd_provider = {
 	.name = "sockets",
 	.enabled = TRUE,
 	.open = &open_sockets,
 	.get = &get_rand_socket_fd,
 };
+
+REG_FD_PROV(socket_fd_provider);

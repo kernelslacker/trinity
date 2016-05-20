@@ -107,9 +107,11 @@ static int get_rand_testfile_fd(void)
 	return obj->testfilefd;
 }
 
-const struct fd_provider testfile_fd_provider = {
+static const struct fd_provider testfile_fd_provider = {
 	.name = "testfile",
 	.enabled = TRUE,
 	.open = &open_testfile_fds,
 	.get = &get_rand_testfile_fd,
 };
+
+REG_FD_PROV(testfile_fd_provider);

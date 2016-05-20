@@ -140,9 +140,11 @@ static int get_rand_drm_fd(void)
 	return obj->drmfd;
 }
 
-struct fd_provider drm_fd_provider = {
+static struct fd_provider drm_fd_provider = {
 	.name = "drm",
 	.enabled = TRUE,
 	.open = &open_drm_fds,
 	.get = &get_rand_drm_fd,
 };
+
+REG_FD_PROV(drm_fd_provider);
