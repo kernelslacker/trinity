@@ -83,6 +83,9 @@ void set_dontkillme(struct childdata *child, bool state)
 	if (child == NULL)	/* possible, we might be the mainpid */
 		return;
 	child->dontkillme = state;
+
+	/* bump the progress indicator */
+	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }
 
 /*
