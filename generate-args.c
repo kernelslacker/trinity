@@ -120,6 +120,8 @@ static void get_num_and_values(struct syscallentry *entry, unsigned int argnum,
 	case 6:	*num = entry->arg6list.num;
 		*values = entry->arg6list.values;
 		break;
+	default:
+		unreachable();
 	}
 
 	if (num == 0)
