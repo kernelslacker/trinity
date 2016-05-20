@@ -156,7 +156,7 @@ regen:
 	return shm->current_fd;
 }
 
-static void enable_fds_param(char *str)
+static void toggle_fds_param(char *str, bool enable)
 {
 	struct list_head *node;
 
@@ -165,34 +165,19 @@ static void enable_fds_param(char *str)
 
 		provider = (struct fd_provider *) node;
 		if (strcmp(provider->name, str) == 0) {
-			provider->enabled = TRUE;
-			outputstd("Enabled fd provider %s\n", str);
-			num_fd_providers_to_enable++;
+			if (enable == TRUE) {
+				provider->enabled = TRUE;
+				outputstd("Enabled fd provider %s\n", str);
+				num_fd_providers_to_enable++;
+			} else {
+				provider->enabled = FALSE;
+				outputstd("Disabled fd provider %s\n", str);
+			}
 			return;
 		}
 	}
 
-	outputstd("Unknown --enable-fds parameter \"%s\"\n", str);
-	enable_disable_fd_usage();
-	exit(EXIT_FAILURE);
-}
-
-static void disable_fds_param(char *str)
-{
-	struct list_head *node;
-
-	list_for_each(node, &fd_providers->list) {
-		struct fd_provider *provider;
-
-		provider = (struct fd_provider *) node;
-		if (strcmp(provider->name, str) == 0) {
-			provider->enabled = FALSE;
-			outputstd("Disabled fd provider %s\n", str);
-			return;
-		}
-	}
-
-	outputstd("Unknown --disable-fds parameter \"%s\"\n", str);
+	outputstd("Unknown parameter \"%s\"\n", str);
 	enable_disable_fd_usage();
 	exit(EXIT_FAILURE);
 }
@@ -224,18 +209,12 @@ void process_fds_param(char *param, bool enable)
 	for (i = 0; i < len; i++) {
 		if (str[i] == ',') {
 			str[i] = 0;
-			if (enable == TRUE)
-				enable_fds_param(str);
-			else
-				disable_fds_param(str);
+			toggle_fds_param(str, enable);
 			str = str_orig + i + 1;
 		}
 	}
-	if (str < str_orig + len) {
-		if (enable == TRUE)
-			enable_fds_param(str);
-		else
-			disable_fds_param(str);
-	}
+	if (str < str_orig + len)
+		toggle_fds_param(str, enable);
+
 	free(str_orig);
 }
