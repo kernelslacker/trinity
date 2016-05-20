@@ -23,6 +23,11 @@ static unsigned int num_fd_providers_initialized = 0;	// num we called ->init on
 
 static struct fd_provider *fd_providers = NULL;
 
+/*
+ * This is called by the REG_FD_PROV constructors on startup.
+ * Because of this, this function shouldn't rely on anything
+ * already existing/being initialized.
+ */
 void register_fd_provider(const struct fd_provider *prov)
 {
 	struct fd_provider *newnode;
