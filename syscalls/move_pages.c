@@ -22,13 +22,12 @@
 #include "trinity.h"
 #include "utils.h"
 
-static unsigned int count;
-
 static void sanitise_move_pages(struct syscallrecord *rec)
 {
 	int *nodes;
 	unsigned long *page_alloc;
 	unsigned int i;
+	unsigned int count;
 
 	/* number of pages to move */
 	count = rnd() % (page_size / sizeof(void *));

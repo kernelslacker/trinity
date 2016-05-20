@@ -237,6 +237,7 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	// skcipher
 	case 3:	algo = rnd() % ARRAY_SIZE(algos);
 		break;
+	default: unreachable();
 	}
 	strcpy((char *)alg->salg_name, algos[algo]);
 
