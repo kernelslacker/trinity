@@ -12,6 +12,8 @@
 #include "log.h"
 #include "sanitise.h"
 
+#define MAX_PERF_FDS 10
+
 static void perffd_destructor(struct object *obj)
 {
 	close(obj->perffd);

@@ -16,8 +16,9 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscalls/syscalls.h"
-#include "testfile.h"
 #include "utils.h"
+
+#define MAX_TESTFILE_FDS 4
 
 static void testfile_destructor(struct object *obj)
 {

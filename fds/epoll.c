@@ -7,13 +7,14 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 
-#include "epoll.h"
 #include "fd.h"
 #include "log.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+
+#define MAX_EPOLL_FDS 10
 
 static void epoll_destructor(struct object *obj)
 {

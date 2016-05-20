@@ -7,13 +7,14 @@
 #include <unistd.h>
 #include <sys/inotify.h>
 
-#include "inotify.h"
 #include "fd.h"
 #include "log.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+
+#define MAX_INOTIFY_FDS 5
 
 static void inotify_destructor(struct object *obj)
 {

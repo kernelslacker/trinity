@@ -4,24 +4,16 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "epoll.h"
-#include "fanotify.h"
 #include "fd.h"
-#include "files.h"
 #include "log.h"
 #include "list.h"
-#include "memfd.h"
 #include "net.h"
 #include "params.h"
-#include "perf.h"
 #include "pids.h"
-#include "pipes.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-#include "testfile.h"
-#include "userfaultfd.h"
 #include "utils.h"
 
 static unsigned int num_fd_providers;			// num in list.

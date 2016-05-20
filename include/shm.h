@@ -2,18 +2,12 @@
 
 #include "arch.h"
 #include "child.h"
-#include "epoll.h"
 #include "exit.h"
 #include "files.h"
-#include "inotify.h"
 #include "locks.h"
-#include "memfd.h"
 #include "net.h"
-#include "pipes.h"
-#include "perf.h"
 #include "stats.h"
 #include "syscall.h"
-#include "testfile.h"
 #include "types.h"
 
 void create_shm(void);
