@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "arch.h"	// biarch
 #include "child.h"
@@ -137,6 +139,7 @@ retry:
 bool random_syscall(struct childdata *child)
 {
 	struct syscallrecord *rec, *stash;
+	pid_t pid;
 
 	rec = &child->syscall;
 
@@ -153,7 +156,27 @@ bool random_syscall(struct childdata *child)
 	stash = zmalloc(sizeof(struct syscallrecord));
 	memcpy(stash, rec, sizeof(struct syscallrecord));
 
-	do_syscall(rec);
+	pid = fork();
+	if (pid == 0) {
+		// child
+		do_syscall(rec);
+		_exit(EXIT_SUCCESS);
+	} else if (pid > 0) {
+		// parent
+		int ret = 0;
+		int childstatus;
+		while (ret == 0) {
+			clock_gettime(CLOCK_MONOTONIC, &child->tp);
+			kill(pid, SIGKILL);
+			ret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+			if (ret == 0)
+				usleep(100);
+		}
+		do_syscall(rec);
+	} else {
+		// fork failed
+		return FALSE;
+	}
 
 	check_sanity(rec, stash);
 
