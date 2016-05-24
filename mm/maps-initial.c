@@ -80,14 +80,11 @@ static void setup_mapping_sizes(void)
 			if ((free * 1024) < GB(8ULL)) {
 				printf("Free memory: %.2fGB\n", (double) free / 1024 / 1024);
 				printf("Low on memory, disabling mmaping of 1GB pages\n");
-				mapping_sizes[5] = page_size;
+				mapping_sizes[4] = page_size;
 				goto out_free;
 			}
 		}
 	}
-
-	//FIXME
-	mapping_sizes[4] = 0;
 
 out_free:
 	free(buffer);
