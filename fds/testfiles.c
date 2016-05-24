@@ -16,6 +16,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscalls/syscalls.h"
+#include "testfile.h"
 #include "utils.h"
 
 #define MAX_TESTFILE_FDS 4
@@ -96,7 +97,7 @@ static int open_testfile_fds(void)
 	return TRUE;
 }
 
-static int get_rand_testfile_fd(void)
+int get_rand_testfile_fd(void)
 {
 	struct object *obj;
 

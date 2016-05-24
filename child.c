@@ -55,12 +55,19 @@ static const struct child_funcs child_ops[] = {
 		.likelyhood = 10,
 		.type = CHILD_READ_ALL_FILES
 	},
-*/	{
+	{
 		.name = "thrash_pid_files",
 		.func = thrash_pidfiles,
 		.likelyhood = 50,
 		.type = CHILD_THRASH_PID
 	},
+	{
+		.name = "truncate_testfile",
+		.func = truncate_testfile,
+		.likelyhood = 10,
+		.type = CHILD_TRUNCATE_TESTFILE
+	},
+*/
 };
 
 static const struct child_funcs root_child_ops[] = {
