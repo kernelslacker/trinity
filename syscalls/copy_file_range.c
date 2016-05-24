@@ -34,7 +34,7 @@ struct syscallentry syscall_copy_file_range = {
 	.arg5type = ARG_LEN,
 	.arg6name = "flags",
 	.arg6type = ARG_LIST,
-	.arg4list = ARGLIST(copy_file_range_flags),
+	.arg6list = ARGLIST(copy_file_range_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
