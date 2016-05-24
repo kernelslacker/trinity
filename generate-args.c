@@ -124,10 +124,10 @@ static void get_num_and_values(struct syscallentry *entry, unsigned int argnum,
 		unreachable();
 	}
 
-	if (num == 0)
+	if (*num == 0)
 		BUG("ARG_OP/LIST with 0 args. What?\n");
 
-	if (values == NULL)
+	if (*values == NULL)
 		BUG("ARG_OP/LIST with no values.\n");
 }
 
