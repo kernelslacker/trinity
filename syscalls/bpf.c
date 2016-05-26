@@ -25,9 +25,19 @@ static void bpf_prog_load(struct syscallrecord *rec)
 
 	attr = zmalloc(sizeof(union bpf_attr));
 
-	bpf_gen_filter(&insns, &len);
-
 	attr->prog_type = RAND_ARRAY(bpf_prog_types);
+
+	switch (attr->prog_type) {
+	case BPF_PROG_TYPE_SOCKET_FILTER:
+		bpf_gen_filter(&insns, &len);
+		break;
+	default:
+		// this will go away when all the other cases are enumerated
+		insns = zmalloc(page_size);
+		generate_rand_bytes((unsigned char *)insns, len);
+		break;
+	}
+
 	attr->insn_cnt = len;
 	attr->insns = (u64) insns;
 	attr->license = (u64) license;
@@ -53,7 +63,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 static void post_bpf(struct syscallrecord *rec)
 {
-	struct sock_fprog *bpf;
+	union bpf_attr *attr;
 
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
@@ -62,9 +72,13 @@ static void post_bpf(struct syscallrecord *rec)
 
 	case BPF_PROG_LOAD:
 		//TODO: add fd to local object cache
-		bpf = (struct sock_fprog *) rec->a2;
-		free(&bpf->filter);
-		freeptr(&rec->a2);
+
+		attr = (union bpf_attr *) rec->a2;
+		if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER) {
+			void *ptr = (void *) attr->insns;
+			free(ptr);
+			freeptr(&rec->a2);
+		}
 		break;
 	default:
 		break;
