@@ -140,6 +140,7 @@ bool random_syscall(struct childdata *child)
 {
 	struct syscallrecord *rec, *stash;
 	pid_t pid;
+	int ret = FALSE;
 
 	rec = &child->syscall;
 
@@ -163,19 +164,19 @@ bool random_syscall(struct childdata *child)
 		_exit(EXIT_SUCCESS);
 	} else if (pid > 0) {
 		// parent
-		int ret = 0;
+		int childret = 0;
 		int childstatus;
 		while (ret == 0) {
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 			kill(pid, SIGKILL);
-			ret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-			if (ret == 0)
+			childret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+			if (childret == 0)
 				usleep(100);
 		}
 		do_syscall(rec);
 	} else {
 		// fork failed
-		return FALSE;
+		goto fail;
 	}
 
 	check_sanity(rec, stash);
@@ -184,7 +185,9 @@ bool random_syscall(struct childdata *child)
 
 	handle_syscall_ret(rec);
 
+	ret = TRUE;
+fail:
 	free(stash);
 
-	return TRUE;
+	return ret;
 }
