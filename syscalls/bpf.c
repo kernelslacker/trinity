@@ -1,25 +1,50 @@
 /*
  * SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
  */
+#include <linux/bpf.h>
 #include <linux/filter.h>
 #include "arch.h"
 #include "net.h"
+#include "random.h"
 #include "sanitise.h"
 
-enum bpf_cmd {
-	BPF_MAP_CREATE, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM,
-	BPF_MAP_GET_NEXT_KEY, BPF_PROG_LOAD,
+static unsigned long bpf_prog_types[] = {
+	BPF_PROG_TYPE_UNSPEC,
+	BPF_PROG_TYPE_SOCKET_FILTER,
+	BPF_PROG_TYPE_KPROBE,
+	BPF_PROG_TYPE_SCHED_CLS,
+	BPF_PROG_TYPE_SCHED_ACT,
 };
+
+static const char license[] = "GPLv2";
+
+static void bpf_prog_load(struct syscallrecord *rec)
+{
+	unsigned long *insns = NULL, len = 0;
+	union bpf_attr *attr;
+
+	attr = zmalloc(sizeof(union bpf_attr));
+
+	bpf_gen_filter(&insns, &len);
+
+	attr->prog_type = RAND_ARRAY(bpf_prog_types);
+	attr->insn_cnt = len;
+	attr->insns = (u64) insns;
+	attr->license = (u64) license;
+	attr->log_level = 0;
+	attr->log_size = rnd() % page_size;
+	attr->log_buf = (u64) get_writable_address(page_size);
+//	attr->kern_version = TODO: stick uname in here.
+
+	rec->a2 = (unsigned long) attr;
+	rec->a3 = sizeof(attr);
+}
 
 static void sanitise_bpf(struct syscallrecord *rec)
 {
-	unsigned long *ptr = NULL, len = 0;
-
 	switch (rec->a1) {
 	case BPF_PROG_LOAD:
-		bpf_gen_filter(&ptr, &len);
-		rec->a2 = (unsigned long) ptr;
-		rec->a3 = len;
+		bpf_prog_load(rec);
 		break;
 	default:
 		break;
