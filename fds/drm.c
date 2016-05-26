@@ -71,6 +71,8 @@ static void add_drm_obj(int fd)
 	output(2, "fd[%d] = drm\n", fd);
 }
 
+static struct fd_provider drm_fd_provider;
+
 static int open_drm_fds(void)
 {
 	struct objhead *head;
