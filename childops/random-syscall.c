@@ -166,7 +166,7 @@ bool random_syscall(struct childdata *child)
 		// parent
 		int childret = 0;
 		int childstatus;
-		while (ret == 0) {
+		while (childret == 0) {
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 			kill(pid, SIGKILL);
 			childret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
