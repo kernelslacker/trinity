@@ -16,9 +16,11 @@ bool truncate_testfile(struct childdata *child)
 {
 	int fd;
 	int ret;
-	int sizes[] = { 0, 4096, MB(1), GB(1) };
+	off_t sizes[] = { 0, 4096, MB(1), GB(1) };
 
 	fd = get_rand_testfile_fd();
+	if (fd < 0)
+		return FALSE;
 
 	ret = ftruncate(fd, RAND_ARRAY(sizes));
 
