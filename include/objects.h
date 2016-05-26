@@ -37,6 +37,10 @@ struct object {
 
 		int fanotifyfd;
 
+		int bpf_map_fd;
+
+		int bpf_prog_fd;
+
 		struct socketinfo sockinfo;
 
 		struct __lock lock; /* futex */
