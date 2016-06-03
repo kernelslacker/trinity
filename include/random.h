@@ -26,3 +26,12 @@ unsigned int rand32(void);
 u64 rand64(void);
 unsigned long rand_single_bit(unsigned char size);
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values);
+
+#ifndef SYS_getrandom
+#ifdef __x86_64__
+#define SYS_getrandom 318
+#endif
+#ifdef __i386__
+#define SYS_getrandom 355
+#endif
+#endif

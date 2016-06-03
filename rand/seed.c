@@ -45,7 +45,14 @@ static int fallbackseed(void)
 	struct timeval t;
 	unsigned int r;
 
-	//printf("Fell back to gtod seed! errno:%s\n", strerror(errno));
+#ifdef SYS_getrandom
+	int buf, ret;
+
+	ret = syscall(SYS_getrandom, &buf, 4, 0);
+	if (ret > 0)
+		return buf;
+#endif
+
 	gettimeofday(&t, NULL);
 	r = t.tv_sec * t.tv_usec;
 	return r;
