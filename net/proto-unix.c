@@ -24,7 +24,7 @@ static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 static void unix_rand_socket(struct socket_triplet *st)
 {
-	st->protocol = PF_UNIX;
+	st->protocol = 0;
 
 	switch (rnd() % 3) {
 	case 0: st->type = SOCK_STREAM;
