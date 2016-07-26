@@ -69,17 +69,6 @@ struct arglist {
 	.values = vals,		\
 }
 
-struct errnos {
-	unsigned int num;
-	int *values;
-};
-
-#define ERRNOS(vals)		\
-{				\
-	.num = ARRAY_SIZE(vals),\
-	.values = vals,		\
-}
-
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);
 	void (*post)(struct syscallrecord *rec);
@@ -128,8 +117,6 @@ struct syscallentry {
 
 	const unsigned int group;
 	const int rettype;
-
-	struct errnos errnos;
 };
 
 #define RET_BORING		-1

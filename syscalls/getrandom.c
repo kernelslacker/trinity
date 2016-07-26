@@ -18,10 +18,6 @@ static unsigned long getrandom_flags[] = {
 	GRND_NONBLOCK, GRND_RANDOM,
 };
 
-static int getrandom_errnos[] = {
-	EINVAL, EFAULT, EAGAIN, EINTR,
-};
-
 struct syscallentry syscall_getrandom = {
 	.name = "getrandom",
 	.num_args = 3,
@@ -31,6 +27,5 @@ struct syscallentry syscall_getrandom = {
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(getrandom_flags),
-	.errnos = ERRNOS(getrandom_errnos),
 	.sanitise = sanitise_getrandom,
 };

@@ -92,13 +92,6 @@ static void post_execveat(struct syscallrecord *rec)
 	free_execve_ptrs((void **) rec->a3, (void **) rec->a4);
 }
 
-static int execve_errnos[] = {
-	E2BIG, EACCES, EFAULT, EINVAL, EIO, EISDIR, ELIBBAD, ELOOP,
-	EMFILE, ENOENT, ENOEXEC, ENOMEM, ENOTDIR, EPERM, ETXTBSY,
-	/* currently undocumented in man page. */
-	ENAMETOOLONG, ENXIO, EBADF,
-};
-
 struct syscallentry syscall_execve = {
 	.name = "execve",
 	.num_args = 3,
@@ -112,7 +105,6 @@ struct syscallentry syscall_execve = {
 	.post = post_execve,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
-	.errnos = ERRNOS(execve_errnos),
 };
 
 static unsigned long execveat_flags[] = {
@@ -137,5 +129,4 @@ struct syscallentry syscall_execveat = {
 	.post = post_execveat,
 	.group = GROUP_VFS,
 	.flags = EXTRA_FORK,
-	.errnos = ERRNOS(execve_errnos),
 };

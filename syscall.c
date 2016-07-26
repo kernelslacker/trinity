@@ -177,49 +177,6 @@ void do_syscall(struct syscallrecord *rec)
 		__do_syscall(rec);
 }
 
-static void check_retval_documented(struct syscallrecord *rec, struct syscallentry *entry)
-{
-	struct errnos *errnos;
-	unsigned int i;
-
-	/* Just return silently if ENOSYS, we'll disable it immediately afterwards. */
-	if (rec->errno_post == ENOSYS)
-		return;
-
-	/* Only check syscalls we've documented so far. */
-	errnos = &entry->errnos;
-	if (errnos->num == 0)
-		return;
-
-	lock(&shm->syscalltable_lock);
-
-	/* Check against the list of known return values. */
-	for (i = 0; i < errnos->num; i++) {
-		if (rec->errno_post == errnos->values[i])
-			goto out;
-	}
-
-	/* if we get here, we have a return value we don't know.
-	 * find space for it, and store it so we don't warn again */
-
-	if (errnos->values[i] == 0) {
-		errnos->values[i] = rec->errno_post;
-		errnos->num++;
-
-		//TODO: if this was the 32bit syscall, we should adjust the 64bit one too.
-		// and vice-versa.
-
-		//output(0, "%s%s\n", rec->prebuffer, rec->postbuffer);
-		output(0, "%s%s returned an undocumented return value (%d:%s)\n",
-			entry->name,
-			rec->do32bit == TRUE ? ":[32BIT]" : "",
-			rec->errno_post, strerror(rec->errno_post));
-	}
-
-out:
-	unlock(&shm->syscalltable_lock);
-}
-
 /*
  * If the syscall doesn't exist don't bother calling it next time.
  * Some syscalls return ENOSYS depending on their arguments, we mark
@@ -227,9 +184,7 @@ out:
  */
 static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, unsigned int call)
 {
-	if (rec->errno_post != ENOSYS)
-		return;
-
+	/* some syscalls return ENOSYS instead of EINVAL etc (futex for eg) */
 	if (entry->flags & IGNORE_ENOSYS)
 		return;
 
@@ -268,8 +223,8 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	if (rec->retval == -1UL) {
 		/* only check syscalls that completed. */
 		if (rec->state == AFTER) {
-			check_retval_documented(rec, entry);
-			deactivate_enosys(rec, entry, call);
+			if (rec->errno_post == ENOSYS)
+				deactivate_enosys(rec, entry, call);
 		}
 	}
 
