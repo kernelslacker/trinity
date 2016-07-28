@@ -166,13 +166,22 @@ bool random_syscall(struct childdata *child)
 		// parent
 		int childret = 0;
 		int childstatus;
+
+		// wait for child to exit, or kill it.
 		while (childret == 0) {
+			// slight pause to let child do something.
+			usleep(1000);
+
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
-			kill(pid, SIGKILL);
-			childret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-			if (childret == 0)
-				usleep(100);
+
+			if (pid_alive(pid) == 0) {
+				kill(pid, SIGKILL);
+				childret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+				if (childret == 0)
+					usleep(10000);
+			}
 		}
+		// and do the same work in the parent.
 		do_syscall(rec);
 	} else {
 		// fork failed
