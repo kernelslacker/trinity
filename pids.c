@@ -69,7 +69,7 @@ void dump_childnos(void)
 				if (pid_is_valid(pid) == FALSE)
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 
-				if (pid_alive(pid == -1))
+				if (pid_alive(pid) == -1)
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 
 				sptr += sprintf(sptr, "%u %s", pid, ANSI_RESET);
