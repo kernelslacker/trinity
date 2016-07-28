@@ -14,37 +14,54 @@
 #include "debug.h"
 #include "log.h"
 #include "params.h"
+#include "pids.h"
 #include "shm.h"
 #include "syscall.h"
 #include "version.h"
 
 #define BACKTRACE_SIZE 100
 
-void show_backtrace(void)
+static void __show_backtrace(void)
 {
 #ifdef USE_BACKTRACE
-	struct childdata *child = this_child();
 	unsigned int j, nptrs;
 	void *buffer[BACKTRACE_SIZE];
 	char **strings;
-
-	set_dontkillme(child, FALSE);
 
 	nptrs = backtrace(buffer, BACKTRACE_SIZE);
 
 	strings = backtrace_symbols(buffer, nptrs);
 	if (strings == NULL) {
 		perror("backtrace_symbols");
-		goto out;
+		return;
 	}
 
 	for (j = 0; j < nptrs; j++)
 		output(0, "%s\n", strings[j]);
 
 	free(strings);
-out:
-	set_dontkillme(child, TRUE);
 #endif
+}
+
+static void show_child_backtrace(void)
+{
+	struct childdata *child = this_child();
+
+	set_dontkillme(child, FALSE);
+	__show_backtrace();
+	set_dontkillme(child, TRUE);
+}
+
+void show_backtrace(void)
+{
+	pid_t pid = getpid();
+
+	if (pid == mainpid) {
+		__show_backtrace();
+		return;
+	}
+
+	show_child_backtrace();
 }
 
 void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno)
