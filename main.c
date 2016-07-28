@@ -103,7 +103,6 @@ static void reap_dead_kids(void)
 
 	for_each_child(i) {
 		pid_t pid;
-		int ret;
 		int childstatus;
 
 		pid = pids[i];
@@ -114,9 +113,8 @@ static void reap_dead_kids(void)
 		if (pid_is_valid(pid) == FALSE)
 			continue;
 
-		ret = kill(pid, 0);
-		/* If it disappeared, reap it. */
-		if (ret == -1) {
+		if (pid_alive(pid) == FALSE) {
+			/* If it disappeared, reap it. */
 			if (errno == ESRCH) {
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
 				reap_child(shm->children[i]);
