@@ -16,6 +16,7 @@
 #include "list.h"
 #include "log.h"
 #include "maps.h"
+#include "random.h"
 #include "utils.h"
 
 static void alloc_zero_map(unsigned long size, int prot, const char *name)
@@ -64,6 +65,15 @@ static void setup_mapping_sizes(void)
 	size_t n = 0;
 
 	mapping_sizes[0] = page_size;
+
+	/* Using 1GB mappings ends up oom'ing a lot, so we don't
+	 * want to do it every single run.  It's worth doing it
+	 * occasionally though, to stress the oom paths.
+	 */
+	if (!(ONE_IN(100))) {
+		mapping_sizes[4] = page_size;
+		return;
+	}
 
 	fp = fopen("/proc/meminfo", "r");
 	if (!fp)
