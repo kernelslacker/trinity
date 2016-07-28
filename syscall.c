@@ -148,6 +148,12 @@ static void do_extrafork(struct syscallrecord *rec)
 		_exit(EXIT_SUCCESS);
 	}
 
+	/* misc failure. */
+	if (extrapid == -1) {
+		debugf("Couldn't fork grandchild\n");
+		return;
+	}
+
 	/* child */
 	while (pid == 0) {
 		int childstatus;
