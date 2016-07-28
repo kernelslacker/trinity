@@ -455,6 +455,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 {
 	struct childdata *child;
 	int __sig;
+	pid_t pid = pids[childno];
 
 	child = shm->children[childno];
 
@@ -468,15 +469,15 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		if (stop != TRUE)
 			return;
 		debugf("Sending PTRACE_DETACH (and then KILL)\n");
-		ptrace(PTRACE_DETACH, pids[childno], NULL, NULL);
-		kill_pid(pids[childno]);
+		ptrace(PTRACE_DETACH, pid, NULL, NULL);
+		kill_pid(pid);
 		//FIXME: Won't we create a zombie here?
 		reap_child(shm->children[childno]);
 		replace_child(childno);
 		return;
 
 	case SIGALRM:
-		debugf("got a alarm signal from child %d (pid %d)\n", childno, pids[childno]);
+		debugf("got a alarm signal from child %d (pid %d)\n", childno, pid);
 		break;
 	case SIGFPE:
 	case SIGSEGV:
@@ -486,10 +487,10 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	case SIGBUS:
 		if (stop == TRUE)
 			debugf("Child %d (pid %d) was stopped by %s\n",
-					childno, pids[childno], strsignal(WSTOPSIG(childstatus)));
+					childno, pid, strsignal(WSTOPSIG(childstatus)));
 		else
 			debugf("got a signal from child %d (pid %d) (%s)\n",
-					childno, pids[childno], strsignal(WTERMSIG(childstatus)));
+					childno, pid, strsignal(WTERMSIG(childstatus)));
 		reap_child(shm->children[childno]);
 
 		fclose(child->pidstatfile);
@@ -500,12 +501,12 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 
 	default:
 		if (__sig >= SIGRTMIN) {
-			debugf("Child %d got RT signal (%d). Ignoring.\n", pids[childno], __sig);
+			debugf("Child %d got RT signal (%d). Ignoring.\n", pid, __sig);
 			return;
 		}
 
 		if (stop == TRUE)
-			debugf("Child %d was stopped by unhandled signal (%s).\n", pids[childno], strsignal(WSTOPSIG(childstatus)));
+			debugf("Child %d was stopped by unhandled signal (%s).\n", pid, strsignal(WSTOPSIG(childstatus)));
 		else
 			debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
 		return;
