@@ -150,7 +150,6 @@ static void kill_all_kids(void)
 	/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
 	for_each_child(i) {
 		pid_t pid;
-		int ret;
 
 		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
@@ -160,11 +159,11 @@ static void kill_all_kids(void)
 		if (pid_is_valid(pid) == FALSE)
 			continue;
 
-		children_seen++;
-
-		ret = kill(pid, SIGKILL);
-		/* check we don't have anything stale in the pidlist */
-		if (ret == -1) {
+		if (pid_alive(pid) == TRUE) {
+			kill_pid(pid);
+			children_seen++;
+		} else {
+			/* check we don't have anything stale in the pidlist */
 			if (errno == ESRCH)
 				reap_child(shm->children[i]);
 		}
@@ -366,11 +365,10 @@ static void stall_genocide(void)
 			continue;
 
 		if (RAND_BOOL()) {
-			int ret;
-
-			ret = kill(pid, SIGKILL);
-			if (ret == 0)
+			if (pid_alive(pid) == TRUE) {
+				kill_pid(pid);
 				killed++;
+			}
 		}
 		if (killed == (max_children / 4))
 			break;
@@ -471,7 +469,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 			return;
 		debugf("Sending PTRACE_DETACH (and then KILL)\n");
 		ptrace(PTRACE_DETACH, pids[childno], NULL, NULL);
-		kill(pids[childno], SIGKILL);
+		kill_pid(pids[childno]);
 		//FIXME: Won't we create a zombie here?
 		reap_child(shm->children[childno]);
 		replace_child(childno);

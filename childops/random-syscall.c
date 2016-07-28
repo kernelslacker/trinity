@@ -175,7 +175,7 @@ bool random_syscall(struct childdata *child)
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 			if (pid_alive(pid) == TRUE) {
-				kill(pid, SIGKILL);
+				kill_pid(pid);
 				childret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 				if (childret == 0)
 					usleep(10000);
