@@ -31,7 +31,7 @@ static void post_fork(struct syscallrecord *rec)
 	} else {
 		__unused__ int ret;
 
-		while (pid_alive(pid)) {
+		while (pid_alive(pid) == TRUE) {
 			int status;
 			ret = waitpid(pid, &status, WUNTRACED | WCONTINUED | WNOHANG);
 		}

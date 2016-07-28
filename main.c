@@ -536,7 +536,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			for_each_child(i) {
 				pid_t pid = pids[i];
 				if (pid != EMPTY_PIDSLOT) {
-					if (pid_alive(pid) == -1) {
+					if (pid_alive(pid) == FALSE) {
 						pids[i] = EMPTY_PIDSLOT;
 						shm->running_childs--;
 						replace_child(i);

@@ -22,7 +22,7 @@ static bool check_lock(lock_t *_lock)
 
 	/* First the easy case. If it's held by a dead pid, release it. */
 	pid = _lock->owner;
-	if (pid_alive(pid) == -1) {
+	if (pid_alive(pid) == FALSE) {
 		if (errno != ESRCH)
 			return TRUE;
 

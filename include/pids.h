@@ -11,10 +11,10 @@ extern pid_t mainpid;
 
 #define CHILD_NOT_FOUND -1
 #define EMPTY_PIDSLOT -1
+
+bool pid_alive(pid_t pid);
 int find_childno(pid_t mypid);
 bool pidmap_empty(void);
 void dump_childnos(void);
 int pid_is_valid(pid_t);
 void pids_init(void);
-
-#define pid_alive(_pid) kill(_pid, 0)

@@ -11,6 +11,13 @@
 
 pid_t *pids;
 
+bool pid_alive(pid_t pid)
+{
+	if (kill(pid, 0) == 0)
+		return TRUE;
+	return FALSE;
+}
+
 struct childdata * this_child(void)
 {
 	pid_t mypid = getpid();
@@ -69,7 +76,7 @@ void dump_childnos(void)
 				if (pid_is_valid(pid) == FALSE)
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 
-				if (pid_alive(pid) == -1)
+				if (pid_alive(pid) == FALSE)
 					sptr += sprintf(sptr, "%s", ANSI_RED);
 
 				sptr += sprintf(sptr, "%u %s", pid, ANSI_RESET);
