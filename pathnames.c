@@ -145,7 +145,7 @@ int check_stat_file(const struct stat *sb)
 		set_write = TRUE;
 
 
-	if ((set_read | set_write) == 0)
+	if (set_read == 0 && set_write == 0)
 		return -1;
 
 	if (set_read == TRUE)
