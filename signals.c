@@ -10,8 +10,6 @@
 
 jmp_buf ret_jump;
 
-int sigwas;
-
 static void ctrlc_handler(__unused__ int sig)
 {
 	panic(EXIT_SIGINT);
@@ -19,8 +17,6 @@ static void ctrlc_handler(__unused__ int sig)
 
 static void sighandler(int sig)
 {
-	sigwas = sig;
-
 	switch (sig) {
 	case SIGALRM:
 		/* Re-arm the alarm. */
@@ -28,7 +24,7 @@ static void sighandler(int sig)
 		(void)signal(sig, sighandler);
 
 		/* Jump back, maybe we'll make progress. */
-		siglongjmp(ret_jump, 1);
+		siglongjmp(ret_jump, sig);
 		break;
 
 	default:

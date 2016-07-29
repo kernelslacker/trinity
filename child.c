@@ -370,7 +370,7 @@ static void periodic_work(void)
  *
  * FIXME: when we have different child ops, we're going to need to redo the progress detector.
  */
-static bool handle_sigreturn(void)
+static bool handle_sigreturn(int sigwas)
 {
 	struct childdata *child = this_child();
 	struct syscallrecord *rec;
@@ -463,7 +463,7 @@ void child_process(struct childdata *child, int childno)
 			goto out;
 		}
 
-		if (handle_sigreturn() == FALSE)
+		if (handle_sigreturn(ret) == FALSE)
 			goto out;	// Exit the child, things are getting too weird.
 	}
 
