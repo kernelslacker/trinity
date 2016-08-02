@@ -16,7 +16,6 @@ static bool check_lock(lock_t *_lock)
 {
 	pid_t pid;
 
-retry:
 	/* We don't care about unlocked or locking-in-progress */
 	if (_lock->lock != LOCKED)
 		return FALSE;
@@ -25,10 +24,10 @@ retry:
 	pid = _lock->owner;
 
 	/* if we're in the process of unlocking, it can show up as LOCKED
-	 * but with no owner. Just retry.
+	 * but with no owner. Just unlock it.
 	 */
 	if (pid == 0)
-		goto retry;
+		unlock(_lock);
 
 	if (pid_alive(pid) == FALSE) {
 		if (errno != ESRCH)
