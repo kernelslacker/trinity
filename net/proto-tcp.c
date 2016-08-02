@@ -13,6 +13,7 @@ static const unsigned int tcp_opts[] = {
 	TCP_THIN_DUPACK, TCP_USER_TIMEOUT, TCP_REPAIR, TCP_REPAIR_QUEUE,
 	TCP_QUEUE_SEQ, TCP_REPAIR_OPTIONS, TCP_FASTOPEN, TCP_TIMESTAMP,
 	TCP_NOTSENT_LOWAT, TCP_CC_INFO, TCP_SAVE_SYN, TCP_SAVED_SYN,
+	TCP_REPAIR_WINDOW,
 };
 
 void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)

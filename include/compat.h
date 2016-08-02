@@ -539,6 +539,10 @@ enum kcmp_type {
 #define TCP_SAVED_SYN		28
 #endif
 
+#ifndef TCP_REPAIR_WINDOW
+#define TCP_REPAIR_WINDOW	29
+#endif
+
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15
