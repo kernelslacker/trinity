@@ -211,6 +211,8 @@ static void check_syscall(struct syscallentry *entry)
 {
 	/* check that we have a name set. */
 #define CHECK(NUMARGS, ARGNUM, ARGTYPE, ARGNAME)		\
+	if (entry == NULL)					\
+		return;						\
 	if (entry->num_args > 0) {				\
 		if (entry->num_args > NUMARGS) {		\
 			if (entry->ARGNAME == NULL)  {		\
@@ -231,6 +233,8 @@ static void check_syscall(struct syscallentry *entry)
 	/* note: not enabled by default, because we haven't annotated everything yet. */
 #undef CHECK
 #define CHECK(NUMARGS, ARGNUM, ARGTYPE, ARGNAME)		\
+	if (entry == NULL)					\
+		return;						\
 	if (entry->num_args > 0) {				\
 		if (entry->num_args > NUMARGS) {		\
 			if (entry->ARGTYPE == ARG_UNDEFINED) {	\
@@ -379,6 +383,9 @@ static void show_unannotated_biarch(void)
 
 	for_each_32bit_syscall(i) {
 		entry = syscalls_32bit[i].entry;
+		if (entry == NULL)
+			continue;
+
 		count = 0;
 
 		for (j = 1; j <= entry->num_args; j++) {
@@ -415,6 +422,9 @@ static void show_unannotated_biarch(void)
 
 	for_each_64bit_syscall(i) {
 		entry = syscalls_64bit[i].entry;
+		if (entry == NULL)
+			continue;
+
 		count = 0;
 
 		for (j = 1; j <= entry->num_args; j++) {
@@ -469,18 +479,24 @@ void show_unannotated_args(void)
  */
 static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsigned int nr)
 {
-	unsigned int n;
+	unsigned int n, m;
 	struct syscallentry *copy;
 
 	copy = alloc_shared(nr * sizeof(struct syscallentry));
 	if (copy == NULL)
 		exit(EXIT_FAILURE);
 
-	for (n = 0; n < nr; n++) {
-		memcpy(copy + n , from[n].entry, sizeof(struct syscallentry));
-		copy[n].number = n;
-		copy[n].active_number = 0;
-		from[n].entry = &copy[n];
+	for (n = 0, m = 0; n < nr; n++) {
+		struct syscallentry *entry = from[n].entry;
+
+		if (entry == NULL)
+			continue;
+
+		memcpy(copy + m , entry, sizeof(struct syscallentry));
+		copy[m].number = n;
+		copy[m].active_number = 0;
+		from[n].entry = &copy[m];
+		m++;
 	}
 	return from;
 }

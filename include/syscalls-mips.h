@@ -371,5 +371,9 @@ struct syscalltable syscalls_mips[] = {
 		{ .entry = &syscall_seccomp },
 		{ .entry = &syscall_getrandom },
 		{ .entry = &syscall_memfd_create },
+#ifdef USE_BPF
 		{ .entry = &syscall_bpf },		/* 4355 */
+#else
+		{ .entry = NULL },
+#endif
 };

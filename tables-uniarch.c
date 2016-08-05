@@ -100,7 +100,11 @@ void mark_all_syscalls_active_uniarch(void)
 	unsigned int i;
 
 	for_each_syscall(i) {
-		syscalls[i].entry->flags |= ACTIVE;
+		struct syscallentry *entry = syscalls[i].entry;
+		if (entry == NULL)
+			continue;
+
+		entry->flags |= ACTIVE;
 		activate_syscall(i);
 	}
 }
@@ -110,9 +114,10 @@ void init_syscalls_uniarch(void)
 	unsigned int i;
 
 	for_each_syscall(i) {
-		struct syscallentry *entry;
+		struct syscallentry *entry = syscalls[i].entry;
+		if (entry == NULL)
+			continue;
 
-		entry = syscalls[i].entry;
 		if (entry->flags & ACTIVE)
 			if (entry->init)
 				entry->init();
@@ -124,9 +129,11 @@ void deactivate_disabled_syscalls_uniarch(void)
 	unsigned int i;
 
 	for_each_syscall(i) {
-		struct syscallentry *entry;
+		struct syscallentry *entry = syscalls[i].entry;
 
-		entry = syscalls[i].entry;
+		if (entry == NULL)
+			continue;
+
 		if (entry->flags & TO_BE_DEACTIVATED) {
 			entry->flags &= ~(ACTIVE|TO_BE_DEACTIVATED);
 			deactivate_syscall_uniarch(i);
@@ -143,9 +150,11 @@ void dump_syscall_tables_uniarch(void)
 	outputstd("syscalls: %d\n", max_nr_syscalls);
 
 	for_each_syscall(i) {
-		struct syscallentry *entry;
+		struct syscallentry *entry = syscalls[i].entry;
 
-		entry = syscalls[i].entry;
+		if (entry == NULL)
+			continue;
+
 		outputstd("entrypoint %d %s : ", entry->number, entry->name);
 		show_state(entry->flags & ACTIVE);
 		if (entry->flags & AVOID_SYSCALL)
@@ -159,9 +168,10 @@ void display_enabled_syscalls_uniarch(void)
         unsigned int i;
 
 	for_each_syscall(i) {
-		struct syscallentry *entry;
+		struct syscallentry *entry = syscalls[i].entry;
 
-		entry = syscalls[i].entry;
+		if (entry == NULL)
+			continue;
 
 		if (entry->flags & ACTIVE)
 			output(0, "syscall %d:%s enabled.\n", i, entry->name);

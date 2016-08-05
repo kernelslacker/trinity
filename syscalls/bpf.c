@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
  */
+#ifdef USE_BPF
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include "arch.h"
@@ -102,3 +103,4 @@ struct syscallentry syscall_bpf = {
 	.sanitise = sanitise_bpf,
 	.post = post_bpf,
 };
+#endif

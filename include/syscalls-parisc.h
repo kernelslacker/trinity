@@ -348,6 +348,10 @@ struct syscalltable syscalls_parisc[] = {
 	{ .entry = &syscall_seccomp },
 	{ .entry = &syscall_getrandom },
 	{ .entry = &syscall_memfd_create },
+#ifdef USE_BPF
 	{ .entry = &syscall_bpf },
+#else
+	{ .entry = NULL },
+#endif
 	{ .entry = &syscall_execveat },
 };
