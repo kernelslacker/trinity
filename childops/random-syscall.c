@@ -152,8 +152,6 @@ static bool do_syscall_in_child(struct syscallrecord *rec, struct childdata *chi
 
 		// wait for child to exit, or kill it.
 		while (childret == 0) {
-			// slight pause to let child do something.
-			usleep(1000);
 
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
