@@ -24,10 +24,10 @@ static bool check_lock(lock_t *_lock)
 	pid = _lock->owner;
 
 	/* if we're in the process of unlocking, it can show up as LOCKED
-	 * but with no owner. Just unlock it.
+	 * but with no owner. Just bail, we'll try again next time around.
 	 */
 	if (pid == 0)
-		unlock(_lock);
+		return FALSE;
 
 	if (pid_alive(pid) == FALSE) {
 		if (errno != ESRCH)
