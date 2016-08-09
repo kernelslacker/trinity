@@ -150,7 +150,7 @@ static void do_extrafork(struct syscallrecord *rec)
 
 	/* misc failure. */
 	if (extrapid == -1) {
-		debugf("Couldn't fork grandchild\n");
+		debugf("Couldn't fork grandchild: %s\n", strerror(errno));
 		return;
 	}
 
