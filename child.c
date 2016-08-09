@@ -410,6 +410,9 @@ static bool handle_sigreturn(int sigwas)
 		return FALSE;
 	}
 
+	if (sigwas == SIGHUP)
+		return FALSE;
+
 	if (sigwas != SIGALRM)
 		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
 
