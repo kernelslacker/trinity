@@ -136,26 +136,9 @@ retry:
 	return TRUE;
 }
 
-bool random_syscall(struct childdata *child)
+static bool do_syscall_in_child(struct syscallrecord *rec, struct childdata *child)
 {
-	struct syscallrecord *rec, *stash;
 	pid_t pid;
-	int ret = FALSE;
-
-	rec = &child->syscall;
-
-	if (set_syscall_nr(rec) == FAIL)
-		return FAIL;
-
-	/* Generate arguments, print them out */
-
-	generate_syscall_args(rec);
-
-	output_syscall_prefix(rec);
-
-	/* we stash a copy of this stuff in case something stomps the rec struct */
-	stash = zmalloc(sizeof(struct syscallrecord));
-	memcpy(stash, rec, sizeof(struct syscallrecord));
 
 	pid = fork();
 	if (pid == 0) {
@@ -183,10 +166,39 @@ bool random_syscall(struct childdata *child)
 		}
 		// and do the same work in the parent.
 		do_syscall(rec);
+		return TRUE;
 	} else {
 		// fork failed
-		goto fail;
+		return FALSE;
 	}
+}
+
+bool random_syscall(struct childdata *child)
+{
+	struct syscallrecord *rec, *stash;
+	int ret = FALSE;
+
+	rec = &child->syscall;
+
+	if (set_syscall_nr(rec) == FAIL)
+		return FAIL;
+
+	/* Generate arguments, print them out */
+
+	generate_syscall_args(rec);
+
+	output_syscall_prefix(rec);
+
+	/* we stash a copy of this stuff in case something stomps the rec struct */
+	stash = zmalloc(sizeof(struct syscallrecord));
+	memcpy(stash, rec, sizeof(struct syscallrecord));
+
+
+	if (RAND_BOOL()) {
+		if (do_syscall_in_child(rec, child) == FALSE)
+			goto fail;
+	} else
+		do_syscall(rec);
 
 	check_sanity(rec, stash);
 
