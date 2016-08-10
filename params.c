@@ -44,6 +44,8 @@ bool do_syslog = FALSE;
 bool random_selection = FALSE;
 unsigned int random_selection_num;
 
+bool clowntown = FALSE;
+
 bool user_set_seed = FALSE;
 
 unsigned char desired_group = GROUP_NONE;
@@ -103,6 +105,7 @@ static const struct option longopts[] = {
 	{ "arch", required_argument, NULL, 'a' },
 	{ "bdev", required_argument, NULL, 'b' },
 	{ "children", required_argument, NULL, 'C' },
+	{ "clowntown", no_argument, NULL, 0 },
 	{ "dangerous", no_argument, NULL, 'd' },
 	{ "dropprivs", no_argument, NULL, 'X'},
 	{ "debug", no_argument, NULL, 'D' },
@@ -313,6 +316,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("server_port", longopts[opt_index].name) == 0)
 				server_port = atoi(optarg);
+
+			if (strcmp("clowntown", longopts[opt_index].name) == 0)
+				clowntown = TRUE;
 
 			if (strcmp("disable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, FALSE);

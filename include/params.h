@@ -48,6 +48,8 @@ extern char *victim_path;
 extern bool random_selection;
 extern unsigned int random_selection_num;
 
+extern bool clowntown;
+
 extern unsigned int kernel_taint_mask;
 extern bool kernel_taint_param_occured;
 

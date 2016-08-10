@@ -96,6 +96,11 @@ void do_uid0_check(void)
 		}
 	}
 
+	if (clowntown == TRUE) {
+		printf("THIS CLOWN GOES TO 11.\n");
+		return;
+	}
+
 	outputstd("ctrl-c now unless you really know what you are doing.\n");
 	for (i = 10; i > 0; i--) {
 		outputstd("Continuing in %u seconds.\r", i);
