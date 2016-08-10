@@ -26,6 +26,9 @@ int search_syscall_table(const struct syscalltable *table, unsigned int nr_sysca
 
 	/* search by name */
 	for (i = 0; i < nr_syscalls; i++) {
+		if (table[i].entry == NULL)
+			continue;
+
 		if (strcmp(arg, table[i].entry->name) == 0) {
 			//debugf("Found %s at %u\n", table[i].entry->name, i);
 			return i;
