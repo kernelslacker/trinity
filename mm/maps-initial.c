@@ -54,7 +54,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 unsigned long mapping_sizes[NR_MAPPING_SIZES] = {
 	-1,	/* over-written with page_size below */
-	MB(1), MB(2), MB(4),
+	MB(1), MB(2),
 	GB(1),
 };
 
@@ -71,7 +71,7 @@ static void setup_mapping_sizes(void)
 	 * occasionally though, to stress the oom paths.
 	 */
 	if (!(ONE_IN(100))) {
-		mapping_sizes[4] = page_size;
+		mapping_sizes[3] = page_size;
 		return;
 	}
 
@@ -90,7 +90,7 @@ static void setup_mapping_sizes(void)
 			if ((free * 1024) < GB(8ULL)) {
 				printf("Free memory: %.2fGB\n", (double) free / 1024 / 1024);
 				printf("Low on memory, disabling mmaping of 1GB pages\n");
-				mapping_sizes[4] = page_size;
+				mapping_sizes[3] = page_size;
 				goto out_free;
 			}
 		}
