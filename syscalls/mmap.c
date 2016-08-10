@@ -58,11 +58,12 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	/* Don't actually set a hint right now. */
 	rec->a1 = 0;
 
+	rec->a2 = RAND_ARRAY(mapping_sizes);
+
 	/* this over-rides the ARG_OP in the syscall struct */
 	rec->a4 = get_rand_mmap_flags();
 
 	if (rec->a4 & MAP_ANONYMOUS) {
-		rec->a2 = RAND_ARRAY(mapping_sizes);
 		do_anon(rec);
 	} else {
 		rec->a5 = get_random_fd();
@@ -76,8 +77,6 @@ static void sanitise_mmap(struct syscallrecord *rec)
 			/* page align non-anonymous mappings. */
 			rec->a6 &= PAGE_MASK;
 		}
-
-		rec->a2 = page_size;
 	}
 }
 
