@@ -123,7 +123,7 @@ struct ipproto {
 static void inet_rand_socket(struct socket_triplet *st)
 {
 	struct ipproto ipprotos[] = {
-		{ .proto = IPPROTO_IP, },
+		{ .proto = IPPROTO_IP, .type = SOCK_DGRAM },
 		{ .proto = IPPROTO_ICMP, .type = SOCK_DGRAM },
 		{ .proto = IPPROTO_IGMP, },
 		{ .proto = IPPROTO_IPIP, },
