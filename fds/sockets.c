@@ -95,8 +95,9 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	obj = add_socket(fd, domain, type, protocol, FALSE);
 
 	proto = net_protocols[domain].proto;
-	if (proto->socket_setup != NULL)
-		proto->socket_setup(fd);
+	if (proto != NULL)
+		if (proto->socket_setup != NULL)
+			proto->socket_setup(fd);
 
 	/* Set some random socket options. */
 	sso_socket(&obj->sockinfo.triplet, &so, fd);

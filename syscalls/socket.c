@@ -129,8 +129,9 @@ static void post_socket(struct syscallrecord *rec)
 		return;
 
 	proto = net_protocols[family].proto;
-	if (proto->socket_setup != NULL)
-		proto->socket_setup(fd);
+	if (proto != NULL)
+		if (proto->socket_setup != NULL)
+			proto->socket_setup(fd);
 
 	// TODO: add socket to local cache
 }
