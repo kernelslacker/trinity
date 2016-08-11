@@ -51,31 +51,58 @@ static const unsigned int packet_opts[] = {
 	PACKET_TIMESTAMP, PACKET_FANOUT,
 };
 
+
+static void setup_tpacket_req3(struct tpacket_req3 *req)
+{
+	unsigned int blocksiz = 1 << 21, framesiz = 1 << 11;
+	unsigned int blocknum = 1;
+
+	memset(req, 0, sizeof(struct tpacket_req3));
+	req->tp_block_size = blocksiz;
+	req->tp_frame_size = framesiz;
+	req->tp_block_nr = blocknum;
+	req->tp_frame_nr = (blocksiz * blocknum) / framesiz;
+	req->tp_retire_blk_tov = 60;
+	req->tp_feature_req_word = TP_FT_REQ_FILL_RXHASH;
+}
+
+static void packet_socket_setup(int fd)
+{
+	int v3 = TPACKET_V3;
+
+	// for now, we only speak v3
+	// trying to mix it up goes horribly wrong, with oom kills etc.
+	setsockopt(fd, SOL_PACKET, PACKET_VERSION, &v3, sizeof(v3));
+}
+
+
+static void set_tpacket_version3(struct sockopt *so)
+{
+	char *optval = (char *) so->optval;
+
+	optval[0] = TPACKET_V3;
+	so->optlen = sizeof(int);
+}
+
 static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
-	char *optval;
+	struct tpacket_req3 *req = (struct tpacket_req3 *) so->optval;
 
 	so->level = SOL_PACKET;
-
-	optval = (char *) so->optval;
 
 	so->optname = RAND_ARRAY(packet_opts);
 
 	/* Adjust length according to operation set. */
 	switch (so->optname) {
 	case PACKET_VERSION:
-		optval[0] = rnd() % 3; /* tpacket versions 1/2/3 */
+		set_tpacket_version3(so);
 		break;
 
-	case PACKET_TX_RING:
 	case PACKET_RX_RING:
-#ifdef TPACKET3_HDRLEN
-		if (ONE_IN(3))
-			so->optlen = sizeof(struct tpacket_req3);
-		else
-#endif
-			so->optlen = sizeof(struct tpacket_req);
+		setup_tpacket_req3(req);
+		so->optlen = sizeof(struct tpacket_req3);
 		break;
+
 	default:
 		break;
 	}
@@ -84,6 +111,7 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 const struct netproto proto_packet = {
 	.name = "packet",
 	.socket = packet_rand_socket,
+	.socket_setup = packet_socket_setup,
 	.setsockopt = packet_setsockopt,
 	.gen_sockaddr = packet_gen_sockaddr,
 };
