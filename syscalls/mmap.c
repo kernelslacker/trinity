@@ -48,7 +48,8 @@ unsigned long get_rand_mmap_flags(void)
 	};
 
 	flags = RAND_ARRAY(mmap_excl_flags);
-	flags |= set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
+	if (RAND_BOOL())
+		flags |= set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
 
 	return flags;
 }
