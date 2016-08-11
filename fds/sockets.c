@@ -83,6 +83,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 {
 	struct object *obj;
 	struct sockaddr *sa = NULL;
+	const struct netproto *proto;
 	socklen_t salen;
 	struct sockopt so = { 0, 0, 0, 0 };
 	int fd;
@@ -92,6 +93,10 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		return fd;
 
 	obj = add_socket(fd, domain, type, protocol, FALSE);
+
+	proto = net_protocols[domain].proto;
+	if (proto->socket_setup != NULL)
+		proto->socket_setup(fd);
 
 	/* Set some random socket options. */
 	sso_socket(&obj->sockinfo.triplet, &so, fd);

@@ -119,6 +119,22 @@ static void sanitise_socket(struct syscallrecord *rec)
 	rec->a3 = st.protocol;
 }
 
+static void post_socket(struct syscallrecord *rec)
+{
+	const struct netproto *proto;
+	unsigned long family = rec->a1;
+	int fd = rec->retval;
+
+	if (fd == -1)
+		return;
+
+	proto = net_protocols[family].proto;
+	if (proto->socket_setup != NULL)
+		proto->socket_setup(fd);
+
+	// TODO: add socket to local cache
+}
+
 struct syscallentry syscall_socket = {
 	.name = "socket",
 	.num_args = 3,
@@ -126,4 +142,5 @@ struct syscallentry syscall_socket = {
 	.arg2name = "type",
 	.arg3name = "protocol",
 	.sanitise = sanitise_socket,
+	.post = post_socket,
 };
