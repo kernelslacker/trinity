@@ -246,12 +246,48 @@ static char get_pid_state(struct childdata *child)
 	return state;
 }
 
+static void dump_pid_stack(int pid)
+{
+	FILE *fp;
+	char filename[80];
+
+	sprintf(filename, "/proc/%d/stack", pid);
+
+	fp = fopen(filename, "r");
+	if (fp == NULL) {
+		output(0, "Couldn't dump stack info for pid %d: %s\n", pid, strerror(errno));
+		return;
+	}
+
+	while (!(feof(fp))) {
+		size_t n = 0;
+		char *line;
+		if (getline(&line, &n, fp) != -1) {
+			output(0, "pid %d stack: %s", pid, line);
+			free(line);
+			line = NULL;
+			n = 0;
+		} else {
+			if (errno != EAGAIN)
+				output(0, "Error reading /proc/%d/stack :%s\n", pid, strerror(errno));
+			return;
+		}
+	}
+	output(0, "------------------------------------------------\n");
+
+	fclose(fp);
+}
+
 static void stuck_syscall_info(struct childdata *child)
 {
 	struct syscallrecord *rec;
 	unsigned int callno;
 	char fdstr[20];
+	pid_t pid;
 	bool do32;
+	char state;
+
+	pid = pids[child->num];
 
 	if (shm->debug == FALSE)
 		return;
@@ -269,8 +305,10 @@ static void stuck_syscall_info(struct childdata *child)
 
 	memset(fdstr, 0, sizeof(fdstr));
 
+	state = rec->state;
+
 	/* we can only be 'stuck' if we're still doing the syscall. */
-	if (rec->state == BEFORE) {
+	if (state == BEFORE) {
 		if (check_if_fd(child, rec) == TRUE) {
 			sprintf(fdstr, "(fd = %u)", (unsigned int) rec->a1);
 			shm->fd_lifetime = 0;
@@ -281,11 +319,13 @@ static void stuck_syscall_info(struct childdata *child)
 
 	unlock(&rec->lock);
 
-	output(0, "child %d (pid %u) Stuck in syscall %d:%s%s%s.\n",
-		child->num, pids[child->num], callno,
+	output(0, "child %d (pid %u. state:%d) Stuck in syscall %d:%s%s%s.\n",
+		child->num, pid, state, callno,
 		print_syscall_name(callno, do32),
 		do32 ? " (32bit)" : "",
 		fdstr);
+	if (state >= BEFORE)
+		dump_pid_stack(pid);
 }
 
 /*
