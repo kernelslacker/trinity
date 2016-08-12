@@ -72,7 +72,7 @@ static void packet_socket_setup(int fd)
 
 	// for now, we only speak v3
 	// trying to mix it up goes horribly wrong, with oom kills etc.
-	setsockopt(fd, SOL_PACKET, PACKET_VERSION, &v3, sizeof(v3));
+	(void) setsockopt(fd, SOL_PACKET, PACKET_VERSION, &v3, sizeof(v3));
 }
 
 
