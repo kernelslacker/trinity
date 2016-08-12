@@ -295,6 +295,7 @@ static void stuck_syscall_info(struct childdata *child)
  */
 static bool is_child_making_progress(struct childdata *child)
 {
+	struct syscallrecord *rec;
 	struct timespec tp;
 	time_t diff, old, now;
 	pid_t pid;
@@ -304,6 +305,17 @@ static bool is_child_making_progress(struct childdata *child)
 
 	if (pid == EMPTY_PIDSLOT)
 		return TRUE;
+	// bail if we've not done a syscall yet, we probably just haven't
+	// been scheduled due to other pids hogging the cpu
+	rec = &child->syscall;
+	if (trylock(&rec->lock) == FALSE)
+		return TRUE;
+
+	if (rec->state <= BEFORE) {
+		unlock(&rec->lock);
+		return TRUE;
+	}
+	unlock(&rec->lock);
 
 	old = child->tp.tv_sec;
 
