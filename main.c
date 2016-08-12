@@ -432,6 +432,8 @@ static bool spawn_child(int childno)
 	struct childdata *child = shm->children[childno];
 	int pid = 0;
 
+	reseed();
+
 	/* Wipe out any state left from a previous child running in this slot. */
 	clean_childdata(child);
 
