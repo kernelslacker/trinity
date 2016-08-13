@@ -60,20 +60,13 @@ static int fallbackseed(void)
 
 unsigned int new_seed(void)
 {
-	unsigned int r, bits;
+	unsigned int r;
 
 	if (urandomfd == -1)
 		return fallbackseed();
 
 	if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
 		return fallbackseed();
-
-	if (read(urandomfd, &bits, sizeof(bits)) != sizeof(bits))
-		return fallbackseed();
-
-	bits %= 31;
-	bits = max(bits, 8U);
-	r &= ((1 << bits) -1);
 
 	//printf("new seed:%u\n", r);
 	return r;
