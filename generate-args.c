@@ -277,7 +277,7 @@ static unsigned long handle_arg_mode_t(void)
 	return mode;
 }
 
-static enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
+enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 {
 	enum argtype argtype = 0;
 

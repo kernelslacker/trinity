@@ -28,6 +28,7 @@ struct syscallrecord {
 	unsigned long a5;
 	unsigned long a6;
 	unsigned long retval;
+
 	int errno_post;	/* what errno was after the syscall. */
 
 	bool do32bit;
@@ -69,6 +70,12 @@ struct arglist {
 	.values = vals,		\
 }
 
+struct results {
+	union {
+		int fdmap[1024];
+	};
+};
+
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);
 	void (*post)(struct syscallrecord *rec);
@@ -94,6 +101,13 @@ struct syscallentry {
 	const char *arg4name;
 	const char *arg5name;
 	const char *arg6name;
+
+	struct results results1;
+	struct results results2;
+	struct results results3;
+	struct results results4;
+	struct results results5;
+	struct results results6;
 
 	/* FIXME: At some point, if we grow more type specific parts here,
 	 * it may be worth union-ising this

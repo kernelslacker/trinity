@@ -218,6 +218,81 @@ static void generic_post(const enum argtype type, unsigned long reg)
 		free(ptr);
 }
 
+static unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
+{
+	switch (argnum) {
+	case 1:	return rec->a1;
+	case 2:	return rec->a2;
+	case 3:	return rec->a3;
+	case 4:	return rec->a4;
+	case 5:	return rec->a5;
+	case 6:	return rec->a6;
+	}
+	unreachable();
+}
+
+static void store_successful_fd(struct syscallrecord *rec, struct syscallentry *entry, unsigned int argnum)
+{
+	int fd;
+
+	fd = (int) get_argval(rec, argnum);
+
+	// TODO: dynamically allocate fdmap on startup
+
+	switch (argnum) {
+	case 1:	entry->results1.fdmap[fd] = TRUE;
+		break;
+	case 2:	entry->results2.fdmap[fd] = TRUE;
+		break;
+	case 3:	entry->results3.fdmap[fd] = TRUE;
+		break;
+	case 4:	entry->results4.fdmap[fd] = TRUE;
+		break;
+	case 5:	entry->results5.fdmap[fd] = TRUE;
+		break;
+	case 6:	entry->results6.fdmap[fd] = TRUE;
+		break;
+	}
+}
+
+static void handle_success(struct syscallrecord *rec)
+{
+	struct syscallentry *entry;
+	unsigned int i, call;
+
+	call = rec->nr;
+	entry = syscalls[call].entry;
+
+	for_each_arg(i) {
+		enum argtype argtype = get_argtype(entry, i);
+
+		switch (argtype) {
+		case ARG_FD:
+			store_successful_fd(rec, entry, i);
+			break;
+		case ARG_LEN:
+		case ARG_UNDEFINED:
+		case ARG_ADDRESS:
+		case ARG_MODE_T:
+		case ARG_NON_NULL_ADDRESS:
+		case ARG_PID:
+		case ARG_RANGE:
+		case ARG_OP:
+		case ARG_LIST:
+		case ARG_CPU:
+		case ARG_PATHNAME:
+		case ARG_IOVEC:
+		case ARG_IOVECLEN:
+		case ARG_SOCKADDR:
+		case ARG_SOCKADDRLEN:
+		case ARG_MMAP:
+		case ARG_SOCKETINFO:
+		default:
+			break;
+		}
+	}
+}
+
 void handle_syscall_ret(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
@@ -232,6 +307,8 @@ void handle_syscall_ret(struct syscallrecord *rec)
 			if (rec->errno_post == ENOSYS)
 				deactivate_enosys(rec, entry, call);
 		}
+	} else {
+		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 	}
 
 	generic_post(entry->arg1type, rec->a1);
