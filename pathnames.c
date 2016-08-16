@@ -279,7 +279,7 @@ const char * generate_pathname(void)
 	char *newpath;
 	unsigned int len;
 
-	if (pathname == NULL)		/* handle -n correctly. */
+	if (pathname == NULL)
 		return NULL;
 
 	/* 90% chance of returning an unmangled filename */
