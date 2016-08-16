@@ -72,7 +72,10 @@ struct arglist {
 
 struct results {
 	union {
+		// ARG_FD.  -1 = Avoid. 0 = untested. 1 = Works.
 		int fdmap[1024];
+		// ARG_LEN
+		unsigned int min, max;
 	};
 };
 

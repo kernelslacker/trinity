@@ -252,6 +252,14 @@ static void store_successful_fd(struct results *results, unsigned long value)
 	results->fdmap[fd] = TRUE;
 }
 
+static void store_successful_len(struct results *results, unsigned long value)
+{
+	if (value < results->min)
+		results->min = value;
+	if (value > results->max)
+		results->max = value;
+}
+
 static void handle_success(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
@@ -272,6 +280,8 @@ static void handle_success(struct syscallrecord *rec)
 			store_successful_fd(results, value);
 			break;
 		case ARG_LEN:
+			store_successful_len(results, value);
+			break;
 		case ARG_UNDEFINED:
 		case ARG_ADDRESS:
 		case ARG_MODE_T:
