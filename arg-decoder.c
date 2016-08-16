@@ -138,7 +138,7 @@ static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *buffe
 
 	sptr += sprintf(sptr, "%s%s(", entry->name, ANSI_RESET);
 
-	for_each_arg(i) {
+	for_each_arg(entry, i) {
 		sptr = render_arg(rec, sptr, i, entry);
 	}
 

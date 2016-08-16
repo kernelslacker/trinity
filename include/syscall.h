@@ -164,6 +164,6 @@ struct syscalltable {
 void do_syscall(struct syscallrecord *rec);
 void handle_syscall_ret(struct syscallrecord *rec);
 
-#define for_each_arg(i) \
-	for (i = 1; i <= entry->num_args; i++)
+#define for_each_arg(_e, _i) \
+	for (_i = 1; _i <= _e->num_args; _i++)
 

@@ -263,7 +263,7 @@ static void handle_success(struct syscallrecord *rec)
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
-	for_each_arg(i) {
+	for_each_arg(entry, i) {
 		enum argtype argtype = get_argtype(entry, i);
 
 		switch (argtype) {
