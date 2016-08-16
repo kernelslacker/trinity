@@ -231,28 +231,25 @@ static unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 	unreachable();
 }
 
-static void store_successful_fd(struct syscallrecord *rec, struct syscallentry *entry, unsigned int argnum)
+static struct results * get_results_ptr(struct syscallentry *entry, unsigned int argnum)
 {
-	int fd;
+	switch (argnum) {
+	case 1:	return &entry->results1;
+	case 2:	return &entry->results2;
+	case 3:	return &entry->results3;
+	case 4:	return &entry->results4;
+	case 5:	return &entry->results5;
+	case 6:	return &entry->results6;
+	}
+	unreachable();
+}
 
-	fd = (int) get_argval(rec, argnum);
+static void store_successful_fd(struct results *results, unsigned long value)
+{
+	int fd = (int) value;
 
 	// TODO: dynamically allocate fdmap on startup
-
-	switch (argnum) {
-	case 1:	entry->results1.fdmap[fd] = TRUE;
-		break;
-	case 2:	entry->results2.fdmap[fd] = TRUE;
-		break;
-	case 3:	entry->results3.fdmap[fd] = TRUE;
-		break;
-	case 4:	entry->results4.fdmap[fd] = TRUE;
-		break;
-	case 5:	entry->results5.fdmap[fd] = TRUE;
-		break;
-	case 6:	entry->results6.fdmap[fd] = TRUE;
-		break;
-	}
+	results->fdmap[fd] = TRUE;
 }
 
 static void handle_success(struct syscallrecord *rec)
@@ -264,11 +261,15 @@ static void handle_success(struct syscallrecord *rec)
 	entry = syscalls[call].entry;
 
 	for_each_arg(entry, i) {
+		struct results *results;
 		enum argtype argtype = get_argtype(entry, i);
+		unsigned long value = get_argval(rec, i);
+
+		results = get_results_ptr(entry, i);
 
 		switch (argtype) {
 		case ARG_FD:
-			store_successful_fd(rec, entry, i);
+			store_successful_fd(results, value);
 			break;
 		case ARG_LEN:
 		case ARG_UNDEFINED:
