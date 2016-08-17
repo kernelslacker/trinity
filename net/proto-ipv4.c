@@ -379,7 +379,7 @@ static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		call_inet_sso_ptr(so, triplet);
 }
 
-static void generate_ipv4_socket(int type, int protocol)
+static void generate_ipv4_socket(int protocol, int type)
 {
 	struct socket_triplet st;
 	int fd;
@@ -398,7 +398,51 @@ static void generate_ipv4_socket(int type, int protocol)
 
 static void generate_ipv4_sockets(void)
 {
-	generate_ipv4_socket(SOCK_DGRAM, IPPROTO_IP);
+	unsigned int i;
+
+	generate_ipv4_socket(IPPROTO_IP, SOCK_DGRAM);
+	generate_ipv4_socket(IPPROTO_IP, SOCK_SEQPACKET);
+	generate_ipv4_socket(IPPROTO_IP, SOCK_STREAM);
+
+	generate_ipv4_socket(IPPROTO_TCP, SOCK_STREAM);
+
+	generate_ipv4_socket(IPPROTO_UDP, SOCK_DGRAM);
+
+	generate_ipv4_socket(IPPROTO_DCCP, SOCK_DCCP);
+
+	generate_ipv4_socket(IPPROTO_SCTP, SOCK_SEQPACKET);
+	generate_ipv4_socket(IPPROTO_SCTP, SOCK_STREAM);
+
+	generate_ipv4_socket(IPPROTO_UDPLITE, SOCK_DGRAM);
+
+	if (orig_uid == 0) {
+		generate_ipv4_socket(IPPROTO_ICMP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_IGMP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_IPIP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_TCP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_EGP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_PUP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_UDP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_IDP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_TP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_DCCP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_IPV6, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_RSVP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_GRE, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_ESP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_AH, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_MTP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_BEETPH, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_ENCAP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_PIM, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_COMP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_SCTP, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_UDPLITE, SOCK_PACKET);
+		generate_ipv4_socket(IPPROTO_MPLS, SOCK_PACKET);
+
+		for (i = 0; i < 256; i++)
+			generate_ipv4_socket(i, SOCK_RAW);
+	}
 }
 
 const struct netproto proto_ipv4 = {
