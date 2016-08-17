@@ -245,15 +245,19 @@ static int parse_generic(int pmu, const char *value,
 				if (value[ptr]==0) break;
 				if (value[ptr]==',') break;
 				if (! ( ((value[ptr]>='0') && (value[ptr]<='9'))
-                   			|| ((value[ptr]>='a') && (value[ptr]<='f'))) ) {
+					|| ((value[ptr]>='a') && (value[ptr]<='f'))
+					|| ((value[ptr]>='A') && (value[ptr]<='F'))) ) {
 					outputerr("Unexpected char %c\n", value[ptr]);
 				}
 				temp*=base;
 				if ((value[ptr]>='0') && (value[ptr]<='9')) {
 					temp+=value[ptr]-'0';
 				}
-				else {
+				else if ((value[ptr]>='a') && (value[ptr]<='f')) {
 					temp+=(value[ptr]-'a')+10;
+				}
+				else {
+					temp+=(value[ptr]-'A')+10;
 				}
 				i++;
 				ptr++;
