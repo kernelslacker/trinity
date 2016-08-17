@@ -40,19 +40,27 @@ static int urandomfd;
  * to store what gets passed in from the command line -s argument */
 unsigned int seed = 0;
 
+static int do_getrandom(unsigned int *buf)
+{
+#ifdef SYS_getrandom
+	int ret;
+
+	ret = syscall(SYS_getrandom, buf, 4, 0);
+	if (ret > 0)
+		return TRUE;
+#endif
+	return FALSE;
+}
+
 static int fallbackseed(void)
 {
 	struct timeval t;
 	unsigned int r;
 
-#ifdef SYS_getrandom
-	int buf, ret;
+	if (do_getrandom(&r) == TRUE)
+		return r;
 
-	ret = syscall(SYS_getrandom, &buf, 4, 0);
-	if (ret > 0)
-		return buf;
-#endif
-
+	// If we get this far, gtod is all we have left.
 	gettimeofday(&t, NULL);
 	r = t.tv_sec * t.tv_usec;
 	return r;
@@ -74,6 +82,15 @@ unsigned int new_seed(void)
 
 bool init_random(void)
 {
+	unsigned int r;
+
+	// If we have sys_getrandom, use that instead of urandom
+	if (do_getrandom(&r) == TRUE) {
+		printf("Using getrandom() for seeds\n");
+		urandomfd = -1;
+		return TRUE;
+	}
+
 	urandomfd = open("/dev/urandom", O_RDONLY);
 	if (urandomfd == -1) {
 		printf("urandom: %s\n", strerror(errno));
