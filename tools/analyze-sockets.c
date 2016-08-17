@@ -135,6 +135,7 @@ static const char * get_proto_name(unsigned int family, unsigned int proto)
 	};
 
 	switch (family) {
+	case AF_INET6:
 	case AF_INET:
 		for (i = 0; i < ARRAY_SIZE(ip_protocols); i++)
 			if (ip_protocols[i].proto == proto)
