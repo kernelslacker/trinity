@@ -20,33 +20,9 @@
 
 void rand_proto_type(struct socket_triplet *st)
 {
-	int n;
+	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_DCCP, SOCK_PACKET };
 
-	/*
-	 * One special moment on packet sockets. They
-	 * can be created with SOCK_PACKET, so if
-	 * PF_PACKET is disabled, choose some other type.
-	 */
-
-	st->protocol = rnd() % PROTO_MAX;
-
-	if (st->family == PF_INET && no_domains[PF_PACKET])
-		n = 5;
-	else
-		n = 6;
-
-	switch (rnd() % n) {
-	case 0:	st->type = SOCK_DGRAM;	break;
-	case 1:	st->type = SOCK_STREAM;	break;
-	case 2:	st->type = SOCK_SEQPACKET;	break;
-	case 3:	st->type = SOCK_RAW;	break;
-	case 4:	st->type = SOCK_RDM;	break;
-	/*
-	 * Make sure it's last one.
-	 */
-	case 5:	st->type = SOCK_PACKET;	break;
-	default: break;
-	}
+	st->protocol = RAND_ARRAY(types);
 }
 
 /* note: also called from generate_sockets() */
