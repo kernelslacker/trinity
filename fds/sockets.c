@@ -329,7 +329,6 @@ out_unlock:
 		close(cachefile);
 	}
 
-	exit(10);
 	return ret;
 }
 
