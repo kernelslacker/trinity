@@ -28,8 +28,8 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 {
 	const char *p;
 
-	/* 50% of the time, just do localhost */
-	if (RAND_BOOL()) {
+	/* 90% of the time, just do localhost */
+	if (!(ONE_IN(10))) {
 		inet_pton(AF_INET6, "::1", v6);
 		return;
 	}

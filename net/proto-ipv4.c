@@ -77,8 +77,8 @@ in_addr_t random_ipv4_address(void)
 		return previous_ip;
 	}
 
-	/* 50% of the time, just do localhost. */
-	if (RAND_BOOL())
+	/* 90% of the time, just do localhost. */
+	if (!(ONE_IN(10)))
 		addr = 0x7f000001;
 	else
 		addr = new_ipv4_addr();
