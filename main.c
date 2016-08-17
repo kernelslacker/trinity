@@ -432,7 +432,12 @@ static bool spawn_child(int childno)
 	struct childdata *child = shm->children[childno];
 	int pid = 0;
 
-	reseed();
+	/* a new child means a new seed, or the new child
+	 * will do the same syscalls as the one in the child it's replacing.
+	 * (special case startup, or we reseed unnecessarily)
+	 */
+	if (shm->ready == TRUE)
+		reseed();
 
 	/* Wipe out any state left from a previous child running in this slot. */
 	clean_childdata(child);
@@ -477,13 +482,6 @@ static void fork_children(void)
 
 		if (shm->spawn_no_more == TRUE)
 			return;
-
-		/* a new child means a new seed, or the new child
-		 * will do the same syscalls as the one in the child it's replacing.
-		 * (special case startup, or we reseed unnecessarily)
-		 */
-		if (shm->ready == TRUE)
-			reseed();
 
 		/* Find a space for it in the pid map */
 		childno = find_childno(EMPTY_PIDSLOT);
