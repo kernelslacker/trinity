@@ -14,10 +14,13 @@
 #include <linux/netfilter_ipv6/ip6_tables.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
+#include <errno.h>
 #include "arch.h"
+#include "log.h"
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// ARRAY_SIZE
+#include "uid.h"
 #include "compat.h"
 
 struct addrtext {
@@ -186,10 +189,52 @@ static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	}
 }
 
+static void generate_ipv6_socket(int protocol, int type)
+{
+	struct socket_triplet st;
+	int fd;
+
+	st.family = PF_INET6;
+	st.type = type;
+	st.protocol = protocol;
+
+	fd = open_socket(st.family, st.type, st.protocol);
+	if (fd > -1) {
+		write_socket_to_cache(&st);
+		return;
+	}
+	output(0, "Couldn't open socket PF_INET:%d:%d. %s\n", type, protocol, strerror(errno));
+}
+
+static void ipv6_generate(void)
+{
+	unsigned int i;
+
+	generate_ipv6_socket(IPPROTO_IP, SOCK_DGRAM);
+	generate_ipv6_socket(IPPROTO_IP, SOCK_SEQPACKET);
+	generate_ipv6_socket(IPPROTO_IP, SOCK_STREAM);
+
+	generate_ipv6_socket(IPPROTO_TCP, SOCK_STREAM);
+
+	generate_ipv6_socket(IPPROTO_UDP, SOCK_DGRAM);
+
+	generate_ipv6_socket(IPPROTO_DCCP, SOCK_DCCP);
+
+	generate_ipv6_socket(IPPROTO_SCTP, SOCK_SEQPACKET);
+
+	generate_ipv6_socket(IPPROTO_UDPLITE, SOCK_DGRAM);
+
+	if (orig_uid == 0) {
+		for (i = 0; i < 256; i++)
+			generate_ipv6_socket(i, SOCK_RAW);
+	}
+}
+
 const struct netproto proto_inet6 = {
 	.name = "inet6",
 	.socket = inet6_rand_socket,
 	.setsockopt = inet6_setsockopt,
 	.gen_sockaddr = ipv6_gen_sockaddr,
+	.generate = ipv6_generate,
 };
 #endif
