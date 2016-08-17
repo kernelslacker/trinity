@@ -475,11 +475,13 @@ void child_process(struct childdata *child, int childno)
 	loops = 0;
 
 	while (shm->exit_reason == STILL_RUNNING) {
-		periodic_work();
-
 		/* If the parent reseeded, we should reflect the latest seed too. */
-		if (shm->seed != child->seed)
+		if (shm->seed != child->seed) {
+			//output(0, "child %d reseeded to %x\n", child->num, child->seed);
 			set_seed(child);
+		}
+
+		periodic_work();
 
 		/* Every NEW_OP_COUNT potentially pick a new childop. */
 		if (loops == 0) {
