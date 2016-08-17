@@ -24,6 +24,7 @@
 unsigned int nr_sockets = 0;
 
 static const char *cachefilename="trinity.socketcache";
+static int cachefile;
 
 static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd)
 {
@@ -79,7 +80,7 @@ static struct object * add_socket(int fd, unsigned int domain, unsigned int type
 	return obj;
 }
 
-static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
+int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	struct object *obj;
 	struct sockaddr *sa = NULL;
@@ -103,8 +104,6 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	sso_socket(&obj->sockinfo.triplet, &so, fd);
 
 	nr_sockets++;
-	if (nr_sockets == NR_SOCKET_FDS)
-		goto skip_bind;
 
 	/* Sometimes, listen on created sockets. */
 	if (RAND_BOOL()) {
@@ -127,15 +126,15 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 //			nr_sockets++;
 //		}
 	}
-skip_bind:
 
+skip_bind:
 	if (sa != NULL)
 		free(sa);
 
 	return fd;
 }
 
-static void lock_cachefile(int cachefile, int type)
+static void lock_cachefile(int type)
 {
 	struct flock fl = {
 		.l_len = 0,
@@ -158,7 +157,7 @@ static void lock_cachefile(int cachefile, int type)
 		output(2, "took lock for cachefile\n");
 }
 
-static void unlock_cachefile(int cachefile)
+static void unlock_cachefile(void)
 {
 	struct flock fl = {
 		.l_len = 0,
@@ -217,7 +216,7 @@ static unsigned int valid_proto(unsigned int family)
 	return TRUE;
 }
 
-static bool write_socket_to_cache(int cachefile, struct socket_triplet *st)
+bool write_socket_to_cache(struct socket_triplet *st)
 {
 	unsigned int buffer[3];
 	int n;
@@ -236,84 +235,101 @@ static bool write_socket_to_cache(int cachefile, struct socket_triplet *st)
 	return TRUE;
 }
 
-static int generate_sockets(void)
+static bool generate_specific_sockets(int family)
 {
-	int fd, n, ret = FALSE;
-	int cachefile;
+	struct socket_triplet st;
+	unsigned int i;
 
-	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
-	if (cachefile == -1)
-		outputerr("Couldn't open cachefile for writing! (%s)\n", strerror(errno));
-	else
-		lock_cachefile(cachefile, F_WRLCK);
+	st.family = family;
 
-	/*
-	 * Don't loop forever if all domains all are disabled.
-	 */
-	if (!do_specific_domain) {
-		for (n = 0; n < (int)ARRAY_SIZE(no_domains); n++) {
-			if (!no_domains[n])
-				break;
-		}
-
-		if (n >= (int)ARRAY_SIZE(no_domains))
-			goto done;
-	}
-
-	while (nr_sockets < NR_SOCKET_FDS) {
-		struct socket_triplet st;
-
-		st.family = rnd() % TRINITY_PF_MAX;
-
-		/* check for ctrl-c again. */
-		if (shm->exit_reason != STILL_RUNNING)
-			goto out_unlock;
-
-		if (do_specific_domain == TRUE) {
-			st.family = specific_domain;
-			//FIXME: If we've passed -P and we're spinning here without making progress
-			// then we should abort after a few hundred loops.
-		}
+	for (i = 0; i < 5; i++) {
+		int fd;
 
 		if (get_domain_name(st.family) == NULL)
-			continue;
+			return FALSE;
 
 		if (valid_proto(st.family) == FALSE) {
-			if (do_specific_domain == TRUE) {
-				outputerr("Can't do protocol %s\n", get_domain_name(st.family));
-				goto out_unlock;
-			} else {
-				continue;
-			}
+			outputerr("Can't do protocol %s\n", get_domain_name(st.family));
+			return FALSE;
 		}
 
 		BUG_ON(st.family >= ARRAY_SIZE(no_domains));
 		if (no_domains[st.family])
-			continue;
+			return FALSE;
 
 		if (sanitise_socket_triplet(&st) == -1)
 			rand_proto_type(&st);
 
 		fd = open_socket(st.family, st.type, st.protocol);
-		if (fd > -1) {
-			if (write_socket_to_cache(cachefile, &st) == FALSE)
-				goto out_unlock;
-		} else {
-			//outputerr("Couldn't open family:%d (%s)\n", st.family, get_domain_name(st.family));
+		if (fd == -1) {
+			output(0, "Couldn't open socket (%d:%d:%d). %s\n",
+					family, st.type, st.protocol,
+					strerror(errno));
+			return FALSE;
 		}
+
+		if (write_socket_to_cache(&st) == FALSE)
+			return FALSE;
+	}
+	return TRUE;
+}
+
+static bool generate_sockets(void)
+{
+	int i, ret = FALSE;
+	bool domains_disabled = FALSE;
+
+	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
+	if (cachefile == -1) {
+		outputerr("Couldn't open cachefile for writing! (%s)\n", strerror(errno));
+		return FALSE;
+	}
+	lock_cachefile(F_WRLCK);
+
+	if (do_specific_domain == TRUE) {
+		ret = generate_specific_sockets(specific_domain);
+		goto out_unlock;
 	}
 
-done:
-	ret = TRUE;
+	/*
+	 * check if all domains are disabled.
+	 */
+	for (i = 0; i < (int)ARRAY_SIZE(no_domains); i++)
+		domains_disabled |= no_domains[i];
+
+	if (domains_disabled == TRUE) {
+		output(0, "All domains disabled!\n");
+		goto out_unlock;
+	}
+
+	for (i = 0; i < TRINITY_PF_MAX; i++) {
+		const struct netproto *proto = net_protocols[i].proto;
+
+		/* check for ctrl-c again. */
+		if (shm->exit_reason != STILL_RUNNING)
+			goto out_unlock;
+
+		if (proto == NULL)
+			continue;
+		if (proto->generate == NULL)
+			continue;
+
+		proto->generate();
+	}
+
+	/* This is here temporarily until we have sufficient ->generate's */
+	for (i = 0; i < 50; i++)
+		generate_specific_sockets(rnd() % TRINITY_PF_MAX);
 
 	output(1, "created %d sockets\n", nr_sockets);
 
 out_unlock:
 	if (cachefile != -1) {
-		unlock_cachefile(cachefile);
+		unlock_cachefile();
 		close(cachefile);
 	}
 
+	exit(10);
 	return ret;
 }
 
@@ -349,7 +365,6 @@ static void socket_destructor(struct object *obj)
 static int open_sockets(void)
 {
 	struct objhead *head;
-	int cachefile;
 	int bytesread = -1;
 	int ret;
 
@@ -363,7 +378,7 @@ static int open_sockets(void)
 		return ret;
 	}
 
-	lock_cachefile(cachefile, F_RDLCK);
+	lock_cachefile(F_RDLCK);
 
 	while (bytesread != 0) {
 		unsigned int domain, type, protocol;
@@ -389,7 +404,7 @@ static int open_sockets(void)
 			       "protocol request (or protocol disabled), "
 			       "and stale data in cachefile.\n");
 regenerate:
-				unlock_cachefile(cachefile);	/* drop the reader lock. */
+				unlock_cachefile();	/* drop the reader lock. */
 				close(cachefile);
 				unlink(cachefilename);
 
@@ -410,14 +425,9 @@ regenerate:
 		}
 	}
 
-	if (nr_sockets < NR_SOCKET_FDS) {
-		output(1, "Insufficient sockets in cachefile (%d). Regenerating.\n", nr_sockets);
-		goto regenerate;
-	}
-
 	output(1, "%d sockets created based on info from socket cachefile.\n", nr_sockets);
 
-	unlock_cachefile(cachefile);
+	unlock_cachefile();
 	close(cachefile);
 
 	return TRUE;

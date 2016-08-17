@@ -1,6 +1,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <netinet/udp.h>
 #include <stdlib.h>
@@ -17,7 +18,7 @@
 #include <linux/ip_vs.h>
 #include "sanitise.h"
 #include "compat.h"
-#include "maps.h"
+#include "log.h"
 #include "net.h"
 #include "config.h"
 #include "random.h"
@@ -378,8 +379,31 @@ static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		call_inet_sso_ptr(so, triplet);
 }
 
+static void generate_ipv4_socket(int type, int protocol)
+{
+	struct socket_triplet st;
+	int fd;
+
+	st.family = PF_INET;
+	st.type = type;
+	st.protocol = protocol;
+
+	fd = open_socket(st.family, st.type, st.protocol);
+	if (fd > -1) {
+		write_socket_to_cache(&st);
+		return;
+	}
+	output(0, "Couldn't open socket PF_INET:%d:%d. %s\n", type, protocol, strerror(errno));
+}
+
+static void generate_ipv4_sockets(void)
+{
+	generate_ipv4_socket(SOCK_DGRAM, IPPROTO_IP);
+}
+
 const struct netproto proto_ipv4 = {
 	.name = "ipv4",
+	.generate = generate_ipv4_sockets,
 	.socket = inet_rand_socket,
 	.setsockopt = inet_setsockopt,
 	.gen_sockaddr = ipv4_gen_sockaddr,

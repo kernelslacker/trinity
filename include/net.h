@@ -8,8 +8,6 @@
 #include "syscall.h"
 #include "socketinfo.h"
 
-#define NR_SOCKET_FDS 375
-
 extern unsigned int nr_sockets;
 
 /* protocol decoding */
@@ -39,6 +37,7 @@ struct sockopt {
 struct netproto {
 	const char *name;
 	void (*socket)(struct socket_triplet *st);
+	void (*generate)(void);
 	void (*socket_setup)(int fd);
 	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
 	void (*gen_sockaddr)(struct sockaddr **addr, socklen_t *addrlen);
@@ -49,6 +48,9 @@ struct protoptr {
 	const struct netproto *proto;
 };
 extern const struct protoptr net_protocols[TRINITY_PF_MAX];
+
+int open_socket(unsigned int domain, unsigned int type, unsigned int protocol);
+bool write_socket_to_cache(struct socket_triplet *st);
 
 struct socketinfo * get_rand_socketinfo(void);
 int fd_from_socketinfo(struct socketinfo *si);
