@@ -114,7 +114,7 @@ static void inet_rand_socket(struct socket_triplet *st)
 	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET };
 
 	struct ipproto ipprotos[] = {
-		{ .proto = IPPROTO_IP, .type = SOCK_DGRAM },
+		{ .proto = IPPROTO_IP, },
 		{ .proto = IPPROTO_ICMP, .type = SOCK_DGRAM },
 		{ .proto = IPPROTO_IGMP, },
 		{ .proto = IPPROTO_IPIP, },
