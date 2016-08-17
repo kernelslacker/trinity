@@ -229,54 +229,52 @@ bool write_socket_to_cache(struct socket_triplet *st)
 	buffer[2] = st->protocol;
 	n = write(cachefile, &buffer, sizeof(int) * 3);
 	if (n == -1) {
-		outputerr("something went wrong writing the cachefile!\n");
+		outputerr("something went wrong writing the cachefile! : %s\n", strerror(errno));
 		return FALSE;
 	}
 	return TRUE;
 }
 
-static bool generate_specific_sockets(int family)
+static bool generate_specific_socket(int family)
 {
 	struct socket_triplet st;
-	unsigned int i;
+	int fd;
 
 	st.family = family;
 
-	for (i = 0; i < 5; i++) {
-		int fd;
+	BUG_ON(st.family >= ARRAY_SIZE(no_domains));
+	if (no_domains[st.family])
+		return FALSE;
 
-		if (get_domain_name(st.family) == NULL)
-			return FALSE;
+	if (get_domain_name(st.family) == NULL)
+		return FALSE;
 
-		if (valid_proto(st.family) == FALSE) {
-			outputerr("Can't do protocol %s\n", get_domain_name(st.family));
-			return FALSE;
-		}
-
-		BUG_ON(st.family >= ARRAY_SIZE(no_domains));
-		if (no_domains[st.family])
-			return FALSE;
-
-		if (sanitise_socket_triplet(&st) == -1)
-			rand_proto_type(&st);
-
-		fd = open_socket(st.family, st.type, st.protocol);
-		if (fd == -1) {
-			output(0, "Couldn't open socket (%d:%d:%d). %s\n",
-					family, st.type, st.protocol,
-					strerror(errno));
-			return FALSE;
-		}
-
-		if (write_socket_to_cache(&st) == FALSE)
-			return FALSE;
+	if (valid_proto(st.family) == FALSE) {
+		outputerr("Can't do protocol %s\n", get_domain_name(st.family));
+		return FALSE;
 	}
-	return TRUE;
+
+	st.protocol = rnd() % 256;
+
+	if (sanitise_socket_triplet(&st) == -1)
+		rand_proto_type(&st);
+
+	fd = open_socket(st.family, st.type, st.protocol);
+	if (fd == -1) {
+		output(0, "Couldn't open socket (%d:%d:%d). %s\n",
+				st.family, st.type, st.protocol,
+				strerror(errno));
+		return FALSE;
+	}
+
+	return write_socket_to_cache(&st);
 }
+
+#define NR_SOCKET_FDS 50
 
 static bool generate_sockets(void)
 {
-	int i, ret = FALSE;
+	int i, r, ret = FALSE;
 	bool domains_disabled = FALSE;
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
@@ -287,7 +285,8 @@ static bool generate_sockets(void)
 	lock_cachefile(F_WRLCK);
 
 	if (do_specific_domain == TRUE) {
-		ret = generate_specific_sockets(specific_domain);
+		while (nr_sockets < NR_SOCKET_FDS)
+			ret |= generate_specific_socket(specific_domain);
 		goto out_unlock;
 	}
 
@@ -318,10 +317,11 @@ static bool generate_sockets(void)
 	}
 
 	/* This is here temporarily until we have sufficient ->generate's */
-	for (i = 0; i < 50; i++)
-		generate_specific_sockets(rnd() % TRINITY_PF_MAX);
-
-	output(1, "created %d sockets\n", nr_sockets);
+	while (nr_sockets < NR_SOCKET_FDS) {
+		r = rnd() % TRINITY_PF_MAX;
+		for (i = 0; i < 10; i++)
+			generate_specific_socket(r);
+	}
 
 out_unlock:
 	if (cachefile != -1) {
@@ -374,6 +374,7 @@ static int open_sockets(void)
 	if (cachefile < 0) {
 		output(1, "Couldn't find socket cachefile. Regenerating.\n");
 		ret = generate_sockets();
+		output(1, "created %d sockets\n", nr_sockets);
 		return ret;
 	}
 
