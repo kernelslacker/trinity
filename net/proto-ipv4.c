@@ -21,6 +21,7 @@
 #include "net.h"
 #include "config.h"
 #include "random.h"
+#include "uid.h"
 #include "utils.h"	// ARRAY_SIZE
 
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
@@ -139,10 +140,12 @@ static void inet_rand_socket(struct socket_triplet *st)
 	};
 	unsigned char val;
 
-	/* half the time, use raw sockets */
-	st->type = SOCK_RAW;
-	if (RAND_BOOL())
-		return;
+	if (orig_uid == 0) {
+		/* half the time, use raw sockets */
+		st->type = SOCK_RAW;
+		if (RAND_BOOL())
+			return;
+	}
 
 	/* The rest of the time, use the correct type if present. */
 	val = rnd() % ARRAY_SIZE(ipprotos);
