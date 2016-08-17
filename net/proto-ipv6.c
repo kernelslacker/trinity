@@ -70,7 +70,6 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in6 *ipv6;
-	struct in6_addr serv_addr;
 
 	ipv6 = zmalloc(sizeof(struct sockaddr_in6));
 
@@ -78,17 +77,6 @@ static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	gen_random_ipv6_address(&ipv6->sin6_addr);
 	ipv6->sin6_port = htons(rnd() % 65535);
-
-	/* Client side if we supplied server_addr */
-	if (inet_pton(PF_INET6, server_addr, &serv_addr) == 1)
-		ipv6->sin6_addr = serv_addr;
-	/* Server side if we supplied port without addr, so listen on in6addr_any */
-	else if (server_port != 0)
-		ipv6->sin6_addr = in6addr_any;
-
-	/* Fuzz from port to (port + 100) if supplied */
-	if (server_port != 0)
-		ipv6->sin6_port = htons(server_port + rnd() % 100);
 
 	*addr = (struct sockaddr *) ipv6;
 	*addrlen = sizeof(struct sockaddr_in6);

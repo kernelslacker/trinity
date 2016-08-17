@@ -55,7 +55,4 @@ extern bool kernel_taint_param_occured;
 
 extern unsigned int user_specified_children;
 
-extern int server_port;
-extern char server_addr[INET6_ADDRSTRLEN];
-
 void enable_disable_fd_usage(void);

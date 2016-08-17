@@ -92,24 +92,12 @@ in_addr_t random_ipv4_address(void)
 static void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *ipv4;
-	struct in_addr serv_addr;
 
 	ipv4 = zmalloc(sizeof(struct sockaddr_in));
 
 	ipv4->sin_family = PF_INET;
 	ipv4->sin_addr.s_addr = random_ipv4_address();
 	ipv4->sin_port = htons(rnd() % 65535);
-
-	/* Client side if we supplied server_addr */
-	if (inet_pton(PF_INET, server_addr, &serv_addr) == 1)
-		ipv4->sin_addr = serv_addr;
-	/* Server side if we supplied port without addr, so listen on INADDR_ANY */
-	else if (server_port != 0)
-		ipv4->sin_addr.s_addr = htonl(INADDR_ANY);
-
-	/* Fuzz from port to (port + 100) if supplied */
-	if (server_port != 0)
-		ipv4->sin_port = htons(server_port + rnd() % 100);
 
 	*addr = (struct sockaddr *) ipv4;
 	*addrlen = sizeof(struct sockaddr_in);

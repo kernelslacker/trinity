@@ -15,9 +15,6 @@ extern unsigned int nr_sockets;
 /* protocol decoding */
 extern unsigned int specific_domain;
 
-extern int server_port;
-extern char server_addr[INET6_ADDRSTRLEN];
-
 /* glibc headers might be older than the kernel, so chances are we know
  * about more protocols than glibc does. So we define our own PF_MAX */
 #define TRINITY_PF_MAX 42
