@@ -111,6 +111,8 @@ struct ipproto {
 
 static void inet_rand_socket(struct socket_triplet *st)
 {
+	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET };
+
 	struct ipproto ipprotos[] = {
 		{ .proto = IPPROTO_IP, .type = SOCK_DGRAM },
 		{ .proto = IPPROTO_ICMP, .type = SOCK_DGRAM },
@@ -152,6 +154,8 @@ static void inet_rand_socket(struct socket_triplet *st)
 	st->protocol = ipprotos[val].proto;
 	if (ipprotos[val].type != 0)
 		st->type = ipprotos[val].type;
+	else
+		st->type = RAND_ARRAY(types);
 }
 
 static const struct sock_option ip_opts[] = {
