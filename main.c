@@ -609,7 +609,8 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			debugf("Child %d (pid:%u type:%u) exited after %ld operations.\n",
 				childno, childpid, child->type, child->op_nr);
 			reap_child(shm->children[childno]);
-			fclose(child->pidstatfile);
+			if (child->pidstatfile != NULL)
+				fclose(child->pidstatfile);
 			child->pidstatfile = NULL;
 
 			replace_child(childno);
