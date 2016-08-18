@@ -78,6 +78,8 @@ static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	gen_random_ipv6_address(&ipv6->sin6_addr);
 	ipv6->sin6_port = htons(rnd() % 65535);
+	ipv6->sin6_flowinfo = rnd();
+	ipv6->sin6_scope_id = rnd();
 
 	*addr = (struct sockaddr *) ipv6;
 	*addrlen = sizeof(struct sockaddr_in6);
