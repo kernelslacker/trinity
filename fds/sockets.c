@@ -310,8 +310,14 @@ static bool generate_sockets(void)
 	/*
 	 * check if all domains are disabled.
 	 */
-	for (i = 0; i < (int)ARRAY_SIZE(no_domains); i++)
-		domains_disabled |= no_domains[i];
+	for (i = 0; i < (int)ARRAY_SIZE(no_domains); i++) {
+		if (no_domains[i] == FALSE) {
+			domains_disabled = FALSE;
+			break;
+		} else {
+			domains_disabled = TRUE;
+		}
+	}
 
 	if (domains_disabled == TRUE) {
 		output(0, "All domains disabled!\n");
@@ -320,6 +326,9 @@ static bool generate_sockets(void)
 
 	for (i = 0; i < TRINITY_PF_MAX; i++) {
 		const struct netproto *proto = net_protocols[i].proto;
+
+		if (no_domains[i] == TRUE)
+			continue;
 
 		/* check for ctrl-c again. */
 		if (shm->exit_reason != STILL_RUNNING)
