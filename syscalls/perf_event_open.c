@@ -1020,6 +1020,7 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->comm_exec = RAND_BOOL();
 	attr->use_clockid = RAND_BOOL();
 	attr->context_switch = RAND_BOOL();
+	attr->write_backward = RAND_BOOL();
 
 	/* wakeup events not relevant */
 
@@ -1036,6 +1037,10 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	/* sample_regs_user not relevant if not sampling */
 
 	/* sample_stack_user not relevant if not sampling */
+
+	/* aux_watermark not relevant if not sampling */
+
+	/* sample_max_stack not relevant if not sampling */
 }
 
 static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
@@ -1085,6 +1090,7 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->comm_exec = RAND_BOOL();
 	attr->use_clockid = RAND_BOOL();
 	attr->context_switch = RAND_BOOL();
+	attr->write_backward = RAND_BOOL();
 
 	attr->wakeup_events = rand32();
 
@@ -1134,6 +1140,8 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 		}
 	}
 
+	attr->aux_watermark = rand32();
+	attr->sample_max_stack = rand32();
 }
 
 
