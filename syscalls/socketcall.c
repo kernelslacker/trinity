@@ -15,7 +15,7 @@
 
 static void socketcall_socket(unsigned long *args)
 {
-	struct socket_triplet st;
+	struct socket_triplet st = { .family = 0, .protocol = 0, .type = 0 };
 
 	gen_socket_args(&st);
 
