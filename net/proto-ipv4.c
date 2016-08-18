@@ -1,7 +1,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <errno.h>
 #include <netinet/in.h>
 #include <netinet/udp.h>
 #include <stdlib.h>
@@ -18,7 +17,6 @@
 #include <linux/ip_vs.h>
 #include "sanitise.h"
 #include "compat.h"
-#include "log.h"
 #include "net.h"
 #include "config.h"
 #include "random.h"
@@ -379,75 +377,58 @@ static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		call_inet_sso_ptr(so, triplet);
 }
 
-static void generate_ipv4_socket(int protocol, int type)
-{
-	struct socket_triplet st;
-	int fd;
-
-	st.family = PF_INET;
-	st.type = type;
-	st.protocol = protocol;
-
-	fd = open_socket(st.family, st.type, st.protocol);
-	if (fd > -1) {
-		write_socket_to_cache(&st);
-		return;
-	}
-	output(0, "Couldn't open socket PF_INET:%d:%d. %s\n", type, protocol, strerror(errno));
-}
-
-static void generate_ipv4_sockets(void)
+static void generate_sockets(void)
 {
 	unsigned int i;
 
-	generate_ipv4_socket(IPPROTO_IP, SOCK_DGRAM);
-	generate_ipv4_socket(IPPROTO_IP, SOCK_SEQPACKET);
-	generate_ipv4_socket(IPPROTO_IP, SOCK_STREAM);
+	generate_socket(PF_INET, IPPROTO_IP, SOCK_DGRAM);
+	generate_socket(PF_INET, IPPROTO_IP, SOCK_SEQPACKET);
+	generate_socket(PF_INET, IPPROTO_IP, SOCK_STREAM);
 
-	generate_ipv4_socket(IPPROTO_TCP, SOCK_STREAM);
+	generate_socket(PF_INET, IPPROTO_TCP, SOCK_STREAM);
 
-	generate_ipv4_socket(IPPROTO_UDP, SOCK_DGRAM);
+	generate_socket(PF_INET, IPPROTO_UDP, SOCK_DGRAM);
 
-	generate_ipv4_socket(IPPROTO_DCCP, SOCK_DCCP);
+	generate_socket(PF_INET, IPPROTO_DCCP, SOCK_DCCP);
 
-	generate_ipv4_socket(IPPROTO_SCTP, SOCK_SEQPACKET);
-	generate_ipv4_socket(IPPROTO_SCTP, SOCK_STREAM);
+	generate_socket(PF_INET, IPPROTO_SCTP, SOCK_SEQPACKET);
+	generate_socket(PF_INET, IPPROTO_SCTP, SOCK_STREAM);
 
-	generate_ipv4_socket(IPPROTO_UDPLITE, SOCK_DGRAM);
+	generate_socket(PF_INET, IPPROTO_UDPLITE, SOCK_DGRAM);
 
 	if (orig_uid == 0) {
-		generate_ipv4_socket(IPPROTO_ICMP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_IGMP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_IPIP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_TCP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_EGP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_PUP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_UDP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_IDP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_TP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_DCCP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_IPV6, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_RSVP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_GRE, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_ESP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_AH, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_MTP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_BEETPH, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_ENCAP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_PIM, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_COMP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_SCTP, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_UDPLITE, SOCK_PACKET);
-		generate_ipv4_socket(IPPROTO_MPLS, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_ICMP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_IGMP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_IPIP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_TCP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_EGP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_PUP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_UDP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_IDP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_TP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_DCCP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_IPV6, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_RSVP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_GRE, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_ESP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_AH, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_MTP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_BEETPH, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_ENCAP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_PIM, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_COMP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_SCTP, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_UDPLITE, SOCK_PACKET);
+		generate_socket(PF_INET, IPPROTO_MPLS, SOCK_PACKET);
 
 		for (i = 0; i < 256; i++)
-			generate_ipv4_socket(i, SOCK_RAW);
+			generate_socket(PF_INET, i, SOCK_RAW);
 	}
 }
 
 const struct netproto proto_ipv4 = {
 	.name = "ipv4",
-	.generate = generate_ipv4_sockets,
+	.generate = generate_sockets,
 	.socket = inet_rand_socket,
 	.setsockopt = inet_setsockopt,
 	.gen_sockaddr = ipv4_gen_sockaddr,

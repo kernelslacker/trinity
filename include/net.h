@@ -49,6 +49,7 @@ struct protoptr {
 };
 extern const struct protoptr net_protocols[TRINITY_PF_MAX];
 
+void generate_socket(unsigned int family, unsigned int protocol, unsigned int type);
 int open_socket(unsigned int domain, unsigned int type, unsigned int protocol);
 bool write_socket_to_cache(struct socket_triplet *st);
 

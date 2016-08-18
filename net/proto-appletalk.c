@@ -1,7 +1,6 @@
 #include "config.h"
 
 #ifdef USE_APPLETALK
-#include <errno.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -9,7 +8,6 @@
 #include <netinet/in.h>
 #include <netatalk/at.h>
 #include <linux/atalk.h>
-#include "log.h"
 #include "random.h"
 #include "net.h"
 #include "utils.h"
@@ -45,29 +43,12 @@ static void atalk_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	so->level = SOL_ATALK;
 }
 
-static void generate_atalk(unsigned int protocol, unsigned int type)
-{
-	struct socket_triplet st;
-	int fd;
-
-	st.family = PF_APPLETALK;
-	st.type = type;
-	st.protocol = protocol;
-
-	fd = open_socket(st.family, st.type, st.protocol);
-	if (fd > -1) {
-		write_socket_to_cache(&st);
-		return;
-	}
-	output(0, "Couldn't open socket PF_INET:%d:%d. %s\n", type, protocol, strerror(errno));
-}
-
 static void gen_atalk(void)
 {
-	generate_atalk(0, SOCK_DGRAM);
+	generate_socket(PF_APPLETALK, 0, SOCK_DGRAM);
 
 	// Atalk will let us create 256 RAW sockets, but we only need one.
-	generate_atalk(0, SOCK_RAW);
+	generate_socket(PF_APPLETALK, 0, SOCK_RAW);
 }
 
 const struct netproto proto_appletalk = {
