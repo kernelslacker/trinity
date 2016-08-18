@@ -81,8 +81,28 @@ static void bluetooth_rand_socket(struct socket_triplet *st)
 	st->type = RAND_ARRAY(types);
 }
 
+static void gen_bluetooth(void)
+{
+	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_SEQPACKET);
+	generate_socket(PF_BLUETOOTH, BTPROTO_SCO, SOCK_SEQPACKET);
+
+	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_STREAM);
+	generate_socket(PF_BLUETOOTH, BTPROTO_RFCOMM, SOCK_STREAM);
+
+	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_RAW);
+	generate_socket(PF_BLUETOOTH, BTPROTO_HCI, SOCK_RAW);
+	generate_socket(PF_BLUETOOTH, BTPROTO_RFCOMM, SOCK_RAW);
+	generate_socket(PF_BLUETOOTH, BTPROTO_BNEP, SOCK_RAW);
+	generate_socket(PF_BLUETOOTH, BTPROTO_CMTP, SOCK_RAW);
+	generate_socket(PF_BLUETOOTH, BTPROTO_HIDP, SOCK_RAW);
+	generate_socket(PF_BLUETOOTH, BTPROTO_AVDTP, SOCK_RAW);
+
+	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_DGRAM);
+}
+
 const struct netproto proto_bluetooth = {
 	.name = "bluetooth",
 	.socket = bluetooth_rand_socket,
 	.setsockopt = bluetooth_setsockopt,
+	.generate = gen_bluetooth,
 };
