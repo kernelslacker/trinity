@@ -29,8 +29,16 @@ static void can_rand_socket(struct socket_triplet *st)
 	st->type = rnd() % TYPE_MAX;
 }
 
+static void gen_can(void)
+{
+	generate_socket(PF_CAN, CAN_RAW, SOCK_RAW);
+	generate_socket(PF_CAN, CAN_BCM, SOCK_DGRAM);
+	// protos 3-7 seem unimplemented.
+}
+
 const struct netproto proto_can = {
 	.name = "can",
 	.socket = can_rand_socket,
 	.gen_sockaddr = can_gen_sockaddr,
+	.generate = gen_can,
 };
