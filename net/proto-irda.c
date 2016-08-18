@@ -62,9 +62,18 @@ static void irda_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optname = RAND_ARRAY(irda_opts);
 }
 
+static void gen_irda(void)
+{
+	generate_socket(PF_IRDA, IRDAPROTO_UNITDATA, SOCK_DGRAM);
+	generate_socket(PF_IRDA, IRDAPROTO_ULTRA, SOCK_DGRAM);
+	generate_socket(PF_IRDA, 0, SOCK_SEQPACKET);
+	generate_socket(PF_IRDA, 0, SOCK_STREAM);
+}
+
 const struct netproto proto_irda = {
 	.name = "irda",
 	.socket = irda_rand_socket,
 	.setsockopt = irda_setsockopt,
 	.gen_sockaddr = irda_gen_sockaddr,
+	.generate = gen_irda,
 };
