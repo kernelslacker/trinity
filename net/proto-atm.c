@@ -57,15 +57,28 @@ static void atm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = RAND_ARRAY(atm_opts);
 }
 
+static void gen_svc(void)
+{
+	generate_socket(PF_ATMSVC, 0, SOCK_DGRAM);
+}
+
+static void gen_pvc(void)
+{
+	generate_socket(PF_ATMPVC, 0, SOCK_DGRAM);
+}
+
+
 const struct netproto proto_atmpvc = {
 	.name = "atmpvc",
 //	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,
 	.gen_sockaddr = atmpvc_gen_sockaddr,
+	.generate = gen_pvc,
 };
 const struct netproto proto_atmsvc = {
 	.name = "atmsvc",
 //	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,
 	.gen_sockaddr = atmsvc_gen_sockaddr,
+	.generate = gen_svc,
 };
