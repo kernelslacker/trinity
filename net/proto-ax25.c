@@ -67,9 +67,24 @@ static void ax25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optname = RAND_ARRAY(ax25_opts);
 }
 
+#define AX25_P_ROSE 1
+#define AX25_P_NETROM 0xcf
+
+static void gen_ax25(void)
+{
+	generate_socket(PF_AX25, 0, SOCK_DGRAM);
+
+	generate_socket(PF_AX25, rnd() % 256, SOCK_RAW);
+
+	generate_socket(PF_AX25, 0, SOCK_SEQPACKET);
+	generate_socket(PF_AX25, AX25_P_ROSE, SOCK_SEQPACKET);
+	generate_socket(PF_AX25, AX25_P_NETROM, SOCK_SEQPACKET);
+}
+
 const struct netproto proto_ax25 = {
 	.name = "ax25",
 	.socket = ax25_rand_socket,
 	.setsockopt = ax25_setsockopt,
 	.gen_sockaddr = ax25_gen_sockaddr,
+	.generate = gen_ax25,
 };
