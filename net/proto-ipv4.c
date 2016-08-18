@@ -110,8 +110,6 @@ struct ipproto {
 
 static void inet_rand_socket(struct socket_triplet *st)
 {
-	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET };
-
 	struct ipproto ipprotos[] = {
 		{ .proto = IPPROTO_IP, },
 		{ .proto = IPPROTO_ICMP, .type = SOCK_DGRAM },
@@ -153,8 +151,10 @@ static void inet_rand_socket(struct socket_triplet *st)
 	st->protocol = ipprotos[val].proto;
 	if (ipprotos[val].type != 0)
 		st->type = ipprotos[val].type;
-	else
+	else {
+		int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET };
 		st->type = RAND_ARRAY(types);
+	}
 }
 
 static const struct sock_option ip_opts[] = {
@@ -379,8 +379,6 @@ static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 
 static void generate_sockets(void)
 {
-	unsigned int i;
-
 	generate_socket(PF_INET, IPPROTO_IP, SOCK_DGRAM);
 	generate_socket(PF_INET, IPPROTO_IP, SOCK_SEQPACKET);
 	generate_socket(PF_INET, IPPROTO_IP, SOCK_STREAM);
@@ -397,6 +395,8 @@ static void generate_sockets(void)
 	generate_socket(PF_INET, IPPROTO_UDPLITE, SOCK_DGRAM);
 
 	if (orig_uid == 0) {
+		unsigned int i;
+
 		generate_socket(PF_INET, IPPROTO_ICMP, SOCK_PACKET);
 		generate_socket(PF_INET, IPPROTO_IGMP, SOCK_PACKET);
 		generate_socket(PF_INET, IPPROTO_IPIP, SOCK_PACKET);

@@ -191,8 +191,6 @@ static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 
 static void ipv6_generate(void)
 {
-	unsigned int i;
-
 	generate_socket(PF_INET6, IPPROTO_IP, SOCK_DGRAM);
 	generate_socket(PF_INET6, IPPROTO_IP, SOCK_SEQPACKET);
 	generate_socket(PF_INET6, IPPROTO_IP, SOCK_STREAM);
@@ -208,6 +206,8 @@ static void ipv6_generate(void)
 	generate_socket(PF_INET6, IPPROTO_UDPLITE, SOCK_DGRAM);
 
 	if (orig_uid == 0) {
+		unsigned int i;
+
 		for (i = 0; i < 256; i++)
 			generate_socket(PF_INET6, i, SOCK_RAW);
 	}
