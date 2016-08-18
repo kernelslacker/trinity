@@ -37,8 +37,16 @@ static void unix_rand_socket(struct socket_triplet *st)
 	}
 }
 
+static void gen_unix(void)
+{
+	generate_socket(PF_LOCAL, 0, SOCK_DGRAM);
+	generate_socket(PF_LOCAL, 0, SOCK_SEQPACKET);
+	generate_socket(PF_LOCAL, 0, SOCK_STREAM);
+}
+
 const struct netproto proto_unix = {
 	.name = "unix",
 	.socket = unix_rand_socket,
 	.gen_sockaddr = unix_gen_sockaddr,
+	.generate = gen_unix,
 };
