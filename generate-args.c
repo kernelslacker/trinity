@@ -187,28 +187,6 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 	return (unsigned long) alloc_iovec(num_entries);
 }
 
-static unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
-{
-	unsigned long val = 0;
-
-	switch (argnum) {
-	case 1:	val = rec->a1;
-		break;
-	case 2:	val = rec->a2;
-		break;
-	case 3:	val = rec->a3;
-		break;
-	case 4:	val = rec->a4;
-		break;
-	case 5:	val = rec->a5;
-		break;
-	case 6:	val = rec->a6;
-		break;
-	}
-	return val;
-}
-
-
 static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	struct sockaddr *sockaddr = NULL;

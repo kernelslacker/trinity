@@ -8,7 +8,7 @@
 #include "syscall.h"
 #include "tables.h"
 
-static unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
+unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 {
 	switch (argnum) {
 	case 1:	return rec->a1;

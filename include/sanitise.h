@@ -7,6 +7,8 @@ void generic_free_arg(struct syscallrecord *rec);
 
 unsigned long get_interesting_value(void);
 
+unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum);
+
 void *get_address(void);
 void *get_non_null_address(void);
 void *get_writable_address(unsigned long size);
