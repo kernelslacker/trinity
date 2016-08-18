@@ -112,6 +112,7 @@ struct syscallentry syscall_sendto = {
  */
 static void sanitise_sendmsg(struct syscallrecord *rec)
 {
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
@@ -120,7 +121,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 
 	msg = zmalloc(sizeof(struct msghdr));
 
-	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, rnd() % TRINITY_PF_MAX);
+	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
