@@ -75,9 +75,43 @@ static void netlink_setsockopt(struct sockopt *so, __unused__ struct socket_trip
 	so->optname = RAND_ARRAY(netlink_opts);
 }
 
+static void gen_netlink(void)
+{
+	generate_socket(PF_NETLINK, NETLINK_AUDIT, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_CONNECTOR, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_DNRTMSG, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_FIB_LOOKUP, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_GENERIC, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_ISCSI, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_KOBJECT_UEVENT, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_NETFILTER, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_ROUTE, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_SCSITRANSPORT, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_SELINUX, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_SOCK_DIAG, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_USERSOCK, SOCK_DGRAM);
+	generate_socket(PF_NETLINK, NETLINK_XFRM, SOCK_DGRAM);
+
+	generate_socket(PF_NETLINK, NETLINK_AUDIT, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_CONNECTOR, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_DNRTMSG, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_FIB_LOOKUP, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_GENERIC, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_ISCSI, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_KOBJECT_UEVENT, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_NETFILTER, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_ROUTE, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_SCSITRANSPORT, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_SELINUX, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_SOCK_DIAG, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_USERSOCK, SOCK_RAW);
+	generate_socket(PF_NETLINK, NETLINK_XFRM, SOCK_RAW);
+}
+
 const struct netproto proto_netlink = {
 	.name = "netlink",
 	.socket = netlink_rand_socket,
 	.setsockopt = netlink_setsockopt,
 	.gen_sockaddr = netlink_gen_sockaddr,
+	.generate = gen_netlink,
 };
