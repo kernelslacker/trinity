@@ -116,6 +116,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
+	unsigned int num_entries;
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
@@ -126,11 +127,16 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
 
-	msg->msg_iov = get_address();
-	msg->msg_iovlen = get_len();
+	num_entries = RAND_RANGE(1, 256);
+	msg->msg_iov = alloc_iovec(num_entries);
+	msg->msg_iovlen = num_entries;
+
 	msg->msg_control = get_address();
-	msg->msg_controllen = get_len();
-	msg->msg_flags = rand32();
+	msg->msg_controllen = rand32() % 20480;	// /proc/sys/net/core/optmem_max
+	if (ONE_IN(100))
+		msg->msg_flags = rand32();
+	else
+		msg->msg_flags = 0;
 
 	rec->a2 = (unsigned long) msg;
 }
@@ -140,6 +146,7 @@ static void post_sendmsg(__unused__ struct syscallrecord *rec)
 	struct msghdr *msg = (struct msghdr *) rec->a2;
 
 	if (msg != NULL) {
+		free(msg->msg_iov);
 		free(msg->msg_name);	// free sockaddr
 		freeptr(&rec->a2);
 	}
