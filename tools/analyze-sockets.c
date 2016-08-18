@@ -80,6 +80,7 @@ static const char * get_family_name(unsigned int family)
 
 static const char * get_proto_name(unsigned int family, unsigned int proto)
 {
+	char *str;
 	unsigned int i;
 
 	const struct protocol ip_protocols[] = {
@@ -149,11 +150,16 @@ static const char * get_proto_name(unsigned int family, unsigned int proto)
 		break;
 	}
 
-	return "unknown";
+	str = malloc(80);
+	memset(str, 0, 80);
+	sprintf(str, "Unknown (%d)", proto);
+	return str;
 }
 
 static const char *decode_type(unsigned int type)
 {
+	char *str;
+
 	switch (type) {
 	case SOCK_STREAM:
 		return "SOCK_STREAM";
@@ -170,7 +176,10 @@ static const char *decode_type(unsigned int type)
 	case SOCK_PACKET:
 		return "SOCK_PACKET";
 	}
-	return "Unknown";
+	str = malloc(80);
+	memset(str, 0, 80);
+	sprintf(str, "Unknown (%d)", type);
+	return str;
 }
 
 
@@ -196,7 +205,7 @@ static void open_sockets(char *cachefilename)
 		type = buffer[1];
 		protocol = buffer[2];
 
-		printf("family:%s type:%s protocol:%s (%u)\n",
+		printf("family:%s type:%s protocol:%s\n",
 			get_family_name(family),
 			decode_type(type),
 			get_proto_name(family, protocol), protocol);
