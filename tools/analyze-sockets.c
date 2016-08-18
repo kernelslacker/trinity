@@ -152,7 +152,7 @@ static const char * get_proto_name(unsigned int family, unsigned int proto)
 
 	str = malloc(80);
 	memset(str, 0, 80);
-	sprintf(str, "Unknown (%d)", proto);
+	sprintf(str, "Unknown(%d)", proto);
 	return str;
 }
 
@@ -178,7 +178,7 @@ static const char *decode_type(unsigned int type)
 	}
 	str = malloc(80);
 	memset(str, 0, 80);
-	sprintf(str, "Unknown (%d)", type);
+	sprintf(str, "Unknown(%d)", type);
 	return str;
 }
 
