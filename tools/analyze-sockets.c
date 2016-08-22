@@ -150,9 +150,8 @@ static const char * get_proto_name(unsigned int family, unsigned int proto)
 		break;
 	}
 
-	str = malloc(80);
-	memset(str, 0, 80);
-	sprintf(str, "Unknown(%d)", proto);
+	str = calloc(1, 80);
+	sprintf(str, "Unknown(%u)", proto);
 	return str;
 }
 
@@ -176,9 +175,8 @@ static const char *decode_type(unsigned int type)
 	case SOCK_PACKET:
 		return "SOCK_PACKET";
 	}
-	str = malloc(80);
-	memset(str, 0, 80);
-	sprintf(str, "Unknown(%d)", type);
+	str = calloc(1, 80);
+	sprintf(str, "Unknown(%u)", type);
 	return str;
 }
 
@@ -205,10 +203,10 @@ static void open_sockets(char *cachefilename)
 		type = buffer[1];
 		protocol = buffer[2];
 
-		printf("family:%s type:%s protocol:%s\n",
+		printf("family:%s type:%s protocol:%s(%d)\n",
 			get_family_name(family),
 			decode_type(type),
-			get_proto_name(family, protocol), protocol);
+			get_proto_name(family, protocol));
 		nr_sockets++;
 
 	}
