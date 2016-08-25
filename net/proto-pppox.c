@@ -178,9 +178,32 @@ static void pppol2tp_setsockopt(struct sockopt *so, __unused__ struct socket_tri
 	so->optlen = sizeof(int);
 }
 
+static void generate_pppox(void)
+{
+	generate_socket(PF_PPPOX, PX_PROTO_OE, SOCK_DGRAM);
+	generate_socket(PF_PPPOX, PX_PROTO_OE, SOCK_RAW);
+	generate_socket(PF_PPPOX, PX_PROTO_OE, SOCK_SEQPACKET);
+	generate_socket(PF_PPPOX, PX_PROTO_OE, SOCK_STREAM);
+
+	generate_socket(PF_PPPOX, PX_PROTO_OL2TP, SOCK_DGRAM);
+	generate_socket(PF_PPPOX, PX_PROTO_OL2TP, SOCK_RAW);
+	generate_socket(PF_PPPOX, PX_PROTO_OL2TP, SOCK_SEQPACKET);
+	generate_socket(PF_PPPOX, PX_PROTO_OL2TP, SOCK_STREAM);
+
+	generate_socket(PF_PPPOX, PX_PROTO_PPTP, SOCK_DGRAM);
+	generate_socket(PF_PPPOX, PX_PROTO_PPTP, SOCK_RAW);
+	generate_socket(PF_PPPOX, PX_PROTO_PPTP, SOCK_SEQPACKET);
+	generate_socket(PF_PPPOX, PX_PROTO_PPTP, SOCK_STREAM);
+
+	// TODO: Figure out wtf '9' means.
+	generate_socket(PF_PPPOX, PX_PROTO_OL2TP, 9);
+	generate_socket(PF_PPPOX, PX_PROTO_PPTP, 9);
+}
+
 const struct netproto proto_pppol2tp = {
 	.name = "pppol2tp",
 //	.socket = pppol2tp_rand_socket,
 	.setsockopt = pppol2tp_setsockopt,
 	.gen_sockaddr = pppox_gen_sockaddr,
+	.generate = generate_pppox,
 };
