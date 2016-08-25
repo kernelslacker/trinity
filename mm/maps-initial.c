@@ -93,6 +93,9 @@ static void setup_mapping_sizes(void)
 				mapping_sizes[3] = page_size;
 				goto out_free;
 			}
+		} else {
+			// Because of increased mem usage, don't do nr_cpus * 4
+			max_children /= 4;
 		}
 	}
 
