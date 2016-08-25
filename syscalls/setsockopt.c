@@ -140,6 +140,12 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
 	so->optname = 0;
 
+	/* Sometimes just do generic options */
+	if (ONE_IN(10)) {
+		socket_setsockopt(so, triplet);
+		return;
+	}
+
 	/* get a page for the optval to live in.
 	 * TODO: push this down into the per-proto .func calls
 	 */
