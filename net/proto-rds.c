@@ -45,11 +45,17 @@ static void rds_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = RAND_ARRAY(rds_opts);
 }
 
+static void generate_rds(void)
+{
+	generate_socket(PF_RDS, 0, SOCK_SEQPACKET);
+}
+
 const struct netproto proto_rds = {
 	.name = "rds",
 	.socket = rds_rand_socket,
 	.setsockopt = rds_setsockopt,
 	.gen_sockaddr = rds_gen_sockaddr,
+	.generate = generate_rds,
 };
 #else
 /* stub if we are built on something without RDS headers */
