@@ -108,7 +108,6 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
 void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
 
 /* ip setsockopt functions */
-void socket_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void tcp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void udp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void udplite_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
