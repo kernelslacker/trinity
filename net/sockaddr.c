@@ -12,6 +12,16 @@
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {
 	const struct netproto *proto;
+	struct sockaddr_un *un;
+
+
+	if (RAND_BOOL()) {
+		un = (struct sockaddr_un *) addr;
+		if (un == NULL)
+			un = zmalloc(sizeof(struct sockaddr_un));
+		un->sun_family = PF_UNSPEC;
+		return;
+	}
 
 	/* If we want sockets of a specific type, we'll want sockaddrs that match. */
 	if (do_specific_domain == TRUE)
