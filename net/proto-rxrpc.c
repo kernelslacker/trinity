@@ -18,8 +18,14 @@ static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	so->optname = RAND_ARRAY(rxrpc_opts);
 }
 
+static void generate_rxrpc(void)
+{
+	generate_socket(PF_RXRPC, PF_INET, SOCK_DGRAM);
+}
+
 const struct netproto proto_rxrpc = {
 	.name = "rxrpc",
 //	.socket = rxrpc_rand_socket,
+	.generate = generate_rxrpc,
 	.setsockopt = rxrpc_setsockopt,
 };
