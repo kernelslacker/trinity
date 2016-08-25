@@ -71,8 +71,15 @@ const struct netproto proto_llc = {
 	.gen_sockaddr = llc_gen_sockaddr,
 };
 
+static void generate_llc(void)
+{
+	generate_socket(PF_LLC, 0, SOCK_DGRAM);
+	generate_socket(PF_LLC, 0, SOCK_STREAM);
+}
+
 const struct netproto proto_netbeui = {
 	.name = "netbeui",
 	.setsockopt = netbeui_setsockopt,
 	.gen_sockaddr = llc_gen_sockaddr,
+	.generate = generate_llc,
 };
