@@ -257,10 +257,16 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->level = SOL_ALG;
 }
 
+static void gen_alg(void)
+{
+	generate_socket(PF_ALG, 0, SOCK_SEQPACKET);
+}
+
 const struct netproto proto_alg = {
 	.name = "alg",
 //	.socket = alg_rand_socket,
 	.setsockopt = alg_setsockopt,
 	.gen_sockaddr = alg_gen_sockaddr,
+	.generate = gen_alg,
 };
 #endif
