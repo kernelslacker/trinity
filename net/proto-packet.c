@@ -108,10 +108,17 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	}
 }
 
+static void generate_packet_socket(void)
+{
+	generate_socket(PF_PACKET, 768, SOCK_PACKET);
+	generate_socket(PF_PACKET, 768, SOCK_RAW);
+}
+
 const struct netproto proto_packet = {
 	.name = "packet",
 	.socket = packet_rand_socket,
 	.socket_setup = packet_socket_setup,
 	.setsockopt = packet_setsockopt,
 	.gen_sockaddr = packet_gen_sockaddr,
+	.generate = generate_packet_socket,
 };
