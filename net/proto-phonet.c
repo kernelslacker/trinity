@@ -39,9 +39,18 @@ static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	so->level = SOL_PNPIPE;
 }
 
+static void generate_phonet(void)
+{
+	generate_socket(PF_PHONET, 0, SOCK_DGRAM);
+	generate_socket(PF_PHONET, 0, SOCK_SEQPACKET);
+	generate_socket(PF_PHONET, 1, SOCK_DGRAM);
+	generate_socket(PF_PHONET, 2, SOCK_SEQPACKET);
+}
+
 const struct netproto proto_phonet = {
 	.name = "phonet",
 	.socket = phonet_rand_socket,
 	.setsockopt = phonet_setsockopt,
 	.gen_sockaddr = phonet_gen_sockaddr,
+	.generate = generate_phonet,
 };
