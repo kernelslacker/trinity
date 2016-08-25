@@ -120,19 +120,25 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
-	msg = zmalloc(sizeof(struct msghdr));
-
 	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
+	msg = zmalloc(sizeof(struct msghdr));
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
 
-	num_entries = RAND_RANGE(1, 256);
-	msg->msg_iov = alloc_iovec(num_entries);
-	msg->msg_iovlen = num_entries;
+	if (RAND_BOOL()) {
+		num_entries = RAND_RANGE(1, 3);
+		msg->msg_iov = alloc_iovec(num_entries);
+		msg->msg_iovlen = num_entries;
+	}
 
-	msg->msg_control = get_address();
-	msg->msg_controllen = rand32() % 20480;	// /proc/sys/net/core/optmem_max
+	if (RAND_BOOL()) {
+		msg->msg_controllen = rand32() % 20480;	// /proc/sys/net/core/optmem_max
+		msg->msg_control = get_address();
+	} else {
+		msg->msg_controllen = 0;
+	}
+
 	if (ONE_IN(100))
 		msg->msg_flags = rand32();
 	else
@@ -146,7 +152,8 @@ static void post_sendmsg(__unused__ struct syscallrecord *rec)
 	struct msghdr *msg = (struct msghdr *) rec->a2;
 
 	if (msg != NULL) {
-		free(msg->msg_iov);
+		if (msg->msg_iov != NULL)
+			free(msg->msg_iov);
 		free(msg->msg_name);	// free sockaddr
 		freeptr(&rec->a2);
 	}
