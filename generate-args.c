@@ -157,6 +157,9 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 
 	get_num_and_values(entry, argnum, &num, &values);
 
+	if (RAND_BOOL())
+		num = min(num, 3U);
+
 	mask = set_rand_bitmask(num, values);
 	return mask;
 }
