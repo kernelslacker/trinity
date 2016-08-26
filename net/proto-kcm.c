@@ -7,6 +7,7 @@
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY
+#include "compat.h"
 
 #ifndef KCMPROTO_CONNECTED
 #define KCMPROTO_CONNECTED 0
@@ -48,8 +49,15 @@ static void kcm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	}
 }
 
+static struct socket_triplet kcm_triplets[] = {
+	{ .family = PF_KCM, .protocol = KCMPROTO_CONNECTED, .type = SOCK_PACKET },
+	{ .family = PF_KCM, .protocol = KCMPROTO_CONNECTED, .type = SOCK_DGRAM },
+};
+
 const struct netproto proto_kcm = {
 	.name = "kcm",
 	.socket = kcm_rand_socket,
 	.setsockopt = kcm_setsockopt,
+	.valid_triplets = kcm_triplets,
+	.nr_triplets = ARRAY_SIZE(kcm_triplets),
 };
