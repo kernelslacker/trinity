@@ -25,7 +25,14 @@ static void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_ec);
 }
 
+static struct socket_triplet econet_triplet[] = {
+	// total guess, doesn't matter, it's dead.
+	{ .family = PF_ECONET, .protocol = 0, .type = SOCK_SEQPACKET },
+};
+
 const struct netproto proto_econet = {
 	.name = "econet",
 	.gen_sockaddr = econet_gen_sockaddr,
+	.valid_triplets = econet_triplet,
+	.nr_triplets = ARRAY_SIZE(econet_triplet),
 };
