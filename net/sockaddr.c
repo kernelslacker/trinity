@@ -20,6 +20,8 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 		if (un == NULL)
 			un = zmalloc(sizeof(struct sockaddr_un));
 		un->sun_family = PF_UNSPEC;
+		*addr = (struct sockaddr *) un;
+		*addrlen = sizeof(struct sockaddr_un);
 		return;
 	}
 
