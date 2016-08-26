@@ -12,10 +12,10 @@
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {
 	const struct netproto *proto;
-	struct sockaddr_un *un;
-
 
 	if (RAND_BOOL()) {
+		struct sockaddr_un *un;
+
 		un = (struct sockaddr_un *) addr;
 		if (un == NULL)
 			un = zmalloc(sizeof(struct sockaddr_un));

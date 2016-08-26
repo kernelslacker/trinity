@@ -116,7 +116,6 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
-	unsigned int num_entries;
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
@@ -127,6 +126,8 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	msg->msg_namelen = salen;
 
 	if (RAND_BOOL()) {
+		unsigned int num_entries;
+
 		num_entries = RAND_RANGE(1, 3);
 		msg->msg_iov = alloc_iovec(num_entries);
 		msg->msg_iovlen = num_entries;
