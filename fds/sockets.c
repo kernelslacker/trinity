@@ -352,7 +352,7 @@ static bool generate_sockets(void)
 			continue;
 
 		triplets = proto->valid_privileged_triplets;
-		for (j = 0; j < proto->nr_triplets; j++)
+		for (j = 0; j < proto->nr_privileged_triplets; j++)
 			generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
 	}
 
