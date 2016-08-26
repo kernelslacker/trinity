@@ -37,12 +37,14 @@ struct sockopt {
 struct netproto {
 	const char *name;
 	struct socket_triplet *valid_triplets;
+	struct socket_triplet *valid_privileged_triplets;
 	void (*socket)(struct socket_triplet *st);
 	void (*socket_setup)(int fd);
 	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
 	void (*gen_sockaddr)(struct sockaddr **addr, socklen_t *addrlen);
 	void (*gen_packet)(struct socket_triplet *st, void **ptr, size_t *len);
 	unsigned int nr_triplets;
+	unsigned int nr_privileged_triplets;
 };
 
 struct protoptr {

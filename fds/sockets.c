@@ -342,10 +342,18 @@ static bool generate_sockets(void)
 			continue;
 
 		triplets = proto->valid_triplets;
-
-		for (j = 0; j < proto->nr_triplets; j++) {
+		for (j = 0; j < proto->nr_triplets; j++)
 			generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
-		}
+
+		if (proto->nr_privileged_triplets == 0)
+			continue;
+
+		if (orig_uid != 0)
+			continue;
+
+		triplets = proto->valid_privileged_triplets;
+		for (j = 0; j < proto->nr_triplets; j++)
+			generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
 	}
 
 	/* This is here temporarily until we have sufficient ->valid_proto's */

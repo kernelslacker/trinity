@@ -205,18 +205,19 @@ static struct socket_triplet ipv6_triplets[] = {
 	{ .family = PF_INET6, .protocol = IPPROTO_UDPLITE, .type = SOCK_DGRAM},
 };
 
-// HAUGLAHGALH
-/*
-static void ipv6_generate(void)
-{
-	if (orig_uid == 0) {
-		unsigned int i;
-
-		for (i = 0; i < 256; i++)
-			generate_socket(PF_INET6, i, SOCK_RAW);
-	}
-}
-*/
+static struct socket_triplet ipv6_privileged_triplets[] = {
+	{ .family = PF_INET6, .protocol = 0, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 1, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 2, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 3, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 4, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 5, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 6, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 7, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 8, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = 9, .type = SOCK_RAW },
+	//TBD: Is it worth doing all 256 of these ?
+};
 
 const struct netproto proto_inet6 = {
 	.name = "inet6",
@@ -225,5 +226,7 @@ const struct netproto proto_inet6 = {
 	.gen_sockaddr = ipv6_gen_sockaddr,
 	.valid_triplets = ipv6_triplets,
 	.nr_triplets = ARRAY_SIZE(ipv6_triplets),
+	.valid_privileged_triplets = ipv6_privileged_triplets,
+	.nr_privileged_triplets = ARRAY_SIZE(ipv6_privileged_triplets),
 };
 #endif

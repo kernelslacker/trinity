@@ -394,42 +394,46 @@ static struct socket_triplet ipv4_triplets[] = {
 	{ .family = PF_INET, .protocol = IPPROTO_UDPLITE, .type = SOCK_DGRAM },
 };
 
-	// NNGH UGH HUAGLAHGLAH
-/*
-static void generate_sockets(void)
-{
-	if (orig_uid == 0) {
-		unsigned int i;
+static struct socket_triplet ipv4_privileged_triplets[] = {
+	{ .family = PF_INET, .protocol = IPPROTO_ICMP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_IGMP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_IPIP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_TCP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_EGP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_PUP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_UDP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_IDP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_TP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_DCCP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_IPV6, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_RSVP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_GRE, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_ESP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_AH, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_MTP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_BEETPH, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_ENCAP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_PIM, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_COMP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_UDPLITE, .type = SOCK_PACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_MPLS, .type = SOCK_PACKET },
 
-		generate_socket(PF_INET, IPPROTO_ICMP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_IGMP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_IPIP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_TCP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_EGP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_PUP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_UDP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_IDP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_TP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_DCCP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_IPV6, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_RSVP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_GRE, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_ESP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_AH, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_MTP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_BEETPH, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_ENCAP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_PIM, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_COMP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_SCTP, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_UDPLITE, SOCK_PACKET);
-		generate_socket(PF_INET, IPPROTO_MPLS, SOCK_PACKET);
 
-		for (i = 0; i < 256; i++)
-			generate_socket(PF_INET, i, SOCK_RAW);
-	}
-}
-*/
+	{ .family = PF_INET, .protocol = 0, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 1, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 2, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 3, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 4, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 5, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 6, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 7, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 8, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = 9, .type = SOCK_RAW },
+
+	//TBD: Is it worth doing all 256 of these ?
+};
+
 const struct netproto proto_ipv4 = {
 	.name = "ipv4",
 	.socket = inet_rand_socket,
@@ -437,4 +441,6 @@ const struct netproto proto_ipv4 = {
 	.gen_sockaddr = ipv4_gen_sockaddr,
 	.valid_triplets = ipv4_triplets,
 	.nr_triplets = ARRAY_SIZE(ipv4_triplets),
+	.valid_privileged_triplets = ipv4_privileged_triplets,
+	.nr_privileged_triplets = ARRAY_SIZE(ipv4_privileged_triplets),
 };
