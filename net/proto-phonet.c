@@ -39,18 +39,18 @@ static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	so->level = SOL_PNPIPE;
 }
 
-static void generate_phonet(void)
-{
-	generate_socket(PF_PHONET, 0, SOCK_DGRAM);
-	generate_socket(PF_PHONET, 0, SOCK_SEQPACKET);
-	generate_socket(PF_PHONET, 1, SOCK_DGRAM);
-	generate_socket(PF_PHONET, 2, SOCK_SEQPACKET);
-}
+static struct socket_triplet phonet_triplets[] = {
+	{ .family = PF_PHONET, .protocol = 0, .type = SOCK_DGRAM },
+	{ .family = PF_PHONET, .protocol = 0, .type = SOCK_SEQPACKET },
+	{ .family = PF_PHONET, .protocol = 1, .type = SOCK_DGRAM },
+	{ .family = PF_PHONET, .protocol = 2, .type = SOCK_SEQPACKET },
+};
 
 const struct netproto proto_phonet = {
 	.name = "phonet",
 	.socket = phonet_rand_socket,
 	.setsockopt = phonet_setsockopt,
 	.gen_sockaddr = phonet_gen_sockaddr,
-	.generate = generate_phonet,
+	.valid_triplets = phonet_triplets,
+	.nr_triplets = ARRAY_SIZE(phonet_triplets),
 };

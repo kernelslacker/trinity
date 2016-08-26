@@ -59,17 +59,17 @@ static void tipc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optlen = sizeof(__u32);
 }
 
-static void generate_tipc(void)
-{
-	generate_socket(PF_TIPC, 0, SOCK_DGRAM);
-	generate_socket(PF_TIPC, 0, SOCK_SEQPACKET);
-	generate_socket(PF_TIPC, 0, SOCK_STREAM);
-}
+static struct socket_triplet tipc_triplets[] = {
+	{ .family = PF_TIPC, .protocol = 0, .type = SOCK_DGRAM },
+	{ .family = PF_TIPC, .protocol = 0, .type = SOCK_SEQPACKET },
+	{ .family = PF_TIPC, .protocol = 0, .type = SOCK_STREAM },
+};
 
 const struct netproto proto_tipc = {
 	.name = "tipc",
 	.socket = tipc_rand_socket,
 	.setsockopt = tipc_setsockopt,
 	.gen_sockaddr = tipc_gen_sockaddr,
-	.generate = generate_tipc,
+	.valid_triplets = tipc_triplets,
+	.nr_triplets = ARRAY_SIZE(tipc_triplets),
 };

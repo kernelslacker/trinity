@@ -46,20 +46,20 @@ static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->level = SOL_NFC;
 }
 
-static void gen_nfc(void)
-{
-	generate_socket(PF_NFC, NFC_SOCKPROTO_RAW, SOCK_SEQPACKET);
-	generate_socket(PF_NFC, NFC_SOCKPROTO_RAW, SOCK_RAW);
+static struct socket_triplet nfc_triplets[] = {
+	{ .family = PF_NFC, .protocol = NFC_SOCKPROTO_RAW, .type = SOCK_SEQPACKET },
+	{ .family = PF_NFC, .protocol = NFC_SOCKPROTO_RAW, .type = SOCK_RAW },
 
-	generate_socket(PF_NFC, NFC_SOCKPROTO_LLCP, SOCK_DGRAM);
-	generate_socket(PF_NFC, NFC_SOCKPROTO_LLCP, SOCK_STREAM);
-	generate_socket(PF_NFC, NFC_SOCKPROTO_LLCP, SOCK_RAW);
-}
+	{ .family = PF_NFC, .protocol = NFC_SOCKPROTO_LLCP, .type = SOCK_DGRAM },
+	{ .family = PF_NFC, .protocol = NFC_SOCKPROTO_LLCP, .type = SOCK_STREAM },
+	{ .family = PF_NFC, .protocol = NFC_SOCKPROTO_LLCP, .type = SOCK_RAW },
+};
 
 const struct netproto proto_nfc = {
 	.name = "nfc",
 	.socket = nfc_rand_socket,
 	.setsockopt = nfc_setsockopt,
 	.gen_sockaddr = nfc_gen_sockaddr,
-	.generate = gen_nfc,
+	.valid_triplets = nfc_triplets,
+	.nr_triplets = ARRAY_SIZE(nfc_triplets),
 };

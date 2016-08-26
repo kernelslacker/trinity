@@ -18,15 +18,15 @@ static void netrom_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	so->optname = RAND_ARRAY(netrom_opts);
 }
 
-static void generate_netrom(void)
-{
-	generate_socket(PF_NETROM, 0, SOCK_SEQPACKET);
-}
+static struct socket_triplet netrom_triplet[] = {
+	{ .family = PF_NETROM, .protocol = 0, .type = SOCK_SEQPACKET },
+};
 
 const struct netproto proto_netrom = {
 	.name = "netrom",
 //	.socket = netrom_rand_socket,
 	.setsockopt = netrom_setsockopt,
-	.generate = generate_netrom,
+	.valid_triplets = netrom_triplet,
+	.nr_triplets = ARRAY_SIZE(netrom_triplet),
 };
 #endif

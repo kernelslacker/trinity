@@ -43,19 +43,18 @@ static void atalk_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	so->level = SOL_ATALK;
 }
 
-static void gen_atalk(void)
-{
-	generate_socket(PF_APPLETALK, 0, SOCK_DGRAM);
-
+static struct socket_triplet atalk_triplets[] = {
+	{ .family = PF_APPLETALK, .protocol = 0, .type = SOCK_DGRAM },
 	// Atalk will let us create 256 RAW sockets, but we only need one.
-	generate_socket(PF_APPLETALK, 0, SOCK_RAW);
-}
+	{ .family = PF_APPLETALK, .protocol = 0, .type = SOCK_RAW },
+};
 
 const struct netproto proto_appletalk = {
 	.name = "appletalk",
 	.socket = atalk_rand_socket,
 	.setsockopt = atalk_setsockopt,
 	.gen_sockaddr = atalk_gen_sockaddr,
-	.generate = gen_atalk,
+	.valid_triplets = atalk_triplets,
+	.nr_triplets = ARRAY_SIZE(atalk_triplets),
 };
 #endif

@@ -326,6 +326,8 @@ static bool generate_sockets(void)
 
 	for (i = 0; i < TRINITY_PF_MAX; i++) {
 		const struct netproto *proto = net_protocols[i].proto;
+		struct socket_triplet *triplets;
+		unsigned int j;
 
 		if (no_domains[i] == TRUE)
 			continue;
@@ -336,13 +338,17 @@ static bool generate_sockets(void)
 
 		if (proto == NULL)
 			continue;
-		if (proto->generate == NULL)
+		if (proto->nr_triplets == 0)
 			continue;
 
-		proto->generate();
+		triplets = proto->valid_triplets;
+
+		for (j = 0; j < proto->nr_triplets; j++) {
+			generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
+		}
 	}
 
-	/* This is here temporarily until we have sufficient ->generate's */
+	/* This is here temporarily until we have sufficient ->valid_proto's */
 	while (nr_sockets < NR_SOCKET_FDS) {
 		r = rnd() % TRINITY_PF_MAX;
 		for (i = 0; i < 10; i++)

@@ -57,15 +57,13 @@ static void atm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = RAND_ARRAY(atm_opts);
 }
 
-static void gen_svc(void)
-{
-	generate_socket(PF_ATMSVC, 0, SOCK_DGRAM);
-}
+static struct socket_triplet atmpvc_triplet[] = {
+	{ .family = PF_ATMPVC, .protocol = 0, .type = SOCK_DGRAM },
+};
 
-static void gen_pvc(void)
-{
-	generate_socket(PF_ATMPVC, 0, SOCK_DGRAM);
-}
+static struct socket_triplet atmsvc_triplet[] = {
+	{ .family = PF_ATMSVC, .protocol = 0, .type = SOCK_DGRAM },
+};
 
 
 const struct netproto proto_atmpvc = {
@@ -73,12 +71,14 @@ const struct netproto proto_atmpvc = {
 //	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,
 	.gen_sockaddr = atmpvc_gen_sockaddr,
-	.generate = gen_pvc,
+	.valid_triplets = atmpvc_triplet,
+	.nr_triplets = ARRAY_SIZE(atmpvc_triplet),
 };
 const struct netproto proto_atmsvc = {
 	.name = "atmsvc",
 //	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,
 	.gen_sockaddr = atmsvc_gen_sockaddr,
-	.generate = gen_svc,
+	.valid_triplets = atmsvc_triplet,
+	.nr_triplets = ARRAY_SIZE(atmsvc_triplet),
 };

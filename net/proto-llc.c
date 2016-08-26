@@ -71,15 +71,15 @@ const struct netproto proto_llc = {
 	.gen_sockaddr = llc_gen_sockaddr,
 };
 
-static void generate_llc(void)
-{
-	generate_socket(PF_LLC, 0, SOCK_DGRAM);
-	generate_socket(PF_LLC, 0, SOCK_STREAM);
-}
+static struct socket_triplet llc_triplets[] = {
+	{ .family = PF_LLC, .protocol = 0, .type = SOCK_DGRAM },
+	{ .family = PF_LLC, .protocol = 0, .type = SOCK_STREAM },
+};
 
 const struct netproto proto_netbeui = {
 	.name = "netbeui",
 	.setsockopt = netbeui_setsockopt,
 	.gen_sockaddr = llc_gen_sockaddr,
-	.generate = generate_llc,
+	.valid_triplets = llc_triplets,
+	.nr_triplets = ARRAY_SIZE(llc_triplets),
 };

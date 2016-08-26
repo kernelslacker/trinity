@@ -70,21 +70,19 @@ static void ax25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 #define AX25_P_ROSE 1
 #define AX25_P_NETROM 0xcf
 
-static void gen_ax25(void)
-{
-	generate_socket(PF_AX25, 0, SOCK_DGRAM);
-
-	generate_socket(PF_AX25, rnd() % 256, SOCK_RAW);
-
-	generate_socket(PF_AX25, 0, SOCK_SEQPACKET);
-	generate_socket(PF_AX25, AX25_P_ROSE, SOCK_SEQPACKET);
-	generate_socket(PF_AX25, AX25_P_NETROM, SOCK_SEQPACKET);
-}
+static struct socket_triplet ax25_triplets[] = {
+	{ .family = PF_AX25, .protocol = 0, .type = SOCK_DGRAM },
+	{ .family = PF_AX25, .protocol = 0, .type = SOCK_RAW },
+	{ .family = PF_AX25, .protocol = 0, .type = SOCK_SEQPACKET },
+	{ .family = PF_AX25, .protocol = AX25_P_ROSE, .type = SOCK_SEQPACKET },
+	{ .family = PF_AX25, .protocol = AX25_P_NETROM, .type = SOCK_SEQPACKET },
+};
 
 const struct netproto proto_ax25 = {
 	.name = "ax25",
 	.socket = ax25_rand_socket,
 	.setsockopt = ax25_setsockopt,
 	.gen_sockaddr = ax25_gen_sockaddr,
-	.generate = gen_ax25,
+	.valid_triplets = ax25_triplets,
+	.nr_triplets = ARRAY_SIZE(ax25_triplets),
 };

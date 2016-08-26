@@ -189,22 +189,26 @@ static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	}
 }
 
+static struct socket_triplet ipv6_triplets[] = {
+	{ .family = PF_INET6, .protocol = IPPROTO_IP, .type = SOCK_DGRAM },
+	{ .family = PF_INET6, .protocol = IPPROTO_IP, .type = SOCK_SEQPACKET },
+	{ .family = PF_INET6, .protocol = IPPROTO_IP, .type = SOCK_STREAM },
+
+	{ .family = PF_INET6, .protocol = IPPROTO_TCP, .type = SOCK_STREAM },
+
+	{ .family = PF_INET6, .protocol = IPPROTO_UDP, .type = SOCK_DGRAM },
+
+	{ .family = PF_INET6, .protocol = IPPROTO_DCCP, .type = SOCK_DCCP },
+
+	{ .family = PF_INET6, .protocol = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
+
+	{ .family = PF_INET6, .protocol = IPPROTO_UDPLITE, .type = SOCK_DGRAM},
+};
+
+// HAUGLAHGALH
+/*
 static void ipv6_generate(void)
 {
-	generate_socket(PF_INET6, IPPROTO_IP, SOCK_DGRAM);
-	generate_socket(PF_INET6, IPPROTO_IP, SOCK_SEQPACKET);
-	generate_socket(PF_INET6, IPPROTO_IP, SOCK_STREAM);
-
-	generate_socket(PF_INET6, IPPROTO_TCP, SOCK_STREAM);
-
-	generate_socket(PF_INET6, IPPROTO_UDP, SOCK_DGRAM);
-
-	generate_socket(PF_INET6, IPPROTO_DCCP, SOCK_DCCP);
-
-	generate_socket(PF_INET6, IPPROTO_SCTP, SOCK_SEQPACKET);
-
-	generate_socket(PF_INET6, IPPROTO_UDPLITE, SOCK_DGRAM);
-
 	if (orig_uid == 0) {
 		unsigned int i;
 
@@ -212,12 +216,14 @@ static void ipv6_generate(void)
 			generate_socket(PF_INET6, i, SOCK_RAW);
 	}
 }
+*/
 
 const struct netproto proto_inet6 = {
 	.name = "inet6",
 	.socket = inet6_rand_socket,
 	.setsockopt = inet6_setsockopt,
 	.gen_sockaddr = ipv6_gen_sockaddr,
-	.generate = ipv6_generate,
+	.valid_triplets = ipv6_triplets,
+	.nr_triplets = ARRAY_SIZE(ipv6_triplets),
 };
 #endif

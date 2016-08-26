@@ -38,15 +38,15 @@ static void ipx_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = IPX_TYPE;
 }
 
-static void ipx_gen(void)
-{
-	generate_socket(PF_IPX, 0, SOCK_DGRAM);
-}
+static struct socket_triplet ipx_triplet[] = {
+	{ .family = PF_IPX, .protocol = 0, .type = SOCK_DGRAM },
+};
 
 const struct netproto proto_ipx = {
 	.name = "ipx",
 	.socket = ipx_rand_socket,
 	.setsockopt = ipx_setsockopt,
 	.gen_sockaddr = ipx_gen_sockaddr,
-	.generate = ipx_gen,
+	.valid_triplets = ipx_triplet,
+	.nr_triplets = ARRAY_SIZE(ipx_triplet),
 };

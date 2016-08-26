@@ -81,28 +81,28 @@ static void bluetooth_rand_socket(struct socket_triplet *st)
 	st->type = RAND_ARRAY(types);
 }
 
-static void gen_bluetooth(void)
-{
-	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_SEQPACKET);
-	generate_socket(PF_BLUETOOTH, BTPROTO_SCO, SOCK_SEQPACKET);
+static struct socket_triplet bluetooth_triplets[] = {
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_SEQPACKET },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_SCO, .type = SOCK_SEQPACKET },
 
-	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_STREAM);
-	generate_socket(PF_BLUETOOTH, BTPROTO_RFCOMM, SOCK_STREAM);
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_STREAM },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_RFCOMM, .type = SOCK_STREAM },
 
-	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_RAW);
-	generate_socket(PF_BLUETOOTH, BTPROTO_HCI, SOCK_RAW);
-	generate_socket(PF_BLUETOOTH, BTPROTO_RFCOMM, SOCK_RAW);
-	generate_socket(PF_BLUETOOTH, BTPROTO_BNEP, SOCK_RAW);
-	generate_socket(PF_BLUETOOTH, BTPROTO_CMTP, SOCK_RAW);
-	generate_socket(PF_BLUETOOTH, BTPROTO_HIDP, SOCK_RAW);
-	generate_socket(PF_BLUETOOTH, BTPROTO_AVDTP, SOCK_RAW);
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_RAW },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_HCI, .type = SOCK_RAW },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_RFCOMM, .type = SOCK_RAW },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_BNEP, .type = SOCK_RAW },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_CMTP, .type = SOCK_RAW },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_HIDP, .type = SOCK_RAW },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_AVDTP, .type = SOCK_RAW },
 
-	generate_socket(PF_BLUETOOTH, BTPROTO_L2CAP, SOCK_DGRAM);
-}
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_DGRAM },
+};
 
 const struct netproto proto_bluetooth = {
 	.name = "bluetooth",
 	.socket = bluetooth_rand_socket,
 	.setsockopt = bluetooth_setsockopt,
-	.generate = gen_bluetooth,
+	.valid_triplets = bluetooth_triplets,
+	.nr_triplets = ARRAY_SIZE(bluetooth_triplets),
 };

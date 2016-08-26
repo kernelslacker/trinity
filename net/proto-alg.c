@@ -252,14 +252,13 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 #define SOL_ALG 279
 
+static struct socket_triplet alg_triplet[] = {
+	{ .family = PF_ALG, .protocol = 0, .type = SOCK_SEQPACKET },
+};
+
 static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ALG;
-}
-
-static void gen_alg(void)
-{
-	generate_socket(PF_ALG, 0, SOCK_SEQPACKET);
 }
 
 const struct netproto proto_alg = {
@@ -267,6 +266,7 @@ const struct netproto proto_alg = {
 //	.socket = alg_rand_socket,
 	.setsockopt = alg_setsockopt,
 	.gen_sockaddr = alg_gen_sockaddr,
-	.generate = gen_alg,
+	.valid_triplets = alg_triplet,
+	.nr_triplets = ARRAY_SIZE(alg_triplet),
 };
 #endif

@@ -75,43 +75,43 @@ static void netlink_setsockopt(struct sockopt *so, __unused__ struct socket_trip
 	so->optname = RAND_ARRAY(netlink_opts);
 }
 
-static void gen_netlink(void)
-{
-	generate_socket(PF_NETLINK, NETLINK_AUDIT, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_CONNECTOR, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_DNRTMSG, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_FIB_LOOKUP, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_GENERIC, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_ISCSI, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_KOBJECT_UEVENT, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_NETFILTER, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_ROUTE, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_SCSITRANSPORT, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_SELINUX, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_SOCK_DIAG, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_USERSOCK, SOCK_DGRAM);
-	generate_socket(PF_NETLINK, NETLINK_XFRM, SOCK_DGRAM);
+static struct socket_triplet netlink_triplets[] = {
+	{ .family = PF_NETLINK, .protocol = NETLINK_AUDIT, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_CONNECTOR, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_DNRTMSG, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_FIB_LOOKUP, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_GENERIC, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_ISCSI, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_KOBJECT_UEVENT, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_NETFILTER, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_ROUTE, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_SCSITRANSPORT, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_SELINUX, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_SOCK_DIAG, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_USERSOCK, .type = SOCK_DGRAM },
+	{ .family = PF_NETLINK, .protocol = NETLINK_XFRM, .type = SOCK_DGRAM },
 
-	generate_socket(PF_NETLINK, NETLINK_AUDIT, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_CONNECTOR, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_DNRTMSG, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_FIB_LOOKUP, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_GENERIC, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_ISCSI, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_KOBJECT_UEVENT, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_NETFILTER, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_ROUTE, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_SCSITRANSPORT, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_SELINUX, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_SOCK_DIAG, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_USERSOCK, SOCK_RAW);
-	generate_socket(PF_NETLINK, NETLINK_XFRM, SOCK_RAW);
-}
+	{ .family = PF_NETLINK, .protocol = NETLINK_AUDIT, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_CONNECTOR, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_DNRTMSG, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_FIB_LOOKUP, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_GENERIC, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_ISCSI, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_KOBJECT_UEVENT, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_NETFILTER, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_ROUTE, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_SCSITRANSPORT, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_SELINUX, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_SOCK_DIAG, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_USERSOCK, .type = SOCK_RAW },
+	{ .family = PF_NETLINK, .protocol = NETLINK_XFRM, .type = SOCK_RAW },
+};
 
 const struct netproto proto_netlink = {
 	.name = "netlink",
 	.socket = netlink_rand_socket,
 	.setsockopt = netlink_setsockopt,
 	.gen_sockaddr = netlink_gen_sockaddr,
-	.generate = gen_netlink,
+	.valid_triplets = netlink_triplets,
+	.nr_triplets = ARRAY_SIZE(netlink_triplets),
 };

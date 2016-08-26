@@ -377,23 +377,27 @@ static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		call_inet_sso_ptr(so, triplet);
 }
 
+static struct socket_triplet ipv4_triplets[] = {
+	{ .family = PF_INET, .protocol = IPPROTO_IP, .type = SOCK_DGRAM },
+	{ .family = PF_INET, .protocol = IPPROTO_IP, .type = SOCK_SEQPACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_IP, .type = SOCK_STREAM },
+
+	{ .family = PF_INET, .protocol = IPPROTO_TCP, .type = SOCK_STREAM },
+
+	{ .family = PF_INET, .protocol = IPPROTO_UDP, .type = SOCK_DGRAM },
+
+	{ .family = PF_INET, .protocol = IPPROTO_DCCP, .type = SOCK_DCCP },
+
+	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
+	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_STREAM },
+
+	{ .family = PF_INET, .protocol = IPPROTO_UDPLITE, .type = SOCK_DGRAM },
+};
+
+	// NNGH UGH HUAGLAHGLAH
+/*
 static void generate_sockets(void)
 {
-	generate_socket(PF_INET, IPPROTO_IP, SOCK_DGRAM);
-	generate_socket(PF_INET, IPPROTO_IP, SOCK_SEQPACKET);
-	generate_socket(PF_INET, IPPROTO_IP, SOCK_STREAM);
-
-	generate_socket(PF_INET, IPPROTO_TCP, SOCK_STREAM);
-
-	generate_socket(PF_INET, IPPROTO_UDP, SOCK_DGRAM);
-
-	generate_socket(PF_INET, IPPROTO_DCCP, SOCK_DCCP);
-
-	generate_socket(PF_INET, IPPROTO_SCTP, SOCK_SEQPACKET);
-	generate_socket(PF_INET, IPPROTO_SCTP, SOCK_STREAM);
-
-	generate_socket(PF_INET, IPPROTO_UDPLITE, SOCK_DGRAM);
-
 	if (orig_uid == 0) {
 		unsigned int i;
 
@@ -425,11 +429,12 @@ static void generate_sockets(void)
 			generate_socket(PF_INET, i, SOCK_RAW);
 	}
 }
-
+*/
 const struct netproto proto_ipv4 = {
 	.name = "ipv4",
-	.generate = generate_sockets,
 	.socket = inet_rand_socket,
 	.setsockopt = inet_setsockopt,
 	.gen_sockaddr = ipv4_gen_sockaddr,
+	.valid_triplets = ipv4_triplets,
+	.nr_triplets = ARRAY_SIZE(ipv4_triplets),
 };

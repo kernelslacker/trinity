@@ -108,11 +108,10 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	}
 }
 
-static void generate_packet_socket(void)
-{
-	generate_socket(PF_PACKET, 768, SOCK_PACKET);
-	generate_socket(PF_PACKET, 768, SOCK_RAW);
-}
+static struct socket_triplet packet_triplets[] = {
+	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_PACKET },
+	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_RAW },
+};
 
 const struct netproto proto_packet = {
 	.name = "packet",
@@ -120,5 +119,6 @@ const struct netproto proto_packet = {
 	.socket_setup = packet_socket_setup,
 	.setsockopt = packet_setsockopt,
 	.gen_sockaddr = packet_gen_sockaddr,
-	.generate = generate_packet_socket,
+	.valid_triplets = packet_triplets,
+	.nr_triplets = ARRAY_SIZE(packet_triplets),
 };

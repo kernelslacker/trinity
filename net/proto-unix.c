@@ -37,16 +37,16 @@ static void unix_rand_socket(struct socket_triplet *st)
 	}
 }
 
-static void gen_unix(void)
-{
-	generate_socket(PF_LOCAL, 0, SOCK_DGRAM);
-	generate_socket(PF_LOCAL, 0, SOCK_SEQPACKET);
-	generate_socket(PF_LOCAL, 0, SOCK_STREAM);
-}
+static struct socket_triplet unix_triplet[] = {
+	{ .family = PF_LOCAL, .protocol = 0, .type = SOCK_DGRAM },
+	{ .family = PF_LOCAL, .protocol = 0, .type = SOCK_SEQPACKET },
+	{ .family = PF_LOCAL, .protocol = 0, .type = SOCK_STREAM },
+};
 
 const struct netproto proto_unix = {
 	.name = "unix",
 	.socket = unix_rand_socket,
 	.gen_sockaddr = unix_gen_sockaddr,
-	.generate = gen_unix,
+	.valid_triplets = unix_triplet,
+	.nr_triplets = ARRAY_SIZE(unix_triplet),
 };

@@ -29,16 +29,16 @@ static void can_rand_socket(struct socket_triplet *st)
 	st->type = rnd() % TYPE_MAX;
 }
 
-static void gen_can(void)
-{
-	generate_socket(PF_CAN, CAN_RAW, SOCK_RAW);
-	generate_socket(PF_CAN, CAN_BCM, SOCK_DGRAM);
+static struct socket_triplet can_triplets[] = {
+	{ .family = PF_CAN, .protocol = CAN_RAW, .type = SOCK_RAW },
+	{ .family = PF_CAN, .protocol = CAN_BCM, .type = SOCK_DGRAM },
 	// protos 3-7 seem unimplemented.
-}
+};
 
 const struct netproto proto_can = {
 	.name = "can",
 	.socket = can_rand_socket,
 	.gen_sockaddr = can_gen_sockaddr,
-	.generate = gen_can,
+	.valid_triplets = can_triplets,
+	.nr_triplets = ARRAY_SIZE(can_triplets),
 };
