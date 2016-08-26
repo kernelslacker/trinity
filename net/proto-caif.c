@@ -55,10 +55,29 @@ static void caif_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 
 	so->optname = RAND_ARRAY(caif_opts);
 }
+
+static struct socket_triplet caif_triplet[] = {
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_AT, .type = SOCK_SEQPACKET },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_DATAGRAM, .type = SOCK_SEQPACKET },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_DATAGRAM_LOOP, .type = SOCK_SEQPACKET },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_UTIL, .type = SOCK_SEQPACKET },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_RFM, .type = SOCK_SEQPACKET },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_DEBUG, .type = SOCK_SEQPACKET },
+
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_AT, .type = SOCK_STREAM },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_DATAGRAM, .type = SOCK_STREAM },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_DATAGRAM_LOOP, .type = SOCK_STREAM },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_UTIL, .type = SOCK_STREAM },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_RFM, .type = SOCK_STREAM },
+	{ .family = PF_CAIF, .protocol = CAIFPROTO_DEBUG, .type = SOCK_STREAM },
+};
+
 const struct netproto proto_caif = {
 	.name = "caif",
 	.socket = caif_rand_socket,
 	.setsockopt = caif_setsockopt,
 	.gen_sockaddr = caif_gen_sockaddr,
+	.valid_triplets = caif_triplet,
+	.nr_triplets = ARRAY_SIZE(caif_triplet),
 };
 #endif
