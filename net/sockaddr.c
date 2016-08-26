@@ -16,7 +16,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	if (RAND_BOOL()) {
 		struct sockaddr_un *un;
 
-		un = (struct sockaddr_un *) addr;
+		un = (struct sockaddr_un *) *addr;
 		if (un == NULL)
 			un = zmalloc(sizeof(struct sockaddr_un));
 		un->sun_family = PF_UNSPEC;
