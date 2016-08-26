@@ -31,15 +31,6 @@ static void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_llc);
 }
 
-static void llc_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = rnd() % PROTO_MAX;
-	if (RAND_BOOL())
-		st->type = SOCK_STREAM;
-	else
-		st->type = SOCK_DGRAM;
-}
-
 #ifndef USE_LLC_OPT_PKTINFO
 #define LLC_OPT_PKTINFO LLC_OPT_UNKNOWN
 #endif
@@ -64,16 +55,17 @@ static void netbeui_setsockopt(struct sockopt *so, __unused__ struct socket_trip
 	so->level = SOL_NETBEUI;
 }
 
-const struct netproto proto_llc = {
-	.name = "llc",
-	.socket = llc_rand_socket,
-	.setsockopt = llc_setsockopt,
-	.gen_sockaddr = llc_gen_sockaddr,
-};
-
 static struct socket_triplet llc_triplets[] = {
 	{ .family = PF_LLC, .protocol = 0, .type = SOCK_DGRAM },
 	{ .family = PF_LLC, .protocol = 0, .type = SOCK_STREAM },
+};
+
+const struct netproto proto_llc = {
+	.name = "llc",
+	.setsockopt = llc_setsockopt,
+	.gen_sockaddr = llc_gen_sockaddr,
+	.valid_triplets = llc_triplets,
+	.nr_triplets = ARRAY_SIZE(llc_triplets),
 };
 
 const struct netproto proto_netbeui = {

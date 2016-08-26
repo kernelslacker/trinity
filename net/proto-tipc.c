@@ -30,21 +30,6 @@ static void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_tipc);
 }
 
-static void tipc_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = 0;
-
-	switch (rnd() % 3) {
-	case 0: st->type = SOCK_STREAM;
-		break;
-	case 1: st->type = SOCK_SEQPACKET;
-		break;
-	case 2: st->type = SOCK_DGRAM;
-		break;
-	default: break;
-	}
-}
-
 static const unsigned int tipc_opts[] = {
 	TIPC_IMPORTANCE, TIPC_SRC_DROPPABLE, TIPC_DEST_DROPPABLE, TIPC_CONN_TIMEOUT,
 	TIPC_NODE_RECVQ_DEPTH, TIPC_SOCK_RECVQ_DEPTH,
@@ -67,7 +52,6 @@ static struct socket_triplet tipc_triplets[] = {
 
 const struct netproto proto_tipc = {
 	.name = "tipc",
-	.socket = tipc_rand_socket,
 	.setsockopt = tipc_setsockopt,
 	.gen_sockaddr = tipc_gen_sockaddr,
 	.valid_triplets = tipc_triplets,

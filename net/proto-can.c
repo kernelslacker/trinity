@@ -23,12 +23,6 @@ static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_can);
 }
 
-static void can_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = rnd() % 7;  // CAN_NPROTO
-	st->type = rnd() % TYPE_MAX;
-}
-
 static struct socket_triplet can_triplets[] = {
 	{ .family = PF_CAN, .protocol = CAN_RAW, .type = SOCK_RAW },
 	{ .family = PF_CAN, .protocol = CAN_BCM, .type = SOCK_DGRAM },
@@ -37,7 +31,6 @@ static struct socket_triplet can_triplets[] = {
 
 const struct netproto proto_can = {
 	.name = "can",
-	.socket = can_rand_socket,
 	.gen_sockaddr = can_gen_sockaddr,
 	.valid_triplets = can_triplets,
 	.nr_triplets = ARRAY_SIZE(can_triplets),

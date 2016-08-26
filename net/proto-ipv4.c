@@ -103,60 +103,6 @@ static void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_in);
 }
 
-struct ipproto {
-	unsigned int proto;
-	unsigned int type;
-};
-
-static void inet_rand_socket(struct socket_triplet *st)
-{
-	struct ipproto ipprotos[] = {
-		{ .proto = IPPROTO_IP, },
-		{ .proto = IPPROTO_ICMP, .type = SOCK_DGRAM },
-		{ .proto = IPPROTO_IGMP, },
-		{ .proto = IPPROTO_IPIP, },
-		{ .proto = IPPROTO_TCP, .type = SOCK_STREAM },
-		{ .proto = IPPROTO_EGP, },
-		{ .proto = IPPROTO_PUP, },
-		{ .proto = IPPROTO_UDP, .type = SOCK_DGRAM },
-		{ .proto = IPPROTO_IDP, },
-		{ .proto = IPPROTO_TP, },
-		{ .proto = IPPROTO_DCCP, .type = SOCK_DCCP },
-		{ .proto = IPPROTO_IPV6, },
-		{ .proto = IPPROTO_RSVP, },
-		{ .proto = IPPROTO_GRE, },
-		{ .proto = IPPROTO_ESP, },
-		{ .proto = IPPROTO_AH, },
-		{ .proto = IPPROTO_MTP, },
-		{ .proto = IPPROTO_BEETPH, },
-		{ .proto = IPPROTO_ENCAP, },
-		{ .proto = IPPROTO_PIM, },
-		{ .proto = IPPROTO_COMP, },
-		{ .proto = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
-		{ .proto = IPPROTO_UDPLITE, .type = SOCK_DGRAM },
-		{ .proto = IPPROTO_RAW, },
-		{ .proto = IPPROTO_MPLS, },
-	};
-	unsigned char val;
-
-	if (orig_uid == 0) {
-		/* half the time, use raw sockets */
-		st->type = SOCK_RAW;
-		if (RAND_BOOL())
-			return;
-	}
-
-	/* The rest of the time, use the correct type if present. */
-	val = rnd() % ARRAY_SIZE(ipprotos);
-	st->protocol = ipprotos[val].proto;
-	if (ipprotos[val].type != 0)
-		st->type = ipprotos[val].type;
-	else {
-		int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET };
-		st->type = RAND_ARRAY(types);
-	}
-}
-
 static const struct sock_option ip_opts[] = {
 	{ .name = IP_TOS, },
 	{ .name = IP_TTL, },
@@ -436,7 +382,6 @@ static struct socket_triplet ipv4_privileged_triplets[] = {
 
 const struct netproto proto_ipv4 = {
 	.name = "ipv4",
-	.socket = inet_rand_socket,
 	.setsockopt = inet_setsockopt,
 	.gen_sockaddr = ipv4_gen_sockaddr,
 	.valid_triplets = ipv4_triplets,

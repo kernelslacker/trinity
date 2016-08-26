@@ -48,19 +48,6 @@ static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_nl);
 }
 
-static void netlink_rand_socket(struct socket_triplet *st)
-{
-	if (RAND_BOOL())
-		st->type = SOCK_RAW;
-	else
-		st->type = SOCK_DGRAM;
-
-	st->protocol = rnd() % (_NETLINK_MAX + 1);
-
-	if (st->protocol == NETLINK_SOCK_DIAG)
-		st->type = rnd() % 136;
-}
-
 static const unsigned int netlink_opts[] = {
 	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
 	NETLINK_NO_ENOBUFS, NETLINK_RX_RING, NETLINK_TX_RING, NETLINK_LISTEN_ALL_NSID,
@@ -105,11 +92,17 @@ static struct socket_triplet netlink_triplets[] = {
 	{ .family = PF_NETLINK, .protocol = NETLINK_SOCK_DIAG, .type = SOCK_RAW },
 	{ .family = PF_NETLINK, .protocol = NETLINK_USERSOCK, .type = SOCK_RAW },
 	{ .family = PF_NETLINK, .protocol = NETLINK_XFRM, .type = SOCK_RAW },
+
+/*
+  Hm, TBD
+
+	if (st->protocol == NETLINK_SOCK_DIAG)
+		st->type = rnd() % 136;
+*/
 };
 
 const struct netproto proto_netlink = {
 	.name = "netlink",
-	.socket = netlink_rand_socket,
 	.setsockopt = netlink_setsockopt,
 	.gen_sockaddr = netlink_gen_sockaddr,
 	.valid_triplets = netlink_triplets,

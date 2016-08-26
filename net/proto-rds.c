@@ -10,12 +10,6 @@
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY
 
-static void rds_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = 0;
-	st->type = SOCK_SEQPACKET;
-}
-
 static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *rds;
@@ -51,7 +45,6 @@ static struct socket_triplet rds_triplet[] = {
 
 const struct netproto proto_rds = {
 	.name = "rds",
-	.socket = rds_rand_socket,
 	.setsockopt = rds_setsockopt,
 	.gen_sockaddr = rds_gen_sockaddr,
 	.valid_triplets = rds_triplet,

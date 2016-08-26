@@ -23,15 +23,6 @@ static void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_pn);
 }
 
-static void phonet_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = 0;
-	if (RAND_BOOL())
-		st->type = SOCK_DGRAM;
-	else
-		st->type = SOCK_SEQPACKET;
-}
-
 #define SOL_PNPIPE 275
 
 static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
@@ -48,7 +39,6 @@ static struct socket_triplet phonet_triplets[] = {
 
 const struct netproto proto_phonet = {
 	.name = "phonet",
-	.socket = phonet_rand_socket,
 	.setsockopt = phonet_setsockopt,
 	.gen_sockaddr = phonet_gen_sockaddr,
 	.valid_triplets = phonet_triplets,

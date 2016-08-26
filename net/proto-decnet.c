@@ -29,17 +29,6 @@ static void decnet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_dn);
 }
 
-static void decnet_rand_socket(struct socket_triplet *st)
-{
-	if (RAND_BOOL()) {
-		st->type = SOCK_SEQPACKET;
-		st->protocol = DNPROTO_NSP;
-	} else {
-		st->type = SOCK_STREAM;
-		st->protocol = rnd() % PROTO_MAX;
-	}
-}
-
 static const unsigned int decnet_opts[] = {
 	SO_CONDATA, SO_CONACCESS, SO_PROXYUSR, SO_LINKINFO,
 	DSO_CONDATA, DSO_DISDATA, DSO_CONACCESS, DSO_ACCEPTMODE,
@@ -63,7 +52,6 @@ static struct socket_triplet decnet_triplets[] = {
 
 const struct netproto proto_decnet = {
 	.name = "decnet",
-	.socket = decnet_rand_socket,
 	.setsockopt = decnet_setsockopt,
 	.gen_sockaddr = decnet_gen_sockaddr,
 	.valid_triplets = decnet_triplets,

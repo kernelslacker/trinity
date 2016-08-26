@@ -24,21 +24,6 @@ static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_nfc);
 }
 
-static void nfc_rand_socket(struct socket_triplet *st)
-{
-	if (RAND_BOOL()) {
-		st->protocol = NFC_SOCKPROTO_LLCP;
-		if (RAND_BOOL())
-			st->type = SOCK_DGRAM;
-		else
-			st->type = SOCK_STREAM;
-		return;
-	}
-
-	st->protocol = NFC_SOCKPROTO_RAW;
-	st->type = SOCK_SEQPACKET;
-}
-
 #define SOL_NFC 280
 
 static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
@@ -57,7 +42,6 @@ static struct socket_triplet nfc_triplets[] = {
 
 const struct netproto proto_nfc = {
 	.name = "nfc",
-	.socket = nfc_rand_socket,
 	.setsockopt = nfc_setsockopt,
 	.gen_sockaddr = nfc_gen_sockaddr,
 	.valid_triplets = nfc_triplets,

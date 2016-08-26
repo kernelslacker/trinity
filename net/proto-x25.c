@@ -22,12 +22,6 @@ static void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_x25);
 }
 
-static void x25_rand_socket(struct socket_triplet *st)
-{
-	st->type = SOCK_SEQPACKET;
-	st->protocol = 0;
-}
-
 static void x25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned int *optval;
@@ -46,7 +40,6 @@ static struct socket_triplet x25_triplet[] = {
 
 const struct netproto proto_x25 = {
 	.name = "x25",
-	.socket = x25_rand_socket,
 	.setsockopt = x25_setsockopt,
 	.gen_sockaddr = x25_gen_sockaddr,
 	.valid_triplets = x25_triplet,

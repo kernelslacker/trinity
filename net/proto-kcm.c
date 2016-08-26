@@ -15,16 +15,6 @@
 #define SOL_KCM 281
 #endif
 
-static void kcm_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = KCMPROTO_CONNECTED;
-
-	if (RAND_BOOL())
-		st->type = SOCK_DGRAM;
-	else
-		st->type = SOCK_PACKET;
-}
-
 static const unsigned int kcm_opts[] = {
 	KCM_RECV_DISABLE,
 };
@@ -56,7 +46,6 @@ static struct socket_triplet kcm_triplets[] = {
 
 const struct netproto proto_kcm = {
 	.name = "kcm",
-	.socket = kcm_rand_socket,
 	.setsockopt = kcm_setsockopt,
 	.valid_triplets = kcm_triplets,
 	.nr_triplets = ARRAY_SIZE(kcm_triplets),

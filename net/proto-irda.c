@@ -27,29 +27,6 @@ static void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_irda);
 }
 
-static void irda_rand_socket(struct socket_triplet *st)
-{
-	switch (rnd() % 3) {
-
-	case 0: st->type = SOCK_STREAM;
-		st->protocol = rnd() % PROTO_MAX;
-		break;
-
-	case 1: st->type = SOCK_SEQPACKET;
-		st->protocol = rnd() % PROTO_MAX;
-		break;
-
-	case 2: st->type = SOCK_DGRAM;
-		if (RAND_BOOL())
-			st->protocol = IRDAPROTO_ULTRA;
-		else
-			st->protocol = IRDAPROTO_UNITDATA;
-		break;
-
-	default:break;
-	}
-}
-
 static const unsigned int irda_opts[] = {
 	IRLMP_ENUMDEVICES, IRLMP_IAS_SET, IRLMP_IAS_QUERY, IRLMP_HINTS_SET,
 	IRLMP_QOS_SET, IRLMP_QOS_GET, IRLMP_MAX_SDU_SIZE, IRLMP_IAS_GET,
@@ -71,7 +48,6 @@ static struct socket_triplet irda_triplets[] = {
 
 const struct netproto proto_irda = {
 	.name = "irda",
-	.socket = irda_rand_socket,
 	.setsockopt = irda_setsockopt,
 	.gen_sockaddr = irda_gen_sockaddr,
 	.valid_triplets = irda_triplets,

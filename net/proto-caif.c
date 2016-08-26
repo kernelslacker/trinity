@@ -34,15 +34,6 @@ static void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_caif);
 }
 
-static void caif_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = rnd() % _CAIFPROTO_MAX;
-	if (RAND_BOOL())
-		st->type = SOCK_SEQPACKET;
-	else
-		st->type = SOCK_STREAM;
-}
-
 static const unsigned int caif_opts[] = {
 	CAIFSO_LINK_SELECT, CAIFSO_REQ_PARAM
 };
@@ -74,7 +65,6 @@ static struct socket_triplet caif_triplet[] = {
 
 const struct netproto proto_caif = {
 	.name = "caif",
-	.socket = caif_rand_socket,
 	.setsockopt = caif_setsockopt,
 	.gen_sockaddr = caif_gen_sockaddr,
 	.valid_triplets = caif_triplet,

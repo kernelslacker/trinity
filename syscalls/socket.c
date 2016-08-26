@@ -32,8 +32,13 @@ int sanitise_socket_triplet(struct socket_triplet *st)
 
 	proto = net_protocols[st->family].proto;
 	if (proto != NULL) {
-		if (proto->socket != NULL) {
-			proto->socket(st);
+		if (proto->nr_triplets != 0) {
+			int r;
+
+			r = rnd() % proto->nr_triplets;
+			st->protocol = proto->valid_triplets[r].protocol;
+			st->type = proto->valid_triplets[r].type;
+			//TODO: privileged sockets.
 			return 0;
 		}
 	}

@@ -22,21 +22,6 @@ static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_un);
 }
 
-static void unix_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = 0;
-
-	switch (rnd() % 3) {
-	case 0: st->type = SOCK_STREAM;
-		break;
-	case 1: st->type = SOCK_DGRAM;
-		break;
-	case 2: st->type = SOCK_SEQPACKET;
-		break;
-	default:break;
-	}
-}
-
 static struct socket_triplet unix_triplet[] = {
 	{ .family = PF_LOCAL, .protocol = 0, .type = SOCK_DGRAM },
 	{ .family = PF_LOCAL, .protocol = 0, .type = SOCK_SEQPACKET },
@@ -45,7 +30,6 @@ static struct socket_triplet unix_triplet[] = {
 
 const struct netproto proto_unix = {
 	.name = "unix",
-	.socket = unix_rand_socket,
 	.gen_sockaddr = unix_gen_sockaddr,
 	.valid_triplets = unix_triplet,
 	.nr_triplets = ARRAY_SIZE(unix_triplet),

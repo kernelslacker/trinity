@@ -25,23 +25,6 @@ static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_pkt);
 }
 
-static void packet_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = htons(ETH_P_ALL);
-
-	if (ONE_IN(8))		// FIXME: 8 ? Why?
-		st->protocol = get_random_ether_type();
-
-	switch (rnd() % 3) {
-	case 0: st->type = SOCK_DGRAM;
-		break;
-	case 1: st->type = SOCK_RAW;
-		break;
-	case 2: st->type = SOCK_PACKET;
-		break;
-	default: break;
-	}
-}
 
 static const unsigned int packet_opts[] = {
 	PACKET_ADD_MEMBERSHIP, PACKET_DROP_MEMBERSHIP, PACKET_RECV_OUTPUT, 4,   /* Value 4 is still used by obsolete turbo-packet. */
@@ -111,11 +94,20 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 static struct socket_triplet packet_triplets[] = {
 	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_PACKET },
 	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_RAW },
+/*
+   revisit all this:
+
+	st->protocol = htons(ETH_P_ALL);
+
+	if (ONE_IN(8))		// FIXME: 8 ? Why?
+		st->protocol = get_random_ether_type();
+
+*/
+
 };
 
 const struct netproto proto_packet = {
 	.name = "packet",
-	.socket = packet_rand_socket,
 	.socket_setup = packet_socket_setup,
 	.setsockopt = packet_setsockopt,
 	.gen_sockaddr = packet_gen_sockaddr,

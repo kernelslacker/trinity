@@ -38,7 +38,6 @@ struct netproto {
 	const char *name;
 	struct socket_triplet *valid_triplets;
 	struct socket_triplet *valid_privileged_triplets;
-	void (*socket)(struct socket_triplet *st);
 	void (*socket_setup)(int fd);
 	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
 	void (*gen_sockaddr)(struct sockaddr **addr, socklen_t *addrlen);

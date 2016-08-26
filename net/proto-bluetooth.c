@@ -69,18 +69,6 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 #define BTPROTO_HIDP    6
 #define BTPROTO_AVDTP   7
 
-static void bluetooth_rand_socket(struct socket_triplet *st)
-{
-	int bt_protos[] = {
-		BTPROTO_L2CAP, BTPROTO_HCI, BTPROTO_SCO, BTPROTO_RFCOMM,
-		BTPROTO_BNEP, BTPROTO_CMTP, BTPROTO_HIDP, BTPROTO_AVDTP,
-	};
-	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_RAW, SOCK_SEQPACKET };
-
-	st->protocol = RAND_ARRAY(bt_protos);
-	st->type = RAND_ARRAY(types);
-}
-
 static struct socket_triplet bluetooth_triplets[] = {
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_SEQPACKET },
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_SCO, .type = SOCK_SEQPACKET },
@@ -101,7 +89,6 @@ static struct socket_triplet bluetooth_triplets[] = {
 
 const struct netproto proto_bluetooth = {
 	.name = "bluetooth",
-	.socket = bluetooth_rand_socket,
 	.setsockopt = bluetooth_setsockopt,
 	.valid_triplets = bluetooth_triplets,
 	.nr_triplets = ARRAY_SIZE(bluetooth_triplets),

@@ -26,18 +26,6 @@ static void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_at);
 }
 
-static void atalk_rand_socket(struct socket_triplet *st)
-{
-	if (RAND_BOOL()) {
-		st->type = SOCK_DGRAM;
-	        st->protocol = 0;
-	        return;
-	}
-
-	st->protocol = rnd() % PROTO_MAX;
-	st->type = SOCK_RAW;
-}
-
 static void atalk_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ATALK;
@@ -51,7 +39,6 @@ static struct socket_triplet atalk_triplets[] = {
 
 const struct netproto proto_appletalk = {
 	.name = "appletalk",
-	.socket = atalk_rand_socket,
 	.setsockopt = atalk_setsockopt,
 	.gen_sockaddr = atalk_gen_sockaddr,
 	.valid_triplets = atalk_triplets,

@@ -85,12 +85,6 @@ static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_in6);
 }
 
-static void inet6_rand_socket(struct socket_triplet *st)
-{
-	// Use the same socket generator as ipv4
-	proto_ipv4.socket(st);
-}
-
 static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_ADDRFORM, },
 	{ .name = IPV6_2292PKTINFO, },
@@ -221,7 +215,6 @@ static struct socket_triplet ipv6_privileged_triplets[] = {
 
 const struct netproto proto_inet6 = {
 	.name = "inet6",
-	.socket = inet6_rand_socket,
 	.setsockopt = inet6_setsockopt,
 	.gen_sockaddr = ipv6_gen_sockaddr,
 	.valid_triplets = ipv6_triplets,

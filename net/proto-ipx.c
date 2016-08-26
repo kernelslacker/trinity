@@ -26,12 +26,6 @@ static void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_ipx);
 }
 
-static void ipx_rand_socket(struct socket_triplet *st)
-{
-	st->protocol = rnd() % PROTO_MAX;
-	st->type = SOCK_DGRAM;
-}
-
 static void ipx_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_IPX;
@@ -44,7 +38,6 @@ static struct socket_triplet ipx_triplet[] = {
 
 const struct netproto proto_ipx = {
 	.name = "ipx",
-	.socket = ipx_rand_socket,
 	.setsockopt = ipx_setsockopt,
 	.gen_sockaddr = ipx_gen_sockaddr,
 	.valid_triplets = ipx_triplet,
