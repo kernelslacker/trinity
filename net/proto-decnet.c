@@ -56,9 +56,16 @@ static void decnet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	// TODO: set optlen correctly
 }
 
+static struct socket_triplet decnet_triplets[] = {
+	{ .family = PF_DECnet, .protocol = DNPROTO_NSP, .type = SOCK_SEQPACKET },
+	{ .family = PF_DECnet, .protocol = DNPROTO_NSP, .type = SOCK_STREAM },
+};
+
 const struct netproto proto_decnet = {
 	.name = "decnet",
 	.socket = decnet_rand_socket,
 	.setsockopt = decnet_setsockopt,
 	.gen_sockaddr = decnet_gen_sockaddr,
+	.valid_triplets = decnet_triplets,
+	.nr_triplets = ARRAY_SIZE(decnet_triplets),
 };
