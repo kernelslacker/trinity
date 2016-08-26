@@ -40,9 +40,15 @@ static void x25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optlen = sizeof(int);
 }
 
+static struct socket_triplet x25_triplet[] = {
+	{ .family = PF_X25, .protocol = 0, .type = SOCK_SEQPACKET },
+};
+
 const struct netproto proto_x25 = {
 	.name = "x25",
 	.socket = x25_rand_socket,
 	.setsockopt = x25_setsockopt,
 	.gen_sockaddr = x25_gen_sockaddr,
+	.valid_triplets = x25_triplet,
+	.nr_triplets = ARRAY_SIZE(x25_triplet),
 };
