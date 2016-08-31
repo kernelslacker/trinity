@@ -93,11 +93,13 @@ static void setup_mapping_sizes(void)
 				mapping_sizes[3] = page_size;
 				goto out_free;
 			}
-		} else {
-			// Because of increased mem usage, don't do nr_cpus * 4
-			max_children /= 4;
 		}
 	}
+
+	// Because of increased mem usage, don't do nr_cpus * 4
+	printf("Limiting children from %u to %u\n",
+			max_children, max_children / 4);
+	max_children /= 4;
 
 out_free:
 	free(buffer);
