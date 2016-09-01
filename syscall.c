@@ -235,6 +235,7 @@ void handle_syscall_ret(struct syscallrecord *rec)
 			if (err == ENOSYS)
 				deactivate_enosys(rec, entry, call);
 
+			entry->failures++;
 			if (err < NR_ERRNOS) {
 				entry->errnos[err]++;
 			} else {
@@ -243,7 +244,9 @@ void handle_syscall_ret(struct syscallrecord *rec)
 		}
 	} else {
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
+		entry->successes++;
 	}
+	entry->attempted++;
 
 	generic_post(entry->arg1type, rec->a1);
 	generic_post(entry->arg2type, rec->a2);

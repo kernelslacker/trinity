@@ -113,6 +113,8 @@ struct syscallentry {
 	struct results results4;
 	struct results results5;
 	struct results results6;
+
+	unsigned int successes, failures, attempted;
 	unsigned int errnos[NR_ERRNOS];
 
 	/* FIXME: At some point, if we grow more type specific parts here,

@@ -8,21 +8,15 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 {
 	struct syscallentry *entry;
 	unsigned int j;
-	unsigned int total = 0;
 
 	entry = table[i].entry;
 	if (entry == NULL)
 		return;
 
-	for (j = 0; j < NR_ERRNOS; j++) {
-		if (entry->errnos[j] != 0)
-			total++;
-	}
-
-	if (total == 0)
+	if (entry->attempted == 0)
 		return;
 
-	printf("%s:\n", entry->name);
+	printf("%s: (attempted:%u. success:%u. failures:%u.\n", entry->name, entry->attempted, entry->successes, entry->failures);
 
 	for (j = 0; j < NR_ERRNOS; j++) {
 		if (entry->errnos[j] != 0) {
