@@ -45,6 +45,7 @@ bool random_selection = FALSE;
 unsigned int random_selection_num;
 
 bool clowntown = FALSE;
+bool show_stats = FALSE;
 
 bool user_set_seed = FALSE;
 
@@ -84,6 +85,7 @@ static void usage(void)
 	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
 	outputerr(" --random,-r#: pick N syscalls at random and just fuzz those\n");
+	outputerr(" --stats: show errno distribution per syscall before exiting\n");
 	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
 	outputerr(" --verbose,-v: increase output verbosity.\n");
 	outputerr(" --victims,-V: path to victim files.\n");
@@ -119,6 +121,7 @@ static const struct option longopts[] = {
 	{ "domain", required_argument, NULL, 'P' },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
+	{ "stats", no_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
@@ -309,6 +312,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
 				show_unannotated = TRUE;
+
+			if (strcmp("stats", longopts[opt_index].name) == 0)
+				show_stats = TRUE;
 
 			break;
 		}

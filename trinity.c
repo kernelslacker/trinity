@@ -20,6 +20,7 @@
 #include "shm.h"
 #include "sysv-shm.h"
 #include "futex.h"
+#include "stats.h"
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
@@ -189,6 +190,8 @@ int main(int argc, char* argv[])
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.op_count - 1, shm->stats.successes, shm->stats.failures);
+	if (show_stats == TRUE)
+		dump_stats();
 
 	shutdown_logging();
 

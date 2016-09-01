@@ -228,10 +228,18 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	entry = syscalls[call].entry;
 
 	if (rec->retval == -1UL) {
+		int err = rec->errno_post;
+
 		/* only check syscalls that completed. */
 		if (rec->state == AFTER) {
-			if (rec->errno_post == ENOSYS)
+			if (err == ENOSYS)
 				deactivate_enosys(rec, entry, call);
+
+			if (err < NR_ERRNOS) {
+				entry->errnos[err]++;
+			} else {
+				printf("errno out of range: %d:%s\n", err, strerror(err));
+			}
 		}
 	} else {
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning

@@ -10,3 +10,5 @@ struct stats_s {
 	/* Counts to tell if we're making progress or not. */
 	unsigned long previous_op_count;	/* combined total of all children */
 };
+
+void dump_stats(void);

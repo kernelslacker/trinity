@@ -70,6 +70,8 @@ struct arglist {
 	.values = vals,		\
 }
 
+#define NR_ERRNOS 133	// Number in /usr/include/asm-generic/errno.h
+
 struct results {
 	union {
 		// ARG_FD.  -1 = Avoid. 0 = untested. 1 = Works.
@@ -111,6 +113,7 @@ struct syscallentry {
 	struct results results4;
 	struct results results5;
 	struct results results6;
+	unsigned int errnos[NR_ERRNOS];
 
 	/* FIXME: At some point, if we grow more type specific parts here,
 	 * it may be worth union-ising this
