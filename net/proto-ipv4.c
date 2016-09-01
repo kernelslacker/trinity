@@ -56,10 +56,19 @@ static in_addr_t new_ipv4_addr(void)
 		{ "224.0.0.0", SLASH24 },	/* multi-cast */
 		{ "255.255.255.255", SLASH32 },
 	};
+	const char localhost[] = "127.0.0.1";
 
-	int entry = rnd() % ARRAY_SIZE(addresses);
-	const char *p = addresses[entry].name;
+	int entry;
+	const char *p;
 
+	/* 99% of the time, just do localhost. */
+	if (!ONE_IN(100)) {
+		inet_pton(AF_INET, localhost, &v4);
+		return v4;
+	}
+
+	entry = rnd() % ARRAY_SIZE(addresses);
+	p = addresses[entry].name;
 	inet_pton(AF_INET, p, &v4);
 
 	if (addresses[entry].classmask != SLASH32)
@@ -77,11 +86,7 @@ in_addr_t random_ipv4_address(void)
 		return previous_ip;
 	}
 
-	/* 90% of the time, just do localhost. */
-	if (!(ONE_IN(10)))
-		addr = 0x7f000001;
-	else
-		addr = new_ipv4_addr();
+	addr = new_ipv4_addr();
 
 	previous_ip = addr;
 	ip_lifetime = 5;
