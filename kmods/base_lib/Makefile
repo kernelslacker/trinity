@@ -1,4 +1,4 @@
-obj-m := base.o test_clobber.o
+obj-m := base.o
 base-objs := base_lib.o
 
 KDIR := /home/chuhu/Git/linux

@@ -31,8 +31,9 @@ unsigned long long test_dump_tasklist(int number, pid_t pid)
 
 EXPORT_SYMBOL(test_dump_tasklist);
 
-long test_dump_cpulist(const char *cp, char **endp, unsigned int base)
+long test_dump_cpulist(int node, int cpu)
 {
+        pr_info("Printing cpu info");
         return 0xff;
 }
 EXPORT_SYMBOL(test_dump_cpulist);
