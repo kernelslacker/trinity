@@ -9,6 +9,22 @@
 static int dummy = 0;
 extern struct list_head tasks;
 
+struct test_description {
+	int id;
+	int duration;
+	char res[8];
+	int date;
+	#ifdef __GENKSYMS__
+	int hiddend_data1;
+	int hiddend_data2;
+	int hiddend_data3;
+	#endif
+};
+
+static struct test_description base_lib_desc;
+
+EXPORT_SYMBOL(base_lib_desc);
+
 unsigned long long test_dump_tasklist(int number, pid_t pid)
 {
         struct task_struct *task;
@@ -46,12 +62,12 @@ EXPORT_SYMBOL(test_dump_nodelist);
 
 int init_lib(void)
 {
-    return 0;
+	return 0;
 }
 
 void exit_lib(void)
 {
-    return;
+	return;
 }
 
 module_init(init_lib);
