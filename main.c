@@ -351,7 +351,7 @@ static bool is_child_making_progress(struct childdata *child)
 	if (trylock(&rec->lock) == FALSE)
 		return TRUE;
 
-	if (rec->state <= BEFORE) {
+	if (rec->state < BEFORE) {
 		unlock(&rec->lock);
 		return TRUE;
 	}

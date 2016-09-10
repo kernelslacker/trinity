@@ -102,6 +102,8 @@ static void __do_syscall(struct syscallrecord *rec)
 		if (needalarm)
 			(void)alarm(1);
 
+		rec->state = BEFORE;
+
 		if (rec->do32bit == FALSE) {
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 		} else {
@@ -174,8 +176,6 @@ void do_syscall(struct syscallrecord *rec)
 
 	call = rec->nr;
 	entry = syscalls[call].entry;
-
-	rec->state = BEFORE;
 
 	if (entry->flags & EXTRA_FORK)
 		do_extrafork(rec);
