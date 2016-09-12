@@ -121,11 +121,6 @@ static void __do_syscall(struct syscallrecord *rec)
 	rec->retval = ret;
 	rec->state = AFTER;
 	unlock(&rec->lock);
-
-	if (IS_ERR(ret))
-		shm->stats.failures++;
-	else
-		shm->stats.successes++;
 }
 
 /* This is a special case for things like execve, which would replace our
@@ -147,7 +142,6 @@ static void do_extrafork(struct syscallrecord *rec)
 		__do_syscall(rec);
 		/* if this was for eg. an successful execve, we should never get here.
 		 * if it failed though... */
-		shm->stats.failures++;
 		_exit(EXIT_SUCCESS);
 	}
 
@@ -167,7 +161,6 @@ static void do_extrafork(struct syscallrecord *rec)
 			kill(extrapid, SIGKILL);
 		usleep(1000);
 	}
-	shm->stats.successes++;
 }
 
 
@@ -243,10 +236,12 @@ void handle_syscall_ret(struct syscallrecord *rec)
 			} else {
 				printf("errno out of range: %d:%s\n", err, strerror(err));
 			}
+			shm->stats.failures++;
 		}
 	} else {
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 		entry->successes++;
+		shm->stats.successes++;
 	}
 	entry->attempted++;
 
