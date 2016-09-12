@@ -130,7 +130,7 @@ static void __do_syscall(struct syscallrecord *rec)
 
 /* This is a special case for things like execve, which would replace our
  * child process with something unknown to us. We use a 'throwaway' process
- * to do the execve in, and let it run for a max of a seconds before we kill it
+ * to do the execve in, and let it run for a max of a second before we kill it
  */
 static void do_extrafork(struct syscallrecord *rec)
 {
@@ -158,6 +158,7 @@ static void do_extrafork(struct syscallrecord *rec)
 	}
 
 	/* child */
+	sleep(1);
 	while (pid == 0) {
 		int childstatus;
 
