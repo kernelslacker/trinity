@@ -89,6 +89,8 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 
 	errno = 0;
 
+	shm->stats.op_count++;
+
 	if (dry_run == FALSE) {
 		int nr, call;
 		bool needalarm;
@@ -112,9 +114,6 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 		if (needalarm)
 			(void)alarm(0);
 	}
-
-	/* We returned! */
-	shm->stats.op_count++;
 
 	lock(&rec->lock);
 	rec->errno_post = errno;
