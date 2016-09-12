@@ -165,6 +165,7 @@ static void do_extrafork(struct syscallrecord *rec)
 		pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 		if (pid_alive(extrapid) == TRUE)
 			kill(extrapid, SIGKILL);
+		usleep(1000);
 	}
 	shm->stats.successes++;
 }
