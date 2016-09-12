@@ -83,7 +83,7 @@ already_done:
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static void __do_syscall(struct syscallrecord *rec)
+static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 {
 	unsigned long ret = 0;
 
@@ -102,7 +102,7 @@ static void __do_syscall(struct syscallrecord *rec)
 		if (needalarm)
 			(void)alarm(1);
 
-		rec->state = BEFORE;
+		rec->state = state;
 
 		if (rec->do32bit == FALSE) {
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
@@ -138,8 +138,7 @@ static void do_extrafork(struct syscallrecord *rec)
 		char childname[]="trinity-subchild";
 		prctl(PR_SET_NAME, (unsigned long) &childname);
 
-		rec->state = GOING_AWAY;
-		__do_syscall(rec);
+		__do_syscall(rec, GOING_AWAY);
 		/* if this was for eg. an successful execve, we should never get here.
 		 * if it failed though... */
 		_exit(EXIT_SUCCESS);
@@ -176,7 +175,7 @@ void do_syscall(struct syscallrecord *rec)
 		do_extrafork(rec);
 	else
 		 /* common-case, do the syscall in this child process. */
-		__do_syscall(rec);
+		__do_syscall(rec, BEFORE);
 }
 
 /*
