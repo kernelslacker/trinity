@@ -104,7 +104,9 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 		if (needalarm)
 			(void)alarm(1);
 
+		lock(&rec->lock);
 		rec->state = state;
+		unlock(&rec->lock);
 
 		if (rec->do32bit == FALSE) {
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
