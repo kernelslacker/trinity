@@ -153,7 +153,7 @@ static void do_extrafork(struct syscallrecord *rec)
 
 	/* small pause to let grandchild do some work. */
 	if (pid_alive(extrapid) == TRUE)
-		sleep(1);
+		usleep(100);
 
 	while (pid == 0) {
 		int childstatus;
