@@ -561,7 +561,7 @@ void display_enabled_syscalls(void)
 		display_enabled_syscalls_uniarch();
 }
 
-void enable_random_syscalls(void)
+static void enable_random_syscalls(void)
 {
 	unsigned int i;
 

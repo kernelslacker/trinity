@@ -58,7 +58,6 @@ int validate_syscall_table_32(void);
 void sanity_check_tables(void);
 const char * print_syscall_name(unsigned int callno, bool is32bit);
 
-void enable_random_syscalls(void);
 void enable_random_syscalls_biarch(void);
 void enable_random_syscalls_uniarch(void);
 
