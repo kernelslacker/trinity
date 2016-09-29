@@ -9,6 +9,8 @@
 static int dummy = 0;
 extern struct list_head tasks;
 
+static short depends;
+
 struct test_description {
 	int id;
 	int duration;
@@ -24,6 +26,7 @@ struct test_description {
 static struct test_description base_lib_desc;
 
 EXPORT_SYMBOL(base_lib_desc);
+EXPORT_SYMBOL(depends);
 
 unsigned long long test_dump_tasklist(int number, pid_t pid)
 {
