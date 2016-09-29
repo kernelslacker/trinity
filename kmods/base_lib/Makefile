@@ -2,7 +2,7 @@ obj-m := base.o
 base-objs := base_lib.o
 
 #KDIR := /home/chuhu/Git/linux
-tKDIR := /usr/lib/modules/$(shell uname -r)/build
+KDIR := /usr/lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
 default:
