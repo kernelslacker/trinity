@@ -97,7 +97,7 @@ fail_progarray:
 	output(2, "fd[%d] = bpf perf event array\n", fd);
 fail_perf_event_array:
 
-	fd = bpf_create_map(BPF_MAP_TYPE_PERCPU_HASH, sizeof(long), sizeof(long), 1024, 0);
+	fd = bpf_create_map(BPF_MAP_TYPE_PERCPU_HASH, sizeof(u32), sizeof(u64) * PERF_MAX_STACK_DEPTH, 10000, 0);
 	if (fd < 0)
 		goto fail_percpu_hash;
 	obj = alloc_object();
