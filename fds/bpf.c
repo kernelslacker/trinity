@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <linux/unistd.h>
+#include <linux/perf_event.h>
 
 #include "fd.h"
 #include "log.h"
@@ -86,6 +87,42 @@ fail_array:
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
 	output(2, "fd[%d] = bpf progarray\n", fd);
 fail_progarray:
+
+	fd = bpf_create_map(BPF_MAP_TYPE_PERF_EVENT_ARRAY, sizeof(int), sizeof(u32), 32, 0);
+	if (fd < 0)
+		goto fail_perf_event_array;
+	obj = alloc_object();
+	obj->bpf_map_fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	output(2, "fd[%d] = bpf perf event array\n", fd);
+fail_perf_event_array:
+
+	fd = bpf_create_map(BPF_MAP_TYPE_PERCPU_HASH, sizeof(long), sizeof(long), 1024, 0);
+	if (fd < 0)
+		goto fail_percpu_hash;
+	obj = alloc_object();
+	obj->bpf_map_fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	output(2, "fd[%d] = bpf percpu hash\n", fd);
+fail_percpu_hash:
+
+	fd = bpf_create_map(BPF_MAP_TYPE_PERCPU_ARRAY, sizeof(u32), sizeof(u64), 100, 0);
+	if (fd < 0)
+		goto fail_percpu_array;
+	obj = alloc_object();
+	obj->bpf_map_fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	output(2, "fd[%d] = bpf percpu array\n", fd);
+fail_percpu_array:
+
+	fd = bpf_create_map(BPF_MAP_TYPE_STACK_TRACE, sizeof(u32), sizeof(u64), 100, 0);
+	if (fd < 0)
+		goto fail_stacktrace;
+	obj = alloc_object();
+	obj->bpf_map_fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	output(2, "fd[%d] = bpf stack trace\n", fd);
+fail_stacktrace:
 
 	//FIXME: right now, returning FALSE means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
