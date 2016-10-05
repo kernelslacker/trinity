@@ -9,6 +9,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/bpf.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <linux/unistd.h>
 
 #include "fd.h"
 #include "log.h"
@@ -19,23 +22,20 @@
 #include "compat.h"
 #include "trinity.h"
 
-static int bpf(__unused__ int cmd, __unused__ union bpf_attr *attr, __unused__ unsigned int size)
+static int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
-#ifdef SYS_bpf
-	return syscall(SYS_bpf, cmd, attr, size);
-#else
-	return -ENOSYS;
-#endif
+	return syscall(__NR_bpf, cmd, attr, size);
 }
 
 static int bpf_create_map(enum bpf_map_type map_type, unsigned int key_size,
-			unsigned int value_size, unsigned int max_entries)
+			unsigned int value_size, unsigned int max_entries, int map_flags)
 {
 	union bpf_attr attr = {
 		.map_type    = map_type,
 		.key_size    = key_size,
 		.value_size  = value_size,
-		.max_entries = max_entries
+		.max_entries = max_entries,
+		.map_flags   = map_flags,
 	};
 
 	return bpf(BPF_MAP_CREATE, &attr, sizeof(attr));
@@ -53,21 +53,40 @@ static int open_bpf_fds(void)
 	int fd, key;
 	long long value = 0;
 	struct object *obj;
+	struct rlimit r = {1 << 20, 1 << 20};
+
+	setrlimit(RLIMIT_MEMLOCK, &r);
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_MAP);
 	head->destroy = &bpf_destructor;
 
-	fd = bpf_create_map(BPF_MAP_TYPE_ARRAY,sizeof(key), sizeof(value), 256);
+	fd = bpf_create_map(BPF_MAP_TYPE_HASH, sizeof(long long), sizeof(long long), 1024, 0);
 	if (fd < 0)
-		goto out;
-
+		goto fail_hash;
 	obj = alloc_object();
 	obj->bpf_map_fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf\n", fd);
+	output(2, "fd[%d] = bpf hash\n", fd);
+fail_hash:
 
+	fd = bpf_create_map(BPF_MAP_TYPE_ARRAY, sizeof(key), sizeof(value), 256, 0);
+	if (fd < 0)
+		goto fail_array;
+	obj = alloc_object();
+	obj->bpf_map_fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	output(2, "fd[%d] = bpf array\n", fd);
+fail_array:
 
-out:
+	fd = bpf_create_map(BPF_MAP_TYPE_PROG_ARRAY, sizeof(int), sizeof(int), 4, 0);
+	if (fd < 0)
+		goto fail_progarray;
+	obj = alloc_object();
+	obj->bpf_map_fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	output(2, "fd[%d] = bpf progarray\n", fd);
+fail_progarray:
+
 	//FIXME: right now, returning FALSE means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
 
