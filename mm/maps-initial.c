@@ -58,11 +58,37 @@ unsigned long mapping_sizes[NR_MAPPING_SIZES] = {
 	GB(1),
 };
 
-static void setup_mapping_sizes(void)
+static unsigned long long get_free_mem(void)
 {
 	FILE *fp;
 	char *buffer;
 	size_t n = 0;
+	unsigned long long memfree = 0;
+
+	fp = fopen("/proc/meminfo", "r");
+	if (!fp)
+		return 0;
+
+	buffer = malloc(4096);
+	if (!buffer)
+		goto out_close;
+
+	while (getline(&buffer, &n, fp) >= 0) {
+		if (sscanf(buffer, "MemFree:         %llu", &memfree) == 1) {
+			goto done;
+		}
+	}
+done:
+	free(buffer);
+out_close:
+	fclose(fp);
+
+	return memfree;
+}
+
+static void setup_mapping_sizes(void)
+{
+	unsigned long long memfree;
 
 	mapping_sizes[0] = page_size;
 
@@ -70,41 +96,30 @@ static void setup_mapping_sizes(void)
 	 * want to do it every single run.  It's worth doing it
 	 * occasionally though, to stress the oom paths.
 	 */
-	if (!(ONE_IN(100))) {
-		mapping_sizes[3] = page_size;
-		return;
+	if (!(ONE_IN(100)))
+		goto disable_1gb_mappings;
+
+	memfree = get_free_mem();
+	if (memfree == 0) {
+		// Something is really fucked. Let's not try big mappings just in case.
+		goto disable_1gb_mappings;
 	}
 
-	fp = fopen("/proc/meminfo", "r");
-	if (!fp)
-		return;
-
-	buffer = malloc(4096);
-	if (!buffer)
-		goto out_close;
-
-	while (getline(&buffer, &n, fp) >= 0) {
-		unsigned long long free;
-
-		if (sscanf(buffer, "MemFree:         %llu", &free) == 1) {
-			if ((free * 1024) < GB(8ULL)) {
-				printf("Free memory: %.2fGB\n", (double) free / 1024 / 1024);
-				printf("Low on memory, disabling mmaping of 1GB pages\n");
-				mapping_sizes[3] = page_size;
-				goto out_free;
-			}
-		}
+	if ((memfree * 1024) < GB(8ULL)) {
+		printf("Free memory: %.2fGB\n", (double) memfree / 1024 / 1024);
+		printf("Low on memory, disabling mmaping of 1GB pages\n");
+		goto disable_1gb_mappings;
 	}
+
 
 	// Because of increased mem usage, don't do nr_cpus * 4
 	printf("Limiting children from %u to %u\n",
 			max_children, max_children / 4);
 	max_children /= 4;
+	return;
 
-out_free:
-	free(buffer);
-out_close:
-	fclose(fp);
+disable_1gb_mappings:
+	mapping_sizes[3] = page_size;
 }
 
 void setup_initial_mappings(void)
