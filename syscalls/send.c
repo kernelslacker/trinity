@@ -23,6 +23,9 @@ static void sanitise_send(struct syscallrecord *rec)
 
 	rec->a1 = fd_from_socketinfo(si);
 
+	if (si == NULL)		// handle --disable-fds=sockets
+		goto skip_si;
+
 	proto = net_protocols[si->triplet.family].proto;
 	if (proto != NULL) {
 		if (proto->gen_packet != NULL) {
@@ -33,6 +36,8 @@ static void sanitise_send(struct syscallrecord *rec)
 			return;
 		}
 	}
+
+skip_si:
 
 	/* The rest of this function is only used as a fallback, if the per-proto
 	 * send()'s aren't implemented.
@@ -117,10 +122,14 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
 
+	if (si == NULL)	// handle --disable-fds=sockets
+		goto skip_si;
+
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
+skip_si:
 	msg = zmalloc(sizeof(struct msghdr));
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
