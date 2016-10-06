@@ -120,7 +120,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
-	socklen_t salen;
+	socklen_t salen = 0;
 
 	if (si == NULL)	// handle --disable-fds=sockets
 		goto skip_si;
