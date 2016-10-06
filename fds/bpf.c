@@ -48,81 +48,50 @@ static void bpf_destructor(struct object *obj)
 	close(obj->bpf_map_fd);
 }
 
+struct bpf_fd_types {
+	u32 map_type;
+	u32 key_size;
+	u32 value_size;
+	u32 max_entries;
+	u32 flags;
+	char name[32];
+};
+
+static struct bpf_fd_types bpf_fds[] = {
+	{ BPF_MAP_TYPE_HASH, sizeof(long long), sizeof(long long), 1024, 0, "hash" },
+	{ BPF_MAP_TYPE_ARRAY, sizeof(int), sizeof(long long), 256, 0, "array" },
+	{ BPF_MAP_TYPE_PROG_ARRAY, sizeof(int), sizeof(int), 4, 0, "prog_array" },
+	{ BPF_MAP_TYPE_PERF_EVENT_ARRAY, sizeof(int), sizeof(u32), 32, 0, "perf event array" },
+	{ BPF_MAP_TYPE_PERCPU_HASH, sizeof(u32), sizeof(u64) * PERF_MAX_STACK_DEPTH, 10000, 0, "percpu hash" },
+	{ BPF_MAP_TYPE_PERCPU_ARRAY, sizeof(u32), sizeof(u64), 100, 0, "percpu array" },
+	{ BPF_MAP_TYPE_STACK_TRACE, sizeof(u32), sizeof(u64), 100, 0, "stack trace" },
+};
+
 static int open_bpf_fds(void)
 {
 	struct objhead *head;
-	int fd, key;
-	long long value = 0;
 	struct object *obj;
 	struct rlimit r = {1 << 20, 1 << 20};
+	unsigned int i;
 
 	setrlimit(RLIMIT_MEMLOCK, &r);
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_MAP);
 	head->destroy = &bpf_destructor;
 
-	fd = bpf_create_map(BPF_MAP_TYPE_HASH, sizeof(long long), sizeof(long long), 1024, 0);
-	if (fd < 0)
-		goto fail_hash;
-	obj = alloc_object();
-	obj->bpf_map_fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf hash\n", fd);
-fail_hash:
+	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++) {
+		int fd;
 
-	fd = bpf_create_map(BPF_MAP_TYPE_ARRAY, sizeof(key), sizeof(value), 256, 0);
-	if (fd < 0)
-		goto fail_array;
-	obj = alloc_object();
-	obj->bpf_map_fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf array\n", fd);
-fail_array:
+		fd = bpf_create_map(bpf_fds[i].map_type, bpf_fds[i].key_size, bpf_fds[i].value_size, bpf_fds[i].max_entries, bpf_fds[i].flags);
 
-	fd = bpf_create_map(BPF_MAP_TYPE_PROG_ARRAY, sizeof(int), sizeof(int), 4, 0);
-	if (fd < 0)
-		goto fail_progarray;
-	obj = alloc_object();
-	obj->bpf_map_fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf progarray\n", fd);
-fail_progarray:
+		if (fd < 0)
+			continue;
 
-	fd = bpf_create_map(BPF_MAP_TYPE_PERF_EVENT_ARRAY, sizeof(int), sizeof(u32), 32, 0);
-	if (fd < 0)
-		goto fail_perf_event_array;
-	obj = alloc_object();
-	obj->bpf_map_fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf perf event array\n", fd);
-fail_perf_event_array:
-
-	fd = bpf_create_map(BPF_MAP_TYPE_PERCPU_HASH, sizeof(u32), sizeof(u64) * PERF_MAX_STACK_DEPTH, 10000, 0);
-	if (fd < 0)
-		goto fail_percpu_hash;
-	obj = alloc_object();
-	obj->bpf_map_fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf percpu hash\n", fd);
-fail_percpu_hash:
-
-	fd = bpf_create_map(BPF_MAP_TYPE_PERCPU_ARRAY, sizeof(u32), sizeof(u64), 100, 0);
-	if (fd < 0)
-		goto fail_percpu_array;
-	obj = alloc_object();
-	obj->bpf_map_fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf percpu array\n", fd);
-fail_percpu_array:
-
-	fd = bpf_create_map(BPF_MAP_TYPE_STACK_TRACE, sizeof(u32), sizeof(u64), 100, 0);
-	if (fd < 0)
-		goto fail_stacktrace;
-	obj = alloc_object();
-	obj->bpf_map_fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	output(2, "fd[%d] = bpf stack trace\n", fd);
-fail_stacktrace:
+		obj = alloc_object();
+		obj->bpf_map_fd = fd;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+		output(2, "fd[%d] = bpf %s\n", fd, &bpf_fds[i].name);
+	}
 
 	//FIXME: right now, returning FALSE means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
