@@ -70,7 +70,6 @@ static struct bpf_fd_types bpf_fds[] = {
 static int open_bpf_fds(void)
 {
 	struct objhead *head;
-	struct object *obj;
 	struct rlimit r = {1 << 20, 1 << 20};
 	unsigned int i;
 
@@ -80,6 +79,7 @@ static int open_bpf_fds(void)
 	head->destroy = &bpf_destructor;
 
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++) {
+		struct object *obj;
 		int fd;
 
 		fd = bpf_create_map(bpf_fds[i].map_type, bpf_fds[i].key_size, bpf_fds[i].value_size, bpf_fds[i].max_entries, bpf_fds[i].flags);
