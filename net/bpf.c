@@ -845,7 +845,7 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 			bpf->filter[i].jf |= (uint8_t) rnd();
 
 		/* Not always fill out k */
-		bpf->filter[i].k = ((ONE_IN(10)) ? 0 : (uint32_t) rnd());
+		bpf->filter[i].k = ((ONE_IN(10)) ? 0 : (uint32_t) rand32());
 
 		/* Also try to jump into BPF extensions by chance */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_LD ||
