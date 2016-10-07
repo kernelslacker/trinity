@@ -68,27 +68,30 @@ static const char *bpf_class_vars_name[] = {
 #define	BPF_W		0x00
 #define	BPF_H		0x08
 #define	BPF_B		0x10
+#define	BPF_DW		0x18	/* eBPF only, double word */
 
 static const uint16_t bpf_size_vars[] = {
-	BPF_W, BPF_H, BPF_B,
+	BPF_W, BPF_H, BPF_B, BPF_DW,
 };
 
 static const char *bpf_size_vars_name[] = {
 	[BPF_W] = "w",
 	[BPF_H] = "h",
 	[BPF_B] = "b",
+	[BPF_DW] = "dw",
 };
 
 #define BPF_MODE(code)	((code) & 0xe0)
-#define	BPF_IMM 	0x00
+#define	BPF_IMM		0x00
 #define	BPF_ABS		0x20
 #define	BPF_IND		0x40
 #define	BPF_MEM		0x60
-#define	BPF_LEN		0x80
-#define	BPF_MSH		0xa0
+#define	BPF_LEN		0x80	/* classic BPF only, reserved in eBPF */
+#define	BPF_MSH		0xa0	/* classic BPF only, reserved in eBPF */
+#define	BPF_XADD	0xc0	/* eBPF only, exclusive add */
 
 static const uint16_t bpf_mode_vars[] = {
-	BPF_IMM, BPF_ABS, BPF_IND, BPF_MEM, BPF_LEN, BPF_MSH,
+	BPF_IMM, BPF_ABS, BPF_IND, BPF_MEM, BPF_LEN, BPF_MSH, BPF_XADD,
 };
 
 static const char *bpf_mode_vars_name[] = {
@@ -98,6 +101,7 @@ static const char *bpf_mode_vars_name[] = {
 	[BPF_MEM] = "mem",
 	[BPF_LEN] = "len",
 	[BPF_MSH] = "msh",
+	[BPF_XADD] = "xadd",
 };
 
 #define BPF_OP(code)	((code) & 0xf0)
@@ -110,12 +114,15 @@ static const char *bpf_mode_vars_name[] = {
 #define	BPF_LSH		0x60
 #define	BPF_RSH		0x70
 #define	BPF_NEG		0x80
-#define BPF_MOD		0x90
+#define	BPF_MOD		0x90
 #define	BPF_XOR		0xa0
+#define	BPF_MOV		0xb0	/* eBPF only: mov reg to reg */
+#define	BPF_ARSH	0xc0	/* eBPF only: sign extending shift right */
+#define	BPF_END		0xd0	/* eBPF only: endianness conversion */
 
 static const uint16_t bpf_alu_op_vars[] = {
 	BPF_ADD, BPF_SUB, BPF_MUL, BPF_DIV, BPF_OR, BPF_AND, BPF_LSH, BPF_RSH,
-	BPF_NEG, BPF_MOD, BPF_XOR,
+	BPF_NEG, BPF_MOD, BPF_XOR, BPF_MOV, BPF_ARSH, BPF_END,
 };
 
 static const char *bpf_alu_op_vars_name[] = {
@@ -130,6 +137,9 @@ static const char *bpf_alu_op_vars_name[] = {
 	[BPF_NEG] = "neg",
 	[BPF_MOD] = "mod",
 	[BPF_XOR] = "xor",
+	[BPF_MOV] = "mov",
+	[BPF_ARSH] = "arsh",
+	[BPF_END] = "end"
 };
 
 #define	BPF_JA		0x00
@@ -137,9 +147,15 @@ static const char *bpf_alu_op_vars_name[] = {
 #define	BPF_JGT		0x20
 #define	BPF_JGE		0x30
 #define	BPF_JSET	0x40
+#define	BPF_JNE		0x50  /* eBPF only: jump != */
+#define	BPF_JSGT	0x60  /* eBPF only: signed '>' */
+#define	BPF_JSGE	0x70  /* eBPF only: signed '>=' */
+#define	BPF_CALL	0x80  /* eBPF only: function call */
+#define	BPF_EXIT	0x90  /* eBPF only: function return */
 
 static const uint16_t bpf_jmp_op_vars[] = {
 	BPF_JA, BPF_JEQ, BPF_JGT, BPF_JGE, BPF_JSET,
+	BPF_JNE, BPF_JSGT, BPF_JSGE, BPF_CALL, BPF_EXIT,
 };
 
 static const char *bpf_jmp_op_vars_name[] = {
@@ -148,6 +164,11 @@ static const char *bpf_jmp_op_vars_name[] = {
 	[BPF_JGT]  = "jgt",
 	[BPF_JGE]  = "jge",
 	[BPF_JSET] = "jset",
+	[BPF_JNE]  = "jne",
+	[BPF_JSGT] = "jsgt",
+	[BPF_JSGE] = "jsge",
+	[BPF_CALL] = "call",
+	[BPF_EXIT] = "exit",
 };
 
 #define BPF_SRC(code)	((code) & 0x08)
