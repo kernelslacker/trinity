@@ -19,7 +19,8 @@
 #include "testfile.h"
 #include "utils.h"
 
-#define MAX_TESTFILE_FDS 4
+#define MAX_TESTFILES 4
+#define MAX_TESTFILE_FDS 20
 
 static void testfile_destructor(struct object *obj)
 {
@@ -60,12 +61,12 @@ static int open_testfile(char *filename)
 static int open_testfile_fds(void)
 {
 	char *filename;
-	unsigned int i = 1;
+	unsigned int i = 1, nr = 0;
 	unsigned int fails = 0;
 
 	filename = zmalloc(64);
 
-	while (i <= MAX_TESTFILE_FDS) {
+	while (nr < MAX_TESTFILE_FDS) {
 		int fd;
 
 		sprintf(filename, "trinity-testfile%u", i);
@@ -79,6 +80,10 @@ static int open_testfile_fds(void)
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
 
 			i++;
+			if (i > MAX_TESTFILES)
+				i = 1;
+			nr++;
+
 			fails = 0;
 
 			mmap_fd(fd, filename, page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
