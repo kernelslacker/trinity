@@ -340,4 +340,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_copy_file_range },
 	{ .entry = &syscall_preadv2 },
 	{ .entry = &syscall_pwritev2 },
+	{ .entry = &syscall_pkey_mprotect },
 };

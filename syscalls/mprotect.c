@@ -45,3 +45,18 @@ struct syscallentry syscall_mprotect = {
 	.group = GROUP_VM,
 	.post = post_mprotect,
 };
+
+struct syscallentry syscall_pkey_mprotect = {
+	.name = "pkey_mprotect",
+	.num_args = 4,
+	.arg1name = "start",
+	.arg1type = ARG_MMAP,
+	.arg2name = "len",
+	.arg3name = "prot",
+	.arg3type = ARG_LIST,
+	.arg3list = ARGLIST(mprotect_prots),
+	.arg4name = "key",
+	.sanitise = sanitise_mprotect,
+	.group = GROUP_VM,
+	.post = post_mprotect,
+};
