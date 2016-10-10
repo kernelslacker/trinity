@@ -341,4 +341,6 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_preadv2 },
 	{ .entry = &syscall_pwritev2 },
 	{ .entry = &syscall_pkey_mprotect },
+	{ .entry = &syscall_pkey_alloc },
+	{ .entry = &syscall_pkey_free },
 };

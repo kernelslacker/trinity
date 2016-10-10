@@ -383,5 +383,7 @@ extern struct syscallentry syscall_copy_file_range;
 extern struct syscallentry syscall_preadv2;
 extern struct syscallentry syscall_pwritev2;
 extern struct syscallentry syscall_pkey_mprotect;
+extern struct syscallentry syscall_pkey_alloc;
+extern struct syscallentry syscall_pkey_free;
 
 unsigned int random_fcntl_setfl_flags(void);
