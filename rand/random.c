@@ -106,21 +106,21 @@ unsigned short rand16(void)
 	if (ONE_IN(25))
 		r = ~r + 1;
 
-	if (ONE_IN(4)) {
+	if (ONE_IN(25)) {
 		int _div = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
 		r /= _div;
 	}
 
-	/* limit the size */
-	switch (rnd() % 4) {
-	case 0: r &= 0xff;
-		break;
-	case 1: r &= 0xfff;
-		break;
-	case 2: r &= PAGE_MASK;
-		break;
-	case 3:	// do nothing
-		break;
+	if (RAND_BOOL()) {
+		/* limit the size */
+		switch (rnd() % 3) {
+		case 0: r &= 0xff;
+			break;
+		case 1: r &= 0xfff;
+			break;
+		case 2: r &= PAGE_MASK;
+			break;
+		}
 	}
 	return r;
 }
@@ -135,10 +135,8 @@ unsigned int rand32(void)
 	switch (rnd() % 8) {
 	case 0:	r = RAND_BYTE();
 		break;
-
 	case 1:	r = rand16();
 		break;
-
 	case 2: r = rand_single_bit(32);
 		break;
 	case 3:	r = randbits(32);
@@ -162,23 +160,23 @@ unsigned int rand32(void)
 		r = ~r + 1;
 
 	/* we might get lucky if something is counting ints/longs etc. */
-	if (ONE_IN(4)) {
+	if (ONE_IN(25)) {
 		int _div = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
 		r /= _div;
 	}
 
-	/* limit the size */
-	switch (rnd() % 5) {
-	case 0: r &= 0xff;
-		break;
-	case 1: r &= 0xffff;
-		break;
-	case 2: r &= PAGE_MASK;
-		break;
-	case 3: r &= 0xffffff;
-		break;
-	case 4:	// do nothing
-		break;
+	if (RAND_BOOL()) {
+		/* limit the size */
+		switch (rnd() % 4) {
+		case 0: r &= 0xff;
+			break;
+		case 1: r &= 0xffff;
+			break;
+		case 2: r &= PAGE_MASK;
+			break;
+		case 3: r &= 0xffffff;
+			break;
+		}
 	}
 
 	return r;
