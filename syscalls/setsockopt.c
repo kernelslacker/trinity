@@ -191,10 +191,16 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	struct socket_triplet *triplet = NULL;
 	int fd;
 
+	si = (struct socketinfo *) rec->a1;
+	if (si == NULL) {
+		rec->a1 = get_random_fd();
+		rec->a4 = (unsigned long) zmalloc(page_size);
+		return;
+	}
+
 	if (ONE_IN(1000)) {
 		fd = get_random_fd();
 	} else {
-		si = (struct socketinfo *) rec->a1;
 		fd = si->fd;
 		triplet = &si->triplet;
 	}
