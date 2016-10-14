@@ -15,7 +15,10 @@
 static void sanitise_read(struct syscallrecord *rec)
 {
 	rec->a2 = (unsigned long) get_non_null_address();
-	rec->a3 = rnd() % page_size;
+	if (RAND_BOOL())
+		rec->a3 = rnd() % page_size;
+	else
+		rec->a3 = page_size;
 }
 
 struct syscallentry syscall_read = {
