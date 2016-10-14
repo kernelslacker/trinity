@@ -86,7 +86,7 @@ unsigned short rand16(void)
 {
 	unsigned short r = 0, r2;
 
-	switch (rnd() % 5) {
+	switch (rnd() % 6) {
 	case 0:	r = RAND_BYTE();
 		break;
 
@@ -99,6 +99,7 @@ unsigned short rand16(void)
 	case 4:	r2 = rnd() & 0xff;
 		r = r2 | r2 << 8;
 		break;
+	case 5: return 0 - ((rnd() % 10) + 1);
 	}
 
 	/* Sometimes flip sign */
@@ -131,7 +132,7 @@ unsigned int rand32(void)
 {
 	unsigned long r = 0;
 
-	switch (rnd() % 7) {
+	switch (rnd() % 8) {
 	case 0:	r = RAND_BYTE();
 		break;
 
@@ -148,6 +149,8 @@ unsigned int rand32(void)
 		break;
 
 	case 6:	return get_interesting_value();
+
+	case 7: return 0 - ((rnd() % 10) + 1);
 	}
 
 	/* Sometimes deduct it from INT_MAX */
@@ -188,7 +191,7 @@ u64 rand64(void)
 {
 	u64 r = 0;
 
-	switch (rnd() % 8) {
+	switch (rnd() % 9) {
 
 	/* 8-bit ranges */
 	case 0:	r = RAND_BYTE();
@@ -214,6 +217,9 @@ u64 rand64(void)
 
 	/* Sometimes pick a not-so-random number. */
 	case 7:	return get_interesting_value();
+
+	// small 64bit negative number.
+	case 8: return 0 - ((rnd() % 10) + 1);
 	}
 
 	/* limit the size */
