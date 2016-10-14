@@ -46,6 +46,8 @@ void validate_specific_syscall(const struct syscalltable *table, int call)
 		return;
 
 	entry = table[call].entry;
+	if (entry == NULL)
+		return;
 
 	if (entry->flags & AVOID_SYSCALL)
 		output(0, "%s is marked as AVOID. Skipping\n", entry->name);
@@ -62,6 +64,8 @@ int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 		return FALSE;
 
 	entry = table[call].entry;
+	if (entry == NULL)
+		return FALSE;
 
 	if (entry->flags & AVOID_SYSCALL)
 		return FALSE;
