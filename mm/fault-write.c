@@ -19,7 +19,7 @@ static void dirty_one_page(struct map *map)
 	char *p = map->ptr;
 	unsigned long offset = (rnd() % (map->size - 1)) & PAGE_MASK;
 
-	mprotect((void *) p + offset, page_size, PROT_READ|PROT_WRITE);
+	mprotect((void *) (p + offset), page_size, PROT_READ|PROT_WRITE);
 	p[offset] = rnd();
 }
 
