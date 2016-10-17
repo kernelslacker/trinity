@@ -19,6 +19,7 @@ static void read_one_page(struct map *map)
 	char buf[page_size];
 
 	p += offset;
+	mprotect((void *) p, page_size, PROT_READ);
 	memcpy(buf, p, page_size);
 }
 
@@ -31,8 +32,11 @@ static void read_whole_mapping(struct map *map)
 
 	nr = nr_pages(map);
 
-	for (i = 0; i < nr; i++)
-		memcpy(buf, p + (i * page_size), page_size);
+	for (i = 0; i < nr; i++) {
+		char *page = p + (i * page_size);
+		mprotect((void *) page, page_size, PROT_READ);
+		memcpy(buf, page, page_size);
+	}
 }
 
 static void read_every_other_page(struct map *map)
@@ -45,8 +49,11 @@ static void read_every_other_page(struct map *map)
 
 	first = RAND_BOOL();
 
-	for (i = first; i < nr; i+=2)
-		memcpy(buf, p + (i * page_size), page_size);
+	for (i = first; i < nr; i+=2) {
+		char *page = p + (i * page_size);
+		mprotect((void *) page, page_size, PROT_READ);
+		memcpy(buf, page, page_size);
+	}
 }
 
 static void read_mapping_reverse(struct map *map)
@@ -57,8 +64,11 @@ static void read_mapping_reverse(struct map *map)
 
 	nr = nr_pages(map) - 1;
 
-	for (i = nr; i > 0; i--)
-		memcpy(buf, p + (i * page_size), page_size);
+	for (i = nr; i > 0; i--) {
+		char *page = p + (i * page_size);
+		mprotect((void *) page, page_size, PROT_READ);
+		memcpy(buf, page, page_size);
+	}
 }
 
 /* fault in a random set of map->size pages. (some may be faulted >once) */
@@ -70,8 +80,11 @@ static void read_random_pages(struct map *map)
 
 	nr = nr_pages(map);
 
-	for (i = 0; i < nr; i++)
-		memcpy(buf, p + ((rnd() % nr) * page_size), page_size);
+	for (i = 0; i < nr; i++) {
+		char *page = p + ((rnd() % nr) * page_size);
+		mprotect((void *) page, page_size, PROT_READ);
+		memcpy(buf, page, page_size);
+	}
 }
 
 /* Fault in the last page in a mapping */
@@ -79,8 +92,11 @@ static void read_last_page(struct map *map)
 {
 	char *p = map->ptr;
 	char buf[page_size];
+	char *ptr;
 
-	memcpy(buf, p + (map->size - page_size), page_size);
+	ptr = p + (map->size - page_size);
+	mprotect((void *) ptr, page_size, PROT_READ);
+	memcpy(buf, ptr, page_size);
 }
 
 static const struct faultfn read_faultfns[] = {
