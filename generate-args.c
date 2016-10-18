@@ -229,7 +229,7 @@ static unsigned long handle_arg_mode_t(void)
 	for (i = 0; i < count; i++) {
 		unsigned int j;
 
-		j = rnd() % 15;
+		j = rnd() % 16;
 		switch (j) {
 		case  0: op = S_IRWXU; break;
 		case  1: op = S_IRUSR; break;
