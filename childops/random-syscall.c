@@ -136,6 +136,7 @@ retry:
 	return TRUE;
 }
 
+/*
 static bool do_syscall_in_child(struct syscallrecord *rec, struct childdata *child)
 {
 	pid_t pid;
@@ -170,6 +171,7 @@ static bool do_syscall_in_child(struct syscallrecord *rec, struct childdata *chi
 		return FALSE;
 	}
 }
+*/
 
 bool random_syscall(struct childdata *child)
 {
@@ -191,12 +193,13 @@ bool random_syscall(struct childdata *child)
 	stash = zmalloc(sizeof(struct syscallrecord));
 	memcpy(stash, rec, sizeof(struct syscallrecord));
 
-
-	if (RAND_BOOL()) {
+/*
+	if (ONE_IN(100)) {
 		if (do_syscall_in_child(rec, child) == FALSE)
 			goto fail;
 	} else
-		do_syscall(rec);
+*/
+	do_syscall(rec);
 
 	check_sanity(rec, stash);
 
@@ -205,7 +208,7 @@ bool random_syscall(struct childdata *child)
 	handle_syscall_ret(rec);
 
 	ret = TRUE;
-fail:
+//fail:
 	free(stash);
 
 	return ret;
