@@ -15,7 +15,7 @@ static unsigned int nr_pages(struct map *map)
 static void read_one_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned long offset = (rnd() % (map->size - 1)) & PAGE_MASK;
+	unsigned long offset = (rnd() % map->size) & PAGE_MASK;
 	char buf[page_size];
 
 	p += offset;
