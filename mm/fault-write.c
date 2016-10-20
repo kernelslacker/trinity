@@ -9,6 +9,12 @@
 #include "sanitise.h"	// get_address
 #include "utils.h"
 
+static void mark_page_rw(struct map *map, void *page)
+{
+	mprotect(page, page_size, PROT_READ|PROT_WRITE);
+	map->prot = PROT_READ|PROT_WRITE;
+}
+
 static unsigned int nr_pages(struct map *map)
 {
 	return map->size / page_size;
@@ -19,7 +25,7 @@ static void dirty_one_page(struct map *map)
 	char *p = map->ptr;
 	unsigned long offset = (rnd() % map->size) & PAGE_MASK;
 
-	mprotect((void *) (p + offset), page_size, PROT_READ|PROT_WRITE);
+	mark_page_rw(map, p + offset);
 	p[offset] = rnd();
 }
 
@@ -31,7 +37,7 @@ static void dirty_whole_mapping(struct map *map)
 
 	for (i = 0; i < nr; i++) {
 		char *p = map->ptr + (i * page_size);
-		mprotect((void *) p, page_size, PROT_READ|PROT_WRITE);
+		mark_page_rw(map, p);
 		*p = rnd();
 	}
 }
@@ -46,7 +52,7 @@ static void dirty_every_other_page(struct map *map)
 
 	for (i = first; i < nr; i+=2) {
 		char *p = map->ptr + (i * page_size);
-		mprotect((void *) p, page_size, PROT_READ|PROT_WRITE);
+		mark_page_rw(map, p);
 		*p = rnd();
 	}
 }
@@ -59,7 +65,7 @@ static void dirty_mapping_reverse(struct map *map)
 
 	for (i = nr; i > 0; i--) {
 		char *p = map->ptr + (i * page_size);
-		mprotect((void *) p, page_size, PROT_READ|PROT_WRITE);
+		mark_page_rw(map, p);
 		*p = rnd();
 	}
 }
@@ -74,7 +80,7 @@ static void dirty_random_pages(struct map *map)
 	for (i = 0; i < nr; i++) {
 		off_t offset = (rnd() % nr) * page_size;
 		char *p = map->ptr + offset;
-		mprotect((void *) p, page_size, PROT_READ|PROT_WRITE);
+		mark_page_rw(map, p);
 		*p = rnd();
 	}
 }
@@ -85,7 +91,7 @@ static void dirty_first_page(struct map *map)
 {
 	char *p = map->ptr;
 
-	mprotect(map->ptr, page_size, PROT_READ|PROT_WRITE);
+	mark_page_rw(map, map->ptr);
 	generate_random_page(p);
 }
 
@@ -96,7 +102,7 @@ static void dirty_last_page(struct map *map)
 {
 	char *p = map->ptr + map->size - page_size;
 
-	mprotect((void *) p, page_size, PROT_READ|PROT_WRITE);
+	mark_page_rw(map, p);
 	memset((void *) p, 'A', page_size);
 }
 
