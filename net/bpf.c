@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bpf.h"
 #include "debug.h"
 #include "log.h"
 #include "net.h"
@@ -845,7 +846,13 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 			bpf->filter[i].jf |= (uint8_t) rnd();
 
 		/* Not always fill out k */
-		bpf->filter[i].k = ((ONE_IN(10)) ? 0 : (uint32_t) rand32());
+		switch (rnd() % 3) {
+		case 0:	bpf->filter[i].k = (uint32_t) rand32();
+			break;
+		case 1:	bpf->filter[i].k = (uint32_t) get_rand_bpf_fd();
+			break;
+		case 2:	break;
+		}
 
 		/* Also try to jump into BPF extensions by chance */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_LD ||

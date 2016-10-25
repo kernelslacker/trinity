@@ -14,6 +14,7 @@
 #include <linux/unistd.h>
 #include <linux/perf_event.h>
 
+#include "bpf.h"
 #include "fd.h"
 #include "log.h"
 #include "objects.h"
@@ -99,7 +100,7 @@ static int open_bpf_fds(void)
 	return TRUE;
 }
 
-static int get_rand_bpf_fd(void)
+int get_rand_bpf_fd(void)
 {
 	struct object *obj;
 
