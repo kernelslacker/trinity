@@ -357,8 +357,8 @@ static void periodic_work(void)
 		check_parent_pid();
 
 	/* Every 100 iterations. */
-	if (!(periodic_counter % 100))
-		dirty_random_mapping();
+//	if (!(periodic_counter % 100))
+//		dirty_random_mapping();
 
 	if (periodic_counter == 1000)
 		periodic_counter = 0;
