@@ -58,8 +58,8 @@ static void post_mremap(struct syscallrecord *rec)
 	map->ptr = ptr;
 
 	/* Sometimes dirty the mapping first. */
-	if (RAND_BOOL())
-		dirty_mapping(map);
+//	if (RAND_BOOL())
+//		dirty_mapping(map);
 }
 
 static unsigned long mremap_flags[] = {
