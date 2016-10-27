@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <asm/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "arch.h"
@@ -125,23 +126,18 @@ struct map * common_set_mmap_ptr_len(void)
  */
 void dirty_mapping(struct map *map)
 {
-	bool rw = RAND_BOOL();
-
-	if (rw == TRUE) {
-		/* Check mapping is writable, or we'll segv.
-		 * TODO: Perhaps we should do that, and trap it, mark it writable,
-		 * then reprotect after we dirtied it ? */
-		if (map->prot & ~PROT_WRITE)
-			return;
-
+	switch (map->prot) {
+	case PROT_WRITE:
+	case PROT_WRITE|PROT_READ:
 		random_map_writefn(map);
-		return;
-
-	} else {
-		if (map->prot & ~PROT_READ)
-			return;
-
+		break;
+	case PROT_READ:
 		random_map_readfn(map);
+		break;
+	case PROT_SEM:
+	case PROT_NONE:
+	default:
+		break;
 	}
 }
 
