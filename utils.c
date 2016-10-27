@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "debug.h"
 #include "log.h"
 #include "pids.h"
 #include "random.h"
@@ -75,6 +76,17 @@ void kill_pid(pid_t pid)
 {
 	int ret;
 	int childno;
+
+	if (pid == -1) {
+		show_backtrace();
+		syslogf("kill_pid tried to kill -1!\n");
+		return;
+	}
+	if (pid == 0) {
+		show_backtrace();
+		syslogf("tried to kill_pid 0!\n");
+		return;
+	}
 
 	childno = find_childno(pid);
 	if (childno != CHILD_NOT_FOUND) {
