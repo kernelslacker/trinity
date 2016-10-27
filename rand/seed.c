@@ -152,8 +152,6 @@ void set_seed(struct childdata *child)
  * Called when a new child starts, so we don't repeat runs across different pids.
  * We only reseed in the main pid, all the children are expected to periodically
  * check if the seed changed, and reseed accordingly.
- *
- * Caveat: Not used if we passed in our own seed with -s
  */
 void reseed(void)
 {
@@ -161,10 +159,6 @@ void reseed(void)
 		outputerr("Reseeding should only happen from parent!\n");
 		exit(EXIT_FAILURE);
 	}
-
-	/* don't change the seed if we passed -s */
-	if (user_set_seed == TRUE)
-		return;
 
 	/* We are reseeding. */
 	shm->seed = new_seed();
