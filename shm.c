@@ -50,10 +50,8 @@ void init_shm(void)
 
 	shm->stats.op_count = 1;
 
-	if (user_set_seed == TRUE)
-		shm->seed = init_seed(seed);
-	else
-		shm->seed = new_seed();
+	shm->seed = init_seed(seed);
+
 	/* Set seed in main process. */
 	set_seed(NULL);
 

@@ -96,7 +96,6 @@ bool init_random(void)
 
 	// If we have sys_getrandom, use that instead of urandom
 	if (do_getrandom(&r) == TRUE) {
-		printf("Using getrandom() for seeds\n");
 		urandomfd = -1;
 		return TRUE;
 	}
@@ -115,8 +114,13 @@ bool init_random(void)
 unsigned int init_seed(unsigned int seedparam)
 {
 	if (user_set_seed == TRUE)
-		output(0, "Using user passed random seed: %u\n", seedparam);
+		output(0, "Using user passed random seed: %u.\n", seedparam);
 	else {
+		if (urandomfd == -1)
+			output(0, "Using getrandom() for seeds.\n");
+		else
+			output(0, "Using /dev/urandom for seeds.\n");
+
 		seedparam = new_seed();
 
 		output(0, "Initial random seed: %u\n", seedparam);
