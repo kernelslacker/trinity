@@ -2,36 +2,22 @@
 #
 # This is an example of how to search for an interaction between
 # two syscalls.   In the example below I was chasing an oops involving
-# futex and another unknown syscall.
+# ftruncate and another unknown syscall.
 #
-# I wanted to avoid execve, because it just slowed things down, and had
-# already been ruled out.
+# I wanted to avoid execve, and the sync syscalls because they just slowed
+# things down, and had already been ruled out.
 #
 
-OLDPATH=$(pwd)
-TRINITY_PATH=${TRINITY_PATH:-$OLDPATH}
-TRINITY_TMP=$(mktemp -d /tmp/trinity.XXXXXX)
-
-check_tainted()
-{
-    if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
-      echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
-      exit
-    fi
-}
+. scripts/paths.sh
+. scripts/privs.sh
+. scripts/taint.sh
 
 chmod 755 $TRINITY_TMP
 cd $TRINITY_TMP
 
-TAINT=$(cat /proc/sys/kernel/tainted)
-
 NR_CPUS=$(nproc)
 
 while [ 1 ];
-do
-
-
-for sc in $($TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $3 }' | sort -u)
 do
   mkdir -p tmp.$i
   pushd tmp.$i
@@ -42,14 +28,12 @@ do
     exit
   fi
 
-  $TRINITY_PATH/trinity -q -l off -c futex -c $sc -x execve -C64 -N 1000000
+  $TRINITY_PATH/trinity $DROPPRIVS -q -l off -a64 -c ftruncate -r20 -x execve -x execveat -x syncfs -x sync -x fsync -x fdatasync -C64 -N 1000000 --enable-fds=pseudo,testfile
 
   popd
 
   check_tainted
 
   chmod 755 $TRINITY_TMP
-
-done
 
 done
