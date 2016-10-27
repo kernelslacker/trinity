@@ -9,10 +9,28 @@
 #include "sanitise.h"
 #include "shm.h"
 
+#include <debug.h>
+
 pid_t *pids;
 
 bool pid_alive(pid_t pid)
 {
+	if (pid < -1) {
+		syslogf("kill_pid tried to kill %d!\n", pid);
+		show_backtrace();
+		return TRUE;
+	}
+	if (pid == -1) {
+		syslogf("kill_pid tried to kill -1!\n");
+		show_backtrace();
+		return TRUE;
+	}
+	if (pid == 0) {
+		syslogf("tried to kill_pid 0!\n");
+		show_backtrace();
+		return TRUE;
+	}
+
 	if (kill(pid, 0) == 0)
 		return TRUE;
 	return FALSE;
