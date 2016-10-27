@@ -68,14 +68,24 @@ static int fallbackseed(void)
 
 unsigned int new_seed(void)
 {
-	unsigned int r;
+	unsigned int r = 0;
 
-	if (urandomfd == -1)
-		return fallbackseed();
+	/* If we passed in an initial seed, all subsequent seeds have to
+	 * be based off of it. */
+	if (user_set_seed == TRUE) {
+		r = rnd();
+		goto out;
+	}
+
+	if (urandomfd == -1) {
+		r = fallbackseed();
+		goto out;
+	}
 
 	if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
-		return fallbackseed();
+		r = fallbackseed();
 
+out:
 	//printf("new seed:%u\n", r);
 	return r;
 }
