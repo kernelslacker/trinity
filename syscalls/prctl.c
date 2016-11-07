@@ -45,9 +45,11 @@ static int prctl_opts[] = {
 #ifdef USE_SECCOMP
 static void do_set_seccomp(struct syscallrecord *rec)
 {
-	unsigned long *optval = NULL, optlen = 0;
+	unsigned long *optval = NULL, __unused__ optlen = 0;
 
+#ifdef USE_BPF
 	bpf_gen_seccomp(&optval, &optlen);
+#endif
 
 	rec->a2 = SECCOMP_MODE_FILTER;
 	rec->a3 = (unsigned long) optval;

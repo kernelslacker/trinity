@@ -48,7 +48,9 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	case SO_ATTACH_FILTER: {
 		unsigned long *optval = NULL, optlen = 0;
 
+#ifdef USE_BPF
 		bpf_gen_filter(&optval, &optlen);
+#endif
 
 		so->optval = (unsigned long) optval;
 		so->optlen = optlen;

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "bpf.h"
+#include "config.h"
 #include "debug.h"
 #include "log.h"
 #include "net.h"
@@ -17,6 +18,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#ifdef USE_BPF
 /**
  * BPF filters are used in networking such as in pf_packet, but also
  * in seccomp for application sand-boxing. Additionally, with arch
@@ -885,3 +887,4 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	if (dump_bpf)
 		bpf_disasm_all(bpf->filter, bpf->len);
 }
+#endif
