@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <linux/fs.h>
+#include <linux/types.h>
 
 #include <asm/ioctl.h>
 #include "ioctls.h"
