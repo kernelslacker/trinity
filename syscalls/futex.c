@@ -106,10 +106,10 @@ static uint32_t * get_futex_mmap(void)
  * to futexes; such that we have "clean" (zero-initialized) list of aligned
  * 32-bit uaddresses to provide to futex(2).
  */
-static inline void futex_init_lock(struct __lock *lock)
+static inline void futex_init_lock(struct __lock *thislock)
 {
-	lock->futex = 0;
-	lock->owner_pid = 0;
+	thislock->futex = 0;
+	thislock->owner_pid = 0;
 }
 
 void create_futexes(void)
@@ -118,9 +118,9 @@ void create_futexes(void)
 
 	for (i = 0; i < NFUTEXES; i++) {
 		struct object *obj = alloc_object();
-		struct __lock *lock = &obj->lock;
+		struct __lock *thislock = &obj->lock;
 
-		futex_init_lock(lock);
+		futex_init_lock(thislock);
 		add_object(obj, OBJ_GLOBAL, OBJ_FUTEX);
 	}
 
@@ -133,19 +133,19 @@ __cmpxchg(uint32_t *uaddr, uint32_t oldval, uint32_t newval)
 	return __sync_val_compare_and_swap(uaddr, oldval, newval);
 }
 
-static bool futex_trylock_or_wait(struct __lock *lock, struct syscallrecord *rec)
+static bool futex_trylock_or_wait(struct __lock *thislock, struct syscallrecord *rec)
 {
-	int status = lock->futex;
+	int status = thislock->futex;
 
 	if (status == FUTEX_UNLOCKED) {
-		status = __cmpxchg(&lock->futex, FUTEX_UNLOCKED, FUTEX_LOCKED);
+		status = __cmpxchg(&thislock->futex, FUTEX_UNLOCKED, FUTEX_LOCKED);
 		if (status == FUTEX_UNLOCKED) {
 			/*
 			 * Boring scenario: uncontended lock, acquired it in
 			 * userspace; so do whatever trinity was going to do
 			 * anyway in the first place.
 			 */
-			lock->owner_pid = getpid();
+			thislock->owner_pid = getpid();
 			return TRUE;
 		}
 	}
@@ -164,13 +164,13 @@ static bool futex_trylock_or_wait(struct __lock *lock, struct syscallrecord *rec
 	return FALSE;
 }
 
-static inline void futex_unlock(struct __lock *lock)
+static inline void futex_unlock(struct __lock *thislock)
 {
-	int status = lock->futex;
+	int status = thislock->futex;
 
 	if (status == FUTEX_LOCKED) {
-		lock->owner_pid = 0;
-		__cmpxchg(&lock->futex, FUTEX_LOCKED, FUTEX_UNLOCKED);
+		thislock->owner_pid = 0;
+		__cmpxchg(&thislock->futex, FUTEX_LOCKED, FUTEX_UNLOCKED);
 
 		/*
 		 * Blindly wakeup anyone blocked waiting on the lock.
@@ -178,8 +178,8 @@ static inline void futex_unlock(struct __lock *lock)
 		 * Could perfectly well be a bogus wakeup; don't even bother
 		 * checking return val...
 		 */
-		syscall(SYS_futex, &lock->futex, FUTEX_WAKE, 1, NULL, 0, 0);
-		syscall(SYS_futex, &lock->futex, FUTEX_UNLOCK_PI, 1, NULL, 0, 0);
+		syscall(SYS_futex, &thislock->futex, FUTEX_WAKE, 1, NULL, 0, 0);
+		syscall(SYS_futex, &thislock->futex, FUTEX_UNLOCK_PI, 1, NULL, 0, 0);
 	}
 }
 
