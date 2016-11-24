@@ -11,20 +11,22 @@
 
 int kernel_taint_initial = 0;
 
-int check_tainted(void)
+static int taint_fd = 0;
+
+int get_taint(void)
 {
-	int fd;
 	unsigned int ret = 0;
 	char buffer[11];
 
 	buffer[10] = 0; //make sure that we can fit the whole int.
 
-	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
-	if (fd < 0)
+	if (taint_fd == 0)
+		taint_fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+
+	if (taint_fd < 0)
 		goto out;
 
-	ret = read(fd, buffer, 10);
-	close(fd);
+	ret = read(taint_fd, buffer, 10);
 
 	if (ret > 0)
 		ret = atoi(buffer);
@@ -36,6 +38,19 @@ out:
 	return ret;
 }
 
+bool is_tainted(void)
+{
+	/* Only check taint if the mask allows it */
+	if (kernel_taint_mask != 0) {
+		int ret = 0;
+
+		ret = get_taint();
+		if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
 static void toggle_taint_flag(int bit)
 {
 	kernel_taint_mask |= (1 << bit);

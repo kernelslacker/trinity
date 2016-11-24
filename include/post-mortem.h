@@ -1,3 +1,3 @@
 #pragma once
 
-void tainted_postmortem(int taint);
+void tainted_postmortem(void);

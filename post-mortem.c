@@ -51,8 +51,10 @@ static void dump_syscall_records(void)
 	fclose(fd);
 }
 
-void tainted_postmortem(int taint)
+void tainted_postmortem(void)
 {
+	int taint = get_taint();
+
 	struct timespec taint_tp;
 
 	shm->postmortem_in_progress = TRUE;

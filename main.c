@@ -739,8 +739,6 @@ static void print_stats(void)
 
 void main_loop(void)
 {
-	int ret = 0;
-
 	fork_children();
 
 	while (shm->exit_reason == STILL_RUNNING) {
@@ -760,12 +758,8 @@ void main_loop(void)
 
 		check_children_progressing();
 
-		/* Only check taint if the mask allows it */
-		if (kernel_taint_mask != 0) {
-			ret = check_tainted();
-			if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0)
-				tainted_postmortem(ret);
-		}
+		if (is_tainted() == TRUE)
+			tainted_postmortem();
 
 		print_stats();
 
