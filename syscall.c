@@ -12,6 +12,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "ftrace.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -113,6 +114,9 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 		} else {
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 		}
+
+		stop_ftrace_if_tainted();
+
 		if (needalarm)
 			(void)alarm(0);
 	}

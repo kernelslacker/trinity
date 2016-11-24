@@ -11,6 +11,7 @@
 
 #include "child.h"
 #include "debug.h"
+#include "ftrace.h"
 #include "log.h"
 #include "params.h"
 #include "pids.h"
@@ -757,6 +758,8 @@ void main_loop(void)
 		}
 
 		check_children_progressing();
+
+		stop_ftrace_if_tainted();
 
 		if (is_tainted() == TRUE)
 			tainted_postmortem();

@@ -9,6 +9,7 @@
 #include "config.h"	// for VERSION
 #include "fd.h"
 #include "files.h"
+#include "ftrace.h"
 #include "ioctls.h"
 #include "log.h"
 #include "maps.h"
@@ -183,6 +184,8 @@ int main(int argc, char* argv[])
 
 		_exit(EXIT_FAILURE);
 	}
+
+	setup_ftrace();
 
 	main_loop();
 
