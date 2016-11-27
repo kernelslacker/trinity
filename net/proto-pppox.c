@@ -58,7 +58,8 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TP(struct sockaddr **addr, socklen_t *add
 	*addrlen = sizeof(struct sockaddr_pppol2tp);
 }
 
-static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(struct sockaddr **addr, socklen_t *addrlen)
+static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(__unused__ struct sockaddr **addr,
+						__unused__ socklen_t *addrlen)
 {
 #ifdef USE_PPPOL2TPIN6
 	struct sockaddr_pppol2tpin6 *pppol2tpin6;
@@ -86,7 +87,8 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(struct sockaddr **addr, socklen_t *
 #endif
 }
 
-static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3(struct sockaddr **addr, socklen_t *addrlen)
+static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3(__unused__ struct sockaddr **addr,
+						__unused__ socklen_t *addrlen)
 {
 #ifdef USE_PPPOL2TPV3
 	struct sockaddr_pppol2tpv3 *pppol2tpv3;
@@ -107,7 +109,8 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3(struct sockaddr **addr, socklen_t *a
 #endif
 }
 
-static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6(struct sockaddr **addr, socklen_t *addrlen)
+static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6(__unused__ struct sockaddr **addr,
+						__unused__ socklen_t *addrlen)
 {
 #ifdef USE_PPPOL2TPIN6
 	struct sockaddr_pppol2tpv3in6 *pppol2tpv3in6;

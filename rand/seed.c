@@ -40,7 +40,7 @@ static int urandomfd;
  * to store what gets passed in from the command line -s argument */
 unsigned int seed = 0;
 
-static int do_getrandom(unsigned int *buf)
+static int do_getrandom(__unused__ unsigned int *buf)
 {
 #ifdef SYS_getrandom
 	int ret;
