@@ -1,7 +1,7 @@
 #include "config.h"
 #ifdef USE_NVME
 #include <linux/ioctl.h>
-#include <linux/nvme.h>
+#include <linux/nvme_ioctl.h>
 
 #include "compat.h"
 #include "utils.h"
