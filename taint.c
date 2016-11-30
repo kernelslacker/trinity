@@ -26,6 +26,8 @@ int get_taint(void)
 	if (taint_fd < 0)
 		goto out;
 
+	lseek(taint_fd, 0, SEEK_SET);
+
 	ret = read(taint_fd, buffer, 10);
 
 	if (ret > 0)
