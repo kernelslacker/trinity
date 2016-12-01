@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <values.h>
 
 #include "arch.h"
 #include "debug.h"
@@ -17,7 +18,7 @@
 #include "tables.h"
 #include "trinity.h"	// num_online_cpus
 
-static unsigned int get_cpu(void)
+static int get_cpu(void)
 {
 	int i;
 	i = rnd() % 100;
@@ -25,7 +26,8 @@ static unsigned int get_cpu(void)
 	switch (i) {
 	case 0: return -1;
 	case 1: return rnd() % 4096;
-	case 2 ... 99:
+	case 2: return INT_MAX;
+	case 3 ... 98:
 		return rnd() % num_online_cpus;
 	}
 	return 0;
