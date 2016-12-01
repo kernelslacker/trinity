@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include "types.h"
 
 /*
  * Simple linked-list routines, based on functions of the same name from the Linux kernel.
@@ -16,7 +17,7 @@ static inline void INIT_LIST_HEAD(struct list_head *list)
         list->prev = list;
 }
 
-static inline int list_empty(const struct list_head *head)
+static inline bool list_empty(const struct list_head *head)
 {
         return head->next == head;
 }
