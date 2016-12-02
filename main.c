@@ -738,12 +738,17 @@ static void print_stats(void)
 	}
 }
 
+static bool handled_taint = FALSE;
 
 static void taint_check(void)
 {
+	if (handled_taint == TRUE)
+		return;
+
 	if (is_tainted() == TRUE) {
 		stop_ftrace();
 		tainted_postmortem();
+		handled_taint = TRUE;
 	}
 }
 
