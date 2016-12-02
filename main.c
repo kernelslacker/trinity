@@ -738,6 +738,15 @@ static void print_stats(void)
 	}
 }
 
+
+static void taint_check(void)
+{
+	if (is_tainted() == TRUE) {
+		stop_ftrace();
+		tainted_postmortem();
+	}
+}
+
 void main_loop(void)
 {
 	fork_children();
@@ -746,10 +755,7 @@ void main_loop(void)
 
 		handle_children();
 
-		if (is_tainted() == TRUE) {
-			stop_ftrace();
-			tainted_postmortem();
-		}
+		taint_check();
 
 		if (shm_is_corrupt() == TRUE)
 			goto corrupt;
@@ -794,10 +800,7 @@ void main_loop(void)
 
 		/* Wait for all the children to exit. */
 		while (shm->running_childs > 0) {
-			if (is_tainted() == TRUE) {
-				stop_ftrace();
-				tainted_postmortem();
-			}
+			taint_check();
 
 			handle_children();
 			kill_all_kids();
