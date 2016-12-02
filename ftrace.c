@@ -16,6 +16,7 @@ void setup_ftrace(void)
 	if (trace_fd == -1) {
 		if (errno != -EEXIST) {
 			output(0, "Error opening tracing_on : %s\n", strerror(errno));
+			return;
 		}
 	}
 	output(0, "Opened ftrace tracing_on as fd %d\n", trace_fd);
