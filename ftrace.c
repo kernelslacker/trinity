@@ -25,8 +25,10 @@ void setup_ftrace(void)
 void stop_ftrace(void)
 {
 	if (trace_fd != -1) {
-		if (write(trace_fd, "0", 1) == -1)
+		if (write(trace_fd, "0", 1) == -1) {
 			output(0, "Stopping ftrace failed! %s\n", strerror(errno));
+			return;
+		}
 	} else {
 		output(0, "trace_fd was %d\n", trace_fd);
 	}
