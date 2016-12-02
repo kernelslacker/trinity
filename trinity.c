@@ -191,6 +191,9 @@ int main(int argc, char* argv[])
 
 	destroy_global_objects();
 
+	if (is_tainted() == TRUE)
+		stop_ftrace();
+
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.op_count - 1, shm->stats.successes, shm->stats.failures);
 	if (show_stats == TRUE)

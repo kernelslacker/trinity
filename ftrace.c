@@ -6,7 +6,6 @@
 
 #include "ftrace.h"
 #include "log.h"
-#include "taint.h"
 
 static int trace_fd = -1;
 
@@ -22,14 +21,12 @@ void setup_ftrace(void)
 	output(0, "Opened ftrace tracing_on as fd %d\n", trace_fd);
 }
 
-void stop_ftrace_if_tainted(void)
+void stop_ftrace(void)
 {
-	if (is_tainted() == TRUE) {
-		if (trace_fd != -1) {
-			if (write(trace_fd, "0", 1) == -1)
-				output(0, "Stopping ftrace failed! %s\n", strerror(errno));
-			close(trace_fd);
-			trace_fd = -1;
-		}
+	if (trace_fd != -1) {
+		if (write(trace_fd, "0", 1) == -1)
+			output(0, "Stopping ftrace failed! %s\n", strerror(errno));
+	} else {
+		output(0, "trace_fd was %d\n", trace_fd);
 	}
 }

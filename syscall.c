@@ -22,6 +22,7 @@
 #include "syscall.h"
 #include "log.h"
 #include "tables.h"
+#include "taint.h"
 #include "uid.h"
 #include "utils.h"
 
@@ -115,7 +116,12 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 		}
 
-		stop_ftrace_if_tainted();
+		/* If we became tainted, get out as fast as we can. */
+		if (is_tainted() == TRUE) {
+			stop_ftrace();
+			panic(EXIT_KERNEL_TAINTED);
+			_exit(EXIT_FAILURE);
+		}
 
 		if (needalarm)
 			(void)alarm(0);
@@ -151,7 +157,7 @@ static void do_extrafork(struct syscallrecord *rec)
 
 	/* misc failure. */
 	if (extrapid == -1) {
-		debugf("Couldn't fork grandchild: %s\n", strerror(errno));
+		//debugf("Couldn't fork grandchild: %s\n", strerror(errno));
 		return;
 	}
 

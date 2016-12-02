@@ -746,6 +746,11 @@ void main_loop(void)
 
 		handle_children();
 
+		if (is_tainted() == TRUE) {
+			stop_ftrace();
+			tainted_postmortem();
+		}
+
 		if (shm_is_corrupt() == TRUE)
 			goto corrupt;
 
@@ -758,11 +763,6 @@ void main_loop(void)
 		}
 
 		check_children_progressing();
-
-		stop_ftrace_if_tainted();
-
-		if (is_tainted() == TRUE)
-			tainted_postmortem();
 
 		print_stats();
 
@@ -794,6 +794,11 @@ void main_loop(void)
 
 		/* Wait for all the children to exit. */
 		while (shm->running_childs > 0) {
+			if (is_tainted() == TRUE) {
+				stop_ftrace();
+				tainted_postmortem();
+			}
+
 			handle_children();
 			kill_all_kids();
 			/* Give children a chance to exit before retrying. */
