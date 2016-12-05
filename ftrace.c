@@ -9,6 +9,51 @@
 
 static int trace_fd = -1;
 
+// TODO: add cmdline arg to override dumpfilename
+//       - if passed a dir, generate filename with datestamp
+
+static void dump_trace(void)
+{
+	int tracein, traceout;
+	ssize_t in = -1, out = -1;
+	char dumpfilename[] = "/boot/trace.txt";
+	char buffer[4096];
+
+	tracein = open("/sys/kernel/debug/tracing/trace", O_RDONLY);
+	if (tracein == -1) {
+		if (errno != -EEXIST) {
+			output(0, "Error opening /sys/kernel/debug/tracing/trace : %s\n", strerror(errno));
+			return;
+		}
+	}
+
+	traceout = open(dumpfilename, O_CREAT | O_WRONLY, 0600);
+	if (traceout == -1) {
+		output(0, "Error opening %s : %s\n", dumpfilename, strerror(errno));
+		return;
+	}
+
+	while (in != 0) {
+		in = read(tracein, buffer, 4096);
+		if (in > 0) {
+			out = write(traceout, buffer, in);
+			if (out == -1) {
+				output(0, "Error writing trace to %s. %s\n", dumpfilename, strerror(errno));
+				goto fail;
+			}
+		}
+	}
+	if (in == -1) {
+		output(0, "something went wrong reading from trace. %s\n", strerror(errno));
+	}
+
+	output(0, "Dumped trace to %s\n", dumpfilename);
+fail:
+	fsync(traceout);
+	close(tracein);
+	close(traceout);
+}
+
 void setup_ftrace(void)
 {
 	//todo: check for root
@@ -29,6 +74,8 @@ void stop_ftrace(void)
 			output(0, "Stopping ftrace failed! %s\n", strerror(errno));
 			return;
 		}
+		dump_trace();
+		return;
 	} else {
 		output(0, "trace_fd was %d\n", trace_fd);
 	}
