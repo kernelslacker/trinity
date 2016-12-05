@@ -6,7 +6,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <bits/sockaddr.h>
-#include <linux/ax25.h> /* for ax25_address in rose.h */
+#include <netax25/ax25.h> /* for ax25_address in rose.h */
 #include <netrose/rose.h>
 #include <stdlib.h>
 #include "net.h"
