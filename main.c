@@ -581,6 +581,9 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			unsigned int i;
 			bool seen = FALSE;
 
+			if (childpid == -1)
+				break;
+
 			debugf("All children exited (childpid:%u)!\n", childpid);
 
 			for_each_child(i) {
