@@ -52,9 +52,6 @@ void init_shm(void)
 
 	shm->seed = init_seed(seed);
 
-	/* Set seed in main process. */
-	set_seed(NULL);
-
 	childptrslen = max_children * sizeof(struct childdata *);
 	/* round up to page size */
 	childptrslen += page_size - 1;

@@ -1,7 +1,7 @@
 /*
  * Routines to get/set seeds.
  *
- * On startup, the main process either generates a seed via new_seed()
+ * On startup, the main process either generates a seed via rnd()
  * or gets one passed in by the -s parameter.
  *
  * Example: we have four children, and our initial seed is 10000.
@@ -34,79 +34,9 @@
 #include "random.h"
 #include "utils.h"
 
-static int urandomfd;
-
 /* The actual seed lives in the shm. This variable is used
  * to store what gets passed in from the command line -s argument */
 unsigned int seed = 0;
-
-static int do_getrandom(__unused__ unsigned int *buf)
-{
-#ifdef SYS_getrandom
-	int ret;
-
-	ret = syscall(SYS_getrandom, buf, 4, 0);
-	if (ret > 0)
-		return TRUE;
-#endif
-	return FALSE;
-}
-
-static int fallbackseed(void)
-{
-	struct timeval t;
-	unsigned int r;
-
-	if (do_getrandom(&r) == TRUE)
-		return r;
-
-	// If we get this far, gtod is all we have left.
-	gettimeofday(&t, NULL);
-	r = t.tv_sec * t.tv_usec;
-	return r;
-}
-
-unsigned int new_seed(void)
-{
-	unsigned int r = 0;
-
-	/* If we passed in an initial seed, all subsequent seeds have to
-	 * be based off of it. */
-	if (user_set_seed == TRUE) {
-		r = rnd();
-		goto out;
-	}
-
-	if (urandomfd == -1) {
-		r = fallbackseed();
-		goto out;
-	}
-
-	if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
-		r = fallbackseed();
-
-out:
-	//printf("new seed:%u\n", r);
-	return r;
-}
-
-bool init_random(void)
-{
-	unsigned int r;
-
-	// If we have sys_getrandom, use that instead of urandom
-	if (do_getrandom(&r) == TRUE) {
-		urandomfd = -1;
-		return TRUE;
-	}
-
-	urandomfd = open("/dev/urandom", O_RDONLY);
-	if (urandomfd == -1) {
-		printf("urandom: %s\n", strerror(errno));
-		return FALSE;
-	}
-	return TRUE;
-}
 
 /*
  * If we passed in a seed with -s, use that. Otherwise make one up from time of day.
@@ -116,12 +46,22 @@ unsigned int init_seed(unsigned int seedparam)
 	if (user_set_seed == TRUE)
 		output(0, "Using user passed random seed: %u.\n", seedparam);
 	else {
-		if (urandomfd == -1)
-			output(0, "Using getrandom() for seeds.\n");
-		else
-			output(0, "Using /dev/urandom for seeds.\n");
+		int urandomfd;
+		unsigned int r;
 
-		seedparam = new_seed();
+		urandomfd = open("/dev/urandom", O_RDONLY);
+		if (urandomfd == -1) {
+			printf("urandom: %s\n", strerror(errno));
+			return FALSE;
+		}
+
+		if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
+			printf("urandom: %s\n", strerror(errno));
+
+		close(urandomfd);
+
+		seedparam = r;
+		srand(r);
 
 		output(0, "Initial random seed: %u\n", seedparam);
 	}
@@ -141,12 +81,6 @@ unsigned int init_seed(unsigned int seedparam)
  */
 void set_seed(struct childdata *child)
 {
-	/* if not in child context, we must be main. */
-	if (child == NULL) {
-//		printf("Setting main pid seed:%u\n", shm->seed);
-		srand(shm->seed);
-		return;
-	}
 	srand(shm->seed + (child->num + 1));
 	child->seed = shm->seed;
 }
@@ -165,5 +99,7 @@ void reseed(void)
 	}
 
 	/* We are reseeding. */
-	shm->seed = new_seed();
+	shm->seed = rnd();
+
+	//outputerr("new seed:%u\n", shm->seed);
 }
