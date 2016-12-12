@@ -20,12 +20,6 @@ int get_taint(void)
 
 	buffer[10] = 0; //make sure that we can fit the whole int.
 
-	if (taint_fd == 0)
-		taint_fd = open("/proc/sys/kernel/tainted", O_RDONLY);
-
-	if (taint_fd < 0)
-		goto out;
-
 	lseek(taint_fd, 0, SEEK_SET);
 
 	ret = read(taint_fd, buffer, 10);
@@ -36,7 +30,7 @@ int get_taint(void)
 		/* We should never fail, but if we do, assume untainted. */
 		ret = 0;
 	}
-out:
+
 	return ret;
 }
 
@@ -125,4 +119,13 @@ void process_taint_arg(char *taintarg)
 		end = strchr(beg, ',');
 	}
 	toggle_taint_flag_by_name(beg,end);
+}
+
+void init_taint_checking(void)
+{
+	taint_fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+
+	kernel_taint_initial = get_taint();
+	if (kernel_taint_initial != 0)
+		output(0, "Kernel was tainted on startup. Will ignore flags that are already set.\n");
 }

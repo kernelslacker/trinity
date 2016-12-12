@@ -11,3 +11,5 @@ int get_taint(void);
 bool is_tainted(void);
 
 void process_taint_arg(char *taintarg);
+
+void init_taint_checking(void);

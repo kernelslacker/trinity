@@ -128,9 +128,7 @@ int main(int argc, char* argv[])
 
 	init_shm();
 
-	kernel_taint_initial = get_taint();
-	if (kernel_taint_initial != 0)
-		output(0, "Kernel was tainted on startup. Will ignore flags that are already set.\n");
+	init_taint_checking();
 
 	if (munge_tables() == FALSE) {
 		ret = EXIT_FAILURE;
