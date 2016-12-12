@@ -9,14 +9,15 @@
 
 static int trace_fd = -1;
 
-// TODO: add cmdline arg to override dumpfilename
-//       - if passed a dir, generate filename with datestamp
+// TODO: if passed a dir, generate filename with datestamp
+
+static const char defaultdumpfilename[] = "/boot/trace.txt";
+const char *ftracedumpname = defaultdumpfilename;
 
 static void dump_trace(void)
 {
 	int tracein, traceout;
 	ssize_t in = -1, out = -1;
-	char dumpfilename[] = "/boot/trace.txt";
 	char buffer[4096];
 
 	tracein = open("/sys/kernel/debug/tracing/trace", O_RDONLY);
@@ -27,9 +28,9 @@ static void dump_trace(void)
 		}
 	}
 
-	traceout = open(dumpfilename, O_CREAT | O_WRONLY, 0600);
+	traceout = open(ftracedumpname, O_CREAT | O_WRONLY, 0600);
 	if (traceout == -1) {
-		output(0, "Error opening %s : %s\n", dumpfilename, strerror(errno));
+		output(0, "Error opening %s : %s\n", ftracedumpname, strerror(errno));
 		return;
 	}
 
@@ -38,7 +39,7 @@ static void dump_trace(void)
 		if (in > 0) {
 			out = write(traceout, buffer, in);
 			if (out == -1) {
-				output(0, "Error writing trace to %s. %s\n", dumpfilename, strerror(errno));
+				output(0, "Error writing trace to %s. %s\n", ftracedumpname, strerror(errno));
 				goto fail;
 			}
 		}
@@ -47,7 +48,7 @@ static void dump_trace(void)
 		output(0, "something went wrong reading from trace. %s\n", strerror(errno));
 	}
 
-	output(0, "Dumped trace to %s\n", dumpfilename);
+	output(0, "Dumped trace to %s\n", ftracedumpname);
 fail:
 	fsync(traceout);
 	close(tracein);
@@ -65,6 +66,7 @@ void setup_ftrace(void)
 		}
 	}
 	output(0, "Opened ftrace tracing_on as fd %d\n", trace_fd);
+	output(0, "Ftrace log will be dumped to %s\n", ftracedumpname);
 }
 
 void stop_ftrace(void)

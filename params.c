@@ -8,6 +8,7 @@
 
 #include "bdevs.h"
 #include "child.h"
+#include "ftrace.h"
 #include "log.h"
 #include "net.h"
 #include "params.h"
@@ -75,6 +76,7 @@ static void usage(void)
 	outputerr(" --dropprivs, -X: if run as root, switch to nobody [EXPERIMENTAL]\n");
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
 	enable_disable_fd_usage();
+	outputerr(" --ftrace-dump-file: specify file that ftrace buffer gets dumped to if kernel becomes tainted.\n");
 	outputerr(" --group,-g = {vfs,vm}: only run syscalls from a certain group.\n");
 	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
@@ -110,6 +112,7 @@ static const struct option longopts[] = {
 	{ "dry-run", no_argument, NULL, 0 },
 	{ "enable-fds", required_argument, NULL, 0 },
 	{ "exclude", required_argument, NULL, 'x' },
+	{ "ftrace-dump-file", required_argument, NULL, 0 },
 	{ "group", required_argument, NULL, 'g' },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
@@ -309,6 +312,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, TRUE);
+
+			if (strcmp("ftrace-dump-file", longopts[opt_index].name) == 0)
+				ftracedumpname = strdup(optarg);
 
 			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
 				show_unannotated = TRUE;
