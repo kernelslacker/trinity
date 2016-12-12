@@ -304,11 +304,11 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("disable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, FALSE);
 
-			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
-				process_fds_param(optarg, TRUE);
-
 			if (strcmp("dry-run", longopts[opt_index].name) == 0)
 				dry_run = TRUE;
+
+			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
+				process_fds_param(optarg, TRUE);
 
 			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
 				show_unannotated = TRUE;
