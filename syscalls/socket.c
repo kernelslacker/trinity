@@ -15,6 +15,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "uid.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -25,6 +26,18 @@ void rand_proto_type(struct socket_triplet *st)
 	st->protocol = RAND_ARRAY(types);
 }
 
+static bool do_priv(struct socket_triplet *st, const struct netproto *proto)
+{
+	if (proto->nr_privileged_triplets != 0) {
+		int r;
+		r = rnd() % proto->nr_privileged_triplets;
+		st->protocol = proto->valid_privileged_triplets[r].protocol;
+		st->type = proto->valid_privileged_triplets[r].type;
+		return TRUE;
+	}
+	return FALSE;
+}
+
 /* note: also called from generate_sockets() */
 int sanitise_socket_triplet(struct socket_triplet *st)
 {
@@ -32,14 +45,22 @@ int sanitise_socket_triplet(struct socket_triplet *st)
 
 	proto = net_protocols[st->family].proto;
 	if (proto != NULL) {
-		if (proto->nr_triplets != 0) {
-			int r;
 
-			r = rnd() % proto->nr_triplets;
-			st->protocol = proto->valid_triplets[r].protocol;
-			st->type = proto->valid_triplets[r].type;
-			//TODO: privileged sockets.
-			return 0;
+		if (orig_uid != 0)
+			goto do_unpriv;
+
+		if (RAND_BOOL()) {
+do_unpriv:
+			if (proto->nr_triplets != 0) {
+				int r;
+				r = rnd() % proto->nr_triplets;
+				st->protocol = proto->valid_triplets[r].protocol;
+				st->type = proto->valid_triplets[r].type;
+				return 0;
+			}
+		} else {
+			if (do_priv(st, proto) == FALSE)
+				goto do_unpriv;
 		}
 	}
 
