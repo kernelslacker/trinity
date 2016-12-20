@@ -113,10 +113,12 @@ static void setup_mapping_sizes(void)
 
 
 	// Because of increased mem usage, don't do nr_cpus * 4
-	printf("Limiting children from %u to %u\n",
-			max_children, max_children / 4);
-	max_children /= 4;
-	return;
+	if (max_children > 4) {
+		printf("Limiting children from %u to %u\n",
+				max_children, max_children / 4);
+		max_children /= 4;
+		return;
+	}
 
 disable_1gb_mappings:
 	mapping_sizes[3] = page_size;
