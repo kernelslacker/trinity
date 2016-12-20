@@ -574,36 +574,6 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 		break;
 
 	case -1:
-		if (shm->exit_reason != STILL_RUNNING)
-			return;
-
-		if (errno == ECHILD) {
-			unsigned int i;
-			bool seen = FALSE;
-
-			if (childpid == -1)
-				break;
-
-			debugf("All children exited (childpid:%u)!\n", childpid);
-
-			for_each_child(i) {
-				pid_t pid = pids[i];
-				if (pid != EMPTY_PIDSLOT) {
-					if (pid_alive(pid) == FALSE) {
-						pids[i] = EMPTY_PIDSLOT;
-						shm->running_childs--;
-						replace_child(i);
-					} else {
-						debugf("%d looks still alive! ignoring.\n", pid);
-					}
-					seen = TRUE;
-				}
-			}
-			if (seen == FALSE)
-				shm->running_childs = 0;
-			break;
-		}
-		output(0, "error! (%s)\n", strerror(errno));
 		break;
 
 	default:
