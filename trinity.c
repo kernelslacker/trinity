@@ -190,7 +190,7 @@ int main(int argc, char* argv[])
 		stop_ftrace();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
-		shm->stats.op_count - 1, shm->stats.successes, shm->stats.failures);
+		shm->stats.op_count, shm->stats.successes, shm->stats.failures);
 	if (show_stats == TRUE)
 		dump_stats();
 
