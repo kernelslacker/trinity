@@ -97,6 +97,7 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_NEXTHOP, },
 	{ .name = IPV6_AUTHHDR, },
 	{ .name = IPV6_FLOWINFO, },
+
 	{ .name = IPV6_UNICAST_HOPS, },
 	{ .name = IPV6_MULTICAST_IF, },
 	{ .name = IPV6_MULTICAST_HOPS, },
@@ -110,10 +111,14 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_V6ONLY, },
 	{ .name = IPV6_JOIN_ANYCAST, .len = sizeof(struct ipv6_mreq) },
 	{ .name = IPV6_LEAVE_ANYCAST, .len = sizeof(struct ipv6_mreq) },
+
 	{ .name = IPV6_FLOWLABEL_MGR, .len = sizeof(struct in6_flowlabel_req) },
 	{ .name = IPV6_FLOWINFO_SEND, },
+
 	{ .name = IPV6_IPSEC_POLICY, },
 	{ .name = IPV6_XFRM_POLICY, },
+	{ .name = IPV6_HDRINCL, },
+
 	{ .name = MCAST_JOIN_GROUP, .len = sizeof(struct group_req) },
 	{ .name = MCAST_BLOCK_SOURCE, .len = sizeof(struct group_source_req) },
 	{ .name = MCAST_UNBLOCK_SOURCE, .len = sizeof(struct group_source_req) },
@@ -121,6 +126,7 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = MCAST_JOIN_SOURCE_GROUP, .len = sizeof(struct group_source_req) },
 	{ .name = MCAST_LEAVE_SOURCE_GROUP, .len = sizeof(struct group_source_req) },
 	{ .name = MCAST_MSFILTER, },
+
 	{ .name = IPV6_RECVPKTINFO, },
 	{ .name = IPV6_PKTINFO, .len = sizeof(struct in6_pktinfo) },
 	{ .name = IPV6_RECVHOPLIMIT, },
@@ -135,19 +141,26 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_RECVPATHMTU, },
 	{ .name = IPV6_PATHMTU, },
 	{ .name = IPV6_DONTFRAG, },
+
+	{ .name = IP6T_SO_SET_REPLACE, },
+	{ .name = IP6T_SO_SET_ADD_COUNTERS, },
+
 	{ .name = IPV6_RECVTCLASS, },
 	{ .name = IPV6_TCLASS, },
+
 	{ .name = IP6T_SO_GET_REVISION_MATCH, },
 	{ .name = IP6T_SO_GET_REVISION_TARGET, },
 	{ .name = IP6T_SO_ORIGINAL_DST, },
+
 	{ .name = IPV6_AUTOFLOWLABEL, },
 	{ .name = IPV6_ADDR_PREFERENCES, },
+
 	{ .name = IPV6_MINHOPCOUNT, },
+
 	{ .name = IPV6_ORIGDSTADDR, },
 	{ .name = IPV6_TRANSPARENT, },
 	{ .name = IPV6_UNICAST_IF, },
-	{ .name = IP6T_SO_SET_REPLACE, },
-	{ .name = IP6T_SO_SET_ADD_COUNTERS, },
+	{ .name = IPV6_RECVFRAGSIZE, },
 };
 
 static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)

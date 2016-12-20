@@ -662,6 +662,10 @@ enum kcmp_type {
 #define IPV6_UNICAST_IF         76
 #endif
 
+#ifndef IPV6_RECVFRAGSIZE
+#define IPV6_RECVFRAGSIZE       77
+#endif
+
 
 
 /* asm/resource.h */
