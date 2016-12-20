@@ -204,7 +204,7 @@ rm -f "$TMP" || exit 1
 
 cat >"$TMP.c" << EOF
 #include <sys/ioctl.h>
-#include <linux/nvme.h>
+#include <linux/nvme_ioctl.h>
 
 int main(int argc, char* argv[])
 {
