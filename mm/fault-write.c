@@ -9,10 +9,15 @@
 #include "sanitise.h"	// get_address
 #include "utils.h"
 
-static void mark_page_rw(struct map *map, void *page)
+static bool mark_page_rw(struct map *map, void *page)
 {
-	mprotect(page, page_size, PROT_READ|PROT_WRITE);
+	int ret;
+	ret = mprotect(page, page_size, PROT_READ|PROT_WRITE);
+	if (ret < 0)
+		return FALSE;
+
 	map->prot = PROT_READ|PROT_WRITE;
+	return TRUE;
 }
 
 static unsigned int nr_pages(struct map *map)
@@ -25,8 +30,8 @@ static void dirty_one_page(struct map *map)
 	char *p = map->ptr;
 	unsigned long offset = (rnd() % map->size) & PAGE_MASK;
 
-	mark_page_rw(map, p + offset);
-	p[offset] = rnd();
+	if (mark_page_rw(map, p + offset) == TRUE)
+		p[offset] = rnd();
 }
 
 static void dirty_whole_mapping(struct map *map)
@@ -37,8 +42,8 @@ static void dirty_whole_mapping(struct map *map)
 
 	for (i = 0; i < nr; i++) {
 		char *p = map->ptr + (i * page_size);
-		mark_page_rw(map, p);
-		*p = rnd();
+		if (mark_page_rw(map, p) == TRUE)
+			*p = rnd();
 	}
 }
 
@@ -52,8 +57,8 @@ static void dirty_every_other_page(struct map *map)
 
 	for (i = first; i < nr; i+=2) {
 		char *p = map->ptr + (i * page_size);
-		mark_page_rw(map, p);
-		*p = rnd();
+		if (mark_page_rw(map, p) == TRUE)
+			*p = rnd();
 	}
 }
 
@@ -65,8 +70,8 @@ static void dirty_mapping_reverse(struct map *map)
 
 	for (i = nr; i > 0; i--) {
 		char *p = map->ptr + (i * page_size);
-		mark_page_rw(map, p);
-		*p = rnd();
+		if (mark_page_rw(map, p) == TRUE)
+			*p = rnd();
 	}
 }
 
@@ -80,8 +85,8 @@ static void dirty_random_pages(struct map *map)
 	for (i = 0; i < nr; i++) {
 		off_t offset = (rnd() % nr) * page_size;
 		char *p = map->ptr + offset;
-		mark_page_rw(map, p);
-		*p = rnd();
+		if (mark_page_rw(map, p) == TRUE)
+			*p = rnd();
 	}
 }
 
@@ -91,8 +96,8 @@ static void dirty_first_page(struct map *map)
 {
 	char *p = map->ptr;
 
-	mark_page_rw(map, map->ptr);
-	generate_random_page(p);
+	if (mark_page_rw(map, map->ptr) == TRUE)
+		generate_random_page(p);
 }
 
 /* Dirty the last page in a mapping
@@ -102,8 +107,8 @@ static void dirty_last_page(struct map *map)
 {
 	char *p = map->ptr + map->size - page_size;
 
-	mark_page_rw(map, p);
-	memset((void *) p, 'A', page_size);
+	if (mark_page_rw(map, p) == TRUE)
+		memset((void *) p, 'A', page_size);
 }
 
 static const struct faultfn write_faultfns_single[] = {
