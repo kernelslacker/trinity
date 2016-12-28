@@ -9,6 +9,17 @@
 #include "sanitise.h"	// get_address
 #include "utils.h"
 
+static bool mark_map_rw(struct map *map)
+{
+	int ret;
+	ret = mprotect(map->ptr, map->size, PROT_READ|PROT_WRITE);
+	if (ret < 0)
+		return FALSE;
+
+	map->prot = PROT_READ|PROT_WRITE;
+	return TRUE;
+}
+
 static bool mark_page_rw(struct map *map, void *page)
 {
 	int ret;
@@ -38,12 +49,14 @@ static void dirty_whole_mapping(struct map *map)
 {
 	unsigned int i, nr;
 
+	if (mark_map_rw(map) == FALSE)
+		return;
+
 	nr = nr_pages(map);
 
 	for (i = 0; i < nr; i++) {
 		char *p = map->ptr + (i * page_size);
-		if (mark_page_rw(map, p) == TRUE)
-			*p = rnd();
+		*p = rnd();
 	}
 }
 
