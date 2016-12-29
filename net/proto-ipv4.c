@@ -299,7 +299,7 @@ static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 
 static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 {
-	int proto = triplet->protocol;
+	unsigned int proto = triplet->protocol;
 
 	/* we might have gotten here from a non-IP socket, (see setsockopt.c
 	 * Make sure we don't run past the end of the array above
