@@ -183,8 +183,9 @@ bool random_syscall(struct childdata *child)
 	if (set_syscall_nr(rec) == FAIL)
 		return FAIL;
 
-	/* Generate arguments, print them out */
+	memset(rec->postbuffer, 0, POSTBUFFER_LEN);
 
+	/* Generate arguments, print them out */
 	generate_syscall_args(rec);
 
 	output_syscall_prefix(rec);
