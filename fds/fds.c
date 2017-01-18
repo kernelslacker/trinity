@@ -74,6 +74,9 @@ static void __open_fds(bool do_rand)
 			provider->initialized = TRUE;
 			num_fd_providers_initialized++;
 			num_fd_providers_enabled++;
+		}else{
+			outputstd("Error during initialization of %s\n",provider->name);
+			num_fd_providers_to_enable--;
 		}
 	}
 }
