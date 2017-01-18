@@ -18,6 +18,10 @@ int get_taint(void)
 	unsigned int ret = 0;
 	char buffer[11];
 
+	/* Opening taint file had previously failed. Continue assuming untainted */
+	if( taint_fd == -1 )
+		return 0;
+
 	buffer[10] = 0; //make sure that we can fit the whole int.
 
 	lseek(taint_fd, 0, SEEK_SET);
