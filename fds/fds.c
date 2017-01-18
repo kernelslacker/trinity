@@ -210,8 +210,8 @@ void process_fds_param(char *param, bool enable)
 	 * validating them as we go.
 	 */
 	for (i = 0; i < len; i++) {
-		if (str[i] == ',') {
-			str[i] = 0;
+		if (str_orig[i] == ',') {
+			str_orig[i] = 0;
 			toggle_fds_param(str, enable);
 			str = str_orig + i + 1;
 		}
