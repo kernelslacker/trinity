@@ -74,6 +74,9 @@ static void __open_fds(bool do_rand)
 			provider->initialized = TRUE;
 			num_fd_providers_initialized++;
 			num_fd_providers_enabled++;
+		}else{
+			outputstd("Error during initialization of %s\n",provider->name);
+			num_fd_providers_to_enable--;
 		}
 	}
 }
@@ -207,8 +210,8 @@ void process_fds_param(char *param, bool enable)
 	 * validating them as we go.
 	 */
 	for (i = 0; i < len; i++) {
-		if (str[i] == ',') {
-			str[i] = 0;
+		if (str_orig[i] == ',') {
+			str_orig[i] = 0;
 			toggle_fds_param(str, enable);
 			str = str_orig + i + 1;
 		}
