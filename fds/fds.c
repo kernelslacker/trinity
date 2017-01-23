@@ -20,6 +20,7 @@ static unsigned int num_fd_providers;			// num in list.
 static unsigned int num_fd_providers_to_enable = 0;	// num of --fd-enable= params
 static unsigned int num_fd_providers_enabled = 0;	// final num we enabled.
 static unsigned int num_fd_providers_initialized = 0;	// num we called ->init on
+static bool enable_fd_initialized = FALSE;		// initialized (disabled all) fd providers
 
 static struct fd_provider *fd_providers = NULL;
 
@@ -194,7 +195,7 @@ void process_fds_param(char *param, bool enable)
 
 	len = strlen(param);
 
-	if (enable == TRUE) {
+	if (enable_fd_initialized == FALSE && enable == TRUE) {
 		struct list_head *node;
 
 		/* First, pass through and mark everything disabled. */
@@ -204,6 +205,7 @@ void process_fds_param(char *param, bool enable)
 			provider = (struct fd_provider *) node;
 			provider->enabled = FALSE;
 		}
+		enable_fd_initialized = TRUE;
 	}
 
 	/* Check if there are any commas. If so, split them into multiple params,
