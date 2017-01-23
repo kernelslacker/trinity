@@ -669,7 +669,9 @@ enum kcmp_type {
 #define IPV6_RECVFRAGSIZE       77
 #endif
 
-
+#ifndef IPV6_HDRINCL
+#define IPV6_HDRINCL		36
+#endif
 
 /* asm/resource.h */
 #ifndef RLIMIT_RTTIME
