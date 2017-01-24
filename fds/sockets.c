@@ -216,7 +216,7 @@ static unsigned int valid_proto(unsigned int family)
 	return TRUE;
 }
 
-void generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
+static void generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
 {
 	struct socket_triplet st;
 	int fd;
