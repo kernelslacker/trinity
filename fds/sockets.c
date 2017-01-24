@@ -80,7 +80,7 @@ static struct object * add_socket(int fd, unsigned int domain, unsigned int type
 	return obj;
 }
 
-int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
+static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	struct object *obj;
 	struct sockaddr *sa = NULL;

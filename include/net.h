@@ -51,8 +51,6 @@ struct protoptr {
 };
 extern const struct protoptr net_protocols[TRINITY_PF_MAX];
 
-int open_socket(unsigned int domain, unsigned int type, unsigned int protocol);
-
 struct socketinfo * get_rand_socketinfo(void);
 int fd_from_socketinfo(struct socketinfo *si);
 
