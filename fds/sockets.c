@@ -216,25 +216,7 @@ static unsigned int valid_proto(unsigned int family)
 	return TRUE;
 }
 
-static bool generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
-{
-	struct socket_triplet st;
-	int fd;
-
-	st.family = family;
-	st.type = type;
-	st.protocol = protocol;
-
-	fd = open_socket(st.family, st.type, st.protocol);
-	if (fd > -1) {
-		write_socket_to_cache(&st);
-		return TRUE;
-	}
-	output(0, "Couldn't open socket %d:%d:%d. %s\n", family, type, protocol, strerror(errno));
-	return FALSE;
-}
-
-bool write_socket_to_cache(struct socket_triplet *st)
+static bool write_socket_to_cache(struct socket_triplet *st)
 {
 	unsigned int buffer[3];
 	int n;
@@ -251,6 +233,24 @@ bool write_socket_to_cache(struct socket_triplet *st)
 		return FALSE;
 	}
 	return TRUE;
+}
+
+static bool generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
+{
+	struct socket_triplet st;
+	int fd;
+
+	st.family = family;
+	st.type = type;
+	st.protocol = protocol;
+
+	fd = open_socket(st.family, st.type, st.protocol);
+	if (fd > -1) {
+		write_socket_to_cache(&st);
+		return TRUE;
+	}
+	output(0, "Couldn't open socket %d:%d:%d. %s\n", family, type, protocol, strerror(errno));
+	return FALSE;
 }
 
 static bool generate_specific_socket(int family)
