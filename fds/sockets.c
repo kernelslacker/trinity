@@ -216,7 +216,7 @@ static unsigned int valid_proto(unsigned int family)
 	return TRUE;
 }
 
-static void generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
+static bool generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
 {
 	struct socket_triplet st;
 	int fd;
@@ -228,9 +228,10 @@ static void generate_socket(unsigned int family, unsigned int protocol, unsigned
 	fd = open_socket(st.family, st.type, st.protocol);
 	if (fd > -1) {
 		write_socket_to_cache(&st);
-		return;
+		return TRUE;
 	}
 	output(0, "Couldn't open socket %d:%d:%d. %s\n", family, type, protocol, strerror(errno));
+	return FALSE;
 }
 
 bool write_socket_to_cache(struct socket_triplet *st)
@@ -343,7 +344,7 @@ static bool generate_sockets(void)
 
 		triplets = proto->valid_triplets;
 		for (j = 0; j < proto->nr_triplets; j++)
-			generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
+			ret |= generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
 
 		if (proto->nr_privileged_triplets == 0)
 			continue;
@@ -353,7 +354,7 @@ static bool generate_sockets(void)
 
 		triplets = proto->valid_privileged_triplets;
 		for (j = 0; j < proto->nr_privileged_triplets; j++)
-			generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
+			ret |= generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
 	}
 
 	/* This is here temporarily until we have sufficient ->valid_proto's */
