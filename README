@@ -89,8 +89,6 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 
  --list/-L: list known syscalls and their offsets
 
- --monochrome/-m: Don't output ANSI control codes
-
  --proto/-P: For network sockets, only use a specific packet family.
 
  --victims/-V: Victim file/dirs.  By default, on startup trinity tree-walks /dev, /sys and /proc.

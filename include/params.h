@@ -37,7 +37,6 @@ extern bool show_syscall_list;
 extern bool show_ioctl_list;
 extern unsigned char quiet_level;
 extern bool verbose;
-extern bool monochrome;
 extern bool dangerous;
 extern bool dropprivs;
 extern bool do_syslog;

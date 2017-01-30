@@ -91,13 +91,8 @@ void dump_childnos(void)
 				sptr += sprintf(sptr, "[empty] ");
 			} else {
 				pid_t pid = pids[child->num];
-				if (pid_is_valid(pid) == FALSE)
-					sptr += sprintf(sptr, "%s", ANSI_RED);
 
-				if (pid_alive(pid) == FALSE)
-					sptr += sprintf(sptr, "%s", ANSI_RED);
-
-				sptr += sprintf(sptr, "%u %s", pid, ANSI_RESET);
+				sptr += sprintf(sptr, "%u ", pid);
 			}
 		}
 		sptr += sprintf(sptr, "\n");

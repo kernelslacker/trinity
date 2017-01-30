@@ -38,7 +38,6 @@ bool show_syscall_list = FALSE;
 bool show_ioctl_list = FALSE;
 unsigned char quiet_level = 0;
 bool verbose = FALSE;
-bool monochrome = FALSE;
 bool dangerous = FALSE;
 bool dropprivs = FALSE;
 bool do_syslog = FALSE;
@@ -82,7 +81,6 @@ static void usage(void)
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
 	outputerr(" --logging,-l: (off=disable logging).\n");
-	outputerr(" --monochrome,-m: don't output ANSI codes\n");
 	outputerr(" --domain,-P: specify specific network domain for sockets.\n");	//FIXME: P used to be 'proto' pick something better.
 	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
@@ -98,7 +96,7 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:b:c:C:dDE:g:hIl:LmN:P:qr:s:ST:V:vx:X";
+static const char paramstr[] = "a:b:c:C:dDE:g:hIl:LN:P:qr:s:ST:V:vx:X";
 
 static const struct option longopts[] = {
 	{ "arch", required_argument, NULL, 'a' },
@@ -119,7 +117,6 @@ static const struct option longopts[] = {
 	{ "list", no_argument, NULL, 'L' },
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "logging", required_argument, NULL, 'l' },
-	{ "monochrome", no_argument, NULL, 'm' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
 	{ "quiet", no_argument, NULL, 'q' },
@@ -213,24 +210,15 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'l':
-			if (!strncmp(optarg, "off", 3))
+			if (!strncmp(optarg, "off", 3)) {
 				logging = LOGGING_DISABLED;
+				break;
+			}
+			outputerr("-l currently does nothing. TBD.\n");
 			break;
 
 		case 'L':
 			show_syscall_list = TRUE;
-			break;
-
-		case 'm':
-			monochrome = TRUE;
-			memset(&ANSI_RED, 0, 1);
-			memset(&ANSI_GREEN, 0, 1);
-			memset(&ANSI_YELLOW, 0, 1);
-			memset(&ANSI_BLUE, 0, 1);
-			memset(&ANSI_MAGENTA, 0, 1);
-			memset(&ANSI_CYAN, 0, 1);
-			memset(&ANSI_WHITE, 0, 1);
-			memset(&ANSI_RESET, 0, 1);
 			break;
 
 		/* Set number of syscalls to do */

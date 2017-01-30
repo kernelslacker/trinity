@@ -68,7 +68,7 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 {
 	struct childdata *child = this_child();
 
-	printf("BUG!: %s%s%s\n", ANSI_RED, bugtxt, ANSI_RESET);
+	printf("BUG!: %s\n", bugtxt);
 	printf("BUG!: %s\n", VERSION);
 	printf("BUG!: [%d] %s:%s:%u\n", getpid(), filename, funcname, lineno);
 

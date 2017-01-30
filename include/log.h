@@ -9,21 +9,10 @@
 #include "types.h"
 #include "utils.h"
 
-extern char ANSI_RED[];
-extern char ANSI_GREEN[];
-extern char ANSI_YELLOW[];
-extern char ANSI_BLUE[];
-extern char ANSI_MAGENTA[];
-extern char ANSI_CYAN[];
-extern char ANSI_WHITE[];
-extern char ANSI_RESET[];
-
 #define MAX_LOGLEVEL 3
 
 FILE *find_logfile_handle(void);
 void synclogs(void);
-
-void strip_ansi(char *ansibuf);
 
 void output(unsigned char level, const char *fmt, ...);
 void outputerr(const char *fmt, ...);
