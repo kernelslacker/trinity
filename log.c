@@ -20,7 +20,6 @@ void output(unsigned char level, const char *fmt, ...)
 {
 	va_list args;
 	int n;
-	FILE *handle;
 	pid_t pid;
 	char outputbuf[BUFSIZE];
 	char *prefix = NULL;
@@ -62,14 +61,6 @@ void output(unsigned char level, const char *fmt, ...)
 	/* go on with file logs only if enabled */
 	if (logging == LOGGING_DISABLED)
 		return;
-
-	handle = find_logfile_handle();
-	if (!handle)
-		return;
-
-	fprintf(handle, "%s %s", prefix, outputbuf);
-
-	(void)fflush(handle);
 }
 
 /*
@@ -98,8 +89,6 @@ void outputstd(const char *fmt, ...)
 // TODO: combine the below with output()
 void output_rendered_buffer(char *buffer)
 {
-	FILE *log_handle;
-
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL) {
 		fprintf(stdout, "%s", buffer);
@@ -109,54 +98,16 @@ void output_rendered_buffer(char *buffer)
 	/* Exit if should not continue at all. */
 	if (logging == LOGGING_DISABLED)
 		return;
-
-	log_handle = find_logfile_handle();
-	if (log_handle != NULL) {
-		fprintf(log_handle, "%s", buffer);
-		fflush(log_handle);
-	}
 }
 
 void init_logging(void)
 {
-	switch (logging) {
-	case LOGGING_DISABLED:
+	if (logging == LOGGING_DISABLED)
 		return;
-	case LOGGING_FILES:
-		open_main_logfile();
-		return;
-	}
 }
 
 void shutdown_logging(void)
 {
-	switch (logging) {
-	case LOGGING_DISABLED:
+	if (logging == LOGGING_DISABLED)
 		return;
-	case LOGGING_FILES:
-		close_logfile(&mainlogfile);
-		return;
-	}
-}
-
-void init_child_logging(struct childdata *child)
-{
-	switch (logging) {
-	case LOGGING_DISABLED:
-		return;
-	case LOGGING_FILES:
-		open_child_logfile(child);
-		return;
-	}
-}
-
-void shutdown_child_logging(struct childdata *child)
-{
-	switch (logging) {
-	case LOGGING_DISABLED:
-		return;
-	case LOGGING_FILES:
-		close_logfile(&child->logfile);
-		return;
-	}
 }

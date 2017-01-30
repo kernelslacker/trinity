@@ -110,10 +110,8 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
  --group/-g
    Used to specify enabling a group of syscalls. Current groups defined are 'vm' and 'vfs'.
 
- --logging/-l off: This disables logging. Useful if you have a serial console, though you
-         will likely lose any information about what system call was being called,
-         what maps got set up etc. Does make things go considerably faster however,
-         as it no longer fsync()'s after every syscall
+ --logging/-l off:
+    Currently does nothing.
 
  --ioctls/-I will dump all available ioctls.
 

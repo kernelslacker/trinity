@@ -518,7 +518,6 @@ void child_process(struct childdata *child, int childno)
 	}
 
 out:
-	shutdown_child_logging(child);
 
 	debugf("child %d %d exiting.\n", childno, getpid());
 }

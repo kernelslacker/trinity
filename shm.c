@@ -78,8 +78,6 @@ void init_shm(void)
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));
 
 		child->num = i;
-
-		init_child_logging(child);
 	}
 	mprotect(shm->children, childptrslen, PROT_READ);
 }
