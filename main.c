@@ -87,6 +87,9 @@ static int shm_is_corrupt(void)
  */
 void reap_child(struct childdata *child)
 {
+	/* Don't reap a child again */
+	if( pids[child->num] == EMPTY_PIDSLOT )
+		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	unlock(&child->syscall.lock);
 	shm->running_childs--;
