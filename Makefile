@@ -2,7 +2,7 @@ VERSION="1.8pre"
 
 INSTALL_PREFIX ?= $(DESTDIR)
 INSTALL_PREFIX ?= $(HOME)
-NR_CPUS := $(shell grep ^processor /proc/cpuinfo | /usr/bin/wc -l)
+NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
 
 ifeq ($(CC),"")
 CC := gcc
