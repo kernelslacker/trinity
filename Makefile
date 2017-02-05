@@ -1,5 +1,11 @@
 VERSION="1.8pre"
 
+ifeq (,$(findstring pre,$(VERSION)))
+DEVEL = 0
+else
+DEVEL = 1
+endif
+
 INSTALL_PREFIX ?= $(DESTDIR)
 INSTALL_PREFIX ?= $(HOME)
 NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
@@ -15,10 +21,11 @@ CFLAGS += -Wall -Wextra -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_
 CFLAGS += $(shell if $(CC) -std=gnu11 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-std=gnu11"; else echo "-std=gnu99"; fi)
 
 # Only enabled during development, and on gcc 4.9+
+ifeq ($(DEVEL), 1)
 CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
 CPP_MINOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f2)
-DEVEL	:= $(shell grep VERSION Makefile | head -n1 | grep pre | wc -l)
-CFLAGS	+= $(shell if [ $(CPP_MAJOR) -eq 5 -a $(CPP_MINOR) -ge 1 -a $(DEVEL) -eq 1 ] ; then echo "-Werror"; else echo ""; fi)
+CFLAGS	+= $(shell if [ $(CPP_MAJOR) -eq 5 -a $(CPP_MINOR) -ge 1 ] ; then echo "-Werror"; else echo ""; fi)
+endif
 
 ifneq ($(SYSROOT),)
 CFLAGS += --sysroot=$(SYSROOT)
@@ -46,7 +53,9 @@ LDLIBS += -lrt
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
-CFLAGS += $(shell if [ $(DEVEL) -eq 0 ]; then echo "-Wno-maybe-uninitialized"; else echo ""; fi)
+ifeq ($(DEVEL), 0)
+CFLAGS += -Wno-maybe-uninitialized
+endif
 endif
 
 # Sometimes useful for debugging. more useful with clang than gcc.
