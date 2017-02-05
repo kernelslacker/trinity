@@ -1,9 +1,8 @@
 #include "config.h"
-#ifdef USE_BTRFS_IOCTL
+#ifdef USE_BTRFS
 #include <stdio.h>
 #include <linux/fs.h>
-
-#include <btrfs/ioctl.h>
+#include <linux/btrfs.h>
 #include "ioctls.h"
 #include "shm.h"
 #include "utils.h"
@@ -122,4 +121,4 @@ static const struct ioctl_group btrfs_grp = {
 };
 
 REG_IOCTL_GROUP(btrfs_grp)
-#endif /* USE_BTRFS_IOCTL */
+#endif /* USE_BTRFS */

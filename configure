@@ -255,7 +255,6 @@ check_header linux/if_alg.h USE_IF_ALG
 check_header linux/rds.h USE_RDS
 check_header linux/vfio.h USE_VFIO
 check_header linux/btrfs.h USE_BTRFS
-check_header btrfs/ioctl.h USE_BTRFS_IOCTL
 check_header drm/drm.h USE_DRM
 check_header drm/exynos_drm.h USE_DRM_EXYNOS
 check_header sound/compress_offload.h USE_SNDDRV_COMPRESS_OFFLOAD
