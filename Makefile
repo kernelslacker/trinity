@@ -18,13 +18,15 @@ LD := $(CROSS_COMPILE)$(LD)
 
 CFLAGS += -Wall -Wextra -g -O2 -I. -Iinclude/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -D__linux__
 
-CFLAGS += $(shell if $(CC) -std=gnu11 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-std=gnu11"; else echo "-std=gnu99"; fi)
+CCSTD := $(shell if $(CC) -std=gnu11 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-std=gnu11"; else echo "-std=gnu99"; fi)
+CFLAGS += $(CCSTD)
 
 # Only enabled during development, and on gcc 4.9+
 ifeq ($(DEVEL), 1)
 CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
 CPP_MINOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f2)
-CFLAGS	+= $(shell if [ $(CPP_MAJOR) -eq 5 -a $(CPP_MINOR) -ge 1 ] ; then echo "-Werror"; else echo ""; fi)
+WERROR	:= $(shell if [ $(CPP_MAJOR) -eq 5 -a $(CPP_MINOR) -ge 1 ] ; then echo "-Werror"; else echo ""; fi)
+CFLAGS	+= $(WERROR)
 endif
 
 ifneq ($(SYSROOT),)
@@ -75,40 +77,40 @@ test:
 	@if [ ! -f config.h ]; then  echo "[1;31mRun configure.sh first.[0m" ; exit; fi
 
 
-MACHINE		= $(shell $(CC) -dumpmachine)
-SYSCALLS_ARCH	= $(shell case "$(MACHINE)" in \
-		  (sh*) echo syscalls/sh/*.c ;; \
-		  (ia64*) echo syscalls/ia64/*.c ;; \
-		  (ppc*|powerpc*) echo syscalls/ppc/*.c ;; \
-		  (sparc*) echo syscalls/sparc/*.c ;; \
-		  (x86_64*) echo syscalls/x86/*.c \
-				 syscalls/x86/i386/*.c \
-				 syscalls/x86/x86_64/*.c;; \
-		  (i?86*) echo syscalls/x86/*.c \
-			       syscalls/x86/i386/*.c;; \
-		  esac)
+MACHINE		:= $(shell $(CC) -dumpmachine)
+SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
+		   (sh*) echo syscalls/sh/*.c ;; \
+		   (ia64*) echo syscalls/ia64/*.c ;; \
+		   (ppc*|powerpc*) echo syscalls/ppc/*.c ;; \
+		   (sparc*) echo syscalls/sparc/*.c ;; \
+		   (x86_64*) echo syscalls/x86/*.c \
+				  syscalls/x86/i386/*.c \
+				  syscalls/x86/x86_64/*.c;; \
+		   (i?86*) echo syscalls/x86/*.c \
+				syscalls/x86/i386/*.c;; \
+		   esac)
 
-HEADERS		= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
+HEADERS		:= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 
-SRCS		= $(wildcard *.c) \
-		  $(wildcard childops/*.c) \
-		  $(wildcard fds/*.c) \
-		  $(wildcard ioctls/*.c) \
-		  $(wildcard mm/*.c) \
-		  $(wildcard net/*.c) \
-		  $(wildcard rand/*.c) \
-		  $(wildcard syscalls/*.c) \
-		  $(SYSCALLS_ARCH)
+SRCS		:= $(wildcard *.c) \
+		   $(wildcard childops/*.c) \
+		   $(wildcard fds/*.c) \
+		   $(wildcard ioctls/*.c) \
+		   $(wildcard mm/*.c) \
+		   $(wildcard net/*.c) \
+		   $(wildcard rand/*.c) \
+		   $(wildcard syscalls/*.c) \
+		   $(SYSCALLS_ARCH)
 
-OBJS		= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard rand/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
-		  $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH)))
+OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard rand/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH)))
 
 DEPDIR= .deps
 
