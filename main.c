@@ -242,6 +242,8 @@ static char get_pid_state(struct childdata *child)
 		BUG("get_pid_state can only be called from main!\n");
 
 	fseek(child->pidstatfile, 0L, SEEK_SET);
+	fflush(child->pidstatfile);
+
 	if (getline(&line, &n, child->pidstatfile) != -1)
 		sscanf(line, "%d %s %c", &pid, procname, &state);
 
