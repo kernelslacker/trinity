@@ -285,7 +285,10 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'X':
-			dropprivs = TRUE;
+			if (getuid() == 0)
+				dropprivs = TRUE;
+			else
+				outputstd("Already running unprivileged, can't drop privs\n");
 			break;
 
 		case 0:
