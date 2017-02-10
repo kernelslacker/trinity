@@ -303,8 +303,12 @@ static bool generate_sockets(void)
 	lock_cachefile(F_WRLCK);
 
 	if (do_specific_domain == TRUE) {
-		while (nr_sockets < NR_SOCKET_FDS)
-			ret |= generate_specific_socket(specific_domain);
+		while (nr_sockets < NR_SOCKET_FDS) {
+			ret = generate_specific_socket(specific_domain);
+
+			if (ret == FALSE)
+				return FALSE;
+		}
 		goto out_unlock;
 	}
 
