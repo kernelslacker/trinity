@@ -61,6 +61,7 @@ static const struct domain domains[] = {
 	{ "ALG",	PF_ALG },
 	{ "NFC",	PF_NFC },
 	{ "VSOCK",	PF_VSOCK },
+	{ "KCM",	PF_KCM },
 };
 
 static const struct domain *lookup_domain(const char *name)
