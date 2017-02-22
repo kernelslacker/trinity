@@ -20,6 +20,11 @@ static void inotify_destructor(struct object *obj)
 	close(obj->inotifyfd);
 }
 
+static void inotify_dump(struct object *obj)
+{
+	output(0, "inotifyfd:%d\n", obj->inotifyfd);
+}
+
 static int open_inotify_fds(void)
 {
 	struct objhead *head;
@@ -35,6 +40,7 @@ static int open_inotify_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_INOTIFY);
 	head->destroy = &inotify_destructor;
+	head->dump = &inotify_dump;
 
 	fd = inotify_init();
 	if (fd < 0)

@@ -20,6 +20,11 @@ static void eventfd_destructor(struct object *obj)
 	close(obj->eventfd);
 }
 
+static void eventfd_dump(struct object *obj)
+{
+	output(0, "eventfd:%d\n", obj->eventfd);
+}
+
 static int open_eventfd_fds(void)
 {
 	struct objhead *head;
@@ -37,6 +42,7 @@ static int open_eventfd_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EVENTFD);
 	head->destroy = &eventfd_destructor;
+	head->dump = &eventfd_dump;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;

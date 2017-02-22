@@ -96,6 +96,11 @@ static void filefd_destructor(struct object *obj)
 	close(obj->filefd);
 }
 
+static void filefd_dump(struct object *obj)
+{
+	output(0, "filefd:%d\n", obj->filefd);
+}
+
 static int open_files(void)
 {
 	struct objhead *head;
@@ -103,6 +108,7 @@ static int open_files(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FILE);
 	head->destroy = &filefd_destructor;
+	head->dump = &filefd_dump;
 
 	generate_filelist();
 

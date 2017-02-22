@@ -130,6 +130,7 @@ void setup_initial_mappings(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
 	head->destroy = &map_destructor;
+	head->dump = &map_dump;
 
 	setup_mapping_sizes();
 

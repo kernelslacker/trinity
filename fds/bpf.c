@@ -48,6 +48,11 @@ static void bpf_destructor(struct object *obj)
 	close(obj->bpf_map_fd);
 }
 
+static void bpf_map_dump(struct object *obj)
+{
+	output(0, "bpf map fd:%d\n", obj->bpf_map_fd);
+}
+
 struct bpf_fd_types {
 	u32 map_type;
 	u32 key_size;
@@ -77,6 +82,7 @@ static int open_bpf_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_MAP);
 	head->destroy = &bpf_destructor;
+	head->dump = &bpf_map_dump;
 
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++) {
 		struct object *obj;

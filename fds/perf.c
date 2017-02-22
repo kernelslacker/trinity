@@ -15,6 +15,11 @@
 
 static void perffd_destructor(struct object *obj)
 {
+	output(0, "perffd:%d\n", obj->perffd);
+}
+
+static void perffd_dump(struct object *obj)
+{
 	close(obj->perffd);
 }
 
@@ -27,6 +32,7 @@ static int open_perf_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
 	head->destroy = &perffd_destructor;
+	head->dump = &perffd_dump;
 
 	while (i < MAX_PERF_FDS) {
 		struct syscallrecord *rec;

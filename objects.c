@@ -18,85 +18,10 @@ void dump_objects(bool global, enum objecttype type)
 			head->num_entries, type, list);
 
 	list_for_each(node, list) {
-		struct object *obj;
-		struct map *m;
-		char buf[11];
+		struct object *obj = (struct object *) node;
 
-		obj = (struct object *) node;
-
-		//TODO: Having object.c have knowledge of each object type is kinda
-		// gross. Have some kind of ->dump operation in the objhead maybe?
-
-		switch (type) {
-		case OBJ_MMAP_ANON:
-		case OBJ_MMAP_FILE:
-		case OBJ_MMAP_TESTFILE:
-			m = &obj->map;
-			sizeunit(m->size, buf);
-			output(0, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
-			break;
-		case OBJ_FD_PIPE:
-			output(0, "pipefd:%d\n", obj->pipefd);
-			break;
-		case OBJ_FD_FILE:
-			output(0, "filefd:%d\n", obj->filefd);
-			break;
-		case OBJ_FD_PERF:
-			output(0, "perffd:%d\n", obj->perffd);
-			break;
-		case OBJ_FD_EPOLL:
-			output(0, "epollfd:%d\n", obj->epollfd);
-			break;
-		case OBJ_FD_EVENTFD:
-			output(0, "eventfd:%d\n", obj->eventfd);
-			break;
-		case OBJ_FD_TIMERFD:
-			output(0, "timerfd:%d\n", obj->timerfd);
-			break;
-		case OBJ_FD_TESTFILE:
-			output(0, "testfilefd:%d\n", obj->testfilefd);
-			break;
-		case OBJ_FD_MEMFD:
-			output(0, "memfd:%d\n", obj->memfd);
-			break;
-		case OBJ_FD_DRM:
-			output(0, "drmfd:%d\n", obj->drmfd);
-			break;
-		case OBJ_FD_INOTIFY:
-			output(0, "inotifyfd:%d\n", obj->inotifyfd);
-			break;
-		case OBJ_FD_SOCKET:
-			output(0, "socket (fam:%d type:%d protocol:%d) fd:%d\n",
-				obj->sockinfo.triplet.family,
-				obj->sockinfo.triplet.type,
-				obj->sockinfo.triplet.protocol,
-				obj->sockinfo.fd);
-			break;
-		case OBJ_FD_USERFAULTFD:
-			output(0, "userfaultfd:%d\n", obj->userfaultfd);
-			break;
-		case OBJ_FD_FANOTIFY:
-			output(0, "fanotify:%d\n", obj->fanotifyfd);\
-			break;
-		case OBJ_FD_BPF_MAP:
-			output(0, "bpf map fd:%d\n", obj->bpf_map_fd);
-			break;
-		case OBJ_FD_BPF_PROG:
-			output(0, "bpf prog fd:%d\n", obj->bpf_prog_fd);
-			break;
-		case OBJ_FUTEX:
-			output(0, "futex: %lx owner:%d\n",
-				obj->lock.futex, obj->lock.owner_pid);
-			break;
-		case OBJ_SYSV_SHM:
-			output(0, "sysv_shm: id:%u size:%d flags:%x ptr:%p\n",
-				obj->sysv_shm.id, obj->sysv_shm.size,
-				obj->sysv_shm.flags, obj->sysv_shm.ptr);
-			break;
-		case MAX_OBJECT_TYPES:
-		default:
-			break;
-		}
+		if (head->dump != NULL)
+			head->dump(obj);
 	}
 }
 

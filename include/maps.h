@@ -24,6 +24,7 @@ extern unsigned long mapping_sizes[NR_MAPPING_SIZES];
 
 struct object;
 void map_destructor(struct object *obj);
+void map_dump(struct object *obj);
 
 void setup_initial_mappings(void);
 

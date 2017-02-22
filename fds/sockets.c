@@ -405,6 +405,15 @@ static void socket_destructor(struct object *obj)
 			strerror(errno));
 }
 
+static void socket_dump(struct object *obj)
+{
+	output(0, "socket (fam:%d type:%d protocol:%d) fd:%d\n",
+		obj->sockinfo.triplet.family,
+		obj->sockinfo.triplet.type,
+		obj->sockinfo.triplet.protocol,
+		obj->sockinfo.fd);
+}
+
 static int open_sockets(void)
 {
 	struct objhead *head;
@@ -413,6 +422,7 @@ static int open_sockets(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
 	head->destroy = &socket_destructor;
+	head->dump = &socket_dump;
 
 	cachefile = open(cachefilename, O_RDONLY);
 	if (cachefile < 0) {

@@ -33,6 +33,11 @@ static void fanotifyfd_destructor(struct object *obj)
 	close(obj->fanotifyfd);
 }
 
+static void fanotifyfd_dump(struct object *obj)
+{
+	output(0, "fanotify:%d\n", obj->fanotifyfd);
+}
+
 static int open_fanotify_fds(void)
 {
 	struct objhead *head;
@@ -40,6 +45,7 @@ static int open_fanotify_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FANOTIFY);
 	head->destroy = &fanotifyfd_destructor;
+	head->dump = &fanotifyfd_dump;
 
 	for (i = 0; i < NR_INOTIFYFDS; i++) {
 		struct object *obj;

@@ -12,8 +12,16 @@
 #include "objects.h"
 #include "utils.h"
 
+static void dump_sysv_shm(struct object *obj)
+{
+	output(0, "sysv_shm: id:%u size:%d flags:%x ptr:%p\n",
+		obj->sysv_shm.id, obj->sysv_shm.size,
+		obj->sysv_shm.flags, obj->sysv_shm.ptr);
+}
+
 void create_sysv_shms(void)
 {
+	struct objhead *head;
 	unsigned int i;
 	int shmget_flags[] = {
 		0,	// Just CREAT|EXCL
@@ -23,6 +31,9 @@ void create_sysv_shms(void)
 		SHM_HUGETLB|SHM_HUGE_2MB|SHM_NORESERVE,
 		SHM_HUGETLB|SHM_HUGE_1GB|SHM_NORESERVE,
 	};
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_SYSV_SHM);
+	head->dump = dump_sysv_shm;
 
 	for (i = 0; i < ARRAY_SIZE(shmget_flags); i++) {
 		void *p;

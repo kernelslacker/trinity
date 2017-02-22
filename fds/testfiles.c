@@ -26,6 +26,11 @@ static void testfile_destructor(struct object *obj)
 	close(obj->testfilefd);
 }
 
+static void testfile_dump(struct object *obj)
+{
+	output(0, "testfilefd:%d\n", obj->testfilefd);
+}
+
 static int open_testfile(char *filename)
 {
 	struct objhead *head;
@@ -33,6 +38,7 @@ static int open_testfile(char *filename)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
 	head->destroy = &testfile_destructor;
+	head->dump = &testfile_dump;
 
 	/* file might be around from an earlier run, nuke it. */
 	(void) unlink(filename);

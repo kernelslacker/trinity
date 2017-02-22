@@ -30,6 +30,11 @@ static void userfaultfd_destructor(struct object *obj)
 	close(obj->userfaultfd);
 }
 
+static void userfaultfd_dump(struct object *obj)
+{
+	output(0, "userfaultfd:%d\n", obj->userfaultfd);
+}
+
 static int open_userfaultfds(void)
 {
 	struct objhead *head;
@@ -43,6 +48,7 @@ static int open_userfaultfds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
 	head->destroy = &userfaultfd_destructor;
+	head->dump = &userfaultfd_dump;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;

@@ -29,6 +29,11 @@ static void drmfd_destructor(struct object *obj)
 	close(obj->drmfd);
 }
 
+static void drmfd_dump(struct object *obj)
+{
+	output(0, "drmfd:%d\n", obj->drmfd);
+}
+
 static int create_dumb(__unused__ int fd)
 {
 #if defined(DRM_IOCTL_MODE_CREATE_DUMB) && defined(DRM_IOCTL_PRIME_HANDLE_TO_FD)
@@ -82,6 +87,7 @@ static int open_drm_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DRM);
 	head->destroy = &drmfd_destructor;
+	head->dump = &drmfd_dump;
 
 	dir = opendir("/dev/dri/");
 	if (!dir)

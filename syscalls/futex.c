@@ -111,8 +111,14 @@ static inline void futex_init_lock(struct __lock *thislock)
 	thislock->owner_pid = 0;
 }
 
+static void dump_futex(struct object *obj)
+{
+	output(0, "futex: %lx owner:%d\n", obj->lock.futex, obj->lock.owner_pid);
+}
+
 void create_futexes(void)
 {
+	struct objhead *head;
 	unsigned int i;
 
 	for (i = 0; i < NFUTEXES; i++) {
@@ -122,6 +128,9 @@ void create_futexes(void)
 		futex_init_lock(thislock);
 		add_object(obj, OBJ_GLOBAL, OBJ_FUTEX);
 	}
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FUTEX);
+	head->dump = dump_futex;
 
 	output(0, "Reserved/initialized %d futexes.\n", NFUTEXES);
 }

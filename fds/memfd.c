@@ -29,6 +29,11 @@ static void memfd_destructor(struct object *obj)
 	close(obj->memfd);
 }
 
+static void memfd_dump(struct object *obj)
+{
+	output(0, "memfd:%d\n", obj->memfd);
+}
+
 static int open_memfd_fds(void)
 {
 	struct objhead *head;
@@ -42,6 +47,7 @@ static int open_memfd_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD);
 	head->destroy = &memfd_destructor;
+	head->dump = &memfd_dump;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;

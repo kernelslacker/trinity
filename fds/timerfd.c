@@ -20,6 +20,11 @@ static void timerfd_destructor(struct object *obj)
 	close(obj->timerfd);
 }
 
+static void timerfd_dump(struct object *obj)
+{
+	output(0, "timerfd:%d\n", obj->timerfd);
+}
+
 static int __open_timerfd_fds(int clockid)
 {
 	struct objhead *head;
@@ -33,6 +38,7 @@ static int __open_timerfd_fds(int clockid)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TIMERFD);
 	head->destroy = &timerfd_destructor;
+	head->dump = &timerfd_dump;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;

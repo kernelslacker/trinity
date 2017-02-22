@@ -21,6 +21,11 @@ static void pipefd_destructor(struct object *obj)
 	close(obj->pipefd);
 }
 
+static void pipefd_dump(struct object *obj)
+{
+	output(0, "pipefd:%d\n", obj->pipefd);
+}
+
 static void open_pipe_pair(unsigned int flags)
 {
 	struct objhead *head;
@@ -29,6 +34,7 @@ static void open_pipe_pair(unsigned int flags)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
 	head->destroy = &pipefd_destructor;
+	head->dump = &pipefd_dump;
 
 	if (pipe2(pipes, flags) < 0) {
 		perror("pipe fail.\n");

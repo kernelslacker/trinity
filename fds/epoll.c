@@ -20,6 +20,11 @@ static void epoll_destructor(struct object *obj)
 	close(obj->epollfd);
 }
 
+static void epoll_dump(struct object *obj)
+{
+	output(0, "epollfd:%d\n", obj->epollfd);
+}
+
 static int open_epoll_fds(void)
 {
 	struct objhead *head;
@@ -28,6 +33,7 @@ static int open_epoll_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EPOLL);
 	head->destroy = &epoll_destructor;
+	head->dump = &epoll_dump;
 
 	while (i < MAX_EPOLL_FDS) {
 

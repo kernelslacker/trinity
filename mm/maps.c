@@ -59,6 +59,16 @@ void map_destructor(struct object *obj)
 	free(map->name);
 }
 
+void map_dump(struct object *obj)
+{
+	struct map *m;
+	char buf[11];
+
+	m = &obj->map;
+	sizeunit(m->size, buf);
+	output(0, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
+}
+
 /*
  * Set up a childs local mapping list.
  * A child inherits the initial mappings, and will add to them
@@ -71,6 +81,7 @@ void init_child_mappings(void)
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
 	head->destroy = &map_destructor;
+	head->dump = &map_dump;
 
 	globallist = shm->global_objects[OBJ_MMAP_ANON].list;
 
@@ -160,6 +171,7 @@ void dirty_random_mapping(void)
  */
 void mmap_fd(int fd, const char *name, size_t len, int prot, bool global, enum objecttype type)
 {
+	struct objhead *head;
 	struct object *obj;
 	off_t offset;
 	int retries = 0;
@@ -188,6 +200,9 @@ retry_mmap:
 		} else
 			goto retry_mmap;
 	}
+
+	head = get_objhead(global, type);
+	head->dump = &map_dump;
 
 	add_object(obj, global, type);
 	return;
