@@ -1,10 +1,9 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include "log.h"
-#include "params.h"	// logging, quiet_level
 #include "pids.h"
-#include "shm.h"
-#include "trinity.h"
+#include "params.h"	// quiet_level
 
 #define BUFSIZE 1024	// decoded syscall args are fprintf'd directly, this is for everything else.
 
@@ -81,7 +80,6 @@ void outputstd(const char *fmt, ...)
 }
 
 
-// TODO: combine the below with output()
 void output_rendered_buffer(char *buffer)
 {
 	/* Output to stdout only if -q param is not specified */
@@ -89,12 +87,4 @@ void output_rendered_buffer(char *buffer)
 		fprintf(stdout, "%s", buffer);
 		fflush(stdout);
 	}
-}
-
-void init_logging(void)
-{
-}
-
-void shutdown_logging(void)
-{
 }

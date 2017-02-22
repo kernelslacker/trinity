@@ -18,6 +18,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"	// progname
+#include "udp.h"
 
 bool set_debug = FALSE;
 bool do_specific_syscall = FALSE;
@@ -209,6 +210,7 @@ void parse_args(int argc, char *argv[])
 
 		case 'l':
 			outputerr("-l currently does nothing. TBD.\n");
+			init_logging(optarg);
 			break;
 
 		case 'L':

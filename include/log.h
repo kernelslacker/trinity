@@ -18,7 +18,4 @@ void output_syscall_prefix(struct syscallrecord *rec);
 void output_syscall_postfix(struct syscallrecord *rec);
 void output_rendered_buffer(char *buffer);
 
-void init_logging(void);
-void shutdown_logging(void);
-
 void debugf(const char *fmt, ...);

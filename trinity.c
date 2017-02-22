@@ -25,6 +25,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
+#include "udp.h"
 #include "uid.h"
 #include "version.h"
 
@@ -120,8 +121,6 @@ int main(int argc, char* argv[])
 	init_uids();
 
 	change_tmp_dir();
-
-	init_logging();
 
 	init_shm();
 
