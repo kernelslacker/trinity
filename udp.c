@@ -70,8 +70,6 @@ void sendudp(char *buffer)
 	ret = sendto(logsocket, buffer, strlen(buffer) + 1, 0, (struct sockaddr *) &udpserver, sizeof(udpserver));
 	if (ret == -1) {
 		fprintf(stderr, "sendto: %s\n", strerror(errno));
-		close(logsocket);
-		exit(EXIT_FAILURE);
 	}
 }
 
