@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include "arch.h"	// page_size
 #include "child.h"
-#include "log.h"
 #include "pathnames.h"
 #include "pids.h"
 #include "random.h"

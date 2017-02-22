@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <unistd.h>
-#include "log.h"
+#include "arg-decoder.h"
 #include "pids.h"
 #include "params.h"	// quiet_level
 

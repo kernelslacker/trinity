@@ -13,7 +13,6 @@
 #include "arch.h"	// page_size
 #include "child.h"
 #include "files.h"
-#include "log.h"
 #include "pathnames.h"
 #include "random.h"
 

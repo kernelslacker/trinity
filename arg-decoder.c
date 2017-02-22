@@ -3,7 +3,7 @@
  */
 #include <stdio.h>
 #include "arch.h"	//PAGE_MASK
-#include "log.h"
+#include "arg-decoder.h"
 #include "params.h"	// logging, quiet_level
 #include "pids.h"
 #include "shm.h"

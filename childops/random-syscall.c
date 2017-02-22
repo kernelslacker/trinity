@@ -10,10 +10,10 @@
 #include <sys/wait.h>
 
 #include "arch.h"	// biarch
+#include "arg-decoder.h"
 #include "child.h"
 #include "debug.h"
 #include "locks.h"
-#include "log.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
