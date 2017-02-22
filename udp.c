@@ -77,4 +77,8 @@ void sendudp(char *buffer)
 
 void shutdown_logging(void)
 {
+	if (logging_enabled == FALSE)
+		return;
+
+	close(logsocket);
 }
