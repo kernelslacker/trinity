@@ -11,7 +11,6 @@
 #include "arch.h"
 #include "syscall.h"
 #include "params.h"
-#include "log.h"
 #include "random.h"
 #include "shm.h"
 #include "tables.h"

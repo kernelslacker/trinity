@@ -16,7 +16,6 @@
 #include "arch.h"
 #include "child.h"
 #include "list.h"
-#include "log.h"
 #include "maps.h"
 #include "params.h"
 #include "pids.h"

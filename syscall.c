@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <unistd.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -20,9 +21,9 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
-#include "log.h"
 #include "tables.h"
 #include "taint.h"
+#include "trinity.h"
 #include "uid.h"
 #include "utils.h"
 

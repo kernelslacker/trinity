@@ -9,7 +9,6 @@
 
 #include "arch.h"
 #include "arch-syscalls.h"
-#include "log.h"
 #include "params.h"
 #include "syscall.h"
 #include "shm.h"

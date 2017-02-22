@@ -4,6 +4,7 @@
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include "arch.h"
 #include "config.h"	// for VERSION
@@ -11,7 +12,6 @@
 #include "files.h"
 #include "ftrace.h"
 #include "ioctls.h"
-#include "log.h"
 #include "maps.h"
 #include "pids.h"
 #include "params.h"

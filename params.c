@@ -9,7 +9,6 @@
 #include "bdevs.h"
 #include "child.h"
 #include "ftrace.h"
-#include "log.h"
 #include "net.h"
 #include "params.h"
 #include "domains.h"

@@ -5,7 +5,6 @@
 
 #include "files.h"
 #include "ioctls.h"
-#include "log.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"

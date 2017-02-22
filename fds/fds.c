@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include "fd.h"
-#include "log.h"
 #include "list.h"
 #include "net.h"
 #include "params.h"

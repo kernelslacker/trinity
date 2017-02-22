@@ -166,7 +166,7 @@ static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *buff
 }
 
 /* These next two functions are always called from child_random_syscalls() by a fuzzing child.
- * They render the buffer, and output it (to both stdout and logs).
+ * They render the buffer, and output it to stdout.
  * Other contexts (like post-mortem) directly use the buffers.
  */
 void output_syscall_prefix(struct syscallrecord *rec)

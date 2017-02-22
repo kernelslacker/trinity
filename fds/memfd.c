@@ -7,7 +7,6 @@
 #include <unistd.h>
 
 #include "fd.h"
-#include "log.h"
 #include "memfd.h"
 #include "objects.h"
 #include "random.h"

@@ -12,7 +12,6 @@
 #include "child.h"
 #include "debug.h"
 #include "ftrace.h"
-#include "log.h"
 #include "params.h"
 #include "pids.h"
 #include "post-mortem.h"

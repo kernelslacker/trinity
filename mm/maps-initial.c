@@ -14,7 +14,6 @@
 #include <sys/mman.h>
 #include "arch.h"
 #include "list.h"
-#include "log.h"
 #include "maps.h"
 #include "random.h"
 #include "utils.h"

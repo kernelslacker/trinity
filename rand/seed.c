@@ -30,7 +30,6 @@
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'
 #include "pids.h"
-#include "log.h"
 #include "random.h"
 #include "utils.h"
 

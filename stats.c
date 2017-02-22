@@ -1,5 +1,5 @@
 #include <errno.h>
-#include "log.h"
+#include "arch.h"
 #include "stats.h"
 #include "syscall.h"
 #include "tables.h"

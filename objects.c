@@ -1,5 +1,4 @@
 #include "list.h"
-#include "log.h"
 #include "objects.h"
 #include "random.h"
 #include "shm.h"

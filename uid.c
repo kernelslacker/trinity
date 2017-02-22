@@ -8,7 +8,7 @@
 #include <grp.h>
 #include "child.h"
 #include "debug.h"
-#include "log.h"
+#include "exit.h"
 #include "params.h"
 #include "trinity.h"
 #include "uid.h"

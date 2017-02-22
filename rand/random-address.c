@@ -6,7 +6,6 @@
 #include <sys/mman.h>	// mprotect
 
 #include "arch.h"	// KERNEL_ADDR etc
-#include "log.h"
 #include "random.h"
 #include "sanitise.h"
 #include "maps.h"

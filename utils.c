@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "debug.h"
-#include "log.h"
 #include "pids.h"
 #include "random.h"
+#include "shm.h"
 #include "utils.h"
 
 /*

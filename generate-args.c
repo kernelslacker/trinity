@@ -7,7 +7,6 @@
 #include "arch.h"
 #include "debug.h"
 #include "files.h"
-#include "log.h"
 #include "maps.h"
 #include "net.h"
 #include "pathnames.h"

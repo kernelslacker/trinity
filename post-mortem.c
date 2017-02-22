@@ -5,7 +5,6 @@
 #include <fcntl.h>
 #include <string.h>
 #include <syslog.h>
-#include "log.h"
 #include "pids.h"
 #include "shm.h"
 #include "taint.h"

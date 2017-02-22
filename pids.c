@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <signal.h>
-#include "log.h"
+#include <unistd.h>
 #include "params.h"	// dangerous
 #include "pids.h"
 #include "random.h"

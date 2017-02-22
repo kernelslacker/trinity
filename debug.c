@@ -10,9 +10,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <syslog.h>
+#include <unistd.h>
 #include "child.h"
 #include "debug.h"
-#include "log.h"
 #include "params.h"
 #include "pids.h"
 #include "shm.h"

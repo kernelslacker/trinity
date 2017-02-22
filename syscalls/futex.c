@@ -14,7 +14,6 @@
 #include "sanitise.h"
 #include "maps.h"
 #include "futex.h"
-#include "log.h"
 
 #define FUTEX_UNLOCKED (0)
 #define FUTEX_LOCKED (!FUTEX_UNLOCKED)

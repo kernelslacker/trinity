@@ -10,7 +10,6 @@
 #include <sys/stat.h>
 
 #include "exit.h"
-#include "log.h"
 #include "params.h"
 #include "pathnames.h"
 #include "random.h"

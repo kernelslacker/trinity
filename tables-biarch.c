@@ -10,7 +10,6 @@
 
 #include "arch.h"
 #include "syscall.h"
-#include "log.h"
 #include "params.h"
 #include "random.h"
 #include "shm.h"

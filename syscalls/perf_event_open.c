@@ -10,7 +10,6 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
-#include "log.h"
 #include "maps.h"
 #include "perf.h"
 #include "perf_event.h"

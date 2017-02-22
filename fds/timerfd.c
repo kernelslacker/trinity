@@ -9,7 +9,6 @@
 
 #include "fd.h"
 #include "files.h"
-#include "log.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"

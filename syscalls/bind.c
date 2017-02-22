@@ -5,7 +5,6 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <sys/socket.h>
-#include "log.h"
 #include "sanitise.h"
 #include "shm.h"
 

@@ -10,7 +10,6 @@
 
 #include "debug.h"
 #include "domains.h"
-#include "log.h"
 #include "net.h"
 #include "objects.h"
 #include "params.h"	// verbose, do_specific_domain

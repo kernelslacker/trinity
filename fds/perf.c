@@ -9,7 +9,6 @@
 #include "objects.h"
 #include "perf.h"
 #include "shm.h"
-#include "log.h"
 #include "sanitise.h"
 
 #define MAX_PERF_FDS 10

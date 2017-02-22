@@ -10,7 +10,6 @@
 #include "exit.h"
 #include "fd.h"
 #include "files.h"
-#include "log.h"
 #include "objects.h"
 #include "pathnames.h"
 #include "random.h"

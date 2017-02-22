@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include "fd.h"
-#include "log.h"
 #include "userfaultfd.h"
 #include "objects.h"
 #include "random.h"

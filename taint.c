@@ -4,10 +4,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include "log.h"
 #include "params.h"
 #include "types.h"
 #include "taint.h"
+#include "trinity.h"
 
 int kernel_taint_initial = 0;
 

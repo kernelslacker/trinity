@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 #include "ftrace.h"
-#include "log.h"
+#include "trinity.h"
 
 static int trace_fd = -1;
 

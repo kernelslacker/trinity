@@ -17,6 +17,7 @@
 #include "pathnames.h"
 #include "pids.h"
 #include "random.h"
+#include "shm.h"
 
 static void read_pid_files(pid_t pid, char *buffer)
 {

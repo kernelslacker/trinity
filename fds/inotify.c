@@ -8,7 +8,6 @@
 #include <sys/inotify.h>
 
 #include "fd.h"
-#include "log.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
