@@ -55,8 +55,6 @@ char *specific_domain_optarg = NULL;
 
 char *victim_path = NULL;
 
-int logging = LOGGING_FILES;
-
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
 bool kernel_taint_param_occured = FALSE;
 
@@ -80,7 +78,7 @@ static void usage(void)
 	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
-	outputerr(" --logging,-l: (off=disable logging).\n");
+	outputerr(" --logging,-l: <CURRENTLY BROKEN>.\n");
 	outputerr(" --domain,-P: specify specific network domain for sockets.\n");	//FIXME: P used to be 'proto' pick something better.
 	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
@@ -210,10 +208,6 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'l':
-			if (!strncmp(optarg, "off", 3)) {
-				logging = LOGGING_DISABLED;
-				break;
-			}
 			outputerr("-l currently does nothing. TBD.\n");
 			break;
 

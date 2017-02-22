@@ -1,6 +1,5 @@
 #pragma once
 
-#include "child.h"
 #include "list.h"
 #include "syscall.h"
 #include "types.h"
@@ -22,7 +21,7 @@ struct fd_provider {
 
 void register_fd_provider(const struct fd_provider *prov);
 
-unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec);
+unsigned int check_if_fd(struct syscallrecord *rec);
 
 int get_random_fd(void);
 int get_new_random_fd(void);

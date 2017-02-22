@@ -26,7 +26,7 @@ void output(unsigned char level, const char *fmt, ...)
 	char main_prefix[]="[main]";
 	char child_prefix[32];
 
-	if (logging == LOGGING_DISABLED && level >= quiet_level)
+	if (level >= quiet_level)
 		return;
 
 	/* prefix preparation */
@@ -40,7 +40,6 @@ void output(unsigned char level, const char *fmt, ...)
 		childno = find_childno(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", childno, pid);
 		prefix = child_prefix;
-		shm->children[childno]->logdirty = TRUE;
 	}
 
 	/* formatting output */
@@ -57,10 +56,6 @@ void output(unsigned char level, const char *fmt, ...)
 		printf("%s %s", prefix, outputbuf);
 		(void)fflush(stdout);
 	}
-
-	/* go on with file logs only if enabled */
-	if (logging == LOGGING_DISABLED)
-		return;
 }
 
 /*
@@ -94,20 +89,12 @@ void output_rendered_buffer(char *buffer)
 		fprintf(stdout, "%s", buffer);
 		fflush(stdout);
 	}
-
-	/* Exit if should not continue at all. */
-	if (logging == LOGGING_DISABLED)
-		return;
 }
 
 void init_logging(void)
 {
-	if (logging == LOGGING_DISABLED)
-		return;
 }
 
 void shutdown_logging(void)
 {
-	if (logging == LOGGING_DISABLED)
-		return;
 }

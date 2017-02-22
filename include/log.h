@@ -22,8 +22,3 @@ void init_logging(void);
 void shutdown_logging(void);
 
 void debugf(const char *fmt, ...);
-
-enum {
-	LOGGING_DISABLED,
-	LOGGING_FILES,
-};
