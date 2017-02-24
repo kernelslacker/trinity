@@ -309,6 +309,9 @@ enum {
 #ifndef RTNLGRP_NSID
 #define RTNLGRP_NSID 28
 #endif
+#ifndef RTNLGRP_MPLS_NETCONF
+#define RTNLGRP_MPLS_NETCONF 29
+#endif
 
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
