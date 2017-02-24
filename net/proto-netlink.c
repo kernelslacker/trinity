@@ -13,18 +13,6 @@
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
-
-/* Current highest netlink socket. Supports some older kernels. */
-#ifdef NETLINK_CRYPTO
-#define _NETLINK_MAX NETLINK_CRYPTO
-#else
-	#ifdef NETLINK_RDMA
-	#define _NETLINK_MAX NETLINK_RDMA
-	#else
-		#define _NETLINK_MAX NETLINK_ECRYPTFS
-	#endif /* NETLINK_RDMA */
-#endif /* NETLINK_CRYPTO */
-
 static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;
