@@ -543,6 +543,10 @@ enum kcmp_type {
 #define TCP_REPAIR_WINDOW	29
 #endif
 
+#ifndef TCP_FASTOPEN_CONNECT
+#define TCP_FASTOPEN_CONNECT	30
+#endif
+
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15
