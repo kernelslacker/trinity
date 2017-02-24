@@ -62,6 +62,7 @@ static const struct domain domains[] = {
 	{ "VSOCK",	PF_VSOCK },
 	{ "KCM",	PF_KCM },
 	{ "QIPCRTR",	PF_QIPCRTR },
+	{ "SMC",	PF_SMC },
 };
 
 static const struct domain *lookup_domain(const char *name)

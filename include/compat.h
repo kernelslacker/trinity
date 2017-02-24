@@ -229,6 +229,10 @@ enum {
 #define PF_QIPCRTR	42
 #endif
 
+#ifndef PF_SMC
+#define PF_SMC		43
+#endif
+
 #ifndef NFC_SOCKPROTO_RAW
 #define NFC_SOCKPROTO_RAW	0
 #endif
