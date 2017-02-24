@@ -48,4 +48,5 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_ALG] = { .proto = &proto_alg },
 #endif
 	[PF_KCM] = { .proto = &proto_kcm },
+	[PF_QIPCRTR] = { .proto = &proto_qipcrtr },
 };
