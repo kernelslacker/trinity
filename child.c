@@ -277,6 +277,14 @@ static void init_child(struct childdata *child, int childno)
 	mask_signals_child();
 
 	disable_coredumps();
+
+	if (RAND_BOOL()) {
+		unshare(CLONE_NEWNS);
+		unshare(CLONE_NEWIPC);
+		unshare(CLONE_IO);
+		unshare(CLONE_NEWNET);
+	}
+
 /*
 	if (shm->unshare_perm_err == FALSE) {
 		if (RAND_BOOL()) {
