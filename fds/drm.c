@@ -83,7 +83,7 @@ static int open_drm_fds(void)
 	int fd, dfd;
 	DIR *dir;
 	struct dirent *entry;
-	char buf[128];
+	char buf[256 + 10];
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DRM);
 	head->destroy = &drmfd_destructor;
