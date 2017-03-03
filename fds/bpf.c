@@ -62,6 +62,16 @@ struct bpf_fd_types {
 	char name[32];
 };
 
+#ifndef BPF_MAP_TYPE_LRU_HASH
+#define BPF_MAP_TYPE_LRU_HASH 9
+#define BPF_MAP_TYPE_LRU_PERCPU_HASH 10
+#define BPF_MAP_TYPE_LPM_TRIE 11
+#endif
+#ifndef BPF_F_NO_COMMON_LRU
+#define BPF_F_NO_COMMON_LRU	(1U << 1)
+#endif
+
+
 static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_HASH, sizeof(long long), sizeof(long long), 1024, 0, "hash" },
 	{ BPF_MAP_TYPE_ARRAY, sizeof(int), sizeof(long long), 256, 0, "array" },
@@ -70,6 +80,11 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_PERCPU_HASH, sizeof(u32), sizeof(u64) * PERF_MAX_STACK_DEPTH, 10000, 0, "percpu hash" },
 	{ BPF_MAP_TYPE_PERCPU_ARRAY, sizeof(u32), sizeof(u64), 100, 0, "percpu array" },
 	{ BPF_MAP_TYPE_STACK_TRACE, sizeof(u32), sizeof(u64), 100, 0, "stack trace" },
+	{ BPF_MAP_TYPE_CGROUP_ARRAY, sizeof(u32), sizeof(u32), 1, 0, "cgroup array" },
+	{ BPF_MAP_TYPE_LRU_HASH, sizeof(u32), sizeof(long), 10000, 0, "LRU hash" },
+	{ BPF_MAP_TYPE_LRU_HASH, sizeof(u32), sizeof(long), 10000, BPF_F_NO_COMMON_LRU, "LRU hash (no common LRU)" },
+	{ BPF_MAP_TYPE_LRU_PERCPU_HASH, sizeof(u32), sizeof(long), 1000, 0, "LRU percpu hash" },
+	{ BPF_MAP_TYPE_LPM_TRIE, 8, sizeof(long), 10000, 0, "LPM TRIE" },
 };
 
 static int open_bpf_fds(void)
