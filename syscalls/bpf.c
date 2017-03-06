@@ -48,6 +48,11 @@ static void bpf_prog_load(struct syscallrecord *rec, union bpf_attr *attr)
 	rec->a3 = sizeof(attr);
 }
 
+#ifndef BPF_OBJ_PIN
+#define BPF_OBJ_PIN 6
+#define BPF_OBJ_GET 7
+#endif
+
 static void sanitise_bpf(struct syscallrecord *rec)
 {
 	union bpf_attr *attr;
@@ -67,6 +72,8 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_UPDATE_ELEM:
 	case BPF_MAP_DELETE_ELEM:
 	case BPF_MAP_GET_NEXT_KEY:
+	case BPF_OBJ_PIN:
+	case BPF_OBJ_GET:
 		attr->fd = get_rand_bpf_fd();
 		attr->key = rnd();
 		attr->value = rnd();
@@ -76,6 +83,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_PROG_LOAD:
 		bpf_prog_load(rec, attr);
 		break;
+
 	default:
 		break;
 	}
@@ -107,7 +115,7 @@ static void post_bpf(struct syscallrecord *rec)
 
 static unsigned long bpf_flags[] = {
 	BPF_MAP_CREATE, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM,
-	BPF_MAP_GET_NEXT_KEY, BPF_PROG_LOAD,
+	BPF_MAP_GET_NEXT_KEY, BPF_PROG_LOAD, BPF_OBJ_PIN, BPF_OBJ_GET,
 };
 
 struct syscallentry syscall_bpf = {
