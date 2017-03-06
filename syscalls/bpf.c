@@ -113,7 +113,7 @@ static void post_bpf(struct syscallrecord *rec)
 	freeptr(&rec->a2);
 }
 
-static unsigned long bpf_flags[] = {
+static unsigned long bpf_cmds[] = {
 	BPF_MAP_CREATE, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM,
 	BPF_MAP_GET_NEXT_KEY, BPF_PROG_LOAD, BPF_OBJ_PIN, BPF_OBJ_GET,
 };
@@ -124,7 +124,7 @@ struct syscallentry syscall_bpf = {
 
 	.arg1name = "cmd",
 	.arg1type = ARG_OP,
-	.arg1list = ARGLIST(bpf_flags),
+	.arg1list = ARGLIST(bpf_cmds),
 	.arg2name = "uattr",
 	.arg3name = "size",
 	.sanitise = sanitise_bpf,
