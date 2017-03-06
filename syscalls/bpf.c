@@ -19,19 +19,16 @@ static unsigned long bpf_prog_types[] = {
 
 static const char license[] = "GPLv2";
 
-static void bpf_prog_load(struct syscallrecord *rec)
+static void bpf_prog_load(struct syscallrecord *rec, union bpf_attr *attr)
 {
 	unsigned long *insns = NULL, len = 0;
-	union bpf_attr *attr;
-
-	attr = zmalloc(sizeof(union bpf_attr));
-
 	attr->prog_type = RAND_ARRAY(bpf_prog_types);
 
 	switch (attr->prog_type) {
 	case BPF_PROG_TYPE_SOCKET_FILTER:
 		bpf_gen_filter(&insns, &len);
 		break;
+
 	default:
 		// this will go away when all the other cases are enumerated
 		insns = zmalloc(page_size);
@@ -53,9 +50,31 @@ static void bpf_prog_load(struct syscallrecord *rec)
 
 static void sanitise_bpf(struct syscallrecord *rec)
 {
+	union bpf_attr *attr;
+
+	attr = zmalloc(sizeof(union bpf_attr));
+
 	switch (rec->a1) {
+	case BPF_MAP_CREATE:
+		attr->map_type = rnd();
+		attr->key_size = rnd();
+		attr->value_size = rnd();
+		attr->max_entries = rnd();
+		attr->map_flags = rnd();
+		break;
+
+	case BPF_MAP_LOOKUP_ELEM:
+	case BPF_MAP_UPDATE_ELEM:
+	case BPF_MAP_DELETE_ELEM:
+	case BPF_MAP_GET_NEXT_KEY:
+		attr->fd = get_rand_bpf_fd();
+		attr->key = rnd();
+		attr->value = rnd();
+		attr->flags = rnd();
+		break;
+
 	case BPF_PROG_LOAD:
-		bpf_prog_load(rec);
+		bpf_prog_load(rec, attr);
 		break;
 	default:
 		break;
@@ -64,7 +83,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 static void post_bpf(struct syscallrecord *rec)
 {
-	union bpf_attr *attr;
+	union bpf_attr *attr = (union bpf_attr *) rec->a2;
 
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
@@ -74,16 +93,16 @@ static void post_bpf(struct syscallrecord *rec)
 	case BPF_PROG_LOAD:
 		//TODO: add fd to local object cache
 
-		attr = (union bpf_attr *) rec->a2;
 		if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER) {
 			void *ptr = (void *) attr->insns;
 			free(ptr);
-			freeptr(&rec->a2);
 		}
 		break;
 	default:
 		break;
 	}
+
+	freeptr(&rec->a2);
 }
 
 static unsigned long bpf_flags[] = {
