@@ -1,4 +1,3 @@
-#include "config.h"
 #ifdef USE_NVME
 #include <linux/ioctl.h>
 #include <linux/nvme_ioctl.h>

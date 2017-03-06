@@ -18,7 +18,6 @@
 #include "sanitise.h"
 #include "compat.h"
 #include "net.h"
-#include "config.h"
 #include "random.h"
 #include "uid.h"
 #include "utils.h"	// ARRAY_SIZE

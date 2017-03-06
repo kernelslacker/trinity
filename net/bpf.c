@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "bpf.h"
-#include "config.h"
 #include "debug.h"
 #include "net.h"
 #include "random.h"

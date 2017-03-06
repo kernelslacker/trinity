@@ -1,4 +1,3 @@
-#include "config.h"
 
 #ifdef USE_ROSE
 #include <sys/types.h>

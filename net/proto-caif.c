@@ -3,7 +3,6 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include "config.h"
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY

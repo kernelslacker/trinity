@@ -1,4 +1,3 @@
-#include "config.h"
 
 #ifdef USE_IPV6
 #include <sys/types.h>

@@ -1,6 +1,5 @@
 /* DRM FDs */
 
-#include "config.h"
 #include "fd.h"
 #include "memfd.h"
 #include "objects.h"

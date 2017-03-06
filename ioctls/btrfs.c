@@ -1,4 +1,3 @@
-#include "config.h"
 #ifdef USE_BTRFS
 #include <stdio.h>
 #include <linux/fs.h>

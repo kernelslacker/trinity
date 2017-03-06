@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include "net.h"
-#include "config.h"
 
 #ifdef USE_RDS
 #include <linux/rds.h>

@@ -2,7 +2,6 @@
 #include <linux/dccp.h>
 #include "net.h"
 #include "compat.h"
-#include "config.h"
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY
 

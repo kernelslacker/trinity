@@ -7,7 +7,6 @@
 #include <unistd.h>
 
 #include "arch.h"
-#include "config.h"	// for VERSION
 #include "fd.h"
 #include "files.h"
 #include "ftrace.h"

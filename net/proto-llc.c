@@ -6,7 +6,6 @@
 #include <linux/if_arp.h>
 #include <linux/llc.h>
 #include <stdlib.h>
-#include "config.h"
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY

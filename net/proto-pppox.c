@@ -7,7 +7,6 @@
 #include <linux/if_pppox.h>
 #include <linux/if_pppol2tp.h>
 #include <stdlib.h>
-#include "config.h"
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"

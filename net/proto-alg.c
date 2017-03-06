@@ -3,7 +3,6 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include "config.h"
 #include "random.h"
 #include "net.h"
 #include "utils.h"

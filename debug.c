@@ -2,7 +2,6 @@
  * Various routines useful for debugging.
  */
 
-#include "config.h"
 
 #ifdef USE_BACKTRACE
 #include <execinfo.h>

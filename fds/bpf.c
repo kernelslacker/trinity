@@ -1,6 +1,5 @@
 /* bpf FDs */
 
-#include "config.h"
 #ifdef USE_BPF
 
 #include <errno.h>

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
  */
-#include "config.h"
 #ifdef USE_BPF
 #include <linux/bpf.h>
 #include <linux/filter.h>

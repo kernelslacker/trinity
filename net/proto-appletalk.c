@@ -1,4 +1,3 @@
-#include "config.h"
 
 #ifdef USE_APPLETALK
 #include <stdlib.h>

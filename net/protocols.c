@@ -1,5 +1,4 @@
 #include <sys/socket.h>
-#include "config.h"
 #include "net.h"
 #include "compat.h"
 
