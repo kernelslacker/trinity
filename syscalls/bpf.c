@@ -1,10 +1,12 @@
 /*
  * SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
  */
+#include "config.h"
 #ifdef USE_BPF
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include "arch.h"
+#include "bpf.h"
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
@@ -74,7 +76,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_GET_NEXT_KEY:
 	case BPF_OBJ_PIN:
 	case BPF_OBJ_GET:
-		attr->fd = get_rand_bpf_fd();
+		attr->map_fd = get_rand_bpf_fd();
 		attr->key = rnd();
 		attr->value = rnd();
 		attr->flags = rnd();
