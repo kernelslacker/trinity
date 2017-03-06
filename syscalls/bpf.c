@@ -65,7 +65,6 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	attr = zmalloc(sizeof(union bpf_attr));
 	rec->a2 = (unsigned long) attr;
-	rec->a3 = sizeof(*attr);
 
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
@@ -74,12 +73,14 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->value_size = rnd() % (1024 * 64);
 		attr->max_entries = rnd() % 1024;
 		attr->flags = RAND_RANGE(0, 4);
+		rec->a3 = 20;
 		break;
 
 	case BPF_MAP_LOOKUP_ELEM:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
 		attr->value = rnd();
+		rec->a3 = 32;
 		break;
 
 	case BPF_MAP_UPDATE_ELEM:
@@ -88,26 +89,31 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->value = rnd();
 		attr->next_key = rnd();
 		attr->flags = RAND_RANGE(0, 4);
+		rec->a3 = 32;
 		break;
 
 	case BPF_MAP_DELETE_ELEM:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
+		rec->a3 = 32;
 		break;
 
 	case BPF_MAP_GET_NEXT_KEY:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
 		attr->value = rnd();
+		rec->a3 = 32;
 		break;
 
 	case BPF_OBJ_PIN:
 	case BPF_OBJ_GET:
 		attr->map_fd = get_rand_bpf_fd();
+		rec->a3 = 32;
 		break;
 
 	case BPF_PROG_LOAD:
 		bpf_prog_load(attr);
+		rec->a3 = 48;
 		break;
 
 	default:
