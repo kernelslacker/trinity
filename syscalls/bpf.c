@@ -75,8 +75,6 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = rnd() % 1024;
 		attr->value = rnd();
-		attr->next_key = 0;
-		attr->flags = 0;
 		break;
 
 	case BPF_MAP_UPDATE_ELEM:
@@ -90,26 +88,17 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_DELETE_ELEM:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = rnd() % 1024;
-		attr->value = 0;
-		attr->next_key = 0;
-		attr->flags = 0;
 		break;
 
 	case BPF_MAP_GET_NEXT_KEY:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = rnd() % 1024;
 		attr->value = rnd();
-		attr->next_key = 0;
-		attr->flags = 0;
 		break;
 
 	case BPF_OBJ_PIN:
 	case BPF_OBJ_GET:
 		attr->map_fd = get_rand_bpf_fd();
-		attr->key = 0;
-		attr->value = 0;
-		attr->next_key = 0;
-		attr->flags = 0;
 		break;
 
 	case BPF_PROG_LOAD:
