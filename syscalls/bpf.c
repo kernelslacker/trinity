@@ -57,6 +57,11 @@ static void bpf_prog_load(union bpf_attr *attr)
 static void sanitise_bpf(struct syscallrecord *rec)
 {
 	union bpf_attr *attr;
+	unsigned long bpf_map_types[] = {
+		BPF_MAP_TYPE_HASH, BPF_MAP_TYPE_ARRAY, BPF_MAP_TYPE_PROG_ARRAY, BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+		BPF_MAP_TYPE_PERCPU_HASH, BPF_MAP_TYPE_PERCPU_ARRAY, BPF_MAP_TYPE_STACK_TRACE, BPF_MAP_TYPE_CGROUP_ARRAY,
+		BPF_MAP_TYPE_LRU_HASH, BPF_MAP_TYPE_LRU_HASH, BPF_MAP_TYPE_LRU_PERCPU_HASH, BPF_MAP_TYPE_LPM_TRIE,
+	};
 
 	attr = zmalloc(sizeof(union bpf_attr));
 	rec->a2 = (unsigned long) attr;
@@ -64,8 +69,8 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
-		attr->map_type = rnd();
-		attr->key_size = rnd();
+		attr->map_type = RAND_ARRAY(bpf_map_types);
+		attr->key_size = rnd() % 1024;
 		attr->value_size = rnd() % (1024 * 64);
 		attr->max_entries = rnd() % 1024;
 		attr->flags = RAND_RANGE(0, 4);
