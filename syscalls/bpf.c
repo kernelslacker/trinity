@@ -46,7 +46,7 @@ static void bpf_prog_load(union bpf_attr *attr)
 	attr->log_level = 0;
 	attr->log_size = rnd() % page_size;
 	attr->log_buf = (u64) get_writable_address(page_size);
-//	attr->kern_version = TODO: stick uname in here.
+	attr->kern_version = rnd();	// TODO: stick uname in here.
 }
 
 #ifndef BPF_OBJ_PIN
@@ -66,21 +66,50 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_CREATE:
 		attr->map_type = rnd();
 		attr->key_size = rnd();
-		attr->value_size = rnd();
-		attr->max_entries = rnd();
-		attr->map_flags = rnd();
+		attr->value_size = rnd() % (1024 * 64);
+		attr->max_entries = rnd() % 1024;
+		attr->flags = RAND_RANGE(0, 4);
 		break;
 
 	case BPF_MAP_LOOKUP_ELEM:
+		attr->map_fd = get_rand_bpf_fd();
+		attr->key = rnd() % 1024;
+		attr->value = rnd();
+		attr->next_key = 0;
+		attr->flags = 0;
+		break;
+
 	case BPF_MAP_UPDATE_ELEM:
+		attr->map_fd = get_rand_bpf_fd();
+		attr->key = rnd() % 1024;
+		attr->value = rnd();
+		attr->next_key = rnd();
+		attr->flags = RAND_RANGE(0, 4);
+		break;
+
 	case BPF_MAP_DELETE_ELEM:
+		attr->map_fd = get_rand_bpf_fd();
+		attr->key = rnd() % 1024;
+		attr->value = 0;
+		attr->next_key = 0;
+		attr->flags = 0;
+		break;
+
 	case BPF_MAP_GET_NEXT_KEY:
+		attr->map_fd = get_rand_bpf_fd();
+		attr->key = rnd() % 1024;
+		attr->value = rnd();
+		attr->next_key = 0;
+		attr->flags = 0;
+		break;
+
 	case BPF_OBJ_PIN:
 	case BPF_OBJ_GET:
 		attr->map_fd = get_rand_bpf_fd();
-		attr->key = rnd();
-		attr->value = rnd();
-		attr->flags = rnd();
+		attr->key = 0;
+		attr->value = 0;
+		attr->next_key = 0;
+		attr->flags = 0;
 		break;
 
 	case BPF_PROG_LOAD:
