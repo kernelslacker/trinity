@@ -236,6 +236,8 @@ void main()
 	union bpf_attr attr = {
 		.map_flags = 0,
 	};
+
+	enum bpf_prog_type type = BPF_PROG_TYPE_PERF_EVENT;
 }
 EOF
 
