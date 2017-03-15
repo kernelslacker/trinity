@@ -88,4 +88,5 @@ struct syscallentry syscall_prctl = {
 	.arg4name = "arg4",
 	.arg5name = "arg5",
 	.sanitise = sanitise_prctl,
+	//TODO: .post that free's bpf & bpf->filter
 };
