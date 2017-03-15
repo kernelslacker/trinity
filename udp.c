@@ -19,14 +19,14 @@ static int logsocket = -1;
 
 static struct sockaddr_in udpserver;
 
-void sendudp(char *buffer)
+void sendudp(char *buffer, size_t len)
 {
 	int ret;
 
 	if (logging_enabled == FALSE)
 		return;
 
-	ret = sendto(logsocket, buffer, strlen(buffer), 0, (struct sockaddr *) &udpserver, sizeof(udpserver));
+	ret = sendto(logsocket, buffer, len, 0, (struct sockaddr *) &udpserver, sizeof(udpserver));
 	if (ret == -1) {
 		fprintf(stderr, "sendto: %s\n", strerror(errno));
 	}
@@ -41,7 +41,7 @@ static bool handshake(void)
 	char buf[MAXBUF];
 
 	printf("Sending hello to logging server.\n");
-	sendudp(hello);
+	sendudp(hello, strlen(hello));
 
 	printf("Waiting for reply from logging server.\n");
 	addrlen = sizeof(udpserver);

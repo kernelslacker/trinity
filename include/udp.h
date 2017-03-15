@@ -6,4 +6,9 @@
 
 void init_logging(char *optarg);
 void shutdown_logging(void);
-void sendudp(char *buffer);
+void sendudp(char *buffer, size_t len);
+
+enum logmsgtypes {
+	MAIN_STARTED,
+	MAIN_EXITED,
+};

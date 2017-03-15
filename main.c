@@ -21,6 +21,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
+#include "udp.h"
 
 static void handle_child(int childno, pid_t childpid, int childstatus);
 
@@ -722,8 +723,25 @@ static void taint_check(void)
 	}
 }
 
+static void log_main_started(void)
+{
+	struct mainstarted {
+		pid_t pid;
+		enum logmsgtypes type;
+		unsigned int num_children;
+	} msg;
+
+	msg.pid = getpid();
+	msg.type = MAIN_STARTED;
+	msg.num_children = max_children;
+
+	sendudp((char *) &msg, sizeof(msg));
+}
+
 void main_loop(void)
 {
+	log_main_started();
+
 	fork_children();
 
 	while (shm->exit_reason == STILL_RUNNING) {
