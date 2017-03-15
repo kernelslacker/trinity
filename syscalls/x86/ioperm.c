@@ -9,4 +9,5 @@ struct syscallentry syscall_ioperm = {
 	.arg1name = "from",
 	.arg2name = "num",
 	.arg3name = "turn_on",
+	.flags = AVOID_SYSCALL,
 };
