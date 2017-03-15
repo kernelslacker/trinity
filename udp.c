@@ -9,12 +9,61 @@
 #include <arpa/inet.h>
 #include "trinity.h"
 #include "udp.h"
+#include "utils.h"
+
+#define MAXBUF 1024
 
 static int logging_enabled = FALSE;
 
 static int logsocket = -1;
 
 static struct sockaddr_in udpserver;
+
+void sendudp(char *buffer)
+{
+	int ret;
+
+	if (logging_enabled == FALSE)
+		return;
+
+	ret = sendto(logsocket, buffer, strlen(buffer), 0, (struct sockaddr *) &udpserver, sizeof(udpserver));
+	if (ret == -1) {
+		fprintf(stderr, "sendto: %s\n", strerror(errno));
+	}
+}
+
+static bool handshake(void)
+{
+	int ret;
+	socklen_t addrlen = 0;
+	char hello[] = "Trinity proto v" __stringify(TRINITY_UDP_VERSION);
+	char expectedreply[] = "Trinity server v" __stringify(TRINITY_UDP_VERSION) ". Go ahead";
+	char buf[MAXBUF];
+
+	printf("Sending hello to logging server.\n");
+	sendudp(hello);
+
+	printf("Waiting for reply from logging server.\n");
+	addrlen = sizeof(udpserver);
+	ret = recvfrom(logsocket, buf, MAXBUF, 0, (struct sockaddr *) &udpserver, &addrlen);
+	if (ret == -1) {
+		fprintf(stderr, "recvfrom: %s\n", strerror(errno));
+		return FALSE;
+	}
+
+	if (ret != (int) strlen(expectedreply)) {
+		printf("Got wrong length expected reply: Should be %d but was %d : %s\n", (int) strlen(expectedreply), ret, buf);
+		return FALSE;
+	}
+	if (strncmp(buf, expectedreply, strlen(expectedreply)) != 0) {
+		printf("Got unregnized reply: (%d bytes) %s\n", ret, buf);
+		printf("Expected %d bytes: %s\n", (int) strlen(expectedreply), expectedreply);
+		return FALSE;
+	}
+
+	printf("Got reply from server. Logging enabled.\n");
+	return TRUE;
+}
 
 void init_logging(char *optarg)
 {
@@ -57,20 +106,13 @@ void init_logging(char *optarg)
 		exit(EXIT_FAILURE);
 	}
 
+	/* We temporarily turn enabled on, as we need it for sendudp to work.
+	 * If we don't get a valid handshake we turn it back off.
+	 */
 	logging_enabled = TRUE;
-}
 
-void sendudp(char *buffer)
-{
-	int ret;
-
-	if (logging_enabled == FALSE)
-		return;
-
-	ret = sendto(logsocket, buffer, strlen(buffer) + 1, 0, (struct sockaddr *) &udpserver, sizeof(udpserver));
-	if (ret == -1) {
-		fprintf(stderr, "sendto: %s\n", strerror(errno));
-	}
+	if (handshake() == FALSE)
+		logging_enabled = FALSE;
 }
 
 void shutdown_logging(void)
