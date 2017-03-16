@@ -726,8 +726,8 @@ static void taint_check(void)
 static void log_main_started(void)
 {
 	struct mainstarted {
-		pid_t pid;
 		enum logmsgtypes type;
+		pid_t pid;
 		unsigned int num_children;
 	} msg;
 
