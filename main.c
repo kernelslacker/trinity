@@ -731,7 +731,7 @@ static void log_main_started(void)
 	mainmsg.type = MAIN_STARTED;
 	mainmsg.num_children = max_children;
 
-	sendudp((char *) &msg, sizeof(mainmsg));
+	sendudp((char *) &mainmsg, sizeof(mainmsg));
 }
 
 void main_loop(void)
