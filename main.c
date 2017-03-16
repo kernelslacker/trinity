@@ -725,17 +725,13 @@ static void taint_check(void)
 
 static void log_main_started(void)
 {
-	struct mainstarted {
-		enum logmsgtypes type;
-		pid_t pid;
-		unsigned int num_children;
-	} msg;
+	struct msg_mainstarted mainmsg;
 
-	msg.pid = getpid();
-	msg.type = MAIN_STARTED;
-	msg.num_children = max_children;
+	mainmsg.pid = getpid();
+	mainmsg.type = MAIN_STARTED;
+	mainmsg.num_children = max_children;
 
-	sendudp((char *) &msg, sizeof(msg));
+	sendudp((char *) &msg, sizeof(mainmsg));
 }
 
 void main_loop(void)
