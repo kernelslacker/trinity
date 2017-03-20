@@ -111,8 +111,11 @@ void init_logging(char *optarg)
 	 */
 	logging_enabled = TRUE;
 
-	if (handshake() == FALSE)
+	if (handshake() == FALSE) {
 		logging_enabled = FALSE;
+		close(logsocket);
+		logsocket = -1;
+	}
 }
 
 void shutdown_logging(void)
