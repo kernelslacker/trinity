@@ -117,6 +117,18 @@ static void decode_child_signalled(void)
 		childmsg->pid, childmsg->childno, strsignal(childmsg->sig));
 }
 
+struct msgfunc {
+	void (*func)(void);
+};
+
+static const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
+	[MAIN_STARTED] = { decode_main_started },
+	[MAIN_EXITING] = { decode_main_exiting },
+	[CHILD_SPAWNED] = { decode_child_spawned },
+	[CHILD_EXITED] = { decode_child_exited },
+	[CHILD_SIGNALLED] = { decode_child_signalled },
+};
+
 int main(__unused__ int argc, __unused__ char* argv[])
 {
 	int ret;
@@ -142,6 +154,7 @@ int main(__unused__ int argc, __unused__ char* argv[])
 
 	while (1) {
 		int i;
+		enum logmsgtypes type;
 
 		ret = readudp();
 
@@ -158,35 +171,20 @@ int main(__unused__ int argc, __unused__ char* argv[])
 				continue;
 		}
 
-		switch (buf[0]) {
-		case MAIN_STARTED:
-			decode_main_started();
-			break;
+		type = buf[0];
+		if (type >= MAX_LOGMSGTYPE) {
+			printf("Unknown msgtype: %d\n", type);
 
-		case MAIN_EXITING:
-			decode_main_exiting();
-			break;
-
-		case CHILD_SPAWNED:
-			decode_child_spawned();
-			break;
-
-		case CHILD_EXITED:
-			decode_child_exited();
-			break;
-
-		case CHILD_SIGNALLED:
-			decode_child_signalled();
-			break;
-
-		default:
 			/* Unknown command (yet). Just dump as hex. */
 			printf("rx %d bytes: ", ret);
 			for (i = 0; i < ret; i++) {
 				printf("%x ", (unsigned char) buf[i]);
 			}
 			printf("\n");
+			continue;
 		}
+
+		decodefuncs[type].func();
 	}
 
 closeout:

@@ -18,6 +18,7 @@ enum logmsgtypes {
 	CHILD_SPAWNED,
 	CHILD_EXITED,
 	CHILD_SIGNALLED,
+	MAX_LOGMSGTYPE,
 };
 
 struct msg_mainstarted {
