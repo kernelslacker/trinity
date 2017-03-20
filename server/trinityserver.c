@@ -55,7 +55,7 @@ static bool __handshake(void)
 	char reply[] = "Trinity server v" __stringify(TRINITY_UDP_VERSION) ". Go ahead";
 
 	if (strncmp(buf, hello, strlen(hello)) != 0) {
-		printf("Incorrect message: %s\n", buf);
+//		printf("Incorrect message: %s\n", buf);
 		return FALSE;
 	}
 
@@ -106,6 +106,15 @@ static void decode_child_exited(void)
 
 	childmsg = (struct msg_childexited *) &buf;
 	printf("Child exited. id:%d pid:%d\n", childmsg->pid, childmsg->childno);
+}
+
+static void decode_child_signalled(void)
+{
+	struct msg_childsignalled *childmsg;
+
+	childmsg = (struct msg_childsignalled *) &buf;
+	printf("Child signal. id:%d pid:%d signal: %s\n",
+		childmsg->pid, childmsg->childno, strsignal(childmsg->sig));
 }
 
 int main(__unused__ int argc, __unused__ char* argv[])
@@ -164,6 +173,10 @@ int main(__unused__ int argc, __unused__ char* argv[])
 
 		case CHILD_EXITED:
 			decode_child_exited();
+			break;
+
+		case CHILD_SIGNALLED:
+			decode_child_signalled();
 			break;
 
 		default:
