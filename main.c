@@ -502,6 +502,18 @@ static void fork_children(void)
 	shm->ready = TRUE;
 }
 
+static void log_child_signalled(int childno, pid_t pid, int sig)
+{
+	struct msg_childsignalled childmsg;
+
+	childmsg.pid = pid;
+	childmsg.type = CHILD_SIGNALLED;
+	childmsg.childno = childno;
+	childmsg.sig = sig;
+
+	sendudp((char *) &childmsg, sizeof(childmsg));
+}
+
 static void handle_childsig(int childno, int childstatus, bool stop)
 {
 	struct childdata *child;
@@ -539,9 +551,11 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		if (stop == TRUE)
 			debugf("Child %d (pid %d) was stopped by %s\n",
 					childno, pid, strsignal(WSTOPSIG(childstatus)));
-		else
+		else {
 			debugf("got a signal from child %d (pid %d) (%s)\n",
 					childno, pid, strsignal(WTERMSIG(childstatus)));
+			log_child_signalled(childno, pid, WTERMSIG(childstatus));
+		}
 		reap_child(shm->children[childno]);
 
 		fclose(child->pidstatfile);
