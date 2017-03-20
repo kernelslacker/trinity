@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "exit.h"
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
@@ -83,6 +84,14 @@ static void decode_main_started(void)
 	printf("Main started. pid:%d number of children: %d\n", mainmsg->pid, mainmsg->num_children);
 }
 
+static void decode_main_exiting(void)
+{
+	struct msg_mainexiting *mainmsg;
+
+	mainmsg = (struct msg_mainexiting *) &buf;
+	printf("Main exiting. pid:%d Reason: %s\n", mainmsg->pid, decode_exit(mainmsg->reason));
+}
+
 int main(__unused__ int argc, __unused__ char* argv[])
 {
 	int ret;
@@ -127,6 +136,10 @@ int main(__unused__ int argc, __unused__ char* argv[])
 		switch (buf[0]) {
 		case MAIN_STARTED:
 			decode_main_started();
+			break;
+
+		case MAIN_EXITING:
+			decode_main_exiting();
 			break;
 
 		default:
