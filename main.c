@@ -642,31 +642,6 @@ static void handle_children(void)
 	}
 }
 
-static const char *reasons[NUM_EXIT_REASONS] = {
-	"Still running.",
-	"No more syscalls enabled.",
-	"Completed maximum number of operations.",
-	"No file descriptors open.",
-	"Lost track of a child.",
-	"shm corruption - Found a pid out of range.",
-	"ctrl-c",
-	"kernel became tainted.",
-	"SHM was corrupted!",
-	"Child reparenting problem",
-	"No files in file list.",
-	"Main process disappeared.",
-	"UID changed.",
-	"Something happened during fd init.",
-	"fork() failure",
-	"some kind of locking catastrophe",
-	"error while opening logfiles",
-};
-
-const char * decode_exit(void)
-{
-	return reasons[shm->exit_reason];
-}
-
 static unsigned int stall_count;
 
 static void check_children_progressing(void)
@@ -802,7 +777,7 @@ corrupt:
 	kill_all_kids();
 
 dont_wait:
-	output(0, "Bailing main loop because %s.\n", decode_exit());
+	output(0, "Bailing main loop because %s.\n", decode_exit(shm->exit_reason));
 }
 
 
