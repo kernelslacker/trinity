@@ -26,6 +26,7 @@
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "uid.h"
+#include "udp.h"
 #include "utils.h"	// zmalloc
 
 enum childflags {
@@ -230,6 +231,17 @@ static void bind_child_to_cpu(struct childdata *child)
 	sched_setaffinity(pid, sizeof(set), &set);
 }
 
+static void log_child_spawned(pid_t pid, int childno)
+{
+	struct msg_childspawned childmsg;
+
+	childmsg.pid = pid;
+	childmsg.type = CHILD_SPAWNED;
+	childmsg.childno = childno;
+
+	sendudp((char *) &childmsg, sizeof(childmsg));
+}
+
 /*
  * Called from the fork_children loop in the main process.
  */
@@ -237,6 +249,8 @@ static void init_child(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
 	char childname[17];
+
+	log_child_spawned(pid, childno);
 
 	/* Wait for parent to set our childno */
 	while (pids[childno] != pid) {

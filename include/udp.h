@@ -15,6 +15,7 @@ void sendudp(char *buffer, size_t len);
 enum logmsgtypes {
 	MAIN_STARTED,
 	MAIN_EXITING,
+	CHILD_SPAWNED,
 };
 
 struct msg_mainstarted {
@@ -27,4 +28,10 @@ struct msg_mainexiting {
 	enum logmsgtypes type;
 	pid_t pid;
 	enum exit_reasons reason;
+};
+
+struct msg_childspawned {
+	enum logmsgtypes type;
+	pid_t pid;
+	int childno;
 };
