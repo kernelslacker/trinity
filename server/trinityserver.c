@@ -9,6 +9,7 @@
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
+#include "utils.h"
 
 #define MAXBUF 1024
 
@@ -47,10 +48,10 @@ static size_t readudp(void)
 }
 
 /* simple 2-way handshake just to agree on protocol. */
-static const char hello[] = "Trinity proto v1";
+static const char hello[] = "Trinity proto v" __stringify(TRINITY_UDP_VERSION);
 static bool __handshake(void)
 {
-	char reply[] = "Trinity server v1. Go ahead";
+	char reply[] = "Trinity server v" __stringify(TRINITY_UDP_VERSION) ". Go ahead";
 
 	if (strncmp(buf, hello, strlen(hello)) != 0) {
 		printf("Incorrect message: %s\n", buf);
