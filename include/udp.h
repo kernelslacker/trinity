@@ -16,6 +16,7 @@ enum logmsgtypes {
 	MAIN_STARTED,
 	MAIN_EXITING,
 	CHILD_SPAWNED,
+	CHILD_EXITED,
 };
 
 struct msg_mainstarted {
@@ -34,4 +35,11 @@ struct msg_childspawned {
 	enum logmsgtypes type;
 	pid_t pid;
 	int childno;
+};
+
+struct msg_childexited {
+	enum logmsgtypes type;
+	pid_t pid;
+	int childno;
+
 };

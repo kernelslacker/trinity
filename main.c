@@ -564,6 +564,17 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	}
 }
 
+static void log_child_exited(pid_t pid, int childno)
+{
+	struct msg_childexited childmsg;
+
+	childmsg.pid = pid;
+	childmsg.type = CHILD_EXITED;
+	childmsg.childno = childno;
+
+	sendudp((char *) &childmsg, sizeof(childmsg));
+}
+
 static void handle_child(int childno, pid_t childpid, int childstatus)
 {
 	switch (childpid) {
@@ -577,6 +588,8 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 	default:
 		if (WIFEXITED(childstatus)) {
 			struct childdata *child = shm->children[childno];
+
+			log_child_exited(childpid, childno);
 
 			debugf("Child %d (pid:%u type:%u) exited after %ld operations.\n",
 				childno, childpid, child->type, child->op_nr);
