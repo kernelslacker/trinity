@@ -32,10 +32,12 @@ void sendudp(char *buffer, size_t len)
 	}
 }
 
-static bool handshake(void)
+static bool __handshake(void)
 {
 	int ret;
-	socklen_t addrlen = 0;
+	socklen_t addrlen = sizeof(udpserver);
+	fd_set rfds;
+	struct timeval tv;
 	char hello[] = "Trinity proto v" __stringify(TRINITY_UDP_VERSION);
 	char expectedreply[] = "Trinity server v" __stringify(TRINITY_UDP_VERSION) ". Go ahead";
 	char buf[MAXBUF];
@@ -44,25 +46,58 @@ static bool handshake(void)
 	sendudp(hello, strlen(hello));
 
 	printf("Waiting for reply from logging server.\n");
-	addrlen = sizeof(udpserver);
-	ret = recvfrom(logsocket, buf, MAXBUF, 0, (struct sockaddr *) &udpserver, &addrlen);
-	if (ret == -1) {
-		fprintf(stderr, "recvfrom: %s\n", strerror(errno));
-		return FALSE;
+
+	FD_ZERO(&rfds);
+
+	/* Wait up to five seconds. */
+	tv.tv_sec = 5;
+	tv.tv_usec = 0;
+	FD_SET(logsocket, &rfds);
+
+	ret = select(logsocket + 1, &rfds, NULL, NULL, &tv);
+	if (ret == -1)
+		perror("select()");
+	else if (ret) {
+		if (FD_ISSET(logsocket, &rfds) != TRUE) {
+			printf("Something happened, but not on logsocket\n");
+			return FALSE;
+		}
+		ret = recvfrom(logsocket, buf, MAXBUF, 0, (struct sockaddr *) &udpserver, &addrlen);
+		if (ret == -1) {
+			printf("recvfrom: %s\n", strerror(errno));
+			return FALSE;
+		}
+
+		if (ret != (int) strlen(expectedreply)) {
+			printf("Got wrong length expected reply: Should be %d but was %d : %s\n", (int) strlen(expectedreply), ret, buf);
+			return FALSE;
+		}
+		if (strncmp(buf, expectedreply, strlen(expectedreply)) != 0) {
+			printf("Got unrecognized reply: (%d bytes) %s\n", ret, buf);
+			printf("Expected %d bytes: %s\n", (int) strlen(expectedreply), expectedreply);
+			return FALSE;
+		}
+		/* handshake complete. */
+		return TRUE;
+	}
+	return FALSE;
+}
+
+static bool handshake(void)
+{
+	int ret, try;
+
+	for (try = 1; try < 4; try++) {
+		ret = __handshake();
+		if (ret == TRUE) {
+			printf("Got reply from server. Logging enabled.\n");
+			return TRUE;
+		}
+		printf("No reply within five seconds, resending hello. [%d/3].\n", try);
 	}
 
-	if (ret != (int) strlen(expectedreply)) {
-		printf("Got wrong length expected reply: Should be %d but was %d : %s\n", (int) strlen(expectedreply), ret, buf);
-		return FALSE;
-	}
-	if (strncmp(buf, expectedreply, strlen(expectedreply)) != 0) {
-		printf("Got unregnized reply: (%d bytes) %s\n", ret, buf);
-		printf("Expected %d bytes: %s\n", (int) strlen(expectedreply), expectedreply);
-		return FALSE;
-	}
-
-	printf("Got reply from server. Logging enabled.\n");
-	return TRUE;
+	printf("Logging server seems down. Logging disabled.\n");
+	return FALSE;
 }
 
 void init_logging(char *optarg)
