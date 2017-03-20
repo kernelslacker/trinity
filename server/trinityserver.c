@@ -92,6 +92,14 @@ static void decode_main_exiting(void)
 	printf("Main exiting. pid:%d Reason: %s\n", mainmsg->pid, decode_exit(mainmsg->reason));
 }
 
+static void decode_child_spawned(void)
+{
+	struct msg_childspawned *childmsg;
+
+	childmsg = (struct msg_childspawned *) &buf;
+	printf("Child spawned. id:%d pid:%d\n", childmsg->pid, childmsg->childno);
+}
+
 int main(__unused__ int argc, __unused__ char* argv[])
 {
 	int ret;
@@ -140,6 +148,10 @@ int main(__unused__ int argc, __unused__ char* argv[])
 
 		case MAIN_EXITING:
 			decode_main_exiting();
+			break;
+
+		case CHILD_SPAWNED:
+			decode_child_spawned();
 			break;
 
 		default:
