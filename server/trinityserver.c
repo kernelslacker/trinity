@@ -54,10 +54,11 @@ static bool __handshake(void)
 {
 	char reply[] = "Trinity server v" __stringify(TRINITY_UDP_VERSION) ". Go ahead";
 
-	if (strncmp(buf, hello, strlen(hello)) != 0) {
-//		printf("Incorrect message: %s\n", buf);
+	/* if we got here, we know we got a correct size message, but the contents
+	 * need to match also for it to be a handshake.
+	 */
+	if (strncmp(buf, hello, strlen(hello)) != 0)
 		return FALSE;
-	}
 
 	printf("Handshake request. sending reply (%ld bytes)\n", strlen(reply));
 
