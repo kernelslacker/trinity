@@ -2,6 +2,7 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include "exit.h"
 
 #define TRINITY_LOG_PORT 6665
 
@@ -13,11 +14,17 @@ void sendudp(char *buffer, size_t len);
 
 enum logmsgtypes {
 	MAIN_STARTED,
-	MAIN_EXITED,
+	MAIN_EXITING,
 };
 
 struct msg_mainstarted {
 	enum logmsgtypes type;
 	pid_t pid;
 	unsigned int num_children;
-} msg;
+};
+
+struct msg_mainexiting {
+	enum logmsgtypes type;
+	pid_t pid;
+	enum exit_reasons reason;
+};

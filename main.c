@@ -709,6 +709,17 @@ static void log_main_started(void)
 	sendudp((char *) &mainmsg, sizeof(mainmsg));
 }
 
+static void log_main_exiting(void)
+{
+	struct msg_mainexiting mainmsg;
+
+	mainmsg.pid = getpid();
+	mainmsg.type = MAIN_EXITING;
+	mainmsg.reason = shm->exit_reason;
+
+	sendudp((char *) &mainmsg, sizeof(mainmsg));
+}
+
 void main_loop(void)
 {
 	log_main_started();
@@ -778,6 +789,7 @@ corrupt:
 
 dont_wait:
 	output(0, "Bailing main loop because %s.\n", decode_exit(shm->exit_reason));
+	log_main_exiting();
 }
 
 
