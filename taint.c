@@ -38,14 +38,24 @@ int get_taint(void)
 	return ret;
 }
 
+static bool became_tainted = FALSE;
+
 bool is_tainted(void)
 {
+	/*
+	 * Microoptimise the case where we became tainted. We don't need
+	 * multiple reads of /proc.
+	 */
+	if (became_tainted == TRUE)
+		return TRUE;
+
 	/* Only check taint if the mask allows it */
 	if (kernel_taint_mask != 0) {
 		int ret = 0;
 
 		ret = get_taint();
 		if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0) {
+			became_tainted = TRUE;
 			return TRUE;
 		}
 	}
