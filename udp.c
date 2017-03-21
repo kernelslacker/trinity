@@ -85,10 +85,10 @@ static bool __handshake(void)
 
 static bool handshake(void)
 {
-	int ret, try;
+	int try;
 
 	for (try = 1; try < 4; try++) {
-		ret = __handshake();
+		int ret = __handshake();
 		if (ret == TRUE) {
 			printf("Got reply from server. Logging enabled.\n");
 			return TRUE;

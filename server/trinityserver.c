@@ -154,7 +154,6 @@ int main(__unused__ int argc, __unused__ char* argv[])
 	handshake();
 
 	while (1) {
-		int i;
 		enum logmsgtypes type;
 
 		ret = readudp();
@@ -174,6 +173,8 @@ int main(__unused__ int argc, __unused__ char* argv[])
 
 		type = buf[0];
 		if (type >= MAX_LOGMSGTYPE) {
+			int i;
+
 			printf("Unknown msgtype: %d\n", type);
 
 			/* Unknown command (yet). Just dump as hex. */
