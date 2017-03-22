@@ -235,6 +235,9 @@ static void log_child_spawned(pid_t pid, int childno)
 {
 	struct msg_childspawned childmsg;
 
+	if (logging_enabled == FALSE)
+		return;
+
 	childmsg.pid = pid;
 	childmsg.type = CHILD_SPAWNED;
 	childmsg.childno = childno;

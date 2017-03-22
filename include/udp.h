@@ -8,6 +8,8 @@
 
 #define TRINITY_UDP_VERSION 0
 
+extern int logging_enabled;
+
 void init_logging(char *optarg);
 void shutdown_logging(void);
 void sendudp(char *buffer, size_t len);

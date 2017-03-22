@@ -729,6 +729,9 @@ static void log_main_started(void)
 {
 	struct msg_mainstarted mainmsg;
 
+	if (logging_enabled == FALSE)
+		return;
+
 	mainmsg.pid = getpid();
 	mainmsg.type = MAIN_STARTED;
 	mainmsg.num_children = max_children;
@@ -739,6 +742,9 @@ static void log_main_started(void)
 static void log_main_exiting(void)
 {
 	struct msg_mainexiting mainmsg;
+
+	if (logging_enabled == FALSE)
+		return;
 
 	mainmsg.pid = getpid();
 	mainmsg.type = MAIN_EXITING;

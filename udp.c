@@ -13,7 +13,7 @@
 
 #define MAXBUF 1024
 
-static int logging_enabled = FALSE;
+int logging_enabled = FALSE;
 
 static int logsocket = -1;
 
