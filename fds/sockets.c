@@ -149,7 +149,7 @@ static void lock_cachefile(int type)
 
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
 		perror("fcntl F_SETLKW");
-		exit(EXIT_FAILURE);
+		return;
 	}
 
 	if (verbose)
@@ -169,7 +169,7 @@ static void unlock_cachefile(void)
 
 	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
 		perror("fcntl F_UNLCK F_SETLK ");
-		exit(EXIT_FAILURE);
+		return;
 	}
 
 	if (verbose)
