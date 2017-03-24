@@ -22,6 +22,12 @@ struct bpfobj {
 	int map_fd;
 };
 
+struct pipeobj {
+	int fd;
+	int flags;
+	bool reader;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -29,7 +35,7 @@ struct object {
 
 		struct fileobj fileobj;
 
-		int pipefd;
+		struct pipeobj pipeobj;
 
 		int perffd;
 

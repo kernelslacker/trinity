@@ -18,12 +18,16 @@
 
 static void pipefd_destructor(struct object *obj)
 {
-	close(obj->pipefd);
+	close(obj->pipeobj.fd);
 }
 
 static void pipefd_dump(struct object *obj)
 {
-	output(0, "pipefd:%d\n", obj->pipefd);
+	struct pipeobj *po = &obj->pipeobj;
+
+	output(0, "pipe fd:%d flags:%x [%s]\n",
+		po->fd, po->flags,
+		po->reader ? "reader" : "writer");
 }
 
 static void open_pipe_pair(unsigned int flags)
@@ -37,15 +41,16 @@ static void open_pipe_pair(unsigned int flags)
 	}
 
 	obj = alloc_object();
-	obj->pipefd = pipes[0];
+	obj->pipeobj.fd = pipes[0];
+	obj->pipeobj.flags = flags;
+	obj->pipeobj.reader = TRUE;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
 	obj = alloc_object();
-	obj->pipefd = pipes[1];
+	obj->pipeobj.fd = pipes[1];
+	obj->pipeobj.flags = flags;
+	obj->pipeobj.reader = FALSE;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
-
-	output(2, "fd[%d] = pipe([reader] flags:%x)\n", pipes[0], flags);
-	output(2, "fd[%d] = pipe([writer] flags:%x)\n", pipes[1], flags);
 }
 
 
@@ -74,7 +79,7 @@ int get_rand_pipe_fd(void)
 	if (obj == NULL)
 		return 0;
 
-	return obj->pipefd;
+	return obj->pipeobj.fd;
 }
 
 static const struct fd_provider pipes_fd_provider = {
