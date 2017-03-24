@@ -20,7 +20,7 @@ static void perffd_destructor(struct object *obj)
 
 static void perffd_dump(struct object *obj)
 {
-	output(0, "perffd:%d\n", obj->perffd);
+	output(0, "perf fd: %d\n", obj->perffd);
 }
 
 static int open_perf_fds(void)
@@ -48,8 +48,6 @@ static int open_perf_fds(void)
 			obj = alloc_object();
 			obj->perffd = fd;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_PERF);
-
-			output(2, "fd[%d] = perf\n", fd);
 			i++;
 
 			/* any time we succeed, reset the failure counts.
