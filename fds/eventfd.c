@@ -55,8 +55,6 @@ static int open_eventfd_fds(void)
 		obj = alloc_object();
 		obj->eventfd = fd;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_EVENTFD);
-
-		output(2, "fd[%d] = eventfd\n", fd);
 	}
 
 	return TRUE;
