@@ -52,7 +52,6 @@ static int __open_timerfd_fds(int clockid)
 		obj = alloc_object();
 		obj->timerfd = fd;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_TIMERFD);
-		output(2, "fd[%d] = timerfd\n", fd);
 	}
 	return TRUE;
 }
