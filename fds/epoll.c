@@ -48,8 +48,6 @@ static int open_epoll_fds(void)
 			obj = alloc_object();
 			obj->epollfd = fd;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
-
-			output(2, "fd[%d] = epoll\n", fd);
 			i++;
 		} else {
 			/* not sure what happened. */
