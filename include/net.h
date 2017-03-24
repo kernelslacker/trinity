@@ -17,9 +17,6 @@ extern unsigned int specific_domain;
  * about more protocols than glibc does. So we define our own PF_MAX */
 #define TRINITY_PF_MAX 44
 
-#define TYPE_MAX 10
-#define PROTO_MAX 256
-
 #define PF_NOHINT (-1)
 
 struct sock_option {
