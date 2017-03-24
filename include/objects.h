@@ -9,6 +9,14 @@
 #include "trinity.h"
 #include "types.h"
 
+struct fileobj {
+	const char *filename;
+	int flags;
+	int fd;
+	bool fopened;
+	int fcntl_flags;
+};
+
 struct bpfobj {
 	u32 map_type;
 	int map_fd;
@@ -19,9 +27,9 @@ struct object {
 	union {
 		struct map map;
 
-		int pipefd;
+		struct fileobj fileobj;
 
-		int filefd;
+		int pipefd;
 
 		int perffd;
 

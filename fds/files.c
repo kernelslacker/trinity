@@ -41,26 +41,32 @@ int open_with_fopen(const char *filename, int flags)
 	return fd;
 }
 
-static int open_file(const char *filename, int flags)
+static int open_file(struct object *obj, const char *filename, int flags)
 {
-	const char *modestr;
 	int fd;
 	int tries = 0;
 	int fcntl_flags = 0;
 	int randflags = 0;
-	bool opened_with_fopen = FALSE;
+
+	obj->fileobj.filename = filename;
 
 	/* OR in some random flags. */
 retry_flags:
 
 	if (RAND_BOOL()) {
 		randflags = get_o_flags();
+		obj->fileobj.flags = flags | randflags;
 		fd = open(filename, flags | randflags | O_NONBLOCK, 0666);
+		obj->fileobj.fopened = FALSE;
+		obj->fileobj.fcntl_flags = 0;
 	} else {
 		fd = open_with_fopen(filename, flags);
+		obj->fileobj.fopened = TRUE;
+		obj->fileobj.flags = flags;
+
 		fcntl_flags = random_fcntl_setfl_flags();
 		fcntl(fd, F_SETFL, fcntl_flags);
-		opened_with_fopen = TRUE;
+		obj->fileobj.fcntl_flags = fcntl_flags;
 	}
 
 	if (fd < 0) {
@@ -77,28 +83,20 @@ retry_flags:
 		goto retry_flags;
 	}
 
-	switch (flags) {
-	case O_RDONLY:  modestr = "read-only";  break;
-	case O_WRONLY:  modestr = "write-only"; break;
-	case O_RDWR:    modestr = "read-write"; break;
-	default: modestr = "unknown"; break;
-	}
-	if (opened_with_fopen == FALSE)
-		output(2, "fd[%i] = open %s (%s) flags:%x\n", fd, filename, modestr, flags | randflags);
-	else
-		output(2, "fd[%i] = fopen %s (%s) flags:%x fcntl_flags:%x\n",
-				fd, filename, modestr, flags, fcntl_flags);
 	return fd;
 }
 
 static void filefd_destructor(struct object *obj)
 {
-	close(obj->filefd);
+	close(obj->fileobj.fd);
 }
 
 static void filefd_dump(struct object *obj)
 {
-	output(0, "filefd:%d\n", obj->filefd);
+	struct fileobj *fo = &obj->fileobj;
+
+	output(0, "file fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
+		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags);
 }
 
 static int open_files(void)
@@ -126,7 +124,7 @@ static int open_files(void)
 	for (i = 0; i < nr_to_open; i++) {
 		struct stat sb;
 		const char *filename;
-		struct object *obj;
+		struct object *obj = alloc_object();
 		int fd = -1;
 		int flags;
 
@@ -143,11 +141,10 @@ static int open_files(void)
 			if (flags == -1)
 				continue;
 
-			fd = open_file(filename, flags);
+			fd = open_file(obj, filename, flags);
 		} while (fd == -1);
 
-		obj = alloc_object();
-		obj->filefd = fd;
+		obj->fileobj.fd = fd;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_FILE);
 
 		/* convert O_ open flags to mmap prot flags */
@@ -178,7 +175,7 @@ static int get_rand_file_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_FILE, OBJ_GLOBAL);
-	return obj->filefd;
+	return obj->fileobj.fd;
 }
 
 static const struct fd_provider file_fd_provider = {
