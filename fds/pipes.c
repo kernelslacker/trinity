@@ -28,13 +28,8 @@ static void pipefd_dump(struct object *obj)
 
 static void open_pipe_pair(unsigned int flags)
 {
-	struct objhead *head;
 	struct object *obj;
 	int pipes[2];
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
-	head->destroy = &pipefd_destructor;
-	head->dump = &pipefd_dump;
 
 	if (pipe2(pipes, flags) < 0) {
 		perror("pipe fail.\n");
@@ -56,6 +51,12 @@ static void open_pipe_pair(unsigned int flags)
 
 static int open_pipes(void)
 {
+	struct objhead *head;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
+	head->destroy = &pipefd_destructor;
+	head->dump = &pipefd_dump;
+
 	open_pipe_pair(0);
 	open_pipe_pair(O_NONBLOCK);
 	open_pipe_pair(O_CLOEXEC);
