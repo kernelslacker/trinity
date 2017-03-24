@@ -25,13 +25,13 @@ static void dump_trace(void)
 	if (tracein == -1) {
 		if (errno != -EEXIST)
 			output(0, "Error opening %s : %s\n", tracefile, strerror(errno));
-		return;
+		goto fail_tracein;
 	}
 
 	traceout = open(ftracedumpname, O_CREAT | O_WRONLY, 0600);
 	if (traceout == -1) {
 		output(0, "Error opening %s : %s\n", ftracedumpname, strerror(errno));
-		return;
+		goto fail_traceout;
 	}
 
 	while (in != 0) {
@@ -54,7 +54,12 @@ static void dump_trace(void)
 fail:
 	fsync(traceout);
 	close(tracein);
+
+fail_traceout:
 	close(traceout);
+fail_tracein:
+	free((void *)ftracedumpname);
+	ftracedumpname = NULL;
 }
 
 void setup_ftrace(void)
