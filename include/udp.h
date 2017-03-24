@@ -27,6 +27,8 @@ struct msg_mainstarted {
 	enum logmsgtypes type;
 	pid_t pid;
 	unsigned int num_children;
+	void * shm_begin;
+	void * shm_end;
 };
 
 struct msg_mainexiting {

@@ -82,7 +82,8 @@ static void decode_main_started(void)
 	struct msg_mainstarted *mainmsg;
 
 	mainmsg = (struct msg_mainstarted *) &buf;
-	printf("Main started. pid:%d number of children: %d\n", mainmsg->pid, mainmsg->num_children);
+	printf("Main started. pid:%d number of children: %d. shm:%p-%p\n",
+		mainmsg->pid, mainmsg->num_children, mainmsg->shm_begin, mainmsg->shm_end);
 }
 
 static void decode_main_exiting(void)

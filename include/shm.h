@@ -72,3 +72,4 @@ struct shm_s {
 	bool unshare_perm_err;
 };
 extern struct shm_s *shm;
+extern unsigned int shm_size;
