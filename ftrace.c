@@ -19,13 +19,13 @@ static void dump_trace(void)
 	int tracein, traceout;
 	ssize_t in = -1, out = -1;
 	char buffer[4096];
+	const char tracefile[] = "/sys/kernel/debug/tracing/trace";
 
-	tracein = open("/sys/kernel/debug/tracing/trace", O_RDONLY);
+	tracein = open(tracefile, O_RDONLY);
 	if (tracein == -1) {
-		if (errno != -EEXIST) {
-			output(0, "Error opening /sys/kernel/debug/tracing/trace : %s\n", strerror(errno));
-			return;
-		}
+		if (errno != -EEXIST)
+			output(0, "Error opening %s : %s\n", tracefile, strerror(errno));
+		return;
 	}
 
 	traceout = open(ftracedumpname, O_CREAT | O_WRONLY, 0600);
@@ -43,9 +43,11 @@ static void dump_trace(void)
 				goto fail;
 			}
 		}
-	}
-	if (in == -1) {
-		output(0, "something went wrong reading from trace. %s\n", strerror(errno));
+
+		if (in == -1) {
+			output(0, "something went wrong reading from trace. %s\n", strerror(errno));
+			goto fail;
+		}
 	}
 
 	output(0, "Dumped trace to %s\n", ftracedumpname);
