@@ -304,7 +304,7 @@ static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet
 	 * Make sure we don't run past the end of the array above
 	 * Don't adjust the actual triplet though, because it's what the real socket is.
 	 */
-	if (proto > IPPROTO_MAX)
+	if (proto >= IPPROTO_MAX)
 		proto = rnd() % IPPROTO_MAX;
 
 	if (ip_ssoptrs[proto].func != NULL) {
