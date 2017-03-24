@@ -15,12 +15,15 @@
 
 static void perffd_destructor(struct object *obj)
 {
-	close(obj->perffd);
+	close(obj->perfobj.fd);
 }
 
 static void perffd_dump(struct object *obj)
 {
-	output(0, "perf fd: %d\n", obj->perffd);
+	struct perfobj *po = &obj->perfobj;
+
+	output(0, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%x\n",
+		po->fd, po->pid, po->cpu, po->group_fd, po->flags);
 }
 
 static int open_perf_fds(void)
@@ -46,7 +49,14 @@ static int open_perf_fds(void)
 			struct object *obj;
 
 			obj = alloc_object();
-			obj->perffd = fd;
+			obj->perfobj.fd = fd;
+			// FIXME: Logging this is going to be complicated, because of the event_attr.
+			// For now, we'll skip it, and just log the other params.
+			//obj->perfobj. = rec->a1;
+			obj->perfobj.pid = rec->a2;
+			obj->perfobj.cpu = rec->a3;
+			obj->perfobj.group_fd = rec->a4;
+			obj->perfobj.flags = rec->a5;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_PERF);
 			i++;
 
@@ -101,7 +111,7 @@ int get_rand_perf_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_PERF, OBJ_GLOBAL);
-	return obj->perffd;
+	return obj->perfobj.fd;
 }
 
 static const struct fd_provider perf_fd_provider = {

@@ -28,6 +28,14 @@ struct pipeobj {
 	bool reader;
 };
 
+struct perfobj {
+	int fd;
+	pid_t pid;
+	int cpu;
+	int group_fd;
+	unsigned long flags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -37,7 +45,7 @@ struct object {
 
 		struct pipeobj pipeobj;
 
-		int perffd;
+		struct perfobj perfobj;
 
 		int epollfd;
 
