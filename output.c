@@ -16,18 +16,24 @@
  *   2 = Just the reseed values
  *
  */
-void output(unsigned char level, const char *fmt, ...)
+void output(char level, const char *fmt, ...)
 {
 	va_list args;
 	int n;
 	pid_t pid;
 	char outputbuf[BUFSIZE];
 	char *prefix = NULL;
-	char main_prefix[]="[main]";
+	char main_prefix[]="[main] ";
+	char continuationtxt[]="";
 	char child_prefix[32];
 
 	if (level >= quiet_level)
 		return;
+
+	if (level == CONT) {
+		prefix = continuationtxt;
+		goto skip_pid;
+	}
 
 	/* prefix preparation */
 	pid = getpid();
@@ -38,9 +44,11 @@ void output(unsigned char level, const char *fmt, ...)
 		unsigned int childno;
 
 		childno = find_childno(pid);
-		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u]", childno, pid);
+		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u] ", childno, pid);
 		prefix = child_prefix;
 	}
+
+skip_pid:
 
 	/* formatting output */
 	va_start(args, fmt);
@@ -53,7 +61,7 @@ void output(unsigned char level, const char *fmt, ...)
 
 	/* stdout output if needed */
 	if (quiet_level >= level) {
-		printf("%s %s", prefix, outputbuf);
+		printf("%s%s", prefix, outputbuf);
 		(void)fflush(stdout);
 	}
 }
