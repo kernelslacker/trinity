@@ -139,6 +139,4 @@ void setup_initial_mappings(void)
 		alloc_zero_map(mapping_sizes[i], PROT_READ, "PROT_READ");
 		alloc_zero_map(mapping_sizes[i], PROT_WRITE, "PROT_WRITE");
 	}
-
-	dump_objects(OBJ_GLOBAL, OBJ_MMAP_ANON);
 }

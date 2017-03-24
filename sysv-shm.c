@@ -63,5 +63,4 @@ void create_sysv_shms(void)
 		if (p != (void *) -1)
 			obj->sysv_shm.ptr = p;
 	}
-	//dump_objects(OBJ_GLOBAL, OBJ_SYSV_SHM);
 }

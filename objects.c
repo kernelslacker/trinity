@@ -5,27 +5,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-void dump_objects(bool global, enum objecttype type)
-{
-	struct list_head *node, *list;
-	struct objhead *head;
-
-	head = get_objhead(global, type);
-	list = head->list;
-
-	// TODO: objhead->name
-	output(0, "There are %d entries in the %d list (@%p).\n",
-			head->num_entries, type, list);
-
-	list_for_each(node, list) {
-		struct object *obj = (struct object *) node;
-
-		if (head->dump != NULL)
-			head->dump(obj);
-	}
-}
-
-
 struct object * alloc_object(void)
 {
 	struct object *obj;
@@ -62,6 +41,9 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 
 	list_add_tail(&obj->list, head->list);
 	head->num_entries++;
+
+	if (head->dump != NULL)
+		head->dump(obj);
 
 	/* if we just added something to a child list, check
 	 * to see if we need to do some pruning.

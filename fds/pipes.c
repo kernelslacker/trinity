@@ -61,8 +61,6 @@ static int open_pipes(void)
 	open_pipe_pair(O_CLOEXEC);
 	open_pipe_pair(O_NONBLOCK | O_CLOEXEC);
 
-	dump_objects(OBJ_GLOBAL, OBJ_FD_PIPE);
-
 	return TRUE;
 }
 

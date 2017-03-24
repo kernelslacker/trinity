@@ -101,8 +101,6 @@ static int open_testfile_fds(void)
 		}
 	}
 
-	dump_objects(OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
-
 	free(filename);
 	return TRUE;
 }
