@@ -15,12 +15,12 @@
 
 static void perffd_destructor(struct object *obj)
 {
-	output(0, "perffd:%d\n", obj->perffd);
+	close(obj->perffd);
 }
 
 static void perffd_dump(struct object *obj)
 {
-	close(obj->perffd);
+	output(0, "perffd:%d\n", obj->perffd);
 }
 
 static int open_perf_fds(void)
