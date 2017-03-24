@@ -29,6 +29,7 @@ struct pipeobj {
 };
 
 struct perfobj {
+	void * eventattr;
 	int fd;
 	pid_t pid;
 	int cpu;

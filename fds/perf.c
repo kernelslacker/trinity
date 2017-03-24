@@ -1,3 +1,6 @@
+#include <linux/perf_event.h>
+#include <linux/hw_breakpoint.h>
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,15 +18,24 @@
 
 static void perffd_destructor(struct object *obj)
 {
+	free(obj->perfobj.eventattr);
 	close(obj->perfobj.fd);
 }
 
 static void perffd_dump(struct object *obj)
 {
 	struct perfobj *po = &obj->perfobj;
+	struct perf_event_attr *attr = obj->perfobj.eventattr;
+	char *p = (char *)attr;
+	unsigned int i;
 
 	output(0, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%x\n",
 		po->fd, po->pid, po->cpu, po->group_fd, po->flags);
+	output(0, " perf_event_attr:");
+	for (i = 0; i < sizeof(struct perf_event_attr); i++) {
+		output(CONT, "%02x ", (unsigned char) p[i]);
+	}
+	output(CONT, "\n");
 }
 
 static int open_perf_fds(void)
@@ -50,9 +62,8 @@ static int open_perf_fds(void)
 
 			obj = alloc_object();
 			obj->perfobj.fd = fd;
-			// FIXME: Logging this is going to be complicated, because of the event_attr.
-			// For now, we'll skip it, and just log the other params.
-			//obj->perfobj. = rec->a1;
+			obj->perfobj.eventattr = zmalloc(sizeof(struct perf_event_attr));
+			memcpy(obj->perfobj.eventattr, (void *) rec->a1, sizeof(struct perf_event_attr));
 			obj->perfobj.pid = rec->a2;
 			obj->perfobj.cpu = rec->a3;
 			obj->perfobj.group_fd = rec->a4;
