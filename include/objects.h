@@ -1,12 +1,18 @@
 #pragma once
 
-#include "list.h"
-#include "socketinfo.h"
-#include "trinity.h"
 #include "futex.h"
-#include "object-types.h"
+#include "list.h"
 #include "maps.h"
+#include "object-types.h"
+#include "socketinfo.h"
 #include "sysv-shm.h"
+#include "trinity.h"
+#include "types.h"
+
+struct bpfobj {
+	u32 map_type;
+	int map_fd;
+};
 
 struct object {
 	struct list_head list;
@@ -37,8 +43,7 @@ struct object {
 
 		int fanotifyfd;
 
-		int bpf_map_fd;
-
+		struct bpfobj bpfobj;
 		int bpf_prog_fd;
 
 		struct socketinfo sockinfo;

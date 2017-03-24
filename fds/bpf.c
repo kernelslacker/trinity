@@ -44,12 +44,7 @@ static int bpf_create_map(enum bpf_map_type map_type, unsigned int key_size,
 
 static void bpf_destructor(struct object *obj)
 {
-	close(obj->bpf_map_fd);
-}
-
-static void bpf_map_dump(struct object *obj)
-{
-	output(0, "bpf map fd:%d\n", obj->bpf_map_fd);
+	close(obj->bpfobj.map_fd);
 }
 
 struct bpf_fd_types {
@@ -77,6 +72,13 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_LPM_TRIE, 8, sizeof(long), 10000, 0, "LPM TRIE" },
 };
 
+static void bpf_map_dump(struct object *obj)
+{
+	u32 type = obj->bpfobj.map_type;
+
+	output(0, "bpf map fd:%d type:%s\n", obj->bpfobj.map_fd, &bpf_fds[type].name);
+}
+
 static int open_bpf_fds(void)
 {
 	struct objhead *head;
@@ -99,9 +101,9 @@ static int open_bpf_fds(void)
 			continue;
 
 		obj = alloc_object();
-		obj->bpf_map_fd = fd;
+		obj->bpfobj.map_fd = fd;
+		obj->bpfobj.map_type = bpf_fds[i].map_type;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-		output(2, "fd[%d] = bpf %s\n", fd, &bpf_fds[i].name);
 	}
 
 	//FIXME: right now, returning FALSE means "abort everything", not
@@ -119,7 +121,7 @@ int get_rand_bpf_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
-	return obj->bpf_map_fd;
+	return obj->bpfobj.map_fd;
 }
 
 static const struct fd_provider bpf_fd_provider = {

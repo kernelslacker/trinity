@@ -2,6 +2,7 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include "types.h"
 
 struct __lock {
 	uint32_t futex;
