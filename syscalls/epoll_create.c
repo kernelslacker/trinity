@@ -6,18 +6,28 @@
  */
 #include "objects.h"
 #include "sanitise.h"
+#include "tables.h"
 #include "utils.h"
 
 static void post_epoll_create(struct syscallrecord *rec)
 {
 	struct object *new;
+	struct epollobj *eo;
 	int fd = rec->retval;
 
 	if (fd == -1)
 		return;
 
 	new = alloc_object();
-	new->epollfd = fd;
+	eo = &new->epollobj;
+	eo->fd = fd;
+	if (this_syscallname("epoll_create1")) {
+		eo->create1 = TRUE;
+		eo->flags = rec->a1;
+	} else {
+		eo->create1 = FALSE;
+		eo->flags = 0;
+	}
 	add_object(new, OBJ_LOCAL, OBJ_FD_EPOLL);
 }
 

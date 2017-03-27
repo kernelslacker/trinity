@@ -37,6 +37,12 @@ struct perfobj {
 	unsigned long flags;
 };
 
+struct epollobj {
+	int fd;
+	bool create1;
+	int flags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -48,7 +54,7 @@ struct object {
 
 		struct perfobj perfobj;
 
-		int epollfd;
+		struct epollobj epollobj;
 
 		int eventfd;
 
