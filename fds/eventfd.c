@@ -17,19 +17,21 @@
 
 static void eventfd_destructor(struct object *obj)
 {
-	close(obj->eventfd);
+	close(obj->eventfdobj.fd);
 }
 
 static void eventfd_dump(struct object *obj)
 {
-	output(0, "eventfd:%d\n", obj->eventfd);
+	struct eventfdobj *eo = &obj->eventfdobj;
+
+	output(0, "eventfd fd:%d count:%d flags:%x\n", eo->fd, eo->count, eo->flags);
 }
 
 static int open_eventfd_fds(void)
 {
 	struct objhead *head;
 	unsigned int i;
-	unsigned int flags[] = {
+	const unsigned int flags[] = {
 		0,
 		EFD_NONBLOCK,
 		EFD_NONBLOCK | EFD_SEMAPHORE,
@@ -47,13 +49,16 @@ static int open_eventfd_fds(void)
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
 		int fd;
+		int count = rand32();
 
-		fd = eventfd(rand32(), flags[i]);
+		fd = eventfd(count, flags[i]);
 		if (fd < 0)
 			continue;
 
 		obj = alloc_object();
-		obj->eventfd = fd;
+		obj->eventfdobj.fd = fd;
+		obj->eventfdobj.count = count;
+		obj->eventfdobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_EVENTFD);
 	}
 
@@ -69,7 +74,7 @@ static int get_rand_eventfd_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_EVENTFD, OBJ_GLOBAL);
-	return obj->eventfd;
+	return obj->eventfdobj.fd;
 }
 
 static const struct fd_provider eventfd_fd_provider = {

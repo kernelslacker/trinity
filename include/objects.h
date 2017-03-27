@@ -43,6 +43,12 @@ struct epollobj {
 	int flags;
 };
 
+struct eventfdobj {
+	int fd;
+	int count;
+	int flags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -56,7 +62,7 @@ struct object {
 
 		struct epollobj epollobj;
 
-		int eventfd;
+		struct eventfdobj eventfdobj;
 
 		int timerfd;
 

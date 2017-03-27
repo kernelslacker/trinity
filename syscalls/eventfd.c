@@ -19,7 +19,9 @@ static void post_eventfd_create(struct syscallrecord *rec)
 		return;
 
 	new = alloc_object();
-	new->eventfd = fd;
+	new->eventfdobj.fd = fd;
+	new->eventfdobj.count = rec->a1;
+	new->eventfdobj.flags = rec->a2;
 	add_object(new, OBJ_LOCAL, OBJ_FD_EVENTFD);
 }
 
