@@ -46,7 +46,7 @@ static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 		struct object *obj;
 
 		obj = (struct object *) node;
-		if (obj->testfilefd == fd)
+		if (obj->testfileobj.fd == fd)
 			return 0;
 	}
 

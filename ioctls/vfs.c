@@ -30,7 +30,7 @@ static int vfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	globallist = shm->global_objects[OBJ_FD_TESTFILE].list;
 	list_for_each(node, globallist) {
 		obj = (struct object *) node;
-		if (obj->testfilefd == fd)
+		if (obj->testfileobj.fd == fd)
 			return 0;
 	}
 

@@ -23,41 +23,46 @@
 
 static void testfile_destructor(struct object *obj)
 {
-	close(obj->testfilefd);
+	close(obj->testfileobj.fd);
 }
 
 static void testfile_dump(struct object *obj)
 {
-	output(0, "testfilefd:%d\n", obj->testfilefd);
+	struct fileobj *fo = &obj->testfileobj;
+
+	output(0, "testfile fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
+		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags);
 }
 
-static int open_testfile(char *filename)
+static int open_testfile(struct object *obj, char *filename)
 {
-	struct objhead *head;
 	int fd;
+	int fcntl_flags;
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
-	head->destroy = &testfile_destructor;
-	head->dump = &testfile_dump;
+	obj->testfileobj.filename = filename;
 
 	/* file might be around from an earlier run, nuke it. */
 	(void) unlink(filename);
 
 	if (RAND_BOOL()) {
-		fd = open_with_fopen(filename, O_RDWR);
-		if (fd != -1) {
-			output(2, "fd[%d] = fopen(\"%s\", O_RDWR)\n", fd, filename);
-			(void) fcntl(fd, F_SETFL, random_fcntl_setfl_flags());
-		}
-	} else {
 		const unsigned long open_flags[] = { O_DIRECT, O_DSYNC, O_SYNC, };
 		int flags = 0;
 
 		flags = set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);;
-
+		obj->testfileobj.flags = O_CREAT | flags;
 		fd = open(filename, O_CREAT | flags, 0666);
-		if (fd != -1)
-			output(2, "fd[%d] = open(\"%s\", flags:%x)\n", fd, filename, flags);	//TODO: decode flags
+		obj->testfileobj.fopened = FALSE;
+		obj->testfileobj.fcntl_flags = 0;
+	} else {
+		obj->testfileobj.fopened = TRUE;
+		obj->testfileobj.flags = O_RDWR;
+
+		fd = open_with_fopen(filename, O_RDWR);
+		if (fd != -1) {
+			fcntl_flags = random_fcntl_setfl_flags();
+			(void) fcntl(fd, F_SETFL, fcntl_flags);
+			obj->testfileobj.fcntl_flags = fcntl_flags;
+		}
 	}
 
 	return fd;
@@ -65,23 +70,30 @@ static int open_testfile(char *filename)
 
 static int open_testfile_fds(void)
 {
+	struct objhead *head;
 	char *filename;
 	unsigned int i = 1, nr = 0;
 	unsigned int fails = 0;
 
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
+	head->destroy = &testfile_destructor;
+	head->dump = &testfile_dump;
+
 	filename = zmalloc(64);
 
 	while (nr < MAX_TESTFILE_FDS) {
+		struct object *obj = NULL;
 		int fd;
 
 		sprintf(filename, "trinity-testfile%u", i);
 
-		fd = open_testfile(filename);
-		if (fd != -1) {
-			struct object *obj;
-
+		if (obj == NULL)
 			obj = alloc_object();
-			obj->testfilefd = fd;
+
+		fd = open_testfile(obj, filename);
+		if (fd != -1) {
+
+			obj->testfileobj.fd = fd;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
 
 			i++;
@@ -90,6 +102,8 @@ static int open_testfile_fds(void)
 			nr++;
 
 			fails = 0;
+
+			obj = NULL;	// Make it alloc a new one.
 
 			mmap_fd(fd, filename, page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
 
@@ -114,7 +128,7 @@ int get_rand_testfile_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TESTFILE, OBJ_GLOBAL);
-	return obj->testfilefd;
+	return obj->testfileobj.fd;
 }
 
 static const struct fd_provider testfile_fd_provider = {

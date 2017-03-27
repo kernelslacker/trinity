@@ -54,7 +54,7 @@ struct object {
 
 		int timerfd;
 
-		int testfilefd;
+		struct fileobj testfileobj;
 
 		int memfd;
 
