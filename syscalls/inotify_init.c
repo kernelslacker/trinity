@@ -14,7 +14,7 @@ static void post_inotify_init(struct syscallrecord *rec)
 		return;
 
 	new = alloc_object();
-	new->eventfd = fd;
+	new->inotifyfd = fd;
 	add_object(new, OBJ_LOCAL, OBJ_FD_INOTIFY);
 }
 
