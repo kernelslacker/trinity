@@ -66,7 +66,7 @@ void map_dump(struct object *obj)
 
 	m = &obj->map;
 	sizeunit(m->size, buf);
-	output(0, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
+	output(2, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
 }
 
 /*
