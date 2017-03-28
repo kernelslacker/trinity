@@ -27,12 +27,14 @@ static int userfaultfd_create(__unused__ unsigned int flag)
 
 static void userfaultfd_destructor(struct object *obj)
 {
-	close(obj->userfaultfd);
+	close(obj->userfaultobj.fd);
 }
 
 static void userfaultfd_dump(struct object *obj)
 {
-	output(0, "userfaultfd:%d\n", obj->userfaultfd);
+	struct userfaultobj *uo = &obj->userfaultobj;
+
+	output(0, "userfault fd:%d flags:%x\n", uo->fd, uo->flags);
 }
 
 static int open_userfaultfds(void)
@@ -59,10 +61,9 @@ static int open_userfaultfds(void)
 			continue;
 
 		obj = alloc_object();
-		obj->userfaultfd = fd;
+		obj->userfaultobj.fd = fd;
+		obj->userfaultobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
-
-		output(2, "fd[%d] = userfaultfd\n", fd);
 	}
 
 	//FIXME: right now, returning FALSE means "abort everything", not
@@ -80,7 +81,7 @@ static int get_rand_userfaultfd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_USERFAULTFD, OBJ_GLOBAL);
-	return obj->userfaultfd;
+	return obj->userfaultobj.fd;
 }
 
 static const struct fd_provider userfaultfd_provider = {

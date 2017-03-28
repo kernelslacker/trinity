@@ -66,6 +66,11 @@ struct inotifyobj {
 	int flags;
 };
 
+struct userfaultobj {
+	int fd;
+	int flags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -91,7 +96,7 @@ struct object {
 
 		struct inotifyobj inotifyobj;
 
-		int userfaultfd;
+		struct userfaultobj userfaultobj;
 
 		int fanotifyfd;
 
