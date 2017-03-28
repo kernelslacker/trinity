@@ -59,7 +59,7 @@ retry:
 		free((void *) so->optval);
 }
 
-static struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol, bool accepted)
+static struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	struct object *obj;
 
@@ -71,10 +71,6 @@ static struct object * add_socket(int fd, unsigned int domain, unsigned int type
 	obj->sockinfo.triplet.protocol = protocol;
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_SOCKET);
-
-	output(2, "fd[%i] = domain:%u (%s) type:0x%u protocol:%u %s\n",
-		fd, domain, get_domain_name(domain), type, protocol,
-		accepted ? "[accepted]" : "");
 
 	return obj;
 }
@@ -92,12 +88,16 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	if (fd == -1)
 		return fd;
 
-	obj = add_socket(fd, domain, type, protocol, FALSE);
+	obj = add_socket(fd, domain, type, protocol);
 
 	proto = net_protocols[domain].proto;
 	if (proto != NULL)
 		if (proto->socket_setup != NULL)
 			proto->socket_setup(fd);
+
+	// FIXME:
+	// All of this needs to be broken out into child ops instead of
+	// special casing it all at creation time.
 
 	/* Set some random socket options. */
 	sso_socket(&obj->sockinfo.triplet, &so, fd);
@@ -121,7 +121,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 //		ret = accept4(fd, sa, &salen, SOCK_NONBLOCK);
 //		if (ret != -1) {
-//			obj = add_socket(ret, domain, type, protocol, TRUE);
+//			obj = add_socket(ret, domain, type, protocol);
 //			nr_sockets++;
 //		}
 	}
@@ -248,7 +248,7 @@ static bool generate_socket(unsigned int family, unsigned int protocol, unsigned
 		write_socket_to_cache(&st);
 		return TRUE;
 	}
-	output(0, "Couldn't open socket %d:%d:%d. %s\n", family, type, protocol, strerror(errno));
+	output(2, "Couldn't open socket %d:%d:%d. %s\n", family, type, protocol, strerror(errno));
 	return FALSE;
 }
 
@@ -407,11 +407,11 @@ static void socket_destructor(struct object *obj)
 
 static void socket_dump(struct object *obj)
 {
-	output(0, "socket (fam:%d type:%d protocol:%d) fd:%d\n",
-		obj->sockinfo.triplet.family,
-		obj->sockinfo.triplet.type,
-		obj->sockinfo.triplet.protocol,
-		obj->sockinfo.fd);
+	struct socketinfo *si = &obj->sockinfo;
+
+	output(0, "socket fd:%d domain:%u (%s) type:0x%u protocol:%u\n",
+		si->fd, si->triplet.family, get_domain_name(si->triplet.family),
+		si->triplet.type, si->triplet.protocol);
 }
 
 static int open_sockets(void)
