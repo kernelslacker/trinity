@@ -37,7 +37,6 @@ static void testfile_dump(struct object *obj)
 static int open_testfile(struct object *obj, char *filename)
 {
 	int fd;
-	int fcntl_flags;
 
 	obj->testfileobj.filename = filename;
 
@@ -59,6 +58,8 @@ static int open_testfile(struct object *obj, char *filename)
 
 		fd = open_with_fopen(filename, O_RDWR);
 		if (fd != -1) {
+			int fcntl_flags;
+
 			fcntl_flags = random_fcntl_setfl_flags();
 			(void) fcntl(fd, F_SETFL, fcntl_flags);
 			obj->testfileobj.fcntl_flags = fcntl_flags;
@@ -71,6 +72,7 @@ static int open_testfile(struct object *obj, char *filename)
 static int open_testfile_fds(void)
 {
 	struct objhead *head;
+	struct object *obj = NULL;
 	char *filename;
 	unsigned int i = 1, nr = 0;
 	unsigned int fails = 0;
@@ -82,7 +84,6 @@ static int open_testfile_fds(void)
 	filename = zmalloc(64);
 
 	while (nr < MAX_TESTFILE_FDS) {
-		struct object *obj = NULL;
 		int fd;
 
 		sprintf(filename, "trinity-testfile%u", i);
