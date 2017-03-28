@@ -61,6 +61,7 @@ static int open_epoll_fds(void)
 		} else {
 			/* not sure what happened. */
 			output(0, "open_epoll_fds fail: %s\n", strerror(errno));
+			free(obj);
 			return FALSE;
 		}
 	}
