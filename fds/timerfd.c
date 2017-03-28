@@ -17,12 +17,14 @@
 
 static void timerfd_destructor(struct object *obj)
 {
-	close(obj->timerfd);
+	close(obj->timerfdobj.fd);
 }
 
 static void timerfd_dump(struct object *obj)
 {
-	output(0, "timerfd:%d\n", obj->timerfd);
+	struct timerfdobj *to = &obj->timerfdobj;
+
+	output(0, "timerfd fd:%d clockid:%d flags:%x\n", to->fd, to->clockid, to->flags);
 }
 
 static int __open_timerfd_fds(int clockid)
@@ -50,7 +52,9 @@ static int __open_timerfd_fds(int clockid)
 				return FALSE;
 
 		obj = alloc_object();
-		obj->timerfd = fd;
+		obj->timerfdobj.fd = fd;
+		obj->timerfdobj.clockid = clockid;
+		obj->timerfdobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_TIMERFD);
 	}
 	return TRUE;
@@ -75,7 +79,7 @@ static int get_rand_timerfd_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TIMERFD, OBJ_GLOBAL);
-	return obj->timerfd;
+	return obj->timerfdobj.fd;
 }
 
 static const struct fd_provider timerfd_fd_provider = {

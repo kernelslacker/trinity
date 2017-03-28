@@ -49,6 +49,12 @@ struct eventfdobj {
 	int flags;
 };
 
+struct timerfdobj {
+	int fd;
+	int clockid;
+	int flags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -64,7 +70,7 @@ struct object {
 
 		struct eventfdobj eventfdobj;
 
-		int timerfd;
+		struct timerfdobj timerfdobj;
 
 		struct fileobj testfileobj;
 
