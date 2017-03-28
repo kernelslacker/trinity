@@ -61,6 +61,11 @@ struct memfdobj {
 	int flags;
 };
 
+struct inotifyobj {
+	int fd;
+	int flags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -84,7 +89,7 @@ struct object {
 
 		int drmfd;
 
-		int inotifyfd;
+		struct inotifyobj inotifyobj;
 
 		int userfaultfd;
 

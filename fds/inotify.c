@@ -17,12 +17,14 @@
 
 static void inotify_destructor(struct object *obj)
 {
-	close(obj->inotifyfd);
+	close(obj->inotifyobj.fd);
 }
 
 static void inotify_dump(struct object *obj)
 {
-	output(0, "inotifyfd:%d\n", obj->inotifyfd);
+	struct inotifyobj *io = &obj->inotifyobj;
+
+	output(0, "inotify fd:%d flags:%x\n", io->fd, io->flags);
 }
 
 static int open_inotify_fds(void)
@@ -47,7 +49,8 @@ static int open_inotify_fds(void)
 		return FALSE;
 
 	obj = alloc_object();
-	obj->inotifyfd = fd;
+	obj->inotifyobj.fd = fd;
+	obj->inotifyobj.flags = 0;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
@@ -56,7 +59,8 @@ static int open_inotify_fds(void)
 			return FALSE;
 
 		obj = alloc_object();
-		obj->inotifyfd = fd;
+		obj->inotifyobj.fd = fd;
+		obj->inotifyobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
 	}
 
@@ -72,7 +76,7 @@ static int get_rand_inotify_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_INOTIFY, OBJ_GLOBAL);
-	return obj->inotifyfd;
+	return obj->inotifyobj.fd;
 }
 
 static const struct fd_provider inotify_fd_provider = {

@@ -3,6 +3,7 @@
  */
 #include "objects.h"
 #include "sanitise.h"
+#include "tables.h"
 #include "utils.h"
 
 static void post_inotify_init(struct syscallrecord *rec)
@@ -14,7 +15,11 @@ static void post_inotify_init(struct syscallrecord *rec)
 		return;
 
 	new = alloc_object();
-	new->inotifyfd = fd;
+	new->inotifyobj.fd = fd;
+	if (this_syscallname("inotify_init1"))
+		new->inotifyobj.flags = rec->a1;
+	else
+		new->inotifyobj.flags = 0;
 	add_object(new, OBJ_LOCAL, OBJ_FD_INOTIFY);
 }
 
