@@ -17,7 +17,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#define NR_INOTIFYFDS 10
+#define NR_FANOTIFYFDS 10
 
 static int fanotify_init(__unused__ unsigned int flags, __unused__ unsigned int eflags)
 {
@@ -30,12 +30,15 @@ static int fanotify_init(__unused__ unsigned int flags, __unused__ unsigned int 
 
 static void fanotifyfd_destructor(struct object *obj)
 {
-	close(obj->fanotifyfd);
+	close(obj->fanotifyobj.fd);
 }
 
 static void fanotifyfd_dump(struct object *obj)
 {
-	output(0, "fanotify:%d\n", obj->fanotifyfd);
+	struct fanotifyobj *fo = &obj->fanotifyobj;
+
+	output(0, "fanotify fd:%d flags:%x eventflags:%x\n",
+		fo->fd, fo->flags, fo->eventflags);
 }
 
 static int open_fanotify_fds(void)
@@ -47,7 +50,7 @@ static int open_fanotify_fds(void)
 	head->destroy = &fanotifyfd_destructor;
 	head->dump = &fanotifyfd_dump;
 
-	for (i = 0; i < NR_INOTIFYFDS; i++) {
+	for (i = 0; i < NR_FANOTIFYFDS; i++) {
 		struct object *obj;
 		unsigned long flags, eventflags;
 		int fd;
@@ -59,10 +62,10 @@ static int open_fanotify_fds(void)
 			continue;
 
 		obj = alloc_object();
-		obj->fanotifyfd = fd;
+		obj->fanotifyobj.fd = fd;
+		obj->fanotifyobj.flags = flags;
+		obj->fanotifyobj.eventflags = eventflags;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_FANOTIFY);
-
-		output(2, "fd[%d] = fanotify_init(%lx, %lx)\n", fd, flags, eventflags);
 	}
 
 	//FIXME: right now, returning FALSE means "abort everything", not
@@ -80,7 +83,7 @@ static int get_rand_fanotifyfd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_FANOTIFY, OBJ_GLOBAL);
-	return obj->fanotifyfd;
+	return obj->fanotifyobj.fd;
 }
 
 static const struct fd_provider fanotify_fd_provider = {

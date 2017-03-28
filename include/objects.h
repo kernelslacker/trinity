@@ -71,6 +71,12 @@ struct userfaultobj {
 	int flags;
 };
 
+struct fanotifyobj {
+	int fd;
+	int flags;
+	int eventflags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -98,7 +104,7 @@ struct object {
 
 		struct userfaultobj userfaultobj;
 
-		int fanotifyfd;
+		struct fanotifyobj fanotifyobj;
 
 		struct bpfobj bpfobj;
 		int bpf_prog_fd;

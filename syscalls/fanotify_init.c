@@ -16,7 +16,7 @@
 #include "sanitise.h"
 #include "utils.h"
 
-unsigned long fanotify_init_flags[] = {
+static unsigned long fanotify_init_flags[] = {
 	FAN_CLOEXEC , FAN_NONBLOCK, FAN_UNLIMITED_QUEUE , FAN_UNLIMITED_MARKS,
 	FAN_CLASS_NOTIF, FAN_CLASS_CONTENT, FAN_CLASS_PRE_CONTENT,
 };
