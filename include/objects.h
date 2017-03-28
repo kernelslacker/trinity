@@ -55,6 +55,12 @@ struct timerfdobj {
 	int flags;
 };
 
+struct memfdobj {
+	int fd;
+	char *name;
+	int flags;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -74,7 +80,7 @@ struct object {
 
 		struct fileobj testfileobj;
 
-		int memfd;
+		struct memfdobj memfdobj;
 
 		int drmfd;
 

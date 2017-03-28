@@ -26,12 +26,15 @@ static int memfd_create(__unused__ const char *uname, __unused__ unsigned int fl
 
 static void memfd_destructor(struct object *obj)
 {
-	close(obj->memfd);
+	free(obj->memfdobj.name);
+	close(obj->memfdobj.fd);
 }
 
 static void memfd_dump(struct object *obj)
 {
-	output(0, "memfd:%d\n", obj->memfd);
+	struct memfdobj *mo = &obj->memfdobj;
+
+	output(0, "memfd fd:%d name:%s flags:%x\n", mo->fd, mo->name, mo->flags);
 }
 
 static int open_memfd_fds(void)
@@ -61,10 +64,10 @@ static int open_memfd_fds(void)
 			continue;
 
 		obj = alloc_object();
-		obj->memfd = fd;
+		obj->memfdobj.fd = fd;
+		obj->memfdobj.name = strdup(namestr);
+		obj->memfdobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
-
-		output(2, "fd[%d] = memfd\n", fd);
 	}
 
 	//FIXME: right now, returning FALSE means "abort everything", not
@@ -82,7 +85,7 @@ static int get_rand_memfd_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_MEMFD, OBJ_GLOBAL);
-	return obj->memfd;
+	return obj->memfdobj.fd;
 }
 
 static const struct fd_provider memfd_fd_provider = {
