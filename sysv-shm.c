@@ -12,7 +12,7 @@
 #include "objects.h"
 #include "utils.h"
 
-static void dump_sysv_shm(struct object *obj)
+static void dump_sysv_shm(struct object *obj, __unused__ bool global)
 {
 	output(0, "sysv_shm: id:%u size:%d flags:%x ptr:%p\n",
 		obj->sysv_shm.id, obj->sysv_shm.size,

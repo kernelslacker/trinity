@@ -111,7 +111,7 @@ static inline void futex_init_lock(struct __lock *thislock)
 	thislock->owner_pid = 0;
 }
 
-static void dump_futex(struct object *obj)
+static void dump_futex(struct object *obj, __unused__ bool global)
 {
 	output(0, "futex: %lx owner:%d\n", obj->lock.futex, obj->lock.owner_pid);
 }

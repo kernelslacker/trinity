@@ -30,7 +30,7 @@ static void userfaultfd_destructor(struct object *obj)
 	close(obj->userfaultobj.fd);
 }
 
-static void userfaultfd_dump(struct object *obj)
+static void userfaultfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct userfaultobj *uo = &obj->userfaultobj;
 

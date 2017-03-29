@@ -405,7 +405,7 @@ static void socket_destructor(struct object *obj)
 			strerror(errno));
 }
 
-static void socket_dump(struct object *obj)
+static void socket_dump(struct object *obj, __unused__ bool global)
 {
 	struct socketinfo *si = &obj->sockinfo;
 

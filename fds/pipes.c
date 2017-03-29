@@ -21,7 +21,7 @@ static void pipefd_destructor(struct object *obj)
 	close(obj->pipeobj.fd);
 }
 
-static void pipefd_dump(struct object *obj)
+static void pipefd_dump(struct object *obj, __unused__ bool global)
 {
 	struct pipeobj *po = &obj->pipeobj;
 

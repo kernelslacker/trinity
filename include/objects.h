@@ -122,7 +122,7 @@ struct objhead {
 	unsigned int num_entries;
 	unsigned int max_entries;
 	void (*destroy)(struct object *obj);
-	void (*dump)(struct object *obj);
+	void (*dump)(struct object *obj, bool global);
 };
 
 #define OBJ_GLOBAL 0

@@ -26,7 +26,7 @@ static void testfile_destructor(struct object *obj)
 	close(obj->testfileobj.fd);
 }
 
-static void testfile_dump(struct object *obj)
+static void testfile_dump(struct object *obj, __unused__ bool global)
 {
 	struct fileobj *fo = &obj->testfileobj;
 

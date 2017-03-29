@@ -20,7 +20,7 @@ static void timerfd_destructor(struct object *obj)
 	close(obj->timerfdobj.fd);
 }
 
-static void timerfd_dump(struct object *obj)
+static void timerfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct timerfdobj *to = &obj->timerfdobj;
 

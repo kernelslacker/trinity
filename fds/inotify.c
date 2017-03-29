@@ -20,7 +20,7 @@ static void inotify_destructor(struct object *obj)
 	close(obj->inotifyobj.fd);
 }
 
-static void inotify_dump(struct object *obj)
+static void inotify_dump(struct object *obj, __unused__ bool global)
 {
 	struct inotifyobj *io = &obj->inotifyobj;
 

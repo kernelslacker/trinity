@@ -91,7 +91,7 @@ static void filefd_destructor(struct object *obj)
 	close(obj->fileobj.fd);
 }
 
-static void filefd_dump(struct object *obj)
+static void filefd_dump(struct object *obj, __unused__ bool global)
 {
 	struct fileobj *fo = &obj->fileobj;
 

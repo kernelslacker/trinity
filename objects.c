@@ -43,7 +43,7 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 	head->num_entries++;
 
 	if (head->dump != NULL)
-		head->dump(obj);
+		head->dump(obj, global);
 
 	/* if we just added something to a child list, check
 	 * to see if we need to do some pruning.

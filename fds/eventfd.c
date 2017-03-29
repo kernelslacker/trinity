@@ -20,7 +20,7 @@ static void eventfd_destructor(struct object *obj)
 	close(obj->eventfdobj.fd);
 }
 
-static void eventfd_dump(struct object *obj)
+static void eventfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct eventfdobj *eo = &obj->eventfdobj;
 

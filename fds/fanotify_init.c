@@ -33,7 +33,7 @@ static void fanotifyfd_destructor(struct object *obj)
 	close(obj->fanotifyobj.fd);
 }
 
-static void fanotifyfd_dump(struct object *obj)
+static void fanotifyfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct fanotifyobj *fo = &obj->fanotifyobj;
 

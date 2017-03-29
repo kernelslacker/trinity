@@ -72,7 +72,7 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_LPM_TRIE, 8, sizeof(long), 10000, 0, "LPM TRIE" },
 };
 
-static void bpf_map_dump(struct object *obj)
+static void bpf_map_dump(struct object *obj, __unused__ bool global)
 {
 	u32 type = obj->bpfobj.map_type;
 

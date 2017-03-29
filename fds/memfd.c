@@ -30,7 +30,7 @@ static void memfd_destructor(struct object *obj)
 	close(obj->memfdobj.fd);
 }
 
-static void memfd_dump(struct object *obj)
+static void memfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct memfdobj *mo = &obj->memfdobj;
 
