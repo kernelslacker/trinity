@@ -270,8 +270,6 @@ const char * get_filename(void)
 	return fileindex[rnd() % files_in_index];
 }
 
-#define MAX_PATH_LEN 4096
-
 const char * generate_pathname(void)
 {
 	const char *pathname = get_filename();

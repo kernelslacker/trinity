@@ -9,6 +9,8 @@ extern char *victim_path;
 extern const char **fileindex;
 extern unsigned int files_in_index;
 
+#define MAX_PATH_LEN 4096
+
 #define NR_FILE_FDS 250U
 
 int check_stat_file(const struct stat *sb);
