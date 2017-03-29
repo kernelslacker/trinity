@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "exit.h"
+#include "pathnames.h"
 
 #define TRINITY_LOG_PORT 6665
 
@@ -17,9 +18,13 @@ void sendudp(char *buffer, size_t len);
 enum logmsgtypes {
 	MAIN_STARTED,
 	MAIN_EXITING,
+
 	CHILD_SPAWNED,
 	CHILD_EXITED,
 	CHILD_SIGNALLED,
+
+	OBJ_CREATED_FILE,
+
 	MAX_LOGMSGTYPE,
 };
 
@@ -55,4 +60,16 @@ struct msg_childsignalled {
 	int childno;
 	int sig;
 
+};
+
+struct msg_objcreatedfile {
+	enum logmsgtypes type;
+	pid_t pid;
+	bool global;
+	void *address;
+	char filename[MAX_PATH_LEN];
+	int flags;
+	int fd;
+	bool fopened;
+	int fcntl_flags;
 };

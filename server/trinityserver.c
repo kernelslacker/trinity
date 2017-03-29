@@ -12,7 +12,7 @@
 #include "udp.h"
 #include "utils.h"
 
-#define MAXBUF 1024
+#define MAXBUF 10240
 
 // TODO: ipv6
 
@@ -43,7 +43,6 @@ static size_t readudp(void)
 	ret = recvfrom(socketfd, buf, MAXBUF, 0, (struct sockaddr *) &udpclient, &addrlen);
 	if (ret == -1)
 		fprintf(stderr, "recvfrom: %s\n", strerror(errno));
-
 
 	return ret;
 }
@@ -119,6 +118,26 @@ static void decode_child_signalled(void)
 		childmsg->childno, childmsg->pid, strsignal(childmsg->sig));
 }
 
+static void decode_obj_created_file(void)
+{
+	struct msg_objcreatedfile *objmsg;
+
+	objmsg = (struct msg_objcreatedfile *) &buf;
+
+	if (objmsg->fopened) {
+		printf("%s object created at %p by pid %d: fd %d = fopen(\"%s\") ; fcntl(fd, 0x%x)\n",
+			objmsg->global ? "local" : "global",
+			objmsg->address, objmsg->pid,
+			objmsg->fd, objmsg->filename,
+			objmsg->fcntl_flags);
+	} else {
+		printf("%s object created at %p by pid %d: fd %d = open(\"%s\", 0x%x)\n",
+			objmsg->global ? "local" : "global",
+			objmsg->address, objmsg->pid,
+			objmsg->fd, objmsg->filename, objmsg->flags);
+	}
+}
+
 struct msgfunc {
 	void (*func)(void);
 };
@@ -129,6 +148,7 @@ static const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[CHILD_SPAWNED] = { decode_child_spawned },
 	[CHILD_EXITED] = { decode_child_exited },
 	[CHILD_SIGNALLED] = { decode_child_signalled },
+	[OBJ_CREATED_FILE] = { decode_obj_created_file },
 };
 
 int main(__unused__ int argc, __unused__ char* argv[])
@@ -173,6 +193,7 @@ int main(__unused__ int argc, __unused__ char* argv[])
 		}
 
 		type = buf[0];
+
 		if (type >= MAX_LOGMSGTYPE) {
 			int i;
 

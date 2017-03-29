@@ -14,6 +14,7 @@
 #include "pathnames.h"
 #include "random.h"
 #include "syscalls/syscalls.h"
+#include "udp.h"
 
 int open_with_fopen(const char *filename, int flags)
 {
@@ -91,9 +92,23 @@ static void filefd_destructor(struct object *obj)
 	close(obj->fileobj.fd);
 }
 
-static void filefd_dump(struct object *obj, __unused__ bool global)
+static void filefd_dump(struct object *obj, bool global)
 {
 	struct fileobj *fo = &obj->fileobj;
+	struct msg_objcreatedfile objmsg;
+	int len = strlen(fo->filename);
+
+	objmsg.type = OBJ_CREATED_FILE;
+	objmsg.pid = getpid();
+	objmsg.global = global;
+	objmsg.address = obj;
+	strncpy(objmsg.filename, fo->filename, len);
+	memset(objmsg.filename + len, 0, MAX_PATH_LEN - len);
+	objmsg.flags = fo->flags;
+	objmsg.fd = fo->fd;
+	objmsg.fopened = fo->fopened;
+	objmsg.fcntl_flags = fo->fcntl_flags;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 
 	output(0, "file fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
 		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags);
