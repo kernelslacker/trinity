@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include "exit.h"
 #include "pathnames.h"
+#include "types.h"
 
 #define TRINITY_LOG_PORT 6665
 
