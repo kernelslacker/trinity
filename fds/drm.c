@@ -28,7 +28,7 @@ static void drmfd_destructor(struct object *obj)
 	close(obj->drmfd);
 }
 
-static void drmfd_dump(struct object *obj)
+static void drmfd_dump(struct object *obj, __unused__ bool global)
 {
 	output(0, "drmfd:%d\n", obj->drmfd);
 }
