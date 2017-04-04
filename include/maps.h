@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits.h>
 #include "types.h"
 #include "list.h"
 #include "object-types.h"
@@ -8,7 +9,8 @@
 #define CHILD_ANON 2
 #define MMAPED_FILE 3
 
-#define MAPS_NAME_MAX_LEN 80
+#define MAPS_NAME_MAX_LEN PATH_MAX
+
 struct map {
 	void *ptr;
 	char *name;
