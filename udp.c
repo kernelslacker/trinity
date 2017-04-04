@@ -19,6 +19,20 @@ static int logsocket = -1;
 
 static struct sockaddr_in udpserver;
 
+void init_msghdr(struct trinity_msghdr *hdr, enum logmsgtypes type)
+{
+	hdr->type = type;
+	hdr->pid = getpid();
+}
+
+void init_msgobjhdr(struct trinity_msgobjhdr *hdr, enum logmsgtypes type, bool global, struct object *obj)
+{
+	hdr->type = type;
+	hdr->pid = getpid();
+	hdr->global = global;
+	hdr->address = obj;
+}
+
 void sendudp(char *buffer, size_t len)
 {
 	int ret;

@@ -31,10 +31,7 @@ static void pipefd_dump(struct object *obj, bool global)
 		po->fd, po->flags,
 		po->reader ? "reader" : "writer");
 
-	objmsg.hdr.type = OBJ_CREATED_PIPE;
-	objmsg.hdr.pid = getpid();
-	objmsg.hdr.global = global;
-	objmsg.hdr.address = obj;
+	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_PIPE, global, obj);
 	objmsg.fd = po->fd;
 	objmsg.flags = po->flags;
 	objmsg.reader = po->reader;

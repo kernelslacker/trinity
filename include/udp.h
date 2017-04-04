@@ -13,10 +13,6 @@
 
 extern int logging_enabled;
 
-void init_logging(char *optarg);
-void shutdown_logging(void);
-void sendudp(char *buffer, size_t len);
-
 enum logmsgtypes {
 	MAIN_STARTED,
 	MAIN_EXITING,
@@ -36,6 +32,20 @@ struct trinity_msghdr {
 	enum logmsgtypes type;
 	pid_t pid;
 };
+
+struct trinity_msgobjhdr {
+	enum logmsgtypes type;
+	pid_t pid;
+	bool global;
+	void *address;
+};
+
+void init_msghdr(struct trinity_msghdr *hdr, enum logmsgtypes type);
+void init_msgobjhdr(struct trinity_msgobjhdr *hdr, enum logmsgtypes type, bool global, struct object *obj);
+
+void init_logging(char *optarg);
+void shutdown_logging(void);
+void sendudp(char *buffer, size_t len);
 
 struct msg_mainstarted {
 	struct trinity_msghdr hdr;
@@ -64,13 +74,6 @@ struct msg_childsignalled {
 	int childno;
 	int sig;
 
-};
-
-struct trinity_msgobjhdr {
-	enum logmsgtypes type;
-	pid_t pid;
-	bool global;
-	void *address;
 };
 
 struct msg_objcreatedfile {
