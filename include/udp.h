@@ -43,6 +43,7 @@ struct trinity_msgobjhdr {
 
 void init_msghdr(struct trinity_msghdr *hdr, enum logmsgtypes type);
 void init_msgobjhdr(struct trinity_msgobjhdr *hdr, enum logmsgtypes type, bool global, struct object *obj);
+void init_childmsghdr(struct trinity_msghdr *hdr, enum logmsgtypes type, pid_t pid);
 
 void init_logging(char *optarg);
 void shutdown_logging(void);
