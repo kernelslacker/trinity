@@ -506,8 +506,8 @@ static void log_child_signalled(int childno, pid_t pid, int sig)
 {
 	struct msg_childsignalled childmsg;
 
-	childmsg.pid = pid;
-	childmsg.type = CHILD_SIGNALLED;
+	childmsg.hdr.pid = pid;
+	childmsg.hdr.type = CHILD_SIGNALLED;
 	childmsg.childno = childno;
 	childmsg.sig = sig;
 
@@ -582,8 +582,8 @@ static void log_child_exited(pid_t pid, int childno)
 {
 	struct msg_childexited childmsg;
 
-	childmsg.pid = pid;
-	childmsg.type = CHILD_EXITED;
+	childmsg.hdr.pid = pid;
+	childmsg.hdr.type = CHILD_EXITED;
 	childmsg.childno = childno;
 
 	sendudp((char *) &childmsg, sizeof(childmsg));
@@ -732,8 +732,8 @@ static void log_main_started(void)
 	if (logging_enabled == FALSE)
 		return;
 
-	mainmsg.pid = getpid();
-	mainmsg.type = MAIN_STARTED;
+	mainmsg.hdr.pid = getpid();
+	mainmsg.hdr.type = MAIN_STARTED;
 	mainmsg.num_children = max_children;
 	mainmsg.shm_begin = shm;
 	mainmsg.shm_end = shm + shm_size - 1;
@@ -748,8 +748,8 @@ static void log_main_exiting(void)
 	if (logging_enabled == FALSE)
 		return;
 
-	mainmsg.pid = getpid();
-	mainmsg.type = MAIN_EXITING;
+	mainmsg.hdr.pid = getpid();
+	mainmsg.hdr.type = MAIN_EXITING;
 	mainmsg.reason = shm->exit_reason;
 
 	sendudp((char *) &mainmsg, sizeof(mainmsg));

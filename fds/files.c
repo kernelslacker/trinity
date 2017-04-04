@@ -98,10 +98,10 @@ static void filefd_dump(struct object *obj, bool global)
 	struct msg_objcreatedfile objmsg;
 	int len = strlen(fo->filename);
 
-	objmsg.type = OBJ_CREATED_FILE;
-	objmsg.pid = getpid();
-	objmsg.global = global;
-	objmsg.address = obj;
+	objmsg.hdr.type = OBJ_CREATED_FILE;
+	objmsg.hdr.pid = getpid();
+	objmsg.hdr.global = global;
+	objmsg.hdr.address = obj;
 	strncpy(objmsg.filename, fo->filename, len);
 	memset(objmsg.filename + len, 0, MAX_PATH_LEN - len);
 	objmsg.flags = fo->flags;

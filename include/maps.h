@@ -8,6 +8,7 @@
 #define CHILD_ANON 2
 #define MMAPED_FILE 3
 
+#define MAPS_NAME_MAX_LEN 80
 struct map {
 	void *ptr;
 	char *name;

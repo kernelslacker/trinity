@@ -25,7 +25,7 @@ do
 
   rm -f trinity.socketcache
 
-  MALLOC_CHECK_=2 ../trinity -q -l off -C $NR_PROCESSES $DROPPRIVS -N 1000000
+  MALLOC_CHECK_=2 ../trinity -q -l wopr -C $NR_PROCESSES $DROPPRIVS -N 1000000 -E SMC -a64
 
   chmod 755 $TRINITY_TMP
   popd > /dev/null
