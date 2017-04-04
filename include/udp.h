@@ -24,6 +24,7 @@ enum logmsgtypes {
 	OBJ_CREATED_FILE,
 	OBJ_CREATED_MAP,
 	OBJ_CREATED_PIPE,
+	OBJ_CREATED_PERF,
 
 	MAX_LOGMSGTYPE,
 };
@@ -99,4 +100,16 @@ struct msg_objcreatedpipe {
 	int fd;
 	int flags;
 	bool reader;
+};
+
+struct msg_objcreatedperf {
+	struct trinity_msgobjhdr hdr;
+	int fd;
+	pid_t pid;
+	int cpu;
+	int group_fd;
+	unsigned long flags;
+	int eventattrsize;
+	// eventattr bytestream follows immediately afterwards.
+	char eventattr[];
 };

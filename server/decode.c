@@ -103,6 +103,27 @@ static void decode_obj_created_pipe(void)
 		objmsg->reader ? "reader" : "writer");
 }
 
+static void decode_obj_created_perf(void)
+{
+	struct msg_objcreatedperf *objmsg;
+	char *p;
+	int i;
+
+	objmsg = (struct msg_objcreatedperf *) &buf;
+	printf("%s perf object created at %p by pid %d: fd:%d pid:%d cpu:%d group_fd:%d flags:%lx eventattr len:%d\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid,
+		objmsg->fd, objmsg->pid, objmsg->cpu, objmsg->group_fd, objmsg->flags,
+		objmsg->eventattrsize);
+
+	printf("perf_event_attr: ");
+	p = (char *) &objmsg->eventattr;
+	for (i = 0; i < objmsg->eventattrsize; i++) {
+		printf("%02x ", (unsigned char) p[i]);
+	}
+	printf("\n");
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -111,5 +132,6 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[CHILD_SIGNALLED] = { decode_child_signalled },
 	[OBJ_CREATED_FILE] = { decode_obj_created_file },
 	[OBJ_CREATED_MAP] = { decode_obj_created_map },
-	[OBJ_CREATED_PIPE] = {decode_obj_created_pipe },
+	[OBJ_CREATED_PIPE] = { decode_obj_created_pipe },
+	[OBJ_CREATED_PERF] = { decode_obj_created_perf },
 };
