@@ -15,19 +15,30 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "udp.h"
 
 static void pipefd_destructor(struct object *obj)
 {
 	close(obj->pipeobj.fd);
 }
 
-static void pipefd_dump(struct object *obj, __unused__ bool global)
+static void pipefd_dump(struct object *obj, bool global)
 {
 	struct pipeobj *po = &obj->pipeobj;
+	struct msg_objcreatedpipe objmsg;
 
 	output(0, "pipe fd:%d flags:%x [%s]\n",
 		po->fd, po->flags,
 		po->reader ? "reader" : "writer");
+
+	objmsg.hdr.type = OBJ_CREATED_PIPE;
+	objmsg.hdr.pid = getpid();
+	objmsg.hdr.global = global;
+	objmsg.hdr.address = obj;
+	objmsg.fd = po->fd;
+	objmsg.flags = po->flags;
+	objmsg.reader = po->reader;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 }
 
 static void open_pipe_pair(unsigned int flags)

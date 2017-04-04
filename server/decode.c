@@ -91,6 +91,18 @@ static void decode_obj_created_map(void)
 		objmsg->start, objmsg->size, objmsg->name, objmsg->prot, maptypes[objmsg->type - 1]);
 }
 
+static void decode_obj_created_pipe(void)
+{
+	struct msg_objcreatedpipe *objmsg;
+	objmsg = (struct msg_objcreatedpipe *) &buf;
+
+	printf("%s pipe object created at %p by pid %d: fd:%d flags:%x [%s]\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid,
+		objmsg->fd, objmsg->flags,
+		objmsg->reader ? "reader" : "writer");
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -99,4 +111,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[CHILD_SIGNALLED] = { decode_child_signalled },
 	[OBJ_CREATED_FILE] = { decode_obj_created_file },
 	[OBJ_CREATED_MAP] = { decode_obj_created_map },
+	[OBJ_CREATED_PIPE] = {decode_obj_created_pipe },
 };
