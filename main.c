@@ -732,8 +732,7 @@ static void log_main_started(void)
 	if (logging_enabled == FALSE)
 		return;
 
-	mainmsg.hdr.pid = getpid();
-	mainmsg.hdr.type = MAIN_STARTED;
+	init_msghdr(&mainmsg.hdr, MAIN_STARTED);
 	mainmsg.num_children = max_children;
 	mainmsg.shm_begin = shm;
 	mainmsg.shm_end = shm + shm_size - 1;
@@ -748,8 +747,7 @@ static void log_main_exiting(void)
 	if (logging_enabled == FALSE)
 		return;
 
-	mainmsg.hdr.pid = getpid();
-	mainmsg.hdr.type = MAIN_EXITING;
+	init_msghdr(&mainmsg.hdr, MAIN_EXITING);
 	mainmsg.reason = shm->exit_reason;
 
 	sendudp((char *) &mainmsg, sizeof(mainmsg));
