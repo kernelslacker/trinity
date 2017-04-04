@@ -60,7 +60,7 @@ void map_destructor(struct object *obj)
 	free(map->name);
 }
 
-void map_dump(struct object *obj, __unused__ bool global)
+void map_dump(struct object *obj, bool global)
 {
 	struct map *m;
 	struct msg_objcreatedmap objmsg;
