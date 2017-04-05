@@ -38,6 +38,7 @@ enum logmsgtypes {
 	OBJ_CREATED_BPFMAP,
 	OBJ_CREATED_SOCKET,
 	OBJ_CREATED_FUTEX,
+	OBJ_CREATED_SHM,
 
 	MAX_LOGMSGTYPE,
 };
@@ -195,4 +196,12 @@ struct msg_objcreatedfutex {
 	struct trinity_msgobjhdr hdr;
 	int futex;
 	pid_t owner;
+};
+
+struct msg_objcreatedshm {
+	struct trinity_msgobjhdr hdr;
+	void *ptr;
+	int id;
+	size_t size;
+	int flags;
 };

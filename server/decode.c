@@ -273,6 +273,17 @@ static void decode_obj_created_futex(void)
 		objmsg->futex, objmsg->owner);
 }
 
+static void decode_obj_created_shm(void)
+{
+	struct msg_objcreatedshm *objmsg;
+	objmsg = (struct msg_objcreatedshm *) &buf;
+
+	printf("%s shm object created at %p by pid %d: id:%u size:%zu flags:%x ptr:%p\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid,
+		objmsg->id, objmsg->size, objmsg->flags, objmsg->ptr);
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -295,4 +306,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_BPFMAP] = { decode_obj_created_bpfmap },
 	[OBJ_CREATED_SOCKET] = { decode_obj_created_socket },
 	[OBJ_CREATED_FUTEX] = { decode_obj_created_futex },
+	[OBJ_CREATED_SHM] = { decode_obj_created_shm },
 };
