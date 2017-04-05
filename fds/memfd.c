@@ -14,6 +14,7 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "udp.h"
 
 static int memfd_create(__unused__ const char *uname, __unused__ unsigned int flag)
 {
@@ -33,8 +34,17 @@ static void memfd_destructor(struct object *obj)
 static void memfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct memfdobj *mo = &obj->memfdobj;
+	struct msg_objcreatedmemfd objmsg;
+	int len;
 
 	output(0, "memfd fd:%d name:%s flags:%x\n", mo->fd, mo->name, mo->flags);
+
+	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_MEMFD, global, obj);
+	objmsg.fd = mo->fd;
+	len = strlen(mo->name);
+	strncpy(objmsg.name, mo->name, len);
+	objmsg.flags = mo->flags;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 }
 
 static int open_memfd_fds(void)

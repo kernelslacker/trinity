@@ -29,6 +29,7 @@ enum logmsgtypes {
 	OBJ_CREATED_EVENTFD,
 	OBJ_CREATED_TIMERFD,
 	OBJ_CREATED_TESTFILE,
+	OBJ_CREATED_MEMFD,
 
 	MAX_LOGMSGTYPE,
 };
@@ -137,5 +138,12 @@ struct msg_objcreatedtimerfd {
 	struct trinity_msgobjhdr hdr;
 	int fd;
 	int clockid;
+	int flags;
+};
+
+struct msg_objcreatedmemfd {
+	struct trinity_msgobjhdr hdr;
+	int fd;
+	char name[MAX_PATH_LEN];
 	int flags;
 };
