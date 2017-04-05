@@ -15,6 +15,7 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "udp.h"
 
 static int userfaultfd_create(__unused__ unsigned int flag)
 {
@@ -33,8 +34,14 @@ static void userfaultfd_destructor(struct object *obj)
 static void userfaultfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct userfaultobj *uo = &obj->userfaultobj;
+	struct msg_objcreateduserfault objmsg;
 
 	output(0, "userfault fd:%d flags:%x\n", uo->fd, uo->flags);
+
+	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_USERFAULT, global, obj);
+	objmsg.fd = uo->fd;
+	objmsg.flags = uo->flags;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 }
 
 static int open_userfaultfds(void)

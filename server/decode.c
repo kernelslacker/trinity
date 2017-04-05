@@ -210,6 +210,16 @@ static void decode_obj_created_inotify(void)
 		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd, objmsg->flags);
 }
 
+static void decode_obj_created_userfault(void)
+{
+	struct msg_objcreateduserfault *objmsg;
+	objmsg = (struct msg_objcreateduserfault *) &buf;
+
+	printf("%s userfault object created at %p by pid %d: fd:%d flags:%x\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd, objmsg->flags);
+}
+
 
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
@@ -228,4 +238,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_MEMFD] = { decode_obj_created_memfd },
 	[OBJ_CREATED_DRM] = { decode_obj_created_drm },
 	[OBJ_CREATED_INOTIFY] = { decode_obj_created_inotify },
+	[OBJ_CREATED_USERFAULT] = { decode_obj_created_userfault },
 };
