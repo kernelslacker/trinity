@@ -107,7 +107,6 @@ struct object {
 		struct fanotifyobj fanotifyobj;
 
 		struct bpfobj bpfobj;
-		int bpf_prog_fd;
 
 		struct socketinfo sockinfo;
 
