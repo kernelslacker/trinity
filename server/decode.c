@@ -14,53 +14,53 @@
 #include "udp.h"
 #include "utils.h"
 
-static void decode_main_started(void)
+static void decode_main_started(char *buf)
 {
 	struct msg_mainstarted *mainmsg;
 
-	mainmsg = (struct msg_mainstarted *) &buf;
+	mainmsg = (struct msg_mainstarted *) buf;
 	printf("Main started. pid:%d number of children: %d. shm:%p-%p\n",
 		mainmsg->hdr.pid, mainmsg->num_children, mainmsg->shm_begin, mainmsg->shm_end);
 }
 
-static void decode_main_exiting(void)
+static void decode_main_exiting(char *buf)
 {
 	struct msg_mainexiting *mainmsg;
 
-	mainmsg = (struct msg_mainexiting *) &buf;
+	mainmsg = (struct msg_mainexiting *) buf;
 	printf("Main exiting. pid:%d Reason: %s\n", mainmsg->hdr.pid, decode_exit(mainmsg->reason));
 }
 
-static void decode_child_spawned(void)
+static void decode_child_spawned(char *buf)
 {
 	struct msg_childspawned *childmsg;
 
-	childmsg = (struct msg_childspawned *) &buf;
+	childmsg = (struct msg_childspawned *) buf;
 	printf("Child spawned. id:%d pid:%d\n", childmsg->childno, childmsg->hdr.pid);
 }
 
-static void decode_child_exited(void)
+static void decode_child_exited(char *buf)
 {
 	struct msg_childexited *childmsg;
 
-	childmsg = (struct msg_childexited *) &buf;
+	childmsg = (struct msg_childexited *) buf;
 	printf("Child exited. id:%d pid:%d\n", childmsg->childno, childmsg->hdr.pid);
 }
 
-static void decode_child_signalled(void)
+static void decode_child_signalled(char *buf)
 {
 	struct msg_childsignalled *childmsg;
 
-	childmsg = (struct msg_childsignalled *) &buf;
+	childmsg = (struct msg_childsignalled *) buf;
 	printf("Child signal. id:%d pid:%d signal: %s\n",
 		childmsg->childno, childmsg->hdr.pid, strsignal(childmsg->sig));
 }
 
-static void decode_obj_created_file(void)
+static void decode_obj_created_file(char *buf)
 {
 	struct msg_objcreatedfile *objmsg;
 
-	objmsg = (struct msg_objcreatedfile *) &buf;
+	objmsg = (struct msg_objcreatedfile *) buf;
 
 	if (objmsg->fopened) {
 		printf("%s file object created at %p by pid %d: fd %d = fopen(\"%s\") ; fcntl(fd, 0x%x)\n",
@@ -76,7 +76,7 @@ static void decode_obj_created_file(void)
 	}
 }
 
-static void decode_obj_created_map(void)
+static void decode_obj_created_map(char *buf)
 {
 	struct msg_objcreatedmap *objmsg;
 	const char *maptypes[] = {
@@ -84,7 +84,7 @@ static void decode_obj_created_map(void)
 		"child created anon mmap",
 		"mmap'd file",
 	};
-	objmsg = (struct msg_objcreatedmap *) &buf;
+	objmsg = (struct msg_objcreatedmap *) buf;
 
 	printf("%s map object created at %p by pid %d: start:%p size:%ld name:%s prot:%x type:%s\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -92,10 +92,10 @@ static void decode_obj_created_map(void)
 		objmsg->start, objmsg->size, objmsg->name, objmsg->prot, maptypes[objmsg->type - 1]);
 }
 
-static void decode_obj_created_pipe(void)
+static void decode_obj_created_pipe(char *buf)
 {
 	struct msg_objcreatedpipe *objmsg;
-	objmsg = (struct msg_objcreatedpipe *) &buf;
+	objmsg = (struct msg_objcreatedpipe *) buf;
 
 	printf("%s pipe object created at %p by pid %d: fd:%d flags:%x [%s]\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -104,13 +104,13 @@ static void decode_obj_created_pipe(void)
 		objmsg->reader ? "reader" : "writer");
 }
 
-static void decode_obj_created_perf(void)
+static void decode_obj_created_perf(char *buf)
 {
 	struct msg_objcreatedperf *objmsg;
 	char *p;
 	int i;
 
-	objmsg = (struct msg_objcreatedperf *) &buf;
+	objmsg = (struct msg_objcreatedperf *) buf;
 	printf("%s perf object created at %p by pid %d: fd:%d pid:%d cpu:%d group_fd:%d flags:%lx eventattr len:%d\n",
 		objmsg->hdr.global ? "local" : "global",
 		objmsg->hdr.address, objmsg->hdr.pid,
@@ -125,10 +125,10 @@ static void decode_obj_created_perf(void)
 	printf("\n");
 }
 
-static void decode_obj_created_epoll(void)
+static void decode_obj_created_epoll(char *buf)
 {
 	struct msg_objcreatedepoll *objmsg;
-	objmsg = (struct msg_objcreatedepoll *) &buf;
+	objmsg = (struct msg_objcreatedepoll *) buf;
 
 	printf("%s epoll object created at %p by pid %d: fd:%d create1: %s flags:%x\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -137,10 +137,10 @@ static void decode_obj_created_epoll(void)
 		objmsg->flags);
 }
 
-static void decode_obj_created_eventfd(void)
+static void decode_obj_created_eventfd(char *buf)
 {
 	struct msg_objcreatedeventfd *objmsg;
-	objmsg = (struct msg_objcreatedeventfd *) &buf;
+	objmsg = (struct msg_objcreatedeventfd *) buf;
 
 	printf("%s eventfd object created at %p by pid %d: fd:%d count: %d flags:%x\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -149,10 +149,10 @@ static void decode_obj_created_eventfd(void)
 }
 
 
-static void decode_obj_created_timerfd(void)
+static void decode_obj_created_timerfd(char *buf)
 {
 	struct msg_objcreatedtimerfd *objmsg;
-	objmsg = (struct msg_objcreatedtimerfd *) &buf;
+	objmsg = (struct msg_objcreatedtimerfd *) buf;
 
 	printf("%s timerfd object created at %p by pid %d: fd:%d clockid: %d flags:%x\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -160,11 +160,11 @@ static void decode_obj_created_timerfd(void)
 		objmsg->clockid, objmsg->flags);
 }
 
-static void decode_obj_created_testfile(void)
+static void decode_obj_created_testfile(char *buf)
 {
 	struct msg_objcreatedfile *objmsg;
 
-	objmsg = (struct msg_objcreatedfile *) &buf;
+	objmsg = (struct msg_objcreatedfile *) buf;
 
 	if (objmsg->fopened) {
 		printf("%s testfile object created at %p by pid %d: fd %d = fopen(\"%s\") ; fcntl(fd, 0x%x)\n",
@@ -180,10 +180,10 @@ static void decode_obj_created_testfile(void)
 	}
 }
 
-static void decode_obj_created_memfd(void)
+static void decode_obj_created_memfd(char *buf)
 {
 	struct msg_objcreatedmemfd *objmsg;
-	objmsg = (struct msg_objcreatedmemfd *) &buf;
+	objmsg = (struct msg_objcreatedmemfd *) buf;
 
 	printf("%s memfd object created at %p by pid %d: fd:%d name: %s flags:%x\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -191,40 +191,40 @@ static void decode_obj_created_memfd(void)
 		objmsg->name, objmsg->flags);
 }
 
-static void decode_obj_created_drm(void)
+static void decode_obj_created_drm(char *buf)
 {
 	struct msg_objcreateddrm *objmsg;
-	objmsg = (struct msg_objcreateddrm *) &buf;
+	objmsg = (struct msg_objcreateddrm *) buf;
 
 	printf("%s drm object created at %p by pid %d: fd:%d\n",
 		objmsg->hdr.global ? "local" : "global",
 		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd);
 }
 
-static void decode_obj_created_inotify(void)
+static void decode_obj_created_inotify(char *buf)
 {
 	struct msg_objcreatedinotify *objmsg;
-	objmsg = (struct msg_objcreatedinotify *) &buf;
+	objmsg = (struct msg_objcreatedinotify *) buf;
 
 	printf("%s inotify object created at %p by pid %d: fd:%d flags:%x\n",
 		objmsg->hdr.global ? "local" : "global",
 		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd, objmsg->flags);
 }
 
-static void decode_obj_created_userfault(void)
+static void decode_obj_created_userfault(char *buf)
 {
 	struct msg_objcreateduserfault *objmsg;
-	objmsg = (struct msg_objcreateduserfault *) &buf;
+	objmsg = (struct msg_objcreateduserfault *) buf;
 
 	printf("%s userfault object created at %p by pid %d: fd:%d flags:%x\n",
 		objmsg->hdr.global ? "local" : "global",
 		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd, objmsg->flags);
 }
 
-static void decode_obj_created_fanotify(void)
+static void decode_obj_created_fanotify(char *buf)
 {
 	struct msg_objcreatedfanotify *objmsg;
-	objmsg = (struct msg_objcreatedfanotify *) &buf;
+	objmsg = (struct msg_objcreatedfanotify *) buf;
 
 	printf("%s fanotify object created at %p by pid %d: fd:%d flags:%x eventflags:%x\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -232,7 +232,7 @@ static void decode_obj_created_fanotify(void)
 		objmsg->flags, objmsg->eventflags);
 }
 
-static void decode_obj_created_bpfmap(void)
+static void decode_obj_created_bpfmap(char *buf)
 {
 	struct msg_objcreatedbpfmap *objmsg;
 	const char *bpfmaptypes[] = {
@@ -241,7 +241,7 @@ static void decode_obj_created_bpfmap(void)
 		"lru hash", "lru hash (no common LRU)", "LRU percpu hash", "LPM TRIE",
 	};
 
-	objmsg = (struct msg_objcreatedbpfmap *) &buf;
+	objmsg = (struct msg_objcreatedbpfmap *) buf;
 
 	printf("%s bpf map object created at %p by pid %d: fd:%d type:%s\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -249,10 +249,10 @@ static void decode_obj_created_bpfmap(void)
 		bpfmaptypes[objmsg->map_type]);
 }
 
-static void decode_obj_created_socket(void)
+static void decode_obj_created_socket(char *buf)
 {
 	struct msg_objcreatedsocket *objmsg;
-	objmsg = (struct msg_objcreatedsocket *) &buf;
+	objmsg = (struct msg_objcreatedsocket *) buf;
 
 	printf("%s socket object created at %p by pid %d: fd:%d family:%d type:%d protocol:%d\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -262,10 +262,10 @@ static void decode_obj_created_socket(void)
 		objmsg->si.triplet.protocol);
 }
 
-static void decode_obj_created_futex(void)
+static void decode_obj_created_futex(char *buf)
 {
 	struct msg_objcreatedfutex *objmsg;
-	objmsg = (struct msg_objcreatedfutex *) &buf;
+	objmsg = (struct msg_objcreatedfutex *) buf;
 
 	printf("%s futex object created at %p by pid %d: futex:%d owner:%d\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -273,10 +273,10 @@ static void decode_obj_created_futex(void)
 		objmsg->futex, objmsg->owner);
 }
 
-static void decode_obj_created_shm(void)
+static void decode_obj_created_shm(char *buf)
 {
 	struct msg_objcreatedshm *objmsg;
-	objmsg = (struct msg_objcreatedshm *) &buf;
+	objmsg = (struct msg_objcreatedshm *) buf;
 
 	printf("%s shm object created at %p by pid %d: id:%u size:%zu flags:%x ptr:%p\n",
 		objmsg->hdr.global ? "local" : "global",
@@ -284,10 +284,10 @@ static void decode_obj_created_shm(void)
 		objmsg->id, objmsg->size, objmsg->flags, objmsg->ptr);
 }
 
-static void decode_obj_destroyed(void)
+static void decode_obj_destroyed(char *buf)
 {
 	struct msg_objdestroyed *objmsg;
-	objmsg = (struct msg_objdestroyed *) &buf;
+	objmsg = (struct msg_objdestroyed *) buf;
 
 	printf("%s object at %p destroyed by pid %d. type:%d\n",
 		objmsg->hdr.global ? "local" : "global",

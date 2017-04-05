@@ -3,12 +3,8 @@
 //#include "trinity.h"
 #include "udp.h"
 
-#define MAXBUF 10240
-
-extern char buf[MAXBUF];
-
 struct msgfunc {
-	void (*func)(void);
+	void (*func)(char *buf);
 };
 
 extern const struct msgfunc decodefuncs[MAX_LOGMSGTYPE];

@@ -19,7 +19,8 @@ struct sockaddr_in udpclient;
 
 int socketfd;
 
-char buf[MAXBUF];
+#define MAXBUF 10240
+static char buf[MAXBUF];
 
 void sendudp(char *buffer, size_t len)
 {
@@ -132,7 +133,7 @@ int main(__unused__ int argc, __unused__ char* argv[])
 			continue;
 		}
 
-		decodefuncs[type].func();
+		decodefuncs[type].func((char *)&buf);
 	}
 
 closeout:
