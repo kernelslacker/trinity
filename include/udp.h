@@ -25,6 +25,7 @@ enum logmsgtypes {
 	OBJ_CREATED_MAP,
 	OBJ_CREATED_PIPE,
 	OBJ_CREATED_PERF,
+	OBJ_CREATED_EPOLL,
 
 	MAX_LOGMSGTYPE,
 };
@@ -113,4 +114,11 @@ struct msg_objcreatedperf {
 	int eventattrsize;
 	// eventattr bytestream follows immediately afterwards.
 	char eventattr[];
+};
+
+struct msg_objcreatedepoll {
+	struct trinity_msgobjhdr hdr;
+	int fd;
+	bool create1;
+	int flags;
 };

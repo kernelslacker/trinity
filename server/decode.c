@@ -124,6 +124,18 @@ static void decode_obj_created_perf(void)
 	printf("\n");
 }
 
+static void decode_obj_created_epoll(void)
+{
+	struct msg_objcreatedepoll *objmsg;
+	objmsg = (struct msg_objcreatedepoll *) &buf;
+
+	printf("%s epoll object created at %p by pid %d: fd:%d create1: %s flags:%x\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd,
+		objmsg->create1 ? "false" : "true",
+		objmsg->flags);
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -134,4 +146,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_MAP] = { decode_obj_created_map },
 	[OBJ_CREATED_PIPE] = { decode_obj_created_pipe },
 	[OBJ_CREATED_PERF] = { decode_obj_created_perf },
+	[OBJ_CREATED_EPOLL] = { decode_obj_created_epoll },
 };
