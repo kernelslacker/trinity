@@ -40,6 +40,8 @@ enum logmsgtypes {
 	OBJ_CREATED_FUTEX,
 	OBJ_CREATED_SHM,
 
+	OBJ_DESTROYED,
+
 	MAX_LOGMSGTYPE,
 };
 
@@ -204,4 +206,8 @@ struct msg_objcreatedshm {
 	int id;
 	size_t size;
 	int flags;
+};
+
+struct msg_objdestroyed {
+	struct trinity_msgobjhdr hdr;
 };

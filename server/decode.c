@@ -284,6 +284,17 @@ static void decode_obj_created_shm(void)
 		objmsg->id, objmsg->size, objmsg->flags, objmsg->ptr);
 }
 
+static void decode_obj_destroyed(void)
+{
+	struct msg_objdestroyed *objmsg;
+	objmsg = (struct msg_objcreatedshm *) &buf;
+
+	printf("%s object at %p destroyed by pid %d. type:%d\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid,
+		objmsg->type);
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -307,4 +318,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_SOCKET] = { decode_obj_created_socket },
 	[OBJ_CREATED_FUTEX] = { decode_obj_created_futex },
 	[OBJ_CREATED_SHM] = { decode_obj_created_shm },
+	[OBJ_DESTROTED] = { decode_obj_destroyed },
 };
