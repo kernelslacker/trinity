@@ -5,6 +5,7 @@
 #include "exit.h"
 #include "maps.h"
 #include "pathnames.h"
+#include "socketinfo.h"
 #include "types.h"
 
 #define TRINITY_LOG_PORT 6665
@@ -35,6 +36,7 @@ enum logmsgtypes {
 	OBJ_CREATED_USERFAULT,
 	OBJ_CREATED_FANOTIFY,
 	OBJ_CREATED_BPFMAP,
+	OBJ_CREATED_SOCKET,
 
 	MAX_LOGMSGTYPE,
 };
@@ -181,4 +183,9 @@ struct msg_objcreatedbpfmap {
 	struct trinity_msgobjhdr hdr;
 	int map_type;
 	int map_fd;
+};
+
+struct msg_objcreatedsocket {
+	struct trinity_msgobjhdr hdr;
+	struct socketinfo si;
 };

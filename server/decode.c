@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "decode.h"
 #include "exit.h"
+#include "socketinfo.h"
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
@@ -248,6 +249,19 @@ static void decode_obj_created_bpfmap(void)
 		bpfmaptypes[objmsg->map_type]);
 }
 
+static void decode_obj_created_socket(void)
+{
+	struct msg_objcreatedsocket *objmsg;
+	objmsg = (struct msg_objcreatedsocket *) &buf;
+
+	printf("%s socket object created at %p by pid %d: fd:%d family:%d type:%d protocol:%d\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid, objmsg->si.fd,
+		objmsg->si.triplet.family,
+		objmsg->si.triplet.type,
+		objmsg->si.triplet.protocol);
+}
+
 
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
@@ -269,4 +283,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_USERFAULT] = { decode_obj_created_userfault },
 	[OBJ_CREATED_FANOTIFY] = { decode_obj_created_fanotify },
 	[OBJ_CREATED_BPFMAP] = { decode_obj_created_bpfmap },
+	[OBJ_CREATED_SOCKET] = { decode_obj_created_socket },
 };
