@@ -16,6 +16,7 @@
 #include "compat.h"
 #include "trinity.h"
 #include "utils.h"
+#include "udp.h"
 
 #define NR_FANOTIFYFDS 10
 
@@ -36,9 +37,16 @@ static void fanotifyfd_destructor(struct object *obj)
 static void fanotifyfd_dump(struct object *obj, __unused__ bool global)
 {
 	struct fanotifyobj *fo = &obj->fanotifyobj;
+	struct msg_objcreatedfanotify objmsg;
 
 	output(0, "fanotify fd:%d flags:%x eventflags:%x\n",
 		fo->fd, fo->flags, fo->eventflags);
+
+	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_FANOTIFY, global, obj);
+	objmsg.fd = fo->fd;
+	objmsg.flags = fo->flags;
+	objmsg.eventflags = fo->eventflags;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 }
 
 static int open_fanotify_fds(void)

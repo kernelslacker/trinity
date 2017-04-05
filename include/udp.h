@@ -33,6 +33,7 @@ enum logmsgtypes {
 	OBJ_CREATED_DRM,
 	OBJ_CREATED_INOTIFY,
 	OBJ_CREATED_USERFAULT,
+	OBJ_CREATED_FANOTIFY,
 
 	MAX_LOGMSGTYPE,
 };
@@ -166,4 +167,11 @@ struct msg_objcreateduserfault {
 	struct trinity_msgobjhdr hdr;
 	int fd;
 	int flags;
+};
+
+struct msg_objcreatedfanotify {
+	struct trinity_msgobjhdr hdr;
+	int fd;
+	int flags;
+	int eventflags;
 };

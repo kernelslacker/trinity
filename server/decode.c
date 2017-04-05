@@ -220,6 +220,17 @@ static void decode_obj_created_userfault(void)
 		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd, objmsg->flags);
 }
 
+static void decode_obj_created_fanotify(void)
+{
+	struct msg_objcreatedfanotify *objmsg;
+	objmsg = (struct msg_objcreatedfanotify *) &buf;
+
+	printf("%s fanotify object created at %p by pid %d: fd:%d flags:%x eventflags:%x\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd,
+		objmsg->flags, objmsg->eventflags);
+}
+
 
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
@@ -239,4 +250,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_DRM] = { decode_obj_created_drm },
 	[OBJ_CREATED_INOTIFY] = { decode_obj_created_inotify },
 	[OBJ_CREATED_USERFAULT] = { decode_obj_created_userfault },
+	[OBJ_CREATED_FANOTIFY] = { decode_obj_created_fanotify },
 };
