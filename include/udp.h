@@ -26,6 +26,7 @@ enum logmsgtypes {
 	OBJ_CREATED_PIPE,
 	OBJ_CREATED_PERF,
 	OBJ_CREATED_EPOLL,
+	OBJ_CREATED_EVENTFD,
 
 	MAX_LOGMSGTYPE,
 };
@@ -120,5 +121,12 @@ struct msg_objcreatedepoll {
 	struct trinity_msgobjhdr hdr;
 	int fd;
 	bool create1;
+	int flags;
+};
+
+struct msg_objcreatedeventfd {
+	struct trinity_msgobjhdr hdr;
+	int fd;
+	int count;
 	int flags;
 };
