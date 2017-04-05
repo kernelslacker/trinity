@@ -147,6 +147,18 @@ static void decode_obj_created_eventfd(void)
 		objmsg->count, objmsg->flags);
 }
 
+
+static void decode_obj_created_timerfd(void)
+{
+	struct msg_objcreatedtimerfd *objmsg;
+	objmsg = (struct msg_objcreatedtimerfd *) &buf;
+
+	printf("%s timerfd object created at %p by pid %d: fd:%d clockid: %d flags:%x\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd,
+		objmsg->clockid, objmsg->flags);
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -159,4 +171,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_PERF] = { decode_obj_created_perf },
 	[OBJ_CREATED_EPOLL] = { decode_obj_created_epoll },
 	[OBJ_CREATED_EVENTFD] = { decode_obj_created_eventfd },
+	[OBJ_CREATED_TIMERFD] = { decode_obj_created_timerfd },
 };
