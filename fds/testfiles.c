@@ -17,6 +17,7 @@
 #include "syscalls/syscalls.h"
 #include "testfile.h"
 #include "utils.h"
+#include "udp.h"
 
 #define MAX_TESTFILES 4
 #define MAX_TESTFILE_FDS 20
@@ -29,9 +30,20 @@ static void testfile_destructor(struct object *obj)
 static void testfile_dump(struct object *obj, __unused__ bool global)
 {
 	struct fileobj *fo = &obj->testfileobj;
+	struct msg_objcreatedfile objmsg;
+	int len = strlen(fo->filename);
 
 	output(0, "testfile fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
 		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags);
+
+	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_TESTFILE, global, obj);
+	strncpy(objmsg.filename, fo->filename, len);
+	memset(objmsg.filename + len, 0, MAX_PATH_LEN - len);
+	objmsg.flags = fo->flags;
+	objmsg.fd = fo->fd;
+	objmsg.fopened = fo->fopened;
+	objmsg.fcntl_flags = fo->fcntl_flags;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 }
 
 static int open_testfile(struct object *obj, char *filename)

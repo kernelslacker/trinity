@@ -62,13 +62,13 @@ static void decode_obj_created_file(void)
 	objmsg = (struct msg_objcreatedfile *) &buf;
 
 	if (objmsg->fopened) {
-		printf("%s object created at %p by pid %d: fd %d = fopen(\"%s\") ; fcntl(fd, 0x%x)\n",
+		printf("%s file object created at %p by pid %d: fd %d = fopen(\"%s\") ; fcntl(fd, 0x%x)\n",
 			objmsg->hdr.global ? "local" : "global",
 			objmsg->hdr.address, objmsg->hdr.pid,
 			objmsg->fd, objmsg->filename,
 			objmsg->fcntl_flags);
 	} else {
-		printf("%s object created at %p by pid %d: fd %d = open(\"%s\", 0x%x)\n",
+		printf("%s file object created at %p by pid %d: fd %d = open(\"%s\", 0x%x)\n",
 			objmsg->hdr.global ? "local" : "global",
 			objmsg->hdr.address, objmsg->hdr.pid,
 			objmsg->fd, objmsg->filename, objmsg->flags);
@@ -159,6 +159,27 @@ static void decode_obj_created_timerfd(void)
 		objmsg->clockid, objmsg->flags);
 }
 
+static void decode_obj_created_testfile(void)
+{
+	struct msg_objcreatedfile *objmsg;
+
+	objmsg = (struct msg_objcreatedfile *) &buf;
+
+	if (objmsg->fopened) {
+		printf("%s testfile object created at %p by pid %d: fd %d = fopen(\"%s\") ; fcntl(fd, 0x%x)\n",
+			objmsg->hdr.global ? "local" : "global",
+			objmsg->hdr.address, objmsg->hdr.pid,
+			objmsg->fd, objmsg->filename,
+			objmsg->fcntl_flags);
+	} else {
+		printf("%s testfile object created at %p by pid %d: fd %d = open(\"%s\", 0x%x)\n",
+			objmsg->hdr.global ? "local" : "global",
+			objmsg->hdr.address, objmsg->hdr.pid,
+			objmsg->fd, objmsg->filename, objmsg->flags);
+	}
+}
+
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -172,4 +193,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_EPOLL] = { decode_obj_created_epoll },
 	[OBJ_CREATED_EVENTFD] = { decode_obj_created_eventfd },
 	[OBJ_CREATED_TIMERFD] = { decode_obj_created_timerfd },
+	[OBJ_CREATED_TESTFILE] = { decode_obj_created_testfile },
 };
