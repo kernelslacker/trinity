@@ -10,10 +10,11 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include "futex.h"
+#include "maps.h"
 #include "random.h"
 #include "sanitise.h"
-#include "maps.h"
-#include "futex.h"
+#include "udp.h"
 
 #define FUTEX_UNLOCKED (0)
 #define FUTEX_LOCKED (!FUTEX_UNLOCKED)
@@ -113,13 +114,23 @@ static inline void futex_init_lock(struct __lock *thislock)
 
 static void dump_futex(struct object *obj, __unused__ bool global)
 {
+	struct msg_objcreatedfutex objmsg;
+
 	output(0, "futex: %lx owner:%d\n", obj->lock.futex, obj->lock.owner_pid);
+
+	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_FUTEX, global, obj);
+	objmsg.futex = obj->lock.futex;
+	objmsg.owner = obj->lock.owner_pid;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 }
 
 void create_futexes(void)
 {
 	struct objhead *head;
 	unsigned int i;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FUTEX);
+	head->dump = dump_futex;
 
 	for (i = 0; i < NFUTEXES; i++) {
 		struct object *obj = alloc_object();
@@ -128,9 +139,6 @@ void create_futexes(void)
 		futex_init_lock(thislock);
 		add_object(obj, OBJ_GLOBAL, OBJ_FUTEX);
 	}
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_FUTEX);
-	head->dump = dump_futex;
 
 	output(0, "Reserved/initialized %d futexes.\n", NFUTEXES);
 }

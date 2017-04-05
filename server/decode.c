@@ -262,6 +262,16 @@ static void decode_obj_created_socket(void)
 		objmsg->si.triplet.protocol);
 }
 
+static void decode_obj_created_futex(void)
+{
+	struct msg_objcreatedfutex *objmsg;
+	objmsg = (struct msg_objcreatedfutex *) &buf;
+
+	printf("%s futex object created at %p by pid %d: futex:%d owner:%d\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid,
+		objmsg->futex, objmsg->owner);
+}
 
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
@@ -284,4 +294,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_FANOTIFY] = { decode_obj_created_fanotify },
 	[OBJ_CREATED_BPFMAP] = { decode_obj_created_bpfmap },
 	[OBJ_CREATED_SOCKET] = { decode_obj_created_socket },
+	[OBJ_CREATED_FUTEX] = { decode_obj_created_futex },
 };
