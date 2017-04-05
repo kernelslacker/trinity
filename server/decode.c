@@ -190,6 +190,16 @@ static void decode_obj_created_memfd(void)
 		objmsg->name, objmsg->flags);
 }
 
+static void decode_obj_created_drm(void)
+{
+	struct msg_objcreateddrm *objmsg;
+	objmsg = (struct msg_objcreateddrm *) &buf;
+
+	printf("%s drm object created at %p by pid %d: fd:%d\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid, objmsg->fd);
+}
+
 
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
@@ -206,4 +216,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_TIMERFD] = { decode_obj_created_timerfd },
 	[OBJ_CREATED_TESTFILE] = { decode_obj_created_testfile },
 	[OBJ_CREATED_MEMFD] = { decode_obj_created_memfd },
+	[OBJ_CREATED_DRM] = { decode_obj_created_drm },
 };
