@@ -17,11 +17,6 @@ struct fileobj {
 	int fcntl_flags;
 };
 
-struct bpfobj {
-	u32 map_type;
-	int map_fd;
-};
-
 struct pipeobj {
 	int fd;
 	int flags;
@@ -75,6 +70,11 @@ struct fanotifyobj {
 	int fd;
 	int flags;
 	int eventflags;
+};
+
+struct bpfobj {
+	u32 map_type;
+	int map_fd;
 };
 
 struct object {

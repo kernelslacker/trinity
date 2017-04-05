@@ -21,6 +21,7 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "udp.h"
 
 static int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
@@ -74,9 +75,15 @@ static struct bpf_fd_types bpf_fds[] = {
 
 static void bpf_map_dump(struct object *obj, __unused__ bool global)
 {
+	struct msg_objcreatedbpfmap objmsg;
 	u32 type = obj->bpfobj.map_type;
 
 	output(0, "bpf map fd:%d type:%s\n", obj->bpfobj.map_fd, &bpf_fds[type].name);
+
+	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_BPFMAP, global, obj);
+	objmsg.map_fd = obj->bpfobj.map_fd;
+	objmsg.map_type = obj->bpfobj.map_type;
+	sendudp((char *) &objmsg, sizeof(objmsg));
 }
 
 static int open_bpf_fds(void)

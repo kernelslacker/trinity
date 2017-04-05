@@ -231,6 +231,23 @@ static void decode_obj_created_fanotify(void)
 		objmsg->flags, objmsg->eventflags);
 }
 
+static void decode_obj_created_bpfmap(void)
+{
+	struct msg_objcreatedbpfmap *objmsg;
+	const char *bpfmaptypes[] = {
+		"hash", "array", "prog array", "perf_event_array",
+		"percpu hash", "percpu array", "stack trace", "cgroup array",
+		"lru hash", "lru hash (no common LRU)", "LRU percpu hash", "LPM TRIE",
+	};
+
+	objmsg = (struct msg_objcreatedbpfmap *) &buf;
+
+	printf("%s bpf map object created at %p by pid %d: fd:%d type:%s\n",
+		objmsg->hdr.global ? "local" : "global",
+		objmsg->hdr.address, objmsg->hdr.pid, objmsg->map_fd,
+		bpfmaptypes[objmsg->map_type]);
+}
+
 
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
@@ -251,4 +268,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_INOTIFY] = { decode_obj_created_inotify },
 	[OBJ_CREATED_USERFAULT] = { decode_obj_created_userfault },
 	[OBJ_CREATED_FANOTIFY] = { decode_obj_created_fanotify },
+	[OBJ_CREATED_BPFMAP] = { decode_obj_created_bpfmap },
 };
