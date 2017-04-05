@@ -31,6 +31,7 @@ enum logmsgtypes {
 	OBJ_CREATED_TESTFILE,
 	OBJ_CREATED_MEMFD,
 	OBJ_CREATED_DRM,
+	OBJ_CREATED_INOTIFY,
 
 	MAX_LOGMSGTYPE,
 };
@@ -152,4 +153,10 @@ struct msg_objcreatedmemfd {
 struct msg_objcreateddrm {
 	struct trinity_msgobjhdr hdr;
 	int fd;
+};
+
+struct msg_objcreatedinotify {
+	struct trinity_msgobjhdr hdr;
+	int fd;
+	int flags;
 };
