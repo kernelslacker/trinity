@@ -42,6 +42,8 @@ enum logmsgtypes {
 
 	OBJ_DESTROYED,
 
+	SYSCALLS_ENABLED,
+
 	MAX_LOGMSGTYPE,
 };
 
@@ -210,4 +212,12 @@ struct msg_objcreatedshm {
 
 struct msg_objdestroyed {
 	struct trinity_msgobjhdr hdr;
+};
+
+struct msg_syscallsenabled {
+	struct trinity_msghdr hdr;
+	unsigned int nr_enabled;
+	bool arch_is_biarch;	// whether capable
+	bool is_64;		// whether the list in this msg is 64bit/32bit
+	int entries[];
 };

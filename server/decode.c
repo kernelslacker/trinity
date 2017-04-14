@@ -295,6 +295,27 @@ static void decode_obj_destroyed(char *buf)
 		objmsg->hdr.type);
 }
 
+static void decode_syscalls_enabled(char *buf)
+{
+	struct msg_syscallsenabled *scmsg;
+	int nr;
+	int i;
+
+	scmsg = (struct msg_syscallsenabled *) buf;
+	nr = scmsg->nr_enabled;
+	if (scmsg->arch_is_biarch == TRUE) {
+		printf("Enabled %d %s bit syscalls : { ", nr, scmsg->is_64 ? "64" : "32");
+		for (i = 0 ; i < nr; i++)
+			printf("%d ", scmsg->entries[i]);
+		printf("}\n");
+	} else {
+		printf("Enabled %d syscalls : { ", nr);
+		for (i = 0 ; i < nr; i++)
+			printf("%d ", scmsg->entries[i]);
+		printf("}\n");
+	}
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -319,4 +340,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_FUTEX] = { decode_obj_created_futex },
 	[OBJ_CREATED_SHM] = { decode_obj_created_shm },
 	[OBJ_DESTROYED] = { decode_obj_destroyed },
+	[SYSCALLS_ENABLED] = { decode_syscalls_enabled },
 };

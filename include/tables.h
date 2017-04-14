@@ -71,6 +71,10 @@ void display_enabled_syscalls(void);
 void display_enabled_syscalls_uniarch(void);
 void display_enabled_syscalls_biarch(void);
 
+void log_enabled_syscalls(void);
+void log_enabled_syscalls_uniarch(void);
+void log_enabled_syscalls_biarch(void);
+
 void init_syscalls(void);
 void init_syscalls_biarch(void);
 void init_syscalls_uniarch(void);
