@@ -51,8 +51,21 @@ echo "[*] Checking system headers."
 [ -z "$IPV6" ] && IPV6=yes
 if [[ "$IPV6" == "yes" ]]; then
 	echo -n "[*] Checking ipv6 headers ... "
-	RET=$(grep __UAPI_DEF_IN6_PKTINFO /usr/include/linux/ipv6.h)
-	if [ -z "$RET" ]; then
+	rm -f "$TMP" || exit 1
+
+	cat >"$TMP.c" << EOF
+#include <netinet/in.h>
+#include <netinet/ip6.h>
+#include <linux/in6.h>
+#include <linux/ipv6.h>
+
+int main()
+{
+	struct in6_addr test;
+}
+EOF
+	${CC} ${CFLAGS} -D_GNU_SOURCE "$TMP.c" -o "$TMP" &>"$TMP.log"
+	if [ ! -x "$TMP" ]; then
 		echo $RED "[BROKEN]" $COL_RESET "See https://patchwork.ozlabs.org/patch/425881/"
 	else
 		echo $GREEN "[OK]" $COL_RESET
