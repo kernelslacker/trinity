@@ -200,6 +200,8 @@ void log_enabled_syscalls_uniarch(void)
 			continue;
 
 		if (entry->flags & ACTIVE)
-			entries[index++]= i;
+			entries[index++] = i;
 	}
+	sendudp((char *) udpmsg, size);
+	free(udpmsg);
 }
