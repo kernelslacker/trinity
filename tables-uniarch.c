@@ -185,7 +185,7 @@ void log_enabled_syscalls_uniarch(void)
 	unsigned int i, index = 0;
 	unsigned int size;
 
-	size = sizeof(struct msg_syscallsenabled) + shm->nr_active_syscalls;
+	size = sizeof(struct msg_syscallsenabled) + (sizeof(int) * shm->nr_active_syscalls);
 	udpmsg = zmalloc(size);
 	init_msghdr(&udpmsg->hdr, SYSCALLS_ENABLED);
 	udpmsg->nr_enabled = shm->nr_active_syscalls;
