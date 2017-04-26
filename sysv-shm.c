@@ -13,7 +13,7 @@
 #include "udp.h"
 #include "utils.h"
 
-static void dump_sysv_shm(struct object *obj, __unused__ bool global)
+static void dump_sysv_shm(struct object *obj, bool global)
 {
 	struct msg_objcreatedshm objmsg;
 

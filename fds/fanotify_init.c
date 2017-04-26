@@ -34,7 +34,7 @@ static void fanotifyfd_destructor(struct object *obj)
 	close(obj->fanotifyobj.fd);
 }
 
-static void fanotifyfd_dump(struct object *obj, __unused__ bool global)
+static void fanotifyfd_dump(struct object *obj, bool global)
 {
 	struct fanotifyobj *fo = &obj->fanotifyobj;
 	struct msg_objcreatedfanotify objmsg;

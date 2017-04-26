@@ -24,7 +24,7 @@ static void perffd_destructor(struct object *obj)
 	close(obj->perfobj.fd);
 }
 
-static void perffd_dump(struct object *obj, __unused__ bool global)
+static void perffd_dump(struct object *obj, bool global)
 {
 	struct perfobj *po = &obj->perfobj;
 	struct perf_event_attr *attr = obj->perfobj.eventattr;

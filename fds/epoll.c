@@ -21,7 +21,7 @@ static void epoll_destructor(struct object *obj)
 	close(obj->epollobj.fd);
 }
 
-static void epoll_dump(struct object *obj, __unused__ bool global)
+static void epoll_dump(struct object *obj, bool global)
 {
 	struct epollobj *eo = &obj->epollobj;
 	struct msg_objcreatedepoll objmsg;
