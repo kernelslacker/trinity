@@ -73,6 +73,7 @@ void init_object_lists(bool global)
 			globalhead = get_objhead(OBJ_GLOBAL, i);
 			head->max_entries = globalhead->max_entries;
 			head->destroy = globalhead->destroy;
+			head->dump = globalhead->dump;
 		}
 	}
 }
