@@ -60,6 +60,7 @@ bool kernel_taint_param_occured = FALSE;
 
 void enable_disable_fd_usage(void)
 {
+	//TODO: Build this dynamically
 	outputerr(" --enable-fds/--disable-fds= {sockets,pipes,perf,epoll,eventfd,pseudo,timerfd,testfile,memfd,drm}\n");
 }
 
