@@ -72,8 +72,10 @@ static void handshake(void)
 retry:	while (ret != strlen(hello))
 		ret = readudp();
 
-	if (__handshake() == FALSE)
+	if (__handshake() == FALSE) {
+		ret = -1;
 		goto retry;
+	}
 }
 
 int main(__unused__ int argc, __unused__ char* argv[])
