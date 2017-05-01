@@ -731,6 +731,7 @@ static void log_main_started(void)
 	mainmsg.num_children = max_children;
 	mainmsg.shm_begin = shm;
 	mainmsg.shm_end = shm + shm_size - 1;
+	mainmsg.initial_seed = shm->seed;
 
 	sendudp((char *) &mainmsg, sizeof(mainmsg));
 }

@@ -31,6 +31,7 @@
 #include "params.h"	// 'user_set_seed'
 #include "pids.h"
 #include "random.h"
+#include "udp.h"
 #include "utils.h"
 
 /* The actual seed lives in the shm. This variable is used
@@ -92,6 +93,8 @@ void set_seed(struct childdata *child)
  */
 void reseed(void)
 {
+	struct msg_reseed reseedmsg;
+
 	if (getpid() != mainpid) {
 		outputerr("Reseeding should only happen from parent!\n");
 		exit(EXIT_FAILURE);
@@ -100,5 +103,7 @@ void reseed(void)
 	/* We are reseeding. */
 	shm->seed = rnd();
 
-	//outputerr("new seed:%u\n", shm->seed);
+	init_msghdr(&reseedmsg.hdr, RESEED);
+	reseedmsg.new_seed = shm->seed;
+	sendudp((char *) &reseedmsg, sizeof(reseedmsg));
 }

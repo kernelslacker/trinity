@@ -19,8 +19,9 @@ static void decode_main_started(char *buf)
 	struct msg_mainstarted *mainmsg;
 
 	mainmsg = (struct msg_mainstarted *) buf;
-	printf("Main started. pid:%d number of children: %d. shm:%p-%p\n",
-		mainmsg->hdr.pid, mainmsg->num_children, mainmsg->shm_begin, mainmsg->shm_end);
+	printf("Main started. pid:%d number of children: %d. shm:%p-%p initial seed: %u\n",
+		mainmsg->hdr.pid, mainmsg->num_children, mainmsg->shm_begin, mainmsg->shm_end,
+		mainmsg->initial_seed);
 }
 
 static void decode_main_exiting(char *buf)
@@ -348,6 +349,16 @@ static void decode_syscall_result(char *buf)
 	      );
 }
 
+static void decode_reseed(char *buf)
+{
+	struct msg_reseed *rsmsg;
+
+	rsmsg = (struct msg_reseed *) buf;
+
+	printf("pid %d Reseed. New seed = %d\n", rsmsg->hdr.pid, rsmsg->new_seed);
+	sleep(5);
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -375,4 +386,5 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[SYSCALLS_ENABLED] = { decode_syscalls_enabled },
 	[SYSCALL_PREP] = { decode_syscall_prep },
 	[SYSCALL_RESULT] = { decode_syscall_result },
+	[RESEED] = { decode_reseed },
 };

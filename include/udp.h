@@ -46,6 +46,8 @@ enum logmsgtypes {
 	SYSCALL_PREP,
 	SYSCALL_RESULT,
 
+	RESEED,
+
 	MAX_LOGMSGTYPE,
 };
 
@@ -80,6 +82,7 @@ struct msg_mainstarted {
 	unsigned int num_children;
 	void * shm_begin;
 	void * shm_end;
+	unsigned int initial_seed;
 };
 
 struct msg_mainexiting {
@@ -244,4 +247,9 @@ struct msg_syscallresult {
 	unsigned long sequence_nr;
 	long retval;
 	int errno_post;
+};
+
+struct msg_reseed {
+	struct trinity_msghdr hdr;
+	unsigned int new_seed;
 };
