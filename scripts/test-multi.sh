@@ -7,7 +7,7 @@
 cd $TRINITY_TMP
 
 NR_CPUS=$(nproc)
-NR_PROCESSES=$(($NR_CPUS * 2))
+NR_PROCESSES=$(($NR_CPUS * 16))
 
 while [ 1 ];
 do

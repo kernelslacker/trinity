@@ -24,6 +24,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
+#include "udp.h"
 #include "uid.h"
 #include "utils.h"
 
@@ -180,7 +181,22 @@ static void do_extrafork(struct syscallrecord *rec)
 void do_syscall(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
+	struct msg_syscallprep scmsg;
+	struct childdata *child = this_child();
 	unsigned int call;
+
+	init_msghdr(&scmsg.hdr, SYSCALL_PREP);
+	scmsg.childnr = child->num;
+	scmsg.sequence_nr = child->op_nr;
+	scmsg.nr = rec->nr;
+	scmsg.is32bit = rec->do32bit;
+	scmsg.a1 = rec->a1;
+	scmsg.a2 = rec->a2;
+	scmsg.a3 = rec->a3;
+	scmsg.a4 = rec->a4;
+	scmsg.a5 = rec->a5;
+	scmsg.a6 = rec->a6;
+	sendudp((char *) &scmsg, sizeof(scmsg));
 
 	call = rec->nr;
 	entry = syscalls[call].entry;
@@ -230,7 +246,16 @@ static void generic_post(const enum argtype type, unsigned long reg)
 void handle_syscall_ret(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
+	struct msg_syscallresult scmsg;
+	struct childdata *child = this_child();
 	unsigned int call;
+
+	init_msghdr(&scmsg.hdr, SYSCALL_RESULT);
+	scmsg.childnr = child->num;
+	scmsg.sequence_nr = child->op_nr;
+	scmsg.retval = rec->retval;
+	scmsg.errno_post = rec->errno_post;
+	sendudp((char *) &scmsg, sizeof(scmsg));
 
 	call = rec->nr;
 	entry = syscalls[call].entry;
@@ -239,6 +264,7 @@ void handle_syscall_ret(struct syscallrecord *rec)
 		int err = rec->errno_post;
 
 		/* only check syscalls that completed. */
+		//FIXME: how else would we get here?
 		if (rec->state == AFTER) {
 			if (err == ENOSYS)
 				deactivate_enosys(rec, entry, call);

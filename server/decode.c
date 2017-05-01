@@ -316,6 +316,38 @@ static void decode_syscalls_enabled(char *buf)
 	}
 }
 
+/*
+ * TODO: buffer the 'prep' stage, and only output it when we get a 'result' msg with matching
+ * child/seqnr.
+ * - if we see another prep from the same child, we must have segv'd.
+ *   (maybe handle this in decode_child_signalled ?)
+ */
+static void decode_syscall_prep(char *buf)
+{
+	struct msg_syscallprep *scmsg;
+
+	scmsg = (struct msg_syscallprep *) buf;
+
+	printf("Child %d [%d] syscall prep [op:%ld] %d%s (0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
+		scmsg->childnr, scmsg->hdr.pid, scmsg->sequence_nr, scmsg->nr,
+		scmsg->is32bit ? "[32bit]" : "",
+		scmsg->a1, scmsg->a2, scmsg->a3,
+		scmsg->a4, scmsg->a5, scmsg->a6);
+}
+
+static void decode_syscall_result(char *buf)
+{
+	struct msg_syscallresult *scmsg;
+
+	scmsg = (struct msg_syscallresult *) buf;
+
+	printf("Child %d [%d] syscall [op:%ld]  result %lx %s\n",
+		scmsg->childnr, scmsg->hdr.pid, scmsg->sequence_nr,
+		scmsg->retval,
+		scmsg->retval == -1 ? strerror(scmsg->errno_post) : ""
+	      );
+}
+
 const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[MAIN_STARTED] = { decode_main_started },
 	[MAIN_EXITING] = { decode_main_exiting },
@@ -341,4 +373,6 @@ const struct msgfunc decodefuncs[MAX_LOGMSGTYPE] = {
 	[OBJ_CREATED_SHM] = { decode_obj_created_shm },
 	[OBJ_DESTROYED] = { decode_obj_destroyed },
 	[SYSCALLS_ENABLED] = { decode_syscalls_enabled },
+	[SYSCALL_PREP] = { decode_syscall_prep },
+	[SYSCALL_RESULT] = { decode_syscall_result },
 };

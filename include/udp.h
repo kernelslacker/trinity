@@ -43,6 +43,8 @@ enum logmsgtypes {
 	OBJ_DESTROYED,
 
 	SYSCALLS_ENABLED,
+	SYSCALL_PREP,
+	SYSCALL_RESULT,
 
 	MAX_LOGMSGTYPE,
 };
@@ -220,4 +222,26 @@ struct msg_syscallsenabled {
 	bool arch_is_biarch;	// whether capable
 	bool is_64;		// whether the list in this msg is 64bit/32bit
 	int entries[];
+};
+
+struct msg_syscallprep {
+	struct trinity_msghdr hdr;
+	int childnr;
+	unsigned long sequence_nr;
+	unsigned int nr;
+	bool is32bit;
+	unsigned long a1;
+	unsigned long a2;
+	unsigned long a3;
+	unsigned long a4;
+	unsigned long a5;
+	unsigned long a6;
+};
+
+struct msg_syscallresult {
+	struct trinity_msghdr hdr;
+	int childnr;
+	unsigned long sequence_nr;
+	long retval;
+	int errno_post;
 };
