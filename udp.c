@@ -25,10 +25,11 @@ void init_msghdr(struct trinity_msghdr *hdr, enum logmsgtypes type)
 	hdr->pid = getpid();
 }
 
-void init_childmsghdr(struct trinity_msghdr *hdr, enum logmsgtypes type, pid_t pid)
+void init_msgchildhdr(struct trinity_msgchildhdr *hdr, enum logmsgtypes type, pid_t pid, int childno)
 {
 	hdr->type = type;
 	hdr->pid = pid;
+	hdr->childno = childno;
 }
 
 void init_msgobjhdr(struct trinity_msgobjhdr *hdr, enum logmsgtypes type, bool global, struct object *obj)

@@ -506,8 +506,7 @@ static void log_child_signalled(int childno, pid_t pid, int sig)
 {
 	struct msg_childsignalled childmsg;
 
-	init_childmsghdr(&childmsg.hdr, CHILD_SIGNALLED, pid);
-	childmsg.childno = childno;
+	init_msgchildhdr(&childmsg.hdr, CHILD_SIGNALLED, pid, childno);
 	childmsg.sig = sig;
 
 	sendudp((char *) &childmsg, sizeof(childmsg));
@@ -581,9 +580,7 @@ static void log_child_exited(pid_t pid, int childno)
 {
 	struct msg_childexited childmsg;
 
-	init_childmsghdr(&childmsg.hdr, CHILD_EXITED, pid);
-	childmsg.childno = childno;
-
+	init_msgchildhdr(&childmsg.hdr, CHILD_EXITED, pid, childno);
 	sendudp((char *) &childmsg, sizeof(childmsg));
 }
 

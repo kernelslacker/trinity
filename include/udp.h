@@ -61,9 +61,15 @@ struct trinity_msgobjhdr {
 	void *address;
 };
 
+struct trinity_msgchildhdr {
+	enum logmsgtypes type;
+	pid_t pid;
+	int childno;
+};
+
 void init_msghdr(struct trinity_msghdr *hdr, enum logmsgtypes type);
 void init_msgobjhdr(struct trinity_msgobjhdr *hdr, enum logmsgtypes type, bool global, struct object *obj);
-void init_childmsghdr(struct trinity_msghdr *hdr, enum logmsgtypes type, pid_t pid);
+void init_msgchildhdr(struct trinity_msgchildhdr *hdr, enum logmsgtypes type, pid_t pid, int childno);
 
 void init_logging(char *optarg);
 void shutdown_logging(void);
@@ -82,20 +88,16 @@ struct msg_mainexiting {
 };
 
 struct msg_childspawned {
-	struct trinity_msghdr hdr;
-	int childno;
+	struct trinity_msgchildhdr hdr;
 };
 
 struct msg_childexited {
-	struct trinity_msghdr hdr;
-	int childno;
+	struct trinity_msgchildhdr hdr;
 };
 
 struct msg_childsignalled {
-	struct trinity_msghdr hdr;
-	int childno;
+	struct trinity_msgchildhdr hdr;
 	int sig;
-
 };
 
 struct msg_objcreatedfile {
@@ -225,8 +227,7 @@ struct msg_syscallsenabled {
 };
 
 struct msg_syscallprep {
-	struct trinity_msghdr hdr;
-	int childnr;
+	struct trinity_msgchildhdr hdr;
 	unsigned long sequence_nr;
 	unsigned int nr;
 	bool is32bit;
@@ -239,8 +240,7 @@ struct msg_syscallprep {
 };
 
 struct msg_syscallresult {
-	struct trinity_msghdr hdr;
-	int childnr;
+	struct trinity_msgchildhdr hdr;
 	unsigned long sequence_nr;
 	long retval;
 	int errno_post;

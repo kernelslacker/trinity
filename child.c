@@ -240,7 +240,7 @@ static void log_child_spawned(pid_t pid, int childno)
 
 	childmsg.hdr.pid = pid;
 	childmsg.hdr.type = CHILD_SPAWNED;
-	childmsg.childno = childno;
+	childmsg.hdr.childno = childno;
 
 	sendudp((char *) &childmsg, sizeof(childmsg));
 }

@@ -36,7 +36,7 @@ static void decode_child_spawned(char *buf)
 	struct msg_childspawned *childmsg;
 
 	childmsg = (struct msg_childspawned *) buf;
-	printf("Child spawned. id:%d pid:%d\n", childmsg->childno, childmsg->hdr.pid);
+	printf("Child spawned. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
 }
 
 static void decode_child_exited(char *buf)
@@ -44,7 +44,7 @@ static void decode_child_exited(char *buf)
 	struct msg_childexited *childmsg;
 
 	childmsg = (struct msg_childexited *) buf;
-	printf("Child exited. id:%d pid:%d\n", childmsg->childno, childmsg->hdr.pid);
+	printf("Child exited. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
 }
 
 static void decode_child_signalled(char *buf)
@@ -53,7 +53,7 @@ static void decode_child_signalled(char *buf)
 
 	childmsg = (struct msg_childsignalled *) buf;
 	printf("Child signal. id:%d pid:%d signal: %s\n",
-		childmsg->childno, childmsg->hdr.pid, strsignal(childmsg->sig));
+		childmsg->hdr.childno, childmsg->hdr.pid, strsignal(childmsg->sig));
 }
 
 static void decode_obj_created_file(char *buf)
@@ -329,7 +329,7 @@ static void decode_syscall_prep(char *buf)
 	scmsg = (struct msg_syscallprep *) buf;
 
 	printf("Child %d [%d] syscall prep [op:%ld] %d%s (0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
-		scmsg->childnr, scmsg->hdr.pid, scmsg->sequence_nr, scmsg->nr,
+		scmsg->hdr.childno, scmsg->hdr.pid, scmsg->sequence_nr, scmsg->nr,
 		scmsg->is32bit ? "[32bit]" : "",
 		scmsg->a1, scmsg->a2, scmsg->a3,
 		scmsg->a4, scmsg->a5, scmsg->a6);
@@ -342,7 +342,7 @@ static void decode_syscall_result(char *buf)
 	scmsg = (struct msg_syscallresult *) buf;
 
 	printf("Child %d [%d] syscall [op:%ld]  result %lx %s\n",
-		scmsg->childnr, scmsg->hdr.pid, scmsg->sequence_nr,
+		scmsg->hdr.childno, scmsg->hdr.pid, scmsg->sequence_nr,
 		scmsg->retval,
 		scmsg->retval == -1 ? strerror(scmsg->errno_post) : ""
 	      );

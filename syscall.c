@@ -185,8 +185,7 @@ void do_syscall(struct syscallrecord *rec)
 	struct childdata *child = this_child();
 	unsigned int call;
 
-	init_msghdr(&scmsg.hdr, SYSCALL_PREP);
-	scmsg.childnr = child->num;
+	init_msgchildhdr(&scmsg.hdr, SYSCALL_PREP, pids[child->num], child->num);
 	scmsg.sequence_nr = child->op_nr;
 	scmsg.nr = rec->nr;
 	scmsg.is32bit = rec->do32bit;
@@ -250,8 +249,7 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	struct childdata *child = this_child();
 	unsigned int call;
 
-	init_msghdr(&scmsg.hdr, SYSCALL_RESULT);
-	scmsg.childnr = child->num;
+	init_msgchildhdr(&scmsg.hdr, SYSCALL_RESULT, pids[child->num], child->num);
 	scmsg.sequence_nr = child->op_nr;
 	scmsg.retval = rec->retval;
 	scmsg.errno_post = rec->errno_post;
