@@ -764,8 +764,11 @@ void main_loop(void)
 		if (shm_is_corrupt() == TRUE)
 			goto corrupt;
 
-		while (check_all_locks() == TRUE)
+		while (check_all_locks() == TRUE) {
 			reap_dead_kids();
+			if (shm->exit_reason == EXIT_REACHED_COUNT)
+				kill_all_kids();
+		}
 
 		if (syscalls_todo && (shm->stats.op_count >= syscalls_todo)) {
 			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
