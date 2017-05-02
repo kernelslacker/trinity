@@ -92,14 +92,16 @@ void lock(lock_t *_lock)
 		if (pid == mainpid) {
 			check_lock(_lock);
 		} else {
-			/* Ok, we're a child pid.
-			 * if something bad happened, like main crashed,
+			/* Ok, we're a child pid. If we reached the limit, just exit */
+			if (shm->exit_reason == EXIT_REACHED_COUNT)
+				_exit(EXIT_SUCCESS);
+
+			/* if something bad happened, like main crashed,
 			 * we don't want to spin forever, so just get out.
 			 */
-			if ((shm->exit_reason != STILL_RUNNING) &&
-			    (shm->exit_reason != EXIT_REACHED_COUNT)) {
+			if (shm->exit_reason != STILL_RUNNING)
 				_exit(EXIT_FAILURE);
-			}
+
 		}
 
 		usleep(1);
