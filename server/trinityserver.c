@@ -78,26 +78,42 @@ retry:	while (ret != strlen(hello))
 	}
 }
 
-int main(__unused__ int argc, __unused__ char* argv[])
+static bool check_handshake(int ret)
 {
-	int ret;
+	if (ret != strlen(hello))
+		return FALSE;
+
+	return __handshake();
+}
+
+static bool setup_socket(void)
+{
 	struct sockaddr_in udpserver;
 
 	socketfd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (socketfd == -1) {
 		fprintf(stderr, "Could not create a socket\n");
-		goto out;
+		return FALSE;
 	}
 
 	udpserver.sin_family = AF_INET;
 	udpserver.sin_addr.s_addr = htonl(INADDR_ANY);
 	udpserver.sin_port = htons(TRINITY_LOG_PORT);
 
-	ret = bind(socketfd, (struct sockaddr *) &udpserver, sizeof(udpserver));
-	if (ret != 0) {
+	if (bind(socketfd, (struct sockaddr *) &udpserver, sizeof(udpserver)) != 0) {
 		fprintf(stderr, "Could not bind to address!\n");
-		goto closeout;
+		close(socketfd);
+		return FALSE;
 	}
+	return TRUE;
+}
+
+int main(__unused__ int argc, __unused__ char* argv[])
+{
+	int ret;
+
+	if (setup_socket() == FALSE)
+		goto out;
 
 	handshake();
 
@@ -114,10 +130,8 @@ int main(__unused__ int argc, __unused__ char* argv[])
 		 * if a client dies without sending a 'main has exited' message.
 		 * Just re-handshake for now. Later, we'll tear down any context etc.
 		 */
-		if (ret == strlen(hello)) {
-			if (__handshake() == TRUE)
-				continue;
-		}
+		if (check_handshake(ret) == TRUE)
+			continue;
 
 		type = buf[0];
 
@@ -138,7 +152,6 @@ int main(__unused__ int argc, __unused__ char* argv[])
 		decodefuncs[type].func((char *)&buf);
 	}
 
-closeout:
 	close(socketfd);
 out:
 	exit(EXIT_FAILURE);
