@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "decode.h"
 #include "exit.h"
+#include "handshake.h"
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
@@ -48,20 +49,20 @@ static size_t readudp(void)
 }
 
 /* simple 2-way handshake just to agree on protocol. */
-static const char hello[] = "Trinity proto v" __stringify(TRINITY_UDP_VERSION);
 static bool __handshake(void)
 {
-	char reply[] = "Trinity server v" __stringify(TRINITY_UDP_VERSION) ". Go ahead";
+	struct hellostruct *hs = (struct hellostruct *) buf;
 
 	/* if we got here, we know we got a correct size message, but the contents
 	 * need to match also for it to be a handshake.
 	 */
-	if (strncmp(buf, hello, strlen(hello)) != 0)
+	if (strncmp((char *)hs->hello, "Trinity\0", HELLOLEN) != 0)
 		return FALSE;
 
-	printf("Handshake request. sending reply (%ld bytes)\n", strlen(reply));
+	printf("Handshake request. (Pid:%d Numchildren:%d) sending reply (%ld bytes)\n",
+			hs->mainpid, hs->num_children, strlen(serverreply));
 
-	sendudp(reply, strlen(reply));
+	sendudp(serverreply, strlen(serverreply));
 	return TRUE;
 }
 
@@ -69,7 +70,7 @@ static void handshake(void)
 {
 	int ret = -1;
 
-retry:	while (ret != strlen(hello))
+retry:	while (ret != sizeof(struct hellostruct))
 		ret = readudp();
 
 	if (__handshake() == FALSE) {
@@ -80,7 +81,7 @@ retry:	while (ret != strlen(hello))
 
 static bool check_handshake(int ret)
 {
-	if (ret != strlen(hello))
+	if (ret != sizeof(struct hellostruct))
 		return FALSE;
 
 	return __handshake();

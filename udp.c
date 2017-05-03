@@ -7,6 +7,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "child.h"
+#include "handshake.h"
 #include "trinity.h"
 #include "udp.h"
 #include "utils.h"
@@ -55,16 +57,20 @@ void sendudp(char *buffer, size_t len)
 
 static bool __handshake(void)
 {
+	struct hellostruct hello;
 	int ret;
 	socklen_t addrlen = sizeof(udpserver);
 	fd_set rfds;
 	struct timeval tv;
-	char hello[] = "Trinity proto v" __stringify(TRINITY_UDP_VERSION);
-	char expectedreply[] = "Trinity server v" __stringify(TRINITY_UDP_VERSION) ". Go ahead";
 	char buf[MAXBUF];
 
+	snprintf(hello.hello, HELLOLEN, "Trinity");
+	hello.version = TRINITY_UDP_VERSION;
+	hello.mainpid = getpid();
+	hello.num_children = max_children;
+
 	printf("Sending hello to logging server.\n");
-	sendudp(hello, strlen(hello));
+	sendudp((char *) &hello, sizeof(struct hellostruct));
 
 	printf("Waiting for reply from logging server.\n");
 
@@ -89,13 +95,13 @@ static bool __handshake(void)
 			return FALSE;
 		}
 
-		if (ret != (int) strlen(expectedreply)) {
-			printf("Got wrong length expected reply: Should be %d but was %d : %s\n", (int) strlen(expectedreply), ret, buf);
+		if (ret != (int) strlen(serverreply)) {
+			printf("Got wrong length expected reply: Should be %d but was %d : %s\n", (int) strlen(serverreply), ret, buf);
 			return FALSE;
 		}
-		if (strncmp(buf, expectedreply, strlen(expectedreply)) != 0) {
+		if (strncmp(buf, serverreply, strlen(serverreply)) != 0) {
 			printf("Got unrecognized reply: (%d bytes) %s\n", ret, buf);
-			printf("Expected %d bytes: %s\n", (int) strlen(expectedreply), expectedreply);
+			printf("Expected %d bytes: %s\n", (int) strlen(serverreply), serverreply);
 			return FALSE;
 		}
 		/* handshake complete. */

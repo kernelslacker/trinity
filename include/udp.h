@@ -79,7 +79,6 @@ void sendudp(char *buffer, size_t len);
 
 struct msg_mainstarted {
 	struct trinity_msghdr hdr;
-	unsigned int num_children;
 	void * shm_begin;
 	void * shm_end;
 	unsigned int initial_seed;
