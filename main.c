@@ -814,6 +814,7 @@ void main_loop(void)
 			/* Give children a chance to exit before retrying. */
 			sleep(1);
 		}
+		reap_dead_kids();
 	}
 
 corrupt:
