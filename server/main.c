@@ -18,8 +18,8 @@ void decode_main_started(char *buf)
 	struct msg_mainstarted *mainmsg;
 
 	mainmsg = (struct msg_mainstarted *) buf;
-	printf("Main started. pid:%d number of children: %d. shm:%p-%p initial seed: %u\n",
-		mainmsg->hdr.pid, mainmsg->num_children, mainmsg->shm_begin, mainmsg->shm_end,
+	printf("Main started. pid:%d shm:%p-%p initial seed: %u\n",
+		mainmsg->hdr.pid, mainmsg->shm_begin, mainmsg->shm_end,
 		mainmsg->initial_seed);
 }
 
