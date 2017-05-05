@@ -22,6 +22,7 @@ struct packet {
 
 struct childdata {
 	pid_t childpid;
+	struct packet packets;
 };
 
 // TODO: dynamically allocate
@@ -50,6 +51,7 @@ static void decode(struct packet *pkt)
 static void decoder_func(struct fuzzsession *fs)
 {
 	struct list_head *node, *tmp;
+	int i;
 
 	// iterate through queue for main
 	if (!list_empty(&fs->mainpackets.list)) {
@@ -60,6 +62,14 @@ static void decoder_func(struct fuzzsession *fs)
 	}
 
 	// iterate through child queues
+	for (i = 0; i < fs->num_children; i++) {
+		if (!list_empty(&fs->children[i].packets.list)) {
+			list_for_each_safe(node, tmp, &fs->children[i].packets.list) {
+				if (node != NULL)
+					decode((struct packet *)node);
+			}
+		}
+	}
 }
 
 
@@ -101,6 +111,7 @@ static size_t readudp(void)
 static bool __handshake(void)
 {
 	struct hellostruct *hs = (struct hellostruct *) buf;
+	int i;
 
 	/* if we got here, we know we got a correct size message, but the contents
 	 * need to match also for it to be a handshake.
@@ -116,6 +127,8 @@ static bool __handshake(void)
 
 	sendudp(serverreply, strlen(serverreply));
 	INIT_LIST_HEAD(&session.mainpackets.list);
+	for (i = 0; i < hs->num_children; i++)
+		INIT_LIST_HEAD(&session.children[i].packets.list);
 
 	return TRUE;
 }
@@ -178,18 +191,34 @@ static void add_to_main_queue(void *data, int len)
 	list_add_tail(&pkt->list, &fs->mainpackets.list);
 }
 
-static void add_to_child_queue(__unused__ void *pkt, __unused__ int len)
+static void add_to_child_queue(void *data, int len)
 {
-	// TODO: find child from pid in pkt.
+	struct packet *pkt = malloc(sizeof(struct packet));
+	// TODO: find session from pid in pkt. (easy for now, we only support 1 session)
 	// TODO: might be easier if we have mainpid in pkt to find session.
+	struct fuzzsession *fs = &session;
+	struct trinity_msgchildhdr *childhdr;
+
+	pkt->data = malloc(len);
+	if (pkt->data == NULL) {
+		free(pkt);
+		return;
+	}
+	memcpy(pkt->data, data, len);
+
+	// We know this is a child packet, so we can assume a trinity_msgchildhdr
+	// FIXME: Not true for objects!
+	childhdr = (struct trinity_msgchildhdr *) pkt->data;
+	list_add_tail(&pkt->list, &fs->children[childhdr->childno].packets.list);
 }
 
 static void queue_object_msg(struct trinity_msgobjhdr *obj, int len)
 {
 	if (obj->global == TRUE)
 		add_to_main_queue(obj, len);
-	else
-		add_to_child_queue(obj, len);
+// TODO: figure out which child created this obj and pass it down
+//	else
+//		add_to_child_queue(obj, len);
 }
 
 static void queue_packets(void)
@@ -221,8 +250,6 @@ static void queue_packets(void)
 	switch (type) {
 	case MAIN_STARTED:
 	case MAIN_EXITING:
-	case CHILD_SPAWNED:
-	case CHILD_EXITED:
 	case SYSCALLS_ENABLED:
 	case RESEED:
 		add_to_main_queue(buf, len);
@@ -232,6 +259,8 @@ static void queue_packets(void)
 		queue_object_msg((struct trinity_msgobjhdr *) buf, len);
 		break;
 
+	case CHILD_SPAWNED:
+	case CHILD_EXITED:
 	case CHILD_SIGNALLED:
 	case SYSCALL_PREP:
 	case SYSCALL_RESULT:
