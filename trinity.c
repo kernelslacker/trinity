@@ -36,6 +36,7 @@ unsigned int page_size;
 unsigned int num_online_cpus;
 bool no_bind_to_cpu;
 unsigned int max_children;
+char *logging_args = NULL;
 
 /*
  * just in case we're not using the test.sh harness, we
@@ -153,6 +154,8 @@ int main(int argc, char* argv[])
 		find_specific_domain(specific_domain_optarg);
 
 	pids_init();
+
+	init_logging(logging_args);
 
 	init_object_lists(OBJ_GLOBAL);
 

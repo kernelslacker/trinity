@@ -136,6 +136,11 @@ void init_logging(char *optarg)
 	int ret;
 	unsigned int i;
 
+	if (optarg == NULL) {
+		logging_enabled = FALSE;
+		return;
+	}
+
 	if ((he = gethostbyname(optarg)) == NULL) {
 		printf("gethostbyname:%s\n", strerror(errno));
 		exit(EXIT_FAILURE);

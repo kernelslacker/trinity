@@ -213,7 +213,7 @@ void parse_args(int argc, char *argv[])
 				outputerr("The -l parameter has changed, and now takes a hostname as an argument. (logging is off by default now)\n");
 				exit(EXIT_FAILURE);
 			}
-			init_logging(optarg);
+			logging_args = strdup(optarg);
 			break;
 
 		case 'L':
