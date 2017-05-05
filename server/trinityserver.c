@@ -9,10 +9,59 @@
 #include "decode.h"
 #include "exit.h"
 #include "handshake.h"
+#include "list.h"
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
 #include "utils.h"
+
+struct packet {
+	struct list_head list;
+	char * data;
+};
+
+struct childdata {
+	pid_t childpid;
+};
+
+// TODO: dynamically allocate
+#define MAX_CHILDREN 1024
+struct fuzzsession {
+	pid_t mainpid;
+	int num_children;
+	struct childdata children[MAX_CHILDREN];
+	struct packet mainpackets;
+};
+
+static struct fuzzsession session;
+
+
+static void decode(struct packet *pkt)
+{
+	char *buffer = pkt->data;
+	enum logmsgtypes type = buffer[0];
+
+	decodefuncs[type].func((char *) pkt->data);
+	list_del(&pkt->list);
+	free(pkt->data);
+	free(pkt);
+}
+
+static void decoder_func(struct fuzzsession *fs)
+{
+	struct list_head *node, *tmp;
+
+	// iterate through queue for main
+	if (!list_empty(&fs->mainpackets.list)) {
+		list_for_each_safe(node, tmp, &fs->mainpackets.list) {
+			if (node != NULL)
+				decode((struct packet *)node);
+		}
+	}
+
+	// iterate through child queues
+}
+
 
 // TODO: ipv6
 
@@ -62,7 +111,12 @@ static bool __handshake(void)
 	printf("Handshake request. (Pid:%d Numchildren:%d) sending reply (%ld bytes)\n",
 			hs->mainpid, hs->num_children, strlen(serverreply));
 
+	session.mainpid = hs->mainpid;
+	session.num_children = hs->num_children;
+
 	sendudp(serverreply, strlen(serverreply));
+	INIT_LIST_HEAD(&session.mainpackets.list);
+
 	return TRUE;
 }
 
@@ -109,48 +163,97 @@ static bool setup_socket(void)
 	return TRUE;
 }
 
-int main(__unused__ int argc, __unused__ char* argv[])
+static void add_to_main_queue(void *data, int len)
+{
+	struct packet *pkt = malloc(sizeof(struct packet));
+	// TODO: find session from pid in pkt. (easy for now, we only support 1 session)
+	struct fuzzsession *fs = &session;
+	pkt->data = malloc(len);
+	if (pkt->data == NULL) {
+		free(pkt);
+		return;
+	}
+	memcpy(pkt->data, data, len);
+
+	list_add_tail(&pkt->list, &fs->mainpackets.list);
+}
+
+static void add_to_child_queue(__unused__ void *pkt, __unused__ int len)
+{
+	// TODO: find child from pid in pkt.
+	// TODO: might be easier if we have mainpid in pkt to find session.
+}
+
+static void queue_object_msg(struct trinity_msgobjhdr *obj, int len)
+{
+	if (obj->global == TRUE)
+		add_to_main_queue(obj, len);
+	else
+		add_to_child_queue(obj, len);
+}
+
+static void queue_packets(void)
 {
 	int ret;
+	int len;
+	enum logmsgtypes type;
 
+	ret = readudp();
+	if (ret <= 0)
+		return;
+
+	len = ret;
+
+	/* We may see a new handshake appear at any time
+	 * if a client dies without sending a 'main has exited' message.
+	 * Just re-handshake for now. Later, we'll tear down any context etc.
+	 */
+	if (check_handshake(len) == TRUE)
+		return;
+
+	type = buf[0];
+
+	if (type >= MAX_LOGMSGTYPE) {
+		printf("Unknown msgtype: %d\n", type);
+		return;
+	}
+
+	switch (type) {
+	case MAIN_STARTED:
+	case MAIN_EXITING:
+	case CHILD_SPAWNED:
+	case CHILD_EXITED:
+	case SYSCALLS_ENABLED:
+	case RESEED:
+		add_to_main_queue(buf, len);
+		break;
+
+	case OBJ_CREATED_FILE ... OBJ_DESTROYED:
+		queue_object_msg((struct trinity_msgobjhdr *) buf, len);
+		break;
+
+	case CHILD_SIGNALLED:
+	case SYSCALL_PREP:
+	case SYSCALL_RESULT:
+		add_to_child_queue(buf, len);
+		break;
+
+	case MAX_LOGMSGTYPE:
+		break;
+	};
+}
+
+int main(__unused__ int argc, __unused__ char* argv[])
+{
 	if (setup_socket() == FALSE)
 		goto out;
 
 	handshake();
 
 	while (1) {
-		enum logmsgtypes type;
-
-		ret = readudp();
-
-		// If something went wrong, just ignore and try again.
-		if (ret <= 0)
-			continue;
-
-		/* We may see a new handshake appear at any time
-		 * if a client dies without sending a 'main has exited' message.
-		 * Just re-handshake for now. Later, we'll tear down any context etc.
-		 */
-		if (check_handshake(ret) == TRUE)
-			continue;
-
-		type = buf[0];
-
-		if (type >= MAX_LOGMSGTYPE) {
-			int i;
-
-			printf("Unknown msgtype: %d\n", type);
-
-			/* Unknown command (yet). Just dump as hex. */
-			printf("rx %d bytes: ", ret);
-			for (i = 0; i < ret; i++) {
-				printf("%x ", (unsigned char) buf[i]);
-			}
-			printf("\n");
-			continue;
-		}
-
-		decodefuncs[type].func((char *)&buf);
+		struct fuzzsession *fs = &session;	// TODO; find session from packets
+		queue_packets();
+		decoder_func(fs);
 	}
 
 	close(socketfd);
