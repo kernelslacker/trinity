@@ -26,7 +26,7 @@ static void eventfd_dump(struct object *obj, bool global)
 	struct eventfdobj *eo = &obj->eventfdobj;
 	struct msg_objcreatedeventfd objmsg;
 
-	output(0, "eventfd fd:%d count:%d flags:%x\n", eo->fd, eo->count, eo->flags);
+	output(2, "eventfd fd:%d count:%d flags:%x\n", eo->fd, eo->count, eo->flags);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_EVENTFD, global, obj);
 	objmsg.fd = eo->fd;

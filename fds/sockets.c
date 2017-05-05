@@ -411,7 +411,7 @@ static void socket_dump(struct object *obj, bool global)
 	struct socketinfo *si = &obj->sockinfo;
 	struct msg_objcreatedsocket objmsg;
 
-	output(0, "socket fd:%d domain:%u (%s) type:0x%u protocol:%u\n",
+	output(2, "socket fd:%d domain:%u (%s) type:0x%u protocol:%u\n",
 		si->fd, si->triplet.family, get_domain_name(si->triplet.family),
 		si->triplet.type, si->triplet.protocol);
 

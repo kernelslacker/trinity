@@ -36,7 +36,7 @@ static void userfaultfd_dump(struct object *obj, bool global)
 	struct userfaultobj *uo = &obj->userfaultobj;
 	struct msg_objcreateduserfault objmsg;
 
-	output(0, "userfault fd:%d flags:%x\n", uo->fd, uo->flags);
+	output(2, "userfault fd:%d flags:%x\n", uo->fd, uo->flags);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_USERFAULT, global, obj);
 	objmsg.fd = uo->fd;

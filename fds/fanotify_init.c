@@ -39,7 +39,7 @@ static void fanotifyfd_dump(struct object *obj, bool global)
 	struct fanotifyobj *fo = &obj->fanotifyobj;
 	struct msg_objcreatedfanotify objmsg;
 
-	output(0, "fanotify fd:%d flags:%x eventflags:%x\n",
+	output(2, "fanotify fd:%d flags:%x eventflags:%x\n",
 		fo->fd, fo->flags, fo->eventflags);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_FANOTIFY, global, obj);

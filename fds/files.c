@@ -107,7 +107,7 @@ static void filefd_dump(struct object *obj, bool global)
 	objmsg.fcntl_flags = fo->fcntl_flags;
 	sendudp((char *) &objmsg, sizeof(objmsg));
 
-	output(0, "file fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
+	output(2, "file fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
 		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags);
 }
 

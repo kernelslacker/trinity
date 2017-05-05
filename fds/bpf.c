@@ -78,7 +78,7 @@ static void bpf_map_dump(struct object *obj, bool global)
 	struct msg_objcreatedbpfmap objmsg;
 	u32 type = obj->bpfobj.map_type;
 
-	output(0, "bpf map fd:%d type:%s\n", obj->bpfobj.map_fd, &bpf_fds[type].name);
+	output(2, "bpf map fd:%d type:%s\n", obj->bpfobj.map_fd, &bpf_fds[type].name);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_BPFMAP, global, obj);
 	objmsg.map_fd = obj->bpfobj.map_fd;

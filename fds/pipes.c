@@ -27,7 +27,7 @@ static void pipefd_dump(struct object *obj, bool global)
 	struct pipeobj *po = &obj->pipeobj;
 	struct msg_objcreatedpipe objmsg;
 
-	output(0, "pipe fd:%d flags:%x [%s]\n",
+	output(2, "pipe fd:%d flags:%x [%s]\n",
 		po->fd, po->flags,
 		po->reader ? "reader" : "writer");
 

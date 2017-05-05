@@ -33,7 +33,7 @@ static void testfile_dump(struct object *obj, bool global)
 	struct msg_objcreatedfile objmsg;
 	int len = strlen(fo->filename);
 
-	output(0, "testfile fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
+	output(2, "testfile fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x\n",
 		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_TESTFILE, global, obj);

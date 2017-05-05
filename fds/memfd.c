@@ -37,7 +37,7 @@ static void memfd_dump(struct object *obj, bool global)
 	struct msg_objcreatedmemfd objmsg;
 	int len;
 
-	output(0, "memfd fd:%d name:%s flags:%x\n", mo->fd, mo->name, mo->flags);
+	output(2, "memfd fd:%d name:%s flags:%x\n", mo->fd, mo->name, mo->flags);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_MEMFD, global, obj);
 	objmsg.fd = mo->fd;

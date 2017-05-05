@@ -34,7 +34,7 @@ static void drmfd_dump(struct object *obj, bool global)
 {
 	struct msg_objcreateddrm objmsg;
 
-	output(0, "drmfd:%d\n", obj->drmfd);
+	output(2, "drmfd:%d\n", obj->drmfd);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_DRM, global, obj);
 	objmsg.fd = obj->drmfd;

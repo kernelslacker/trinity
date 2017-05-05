@@ -26,7 +26,7 @@ static void inotify_dump(struct object *obj, bool global)
 	struct inotifyobj *io = &obj->inotifyobj;
 	struct msg_objcreatedinotify objmsg;
 
-	output(0, "inotify fd:%d flags:%x\n", io->fd, io->flags);
+	output(2, "inotify fd:%d flags:%x\n", io->fd, io->flags);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_INOTIFY, global, obj);
 	objmsg.fd = io->fd;

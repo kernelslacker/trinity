@@ -33,9 +33,9 @@ static void perffd_dump(struct object *obj, bool global)
 	unsigned int i;
 	unsigned int perfsize = sizeof(struct perf_event_attr);
 
-	output(0, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%lx\n",
+	output(2, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%lx\n",
 		po->fd, po->pid, po->cpu, po->group_fd, po->flags);
-	output(0, " perf_event_attr:");
+	output(2, " perf_event_attr:");
 	for (i = 0; i < perfsize ; i++) {
 		output(CONT, "%02x ", (unsigned char) p[i]);
 	}

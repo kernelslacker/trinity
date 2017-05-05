@@ -26,7 +26,7 @@ static void epoll_dump(struct object *obj, bool global)
 	struct epollobj *eo = &obj->epollobj;
 	struct msg_objcreatedepoll objmsg;
 
-	output(0, "epoll fd:%d used create1?:%d flags:%x\n", eo->fd, eo->create1, eo->flags);
+	output(2, "epoll fd:%d used create1?:%d flags:%x\n", eo->fd, eo->create1, eo->flags);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_EPOLL, global, obj);
 	objmsg.fd = eo->fd;
