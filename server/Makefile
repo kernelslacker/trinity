@@ -1,6 +1,7 @@
 NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
 
-CFLAGS += -Wall -Wextra -g -O2 -I. -I../include/ -Wimplicit -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -D__linux__
+CFLAGS ?= -g -O2 -D_FORTIFY_SOURCE=2
+CFLAGS += -Wall -Wextra -I. -I../include/ -Wimplicit -D_GNU_SOURCE -D__linux__
 
 CCSTD := $(shell if $(CC) -std=gnu11 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-std=gnu11"; else echo "-std=gnu99"; fi)
 CFLAGS += $(CCSTD)
