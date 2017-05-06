@@ -1,7 +1,9 @@
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <errno.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +25,7 @@ struct packet {
 struct childdata {
 	pid_t childpid;
 	struct packet packets;
+	pthread_mutex_t packetmutex;
 };
 
 // TODO: dynamically allocate
@@ -31,19 +34,22 @@ struct fuzzsession {
 	pid_t mainpid;
 	int num_children;
 	struct childdata children[MAX_CHILDREN];
+	pthread_mutex_t packetmutex;
 	struct packet mainpackets;
 };
 
 static struct fuzzsession session;
 
 
-static void decode(struct packet *pkt)
+static void decode(struct packet *pkt, pthread_mutex_t *packetmutex)
 {
 	char *buffer = pkt->data;
 	enum logmsgtypes type = buffer[0];
 
 	decodefuncs[type].func((char *) pkt->data);
+	pthread_mutex_lock(packetmutex);
 	list_del(&pkt->list);
+	pthread_mutex_unlock(packetmutex);
 	free(pkt->data);
 	free(pkt);
 }
@@ -57,7 +63,7 @@ static void decoder_func(struct fuzzsession *fs)
 	if (!list_empty(&fs->mainpackets.list)) {
 		list_for_each_safe(node, tmp, &fs->mainpackets.list) {
 			if (node != NULL)
-				decode((struct packet *)node);
+				decode((struct packet *)node, &fs->packetmutex);
 		}
 	}
 
@@ -66,7 +72,7 @@ static void decoder_func(struct fuzzsession *fs)
 		if (!list_empty(&fs->children[i].packets.list)) {
 			list_for_each_safe(node, tmp, &fs->children[i].packets.list) {
 				if (node != NULL)
-					decode((struct packet *)node);
+					decode((struct packet *)node, &fs->children[i].packetmutex);
 			}
 		}
 	}
@@ -127,8 +133,12 @@ static bool __handshake(void)
 
 	sendudp(serverreply, strlen(serverreply));
 	INIT_LIST_HEAD(&session.mainpackets.list);
-	for (i = 0; i < hs->num_children; i++)
+	pthread_mutex_init(&session.packetmutex, NULL);
+
+	for (i = 0; i < hs->num_children; i++) {
 		INIT_LIST_HEAD(&session.children[i].packets.list);
+		pthread_mutex_init(&session.children[i].packetmutex, NULL);
+	}
 
 	return TRUE;
 }
@@ -188,7 +198,9 @@ static void add_to_main_queue(void *data, int len)
 	}
 	memcpy(pkt->data, data, len);
 
+	pthread_mutex_lock(&fs->packetmutex);
 	list_add_tail(&pkt->list, &fs->mainpackets.list);
+	pthread_mutex_unlock(&fs->packetmutex);
 }
 
 static void add_to_child_queue(void *data, int len)
@@ -209,7 +221,9 @@ static void add_to_child_queue(void *data, int len)
 	// We know this is a child packet, so we can assume a trinity_msgchildhdr
 	// FIXME: Not true for objects!
 	childhdr = (struct trinity_msgchildhdr *) pkt->data;
+	pthread_mutex_lock(&fs->children[childhdr->childno].packetmutex);
 	list_add_tail(&pkt->list, &fs->children[childhdr->childno].packets.list);
+	pthread_mutex_unlock(&fs->children[childhdr->childno].packetmutex);
 }
 
 static void queue_object_msg(struct trinity_msgobjhdr *obj, int len)
@@ -221,67 +235,75 @@ static void queue_object_msg(struct trinity_msgobjhdr *obj, int len)
 //		add_to_child_queue(obj, len);
 }
 
-static void queue_packets(void)
+static void * queue_packets(__unused__ void *data)
 {
 	int ret;
 	int len;
 	enum logmsgtypes type;
 
-	ret = readudp();
-	if (ret <= 0)
-		return;
+	while (1) {
+		ret = readudp();
+		if (ret <= 0)
+			continue;
 
-	len = ret;
+		len = ret;
 
-	/* We may see a new handshake appear at any time
-	 * if a client dies without sending a 'main has exited' message.
-	 * Just re-handshake for now. Later, we'll tear down any context etc.
-	 */
-	if (check_handshake(len) == TRUE)
-		return;
+		/* We may see a new handshake appear at any time
+		 * if a client dies without sending a 'main has exited' message.
+		 * Just re-handshake for now. Later, we'll tear down any context etc.
+		 */
+		if (check_handshake(len) == TRUE)
+			continue;
 
-	type = buf[0];
+		type = buf[0];
 
-	if (type >= MAX_LOGMSGTYPE) {
-		printf("Unknown msgtype: %d\n", type);
-		return;
+		if (type >= MAX_LOGMSGTYPE) {
+			printf("Unknown msgtype: %d\n", type);
+			continue;
+		}
+
+		switch (type) {
+		case MAIN_STARTED:
+		case MAIN_EXITING:
+		case SYSCALLS_ENABLED:
+		case RESEED:
+			add_to_main_queue(buf, len);
+			break;
+
+		case OBJ_CREATED_FILE ... OBJ_DESTROYED:
+			queue_object_msg((struct trinity_msgobjhdr *) buf, len);
+			break;
+
+		case CHILD_SPAWNED:
+		case CHILD_EXITED:
+		case CHILD_SIGNALLED:
+		case SYSCALL_PREP:
+		case SYSCALL_RESULT:
+			add_to_child_queue(buf, len);
+			break;
+
+		case MAX_LOGMSGTYPE:
+			break;
+		};
 	}
-
-	switch (type) {
-	case MAIN_STARTED:
-	case MAIN_EXITING:
-	case SYSCALLS_ENABLED:
-	case RESEED:
-		add_to_main_queue(buf, len);
-		break;
-
-	case OBJ_CREATED_FILE ... OBJ_DESTROYED:
-		queue_object_msg((struct trinity_msgobjhdr *) buf, len);
-		break;
-
-	case CHILD_SPAWNED:
-	case CHILD_EXITED:
-	case CHILD_SIGNALLED:
-	case SYSCALL_PREP:
-	case SYSCALL_RESULT:
-		add_to_child_queue(buf, len);
-		break;
-
-	case MAX_LOGMSGTYPE:
-		break;
-	};
+	return NULL;
 }
 
 int main(__unused__ int argc, __unused__ char* argv[])
 {
+	pthread_t udpthread;
+	int ret;
+
 	if (setup_socket() == FALSE)
 		goto out;
 
-	handshake();
+	handshake();		// TODO: eventually fold into queue_packets
+
+	ret = pthread_create(&udpthread, NULL, queue_packets, NULL);	// TODO: pass session down. one thread per session.
+	assert(!ret);
 
 	while (1) {
 		struct fuzzsession *fs = &session;	// TODO; find session from packets
-		queue_packets();
 		decoder_func(fs);
 	}
 

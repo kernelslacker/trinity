@@ -29,6 +29,8 @@ endif
 # Sometimes useful for debugging. more useful with clang than gcc.
 #CFLAGS += -fsanitize=address
 
+LDFLAGS = -lpthread
+
 V	= @
 Q	= $(V:1=)
 QUIET_CC = $(Q:@=@echo    '  CC	'$@;)
