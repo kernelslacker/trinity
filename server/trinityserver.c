@@ -237,12 +237,11 @@ static void queue_object_msg(struct trinity_msgobjhdr *obj, int len)
 
 static void * queue_packets(__unused__ void *data)
 {
-	int ret;
 	int len;
 	enum logmsgtypes type;
 
 	while (1) {
-		ret = readudp();
+		int ret = readudp();
 		if (ret <= 0)
 			continue;
 
