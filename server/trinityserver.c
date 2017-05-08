@@ -43,7 +43,7 @@ struct fuzzsession {
 static struct fuzzsession session;
 
 
-static void decode(struct packet *pkt, pthread_mutex_t *packetmutex)
+static void decode(struct packet *pkt)
 {
 	char *buffer = pkt->data;
 	char *str;
@@ -53,9 +53,7 @@ static void decode(struct packet *pkt, pthread_mutex_t *packetmutex)
 	printf("%s", str);
 	free(str);
 
-	pthread_mutex_lock(packetmutex);
 	list_del(&pkt->list);
-	pthread_mutex_unlock(packetmutex);
 	free(pkt->data);
 	free(pkt);
 }
@@ -66,12 +64,14 @@ static void * decoder_child_func(void *data)
 	struct list_head *node, *tmp;
 
 	while (1) {
+		pthread_mutex_lock(&child->packetmutex);
 		if (!list_empty(&child->packets.list)) {
 			list_for_each_safe(node, tmp, &child->packets.list) {
 				if (node != NULL)
-					decode((struct packet *)node, &child->packetmutex);
+					decode((struct packet *)node);
 			}
 		}
+		pthread_mutex_unlock(&child->packetmutex);
 		//TODO: if main session exits, we should exit this thread.
 	}
 	return NULL;
@@ -84,12 +84,14 @@ static void * decoder_main_func(void *data)
 
 	while (1) {
 		// iterate through queue for main
+		pthread_mutex_lock(&fs->packetmutex);
 		if (!list_empty(&fs->mainpackets.list)) {
 			list_for_each_safe(node, tmp, &fs->mainpackets.list) {
 				if (node != NULL)
-					decode((struct packet *)node, &fs->packetmutex);
+					decode((struct packet *)node);
 			}
 		}
+		pthread_mutex_unlock(&fs->packetmutex);
 		//TODO: if main session exits, we should exit this thread.
 	}
 	return NULL;
