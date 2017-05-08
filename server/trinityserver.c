@@ -34,6 +34,8 @@ struct fuzzsession {
 	pid_t mainpid;
 	int num_children;
 	struct childdata children[MAX_CHILDREN];
+	pthread_t childthreads[MAX_CHILDREN];
+
 	pthread_mutex_t packetmutex;
 	struct packet mainpackets;
 };
@@ -54,28 +56,39 @@ static void decode(struct packet *pkt, pthread_mutex_t *packetmutex)
 	free(pkt);
 }
 
-static void decoder_func(struct fuzzsession *fs)
+static void * decoder_child_func(void *data)
 {
+	struct childdata *child = (struct childdata *) data;
 	struct list_head *node, *tmp;
-	int i;
 
-	// iterate through queue for main
-	if (!list_empty(&fs->mainpackets.list)) {
-		list_for_each_safe(node, tmp, &fs->mainpackets.list) {
-			if (node != NULL)
-				decode((struct packet *)node, &fs->packetmutex);
-		}
-	}
-
-	// iterate through child queues
-	for (i = 0; i < fs->num_children; i++) {
-		if (!list_empty(&fs->children[i].packets.list)) {
-			list_for_each_safe(node, tmp, &fs->children[i].packets.list) {
+	while (1) {
+		if (!list_empty(&child->packets.list)) {
+			list_for_each_safe(node, tmp, &child->packets.list) {
 				if (node != NULL)
-					decode((struct packet *)node, &fs->children[i].packetmutex);
+					decode((struct packet *)node, &child->packetmutex);
 			}
 		}
+		//TODO: if main session exits, we should exit this thread.
 	}
+	return NULL;
+}
+
+static void * decoder_main_func(void *data)
+{
+	struct fuzzsession *fs = (struct fuzzsession *) data;
+	struct list_head *node, *tmp;
+
+	while (1) {
+		// iterate through queue for main
+		if (!list_empty(&fs->mainpackets.list)) {
+			list_for_each_safe(node, tmp, &fs->mainpackets.list) {
+				if (node != NULL)
+					decode((struct packet *)node, &fs->packetmutex);
+			}
+		}
+		//TODO: if main session exits, we should exit this thread.
+	}
+	return NULL;
 }
 
 
@@ -136,8 +149,11 @@ static bool __handshake(void)
 	pthread_mutex_init(&session.packetmutex, NULL);
 
 	for (i = 0; i < hs->num_children; i++) {
+		int ret;
 		INIT_LIST_HEAD(&session.children[i].packets.list);
 		pthread_mutex_init(&session.children[i].packetmutex, NULL);
+		ret = pthread_create(&session.childthreads[i], NULL, decoder_child_func, &session.children[i]);
+		assert(!ret);
 	}
 
 	return TRUE;
@@ -210,6 +226,7 @@ static void add_to_child_queue(void *data, int len)
 	// TODO: might be easier if we have mainpid in pkt to find session.
 	struct fuzzsession *fs = &session;
 	struct trinity_msgchildhdr *childhdr;
+	struct childdata *child;
 
 	pkt->data = malloc(len);
 	if (pkt->data == NULL) {
@@ -221,9 +238,10 @@ static void add_to_child_queue(void *data, int len)
 	// We know this is a child packet, so we can assume a trinity_msgchildhdr
 	// FIXME: Not true for objects!
 	childhdr = (struct trinity_msgchildhdr *) pkt->data;
-	pthread_mutex_lock(&fs->children[childhdr->childno].packetmutex);
-	list_add_tail(&pkt->list, &fs->children[childhdr->childno].packets.list);
-	pthread_mutex_unlock(&fs->children[childhdr->childno].packetmutex);
+	child = &fs->children[childhdr->childno];
+	pthread_mutex_lock(&child->packetmutex);
+	list_add_tail(&pkt->list, &child->packets.list);
+	pthread_mutex_unlock(&child->packetmutex);
 }
 
 static void queue_object_msg(struct trinity_msgobjhdr *obj, int len)
@@ -290,7 +308,8 @@ static void * queue_packets(__unused__ void *data)
 
 int main(__unused__ int argc, __unused__ char* argv[])
 {
-	pthread_t udpthread;
+	pthread_t udpthread, decode_main_thr;
+	struct fuzzsession *fs = &session;	// TODO; find session from packets
 	int ret;
 
 	if (setup_socket() == FALSE)
@@ -302,9 +321,13 @@ int main(__unused__ int argc, __unused__ char* argv[])
 	assert(!ret);
 
 	while (1) {
-		struct fuzzsession *fs = &session;	// TODO; find session from packets
-		decoder_func(fs);
+		ret = pthread_create(&decode_main_thr, NULL, decoder_main_func, fs);
+		assert(!ret);
+		pthread_join(decode_main_thr, NULL);
 	}
+
+
+	pthread_exit(NULL);
 
 	close(socketfd);
 out:
