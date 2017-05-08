@@ -13,30 +13,35 @@
 #include "udp.h"
 #include "utils.h"
 
-void decode_main_started(char *buf)
+char * decode_main_started(char *buf)
 {
 	struct msg_mainstarted *mainmsg;
+	void *p = zmalloc(1024);
 
 	mainmsg = (struct msg_mainstarted *) buf;
-	printf("Main started. pid:%d shm:%p-%p initial seed: %u\n",
+	sprintf(p, "Main started. pid:%d shm:%p-%p initial seed: %u\n",
 		mainmsg->hdr.pid, mainmsg->shm_begin, mainmsg->shm_end,
 		mainmsg->initial_seed);
+	return p;
 }
 
-void decode_main_exiting(char *buf)
+char * decode_main_exiting(char *buf)
 {
 	struct msg_mainexiting *mainmsg;
+	void *p = zmalloc(1024);
 
 	mainmsg = (struct msg_mainexiting *) buf;
-	printf("Main exiting. pid:%d Reason: %s\n", mainmsg->hdr.pid, decode_exit(mainmsg->reason));
+	sprintf(p, "Main exiting. pid:%d Reason: %s\n", mainmsg->hdr.pid, decode_exit(mainmsg->reason));
+	return p;
 }
 
-void decode_reseed(char *buf)
+char * decode_reseed(char *buf)
 {
 	struct msg_reseed *rsmsg;
+	void *p = zmalloc(1024);
 
 	rsmsg = (struct msg_reseed *) buf;
 
-	printf("pid %d Reseed. New seed = %d\n", rsmsg->hdr.pid, rsmsg->new_seed);
-	sleep(5);
+	sprintf(p, "pid %d Reseed. New seed = %d\n", rsmsg->hdr.pid, rsmsg->new_seed);
+	return p;
 }

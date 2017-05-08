@@ -14,25 +14,28 @@
 #include "udp.h"
 #include "utils.h"
 
-void decode_syscalls_enabled(char *buf)
+char * decode_syscalls_enabled(char *buf)
 {
 	struct msg_syscallsenabled *scmsg;
+	char *p = zmalloc(1024);
+	char *str = p;
 	int nr;
 	int i;
 
 	scmsg = (struct msg_syscallsenabled *) buf;
 	nr = scmsg->nr_enabled;
 	if (scmsg->arch_is_biarch == TRUE) {
-		printf("Enabled %d %s bit syscalls : { ", nr, scmsg->is_64 ? "64" : "32");
+		p += sprintf(p, "Enabled %d %s bit syscalls : { ", nr, scmsg->is_64 ? "64" : "32");
 		for (i = 0 ; i < nr; i++)
-			printf("%d ", scmsg->entries[i]);
-		printf("}\n");
+			p += sprintf(p, "%d ", scmsg->entries[i]);
+		sprintf(p, "}\n");
 	} else {
-		printf("Enabled %d syscalls : { ", nr);
+		p += sprintf(p, "Enabled %d syscalls : { ", nr);
 		for (i = 0 ; i < nr; i++)
-			printf("%d ", scmsg->entries[i]);
-		printf("}\n");
+			p += sprintf(p, "%d ", scmsg->entries[i]);
+		sprintf(p, "}\n");
 	}
+	return str;
 }
 
 /*
@@ -41,28 +44,32 @@ void decode_syscalls_enabled(char *buf)
  * - if we see another prep from the same child, we must have segv'd.
  *   (maybe handle this in decode_child_signalled ?)
  */
-void decode_syscall_prep(char *buf)
+char * decode_syscall_prep(char *buf)
 {
 	struct msg_syscallprep *scmsg;
+	void *p = zmalloc(1024);
 
 	scmsg = (struct msg_syscallprep *) buf;
 
-	printf("Child %d [%d] syscall prep [op:%ld] %d%s (0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
+	sprintf(p, "Child %d [%d] syscall prep [op:%ld] %d%s (0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
 		scmsg->hdr.childno, scmsg->hdr.pid, scmsg->sequence_nr, scmsg->nr,
 		scmsg->is32bit ? "[32bit]" : "",
 		scmsg->a1, scmsg->a2, scmsg->a3,
 		scmsg->a4, scmsg->a5, scmsg->a6);
+	return p;
 }
 
-void decode_syscall_result(char *buf)
+char * decode_syscall_result(char *buf)
 {
 	struct msg_syscallresult *scmsg;
+	void *p = zmalloc(1024);
 
 	scmsg = (struct msg_syscallresult *) buf;
 
-	printf("Child %d [%d] syscall [op:%ld]  result %lx %s\n",
+	sprintf(p, "Child %d [%d] syscall [op:%ld]  result %lx %s\n",
 		scmsg->hdr.childno, scmsg->hdr.pid, scmsg->sequence_nr,
 		scmsg->retval,
 		scmsg->retval == -1 ? strerror(scmsg->errno_post) : ""
 	      );
+	return p;
 }

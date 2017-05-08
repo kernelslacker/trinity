@@ -14,27 +14,33 @@
 #include "udp.h"
 #include "utils.h"
 
-void decode_child_spawned(char *buf)
+char * decode_child_spawned(char *buf)
 {
 	struct msg_childspawned *childmsg;
+	void *p = zmalloc(1024);
 
 	childmsg = (struct msg_childspawned *) buf;
-	printf("Child spawned. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
+	sprintf(p, "Child spawned. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
+	return p;
 }
 
-void decode_child_exited(char *buf)
+char * decode_child_exited(char *buf)
 {
 	struct msg_childexited *childmsg;
+	void *p = zmalloc(1024);
 
 	childmsg = (struct msg_childexited *) buf;
-	printf("Child exited. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
+	sprintf(p, "Child exited. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
+	return p;
 }
 
-void decode_child_signalled(char *buf)
+char * decode_child_signalled(char *buf)
 {
 	struct msg_childsignalled *childmsg;
+	void *p = zmalloc(1024);
 
 	childmsg = (struct msg_childsignalled *) buf;
-	printf("Child signal. id:%d pid:%d signal: %s\n",
+	sprintf(p, "Child signal. id:%d pid:%d signal: %s\n",
 		childmsg->hdr.childno, childmsg->hdr.pid, strsignal(childmsg->sig));
+	return p;
 }

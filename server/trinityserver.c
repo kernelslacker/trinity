@@ -46,9 +46,13 @@ static struct fuzzsession session;
 static void decode(struct packet *pkt, pthread_mutex_t *packetmutex)
 {
 	char *buffer = pkt->data;
+	char *str;
 	enum logmsgtypes type = buffer[0];
 
-	decodefuncs[type].func((char *) pkt->data);
+	str = decodefuncs[type].func((char *) pkt->data);
+	printf("%s", str);
+	free(str);
+
 	pthread_mutex_lock(packetmutex);
 	list_del(&pkt->list);
 	pthread_mutex_unlock(packetmutex);
