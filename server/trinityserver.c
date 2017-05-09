@@ -12,6 +12,7 @@
 #include "exit.h"
 #include "handshake.h"
 #include "list.h"
+#include "logfiles.h"
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
@@ -27,6 +28,7 @@ struct childdata {
 	pid_t childpid;
 	struct packet packets;
 	pthread_mutex_t packetmutex;
+	int logfile;
 };
 
 // TODO: dynamically allocate
@@ -39,24 +41,24 @@ struct fuzzsession {
 
 	pthread_mutex_t packetmutex;
 	struct packet mainpackets;
+	int logfile;
 };
 
 static struct fuzzsession session;
 
 
-static void decode(struct packet *pkt)
+static char * decode(struct packet *pkt)
 {
 	char *buffer = pkt->data;
 	char *str;
 	enum logmsgtypes type = buffer[0];
 
 	str = decodefuncs[type].func((char *) pkt->data);
-	printf("%s", str);
-	free(str);
 
 	list_del(&pkt->list);
 	free(pkt->data);
 	free(pkt);
+	return str;
 }
 
 static void * decoder_child_func(void *data)
@@ -68,8 +70,12 @@ static void * decoder_child_func(void *data)
 		pthread_mutex_lock(&child->packetmutex);
 		if (!list_empty(&child->packets.list)) {
 			list_for_each_safe(node, tmp, &child->packets.list) {
-				if (node != NULL)
-					decode((struct packet *)node);
+				if (node != NULL) {
+					char *str;
+					str = decode((struct packet *)node);
+					write(child->logfile, str, strlen(str));
+					free(str);
+				}
 			}
 		}
 		pthread_mutex_unlock(&child->packetmutex);
@@ -88,8 +94,12 @@ static void * decoder_main_func(void *data)
 		pthread_mutex_lock(&fs->packetmutex);
 		if (!list_empty(&fs->mainpackets.list)) {
 			list_for_each_safe(node, tmp, &fs->mainpackets.list) {
-				if (node != NULL)
-					decode((struct packet *)node);
+				if (node != NULL) {
+					char *str;
+					str = decode((struct packet *)node);
+					write(fs->logfile, str, strlen(str));
+					free(str);
+				}
 			}
 		}
 		pthread_mutex_unlock(&fs->packetmutex);
@@ -115,18 +125,25 @@ static bool __handshake(void)
 
 	session.mainpid = hs->mainpid;
 	session.num_children = hs->num_children;
+	//TODO: mkdir("logs/") ; chdir ("logs/")
+	//TODO mkdir session-mainpid
+	session.logfile = open_logfile("trinity-main.log");
 
-	sendudp(serverreply, strlen(serverreply));
 	INIT_LIST_HEAD(&session.mainpackets.list);
 	pthread_mutex_init(&session.packetmutex, NULL);
 
 	for (i = 0; i < hs->num_children; i++) {
+		struct childdata *child = &session.children[i];
 		int ret;
-		INIT_LIST_HEAD(&session.children[i].packets.list);
-		pthread_mutex_init(&session.children[i].packetmutex, NULL);
-		ret = pthread_create(&session.childthreads[i], NULL, decoder_child_func, &session.children[i]);
+
+		child->logfile = open_child_logfile(i);
+		INIT_LIST_HEAD(&child->packets.list);
+		pthread_mutex_init(&child->packetmutex, NULL);
+		ret = pthread_create(&session.childthreads[i], NULL, decoder_child_func, child);
 		assert(!ret);
 	}
+
+	sendudp(serverreply, strlen(serverreply));
 
 	return TRUE;
 }
