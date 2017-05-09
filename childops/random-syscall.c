@@ -69,29 +69,6 @@ static bool choose_syscall_table(void)
 	return do32;
 }
 
-static void fail_sanity(void)
-{
-	struct childdata *child = this_child();
-
-	dump_childnos();
-	dump_childdata(child);
-	panic(EXIT_SHM_CORRUPTION);
-}
-
-static void check_sanity(struct syscallrecord *rec, struct syscallrecord *stash)
-{
-	unsigned int len;
-
-	len = strlen(stash->prebuffer);
-	if (len != strlen(rec->prebuffer)) {
-		output(0, "Sanity check failed: prebuffer length changed from %d to %d after syscall:%s(%lx, %lx, %lx).\n",
-			len, strlen(rec->prebuffer),
-			print_syscall_name(stash->nr, stash->do32bit),
-			stash->a1, stash->a2, stash->a3);
-		fail_sanity();
-	}
-}
-
 static bool set_syscall_nr(struct syscallrecord *rec)
 {
 	unsigned int syscallnr;
@@ -175,7 +152,7 @@ static bool do_syscall_in_child(struct syscallrecord *rec, struct childdata *chi
 
 bool random_syscall(struct childdata *child)
 {
-	struct syscallrecord *rec, *stash;
+	struct syscallrecord *rec;
 	int ret = FALSE;
 
 	rec = &child->syscall;
@@ -190,10 +167,6 @@ bool random_syscall(struct childdata *child)
 
 	output_syscall_prefix(rec);
 
-	/* we stash a copy of this stuff in case something stomps the rec struct */
-	stash = zmalloc(sizeof(struct syscallrecord));
-	memcpy(stash, rec, sizeof(struct syscallrecord));
-
 /*
 	if (ONE_IN(100)) {
 		if (do_syscall_in_child(rec, child) == FALSE)
@@ -202,15 +175,11 @@ bool random_syscall(struct childdata *child)
 */
 	do_syscall(rec);
 
-	check_sanity(rec, stash);
-
 	output_syscall_postfix(rec);
 
 	handle_syscall_ret(rec);
 
 	ret = TRUE;
 //fail:
-	free(stash);
-
 	return ret;
 }
