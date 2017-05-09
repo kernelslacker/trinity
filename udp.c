@@ -132,7 +132,7 @@ void init_logging(char *optarg)
 	struct hostent *he;
 	struct sockaddr_in udpclient;
 	struct in_addr **addr_list;
-	char *ip;
+	char *ip = NULL;
 	int ret;
 	unsigned int i;
 
@@ -154,6 +154,10 @@ void init_logging(char *optarg)
 		udpserver.sin_addr.s_addr = inet_addr(ip);
 		udpserver.sin_port = htons(TRINITY_LOG_PORT);
 	}
+
+	if (ip == NULL)
+		return;
+
 	printf("Logging to %s\n", ip);
 
 	logsocket = socket(AF_INET, SOCK_DGRAM, 0);
