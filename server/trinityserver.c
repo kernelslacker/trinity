@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include "decode.h"
 #include "exit.h"
 #include "handshake.h"
@@ -143,6 +146,7 @@ static bool __handshake(void)
 		assert(!ret);
 	}
 
+	printf("Received handshake from %s:%d\n", inet_ntoa(udpclient.sin_addr), ntohs(udpclient.sin_port));
 	sendudp(serverreply, strlen(serverreply));
 
 	return TRUE;
