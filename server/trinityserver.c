@@ -15,6 +15,7 @@
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
+#include "udp-server.h"
 #include "utils.h"
 
 struct packet {
@@ -97,41 +98,6 @@ static void * decoder_main_func(void *data)
 	return NULL;
 }
 
-
-// TODO: ipv6
-
-struct sockaddr_in udpclient;
-
-int socketfd;
-
-#define MAXBUF 10240
-static char buf[MAXBUF];
-
-void sendudp(char *buffer, size_t len)
-{
-	int ret;
-
-	ret = sendto(socketfd, buffer, len, 0, (struct sockaddr *) &udpclient, sizeof(udpclient));
-	if (ret == -1) {
-		fprintf(stderr, "sendto: %s\n", strerror(errno));
-	}
-}
-
-static size_t readudp(void)
-{
-	int ret;
-	socklen_t addrlen = 0;
-
-	memset(buf, 0, MAXBUF);
-
-	addrlen = sizeof(udpclient);
-	ret = recvfrom(socketfd, buf, MAXBUF, 0, (struct sockaddr *) &udpclient, &addrlen);
-	if (ret == -1)
-		fprintf(stderr, "recvfrom: %s\n", strerror(errno));
-
-	return ret;
-}
-
 /* simple 2-way handshake just to agree on protocol. */
 static bool __handshake(void)
 {
@@ -184,28 +150,6 @@ static bool check_handshake(int ret)
 		return FALSE;
 
 	return __handshake();
-}
-
-static bool setup_socket(void)
-{
-	struct sockaddr_in udpserver;
-
-	socketfd = socket(AF_INET, SOCK_DGRAM, 0);
-	if (socketfd == -1) {
-		fprintf(stderr, "Could not create a socket\n");
-		return FALSE;
-	}
-
-	udpserver.sin_family = AF_INET;
-	udpserver.sin_addr.s_addr = htonl(INADDR_ANY);
-	udpserver.sin_port = htons(TRINITY_LOG_PORT);
-
-	if (bind(socketfd, (struct sockaddr *) &udpserver, sizeof(udpserver)) != 0) {
-		fprintf(stderr, "Could not bind to address!\n");
-		close(socketfd);
-		return FALSE;
-	}
-	return TRUE;
 }
 
 static void add_to_main_queue(void *data, int len)
