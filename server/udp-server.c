@@ -48,6 +48,8 @@ size_t readudp(void)
 bool setup_socket(void)
 {
 	struct sockaddr_in udpserver;
+	int rcvbuf;
+	int ret;
 
 	socketfd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (socketfd == -1) {
@@ -64,5 +66,10 @@ bool setup_socket(void)
 		close(socketfd);
 		return FALSE;
 	}
+
+	rcvbuf = 1000000 * 64;	//TODO: adjust 64 to max_children
+	ret = setsockopt(socketfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+	printf("Recieve socket buffer size set to %d\n", rcvbuf);
+
 	return TRUE;
 }

@@ -135,6 +135,7 @@ void init_logging(char *optarg)
 	char *ip = NULL;
 	int ret;
 	unsigned int i;
+	int sendbuff;
 
 	if (optarg == NULL) {
 		logging_enabled = FALSE;
@@ -176,6 +177,10 @@ void init_logging(char *optarg)
 		close(logsocket);
 		exit(EXIT_FAILURE);
 	}
+
+	sendbuff = 1000000 * max_children;
+	ret = setsockopt(logsocket, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof(sendbuff));
+	printf("socket buffer size set to: %d. (res:%s)\n", sendbuff, strerror(errno));
 
 	/* We temporarily turn enabled on, as we need it for sendudp to work.
 	 * If we don't get a valid handshake we turn it back off.
