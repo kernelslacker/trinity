@@ -238,10 +238,7 @@ static void log_child_spawned(pid_t pid, int childno)
 	if (logging_enabled == FALSE)
 		return;
 
-	childmsg.hdr.pid = pid;
-	childmsg.hdr.type = CHILD_SPAWNED;
-	childmsg.hdr.childno = childno;
-
+	init_msgchildhdr(&childmsg.hdr, CHILD_SPAWNED, pid, childno);
 	sendudp((char *) &childmsg, sizeof(childmsg));
 }
 

@@ -52,7 +52,7 @@ char * decode_syscall_prep(char *buf)
 	void *p = zmalloc(1024);
 
 	scmsg = (struct msg_syscallprep *) buf;
-	ts = &scmsg->tp;
+	ts = &scmsg->hdr.tp;
 
 	sprintf(p, "%d.%d Child %d [%d] syscall prep [op:%ld] %d%s (0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
 		(int) ts->tv_sec, (int) ts->tv_nsec,
@@ -70,7 +70,7 @@ char * decode_syscall_result(char *buf)
 	void *p = zmalloc(1024);
 
 	scmsg = (struct msg_syscallresult *) buf;
-	ts = &scmsg->tp;
+	ts = &scmsg->hdr.tp;
 
 	sprintf(p, "%d.%d Child %d [%d] syscall [op:%ld]  result %lx %s\n",
 		(int) ts->tv_sec, (int) ts->tv_nsec,

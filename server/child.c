@@ -17,30 +17,41 @@
 char * decode_child_spawned(char *buf)
 {
 	struct msg_childspawned *childmsg;
+	struct timespec *ts;
 	void *p = zmalloc(1024);
 
 	childmsg = (struct msg_childspawned *) buf;
-	sprintf(p, "Child spawned. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
+	ts = &childmsg->hdr.tp;
+	sprintf(p, "%d.%d Child spawned. id:%d pid:%d\n",
+		(int) ts->tv_sec, (int) ts->tv_nsec,
+		childmsg->hdr.childno, childmsg->hdr.pid);
 	return p;
 }
 
 char * decode_child_exited(char *buf)
 {
 	struct msg_childexited *childmsg;
+	struct timespec *ts;
 	void *p = zmalloc(1024);
 
 	childmsg = (struct msg_childexited *) buf;
-	sprintf(p, "Child exited. id:%d pid:%d\n", childmsg->hdr.childno, childmsg->hdr.pid);
+	ts = &childmsg->hdr.tp;
+	sprintf(p, "%d.%d Child exited. id:%d pid:%d\n",
+		(int) ts->tv_sec, (int) ts->tv_nsec,
+		childmsg->hdr.childno, childmsg->hdr.pid);
 	return p;
 }
 
 char * decode_child_signalled(char *buf)
 {
 	struct msg_childsignalled *childmsg;
+	struct timespec *ts;
 	void *p = zmalloc(1024);
 
 	childmsg = (struct msg_childsignalled *) buf;
-	sprintf(p, "Child signal. id:%d pid:%d signal: %s\n",
+	ts = &childmsg->hdr.tp;
+	sprintf(p, "%d.%d Child signal. id:%d pid:%d signal: %s\n",
+		(int) ts->tv_sec, (int) ts->tv_nsec,
 		childmsg->hdr.childno, childmsg->hdr.pid, strsignal(childmsg->sig));
 	return p;
 }

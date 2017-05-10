@@ -65,6 +65,7 @@ struct trinity_msgobjhdr {
 
 struct trinity_msgchildhdr {
 	enum logmsgtypes type;
+	struct timespec tp;
 	pid_t pid;
 	int childno;
 };
@@ -230,7 +231,6 @@ struct msg_syscallsenabled {
 
 struct msg_syscallprep {
 	struct trinity_msgchildhdr hdr;
-	struct timespec tp;
 	unsigned long sequence_nr;
 	unsigned int nr;
 	bool is32bit;
@@ -244,7 +244,6 @@ struct msg_syscallprep {
 
 struct msg_syscallresult {
 	struct trinity_msgchildhdr hdr;
-	struct timespec tp;
 	unsigned long sequence_nr;
 	long retval;
 	int errno_post;

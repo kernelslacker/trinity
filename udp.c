@@ -29,6 +29,8 @@ void init_msghdr(struct trinity_msghdr *hdr, enum logmsgtypes type)
 
 void init_msgchildhdr(struct trinity_msgchildhdr *hdr, enum logmsgtypes type, pid_t pid, int childno)
 {
+	clock_gettime(CLOCK_MONOTONIC, &hdr->tp);
+
 	hdr->type = type;
 	hdr->pid = pid;
 	hdr->childno = childno;
