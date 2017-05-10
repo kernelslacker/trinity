@@ -59,17 +59,17 @@ static void * decoder_child_func(void *data)
 	struct list_head *node = NULL, *tmp;
 
 	while (1) {
-		struct packet *currpkt;
-		struct msg_syscallprep *scmsg;
-		struct msg_syscallresult *srmsg;
-		struct trinity_msgchildhdr *childhdr;
-		enum logmsgtypes type;
-
 		pthread_mutex_lock(&child->packetmutex);
 		if (list_empty(&child->packets.list))
 			goto done;
 
 		list_for_each_safe(node, tmp, &child->packets.list) {
+			struct packet *currpkt;
+			struct msg_syscallprep *scmsg;
+			struct msg_syscallresult *srmsg;
+			struct trinity_msgchildhdr *childhdr;
+			enum logmsgtypes type;
+
 			currpkt = (struct packet *) node;
 			type = get_packet_type(currpkt);
 
