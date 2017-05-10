@@ -110,6 +110,8 @@ static void * decoder_child_func(void *data)
 done:
 		pthread_mutex_unlock(&child->packetmutex);
 		//TODO: if main session exits, we should exit this thread.
+
+		sleep(1);
 	}
 	return NULL;
 }
