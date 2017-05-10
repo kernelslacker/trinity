@@ -72,6 +72,17 @@ static void * decoder_child_func(void *data)
 			currpkt = (struct packet *) node;
 			type = get_packet_type(currpkt);
 
+			// The non syscall related messages have no ordering on each other asides from timestamp
+			switch (type) {
+				case CHILD_SPAWNED:
+				case CHILD_EXITED:
+				case CHILD_SIGNALLED:
+					decode_this_packet(child, currpkt);
+					continue;
+				default:
+					break;
+			}
+
 			if (child->expecting_result == TRUE) {
 				if (type != SYSCALL_RESULT) {
 					continue;
