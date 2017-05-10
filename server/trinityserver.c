@@ -62,6 +62,7 @@ static void * decoder_child_func(void *data)
 		struct packet *currpkt;
 		struct msg_syscallprep *scmsg;
 		struct msg_syscallresult *srmsg;
+		struct trinity_msgchildhdr *childhdr;
 		enum logmsgtypes type;
 
 		pthread_mutex_lock(&child->packetmutex);
@@ -83,6 +84,12 @@ static void * decoder_child_func(void *data)
 					break;
 			}
 
+			/* if the pid changed, before we gto a CHILD_SPAWNED, skip */
+			childhdr = (struct trinity_msgchildhdr *) currpkt->data;
+			if (child->childpid != childhdr->pid)
+				continue;
+
+			// TODO: What if we crashed ?
 			if (child->expecting_result == TRUE) {
 				if (type != SYSCALL_RESULT) {
 					continue;
