@@ -11,46 +11,21 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "child.h"
 #include "decode.h"
 #include "exit.h"
 #include "handshake.h"
 #include "list.h"
 #include "logfiles.h"
+#include "packet.h"
+#include "session.h"
 #include "trinity.h"
 #include "types.h"
 #include "udp.h"
 #include "udp-server.h"
 #include "utils.h"
 
-struct packet {
-	struct list_head list;
-	struct timespec tp;
-	char * data;
-};
-
-struct childdata {
-	pid_t childpid;
-	struct packet packets;
-	pthread_mutex_t packetmutex;
-	int logfile;
-	unsigned long expected_seq;
-	bool expecting_result;
-};
-
-// TODO: dynamically allocate
-#define MAX_CHILDREN 1024
-struct fuzzsession {
-	pid_t mainpid;
-	int num_children;
-	struct childdata children[MAX_CHILDREN];
-	pthread_t childthreads[MAX_CHILDREN];
-
-	pthread_mutex_t packetmutex;
-	struct packet mainpackets;
-	int logfile;
-};
-
-static struct fuzzsession session;
+struct fuzzsession session;
 
 static enum logmsgtypes get_packet_type(struct packet *pkt)
 {

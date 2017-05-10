@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "decode.h"
 #include "exit.h"
+#include "session.h"
 #include "socketinfo.h"
 #include "trinity.h"
 #include "types.h"
@@ -18,6 +19,7 @@ char * decode_child_spawned(char *buf)
 {
 	struct msg_childspawned *childmsg;
 	struct timespec *ts;
+	struct childdata *child;
 	void *p = zmalloc(1024);
 
 	childmsg = (struct msg_childspawned *) buf;
@@ -25,6 +27,10 @@ char * decode_child_spawned(char *buf)
 	sprintf(p, "%d.%d Child spawned. id:%d pid:%d\n",
 		(int) ts->tv_sec, (int) ts->tv_nsec,
 		childmsg->hdr.childno, childmsg->hdr.pid);
+
+	child = &session.children[childmsg->hdr.childno];
+	child->expected_seq = 0;
+	child->expecting_result = FALSE;
 	return p;
 }
 
