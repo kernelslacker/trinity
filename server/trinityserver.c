@@ -75,29 +75,27 @@ static void * decoder_child_func(void *data)
 
 			// The non syscall related messages have no ordering on each other asides from timestamp
 			switch (type) {
-				case CHILD_SPAWNED:
-				case CHILD_EXITED:
-				case CHILD_SIGNALLED:
-					decode_this_packet(child, currpkt);
-					continue;
-				default:
-					break;
+			case CHILD_SPAWNED:
+			case CHILD_EXITED:
+			case CHILD_SIGNALLED:
+				decode_this_packet(child, currpkt);
+				child->expecting_result = FALSE;
+				continue;
+			default:
+				break;
 			}
+
+			/* From here on, type can only be SYSCALL_PREP or SYSCALL_RESULT */
 
 			/* if the pid changed, before we gto a CHILD_SPAWNED, skip */
 			childhdr = (struct trinity_msgchildhdr *) currpkt->data;
 			if (child->childpid != childhdr->pid)
 				continue;
 
-			// TODO: What if we crashed ?
-			if (child->expecting_result == TRUE) {
-				if (type != SYSCALL_RESULT) {
+			if (type == SYSCALL_PREP) {
+				if (child->expecting_result == TRUE)
 					continue;
-				}
-			}
 
-			switch (type) {
-			case SYSCALL_PREP:
 				scmsg = (struct msg_syscallprep *) currpkt->data;
 				if (scmsg->sequence_nr != child->expected_seq)
 					continue;
@@ -105,8 +103,9 @@ static void * decoder_child_func(void *data)
 				decode_this_packet(child, currpkt);
 				child->expecting_result = TRUE;
 				continue;
+			}
 
-			case SYSCALL_RESULT:
+			if (type == SYSCALL_RESULT) {
 				if (child->expecting_result == FALSE)
 					continue;
 
@@ -117,11 +116,6 @@ static void * decoder_child_func(void *data)
 				decode_this_packet(child, currpkt);
 				child->expecting_result = FALSE;
 				child->expected_seq++;
-				continue;
-
-			default:
-				decode_this_packet(child, currpkt);
-				child->expecting_result = FALSE;
 				continue;
 			}
 		}
