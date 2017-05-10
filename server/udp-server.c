@@ -69,7 +69,8 @@ bool setup_socket(void)
 
 	rcvbuf = 1000000 * 64;	//TODO: adjust 64 to max_children
 	ret = setsockopt(socketfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
-	printf("Recieve socket buffer size set to %d\n", rcvbuf);
+	if (ret == 0)
+		printf("Recieve socket buffer size set to %d\n", rcvbuf);
 
 	return TRUE;
 }
