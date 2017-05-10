@@ -24,6 +24,7 @@
 
 struct packet {
 	struct list_head list;
+	struct timespec tp;
 	char * data;
 };
 
@@ -32,6 +33,8 @@ struct childdata {
 	struct packet packets;
 	pthread_mutex_t packetmutex;
 	int logfile;
+	unsigned long expected_seq;
+	bool expecting_result;
 };
 
 // TODO: dynamically allocate
@@ -49,12 +52,16 @@ struct fuzzsession {
 
 static struct fuzzsession session;
 
+static enum logmsgtypes get_packet_type(struct packet *pkt)
+{
+	char *buffer = pkt->data;
+	return buffer[0];
+}
 
 static char * decode(struct packet *pkt)
 {
-	char *buffer = pkt->data;
 	char *str;
-	enum logmsgtypes type = buffer[0];
+	enum logmsgtypes type = get_packet_type(pkt);
 
 	str = decodefuncs[type].func((char *) pkt->data);
 
@@ -64,23 +71,68 @@ static char * decode(struct packet *pkt)
 	return str;
 }
 
+static void decode_this_packet(struct childdata *child, struct packet *pkt)
+{
+	char *str = decode(pkt);
+	write(child->logfile, str, strlen(str));
+	free(str);
+}
+
 static void * decoder_child_func(void *data)
 {
 	struct childdata *child = (struct childdata *) data;
-	struct list_head *node, *tmp;
+	struct list_head *node = NULL, *tmp;
 
 	while (1) {
+		struct packet *currpkt;
+		struct msg_syscallprep *scmsg;
+		struct msg_syscallresult *srmsg;
+		enum logmsgtypes type;
+
 		pthread_mutex_lock(&child->packetmutex);
-		if (!list_empty(&child->packets.list)) {
-			list_for_each_safe(node, tmp, &child->packets.list) {
-				if (node != NULL) {
-					char *str;
-					str = decode((struct packet *)node);
-					write(child->logfile, str, strlen(str));
-					free(str);
+		if (list_empty(&child->packets.list))
+			goto done;
+
+		list_for_each_safe(node, tmp, &child->packets.list) {
+			currpkt = (struct packet *) node;
+			type = get_packet_type(currpkt);
+
+			if (child->expecting_result == TRUE) {
+				if (type != SYSCALL_RESULT) {
+					continue;
 				}
 			}
+
+			switch (type) {
+			case SYSCALL_PREP:
+				scmsg = (struct msg_syscallprep *) currpkt->data;
+				if (scmsg->sequence_nr != child->expected_seq)
+					continue;
+
+				decode_this_packet(child, currpkt);
+				child->expecting_result = TRUE;
+				continue;
+
+			case SYSCALL_RESULT:
+				if (child->expecting_result == FALSE)
+					continue;
+
+				srmsg = (struct msg_syscallresult *) currpkt->data;
+				if (srmsg->sequence_nr != child->expected_seq)
+					continue;
+
+				decode_this_packet(child, currpkt);
+				child->expecting_result = FALSE;
+				child->expected_seq++;
+				continue;
+
+			default:
+				decode_this_packet(child, currpkt);
+				child->expecting_result = FALSE;
+				continue;
+			}
 		}
+done:
 		pthread_mutex_unlock(&child->packetmutex);
 		//TODO: if main session exits, we should exit this thread.
 	}
@@ -140,6 +192,8 @@ static bool __handshake(void)
 		int ret;
 
 		child->logfile = open_child_logfile(i);
+		child->expected_seq = 0;
+		child->expecting_result = FALSE;
 		INIT_LIST_HEAD(&child->packets.list);
 		pthread_mutex_init(&child->packetmutex, NULL);
 		ret = pthread_create(&session.childthreads[i], NULL, decoder_child_func, child);
@@ -198,6 +252,7 @@ static void add_to_child_queue(void *data, int len)
 	struct fuzzsession *fs = &session;
 	struct trinity_msgchildhdr *childhdr;
 	struct childdata *child;
+	struct list_head *node, *tmp;
 
 	pkt->data = malloc(len);
 	if (pkt->data == NULL) {
@@ -210,8 +265,28 @@ static void add_to_child_queue(void *data, int len)
 	// FIXME: Not true for objects!
 	childhdr = (struct trinity_msgchildhdr *) pkt->data;
 	child = &fs->children[childhdr->childno];
+
 	pthread_mutex_lock(&child->packetmutex);
+
+	if (list_empty(&child->packets.list))
+		goto tail_add;
+
+	list_for_each_safe(node, tmp, &child->packets.list) {
+		struct packet *listpkt = (struct packet *) node;
+
+		if (childhdr->tp.tv_sec > listpkt->tp.tv_sec)
+			continue;
+		if (childhdr->tp.tv_nsec > listpkt->tp.tv_nsec)
+			continue;
+
+		list_add(&pkt->list, node);
+		goto done;
+	}
+
+tail_add:
+
 	list_add_tail(&pkt->list, &child->packets.list);
+done:
 	pthread_mutex_unlock(&child->packetmutex);
 }
 

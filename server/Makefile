@@ -12,7 +12,6 @@ CFLAGS += -Winit-self
 CFLAGS += -Wnested-externs
 CFLAGS += -Wpacked
 CFLAGS += -Wshadow
-CFLAGS += -Wswitch-enum
 CFLAGS += -Wundef
 CFLAGS += -Wwrite-strings
 CFLAGS += -Wno-format-nonliteral
