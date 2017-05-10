@@ -29,6 +29,9 @@ struct syscallrecord {
 	unsigned long a6;
 	unsigned long retval;
 
+	/* timestamp (written before the syscall, and updated afterwards. */
+	struct timespec tp;
+
 	int errno_post;	/* what errno was after the syscall. */
 
 	bool do32bit;

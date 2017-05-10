@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 #include "decode.h"
 #include "exit.h"
@@ -47,11 +48,14 @@ char * decode_syscalls_enabled(char *buf)
 char * decode_syscall_prep(char *buf)
 {
 	struct msg_syscallprep *scmsg;
+	struct timespec *ts;
 	void *p = zmalloc(1024);
 
 	scmsg = (struct msg_syscallprep *) buf;
+	ts = &scmsg->tp;
 
-	sprintf(p, "Child %d [%d] syscall prep [op:%ld] %d%s (0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
+	sprintf(p, "%d.%d Child %d [%d] syscall prep [op:%ld] %d%s (0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx)\n",
+		(int) ts->tv_sec, (int) ts->tv_nsec,
 		scmsg->hdr.childno, scmsg->hdr.pid, scmsg->sequence_nr, scmsg->nr,
 		scmsg->is32bit ? "[32bit]" : "",
 		scmsg->a1, scmsg->a2, scmsg->a3,
@@ -62,11 +66,14 @@ char * decode_syscall_prep(char *buf)
 char * decode_syscall_result(char *buf)
 {
 	struct msg_syscallresult *scmsg;
+	struct timespec *ts;
 	void *p = zmalloc(1024);
 
 	scmsg = (struct msg_syscallresult *) buf;
+	ts = &scmsg->tp;
 
-	sprintf(p, "Child %d [%d] syscall [op:%ld]  result %lx %s\n",
+	sprintf(p, "%d.%d Child %d [%d] syscall [op:%ld]  result %lx %s\n",
+		(int) ts->tv_sec, (int) ts->tv_nsec,
 		scmsg->hdr.childno, scmsg->hdr.pid, scmsg->sequence_nr,
 		scmsg->retval,
 		scmsg->retval == -1 ? strerror(scmsg->errno_post) : ""

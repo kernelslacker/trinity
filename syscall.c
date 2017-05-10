@@ -185,6 +185,9 @@ void do_syscall(struct syscallrecord *rec)
 	struct childdata *child = this_child();
 	unsigned int call;
 
+	/* timestamp for 'before the syscall' */
+	clock_gettime(CLOCK_MONOTONIC, &rec->tp);
+
 	init_msgchildhdr(&scmsg.hdr, SYSCALL_PREP, pids[child->num], child->num);
 	scmsg.sequence_nr = child->op_nr;
 	scmsg.nr = rec->nr;
@@ -195,6 +198,7 @@ void do_syscall(struct syscallrecord *rec)
 	scmsg.a4 = rec->a4;
 	scmsg.a5 = rec->a5;
 	scmsg.a6 = rec->a6;
+	scmsg.tp = rec->tp;
 	sendudp((char *) &scmsg, sizeof(scmsg));
 
 	call = rec->nr;
@@ -205,6 +209,9 @@ void do_syscall(struct syscallrecord *rec)
 	else
 		 /* common-case, do the syscall in this child process. */
 		__do_syscall(rec, BEFORE);
+
+	/* timestamp again for when we returned */
+	clock_gettime(CLOCK_MONOTONIC, &rec->tp);
 }
 
 /*
@@ -253,6 +260,7 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	scmsg.sequence_nr = child->op_nr;
 	scmsg.retval = rec->retval;
 	scmsg.errno_post = rec->errno_post;
+	scmsg.tp = rec->tp;
 	sendudp((char *) &scmsg, sizeof(scmsg));
 
 	call = rec->nr;
