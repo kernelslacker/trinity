@@ -65,8 +65,6 @@ static void * decoder_child_func(void *data)
 
 		list_for_each_safe(node, tmp, &child->packets.list) {
 			struct packet *currpkt;
-			struct msg_syscallprep *scmsg;
-			struct msg_syscallresult *srmsg;
 			struct trinity_msgchildhdr *childhdr;
 			enum logmsgtypes type;
 
@@ -93,6 +91,7 @@ static void * decoder_child_func(void *data)
 				continue;
 
 			if (type == SYSCALL_PREP) {
+				struct msg_syscallprep *scmsg;
 				if (child->expecting_result == TRUE)
 					continue;
 
@@ -106,6 +105,7 @@ static void * decoder_child_func(void *data)
 			}
 
 			if (type == SYSCALL_RESULT) {
+				struct msg_syscallresult *srmsg;
 				if (child->expecting_result == FALSE)
 					continue;
 

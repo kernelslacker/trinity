@@ -19,7 +19,7 @@ int open_logfile(const char *logfilename)
 	return fd;
 }
 
-int open_child_logfile(int num)
+int open_child_logfile(unsigned int num)
 {
 	char *logfilename;
 	int fd;
