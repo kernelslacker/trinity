@@ -49,7 +49,11 @@ static char * decode(struct packet *pkt)
 static void decode_this_packet(struct childdata *child, struct packet *pkt)
 {
 	char *str = decode(pkt);
-	write(child->logfile, str, strlen(str));
+	int ret;
+
+	ret = write(child->logfile, str, strlen(str));
+	if (ret == -1)
+		printf("error writing to child logfile: %s\n", strerror(errno));
 	free(str);
 }
 
@@ -140,8 +144,11 @@ static void * decoder_main_func(void *data)
 			list_for_each_safe(node, tmp, &fs->mainpackets.list) {
 				if (node != NULL) {
 					char *str;
+					int ret;
 					str = decode((struct packet *)node);
-					write(fs->logfile, str, strlen(str));
+					ret = write(fs->logfile, str, strlen(str));
+					if (ret == -1)
+						printf("error writing to main logfile: %s\n", strerror(errno));
 					free(str);
 				}
 			}
