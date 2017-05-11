@@ -502,12 +502,13 @@ static void fork_children(void)
 	shm->ready = TRUE;
 }
 
-static void log_child_signalled(int childno, pid_t pid, int sig)
+static void log_child_signalled(int childno, pid_t pid, int sig, unsigned long op_nr)
 {
 	struct msg_childsignalled childmsg;
 
 	init_msgchildhdr(&childmsg.hdr, CHILD_SIGNALLED, pid, childno);
 	childmsg.sig = sig;
+	childmsg.op_nr = op_nr;
 
 	sendudp((char *) &childmsg, sizeof(childmsg));
 }
@@ -552,7 +553,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		else {
 			debugf("got a signal from child %d (pid %d) (%s)\n",
 					childno, pid, strsignal(WTERMSIG(childstatus)));
-			log_child_signalled(childno, pid, WTERMSIG(childstatus));
+			log_child_signalled(childno, pid, WTERMSIG(childstatus), child->op_nr);
 		}
 		reap_child(shm->children[childno]);
 

@@ -101,6 +101,7 @@ struct msg_childexited {
 struct msg_childsignalled {
 	struct trinity_msgchildhdr hdr;
 	int sig;
+	unsigned long op_nr;
 };
 
 struct msg_objcreatedfile {

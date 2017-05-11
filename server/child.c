@@ -57,8 +57,9 @@ char * decode_child_signalled(char *buf)
 
 	childmsg = (struct msg_childsignalled *) buf;
 	ts = &childmsg->hdr.tp;
-	sprintf(p, "%d.%d Child signal. id:%d pid:%d signal: %s\n",
+	sprintf(p, "%d.%d Child signal. id:%d pid:%d signal: %s. After op:%lu\n",
 		(int) ts->tv_sec, (int) ts->tv_nsec,
-		childmsg->hdr.childno, childmsg->hdr.pid, strsignal(childmsg->sig));
+		childmsg->hdr.childno, childmsg->hdr.pid, strsignal(childmsg->sig),
+		childmsg->op_nr);
 	return p;
 }
