@@ -55,6 +55,8 @@ static void decode_this_packet(struct childdata *child, struct packet *pkt)
 	if (ret == -1)
 		printf("error writing to child logfile: %s\n", strerror(errno));
 	free(str);
+
+	child->packetcount--;
 }
 
 static void * decoder_child_func(void *data)
@@ -191,6 +193,7 @@ static bool __handshake(void)
 		child->expected_seq = 0;
 		child->expecting_result = FALSE;
 		INIT_LIST_HEAD(&child->packets.list);
+		child->packetcount = 0;
 		pthread_mutex_init(&child->packetmutex, NULL);
 		ret = pthread_create(&session.childthreads[i], NULL, decoder_child_func, child);
 		assert(!ret);
@@ -283,6 +286,7 @@ tail_add:
 
 	list_add_tail(&pkt->list, &child->packets.list);
 done:
+	child->packetcount++;
 	pthread_mutex_unlock(&child->packetmutex);
 }
 
