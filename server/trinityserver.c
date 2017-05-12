@@ -265,6 +265,8 @@ static void add_to_child_queue(void *data, int len)
 	childhdr = (struct trinity_msgchildhdr *) pkt->data;
 	child = &fs->children[childhdr->childno];
 
+	pkt->tp = childhdr->tp;
+
 	pthread_mutex_lock(&child->packetmutex);
 
 	if (list_empty(&child->packets.list))
