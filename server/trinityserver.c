@@ -81,9 +81,18 @@ static void * decoder_child_func(void *data)
 			switch (type) {
 			case CHILD_SPAWNED:
 			case CHILD_EXITED:
-			case CHILD_SIGNALLED:
+				// TODO: put lastop in the exit msg and wait until that op before processing this.
+				// TODO: check signalled->op_nr == expected-1
 				decode_this_packet(child, currpkt);
 				child->expecting_result = FALSE;
+				continue;
+
+			case CHILD_SIGNALLED:
+				// TODO: check signalled->op_nr == expected-1
+				decode_this_packet(child, currpkt);
+				child->expecting_result = FALSE;
+				// TODO: only if SIGALRM
+				child->expected_seq++;
 				continue;
 			default:
 				break;
