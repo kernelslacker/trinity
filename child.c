@@ -435,7 +435,10 @@ static bool handle_sigreturn(int sigwas)
 
 	if (sigwas != SIGALRM)
 		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
-
+	else {
+		log_child_signalled(child->num, pids[child->num], SIGALRM, child->op_nr);
+		child->op_nr++;
+	}
 	return TRUE;
 }
 

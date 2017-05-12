@@ -502,7 +502,7 @@ static void fork_children(void)
 	shm->ready = TRUE;
 }
 
-static void log_child_signalled(int childno, pid_t pid, int sig, unsigned long op_nr)
+void log_child_signalled(int childno, pid_t pid, int sig, unsigned long op_nr)
 {
 	struct msg_childsignalled childmsg;
 
