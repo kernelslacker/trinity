@@ -72,6 +72,7 @@ static void * decoder_child_func(void *data)
 		list_for_each_safe(node, tmp, &child->packets.list) {
 			struct packet *currpkt;
 			struct trinity_msgchildhdr *childhdr;
+			struct msg_childsignalled *sigmsg;
 			enum logmsgtypes type;
 
 			currpkt = (struct packet *) node;
@@ -80,19 +81,38 @@ static void * decoder_child_func(void *data)
 			// The non syscall related messages have no ordering on each other asides from timestamp
 			switch (type) {
 			case CHILD_SPAWNED:
+				if (child->expecting_spawn == TRUE) {
+					decode_this_packet(child, currpkt);
+					child->expecting_result = FALSE;
+					child->expecting_spawn = FALSE;
+				}
+				continue;
+
 			case CHILD_EXITED:
 				// TODO: put lastop in the exit msg and wait until that op before processing this.
 				// TODO: check signalled->op_nr == expected-1
 				decode_this_packet(child, currpkt);
 				child->expecting_result = FALSE;
+				child->expecting_spawn = TRUE;
 				continue;
 
 			case CHILD_SIGNALLED:
-				// TODO: check signalled->op_nr == expected-1
-				decode_this_packet(child, currpkt);
-				child->expecting_result = FALSE;
-				// TODO: only if SIGALRM
-				child->expected_seq++;
+				sigmsg = (struct msg_childsignalled *) currpkt->data;
+
+				if (sigmsg->op_nr == child->expected_seq) {
+					if (sigmsg->sig == SIGSEGV) {
+						child->expecting_spawn = TRUE;
+						child->expecting_result = FALSE;
+						child->expected_seq++;
+					}
+
+					if (sigmsg->sig == SIGALRM) {
+						child->expecting_result = FALSE;
+						child->expected_seq++;
+					}
+
+					decode_this_packet(child, currpkt);
+				}
 				continue;
 			default:
 				break;
@@ -199,6 +219,7 @@ static bool __handshake(void)
 		int ret;
 
 		child->logfile = open_child_logfile(i);
+		child->expecting_spawn = TRUE;
 		child->expected_seq = 0;
 		child->expecting_result = FALSE;
 		INIT_LIST_HEAD(&child->packets.list);

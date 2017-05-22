@@ -9,5 +9,6 @@ struct childdata {
 	pthread_mutex_t packetmutex;
 	int logfile;
 	unsigned long expected_seq;
+	bool expecting_spawn;
 	bool expecting_result;
 };
