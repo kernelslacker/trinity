@@ -43,9 +43,9 @@ char * decode_child_exited(char *buf)
 
 	childmsg = (struct msg_childexited *) buf;
 	ts = &childmsg->hdr.tp;
-	sprintf(p, "%d.%d Child exited. id:%d pid:%d\n",
+	sprintf(p, "%d.%d Child exited. id:%d pid:%d lastop:%lu\n",
 		(int) ts->tv_sec, (int) ts->tv_nsec,
-		childmsg->hdr.childno, childmsg->hdr.pid);
+		childmsg->hdr.childno, childmsg->hdr.pid, childmsg->op_nr);
 	return p;
 }
 

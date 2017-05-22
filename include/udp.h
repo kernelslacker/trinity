@@ -96,6 +96,7 @@ struct msg_childspawned {
 
 struct msg_childexited {
 	struct trinity_msgchildhdr hdr;
+	unsigned long op_nr;
 };
 
 struct msg_childsignalled {
