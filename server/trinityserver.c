@@ -289,7 +289,7 @@ static void add_to_child_queue(void *data, int len)
 		if (childhdr->tp.tv_nsec > listpkt->tp.tv_nsec)
 			continue;
 
-		list_add(&pkt->list, node);
+		list_add(&pkt->list, node->prev);
 		goto done;
 	}
 
