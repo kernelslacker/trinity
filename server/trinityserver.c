@@ -64,12 +64,18 @@ static void * decoder_child_func(void *data)
 {
 	struct childdata *child = (struct childdata *) data;
 	struct list_head *node = NULL, *tmp;
+	int childno;
+	static unsigned long before;
+	int n;
 
 	while (1) {
+		n = 0;
+
 		pthread_mutex_lock(&child->packetmutex);
 		if (list_empty(&child->packets.list))
 			goto done;
 
+		before = child->packetcount;
 		list_for_each_safe(node, tmp, &child->packets.list) {
 			struct packet *currpkt;
 			struct trinity_msgchildhdr *childhdr;
@@ -79,6 +85,11 @@ static void * decoder_child_func(void *data)
 
 			currpkt = (struct packet *) node;
 			type = get_packet_type(currpkt);
+
+			childhdr = (struct trinity_msgchildhdr *) currpkt->data;
+			childno = childhdr->childno;
+
+			n++;
 
 			switch (type) {
 			case CHILD_SPAWNED:
@@ -156,6 +167,14 @@ static void * decoder_child_func(void *data)
 				continue;
 			}
 		}
+
+		if (before != child->packetcount) {
+			if (child->packetcount == 0)
+				goto done;
+
+			printf("pkts in queue for child %u: %d\n", childno, child->packetcount);
+		}
+
 done:
 		pthread_mutex_unlock(&child->packetmutex);
 
