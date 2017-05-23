@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <signal.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,13 +73,13 @@ static void * decoder_child_func(void *data)
 		list_for_each_safe(node, tmp, &child->packets.list) {
 			struct packet *currpkt;
 			struct trinity_msgchildhdr *childhdr;
+			struct msg_childexited *exithdr;
 			struct msg_childsignalled *sigmsg;
 			enum logmsgtypes type;
 
 			currpkt = (struct packet *) node;
 			type = get_packet_type(currpkt);
 
-			// The non syscall related messages have no ordering on each other asides from timestamp
 			switch (type) {
 			case CHILD_SPAWNED:
 				if (child->expecting_spawn == TRUE) {
@@ -89,11 +90,12 @@ static void * decoder_child_func(void *data)
 				continue;
 
 			case CHILD_EXITED:
-				// TODO: put lastop in the exit msg and wait until that op before processing this.
-				// TODO: check signalled->op_nr == expected-1
-				decode_this_packet(child, currpkt);
-				child->expecting_result = FALSE;
-				child->expecting_spawn = TRUE;
+				exithdr = (struct msg_childexited *) currpkt->data;
+				if (exithdr->op_nr == child->expected_seq + 1) {
+					decode_this_packet(child, currpkt);
+					child->expecting_result = FALSE;
+					child->expecting_spawn = TRUE;
+				}
 				continue;
 
 			case CHILD_SIGNALLED:
