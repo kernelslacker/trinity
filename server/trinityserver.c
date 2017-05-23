@@ -133,8 +133,7 @@ static void * decoder_child_func(void *data)
 
 			/* From here on, type can only be SYSCALL_PREP or SYSCALL_RESULT */
 
-			/* if the pid changed, before we gto a CHILD_SPAWNED, skip */
-			childhdr = (struct trinity_msgchildhdr *) currpkt->data;
+			/* if the pid changed, before we got a CHILD_SPAWNED, skip */
 			if (child->childpid != childhdr->pid)
 				continue;
 
