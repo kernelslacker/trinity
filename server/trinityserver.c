@@ -338,6 +338,8 @@ static void add_to_child_queue(void *data, int len)
 	if (childhdr->tp.tv_sec == listpkt->tp.tv_sec) {
 		if (childhdr->tp.tv_nsec > listpkt->tp.tv_nsec)
 			goto tail_add;
+		if (childhdr->tp.tv_nsec == listpkt->tp.tv_nsec)
+			goto drop_dupe;
 	}
 
 	/* crap, we've got something out of order, scan the list for the right place
@@ -350,6 +352,8 @@ static void add_to_child_queue(void *data, int len)
 			continue;
 		if (childhdr->tp.tv_nsec > listpkt->tp.tv_nsec)
 			continue;
+		if (childhdr->tp.tv_nsec == listpkt->tp.tv_nsec)
+			goto drop_dupe;
 
 		list_add(&pkt->list, node->prev);
 		goto done;
@@ -360,6 +364,12 @@ tail_add:
 	list_add_tail(&pkt->list, &child->packets.list);
 done:
 	child->packetcount++;
+	pthread_mutex_unlock(&child->packetmutex);
+	return;
+
+drop_dupe:
+	free(pkt->data);
+	free(pkt);
 	pthread_mutex_unlock(&child->packetmutex);
 }
 
