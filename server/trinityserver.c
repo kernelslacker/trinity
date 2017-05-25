@@ -306,7 +306,8 @@ static void add_to_child_queue(void *data, int len)
 	struct fuzzsession *fs = &session;
 	struct trinity_msgchildhdr *childhdr;
 	struct childdata *child;
-	struct list_head *node, *tmp;
+	struct list_head *node, *tmp, *tail;
+	struct packet *listpkt;
 
 	pkt->data = malloc(len);
 	if (pkt->data == NULL) {
@@ -327,8 +328,23 @@ static void add_to_child_queue(void *data, int len)
 	if (list_empty(&child->packets.list))
 		goto tail_add;
 
+	/* Can we just go at the end ? */
+	tail = child->packets.list.prev;
+	listpkt = (struct packet *) tail;
+
+	if (childhdr->tp.tv_sec > listpkt->tp.tv_sec)
+		goto tail_add;
+
+	if (childhdr->tp.tv_sec == listpkt->tp.tv_sec) {
+		if (childhdr->tp.tv_nsec > listpkt->tp.tv_nsec)
+			goto tail_add;
+	}
+
+	/* crap, we've got something out of order, scan the list for the right place
+	 * to insert it.   TODO: Might be quicker to search backwards from the tail
+	 */
 	list_for_each_safe(node, tmp, &child->packets.list) {
-		struct packet *listpkt = (struct packet *) node;
+		listpkt = (struct packet *) node;
 
 		if (childhdr->tp.tv_sec > listpkt->tp.tv_sec)
 			continue;
