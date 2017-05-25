@@ -63,7 +63,7 @@ static void decode_this_packet(struct childdata *child, struct packet *pkt)
 static void decode_one_child(struct childdata *child)
 {
 	struct list_head *node = NULL, *tmp;
-	int childno;
+	unsigned int childno;
 	int n = 0;
 
 	pthread_mutex_lock(&child->packetmutex);
@@ -162,7 +162,7 @@ static void decode_one_child(struct childdata *child)
 	}
 
 	if (child->packetcount != 0)
-		printf("pkts in queue for child %u: %d\n", childno, child->packetcount);
+		printf("pkts in queue for child %u: %u\n", childno, child->packetcount);
 done:
 	pthread_mutex_unlock(&child->packetmutex);
 
