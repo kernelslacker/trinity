@@ -7,9 +7,9 @@
 
 struct fuzzsession {
 	pid_t mainpid;
-	int num_children;
+	unsigned int num_children;
 	struct childdata children[MAX_CHILDREN];
-	pthread_t childthreads[MAX_CHILDREN];
+	pthread_t decodethread;
 
 	pthread_mutex_t packetmutex;
 	struct packet mainpackets;
