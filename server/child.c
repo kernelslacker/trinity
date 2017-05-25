@@ -30,8 +30,6 @@ char * decode_child_spawned(char *buf)
 
 	child = &session.children[childmsg->hdr.childno];
 	child->childpid = childmsg->hdr.pid;
-	child->expected_seq = 0;
-	child->expecting_result = FALSE;
 	return p;
 }
 

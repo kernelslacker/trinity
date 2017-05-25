@@ -63,8 +63,6 @@ static void decode_this_packet(struct childdata *child, struct packet *pkt)
 static void decode_one_child(struct childdata *child)
 {
 	struct list_head *node = NULL, *tmp;
-	unsigned int childno;
-	int n = 0;
 
 	pthread_mutex_lock(&child->packetmutex);
 	if (list_empty(&child->packets.list))
@@ -72,100 +70,13 @@ static void decode_one_child(struct childdata *child)
 
 	list_for_each_safe(node, tmp, &child->packets.list) {
 		struct packet *currpkt;
-		struct trinity_msgchildhdr *childhdr;
-		struct msg_childexited *exithdr;
-		struct msg_childsignalled *sigmsg;
-		enum logmsgtypes type;
 
 		currpkt = (struct packet *) node;
-		type = get_packet_type(currpkt);
 
-		childhdr = (struct trinity_msgchildhdr *) currpkt->data;
-		childno = childhdr->childno;
-
-		n++;
-
-		switch (type) {
-		case CHILD_SPAWNED:
-			if (child->expecting_spawn == TRUE) {
-				decode_this_packet(child, currpkt);
-				child->expecting_result = FALSE;
-				child->expecting_spawn = FALSE;
-			}
-			continue;
-
-		case CHILD_EXITED:
-			exithdr = (struct msg_childexited *) currpkt->data;
-			if (exithdr->op_nr == child->expected_seq + 1) {
-				decode_this_packet(child, currpkt);
-				child->expecting_result = FALSE;
-				child->expecting_spawn = TRUE;
-			}
-			continue;
-
-		case CHILD_SIGNALLED:
-			sigmsg = (struct msg_childsignalled *) currpkt->data;
-
-			if (sigmsg->op_nr == child->expected_seq) {
-				if (sigmsg->sig == SIGSEGV) {
-					child->expecting_spawn = TRUE;
-					child->expecting_result = FALSE;
-					child->expected_seq++;
-				}
-
-				if (sigmsg->sig == SIGALRM) {
-					child->expecting_result = FALSE;
-					child->expected_seq++;
-				}
-
-				decode_this_packet(child, currpkt);
-			}
-			continue;
-		default:
-			break;
-		}
-
-		/* From here on, type can only be SYSCALL_PREP or SYSCALL_RESULT */
-
-		/* if the pid changed, before we got a CHILD_SPAWNED, skip */
-		if (child->childpid != childhdr->pid)
-			continue;
-
-		if (type == SYSCALL_PREP) {
-			struct msg_syscallprep *scmsg;
-			if (child->expecting_result == TRUE)
-				continue;
-
-			scmsg = (struct msg_syscallprep *) currpkt->data;
-			if (scmsg->sequence_nr != child->expected_seq)
-				continue;
-
-			decode_this_packet(child, currpkt);
-			child->expecting_result = TRUE;
-			continue;
-		}
-
-		if (type == SYSCALL_RESULT) {
-			struct msg_syscallresult *srmsg;
-			if (child->expecting_result == FALSE)
-				continue;
-
-			srmsg = (struct msg_syscallresult *) currpkt->data;
-			if (srmsg->sequence_nr != child->expected_seq)
-				continue;
-
-			decode_this_packet(child, currpkt);
-			child->expecting_result = FALSE;
-			child->expected_seq++;
-			continue;
-		}
+		decode_this_packet(child, currpkt);
 	}
-
-	if (child->packetcount != 0)
-		printf("pkts in queue for child %u: %u\n", childno, child->packetcount);
 done:
 	pthread_mutex_unlock(&child->packetmutex);
-
 }
 
 static void * decoder_func(void *data)
@@ -178,7 +89,10 @@ static void * decoder_func(void *data)
 		for (i = 0; i < fs->num_children; i++) {
 			struct childdata *child = &fs->children[i];
 
-			decode_one_child(child);
+			if (pthread_mutex_trylock(&child->drainmutex) == 0) {
+				decode_one_child(child);
+				pthread_mutex_unlock(&child->drainmutex);
+			}
 		}
 		pthread_yield();
 	}
@@ -209,6 +123,7 @@ static void * decoder_main_func(void *data)
 			}
 		}
 		pthread_mutex_unlock(&fs->packetmutex);
+		pthread_yield();
 		//TODO: if main session exits, we should exit this thread.
 	}
 	return NULL;
@@ -243,12 +158,10 @@ static bool __handshake(void)
 		struct childdata *child = &session.children[i];
 
 		child->logfile = open_child_logfile(i);
-		child->expecting_spawn = TRUE;
-		child->expected_seq = 0;
-		child->expecting_result = FALSE;
 		INIT_LIST_HEAD(&child->packets.list);
 		child->packetcount = 0;
 		pthread_mutex_init(&child->packetmutex, NULL);
+		pthread_mutex_init(&child->drainmutex, NULL);
 	}
 
 	ret = pthread_create(&session.decodethread, NULL, decoder_func, &session);
@@ -373,6 +286,15 @@ drop_dupe:
 	pthread_mutex_unlock(&child->packetmutex);
 }
 
+static struct childdata * get_child_from_pkt(void *data)
+{
+	struct fuzzsession *fs = &session;
+	struct trinity_msgchildhdr *childhdr;
+
+	childhdr = (struct trinity_msgchildhdr *) data;
+	return &fs->children[childhdr->childno];
+}
+
 static void queue_object_msg(struct trinity_msgobjhdr *obj, int len)
 {
 	if (obj->global == TRUE)
@@ -388,7 +310,9 @@ static void * queue_packets(__unused__ void *data)
 	enum logmsgtypes type;
 
 	while (1) {
+		struct childdata *child;
 		int ret = readudp();
+
 		if (ret <= 0)
 			continue;
 
@@ -421,8 +345,24 @@ static void * queue_packets(__unused__ void *data)
 			break;
 
 		case CHILD_SPAWNED:
+			child = get_child_from_pkt(buf);
+			pthread_mutex_lock(&child->drainmutex);
+			add_to_child_queue(buf, len);
+			break;
+
 		case CHILD_EXITED:
+			add_to_child_queue(buf, len);
+			child = get_child_from_pkt(buf);
+			pthread_mutex_unlock(&child->drainmutex);
+			break;
+
 		case CHILD_SIGNALLED:
+			add_to_child_queue(buf, len);
+			//child = get_child_from_pkt(buf);
+			//FIXME: only if signal = child exits.
+			//pthread_mutex_unlock(&child->drainmutex);
+			break;
+
 		case SYSCALL_PREP:
 		case SYSCALL_RESULT:
 			add_to_child_queue(buf, len);
