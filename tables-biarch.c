@@ -423,7 +423,6 @@ void log_enabled_syscalls_biarch(void)
 	}
 
 	sendudp((char *) udpmsg, size);
-	printf("freeing %p\n", udpmsg);
 	free(udpmsg);
 
 	/* Now send the 32bit syscalls */
