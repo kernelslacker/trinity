@@ -30,7 +30,7 @@ void output(char level, const char *fmt, ...)
 	if (level >= quiet_level)
 		return;
 
-	if (level == CONT) {
+	if (level == (char)CONT) {
 		prefix = continuationtxt;
 		goto skip_pid;
 	}
