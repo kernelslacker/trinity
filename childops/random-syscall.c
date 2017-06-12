@@ -71,6 +71,7 @@ static bool choose_syscall_table(void)
 
 static bool set_syscall_nr(struct syscallrecord *rec)
 {
+	struct syscallentry *entry;
 	unsigned int syscallnr;
 	bool do32;
 
@@ -95,6 +96,12 @@ retry:
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE) {
 		deactivate_syscall(syscallnr, do32);
 		goto retry;
+	}
+
+	entry = get_syscall_entry(syscallnr, do32);
+	if (entry->flags & EXPENSIVE) {
+		if (!ONE_IN(1000))
+			goto retry;
 	}
 
 	/* critical section for shm updates. */
