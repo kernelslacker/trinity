@@ -171,6 +171,7 @@ struct syscalltable {
 #define NEED_ALARM		(1<<5)
 #define EXTRA_FORK		(1<<6)
 #define IGNORE_ENOSYS		(1<<7)
+#define EXPENSIVE		(1<<8)
 
 void do_syscall(struct syscallrecord *rec);
 void handle_syscall_ret(struct syscallrecord *rec);

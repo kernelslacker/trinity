@@ -8,6 +8,6 @@ struct syscallentry syscall_syncfs = {
 	.num_args = 1,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | EXPENSIVE,
 	.group = GROUP_VFS,
 };
