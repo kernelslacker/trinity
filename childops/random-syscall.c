@@ -120,43 +120,6 @@ retry:
 	return TRUE;
 }
 
-/*
-static bool do_syscall_in_child(struct syscallrecord *rec, struct childdata *child)
-{
-	pid_t pid;
-
-	pid = fork();
-	if (pid == 0) {
-		// child
-		do_syscall(rec);
-		_exit(EXIT_SUCCESS);
-	} else if (pid > 0) {
-		// parent
-		int childret = 0;
-		int childstatus;
-
-		// wait for child to exit, or kill it.
-		while (childret == 0) {
-
-			clock_gettime(CLOCK_MONOTONIC, &child->tp);
-
-			if (pid_alive(pid) == TRUE) {
-				kill_pid(pid);
-				childret = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-				if (childret == 0)
-					usleep(10000);
-			}
-		}
-		// and do the same work in the parent.
-		do_syscall(rec);
-		return TRUE;
-	} else {
-		// fork failed
-		return FALSE;
-	}
-}
-*/
-
 bool random_syscall(struct childdata *child)
 {
 	struct syscallrecord *rec;
@@ -174,12 +137,6 @@ bool random_syscall(struct childdata *child)
 
 	output_syscall_prefix(rec);
 
-/*
-	if (ONE_IN(100)) {
-		if (do_syscall_in_child(rec, child) == FALSE)
-			goto fail;
-	} else
-*/
 	do_syscall(rec);
 
 	output_syscall_postfix(rec);
@@ -187,6 +144,6 @@ bool random_syscall(struct childdata *child)
 	handle_syscall_ret(rec);
 
 	ret = TRUE;
-//fail:
+
 	return ret;
 }
