@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <linux/fiemap.h>
 #include <linux/fs.h>
+#include <linux/blktrace_api.h>
 #include <linux/ioctl.h>
 #include <asm/ioctls.h>
 #include "ioctls.h"
@@ -114,6 +115,132 @@ static const struct ioctl vfs_ioctls[] = {
 	{ .name = "FIONREAD", .request = FIONREAD, },
 	{ .name = "FS_IOC_RESVSP", .request = FS_IOC_RESVSP, },
 	{ .name = "FS_IOC_RESVSP64", .request = FS_IOC_RESVSP64, },
+#ifdef BLKROSET
+	{ .name = "BLKROSET", .request = BLKROSET, },
+#endif
+#ifdef BLKROGET
+	{ .name = "BLKROGET", .request = BLKROGET, },
+#endif
+#ifdef BLKRRPART
+	{ .name = "BLKRRPART", .request = BLKRRPART, },
+#endif
+#ifdef BLKGETSIZE
+	{ .name = "BLKGETSIZE", .request = BLKGETSIZE, },
+#endif
+#ifdef BLKFLSBUF
+	{ .name = "BLKFLSBUF", .request = BLKFLSBUF, },
+#endif
+#ifdef BLKRASET
+	{ .name = "BLKRASET", .request = BLKRASET, },
+#endif
+#ifdef BLKRAGET
+	{ .name = "BLKRAGET", .request = BLKRAGET, },
+#endif
+#ifdef BLKFRASET
+	{ .name = "BLKFRASET", .request = BLKFRASET, },
+#endif
+#ifdef BLKFRAGET
+	{ .name = "BLKFRAGET", .request = BLKFRAGET, },
+#endif
+#ifdef BLKSECTSET
+	{ .name = "BLKSECTSET", .request = BLKSECTSET, },
+#endif
+#ifdef BLKSECTGET
+	{ .name = "BLKSECTGET", .request = BLKSECTGET, },
+#endif
+#ifdef BLKSSZGET
+	{ .name = "BLKSSZGET", .request = BLKSSZGET, },
+#endif
+#ifdef BLKBSZGET
+	{ .name = "BLKBSZGET", .request = BLKBSZGET, },
+#endif
+#ifdef BLKBSZSET
+	{ .name = "BLKBSZSET", .request = BLKBSZSET, },
+#endif
+#ifdef BLKGETSIZE64
+	{ .name = "BLKGETSIZE64", .request = BLKGETSIZE64, },
+#endif
+#ifdef BLKTRACESETUP
+	{ .name = "BLKTRACESETUP", .request = BLKTRACESETUP, },
+#endif
+#ifdef BLKTRACESTART
+	{ .name = "BLKTRACESTART", .request = BLKTRACESTART, },
+#endif
+#ifdef BLKTRACESTOP
+	{ .name = "BLKTRACESTOP", .request = BLKTRACESTOP, },
+#endif
+#ifdef BLKTRACETEARDOWN
+	{ .name = "BLKTRACETEARDOWN", .request = BLKTRACETEARDOWN, },
+#endif
+#ifdef BLKDISCARD
+	{ .name = "BLKDISCARD", .request = BLKDISCARD, },
+#endif
+#ifdef BLKIOMIN
+	{ .name = "BLKIOMIN", .request = BLKIOMIN, },
+#endif
+#ifdef BLKIOOPT
+	{ .name = "BLKIOOPT", .request = BLKIOOPT, },
+#endif
+#ifdef BLKALIGNOFF
+	{ .name = "BLKALIGNOFF", .request = BLKALIGNOFF, },
+#endif
+#ifdef BLKPBSZGET
+	{ .name = "BLKPBSZGET", .request = BLKPBSZGET, },
+#endif
+#ifdef BLKDISCARDZEROES
+	{ .name = "BLKDISCARDZEROES", .request = BLKDISCARDZEROES, },
+#endif
+#ifdef BLKSECDISCARD
+	{ .name = "BLKSECDISCARD", .request = BLKSECDISCARD, },
+#endif
+#ifdef BLKROTATIONAL
+	{ .name = "BLKROTATIONAL", .request = BLKROTATIONAL, },
+#endif
+#ifdef BLKZEROOUT
+	{ .name = "BLKZEROOUT", .request = BLKZEROOUT, },
+#endif
+#ifdef FITRIM
+	{ .name = "FITRIM", .request = FITRIM, },
+#endif
+#ifdef FS_IOC_GETFLAGS
+	{ .name = "FS_IOC_GETFLAGS", .request = FS_IOC_GETFLAGS, },
+#endif
+#ifdef FS_IOC_SETFLAGS
+	{ .name = "FS_IOC_SETFLAGS", .request = FS_IOC_SETFLAGS, },
+#endif
+#ifdef FS_IOC_GETVERSION
+	{ .name = "FS_IOC_GETVERSION", .request = FS_IOC_GETVERSION, },
+#endif
+#ifdef FS_IOC_SETVERSION
+	{ .name = "FS_IOC_SETVERSION", .request = FS_IOC_SETVERSION, },
+#endif
+#ifdef FS_IOC32_GETFLAGS
+	{ .name = "FS_IOC32_GETFLAGS", .request = FS_IOC32_GETFLAGS, },
+#endif
+#ifdef FS_IOC32_SETFLAGS
+	{ .name = "FS_IOC32_SETFLAGS", .request = FS_IOC32_SETFLAGS, },
+#endif
+#ifdef FS_IOC32_GETVERSION
+	{ .name = "FS_IOC32_GETVERSION", .request = FS_IOC32_GETVERSION, },
+#endif
+#ifdef FS_IOC32_SETVERSION
+	{ .name = "FS_IOC32_SETVERSION", .request = FS_IOC32_SETVERSION, },
+#endif
+#ifdef FS_IOC_FSGETXATTR
+	{ .name = "FS_IOC_FSGETXATTR", .request = FS_IOC_FSGETXATTR, },
+#endif
+#ifdef FS_IOC_FSSETXATTR
+	{ .name = "FS_IOC_FSSETXATTR", .request = FS_IOC_FSSETXATTR, },
+#endif
+#ifdef FS_IOC_SET_ENCRYPTION_POLICY
+	{ .name = "FS_IOC_SET_ENCRYPTION_POLICY", .request = FS_IOC_SET_ENCRYPTION_POLICY, },
+#endif
+#ifdef FS_IOC_GET_ENCRYPTION_PWSALT
+	{ .name = "FS_IOC_GET_ENCRYPTION_PWSALT", .request = FS_IOC_GET_ENCRYPTION_PWSALT, },
+#endif
+#ifdef FS_IOC_GET_ENCRYPTION_POLICY
+	{ .name = "FS_IOC_GET_ENCRYPTION_POLICY", .request = FS_IOC_GET_ENCRYPTION_POLICY, },
+#endif
 };
 
 static const struct ioctl_group vfs_grp = {
