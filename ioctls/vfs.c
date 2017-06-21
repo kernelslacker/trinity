@@ -2,6 +2,9 @@
 #include <linux/fiemap.h>
 #include <linux/fs.h>
 #include <linux/blktrace_api.h>
+#ifdef USE_FSMAP
+#include <linux/fsmap.h>
+#endif
 #include <linux/ioctl.h>
 #include <asm/ioctls.h>
 #include "ioctls.h"
@@ -240,6 +243,9 @@ static const struct ioctl vfs_ioctls[] = {
 #endif
 #ifdef FS_IOC_GET_ENCRYPTION_POLICY
 	{ .name = "FS_IOC_GET_ENCRYPTION_POLICY", .request = FS_IOC_GET_ENCRYPTION_POLICY, },
+#endif
+#ifdef FS_IOC_GETFSMAP
+	{ .name = "FS_IOC_GETFSMAP", .request = FS_IOC_GETFSMAP, },
 #endif
 };
 
