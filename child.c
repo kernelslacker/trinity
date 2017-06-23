@@ -527,6 +527,13 @@ void child_process(struct childdata *child, int childno)
 
 		if (ops->flags & ONESHOT)
 			loops = 0;
+
+		if (syscalls_todo) {
+			if (shm->stats.op_count >= syscalls_todo) {
+				shm->exit_reason = EXIT_REACHED_COUNT;
+				goto out;
+			}
+		}
 	}
 
 	enable_coredumps();

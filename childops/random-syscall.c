@@ -110,13 +110,6 @@ retry:
 	rec->nr = syscallnr;
 	unlock(&rec->lock);
 
-	if (syscalls_todo) {
-		if (shm->stats.op_count >= syscalls_todo) {
-			shm->exit_reason = EXIT_REACHED_COUNT;
-			return FAIL;
-		}
-	}
-
 	return TRUE;
 }
 
