@@ -101,7 +101,7 @@ void reseed(void)
 	}
 
 	/* We are reseeding. */
-	shm->seed = rnd();
+	shm->seed += max_children;
 
 	init_msghdr(&reseedmsg.hdr, RESEED);
 	reseedmsg.new_seed = shm->seed;
