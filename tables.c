@@ -673,15 +673,14 @@ int munge_tables(void)
  */
 struct syscallentry * get_syscall_entry(unsigned int callno, bool do32)
 {
-	unsigned int offset = callno - SYSCALL_OFFSET;
 	if (biarch == FALSE)
-		return syscalls[offset].entry;
+		return syscalls[callno].entry;
 
 	/* biarch case */
 	if (do32 == TRUE)
-		return syscalls_32bit[offset].entry;
+		return syscalls_32bit[callno].entry;
 	else
-		return syscalls_64bit[offset].entry;
+		return syscalls_64bit[callno].entry;
 }
 
 /*
