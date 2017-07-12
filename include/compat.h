@@ -558,6 +558,14 @@ enum kcmp_type {
 #define TCP_FASTOPEN_CONNECT	30
 #endif
 
+#ifndef TCP_ULP
+#define TCP_ULP			31
+#endif
+
+#ifndef TCP_MD5SIG_EXT
+#define TCP_MD5SIG_EXT		32
+#endif
+
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15
