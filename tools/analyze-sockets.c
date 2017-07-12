@@ -133,6 +133,7 @@ static const char * get_proto_name(unsigned int family, unsigned int proto)
 		{ "NETLINK_ECRYPTFS", NETLINK_ECRYPTFS },
 		{ "NETLINK_RDMA", NETLINK_RDMA },
 		{ "NETLINK_CRYPTO", NETLINK_CRYPTO },
+		{ "NETLINK_SMC", NETLINK_SMC },
 	};
 
 	switch (family) {

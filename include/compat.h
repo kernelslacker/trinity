@@ -275,6 +275,9 @@ enum {
 #ifndef NETLINK_CRYPTO
 #define NETLINK_CRYPTO 21
 #endif
+#ifndef NETLINK_SMC
+#define NETLINK_SMC 22
+#endif
 #ifndef NETLINK_RX_RING
 #define NETLINK_RX_RING 6
 #define NETLINK_TX_RING 7
