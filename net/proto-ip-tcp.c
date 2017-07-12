@@ -19,4 +19,11 @@ static const unsigned int tcp_opts[] = {
 void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->optname = RAND_ARRAY(tcp_opts);
+
+	if (so->optname == TCP_ULP) {
+		char *ptr = (char *) so->optval;
+
+		sprintf(ptr, "tls");
+		so->optlen = sizeof("tls");
+	}
 }
