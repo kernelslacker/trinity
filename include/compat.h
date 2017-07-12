@@ -496,6 +496,33 @@ enum kcmp_type {
 #define SO_CNX_ADVICE 53
 #endif
 
+#ifndef SCM_TIMESTAMPING_OPT_STATS
+#define SCM_TIMESTAMPING_OPT_STATS      54
+#endif
+
+#ifndef SO_MEMINFO
+#define SO_MEMINFO              55
+#endif
+
+#ifndef SO_INCOMING_NAPI_ID
+#define SO_INCOMING_NAPI_ID     56
+#endif
+
+#ifndef SO_COOKIE
+#define SO_COOKIE               57
+#endif
+
+#ifndef SCM_TIMESTAMPING_PKTINFO
+#define SCM_TIMESTAMPING_PKTINFO        58
+#endif
+
+#ifndef SO_PEERGROUPS
+#define SO_PEERGROUPS           59
+#endif
+
+
+
+
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
 #define TCP_COOKIE_TRANSACTIONS	15
