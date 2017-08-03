@@ -805,6 +805,10 @@ enum kcmp_type {
 #define SOL_RFCOMM      18
 #endif
 
+#ifndef SOL_TLS
+#define SOL_TLS		282
+#endif
+
 /* net/bluetooth/hci.h */
 #ifndef HCI_DATA_DIR
 #define HCI_DATA_DIR    1

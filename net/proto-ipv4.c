@@ -20,6 +20,7 @@
 #include "compat.h"
 #include "net.h"
 #include "random.h"
+#include "tls.h"
 #include "uid.h"
 #include "utils.h"	// ARRAY_SIZE
 
@@ -319,14 +320,34 @@ static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet
 	ip_setsockopt(so, triplet);
 }
 
+static void call_ulp_sso_ptr(struct sockopt *so)
+{
+	// For now, we only support TLS sockets. Extend if/when more ULPs appear.
+
+	struct tls12_crypto_info_aes_gcm_128 *crypto_info;
+
+	crypto_info = (struct tls12_crypto_info_aes_gcm_128 *) so->optval;
+
+	crypto_info->info.version = TLS_1_2_VERSION;
+	crypto_info->info.cipher_type = TLS_CIPHER_AES_GCM_128;
+
+	so->level = SOL_TLS;
+	so->optname = TLS_TX;
+	so->optlen = sizeof(struct tls12_crypto_info_aes_gcm_128);
+}
+
 static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
 	so->level = SOL_IP;
 
-	if (RAND_BOOL())
-		ip_setsockopt(so, triplet);
-	else
-		call_inet_sso_ptr(so, triplet);
+	switch (rnd() % 3) {
+	case 0:	ip_setsockopt(so, triplet);
+		break;
+	case 1:	call_inet_sso_ptr(so, triplet);
+		break;
+	case 2:	call_ulp_sso_ptr(so);
+		break;
+	}
 }
 
 static struct socket_triplet ipv4_triplets[] = {

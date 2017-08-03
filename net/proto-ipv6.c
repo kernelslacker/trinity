@@ -1,4 +1,3 @@
-
 #ifdef USE_IPV6
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -16,6 +15,7 @@
 #include "arch.h"
 #include "net.h"
 #include "random.h"
+#include "tls.h"
 #include "utils.h"	// ARRAY_SIZE
 #include "uid.h"
 #include "compat.h"
@@ -162,7 +162,7 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_RECVFRAGSIZE, },
 };
 
-static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+static void __inet6_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
 
@@ -191,7 +191,29 @@ static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	case IPV6_XFRM_POLICY:
 		so->optlen = rnd() % page_size;
 		break;
+	}
+}
 
+static void inet6_ulp_setsockopt(struct sockopt *so)
+{
+	// For now, we only support TLS sockets. Extend if/when more ULPs appear.
+	struct tls12_crypto_info_aes_gcm_128 *crypto_info;
+
+	crypto_info = (struct tls12_crypto_info_aes_gcm_128 *) so->optval;
+	crypto_info->info.version = TLS_1_2_VERSION;
+	crypto_info->info.cipher_type = TLS_CIPHER_AES_GCM_128;
+
+	so->level = SOL_TLS;
+	so->optname = TLS_TX;
+	so->optlen = sizeof(struct tls12_crypto_info_aes_gcm_128);
+}
+
+static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+{
+	if (RAND_BOOL()) {
+		__inet6_setsockopt(so);
+	} else {
+		inet6_ulp_setsockopt(so);
 	}
 }
 
