@@ -260,7 +260,7 @@ static void dump_pid_stack(int pid)
 
 	while (!(feof(fp))) {
 		size_t n = 0;
-		char *line;
+		char *line = NULL;
 		if (getline(&line, &n, fp) != -1) {
 			output(0, "pid %d stack: %s", pid, line);
 			free(line);
