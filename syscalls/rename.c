@@ -40,9 +40,10 @@ struct syscallentry syscall_renameat = {
 
 #define RENAME_NOREPLACE        (1 << 0)        /* Don't overwrite target */
 #define RENAME_EXCHANGE         (1 << 1)        /* Exchange source and dest */
+#define RENAME_WHITEOUT         (1 << 2)	/* Whiteout source */
 
 static unsigned long renameat2_flags[] = {
-	RENAME_NOREPLACE, RENAME_EXCHANGE,
+	RENAME_NOREPLACE, RENAME_EXCHANGE, RENAME_WHITEOUT,
 };
 
 struct syscallentry syscall_renameat2 = {
