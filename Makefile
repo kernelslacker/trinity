@@ -22,11 +22,11 @@ CFLAGS += -Wall -Wextra -I. -Iinclude/ -include config.h -Wimplicit -D_GNU_SOURC
 CCSTD := $(shell if $(CC) -std=gnu11 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-std=gnu11"; else echo "-std=gnu99"; fi)
 CFLAGS += $(CCSTD)
 
-# -Werror only enabled during development, and on gcc 5.1+
+# -Werror only enabled during development, and on gcc 7+
 ifeq ($(DEVEL), 1)
 CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
 CPP_MINOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f2)
-WERROR	:= $(shell if [ $(CPP_MAJOR) -eq 5 -a $(CPP_MINOR) -ge 1 ] || [ $(CPP_MAJOR) -ge 6 ] ; then echo "-Werror"; else echo ""; fi)
+WERROR	:= $(shell if [ $(CPP_MAJOR) -ge 7 ] ; then echo "-Werror"; else echo ""; fi)
 CFLAGS	+= $(WERROR)
 endif
 
