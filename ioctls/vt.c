@@ -2,7 +2,7 @@
 #include <sys/ioctl.h>
 #include <linux/kd.h>
 #include <linux/serial.h>
-#include <sys/termios.h>
+#include <termios.h>
 
 #include "utils.h"
 #include "ioctls.h"
