@@ -1,3 +1,4 @@
+#ifdef USE_IPX
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -43,3 +44,5 @@ const struct netproto proto_ipx = {
 	.valid_triplets = ipx_triplet,
 	.nr_triplets = ARRAY_SIZE(ipx_triplet),
 };
+
+#endif

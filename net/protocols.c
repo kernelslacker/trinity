@@ -8,7 +8,9 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 #ifdef USE_NETAX25
 	[PF_AX25] = { .proto = &proto_ax25 },
 #endif
+#ifdef USE_IPX
 	[PF_IPX] = { .proto = &proto_ipx },
+#endif
 #ifdef USE_APPLETALK
 	[PF_APPLETALK] = { .proto = &proto_appletalk },
 #endif
