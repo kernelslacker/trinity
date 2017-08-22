@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/socket.h>
+
 /* bits/eventfd.h */
 #ifndef EFD_SEMAPHORE
 #define EFD_SEMAPHORE 1
@@ -836,7 +838,6 @@ enum kcmp_type {
 
 /* linux/nfc.h */
 #ifndef sockaddr_nfc
-#include <bits/sockaddr.h>
 #include <linux/types.h>
 
 struct sockaddr_nfc {

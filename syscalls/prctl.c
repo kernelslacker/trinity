@@ -4,7 +4,6 @@
  */
 
 #include <stdlib.h>
-#include <linux/prctl.h>
 #ifdef USE_SECCOMP
 #include <linux/seccomp.h>
 #endif
