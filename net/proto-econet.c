@@ -1,3 +1,4 @@
+#ifdef USE_NETECONET
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -36,3 +37,5 @@ const struct netproto proto_econet = {
 	.valid_triplets = econet_triplet,
 	.nr_triplets = ARRAY_SIZE(econet_triplet),
 };
+
+#endif

@@ -16,7 +16,9 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 #endif
 	[PF_DECnet] = { .proto = &proto_decnet },
 	[PF_PACKET] = { .proto = &proto_packet },
+#ifdef USE_NETECONET
 	[PF_ECONET] = { .proto = &proto_econet },
+#endif
 #ifdef USE_RDS
 	[PF_RDS] = { .proto = &proto_rds },
 #endif
