@@ -12,6 +12,10 @@
 #include "sanitise.h"
 #include "utils.h"
 
+#ifndef __NFDBITS
+#define __NFDBITS NFDBITS
+#endif
+
 static void sanitise_select(struct syscallrecord *rec)
 {
 	unsigned int i;
