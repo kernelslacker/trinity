@@ -1,3 +1,4 @@
+#ifdef USE_NETAX25
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -53,3 +54,4 @@ const struct netproto proto_ax25 = {
 	.valid_triplets = ax25_triplets,
 	.nr_triplets = ARRAY_SIZE(ax25_triplets),
 };
+#endif

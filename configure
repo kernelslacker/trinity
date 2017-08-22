@@ -306,6 +306,7 @@ check_header netatalk/at.h USE_APPLETALK
 check_header netrom/netrom.h USE_NETROM
 check_header netrose/rose.h USE_ROSE
 check_header neteconet/ec.h USE_NETECONET
+check_header netax25/ax25.h USE_NETAX25
 
 rm -f "$TMP" "$TMP.log" "$TMP.c"
 
