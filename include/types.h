@@ -1,8 +1,8 @@
 #pragma once
 
-#include <sys/types.h>
+#include <stdint.h>
 
 typedef enum { FALSE = 0, TRUE = 1 } bool;
 
-typedef __uint32_t u32;
-typedef __uint64_t u64;
+typedef uint32_t u32;
+typedef uint64_t u64;
