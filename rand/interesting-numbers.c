@@ -57,7 +57,7 @@ static unsigned int get_interesting_32bit_value(void)
 	}
 }
 
-#if __WORDSIZE != 32
+#if WORD_BIT != 32
 static unsigned long per_arch_interesting_addr(unsigned long low)
 {
 	int i = 0;
@@ -77,7 +77,7 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 
 	return i | low;
 }
-#endif	/* __WORDSIZE */
+#endif	/* WORD_BIT */
 
 unsigned long get_interesting_value(void)
 {
@@ -93,7 +93,7 @@ unsigned long get_interesting_value(void)
 	}
 
 	low = (rnd() & 0xf) ? low : plus_minus_two(low);	// 1 in 16 call plus_minus_two
-#if __WORDSIZE != 32
+#if WORD_BIT != 32
 
 	if (RAND_BOOL()) {	// FIXME: This should likely be less aggressive than 50/50
 		switch (rnd() % 11) {
@@ -111,6 +111,6 @@ unsigned long get_interesting_value(void)
 		}
 	}
 
-#endif	/* __WORDSIZE */
+#endif	/* WORD_BIT */
 	return low;
 }

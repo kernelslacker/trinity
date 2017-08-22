@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 
-#if __WORDSIZE == 64
+#if WORD_BIT == 64
 
 /* arch/sh/kernel/syscalls_64.S */
 struct syscalltable syscalls_sh[] = {

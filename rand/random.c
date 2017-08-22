@@ -39,12 +39,12 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 }
 
 /*
- * Pick a random power of two between 2^0 and 2^(__WORDSIZE-1)
+ * Pick a random power of two between 2^0 and 2^(WORD_BIT-1)
  */
 unsigned long rand_single_bit(unsigned char size)
 {
-	if (size > __WORDSIZE)
-		size = __WORDSIZE;
+	if (size > WORD_BIT)
+		size = WORD_BIT;
 
 	return (1UL << (rnd() % size));
 }
@@ -73,7 +73,7 @@ static unsigned long rept_byte(void)
 
 	r = (r << 8) | r;
 	r = (r << 16) | r;
-#if __WORDSIZE == 64
+#if WORD_BIT == 64
 	r = (r << 32) | r;
 #endif
 	return r;
@@ -243,7 +243,7 @@ u64 rand64(void)
 
 		rounds = rnd() % 4;
 		for (i = 0; i < rounds; i++)
-			r |= (1UL << ((__WORDSIZE - 1) - (rnd() % 8)));
+			r |= (1UL << ((WORD_BIT - 1) - (rnd() % 8)));
 	}
 
 	/* Sometimes flip sign */

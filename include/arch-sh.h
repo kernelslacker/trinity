@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#if __WORDSIZE == 64
+#if WORD_BIT == 64
 #define KERNEL_ADDR             0xfffff80000000000
 #define MODULE_ADDR		0xffffffffa0000000L	// FIXME: Placeholder
 #define TASK_SIZE               ~0UL

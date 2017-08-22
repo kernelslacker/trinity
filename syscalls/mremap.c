@@ -33,7 +33,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
 
 	if (rec->a4 & MREMAP_FIXED) {
 		unsigned long align = RAND_ARRAY(alignments);
-		unsigned int shift = (__WORDSIZE / 2) - 1;
+		unsigned int shift = (WORD_BIT / 2) - 1;
 
 		newaddr = RAND_BYTE();
 		newaddr <<= shift;
