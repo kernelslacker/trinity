@@ -17,6 +17,13 @@
 #include "uid.h"
 #include "utils.h"
 
+#ifndef FTW_ACTIONRETVAL
+#define FTW_ACTIONRETVAL 0
+#define FTW_CONTINUE 0
+#define FTW_SKIP_SUBTREE 0
+#define FTW_STOP 1
+#endif
+
 unsigned int files_in_index = 0;
 const char **fileindex;
 
@@ -183,7 +190,6 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 
 	return FTW_CONTINUE;
 }
-
 
 static void open_fds_from_path(const char *dirpath)
 {
