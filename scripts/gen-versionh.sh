@@ -48,3 +48,5 @@ else
   # devel=0 : release version.
   makefilever
 fi
+
+touch ${HEADER}

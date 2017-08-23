@@ -72,9 +72,6 @@ QUIET_CC = $(Q:@=@echo    '  CC	'$@;)
 
 all: trinity
 
-version:
-	@scripts/gen-versionh.sh
-
 test:
 	@if [ ! -f config.h ]; then  echo "[1;31mRun configure.sh first.[0m" ; exit; fi
 
@@ -91,6 +88,8 @@ SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
 		   (i?86*) echo syscalls/x86/*.c \
 				syscalls/x86/i386/*.c;; \
 		   esac)
+
+VERSION_H	:= include/version.h
 
 HEADERS		:= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 
@@ -118,13 +117,16 @@ DEPDIR= .deps
 
 -include $(SRCS:%.c=$(DEPDIR)/%.d)
 
-trinity: version test $(OBJS) $(HEADERS)
+$(VERSION_H): scripts/gen-versionh.sh Makefile $(wildcard .git)
+	@scripts/gen-versionh.sh
+
+trinity: test $(OBJS) $(HEADERS)
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS) $(LDLIBS)
 	@mkdir -p tmp
 
 df = $(DEPDIR)/$(*D)/$(*F)
 
-%.o : %.c
+%.o : %.c | $(VERSION_H)
 	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ -c $<
 	@mkdir -p $(DEPDIR)/$(*D)
 	@$(CC) -MM $(CFLAGS) $*.c > $(df).d
@@ -141,7 +143,7 @@ clean:
 	@rm -f tags
 	@rm -rf $(DEPDIR)/*
 	@rm -rf trinity-coverity.tar.xz cov-int
-	@rm -f include/version.h
+	@rm -f $(VERSION_H)
 
 tag:
 	@git tag -a v$(VERSION) -m "$(VERSION) release."
