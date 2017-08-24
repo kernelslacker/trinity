@@ -167,6 +167,7 @@ static void do_extrafork(struct syscallrecord *rec)
 	if (pid_alive(extrapid) == TRUE)
 		usleep(100);
 
+	lock(&rec->lock);
 	while (pid == 0) {
 		int childstatus;
 
@@ -175,6 +176,7 @@ static void do_extrafork(struct syscallrecord *rec)
 			kill(extrapid, SIGKILL);
 		usleep(1000);
 	}
+	unlock(&rec->lock);
 }
 
 
