@@ -547,6 +547,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	case SIGPIPE:
 	case SIGABRT:
 	case SIGBUS:
+	case SIGILL:
 		if (stop == TRUE)
 			debugf("Child %d (pid %d) was stopped by %s\n",
 					childno, pid, strsignal(WSTOPSIG(childstatus)));
