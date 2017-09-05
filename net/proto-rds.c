@@ -1,10 +1,7 @@
-#include <stdlib.h>
-#include "net.h"
-
 #ifdef USE_RDS
 #include <linux/rds.h>
-#endif
-
+#include <stdlib.h>
+#include "net.h"
 #include "compat.h"
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY
@@ -23,7 +20,6 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_in);
 }
 
-#ifdef USE_RDS
 static const unsigned int rds_opts[] = {
 	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
 	4, /* deprecated RDS_BARRIER 4 */
@@ -49,9 +45,4 @@ const struct netproto proto_rds = {
 	.valid_triplets = rds_triplet,
 	.nr_triplets = ARRAY_SIZE(rds_triplet),
 };
-#else
-/* stub if we are built on something without RDS headers */
-void rds_setsockopt(struct sockopt *so)
-{
-}
 #endif	/* USE_RDS */
