@@ -308,6 +308,7 @@ static void * queue_packets(__unused__ void *data)
 {
 	int len;
 	enum logmsgtypes type;
+	unsigned long numpkts = 0;
 
 	while (1) {
 		struct childdata *child;
@@ -317,6 +318,9 @@ static void * queue_packets(__unused__ void *data)
 			continue;
 
 		len = ret;
+
+		numpkts++;
+		printf("RX:%lu\r", numpkts);
 
 		/* We may see a new handshake appear at any time
 		 * if a client dies without sending a 'main has exited' message.
