@@ -1,4 +1,6 @@
 #ifdef USE_RDS
+#include <sys/socket.h>
+#include <stdint.h>
 #include <linux/rds.h>
 #include <stdlib.h>
 #include "net.h"
