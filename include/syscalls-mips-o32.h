@@ -371,4 +371,15 @@ struct syscalltable syscalls_mips[] = {
 #else
 		{ .entry = NULL },
 #endif
+		{ .entry = &syscall_execveat },
+		{ .entry = &syscall_userfaultfd },
+		{ .entry = &syscall_membarrier },
+		{ .entry = &syscall_mlock2 },
+		{ .entry = &syscall_copy_file_range },	/* 4360 */
+		{ .entry = &syscall_preadv2 },
+		{ .entry = &syscall_pwritev2 },
+		{ .entry = &syscall_pkey_mprotect },
+		{ .entry = &syscall_pkey_alloc },
+		{ .entry = &syscall_pkey_free },	/* 4365 */
+		{ .entry = &syscall_statx },
 };
