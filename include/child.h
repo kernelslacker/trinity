@@ -19,6 +19,10 @@ struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
 
+	/* log file related stuff */
+	FILE *logfile;
+	bool logdirty;
+
 	/* ONLY to be read by main. */
 	FILE *pidstatfile;
 

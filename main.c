@@ -12,6 +12,7 @@
 #include "child.h"
 #include "debug.h"
 #include "ftrace.h"
+#include "log.h"
 #include "params.h"
 #include "pids.h"
 #include "post-mortem.h"
@@ -184,7 +185,7 @@ static void kill_all_kids(void)
 
 /* if the first arg was an fd, find out which one it was.
  * Call with syscallrecord lock held. */
-unsigned int check_if_fd(struct syscallrecord *rec)
+unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
 	unsigned int fd;
@@ -203,6 +204,14 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 	/* if it's out of range, it's not going to be valid. */
 	if (fd > 1024)
 		return FALSE;
+
+	if (logging == LOGGING_FILES) {
+		if (child->logfile == NULL)
+			return FALSE;
+
+		if (fd <= (unsigned int) fileno(child->logfile))
+			return FALSE;
+	}
 
 	return TRUE;
 }
@@ -308,7 +317,7 @@ static void stuck_syscall_info(struct childdata *child)
 
 	/* we can only be 'stuck' if we're still doing the syscall. */
 	if (state == BEFORE) {
-		if (check_if_fd(rec) == TRUE) {
+		if (check_if_fd(child, rec) == TRUE) {
 			sprintf(fdstr, "(fd = %u)", (unsigned int) rec->a1);
 			shm->fd_lifetime = 0;
 			//close(rec->a1);

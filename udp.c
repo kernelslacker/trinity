@@ -129,7 +129,7 @@ static bool handshake(void)
 	return FALSE;
 }
 
-void init_logging(char *optarg)
+void init_udp_logging(char *optarg)
 {
 	struct hostent *he;
 	struct sockaddr_in udpclient;
@@ -196,7 +196,7 @@ void init_logging(char *optarg)
 	}
 }
 
-void shutdown_logging(void)
+void shutdown_udp_logging(void)
 {
 	if (logging_enabled == FALSE)
 		return;

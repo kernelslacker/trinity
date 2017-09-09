@@ -74,8 +74,8 @@ void init_msghdr(struct trinity_msghdr *hdr, enum logmsgtypes type);
 void init_msgobjhdr(struct trinity_msgobjhdr *hdr, enum logmsgtypes type, bool global, struct object *obj);
 void init_msgchildhdr(struct trinity_msgchildhdr *hdr, enum logmsgtypes type, pid_t pid, int childno);
 
-void init_logging(char *optarg);
-void shutdown_logging(void);
+void init_udp_logging(char *optarg);
+void shutdown_udp_logging(void);
 void sendudp(char *buffer, size_t len);
 
 struct msg_mainstarted {

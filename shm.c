@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include "arch.h"
 #include "child.h"
+#include "log.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -77,6 +78,7 @@ void init_shm(void)
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));
 
 		child->num = i;
+		init_child_logging(child);
 	}
 	mprotect(shm->children, childptrslen, PROT_READ);
 }

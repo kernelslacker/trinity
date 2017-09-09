@@ -9,6 +9,7 @@
 #include "bdevs.h"
 #include "child.h"
 #include "ftrace.h"
+#include "log.h"
 #include "net.h"
 #include "params.h"
 #include "domains.h"
@@ -55,6 +56,9 @@ char *specific_domain_optarg = NULL;
 
 char *victim_path = NULL;
 
+int logging = LOGGING_FILES;
+char *logging_args = NULL;
+
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
 bool kernel_taint_param_occured = FALSE;
 
@@ -79,7 +83,7 @@ static void usage(void)
 	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
-	outputerr(" --logging,-l <hostname> : log over udp to a remote trinity server.\n");
+	outputerr(" --logging,-l [off, <hostname>] : disable logging to files, or log over udp to a remote trinity server.\n");
 	outputerr(" --domain,-P: specify specific network domain for sockets.\n");	//FIXME: P used to be 'proto' pick something better.
 	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
@@ -210,9 +214,11 @@ void parse_args(int argc, char *argv[])
 
 		case 'l':
 			if (!strcmp(optarg, "off")) {
-				outputerr("The -l parameter has changed, and now takes a hostname as an argument. (logging is off by default now)\n");
-				exit(EXIT_FAILURE);
+				logging = LOGGING_DISABLED;
+				break;
 			}
+			// fallthrough, and try the arg as a hostname.
+			logging = LOGGING_UDP;
 			logging_args = strdup(optarg);
 			break;
 

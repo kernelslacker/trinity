@@ -16,6 +16,7 @@
 #include "arch.h"
 #include "child.h"
 #include "list.h"
+#include "log.h"
 #include "maps.h"
 #include "params.h"
 #include "pids.h"
@@ -200,6 +201,7 @@ static void oom_score_adj(int adj)
 void clean_childdata(struct childdata *child)
 {
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
+	child->logdirty = FALSE;
 	child->seed = 0;
 	child->kill_count = 0;
 	child->dontkillme = FALSE;
@@ -404,7 +406,7 @@ static bool handle_sigreturn(int sigwas)
 
 	/* Check if we're blocked because we were stuck on an fd. */
 	lock(&rec->lock);
-	if (check_if_fd(rec) == TRUE) {
+	if (check_if_fd(child, rec) == TRUE) {
 		/* avoid doing it again from other threads. */
 		shm->fd_lifetime = 0;
 
@@ -548,6 +550,7 @@ void child_process(struct childdata *child, int childno)
 	}
 
 out:
+	shutdown_child_logging(child);
 
 	debugf("child %d %d exiting.\n", childno, getpid());
 }

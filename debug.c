@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
+#include "log.h"
 #include "params.h"
 #include "pids.h"
 #include "shm.h"
@@ -107,6 +108,9 @@ void dump_childdata(struct childdata *child)
 
 	output(0, "syscall: %p\n", &child->syscall);
 	dump_syscallrec(&child->syscall);
+
+	if (logging == LOGGING_FILES)
+		output(0, "logfile: %p (dirty:%d)\n", child->logfile, child->logdirty);
 
 	output(0, "objects: %p\n", child->objects);
 	//TODO: dump each objhead
