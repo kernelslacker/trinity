@@ -12,8 +12,6 @@
 
 FILE *mainlogfile;
 
-static bool logfiles_opened = FALSE;
-
 static FILE *open_logfile(const char *logfilename)
 {
 	FILE *file;
@@ -38,8 +36,6 @@ void open_main_logfile(void)
 	mainlogfile = open_logfile("trinity.log");
 	if (!mainlogfile)
 		exit(EXIT_FAILURE);
-
-	logfiles_opened = TRUE;	//FIXME: This is a bit crap
 }
 
 void open_child_logfile(struct childdata *child)
@@ -73,9 +69,6 @@ FILE *find_logfile_handle(void)
 {
 	struct childdata *child;
 	pid_t pid;
-
-	if (!logfiles_opened)
-		return NULL;
 
 	pid = getpid();
 	if (pid == mainpid)
