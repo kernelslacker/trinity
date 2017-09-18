@@ -19,13 +19,19 @@ static bool logfiles_opened = FALSE;
 static FILE *open_logfile(const char *logfilename)
 {
 	FILE *file;
+	char *fullpath;
+	int len = strlen(logging_args) + strlen(logfilename) + 2;
 
-	unlink(logfilename);
+	fullpath = zmalloc(len);
+	snprintf(fullpath, len, "%s/%s", logging_args, logfilename);
 
-	file = fopen(logfilename, "w");
+	unlink(fullpath);
+
+	file = fopen(fullpath, "w");
 	if (!file)
-		outputerr("## couldn't open logfile %s\n", logfilename);
+		outputerr("## couldn't open logfile %s\n", fullpath);
 
+	free(fullpath);
 	return file;
 }
 

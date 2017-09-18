@@ -131,6 +131,31 @@ static const struct option longopts[] = {
 	{ "victims", required_argument, NULL, 'V' },
 	{ NULL, 0, NULL, 0 } };
 
+static void parse_logging(void)
+{
+	struct stat sb;
+	int ret;
+
+	if (!strcmp(optarg, "off")) {
+		logging = LOGGING_DISABLED;
+		return;
+	}
+
+	logging_args = strdup(optarg);
+
+	// Is the param a directory ?
+	ret = stat(logging_args, &sb);
+	if (ret == 0) {
+		if (S_ISDIR(sb.st_mode)) {
+			logging = LOGGING_FILES;
+			return;
+		}
+	}
+
+	// try the arg as a hostname.
+	logging = LOGGING_UDP;
+}
+
 void parse_args(int argc, char *argv[])
 {
 	int opt;
@@ -213,13 +238,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'l':
-			if (!strcmp(optarg, "off")) {
-				logging = LOGGING_DISABLED;
-				break;
-			}
-			// fallthrough, and try the arg as a hostname.
-			logging = LOGGING_UDP;
-			logging_args = strdup(optarg);
+			parse_logging();
 			break;
 
 		case 'L':
