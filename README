@@ -116,7 +116,8 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
          what maps got set up etc. Does make things go considerably faster however,
          as it no longer fsync()'s after every syscall
   <hostname> : sends packets over udp to a trinity server running on another host.
-  Note: Still in development. Enabling this feature disables log-to-file.
+         Note: Still in development. Enabling this feature disables log-to-file.
+  <dir> : Specify a directory where trinity will dump its log files.
 
  --ioctls/-I will dump all available ioctls.
 

@@ -83,7 +83,7 @@ static void usage(void)
 	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
-	outputerr(" --logging,-l [off, <hostname>] : disable logging to files, or log over udp to a remote trinity server.\n");
+	outputerr(" --logging,-l [off, <dir>, <hostname>] : disable logging to files, log to a directory, or log over udp to a remote trinity server.\n");
 	outputerr(" --domain,-P: specify specific network domain for sockets.\n");	//FIXME: P used to be 'proto' pick something better.
 	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
 	outputerr(" --quiet,-q: less output.\n");
