@@ -10,8 +10,6 @@
 #include "pids.h"
 #include "shm.h"
 
-//FIXME: Remove all the DISABLED checks, move them up a level
-
 FILE *mainlogfile;
 
 static bool logfiles_opened = FALSE;
@@ -37,9 +35,6 @@ static FILE *open_logfile(const char *logfilename)
 
 void open_main_logfile(void)
 {
-	if (logging == LOGGING_DISABLED)
-		return;
-
 	mainlogfile = open_logfile("trinity.log");
 	if (!mainlogfile)
 		exit(EXIT_FAILURE);
@@ -50,9 +45,6 @@ void open_main_logfile(void)
 void open_child_logfile(struct childdata *child)
 {
 	char *logfilename;
-
-	if (logging == LOGGING_DISABLED)
-		return;
 
 	logfilename = zmalloc(64);
 	sprintf(logfilename, "trinity-child%u.log", child->num);
@@ -70,9 +62,6 @@ void open_child_logfile(struct childdata *child)
 
 void close_logfile(FILE **filehandle)
 {
-	if (logging == LOGGING_DISABLED)
-		return;
-
 	if (*filehandle == NULL)
 		return;
 
@@ -84,9 +73,6 @@ FILE *find_logfile_handle(void)
 {
 	struct childdata *child;
 	pid_t pid;
-
-	if (logging == LOGGING_DISABLED)
-		return NULL;
 
 	if (!logfiles_opened)
 		return NULL;
@@ -110,9 +96,6 @@ void synclogs(void)
 {
 	struct childdata *child;
 	int fd;
-
-	if (logging == LOGGING_DISABLED)
-		return;
 
 	child = this_child();
 	if (child->logdirty == FALSE)
