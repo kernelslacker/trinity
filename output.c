@@ -70,16 +70,15 @@ skip_pid:
 	}
 
 	/* go on with file logs only if enabled */
-	if (logging == LOGGING_DISABLED)
-		return;
+	if (logging == LOGGING_FILES) {
+		handle = find_logfile_handle();
+		if (!handle)
+			return;
 
-	handle = find_logfile_handle();
-	if (!handle)
-		return;
+		fprintf(handle, "%s %s", prefix, outputbuf);
 
-	fprintf(handle, "%s %s", prefix, outputbuf);
-
-	(void)fflush(handle);
+		(void)fflush(handle);
+	}
 }
 
 /*
