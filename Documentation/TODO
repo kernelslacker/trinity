@@ -1,3 +1,52 @@
+* Various syscall improvements.
+  - brk could be smarter about existing brk
+  - Revisit fuzzing ptrace.
+    - It's disabled currently because of situations like..
+    child a traces child b
+    child a segfaults
+    child b never proceeds, and doesn't get untraced.
+  - semtimedop needs a timeout
+  - execve close stderr/stdin/stdout and then dup weird fd's
+  - demux do_futex
+  - mremap post needs to get rid of global 'map'. Stash something in ->rec ?
+  - Improve ioctl
+    - VFS ioctls
+    - ext ioctls
+    - XFS ioctls
+    - 3rd param to ioctl struct for the arg type
+    - needs filename globbing for some ioctls
+  - Maybe just make the ioctl's be NEED_ROOT child ops
+  - audit which syscalls never succeed, and write sanitise routines for them
+  - sanitise for shmget/shmat/shmctl
+  - Make the write variants handle all common block/page sizes.
+  The ARG_LEN code in particular could probably be made better.
+
+* Further syscall annotation improvements
+  - Finish annotating syscall return types & error codes.
+  - Add missing system calls.
+
+
+* UDP logging
+- This is pretty rough right now, but kinda works.
+  : Shortcomings:
+   - if client crashes, or gets oom killed, server doesn't detect
+   and sits on packets. flush-on-no-packet-in-a-while ?
+   - ctrl-c on server should flush queues
+   - getting a new handshake message should flush queues
+   - if hasn't flushed in a while, will eventually oom.
+
+  - accumulate packets, and kick threads to dispatch as needed ?
+  - when we get a child spawn/signal/quit message, clear the queue of old pid first.
+  - When this is solid enough, can we kill off post-mortem code ?
+  - Likewise, can we revert all the log-to-disk stuff again, and just run a server on localhost ?
+  - client perform extended tracking:
+    - global fd logging. Store a linked-list of every op that happened to an fd, and the pid that did it.
+  - log child exit reasons, so we can print reason when children just 'exit after n ops'
+  - destroy context & restart when main exits.  There's beginnings of multi-session support in how
+    the fuzzsession struct was created, but there's no code to manage the possibility of multiple of them.
+    I forward-planned a little too far here, thinking about a possible future where we have one server,
+    and multiple clients running simultaneously.
+
 * Flesh out the child ops some more
   - Add more things that a real program would do.
     - add all the ops things like fsx do.
@@ -10,10 +59,54 @@
     - send fd's over unix sockets to other children
     - open/read all /proc/$$/* files
     - tuned random syscalls. (open -> read -> close). tree of possibilities.
-  - Ability to mark some ops as 'NEEDS_ROOT'.
-  - Move the drop privs code from main to just before we start a new child.
+    - increment progress in childops
+    - memcpy between map ptrs
+    - child type where it picks one syscall and hammers on it with random args
+      - maybe also hammer on an ->assoc
+    - mlock patterns. Every other page etc.
+    - madvise(DONTNEED/WILLNEED) in a loop on a mapping for a while.
+    - "mmap-pagefault-munmap" loop
+    - ioctls as child-op type
+    - mprotect adjacent pages to random prot's, then all the same, to test splitting/merging
+      - walk backwards
+    - /dev/shm hugepage fuckery.
+    - fork(), mess with maps, exit
+    - fsx stuff
+    - readdir()
+    - inode spewer
+      - create nested dir struct
+      - create huge number of files in a subdir
+      - nftw (stat/read/write)
+      - nftw (stat/mmap/write)
+      - nftw to delete subtree
+      - variant: delete as we go
+      - variant: create inotify/fsnotify watches
+       "mount, make millions of inodes in cache, then unmount, and everything is sad"
+    - http://bazaar.launchpad.net/~domas-mituzas/%2Bjunk/uncache/annotate/head%3A/uncache.c
+    - blast data through a pipe / read from a pipe
+    - producer/consumer over an ipv[46] socket
+    - open/access/write/close one file concurrently
+    - tsearch: http://serverfault.com/questions/183821/rm-on-a-directory-with-millions-of-files
+    - read a file page at a time, MADV_DONTNEED'ing as we go
+  - root child-ops
+    - cgroup shit
+    - mount something on a testdir
+    - ionice
+    - sched features
+    - vm compaction
+    - mkfs & mount a ramdisk, cd into it, add to pathname list.
+    - loopback mount
+    - cd back to original cwd, unmount a ramdisk
+    - chroot to a destdir
+    - create a pidns
+    - mount a proc,sysfs,tmpfs in a destdir
+      - unshare(CLONE_NEWPID) - fork then returns 1 in the child ? https://www.exploit-db.com/exploits/36746/
+        http://stealth.openwall.net/xSports/clown-newuser.c
+    - echo 0,1,2 > /sys/kernel/mm/ksm/run
+    - /proc/sys/vm/drop_cache
 
-* vm related improvements:
+
+* mm related improvements:
   - mmapping:
     - Sometimes generate overlapping addresses/lengths when we have ARG_ADDRESS/ARG_ADDRESS2 pairs
     - munge lengths when handing out maps.
@@ -31,24 +124,77 @@
     - /dev/shm mappings
   - pass memfd's in mmap sanitise
   - sysv shm handling could be improved.
+  - map cache a la last-fd cache
+  - map struct needs a destructor.
+               id = shmget(IPC_PRIVATE, 3 * PAGE_SIZE, 0);
+               p = shmat(id, NULL, 0);
+               shmctl(id, IPC_RMID, NULL);
+               remap_file_pages(p, 3 * PAGE_SIZE, 0, 7, 0);
+
+    In this case, the destructor is shmdt
+  - Only allow max of 2-3 huge pages per child
+  - Check we update map struct ptr when we mremap it
+
+* Networking improvements.
+  - More focus on non-ipv4 protocols.
+    - igmp
+    - ipv6 / 6to4
+    - sctp
+    - ipip
+    - tun (vxlan / gre)
+    - ppp
+    - pppoe
+    - tipc
+    - rds
+    - nfc
+    - nft
+    - iscsi
+  - for syscalls that take a fd and a sockaddr, look up the triplet and match.
+  - Flesh out sockaddr/socket gen for all remaining protocols.
+  - setsockopt coverage is still lacking for some protocols.
+  - improve netlink fuzzing.
+   - Make sure we support all the different socket types.
+   - pass down more realistic looking messages.
+  - param to specify an ip of a victim machine
+  - --proto-exclude
+  - check EAFNOSUPPORT if -P
+  - split ARG_SOCKET into per proto object caches ?
+  - have write() check if the fd to be written to is a socket
+    if so, lookup protocol, and use correct ->genpacket
+  - in fds/sockets, as well as bind() try connect() random ip's
+    borrow from https://github.com/borkmann/stuff/blob/master/daytime.c
+    - accept() only on IPPROTO_IP sockets
+  - linger off vs 0 linger
+  - make -P INET:DCCP work
+  - rewrite socket init to just do < 5 of each known proto type
+  - Pass FD's over AF_UNIX between children
+  - more ->socket entries for missing ones?
+  - store the ports we're listening on in the shm, and use those when we send()
+  --no-rfc1918, so we only use localhost
+  - Is the socketcache still useful ? Probably not..
+
+* Improve the ->post routine to walk a list of objects that we allocated during a
+   syscalls ->sanitise in a ->post method.
+  - On return from the syscall, we don't call the destructor immediately.
+    We pick a small random number, and do N other syscalls before we do the destruction.
+    This requires us to create a list of work to be done later, along with a pointer
+    to any allocated data.
+  - some ancillary data needs to be destroyed immediately after the syscall
+    (it's pointless keeping around mangled pathnames for eg).
+    For this, we just destroy it in ->post
+  - Right now ->sanitise routines have to pick either a map, or malloc itself and
+    do the right thing to free it in ->post. By tagging what the allocation type was in
+    generic-sanitise, we can do multiple types.
 
 * munge_process() on child startup
   - replace fork() with random clone()
   - run children in different namespaces, personalities.
   - unshare
   - do some random fcntls to all fd's on child spawn
-
-* ioctl improvements
-  - needs filename globbing for some ioctls
-  - Sanitise routines for more ioctls
-    - ext4
-  - Maybe just make the ioctl's be NEED_ROOT child ops
+  - on child startup, setup some cgroup params for that child.
 
 * Some debugging enhancements.
   - Make -D use a separate debug log file
-  - if we have a large number of children, we use up a lot of fd's for
-    the log files. Instead of keeping them all open, reopen them as needed.
-  - mprotect the child struct around write accesses
   - improve debugf re: http://c-faq.com/varargs/handoff.html
   - Activate the function tracer before each syscall. Flush before calling.
 
@@ -56,7 +202,6 @@
   - change child->syscall / ->previous to be a ringbuffer of syscallrecord structs.
   - Compare timestamp that taint was noticed at, ignore all later.
   - log 'unfinished' if state isn't complete.
-  - is post mortem code generating ESC0m ?
   - function that takes a void * and outputs what it is (mapping, page_* etc)
     (searches various lists etc)
 
@@ -83,12 +228,35 @@
   - Attach an operation history to each fd for post-mortem.
     Maybe we need an fd container struct ?
   - deregister fd providers if init of one fails
+  - separate fd lists for dirs vs files
+  - make fd providers take array to fillin & num of fds as params.
+  - child fd's
+    - call some fd providers from children after init
+  - periodically close/reopen existing fds
+  - random selection of fd providers on startup
+  - stuck_syscall_info should close the fd
+    This needs a way to communicate from child -> main.
+  - mmap more fd types
+
+Pathname rewrite:
+- convert pathnames to objects
+  - separate pools for dev, sys, proc, testfile etc
+  - get_random_pathname picks from a random pool
+- make get_filename return testfile[n]
+- make sure pathnames are read-only
+- make handle_arg_address return ptr to pathname
+- open() should add to local fd's.
+- finish globbing in ignore_files
+  - add sd[a-z]* hd[a-z]*
+- if -EBADF remove the object
+- children should nftw and create their own local objects
 
 * Pretty-print improvements.
  - decode fd number -> filename in output
  - decode addresses when printing them out to print 'page_rand+4' instead of a hex address.
  - ->decode_argN functions to print decoded flags etc.
  - decode maps.
+ - These things are all probably better done in the udp server at this point.
 
 * filename related issues.
   - filename cache.
@@ -108,76 +276,23 @@
     - use count
   - create N testfiles for each -V
 
-* Networking improvements.
-  - More focus on non-ipv4 protocols.
-    - igmp
-    - ipv6 / 6to4
-    - sctp
-    - ipip
-    - tun (vxlan / gre)
-    - ppp
-    - pppoe
-    - tipc
-    - rds
-    - nfc
-    - nft
-    - iscsi
-  - Rewrite socket generation.
-    Organise into (sorted) per-protocol buckets of linked-lists..
-    - Search buckets for dupes before adding.
-  - for syscalls that take a fd and a sockaddr, look up the triplet and match.
-  - Flesh out sockaddr/socket gen for all remaining protocols.
-  - setsockopt coverage is still lacking for some protocols.
-  - improve netlink fuzzing
-  - specify an ip of a victim machine (Maybe also config file)
-  - --proto-exclude
-  - better spread of net protocols on startup
-  - check EAFNOSUPPORT if -P
-  - speed up PF_CAN creation
-
-* Improve the ->post routine to walk a list of objects that we allocated during a
-   syscalls ->sanitise in a ->post method.
-  - On return from the syscall, we don't call the destructor immediately.
-    We pick a small random number, and do N other syscalls before we do the destruction.
-    This requires us to create a list of work to be done later, along with a pointer
-    to any allocated data.
-  - some ancillary data needs to be destroyed immediately after the syscall
-    (it's pointless keeping around mangled pathnames for eg).
-    For this, we just destroy it in ->post
-  - Right now ->sanitise routines have to pick either a map, or malloc itself and
-    do the right thing to free it in ->post. By tagging what the allocation type was in
-    generic-sanitise, we can do multiple types.
-
 * Perform some checks on return from syscall
   - check padding between struct members is zeroed.
 
-* Output errno distribution on exit
-
 * allow for multiple -G's (after there is more than 'vm')
-
-* audit which syscalls never succeed, and write sanitise routines for them
+  - multigroups. mmap should be in VFS too
+  - -G SCHED
+  - -G IPC
 
 * if a read() blocks, blacklist (close?) that fd/filename.
-
-* Various syscall improvements.
-  - brk could be smarter about existing brk
-  - Revisit fuzzing ptrace.
-    - It's disabled currently because of situations like..
-    child a traces child b
-    child a segfaults
-    child b never proceeds, and doesn't get untraced.
-
-* Further syscall annotation improvements
-  - Finish annotating syscall return types & error codes.
+  This needs a way to communicate from child -> main.
 
 * structured logging.
-  - To begin with, in parallel with existing text based logging.
   - Basic premise is that we store records of each syscall in a manner that would
     allow easier replay of logs.
     - For eg, if a param is an fd, we store the type (socket/file/etc..)
       as well as a pathname/socket triplet/whatever to create it.
-  - Eventually, kill off the text based logging, and replace it with
-    ./trinity --parselog=mylog.bin
+  - Take a logdump from the server, and rerun it on the client with --parselog=mylog.bin
   - Done correctly, this should allow automated bisecting of replays.
     - Different replay strategies:
       - replay log in reverse order
@@ -193,14 +308,25 @@
 
 * Misc improvements.
   - implement _lock->queue so waiters get the lock on a FIFO basis.
+    (Do we have enough contention this matters?)
   - Add a NEEDS_ROOT flag for syscalls that are expected to fail.
     (and then if !root, deactivate them on startup)
-  - --stats
-    - count segv's.
   - avoid BORING syscalls. geteuid etc is kinda pointless.
     (maybe an override param to call them)
   - unix socket for comms between children/parent.
     also other apps so we can do stats gathering, debug, config changes etc
+  - make check_children_progressing() look at se.exec_start field of /proc/1/task/1/sched
+  (I can't remember the reasoning for this idea, it came from the watchdog days)
+  - make -V do IS_CHR() etc tests and add to device list if chardev/blockdev
+  - --no-sync to disable sync,syncfs,fsync,fdatasync
+  - ioprio tweaking before doing io
+  - split out sighandler -> sigalarmhandler
+  - more --stats
+    - count segv's.
+    - Output errno distribution on exit
+    - fastest/slowest syscall (that completed)
+    - syscalls per second
+    - segfaults per second
 
 * Misc cleanups
   - Move arch specific syscalls into syscalls/arch/
@@ -210,13 +336,17 @@
     - zfree (free & null)
     - check_errno(EINVAL)
       (checks if -1, and checks errno, returns bool)
+      [I forget why this was useful]
     - set_random_bits()
-  - fix up -q. trinity -h needs to be more silent
-  - add a kernel rodata addr to trinity (sys_call_table for eg)
+  - fix up -q. trinity -h needs to be more silent for non help related text
+  - split up compat.h
+  - merge fruncate/truncate
+  - merge sync/fsync/syncfs
+  - constructors for objects, like the fd providers
+
+* add a kernel rodata addr to trinity (sys_call_table for eg)
 
 * watch dmesg buffer for interesting kernel messages and halt if necessary. Lockdep for eg.
-  - Pause on oops.
-    Sometimes we might want to read trinity state when we trigger a bad event.
 
 * Blocked child improvements.
   - if we find a blocking fd, check if it's a socket, and shutdown() it.
@@ -224,7 +354,6 @@
 
 
 * things to check.
-  - execve occasionally returns -ESRCH. Why ?
   - disappearing processes. 'oom killed maybe' when no oom.
 
 * pthreads. (Real long term, lots of work).
@@ -237,3 +366,142 @@
     put mutex in lock_t ?
   - logging for threads?
   - send pthread_kill
+  - split childdata into threaddata & childdata
+  - logfiles got a lot trickier. nrgh. (postpone until after udp logging implemented)
+  - audit getpids that should now be gettid's
+  - more syscalls to be marked avoid ?
+  - allocate threaddata/syscallrecord before/after syscall
+  - tgkill instead of kill ?
+  - child needs to 'tick' and also become mini-watchdog checking on threads.
+  - each syscall:
+        void *thr(void *p)
+        {
+                regset = (struct regset *) p;
+                do_syscall(regset);
+        }
+
+        pthread_t th;
+        pthread_create(&th, 0, thr, regset);
+        //pthread_join(th, 0);
+        pthread_detach(th)
+  - parallelize nftw's on startup
+
+
+* bugs that need fixing
+  -a64 is positional vs -c
+  -g vm -c sendfile -a64  enables 1 32bit.
+  use of socketinfo in syscall sanitizers will segv if --disable-fds=sockets
+
+- move to object cache
+  - sysv objects
+  - iovecs
+  - store shmat return addresses.
+  - keyctl foo
+
+* AVOID_SYSCALL_IF_ROOT might be useful ?
+
+* Improve ftrace setup
+  - command line arg to enable function tracer or function-graph
+  - use a list of functions to avoid.
+
+* make dropprivs default.
+ - Move the drop privs code from main to just before we start a new child.
+
+* New ARG_ types
+  - ARG_FPOS
+   - 0
+   - page_size -1
+   - page_size
+   - page_size * 2
+   - (page_size * 2) -1
+  - ARG_SHMID
+  - More ARG_*FD types
+    - ARG_FD -> ARG_FD_FILE
+    - ARG_FD_DIR
+    - ARG_FD_PIPE
+    - ARG_FD_SIGNAL
+    - ARG_FD_EVENT
+    - ARG_FD_TIMER
+    - ARG_FD_EPOLL
+    - ARG_FD_MQ
+    - ARG_FD_INOTIFY
+    - ARG_FD_FANOTIFY
+    - ARG_FD_TTY
+    - ARG_FD_FUSE
+    - ARG_FD_TTY
+    - ARG_FD_DRM
+    - ARG_FILENAME
+  - kill off ARG_NON_NULL_ADDRESS & ARG_ADDRESS
+    Long way to go here. Generally, use ARG_MMAP
+  - ARG_DEVT
+  - ARG_TIMESPEC
+
+makedev dev_t's for dev args
+unlink on /dev files should be disallowed
+
+scan /proc/filesystems for args for sys_mount
+Gather more from /proc/mounts ? Look at iknowthis for examples.
+
+Maintain a tree of errnos that a syscall has seen. (only tricky part is that it needs to be in the shm)
+
+on startup, enable /proc/sys/net/core/bpf_jit_enable if we're root
+
+ram disks for mkfs,mount etc
+
+audit malloc uses in syscalls and convert to ARG_MMAP use where possible
+
+zmalloc should indicate to children to munlockall, sleep, and then retry
+ (some unix socket shared between children->main for comms?)
+
+load balancer:
+- monitor meminfo/loadavg and dynamically adjust number of children
+- fork extra children when more than half have been sent KILLs
+- set shm->notprogressing if stall count reaches == nr_running_child/2
+  - dont fork new processes if set
+  - halve max_children
+  - kill a few children at random
+
+New directions:
+- variable alarm time for syscalls that might take longer than usual.
+- recursion depth in child struct, so we can call fork/clone
+  - use clone instead of fork() sometimes.
+  - per child pids[] array ?
+  - This gets messy with things like adding to object lists so might not be a good idea.
+- .assoc for things like socket/shutdown, open/close, mmap/munmap, truncate/lseek etc
+- create hash of call chain in kernel (mask out boring funcs)
+  - use kcov for kernel traces
+  - in syscall struct have a tree of mutations
+     struct mutation {
+             unsigned long tracehash;
+             struct regset regs;
+     }
+  - if ->mutations is empty, generate args.
+    otherwise, get mutation from list, and mutate one arg.
+    if new run = new hash, store mutation in list.
+    if new run = existing hash, refetch mutation & mutate again
+  - if no other mutations, generate all new args
+  - if child dies, generate all new args
+
+* Revisit kcov code, and make use of the stacktraces in some way.
+ - we're not a mutational fuzzer (yet?) like syzkaller, so we might have to think
+  of something different to do here.
+ Some old, possibly no longer interesting ideas:
+
+  If success, store parameters
+  - each arg in syscall struct gets a valid inputs entry
+    ARG_FD: bitmap of fd's that don't inval
+    ARG_LEN: min/max
+  - generate_args
+   - looks at past successes and picks a mix of 90% the same as last inputs.
+   - occasionally try something completely new
+
+   Store success/fail per syscall
+
+   hash stack trace
+   for each arg {
+     mutate arg      <---+
+     if new stack trace  |
+       store arg         |
+     if tries < 10   ----+
+    }
+
