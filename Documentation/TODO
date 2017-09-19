@@ -24,7 +24,8 @@
 * Further syscall annotation improvements
   - Finish annotating syscall return types & error codes.
   - Add missing system calls.
-
+  - Run scripts/hashcheck.sh to get info on new bits that need adding to Trinity.
+  - Add additional userspace APIs to hashcheck
 
 * UDP logging
 - This is pretty rough right now, but kinda works.
