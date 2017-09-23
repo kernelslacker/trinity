@@ -15,11 +15,16 @@ FILE *mainlogfile;
 static FILE *open_logfile(const char *logfilename)
 {
 	FILE *file;
-	char *fullpath;
-	int len = strlen(logging_args) + strlen(logfilename) + 2;
+	char *fullpath, *p;
+	int len = strlen(logfilename) + 2;
 
-	fullpath = zmalloc(len);
-	snprintf(fullpath, len, "%s/%s", logging_args, logfilename);
+	if (logging_args)
+		len += strlen(logging_args);
+
+	p = fullpath = zmalloc(len);
+	if (logging_args)
+		p += snprintf(fullpath, strlen(logging_args) + 2, "%s/", logging_args);
+	p += snprintf(p, strlen(logfilename) + 1, "%s", logfilename);
 
 	unlink(fullpath);
 
