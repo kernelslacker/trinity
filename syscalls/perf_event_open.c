@@ -879,6 +879,8 @@ static long long random_sample_type(void)
 		sample_type |= PERF_SAMPLE_TRANSACTION;
 	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_REGS_INTR;
+	if (RAND_BOOL())
+		sample_type |= PERF_SAMPLE_PHYS_ADDR;
 
 	return sample_type;
 }
@@ -958,14 +960,6 @@ static long long random_branch_sample_type(void)
 		branch_sample |= PERF_SAMPLE_BRANCH_ANY_RETURN;
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_IND_CALL;
-	if (RAND_BOOL())
-		branch_sample |= PERF_SAMPLE_BRANCH_COND;
-	if (RAND_BOOL())
-		branch_sample |= PERF_SAMPLE_BRANCH_CALL_STACK;
-	if (RAND_BOOL())
-		branch_sample |= PERF_SAMPLE_BRANCH_IND_JUMP;
-	if (RAND_BOOL())
-		branch_sample |= PERF_SAMPLE_BRANCH_CALL;
 
 	/* Transactional Memory Types */
 	if (RAND_BOOL())
@@ -974,6 +968,23 @@ static long long random_branch_sample_type(void)
 		branch_sample |= PERF_SAMPLE_BRANCH_IN_TX;
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_NO_TX;
+
+
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_COND;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_CALL_STACK;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_IND_JUMP;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_CALL;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_NO_FLAGS;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_NO_CYCLES;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_TYPE_SAVE;
+
 
 	return branch_sample;
 }
