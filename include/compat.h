@@ -250,6 +250,10 @@ enum {
 #define MSG_BATCH 0x40000
 #endif
 
+#ifndef MSG_ZEROCOPY
+#define MSG_ZEROCOPY	0x4000000
+#endif
+
 #ifndef MSG_CMSG_CLOEXEC
 #define MSG_CMSG_CLOEXEC	0x40000000
 #endif
