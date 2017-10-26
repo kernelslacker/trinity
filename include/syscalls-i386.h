@@ -1,6 +1,6 @@
 #pragma once
 
-/* Syscalls from arch/x86/syscalls/syscall_32.tbl */
+/* Syscalls from arch/x86/entry/syscalls/syscall_32.tbl */
 
 #include "sanitise.h"
 #include "syscall.h"
@@ -394,4 +394,5 @@ struct syscalltable syscalls_i386[] = {
 	{ .entry = &syscall_pkey_mprotect },
 	{ .entry = &syscall_pkey_alloc },
 	{ .entry = &syscall_pkey_free },
+	{ .entry = &syscall_statx },
 };
