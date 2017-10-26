@@ -525,7 +525,9 @@ enum kcmp_type {
 #define SO_PEERGROUPS           59
 #endif
 
-
+#ifndef SO_ZEROCOPY
+#define SO_ZEROCOPY	60
+#endif
 
 
 /* linux/tcp.h */
