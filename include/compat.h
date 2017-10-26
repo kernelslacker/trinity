@@ -138,6 +138,12 @@ enum {
 #ifndef MADV_DODUMP
 #define MADV_DODUMP 17
 #endif
+#ifndef MADV_WIPEONFORK
+#define MADV_WIPEONFORK 18
+#endif
+#ifndef MADV_KEEPONFORK
+#define MADV_KEEPONFORK 19
+#endif
 
 
 /* bits/socket.h */
