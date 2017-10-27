@@ -206,8 +206,11 @@
   - function that takes a void * and outputs what it is (mapping, page_* etc)
     (searches various lists etc)
 
-* --dry-run mode.
+* Extra command line args.
+  --dry-run mode.
    need to work around segv's when we do things like mmap->post and register null maps.
+  --disable-fault-injection
+  --pause (reinstate the old code to pause for a second after a syscall)
 
 * fd handling improvements.
   - kill off NR_FILE_FDS
