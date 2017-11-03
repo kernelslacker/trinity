@@ -1,4 +1,4 @@
-VERSION="1.8pre"
+VERSION="1.8"
 
 ifeq (,$(findstring pre,$(VERSION)))
 DEVEL = 0
