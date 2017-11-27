@@ -55,10 +55,12 @@ static int init_hung_task_test(void)
 static void exit_hung_task_test(void)
 {
         ktime_t rem;
+        schedule_timeout_interruptible(10000);
         while (hrtimer_active(&test_data.hrtimer_release_mutex)) {
                 rem = hrtimer_get_remaining(&test_data.hrtimer_release_mutex);
                 printk("hrtimer is active, remaining %lld secs\n",
-                        rem.tv64 / NSEC_PER_SEC);
+                        rem / NSEC_PER_SEC);
+                set_current_state(TASK_INTERRUPTIBLE);
                 msleep(1000);
         }
         pr_info("hrtimer has been done...");
