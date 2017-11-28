@@ -8,6 +8,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "utils.h"
+#include "compat.h"
 
 /* include/linux/auto_dev-ioctl.h */
 /*
