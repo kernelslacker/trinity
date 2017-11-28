@@ -1,3 +1,7 @@
+* Object logging.
+  - Attach an operation history to each object to be dumped at post-mortem time.
+  - Will need a comms channel from children->main. pipe? unix socket?
+
 * Various syscall improvements.
   - brk could be smarter about existing brk
   - Revisit fuzzing ptrace.
@@ -229,8 +233,6 @@
     they dominate over the /dev entries.
   - more fd 'types' (fanotify_init)
   - need a way to go from fd to string describing what it is. for post-mortem
-  - Attach an operation history to each fd for post-mortem.
-    Maybe we need an fd container struct ?
   - deregister fd providers if init of one fails
   - separate fd lists for dirs vs files
   - make fd providers take array to fillin & num of fds as params.
