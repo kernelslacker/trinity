@@ -1209,3 +1209,11 @@ struct kvm_get_htab_fd {
 #ifndef SO_IP_SET
 #define SO_IP_SET 83
 #endif
+
+/* linux/auto_fs4.h */
+#ifndef AUTOFS_IOC_EXPIRE_INDIRECT
+#define AUTOFS_IOC_EXPIRE_INDIRECT AUTOFS_IOC_EXPIRE_MULTI
+#endif
+#ifndef AUTOFS_IOC_EXPIRE_DIRECT
+#define AUTOFS_IOC_EXPIRE_DIRECT AUTOFS_IOC_EXPIRE_MULTI
+#endif
