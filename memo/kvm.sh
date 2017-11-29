@@ -1,0 +1,1 @@
+qemu-system-x86_64 -m 4096 -hda syzkaller.img --enable-kvm -net nic -kernel vmlinuz-4.14.0-rc5+ -append "root=/dev/mapper/rhel-root rd.lv=rhel/root" -net user,host=10.0.2.10,hostfwd=tcp::56788-:22 -initrd initramfs-4.14.0-rc5+.img
