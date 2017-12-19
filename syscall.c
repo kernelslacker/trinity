@@ -167,6 +167,8 @@ static void do_extrafork(struct syscallrecord *rec)
 	if (pid_alive(extrapid) == TRUE)
 		usleep(100);
 
+	/* We take the rec lock here even though we don't obviously use it.
+	 * The reason, is that the grandchild is using it. */
 	lock(&rec->lock);
 	while (pid == 0) {
 		int childstatus;
