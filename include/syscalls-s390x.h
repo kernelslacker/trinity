@@ -363,8 +363,8 @@ struct syscalltable syscalls_s390x[] = {
 #else
 	{ .entry = NULL },
 #endif
-	{ .entry = &syscall_ni_syscall },	/* TODO: s390_pci_mmio_write svc */
-	{ .entry = &syscall_ni_syscall },	/* TODO: s390_pci_mmio_read svc */
+	{ .entry = &syscall_s390_pci_mmio_write },
+	{ .entry = &syscall_s390_pci_mmio_read },
 	{ .entry = &syscall_execveat },
 	{ .entry = &syscall_userfaultfd },
 	{ .entry = &syscall_membarrier },
