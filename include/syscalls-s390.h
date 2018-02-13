@@ -391,5 +391,5 @@ struct syscalltable syscalls_s390[] = {
 	{ .entry = &syscall_pwritev2 },
 	{ .entry = &syscall_s390_guarded_storage },
 	{ .entry = &syscall_statx },
-	{ .entry = &syscall_ni_syscall },	/* TODO: s390_sthyi svc */
+	{ .entry = &syscall_s390_sthyi },
 };
