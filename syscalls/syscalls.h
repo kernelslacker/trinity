@@ -386,5 +386,6 @@ extern struct syscallentry syscall_pkey_mprotect;
 extern struct syscallentry syscall_pkey_alloc;
 extern struct syscallentry syscall_pkey_free;
 extern struct syscallentry syscall_statx;
+extern struct syscallentry syscall_runtime_instr;
 
 unsigned int random_fcntl_setfl_flags(void);
