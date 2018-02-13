@@ -390,5 +390,6 @@ extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
 extern struct syscallentry syscall_s390_pci_mmio_read;
 extern struct syscallentry syscall_s390_guarded_storage;
+extern struct syscallentry syscall_s390_sthyi;
 
 unsigned int random_fcntl_setfl_flags(void);
