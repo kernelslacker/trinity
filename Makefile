@@ -87,6 +87,7 @@ SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
 				  syscalls/x86/x86_64/*.c;; \
 		   (i?86*) echo syscalls/x86/*.c \
 				syscalls/x86/i386/*.c;; \
+		   (s390x*) echo syscalls/s390x/*.c ;; \
 		   esac)
 
 VERSION_H	:= include/version.h
