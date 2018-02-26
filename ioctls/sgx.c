@@ -2,6 +2,8 @@
  * ioctl fuzzing for Intel SGX kernel driver (isgx)
  * based on intel_sgx: Intel SGX Driver v0.10 
  * Feb 25, 2018
+ * Add support for SGXv2
+ * Feb 26, 2018
  * root@davejingtian.org
  */
 #include <linux/types.h>
@@ -17,6 +19,18 @@
 	_IOW(SGX_MAGIC, 0x01, struct sgx_enclave_add_page)
 #define SGX_IOC_ENCLAVE_INIT \
 	_IOW(SGX_MAGIC, 0x02, struct sgx_enclave_init)
+
+/* SGXv2 */
+#define SGX_IOC_ENCLAVE_EMODPR \
+	_IOW(SGX_MAGIC, 0x09, struct sgx_modification_param)
+#define SGX_IOC_ENCLAVE_MKTCS \
+	_IOW(SGX_MAGIC, 0x0a, struct sgx_range)
+#define SGX_IOC_ENCLAVE_TRIM \
+	_IOW(SGX_MAGIC, 0x0b, struct sgx_range)
+#define SGX_IOC_ENCLAVE_NOTIFY_ACCEPT \
+	_IOW(SGX_MAGIC, 0x0c, struct sgx_range)
+#define SGX_IOC_ENCLAVE_PAGE_REMOVE \
+	_IOW(SGX_MAGIC, 0x0d, unsigned long)
 
 /**
  * struct sgx_enclave_create - parameter structure for the
@@ -56,10 +70,30 @@ struct sgx_enclave_init {
 } __attribute__((__packed__));
 
 
+/* SGXv2 */
+struct sgx_range {
+	unsigned long start_addr;
+	unsigned int nr_pages;
+};
+
+struct sgx_modification_param {
+	struct sgx_range range;
+	unsigned long flags;
+};
+
+
+
 static const struct ioctl sgx_ioctls[] = {
 	IOCTL(SGX_IOC_ENCLAVE_CREATE),
 	IOCTL(SGX_IOC_ENCLAVE_ADD_PAGE),
 	IOCTL(SGX_IOC_ENCLAVE_INIT),
+#ifdef SGXv2
+	IOCTL(SGX_IOC_ENCLAVE_EMODPR),
+	IOCTL(SGX_IOC_ENCLAVE_MKTCS),
+	IOCTL(SGX_IOC_ENCLAVE_TRIM),
+	IOCTL(SGX_IOC_ENCLAVE_NOTIFY_ACCEPT),
+	IOCTL(SGX_IOC_ENCLAVE_PAGE_REMOVE),
+#endif
 };
 
 static const char *const sgx_devs[] = {
