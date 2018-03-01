@@ -32,6 +32,7 @@
 #define SGX_IOC_ENCLAVE_PAGE_REMOVE \
 	_IOW(SGX_MAGIC, 0x0d, unsigned long)
 
+#pragma GCC diagnostic ignored "-Wpacked"
 /**
  * struct sgx_enclave_create - parameter structure for the
  *                             %SGX_IOC_ENCLAVE_CREATE ioctl
@@ -80,8 +81,7 @@ struct sgx_modification_param {
 	struct sgx_range range;
 	unsigned long flags;
 };
-
-
+#pragma GCC diagnostic pop
 
 static const struct ioctl sgx_ioctls[] = {
 	IOCTL(SGX_IOC_ENCLAVE_CREATE),
