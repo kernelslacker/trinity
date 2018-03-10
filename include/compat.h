@@ -1186,6 +1186,11 @@ struct kvm_get_htab_fd {
 #define POLL_BUSY_LOOP 0x8000
 #endif
 
+/* asm/mman.h */
+#ifndef MLOCK_ONFAULT
+#define MLOCK_ONFAULT	0x01
+#endif
+
 /* linux/nvme_ioctl.h */
 #ifndef NVME_IOCTL_RESET
 #define NVME_IOCTL_RESET _IO('N', 0x44)

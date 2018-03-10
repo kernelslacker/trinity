@@ -7,6 +7,7 @@
 #include "sanitise.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "compat.h"
 
 static void sanitise_mlock(__unused__ struct syscallrecord *rec)
 {
@@ -26,8 +27,6 @@ struct syscallentry syscall_mlock = {
 /*
  * SYSCALL_DEFINE3(mlock2, unsigned long, start, size_t, len, int, flags)
  */
-
-#define MLOCK_ONFAULT   0x01
 
 struct syscallentry syscall_mlock2 = {
 	.name = "mlock2",
