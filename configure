@@ -289,6 +289,29 @@ else
 fi
 
 #############################################################################################
+# Does glibc provide memfd_create() syscall wrapper
+#
+echo -n "[*] Checking if glibc provides memfd_create.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <sys/mman.h>
+
+void main()
+{
+	memfd_create();
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_MEMFD_CREATE 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/fsmap.h USE_FSMAP
