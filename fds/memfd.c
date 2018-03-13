@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #include "fd.h"
 #include "memfd.h"
@@ -16,6 +17,7 @@
 #include "trinity.h"
 #include "udp.h"
 
+#ifndef USE_MEMFD_CREATE
 static int memfd_create(__unused__ const char *uname, __unused__ unsigned int flag)
 {
 #ifdef SYS_memfd_create
@@ -24,6 +26,7 @@ static int memfd_create(__unused__ const char *uname, __unused__ unsigned int fl
 	return -ENOSYS;
 #endif
 }
+#endif
 
 static void memfd_destructor(struct object *obj)
 {
