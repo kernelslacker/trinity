@@ -114,6 +114,9 @@ void output_rendered_buffer(char *buffer)
 		fflush(stdout);
 	}
 
+	if (logging == LOGGING_DISABLED)
+		return;
+
 	log_handle = find_logfile_handle();
 	if (log_handle != NULL) {
 		fprintf(log_handle, "%s", buffer);
