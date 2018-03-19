@@ -1,6 +1,6 @@
 obj-m := lpm.o
 
-KDIR := /home/chuhu/Git/linux/
+KDIR := /usr/lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
 default:

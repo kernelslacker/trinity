@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/livepatch.h>
+#include <linux/slab.h>
 
 /*
  * This (dumb) live patch overrides the function that prints the
@@ -41,19 +42,27 @@
  * <your cmdline>
  */
 
+long *ptr;
+long *shadow;
+
 #include <linux/seq_file.h>
 static int livepatch_cmdline_proc_show(struct seq_file *m, void *v)
 {
 	//long *ptr = 0xffff8802039a3498;
-	long *ptr = 0xffff8802033451a8;
+	ptr = kmalloc(16, GFP_KERNEL|GFP_ATOMIC);
 	long *eptr =  ptr + 40;
 	long *tmp = NULL;
 	seq_printf(m, "%s\n", "this has been live patched");
-	pr_info("contents of %p", ptr);
+	pr_info("kmalloc ptr %p", ptr);
+	shadow = klp_shadow_alloc(ptr, 0xccccc, "0xccccc", 8, GFP_ATOMIC);
+	pr_info("shadown ptr %p", shadow);
 	while ((tmp = ptr++) < eptr) {
-	    *tmp = 0xaaaaaaaaaaaaaaaa;
-		printk("%16lx ", *tmp);
+	 //   *tmp = 0xaaaaaaaaaaaaaaaa;
+	//	printk("%16lx ", *tmp);
+		;
 	}
+	klp_shadow_free(ptr, 0xccccc);
+	kfree(ptr);
 	pr_info("\n");
 	return 0;
 }
