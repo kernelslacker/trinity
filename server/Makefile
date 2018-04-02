@@ -29,7 +29,7 @@ endif
 # Sometimes useful for debugging. more useful with clang than gcc.
 #CFLAGS += -fsanitize=address
 
-LDFLAGS = -lpthread
+LDFLAGS = -pthread
 
 V	= @
 Q	= $(V:1=)
