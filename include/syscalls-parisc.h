@@ -354,4 +354,11 @@ struct syscalltable syscalls_parisc[] = {
 	{ .entry = NULL },
 #endif
 	{ .entry = &syscall_execveat },
+	{ .entry = &syscall_membarrier },
+	{ .entry = &syscall_userfaultfd },
+	{ .entry = &syscall_mlock2 },
+	{ .entry = &syscall_copy_file_range },
+	{ .entry = &syscall_preadv2 },
+	{ .entry = &syscall_pwritev2 },
+	{ .entry = &syscall_statx },
 };

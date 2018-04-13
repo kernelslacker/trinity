@@ -8,9 +8,15 @@
 #include "syscall.h"
 #include "trinity.h"
 
+#if !defined(MS_ASYNC)
 #define MS_ASYNC        1               /* Sync memory asynchronously.  */
+#endif
+#if !defined(MS_SYNC)
 #define MS_SYNC         4               /* Synchronous memory sync.  */
+#endif
+#if !defined(MS_INVALIDATE)
 #define MS_INVALIDATE   2               /* Invalidate the caches.  */
+#endif
 
 static void sanitise_msync(struct syscallrecord *rec)
 {

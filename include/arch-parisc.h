@@ -16,9 +16,9 @@
 #define PAGE_SHIFT 		12
 #define PTE_FILE_MAX_BITS	(32 - 11)
 
-#define PTRACE_GETREGS		0
-#define PTRACE_GETFPREGS	0
-#define PTRACE_SETREGS		0
-#define PTRACE_SETFPREGS	0
+#define PTRACE_GETREGS		18
+#define PTRACE_GETFPREGS	14
+#define PTRACE_SETREGS		19
+#define PTRACE_SETFPREGS	15
 
 #define SYSCALLS syscalls_parisc
