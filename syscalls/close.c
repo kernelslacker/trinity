@@ -11,6 +11,5 @@ struct syscallentry syscall_close = {
 	.num_args = 1,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
-	.flags = AVOID_SYSCALL,
 	.rettype = RET_ZERO_SUCCESS,
 };
