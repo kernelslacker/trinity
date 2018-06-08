@@ -4,12 +4,14 @@
 #include <sys/un.h>
 /* old irda.h does not include something which defines sa_family_t */
 #include <netinet/in.h>
-#include <linux/irda.h>
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
 #include "utils.h"	// RAND_ARRAY
 #include "compat.h"
+
+#ifdef USE_IRDA
+#include <linux/irda.h>
 
 static void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -53,3 +55,5 @@ const struct netproto proto_irda = {
 	.valid_triplets = irda_triplets,
 	.nr_triplets = ARRAY_SIZE(irda_triplets),
 };
+
+#endif
