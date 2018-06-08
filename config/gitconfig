@@ -1,0 +1,16 @@
+[user]
+ name = Chunyu Hu
+ email = chuhu@redhat.com
+[color]
+ ui = true
+[sendemail]
+# smtpserverport = 25
+ smtpserver = smtp.corp.redhat.com
+ chainreplyto = true
+ signedoffbycc = true
+ suppressfrom = true
+ smtpencryption = tls
+[core]
+ excludesfile = /home/chuhu/.gitignore_global
+[push]
+ default = simple

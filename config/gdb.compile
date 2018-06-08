@@ -1,0 +1,10 @@
+wget http://download.eng.bos.redhat.com/brewroot/packages/gdb/7.2/90.el6/src/gdb-7.2-90.el6.src.rpm
+rpm -ivh gdb-7.2-90.el6.src.rpm 
+cd /root/rpmbuild/SPECS/
+yum-builddep -y gdb.spec 
+rpmbuild -bi --target x86_64 --with testsuite gdb.spec 
+yum -y install gcc-objc gcc-java dejagnu sharutils systemtap-sdt-devel libgnat gcc-gnat glibc-devel libgcc libstdc++ libgcj glibc-static zlib-devel valgrind
+yum -y install "libgnat(x86-32)" "glibc-devel(x86-32)" "libgcc(x86-32)" "libstdc++(x86-32)" "libgcj(x86-32)" "zlib-devel(x86-32)" "valgrind(x86-32)" gdb.spec 
+yum -y install binutils bison dejagnu expat-devel flex gcc gcc44 gcc44-gfortran gcc-gfortran gcc-gnat gcc-go gcc-java gcc-objc gdb gdb-debuginfo glibc-devel glibc-devel.i686 glibc-static libgcc libgcc.i686 libgcj libgcj.i686 libgnat libgnat.i686 libgo-devel libgo-devel.i686 libselinux-devel libstdc++ libstdc++.i686 prelink python-devel readline-devel rpm-build rpm-devel sharutils systemtap-sdt-devel texinfo-tex texlive-cm-super texlive-ec valgrind valgrind.i686 xz-devel yum-utils zlib-devel zlib-devel.i686 texinfo
+rpmbuild -bi --target x86_64 --with testsuite gdb.spec
+#while :;do runtest gdb.base/checkpoint.exp;done

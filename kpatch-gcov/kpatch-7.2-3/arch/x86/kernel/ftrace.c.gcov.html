@@ -1,0 +1,884 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - arch/x86/kernel/ftrace.c</title>
+  <link rel="stylesheet" type="text/css" href="../../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../../index.html">top level</a> - <a href="index.html">arch/x86/kernel</a> - ftrace.c<span style="font-size: 80%;"> (source / <a href="ftrace.c.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">143</td>
+            <td class="headerCovTableEntry">211</td>
+            <td class="headerCovTableEntryLo">67.8 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">19</td>
+            <td class="headerCovTableEntry">26</td>
+            <td class="headerCovTableEntryLo">73.1 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /*</a>
+<span class="lineNum">       2 </span>            :  * Code for replacing ftrace calls with jumps.
+<span class="lineNum">       3 </span>            :  *
+<span class="lineNum">       4 </span>            :  * Copyright (C) 2007-2008 Steven Rostedt &lt;srostedt@redhat.com&gt;
+<span class="lineNum">       5 </span>            :  *
+<span class="lineNum">       6 </span>            :  * Thanks goes to Ingo Molnar, for suggesting the idea.
+<span class="lineNum">       7 </span>            :  * Mathieu Desnoyers, for suggesting postponing the modifications.
+<span class="lineNum">       8 </span>            :  * Arjan van de Ven, for keeping me straight, and explaining to me
+<span class="lineNum">       9 </span>            :  * the dangers of modifying code on the run.
+<span class="lineNum">      10 </span>            :  */
+<span class="lineNum">      11 </span>            : 
+<span class="lineNum">      12 </span>            : #define pr_fmt(fmt) KBUILD_MODNAME &quot;: &quot; fmt
+<span class="lineNum">      13 </span>            : 
+<span class="lineNum">      14 </span>            : #include &lt;linux/spinlock.h&gt;
+<span class="lineNum">      15 </span>            : #include &lt;linux/hardirq.h&gt;
+<span class="lineNum">      16 </span>            : #include &lt;linux/uaccess.h&gt;
+<span class="lineNum">      17 </span>            : #include &lt;linux/ftrace.h&gt;
+<span class="lineNum">      18 </span>            : #include &lt;linux/percpu.h&gt;
+<span class="lineNum">      19 </span>            : #include &lt;linux/sched.h&gt;
+<span class="lineNum">      20 </span>            : #include &lt;linux/init.h&gt;
+<span class="lineNum">      21 </span>            : #include &lt;linux/list.h&gt;
+<span class="lineNum">      22 </span>            : #include &lt;linux/module.h&gt;
+<span class="lineNum">      23 </span>            : 
+<span class="lineNum">      24 </span>            : #include &lt;trace/syscall.h&gt;
+<span class="lineNum">      25 </span>            : 
+<span class="lineNum">      26 </span>            : #include &lt;asm/cacheflush.h&gt;
+<span class="lineNum">      27 </span>            : #include &lt;asm/kprobes.h&gt;
+<span class="lineNum">      28 </span>            : #include &lt;asm/ftrace.h&gt;
+<span class="lineNum">      29 </span>            : #include &lt;asm/nops.h&gt;
+<span class="lineNum">      30 </span>            : 
+<a name="31"><span class="lineNum">      31 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE</a>
+<span class="lineNum">      32 </span>            : 
+<span class="lineNum">      33 </span><span class="lineCov">         11 : int ftrace_arch_code_modify_prepare(void)</span>
+<span class="lineNum">      34 </span>            : {
+<span class="lineNum">      35 </span>            :         set_kernel_text_rw();
+<span class="lineNum">      36 </span><span class="lineCov">         11 :         set_all_modules_text_rw();</span>
+<span class="lineNum">      37 </span><span class="lineCov">         11 :         return 0;</span>
+<a name="38"><span class="lineNum">      38 </span>            : }</a>
+<span class="lineNum">      39 </span>            : 
+<span class="lineNum">      40 </span><span class="lineCov">         11 : int ftrace_arch_code_modify_post_process(void)</span>
+<span class="lineNum">      41 </span>            : {
+<span class="lineNum">      42 </span><span class="lineCov">         11 :         set_all_modules_text_ro();</span>
+<span class="lineNum">      43 </span>            :         set_kernel_text_ro();
+<span class="lineNum">      44 </span><span class="lineCov">         11 :         return 0;</span>
+<span class="lineNum">      45 </span>            : }
+<span class="lineNum">      46 </span>            : 
+<span class="lineNum">      47 </span>            : union ftrace_code_union {
+<span class="lineNum">      48 </span>            :         char code[MCOUNT_INSN_SIZE];
+<span class="lineNum">      49 </span>            :         struct {
+<span class="lineNum">      50 </span>            :                 char e8;
+<span class="lineNum">      51 </span>            :                 int offset;
+<span class="lineNum">      52 </span>            :         } __attribute__((packed));
+<span class="lineNum">      53 </span>            : };
+<span class="lineNum">      54 </span>            : 
+<a name="55"><span class="lineNum">      55 </span>            : static int ftrace_calc_offset(long ip, long addr)</a>
+<span class="lineNum">      56 </span>            : {
+<span class="lineNum">      57 </span><span class="lineCov">         65 :         return (int)(addr - ip);</span>
+<span class="lineNum">      58 </span>            : }
+<span class="lineNum">      59 </span>            : 
+<span class="lineNum">      60 </span>            : static unsigned char *ftrace_call_replace(unsigned long ip, unsigned long addr)
+<span class="lineNum">      61 </span>            : {
+<span class="lineNum">      62 </span>            :         static union ftrace_code_union calc;
+<span class="lineNum">      63 </span>            : 
+<span class="lineNum">      64 </span><span class="lineCov">         65 :         calc.e8         = 0xe8;</span>
+<span class="lineNum">      65 </span><span class="lineCov">        130 :         calc.offset     = ftrace_calc_offset(ip + MCOUNT_INSN_SIZE, addr);</span>
+<span class="lineNum">      66 </span>            : 
+<span class="lineNum">      67 </span>            :         /*
+<span class="lineNum">      68 </span>            :          * No locking needed, this must be called via kstop_machine
+<span class="lineNum">      69 </span>            :          * which in essence is like running on a uniprocessor machine.
+<span class="lineNum">      70 </span>            :          */
+<span class="lineNum">      71 </span>            :         return calc.code;
+<span class="lineNum">      72 </span>            : }
+<span class="lineNum">      73 </span>            : 
+<span class="lineNum">      74 </span>            : static inline int
+<a name="75"><span class="lineNum">      75 </span>            : within(unsigned long addr, unsigned long start, unsigned long end)</a>
+<span class="lineNum">      76 </span>            : {
+<span class="lineNum">      77 </span><span class="lineCov">        121 :         return addr &gt;= start &amp;&amp; addr &lt; end;</span>
+<span class="lineNum">      78 </span>            : }
+<span class="lineNum">      79 </span>            : 
+<span class="lineNum">      80 </span>            : static unsigned long text_ip_addr(unsigned long ip)
+<span class="lineNum">      81 </span>            : {
+<span class="lineNum">      82 </span>            :         /*
+<span class="lineNum">      83 </span>            :          * On x86_64, kernel text mappings are mapped read-only with
+<span class="lineNum">      84 </span>            :          * CONFIG_DEBUG_RODATA. So we use the kernel identity mapping instead
+<span class="lineNum">      85 </span>            :          * of the kernel text mapping to modify the kernel text.
+<span class="lineNum">      86 </span>            :          *
+<span class="lineNum">      87 </span>            :          * For 32bit kernels, these mappings are same and we can use
+<span class="lineNum">      88 </span>            :          * kernel identity mapping to modify code.
+<span class="lineNum">      89 </span>            :          */
+<span class="lineNum">      90 </span><span class="lineCov">         56 :         if (within(ip, (unsigned long)_text, (unsigned long)_etext))</span>
+<span class="lineNum">      91 </span><span class="lineNoCov">          0 :                 ip = (unsigned long)__va(__pa_symbol(ip));</span>
+<span class="lineNum">      92 </span>            : 
+<span class="lineNum">      93 </span>            :         return ip;
+<span class="lineNum">      94 </span>            : }
+<span class="lineNum">      95 </span>            : 
+<a name="96"><span class="lineNum">      96 </span>            : static const unsigned char *ftrace_nop_replace(void)</a>
+<span class="lineNum">      97 </span>            : {
+<span class="lineNum">      98 </span><span class="lineCov">         44 :         return ideal_nops[NOP_ATOMIC5];</span>
+<span class="lineNum">      99 </span>            : }
+<span class="lineNum">     100 </span>            : 
+<span class="lineNum">     101 </span>            : static int
+<span class="lineNum">     102 </span><span class="lineCov">         28 : ftrace_modify_code_direct(unsigned long ip, unsigned const char *old_code,</span>
+<span class="lineNum">     103 </span>            :                    unsigned const char *new_code)
+<span class="lineNum">     104 </span>            : {
+<span class="lineNum">     105 </span>            :         unsigned char replaced[MCOUNT_INSN_SIZE];
+<span class="lineNum">     106 </span>            : 
+<span class="lineNum">     107 </span>            :         /*
+<span class="lineNum">     108 </span>            :          * Note: Due to modules and __init, code can
+<span class="lineNum">     109 </span>            :          *  disappear and change, we need to protect against faulting
+<span class="lineNum">     110 </span>            :          *  as well as code changing. We do this by using the
+<span class="lineNum">     111 </span>            :          *  probe_kernel_* functions.
+<span class="lineNum">     112 </span>            :          *
+<span class="lineNum">     113 </span>            :          * No real locking needed, this code is run through
+<span class="lineNum">     114 </span>            :          * kstop_machine, or before SMP starts.
+<span class="lineNum">     115 </span>            :          */
+<span class="lineNum">     116 </span>            : 
+<span class="lineNum">     117 </span>            :         /* read the text we want to modify */
+<span class="lineNum">     118 </span><span class="lineCov">         28 :         if (probe_kernel_read(replaced, (void *)ip, MCOUNT_INSN_SIZE))</span>
+<span class="lineNum">     119 </span>            :                 return -EFAULT;
+<span class="lineNum">     120 </span>            : 
+<span class="lineNum">     121 </span>            :         /* Make sure it is what we expect it to be */
+<span class="lineNum">     122 </span><span class="lineCov">         28 :         if (memcmp(replaced, old_code, MCOUNT_INSN_SIZE) != 0)</span>
+<span class="lineNum">     123 </span>            :                 return -EINVAL;
+<span class="lineNum">     124 </span>            : 
+<span class="lineNum">     125 </span><span class="lineCov">         28 :         ip = text_ip_addr(ip);</span>
+<span class="lineNum">     126 </span>            : 
+<span class="lineNum">     127 </span>            :         /* replace the text with the new text */
+<span class="lineNum">     128 </span><span class="lineCov">         28 :         if (probe_kernel_write((void *)ip, new_code, MCOUNT_INSN_SIZE))</span>
+<span class="lineNum">     129 </span>            :                 return -EPERM;
+<span class="lineNum">     130 </span>            : 
+<span class="lineNum">     131 </span>            :         sync_core();
+<span class="lineNum">     132 </span>            : 
+<span class="lineNum">     133 </span><span class="lineCov">         28 :         return 0;</span>
+<span class="lineNum">     134 </span>            : }
+<span class="lineNum">     135 </span>            : 
+<span class="lineNum">     136 </span><span class="lineCov">         28 : int ftrace_make_nop(struct module *mod,</span>
+<span class="lineNum">     137 </span>            :                     struct dyn_ftrace *rec, unsigned long addr)
+<span class="lineNum">     138 </span>            : {
+<span class="lineNum">     139 </span>            :         unsigned const char *new, *old;
+<span class="lineNum">     140 </span><span class="lineCov">         28 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     141 </span>            : 
+<span class="lineNum">     142 </span><span class="lineCov">         28 :         old = ftrace_call_replace(ip, addr);</span>
+<span class="lineNum">     143 </span><span class="lineCov">         28 :         new = ftrace_nop_replace();</span>
+<span class="lineNum">     144 </span>            : 
+<span class="lineNum">     145 </span>            :         /*
+<span class="lineNum">     146 </span>            :          * On boot up, and when modules are loaded, the MCOUNT_ADDR
+<span class="lineNum">     147 </span>            :          * is converted to a nop, and will never become MCOUNT_ADDR
+<span class="lineNum">     148 </span>            :          * again. This code is either running before SMP (on boot up)
+<span class="lineNum">     149 </span>            :          * or before the code will ever be executed (module load).
+<span class="lineNum">     150 </span>            :          * We do not want to use the breakpoint version in this case,
+<span class="lineNum">     151 </span>            :          * just modify the code directly.
+<span class="lineNum">     152 </span>            :          */
+<span class="lineNum">     153 </span><span class="lineCov">         28 :         if (addr == MCOUNT_ADDR)</span>
+<span class="lineNum">     154 </span><span class="lineCov">         28 :                 return ftrace_modify_code_direct(rec-&gt;ip, old, new);</span>
+<span class="lineNum">     155 </span>            : 
+<span class="lineNum">     156 </span>            :         /* Normal cases use add_brk_on_nop */
+<span class="lineNum">     157 </span><span class="lineNoCov">          0 :         WARN_ONCE(1, &quot;invalid use of ftrace_make_nop&quot;);</span>
+<span class="lineNum">     158 </span>            :         return -EINVAL;
+<span class="lineNum">     159 </span>            : }
+<span class="lineNum">     160 </span>            : 
+<span class="lineNum">     161 </span><span class="lineNoCov">          0 : int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)</span>
+<span class="lineNum">     162 </span>            : {
+<span class="lineNum">     163 </span>            :         unsigned const char *new, *old;
+<span class="lineNum">     164 </span><span class="lineNoCov">          0 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     165 </span>            : 
+<span class="lineNum">     166 </span><span class="lineNoCov">          0 :         old = ftrace_nop_replace();</span>
+<span class="lineNum">     167 </span><span class="lineNoCov">          0 :         new = ftrace_call_replace(ip, addr);</span>
+<span class="lineNum">     168 </span>            : 
+<span class="lineNum">     169 </span>            :         /* Should only be called when module is loaded */
+<span class="lineNum">     170 </span><span class="lineNoCov">          0 :         return ftrace_modify_code_direct(rec-&gt;ip, old, new);</span>
+<span class="lineNum">     171 </span>            : }
+<span class="lineNum">     172 </span>            : 
+<span class="lineNum">     173 </span>            : /*
+<span class="lineNum">     174 </span>            :  * The modifying_ftrace_code is used to tell the breakpoint
+<span class="lineNum">     175 </span>            :  * handler to call ftrace_int3_handler(). If it fails to
+<span class="lineNum">     176 </span>            :  * call this handler for a breakpoint added by ftrace, then
+<span class="lineNum">     177 </span>            :  * the kernel may crash.
+<span class="lineNum">     178 </span>            :  *
+<span class="lineNum">     179 </span>            :  * As atomic_writes on x86 do not need a barrier, we do not
+<span class="lineNum">     180 </span>            :  * need to add smp_mb()s for this to work. It is also considered
+<span class="lineNum">     181 </span>            :  * that we can not read the modifying_ftrace_code before
+<span class="lineNum">     182 </span>            :  * executing the breakpoint. That would be quite remarkable if
+<span class="lineNum">     183 </span>            :  * it could do that. Here's the flow that is required:
+<span class="lineNum">     184 </span>            :  *
+<span class="lineNum">     185 </span>            :  *   CPU-0                          CPU-1
+<span class="lineNum">     186 </span>            :  *
+<span class="lineNum">     187 </span>            :  * atomic_inc(mfc);
+<span class="lineNum">     188 </span>            :  * write int3s
+<span class="lineNum">     189 </span>            :  *                              &lt;trap-int3&gt; // implicit (r)mb
+<span class="lineNum">     190 </span>            :  *                              if (atomic_read(mfc))
+<span class="lineNum">     191 </span>            :  *                                      call ftrace_int3_handler()
+<span class="lineNum">     192 </span>            :  *
+<span class="lineNum">     193 </span>            :  * Then when we are finished:
+<span class="lineNum">     194 </span>            :  *
+<span class="lineNum">     195 </span>            :  * atomic_dec(mfc);
+<span class="lineNum">     196 </span>            :  *
+<span class="lineNum">     197 </span>            :  * If we hit a breakpoint that was not set by ftrace, it does not
+<span class="lineNum">     198 </span>            :  * matter if ftrace_int3_handler() is called or not. It will
+<span class="lineNum">     199 </span>            :  * simply be ignored. But it is crucial that a ftrace nop/caller
+<span class="lineNum">     200 </span>            :  * breakpoint is handled. No other user should ever place a
+<span class="lineNum">     201 </span>            :  * breakpoint on an ftrace nop/caller location. It must only
+<span class="lineNum">     202 </span>            :  * be done by this code.
+<span class="lineNum">     203 </span>            :  */
+<span class="lineNum">     204 </span>            : atomic_t modifying_ftrace_code __read_mostly;
+<span class="lineNum">     205 </span>            : 
+<span class="lineNum">     206 </span>            : static int
+<span class="lineNum">     207 </span>            : ftrace_modify_code(unsigned long ip, unsigned const char *old_code,
+<span class="lineNum">     208 </span>            :                    unsigned const char *new_code);
+<span class="lineNum">     209 </span>            : 
+<span class="lineNum">     210 </span>            : /*
+<span class="lineNum">     211 </span>            :  * Should never be called:
+<span class="lineNum">     212 </span>            :  *  As it is only called by __ftrace_replace_code() which is called by
+<span class="lineNum">     213 </span>            :  *  ftrace_replace_code() that x86 overrides, and by ftrace_update_code()
+<span class="lineNum">     214 </span>            :  *  which is called to turn mcount into nops or nops into function calls
+<span class="lineNum">     215 </span>            :  *  but not to convert a function from not using regs to one that uses
+<a name="216"><span class="lineNum">     216 </span>            :  *  regs, which ftrace_modify_call() is for.</a>
+<span class="lineNum">     217 </span>            :  */
+<span class="lineNum">     218 </span><span class="lineNoCov">          0 : int ftrace_modify_call(struct dyn_ftrace *rec, unsigned long old_addr,</span>
+<span class="lineNum">     219 </span>            :                                  unsigned long addr)
+<span class="lineNum">     220 </span>            : {
+<span class="lineNum">     221 </span><span class="lineNoCov">          0 :         WARN_ON(1);</span>
+<span class="lineNum">     222 </span><span class="lineNoCov">          0 :         return -EINVAL;</span>
+<span class="lineNum">     223 </span>            : }
+<span class="lineNum">     224 </span>            : 
+<a name="225"><span class="lineNum">     225 </span>            : static unsigned long ftrace_update_func;</a>
+<span class="lineNum">     226 </span>            : 
+<span class="lineNum">     227 </span><span class="lineCov">         20 : static int update_ftrace_func(unsigned long ip, void *new)</span>
+<span class="lineNum">     228 </span>            : {
+<span class="lineNum">     229 </span>            :         unsigned char old[MCOUNT_INSN_SIZE];
+<span class="lineNum">     230 </span>            :         int ret;
+<span class="lineNum">     231 </span>            : 
+<span class="lineNum">     232 </span><span class="lineCov">         20 :         memcpy(old, (void *)ip, MCOUNT_INSN_SIZE);</span>
+<span class="lineNum">     233 </span>            : 
+<span class="lineNum">     234 </span><span class="lineCov">         20 :         ftrace_update_func = ip;</span>
+<span class="lineNum">     235 </span>            :         /* Make sure the breakpoints see the ftrace_update_func update */
+<span class="lineNum">     236 </span><span class="lineCov">         20 :         smp_wmb();</span>
+<span class="lineNum">     237 </span>            : 
+<span class="lineNum">     238 </span>            :         /* See comment above by declaration of modifying_ftrace_code */
+<span class="lineNum">     239 </span>            :         atomic_inc(&amp;modifying_ftrace_code);
+<span class="lineNum">     240 </span>            : 
+<span class="lineNum">     241 </span><span class="lineCov">         20 :         ret = ftrace_modify_code(ip, old, new);</span>
+<span class="lineNum">     242 </span>            : 
+<span class="lineNum">     243 </span>            :         atomic_dec(&amp;modifying_ftrace_code);
+<span class="lineNum">     244 </span>            : 
+<span class="lineNum">     245 </span><span class="lineCov">         20 :         return ret;</span>
+<span class="lineNum">     246 </span>            : }
+<span class="lineNum">     247 </span>            : 
+<span class="lineNum">     248 </span><span class="lineCov">         10 : int ftrace_update_ftrace_func(ftrace_func_t func)</span>
+<span class="lineNum">     249 </span>            : {
+<span class="lineNum">     250 </span><span class="lineCov">         10 :         unsigned long ip = (unsigned long)(&amp;ftrace_call);</span>
+<span class="lineNum">     251 </span>            :         unsigned char *new;
+<span class="lineNum">     252 </span>            :         int ret;
+<span class="lineNum">     253 </span>            : 
+<span class="lineNum">     254 </span><span class="lineCov">         20 :         new = ftrace_call_replace(ip, (unsigned long)func);</span>
+<span class="lineNum">     255 </span><span class="lineCov">         10 :         ret = update_ftrace_func(ip, new);</span>
+<span class="lineNum">     256 </span>            : 
+<span class="lineNum">     257 </span>            :         /* Also update the regs callback function */
+<span class="lineNum">     258 </span><span class="lineCov">         10 :         if (!ret) {</span>
+<span class="lineNum">     259 </span><span class="lineCov">         10 :                 ip = (unsigned long)(&amp;ftrace_regs_call);</span>
+<span class="lineNum">     260 </span><span class="lineCov">         20 :                 new = ftrace_call_replace(ip, (unsigned long)func);</span>
+<span class="lineNum">     261 </span><span class="lineCov">         10 :                 ret = update_ftrace_func(ip, new);</span>
+<span class="lineNum">     262 </span>            :         }
+<span class="lineNum">     263 </span>            : 
+<span class="lineNum">     264 </span><span class="lineCov">         10 :         return ret;</span>
+<span class="lineNum">     265 </span>            : }
+<span class="lineNum">     266 </span>            : 
+<a name="267"><span class="lineNum">     267 </span>            : static int is_ftrace_caller(unsigned long ip)</a>
+<span class="lineNum">     268 </span>            : {
+<span class="lineNum">     269 </span><span class="lineCov">          1 :         if (ip == ftrace_update_func)</span>
+<span class="lineNum">     270 </span>            :                 return 1;
+<span class="lineNum">     271 </span>            : 
+<span class="lineNum">     272 </span>            :         return 0;
+<span class="lineNum">     273 </span>            : }
+<span class="lineNum">     274 </span>            : 
+<span class="lineNum">     275 </span>            : /*
+<span class="lineNum">     276 </span>            :  * A breakpoint was added to the code address we are about to
+<span class="lineNum">     277 </span>            :  * modify, and this is the handle that will just skip over it.
+<span class="lineNum">     278 </span>            :  * We are either changing a nop into a trace call, or a trace
+<span class="lineNum">     279 </span>            :  * call to a nop. While the change is taking place, we treat
+<span class="lineNum">     280 </span>            :  * it just like it was a nop.
+<span class="lineNum">     281 </span>            :  */
+<span class="lineNum">     282 </span><span class="lineCov">          7 : int ftrace_int3_handler(struct pt_regs *regs)</span>
+<span class="lineNum">     283 </span>            : {
+<span class="lineNum">     284 </span>            :         unsigned long ip;
+<span class="lineNum">     285 </span>            : 
+<span class="lineNum">     286 </span><span class="lineCov">          7 :         if (WARN_ON_ONCE(!regs))</span>
+<span class="lineNum">     287 </span>            :                 return 0;
+<span class="lineNum">     288 </span>            : 
+<span class="lineNum">     289 </span><span class="lineCov">          7 :         ip = regs-&gt;ip - 1;</span>
+<span class="lineNum">     290 </span><span class="lineCov">          8 :         if (!ftrace_location(ip) &amp;&amp; !is_ftrace_caller(ip))</span>
+<span class="lineNum">     291 </span>            :                 return 0;
+<span class="lineNum">     292 </span>            : 
+<span class="lineNum">     293 </span><span class="lineCov">          7 :         regs-&gt;ip += MCOUNT_INSN_SIZE - 1;</span>
+<span class="lineNum">     294 </span>            : 
+<span class="lineNum">     295 </span><span class="lineCov">          7 :         return 1;</span>
+<span class="lineNum">     296 </span>            : }
+<span class="lineNum">     297 </span>            : 
+<span class="lineNum">     298 </span><span class="lineCov">         93 : static int ftrace_write(unsigned long ip, const char *val, int size)</span>
+<span class="lineNum">     299 </span>            : {
+<span class="lineNum">     300 </span>            :         /*
+<span class="lineNum">     301 </span>            :          * On x86_64, kernel text mappings are mapped read-only with
+<span class="lineNum">     302 </span>            :          * CONFIG_DEBUG_RODATA. So we use the kernel identity mapping instead
+<span class="lineNum">     303 </span>            :          * of the kernel text mapping to modify the kernel text.
+<span class="lineNum">     304 </span>            :          *
+<span class="lineNum">     305 </span>            :          * For 32bit kernels, these mappings are same and we can use
+<span class="lineNum">     306 </span>            :          * kernel identity mapping to modify code.
+<span class="lineNum">     307 </span>            :          */
+<span class="lineNum">     308 </span><span class="lineCov">        186 :         if (within(ip, (unsigned long)_text, (unsigned long)_etext))</span>
+<span class="lineNum">     309 </span><span class="lineCov">         93 :                 ip = (unsigned long)__va(__pa_symbol(ip));</span>
+<span class="lineNum">     310 </span>            : 
+<span class="lineNum">     311 </span><span class="lineCov">         93 :         if (probe_kernel_write((void *)ip, val, size))</span>
+<span class="lineNum">     312 </span>            :                 return -EPERM;
+<span class="lineNum">     313 </span>            : 
+<span class="lineNum">     314 </span><span class="lineCov">         93 :         return 0;</span>
+<a name="315"><span class="lineNum">     315 </span>            : }</a>
+<span class="lineNum">     316 </span>            : 
+<span class="lineNum">     317 </span><span class="lineCov">         31 : static int add_break(unsigned long ip, const char *old)</span>
+<span class="lineNum">     318 </span>            : {
+<span class="lineNum">     319 </span>            :         unsigned char replaced[MCOUNT_INSN_SIZE];
+<span class="lineNum">     320 </span><span class="lineCov">         31 :         unsigned char brk = BREAKPOINT_INSTRUCTION;</span>
+<span class="lineNum">     321 </span>            : 
+<span class="lineNum">     322 </span><span class="lineCov">         31 :         if (probe_kernel_read(replaced, (void *)ip, MCOUNT_INSN_SIZE))</span>
+<span class="lineNum">     323 </span>            :                 return -EFAULT;
+<span class="lineNum">     324 </span>            : 
+<span class="lineNum">     325 </span>            :         /* Make sure it is what we expect it to be */
+<span class="lineNum">     326 </span><span class="lineCov">         31 :         if (memcmp(replaced, old, MCOUNT_INSN_SIZE) != 0)</span>
+<span class="lineNum">     327 </span>            :                 return -EINVAL;
+<span class="lineNum">     328 </span>            : 
+<span class="lineNum">     329 </span><span class="lineCov">         31 :         return ftrace_write(ip, &amp;brk, 1);</span>
+<span class="lineNum">     330 </span>            : }
+<span class="lineNum">     331 </span>            : 
+<span class="lineNum">     332 </span>            : static int add_brk_on_call(struct dyn_ftrace *rec, unsigned long addr)
+<span class="lineNum">     333 </span>            : {
+<span class="lineNum">     334 </span>            :         unsigned const char *old;
+<span class="lineNum">     335 </span><span class="lineCov">          5 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     336 </span>            : 
+<span class="lineNum">     337 </span><span class="lineCov">          5 :         old = ftrace_call_replace(ip, addr);</span>
+<span class="lineNum">     338 </span>            : 
+<span class="lineNum">     339 </span><span class="lineCov">          5 :         return add_break(rec-&gt;ip, old);</span>
+<span class="lineNum">     340 </span>            : }
+<span class="lineNum">     341 </span>            : 
+<span class="lineNum">     342 </span>            : 
+<span class="lineNum">     343 </span>            : static int add_brk_on_nop(struct dyn_ftrace *rec)
+<span class="lineNum">     344 </span>            : {
+<span class="lineNum">     345 </span>            :         unsigned const char *old;
+<span class="lineNum">     346 </span>            : 
+<span class="lineNum">     347 </span><span class="lineCov">          6 :         old = ftrace_nop_replace();</span>
+<span class="lineNum">     348 </span>            : 
+<span class="lineNum">     349 </span><span class="lineCov">          6 :         return add_break(rec-&gt;ip, old);</span>
+<span class="lineNum">     350 </span>            : }
+<span class="lineNum">     351 </span>            : 
+<span class="lineNum">     352 </span>            : /*
+<span class="lineNum">     353 </span>            :  * If the record has the FTRACE_FL_REGS set, that means that it
+<span class="lineNum">     354 </span>            :  * wants to convert to a callback that saves all regs. If FTRACE_FL_REGS
+<span class="lineNum">     355 </span>            :  * is not not set, then it wants to convert to the normal callback.
+<span class="lineNum">     356 </span>            :  */
+<a name="357"><span class="lineNum">     357 </span>            : static unsigned long get_ftrace_addr(struct dyn_ftrace *rec)</a>
+<span class="lineNum">     358 </span>            : {
+<span class="lineNum">     359 </span><span class="lineCov">    1141767 :         if (rec-&gt;flags &amp; FTRACE_FL_REGS)</span>
+<span class="lineNum">     360 </span><span class="lineCov">         29 :                 return (unsigned long)FTRACE_REGS_ADDR;</span>
+<span class="lineNum">     361 </span>            :         else
+<span class="lineNum">     362 </span><span class="lineCov">    1141738 :                 return (unsigned long)FTRACE_ADDR;</span>
+<span class="lineNum">     363 </span>            : }
+<span class="lineNum">     364 </span>            : 
+<span class="lineNum">     365 </span>            : /*
+<span class="lineNum">     366 </span>            :  * The FTRACE_FL_REGS_EN is set when the record already points to
+<span class="lineNum">     367 </span>            :  * a function that saves all the regs. Basically the '_EN' version
+<span class="lineNum">     368 </span>            :  * represents the current state of the function.
+<span class="lineNum">     369 </span>            :  */
+<span class="lineNum">     370 </span>            : static unsigned long get_ftrace_old_addr(struct dyn_ftrace *rec)
+<span class="lineNum">     371 </span>            : {
+<span class="lineNum">     372 </span><span class="lineNoCov">          0 :         if (rec-&gt;flags &amp; FTRACE_FL_REGS_EN)</span>
+<span class="lineNum">     373 </span><span class="lineNoCov">          0 :                 return (unsigned long)FTRACE_REGS_ADDR;</span>
+<span class="lineNum">     374 </span>            :         else
+<span class="lineNum">     375 </span><span class="lineNoCov">          0 :                 return (unsigned long)FTRACE_ADDR;</span>
+<span class="lineNum">     376 </span>            : }
+<span class="lineNum">     377 </span>            : 
+<span class="lineNum">     378 </span><span class="lineCov">     761184 : static int add_breakpoints(struct dyn_ftrace *rec, int enable)</span>
+<span class="lineNum">     379 </span>            : {
+<span class="lineNum">     380 </span>            :         unsigned long ftrace_addr;
+<span class="lineNum">     381 </span>            :         int ret;
+<span class="lineNum">     382 </span>            : 
+<span class="lineNum">     383 </span><span class="lineCov">     380589 :         ret = ftrace_test_record(rec, enable);</span>
+<span class="lineNum">     384 </span>            : 
+<span class="lineNum">     385 </span><span class="lineCov">     761178 :         ftrace_addr = get_ftrace_addr(rec);</span>
+<span class="lineNum">     386 </span>            : 
+<span class="lineNum">     387 </span><span class="lineCov">     380589 :         switch (ret) {</span>
+<span class="lineNum">     388 </span>            :         case FTRACE_UPDATE_IGNORE:
+<span class="lineNum">     389 </span>            :                 return 0;
+<span class="lineNum">     390 </span>            : 
+<span class="lineNum">     391 </span>            :         case FTRACE_UPDATE_MAKE_CALL:
+<span class="lineNum">     392 </span>            :                 /* converting nop to call */
+<span class="lineNum">     393 </span><span class="lineCov">         12 :                 return add_brk_on_nop(rec);</span>
+<span class="lineNum">     394 </span>            : 
+<span class="lineNum">     395 </span>            :         case FTRACE_UPDATE_MODIFY_CALL_REGS:
+<span class="lineNum">     396 </span>            :         case FTRACE_UPDATE_MODIFY_CALL:
+<span class="lineNum">     397 </span><span class="lineNoCov">          0 :                 ftrace_addr = get_ftrace_old_addr(rec);</span>
+<span class="lineNum">     398 </span>            :                 /* fall through */
+<span class="lineNum">     399 </span>            :         case FTRACE_UPDATE_MAKE_NOP:
+<span class="lineNum">     400 </span>            :                 /* converting a call to a nop */
+<span class="lineNum">     401 </span><span class="lineCov">         10 :                 return add_brk_on_call(rec, ftrace_addr);</span>
+<span class="lineNum">     402 </span>            :         }
+<span class="lineNum">     403 </span>            :         return 0;
+<span class="lineNum">     404 </span>            : }
+<span class="lineNum">     405 </span>            : 
+<span class="lineNum">     406 </span>            : /*
+<span class="lineNum">     407 </span>            :  * On error, we need to remove breakpoints. This needs to
+<span class="lineNum">     408 </span>            :  * be done caefully. If the address does not currently have a
+<span class="lineNum">     409 </span>            :  * breakpoint, we know we are done. Otherwise, we look at the
+<span class="lineNum">     410 </span>            :  * remaining 4 bytes of the instruction. If it matches a nop
+<span class="lineNum">     411 </span>            :  * we replace the breakpoint with the nop. Otherwise we replace
+<span class="lineNum">     412 </span>            :  * it with the call instruction.
+<span class="lineNum">     413 </span>            :  */
+<span class="lineNum">     414 </span><span class="lineNoCov">          0 : static int remove_breakpoint(struct dyn_ftrace *rec)</span>
+<span class="lineNum">     415 </span>            : {
+<span class="lineNum">     416 </span>            :         unsigned char ins[MCOUNT_INSN_SIZE];
+<span class="lineNum">     417 </span><span class="lineNoCov">          0 :         unsigned char brk = BREAKPOINT_INSTRUCTION;</span>
+<span class="lineNum">     418 </span>            :         const unsigned char *nop;
+<span class="lineNum">     419 </span>            :         unsigned long ftrace_addr;
+<span class="lineNum">     420 </span><span class="lineNoCov">          0 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     421 </span>            : 
+<span class="lineNum">     422 </span>            :         /* If we fail the read, just give up */
+<span class="lineNum">     423 </span><span class="lineNoCov">          0 :         if (probe_kernel_read(ins, (void *)ip, MCOUNT_INSN_SIZE))</span>
+<span class="lineNum">     424 </span>            :                 return -EFAULT;
+<span class="lineNum">     425 </span>            : 
+<span class="lineNum">     426 </span>            :         /* If this does not have a breakpoint, we are done */
+<span class="lineNum">     427 </span><span class="lineNoCov">          0 :         if (ins[0] != brk)</span>
+<span class="lineNum">     428 </span>            :                 return 0;
+<span class="lineNum">     429 </span>            : 
+<span class="lineNum">     430 </span><span class="lineNoCov">          0 :         nop = ftrace_nop_replace();</span>
+<span class="lineNum">     431 </span>            : 
+<span class="lineNum">     432 </span>            :         /*
+<span class="lineNum">     433 </span>            :          * If the last 4 bytes of the instruction do not match
+<span class="lineNum">     434 </span>            :          * a nop, then we assume that this is a call to ftrace_addr.
+<span class="lineNum">     435 </span>            :          */
+<span class="lineNum">     436 </span><span class="lineNoCov">          0 :         if (memcmp(&amp;ins[1], &amp;nop[1], MCOUNT_INSN_SIZE - 1) != 0) {</span>
+<span class="lineNum">     437 </span>            :                 /*
+<span class="lineNum">     438 </span>            :                  * For extra paranoidism, we check if the breakpoint is on
+<span class="lineNum">     439 </span>            :                  * a call that would actually jump to the ftrace_addr.
+<span class="lineNum">     440 </span>            :                  * If not, don't touch the breakpoint, we make just create
+<span class="lineNum">     441 </span>            :                  * a disaster.
+<span class="lineNum">     442 </span>            :                  */
+<span class="lineNum">     443 </span><span class="lineNoCov">          0 :                 ftrace_addr = get_ftrace_addr(rec);</span>
+<span class="lineNum">     444 </span><span class="lineNoCov">          0 :                 nop = ftrace_call_replace(ip, ftrace_addr);</span>
+<span class="lineNum">     445 </span>            : 
+<span class="lineNum">     446 </span><span class="lineNoCov">          0 :                 if (memcmp(&amp;ins[1], &amp;nop[1], MCOUNT_INSN_SIZE - 1) == 0)</span>
+<span class="lineNum">     447 </span>            :                         goto update;
+<span class="lineNum">     448 </span>            : 
+<span class="lineNum">     449 </span>            :                 /* Check both ftrace_addr and ftrace_old_addr */
+<span class="lineNum">     450 </span><span class="lineNoCov">          0 :                 ftrace_addr = get_ftrace_old_addr(rec);</span>
+<span class="lineNum">     451 </span><span class="lineNoCov">          0 :                 nop = ftrace_call_replace(ip, ftrace_addr);</span>
+<span class="lineNum">     452 </span>            : 
+<span class="lineNum">     453 </span><span class="lineNoCov">          0 :                 if (memcmp(&amp;ins[1], &amp;nop[1], MCOUNT_INSN_SIZE - 1) != 0)</span>
+<span class="lineNum">     454 </span>            :                         return -EINVAL;
+<span class="lineNum">     455 </span>            :         }
+<span class="lineNum">     456 </span>            : 
+<span class="lineNum">     457 </span>            :  update:
+<span class="lineNum">     458 </span><span class="lineNoCov">          0 :         return ftrace_write(ip, nop, 1);</span>
+<span class="lineNum">     459 </span>            : }
+<span class="lineNum">     460 </span>            : 
+<span class="lineNum">     461 </span>            : static int add_update_code(unsigned long ip, unsigned const char *new)
+<a name="462"><span class="lineNum">     462 </span>            : {</a>
+<span class="lineNum">     463 </span>            :         /* skip breakpoint */
+<span class="lineNum">     464 </span><span class="lineCov">         31 :         ip++;</span>
+<span class="lineNum">     465 </span><span class="lineCov">         31 :         new++;</span>
+<span class="lineNum">     466 </span><span class="lineCov">         31 :         return ftrace_write(ip, new, MCOUNT_INSN_SIZE - 1);</span>
+<span class="lineNum">     467 </span>            : }
+<span class="lineNum">     468 </span>            : 
+<span class="lineNum">     469 </span><span class="lineCov">          6 : static int add_update_call(struct dyn_ftrace *rec, unsigned long addr)</span>
+<span class="lineNum">     470 </span>            : {
+<span class="lineNum">     471 </span><span class="lineCov">          6 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     472 </span>            :         unsigned const char *new;
+<span class="lineNum">     473 </span>            : 
+<span class="lineNum">     474 </span><span class="lineCov">          6 :         new = ftrace_call_replace(ip, addr);</span>
+<span class="lineNum">     475 </span><span class="lineCov">          6 :         return add_update_code(ip, new);</span>
+<span class="lineNum">     476 </span>            : }
+<span class="lineNum">     477 </span>            : 
+<span class="lineNum">     478 </span><span class="lineCov">          5 : static int add_update_nop(struct dyn_ftrace *rec)</span>
+<span class="lineNum">     479 </span>            : {
+<span class="lineNum">     480 </span><span class="lineCov">          5 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     481 </span>            :         unsigned const char *new;
+<span class="lineNum">     482 </span>            : 
+<span class="lineNum">     483 </span><span class="lineCov">          5 :         new = ftrace_nop_replace();</span>
+<span class="lineNum">     484 </span><span class="lineCov">          5 :         return add_update_code(ip, new);</span>
+<span class="lineNum">     485 </span>            : }
+<span class="lineNum">     486 </span>            : 
+<span class="lineNum">     487 </span><span class="lineCov">     761189 : static int add_update(struct dyn_ftrace *rec, int enable)</span>
+<span class="lineNum">     488 </span>            : {
+<span class="lineNum">     489 </span>            :         unsigned long ftrace_addr;
+<span class="lineNum">     490 </span>            :         int ret;
+<span class="lineNum">     491 </span>            : 
+<span class="lineNum">     492 </span><span class="lineCov">     380589 :         ret = ftrace_test_record(rec, enable);</span>
+<span class="lineNum">     493 </span>            : 
+<span class="lineNum">     494 </span><span class="lineCov">     761178 :         ftrace_addr  = get_ftrace_addr(rec);</span>
+<span class="lineNum">     495 </span>            : 
+<span class="lineNum">     496 </span><span class="lineCov">     380589 :         switch (ret) {</span>
+<span class="lineNum">     497 </span>            :         case FTRACE_UPDATE_IGNORE:
+<span class="lineNum">     498 </span>            :                 return 0;
+<span class="lineNum">     499 </span>            : 
+<span class="lineNum">     500 </span>            :         case FTRACE_UPDATE_MODIFY_CALL_REGS:
+<span class="lineNum">     501 </span>            :         case FTRACE_UPDATE_MODIFY_CALL:
+<span class="lineNum">     502 </span>            :         case FTRACE_UPDATE_MAKE_CALL:
+<span class="lineNum">     503 </span>            :                 /* converting nop to call */
+<span class="lineNum">     504 </span><span class="lineCov">          6 :                 return add_update_call(rec, ftrace_addr);</span>
+<span class="lineNum">     505 </span>            : 
+<span class="lineNum">     506 </span>            :         case FTRACE_UPDATE_MAKE_NOP:
+<span class="lineNum">     507 </span>            :                 /* converting a call to a nop */
+<span class="lineNum">     508 </span><span class="lineCov">          5 :                 return add_update_nop(rec);</span>
+<span class="lineNum">     509 </span>            :         }
+<span class="lineNum">     510 </span>            : 
+<span class="lineNum">     511 </span>            :         return 0;
+<span class="lineNum">     512 </span>            : }
+<span class="lineNum">     513 </span>            : 
+<span class="lineNum">     514 </span>            : static int finish_update_call(struct dyn_ftrace *rec, unsigned long addr)
+<span class="lineNum">     515 </span>            : {
+<span class="lineNum">     516 </span><span class="lineCov">          6 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     517 </span>            :         unsigned const char *new;
+<span class="lineNum">     518 </span>            : 
+<span class="lineNum">     519 </span><span class="lineCov">          6 :         new = ftrace_call_replace(ip, addr);</span>
+<span class="lineNum">     520 </span>            : 
+<span class="lineNum">     521 </span><span class="lineCov">          6 :         return ftrace_write(ip, new, 1);</span>
+<span class="lineNum">     522 </span>            : }
+<span class="lineNum">     523 </span>            : 
+<span class="lineNum">     524 </span>            : static int finish_update_nop(struct dyn_ftrace *rec)
+<span class="lineNum">     525 </span>            : {
+<span class="lineNum">     526 </span><span class="lineCov">          5 :         unsigned long ip = rec-&gt;ip;</span>
+<span class="lineNum">     527 </span>            :         unsigned const char *new;
+<span class="lineNum">     528 </span>            : 
+<span class="lineNum">     529 </span><span class="lineCov">          5 :         new = ftrace_nop_replace();</span>
+<span class="lineNum">     530 </span>            : 
+<span class="lineNum">     531 </span><span class="lineCov">          5 :         return ftrace_write(ip, new, 1);</span>
+<span class="lineNum">     532 </span>            : }
+<span class="lineNum">     533 </span>            : 
+<span class="lineNum">     534 </span><span class="lineCov">     761189 : static int finish_update(struct dyn_ftrace *rec, int enable)</span>
+<span class="lineNum">     535 </span>            : {
+<span class="lineNum">     536 </span>            :         unsigned long ftrace_addr;
+<span class="lineNum">     537 </span>            :         int ret;
+<span class="lineNum">     538 </span>            : 
+<span class="lineNum">     539 </span><span class="lineCov">     380589 :         ret = ftrace_update_record(rec, enable);</span>
+<span class="lineNum">     540 </span>            : 
+<span class="lineNum">     541 </span><span class="lineCov">     761178 :         ftrace_addr = get_ftrace_addr(rec);</span>
+<span class="lineNum">     542 </span>            : 
+<span class="lineNum">     543 </span><span class="lineCov">     380589 :         switch (ret) {</span>
+<span class="lineNum">     544 </span>            :         case FTRACE_UPDATE_IGNORE:
+<span class="lineNum">     545 </span>            :                 return 0;
+<span class="lineNum">     546 </span>            : 
+<span class="lineNum">     547 </span>            :         case FTRACE_UPDATE_MODIFY_CALL_REGS:
+<span class="lineNum">     548 </span>            :         case FTRACE_UPDATE_MODIFY_CALL:
+<span class="lineNum">     549 </span>            :         case FTRACE_UPDATE_MAKE_CALL:
+<span class="lineNum">     550 </span>            :                 /* converting nop to call */
+<span class="lineNum">     551 </span><span class="lineCov">         12 :                 return finish_update_call(rec, ftrace_addr);</span>
+<span class="lineNum">     552 </span>            : 
+<span class="lineNum">     553 </span>            :         case FTRACE_UPDATE_MAKE_NOP:
+<span class="lineNum">     554 </span>            :                 /* converting a call to a nop */
+<span class="lineNum">     555 </span><span class="lineCov">         10 :                 return finish_update_nop(rec);</span>
+<span class="lineNum">     556 </span>            :         }
+<span class="lineNum">     557 </span>            : 
+<span class="lineNum">     558 </span>            :         return 0;
+<a name="559"><span class="lineNum">     559 </span>            : }</a>
+<span class="lineNum">     560 </span>            : 
+<span class="lineNum">     561 </span><span class="lineCov">       2634 : static void do_sync_core(void *data)</span>
+<span class="lineNum">     562 </span>            : {
+<span class="lineNum">     563 </span>            :         sync_core();
+<a name="564"><span class="lineNum">     564 </span><span class="lineCov">       2894 : }</span></a>
+<span class="lineNum">     565 </span>            : 
+<span class="lineNum">     566 </span><span class="lineCov">         93 : static void run_sync(void)</span>
+<span class="lineNum">     567 </span>            : {
+<span class="lineNum">     568 </span><span class="lineCov">        186 :         int enable_irqs = irqs_disabled();</span>
+<span class="lineNum">     569 </span>            : 
+<span class="lineNum">     570 </span>            :         /* We may be called with interrupts disbled (on bootup). */
+<span class="lineNum">     571 </span><span class="lineCov">         93 :         if (enable_irqs)</span>
+<span class="lineNum">     572 </span>            :                 local_irq_enable();
+<span class="lineNum">     573 </span><span class="lineCov">         93 :         on_each_cpu(do_sync_core, NULL, 1);</span>
+<span class="lineNum">     574 </span><span class="lineCov">         93 :         if (enable_irqs)</span>
+<span class="lineNum">     575 </span>            :                 local_irq_disable();
+<a name="576"><span class="lineNum">     576 </span><span class="lineCov">         93 : }</span></a>
+<span class="lineNum">     577 </span>            : 
+<span class="lineNum">     578 </span><span class="lineCov">         11 : void ftrace_replace_code(int enable)</span>
+<span class="lineNum">     579 </span>            : {
+<span class="lineNum">     580 </span>            :         struct ftrace_rec_iter *iter;
+<span class="lineNum">     581 </span>            :         struct dyn_ftrace *rec;
+<span class="lineNum">     582 </span><span class="lineCov">         11 :         const char *report = &quot;adding breakpoints&quot;;</span>
+<span class="lineNum">     583 </span><span class="lineCov">         11 :         int count = 0;</span>
+<span class="lineNum">     584 </span>            :         int ret;
+<span class="lineNum">     585 </span>            : 
+<span class="lineNum">     586 </span><span class="lineCov">     380600 :         for_ftrace_rec_iter(iter) {</span>
+<span class="lineNum">     587 </span><span class="lineCov">     380589 :                 rec = ftrace_rec_iter_record(iter);</span>
+<span class="lineNum">     588 </span>            : 
+<span class="lineNum">     589 </span><span class="lineCov">     380589 :                 ret = add_breakpoints(rec, enable);</span>
+<span class="lineNum">     590 </span><span class="lineCov">     380589 :                 if (ret)</span>
+<span class="lineNum">     591 </span>            :                         goto remove_breakpoints;
+<span class="lineNum">     592 </span><span class="lineCov">     380589 :                 count++;</span>
+<span class="lineNum">     593 </span>            :         }
+<span class="lineNum">     594 </span>            : 
+<span class="lineNum">     595 </span><span class="lineCov">         11 :         run_sync();</span>
+<span class="lineNum">     596 </span>            : 
+<span class="lineNum">     597 </span><span class="lineCov">         11 :         report = &quot;updating code&quot;;</span>
+<span class="lineNum">     598 </span>            : 
+<span class="lineNum">     599 </span><span class="lineCov">     380600 :         for_ftrace_rec_iter(iter) {</span>
+<span class="lineNum">     600 </span><span class="lineCov">     380589 :                 rec = ftrace_rec_iter_record(iter);</span>
+<span class="lineNum">     601 </span>            : 
+<span class="lineNum">     602 </span><span class="lineCov">     380589 :                 ret = add_update(rec, enable);</span>
+<span class="lineNum">     603 </span><span class="lineCov">     380589 :                 if (ret)</span>
+<span class="lineNum">     604 </span>            :                         goto remove_breakpoints;
+<span class="lineNum">     605 </span>            :         }
+<span class="lineNum">     606 </span>            : 
+<span class="lineNum">     607 </span><span class="lineCov">         11 :         run_sync();</span>
+<span class="lineNum">     608 </span>            : 
+<span class="lineNum">     609 </span><span class="lineCov">         11 :         report = &quot;removing breakpoints&quot;;</span>
+<span class="lineNum">     610 </span>            : 
+<span class="lineNum">     611 </span><span class="lineCov">     380600 :         for_ftrace_rec_iter(iter) {</span>
+<span class="lineNum">     612 </span><span class="lineCov">     380589 :                 rec = ftrace_rec_iter_record(iter);</span>
+<span class="lineNum">     613 </span>            : 
+<span class="lineNum">     614 </span><span class="lineCov">     380589 :                 ret = finish_update(rec, enable);</span>
+<span class="lineNum">     615 </span><span class="lineCov">     380589 :                 if (ret)</span>
+<span class="lineNum">     616 </span>            :                         goto remove_breakpoints;
+<span class="lineNum">     617 </span>            :         }
+<span class="lineNum">     618 </span>            : 
+<span class="lineNum">     619 </span><span class="lineCov">         11 :         run_sync();</span>
+<span class="lineNum">     620 </span>            : 
+<span class="lineNum">     621 </span><span class="lineCov">         22 :         return;</span>
+<span class="lineNum">     622 </span>            : 
+<span class="lineNum">     623 </span>            :  remove_breakpoints:
+<span class="lineNum">     624 </span><span class="lineNoCov">          0 :         ftrace_bug(ret, rec ? rec-&gt;ip : 0);</span>
+<span class="lineNum">     625 </span><span class="lineNoCov">          0 :         printk(KERN_WARNING &quot;Failed on %s (%d):\n&quot;, report, count);</span>
+<span class="lineNum">     626 </span><span class="lineNoCov">          0 :         for_ftrace_rec_iter(iter) {</span>
+<span class="lineNum">     627 </span><span class="lineNoCov">          0 :                 rec = ftrace_rec_iter_record(iter);</span>
+<span class="lineNum">     628 </span>            :                 /*
+<span class="lineNum">     629 </span>            :                  * Breakpoints are handled only when this function is in
+<span class="lineNum">     630 </span>            :                  * progress. The system could not work with them.
+<span class="lineNum">     631 </span>            :                  */
+<span class="lineNum">     632 </span><span class="lineNoCov">          0 :                 if (remove_breakpoint(rec))</span>
+<span class="lineNum">     633 </span><span class="lineNoCov">          0 :                         BUG();</span>
+<span class="lineNum">     634 </span>            :         }
+<span class="lineNum">     635 </span><span class="lineNoCov">          0 :         run_sync();</span>
+<span class="lineNum">     636 </span>            : }
+<span class="lineNum">     637 </span>            : 
+<span class="lineNum">     638 </span>            : static int
+<span class="lineNum">     639 </span><span class="lineCov">         20 : ftrace_modify_code(unsigned long ip, unsigned const char *old_code,</span>
+<span class="lineNum">     640 </span>            :                    unsigned const char *new_code)
+<span class="lineNum">     641 </span>            : {
+<span class="lineNum">     642 </span>            :         int ret;
+<span class="lineNum">     643 </span>            : 
+<span class="lineNum">     644 </span><span class="lineCov">         20 :         ret = add_break(ip, old_code);</span>
+<span class="lineNum">     645 </span><span class="lineCov">         20 :         if (ret)</span>
+<span class="lineNum">     646 </span>            :                 goto out;
+<span class="lineNum">     647 </span>            : 
+<span class="lineNum">     648 </span><span class="lineCov">         20 :         run_sync();</span>
+<span class="lineNum">     649 </span>            : 
+<span class="lineNum">     650 </span><span class="lineCov">         20 :         ret = add_update_code(ip, new_code);</span>
+<span class="lineNum">     651 </span><span class="lineCov">         20 :         if (ret)</span>
+<span class="lineNum">     652 </span>            :                 goto fail_update;
+<span class="lineNum">     653 </span>            : 
+<span class="lineNum">     654 </span><span class="lineCov">         20 :         run_sync();</span>
+<span class="lineNum">     655 </span>            : 
+<span class="lineNum">     656 </span><span class="lineCov">         20 :         ret = ftrace_write(ip, new_code, 1);</span>
+<span class="lineNum">     657 </span>            :         /*
+<span class="lineNum">     658 </span>            :          * The breakpoint is handled only when this function is in progress.
+<span class="lineNum">     659 </span>            :          * The system could not work if we could not remove it.
+<span class="lineNum">     660 </span>            :          */
+<span class="lineNum">     661 </span><span class="lineCov">         20 :         BUG_ON(ret);</span>
+<span class="lineNum">     662 </span>            :  out:
+<span class="lineNum">     663 </span><span class="lineCov">         20 :         run_sync();</span>
+<span class="lineNum">     664 </span><span class="lineCov">         20 :         return ret;</span>
+<span class="lineNum">     665 </span>            : 
+<span class="lineNum">     666 </span>            :  fail_update:
+<span class="lineNum">     667 </span>            :         /* Also here the system could not work with the breakpoint */
+<span class="lineNum">     668 </span><span class="lineNoCov">          0 :         if (ftrace_write(ip, old_code, 1))</span>
+<span class="lineNum">     669 </span><span class="lineNoCov">          0 :                 BUG();</span>
+<span class="lineNum">     670 </span>            :         goto out;
+<a name="671"><span class="lineNum">     671 </span>            : }</a>
+<span class="lineNum">     672 </span>            : 
+<span class="lineNum">     673 </span><span class="lineCov">         11 : void arch_ftrace_update_code(int command)</span>
+<span class="lineNum">     674 </span>            : {
+<span class="lineNum">     675 </span>            :         /* See comment above by declaration of modifying_ftrace_code */
+<span class="lineNum">     676 </span>            :         atomic_inc(&amp;modifying_ftrace_code);
+<span class="lineNum">     677 </span>            : 
+<span class="lineNum">     678 </span><span class="lineCov">         11 :         ftrace_modify_all_code(command);</span>
+<span class="lineNum">     679 </span>            : 
+<span class="lineNum">     680 </span>            :         atomic_dec(&amp;modifying_ftrace_code);
+<a name="681"><span class="lineNum">     681 </span><span class="lineCov">         11 : }</span></a>
+<span class="lineNum">     682 </span>            : 
+<span class="lineNum">     683 </span><span class="lineNoCov">          0 : int __init ftrace_dyn_arch_init(void *data)</span>
+<span class="lineNum">     684 </span>            : {
+<span class="lineNum">     685 </span>            :         /* The return code is retured via data */
+<span class="lineNum">     686 </span><span class="lineNoCov">          0 :         *(unsigned long *)data = 0;</span>
+<span class="lineNum">     687 </span>            : 
+<span class="lineNum">     688 </span><span class="lineNoCov">          0 :         return 0;</span>
+<span class="lineNum">     689 </span>            : }
+<span class="lineNum">     690 </span>            : #endif
+<span class="lineNum">     691 </span>            : 
+<span class="lineNum">     692 </span>            : #ifdef CONFIG_FUNCTION_GRAPH_TRACER
+<span class="lineNum">     693 </span>            : 
+<span class="lineNum">     694 </span>            : #ifdef CONFIG_DYNAMIC_FTRACE
+<span class="lineNum">     695 </span>            : extern void ftrace_graph_call(void);
+<span class="lineNum">     696 </span>            : 
+<span class="lineNum">     697 </span>            : static unsigned char *ftrace_jmp_replace(unsigned long ip, unsigned long addr)
+<span class="lineNum">     698 </span>            : {
+<span class="lineNum">     699 </span>            :         static union ftrace_code_union calc;
+<span class="lineNum">     700 </span>            : 
+<span class="lineNum">     701 </span>            :         /* Jmp not a call (ignore the .e8) */
+<span class="lineNum">     702 </span><span class="lineNoCov">          0 :         calc.e8         = 0xe9;</span>
+<span class="lineNum">     703 </span><span class="lineNoCov">          0 :         calc.offset     = ftrace_calc_offset(ip + MCOUNT_INSN_SIZE, addr);</span>
+<span class="lineNum">     704 </span>            : 
+<span class="lineNum">     705 </span>            :         /*
+<span class="lineNum">     706 </span>            :          * ftrace external locks synchronize the access to the static variable.
+<span class="lineNum">     707 </span>            :          */
+<span class="lineNum">     708 </span>            :         return calc.code;
+<span class="lineNum">     709 </span>            : }
+<span class="lineNum">     710 </span>            : 
+<span class="lineNum">     711 </span>            : static int ftrace_mod_jmp(unsigned long ip, void *func)
+<span class="lineNum">     712 </span>            : {
+<span class="lineNum">     713 </span>            :         unsigned char *new;
+<span class="lineNum">     714 </span>            : 
+<span class="lineNum">     715 </span><span class="lineNoCov">          0 :         new = ftrace_jmp_replace(ip, (unsigned long)func);</span>
+<span class="lineNum">     716 </span>            : 
+<span class="lineNum">     717 </span><span class="lineNoCov">          0 :         return update_ftrace_func(ip, new);</span>
+<span class="lineNum">     718 </span>            : }
+<span class="lineNum">     719 </span>            : 
+<span class="lineNum">     720 </span><span class="lineNoCov">          0 : int ftrace_enable_ftrace_graph_caller(void)</span>
+<span class="lineNum">     721 </span>            : {
+<span class="lineNum">     722 </span><span class="lineNoCov">          0 :         unsigned long ip = (unsigned long)(&amp;ftrace_graph_call);</span>
+<span class="lineNum">     723 </span>            : 
+<span class="lineNum">     724 </span><span class="lineNoCov">          0 :         return ftrace_mod_jmp(ip, &amp;ftrace_graph_caller);</span>
+<span class="lineNum">     725 </span>            : }
+<span class="lineNum">     726 </span>            : 
+<span class="lineNum">     727 </span><span class="lineNoCov">          0 : int ftrace_disable_ftrace_graph_caller(void)</span>
+<span class="lineNum">     728 </span>            : {
+<span class="lineNum">     729 </span><span class="lineNoCov">          0 :         unsigned long ip = (unsigned long)(&amp;ftrace_graph_call);</span>
+<span class="lineNum">     730 </span>            : 
+<span class="lineNum">     731 </span><span class="lineNoCov">          0 :         return ftrace_mod_jmp(ip, &amp;ftrace_stub);</span>
+<span class="lineNum">     732 </span>            : }
+<span class="lineNum">     733 </span>            : 
+<span class="lineNum">     734 </span>            : #endif /* !CONFIG_DYNAMIC_FTRACE */
+<span class="lineNum">     735 </span>            : 
+<span class="lineNum">     736 </span>            : /*
+<span class="lineNum">     737 </span>            :  * Hook the return address and push it in the stack of return addrs
+<a name="738"><span class="lineNum">     738 </span>            :  * in current thread info.</a>
+<span class="lineNum">     739 </span>            :  */
+<span class="lineNum">     740 </span><span class="lineNoCov">          0 : void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,</span>
+<span class="lineNum">     741 </span>            :                            unsigned long frame_pointer)
+<span class="lineNum">     742 </span>            : {
+<span class="lineNum">     743 </span>            :         unsigned long old;
+<span class="lineNum">     744 </span>            :         int faulted;
+<span class="lineNum">     745 </span>            :         struct ftrace_graph_ent trace;
+<span class="lineNum">     746 </span><span class="lineNoCov">          0 :         unsigned long return_hooker = (unsigned long)</span>
+<span class="lineNum">     747 </span>            :                                 &amp;return_to_handler;
+<span class="lineNum">     748 </span>            : 
+<span class="lineNum">     749 </span><span class="lineNoCov">          0 :         if (unlikely(ftrace_graph_is_dead()))</span>
+<span class="lineNum">     750 </span><span class="lineNoCov">          0 :                 return;</span>
+<span class="lineNum">     751 </span>            : 
+<span class="lineNum">     752 </span><span class="lineNoCov">          0 :         if (unlikely(atomic_read(&amp;current-&gt;tracing_graph_pause)))</span>
+<span class="lineNum">     753 </span>            :                 return;
+<span class="lineNum">     754 </span>            : 
+<span class="lineNum">     755 </span>            :         /*
+<span class="lineNum">     756 </span>            :          * Protect against fault, even if it shouldn't
+<span class="lineNum">     757 </span>            :          * happen. This tool is too much intrusive to
+<span class="lineNum">     758 </span>            :          * ignore such a protection.
+<span class="lineNum">     759 </span>            :          */
+<span class="lineNum">     760 </span><span class="lineNoCov">          0 :         asm volatile(</span>
+<span class="lineNum">     761 </span>            :                 &quot;1: &quot; _ASM_MOV &quot; (%[parent]), %[old]\n&quot;
+<span class="lineNum">     762 </span>            :                 &quot;2: &quot; _ASM_MOV &quot; %[return_hooker], (%[parent])\n&quot;
+<span class="lineNum">     763 </span>            :                 &quot;   movl $0, %[faulted]\n&quot;
+<span class="lineNum">     764 </span>            :                 &quot;3:\n&quot;
+<span class="lineNum">     765 </span>            : 
+<span class="lineNum">     766 </span>            :                 &quot;.section .fixup, \&quot;ax\&quot;\n&quot;
+<span class="lineNum">     767 </span>            :                 &quot;4: movl $1, %[faulted]\n&quot;
+<span class="lineNum">     768 </span>            :                 &quot;   jmp 3b\n&quot;
+<span class="lineNum">     769 </span>            :                 &quot;.previous\n&quot;
+<span class="lineNum">     770 </span>            : 
+<span class="lineNum">     771 </span>            :                 _ASM_EXTABLE(1b, 4b)
+<span class="lineNum">     772 </span>            :                 _ASM_EXTABLE(2b, 4b)
+<span class="lineNum">     773 </span>            : 
+<span class="lineNum">     774 </span>            :                 : [old] &quot;=&amp;r&quot; (old), [faulted] &quot;=r&quot; (faulted)
+<span class="lineNum">     775 </span>            :                 : [parent] &quot;r&quot; (parent), [return_hooker] &quot;r&quot; (return_hooker)
+<span class="lineNum">     776 </span>            :                 : &quot;memory&quot;
+<span class="lineNum">     777 </span>            :         );
+<span class="lineNum">     778 </span>            : 
+<span class="lineNum">     779 </span><span class="lineNoCov">          0 :         if (unlikely(faulted)) {</span>
+<span class="lineNum">     780 </span><span class="lineNoCov">          0 :                 ftrace_graph_stop();</span>
+<span class="lineNum">     781 </span><span class="lineNoCov">          0 :                 WARN_ON(1);</span>
+<span class="lineNum">     782 </span><span class="lineNoCov">          0 :                 return;</span>
+<span class="lineNum">     783 </span>            :         }
+<span class="lineNum">     784 </span>            : 
+<span class="lineNum">     785 </span><span class="lineNoCov">          0 :         trace.func = self_addr;</span>
+<span class="lineNum">     786 </span><span class="lineNoCov">          0 :         trace.depth = current-&gt;curr_ret_stack + 1;</span>
+<span class="lineNum">     787 </span>            : 
+<span class="lineNum">     788 </span>            :         /* Only trace if the calling function expects to */
+<span class="lineNum">     789 </span><span class="lineNoCov">          0 :         if (!ftrace_graph_entry(&amp;trace)) {</span>
+<span class="lineNum">     790 </span><span class="lineNoCov">          0 :                 *parent = old;</span>
+<span class="lineNum">     791 </span><span class="lineNoCov">          0 :                 return;</span>
+<span class="lineNum">     792 </span>            :         }
+<span class="lineNum">     793 </span>            : 
+<span class="lineNum">     794 </span><span class="lineNoCov">          0 :         if (ftrace_push_return_trace(old, self_addr, &amp;trace.depth,</span>
+<span class="lineNum">     795 </span>            :                     frame_pointer) == -EBUSY) {
+<span class="lineNum">     796 </span><span class="lineNoCov">          0 :                 *parent = old;</span>
+<span class="lineNum">     797 </span><span class="lineNoCov">          0 :                 return;</span>
+<span class="lineNum">     798 </span>            :         }
+<span class="lineNum">     799 </span>            : }
+<span class="lineNum">     800 </span>            : #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

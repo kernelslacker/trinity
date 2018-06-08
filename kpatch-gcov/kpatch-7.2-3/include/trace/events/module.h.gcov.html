@@ -1,0 +1,217 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - include/trace/events/module.h</title>
+  <link rel="stylesheet" type="text/css" href="../../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../../index.html">top level</a> - <a href="index.html">include/trace/events</a> - module.h<span style="font-size: 80%;"> (source / <a href="module.h.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">4</td>
+            <td class="headerCovTableEntry">6</td>
+            <td class="headerCovTableEntryLo">66.7 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">4</td>
+            <td class="headerCovTableEntry">25</td>
+            <td class="headerCovTableEntryLo">16.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : /*</a>
+<span class="lineNum">       2 </span>            :  * Because linux/module.h has tracepoints in the header, and ftrace.h
+<span class="lineNum">       3 </span>            :  * used to include this file, define_trace.h includes linux/module.h
+<span class="lineNum">       4 </span>            :  * But we do not want the module.h to override the TRACE_SYSTEM macro
+<span class="lineNum">       5 </span>            :  * variable that define_trace.h is processing, so we only set it
+<span class="lineNum">       6 </span>            :  * when module events are being processed, which would happen when
+<span class="lineNum">       7 </span>            :  * CREATE_TRACE_POINTS is defined.
+<span class="lineNum">       8 </span>            :  */
+<span class="lineNum">       9 </span>            : #ifdef CREATE_TRACE_POINTS
+<span class="lineNum">      10 </span>            : #undef TRACE_SYSTEM
+<span class="lineNum">      11 </span>            : #define TRACE_SYSTEM module
+<span class="lineNum">      12 </span>            : #endif
+<span class="lineNum">      13 </span>            : 
+<span class="lineNum">      14 </span>            : #if !defined(_TRACE_MODULE_H) || defined(TRACE_HEADER_MULTI_READ)
+<span class="lineNum">      15 </span>            : #define _TRACE_MODULE_H
+<span class="lineNum">      16 </span>            : 
+<span class="lineNum">      17 </span>            : #include &lt;linux/tracepoint.h&gt;
+<span class="lineNum">      18 </span>            : 
+<span class="lineNum">      19 </span>            : #ifdef CONFIG_MODULES
+<span class="lineNum">      20 </span>            : 
+<span class="lineNum">      21 </span>            : struct module;
+<span class="lineNum">      22 </span>            : 
+<span class="lineNum">      23 </span>            : #define show_module_flags(flags) __print_flags(flags, &quot;&quot;,     \
+<span class="lineNum">      24 </span>            :         { (1UL &lt;&lt; TAINT_PROPRIETARY_MODULE),      &quot;P&quot; },                \
+<span class="lineNum">      25 </span>            :         { (1UL &lt;&lt; TAINT_OOT_MODULE),              &quot;O&quot; },                \
+<span class="lineNum">      26 </span>            :         { (1UL &lt;&lt; TAINT_FORCED_MODULE),           &quot;F&quot; },                \
+<span class="lineNum">      27 </span>            :         { (1UL &lt;&lt; TAINT_CRAP),                    &quot;C&quot; },                \
+<a name="28"><span class="lineNum">      28 </span>            :         { (1UL &lt;&lt; TAINT_UNSIGNED_MODULE), &quot;X&quot; })</a>
+<span class="lineNum">      29 </span>            : 
+<span class="lineNum">      30 </span><span class="lineCov">         18 : TRACE_EVENT(module_load,</span>
+<span class="lineNum">      31 </span>            : 
+<span class="lineNum">      32 </span>            :         TP_PROTO(struct module *mod),
+<span class="lineNum">      33 </span>            : 
+<span class="lineNum">      34 </span>            :         TP_ARGS(mod),
+<span class="lineNum">      35 </span>            : 
+<span class="lineNum">      36 </span>            :         TP_STRUCT__entry(
+<span class="lineNum">      37 </span>            :                 __field(        unsigned int,   taints          )
+<span class="lineNum">      38 </span>            :                 __string(       name,           mod-&gt;name    )
+<span class="lineNum">      39 </span>            :         ),
+<span class="lineNum">      40 </span>            : 
+<span class="lineNum">      41 </span>            :         TP_fast_assign(
+<span class="lineNum">      42 </span>            :                 __entry-&gt;taints = mod-&gt;taints;
+<span class="lineNum">      43 </span>            :                 __assign_str(name, mod-&gt;name);
+<span class="lineNum">      44 </span>            :         ),
+<span class="lineNum">      45 </span>            : 
+<span class="lineNum">      46 </span>            :         TP_printk(&quot;%s %s&quot;, __get_str(name), show_module_flags(__entry-&gt;taints))
+<a name="47"><span class="lineNum">      47 </span>            : );</a>
+<span class="lineNum">      48 </span>            : 
+<span class="lineNum">      49 </span><span class="lineCov">         12 : TRACE_EVENT(module_free,</span>
+<span class="lineNum">      50 </span>            : 
+<span class="lineNum">      51 </span>            :         TP_PROTO(struct module *mod),
+<span class="lineNum">      52 </span>            : 
+<span class="lineNum">      53 </span>            :         TP_ARGS(mod),
+<span class="lineNum">      54 </span>            : 
+<span class="lineNum">      55 </span>            :         TP_STRUCT__entry(
+<span class="lineNum">      56 </span>            :                 __string(       name,           mod-&gt;name    )
+<span class="lineNum">      57 </span>            :         ),
+<span class="lineNum">      58 </span>            : 
+<span class="lineNum">      59 </span>            :         TP_fast_assign(
+<span class="lineNum">      60 </span>            :                 __assign_str(name, mod-&gt;name);
+<span class="lineNum">      61 </span>            :         ),
+<span class="lineNum">      62 </span>            : 
+<span class="lineNum">      63 </span>            :         TP_printk(&quot;%s&quot;, __get_str(name))
+<span class="lineNum">      64 </span>            : );
+<span class="lineNum">      65 </span>            : 
+<span class="lineNum">      66 </span>            : #ifdef CONFIG_MODULE_UNLOAD
+<a name="67"><span class="lineNum">      67 </span>            : /* trace_module_get/put are only used if CONFIG_MODULE_UNLOAD is defined */</a>
+<span class="lineNum">      68 </span>            : 
+<span class="lineNum">      69 </span><span class="lineNoCov">          0 : DECLARE_EVENT_CLASS(module_refcnt,</span>
+<span class="lineNum">      70 </span>            : 
+<span class="lineNum">      71 </span>            :         TP_PROTO(struct module *mod, unsigned long ip),
+<span class="lineNum">      72 </span>            : 
+<span class="lineNum">      73 </span>            :         TP_ARGS(mod, ip),
+<span class="lineNum">      74 </span>            : 
+<span class="lineNum">      75 </span>            :         TP_STRUCT__entry(
+<span class="lineNum">      76 </span>            :                 __field(        unsigned long,  ip              )
+<span class="lineNum">      77 </span>            :                 __field(        int,            refcnt          )
+<span class="lineNum">      78 </span>            :                 __string(       name,           mod-&gt;name    )
+<span class="lineNum">      79 </span>            :         ),
+<span class="lineNum">      80 </span>            : 
+<span class="lineNum">      81 </span>            :         TP_fast_assign(
+<span class="lineNum">      82 </span>            :                 __entry-&gt;ip  = ip;
+<span class="lineNum">      83 </span>            :                 __entry-&gt;refcnt      = __this_cpu_read(mod-&gt;refptr-&gt;incs) + __this_cpu_read(mod-&gt;refptr-&gt;decs);
+<span class="lineNum">      84 </span>            :                 __assign_str(name, mod-&gt;name);
+<span class="lineNum">      85 </span>            :         ),
+<span class="lineNum">      86 </span>            : 
+<span class="lineNum">      87 </span>            :         TP_printk(&quot;%s call_site=%pf refcnt=%d&quot;,
+<span class="lineNum">      88 </span>            :                   __get_str(name), (void *)__entry-&gt;ip, __entry-&gt;refcnt)
+<a name="89"><span class="lineNum">      89 </span>            : );</a>
+<span class="lineNum">      90 </span>            : 
+<span class="lineNum">      91 </span><span class="lineCov">        222 : DEFINE_EVENT(module_refcnt, module_get,</span>
+<span class="lineNum">      92 </span>            : 
+<span class="lineNum">      93 </span>            :         TP_PROTO(struct module *mod, unsigned long ip),
+<span class="lineNum">      94 </span>            : 
+<span class="lineNum">      95 </span>            :         TP_ARGS(mod, ip)
+<a name="96"><span class="lineNum">      96 </span>            : );</a>
+<span class="lineNum">      97 </span>            : 
+<span class="lineNum">      98 </span><span class="lineCov">        234 : DEFINE_EVENT(module_refcnt, module_put,</span>
+<span class="lineNum">      99 </span>            : 
+<span class="lineNum">     100 </span>            :         TP_PROTO(struct module *mod, unsigned long ip),
+<span class="lineNum">     101 </span>            : 
+<span class="lineNum">     102 </span>            :         TP_ARGS(mod, ip)
+<span class="lineNum">     103 </span>            : );
+<a name="104"><span class="lineNum">     104 </span>            : #endif /* CONFIG_MODULE_UNLOAD */</a>
+<span class="lineNum">     105 </span>            : 
+<span class="lineNum">     106 </span><span class="lineNoCov">          0 : TRACE_EVENT(module_request,</span>
+<span class="lineNum">     107 </span>            : 
+<span class="lineNum">     108 </span>            :         TP_PROTO(char *name, bool wait, unsigned long ip),
+<span class="lineNum">     109 </span>            : 
+<span class="lineNum">     110 </span>            :         TP_ARGS(name, wait, ip),
+<span class="lineNum">     111 </span>            : 
+<span class="lineNum">     112 </span>            :         TP_STRUCT__entry(
+<span class="lineNum">     113 </span>            :                 __field(        unsigned long,  ip              )
+<span class="lineNum">     114 </span>            :                 __field(        bool,           wait            )
+<span class="lineNum">     115 </span>            :                 __string(       name,           name            )
+<span class="lineNum">     116 </span>            :         ),
+<span class="lineNum">     117 </span>            : 
+<span class="lineNum">     118 </span>            :         TP_fast_assign(
+<span class="lineNum">     119 </span>            :                 __entry-&gt;ip  = ip;
+<span class="lineNum">     120 </span>            :                 __entry-&gt;wait        = wait;
+<span class="lineNum">     121 </span>            :                 __assign_str(name, name);
+<span class="lineNum">     122 </span>            :         ),
+<span class="lineNum">     123 </span>            : 
+<span class="lineNum">     124 </span>            :         TP_printk(&quot;%s wait=%d call_site=%pf&quot;,
+<span class="lineNum">     125 </span>            :                   __get_str(name), (int)__entry-&gt;wait, (void *)__entry-&gt;ip)
+<span class="lineNum">     126 </span>            : );
+<span class="lineNum">     127 </span>            : 
+<span class="lineNum">     128 </span>            : #endif /* CONFIG_MODULES */
+<span class="lineNum">     129 </span>            : 
+<span class="lineNum">     130 </span>            : #endif /* _TRACE_MODULE_H */
+<span class="lineNum">     131 </span>            : 
+<span class="lineNum">     132 </span>            : /* This part must be outside protection */
+<span class="lineNum">     133 </span>            : #include &lt;trace/define_trace.h&gt;
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

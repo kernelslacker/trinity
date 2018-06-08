@@ -1,0 +1,36 @@
+#!/usr/bin/env stap -g
+# list_flags.stp
+# Copyright (C) 2007 Red Hat, Inc., Eugene Teo <eteo@redhat.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+#
+
+%{ 
+#include <linux/file.h>
+%}
+
+function list_flags:long (pid:long, fd:long) %{
+	struct task_struct *p;
+	struct list_head *_p, *_n;
+
+	list_for_each_safe(_p, _n, &current->tasks) {
+		p = list_entry(_p, struct task_struct, tasks);
+		if (p->pid == (int)THIS->pid) {
+			struct file *filp;
+			struct files_struct *files = p->files;
+			spin_lock(&files->file_lock);
+			filp = fcheck_files(files, (int)THIS->fd);
+			THIS->__retvalue = (!filp ? -1 : filp->f_flags);
+			spin_unlock(&files->file_lock);
+			break;
+		}
+	}
+%}
+
+probe begin {
+	flag_str = ( (flags = list_flags($1, $2)) ? _sys_open_flag_str(flags) : "???");
+	printf("pid: %d, fd: %d: %s\n", $1, $2, flag_str)
+	exit()
+}

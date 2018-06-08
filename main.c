@@ -566,8 +566,8 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 			log_child_signalled(childno, pid, WTERMSIG(childstatus), child->op_nr);
 		}
 		reap_child(shm->children[childno]);
-
-		fclose(child->pidstatfile);
+		if (child->pidstatfile)
+			fclose(child->pidstatfile);
 		child->pidstatfile = NULL;
 
 		replace_child(childno);

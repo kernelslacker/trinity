@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - include/linux/moduleloader.h</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">include/linux</a> - moduleloader.h<span style="font-size: 80%;"> (source / <a href="moduleloader.h.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">1</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntryHi">-</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : #ifndef _LINUX_MODULELOADER_H</a>
+<span class="lineNum">       2 </span>            : #define _LINUX_MODULELOADER_H
+<span class="lineNum">       3 </span>            : /* The stuff needed for archs to support modules. */
+<span class="lineNum">       4 </span>            : 
+<span class="lineNum">       5 </span>            : #include &lt;linux/module.h&gt;
+<span class="lineNum">       6 </span>            : #include &lt;linux/elf.h&gt;
+<span class="lineNum">       7 </span>            : 
+<span class="lineNum">       8 </span>            : /* These may be implemented by architectures that need to hook into the
+<span class="lineNum">       9 </span>            :  * module loader code.  Architectures that don't need to do anything special
+<span class="lineNum">      10 </span>            :  * can just rely on the 'weak' default hooks defined in kernel/module.c.
+<span class="lineNum">      11 </span>            :  * Note, however, that at least one of apply_relocate or apply_relocate_add
+<span class="lineNum">      12 </span>            :  * must be implemented by each architecture.
+<span class="lineNum">      13 </span>            :  */
+<span class="lineNum">      14 </span>            : 
+<span class="lineNum">      15 </span>            : /* Adjust arch-specific sections.  Return 0 on success.  */
+<span class="lineNum">      16 </span>            : int module_frob_arch_sections(Elf_Ehdr *hdr,
+<span class="lineNum">      17 </span>            :                               Elf_Shdr *sechdrs,
+<span class="lineNum">      18 </span>            :                               char *secstrings,
+<span class="lineNum">      19 </span>            :                               struct module *mod);
+<span class="lineNum">      20 </span>            : 
+<span class="lineNum">      21 </span>            : /* Additional bytes needed by arch in front of individual sections */
+<span class="lineNum">      22 </span>            : unsigned int arch_mod_section_prepend(struct module *mod, unsigned int section);
+<span class="lineNum">      23 </span>            : 
+<span class="lineNum">      24 </span>            : /* Allocator used for allocating struct module, core sections and init
+<span class="lineNum">      25 </span>            :    sections.  Returns NULL on failure. */
+<span class="lineNum">      26 </span>            : void *module_alloc(unsigned long size);
+<span class="lineNum">      27 </span>            : 
+<span class="lineNum">      28 </span>            : /* Free memory returned from module_alloc. */
+<span class="lineNum">      29 </span>            : void module_free(struct module *mod, void *module_region);
+<span class="lineNum">      30 </span>            : 
+<span class="lineNum">      31 </span>            : /*
+<span class="lineNum">      32 </span>            :  * Apply the given relocation to the (simplified) ELF.  Return -error
+<span class="lineNum">      33 </span>            :  * or 0.
+<span class="lineNum">      34 </span>            :  */
+<span class="lineNum">      35 </span>            : #ifdef CONFIG_MODULES_USE_ELF_REL
+<span class="lineNum">      36 </span>            : int apply_relocate(Elf_Shdr *sechdrs,
+<span class="lineNum">      37 </span>            :                    const char *strtab,
+<span class="lineNum">      38 </span>            :                    unsigned int symindex,
+<span class="lineNum">      39 </span>            :                    unsigned int relsec,
+<span class="lineNum">      40 </span>            :                    struct module *mod);
+<span class="lineNum">      41 </span>            : #else
+<span class="lineNum">      42 </span>            : static inline int apply_relocate(Elf_Shdr *sechdrs,
+<span class="lineNum">      43 </span>            :                                  const char *strtab,
+<span class="lineNum">      44 </span>            :                                  unsigned int symindex,
+<span class="lineNum">      45 </span>            :                                  unsigned int relsec,
+<span class="lineNum">      46 </span>            :                                  struct module *me)
+<span class="lineNum">      47 </span>            : {
+<span class="lineNum">      48 </span><span class="lineNoCov">          0 :         printk(KERN_ERR &quot;module %s: REL relocation unsupported\n&quot;, me-&gt;name);</span>
+<span class="lineNum">      49 </span>            :         return -ENOEXEC;
+<span class="lineNum">      50 </span>            : }
+<span class="lineNum">      51 </span>            : #endif
+<span class="lineNum">      52 </span>            : 
+<span class="lineNum">      53 </span>            : /*
+<span class="lineNum">      54 </span>            :  * Apply the given add relocation to the (simplified) ELF.  Return
+<span class="lineNum">      55 </span>            :  * -error or 0
+<span class="lineNum">      56 </span>            :  */
+<span class="lineNum">      57 </span>            : #ifdef CONFIG_MODULES_USE_ELF_RELA
+<span class="lineNum">      58 </span>            : int apply_relocate_add(Elf_Shdr *sechdrs,
+<span class="lineNum">      59 </span>            :                        const char *strtab,
+<span class="lineNum">      60 </span>            :                        unsigned int symindex,
+<span class="lineNum">      61 </span>            :                        unsigned int relsec,
+<span class="lineNum">      62 </span>            :                        struct module *mod);
+<span class="lineNum">      63 </span>            : #else
+<span class="lineNum">      64 </span>            : static inline int apply_relocate_add(Elf_Shdr *sechdrs,
+<span class="lineNum">      65 </span>            :                                      const char *strtab,
+<span class="lineNum">      66 </span>            :                                      unsigned int symindex,
+<span class="lineNum">      67 </span>            :                                      unsigned int relsec,
+<span class="lineNum">      68 </span>            :                                      struct module *me)
+<span class="lineNum">      69 </span>            : {
+<span class="lineNum">      70 </span>            :         printk(KERN_ERR &quot;module %s: REL relocation unsupported\n&quot;, me-&gt;name);
+<span class="lineNum">      71 </span>            :         return -ENOEXEC;
+<span class="lineNum">      72 </span>            : }
+<span class="lineNum">      73 </span>            : #endif
+<span class="lineNum">      74 </span>            : 
+<span class="lineNum">      75 </span>            : /* Any final processing of module before access.  Return -error or 0. */
+<span class="lineNum">      76 </span>            : int module_finalize(const Elf_Ehdr *hdr,
+<span class="lineNum">      77 </span>            :                     const Elf_Shdr *sechdrs,
+<span class="lineNum">      78 </span>            :                     struct module *mod);
+<span class="lineNum">      79 </span>            : 
+<span class="lineNum">      80 </span>            : /* Any cleanup needed when module leaves. */
+<span class="lineNum">      81 </span>            : void module_arch_cleanup(struct module *mod);
+<span class="lineNum">      82 </span>            : 
+<span class="lineNum">      83 </span>            : #endif
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - kpatch.ko related coverage - include/linux/kmod.h</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="title">LCOV - code coverage report</td></tr>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+    <tr>
+      <td width="100%">
+        <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="35%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">include/linux</a> - kmod.h<span style="font-size: 80%;"> (source / <a href="kmod.h.func.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="15%"></td>
+            <td width="10%" class="headerCovTableHead">Hit</td>
+            <td width="10%" class="headerCovTableHead">Total</td>
+            <td width="15%" class="headerCovTableHead">Coverage</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">kpatch.ko related coverage</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">1</td>
+            <td class="headerCovTableEntryLo">0.0 %</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Date:</td>
+            <td class="headerValue">2016-01-09</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntryHi">-</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Legend:</td>
+            <td class="headerValueLeg">            Lines:
+            <span class="coverLegendCov">hit</span>
+            <span class="coverLegendNoCov">not hit</span>
+</td>
+            <td></td>
+          </tr>
+          <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+  </table>
+
+  <table cellpadding=0 cellspacing=0 border=0>
+    <tr>
+      <td><br></td>
+    </tr>
+    <tr>
+      <td>
+<pre class="sourceHeading">          Line data    Source code</pre>
+<pre class="source">
+<a name="1"><span class="lineNum">       1 </span>            : #ifndef __LINUX_KMOD_H__</a>
+<span class="lineNum">       2 </span>            : #define __LINUX_KMOD_H__
+<span class="lineNum">       3 </span>            : 
+<span class="lineNum">       4 </span>            : /*
+<span class="lineNum">       5 </span>            :  *      include/linux/kmod.h
+<span class="lineNum">       6 </span>            :  *
+<span class="lineNum">       7 </span>            :  *      This program is free software; you can redistribute it and/or modify
+<span class="lineNum">       8 </span>            :  *      it under the terms of the GNU General Public License as published by
+<span class="lineNum">       9 </span>            :  *      the Free Software Foundation; either version 2 of the License, or
+<span class="lineNum">      10 </span>            :  *      (at your option) any later version.
+<span class="lineNum">      11 </span>            :  *
+<span class="lineNum">      12 </span>            :  *      This program is distributed in the hope that it will be useful,
+<span class="lineNum">      13 </span>            :  *      but WITHOUT ANY WARRANTY; without even the implied warranty of
+<span class="lineNum">      14 </span>            :  *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+<span class="lineNum">      15 </span>            :  *      GNU General Public License for more details.
+<span class="lineNum">      16 </span>            :  *
+<span class="lineNum">      17 </span>            :  *      You should have received a copy of the GNU General Public License
+<span class="lineNum">      18 </span>            :  *      along with this program; if not, write to the Free Software
+<span class="lineNum">      19 </span>            :  *      Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+<span class="lineNum">      20 </span>            :  */
+<span class="lineNum">      21 </span>            : 
+<span class="lineNum">      22 </span>            : #include &lt;linux/gfp.h&gt;
+<span class="lineNum">      23 </span>            : #include &lt;linux/stddef.h&gt;
+<span class="lineNum">      24 </span>            : #include &lt;linux/errno.h&gt;
+<span class="lineNum">      25 </span>            : #include &lt;linux/compiler.h&gt;
+<span class="lineNum">      26 </span>            : #include &lt;linux/workqueue.h&gt;
+<span class="lineNum">      27 </span>            : #include &lt;linux/sysctl.h&gt;
+<span class="lineNum">      28 </span>            : 
+<span class="lineNum">      29 </span>            : #define KMOD_PATH_LEN 256
+<span class="lineNum">      30 </span>            : 
+<span class="lineNum">      31 </span>            : #ifdef CONFIG_MODULES
+<span class="lineNum">      32 </span>            : extern char modprobe_path[]; /* for sysctl */
+<span class="lineNum">      33 </span>            : /* modprobe exit status on success, -ve on error.  Return value
+<span class="lineNum">      34 </span>            :  * usually useless though. */
+<span class="lineNum">      35 </span>            : extern __printf(2, 3)
+<span class="lineNum">      36 </span>            : int __request_module(bool wait, const char *name, ...);
+<span class="lineNum">      37 </span>            : #define request_module(mod...) __request_module(true, mod)
+<span class="lineNum">      38 </span>            : #define request_module_nowait(mod...) __request_module(false, mod)
+<span class="lineNum">      39 </span>            : #define try_then_request_module(x, mod...) \
+<span class="lineNum">      40 </span>            :         ((x) ?: (__request_module(true, mod), (x)))
+<span class="lineNum">      41 </span>            : #else
+<span class="lineNum">      42 </span>            : static inline int request_module(const char *name, ...) { return -ENOSYS; }
+<span class="lineNum">      43 </span>            : static inline int request_module_nowait(const char *name, ...) { return -ENOSYS; }
+<span class="lineNum">      44 </span>            : #define try_then_request_module(x, mod...) (x)
+<span class="lineNum">      45 </span>            : #endif
+<span class="lineNum">      46 </span>            : 
+<span class="lineNum">      47 </span>            : 
+<span class="lineNum">      48 </span>            : struct cred;
+<span class="lineNum">      49 </span>            : struct file;
+<span class="lineNum">      50 </span>            : 
+<span class="lineNum">      51 </span>            : #define UMH_NO_WAIT     0       /* don't wait at all */
+<span class="lineNum">      52 </span>            : #define UMH_WAIT_EXEC   1       /* wait for the exec, but not the process */
+<span class="lineNum">      53 </span>            : #define UMH_WAIT_PROC   2       /* wait for the process to complete */
+<span class="lineNum">      54 </span>            : #define UMH_KILLABLE    4       /* wait for EXEC/PROC killable */
+<span class="lineNum">      55 </span>            : 
+<span class="lineNum">      56 </span>            : struct subprocess_info {
+<span class="lineNum">      57 </span>            :         struct work_struct work;
+<span class="lineNum">      58 </span>            :         struct completion *complete;
+<span class="lineNum">      59 </span>            :         char *path;
+<span class="lineNum">      60 </span>            :         char **argv;
+<span class="lineNum">      61 </span>            :         char **envp;
+<span class="lineNum">      62 </span>            :         int wait;
+<span class="lineNum">      63 </span>            :         int retval;
+<span class="lineNum">      64 </span>            :         int (*init)(struct subprocess_info *info, struct cred *new);
+<span class="lineNum">      65 </span>            :         void (*cleanup)(struct subprocess_info *info);
+<span class="lineNum">      66 </span>            :         void *data;
+<span class="lineNum">      67 </span>            : };
+<span class="lineNum">      68 </span>            : 
+<span class="lineNum">      69 </span>            : extern int
+<span class="lineNum">      70 </span>            : call_usermodehelper(char *path, char **argv, char **envp, int wait);
+<span class="lineNum">      71 </span>            : 
+<span class="lineNum">      72 </span>            : extern struct subprocess_info *
+<span class="lineNum">      73 </span>            : call_usermodehelper_setup(char *path, char **argv, char **envp, gfp_t gfp_mask,
+<span class="lineNum">      74 </span>            :                           int (*init)(struct subprocess_info *info, struct cred *new),
+<span class="lineNum">      75 </span>            :                           void (*cleanup)(struct subprocess_info *), void *data);
+<span class="lineNum">      76 </span>            : 
+<span class="lineNum">      77 </span>            : extern int
+<span class="lineNum">      78 </span>            : call_usermodehelper_exec(struct subprocess_info *info, int wait);
+<span class="lineNum">      79 </span>            : 
+<span class="lineNum">      80 </span>            : extern struct ctl_table usermodehelper_table[];
+<span class="lineNum">      81 </span>            : 
+<span class="lineNum">      82 </span>            : enum umh_disable_depth {
+<span class="lineNum">      83 </span>            :         UMH_ENABLED = 0,
+<span class="lineNum">      84 </span>            :         UMH_FREEZING,
+<span class="lineNum">      85 </span>            :         UMH_DISABLED,
+<span class="lineNum">      86 </span>            : };
+<span class="lineNum">      87 </span>            : 
+<span class="lineNum">      88 </span>            : extern void usermodehelper_init(void);
+<span class="lineNum">      89 </span>            : 
+<span class="lineNum">      90 </span>            : extern int __usermodehelper_disable(enum umh_disable_depth depth);
+<span class="lineNum">      91 </span>            : extern void __usermodehelper_set_disable_depth(enum umh_disable_depth depth);
+<span class="lineNum">      92 </span>            : 
+<span class="lineNum">      93 </span>            : static inline int usermodehelper_disable(void)
+<span class="lineNum">      94 </span>            : {
+<span class="lineNum">      95 </span><span class="lineNoCov">          0 :         return __usermodehelper_disable(UMH_DISABLED);</span>
+<span class="lineNum">      96 </span>            : }
+<span class="lineNum">      97 </span>            : 
+<span class="lineNum">      98 </span>            : static inline void usermodehelper_enable(void)
+<span class="lineNum">      99 </span>            : {
+<span class="lineNum">     100 </span>            :         __usermodehelper_set_disable_depth(UMH_ENABLED);
+<span class="lineNum">     101 </span>            : }
+<span class="lineNum">     102 </span>            : 
+<span class="lineNum">     103 </span>            : extern int usermodehelper_read_trylock(void);
+<span class="lineNum">     104 </span>            : extern long usermodehelper_read_lock_wait(long timeout);
+<span class="lineNum">     105 </span>            : extern void usermodehelper_read_unlock(void);
+<span class="lineNum">     106 </span>            : 
+<span class="lineNum">     107 </span>            : #endif /* __LINUX_KMOD_H__ */
+</pre>
+      </td>
+    </tr>
+  </table>
+  <br>
+
+  <table width="100%" border=0 cellspacing=0 cellpadding=0>
+    <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+    <tr><td class="versionInfo">Generated by: <a href="http://ltp.sourceforge.net/coverage/lcov.php" target="_parent">LCOV version 1.10</a></td></tr>
+  </table>
+  <br>
+
+</body>
+</html>

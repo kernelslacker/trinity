@@ -1,0 +1,1 @@
+ /usr/libexec/qemu-kvm  -m 524288 -net nic -net user -display none -serial stdio -no-reboot  -numa node,nodeid=0,cpus=0-1 -numa node,nodeid=1,cpus=2-3 -smp sockets=2,cores=2,threads=1  -enable-kvm  -hda /var/lib/libvirt/images/rhel-6.9.qcow2  -vnc 0.0.0.0:1 -monitor telnet:127.0.0.1:1234,server,nowait 

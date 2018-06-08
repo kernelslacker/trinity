@@ -1,0 +1,11 @@
+probe begin
+{
+        printf("ready go\n");
+}
+ 
+probe kernel.function("do_tcp_setsockopt")
+{
+        $sysctl_tcp_fin_timeout = $1
+        printf("sysctl_tcp_fin_timeout = %d\n", $sysctl_tcp_fin_timeout);
+        exit()
+}

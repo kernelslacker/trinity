@@ -1,0 +1,2 @@
+fetch_url="git://git.engineering.redhat.com/users/chuhu/kernel-tests.git?master#general/code-coverage/start" /kernel/general/code-coverage/start
+fetch_url="git://git.engineering.redhat.com/users/chuhu/kernel-tests.git?master#distribution/reservesys" /Chunyu/Hu/reserve/the/system/for/24h*2/
