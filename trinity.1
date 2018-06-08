@@ -1,0 +1,171 @@
+.TH TRINITY 1 Trinity trinity\-1.5
+.nh
+.SH NAME
+Trinity -  Linux system call fuzzer
+
+.SH DESCRIPTION
+	"After the initial euphoria of witnessing the explosion had passed, test
+	 director Kenneth Bainbridge commented to Los Alamos director J. Robert
+	 Oppenheimer, "Now we are all sons of bitches." Oppenheimer later stated
+	 that while watching the test he was reminded of a line from the Hindu
+	 scripture the Bhagavad Gita:
+
+		Now I am become Death, the destroyer of worlds."
+
+.SH SYNOPSIS
+
+System call fuzzers aren't a particularly new idea.   As far back as 1991,
+people have written apps that bomb syscall inputs with garbage data,
+that have had a variety of success in crashing assorted operating systems.
+
+After fixing the obvious dumb bugs however, a majority of the time
+these calls will just by rejected by the kernel very near the beginning
+of their function entry point as basic parameter validation is performed.
+
+Trinity is a system call fuzzer which employs some techniques to
+pass semi-intelligent arguments to the syscalls being called.
+
+The intelligence features include:
+
+\- If a system call expects a certain datatype as an argument
+  (for example a file descriptor) it gets passed one.
+  This is the reason for the slow initial startup, as it generates a
+  list of fd's of files it can read from /sys, /proc and /dev
+  and then supplements this with fd's for various network protocol sockets.
+  (Information on which protocols succeed/fail is cached on the first run,
+   greatly increasing the speed of subsequent runs).
+
+\- If a system call only accepts certain values as an argument,
+  (for example a 'flags' field), trinity has a list of all the valid
+  flags that may be passed.
+  Just to throw a spanner in the works, occasionally, it will bitflip
+  one of the flags, just to make things more interesting.
+
+\- If a system call only takes a range of values, the random value
+  passed is biased to usually fit within that range.
+
+
+Trinity logs it's output to a files (1 for each child process), and fsync's
+the files before it actually makes the system call. This way, should you trigger
+something which panics the kernel, you should be able to find out exactly what
+happened by examining the log.
+
+There are several test harnesses provided (test-*.sh), which run trinity in
+various modes and takes care of things like cpu affinity, and makes sure it runs from the
+tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp afterwards)
+
+
+.SH OPTIONS
+
+.TP
+\fI \-\-arch \-a\fP
+Selects syscalls for the specified architecture (32 or 64). Both by default.
+
+.TP
+\fI \-\-bdev \-b\ <node>\fP
+Add \/dev\/\fP node to list of block devices to use for destructive tests.
+
+.TP
+\fI \-\-children \-C \fP
+Specify number of child processes
+
+.TP
+\fI \-\-debug \-D\fP
+Enable debug
+
+.TP
+\fI\-\-dropprivs \-X\fP
+If run as root, switch to nobody \fB[EXPERIMENTAL]
+
+.TP
+\fI\-\-exclude \-x\fP
+Don't call a specific syscall
+
+.TP
+\fI\-\-enable\-fds or \-\-disable\-fds\fp
+Options are: sockets, pipes, perf, epoll, eventfd, pseudo, timerfd,
+testfile, memfd and drm
+
+.TP
+\fI\-\-group \-g = {vfs,vm}\fP
+Only run syscalls from a certain group.
+
+.TP
+\fI\-\-ioctls \-I\fP
+List all ioctls.
+
+.TP
+\fI\-\-kernel_taint \-T\fP
+Controls which kernel taint flags should be considered.
+
+.TP
+\fI\-\-list \-L\fP
+List all syscalls known on this architecture.
+
+.TP
+\fI\-\-logging \-l\fP
+off=disable logging.
+<dirname> specify a directory where logfiles will be placed.
+<hostname> a remote host to log to over UDP. Needs a trinity server listening on port 6665.
+ (Note: still in development, partially working)
+
+.TP
+\fI\-\-domain \-P\fP
+Specify specific network domain for sockets.
+
+.TP
+\fI\-\-no_domain \-E\fP
+Specify network domains to be excluded from testing.
+
+.TP
+\fI\-\-quiet \-q\fP
+Less output.
+
+.TP
+\fI\-\-random \-r# \fP
+Pick N syscalls at random and just fuzz those
+
+.TP
+\fI\-\-syslog \-S\fP
+Log important info to syslog. Useful if syslog is remote.
+
+.TP
+\fI\-\-verbose \-v\fP
+Increase output verbosity.
+
+.TP
+\fI\-\-victims \-V\fP
+Path to victim files.
+
+.TP
+\fI\-c# @\fP
+Target specific syscall, takes syscall name as parameter and optionally 32 or
+64 as bit\-width. Default is both.
+
+.TP
+\fI\-N#\fP
+Do # syscalls then exit.
+
+.TP
+\fI\-p\fP
+Pause after syscall.
+
+.TP
+\fB\-s#\fP
+use # as random seed.
+
+
+.SH EXAMPLES
+.TP
+.B trinity -c splice
+Stress test the splice syscall
+.TP
+.B trinity \-x splice
+Call every syscall except for splice.
+.TP
+.B trinity \-qq \-l off \-C16
+Turn off logging, and suppress most output to run as fast as possible. Use 16 child processes
+
+.fi
+.SH AUTHOR
+Trinity is written by Dave Jones <davej@codemonkey.org.uk>

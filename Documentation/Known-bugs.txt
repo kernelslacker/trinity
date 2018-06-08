@@ -1,0 +1,31 @@
+- render_arg occasionally scribbles past the end of the postbuffer.
+  This becomes more obvious when trinity is run with MALLOC_PERTURB_ set.
+
+- getrandom syscall can block, and the watchdog can't kill it.
+  Might need a ->sanitise routine to prevent blocking ops.
+
+- -c execve seems to always pass the same junk as args.
+
+- -r and -c don't seem to work together
+
+- when we randomly call personality, the child stops logging.
+
+- fuzzing certain syscalls causes segfaults
+
+  - modify_ldt: This needs a proper sanitise routine
+  - Various VM syscalls cause us to corrupt our own state.
+    - munmap: Looks like we munmap something important.
+    - move_pages: possibly a similar bug.
+    - mprotect: Setting page_rand to readonly for eg will cause segv's.
+    These need to work on their own allocated pages, or better yet a list of
+    victim allocations.
+
+- fuzzing read() occasionally hangs a long time. Probably a socket ?
+  The watchdog _should_ be killing processes that hang, but if they're stuck in D state,
+  there's not much we can do. Maybe close that fd so we don't hang on it again?
+
+- occasionally a thread exits after 0 syscalls. Find out why.
+
+- occasionally trinity fails to startup because we've leaked so much ipc stuff.
+  cleanup on startup. (scripts/clean-ipc.sh in the meantime)
+

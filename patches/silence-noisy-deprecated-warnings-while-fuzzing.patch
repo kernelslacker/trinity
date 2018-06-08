@@ -1,0 +1,341 @@
+From 57b3e2f189a0ba3496daf5ac100cd9372f34ddce Mon Sep 17 00:00:00 2001
+From: Dave Jones <davej@codemonkey.org.uk>
+Date: Mon, 15 Jun 2015 23:42:40 -0400
+Subject: [PATCH 23/23] silence deprecated warnings
+
+---
+ drivers/usb/core/sysfs.c            |  7 -------
+ fs/hugetlbfs/inode.c                |  7 +------
+ fs/proc/task_mmu.c                  |  6 ------
+ fs/stat.c                           | 10 ----------
+ kernel/sysctl_binary.c              | 10 ----------
+ mm/backing-dev.c                    |  2 --
+ net/ax25/af_ax25.c                  | 10 ----------
+ net/core/sock.c                     |  8 --------
+ net/dccp/proto.c                    |  3 ---
+ net/ipv4/raw.c                      |  2 --
+ net/ipv6/ndisc.c                    | 10 ----------
+ net/netfilter/nf_conntrack_helper.c |  4 ----
+ net/sctp/socket.c                   | 20 --------------------
+ net/socket.c                        |  9 +--------
+ 14 files changed, 2 insertions(+), 106 deletions(-)
+
+diff --git a/drivers/usb/core/sysfs.c b/drivers/usb/core/sysfs.c
+index d26973844a4d..bf34697d50c2 100644
+--- a/drivers/usb/core/sysfs.c
++++ b/drivers/usb/core/sysfs.c
+@@ -392,13 +392,6 @@ static const char auto_string[] = "auto";
+ 
+ static void warn_level(void)
+ {
+-	static int level_warned;
+-
+-	if (!level_warned) {
+-		level_warned = 1;
+-		printk(KERN_WARNING "WARNING! power/level is deprecated; "
+-				"use power/control instead\n");
+-	}
+ }
+ 
+ static ssize_t level_show(struct device *dev, struct device_attribute *attr,
+diff --git a/fs/hugetlbfs/inode.c b/fs/hugetlbfs/inode.c
+index 87724c1d7be6..88cedd5b82aa 100644
+--- a/fs/hugetlbfs/inode.c
++++ b/fs/hugetlbfs/inode.c
+@@ -986,12 +986,7 @@ struct file *hugetlb_file_setup(const char *name, size_t size,
+ 
+ 	if (creat_flags == HUGETLB_SHMFS_INODE && !can_do_hugetlb_shm()) {
+ 		*user = current_user();
+-		if (user_shm_lock(size, *user)) {
+-			task_lock(current);
+-			pr_warn_once("%s (%d): Using mlock ulimits for SHM_HUGETLB is deprecated\n",
+-				current->comm, current->pid);
+-			task_unlock(current);
+-		} else {
++		if (!(user_shm_lock(size, *user))) {
+ 			*user = NULL;
+ 			return ERR_PTR(-EPERM);
+ 		}
+diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
+index 6dee68d013ff..4ac8001ef9ff 100644
+--- a/fs/proc/task_mmu.c
++++ b/fs/proc/task_mmu.c
+@@ -889,9 +889,6 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
+ 
+ 	if (type == CLEAR_REFS_SOFT_DIRTY) {
+ 		soft_dirty_cleared = true;
+-		pr_warn_once("The pagemap bits 55-60 has changed their meaning!"
+-			     " See the linux/Documentation/vm/pagemap.txt for "
+-			     "details.\n");
+ 	}
+ 
+ 	task = get_proc_task(file_inode(file));
+@@ -1328,9 +1325,6 @@ static int pagemap_open(struct inode *inode, struct file *file)
+ 	/* do not disclose physical addresses: attack vector */
+ 	if (!capable(CAP_SYS_ADMIN))
+ 		return -EPERM;
+-	pr_warn_once("Bits 55-60 of /proc/PID/pagemap entries are about "
+-			"to stop being page-shift some time soon. See the "
+-			"linux/Documentation/vm/pagemap.txt for details.\n");
+ 	return 0;
+ }
+ 
+diff --git a/fs/stat.c b/fs/stat.c
+index cccc1aab9a8b..0eb2a98dc22f 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -139,17 +139,7 @@ EXPORT_SYMBOL(vfs_lstat);
+  */
+ static int cp_old_stat(struct kstat *stat, struct __old_kernel_stat __user * statbuf)
+ {
+-	static int warncount = 5;
+ 	struct __old_kernel_stat tmp;
+-	
+-	if (warncount > 0) {
+-		warncount--;
+-		printk(KERN_WARNING "VFS: Warning: %s using old stat() call. Recompile your binary.\n",
+-			current->comm);
+-	} else if (warncount < 0) {
+-		/* it's laughable, but... */
+-		warncount = 0;
+-	}
+ 
+ 	memset(&tmp, 0, sizeof(struct __old_kernel_stat));
+ 	tmp.st_dev = old_encode_dev(stat->dev);
+diff --git a/kernel/sysctl_binary.c b/kernel/sysctl_binary.c
+index 7e7746a42a62..6fb00bbc5eb7 100644
+--- a/kernel/sysctl_binary.c
++++ b/kernel/sysctl_binary.c
+@@ -1349,8 +1349,6 @@ static ssize_t binary_sysctl(const int *name, int nlen,
+ 
+ static void deprecated_sysctl_warning(const int *name, int nlen)
+ {
+-	int i;
+-
+ 	/*
+ 	 * CTL_KERN/KERN_VERSION is used by older glibc and cannot
+ 	 * ever go away.
+@@ -1358,14 +1356,6 @@ static void deprecated_sysctl_warning(const int *name, int nlen)
+ 	if (name[0] == CTL_KERN && name[1] == KERN_VERSION)
+ 		return;
+ 
+-	if (printk_ratelimit()) {
+-		printk(KERN_INFO
+-			"warning: process `%s' used the deprecated sysctl "
+-			"system call with ", current->comm);
+-		for (i = 0; i < nlen; i++)
+-			printk("%d.", name[i]);
+-		printk("\n");
+-	}
+ 	return;
+ }
+ 
+diff --git a/mm/backing-dev.c b/mm/backing-dev.c
+index 000e7b3b9896..cf5949bbcf0d 100644
+--- a/mm/backing-dev.c
++++ b/mm/backing-dev.c
+@@ -592,8 +592,6 @@ int pdflush_proc_obsolete(struct ctl_table *table, int write,
+ 
+ 	if (copy_to_user(buffer, kbuf, sizeof(kbuf)))
+ 		return -EFAULT;
+-	printk_once(KERN_WARNING "%s exported in /proc is scheduled for removal\n",
+-			table->procname);
+ 
+ 	*lenp = 2;
+ 	*ppos += *lenp;
+diff --git a/net/ax25/af_ax25.c b/net/ax25/af_ax25.c
+index 330c1f4a5a0b..f322fc7b28eb 100644
+--- a/net/ax25/af_ax25.c
++++ b/net/ax25/af_ax25.c
+@@ -1209,9 +1209,6 @@ static int __must_check ax25_connect(struct socket *sock,
+ 	 *	been filled in, error if it hasn't.
+ 	 */
+ 	if (sock_flag(sk, SOCK_ZAPPED)) {
+-		/* check if we can remove this feature. It is broken. */
+-		printk(KERN_WARNING "ax25_connect(): %s uses autobind, please contact jreuter@yaina.de\n",
+-			current->comm);
+ 		if ((err = ax25_rt_autobind(ax25, &fsa->fsa_ax25.sax25_call)) < 0) {
+ 			kfree(digi);
+ 			goto out_release;
+@@ -1788,13 +1785,6 @@ static int ax25_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
+ 
+ 		/* old structure? */
+ 		if (cmd == SIOCAX25GETINFOOLD) {
+-			static int warned = 0;
+-			if (!warned) {
+-				printk(KERN_INFO "%s uses old SIOCAX25GETINFO\n",
+-					current->comm);
+-				warned=1;
+-			}
+-
+ 			if (copy_to_user(argp, &ax25_info, sizeof(struct ax25_info_struct_deprecated))) {
+ 				res = -EFAULT;
+ 				break;
+diff --git a/net/core/sock.c b/net/core/sock.c
+index ed36ac88702f..53b6438f1268 100644
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -404,14 +404,6 @@ static int sock_set_timeout(long *timeo_p, char __user *optval, int optlen)
+ 
+ static void sock_warn_obsolete_bsdism(const char *name)
+ {
+-	static int warned;
+-	static char warncomm[TASK_COMM_LEN];
+-	if (strcmp(warncomm, current->comm) && warned < 5) {
+-		strcpy(warncomm,  current->comm);
+-		pr_warn("process `%s' is using obsolete %s SO_BSDCOMPAT\n",
+-			warncomm, name);
+-		warned++;
+-	}
+ }
+ 
+ #define SK_FLAGS_TIMESTAMP ((1UL << SOCK_TIMESTAMP) | (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE))
+diff --git a/net/dccp/proto.c b/net/dccp/proto.c
+index 52a94016526d..9a873b6e6dbb 100644
+--- a/net/dccp/proto.c
++++ b/net/dccp/proto.c
+@@ -497,11 +497,9 @@ static int do_dccp_setsockopt(struct sock *sk, int level, int optname,
+ 
+ 	switch (optname) {
+ 	case DCCP_SOCKOPT_PACKET_SIZE:
+-		DCCP_WARN("sockopt(PACKET_SIZE) is deprecated: fix your app\n");
+ 		return 0;
+ 	case DCCP_SOCKOPT_CHANGE_L:
+ 	case DCCP_SOCKOPT_CHANGE_R:
+-		DCCP_WARN("sockopt(CHANGE_L/R) is deprecated: fix your app\n");
+ 		return 0;
+ 	case DCCP_SOCKOPT_CCID:
+ 	case DCCP_SOCKOPT_RX_CCID:
+@@ -624,7 +622,6 @@ static int do_dccp_getsockopt(struct sock *sk, int level, int optname,
+ 
+ 	switch (optname) {
+ 	case DCCP_SOCKOPT_PACKET_SIZE:
+-		DCCP_WARN("sockopt(PACKET_SIZE) is deprecated: fix your app\n");
+ 		return 0;
+ 	case DCCP_SOCKOPT_SERVICE:
+ 		return dccp_getsockopt_service(sk, len,
+diff --git a/net/ipv4/raw.c b/net/ipv4/raw.c
+index 561cd4b8fc6e..d6da871d79a9 100644
+--- a/net/ipv4/raw.c
++++ b/net/ipv4/raw.c
+@@ -516,8 +516,6 @@ static int raw_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
+ 		if (msg->msg_namelen < sizeof(*usin))
+ 			goto out;
+ 		if (usin->sin_family != AF_INET) {
+-			pr_info_once("%s: %s forgot to set AF_INET. Fix it!\n",
+-				     __func__, current->comm);
+ 			err = -EAFNOSUPPORT;
+ 			if (usin->sin_family)
+ 				goto out;
+diff --git a/net/ipv6/ndisc.c b/net/ipv6/ndisc.c
+index 96f153c0846b..929483c141e3 100644
+--- a/net/ipv6/ndisc.c
++++ b/net/ipv6/ndisc.c
+@@ -1686,16 +1686,6 @@ static struct notifier_block ndisc_netdev_notifier = {
+ static void ndisc_warn_deprecated_sysctl(struct ctl_table *ctl,
+ 					 const char *func, const char *dev_name)
+ {
+-	static char warncomm[TASK_COMM_LEN];
+-	static int warned;
+-	if (strcmp(warncomm, current->comm) && warned < 5) {
+-		strcpy(warncomm, current->comm);
+-		pr_warn("process `%s' is using deprecated sysctl (%s) net.ipv6.neigh.%s.%s - use net.ipv6.neigh.%s.%s_ms instead\n",
+-			warncomm, func,
+-			dev_name, ctl->procname,
+-			dev_name, ctl->procname);
+-		warned++;
+-	}
+ }
+ 
+ int ndisc_ifinfo_sysctl_change(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+diff --git a/net/netfilter/nf_conntrack_helper.c b/net/netfilter/nf_conntrack_helper.c
+index bd9d31537905..f2fdf02f0a94 100644
+--- a/net/netfilter/nf_conntrack_helper.c
++++ b/net/netfilter/nf_conntrack_helper.c
+@@ -212,10 +212,6 @@ int __nf_ct_try_assign_helper(struct nf_conn *ct, struct nf_conn *tmpl,
+ 	if (net->ct.sysctl_auto_assign_helper && helper == NULL) {
+ 		helper = __nf_ct_helper_find(&ct->tuplehash[IP_CT_DIR_REPLY].tuple);
+ 		if (unlikely(!net->ct.auto_assign_helper_warned && helper)) {
+-			pr_info("nf_conntrack: automatic helper "
+-				"assignment is deprecated and it will "
+-				"be removed soon. Use the iptables CT target "
+-				"to attach helpers instead.\n");
+ 			net->ct.auto_assign_helper_warned = true;
+ 		}
+ 	}
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index 940de29b8bec..3f59f80ca0f6 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -3084,11 +3084,6 @@ static int sctp_setsockopt_maxseg(struct sock *sk, char __user *optval, unsigned
+ 	int val;
+ 
+ 	if (optlen == sizeof(int)) {
+-		pr_warn_ratelimited(DEPRECATED
+-				    "%s (pid %d) "
+-				    "Use of int in maxseg socket option.\n"
+-				    "Use struct sctp_assoc_value instead\n",
+-				    current->comm, task_pid_nr(current));
+ 		if (copy_from_user(&val, optval, optlen))
+ 			return -EFAULT;
+ 		params.assoc_id = 0;
+@@ -3345,11 +3340,6 @@ static int sctp_setsockopt_maxburst(struct sock *sk,
+ 	int assoc_id = 0;
+ 
+ 	if (optlen == sizeof(int)) {
+-		pr_warn_ratelimited(DEPRECATED
+-				    "%s (pid %d) "
+-				    "Use of int in max_burst socket option deprecated.\n"
+-				    "Use struct sctp_assoc_value instead\n",
+-				    current->comm, task_pid_nr(current));
+ 		if (copy_from_user(&val, optval, optlen))
+ 			return -EFAULT;
+ 	} else if (optlen == sizeof(struct sctp_assoc_value)) {
+@@ -5398,11 +5388,6 @@ static int sctp_getsockopt_maxseg(struct sock *sk, int len,
+ 	struct sctp_association *asoc;
+ 
+ 	if (len == sizeof(int)) {
+-		pr_warn_ratelimited(DEPRECATED
+-				    "%s (pid %d) "
+-				    "Use of int in maxseg socket option.\n"
+-				    "Use struct sctp_assoc_value instead\n",
+-				    current->comm, task_pid_nr(current));
+ 		params.assoc_id = 0;
+ 	} else if (len >= sizeof(struct sctp_assoc_value)) {
+ 		len = sizeof(struct sctp_assoc_value);
+@@ -5493,11 +5478,6 @@ static int sctp_getsockopt_maxburst(struct sock *sk, int len,
+ 	struct sctp_association *asoc;
+ 
+ 	if (len == sizeof(int)) {
+-		pr_warn_ratelimited(DEPRECATED
+-				    "%s (pid %d) "
+-				    "Use of int in max_burst socket option.\n"
+-				    "Use struct sctp_assoc_value instead\n",
+-				    current->comm, task_pid_nr(current));
+ 		params.assoc_id = 0;
+ 	} else if (len >= sizeof(struct sctp_assoc_value)) {
+ 		len = sizeof(struct sctp_assoc_value);
+diff --git a/net/socket.c b/net/socket.c
+index c92a71f1dee2..c41e1f3c7652 100644
+--- a/net/socket.c
++++ b/net/socket.c
+@@ -1114,15 +1114,8 @@ int __sock_create(struct net *net, int family, int type, int protocol,
+ 	   This uglymoron is moved from INET layer to here to avoid
+ 	   deadlock in module load.
+ 	 */
+-	if (family == PF_INET && type == SOCK_PACKET) {
+-		static int warned;
+-		if (!warned) {
+-			warned = 1;
+-			pr_info("%s uses obsolete (PF_INET,SOCK_PACKET)\n",
+-				current->comm);
+-		}
++	if (family == PF_INET && type == SOCK_PACKET)
+ 		family = PF_PACKET;
+-	}
+ 
+ 	err = security_socket_create(family, type, protocol, kern);
+ 	if (err)
+-- 
+2.1.4
+

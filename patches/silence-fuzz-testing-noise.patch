@@ -1,0 +1,276 @@
+From ff4431740d5b3b0192a033d610bcc24a625ea45a Mon Sep 17 00:00:00 2001
+From: Dave Jones <davej@codemonkey.org.uk>
+Date: Mon, 15 Jun 2015 23:42:18 -0400
+Subject: [PATCH 22/23] silence fuzz-testing noise
+
+---
+ arch/x86/kernel/vm86_32.c       |  9 +++------
+ drivers/gpu/drm/drm_sysfs.c     |  2 --
+ drivers/scsi/scsi_netlink.c     | 10 ++--------
+ net/appletalk/ddp.c             |  5 -----
+ net/can/af_can.c                |  9 ---------
+ net/core/sock.c                 |  7 -------
+ net/irda/af_irda.c              |  6 +-----
+ net/netfilter/ipvs/ip_vs_core.c |  2 --
+ net/packet/af_packet.c          |  4 +---
+ net/rds/bind.c                  |  2 --
+ net/sctp/socket.c               |  8 --------
+ net/socket.c                    |  2 --
+ security/selinux/hooks.c        |  4 ----
+ 13 files changed, 7 insertions(+), 63 deletions(-)
+
+diff --git a/arch/x86/kernel/vm86_32.c b/arch/x86/kernel/vm86_32.c
+index fc9db6ef2a95..f01621eeea7e 100644
+--- a/arch/x86/kernel/vm86_32.c
++++ b/arch/x86/kernel/vm86_32.c
+@@ -138,17 +138,14 @@ struct pt_regs *save_v86_state(struct kernel_vm86_regs *regs)
+ 	 */
+ 	local_irq_enable();
+ 
+-	if (!current->thread.vm86_info) {
+-		pr_alert("no vm86_info: BAD\n");
++	if (!current->thread.vm86_info)
+ 		do_exit(SIGSEGV);
+-	}
++
+ 	set_flags(regs->pt.flags, VEFLAGS, X86_EFLAGS_VIF | current->thread.v86mask);
+ 	tmp = copy_vm86_regs_to_user(&current->thread.vm86_info->regs, regs);
+ 	tmp += put_user(current->thread.screen_bitmap, &current->thread.vm86_info->screen_bitmap);
+-	if (tmp) {
+-		pr_alert("could not access userspace vm86_info\n");
++	if (tmp)
+ 		do_exit(SIGSEGV);
+-	}
+ 
+ 	tss = &per_cpu(cpu_tss, get_cpu());
+ 	current->thread.sp0 = current->thread.saved_sp0;
+diff --git a/drivers/gpu/drm/drm_sysfs.c b/drivers/gpu/drm/drm_sysfs.c
+index eb7e61078a5b..c01be4f522eb 100644
+--- a/drivers/gpu/drm/drm_sysfs.c
++++ b/drivers/gpu/drm/drm_sysfs.c
+@@ -330,7 +330,6 @@ static ssize_t subconnector_show(struct device *device,
+ 	}
+ 
+ 	if (!prop) {
+-		DRM_ERROR("Unable to find subconnector property\n");
+ 		return 0;
+ 	}
+ 
+@@ -371,7 +370,6 @@ static ssize_t select_subconnector_show(struct device *device,
+ 	}
+ 
+ 	if (!prop) {
+-		DRM_ERROR("Unable to find select subconnector property\n");
+ 		return 0;
+ 	}
+ 
+diff --git a/drivers/scsi/scsi_netlink.c b/drivers/scsi/scsi_netlink.c
+index 109802f776ed..1e8b706967fa 100644
+--- a/drivers/scsi/scsi_netlink.c
++++ b/drivers/scsi/scsi_netlink.c
+@@ -55,11 +55,8 @@ scsi_nl_rcv_msg(struct sk_buff *skb)
+ 
+ 		nlh = nlmsg_hdr(skb);
+ 		if ((nlh->nlmsg_len < (sizeof(*nlh) + sizeof(*hdr))) ||
+-		    (skb->len < nlh->nlmsg_len)) {
+-			printk(KERN_WARNING "%s: discarding partial skb\n",
+-				 __func__);
++		    (skb->len < nlh->nlmsg_len))
+ 			return;
+-		}
+ 
+ 		rlen = NLMSG_ALIGN(nlh->nlmsg_len);
+ 		if (rlen > skb->len)
+@@ -82,11 +79,8 @@ scsi_nl_rcv_msg(struct sk_buff *skb)
+ 			goto next_msg;
+ 		}
+ 
+-		if (nlh->nlmsg_len < (sizeof(*nlh) + hdr->msglen)) {
+-			printk(KERN_WARNING "%s: discarding partial message\n",
+-				 __func__);
++		if (nlh->nlmsg_len < (sizeof(*nlh) + hdr->msglen))
+ 			goto next_msg;
+-		}
+ 
+ 		/*
+ 		 * Deliver message to the appropriate transport
+diff --git a/net/appletalk/ddp.c b/net/appletalk/ddp.c
+index 3b7ad43c7dad..737d14fb9b6b 100644
+--- a/net/appletalk/ddp.c
++++ b/net/appletalk/ddp.c
+@@ -1204,12 +1204,7 @@ static int atalk_connect(struct socket *sock, struct sockaddr *uaddr,
+ 
+ 	if (addr->sat_addr.s_node == ATADDR_BCAST &&
+ 	    !sock_flag(sk, SOCK_BROADCAST)) {
+-#if 1
+-		pr_warn("atalk_connect: %s is broken and did not set SO_BROADCAST.\n",
+-			current->comm);
+-#else
+ 		return -EACCES;
+-#endif
+ 	}
+ 
+ 	lock_sock(sk);
+diff --git a/net/can/af_can.c b/net/can/af_can.c
+index 32d710eaf1fc..9434353b8c46 100644
+--- a/net/can/af_can.c
++++ b/net/can/af_can.c
+@@ -154,15 +154,6 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
+ 
+ 		err = request_module("can-proto-%d", protocol);
+ 
+-		/*
+-		 * In case of error we only print a message but don't
+-		 * return the error code immediately.  Below we will
+-		 * return -EPROTONOSUPPORT
+-		 */
+-		if (err)
+-			printk_ratelimited(KERN_ERR "can: request_module "
+-			       "(can-proto-%d) failed.\n", protocol);
+-
+ 		cp = can_get_proto(protocol);
+ 	}
+ #endif
+diff --git a/net/core/sock.c b/net/core/sock.c
+index dc30dc5bb1b8..ed36ac88702f 100644
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -391,14 +391,7 @@ static int sock_set_timeout(long *timeo_p, char __user *optval, int optlen)
+ 		return -EDOM;
+ 
+ 	if (tv.tv_sec < 0) {
+-		static int warned __read_mostly;
+-
+ 		*timeo_p = 0;
+-		if (warned < 10 && net_ratelimit()) {
+-			warned++;
+-			pr_info("%s: `%s' (pid %d) tries to set negative timeout\n",
+-				__func__, current->comm, task_pid_nr(current));
+-		}
+ 		return 0;
+ 	}
+ 	*timeo_p = MAX_SCHEDULE_TIMEOUT;
+diff --git a/net/irda/af_irda.c b/net/irda/af_irda.c
+index ee0ea25c8e7a..60aad352dad6 100644
+--- a/net/irda/af_irda.c
++++ b/net/irda/af_irda.c
+@@ -494,10 +494,8 @@ static int irda_open_lsap(struct irda_sock *self, int pid)
+ {
+ 	notify_t notify;
+ 
+-	if (self->lsap) {
+-		net_warn_ratelimited("%s(), busy!\n", __func__);
++	if (self->lsap)
+ 		return -EBUSY;
+-	}
+ 
+ 	/* Initialize callbacks to be used by the IrDA stack */
+ 	irda_notify_init(&notify);
+@@ -2104,8 +2102,6 @@ static int irda_setsockopt(struct socket *sock, int level, int optname,
+ 				 __func__, opt);
+ 			self->max_sdu_size_rx = opt;
+ 		} else {
+-			net_warn_ratelimited("%s: not allowed to set MAXSDUSIZE for this socket type!\n",
+-					     __func__);
+ 			err = -ENOPROTOOPT;
+ 			goto out;
+ 		}
+diff --git a/net/netfilter/ipvs/ip_vs_core.c b/net/netfilter/ipvs/ip_vs_core.c
+index 5d2b806a862e..e87a6c896ff8 100644
+--- a/net/netfilter/ipvs/ip_vs_core.c
++++ b/net/netfilter/ipvs/ip_vs_core.c
+@@ -2005,8 +2005,6 @@ static int __net_init __ip_vs_init(struct net *net)
+ 	if (ip_vs_sync_net_init(net) < 0)
+ 		goto sync_fail;
+ 
+-	printk(KERN_INFO "IPVS: Creating netns size=%zu id=%d\n",
+-			 sizeof(struct netns_ipvs), ipvs->gen);
+ 	return 0;
+ /*
+  * Error handling
+diff --git a/net/packet/af_packet.c b/net/packet/af_packet.c
+index b5989c6ee551..8b2aafbf4154 100644
+--- a/net/packet/af_packet.c
++++ b/net/packet/af_packet.c
+@@ -3819,10 +3819,8 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
+ 	struct tpacket_req *req = &req_u->req;
+ 
+ 	/* Opening a Tx-ring is NOT supported in TPACKET_V3 */
+-	if (!closing && tx_ring && (po->tp_version > TPACKET_V2)) {
+-		WARN(1, "Tx-ring is not supported.\n");
++	if (!closing && tx_ring && (po->tp_version > TPACKET_V2))
+ 		goto out;
+-	}
+ 
+ 	rb = tx_ring ? &po->tx_ring : &po->rx_ring;
+ 	rb_queue = tx_ring ? &sk->sk_write_queue : &sk->sk_receive_queue;
+diff --git a/net/rds/bind.c b/net/rds/bind.c
+index a2e6562da751..6294c5b9f259 100644
+--- a/net/rds/bind.c
++++ b/net/rds/bind.c
+@@ -185,8 +185,6 @@ int rds_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
+ 	if (!trans) {
+ 		ret = -EADDRNOTAVAIL;
+ 		rds_remove_bound(rs);
+-		printk_ratelimited(KERN_INFO "RDS: rds_bind() could not find a transport, "
+-				"load rds_tcp or rds_rdma?\n");
+ 		goto out;
+ 	}
+ 
+diff --git a/net/sctp/socket.c b/net/sctp/socket.c
+index f09de7fac2e6..940de29b8bec 100644
+--- a/net/sctp/socket.c
++++ b/net/sctp/socket.c
+@@ -2204,12 +2204,6 @@ static int sctp_setsockopt_events(struct sock *sk, char __user *optval,
+ 	if (copy_from_user(&sctp_sk(sk)->subscribe, optval, optlen))
+ 		return -EFAULT;
+ 
+-	if (sctp_sk(sk)->subscribe.sctp_data_io_event)
+-		pr_warn_ratelimited(DEPRECATED "%s (pid %d) "
+-				    "Requested SCTP_SNDRCVINFO event.\n"
+-				    "Use SCTP_RCVINFO through SCTP_RECVRCVINFO option instead.\n",
+-				    current->comm, task_pid_nr(current));
+-
+ 	/* At the time when a user app subscribes to SCTP_SENDER_DRY_EVENT,
+ 	 * if there is no data to be sent or retransmit, the stack will
+ 	 * immediately send up this notification.
+@@ -6311,8 +6305,6 @@ static int sctp_listen_start(struct sock *sk, int backlog)
+ 		sprintf(alg, "hmac(%s)", sp->sctp_hmac_alg);
+ 		tfm = crypto_alloc_hash(alg, 0, CRYPTO_ALG_ASYNC);
+ 		if (IS_ERR(tfm)) {
+-			net_info_ratelimited("failed to load transform for %s: %ld\n",
+-					     sp->sctp_hmac_alg, PTR_ERR(tfm));
+ 			return -ENOSYS;
+ 		}
+ 		sctp_sk(sk)->hmac = tfm;
+diff --git a/net/socket.c b/net/socket.c
+index 884e32997698..c92a71f1dee2 100644
+--- a/net/socket.c
++++ b/net/socket.c
+@@ -2452,8 +2452,6 @@ int sock_register(const struct net_proto_family *ops)
+ 		err = 0;
+ 	}
+ 	spin_unlock(&net_family_lock);
+-
+-	pr_info("NET: Registered protocol family %d\n", ops->family);
+ 	return err;
+ }
+ EXPORT_SYMBOL(sock_register);
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+index 7dade28affba..8246956ddf29 100644
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -4766,10 +4766,6 @@ static int selinux_nlmsg_perm(struct sock *sk, struct sk_buff *skb)
+ 	err = selinux_nlmsg_lookup(sksec->sclass, nlh->nlmsg_type, &perm);
+ 	if (err) {
+ 		if (err == -EINVAL) {
+-			printk(KERN_WARNING
+-			       "SELinux: unrecognized netlink message:"
+-			       " protocol=%hu nlmsg_type=%hu sclass=%hu\n",
+-			       sk->sk_protocol, nlh->nlmsg_type, sksec->sclass);
+ 			if (!selinux_enforcing || security_get_allow_unknown())
+ 				err = 0;
+ 		}
+-- 
+2.1.4
+
