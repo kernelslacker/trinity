@@ -174,7 +174,7 @@ static int open_files(void)
 			break;
 		}
 
-		mmap_fd(fd, filename, sb.st_size, flags, OBJ_GLOBAL, OBJ_MMAP_FILE);
+		mmap_fd(fd, filename, 0, flags, OBJ_GLOBAL, OBJ_MMAP_FILE);
 	}
 	return TRUE;
 }
