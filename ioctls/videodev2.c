@@ -5,7 +5,9 @@
 
 static const struct ioctl videodev2_ioctls[] = {
 	IOCTL(VIDIOC_QUERYCAP),
+#ifdef VIDIOC_RESERVED
 	IOCTL(VIDIOC_RESERVED),
+#endif
 	IOCTL(VIDIOC_ENUM_FMT),
 	IOCTL(VIDIOC_G_FMT),
 	IOCTL(VIDIOC_S_FMT),
