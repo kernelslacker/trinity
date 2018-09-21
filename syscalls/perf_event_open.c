@@ -278,10 +278,10 @@ static int init_pmus(void) {
 	DIR *dir,*event_dir,*format_dir;
 	struct dirent *entry,*event_entry,*format_entry;
 	char dir_name[BUFSIZ] = "";
-	char event_name[BUFSIZ] = "";
+	char event_name[BUFSIZ+7] = "";
 	char event_value[BUFSIZ] = "";
-	char temp_name[BUFSIZ] = "";
-	char format_name[BUFSIZ] = "";
+	char temp_name[BUFSIZ*2] = "";
+	char format_name[BUFSIZ+7] = "";
 	char format_value[BUFSIZ] = "";
 	int type,pmu_num=0,format_num=0,generic_num=0;
 	FILE *fff;
