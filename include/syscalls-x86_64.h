@@ -344,4 +344,6 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_pkey_alloc },
 	{ .entry = &syscall_pkey_free },
 	{ .entry = &syscall_statx },
+	{ .entry = &syscall_io_pgetevents },
+	{ .entry = &syscall_rseq },
 };
