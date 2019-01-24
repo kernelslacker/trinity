@@ -46,6 +46,8 @@ CFLAGS += -Wwrite-strings
 CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS += -fsigned-char
+# BPF spew.
+CFLAGS += -Wno-missing-field-initializers
 
 # needed for show_backtrace() to work correctly.
 LDFLAGS += -rdynamic
