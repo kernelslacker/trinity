@@ -45,7 +45,7 @@ static void memfd_dump(struct object *obj, bool global)
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_MEMFD, global, obj);
 	objmsg.fd = mo->fd;
 	len = strlen(mo->name);
-	strncpy(objmsg.name, mo->name, len);
+	memcpy(objmsg.name, mo->name, len);
 	objmsg.flags = mo->flags;
 	sendudp((char *) &objmsg, sizeof(objmsg));
 }
