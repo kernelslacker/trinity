@@ -117,7 +117,7 @@ static void add_to_namelist(const char *name)
 
 int check_stat_file(const struct stat *sb)
 {
-	int openflag;
+	int openflag = 0;
 	bool set_read = FALSE;
 	bool set_write = FALSE;
 	uid_t target_uid = orig_uid;
