@@ -18,6 +18,8 @@
 #include "udp.h"
 
 #ifndef USE_MEMFD_CREATE
+
+#ifndef MFD_ALLOW_SEALING
 static int memfd_create(__unused__ const char *uname, __unused__ unsigned int flag)
 {
 #ifdef SYS_memfd_create
@@ -26,6 +28,7 @@ static int memfd_create(__unused__ const char *uname, __unused__ unsigned int fl
 	return -ENOSYS;
 #endif
 }
+#endif
 #endif
 
 static void memfd_destructor(struct object *obj)
@@ -58,7 +61,7 @@ static int open_memfd_fds(void)
 		0,
 		MFD_CLOEXEC,
 		MFD_CLOEXEC | MFD_ALLOW_SEALING,
-		MFD_ALLOW_SEALING,
+		MFD_ALLOW_SEALING, MFD_HUGETLB,
 	};
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD);
