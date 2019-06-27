@@ -25,11 +25,11 @@ check()
 # Note: Commented out checks are likely out of date, but they're for architectures
 #  I don't have time to care about. Step up and contribute if you care.
 #
-check include/uapi/asm-generic/unistd.h    e1f35cf48a7ae6a07949ad3e875cb7937c2c6cf0 sys_
+check include/uapi/asm-generic/unistd.h    f15d6c6ce3fd351a88f40d7c8b2e631e25dbed8d sys_
 #check arch/alpha/include/uapi/asm/unistd.h 51fa669a21d8f26a0c9de8280a3cfd9c257a0d28 _NR_
 #check arch/arm/include/uapi/asm/unistd.h   7c601d436a3ebbe05a9b6813c0ffcf8eedaf101b SYSCALL
 check arch/x86/entry/syscalls/syscall_32.tbl     1b9ed3050a88b2d84bdb7dbcfe2ab23b8234bee8 sys_
-check arch/x86/entry/syscalls/syscall_64.tbl     d52841da5ee801bfd7277fccf5b76d30566ace1a sys_
+check arch/x86/entry/syscalls/syscall_64.tbl     9aca30eead0af4397c058c829ca15b49ea3e585e sys_
 check arch/x86/entry/syscalls/syscall_64.tbl     da39a3ee5e6b4b0d3255bfef95601890afd80709 stub_
 #check arch/ia64/kernel/entry.S             e6a21b973609ec08cd19b0b8c67830f8570e93ef "data8\ sys_"
 #check arch/mips/kernel/scall32-o32.S       b1501a675dd998fe2af68ae43cd797cf18d67b33 sys_
@@ -40,19 +40,19 @@ check arch/x86/entry/syscalls/syscall_64.tbl     da39a3ee5e6b4b0d3255bfef9560189
 #check arch/sparc/kernel/systbls_32.S       98100f9dedc82d82ac18a33fd68dc7e4852ffcb8 sys_
 
 # new setsockopt values
-check include/uapi/asm-generic/socket.h	848bfd5d1700324c48e1216da2abdda7515b230b SO_
-check include/uapi/linux/tcp.h          ed5bbfa500b64aad4d742b2eed0d35ce22ab36b8 \#define\ TCP_
+check include/uapi/asm-generic/socket.h	9df70d0b2c11b5df9a2f9b3aa835d49511a0ec36 SO_
+check include/uapi/linux/tcp.h          8ea7461203395459db4a7ceaeea1f18893f74cec \#define\ TCP_
 check include/uapi/linux/in.h           0116e6878df350e74ec730fd9f455efb95e510c8 \#define\ IP_
 
 # Check for new packet families
-check include/linux/socket.h 17b4779bb45a76825972f41d1fa1f8d2b908a21b SOL_
-check include/linux/socket.h 80c34154051e712d03e81577d494efe8f09139a8 AF_
+check include/linux/socket.h 52069f49a4646e9692c6b3186172fbd1fa681dcf SOL_
+check include/linux/socket.h 02ead19934fd61e127ccfb46445afea2caed4ece AF_
 
 # MSG_ flags
-check include/linux/socket.h 91b84d05363d32e88375567a9bb7a4e16d738ea8 \ MSG_
+check include/linux/socket.h 94a5669653d7098b8c4a4391aeabb593b5940486 \ MSG_
 
 # new netlink protos
-check include/uapi/linux/netlink.h 1f391f35d0443f432871cbb366d1150973eb2bcb "#define\ NETLINK_"
+check include/uapi/linux/netlink.h 97cad03cf941de83421ddcfc5178af06a05cea50 "#define\ NETLINK_"
 
 # new O_ flags
 check include/uapi/asm-generic/fcntl.h 256ab30dfec0915704a13755ba645c448a65220c O_
