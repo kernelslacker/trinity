@@ -543,6 +543,29 @@ enum kcmp_type {
 #define SO_ZEROCOPY	60
 #endif
 
+#ifndef SO_TXTIME
+#define SO_TXTIME               61
+#endif
+#ifndef SO_BINDTOIFINDEX
+#define SO_BINDTOIFINDEX        62
+#endif
+#ifndef SO_TIMESTAMP_NEW
+#define SO_TIMESTAMP_NEW        63
+#endif
+#ifndef SO_TIMESTAMPNS_NEW
+#define SO_TIMESTAMPNS_NEW      64
+#endif
+#ifndef SO_TIMESTAMPING_NEW
+#define SO_TIMESTAMPING_NEW     65
+#endif
+#ifndef SO_RCVTIMEO_NEW
+#define SO_RCVTIMEO_NEW         66
+#endif
+#ifndef SO_SNDTIMEO_NEW
+#define SO_SNDTIMEO_NEW         67
+#endif
+
+
 
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
