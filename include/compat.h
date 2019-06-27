@@ -241,6 +241,10 @@ enum {
 #define PF_SMC		43
 #endif
 
+#ifndef PF_XDP
+#define PF_XDP		44
+#endif
+
 #ifndef NFC_SOCKPROTO_RAW
 #define NFC_SOCKPROTO_RAW	0
 #endif
