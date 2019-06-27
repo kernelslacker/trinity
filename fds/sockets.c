@@ -249,7 +249,7 @@ static bool generate_socket(unsigned int family, unsigned int protocol, unsigned
 		write_socket_to_cache(&st);
 		return TRUE;
 	}
-	output(2, "Couldn't open socket %d:%d:%d. %s\n", family, type, protocol, strerror(errno));
+	output(2, "Couldn't open socket %u:%u:%u. %s\n", family, type, protocol, strerror(errno));
 	return FALSE;
 }
 
