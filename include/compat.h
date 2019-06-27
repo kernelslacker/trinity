@@ -376,6 +376,23 @@ enum {
 #define PR_CAP_AMBIENT		47
 #endif
 
+//TODO wtf were 48,49 ?
+
+// arm64 only
+#ifndef PR_SVE_SET_VL
+#define PR_SVE_SET_VL		50 
+#define PR_SVE_GET_VL           51
+#endif
+
+#ifndef PR_GET_SPECULATION_CTRL
+#define PR_GET_SPECULATION_CTRL         52
+#define PR_SET_SPECULATION_CTRL         53
+#endif
+
+// arm64 only
+#ifndef PR_PAC_RESET_KEYS
+#define PR_PAC_RESET_KEYS               54
+#endif
 
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO
