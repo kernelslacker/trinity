@@ -439,4 +439,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_io_uring_setup },
 	{ .entry = &syscall_io_uring_enter },
 	{ .entry = &syscall_io_uring_register },
+	{ .entry = &syscall_open_tree},
 };
