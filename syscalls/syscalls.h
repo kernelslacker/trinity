@@ -396,6 +396,8 @@ extern struct syscallentry syscall_open_tree;
 extern struct syscallentry syscall_move_mount;
 extern struct syscallentry syscall_fsopen;
 extern struct syscallentry syscall_fsconfig;
+extern struct syscallentry syscall_fsmount;
+extern struct syscallentry syscall_fspick;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
