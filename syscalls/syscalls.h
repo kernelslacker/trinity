@@ -392,6 +392,7 @@ extern struct syscallentry syscall_pidfd_send_signal;
 extern struct syscallentry syscall_io_uring_setup;
 extern struct syscallentry syscall_io_uring_enter;
 extern struct syscallentry syscall_io_uring_register;
+extern struct syscallentry syscall_open_tree;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
