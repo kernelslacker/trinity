@@ -28,7 +28,7 @@ check()
 check include/uapi/asm-generic/unistd.h    f15d6c6ce3fd351a88f40d7c8b2e631e25dbed8d sys_
 #check arch/alpha/include/uapi/asm/unistd.h 51fa669a21d8f26a0c9de8280a3cfd9c257a0d28 _NR_
 #check arch/arm/include/uapi/asm/unistd.h   7c601d436a3ebbe05a9b6813c0ffcf8eedaf101b SYSCALL
-check arch/x86/entry/syscalls/syscall_32.tbl     1b9ed3050a88b2d84bdb7dbcfe2ab23b8234bee8 sys_
+check arch/x86/entry/syscalls/syscall_32.tbl     340cb5804ab72eeaea9aed0394b4f2e891575a81 sys_
 check arch/x86/entry/syscalls/syscall_64.tbl     9aca30eead0af4397c058c829ca15b49ea3e585e sys_
 check arch/x86/entry/syscalls/syscall_64.tbl     da39a3ee5e6b4b0d3255bfef95601890afd80709 stub_
 #check arch/ia64/kernel/entry.S             e6a21b973609ec08cd19b0b8c67830f8570e93ef "data8\ sys_"
@@ -76,7 +76,7 @@ check include/uapi/linux/in.h  80799106aba80b40af5416f0d5cc47dea8b02225 \ \ IPPR
 check include/uapi/asm-generic/errno.h	da39a3ee5e6b4b0d3255bfef95601890afd80709 134
 
 # new prctls
-check include/uapi/linux/prctl.h 54a153856a9136a9bad87deed2475f8eca2ebbbb PR_
+check include/uapi/linux/prctl.h 2b3c44c13ff4df4b9062898f6bb5a3323283ab7d PR_
 
 # new fallocate flags
 check include/uapi/linux/falloc.h c46220c8e3bd5e237d02880e0d2ac16e88a6d7c0 FALLOC_
