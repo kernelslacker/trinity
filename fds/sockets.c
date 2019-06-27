@@ -365,7 +365,8 @@ static bool generate_sockets(void)
 	while (nr_sockets < NR_SOCKET_FDS) {
 		r = rnd() % TRINITY_PF_MAX;
 		for (i = 0; i < 10; i++)
-			generate_specific_socket(r);
+			if (generate_specific_socket(r) == FALSE)
+				break;
 	}
 
 out_unlock:
