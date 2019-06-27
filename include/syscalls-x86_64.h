@@ -436,4 +436,7 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = NULL },			// 422
 	{ .entry = NULL },			// 423
 	{ .entry = &syscall_pidfd_send_signal }, // 424
+	{ .entry = &syscall_io_uring_setup },
+	{ .entry = &syscall_io_uring_enter },
+	{ .entry = &syscall_io_uring_register },
 };
