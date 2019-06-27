@@ -279,7 +279,7 @@ static bool generate_specific_socket(int family)
 
 	fd = open_socket(st.family, st.type, st.protocol);
 	if (fd == -1) {
-		output(0, "Couldn't open socket (%d:%d:%d). %s\n",
+		output(0, "Couldn't open socket (%u:%u:%u). %s\n",
 				st.family, st.type, st.protocol,
 				strerror(errno));
 		return FALSE;
