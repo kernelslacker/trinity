@@ -19,7 +19,7 @@
 
 #ifndef USE_MEMFD_CREATE
 
-#ifndef MFD_ALLOW_SEALING
+#ifndef memfd_create
 static int memfd_create(__unused__ const char *uname, __unused__ unsigned int flag)
 {
 #ifdef SYS_memfd_create
