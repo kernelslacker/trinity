@@ -30,17 +30,17 @@ static void perffd_dump(struct object *obj, bool global)
 	struct perf_event_attr *attr = obj->perfobj.eventattr;
 	struct msg_objcreatedperf *objmsg;
 	char *p = (char *)attr;
-	unsigned int i;
+//	unsigned int i;
 	unsigned int perfsize = sizeof(struct perf_event_attr);
 
 	output(2, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%lx\n",
 		po->fd, po->pid, po->cpu, po->group_fd, po->flags);
-	output(2, " perf_event_attr:");
+/*	output(2, " perf_event_attr:");
 	for (i = 0; i < perfsize ; i++) {
 		output(CONT, "%02x ", (unsigned char) p[i]);
 	}
 	output(CONT, "\n");
-
+*/
 	objmsg = zmalloc(sizeof(struct msg_objcreatedperf) + perfsize);
 	init_msgobjhdr(&objmsg->hdr, OBJ_CREATED_PERF, global, obj);
 	objmsg->fd = po->fd;
