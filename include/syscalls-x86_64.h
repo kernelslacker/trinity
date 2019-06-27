@@ -441,4 +441,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_io_uring_register },
 	{ .entry = &syscall_open_tree},
 	{ .entry = &syscall_move_mount},
+	{ .entry = &syscall_fsopen },
 };
