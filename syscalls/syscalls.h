@@ -388,6 +388,7 @@ extern struct syscallentry syscall_pkey_free;
 extern struct syscallentry syscall_statx;
 extern struct syscallentry syscall_io_pgetevents;
 extern struct syscallentry syscall_rseq;
+extern struct syscallentry syscall_pidfd_send_signal;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
