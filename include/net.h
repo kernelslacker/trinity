@@ -15,7 +15,7 @@ extern unsigned int specific_domain;
 
 /* glibc headers might be older than the kernel, so chances are we know
  * about more protocols than glibc does. So we define our own PF_MAX */
-#define TRINITY_PF_MAX 44
+#define TRINITY_PF_MAX 45
 
 #define PF_NOHINT (-1)
 
@@ -99,6 +99,7 @@ extern const struct netproto proto_phonet;
 extern const struct netproto proto_kcm;
 extern const struct netproto proto_qipcrtr;
 extern const struct netproto proto_smc;
+extern const struct netproto proto_xdp;
 
 /* bpf */
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
