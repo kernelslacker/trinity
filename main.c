@@ -403,7 +403,7 @@ static bool is_child_making_progress(struct childdata *child)
 	if (diff < 40)
 		return FALSE;
 
-	debugf("sending another SIGKILL to child %d (pid:%u type:%u). [kill count:%d] [diff:%d]\n",
+	debugf("sending another SIGKILL to child %u (pid:%u type:%u). [kill count:%u] [diff:%lu]\n",
 		child->num, pid, child->type, child->kill_count, diff);
 	child->kill_count++;
 	kill_pid(pid);
@@ -783,7 +783,7 @@ void main_loop(void)
 		}
 
 		if (syscalls_todo && (shm->stats.op_count >= syscalls_todo)) {
-			output(0, "Reached limit %d. Telling children to exit.\n", syscalls_todo);
+			output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
 			panic(EXIT_REACHED_COUNT);
 		}
 

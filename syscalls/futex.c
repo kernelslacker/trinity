@@ -116,7 +116,7 @@ static void dump_futex(struct object *obj, __unused__ bool global)
 {
 	struct msg_objcreatedfutex objmsg;
 
-	output(0, "futex: %lx owner:%d\n", obj->lock.futex, obj->lock.owner_pid);
+	output(0, "futex: %x owner:%d\n", obj->lock.futex, obj->lock.owner_pid);
 
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_FUTEX, global, obj);
 	objmsg.futex = obj->lock.futex;

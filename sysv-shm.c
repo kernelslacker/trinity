@@ -17,7 +17,7 @@ static void dump_sysv_shm(struct object *obj, bool global)
 {
 	struct msg_objcreatedshm objmsg;
 
-	output(0, "sysv_shm: id:%u size:%d flags:%x ptr:%p\n",
+	output(0, "sysv_shm: id:%u size:%ld flags:%x ptr:%p\n",
 		obj->sysv_shm.id, obj->sysv_shm.size,
 		obj->sysv_shm.flags, obj->sysv_shm.ptr);
 
