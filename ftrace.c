@@ -53,10 +53,10 @@ static void dump_trace(void)
 	output(0, "Dumped trace to %s\n", ftracedumpname);
 fail:
 	fsync(traceout);
-	close(tracein);
+	close(traceout);
 
 fail_traceout:
-	close(traceout);
+	close(tracein);
 fail_tracein:
 	free((void *)ftracedumpname);
 	ftracedumpname = NULL;
