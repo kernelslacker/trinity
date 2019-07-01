@@ -47,7 +47,7 @@ retry:
 
 	ret = setsockopt(fd, so->level, so->optname, (void *)so->optval, so->optlen);
 	if (ret == 0) {
-		output(2, "setsockopt(%lx %lx %lx %lx) on fd %d [%d:%d:%d]\n",
+		output(2, "setsockopt(%u 0x%lx 0x%lx 0x%lx) on fd %u [%u:%u:%u]\n",
 			so->level, so->optname, so->optval, so->optlen, fd,
 			triplet->family, triplet->type, triplet->protocol);
 	} else {
@@ -400,7 +400,7 @@ static void socket_destructor(struct object *obj)
 	(void) shutdown(fd, SHUT_RDWR);
 
 	if (close(fd) != 0)
-		output(1, "failed to close socket [%d:%d:%d].(%s)\n",
+		output(1, "failed to close socket [%u:%u:%u].(%s)\n",
 			si->triplet.family,
 			si->triplet.type,
 			si->triplet.protocol,
@@ -412,7 +412,7 @@ static void socket_dump(struct object *obj, bool global)
 	struct socketinfo *si = &obj->sockinfo;
 	struct msg_objcreatedsocket objmsg;
 
-	output(2, "socket fd:%d domain:%u (%s) type:0x%u protocol:%u\n",
+	output(2, "socket fd:%u domain:%u (%s) type:0x%u protocol:%u\n",
 		si->fd, si->triplet.family, get_domain_name(si->triplet.family),
 		si->triplet.type, si->triplet.protocol);
 
@@ -438,7 +438,7 @@ static int open_sockets(void)
 	if (cachefile < 0) {
 		output(1, "Couldn't find socket cachefile. Regenerating.\n");
 		ret = generate_sockets();
-		output(1, "created %d sockets\n", nr_sockets);
+		output(1, "created %u sockets\n", nr_sockets);
 		return ret;
 	}
 
@@ -492,7 +492,7 @@ regenerate:
 		}
 	}
 
-	output(1, "%d sockets created based on info from socket cachefile.\n", nr_sockets);
+	output(1, "%u sockets created based on info from socket cachefile.\n", nr_sockets);
 
 	unlock_cachefile();
 	close(cachefile);
