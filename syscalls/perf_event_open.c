@@ -136,7 +136,7 @@ static int parse_format(const char *string, int *field_type, unsigned long long 
 		}
 
 		if (bits==64) {
-			*mask|=0xffffffffffffffffULL;
+			*mask=0xffffffffffffffffULL;
 		} else {
 			*mask|=((1ULL<<bits)-1)<<shift;
 		}
