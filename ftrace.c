@@ -54,12 +54,13 @@ static void dump_trace(void)
 fail:
 	fsync(traceout);
 	close(traceout);
-
 fail_traceout:
 	close(tracein);
 fail_tracein:
-	free((void *)ftracedumpname);
-	ftracedumpname = NULL;
+	if (ftracedumpname != defaultdumpfilename) {
+		free((void *)ftracedumpname);
+		ftracedumpname = NULL;
+	}
 }
 
 void setup_ftrace(void)
@@ -85,7 +86,5 @@ void stop_ftrace(void)
 		}
 		dump_trace();
 		return;
-	} else {
-		output(0, "trace_fd was %d\n", trace_fd);
 	}
 }
