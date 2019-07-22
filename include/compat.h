@@ -582,6 +582,10 @@ enum kcmp_type {
 #define SO_SNDTIMEO_NEW         67
 #endif
 
+#ifndef SO_DETACH_REUSEPORT_BPF
+#define SO_DETACH_REUSEPORT_BPF 68
+#endif
+
 
 
 /* linux/tcp.h */

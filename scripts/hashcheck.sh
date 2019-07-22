@@ -40,7 +40,7 @@ check arch/x86/entry/syscalls/syscall_64.tbl     da39a3ee5e6b4b0d3255bfef9560189
 #check arch/sparc/kernel/systbls_32.S       98100f9dedc82d82ac18a33fd68dc7e4852ffcb8 sys_
 
 # new setsockopt values
-check include/uapi/asm-generic/socket.h	9df70d0b2c11b5df9a2f9b3aa835d49511a0ec36 SO_
+check include/uapi/asm-generic/socket.h	08003e14cf68ce62a2caeb8921db3e081a612f09 SO_
 check include/uapi/linux/tcp.h          8ea7461203395459db4a7ceaeea1f18893f74cec \#define\ TCP_
 check include/uapi/linux/in.h           0116e6878df350e74ec730fd9f455efb95e510c8 \#define\ IP_
 
