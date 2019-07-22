@@ -658,6 +658,26 @@ enum kcmp_type {
 #define TCP_MD5SIG_EXT		32
 #endif
 
+#ifndef TCP_FASTOPEN_KEY
+#define TCP_FASTOPEN_KEY        33      /* Set the key for Fast Open (cookie) */
+#endif
+
+#ifndef TCP_FASTOPEN_NO_COOKIE
+#define TCP_FASTOPEN_NO_COOKIE  34      /* Enable TFO without a TFO cookie */
+#endif
+
+#ifndef TCP_ZEROCOPY_RECEIVE
+#define TCP_ZEROCOPY_RECEIVE    35
+#endif
+
+#ifndef TCP_INQ
+#define TCP_INQ                 36      /* Notify bytes available to read as a cmsg on read */
+#endif
+
+#ifndef TCP_TX_DELAY
+#define TCP_TX_DELAY	37
+#endif
+
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15

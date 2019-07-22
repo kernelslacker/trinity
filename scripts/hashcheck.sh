@@ -41,7 +41,7 @@ check arch/x86/entry/syscalls/syscall_64.tbl     da39a3ee5e6b4b0d3255bfef9560189
 
 # new setsockopt values
 check include/uapi/asm-generic/socket.h	08003e14cf68ce62a2caeb8921db3e081a612f09 SO_
-check include/uapi/linux/tcp.h          8ea7461203395459db4a7ceaeea1f18893f74cec \#define\ TCP_
+check include/uapi/linux/tcp.h          149a6ee4bb5bb81fd8d44923c5846f85b7130d5e \#define\ TCP_
 check include/uapi/linux/in.h           0116e6878df350e74ec730fd9f455efb95e510c8 \#define\ IP_
 
 # Check for new packet families
