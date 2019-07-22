@@ -398,6 +398,8 @@ extern struct syscallentry syscall_fsopen;
 extern struct syscallentry syscall_fsconfig;
 extern struct syscallentry syscall_fsmount;
 extern struct syscallentry syscall_fspick;
+extern struct syscallentry syscall_pidfd_open;
+extern struct syscallentry syscall_clone3;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
