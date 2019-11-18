@@ -6,6 +6,7 @@
  */
 #include <stdlib.h>
 #include <sys/types.h>
+#include <linux/types.h> /* before __ASSEMBLY__ == 1 */
 #define __ASSEMBLY__ 1
 #include <asm/ldt.h>
 #include "sanitise.h"
