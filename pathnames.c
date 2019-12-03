@@ -117,7 +117,7 @@ static void add_to_namelist(const char *name)
 
 int check_stat_file(const struct stat *sb)
 {
-	int openflag;
+	int openflag = 0;
 	bool set_read = FALSE;
 	bool set_write = FALSE;
 	uid_t target_uid = orig_uid;
@@ -295,13 +295,13 @@ const char * generate_pathname(void)
 	len = strlen(pathname);
 
 	if (RAND_BOOL())
-		(void) strncpy(newpath, pathname, len);
+		(void) memcpy(newpath, pathname, len);
 	else {
 		if (len < MAX_PATH_LEN - 2) {
 			/* make it look relative to cwd */
 			newpath[0] = '.';
 			newpath[1] = '/';
-			(void) strncpy(newpath + 2, pathname, len);
+			(void) memcpy(newpath + 2, pathname, len);
 			len += 2;
 		}
 	}

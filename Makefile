@@ -1,10 +1,4 @@
-VERSION="1.9pre"
-
-ifeq (,$(findstring pre,$(VERSION)))
-DEVEL = 0
-else
-DEVEL = 1
-endif
+VERSION="2019.06"
 
 INSTALL_PREFIX ?= $(DESTDIR)
 INSTALL_PREFIX ?= $(HOME)
@@ -22,14 +16,6 @@ CFLAGS += -Wall -Wextra -I. -Iinclude/ -include config.h -Wimplicit -D_GNU_SOURC
 CCSTD := $(shell if $(CC) -std=gnu11 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-std=gnu11"; else echo "-std=gnu99"; fi)
 CFLAGS += $(CCSTD)
 
-# -Werror only enabled during development, and on gcc 7+
-ifeq ($(DEVEL), 1)
-CPP_MAJOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f1)
-CPP_MINOR := $(shell $(CPP) -dumpversion 2>&1 | cut -d'.' -f2)
-WERROR	:= $(shell if [ $(CPP_MAJOR) -ge 7 ] ; then echo "-Werror"; else echo ""; fi)
-CFLAGS	+= $(WERROR)
-endif
-
 ifneq ($(SYSROOT),)
 CFLAGS += --sysroot=$(SYSROOT)
 endif
@@ -46,6 +32,8 @@ CFLAGS += -Wwrite-strings
 CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS += -fsigned-char
+# BPF spew.
+CFLAGS += -Wno-missing-field-initializers
 
 # needed for show_backtrace() to work correctly.
 LDFLAGS += -rdynamic
@@ -57,9 +45,6 @@ LDLIBS += -lrt
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
-ifeq ($(DEVEL), 0)
-CFLAGS += -Wno-maybe-uninitialized
-endif
 endif
 
 # Sometimes useful for debugging. more useful with clang than gcc.

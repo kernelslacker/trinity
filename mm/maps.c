@@ -72,7 +72,7 @@ void map_dump(struct object *obj, bool global)
 	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_MAP, global, obj);
 	objmsg.start = m->ptr;
 	len = strlen(m->name);
-	strncpy(objmsg.name, m->name, len);
+	memcpy(objmsg.name, m->name, len);
 	memset(objmsg.name + len, 0, MAPS_NAME_MAX_LEN - len);
 	objmsg.prot = m->prot;
 	objmsg.type = m->type;

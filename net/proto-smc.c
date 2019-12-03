@@ -1,9 +1,12 @@
 #include "net.h"
 #include "compat.h"
 
+#define SMCPROTO_SMC            0       /* SMC protocol, IPv4 */
+#define SMCPROTO_SMC6           1       /* SMC protocol, IPv6 */
+
 static struct socket_triplet smc_triplet[] = {
-	{ .family = PF_QIPCRTR, .protocol = IPPROTO_IP, .type = SOCK_STREAM },
-	{ .family = PF_QIPCRTR, .protocol = IPPROTO_TCP, .type = SOCK_STREAM },
+	{ .family = SMCPROTO_SMC, .protocol = SMCPROTO_SMC, .type = SOCK_STREAM },
+	{ .family = SMCPROTO_SMC6, .protocol = SMCPROTO_SMC6, .type = SOCK_STREAM },
 };
 
 const struct netproto proto_smc = {
