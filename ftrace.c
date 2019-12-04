@@ -7,6 +7,7 @@
 #include "ftrace.h"
 #include "trinity.h"
 
+#if USE_BPF
 static int trace_fd = -1;
 
 // TODO: if passed a dir, generate filename with datestamp
@@ -62,9 +63,11 @@ fail_tracein:
 		ftracedumpname = NULL;
 	}
 }
+#endif
 
 void setup_ftrace(void)
 {
+#if USE_BPF
 	//todo: check for root
 	trace_fd = open("/sys/kernel/debug/tracing/tracing_on", O_WRONLY);
 	if (trace_fd == -1) {
@@ -75,10 +78,12 @@ void setup_ftrace(void)
 	}
 	output(0, "Opened ftrace tracing_on as fd %d\n", trace_fd);
 	output(0, "Ftrace log will be dumped to %s\n", ftracedumpname);
+#endif
 }
 
 void stop_ftrace(void)
 {
+#if USE_BPF
 	if (trace_fd != -1) {
 		if (write(trace_fd, "0", 1) == -1) {
 			output(0, "Stopping ftrace failed! %s\n", strerror(errno));
@@ -87,4 +92,5 @@ void stop_ftrace(void)
 		dump_trace();
 		return;
 	}
+#endif
 }

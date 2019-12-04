@@ -237,31 +237,31 @@ fi
 #############################################################################################
 # is /usr/include/linux/bpf.h new enough to feature bpf
 #
-echo -n "[*] Checking if bpf_attr can use map_flags.. "
-rm -f "$TMP" || exit 1
-
-cat >"$TMP.c" << EOF
-#include <stdio.h>
-#include <linux/bpf.h>
-
-void main()
-{
-	union bpf_attr attr = {
-		.map_flags = 0,
-	};
-
-	enum bpf_prog_type type = BPF_PROG_TYPE_PERF_EVENT;
-}
-EOF
-
-${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
-if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $COL_RESET
-	MISSING_DEFS=1
-else
-	echo $GREEN "[YES]" $COL_RESET
-	echo "#define USE_BPF 1" >> $CONFIGH
-fi
+echo "[*] Checking if bpf_attr can use map_flags.. $RED DISABLED (weka) $COL_RESET"
+#rm -f "$TMP" || exit 1
+#
+#cat >"$TMP.c" << EOF
+##include <stdio.h>
+##include <linux/bpf.h>
+#
+#void main()
+#{
+#	union bpf_attr attr = {
+#		.map_flags = 0,
+#	};
+#
+#	enum bpf_prog_type type = BPF_PROG_TYPE_PERF_EVENT;
+#}
+#EOF
+#
+#${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+#if [ ! -x "$TMP" ]; then
+#	echo $RED "[NO]" $COL_RESET
+#	MISSING_DEFS=1
+#else
+#	echo $GREEN "[YES]" $COL_RESET
+#	echo "#define USE_BPF 1" >> $CONFIGH
+#fi
 
 #############################################################################################
 # is /usr/include/linux/btrfs.h new enough to feature btrfs
