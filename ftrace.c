@@ -7,13 +7,13 @@
 #include "ftrace.h"
 #include "trinity.h"
 
-#if USE_BPF
-static int trace_fd = -1;
-
 // TODO: if passed a dir, generate filename with datestamp
 
 static const char defaultdumpfilename[] = "/boot/trace.txt";
 const char *ftracedumpname = defaultdumpfilename;
+
+#if USE_BPF
+static int trace_fd = -1;
 
 static void dump_trace(void)
 {

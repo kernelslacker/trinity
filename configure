@@ -262,6 +262,7 @@ echo "[*] Checking if bpf_attr can use map_flags.. $RED DISABLED (weka) $COL_RES
 #	echo $GREEN "[YES]" $COL_RESET
 #	echo "#define USE_BPF 1" >> $CONFIGH
 #fi
+echo "#define USE_BPF 0" >> $CONFIGH
 
 #############################################################################################
 # is /usr/include/linux/btrfs.h new enough to feature btrfs
