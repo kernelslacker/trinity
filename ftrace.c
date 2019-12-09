@@ -12,7 +12,7 @@
 static const char defaultdumpfilename[] = "/boot/trace.txt";
 const char *ftracedumpname = defaultdumpfilename;
 
-#if USE_BPF
+#ifdef USE_BPF
 static int trace_fd = -1;
 
 static void dump_trace(void)
@@ -67,7 +67,7 @@ fail_tracein:
 
 void setup_ftrace(void)
 {
-#if USE_BPF
+#ifdef USE_BPF
 	//todo: check for root
 	trace_fd = open("/sys/kernel/debug/tracing/tracing_on", O_WRONLY);
 	if (trace_fd == -1) {
@@ -83,7 +83,7 @@ void setup_ftrace(void)
 
 void stop_ftrace(void)
 {
-#if USE_BPF
+#ifdef USE_BPF
 	if (trace_fd != -1) {
 		if (write(trace_fd, "0", 1) == -1) {
 			output(0, "Stopping ftrace failed! %s\n", strerror(errno));
