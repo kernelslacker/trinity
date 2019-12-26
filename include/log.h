@@ -9,7 +9,6 @@ void shutdown_logging(void);
 enum {
        LOGGING_DISABLED,
        LOGGING_FILES,
-       LOGGING_UDP,
 };
 
 void init_child_logging(struct childdata *child);

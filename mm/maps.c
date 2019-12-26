@@ -11,7 +11,6 @@
 #include "random.h"
 #include "shm.h"
 #include "utils.h"
-#include "udp.h"
 
 /*
  * Return a pointer a previous mmap() that we did, either during startup,
@@ -63,24 +62,13 @@ void map_destructor(struct object *obj)
 void map_dump(struct object *obj, bool global)
 {
 	struct map *m;
-	struct msg_objcreatedmap objmsg;
 	char buf[11];
-	int len;
 
 	m = &obj->map;
 
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_MAP, global, obj);
-	objmsg.start = m->ptr;
-	len = strlen(m->name);
-	memcpy(objmsg.name, m->name, len);
-	memset(objmsg.name + len, 0, MAPS_NAME_MAX_LEN - len);
-	objmsg.prot = m->prot;
-	objmsg.type = m->type;
-	objmsg.size = m->size;
-	sendudp((char *) &objmsg, sizeof(objmsg));
-
 	sizeunit(m->size, buf);
-	output(2, " start: %p size:%s  name: %s\n", m->ptr, buf, m->name);
+	output(2, " start: %p size:%s  name: %s global:%d\n",
+		m->ptr, buf, m->name, global);
 }
 
 /*
