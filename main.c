@@ -300,9 +300,6 @@ static void stuck_syscall_info(struct childdata *child)
 	if (shm->debug == FALSE)
 		return;
 
-	if (child->type != CHILD_RAND_SYSCALL)
-		return;
-
 	rec = &child->syscall;
 
 	if (trylock(&rec->lock) == FALSE)
@@ -403,8 +400,8 @@ static bool is_child_making_progress(struct childdata *child)
 	if (diff < 40)
 		return FALSE;
 
-	debugf("sending another SIGKILL to child %u (pid:%u type:%u). [kill count:%u] [diff:%lu]\n",
-		child->num, pid, child->type, child->kill_count, diff);
+	debugf("sending another SIGKILL to child %u (pid:%u). [kill count:%u] [diff:%lu]\n",
+		child->num, pid, child->kill_count, diff);
 	child->kill_count++;
 	kill_pid(pid);
 
@@ -613,8 +610,8 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 
 			log_child_exited(child);
 
-			debugf("Child %d (pid:%u type:%u) exited after %ld operations.\n",
-				childno, childpid, child->type, child->op_nr);
+			debugf("Child %d (pid:%u) exited after %ld operations.\n",
+				childno, childpid, child->op_nr);
 			reap_child(shm->children[childno]);
 			if (child->pidstatfile != NULL)
 				fclose(child->pidstatfile);
