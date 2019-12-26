@@ -14,7 +14,6 @@
 #include "random.h"
 #include "shm.h"
 #include "tables.h"
-#include "udp.h"
 
 #define NOTFOUND (unsigned int)-1
 
@@ -393,57 +392,4 @@ void display_enabled_syscalls_biarch(void)
 		if (entry->flags & ACTIVE)
 			output(0, "32-bit syscall %d:%s enabled.\n", i, entry->name);
 	}
-}
-
-void log_enabled_syscalls_biarch(void)
-{
-	struct syscallentry *entry;
-	struct msg_syscallsenabled *udpmsg;
-	int *entries;
-	unsigned int i;
-	unsigned int index = 0;
-	unsigned int size = sizeof(struct msg_syscallsenabled);
-
-	/* First the 64bit syscalls */
-	size += shm->nr_active_64bit_syscalls * sizeof(unsigned int);
-	udpmsg = zmalloc(size);
-	init_msghdr(&udpmsg->hdr, SYSCALLS_ENABLED);
-	udpmsg->nr_enabled = shm->nr_active_64bit_syscalls;
-	udpmsg->arch_is_biarch = TRUE;
-	udpmsg->is_64 = TRUE;
-	entries = udpmsg->entries;
-
-	for_each_64bit_syscall(i) {
-		entry = syscalls_64bit[i].entry;
-		if (entry == NULL)
-			continue;
-
-		if (entry->flags & ACTIVE)
-			entries[index++] = i;
-	}
-
-	sendudp((char *) udpmsg, size);
-	free(udpmsg);
-
-	/* Now send the 32bit syscalls */
-	index = 0;
-	size = sizeof(struct msg_syscallsenabled);
-	size += shm->nr_active_32bit_syscalls * sizeof(unsigned int);
-	udpmsg = zmalloc(size);
-	init_msghdr(&udpmsg->hdr, SYSCALLS_ENABLED);
-	udpmsg->nr_enabled = shm->nr_active_32bit_syscalls;
-	udpmsg->arch_is_biarch = TRUE;
-	udpmsg->is_64 = FALSE;
-	entries = udpmsg->entries;
-
-	for_each_32bit_syscall(i) {
-		entry = syscalls_32bit[i].entry;
-		if (entry == NULL)
-			continue;
-
-		if (entry->flags & ACTIVE)
-			entries[index++] = i;
-	}
-	sendudp((char *) udpmsg, size);
-	free(udpmsg);
 }

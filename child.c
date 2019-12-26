@@ -27,7 +27,6 @@
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "uid.h"
-#include "udp.h"
 #include "utils.h"	// zmalloc
 
 /*
@@ -183,17 +182,6 @@ static void bind_child_to_cpu(struct childdata *child)
 	sched_setaffinity(pid, sizeof(set), &set);
 }
 
-static void log_child_spawned(pid_t pid, int childno)
-{
-	struct msg_childspawned childmsg;
-
-	if (logging_enabled == FALSE)
-		return;
-
-	init_msgchildhdr(&childmsg.hdr, CHILD_SPAWNED, pid, childno);
-	sendudp((char *) &childmsg, sizeof(childmsg));
-}
-
 /*
  * Called from the fork_children loop in the main process.
  */
@@ -201,8 +189,6 @@ static void init_child(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
 	char childname[17];
-
-	log_child_spawned(pid, childno);
 
 	/* Wait for parent to set our childno */
 	while (pids[childno] != pid) {
@@ -388,7 +374,6 @@ static bool handle_sigreturn(int sigwas)
 	if (sigwas != SIGALRM)
 		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
 	else {
-		log_child_signalled(child->num, pids[child->num], SIGALRM, child->op_nr);
 		child->op_nr++;
 	}
 	return TRUE;

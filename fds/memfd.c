@@ -15,7 +15,6 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
-#include "udp.h"
 
 #ifndef USE_MEMFD_CREATE
 
@@ -40,17 +39,9 @@ static void memfd_destructor(struct object *obj)
 static void memfd_dump(struct object *obj, bool global)
 {
 	struct memfdobj *mo = &obj->memfdobj;
-	struct msg_objcreatedmemfd objmsg;
-	int len;
 
-	output(2, "memfd fd:%d name:%s flags:%x\n", mo->fd, mo->name, mo->flags);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_MEMFD, global, obj);
-	objmsg.fd = mo->fd;
-	len = strlen(mo->name);
-	memcpy(objmsg.name, mo->name, len);
-	objmsg.flags = mo->flags;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+	output(2, "memfd fd:%d name:%s flags:%x global:%d\n",
+		mo->fd, mo->name, mo->flags, global);
 }
 
 static int open_memfd_fds(void)

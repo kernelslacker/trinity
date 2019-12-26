@@ -3,7 +3,6 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
-#include "udp.h"
 #include "utils.h"
 
 struct object * alloc_object(void)
@@ -116,10 +115,6 @@ bool objects_empty(enum objecttype type)
 void destroy_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
-	struct msg_objdestroyed objmsg;
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_DESTROYED, global, obj);
-	sendudp((char *) &objmsg, sizeof(objmsg));
 
 	list_del(&obj->list);
 

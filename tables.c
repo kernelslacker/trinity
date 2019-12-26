@@ -564,14 +564,6 @@ void display_enabled_syscalls(void)
 		display_enabled_syscalls_uniarch();
 }
 
-void log_enabled_syscalls(void)
-{
-	if (biarch == TRUE)
-		log_enabled_syscalls_biarch();
-	else
-		log_enabled_syscalls_uniarch();
-}
-
 static void enable_random_syscalls(void)
 {
 	unsigned int i;
@@ -654,7 +646,6 @@ int munge_tables(void)
 
 	if (verbose == TRUE)
 		display_enabled_syscalls();
-	log_enabled_syscalls();
 
 	if (validate_syscall_tables() == FALSE) {
 		outputstd("No syscalls were enabled!\n");

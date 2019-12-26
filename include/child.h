@@ -50,8 +50,6 @@ void set_dontkillme(struct childdata *child, bool state);
 
 void reap_child(struct childdata *child);
 
-void log_child_signalled(int childno, pid_t pid, int sig, unsigned long op_nr);
-
 /* Childops */
 bool random_syscall(struct childdata *child);
 bool read_all_files(struct childdata *child);

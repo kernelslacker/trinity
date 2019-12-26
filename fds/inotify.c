@@ -12,7 +12,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "udp.h"
 
 #define MAX_INOTIFY_FDS 5
 
@@ -24,14 +23,8 @@ static void inotify_destructor(struct object *obj)
 static void inotify_dump(struct object *obj, bool global)
 {
 	struct inotifyobj *io = &obj->inotifyobj;
-	struct msg_objcreatedinotify objmsg;
 
-	output(2, "inotify fd:%d flags:%x\n", io->fd, io->flags);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_INOTIFY, global, obj);
-	objmsg.fd = io->fd;
-	objmsg.flags = io->flags;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+	output(2, "inotify fd:%d flags:%x global:%d\n", io->fd, io->flags, global);
 }
 
 static int open_inotify_fds(void)

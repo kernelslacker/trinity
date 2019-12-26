@@ -14,7 +14,6 @@
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
-#include "udp.h"
 
 #define FUTEX_UNLOCKED (0)
 #define FUTEX_LOCKED (!FUTEX_UNLOCKED)
@@ -114,14 +113,7 @@ static inline void futex_init_lock(struct __lock *thislock)
 
 static void dump_futex(struct object *obj, __unused__ bool global)
 {
-	struct msg_objcreatedfutex objmsg;
-
-	output(0, "futex: %x owner:%d\n", obj->lock.futex, obj->lock.owner_pid);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_FUTEX, global, obj);
-	objmsg.futex = obj->lock.futex;
-	objmsg.owner = obj->lock.owner_pid;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+	output(0, "futex: %x owner:%d global:%d\n", obj->lock.futex, obj->lock.owner_pid, global);
 }
 
 void create_futexes(void)

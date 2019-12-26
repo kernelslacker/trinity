@@ -14,7 +14,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
-#include "udp.h"
 
 static void timerfd_destructor(struct object *obj)
 {
@@ -24,15 +23,8 @@ static void timerfd_destructor(struct object *obj)
 static void timerfd_dump(struct object *obj, bool global)
 {
 	struct timerfdobj *to = &obj->timerfdobj;
-	struct msg_objcreatedtimerfd objmsg;
 
-	output(2, "timerfd fd:%d clockid:%d flags:%x\n", to->fd, to->clockid, to->flags);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_TIMERFD, global, obj);
-	objmsg.fd = to->fd;
-	objmsg.clockid = to->clockid;
-	objmsg.flags = to->flags;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+	output(2, "timerfd fd:%d clockid:%d flags:%x global:%d\n", to->fd, to->clockid, to->flags, global);
 }
 
 static int __open_timerfd_fds(int clockid)

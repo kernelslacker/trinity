@@ -14,7 +14,6 @@
 #include "random.h"
 #include "shm.h"
 #include "tables.h"
-#include "udp.h"
 
 const struct syscalltable *syscalls;
 
@@ -176,32 +175,4 @@ void display_enabled_syscalls_uniarch(void)
 		if (entry->flags & ACTIVE)
 			output(0, "syscall %d:%s enabled.\n", i, entry->name);
 	}
-}
-
-void log_enabled_syscalls_uniarch(void)
-{
-	struct msg_syscallsenabled *udpmsg;
-	int *entries;
-	unsigned int i, index = 0;
-	unsigned int size;
-
-	size = sizeof(struct msg_syscallsenabled) + (sizeof(int) * shm->nr_active_syscalls);
-	udpmsg = zmalloc(size);
-	init_msghdr(&udpmsg->hdr, SYSCALLS_ENABLED);
-	udpmsg->nr_enabled = shm->nr_active_syscalls;
-	udpmsg->arch_is_biarch = FALSE;
-	udpmsg->is_64 = FALSE;
-	entries = udpmsg->entries;
-
-	for_each_syscall(i) {
-		struct syscallentry *entry = syscalls[i].entry;
-
-		if (entry == NULL)
-			continue;
-
-		if (entry->flags & ACTIVE)
-			entries[index++] = i;
-	}
-	sendudp((char *) udpmsg, size);
-	free(udpmsg);
 }

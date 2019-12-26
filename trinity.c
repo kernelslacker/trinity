@@ -25,7 +25,6 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
-#include "udp.h"
 #include "uid.h"
 #include "version.h"
 

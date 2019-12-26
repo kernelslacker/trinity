@@ -18,7 +18,6 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"	// progname
-#include "udp.h"
 
 bool set_debug = FALSE;
 bool do_specific_syscall = FALSE;
@@ -151,9 +150,6 @@ static void parse_logging(void)
 			return;
 		}
 	}
-
-	// try the arg as a hostname.
-	logging = LOGGING_UDP;
 }
 
 void parse_args(int argc, char *argv[])

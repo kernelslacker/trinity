@@ -17,7 +17,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-#include "udp.h"
 #include "uid.h"
 #include "utils.h"
 
@@ -410,18 +409,11 @@ static void socket_destructor(struct object *obj)
 static void socket_dump(struct object *obj, bool global)
 {
 	struct socketinfo *si = &obj->sockinfo;
-	struct msg_objcreatedsocket objmsg;
 
-	output(2, "socket fd:%u domain:%u (%s) type:0x%u protocol:%u\n",
+	output(2, "socket fd:%u domain:%u (%s) type:0x%u protocol:%u global:%d\n",
 		si->fd, si->triplet.family, get_domain_name(si->triplet.family),
-		si->triplet.type, si->triplet.protocol);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_SOCKET, global, obj);
-	objmsg.si.fd = si->fd;
-	objmsg.si.triplet.family = si->triplet.family;
-	objmsg.si.triplet.type = si->triplet.type;
-	objmsg.si.triplet.protocol = si->triplet.protocol;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+		si->triplet.type, si->triplet.protocol,
+		global);
 }
 
 static int open_sockets(void)

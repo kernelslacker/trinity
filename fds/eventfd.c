@@ -13,7 +13,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "udp.h"
 #include "compat.h"
 
 static void eventfd_destructor(struct object *obj)
@@ -24,15 +23,9 @@ static void eventfd_destructor(struct object *obj)
 static void eventfd_dump(struct object *obj, bool global)
 {
 	struct eventfdobj *eo = &obj->eventfdobj;
-	struct msg_objcreatedeventfd objmsg;
 
-	output(2, "eventfd fd:%d count:%d flags:%x\n", eo->fd, eo->count, eo->flags);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_EVENTFD, global, obj);
-	objmsg.fd = eo->fd;
-	objmsg.count = eo->count;
-	objmsg.flags = eo->flags;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+	output(2, "eventfd fd:%d count:%d flags:%x global:%d\n",
+		eo->fd, eo->count, eo->flags, global);
 }
 
 static int open_eventfd_fds(void)
