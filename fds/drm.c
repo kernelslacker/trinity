@@ -32,8 +32,6 @@ static void drmfd_destructor(struct object *obj)
 
 static void drmfd_dump(struct object *obj, bool global)
 {
-	struct msg_objcreateddrm objmsg;
-
 	output(2, "drmfd:%d\n", obj->drmfd);
 }
 
