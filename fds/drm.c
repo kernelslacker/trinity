@@ -23,8 +23,6 @@
 #include <fcntl.h>
 #include <drm/drm.h>
 
-#include "udp.h"
-
 static void drmfd_destructor(struct object *obj)
 {
 	close(obj->drmfd);
