@@ -5,7 +5,7 @@
 FILE *find_logfile_handle(void);
 void synclogs(void);
 
-FILE *mainlogfile;
+extern FILE *mainlogfile;
 void open_main_logfile(void);
 void close_logfile(FILE **handle);
 
