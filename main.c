@@ -39,7 +39,11 @@ static int shm_is_corrupt(void)
 {
 	unsigned int i;
 
-	if (shm->stats.op_count < shm->stats.previous_op_count) {
+	unsigned long current_previous_op_count = shm->stats.previous_op_count;
+	unsigned long current_op_count = shm->stats.op_count;
+
+	//if (shm->stats.op_count < shm->stats.previous_op_count) {
+	if (current_op_count < current_previous_op_count) {
 		output(0, "Execcount went backwards! (old:%ld new:%ld):\n",
 			shm->stats.previous_op_count, shm->stats.op_count);
 		panic(EXIT_SHM_CORRUPTION);
