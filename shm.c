@@ -49,6 +49,7 @@ void init_shm(void)
 		shm->debug = TRUE;
 
 	shm->stats.op_count = 0;
+	shm->stats.previous_op_count = 0;
 
 	shm->seed = init_seed(seed);
 
