@@ -36,3 +36,31 @@ struct syscallentry syscall_madvise = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,
 };
+
+#define MADV_COLD       20              /* deactivate these pages */
+#define MADV_PAGEOUT    21              /* reclaim these pages */
+
+static unsigned long process_madvise_behaviours[] = {
+	MADV_COLD, MADV_PAGEOUT,
+};
+static unsigned long process_madvise_flags[] = {
+	0,
+};
+
+struct syscallentry syscall_process_madvise = {
+	.name = "process_madvise",
+	.num_args = 5,
+	.arg1name = "pidfd",
+	.arg1type = ARG_FD,
+	.arg2name = "vec",
+	.arg3name = "vlen",
+	.arg3type = ARG_LEN,
+	.arg4name = "behaviour",
+	.arg4type = ARG_LIST,
+	.arg4list = ARGLIST(process_madvise_behaviours),
+	.arg5name = "flags",
+	.arg5type = ARG_OP,
+	.arg5list = ARGLIST(process_madvise_flags),
+	.group = GROUP_VM,
+	.sanitise = sanitise_madvise,
+};

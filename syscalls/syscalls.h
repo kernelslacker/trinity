@@ -400,6 +400,13 @@ extern struct syscallentry syscall_fsmount;
 extern struct syscallentry syscall_fspick;
 extern struct syscallentry syscall_pidfd_open;
 extern struct syscallentry syscall_clone3;
+extern struct syscallentry syscall_close_range;
+extern struct syscallentry syscall_openat2;
+extern struct syscallentry syscall_pidfd_getfd;
+extern struct syscallentry syscall_faccessat2;
+extern struct syscallentry syscall_process_madvise;
+extern struct syscallentry syscall_epoll_pwait2;
+extern struct syscallentry syscall_mount_setattr;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;

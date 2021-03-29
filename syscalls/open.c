@@ -101,6 +101,23 @@ struct syscallentry syscall_openat = {
 };
 
 /*
+ * SYSCALL_DEFINE4(openat2, int, dfd, const char __user *, filename,
+                 struct open_how __user *, how, size_t, usize)
+ */
+struct syscallentry syscall_openat2 = {
+	.name = "openat2",
+	.num_args = 4,
+	.arg1name = "dfd",
+	.arg1type = ARG_FD,
+	.arg2name = "filename",
+	.arg2type = ARG_PATHNAME,
+	.arg3name = "how",
+	.arg4name = "usize",
+	.arg4type = ARG_LEN,
+	.flags = NEED_ALARM,
+};
+
+/*
  * SYSCALL_DEFINE3(open_by_handle_at, int, mountdirfd,
  *               struct file_handle __user *, handle,
  *               int, flags)
