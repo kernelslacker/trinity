@@ -14,6 +14,8 @@
 #define IORING_REGISTER_PROBE           8
 #define IORING_REGISTER_PERSONALITY     9
 #define IORING_UNREGISTER_PERSONALITY   10
+#define IORING_REGISTER_RESTRICTIONS    11
+#define IORING_REGISTER_ENABLE_RINGS    12
 
 
 static unsigned long io_uring_register_opcodes[] = {
@@ -28,6 +30,8 @@ static unsigned long io_uring_register_opcodes[] = {
 	IORING_REGISTER_PROBE,
 	IORING_REGISTER_PERSONALITY,
 	IORING_UNREGISTER_PERSONALITY,
+	IORING_REGISTER_RESTRICTIONS,
+	IORING_REGISTER_ENABLE_RINGS,
 };
 
 struct syscallentry syscall_io_uring_register = {
