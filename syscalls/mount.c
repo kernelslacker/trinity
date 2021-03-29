@@ -36,3 +36,33 @@ struct syscallentry syscall_mount = {
 	.arg5type = ARG_ADDRESS,
 	.group = GROUP_VFS,
 };
+
+#define AT_EMPTY_PATH           0x1000  /* Allow empty relative pathname */
+
+#define AT_STATX_SYNC_TYPE      0x6000  /* Type of synchronisation required from statx() */
+#define AT_STATX_SYNC_AS_STAT   0x0000  /* - Do whatever stat() does */
+#define AT_STATX_FORCE_SYNC     0x2000  /* - Force the attributes to be sync'd with the server */
+#define AT_STATX_DONT_SYNC      0x4000  /* - Don't sync attributes with the server */
+    
+#define AT_RECURSIVE            0x8000  /* Apply to the entire subtree */
+
+static unsigned long mount_setattr_flags[] = {
+	AT_EMPTY_PATH, AT_STATX_SYNC_TYPE, AT_STATX_SYNC_AS_STAT, AT_STATX_FORCE_SYNC, AT_STATX_DONT_SYNC, AT_RECURSIVE,
+};
+
+struct syscallentry syscall_mount_setattr = {
+	.name = "mount_setattr",
+	.num_args = 5,
+	.arg1name = "dfd",
+	.arg1type = ARG_FD,
+	.arg2name = "path",
+	.arg2type = ARG_PATHNAME,
+	.arg3name = "flags",
+	.arg3type = ARG_LIST,
+	.arg3list = ARGLIST(mount_setattr_flags),
+	.arg4name = "uattr",
+	.arg4type = ARG_ADDRESS,
+	.arg5name = "usize",
+	.arg5type = ARG_LEN,
+	.group = GROUP_VFS,
+};

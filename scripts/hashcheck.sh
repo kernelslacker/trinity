@@ -25,7 +25,7 @@ check()
 # Note: Commented out checks are likely out of date, but they're for architectures
 #  I don't have time to care about. Step up and contribute if you care.
 #
-check include/uapi/asm-generic/unistd.h    198599d8f761b4dd63db413600419fdad3ddfcbd sys_
+check include/uapi/asm-generic/unistd.h    11c46e9ce6393e7c8a17577c6128b78684395016 sys_
 #check arch/alpha/include/uapi/asm/unistd.h 51fa669a21d8f26a0c9de8280a3cfd9c257a0d28 _NR_
 #check arch/arm/include/uapi/asm/unistd.h   7c601d436a3ebbe05a9b6813c0ffcf8eedaf101b SYSCALL
 check arch/x86/entry/syscalls/syscall_32.tbl     be7686afac49943e1a89447b1d09f4a6e868f482 sys_

@@ -447,4 +447,11 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_fspick },
 	{ .entry = &syscall_pidfd_open },
 	{ .entry = &syscall_clone3 },
+	{ .entry = &syscall_close_range },
+	{ .entry = &syscall_openat2 },
+	{ .entry = &syscall_pidfd_getfd },
+	{ .entry = &syscall_faccessat2 },
+	{ .entry = &syscall_process_madvise },
+	{ .entry = &syscall_epoll_pwait2 },
+	{ .entry = &syscall_mount_setattr },
 };
