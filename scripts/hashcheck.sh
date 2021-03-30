@@ -64,7 +64,7 @@ check include/uapi/asm-generic/fcntl.h 98cf236ce61466e272727683eba11493d41c6b27 
 check include/linux/splice.h fb753f99bf38f7c041427c442f199aa2049fa329 SPLICE_F_
 
 # new madvise flags
-check include/uapi/asm-generic/mman-common.h c6e990af02fd65c13c5e25c2d4e7dffa32724b23 MADV_
+check include/uapi/asm-generic/mman-common.h fdfd95258ab07c7377584912890dd286beae4f9f MADV_
 
 # new mremap flags
 check include/uapi/linux/mman.h 556bcea4a4581a03a600c2d383c462840f1c0e6c MREMAP_

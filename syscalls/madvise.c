@@ -21,7 +21,7 @@ static unsigned long madvise_advices[] = {
 	MADV_FREE, MADV_REMOVE, MADV_DONTFORK, MADV_DOFORK,
 	MADV_MERGEABLE, MADV_UNMERGEABLE, MADV_HUGEPAGE, MADV_NOHUGEPAGE,
 	MADV_DONTDUMP, MADV_DODUMP,
-	MADV_WIPEONFORK, MADV_KEEPONFORK,
+	MADV_WIPEONFORK, MADV_KEEPONFORK, MADV_COLD, MADV_PAGEOUT,
 };
 
 struct syscallentry syscall_madvise = {
@@ -36,9 +36,6 @@ struct syscallentry syscall_madvise = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,
 };
-
-#define MADV_COLD       20              /* deactivate these pages */
-#define MADV_PAGEOUT    21              /* reclaim these pages */
 
 static unsigned long process_madvise_behaviours[] = {
 	MADV_COLD, MADV_PAGEOUT,
