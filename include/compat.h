@@ -144,6 +144,12 @@ enum {
 #ifndef MADV_KEEPONFORK
 #define MADV_KEEPONFORK 19
 #endif
+#ifndef MADV_COLD
+#define MADV_COLD       20              /* deactivate these pages */
+#endif
+#ifndef MADV_PAGEOUT
+#define MADV_PAGEOUT    21              /* reclaim these pages */
+#endif
 
 
 /* bits/socket.h */
