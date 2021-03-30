@@ -586,6 +586,13 @@ enum kcmp_type {
 #define SO_DETACH_REUSEPORT_BPF 68
 #endif
 
+#ifndef SO_PREFER_BUSY_POLL
+#define SO_PREFER_BUSY_POLL     69
+#endif
+
+#ifndef SO_BUSY_POLL_BUDGET
+#define SO_BUSY_POLL_BUDGET     70
+#endif
 
 
 /* linux/tcp.h */
@@ -802,6 +809,11 @@ enum kcmp_type {
 
 #ifndef IPV6_RECVFRAGSIZE
 #define IPV6_RECVFRAGSIZE       77
+#endif
+
+/* netfilter/ipset/ipset.h */
+#ifndef SO_IP_SET
+#define SO_IP_SET 83
 #endif
 
 #ifndef IPV6_HDRINCL
@@ -1276,11 +1288,6 @@ struct kvm_get_htab_fd {
 /* bits/shm.h */
 #ifndef SHM_NORESERVE
 # define SHM_NORESERVE 010000
-#endif
-
-/* netfilter/ipset/ipset.h */
-#ifndef SO_IP_SET
-#define SO_IP_SET 83
 #endif
 
 /* linux/auto_fs4.h */
