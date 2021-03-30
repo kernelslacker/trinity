@@ -67,7 +67,7 @@ check include/linux/splice.h fb753f99bf38f7c041427c442f199aa2049fa329 SPLICE_F_
 check include/uapi/asm-generic/mman-common.h fdfd95258ab07c7377584912890dd286beae4f9f MADV_
 
 # new mremap flags
-check include/uapi/linux/mman.h 556bcea4a4581a03a600c2d383c462840f1c0e6c MREMAP_
+check include/uapi/linux/mman.h 3465560bc9439e3edabb652ce31d6a0d0e1aa400 MREMAP_
 
 # new IPPROTO's
 check include/uapi/linux/in.h  80799106aba80b40af5416f0d5cc47dea8b02225 \ \ IPPROTO_

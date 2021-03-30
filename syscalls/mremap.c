@@ -14,6 +14,7 @@
 #include "syscall.h"
 #include "trinity.h"
 #include "utils.h"
+#include "compat.h"
 
 static struct map *map;
 
@@ -63,7 +64,7 @@ static void post_mremap(struct syscallrecord *rec)
 }
 
 static unsigned long mremap_flags[] = {
-	MREMAP_MAYMOVE, MREMAP_FIXED,
+	MREMAP_MAYMOVE, MREMAP_FIXED, MREMAP_DONTUNMAP,
 };
 
 struct syscallentry syscall_mremap = {

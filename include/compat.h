@@ -1277,6 +1277,10 @@ struct kvm_get_htab_fd {
 #define MLOCK_ONFAULT	0x01
 #endif
 
+#ifndef MREMAP_DONTUNMAP
+#define MREMAP_DONTUNMAP        4
+#endif
+
 /* linux/nvme_ioctl.h */
 #ifndef NVME_IOCTL_RESET
 #define NVME_IOCTL_RESET _IO('N', 0x44)
