@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -22,6 +23,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void handle_child(int childno, pid_t childpid, int childstatus);
 
@@ -462,6 +464,13 @@ static bool spawn_child(int childno)
 
 	/* Child won't get out of init_child until we write the pid */
 	pids[childno] = pid;
+	int nr_fds = get_num_fds();
+	if ((max_files_rlimit.rlim_cur - nr_fds) < 3)
+	{
+		// child->pidstatfile may be NULL below if fd limition is reached.
+		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
+		panic(EXIT_NO_FDS);
+	}
 	child->pidstatfile = open_child_pidstat(pid);
 	shm->running_childs++;
 

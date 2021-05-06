@@ -1,9 +1,13 @@
+#include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "debug.h"
 #include "pids.h"
 #include "random.h"
@@ -106,4 +110,21 @@ void freeptr(unsigned long *p)
 	if (ptr != NULL)
 		free(ptr);
 	*p = 0L;
+}
+
+int get_num_fds(void)
+{
+     int fd_count;
+     char buf[64];
+     struct dirent *dp;
+
+     snprintf(buf, 64, "/proc/%i/fd/", mainpid);
+
+     fd_count = 0;
+     DIR *dir = opendir(buf);
+     while ((dp = readdir(dir)) != NULL) {
+          fd_count++;
+     }
+     closedir(dir);
+     return fd_count;
 }
