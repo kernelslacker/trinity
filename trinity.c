@@ -2,6 +2,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -36,6 +37,7 @@ unsigned int page_size;
 unsigned int num_online_cpus;
 bool no_bind_to_cpu;
 unsigned int max_children;
+struct rlimit max_files_rlimit;
 
 /*
  * just in case we're not using the test.sh harness, we
@@ -106,6 +108,8 @@ int main(int argc, char* argv[])
 	progname = argv[0];
 
 	mainpid = getpid();
+
+    getrlimit(RLIMIT_NOFILE, &max_files_rlimit);
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
