@@ -1,3 +1,4 @@
+#include <netinet/in.h>
 #include <linux/icmp.h>
 #include "net.h"
 #include "trinity.h"
