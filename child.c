@@ -189,6 +189,14 @@ static void init_child(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
 	char childname[17];
+	unsigned int i;
+
+	for_each_child(i) {
+		if (child->num != i)
+			mprotect(shm->children[i], sizeof(struct childdata), PROT_READ);
+	}
+
+	mprotect(pids, max_children * sizeof(int), PROT_READ);
 
 	/* Wait for parent to set our childno */
 	while (pids[childno] != pid) {
