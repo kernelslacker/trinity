@@ -600,6 +600,13 @@ enum kcmp_type {
 #define SO_BUSY_POLL_BUDGET     70
 #endif
 
+#ifndef SO_NETNS_COOKIE
+#define SO_NETNS_COOKIE		71
+#endif
+
+#ifndef SO_BUF_LOCK
+#define SO_BUF_LOCK		72
+#endif
 
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS

@@ -29,6 +29,7 @@ static const unsigned int socket_opts[] = {
 	SO_TXTIME, SO_BINDTOIFINDEX, SO_TIMESTAMP_NEW, SO_TIMESTAMPNS_NEW,
 	SO_TIMESTAMPING_NEW, SO_RCVTIMEO_NEW, SO_SNDTIMEO_NEW,
 	SO_DETACH_REUSEPORT_BPF, SO_PREFER_BUSY_POLL, SO_BUSY_POLL_BUDGET,
+	SO_NETNS_COOKIE, SO_BUF_LOCK,
 };
 
 static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
