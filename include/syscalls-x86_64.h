@@ -454,4 +454,10 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_process_madvise },
 	{ .entry = &syscall_epoll_pwait2 },
 	{ .entry = &syscall_mount_setattr },
+	{ .entry = &syscall_quotactl_fd },
+	{ .entry = &syscall_landlock_create_ruleset },
+	{ .entry = &syscall_landlock_add_rule },
+	{ .entry = &syscall_landlock_restrict_self },
+	{ .entry = &syscall_memfd_secret },
+	{ .entry = &syscall_process_mrelease },
 };
