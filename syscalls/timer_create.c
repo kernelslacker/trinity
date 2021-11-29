@@ -11,9 +11,10 @@
 static void timer_create_sanitise(struct syscallrecord *rec)
 {
 	struct sigevent *sigev;
-	int signo;
 
 	if (RAND_BOOL()) {
+		int signo;
+
 		sigev = (struct sigevent *) get_writable_address(sizeof(struct sigevent));
 
 		/* do not let created timer send SIGINT signal */
