@@ -30,7 +30,7 @@ static void drmfd_destructor(struct object *obj)
 
 static void drmfd_dump(struct object *obj, bool global)
 {
-	output(2, "drmfd:%d\n", obj->drmfd);
+	output(2, "drmfd:%d global:%d\n", obj->drmfd, global);
 }
 
 static int create_dumb(__unused__ int fd)
