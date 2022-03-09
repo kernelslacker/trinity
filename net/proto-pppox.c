@@ -13,6 +13,8 @@
 #include "utils.h"
 #include "compat.h"
 
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 static void pppox_PX_PROTO_OE(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pppox *pppox;
