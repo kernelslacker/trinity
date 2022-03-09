@@ -688,7 +688,7 @@ static void print_stats(void)
 		if (shm->stats.op_count - lastcount > 10000) {
 			char stalltxt[]=" STALLED:XXXX";
 
-			if (stall_count > 0)
+			if (stall_count > 0 && stall_count < 10000)
 				sprintf(stalltxt, " STALLED:%u", stall_count);
 			output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s]\n",
 				shm->stats.op_count,
