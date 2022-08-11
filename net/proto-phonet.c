@@ -9,6 +9,8 @@
 #include "utils.h"
 #include "compat.h"
 
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 static void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pn *pn;

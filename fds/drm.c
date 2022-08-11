@@ -23,8 +23,6 @@
 #include <fcntl.h>
 #include <drm/drm.h>
 
-#include "udp.h"
-
 static void drmfd_destructor(struct object *obj)
 {
 	close(obj->drmfd);
@@ -32,13 +30,7 @@ static void drmfd_destructor(struct object *obj)
 
 static void drmfd_dump(struct object *obj, bool global)
 {
-	struct msg_objcreateddrm objmsg;
-
-	output(2, "drmfd:%d\n", obj->drmfd);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_DRM, global, obj);
-	objmsg.fd = obj->drmfd;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+	output(2, "drmfd:%d global:%d\n", obj->drmfd, global);
 }
 
 static int create_dumb(__unused__ int fd)

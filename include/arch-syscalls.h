@@ -43,3 +43,10 @@
 #ifdef __tile__
 #include "syscalls-tile.h"
 #endif
+#if defined(__riscv) || defined(__riscv__)
+#if __riscv_xlen == 64
+#include "syscalls-riscv64.h"
+#else
+#error "riscv32 is not supported yet."
+#endif
+#endif

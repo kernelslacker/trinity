@@ -15,7 +15,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-#include "udp.h"
 
 static void pipefd_destructor(struct object *obj)
 {
@@ -25,17 +24,11 @@ static void pipefd_destructor(struct object *obj)
 static void pipefd_dump(struct object *obj, bool global)
 {
 	struct pipeobj *po = &obj->pipeobj;
-	struct msg_objcreatedpipe objmsg;
 
-	output(2, "pipe fd:%d flags:%x [%s]\n",
+	output(2, "pipe fd:%d flags:%x [%s] global:%d\n",
 		po->fd, po->flags,
-		po->reader ? "reader" : "writer");
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_PIPE, global, obj);
-	objmsg.fd = po->fd;
-	objmsg.flags = po->flags;
-	objmsg.reader = po->reader;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+		po->reader ? "reader" : "writer",
+		global);
 }
 
 static void open_pipe_pair(unsigned int flags)

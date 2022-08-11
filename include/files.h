@@ -1,6 +1,6 @@
 #pragma once
 
-#include <sys/stat.h>
+#include <fcntl.h>
 #include "fd.h"
 
 unsigned long get_o_flags(void);

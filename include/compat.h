@@ -144,6 +144,12 @@ enum {
 #ifndef MADV_KEEPONFORK
 #define MADV_KEEPONFORK 19
 #endif
+#ifndef MADV_COLD
+#define MADV_COLD       20              /* deactivate these pages */
+#endif
+#ifndef MADV_PAGEOUT
+#define MADV_PAGEOUT    21              /* reclaim these pages */
+#endif
 
 
 /* bits/socket.h */
@@ -586,7 +592,21 @@ enum kcmp_type {
 #define SO_DETACH_REUSEPORT_BPF 68
 #endif
 
+#ifndef SO_PREFER_BUSY_POLL
+#define SO_PREFER_BUSY_POLL     69
+#endif
 
+#ifndef SO_BUSY_POLL_BUDGET
+#define SO_BUSY_POLL_BUDGET     70
+#endif
+
+#ifndef SO_NETNS_COOKIE
+#define SO_NETNS_COOKIE		71
+#endif
+
+#ifndef SO_BUF_LOCK
+#define SO_BUF_LOCK		72
+#endif
 
 /* linux/tcp.h */
 #ifndef TCP_COOKIE_TRANSACTIONS
@@ -802,6 +822,11 @@ enum kcmp_type {
 
 #ifndef IPV6_RECVFRAGSIZE
 #define IPV6_RECVFRAGSIZE       77
+#endif
+
+/* netfilter/ipset/ipset.h */
+#ifndef SO_IP_SET
+#define SO_IP_SET 83
 #endif
 
 #ifndef IPV6_HDRINCL
@@ -1259,6 +1284,10 @@ struct kvm_get_htab_fd {
 #define MLOCK_ONFAULT	0x01
 #endif
 
+#ifndef MREMAP_DONTUNMAP
+#define MREMAP_DONTUNMAP        4
+#endif
+
 /* linux/nvme_ioctl.h */
 #ifndef NVME_IOCTL_RESET
 #define NVME_IOCTL_RESET _IO('N', 0x44)
@@ -1276,11 +1305,6 @@ struct kvm_get_htab_fd {
 /* bits/shm.h */
 #ifndef SHM_NORESERVE
 # define SHM_NORESERVE 010000
-#endif
-
-/* netfilter/ipset/ipset.h */
-#ifndef SO_IP_SET
-#define SO_IP_SET 83
 #endif
 
 /* linux/auto_fs4.h */

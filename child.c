@@ -27,59 +27,8 @@
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "uid.h"
-#include "udp.h"
 #include "utils.h"	// zmalloc
 
-enum childflags {
-	NONE,
-	ONESHOT,
-};
-
-struct child_funcs {
-	const char *name;
-	bool (*func)(struct childdata *child);
-	unsigned char likelyhood;
-	enum childtype type;
-	unsigned int flags;
-};
-
-static const struct child_funcs child_ops[] = {
-	{
-		.name = "rand_syscall",
-		.func = random_syscall,
-		.likelyhood = 100,
-		.type = CHILD_RAND_SYSCALL
-	},
-/*	{
-		.name = "read_all_files",
-		.func = read_all_files,
-		.likelyhood = 10,
-		.type = CHILD_READ_ALL_FILES
-	},
-	{
-		.name = "thrash_pid_files",
-		.func = thrash_pidfiles,
-		.likelyhood = 50,
-		.type = CHILD_THRASH_PID
-	},
-	{
-		.name = "truncate_testfile",
-		.func = truncate_testfile,
-		.likelyhood = 10,
-		.type = CHILD_TRUNCATE_TESTFILE
-	},
-*/
-};
-
-static const struct child_funcs root_child_ops[] = {
-	{
-		.name = "drop_privs",
-		.func = drop_privs,
-		.likelyhood = 90,
-		.type = CHILD_ROOT_DROP_PRIVS,
-		.flags = ONESHOT,
-	},
-};
 /*
  * Provide temporary immunity from the reaper
  * This is useful if we're going to do something that might take
@@ -233,17 +182,6 @@ static void bind_child_to_cpu(struct childdata *child)
 	sched_setaffinity(pid, sizeof(set), &set);
 }
 
-static void log_child_spawned(pid_t pid, int childno)
-{
-	struct msg_childspawned childmsg;
-
-	if (logging_enabled == FALSE)
-		return;
-
-	init_msgchildhdr(&childmsg.hdr, CHILD_SPAWNED, pid, childno);
-	sendudp((char *) &childmsg, sizeof(childmsg));
-}
-
 /*
  * Called from the fork_children loop in the main process.
  */
@@ -251,8 +189,14 @@ static void init_child(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
 	char childname[17];
+	unsigned int i;
 
-	log_child_spawned(pid, childno);
+	for_each_child(i) {
+		if (child->num != i)
+			mprotect(shm->children[i], sizeof(struct childdata), PROT_READ);
+	}
+
+	mprotect(pids, max_children * sizeof(int), PROT_READ);
 
 	/* Wait for parent to set our childno */
 	while (pids[childno] != pid) {
@@ -438,35 +382,11 @@ static bool handle_sigreturn(int sigwas)
 	if (sigwas != SIGALRM)
 		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
 	else {
-		log_child_signalled(child->num, pids[child->num], SIGALRM, child->op_nr);
 		child->op_nr++;
 	}
 	return TRUE;
 }
 
-
-static const struct child_funcs * set_new_op(struct childdata *child)
-{
-	const struct child_funcs *ops = child_ops;
-	size_t len = ARRAY_SIZE(child_ops);
-
-	if (orig_uid == 0) {
-		if (child->dropped_privs == FALSE) {
-			ops = root_child_ops;
-			len = ARRAY_SIZE(root_child_ops);
-		}
-	}
-
-	while (1) {
-		unsigned int i = rnd() % len;
-
-		if (rnd() % 100 <= ops[i].likelyhood) {
-			//output(0, "Chose %s.\n", ops[i].name);
-			child->type = ops[i].type;
-			return ops;
-		}
-	}
-}
 
 /*
  * This is the child main loop, entered after init_child has completed
@@ -477,9 +397,6 @@ static const struct child_funcs * set_new_op(struct childdata *child)
 
 void child_process(struct childdata *child, int childno)
 {
-	const struct child_funcs *ops;
-	bool (*op)(struct childdata *child);
-	unsigned int loops;
 	int ret;
 
 	init_child(child, childno);
@@ -495,10 +412,6 @@ void child_process(struct childdata *child, int childno)
 			goto out;	// Exit the child, things are getting too weird.
 	}
 
-	op = NULL;
-	ops = NULL;
-	loops = 0;
-
 	while (shm->exit_reason == STILL_RUNNING) {
 		/* If the parent reseeded, we should reflect the latest seed too. */
 		if (shm->seed != child->seed) {
@@ -508,27 +421,15 @@ void child_process(struct childdata *child, int childno)
 
 		periodic_work();
 
-		/* Every NEW_OP_COUNT potentially pick a new childop. */
-		if (loops == 0) {
-			ops = set_new_op(child);
-			op = ops->func;
-			loops = NEW_OP_COUNT;
-		}
-
-		/* timestamp, and do the childop */
+		/* timestamp, and do the syscall */
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
-		ret = op(child);
+		ret = random_syscall(child);
 
 		child->op_nr++;
 
 		if (ret == FAIL)
 			goto out;
-
-		loops--;
-
-		if (ops->flags & ONESHOT)
-			loops = 0;
 
 		if (syscalls_todo) {
 			if (shm->stats.op_count >= syscalls_todo) {

@@ -13,7 +13,6 @@
 #include "perf.h"
 #include "shm.h"
 #include "sanitise.h"
-#include "udp.h"
 #include "utils.h"
 
 #define MAX_PERF_FDS 10
@@ -27,32 +26,16 @@ static void perffd_destructor(struct object *obj)
 static void perffd_dump(struct object *obj, bool global)
 {
 	struct perfobj *po = &obj->perfobj;
-	struct perf_event_attr *attr = obj->perfobj.eventattr;
-	struct msg_objcreatedperf *objmsg;
-	char *p = (char *)attr;
 //	unsigned int i;
-	unsigned int perfsize = sizeof(struct perf_event_attr);
 
-	output(2, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%lx\n",
-		po->fd, po->pid, po->cpu, po->group_fd, po->flags);
+	output(2, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%lx global:%d\n",
+		po->fd, po->pid, po->cpu, po->group_fd, po->flags, global);
 /*	output(2, " perf_event_attr:");
 	for (i = 0; i < perfsize ; i++) {
 		output(CONT, "%02x ", (unsigned char) p[i]);
 	}
 	output(CONT, "\n");
 */
-	objmsg = zmalloc(sizeof(struct msg_objcreatedperf) + perfsize);
-	init_msgobjhdr(&objmsg->hdr, OBJ_CREATED_PERF, global, obj);
-	objmsg->fd = po->fd;
-	objmsg->pid = po->pid;
-	objmsg->cpu = po->cpu;
-	objmsg->group_fd = po->group_fd;
-	objmsg->flags = po->flags;
-	objmsg->eventattrsize = perfsize;
-	memcpy(&objmsg->eventattr, p, perfsize);
-	sendudp((char *) objmsg, sizeof(objmsg) + perfsize);
-
-	free(objmsg);
 }
 
 static int open_perf_fds(void)

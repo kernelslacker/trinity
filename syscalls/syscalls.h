@@ -400,11 +400,26 @@ extern struct syscallentry syscall_fsmount;
 extern struct syscallentry syscall_fspick;
 extern struct syscallentry syscall_pidfd_open;
 extern struct syscallentry syscall_clone3;
+extern struct syscallentry syscall_close_range;
+extern struct syscallentry syscall_openat2;
+extern struct syscallentry syscall_pidfd_getfd;
+extern struct syscallentry syscall_faccessat2;
+extern struct syscallentry syscall_process_madvise;
+extern struct syscallentry syscall_epoll_pwait2;
+extern struct syscallentry syscall_mount_setattr;
+extern struct syscallentry syscall_quotactl_fd;
+extern struct syscallentry syscall_landlock_create_ruleset;
+extern struct syscallentry syscall_landlock_add_rule;
+extern struct syscallentry syscall_landlock_restrict_self;
+extern struct syscallentry syscall_memfd_secret;
+extern struct syscallentry syscall_process_mrelease;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
 extern struct syscallentry syscall_s390_pci_mmio_read;
 extern struct syscallentry syscall_s390_guarded_storage;
 extern struct syscallentry syscall_s390_sthyi;
+
+extern struct syscallentry syscall_riscv_flush_icache;
 
 unsigned int random_fcntl_setfl_flags(void);

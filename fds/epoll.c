@@ -12,7 +12,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "udp.h"
 
 #define MAX_EPOLL_FDS 10
 
@@ -24,15 +23,9 @@ static void epoll_destructor(struct object *obj)
 static void epoll_dump(struct object *obj, bool global)
 {
 	struct epollobj *eo = &obj->epollobj;
-	struct msg_objcreatedepoll objmsg;
 
-	output(2, "epoll fd:%d used create1?:%d flags:%x\n", eo->fd, eo->create1, eo->flags);
-
-	init_msgobjhdr(&objmsg.hdr, OBJ_CREATED_EPOLL, global, obj);
-	objmsg.fd = eo->fd;
-	objmsg.create1 = eo->create1;
-	objmsg.flags = eo->flags;
-	sendudp((char *) &objmsg, sizeof(objmsg));
+	output(2, "epoll fd:%d used create1?:%d flags:%x global:%d\n",
+		eo->fd, eo->create1, eo->flags, global);
 }
 
 static int open_epoll_fds(void)

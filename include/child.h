@@ -6,15 +6,6 @@
 #include "objects.h"
 #include "syscall.h"
 
-/* Childops */
-enum childtype {
-	CHILD_RAND_SYSCALL,
-	CHILD_READ_ALL_FILES,
-	CHILD_THRASH_PID,
-	CHILD_ROOT_DROP_PRIVS,
-	CHILD_TRUNCATE_TESTFILE,
-};
-
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
@@ -40,8 +31,6 @@ struct childdata {
 
 	unsigned char kill_count;
 
-	enum childtype type;
-
 	bool dontkillme;	/* provide temporary protection from the reaper. */
 
 	bool dropped_privs;
@@ -60,8 +49,6 @@ void child_process(struct childdata *child, int childno);
 void set_dontkillme(struct childdata *child, bool state);
 
 void reap_child(struct childdata *child);
-
-void log_child_signalled(int childno, pid_t pid, int sig, unsigned long op_nr);
 
 /* Childops */
 bool random_syscall(struct childdata *child);

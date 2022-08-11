@@ -54,6 +54,14 @@
 #include "arch-tile.h"
 #endif
 
+#if defined(__riscv) || defined(__riscv__)
+#if __riscv_xlen == 64
+#include "arch-riscv64.h"
+#else
+#error "riscv32 is not supported yet."
+#endif
+#endif
+
 #ifndef SYSCALL_OFFSET
 #define SYSCALL_OFFSET 0
 #endif
