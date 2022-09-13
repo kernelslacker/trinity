@@ -460,4 +460,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_landlock_restrict_self },
 	{ .entry = &syscall_memfd_secret },
 	{ .entry = &syscall_process_mrelease },
+	{ .entry = &syscall_futex_waitv },
 };

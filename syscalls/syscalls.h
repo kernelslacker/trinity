@@ -413,6 +413,7 @@ extern struct syscallentry syscall_landlock_add_rule;
 extern struct syscallentry syscall_landlock_restrict_self;
 extern struct syscallentry syscall_memfd_secret;
 extern struct syscallentry syscall_process_mrelease;
+extern struct syscallentry syscall_futex_waitv;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
