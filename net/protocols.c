@@ -18,7 +18,6 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 #ifdef USE_IPV6
 	[PF_INET6] = { .proto = &proto_inet6 },
 #endif
-	[PF_DECnet] = { .proto = &proto_decnet },
 	[PF_PACKET] = { .proto = &proto_packet },
 #ifdef USE_NETECONET
 	[PF_ECONET] = { .proto = &proto_econet },
