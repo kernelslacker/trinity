@@ -8,7 +8,6 @@
 #include "utils.h"
 
 static const struct ioctl kvm_ioctls[] = {
-	IOCTL(KVM_SET_MEMORY_REGION),
 	IOCTL(KVM_CREATE_VCPU),
 	IOCTL(KVM_GET_DIRTY_LOG),
 	IOCTL(KVM_SET_NR_MMU_PAGES),
