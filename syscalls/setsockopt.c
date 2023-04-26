@@ -94,7 +94,7 @@ static void do_random_sso(struct sockopt *so, struct socket_triplet *triplet)
 retry:
 	switch (rnd() % 4) {
 	case 0:	/* do a random protocol, even if it doesn't match this socket. */
-		i = rnd() % PF_MAX;
+		i = rnd() % TRINITY_PF_MAX;
 		proto = net_protocols[i].proto;
 		if (proto != NULL) {
 			if (proto->setsockopt != NULL) {
