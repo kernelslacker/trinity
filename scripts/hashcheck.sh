@@ -28,8 +28,8 @@ check()
 check include/uapi/asm-generic/unistd.h    11c46e9ce6393e7c8a17577c6128b78684395016 sys_
 #check arch/alpha/include/uapi/asm/unistd.h 51fa669a21d8f26a0c9de8280a3cfd9c257a0d28 _NR_
 #check arch/arm/include/uapi/asm/unistd.h   7c601d436a3ebbe05a9b6813c0ffcf8eedaf101b SYSCALL
-check arch/x86/entry/syscalls/syscall_32.tbl     be7686afac49943e1a89447b1d09f4a6e868f482 sys_
-check arch/x86/entry/syscalls/syscall_64.tbl     8c8f94228fc4f325cf635fce25adf411f3714d1e sys_
+check arch/x86/entry/syscalls/syscall_32.tbl     a2232d6f101274762e9fab44dabb07d86a3719ee sys_
+check arch/x86/entry/syscalls/syscall_64.tbl     60d2554683c0a8638f6a874f2ff74ede49435564 sys_
 check arch/x86/entry/syscalls/syscall_64.tbl     da39a3ee5e6b4b0d3255bfef95601890afd80709 stub_
 #check arch/ia64/kernel/entry.S             e6a21b973609ec08cd19b0b8c67830f8570e93ef "data8\ sys_"
 #check arch/mips/kernel/scall32-o32.S       b1501a675dd998fe2af68ae43cd797cf18d67b33 sys_
