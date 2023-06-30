@@ -320,6 +320,10 @@ check_header linux/irda.h USE_IRDA
 check_header linux/rds.h USE_RDS
 check_header linux/vfio.h USE_VFIO
 check_header drm/drm.h USE_DRM
+check_header drm/i810_drm.h USE_DRM_I810
+check_header drm/mga_drm.h USE_DRM_MGA
+check_header drm/r128_drm.h USE_DRM_R128
+check_header drm/savage_drm.h USE_DRM_SAVAGE
 check_header drm/exynos_drm.h USE_DRM_EXYNOS
 check_header sound/compress_offload.h USE_SNDDRV_COMPRESS_OFFLOAD
 check_header linux/kvm.h USE_KVM
