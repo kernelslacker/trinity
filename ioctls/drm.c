@@ -8,13 +8,21 @@
 #ifdef USE_DRM_EXYNOS
 #include <drm/exynos_drm.h>
 #endif
+#ifdef USE_DRM_I810
 #include <drm/i810_drm.h>
+#endif
 #include <drm/i915_drm.h>
+#ifdef USE_DRM_MGA
 #include <drm/mga_drm.h>
+#endif
 #include <drm/nouveau_drm.h>
+#ifdef USE_DRM_R128
 #include <drm/r128_drm.h>
+#endif
 #include <drm/radeon_drm.h>
+#ifdef USE_DRM_SAVAGE
 #include <drm/savage_drm.h>
+#endif
 
 #include "ioctls.h"
 #include "utils.h"
@@ -293,6 +301,7 @@ static const struct ioctl drm_ioctls[] = {
 #endif
 #endif
 
+#ifdef USE_DRM_I810
 	/* i810_drm.h */
 	IOCTL(DRM_IOCTL_I810_INIT),
 	IOCTL(DRM_IOCTL_I810_VERTEX),
@@ -309,6 +318,7 @@ static const struct ioctl drm_ioctls[] = {
 	IOCTL(DRM_IOCTL_I810_MC),
 	IOCTL(DRM_IOCTL_I810_RSTATUS),
 	IOCTL(DRM_IOCTL_I810_FLIP),
+#endif
 
 	/* i915_drm.h */
 	IOCTL(DRM_IOCTL_I915_INIT),
@@ -378,6 +388,7 @@ static const struct ioctl drm_ioctls[] = {
 	IOCTL(DRM_IOCTL_I915_REG_READ),
 #endif
 
+#ifdef USE_DRM_MGA
 	/* mga_drm.h */
 	IOCTL(DRM_IOCTL_MGA_INIT),
 	IOCTL(DRM_IOCTL_MGA_FLUSH),
@@ -401,6 +412,7 @@ static const struct ioctl drm_ioctls[] = {
 	IOCTL(DRM_IOCTL_NOUVEAU_GROBJ_ALLOC),
 	IOCTL(DRM_IOCTL_NOUVEAU_NOTIFIEROBJ_ALLOC),
 	IOCTL(DRM_IOCTL_NOUVEAU_GPUOBJ_FREE),
+#endif
 #ifdef DRM_IOCTL_NOUVEAU_GEM_NEW
 	IOCTL(DRM_IOCTL_NOUVEAU_GEM_NEW),
 #endif
@@ -417,6 +429,7 @@ static const struct ioctl drm_ioctls[] = {
 	IOCTL(DRM_IOCTL_NOUVEAU_GEM_INFO),
 #endif
 
+#ifdef USE_DRM_R128
 	/* r128_drm.h */
 	IOCTL(DRM_IOCTL_R128_INIT),
 	IOCTL(DRM_IOCTL_R128_CCE_START),
@@ -435,6 +448,7 @@ static const struct ioctl drm_ioctls[] = {
 	IOCTL(DRM_IOCTL_R128_FULLSCREEN),
 	IOCTL(DRM_IOCTL_R128_GETPARAM),
 	IOCTL(DRM_IOCTL_R128_FLIP),
+#endif
 
 	/* radeon_drm.h */
 	IOCTL(DRM_IOCTL_RADEON_CP_INIT),
