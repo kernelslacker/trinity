@@ -50,3 +50,6 @@
 #error "riscv32 is not supported yet."
 #endif
 #endif
+#ifdef __loongarch__
+#include "syscalls-loongarch.h"
+#endif

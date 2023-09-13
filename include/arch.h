@@ -62,6 +62,10 @@
 #endif
 #endif
 
+#ifdef __loongarch__
+#include "arch-loongarch.h"
+#endif
+
 #ifndef SYSCALL_OFFSET
 #define SYSCALL_OFFSET 0
 #endif

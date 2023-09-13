@@ -17,8 +17,6 @@ static void sanitise_vmsplice(struct syscallrecord *rec)
 {
 	if ((rnd() % 10) > 0)
 		rec->a1 = get_rand_pipe_fd();
-
-	rec->a3 = rnd() % UIO_MAXIOV;
 }
 
 static unsigned long vmsplice_flags[] = {
