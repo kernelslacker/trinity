@@ -80,7 +80,7 @@ static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 {
 	struct sgio *sgio;
 
-	sgio = (struct sgio *) get_address();
+	sgio = (struct sgio *) get_writable_address(sizeof(struct sgio));
 
 	sgio->cmd[0] = 0x12;
 	sgio->cmd[3] = 0x2;
