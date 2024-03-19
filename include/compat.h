@@ -1049,6 +1049,30 @@ struct kvm_ppc_pvinfo {
 #ifndef KVM_ASSIGN_SET_INTX_MASK
 #define KVM_ASSIGN_SET_INTX_MASK  _IOW(KVMIO,  0xa4, struct kvm_assigned_pci_dev)
 #endif
+#ifndef KVM_ASSIGN_PCI_DEVICE
+#define KVM_ASSIGN_PCI_DEVICE     _IOR(KVMIO,  0x69, struct kvm_assigned_pci_dev)
+#endif
+#ifndef KVM_ASSIGN_IRQ
+#define KVM_ASSIGN_IRQ            _IOR(KVMIO, 0x70, struct kvm_assigned_irq)
+#endif
+#ifndef KVM_ASSIGN_DEV_IRQ
+#define KVM_ASSIGN_DEV_IRQ        _IOW(KVMIO, 0x70, struct kvm_assigned_irq)
+#endif
+#ifndef KVM_DEASSIGN_PCI_DEVICE
+#define KVM_DEASSIGN_PCI_DEVICE   _IOW(KVMIO,  0x72, struct kvm_assigned_pci_dev)
+#endif
+#ifndef KVM_ASSIGN_SET_MSIX_NR
+#define KVM_ASSIGN_SET_MSIX_NR    _IOW(KVMIO,  0x73, struct kvm_assigned_msix_nr)
+#endif
+#ifndef KVM_ASSIGN_SET_MSIX_ENTRY
+#define KVM_ASSIGN_SET_MSIX_ENTRY _IOW(KVMIO,  0x74, struct kvm_assigned_msix_entry)
+#endif
+#ifndef KVM_DEASSIGN_DEV_IRQ
+#define KVM_DEASSIGN_DEV_IRQ      _IOW(KVMIO,  0x75, struct kvm_assigned_irq)
+#endif
+#ifndef KVM_DEBUG_GUEST
+#define KVM_DEBUG_GUEST           _IOW(KVMIO, 0x87, int)
+#endif
 
 #ifndef KVM_GET_DEBUGREGS
 struct kvm_debugregs {
