@@ -150,6 +150,21 @@ enum {
 #ifndef MADV_PAGEOUT
 #define MADV_PAGEOUT    21              /* reclaim these pages */
 #endif
+#ifndef MADV_POPULATE_READ
+#define MADV_POPULATE_READ 22
+#endif
+
+#ifndef MADV_POPULATE_WRITE
+#define MADV_POPULATE_WRITE 23
+#endif
+
+#ifndef MADV_DONTNEED_LOCKED
+#define MADV_DONTNEED_LOCKED 24
+#endif
+
+#ifndef MADV_COLLAPSE
+#define MADV_COLLAPSE 25
+#endif
 
 
 /* bits/socket.h */
