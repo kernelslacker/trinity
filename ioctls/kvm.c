@@ -42,7 +42,9 @@ static const struct ioctl kvm_ioctls[] = {
 	IOCTL(KVM_IOEVENTFD),
 	IOCTL(KVM_SET_CLOCK),
 	IOCTL(KVM_GET_CLOCK),
+#if defined(__powerpc__)
 	IOCTL(KVM_PPC_GET_PVINFO),
+#endif
 	IOCTL(KVM_SET_TSC_KHZ),
 	IOCTL(KVM_GET_TSC_KHZ),
 	IOCTL(KVM_ASSIGN_SET_INTX_MASK),
