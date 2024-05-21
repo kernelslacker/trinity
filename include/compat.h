@@ -1038,6 +1038,43 @@ struct kvm_ppc_pvinfo {
 #define KVM_PPC_GET_PVINFO        _IOW(KVMIO,  0xa1, struct kvm_ppc_pvinfo)
 #endif
 
+#ifndef KVM_DEV_ASSIGN_ENABLE_IOMMU
+struct kvm_assigned_pci_dev {
+	__u32 assigned_dev_id;
+	__u32 busnr;
+	__u32 devfn;
+	__u32 flags;
+	__u32 segnr;
+	union {
+		__u32 reserved[11];
+	};
+};
+
+struct kvm_assigned_irq {
+	__u32 assigned_dev_id;
+	__u32 host_irq;
+	__u32 guest_irq;
+	__u32 flags;
+	union {
+		__u32 reserved[12];
+	};
+};
+
+struct kvm_assigned_msix_nr {
+	__u32 assigned_dev_id;
+	__u16 entry_nr;
+	__u16 padding;
+};
+
+struct kvm_assigned_msix_entry {
+	__u32 assigned_dev_id;
+	__u32 gsi;
+	__u16 entry;
+	__u16 padding[3];
+};
+
+#endif
+
 #ifndef KVM_SET_TSC_KHZ
 #define KVM_SET_TSC_KHZ           _IO(KVMIO,  0xa2)
 #endif
@@ -1048,6 +1085,30 @@ struct kvm_ppc_pvinfo {
 
 #ifndef KVM_ASSIGN_SET_INTX_MASK
 #define KVM_ASSIGN_SET_INTX_MASK  _IOW(KVMIO,  0xa4, struct kvm_assigned_pci_dev)
+#endif
+#ifndef KVM_ASSIGN_PCI_DEVICE
+#define KVM_ASSIGN_PCI_DEVICE     _IOR(KVMIO,  0x69, struct kvm_assigned_pci_dev)
+#endif
+#ifndef KVM_ASSIGN_IRQ
+#define KVM_ASSIGN_IRQ            _IOR(KVMIO, 0x70, struct kvm_assigned_irq)
+#endif
+#ifndef KVM_ASSIGN_DEV_IRQ
+#define KVM_ASSIGN_DEV_IRQ        _IOW(KVMIO, 0x70, struct kvm_assigned_irq)
+#endif
+#ifndef KVM_DEASSIGN_PCI_DEVICE
+#define KVM_DEASSIGN_PCI_DEVICE   _IOW(KVMIO,  0x72, struct kvm_assigned_pci_dev)
+#endif
+#ifndef KVM_ASSIGN_SET_MSIX_NR
+#define KVM_ASSIGN_SET_MSIX_NR    _IOW(KVMIO,  0x73, struct kvm_assigned_msix_nr)
+#endif
+#ifndef KVM_ASSIGN_SET_MSIX_ENTRY
+#define KVM_ASSIGN_SET_MSIX_ENTRY _IOW(KVMIO,  0x74, struct kvm_assigned_msix_entry)
+#endif
+#ifndef KVM_DEASSIGN_DEV_IRQ
+#define KVM_DEASSIGN_DEV_IRQ      _IOW(KVMIO,  0x75, struct kvm_assigned_irq)
+#endif
+#ifndef KVM_DEBUG_GUEST
+#define KVM_DEBUG_GUEST           _IOW(KVMIO, 0x87, int)
 #endif
 
 #ifndef KVM_GET_DEBUGREGS
