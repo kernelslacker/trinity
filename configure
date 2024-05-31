@@ -295,11 +295,12 @@ echo -n "[*] Checking if glibc provides memfd_create.. "
 rm -f "$TMP" || exit 1
 
 cat >"$TMP.c" << EOF
+#define _GNU_SOURCE
 #include <sys/mman.h>
 
 void main()
 {
-	memfd_create();
+	memfd_create("", 0);
 }
 EOF
 
