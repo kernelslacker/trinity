@@ -17,27 +17,9 @@
 static void sanitise_send(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
-	const struct netproto *proto;
-	void *ptr;
 	size_t size;
 
 	rec->a1 = fd_from_socketinfo(si);
-
-	if (si == NULL)		// handle --disable-fds=sockets
-		goto skip_si;
-
-	proto = net_protocols[si->triplet.family].proto;
-	if (proto != NULL) {
-		if (proto->gen_packet != NULL) {
-			ptr = &rec->a2;
-			proto->gen_packet(&si->triplet, ptr, &rec->a3);
-//		printf("Sending to family:%d type:%d proto:%d\n",
-//			si->triplet.family, si->triplet.type, si->triplet.protocol);
-			return;
-		}
-	}
-
-skip_si:
 
 	/* The rest of this function is only used as a fallback, if the per-proto
 	 * send()'s aren't implemented.
@@ -47,19 +29,7 @@ skip_si:
 	else
 		size = rnd() % page_size;
 
-	ptr = malloc(size);
-	rec->a2 = (unsigned long) ptr;
-	if (ptr == NULL)
-		return;
-
 	rec->a3 = size;
-
-	generate_rand_bytes(ptr, size);
-}
-
-static void post_send(struct syscallrecord *rec)
-{
-	freeptr(&rec->a2);
 }
 
 static unsigned long sendflags[] = {
@@ -77,12 +47,12 @@ struct syscallentry syscall_send = {
 	.arg1name = "fd",
 	.arg1type = ARG_SOCKETINFO,
 	.arg2name = "buff",
+	.arg2type = ARG_ADDRESS,
 	.arg3name = "len",
 	.arg4name = "flags",
         .arg4type = ARG_LIST,
 	.arg4list = ARGLIST(sendflags),
 	.sanitise = sanitise_send,
-	.post = post_send,
 };
 
 
@@ -109,7 +79,6 @@ struct syscallentry syscall_sendto = {
 	.arg6type = ARG_SOCKADDRLEN,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_send,	// same as send
-	.post = post_send,
 };
 
 /*
