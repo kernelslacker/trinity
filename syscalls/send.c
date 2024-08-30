@@ -29,8 +29,10 @@ static void sanitise_send(struct syscallrecord *rec)
 	proto = net_protocols[si->triplet.family].proto;
 	if (proto != NULL) {
 		if (proto->gen_packet != NULL) {
+			size_t len;
 			ptr = &rec->a2;
-			proto->gen_packet(&si->triplet, ptr, &rec->a3);
+			proto->gen_packet(&si->triplet, ptr, &len);
+			rec->a3 = len;
 //		printf("Sending to family:%d type:%d proto:%d\n",
 //			si->triplet.family, si->triplet.type, si->triplet.protocol);
 			return;
