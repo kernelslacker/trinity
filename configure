@@ -313,6 +313,60 @@ else
 fi
 
 #############################################################################################
+# Does header define struct drm_nouveau_notifierobj_alloc
+#
+echo -n "[*] Checking if struct drm_nouveau_notifierobj_alloc is defined"
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#define _GNU_SOURCE
+#include <drm/nouveau_drm.h>
+#include <stdio.h>
+
+void main()
+{
+	struct drm_nouveau_notifierobj_alloc dnna = {0,0,0,0};
+	dnna.size = 64;
+	printf("size=%d\n", dnna.size);
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_DEFAULT_STRUCT_DRM_NOUVEAU_NOTIFIEROBJ_ALLOC 1" >> $CONFIGH
+fi
+
+#############################################################################################
+# Does header define struct drm_nouveau_notifierobj_alloc
+#
+echo -n "[*] Checking if struct drm_nouveau_gpuobj_free is defined"
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#define _GNU_SOURCE
+#include <drm/nouveau_drm.h>
+#include <stdio.h>
+
+void main()
+{
+	struct drm_nouveau_gpuobj_free dngf = {0,0};
+	dngf.channel = 64;
+	printf("channel=%d\n", dngf.channel);
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_DEFAULT_STRUCT_DRM_NOUVEAU_GPUOBJ_FREE 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/fsmap.h USE_FSMAP

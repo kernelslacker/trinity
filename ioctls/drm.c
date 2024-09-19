@@ -129,21 +129,25 @@ struct drm_nouveau_grobj_alloc {
 #define DRM_IOCTL_NOUVEAU_GROBJ_ALLOC        DRM_IOW (DRM_COMMAND_BASE + DRM_NOUVEAU_GROBJ_ALLOC, struct drm_nouveau_grobj_alloc)
 #endif
 
-#ifndef DRM_IOCTL_NOUVEAU_NOTIFIEROBJ_ALLOC
+#ifndef USE_DEFAULT_STRUCT_DRM_NOUVEAU_NOTIFIEROBJ_ALLOC
 struct drm_nouveau_notifierobj_alloc {
 	uint32_t channel;
 	uint32_t handle;
 	uint32_t size;
 	uint32_t offset;
 };
+#endif
+#ifndef DRM_IOCTL_NOUVEAU_NOTIFIEROBJ_ALLOC
 #define DRM_IOCTL_NOUVEAU_NOTIFIEROBJ_ALLOC  DRM_IOWR(DRM_COMMAND_BASE + DRM_NOUVEAU_NOTIFIEROBJ_ALLOC, struct drm_nouveau_notifierobj_alloc)
 #endif
 
-#ifndef DRM_IOCTL_NOUVEAU_GPUOBJ_FREE
+#ifndef USE_DEFAULT_STRUCT_DRM_NOUVEAU_GPUOBJ_FREE
 struct drm_nouveau_gpuobj_free {
 	int      channel;
 	uint32_t handle;
 };
+#endif
+#ifndef DRM_IOCTL_NOUVEAU_GPUOBJ_FREE
 #define DRM_IOCTL_NOUVEAU_GPUOBJ_FREE        DRM_IOW (DRM_COMMAND_BASE + DRM_NOUVEAU_GPUOBJ_FREE, struct drm_nouveau_gpuobj_free)
 #endif
 
