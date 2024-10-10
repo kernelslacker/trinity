@@ -294,6 +294,7 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 	case AUTOFS_DEV_IOCTL_EXPIRE:
 	case AUTOFS_DEV_IOCTL_ASKUMOUNT:
 	case AUTOFS_DEV_IOCTL_ISMOUNTPOINT:
+		rec->a3 = (unsigned long) get_writable_address(sizeof(struct autofs_dev_ioctl));
 		arg = (struct autofs_dev_ioctl *) rec->a3;
 		init_autofs_dev_ioctl(arg);
 		arg->ioctlfd = get_random_fd();
