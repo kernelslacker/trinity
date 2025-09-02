@@ -117,6 +117,8 @@ static int open_testfile_fds(void)
 	}
 
 	free(filename);
+	filename = NULL;
+
 	return TRUE;
 }
 

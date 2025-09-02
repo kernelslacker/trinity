@@ -31,6 +31,7 @@ static int memfd_create(__unused__ const char *uname, __unused__ unsigned int fl
 static void memfd_destructor(struct object *obj)
 {
 	free(obj->memfdobj.name);
+	obj->memfdobj.name = NULL;
 	close(obj->memfdobj.fd);
 }
 

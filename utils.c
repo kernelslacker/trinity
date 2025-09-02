@@ -56,7 +56,7 @@ done:
 void sizeunit(unsigned long size, char *buf)
 {
 	/* non kilobyte aligned size? */
-	if (size & 1023) {
+	if (size < 1024) {
 		sprintf(buf, "%lu bytes", size);
 		return;
 	}
