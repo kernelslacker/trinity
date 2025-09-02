@@ -236,7 +236,6 @@ static const char ** list_to_index(struct namelist *namelist)
 		list_del(&nl->list);
 		free(nl);
 	}
-
 	free(names);
 	names = NULL;
 
