@@ -34,5 +34,6 @@ struct syscallentry syscall_open_tree_attr = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "usize",
 	.arg5type = ARG_LEN,
+	.rettype = RET_FD,
 	.group = GROUP_VFS,
 };

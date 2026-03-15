@@ -20,4 +20,5 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(landlock_create_ruleset_flags),
+	.rettype = RET_FD,
 };

@@ -28,4 +28,5 @@ struct syscallentry syscall_open_tree = {
 	.arg3name = "flags",
 	.arg3type = ARG_OP,
 	.arg3list = ARGLIST(open_tree_flags),
+	.rettype = RET_FD,
 };

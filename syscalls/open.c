@@ -78,6 +78,7 @@ struct syscallentry syscall_open = {
 	.arg2list = ARGLIST(open_o_flags_base),
 	.arg3name = "mode",
 	.arg3type = ARG_MODE_T,
+	.rettype = RET_FD,
 	.sanitise = sanitise_open,
 };
 
@@ -96,6 +97,7 @@ struct syscallentry syscall_openat = {
 	.arg3list = ARGLIST(open_o_flags_base),
 	.arg4name = "mode",
 	.arg4type = ARG_MODE_T,
+	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
 };
@@ -114,6 +116,7 @@ struct syscallentry syscall_openat2 = {
 	.arg3name = "how",
 	.arg4name = "usize",
 	.arg4type = ARG_LEN,
+	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 };
 
@@ -132,6 +135,7 @@ struct syscallentry syscall_open_by_handle_at = {
 	.arg3name = "flags",
 	.arg3type = ARG_OP,
 	.arg3list = ARGLIST(open_o_flags_base),
+	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,	// For now we only sanitise .flags, which is also arg3
 };

@@ -12,6 +12,7 @@ struct syscallentry syscall_signalfd = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "sizemask",
 	.arg3type = ARG_LEN,
+	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 };
 
@@ -38,5 +39,6 @@ struct syscallentry syscall_signalfd4 = {
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(signalfd4_flags),
+	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 };
