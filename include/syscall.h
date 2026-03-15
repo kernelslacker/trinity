@@ -6,7 +6,7 @@
 #include "types.h"
 #include "utils.h"
 
-#define PREBUFFER_LEN	4096 * 6
+#define PREBUFFER_LEN	(4096 * 6)
 #define POSTBUFFER_LEN	128
 
 #define MAX_NR_SYSCALL 1024
