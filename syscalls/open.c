@@ -106,6 +106,45 @@ struct syscallentry syscall_openat = {
  * SYSCALL_DEFINE4(openat2, int, dfd, const char __user *, filename,
                  struct open_how __user *, how, size_t, usize)
  */
+#ifndef RESOLVE_NO_XDEV
+struct open_how {
+	__u64 flags;
+	__u64 mode;
+	__u64 resolve;
+};
+#define RESOLVE_NO_XDEV		0x01
+#define RESOLVE_NO_MAGICLINKS	0x02
+#define RESOLVE_NO_SYMLINKS	0x04
+#define RESOLVE_BENEATH		0x08
+#define RESOLVE_IN_ROOT		0x10
+#define RESOLVE_CACHED		0x20
+#endif
+
+static unsigned long openat2_resolve_flags[] = {
+	RESOLVE_NO_XDEV, RESOLVE_NO_MAGICLINKS, RESOLVE_NO_SYMLINKS,
+	RESOLVE_BENEATH, RESOLVE_IN_ROOT, RESOLVE_CACHED,
+};
+
+static void sanitise_openat2(struct syscallrecord *rec)
+{
+	struct open_how *how;
+
+	how = zmalloc(sizeof(struct open_how));
+	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
+	if (how->flags & (O_CREAT | O_TMPFILE))
+		how->mode = 0666;
+	how->resolve = set_rand_bitmask(ARRAY_SIZE(openat2_resolve_flags),
+					openat2_resolve_flags);
+
+	rec->a3 = (unsigned long) how;
+	rec->a4 = sizeof(struct open_how);
+}
+
+static void post_openat2(struct syscallrecord *rec)
+{
+	freeptr(&rec->a3);
+}
+
 struct syscallentry syscall_openat2 = {
 	.name = "openat2",
 	.num_args = 4,
@@ -118,6 +157,8 @@ struct syscallentry syscall_openat2 = {
 	.arg4type = ARG_LEN,
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_openat2,
+	.post = post_openat2,
 };
 
 /*
