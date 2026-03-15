@@ -11,6 +11,17 @@ Trinity: Linux system call fuzzer.
 
 #######################################################################
 
+Twenty years after its public introduction, I haven't had time to work on this much
+at all in the last decade. You should consider this abandonware for the most part,
+however; I'm experimenting with use of LLM generation syscall definitions, which
+was previously one of the more laborious parts of keeping this up to date with
+modern kernel versions.  I may give it instructions to add some other bits later,
+let's see how it goes.
+
+For a stable syscall fuzzer, see syskaller, which is actively maintained/supported.
+
+#######################################################################
+
 WARNINGS:
 * This program may seriously corrupt your files, including any of those
   that may be writable on mounted network file shares.  It may create network
