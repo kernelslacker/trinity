@@ -417,6 +417,7 @@ extern struct syscallentry syscall_futex_waitv;
 extern struct syscallentry syscall_set_mempolicy_home_node;
 extern struct syscallentry syscall_cachestat;
 extern struct syscallentry syscall_fchmodat2;
+extern struct syscallentry syscall_map_shadow_stack;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
