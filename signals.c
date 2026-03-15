@@ -8,7 +8,7 @@
 #include "signals.h"
 #include "shm.h"
 
-jmp_buf ret_jump;
+sigjmp_buf ret_jump;
 
 static void ctrlc_handler(__unused__ int sig)
 {
