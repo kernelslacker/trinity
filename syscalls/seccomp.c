@@ -5,10 +5,17 @@
 #include <errno.h>
 #include "sanitise.h"
 
-#define SECCOMP_SET_MODE_STRICT 0
-#define SECCOMP_SET_MODE_FILTER 1
+#define SECCOMP_SET_MODE_STRICT		0
+#define SECCOMP_SET_MODE_FILTER		1
+#define SECCOMP_GET_ACTION_AVAIL	2
+#define SECCOMP_GET_NOTIF_SIZES		3
 
-#define SECCOMP_FILTER_FLAG_TSYNC 1
+#define SECCOMP_FILTER_FLAG_TSYNC		(1UL << 0)
+#define SECCOMP_FILTER_FLAG_LOG			(1UL << 1)
+#define SECCOMP_FILTER_FLAG_SPEC_ALLOW		(1UL << 2)
+#define SECCOMP_FILTER_FLAG_NEW_LISTENER	(1UL << 3)
+#define SECCOMP_FILTER_FLAG_TSYNC_ESRCH		(1UL << 4)
+#define SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV	(1UL << 5)
 
 static void sanitise_seccomp(struct syscallrecord *rec)
 {
@@ -20,10 +27,16 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 
 static unsigned long seccomp_ops[] = {
 	SECCOMP_SET_MODE_STRICT, SECCOMP_SET_MODE_FILTER,
+	SECCOMP_GET_ACTION_AVAIL, SECCOMP_GET_NOTIF_SIZES,
 };
 
 static unsigned long seccomp_flags[] = {
 	SECCOMP_FILTER_FLAG_TSYNC,
+	SECCOMP_FILTER_FLAG_LOG,
+	SECCOMP_FILTER_FLAG_SPEC_ALLOW,
+	SECCOMP_FILTER_FLAG_NEW_LISTENER,
+	SECCOMP_FILTER_FLAG_TSYNC_ESRCH,
+	SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV,
 };
 
 struct syscallentry syscall_seccomp = {
