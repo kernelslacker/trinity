@@ -3,11 +3,19 @@
  */
 #include "sanitise.h"
 
-#define IORING_ENTER_GETEVENTS  (1U << 0)
-#define IORING_ENTER_SQ_WAKEUP  (1U << 1)
+#define IORING_ENTER_GETEVENTS		(1U << 0)
+#define IORING_ENTER_SQ_WAKEUP		(1U << 1)
+#define IORING_ENTER_SQ_WAIT		(1U << 2)
+#define IORING_ENTER_EXT_ARG		(1U << 3)
+#define IORING_ENTER_REGISTERED_RING	(1U << 4)
+#define IORING_ENTER_ABS_TIMER		(1U << 5)
+#define IORING_ENTER_EXT_ARG_REG	(1U << 6)
 
 static unsigned long io_uring_enter_flags[] = {
 	IORING_ENTER_GETEVENTS, IORING_ENTER_SQ_WAKEUP,
+	IORING_ENTER_SQ_WAIT, IORING_ENTER_EXT_ARG,
+	IORING_ENTER_REGISTERED_RING, IORING_ENTER_ABS_TIMER,
+	IORING_ENTER_EXT_ARG_REG,
 };
 
 struct syscallentry syscall_io_uring_enter = {
