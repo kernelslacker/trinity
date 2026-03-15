@@ -22,4 +22,5 @@ struct syscallentry syscall_timerfd_create = {
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(timerfd_create_flags),
+	.rettype = RET_FD,
 };

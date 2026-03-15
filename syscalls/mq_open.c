@@ -13,4 +13,5 @@ struct syscallentry syscall_mq_open = {
 	.arg3type = ARG_MODE_T,
 	.arg4name = "u_attr",
 	.arg4type = ARG_ADDRESS,
+	.rettype = RET_FD,
 };

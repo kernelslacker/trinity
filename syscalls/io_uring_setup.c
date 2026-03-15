@@ -9,4 +9,6 @@ struct syscallentry syscall_io_uring_setup = {
 	.arg1name = "entries",
 	.arg2name = "params",
 	.arg2type = ARG_ADDRESS,
+	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 };
