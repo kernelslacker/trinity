@@ -2,7 +2,6 @@
  * Shared mapping creation.
  */
 
-#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -58,8 +57,7 @@ void init_shm(void)
 	childptrslen += page_size - 1;
 	childptrslen &= PAGE_MASK;
 
-	shm->children = memalign(page_size, childptrslen);
-	if (shm->children == NULL) {
+	if (posix_memalign((void **)&shm->children, page_size, childptrslen) != 0) {
 		printf("Failed to allocate child structures.\n");
 		exit(EXIT_FAILURE);
 	}
