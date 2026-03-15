@@ -122,6 +122,8 @@ int get_num_fds(void)
 
      fd_count = 0;
      DIR *dir = opendir(buf);
+     if (dir == NULL)
+          return 0;
      while ((dp = readdir(dir)) != NULL) {
           fd_count++;
      }
