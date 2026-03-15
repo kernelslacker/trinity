@@ -4,7 +4,7 @@ INSTALL_PREFIX ?= $(DESTDIR)
 INSTALL_PREFIX ?= $(HOME)
 NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
 
-ifeq ($(CC),"")
+ifeq ($(CC),)
 CC := gcc
 endif
 CC := $(CROSS_COMPILE)$(CC)
