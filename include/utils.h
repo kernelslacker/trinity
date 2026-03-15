@@ -60,7 +60,7 @@ int get_num_fds(void);
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
-#define unreachable() do { } while (1)
+#define unreachable() __builtin_unreachable()
 
 #define RAND_ELEMENT(_array, _element) \
 	_array[rnd() % ARRAY_SIZE(_array)]._element
