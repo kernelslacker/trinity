@@ -91,11 +91,7 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 		BUG("Fix syscall definition!\n");
 	}
 
-	i = (unsigned long) rand64() % high;
-	if (i < low) {
-		i += low;
-		i &= high;
-	}
+	i = low + (unsigned long) rand64() % (high - low + 1);
 	return i;
 }
 
