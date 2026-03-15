@@ -473,4 +473,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_lsm_get_self_attr },	// 459
 	{ .entry = &syscall_lsm_set_self_attr },	// 460
 	{ .entry = &syscall_lsm_list_modules },	// 461
+	{ .entry = &syscall_mseal },			// 462
 };
