@@ -6,11 +6,11 @@
 
 int rnd(void);
 
-#define ONE_IN(x)		((rnd() % x) == 0)	// limit of RAND_MAX-1
+#define ONE_IN(x)		((rnd() % (x)) == 0)	// limit of RAND_MAX-1
 
 #define RAND_BOOL()		(rnd() & 1)
 #define RAND_BYTE()		(rnd() & 0xff)
-#define RAND_RANGE(min, max)	(min + rnd() / (RAND_MAX / (max - min + 1) + 1))
+#define RAND_RANGE(min, max)	((min) + rnd() / (RAND_MAX / ((max) - (min) + 1) + 1))
 
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
