@@ -470,4 +470,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_futex_requeue },		// 456
 	{ .entry = &syscall_statmount },		// 457
 	{ .entry = &syscall_listmount },		// 458
+	{ .entry = &syscall_lsm_get_self_attr },	// 459
 };
