@@ -468,4 +468,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_futex_wake },		// 454
 	{ .entry = &syscall_futex_wait },		// 455
 	{ .entry = &syscall_futex_requeue },		// 456
+	{ .entry = &syscall_statmount },		// 457
 };
