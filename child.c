@@ -284,7 +284,7 @@ static void check_parent_pid(void)
 
 	if (ppid < 2) {
 		debugf("ppid == %d. pidns? exiting child.\n", ppid);
-		_exit(EXIT_FAILURE);;
+		_exit(EXIT_FAILURE);
 	}
 
 	lock(&shm->buglock);
