@@ -183,32 +183,32 @@ static unsigned int valid_proto(unsigned int family)
 	famstr = get_domain_name(family);
 
 	/* Not used for creating sockets. */
-	if (strncmp(famstr, "UNSPEC", 9) == 0)
+	if (strncmp(famstr, "UNSPEC", 7) == 0)
 		return FALSE;
-	if (strncmp(famstr, "BRIDGE", 9) == 0)
+	if (strncmp(famstr, "BRIDGE", 7) == 0)
 		return FALSE;
-	if (strncmp(famstr, "SECURITY", 11) == 0)
+	if (strncmp(famstr, "SECURITY", 9) == 0)
 		return FALSE;
 
 	/* Not actually implemented (or now removed). */
-	if (strncmp(famstr, "NETBEUI", 10) == 0)
+	if (strncmp(famstr, "NETBEUI", 8) == 0)
 		return FALSE;
-	if (strncmp(famstr, "ASH", 6) == 0)
+	if (strncmp(famstr, "ASH", 4) == 0)
 		return FALSE;
-	if (strncmp(famstr, "ECONET", 9) == 0)
+	if (strncmp(famstr, "ECONET", 7) == 0)
 		return FALSE;
-	if (strncmp(famstr, "SNA", 6) == 0)
+	if (strncmp(famstr, "SNA", 4) == 0)
 		return FALSE;
-	if (strncmp(famstr, "WANPIPE", 10) == 0)
+	if (strncmp(famstr, "WANPIPE", 8) == 0)
 		return FALSE;
 
 	/* Needs root. */
 	if (orig_uid != 0) {
-		if (strncmp(famstr, "KEY", 6) == 0)
+		if (strncmp(famstr, "KEY", 4) == 0)
 			return FALSE;
-		if (strncmp(famstr, "PACKET", 9) == 0)
+		if (strncmp(famstr, "PACKET", 7) == 0)
 			return FALSE;
-		if (strncmp(famstr, "LLC", 6) == 0)
+		if (strncmp(famstr, "LLC", 4) == 0)
 			return FALSE;
 	}
 
