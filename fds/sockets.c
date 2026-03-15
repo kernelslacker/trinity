@@ -112,7 +112,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, domain);
 
 		ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-		if (ret != -1)
+		if (ret == -1)
 			goto skip_bind;
 
 		ret = bind(fd, sa, salen);
