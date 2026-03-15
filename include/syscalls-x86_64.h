@@ -463,4 +463,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_futex_waitv },
 	{ .entry = &syscall_set_mempolicy_home_node },
 	{ .entry = &syscall_cachestat },		// 451
+	{ .entry = &syscall_fchmodat2 },		// 452
 };
