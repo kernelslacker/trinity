@@ -429,6 +429,7 @@ extern struct syscallentry syscall_lsm_list_modules;
 extern struct syscallentry syscall_mseal;
 extern struct syscallentry syscall_setxattrat;
 extern struct syscallentry syscall_getxattrat;
+extern struct syscallentry syscall_listxattrat;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
