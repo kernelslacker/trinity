@@ -15,5 +15,5 @@ struct syscallentry syscall_pidfd_open = {
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(pidfd_open_flags),
-	.rettype = RET_PID_T,
+	.rettype = RET_FD,
 };
