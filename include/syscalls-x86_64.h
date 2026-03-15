@@ -465,4 +465,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_cachestat },		// 451
 	{ .entry = &syscall_fchmodat2 },		// 452
 	{ .entry = &syscall_map_shadow_stack },		// 453
+	{ .entry = &syscall_futex_wake },		// 454
 };
