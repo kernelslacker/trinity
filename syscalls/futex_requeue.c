@@ -24,4 +24,5 @@ struct syscallentry syscall_futex_requeue = {
 	.low4range = 0,
 	.hi4range = 128,
 	.sanitise = sanitise_futex_requeue,
+	.flags = NEED_ALARM,
 };
