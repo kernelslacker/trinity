@@ -18,7 +18,7 @@ was previously one of the more laborious parts of keeping this up to date with
 modern kernel versions.  I may give it instructions to add some other bits later,
 let's see how it goes.
 
-For a stable syscall fuzzer, see syskaller, which is actively maintained/supported.
+For a stable syscall fuzzer, see syzkaller, which is actively maintained/supported.
 
 #######################################################################
 
@@ -159,16 +159,13 @@ in the body of a mail to majordomo@vger.kernel.org
   http://groups.google.com/groups?q=syscall+crashme&hl=en&lr=&ie=UTF-8&selm=1991Sep20.232550.5013%40smsc.sony.com&rnum=1
 
 = iknowthis
-  http://iknowthis.googlecode.com
   Fuzzer by Tavis Ormandy with very similar goals to this project.
 
 = sysfuzz
   basic fuzzer by Ilja van Sprundel
   mentioned in http://events.ccc.de/congress/2005/fahrplan/attachments/683-slides_fuzzing.pdf
-  http://leetupload.com/dbindex2/index.php?dir=Linux/&file=sysfuzz.tar.gz
 
 = xnufuzz
-  https://github.com/fintler/xnufuzz/tree/
   basic fuzzer for XNU.  Looks to be based on Ilja's sysfuzz.
 
 = kg_crashme / ak_crashme / dj_crashme
