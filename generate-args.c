@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <values.h>
 
 #include "arch.h"
 #include "debug.h"
