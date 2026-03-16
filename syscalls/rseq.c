@@ -14,10 +14,11 @@ static unsigned long rseq_flags[] = {
 };
 
 struct syscallentry syscall_rseq = {
-	.name = "rseq,",
+	.name = "rseq",
 	.num_args = 4,
 
 	.arg1name = "rseq",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "rseq_len",
 	.arg2type = ARG_LEN,
 	.arg3name = "flags",
