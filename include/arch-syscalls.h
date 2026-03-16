@@ -43,6 +43,9 @@
 #ifdef __tile__
 #include "syscalls-tile.h"
 #endif
+#ifdef __loongarch__
+#include "syscalls-loongarch.h"
+#endif
 #if defined(__riscv) || defined(__riscv__)
 #if __riscv_xlen == 64
 #include "syscalls-riscv64.h"

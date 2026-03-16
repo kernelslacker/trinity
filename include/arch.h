@@ -54,6 +54,10 @@
 #include "arch-tile.h"
 #endif
 
+#ifdef __loongarch__
+#include "arch-loongarch.h"
+#endif
+
 #if defined(__riscv) || defined(__riscv__)
 #if __riscv_xlen == 64
 #include "arch-riscv64.h"

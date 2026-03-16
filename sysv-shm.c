@@ -48,7 +48,7 @@ void create_sysv_shms(void)
 
 		size = page_size * (1 + rnd() % 10);
 
-		id = shmget(IPC_PRIVATE, page_size, flags);
+		id = shmget(IPC_PRIVATE, size, flags);
 		if (id == -1) {
 			free(obj);
 			continue;
@@ -57,10 +57,9 @@ void create_sysv_shms(void)
 		obj->sysv_shm.flags = flags;
 		obj->sysv_shm.size = size;
 
-		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
-
 		p = shmat(id, NULL, 0);	// TODO: Try alternative flags.
 		if (p != (void *) -1)
 			obj->sysv_shm.ptr = p;
+		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
 	}
 }
