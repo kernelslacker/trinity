@@ -90,6 +90,16 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 		BUG("Fix syscall definition!\n");
 	}
 
+	/* ~1 in 8: bias toward the range boundaries where off-by-one bugs hide */
+	if (ONE_IN(8)) {
+		switch (rnd() % 4) {
+		case 0: return low;
+		case 1: return high;
+		case 2: return (low < high) ? low + 1 : low;
+		case 3: return (high > low) ? high - 1 : high;
+		}
+	}
+
 	i = low + (unsigned long) rand64() % (high - low + 1);
 	return i;
 }
