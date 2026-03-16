@@ -11,7 +11,7 @@
 #include "syscall.h"
 
 struct syscallentry syscall_io_pgetevents = {
-	.name = "io_pgetevents,",
+	.name = "io_pgetevents",
 	.num_args = 6,
 
 	.arg1name = "ctx_id",
@@ -20,6 +20,9 @@ struct syscallentry syscall_io_pgetevents = {
 	.arg3name = "nr",
 	.arg3type = ARG_LEN,
 	.arg4name = "events",
+	.arg4type = ARG_ADDRESS,
 	.arg5name = "timeout",
+	.arg5type = ARG_ADDRESS,
 	.arg6name = "usig",
+	.arg6type = ARG_ADDRESS,
 };
