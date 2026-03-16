@@ -8,6 +8,10 @@ unsigned long get_len(void)
 {
 	int i = 0;
 
+	/* ~1 in 8: return a boundary value (0, 1, page_size, MAX, etc.) */
+	if (ONE_IN(8))
+		return get_boundary_value();
+
 	if (RAND_BOOL()) {
 		switch (rnd() % 4) {
 		case 0:	return sizeof(char);

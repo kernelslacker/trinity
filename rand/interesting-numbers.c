@@ -1,8 +1,56 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
+
+/*
+ * Boundary values that tend to trigger off-by-one errors, integer overflows,
+ * and sign-extension bugs in kernel code.  These values find a
+ * disproportionate number of bugs compared to purely random input.
+ */
+static const unsigned long boundary_values[] = {
+	0,
+	1,
+	2,
+	4,
+	8,
+	16,
+	32,
+	64,
+	128,
+	256,
+	512,
+	1024,
+	4095,				/* page_size - 1 */
+	4096,				/* common page_size */
+	4097,				/* page_size + 1 */
+	65535,				/* USHRT_MAX */
+	65536,				/* USHRT_MAX + 1 */
+	0x7ffffffe,			/* INT_MAX - 1 */
+	0x7fffffff,			/* INT_MAX */
+	0x80000000,			/* INT_MIN (as unsigned) */
+	0x80000001,			/* INT_MIN + 1 */
+	0xfffffffe,			/* UINT_MAX - 1 */
+	0xffffffff,			/* UINT_MAX */
+#if WORD_BIT == 64
+	0x100000000UL,			/* UINT_MAX + 1 */
+	0x7ffffffffffffffeUL,		/* LONG_MAX - 1 */
+	0x7fffffffffffffffUL,		/* LONG_MAX */
+	0x8000000000000000UL,		/* LONG_MIN (as unsigned) */
+	0x8000000000000001UL,		/* LONG_MIN + 1 */
+	0xfffffffffffffffeUL,		/* ULONG_MAX - 1 */
+	0xffffffffffffffffUL,		/* ULONG_MAX */
+#endif
+};
+
+#define NR_BOUNDARY_VALUES (sizeof(boundary_values) / sizeof(boundary_values[0]))
+
+unsigned long get_boundary_value(void)
+{
+	return boundary_values[rnd() % NR_BOUNDARY_VALUES];
+}
 
 static unsigned int plus_minus_two(unsigned int num)
 {
