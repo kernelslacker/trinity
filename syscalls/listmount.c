@@ -4,11 +4,15 @@
  *		unsigned int, flags)
  */
 #include "sanitise.h"
+#include "compat.h"
 
-static void sanitise_listmount(struct syscallrecord *rec)
-{
-	rec->a4 = 0;	/* flags must be zero */
-}
+#ifndef LISTMOUNT_REVERSE
+#define LISTMOUNT_REVERSE	(1 << 0)
+#endif
+
+static unsigned long listmount_flags[] = {
+	LISTMOUNT_REVERSE,
+};
 
 struct syscallentry syscall_listmount = {
 	.name = "listmount",
@@ -20,7 +24,8 @@ struct syscallentry syscall_listmount = {
 	.arg3name = "nr_mnt_ids",
 	.arg3type = ARG_LEN,
 	.arg4name = "flags",
+	.arg4type = ARG_LIST,
+	.arg4list = ARGLIST(listmount_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
-	.sanitise = sanitise_listmount,
 };
