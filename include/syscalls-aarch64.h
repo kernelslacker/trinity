@@ -296,4 +296,17 @@ struct syscalltable syscalls_aarch64[] = {
 		{ .entry = NULL },
 #endif
 /* 281 */	{ .entry = &syscall_execveat },
+/* 282 */	{ .entry = &syscall_userfaultfd },
+/* 283 */	{ .entry = &syscall_membarrier },
+/* 284 */	{ .entry = &syscall_mlock2 },
+/* 285 */	{ .entry = &syscall_copy_file_range },
+/* 286 */	{ .entry = &syscall_preadv2 },
+/* 287 */	{ .entry = &syscall_pwritev2 },
+/* 288 */	{ .entry = &syscall_pkey_mprotect },
+/* 289 */	{ .entry = &syscall_pkey_alloc },
+/* 290 */	{ .entry = &syscall_pkey_free },
+/* 291 */	{ .entry = &syscall_statx },
+/* 292 */	{ .entry = &syscall_io_pgetevents },
+/* 293 */	{ .entry = &syscall_rseq },
+/* 294 */	{ .entry = &syscall_kexec_file_load },
 };
