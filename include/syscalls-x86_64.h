@@ -481,4 +481,5 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_open_tree_attr },		// 467
 	{ .entry = &syscall_file_getattr },		// 468
 	{ .entry = &syscall_file_setattr },		// 469
+	{ .entry = &syscall_listns },			// 470
 };
