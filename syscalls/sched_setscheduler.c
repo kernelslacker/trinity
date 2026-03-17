@@ -12,6 +12,7 @@ static unsigned long sched_setscheduler_policies[] = {
 
 struct syscallentry syscall_sched_setscheduler = {
 	.name = "sched_setscheduler",
+	.group = GROUP_SCHED,
 	.num_args = 3,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

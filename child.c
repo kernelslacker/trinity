@@ -156,6 +156,7 @@ void clean_childdata(struct childdata *child)
 	child->dontkillme = FALSE;
 	child->xcpu_count = 0;
 	child->op_nr = 0;
+	child->last_group = GROUP_NONE;
 	child->dropped_privs = FALSE;
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }

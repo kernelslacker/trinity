@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_settimeofday = {
 	.name = "settimeofday",
+	.group = GROUP_TIME,
 	.num_args = 2,
 	.arg1name = "tv",
 	.arg1type = ARG_ADDRESS,

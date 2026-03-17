@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_futimesat = {
 	.name = "futimesat",
+	.group = GROUP_TIME,
 	.num_args = 3,
 	.arg1name = "dfd",
 	.arg1type = ARG_FD,

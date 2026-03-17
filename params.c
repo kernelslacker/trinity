@@ -46,6 +46,7 @@ unsigned int random_selection_num;
 
 bool clowntown = FALSE;
 bool show_stats = FALSE;
+bool group_bias = FALSE;
 
 bool user_set_seed = FALSE;
 
@@ -78,7 +79,8 @@ static void usage(void)
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
 	enable_disable_fd_usage();
 	outputerr(" --ftrace-dump-file: specify file that ftrace buffer gets dumped to if kernel becomes tainted.\n");
-	outputerr(" --group,-g = {vfs,vm}: only run syscalls from a certain group.\n");
+	outputerr(" --group,-g = {vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time}: only run syscalls from a certain group.\n");
+	outputerr(" --group-bias: bias syscall selection toward the same group as the previous call.\n");
 	outputerr(" --ioctls,-I: list all ioctls.\n");
 	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
@@ -114,6 +116,7 @@ static const struct option longopts[] = {
 	{ "exclude", required_argument, NULL, 'x' },
 	{ "ftrace-dump-file", required_argument, NULL, 0 },
 	{ "group", required_argument, NULL, 'g' },
+	{ "group-bias", no_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
 	{ "list", no_argument, NULL, 'L' },
@@ -220,8 +223,24 @@ void parse_args(int argc, char *argv[])
 		case 'g':
 			if (!strcmp(optarg, "vm"))
 				desired_group = GROUP_VM;
-			if (!strcmp(optarg, "vfs"))
+			else if (!strcmp(optarg, "vfs"))
 				desired_group = GROUP_VFS;
+			else if (!strcmp(optarg, "net"))
+				desired_group = GROUP_NET;
+			else if (!strcmp(optarg, "ipc"))
+				desired_group = GROUP_IPC;
+			else if (!strcmp(optarg, "process"))
+				desired_group = GROUP_PROCESS;
+			else if (!strcmp(optarg, "signal"))
+				desired_group = GROUP_SIGNAL;
+			else if (!strcmp(optarg, "io_uring"))
+				desired_group = GROUP_IO_URING;
+			else if (!strcmp(optarg, "bpf"))
+				desired_group = GROUP_BPF;
+			else if (!strcmp(optarg, "sched"))
+				desired_group = GROUP_SCHED;
+			else if (!strcmp(optarg, "time"))
+				desired_group = GROUP_TIME;
 			break;
 
 		/* Show help */
@@ -326,6 +345,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("ftrace-dump-file", longopts[opt_index].name) == 0)
 				ftracedumpname = strdup(optarg);
+
+			if (strcmp("group-bias", longopts[opt_index].name) == 0)
+				group_bias = TRUE;
 
 			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
 				show_unannotated = TRUE;

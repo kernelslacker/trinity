@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_signalfd = {
 	.name = "signalfd",
+	.group = GROUP_SIGNAL,
 	.num_args = 3,
 	.arg1name = "ufd",
 	.arg1type = ARG_FD,
@@ -30,6 +31,7 @@ static unsigned long signalfd4_flags[] = {
 
 struct syscallentry syscall_signalfd4 = {
 	.name = "signalfd4",
+	.group = GROUP_SIGNAL,
 	.num_args = 4,
 	.arg1name = "ufd",
 	.arg1type = ARG_FD,

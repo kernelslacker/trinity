@@ -158,6 +158,15 @@ struct syscallentry {
 #define GROUP_NONE	0
 #define GROUP_VM	1
 #define GROUP_VFS	2
+#define GROUP_NET	3
+#define GROUP_IPC	4
+#define GROUP_PROCESS	5
+#define GROUP_SIGNAL	6
+#define GROUP_IO_URING	7
+#define GROUP_BPF	8
+#define GROUP_SCHED	9
+#define GROUP_TIME	10
+#define NR_GROUPS	11
 
 struct syscalltable {
 	struct syscallentry *entry;

@@ -21,5 +21,6 @@ struct syscallentry syscall_getsockopt = {
 	.arg5name = "optlen",
 	.arg5type = ARG_LEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 	.sanitise = sanitise_getsockopt,
 };

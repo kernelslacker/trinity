@@ -40,6 +40,7 @@ static void post_fork(struct syscallrecord *rec)
 
 struct syscallentry syscall_fork = {
 	.name = "fork",
+	.group = GROUP_PROCESS,
 	.num_args = 0,
 	.flags = AVOID_SYSCALL, // No args to fuzz, confuses fuzzer
 	.post = post_fork,

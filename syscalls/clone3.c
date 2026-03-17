@@ -7,6 +7,7 @@
 
 struct syscallentry syscall_clone3 = {
 	.name = "clone3",
+	.group = GROUP_PROCESS,
 	.num_args = 2,
 	.flags = AVOID_SYSCALL,
 	.arg1name = "uargs",

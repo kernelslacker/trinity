@@ -38,6 +38,7 @@ static unsigned long ptrace_reqs[] = {
 
 struct syscallentry syscall_ptrace = {
 	.name = "ptrace",
+	.group = GROUP_PROCESS,
 	.num_args = 4,
 	.arg1name = "request",
 	.arg1type = ARG_OP,

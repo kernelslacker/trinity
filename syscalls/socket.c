@@ -143,6 +143,7 @@ struct syscallentry syscall_socket = {
 	.arg2name = "type",
 	.arg3name = "protocol",
 	.rettype = RET_FD,
+	.group = GROUP_NET,
 	.sanitise = sanitise_socket,
 	.post = post_socket,
 };

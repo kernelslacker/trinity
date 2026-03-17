@@ -9,6 +9,7 @@ static unsigned long process_mrelease_flags[] = {
 
 struct syscallentry syscall_process_mrelease = {
 	.name = "process_mrelease",
+	.group = GROUP_PROCESS,
 	.num_args = 2,
 	.arg1name = "pidfd",
 	.arg2name = "flags",

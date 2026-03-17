@@ -11,6 +11,7 @@ static unsigned long process_vm_readv_flags[] = {
 
 struct syscallentry syscall_process_vm_readv = {
 	.name = "process_vm_readv",
+	.group = GROUP_PROCESS,
 	.num_args = 6,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

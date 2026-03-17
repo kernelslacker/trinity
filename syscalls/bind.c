@@ -41,5 +41,6 @@ struct syscallentry syscall_bind = {
 	//.sanitise = dump,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 	.sanitise = sanitise_bind,
 };

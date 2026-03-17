@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_shmat = {
 	.name = "shmat",
+	.group = GROUP_IPC,
 	.num_args = 3,
 	.arg1name = "shmid",
 	.arg2name = "shmaddr",

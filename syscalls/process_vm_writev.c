@@ -11,6 +11,7 @@ static unsigned long process_vm_writev_flags[] = {
 
 struct syscallentry syscall_process_vm_writev = {
 	.name = "process_vm_writev",
+	.group = GROUP_PROCESS,
 	.num_args = 6,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

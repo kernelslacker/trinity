@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_msgget = {
 	.name = "msgget",
+	.group = GROUP_IPC,
 	.num_args = 2,
 	.arg1name = "key",
 	.arg2name = "msgflg",

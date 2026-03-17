@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_rt_sigsuspend = {
 	.name = "rt_sigsuspend",
+	.group = GROUP_SIGNAL,
 	.num_args = 2,
 	.arg1name = "unewset",
 	.arg1type = ARG_ADDRESS,

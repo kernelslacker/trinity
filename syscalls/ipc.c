@@ -13,6 +13,7 @@ static unsigned long ipc_calls[] = {
 
 struct syscallentry syscall_ipc = {
 	.name = "ipc",
+	.group = GROUP_IPC,
 	.num_args = 6,
 	.arg1name = "call",
 	.arg1type = ARG_OP,

@@ -84,6 +84,7 @@ static unsigned long io_uring_register_opcodes[] = {
 
 struct syscallentry syscall_io_uring_register = {
 	.name = "io_uring_register",
+	.group = GROUP_IO_URING,
 	.num_args = 4,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,

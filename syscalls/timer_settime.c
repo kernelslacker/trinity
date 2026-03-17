@@ -12,6 +12,7 @@ static unsigned long timer_settime_flags[] = {
 
 struct syscallentry syscall_timer_settime = {
 	.name = "timer_settime",
+	.group = GROUP_TIME,
 	.num_args = 4,
 	.arg1name = "timer_id",
 	.arg2name = "flags",

@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_sched_getaffinity = {
 	.name = "sched_getaffinity",
+	.group = GROUP_SCHED,
 	.num_args = 3,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

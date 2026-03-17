@@ -7,6 +7,7 @@
 
 struct syscallentry syscall_clock_gettime = {
 	.name = "clock_gettime",
+	.group = GROUP_TIME,
 	.num_args = 2,
 	.arg1name = "which_clock",
 	.arg2name = "tp",

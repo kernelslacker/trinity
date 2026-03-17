@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_semget = {
 	.name = "semget",
+	.group = GROUP_IPC,
 	.num_args = 3,
 	.arg1name = "key",
 	.arg2name = "nsems",

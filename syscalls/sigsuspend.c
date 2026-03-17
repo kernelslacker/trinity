@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_sigsuspend = {
 	.name = "sigsuspend",
+	.group = GROUP_SIGNAL,
 	.num_args = 2,
 	.arg1name = "history0",
 	.arg2name = "history1",

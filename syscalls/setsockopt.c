@@ -240,4 +240,5 @@ struct syscallentry syscall_setsockopt = {
 	.sanitise = sanitise_setsockopt,
 	.post = post_setsockopt,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 };

@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_getpgid = {
 	.name = "getpgid",
+	.group = GROUP_PROCESS,
 	.num_args = 1,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

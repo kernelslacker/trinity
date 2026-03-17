@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_timer_delete = {
 	.name = "timer_delete",
+	.group = GROUP_TIME,
 	.num_args = 1,
 	.arg1name = "timer_id",
 };

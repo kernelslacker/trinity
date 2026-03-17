@@ -15,6 +15,7 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 
 struct syscallentry syscall_rt_sigprocmask = {
 	.name = "rt_sigprocmask",
+	.group = GROUP_SIGNAL,
 	.num_args = 4,
 	.sanitise = sanitise_rt_sigprocmask,
 	.arg1name = "how",

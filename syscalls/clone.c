@@ -24,6 +24,7 @@ static unsigned long clone_flags[] = {
 
 struct syscallentry syscall_clone = {
 	.name = "clone",
+	.group = GROUP_PROCESS,
 	.num_args = 5,
 	.flags = AVOID_SYSCALL,
 	.arg1name = "clone_flags",
@@ -51,6 +52,7 @@ struct syscallentry syscall_clone = {
 
 struct syscallentry syscall_clone2 = {
 	.name = "clone",
+	.group = GROUP_PROCESS,
 	.num_args = 6,
 	.flags = AVOID_SYSCALL,
 	.arg1name = "flags",

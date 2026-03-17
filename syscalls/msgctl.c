@@ -13,6 +13,7 @@ static unsigned long msgctl_cmds[] = {
 
 struct syscallentry syscall_msgctl = {
 	.name = "msgctl",
+	.group = GROUP_IPC,
 	.num_args = 3,
 	.arg1name = "msqid",
 	.arg2name = "cmd",

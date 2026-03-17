@@ -7,6 +7,7 @@
 
 struct syscallentry syscall_rt_sigtimedwait = {
 	.name = "rt_sigtimedwait",
+	.group = GROUP_SIGNAL,
 	.num_args = 4,
 	.arg1name = "uthese",
 	.arg2name = "uinfo",

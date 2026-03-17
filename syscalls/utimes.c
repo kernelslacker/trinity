@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_utimes = {
 	.name = "utimes",
+	.group = GROUP_TIME,
 	.num_args = 2,
 	.arg1name = "filename",
 	.arg1type = ARG_PATHNAME,

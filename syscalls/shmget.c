@@ -20,6 +20,7 @@ static void post_shmget(struct syscallrecord *rec)
 
 struct syscallentry syscall_shmget = {
 	.name = "shmget",
+	.group = GROUP_IPC,
 	.num_args = 3,
 	.arg1name = "key",
 	.arg2name = "size",

@@ -380,6 +380,7 @@ static unsigned long bpf_cmds[] = {
 
 struct syscallentry syscall_bpf = {
 	.name = "bpf",
+	.group = GROUP_BPF,
 	.num_args = 3,
 
 	.arg1name = "cmd",

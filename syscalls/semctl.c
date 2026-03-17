@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_semctl = {
 	.name = "semctl",
+	.group = GROUP_IPC,
 	.num_args = 4,
 	.arg1name = "semid",
 	.arg2name = "semnum",

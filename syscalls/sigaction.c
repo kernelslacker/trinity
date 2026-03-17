@@ -25,6 +25,7 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 
 struct syscallentry syscall_rt_sigaction = {
 	.name = "rt_sigaction",
+	.group = GROUP_SIGNAL,
 	.num_args = 4,
 	.sanitise = sanitise_rt_sigaction,
 	.arg1name = "sig",
@@ -47,6 +48,7 @@ struct syscallentry syscall_rt_sigaction = {
 
 struct syscallentry syscall_sigaction = {
 	.name = "sigaction",
+	.group = GROUP_SIGNAL,
 	.num_args = 3,
 	.sanitise = sanitise_rt_sigaction,
 	.arg1name = "sig",

@@ -77,5 +77,6 @@ struct syscallentry syscall_socketcall = {
 	.arg1name = "call",
 	.arg2name = "args",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_NET,
 	.sanitise = sanitise_socketcall,
 };

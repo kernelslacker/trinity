@@ -18,6 +18,7 @@ static unsigned long msgrcv_flags[] = {
 
 struct syscallentry syscall_msgrcv = {
 	.name = "msgrcv",
+	.group = GROUP_IPC,
 	.num_args = 5,
 	.arg1name = "msqid",
 	.arg2name = "msgp",

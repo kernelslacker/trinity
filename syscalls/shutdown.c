@@ -17,4 +17,5 @@ struct syscallentry syscall_shutdown = {
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(shutdown_hows),
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 };

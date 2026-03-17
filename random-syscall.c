@@ -14,6 +14,7 @@
 #include "child.h"
 #include "debug.h"
 #include "locks.h"
+#include "params.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -69,11 +70,27 @@ static bool choose_syscall_table(void)
 	return do32;
 }
 
-static bool set_syscall_nr(struct syscallrecord *rec)
+/*
+ * Check if a syscall entry belongs to the target group.
+ * Used by group biasing to filter candidates.
+ */
+static bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_group)
+{
+	struct syscallentry *entry;
+
+	entry = get_syscall_entry(nr, do32);
+	if (entry == NULL)
+		return FALSE;
+
+	return entry->group == target_group;
+}
+
+static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 {
 	struct syscallentry *entry;
 	unsigned int syscallnr;
 	bool do32;
+	unsigned int bias_attempts = 0;
 
 retry:
 	if (no_syscalls_enabled() == TRUE) {
@@ -104,6 +121,32 @@ retry:
 			goto retry;
 	}
 
+	/*
+	 * Group biasing: when enabled and we have a previous group context,
+	 * bias selection toward syscalls in the same group.
+	 *
+	 * 70% of the time: prefer same group as last call
+	 * 25% of the time: accept any syscall (no bias)
+	 *  5% of the time: accept any syscall (exploration)
+	 *
+	 * If we can't find a same-group syscall after 20 attempts,
+	 * fall through and accept whatever we picked.
+	 */
+	if (group_bias && child->last_group != GROUP_NONE) {
+		unsigned int dice = rnd() % 100;
+
+		if (dice < 70) {
+			/* Try to pick from same group */
+			if (!syscall_in_group(syscallnr, do32, child->last_group)) {
+				bias_attempts++;
+				if (bias_attempts < 20)
+					goto retry;
+				/* Gave up, accept this one. */
+			}
+		}
+		/* dice >= 70: accept any syscall */
+	}
+
 	/* critical section for shm updates. */
 	lock(&rec->lock);
 	rec->do32bit = do32;
@@ -116,11 +159,12 @@ retry:
 bool random_syscall(struct childdata *child)
 {
 	struct syscallrecord *rec;
+	struct syscallentry *entry;
 	int ret = FALSE;
 
 	rec = &child->syscall;
 
-	if (set_syscall_nr(rec) == FAIL)
+	if (set_syscall_nr(rec, child) == FAIL)
 		return FAIL;
 
 	memset(rec->postbuffer, 0, POSTBUFFER_LEN);
@@ -135,6 +179,13 @@ bool random_syscall(struct childdata *child)
 	output_syscall_postfix(rec);
 
 	handle_syscall_ret(rec);
+
+	/* Track the group of the syscall we just executed for biasing. */
+	if (group_bias) {
+		entry = get_syscall_entry(rec->nr, rec->do32bit);
+		if (entry != NULL)
+			child->last_group = entry->group;
+	}
 
 	ret = TRUE;
 

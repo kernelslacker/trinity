@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_sched_get_priority_max = {
 	.name = "sched_get_priority_max",
+	.group = GROUP_SCHED,
 	.num_args = 1,
 	.arg1name = "policy",
 };

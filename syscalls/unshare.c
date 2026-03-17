@@ -12,6 +12,7 @@ static unsigned long unshare_flags[] = {
 
 struct syscallentry syscall_unshare = {
 	.name = "unshare",
+	.group = GROUP_PROCESS,
 	.num_args = 1,
 	.arg1name = "unshare_flags",
 	.arg1type = ARG_LIST,

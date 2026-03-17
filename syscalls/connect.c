@@ -23,5 +23,6 @@ struct syscallentry syscall_connect = {
 	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 	.sanitise = sanitise_connect,
 };

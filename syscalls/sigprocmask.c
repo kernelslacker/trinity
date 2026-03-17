@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_sigprocmask = {
 	.name = "sigprocmask",
+	.group = GROUP_SIGNAL,
 	.num_args = 3,
 	.arg1name = "how",
 	.arg2name = "set",

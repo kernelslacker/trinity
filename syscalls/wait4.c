@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_wait4 = {
 	.name = "wait4",
+	.group = GROUP_PROCESS,
 	.num_args = 4,
 	.arg1name = "upid",
 	.arg1type = ARG_PID,

@@ -9,6 +9,7 @@ static unsigned long pidfd_send_signal_flags[] = {
 
 struct syscallentry syscall_pidfd_send_signal = {
 	.name = "pidfd_send_signal",
+	.group = GROUP_PROCESS,
 	.num_args = 4,
 	.arg1name = "pidfd",
 	.arg1type = ARG_FD,

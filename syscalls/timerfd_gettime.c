@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_timerfd_gettime = {
 	.name = "timerfd_gettime",
+	.group = GROUP_TIME,
 	.num_args = 2,
 	.arg1name = "ufd",
 	.arg1type = ARG_FD,

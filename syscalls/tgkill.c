@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_tgkill = {
 	.name = "tgkill",
+	.group = GROUP_SIGNAL,
 	.num_args = 3,
 	.arg1name = "tgid",
 	.arg1type = ARG_PID,

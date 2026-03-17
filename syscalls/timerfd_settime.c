@@ -25,6 +25,7 @@ static unsigned long timerfd_settime_flags[] = {
 
 struct syscallentry syscall_timerfd_settime = {
 	.name = "timerfd_settime",
+	.group = GROUP_TIME,
 	.num_args = 4,
 	.arg1name = "ufd",
 	.arg1type = ARG_FD,

@@ -27,6 +27,9 @@ struct childdata {
 
 	unsigned int num;
 
+	/* Last syscall group executed, for group biasing. */
+	unsigned int last_group;
+
 	unsigned char xcpu_count;
 
 	unsigned char kill_count;

@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_sched_setattr = {
 	.name = "sched_setattr",
+	.group = GROUP_SCHED,
 	.num_args = 2,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
