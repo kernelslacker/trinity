@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_semtimedop = {
 	.name = "semtimedop",
+	.group = GROUP_IPC,
 	.num_args = 4,
 	.arg1name = "semid",
 	.arg2name = "tsops",

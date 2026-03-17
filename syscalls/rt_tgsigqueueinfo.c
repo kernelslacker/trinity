@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_rt_tgsigqueueinfo = {
 	.name = "rt_tgsigqueueinfo",
+	.group = GROUP_SIGNAL,
 	.num_args = 4,
 	.arg1name = "tgid",
 	.arg2name = "pid",

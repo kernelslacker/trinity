@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_mq_unlink = {
 	.name = "mq_unlink",
+	.group = GROUP_IPC,
 	.num_args = 1,
 	.arg1name = "u_name",
 	.arg1type = ARG_ADDRESS,

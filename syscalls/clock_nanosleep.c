@@ -21,6 +21,7 @@ static unsigned long clock_nanosleep_flags[] = {
 
 struct syscallentry syscall_clock_nanosleep = {
 	.name = "clock_nanosleep",
+	.group = GROUP_TIME,
 	.num_args = 4,
 	.arg1name = "which_clock",
 	.arg1type = ARG_OP,

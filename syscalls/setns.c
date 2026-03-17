@@ -10,6 +10,7 @@ static unsigned long setns_types[] = {
 
 struct syscallentry syscall_setns= {
 	.name = "setns",
+	.group = GROUP_PROCESS,
 	.num_args = 2,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,

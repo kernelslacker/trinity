@@ -31,6 +31,7 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 
 struct syscallentry syscall_timer_create = {
 	.name = "timer_create",
+	.group = GROUP_TIME,
 	.num_args = 3,
 	.arg1name = "which_clock",
 	.arg2name = "timer_event_spec",

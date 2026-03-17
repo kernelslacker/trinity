@@ -7,6 +7,7 @@
 
 struct syscallentry syscall_mq_timedreceive = {
 	.name = "mq_timedreceive",
+	.group = GROUP_IPC,
 	.num_args = 5,
 	.arg1name = "mqdes",
 	.arg1type = ARG_FD,

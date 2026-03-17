@@ -13,6 +13,7 @@ static unsigned long kcmp_types[] = {
 
 struct syscallentry syscall_kcmp = {
 	.name = "kcmp",
+	.group = GROUP_PROCESS,
 	.num_args = 5,
 	.arg1name = "pid1",
 	.arg1type = ARG_PID,

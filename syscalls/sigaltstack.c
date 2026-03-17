@@ -6,6 +6,7 @@
 
 struct syscallentry syscall_sigaltstack = {
 	.name = "sigaltstack",
+	.group = GROUP_SIGNAL,
 	.num_args = 3,
 	.arg1name = "uss",
 	.arg1type = ARG_ADDRESS,

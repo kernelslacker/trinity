@@ -28,6 +28,7 @@ struct syscallentry syscall_socketpair = {
 	.arg3name = "protocol",
 	.arg4name = "usockvec",
 	.arg4type = ARG_ADDRESS,
+	.group = GROUP_NET,
 	.sanitise = sanitise_socketpair,
 	.post = post_socketpair,
 };

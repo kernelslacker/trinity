@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_getitimer = {
 	.name = "getitimer",
+	.group = GROUP_TIME,
 	.num_args = 2,
 	.arg1name = "which",
 	.arg2name = "value",

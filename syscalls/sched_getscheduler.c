@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_sched_getscheduler = {
 	.name = "sched_getscheduler",
+	.group = GROUP_SCHED,
 	.num_args = 1,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

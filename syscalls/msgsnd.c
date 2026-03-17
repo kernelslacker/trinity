@@ -12,6 +12,7 @@ static unsigned long msgsnd_flags[] = {
 
 struct syscallentry syscall_msgsnd = {
 	.name = "msgsnd",
+	.group = GROUP_IPC,
 	.num_args = 4,
 	.arg1name = "msqid",
 	.arg2name = "msgp",

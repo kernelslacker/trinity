@@ -12,6 +12,7 @@ static unsigned long shmctl_ops[] = {
 
 struct syscallentry syscall_shmctl = {
 	.name = "shmctl",
+	.group = GROUP_IPC,
 	.num_args = 3,
 	.arg1name = "shmid",
 	.arg2name = "cmd",

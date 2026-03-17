@@ -6,6 +6,7 @@
 struct syscallentry syscall_setitimer = {
 	.flags = AVOID_SYSCALL,		/* setitimer interferes with alarm() */
 	.name = "setitimer",
+	.group = GROUP_TIME,
 	.num_args = 3,
 	.arg1name = "which",
 	.arg2name = "value",

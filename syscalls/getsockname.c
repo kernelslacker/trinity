@@ -19,5 +19,6 @@ struct syscallentry syscall_getsockname = {
 	.arg3name = "usockaddr_len",
 	.arg3type = ARG_SOCKADDRLEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 	.sanitise = sanitise_getsockname,
 };

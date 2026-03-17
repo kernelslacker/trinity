@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_mq_notify = {
 	.name = "mq_notify",
+	.group = GROUP_IPC,
 	.num_args = 2,
 	.arg1name = "mqdes",
 	.arg1type = ARG_FD,

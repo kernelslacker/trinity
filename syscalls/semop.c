@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_semop = {
 	.name = "semop",
+	.group = GROUP_IPC,
 	.num_args = 3,
 	.arg1name = "semid",
 	.arg2name = "tsops",

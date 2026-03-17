@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_sigpending = {
 	.name = "sigpending",
+	.group = GROUP_SIGNAL,
 	.num_args = 1,
 	.arg1name = "set",
 	.arg1type = ARG_ADDRESS,

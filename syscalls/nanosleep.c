@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_nanosleep = {
 	.name = "nanosleep",
+	.group = GROUP_TIME,
 	.num_args = 2,
 	.arg1name = "rqtp",
 	.arg1type = ARG_ADDRESS,

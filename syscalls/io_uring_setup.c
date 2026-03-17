@@ -94,6 +94,7 @@ static void post_io_uring_setup(struct syscallrecord *rec)
 
 struct syscallentry syscall_io_uring_setup = {
 	.name = "io_uring_setup",
+	.group = GROUP_IO_URING,
 	.num_args = 2,
 	.arg1name = "entries",
 	.arg2name = "params",

@@ -15,6 +15,7 @@ static unsigned long timerfd_create_flags[] = {
 
 struct syscallentry syscall_timerfd_create = {
 	.name = "timerfd_create",
+	.group = GROUP_TIME,
 	.num_args = 2,
 	.arg1name = "clockid",
 	.arg1type = ARG_OP,

@@ -11,6 +11,7 @@ static unsigned long utimensat_flags[] = {
 
 struct syscallentry syscall_utimensat = {
 	.name = "utimensat",
+	.group = GROUP_TIME,
 	.num_args = 4,
 	.arg1name = "dfd",
 	.arg1type = ARG_FD,

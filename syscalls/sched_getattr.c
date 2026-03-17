@@ -20,6 +20,7 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 
 struct syscallentry syscall_sched_getattr = {
 	.name = "sched_getattr",
+	.group = GROUP_SCHED,
 	.num_args = 3,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

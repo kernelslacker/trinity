@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_personality = {
 	.name = "personality",
+	.group = GROUP_PROCESS,
 	.num_args = 1,
 	.arg1name = "personality",
 };

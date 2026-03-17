@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_getpid = {
 	.name = "getpid",
+	.group = GROUP_PROCESS,
 	.num_args = 0,
 	.rettype = RET_PID_T,
 };

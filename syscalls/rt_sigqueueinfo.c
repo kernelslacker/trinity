@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_rt_sigqueueinfo = {
 	.name = "rt_sigqueueinfo",
+	.group = GROUP_SIGNAL,
 	.num_args = 3,
 	.arg1name = "pid",
 	.arg1type = ARG_PID,

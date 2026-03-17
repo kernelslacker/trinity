@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_mq_open = {
 	.name = "mq_open",
+	.group = GROUP_IPC,
 	.num_args = 4,
 	.arg1name = "u_name",
 	.arg1type = ARG_ADDRESS,

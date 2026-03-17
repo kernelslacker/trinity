@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_signal = {
 	.name = "signal",
+	.group = GROUP_SIGNAL,
 	.num_args = 2,
 	.arg1name = "sig",
 	.arg2name = "handler",

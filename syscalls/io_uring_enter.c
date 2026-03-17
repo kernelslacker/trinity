@@ -20,6 +20,7 @@ static unsigned long io_uring_enter_flags[] = {
 
 struct syscallentry syscall_io_uring_enter = {
 	.name = "io_uring_enter",
+	.group = GROUP_IO_URING,
 	.num_args = 6,
 	.arg1name = "fd",
 	.arg1type = ARG_FD,

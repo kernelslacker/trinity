@@ -5,6 +5,7 @@
 
 struct syscallentry syscall_timer_getoverrun = {
 	.name = "timer_getoverrun",
+	.group = GROUP_TIME,
 	.num_args = 1,
 	.arg1name = "timer_id",
 };

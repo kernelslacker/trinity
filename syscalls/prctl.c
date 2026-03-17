@@ -84,6 +84,7 @@ static void sanitise_prctl(struct syscallrecord *rec)
 
 struct syscallentry syscall_prctl = {
 	.name = "prctl",
+	.group = GROUP_PROCESS,
 	.num_args = 5,
 	.arg1name = "option",
 	.arg2name = "arg2",

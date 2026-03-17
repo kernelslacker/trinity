@@ -52,6 +52,7 @@ struct syscallentry syscall_send = {
 	.arg4name = "flags",
         .arg4type = ARG_LIST,
 	.arg4list = ARGLIST(sendflags),
+	.group = GROUP_NET,
 	.sanitise = sanitise_send,
 };
 
@@ -78,6 +79,7 @@ struct syscallentry syscall_sendto = {
 	.arg6name = "addr_len",
 	.arg6type = ARG_SOCKADDRLEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 	.sanitise = sanitise_send,	// same as send
 };
 
@@ -150,6 +152,7 @@ struct syscallentry syscall_sendmsg = {
 	.sanitise = sanitise_sendmsg,
 	.post = post_sendmsg,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 };
 /*
  * SYSCALL_DEFINE4(sendmmsg, int, fd, struct mmsghdr __user *, mmsg,
@@ -173,5 +176,6 @@ struct syscallentry syscall_sendmmsg = {
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(sendflags),
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 	.sanitise = sanitise_sendmmsg,
 };

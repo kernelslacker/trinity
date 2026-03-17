@@ -20,5 +20,6 @@ struct syscallentry syscall_getpeername = {
 	.arg3type = ARG_SOCKADDRLEN,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_NET,
 	.sanitise = sanitise_getpeername,
 };
