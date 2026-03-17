@@ -163,6 +163,13 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 
 	get_num_and_values(entry, argnum, &num, &values);
 
+	/* ~1 in 8: OR in a shifted flag to probe for undocumented adjacent bits */
+	if (ONE_IN(8)) {
+		mask = set_rand_bitmask(num, values);
+		mask |= shift_flag_bit(values[rnd() % num]);
+		return mask;
+	}
+
 	if (RAND_BOOL())
 		num = min(num, 3U);
 
@@ -305,9 +312,15 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
-		if (RAND_BOOL())
-			return (unsigned long) rand64();
-		return (unsigned long) get_writable_address(page_size);
+		switch (rnd() % 7) {
+		case 0: return mutate_value(get_boundary_value());
+		case 1: return mutate_value(rand64());
+		case 2: return get_interesting_value();
+		case 3: return rand64();
+		case 4: return (unsigned long) get_writable_address(page_size);
+		case 5: return rand64() & rand64();	/* sparse bits (~25% set) */
+		case 6: return rand64() | rand64();	/* dense bits (~75% set) */
+		}
 
 	case ARG_FD:
 		if (RAND_BOOL()) {
