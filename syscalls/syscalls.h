@@ -435,6 +435,7 @@ extern struct syscallentry syscall_open_tree_attr;
 extern struct syscallentry syscall_file_getattr;
 extern struct syscallentry syscall_file_setattr;
 extern struct syscallentry syscall_listns;
+extern struct syscallentry syscall_rseq_slice_yield;
 
 extern struct syscallentry syscall_runtime_instr;
 extern struct syscallentry syscall_s390_pci_mmio_write;
