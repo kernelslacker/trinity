@@ -6,6 +6,7 @@ void generic_sanitise(struct syscallrecord *rec);
 void generic_free_arg(struct syscallrecord *rec);
 
 unsigned long get_interesting_value(void);
+unsigned int get_interesting_32bit_value(void);
 unsigned long get_boundary_value(void);
 unsigned long get_sizeof_boundary_value(void);
 unsigned long mutate_value(unsigned long val);
