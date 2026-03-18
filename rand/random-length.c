@@ -27,7 +27,7 @@ unsigned long get_len(void)
 	if (i == 0)
 		return 0;
 
-	switch (rnd() % 6) {
+	switch (rnd() % 5) {
 	case 0:	i &= 0xff;
 		break;
 	case 1: i &= page_size - 1;
@@ -36,9 +36,7 @@ unsigned long get_len(void)
 		break;
 	case 3:	i &= 0xffffff;
 		break;
-	case 4:	i &= 0xffffffff;
-		break;
-	case 5:
+	case 4:
 		// Pass through
 		break;
 	}
