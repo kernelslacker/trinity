@@ -132,7 +132,7 @@ static unsigned short get_interesting_16bit_value(void)
 	}
 }
 
-static unsigned int get_interesting_32bit_value(void)
+unsigned int get_interesting_32bit_value(void)
 {
 	switch (rnd() % 10) {
 	case 0: return 0x80000000 >> (rnd() & 0x1f);	// 2^n (1 -> 0x10000)

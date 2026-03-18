@@ -146,7 +146,7 @@ unsigned int rand32(void)
 	case 5:	r = rept_byte();
 		break;
 
-	case 6:	return get_interesting_value();
+	case 6:	return get_interesting_32bit_value();
 
 	case 7: return 0 - ((rnd() % 10) + 1);
 	}
