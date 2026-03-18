@@ -52,19 +52,17 @@ unsigned long get_boundary_value(void)
 	return boundary_values[rnd() % NR_BOUNDARY_VALUES];
 }
 
-static unsigned int plus_minus_two(unsigned int num)
+#define ARITH_MAX 128
+
+static unsigned int plus_minus_arith(unsigned int num)
 {
-	/* Now munge it for off-by-ones. */
-	switch (rnd() % 4) {
-	case 0:	num -= 2;
-		break;
-	case 1:	num -= 1;
-		break;
-	case 2:	num += 1;
-		break;
-	case 3:	num += 2;
-		break;
-	}
+	/* Arithmetic delta: +/- 1..ARITH_MAX. */
+	unsigned int delta = (rnd() % ARITH_MAX) + 1;
+
+	if (RAND_BOOL())
+		num += delta;
+	else
+		num -= delta;
 	return num;
 }
 
@@ -140,7 +138,7 @@ unsigned long get_interesting_value(void)
 		break;
 	}
 
-	low = (rnd() & 0xf) ? low : plus_minus_two(low);	// 1 in 16 call plus_minus_two
+	low = (rnd() & 0xf) ? low : plus_minus_arith(low);	// 1 in 16 call plus_minus_arith
 #if WORD_BIT != 32
 
 	if (RAND_BOOL()) {	// FIXME: This should likely be less aggressive than 50/50
