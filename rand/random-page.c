@@ -132,7 +132,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 				switch (rnd() % 3) {
 				case 0:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
 					break;
-				case 1:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
+				case 1:	p += sprintf(p, "0x%08x", (unsigned int) rand32());
 					break;
 				case 2:	p += sprintf(p, "0x%x", (int) rand32());
 					break;
