@@ -312,7 +312,7 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
-		switch (rnd() % 7) {
+		switch (rnd() % 8) {
 		case 0: return mutate_value(get_boundary_value());
 		case 1: return mutate_value(rand64());
 		case 2: return get_interesting_value();
@@ -320,6 +320,7 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 		case 4: return (unsigned long) get_writable_address(page_size);
 		case 5: return rand64() & rand64();	/* sparse bits (~25% set) */
 		case 6: return rand64() | rand64();	/* dense bits (~75% set) */
+		case 7: return get_sizeof_boundary_value();
 		}
 
 	case ARG_FD:

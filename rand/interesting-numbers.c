@@ -57,6 +57,46 @@ unsigned long get_boundary_value(void)
 	return boundary_values[rnd() % NR_BOUNDARY_VALUES];
 }
 
+/*
+ * Boundary values divided by common struct sizes, targeting integer
+ * overflow in kernel allocation-size calculations (count * sizeof).
+ * The kernel frequently does: kmalloc(count * sizeof(struct foo))
+ * and if count is close to SIZE_MAX/sizeof, the multiplication wraps.
+ */
+static const unsigned int common_struct_sizes[] = {
+	4, 8, 12, 16, 20, 24, 32, 48, 64, 128, 256, 512, 1024, 4096,
+};
+
+#define NR_STRUCT_SIZES (sizeof(common_struct_sizes) / sizeof(common_struct_sizes[0]))
+
+unsigned long get_sizeof_boundary_value(void)
+{
+	static const unsigned long overflow_bases[] = {
+		0x7fffffff,				/* INT_MAX */
+		0x80000000,				/* INT_MIN (unsigned) */
+		0xffffffff,				/* UINT_MAX */
+#if WORD_BIT == 64
+		0x7fffffffffffffffUL,			/* LONG_MAX */
+		0x8000000000000000UL,			/* LONG_MIN (unsigned) */
+		0xffffffffffffffffUL,			/* ULONG_MAX */
+#endif
+	};
+	#define NR_OVERFLOW_BASES (sizeof(overflow_bases) / sizeof(overflow_bases[0]))
+
+	unsigned long base = overflow_bases[rnd() % NR_OVERFLOW_BASES];
+	unsigned int sz = common_struct_sizes[rnd() % NR_STRUCT_SIZES];
+	unsigned long val = base / sz;
+
+	/* Occasionally add +/-1 to probe the exact overflow boundary */
+	switch (rnd() % 3) {
+	case 0: break;
+	case 1: val++; break;
+	case 2: val--; break;
+	}
+
+	return val;
+}
+
 #define ARITH_MAX 128
 
 static unsigned int plus_minus_arith(unsigned int num)
