@@ -171,14 +171,14 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 		for (i = 0; i < len; i += 2) {
 			ptr[i] = '%';
 			switch (rnd() % 8) {
-			case 0:	ptr[i + 1] = 'd'; break;	/* signed decimal */
+			case 0:	ptr[i + 1] = 'd'; break;	/* signed decimal integer */
 			case 1:	ptr[i + 1] = 's'; break;	/* string */
-			case 2:	ptr[i + 1] = 'x'; break;	/* hex (lowercase) */
-			case 3:	ptr[i + 1] = 'u'; break;	/* unsigned decimal */
-			case 4:	ptr[i + 1] = 'i'; break;	/* signed decimal (alias) */
-			case 5:	ptr[i + 1] = 'o'; break;	/* octal */
+			case 2:	ptr[i + 1] = 'x'; break;	/* unsigned hex (lowercase) */
+			case 3:	ptr[i + 1] = 'u'; break;	/* unsigned decimal integer */
+			case 4:	ptr[i + 1] = 'i'; break;	/* signed decimal integer (alias for %d) */
+			case 5:	ptr[i + 1] = 'o'; break;	/* unsigned octal */
 			case 6:	ptr[i + 1] = 'c'; break;	/* character */
-			case 7:				/* pointer */
+			case 7:				/* pointer (extensions follow) */
 				ptr[i + 1] = 'p';
 				/*
 				 * Half the time, follow %p with a kernel
