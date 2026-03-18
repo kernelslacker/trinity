@@ -178,7 +178,41 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			case 4:	ptr[i + 1] = 'i'; break;	/* signed decimal (alias) */
 			case 5:	ptr[i + 1] = 'o'; break;	/* octal */
 			case 6:	ptr[i + 1] = 'c'; break;	/* character */
-			case 7:	ptr[i + 1] = 'p'; break;	/* pointer (hashed; may hit extensions) */
+			case 7:				/* pointer */
+				ptr[i + 1] = 'p';
+				/*
+				 * Half the time, follow %p with a kernel
+				 * pointer extension specifier.  These need
+				 * a third byte, so bounds-check first.
+				 */
+				if (RAND_BOOL() && i + 2 < len) {
+					static const char exts[] = {
+						'S',	/* symbol+offset */
+						's',	/* symbol */
+						'B',	/* backtrace symbol */
+						'I',	/* IP address */
+						'M',	/* MAC address */
+						'd',	/* dentry name */
+						'D',	/* file path */
+						'U',	/* UUID/GUID */
+						'K',	/* kernel pointer (restricted) */
+						'x',	/* unhashed pointer */
+						'e',	/* error pointer */
+						'V',	/* va_format */
+						'g',	/* block_device name */
+						'r',	/* struct resource (numeric) */
+						'R',	/* struct resource (decoded) */
+						't',	/* time/date */
+						'C',	/* struct clk */
+						'G',	/* flags bitfield */
+						'N',	/* netdev features */
+						'O',	/* device tree node */
+						'A',	/* Rust fmt::Arguments */
+					};
+					ptr[i + 2] = exts[rnd() % sizeof(exts)];
+					i++;
+				}
+				break;
 			}
 		}
 		ptr[rnd() % len] = 0;
