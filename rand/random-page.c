@@ -64,12 +64,11 @@ static void fabricate_struct(char *p, unsigned int len)
 				*(unsigned short *)ptr = rand16();
 			} else {
 				/* two u8's */
-				for (int j = 0; j < 2; j++) {
-					i += sizeof(unsigned char);
-					if (i > len)
-						return;
-				}
+				i += 2;
+				if (i > len)
+					return;
 				*(unsigned char *)ptr = RAND_BYTE();
+				*((unsigned char *)ptr + 1) = RAND_BYTE();
 			}
 			break;
 		}
