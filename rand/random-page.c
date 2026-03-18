@@ -166,15 +166,19 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 		fabricate_struct((char *)ptr, len);
 		return;
 
-	/* format strings. */
+	/* format strings targeting kernel printk specifiers. */
 	case 8:
 		for (i = 0; i < len; i += 2) {
 			ptr[i] = '%';
-			switch (RAND_BOOL()) {
-			case 0:	ptr[i + 1] = 'd';
-				break;
-			case 1:	ptr[i + 1] = 's';
-				break;
+			switch (rnd() % 8) {
+			case 0:	ptr[i + 1] = 'd'; break;	/* signed decimal */
+			case 1:	ptr[i + 1] = 's'; break;	/* string */
+			case 2:	ptr[i + 1] = 'x'; break;	/* hex (lowercase) */
+			case 3:	ptr[i + 1] = 'u'; break;	/* unsigned decimal */
+			case 4:	ptr[i + 1] = 'i'; break;	/* signed decimal (alias) */
+			case 5:	ptr[i + 1] = 'o'; break;	/* octal */
+			case 6:	ptr[i + 1] = 'c'; break;	/* character */
+			case 7:	ptr[i + 1] = 'p'; break;	/* pointer (hashed; may hit extensions) */
 			}
 		}
 		ptr[rnd() % len] = 0;
