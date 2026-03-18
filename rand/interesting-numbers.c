@@ -19,13 +19,16 @@ static const unsigned long boundary_values[] = {
 	16,
 	32,
 	64,
+	100,				/* round decimal (buffer/loop count) */
 	128,
 	256,
 	512,
+	1000,				/* round decimal (buffer/loop count) */
 	1024,
 	4095,				/* page_size - 1 */
 	4096,				/* common page_size */
 	4097,				/* page_size + 1 */
+	32768,				/* INT16_MAX + 1: wrong sign as i16 */
 	65535,				/* USHRT_MAX */
 	65536,				/* USHRT_MAX + 1 */
 	0x7ffffffe,			/* INT_MAX - 1 */
@@ -41,6 +44,8 @@ static const unsigned long boundary_values[] = {
 	0x8000000000000000UL,		/* LONG_MIN (as unsigned) */
 	0x8000000000000001UL,		/* LONG_MIN + 1 */
 	0xfffffffffffffffeUL,		/* ULONG_MAX - 1 */
+	(unsigned long) -32769,		/* INT16_MIN - 1: overflows i16 */
+	(unsigned long) -129,		/* INT8_MIN - 1: overflows i8 */
 	0xffffffffffffffffUL,		/* ULONG_MAX */
 #endif
 };
