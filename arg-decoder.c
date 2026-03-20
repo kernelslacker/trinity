@@ -19,6 +19,15 @@ static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 		break;
 	case ARG_PID:
 	case ARG_FD:
+	case ARG_FD_EPOLL:
+	case ARG_FD_EVENTFD:
+	case ARG_FD_FANOTIFY:
+	case ARG_FD_INOTIFY:
+	case ARG_FD_MEMFD:
+	case ARG_FD_PERF:
+	case ARG_FD_PIPE:
+	case ARG_FD_SOCKET:
+	case ARG_FD_TIMERFD:
 	case ARG_SOCKETINFO:
 		sptr += sprintf(sptr, "%ld", (long) reg);
 		break;

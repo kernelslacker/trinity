@@ -7,6 +7,7 @@
 #include "fd.h"
 #include "list.h"
 #include "net.h"
+#include "objects.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -157,6 +158,52 @@ regen:
 	}
 
 	return shm->current_fd;
+}
+
+/*
+ * Return an fd of a specific type for syscalls that expect a particular
+ * kind of fd (epoll, timerfd, socket, etc.).  Falls back to get_random_fd()
+ * if no objects of that type exist.
+ */
+int get_typed_fd(enum argtype type)
+{
+	struct object *obj = NULL;
+	enum objecttype objtype;
+
+	switch (type) {
+	case ARG_FD_EPOLL:	objtype = OBJ_FD_EPOLL; break;
+	case ARG_FD_EVENTFD:	objtype = OBJ_FD_EVENTFD; break;
+	case ARG_FD_FANOTIFY:	objtype = OBJ_FD_FANOTIFY; break;
+	case ARG_FD_INOTIFY:	objtype = OBJ_FD_INOTIFY; break;
+	case ARG_FD_MEMFD:	objtype = OBJ_FD_MEMFD; break;
+	case ARG_FD_PERF:	objtype = OBJ_FD_PERF; break;
+	case ARG_FD_PIPE:	objtype = OBJ_FD_PIPE; break;
+	case ARG_FD_SOCKET:	objtype = OBJ_FD_SOCKET; break;
+	case ARG_FD_TIMERFD:	objtype = OBJ_FD_TIMERFD; break;
+	default:
+		return get_random_fd();
+	}
+
+	if (objects_empty(objtype))
+		return get_random_fd();
+
+	obj = get_random_object(objtype, OBJ_GLOBAL);
+	if (obj == NULL)
+		return get_random_fd();
+
+	switch (type) {
+	case ARG_FD_EPOLL:	return obj->epollobj.fd;
+	case ARG_FD_EVENTFD:	return obj->eventfdobj.fd;
+	case ARG_FD_FANOTIFY:	return obj->fanotifyobj.fd;
+	case ARG_FD_INOTIFY:	return obj->inotifyobj.fd;
+	case ARG_FD_MEMFD:	return obj->memfdobj.fd;
+	case ARG_FD_PERF:	return obj->perfobj.fd;
+	case ARG_FD_PIPE:	return obj->pipeobj.fd;
+	case ARG_FD_SOCKET:	return obj->sockinfo.fd;
+	case ARG_FD_TIMERFD:	return obj->timerfdobj.fd;
+	default:
+		return get_random_fd();
+	}
 }
 
 static void toggle_fds_param(char *str, bool enable)

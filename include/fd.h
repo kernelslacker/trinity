@@ -26,6 +26,7 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec);
 
 int get_random_fd(void);
 int get_new_random_fd(void);
+int get_typed_fd(enum argtype type);
 
 #define REG_FD_PROV(_struct) \
 	static void __attribute__((constructor)) register_##_struct(void) { \

@@ -5,6 +5,7 @@
 
 #include "arch.h"
 #include "debug.h"
+#include "fd.h"
 #include "files.h"
 #include "maps.h"
 #include "net.h"
@@ -341,6 +342,17 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 			}
 		}
 		return get_random_fd();
+
+	case ARG_FD_EPOLL:
+	case ARG_FD_EVENTFD:
+	case ARG_FD_FANOTIFY:
+	case ARG_FD_INOTIFY:
+	case ARG_FD_MEMFD:
+	case ARG_FD_PERF:
+	case ARG_FD_PIPE:
+	case ARG_FD_SOCKET:
+	case ARG_FD_TIMERFD:
+		return get_typed_fd(argtype);
 
 	case ARG_LEN:
 		return (unsigned long) get_len();
