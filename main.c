@@ -197,9 +197,22 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 
-	if ((entry->arg1type != ARG_FD) &&
-	    (entry->arg1type != ARG_SOCKETINFO))
-	    return FALSE;
+	switch (entry->arg1type) {
+	case ARG_FD:
+	case ARG_FD_EPOLL:
+	case ARG_FD_EVENTFD:
+	case ARG_FD_FANOTIFY:
+	case ARG_FD_INOTIFY:
+	case ARG_FD_MEMFD:
+	case ARG_FD_PERF:
+	case ARG_FD_PIPE:
+	case ARG_FD_SOCKET:
+	case ARG_FD_TIMERFD:
+	case ARG_SOCKETINFO:
+		break;
+	default:
+		return FALSE;
+	}
 
 	/* in the SOCKETINFO case, post syscall, a1 is actually the fd,
 	 * not the socketinfo.  In ARG_FD a1=fd.
