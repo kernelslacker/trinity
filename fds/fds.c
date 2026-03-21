@@ -176,6 +176,7 @@ int get_typed_fd(enum argtype type)
 	case ARG_FD_FANOTIFY:	objtype = OBJ_FD_FANOTIFY; break;
 	case ARG_FD_INOTIFY:	objtype = OBJ_FD_INOTIFY; break;
 	case ARG_FD_IO_URING:	objtype = OBJ_FD_IO_URING; break;
+	case ARG_FD_LANDLOCK:	objtype = OBJ_FD_LANDLOCK; break;
 	case ARG_FD_MEMFD:	objtype = OBJ_FD_MEMFD; break;
 	case ARG_FD_PERF:	objtype = OBJ_FD_PERF; break;
 	case ARG_FD_PIDFD:	objtype = OBJ_FD_PIDFD; break;
@@ -199,6 +200,7 @@ int get_typed_fd(enum argtype type)
 	case ARG_FD_FANOTIFY:	return obj->fanotifyobj.fd;
 	case ARG_FD_INOTIFY:	return obj->inotifyobj.fd;
 	case ARG_FD_IO_URING:	return obj->io_uringobj.fd;
+	case ARG_FD_LANDLOCK:	return obj->landlockobj.fd;
 	case ARG_FD_MEMFD:	return obj->memfdobj.fd;
 	case ARG_FD_PERF:	return obj->perfobj.fd;
 	case ARG_FD_PIDFD:	return obj->pidfdobj.fd;
