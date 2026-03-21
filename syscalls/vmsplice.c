@@ -5,21 +5,8 @@
 
 #include <fcntl.h>
 #include <sys/uio.h>
-#include <stdlib.h>
-#include "pipes.h"
-#include "random.h"
 #include "sanitise.h"
-#include "shm.h"
-#include "syscall.h"
-#include "trinity.h"
-
-static void sanitise_vmsplice(struct syscallrecord *rec)
-{
-	if ((rnd() % 10) > 0)
-		rec->a1 = get_rand_pipe_fd();
-
-	rec->a3 = rnd() % UIO_MAXIOV;
-}
+#include "compat.h"
 
 static unsigned long vmsplice_flags[] = {
 	SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT,
@@ -28,9 +15,8 @@ static unsigned long vmsplice_flags[] = {
 struct syscallentry syscall_vmsplice = {
 	.name = "vmsplice",
 	.num_args = 4,
-	.sanitise = sanitise_vmsplice,
 	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_FD_PIPE,
 	.arg2name = "iov",
 	.arg2type = ARG_IOVEC,
 	.arg3name = "nr_segs",
