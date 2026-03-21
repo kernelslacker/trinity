@@ -4,12 +4,7 @@
 	size_t, len, unsigned int, flags)
  */
 #include <fcntl.h>
-#include <stdlib.h>
-#include "random.h"
 #include "sanitise.h"
-#include "shm.h"
-#include "syscall.h"
-#include "trinity.h"
 #include "compat.h"
 
 static unsigned long splice_flags[] = {
@@ -20,7 +15,7 @@ struct syscallentry syscall_splice = {
 	.name = "splice",
 	.num_args = 6,
 	.arg1name = "fd_in",
-	.arg1type = ARG_FD,
+	.arg1type = ARG_FD_PIPE,
 	.arg2name = "off_in",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "fd_out",
