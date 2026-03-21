@@ -177,6 +177,7 @@ int get_typed_fd(enum argtype type)
 	case ARG_FD_INOTIFY:	objtype = OBJ_FD_INOTIFY; break;
 	case ARG_FD_MEMFD:	objtype = OBJ_FD_MEMFD; break;
 	case ARG_FD_PERF:	objtype = OBJ_FD_PERF; break;
+	case ARG_FD_PIDFD:	objtype = OBJ_FD_PIDFD; break;
 	case ARG_FD_PIPE:	objtype = OBJ_FD_PIPE; break;
 	case ARG_FD_SOCKET:	objtype = OBJ_FD_SOCKET; break;
 	case ARG_FD_TIMERFD:	objtype = OBJ_FD_TIMERFD; break;
@@ -198,6 +199,7 @@ int get_typed_fd(enum argtype type)
 	case ARG_FD_INOTIFY:	return obj->inotifyobj.fd;
 	case ARG_FD_MEMFD:	return obj->memfdobj.fd;
 	case ARG_FD_PERF:	return obj->perfobj.fd;
+	case ARG_FD_PIDFD:	return obj->pidfdobj.fd;
 	case ARG_FD_PIPE:	return obj->pipeobj.fd;
 	case ARG_FD_SOCKET:	return obj->sockinfo.fd;
 	case ARG_FD_TIMERFD:	return obj->timerfdobj.fd;

@@ -77,6 +77,11 @@ struct bpfobj {
 	int map_fd;
 };
 
+struct pidfdobj {
+	int fd;
+	pid_t pid;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -107,6 +112,8 @@ struct object {
 		struct fanotifyobj fanotifyobj;
 
 		struct bpfobj bpfobj;
+
+		struct pidfdobj pidfdobj;
 
 		struct socketinfo sockinfo;
 
