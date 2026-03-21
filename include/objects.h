@@ -86,6 +86,10 @@ struct io_uringobj {
 	int fd;
 };
 
+struct landlockobj {
+	int fd;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -120,6 +124,8 @@ struct object {
 		struct pidfdobj pidfdobj;
 
 		struct io_uringobj io_uringobj;
+
+		struct landlockobj landlockobj;
 
 		struct socketinfo sockinfo;
 
