@@ -82,6 +82,10 @@ struct pidfdobj {
 	pid_t pid;
 };
 
+struct io_uringobj {
+	int fd;
+};
+
 struct object {
 	struct list_head list;
 	union {
@@ -114,6 +118,8 @@ struct object {
 		struct bpfobj bpfobj;
 
 		struct pidfdobj pidfdobj;
+
+		struct io_uringobj io_uringobj;
 
 		struct socketinfo sockinfo;
 
