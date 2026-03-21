@@ -203,8 +203,11 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec)
 	case ARG_FD_EVENTFD:
 	case ARG_FD_FANOTIFY:
 	case ARG_FD_INOTIFY:
+	case ARG_FD_IO_URING:
+	case ARG_FD_LANDLOCK:
 	case ARG_FD_MEMFD:
 	case ARG_FD_PERF:
+	case ARG_FD_PIDFD:
 	case ARG_FD_PIPE:
 	case ARG_FD_SOCKET:
 	case ARG_FD_TIMERFD:
