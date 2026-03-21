@@ -347,6 +347,7 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 	case ARG_FD_EVENTFD:
 	case ARG_FD_FANOTIFY:
 	case ARG_FD_INOTIFY:
+	case ARG_FD_IO_URING:
 	case ARG_FD_MEMFD:
 	case ARG_FD_PERF:
 	case ARG_FD_PIDFD:

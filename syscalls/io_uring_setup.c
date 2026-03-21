@@ -2,6 +2,7 @@
  *   SYSCALL_DEFINE2(io_uring_setup, u32, entries, struct io_uring_params __user *, params)
  */
 #include <linux/types.h>
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "utils.h"
@@ -89,7 +90,16 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 
 static void post_io_uring_setup(struct syscallrecord *rec)
 {
+	int fd = rec->retval;
+
 	freeptr(&rec->a2);
+
+	if (fd == -1)
+		return;
+
+	struct object *new = alloc_object();
+	new->io_uringobj.fd = fd;
+	add_object(new, OBJ_LOCAL, OBJ_FD_IO_URING);
 }
 
 struct syscallentry syscall_io_uring_setup = {
