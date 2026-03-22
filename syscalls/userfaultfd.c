@@ -4,9 +4,14 @@
 
 #include <fcntl.h>
 #include "sanitise.h"
+#include "compat.h"
+
+#ifndef UFFD_USER_MODE_ONLY
+#define UFFD_USER_MODE_ONLY 1
+#endif
 
 static unsigned long userfaultfd_flags[] = {
-	O_CLOEXEC, O_NONBLOCK,
+	O_CLOEXEC, O_NONBLOCK, UFFD_USER_MODE_ONLY,
 };
 
 struct syscallentry syscall_userfaultfd = {
