@@ -12,6 +12,7 @@
 #include "arch.h"	// biarch
 #include "arg-decoder.h"
 #include "child.h"
+#include "cmp_hints.h"
 #include "debug.h"
 #include "kcov.h"
 #include "locks.h"
@@ -162,6 +163,7 @@ bool random_syscall(struct childdata *child)
 	struct syscallrecord *rec;
 	struct syscallentry *entry;
 	int ret = FALSE;
+	bool do_cmp;
 
 	rec = &child->syscall;
 
@@ -175,9 +177,17 @@ bool random_syscall(struct childdata *child)
 
 	output_syscall_prefix(rec);
 
+	/* Every CMP_MODE_RATIO-th syscall, run in CMP mode to collect
+	 * comparison operand hints instead of PC coverage. */
+	do_cmp = child->kcov.active && ONE_IN(CMP_MODE_RATIO);
+	child->kcov.cmp_mode = do_cmp;
+
 	do_syscall(rec, &child->kcov);
 
-	kcov_collect(&child->kcov);
+	if (do_cmp)
+		cmp_hints_collect(child->kcov.trace_buf, rec->nr);
+	else
+		kcov_collect(&child->kcov);
 
 	output_syscall_postfix(rec);
 

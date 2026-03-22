@@ -1,5 +1,6 @@
 #include <errno.h>
 #include "arch.h"
+#include "cmp_hints.h"
 #include "kcov.h"
 #include "shm.h"
 #include "stats.h"
@@ -57,5 +58,18 @@ void dump_stats(void)
 	if (kcov_shm != NULL) {
 		printf("\nKCOV coverage: %lu unique edges, %lu total PCs collected\n",
 			kcov_shm->edges_found, kcov_shm->total_pcs);
+	}
+
+	if (cmp_hints_shm != NULL) {
+		unsigned int total_hints = 0, syscalls_with_hints = 0;
+
+		for (i = 0; i < MAX_NR_SYSCALL; i++) {
+			if (cmp_hints_shm->pools[i].count > 0) {
+				total_hints += cmp_hints_shm->pools[i].count;
+				syscalls_with_hints++;
+			}
+		}
+		printf("CMP hints: %u values across %u syscalls\n",
+			total_hints, syscalls_with_hints);
 	}
 }
