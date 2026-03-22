@@ -16,4 +16,5 @@ struct syscallentry syscall_setpriority = {
 	.arg1list = ARGLIST(setpriority_which),
 	.arg2name = "who",
 	.arg3name = "niceval",
+	.group = GROUP_SCHED,
 };
