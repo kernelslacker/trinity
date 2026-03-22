@@ -21,4 +21,5 @@ struct syscallentry syscall_ioprio_set = {
 	.arg1list = ARGLIST(ioprio_who),
 	.arg2name = "who",
 	.arg3name = "ioprio",
+	.group = GROUP_SCHED,
 };
