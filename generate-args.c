@@ -147,22 +147,24 @@ static void get_num_and_values(struct syscallentry *entry, unsigned int argnum,
 /*
  * Get a single entry from the list of values.
  */
-static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argnum)
+static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argnum, unsigned int call)
 {
 	const unsigned long *values = NULL;
 	unsigned int num = 0;
-	unsigned long op = 0;
 
 	get_num_and_values(entry, argnum, &num, &values);
 
-	op = values[rand() % num];
-	return op;
+	/* ~1 in 16: try a CMP hint as an undocumented command code. */
+	if (ONE_IN(16) && cmp_hints_available(call))
+		return cmp_hints_get(call);
+
+	return values[rand() % num];
 }
 
 /*
  * OR a random number of bits from the list of values into a bitmask, and return it.
  */
-static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int argnum)
+static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int argnum, unsigned int call)
 {
 	unsigned long mask = 0;
 	unsigned int num = 0;
@@ -174,6 +176,13 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 	if (ONE_IN(8)) {
 		mask = set_rand_bitmask(num, values);
 		mask |= shift_flag_bit(values[rand() % num]);
+		return mask;
+	}
+
+	/* ~1 in 16: OR in a CMP hint as an undocumented flag bit. */
+	if (ONE_IN(16) && cmp_hints_available(call)) {
+		mask = set_rand_bitmask(num, values);
+		mask |= cmp_hints_get(call);
 		return mask;
 	}
 
@@ -386,10 +395,10 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 		return handle_arg_range(entry, argnum);
 
 	case ARG_OP:	/* Like ARG_LIST, but just a single value. */
-		return handle_arg_op(entry, argnum);
+		return handle_arg_op(entry, argnum, call);
 
 	case ARG_LIST:
-		return handle_arg_list(entry, argnum);
+		return handle_arg_list(entry, argnum, call);
 
 	case ARG_CPU:
 		return (unsigned long) get_cpu();
