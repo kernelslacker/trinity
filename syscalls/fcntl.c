@@ -130,6 +130,10 @@ static unsigned long fcntl_flags[] = {
 	F_GETLK64, F_SETLK64, F_SETLKW64,
 #endif
 	F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW,
+	F_DUPFD_QUERY, F_CREATED_QUERY, F_CANCELLK,
+	F_ADD_SEALS, F_GET_SEALS,
+	F_GET_RW_HINT, F_SET_RW_HINT, F_GET_FILE_RW_HINT, F_SET_FILE_RW_HINT,
+	F_GETDELEG, F_SETDELEG,
 };
 
 struct syscallentry syscall_fcntl = {
