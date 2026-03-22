@@ -105,9 +105,9 @@ static const struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
 	.objtype = OBJ_FD_EVENTFD,
 	.enabled = TRUE,
-	.open = &open_eventfd_fds,
+	.init = &open_eventfd_fds,
 	.get = &get_rand_eventfd_fd,
-	.reopen = &reopen_eventfd_fd,
+	.open = &reopen_eventfd_fd,
 };
 
 REG_FD_PROV(eventfd_fd_provider);

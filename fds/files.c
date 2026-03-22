@@ -182,7 +182,7 @@ static const struct fd_provider file_fd_provider = {
 	.name = "pseudo",	// FIXME: Use separate providers for dev/sysfs/procfs
 	.objtype = OBJ_FD_FILE,
 	.enabled = TRUE,
-	.open = &open_files,
+	.init = &open_files,
 	.get = &get_rand_file_fd,
 };
 

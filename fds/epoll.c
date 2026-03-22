@@ -110,9 +110,9 @@ static const struct fd_provider epoll_fd_provider = {
 	.name = "epoll",
 	.objtype = OBJ_FD_EPOLL,
 	.enabled = TRUE,
-	.open = &open_epoll_fds,
+	.init = &open_epoll_fds,
 	.get = &get_rand_epoll_fd,
-	.reopen = &reopen_epoll_fd,
+	.open = &reopen_epoll_fd,
 };
 
 REG_FD_PROV(epoll_fd_provider);

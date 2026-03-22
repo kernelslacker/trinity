@@ -103,9 +103,9 @@ static const struct fd_provider inotify_fd_provider = {
 	.name = "inotify",
 	.objtype = OBJ_FD_INOTIFY,
 	.enabled = TRUE,
-	.open = &open_inotify_fds,
+	.init = &open_inotify_fds,
 	.get = &get_rand_inotify_fd,
-	.reopen = &reopen_inotify_fd,
+	.open = &reopen_inotify_fd,
 };
 
 REG_FD_PROV(inotify_fd_provider);

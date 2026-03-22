@@ -16,9 +16,9 @@ struct fd_provider {
         struct list_head list;
 	const char *name;
 	enum objecttype objtype;
-        int (*open)(void);
+        int (*init)(void);
         int (*get)(void);
-	int (*reopen)(void);
+	int (*open)(void);
 	bool enabled;
 	bool initialized;
 };

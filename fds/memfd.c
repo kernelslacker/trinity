@@ -119,9 +119,9 @@ static const struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
 	.objtype = OBJ_FD_MEMFD,
 	.enabled = TRUE,
-	.open = &open_memfd_fds,
+	.init = &open_memfd_fds,
 	.get = &get_rand_memfd_fd,
-	.reopen = &reopen_memfd_fd,
+	.open = &reopen_memfd_fd,
 };
 
 REG_FD_PROV(memfd_fd_provider);
