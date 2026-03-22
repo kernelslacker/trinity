@@ -9,6 +9,11 @@ struct stats_s {
 
 	/* Counts to tell if we're making progress or not. */
 	unsigned long previous_op_count;	/* combined total of all children */
+
+	/* fd lifecycle tracking */
+	unsigned long fd_stale_detected;
+	unsigned long fd_closed_tracked;
+	unsigned long fd_regenerated;
 };
 
 void dump_stats(void);

@@ -154,6 +154,7 @@ regen:
 		/* Validate the fd is still alive */
 		if (shm->current_fd > 0 &&
 		    fcntl(shm->current_fd, F_GETFD) == -1 && errno == EBADF) {
+			shm->stats.fd_stale_detected++;
 			if (++retries < 10)
 				goto regen;
 		}
@@ -220,6 +221,7 @@ retry:
 
 	/* Validate fd is still alive */
 	if (fcntl(fd, F_GETFD) == -1 && errno == EBADF) {
+		shm->stats.fd_stale_detected++;
 		destroy_object(obj, OBJ_GLOBAL, objtype);
 		try_regenerate_fd(objtype);
 		retries++;
@@ -247,7 +249,8 @@ void try_regenerate_fd(enum objecttype type)
 		provider = (struct fd_provider *) node;
 		if (provider->objtype == type && provider->reopen != NULL &&
 		    provider->initialized == TRUE) {
-			provider->reopen();
+			if (provider->reopen() == TRUE)
+				shm->stats.fd_regenerated++;
 			return;
 		}
 	}
