@@ -6,7 +6,7 @@
 
 unsigned long get_len(void)
 {
-	int i = 0;
+	unsigned int i = 0;
 
 	/* ~1 in 8: return a boundary value (0, 1, page_size, MAX, etc.) */
 	if (ONE_IN(8))
