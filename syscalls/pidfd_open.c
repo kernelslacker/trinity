@@ -3,7 +3,6 @@
  */
 #include "objects.h"
 #include "sanitise.h"
-#include "utils.h"
 
 static void post_pidfd_open(struct syscallrecord *rec)
 {

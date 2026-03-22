@@ -7,7 +7,6 @@
 #include <netipx/ipx.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"
 
 static void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {

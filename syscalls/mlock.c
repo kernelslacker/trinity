@@ -5,7 +5,6 @@
 #include "maps.h"
 #include "shm.h"
 #include "sanitise.h"
-#include "syscall.h"
 #include "trinity.h"
 #include "compat.h"
 

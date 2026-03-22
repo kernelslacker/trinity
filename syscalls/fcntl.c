@@ -23,9 +23,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscalls.h"
-#include "syscall.h"
 #include "trinity.h"
-#include "utils.h"
 #include "compat.h"
 
 #if F_GETLK64 != F_GETLK

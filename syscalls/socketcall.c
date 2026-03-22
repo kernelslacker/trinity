@@ -8,9 +8,7 @@
 #include "net.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
-#include "utils.h"
 #include "compat.h"
 
 static void socketcall_socket(unsigned long *args)

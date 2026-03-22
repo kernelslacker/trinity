@@ -4,8 +4,6 @@
 #include <netrom/netrom.h>
 #include "net.h"
 #include "compat.h"
-#include "random.h"
-#include "utils.h"	// RAND_ARRAY
 
 static void netrom_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {

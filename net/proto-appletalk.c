@@ -9,7 +9,6 @@
 #include <linux/atalk.h>
 #include "random.h"
 #include "net.h"
-#include "utils.h"
 
 static void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {

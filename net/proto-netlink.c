@@ -9,8 +9,6 @@
 #include "compat.h"
 #include "net.h"
 #include "random.h"
-#include "sanitise.h"
-#include "utils.h"	// RAND_ARRAY
 
 static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {

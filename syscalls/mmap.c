@@ -15,10 +15,8 @@
 #include "compat.h"
 #include "objects.h"
 #include "random.h"
-#include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
-#include "utils.h"	//ARRAY_SIZE
 
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED

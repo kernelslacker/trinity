@@ -7,9 +7,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
-#include "utils.h"
 
 #define WHOLE 1
 static int action;

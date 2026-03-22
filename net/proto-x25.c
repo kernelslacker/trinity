@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"
 
 static void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {

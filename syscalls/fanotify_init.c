@@ -14,7 +14,6 @@
 #include "fanotify.h"
 #include "random.h"
 #include "sanitise.h"
-#include "utils.h"
 
 static unsigned long fanotify_init_flags[] = {
 	FAN_CLOEXEC , FAN_NONBLOCK, FAN_UNLIMITED_QUEUE , FAN_UNLIMITED_MARKS,

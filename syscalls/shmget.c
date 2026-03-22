@@ -7,7 +7,6 @@
 #include <sys/shm.h>
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
 
 static void post_shmget(struct syscallrecord *rec)

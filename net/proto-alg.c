@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include "random.h"
 #include "net.h"
-#include "utils.h"
 #include "compat.h"
 
 #ifdef USE_IF_ALG

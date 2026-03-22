@@ -7,7 +7,6 @@
 #include <sched.h>
 #include "random.h"
 #include "sanitise.h"
-#include "utils.h"
 
 /*
  * struct ns_id_req from include/uapi/linux/nsfs.h.

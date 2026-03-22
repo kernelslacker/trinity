@@ -7,7 +7,6 @@
 #include <netax25/ax25.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 static void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)

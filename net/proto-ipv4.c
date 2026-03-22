@@ -16,13 +16,11 @@
 #include <linux/netfilter_arp/arp_tables.h>
 #include <linux/netfilter/ipset/ip_set.h>
 #include <linux/ip_vs.h>
-#include "sanitise.h"
 #include "compat.h"
 #include "net.h"
 #include "random.h"
 #include "tls.h"
 #include "uid.h"
-#include "utils.h"	// ARRAY_SIZE
 
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
 #ifndef IP_MULTICAST_ALL

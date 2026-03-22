@@ -11,7 +11,6 @@
  */
 #include "objects.h"
 #include "sanitise.h"
-#include "syscall.h"
 
 #define CLOSE_RANGE_UNSHARE     (1U << 1)
 #define CLOSE_RANGE_CLOEXEC     (1U << 2)

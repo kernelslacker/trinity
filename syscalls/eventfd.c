@@ -8,7 +8,6 @@
  */
 #include "objects.h"
 #include "sanitise.h"
-#include "utils.h"
 
 static void post_eventfd_create(struct syscallrecord *rec)
 {

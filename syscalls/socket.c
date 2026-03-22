@@ -11,10 +11,8 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
 #include "uid.h"
-#include "utils.h"
 #include "compat.h"
 
 void rand_proto_type(struct socket_triplet *st)

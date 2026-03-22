@@ -1,8 +1,6 @@
 #include <stdlib.h>
 #include "net.h"
 #include "compat.h"
-#include "random.h"
-#include "utils.h"	// RAND_ARRAY
 
 static const unsigned int iucv_opts[] = {
 	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE

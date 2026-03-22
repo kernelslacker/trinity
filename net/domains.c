@@ -7,7 +7,6 @@
 #include "net.h"
 #include "domains.h"
 #include "params.h"
-#include "utils.h"
 #include "compat.h"
 
 struct domain {

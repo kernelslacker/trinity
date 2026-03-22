@@ -6,9 +6,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
-#include "utils.h"
 #include "compat.h"
 
 static unsigned long open_o_flags_base[] = {

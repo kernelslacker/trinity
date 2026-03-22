@@ -4,7 +4,6 @@
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
-#include "syscall.h"
 #include "trinity.h"
 
 static void sanitise_setuid(struct syscallrecord *rec)

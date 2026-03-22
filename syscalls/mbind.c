@@ -10,7 +10,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
 
 #define MPOL_F_STATIC_NODES     (1 << 15)

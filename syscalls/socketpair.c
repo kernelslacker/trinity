@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include "sanitise.h"
-#include "utils.h"
 
 static void sanitise_socketpair(struct syscallrecord *rec)
 {
