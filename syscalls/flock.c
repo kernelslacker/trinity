@@ -4,7 +4,13 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <sys/file.h>
 #include "sanitise.h"
+
+static unsigned long flock_cmds[] = {
+	LOCK_SH, LOCK_EX, LOCK_UN,
+	LOCK_SH | LOCK_NB, LOCK_EX | LOCK_NB,
+};
 
 struct syscallentry syscall_flock = {
 	.name = "flock",
@@ -12,6 +18,8 @@ struct syscallentry syscall_flock = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "cmd",
+	.arg2type = ARG_OP,
+	.arg2list = ARGLIST(flock_cmds),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
