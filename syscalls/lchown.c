@@ -9,7 +9,13 @@ struct syscallentry syscall_lchown = {
 	.arg1name = "filename",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "user",
+	.arg2type = ARG_RANGE,
+	.low2range = 0,
+	.hi2range = 65535,
 	.arg3name = "group",
+	.arg3type = ARG_RANGE,
+	.low3range = 0,
+	.hi3range = 65535,
 	.group = GROUP_VFS,
 };
 
@@ -23,6 +29,12 @@ struct syscallentry syscall_lchown16 = {
 	.arg1name = "filename",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "user",
+	.arg2type = ARG_RANGE,
+	.low2range = 0,
+	.hi2range = 65535,
 	.arg3name = "group",
+	.arg3type = ARG_RANGE,
+	.low3range = 0,
+	.hi3range = 65535,
 	.group = GROUP_VFS,
 };
