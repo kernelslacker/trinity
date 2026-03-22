@@ -7,6 +7,9 @@ struct syscallentry syscall_setfsuid = {
 	.name = "setfsuid",
 	.num_args = 1,
 	.arg1name = "uid",
+	.arg1type = ARG_RANGE,
+	.low1range = 0,
+	.hi1range = 65535,
 	.group = GROUP_VFS,
 };
 
@@ -19,5 +22,8 @@ struct syscallentry syscall_setfsuid16 = {
 	.name = "setfsuid16",
 	.num_args = 1,
 	.arg1name = "uid",
+	.arg1type = ARG_RANGE,
+	.low1range = 0,
+	.hi1range = 65535,
 	.group = GROUP_VFS,
 };
