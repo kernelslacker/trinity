@@ -68,10 +68,8 @@ The intelligence features include:
   passed is biased to usually fit within that range.
 
 
-Trinity logs it's output to a files (1 for each child process), and fsync's
-the files before it actually makes the system call. This way, should you trigger
-something which panics the kernel, you should be able to find out exactly what
-happened by examining the log.
+Trinity outputs only essential messages by default (errors, taint detection,
+syscall counts). Use -v for more detail, -vv for full debug output.
 
 There are several test harnesses provided (test-*.sh), which run trinity in
 various modes and takes care of things like cpu affinity, and makes sure it runs from the
@@ -79,10 +77,7 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 
 ######### options ###############################################
 
- --quiet/-q: reduce verbosity.
-   Specify once to not output register values, or twice to also suppress syscall count.
-
- --verbose: increase verbosity.
+ --verbose/-v: increase output verbosity. Repeat for more detail (-vv).
 
  -D: Debug mode.
      This is useful for catching core dumps if trinity is segfaulting, as by default
@@ -134,8 +129,8 @@ Stress test the splice syscall
 ./trinity -x splice
 Call every syscall except for splice.
 
-./trinity -qq -C16
-Suppress most output to run as fast as possible. Use 16 child processes
+./trinity -C16
+Run with 16 child processes
 
 
 #######################################################################

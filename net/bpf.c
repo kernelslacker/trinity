@@ -13,6 +13,7 @@
 #include "net.h"
 #include "params.h"
 #include "random.h"
+#include "trinity.h"	// MAX_LOGLEVEL
 #include "tables.h"
 #include "compat.h"
 
@@ -845,7 +846,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
 
-	if (verbose)
+	if (quiet_level >= MAX_LOGLEVEL)
 		bpf_disasm_all(bpf->filter, bpf->len);
 }
 
@@ -923,7 +924,7 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
 
-	if (verbose)
+	if (quiet_level >= MAX_LOGLEVEL)
 		bpf_disasm_all(bpf->filter, bpf->len);
 }
 #endif

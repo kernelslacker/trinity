@@ -10,11 +10,12 @@
 #define BUFSIZE 1024	// decoded syscall args are fprintf'd directly, this is for everything else.
 
 /*
- * level defines whether it gets displayed to the screen with printf.
- *   0 = everything, even all the registers
- *   1 = prints syscall count
- *   2 = Just the reseed values
- *
+ * level defines whether it gets displayed to the screen.
+ * quiet_level defaults to 1 (only level 0 prints).
+ * Each -v increases quiet_level: -v shows 0+1, -vv shows 0+1+2.
+ *   0 = important (errors, taint, startup info, syscall counts)
+ *   1 = operational (fd generation, socket cache, done parsing)
+ *   2 = debug (device details, per-socket info, map details)
  */
 void output(char level, const char *fmt, ...)
 {
@@ -59,11 +60,8 @@ skip_pid:
 		exit(EXIT_FAILURE);
 	}
 
-	/* stdout output */
-	if (quiet_level >= level) {
-		printf("%s%s", prefix, outputbuf);
-		(void)fflush(stdout);
-	}
+	printf("%s%s", prefix, outputbuf);
+	(void)fflush(stdout);
 }
 
 /*
@@ -91,8 +89,7 @@ void outputstd(const char *fmt, ...)
 
 void output_rendered_buffer(char *buffer)
 {
-	/* Output to stdout only if -q param is not specified */
-	if (quiet_level == MAX_LOGLEVEL) {
+	if (quiet_level > 1) {
 		fprintf(stdout, "%s", buffer);
 		fflush(stdout);
 	}

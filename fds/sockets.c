@@ -12,7 +12,7 @@
 #include "domains.h"
 #include "net.h"
 #include "objects.h"
-#include "params.h"	// verbose, do_specific_domain
+#include "params.h"	// quiet_level, do_specific_domain
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -144,7 +144,7 @@ static void lock_cachefile(int type)
 	fl.l_pid = getpid();
 	fl.l_type = type;
 
-	if (verbose)
+	if (quiet_level >= MAX_LOGLEVEL)
 		output(2, "waiting on lock for cachefile\n");
 
 	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
@@ -152,7 +152,7 @@ static void lock_cachefile(int type)
 		return;
 	}
 
-	if (verbose)
+	if (quiet_level >= MAX_LOGLEVEL)
 		output(2, "took lock for cachefile\n");
 }
 
@@ -172,7 +172,7 @@ static void unlock_cachefile(void)
 		return;
 	}
 
-	if (verbose)
+	if (quiet_level >= MAX_LOGLEVEL)
 		output(2, "dropped lock for cachefile\n");
 }
 

@@ -60,7 +60,7 @@ do
 		exit
 	fi
 
-	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -l off $syscalls -N 99999 -C 64
+	MALLOC_CHECK_=2 $TRINITY_PATH/trinity $syscalls -N 99999 -C 64
 	popd > /dev/null
 
 	check_tainted

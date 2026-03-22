@@ -33,8 +33,7 @@ bool dry_run = false;
 bool show_unannotated = false;
 bool show_syscall_list = false;
 bool show_ioctl_list = false;
-unsigned char quiet_level = 0;
-bool verbose = false;
+unsigned char quiet_level = 1;
 bool dangerous = false;
 bool dropprivs = false;
 bool do_syslog = false;
@@ -79,11 +78,10 @@ static void usage(void)
 	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
 	outputerr(" --domain,-P: specify specific network domain for sockets.\n");	//FIXME: P used to be 'proto' pick something better.
 	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
-	outputerr(" --quiet,-q: less output.\n");
 	outputerr(" --random,-r#: pick N syscalls at random and just fuzz those\n");
 	outputerr(" --stats: show errno distribution per syscall before exiting\n");
 	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
-	outputerr(" --verbose,-v: increase output verbosity.\n");
+	outputerr(" --verbose,-v: increase output verbosity. Repeat for more detail (-vv).\n");
 	outputerr(" --victims,-V: path to victim files.\n");
 	outputerr("\n");
 	outputerr(" -c#,@: target specific syscall (takes syscall name as parameter and optionally 32 or 64 as bit-width. Default:both).\n");
@@ -92,7 +90,7 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:X";
+static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:r:s:ST:V:vx:X";
 
 static const struct option longopts[] = {
 	{ "arch", required_argument, NULL, 'a' },
@@ -114,7 +112,6 @@ static const struct option longopts[] = {
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
-	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
 	{ "stats", no_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
@@ -235,10 +232,6 @@ void parse_args(int argc, char *argv[])
 			specific_domain_optarg = optarg;
 			break;
 
-		case 'q':
-			quiet_level++;
-			break;
-
 		case 'r':
 			if (do_exclude_syscall == true) {
 				outputerr("-r needs to be before any -x options.\n");
@@ -268,7 +261,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'v':
-			verbose = true;
+			quiet_level++;
 			break;
 
 		case 'V':
@@ -321,8 +314,6 @@ void parse_args(int argc, char *argv[])
 	}
 	if (quiet_level > MAX_LOGLEVEL)
 		quiet_level = MAX_LOGLEVEL;
-
-	quiet_level = MAX_LOGLEVEL - quiet_level;
 
 	output(1, "Done parsing arguments.\n");
 }
