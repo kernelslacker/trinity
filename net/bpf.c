@@ -1,5 +1,6 @@
 #include <linux/unistd.h>
 #include <linux/audit.h>
+#include <linux/bpf.h>
 #include <linux/filter.h>
 #include <sys/socket.h>
 #include <stdlib.h>
