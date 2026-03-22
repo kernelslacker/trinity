@@ -14,4 +14,5 @@ struct syscallentry syscall_getcpu = {
 	.arg3name = "unused",
 	.arg3type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_PROCESS,
 };
