@@ -151,6 +151,10 @@ int get_random_fd(void)
 	struct childdata *child = this_child();
 	unsigned int retries = 0;
 
+	/* During init (no child context), skip fd_lifetime caching. */
+	if (child == NULL)
+		return get_new_random_fd();
+
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
 	if (child->fd_lifetime == 0) {
