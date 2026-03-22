@@ -59,7 +59,4 @@ void reap_child(struct childdata *child);
 
 /* Childops */
 bool random_syscall(struct childdata *child);
-bool read_all_files(struct childdata *child);
-bool thrash_pidfiles(struct childdata *child);
 bool drop_privs(struct childdata *child);
-bool truncate_testfile(struct childdata *child);
