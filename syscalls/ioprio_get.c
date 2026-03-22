@@ -20,5 +20,6 @@ struct syscallentry syscall_ioprio_get = {
 	.arg1type = ARG_OP,
 	.arg1list = ARGLIST(ioprio_who),
 	.arg2name = "who",
+	.arg2type = ARG_PID,
 	.group = GROUP_SCHED,
 };
