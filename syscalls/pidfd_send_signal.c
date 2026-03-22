@@ -2,6 +2,7 @@
  *   SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig, siginfo_t __user *, info, unsigned int, flags)
  */
 #include <signal.h>
+#include <linux/pidfd.h>
 #include "sanitise.h"
 
 static unsigned long pidfd_signals[] = {
@@ -13,7 +14,7 @@ static unsigned long pidfd_signals[] = {
 };
 
 static unsigned long pidfd_send_signal_flags[] = {
-	0,
+	PIDFD_SIGNAL_THREAD, PIDFD_SIGNAL_THREAD_GROUP, PIDFD_SIGNAL_PROCESS_GROUP,
 };
 
 struct syscallentry syscall_pidfd_send_signal = {

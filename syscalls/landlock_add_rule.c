@@ -7,10 +7,12 @@
 
 enum landlock_rule_type {
 	LANDLOCK_RULE_PATH_BENEATH = 1,
+	LANDLOCK_RULE_NET_PORT,
 };
 
 static unsigned long landlock_ruletypes[] = {
 	LANDLOCK_RULE_PATH_BENEATH,
+	LANDLOCK_RULE_NET_PORT,
 };
 
 // no flags for now
