@@ -197,7 +197,10 @@ static struct socket_triplet pppox_triplets[] = {
 	{ .family = PF_PPPOX, .protocol = PX_PROTO_PPTP, .type = SOCK_SEQPACKET },
 	{ .family = PF_PPPOX, .protocol = PX_PROTO_PPTP, .type = SOCK_STREAM },
 
-	// TODO: Figure out wtf '9' means.
+	// Undefined socket type in the SOCK_DCCP(6)..SOCK_PACKET(10) gap.
+	// pppox_create() doesn't validate type — pptp/l2tp handlers ignore
+	// it and hardcode SOCK_STREAM. Exercises kernel handling of
+	// in-range but undefined type values.
 	{ .family = PF_PPPOX, .protocol = PX_PROTO_OL2TP, .type = 9 },
 	{ .family = PF_PPPOX, .protocol = PX_PROTO_PPTP, .type = 9 },
 };
