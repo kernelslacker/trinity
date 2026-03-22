@@ -281,6 +281,9 @@ struct seccomp_data {
 #define bpf_rand(type) \
 	(bpf_##type##_vars[rand() % ARRAY_SIZE(bpf_##type##_vars)])
 
+#define SAFE_NAME(table, idx) \
+	(((idx) < ARRAY_SIZE(table) && (table)[idx]) ? (table)[idx] : "?")
+
 static const char * const op_table[] = {
 #define OP(_op, _name)  [_op] = _name
 	OP(BPF_ST,       "st"),
@@ -525,32 +528,32 @@ static void bpf_disasm(const struct sock_filter f, unsigned int i)
 		case BPF_ST:
 		case BPF_STX:
 			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s %s",
-				 bpf_class_vars_name[BPF_CLASS(f.code)],
-				 bpf_size_vars_name[BPF_SIZE(f.code)],
-				 bpf_mode_vars_name[BPF_MODE(f.code)],
-				 bpf_src_vars_name[BPF_SRC(f.code)]);
+				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+				 SAFE_NAME(bpf_size_vars_name, BPF_SIZE(f.code)),
+				 SAFE_NAME(bpf_mode_vars_name, BPF_MODE(f.code)),
+				 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
 			goto cont;
 		case BPF_ALU:
 			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s",
-				 bpf_class_vars_name[BPF_CLASS(f.code)],
-				 bpf_alu_op_vars_name[BPF_OP(f.code)],
-				 bpf_src_vars_name[BPF_SRC(f.code)]);
+				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+				 SAFE_NAME(bpf_alu_op_vars_name, BPF_OP(f.code)),
+				 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
 			goto cont;
 		case BPF_JMP:
 			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s",
-				 bpf_class_vars_name[BPF_CLASS(f.code)],
-				 bpf_jmp_op_vars_name[BPF_OP(f.code)],
-				 bpf_src_vars_name[BPF_SRC(f.code)]);
+				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+				 SAFE_NAME(bpf_jmp_op_vars_name, BPF_OP(f.code)),
+				 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
 			goto cont;
 		case BPF_RET:
 			snprintf(tmp, sizeof(tmp), "inv[%s] %s",
-				 bpf_class_vars_name[BPF_CLASS(f.code)],
-				 bpf_ret_vars_name[BPF_RVAL(f.code)]);
+				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+				 SAFE_NAME(bpf_ret_vars_name, BPF_RVAL(f.code)));
 			goto cont;
 		case BPF_MISC:
 			snprintf(tmp, sizeof(tmp), "inv[%s] %s",
-				 bpf_class_vars_name[BPF_CLASS(f.code)],
-				 bpf_misc_vars_name[BPF_MISCOP(f.code)]);
+				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+				 SAFE_NAME(bpf_misc_vars_name, BPF_MISCOP(f.code)));
 			goto cont;
 		default:
 			snprintf(tmp, sizeof(tmp), "inv[??][%u,%u,%u,%u]",
