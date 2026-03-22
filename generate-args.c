@@ -91,6 +91,12 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 		BUG("Fix syscall definition!\n");
 	}
 
+	if (low >= high) {
+		outputerr("%s has invalid range: low(%lu) >= high(%lu)!\n",
+			entry->name, low, high);
+		BUG("Fix syscall definition!\n");
+	}
+
 	/* ~1 in 8: bias toward the range boundaries where off-by-one bugs hide */
 	if (ONE_IN(8)) {
 		switch (rnd() % 4) {
