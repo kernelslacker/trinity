@@ -162,4 +162,4 @@ int get_rand_bpf_fd(void);
 	  .dst_reg = (dst), .src_reg = 0, .off = 0, .imm = (len) })
 
 /* eBPF program generation */
-struct bpf_insn *ebpf_gen_program(int *insn_count);
+struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type);

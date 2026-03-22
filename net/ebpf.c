@@ -35,6 +35,117 @@
 #define TIER3_MAX_INSNS		512
 
 /*
+ * Per-prog-type helper function tables.
+ *
+ * Only helpers that need zero arguments or simple scalar args are
+ * included — calling helpers that require specific pointer types
+ * (map values, skb pointers, etc.) without proper setup would just
+ * get rejected by the verifier anyway.
+ */
+static const int helpers_universal[] = {
+	BPF_FUNC_ktime_get_ns,
+	BPF_FUNC_get_prandom_u32,
+	BPF_FUNC_get_smp_processor_id,
+	BPF_FUNC_get_current_pid_tgid,
+	BPF_FUNC_get_current_uid_gid,
+	BPF_FUNC_get_numa_node_id,
+	BPF_FUNC_ktime_get_boot_ns,
+	BPF_FUNC_ktime_get_coarse_ns,
+	BPF_FUNC_jiffies64,
+	BPF_FUNC_ktime_get_tai_ns,
+};
+
+/* Tracing types: kprobe, tracepoint, perf_event, raw_tracepoint */
+static const int helpers_tracing[] = {
+	BPF_FUNC_ktime_get_ns,
+	BPF_FUNC_get_prandom_u32,
+	BPF_FUNC_get_smp_processor_id,
+	BPF_FUNC_get_current_pid_tgid,
+	BPF_FUNC_get_current_uid_gid,
+	BPF_FUNC_get_numa_node_id,
+	BPF_FUNC_ktime_get_boot_ns,
+	BPF_FUNC_get_current_task,
+	BPF_FUNC_get_current_cgroup_id,
+	BPF_FUNC_get_func_ip,
+};
+
+/* Networking types: socket_filter, sched_cls, sched_act, xdp, lwt, etc. */
+static const int helpers_networking[] = {
+	BPF_FUNC_ktime_get_ns,
+	BPF_FUNC_get_prandom_u32,
+	BPF_FUNC_get_smp_processor_id,
+	BPF_FUNC_get_current_pid_tgid,
+	BPF_FUNC_get_current_uid_gid,
+	BPF_FUNC_get_numa_node_id,
+	BPF_FUNC_ktime_get_boot_ns,
+	BPF_FUNC_get_hash_recalc,
+	BPF_FUNC_get_route_realm,
+	BPF_FUNC_csum_update,
+};
+
+/* Cgroup types */
+static const int helpers_cgroup[] = {
+	BPF_FUNC_ktime_get_ns,
+	BPF_FUNC_get_prandom_u32,
+	BPF_FUNC_get_smp_processor_id,
+	BPF_FUNC_get_current_pid_tgid,
+	BPF_FUNC_get_current_uid_gid,
+	BPF_FUNC_get_numa_node_id,
+	BPF_FUNC_ktime_get_boot_ns,
+	BPF_FUNC_get_current_cgroup_id,
+	BPF_FUNC_get_local_storage,
+};
+
+struct helper_set {
+	const int *helpers;
+	int count;
+};
+
+#define HELPER_SET(arr) { .helpers = (arr), .count = ARRAY_SIZE(arr) }
+
+static struct helper_set get_helpers_for_prog_type(unsigned int prog_type)
+{
+	switch (prog_type) {
+	case BPF_PROG_TYPE_KPROBE:
+	case BPF_PROG_TYPE_TRACEPOINT:
+	case BPF_PROG_TYPE_PERF_EVENT:
+	case BPF_PROG_TYPE_RAW_TRACEPOINT:
+	case BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE:
+	case BPF_PROG_TYPE_TRACING:
+	case BPF_PROG_TYPE_LSM:
+		return (struct helper_set) HELPER_SET(helpers_tracing);
+
+	case BPF_PROG_TYPE_SOCKET_FILTER:
+	case BPF_PROG_TYPE_SCHED_CLS:
+	case BPF_PROG_TYPE_SCHED_ACT:
+	case BPF_PROG_TYPE_XDP:
+	case BPF_PROG_TYPE_LWT_IN:
+	case BPF_PROG_TYPE_LWT_OUT:
+	case BPF_PROG_TYPE_LWT_XMIT:
+	case BPF_PROG_TYPE_LWT_SEG6LOCAL:
+	case BPF_PROG_TYPE_SK_SKB:
+	case BPF_PROG_TYPE_SK_MSG:
+	case BPF_PROG_TYPE_FLOW_DISSECTOR:
+	case BPF_PROG_TYPE_SK_REUSEPORT:
+	case BPF_PROG_TYPE_SK_LOOKUP:
+	case BPF_PROG_TYPE_NETFILTER:
+	case BPF_PROG_TYPE_SOCK_OPS:
+		return (struct helper_set) HELPER_SET(helpers_networking);
+
+	case BPF_PROG_TYPE_CGROUP_SKB:
+	case BPF_PROG_TYPE_CGROUP_SOCK:
+	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
+	case BPF_PROG_TYPE_CGROUP_DEVICE:
+	case BPF_PROG_TYPE_CGROUP_SYSCTL:
+	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
+		return (struct helper_set) HELPER_SET(helpers_cgroup);
+
+	default:
+		return (struct helper_set) HELPER_SET(helpers_universal);
+	}
+}
+
+/*
  * Register liveness bitmap. Tracks which registers hold known-valid values
  * so we only read from initialized registers.
  */
@@ -111,7 +222,8 @@ static const int mem_sizes[] = { BPF_B, BPF_H, BPF_W, BPF_DW };
  * statically validate. All jumps are forward-only, all register reads
  * come from initialized registers, stack access is bounded.
  */
-static int gen_tier1(struct bpf_insn *insns, int max_insns)
+static int gen_tier1(struct bpf_insn *insns, int max_insns,
+		     struct helper_set hs)
 {
 	struct reg_state rs;
 	int pos = 0;
@@ -232,8 +344,9 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns)
 			reg_set(&rs, dst);
 
 		} else if (choice < 97 && remaining >= 2) {
-			/* Helper call: get_prandom_u32 (no args needed) */
-			insns[pos++] = EBPF_CALL(BPF_FUNC_get_prandom_u32);
+			/* Helper call from prog-type-appropriate set */
+			int func = hs.helpers[rand() % hs.count];
+			insns[pos++] = EBPF_CALL(func);
 			reg_clear_caller_saved(&rs);
 
 		} else {
@@ -486,9 +599,10 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
  *
  * Distribution: ~50% Tier 1 (valid), ~25% Tier 2 (boundary), ~25% Tier 3 (chaos)
  */
-struct bpf_insn *ebpf_gen_program(int *insn_count)
+struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type)
 {
 	struct bpf_insn *insns;
+	struct helper_set hs;
 	int max_insns, len;
 	int tier = rand() % 100;
 
@@ -501,9 +615,10 @@ struct bpf_insn *ebpf_gen_program(int *insn_count)
 	}
 
 	insns = zmalloc(max_insns * sizeof(struct bpf_insn));
+	hs = get_helpers_for_prog_type(prog_type);
 
 	if (tier < 50)
-		len = gen_tier1(insns, max_insns);
+		len = gen_tier1(insns, max_insns, hs);
 	else if (tier < 75)
 		len = gen_tier2(insns, max_insns);
 	else
