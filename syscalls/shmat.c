@@ -1,7 +1,12 @@
 /*
  * SYSCALL_DEFINE3(shmat, int, shmid, char __user *, shmaddr, int, shmflg)
  */
+#include <sys/shm.h>
 #include "sanitise.h"
+
+static unsigned long shmat_flags[] = {
+	SHM_RDONLY, SHM_RND,
+};
 
 struct syscallentry syscall_shmat = {
 	.name = "shmat",
@@ -11,4 +16,6 @@ struct syscallentry syscall_shmat = {
 	.arg2name = "shmaddr",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "shmflg",
+	.arg3type = ARG_LIST,
+	.arg3list = ARGLIST(shmat_flags),
 };
