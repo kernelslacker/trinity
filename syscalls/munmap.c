@@ -66,6 +66,7 @@ struct syscallentry syscall_munmap = {
 	.arg1name = "addr",
 	.arg1type = ARG_MMAP,
 	.arg2name = "len",
+	.arg2type = ARG_LEN,
 	.group = GROUP_VM,
 	.sanitise = sanitise_munmap,
 	.post = post_munmap,

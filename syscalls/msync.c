@@ -35,6 +35,7 @@ struct syscallentry syscall_msync = {
 	.arg1name = "start",
 	.arg1type = ARG_MMAP,
 	.arg2name = "len",
+	.arg2type = ARG_LEN,
 	.arg3name = "flags",
 	.arg3type = ARG_OP,
 	.arg3list = ARGLIST(msync_flags),
