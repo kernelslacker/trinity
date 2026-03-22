@@ -5,8 +5,8 @@
 #define SMCPROTO_SMC6           1       /* SMC protocol, IPv6 */
 
 static struct socket_triplet smc_triplet[] = {
-	{ .family = SMCPROTO_SMC, .protocol = SMCPROTO_SMC, .type = SOCK_STREAM },
-	{ .family = SMCPROTO_SMC6, .protocol = SMCPROTO_SMC6, .type = SOCK_STREAM },
+	{ .family = PF_SMC, .protocol = SMCPROTO_SMC, .type = SOCK_STREAM },
+	{ .family = PF_SMC, .protocol = SMCPROTO_SMC6, .type = SOCK_STREAM },
 };
 
 const struct netproto proto_smc = {
