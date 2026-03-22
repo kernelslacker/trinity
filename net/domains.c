@@ -128,12 +128,12 @@ unsigned int find_next_enabled_domain(unsigned int from)
 
 	for (i = from; i < ARRAY_SIZE(no_domains); i++) {
 		if (no_domains[i] == FALSE)
-			return no_domains[i];
+			return i;
 	}
 
 	for (i = 0; i < from; i++) {
 		if (no_domains[i] == FALSE)
-			return no_domains[i];
+			return i;
 	}
 
 	return -1u;
