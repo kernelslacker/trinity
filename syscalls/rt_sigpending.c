@@ -10,4 +10,5 @@ struct syscallentry syscall_rt_sigpending = {
 	.arg1name = "set",
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "sigsetsize",
+	.arg2type = ARG_LEN,
 };

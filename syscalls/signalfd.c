@@ -38,6 +38,7 @@ struct syscallentry syscall_signalfd4 = {
 	.arg2name = "user_mask",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "sizemask",
+	.arg3type = ARG_LEN,
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(signalfd4_flags),
