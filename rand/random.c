@@ -1,17 +1,12 @@
 /*
  * Routines to get randomness.
  */
-#include <syslog.h>
-#include <unistd.h>
 #include <stdlib.h>
-#include <sys/types.h>
 #include <limits.h>
 #include "arch.h"
-#include "pids.h"
 #include "random.h"
 #include "sanitise.h"	// interesting_numbers
 #include "types.h"
-#include "utils.h"
 
 /*
  * OR a random number of bits into a mask.
@@ -102,8 +97,8 @@ unsigned short rand16(void)
 		r = ~r + 1;
 
 	if (ONE_IN(25)) {
-		int _div = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
-		r /= _div;
+		int divisor = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
+		r /= divisor;
 	}
 
 	if (RAND_BOOL()) {
@@ -125,7 +120,7 @@ unsigned short rand16(void)
  */
 unsigned int rand32(void)
 {
-	unsigned long r = 0;
+	unsigned int r = 0;
 
 	switch (rand() % 8) {
 	case 0:	r = RAND_BYTE();
@@ -156,8 +151,8 @@ unsigned int rand32(void)
 
 	/* we might get lucky if something is counting ints/longs etc. */
 	if (ONE_IN(25)) {
-		int _div = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
-		r /= _div;
+		int divisor = 1 << RAND_RANGE(1, 4);	/* 2,4,8 or 16 */
+		r /= divisor;
 	}
 
 	if (RAND_BOOL()) {
