@@ -2,13 +2,27 @@
  * SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
  */
 #ifdef USE_BPF
+#include <sys/utsname.h>
 #include <linux/bpf.h>
 #include <linux/filter.h>
+#include <linux/version.h>
 #include "arch.h"
 #include "bpf.h"
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
+
+static __u32 get_kern_version(void)
+{
+	struct utsname buf;
+	unsigned int major, minor, patch;
+
+	if (uname(&buf) != 0)
+		return 0;
+	if (sscanf(buf.release, "%u.%u.%u", &major, &minor, &patch) != 3)
+		return 0;
+	return KERNEL_VERSION(major, minor, patch);
+}
 
 static unsigned long bpf_prog_types[] = {
 	BPF_PROG_TYPE_UNSPEC,
@@ -46,7 +60,7 @@ static void bpf_prog_load(union bpf_attr *attr)
 	attr->log_level = 0;
 	attr->log_size = rand() % page_size;
 	attr->log_buf = (u64) get_writable_address(page_size);
-	attr->kern_version = rand();	// TODO: stick uname in here.
+	attr->kern_version = get_kern_version();
 }
 
 /* Commands added after trinity's original definitions */
