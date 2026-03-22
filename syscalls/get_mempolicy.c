@@ -31,4 +31,5 @@ struct syscallentry syscall_get_mempolicy = {
 	.arg5type = ARG_LIST,
 	.arg5list = ARGLIST(get_mempolicy_flags),
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_VM,
 };
