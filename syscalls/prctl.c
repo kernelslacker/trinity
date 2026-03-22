@@ -31,12 +31,8 @@ static int prctl_opts[] = {
 	PR_GET_NO_NEW_PRIVS, PR_GET_TID_ADDRESS, PR_SET_THP_DISABLE, PR_GET_THP_DISABLE,
 	PR_MPX_ENABLE_MANAGEMENT, PR_MPX_DISABLE_MANAGEMENT,
 	PR_GET_SPECULATION_CTRL, PR_SET_SPECULATION_CTRL,
-#ifdef __mips__
 	PR_GET_FP_MODE, PR_SET_FP_MODE,
-#endif
-#ifdef __arm64__
 	PR_SVE_SET_VL, PR_SVE_GET_VL, PR_PAC_RESET_KEYS,
-#endif
 	PR_CAP_AMBIENT,
 };
 #define NR_PRCTL_OPTS ARRAY_SIZE(prctl_opts)
@@ -64,9 +60,6 @@ static void do_set_seccomp(__unused__ struct syscallrecord *rec) { }
 static void sanitise_prctl(struct syscallrecord *rec)
 {
 	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
-
-// For now, just do SECCOMP, the other options need some attention.
-	option = PR_SET_SECCOMP;
 
 	rec->a1 = option;
 
