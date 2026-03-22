@@ -14,6 +14,8 @@ static const unsigned int tcp_opts[] = {
 	TCP_REPAIR_WINDOW, TCP_FASTOPEN_CONNECT, TCP_ULP, TCP_MD5SIG_EXT,
 	TCP_FASTOPEN_KEY, TCP_FASTOPEN_NO_COOKIE, TCP_ZEROCOPY_RECEIVE, TCP_INQ,
 	TCP_TX_DELAY,
+	TCP_AO_ADD_KEY, TCP_AO_DEL_KEY, TCP_AO_INFO, TCP_AO_GET_KEYS, TCP_AO_REPAIR,
+	TCP_IS_MPTCP, TCP_RTO_MAX_MS, TCP_RTO_MIN_US, TCP_DELACK_MAX_US,
 };
 
 void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
