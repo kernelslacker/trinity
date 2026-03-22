@@ -76,7 +76,7 @@ static void bpf_prog_load(union bpf_attr *attr)
 	} else {
 		/* eBPF for everything else (and sometimes socket filters) */
 		int insn_count = 0;
-		struct bpf_insn *insns = ebpf_gen_program(&insn_count);
+		struct bpf_insn *insns = ebpf_gen_program(&insn_count, attr->prog_type);
 		attr->insn_cnt = insn_count;
 		attr->insns = (u64) insns;
 	}
