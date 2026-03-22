@@ -704,6 +704,38 @@ enum kcmp_type {
 #define SO_BUF_LOCK		72
 #endif
 
+#ifndef SO_RESERVE_MEM
+#define SO_RESERVE_MEM		73
+#endif
+
+#ifndef SO_TXREHASH
+#define SO_TXREHASH		74
+#endif
+
+#ifndef SO_RCVMARK
+#define SO_RCVMARK		75
+#endif
+
+#ifndef SO_PASSPIDFD
+#define SO_PASSPIDFD		76
+#endif
+
+#ifndef SO_PEERPIDFD
+#define SO_PEERPIDFD		77
+#endif
+
+#ifndef SO_DEVMEM_LINEAR
+#define SO_DEVMEM_LINEAR	78
+#endif
+
+#ifndef SO_DEVMEM_DMABUF
+#define SO_DEVMEM_DMABUF	79
+#endif
+
+#ifndef SO_DEVMEM_DONTNEED
+#define SO_DEVMEM_DONTNEED	80
+#endif
+
 #ifndef SO_RCVPRIORITY
 #define SO_RCVPRIORITY		82
 #endif
