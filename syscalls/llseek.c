@@ -4,6 +4,12 @@
                 unsigned int, origin)
  */
 #include "sanitise.h"
+#include "compat.h"
+
+static unsigned long llseek_origins[] = {
+	SEEK_SET, SEEK_CUR, SEEK_END, SEEK_DATA,
+	SEEK_HOLE,
+};
 
 struct syscallentry syscall_llseek = {
 	.name = "llseek",
@@ -13,6 +19,9 @@ struct syscallentry syscall_llseek = {
 	.arg2name = "offset_high",
 	.arg3name = "offset_low",
 	.arg4name = "result",
+	.arg4type = ARG_ADDRESS,
 	.arg5name = "origin",
+	.arg5type = ARG_OP,
+	.arg5list = ARGLIST(llseek_origins),
 	.group = GROUP_VFS,
 };
