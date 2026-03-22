@@ -98,7 +98,7 @@ void reap_child(struct childdata *child)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	unlock(&child->syscall.lock);
-	shm->running_childs--;
+	__atomic_sub_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 	pids[child->num] = EMPTY_PIDSLOT;
 }
 
@@ -180,7 +180,7 @@ static void kill_all_kids(void)
 	}
 
 	if (children_seen == 0)
-		shm->running_childs = 0;
+		__atomic_store_n(&shm->running_childs, 0, __ATOMIC_RELAXED);
 
 	/* Check that no dead children hold locks. */
 	while (check_all_locks() == TRUE)
@@ -491,7 +491,7 @@ static bool spawn_child(int childno)
 		panic(EXIT_NO_FDS);
 	}
 	child->pidstatfile = open_child_pidstat(pid);
-	shm->running_childs++;
+	__atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 
 	debugf("Created child %d (pid:%d) [total:%d/%d]\n",
 		childno, pid, shm->running_childs, max_children);
