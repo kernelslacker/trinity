@@ -167,6 +167,34 @@ void destroy_global_objects(void)
 }
 
 /*
+ * Extract the fd from an object, given its type.
+ * Returns -1 for non-fd object types.
+ */
+int fd_from_object(struct object *obj, enum objecttype type)
+{
+	switch (type) {
+	case OBJ_FD_PIPE:	return obj->pipeobj.fd;
+	case OBJ_FD_FILE:	return obj->fileobj.fd;
+	case OBJ_FD_PERF:	return obj->perfobj.fd;
+	case OBJ_FD_EPOLL:	return obj->epollobj.fd;
+	case OBJ_FD_EVENTFD:	return obj->eventfdobj.fd;
+	case OBJ_FD_TIMERFD:	return obj->timerfdobj.fd;
+	case OBJ_FD_TESTFILE:	return obj->testfileobj.fd;
+	case OBJ_FD_MEMFD:	return obj->memfdobj.fd;
+	case OBJ_FD_DRM:	return obj->drmfd;
+	case OBJ_FD_INOTIFY:	return obj->inotifyobj.fd;
+	case OBJ_FD_SOCKET:	return obj->sockinfo.fd;
+	case OBJ_FD_USERFAULTFD: return obj->userfaultobj.fd;
+	case OBJ_FD_FANOTIFY:	return obj->fanotifyobj.fd;
+	case OBJ_FD_BPF_MAP:	return obj->bpfobj.map_fd;
+	case OBJ_FD_IO_URING:	return obj->io_uringobj.fd;
+	case OBJ_FD_LANDLOCK:	return obj->landlockobj.fd;
+	case OBJ_FD_PIDFD:	return obj->pidfdobj.fd;
+	default:		return -1;
+	}
+}
+
+/*
  * Think of this as a poor mans garbage collector, to prevent
  * us from exhausting all the available fd's in the system etc.
  */

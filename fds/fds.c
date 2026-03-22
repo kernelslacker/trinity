@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -141,10 +142,20 @@ retry:
 
 int get_random_fd(void)
 {
+	unsigned int retries = 0;
+
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
 	if (shm->fd_lifetime == 0) {
 		shm->current_fd = get_new_random_fd();
+
+		/* Validate the fd is still alive */
+		if (shm->current_fd > 0 &&
+		    fcntl(shm->current_fd, F_GETFD) == -1 && errno == EBADF) {
+			if (++retries < 10)
+				goto regen;
+		}
+
 		if (max_children > 5)
 			shm->fd_lifetime = RAND_RANGE(5, max_children);
 		else
@@ -164,11 +175,17 @@ regen:
  * Return an fd of a specific type for syscalls that expect a particular
  * kind of fd (epoll, timerfd, socket, etc.).  Falls back to get_random_fd()
  * if no objects of that type exist.
+ *
+ * Validates that the fd is still alive via fcntl(F_GETFD).  If stale
+ * (EBADF), destroys the object and retries up to 10 times before
+ * falling back to get_random_fd().
  */
 int get_typed_fd(enum argtype type)
 {
-	struct object *obj = NULL;
+	struct object *obj;
 	enum objecttype objtype;
+	int fd;
+	unsigned int retries = 0;
 
 	switch (type) {
 	case ARG_FD_EPOLL:	objtype = OBJ_FD_EPOLL; break;
@@ -187,29 +204,26 @@ int get_typed_fd(enum argtype type)
 		return get_random_fd();
 	}
 
-	if (objects_empty(objtype))
+retry:
+	if (objects_empty(objtype) || retries >= 10)
 		return get_random_fd();
 
 	obj = get_random_object(objtype, OBJ_GLOBAL);
 	if (obj == NULL)
 		return get_random_fd();
 
-	switch (type) {
-	case ARG_FD_EPOLL:	return obj->epollobj.fd;
-	case ARG_FD_EVENTFD:	return obj->eventfdobj.fd;
-	case ARG_FD_FANOTIFY:	return obj->fanotifyobj.fd;
-	case ARG_FD_INOTIFY:	return obj->inotifyobj.fd;
-	case ARG_FD_IO_URING:	return obj->io_uringobj.fd;
-	case ARG_FD_LANDLOCK:	return obj->landlockobj.fd;
-	case ARG_FD_MEMFD:	return obj->memfdobj.fd;
-	case ARG_FD_PERF:	return obj->perfobj.fd;
-	case ARG_FD_PIDFD:	return obj->pidfdobj.fd;
-	case ARG_FD_PIPE:	return obj->pipeobj.fd;
-	case ARG_FD_SOCKET:	return obj->sockinfo.fd;
-	case ARG_FD_TIMERFD:	return obj->timerfdobj.fd;
-	default:
+	fd = fd_from_object(obj, objtype);
+	if (fd < 0)
 		return get_random_fd();
+
+	/* Validate fd is still alive */
+	if (fcntl(fd, F_GETFD) == -1 && errno == EBADF) {
+		destroy_object(obj, OBJ_GLOBAL, objtype);
+		retries++;
+		goto retry;
 	}
+
+	return fd;
 }
 
 static void toggle_fds_param(char *str, bool enable)
