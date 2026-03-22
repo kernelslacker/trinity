@@ -10,7 +10,9 @@ struct syscallentry syscall_capset = {
 	.name = "capset",
 	.num_args = 2,
 	.arg1name = "header",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "data",
+	.arg2type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 };

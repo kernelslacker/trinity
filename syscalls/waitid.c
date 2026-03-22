@@ -9,11 +9,17 @@ static unsigned long waitid_options[] = {
 	WNOHANG, WEXITED, WSTOPPED, WCONTINUED, WNOWAIT,
 };
 
+static unsigned long waitid_which[] = {
+	P_ALL, P_PID, P_PGID,
+};
+
 struct syscallentry syscall_waitid = {
 	.name = "waitid",
 	.group = GROUP_PROCESS,
 	.num_args = 5,
 	.arg1name = "which",
+	.arg1type = ARG_OP,
+	.arg1list = ARGLIST(waitid_which),
 	.arg2name = "upid",
 	.arg2type = ARG_PID,
 	.arg3name = "infop",
