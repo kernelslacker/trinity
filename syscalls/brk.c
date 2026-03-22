@@ -13,4 +13,5 @@ struct syscallentry syscall_brk = {
 	.arg1type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = AVOID_SYSCALL,
+	.group = GROUP_VM,
 };

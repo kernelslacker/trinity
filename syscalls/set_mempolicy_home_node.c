@@ -17,4 +17,5 @@ struct syscallentry syscall_set_mempolicy_home_node = {
 	.arg3name = "home_node",
 	.arg4name = "flags",
 	.sanitise = sanitise_set_mempolicy_home_node,
+	.group = GROUP_VM,
 };
