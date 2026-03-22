@@ -43,10 +43,6 @@ struct shm_s {
 	/* generic object cache*/
 	struct objhead global_objects[MAX_OBJECT_TYPES];
 
-	/* file descriptor info */
-	int current_fd;
-	unsigned int fd_lifetime;
-
 	/* to protect from multiple child processes from
 	 * trying to disable the same syscall at the same time. */
 	lock_t syscalltable_lock;

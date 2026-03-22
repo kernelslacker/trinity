@@ -355,8 +355,8 @@ static bool handle_sigreturn(int sigwas)
 	/* Check if we're blocked because we were stuck on an fd. */
 	lock(&rec->lock);
 	if (check_if_fd(child, rec) == TRUE) {
-		/* avoid doing it again from other threads. */
-		shm->fd_lifetime = 0;
+		/* Force this child to pick a new fd next time. */
+		child->fd_lifetime = 0;
 
 		/* TODO: Somehow mark the fd in the parent not to be used again too. */
 	}
