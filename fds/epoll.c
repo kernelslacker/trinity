@@ -28,7 +28,7 @@ static void epoll_dump(struct object *obj, bool global)
 		eo->fd, eo->create1, eo->flags, global);
 }
 
-static int open_epoll_fds(void)
+static int init_epoll_fds(void)
 {
 	struct object *obj = NULL;
 	struct objhead *head;
@@ -61,7 +61,7 @@ static int open_epoll_fds(void)
 			obj = NULL;	// alloc a new obj.
 		} else {
 			/* not sure what happened. */
-			output(0, "open_epoll_fds fail: %s\n", strerror(errno));
+			output(0, "init_epoll_fds fail: %s\n", strerror(errno));
 			free(obj);
 			return FALSE;
 		}
@@ -69,7 +69,7 @@ static int open_epoll_fds(void)
 	return TRUE;
 }
 
-static int reopen_epoll_fd(void)
+static int open_epoll_fd(void)
 {
 	struct object *obj;
 	int fd;
@@ -110,9 +110,9 @@ static const struct fd_provider epoll_fd_provider = {
 	.name = "epoll",
 	.objtype = OBJ_FD_EPOLL,
 	.enabled = TRUE,
-	.init = &open_epoll_fds,
+	.init = &init_epoll_fds,
 	.get = &get_rand_epoll_fd,
-	.open = &reopen_epoll_fd,
+	.open = &open_epoll_fd,
 };
 
 REG_FD_PROV(epoll_fd_provider);

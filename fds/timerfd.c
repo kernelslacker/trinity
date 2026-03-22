@@ -26,7 +26,7 @@ static void timerfd_dump(struct object *obj, bool global)
 	output(2, "timerfd fd:%d clockid:%d flags:%x global:%d\n", to->fd, to->clockid, to->flags, global);
 }
 
-static int __open_timerfd_fds(int clockid)
+static int __init_timerfd_fds(int clockid)
 {
 	struct objhead *head;
 	unsigned int i;
@@ -59,14 +59,14 @@ static int __open_timerfd_fds(int clockid)
 	return TRUE;
 }
 
-static int open_timerfd_fds(void)
+static int init_timerfd_fds(void)
 {
 	int ret;
-	ret = __open_timerfd_fds(CLOCK_REALTIME);
+	ret = __init_timerfd_fds(CLOCK_REALTIME);
 	if (ret != FALSE)
-		ret = __open_timerfd_fds(CLOCK_MONOTONIC);
+		ret = __init_timerfd_fds(CLOCK_MONOTONIC);
 	if (ret != FALSE)
-		ret = __open_timerfd_fds(CLOCK_BOOTTIME);
+		ret = __init_timerfd_fds(CLOCK_BOOTTIME);
 
 	return ret;
 }
@@ -83,7 +83,7 @@ static int get_rand_timerfd_fd(void)
 	return obj->timerfdobj.fd;
 }
 
-static int reopen_timerfd_fd(void)
+static int open_timerfd_fd(void)
 {
 	struct object *obj;
 	int fd, clockid = CLOCK_REALTIME, flags;
@@ -113,9 +113,9 @@ static const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
 	.objtype = OBJ_FD_TIMERFD,
 	.enabled = TRUE,
-	.init = &open_timerfd_fds,
+	.init = &init_timerfd_fds,
 	.get = &get_rand_timerfd_fd,
-	.open = &reopen_timerfd_fd,
+	.open = &open_timerfd_fd,
 };
 
 REG_FD_PROV(timerfd_fd_provider);
