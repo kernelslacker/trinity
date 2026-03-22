@@ -9,6 +9,7 @@ struct syscallentry syscall_readahead = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "offset",
+	.arg2type = ARG_LEN,
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
 	.flags = NEED_ALARM,
