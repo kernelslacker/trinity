@@ -25,5 +25,6 @@ struct syscallentry syscall_fspick = {
 	.arg3name = "flags",
 	.arg3type = ARG_OP,
 	.arg3list = ARGLIST(fspick_flags),
+	.rettype = RET_FD,
 	.group = GROUP_VFS,
 };
