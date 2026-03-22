@@ -12,7 +12,6 @@
 
 #include "child.h"
 #include "debug.h"
-#include "ftrace.h"
 #include "kcov.h"
 #include "log.h"
 #include "params.h"
@@ -731,7 +730,6 @@ static void taint_check(void)
 		return;
 
 	if (is_tainted() == true) {
-		stop_ftrace();
 		tainted_postmortem();
 		handled_taint = true;
 	}

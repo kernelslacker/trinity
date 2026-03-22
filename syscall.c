@@ -13,7 +13,6 @@
 
 #include "arch.h"
 #include "child.h"
-#include "ftrace.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
@@ -130,7 +129,6 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 
 		/* If we became tainted, get out as fast as we can. */
 		if (is_tainted() == true) {
-			stop_ftrace();
 			panic(EXIT_KERNEL_TAINTED);
 			_exit(EXIT_FAILURE);
 		}

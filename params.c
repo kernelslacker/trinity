@@ -8,7 +8,6 @@
 
 #include "bdevs.h"
 #include "child.h"
-#include "ftrace.h"
 #include "log.h"
 #include "net.h"
 #include "params.h"
@@ -78,7 +77,6 @@ static void usage(void)
 	outputerr(" --dropprivs, -X: if run as root, switch to nobody [EXPERIMENTAL]\n");
 	outputerr(" --exclude,-x: don't call a specific syscall\n");
 	enable_disable_fd_usage();
-	outputerr(" --ftrace-dump-file: specify file that ftrace buffer gets dumped to if kernel becomes tainted.\n");
 	outputerr(" --group,-g = {vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time}: only run syscalls from a certain group.\n");
 	outputerr(" --group-bias: bias syscall selection toward the same group as the previous call.\n");
 	outputerr(" --ioctls,-I: list all ioctls.\n");
@@ -114,7 +112,6 @@ static const struct option longopts[] = {
 	{ "dry-run", no_argument, NULL, 0 },
 	{ "enable-fds", required_argument, NULL, 0 },
 	{ "exclude", required_argument, NULL, 'x' },
-	{ "ftrace-dump-file", required_argument, NULL, 0 },
 	{ "group", required_argument, NULL, 'g' },
 	{ "group-bias", no_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
@@ -342,9 +339,6 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, true);
-
-			if (strcmp("ftrace-dump-file", longopts[opt_index].name) == 0)
-				ftracedumpname = strdup(optarg);
 
 			if (strcmp("group-bias", longopts[opt_index].name) == 0)
 				group_bias = true;
