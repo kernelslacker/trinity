@@ -4,6 +4,7 @@
  */
 
 #include <stdlib.h>
+#include <linux/filter.h>
 #ifdef USE_SECCOMP
 #include <linux/seccomp.h>
 #endif
@@ -73,6 +74,21 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	}
 }
 
+static void post_prctl(struct syscallrecord *rec)
+{
+	struct sock_fprog *bpf;
+
+	if (rec->a1 != PR_SET_SECCOMP)
+		return;
+
+	bpf = (struct sock_fprog *) rec->a3;
+	if (bpf == NULL)
+		return;
+
+	free(bpf->filter);
+	free(bpf);
+}
+
 struct syscallentry syscall_prctl = {
 	.name = "prctl",
 	.group = GROUP_PROCESS,
@@ -83,5 +99,5 @@ struct syscallentry syscall_prctl = {
 	.arg4name = "arg4",
 	.arg5name = "arg5",
 	.sanitise = sanitise_prctl,
-	//TODO: .post that free's bpf & bpf->filter
+	.post = post_prctl,
 };
