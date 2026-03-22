@@ -18,7 +18,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	len = min(GB(1), map->size);
 	len = len + (page_size - 1) / page_size;
 
-	rec->a3 = (unsigned long) zmalloc(len);	// FIXME: LEAK
+	rec->a3 = (unsigned long) zmalloc(len);
 }
 
 static void post_mincore(struct syscallrecord *rec)
