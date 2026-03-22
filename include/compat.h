@@ -623,11 +623,6 @@ enum kcmp_type {
 #define SO_BUF_LOCK		72
 #endif
 
-/* linux/tcp.h */
-#ifndef TCP_COOKIE_TRANSACTIONS
-#define TCP_COOKIE_TRANSACTIONS	15
-#endif
-
 #ifndef TCP_THIN_LINEAR_TIMEOUTS
 #define TCP_THIN_LINEAR_TIMEOUTS 16
 #endif
