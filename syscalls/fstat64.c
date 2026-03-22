@@ -4,6 +4,7 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <fcntl.h>
 #include "sanitise.h"
 
 struct syscallentry syscall_fstat64 = {
@@ -26,6 +27,10 @@ struct syscallentry syscall_fstat64 = {
  * On error, -1 is returned and errno is set to indicate the error.
  */
 
+static unsigned long fstatat_flags[] = {
+	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT,
+};
+
 struct syscallentry syscall_fstatat64 = {
 	.name = "fstatat64",
 	.num_args = 4,
@@ -36,6 +41,8 @@ struct syscallentry syscall_fstatat64 = {
 	.arg3name = "statbuf",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "flag",
+	.arg4type = ARG_LIST,
+	.arg4list = ARGLIST(fstatat_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
