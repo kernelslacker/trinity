@@ -82,10 +82,11 @@ static unsigned long mutate_alignment(unsigned long val)
  *   negate        -- sign confusion (positive <-> negative)
  *   byte swap     -- catches endianness assumptions
  *   single-bit    -- flip one random bit (flag toggling)
+ *   arith delta   -- add/subtract small value (off-by-one, overflow)
  */
 unsigned long mutate_value(unsigned long val)
 {
-	switch (rand() % 6) {
+	switch (rand() % 7) {
 	case 0:
 		return mutate_truncate(val);
 	case 1:
@@ -106,6 +107,13 @@ unsigned long mutate_value(unsigned long val)
 	case 5:
 		/* Single-bit flip -- toggles one flag/permission bit */
 		return val ^ (1UL << (rand() % WORD_BIT));
+	case 6: {
+		/* Arithmetic delta +/- 1..128 */
+		unsigned long delta = (rand() % 128) + 1;
+		if (RAND_BOOL())
+			return val + delta;
+		return val - delta;
+	}
 	}
 	return val;
 }
