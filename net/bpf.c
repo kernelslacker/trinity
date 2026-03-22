@@ -10,6 +10,7 @@
 #include "bpf.h"
 #include "debug.h"
 #include "net.h"
+#include "params.h"
 #include "random.h"
 #include "tables.h"
 #include "compat.h"
@@ -22,7 +23,6 @@
  *    -- Daniel Borkmann, <borkmann@redhat.com>
  */
 
-static int dump_bpf = 0;
 
 /* Both here likely defined in linux/filter.h already */
 #ifndef SKF_AD_OFF
@@ -802,7 +802,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
 
-	if (dump_bpf)
+	if (verbose)
 		bpf_disasm_all(bpf->filter, bpf->len);
 }
 
@@ -880,7 +880,7 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
 
-	if (dump_bpf)
+	if (verbose)
 		bpf_disasm_all(bpf->filter, bpf->len);
 }
 #endif
