@@ -10,6 +10,7 @@
 #include "fd.h"
 #include "userfaultfd.h"
 #include "objects.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
@@ -36,34 +37,37 @@ static void userfaultfd_dump(struct object *obj, bool global)
 	output(2, "userfault fd:%d flags:%x global:%d\n", uo->fd, uo->flags, global);
 }
 
-static int open_userfaultfds(void)
+static int open_userfaultfd(void)
+{
+	struct object *obj;
+	int fd, flags;
+
+	flags = RAND_BOOL() ? O_NONBLOCK : 0;
+	if (RAND_BOOL())
+		flags |= O_CLOEXEC;
+
+	fd = userfaultfd_create(flags);
+	if (fd < 0)
+		return FALSE;
+
+	obj = alloc_object();
+	obj->userfaultobj.fd = fd;
+	obj->userfaultobj.flags = flags;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
+	return TRUE;
+}
+
+static int init_userfaultfds(void)
 {
 	struct objhead *head;
 	unsigned int i;
-	unsigned int flags[] = {
-		0,
-		O_CLOEXEC,
-		O_NONBLOCK,
-		O_CLOEXEC | O_NONBLOCK,
-	};
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
 	head->destroy = &userfaultfd_destructor;
 	head->dump = &userfaultfd_dump;
 
-	for (i = 0; i < ARRAY_SIZE(flags); i++) {
-		struct object *obj;
-		int fd;
-
-		fd = userfaultfd_create(flags[i]);
-		if (fd < 0)
-			continue;
-
-		obj = alloc_object();
-		obj->userfaultobj.fd = fd;
-		obj->userfaultobj.flags = flags[i];
-		add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
-	}
+	for (i = 0; i < 4; i++)
+		open_userfaultfd();
 
 	//FIXME: right now, returning FALSE means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
@@ -87,8 +91,9 @@ static const struct fd_provider userfaultfd_provider = {
 	.name = "userfaultfd",
 	.objtype = OBJ_FD_USERFAULTFD,
 	.enabled = TRUE,
-	.init = &open_userfaultfds,
+	.init = &init_userfaultfds,
 	.get = &get_rand_userfaultfd,
+	.open = &open_userfaultfd,
 };
 
 REG_FD_PROV(userfaultfd_provider);
