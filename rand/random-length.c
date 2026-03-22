@@ -12,6 +12,10 @@ unsigned long get_len(void)
 	if (ONE_IN(8))
 		return get_boundary_value();
 
+	/* ~1 in 16: return a sizeof-boundary value (UINT_MAX/sizeof, etc.) */
+	if (ONE_IN(16))
+		return get_sizeof_boundary_value();
+
 	if (RAND_BOOL()) {
 		switch (rand() % 4) {
 		case 0:	return sizeof(char);
