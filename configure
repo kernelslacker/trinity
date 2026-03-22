@@ -86,7 +86,7 @@ cat >"$TMP.c" << EOF
 #include <linux/if.h>
 #include <linux/if_pppox.h>
 
-void main()
+int main(void)
 {
 	struct sockaddr_pppol2tpin6 *pppox;
 	printf("%d\n", pppox->sa_family);
@@ -114,7 +114,7 @@ cat >"$TMP.c" << EOF
 #include <linux/if.h>
 #include <linux/if_pppox.h>
 
-void main()
+int main(void)
 {
 	struct sockaddr_pppol2tpv3 *pppox;
 	printf("%d\n", pppox->sa_family);
@@ -142,7 +142,7 @@ cat >"$TMP.c" << EOF
 #include <linux/if.h>
 #include <linux/if_pppox.h>
 
-void main()
+int main(void)
 {
 	struct sockaddr_pppox *pppox;
 	printf("%d\n", pppox->sa_addr.pptp.call_id);
@@ -169,7 +169,7 @@ cat >"$TMP.c" << EOF
 #include <net/if.h>
 #include <linux/llc.h>
 
-void main()
+int main(void)
 {
 	printf("%d\n", LLC_OPT_PKTINFO);
 }
@@ -245,7 +245,7 @@ cat >"$TMP.c" << EOF
 #include <stdio.h>
 #include <linux/bpf.h>
 
-void main()
+int main(void)
 {
 	union bpf_attr attr = {
 		.map_flags = 0,
@@ -274,7 +274,7 @@ cat >"$TMP.c" << EOF
 #include <stdio.h>
 #include <linux/btrfs.h>
 
-void main()
+int main(void)
 {
 	struct btrfs_ioctl_defrag_range_args args;
 }
@@ -299,7 +299,7 @@ cat >"$TMP.c" << EOF
 #define _GNU_SOURCE
 #include <sys/mman.h>
 
-void main()
+int main(void)
 {
 	memfd_create("", 0);
 }
@@ -324,7 +324,7 @@ cat >"$TMP.c" << EOF
 #include <drm/nouveau_drm.h>
 #include <stdio.h>
 
-void main()
+int main(void)
 {
 	struct drm_nouveau_notifierobj_alloc dnna = {0,0,0,0};
 	dnna.size = 64;
@@ -351,7 +351,7 @@ cat >"$TMP.c" << EOF
 #include <drm/nouveau_drm.h>
 #include <stdio.h>
 
-void main()
+int main(void)
 {
 	struct drm_nouveau_gpuobj_free dngf = {0,0};
 	dngf.channel = 64;
