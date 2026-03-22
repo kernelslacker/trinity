@@ -10,6 +10,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "pipes.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -53,18 +54,29 @@ static void open_pipe_pair(unsigned int flags)
 }
 
 
-static int open_pipes(void)
+static int open_pipe(void)
+{
+	int flags;
+
+	flags = RAND_BOOL() ? O_NONBLOCK : 0;
+	if (RAND_BOOL())
+		flags |= O_CLOEXEC;
+
+	open_pipe_pair(flags);
+	return TRUE;
+}
+
+static int init_pipes(void)
 {
 	struct objhead *head;
+	unsigned int i;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
 	head->destroy = &pipefd_destructor;
 	head->dump = &pipefd_dump;
 
-	open_pipe_pair(0);
-	open_pipe_pair(O_NONBLOCK);
-	open_pipe_pair(O_CLOEXEC);
-	open_pipe_pair(O_NONBLOCK | O_CLOEXEC);
+	for (i = 0; i < 4; i++)
+		open_pipe();
 
 	return TRUE;
 }
@@ -85,8 +97,9 @@ static const struct fd_provider pipes_fd_provider = {
 	.name = "pipes",
 	.objtype = OBJ_FD_PIPE,
 	.enabled = TRUE,
-	.init = &open_pipes,
+	.init = &init_pipes,
 	.get = &get_rand_pipe_fd,
+	.open = &open_pipe,
 };
 
 REG_FD_PROV(pipes_fd_provider);
