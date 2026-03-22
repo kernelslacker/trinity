@@ -9,6 +9,13 @@
 #include "trinity.h"
 #include "compat.h"
 
+#ifndef MADV_HWPOISON
+#define MADV_HWPOISON		100
+#endif
+#ifndef MADV_SOFT_OFFLINE
+#define MADV_SOFT_OFFLINE	101
+#endif
+
 static void sanitise_madvise(__unused__ struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len();
@@ -22,6 +29,7 @@ static unsigned long madvise_advices[] = {
 	MADV_DONTDUMP, MADV_DODUMP,
 	MADV_WIPEONFORK, MADV_KEEPONFORK, MADV_COLD, MADV_PAGEOUT,
 	MADV_POPULATE_READ, MADV_POPULATE_WRITE, MADV_DONTNEED_LOCKED, MADV_COLLAPSE,
+	MADV_HWPOISON, MADV_SOFT_OFFLINE,
 	MADV_GUARD_INSTALL, MADV_GUARD_REMOVE,
 };
 
