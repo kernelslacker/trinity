@@ -17,8 +17,8 @@ static bool check_lock(lock_t *lk)
 {
 	pid_t pid;
 
-	/* We don't care about unlocked or locking-in-progress */
-	if (lk->lock != LOCKED)
+	/* We don't care about unlocked locks */
+	if (__atomic_load_n(&lk->lock, __ATOMIC_RELAXED) != LOCKED)
 		return FALSE;
 
 	/* First the easy case. If it's held by a dead pid, release it. */
@@ -57,14 +57,15 @@ bool check_all_locks(void)
 
 static void __lock(lock_t *lk)
 {
-	lk->lock = LOCKING;
 	lk->owner = getpid();
-	lk->lock = LOCKED;
 }
 
 bool trylock(lock_t *lk)
 {
-	if (lk->lock == UNLOCKED) {
+	unsigned char expected = UNLOCKED;
+
+	if (__atomic_compare_exchange_n(&lk->lock, &expected, LOCKED,
+					0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
 		__lock(lk);
 		return TRUE;
 	}
@@ -75,7 +76,7 @@ void lock(lock_t *lk)
 {
 	pid_t pid = getpid();
 
-	while (lk->lock != UNLOCKED) {
+	while (!trylock(lk)) {
 		if (lk->owner == pid) {
 			debugf("lol, already have lock!\n");
 			show_backtrace();
@@ -106,14 +107,12 @@ void lock(lock_t *lk)
 
 		usleep(1);
 	}
-	__lock(lk);
 }
 
 void unlock(lock_t *lk)
 {
-	asm volatile("" ::: "memory");
 	lk->owner = 0;
-	lk->lock = UNLOCKED;
+	__atomic_store_n(&lk->lock, UNLOCKED, __ATOMIC_RELEASE);
 }
 
 /*
@@ -125,7 +124,7 @@ void unlock(lock_t *lk)
  */
 void bust_lock(lock_t *lk)
 {
-	if (lk->lock == UNLOCKED)
+	if (__atomic_load_n(&lk->lock, __ATOMIC_RELAXED) == UNLOCKED)
 		return;
 	if (getpid() != lk->owner)
 		return;
