@@ -3,7 +3,15 @@
 	 const struct rlimit64 __user *, new_rlim,
 	 struct rlimit64 __user *, old_rlim)
  */
+#include <sys/resource.h>
 #include "sanitise.h"
+
+static unsigned long rlimit_resources[] = {
+	RLIMIT_CPU, RLIMIT_FSIZE, RLIMIT_DATA, RLIMIT_STACK,
+	RLIMIT_CORE, RLIMIT_RSS, RLIMIT_NPROC, RLIMIT_NOFILE,
+	RLIMIT_MEMLOCK, RLIMIT_AS, RLIMIT_LOCKS, RLIMIT_SIGPENDING,
+	RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_RTPRIO,
+};
 
 struct syscallentry syscall_prlimit64 = {
 	.name = "prlimit64",
@@ -11,6 +19,8 @@ struct syscallentry syscall_prlimit64 = {
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
 	.arg2name = "resource",
+	.arg2type = ARG_OP,
+	.arg2list = ARGLIST(rlimit_resources),
 	.arg3name = "new_rlim",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "old_rlim",
