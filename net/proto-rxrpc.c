@@ -2,9 +2,14 @@
 #include "net.h"
 #include "compat.h"
 
+/* Real setsockopt options, not cmsg types. */
+#define RXRPC_MIN_SECURITY_LEVEL	4
+#define RXRPC_UPGRADEABLE_SERVICE	0x200
+#define RXRPC_SUPPORTED_CMSG		0x400
+
 static const unsigned int rxrpc_opts[] = {
-	RXRPC_USER_CALL_ID, RXRPC_ABORT, RXRPC_ACK, RXRPC_NET_ERROR,
-	RXRPC_BUSY, RXRPC_LOCAL_ERROR, RXRPC_NEW_CALL, RXRPC_ACCEPT,
+	RXRPC_MIN_SECURITY_LEVEL, RXRPC_UPGRADEABLE_SERVICE,
+	RXRPC_SUPPORTED_CMSG,
 };
 
 #define SOL_RXRPC 272
