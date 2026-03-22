@@ -7,8 +7,9 @@ struct syscallentry syscall_getgroups = {
 	.name = "getgroups",
 	.num_args = 2,
 	.arg1name = "gidsetsize",
-	.arg2type = ARG_ADDRESS,
+	.arg1type = ARG_LEN,
 	.arg2name = "grouplist",
+	.arg2type = ARG_ADDRESS,
 	.rettype = RET_BORING,
 };
 
@@ -21,7 +22,8 @@ struct syscallentry syscall_getgroups16 = {
 	.name = "getgroups16",
 	.num_args = 2,
 	.arg1name = "gidsetsize",
-	.arg2type = ARG_ADDRESS,
+	.arg1type = ARG_LEN,
 	.arg2name = "grouplist",
+	.arg2type = ARG_ADDRESS,
 	.rettype = RET_BORING,
 };
