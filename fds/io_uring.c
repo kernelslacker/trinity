@@ -34,14 +34,14 @@ static int open_io_uring_fd(void)
 	memset(params, 0, sizeof(params));
 	fd = syscall(__NR_io_uring_setup, 4, params);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->io_uringobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IO_URING);
-	return TRUE;
+	return true;
 #else
-	return FALSE;
+	return false;
 #endif
 }
 
@@ -55,14 +55,14 @@ static int init_io_uring_fds(void)
 
 	open_io_uring_fd();
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_io_uring_fd(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_FD_IO_URING) == TRUE)
+	if (objects_empty(OBJ_FD_IO_URING) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_IO_URING, OBJ_GLOBAL);
@@ -72,7 +72,7 @@ static int get_rand_io_uring_fd(void)
 static const struct fd_provider io_uring_fd_provider = {
 	.name = "io_uring",
 	.objtype = OBJ_FD_IO_URING,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_io_uring_fds,
 	.get = &get_rand_io_uring_fd,
 	.open = &open_io_uring_fd,

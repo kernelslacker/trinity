@@ -45,11 +45,11 @@ static int init_epoll_fds(void)
 			obj = alloc_object();
 
 		if (RAND_BOOL()) {
-			obj->epollobj.create1 = FALSE;
+			obj->epollobj.create1 = false;
 			obj->epollobj.flags = 0;
 			fd = epoll_create(1);
 		} else{
-			obj->epollobj.create1 = TRUE;
+			obj->epollobj.create1 = true;
 			obj->epollobj.flags = EPOLL_CLOEXEC;
 			fd = epoll_create1(EPOLL_CLOEXEC);
 		}
@@ -63,10 +63,10 @@ static int init_epoll_fds(void)
 			/* not sure what happened. */
 			output(0, "init_epoll_fds fail: %s\n", strerror(errno));
 			free(obj);
-			return FALSE;
+			return false;
 		}
 	}
-	return TRUE;
+	return true;
 }
 
 static int open_epoll_fd(void)
@@ -76,30 +76,30 @@ static int open_epoll_fd(void)
 
 	obj = alloc_object();
 	if (RAND_BOOL()) {
-		obj->epollobj.create1 = FALSE;
+		obj->epollobj.create1 = false;
 		obj->epollobj.flags = 0;
 		fd = epoll_create(1);
 	} else {
-		obj->epollobj.create1 = TRUE;
+		obj->epollobj.create1 = true;
 		obj->epollobj.flags = EPOLL_CLOEXEC;
 		fd = epoll_create1(EPOLL_CLOEXEC);
 	}
 
 	if (fd == -1) {
 		free(obj);
-		return FALSE;
+		return false;
 	}
 
 	obj->epollobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
-	return TRUE;
+	return true;
 }
 
 static int get_rand_epoll_fd(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_FD_EPOLL) == TRUE)
+	if (objects_empty(OBJ_FD_EPOLL) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_EPOLL, OBJ_GLOBAL);
@@ -109,7 +109,7 @@ static int get_rand_epoll_fd(void)
 static const struct fd_provider epoll_fd_provider = {
 	.name = "epoll",
 	.objtype = OBJ_FD_EPOLL,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_epoll_fds,
 	.get = &get_rand_epoll_fd,
 	.open = &open_epoll_fd,

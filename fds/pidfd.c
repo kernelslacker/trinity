@@ -45,13 +45,13 @@ static int open_pidfd_fd(void)
 	pid = getpid();
 	fd = open_pidfd(pid);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->pidfdobj.fd = fd;
 	obj->pidfdobj.pid = pid;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
-	return TRUE;
+	return true;
 }
 
 static int init_pidfd_fds(void)
@@ -64,8 +64,8 @@ static int init_pidfd_fds(void)
 	head->destroy = &pidfd_destructor;
 	head->dump = &pidfd_dump;
 
-	if (open_pidfd_fd() == FALSE)
-		return FALSE;
+	if (open_pidfd_fd() == false)
+		return false;
 
 	/* Also open a pidfd for pid 1 (init). */
 	fd = open_pidfd(1);
@@ -76,14 +76,14 @@ static int init_pidfd_fds(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
 	}
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_pidfd(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_FD_PIDFD) == TRUE)
+	if (objects_empty(OBJ_FD_PIDFD) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_PIDFD, OBJ_GLOBAL);
@@ -93,7 +93,7 @@ static int get_rand_pidfd(void)
 static const struct fd_provider pidfd_fd_provider = {
 	.name = "pidfd",
 	.objtype = OBJ_FD_PIDFD,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_pidfd_fds,
 	.get = &get_rand_pidfd,
 	.open = &open_pidfd_fd,

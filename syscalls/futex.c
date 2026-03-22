@@ -44,9 +44,9 @@ static inline bool futex_pi_cmd(int cmd)
 	case FUTEX_CMP_REQUEUE_PI_PRIVATE:
 	case FUTEX_WAIT_REQUEUE_PI:
 	case FUTEX_WAIT_REQUEUE_PI_PRIVATE:
-		return TRUE;
+		return true;
 	default:
-		return FALSE;
+		return false;
 	}
 }
 
@@ -154,7 +154,7 @@ static bool futex_trylock_or_wait(struct __lock *thislock, struct syscallrecord 
 			 * anyway in the first place.
 			 */
 			thislock->owner_pid = getpid();
-			return TRUE;
+			return true;
 		}
 	}
 
@@ -169,7 +169,7 @@ static bool futex_trylock_or_wait(struct __lock *thislock, struct syscallrecord 
 	} else
 		rec->a2 = FUTEX_LOCK_PI;
 
-	return FALSE;
+	return false;
 }
 
 static inline void futex_unlock(struct __lock *thislock)
@@ -315,7 +315,7 @@ static void sanitise_futex(struct syscallrecord *rec)
 	}
 
 	if (ONE_IN(100))
-		(void)toggle_futex_fail_inj(TRUE);
+		(void)toggle_futex_fail_inj(true);
 
 out_setclock:
 	switch (rec->a2) {
@@ -343,7 +343,7 @@ static void post_futex(struct syscallrecord *rec)
 	if (futex_pi_cmd(rec->a2))
 		setpriority(PRIO_PROCESS, 0, 0);
 
-	(void)toggle_futex_fail_inj(FALSE);
+	(void)toggle_futex_fail_inj(false);
 }
 
 struct syscallentry syscall_futex = {

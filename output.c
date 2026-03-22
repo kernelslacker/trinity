@@ -49,7 +49,7 @@ void output(char level, const char *fmt, ...)
 		childno = find_childno(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u] ", childno, pid);
 		prefix = child_prefix;
-		shm->children[childno]->logdirty = TRUE;
+		shm->children[childno]->logdirty = true;
 	}
 
 skip_pid:

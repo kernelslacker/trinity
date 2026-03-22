@@ -76,10 +76,10 @@ static int init_memfd_fds(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
 	}
 
-	//FIXME: right now, returning FALSE means "abort everything", not
+	//FIXME: right now, returning false means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_memfd_fd(void)
@@ -87,7 +87,7 @@ static int get_rand_memfd_fd(void)
 	struct object *obj;
 
 	/* check if eventfd unavailable/disabled. */
-	if (objects_empty(OBJ_FD_MEMFD) == TRUE)
+	if (objects_empty(OBJ_FD_MEMFD) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_MEMFD, OBJ_GLOBAL);
@@ -105,20 +105,20 @@ static int open_memfd_fd(void)
 
 	fd = memfd_create("memfd", flags);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->memfdobj.fd = fd;
 	obj->memfdobj.name = strdup("memfd");
 	obj->memfdobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
-	return TRUE;
+	return true;
 }
 
 static const struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
 	.objtype = OBJ_FD_MEMFD,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_memfd_fds,
 	.get = &get_rand_memfd_fd,
 	.open = &open_memfd_fd,

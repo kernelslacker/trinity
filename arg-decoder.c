@@ -145,7 +145,7 @@ static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *buffe
 
 	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s",
 			child->num, pids[child->num], child->op_nr,
-			rec->do32bit == TRUE ? "[32BIT] " : "");
+			rec->do32bit == true ? "[32BIT] " : "");
 
 	sptr += sprintf(sptr, "%s(", entry->name);
 

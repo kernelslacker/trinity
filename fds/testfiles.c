@@ -50,10 +50,10 @@ static int open_testfile(struct object *obj, char *filename)
 		flags = set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);;
 		obj->testfileobj.flags = O_CREAT | flags;
 		fd = open(filename, O_CREAT | flags, 0666);
-		obj->testfileobj.fopened = FALSE;
+		obj->testfileobj.fopened = false;
 		obj->testfileobj.fcntl_flags = 0;
 	} else {
-		obj->testfileobj.fopened = TRUE;
+		obj->testfileobj.fopened = true;
 		obj->testfileobj.flags = O_RDWR;
 
 		fd = open_with_fopen(filename, O_RDWR);
@@ -119,7 +119,7 @@ static int open_testfile_fds(void)
 	free(filename);
 	filename = NULL;
 
-	return TRUE;
+	return true;
 }
 
 int get_rand_testfile_fd(void)
@@ -127,7 +127,7 @@ int get_rand_testfile_fd(void)
 	struct object *obj;
 
 	/* check if testfilefd's unavailable/disabled. */
-	if (objects_empty(OBJ_FD_TESTFILE) == TRUE)
+	if (objects_empty(OBJ_FD_TESTFILE) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TESTFILE, OBJ_GLOBAL);
@@ -137,7 +137,7 @@ int get_rand_testfile_fd(void)
 static const struct fd_provider testfile_fd_provider = {
 	.name = "testfile",
 	.objtype = OBJ_FD_TESTFILE,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &open_testfile_fds,
 	.get = &get_rand_testfile_fd,
 };

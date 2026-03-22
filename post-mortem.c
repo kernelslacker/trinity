@@ -56,7 +56,7 @@ void tainted_postmortem(void)
 
 	struct timespec taint_tp;
 
-	shm->postmortem_in_progress = TRUE;
+	shm->postmortem_in_progress = true;
 
 	//TODO: Sort syscall rec output by timespec, and mark when we detected taint_tp.
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
@@ -72,5 +72,5 @@ void tainted_postmortem(void)
 
 	dump_syscall_records();
 
-	shm->postmortem_in_progress = FALSE;
+	shm->postmortem_in_progress = false;
 }

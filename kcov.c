@@ -48,8 +48,8 @@ void kcov_init_child(struct kcov_child *kc)
 {
 	kc->fd = -1;
 	kc->trace_buf = NULL;
-	kc->active = FALSE;
-	kc->cmp_mode = FALSE;
+	kc->active = false;
+	kc->cmp_mode = false;
 
 	if (kcov_shm == NULL)
 		return;
@@ -76,7 +76,7 @@ void kcov_init_child(struct kcov_child *kc)
 		return;
 	}
 
-	kc->active = TRUE;
+	kc->active = true;
 }
 
 void kcov_cleanup_child(struct kcov_child *kc)
@@ -89,7 +89,7 @@ void kcov_cleanup_child(struct kcov_child *kc)
 		close(kc->fd);
 		kc->fd = -1;
 	}
-	kc->active = FALSE;
+	kc->active = false;
 }
 
 void kcov_enable_trace(struct kcov_child *kc)
@@ -133,10 +133,10 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 {
 	unsigned long count;
 	unsigned long idx;
-	bool found_new = FALSE;
+	bool found_new = false;
 
 	if (!kc->active)
-		return FALSE;
+		return false;
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
 	if (count > KCOV_TRACE_SIZE - 1)
@@ -155,7 +155,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 		if (!(old & bit_mask)) {
 			__atomic_fetch_add(&kcov_shm->edges_found,
 				1, __ATOMIC_RELAXED);
-			found_new = TRUE;
+			found_new = true;
 		}
 	}
 

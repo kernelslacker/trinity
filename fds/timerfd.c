@@ -48,7 +48,7 @@ static int __init_timerfd_fds(int clockid)
 		fd = timerfd_create(clockid, flags[i]);
 		if (fd == -1)
 			if (errno == ENOSYS)
-				return FALSE;
+				return false;
 
 		obj = alloc_object();
 		obj->timerfdobj.fd = fd;
@@ -56,16 +56,16 @@ static int __init_timerfd_fds(int clockid)
 		obj->timerfdobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_TIMERFD);
 	}
-	return TRUE;
+	return true;
 }
 
 static int init_timerfd_fds(void)
 {
 	int ret;
 	ret = __init_timerfd_fds(CLOCK_REALTIME);
-	if (ret != FALSE)
+	if (ret != false)
 		ret = __init_timerfd_fds(CLOCK_MONOTONIC);
-	if (ret != FALSE)
+	if (ret != false)
 		ret = __init_timerfd_fds(CLOCK_BOOTTIME);
 
 	return ret;
@@ -76,7 +76,7 @@ static int get_rand_timerfd_fd(void)
 	struct object *obj;
 
 	/* check if timerfd unavailable/disabled. */
-	if (objects_empty(OBJ_FD_TIMERFD) == TRUE)
+	if (objects_empty(OBJ_FD_TIMERFD) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TIMERFD, OBJ_GLOBAL);
@@ -99,20 +99,20 @@ static int open_timerfd_fd(void)
 
 	fd = timerfd_create(clockid, flags);
 	if (fd == -1)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->timerfdobj.fd = fd;
 	obj->timerfdobj.clockid = clockid;
 	obj->timerfdobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_TIMERFD);
-	return TRUE;
+	return true;
 }
 
 static const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
 	.objtype = OBJ_FD_TIMERFD,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_timerfd_fds,
 	.get = &get_rand_timerfd_fd,
 	.open = &open_timerfd_fd,

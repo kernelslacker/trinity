@@ -38,7 +38,7 @@ int get_taint(void)
 	return ret;
 }
 
-static bool became_tainted = FALSE;
+static bool became_tainted = false;
 
 bool is_tainted(void)
 {
@@ -46,8 +46,8 @@ bool is_tainted(void)
 	 * Microoptimise the case where we became tainted. We don't need
 	 * multiple reads of /proc.
 	 */
-	if (became_tainted == TRUE)
-		return TRUE;
+	if (became_tainted == true)
+		return true;
 
 	/* Only check taint if the mask allows it */
 	if (kernel_taint_mask != 0) {
@@ -55,11 +55,11 @@ bool is_tainted(void)
 
 		ret = get_taint();
 		if (((ret & kernel_taint_mask) & (~kernel_taint_initial)) != 0) {
-			became_tainted = TRUE;
-			return TRUE;
+			became_tainted = true;
+			return true;
 		}
 	}
-	return FALSE;
+	return false;
 }
 static void toggle_taint_flag(int bit)
 {
@@ -120,8 +120,8 @@ void process_taint_arg(char *taintarg)
 {
 	char *beg, *end;
 
-	if (kernel_taint_param_occured == FALSE) {
-		kernel_taint_param_occured = TRUE;
+	if (kernel_taint_param_occured == false) {
+		kernel_taint_param_occured = true;
 		kernel_taint_mask = 0; //We now only care about flags that user specified.
 	}
 

@@ -29,7 +29,7 @@ retry:
 	if (off >= (0x100000000LL << PAGE_SHIFT))
 		goto retry;
 
-	if (this_syscallname("sync_file_range2") == FALSE) {
+	if (this_syscallname("sync_file_range2") == false) {
 		rec->a2 = off;
 		rec->a3 = nbytes;
 	} else {

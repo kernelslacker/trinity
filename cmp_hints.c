@@ -49,12 +49,12 @@ void cmp_hints_init(void)
 static bool interesting_value(unsigned long val)
 {
 	if (val == 0 || val == 1)
-		return FALSE;
+		return false;
 	if (val == (unsigned long) -1)
-		return FALSE;
+		return false;
 	if (val < 4)
-		return FALSE;
-	return TRUE;
+		return false;
+	return true;
 }
 
 /*
@@ -133,7 +133,7 @@ unsigned long cmp_hints_get(unsigned int nr)
 bool cmp_hints_available(unsigned int nr)
 {
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return FALSE;
+		return false;
 
 	return cmp_hints_shm->pools[nr].count > 0;
 }

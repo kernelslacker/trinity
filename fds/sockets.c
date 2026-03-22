@@ -184,35 +184,35 @@ static unsigned int valid_proto(unsigned int family)
 
 	/* Not used for creating sockets. */
 	if (strncmp(famstr, "UNSPEC", 7) == 0)
-		return FALSE;
+		return false;
 	if (strncmp(famstr, "BRIDGE", 7) == 0)
-		return FALSE;
+		return false;
 	if (strncmp(famstr, "SECURITY", 9) == 0)
-		return FALSE;
+		return false;
 
 	/* Not actually implemented (or now removed). */
 	if (strncmp(famstr, "NETBEUI", 8) == 0)
-		return FALSE;
+		return false;
 	if (strncmp(famstr, "ASH", 4) == 0)
-		return FALSE;
+		return false;
 	if (strncmp(famstr, "ECONET", 7) == 0)
-		return FALSE;
+		return false;
 	if (strncmp(famstr, "SNA", 4) == 0)
-		return FALSE;
+		return false;
 	if (strncmp(famstr, "WANPIPE", 8) == 0)
-		return FALSE;
+		return false;
 
 	/* Needs root. */
 	if (orig_uid != 0) {
 		if (strncmp(famstr, "KEY", 4) == 0)
-			return FALSE;
+			return false;
 		if (strncmp(famstr, "PACKET", 7) == 0)
-			return FALSE;
+			return false;
 		if (strncmp(famstr, "LLC", 4) == 0)
-			return FALSE;
+			return false;
 	}
 
-	return TRUE;
+	return true;
 }
 
 static bool write_socket_to_cache(struct socket_triplet *st)
@@ -221,7 +221,7 @@ static bool write_socket_to_cache(struct socket_triplet *st)
 	int n;
 
 	if (cachefile == -1)
-		return FALSE;
+		return false;
 
 	buffer[0] = st->family;
 	buffer[1] = st->type;
@@ -229,9 +229,9 @@ static bool write_socket_to_cache(struct socket_triplet *st)
 	n = write(cachefile, &buffer, sizeof(int) * 3);
 	if (n == -1) {
 		outputerr("something went wrong writing the cachefile! : %s\n", strerror(errno));
-		return FALSE;
+		return false;
 	}
-	return TRUE;
+	return true;
 }
 
 static bool generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
@@ -246,10 +246,10 @@ static bool generate_socket(unsigned int family, unsigned int protocol, unsigned
 	fd = open_socket(st.family, st.type, st.protocol);
 	if (fd > -1) {
 		write_socket_to_cache(&st);
-		return TRUE;
+		return true;
 	}
 	output(2, "Couldn't open socket %u:%u:%u. %s\n", family, type, protocol, strerror(errno));
-	return FALSE;
+	return false;
 }
 
 static bool generate_specific_socket(int family)
@@ -261,14 +261,14 @@ static bool generate_specific_socket(int family)
 
 	BUG_ON(st.family >= ARRAY_SIZE(no_domains));
 	if (no_domains[st.family])
-		return FALSE;
+		return false;
 
 	if (get_domain_name(st.family) == NULL)
-		return FALSE;
+		return false;
 
-	if (valid_proto(st.family) == FALSE) {
+	if (valid_proto(st.family) == false) {
 		outputerr("Can't do protocol %s\n", get_domain_name(st.family));
-		return FALSE;
+		return false;
 	}
 
 	st.protocol = rand() % 256;
@@ -281,7 +281,7 @@ static bool generate_specific_socket(int family)
 		output(0, "Couldn't open socket (%u:%u:%u). %s\n",
 				st.family, st.type, st.protocol,
 				strerror(errno));
-		return FALSE;
+		return false;
 	}
 
 	return write_socket_to_cache(&st);
@@ -291,22 +291,22 @@ static bool generate_specific_socket(int family)
 
 static bool generate_sockets(void)
 {
-	int i, r, ret = FALSE;
-	bool domains_disabled = FALSE;
+	int i, r, ret = false;
+	bool domains_disabled = false;
 
 	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
 	if (cachefile == -1) {
 		outputerr("Couldn't open cachefile for writing! (%s)\n", strerror(errno));
-		return FALSE;
+		return false;
 	}
 	lock_cachefile(F_WRLCK);
 
-	if (do_specific_domain == TRUE) {
+	if (do_specific_domain == true) {
 		while (nr_sockets < NR_SOCKET_FDS) {
 			ret = generate_specific_socket(specific_domain);
 
-			if (ret == FALSE)
-				return FALSE;
+			if (ret == false)
+				return false;
 		}
 		goto out_unlock;
 	}
@@ -315,15 +315,15 @@ static bool generate_sockets(void)
 	 * check if all domains are disabled.
 	 */
 	for (i = 0; i < (int)ARRAY_SIZE(no_domains); i++) {
-		if (no_domains[i] == FALSE) {
-			domains_disabled = FALSE;
+		if (no_domains[i] == false) {
+			domains_disabled = false;
 			break;
 		} else {
-			domains_disabled = TRUE;
+			domains_disabled = true;
 		}
 	}
 
-	if (domains_disabled == TRUE) {
+	if (domains_disabled == true) {
 		output(0, "All domains disabled!\n");
 		goto out_unlock;
 	}
@@ -333,7 +333,7 @@ static bool generate_sockets(void)
 		struct socket_triplet *triplets;
 		unsigned int j;
 
-		if (no_domains[i] == TRUE)
+		if (no_domains[i] == true)
 			continue;
 
 		/* check for ctrl-c again. */
@@ -364,7 +364,7 @@ static bool generate_sockets(void)
 	while (nr_sockets < NR_SOCKET_FDS) {
 		r = rand() % TRINITY_PF_MAX;
 		for (i = 0; i < 10; i++)
-			if (generate_specific_socket(r) == FALSE)
+			if (generate_specific_socket(r) == false)
 				break;
 	}
 
@@ -380,7 +380,7 @@ out_unlock:
 static void socket_destructor(struct object *obj)
 {
 	struct socketinfo *si = &obj->sockinfo;
-	struct linger ling = { .l_onoff = FALSE, .l_linger = 0 };
+	struct linger ling = { .l_onoff = false, .l_linger = 0 };
 	int fd;
 
 	//FIXME: This is a workaround for a weird bug where we hang forevre
@@ -457,8 +457,8 @@ static int open_sockets(void)
 			goto regenerate;
 		}
 
-		if ((do_specific_domain == TRUE && domain != specific_domain) ||
-		    (no_domains[domain] == TRUE)) {
+		if ((do_specific_domain == true && domain != specific_domain) ||
+		    (no_domains[domain] == true)) {
 			output(1, "ignoring socket cachefile due to specific "
 			       "protocol request (or protocol disabled), "
 			       "and stale data in cachefile.\n");
@@ -480,7 +480,7 @@ regenerate:
 		/* check for ctrl-c */
 		if (shm->exit_reason != STILL_RUNNING) {
 			close(cachefile);
-			return FALSE;
+			return false;
 		}
 	}
 
@@ -489,7 +489,7 @@ regenerate:
 	unlock_cachefile();
 	close(cachefile);
 
-	return TRUE;
+	return true;
 }
 
 struct socketinfo * get_rand_socketinfo(void)
@@ -497,7 +497,7 @@ struct socketinfo * get_rand_socketinfo(void)
 	struct object *obj;
 
 	/* When using victim files, sockets can be 0. */
-	if (objects_empty(OBJ_FD_SOCKET) == TRUE)
+	if (objects_empty(OBJ_FD_SOCKET) == true)
 		return NULL;
 
 	obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
@@ -533,13 +533,13 @@ static int open_socket_fd(void)
 	st.family = r;
 
 	if (st.family >= ARRAY_SIZE(no_domains))
-		return FALSE;
+		return false;
 	if (no_domains[st.family])
-		return FALSE;
+		return false;
 	if (get_domain_name(st.family) == NULL)
-		return FALSE;
-	if (valid_proto(st.family) == FALSE)
-		return FALSE;
+		return false;
+	if (valid_proto(st.family) == false)
+		return false;
 
 	st.protocol = rand() % 256;
 	if (sanitise_socket_triplet(&st) == -1)
@@ -547,15 +547,15 @@ static int open_socket_fd(void)
 
 	fd = open_socket(st.family, st.type, st.protocol);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
-	return TRUE;
+	return true;
 }
 
 static const struct fd_provider socket_fd_provider = {
 	.name = "sockets",
 	.objtype = OBJ_FD_SOCKET,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &open_sockets,
 	.get = &get_rand_socket_fd,
 	.open = &open_socket_fd,

@@ -47,9 +47,9 @@ static void show_child_backtrace(void)
 {
 	struct childdata *child = this_child();
 
-	set_dontkillme(child, FALSE);
+	set_dontkillme(child, false);
 	__show_backtrace();
-	set_dontkillme(child, TRUE);
+	set_dontkillme(child, true);
 }
 
 void show_backtrace(void)
@@ -76,11 +76,11 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 
 	/* Now spin indefinitely (but allow ctrl-c) */
 
-	set_dontkillme(child, TRUE);
+	set_dontkillme(child, true);
 
 	while (1) {
 		if (shm->exit_reason == EXIT_SIGINT) {
-			set_dontkillme(child, FALSE);
+			set_dontkillme(child, false);
 			exit(EXIT_FAILURE);
 		}
 		sleep(1);
@@ -128,7 +128,7 @@ void dump_childdata(struct childdata *child)
 /*
  * debugging output.
  * This is just a convenience helper to avoid littering the code
- * with dozens of 'if debug == TRUE' comparisons causing unnecessary nesting.
+ * with dozens of 'if debug == true' comparisons causing unnecessary nesting.
  */
 #define BUFSIZE 1024
 
@@ -137,7 +137,7 @@ void debugf(const char *fmt, ...)
 	char debugbuf[BUFSIZE];
 	va_list args;
 
-	if (shm->debug == FALSE)
+	if (shm->debug == false)
 		return;
 
 	va_start(args, fmt);

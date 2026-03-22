@@ -42,7 +42,7 @@ void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_na
 
 	entry = syscalls[calln].entry;
 
-	if (state == TRUE) {
+	if (state == true) {
 		entry->flags |= ACTIVE;
 		activate_syscall(calln);
 	} else {
@@ -64,14 +64,14 @@ retry:
 	call = rand() % max_nr_syscalls;
 	entry = syscalls[call].entry;
 
-	if (validate_specific_syscall_silent(syscalls, call) == FALSE)
+	if (validate_specific_syscall_silent(syscalls, call) == false)
 		goto retry;
 
 	/* if we've set this to be disabled, don't enable it! */
 	if (entry->flags & TO_BE_DEACTIVATED)
 		goto retry;
 
-	toggle_syscall_n(call, TRUE, entry->name, entry->name);
+	toggle_syscall_n(call, true, entry->name, entry->name);
 }
 
 
@@ -86,12 +86,12 @@ int setup_syscall_group_uniarch(unsigned int group)
 
 	if (shm->nr_active_syscalls == 0) {
 		outputstd("No syscalls found in group\n");
-		return FALSE;
+		return false;
 	} else {
 		outputstd("Found %d syscalls in group\n", shm->nr_active_syscalls);
 	}
 
-	return TRUE;
+	return true;
 }
 
 void mark_all_syscalls_active_uniarch(void)

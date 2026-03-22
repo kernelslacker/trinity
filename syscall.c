@@ -43,7 +43,7 @@ static long syscall32(unsigned int call,
 	/* If we have CONFIG_IA32_EMULATION unset, we will segfault.
 	 * Detect this case, and force 64-bit only.
 	 */
-	if (shm->syscalls32_succeeded == FALSE) {
+	if (shm->syscalls32_succeeded == false) {
 		if (shm->syscalls32_attempted >= (max_children * 2)) {
 			unsigned int i;
 
@@ -60,7 +60,7 @@ static long syscall32(unsigned int call,
 				struct syscallentry *entry = syscalls[i].entry;
 
 				if (entry->active_number != 0)
-					deactivate_syscall(i, TRUE);
+					deactivate_syscall(i, true);
 			}
 already_done:
 			unlock(&shm->syscalltable_lock);
@@ -76,7 +76,7 @@ already_done:
 		__res = -1;
 	}
 
-	shm->syscalls32_succeeded = TRUE;
+	shm->syscalls32_succeeded = true;
 
 #else
 	#error Implement 32-on-64 syscall macro for this architecture.
@@ -95,7 +95,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 
 	__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
 
-	if (dry_run == FALSE) {
+	if (dry_run == false) {
 		int nr, call;
 		bool needalarm;
 
@@ -112,7 +112,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 		rec->state = state;
 		unlock(&rec->lock);
 
-		if (rec->do32bit == FALSE) {
+		if (rec->do32bit == false) {
 			if (kc != NULL && kc->cmp_mode)
 				kcov_enable_cmp(kc);
 			else
@@ -129,7 +129,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 		}
 
 		/* If we became tainted, get out as fast as we can. */
-		if (is_tainted() == TRUE) {
+		if (is_tainted() == true) {
 			stop_ftrace();
 			panic(EXIT_KERNEL_TAINTED);
 			_exit(EXIT_FAILURE);
@@ -174,7 +174,7 @@ static void do_extrafork(struct syscallrecord *rec)
 	}
 
 	/* small pause to let grandchild do some work. */
-	if (pid_alive(extrapid) == TRUE)
+	if (pid_alive(extrapid) == true)
 		usleep(100);
 
 	/* We take the rec lock here even though we don't obviously use it.
@@ -184,7 +184,7 @@ static void do_extrafork(struct syscallrecord *rec)
 		int childstatus;
 
 		pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		if (pid_alive(extrapid) == TRUE)
+		if (pid_alive(extrapid) == true)
 			kill(extrapid, SIGKILL);
 		usleep(1000);
 	}
@@ -230,7 +230,7 @@ static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *en
 	output(1, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
 		entry->name,
 		call + SYSCALL_OFFSET,
-		rec->do32bit == TRUE ? ":[32BIT]" : "");
+		rec->do32bit == true ? ":[32BIT]" : "");
 
 	deactivate_syscall(call, rec->do32bit);
 already_done:

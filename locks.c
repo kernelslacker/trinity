@@ -19,7 +19,7 @@ static bool check_lock(lock_t *lk)
 
 	/* We don't care about unlocked locks */
 	if (__atomic_load_n(&lk->lock, __ATOMIC_RELAXED) != LOCKED)
-		return FALSE;
+		return false;
 
 	/* First the easy case. If it's held by a dead pid, release it. */
 	pid = lk->owner;
@@ -28,24 +28,24 @@ static bool check_lock(lock_t *lk)
 	 * but with no owner. Just bail, we'll try again next time around.
 	 */
 	if (pid == 0)
-		return FALSE;
+		return false;
 
-	if (pid_alive(pid) == FALSE) {
+	if (pid_alive(pid) == false) {
 		if (errno != ESRCH)
-			return TRUE;
+			return true;
 
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
 		unlock(lk);
-		return TRUE;
+		return true;
 	}
-	return FALSE;
+	return false;
 }
 
-/* returns TRUE if something is awry */
+/* returns true if something is awry */
 bool check_all_locks(void)
 {
 	unsigned int i;
-	bool ret = FALSE;
+	bool ret = false;
 
 	check_lock(&shm->syscalltable_lock);
 
@@ -67,9 +67,9 @@ bool trylock(lock_t *lk)
 	if (__atomic_compare_exchange_n(&lk->lock, &expected, LOCKED,
 					0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
 		__lock(lk);
-		return TRUE;
+		return true;
 	}
-	return FALSE;
+	return false;
 }
 
 void lock(lock_t *lk)

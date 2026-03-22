@@ -39,7 +39,7 @@ static void store_successful_fd(struct results *results, unsigned long value)
 	int fd = (int) value;
 
 	// TODO: dynamically allocate fdmap on startup
-	results->fdmap[fd] = TRUE;
+	results->fdmap[fd] = true;
 }
 
 static void store_successful_len(struct results *results, unsigned long value)

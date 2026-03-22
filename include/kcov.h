@@ -30,8 +30,8 @@
 struct kcov_child {
 	int fd;
 	unsigned long *trace_buf;
-	bool active;    /* TRUE if this child successfully opened kcov */
-	bool cmp_mode;  /* TRUE when this syscall should use CMP tracing */
+	bool active;    /* true if this child successfully opened kcov */
+	bool cmp_mode;  /* true when this syscall should use CMP tracing */
 };
 
 /* Shared coverage state, allocated in shared memory. */
@@ -48,8 +48,8 @@ extern struct kcov_shared *kcov_shm;
 void kcov_init_global(void);
 
 /* Called per-child to try to open/mmap the kcov fd.
- * Returns TRUE on success or if kcov is unavailable (not an error).
- * Sets kc->active = TRUE only if kcov is usable. */
+ * Returns true on success or if kcov is unavailable (not an error).
+ * Sets kc->active = true only if kcov is usable. */
 void kcov_init_child(struct kcov_child *kc);
 
 /* Called per-child on exit to clean up. */

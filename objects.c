@@ -136,7 +136,7 @@ static void destroy_objects(enum objecttype type, bool global)
 	struct list_head *node, *list, *tmp;
 	struct objhead *head;
 
-	if (objects_empty(type) == TRUE)
+	if (objects_empty(type) == true)
 		return;
 
 	head = get_objhead(global, type);

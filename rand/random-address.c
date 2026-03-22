@@ -63,10 +63,10 @@ void * get_address(void)
 static bool is_arg_address(enum argtype argtype)
 {
 	if (argtype == ARG_ADDRESS)
-		return TRUE;
+		return true;
 	if (argtype == ARG_NON_NULL_ADDRESS)
-		return TRUE;
-	return FALSE;
+		return true;
+	return false;
 }
 
 unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int argnum)
@@ -79,23 +79,23 @@ unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int 
 	entry = syscalls[call].entry;
 
 	if (argnum > 1)
-		if (is_arg_address(entry->arg1type) == TRUE)
+		if (is_arg_address(entry->arg1type) == true)
 			addr = rec->a1;
 
 	if (argnum > 2)
-		if (is_arg_address(entry->arg2type) == TRUE)
+		if (is_arg_address(entry->arg2type) == true)
 			addr = rec->a2;
 
 	if (argnum > 3)
-		if (is_arg_address(entry->arg3type) == TRUE)
+		if (is_arg_address(entry->arg3type) == true)
 			addr = rec->a3;
 
 	if (argnum > 4)
-		if (is_arg_address(entry->arg4type) == TRUE)
+		if (is_arg_address(entry->arg4type) == true)
 			addr = rec->a4;
 
 	if (argnum > 5)
-		if (is_arg_address(entry->arg5type) == TRUE)
+		if (is_arg_address(entry->arg5type) == true)
 			addr = rec->a5;
 
 	return addr;

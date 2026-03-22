@@ -50,14 +50,14 @@ static int open_fanotify_fd(void)
 	flags = get_fanotify_init_flags();
 	fd = fanotify_init(flags, eventflags);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->fanotifyobj.fd = fd;
 	obj->fanotifyobj.flags = flags;
 	obj->fanotifyobj.eventflags = eventflags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_FANOTIFY);
-	return TRUE;
+	return true;
 }
 
 static int init_fanotify_fds(void)
@@ -72,10 +72,10 @@ static int init_fanotify_fds(void)
 	for (i = 0; i < NR_FANOTIFYFDS; i++)
 		open_fanotify_fd();
 
-	//FIXME: right now, returning FALSE means "abort everything", not
+	//FIXME: right now, returning false means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_fanotifyfd(void)
@@ -83,7 +83,7 @@ static int get_rand_fanotifyfd(void)
 	struct object *obj;
 
 	/* check if eventfd unavailable/disabled. */
-	if (objects_empty(OBJ_FD_FANOTIFY) == TRUE)
+	if (objects_empty(OBJ_FD_FANOTIFY) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_FANOTIFY, OBJ_GLOBAL);
@@ -93,7 +93,7 @@ static int get_rand_fanotifyfd(void)
 static const struct fd_provider fanotify_fd_provider = {
 	.name = "fanotify",
 	.objtype = OBJ_FD_FANOTIFY,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_fanotify_fds,
 	.get = &get_rand_fanotifyfd,
 	.open = &open_fanotify_fd,

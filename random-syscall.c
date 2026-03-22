@@ -36,30 +36,30 @@ static int *active_syscalls;
 
 static bool choose_syscall_table(void)
 {
-	bool do32 = FALSE;
+	bool do32 = false;
 
-	if (biarch == FALSE) {
+	if (biarch == false) {
 		active_syscalls = shm->active_syscalls;
 	} else {
 
 		/* First, check that we have syscalls enabled in either table. */
-		if (validate_syscall_table_64() == FALSE) {
-			use_64bit = FALSE;
+		if (validate_syscall_table_64() == false) {
+			use_64bit = false;
 			/* If no 64bit syscalls enabled, force 32bit. */
-			do32 = TRUE;
+			do32 = true;
 		}
 
-		if (validate_syscall_table_32() == FALSE)
-			use_32bit = FALSE;
+		if (validate_syscall_table_32() == false)
+			use_32bit = false;
 
 		/* If both tables enabled, pick randomly. */
-		if ((use_64bit == TRUE) && (use_32bit == TRUE)) {
+		if ((use_64bit == true) && (use_32bit == true)) {
 			/* 10% possibility of a 32bit syscall */
 			if (ONE_IN(10))
-				do32 = TRUE;
+				do32 = true;
 		}
 
-		if (do32 == FALSE) {
+		if (do32 == false) {
 			syscalls = syscalls_64bit;
 			active_syscalls = shm->active_syscalls64;
 			max_nr_syscalls = max_nr_64bit_syscalls;
@@ -82,7 +82,7 @@ static bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_gro
 
 	entry = get_syscall_entry(nr, do32);
 	if (entry == NULL)
-		return FALSE;
+		return false;
 
 	return entry->group == target_group;
 }
@@ -95,7 +95,7 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	unsigned int bias_attempts = 0;
 
 retry:
-	if (no_syscalls_enabled() == TRUE) {
+	if (no_syscalls_enabled() == true) {
 		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
 		shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
 		return FAIL;
@@ -112,7 +112,7 @@ retry:
 
 	syscallnr = active_syscalls[syscallnr] - 1;
 
-	if (validate_specific_syscall_silent(syscalls, syscallnr) == FALSE) {
+	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
 		deactivate_syscall(syscallnr, do32);
 		goto retry;
 	}
@@ -155,14 +155,14 @@ retry:
 	rec->nr = syscallnr;
 	unlock(&rec->lock);
 
-	return TRUE;
+	return true;
 }
 
 bool random_syscall(struct childdata *child)
 {
 	struct syscallrecord *rec;
 	struct syscallentry *entry;
-	int ret = FALSE;
+	int ret = false;
 	bool do_cmp;
 
 	rec = &child->syscall;
@@ -200,7 +200,7 @@ bool random_syscall(struct childdata *child)
 			child->last_group = entry->group;
 	}
 
-	ret = TRUE;
+	ret = true;
 
 	return ret;
 }

@@ -28,22 +28,22 @@ bool pid_alive(pid_t pid)
 	if (pid < -1) {
 		syslogf("kill_pid tried to kill %d!\n", pid);
 		show_backtrace();
-		return TRUE;
+		return true;
 	}
 	if (pid == -1) {
 		syslogf("kill_pid tried to kill -1!\n");
 		show_backtrace();
-		return TRUE;
+		return true;
 	}
 	if (pid == 0) {
 		syslogf("tried to kill_pid 0!\n");
 		show_backtrace();
-		return TRUE;
+		return true;
 	}
 
 	if (kill(pid, 0) == 0)
-		return TRUE;
-	return FALSE;
+		return true;
+	return false;
 }
 
 struct childdata * this_child(void)
@@ -82,9 +82,9 @@ bool pidmap_empty(void)
 
 	for_each_child(i) {
 		if (pids[i] != EMPTY_PIDSLOT)
-			return FALSE;
+			return false;
 	}
-	return TRUE;
+	return true;
 }
 
 void dump_childnos(void)
@@ -172,9 +172,9 @@ void pids_init(void)
 int pid_is_valid(pid_t pid)
 {
 	if ((pid > pidmax) || (pid < 1))
-		return FALSE;
+		return false;
 
-	return TRUE;
+	return true;
 }
 
 unsigned int get_pid(void)
@@ -198,7 +198,7 @@ retry:		i = rand() % max_children;
 	case 1:	pid = 0;
 		break;
 
-	case 2:	if (dangerous == FALSE)	// We don't want root trying to kill init.
+	case 2:	if (dangerous == false)	// We don't want root trying to kill init.
 			pid = 1;
 		break;
 	}

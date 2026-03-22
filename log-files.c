@@ -57,7 +57,7 @@ void open_child_logfile(struct childdata *child)
 
 	free(logfilename);
 
-	child->logdirty = FALSE;
+	child->logdirty = false;
 }
 
 void close_logfile(FILE **filehandle)
@@ -95,7 +95,7 @@ void synclogs(void)
 	int fd;
 
 	child = this_child();
-	if (child->logdirty == FALSE)
+	if (child->logdirty == false)
 		return;
 
 	fflush(child->logfile);
@@ -103,7 +103,7 @@ void synclogs(void)
 	if (fd != -1)
 		(void) fsync(fd);
 
-	child->logdirty = FALSE;
+	child->logdirty = false;
 
 	/* If we're flushing the child log, may as well flush
 	 * any other logs while we're writing to disk.

@@ -48,13 +48,13 @@ static int open_userfaultfd(void)
 
 	fd = userfaultfd_create(flags);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->userfaultobj.fd = fd;
 	obj->userfaultobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
-	return TRUE;
+	return true;
 }
 
 static int init_userfaultfds(void)
@@ -69,10 +69,10 @@ static int init_userfaultfds(void)
 	for (i = 0; i < 4; i++)
 		open_userfaultfd();
 
-	//FIXME: right now, returning FALSE means "abort everything", not
+	//FIXME: right now, returning false means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_userfaultfd(void)
@@ -80,7 +80,7 @@ static int get_rand_userfaultfd(void)
 	struct object *obj;
 
 	/* check if eventfd unavailable/disabled. */
-	if (objects_empty(OBJ_FD_USERFAULTFD) == TRUE)
+	if (objects_empty(OBJ_FD_USERFAULTFD) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_USERFAULTFD, OBJ_GLOBAL);
@@ -90,7 +90,7 @@ static int get_rand_userfaultfd(void)
 static const struct fd_provider userfaultfd_provider = {
 	.name = "userfaultfd",
 	.objtype = OBJ_FD_USERFAULTFD,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_userfaultfds,
 	.get = &get_rand_userfaultfd,
 	.open = &open_userfaultfd,
