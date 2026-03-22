@@ -65,6 +65,8 @@ static int open_timerfd_fds(void)
 	ret = __open_timerfd_fds(CLOCK_REALTIME);
 	if (ret != FALSE)
 		ret = __open_timerfd_fds(CLOCK_MONOTONIC);
+	if (ret != FALSE)
+		ret = __open_timerfd_fds(CLOCK_BOOTTIME);
 
 	return ret;
 }
@@ -84,9 +86,13 @@ static int get_rand_timerfd_fd(void)
 static int reopen_timerfd_fd(void)
 {
 	struct object *obj;
-	int fd, clockid, flags;
+	int fd, clockid = CLOCK_REALTIME, flags;
 
-	clockid = RAND_BOOL() ? CLOCK_REALTIME : CLOCK_MONOTONIC;
+	switch (rand() % 3) {
+	case 0: clockid = CLOCK_REALTIME; break;
+	case 1: clockid = CLOCK_MONOTONIC; break;
+	case 2: clockid = CLOCK_BOOTTIME; break;
+	}
 	flags = RAND_BOOL() ? TFD_NONBLOCK : 0;
 	if (RAND_BOOL())
 		flags |= TFD_CLOEXEC;
