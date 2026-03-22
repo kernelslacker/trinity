@@ -115,7 +115,11 @@ int get_new_random_fd(void)
 
 	while (fd < 0) {
 		unsigned int i, j;
+		unsigned int attempts = 0;
 retry:
+		if (++attempts > num_fd_providers * 10)
+			return -1;
+
 		i = rand() % num_fd_providers;			// FIXME: after below fixme, this should be num_fd_providers_initialized
 		j = 0;
 
