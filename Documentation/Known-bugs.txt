@@ -8,8 +8,6 @@
 
 - -r and -c don't seem to work together
 
-- when we randomly call personality, the child stops logging.
-
 - fuzzing certain syscalls causes segfaults
 
   - modify_ldt: This needs a proper sanitise routine

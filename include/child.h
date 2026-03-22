@@ -14,10 +14,6 @@ struct childdata {
 	/* Per-child KCOV state (fd + trace buffer). */
 	struct kcov_child kcov;
 
-	/* log file related stuff */
-	FILE *logfile;
-	bool logdirty;
-
 	/* ONLY to be read by main. */
 	FILE *pidstatfile;
 

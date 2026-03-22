@@ -11,7 +11,6 @@
 #include "fd.h"
 #include "files.h"
 #include "ioctls.h"
-#include "log.h"
 #include "maps.h"
 #include "pids.h"
 #include "params.h"
@@ -81,7 +80,6 @@ static int set_exit_code(enum exit_reasons reason)
 	case EXIT_LOCKING_CATASTROPHE:
 	case EXIT_FORK_FAILURE:
 	case EXIT_FD_INIT_FAILURE:
-	case EXIT_LOGFILE_OPEN_ERROR:
 		ret = EXIT_FAILURE;
 		break;
 
@@ -157,8 +155,6 @@ int main(int argc, char* argv[])
 
 	pids_init();
 
-	init_logging();
-
 	init_object_lists(OBJ_GLOBAL);
 
 	setup_initial_mappings();
@@ -191,8 +187,6 @@ int main(int argc, char* argv[])
 		shm->stats.op_count, shm->stats.successes, shm->stats.failures);
 	if (show_stats == true)
 		dump_stats();
-
-	shutdown_logging();
 
 	ret = set_exit_code(shm->exit_reason);
 out:

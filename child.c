@@ -17,7 +17,6 @@
 #include "child.h"
 #include "kcov.h"
 #include "list.h"
-#include "log.h"
 #include "maps.h"
 #include "params.h"
 #include "pids.h"
@@ -151,7 +150,6 @@ static void oom_score_adj(int adj)
 void clean_childdata(struct childdata *child)
 {
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
-	child->logdirty = false;
 	child->seed = 0;
 	child->kill_count = 0;
 	child->dontkillme = false;
@@ -357,7 +355,7 @@ static bool handle_sigreturn(int sigwas)
 
 	/* Check if we're blocked because we were stuck on an fd. */
 	lock(&rec->lock);
-	if (check_if_fd(child, rec) == true) {
+	if (check_if_fd(rec) == true) {
 		/* Force this child to pick a new fd next time. */
 		child->fd_lifetime = 0;
 
@@ -459,7 +457,6 @@ void child_process(struct childdata *child, int childno)
 
 out:
 	kcov_cleanup_child(&child->kcov);
-	shutdown_child_logging(child);
 
 	debugf("child %d %d exiting.\n", childno, getpid());
 }

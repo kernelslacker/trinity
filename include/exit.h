@@ -19,9 +19,8 @@ enum exit_reasons {
 	EXIT_FD_INIT_FAILURE = 13,
 	EXIT_FORK_FAILURE = 14,
 	EXIT_LOCKING_CATASTROPHE = 15,
-	EXIT_LOGFILE_OPEN_ERROR = 16,
 
-	NUM_EXIT_REASONS = 17
+	NUM_EXIT_REASONS = 16
 };
 
 static const char *reasons[NUM_EXIT_REASONS] = {
@@ -41,7 +40,6 @@ static const char *reasons[NUM_EXIT_REASONS] = {
   "Something happened during fd init.",
   "fork() failure",
   "some kind of locking catastrophe",
-  "error while opening logfiles",
 };
 
 static inline const char * decode_exit(enum exit_reasons reason)
