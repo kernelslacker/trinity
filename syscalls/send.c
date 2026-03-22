@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "maps.h"
+#include "net.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -86,12 +87,17 @@ struct syscallentry syscall_sendto = {
 /*
  * SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
  */
+/* Set when sanitise_sendmsg uses gen_msg so post_sendmsg knows to free iov_base */
+static int sendmsg_used_gen_msg;
+
 static void sanitise_sendmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen = 0;
+
+	sendmsg_used_gen_msg = 0;
 
 	if (si == NULL)	// handle --disable-fds=sockets
 		goto skip_si;
@@ -105,6 +111,34 @@ skip_si:
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
 
+	/*
+	 * If the protocol has a gen_msg hook, use it to build a structured
+	 * message instead of random garbage. Fall back to random iovecs
+	 * with some probability to keep testing the unstructured path too.
+	 */
+	if (si != NULL && !ONE_IN(4)) {
+		const struct netproto *proto;
+		unsigned int family = si->triplet.family;
+
+		if (family < TRINITY_PF_MAX) {
+			proto = net_protocols[family].proto;
+			if (proto != NULL && proto->gen_msg != NULL) {
+				struct iovec *iov;
+				void *buf = NULL;
+				size_t len = 0;
+
+				proto->gen_msg(&si->triplet, &buf, &len);
+				iov = zmalloc(sizeof(struct iovec));
+				iov->iov_base = buf;
+				iov->iov_len = len;
+				msg->msg_iov = iov;
+				msg->msg_iovlen = 1;
+				sendmsg_used_gen_msg = 1;
+				goto set_control;
+			}
+		}
+	}
+
 	if (RAND_BOOL()) {
 		unsigned int num_entries;
 
@@ -113,6 +147,7 @@ skip_si:
 		msg->msg_iovlen = num_entries;
 	}
 
+set_control:
 	if (RAND_BOOL()) {
 		msg->msg_controllen = rand32() % 20480;	// /proc/sys/net/core/optmem_max
 		msg->msg_control = get_address();
@@ -133,8 +168,11 @@ static void post_sendmsg(__unused__ struct syscallrecord *rec)
 	struct msghdr *msg = (struct msghdr *) rec->a2;
 
 	if (msg != NULL) {
-		if (msg->msg_iov != NULL)
+		if (msg->msg_iov != NULL) {
+			if (sendmsg_used_gen_msg)
+				free(msg->msg_iov[0].iov_base);
 			free(msg->msg_iov);
+		}
 		free(msg->msg_name);	// free sockaddr
 		freeptr(&rec->a2);
 	}
