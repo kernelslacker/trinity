@@ -8,7 +8,6 @@
 #include <sys/timerfd.h>
 
 #include "fd.h"
-#include "files.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"

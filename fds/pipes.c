@@ -8,10 +8,8 @@
 #include <unistd.h>
 
 #include "fd.h"
-#include "files.h"
 #include "objects.h"
 #include "pipes.h"
-#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
