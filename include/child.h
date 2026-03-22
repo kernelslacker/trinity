@@ -30,6 +30,10 @@ struct childdata {
 	/* Last syscall group executed, for group biasing. */
 	unsigned int last_group;
 
+	/* per-child fd caching to avoid cross-child races */
+	int current_fd;
+	unsigned int fd_lifetime;
+
 	unsigned char xcpu_count;
 
 	unsigned char kill_count;

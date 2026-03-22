@@ -144,34 +144,35 @@ retry:
 
 int get_random_fd(void)
 {
+	struct childdata *child = this_child();
 	unsigned int retries = 0;
 
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
-	if (shm->fd_lifetime == 0) {
-		shm->current_fd = get_new_random_fd();
+	if (child->fd_lifetime == 0) {
+		child->current_fd = get_new_random_fd();
 
 		/* Validate the fd is still alive */
-		if (shm->current_fd > 0 &&
-		    fcntl(shm->current_fd, F_GETFD) == -1 && errno == EBADF) {
+		if (child->current_fd > 0 &&
+		    fcntl(child->current_fd, F_GETFD) == -1 && errno == EBADF) {
 			__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
 			if (++retries < 10)
 				goto regen;
 		}
 
 		if (max_children > 5)
-			shm->fd_lifetime = RAND_RANGE(5, max_children);
+			child->fd_lifetime = RAND_RANGE(5, max_children);
 		else
-			shm->fd_lifetime = RAND_RANGE(max_children, 5);
+			child->fd_lifetime = RAND_RANGE(max_children, 5);
 	} else
-		shm->fd_lifetime--;
+		child->fd_lifetime--;
 
-	if (shm->current_fd == 0) {
-		shm->fd_lifetime = 0;
+	if (child->current_fd == 0) {
+		child->fd_lifetime = 0;
 		goto regen;
 	}
 
-	return shm->current_fd;
+	return child->current_fd;
 }
 
 /*

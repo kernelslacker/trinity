@@ -336,7 +336,7 @@ static void stuck_syscall_info(struct childdata *child)
 	if (state == BEFORE) {
 		if (check_if_fd(child, rec) == TRUE) {
 			sprintf(fdstr, "(fd = %u)", (unsigned int) rec->a1);
-			shm->fd_lifetime = 0;
+			child->fd_lifetime = 0;
 			//close(rec->a1);
 			//TODO: Remove the fd from the object list.
 		}
