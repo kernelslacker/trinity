@@ -129,7 +129,7 @@ static unsigned int pc_to_bit(unsigned long pc)
 	return (unsigned int)(pc % (KCOV_BITMAP_SIZE * 8));
 }
 
-bool kcov_collect(struct kcov_child *kc)
+bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 {
 	unsigned long count;
 	unsigned long idx;
@@ -160,6 +160,10 @@ bool kcov_collect(struct kcov_child *kc)
 	}
 
 	__atomic_fetch_add(&kcov_shm->total_pcs, count, __ATOMIC_RELAXED);
+
+	if (found_new && nr < MAX_NR_SYSCALL)
+		__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr],
+			1, __ATOMIC_RELAXED);
 
 	return found_new;
 }
