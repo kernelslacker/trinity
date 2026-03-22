@@ -11,6 +11,7 @@ struct syscallentry syscall_migrate_pages = {
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
 	.arg2name = "maxnode",
+	.arg2type = ARG_LEN,
 	.arg3name = "old_nodes",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "new_nodes",

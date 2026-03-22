@@ -29,5 +29,6 @@ struct syscallentry syscall_set_mempolicy = {
 	.arg2name = "nmask",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "maxnode",
+	.arg3type = ARG_LEN,
 	.group = GROUP_VM,
 };
