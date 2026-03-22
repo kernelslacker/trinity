@@ -704,6 +704,18 @@ enum kcmp_type {
 #define SO_BUF_LOCK		72
 #endif
 
+#ifndef SO_RCVPRIORITY
+#define SO_RCVPRIORITY		82
+#endif
+
+#ifndef SO_PASSRIGHTS
+#define SO_PASSRIGHTS		83
+#endif
+
+#ifndef SO_INQ
+#define SO_INQ			84
+#endif
+
 #ifndef TCP_THIN_LINEAR_TIMEOUTS
 #define TCP_THIN_LINEAR_TIMEOUTS 16
 #endif
