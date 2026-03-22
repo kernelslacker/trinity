@@ -24,39 +24,36 @@ static void io_uring_dump(struct object *obj, bool global)
 		obj->io_uringobj.fd, global);
 }
 
-static int open_io_uring_fds(void)
+static int open_io_uring_fd(void)
+{
+#ifdef __NR_io_uring_setup
+	struct object *obj;
+	unsigned char params[120];
+	int fd;
+
+	memset(params, 0, sizeof(params));
+	fd = syscall(__NR_io_uring_setup, 4, params);
+	if (fd < 0)
+		return FALSE;
+
+	obj = alloc_object();
+	obj->io_uringobj.fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_IO_URING);
+	return TRUE;
+#else
+	return FALSE;
+#endif
+}
+
+static int init_io_uring_fds(void)
 {
 	struct objhead *head;
-	struct object *obj;
-	int fd;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_IO_URING);
 	head->destroy = &io_uring_destructor;
 	head->dump = &io_uring_dump;
 
-#ifdef __NR_io_uring_setup
-	{
-		/*
-		 * io_uring_setup(entries, params) needs a zeroed
-		 * io_uring_params struct on the stack.  We only need
-		 * 120 bytes (sizeof kernel struct), zero it all.
-		 */
-		unsigned char params[120];
-
-		memset(params, 0, sizeof(params));
-
-		fd = syscall(__NR_io_uring_setup, 4, params);
-		if (fd < 0)
-			return FALSE;
-
-		obj = alloc_object();
-		obj->io_uringobj.fd = fd;
-		add_object(obj, OBJ_GLOBAL, OBJ_FD_IO_URING);
-	}
-#else
-	(void)fd;
-	(void)obj;
-#endif
+	open_io_uring_fd();
 
 	return TRUE;
 }
@@ -76,8 +73,9 @@ static const struct fd_provider io_uring_fd_provider = {
 	.name = "io_uring",
 	.objtype = OBJ_FD_IO_URING,
 	.enabled = TRUE,
-	.init = &open_io_uring_fds,
+	.init = &init_io_uring_fds,
 	.get = &get_rand_io_uring_fd,
+	.open = &open_io_uring_fd,
 };
 
 REG_FD_PROV(io_uring_fd_provider);
