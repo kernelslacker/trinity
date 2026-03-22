@@ -51,4 +51,5 @@ struct syscallentry syscall_seccomp = {
 	.arg3name = "uargs",
 	.arg3type = ARG_ADDRESS,
 	.sanitise = sanitise_seccomp,
+	.group = GROUP_PROCESS,
 };

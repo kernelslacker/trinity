@@ -9,4 +9,5 @@ struct syscallentry syscall_set_tid_address = {
 	.arg1name = "tidptr",
 	.arg1type = ARG_ADDRESS,
 	.flags = AVOID_SYSCALL,
+	.group = GROUP_PROCESS,
 };

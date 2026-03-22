@@ -19,4 +19,5 @@ struct syscallentry syscall_lsm_list_modules = {
 	.arg3name = "flags",
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_lsm_list_modules,
+	.group = GROUP_PROCESS,
 };

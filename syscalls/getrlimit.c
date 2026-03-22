@@ -23,4 +23,5 @@ struct syscallentry syscall_getrlimit = {
 	.arg1list = ARGLIST(getrlimit_resources),
 	.arg2name = "rlim",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

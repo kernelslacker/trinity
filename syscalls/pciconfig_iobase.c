@@ -9,4 +9,5 @@ struct syscallentry syscall_pciconfig_iobase = {
 	.arg1name = "which",
 	.arg2name = "bus",
 	.arg3name = "devfn",
+	.group = GROUP_PROCESS,
 };

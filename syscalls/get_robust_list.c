@@ -14,4 +14,5 @@ struct syscallentry syscall_get_robust_list = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "len_ptr",
 	.arg3type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

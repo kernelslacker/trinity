@@ -8,6 +8,7 @@ struct syscallentry syscall_setregid = {
 	.num_args = 2,
 	.arg1name = "rgid",
 	.arg2name = "egid",
+	.group = GROUP_PROCESS,
 };
 
 /*
@@ -19,4 +20,5 @@ struct syscallentry syscall_setregid16 = {
 	.num_args = 2,
 	.arg1name = "rgid",
 	.arg2name = "egid",
+	.group = GROUP_PROCESS,
 };

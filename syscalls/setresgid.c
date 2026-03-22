@@ -9,6 +9,7 @@ struct syscallentry syscall_setresgid = {
 	.arg1name = "rgid",
 	.arg2name = "egid",
 	.arg3name = "sgid",
+	.group = GROUP_PROCESS,
 };
 
 
@@ -22,4 +23,5 @@ struct syscallentry syscall_setresgid16 = {
 	.arg1name = "rgid",
 	.arg2name = "egid",
 	.arg3name = "sgid",
+	.group = GROUP_PROCESS,
 };

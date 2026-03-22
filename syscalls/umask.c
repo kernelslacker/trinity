@@ -7,4 +7,5 @@ struct syscallentry syscall_umask = {
 	.name = "umask",
 	.num_args = 1,
 	.arg1name = "mask",
+	.group = GROUP_PROCESS,
 };

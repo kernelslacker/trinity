@@ -7,4 +7,5 @@ struct syscallentry syscall_getpagesize = {
 	.flags = BORING,
 	.name = "getpagesize",
 	.num_args = 0,
+	.group = GROUP_PROCESS,
 };

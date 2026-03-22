@@ -16,4 +16,5 @@ struct syscallentry syscall_getrusage = {
 	.arg1list = ARGLIST(getrusage_who),
 	.arg2name = "ru",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

@@ -36,4 +36,5 @@ struct syscallentry syscall_lsm_set_self_attr = {
 	.arg4name = "flags",
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_lsm_set_self_attr,
+	.group = GROUP_PROCESS,
 };

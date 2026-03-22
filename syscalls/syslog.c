@@ -59,4 +59,5 @@ struct syscallentry syscall_syslog = {
 	.arg2type = ARG_MMAP,
 	.arg3name = "len",
 	.sanitise = sanitise_syslog,
+	.group = GROUP_PROCESS,
 };

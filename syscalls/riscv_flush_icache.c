@@ -22,4 +22,5 @@ struct syscallentry syscall_riscv_flush_icache = {
 	.arg3name = "flags",
 	.arg3type = ARG_OP,
 	.arg3list = ARGLIST(riscv_flush_icache_flags),
+	.group = GROUP_PROCESS,
 };

@@ -76,4 +76,5 @@ struct syscallentry syscall_listns = {
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_listns,
 	.post = post_listns,
+	.group = GROUP_PROCESS,
 };

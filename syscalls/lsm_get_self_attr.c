@@ -40,4 +40,5 @@ struct syscallentry syscall_lsm_get_self_attr = {
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(lsm_get_flags),
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_PROCESS,
 };

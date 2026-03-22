@@ -13,4 +13,5 @@ struct syscallentry syscall_init_module = {
 	.arg2type = ARG_LEN,
 	.arg3name = "uargs",
 	.arg3type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

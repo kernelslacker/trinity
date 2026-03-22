@@ -8,6 +8,7 @@ struct syscallentry syscall_setreuid = {
 	.num_args = 2,
 	.arg1name = "ruid",
 	.arg2name = "euid",
+	.group = GROUP_PROCESS,
 };
 
 
@@ -20,4 +21,5 @@ struct syscallentry syscall_setreuid16 = {
 	.num_args = 2,
 	.arg1name = "ruid",
 	.arg2name = "euid",
+	.group = GROUP_PROCESS,
 };

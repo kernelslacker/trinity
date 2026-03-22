@@ -1382,4 +1382,5 @@ struct syscallentry syscall_perf_event_open = {
 	.post = post_perf_event_open,
 	.init = init_pmus,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
+	.group = GROUP_PROCESS,
 };

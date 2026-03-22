@@ -11,6 +11,7 @@ struct syscallentry syscall_getgroups = {
 	.arg2name = "grouplist",
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_BORING,
+	.group = GROUP_PROCESS,
 };
 
 
@@ -26,4 +27,5 @@ struct syscallentry syscall_getgroups16 = {
 	.arg2name = "grouplist",
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_BORING,
+	.group = GROUP_PROCESS,
 };

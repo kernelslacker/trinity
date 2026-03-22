@@ -7,6 +7,7 @@ struct syscallentry syscall_setgid = {
 	.name = "setgid",
 	.num_args = 1,
 	.arg1name = "gid",
+	.group = GROUP_PROCESS,
 };
 
 
@@ -18,4 +19,5 @@ struct syscallentry syscall_setgid16 = {
 	.name = "setgid16",
 	.num_args = 1,
 	.arg1name = "gid",
+	.group = GROUP_PROCESS,
 };

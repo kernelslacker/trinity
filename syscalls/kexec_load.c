@@ -24,4 +24,5 @@ struct syscallentry syscall_kexec_load = {
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(kexec_load_flags),
+	.group = GROUP_PROCESS,
 };

@@ -12,4 +12,5 @@ struct syscallentry syscall_capset = {
 	.arg1name = "header",
 	.arg2name = "data",
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_PROCESS,
 };
