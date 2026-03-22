@@ -32,6 +32,7 @@ struct syscallentry syscall_fstatfs64 = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "sz",
+	.arg2type = ARG_LEN,
 	.arg3name = "buf",
 	.arg3type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
