@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "bpf.h"
 #include "net.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 
@@ -350,20 +351,32 @@ static void sanitise_bpf(struct syscallrecord *rec)
 static void post_bpf(struct syscallrecord *rec)
 {
 	union bpf_attr *attr = (union bpf_attr *) rec->a2;
+	int fd = rec->retval;
 
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
-		//TODO: add fd to local object cache
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpfobj.map_fd = fd;
+			obj->bpfobj.map_type = attr->map_type;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
+		}
 		break;
 
 	case BPF_PROG_LOAD:
-		//TODO: add fd to local object cache
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpfprogobj.fd = fd;
+			obj->bpfprogobj.prog_type = attr->prog_type;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
+		}
 
 		if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER) {
 			void *ptr = (void *) attr->insns;
 			free(ptr);
 		}
 		break;
+
 	default:
 		break;
 	}

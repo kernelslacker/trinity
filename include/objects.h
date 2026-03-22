@@ -77,6 +77,11 @@ struct bpfobj {
 	int map_fd;
 };
 
+struct bpfprogobj {
+	int fd;
+	u32 prog_type;
+};
+
 struct pidfdobj {
 	int fd;
 	pid_t pid;
@@ -120,6 +125,8 @@ struct object {
 		struct fanotifyobj fanotifyobj;
 
 		struct bpfobj bpfobj;
+
+		struct bpfprogobj bpfprogobj;
 
 		struct pidfdobj pidfdobj;
 
