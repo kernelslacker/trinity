@@ -7,7 +7,6 @@
 #include "objects.h"
 #include "sanitise.h"
 #include "tables.h"
-#include "utils.h"
 
 static void post_epoll_create(struct syscallrecord *rec)
 {

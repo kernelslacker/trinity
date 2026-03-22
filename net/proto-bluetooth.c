@@ -2,7 +2,6 @@
 #include "net.h"
 #include "compat.h"
 #include "random.h"
-#include "utils.h"	// RAND_ARRAY
 
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,

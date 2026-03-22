@@ -4,7 +4,6 @@
 #include <linux/futex.h>
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
 
 static void sanitise_set_robust_list(struct syscallrecord *rec)

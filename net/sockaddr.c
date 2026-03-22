@@ -7,7 +7,6 @@
 #include "net.h"
 #include "params.h"	// do_specific_domain
 #include "random.h"
-#include "utils.h"	// ARRAY_SIZE
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {

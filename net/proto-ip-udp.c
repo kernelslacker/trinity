@@ -2,7 +2,6 @@
 #include <netinet/udp.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 static const unsigned int udp_opts[] = {

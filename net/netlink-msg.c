@@ -19,8 +19,6 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
-#include "sanitise.h"
-#include "utils.h"
 
 /* Forward declaration — called via gen_msg hook from proto-netlink.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);

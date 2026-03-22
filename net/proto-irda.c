@@ -4,10 +4,8 @@
 #include <sys/un.h>
 /* old irda.h does not include something which defines sa_family_t */
 #include <netinet/in.h>
-#include <stdlib.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"	// RAND_ARRAY
 #include "compat.h"
 
 #ifdef USE_IRDA

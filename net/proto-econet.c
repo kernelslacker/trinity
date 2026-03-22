@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"
 
 static void econet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {

@@ -2,7 +2,6 @@
 #include <linux/if_ether.h>
 #include "net.h"
 #include "random.h"
-#include "utils.h"
 #include "compat.h"
 
 static const int ether_types[] = {

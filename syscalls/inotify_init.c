@@ -4,7 +4,6 @@
 #include "objects.h"
 #include "sanitise.h"
 #include "tables.h"
-#include "utils.h"
 
 static void post_inotify_init(struct syscallrecord *rec)
 {

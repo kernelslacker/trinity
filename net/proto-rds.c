@@ -5,7 +5,6 @@
 #include "net.h"
 #include "compat.h"
 #include "random.h"
-#include "utils.h"	// RAND_ARRAY
 #include <linux/rds.h>
 
 static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)

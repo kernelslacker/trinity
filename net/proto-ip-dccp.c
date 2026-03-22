@@ -2,8 +2,6 @@
 #include <linux/dccp.h>
 #include "net.h"
 #include "compat.h"
-#include "random.h"
-#include "utils.h"	// RAND_ARRAY
 
 static const unsigned int dccp_opts[] = {
 	DCCP_SOCKOPT_PACKET_SIZE, DCCP_SOCKOPT_SERVICE, DCCP_SOCKOPT_CHANGE_L, DCCP_SOCKOPT_CHANGE_R,

@@ -5,7 +5,6 @@
  */
 #include "objects.h"
 #include "sanitise.h"
-#include "utils.h"
 
 #define LANDLOCK_CREATE_RULESET_VERSION                 (1U << 0)
 

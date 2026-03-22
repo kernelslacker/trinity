@@ -3,7 +3,6 @@
  */
 #include "maps.h"
 #include "sanitise.h"
-#include "syscall.h"
 #include "trinity.h"
 
 static void sanitise_munlock(__unused__ struct syscallrecord *rec)

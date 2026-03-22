@@ -16,10 +16,8 @@
 #include "random.h"	// generate_rand_bytes
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// __unused__
-#include "utils.h"
 #include "compat.h"
 
 static unsigned int argvcount;

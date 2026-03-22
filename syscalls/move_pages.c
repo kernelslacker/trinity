@@ -18,9 +18,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
-#include "utils.h"
 
 static void sanitise_move_pages(struct syscallrecord *rec)
 {

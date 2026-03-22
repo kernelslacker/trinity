@@ -11,9 +11,7 @@
 #include "debug.h"
 #include "net.h"
 #include "random.h"
-#include "syscall.h"
 #include "tables.h"
-#include "utils.h"
 #include "compat.h"
 
 #ifdef USE_BPF

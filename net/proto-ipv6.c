@@ -16,7 +16,6 @@
 #include "net.h"
 #include "random.h"
 #include "tls.h"
-#include "utils.h"	// ARRAY_SIZE
 #include "uid.h"
 #include "compat.h"
 

@@ -8,7 +8,6 @@
 #include "fd.h"
 #include "sanitise.h"
 #include "random.h"
-#include "utils.h"
 #include "compat.h"
 
 #ifndef EPOLLEXCLUSIVE

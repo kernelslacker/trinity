@@ -9,7 +9,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
 
 static void sanitise_ioctl(struct syscallrecord *rec)

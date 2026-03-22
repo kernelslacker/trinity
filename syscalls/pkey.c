@@ -3,9 +3,7 @@
  */
 
 #include "sanitise.h"
-#include "syscall.h"
 #include "trinity.h"
-#include "utils.h"
 
 #define PKEY_DISABLE_ACCESS     0x1
 #define PKEY_DISABLE_WRITE      0x2

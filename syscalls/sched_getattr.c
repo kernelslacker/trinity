@@ -6,7 +6,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscall.h"
 #include "trinity.h"
 
 #define SCHED_ATTR_SIZE_VER0	48

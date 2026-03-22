@@ -5,7 +5,6 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
-#include "utils.h"
 
 #ifndef IORING_SETUP_IOPOLL
 #define IORING_SETUP_IOPOLL		(1U << 0)
