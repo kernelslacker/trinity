@@ -23,8 +23,8 @@ const struct syscalltable *syscalls_64bit;
 unsigned int max_nr_32bit_syscalls;
 unsigned int max_nr_64bit_syscalls;
 
-bool use_32bit = FALSE;
-bool use_64bit = FALSE;
+bool use_32bit = false;
+bool use_64bit = false;
 
 void activate_syscall32(unsigned int calln)
 {
@@ -50,9 +50,9 @@ void deactivate_syscall64(unsigned int calln)
 int validate_syscall_table_64(void)
 {
 	if (shm->nr_active_64bit_syscalls == 0)
-		use_64bit = FALSE;
+		use_64bit = false;
 	else
-		use_64bit = TRUE;
+		use_64bit = true;
 
 	return use_64bit;
 }
@@ -60,9 +60,9 @@ int validate_syscall_table_64(void)
 int validate_syscall_table_32(void)
 {
 	if (shm->nr_active_32bit_syscalls == 0)
-		use_32bit = FALSE;
+		use_32bit = false;
 	else
-		use_32bit = TRUE;
+		use_32bit = true;
 
 	return use_32bit;
 }
@@ -77,7 +77,7 @@ static void toggle_syscall_biarch_n(int calln, const struct syscalltable *table,
 
 		validate_specific_syscall(table, calln);
 
-		if ((state == TRUE) && onlyflag && doflag) {
+		if ((state == true) && onlyflag && doflag) {
 			entry->flags |= ACTIVE;
 			(*activate)(calln);
 		} else {
@@ -96,8 +96,8 @@ void toggle_syscall_biarch(const char *arg, bool state)
 	int specific_syscall32 = 0;
 	int specific_syscall64 = 0;
 	char *arg_name = NULL;
-	bool only_32bit = TRUE;
-	bool only_64bit = TRUE;
+	bool only_32bit = true;
+	bool only_64bit = true;
 
 	check_user_specified_arch(arg, &arg_name, &only_64bit, &only_32bit);
 
@@ -157,7 +157,7 @@ retry:
 
 		call64 = rand() % max_nr_64bit_syscalls;
 
-		if (validate_specific_syscall_silent(syscalls_64bit, call64) == FALSE)
+		if (validate_specific_syscall_silent(syscalls_64bit, call64) == false)
 			goto retry;
 
 		entry = syscalls_64bit[call64].entry;
@@ -173,7 +173,7 @@ retry:
 		}
 
 		// If we got so far, then activate it.
-		toggle_syscall_biarch_n(call64, syscalls_64bit, TRUE, do_64_arch, TRUE,
+		toggle_syscall_biarch_n(call64, syscalls_64bit, true, do_64_arch, true,
 					&activate_syscall64, 64, entry->name);
 	}
 
@@ -196,7 +196,7 @@ just32:
 			call32 = rand() % max_nr_32bit_syscalls;
 		}
 
-		if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE)
+		if (validate_specific_syscall_silent(syscalls_32bit, call32) == false)
 			return;
 
 		entry = syscalls_32bit[call32].entry;
@@ -205,7 +205,7 @@ just32:
 			return;
 
 		//If we got so far, then active it.
-		toggle_syscall_biarch_n(call32, syscalls_32bit, TRUE, do_32_arch, TRUE,
+		toggle_syscall_biarch_n(call32, syscalls_32bit, true, do_32_arch, true,
 					&activate_syscall32, 32, entry->name);
 	}
 }
@@ -220,7 +220,7 @@ int setup_syscall_group_biarch(unsigned int group)
 			continue;
 
 		if (entry->group == group)
-			toggle_syscall(entry->name, TRUE);
+			toggle_syscall(entry->name, true);
 	}
 
 	if (shm->nr_active_32bit_syscalls == 0)
@@ -235,17 +235,17 @@ int setup_syscall_group_biarch(unsigned int group)
 		continue;
 
 		if (entry->group == group)
-			toggle_syscall(entry->name, TRUE);
+			toggle_syscall(entry->name, true);
 	}
 
 	if (shm->nr_active_64bit_syscalls == 0) {
 		outputstd("No 64-bit syscalls in group\n");
-		return FALSE;
+		return false;
 	} else {
 		outputstd("Found %d 64-bit syscalls in group\n", shm->nr_active_64bit_syscalls);
 	}
 
-	return TRUE;
+	return true;
 }
 
 void mark_all_syscalls_active_biarch(void)

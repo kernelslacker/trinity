@@ -126,12 +126,12 @@ unsigned int find_next_enabled_domain(unsigned int from)
 	from %= ARRAY_SIZE(no_domains);
 
 	for (i = from; i < ARRAY_SIZE(no_domains); i++) {
-		if (no_domains[i] == FALSE)
+		if (no_domains[i] == false)
 			return i;
 	}
 
 	for (i = 0; i < from; i++) {
-		if (no_domains[i] == FALSE)
+		if (no_domains[i] == false)
 			return i;
 	}
 
@@ -153,7 +153,7 @@ void parse_exclude_domains(const char *arg)
 		p = lookup_domain(tok);
 		if (p) {
 			BUG_ON(p->domain >= ARRAY_SIZE(no_domains));
-			no_domains[p->domain] = TRUE;
+			no_domains[p->domain] = true;
 		} else
 			goto err;
 	}

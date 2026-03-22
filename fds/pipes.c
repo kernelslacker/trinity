@@ -43,13 +43,13 @@ static void open_pipe_pair(unsigned int flags)
 	obj = alloc_object();
 	obj->pipeobj.fd = pipes[0];
 	obj->pipeobj.flags = flags;
-	obj->pipeobj.reader = TRUE;
+	obj->pipeobj.reader = true;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
 	obj = alloc_object();
 	obj->pipeobj.fd = pipes[1];
 	obj->pipeobj.flags = flags;
-	obj->pipeobj.reader = FALSE;
+	obj->pipeobj.reader = false;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 }
 
@@ -63,7 +63,7 @@ static int open_pipe(void)
 		flags |= O_CLOEXEC;
 
 	open_pipe_pair(flags);
-	return TRUE;
+	return true;
 }
 
 static int init_pipes(void)
@@ -78,7 +78,7 @@ static int init_pipes(void)
 	for (i = 0; i < 4; i++)
 		open_pipe();
 
-	return TRUE;
+	return true;
 }
 
 int get_rand_pipe_fd(void)
@@ -96,7 +96,7 @@ int get_rand_pipe_fd(void)
 static const struct fd_provider pipes_fd_provider = {
 	.name = "pipes",
 	.objtype = OBJ_FD_PIPE,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_pipes,
 	.get = &get_rand_pipe_fd,
 	.open = &open_pipe,

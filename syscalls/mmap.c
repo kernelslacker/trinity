@@ -69,7 +69,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		if (rec->a5 == (unsigned long) -1)
 			rec->a5 = 0;
 
-		if (this_syscallname("mmap2") == TRUE) {
+		if (this_syscallname("mmap2") == true) {
 			/* mmap2 counts in 4K units */
 			rec->a6 /= 4096;
 		} else {

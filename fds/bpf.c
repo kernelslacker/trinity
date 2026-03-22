@@ -90,13 +90,13 @@ static int open_bpf_fd(void)
 			    bpf_fds[idx].value_size, bpf_fds[idx].max_entries,
 			    bpf_fds[idx].flags);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->bpfobj.map_fd = fd;
 	obj->bpfobj.map_type = bpf_fds[idx].map_type;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	return TRUE;
+	return true;
 }
 
 static int init_bpf_fds(void)
@@ -114,10 +114,10 @@ static int init_bpf_fds(void)
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++)
 		open_bpf_fd();
 
-	//FIXME: right now, returning FALSE means "abort everything", not
+	//FIXME: right now, returning false means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
 
-	return TRUE;
+	return true;
 }
 
 int get_rand_bpf_fd(void)
@@ -125,7 +125,7 @@ int get_rand_bpf_fd(void)
 	struct object *obj;
 
 	/* check if bpf unavailable/disabled. */
-	if (objects_empty(OBJ_FD_BPF_MAP) == TRUE)
+	if (objects_empty(OBJ_FD_BPF_MAP) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
@@ -135,7 +135,7 @@ int get_rand_bpf_fd(void)
 static const struct fd_provider bpf_fd_provider = {
 	.name = "bpf",
 	.objtype = OBJ_FD_BPF_MAP,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_bpf_fds,
 	.get = &get_rand_bpf_fd,
 	.open = &open_bpf_fd,

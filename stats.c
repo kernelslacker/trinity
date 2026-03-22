@@ -33,7 +33,7 @@ void dump_stats(void)
 {
 	unsigned int i;
 
-	if (biarch == TRUE) {
+	if (biarch == true) {
 		printf("32bit:\n");
 		for_each_32bit_syscall(i) {
 			dump_entry(syscalls_32bit, i);

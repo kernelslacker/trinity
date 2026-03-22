@@ -44,7 +44,7 @@ static int init_inotify_fds(void)
 
 	fd = inotify_init();
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->inotifyobj.fd = fd;
@@ -54,7 +54,7 @@ static int init_inotify_fds(void)
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		fd = inotify_init1(flags[i]);
 		if (fd < 0)
-			return FALSE;
+			return false;
 
 		obj = alloc_object();
 		obj->inotifyobj.fd = fd;
@@ -62,7 +62,7 @@ static int init_inotify_fds(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
 	}
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_inotify_fd(void)
@@ -70,7 +70,7 @@ static int get_rand_inotify_fd(void)
 	struct object *obj;
 
 	/* check if inotifyfd unavailable/disabled. */
-	if (objects_empty(OBJ_FD_INOTIFY) == TRUE)
+	if (objects_empty(OBJ_FD_INOTIFY) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_INOTIFY, OBJ_GLOBAL);
@@ -88,19 +88,19 @@ static int open_inotify_fd(void)
 
 	fd = inotify_init1(flags);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
-	return TRUE;
+	return true;
 }
 
 static const struct fd_provider inotify_fd_provider = {
 	.name = "inotify",
 	.objtype = OBJ_FD_INOTIFY,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_inotify_fds,
 	.get = &get_rand_inotify_fd,
 	.open = &open_inotify_fd,

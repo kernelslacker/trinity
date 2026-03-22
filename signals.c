@@ -72,7 +72,7 @@ void mask_signals_child(void)
 		(void)signal(i, SIG_IGN);
 
 	/* If we are in debug mode, we want segfaults and core dumps */
-	if (shm->debug == TRUE) {
+	if (shm->debug == true) {
 		(void)signal(SIGABRT, SIG_DFL);
 		(void)signal(SIGSEGV, SIG_DFL);
 	}

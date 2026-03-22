@@ -46,8 +46,8 @@ void init_shm(void)
 
 	output(2, "shm is at %p\n", shm);
 
-	if (set_debug == TRUE)
-		shm->debug = TRUE;
+	if (set_debug == true)
+		shm->debug = true;
 
 	shm->stats.op_count = 0;
 	shm->stats.previous_op_count = 0;

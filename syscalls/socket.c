@@ -29,9 +29,9 @@ static bool do_priv(struct socket_triplet *st, const struct netproto *proto)
 		r = rand() % proto->nr_privileged_triplets;
 		st->protocol = proto->valid_privileged_triplets[r].protocol;
 		st->type = proto->valid_privileged_triplets[r].type;
-		return TRUE;
+		return true;
 	}
-	return FALSE;
+	return false;
 }
 
 /* note: also called from generate_sockets() */
@@ -55,7 +55,7 @@ do_unpriv:
 				return 0;
 			}
 		} else {
-			if (do_priv(st, proto) == FALSE)
+			if (do_priv(st, proto) == false)
 				goto do_unpriv;
 		}
 	}
@@ -67,7 +67,7 @@ do_unpriv:
 /* note: also called from sanitise_socketcall() */
 void gen_socket_args(struct socket_triplet *st)
 {
-	if (do_specific_domain == TRUE)
+	if (do_specific_domain == true)
 		st->family = specific_domain;
 
 	else {

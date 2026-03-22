@@ -57,11 +57,11 @@ retry_flags:
 		randflags = get_o_flags();
 		obj->fileobj.flags = flags | randflags;
 		fd = open(filename, flags | randflags | O_NONBLOCK, 0666);
-		obj->fileobj.fopened = FALSE;
+		obj->fileobj.fopened = false;
 		obj->fileobj.fcntl_flags = 0;
 	} else {
 		fd = open_with_fopen(filename, flags);
-		obj->fileobj.fopened = TRUE;
+		obj->fileobj.fopened = true;
 		obj->fileobj.flags = flags;
 
 		fcntl_flags = random_fcntl_setfl_flags();
@@ -113,13 +113,13 @@ static int open_files(void)
 	if (files_in_index == 0) {
 		/* Something bad happened. Crappy -V maybe? */
 		panic(EXIT_NO_FILES);
-		return FALSE;
+		return false;
 	}
 
 	nr_to_open = min(files_in_index, NR_FILE_FDS);
 
 	if (fileindex == NULL)	/* this can happen if we ctrl-c'd */
-		return FALSE;
+		return false;
 
 	for (i = 0; i < nr_to_open; i++) {
 		struct stat sb;
@@ -164,14 +164,14 @@ static int open_files(void)
 
 		mmap_fd(fd, filename, sb.st_size, flags, OBJ_GLOBAL, OBJ_MMAP_FILE);
 	}
-	return TRUE;
+	return true;
 }
 
 static int get_rand_file_fd(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_FD_FILE) == TRUE)
+	if (objects_empty(OBJ_FD_FILE) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_FILE, OBJ_GLOBAL);
@@ -181,7 +181,7 @@ static int get_rand_file_fd(void)
 static const struct fd_provider file_fd_provider = {
 	.name = "pseudo",	// FIXME: Use separate providers for dev/sysfs/procfs
 	.objtype = OBJ_FD_FILE,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &open_files,
 	.get = &get_rand_file_fd,
 };

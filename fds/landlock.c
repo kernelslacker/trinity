@@ -34,14 +34,14 @@ static int open_landlock_fd(void)
 	attr = 0xfff;	/* LANDLOCK_ACCESS_FS_* bits */
 	fd = syscall(__NR_landlock_create_ruleset, &attr, sizeof(attr), 0);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->landlockobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_LANDLOCK);
-	return TRUE;
+	return true;
 #else
-	return FALSE;
+	return false;
 #endif
 }
 
@@ -55,14 +55,14 @@ static int init_landlock_fds(void)
 
 	open_landlock_fd();
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_landlock_fd(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_FD_LANDLOCK) == TRUE)
+	if (objects_empty(OBJ_FD_LANDLOCK) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_LANDLOCK, OBJ_GLOBAL);
@@ -72,7 +72,7 @@ static int get_rand_landlock_fd(void)
 static const struct fd_provider landlock_fd_provider = {
 	.name = "landlock",
 	.objtype = OBJ_FD_LANDLOCK,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_landlock_fds,
 	.get = &get_rand_landlock_fd,
 	.open = &open_landlock_fd,

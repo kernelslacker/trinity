@@ -48,8 +48,8 @@ bool drop_privs(struct childdata *child)
 	}
 
 //	debugf("set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
-	child->dropped_privs = TRUE;
-	return TRUE;
+	child->dropped_privs = true;
+	return true;
 }
 
 void init_uids(void)
@@ -59,7 +59,7 @@ void init_uids(void)
 	orig_uid = getuid();
 	orig_gid = getgid();
 
-	if (dropprivs == FALSE)
+	if (dropprivs == false)
 		return;
 
 	passwd = getpwnam("nobody");
@@ -80,14 +80,14 @@ void do_uid0_check(void)
 	if (orig_uid != 0)
 		return;
 
-	if (dangerous == TRUE) {
+	if (dangerous == true) {
 		outputstd("DANGER: RUNNING AS ROOT.\n");
 		outputstd("Unless you are running in a virtual machine, this could cause serious problems such as overwriting CMOS\n");
 		outputstd("or similar which could potentially make this machine unbootable without a firmware reset.\n");
 		outputstd("You might want to check out running with --dropprivs (currently experimental).\n\n");
 	} else {
 
-		if (dropprivs == FALSE) {
+		if (dropprivs == false) {
 			outputstd("Don't run as root (or pass --dangerous, or --dropprivs if you know what you are doing).\n");
 			exit(EXIT_FAILURE);
 		} else {
@@ -96,7 +96,7 @@ void do_uid0_check(void)
 		}
 	}
 
-	if (clowntown == TRUE) {
+	if (clowntown == true) {
 		printf("THIS CLOWN GOES TO 11.\n");
 		return;
 	}
@@ -120,7 +120,7 @@ void check_uid(void)
 	myuid = getuid();
 
 	/* we should be 'nobody' if we ran with --dropprivs */
-	if (dropprivs == TRUE) {
+	if (dropprivs == true) {
 		if (myuid == nobody_uid)
 			return;
 		else

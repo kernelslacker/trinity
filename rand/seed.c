@@ -42,7 +42,7 @@ unsigned int seed = 0;
  */
 unsigned int init_seed(unsigned int seedparam)
 {
-	if (user_set_seed == TRUE)
+	if (user_set_seed == true)
 		output(0, "Using user passed random seed: %u.\n", seedparam);
 	else {
 		int urandomfd;
@@ -51,7 +51,7 @@ unsigned int init_seed(unsigned int seedparam)
 		urandomfd = open("/dev/urandom", O_RDONLY);
 		if (urandomfd == -1) {
 			printf("urandom: %s\n", strerror(errno));
-			return FALSE;
+			return false;
 		}
 
 		if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
@@ -65,7 +65,7 @@ unsigned int init_seed(unsigned int seedparam)
 		output(0, "Initial random seed: %u\n", seedparam);
 	}
 
-	if (do_syslog == TRUE) {
+	if (do_syslog == true) {
 		openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
 		syslog(LOG_CRIT, "Initial random seed: %u\n", seedparam);
 		closelog();

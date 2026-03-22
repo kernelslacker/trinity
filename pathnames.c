@@ -118,12 +118,12 @@ static void add_to_namelist(const char *name)
 int check_stat_file(const struct stat *sb)
 {
 	int openflag = 0;
-	bool set_read = FALSE;
-	bool set_write = FALSE;
+	bool set_read = false;
+	bool set_write = false;
 	uid_t target_uid = orig_uid;
 	gid_t target_gid = orig_gid;
 
-	if (dropprivs == TRUE) {
+	if (dropprivs == true) {
 		target_uid = nobody_uid;
 		target_gid = nobody_gid;
 	}
@@ -133,32 +133,32 @@ int check_stat_file(const struct stat *sb)
 
 	if (sb->st_uid == target_uid) {
 		if (sb->st_mode & S_IRUSR)
-			set_read = TRUE;
+			set_read = true;
 		if (sb->st_mode & S_IWUSR)
-			set_write = TRUE;
+			set_write = true;
 	}
 
 	if (sb->st_gid == target_gid) {
 		if (sb->st_mode & S_IRGRP)
-			set_read = TRUE;
+			set_read = true;
 		if (sb->st_mode & S_IWGRP)
-			set_write = TRUE;
+			set_write = true;
 	}
 
 	if (sb->st_mode & S_IROTH)
-		set_read = TRUE;
+		set_read = true;
 	if (sb->st_mode & S_IWOTH)
-		set_write = TRUE;
+		set_write = true;
 
 
 	if (set_read == 0 && set_write == 0)
 		return -1;
 
-	if (set_read == TRUE)
+	if (set_read == true)
 		openflag = O_RDONLY;
-	if (set_write == TRUE)
+	if (set_write == true)
 		openflag = O_WRONLY;
-	if ((set_read == TRUE) && (set_write == TRUE))
+	if ((set_read == true) && (set_write == true))
 		openflag = O_RDWR;
 
 	if (S_ISDIR(sb->st_mode))

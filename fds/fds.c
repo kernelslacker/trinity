@@ -21,7 +21,7 @@ static unsigned int num_fd_providers;			// num in list.
 static unsigned int num_fd_providers_to_enable = 0;	// num of --fd-enable= params
 static unsigned int num_fd_providers_enabled = 0;	// final num we enabled.
 static unsigned int num_fd_providers_initialized = 0;	// num we called ->init on
-static bool enable_fd_initialized = FALSE;		// initialized (disabled all) fd providers
+static bool enable_fd_initialized = false;		// initialized (disabled all) fd providers
 
 static struct fd_provider *fd_providers = NULL;
 
@@ -60,22 +60,22 @@ static void __open_fds(bool do_rand)
 		provider = (struct fd_provider *) node;
 
 		/* disabled on cmdline */
-		if (provider->enabled == FALSE)
+		if (provider->enabled == false)
 			continue;
 
 		/* already done */
-		if (provider->initialized == TRUE)
+		if (provider->initialized == true)
 			continue;
 
-		if (do_rand == TRUE) {
+		if (do_rand == true) {
 			/* to mix up init order */
 			if (RAND_BOOL())
 				continue;
 		}
 
 		provider->enabled = provider->init();
-		if (provider->enabled == TRUE) {
-			provider->initialized = TRUE;
+		if (provider->enabled == true) {
+			provider->initialized = true;
 			num_fd_providers_initialized++;
 			num_fd_providers_enabled++;
 		} else {
@@ -89,15 +89,15 @@ unsigned int open_fds(void)
 {
 	/* Open half the providers randomly */
 	while (num_fd_providers_initialized < (num_fd_providers_to_enable / 2))
-		__open_fds(TRUE);
+		__open_fds(true);
 
 	/* Now open any leftovers */
-	__open_fds(FALSE);
+	__open_fds(false);
 
 	output(0, "Enabled %d/%d fd providers. initialized:%d.\n",
 		num_fd_providers_enabled, num_fd_providers, num_fd_providers_initialized);
 
-	return TRUE;
+	return true;
 }
 
 int get_new_random_fd(void)
@@ -129,11 +129,11 @@ retry:
 			if (i == j) {
 				provider = (struct fd_provider *) node;
 
-				if (provider->enabled == FALSE)	// FIXME: Better would be to just remove disabled providers from the list.
+				if (provider->enabled == false)	// FIXME: Better would be to just remove disabled providers from the list.
 					goto retry;
 
 				// Hasn't been run yet.
-				if (provider->initialized == FALSE)
+				if (provider->initialized == false)
 					goto retry;
 
 				fd = provider->get();
@@ -257,8 +257,8 @@ void try_regenerate_fd(enum objecttype type)
 
 		provider = (struct fd_provider *) node;
 		if (provider->objtype == type && provider->open != NULL &&
-		    provider->initialized == TRUE) {
-			if (provider->open() == TRUE)
+		    provider->initialized == true) {
+			if (provider->open() == true)
 				__atomic_add_fetch(&shm->stats.fd_regenerated, 1, __ATOMIC_RELAXED);
 			return;
 		}
@@ -274,12 +274,12 @@ static void toggle_fds_param(char *str, bool enable)
 
 		provider = (struct fd_provider *) node;
 		if (strcmp(provider->name, str) == 0) {
-			if (enable == TRUE) {
-				provider->enabled = TRUE;
+			if (enable == true) {
+				provider->enabled = true;
 				outputstd("Enabled fd provider %s\n", str);
 				num_fd_providers_to_enable++;
 			} else {
-				provider->enabled = FALSE;
+				provider->enabled = false;
 				outputstd("Disabled fd provider %s\n", str);
 			}
 			return;
@@ -300,7 +300,7 @@ void process_fds_param(char *param, bool enable)
 
 	len = strlen(param);
 
-	if (enable_fd_initialized == FALSE && enable == TRUE) {
+	if (enable_fd_initialized == false && enable == true) {
 		struct list_head *node;
 
 		/* First, pass through and mark everything disabled. */
@@ -308,9 +308,9 @@ void process_fds_param(char *param, bool enable)
 			struct fd_provider *provider;
 
 			provider = (struct fd_provider *) node;
-			provider->enabled = FALSE;
+			provider->enabled = false;
 		}
-		enable_fd_initialized = TRUE;
+		enable_fd_initialized = true;
 	}
 
 	/* Check if there are any commas. If so, split them into multiple params,

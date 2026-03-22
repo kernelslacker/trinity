@@ -25,7 +25,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	}
 
 	/* If we want sockets of a specific type, we'll want sockaddrs that match. */
-	if (do_specific_domain == TRUE)
+	if (do_specific_domain == true)
 		pf = specific_domain;
 
 	/* If we got no hint passed down, pick a random proto. */

@@ -49,7 +49,7 @@ static int open_perf_fd(void)
 
 	fd = syscall(__NR_perf_event_open, rec.a1, rec.a2, rec.a3, rec.a4, rec.a5);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->perfobj.fd = fd;
@@ -60,7 +60,7 @@ static int open_perf_fd(void)
 	obj->perfobj.group_fd = rec.a4;
 	obj->perfobj.flags = rec.a5;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PERF);
-	return TRUE;
+	return true;
 }
 
 static int init_perf_fds(void)
@@ -75,14 +75,14 @@ static int init_perf_fds(void)
 	head->dump = &perffd_dump;
 
 	while (i < MAX_PERF_FDS) {
-		if (open_perf_fd() == TRUE) {
+		if (open_perf_fd() == true) {
 			i++;
 			inval_count = 0;
 			perm_count = 0;
 		} else {
 			switch (errno) {
 			case ENOSYS:
-				return FALSE;
+				return false;
 			case EINVAL:
 				inval_count++;
 				break;
@@ -94,19 +94,19 @@ static int init_perf_fds(void)
 
 		if (perm_count > 1000) {
 			output(2, "Couldn't open enough perf events, got EPERM too much. Giving up.\n");
-			return FALSE;
+			return false;
 		}
 
 		if (inval_count > 10000) {
 			output(2, "couldn't open enough perf events, got EINVAL too much. Giving up.\n");
-			return FALSE;
+			return false;
 		}
 
 		if (shm->exit_reason != STILL_RUNNING)
-			return FALSE;
+			return false;
 	}
 
-	return TRUE;
+	return true;
 }
 
 int get_rand_perf_fd(void)
@@ -114,7 +114,7 @@ int get_rand_perf_fd(void)
 	struct object *obj;
 
 	/* check if perf unavailable/disabled. */
-	if (objects_empty(OBJ_FD_PERF) == TRUE)
+	if (objects_empty(OBJ_FD_PERF) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_PERF, OBJ_GLOBAL);
@@ -124,7 +124,7 @@ int get_rand_perf_fd(void)
 static const struct fd_provider perf_fd_provider = {
 	.name = "perf",
 	.objtype = OBJ_FD_PERF,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_perf_fds,
 	.get = &get_rand_perf_fd,
 	.open = &open_perf_fd,

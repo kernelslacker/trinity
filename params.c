@@ -19,36 +19,36 @@
 #include "taint.h"
 #include "trinity.h"	// progname
 
-bool set_debug = FALSE;
-bool do_specific_syscall = FALSE;
-bool do_exclude_syscall = FALSE;
+bool set_debug = false;
+bool do_specific_syscall = false;
+bool do_exclude_syscall = false;
 
-bool do_32_arch = TRUE;
-bool do_64_arch = TRUE;
+bool do_32_arch = true;
+bool do_64_arch = true;
 
 unsigned int specific_domain = 0;
 unsigned int user_specified_children = 0;
 
-bool do_specific_domain = FALSE;
+bool do_specific_domain = false;
 bool no_domains[TRINITY_PF_MAX];
 
-bool dry_run = FALSE;
-bool show_unannotated = FALSE;
-bool show_syscall_list = FALSE;
-bool show_ioctl_list = FALSE;
+bool dry_run = false;
+bool show_unannotated = false;
+bool show_syscall_list = false;
+bool show_ioctl_list = false;
 unsigned char quiet_level = 0;
-bool verbose = FALSE;
-bool dangerous = FALSE;
-bool dropprivs = FALSE;
-bool do_syslog = FALSE;
-bool random_selection = FALSE;
+bool verbose = false;
+bool dangerous = false;
+bool dropprivs = false;
+bool do_syslog = false;
+bool random_selection = false;
 unsigned int random_selection_num;
 
-bool clowntown = FALSE;
-bool show_stats = FALSE;
-bool group_bias = FALSE;
+bool clowntown = false;
+bool show_stats = false;
+bool group_bias = false;
 
-bool user_set_seed = FALSE;
+bool user_set_seed = false;
 
 unsigned char desired_group = GROUP_NONE;
 
@@ -60,7 +60,7 @@ int logging = LOGGING_FILES;
 char *logging_args = NULL;
 
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
-bool kernel_taint_param_occured = FALSE;
+bool kernel_taint_param_occured = false;
 
 void enable_disable_fd_usage(void)
 {
@@ -171,14 +171,14 @@ void parse_args(int argc, char *argv[])
 
 		case 'a':
 			/* One of the architectures selected*/
-			do_32_arch = FALSE;
-			do_64_arch = FALSE;
+			do_32_arch = false;
+			do_64_arch = false;
 			if (strcmp(optarg, "64") == 0) {
-				do_32_arch = FALSE;
-				do_64_arch = TRUE;
+				do_32_arch = false;
+				do_64_arch = true;
 			} else if (strcmp(optarg, "32") == 0) {
-				do_32_arch = TRUE;
-				do_64_arch = FALSE;
+				do_32_arch = true;
+				do_64_arch = false;
 			} else {
 				outputstd("can't parse %s\n", optarg);
 				exit(EXIT_FAILURE);
@@ -194,8 +194,8 @@ void parse_args(int argc, char *argv[])
 
 		case 'c':
 			/* syscalls are all disabled at this point. enable the syscall we care about. */
-			do_specific_syscall = TRUE;
-			toggle_syscall(optarg, TRUE);
+			do_specific_syscall = true;
+			toggle_syscall(optarg, true);
 			break;
 
 		case 'C':
@@ -209,11 +209,11 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'd':
-			dangerous = TRUE;
+			dangerous = true;
 			break;
 
 		case 'D':
-			set_debug = TRUE;
+			set_debug = true;
 			break;
 
 		case 'E':
@@ -249,7 +249,7 @@ void parse_args(int argc, char *argv[])
 			exit(EXIT_SUCCESS);
 
 		case 'I':
-			show_ioctl_list = TRUE;
+			show_ioctl_list = true;
 			break;
 
 		case 'l':
@@ -257,7 +257,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'L':
-			show_syscall_list = TRUE;
+			show_syscall_list = true;
 			break;
 
 		/* Set number of syscalls to do */
@@ -266,7 +266,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'P':
-			do_specific_domain = TRUE;
+			do_specific_domain = true;
 			specific_domain = strtol(optarg, NULL, 10);
 			specific_domain_optarg = optarg;
 			break;
@@ -276,23 +276,23 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'r':
-			if (do_exclude_syscall == TRUE) {
+			if (do_exclude_syscall == true) {
 				outputerr("-r needs to be before any -x options.\n");
 				exit(EXIT_FAILURE);
 			}
-			random_selection = TRUE;
+			random_selection = true;
 			random_selection_num = strtol(optarg, NULL, 10);
 			break;
 
 		/* Set seed */
 		case 's':
 			seed = strtol(optarg, NULL, 10);
-			user_set_seed = TRUE;
+			user_set_seed = true;
 			break;
 
 
 		case 'S':
-			do_syslog = TRUE;
+			do_syslog = true;
 			break;
 
 		case 'T':
@@ -304,7 +304,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'v':
-			verbose = TRUE;
+			verbose = true;
 			break;
 
 		case 'V':
@@ -319,41 +319,41 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'x':
-			do_exclude_syscall = TRUE;
-			toggle_syscall(optarg, FALSE);
+			do_exclude_syscall = true;
+			toggle_syscall(optarg, false);
 			break;
 
 		case 'X':
 			if (getuid() == 0)
-				dropprivs = TRUE;
+				dropprivs = true;
 			else
 				outputstd("Already running unprivileged, can't drop privs\n");
 			break;
 
 		case 0:
 			if (strcmp("clowntown", longopts[opt_index].name) == 0)
-				clowntown = TRUE;
+				clowntown = true;
 
 			if (strcmp("disable-fds", longopts[opt_index].name) == 0)
-				process_fds_param(optarg, FALSE);
+				process_fds_param(optarg, false);
 
 			if (strcmp("dry-run", longopts[opt_index].name) == 0)
-				dry_run = TRUE;
+				dry_run = true;
 
 			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
-				process_fds_param(optarg, TRUE);
+				process_fds_param(optarg, true);
 
 			if (strcmp("ftrace-dump-file", longopts[opt_index].name) == 0)
 				ftracedumpname = strdup(optarg);
 
 			if (strcmp("group-bias", longopts[opt_index].name) == 0)
-				group_bias = TRUE;
+				group_bias = true;
 
 			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
-				show_unannotated = TRUE;
+				show_unannotated = true;
 
 			if (strcmp("stats", longopts[opt_index].name) == 0)
-				show_stats = TRUE;
+				show_stats = true;
 
 			break;
 		}

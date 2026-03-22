@@ -122,15 +122,15 @@ static int open_drm_fds(void)
 		closedir(dir);
 
 done:
-	if (objects_empty(OBJ_FD_DRM) == TRUE)
-		drm_fd_provider.enabled = FALSE;
+	if (objects_empty(OBJ_FD_DRM) == true)
+		drm_fd_provider.enabled = false;
 
-	return TRUE;
+	return true;
 }
 
 #else
 
-static int open_drm_fds(void) { return TRUE; }
+static int open_drm_fds(void) { return true; }
 
 #endif /* USE_DRM */
 
@@ -139,7 +139,7 @@ static int get_rand_drm_fd(void)
 	struct object *obj;
 
 	/* check if drm unavailable/disabled. */
-	if (objects_empty(OBJ_FD_DRM) == TRUE)
+	if (objects_empty(OBJ_FD_DRM) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);
@@ -149,7 +149,7 @@ static int get_rand_drm_fd(void)
 static struct fd_provider drm_fd_provider = {
 	.name = "drm",
 	.objtype = OBJ_FD_DRM,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &open_drm_fds,
 	.get = &get_rand_drm_fd,
 };

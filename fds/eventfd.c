@@ -62,7 +62,7 @@ static int init_eventfd_fds(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_EVENTFD);
 	}
 
-	return TRUE;
+	return true;
 }
 
 static int get_rand_eventfd_fd(void)
@@ -70,7 +70,7 @@ static int get_rand_eventfd_fd(void)
 	struct object *obj;
 
 	/* check if eventfd unavailable/disabled. */
-	if (objects_empty(OBJ_FD_EVENTFD) == TRUE)
+	if (objects_empty(OBJ_FD_EVENTFD) == true)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_EVENTFD, OBJ_GLOBAL);
@@ -91,20 +91,20 @@ static int open_eventfd_fd(void)
 
 	fd = eventfd(count, flags);
 	if (fd < 0)
-		return FALSE;
+		return false;
 
 	obj = alloc_object();
 	obj->eventfdobj.fd = fd;
 	obj->eventfdobj.count = count;
 	obj->eventfdobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_EVENTFD);
-	return TRUE;
+	return true;
 }
 
 static const struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
 	.objtype = OBJ_FD_EVENTFD,
-	.enabled = TRUE,
+	.enabled = true,
 	.init = &init_eventfd_fds,
 	.get = &get_rand_eventfd_fd,
 	.open = &open_eventfd_fd,

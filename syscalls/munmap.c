@@ -20,7 +20,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 
 	action = 0;
 
-	if (ONE_IN(20) == TRUE) {
+	if (ONE_IN(20) == true) {
 		/* delete the whole mapping. */
 		action = WHOLE;
 		return;

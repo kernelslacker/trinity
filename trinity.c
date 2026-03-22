@@ -129,22 +129,22 @@ int main(int argc, char* argv[])
 
 	init_taint_checking();
 
-	if (munge_tables() == FALSE) {
+	if (munge_tables() == false) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	if (show_syscall_list == TRUE) {
+	if (show_syscall_list == true) {
 		dump_syscall_tables();
 		goto out;
 	}
 
-	if (show_ioctl_list == TRUE) {
+	if (show_ioctl_list == true) {
 		dump_ioctls();
 		goto out;
 	}
 
-	if (show_unannotated == TRUE) {
+	if (show_unannotated == true) {
 		show_unannotated_args();
 		goto out;
 	}
@@ -153,7 +153,7 @@ int main(int argc, char* argv[])
 
 	do_uid0_check();
 
-	if (do_specific_domain == TRUE)
+	if (do_specific_domain == true)
 		find_specific_domain(specific_domain_optarg);
 
 	pids_init();
@@ -177,7 +177,7 @@ int main(int argc, char* argv[])
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
-	if (open_fds() == FALSE) {
+	if (open_fds() == false) {
 		if (shm->exit_reason != STILL_RUNNING)
 			panic(EXIT_FD_INIT_FAILURE);	// FIXME: Later, push this down to multiple EXIT's.
 
@@ -190,12 +190,12 @@ int main(int argc, char* argv[])
 
 	destroy_global_objects();
 
-	if (is_tainted() == TRUE)
+	if (is_tainted() == true)
 		stop_ftrace();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.op_count, shm->stats.successes, shm->stats.failures);
-	if (show_stats == TRUE)
+	if (show_stats == true)
 		dump_stats();
 
 	shutdown_logging();

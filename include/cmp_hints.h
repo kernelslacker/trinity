@@ -40,5 +40,5 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr);
 /* Return a random hint value for the given syscall, or 0 if none. */
 unsigned long cmp_hints_get(unsigned int nr);
 
-/* Return TRUE if any hints are available for this syscall. */
+/* Return true if any hints are available for this syscall. */
 bool cmp_hints_available(unsigned int nr);

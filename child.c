@@ -55,7 +55,7 @@ static void disable_coredumps(void)
 {
 	struct rlimit limit = { .rlim_cur = 0, .rlim_max = 0 };
 
-	if (shm->debug == TRUE) {
+	if (shm->debug == true) {
 		(void)signal(SIGABRT, SIG_DFL);
 		(void)signal(SIGSEGV, SIG_DFL);
 		return;
@@ -64,7 +64,7 @@ static void disable_coredumps(void)
 	if (setrlimit(RLIMIT_CORE, &limit) != 0)
 		perror( "setrlimit(RLIMIT_CORE)" );
 
-	prctl(PR_SET_DUMPABLE, FALSE);
+	prctl(PR_SET_DUMPABLE, false);
 }
 
 /*
@@ -78,10 +78,10 @@ static void enable_coredumps(void)
 		.rlim_max = RLIM_INFINITY
 	};
 
-	if (shm->debug == TRUE)
+	if (shm->debug == true)
 		return;
 
-	prctl(PR_SET_DUMPABLE, TRUE);
+	prctl(PR_SET_DUMPABLE, true);
 
 	(void) setrlimit(RLIMIT_CORE, &limit);
 }
@@ -98,19 +98,19 @@ static void set_make_it_fail(void)
 	/* If we failed last time, it's probably because we don't
 	 * have fault-injection enabled, so don't bother trying in future.
 	 */
-	if (shm->dont_make_it_fail == TRUE)
+	if (shm->dont_make_it_fail == true)
 		return;
 
 	fd = open("/proc/self/make-it-fail", O_WRONLY);
 	if (fd == -1) {
-		shm->dont_make_it_fail = TRUE;
+		shm->dont_make_it_fail = true;
 		return;
 	}
 
 	if (write(fd, buf, 1) == -1) {
 		if (errno != EPERM)
 			outputerr("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
-		shm->dont_make_it_fail = TRUE;
+		shm->dont_make_it_fail = true;
 	}
 
 	close(fd);
@@ -151,14 +151,14 @@ static void oom_score_adj(int adj)
 void clean_childdata(struct childdata *child)
 {
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
-	child->logdirty = FALSE;
+	child->logdirty = false;
 	child->seed = 0;
 	child->kill_count = 0;
-	child->dontkillme = FALSE;
+	child->dontkillme = false;
 	child->xcpu_count = 0;
 	child->op_nr = 0;
 	child->last_group = GROUP_NONE;
-	child->dropped_privs = FALSE;
+	child->dropped_privs = false;
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }
 
@@ -168,7 +168,7 @@ static void bind_child_to_cpu(struct childdata *child)
 	unsigned int cpudest;
 	pid_t pid = pids[child->num];
 
-	if (no_bind_to_cpu == TRUE)
+	if (no_bind_to_cpu == true)
 		return;
 
 	if (sched_getaffinity(pid, sizeof(set), &set) != 0)
@@ -203,7 +203,7 @@ static void init_child(struct childdata *child, int childno)
 	/* Wait for parent to set our childno */
 	while (pids[childno] != pid) {
 		/* Make sure parent is actually alive to wait for us. */
-		if (pid_alive(mainpid) == FALSE) {
+		if (pid_alive(mainpid) == false) {
 			panic(EXIT_SHM_CORRUPTION);
 			outputerr("BUG!: parent (%d) went away!\n", mainpid);
 			sleep(20000);
@@ -231,7 +231,7 @@ static void init_child(struct childdata *child, int childno)
 	oom_score_adj(500);
 
 	/* Wait for all the children to start up. */
-	while (shm->ready == FALSE)
+	while (shm->ready == false)
 		sleep(1);
 
 	set_make_it_fail();
@@ -251,18 +251,18 @@ static void init_child(struct childdata *child, int childno)
 	}
 
 /*
-	if (shm->unshare_perm_err == FALSE) {
+	if (shm->unshare_perm_err == false) {
 		if (RAND_BOOL()) {
 			int ret = unshare(CLONE_NEWUSER);
 			if (ret != 0)
 				output(0, "couldn't unshare: %s\n", strerror(errno));
 			if (ret == -EPERM)
-				shm->unshare_perm_err = TRUE;
+				shm->unshare_perm_err = true;
 		}
 	}
 */
 	if (orig_uid == 0)
-		child->dropped_privs = FALSE;
+		child->dropped_privs = false;
 
 	kcov_init_child(&child->kcov);
 }
@@ -303,7 +303,7 @@ static void check_parent_pid(void)
 		"main pid:%d. ppid=%d\n",
 		pid, mainpid, ppid);
 
-	if (pid_alive(mainpid) == FALSE)
+	if (pid_alive(mainpid) == false)
 		output(0, "main pid %d is dead.\n", mainpid);
 
 	panic(EXIT_REPARENT_PROBLEM);
@@ -357,7 +357,7 @@ static bool handle_sigreturn(int sigwas)
 
 	/* Check if we're blocked because we were stuck on an fd. */
 	lock(&rec->lock);
-	if (check_if_fd(child, rec) == TRUE) {
+	if (check_if_fd(child, rec) == true) {
 		/* Force this child to pick a new fd next time. */
 		child->fd_lifetime = 0;
 
@@ -375,23 +375,23 @@ static bool handle_sigreturn(int sigwas)
 	}
 	if (count == 10) {
 		output(1, "no progress for 10 tries, exiting child.\n");
-		return FALSE;
+		return false;
 	}
 
 	if (child->kill_count > 0) {
 		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
-		return FALSE;
+		return false;
 	}
 
 	if (sigwas == SIGHUP)
-		return FALSE;
+		return false;
 
 	if (sigwas != SIGALRM)
 		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
 	else {
 		child->op_nr++;
 	}
-	return TRUE;
+	return true;
 }
 
 
@@ -415,7 +415,7 @@ void child_process(struct childdata *child, int childno)
 			goto out;
 		}
 
-		if (handle_sigreturn(ret) == FALSE)
+		if (handle_sigreturn(ret) == false)
 			goto out;	// Exit the child, things are getting too weird.
 	}
 
@@ -449,9 +449,9 @@ void child_process(struct childdata *child, int childno)
 	enable_coredumps();
 
 	/* If we're exiting because we tainted, wait here for it to be done. */
-	while (shm->postmortem_in_progress == TRUE) {
+	while (shm->postmortem_in_progress == true) {
 		/* Make sure the main process is still around. */
-		if (pid_alive(mainpid) == FALSE)
+		if (pid_alive(mainpid) == false)
 			goto out;
 
 		usleep(1);

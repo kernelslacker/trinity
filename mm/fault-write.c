@@ -14,10 +14,10 @@ static bool mark_map_rw(struct map *map)
 	int ret;
 	ret = mprotect(map->ptr, map->size, PROT_READ|PROT_WRITE);
 	if (ret < 0)
-		return FALSE;
+		return false;
 
 	map->prot = PROT_READ|PROT_WRITE;
-	return TRUE;
+	return true;
 }
 
 static bool mark_page_rw(struct map *map, void *page)
@@ -25,10 +25,10 @@ static bool mark_page_rw(struct map *map, void *page)
 	int ret;
 	ret = mprotect(page, page_size, PROT_READ|PROT_WRITE);
 	if (ret < 0)
-		return FALSE;
+		return false;
 
 	map->prot = PROT_READ|PROT_WRITE;
-	return TRUE;
+	return true;
 }
 
 static unsigned int nr_pages(struct map *map)
@@ -41,7 +41,7 @@ static void dirty_one_page(struct map *map)
 	char *p = map->ptr;
 	unsigned long offset = (rand() % map->size) & PAGE_MASK;
 
-	if (mark_page_rw(map, p + offset) == TRUE)
+	if (mark_page_rw(map, p + offset) == true)
 		p[offset] = rand();
 }
 
@@ -49,7 +49,7 @@ static void dirty_whole_mapping(struct map *map)
 {
 	unsigned int i, nr;
 
-	if (mark_map_rw(map) == FALSE)
+	if (mark_map_rw(map) == false)
 		return;
 
 	nr = nr_pages(map);
@@ -70,7 +70,7 @@ static void dirty_every_other_page(struct map *map)
 
 	for (i = first; i < nr; i+=2) {
 		char *p = map->ptr + (i * page_size);
-		if (mark_page_rw(map, p) == TRUE)
+		if (mark_page_rw(map, p) == true)
 			*p = rand();
 	}
 }
@@ -83,7 +83,7 @@ static void dirty_mapping_reverse(struct map *map)
 
 	for (i = nr; i > 0; i--) {
 		char *p = map->ptr + (i * page_size);
-		if (mark_page_rw(map, p) == TRUE)
+		if (mark_page_rw(map, p) == true)
 			*p = rand();
 	}
 }
@@ -98,7 +98,7 @@ static void dirty_random_pages(struct map *map)
 	for (i = 0; i < nr; i++) {
 		off_t offset = (rand() % nr) * page_size;
 		char *p = map->ptr + offset;
-		if (mark_page_rw(map, p) == TRUE)
+		if (mark_page_rw(map, p) == true)
 			*p = rand();
 	}
 }
@@ -109,7 +109,7 @@ static void dirty_first_page(struct map *map)
 {
 	char *p = map->ptr;
 
-	if (mark_page_rw(map, map->ptr) == TRUE)
+	if (mark_page_rw(map, map->ptr) == true)
 		generate_random_page(p);
 }
 
@@ -120,7 +120,7 @@ static void dirty_last_page(struct map *map)
 {
 	char *p = map->ptr + map->size - page_size;
 
-	if (mark_page_rw(map, p) == TRUE)
+	if (mark_page_rw(map, p) == true)
 		memset((void *) p, 'A', page_size);
 }
 
