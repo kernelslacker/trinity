@@ -10,7 +10,6 @@
 #include "arch.h"
 #include "fd.h"
 #include "files.h"
-#include "ftrace.h"
 #include "ioctls.h"
 #include "log.h"
 #include "maps.h"
@@ -184,14 +183,9 @@ int main(int argc, char* argv[])
 		_exit(EXIT_FAILURE);
 	}
 
-	setup_ftrace();
-
 	main_loop();
 
 	destroy_global_objects();
-
-	if (is_tainted() == true)
-		stop_ftrace();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 		shm->stats.op_count, shm->stats.successes, shm->stats.failures);
