@@ -8,4 +8,7 @@ struct syscallentry syscall_timer_getoverrun = {
 	.group = GROUP_TIME,
 	.num_args = 1,
 	.arg1name = "timer_id",
+	.arg1type = ARG_RANGE,
+	.low1range = 0,
+	.hi1range = 31,
 };
