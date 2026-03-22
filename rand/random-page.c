@@ -17,7 +17,7 @@ static void fabricate_struct(char *p, unsigned int len)
 		void **ptr = (void*) &p[i];
 		unsigned long val = 0;
 
-		switch (rnd() % 3) {
+		switch (rand() % 3) {
 		case 0:
 			if (!IS_ALIGNED(i, 8))
 				break;
@@ -26,7 +26,7 @@ static void fabricate_struct(char *p, unsigned int len)
 			if (i > len)
 				return;
 
-			switch (rnd() % 4) {
+			switch (rand() % 4) {
 			case 0:	val = rand64();
 				break;
 			case 1:	val = (unsigned long) get_address();
@@ -95,7 +95,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			len--;
 	}
 
-	switch (rnd() % randrange) {
+	switch (rand() % randrange) {
 	case 0:
 		/* Complete garbage. */
 		for (i = 0; i < len; i++)
@@ -117,19 +117,19 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	case 5:
 		/* printable text strings. */
 		for (i = 0; i < len; i++)
-			ptr[i] = 32 + rnd() % (0x7f - 32);
+			ptr[i] = 32 + rand() % (0x7f - 32);
 		break;
 
 	case 6:
 		/* ascii representation of random numbers */
-		separator = separators[rnd() % sizeof(separators)];
+		separator = separators[rand() % sizeof(separators)];
 
 		p = (char *) ptr;
 
 		while (p < (char *)(ptr + (len-23))) {		// 23 is the longest case below + separator.
 			if (RAND_BOOL()) {
 				/* hex */
-				switch (rnd() % 3) {
+				switch (rand() % 3) {
 				case 0:	p += sprintf(p, "0x%lx", (unsigned long) rand64());
 					break;
 				case 1:	p += sprintf(p, "0x%08x", (unsigned int) rand32());
@@ -144,12 +144,12 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 				if (RAND_BOOL())
 					p += sprintf(p, "-");
 
-				switch (rnd() % 3) {
+				switch (rand() % 3) {
 				case 0:	p += sprintf(p, "%lu", (unsigned long) rand64());
 					break;
 				case 1:	p += sprintf(p, "%u", (unsigned int) rand32());
 					break;
-				case 2:	p += sprintf(p, "%u", (unsigned char) rnd());
+				case 2:	p += sprintf(p, "%u", (unsigned char) rand());
 					break;
 				}
 			}
@@ -170,7 +170,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	case 8:
 		for (i = 0; i < len; i += 2) {
 			ptr[i] = '%';
-			switch (rnd() % 8) {
+			switch (rand() % 8) {
 			case 0:	ptr[i + 1] = 'd'; break;	/* signed decimal integer */
 			case 1:	ptr[i + 1] = 's'; break;	/* string */
 			case 2:	ptr[i + 1] = 'x'; break;	/* unsigned hex (lowercase) */
@@ -209,13 +209,13 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 						'O',	/* device tree node */
 						'A',	/* Rust fmt::Arguments */
 					};
-					ptr[i + 2] = exts[rnd() % sizeof(exts)];
+					ptr[i + 2] = exts[rand() % sizeof(exts)];
 					i++;
 				}
 				break;
 			}
 		}
-		ptr[rnd() % len] = 0;
+		ptr[rand() % len] = 0;
 		return;
 	}
 }

@@ -271,7 +271,7 @@ static bool generate_specific_socket(int family)
 		return FALSE;
 	}
 
-	st.protocol = rnd() % 256;
+	st.protocol = rand() % 256;
 
 	if (sanitise_socket_triplet(&st) == -1)
 		rand_proto_type(&st);
@@ -362,7 +362,7 @@ static bool generate_sockets(void)
 
 	/* This is here temporarily until we have sufficient ->valid_proto's */
 	while (nr_sockets < NR_SOCKET_FDS) {
-		r = rnd() % TRINITY_PF_MAX;
+		r = rand() % TRINITY_PF_MAX;
 		for (i = 0; i < 10; i++)
 			if (generate_specific_socket(r) == FALSE)
 				break;

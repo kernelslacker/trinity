@@ -486,17 +486,17 @@ static long long random_sysfs_config(__u32 *type,
 		return rand64();
 	}
 
-	i=rnd()%num_pmus;
+	i=rand()%num_pmus;
 
 	*type=pmus[i].type;
 
-	switch(rnd()%3) {
+	switch(rand()%3) {
 		/* Random by Format */
 		case 0:
 			if (pmus[i].num_formats==0) goto out;
 			for(j=0;j<pmus[i].num_formats;j++) {
 				/* 50% chance of having field set */
-				if (rnd()%2) {
+				if (rand()%2) {
 					if (pmus[i].formats[j].field==FIELD_CONFIG) {
 						c|=(rand64()&pmus[i].formats[j].mask);
 					} else if (pmus[i].formats[j].field==FIELD_CONFIG1) {
@@ -512,7 +512,7 @@ static long long random_sysfs_config(__u32 *type,
 		/* Random by generic event */
 		case 1:
 			if (pmus[i].num_generic_events==0) goto out;
-			j=rnd()%pmus[i].num_generic_events;
+			j=rand()%pmus[i].num_generic_events;
 			c=pmus[i].generic_events[j].config;
 			c1=pmus[i].generic_events[j].config1;
 			c2=pmus[i].generic_events[j].config2;
@@ -530,8 +530,8 @@ static long long random_sysfs_config(__u32 *type,
 	*config2=c2;
 	return c;
 out:
-	*config1=rnd()%64;
-	return rnd()%64;
+	*config1=rand()%64;
+	return rand()%64;
 }
 
 /* arbitrary high number unlikely to be used by perf_event */
@@ -543,7 +543,7 @@ static long long random_cache_config(void)
 
 	int cache_id, hw_cache_op_id, hw_cache_op_result_id;
 
-	switch (rnd() % 8) {
+	switch (rand() % 8) {
 	case 0:
 		cache_id = PERF_COUNT_HW_CACHE_L1D;
 		break;
@@ -573,7 +573,7 @@ static long long random_cache_config(void)
 		break;
 	}
 
-	switch (rnd() % 4) {
+	switch (rand() % 4) {
 	case 0:
 		hw_cache_op_id = PERF_COUNT_HW_CACHE_OP_READ;
 		break;
@@ -591,7 +591,7 @@ static long long random_cache_config(void)
 		break;
 	}
 
-	switch (rnd() % 3) {
+	switch (rand() % 3) {
 	case 0:
 		hw_cache_op_result_id = PERF_COUNT_HW_CACHE_RESULT_ACCESS;
 		break;
@@ -614,7 +614,7 @@ static int random_event_type(void)
 
 	int type=0;
 
-	switch (rnd() % 8) {
+	switch (rand() % 8) {
 	case 0:
 		type = PERF_TYPE_HARDWARE;
 		break;
@@ -653,7 +653,7 @@ static long long random_event_config(__u32 *event_type,
 
 	switch (*event_type) {
 	case PERF_TYPE_HARDWARE:
-		switch (rnd() % 11) {
+		switch (rand() % 11) {
 		case 0:
 			config = PERF_COUNT_HW_CPU_CYCLES;
 			break;
@@ -692,7 +692,7 @@ static long long random_event_config(__u32 *event_type,
 		}
 		break;
 	case PERF_TYPE_SOFTWARE:
-		switch (rnd() % 12) {
+		switch (rand() % 12) {
 		case 0:
 			config = PERF_COUNT_SW_CPU_CLOCK;
 			break;
@@ -737,10 +737,10 @@ static long long random_event_config(__u32 *event_type,
 		/* Actual values to use can be found under */
 		/* debugfs tracing/events/?*?/?*?/id       */
 		/* usually a small < 4096 number           */
-		switch(rnd()%2) {
+		switch(rand()%2) {
 		case 0:
 			/* Try a value < 4096 */
-			config = rnd()&0xfff;
+			config = rand()&0xfff;
 			break;
 		case 1:
 			config = rand64();
@@ -784,7 +784,7 @@ static long long random_event_config(__u32 *event_type,
 static void setup_breakpoints(struct perf_event_attr *attr)
 {
 
-	switch (rnd() % 6) {
+	switch (rand() % 6) {
 	case 0:
 		attr->bp_type = HW_BREAKPOINT_EMPTY;
 		break;
@@ -812,7 +812,7 @@ static void setup_breakpoints(struct perf_event_attr *attr)
 	/* or a valid mem location for R/W/RW             */
 	attr->bp_addr = (long)get_address();
 
-	switch (rnd() % 5) {
+	switch (rand() % 5) {
 	case 0:
 		attr->bp_len = HW_BREAKPOINT_LEN_1;
 		break;
@@ -909,7 +909,7 @@ static int random_attr_size(void) {
 
 	int size=0;
 
-	switch(rnd() % 10) {
+	switch(rand() % 10) {
 	case 0:	size = PERF_ATTR_SIZE_VER0;
 		break;
 	case 1: size = PERF_ATTR_SIZE_VER1;
@@ -1023,7 +1023,7 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->enable_on_exec = RAND_BOOL();
 	attr->task = RAND_BOOL();
 	attr->watermark = RAND_BOOL();
-	attr->precise_ip = rnd() % 4;	// two bits
+	attr->precise_ip = rand() % 4;	// two bits
 	attr->mmap_data = RAND_BOOL();
 	attr->sample_id_all = RAND_BOOL();
 	attr->exclude_host = RAND_BOOL();
@@ -1093,7 +1093,7 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->enable_on_exec = RAND_BOOL();
 	attr->task = RAND_BOOL();
 	attr->watermark = RAND_BOOL();
-	attr->precise_ip = rnd() % 4;	// two bits
+	attr->precise_ip = rand() % 4;	// two bits
 	attr->mmap_data = RAND_BOOL();
 	attr->sample_id_all = RAND_BOOL();
 	attr->exclude_host = RAND_BOOL();
@@ -1121,10 +1121,10 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	/* sample_regs_user is a bitmask of CPU registers to record.     */
 	/* The values come from arch/ARCH/include/uapi/asm/perf_regs.h   */
 	/* Most architectures have fewer than 64 registers...            */
-	switch(rnd()%3) {
-		case 0:		attr->sample_regs_user = rnd()%16;
+	switch(rand()%3) {
+		case 0:		attr->sample_regs_user = rand()%16;
 				break;
-		case 1:		attr->sample_regs_user = rnd()%64;
+		case 1:		attr->sample_regs_user = rand()%64;
 				break;
 		case 2:		attr->sample_regs_user = rand64();
 				break;
@@ -1137,7 +1137,7 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->sample_stack_user = rand32();
 
 	if (attr->use_clockid) {
-		switch(rnd()%6) {
+		switch(rand()%6) {
 			case 0:	attr->clockid = CLOCK_MONOTONIC;
 				break;
 			case 1: attr->clockid = CLOCK_MONOTONIC_RAW;
@@ -1149,7 +1149,7 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 			/* Most possible values < 32 */
 			case 4: attr->clockid = RAND_BYTE();
 				break;
-			case 5:	attr->clockid = rnd();
+			case 5:	attr->clockid = rand();
 				break;
 		}
 	}
@@ -1220,7 +1220,7 @@ static void create_random_event(struct perf_event_attr *attr)
 	attr->enable_on_exec = RAND_BOOL();
 	attr->task = RAND_BOOL();
 	attr->watermark = RAND_BOOL();
-	attr->precise_ip = rnd() % 4;
+	attr->precise_ip = rand() % 4;
 	attr->mmap_data = RAND_BOOL();
 	attr->sample_id_all = RAND_BOOL();
 	attr->exclude_host = RAND_BOOL();
@@ -1275,7 +1275,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	/* should usually be -1 or another perf_event fd         */
 	/* Anything but -1 unlikely to work unless the other pid */
 	/* was properly set up to be a group master              */
-	switch (rnd() % 3) {
+	switch (rand() % 3) {
 	case 0:
 		rec->a4 = -1;
 		group_leader = 1;
@@ -1316,7 +1316,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 		/* a file descriptor from /dev/cgroup       */
 		pid = get_random_fd();
 	} else {
-		switch(rnd() % 4) {
+		switch(rand() % 4) {
 		case 0:	/* use current thread */
 			pid = 0;
 			break;
@@ -1337,7 +1337,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	rec->a2 = pid;
 
 	/* set up attr structure */
-	switch (rnd() % 4) {
+	switch (rand() % 4) {
 	case 0:
 		create_mostly_valid_counting_event(attr,group_leader);
 		break;

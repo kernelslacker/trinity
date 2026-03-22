@@ -13,11 +13,6 @@
 #include "types.h"
 #include "utils.h"
 
-int rnd(void)
-{
-	return rand();
-}
-
 /*
  * OR a random number of bits into a mask.
  * Used by ARG_LIST generation, and get_o_flags()
@@ -33,7 +28,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 		return mask;
 
 	for (i = 0; i < bits; i++)
-		mask |= values[rnd() % num];
+		mask |= values[rand() % num];
 
 	return mask;
 }
@@ -46,7 +41,7 @@ unsigned long rand_single_bit(unsigned char size)
 	if (size > WORD_BIT)
 		size = WORD_BIT;
 
-	return (1UL << (rnd() % size));
+	return (1UL << (rand() % size));
 }
 
 /*
@@ -54,12 +49,12 @@ unsigned long rand_single_bit(unsigned char size)
  */
 static unsigned long randbits(int limit)
 {
-	unsigned int num = rnd() % (limit / 2);
+	unsigned int num = rand() % (limit / 2);
 	unsigned int i;
 	unsigned long r = 0;
 
 	for (i = 0; i < num; i++)
-		r |= (1UL << (rnd() % (limit - 1)));
+		r |= (1UL << (rand() % (limit - 1)));
 
 	return r;
 }
@@ -86,7 +81,7 @@ unsigned short rand16(void)
 {
 	unsigned short r = 0, r2;
 
-	switch (rnd() % 6) {
+	switch (rand() % 6) {
 	case 0:	r = RAND_BYTE();
 		break;
 
@@ -94,12 +89,12 @@ unsigned short rand16(void)
 		break;
 	case 2:	r = randbits(16);
 		break;
-	case 3: r = rnd();
+	case 3: r = rand();
 		break;
-	case 4:	r2 = rnd() & 0xff;
+	case 4:	r2 = rand() & 0xff;
 		r = r2 | r2 << 8;
 		break;
-	case 5: return 0 - ((rnd() % 10) + 1);
+	case 5: return 0 - ((rand() % 10) + 1);
 	}
 
 	/* Sometimes flip sign */
@@ -113,7 +108,7 @@ unsigned short rand16(void)
 
 	if (RAND_BOOL()) {
 		/* limit the size */
-		switch (rnd() % 3) {
+		switch (rand() % 3) {
 		case 0: r &= 0xff;
 			break;
 		case 1: r &= 0xfff;
@@ -132,7 +127,7 @@ unsigned int rand32(void)
 {
 	unsigned long r = 0;
 
-	switch (rnd() % 8) {
+	switch (rand() % 8) {
 	case 0:	r = RAND_BYTE();
 		break;
 	case 1:	r = rand16();
@@ -141,14 +136,14 @@ unsigned int rand32(void)
 		break;
 	case 3:	r = randbits(32);
 		break;
-	case 4: r = rnd();
+	case 4: r = rand();
 		break;
 	case 5:	r = rept_byte();
 		break;
 
 	case 6:	return get_interesting_32bit_value();
 
-	case 7: return 0 - ((rnd() % 10) + 1);
+	case 7: return 0 - ((rand() % 10) + 1);
 	}
 
 	/* Sometimes deduct it from INT_MAX */
@@ -167,7 +162,7 @@ unsigned int rand32(void)
 
 	if (RAND_BOOL()) {
 		/* limit the size */
-		switch (rnd() % 4) {
+		switch (rand() % 4) {
 		case 0: r &= 0xff;
 			break;
 		case 1: r &= 0xffff;
@@ -189,7 +184,7 @@ u64 rand64(void)
 {
 	u64 r = 0;
 
-	switch (rnd() % 9) {
+	switch (rand() % 9) {
 
 	/* 8-bit ranges */
 	case 0:	r = RAND_BYTE();
@@ -208,7 +203,7 @@ u64 rand64(void)
 		break;
 	case 4:	r = randbits(64);
 		break;
-	case 5:	r = (u64) rnd() << 32 | rnd();
+	case 5:	r = (u64) rand() << 32 | rand();
 		break;
 	case 6:	r = rept_byte();
 		break;
@@ -217,11 +212,11 @@ u64 rand64(void)
 	case 7:	return get_interesting_value();
 
 	// small 64bit negative number.
-	case 8: return 0 - ((rnd() % 10) + 1);
+	case 8: return 0 - ((rand() % 10) + 1);
 	}
 
 	/* limit the size */
-	switch (rnd() % 4) {
+	switch (rand() % 4) {
 	case 0: r &= 0x000000ffffffffffULL;
 		break;
 	case 1: r &= 0x0000ffffffffffffULL;
@@ -241,9 +236,9 @@ u64 rand64(void)
 		unsigned int i;
 		unsigned int rounds;
 
-		rounds = rnd() % 4;
+		rounds = rand() % 4;
 		for (i = 0; i < rounds; i++)
-			r |= (1UL << ((WORD_BIT - 1) - (rnd() % 8)));
+			r |= (1UL << ((WORD_BIT - 1) - (rand() % 8)));
 	}
 
 	/* Sometimes flip sign */

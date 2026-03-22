@@ -112,7 +112,7 @@ const struct ioctl_group *get_random_ioctl_group(void)
 	if (grps_cnt == 0)
 		return NULL;
 
-	return grps[rnd() % grps_cnt];
+	return grps[rand() % grps_cnt];
 }
 
 static unsigned long random_ioctl_arg(void)
@@ -133,7 +133,7 @@ void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	int ioctlnr;
 
-	ioctlnr = rnd() % grp->ioctls_cnt;
+	ioctlnr = rand() % grp->ioctls_cnt;
 
 	rec->a2 = grp->ioctls[ioctlnr].request;
 	rec->a3 = random_ioctl_arg();

@@ -21,10 +21,10 @@ static void irda_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	irda = zmalloc(sizeof(struct sockaddr_irda));
 
 	irda->sir_family = PF_IRDA;
-	irda->sir_lsap_sel = rnd();
-	irda->sir_addr = rnd();
+	irda->sir_lsap_sel = rand();
+	irda->sir_addr = rand();
 	for (i = 0; i < 25; i++)
-		irda->sir_name[i] = rnd();
+		irda->sir_name[i] = rand();
 	*addr = (struct sockaddr *) irda;
 	*addrlen = sizeof(struct sockaddr_irda);
 }

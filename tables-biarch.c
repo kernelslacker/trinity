@@ -155,7 +155,7 @@ retry:
 	if (do_64_arch) {
 		struct syscallentry *entry = NULL;
 
-		call64 = rnd() % max_nr_64bit_syscalls;
+		call64 = rand() % max_nr_64bit_syscalls;
 
 		if (validate_specific_syscall_silent(syscalls_64bit, call64) == FALSE)
 			goto retry;
@@ -193,7 +193,7 @@ try32bit:
 			}
 		} else {
 just32:
-			call32 = rnd() % max_nr_32bit_syscalls;
+			call32 = rand() % max_nr_32bit_syscalls;
 		}
 
 		if (validate_specific_syscall_silent(syscalls_32bit, call32) == FALSE)

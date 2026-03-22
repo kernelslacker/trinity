@@ -25,10 +25,10 @@ static void sanitise_s390_sthyi(struct syscallrecord *rec)
 	rec->a2 = (unsigned long)addr;
 
 	/* Use NULL, random or valid address */
-	switch (rnd() % 3) {
+	switch (rand() % 3) {
 	case 0:	rec->a3 = 0;
 		break;
-	case 1: rec->a3 = rnd();
+	case 1: rec->a3 = rand();
 		break;
 	case 2: rec->a3 = (unsigned long)&syscall_s390_sthyi_return_code;
 		break;

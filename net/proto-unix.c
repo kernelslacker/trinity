@@ -15,7 +15,7 @@ static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	unixsock = zmalloc(sizeof(struct sockaddr_un));
 
 	unixsock->sun_family = PF_UNIX;
-	len = rnd() % 20;
+	len = rand() % 20;
 	generate_rand_bytes((unsigned char *)unixsock->sun_path, len);
 	*addr = (struct sockaddr *) unixsock;
 	*addrlen = sizeof(struct sockaddr_un);

@@ -16,7 +16,7 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	rds->sin_family = AF_INET;
 	rds->sin_addr.s_addr = random_ipv4_address();
-	rds->sin_port = rnd() % 65535;
+	rds->sin_port = rand() % 65535;
 
 	*addr = (struct sockaddr *) rds;
 	*addrlen = sizeof(struct sockaddr_in);

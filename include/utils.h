@@ -63,8 +63,8 @@ int get_num_fds(void);
 #define unreachable() __builtin_unreachable()
 
 #define RAND_ELEMENT(_array, _element) \
-	_array[rnd() % ARRAY_SIZE(_array)]._element
+	_array[rand() % ARRAY_SIZE(_array)]._element
 
-#define RAND_ARRAY(_array) _array[rnd() % ARRAY_SIZE(_array)]
+#define RAND_ARRAY(_array) _array[rand() % ARRAY_SIZE(_array)]
 
 #define IS_ALIGNED(x, a)	(((x) & ((typeof(x))(a) - 1)) == 0)

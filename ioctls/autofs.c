@@ -297,21 +297,21 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 		arg = (struct autofs_dev_ioctl *) rec->a3;
 		init_autofs_dev_ioctl(arg);
 		arg->ioctlfd = get_random_fd();
-		arg->fail.token = rnd();
-		arg->fail.status = rnd();
+		arg->fail.token = rand();
+		arg->fail.status = rand();
 		if (RAND_BOOL()) {
 			arg->size += 5;
 			arg->path[0] = '/';
-			arg->path[1] = rnd();
-			arg->path[2] = rnd();
-			arg->path[3] = rnd();
+			arg->path[1] = rand();
+			arg->path[2] = rand();
+			arg->path[3] = rand();
 			arg->path[4] = 0;
 		} else {
 			int i;
 
-			arg->size += rnd();
+			arg->size += rand();
 			for (i=0; i < 10; ++i)
-				arg->path[i] = rnd();
+				arg->path[i] = rand();
 		}
 		break;
 	default:

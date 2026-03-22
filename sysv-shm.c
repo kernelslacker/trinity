@@ -46,7 +46,7 @@ void create_sysv_shms(void)
 
 		flags = 0660 | IPC_CREAT | IPC_EXCL | shmget_flags[i];
 
-		size = page_size * (1 + rnd() % 10);
+		size = page_size * (1 + rand() % 10);
 
 		id = shmget(IPC_PRIVATE, page_size, flags);
 		if (id == -1) {

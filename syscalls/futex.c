@@ -283,7 +283,7 @@ static void sanitise_futex(struct syscallrecord *rec)
 		goto out_setclock;
 	}
 
-	switch (rnd() % 4) {
+	switch (rand() % 4) {
 	case 0:
 		if (futex_trylock_or_wait(lock1, rec))
 			futex_unlock(lock1);

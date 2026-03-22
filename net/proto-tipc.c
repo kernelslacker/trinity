@@ -16,16 +16,16 @@ static void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	tipc = zmalloc(sizeof(struct sockaddr_tipc));
 
 	tipc->family = AF_TIPC;
-	tipc->addrtype = rnd();
-	tipc->scope = rnd();
-	tipc->addr.id.ref = rnd();
-	tipc->addr.id.node = rnd();
-	tipc->addr.nameseq.type = rnd();
-	tipc->addr.nameseq.lower = rnd();
-	tipc->addr.nameseq.upper = rnd();
-	tipc->addr.name.name.type = rnd();
-	tipc->addr.name.name.instance = rnd();
-	tipc->addr.name.domain = rnd();
+	tipc->addrtype = rand();
+	tipc->scope = rand();
+	tipc->addr.id.ref = rand();
+	tipc->addr.id.node = rand();
+	tipc->addr.nameseq.type = rand();
+	tipc->addr.nameseq.lower = rand();
+	tipc->addr.nameseq.upper = rand();
+	tipc->addr.name.name.type = rand();
+	tipc->addr.name.name.instance = rand();
+	tipc->addr.name.domain = rand();
 	*addr = (struct sockaddr *) tipc;
 	*addrlen = sizeof(struct sockaddr_tipc);
 }

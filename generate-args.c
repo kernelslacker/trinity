@@ -20,14 +20,14 @@
 static int get_cpu(void)
 {
 	int i;
-	i = rnd() % 100;
+	i = rand() % 100;
 
 	switch (i) {
 	case 0: return -1;
-	case 1: return rnd() % 4096;
+	case 1: return rand() % 4096;
 	case 2: return INT_MAX;
 	case 3 ... 98:
-		return rnd() % num_online_cpus;
+		return rand() % num_online_cpus;
 	}
 	return 0;
 }
@@ -47,7 +47,7 @@ static unsigned long handle_arg_address(struct syscallrecord *rec, unsigned int 
 
 	addr = find_previous_arg_address(rec, argnum);
 
-	switch (rnd() % 4) {
+	switch (rand() % 4) {
 	case 0:	break;	/* return unmodified */
 	case 1:	addr++;
 		break;
@@ -99,7 +99,7 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 
 	/* ~1 in 8: bias toward the range boundaries where off-by-one bugs hide */
 	if (ONE_IN(8)) {
-		switch (rnd() % 4) {
+		switch (rand() % 4) {
 		case 0: return low;
 		case 1: return high;
 		case 2: return (low < high) ? low + 1 : low;
@@ -155,7 +155,7 @@ static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argn
 
 	get_num_and_values(entry, argnum, &num, &values);
 
-	op = values[rnd() % num];
+	op = values[rand() % num];
 	return op;
 }
 
@@ -173,7 +173,7 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 	/* ~1 in 8: OR in a shifted flag to probe for undocumented adjacent bits */
 	if (ONE_IN(8)) {
 		mask = set_rand_bitmask(num, values);
-		mask |= shift_flag_bit(values[rnd() % num]);
+		mask |= shift_flag_bit(values[rand() % num]);
 		return mask;
 	}
 
@@ -247,12 +247,12 @@ static unsigned long handle_arg_mode_t(void)
 	unsigned int i, count;
 	mode_t mode = 0, op = 0;
 
-	count = rnd() % 9;
+	count = rand() % 9;
 
 	for (i = 0; i < count; i++) {
 		unsigned int j;
 
-		j = rnd() % 15;
+		j = rand() % 15;
 		switch (j) {
 		case  0: op = S_IRWXU; break;
 		case  1: op = S_IRUSR; break;
@@ -305,7 +305,7 @@ enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 
 static unsigned long gen_undefined_arg(void)
 {
-	switch (rnd() % 8) {
+	switch (rand() % 8) {
 	case 0: return mutate_value(get_boundary_value());
 	case 1: return mutate_value(rand64());
 	case 2: return get_interesting_value();

@@ -113,7 +113,7 @@ static unsigned short pick_nlmsg_type(int protocol)
 		return RAND_ARRAY(audit_types);
 	case NETLINK_NETFILTER:
 		/* nfnetlink: subsys << 8 | msg. subsys 0-15ish */
-		return ((rnd() % 16) << 8) | (rnd() % 16);
+		return ((rand() % 16) << 8) | (rand() % 16);
 	case NETLINK_GENERIC:
 		/* genl: CTRL_CMD range or random family id */
 		if (RAND_BOOL())
@@ -142,7 +142,7 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen)
 	if (offset + NLA_HDRLEN > buflen)
 		return offset;
 
-	payload_len = rnd() % 64;
+	payload_len = rand() % 64;
 	total = NLA_HDRLEN + payload_len;
 
 	/* Align to 4 bytes */
@@ -193,7 +193,7 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	/* Protocol body: 4-64 bytes of random data */
 	body_len = RAND_RANGE(4, 64);
 	/* Space for attrs: 0-512 bytes */
-	total_len = NLMSG_HDRLEN + body_len + (rnd() % 512);
+	total_len = NLMSG_HDRLEN + body_len + (rand() % 512);
 
 	/* Cap at a reasonable size */
 	if (total_len > 4096)
@@ -212,14 +212,14 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 
 	/* Append random nlattr TLVs */
 	offset = NLMSG_HDRLEN + body_len;
-	num_attrs = rnd() % 8;
+	num_attrs = rand() % 8;
 	while (num_attrs-- > 0 && offset < total_len)
 		offset = append_nlattr(msg, offset, total_len);
 
 	/* Set nlmsg_len — usually correct, sometimes corrupted */
 	if (ONE_IN(10)) {
 		/* Corrupt: too short, too long, zero, or max */
-		switch (rnd() % 4) {
+		switch (rand() % 4) {
 		case 0: nlh->nlmsg_len = 0; break;
 		case 1: nlh->nlmsg_len = NLMSG_HDRLEN - 1; break;
 		case 2: nlh->nlmsg_len = total_len * 2; break;

@@ -187,9 +187,9 @@ unsigned int get_pid(void)
 	if (shm->running_childs == 0)
 		return 0;
 
-	switch (rnd() % 3) {
+	switch (rand() % 3) {
 	case 0:
-retry:		i = rnd() % max_children;
+retry:		i = rand() % max_children;
 		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			goto retry;

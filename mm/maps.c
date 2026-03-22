@@ -35,7 +35,7 @@ struct map * get_map(void)
 		global = OBJ_LOCAL;
 
 	while (obj == NULL) {
-		switch (rnd() % 3) {
+		switch (rand() % 3) {
 		case 0:	type = OBJ_MMAP_ANON;
 			break;
 		case 1:	type = OBJ_MMAP_FILE;
@@ -128,7 +128,7 @@ struct map * common_set_mmap_ptr_len(void)
 	}
 
 	rec->a1 = (unsigned long) map->ptr;
-	rec->a2 = rnd() % map->size;
+	rec->a2 = rand() % map->size;
 	rec->a2 &= PAGE_MASK;
 
 	return map;
@@ -189,7 +189,7 @@ retry_mmap:
 		offset = 0;
 		obj->map.size = page_size;
 	} else
-		offset = (rnd() % obj->map.size) & PAGE_MASK;
+		offset = (rand() % obj->map.size) & PAGE_MASK;
 
 	obj->map.prot = prot;
 	obj->map.type = MMAPED_FILE;

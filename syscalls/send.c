@@ -28,7 +28,7 @@ static void sanitise_send(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		size = 1;
 	else
-		size = rnd() % page_size;
+		size = rand() % page_size;
 
 	rec->a3 = size;
 }

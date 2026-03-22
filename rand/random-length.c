@@ -13,7 +13,7 @@ unsigned long get_len(void)
 		return get_boundary_value();
 
 	if (RAND_BOOL()) {
-		switch (rnd() % 4) {
+		switch (rand() % 4) {
 		case 0:	return sizeof(char);
 		case 1:	return sizeof(int);
 		case 2:	return sizeof(long);
@@ -27,7 +27,7 @@ unsigned long get_len(void)
 	if (i == 0)
 		return 0;
 
-	switch (rnd() % 5) {
+	switch (rand() % 5) {
 	case 0:	i &= 0xff;
 		break;
 	case 1: i &= page_size - 1;

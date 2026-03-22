@@ -76,9 +76,9 @@ static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ipv6->sin6_family = PF_INET6;
 
 	gen_random_ipv6_address(&ipv6->sin6_addr);
-	ipv6->sin6_port = htons(rnd() % 65535);
-	ipv6->sin6_flowinfo = rnd();
-	ipv6->sin6_scope_id = rnd();
+	ipv6->sin6_port = htons(rand() % 65535);
+	ipv6->sin6_flowinfo = rand();
+	ipv6->sin6_scope_id = rand();
 
 	*addr = (struct sockaddr *) ipv6;
 	*addrlen = sizeof(struct sockaddr_in6);
@@ -168,7 +168,7 @@ static void __inet6_setsockopt(struct sockopt *so)
 
 	so->level = SOL_IPV6;
 
-	val = rnd() % ARRAY_SIZE(inet6_opts);
+	val = rand() % ARRAY_SIZE(inet6_opts);
 	so->optname = inet6_opts[val].name;
 	so->optlen = sockoptlen(inet6_opts[val].len);
 
@@ -178,18 +178,18 @@ static void __inet6_setsockopt(struct sockopt *so)
 	case IPV6_RTHDR:
 	case IPV6_DSTOPTS:
 		so->optlen = sizeof(struct ipv6_opt_hdr);
-		so->optlen += rnd() % ((8 * 255) - so->optlen);
+		so->optlen += rand() % ((8 * 255) - so->optlen);
 		so->optlen &= ~0x7;
 		break;
 	case IPV6_2292PKTOPTIONS:
 		if (RAND_BOOL())
 			so->optlen = 0;	// update
 		else
-			so->optlen = rnd() % 64*1024;
+			so->optlen = rand() % 64*1024;
 		break;
 	case IPV6_IPSEC_POLICY:
 	case IPV6_XFRM_POLICY:
-		so->optlen = rnd() % page_size;
+		so->optlen = rand() % page_size;
 		break;
 	}
 }

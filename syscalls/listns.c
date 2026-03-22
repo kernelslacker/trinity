@@ -51,7 +51,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 
 	req = zmalloc(sizeof(struct ns_id_req));
 	req->size = NS_ID_REQ_SIZE_VER0;
-	req->ns_type = ns_types[rnd() % ARRAY_SIZE(ns_types)];
+	req->ns_type = ns_types[rand() % ARRAY_SIZE(ns_types)];
 
 	rec->a1 = (unsigned long) req;
 	rec->a3 = RAND_RANGE(1, 512);

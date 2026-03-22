@@ -101,7 +101,7 @@ retry:
 
 	/* Ok, we're doing another syscall, let's pick one. */
 	do32 = choose_syscall_table();
-	syscallnr = rnd() % max_nr_syscalls;
+	syscallnr = rand() % max_nr_syscalls;
 
 	/* If we got a syscallnr which is not active repeat the attempt,
 	 * since another child has switched that syscall off already.*/
@@ -133,7 +133,7 @@ retry:
 	 * fall through and accept whatever we picked.
 	 */
 	if (group_bias && child->last_group != GROUP_NONE) {
-		unsigned int dice = rnd() % 100;
+		unsigned int dice = rand() % 100;
 
 		if (dice < 70) {
 			/* Try to pick from same group */
