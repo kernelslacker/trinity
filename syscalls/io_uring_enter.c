@@ -38,5 +38,6 @@ struct syscallentry syscall_io_uring_enter = {
 	.arg5name = "sig",
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "sigsz",
+	.arg6type = ARG_LEN,
 	.flags = NEED_ALARM,
 };

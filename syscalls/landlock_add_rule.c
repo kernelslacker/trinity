@@ -27,6 +27,7 @@ struct syscallentry syscall_landlock_add_rule = {
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(landlock_ruletypes),
 	.arg3name = "rule_attr",
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "flags",
 //	.arg4type = ARG_LIST,
 //	.arg4list = ARGLIST(landlock_add_rule_flags),

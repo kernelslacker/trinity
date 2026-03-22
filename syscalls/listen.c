@@ -9,6 +9,9 @@ struct syscallentry syscall_listen = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD_SOCKET,
 	.arg2name = "backlog",
+	.arg2type = ARG_RANGE,
+	.low2range = 0,
+	.hi2range = 128,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 };

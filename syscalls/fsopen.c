@@ -14,6 +14,7 @@ struct syscallentry syscall_fsopen = {
 	.name = "fsopen",
 	.num_args = 2,
 	.arg1name = "_fs_name",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "flags",
 	.arg2type = ARG_OP,
 	.arg2list = ARGLIST(fsopen_flags),
