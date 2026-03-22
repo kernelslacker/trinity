@@ -14,6 +14,7 @@
 #include "arch.h"
 #include "child.h"
 #include "ftrace.h"
+#include "kcov.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -86,7 +87,7 @@ already_done:
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
+static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, struct kcov_child *kc)
 {
 	unsigned long ret = 0;
 
@@ -112,9 +113,19 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 		unlock(&rec->lock);
 
 		if (rec->do32bit == FALSE) {
+			if (kc != NULL && kc->cmp_mode)
+				kcov_enable_cmp(kc);
+			else
+				kcov_enable_trace(kc);
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+			kcov_disable(kc);
 		} else {
+			if (kc != NULL && kc->cmp_mode)
+				kcov_enable_cmp(kc);
+			else
+				kcov_enable_trace(kc);
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+			kcov_disable(kc);
 		}
 
 		/* If we became tainted, get out as fast as we can. */
@@ -150,7 +161,7 @@ static void do_extrafork(struct syscallrecord *rec)
 		char childname[]="trinity-subchild";
 		prctl(PR_SET_NAME, (unsigned long) &childname);
 
-		__do_syscall(rec, GOING_AWAY);
+		__do_syscall(rec, GOING_AWAY, NULL);
 		/* if this was for eg. an successful execve, we should never get here.
 		 * if it failed though... */
 		_exit(EXIT_SUCCESS);
@@ -181,7 +192,7 @@ static void do_extrafork(struct syscallrecord *rec)
 }
 
 
-void do_syscall(struct syscallrecord *rec)
+void do_syscall(struct syscallrecord *rec, struct kcov_child *kc)
 {
 	struct syscallentry *entry;
 	unsigned int call;
@@ -193,7 +204,7 @@ void do_syscall(struct syscallrecord *rec)
 		do_extrafork(rec);
 	else
 		 /* common-case, do the syscall in this child process. */
-		__do_syscall(rec, BEFORE);
+		__do_syscall(rec, BEFORE, kc);
 
 	/* timestamp again for when we returned */
 	clock_gettime(CLOCK_MONOTONIC, &rec->tp);

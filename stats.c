@@ -1,5 +1,6 @@
 #include <errno.h>
 #include "arch.h"
+#include "kcov.h"
 #include "shm.h"
 #include "stats.h"
 #include "syscall.h"
@@ -51,5 +52,10 @@ void dump_stats(void)
 			shm->stats.fd_stale_detected,
 			shm->stats.fd_closed_tracked,
 			shm->stats.fd_regenerated);
+	}
+
+	if (kcov_shm != NULL) {
+		printf("\nKCOV coverage: %lu unique edges, %lu total PCs collected\n",
+			kcov_shm->edges_found, kcov_shm->total_pcs);
 	}
 }

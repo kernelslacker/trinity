@@ -13,6 +13,7 @@
 #include "child.h"
 #include "debug.h"
 #include "ftrace.h"
+#include "kcov.h"
 #include "log.h"
 #include "params.h"
 #include "pids.h"
@@ -714,6 +715,9 @@ static void print_stats(void)
 				shm->stats.failures, shm->stats.successes,
 				hiscore,
 				stall_count ? stalltxt : "");
+			if (kcov_shm != NULL)
+				output(0, "  KCOV: %lu edges\n",
+					kcov_shm->edges_found);
 			lastcount = shm->stats.op_count;
 		}
 	}

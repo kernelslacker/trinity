@@ -194,7 +194,9 @@ struct syscalltable {
 #define IGNORE_ENOSYS		(1<<7)
 #define EXPENSIVE		(1<<8)
 
-void do_syscall(struct syscallrecord *rec);
+struct kcov_child;
+
+void do_syscall(struct syscallrecord *rec, struct kcov_child *kc);
 void handle_syscall_ret(struct syscallrecord *rec);
 
 #define for_each_arg(_e, _i) \

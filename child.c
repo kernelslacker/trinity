@@ -15,6 +15,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "kcov.h"
 #include "list.h"
 #include "log.h"
 #include "maps.h"
@@ -262,6 +263,8 @@ static void init_child(struct childdata *child, int childno)
 */
 	if (orig_uid == 0)
 		child->dropped_privs = FALSE;
+
+	kcov_init_child(&child->kcov);
 }
 
 /*
@@ -455,6 +458,7 @@ void child_process(struct childdata *child, int childno)
 	}
 
 out:
+	kcov_cleanup_child(&child->kcov);
 	shutdown_child_logging(child);
 
 	debugf("child %d %d exiting.\n", childno, getpid());
