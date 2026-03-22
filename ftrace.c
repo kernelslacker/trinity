@@ -23,7 +23,7 @@ static void dump_trace(void)
 
 	tracein = open(tracefile, O_RDONLY);
 	if (tracein == -1) {
-		if (errno != -EEXIST)
+		if (errno != EEXIST)
 			output(0, "Error opening %s : %s\n", tracefile, strerror(errno));
 		goto fail_tracein;
 	}
@@ -68,7 +68,7 @@ void setup_ftrace(void)
 	//todo: check for root
 	trace_fd = open("/sys/kernel/debug/tracing/tracing_on", O_WRONLY);
 	if (trace_fd == -1) {
-		if (errno != -EEXIST) {
+		if (errno != EEXIST) {
 			output(0, "Error opening tracing_on : %s\n", strerror(errno));
 			return;
 		}
