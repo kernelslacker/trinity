@@ -46,21 +46,21 @@ static const char *algos[] = {
 	"authenc(hmac(sha1),cbc(aes))",
 	"authenc(hmac(sha1),cbc(des))",
 	"authenc(hmac(sha1),cbc(des3_ede))",
-	"authenc(hmac(sha1),ctr(aes))"
+	"authenc(hmac(sha1),ctr(aes))",
 	"authenc(hmac(sha1),ecb(cipher_null))",
 	"authenc(hmac(sha224),cbc(des))",
 	"authenc(hmac(sha224),cbc(des3_ede))",
 	"authenc(hmac(sha256),cbc(aes))",
 	"authenc(hmac(sha256),cbc(des))",
 	"authenc(hmac(sha256),cbc(des3_ede))",
-	"authenc(hmac(sha256),ctr(aes))"
+	"authenc(hmac(sha256),ctr(aes))",
 	"authenc(hmac(sha384),cbc(des))",
 	"authenc(hmac(sha384),cbc(des3_ede))",
-	"authenc(hmac(sha384),ctr(aes))"
+	"authenc(hmac(sha384),ctr(aes))",
 	"authenc(hmac(sha512),cbc(aes))",
 	"authenc(hmac(sha512),cbc(des))",
 	"authenc(hmac(sha512),cbc(des3_ede))",
-	"authenc(hmac(sha512),ctr(aes))"
+	"authenc(hmac(sha512),ctr(aes))",
 	"cbc(aes)",
 	"cbc(anubis)",
 	"cbc(blowfish)",
@@ -250,6 +250,19 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 #define SOL_ALG 279
 
+#define ALG_SET_KEY		1
+#define ALG_SET_IV		2
+#define ALG_SET_OP		3
+#define ALG_SET_AEAD_ASSOCLEN	4
+#define ALG_SET_AEAD_AUTHSIZE	5
+#define ALG_SET_DRBG_ENTROPY	6
+
+static const unsigned int alg_opts[] = {
+	ALG_SET_KEY, ALG_SET_IV, ALG_SET_OP,
+	ALG_SET_AEAD_ASSOCLEN, ALG_SET_AEAD_AUTHSIZE,
+	ALG_SET_DRBG_ENTROPY,
+};
+
 static struct socket_triplet alg_triplet[] = {
 	{ .family = PF_ALG, .protocol = 0, .type = SOCK_SEQPACKET },
 };
@@ -257,6 +270,7 @@ static struct socket_triplet alg_triplet[] = {
 static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ALG;
+	so->optname = RAND_ARRAY(alg_opts);
 }
 
 const struct netproto proto_alg = {
