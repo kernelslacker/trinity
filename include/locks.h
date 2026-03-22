@@ -4,15 +4,14 @@
 #include "types.h"
 
 struct lock_struct {
-	volatile unsigned char lock;
+	unsigned char lock;
 	pid_t owner;
 };
 
 typedef struct lock_struct lock_t;
 
 #define UNLOCKED 0
-#define LOCKING 1
-#define LOCKED 2
+#define LOCKED 1
 
 bool trylock(lock_t *lk);
 void lock(lock_t *lk);
