@@ -8,6 +8,7 @@ struct syscallentry syscall_io_submit = {
 	.name = "io_submit",
 	.num_args = 3,
 	.arg1name = "ctx_id",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "nr",
 	.arg2type = ARG_LEN,
 	.arg3name = "iocbpp",

@@ -15,6 +15,7 @@ struct syscallentry syscall_io_pgetevents = {
 	.num_args = 6,
 
 	.arg1name = "ctx_id",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "min_nr",
 	.arg2type = ARG_LEN,
 	.arg3name = "nr",
