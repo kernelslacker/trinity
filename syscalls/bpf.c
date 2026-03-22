@@ -34,29 +34,53 @@ static unsigned long bpf_prog_types[] = {
 	BPF_PROG_TYPE_TRACEPOINT,
 	BPF_PROG_TYPE_XDP,
 	BPF_PROG_TYPE_PERF_EVENT,
+	BPF_PROG_TYPE_CGROUP_SKB,
+	BPF_PROG_TYPE_CGROUP_SOCK,
+	BPF_PROG_TYPE_LWT_IN,
+	BPF_PROG_TYPE_LWT_OUT,
+	BPF_PROG_TYPE_LWT_XMIT,
+	BPF_PROG_TYPE_SOCK_OPS,
+	BPF_PROG_TYPE_SK_SKB,
+	BPF_PROG_TYPE_CGROUP_DEVICE,
+	BPF_PROG_TYPE_SK_MSG,
+	BPF_PROG_TYPE_RAW_TRACEPOINT,
+	BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
+	BPF_PROG_TYPE_LWT_SEG6LOCAL,
+	BPF_PROG_TYPE_LIRC_MODE2,
+	BPF_PROG_TYPE_SK_REUSEPORT,
+	BPF_PROG_TYPE_FLOW_DISSECTOR,
+	BPF_PROG_TYPE_CGROUP_SYSCTL,
+	BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE,
+	BPF_PROG_TYPE_CGROUP_SOCKOPT,
+	BPF_PROG_TYPE_TRACING,
+	BPF_PROG_TYPE_STRUCT_OPS,
+	BPF_PROG_TYPE_EXT,
+	BPF_PROG_TYPE_LSM,
+	BPF_PROG_TYPE_SK_LOOKUP,
+	BPF_PROG_TYPE_SYSCALL,
+	BPF_PROG_TYPE_NETFILTER,
 };
 
 static const char license[] = "GPLv2";
 
 static void bpf_prog_load(union bpf_attr *attr)
 {
-	unsigned long *insns = NULL, len = 0;
 	attr->prog_type = RAND_ARRAY(bpf_prog_types);
 
-	switch (attr->prog_type) {
-	case BPF_PROG_TYPE_SOCKET_FILTER:
+	if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER && ONE_IN(2)) {
+		/* Classic BPF via sock_fprog for socket filters */
+		unsigned long *insns = NULL, len = 0;
 		bpf_gen_filter(&insns, &len);
-		break;
-
-	default:
-		// this will go away when all the other cases are enumerated
-		insns = zmalloc(page_size);
-		generate_rand_bytes((unsigned char *)insns, len);
-		break;
+		attr->insn_cnt = len;
+		attr->insns = (u64) insns;
+	} else {
+		/* eBPF for everything else (and sometimes socket filters) */
+		int insn_count = 0;
+		struct bpf_insn *insns = ebpf_gen_program(&insn_count);
+		attr->insn_cnt = insn_count;
+		attr->insns = (u64) insns;
 	}
 
-	attr->insn_cnt = len;
-	attr->insns = (u64) insns;
 	attr->license = (u64) license;
 	attr->log_level = 0;
 	attr->log_size = rand() % page_size;
@@ -371,8 +395,9 @@ static void post_bpf(struct syscallrecord *rec)
 			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
 		}
 
-		if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER) {
-			void *ptr = (void *) attr->insns;
+		/* Free the instruction buffer (allocated by both generators) */
+		{
+			void *ptr = (void *)(unsigned long)attr->insns;
 			free(ptr);
 		}
 		break;
