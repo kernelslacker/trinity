@@ -13,6 +13,7 @@
 #include "syscall.h"
 #include "shm.h"
 #include "tables.h"
+#include "trinity.h"	// MAX_LOGLEVEL
 #include "utils.h"	// ARRAY_SIZE
 
 unsigned long syscalls_todo = 0;
@@ -644,7 +645,7 @@ int munge_tables(void)
 
 	count_syscalls_enabled();
 
-	if (verbose == true)
+	if (quiet_level >= MAX_LOGLEVEL)
 		display_enabled_syscalls();
 
 	if (validate_syscall_tables() == false) {

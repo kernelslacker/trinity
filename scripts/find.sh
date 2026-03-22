@@ -28,7 +28,7 @@ do
     exit
   fi
 
-  $TRINITY_PATH/trinity $DROPPRIVS -q -l off -a64 -c ftruncate -r20 -x execve -x execveat -x syncfs -x sync -x fsync -x fdatasync -C64 -N 1000000 --enable-fds=pseudo,testfile
+  $TRINITY_PATH/trinity $DROPPRIVS -a64 -c ftruncate -r20 -x execve -x execveat -x syncfs -x sync -x fsync -x fdatasync -C64 -N 1000000 --enable-fds=pseudo,testfile
 
   popd
 

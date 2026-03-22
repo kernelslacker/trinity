@@ -18,6 +18,7 @@
 #include "debug.h"
 #include "params.h"
 #include "random.h"
+#include "trinity.h"	// MAX_LOGLEVEL
 #include "utils.h"
 
 #ifdef USE_BPF
@@ -626,7 +627,7 @@ struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type)
 
 	*insn_count = len;
 
-	if (verbose)
+	if (quiet_level >= MAX_LOGLEVEL)
 		debugf("ebpf: generated tier %d program, %d insns\n",
 		       tier < 50 ? 1 : (tier < 75 ? 2 : 3), len);
 

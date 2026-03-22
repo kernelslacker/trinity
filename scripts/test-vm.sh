@@ -23,7 +23,7 @@ do
 		exit
 	fi
 
-	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -q -l off -c mmap -c $syscall -N 1000000 -C 64 $DROPPRIVS
+	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -c mmap -c $syscall -N 1000000 -C 64 $DROPPRIVS
 
 	chmod 755 $TRINITY_TMP
 	popd > /dev/null
