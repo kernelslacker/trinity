@@ -223,7 +223,7 @@ void remove_object_by_fd(int fd)
 			struct object *obj = (struct object *) node;
 
 			if (fd_from_object(obj, fd_types[i]) == fd) {
-				shm->stats.fd_closed_tracked++;
+				__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
 				destroy_object(obj, OBJ_GLOBAL, fd_types[i]);
 				try_regenerate_fd(fd_types[i]);
 				return;

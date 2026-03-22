@@ -92,7 +92,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state)
 
 	errno = 0;
 
-	shm->stats.op_count++;
+	__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
 
 	if (dry_run == FALSE) {
 		int nr, call;
@@ -251,9 +251,9 @@ void handle_syscall_ret(struct syscallrecord *rec)
 			if (err == ENOSYS)
 				deactivate_enosys(rec, entry, call);
 
-			entry->failures++;
+			__atomic_add_fetch(&entry->failures, 1, __ATOMIC_RELAXED);
 			if (err < NR_ERRNOS) {
-				entry->errnos[err]++;
+				__atomic_add_fetch(&entry->errnos[err], 1, __ATOMIC_RELAXED);
 			} else {
 				// "These should never be seen by user programs."
 				// But trinity isn't a 'normal' user program, we're doing
@@ -263,14 +263,14 @@ void handle_syscall_ret(struct syscallrecord *rec)
 						entry->name,
 						err, strerror(err));
 			}
-			shm->stats.failures++;
+			__atomic_add_fetch(&shm->stats.failures, 1, __ATOMIC_RELAXED);
 		}
 	} else {
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
-		entry->successes++;
-		shm->stats.successes++;
+		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.successes, 1, __ATOMIC_RELAXED);
 	}
-	entry->attempted++;
+	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
 
 	generic_post(entry->arg1type, rec->a1);
 	generic_post(entry->arg2type, rec->a2);
