@@ -10,6 +10,7 @@ struct syscallentry syscall_rt_sigtimedwait = {
 	.group = GROUP_SIGNAL,
 	.num_args = 4,
 	.arg1name = "uthese",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "uinfo",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "uts",

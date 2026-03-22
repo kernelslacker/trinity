@@ -19,4 +19,5 @@ struct syscallentry syscall_sigprocmask = {
 	.arg2name = "set",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "oset",
+	.arg3type = ARG_ADDRESS,
 };
