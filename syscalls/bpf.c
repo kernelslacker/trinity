@@ -214,6 +214,44 @@ static void bpf_prog_load(union bpf_attr *attr)
 #define BPF_MAP_TYPE_INSN_ARRAY		34
 #endif
 
+/* Attach types not present in older bpf.h headers */
+#ifndef BPF_TRACE_FSESSION
+#define BPF_TRACE_FSESSION		58
+#endif
+
+static unsigned long bpf_attach_types[] = {
+	BPF_CGROUP_INET_INGRESS, BPF_CGROUP_INET_EGRESS,
+	BPF_CGROUP_INET_SOCK_CREATE, BPF_CGROUP_SOCK_OPS,
+	BPF_SK_SKB_STREAM_PARSER, BPF_SK_SKB_STREAM_VERDICT,
+	BPF_CGROUP_DEVICE, BPF_SK_MSG_VERDICT,
+	BPF_CGROUP_INET4_BIND, BPF_CGROUP_INET6_BIND,
+	BPF_CGROUP_INET4_CONNECT, BPF_CGROUP_INET6_CONNECT,
+	BPF_CGROUP_INET4_POST_BIND, BPF_CGROUP_INET6_POST_BIND,
+	BPF_CGROUP_UDP4_SENDMSG, BPF_CGROUP_UDP6_SENDMSG,
+	BPF_LIRC_MODE2, BPF_FLOW_DISSECTOR,
+	BPF_CGROUP_SYSCTL,
+	BPF_CGROUP_UDP4_RECVMSG, BPF_CGROUP_UDP6_RECVMSG,
+	BPF_CGROUP_GETSOCKOPT, BPF_CGROUP_SETSOCKOPT,
+	BPF_TRACE_RAW_TP, BPF_TRACE_FENTRY, BPF_TRACE_FEXIT,
+	BPF_MODIFY_RETURN, BPF_LSM_MAC, BPF_TRACE_ITER,
+	BPF_CGROUP_INET4_GETPEERNAME, BPF_CGROUP_INET6_GETPEERNAME,
+	BPF_CGROUP_INET4_GETSOCKNAME, BPF_CGROUP_INET6_GETSOCKNAME,
+	BPF_XDP_DEVMAP, BPF_CGROUP_INET_SOCK_RELEASE,
+	BPF_XDP_CPUMAP, BPF_SK_LOOKUP, BPF_XDP,
+	BPF_SK_SKB_VERDICT,
+	BPF_SK_REUSEPORT_SELECT, BPF_SK_REUSEPORT_SELECT_OR_MIGRATE,
+	BPF_PERF_EVENT, BPF_TRACE_KPROBE_MULTI,
+	BPF_LSM_CGROUP, BPF_STRUCT_OPS, BPF_NETFILTER,
+	BPF_TCX_INGRESS, BPF_TCX_EGRESS,
+	BPF_TRACE_UPROBE_MULTI,
+	BPF_CGROUP_UNIX_CONNECT, BPF_CGROUP_UNIX_SENDMSG,
+	BPF_CGROUP_UNIX_RECVMSG, BPF_CGROUP_UNIX_GETPEERNAME,
+	BPF_CGROUP_UNIX_GETSOCKNAME,
+	BPF_NETKIT_PRIMARY, BPF_NETKIT_PEER,
+	BPF_TRACE_KPROBE_SESSION, BPF_TRACE_UPROBE_SESSION,
+	BPF_TRACE_FSESSION,
+};
+
 static void sanitise_bpf(struct syscallrecord *rec)
 {
 	union bpf_attr *attr;
@@ -301,7 +339,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_PROG_DETACH:
 		attr->target_fd = get_rand_bpf_fd();
 		attr->attach_bpf_fd = get_rand_bpf_fd();
-		attr->attach_type = rand() % 64;
+		attr->attach_type = RAND_ARRAY(bpf_attach_types);
 		rec->a3 = 16;
 		break;
 
@@ -341,7 +379,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_LINK_CREATE:
 		attr->link_create.prog_fd = get_rand_bpf_fd();
 		attr->link_create.target_fd = get_rand_bpf_fd();
-		attr->link_create.attach_type = rand() % 64;
+		attr->link_create.attach_type = RAND_ARRAY(bpf_attach_types);
 		attr->link_create.flags = rand() % 16;
 		rec->a3 = sizeof(attr->link_create);
 		break;
