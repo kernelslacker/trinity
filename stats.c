@@ -60,10 +60,12 @@ void dump_stats(void)
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
 		unsigned int top_count = 0;
+		unsigned int cold_count = 0;
 		unsigned int j;
 
-		printf("\nKCOV coverage: %lu unique edges, %lu total PCs collected\n",
-			kcov_shm->edges_found, kcov_shm->total_pcs);
+		printf("\nKCOV coverage: %lu unique edges, %lu total PCs, %lu calls\n",
+			kcov_shm->edges_found, kcov_shm->total_pcs,
+			kcov_shm->total_calls);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		memset(top_edges, 0, sizeof(top_edges));
@@ -72,6 +74,9 @@ void dump_stats(void)
 
 			if (edges == 0)
 				continue;
+
+			if (kcov_syscall_is_cold(i))
+				cold_count++;
 
 			/* Find insertion point. */
 			for (j = top_count; j > 0 && edges > top_edges[j - 1]; j--) {
@@ -97,6 +102,9 @@ void dump_stats(void)
 				printf("  %-24s %lu\n", name, top_edges[j]);
 			}
 		}
+
+		if (cold_count > 0)
+			printf("Cold syscalls (deprioritized): %u\n", cold_count);
 	}
 
 	if (cmp_hints_shm != NULL) {

@@ -149,6 +149,14 @@ retry:
 		/* dice >= 70: accept any syscall */
 	}
 
+	/* Coverage-guided cold avoidance: if this syscall has stopped
+	 * finding new edges, skip it 50% of the time. */
+	if (kcov_syscall_is_cold(syscallnr) && RAND_BOOL()) {
+		bias_attempts++;
+		if (bias_attempts < 20)
+			goto retry;
+	}
+
 	/* critical section for shm updates. */
 	lock(&rec->lock);
 	rec->do32bit = do32;
