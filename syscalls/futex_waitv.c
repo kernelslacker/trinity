@@ -28,4 +28,5 @@ struct syscallentry syscall_futex_waitv = {
 	.arg5name = "clockid",
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex_waitv,
+	.group = GROUP_IPC,
 };

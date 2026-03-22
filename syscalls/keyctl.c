@@ -25,4 +25,5 @@ struct syscallentry syscall_keyctl = {
 	.arg3name = "arg3",
 	.arg4name = "arg4",
 	.arg5name = "arg5",
+	.group = GROUP_IPC,
 };

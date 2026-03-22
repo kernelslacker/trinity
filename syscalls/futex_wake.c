@@ -35,4 +35,5 @@ struct syscallentry syscall_futex_wake = {
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(futex2_flags),
+	.group = GROUP_IPC,
 };

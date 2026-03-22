@@ -48,4 +48,5 @@ struct syscallentry syscall_add_key = {
 	.arg5list = ARGLIST(addkey_ringids),
 	.rettype = RET_KEY_SERIAL_T,
 	.sanitise = sanitise_add_key,
+	.group = GROUP_IPC,
 };

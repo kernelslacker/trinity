@@ -46,4 +46,5 @@ struct syscallentry syscall_futex_wait = {
 	.arg6type = ARG_OP,
 	.arg6list = ARGLIST(futex_wait_clockids),
 	.flags = NEED_ALARM,
+	.group = GROUP_IPC,
 };
