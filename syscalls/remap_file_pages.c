@@ -61,6 +61,7 @@ struct syscallentry syscall_remap_file_pages = {
 	.arg1name = "start",
 	.arg1type = ARG_MMAP,
 	.arg2name = "size",
+	.arg2type = ARG_LEN,
 	.arg3name = "prot",
 	.arg4name = "pgoff",
 	.arg5name = "flags",

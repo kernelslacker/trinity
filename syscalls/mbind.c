@@ -48,6 +48,7 @@ struct syscallentry syscall_mbind = {
 	.arg1type = ARG_MMAP,
 
 	.arg2name = "len",
+	.arg2type = ARG_LEN,
 
 	.arg3name = "mode",
 	.arg3type = ARG_LIST,
