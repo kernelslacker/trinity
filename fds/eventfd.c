@@ -27,7 +27,7 @@ static void eventfd_dump(struct object *obj, bool global)
 		eo->fd, eo->count, eo->flags, global);
 }
 
-static int open_eventfd_fds(void)
+static int init_eventfd_fds(void)
 {
 	struct objhead *head;
 	unsigned int i;
@@ -77,7 +77,7 @@ static int get_rand_eventfd_fd(void)
 	return obj->eventfdobj.fd;
 }
 
-static int reopen_eventfd_fd(void)
+static int open_eventfd_fd(void)
 {
 	struct object *obj;
 	int fd, count, flags;
@@ -105,9 +105,9 @@ static const struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
 	.objtype = OBJ_FD_EVENTFD,
 	.enabled = TRUE,
-	.init = &open_eventfd_fds,
+	.init = &init_eventfd_fds,
 	.get = &get_rand_eventfd_fd,
-	.open = &reopen_eventfd_fd,
+	.open = &open_eventfd_fd,
 };
 
 REG_FD_PROV(eventfd_fd_provider);

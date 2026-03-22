@@ -43,7 +43,7 @@ static void memfd_dump(struct object *obj, bool global)
 		mo->fd, mo->name, mo->flags, global);
 }
 
-static int open_memfd_fds(void)
+static int init_memfd_fds(void)
 {
 	struct objhead *head;
 	unsigned int i;
@@ -94,7 +94,7 @@ static int get_rand_memfd_fd(void)
 	return obj->memfdobj.fd;
 }
 
-static int reopen_memfd_fd(void)
+static int open_memfd_fd(void)
 {
 	struct object *obj;
 	int fd, flags;
@@ -103,13 +103,13 @@ static int reopen_memfd_fd(void)
 	if (RAND_BOOL())
 		flags |= MFD_ALLOW_SEALING;
 
-	fd = memfd_create("memfd-regen", flags);
+	fd = memfd_create("memfd", flags);
 	if (fd < 0)
 		return FALSE;
 
 	obj = alloc_object();
 	obj->memfdobj.fd = fd;
-	obj->memfdobj.name = strdup("memfd-regen");
+	obj->memfdobj.name = strdup("memfd");
 	obj->memfdobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
 	return TRUE;
@@ -119,9 +119,9 @@ static const struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
 	.objtype = OBJ_FD_MEMFD,
 	.enabled = TRUE,
-	.init = &open_memfd_fds,
+	.init = &init_memfd_fds,
 	.get = &get_rand_memfd_fd,
-	.open = &reopen_memfd_fd,
+	.open = &open_memfd_fd,
 };
 
 REG_FD_PROV(memfd_fd_provider);

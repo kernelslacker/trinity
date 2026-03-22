@@ -13,8 +13,6 @@
 #include "sanitise.h"
 #include "shm.h"
 
-#define MAX_INOTIFY_FDS 5
-
 static void inotify_destructor(struct object *obj)
 {
 	close(obj->inotifyobj.fd);
@@ -27,7 +25,7 @@ static void inotify_dump(struct object *obj, bool global)
 	output(2, "inotify fd:%d flags:%x global:%d\n", io->fd, io->flags, global);
 }
 
-static int open_inotify_fds(void)
+static int init_inotify_fds(void)
 {
 	struct objhead *head;
 	struct object *obj;
@@ -79,7 +77,7 @@ static int get_rand_inotify_fd(void)
 	return obj->inotifyobj.fd;
 }
 
-static int reopen_inotify_fd(void)
+static int open_inotify_fd(void)
 {
 	struct object *obj;
 	int fd, flags;
@@ -103,9 +101,9 @@ static const struct fd_provider inotify_fd_provider = {
 	.name = "inotify",
 	.objtype = OBJ_FD_INOTIFY,
 	.enabled = TRUE,
-	.init = &open_inotify_fds,
+	.init = &init_inotify_fds,
 	.get = &get_rand_inotify_fd,
-	.open = &reopen_inotify_fd,
+	.open = &open_inotify_fd,
 };
 
 REG_FD_PROV(inotify_fd_provider);
