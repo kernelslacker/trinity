@@ -9,13 +9,17 @@
 #define OPEN_TREE_CLOEXEC       O_CLOEXEC       /* Close the file on execve() */
 #endif
 
+#ifndef OPEN_TREE_NAMESPACE
+#define OPEN_TREE_NAMESPACE	2		/* Clone into new mount namespace */
+#endif
+
 #ifndef AT_RECURSIVE
 #define AT_RECURSIVE            0x8000  /* Apply to the entire subtree */
 #endif
 
 static unsigned long open_tree_flags[] = {
 	AT_EMPTY_PATH, AT_NO_AUTOMOUNT, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW,
-	OPEN_TREE_CLONE, OPEN_TREE_CLOEXEC,
+	OPEN_TREE_CLONE, OPEN_TREE_CLOEXEC, OPEN_TREE_NAMESPACE,
 };
 
 struct syscallentry syscall_open_tree = {

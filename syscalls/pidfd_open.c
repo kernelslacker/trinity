@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
  */
+#include <linux/pidfd.h>
 #include "objects.h"
 #include "sanitise.h"
 
@@ -19,7 +20,7 @@ static void post_pidfd_open(struct syscallrecord *rec)
 }
 
 static unsigned long pidfd_open_flags[] = {
-	0,
+	PIDFD_NONBLOCK, PIDFD_THREAD,
 };
 
 struct syscallentry syscall_pidfd_open = {

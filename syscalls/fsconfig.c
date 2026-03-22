@@ -12,11 +12,13 @@ enum fsconfig_command {
     FSCONFIG_SET_FD         = 5,    /* Set parameter, supplying an object by fd */
     FSCONFIG_CMD_CREATE     = 6,    /* Invoke superblock creation */
     FSCONFIG_CMD_RECONFIGURE = 7,   /* Invoke superblock reconfiguration */
+    FSCONFIG_CMD_CREATE_EXCL = 8,   /* Create new, fail if reusing existing */
 };
 
 static unsigned long fsconfig_ops[] = {
  FSCONFIG_SET_FLAG, FSCONFIG_SET_STRING, FSCONFIG_SET_BINARY, FSCONFIG_SET_PATH,
  FSCONFIG_SET_PATH_EMPTY, FSCONFIG_SET_FD, FSCONFIG_CMD_CREATE, FSCONFIG_CMD_RECONFIGURE,
+ FSCONFIG_CMD_CREATE_EXCL,
 };
 
 struct syscallentry syscall_fsconfig = {

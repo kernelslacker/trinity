@@ -29,6 +29,7 @@ static unsigned long futex_ops[] = {
 	FUTEX_UNLOCK_PI_PRIVATE, FUTEX_TRYLOCK_PI_PRIVATE,
 	FUTEX_WAIT_BITSET_PRIVATE, FUTEX_WAKE_BITSET_PRIVATE,
 	FUTEX_WAIT_REQUEUE_PI_PRIVATE,
+	FUTEX_LOCK_PI2, FUTEX_LOCK_PI2_PRIVATE,
 };
 
 static inline bool futex_pi_cmd(int cmd)
@@ -36,6 +37,8 @@ static inline bool futex_pi_cmd(int cmd)
 	switch (cmd) {
 	case FUTEX_LOCK_PI:
 	case FUTEX_LOCK_PI_PRIVATE:
+	case FUTEX_LOCK_PI2:
+	case FUTEX_LOCK_PI2_PRIVATE:
 	case FUTEX_TRYLOCK_PI:
 	case FUTEX_TRYLOCK_PI_PRIVATE:
 	case FUTEX_UNLOCK_PI:
