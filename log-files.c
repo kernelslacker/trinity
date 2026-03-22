@@ -4,7 +4,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include "log.h"
 #include "logfile.h"
 #include "params.h"	// logging, quiet_level
 #include "pids.h"

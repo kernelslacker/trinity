@@ -10,7 +10,6 @@
 #include "fd.h"
 #include "fanotify.h"
 #include "objects.h"
-#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"

@@ -16,7 +16,6 @@
 #include "bpf.h"
 #include "fd.h"
 #include "objects.h"
-#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
