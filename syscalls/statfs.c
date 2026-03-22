@@ -18,10 +18,11 @@ struct syscallentry syscall_statfs = {
 
 struct syscallentry syscall_statfs64 = {
 	.name = "statfs64",
-	.num_args = 2,
+	.num_args = 3,
 	.arg1name = "pathname",
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "sz",
+	.arg2type = ARG_LEN,
 	.arg3name = "buf",
 	.arg3type = ARG_ADDRESS,
 };
