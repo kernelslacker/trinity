@@ -28,7 +28,9 @@ struct syscallentry syscall_fsconfig = {
 	.arg2type = ARG_OP,
 	.arg2list = ARGLIST(fsconfig_ops),
 	.arg3name = "_key",
+	.arg3type = ARG_ADDRESS,
 	.arg4name = "_value",
+	.arg4type = ARG_ADDRESS,
 	.arg5name = "aux",
 	.group = GROUP_VFS,
 };

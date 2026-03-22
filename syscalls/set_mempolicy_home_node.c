@@ -12,6 +12,7 @@ struct syscallentry syscall_set_mempolicy_home_node = {
 	.name = "set_mempolicy_home_node",
 	.num_args = 4,
 	.arg1name = "start",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
 	.arg3name = "home_node",
