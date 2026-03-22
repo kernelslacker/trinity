@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "arch.h"
+#include "cmp_hints.h"
 #include "debug.h"
 #include "fd.h"
 #include "maps.h"
@@ -302,17 +303,21 @@ enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 	return argtype;
 }
 
-static unsigned long gen_undefined_arg(void)
+static unsigned long gen_undefined_arg(unsigned int call)
 {
-	switch (rand() % 8) {
-	case 0: return mutate_value(get_boundary_value());
-	case 1: return mutate_value(rand64());
-	case 2: return get_interesting_value();
-	case 3: return rand64();
-	case 4: return (unsigned long) get_writable_address(page_size);
-	case 5: return rand64() & rand64();	/* sparse bits (~25% set) */
-	case 6: return rand64() | rand64();	/* dense bits (~75% set) */
-	case 7: return get_sizeof_boundary_value();
+	switch (rand() % 9) {
+	case 0:
+		if (cmp_hints_available(call))
+			return cmp_hints_get(call);
+		return mutate_value(get_boundary_value());
+	case 1: return mutate_value(get_boundary_value());
+	case 2: return mutate_value(rand64());
+	case 3: return get_interesting_value();
+	case 4: return rand64();
+	case 5: return (unsigned long) get_writable_address(page_size);
+	case 6: return rand64() & rand64();	/* sparse bits (~25% set) */
+	case 7: return rand64() | rand64();	/* dense bits (~75% set) */
+	case 8: return get_sizeof_boundary_value();
 	}
 	return rand64();
 }
@@ -333,7 +338,7 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
-		return gen_undefined_arg();
+		return gen_undefined_arg(call);
 
 	case ARG_FD:
 		if (RAND_BOOL()) {
@@ -464,17 +469,17 @@ void generate_syscall_args(struct syscallrecord *rec)
 	entry = syscalls[rec->nr].entry;
 	rec->state = PREP;
 	if (entry->arg1type == ARG_UNDEFINED)
-		rec->a1 = gen_undefined_arg();
+		rec->a1 = gen_undefined_arg(rec->nr);
 	if (entry->arg2type == ARG_UNDEFINED)
-		rec->a2 = gen_undefined_arg();
+		rec->a2 = gen_undefined_arg(rec->nr);
 	if (entry->arg3type == ARG_UNDEFINED)
-		rec->a3 = gen_undefined_arg();
+		rec->a3 = gen_undefined_arg(rec->nr);
 	if (entry->arg4type == ARG_UNDEFINED)
-		rec->a4 = gen_undefined_arg();
+		rec->a4 = gen_undefined_arg(rec->nr);
 	if (entry->arg5type == ARG_UNDEFINED)
-		rec->a5 = gen_undefined_arg();
+		rec->a5 = gen_undefined_arg(rec->nr);
 	if (entry->arg6type == ARG_UNDEFINED)
-		rec->a6 = gen_undefined_arg();
+		rec->a6 = gen_undefined_arg(rec->nr);
 
 	generic_sanitise(rec);
 	if (entry->sanitise)
