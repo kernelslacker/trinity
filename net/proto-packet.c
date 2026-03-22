@@ -93,16 +93,6 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 static struct socket_triplet packet_triplets[] = {
 	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_PACKET },
 	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_RAW },
-/*
-   revisit all this:
-
-	st->protocol = htons(ETH_P_ALL);
-
-	if (ONE_IN(8))		// FIXME: 8 ? Why?
-		st->protocol = get_random_ether_type();
-
-*/
-
 };
 
 const struct netproto proto_packet = {
