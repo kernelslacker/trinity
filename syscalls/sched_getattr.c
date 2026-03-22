@@ -26,5 +26,6 @@ struct syscallentry syscall_sched_getattr = {
 	.arg2name = "param",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "size",
+	.arg3type = ARG_LEN,
 	.sanitise = sanitise_sched_getattr,
 };
