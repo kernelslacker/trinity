@@ -524,12 +524,41 @@ int fd_from_socketinfo(struct socketinfo *si)
 	return get_random_fd();
 }
 
+static int open_socket_fd(void)
+{
+	struct socket_triplet st;
+	int r, fd;
+
+	r = rand() % TRINITY_PF_MAX;
+	st.family = r;
+
+	if (st.family >= ARRAY_SIZE(no_domains))
+		return FALSE;
+	if (no_domains[st.family])
+		return FALSE;
+	if (get_domain_name(st.family) == NULL)
+		return FALSE;
+	if (valid_proto(st.family) == FALSE)
+		return FALSE;
+
+	st.protocol = rand() % 256;
+	if (sanitise_socket_triplet(&st) == -1)
+		rand_proto_type(&st);
+
+	fd = open_socket(st.family, st.type, st.protocol);
+	if (fd < 0)
+		return FALSE;
+
+	return TRUE;
+}
+
 static const struct fd_provider socket_fd_provider = {
 	.name = "sockets",
 	.objtype = OBJ_FD_SOCKET,
 	.enabled = TRUE,
 	.init = &open_sockets,
 	.get = &get_rand_socket_fd,
+	.open = &open_socket_fd,
 };
 
 REG_FD_PROV(socket_fd_provider);
