@@ -28,6 +28,7 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.name = "landlock_create_ruleset",
 	.num_args = 3,
 	.arg1name = "attr",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "size",
 	.arg2type = ARG_LEN,
 	.arg3name = "flags",

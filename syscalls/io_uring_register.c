@@ -95,4 +95,5 @@ struct syscallentry syscall_io_uring_register = {
 	.arg3name = "arg",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "nr_args",
+	.arg4type = ARG_LEN,
 };
