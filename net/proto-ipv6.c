@@ -120,7 +120,7 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = MCAST_JOIN_GROUP, .len = sizeof(struct group_req) },
 	{ .name = MCAST_BLOCK_SOURCE, .len = sizeof(struct group_source_req) },
 	{ .name = MCAST_UNBLOCK_SOURCE, .len = sizeof(struct group_source_req) },
-	{ .name = MCAST_LEAVE_GROUP, sizeof(struct group_req) },
+	{ .name = MCAST_LEAVE_GROUP, .len = sizeof(struct group_req) },
 	{ .name = MCAST_JOIN_SOURCE_GROUP, .len = sizeof(struct group_source_req) },
 	{ .name = MCAST_LEAVE_SOURCE_GROUP, .len = sizeof(struct group_source_req) },
 	{ .name = MCAST_MSFILTER, },
