@@ -789,6 +789,30 @@ enum kcmp_type {
 #define TCP_TX_DELAY	37
 #endif
 
+#ifndef TCP_AO_ADD_KEY
+#define TCP_AO_ADD_KEY		38
+#define TCP_AO_DEL_KEY		39
+#define TCP_AO_INFO		40
+#define TCP_AO_GET_KEYS		41
+#define TCP_AO_REPAIR		42
+#endif
+
+#ifndef TCP_IS_MPTCP
+#define TCP_IS_MPTCP		43
+#endif
+
+#ifndef TCP_RTO_MAX_MS
+#define TCP_RTO_MAX_MS		44
+#endif
+
+#ifndef TCP_RTO_MIN_US
+#define TCP_RTO_MIN_US		45
+#endif
+
+#ifndef TCP_DELACK_MAX_US
+#define TCP_DELACK_MAX_US	46
+#endif
+
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15
