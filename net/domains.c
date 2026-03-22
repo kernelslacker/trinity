@@ -141,16 +141,16 @@ unsigned int find_next_enabled_domain(unsigned int from)
 
 void parse_exclude_domains(const char *arg)
 {
-	char *_arg = strdup(arg);
+	char *argcopy = strdup(arg);
 	const struct domain *p;
 	char *tok;
 
-	if (!_arg) {
+	if (!argcopy) {
 		outputerr("No free memory\n");
 		exit(EXIT_FAILURE);
 	}
 
-	for (tok = strtok(_arg, ","); tok; tok = strtok(NULL, ",")) {
+	for (tok = strtok(argcopy, ","); tok; tok = strtok(NULL, ",")) {
 		p = lookup_domain(tok);
 		if (p) {
 			BUG_ON(p->domain >= ARRAY_SIZE(no_domains));
@@ -159,11 +159,11 @@ void parse_exclude_domains(const char *arg)
 			goto err;
 	}
 
-	free(_arg);
+	free(argcopy);
 	return;
 
 err:
-	free(_arg);
+	free(argcopy);
 	outputerr("Domain unknown in argument %s\n", arg);
 	exit(EXIT_FAILURE);
 }

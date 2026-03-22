@@ -13,16 +13,16 @@
 /*
  * Check that the processes holding locks are still alive.
  */
-static bool check_lock(lock_t *_lock)
+static bool check_lock(lock_t *lk)
 {
 	pid_t pid;
 
 	/* We don't care about unlocked or locking-in-progress */
-	if (_lock->lock != LOCKED)
+	if (lk->lock != LOCKED)
 		return FALSE;
 
 	/* First the easy case. If it's held by a dead pid, release it. */
-	pid = _lock->owner;
+	pid = lk->owner;
 
 	/* if we're in the process of unlocking, it can show up as LOCKED
 	 * but with no owner. Just bail, we'll try again next time around.
@@ -35,7 +35,7 @@ static bool check_lock(lock_t *_lock)
 			return TRUE;
 
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
-		unlock(_lock);
+		unlock(lk);
 		return TRUE;
 	}
 	return FALSE;
@@ -55,28 +55,28 @@ bool check_all_locks(void)
 	return ret;
 }
 
-static void __lock(lock_t *_lock)
+static void __lock(lock_t *lk)
 {
-	_lock->lock = LOCKING;
-	_lock->owner = getpid();
-	_lock->lock = LOCKED;
+	lk->lock = LOCKING;
+	lk->owner = getpid();
+	lk->lock = LOCKED;
 }
 
-bool trylock(lock_t *_lock)
+bool trylock(lock_t *lk)
 {
-	if (_lock->lock == UNLOCKED) {
-		__lock(_lock);
+	if (lk->lock == UNLOCKED) {
+		__lock(lk);
 		return TRUE;
 	}
 	return FALSE;
 }
 
-void lock(lock_t *_lock)
+void lock(lock_t *lk)
 {
 	pid_t pid = getpid();
 
-	while (_lock->lock != UNLOCKED) {
-		if (_lock->owner == pid) {
+	while (lk->lock != UNLOCKED) {
+		if (lk->owner == pid) {
 			debugf("lol, already have lock!\n");
 			show_backtrace();
 			panic(EXIT_LOCKING_CATASTROPHE);
@@ -90,7 +90,7 @@ void lock(lock_t *_lock)
 		 * So we add an extra explicit check here.
 		 */
 		if (pid == mainpid) {
-			check_lock(_lock);
+			check_lock(lk);
 		} else {
 			/* Ok, we're a child pid. If we reached the limit, just exit */
 			if (shm->exit_reason == EXIT_REACHED_COUNT)
@@ -106,14 +106,14 @@ void lock(lock_t *_lock)
 
 		usleep(1);
 	}
-	__lock(_lock);
+	__lock(lk);
 }
 
-void unlock(lock_t *_lock)
+void unlock(lock_t *lk)
 {
 	asm volatile("" ::: "memory");
-	_lock->owner = 0;
-	_lock->lock = UNLOCKED;
+	lk->owner = 0;
+	lk->lock = UNLOCKED;
 }
 
 /*
@@ -123,11 +123,11 @@ void unlock(lock_t *_lock)
  * that you'll need, just for rare occasions like when we return from a
  * signal handler with a lock held.
  */
-void bust_lock(lock_t *_lock)
+void bust_lock(lock_t *lk)
 {
-	if (_lock->lock == UNLOCKED)
+	if (lk->lock == UNLOCKED)
 		return;
-	if (getpid() != _lock->owner)
+	if (getpid() != lk->owner)
 		return;
-	unlock(_lock);
+	unlock(lk);
 }
