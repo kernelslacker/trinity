@@ -159,6 +159,10 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_TRANSPARENT, },
 	{ .name = IPV6_UNICAST_IF, },
 	{ .name = IPV6_RECVFRAGSIZE, },
+	{ .name = IPV6_MULTICAST_ALL, },
+	{ .name = IPV6_ROUTER_ALERT_ISOLATE, },
+	{ .name = IPV6_RECVERR_RFC4884, },
+	{ .name = IPV6_FREEBIND, },
 };
 
 static void __inet6_setsockopt(struct sockopt *so)
