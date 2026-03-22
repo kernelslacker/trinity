@@ -23,6 +23,10 @@
  * 64KB = 512K bits. PCs are hashed into this bitmap. */
 #define KCOV_BITMAP_SIZE (64 << 10)
 
+/* If a syscall hasn't found new edges in this many global calls,
+ * it's considered "cold" and deprioritized during selection. */
+#define KCOV_COLD_THRESHOLD 500000
+
 /* KCOV trace modes */
 #define KCOV_TRACE_PC  0
 #define KCOV_TRACE_CMP 1
@@ -39,7 +43,9 @@ struct kcov_shared {
 	unsigned char bitmap[KCOV_BITMAP_SIZE];
 	unsigned long edges_found;
 	unsigned long total_pcs;
+	unsigned long total_calls;
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
+	unsigned long last_edge_at[MAX_NR_SYSCALL];
 };
 
 extern struct kcov_shared *kcov_shm;
@@ -64,3 +70,7 @@ void kcov_disable(struct kcov_child *kc);
  * Returns true if new coverage was found. nr is the syscall number
  * for per-syscall edge tracking. */
 bool kcov_collect(struct kcov_child *kc, unsigned int nr);
+
+/* Returns true if syscall nr hasn't found new edges recently.
+ * Used by syscall selection to deprioritize saturated syscalls. */
+bool kcov_syscall_is_cold(unsigned int nr);

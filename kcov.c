@@ -133,10 +133,14 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 {
 	unsigned long count;
 	unsigned long idx;
+	unsigned long call_nr;
 	bool found_new = false;
 
 	if (!kc->active)
 		return false;
+
+	call_nr = __atomic_fetch_add(&kcov_shm->total_calls,
+		1, __ATOMIC_RELAXED);
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
 	if (count > KCOV_TRACE_SIZE - 1)
@@ -161,9 +165,29 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 
 	__atomic_fetch_add(&kcov_shm->total_pcs, count, __ATOMIC_RELAXED);
 
-	if (found_new && nr < MAX_NR_SYSCALL)
+	if (found_new && nr < MAX_NR_SYSCALL) {
 		__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr],
 			1, __ATOMIC_RELAXED);
+		__atomic_store_n(&kcov_shm->last_edge_at[nr],
+			call_nr, __ATOMIC_RELAXED);
+	}
 
 	return found_new;
+}
+
+bool kcov_syscall_is_cold(unsigned int nr)
+{
+	unsigned long total, last;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return false;
+
+	total = __atomic_load_n(&kcov_shm->total_calls, __ATOMIC_RELAXED);
+	last = __atomic_load_n(&kcov_shm->last_edge_at[nr], __ATOMIC_RELAXED);
+
+	/* Never found any edges — not cold, just unexplored. */
+	if (last == 0 && kcov_shm->per_syscall_edges[nr] == 0)
+		return false;
+
+	return (total - last) > KCOV_COLD_THRESHOLD;
 }
