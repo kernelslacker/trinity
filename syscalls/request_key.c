@@ -26,4 +26,5 @@ struct syscallentry syscall_request_key = {
 	.arg4name = "destringid",
 	.arg4type = ARG_OP,
 	.arg4list = ARGLIST(request_key_ids),
+	.group = GROUP_IPC,
 };

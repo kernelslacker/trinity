@@ -25,4 +25,5 @@ struct syscallentry syscall_futex_requeue = {
 	.hi4range = 128,
 	.sanitise = sanitise_futex_requeue,
 	.flags = NEED_ALARM,
+	.group = GROUP_IPC,
 };

@@ -31,6 +31,7 @@ struct syscallentry syscall_eventfd = {
 	.arg1type = ARG_LEN,
 	.rettype = RET_FD,
 	.post = post_eventfd_create,
+	.group = GROUP_IPC,
 };
 
 /*
@@ -57,4 +58,5 @@ struct syscallentry syscall_eventfd2 = {
 	.arg2list = ARGLIST(eventfd2_flags),
 	.rettype = RET_FD,
 	.post = post_eventfd_create,
+	.group = GROUP_IPC,
 };

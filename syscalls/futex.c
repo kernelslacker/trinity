@@ -363,4 +363,5 @@ struct syscallentry syscall_futex = {
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex,
 	.post = post_futex,
+	.group = GROUP_IPC,
 };
