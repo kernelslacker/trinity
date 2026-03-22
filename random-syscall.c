@@ -187,7 +187,7 @@ bool random_syscall(struct childdata *child)
 	if (do_cmp)
 		cmp_hints_collect(child->kcov.trace_buf, rec->nr);
 	else
-		kcov_collect(&child->kcov);
+		kcov_collect(&child->kcov, rec->nr);
 
 	output_syscall_postfix(rec);
 

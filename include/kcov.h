@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "syscall.h"	/* MAX_NR_SYSCALL */
 
 /*
  * KCOV coverage collection support.
@@ -38,6 +39,7 @@ struct kcov_shared {
 	unsigned char bitmap[KCOV_BITMAP_SIZE];
 	unsigned long edges_found;
 	unsigned long total_pcs;
+	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
 };
 
 extern struct kcov_shared *kcov_shm;
@@ -59,5 +61,6 @@ void kcov_enable_cmp(struct kcov_child *kc);
 void kcov_disable(struct kcov_child *kc);
 
 /* After disabling, collect PCs and update the global bitmap.
- * Returns true if new coverage was found. */
-bool kcov_collect(struct kcov_child *kc);
+ * Returns true if new coverage was found. nr is the syscall number
+ * for per-syscall edge tracking. */
+bool kcov_collect(struct kcov_child *kc, unsigned int nr);

@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <string.h>
 #include "arch.h"
 #include "cmp_hints.h"
 #include "kcov.h"
@@ -56,8 +57,46 @@ void dump_stats(void)
 	}
 
 	if (kcov_shm != NULL) {
+		unsigned int top_nr[10];
+		unsigned long top_edges[10];
+		unsigned int top_count = 0;
+		unsigned int j;
+
 		printf("\nKCOV coverage: %lu unique edges, %lu total PCs collected\n",
 			kcov_shm->edges_found, kcov_shm->total_pcs);
+
+		/* Find top 10 edge-producing syscalls via insertion sort. */
+		memset(top_edges, 0, sizeof(top_edges));
+		for (i = 0; i < max_nr_syscalls; i++) {
+			unsigned long edges = kcov_shm->per_syscall_edges[i];
+
+			if (edges == 0)
+				continue;
+
+			/* Find insertion point. */
+			for (j = top_count; j > 0 && edges > top_edges[j - 1]; j--) {
+				if (j < 10) {
+					top_edges[j] = top_edges[j - 1];
+					top_nr[j] = top_nr[j - 1];
+				}
+			}
+			if (j < 10) {
+				top_edges[j] = edges;
+				top_nr[j] = i;
+				if (top_count < 10)
+					top_count++;
+			}
+		}
+
+		if (top_count > 0) {
+			printf("Top edge-producing syscalls:\n");
+			for (j = 0; j < top_count; j++) {
+				struct syscallentry *entry = syscalls[top_nr[j]].entry;
+				const char *name = entry ? entry->name : "???";
+
+				printf("  %-24s %lu\n", name, top_edges[j]);
+			}
+		}
 	}
 
 	if (cmp_hints_shm != NULL) {
