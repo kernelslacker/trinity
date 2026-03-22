@@ -5,6 +5,24 @@
 #include "sanitise.h"
 
 /* Opcodes added after our system headers — guard with #ifndef. */
+#ifndef IORING_REGISTER_PBUF_STATUS
+#define IORING_REGISTER_PBUF_STATUS	26
+#endif
+#ifndef IORING_REGISTER_NAPI
+#define IORING_REGISTER_NAPI		27
+#endif
+#ifndef IORING_UNREGISTER_NAPI
+#define IORING_UNREGISTER_NAPI		28
+#endif
+#ifndef IORING_REGISTER_CLOCK
+#define IORING_REGISTER_CLOCK		29
+#endif
+#ifndef IORING_REGISTER_CLONE_BUFFERS
+#define IORING_REGISTER_CLONE_BUFFERS	30
+#endif
+#ifndef IORING_REGISTER_SEND_MSG_RING
+#define IORING_REGISTER_SEND_MSG_RING	31
+#endif
 #ifndef IORING_REGISTER_ZCRX_IFQ
 #define IORING_REGISTER_ZCRX_IFQ	32
 #endif
