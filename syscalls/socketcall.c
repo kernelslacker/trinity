@@ -69,6 +69,11 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) args;
 }
 
+static void post_socketcall(struct syscallrecord *rec)
+{
+	free((void *) rec->a2);
+}
+
 struct syscallentry syscall_socketcall = {
 	.name = "socketcall",
 	.num_args = 2,
@@ -77,4 +82,5 @@ struct syscallentry syscall_socketcall = {
 	.arg2type = ARG_ADDRESS,
 	.group = GROUP_NET,
 	.sanitise = sanitise_socketcall,
+	.post = post_socketcall,
 };
