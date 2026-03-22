@@ -152,6 +152,12 @@ static void bpf_prog_load(union bpf_attr *attr)
 #ifndef BPF_TOKEN_CREATE
 #define BPF_TOKEN_CREATE		36
 #endif
+#ifndef BPF_PROG_STREAM_READ_BY_FD
+#define BPF_PROG_STREAM_READ_BY_FD	37
+#endif
+#ifndef BPF_PROG_ASSOC_STRUCT_OPS
+#define BPF_PROG_ASSOC_STRUCT_OPS	38
+#endif
 
 /* Map types added after trinity's original definitions */
 #ifndef BPF_MAP_TYPE_ARRAY_OF_MAPS
@@ -204,6 +210,9 @@ static void bpf_prog_load(union bpf_attr *attr)
 #ifndef BPF_MAP_TYPE_ARENA
 #define BPF_MAP_TYPE_ARENA		33
 #endif
+#ifndef BPF_MAP_TYPE_INSN_ARRAY
+#define BPF_MAP_TYPE_INSN_ARRAY		34
+#endif
 
 static void sanitise_bpf(struct syscallrecord *rec)
 {
@@ -226,6 +235,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		BPF_MAP_TYPE_INODE_STORAGE, BPF_MAP_TYPE_TASK_STORAGE,
 		BPF_MAP_TYPE_BLOOM_FILTER, BPF_MAP_TYPE_USER_RINGBUF,
 		BPF_MAP_TYPE_CGRP_STORAGE, BPF_MAP_TYPE_ARENA,
+		BPF_MAP_TYPE_INSN_ARRAY,
 	};
 
 	attr = zmalloc(sizeof(union bpf_attr));
@@ -428,6 +438,7 @@ static unsigned long bpf_cmds[] = {
 	BPF_ENABLE_STATS, BPF_ITER_CREATE,
 	BPF_LINK_DETACH, BPF_PROG_BIND_MAP,
 	BPF_TOKEN_CREATE,
+	BPF_PROG_STREAM_READ_BY_FD, BPF_PROG_ASSOC_STRUCT_OPS,
 };
 
 struct syscallentry syscall_bpf = {
