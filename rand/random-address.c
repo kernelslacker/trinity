@@ -116,7 +116,7 @@ struct iovec * alloc_iovec(unsigned int num)
 		if (RAND_BOOL())
 			iov[i].iov_len = 20;
 		else
-			iov[i].iov_len = rnd() % map->size;
+			iov[i].iov_len = rand() % map->size;
 	}
 
 	return iov;

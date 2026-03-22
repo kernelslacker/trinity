@@ -1,7 +1,7 @@
 /*
  * Routines to get/set seeds.
  *
- * On startup, the main process either generates a seed via rnd()
+ * On startup, the main process either generates a seed via rand()
  * or gets one passed in by the -s parameter.
  *
  * Example: we have four children, and our initial seed is 10000.

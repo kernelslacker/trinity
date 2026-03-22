@@ -30,7 +30,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	unsigned int count;
 
 	/* number of pages to move */
-	count = rnd() % (page_size / sizeof(void *));
+	count = rand() % (page_size / sizeof(void *));
 	count = max(1U, count);
 	rec->a2 = count;
 

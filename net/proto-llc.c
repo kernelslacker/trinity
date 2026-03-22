@@ -20,12 +20,12 @@ static void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	llc->sllc_family = AF_LLC;
 	llc->sllc_arphrd = ARPHRD_ETHER;
-	llc->sllc_test = rnd();
-	llc->sllc_xid = rnd();
-	llc->sllc_ua = rnd();
-	llc->sllc_sap = rnd();
+	llc->sllc_test = rand();
+	llc->sllc_xid = rand();
+	llc->sllc_ua = rand();
+	llc->sllc_sap = rand();
 	for (i = 0; i < IFHWADDRLEN; i++)
-		llc->sllc_mac[i] = rnd();
+		llc->sllc_mac[i] = rand();
 	*addr = (struct sockaddr *) llc;
 	*addrlen = sizeof(struct sockaddr_llc);
 }

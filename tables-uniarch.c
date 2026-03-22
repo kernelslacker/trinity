@@ -61,7 +61,7 @@ void enable_random_syscalls_uniarch(void)
 	struct syscallentry *entry;
 
 retry:
-	call = rnd() % max_nr_syscalls;
+	call = rand() % max_nr_syscalls;
 	entry = syscalls[call].entry;
 
 	if (validate_specific_syscall_silent(syscalls, call) == FALSE)

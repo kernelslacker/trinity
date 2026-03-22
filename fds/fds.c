@@ -116,7 +116,7 @@ int get_new_random_fd(void)
 	while (fd < 0) {
 		unsigned int i, j;
 retry:
-		i = rnd() % num_fd_providers;			// FIXME: after below fixme, this should be num_fd_providers_initialized
+		i = rand() % num_fd_providers;			// FIXME: after below fixme, this should be num_fd_providers_initialized
 		j = 0;
 
 		list_for_each(node, &fd_providers->list) {

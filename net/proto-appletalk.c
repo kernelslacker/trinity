@@ -18,9 +18,9 @@ static void atalk_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	atalk = zmalloc(sizeof(struct sockaddr_at));
 
 	atalk->sat_family = PF_APPLETALK;
-	atalk->sat_port = rnd();
-	atalk->sat_addr.s_net = rnd();
-	atalk->sat_addr.s_node = rnd();
+	atalk->sat_port = rand();
+	atalk->sat_addr.s_net = rand();
+	atalk->sat_addr.s_node = rand();
 	*addr = (struct sockaddr *) atalk;
 	*addrlen = sizeof(struct sockaddr_at);
 }

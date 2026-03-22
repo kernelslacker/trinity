@@ -91,7 +91,7 @@ struct object * get_random_object(enum objecttype type, bool global)
 	n = head->num_entries;
 	if (n == 0)
 		return NULL;
-	i = rnd() % n;
+	i = rand() % n;
 
 	list_for_each(node, list) {
 		struct object *m;
@@ -254,7 +254,7 @@ static void __prune_objects(enum objecttype type, bool global)
 	if (head->num_entries < head->max_entries)
 		return;
 
-	num_to_prune = rnd() % head->num_entries;
+	num_to_prune = rand() % head->num_entries;
 
 	while (num_to_prune > 0) {
 		struct list_head *node, *list, *tmp;

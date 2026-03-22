@@ -272,7 +272,7 @@ const char * get_filename(void)
 	if (files_in_index == 0)	/* This can happen if we run with -n. Should we do something else ? */
 		return NULL;
 
-	return fileindex[rnd() % files_in_index];
+	return fileindex[rand() % files_in_index];
 }
 
 const char * generate_pathname(void)

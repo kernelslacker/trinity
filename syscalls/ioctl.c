@@ -27,7 +27,7 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 		/* if we don't know about this ioctl, the argument could mean anything,
 		 * because ioctl sucks like that. Make some shit up.
 		 */
-		switch (rnd() % 3) {
+		switch (rand() % 3) {
 		case 0:	rec->a3 = rand32();
 			break;
 		case 1:	rec->a3 = (unsigned long) get_non_null_address();

@@ -17,11 +17,11 @@ static void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ipx = zmalloc(sizeof(struct sockaddr_ipx));
 
 	ipx->sipx_family = PF_IPX;
-	ipx->sipx_port = rnd();
-	ipx->sipx_network = rnd();
+	ipx->sipx_port = rand();
+	ipx->sipx_network = rand();
 	for (i = 0; i < 6; i++)
-		ipx->sipx_node[i] = rnd();
-	ipx->sipx_type = rnd();
+		ipx->sipx_node[i] = rand();
+	ipx->sipx_type = rand();
 	ipx->sipx_zero = RAND_BOOL();
 	*addr = (struct sockaddr *) ipx;
 	*addrlen = sizeof(struct sockaddr_ipx);

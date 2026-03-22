@@ -28,7 +28,7 @@ static bool do_priv(struct socket_triplet *st, const struct netproto *proto)
 {
 	if (proto->nr_privileged_triplets != 0) {
 		int r;
-		r = rnd() % proto->nr_privileged_triplets;
+		r = rand() % proto->nr_privileged_triplets;
 		st->protocol = proto->valid_privileged_triplets[r].protocol;
 		st->type = proto->valid_privileged_triplets[r].type;
 		return TRUE;
@@ -51,7 +51,7 @@ int sanitise_socket_triplet(struct socket_triplet *st)
 do_unpriv:
 			if (proto->nr_triplets != 0) {
 				int r;
-				r = rnd() % proto->nr_triplets;
+				r = rand() % proto->nr_triplets;
 				st->protocol = proto->valid_triplets[r].protocol;
 				st->type = proto->valid_triplets[r].type;
 				return 0;
@@ -73,7 +73,7 @@ void gen_socket_args(struct socket_triplet *st)
 		st->family = specific_domain;
 
 	else {
-		st->family = rnd() % TRINITY_PF_MAX;
+		st->family = rand() % TRINITY_PF_MAX;
 
 		/*
 		 * If we get a disabled family, try to find

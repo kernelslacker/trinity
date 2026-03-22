@@ -96,7 +96,7 @@ static struct socket_triplet netlink_triplets[] = {
   Hm, TBD
 
 	if (st->protocol == NETLINK_SOCK_DIAG)
-		st->type = rnd() % 136;
+		st->type = rand() % 136;
 */
 };
 

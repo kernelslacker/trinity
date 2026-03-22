@@ -18,7 +18,7 @@ static void ax25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	ax25->sax25_family = PF_AX25;
 	generate_rand_bytes((unsigned char *) ax25->sax25_call.ax25_call, 7);
-	ax25->sax25_ndigis = rnd();
+	ax25->sax25_ndigis = rand();
 	*addr = (struct sockaddr *) ax25;
 	*addrlen = sizeof(struct sockaddr_ax25);
 }

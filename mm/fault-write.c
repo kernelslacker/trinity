@@ -39,10 +39,10 @@ static unsigned int nr_pages(struct map *map)
 static void dirty_one_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned long offset = (rnd() % map->size) & PAGE_MASK;
+	unsigned long offset = (rand() % map->size) & PAGE_MASK;
 
 	if (mark_page_rw(map, p + offset) == TRUE)
-		p[offset] = rnd();
+		p[offset] = rand();
 }
 
 static void dirty_whole_mapping(struct map *map)
@@ -56,7 +56,7 @@ static void dirty_whole_mapping(struct map *map)
 
 	for (i = 0; i < nr; i++) {
 		char *p = map->ptr + (i * page_size);
-		*p = rnd();
+		*p = rand();
 	}
 }
 
@@ -71,7 +71,7 @@ static void dirty_every_other_page(struct map *map)
 	for (i = first; i < nr; i+=2) {
 		char *p = map->ptr + (i * page_size);
 		if (mark_page_rw(map, p) == TRUE)
-			*p = rnd();
+			*p = rand();
 	}
 }
 
@@ -84,7 +84,7 @@ static void dirty_mapping_reverse(struct map *map)
 	for (i = nr; i > 0; i--) {
 		char *p = map->ptr + (i * page_size);
 		if (mark_page_rw(map, p) == TRUE)
-			*p = rnd();
+			*p = rand();
 	}
 }
 
@@ -96,10 +96,10 @@ static void dirty_random_pages(struct map *map)
 	nr = nr_pages(map);
 
 	for (i = 0; i < nr; i++) {
-		off_t offset = (rnd() % nr) * page_size;
+		off_t offset = (rand() % nr) * page_size;
 		char *p = map->ptr + offset;
 		if (mark_page_rw(map, p) == TRUE)
-			*p = rnd();
+			*p = rand();
 	}
 }
 
@@ -140,12 +140,12 @@ static const struct faultfn write_faultfns[] = {
 void random_map_writefn(struct map *map)
 {
 	if (map->size == page_size) {
-		write_faultfns_single[rnd() % ARRAY_SIZE(write_faultfns_single)].func(map);
+		write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
 	} else {
 		if (RAND_BOOL()) {
-			write_faultfns[rnd() % ARRAY_SIZE(write_faultfns)].func(map);
+			write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
 		} else {
-			write_faultfns_single[rnd() % ARRAY_SIZE(write_faultfns_single)].func(map);
+			write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
 		}
 	}
 }

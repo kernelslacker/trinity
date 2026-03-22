@@ -20,7 +20,7 @@ static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	pkt->spkt_family = PF_PACKET;
 	for (i = 0; i < 14; i++)
-		pkt->spkt_device[i] = rnd();
+		pkt->spkt_device[i] = rand();
 	*addr = (struct sockaddr *) pkt;
 	*addrlen = sizeof(struct sockaddr_pkt);
 }

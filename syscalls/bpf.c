@@ -44,9 +44,9 @@ static void bpf_prog_load(union bpf_attr *attr)
 	attr->insns = (u64) insns;
 	attr->license = (u64) license;
 	attr->log_level = 0;
-	attr->log_size = rnd() % page_size;
+	attr->log_size = rand() % page_size;
 	attr->log_buf = (u64) get_writable_address(page_size);
-	attr->kern_version = rnd();	// TODO: stick uname in here.
+	attr->kern_version = rand();	// TODO: stick uname in here.
 }
 
 /* Commands added after trinity's original definitions */
@@ -195,9 +195,9 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
 		attr->map_type = RAND_ARRAY(bpf_map_types);
-		attr->key_size = rnd() % 1024;
-		attr->value_size = rnd() % (1024 * 64);
-		attr->max_entries = rnd() % 1024;
+		attr->key_size = rand() % 1024;
+		attr->value_size = rand() % (1024 * 64);
+		attr->max_entries = rand() % 1024;
 		attr->flags = RAND_RANGE(0, 4);
 		rec->a3 = 20;
 		break;
@@ -206,15 +206,15 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
-		attr->value = rnd();
+		attr->value = rand();
 		rec->a3 = 32;
 		break;
 
 	case BPF_MAP_UPDATE_ELEM:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
-		attr->value = rnd();
-		attr->next_key = rnd();
+		attr->value = rand();
+		attr->next_key = rand();
 		attr->flags = RAND_RANGE(0, 4);
 		rec->a3 = 32;
 		break;
@@ -228,7 +228,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_GET_NEXT_KEY:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
-		attr->value = rnd();
+		attr->value = rand();
 		rec->a3 = 32;
 		break;
 
@@ -252,17 +252,17 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_PROG_DETACH:
 		attr->target_fd = get_rand_bpf_fd();
 		attr->attach_bpf_fd = get_rand_bpf_fd();
-		attr->attach_type = rnd() % 64;
+		attr->attach_type = rand() % 64;
 		rec->a3 = 16;
 		break;
 
 	case BPF_PROG_TEST_RUN:
 		attr->test.prog_fd = get_rand_bpf_fd();
-		attr->test.data_size_in = rnd() % page_size;
+		attr->test.data_size_in = rand() % page_size;
 		attr->test.data_in = (u64) get_address();
-		attr->test.data_size_out = rnd() % page_size;
+		attr->test.data_size_out = rand() % page_size;
 		attr->test.data_out = (u64) get_writable_address(page_size);
-		attr->test.repeat = rnd() % 256;
+		attr->test.repeat = rand() % 256;
 		rec->a3 = sizeof(attr->test);
 		break;
 
@@ -270,7 +270,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_GET_NEXT_ID:
 	case BPF_BTF_GET_NEXT_ID:
 	case BPF_LINK_GET_NEXT_ID:
-		attr->start_id = rnd();
+		attr->start_id = rand();
 		rec->a3 = 8;
 		break;
 
@@ -278,13 +278,13 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_GET_FD_BY_ID:
 	case BPF_BTF_GET_FD_BY_ID:
 	case BPF_LINK_GET_FD_BY_ID:
-		attr->start_id = rnd();
+		attr->start_id = rand();
 		rec->a3 = 8;
 		break;
 
 	case BPF_OBJ_GET_INFO_BY_FD:
 		attr->info.bpf_fd = get_rand_bpf_fd();
-		attr->info.info_len = rnd() % page_size;
+		attr->info.info_len = rand() % page_size;
 		attr->info.info = (u64) get_writable_address(page_size);
 		rec->a3 = sizeof(attr->info);
 		break;
@@ -292,15 +292,15 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_LINK_CREATE:
 		attr->link_create.prog_fd = get_rand_bpf_fd();
 		attr->link_create.target_fd = get_rand_bpf_fd();
-		attr->link_create.attach_type = rnd() % 64;
-		attr->link_create.flags = rnd() % 16;
+		attr->link_create.attach_type = rand() % 64;
+		attr->link_create.flags = rand() % 16;
 		rec->a3 = sizeof(attr->link_create);
 		break;
 
 	case BPF_LINK_UPDATE:
 		attr->link_update.link_fd = get_rand_bpf_fd();
 		attr->link_update.new_prog_fd = get_rand_bpf_fd();
-		attr->link_update.flags = rnd() % 4;
+		attr->link_update.flags = rand() % 4;
 		rec->a3 = sizeof(attr->link_update);
 		break;
 
@@ -310,7 +310,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 
 	case BPF_ENABLE_STATS:
-		attr->enable_stats.type = rnd() % 4;
+		attr->enable_stats.type = rand() % 4;
 		rec->a3 = 4;
 		break;
 

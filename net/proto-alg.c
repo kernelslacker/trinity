@@ -221,22 +221,22 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	alg->salg_family = PF_ALG;
 
-	type = rnd() % ARRAY_SIZE(types);
+	type = rand() % ARRAY_SIZE(types);
 	strcpy((char *)alg->salg_type, types[type]);
 
 	switch (type) {
 	// aead
-	case 0:	algo = rnd() % ARRAY_SIZE(algos);
+	case 0:	algo = rand() % ARRAY_SIZE(algos);
 		break;
 	// hash
-	case 1:	algo = rnd() % ARRAY_SIZE(hashes);
+	case 1:	algo = rand() % ARRAY_SIZE(hashes);
 		algs = hashes;
 		break;
 	// rng
-	case 2:	algo = rnd() % ARRAY_SIZE(algos);
+	case 2:	algo = rand() % ARRAY_SIZE(algos);
 		break;
 	// skcipher
-	case 3:	algo = rnd() % ARRAY_SIZE(algos);
+	case 3:	algo = rand() % ARRAY_SIZE(algos);
 		break;
 	default: unreachable();
 	}

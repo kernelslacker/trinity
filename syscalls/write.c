@@ -20,7 +20,7 @@ static void sanitise_write(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		size = 1;
 	else
-		size = rnd() % page_size;
+		size = rand() % page_size;
 
 	ptr = malloc(size);
 	if (ptr == NULL)
