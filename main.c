@@ -259,7 +259,7 @@ static char get_pid_state(struct childdata *child)
 	char *line = NULL;
 	pid_t pid;
 	char state = '?';
-	char *procname = zmalloc(100);
+	char procname[100];
 
 	if (getpid() != mainpid)
 		BUG("get_pid_state can only be called from main!\n");
@@ -268,10 +268,9 @@ static char get_pid_state(struct childdata *child)
 	fflush(child->pidstatfile);
 
 	if (getline(&line, &n, child->pidstatfile) != -1)
-		sscanf(line, "%d %s %c", &pid, procname, &state);
+		sscanf(line, "%d %99s %c", &pid, procname, &state);
 
 	free(line);
-	free(procname);
 	return state;
 }
 
