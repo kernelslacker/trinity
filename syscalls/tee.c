@@ -22,4 +22,5 @@ struct syscallentry syscall_tee = {
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(tee_flags),
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

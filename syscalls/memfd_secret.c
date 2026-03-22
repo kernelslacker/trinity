@@ -18,4 +18,5 @@ struct syscallentry syscall_memfd_secret = {
 	.arg1type = ARG_LIST,
 	.arg1list = ARGLIST(memfd_secret_flags),
 	.rettype = RET_FD,
+	.group = GROUP_VFS,
 };

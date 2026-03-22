@@ -14,4 +14,5 @@ struct syscallentry syscall_chmod = {
 	.arg2name = "mode",
 	.arg2type = ARG_MODE_T,
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_VFS,
 };

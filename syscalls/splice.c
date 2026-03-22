@@ -28,4 +28,5 @@ struct syscallentry syscall_splice = {
 	.arg6type = ARG_LIST,
 	.arg6list = ARGLIST(splice_flags),
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

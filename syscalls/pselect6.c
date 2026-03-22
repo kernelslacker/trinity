@@ -20,4 +20,5 @@ struct syscallentry syscall_pselect6 = {
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "sig",
 	.arg6type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

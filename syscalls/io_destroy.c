@@ -7,4 +7,5 @@ struct syscallentry syscall_io_destroy = {
 	.name = "io_destroy",
 	.num_args = 1,
 	.arg1name = "ctx",
+	.group = GROUP_VFS,
 };

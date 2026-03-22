@@ -26,6 +26,7 @@ struct syscallentry syscall_epoll_pwait = {
 	.arg6name = "sigsetsize",
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 struct syscallentry syscall_epoll_pwait2 = {
@@ -41,4 +42,5 @@ struct syscallentry syscall_epoll_pwait2 = {
 	.arg6name = "sigsetsize",
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

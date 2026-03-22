@@ -13,4 +13,5 @@ struct syscallentry syscall_oldreaddir = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
+	.group = GROUP_VFS,
 };

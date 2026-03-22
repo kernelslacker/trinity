@@ -31,6 +31,7 @@ struct syscallentry syscall_read = {
 	.arg3name = "count",
 	.arg3type = ARG_LEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 
@@ -48,6 +49,7 @@ struct syscallentry syscall_readv = {
 	.arg3name = "vlen",
 	.arg3type = ARG_IOVECLEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -77,6 +79,7 @@ struct syscallentry syscall_pread64 = {
 	.arg3type = ARG_LEN,
 	.arg4name = "pos",
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -96,6 +99,7 @@ struct syscallentry syscall_preadv = {
 	.arg4name = "pos_l",
 	.arg5name = "pos_h",
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -122,4 +126,5 @@ struct syscallentry syscall_preadv2 = {
 	.arg6type = ARG_LIST,
 	.arg6list = ARGLIST(preadv2_flags),
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

@@ -27,4 +27,5 @@ struct syscallentry syscall_name_to_handle_at = {
 	.arg5type = ARG_LIST,
 	.arg5list = ARGLIST(name_to_handle_at_flags),
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

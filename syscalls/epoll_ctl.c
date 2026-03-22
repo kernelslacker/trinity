@@ -54,4 +54,5 @@ struct syscallentry syscall_epoll_ctl = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_epoll_ctl,
 	.post = post_epoll_ctl,
+	.group = GROUP_VFS,
 };

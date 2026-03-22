@@ -18,4 +18,5 @@ struct syscallentry syscall_epoll_wait = {
 	.arg4name = "timeout",
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
