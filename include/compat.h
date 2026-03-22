@@ -74,6 +74,29 @@
 #define F_OFD_SETLK       37
 #define F_OFD_SETLKW      38
 #endif
+#ifndef F_DUPFD_QUERY
+#define F_DUPFD_QUERY		(F_LINUX_SPECIFIC_BASE + 3)
+#endif
+#ifndef F_CREATED_QUERY
+#define F_CREATED_QUERY		(F_LINUX_SPECIFIC_BASE + 4)
+#endif
+#ifndef F_CANCELLK
+#define F_CANCELLK		(F_LINUX_SPECIFIC_BASE + 5)
+#endif
+#ifndef F_ADD_SEALS
+#define F_ADD_SEALS		(F_LINUX_SPECIFIC_BASE + 9)
+#define F_GET_SEALS		(F_LINUX_SPECIFIC_BASE + 10)
+#endif
+#ifndef F_GET_RW_HINT
+#define F_GET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 11)
+#define F_SET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 12)
+#define F_GET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 13)
+#define F_SET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 14)
+#endif
+#ifndef F_GETDELEG
+#define F_GETDELEG		(F_LINUX_SPECIFIC_BASE + 15)
+#define F_SETDELEG		(F_LINUX_SPECIFIC_BASE + 16)
+#endif
 
 /* Flags for SPLICE and VMSPLICE.  */
 #ifndef SPLICE_F_MOVE
@@ -421,6 +444,56 @@ enum {
 // arm64 only
 #ifndef PR_PAC_RESET_KEYS
 #define PR_PAC_RESET_KEYS               54
+#endif
+#ifndef PR_SET_TAGGED_ADDR_CTRL
+#define PR_SET_TAGGED_ADDR_CTRL		55
+#define PR_GET_TAGGED_ADDR_CTRL		56
+#endif
+#ifndef PR_SET_IO_FLUSHER
+#define PR_SET_IO_FLUSHER		57
+#define PR_GET_IO_FLUSHER		58
+#endif
+#ifndef PR_SET_SYSCALL_USER_DISPATCH
+#define PR_SET_SYSCALL_USER_DISPATCH	59
+#endif
+#ifndef PR_SCHED_CORE
+#define PR_SCHED_CORE			62
+#endif
+#ifndef PR_SET_MDWE
+#define PR_SET_MDWE			65
+#define PR_GET_MDWE			66
+#endif
+#ifndef PR_SET_MEMORY_MERGE
+#define PR_SET_MEMORY_MERGE		67
+#define PR_GET_MEMORY_MERGE		68
+#endif
+#ifndef PR_GET_SHADOW_STACK_STATUS
+#define PR_GET_SHADOW_STACK_STATUS	74
+#define PR_SET_SHADOW_STACK_STATUS	75
+#define PR_LOCK_SHADOW_STACK_STATUS	76
+#endif
+#ifndef PR_TIMER_CREATE_RESTORE_IDS
+#define PR_TIMER_CREATE_RESTORE_IDS	77
+#endif
+#ifndef PR_FUTEX_HASH
+#define PR_FUTEX_HASH			78
+#endif
+#ifndef PR_RSEQ_SLICE_EXTENSION
+#define PR_RSEQ_SLICE_EXTENSION		79
+#endif
+#ifndef PR_GET_INDIR_BR_LP_STATUS
+#define PR_GET_INDIR_BR_LP_STATUS	80
+#define PR_SET_INDIR_BR_LP_STATUS	81
+#define PR_LOCK_INDIR_BR_LP_STATUS	82
+#endif
+#ifndef PR_SET_PTRACER
+#define PR_SET_PTRACER			0x59616d61
+#endif
+#ifndef PR_SET_VMA
+#define PR_SET_VMA			0x53564d41
+#endif
+#ifndef PR_GET_AUXV
+#define PR_GET_AUXV			0x41555856
 #endif
 
 /* linux/rds.h */
