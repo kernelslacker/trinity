@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include "arch.h"
 #include "child.h"
+#include "kcov.h"
 #include "log.h"
 #include "params.h"
 #include "pids.h"
@@ -80,4 +81,6 @@ void init_shm(void)
 		init_child_logging(child);
 	}
 	mprotect(shm->children, childptrslen, PROT_READ);
+
+	kcov_init_global();
 }

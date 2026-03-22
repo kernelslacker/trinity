@@ -3,12 +3,16 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <types.h>
+#include "kcov.h"
 #include "objects.h"
 #include "syscall.h"
 
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
+
+	/* Per-child KCOV state (fd + trace buffer). */
+	struct kcov_child kcov;
 
 	/* log file related stuff */
 	FILE *logfile;

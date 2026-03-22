@@ -13,6 +13,7 @@
 #include "arg-decoder.h"
 #include "child.h"
 #include "debug.h"
+#include "kcov.h"
 #include "locks.h"
 #include "params.h"
 #include "pids.h"
@@ -174,7 +175,9 @@ bool random_syscall(struct childdata *child)
 
 	output_syscall_prefix(rec);
 
-	do_syscall(rec);
+	do_syscall(rec, &child->kcov);
+
+	kcov_collect(&child->kcov);
 
 	output_syscall_postfix(rec);
 
