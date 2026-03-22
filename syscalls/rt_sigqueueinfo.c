@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(rt_sigqueueinfo, pid_t, pid, int, sig, siginfo_t __user *, uinfo)
  */
+#include <signal.h>
 #include "sanitise.h"
 
 struct syscallentry syscall_rt_sigqueueinfo = {
@@ -10,6 +11,9 @@ struct syscallentry syscall_rt_sigqueueinfo = {
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
 	.arg2name = "sig",
+	.arg2type = ARG_RANGE,
+	.low2range = 0,
+	.hi2range = _NSIG,
 	.arg3name = "uinfo",
 	.arg3type = ARG_ADDRESS,
 	.flags = AVOID_SYSCALL,	// needs more signal handling.
