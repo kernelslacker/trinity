@@ -4,6 +4,7 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <fcntl.h>
 #include "sanitise.h"
 
 struct syscallentry syscall_fchown = {
@@ -45,6 +46,10 @@ struct syscallentry syscall_fchown16 = {
  *  On error, -1 is returned and errno is set to indicate the error.
  */
 
+static unsigned long fchownat_flags[] = {
+	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW,
+};
+
 struct syscallentry syscall_fchownat = {
 	.name = "fchownat",
 	.num_args = 5,
@@ -55,6 +60,8 @@ struct syscallentry syscall_fchownat = {
 	.arg3name = "user",
 	.arg4name = "group",
 	.arg5name = "flag",
+	.arg5type = ARG_LIST,
+	.arg5list = ARGLIST(fchownat_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
