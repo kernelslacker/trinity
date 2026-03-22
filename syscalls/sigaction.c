@@ -36,6 +36,7 @@ struct syscallentry syscall_rt_sigaction = {
 	.arg3name = "oact",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "sigsetsize",
+	.arg4type = ARG_LEN,
 };
 
 
@@ -51,8 +52,12 @@ struct syscallentry syscall_sigaction = {
 	.num_args = 3,
 	.sanitise = sanitise_rt_sigaction,
 	.arg1name = "sig",
+	.arg1type = ARG_RANGE,
+	.low1range = 0,
+	.hi1range = _NSIG,
 	.arg2name = "act",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "oact",
+	.arg3type = ARG_ADDRESS,
 	.flags = AVOID_SYSCALL,
 };

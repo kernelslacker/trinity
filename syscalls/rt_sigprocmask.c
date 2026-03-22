@@ -29,4 +29,5 @@ struct syscallentry syscall_rt_sigprocmask = {
 	.arg3name = "oset",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "sigsetsize",
+	.arg4type = ARG_LEN,
 };
