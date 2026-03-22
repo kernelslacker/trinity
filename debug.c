@@ -141,7 +141,7 @@ void debugf(const char *fmt, ...)
 		return;
 
 	va_start(args, fmt);
-	vsprintf(debugbuf, fmt, args);
+	vsnprintf(debugbuf, BUFSIZE, fmt, args);
 	va_end(args);
 	output(0, debugbuf);
 }
@@ -156,7 +156,7 @@ void syslogf(const char *fmt, ...)
 	va_list args;
 
 	va_start(args, fmt);
-	vsprintf(debugbuf, fmt, args);
+	vsnprintf(debugbuf, BUFSIZE, fmt, args);
 	va_end(args);
 
 	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
