@@ -24,6 +24,7 @@ struct syscallentry syscall_getrandom = {
 	.arg1name = "buf",
 	.arg1type = ARG_MMAP,
 	.arg2name = "count",
+	.arg2type = ARG_LEN,
 	.arg3name = "flags",
 	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(getrandom_flags),
