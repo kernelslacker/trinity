@@ -23,8 +23,10 @@ struct syscallentry syscall_newfstat = {
 #include "sanitise.h"
 
 static unsigned long newfstatat_flags[] = {
-	0,	// FIXME: WAT?
+	0,	/* no flags — follow symlinks (default behavior) */
 	AT_SYMLINK_NOFOLLOW,
+	AT_EMPTY_PATH,
+	AT_NO_AUTOMOUNT,
 };
 
 struct syscallentry syscall_newfstatat = {
