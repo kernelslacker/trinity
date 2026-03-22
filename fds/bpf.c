@@ -128,7 +128,7 @@ static const struct fd_provider bpf_fd_provider = {
 	.name = "bpf",
 	.objtype = OBJ_FD_BPF_MAP,
 	.enabled = TRUE,
-	.open = &open_bpf_fds,
+	.init = &open_bpf_fds,
 	.get = &get_rand_bpf_fd,
 };
 

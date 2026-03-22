@@ -85,7 +85,7 @@ static const struct fd_provider pipes_fd_provider = {
 	.name = "pipes",
 	.objtype = OBJ_FD_PIPE,
 	.enabled = TRUE,
-	.open = &open_pipes,
+	.init = &open_pipes,
 	.get = &get_rand_pipe_fd,
 };
 

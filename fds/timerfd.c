@@ -113,9 +113,9 @@ static const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
 	.objtype = OBJ_FD_TIMERFD,
 	.enabled = TRUE,
-	.open = &open_timerfd_fds,
+	.init = &open_timerfd_fds,
 	.get = &get_rand_timerfd_fd,
-	.reopen = &reopen_timerfd_fd,
+	.open = &reopen_timerfd_fd,
 };
 
 REG_FD_PROV(timerfd_fd_provider);

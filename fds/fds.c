@@ -42,9 +42,9 @@ void register_fd_provider(const struct fd_provider *prov)
 	newnode->name = strdup(prov->name);
 	newnode->objtype = prov->objtype;
 	newnode->enabled = prov->enabled;
-	newnode->open = prov->open;
+	newnode->init = prov->init;
 	newnode->get = prov->get;
-	newnode->reopen = prov->reopen;
+	newnode->open = prov->open;
 	num_fd_providers++;
 
 	list_add_tail(&newnode->list, &fd_providers->list);
@@ -73,7 +73,7 @@ static void __open_fds(bool do_rand)
 				continue;
 		}
 
-		provider->enabled = provider->open();
+		provider->enabled = provider->init();
 		if (provider->enabled == TRUE) {
 			provider->initialized = TRUE;
 			num_fd_providers_initialized++;
@@ -239,7 +239,7 @@ retry:
 /*
  * Try to create a replacement fd after one was destroyed.
  * Finds the provider for the given object type and calls its
- * .reopen hook if available.
+ * .open hook if available.
  */
 void try_regenerate_fd(enum objecttype type)
 {
@@ -252,9 +252,9 @@ void try_regenerate_fd(enum objecttype type)
 		struct fd_provider *provider;
 
 		provider = (struct fd_provider *) node;
-		if (provider->objtype == type && provider->reopen != NULL &&
+		if (provider->objtype == type && provider->open != NULL &&
 		    provider->initialized == TRUE) {
-			if (provider->reopen() == TRUE)
+			if (provider->open() == TRUE)
 				__atomic_add_fetch(&shm->stats.fd_regenerated, 1, __ATOMIC_RELAXED);
 			return;
 		}

@@ -76,7 +76,7 @@ static const struct fd_provider io_uring_fd_provider = {
 	.name = "io_uring",
 	.objtype = OBJ_FD_IO_URING,
 	.enabled = TRUE,
-	.open = &open_io_uring_fds,
+	.init = &open_io_uring_fds,
 	.get = &get_rand_io_uring_fd,
 };
 

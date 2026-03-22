@@ -150,7 +150,7 @@ static struct fd_provider drm_fd_provider = {
 	.name = "drm",
 	.objtype = OBJ_FD_DRM,
 	.enabled = TRUE,
-	.open = &open_drm_fds,
+	.init = &open_drm_fds,
 	.get = &get_rand_drm_fd,
 };
 

@@ -89,7 +89,7 @@ static const struct fd_provider fanotify_fd_provider = {
 	.name = "fanotify",
 	.objtype = OBJ_FD_FANOTIFY,
 	.enabled = TRUE,
-	.open = &open_fanotify_fds,
+	.init = &open_fanotify_fds,
 	.get = &get_rand_fanotifyfd,
 };
 
