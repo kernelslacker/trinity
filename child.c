@@ -209,6 +209,9 @@ static void init_child(struct childdata *child, int childno)
 		}
 	}
 
+	/* Cache our childno/pid for O(1) lookups in this_child()/find_childno() */
+	set_child_cache(childno, pid);
+
 	set_seed(child);
 
 	init_object_lists(OBJ_LOCAL);

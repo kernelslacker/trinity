@@ -14,6 +14,7 @@ extern pid_t mainpid;
 
 bool pid_alive(pid_t pid);
 int find_childno(pid_t mypid);
+void set_child_cache(int childno, pid_t pid);
 bool pidmap_empty(void);
 void dump_childnos(void);
 int pid_is_valid(pid_t);
