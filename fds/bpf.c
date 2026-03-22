@@ -79,11 +79,31 @@ static void bpf_map_dump(struct object *obj, bool global)
 		obj->bpfobj.map_fd, (char *)&bpf_fds[type].name, global);
 }
 
-static int open_bpf_fds(void)
+static int open_bpf_fd(void)
+{
+	struct object *obj;
+	unsigned int idx;
+	int fd;
+
+	idx = rand() % ARRAY_SIZE(bpf_fds);
+	fd = bpf_create_map(bpf_fds[idx].map_type, bpf_fds[idx].key_size,
+			    bpf_fds[idx].value_size, bpf_fds[idx].max_entries,
+			    bpf_fds[idx].flags);
+	if (fd < 0)
+		return FALSE;
+
+	obj = alloc_object();
+	obj->bpfobj.map_fd = fd;
+	obj->bpfobj.map_type = bpf_fds[idx].map_type;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	return TRUE;
+}
+
+static int init_bpf_fds(void)
 {
 	struct objhead *head;
-	struct rlimit r = {1 << 20, 1 << 20};
 	unsigned int i;
+	struct rlimit r = {1 << 20, 1 << 20};
 
 	setrlimit(RLIMIT_MEMLOCK, &r);
 
@@ -91,20 +111,8 @@ static int open_bpf_fds(void)
 	head->destroy = &bpf_destructor;
 	head->dump = &bpf_map_dump;
 
-	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++) {
-		struct object *obj;
-		int fd;
-
-		fd = bpf_create_map(bpf_fds[i].map_type, bpf_fds[i].key_size, bpf_fds[i].value_size, bpf_fds[i].max_entries, bpf_fds[i].flags);
-
-		if (fd < 0)
-			continue;
-
-		obj = alloc_object();
-		obj->bpfobj.map_fd = fd;
-		obj->bpfobj.map_type = bpf_fds[i].map_type;
-		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	}
+	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++)
+		open_bpf_fd();
 
 	//FIXME: right now, returning FALSE means "abort everything", not
 	// "skip this provider", so on -ENOSYS, we have to still register.
@@ -128,8 +136,9 @@ static const struct fd_provider bpf_fd_provider = {
 	.name = "bpf",
 	.objtype = OBJ_FD_BPF_MAP,
 	.enabled = TRUE,
-	.init = &open_bpf_fds,
+	.init = &init_bpf_fds,
 	.get = &get_rand_bpf_fd,
+	.open = &open_bpf_fd,
 };
 
 REG_FD_PROV(bpf_fd_provider);
