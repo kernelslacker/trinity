@@ -9,6 +9,10 @@
 #include "shm.h"
 #include "trinity.h"
 
+static unsigned long ipc_flags[] = {
+	IPC_CREAT, IPC_EXCL,
+};
+
 static void post_shmget(struct syscallrecord *rec)
 {
 	if (rec->retval == (unsigned long) -1L)
@@ -25,5 +29,7 @@ struct syscallentry syscall_shmget = {
 	.arg2name = "size",
 	.arg2type = ARG_LEN,
 	.arg3name = "shmflg",
+	.arg3type = ARG_LIST,
+	.arg3list = ARGLIST(ipc_flags),
 	.post = post_shmget,
 };
