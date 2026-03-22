@@ -7,5 +7,5 @@ struct syscallentry syscall_uselib = {
 	.name = "uselib",
 	.num_args = 1,
 	.arg1name = "library",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 };

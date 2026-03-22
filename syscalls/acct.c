@@ -10,5 +10,5 @@ struct syscallentry syscall_acct = {
 	.name = "acct",
 	.num_args = 1,
 	.arg1name = "name",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_PATHNAME,
 };
