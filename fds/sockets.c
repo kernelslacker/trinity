@@ -526,6 +526,7 @@ int fd_from_socketinfo(struct socketinfo *si)
 
 static const struct fd_provider socket_fd_provider = {
 	.name = "sockets",
+	.objtype = OBJ_FD_SOCKET,
 	.enabled = TRUE,
 	.open = &open_sockets,
 	.get = &get_rand_socket_fd,

@@ -2,6 +2,7 @@
 
 #include "child.h"
 #include "list.h"
+#include "object-types.h"
 #include "syscall.h"
 #include "types.h"
 
@@ -14,8 +15,10 @@ void process_fds_param(char *optarg, bool enable);
 struct fd_provider {
         struct list_head list;
 	const char *name;
+	enum objecttype objtype;
         int (*open)(void);
         int (*get)(void);
+	int (*reopen)(void);
 	bool enabled;
 	bool initialized;
 };
@@ -27,6 +30,7 @@ unsigned int check_if_fd(struct childdata *child, struct syscallrecord *rec);
 int get_random_fd(void);
 int get_new_random_fd(void);
 int get_typed_fd(enum argtype type);
+void try_regenerate_fd(enum objecttype type);
 
 #define REG_FD_PROV(_struct) \
 	static void __attribute__((constructor)) register_##_struct(void) { \

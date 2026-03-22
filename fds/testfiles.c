@@ -136,6 +136,7 @@ int get_rand_testfile_fd(void)
 
 static const struct fd_provider testfile_fd_provider = {
 	.name = "testfile",
+	.objtype = OBJ_FD_TESTFILE,
 	.enabled = TRUE,
 	.open = &open_testfile_fds,
 	.get = &get_rand_testfile_fd,

@@ -1,3 +1,4 @@
+#include "fd.h"
 #include "list.h"
 #include "objects.h"
 #include "random.h"
@@ -223,6 +224,7 @@ void remove_object_by_fd(int fd)
 
 			if (fd_from_object(obj, fd_types[i]) == fd) {
 				destroy_object(obj, OBJ_GLOBAL, fd_types[i]);
+				try_regenerate_fd(fd_types[i]);
 				return;
 			}
 		}
