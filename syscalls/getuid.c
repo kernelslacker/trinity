@@ -6,6 +6,7 @@
 struct syscallentry syscall_getuid = {
 	.name = "getuid",
 	.num_args = 0,
+	.group = GROUP_PROCESS,
 };
 
 
@@ -16,4 +17,5 @@ struct syscallentry syscall_getuid = {
 struct syscallentry syscall_getuid16 = {
 	.name = "getuid16",
 	.num_args = 0,
+	.group = GROUP_PROCESS,
 };

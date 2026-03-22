@@ -15,4 +15,5 @@ struct syscallentry syscall_sysfs = {
 	.arg1list = ARGLIST(sysfs_options),
 	.arg2name = "arg1",
 	.arg3name = "arg2",
+	.group = GROUP_PROCESS,
 };

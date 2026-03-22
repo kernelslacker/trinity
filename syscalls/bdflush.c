@@ -9,4 +9,5 @@ struct syscallentry syscall_bdflush = {
 	.arg1name = "func",
 	.arg2name = "data",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

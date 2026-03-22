@@ -10,4 +10,5 @@ struct syscallentry syscall_sethostname = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
+	.group = GROUP_PROCESS,
 };

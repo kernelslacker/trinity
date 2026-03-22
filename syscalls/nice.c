@@ -7,4 +7,5 @@ struct syscallentry syscall_nice = {
 	.name = "nice",
 	.num_args = 1,
 	.arg1name = "increment",
+	.group = GROUP_PROCESS,
 };

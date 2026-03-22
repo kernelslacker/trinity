@@ -16,4 +16,5 @@ struct syscallentry syscall_landlock_restrict_self = {
 	.arg2name = "flags",
 //	arg2type = ARG_LIST,
 //	arg2list = ARGLIST(landlock_restrict_self_flags),
+	.group = GROUP_PROCESS,
 };

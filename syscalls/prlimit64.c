@@ -25,4 +25,5 @@ struct syscallentry syscall_prlimit64 = {
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "old_rlim",
 	.arg4type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

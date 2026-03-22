@@ -35,4 +35,5 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.arg3list = ARGLIST(landlock_create_ruleset_flags),
 	.rettype = RET_FD,
 	.post = post_landlock_create_ruleset,
+	.group = GROUP_PROCESS,
 };

@@ -8,4 +8,5 @@ struct syscallentry syscall_uname = {
 	.num_args = 1,
 	.arg1name = "name",
 	.arg1type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

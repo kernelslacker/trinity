@@ -25,4 +25,5 @@ struct syscallentry syscall_rseq = {
 	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(rseq_flags),
 	.arg4name = "sig",
+	.group = GROUP_PROCESS,
 };

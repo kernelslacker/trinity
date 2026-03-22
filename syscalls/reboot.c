@@ -11,4 +11,5 @@ struct syscallentry syscall_reboot = {
 	.arg3name = "cmd",
 	.arg4name = "arg",
 	.arg4type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

@@ -13,4 +13,5 @@ struct syscallentry syscall_pciconfig_read = {
 	.arg4name = "len",
 	.arg5name = "buf",
 	.arg5type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

@@ -6,4 +6,5 @@
 struct syscallentry syscall_gettid = {
 	.name = "gettid",
 	.num_args = 0,
+	.group = GROUP_PROCESS,
 };

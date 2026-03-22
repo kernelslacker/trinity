@@ -28,4 +28,5 @@ struct syscallentry syscall_getrandom = {
 	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(getrandom_flags),
 	.sanitise = sanitise_getrandom,
+	.group = GROUP_PROCESS,
 };

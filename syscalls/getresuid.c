@@ -12,6 +12,7 @@ struct syscallentry syscall_getresuid = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "suid",
 	.arg3type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };
 
 /*
@@ -27,4 +28,5 @@ struct syscallentry syscall_getresuid16 = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "suid",
 	.arg3type = ARG_ADDRESS,
+	.group = GROUP_PROCESS,
 };

@@ -30,4 +30,5 @@ struct syscallentry syscall_landlock_add_rule = {
 	.arg4name = "flags",
 //	.arg4type = ARG_LIST,
 //	.arg4list = ARGLIST(landlock_add_rule_flags),
+	.group = GROUP_PROCESS,
 };

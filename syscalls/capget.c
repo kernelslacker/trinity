@@ -12,4 +12,5 @@ struct syscallentry syscall_capget = {
 	.arg1name = "header",
 	.arg2name = "dataptr",
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_PROCESS,
 };
