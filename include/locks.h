@@ -14,10 +14,10 @@ typedef struct lock_struct lock_t;
 #define LOCKING 1
 #define LOCKED 2
 
-bool trylock(lock_t *_lock);
-void lock(lock_t *_lock);
-void unlock(lock_t *_lock);
+bool trylock(lock_t *lk);
+void lock(lock_t *lk);
+void unlock(lock_t *lk);
 
 bool check_all_locks(void);
 
-void bust_lock(lock_t *_lock);
+void bust_lock(lock_t *lk);
