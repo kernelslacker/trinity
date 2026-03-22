@@ -15,6 +15,7 @@ struct syscallentry syscall_sendfile = {
 	.arg4name = "count",
 	.arg4type = ARG_LEN,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -33,4 +34,5 @@ struct syscallentry syscall_sendfile64 = {
 	.arg4name = "count",
 	.arg4type = ARG_LEN,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
+	.group = GROUP_VFS,
 };

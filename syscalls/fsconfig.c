@@ -30,4 +30,5 @@ struct syscallentry syscall_fsconfig = {
 	.arg3name = "_key",
 	.arg4name = "_value",
 	.arg5name = "aux",
+	.group = GROUP_VFS,
 };

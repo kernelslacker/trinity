@@ -13,4 +13,5 @@ struct syscallentry syscall_io_submit = {
 	.arg3name = "iocbpp",
 	.arg3type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

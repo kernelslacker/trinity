@@ -24,4 +24,5 @@ struct syscallentry syscall_move_mount = {
 	.arg5name = "flags",
 	.arg5type = ARG_OP,
 	.arg5list = ARGLIST(move_mount_flags),
+	.group = GROUP_VFS,
 };

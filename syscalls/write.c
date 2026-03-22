@@ -47,6 +47,7 @@ struct syscallentry syscall_write = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_write,
 	.post     = post_write,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -63,6 +64,7 @@ struct syscallentry syscall_writev = {
 	.arg3name = "vlen",
 	.arg3type = ARG_IOVECLEN,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 
@@ -94,6 +96,7 @@ struct syscallentry syscall_pwrite64 = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_pwrite64,
 	.post     = post_write,
+	.group = GROUP_VFS,
 };
 
 
@@ -114,6 +117,7 @@ struct syscallentry syscall_pwritev = {
 	.arg4name = "pos_l",
 	.arg5name = "pos_h",
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -141,4 +145,5 @@ struct syscallentry syscall_pwritev2 = {
 	.arg6type = ARG_LIST,
 	.arg6list = ARGLIST(pwritev2_flags),
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

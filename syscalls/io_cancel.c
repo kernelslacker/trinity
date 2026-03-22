@@ -12,4 +12,5 @@ struct syscallentry syscall_io_cancel = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "result",
 	.arg3type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

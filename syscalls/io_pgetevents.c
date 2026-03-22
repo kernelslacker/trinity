@@ -25,4 +25,5 @@ struct syscallentry syscall_io_pgetevents = {
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "usig",
 	.arg6type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

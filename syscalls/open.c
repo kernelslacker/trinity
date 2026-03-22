@@ -78,6 +78,7 @@ struct syscallentry syscall_open = {
 	.arg3type = ARG_MODE_T,
 	.rettype = RET_FD,
 	.sanitise = sanitise_open,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -98,6 +99,7 @@ struct syscallentry syscall_openat = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -157,6 +159,7 @@ struct syscallentry syscall_openat2 = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat2,
 	.post = post_openat2,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -177,4 +180,5 @@ struct syscallentry syscall_open_by_handle_at = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,	// For now we only sanitise .flags, which is also arg3
+	.group = GROUP_VFS,
 };

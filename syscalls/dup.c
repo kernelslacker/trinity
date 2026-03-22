@@ -18,6 +18,7 @@ struct syscallentry syscall_dup = {
 	.arg1type = ARG_FD,
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -47,6 +48,7 @@ struct syscallentry syscall_dup2 = {
 	.rettype = RET_FD,
 	.post = post_dup2,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };
 
 
@@ -74,4 +76,5 @@ struct syscallentry syscall_dup3 = {
 	.rettype = RET_FD,
 	.post = post_dup2,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

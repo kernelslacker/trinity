@@ -58,4 +58,5 @@ struct syscallentry syscall_close_range = {
 	.post = post_close_range,
 	.flags = AVOID_SYSCALL,
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_VFS,
 };

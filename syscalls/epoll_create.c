@@ -37,6 +37,7 @@ struct syscallentry syscall_epoll_create = {
 	.arg1type = ARG_LEN,
 	.rettype = RET_FD,
 	.post = post_epoll_create,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -63,4 +64,5 @@ struct syscallentry syscall_epoll_create1 = {
 	.arg1list = ARGLIST(epoll_create_flags),
 	.rettype = RET_FD,
 	.post = post_epoll_create,
+	.group = GROUP_VFS,
 };

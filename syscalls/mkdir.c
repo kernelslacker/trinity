@@ -10,6 +10,7 @@ struct syscallentry syscall_mkdir = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "mode",
 	.arg2type = ARG_MODE_T,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -27,4 +28,5 @@ struct syscallentry syscall_mkdirat = {
 	.arg3name = "mode",
 	.arg3type = ARG_MODE_T,
 	.flags = NEED_ALARM,
+	.group = GROUP_VFS,
 };

@@ -20,4 +20,5 @@ struct syscallentry syscall_memfd_create = {
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(memfd_create_flags),
 	.rettype = RET_FD,
+	.group = GROUP_VFS,
 };

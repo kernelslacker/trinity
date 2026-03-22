@@ -19,4 +19,5 @@ struct syscallentry syscall_io_getevents = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "timeout",
 	.arg5type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

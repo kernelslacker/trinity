@@ -25,4 +25,5 @@ struct syscallentry syscall_setxattr = {
 	.arg5name = "flags",
 	.arg5type = ARG_LIST,
 	.arg5list = ARGLIST(setxattr_flags),
+	.group = GROUP_VFS,
 };

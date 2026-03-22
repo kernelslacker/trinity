@@ -10,6 +10,7 @@ struct syscallentry syscall_stat = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };
 
 
@@ -24,6 +25,7 @@ struct syscallentry syscall_stat64 = {
 	.arg1type = ARG_PATHNAME,
 	.arg2name = "statbuf",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -52,4 +54,5 @@ struct syscallentry syscall_statx = {
 	.arg4name = "mask",
 	.arg5name = "buffer",
 	.arg5type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

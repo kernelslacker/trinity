@@ -9,4 +9,5 @@ struct syscallentry syscall_io_setup = {
 	.arg1name = "nr_events",
 	.arg2name = "ctxp",
 	.arg2type = ARG_ADDRESS,
+	.group = GROUP_VFS,
 };

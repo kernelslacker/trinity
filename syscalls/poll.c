@@ -50,6 +50,7 @@ struct syscallentry syscall_poll = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_poll,
 	.post = post_poll,
+	.group = GROUP_VFS,
 };
 
 /*
@@ -94,4 +95,5 @@ struct syscallentry syscall_ppoll = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_ppoll,
 	.post = post_ppoll,
+	.group = GROUP_VFS,
 };
