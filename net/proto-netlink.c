@@ -11,7 +11,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "utils.h"	// RAND_ARRAY
-#include "compat.h"
 
 static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -101,10 +100,14 @@ static struct socket_triplet netlink_triplets[] = {
 */
 };
 
+/* defined in netlink-msg.c */
+void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
+
 const struct netproto proto_netlink = {
 	.name = "netlink",
 	.setsockopt = netlink_setsockopt,
 	.gen_sockaddr = netlink_gen_sockaddr,
+	.gen_msg = netlink_gen_msg,
 	.valid_triplets = netlink_triplets,
 	.nr_triplets = ARRAY_SIZE(netlink_triplets),
 };
