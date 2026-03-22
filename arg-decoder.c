@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include "arch.h"	//PAGE_MASK
 #include "arg-decoder.h"
-#include "params.h"	// logging, quiet_level
+#include "params.h"	// quiet_level
 #include "pids.h"
 #include "shm.h"
 #include "syscall.h"

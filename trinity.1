@@ -103,11 +103,6 @@ Controls which kernel taint flags should be considered.
 List all syscalls known on this architecture.
 
 .TP
-\fI\-\-logging \-l\fP
-off=disable logging.
-<dirname> specify a directory where logfiles will be placed.
-
-.TP
 \fI\-\-domain \-P\fP
 Specify specific network domain for sockets.
 
@@ -161,8 +156,8 @@ Stress test the splice syscall
 .B trinity \-x splice
 Call every syscall except for splice.
 .TP
-.B trinity \-qq \-l off \-C16
-Turn off logging, and suppress most output to run as fast as possible. Use 16 child processes
+.B trinity \-qq \-C16
+Suppress most output to run as fast as possible. Use 16 child processes
 
 .fi
 .SH AUTHOR

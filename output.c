@@ -3,7 +3,6 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include "arg-decoder.h"
-#include "log.h"
 #include "pids.h"
 #include "params.h"	// quiet_level
 #include "shm.h"
@@ -12,7 +11,6 @@
 
 /*
  * level defines whether it gets displayed to the screen with printf.
- * (it always logs).
  *   0 = everything, even all the registers
  *   1 = prints syscall count
  *   2 = Just the reseed values
@@ -22,7 +20,6 @@ void output(char level, const char *fmt, ...)
 {
 	va_list args;
 	int n;
-	FILE *handle;
 	pid_t pid;
 	char outputbuf[BUFSIZE];
 	char *prefix = NULL;
@@ -49,7 +46,6 @@ void output(char level, const char *fmt, ...)
 		childno = find_childno(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u] ", childno, pid);
 		prefix = child_prefix;
-		shm->children[childno]->logdirty = true;
 	}
 
 skip_pid:
@@ -63,21 +59,10 @@ skip_pid:
 		exit(EXIT_FAILURE);
 	}
 
-	/* stdout output if needed */
+	/* stdout output */
 	if (quiet_level >= level) {
 		printf("%s%s", prefix, outputbuf);
 		(void)fflush(stdout);
-	}
-
-	/* go on with file logs only if enabled */
-	if (logging == LOGGING_FILES) {
-		handle = find_logfile_handle();
-		if (!handle)
-			return;
-
-		fprintf(handle, "%s %s", prefix, outputbuf);
-
-		(void)fflush(handle);
 	}
 }
 
@@ -106,20 +91,9 @@ void outputstd(const char *fmt, ...)
 
 void output_rendered_buffer(char *buffer)
 {
-	FILE *log_handle;
-
 	/* Output to stdout only if -q param is not specified */
 	if (quiet_level == MAX_LOGLEVEL) {
 		fprintf(stdout, "%s", buffer);
 		fflush(stdout);
-	}
-
-	if (logging == LOGGING_DISABLED)
-		return;
-
-	log_handle = find_logfile_handle();
-	if (log_handle != NULL) {
-		fprintf(log_handle, "%s", buffer);
-		fflush(log_handle);
 	}
 }
