@@ -14,10 +14,21 @@
 #define EPOLLEXCLUSIVE (1 << 28)
 #endif
 
+#ifndef EPOLL_URING_WAKE
+#define EPOLL_URING_WAKE (1U << 27)
+#endif
+
+#ifndef EPOLLNVAL
+#define EPOLLNVAL 0x00000020
+#endif
+
 static const unsigned long epoll_flags[] = {
 	EPOLLIN, EPOLLOUT, EPOLLRDHUP, EPOLLPRI,
 	EPOLLERR, EPOLLHUP, EPOLLET, EPOLLONESHOT,
 	EPOLLWAKEUP, EPOLLEXCLUSIVE,
+	EPOLLNVAL, EPOLLRDNORM, EPOLLRDBAND,
+	EPOLLWRNORM, EPOLLWRBAND, EPOLLMSG,
+	EPOLL_URING_WAKE,
 };
 
 static void sanitise_epoll_ctl(struct syscallrecord *rec)
