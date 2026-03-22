@@ -702,8 +702,6 @@ static uint16_t gen_bpf_code_more_crazy(bool last_instr)
 	return ret;
 }
 
-static int seccomp_state;
-
 enum {
 	STATE_GEN_VALIDATE_ARCH    = 0,
 	STATE_GEN_EXAMINE_SYSCALL  = 1,
@@ -728,7 +726,7 @@ static const float seccomp_markov_init[__STATE_GEN_MAX] = {
 	.5f, .3f, .1f, .05f, .05f
 };
 
-static int gen_seccomp_bpf_code(struct sock_filter *curr)
+static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 {
 	int used = 0;
 	struct sock_filter validate_arch[] = {
@@ -747,7 +745,7 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr)
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
 	};
 
-	switch (seccomp_state) {
+	switch (state) {
 	case STATE_GEN_VALIDATE_ARCH:
 		used = 3;
 		memcpy(curr, validate_arch, sizeof(validate_arch));
@@ -814,6 +812,7 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 {
 	int avail;
+	int state;
 	struct sock_filter *curr;
 	struct sock_fprog *bpf = (void *) *addr;
 
@@ -829,16 +828,16 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 
 	bpf->filter = zmalloc(bpf->len * sizeof(struct sock_filter));
 
-	seccomp_state = seccomp_choose(seccomp_markov_init);
+	state = seccomp_choose(seccomp_markov_init);
 
 	for (curr = bpf->filter; avail > 3; ) {
 		int used;
 
-		used = gen_seccomp_bpf_code(curr);
+		used = gen_seccomp_bpf_code(curr, state);
 		curr  += used;
 		avail -= used;
 
-		seccomp_state = seccomp_choose(seccomp_markov[seccomp_state]);
+		state = seccomp_choose(seccomp_markov[state]);
 	}
 
 	*addr = (void *) bpf;
