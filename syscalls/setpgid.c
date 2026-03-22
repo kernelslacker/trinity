@@ -10,4 +10,5 @@ struct syscallentry syscall_setpgid = {
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
 	.arg2name = "pgid",
+	.arg2type = ARG_PID,
 };
