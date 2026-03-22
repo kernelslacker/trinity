@@ -28,7 +28,15 @@ static void sanitise_mremap(struct syscallrecord *rec)
 
 	map = common_set_mmap_ptr_len();
 
-	rec->a3 = map->size;		//TODO: Munge this.
+	rec->a3 = map->size;
+
+	/* Sometimes request a different size */
+	switch (rand() % 4) {
+	case 0: break;	/* same size */
+	case 1: rec->a3 /= 2; break;	/* shrink */
+	case 2: rec->a3 *= 2; break;	/* grow */
+	case 3: rec->a3 = page_size * (1 + rand() % 16); break;	/* random pages */
+	}
 
 	if (rec->a4 & MREMAP_FIXED) {
 		unsigned long align = RAND_ARRAY(alignments);
@@ -55,6 +63,7 @@ static void post_mremap(struct syscallrecord *rec)
 		return;
 
 	map->ptr = ptr;
+	map->size = rec->a3;
 
 	/* Sometimes dirty the mapping first. */
 //	if (RAND_BOOL())
