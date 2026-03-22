@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <fcntl.h>
+#include "objects.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -20,6 +21,16 @@ struct syscallentry syscall_dup = {
 };
 
 /*
+ * dup2/dup3 silently close newfd if it was open.
+ * Remove any object holding newfd from the pool on success.
+ */
+static void post_dup2(struct syscallrecord *rec)
+{
+	if ((long) rec->retval >= 0)
+		remove_object_by_fd((int) rec->a2);
+}
+
+/*
  * SYSCALL_DEFINE2(dup2, unsigned int, oldfd, unsigned int, newfd)
  *
  * On success, returns the new descriptor.
@@ -34,6 +45,7 @@ struct syscallentry syscall_dup2 = {
 	.arg2name = "newfd",
 	.arg2type = ARG_FD,
 	.rettype = RET_FD,
+	.post = post_dup2,
 	.flags = NEED_ALARM,
 };
 
@@ -60,5 +72,6 @@ struct syscallentry syscall_dup3 = {
 	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(dup3_flags),
 	.rettype = RET_FD,
+	.post = post_dup2,
 	.flags = NEED_ALARM,
 };

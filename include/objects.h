@@ -156,3 +156,4 @@ bool objects_empty(enum objecttype type);
 struct objhead * get_objhead(bool global, enum objecttype type);
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);
+void remove_object_by_fd(int fd);

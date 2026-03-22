@@ -195,6 +195,41 @@ int fd_from_object(struct object *obj, enum objecttype type)
 }
 
 /*
+ * Scan all fd-type object pools and destroy any object holding this fd.
+ * Called after a successful close() or dup2() to keep the pool in sync.
+ */
+void remove_object_by_fd(int fd)
+{
+	static const enum objecttype fd_types[] = {
+		OBJ_FD_PIPE, OBJ_FD_FILE, OBJ_FD_PERF, OBJ_FD_EPOLL,
+		OBJ_FD_EVENTFD, OBJ_FD_TIMERFD, OBJ_FD_TESTFILE,
+		OBJ_FD_MEMFD, OBJ_FD_DRM, OBJ_FD_INOTIFY, OBJ_FD_SOCKET,
+		OBJ_FD_USERFAULTFD, OBJ_FD_FANOTIFY, OBJ_FD_BPF_MAP,
+		OBJ_FD_BPF_PROG, OBJ_FD_IO_URING, OBJ_FD_LANDLOCK,
+		OBJ_FD_PIDFD,
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(fd_types); i++) {
+		struct objhead *head;
+		struct list_head *node, *tmp;
+
+		head = get_objhead(OBJ_GLOBAL, fd_types[i]);
+		if (head->list == NULL || head->num_entries == 0)
+			continue;
+
+		list_for_each_safe(node, tmp, head->list) {
+			struct object *obj = (struct object *) node;
+
+			if (fd_from_object(obj, fd_types[i]) == fd) {
+				destroy_object(obj, OBJ_GLOBAL, fd_types[i]);
+				return;
+			}
+		}
+	}
+}
+
+/*
  * Think of this as a poor mans garbage collector, to prevent
  * us from exhausting all the available fd's in the system etc.
  */
