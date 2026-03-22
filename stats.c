@@ -1,5 +1,6 @@
 #include <errno.h>
 #include "arch.h"
+#include "shm.h"
 #include "stats.h"
 #include "syscall.h"
 #include "tables.h"
@@ -42,5 +43,13 @@ void dump_stats(void)
 		for_each_syscall(i) {
 			dump_entry(syscalls, i);
 		}
+	}
+
+	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
+	    shm->stats.fd_regenerated) {
+		printf("\nfd lifecycle: stale:%lu closed:%lu regenerated:%lu\n",
+			shm->stats.fd_stale_detected,
+			shm->stats.fd_closed_tracked,
+			shm->stats.fd_regenerated);
 	}
 }
