@@ -5,6 +5,7 @@
  *		struct __kernel_timespec __user *, timeout,
  *		clockid_t, clockid)
  */
+#include <time.h>
 #include "sanitise.h"
 #include "compat.h"
 
@@ -25,6 +26,10 @@ static unsigned long futex2_flags[] = {
 	FUTEX2_NUMA, FUTEX2_PRIVATE,
 };
 
+static unsigned long futex_wait_clockids[] = {
+	CLOCK_REALTIME, CLOCK_MONOTONIC,
+};
+
 struct syscallentry syscall_futex_wait = {
 	.name = "futex_wait",
 	.num_args = 6,
@@ -38,5 +43,7 @@ struct syscallentry syscall_futex_wait = {
 	.arg5name = "timeout",
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "clockid",
+	.arg6type = ARG_OP,
+	.arg6list = ARGLIST(futex_wait_clockids),
 	.flags = NEED_ALARM,
 };
