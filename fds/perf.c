@@ -38,7 +38,32 @@ static void perffd_dump(struct object *obj, bool global)
 */
 }
 
-static int open_perf_fds(void)
+static int open_perf_fd(void)
+{
+	struct syscallrecord rec;
+	struct object *obj;
+	int fd;
+
+	memset(&rec, 0, sizeof(rec));
+	sanitise_perf_event_open(&rec);
+
+	fd = syscall(__NR_perf_event_open, rec.a1, rec.a2, rec.a3, rec.a4, rec.a5);
+	if (fd < 0)
+		return FALSE;
+
+	obj = alloc_object();
+	obj->perfobj.fd = fd;
+	obj->perfobj.eventattr = zmalloc(sizeof(struct perf_event_attr));
+	memcpy(obj->perfobj.eventattr, (void *) rec.a1, sizeof(struct perf_event_attr));
+	obj->perfobj.pid = rec.a2;
+	obj->perfobj.cpu = rec.a3;
+	obj->perfobj.group_fd = rec.a4;
+	obj->perfobj.flags = rec.a5;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_PERF);
+	return TRUE;
+}
+
+static int init_perf_fds(void)
 {
 	struct objhead *head;
 	unsigned int i = 0;
@@ -50,46 +75,17 @@ static int open_perf_fds(void)
 	head->dump = &perffd_dump;
 
 	while (i < MAX_PERF_FDS) {
-		struct syscallrecord *rec;
-		int fd;
-
-		rec = &shm->children[0]->syscall;
-		sanitise_perf_event_open(rec);
-
-		fd = syscall(__NR_perf_event_open, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5);
-		if (fd != -1) {
-			struct object *obj;
-
-			obj = alloc_object();
-			obj->perfobj.fd = fd;
-			obj->perfobj.eventattr = zmalloc(sizeof(struct perf_event_attr));
-			memcpy(obj->perfobj.eventattr, (void *) rec->a1, sizeof(struct perf_event_attr));
-			obj->perfobj.pid = rec->a2;
-			obj->perfobj.cpu = rec->a3;
-			obj->perfobj.group_fd = rec->a4;
-			obj->perfobj.flags = rec->a5;
-			add_object(obj, OBJ_GLOBAL, OBJ_FD_PERF);
+		if (open_perf_fd() == TRUE) {
 			i++;
-
-			/* any time we succeed, reset the failure counts.
-			 * They're only there for the cases where we hit them repeatedly.
-			 */
 			inval_count = 0;
 			perm_count = 0;
 		} else {
 			switch (errno) {
 			case ENOSYS:
-				/* If ENOSYS, bail early rather than do MAX_PERF_FDS retries */
 				return FALSE;
-
 			case EINVAL:
-				/* If we get here we probably generated something invalid and
-				 * perf_event_open threw it out. Go around the loop again.
-				 * OR its LXCore throwing us in an endless loop.
-				 */
 				inval_count++;
 				break;
-
 			case EACCES:
 				perm_count++;
 				break;
@@ -129,8 +125,9 @@ static const struct fd_provider perf_fd_provider = {
 	.name = "perf",
 	.objtype = OBJ_FD_PERF,
 	.enabled = TRUE,
-	.init = &open_perf_fds,
+	.init = &init_perf_fds,
 	.get = &get_rand_perf_fd,
+	.open = &open_perf_fd,
 };
 
 REG_FD_PROV(perf_fd_provider);
