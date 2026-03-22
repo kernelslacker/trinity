@@ -84,6 +84,7 @@ static int get_rand_pidfd(void)
 
 static const struct fd_provider pidfd_fd_provider = {
 	.name = "pidfd",
+	.objtype = OBJ_FD_PIDFD,
 	.enabled = TRUE,
 	.open = &open_pidfd_fds,
 	.get = &get_rand_pidfd,

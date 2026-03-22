@@ -40,9 +40,11 @@ void register_fd_provider(const struct fd_provider *prov)
 	}
 	newnode = zmalloc(sizeof(struct fd_provider));
 	newnode->name = strdup(prov->name);
+	newnode->objtype = prov->objtype;
 	newnode->enabled = prov->enabled;
 	newnode->open = prov->open;
 	newnode->get = prov->get;
+	newnode->reopen = prov->reopen;
 	num_fd_providers++;
 
 	list_add_tail(&newnode->list, &fd_providers->list);
@@ -219,11 +221,36 @@ retry:
 	/* Validate fd is still alive */
 	if (fcntl(fd, F_GETFD) == -1 && errno == EBADF) {
 		destroy_object(obj, OBJ_GLOBAL, objtype);
+		try_regenerate_fd(objtype);
 		retries++;
 		goto retry;
 	}
 
 	return fd;
+}
+
+/*
+ * Try to create a replacement fd after one was destroyed.
+ * Finds the provider for the given object type and calls its
+ * .reopen hook if available.
+ */
+void try_regenerate_fd(enum objecttype type)
+{
+	struct list_head *node;
+
+	if (fd_providers == NULL)
+		return;
+
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider;
+
+		provider = (struct fd_provider *) node;
+		if (provider->objtype == type && provider->reopen != NULL &&
+		    provider->initialized == TRUE) {
+			provider->reopen();
+			return;
+		}
+	}
 }
 
 static void toggle_fds_param(char *str, bool enable)

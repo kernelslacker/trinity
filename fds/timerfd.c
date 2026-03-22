@@ -82,11 +82,35 @@ static int get_rand_timerfd_fd(void)
 	return obj->timerfdobj.fd;
 }
 
+static int reopen_timerfd_fd(void)
+{
+	struct object *obj;
+	int fd, clockid, flags;
+
+	clockid = RAND_BOOL() ? CLOCK_REALTIME : CLOCK_MONOTONIC;
+	flags = RAND_BOOL() ? TFD_NONBLOCK : 0;
+	if (RAND_BOOL())
+		flags |= TFD_CLOEXEC;
+
+	fd = timerfd_create(clockid, flags);
+	if (fd == -1)
+		return FALSE;
+
+	obj = alloc_object();
+	obj->timerfdobj.fd = fd;
+	obj->timerfdobj.clockid = clockid;
+	obj->timerfdobj.flags = flags;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_TIMERFD);
+	return TRUE;
+}
+
 static const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
+	.objtype = OBJ_FD_TIMERFD,
 	.enabled = TRUE,
 	.open = &open_timerfd_fds,
 	.get = &get_rand_timerfd_fd,
+	.reopen = &reopen_timerfd_fd,
 };
 
 REG_FD_PROV(timerfd_fd_provider);

@@ -86,6 +86,7 @@ static int get_rand_userfaultfd(void)
 
 static const struct fd_provider userfaultfd_provider = {
 	.name = "userfaultfd",
+	.objtype = OBJ_FD_USERFAULTFD,
 	.enabled = TRUE,
 	.open = &open_userfaultfds,
 	.get = &get_rand_userfaultfd,

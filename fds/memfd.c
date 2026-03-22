@@ -94,11 +94,34 @@ static int get_rand_memfd_fd(void)
 	return obj->memfdobj.fd;
 }
 
+static int reopen_memfd_fd(void)
+{
+	struct object *obj;
+	int fd, flags;
+
+	flags = RAND_BOOL() ? MFD_CLOEXEC : 0;
+	if (RAND_BOOL())
+		flags |= MFD_ALLOW_SEALING;
+
+	fd = memfd_create("memfd-regen", flags);
+	if (fd < 0)
+		return FALSE;
+
+	obj = alloc_object();
+	obj->memfdobj.fd = fd;
+	obj->memfdobj.name = strdup("memfd-regen");
+	obj->memfdobj.flags = flags;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
+	return TRUE;
+}
+
 static const struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
+	.objtype = OBJ_FD_MEMFD,
 	.enabled = TRUE,
 	.open = &open_memfd_fds,
 	.get = &get_rand_memfd_fd,
+	.reopen = &reopen_memfd_fd,
 };
 
 REG_FD_PROV(memfd_fd_provider);

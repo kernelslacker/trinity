@@ -127,6 +127,7 @@ int get_rand_perf_fd(void)
 
 static const struct fd_provider perf_fd_provider = {
 	.name = "perf",
+	.objtype = OBJ_FD_PERF,
 	.enabled = TRUE,
 	.open = &open_perf_fds,
 	.get = &get_rand_perf_fd,

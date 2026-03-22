@@ -75,6 +75,7 @@ static int get_rand_landlock_fd(void)
 
 static const struct fd_provider landlock_fd_provider = {
 	.name = "landlock",
+	.objtype = OBJ_FD_LANDLOCK,
 	.enabled = TRUE,
 	.open = &open_landlock_fds,
 	.get = &get_rand_landlock_fd,
