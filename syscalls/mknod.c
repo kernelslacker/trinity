@@ -27,6 +27,7 @@ struct syscallentry syscall_mknodat = {
 	.arg2name = "filename",
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "mode",
+	.arg3type = ARG_MODE_T,
 	.arg4name = "dev",
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
