@@ -166,6 +166,14 @@ enum {
 #define MADV_COLLAPSE 25
 #endif
 
+#ifndef MADV_GUARD_INSTALL
+#define MADV_GUARD_INSTALL 102
+#endif
+
+#ifndef MADV_GUARD_REMOVE
+#define MADV_GUARD_REMOVE 103
+#endif
+
 
 /* bits/socket.h */
 #ifndef SOCK_CLOEXEC
