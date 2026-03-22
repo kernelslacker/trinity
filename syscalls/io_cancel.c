@@ -8,6 +8,7 @@ struct syscallentry syscall_io_cancel = {
 	.name = "io_cancel",
 	.num_args = 3,
 	.arg1name = "ctx_id",
+	.arg1type = ARG_ADDRESS,
 	.arg2name = "iocb",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "result",
