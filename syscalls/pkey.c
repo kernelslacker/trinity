@@ -34,5 +34,8 @@ struct syscallentry syscall_pkey_free = {
 	.name = "pkey_free",
 	.num_args = 1,
 	.arg1name = "key",
+	.arg1type = ARG_RANGE,
+	.low1range = 0,
+	.hi1range = 15,
 	.group = GROUP_VM,
 };
