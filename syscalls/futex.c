@@ -350,6 +350,7 @@ struct syscallentry syscall_futex = {
 	.name = "futex",
 	.num_args = 6,
 	.arg1name = "uaddr",
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.arg2name = "op",
 	.arg2type = ARG_OP,
 	.arg2list = ARGLIST(futex_ops),

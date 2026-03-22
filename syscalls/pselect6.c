@@ -10,6 +10,7 @@ struct syscallentry syscall_pselect6 = {
 	.num_args = 6,
 	.flags = AVOID_SYSCALL, // Can cause the fuzzer to hang without timeout firing
 	.arg1name = "n",
+	.arg1type = ARG_LEN,
 	.arg2name = "inp",
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "outp",
