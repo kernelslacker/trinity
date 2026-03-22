@@ -7,7 +7,8 @@
 #include "compat.h"
 
 static unsigned long memfd_create_flags[] = {
-	MFD_CLOEXEC, MFD_ALLOW_SEALING,
+	MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB,
+	MFD_NOEXEC_SEAL, MFD_EXEC,
 };
 
 struct syscallentry syscall_memfd_create = {
