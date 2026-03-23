@@ -9,11 +9,12 @@
 #include "shm.h"
 #include "trinity.h"
 
-static struct map* map;
-
-static void sanitise_mprotect(__unused__ struct syscallrecord *rec)
+static void sanitise_mprotect(struct syscallrecord *rec)
 {
-	map = common_set_mmap_ptr_len();
+	struct map *map = common_set_mmap_ptr_len();
+
+	/* Stash map pointer in unused arg slot for post callback. */
+	rec->a5 = (unsigned long) map;
 }
 
 /*
@@ -21,6 +22,8 @@ static void sanitise_mprotect(__unused__ struct syscallrecord *rec)
  */
 static void post_mprotect(struct syscallrecord *rec)
 {
+	struct map *map = (struct map *) rec->a5;
+
 	if (rec->retval == 0)
 		map->prot = rec->a3;
 }

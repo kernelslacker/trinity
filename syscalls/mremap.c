@@ -14,8 +14,6 @@
 #include "trinity.h"
 #include "compat.h"
 
-static struct map *map;
-
 static const unsigned long alignments[] = {
 	MB(1), MB(2), MB(4), MB(4),
 	MB(10), MB(100),
@@ -24,6 +22,7 @@ static const unsigned long alignments[] = {
 
 static void sanitise_mremap(struct syscallrecord *rec)
 {
+	struct map *map;
 	unsigned long newaddr = 0;
 
 	map = common_set_mmap_ptr_len();
@@ -49,6 +48,9 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	}
 
 	rec->a5 = newaddr;
+
+	/* Stash map pointer in unused arg slot for post callback. */
+	rec->a6 = (unsigned long) map;
 }
 
 /*
@@ -57,6 +59,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
  */
 static void post_mremap(struct syscallrecord *rec)
 {
+	struct map *map = (struct map *) rec->a6;
 	void *ptr = (void *) rec->retval;
 
 	if (ptr == MAP_FAILED)
