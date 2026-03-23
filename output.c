@@ -61,7 +61,6 @@ skip_pid:
 	}
 
 	printf("%s%s", prefix, outputbuf);
-	(void)fflush(stdout);
 }
 
 /*
@@ -89,8 +88,6 @@ void outputstd(const char *fmt, ...)
 
 void output_rendered_buffer(char *buffer)
 {
-	if (quiet_level > 1) {
+	if (quiet_level > 1)
 		fprintf(stdout, "%s", buffer);
-		fflush(stdout);
-	}
 }

@@ -103,6 +103,8 @@ int main(int argc, char* argv[])
 
 	outputstd("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
 
+	setlinebuf(stdout);
+
 	progname = argv[0];
 
 	mainpid = getpid();
