@@ -694,17 +694,30 @@ static void print_stats(void)
 {
 	if (shm->stats.op_count > 1) {
 		static unsigned long lastcount = 0;
+		static struct timespec last_tp = { 0 };
 
 		if (shm->stats.op_count - lastcount > 10000) {
+			struct timespec now;
+			unsigned long rate = 0;
 			char stalltxt[]=" STALLED:XXXX";
+
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			if (last_tp.tv_sec > 0) {
+				double elapsed = (now.tv_sec - last_tp.tv_sec) +
+					(now.tv_nsec - last_tp.tv_nsec) / 1e9;
+				if (elapsed > 0.01)
+					rate = (unsigned long)((shm->stats.op_count - lastcount) / elapsed);
+			}
+			last_tp = now;
 
 			if (stall_count > 0 && stall_count < 10000)
 				sprintf(stalltxt, " STALLED:%u", stall_count);
-			output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s]\n",
+			output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec\n",
 				shm->stats.op_count,
 				shm->stats.failures, shm->stats.successes,
 				hiscore,
-				stall_count ? stalltxt : "");
+				stall_count ? stalltxt : "",
+				rate);
 			if (kcov_shm != NULL) {
 				static unsigned long last_edges = 0;
 				static unsigned int plateau_intervals = 0;
