@@ -1,17 +1,32 @@
 /*
  * SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
  */
+#include <linux/ioprio.h>
 #include "sanitise.h"
-
-#ifndef IOPRIO_WHO_PROCESS
-#define IOPRIO_WHO_PROCESS	1
-#define IOPRIO_WHO_PGRP		2
-#define IOPRIO_WHO_USER		3
-#endif
+#include "random.h"
 
 static unsigned long ioprio_who[] = {
 	IOPRIO_WHO_PROCESS, IOPRIO_WHO_PGRP, IOPRIO_WHO_USER,
 };
+
+static void sanitise_ioprio_set(struct syscallrecord *rec)
+{
+	unsigned int class, level;
+
+	/* ioprio encodes class in bits 15:13, level in bits 12:0. */
+	switch (rand() % 5) {
+	case 0: class = IOPRIO_CLASS_NONE; break;
+	case 1: class = IOPRIO_CLASS_RT; break;
+	case 2: class = IOPRIO_CLASS_BE; break;
+	case 3: class = IOPRIO_CLASS_IDLE; break;
+	case 4: class = IOPRIO_CLASS_INVALID; break;
+	default: class = IOPRIO_CLASS_BE; break;
+	}
+
+	level = rand() % 8;
+
+	rec->a3 = (class << IOPRIO_CLASS_SHIFT) | level;
+}
 
 struct syscallentry syscall_ioprio_set = {
 	.name = "ioprio_set",
@@ -22,5 +37,6 @@ struct syscallentry syscall_ioprio_set = {
 	.arg2name = "who",
 	.arg2type = ARG_PID,
 	.arg3name = "ioprio",
+	.sanitise = sanitise_ioprio_set,
 	.group = GROUP_SCHED,
 };

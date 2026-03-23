@@ -1,13 +1,8 @@
 /*
  * SYSCALL_DEFINE2(ioprio_get, int, which, int, who)
  */
+#include <linux/ioprio.h>
 #include "sanitise.h"
-
-#ifndef IOPRIO_WHO_PROCESS
-#define IOPRIO_WHO_PROCESS	1
-#define IOPRIO_WHO_PGRP		2
-#define IOPRIO_WHO_USER		3
-#endif
 
 static unsigned long ioprio_who[] = {
 	IOPRIO_WHO_PROCESS, IOPRIO_WHO_PGRP, IOPRIO_WHO_USER,
