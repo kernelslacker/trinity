@@ -705,9 +705,29 @@ static void print_stats(void)
 				shm->stats.failures, shm->stats.successes,
 				hiscore,
 				stall_count ? stalltxt : "");
-			if (kcov_shm != NULL)
-				output(0, "  KCOV: %lu edges\n",
-					kcov_shm->edges_found);
+			if (kcov_shm != NULL) {
+				static unsigned long last_edges = 0;
+				static unsigned int plateau_intervals = 0;
+				unsigned long edges = kcov_shm->edges_found;
+
+				if (edges == last_edges && last_edges > 0) {
+					plateau_intervals++;
+					if (plateau_intervals == 10)
+						output(0, "  KCOV: coverage plateau at %lu edges\n", edges);
+					else if (plateau_intervals > 10 && (plateau_intervals % 50) == 0)
+						output(0, "  KCOV: still at plateau (%lu edges, %u intervals)\n",
+							edges, plateau_intervals);
+					else
+						output(0, "  KCOV: %lu edges\n", edges);
+				} else {
+					if (plateau_intervals >= 10)
+						output(0, "  KCOV: %lu edges (plateau broken!)\n", edges);
+					else
+						output(0, "  KCOV: %lu edges\n", edges);
+					plateau_intervals = 0;
+				}
+				last_edges = edges;
+			}
 			lastcount = shm->stats.op_count;
 		}
 	}
