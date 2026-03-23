@@ -127,10 +127,14 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 
 	/* Grow parallel array if needed */
 	if (head->num_entries >= head->array_capacity) {
+		struct object **newarray;
 		unsigned int newcap;
 
 		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
-		head->array = realloc(head->array, newcap * sizeof(struct object *));
+		newarray = realloc(head->array, newcap * sizeof(struct object *));
+		if (newarray == NULL)
+			return;
+		head->array = newarray;
 		head->array_capacity = newcap;
 	}
 	head->array[head->num_entries] = obj;
