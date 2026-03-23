@@ -1458,6 +1458,11 @@ struct kvm_get_htab_fd {
 #define SCHED_IDLE 5
 #endif
 
+/* signal.h */
+#ifndef SS_AUTODISARM
+#define SS_AUTODISARM (1U << 31)
+#endif
+
 /* sys/swap.h */
 #ifndef SWAP_FLAG_DISCARD
 #define SWAP_FLAG_DISCARD 0x10000
