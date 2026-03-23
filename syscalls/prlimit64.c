@@ -4,6 +4,8 @@
 	 struct rlimit64 __user *, old_rlim)
  */
 #include <sys/resource.h>
+#include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 
 static unsigned long rlimit_resources[] = {
@@ -12,6 +14,33 @@ static unsigned long rlimit_resources[] = {
 	RLIMIT_MEMLOCK, RLIMIT_AS, RLIMIT_LOCKS, RLIMIT_SIGPENDING,
 	RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_RTPRIO,
 };
+
+static rlim64_t random_rlim64(void)
+{
+	switch (rand() % 5) {
+	case 0: return RLIM64_INFINITY;
+	case 1: return 0;
+	case 2: return 1 + (rand() % 1024);
+	case 3: return (rlim64_t) page_size * (1 + (rand() % 256));
+	default: return rand32();
+	}
+}
+
+/* Fill struct rlimit64 with interesting boundary values. */
+static void sanitise_prlimit64(struct syscallrecord *rec)
+{
+	struct rlimit64 *rlim;
+
+	rlim = (struct rlimit64 *) get_writable_address(sizeof(*rlim));
+	rlim->rlim_cur = random_rlim64();
+	rlim->rlim_max = random_rlim64();
+
+	/* Half the time, enforce cur <= max for valid calls. */
+	if (RAND_BOOL() && rlim->rlim_cur > rlim->rlim_max)
+		rlim->rlim_cur = rlim->rlim_max;
+
+	rec->a3 = (unsigned long) rlim;
+}
 
 struct syscallentry syscall_prlimit64 = {
 	.name = "prlimit64",
@@ -22,8 +51,8 @@ struct syscallentry syscall_prlimit64 = {
 	.arg2type = ARG_OP,
 	.arg2list = ARGLIST(rlimit_resources),
 	.arg3name = "new_rlim",
-	.arg3type = ARG_ADDRESS,
 	.arg4name = "old_rlim",
 	.arg4type = ARG_ADDRESS,
 	.group = GROUP_PROCESS,
+	.sanitise = sanitise_prlimit64,
 };
