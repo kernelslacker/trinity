@@ -35,4 +35,5 @@ struct syscallentry syscall_fsconfig = {
 	.arg4type = ARG_ADDRESS,
 	.arg5name = "aux",
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

@@ -29,6 +29,6 @@ struct syscallentry syscall_mknodat = {
 	.arg3name = "mode",
 	.arg3type = ARG_MODE_T,
 	.arg4name = "dev",
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | NEEDS_ROOT,
 	.group = GROUP_VFS,
 };

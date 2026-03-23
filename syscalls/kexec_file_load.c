@@ -29,4 +29,5 @@ struct syscallentry syscall_kexec_file_load = {
 	.arg5type = ARG_LIST,
 	.arg5list = ARGLIST(kexec_file_load_flags),
 	.group = GROUP_PROCESS,
+	.flags = NEEDS_ROOT,
 };

@@ -13,4 +13,5 @@ struct syscallentry syscall_chroot = {
 	.arg1type = ARG_PATHNAME,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

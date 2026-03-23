@@ -11,4 +11,5 @@ struct syscallentry syscall_setdomainname = {
 	.arg2name = "len",
 	.arg2type = ARG_LEN,
 	.group = GROUP_PROCESS,
+	.flags = NEEDS_ROOT,
 };

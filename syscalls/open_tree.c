@@ -34,4 +34,5 @@ struct syscallentry syscall_open_tree = {
 	.arg3list = ARGLIST(open_tree_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

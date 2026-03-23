@@ -45,4 +45,5 @@ struct syscallentry syscall_fsmount = {
 	.arg3list = ARGLIST(fsmount_attr_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

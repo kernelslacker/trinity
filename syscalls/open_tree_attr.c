@@ -36,4 +36,5 @@ struct syscallentry syscall_open_tree_attr = {
 	.arg5type = ARG_LEN,
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

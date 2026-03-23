@@ -23,4 +23,5 @@ struct syscallentry syscall_clock_settime = {
 	.arg2name = "tp",
 	.arg2type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEEDS_ROOT,
 };

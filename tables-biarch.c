@@ -350,6 +350,8 @@ void dump_syscall_tables_biarch(void)
 
 		if (entry->flags & AVOID_SYSCALL)
 			outputstd(" AVOID");
+		if (entry->flags & NEEDS_ROOT)
+			outputstd(" NEEDS_ROOT");
 
 		outputstd("\n");
 	}
@@ -365,6 +367,8 @@ void dump_syscall_tables_biarch(void)
 
 		if (entry->flags & AVOID_SYSCALL)
 			outputstd(" AVOID");
+		if (entry->flags & NEEDS_ROOT)
+			outputstd(" NEEDS_ROOT");
 
 		outputstd("\n");
 	}

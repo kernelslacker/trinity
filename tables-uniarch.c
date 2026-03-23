@@ -158,6 +158,8 @@ void dump_syscall_tables_uniarch(void)
 		show_state(entry->flags & ACTIVE);
 		if (entry->flags & AVOID_SYSCALL)
 			outputstd(" AVOID");
+		if (entry->flags & NEEDS_ROOT)
+			outputstd(" NEEDS_ROOT");
 		outputstd("\n");
 	}
 }

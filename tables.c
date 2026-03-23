@@ -14,6 +14,7 @@
 #include "shm.h"
 #include "tables.h"
 #include "trinity.h"	// MAX_LOGLEVEL
+#include "uid.h"
 #include "utils.h"	// ARRAY_SIZE
 
 unsigned long syscalls_todo = 0;
@@ -54,6 +55,9 @@ void validate_specific_syscall(const struct syscalltable *table, int call)
 
 	if (entry->flags & NI_SYSCALL)
 		output(0, "%s is NI_SYSCALL. Skipping\n", entry->name);
+
+	if ((entry->flags & NEEDS_ROOT) && orig_uid != 0)
+		output(0, "%s needs root. Skipping\n", entry->name);
 }
 
 int validate_specific_syscall_silent(const struct syscalltable *table, int call)
@@ -73,12 +77,18 @@ int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 	if (entry->flags & NI_SYSCALL)
 		return false;
 
+	if ((entry->flags & NEEDS_ROOT) && orig_uid != 0)
+		return false;
+
 	return true;
 }
 
 void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall)
 {
 	struct syscallentry *entry = table[calln].entry;
+
+	if ((entry->flags & NEEDS_ROOT) && orig_uid != 0)
+		return;
 
 	//Check if the call is activated already, and activate it only if needed
 	if (entry->active_number == 0) {

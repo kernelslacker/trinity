@@ -21,4 +21,5 @@ struct syscallentry syscall_delete_module = {
 	.arg2list = ARGLIST(delete_module_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
+	.flags = NEEDS_ROOT,
 };

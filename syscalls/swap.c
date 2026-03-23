@@ -18,6 +18,7 @@ struct syscallentry syscall_swapon = {
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(swapon_flags),
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };
 
 /*
@@ -29,4 +30,5 @@ struct syscallentry syscall_swapoff = {
 	.arg1name = "path",
 	.arg1type = ARG_PATHNAME,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };
