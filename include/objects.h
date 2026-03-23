@@ -108,6 +108,7 @@ struct landlockobj {
 
 struct object {
 	struct list_head list;
+	unsigned int array_idx;		/* index in objhead->array */
 	union {
 		struct map map;
 
@@ -155,7 +156,9 @@ struct object {
 
 struct objhead {
 	struct list_head *list;
+	struct object **array;		/* parallel array for O(1) random access */
 	unsigned int num_entries;
+	unsigned int array_capacity;
 	unsigned int max_entries;
 	void (*destroy)(struct object *obj);
 	void (*dump)(struct object *obj, bool global);
