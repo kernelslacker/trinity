@@ -215,6 +215,12 @@ static void bpf_prog_load(union bpf_attr *attr)
 #endif
 
 /* Attach types not present in older bpf.h headers */
+#ifndef BPF_TRACE_KPROBE_SESSION
+#define BPF_TRACE_KPROBE_SESSION	56
+#endif
+#ifndef BPF_TRACE_UPROBE_SESSION
+#define BPF_TRACE_UPROBE_SESSION	57
+#endif
 #ifndef BPF_TRACE_FSESSION
 #define BPF_TRACE_FSESSION		58
 #endif
