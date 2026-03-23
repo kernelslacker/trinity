@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include "fd.h"
 #include "list.h"
 #include "objects.h"
@@ -6,6 +7,87 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Hash table mapping fd → (object, type) for O(1) lookup in
+ * remove_object_by_fd().  Open-addressing with linear probing.
+ */
+static struct fd_hash_entry fd_hash[FD_HASH_SIZE];
+
+void fd_hash_init(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < FD_HASH_SIZE; i++)
+		fd_hash[i].fd = -1;
+}
+
+static unsigned int fd_hash_slot(int fd)
+{
+	return (unsigned int) fd & (FD_HASH_SIZE - 1);
+}
+
+void fd_hash_insert(int fd, struct object *obj, enum objecttype type)
+{
+	unsigned int slot;
+
+	if (fd < 0)
+		return;
+
+	slot = fd_hash_slot(fd);
+	while (fd_hash[slot].fd != -1 && fd_hash[slot].fd != fd)
+		slot = (slot + 1) & (FD_HASH_SIZE - 1);
+
+	fd_hash[slot].fd = fd;
+	fd_hash[slot].obj = obj;
+	fd_hash[slot].type = type;
+}
+
+void fd_hash_remove(int fd)
+{
+	unsigned int slot, next;
+
+	if (fd < 0)
+		return;
+
+	slot = fd_hash_slot(fd);
+	while (fd_hash[slot].fd != -1) {
+		if (fd_hash[slot].fd == fd) {
+			/* Delete and re-hash any entries displaced by this one */
+			fd_hash[slot].fd = -1;
+			next = (slot + 1) & (FD_HASH_SIZE - 1);
+			while (fd_hash[next].fd != -1) {
+				struct fd_hash_entry displaced = fd_hash[next];
+				fd_hash[next].fd = -1;
+				fd_hash_insert(displaced.fd, displaced.obj, displaced.type);
+				next = (next + 1) & (FD_HASH_SIZE - 1);
+			}
+			return;
+		}
+		slot = (slot + 1) & (FD_HASH_SIZE - 1);
+	}
+}
+
+static struct fd_hash_entry *fd_hash_lookup(int fd)
+{
+	unsigned int slot;
+
+	if (fd < 0)
+		return NULL;
+
+	slot = fd_hash_slot(fd);
+	while (fd_hash[slot].fd != -1) {
+		if (fd_hash[slot].fd == fd)
+			return &fd_hash[slot];
+		slot = (slot + 1) & (FD_HASH_SIZE - 1);
+	}
+	return NULL;
+}
+
+static bool is_fd_type(enum objecttype type)
+{
+	return type >= OBJ_FD_PIPE && type <= OBJ_FD_PIDFD;
+}
 
 struct object * alloc_object(void)
 {
@@ -55,6 +137,12 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 	obj->array_idx = head->num_entries;
 
 	head->num_entries++;
+
+	/* Track global fd-type objects in the hash table */
+	if (global == OBJ_GLOBAL && is_fd_type(type)) {
+		int fd = fd_from_object(obj, type);
+		fd_hash_insert(fd, obj, type);
+	}
 
 	if (head->dump != NULL)
 		head->dump(obj, global);
@@ -133,6 +221,10 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 
 	head->num_entries--;
 
+	/* Remove from fd hash table */
+	if (global == OBJ_GLOBAL && is_fd_type(type))
+		fd_hash_remove(fd_from_object(obj, type));
+
 	if (head->destroy != NULL)
 		head->destroy(obj);
 
@@ -210,40 +302,20 @@ int fd_from_object(struct object *obj, enum objecttype type)
 }
 
 /*
- * Scan all fd-type object pools and destroy any object holding this fd.
+ * Look up an fd in the hash table and destroy its object.
  * Called after a successful close() or dup2() to keep the pool in sync.
  */
 void remove_object_by_fd(int fd)
 {
-	static const enum objecttype fd_types[] = {
-		OBJ_FD_PIPE, OBJ_FD_FILE, OBJ_FD_PERF, OBJ_FD_EPOLL,
-		OBJ_FD_EVENTFD, OBJ_FD_TIMERFD, OBJ_FD_TESTFILE,
-		OBJ_FD_MEMFD, OBJ_FD_DRM, OBJ_FD_INOTIFY, OBJ_FD_SOCKET,
-		OBJ_FD_USERFAULTFD, OBJ_FD_FANOTIFY, OBJ_FD_BPF_MAP,
-		OBJ_FD_BPF_PROG, OBJ_FD_IO_URING, OBJ_FD_LANDLOCK,
-		OBJ_FD_PIDFD,
-	};
-	unsigned int i;
+	struct fd_hash_entry *entry;
 
-	for (i = 0; i < ARRAY_SIZE(fd_types); i++) {
-		struct objhead *head;
-		struct list_head *node, *tmp;
+	entry = fd_hash_lookup(fd);
+	if (entry == NULL)
+		return;
 
-		head = get_objhead(OBJ_GLOBAL, fd_types[i]);
-		if (head->list == NULL || head->num_entries == 0)
-			continue;
-
-		list_for_each_safe(node, tmp, head->list) {
-			struct object *obj = (struct object *) node;
-
-			if (fd_from_object(obj, fd_types[i]) == fd) {
-				__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
-				destroy_object(obj, OBJ_GLOBAL, fd_types[i]);
-				try_regenerate_fd(fd_types[i]);
-				return;
-			}
-		}
-	}
+	__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
+	destroy_object(entry->obj, OBJ_GLOBAL, entry->type);
+	try_regenerate_fd(entry->type);
 }
 
 /*

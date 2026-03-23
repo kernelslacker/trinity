@@ -12,6 +12,7 @@
 #include "files.h"
 #include "ioctls.h"
 #include "maps.h"
+#include "objects.h"
 #include "pids.h"
 #include "params.h"
 #include "domains.h"
@@ -155,6 +156,7 @@ int main(int argc, char* argv[])
 
 	pids_init();
 
+	fd_hash_init();
 	init_object_lists(OBJ_GLOBAL);
 
 	setup_initial_mappings();
