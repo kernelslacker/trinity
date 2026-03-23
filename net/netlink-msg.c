@@ -10,6 +10,9 @@
 #include <netinet/in.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/if_addr.h>
+#include <linux/neighbour.h>
+#include <linux/fib_rules.h>
 #include <linux/genetlink.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/xfrm.h>
@@ -169,44 +172,163 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen)
 	return offset + total;
 }
 
+static unsigned char rand_family(void)
+{
+	static const unsigned char families[] = {
+		AF_INET, AF_INET6, AF_UNSPEC, AF_BRIDGE, AF_MPLS,
+		AF_PACKET, AF_DECnet,
+	};
+	if (ONE_IN(8))
+		return rand() % 256;
+	return RAND_ARRAY(families);
+}
+
+/*
+ * Generate a protocol-specific body for rtnetlink messages.
+ * The kernel validates these structs before processing attrs, so
+ * random bytes get rejected immediately. Using proper structs with
+ * fuzzed fields gets past validation into interesting code paths.
+ *
+ * Returns the body length written. Caller must ensure buf has enough
+ * room (at least sizeof(struct tcmsg) = 20 bytes).
+ */
+static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
+{
+	/* Map RTM type to its base: RTM_*LINK=16-19, RTM_*ADDR=20-23, etc.
+	 * Each group of 4 shares the same body struct. */
+	unsigned int group = (nlmsg_type - RTM_BASE) / 4;
+
+	switch (group) {
+	case 0: { /* RTM_*LINK: struct ifinfomsg */
+		struct ifinfomsg ifi;
+		ifi.ifi_family = rand_family();
+		ifi.__ifi_pad = 0;
+		ifi.ifi_type = rand16();     /* ARPHRD_* */
+		ifi.ifi_index = rand32() % 64; /* small interface indices */
+		ifi.ifi_flags = rand32();    /* IFF_* */
+		ifi.ifi_change = rand32();
+		memcpy(body, &ifi, sizeof(ifi));
+		return sizeof(ifi);
+	}
+	case 1: { /* RTM_*ADDR: struct ifaddrmsg */
+		struct ifaddrmsg ifa;
+		ifa.ifa_family = rand_family();
+		ifa.ifa_prefixlen = rand() % 129;
+		ifa.ifa_flags = rand() % 256;
+		ifa.ifa_scope = rand() % 256;
+		ifa.ifa_index = rand32() % 64;
+		memcpy(body, &ifa, sizeof(ifa));
+		return sizeof(ifa);
+	}
+	case 2: { /* RTM_*ROUTE: struct rtmsg */
+		struct rtmsg rtm;
+		rtm.rtm_family = rand_family();
+		rtm.rtm_dst_len = rand() % 129;
+		rtm.rtm_src_len = rand() % 129;
+		rtm.rtm_tos = rand() % 256;
+		rtm.rtm_table = rand() % 256;
+		rtm.rtm_protocol = rand() % 256;
+		rtm.rtm_scope = rand() % 256;
+		rtm.rtm_type = rand() % (RTN_MAX + 1);
+		rtm.rtm_flags = rand32();
+		memcpy(body, &rtm, sizeof(rtm));
+		return sizeof(rtm);
+	}
+	case 3: { /* RTM_*NEIGH: struct ndmsg */
+		struct ndmsg ndm;
+		ndm.ndm_family = rand_family();
+		ndm.ndm_pad1 = 0;
+		ndm.ndm_pad2 = 0;
+		ndm.ndm_ifindex = rand32() % 64;
+		ndm.ndm_state = rand16();
+		ndm.ndm_flags = rand() % 256;
+		ndm.ndm_type = rand() % 256;
+		memcpy(body, &ndm, sizeof(ndm));
+		return sizeof(ndm);
+	}
+	case 4: { /* RTM_*RULE: struct fib_rule_hdr */
+		struct fib_rule_hdr frh;
+		frh.family = rand_family();
+		frh.dst_len = rand() % 129;
+		frh.src_len = rand() % 129;
+		frh.tos = rand() % 256;
+		frh.table = rand() % 256;
+		frh.res1 = 0;
+		frh.res2 = 0;
+		frh.action = rand() % 256;
+		frh.flags = rand32();
+		memcpy(body, &frh, sizeof(frh));
+		return sizeof(frh);
+	}
+	case 5: /* RTM_*QDISC */
+	case 6: /* RTM_*TCLASS */
+	case 7: { /* RTM_*TFILTER: struct tcmsg */
+		struct tcmsg tc;
+		tc.tcm_family = rand_family();
+		tc.tcm__pad1 = 0;
+		tc.tcm__pad2 = 0;
+		tc.tcm_ifindex = rand32() % 64;
+		tc.tcm_handle = rand32();
+		tc.tcm_parent = rand32();
+		tc.tcm_info = rand32();
+		memcpy(body, &tc, sizeof(tc));
+		return sizeof(tc);
+	}
+	default: { /* Everything else: struct rtgenmsg (1 byte) */
+		struct rtgenmsg gen;
+		gen.rtgen_family = rand_family();
+		memcpy(body, &gen, sizeof(gen));
+		return sizeof(gen);
+	}
+	}
+}
+
 /*
  * Build a structured netlink message. The caller must free *buf.
  *
  * Structure: [nlmsghdr][protocol body][nlattr...nlattr]
  *
- * The protocol body is a small fixed-size header that varies by
- * protocol (rtnetlink uses struct rtgenmsg/ifinfomsg, xfrm uses
- * xfrm_usersa_info, etc). We fill it with random bytes since the
- * interesting fuzzing is in the attrs and type dispatch.
+ * For NETLINK_ROUTE, the protocol body is the correct struct for the
+ * message type (ifinfomsg, rtmsg, etc.) with fuzzed field values.
+ * For other protocols, it's random bytes since the interesting fuzzing
+ * is in the message type dispatch.
  */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 {
 	struct nlmsghdr *nlh;
+	unsigned short nlmsg_type;
 	size_t body_len;
 	size_t total_len;
 	size_t offset;
 	unsigned char *msg;
 	int num_attrs;
 
-	/* Protocol body: 4-64 bytes of random data */
-	body_len = RAND_RANGE(4, 64);
-	/* Space for attrs: 0-512 bytes */
-	total_len = NLMSG_HDRLEN + body_len + (rand() % 512);
+	nlmsg_type = pick_nlmsg_type(triplet->protocol);
 
-	/* Cap at a reasonable size */
+	/* Pre-allocate max body + attr space, we'll trim later */
+	total_len = NLMSG_HDRLEN + 64 + (rand() % 512);
 	if (total_len > 4096)
 		total_len = 4096;
 
 	msg = zmalloc(total_len);
 
 	nlh = (struct nlmsghdr *) msg;
-	nlh->nlmsg_type = pick_nlmsg_type(triplet->protocol);
+	nlh->nlmsg_type = nlmsg_type;
 	nlh->nlmsg_flags = gen_nlmsg_flags();
 	nlh->nlmsg_seq = rand32();
 	nlh->nlmsg_pid = RAND_BOOL() ? 0 : rand32();
 
-	/* Fill protocol body with random bytes */
-	generate_rand_bytes(msg + NLMSG_HDRLEN, body_len);
+	/* Generate protocol-appropriate body struct */
+	if (triplet->protocol == NETLINK_ROUTE &&
+	    nlmsg_type >= RTM_BASE && nlmsg_type < RTM_MAX) {
+		body_len = gen_rtnl_body(msg + NLMSG_HDRLEN, nlmsg_type);
+	} else {
+		/* Other protocols: random body, 4-64 bytes */
+		body_len = RAND_RANGE(4, 64);
+		if (NLMSG_HDRLEN + body_len > total_len)
+			body_len = total_len - NLMSG_HDRLEN;
+		generate_rand_bytes(msg + NLMSG_HDRLEN, body_len);
+	}
 
 	/* Append random nlattr TLVs */
 	offset = NLMSG_HDRLEN + body_len;
