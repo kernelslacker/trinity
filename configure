@@ -372,7 +372,6 @@ fi
 check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/fsmap.h USE_FSMAP
 check_header linux/if_alg.h USE_IF_ALG
-check_header linux/irda.h USE_IRDA
 check_header linux/rds.h USE_RDS
 check_header linux/vfio.h USE_VFIO
 check_header drm/drm.h USE_DRM
@@ -386,10 +385,8 @@ check_header linux/kvm.h USE_KVM
 check_header linux/seccomp.h USE_SECCOMP
 check_header linux/vhost.h USE_VHOST
 check_header execinfo.h USE_BACKTRACE
-check_header netatalk/at.h USE_APPLETALK
 check_header netrom/netrom.h USE_NETROM
 check_header netrose/rose.h USE_ROSE
-check_header neteconet/ec.h USE_NETECONET
 check_header netax25/ax25.h USE_NETAX25
 check_header netipx/ipx.h USE_IPX
 
