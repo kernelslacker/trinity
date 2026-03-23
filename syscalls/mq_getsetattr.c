@@ -3,7 +3,28 @@
 	const struct mq_attr __user *, u_mqstat,
 	struct mq_attr __user *, u_omqstat)
  */
+#include <fcntl.h>
+#include <mqueue.h>
+#include <string.h>
+#include "random.h"
 #include "sanitise.h"
+
+static void sanitise_mq_getsetattr(struct syscallrecord *rec)
+{
+	struct mq_attr *mqstat, *omqstat;
+
+	mqstat = (struct mq_attr *) get_writable_address(sizeof(*mqstat));
+	memset(mqstat, 0, sizeof(*mqstat));
+
+	/* Only mq_flags is settable: O_NONBLOCK or 0. */
+	if (RAND_BOOL())
+		mqstat->mq_flags = O_NONBLOCK;
+
+	omqstat = (struct mq_attr *) get_writable_address(sizeof(*omqstat));
+
+	rec->a2 = (unsigned long) mqstat;
+	rec->a3 = (unsigned long) omqstat;
+}
 
 struct syscallentry syscall_mq_getsetattr = {
 	.name = "mq_getsetattr",
@@ -12,8 +33,7 @@ struct syscallentry syscall_mq_getsetattr = {
 	.arg1name = "mqdes",
 	.arg1type = ARG_FD,
 	.arg2name = "u_mqstat",
-	.arg2type = ARG_ADDRESS,
 	.arg3name = "u_omqstat",
-	.arg3type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_mq_getsetattr,
 };

@@ -3,7 +3,34 @@
 	size_t, msg_len, unsigned int __user *, u_msg_prio,
 	const struct timespec __user *, u_abs_timeout)
  */
+#include <time.h>
+#include "random.h"
 #include "sanitise.h"
+
+static void sanitise_mq_timedreceive(struct syscallrecord *rec)
+{
+	char *msg;
+	unsigned int *prio;
+	struct timespec *ts;
+	unsigned int len;
+
+	/* Provide a receive buffer. */
+	len = 1 + (rand() % 8192);
+	msg = (char *) get_writable_address(len);
+
+	/* Writable priority output. */
+	prio = (unsigned int *) get_writable_address(sizeof(*prio));
+
+	/* Short timeout to avoid blocking. */
+	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	ts->tv_sec = 0;
+	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+
+	rec->a2 = (unsigned long) msg;
+	rec->a3 = len;
+	rec->a4 = (unsigned long) prio;
+	rec->a5 = (unsigned long) ts;
+}
 
 struct syscallentry syscall_mq_timedreceive = {
 	.name = "mq_timedreceive",
@@ -12,12 +39,9 @@ struct syscallentry syscall_mq_timedreceive = {
 	.arg1name = "mqdes",
 	.arg1type = ARG_FD,
 	.arg2name = "u_msg_ptr",
-	.arg2type = ARG_ADDRESS,
 	.arg3name = "msg_len",
-	.arg3type = ARG_LEN,
 	.arg4name = "u_msg_prio",
-	.arg4type = ARG_ADDRESS,
 	.arg5name = "u_abs_timeout",
-	.arg5type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_mq_timedreceive,
 };

@@ -3,7 +3,29 @@
 	size_t, msg_len, unsigned int, msg_prio,
 	const struct timespec __user *, u_abs_timeout)
  */
+#include <time.h>
+#include "random.h"
 #include "sanitise.h"
+
+static void sanitise_mq_timedsend(struct syscallrecord *rec)
+{
+	char *msg;
+	struct timespec *ts;
+	unsigned int len;
+
+	/* Generate a message buffer with some data. */
+	len = 1 + (rand() % 8192);
+	msg = (char *) get_writable_address(len);
+
+	/* Short timeout to avoid blocking. */
+	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	ts->tv_sec = 0;
+	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+
+	rec->a2 = (unsigned long) msg;
+	rec->a3 = len;
+	rec->a5 = (unsigned long) ts;
+}
 
 struct syscallentry syscall_mq_timedsend = {
 	.name = "mq_timedsend",
@@ -12,14 +34,12 @@ struct syscallentry syscall_mq_timedsend = {
 	.arg1name = "mqdes",
 	.arg1type = ARG_FD,
 	.arg2name = "u_msg_ptr",
-	.arg2type = ARG_ADDRESS,
 	.arg3name = "msg_len",
-	.arg3type = ARG_LEN,
 	.arg4name = "msg_prio",
 	.arg4type = ARG_RANGE,
 	.low4range = 0,
 	.hi4range = 32768,
 	.arg5name = "u_abs_timeout",
-	.arg5type = ARG_ADDRESS,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_mq_timedsend,
 };
