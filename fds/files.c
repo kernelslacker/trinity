@@ -35,8 +35,10 @@ int open_with_fopen(const char *filename, int flags)
 	}
 
 	file = fopen(filename, mode);
-	if (file)
-		fd = fileno(file);
+	if (file) {
+		fd = dup(fileno(file));
+		fclose(file);
+	}
 
 	return fd;
 }
