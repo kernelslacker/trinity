@@ -18,4 +18,5 @@ struct syscallentry syscall_semtimedop = {
 	.arg3type = ARG_LEN,
 	.arg4name = "timeout",
 	.arg4type = ARG_ADDRESS,
+	.flags = NEED_ALARM,
 };

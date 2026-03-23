@@ -25,4 +25,5 @@ struct syscallentry syscall_msgsnd = {
 	.arg4name = "msgflg",
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(msgsnd_flags),
+	.flags = NEED_ALARM,
 };

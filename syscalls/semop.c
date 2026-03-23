@@ -15,4 +15,5 @@ struct syscallentry syscall_semop = {
 	.arg2type = ARG_ADDRESS,
 	.arg3name = "nsops",
 	.arg3type = ARG_LEN,
+	.flags = NEED_ALARM,
 };
