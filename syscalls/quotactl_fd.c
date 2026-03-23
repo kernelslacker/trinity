@@ -14,4 +14,5 @@ struct syscallentry syscall_quotactl_fd = {
 	.arg4name = "addr",
 	.arg4type = ARG_ADDRESS,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

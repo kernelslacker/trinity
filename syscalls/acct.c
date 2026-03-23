@@ -12,4 +12,5 @@ struct syscallentry syscall_acct = {
 	.arg1name = "name",
 	.arg1type = ARG_PATHNAME,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

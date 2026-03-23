@@ -18,4 +18,5 @@ struct syscallentry syscall_umount = {
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(umount_flags),
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

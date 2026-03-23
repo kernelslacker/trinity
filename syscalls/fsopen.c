@@ -20,4 +20,5 @@ struct syscallentry syscall_fsopen = {
 	.arg2list = ARGLIST(fsopen_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

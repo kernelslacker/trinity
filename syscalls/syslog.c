@@ -61,4 +61,5 @@ struct syscallentry syscall_syslog = {
 	.arg3type = ARG_LEN,
 	.sanitise = sanitise_syslog,
 	.group = GROUP_PROCESS,
+	.flags = NEEDS_ROOT,
 };

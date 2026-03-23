@@ -11,4 +11,5 @@ struct syscallentry syscall_settimeofday = {
 	.arg1type = ARG_ADDRESS,
 	.arg2name = "tz",
 	.arg2type = ARG_ADDRESS,
+	.flags = NEEDS_ROOT,
 };

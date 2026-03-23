@@ -12,4 +12,5 @@ struct syscallentry syscall_lookup_dcookie = {
 	.arg3name = "len",
 	.arg3type = ARG_LEN,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

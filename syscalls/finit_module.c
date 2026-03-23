@@ -22,4 +22,5 @@ struct syscallentry syscall_finit_module = {
 	.arg3list = ARGLIST(finit_module_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
+	.flags = NEEDS_ROOT,
 };

@@ -15,4 +15,5 @@ struct syscallentry syscall_clock_adjtime = {
 	.hi1range = 16,
 	.arg2name = "utx",
 	.arg2type = ARG_ADDRESS,
+	.flags = NEEDS_ROOT,
 };

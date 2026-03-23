@@ -12,4 +12,5 @@ struct syscallentry syscall_nfsservctl = {
 	.arg3name = "res",
 	.arg3type = ARG_ADDRESS,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

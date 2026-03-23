@@ -9,4 +9,5 @@ struct syscallentry syscall_iopl = {
 	.arg1name = "level",
 	.arg2name = "regs",
 	.arg2type = ARG_ADDRESS,
+	.flags = NEEDS_ROOT,
 };

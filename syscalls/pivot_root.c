@@ -11,4 +11,5 @@ struct syscallentry syscall_pivot_root = {
 	.arg2name = "put_old",
 	.arg2type = ARG_ADDRESS,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };

@@ -35,6 +35,7 @@ struct syscallentry syscall_mount = {
 	.arg5name = "data",
 	.arg5type = ARG_ADDRESS,
 	.group = GROUP_VFS,
+	.flags = NEEDS_ROOT,
 };
 
 #define AT_EMPTY_PATH           0x1000  /* Allow empty relative pathname */

@@ -192,6 +192,7 @@ struct syscalltable {
 #define EXTRA_FORK		(1<<6)
 #define IGNORE_ENOSYS		(1<<7)
 #define EXPENSIVE		(1<<8)
+#define NEEDS_ROOT		(1<<9)
 
 struct kcov_child;
 
