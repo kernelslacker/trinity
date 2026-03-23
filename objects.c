@@ -294,6 +294,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_USERFAULTFD: return obj->userfaultobj.fd;
 	case OBJ_FD_FANOTIFY:	return obj->fanotifyobj.fd;
 	case OBJ_FD_BPF_MAP:	return obj->bpfobj.map_fd;
+	case OBJ_FD_BPF_PROG:	return obj->bpfprogobj.fd;
 	case OBJ_FD_IO_URING:	return obj->io_uringobj.fd;
 	case OBJ_FD_LANDLOCK:	return obj->landlockobj.fd;
 	case OBJ_FD_PIDFD:	return obj->pidfdobj.fd;
