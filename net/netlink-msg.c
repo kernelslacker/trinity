@@ -133,8 +133,10 @@ static unsigned short pick_nlmsg_type(int protocol)
 	}
 }
 
-/* Append a single nlattr to buf at offset. Returns new offset. */
-static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen)
+/* Append a single nlattr to buf at offset. Returns new offset.
+ * nla_type_hint is a protocol-appropriate attr type; 0 means random. */
+static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
+			    unsigned short nla_type_hint)
 {
 	struct nlattr nla;
 	size_t payload_len;
@@ -155,7 +157,12 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen)
 		return offset;
 
 	nla.nla_len = NLA_HDRLEN + payload_len;
-	nla.nla_type = rand16();
+
+	/* Use the hint most of the time, random for chaos */
+	if (nla_type_hint && !ONE_IN(8))
+		nla.nla_type = nla_type_hint;
+	else
+		nla.nla_type = rand16();
 
 	/* Sometimes set nested/net-byteorder flags */
 	if (ONE_IN(4))
@@ -170,6 +177,78 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen)
 		generate_rand_bytes(buf + offset + NLA_HDRLEN, total - NLA_HDRLEN);
 
 	return offset + total;
+}
+
+/* nlattr types for each rtnetlink message group.
+ * Each call picks a random entry from the appropriate list. */
+static const unsigned short ifla_attrs[] = {
+	IFLA_ADDRESS, IFLA_BROADCAST, IFLA_IFNAME, IFLA_MTU, IFLA_LINK,
+	IFLA_QDISC, IFLA_STATS, IFLA_COST, IFLA_PRIORITY, IFLA_MASTER,
+	IFLA_PROTINFO, IFLA_TXQLEN, IFLA_MAP, IFLA_WEIGHT, IFLA_OPERSTATE,
+	IFLA_LINKMODE, IFLA_LINKINFO, IFLA_NET_NS_PID, IFLA_IFALIAS,
+	IFLA_NUM_VF, IFLA_STATS64, IFLA_AF_SPEC, IFLA_GROUP,
+	IFLA_NET_NS_FD, IFLA_EXT_MASK, IFLA_PROMISCUITY,
+	IFLA_NUM_TX_QUEUES, IFLA_NUM_RX_QUEUES, IFLA_CARRIER,
+	IFLA_PHYS_PORT_ID, IFLA_LINK_NETNSID, IFLA_PROTO_DOWN,
+	IFLA_GSO_MAX_SEGS, IFLA_GSO_MAX_SIZE, IFLA_XDP,
+	IFLA_NEW_IFINDEX, IFLA_MIN_MTU, IFLA_MAX_MTU,
+	IFLA_PROP_LIST, IFLA_ALT_IFNAME, IFLA_PERM_ADDRESS,
+};
+
+static const unsigned short ifa_attrs[] = {
+	IFA_ADDRESS, IFA_LOCAL, IFA_LABEL, IFA_BROADCAST, IFA_ANYCAST,
+	IFA_CACHEINFO, IFA_FLAGS, IFA_RT_PRIORITY, IFA_PROTO,
+};
+
+static const unsigned short rta_attrs[] = {
+	RTA_DST, RTA_SRC, RTA_IIF, RTA_OIF, RTA_GATEWAY, RTA_PRIORITY,
+	RTA_PREFSRC, RTA_METRICS, RTA_MULTIPATH, RTA_FLOW, RTA_CACHEINFO,
+	RTA_TABLE, RTA_MARK, RTA_MFC_STATS, RTA_VIA, RTA_NEWDST,
+	RTA_PREF, RTA_ENCAP_TYPE, RTA_ENCAP, RTA_EXPIRES, RTA_UID,
+	RTA_TTL_PROPAGATE, RTA_IP_PROTO, RTA_SPORT, RTA_DPORT, RTA_NH_ID,
+};
+
+static const unsigned short nda_attrs[] = {
+	NDA_DST, NDA_LLADDR, NDA_CACHEINFO, NDA_PROBES, NDA_VLAN,
+	NDA_PORT, NDA_VNI, NDA_IFINDEX, NDA_MASTER, NDA_LINK_NETNSID,
+	NDA_SRC_VNI, NDA_PROTOCOL, NDA_NH_ID, NDA_FLAGS_EXT,
+	NDA_NDM_STATE_MASK, NDA_NDM_FLAGS_MASK,
+};
+
+static const unsigned short fra_attrs[] = {
+	FRA_DST, FRA_SRC, FRA_IIFNAME, FRA_GOTO, FRA_PRIORITY,
+	FRA_FWMARK, FRA_FLOW, FRA_TUN_ID, FRA_SUPPRESS_IFGROUP,
+	FRA_SUPPRESS_PREFIXLEN, FRA_TABLE, FRA_FWMASK, FRA_OIFNAME,
+	FRA_L3MDEV,
+};
+
+static const unsigned short tca_attrs[] = {
+	TCA_KIND, TCA_OPTIONS, TCA_STATS, TCA_XSTATS, TCA_RATE,
+	TCA_FCNT, TCA_STATS2, TCA_STAB, TCA_CHAIN, TCA_HW_OFFLOAD,
+	TCA_INGRESS_BLOCK, TCA_EXT_WARN_MSG,
+};
+
+/* Pick an nlattr type appropriate for an rtnetlink message group.
+ * Returns 0 for unknown groups (caller falls back to random). */
+static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
+{
+	unsigned int group;
+
+	if (nlmsg_type < RTM_BASE || nlmsg_type >= RTM_MAX)
+		return 0;
+
+	group = (nlmsg_type - RTM_BASE) / 4;
+	switch (group) {
+	case 0: return RAND_ARRAY(ifla_attrs);
+	case 1: return RAND_ARRAY(ifa_attrs);
+	case 2: return RAND_ARRAY(rta_attrs);
+	case 3: return RAND_ARRAY(nda_attrs);
+	case 4: return RAND_ARRAY(fra_attrs);
+	case 5:
+	case 6:
+	case 7: return RAND_ARRAY(tca_attrs);
+	default: return 0;
+	}
 }
 
 static unsigned char rand_family(void)
@@ -330,11 +409,16 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 		generate_rand_bytes(msg + NLMSG_HDRLEN, body_len);
 	}
 
-	/* Append random nlattr TLVs */
+	/* Append nlattr TLVs with protocol-appropriate types */
 	offset = NLMSG_HDRLEN + body_len;
 	num_attrs = rand() % 8;
-	while (num_attrs-- > 0 && offset < total_len)
-		offset = append_nlattr(msg, offset, total_len);
+	while (num_attrs-- > 0 && offset < total_len) {
+		unsigned short attr_hint = 0;
+
+		if (triplet->protocol == NETLINK_ROUTE)
+			attr_hint = pick_rtnl_attr_type(nlmsg_type);
+		offset = append_nlattr(msg, offset, total_len, attr_hint);
+	}
 
 	/* Set nlmsg_len — usually correct, sometimes corrupted */
 	if (ONE_IN(10)) {
