@@ -284,9 +284,12 @@ const char * generate_pathname(void)
 	if (pathname == NULL)
 		return NULL;
 
-	/* 90% chance of returning an unmangled filename */
+	/* 90% chance of returning an unmangled filename.
+	 * pathname points into fileindex[] which is stable for our lifetime,
+	 * so there's no need to copy it.
+	 */
 	if (!ONE_IN(10))
-		return strdup(pathname);
+		return pathname;
 
 	/* Create a bogus filename. */
 	newpath = zmalloc(MAX_PATH_LEN);
