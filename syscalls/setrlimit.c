@@ -2,6 +2,8 @@
  * SYSCALL_DEFINE2(setrlimit, unsigned int, resource, struct rlimit __user *, rlim)
  */
 #include <sys/resource.h>
+#include "arch.h"
+#include "random.h"
 #include "sanitise.h"
 
 static unsigned long rlimit_resources[] = {
@@ -11,6 +13,33 @@ static unsigned long rlimit_resources[] = {
 	RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_RTPRIO,
 };
 
+static rlim_t random_rlim(void)
+{
+	switch (rand() % 5) {
+	case 0: return RLIM_INFINITY;
+	case 1: return 0;
+	case 2: return 1 + (rand() % 1024);
+	case 3: return (rlim_t) page_size * (1 + (rand() % 256));
+	default: return rand32();
+	}
+}
+
+/* Fill struct rlimit with interesting boundary values. */
+static void sanitise_setrlimit(struct syscallrecord *rec)
+{
+	struct rlimit *rlim;
+
+	rlim = (struct rlimit *) get_writable_address(sizeof(*rlim));
+	rlim->rlim_cur = random_rlim();
+	rlim->rlim_max = random_rlim();
+
+	/* Half the time, enforce cur <= max for valid calls. */
+	if (RAND_BOOL() && rlim->rlim_cur > rlim->rlim_max)
+		rlim->rlim_cur = rlim->rlim_max;
+
+	rec->a2 = (unsigned long) rlim;
+}
+
 struct syscallentry syscall_setrlimit = {
 	.name = "setrlimit",
 	.num_args = 2,
@@ -18,6 +47,6 @@ struct syscallentry syscall_setrlimit = {
 	.arg1type = ARG_OP,
 	.arg1list = ARGLIST(rlimit_resources),
 	.arg2name = "rlim",
-	.arg2type = ARG_ADDRESS,
 	.group = GROUP_PROCESS,
+	.sanitise = sanitise_setrlimit,
 };
