@@ -25,6 +25,7 @@
 #include "utils.h"
 
 static void handle_child(int childno, pid_t childpid, int childstatus);
+static void replace_child(int childno);
 
 static unsigned long hiscore = 0;
 
@@ -391,10 +392,11 @@ static bool is_child_making_progress(struct childdata *child)
 	if (diff < 30)
 		return true;
 
-	/* if we're blocked in uninteruptible sleep, SIGKILL won't help. */
+	/* if we're blocked in uninteruptible sleep, SIGKILL won't help.
+	 * Still increment kill_count so we eventually reap the slot. */
 	state = get_pid_state(child);
 	if (state == 'D') {
-		//debugf("child %d (pid %u) is blocked in D state\n", child->num, pid);
+		child->kill_count++;
 		return false;
 	}
 
@@ -410,6 +412,22 @@ static bool is_child_making_progress(struct childdata *child)
 	/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 	if (diff < 40)
 		return false;
+
+	/* After too many kill attempts, the child is truly stuck (D state,
+	 * frozen cgroup, etc). Forcibly reap the slot so we can spawn a
+	 * replacement. The original process becomes a zombie but at least
+	 * we don't permanently lose a child slot. */
+	if (child->kill_count >= 10) {
+		output(0, "child %d (pid %u) unkillable after %u attempts, "
+			"forcibly reaping slot.\n",
+			child->num, pid, child->kill_count);
+		if (child->pidstatfile)
+			fclose(child->pidstatfile);
+		child->pidstatfile = NULL;
+		reap_child(child);
+		replace_child(child->num);
+		return true;
+	}
 
 	debugf("sending another SIGKILL to child %u (pid:%u). [kill count:%u] [diff:%lu]\n",
 		child->num, pid, child->kill_count, diff);
