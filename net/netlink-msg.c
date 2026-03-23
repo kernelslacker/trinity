@@ -371,68 +371,97 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
  * message type (ifinfomsg, rtmsg, etc.) with fuzzed field values.
  * For other protocols, it's random bytes since the interesting fuzzing
  * is in the message type dispatch.
+ *
+ * ~1 in 4 messages are multi-message batches (2-4 nlmsghdr chained
+ * together) to exercise the kernel's NLMSG_NEXT iteration path.
  */
-void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
+
+/* Build a single nlmsghdr at msg+offset. Returns new offset (NLMSG_ALIGN'd). */
+static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
+			      struct socket_triplet *triplet)
 {
 	struct nlmsghdr *nlh;
 	unsigned short nlmsg_type;
 	size_t body_len;
-	size_t total_len;
-	size_t offset;
-	unsigned char *msg;
+	size_t msg_start = offset;
 	int num_attrs;
+
+	if (offset + NLMSG_HDRLEN + 4 > buflen)
+		return offset;
 
 	nlmsg_type = pick_nlmsg_type(triplet->protocol);
 
-	/* Pre-allocate max body + attr space, we'll trim later */
-	total_len = NLMSG_HDRLEN + 64 + (rand() % 512);
-	if (total_len > 4096)
-		total_len = 4096;
-
-	msg = zmalloc(total_len);
-
-	nlh = (struct nlmsghdr *) msg;
+	nlh = (struct nlmsghdr *) (msg + offset);
 	nlh->nlmsg_type = nlmsg_type;
 	nlh->nlmsg_flags = gen_nlmsg_flags();
 	nlh->nlmsg_seq = rand32();
 	nlh->nlmsg_pid = RAND_BOOL() ? 0 : rand32();
 
+	offset += NLMSG_HDRLEN;
+
 	/* Generate protocol-appropriate body struct */
 	if (triplet->protocol == NETLINK_ROUTE &&
 	    nlmsg_type >= RTM_BASE && nlmsg_type < RTM_MAX) {
-		body_len = gen_rtnl_body(msg + NLMSG_HDRLEN, nlmsg_type);
+		body_len = gen_rtnl_body(msg + offset, nlmsg_type);
 	} else {
-		/* Other protocols: random body, 4-64 bytes */
 		body_len = RAND_RANGE(4, 64);
-		if (NLMSG_HDRLEN + body_len > total_len)
-			body_len = total_len - NLMSG_HDRLEN;
-		generate_rand_bytes(msg + NLMSG_HDRLEN, body_len);
+		if (offset + body_len > buflen)
+			body_len = buflen - offset;
+		generate_rand_bytes(msg + offset, body_len);
 	}
+	offset += body_len;
 
 	/* Append nlattr TLVs with protocol-appropriate types */
-	offset = NLMSG_HDRLEN + body_len;
 	num_attrs = rand() % 8;
-	while (num_attrs-- > 0 && offset < total_len) {
+	while (num_attrs-- > 0 && offset < buflen) {
 		unsigned short attr_hint = 0;
 
 		if (triplet->protocol == NETLINK_ROUTE)
 			attr_hint = pick_rtnl_attr_type(nlmsg_type);
-		offset = append_nlattr(msg, offset, total_len, attr_hint);
+		offset = append_nlattr(msg, offset, buflen, attr_hint);
 	}
 
 	/* Set nlmsg_len — usually correct, sometimes corrupted */
 	if (ONE_IN(10)) {
-		/* Corrupt: too short, too long, zero, or max */
 		switch (rand() % 4) {
 		case 0: nlh->nlmsg_len = 0; break;
 		case 1: nlh->nlmsg_len = NLMSG_HDRLEN - 1; break;
-		case 2: nlh->nlmsg_len = total_len * 2; break;
+		case 2: nlh->nlmsg_len = (offset - msg_start) * 2; break;
 		case 3: nlh->nlmsg_len = rand32(); break;
 		}
 	} else {
-		nlh->nlmsg_len = offset;
+		nlh->nlmsg_len = offset - msg_start;
 	}
 
+	/* NLMSG_ALIGN for chaining */
+	return NLMSG_ALIGN(offset);
+}
+
+void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
+{
+	size_t total_len;
+	size_t offset;
+	unsigned char *msg;
+	int num_msgs;
+
+	/* Total buffer: room for up to 4 messages with attrs */
+	total_len = NLMSG_HDRLEN + 64 + (rand() % 512);
+	/* Multi-message batches need more space */
+	if (ONE_IN(4)) {
+		num_msgs = RAND_RANGE(2, 4);
+		total_len *= num_msgs;
+	} else {
+		num_msgs = 1;
+	}
+	if (total_len > 8192)
+		total_len = 8192;
+
+	msg = zmalloc(total_len);
+
+	offset = 0;
+	while (num_msgs-- > 0 && offset < total_len)
+		offset = build_one_nlmsg(msg, offset, total_len, triplet);
+
 	*buf = msg;
-	*len = offset; /* actual bytes to send (iov_len) */
+	*len = offset;
 }
