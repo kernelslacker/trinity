@@ -5,10 +5,18 @@
 
 #include <linux/xattr.h>
 #include "sanitise.h"
+#include "xattr.h"
 
 static unsigned long fsetxattr_flags[] = {
 	XATTR_CREATE, XATTR_REPLACE,
 };
+
+static void sanitise_fsetxattr(struct syscallrecord *rec)
+{
+	char *name = (char *) get_writable_address(256);
+	gen_xattr_name(name, 256);
+	rec->a2 = (unsigned long) name;
+}
 
 struct syscallentry syscall_fsetxattr = {
 	.name = "fsetxattr",
@@ -16,7 +24,6 @@ struct syscallentry syscall_fsetxattr = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "name",
-	.arg2type = ARG_ADDRESS,
 	.arg3name = "value",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "size",
@@ -27,4 +34,5 @@ struct syscallentry syscall_fsetxattr = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.sanitise = sanitise_fsetxattr,
 };

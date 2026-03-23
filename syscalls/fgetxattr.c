@@ -3,6 +3,14 @@
 	 void __user *, value, size_t, size)
  */
 #include "sanitise.h"
+#include "xattr.h"
+
+static void sanitise_fgetxattr(struct syscallrecord *rec)
+{
+	char *name = (char *) get_writable_address(256);
+	gen_xattr_name(name, 256);
+	rec->a2 = (unsigned long) name;
+}
 
 struct syscallentry syscall_fgetxattr = {
 	.name = "fgetxattr",
@@ -10,7 +18,6 @@ struct syscallentry syscall_fgetxattr = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "name",
-	.arg2type = ARG_ADDRESS,
 	.arg3name = "value",
 	.arg3type = ARG_ADDRESS,
 	.arg4name = "size",
@@ -18,4 +25,5 @@ struct syscallentry syscall_fgetxattr = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.sanitise = sanitise_fgetxattr,
 };
