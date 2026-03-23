@@ -9,6 +9,7 @@
  */
 
 #include <time.h>
+#include "random.h"
 #include "sanitise.h"
 
 static unsigned long clock_nanosleep_which[] = {
@@ -18,6 +19,24 @@ static unsigned long clock_nanosleep_which[] = {
 static unsigned long clock_nanosleep_flags[] = {
 	TIMER_ABSTIME,
 };
+
+static void sanitise_clock_nanosleep(struct syscallrecord *rec)
+{
+	struct timespec *ts;
+
+	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+
+	/* Keep sleep durations tiny so we don't block the fuzzer. */
+	ts->tv_sec = 0;
+	switch (rand() % 4) {
+	case 0: ts->tv_nsec = 0; break;
+	case 1: ts->tv_nsec = 1; break;
+	case 2: ts->tv_nsec = rand() % 1000; break;		/* microsecond range */
+	default: ts->tv_nsec = rand() % 1000000; break;	/* millisecond range */
+	}
+
+	rec->a3 = (unsigned long) ts;
+}
 
 struct syscallentry syscall_clock_nanosleep = {
 	.name = "clock_nanosleep",
@@ -30,9 +49,9 @@ struct syscallentry syscall_clock_nanosleep = {
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(clock_nanosleep_flags),
 	.arg3name = "rqtp",
-	.arg3type = ARG_ADDRESS,
 	.arg4name = "rmtp",
 	.arg4type = ARG_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_clock_nanosleep,
 };
