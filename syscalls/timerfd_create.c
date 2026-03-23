@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE2(timerfd_create, int, clockid, int, flags)
  */
 #include <time.h>
+#include "objects.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -12,6 +13,21 @@ static unsigned long timerfd_create_clockids[] = {
 static unsigned long timerfd_create_flags[] = {
 	TFD_NONBLOCK, TFD_CLOEXEC,
 };
+
+static void post_timerfd_create(struct syscallrecord *rec)
+{
+	struct object *new;
+	int fd = rec->retval;
+
+	if (fd == -1)
+		return;
+
+	new = alloc_object();
+	new->timerfdobj.fd = fd;
+	new->timerfdobj.clockid = rec->a1;
+	new->timerfdobj.flags = rec->a2;
+	add_object(new, OBJ_LOCAL, OBJ_FD_TIMERFD);
+}
 
 struct syscallentry syscall_timerfd_create = {
 	.name = "timerfd_create",
@@ -24,4 +40,5 @@ struct syscallentry syscall_timerfd_create = {
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(timerfd_create_flags),
 	.rettype = RET_FD,
+	.post = post_timerfd_create,
 };

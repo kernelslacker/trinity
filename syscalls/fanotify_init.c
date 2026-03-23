@@ -12,6 +12,7 @@
 
 #include <fcntl.h>
 #include "fanotify.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 
@@ -50,6 +51,21 @@ static void sanitise_fanotify_init(struct syscallrecord *rec)
 	rec->a2 = get_fanotify_init_event_flags();
 }
 
+static void post_fanotify_init(struct syscallrecord *rec)
+{
+	struct object *new;
+	int fd = rec->retval;
+
+	if (fd == -1)
+		return;
+
+	new = alloc_object();
+	new->fanotifyobj.fd = fd;
+	new->fanotifyobj.flags = rec->a1;
+	new->fanotifyobj.eventflags = rec->a2;
+	add_object(new, OBJ_LOCAL, OBJ_FD_FANOTIFY);
+}
+
 struct syscallentry syscall_fanotify_init = {
 	.name = "fanotify_init",
 	.num_args = 2,
@@ -59,5 +75,6 @@ struct syscallentry syscall_fanotify_init = {
 	.arg2name = "event_f_flags",
 	.rettype = RET_FD,
 	.sanitise = sanitise_fanotify_init,
+	.post = post_fanotify_init,
 	.group = GROUP_VFS,
 };

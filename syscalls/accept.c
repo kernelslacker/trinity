@@ -5,11 +5,25 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include "net.h"
+#include "objects.h"
 #include "sanitise.h"
 
 static void sanitise_accept(struct syscallrecord *rec)
 {
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+}
+
+static void post_accept(struct syscallrecord *rec)
+{
+	struct object *new;
+	int fd = rec->retval;
+
+	if (fd == -1)
+		return;
+
+	new = alloc_object();
+	new->sockinfo.fd = fd;
+	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
 }
 
 struct syscallentry syscall_accept = {
@@ -25,8 +39,8 @@ struct syscallentry syscall_accept = {
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_accept,
+	.post = post_accept,
 };
-
 
 /*
  * SYSCALL_DEFINE4(accept4, int, fd, struct sockaddr __user *, upeer_sockaddr,
@@ -56,5 +70,6 @@ struct syscallentry syscall_accept4 = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
-	.sanitise = sanitise_accept,	// use same as accept.
+	.sanitise = sanitise_accept,
+	.post = post_accept,
 };

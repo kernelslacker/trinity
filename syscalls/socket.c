@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include "debug.h"
 #include "net.h"
+#include "objects.h"
 #include "params.h"
 #include "domains.h"
 #include "random.h"
@@ -120,6 +121,7 @@ static void sanitise_socket(struct syscallrecord *rec)
 static void post_socket(struct syscallrecord *rec)
 {
 	const struct netproto *proto;
+	struct object *new;
 	unsigned long family = rec->a1;
 	int fd = rec->retval;
 
@@ -131,7 +133,12 @@ static void post_socket(struct syscallrecord *rec)
 		if (proto->socket_setup != NULL)
 			proto->socket_setup(fd);
 
-	// TODO: add socket to local cache
+	new = alloc_object();
+	new->sockinfo.fd = fd;
+	new->sockinfo.triplet.family = family;
+	new->sockinfo.triplet.type = rec->a2;
+	new->sockinfo.triplet.protocol = rec->a3;
+	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
 }
 
 struct syscallentry syscall_socket = {
