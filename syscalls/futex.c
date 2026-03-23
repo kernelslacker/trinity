@@ -363,7 +363,6 @@ struct syscallentry syscall_futex = {
 	.arg5name = "uaddr2",
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "val3",
-	.rettype = RET_FD,		// FIXME: Needs to mutate depending on 'op' value
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex,
 	.post = post_futex,
