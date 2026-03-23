@@ -23,7 +23,7 @@ struct syscallentry syscall_sendfile = {
  */
 
 struct syscallentry syscall_sendfile64 = {
-	.name = "sendfile",
+	.name = "sendfile64",
 	.num_args = 4,
 	.arg1name = "out_fd",
 	.arg1type = ARG_FD,
