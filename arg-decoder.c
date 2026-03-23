@@ -64,6 +64,8 @@ static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 			sptr += sprintf(sptr, "%ld", (long) reg);
 		}
 		break;
+	default:
+		break;
 	}
 
 	return sptr;
