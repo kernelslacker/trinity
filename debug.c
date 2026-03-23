@@ -93,9 +93,9 @@ void dump_syscallrec(struct syscallrecord *rec)
 	output(0, " do32bit:%d\n", rec->do32bit);
 	output(0, " lock:%d {owner:%d)\n", rec->lock.lock, rec->lock.owner);
 	output(0, " state:%d\n", rec->state);
-	output(0, " prebuffer : %p (len:%d)\n", rec->prebuffer, strlen(rec->prebuffer));
+	output(0, " prebuffer : %p (len:%zu)\n", rec->prebuffer, strlen(rec->prebuffer));
 	output(0, " -> %s\n", rec->prebuffer);
-	output(0, " postbuffer : %p (len:%ld)\n", rec->postbuffer, strlen(rec->postbuffer));
+	output(0, " postbuffer : %p (len:%zu)\n", rec->postbuffer, strlen(rec->postbuffer));
 	output(0, " -> %s\n", rec->postbuffer);
 }
 
@@ -139,7 +139,7 @@ void debugf(const char *fmt, ...)
 	va_start(args, fmt);
 	vsnprintf(debugbuf, BUFSIZE, fmt, args);
 	va_end(args);
-	output(0, debugbuf);
+	output(0, "%s", debugbuf);
 }
 
 /* This is a bit crappy, wrapping a varargs fn with another,
