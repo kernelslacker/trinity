@@ -4,31 +4,79 @@
                    struct __kernel_timespec __user *, timeout, clockid_t, clockid)
  */
 #include <linux/futex.h>
-#include <limits.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <sys/types.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#include <inttypes.h>
+#include <string.h>
+#include "random.h"
 #include "sanitise.h"
+#include "compat.h"
+
+#ifndef FUTEX2_SIZE_U8
+#define FUTEX2_SIZE_U8		0x00
+#define FUTEX2_SIZE_U16		0x01
+#define FUTEX2_SIZE_U32		0x02
+#define FUTEX2_SIZE_U64		0x03
+#endif
+
+#ifndef FUTEX2_NUMA
+#define FUTEX2_NUMA		0x04
+#endif
+
+#ifndef FUTEX_32
+#define FUTEX_32		FUTEX2_SIZE_U32
+#endif
+
+#ifndef FUTEX2_PRIVATE
+#define FUTEX2_PRIVATE		FUTEX_PRIVATE_FLAG
+#endif
+
+static unsigned long futex_waitv_flags[] = {
+	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U32, FUTEX2_SIZE_U64,
+};
 
 static void sanitise_futex_waitv(struct syscallrecord *rec)
 {
-	rec->a3 = 0;	// no flags right now
+	struct futex_waitv *waiters;
+	struct timespec *ts;
+	unsigned int nr, i;
+	__u32 *futex_words;
+
+	nr = 1 + (rand() % 8);
+
+	/* Allocate the futex words that waiters will point to. */
+	futex_words = (__u32 *) get_writable_address(nr * sizeof(*futex_words));
+
+	waiters = (struct futex_waitv *) get_writable_address(nr * sizeof(*waiters));
+	memset(waiters, 0, nr * sizeof(*waiters));
+
+	for (i = 0; i < nr; i++) {
+		futex_words[i] = rand32();
+		waiters[i].uaddr = (__u64)(unsigned long) &futex_words[i];
+		waiters[i].val = futex_words[i];	/* match so we actually wait */
+		waiters[i].flags = FUTEX2_SIZE_U32;
+		if (RAND_BOOL())
+			waiters[i].flags |= FUTEX2_PRIVATE;
+	}
+
+	/* Short timeout so we don't block forever. */
+	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	ts->tv_sec = 0;
+	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+
+	rec->a1 = (unsigned long) waiters;
+	rec->a2 = nr;
+	rec->a3 = 0;
+	rec->a4 = (unsigned long) ts;
 }
 
 struct syscallentry syscall_futex_waitv = {
 	.name = "futex_waitv",
 	.num_args = 5,
 	.arg1name = "waiters",
-	.arg1type = ARG_ADDRESS,
 	.arg2name = "nr_futexes",
-	.arg2type = ARG_LEN,
 	.arg3name = "flags",
 	.arg4name = "timeout",
-	.arg4type = ARG_ADDRESS,
 	.arg5name = "clockid",
+	.arg5type = ARG_OP,
+	.arg5list = ARGLIST(futex_waitv_flags),
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex_waitv,
 	.group = GROUP_IPC,
