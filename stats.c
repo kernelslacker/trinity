@@ -103,8 +103,23 @@ void dump_stats(void)
 			}
 		}
 
-		if (cold_count > 0)
-			printf("Cold syscalls (deprioritized): %u\n", cold_count);
+		if (cold_count > 0) {
+			printf("Cold syscalls (need better sanitise): %u\n", cold_count);
+			for (i = 0; i < max_nr_syscalls; i++) {
+				struct syscallentry *entry;
+
+				if (kcov_shm->per_syscall_edges[i] == 0)
+					continue;
+				if (!kcov_syscall_is_cold(i))
+					continue;
+
+				entry = syscalls[i].entry;
+				printf("  %-24s (edges:%lu, last new @ call %lu)\n",
+					entry ? entry->name : "???",
+					kcov_shm->per_syscall_edges[i],
+					kcov_shm->last_edge_at[i]);
+			}
+		}
 	}
 
 	if (cmp_hints_shm != NULL) {
