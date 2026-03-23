@@ -11,7 +11,7 @@
 
 int kernel_taint_initial = 0;
 
-static int taint_fd = 0;
+static int taint_fd = -1;
 
 int get_taint(void)
 {
