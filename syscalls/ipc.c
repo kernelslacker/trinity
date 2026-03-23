@@ -1,8 +1,16 @@
 /*
  * SYSCALL_DEFINE6(ipc, unsigned int, call, int, first, unsigned long, second,
                   unsigned long, third, void __user *, ptr, long, fifth)
+ *
+ * Old-style IPC multiplexer.  Maps to semop/semget/semctl/msgsnd/msgrcv/
+ * msgget/msgctl/shmat/shmdt/shmget/shmctl via the 'call' argument.
  */
 #include <linux/ipc.h>
+#include <linux/sem.h>
+#include <linux/msg.h>
+#include <linux/shm.h>
+#include <string.h>
+#include "random.h"
 #include "sanitise.h"
 
 static unsigned long ipc_calls[] = {
@@ -10,6 +18,267 @@ static unsigned long ipc_calls[] = {
 	MSGSND, MSGRCV, MSGGET, MSGCTL,
 	SHMAT, SHMDT, SHMGET, SHMCTL,
 };
+
+static int sem_cmds[] = {
+	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
+	GETVAL, GETALL, GETNCNT, GETZCNT, GETPID,
+	SETVAL, SETALL, SEM_INFO, SEM_STAT,
+};
+
+static int msg_cmds[] = {
+	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
+	MSG_INFO, MSG_STAT,
+};
+
+static int shm_cmds[] = {
+	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
+	SHM_INFO, SHM_STAT, SHM_LOCK, SHM_UNLOCK,
+};
+
+static void sanitise_ipc(struct syscallrecord *rec)
+{
+	unsigned long call = rec->a1;
+
+	switch (call) {
+	case SEMOP:
+	case SEMTIMEDOP: {
+		/*
+		 * first=semid, second=nsops, ptr=struct sembuf[],
+		 * fifth=timeout (SEMTIMEDOP only)
+		 */
+		struct sembuf *sops;
+		unsigned int nsops, i;
+
+		nsops = 1 + (rand() % 8);
+		sops = (struct sembuf *) get_writable_address(nsops * sizeof(*sops));
+		for (i = 0; i < nsops; i++) {
+			sops[i].sem_num = rand() % 32;
+			sops[i].sem_op = (rand() % 5) - 2;	/* -2..2 */
+			sops[i].sem_flg = 0;
+			if (RAND_BOOL())
+				sops[i].sem_flg |= IPC_NOWAIT;
+			if (RAND_BOOL())
+				sops[i].sem_flg |= SEM_UNDO;
+		}
+		rec->a2 = rand() % 1000;	/* semid */
+		rec->a3 = nsops;
+		rec->a5 = (unsigned long) sops;
+
+		if (call == SEMTIMEDOP) {
+			struct timespec *ts;
+			ts = (struct timespec *) get_writable_address(sizeof(*ts));
+			ts->tv_sec = 0;
+			ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+			rec->a6 = (unsigned long) ts;
+		}
+		break;
+	}
+
+	case SEMGET:
+		/* first=key, second=nsems, third=semflg */
+		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
+		rec->a3 = 1 + (rand() % 32);
+		rec->a4 = 0666;
+		if (RAND_BOOL())
+			rec->a4 |= IPC_CREAT;
+		if (RAND_BOOL())
+			rec->a4 |= IPC_EXCL;
+		break;
+
+	case SEMCTL: {
+		/*
+		 * first=semid, second=semnum, third=cmd,
+		 * ptr=union semun (for IPC_SET/GETALL/SETALL/SETVAL)
+		 */
+		int cmd;
+
+		rec->a2 = rand() % 1000;	/* semid */
+		rec->a3 = rand() % 32;		/* semnum */
+		cmd = sem_cmds[rand() % ARRAY_SIZE(sem_cmds)];
+		rec->a4 = cmd;
+
+		switch (cmd) {
+		case IPC_STAT:
+		case IPC_SET:
+		case SEM_STAT: {
+			struct semid_ds *buf;
+			buf = (struct semid_ds *) get_writable_address(sizeof(*buf));
+			memset(buf, 0, sizeof(*buf));
+			rec->a5 = (unsigned long) buf;
+			break;
+		}
+		case SETVAL:
+			/* ptr is the value directly for old-style ipc() */
+			rec->a5 = rand() % 32768;
+			break;
+		case GETALL:
+		case SETALL: {
+			unsigned short *arr;
+			unsigned int nsems = 1 + (rand() % 32);
+			unsigned int j;
+			arr = (unsigned short *) get_writable_address(nsems * sizeof(*arr));
+			for (j = 0; j < nsems; j++)
+				arr[j] = rand() % 32768;
+			rec->a5 = (unsigned long) arr;
+			break;
+		}
+		case IPC_INFO:
+		case SEM_INFO: {
+			/* Kernel writes struct seminfo */
+			void *buf;
+			buf = get_writable_address(256);
+			memset(buf, 0, 256);
+			rec->a5 = (unsigned long) buf;
+			break;
+		}
+		}
+		break;
+	}
+
+	case MSGSND: {
+		/*
+		 * first=msqid, ptr=msgbuf, second=msgsz, third=msgflg
+		 */
+		struct msgbuf *mb;
+		size_t msgsz;
+
+		msgsz = 1 + (rand() % 256);
+		mb = (struct msgbuf *) get_writable_address(sizeof(long) + msgsz);
+		mb->mtype = 1 + (rand() % 100);
+		memset(mb->mtext, 'A', msgsz);
+
+		rec->a2 = rand() % 1000;	/* msqid */
+		rec->a3 = msgsz;
+		rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
+		rec->a5 = (unsigned long) mb;
+		break;
+	}
+
+	case MSGRCV: {
+		/*
+		 * first=msqid, ptr=struct { msgbuf*, msgtyp },
+		 * second=msgsz, third=msgflg
+		 *
+		 * The ipc() mux wraps msgrcv args in a tmp struct.
+		 * Kernel extracts ptr->msgp and ptr->msgtyp from it.
+		 */
+		struct {
+			struct msgbuf *msgp;
+			long msgtyp;
+		} *tmp;
+		struct msgbuf *mb;
+
+		mb = (struct msgbuf *) get_writable_address(sizeof(long) + 256);
+		memset(mb, 0, sizeof(long) + 256);
+
+		tmp = (void *) get_writable_address(sizeof(*tmp));
+		tmp->msgp = mb;
+		tmp->msgtyp = rand() % 10;	/* 0=any type */
+
+		rec->a2 = rand() % 1000;	/* msqid */
+		rec->a3 = 256;			/* msgsz */
+		rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
+		rec->a5 = (unsigned long) tmp;
+		break;
+	}
+
+	case MSGGET:
+		/* first=key, second=msgflg */
+		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
+		rec->a3 = 0666;
+		if (RAND_BOOL())
+			rec->a3 |= IPC_CREAT;
+		if (RAND_BOOL())
+			rec->a3 |= IPC_EXCL;
+		break;
+
+	case MSGCTL: {
+		/* first=msqid, second=cmd, ptr=struct msqid_ds */
+		int cmd;
+
+		rec->a2 = rand() % 1000;
+		cmd = msg_cmds[rand() % ARRAY_SIZE(msg_cmds)];
+		rec->a3 = cmd;
+
+		switch (cmd) {
+		case IPC_STAT:
+		case IPC_SET:
+		case MSG_STAT: {
+			struct msqid_ds *buf;
+			buf = (struct msqid_ds *) get_writable_address(sizeof(*buf));
+			memset(buf, 0, sizeof(*buf));
+			rec->a5 = (unsigned long) buf;
+			break;
+		}
+		case IPC_INFO:
+		case MSG_INFO: {
+			void *buf;
+			buf = get_writable_address(256);
+			memset(buf, 0, 256);
+			rec->a5 = (unsigned long) buf;
+			break;
+		}
+		}
+		break;
+	}
+
+	case SHMAT: {
+		/* first=shmid, ptr=shmaddr, second=shmflg */
+		rec->a2 = rand() % 1000;	/* shmid */
+		rec->a3 = 0;			/* let kernel pick */
+		rec->a5 = 0;			/* shmaddr=NULL */
+		if (RAND_BOOL())
+			rec->a3 |= SHM_RDONLY;
+		break;
+	}
+
+	case SHMDT:
+		/* ptr=shmaddr — use a valid writable page */
+		rec->a5 = (unsigned long) get_writable_address(4096);
+		break;
+
+	case SHMGET:
+		/* first=key, second=size, third=shmflg */
+		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
+		rec->a3 = 4096 * (1 + (rand() % 16));	/* 4K-64K */
+		rec->a4 = 0666;
+		if (RAND_BOOL())
+			rec->a4 |= IPC_CREAT;
+		if (RAND_BOOL())
+			rec->a4 |= IPC_EXCL;
+		break;
+
+	case SHMCTL: {
+		/* first=shmid, second=cmd, ptr=struct shmid_ds */
+		int cmd;
+
+		rec->a2 = rand() % 1000;
+		cmd = shm_cmds[rand() % ARRAY_SIZE(shm_cmds)];
+		rec->a3 = cmd;
+
+		switch (cmd) {
+		case IPC_STAT:
+		case IPC_SET:
+		case SHM_STAT: {
+			struct shmid_ds *buf;
+			buf = (struct shmid_ds *) get_writable_address(sizeof(*buf));
+			memset(buf, 0, sizeof(*buf));
+			rec->a5 = (unsigned long) buf;
+			break;
+		}
+		case IPC_INFO:
+		case SHM_INFO: {
+			void *buf;
+			buf = get_writable_address(256);
+			memset(buf, 0, 256);
+			rec->a5 = (unsigned long) buf;
+			break;
+		}
+		}
+		break;
+	}
+	}
+}
 
 struct syscallentry syscall_ipc = {
 	.name = "ipc",
@@ -25,4 +294,5 @@ struct syscallentry syscall_ipc = {
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "fifth",
 	.flags = IGNORE_ENOSYS,
+	.sanitise = sanitise_ipc,
 };
