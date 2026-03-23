@@ -25,6 +25,10 @@ static bool enable_fd_initialized = false;		// initialized (disabled all) fd pro
 
 static struct fd_provider *fd_providers = NULL;
 
+/* Array of enabled+initialized providers for O(1) random selection. */
+static struct fd_provider **active_providers = NULL;
+static unsigned int num_active_providers = 0;
+
 /*
  * This is called by the REG_FD_PROV constructors on startup.
  * Because of this, this function shouldn't rely on anything
@@ -87,12 +91,24 @@ static void __open_fds(bool do_rand)
 
 unsigned int open_fds(void)
 {
+	struct list_head *node;
+
 	/* Open half the providers randomly */
 	while (num_fd_providers_initialized < (num_fd_providers_to_enable / 2))
 		__open_fds(true);
 
 	/* Now open any leftovers */
 	__open_fds(false);
+
+	/* Build array of active providers for O(1) random selection. */
+	active_providers = zmalloc(num_fd_providers_enabled * sizeof(struct fd_provider *));
+	num_active_providers = 0;
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider = (struct fd_provider *) node;
+
+		if (provider->enabled && provider->initialized)
+			active_providers[num_active_providers++] = provider;
+	}
 
 	output(0, "Enabled %d/%d fd providers. initialized:%d.\n",
 		num_fd_providers_enabled, num_fd_providers, num_fd_providers_initialized);
@@ -102,48 +118,13 @@ unsigned int open_fds(void)
 
 int get_new_random_fd(void)
 {
-	struct list_head *node;
-	int fd = -1;
+	struct fd_provider *provider;
 
-	/* short-cut if we've disabled everything. */
-	if (num_fd_providers_enabled == 0)
+	if (num_active_providers == 0)
 		return -1;
 
-	/* if nothing has initialized yet, bail */
-	if (num_fd_providers_initialized == 0)
-		return -1;
-
-	while (fd < 0) {
-		unsigned int i, j;
-		unsigned int attempts = 0;
-retry:
-		if (++attempts > num_fd_providers * 10)
-			return -1;
-
-		i = rand() % num_fd_providers;			// FIXME: after below fixme, this should be num_fd_providers_initialized
-		j = 0;
-
-		list_for_each(node, &fd_providers->list) {
-			struct fd_provider *provider;
-
-			if (i == j) {
-				provider = (struct fd_provider *) node;
-
-				if (provider->enabled == false)	// FIXME: Better would be to just remove disabled providers from the list.
-					goto retry;
-
-				// Hasn't been run yet.
-				if (provider->initialized == false)
-					goto retry;
-
-				fd = provider->get();
-				break;
-			}
-			j++;
-		}
-	}
-
-	return fd;
+	provider = active_providers[rand() % num_active_providers];
+	return provider->get();
 }
 
 int get_random_fd(void)
