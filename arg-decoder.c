@@ -13,24 +13,17 @@
 
 static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 {
+	if (is_typed_fdarg(type)) {
+		sptr += sprintf(sptr, "%ld", (long) reg);
+		return sptr;
+	}
+
 	switch (type) {
 	case ARG_PATHNAME:
 		sptr += sprintf(sptr, "\"%s\"", (char *) reg);
 		break;
 	case ARG_PID:
 	case ARG_FD:
-	case ARG_FD_EPOLL:
-	case ARG_FD_EVENTFD:
-	case ARG_FD_FANOTIFY:
-	case ARG_FD_INOTIFY:
-	case ARG_FD_IO_URING:
-	case ARG_FD_LANDLOCK:
-	case ARG_FD_MEMFD:
-	case ARG_FD_PERF:
-	case ARG_FD_PIDFD:
-	case ARG_FD_PIPE:
-	case ARG_FD_SOCKET:
-	case ARG_FD_TIMERFD:
 	case ARG_SOCKETINFO:
 		sptr += sprintf(sptr, "%ld", (long) reg);
 		break;

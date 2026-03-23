@@ -74,6 +74,11 @@ enum argtype {
 	ARG_FD_TIMERFD,
 };
 
+static inline bool is_typed_fdarg(enum argtype type)
+{
+	return type >= ARG_FD_EPOLL && type <= ARG_FD_TIMERFD;
+}
+
 struct arglist {
 	unsigned int num;
 	unsigned long *values;

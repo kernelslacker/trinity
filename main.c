@@ -197,24 +197,14 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 
-	switch (entry->arg1type) {
-	case ARG_FD:
-	case ARG_FD_EPOLL:
-	case ARG_FD_EVENTFD:
-	case ARG_FD_FANOTIFY:
-	case ARG_FD_INOTIFY:
-	case ARG_FD_IO_URING:
-	case ARG_FD_LANDLOCK:
-	case ARG_FD_MEMFD:
-	case ARG_FD_PERF:
-	case ARG_FD_PIDFD:
-	case ARG_FD_PIPE:
-	case ARG_FD_SOCKET:
-	case ARG_FD_TIMERFD:
-	case ARG_SOCKETINFO:
-		break;
-	default:
-		return false;
+	if (!is_typed_fdarg(entry->arg1type)) {
+		switch (entry->arg1type) {
+		case ARG_FD:
+		case ARG_SOCKETINFO:
+			break;
+		default:
+			return false;
+		}
 	}
 
 	/* in the SOCKETINFO case, post syscall, a1 is actually the fd,
