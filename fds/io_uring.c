@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 
 #include "fd.h"
@@ -13,32 +14,118 @@
 #include "shm.h"
 #include "trinity.h"
 
+#ifndef IORING_OFF_SQ_RING
+#define IORING_OFF_SQ_RING	0ULL
+#define IORING_OFF_SQES		0x10000000ULL
+#endif
+
+/* Offsets within the mmap'd SQ ring where key fields live. */
+struct trinity_sqring_offsets {
+	unsigned int head;
+	unsigned int tail;
+	unsigned int ring_mask;
+	unsigned int ring_entries;
+	unsigned int flags;
+	unsigned int dropped;
+	unsigned int array;
+	unsigned int resv1;
+	unsigned long long user_addr;
+};
+
+/* Full io_uring_params including the output fields we need. */
+struct trinity_io_uring_params {
+	unsigned int sq_entries;
+	unsigned int cq_entries;
+	unsigned int flags;
+	unsigned int sq_thread_cpu;
+	unsigned int sq_thread_idle;
+	unsigned int features;
+	unsigned int wq_fd;
+	unsigned int resv[3];
+	struct trinity_sqring_offsets sq_off;
+	/* cq_off follows but we don't need it */
+	unsigned char cq_off[40];
+};
+
+/* The ring with valid mappings, used by io_uring_enter sanitise. */
+static struct io_uringobj *mapped_ring;
+
+struct io_uringobj *get_io_uring_ring(void)
+{
+	return mapped_ring;
+}
+
 static void io_uring_destructor(struct object *obj)
 {
-	close(obj->io_uringobj.fd);
+	struct io_uringobj *ring = &obj->io_uringobj;
+
+	if (ring->sqes)
+		munmap(ring->sqes, ring->sqes_sz);
+	if (ring->sq_ring)
+		munmap(ring->sq_ring, ring->sq_ring_sz);
+	if (mapped_ring == ring)
+		mapped_ring = NULL;
+	close(ring->fd);
 }
 
 static void io_uring_dump(struct object *obj, bool global)
 {
-	output(2, "io_uring fd:%d global:%d\n",
-		obj->io_uringobj.fd, global);
+	struct io_uringobj *ring = &obj->io_uringobj;
+
+	output(2, "io_uring fd:%d sq_entries:%u mapped:%s global:%d\n",
+		ring->fd, ring->sq_entries,
+		ring->sq_ring ? "yes" : "no", global);
 }
 
 static int open_io_uring_fd(void)
 {
 #ifdef __NR_io_uring_setup
+	struct trinity_io_uring_params params;
 	struct object *obj;
-	unsigned char params[120];
+	struct io_uringobj *ring;
+	size_t sq_ring_sz, sqes_sz;
+	void *sq_ring, *sqes;
 	int fd;
 
-	memset(params, 0, sizeof(params));
-	fd = syscall(__NR_io_uring_setup, 4, params);
+	memset(&params, 0, sizeof(params));
+	fd = syscall(__NR_io_uring_setup, 4, &params);
 	if (fd < 0)
 		return false;
 
+	/* mmap the SQ ring. Size is sq_off.array + sq_entries * sizeof(u32). */
+	sq_ring_sz = params.sq_off.array + params.sq_entries * sizeof(unsigned int);
+	sq_ring = mmap(NULL, sq_ring_sz, PROT_READ | PROT_WRITE,
+		       MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
+	if (sq_ring == MAP_FAILED) {
+		close(fd);
+		return false;
+	}
+
+	/* mmap the SQE array. */
+	sqes_sz = params.sq_entries * 64;	/* sizeof(struct io_uring_sqe) */
+	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
+		    MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
+	if (sqes == MAP_FAILED) {
+		munmap(sq_ring, sq_ring_sz);
+		close(fd);
+		return false;
+	}
+
 	obj = alloc_object();
-	obj->io_uringobj.fd = fd;
+	ring = &obj->io_uringobj;
+	ring->fd = fd;
+	ring->sq_ring = sq_ring;
+	ring->sq_ring_sz = sq_ring_sz;
+	ring->sqes = sqes;
+	ring->sqes_sz = sqes_sz;
+	ring->sq_entries = params.sq_entries;
+	ring->off_head = params.sq_off.head;
+	ring->off_tail = params.sq_off.tail;
+	ring->off_mask = params.sq_off.ring_mask;
+	ring->off_array = params.sq_off.array;
+
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IO_URING);
+	mapped_ring = ring;
 	return true;
 #else
 	return false;

@@ -89,7 +89,18 @@ struct pidfdobj {
 
 struct io_uringobj {
 	int fd;
+	void *sq_ring;		/* mmap'd SQ ring, NULL if not mapped */
+	void *sqes;		/* mmap'd SQE array */
+	size_t sq_ring_sz;	/* mmap size for munmap */
+	size_t sqes_sz;
+	unsigned int sq_entries;
+	unsigned int off_head;
+	unsigned int off_tail;
+	unsigned int off_mask;
+	unsigned int off_array;
 };
+
+struct io_uringobj *get_io_uring_ring(void);
 
 struct landlockobj {
 	int fd;
