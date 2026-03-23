@@ -10,19 +10,18 @@
 #include "trinity.h"
 
 #define WHOLE 1
-static int action;
-
-static struct map *map;
 
 static void sanitise_munmap(struct syscallrecord *rec)
 {
-	map = common_set_mmap_ptr_len();
-
-	action = 0;
+	struct map *map = common_set_mmap_ptr_len();
+	int action = 0;
 
 	if (ONE_IN(20) == true) {
 		/* delete the whole mapping. */
 		action = WHOLE;
+		/* Stash map pointer and action in unused arg slots for post callback. */
+		rec->a3 = (unsigned long) map;
+		rec->a4 = action;
 		return;
 	}
 
@@ -47,10 +46,17 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		rec->a1 += (rand() % map->size) & PAGE_MASK;
 		rec->a2 = page_size;
 	}
+
+	/* Stash map pointer and action in unused arg slots for post callback. */
+	rec->a3 = (unsigned long) map;
+	rec->a4 = action;
 }
 
 static void post_munmap(struct syscallrecord *rec)
 {
+	struct map *map = (struct map *) rec->a3;
+	int action = rec->a4;
+
 	if (rec->retval != 0)
 		return;
 
