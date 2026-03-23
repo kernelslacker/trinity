@@ -16,9 +16,12 @@ void init_shm(void);
 struct shm_s {
 	struct childdata **children;
 
-	struct stats_s stats;
+	/* Frequently updated by all children — own cache line. */
+	struct stats_s stats __attribute__((aligned(64)));
 
-	unsigned int running_childs;
+	/* Written by main process — own cache line to avoid
+	 * false sharing with child-written stats above. */
+	unsigned int running_childs __attribute__((aligned(64)));
 
 	/* rng related state */
 	unsigned int seed;
@@ -43,11 +46,8 @@ struct shm_s {
 	/* generic object cache*/
 	struct objhead global_objects[MAX_OBJECT_TYPES];
 
-	/* to protect from multiple child processes from
-	 * trying to disable the same syscall at the same time. */
-	lock_t syscalltable_lock;
-
-	/* child<>child mutex, used so only one child spews debug output */
+	/* Contended child<>child locks — own cache line. */
+	lock_t syscalltable_lock __attribute__((aligned(64)));
 	lock_t buglock;
 
 	/* various flags. */
