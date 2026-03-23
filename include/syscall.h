@@ -88,12 +88,11 @@ struct arglist {
 #define NR_ERRNOS 133	// Number in /usr/include/asm-generic/errno.h
 
 struct results {
-	union {
-		// ARG_FD.  -1 = Avoid. 0 = untested. 1 = Works.
-		int fdmap[1024];
-		// ARG_LEN
-		unsigned int min, max;
-	};
+	/* ARG_FD: tracks which fd values have succeeded.
+	 * Dynamically allocated on first successful fd arg. */
+	int *fdmap;
+	/* ARG_LEN: range of successful length values. */
+	unsigned int min, max;
 };
 
 struct syscallentry {

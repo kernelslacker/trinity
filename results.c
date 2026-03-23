@@ -3,6 +3,7 @@
  */
 
 #include <errno.h>
+#include <stdlib.h>
 #include "results.h"
 #include "sanitise.h"
 #include "syscall.h"
@@ -34,11 +35,20 @@ static struct results * get_results_ptr(struct syscallentry *entry, unsigned int
 	unreachable();
 }
 
+#define FDMAP_SIZE 1024
+
 static void store_successful_fd(struct results *results, unsigned long value)
 {
 	int fd = (int) value;
 
-	// TODO: dynamically allocate fdmap on startup
+	if (fd < 0 || fd >= FDMAP_SIZE)
+		return;
+
+	if (results->fdmap == NULL) {
+		results->fdmap = calloc(FDMAP_SIZE, sizeof(int));
+		if (results->fdmap == NULL)
+			return;
+	}
 	results->fdmap[fd] = true;
 }
 
