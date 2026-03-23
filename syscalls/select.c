@@ -74,4 +74,5 @@ struct syscallentry syscall_select = {
 	.sanitise = sanitise_select,
 	.post = post_select,
 	.group = GROUP_VFS,
+	.flags = NEED_ALARM,
 };
