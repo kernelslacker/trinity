@@ -10,5 +10,5 @@ struct syscallentry syscall_nice = {
 	.arg1type = ARG_RANGE,
 	.low1range = -20,
 	.hi1range = 19,
-	.group = GROUP_PROCESS,
+	.group = GROUP_SCHED,
 };
