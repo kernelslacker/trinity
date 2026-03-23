@@ -3,22 +3,58 @@
  *                const int, ruleset_fd, const enum landlock_rule_type, rule_type,
  *                const void __user *const, rule_attr, const __u32, flags)
  */
+#include <linux/landlock.h>
+#include <string.h>
+#include "fd.h"
+#include "random.h"
 #include "sanitise.h"
+#include "compat.h"
 
-enum landlock_rule_type {
-	LANDLOCK_RULE_PATH_BENEATH = 1,
-	LANDLOCK_RULE_NET_PORT,
+enum landlock_rule_type_compat {
+	LANDLOCK_RULE_PATH_BENEATH_COMPAT = 1,
+	LANDLOCK_RULE_NET_PORT_COMPAT,
 };
 
 static unsigned long landlock_ruletypes[] = {
-	LANDLOCK_RULE_PATH_BENEATH,
-	LANDLOCK_RULE_NET_PORT,
+	LANDLOCK_RULE_PATH_BENEATH_COMPAT,
+	LANDLOCK_RULE_NET_PORT_COMPAT,
 };
 
-// no flags for now
-//static unsigned long landlock_add_rule_flags[] = {
-//	,
-//};
+static void sanitise_landlock_add_rule(struct syscallrecord *rec)
+{
+	unsigned long rule_type;
+
+	rule_type = rec->a2;
+
+	switch (rule_type) {
+	case LANDLOCK_RULE_PATH_BENEATH_COMPAT: {
+		struct landlock_path_beneath_attr *pb;
+
+		pb = (struct landlock_path_beneath_attr *) get_writable_address(sizeof(*pb));
+		memset(pb, 0, sizeof(*pb));
+		pb->allowed_access = rand32() & ((1ULL << 16) - 1);
+		pb->parent_fd = get_random_fd();
+		rec->a3 = (unsigned long) pb;
+		break;
+	}
+	case LANDLOCK_RULE_NET_PORT_COMPAT: {
+		struct landlock_net_port_attr *np;
+
+		np = (struct landlock_net_port_attr *) get_writable_address(sizeof(*np));
+		memset(np, 0, sizeof(*np));
+		np->allowed_access = rand() % 4;
+
+		switch (rand() % 4) {
+		case 0: np->port = 0; break;		/* ephemeral */
+		case 1: np->port = 80; break;		/* well-known */
+		case 2: np->port = 1 + (rand() % 1023); break;	/* privileged */
+		default: np->port = 1024 + (rand() % 64512); break; /* unprivileged */
+		}
+		rec->a3 = (unsigned long) np;
+		break;
+	}
+	}
+}
 
 struct syscallentry syscall_landlock_add_rule = {
 	.name = "landlock_add_rule",
@@ -26,12 +62,10 @@ struct syscallentry syscall_landlock_add_rule = {
 	.arg1name = "ruleset_fd",
 	.arg1type = ARG_FD_LANDLOCK,
 	.arg2name = "rule_type",
-	.arg2type = ARG_LIST,
+	.arg2type = ARG_OP,
 	.arg2list = ARGLIST(landlock_ruletypes),
 	.arg3name = "rule_attr",
-	.arg3type = ARG_ADDRESS,
 	.arg4name = "flags",
-//	.arg4type = ARG_LIST,
-//	.arg4list = ARGLIST(landlock_add_rule_flags),
 	.group = GROUP_PROCESS,
+	.sanitise = sanitise_landlock_add_rule,
 };
