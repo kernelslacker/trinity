@@ -71,6 +71,8 @@ struct __lock * get_random_lock(void)
 	obj = get_random_object(OBJ_FUTEX, global);
 	if (!obj)
 		obj = get_random_object(OBJ_MMAP_ANON, OBJ_GLOBAL);
+	if (!obj)
+		return NULL;
 
 	return &obj->lock;
 }
@@ -94,6 +96,8 @@ static uint32_t * get_futex_mmap(void)
 	obj = get_random_object(OBJ_MMAP_ANON, global);
 	if (!obj)
 		obj = get_random_object(OBJ_MMAP_ANON, OBJ_GLOBAL);
+	if (!obj)
+		return NULL;
 
 	map = &obj->map;
 	return (uint32_t *)map->ptr;
@@ -276,6 +280,8 @@ static void sanitise_futex(struct syscallrecord *rec)
 	if (RAND_BOOL()) {
 		lock1 = get_random_lock();
 		lock2 = get_random_lock();
+		if (!lock1 || !lock2)
+			goto out_setclock;
 
 		rec->a1 = (unsigned long) &lock1->futex; /* uaddr */
 		/* ^^ no, we do not have 64-bit futexes :P */
