@@ -70,5 +70,4 @@ struct syscallentry syscall_process_madvise = {
 	.arg5type = ARG_OP,
 	.arg5list = ARGLIST(process_madvise_flags),
 	.group = GROUP_VM,
-	.sanitise = sanitise_madvise,
 };
