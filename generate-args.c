@@ -412,6 +412,9 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 
 	case ARG_SOCKETINFO:
 		return (unsigned long) get_rand_socketinfo();
+
+	default:
+		break;
 	}
 
 	BUG("unreachable!\n");
