@@ -3,6 +3,8 @@
  *               unsigned long, idx1, unsigned long, idx2)
  *
  */
+#include "fd.h"
+#include "random.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -10,6 +12,15 @@ static unsigned long kcmp_types[] = {
 	KCMP_FILE, KCMP_VM, KCMP_FILES, KCMP_FS,
 	KCMP_SIGHAND, KCMP_IO, KCMP_SYSVSEM,
 };
+
+/* For KCMP_FILE, idx1/idx2 are fd numbers to compare. */
+static void sanitise_kcmp(struct syscallrecord *rec)
+{
+	if (rec->a3 == KCMP_FILE) {
+		rec->a4 = get_random_fd();
+		rec->a5 = get_random_fd();
+	}
+}
 
 struct syscallentry syscall_kcmp = {
 	.name = "kcmp",
@@ -24,4 +35,5 @@ struct syscallentry syscall_kcmp = {
 	.arg3list = ARGLIST(kcmp_types),
 	.arg4name = "idx1",
 	.arg5name = "idx2",
+	.sanitise = sanitise_kcmp,
 };
