@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "fd.h"
 #include "list.h"
 #include "objects.h"
@@ -41,6 +42,18 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 	}
 
 	list_add_tail(&obj->list, head->list);
+
+	/* Grow parallel array if needed */
+	if (head->num_entries >= head->array_capacity) {
+		unsigned int newcap;
+
+		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
+		head->array = realloc(head->array, newcap * sizeof(struct object *));
+		head->array_capacity = newcap;
+	}
+	head->array[head->num_entries] = obj;
+	obj->array_idx = head->num_entries;
+
 	head->num_entries++;
 
 	if (head->dump != NULL)
@@ -63,7 +76,9 @@ void init_object_lists(bool global)
 		head = get_objhead(global, i);
 
 		head->list = NULL;
+		head->array = NULL;
 		head->num_entries = 0;
+		head->array_capacity = 0;
 
 		/*
 		 * child lists can inherit properties from global lists.
@@ -81,28 +96,13 @@ void init_object_lists(bool global)
 struct object * get_random_object(enum objecttype type, bool global)
 {
 	struct objhead *head;
-	struct list_head *node, *list;
-	unsigned int i, j = 0, n;
 
 	head = get_objhead(global, type);
 
-	list = head->list;
-
-	n = head->num_entries;
-	if (n == 0)
+	if (head->num_entries == 0)
 		return NULL;
-	i = rand() % n;
 
-	list_for_each(node, list) {
-		struct object *m;
-
-		m = (struct object *) node;
-
-		if (i == j)
-			return m;
-		j++;
-	}
-	return NULL;
+	return head->array[rand() % head->num_entries];
 }
 
 bool objects_empty(enum objecttype type)
@@ -116,10 +116,21 @@ bool objects_empty(enum objecttype type)
 void destroy_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
+	unsigned int idx, last;
 
 	list_del(&obj->list);
 
 	head = get_objhead(global, type);
+
+	/* Swap-with-last removal from the parallel array */
+	idx = obj->array_idx;
+	last = head->num_entries - 1;
+	if (idx != last) {
+		head->array[idx] = head->array[last];
+		head->array[idx]->array_idx = idx;
+	}
+	head->array[last] = NULL;
+
 	head->num_entries--;
 
 	if (head->destroy != NULL)
@@ -151,6 +162,9 @@ static void destroy_objects(enum objecttype type, bool global)
 	}
 
 	head->num_entries = 0;
+	free(head->array);
+	head->array = NULL;
+	head->array_capacity = 0;
 }
 
 /* Destroy all the global objects.
