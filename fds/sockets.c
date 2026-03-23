@@ -195,8 +195,6 @@ static unsigned int valid_proto(unsigned int family)
 		return false;
 	if (strncmp(famstr, "ASH", 4) == 0)
 		return false;
-	if (strncmp(famstr, "ECONET", 7) == 0)
-		return false;
 	if (strncmp(famstr, "SNA", 4) == 0)
 		return false;
 	if (strncmp(famstr, "WANPIPE", 8) == 0)
