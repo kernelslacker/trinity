@@ -191,8 +191,15 @@ static void init_child(struct childdata *child, int childno)
 	char childname[17];
 	unsigned int i;
 
+	/* Re-set num from the stack-based childno in case shared memory
+	 * was corrupted by a sibling's stray write. */
+	child->num = childno;
+
+	/* Use childno (on stack) not child->num (in shared memory) to
+	 * decide which struct to skip — a corrupted num would cause us
+	 * to mprotect our own childdata and then SIGSEGV on write. */
 	for_each_child(i) {
-		if (child->num != i)
+		if ((unsigned int)childno != i)
 			mprotect(shm->children[i], sizeof(struct childdata), PROT_READ);
 	}
 
