@@ -219,6 +219,8 @@ void init_object_lists(enum obj_scope scope)
 		struct objhead *head;
 
 		head = get_objhead(scope, i);
+		if (head == NULL)
+			continue;
 
 		head->list = NULL;
 		head->array = NULL;
