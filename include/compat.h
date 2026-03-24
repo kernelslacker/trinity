@@ -1509,6 +1509,14 @@ struct kvm_get_htab_fd {
 #define MLOCK_ONFAULT	0x01
 #endif
 
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE	0x100000
+#endif
+
+#ifndef MAP_DROPPABLE
+#define MAP_DROPPABLE		0x08
+#endif
+
 #ifndef MREMAP_DONTUNMAP
 #define MREMAP_DONTUNMAP        4
 #endif
