@@ -20,14 +20,14 @@ static void pipefd_destructor(struct object *obj)
 	close(obj->pipeobj.fd);
 }
 
-static void pipefd_dump(struct object *obj, bool global)
+static void pipefd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct pipeobj *po = &obj->pipeobj;
 
-	output(2, "pipe fd:%d flags:%x [%s] global:%d\n",
+	output(2, "pipe fd:%d flags:%x [%s] scope:%d\n",
 		po->fd, po->flags,
 		po->reader ? "reader" : "writer",
-		global);
+		scope);
 }
 
 static void open_pipe_pair(unsigned int flags)

@@ -35,12 +35,12 @@ static void memfd_destructor(struct object *obj)
 	close(obj->memfdobj.fd);
 }
 
-static void memfd_dump(struct object *obj, bool global)
+static void memfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct memfdobj *mo = &obj->memfdobj;
 
-	output(2, "memfd fd:%d name:%s flags:%x global:%d\n",
-		mo->fd, mo->name, mo->flags, global);
+	output(2, "memfd fd:%d name:%s flags:%x scope:%d\n",
+		mo->fd, mo->name, mo->flags, scope);
 }
 
 static int init_memfd_fds(void)

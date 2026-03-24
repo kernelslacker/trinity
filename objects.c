@@ -132,11 +132,11 @@ struct object * alloc_object(void)
 	return obj;
 }
 
-struct objhead * get_objhead(bool global, enum objecttype type)
+struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
 
-	if (global == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL)
 		head = &shm->global_objects[type];
 	else {
 		struct childdata *child;
@@ -148,22 +148,22 @@ struct objhead * get_objhead(bool global, enum objecttype type)
 }
 
 
-void add_object(struct object *obj, bool global, enum objecttype type)
+void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
 
 	/* Children must not mutate global objects — the objhead metadata
 	 * is in shared memory but the objects/arrays are in per-process
 	 * heap (COW after fork).  Mixing the two corrupts everything. */
-	if (global == OBJ_GLOBAL && getpid() != mainpid) {
+	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
 		free(obj);
 		return;
 	}
 
-	if (global == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
-	head = get_objhead(global, type);
+	head = get_objhead(scope, type);
 	if (head->list == NULL) {
 		head->list = zmalloc(sizeof(struct object));
 		INIT_LIST_HEAD(head->list);
@@ -180,7 +180,7 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 		newarray = realloc(head->array, newcap * sizeof(struct object *));
 		if (newarray == NULL) {
 			list_del(&obj->list);
-			if (global == OBJ_GLOBAL)
+			if (scope == OBJ_GLOBAL)
 				unlock(&shm->objlock);
 			return;
 		}
@@ -193,32 +193,32 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 	head->num_entries++;
 
 	/* Track global fd-type objects in the hash table */
-	if (global == OBJ_GLOBAL && is_fd_type(type)) {
+	if (scope == OBJ_GLOBAL && is_fd_type(type)) {
 		int fd = fd_from_object(obj, type);
 		fd_hash_insert(fd, obj, type);
 	}
 
 	if (head->dump != NULL)
-		head->dump(obj, global);
+		head->dump(obj, scope);
 
-	if (global == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL)
 		unlock(&shm->objlock);
 
 	/* if we just added something to a child list, check
 	 * to see if we need to do some pruning.
 	 */
-	if (global == OBJ_LOCAL)
+	if (scope == OBJ_LOCAL)
 		prune_objects();
 }
 
-void init_object_lists(bool global)
+void init_object_lists(enum obj_scope scope)
 {
 	unsigned int i;
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
 		struct objhead *head;
 
-		head = get_objhead(global, i);
+		head = get_objhead(scope, i);
 
 		head->list = NULL;
 		head->array = NULL;
@@ -228,7 +228,7 @@ void init_object_lists(bool global)
 		/*
 		 * child lists can inherit properties from global lists.
 		 */
-		if (global == OBJ_LOCAL) {
+		if (scope == OBJ_LOCAL) {
 			struct objhead *globalhead;
 			globalhead = get_objhead(OBJ_GLOBAL, i);
 			head->max_entries = globalhead->max_entries;
@@ -238,22 +238,22 @@ void init_object_lists(bool global)
 	}
 }
 
-struct object * get_random_object(enum objecttype type, bool global)
+struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
 	struct object *obj;
 
-	if (global == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
-	head = get_objhead(global, type);
+	head = get_objhead(scope, type);
 
 	if (head->num_entries == 0)
 		obj = NULL;
 	else
 		obj = head->array[rand() % head->num_entries];
 
-	if (global == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL)
 		unlock(&shm->objlock);
 
 	return obj;
@@ -268,14 +268,14 @@ bool objects_empty(enum objecttype type)
  * Call the destructor for this object, and then release it.
  * Internal version — caller must hold objlock if operating on globals.
  */
-static void __destroy_object(struct object *obj, bool global, enum objecttype type)
+static void __destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
 	unsigned int idx, last;
 
 	list_del(&obj->list);
 
-	head = get_objhead(global, type);
+	head = get_objhead(scope, type);
 
 	/* Swap-with-last removal from the parallel array */
 	idx = obj->array_idx;
@@ -289,7 +289,7 @@ static void __destroy_object(struct object *obj, bool global, enum objecttype ty
 	head->num_entries--;
 
 	/* Remove from fd hash table */
-	if (global == OBJ_GLOBAL && is_fd_type(type))
+	if (scope == OBJ_GLOBAL && is_fd_type(type))
 		fd_hash_remove(fd_from_object(obj, type));
 
 	if (head->destroy != NULL)
@@ -298,24 +298,24 @@ static void __destroy_object(struct object *obj, bool global, enum objecttype ty
 	free(obj);
 }
 
-void destroy_object(struct object *obj, bool global, enum objecttype type)
+void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
-	if (global == OBJ_GLOBAL && getpid() != mainpid)
+	if (scope == OBJ_GLOBAL && getpid() != mainpid)
 		return;
 
-	if (global == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
-	__destroy_object(obj, global, type);
+	__destroy_object(obj, scope, type);
 
-	if (global == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL)
 		unlock(&shm->objlock);
 }
 
 /*
  * Destroy a whole list of objects.
  */
-static void destroy_objects(enum objecttype type, bool global)
+static void destroy_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct list_head *node, *list, *tmp;
 	struct objhead *head;
@@ -323,7 +323,7 @@ static void destroy_objects(enum objecttype type, bool global)
 	if (objects_empty(type) == true)
 		return;
 
-	head = get_objhead(global, type);
+	head = get_objhead(scope, type);
 	list = head->list;
 
 	list_for_each_safe(node, tmp, list) {
@@ -331,7 +331,7 @@ static void destroy_objects(enum objecttype type, bool global)
 
 		obj = (struct object *) node;
 
-		__destroy_object(obj, global, type);
+		__destroy_object(obj, scope, type);
 	}
 
 	head->num_entries = 0;
@@ -419,7 +419,7 @@ void remove_object_by_fd(int fd)
  * Think of this as a poor mans garbage collector, to prevent
  * us from exhausting all the available fd's in the system etc.
  */
-static void __prune_objects(enum objecttype type, bool global)
+static void __prune_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
 	unsigned int num_to_prune;
@@ -427,7 +427,7 @@ static void __prune_objects(enum objecttype type, bool global)
 	if (RAND_BOOL())
 		return;
 
-	head = get_objhead(global, type);
+	head = get_objhead(scope, type);
 
 	/* 0 = don't ever prune. */
 	if (head->max_entries == 0)
@@ -449,7 +449,7 @@ static void __prune_objects(enum objecttype type, bool global)
 				struct object *obj;
 
 				obj = (struct object *) node;
-				destroy_object(obj, global, type);
+				destroy_object(obj, scope, type);
 				num_to_prune--;
 				//TODO: log something
 			}

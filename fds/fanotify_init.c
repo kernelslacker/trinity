@@ -32,12 +32,12 @@ static void fanotifyfd_destructor(struct object *obj)
 	close(obj->fanotifyobj.fd);
 }
 
-static void fanotifyfd_dump(struct object *obj, bool global)
+static void fanotifyfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fanotifyobj *fo = &obj->fanotifyobj;
 
-	output(2, "fanotify fd:%d flags:%x eventflags:%x global:%d\n",
-		fo->fd, fo->flags, fo->eventflags, global);
+	output(2, "fanotify fd:%d flags:%x eventflags:%x scope:%d\n",
+		fo->fd, fo->flags, fo->eventflags, scope);
 }
 
 static int open_fanotify_fd(void)

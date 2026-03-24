@@ -20,7 +20,7 @@ struct map * get_map(void)
 {
 	struct object *obj = NULL;
 	struct childdata *child = this_child();
-	bool global;
+	enum obj_scope scope;
 	enum objecttype type = 0;
 
 	/*
@@ -30,9 +30,9 @@ struct map * get_map(void)
 	 * initial mappings list directly.
 	 */
 	if (child == NULL)
-		global = OBJ_GLOBAL;
+		scope = OBJ_GLOBAL;
 	else
-		global = OBJ_LOCAL;
+		scope = OBJ_LOCAL;
 
 	while (obj == NULL) {
 		switch (rand() % 3) {
@@ -44,7 +44,7 @@ struct map * get_map(void)
 			break;
 		}
 
-		obj = get_random_object(type, global);
+		obj = get_random_object(type, scope);
 	}
 
 	return &obj->map;
@@ -60,7 +60,7 @@ void map_destructor(struct object *obj)
 	map->name = NULL;
 }
 
-void map_dump(struct object *obj, bool global)
+void map_dump(struct object *obj, enum obj_scope scope)
 {
 	struct map *m;
 	char buf[32];
@@ -68,8 +68,8 @@ void map_dump(struct object *obj, bool global)
 	m = &obj->map;
 
 	sizeunit(m->size, buf);
-	output(2, " start: %p size:%s  name: %s global:%d\n",
-		m->ptr, buf, m->name, global);
+	output(2, " start: %p size:%s  name: %s scope:%d\n",
+		m->ptr, buf, m->name, scope);
 }
 
 /*
@@ -172,7 +172,7 @@ void dirty_random_mapping(void)
 /*
  * Set up a mmap object for an fd we already opened.
  */
-void mmap_fd(int fd, const char *name, size_t len, int prot, bool global, enum objecttype type)
+void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
 	struct object *obj;
@@ -206,9 +206,9 @@ retry_mmap:
 			goto retry_mmap;
 	}
 
-	head = get_objhead(global, type);
+	head = get_objhead(scope, type);
 	head->dump = &map_dump;
 
-	add_object(obj, global, type);
+	add_object(obj, scope, type);
 	return;
 }

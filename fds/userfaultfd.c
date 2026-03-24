@@ -32,11 +32,11 @@ static void userfaultfd_destructor(struct object *obj)
 	close(obj->userfaultobj.fd);
 }
 
-static void userfaultfd_dump(struct object *obj, bool global)
+static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct userfaultobj *uo = &obj->userfaultobj;
 
-	output(2, "userfault fd:%d flags:%x global:%d\n", uo->fd, uo->flags, global);
+	output(2, "userfault fd:%d flags:%x scope:%d\n", uo->fd, uo->flags, scope);
 }
 
 /*

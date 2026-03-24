@@ -23,13 +23,13 @@ static void perffd_destructor(struct object *obj)
 	close(obj->perfobj.fd);
 }
 
-static void perffd_dump(struct object *obj, bool global)
+static void perffd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct perfobj *po = &obj->perfobj;
 //	unsigned int i;
 
-	output(2, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%lx global:%d\n",
-		po->fd, po->pid, po->cpu, po->group_fd, po->flags, global);
+	output(2, "perf fd: %d pid:%d cpu:%d group_fd:%d flags:%lx scope:%d\n",
+		po->fd, po->pid, po->cpu, po->group_fd, po->flags, scope);
 /*	output(2, " perf_event_attr:");
 	for (i = 0; i < perfsize ; i++) {
 		output(CONT, "%02x ", (unsigned char) p[i]);

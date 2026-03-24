@@ -71,12 +71,12 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_LPM_TRIE, 8, sizeof(long), 10000, 0, "LPM TRIE" },
 };
 
-static void bpf_map_dump(struct object *obj, bool global)
+static void bpf_map_dump(struct object *obj, enum obj_scope scope)
 {
 	u32 type = obj->bpfobj.map_type;
 
-	output(2, "bpf map fd:%d type:%s global:%d\n",
-		obj->bpfobj.map_fd, (char *)&bpf_fds[type].name, global);
+	output(2, "bpf map fd:%d type:%s scope:%d\n",
+		obj->bpfobj.map_fd, (char *)&bpf_fds[type].name, scope);
 }
 
 static int open_bpf_fd(void)

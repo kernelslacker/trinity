@@ -26,3 +26,8 @@ enum objecttype {
 	OBJ_SYSV_SHM,
 	MAX_OBJECT_TYPES,
 };
+
+enum obj_scope {
+	OBJ_LOCAL,
+	OBJ_GLOBAL,
+};

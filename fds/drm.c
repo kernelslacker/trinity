@@ -28,9 +28,9 @@ static void drmfd_destructor(struct object *obj)
 	close(obj->drmfd);
 }
 
-static void drmfd_dump(struct object *obj, bool global)
+static void drmfd_dump(struct object *obj, enum obj_scope scope)
 {
-	output(2, "drmfd:%d global:%d\n", obj->drmfd, global);
+	output(2, "drmfd:%d scope:%d\n", obj->drmfd, scope);
 }
 
 static int create_dumb(__unused__ int fd)

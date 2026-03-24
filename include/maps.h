@@ -27,7 +27,7 @@ extern unsigned long mapping_sizes[NR_MAPPING_SIZES];
 
 struct object;
 void map_destructor(struct object *obj);
-void map_dump(struct object *obj, bool global);
+void map_dump(struct object *obj, enum obj_scope scope);
 
 void setup_initial_mappings(void);
 
@@ -47,4 +47,4 @@ void random_map_writefn(struct map *map);
 
 unsigned long get_rand_mmap_flags(void);
 
-void mmap_fd(int fd, const char *name, size_t len, int prot, bool global, enum objecttype type);
+void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scope, enum objecttype type);

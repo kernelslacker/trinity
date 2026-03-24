@@ -50,11 +50,11 @@ static void inotify_destructor(struct object *obj)
 	close(obj->inotifyobj.fd);
 }
 
-static void inotify_dump(struct object *obj, bool global)
+static void inotify_dump(struct object *obj, enum obj_scope scope)
 {
 	struct inotifyobj *io = &obj->inotifyobj;
 
-	output(2, "inotify fd:%d flags:%x global:%d\n", io->fd, io->flags, global);
+	output(2, "inotify fd:%d flags:%x scope:%d\n", io->fd, io->flags, scope);
 }
 
 static int init_inotify_fds(void)

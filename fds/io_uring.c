@@ -68,13 +68,13 @@ static void io_uring_destructor(struct object *obj)
 	close(ring->fd);
 }
 
-static void io_uring_dump(struct object *obj, bool global)
+static void io_uring_dump(struct object *obj, enum obj_scope scope)
 {
 	struct io_uringobj *ring = &obj->io_uringobj;
 
-	output(2, "io_uring fd:%d sq_entries:%u mapped:%s global:%d\n",
+	output(2, "io_uring fd:%d sq_entries:%u mapped:%s scope:%d\n",
 		ring->fd, ring->sq_entries,
-		ring->sq_ring ? "yes" : "no", global);
+		ring->sq_ring ? "yes" : "no", scope);
 }
 
 static int open_io_uring_fd(void)

@@ -21,10 +21,10 @@ static void landlock_destructor(struct object *obj)
 	close(obj->landlockobj.fd);
 }
 
-static void landlock_dump(struct object *obj, bool global)
+static void landlock_dump(struct object *obj, enum obj_scope scope)
 {
-	output(2, "landlock fd:%d global:%d\n",
-		obj->landlockobj.fd, global);
+	output(2, "landlock fd:%d scope:%d\n",
+		obj->landlockobj.fd, scope);
 }
 
 static const char *landlock_paths[] = {
