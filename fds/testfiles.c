@@ -24,6 +24,7 @@
 static void testfile_destructor(struct object *obj)
 {
 	close(obj->testfileobj.fd);
+	free((void *) obj->testfileobj.filename);
 }
 
 static void testfile_dump(struct object *obj, bool global)
@@ -73,7 +74,6 @@ static int open_testfile_fds(void)
 {
 	struct objhead *head;
 	struct object *obj = NULL;
-	char *filename;
 	unsigned int i = 1, nr = 0;
 	unsigned int fails = 0;
 
@@ -81,12 +81,12 @@ static int open_testfile_fds(void)
 	head->destroy = &testfile_destructor;
 	head->dump = &testfile_dump;
 
-	filename = zmalloc(64);
-
 	while (nr < MAX_TESTFILE_FDS) {
+		char *filename;
 		int fd;
 
-		sprintf(filename, "trinity-testfile%u", i);
+		filename = zmalloc(64);
+		snprintf(filename, 64, "trinity-testfile%u", i);
 
 		if (obj == NULL)
 			obj = alloc_object();
@@ -109,15 +109,13 @@ static int open_testfile_fds(void)
 			mmap_fd(fd, filename, page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
 
 		} else {
+			free(filename);
 			fails++;
 			if (fails == 100) {
 				output(2, "testfile creation is failing a lot. last error:%s\n", strerror(errno));
 			}
 		}
 	}
-
-	free(filename);
-	filename = NULL;
 
 	return true;
 }
