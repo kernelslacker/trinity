@@ -10,7 +10,7 @@ struct syscallentry syscall_pipe = {
 	.name = "pipe",
 	.num_args = 1,
 	.arg1name = "fildes",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_VFS,
 };
 
@@ -26,7 +26,7 @@ struct syscallentry syscall_pipe2 = {
 	.name = "pipe2",
 	.num_args = 2,
 	.arg1name = "fildes",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.arg2name = "flags",
 	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(pipe2_flags),

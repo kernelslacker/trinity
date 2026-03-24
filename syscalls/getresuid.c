@@ -7,11 +7,11 @@ struct syscallentry syscall_getresuid = {
 	.name = "getresuid",
 	.num_args = 3,
 	.arg1name = "ruid",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.arg2name = "euid",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 	.arg3name = "suid",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_PROCESS,
 };
 
@@ -23,10 +23,10 @@ struct syscallentry syscall_getresuid16 = {
 	.name = "getresuid16",
 	.num_args = 3,
 	.arg1name = "ruid",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.arg2name = "euid",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 	.arg3name = "suid",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_PROCESS,
 };
