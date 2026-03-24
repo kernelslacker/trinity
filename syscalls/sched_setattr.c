@@ -46,6 +46,7 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) sa;
+	rec->a3 = 0;	/* flags must be zero */
 }
 
 struct syscallentry syscall_sched_setattr = {
