@@ -10,6 +10,13 @@
 #include "net.h"
 #include "random.h"
 
+#ifndef NETLINK_EXT_ACK
+#define NETLINK_EXT_ACK		11
+#endif
+#ifndef NETLINK_GET_STRICT_CHK
+#define NETLINK_GET_STRICT_CHK	12
+#endif
+
 static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;
@@ -36,7 +43,7 @@ static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 static const unsigned int netlink_opts[] = {
 	NETLINK_ADD_MEMBERSHIP, NETLINK_DROP_MEMBERSHIP, NETLINK_PKTINFO, NETLINK_BROADCAST_ERROR,
 	NETLINK_NO_ENOBUFS, NETLINK_RX_RING, NETLINK_TX_RING, NETLINK_LISTEN_ALL_NSID,
-	NETLINK_LIST_MEMBERSHIPS, NETLINK_CAP_ACK,
+	NETLINK_LIST_MEMBERSHIPS, NETLINK_CAP_ACK, NETLINK_EXT_ACK, NETLINK_GET_STRICT_CHK,
 };
 
 #define SOL_NETLINK 270
