@@ -1,4 +1,5 @@
 #include <ftw.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -176,6 +177,14 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 		return FTW_CONTINUE;
 
 	if (ignore_files(fpath))
+		return FTW_SKIP_SUBTREE;
+
+	/* Skip /proc/<pid>/ directories — operations on per-process procfs
+	 * files trigger ptrace_may_access() checks against random pids.
+	 * TODO: Revisit this once we have proper child isolation (unshare).
+	 * With a pid namespace we could safely fuzz /proc/<pid>/ without
+	 * affecting processes outside the sandbox. */
+	if (strncmp(fpath, "/proc/", 6) == 0 && isdigit(fpath[6]))
 		return FTW_SKIP_SUBTREE;
 
 	// Check we can read it.
