@@ -44,14 +44,17 @@ static void sigxcpu_handler(__unused__ int sig)
 /*
  * Handler for signals that should only be fatal if they come from the
  * kernel (real fault), not from a child process sending us garbage via
- * kill/tkill/tgkill.  If si_code > 0, the kernel generated the signal
- * (e.g. SEGV_MAPERR).  If si_code <= 0 (SI_USER, SI_TKILL, SI_QUEUE),
- * another process sent it — ignore.
+ * kill/tkill/tgkill.
+ *
+ * si_code > 0:  kernel generated (e.g. SEGV_MAPERR) — always fatal
+ * si_code <= 0: sent by a process (SI_USER, SI_TKILL, SI_QUEUE)
+ *   - from ourselves (abort(), raise()): fatal — it's a real crash
+ *   - from a child process: ignore — it's fuzzer noise
  */
 static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 {
-	if (info->si_code > 0) {
-		/* Real fault — restore default and re-raise to get a core dump */
+	if (info->si_code > 0 || info->si_pid == getpid()) {
+		/* Real fault or self-sent (e.g. glibc abort) — die properly */
 		signal(sig, SIG_DFL);
 		raise(sig);
 	}
