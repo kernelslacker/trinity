@@ -675,14 +675,22 @@ int munge_tables(void)
  */
 struct syscallentry * get_syscall_entry(unsigned int callno, bool do32)
 {
-	if (biarch == false)
+	if (biarch == false) {
+		if (callno >= max_nr_syscalls)
+			return NULL;
 		return syscalls[callno].entry;
+	}
 
 	/* biarch case */
-	if (do32 == true)
+	if (do32 == true) {
+		if (callno >= max_nr_32bit_syscalls)
+			return NULL;
 		return syscalls_32bit[callno].entry;
-	else
-		return syscalls_64bit[callno].entry;
+	}
+
+	if (callno >= max_nr_64bit_syscalls)
+		return NULL;
+	return syscalls_64bit[callno].entry;
 }
 
 /*
