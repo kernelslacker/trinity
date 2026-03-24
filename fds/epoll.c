@@ -15,6 +15,43 @@
 
 #define MAX_EPOLL_FDS 10
 
+static const uint32_t epoll_events[] = {
+	EPOLLIN, EPOLLOUT, EPOLLRDHUP, EPOLLPRI,
+	EPOLLET, EPOLLONESHOT,
+};
+
+/*
+ * Register 1-3 random fds with the epoll instance so that
+ * epoll_wait/epoll_pwait actually have something to monitor.
+ */
+static void arm_epoll(int epfd)
+{
+	unsigned int i, count;
+
+	count = 1 + (rand() % 3);
+	for (i = 0; i < count; i++) {
+		struct epoll_event ev;
+		int target_fd;
+		unsigned int j, nbits;
+
+		target_fd = get_random_fd();
+		if (target_fd < 0)
+			continue;
+
+		/* Don't add an epoll fd to itself */
+		if (target_fd == epfd)
+			continue;
+
+		ev.events = 0;
+		nbits = 1 + (rand() % ARRAY_SIZE(epoll_events));
+		for (j = 0; j < nbits; j++)
+			ev.events |= epoll_events[rand() % ARRAY_SIZE(epoll_events)];
+		ev.data.fd = target_fd;
+
+		epoll_ctl(epfd, EPOLL_CTL_ADD, target_fd, &ev);
+	}
+}
+
 static void epoll_destructor(struct object *obj)
 {
 	close(obj->epollobj.fd);
@@ -57,6 +94,7 @@ static int init_epoll_fds(void)
 		if (fd != -1) {
 			obj->epollobj.fd = fd;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
+			arm_epoll(fd);
 			i++;
 			obj = NULL;	// alloc a new obj.
 		} else {
@@ -92,6 +130,7 @@ static int open_epoll_fd(void)
 
 	obj->epollobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
+	arm_epoll(fd);
 	return true;
 }
 
