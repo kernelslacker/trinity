@@ -20,6 +20,8 @@ static void sanitise_s390_pci_mmio(struct syscallrecord *rec)
 
 	if (offset + rec->a3 > page_size)
 		rec->a3 = page_size - offset;
+	if (rec->a3 == 0)
+		rec->a3 = 1;
 	rec->a2 = (unsigned long)malloc(rec->a3);
 }
 

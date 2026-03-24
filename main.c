@@ -817,7 +817,7 @@ void main_loop(void)
 		if (last != shm->running_childs) {
 			last = shm->running_childs;
 
-			output(0, "exit_reason=%d, but %d children still running.\n",
+			output(0, "exit_reason=%d, but %u children still running.\n",
 				shm->exit_reason, shm->running_childs);
 		}
 
