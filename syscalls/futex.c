@@ -212,40 +212,6 @@ static inline int random_futex_wake_op(void)
 	return RAND_ARRAY(op_flags) | RAND_ARRAY(cmp_flags);
 }
 
-static int toggle_futex_fail_inj(__unused__ bool on)
-{
-	int err = 0;
-#if 0
-
-	if (access("/proc/self/make-it-fail", W_OK) == -1)
-		goto done;
-
-	if (!on) {
-		err = system("echo 0 > /proc/self/make-it-fail");
-		goto done;
-	} else
-		err = system("echo 1 > /proc/self/make-it-fail");
-
-	/*
-	 * Even if we can, do not always fiddle with the fail_futex debugfs
-	 * config entries. In most cases, setting make-it-fail above, and
-	 * clearing it after the futex call, will be enough.
-	 */
-	if (RAND_BOOL())
-		goto done;
-
-	/* probably no permissions or lack of debugfs/error injection support */
-	if (access("/sys/kernel/debug/fail_futex/", W_OK) == -1)
-		goto done;
-
-	err = system("echo Y > /sys/kernel/debug/fail_futex/ignore-private");
-	err = system("echo Y > /sys/kernel/debug/fail_futex/task-filter");
-	err = system("echo 1 > /sys/kernel/debug/fail_futex/times");
-done:
-#endif
-	return err;
-}
-
 /*
  * Roughly half the calls will use the generic arguments,
  * with the occasional exception of using CLOCK_REALTIME,
@@ -323,9 +289,6 @@ static void sanitise_futex(struct syscallrecord *rec)
 		break;
 	}
 
-	if (ONE_IN(100))
-		(void)toggle_futex_fail_inj(true);
-
 out_setclock:
 	switch (rec->a2) {
 	case FUTEX_WAIT:
@@ -351,8 +314,6 @@ static void post_futex(struct syscallrecord *rec)
 	 */
 	if (futex_pi_cmd(rec->a2))
 		setpriority(PRIO_PROCESS, 0, 0);
-
-	(void)toggle_futex_fail_inj(false);
 }
 
 struct syscallentry syscall_futex = {
