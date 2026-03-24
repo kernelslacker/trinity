@@ -5,6 +5,7 @@
  */
 #include <linux/futex.h>
 #include <string.h>
+#include <time.h>
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
@@ -28,8 +29,8 @@
 #define FUTEX2_PRIVATE		FUTEX_PRIVATE_FLAG
 #endif
 
-static unsigned long futex_waitv_flags[] = {
-	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U32, FUTEX2_SIZE_U64,
+static unsigned long futex_waitv_clockids[] = {
+	CLOCK_MONOTONIC, CLOCK_REALTIME,
 };
 
 static void sanitise_futex_waitv(struct syscallrecord *rec)
@@ -76,7 +77,7 @@ struct syscallentry syscall_futex_waitv = {
 	.arg4name = "timeout",
 	.arg5name = "clockid",
 	.arg5type = ARG_OP,
-	.arg5list = ARGLIST(futex_waitv_flags),
+	.arg5list = ARGLIST(futex_waitv_clockids),
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex_waitv,
 	.group = GROUP_IPC,
