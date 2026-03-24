@@ -380,9 +380,11 @@ static void socket_destructor(struct object *obj)
 	struct linger ling = { .l_onoff = false, .l_linger = 0 };
 	int fd;
 
-	//FIXME: This is a workaround for a weird bug where we hang forevre
-	// waiting for bluetooth sockets when we setsockopt.
-	// Hopefully at some point we can remove this when someone figures out what's going on.
+	/*
+	 * Skip bluetooth sockets — setsockopt(SO_LINGER) on PF_BLUETOOTH
+	 * can hang forever in the kernel.  See also the matching skip in
+	 * sso_socket().
+	 */
 	if (si->triplet.family == PF_BLUETOOTH)
 		return;
 
