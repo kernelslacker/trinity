@@ -164,8 +164,10 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 
 		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
 		newarray = realloc(head->array, newcap * sizeof(struct object *));
-		if (newarray == NULL)
+		if (newarray == NULL) {
+			list_del(&obj->list);
 			return;
+		}
 		head->array = newarray;
 		head->array_capacity = newcap;
 	}
@@ -249,7 +251,7 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 	/* Swap-with-last removal from the parallel array */
 	idx = obj->array_idx;
 	last = head->num_entries - 1;
-	if (idx != last) {
+	if (idx != last && head->array[last] != NULL) {
 		head->array[idx] = head->array[last];
 		head->array[idx]->array_idx = idx;
 	}
