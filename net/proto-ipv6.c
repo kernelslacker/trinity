@@ -19,6 +19,22 @@
 #include "uid.h"
 #include "compat.h"
 
+#ifndef SOL_TCP
+#define SOL_TCP 6
+#endif
+#ifndef SOL_UDP
+#define SOL_UDP 17
+#endif
+#ifndef SOL_SCTP
+#define SOL_SCTP 132
+#endif
+#ifndef SOL_UDPLITE
+#define SOL_UDPLITE 136
+#endif
+#ifndef SOL_DCCP
+#define SOL_DCCP 269
+#endif
+
 struct addrtext {
 	const char *name;
 };
@@ -211,12 +227,46 @@ static void inet6_ulp_setsockopt(struct sockopt *so)
 	so->optlen = sizeof(struct tls12_crypto_info_aes_gcm_128);
 }
 
-static void inet6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+static void inet6_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
-	if (RAND_BOOL()) {
+	/* Dispatch to protocol-specific options based on socket protocol.
+	 * Without this, IPv6 TCP sockets never get TCP_NODELAY, TCP_CONGESTION,
+	 * etc., and IPv6 UDP sockets never get UDP_SEGMENT, UDP_GRO, etc.
+	 */
+	switch (rand() % 3) {
+	case 0:
 		__inet6_setsockopt(so);
-	} else {
+		break;
+	case 1:
+		switch (triplet->protocol) {
+		case IPPROTO_TCP:
+			so->level = SOL_TCP;
+			tcp_setsockopt(so, triplet);
+			break;
+		case IPPROTO_UDP:
+			so->level = SOL_UDP;
+			udp_setsockopt(so, triplet);
+			break;
+		case IPPROTO_UDPLITE:
+			so->level = SOL_UDPLITE;
+			udplite_setsockopt(so, triplet);
+			break;
+		case IPPROTO_SCTP:
+			so->level = SOL_SCTP;
+			sctp_setsockopt(so, triplet);
+			break;
+		case IPPROTO_DCCP:
+			so->level = SOL_DCCP;
+			dccp_setsockopt(so, triplet);
+			break;
+		default:
+			__inet6_setsockopt(so);
+			break;
+		}
+		break;
+	case 2:
 		inet6_ulp_setsockopt(so);
+		break;
 	}
 }
 
