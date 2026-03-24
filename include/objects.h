@@ -161,20 +161,17 @@ struct objhead {
 	unsigned int array_capacity;
 	unsigned int max_entries;
 	void (*destroy)(struct object *obj);
-	void (*dump)(struct object *obj, bool global);
+	void (*dump)(struct object *obj, enum obj_scope scope);
 };
 
-#define OBJ_LOCAL 0
-#define OBJ_GLOBAL 1
-
 struct object * alloc_object(void);
-void add_object(struct object *obj, bool global, enum objecttype type);
-void destroy_object(struct object *obj, bool global, enum objecttype type);
+void add_object(struct object *obj, enum obj_scope scope, enum objecttype type);
+void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type);
 void destroy_global_objects(void);
-void init_object_lists(bool global);
-struct object * get_random_object(enum objecttype type, bool global);
+void init_object_lists(enum obj_scope scope);
+struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 bool objects_empty(enum objecttype type);
-struct objhead * get_objhead(bool global, enum objecttype type);
+struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);
 void remove_object_by_fd(int fd);

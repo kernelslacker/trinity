@@ -12,11 +12,11 @@
 #include "objects.h"
 #include "utils.h"
 
-static void dump_sysv_shm(struct object *obj, bool global)
+static void dump_sysv_shm(struct object *obj, enum obj_scope scope)
 {
-	output(0, "sysv_shm: id:%u size:%ld flags:%x ptr:%p global:%d\n",
+	output(0, "sysv_shm: id:%u size:%ld flags:%x ptr:%p scope:%d\n",
 		obj->sysv_shm.id, obj->sysv_shm.size,
-		obj->sysv_shm.flags, obj->sysv_shm.ptr, global);
+		obj->sysv_shm.flags, obj->sysv_shm.ptr, scope);
 }
 
 void create_sysv_shms(void)

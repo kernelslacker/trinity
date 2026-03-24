@@ -19,12 +19,12 @@ static void eventfd_destructor(struct object *obj)
 	close(obj->eventfdobj.fd);
 }
 
-static void eventfd_dump(struct object *obj, bool global)
+static void eventfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct eventfdobj *eo = &obj->eventfdobj;
 
-	output(2, "eventfd fd:%d count:%d flags:%x global:%d\n",
-		eo->fd, eo->count, eo->flags, global);
+	output(2, "eventfd fd:%d count:%d flags:%x scope:%d\n",
+		eo->fd, eo->count, eo->flags, scope);
 }
 
 static int init_eventfd_fds(void)

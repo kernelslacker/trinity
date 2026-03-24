@@ -18,12 +18,12 @@ static void pidfd_destructor(struct object *obj)
 	close(obj->pidfdobj.fd);
 }
 
-static void pidfd_dump(struct object *obj, bool global)
+static void pidfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct pidfdobj *po = &obj->pidfdobj;
 
-	output(2, "pidfd fd:%d pid:%d global:%d\n",
-		po->fd, po->pid, global);
+	output(2, "pidfd fd:%d pid:%d scope:%d\n",
+		po->fd, po->pid, scope);
 }
 
 static int open_pidfd(pid_t pid)

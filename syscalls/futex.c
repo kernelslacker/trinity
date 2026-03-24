@@ -56,7 +56,7 @@ static inline bool futex_pi_cmd(int cmd)
 struct __lock * get_random_lock(void)
 {
 	struct object *obj;
-	bool global;
+	enum obj_scope scope;
 
 	/*
 	 * If a child creates a futex, it should add it to OBJ_LOCAL
@@ -64,11 +64,11 @@ struct __lock * get_random_lock(void)
 	 * a stale address in a global list.
 	 */
 	if (this_child() == NULL)
-		global = OBJ_GLOBAL;
+		scope = OBJ_GLOBAL;
 	else
-		global = OBJ_LOCAL;
+		scope = OBJ_LOCAL;
 
-	obj = get_random_object(OBJ_FUTEX, global);
+	obj = get_random_object(OBJ_FUTEX, scope);
 	if (!obj)
 		obj = get_random_object(OBJ_MMAP_ANON, OBJ_GLOBAL);
 	if (!obj)
@@ -81,7 +81,7 @@ static uint32_t * get_futex_mmap(void)
 {
 	struct object *obj;
 	struct map *map;
-	bool global;
+	enum obj_scope scope;
 
 	/*
 	 * If a child creates a futex, it should add it to OBJ_LOCAL
@@ -89,11 +89,11 @@ static uint32_t * get_futex_mmap(void)
 	 * a stale address in a global list.
 	 */
 	if (this_child() == NULL)
-		global = OBJ_GLOBAL;
+		scope = OBJ_GLOBAL;
 	else
-		global = OBJ_LOCAL;
+		scope = OBJ_LOCAL;
 
-	obj = get_random_object(OBJ_MMAP_ANON, global);
+	obj = get_random_object(OBJ_MMAP_ANON, scope);
 	if (!obj)
 		obj = get_random_object(OBJ_MMAP_ANON, OBJ_GLOBAL);
 	if (!obj)
@@ -118,9 +118,9 @@ static inline void futex_init_lock(struct __lock *thislock)
 	thislock->owner_pid = 0;
 }
 
-static void dump_futex(struct object *obj, __unused__ bool global)
+static void dump_futex(struct object *obj, __unused__ enum obj_scope scope)
 {
-	output(0, "futex: %x owner:%d global:%d\n", obj->lock.futex, obj->lock.owner_pid, global);
+	output(0, "futex: %x owner:%d scope:%d\n", obj->lock.futex, obj->lock.owner_pid, scope);
 }
 
 void create_futexes(void)

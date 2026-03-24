@@ -93,12 +93,12 @@ static void filefd_destructor(struct object *obj)
 	close(obj->fileobj.fd);
 }
 
-static void filefd_dump(struct object *obj, bool global)
+static void filefd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fileobj *fo = &obj->fileobj;
 
-	output(2, "file fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x global:%d\n",
-		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags, global);
+	output(2, "file fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x scope:%d\n",
+		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags, scope);
 }
 
 static int open_files(void)

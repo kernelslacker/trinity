@@ -57,12 +57,12 @@ static void epoll_destructor(struct object *obj)
 	close(obj->epollobj.fd);
 }
 
-static void epoll_dump(struct object *obj, bool global)
+static void epoll_dump(struct object *obj, enum obj_scope scope)
 {
 	struct epollobj *eo = &obj->epollobj;
 
-	output(2, "epoll fd:%d used create1?:%d flags:%x global:%d\n",
-		eo->fd, eo->create1, eo->flags, global);
+	output(2, "epoll fd:%d used create1?:%d flags:%x scope:%d\n",
+		eo->fd, eo->create1, eo->flags, scope);
 }
 
 static int init_epoll_fds(void)

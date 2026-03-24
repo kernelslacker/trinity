@@ -19,11 +19,11 @@ static void timerfd_destructor(struct object *obj)
 	close(obj->timerfdobj.fd);
 }
 
-static void timerfd_dump(struct object *obj, bool global)
+static void timerfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct timerfdobj *to = &obj->timerfdobj;
 
-	output(2, "timerfd fd:%d clockid:%d flags:%x global:%d\n", to->fd, to->clockid, to->flags, global);
+	output(2, "timerfd fd:%d clockid:%d flags:%x scope:%d\n", to->fd, to->clockid, to->flags, scope);
 }
 
 /*

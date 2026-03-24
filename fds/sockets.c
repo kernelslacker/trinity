@@ -404,14 +404,14 @@ static void socket_destructor(struct object *obj)
 			strerror(errno));
 }
 
-static void socket_dump(struct object *obj, bool global)
+static void socket_dump(struct object *obj, enum obj_scope scope)
 {
 	struct socketinfo *si = &obj->sockinfo;
 
-	output(2, "socket fd:%u domain:%u (%s) type:0x%u protocol:%u global:%d\n",
+	output(2, "socket fd:%u domain:%u (%s) type:0x%u protocol:%u scope:%d\n",
 		si->fd, si->triplet.family, get_domain_name(si->triplet.family),
 		si->triplet.type, si->triplet.protocol,
-		global);
+		scope);
 }
 
 static int open_sockets(void)

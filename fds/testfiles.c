@@ -27,12 +27,12 @@ static void testfile_destructor(struct object *obj)
 	free((void *) obj->testfileobj.filename);
 }
 
-static void testfile_dump(struct object *obj, bool global)
+static void testfile_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fileobj *fo = &obj->testfileobj;
 
-	output(2, "testfile fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x global:%d\n",
-		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags, global);
+	output(2, "testfile fd:%d filename:%s flags:%x fopened:%d fcntl_flags:%x scope:%d\n",
+		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags, scope);
 }
 
 static int open_testfile(struct object *obj, char *filename)
