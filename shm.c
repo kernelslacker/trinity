@@ -58,12 +58,7 @@ void init_shm(void)
 	childptrslen += page_size - 1;
 	childptrslen &= PAGE_MASK;
 
-	if (posix_memalign((void **)&shm->children, page_size, childptrslen) != 0) {
-		printf("Failed to allocate child structures.\n");
-		exit(EXIT_FAILURE);
-	}
-
-	memset(shm->children, 0, childptrslen);
+	shm->children = alloc_shared(childptrslen);
 
 	/* We allocate the childdata structs as shared mappings, because
 	 * the forking process needs to peek into each childs syscall records
