@@ -54,6 +54,8 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		break;
 	}
 	}
+
+	rec->a4 = 0;	/* flags must be zero */
 }
 
 struct syscallentry syscall_landlock_add_rule = {

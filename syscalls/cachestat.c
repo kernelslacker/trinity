@@ -38,6 +38,7 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) range;
 	rec->a3 = (unsigned long) cs;
+	rec->a4 = 0;	/* no flags defined yet, must be zero */
 }
 
 struct syscallentry syscall_cachestat = {
