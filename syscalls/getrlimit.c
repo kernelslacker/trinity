@@ -22,6 +22,6 @@ struct syscallentry syscall_getrlimit = {
 	.arg1type = ARG_OP,
 	.arg1list = ARGLIST(getrlimit_resources),
 	.arg2name = "rlim",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_PROCESS,
 };
