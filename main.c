@@ -138,6 +138,7 @@ static void reap_dead_kids(void)
 			} else {
 				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
 			}
+			continue;
 		}
 
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
@@ -836,6 +837,13 @@ void main_loop(void)
 	/* Are there still children running ? */
 	while (pidmap_empty() == false) {
 		static unsigned int last = 0;
+		static unsigned int shutdown_attempts = 0;
+
+		if (++shutdown_attempts > 10) {
+			output(0, "Gave up waiting for children after %u attempts.\n",
+				shutdown_attempts);
+			break;
+		}
 
 		if (last != shm->running_childs) {
 			last = shm->running_childs;
