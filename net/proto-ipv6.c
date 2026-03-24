@@ -215,16 +215,67 @@ static void __inet6_setsockopt(struct sockopt *so)
 
 static void inet6_ulp_setsockopt(struct sockopt *so)
 {
-	// For now, we only support TLS sockets. Extend if/when more ULPs appear.
-	struct tls12_crypto_info_aes_gcm_128 *crypto_info;
-
-	crypto_info = (struct tls12_crypto_info_aes_gcm_128 *) so->optval;
-	crypto_info->info.version = TLS_1_2_VERSION;
-	crypto_info->info.cipher_type = TLS_CIPHER_AES_GCM_128;
+	unsigned char *p = (unsigned char *) so->optval;
 
 	so->level = SOL_TLS;
-	so->optname = TLS_TX;
-	so->optlen = sizeof(struct tls12_crypto_info_aes_gcm_128);
+
+	switch (rand() % 4) {
+	case 0: so->optname = TLS_TX; break;
+	case 1: so->optname = TLS_RX; break;
+	case 2: so->optname = TLS_TX_ZEROCOPY_RO; break;
+	case 3: so->optname = TLS_RX_EXPECT_NO_PAD; break;
+	}
+
+	switch (rand() % 6) {
+	case 0: {
+		struct tls12_crypto_info_aes_gcm_128 *ci = (struct tls12_crypto_info_aes_gcm_128 *) p;
+
+		ci->info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+		ci->info.cipher_type = TLS_CIPHER_AES_GCM_128;
+		so->optlen = sizeof(*ci);
+		break;
+	}
+	case 1: {
+		struct tls12_crypto_info_aes_gcm_256 *ci = (struct tls12_crypto_info_aes_gcm_256 *) p;
+
+		ci->info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+		ci->info.cipher_type = TLS_CIPHER_AES_GCM_256;
+		so->optlen = sizeof(*ci);
+		break;
+	}
+	case 2: {
+		struct tls12_crypto_info_aes_ccm_128 *ci = (struct tls12_crypto_info_aes_ccm_128 *) p;
+
+		ci->info.version = TLS_1_2_VERSION;
+		ci->info.cipher_type = TLS_CIPHER_AES_CCM_128;
+		so->optlen = sizeof(*ci);
+		break;
+	}
+	case 3: {
+		struct tls12_crypto_info_chacha20_poly1305 *ci = (struct tls12_crypto_info_chacha20_poly1305 *) p;
+
+		ci->info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+		ci->info.cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
+		so->optlen = sizeof(*ci);
+		break;
+	}
+	case 4: {
+		struct tls12_crypto_info_sm4_gcm *ci = (struct tls12_crypto_info_sm4_gcm *) p;
+
+		ci->info.version = TLS_1_3_VERSION;
+		ci->info.cipher_type = TLS_CIPHER_SM4_GCM;
+		so->optlen = sizeof(*ci);
+		break;
+	}
+	case 5: {
+		struct tls12_crypto_info_sm4_ccm *ci = (struct tls12_crypto_info_sm4_ccm *) p;
+
+		ci->info.version = TLS_1_3_VERSION;
+		ci->info.cipher_type = TLS_CIPHER_SM4_CCM;
+		so->optlen = sizeof(*ci);
+		break;
+	}
+	}
 }
 
 static void inet6_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
