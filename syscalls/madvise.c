@@ -48,7 +48,7 @@ struct syscallentry syscall_madvise = {
 };
 
 static unsigned long process_madvise_behaviours[] = {
-	MADV_COLD, MADV_PAGEOUT,
+	MADV_COLD, MADV_PAGEOUT, MADV_WILLNEED,
 };
 static unsigned long process_madvise_flags[] = {
 	0,
@@ -64,7 +64,7 @@ struct syscallentry syscall_process_madvise = {
 	.arg3name = "vlen",
 	.arg3type = ARG_LEN,
 	.arg4name = "behaviour",
-	.arg4type = ARG_LIST,
+	.arg4type = ARG_OP,
 	.arg4list = ARGLIST(process_madvise_behaviours),
 	.arg5name = "flags",
 	.arg5type = ARG_OP,
