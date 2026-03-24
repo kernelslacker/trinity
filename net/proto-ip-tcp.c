@@ -1,6 +1,8 @@
 #include <stdlib.h>
+#include <string.h>
 #include <linux/tcp.h>
 #include "net.h"
+#include "random.h"
 #include "compat.h"
 
 static const unsigned int tcp_opts[] = {
@@ -18,14 +20,33 @@ static const unsigned int tcp_opts[] = {
 	TCP_IS_MPTCP, TCP_RTO_MAX_MS, TCP_RTO_MIN_US, TCP_DELACK_MAX_US,
 };
 
+static const char *ulp_names[] = { "tls", "mptcp" };
+
+static const char *cc_algos[] = { "cubic", "reno", "bbr", "dctcp", "vegas", "westwood" };
+
 void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	char *ptr;
+	const char *str;
+
 	so->optname = RAND_ARRAY(tcp_opts);
 
-	if (so->optname == TCP_ULP) {
-		char *ptr = (char *) so->optval;
+	switch (so->optname) {
+	case TCP_ULP:
+		ptr = (char *) so->optval;
+		str = RAND_ARRAY(ulp_names);
+		so->optlen = strlen(str) + 1;
+		memcpy(ptr, str, so->optlen);
+		break;
 
-		sprintf(ptr, "tls");
-		so->optlen = sizeof("tls");
+	case TCP_CONGESTION:
+		ptr = (char *) so->optval;
+		str = RAND_ARRAY(cc_algos);
+		so->optlen = strlen(str) + 1;
+		memcpy(ptr, str, so->optlen);
+		break;
+
+	default:
+		break;
 	}
 }
