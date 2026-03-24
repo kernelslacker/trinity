@@ -193,6 +193,8 @@ retry:		i = rand() % max_children;
 		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			goto retry;
+		if (pid == mainpid)
+			goto retry;
 		break;
 
 	case 1:	pid = 0;
