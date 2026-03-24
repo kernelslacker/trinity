@@ -1,9 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "fd.h"
 #include "list.h"
 #include "locks.h"
 #include "objects.h"
+#include "pids.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -150,6 +152,14 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
 
+	/* Children must not mutate global objects — the objhead metadata
+	 * is in shared memory but the objects/arrays are in per-process
+	 * heap (COW after fork).  Mixing the two corrupts everything. */
+	if (global == OBJ_GLOBAL && getpid() != mainpid) {
+		free(obj);
+		return;
+	}
+
 	if (global == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
@@ -290,6 +300,9 @@ static void __destroy_object(struct object *obj, bool global, enum objecttype ty
 
 void destroy_object(struct object *obj, bool global, enum objecttype type)
 {
+	if (global == OBJ_GLOBAL && getpid() != mainpid)
+		return;
+
 	if (global == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
@@ -379,6 +392,9 @@ void remove_object_by_fd(int fd)
 	struct fd_hash_entry *entry;
 	struct object *obj;
 	enum objecttype type;
+
+	if (getpid() != mainpid)
+		return;
 
 	lock(&shm->objlock);
 
