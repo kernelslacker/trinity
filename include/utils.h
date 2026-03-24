@@ -2,6 +2,7 @@
 
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #define GB(_x) (_x * 1024UL * MB(1))
 
 void * alloc_shared(unsigned int size);
+bool range_overlaps_shared(unsigned long addr, unsigned long len);
 
 void * __zmalloc(size_t size, const char *func);
 #define zmalloc(size)	__zmalloc(size, __func__)

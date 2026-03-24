@@ -51,7 +51,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 * Make sure we don't unmap the shm region — children fuzzing
 	 * munmap can blow away trinity's shared state and crash everyone.
 	 */
-	if (range_overlaps_shm(rec->a1, rec->a2)) {
+	if (range_overlaps_shared(rec->a1, rec->a2)) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
