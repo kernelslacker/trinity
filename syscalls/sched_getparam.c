@@ -10,5 +10,5 @@ struct syscallentry syscall_sched_getparam = {
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
 	.arg2name = "param",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 };

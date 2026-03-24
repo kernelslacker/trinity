@@ -11,8 +11,8 @@ struct syscallentry syscall_get_robust_list = {
 	.arg1name = "pid",
 	.arg1type = ARG_PID,
 	.arg2name = "head_ptr",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 	.arg3name = "len_ptr",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_PROCESS,
 };

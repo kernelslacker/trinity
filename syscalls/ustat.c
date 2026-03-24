@@ -8,6 +8,6 @@ struct syscallentry syscall_ustat = {
 	.num_args = 2,
 	.arg1name = "dev",
 	.arg2name = "ubuf",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_VFS,
 };
