@@ -98,15 +98,15 @@ static int shm_is_corrupt(void)
  *
  * The reaper lock protects against these happening at the same time.
  */
-void reap_child(struct childdata *child)
+void reap_child(struct childdata *child, int childno)
 {
 	/* Don't reap a child again */
-	if( pids[child->num] == EMPTY_PIDSLOT )
+	if( pids[childno] == EMPTY_PIDSLOT )
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	unlock(&child->syscall.lock);
 	__atomic_sub_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
-	pids[child->num] = EMPTY_PIDSLOT;
+	pids[childno] = EMPTY_PIDSLOT;
 }
 
 /* Make sure there's no dead kids lying around.
@@ -137,7 +137,7 @@ static void reap_dead_kids(void)
 			/* If it disappeared, reap it. */
 			if (errno == ESRCH) {
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
-				reap_child(shm->children[i]);
+				reap_child(shm->children[i], i);
 				reaped++;
 			} else {
 				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
@@ -186,7 +186,7 @@ static void kill_all_kids(void)
 		} else {
 			/* check we don't have anything stale in the pidlist */
 			if (errno == ESRCH)
-				reap_child(shm->children[i]);
+				reap_child(shm->children[i], i);
 		}
 	}
 
@@ -246,7 +246,7 @@ static FILE * open_child_pidstat(pid_t target)
 	return fp;
 }
 
-static char get_pid_state(struct childdata *child)
+static char get_pid_state(int childno)
 {
 	size_t n = 0;
 	char *line = NULL;
@@ -258,7 +258,7 @@ static char get_pid_state(struct childdata *child)
 	if (getpid() != mainpid)
 		BUG("get_pid_state can only be called from main!\n");
 
-	fp = pidstatfiles[child->num];
+	fp = pidstatfiles[childno];
 	if (fp == NULL)
 		return '?';
 
@@ -304,7 +304,7 @@ static void dump_pid_stack(int pid)
 	fclose(fp);
 }
 
-static void stuck_syscall_info(struct childdata *child)
+static void stuck_syscall_info(struct childdata *child, int childno)
 {
 	struct syscallrecord *rec;
 	unsigned int callno;
@@ -313,7 +313,7 @@ static void stuck_syscall_info(struct childdata *child)
 	bool do32;
 	char state;
 
-	pid = pids[child->num];
+	pid = pids[childno];
 
 	if (shm->debug == false)
 		return;
@@ -343,7 +343,7 @@ static void stuck_syscall_info(struct childdata *child)
 	unlock(&rec->lock);
 
 	output(0, "child %d (pid %u. state:%d) Stuck in syscall %d:%s%s%s.\n",
-		child->num, pid, state, callno,
+		childno, pid, state, callno,
 		print_syscall_name(callno, do32),
 		do32 ? " (32bit)" : "",
 		fdstr);
@@ -356,7 +356,7 @@ static void stuck_syscall_info(struct childdata *child)
  * recorded before making its last syscall.
  * If no progress is being made, send SIGKILLs to it.
  */
-static bool is_child_making_progress(struct childdata *child)
+static bool is_child_making_progress(struct childdata *child, int childno)
 {
 	struct syscallrecord *rec;
 	struct timespec tp;
@@ -364,7 +364,7 @@ static bool is_child_making_progress(struct childdata *child)
 	pid_t pid;
 	char state;
 
-	pid = pids[child->num];
+	pid = pids[childno];
 
 	if (pid == EMPTY_PIDSLOT)
 		return true;
@@ -400,7 +400,7 @@ static bool is_child_making_progress(struct childdata *child)
 
 	/* if we're blocked in uninteruptible sleep, SIGKILL won't help.
 	 * Still increment kill_count so we eventually reap the slot. */
-	state = get_pid_state(child);
+	state = get_pid_state(childno);
 	if (state == 'D') {
 		child->kill_count++;
 		return false;
@@ -408,9 +408,9 @@ static bool is_child_making_progress(struct childdata *child)
 
 	/* After 30 seconds of no progress, send a kill signal. */
 	if (diff == 30) {
-		stuck_syscall_info(child);
+		stuck_syscall_info(child, childno);
 		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
-				child->num, pid);
+				childno, pid);
 		child->kill_count++;
 		kill_pid(pid);
 	}
@@ -426,17 +426,17 @@ static bool is_child_making_progress(struct childdata *child)
 	if (child->kill_count >= 10) {
 		output(0, "child %d (pid %u) unkillable after %u attempts, "
 			"forcibly reaping slot.\n",
-			child->num, pid, child->kill_count);
-		if (pidstatfiles[child->num])
-			fclose(pidstatfiles[child->num]);
-		pidstatfiles[child->num] = NULL;
-		reap_child(child);
-		replace_child(child->num);
+			childno, pid, child->kill_count);
+		if (pidstatfiles[childno])
+			fclose(pidstatfiles[childno]);
+		pidstatfiles[childno] = NULL;
+		reap_child(child, childno);
+		replace_child(childno);
 		return true;
 	}
 
 	debugf("sending another SIGKILL to child %u (pid:%u). [kill count:%u] [diff:%lu]\n",
-		child->num, pid, child->kill_count, diff);
+		childno, pid, child->kill_count, diff);
 	child->kill_count++;
 	kill_pid(pid);
 
@@ -557,14 +557,11 @@ static void fork_children(void)
 
 static void handle_childsig(int childno, int childstatus, bool stop)
 {
-	struct childdata *child;
 	int __sig;
 	pid_t pid = pids[childno];
 
 	if (shm->children == NULL)
 		return;
-
-	child = shm->children[childno];
 
 	if (stop == true)
 		__sig = WSTOPSIG(childstatus);
@@ -579,7 +576,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		ptrace(PTRACE_DETACH, pid, NULL, NULL);
 		kill_pid(pid);
 		//FIXME: Won't we create a zombie here?
-		reap_child(shm->children[childno]);
+		reap_child(shm->children[childno], childno);
 		replace_child(childno);
 		return;
 
@@ -600,7 +597,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 			debugf("got a signal from child %d (pid %d) (%s)\n",
 					childno, pid, strsignal(WTERMSIG(childstatus)));
 		}
-		reap_child(shm->children[childno]);
+		reap_child(shm->children[childno], childno);
 		if (pidstatfiles[childno])
 			fclose(pidstatfiles[childno]);
 		pidstatfiles[childno] = NULL;
@@ -641,7 +638,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 
 			debugf("Child %d (pid:%u) exited after %ld operations.\n",
 				childno, childpid, child->op_nr);
-			reap_child(shm->children[childno]);
+			reap_child(shm->children[childno], childno);
 			if (pidstatfiles[childno] != NULL)
 				fclose(pidstatfiles[childno]);
 			pidstatfiles[childno] = NULL;
@@ -720,7 +717,7 @@ static void check_children_progressing(void)
 	for_each_child(i) {
 		struct childdata *child = shm->children[i];
 
-		if (is_child_making_progress(child) == false)
+		if (is_child_making_progress(child, i) == false)
 			stall_count++;
 
 		if (child->op_nr > hiscore)

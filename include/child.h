@@ -52,7 +52,7 @@ void child_process(struct childdata *child, int childno);
 
 void set_dontkillme(struct childdata *child, bool state);
 
-void reap_child(struct childdata *child);
+void reap_child(struct childdata *child, int childno);
 
 /* Childops */
 bool random_syscall(struct childdata *child);

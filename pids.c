@@ -97,17 +97,13 @@ void dump_childnos(void)
 	for (i = 0; i < max_children; i += 8) {
 		sptr += sprintf(sptr, "%u-%u: ", i, i + 7);
 		for (j = 0; j < 8; j++) {
-			struct childdata *child;
-
 			if (i + j >= max_children)
 				break;
 
-			child = shm->children[i + j];
-
-			if (pids[child->num] == EMPTY_PIDSLOT) {
+			if (pids[i + j] == EMPTY_PIDSLOT) {
 				sptr += sprintf(sptr, "[empty] ");
 			} else {
-				pid_t pid = pids[child->num];
+				pid_t pid = pids[i + j];
 
 				sptr += sprintf(sptr, "%u ", pid);
 			}
