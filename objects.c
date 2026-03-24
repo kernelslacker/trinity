@@ -72,13 +72,15 @@ void fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 
 void fd_hash_remove(int fd)
 {
-	unsigned int slot, next;
+	unsigned int slot, next, i;
 
 	if (fd < 0)
 		return;
 
 	slot = fd_hash_slot(fd);
-	while (fd_hash[slot].fd != -1) {
+	for (i = 0; i < FD_HASH_SIZE; i++) {
+		if (fd_hash[slot].fd == -1)
+			return;
 		if (fd_hash[slot].fd == fd) {
 			/* Delete and re-hash any entries displaced by this one */
 			fd_hash[slot].fd = -1;
@@ -98,13 +100,15 @@ void fd_hash_remove(int fd)
 
 static struct fd_hash_entry *fd_hash_lookup(int fd)
 {
-	unsigned int slot;
+	unsigned int slot, i;
 
 	if (fd < 0)
 		return NULL;
 
 	slot = fd_hash_slot(fd);
-	while (fd_hash[slot].fd != -1) {
+	for (i = 0; i < FD_HASH_SIZE; i++) {
+		if (fd_hash[slot].fd == -1)
+			return NULL;
 		if (fd_hash[slot].fd == fd)
 			return &fd_hash[slot];
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
