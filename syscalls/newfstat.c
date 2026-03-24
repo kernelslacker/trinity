@@ -9,7 +9,7 @@ struct syscallentry syscall_newfstat = {
 	.arg1name = "fd",
 	.arg1type = ARG_FD,
 	.arg2name = "statbuf",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
@@ -37,7 +37,7 @@ struct syscallentry syscall_newfstatat = {
 	.arg2name = "filename",
 	.arg2type = ARG_PATHNAME,
 	.arg3name = "statbuf",
-	.arg3type = ARG_ADDRESS,
+	.arg3type = ARG_NON_NULL_ADDRESS,
 	.arg4name = "flag",
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(newfstatat_flags),
