@@ -77,6 +77,7 @@ struct syscallentry syscall_open = {
 	.arg3name = "mode",
 	.arg3type = ARG_MODE_T,
 	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 	.sanitise = sanitise_open,
 	.group = GROUP_VFS,
 };
