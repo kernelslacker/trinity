@@ -168,7 +168,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 
 	/* format strings targeting kernel printk specifiers. */
 	case 8:
-		for (i = 0; i < len; i += 2) {
+		for (i = 0; i + 1 < len; i += 2) {
 			ptr[i] = '%';
 			switch (rand() % 8) {
 			case 0:	ptr[i + 1] = 'd'; break;	/* signed decimal integer */
