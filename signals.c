@@ -124,6 +124,7 @@ void setup_main_signals(void)
 	(void)signal(SIGXFSZ, SIG_IGN);
 	(void)signal(SIGXCPU, SIG_IGN);
 	(void)signal(SIGPIPE, SIG_IGN);
+	(void)signal(SIGIO, SIG_IGN);
 
 	/*
 	 * Use SA_SIGINFO for fault/core-dump signals so we can distinguish
