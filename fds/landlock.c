@@ -1,14 +1,17 @@
 /* landlock FD provider. */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <linux/landlock.h>
 
 #include "fd.h"
 #include "objects.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -24,6 +27,46 @@ static void landlock_dump(struct object *obj, bool global)
 		obj->landlockobj.fd, global);
 }
 
+static const char *landlock_paths[] = {
+	"/tmp", "/dev", "/proc", "/sys", "/dev/shm",
+};
+
+/*
+ * Add a few path-beneath rules to the landlock ruleset so it
+ * has actual content. Without rules, the ruleset is an empty
+ * shell and landlock_restrict_self is a no-op.
+ *
+ * We deliberately do NOT call landlock_restrict_self here —
+ * that would sandbox the fuzzer itself. We just populate the
+ * ruleset so that syscalls operating on it exercise real kernel paths.
+ */
+static void arm_landlock(int ruleset_fd)
+{
+#ifdef __NR_landlock_add_rule
+	unsigned int i, count;
+
+	count = 1 + (rand() % 3);
+	for (i = 0; i < count; i++) {
+		struct landlock_path_beneath_attr attr;
+		const char *path;
+		int path_fd;
+
+		path = landlock_paths[rand() % ARRAY_SIZE(landlock_paths)];
+		path_fd = open(path, O_PATH | O_CLOEXEC);
+		if (path_fd < 0)
+			continue;
+
+		memset(&attr, 0, sizeof(attr));
+		attr.parent_fd = path_fd;
+		attr.allowed_access = 1 + (rand() % 0xfff);
+
+		syscall(__NR_landlock_add_rule, ruleset_fd,
+			LANDLOCK_RULE_PATH_BENEATH, &attr, 0);
+		close(path_fd);
+	}
+#endif
+}
+
 static int open_landlock_fd(void)
 {
 #ifdef __NR_landlock_create_ruleset
@@ -35,6 +78,8 @@ static int open_landlock_fd(void)
 	fd = syscall(__NR_landlock_create_ruleset, &attr, sizeof(attr), 0);
 	if (fd < 0)
 		return false;
+
+	arm_landlock(fd);
 
 	obj = alloc_object();
 	obj->landlockobj.fd = fd;
