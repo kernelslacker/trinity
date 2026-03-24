@@ -5,23 +5,42 @@
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
 #include <stdlib.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"
 
 static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
-	struct sockaddr_pkt *pkt;
-	unsigned int i;
+	struct sockaddr_ll *ll;
 
-	//TODO: See also sockaddr_ll
-	pkt = zmalloc(sizeof(struct sockaddr_pkt));
+	ll = zmalloc(sizeof(struct sockaddr_ll));
 
-	pkt->spkt_family = PF_PACKET;
-	for (i = 0; i < 14; i++)
-		pkt->spkt_device[i] = rand();
-	*addr = (struct sockaddr *) pkt;
-	*addrlen = sizeof(struct sockaddr_pkt);
+	ll->sll_family = PF_PACKET;
+
+	switch (rand() % 4) {
+	case 0:
+		ll->sll_protocol = htons(ETH_P_ALL);
+		break;
+	case 1:
+		ll->sll_protocol = htons(ETH_P_IP);
+		break;
+	case 2:
+		ll->sll_protocol = htons(ETH_P_ARP);
+		break;
+	case 3:
+		ll->sll_protocol = htons(rand());
+		break;
+	}
+
+	ll->sll_ifindex = rand() % 4;	/* 0=any, 1=lo, 2-3=maybe eth */
+	ll->sll_hatype = rand() % 2 ? 1 : rand();	/* 1=ARPHRD_ETHER */
+	ll->sll_pkttype = rand() % 5;	/* HOST..OTHERHOST */
+	ll->sll_halen = rand() % 9;	/* 0-8 */
+	generate_rand_bytes(ll->sll_addr, 8);
+
+	*addr = (struct sockaddr *) ll;
+	*addrlen = sizeof(struct sockaddr_ll);
 }
 
 
@@ -87,6 +106,36 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		so->optlen = sizeof(struct tpacket_req3);
 		break;
 
+	case PACKET_FANOUT: {
+		/* type in low 16 bits, flags in high 16 bits */
+		unsigned int *optval32 = (unsigned int *) so->optval;
+		unsigned int type = rand() % 7;	/* HASH..CBPF */
+		unsigned int flags = 0;
+
+		if (RAND_BOOL())
+			flags |= 0x1000;	/* PACKET_FANOUT_FLAG_ROLLOVER */
+		if (RAND_BOOL())
+			flags |= 0x2000;	/* PACKET_FANOUT_FLAG_UNIQUEID */
+		if (RAND_BOOL())
+			flags |= 0x4000;	/* PACKET_FANOUT_FLAG_DEFRAG */
+		*optval32 = type | (flags << 16) | ((rand() % 256) << 8);
+		so->optlen = sizeof(unsigned int);
+		break;
+	}
+
+	case PACKET_ADD_MEMBERSHIP:
+	case PACKET_DROP_MEMBERSHIP: {
+		struct packet_mreq *mreq = (struct packet_mreq *) so->optval;
+
+		memset(mreq, 0, sizeof(struct packet_mreq));
+		mreq->mr_ifindex = rand() % 4;
+		mreq->mr_type = rand() % 4 + 1;	/* MULTICAST..ALLMULTI */
+		mreq->mr_alen = rand() % 9;
+		generate_rand_bytes((unsigned char *) mreq->mr_address, 8);
+		so->optlen = sizeof(struct packet_mreq);
+		break;
+	}
+
 	default:
 		break;
 	}
@@ -95,6 +144,7 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 static struct socket_triplet packet_triplets[] = {
 	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_PACKET },
 	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_RAW },
+	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_DGRAM },
 };
 
 const struct netproto proto_packet = {

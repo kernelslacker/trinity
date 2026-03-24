@@ -1,7 +1,108 @@
 #include <stdlib.h>
+#include <string.h>
 #include "net.h"
 #include "compat.h"
 #include "random.h"
+
+/* Bluetooth address — 6 bytes, little-endian */
+typedef struct {
+	unsigned char b[6];
+} bdaddr_t;
+
+/* HCI socket address */
+struct sockaddr_hci {
+	sa_family_t	hci_family;
+	unsigned short	hci_dev;
+	unsigned short	hci_channel;
+};
+
+#ifndef HCI_CHANNEL_RAW
+#define HCI_CHANNEL_RAW		0
+#define HCI_CHANNEL_USER	1
+#define HCI_CHANNEL_MONITOR	2
+#define HCI_CHANNEL_CONTROL	3
+#define HCI_CHANNEL_LOGGING	4
+#endif
+
+/* L2CAP socket address */
+struct sockaddr_l2 {
+	sa_family_t	l2_family;
+	unsigned short	l2_psm;
+	bdaddr_t	l2_bdaddr;
+	unsigned short	l2_cid;
+	unsigned char	l2_bdaddr_type;
+};
+
+/* RFCOMM socket address */
+struct sockaddr_rc {
+	sa_family_t	rc_family;
+	bdaddr_t	rc_bdaddr;
+	unsigned char	rc_channel;
+};
+
+/* SCO socket address */
+struct sockaddr_sco {
+	sa_family_t	sco_family;
+	bdaddr_t	sco_bdaddr;
+};
+
+static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+{
+	switch (rand() % 4) {
+	case 0: {
+		/* HCI — raw access to Bluetooth controller */
+		struct sockaddr_hci *hci;
+
+		hci = zmalloc(sizeof(struct sockaddr_hci));
+		hci->hci_family = PF_BLUETOOTH;
+		hci->hci_dev = rand() % 4;
+		hci->hci_channel = rand() % 5;	/* RAW..LOGGING */
+		*addr = (struct sockaddr *) hci;
+		*addrlen = sizeof(struct sockaddr_hci);
+		break;
+	}
+
+	case 1: {
+		/* L2CAP — logical link control */
+		struct sockaddr_l2 *l2;
+
+		l2 = zmalloc(sizeof(struct sockaddr_l2));
+		l2->l2_family = PF_BLUETOOTH;
+		l2->l2_psm = rand() % 2 ? 1 : rand();	/* 1=SDP */
+		generate_rand_bytes(l2->l2_bdaddr.b, 6);
+		l2->l2_cid = rand();
+		l2->l2_bdaddr_type = rand() % 3;	/* BR/EDR, LE public, LE random */
+		*addr = (struct sockaddr *) l2;
+		*addrlen = sizeof(struct sockaddr_l2);
+		break;
+	}
+
+	case 2: {
+		/* RFCOMM — serial port emulation */
+		struct sockaddr_rc *rc;
+
+		rc = zmalloc(sizeof(struct sockaddr_rc));
+		rc->rc_family = PF_BLUETOOTH;
+		generate_rand_bytes(rc->rc_bdaddr.b, 6);
+		rc->rc_channel = rand() % 31 + 1;	/* 1-30 valid */
+		*addr = (struct sockaddr *) rc;
+		*addrlen = sizeof(struct sockaddr_rc);
+		break;
+	}
+
+	case 3: {
+		/* SCO — synchronous connection oriented (voice) */
+		struct sockaddr_sco *sco;
+
+		sco = zmalloc(sizeof(struct sockaddr_sco));
+		sco->sco_family = PF_BLUETOOTH;
+		generate_rand_bytes(sco->sco_bdaddr.b, 6);
+		*addr = (struct sockaddr *) sco;
+		*addrlen = sizeof(struct sockaddr_sco);
+		break;
+	}
+	}
+}
 
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
@@ -88,6 +189,7 @@ static struct socket_triplet bluetooth_triplets[] = {
 
 const struct netproto proto_bluetooth = {
 	.name = "bluetooth",
+	.gen_sockaddr = bluetooth_gen_sockaddr,
 	.setsockopt = bluetooth_setsockopt,
 	.valid_triplets = bluetooth_triplets,
 	.nr_triplets = ARRAY_SIZE(bluetooth_triplets),
