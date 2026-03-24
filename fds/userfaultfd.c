@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/userfaultfd.h>
 
 #include "fd.h"
 #include "userfaultfd.h"
@@ -37,6 +39,22 @@ static void userfaultfd_dump(struct object *obj, bool global)
 	output(2, "userfault fd:%d flags:%x global:%d\n", uo->fd, uo->flags, global);
 }
 
+/*
+ * Perform the UFFDIO_API handshake so the kernel accepts subsequent
+ * userfaultfd ioctls (UFFDIO_REGISTER, UFFDIO_COPY, etc.) on this fd.
+ * Without the handshake, all other ioctls return -EINVAL.
+ */
+static void arm_userfaultfd(int fd)
+{
+	struct uffdio_api api;
+
+	memset(&api, 0, sizeof(api));
+	api.api = UFFD_API;
+	api.features = 0;
+
+	ioctl(fd, UFFDIO_API, &api);
+}
+
 static int open_userfaultfd(void)
 {
 	struct object *obj;
@@ -49,6 +67,8 @@ static int open_userfaultfd(void)
 	fd = userfaultfd_create(flags);
 	if (fd < 0)
 		return false;
+
+	arm_userfaultfd(fd);
 
 	obj = alloc_object();
 	obj->userfaultobj.fd = fd;
@@ -79,7 +99,7 @@ static int get_rand_userfaultfd(void)
 {
 	struct object *obj;
 
-	/* check if eventfd unavailable/disabled. */
+	/* check if userfaultfd unavailable/disabled. */
 	if (objects_empty(OBJ_FD_USERFAULTFD) == true)
 		return -1;
 
