@@ -67,7 +67,7 @@ void map_dump(struct object *obj, enum obj_scope scope)
 
 	m = &obj->map;
 
-	sizeunit(m->size, buf);
+	sizeunit(m->size, buf, sizeof(buf));
 	output(2, " start: %p size:%s  name: %s scope:%d\n",
 		m->ptr, buf, m->name, scope);
 }

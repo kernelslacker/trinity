@@ -246,7 +246,7 @@ static FILE * open_child_pidstat(pid_t target)
 	FILE *fp;
 	char filename[80];
 
-	sprintf(filename, "/proc/%d/stat", target);
+	snprintf(filename, sizeof(filename), "/proc/%d/stat", target);
 
 	fp = fopen(filename, "r");
 
@@ -284,7 +284,7 @@ static void dump_pid_stack(int pid)
 	FILE *fp;
 	char filename[80];
 
-	sprintf(filename, "/proc/%d/stack", pid);
+	snprintf(filename, sizeof(filename), "/proc/%d/stack", pid);
 
 	fp = fopen(filename, "r");
 	if (fp == NULL) {
@@ -340,7 +340,7 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	/* we can only be 'stuck' if we're still doing the syscall. */
 	if (state == BEFORE) {
 		if (check_if_fd(rec) == true) {
-			sprintf(fdstr, "(fd = %u)", (unsigned int) rec->a1);
+			snprintf(fdstr, sizeof(fdstr), "(fd = %u)", (unsigned int) rec->a1);
 			child->fd_lifetime = 0;
 			//close(rec->a1);
 			//TODO: Remove the fd from the object list.
@@ -756,7 +756,7 @@ static void print_stats(void)
 			last_tp = now;
 
 			if (stall_count > 0 && stall_count < 10000)
-				sprintf(stalltxt, " STALLED:%u", stall_count);
+				snprintf(stalltxt, sizeof(stalltxt), " STALLED:%u", stall_count);
 			output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec\n",
 				shm->stats.op_count,
 				shm->stats.failures, shm->stats.successes,

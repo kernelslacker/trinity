@@ -230,7 +230,7 @@ static void init_child(struct childdata *child, int childno)
 		bind_child_to_cpu(child);
 
 	memset(childname, 0, sizeof(childname));
-	sprintf(childname, "trinity-c%d", childno);
+	snprintf(childname, sizeof(childname), "trinity-c%d", childno);
 	prctl(PR_SET_NAME, (unsigned long) &childname);
 
 	oom_score_adj(500);

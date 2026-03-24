@@ -63,7 +63,7 @@ static int init_memfd_fds(void)
 		char namestr[] = "memfdN";
 		int fd;
 
-		sprintf(namestr, "memfd%u", i + 1);
+		snprintf(namestr, sizeof(namestr), "memfd%u", i + 1);
 
 		fd = memfd_create(namestr, flags[i]);
 		if (fd < 0)

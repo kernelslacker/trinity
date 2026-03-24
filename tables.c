@@ -151,27 +151,35 @@ void count_syscalls_enabled(void)
 		/* first the 32bit syscalls */
 		if (shm->nr_active_32bit_syscalls != 0) {
 			char *p = str32;
+			char *end = str32 + sizeof(str32);
+			int n;
 
-			p += sprintf(p, "%d enabled", shm->nr_active_32bit_syscalls);
+			n = snprintf(p, end - p, "%d enabled", shm->nr_active_32bit_syscalls);
+			if (n > 0 && n < end - p)
+				p += n;
 
 			nr = max_nr_32bit_syscalls - shm->nr_active_32bit_syscalls;
 			if (nr != 0)
-				p += sprintf(p, ", %u disabled", nr);
+				snprintf(p, end - p, ", %u disabled", nr);
 		} else {
-			sprintf(str32, "all disabled.");
+			snprintf(str32, sizeof(str32), "all disabled.");
 		}
 
 		/* now the 64bit syscalls. */
 		if (shm->nr_active_64bit_syscalls != 0) {
 			char *p = str64;
+			char *end = str64 + sizeof(str64);
+			int n;
 
-			p += sprintf(p, "%d enabled", shm->nr_active_64bit_syscalls);
+			n = snprintf(p, end - p, "%d enabled", shm->nr_active_64bit_syscalls);
+			if (n > 0 && n < end - p)
+				p += n;
 
 			nr = max_nr_64bit_syscalls - shm->nr_active_64bit_syscalls;
 			if (nr != 0)
-				p += sprintf(p, ", %u disabled", nr);
+				snprintf(p, end - p, ", %u disabled", nr);
 		} else {
-			sprintf(str64, "all disabled");
+			snprintf(str64, sizeof(str64), "all disabled");
 		}
 
 		output(0, "32-bit syscalls: %s.  64-bit syscalls: %s.\n",

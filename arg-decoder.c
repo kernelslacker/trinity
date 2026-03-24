@@ -1,6 +1,7 @@
 /*
  * Routines to take a syscallrecord and turn it into an ascii representation.
  */
+#include <stdarg.h>
 #include <stdio.h>
 #include "arch.h"	//PAGE_MASK
 #include "arg-decoder.h"
@@ -11,43 +12,69 @@
 #include "tables.h"
 #include "utils.h"
 
-static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
+/*
+ * Bounded sprintf for the sptr/end rendering pattern.
+ * Advances sptr by the number of characters written, clamped to
+ * available space so we never write past end.
+ */
+static char * bprintf(char *sptr, char *end, const char *fmt, ...)
+	__attribute__((format(printf, 3, 4)));
+
+static char * bprintf(char *sptr, char *end, const char *fmt, ...)
+{
+	va_list ap;
+	int n;
+
+	if (sptr >= end)
+		return sptr;
+
+	va_start(ap, fmt);
+	n = vsnprintf(sptr, end - sptr, fmt, ap);
+	va_end(ap);
+
+	if (n > 0)
+		sptr += (n < end - sptr) ? n : end - sptr - 1;
+
+	return sptr;
+}
+
+static char * decode_argtype(char *sptr, char *end, unsigned long reg, enum argtype type)
 {
 	if (is_typed_fdarg(type)) {
-		sptr += sprintf(sptr, "%ld", (long) reg);
+		sptr = bprintf(sptr, end, "%ld", (long) reg);
 		return sptr;
 	}
 
 	switch (type) {
 	case ARG_PATHNAME:
-		sptr += sprintf(sptr, "\"%s\"", (char *) reg);
+		sptr = bprintf(sptr, end, "\"%s\"", (char *) reg);
 		break;
 	case ARG_PID:
 	case ARG_FD:
 	case ARG_SOCKETINFO:
-		sptr += sprintf(sptr, "%ld", (long) reg);
+		sptr = bprintf(sptr, end, "%ld", (long) reg);
 		break;
 	case ARG_MODE_T:
-		sptr += sprintf(sptr, "%o", (mode_t) reg);
+		sptr = bprintf(sptr, end, "%o", (mode_t) reg);
 		break;
 
 	case ARG_ADDRESS:
 	case ARG_NON_NULL_ADDRESS:
 	case ARG_IOVEC:
 	case ARG_SOCKADDR:
-		sptr += sprintf(sptr, "0x%lx", reg);
+		sptr = bprintf(sptr, end, "0x%lx", reg);
 		break;
 
 	case ARG_MMAP:
 		/* Although generic sanitise has set this to a map struct,
 		 * common_set_mmap_ptr_len() will subsequently set it to the ->ptr
 		 * in the per syscall ->sanitise routine. */
-		sptr += sprintf(sptr, "%p", (void *) reg);
+		sptr = bprintf(sptr, end, "%p", (void *) reg);
 		break;
 
 	case ARG_OP:
 	case ARG_LIST:
-		sptr += sprintf(sptr, "0x%lx", reg);
+		sptr = bprintf(sptr, end, "0x%lx", reg);
 		break;
 
 	case ARG_UNDEFINED:
@@ -58,10 +85,10 @@ static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 	case ARG_SOCKADDRLEN:
 		if (((long) reg < -16384) || ((long) reg > 16384)) {
 			/* Print everything outside -16384 and 16384 as hex. */
-			sptr += sprintf(sptr, "0x%lx", reg);
+			sptr = bprintf(sptr, end, "0x%lx", reg);
 		} else {
 			/* Print everything else as signed decimal. */
-			sptr += sprintf(sptr, "%ld", (long) reg);
+			sptr = bprintf(sptr, end, "%ld", (long) reg);
 		}
 		break;
 	default:
@@ -71,7 +98,7 @@ static char * decode_argtype(char *sptr, unsigned long reg, enum argtype type)
 	return sptr;
 }
 
-static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int argnum, struct syscallentry *entry)
+static char * render_arg(struct syscallrecord *rec, char *sptr, char *end, unsigned int argnum, struct syscallentry *entry)
 {
 	const char *name = NULL;
 	unsigned long reg = 0;
@@ -105,18 +132,18 @@ static char * render_arg(struct syscallrecord *rec, char *sptr, unsigned int arg
 	}
 
 	if (argnum != 1)
-		sptr += sprintf(sptr, ", ");
+		sptr = bprintf(sptr, end, ", ");
 
-	sptr += sprintf(sptr, "%s=", name);
+	sptr = bprintf(sptr, end, "%s=", name);
 
-	sptr = decode_argtype(sptr, reg, type);
+	sptr = decode_argtype(sptr, end, reg, type);
 
 	if (entry->decode != NULL) {
 		char *str;
 
 		str = entry->decode(rec, argnum);
 		if (str != NULL) {
-			sptr += sprintf(sptr, "%s", str);
+			sptr = bprintf(sptr, end, "%s", str);
 			free(str);
 		}
 	}
@@ -132,6 +159,7 @@ static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *buffe
 	struct syscallentry *entry;
 	struct childdata *child = this_child();
 	char *sptr = bufferstart;
+	char *end = bufferstart + PREBUFFER_LEN;
 	unsigned int i;
 	unsigned int syscallnr;
 
@@ -140,17 +168,17 @@ static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *buffe
 	if (entry == NULL)
 		return 0;
 
-	sptr += sprintf(sptr, "[child%u:%u] [%lu] %s",
+	sptr = bprintf(sptr, end, "[child%u:%u] [%lu] %s",
 			child->num, pids[child->num], child->op_nr,
 			rec->do32bit == true ? "[32BIT] " : "");
 
-	sptr += sprintf(sptr, "%s(", entry->name);
+	sptr = bprintf(sptr, end, "%s(", entry->name);
 
 	for_each_arg(entry, i) {
-		sptr = render_arg(rec, sptr, i, entry);
+		sptr = render_arg(rec, sptr, end, i, entry);
 	}
 
-	sptr += sprintf(sptr, ") ");
+	sptr = bprintf(sptr, end, ") ");
 
 	return sptr - bufferstart;
 }
@@ -158,18 +186,19 @@ static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *buffe
 static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *bufferstart)
 {
 	char *sptr = bufferstart;
+	char *end = bufferstart + POSTBUFFER_LEN;
 
 	if (IS_ERR(rec->retval)) {
-		sptr += sprintf(sptr, "= %ld (%s)",
+		sptr = bprintf(sptr, end, "= %ld (%s)",
 			(long) rec->retval, strerror(rec->errno_post));
 	} else {
-		sptr += sprintf(sptr, "= ");
+		sptr = bprintf(sptr, end, "= ");
 		if ((unsigned long) rec->retval > 10000)
-			sptr += sprintf(sptr, "0x%lx", rec->retval);
+			sptr = bprintf(sptr, end, "0x%lx", rec->retval);
 		else
-			sptr += sprintf(sptr, "%ld", (long) rec->retval);
+			sptr = bprintf(sptr, end, "%ld", (long) rec->retval);
 	}
-	sptr += sprintf(sptr, "\n");
+	sptr = bprintf(sptr, end, "\n");
 
 	return sptr - bufferstart;
 }

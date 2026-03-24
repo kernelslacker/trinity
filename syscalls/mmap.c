@@ -112,24 +112,26 @@ static char * decode_mmap(struct syscallrecord *rec, unsigned int argnum)
 	if (argnum == 3) {
 		int flags = rec->a3;
 		char *p;
+		char *end;
 
 		p = buf = zmalloc(80);
-		p += sprintf(buf, "[");
+		end = buf + 80;
+		p += snprintf(buf, end - p, "[");
 
 		if (flags == 0) {
-			p += sprintf(p, "PROT_NONE]");
+			snprintf(p, end - p, "PROT_NONE]");
 			return buf;
 		}
 		if (flags & PROT_READ)
-			p += sprintf(p, "PROT_READ|");
+			p += snprintf(p, end - p, "PROT_READ|");
 		if (flags & PROT_WRITE)
-			p += sprintf(p, "PROT_WRITE|");
+			p += snprintf(p, end - p, "PROT_WRITE|");
 		if (flags & PROT_EXEC)
-			p += sprintf(p, "PROT_EXEC|");
+			p += snprintf(p, end - p, "PROT_EXEC|");
 		if (flags & PROT_SEM)
-			p += sprintf(p, "PROT_SEM ");
+			p += snprintf(p, end - p, "PROT_SEM ");
 		p--;
-		sprintf(p, "]");
+		snprintf(p, end - p, "]");
 
 		return buf;
 	}
