@@ -14,5 +14,6 @@ struct syscallentry syscall_creat = {
 	.arg2name = "mode",
 	.arg2type = ARG_MODE_T,
 	.rettype = RET_FD,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
