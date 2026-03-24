@@ -28,6 +28,16 @@
 unsigned int files_in_index = 0;
 const char **fileindex;
 
+#define MAX_PATHNAME_POOLS 4
+
+struct pathname_pool {
+	unsigned int start;	/* index into fileindex[] */
+	unsigned int count;
+};
+
+static struct pathname_pool pools[MAX_PATHNAME_POOLS];
+static unsigned int num_pools;
+
 struct namelist {
 	struct list_head list;
 	const char *name;
@@ -251,6 +261,19 @@ static const char ** list_to_index(struct namelist *namelist)
 	return findex;
 }
 
+static void add_pool(const char *dirpath)
+{
+	unsigned int before = files_in_index;
+
+	open_fds_from_path(dirpath);
+
+	if (files_in_index > before && num_pools < MAX_PATHNAME_POOLS) {
+		pools[num_pools].start = before;
+		pools[num_pools].count = files_in_index - before;
+		num_pools++;
+	}
+}
+
 void generate_filelist(void)
 {
 	names = zmalloc(sizeof(struct namelist));
@@ -258,12 +281,14 @@ void generate_filelist(void)
 
 	output(1, "Generating file descriptors\n");
 
+	num_pools = 0;
+
 	if (victim_path != NULL) {
-		open_fds_from_path(victim_path);
+		add_pool(victim_path);
 	} else {
-		open_fds_from_path("/dev");
-		open_fds_from_path("/proc");
-		open_fds_from_path("/sys");
+		add_pool("/dev");
+		add_pool("/proc");
+		add_pool("/sys");
 	}
 
 	if (shm->exit_reason != STILL_RUNNING)
@@ -278,8 +303,17 @@ void generate_filelist(void)
 
 const char * get_filename(void)
 {
+	struct pathname_pool *pool;
+
 	if (files_in_index == 0)	/* This can happen if we run with -n. Should we do something else ? */
 		return NULL;
+
+	/* Pick a pool first so /dev gets equal probability with /proc and /sys
+	 * despite having far fewer files. */
+	if (num_pools > 1) {
+		pool = &pools[rand() % num_pools];
+		return fileindex[pool->start + rand() % pool->count];
+	}
 
 	return fileindex[rand() % files_in_index];
 }
