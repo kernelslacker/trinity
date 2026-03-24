@@ -41,6 +41,23 @@ static void sigxcpu_handler(__unused__ int sig)
 	siglongjmp(ret_jump, 1);
 }
 
+/*
+ * Handler for signals that should only be fatal if they come from the
+ * kernel (real fault), not from a child process sending us garbage via
+ * kill/tkill/tgkill.  If si_code > 0, the kernel generated the signal
+ * (e.g. SEGV_MAPERR).  If si_code <= 0 (SI_USER, SI_TKILL, SI_QUEUE),
+ * another process sent it — ignore.
+ */
+static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
+{
+	if (info->si_code > 0) {
+		/* Real fault — restore default and re-raise to get a core dump */
+		signal(sig, SIG_DFL);
+		raise(sig);
+	}
+	/* Sent by a child process — ignore */
+}
+
 void mask_signals_child(void)
 {
 	struct sigaction sa;
@@ -85,15 +102,27 @@ void mask_signals_child(void)
 
 void setup_main_signals(void)
 {
-	/* we want default behaviour for child process signals */
-	(void)signal(SIGFPE, SIG_DFL);
+	struct sigaction sa;
+
 	(void)signal(SIGCHLD, SIG_DFL);
-	(void)signal(SIGABRT, SIG_DFL);
-	(void)signal(SIGSEGV, SIG_DFL);
 
 	/* ignore SIGXFSZ/SIGXCPU — resource limit signals are not fatal */
 	(void)signal(SIGXFSZ, SIG_IGN);
 	(void)signal(SIGXCPU, SIG_IGN);
+
+	/*
+	 * Use SA_SIGINFO for fault signals so we can distinguish real
+	 * faults (si_code > 0, from kernel) from signals sent by child
+	 * processes fuzzing kill/tkill/tgkill (si_code <= 0).
+	 */
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_SIGINFO;
+	sa.sa_sigaction = main_fault_handler;
+	(void)sigaction(SIGABRT, &sa, NULL);
+	(void)sigaction(SIGSEGV, &sa, NULL);
+	(void)sigaction(SIGBUS, &sa, NULL);
+	(void)sigaction(SIGILL, &sa, NULL);
+	(void)sigaction(SIGFPE, &sa, NULL);
 
 	(void)signal(SIGINT, ctrlc_handler);
 }
