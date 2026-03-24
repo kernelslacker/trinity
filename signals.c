@@ -91,8 +91,9 @@ void setup_main_signals(void)
 	(void)signal(SIGABRT, SIG_DFL);
 	(void)signal(SIGSEGV, SIG_DFL);
 
-	/* ignore SIGXFSZ — log writes hitting ulimit is not fatal */
+	/* ignore SIGXFSZ/SIGXCPU — resource limit signals are not fatal */
 	(void)signal(SIGXFSZ, SIG_IGN);
+	(void)signal(SIGXCPU, SIG_IGN);
 
 	(void)signal(SIGINT, ctrlc_handler);
 }
