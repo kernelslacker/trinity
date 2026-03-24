@@ -106,13 +106,25 @@ void setup_main_signals(void)
 
 	(void)signal(SIGCHLD, SIG_DFL);
 
-	/* ignore SIGXFSZ/SIGXCPU — resource limit signals are not fatal */
+	/*
+	 * Ignore signals that children can send us via kill/tkill/tgkill.
+	 * Without this, the fuzzer randomly terminates when a child happens
+	 * to send a fatal signal to the parent PID.
+	 */
+	(void)signal(SIGHUP, SIG_IGN);
+	(void)signal(SIGUSR1, SIG_IGN);
+	(void)signal(SIGUSR2, SIG_IGN);
+	(void)signal(SIGALRM, SIG_IGN);
+	(void)signal(SIGTERM, SIG_IGN);
+	(void)signal(SIGVTALRM, SIG_IGN);
+	(void)signal(SIGPROF, SIG_IGN);
 	(void)signal(SIGXFSZ, SIG_IGN);
 	(void)signal(SIGXCPU, SIG_IGN);
+	(void)signal(SIGPIPE, SIG_IGN);
 
 	/*
-	 * Use SA_SIGINFO for fault signals so we can distinguish real
-	 * faults (si_code > 0, from kernel) from signals sent by child
+	 * Use SA_SIGINFO for fault/core-dump signals so we can distinguish
+	 * real faults (si_code > 0, from kernel) from signals sent by child
 	 * processes fuzzing kill/tkill/tgkill (si_code <= 0).
 	 */
 	sigemptyset(&sa.sa_mask);
@@ -123,6 +135,9 @@ void setup_main_signals(void)
 	(void)sigaction(SIGBUS, &sa, NULL);
 	(void)sigaction(SIGILL, &sa, NULL);
 	(void)sigaction(SIGFPE, &sa, NULL);
+	(void)sigaction(SIGQUIT, &sa, NULL);
+	(void)sigaction(SIGTRAP, &sa, NULL);
+	(void)sigaction(SIGSYS, &sa, NULL);
 
 	(void)signal(SIGINT, ctrlc_handler);
 }
