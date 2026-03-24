@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "taint.h"
 #include "trinity.h"
+#include "syscall.h"
 #include "post-mortem.h"
 #include "utils.h"
 
@@ -22,11 +23,12 @@ static void dump_syscall_rec(FILE *fd, struct syscallrecord *rec)
 		/* haven't finished setting up, so don't dump. */
 		break;
 	case BEFORE:
-		fprintf(fd, "%s\n", rec->prebuffer);
+		fprintf(fd, "%.*s\n", PREBUFFER_LEN, rec->prebuffer);
 		break;
 	case AFTER:
 	case GOING_AWAY:
-		fprintf(fd, "%s%s\n", rec->prebuffer, rec->postbuffer);
+		fprintf(fd, "%.*s%.*s\n", PREBUFFER_LEN, rec->prebuffer,
+			POSTBUFFER_LEN, rec->postbuffer);
 		break;
 	}
 }

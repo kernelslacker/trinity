@@ -93,10 +93,10 @@ void dump_syscallrec(struct syscallrecord *rec)
 	output(0, " do32bit:%d\n", rec->do32bit);
 	output(0, " lock:%d {owner:%d)\n", rec->lock.lock, rec->lock.owner);
 	output(0, " state:%d\n", rec->state);
-	output(0, " prebuffer : %p (len:%zu)\n", rec->prebuffer, strlen(rec->prebuffer));
-	output(0, " -> %s\n", rec->prebuffer);
-	output(0, " postbuffer : %p (len:%zu)\n", rec->postbuffer, strlen(rec->postbuffer));
-	output(0, " -> %s\n", rec->postbuffer);
+	output(0, " prebuffer : %p (len:%zu)\n", rec->prebuffer, strnlen(rec->prebuffer, PREBUFFER_LEN));
+	output(0, " -> %.*s\n", PREBUFFER_LEN, rec->prebuffer);
+	output(0, " postbuffer : %p (len:%zu)\n", rec->postbuffer, strnlen(rec->postbuffer, POSTBUFFER_LEN));
+	output(0, " -> %.*s\n", POSTBUFFER_LEN, rec->postbuffer);
 }
 
 void dump_childdata(struct childdata *child)
