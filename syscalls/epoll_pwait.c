@@ -13,6 +13,19 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
  */
 #include "sanitise.h"
 
+#include "random.h"
+#include "sanitise.h"
+
+static void sanitise_epoll_pwait(struct syscallrecord *rec)
+{
+	/* timeout: -1 = block, 0 = return immediately, >0 = ms to wait */
+	switch (rand() % 4) {
+	case 0: rec->a4 = (unsigned long) -1; break;	/* block */
+	case 1: rec->a4 = 0; break;			/* immediate */
+	default: rec->a4 = 1 + (rand() % 100); break;	/* short wait */
+	}
+}
+
 struct syscallentry syscall_epoll_pwait = {
 	.name = "epoll_pwait",
 	.num_args = 6,
@@ -25,13 +38,11 @@ struct syscallentry syscall_epoll_pwait = {
 	.low3range = 1,
 	.hi3range = 128,
 	.arg4name = "timeout",
-	.arg4type = ARG_RANGE,
-	.low4range = -1,
-	.hi4range = 5000,
 	.arg5name = "sigmask",
 	.arg5type = ARG_ADDRESS,
 	.arg6name = "sigsetsize",
 	.arg6type = ARG_LEN,
+	.sanitise = sanitise_epoll_pwait,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
