@@ -69,11 +69,11 @@ void sizeunit(unsigned long size, char *buf)
 
 	/* < 1GB ? */
 	if (size < (1024 * 1024 * 1024)) {
-		sprintf(buf, "%ldMB", (size / 1024) / 1024);
+		sprintf(buf, "%luMB", (size / 1024) / 1024);
 		return;
 	}
 
-	sprintf(buf, "%ldGB", ((size / 1024) / 1024) / 1024);
+	sprintf(buf, "%luGB", ((size / 1024) / 1024) / 1024);
 }
 
 void kill_pid(pid_t pid)

@@ -44,7 +44,7 @@ static int shm_is_corrupt(void)
 
 	//if (shm->stats.op_count < shm->stats.previous_op_count) {
 	if (current_op_count < current_previous_op_count) {
-		output(0, "Execcount went backwards! (old:%ld new:%ld):\n",
+		output(0, "Execcount went backwards! (old:%lu new:%lu):\n",
 			shm->stats.previous_op_count, shm->stats.op_count);
 		panic(EXIT_SHM_CORRUPTION);
 		return true;
@@ -66,7 +66,7 @@ static int shm_is_corrupt(void)
 			if (once != false)
 				return true;
 
-			output(0, "Sanity check failed! Found pid %u at pidslot %u!\n", pid, i);
+			output(0, "Sanity check failed! Found pid %d at pidslot %u!\n", pid, i);
 
 			dump_childnos();
 
@@ -492,7 +492,7 @@ static bool spawn_child(int childno)
 	child->pidstatfile = open_child_pidstat(pid);
 	__atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 
-	debugf("Created child %d (pid:%d) [total:%d/%d]\n",
+	debugf("Created child %d (pid:%d) [total:%u/%u]\n",
 		childno, pid, shm->running_childs, max_children);
 	return true;
 }

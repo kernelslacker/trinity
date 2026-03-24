@@ -42,10 +42,10 @@ void output(char level, const char *fmt, ...)
 	if (pid == mainpid)
 		prefix = main_prefix;
 	else if (prefix == NULL) {
-		unsigned int childno;
+		int childno;
 
 		childno = find_childno(pid);
-		snprintf(child_prefix, sizeof(child_prefix), "[child%u:%u] ", childno, pid);
+		snprintf(child_prefix, sizeof(child_prefix), "[child%d:%d] ", childno, pid);
 		prefix = child_prefix;
 	}
 
