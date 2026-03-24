@@ -11,9 +11,12 @@
 #include <time.h>
 #include "random.h"
 #include "sanitise.h"
+#include "compat.h"
 
 static unsigned long clock_nanosleep_which[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
+	CLOCK_THREAD_CPUTIME_ID, CLOCK_BOOTTIME, CLOCK_TAI,
+	CLOCK_REALTIME_ALARM, CLOCK_BOOTTIME_ALARM,
 };
 
 static unsigned long clock_nanosleep_flags[] = {

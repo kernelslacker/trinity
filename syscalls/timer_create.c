@@ -34,7 +34,8 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 static unsigned long clock_ids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
 	CLOCK_THREAD_CPUTIME_ID, CLOCK_MONOTONIC_RAW, CLOCK_REALTIME_COARSE,
-	CLOCK_MONOTONIC_COARSE, CLOCK_BOOTTIME,
+	CLOCK_MONOTONIC_COARSE, CLOCK_BOOTTIME, CLOCK_TAI,
+	CLOCK_REALTIME_ALARM, CLOCK_BOOTTIME_ALARM,
 };
 
 struct syscallentry syscall_timer_create = {
