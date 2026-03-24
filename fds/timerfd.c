@@ -26,6 +26,43 @@ static void timerfd_dump(struct object *obj, bool global)
 	output(2, "timerfd fd:%d clockid:%d flags:%x global:%d\n", to->fd, to->clockid, to->flags, global);
 }
 
+/*
+ * Arm a timerfd with a random expiration so the kernel actually
+ * processes timer events when this fd is used in read/poll/epoll.
+ */
+static void arm_timerfd(int fd)
+{
+	struct itimerspec its;
+
+	memset(&its, 0, sizeof(its));
+
+	switch (rand() % 4) {
+	case 0:
+		/* One-shot, fires soon */
+		its.it_value.tv_sec = 0;
+		its.it_value.tv_nsec = 1 + (rand() % 999999999);
+		break;
+	case 1:
+		/* Repeating, short interval */
+		its.it_value.tv_sec = 0;
+		its.it_value.tv_nsec = 1000;
+		its.it_interval.tv_sec = 0;
+		its.it_interval.tv_nsec = 1000 + (rand() % 999999);
+		break;
+	case 2:
+		/* One-shot, fires in 1-5 seconds */
+		its.it_value.tv_sec = 1 + (rand() % 5);
+		break;
+	case 3:
+		/* Repeating, 1 second interval */
+		its.it_value.tv_sec = 1;
+		its.it_interval.tv_sec = 1;
+		break;
+	}
+
+	timerfd_settime(fd, 0, &its, NULL);
+}
+
 static int __init_timerfd_fds(int clockid)
 {
 	struct objhead *head;
@@ -49,6 +86,8 @@ static int __init_timerfd_fds(int clockid)
 		if (fd == -1)
 			if (errno == ENOSYS)
 				return false;
+
+		arm_timerfd(fd);
 
 		obj = alloc_object();
 		obj->timerfdobj.fd = fd;
@@ -100,6 +139,8 @@ static int open_timerfd_fd(void)
 	fd = timerfd_create(clockid, flags);
 	if (fd == -1)
 		return false;
+
+	arm_timerfd(fd);
 
 	obj = alloc_object();
 	obj->timerfdobj.fd = fd;
