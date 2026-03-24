@@ -14,9 +14,6 @@ struct childdata {
 	/* Per-child KCOV state (fd + trace buffer). */
 	struct kcov_child kcov;
 
-	/* ONLY to be read by main. */
-	FILE *pidstatfile;
-
 	struct objhead objects[MAX_OBJECT_TYPES];
 
 	/* last time the child made progress. */
