@@ -55,6 +55,9 @@ static int shm_is_corrupt(void)
 		struct childdata *child;
 		pid_t pid;
 
+		if (shm->children == NULL)
+			return true;
+
 		child = shm->children[i];
 		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
@@ -110,6 +113,9 @@ static void reap_dead_kids(void)
 {
 	unsigned int i;
 	unsigned int reaped = 0;
+
+	if (shm->children == NULL)
+		return;
 
 	for_each_child(i) {
 		pid_t pid;
@@ -453,8 +459,13 @@ static void stall_genocide(void)
 
 static bool spawn_child(int childno)
 {
-	struct childdata *child = shm->children[childno];
+	struct childdata *child;
 	int pid = 0;
+
+	if (shm->children == NULL)
+		return false;
+
+	child = shm->children[childno];
 
 	/* a new child means a new seed, or the new child
 	 * will do the same syscalls as the one in the child it's replacing.
@@ -540,6 +551,9 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	int __sig;
 	pid_t pid = pids[childno];
 
+	if (shm->children == NULL)
+		return;
+
 	child = shm->children[childno];
 
 	if (stop == true)
@@ -609,6 +623,9 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 		break;
 
 	default:
+		if (shm->children == NULL)
+			break;
+
 		if (WIFEXITED(childstatus)) {
 			struct childdata *child = shm->children[childno];
 
@@ -641,6 +658,9 @@ static void handle_children(void)
 	int ret;
 
 	if (shm->running_childs == 0)
+		return;
+
+	if (shm->children == NULL)
 		return;
 
 	sigemptyset(&mask);
@@ -683,6 +703,9 @@ static void check_children_progressing(void)
 	unsigned int i;
 
 	stall_count = 0;
+
+	if (shm->children == NULL)
+		return;
 
 	for_each_child(i) {
 		struct childdata *child = shm->children[i];
