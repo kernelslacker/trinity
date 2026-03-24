@@ -72,9 +72,6 @@ static int init_fanotify_fds(void)
 	for (i = 0; i < NR_FANOTIFYFDS; i++)
 		open_fanotify_fd();
 
-	//FIXME: right now, returning false means "abort everything", not
-	// "skip this provider", so on -ENOSYS, we have to still register.
-
 	return true;
 }
 

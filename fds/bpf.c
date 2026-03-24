@@ -114,9 +114,6 @@ static int init_bpf_fds(void)
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++)
 		open_bpf_fd();
 
-	//FIXME: right now, returning false means "abort everything", not
-	// "skip this provider", so on -ENOSYS, we have to still register.
-
 	return true;
 }
 
