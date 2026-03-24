@@ -105,6 +105,12 @@ struct syscallentry syscall_pwrite64 = {
 	 unsigned long, vlen, unsigned long, pos_l, unsigned long, pos_h)
  */
 
+static void sanitise_pwritev(struct syscallrecord *rec)
+{
+	rec->a5 = 0;
+	rec->a4 = rand64() & 0x7fffffff;
+}
+
 struct syscallentry syscall_pwritev = {
 	.name = "pwritev",
 	.num_args = 5,
@@ -117,6 +123,7 @@ struct syscallentry syscall_pwritev = {
 	.arg4name = "pos_l",
 	.arg5name = "pos_h",
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_pwritev,
 	.group = GROUP_VFS,
 };
 
@@ -129,6 +136,17 @@ struct syscallentry syscall_pwritev = {
 static unsigned long pwritev2_flags[] = {
 	RWF_HIPRI, RWF_DSYNC, RWF_SYNC,
 };
+
+static void sanitise_pwritev2(struct syscallrecord *rec)
+{
+	if (RAND_BOOL()) {
+		rec->a4 = (unsigned long) -1;
+		rec->a5 = (unsigned long) -1;
+	} else {
+		rec->a5 = 0;
+		rec->a4 = rand64() & 0x7fffffff;
+	}
+}
 
 struct syscallentry syscall_pwritev2 = {
 	.name = "pwritev2",
@@ -145,5 +163,6 @@ struct syscallentry syscall_pwritev2 = {
 	.arg6type = ARG_LIST,
 	.arg6list = ARGLIST(pwritev2_flags),
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_pwritev2,
 	.group = GROUP_VFS,
 };

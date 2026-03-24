@@ -87,6 +87,13 @@ struct syscallentry syscall_pread64 = {
 	 unsigned long, vlen, unsigned long, pos_l, unsigned long, pos_h)
  */
 
+static void sanitise_preadv(struct syscallrecord *rec)
+{
+	/* Generate a valid file position (non-negative loff_t). */
+	rec->a5 = 0;	/* pos_h: keep offset < 4GB */
+	rec->a4 = rand64() & 0x7fffffff;	/* pos_l: non-negative */
+}
+
 struct syscallentry syscall_preadv = {
 	.name = "preadv",
 	.num_args = 5,
@@ -99,6 +106,7 @@ struct syscallentry syscall_preadv = {
 	.arg4name = "pos_l",
 	.arg5name = "pos_h",
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_preadv,
 	.group = GROUP_VFS,
 };
 
@@ -110,6 +118,18 @@ struct syscallentry syscall_preadv = {
 static unsigned long preadv2_flags[] = {
 	RWF_HIPRI, RWF_DSYNC, RWF_SYNC,
 };
+
+static void sanitise_preadv2(struct syscallrecord *rec)
+{
+	if (RAND_BOOL()) {
+		/* pos == -1: use current file position */
+		rec->a4 = (unsigned long) -1;
+		rec->a5 = (unsigned long) -1;
+	} else {
+		rec->a5 = 0;
+		rec->a4 = rand64() & 0x7fffffff;
+	}
+}
 
 struct syscallentry syscall_preadv2 = {
 	.name = "preadv2",
@@ -126,5 +146,6 @@ struct syscallentry syscall_preadv2 = {
 	.arg6type = ARG_LIST,
 	.arg6list = ARGLIST(preadv2_flags),
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_preadv2,
 	.group = GROUP_VFS,
 };
