@@ -274,14 +274,14 @@ static void dump_pid_stack(int pid)
 		char *line = NULL;
 		if (getline(&line, &n, fp) != -1) {
 			output(0, "pid %d stack: %s", pid, line);
-			free(line);
-			line = NULL;
-			n = 0;
 		} else {
 			if (errno != EAGAIN)
 				output(0, "Error reading /proc/%d/stack :%s\n", pid, strerror(errno));
+			free(line);
+			fclose(fp);
 			return;
 		}
+		free(line);
 	}
 	output(0, "------------------------------------------------\n");
 
