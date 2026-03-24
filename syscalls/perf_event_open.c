@@ -527,11 +527,6 @@ static long long random_sysfs_config(__u32 *type,
 
 		case 2:
 			goto out;
-			break;
-
-		default:
-			goto out;
-			break;
 	}
 	*config1=c1;
 	*config2=c2;

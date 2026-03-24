@@ -248,17 +248,6 @@ static void init_child(struct childdata *child, int childno)
 		unshare(CLONE_NEWNET);
 	}
 
-/*
-	if (shm->unshare_perm_err == false) {
-		if (RAND_BOOL()) {
-			int ret = unshare(CLONE_NEWUSER);
-			if (ret != 0)
-				output(0, "couldn't unshare: %s\n", strerror(errno));
-			if (ret == -EPERM)
-				shm->unshare_perm_err = true;
-		}
-	}
-*/
 	if (orig_uid == 0)
 		child->dropped_privs = false;
 
