@@ -469,18 +469,6 @@ void generate_syscall_args(struct syscallrecord *rec)
 
 	entry = syscalls[rec->nr].entry;
 	rec->state = PREP;
-	if (entry->arg1type == ARG_UNDEFINED)
-		rec->a1 = gen_undefined_arg(rec->nr);
-	if (entry->arg2type == ARG_UNDEFINED)
-		rec->a2 = gen_undefined_arg(rec->nr);
-	if (entry->arg3type == ARG_UNDEFINED)
-		rec->a3 = gen_undefined_arg(rec->nr);
-	if (entry->arg4type == ARG_UNDEFINED)
-		rec->a4 = gen_undefined_arg(rec->nr);
-	if (entry->arg5type == ARG_UNDEFINED)
-		rec->a5 = gen_undefined_arg(rec->nr);
-	if (entry->arg6type == ARG_UNDEFINED)
-		rec->a6 = gen_undefined_arg(rec->nr);
 
 	generic_sanitise(rec);
 	if (entry->sanitise)
