@@ -9,6 +9,8 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 {
 	rec->a1 = AF_UNIX;
 	rec->a4 = (unsigned long) malloc(sizeof(int) * 2);
+	if (!rec->a4)
+		return;
 }
 
 static void post_socketpair(struct syscallrecord *rec)
