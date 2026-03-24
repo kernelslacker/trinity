@@ -27,6 +27,11 @@ static void sanitise_mremap(struct syscallrecord *rec)
 
 	map = common_set_mmap_ptr_len();
 
+	if (range_overlaps_shm(rec->a1, rec->a2)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
+
 	rec->a3 = map->size;
 
 	/* Sometimes request a different size */

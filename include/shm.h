@@ -69,3 +69,12 @@ struct shm_s {
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;
+
+static inline bool range_overlaps_shm(unsigned long addr, unsigned long len)
+{
+	unsigned long shm_start = (unsigned long) shm;
+	unsigned long shm_end = shm_start + shm_size;
+	unsigned long end = addr + len;
+
+	return addr < shm_end && end > shm_start;
+}

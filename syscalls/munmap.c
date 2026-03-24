@@ -47,6 +47,15 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		rec->a2 = page_size;
 	}
 
+	/*
+	 * Make sure we don't unmap the shm region — children fuzzing
+	 * munmap can blow away trinity's shared state and crash everyone.
+	 */
+	if (range_overlaps_shm(rec->a1, rec->a2)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
+
 	/* Stash map pointer and action in unused arg slots for post callback. */
 	rec->a3 = (unsigned long) map;
 	rec->a4 = action;
