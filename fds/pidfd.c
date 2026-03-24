@@ -39,17 +39,18 @@ static int open_pidfd(pid_t pid)
 static int open_pidfd_fd(void)
 {
 	struct object *obj;
-	pid_t pid;
 	int fd;
 
-	pid = getpid();
-	fd = open_pidfd(pid);
+	/* Don't create a pidfd for our own pid — children inherit global
+	 * objects and would use it with pidfd_getfd/pidfd_send_signal,
+	 * triggering ptrace_may_access() on the parent.  Use pid 1 instead. */
+	fd = open_pidfd(1);
 	if (fd < 0)
 		return false;
 
 	obj = alloc_object();
 	obj->pidfdobj.fd = fd;
-	obj->pidfdobj.pid = pid;
+	obj->pidfdobj.pid = 1;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
 	return true;
 }
@@ -64,10 +65,10 @@ static int init_pidfd_fds(void)
 	head->destroy = &pidfd_destructor;
 	head->dump = &pidfd_dump;
 
-	if (open_pidfd_fd() == false)
-		return false;
-
-	/* Also open a pidfd for pid 1 (init). */
+	/* Only create a pidfd for pid 1 (init).  Don't create one for
+	 * our own pid — children inherit global objects and would use
+	 * it with pidfd_getfd/pidfd_send_signal, triggering
+	 * ptrace_may_access() on the parent process. */
 	fd = open_pidfd(1);
 	if (fd >= 0) {
 		obj = alloc_object();
@@ -76,7 +77,7 @@ static int init_pidfd_fds(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
 	}
 
-	return true;
+	return fd >= 0;
 }
 
 static int get_rand_pidfd(void)
