@@ -39,6 +39,7 @@ struct syscallentry syscall_msync = {
 	.arg3name = "flags",
 	.arg3type = ARG_OP,
 	.arg3list = ARGLIST(msync_flags),
+	.flags = NEED_ALARM,
 	.group = GROUP_VM,
 	.sanitise = sanitise_msync,
 };
