@@ -43,10 +43,16 @@ static void rose_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->level = SOL_ROSE;
 	so->optname = RAND_ARRAY(rose_opts);
 }
+
+static struct socket_triplet rose_triplets[] = {
+	{ .family = PF_ROSE, .protocol = 0, .type = SOCK_SEQPACKET },
+};
+
 const struct netproto proto_rose = {
 	.name = "rose",
-	//     .socket = rose_rand_socket,
 	.setsockopt = rose_setsockopt,
 	.gen_sockaddr = rose_gen_sockaddr,
+	.valid_triplets = rose_triplets,
+	.nr_triplets = ARRAY_SIZE(rose_triplets),
 };
 #endif
