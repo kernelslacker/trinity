@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE4(futex_wake, void __user *, uaddr,
  *		unsigned long, mask, int, nr, unsigned int, flags)
  */
+#include "random.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -22,6 +23,17 @@ static unsigned long futex2_flags[] = {
 	FUTEX2_NUMA, FUTEX2_PRIVATE,
 };
 
+static void sanitise_futex_wake(struct syscallrecord *rec)
+{
+	/* mask: generate a useful comparison mask */
+	switch (rand() % 4) {
+	case 0: rec->a2 = 0xffffffff; break;	/* all bits (common case) */
+	case 1: rec->a2 = 0xff; break;		/* U8 futex */
+	case 2: rec->a2 = 0xffff; break;	/* U16 futex */
+	default: rec->a2 = rand32(); break;	/* random mask */
+	}
+}
+
 struct syscallentry syscall_futex_wake = {
 	.name = "futex_wake",
 	.num_args = 4,
@@ -35,5 +47,6 @@ struct syscallentry syscall_futex_wake = {
 	.arg4name = "flags",
 	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(futex2_flags),
+	.sanitise = sanitise_futex_wake,
 	.group = GROUP_IPC,
 };
