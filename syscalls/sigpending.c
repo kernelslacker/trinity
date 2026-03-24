@@ -8,5 +8,5 @@ struct syscallentry syscall_sigpending = {
 	.group = GROUP_SIGNAL,
 	.num_args = 1,
 	.arg1name = "set",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 };

@@ -7,6 +7,6 @@ struct syscallentry syscall_olduname = {
 	.name = "olduname",
 	.num_args = 1,
 	.arg1name = "name",
-	.arg1type = ARG_ADDRESS,
+	.arg1type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_PROCESS,
 };
