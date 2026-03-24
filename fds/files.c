@@ -180,12 +180,45 @@ static int get_rand_file_fd(void)
 	return obj->fileobj.fd;
 }
 
+static int open_file_fd(void)
+{
+	struct object *obj;
+	const char *filename;
+	struct stat sb;
+	int fd, flags, tries;
+
+	if (fileindex == NULL)
+		return false;
+
+	for (tries = 0; tries < 10; tries++) {
+		filename = get_filename();
+		if (lstat(filename, &sb) == -1)
+			continue;
+		flags = check_stat_file(&sb);
+		if (flags == -1)
+			continue;
+
+		obj = alloc_object();
+		fd = open_file(obj, filename, flags);
+		if (fd == -1) {
+			free(obj);
+			continue;
+		}
+
+		obj->fileobj.fd = fd;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_FILE);
+		return true;
+	}
+	return false;
+}
+
 static const struct fd_provider file_fd_provider = {
 	.name = "pseudo",	// FIXME: Use separate providers for dev/sysfs/procfs
 	.objtype = OBJ_FD_FILE,
 	.enabled = true,
 	.init = &open_files,
 	.get = &get_rand_file_fd,
+	.open = &open_file_fd,
 };
 
 REG_FD_PROV(file_fd_provider);
