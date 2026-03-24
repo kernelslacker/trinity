@@ -51,7 +51,7 @@ static inline long IS_ERR(unsigned long x)
 	return IS_ERR_VALUE(x);
 }
 
-void sizeunit(unsigned long size, char *buf);
+void sizeunit(unsigned long size, char *buf, size_t buflen);
 
 void kill_pid(pid_t pid);
 

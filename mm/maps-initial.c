@@ -44,7 +44,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 	new->map.name = zmalloc(80);
 
-	sprintf(new->map.name, "anon(%s)", name);
+	snprintf(new->map.name, 80, "anon(%s)", name);
 
 	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
 

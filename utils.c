@@ -88,27 +88,27 @@ done:
 	return p;
 }
 
-void sizeunit(unsigned long size, char *buf)
+void sizeunit(unsigned long size, char *buf, size_t buflen)
 {
 	/* non kilobyte aligned size? */
 	if (size < 1024) {
-		sprintf(buf, "%lu bytes", size);
+		snprintf(buf, buflen, "%lu bytes", size);
 		return;
 	}
 
 	/* < 1MB ? */
 	if (size < (1024 * 1024)) {
-		sprintf(buf, "%luKB", size / 1024);
+		snprintf(buf, buflen, "%luKB", size / 1024);
 		return;
 	}
 
 	/* < 1GB ? */
 	if (size < (1024 * 1024 * 1024)) {
-		sprintf(buf, "%luMB", (size / 1024) / 1024);
+		snprintf(buf, buflen, "%luMB", (size / 1024) / 1024);
 		return;
 	}
 
-	sprintf(buf, "%luGB", ((size / 1024) / 1024) / 1024);
+	snprintf(buf, buflen, "%luGB", ((size / 1024) / 1024) / 1024);
 }
 
 void kill_pid(pid_t pid)

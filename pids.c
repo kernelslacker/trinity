@@ -91,24 +91,34 @@ void dump_childnos(void)
 {
 	unsigned int i, j = 0;
 	char string[512], *sptr = string;
+	char *end = string + sizeof(string);
+	int n;
 
-	sptr += sprintf(sptr, "## pids: (%u active)\n", shm->running_childs);
+	n = snprintf(sptr, end - sptr, "## pids: (%u active)\n", shm->running_childs);
+	if (n > 0 && n < end - sptr)
+		sptr += n;
 
 	for (i = 0; i < max_children; i += 8) {
-		sptr += sprintf(sptr, "%u-%u: ", i, i + 7);
+		n = snprintf(sptr, end - sptr, "%u-%u: ", i, i + 7);
+		if (n > 0 && n < end - sptr)
+			sptr += n;
 		for (j = 0; j < 8; j++) {
 			if (i + j >= max_children)
 				break;
 
 			if (pids[i + j] == EMPTY_PIDSLOT) {
-				sptr += sprintf(sptr, "[empty] ");
+				n = snprintf(sptr, end - sptr, "[empty] ");
 			} else {
 				pid_t pid = pids[i + j];
 
-				sptr += sprintf(sptr, "%u ", pid);
+				n = snprintf(sptr, end - sptr, "%u ", pid);
 			}
+			if (n > 0 && n < end - sptr)
+				sptr += n;
 		}
-		sptr += sprintf(sptr, "\n");
+		n = snprintf(sptr, end - sptr, "\n");
+		if (n > 0 && n < end - sptr)
+			sptr += n;
 		*sptr = '\0';
 		outputerr("%s", string);
 		sptr = string;
