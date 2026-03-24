@@ -207,6 +207,8 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 	unsigned int fd;
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
+	if (entry == NULL)
+		return false;
 
 	if (!is_typed_fdarg(entry->arg1type)) {
 		switch (entry->arg1type) {
