@@ -120,6 +120,28 @@ static int open_testfile_fds(void)
 	return true;
 }
 
+static int open_testfile_fd(void)
+{
+	struct object *obj;
+	char *filename;
+	int fd;
+
+	filename = zmalloc(64);
+	snprintf(filename, 64, "trinity-testfile%u", 1 + (rand() % MAX_TESTFILES));
+
+	obj = alloc_object();
+	fd = open_testfile(obj, filename);
+	if (fd == -1) {
+		free(filename);
+		free(obj);
+		return false;
+	}
+
+	obj->testfileobj.fd = fd;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
+	return true;
+}
+
 int get_rand_testfile_fd(void)
 {
 	struct object *obj;
@@ -140,6 +162,7 @@ static const struct fd_provider testfile_fd_provider = {
 	.enabled = true,
 	.init = &open_testfile_fds,
 	.get = &get_rand_testfile_fd,
+	.open = &open_testfile_fd,
 };
 
 REG_FD_PROV(testfile_fd_provider);

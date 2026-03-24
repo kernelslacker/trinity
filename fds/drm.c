@@ -128,9 +128,29 @@ done:
 	return true;
 }
 
+static int open_drm_fd(void)
+{
+	struct object *obj;
+	int base_fd, dfd;
+
+	if (objects_empty(OBJ_FD_DRM) == true)
+		return false;
+
+	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);
+	base_fd = obj->drmfd;
+
+	dfd = create_dumb(base_fd);
+	if (dfd < 0)
+		return false;
+
+	add_drm_obj(dfd);
+	return true;
+}
+
 #else
 
 static int open_drm_fds(void) { return true; }
+static int open_drm_fd(void) { return false; }
 
 #endif /* USE_DRM */
 
@@ -152,6 +172,7 @@ static struct fd_provider drm_fd_provider = {
 	.enabled = true,
 	.init = &open_drm_fds,
 	.get = &get_rand_drm_fd,
+	.open = &open_drm_fd,
 };
 
 REG_FD_PROV(drm_fd_provider);
