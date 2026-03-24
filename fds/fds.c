@@ -22,6 +22,7 @@ static unsigned int num_fd_providers_to_enable = 0;	// num of --fd-enable= param
 static unsigned int num_fd_providers_enabled = 0;	// final num we enabled.
 static unsigned int num_fd_providers_initialized = 0;	// num we called ->init on
 static bool enable_fd_initialized = false;		// initialized (disabled all) fd providers
+static bool disable_fd_used = false;			// --disable-fds was passed
 
 static struct fd_provider *fd_providers = NULL;
 
@@ -272,7 +273,6 @@ static void toggle_fds_param(char *str, bool enable)
 	exit(EXIT_FAILURE);
 }
 
-//TODO: prevent --enable and --disable being passed at the same time.
 void process_fds_param(char *param, bool enable)
 {
 	unsigned int len, i;
@@ -280,6 +280,20 @@ void process_fds_param(char *param, bool enable)
 	char *str = str_orig;
 
 	len = strlen(param);
+
+	if (enable == true && disable_fd_used == true) {
+		outputerr("Cannot use both --enable-fds and --disable-fds\n");
+		free(str_orig);
+		exit(EXIT_FAILURE);
+	}
+	if (enable == false && enable_fd_initialized == true) {
+		outputerr("Cannot use both --enable-fds and --disable-fds\n");
+		free(str_orig);
+		exit(EXIT_FAILURE);
+	}
+
+	if (enable == false)
+		disable_fd_used = true;
 
 	if (enable_fd_initialized == false && enable == true) {
 		struct list_head *node;
