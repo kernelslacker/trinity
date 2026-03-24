@@ -55,7 +55,6 @@ struct bpf_fd_types {
 	char name[32];
 };
 
-// TODO: Move to syscalls/bpf.c
 static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_HASH, sizeof(long long), sizeof(long long), 1024, 0, "hash" },
 	{ BPF_MAP_TYPE_ARRAY, sizeof(int), sizeof(long long), 256, 0, "array" },
