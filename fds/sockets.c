@@ -95,9 +95,8 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		if (proto->socket_setup != NULL)
 			proto->socket_setup(fd);
 
-	// FIXME:
-	// All of this needs to be broken out into child ops instead of
-	// special casing it all at creation time.
+	// TODO: Break socket setup (setsockopt, bind, listen) out into
+	// child ops instead of special casing it all at creation time.
 
 	/* Set some random socket options. */
 	sso_socket(&obj->sockinfo.triplet, &so, fd);
