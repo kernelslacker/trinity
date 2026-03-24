@@ -13,6 +13,38 @@
 #include "sanitise.h"
 #include "shm.h"
 
+static const char *watch_paths[] = {
+	"/tmp", "/proc", "/sys", "/dev", "/dev/shm",
+};
+
+static const uint32_t watch_masks[] = {
+	IN_ACCESS, IN_MODIFY, IN_ATTRIB, IN_CLOSE_WRITE,
+	IN_CLOSE_NOWRITE, IN_OPEN, IN_MOVED_FROM, IN_MOVED_TO,
+	IN_CREATE, IN_DELETE, IN_DELETE_SELF, IN_MOVE_SELF,
+	IN_ALL_EVENTS,
+};
+
+/*
+ * Add 1-3 random watches so the kernel actually has something
+ * to monitor and can generate events on this inotify fd.
+ */
+static void arm_inotify(int fd)
+{
+	unsigned int i, count;
+
+	count = 1 + (rand() % 3);
+	for (i = 0; i < count; i++) {
+		const char *path = watch_paths[rand() % ARRAY_SIZE(watch_paths)];
+		uint32_t mask = watch_masks[rand() % ARRAY_SIZE(watch_masks)];
+
+		/* OR in a second mask bit half the time */
+		if (RAND_BOOL())
+			mask |= watch_masks[rand() % ARRAY_SIZE(watch_masks)];
+
+		inotify_add_watch(fd, path, mask);
+	}
+}
+
 static void inotify_destructor(struct object *obj)
 {
 	close(obj->inotifyobj.fd);
@@ -46,6 +78,8 @@ static int init_inotify_fds(void)
 	if (fd < 0)
 		return false;
 
+	arm_inotify(fd);
+
 	obj = alloc_object();
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = 0;
@@ -55,6 +89,8 @@ static int init_inotify_fds(void)
 		fd = inotify_init1(flags[i]);
 		if (fd < 0)
 			return false;
+
+		arm_inotify(fd);
 
 		obj = alloc_object();
 		obj->inotifyobj.fd = fd;
@@ -89,6 +125,8 @@ static int open_inotify_fd(void)
 	fd = inotify_init1(flags);
 	if (fd < 0)
 		return false;
+
+	arm_inotify(fd);
 
 	obj = alloc_object();
 	obj->inotifyobj.fd = fd;
