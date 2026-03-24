@@ -12,5 +12,5 @@ struct syscallentry syscall_timer_gettime = {
 	.low1range = 0,
 	.hi1range = 31,
 	.arg2name = "setting",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 };

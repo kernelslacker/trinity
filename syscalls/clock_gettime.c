@@ -21,6 +21,6 @@ struct syscallentry syscall_clock_gettime = {
 	.arg1type = ARG_OP,
 	.arg1list = ARGLIST(clock_ids),
 	.arg2name = "tp",
-	.arg2type = ARG_ADDRESS,
+	.arg2type = ARG_NON_NULL_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 };
