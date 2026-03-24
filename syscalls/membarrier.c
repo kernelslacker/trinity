@@ -4,26 +4,41 @@
 #include <stdlib.h>
 #include "random.h"
 #include "sanitise.h"
+#include "compat.h"
+
+#ifndef MEMBARRIER_CMD_QUERY
+#define MEMBARRIER_CMD_QUERY				0
+#define MEMBARRIER_CMD_GLOBAL				(1 << 0)
+#define MEMBARRIER_CMD_GLOBAL_EXPEDITED			(1 << 1)
+#define MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED	(1 << 2)
+#define MEMBARRIER_CMD_PRIVATE_EXPEDITED		(1 << 3)
+#define MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED	(1 << 4)
+#define MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE	(1 << 5)
+#define MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE (1 << 6)
+#endif
+
+#ifndef MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ
+#define MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ		(1 << 7)
+#define MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ	(1 << 8)
+#endif
+
+static unsigned long membarrier_cmds[] = {
+	MEMBARRIER_CMD_QUERY,
+	MEMBARRIER_CMD_GLOBAL,
+	MEMBARRIER_CMD_GLOBAL_EXPEDITED,
+	MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED,
+	MEMBARRIER_CMD_PRIVATE_EXPEDITED,
+	MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED,
+	MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE,
+	MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE,
+	MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ,
+	MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ,
+};
 
 static void sanitise_membarrier(struct syscallrecord *rec)
 {
-	// for now, there are no flags, but for future
-	// proofing, we'll leak something random occasionally.
-	// 0 the rest of the time, or we just EINVAL
-	if (ONE_IN(1000))
-		rec->a2 = 1 << (rand() % 4);
-	else
-		rec->a2 = 0;
+	rec->a2 = 0;	/* flags must be zero */
 }
-
-enum membarrier_cmd {
-	MEMBARRIER_CMD_QUERY = 0,
-	MEMBARRIER_CMD_SHARED = (1 << 0),
-};
-
-static unsigned long membarrier_cmds[] = {
-	MEMBARRIER_CMD_QUERY, MEMBARRIER_CMD_SHARED,
-};
 
 struct syscallentry syscall_membarrier = {
 	.name = "membarrier",
