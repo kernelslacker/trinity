@@ -6,6 +6,7 @@
  *		clockid_t, clockid)
  */
 #include <time.h>
+#include "random.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -30,6 +31,35 @@ static unsigned long futex_wait_clockids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC,
 };
 
+static void sanitise_futex_wait(struct syscallrecord *rec)
+{
+	/* val: write a known value to uaddr so the comparison can succeed */
+	__u32 *futex_word;
+
+	futex_word = (__u32 *) get_writable_address(sizeof(*futex_word));
+	*futex_word = rand32();
+	rec->a1 = (unsigned long) futex_word;
+	rec->a2 = *futex_word;	/* match the value we just wrote */
+
+	/* mask: generate a useful comparison mask */
+	switch (rand() % 4) {
+	case 0: rec->a3 = 0xffffffff; break;	/* all bits (common case) */
+	case 1: rec->a3 = 0xff; break;		/* U8 futex */
+	case 2: rec->a3 = 0xffff; break;	/* U16 futex */
+	default: rec->a3 = rand32(); break;	/* random mask */
+	}
+
+	/* timeout: sometimes provide a short timeout */
+	if (RAND_BOOL()) {
+		struct timespec *ts;
+
+		ts = (struct timespec *) get_writable_address(sizeof(*ts));
+		ts->tv_sec = 0;
+		ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+		rec->a5 = (unsigned long) ts;
+	}
+}
+
 struct syscallentry syscall_futex_wait = {
 	.name = "futex_wait",
 	.num_args = 6,
@@ -45,6 +75,7 @@ struct syscallentry syscall_futex_wait = {
 	.arg6name = "clockid",
 	.arg6type = ARG_OP,
 	.arg6list = ARGLIST(futex_wait_clockids),
+	.sanitise = sanitise_futex_wait,
 	.flags = NEED_ALARM,
 	.group = GROUP_IPC,
 };
