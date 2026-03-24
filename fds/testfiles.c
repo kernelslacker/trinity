@@ -131,6 +131,8 @@ int get_rand_testfile_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_TESTFILE, OBJ_GLOBAL);
+	if (!obj)
+		return -1;
 	return obj->testfileobj.fd;
 }
 
