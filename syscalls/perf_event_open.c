@@ -71,6 +71,10 @@ static int parse_format(const char *string, int *field_type, unsigned long long 
 
 	i=0;
 	while(1) {
+		if (i >= BUFSIZ - 1) {
+			format_string[i]=0;
+			break;
+		}
 		format_string[i]=string[i];
 		if (string[i]==':') {
 			format_string[i]=0;
@@ -208,6 +212,10 @@ static int parse_generic(int pmu, const char *value,
 		int i;
 		i=0;
 		while(1) {
+			if (i >= BUFSIZ - 1) {
+				field[i]=0;
+				break;
+			}
 			field[i]=value[ptr];
 			if (value[ptr]==0) break;
 			if ((value[ptr]=='=') || (value[ptr]==',')) {
