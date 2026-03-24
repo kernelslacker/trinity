@@ -11,8 +11,6 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
  * or zero if no file descriptor became ready during the requested timeout milliseconds.
  * When an error occurs, returns -1 and errno is set appropriately.
  */
-#include "sanitise.h"
-
 #include "random.h"
 #include "sanitise.h"
 

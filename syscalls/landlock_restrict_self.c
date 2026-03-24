@@ -4,14 +4,17 @@
  */
 #include "sanitise.h"
 
+static void sanitise_landlock_restrict_self(struct syscallrecord *rec)
+{
+	rec->a2 = 0;	/* flags: MBZ */
+}
+
 struct syscallentry syscall_landlock_restrict_self = {
 	.name = "landlock_restrict_self",
 	.num_args = 2,
 	.arg1name = "fd",
 	.arg1type = ARG_FD_LANDLOCK,
 	.arg2name = "flags",
-	.arg2type = ARG_RANGE,
-	.low2range = 0,
-	.hi2range = 0,
+	.sanitise = sanitise_landlock_restrict_self,
 	.group = GROUP_PROCESS,
 };
