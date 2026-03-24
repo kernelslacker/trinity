@@ -17,6 +17,9 @@ static bool check_lock(lock_t *lk)
 {
 	pid_t pid;
 
+	if (lk == NULL)
+		return false;
+
 	/* We don't care about unlocked locks */
 	if (__atomic_load_n(&lk->lock, __ATOMIC_RELAXED) != LOCKED)
 		return false;
