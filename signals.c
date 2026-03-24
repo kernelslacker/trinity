@@ -66,6 +66,7 @@ void mask_signals_child(void)
 	(void)signal(SIGWINCH, SIG_IGN);
 	(void)signal(SIGIO, SIG_IGN);
 	(void)signal(SIGPIPE, SIG_IGN);
+	(void)signal(SIGXFSZ, SIG_IGN);
 
 	/* Ignore the RT signals. */
 	for (i = SIGRTMIN; i <= SIGRTMAX; i++)
@@ -89,6 +90,9 @@ void setup_main_signals(void)
 	(void)signal(SIGCHLD, SIG_DFL);
 	(void)signal(SIGABRT, SIG_DFL);
 	(void)signal(SIGSEGV, SIG_DFL);
+
+	/* ignore SIGXFSZ — log writes hitting ulimit is not fatal */
+	(void)signal(SIGXFSZ, SIG_IGN);
 
 	(void)signal(SIGINT, ctrlc_handler);
 }
