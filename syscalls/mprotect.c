@@ -13,6 +13,11 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 {
 	struct map *map = common_set_mmap_ptr_len();
 
+	if (range_overlaps_shm(rec->a1, rec->a2)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
+
 	/* Stash map pointer in unused arg slot for post callback. */
 	rec->a5 = (unsigned long) map;
 }

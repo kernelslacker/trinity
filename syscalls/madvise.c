@@ -16,9 +16,14 @@
 #define MADV_SOFT_OFFLINE	101
 #endif
 
-static void sanitise_madvise(__unused__ struct syscallrecord *rec)
+static void sanitise_madvise(struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len();
+
+	if (range_overlaps_shm(rec->a1, rec->a2)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
 }
 
 static unsigned long madvise_advices[] = {
