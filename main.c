@@ -31,6 +31,11 @@ static void replace_child(int childno);
  * Kept out of shared memory so children's stray writes can't corrupt them. */
 static FILE **pidstatfiles;
 
+/* Parent-local cache of shm->children pointer.  The pointer in shm is
+ * in MAP_SHARED memory and could be corrupted by a child's stray write.
+ * Cached once at main_loop() entry before any children are forked. */
+static struct childdata **children;
+
 static unsigned long hiscore = 0;
 
 /*
@@ -59,10 +64,10 @@ static int shm_is_corrupt(void)
 		struct childdata *child;
 		pid_t pid;
 
-		if (shm->children == NULL)
+		if (children == NULL)
 			return true;
 
-		child = shm->children[i];
+		child = children[i];
 		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT)
 			continue;
@@ -118,7 +123,7 @@ static void reap_dead_kids(void)
 	unsigned int i;
 	unsigned int reaped = 0;
 
-	if (shm->children == NULL)
+	if (children == NULL)
 		return;
 
 	for_each_child(i) {
@@ -137,7 +142,7 @@ static void reap_dead_kids(void)
 			/* If it disappeared, reap it. */
 			if (errno == ESRCH) {
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
-				reap_child(shm->children[i], i);
+				reap_child(children[i], i);
 				reaped++;
 			} else {
 				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
@@ -186,7 +191,7 @@ static void kill_all_kids(void)
 		} else {
 			/* check we don't have anything stale in the pidlist */
 			if (errno == ESRCH)
-				reap_child(shm->children[i], i);
+				reap_child(children[i], i);
 		}
 	}
 
@@ -474,10 +479,10 @@ static bool spawn_child(int childno)
 	struct childdata *child;
 	int pid = 0;
 
-	if (shm->children == NULL)
+	if (children == NULL)
 		return false;
 
-	child = shm->children[childno];
+	child = children[childno];
 
 	/* a new child means a new seed, or the new child
 	 * will do the same syscalls as the one in the child it's replacing.
@@ -562,7 +567,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	int __sig;
 	pid_t pid = pids[childno];
 
-	if (shm->children == NULL)
+	if (children == NULL)
 		return;
 
 	if (stop == true)
@@ -578,7 +583,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		ptrace(PTRACE_DETACH, pid, NULL, NULL);
 		kill_pid(pid);
 		//FIXME: Won't we create a zombie here?
-		reap_child(shm->children[childno], childno);
+		reap_child(children[childno], childno);
 		replace_child(childno);
 		return;
 
@@ -599,7 +604,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 			debugf("got a signal from child %d (pid %d) (%s)\n",
 					childno, pid, strsignal(WTERMSIG(childstatus)));
 		}
-		reap_child(shm->children[childno], childno);
+		reap_child(children[childno], childno);
 		if (pidstatfiles[childno])
 			fclose(pidstatfiles[childno]);
 		pidstatfiles[childno] = NULL;
@@ -632,15 +637,15 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 		break;
 
 	default:
-		if (shm->children == NULL)
+		if (children == NULL)
 			break;
 
 		if (WIFEXITED(childstatus)) {
-			struct childdata *child = shm->children[childno];
+			struct childdata *child = children[childno];
 
 			debugf("Child %d (pid:%u) exited after %ld operations.\n",
 				childno, childpid, child->op_nr);
-			reap_child(shm->children[childno], childno);
+			reap_child(children[childno], childno);
 			if (pidstatfiles[childno] != NULL)
 				fclose(pidstatfiles[childno]);
 			pidstatfiles[childno] = NULL;
@@ -669,7 +674,7 @@ static void handle_children(void)
 	if (shm->running_childs == 0)
 		return;
 
-	if (shm->children == NULL)
+	if (children == NULL)
 		return;
 
 	sigemptyset(&mask);
@@ -713,11 +718,11 @@ static void check_children_progressing(void)
 
 	stall_count = 0;
 
-	if (shm->children == NULL)
+	if (children == NULL)
 		return;
 
 	for_each_child(i) {
-		struct childdata *child = shm->children[i];
+		struct childdata *child = children[i];
 
 		if (is_child_making_progress(child, i) == false)
 			stall_count++;
@@ -802,6 +807,7 @@ static void taint_check(void)
 void main_loop(void)
 {
 	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
+	children = shm->children;
 
 	fork_children();
 
