@@ -76,9 +76,6 @@ static int init_memfd_fds(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
 	}
 
-	//FIXME: right now, returning false means "abort everything", not
-	// "skip this provider", so on -ENOSYS, we have to still register.
-
 	return true;
 }
 

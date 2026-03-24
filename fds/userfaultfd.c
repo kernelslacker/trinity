@@ -89,9 +89,6 @@ static int init_userfaultfds(void)
 	for (i = 0; i < 4; i++)
 		open_userfaultfd();
 
-	//FIXME: right now, returning false means "abort everything", not
-	// "skip this provider", so on -ENOSYS, we have to still register.
-
 	return true;
 }
 
