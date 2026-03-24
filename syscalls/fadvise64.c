@@ -5,7 +5,14 @@
  * On error, an error number is returned.
  */
 #include <fcntl.h>
+#include "random.h"
 #include "sanitise.h"
+
+static void sanitise_fadvise64(struct syscallrecord *rec)
+{
+	/* Negative offsets produce EINVAL. */
+	rec->a2 = rand64() & 0x7fffffff;
+}
 
 static unsigned long fadvise_flags[] = {
 	POSIX_FADV_NORMAL,
@@ -27,6 +34,7 @@ struct syscallentry syscall_fadvise64 = {
 	.arg4name = "advice",
 	.arg4type = ARG_OP,
 	.arg4list = ARGLIST(fadvise_flags),
+	.sanitise = sanitise_fadvise64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
@@ -51,6 +59,7 @@ struct syscallentry syscall_fadvise64_64 = {
 	.arg4name = "advice",
 	.arg4type = ARG_OP,
 	.arg4list = ARGLIST(fadvise_flags),
+	.sanitise = sanitise_fadvise64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
@@ -62,6 +71,12 @@ struct syscallentry syscall_fadvise64_64 = {
  * asmlinkage long sys_arm_fadvise64_64(int fd, int advice, loff_t offset, loff_t len)
  * ARM has same as fadvise64 but with other argument order.
  */
+static void sanitise_arm_fadvise64_64(struct syscallrecord *rec)
+{
+	/* Negative offsets produce EINVAL. */
+	rec->a3 = rand64() & 0x7fffffff;
+}
+
 struct syscallentry syscall_arm_fadvise64_64 = {
 	.name = "fadvise64_64",
 	.num_args = 4,
@@ -73,6 +88,7 @@ struct syscallentry syscall_arm_fadvise64_64 = {
 	.arg3name = "offset",
 	.arg4name = "len",
 	.arg4type = ARG_LEN,
+	.sanitise = sanitise_arm_fadvise64_64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
