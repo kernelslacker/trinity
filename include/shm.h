@@ -48,6 +48,7 @@ struct shm_s {
 
 	/* Contended child<>child locks — own cache line. */
 	lock_t syscalltable_lock __attribute__((aligned(64)));
+	lock_t objlock;
 	lock_t buglock;
 
 	/* various flags. */

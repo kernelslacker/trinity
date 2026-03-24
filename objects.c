@@ -2,6 +2,7 @@
 #include <string.h>
 #include "fd.h"
 #include "list.h"
+#include "locks.h"
 #include "objects.h"
 #include "random.h"
 #include "shm.h"
@@ -149,6 +150,9 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
 
+	if (global == OBJ_GLOBAL)
+		lock(&shm->objlock);
+
 	head = get_objhead(global, type);
 	if (head->list == NULL) {
 		head->list = zmalloc(sizeof(struct object));
@@ -166,6 +170,8 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 		newarray = realloc(head->array, newcap * sizeof(struct object *));
 		if (newarray == NULL) {
 			list_del(&obj->list);
+			if (global == OBJ_GLOBAL)
+				unlock(&shm->objlock);
 			return;
 		}
 		head->array = newarray;
@@ -184,6 +190,9 @@ void add_object(struct object *obj, bool global, enum objecttype type)
 
 	if (head->dump != NULL)
 		head->dump(obj, global);
+
+	if (global == OBJ_GLOBAL)
+		unlock(&shm->objlock);
 
 	/* if we just added something to a child list, check
 	 * to see if we need to do some pruning.
@@ -222,13 +231,22 @@ void init_object_lists(bool global)
 struct object * get_random_object(enum objecttype type, bool global)
 {
 	struct objhead *head;
+	struct object *obj;
+
+	if (global == OBJ_GLOBAL)
+		lock(&shm->objlock);
 
 	head = get_objhead(global, type);
 
 	if (head->num_entries == 0)
-		return NULL;
+		obj = NULL;
+	else
+		obj = head->array[rand() % head->num_entries];
 
-	return head->array[rand() % head->num_entries];
+	if (global == OBJ_GLOBAL)
+		unlock(&shm->objlock);
+
+	return obj;
 }
 
 bool objects_empty(enum objecttype type)
@@ -238,8 +256,9 @@ bool objects_empty(enum objecttype type)
 
 /*
  * Call the destructor for this object, and then release it.
+ * Internal version — caller must hold objlock if operating on globals.
  */
-void destroy_object(struct object *obj, bool global, enum objecttype type)
+static void __destroy_object(struct object *obj, bool global, enum objecttype type)
 {
 	struct objhead *head;
 	unsigned int idx, last;
@@ -269,6 +288,17 @@ void destroy_object(struct object *obj, bool global, enum objecttype type)
 	free(obj);
 }
 
+void destroy_object(struct object *obj, bool global, enum objecttype type)
+{
+	if (global == OBJ_GLOBAL)
+		lock(&shm->objlock);
+
+	__destroy_object(obj, global, type);
+
+	if (global == OBJ_GLOBAL)
+		unlock(&shm->objlock);
+}
+
 /*
  * Destroy a whole list of objects.
  */
@@ -288,7 +318,7 @@ static void destroy_objects(enum objecttype type, bool global)
 
 		obj = (struct object *) node;
 
-		destroy_object(obj, global, type);
+		__destroy_object(obj, global, type);
 	}
 
 	head->num_entries = 0;
@@ -347,14 +377,26 @@ int fd_from_object(struct object *obj, enum objecttype type)
 void remove_object_by_fd(int fd)
 {
 	struct fd_hash_entry *entry;
+	struct object *obj;
+	enum objecttype type;
+
+	lock(&shm->objlock);
 
 	entry = fd_hash_lookup(fd);
-	if (entry == NULL)
+	if (entry == NULL) {
+		unlock(&shm->objlock);
 		return;
+	}
+
+	obj = entry->obj;
+	type = entry->type;
 
 	__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
-	destroy_object(entry->obj, OBJ_GLOBAL, entry->type);
-	try_regenerate_fd(entry->type);
+	__destroy_object(obj, OBJ_GLOBAL, type);
+
+	unlock(&shm->objlock);
+
+	try_regenerate_fd(type);
 }
 
 /*
