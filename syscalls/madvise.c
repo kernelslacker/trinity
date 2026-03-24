@@ -20,7 +20,7 @@ static void sanitise_madvise(struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len();
 
-	if (range_overlaps_shm(rec->a1, rec->a2)) {
+	if (range_overlaps_shared(rec->a1, rec->a2)) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}

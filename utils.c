@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -17,7 +18,19 @@
 /*
  * Use this allocator if you have an object a child writes to that you want
  * all other processes to see.
+ *
+ * Every allocation is tracked so that VM syscalls (munmap, madvise, mremap,
+ * mprotect) can avoid clobbering trinity's own shared state.
  */
+
+#define MAX_SHARED_ALLOCS 128
+
+static struct {
+	unsigned long addr;
+	unsigned long size;
+} shared_regions[MAX_SHARED_ALLOCS];
+static unsigned int nr_shared_regions;
+
 void * alloc_shared(unsigned int size)
 {
 	void *ret;
@@ -29,7 +42,29 @@ void * alloc_shared(unsigned int size)
 	}
 	/* poison, to force users to set it to something sensible. */
 	memset(ret, rand(), size);
+
+	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
+		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
+		shared_regions[nr_shared_regions].size = size;
+		nr_shared_regions++;
+	}
+
 	return ret;
+}
+
+bool range_overlaps_shared(unsigned long addr, unsigned long len)
+{
+	unsigned long end = addr + len;
+	unsigned int i;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		unsigned long r_start = shared_regions[i].addr;
+		unsigned long r_end = r_start + shared_regions[i].size;
+
+		if (addr < r_end && end > r_start)
+			return true;
+	}
+	return false;
 }
 
 void * __zmalloc(size_t size, const char *func)
