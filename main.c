@@ -27,6 +27,10 @@
 static void handle_child(int childno, pid_t childpid, int childstatus);
 static void replace_child(int childno);
 
+/* Parent-local array of /proc/<pid>/stat file handles, indexed by childno.
+ * Kept out of shared memory so children's stray writes can't corrupt them. */
+static FILE **pidstatfiles;
+
 static unsigned long hiscore = 0;
 
 /*
@@ -249,14 +253,19 @@ static char get_pid_state(struct childdata *child)
 	pid_t pid;
 	char state = '?';
 	char procname[100];
+	FILE *fp;
 
 	if (getpid() != mainpid)
 		BUG("get_pid_state can only be called from main!\n");
 
-	fseek(child->pidstatfile, 0L, SEEK_SET);
-	fflush(child->pidstatfile);
+	fp = pidstatfiles[child->num];
+	if (fp == NULL)
+		return '?';
 
-	if (getline(&line, &n, child->pidstatfile) != -1)
+	fseek(fp, 0L, SEEK_SET);
+	fflush(fp);
+
+	if (getline(&line, &n, fp) != -1)
 		sscanf(line, "%d %99s %c", &pid, procname, &state);
 
 	free(line);
@@ -418,9 +427,9 @@ static bool is_child_making_progress(struct childdata *child)
 		output(0, "child %d (pid %u) unkillable after %u attempts, "
 			"forcibly reaping slot.\n",
 			child->num, pid, child->kill_count);
-		if (child->pidstatfile)
-			fclose(child->pidstatfile);
-		child->pidstatfile = NULL;
+		if (pidstatfiles[child->num])
+			fclose(pidstatfiles[child->num]);
+		pidstatfiles[child->num] = NULL;
 		reap_child(child);
 		replace_child(child->num);
 		return true;
@@ -497,11 +506,11 @@ static bool spawn_child(int childno)
 	int nr_fds = get_num_fds();
 	if ((max_files_rlimit.rlim_cur - nr_fds) < 3)
 	{
-		// child->pidstatfile may be NULL below if fd limition is reached.
+		// pidstatfiles[childno] may be NULL below if fd limit is reached.
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
 		panic(EXIT_NO_FDS);
 	}
-	child->pidstatfile = open_child_pidstat(pid);
+	pidstatfiles[childno] = open_child_pidstat(pid);
 	__atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 
 	debugf("Created child %d (pid:%d) [total:%u/%u]\n",
@@ -592,9 +601,9 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 					childno, pid, strsignal(WTERMSIG(childstatus)));
 		}
 		reap_child(shm->children[childno]);
-		if (child->pidstatfile)
-			fclose(child->pidstatfile);
-		child->pidstatfile = NULL;
+		if (pidstatfiles[childno])
+			fclose(pidstatfiles[childno]);
+		pidstatfiles[childno] = NULL;
 
 		replace_child(childno);
 		return;
@@ -633,9 +642,9 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			debugf("Child %d (pid:%u) exited after %ld operations.\n",
 				childno, childpid, child->op_nr);
 			reap_child(shm->children[childno]);
-			if (child->pidstatfile != NULL)
-				fclose(child->pidstatfile);
-			child->pidstatfile = NULL;
+			if (pidstatfiles[childno] != NULL)
+				fclose(pidstatfiles[childno]);
+			pidstatfiles[childno] = NULL;
 
 			replace_child(childno);
 			break;
@@ -793,6 +802,8 @@ static void taint_check(void)
 
 void main_loop(void)
 {
+	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
+
 	fork_children();
 
 	while (shm->exit_reason == STILL_RUNNING) {
