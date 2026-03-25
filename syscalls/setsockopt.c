@@ -158,6 +158,9 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		return;
 	}
 
+	if (triplet == NULL)
+		return;
+
 	/* get a page for the optval to live in.
 	 * Pushing this into per-proto .setsockopt calls is deferred because
 	 * each protocol would need its own function pointer and allocation
@@ -171,16 +174,10 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 */
 	so->optlen = sockoptlen(0);
 
-	if (ONE_IN(100)) {
+	if (ONE_IN(100))
 		do_random_sso(so, triplet);
-	} else {
-		if (triplet != NULL) {
-			call_sso_ptr(so, triplet);
-		} else {
-			// fd probably isn't a socket.
-			do_random_sso(so, triplet);
-		}
-	}
+	else
+		call_sso_ptr(so, triplet);
 
 	/*
 	 * 10% of the time, mangle the options.
