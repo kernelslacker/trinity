@@ -34,7 +34,7 @@
 
 static int *active_syscalls;
 
-static bool choose_syscall_table(void)
+static bool choose_syscall_table(unsigned int *nr_syscalls_out)
 {
 	bool do32 = false;
 
@@ -62,11 +62,11 @@ static bool choose_syscall_table(void)
 		if (do32 == false) {
 			syscalls = syscalls_64bit;
 			active_syscalls = shm->active_syscalls64;
-			max_nr_syscalls = max_nr_64bit_syscalls;
+			*nr_syscalls_out = max_nr_64bit_syscalls;
 		} else {
 			syscalls = syscalls_32bit;
 			active_syscalls = shm->active_syscalls32;
-			max_nr_syscalls = max_nr_32bit_syscalls;
+			*nr_syscalls_out = max_nr_32bit_syscalls;
 		}
 	}
 	return do32;
@@ -93,6 +93,7 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	unsigned int syscallnr;
 	bool do32;
 	unsigned int bias_attempts = 0;
+	unsigned int nr_syscalls;
 
 retry:
 	if (no_syscalls_enabled() == true) {
@@ -102,8 +103,10 @@ retry:
 	}
 
 	/* Ok, we're doing another syscall, let's pick one. */
-	do32 = choose_syscall_table();
-	syscallnr = rand() % max_nr_syscalls;
+	do32 = choose_syscall_table(&nr_syscalls);
+	if (biarch == false)
+		nr_syscalls = max_nr_syscalls;
+	syscallnr = rand() % nr_syscalls;
 
 	/* If we got a syscallnr which is not active repeat the attempt,
 	 * since another child has switched that syscall off already.*/
