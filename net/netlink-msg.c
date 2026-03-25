@@ -251,6 +251,13 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	}
 }
 
+/* genl controller attributes (GENL_ID_CTRL messages) */
+static const unsigned short genl_ctrl_attrs[] = {
+	CTRL_ATTR_FAMILY_ID, CTRL_ATTR_FAMILY_NAME, CTRL_ATTR_VERSION,
+	CTRL_ATTR_HDRSIZE, CTRL_ATTR_MAXATTR, CTRL_ATTR_OPS,
+	CTRL_ATTR_MCAST_GROUPS, CTRL_ATTR_POLICY, CTRL_ATTR_OP,
+};
+
 static unsigned char rand_family(void)
 {
 	static const unsigned char families[] = {
@@ -363,6 +370,43 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
 }
 
 /*
+ * Generate body for NETLINK_GENERIC messages.
+ * All genl messages have a genlmsghdr (4 bytes) immediately after nlmsghdr.
+ * For the controller (GENL_ID_CTRL), we pick from CTRL_CMD_* commands.
+ * For other families, we use random cmd values since we don't know
+ * which families are loaded at runtime.
+ */
+static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
+{
+	struct genlmsghdr genl;
+
+	if (nlmsg_type == GENL_ID_CTRL) {
+		/* Controller commands: GETFAMILY is the most useful */
+		genl.cmd = RAND_RANGE(CTRL_CMD_UNSPEC, CTRL_CMD_MAX);
+	} else {
+		/* Unknown family: random command, biased toward low values */
+		if (RAND_BOOL())
+			genl.cmd = rand() % 16;
+		else
+			genl.cmd = rand() % 256;
+	}
+	genl.version = RAND_BOOL() ? 1 : rand() % 4;
+	/* reserved: usually 0, but fuzz it sometimes to test validation */
+	genl.reserved = ONE_IN(4) ? rand16() : 0;
+
+	memcpy(body, &genl, sizeof(genl));
+	return sizeof(genl);
+}
+
+/* Pick an nlattr type for genl controller messages. */
+static unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
+{
+	if (nlmsg_type == GENL_ID_CTRL)
+		return RAND_ARRAY(genl_ctrl_attrs);
+	return 0; /* unknown family: fall back to random */
+}
+
+/*
  * Build a structured netlink message. The caller must free *buf.
  *
  * Structure: [nlmsghdr][protocol body][nlattr...nlattr]
@@ -403,6 +447,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	if (triplet->protocol == NETLINK_ROUTE &&
 	    nlmsg_type >= RTM_BASE && nlmsg_type < RTM_MAX) {
 		body_len = gen_rtnl_body(msg + offset, nlmsg_type);
+	} else if (triplet->protocol == NETLINK_GENERIC) {
+		body_len = gen_genl_body(msg + offset, nlmsg_type);
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
@@ -418,6 +464,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 
 		if (triplet->protocol == NETLINK_ROUTE)
 			attr_hint = pick_rtnl_attr_type(nlmsg_type);
+		else if (triplet->protocol == NETLINK_GENERIC)
+			attr_hint = pick_genl_attr_type(nlmsg_type);
 		offset = append_nlattr(msg, offset, buflen, attr_hint);
 	}
 
