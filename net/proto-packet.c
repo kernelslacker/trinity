@@ -18,7 +18,7 @@ static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	ll->sll_family = PF_PACKET;
 
-	switch (rand() % 4) {
+	switch (rand() % 5) {
 	case 0:
 		ll->sll_protocol = htons(ETH_P_ALL);
 		break;
@@ -29,14 +29,17 @@ static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		ll->sll_protocol = htons(ETH_P_ARP);
 		break;
 	case 3:
+		ll->sll_protocol = htons(ETH_P_8021Q);
+		break;
+	case 4:
 		ll->sll_protocol = htons(rand());
 		break;
 	}
 
-	ll->sll_ifindex = rand() % 4;	/* 0=any, 1=lo, 2-3=maybe eth */
+	ll->sll_ifindex = rand() % 2;	/* 0=any, 1=lo */
 	ll->sll_hatype = rand() % 2 ? 1 : rand();	/* 1=ARPHRD_ETHER */
 	ll->sll_pkttype = rand() % 5;	/* HOST..OTHERHOST */
-	ll->sll_halen = rand() % 9;	/* 0-8 */
+	ll->sll_halen = 6;
 	generate_rand_bytes(ll->sll_addr, 8);
 
 	*addr = (struct sockaddr *) ll;
