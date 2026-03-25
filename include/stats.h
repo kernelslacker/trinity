@@ -15,6 +15,7 @@ struct stats_s {
 	unsigned long fd_stale_by_generation;
 	unsigned long fd_closed_tracked;
 	unsigned long fd_regenerated;
+	unsigned long fd_duped;
 };
 
 void dump_stats(void);

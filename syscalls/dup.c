@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include "objects.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "compat.h"
 
 /*
@@ -11,12 +12,31 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 
+/*
+ * dup() creates a new fd pointing to the same file description.
+ * We can't add the new fd to the global object pool from a child
+ * process (COW heap), but we bump fd_generation so other children
+ * know the fd table changed and invalidate their caches.
+ *
+ * Full object pool tracking for dup'd fds requires the child-to-parent
+ * event queue (Phase 2).
+ */
+static void post_dup(struct syscallrecord *rec)
+{
+	if ((long) rec->retval < 0)
+		return;
+
+	__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+}
+
 struct syscallentry syscall_dup = {
 	.name = "dup",
 	.num_args = 1,
 	.arg1name = "fildes",
 	.arg1type = ARG_FD,
 	.rettype = RET_FD,
+	.post = post_dup,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
@@ -27,8 +47,11 @@ struct syscallentry syscall_dup = {
  */
 static void post_dup2(struct syscallrecord *rec)
 {
-	if ((long) rec->retval >= 0)
-		remove_object_by_fd((int) rec->a2);
+	if ((long) rec->retval < 0)
+		return;
+
+	remove_object_by_fd((int) rec->a2);
+	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 }
 
 /*
