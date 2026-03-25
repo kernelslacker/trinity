@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MB(_x) (_x * 1024UL * 1024UL)
-#define GB(_x) (_x * 1024UL * MB(1))
+#define MB(_x) ((_x) * 1024UL * 1024UL)
+#define GB(_x) ((_x) * 1024UL * MB(1))
 
 void * alloc_shared(unsigned int size);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
