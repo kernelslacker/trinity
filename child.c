@@ -176,7 +176,7 @@ static void bind_child_to_cpu(struct childdata *child)
 	if (sched_getaffinity(pid, sizeof(set), &set) != 0)
 		return;
 
-	if (child->num > num_online_cpus)
+	if (child->num >= num_online_cpus)
 		cpudest = child->num % num_online_cpus;
 	else
 		cpudest = child->num;
