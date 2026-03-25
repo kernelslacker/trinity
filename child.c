@@ -15,6 +15,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "fd-event.h"
 #include "kcov.h"
 #include "list.h"
 #include "maps.h"
@@ -355,7 +356,11 @@ static bool handle_sigreturn(int sigwas)
 		/* Force this child to pick a new fd next time. */
 		child->fd_lifetime = 0;
 
-		/* TODO: Somehow mark the fd in the parent not to be used again too. */
+		/* Tell the parent to remove this fd from the pool
+		 * so no other child picks it up either. */
+		if (child->fd_event_ring != NULL)
+			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
+					 (int) rec->a1, -1, 0);
 	}
 	unlock(&rec->lock);
 
