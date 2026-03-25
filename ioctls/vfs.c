@@ -52,7 +52,19 @@ static int vfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 			return 0;
 	}
 
-	/* TODO: There may be other fd types we can perform vfs ioctls on */
+	globallist = shm->global_objects[OBJ_FD_MEMFD].list;
+	list_for_each(node, globallist) {
+		obj = (struct object *) node;
+		if (obj->memfdobj.fd == fd)
+			return 0;
+	}
+
+	globallist = shm->global_objects[OBJ_FD_TIMERFD].list;
+	list_for_each(node, globallist) {
+		obj = (struct object *) node;
+		if (obj->timerfdobj.fd == fd)
+			return 0;
+	}
 
 	return -1;
 }
