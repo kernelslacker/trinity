@@ -11,6 +11,7 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_addr.h>
+#include <linux/if_link.h>
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
 #include <linux/genetlink.h>
@@ -22,6 +23,7 @@
 #include <linux/connector.h>
 #include <string.h>
 #include <stdlib.h>
+#include <arpa/inet.h>
 #include "net.h"
 #include "random.h"
 
@@ -154,36 +156,635 @@ static unsigned short pick_nlmsg_type(int protocol)
 	}
 }
 
-/* Append a single nlattr to buf at offset. Returns new offset.
- * nla_type_hint is a protocol-appropriate attr type; 0 means random. */
+/*
+ * Generate random IPv4 address, biased toward useful values.
+ */
+static __u32 rand_ipv4(void)
+{
+	if (ONE_IN(4))
+		return htonl(0x7f000001);	/* 127.0.0.1 */
+	if (ONE_IN(4))
+		return htonl(RAND_RANGE(0xc0a80001, 0xc0a800fe)); /* 192.168.0.x */
+	if (ONE_IN(4))
+		return htonl(RAND_RANGE(0x0a000001, 0x0a0000fe)); /* 10.0.0.x */
+	return rand32();
+}
+
+/*
+ * Generate random IPv6 address.
+ */
+static void rand_ipv6(struct in6_addr *addr)
+{
+	if (ONE_IN(4)) {
+		/* ::1 loopback */
+		memset(addr, 0, sizeof(*addr));
+		addr->s6_addr[15] = 1;
+	} else if (ONE_IN(3)) {
+		/* fe80:: link-local */
+		memset(addr, 0, sizeof(*addr));
+		addr->s6_addr[0] = 0xfe;
+		addr->s6_addr[1] = 0x80;
+		generate_rand_bytes(&addr->s6_addr[8], 8);
+	} else {
+		generate_rand_bytes((unsigned char *)addr, sizeof(*addr));
+	}
+}
+
+/*
+ * Write an nlattr header at buf+offset. Returns pointer past the header,
+ * or NULL if there's not enough room. Caller fills the payload.
+ * After filling, caller must update nla_len if known, and advance offset
+ * by NLA_ALIGN(nla_len).
+ */
+static struct nlattr *start_nlattr(unsigned char *buf, size_t offset,
+				   size_t buflen, unsigned short nla_type,
+				   size_t payload_len)
+{
+	struct nlattr nla;
+	size_t total = NLA_ALIGN(NLA_HDRLEN + payload_len);
+
+	if (offset + total > buflen)
+		return NULL;
+
+	nla.nla_len = NLA_HDRLEN + payload_len;
+	nla.nla_type = nla_type;
+	memcpy(buf + offset, &nla, NLA_HDRLEN);
+	return (struct nlattr *)(buf + offset);
+}
+
+/*
+ * Build a chain of nested sub-attributes inside a buffer.
+ * Returns the total length of the nested chain (unaligned).
+ * This is used for containers like RTA_METRICS, IFLA_LINKINFO, IFLA_AF_SPEC.
+ */
+static size_t build_nested_attrs(unsigned char *buf, size_t buflen,
+				 const unsigned short *attr_types,
+				 size_t nr_types, int max_depth)
+{
+	size_t offset = 0;
+	int count = RAND_RANGE(1, 4);
+
+	if (max_depth <= 0)
+		count = RAND_RANGE(1, 2);
+
+	while (count-- > 0 && offset + NLA_HDRLEN + 4 <= buflen) {
+		unsigned short atype = attr_types[rand() % nr_types];
+		size_t payload_len;
+		size_t total;
+
+		/* Random payload 4-32 bytes */
+		payload_len = RAND_RANGE(4, 32);
+		if (payload_len > buflen - offset - NLA_HDRLEN)
+			payload_len = buflen - offset - NLA_HDRLEN;
+
+		total = NLA_ALIGN(NLA_HDRLEN + payload_len);
+		if (offset + total > buflen)
+			break;
+
+		if (!start_nlattr(buf, offset, buflen, atype, payload_len))
+			break;
+		generate_rand_bytes(buf + offset + NLA_HDRLEN, payload_len);
+		offset += total;
+	}
+	return offset;
+}
+
+/* RTAX_* metrics sub-attributes for RTA_METRICS nested container */
+static const unsigned short rtax_attrs[] = {
+	RTAX_MTU, RTAX_WINDOW, RTAX_RTT, RTAX_RTTVAR,
+	RTAX_SSTHRESH, RTAX_CWND, RTAX_ADVMSS, RTAX_REORDERING,
+	RTAX_HOPLIMIT, RTAX_INITCWND, RTAX_FEATURES, RTAX_RTO_MIN,
+	RTAX_INITRWND, RTAX_QUICKACK,
+};
+
+/* Link type names for IFLA_INFO_KIND */
+static const char *link_kinds[] = {
+	"veth", "bridge", "bond", "vlan", "macvlan",
+	"vxlan", "ipvlan", "dummy", "ifb", "gre",
+	"gretap", "sit", "ip6tnl", "ip6gre", "vti",
+};
+
+/*
+ * Generate a structured payload for route attributes (RTA_*).
+ * Returns payload length, or 0 for random fallback.
+ */
+static size_t gen_rta_route_payload(unsigned char *p, size_t avail,
+				    unsigned short nla_type, unsigned char family)
+{
+	switch (nla_type) {
+	case RTA_DST:
+	case RTA_SRC:
+	case RTA_GATEWAY:
+	case RTA_PREFSRC:
+		if (family == AF_INET6 && avail >= 16) {
+			struct in6_addr addr;
+			rand_ipv6(&addr);
+			memcpy(p, &addr, 16);
+			return 16;
+		}
+		if (avail >= 4) {
+			__u32 addr = rand_ipv4();
+			memcpy(p, &addr, 4);
+			return 4;
+		}
+		return 0;
+
+	case RTA_OIF:
+	case RTA_IIF:
+	case RTA_TABLE:
+	case RTA_MARK:
+	case RTA_NH_ID:
+	case RTA_PRIORITY:
+		if (avail >= 4) {
+			__u32 val = rand32() % 64;
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case RTA_PREF:
+	case RTA_TTL_PROPAGATE:
+	case RTA_IP_PROTO:
+		if (avail >= 1) {
+			*p = rand() % 256;
+			return 1;
+		}
+		return 0;
+
+	case RTA_SPORT:
+	case RTA_DPORT:
+	case RTA_ENCAP_TYPE:
+		if (avail >= 2) {
+			unsigned short val = rand16();
+			memcpy(p, &val, 2);
+			return 2;
+		}
+		return 0;
+
+	case RTA_UID:
+	case RTA_EXPIRES:
+		if (avail >= 4) {
+			__u32 val = rand32();
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case RTA_CACHEINFO:
+		if (avail >= sizeof(struct rta_cacheinfo)) {
+			struct rta_cacheinfo ci;
+			generate_rand_bytes((unsigned char *)&ci, sizeof(ci));
+			memcpy(p, &ci, sizeof(ci));
+			return sizeof(ci);
+		}
+		return 0;
+
+	case RTA_METRICS:
+		/* Nested container of RTAX_* sub-attributes */
+		if (avail >= NLA_HDRLEN + 8) {
+			return build_nested_attrs(p, avail, rtax_attrs,
+						  ARRAY_SIZE(rtax_attrs), 0);
+		}
+		return 0;
+
+	case RTA_MULTIPATH: {
+		/* Array of struct rtnexthop, each optionally followed by RTA_GATEWAY */
+		size_t written = 0;
+		int nhops = RAND_RANGE(1, 3);
+
+		while (nhops-- > 0 && written + sizeof(struct rtnexthop) <= avail) {
+			struct rtnexthop nh;
+			size_t nh_start = written;
+
+			nh.rtnh_flags = rand() % 256;
+			nh.rtnh_hops = rand() % 256;
+			nh.rtnh_ifindex = rand32() % 64;
+			nh.rtnh_len = sizeof(struct rtnexthop);
+
+			memcpy(p + written, &nh, sizeof(nh));
+			written += sizeof(struct rtnexthop);
+
+			/* Sometimes append an RTA_GATEWAY after the nexthop */
+			if (RAND_BOOL() && written + NLA_HDRLEN + 4 <= avail) {
+				struct nlattr gw_nla;
+				__u32 gw = rand_ipv4();
+
+				gw_nla.nla_len = NLA_HDRLEN + 4;
+				gw_nla.nla_type = RTA_GATEWAY;
+				memcpy(p + written, &gw_nla, NLA_HDRLEN);
+				memcpy(p + written + NLA_HDRLEN, &gw, 4);
+				written += NLA_ALIGN(NLA_HDRLEN + 4);
+			}
+
+			/* Update rtnh_len to include any trailing attrs */
+			nh.rtnh_len = written - nh_start;
+			memcpy(p + nh_start, &nh, sizeof(nh.rtnh_len));
+		}
+		return written;
+	}
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for link attributes (IFLA_*).
+ */
+static size_t gen_rta_link_payload(unsigned char *p, size_t avail,
+				   unsigned short nla_type)
+{
+	switch (nla_type) {
+	case IFLA_IFNAME:
+	case IFLA_QDISC:
+	case IFLA_IFALIAS: {
+		static const char *names[] = {
+			"eth0", "lo", "br0", "bond0", "veth0",
+			"dummy0", "wlan0", "tun0",
+		};
+		const char *name = RAND_ARRAY(names);
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case IFLA_ALT_IFNAME: {
+		static const char *alts[] = { "altname0", "renamed1" };
+		const char *name = RAND_ARRAY(alts);
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case IFLA_MTU:
+	case IFLA_MIN_MTU:
+	case IFLA_MAX_MTU:
+		if (avail >= 4) {
+			__u32 val = RAND_RANGE(68, 65535);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFLA_TXQLEN:
+		if (avail >= 4) {
+			__u32 val = RAND_RANGE(0, 10000);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFLA_GROUP:
+	case IFLA_PROMISCUITY:
+	case IFLA_NUM_TX_QUEUES:
+	case IFLA_NUM_RX_QUEUES:
+	case IFLA_NUM_VF:
+	case IFLA_GSO_MAX_SEGS:
+	case IFLA_GSO_MAX_SIZE:
+	case IFLA_NEW_IFINDEX:
+	case IFLA_LINK:
+	case IFLA_MASTER:
+	case IFLA_EXT_MASK:
+	case IFLA_LINK_NETNSID:
+	case IFLA_NET_NS_PID:
+	case IFLA_NET_NS_FD:
+		if (avail >= 4) {
+			__u32 val = rand32() % 64;
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFLA_ADDRESS:
+	case IFLA_BROADCAST:
+	case IFLA_PERM_ADDRESS:
+		/* MAC address: 6 bytes */
+		if (avail >= 6) {
+			generate_rand_bytes(p, 6);
+			return 6;
+		}
+		return 0;
+
+	case IFLA_OPERSTATE:
+	case IFLA_LINKMODE:
+	case IFLA_CARRIER:
+	case IFLA_PROTO_DOWN:
+		if (avail >= 1) {
+			*p = rand() % 8;
+			return 1;
+		}
+		return 0;
+
+	case IFLA_WEIGHT:
+	case IFLA_COST:
+	case IFLA_PRIORITY:
+		if (avail >= 4) {
+			__u32 val = rand32();
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFLA_LINKINFO:
+		/* Nested: IFLA_INFO_KIND (string) + optional IFLA_INFO_DATA */
+		if (avail >= NLA_HDRLEN + 8) {
+			size_t nested_len = 0;
+			const char *kind = RAND_ARRAY(link_kinds);
+			size_t kind_len = strlen(kind) + 1;
+			size_t kind_total = NLA_ALIGN(NLA_HDRLEN + kind_len);
+
+			/* IFLA_INFO_KIND */
+			if (nested_len + kind_total <= avail) {
+				if (start_nlattr(p, nested_len, avail,
+						 IFLA_INFO_KIND, kind_len)) {
+					memcpy(p + nested_len + NLA_HDRLEN,
+					       kind, kind_len);
+					nested_len += kind_total;
+				}
+			}
+
+			/* Sometimes add IFLA_INFO_DATA with random nested attrs */
+			if (RAND_BOOL() && nested_len + NLA_HDRLEN + 8 <= avail) {
+				size_t data_avail = avail - nested_len - NLA_HDRLEN;
+				size_t data_len;
+				unsigned char sub[128];
+
+				if (data_avail > sizeof(sub))
+					data_avail = sizeof(sub);
+				data_len = RAND_RANGE(4, data_avail);
+				generate_rand_bytes(sub, data_len);
+
+				if (start_nlattr(p, nested_len, avail,
+						 IFLA_INFO_DATA | NLA_F_NESTED,
+						 data_len)) {
+					memcpy(p + nested_len + NLA_HDRLEN,
+					       sub, data_len);
+					nested_len += NLA_ALIGN(NLA_HDRLEN + data_len);
+				}
+			}
+
+			return nested_len;
+		}
+		return 0;
+
+	case IFLA_AF_SPEC: {
+		/* Nested: per-address-family containers */
+		size_t nested_len = 0;
+		int i, count = RAND_RANGE(1, 3);
+		static const unsigned char af_types[] = {
+			AF_INET, AF_INET6, AF_BRIDGE,
+		};
+
+		for (i = 0; i < count && nested_len + NLA_HDRLEN + 8 <= avail; i++) {
+			unsigned char af = RAND_ARRAY(af_types);
+			size_t inner_avail = avail - nested_len - NLA_HDRLEN;
+			size_t inner_len;
+			unsigned char inner[64];
+
+			if (inner_avail > sizeof(inner))
+				inner_avail = sizeof(inner);
+			inner_len = RAND_RANGE(4, inner_avail);
+			generate_rand_bytes(inner, inner_len);
+
+			if (start_nlattr(p, nested_len, avail,
+					 af | NLA_F_NESTED, inner_len)) {
+				memcpy(p + nested_len + NLA_HDRLEN,
+				       inner, inner_len);
+				nested_len += NLA_ALIGN(NLA_HDRLEN + inner_len);
+			}
+		}
+		return nested_len;
+	}
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for address attributes (IFA_*).
+ */
+static size_t gen_rta_addr_payload(unsigned char *p, size_t avail,
+				   unsigned short nla_type, unsigned char family)
+{
+	switch (nla_type) {
+	case IFA_ADDRESS:
+	case IFA_LOCAL:
+	case IFA_BROADCAST:
+	case IFA_ANYCAST:
+		if (family == AF_INET6 && avail >= 16) {
+			struct in6_addr addr;
+			rand_ipv6(&addr);
+			memcpy(p, &addr, 16);
+			return 16;
+		}
+		if (avail >= 4) {
+			__u32 addr = rand_ipv4();
+			memcpy(p, &addr, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFA_LABEL: {
+		static const char *labels[] = {
+			"eth0", "eth0:1", "lo", "br0",
+		};
+		const char *label = RAND_ARRAY(labels);
+		size_t slen = strlen(label) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, label, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case IFA_CACHEINFO:
+		if (avail >= sizeof(struct ifa_cacheinfo)) {
+			struct ifa_cacheinfo ci;
+			ci.ifa_prefered = rand32();
+			ci.ifa_valid = rand32();
+			ci.cstamp = rand32();
+			ci.tstamp = rand32();
+			memcpy(p, &ci, sizeof(ci));
+			return sizeof(ci);
+		}
+		return 0;
+
+	case IFA_FLAGS:
+	case IFA_RT_PRIORITY:
+		if (avail >= 4) {
+			__u32 val = rand32();
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFA_PROTO:
+		if (avail >= 1) {
+			*p = rand() % 256;
+			return 1;
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for neighbor attributes (NDA_*).
+ */
+static size_t gen_rta_neigh_payload(unsigned char *p, size_t avail,
+				    unsigned short nla_type, unsigned char family)
+{
+	switch (nla_type) {
+	case NDA_DST:
+		if (family == AF_INET6 && avail >= 16) {
+			struct in6_addr addr;
+			rand_ipv6(&addr);
+			memcpy(p, &addr, 16);
+			return 16;
+		}
+		if (avail >= 4) {
+			__u32 addr = rand_ipv4();
+			memcpy(p, &addr, 4);
+			return 4;
+		}
+		return 0;
+
+	case NDA_LLADDR:
+		/* Link-layer address (MAC): 6 bytes */
+		if (avail >= 6) {
+			generate_rand_bytes(p, 6);
+			return 6;
+		}
+		return 0;
+
+	case NDA_CACHEINFO:
+		if (avail >= sizeof(struct nda_cacheinfo)) {
+			struct nda_cacheinfo ci;
+			ci.ndm_confirmed = rand32();
+			ci.ndm_used = rand32();
+			ci.ndm_updated = rand32();
+			ci.ndm_refcnt = rand32();
+			memcpy(p, &ci, sizeof(ci));
+			return sizeof(ci);
+		}
+		return 0;
+
+	case NDA_PROBES:
+	case NDA_IFINDEX:
+	case NDA_MASTER:
+	case NDA_LINK_NETNSID:
+	case NDA_SRC_VNI:
+	case NDA_VNI:
+	case NDA_NH_ID:
+	case NDA_FLAGS_EXT:
+	case NDA_NDM_STATE_MASK:
+	case NDA_NDM_FLAGS_MASK:
+		if (avail >= 4) {
+			__u32 val = rand32();
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case NDA_VLAN:
+	case NDA_PORT:
+		if (avail >= 2) {
+			unsigned short val = rand16();
+			memcpy(p, &val, 2);
+			return 2;
+		}
+		return 0;
+
+	case NDA_PROTOCOL:
+		if (avail >= 1) {
+			*p = rand() % 256;
+			return 1;
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for a specific rtnetlink attribute.
+ * Dispatches to the appropriate per-group generator based on the
+ * rtnetlink message group. Returns the payload length, or 0 for
+ * random fallback.
+ */
+static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
+			      unsigned short nla_type, unsigned char family,
+			      int rtnl_group)
+{
+	size_t avail = buflen - offset;
+	unsigned char *p = buf + offset;
+
+	switch (rtnl_group) {
+	case 0: return gen_rta_link_payload(p, avail, nla_type);
+	case 1: return gen_rta_addr_payload(p, avail, nla_type, family);
+	case 2: return gen_rta_route_payload(p, avail, nla_type, family);
+	case 3: return gen_rta_neigh_payload(p, avail, nla_type, family);
+	default: return 0;
+	}
+}
+
+/*
+ * Append a single nlattr to buf at offset. Returns new offset.
+ * nla_type_hint is a protocol-appropriate attr type; 0 means random.
+ * family is the address family from the body struct (for address sizing).
+ */
 static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
-			    unsigned short nla_type_hint)
+			    unsigned short nla_type_hint, unsigned char family,
+			    int rtnl_group)
 {
 	struct nlattr nla;
 	size_t payload_len;
+	size_t structured_len;
 	size_t total;
+	unsigned short nla_type;
 
 	if (offset + NLA_HDRLEN > buflen)
 		return offset;
 
-	payload_len = rand() % 64;
-	total = NLA_HDRLEN + payload_len;
+	/* Decide the attr type first */
+	if (nla_type_hint && !ONE_IN(8))
+		nla_type = nla_type_hint;
+	else
+		nla_type = rand16();
 
-	/* Align to 4 bytes */
-	total = (total + 3) & ~3;
-	if (offset + total > buflen)
+	/* Try structured payload generation for known types */
+	structured_len = gen_rta_payload(buf, offset + NLA_HDRLEN, buflen,
+					nla_type, family, rtnl_group);
+	if (structured_len > 0) {
+		payload_len = structured_len;
+	} else {
+		/* Fall back to random bytes */
+		payload_len = rand() % 64;
+	}
+
+	total = NLA_ALIGN(NLA_HDRLEN + payload_len);
+	if (offset + total > buflen) {
 		total = buflen - offset;
-
-	if (total < NLA_HDRLEN)
-		return offset;
+		if (total < NLA_HDRLEN)
+			return offset;
+		payload_len = total - NLA_HDRLEN;
+	}
 
 	nla.nla_len = NLA_HDRLEN + payload_len;
-
-	/* Use the hint most of the time, random for chaos */
-	if (nla_type_hint && !ONE_IN(8))
-		nla.nla_type = nla_type_hint;
-	else
-		nla.nla_type = rand16();
+	nla.nla_type = nla_type;
 
 	/* Sometimes set nested/net-byteorder flags */
 	if (ONE_IN(4))
@@ -193,11 +794,11 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 
 	memcpy(buf + offset, &nla, NLA_HDRLEN);
 
-	/* Fill payload with random data */
-	if (total > NLA_HDRLEN)
-		generate_rand_bytes(buf + offset + NLA_HDRLEN, total - NLA_HDRLEN);
+	/* If we didn't do structured generation, fill with random data */
+	if (structured_len == 0 && payload_len > 0)
+		generate_rand_bytes(buf + offset + NLA_HDRLEN, payload_len);
 
-	return offset + total;
+	return offset + NLA_ALIGN(NLA_HDRLEN + payload_len);
 }
 
 /* nlattr types for each rtnetlink message group.
@@ -299,7 +900,8 @@ static unsigned char rand_family(void)
  * Returns the body length written. Caller must ensure buf has enough
  * room (at least sizeof(struct tcmsg) = 20 bytes).
  */
-static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
+static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
+			    unsigned char *out_family)
 {
 	/* Map RTM type to its base: RTM_*LINK=16-19, RTM_*ADDR=20-23, etc.
 	 * Each group of 4 shares the same body struct. */
@@ -314,6 +916,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
 		ifi.ifi_index = rand32() % 64; /* small interface indices */
 		ifi.ifi_flags = rand32();    /* IFF_* */
 		ifi.ifi_change = rand32();
+		*out_family = ifi.ifi_family;
 		memcpy(body, &ifi, sizeof(ifi));
 		return sizeof(ifi);
 	}
@@ -324,6 +927,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
 		ifa.ifa_flags = rand() % 256;
 		ifa.ifa_scope = rand() % 256;
 		ifa.ifa_index = rand32() % 64;
+		*out_family = ifa.ifa_family;
 		memcpy(body, &ifa, sizeof(ifa));
 		return sizeof(ifa);
 	}
@@ -338,6 +942,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
 		rtm.rtm_scope = rand() % 256;
 		rtm.rtm_type = rand() % (RTN_MAX + 1);
 		rtm.rtm_flags = rand32();
+		*out_family = rtm.rtm_family;
 		memcpy(body, &rtm, sizeof(rtm));
 		return sizeof(rtm);
 	}
@@ -350,6 +955,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
 		ndm.ndm_state = rand16();
 		ndm.ndm_flags = rand() % 256;
 		ndm.ndm_type = rand() % 256;
+		*out_family = ndm.ndm_family;
 		memcpy(body, &ndm, sizeof(ndm));
 		return sizeof(ndm);
 	}
@@ -364,6 +970,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
 		frh.res2 = 0;
 		frh.action = rand() % 256;
 		frh.flags = rand32();
+		*out_family = frh.family;
 		memcpy(body, &frh, sizeof(frh));
 		return sizeof(frh);
 	}
@@ -378,12 +985,14 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type)
 		tc.tcm_handle = rand32();
 		tc.tcm_parent = rand32();
 		tc.tcm_info = rand32();
+		*out_family = tc.tcm_family;
 		memcpy(body, &tc, sizeof(tc));
 		return sizeof(tc);
 	}
 	default: { /* Everything else: struct rtgenmsg (1 byte) */
 		struct rtgenmsg gen;
 		gen.rtgen_family = rand_family();
+		*out_family = gen.rtgen_family;
 		memcpy(body, &gen, sizeof(gen));
 		return sizeof(gen);
 	}
@@ -672,6 +1281,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	unsigned short nlmsg_type;
 	size_t body_len;
 	size_t msg_start = offset;
+	unsigned char body_family = AF_UNSPEC;
+	int rtnl_group = -1;
 	int num_attrs;
 
 	if (offset + NLMSG_HDRLEN + 4 > buflen)
@@ -690,7 +1301,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	/* Generate protocol-appropriate body struct */
 	if (triplet->protocol == NETLINK_ROUTE &&
 	    nlmsg_type >= RTM_BASE && nlmsg_type < RTM_MAX) {
-		body_len = gen_rtnl_body(msg + offset, nlmsg_type);
+		body_len = gen_rtnl_body(msg + offset, nlmsg_type, &body_family);
+		rtnl_group = (nlmsg_type - RTM_BASE) / 4;
 	} else if (triplet->protocol == NETLINK_GENERIC) {
 		body_len = gen_genl_body(msg + offset, nlmsg_type);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
@@ -724,7 +1336,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			attr_hint = RAND_ARRAY(xfrma_attrs);
 		else if (triplet->protocol == NETLINK_SOCK_DIAG)
 			attr_hint = RAND_ARRAY(inet_diag_req_attrs);
-		offset = append_nlattr(msg, offset, buflen, attr_hint);
+		offset = append_nlattr(msg, offset, buflen, attr_hint,
+				       body_family, rtnl_group);
 	}
 
 	/* Set nlmsg_len — usually correct, sometimes corrupted */
