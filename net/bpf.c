@@ -326,9 +326,57 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 #elif defined(__x86_64__)
 # define TRUE_REG_SYSCALL	REG_RAX
 # define TRUE_ARCH		AUDIT_ARCH_X86_64
+#elif defined(__aarch64__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_AARCH64
+#elif defined(__arm__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_ARM
+#elif defined(__powerpc64__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_PPC64
+#elif defined(__powerpc__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_PPC
+#elif defined(__s390x__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_S390X
+#elif defined(__s390__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_S390
+#elif defined(__mips__) && defined(__LP64__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_MIPS64
+#elif defined(__mips__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_MIPS
+#elif defined(__sparc__) && defined(__LP64__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_SPARC64
+#elif defined(__sparc__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_SPARC
+#elif defined(__alpha__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_ALPHA
+#elif defined(__ia64__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_IA64
+#elif defined(__sh__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_SH
+#elif defined(__hppa__) && defined(__LP64__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_PARISC64
+#elif defined(__hppa__)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_PARISC
+#elif defined(__riscv) && (__riscv_xlen == 64)
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_RISCV64
 #else
-# define TRUE_REG_SYSCALL	((uint32_t) rand()) /* TODO later */
-# define TRUE_ARCH		((uint32_t) rand()) /* TODO later */
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		((uint32_t) rand())
 #endif
 
 struct seccomp_data {
