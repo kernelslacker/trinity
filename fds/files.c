@@ -101,24 +101,25 @@ static void filefd_dump(struct object *obj, enum obj_scope scope)
 		fo->fd, fo->filename, fo->flags, fo->fopened, fo->fcntl_flags, scope);
 }
 
-static int open_files(void)
+/*
+ * Per-pool provider: open files from a specific pathname pool.
+ */
+static int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 {
 	struct objhead *head;
-	unsigned int i, nr_to_open;
+	unsigned int i, nr_to_open, pool_count;
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FILE);
+	head = get_objhead(OBJ_GLOBAL, objtype);
 	head->destroy = &filefd_destructor;
 	head->dump = &filefd_dump;
 
 	generate_filelist();
 
-	if (files_in_index == 0) {
-		/* Something bad happened. Crappy -V maybe? */
-		panic(EXIT_NO_FILES);
+	pool_count = get_pool_file_count(pool_id);
+	if (pool_count == 0)
 		return false;
-	}
 
-	nr_to_open = min(files_in_index, NR_FILE_FDS);
+	nr_to_open = min(pool_count, NR_FILE_FDS / 3);
 
 	if (fileindex == NULL)	/* this can happen if we ctrl-c'd */
 		return false;
@@ -133,7 +134,9 @@ static int open_files(void)
 		do {
 			int ret;
 
-			filename = get_filename();
+			filename = get_filename_for_pool(pool_id);
+			if (filename == NULL)
+				break;
 
 			ret = lstat(filename, &sb);
 			if (ret == -1)
@@ -146,8 +149,13 @@ static int open_files(void)
 			fd = open_file(obj, filename, flags);
 		} while (fd == -1);
 
+		if (fd == -1) {
+			free(obj);
+			break;
+		}
+
 		obj->fileobj.fd = fd;
-		add_object(obj, OBJ_GLOBAL, OBJ_FD_FILE);
+		add_object(obj, OBJ_GLOBAL, objtype);
 
 		/* convert O_ open flags to mmap prot flags */
 		switch (flags) {
@@ -169,18 +177,18 @@ static int open_files(void)
 	return true;
 }
 
-static int get_rand_file_fd(void)
+static int get_rand_pool_fd(enum objecttype objtype)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_FD_FILE) == true)
+	if (objects_empty(objtype) == true)
 		return -1;
 
-	obj = get_random_object(OBJ_FD_FILE, OBJ_GLOBAL);
+	obj = get_random_object(objtype, OBJ_GLOBAL);
 	return obj->fileobj.fd;
 }
 
-static int open_file_fd(void)
+static int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
 {
 	struct object *obj;
 	const char *filename;
@@ -191,7 +199,9 @@ static int open_file_fd(void)
 		return false;
 
 	for (tries = 0; tries < 10; tries++) {
-		filename = get_filename();
+		filename = get_filename_for_pool(pool_id);
+		if (filename == NULL)
+			return false;
 		if (lstat(filename, &sb) == -1)
 			continue;
 		flags = check_stat_file(&sb);
@@ -206,19 +216,56 @@ static int open_file_fd(void)
 		}
 
 		obj->fileobj.fd = fd;
-		add_object(obj, OBJ_GLOBAL, OBJ_FD_FILE);
+		add_object(obj, OBJ_GLOBAL, objtype);
 		return true;
 	}
 	return false;
 }
 
-static const struct fd_provider file_fd_provider = {
-	.name = "pseudo",	// FIXME: Use separate providers for dev/sysfs/procfs
-	.objtype = OBJ_FD_FILE,
+/* /dev provider (pool 0) */
+static int init_devfiles(void)		{ return open_pool_files(0, OBJ_FD_DEVFILE); }
+static int get_rand_devfile_fd(void)	{ return get_rand_pool_fd(OBJ_FD_DEVFILE); }
+static int open_devfile_fd(void)	{ return open_pool_fd(0, OBJ_FD_DEVFILE); }
+
+static const struct fd_provider devfile_provider = {
+	.name = "dev",
+	.objtype = OBJ_FD_DEVFILE,
 	.enabled = true,
-	.init = &open_files,
-	.get = &get_rand_file_fd,
-	.open = &open_file_fd,
+	.init = &init_devfiles,
+	.get = &get_rand_devfile_fd,
+	.open = &open_devfile_fd,
 };
 
-REG_FD_PROV(file_fd_provider);
+REG_FD_PROV(devfile_provider);
+
+/* /proc provider (pool 1) */
+static int init_procfiles(void)		{ return open_pool_files(1, OBJ_FD_PROCFILE); }
+static int get_rand_procfile_fd(void)	{ return get_rand_pool_fd(OBJ_FD_PROCFILE); }
+static int open_procfile_fd(void)	{ return open_pool_fd(1, OBJ_FD_PROCFILE); }
+
+static const struct fd_provider procfile_provider = {
+	.name = "proc",
+	.objtype = OBJ_FD_PROCFILE,
+	.enabled = true,
+	.init = &init_procfiles,
+	.get = &get_rand_procfile_fd,
+	.open = &open_procfile_fd,
+};
+
+REG_FD_PROV(procfile_provider);
+
+/* /sys provider (pool 2) */
+static int init_sysfiles(void)		{ return open_pool_files(2, OBJ_FD_SYSFILE); }
+static int get_rand_sysfile_fd(void)	{ return get_rand_pool_fd(OBJ_FD_SYSFILE); }
+static int open_sysfile_fd(void)	{ return open_pool_fd(2, OBJ_FD_SYSFILE); }
+
+static const struct fd_provider sysfile_provider = {
+	.name = "sys",
+	.objtype = OBJ_FD_SYSFILE,
+	.enabled = true,
+	.init = &init_sysfiles,
+	.get = &get_rand_sysfile_fd,
+	.open = &open_sysfile_fd,
+};
+
+REG_FD_PROV(sysfile_provider);

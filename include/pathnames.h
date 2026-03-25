@@ -16,4 +16,6 @@ extern unsigned int files_in_index;
 int check_stat_file(const struct stat *sb);
 void generate_filelist(void);
 const char * get_filename(void);
+const char * get_filename_for_pool(unsigned int pool_id);
+unsigned int get_pool_file_count(unsigned int pool_id);
 const char * generate_pathname(void);

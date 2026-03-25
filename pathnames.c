@@ -276,6 +276,10 @@ static void add_pool(const char *dirpath)
 
 void generate_filelist(void)
 {
+	/* Only generate once — multiple providers may call this. */
+	if (fileindex != NULL)
+		return;
+
 	names = zmalloc(sizeof(struct namelist));
 	INIT_LIST_HEAD(&names->list);
 
@@ -316,6 +320,27 @@ const char * get_filename(void)
 	}
 
 	return fileindex[rand() % files_in_index];
+}
+
+const char * get_filename_for_pool(unsigned int pool_id)
+{
+	struct pathname_pool *pool;
+
+	if (pool_id >= num_pools)
+		return NULL;
+
+	pool = &pools[pool_id];
+	if (pool->count == 0)
+		return NULL;
+
+	return fileindex[pool->start + rand() % pool->count];
+}
+
+unsigned int get_pool_file_count(unsigned int pool_id)
+{
+	if (pool_id >= num_pools)
+		return 0;
+	return pools[pool_id].count;
 }
 
 const char * generate_pathname(void)

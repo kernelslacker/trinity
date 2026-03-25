@@ -364,7 +364,9 @@ int fd_from_object(struct object *obj, enum objecttype type)
 {
 	switch (type) {
 	case OBJ_FD_PIPE:	return obj->pipeobj.fd;
-	case OBJ_FD_FILE:	return obj->fileobj.fd;
+	case OBJ_FD_DEVFILE:
+	case OBJ_FD_PROCFILE:
+	case OBJ_FD_SYSFILE:	return obj->fileobj.fd;
 	case OBJ_FD_PERF:	return obj->perfobj.fd;
 	case OBJ_FD_EPOLL:	return obj->epollobj.fd;
 	case OBJ_FD_EVENTFD:	return obj->eventfdobj.fd;
