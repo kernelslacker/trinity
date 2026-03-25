@@ -68,8 +68,7 @@ static void disable_coredumps(void)
 }
 
 /*
- * We reenable core dumps when we're about to exit a child.
- * TODO: Maybe narrow the disable/enable pair to just around do_syscall ?
+ * Re-enable core dumps after do_syscall completes.
  */
 static void enable_coredumps(void)
 {
@@ -246,8 +245,6 @@ static void init_child(struct childdata *child, int childno)
 		use_fpu();
 
 	mask_signals_child();
-
-	disable_coredumps();
 
 	if (RAND_BOOL()) {
 		unshare(CLONE_NEWNS);
@@ -430,7 +427,9 @@ void child_process(struct childdata *child, int childno)
 		/* timestamp, and do the syscall */
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
+		disable_coredumps();
 		ret = random_syscall(child);
+		enable_coredumps();
 
 		child->op_nr++;
 
@@ -444,8 +443,6 @@ void child_process(struct childdata *child, int childno)
 			}
 		}
 	}
-
-	enable_coredumps();
 
 	/* If we're exiting because we tainted, wait here for it to be done. */
 	while (shm->postmortem_in_progress == true) {
