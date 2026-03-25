@@ -59,7 +59,11 @@ void create_sysv_shms(void)
 
 		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
 
-		p = shmat(id, NULL, 0);	// TODO: Try alternative flags.
+		p = shmat(id, NULL, 0);
+		if (p == (void *) -1)
+			p = shmat(id, NULL, SHM_RDONLY);
+		if (p == (void *) -1)
+			p = shmat(id, NULL, SHM_EXEC);
 		if (p != (void *) -1)
 			obj->sysv_shm.ptr = p;
 	}
