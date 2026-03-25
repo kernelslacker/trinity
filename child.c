@@ -215,7 +215,7 @@ static void init_child(struct childdata *child, int childno)
 		if (pid_alive(mainpid) == false) {
 			panic(EXIT_SHM_CORRUPTION);
 			outputerr("BUG!: parent (%d) went away!\n", mainpid);
-			sleep(20000);
+			_exit(EXIT_FAILURE);
 		}
 	}
 
