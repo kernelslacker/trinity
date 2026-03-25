@@ -60,7 +60,7 @@ unsigned long mapping_sizes[NR_MAPPING_SIZES] = {
 static unsigned long long get_free_mem(void)
 {
 	FILE *fp;
-	char *buffer;
+	char *buffer = NULL;
 	size_t n = 0;
 	unsigned long long memfree = 0;
 
@@ -68,18 +68,12 @@ static unsigned long long get_free_mem(void)
 	if (!fp)
 		return 0;
 
-	buffer = malloc(4096);
-	if (!buffer)
-		goto out_close;
-
 	while (getline(&buffer, &n, fp) >= 0) {
 		if (sscanf(buffer, "MemFree:         %llu", &memfree) == 1) {
-			goto done;
+			break;
 		}
 	}
-done:
 	free(buffer);
-out_close:
 	fclose(fp);
 
 	return memfree;
