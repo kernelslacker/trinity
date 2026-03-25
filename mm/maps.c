@@ -128,8 +128,12 @@ struct map * common_set_mmap_ptr_len(void)
 	}
 
 	rec->a1 = (unsigned long) map->ptr;
-	rec->a2 = rand() % map->size;
-	rec->a2 &= PAGE_MASK;
+	if (map->size == 0) {
+		rec->a2 = 0;
+	} else {
+		rec->a2 = rand() % map->size;
+		rec->a2 &= PAGE_MASK;
+	}
 
 	return map;
 }
@@ -189,7 +193,7 @@ retry_mmap:
 		offset = 0;
 		obj->map.size = page_size;
 	} else
-		offset = (rand() % obj->map.size) & PAGE_MASK;
+		offset = (obj->map.size > 0 ? rand() % obj->map.size : 0) & PAGE_MASK;
 
 	obj->map.prot = prot;
 	obj->map.type = MMAPED_FILE;
