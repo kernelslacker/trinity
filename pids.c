@@ -195,13 +195,16 @@ unsigned int get_pid(void)
 
 	switch (rand() % 3) {
 	case 0:
+	{	unsigned int retries = 0;
 retry:		i = rand() % max_children;
 		pid = pids[i];
-		if (pid == EMPTY_PIDSLOT)
+		if (pid == EMPTY_PIDSLOT || pid == getppid()) {
+			if (++retries >= 100)
+				return getpid();
 			goto retry;
-		if (pid == getppid())
-			goto retry;
+		}
 		break;
+	}
 
 	case 1:	pid = 0;
 		break;
