@@ -14,6 +14,10 @@ enum child_op_type {
 	CHILD_OP_SYSCALL = 0,	/* default: fuzz random syscalls */
 	CHILD_OP_FAULT_INJECT,	/* future: fault injection workloads */
 	CHILD_OP_FD_CHURN,	/* future: fd lifecycle stress */
+	CHILD_OP_MMAP_LIFECYCLE,
+	CHILD_OP_MPROTECT_SPLIT,
+	CHILD_OP_MLOCK_PRESSURE,
+	CHILD_OP_INODE_SPEWER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -74,3 +78,7 @@ void reap_child(struct childdata *child, int childno);
 /* Childops */
 bool random_syscall(struct childdata *child);
 bool drop_privs(struct childdata *child);
+bool mmap_lifecycle(struct childdata *child);
+bool mprotect_split(struct childdata *child);
+bool mlock_pressure(struct childdata *child);
+bool inode_spewer(struct childdata *child);
