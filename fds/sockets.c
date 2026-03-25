@@ -306,7 +306,7 @@ static bool generate_sockets(void)
 			ret = generate_specific_socket(specific_domain);
 
 			if (ret == false)
-				return false;
+				goto out_unlock;
 		}
 		goto out_unlock;
 	}
