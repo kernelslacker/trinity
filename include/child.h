@@ -10,6 +10,13 @@
 
 struct fd_event_ring;
 
+enum child_op_type {
+	CHILD_OP_SYSCALL = 0,	/* default: fuzz random syscalls */
+	CHILD_OP_FAULT_INJECT,	/* future: fault injection workloads */
+	CHILD_OP_FD_CHURN,	/* future: fd lifecycle stress */
+	NR_CHILD_OP_TYPES,
+};
+
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
@@ -46,6 +53,8 @@ struct childdata {
 	bool dontkillme;	/* provide temporary protection from the reaper. */
 
 	bool dropped_privs;
+
+	enum child_op_type op_type;
 };
 
 extern unsigned int max_children;

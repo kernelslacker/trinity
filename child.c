@@ -157,6 +157,7 @@ void clean_childdata(struct childdata *child)
 	child->op_nr = 0;
 	child->last_group = GROUP_NONE;
 	child->dropped_privs = false;
+	child->op_type = CHILD_OP_SYSCALL;
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }
 
@@ -330,10 +331,22 @@ static void periodic_work(void)
 }
 
 /*
+ * Per-op-type stall thresholds.  Syscalls are fast, so 10 missed
+ * progress checks means something is stuck.  Future op types that do
+ * heavier work (fault injection, fd lifecycle stress) get more slack.
+ */
+static unsigned int stall_threshold(enum child_op_type op_type)
+{
+	switch (op_type) {
+	case CHILD_OP_FAULT_INJECT:	return 50;
+	case CHILD_OP_FD_CHURN:		return 30;
+	default:			return 10;
+	}
+}
+
+/*
  * We jump here on return from a signal. We do all the stuff here that we
  * otherwise couldn't do in a signal handler.
- *
- * FIXME: when we have different child ops, we're going to need to redo the progress detector.
  */
 static bool handle_sigreturn(int sigwas)
 {
@@ -364,13 +377,13 @@ static bool handle_sigreturn(int sigwas)
 	/* Check if we're making any progress at all. */
 	if (child->op_nr == last) {
 		count++;
-		//output(1, "no progress for %d tries.\n", count);
 	} else {
 		count = 0;
 		last = child->op_nr;
 	}
-	if (count == 10) {
-		output(1, "no progress for 10 tries, exiting child.\n");
+	if (count == stall_threshold(child->op_type)) {
+		output(1, "no progress for %u tries (op_type=%d), exiting child.\n",
+			count, child->op_type);
 		return false;
 	}
 
