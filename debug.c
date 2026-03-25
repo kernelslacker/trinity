@@ -109,7 +109,25 @@ void dump_childdata(struct childdata *child)
 	dump_syscallrec(&child->syscall);
 
 	output(0, "objects: %p\n", child->objects);
-	//TODO: dump each objhead
+	{
+		unsigned int i;
+		for (i = 0; i < MAX_OBJECT_TYPES; i++) {
+			struct objhead *head = &child->objects[i];
+
+			if (head->num_entries == 0)
+				continue;
+
+			output(0, " objhead[%u]: %u entries (max %u, capacity %u)\n",
+				i, head->num_entries, head->max_entries,
+				head->array_capacity);
+
+			if (head->dump != NULL) {
+				unsigned int j;
+				for (j = 0; j < head->num_entries; j++)
+					head->dump(head->array[j], OBJ_LOCAL);
+			}
+		}
+	}
 
 	output(0, " tp.tv_sec=%ld tp.tv_nsec=%ld\n", child->tp.tv_sec, child->tp.tv_nsec);
 
