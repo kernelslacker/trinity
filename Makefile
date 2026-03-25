@@ -78,6 +78,7 @@ VERSION_H	:= include/version.h
 HEADERS		:= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
 
 SRCS		:= $(wildcard *.c) \
+		   $(wildcard childops/*.c) \
 		   $(wildcard fds/*.c) \
 		   $(wildcard ioctls/*.c) \
 		   $(wildcard mm/*.c) \
@@ -87,6 +88,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(SYSCALLS_ARCH)
 
 OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \

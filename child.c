@@ -369,6 +369,10 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	switch (op_type) {
 	case CHILD_OP_FAULT_INJECT:	return 50;
 	case CHILD_OP_FD_CHURN:		return 30;
+	case CHILD_OP_MMAP_LIFECYCLE:	return 30;
+	case CHILD_OP_MPROTECT_SPLIT:	return 30;
+	case CHILD_OP_MLOCK_PRESSURE:	return 50;
+	case CHILD_OP_INODE_SPEWER:	return 40;
 	default:			return 10;
 	}
 }
@@ -470,7 +474,15 @@ void child_process(struct childdata *child, int childno)
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 		disable_coredumps();
-		ret = random_syscall(child);
+
+		switch (child->op_type) {
+		case CHILD_OP_MMAP_LIFECYCLE:	ret = mmap_lifecycle(child); break;
+		case CHILD_OP_MPROTECT_SPLIT:	ret = mprotect_split(child); break;
+		case CHILD_OP_MLOCK_PRESSURE:	ret = mlock_pressure(child); break;
+		case CHILD_OP_INODE_SPEWER:	ret = inode_spewer(child); break;
+		default:			ret = random_syscall(child); break;
+		}
+
 		enable_coredumps();
 
 		child->op_nr++;
