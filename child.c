@@ -30,6 +30,9 @@
 #include "uid.h"
 #include "utils.h"	// zmalloc
 
+/* Set to true once we detect that unprivileged pidns isn't available. */
+static bool no_pidns;
+
 /*
  * Provide temporary immunity from the reaper
  * This is useful if we're going to do something that might take
@@ -254,6 +257,24 @@ static void init_child(struct childdata *child, int childno)
 		unshare(CLONE_NEWNET);
 	}
 
+	/*
+	 * Optionally enter a new PID namespace.  unshare(CLONE_NEWPID)
+	 * doesn't move *us* into the new namespace — it means our next
+	 * fork() creates pid 1 in a fresh pidns.  This exercises kernel
+	 * pidns code paths when EXTRA_FORK syscalls (like execve) run.
+	 *
+	 * Skip if we already know it'll fail (EPERM on unprivileged
+	 * kernels without user_namespaces, or missing CONFIG_PID_NS).
+	 */
+#ifdef CLONE_NEWPID
+	if (RAND_BOOL() && !no_pidns) {
+		if (unshare(CLONE_NEWPID) == -1) {
+			if (errno == EPERM || errno == EINVAL)
+				no_pidns = true;
+		}
+	}
+#endif
+
 	if (orig_uid == 0)
 		child->dropped_privs = false;
 
@@ -274,9 +295,17 @@ static void check_parent_pid(void)
 
 	pid = getpid();
 
-	/* TODO: it'd be neat to do stuff inside pidns's, but right now
-	 * we shit ourselves when we exit and get reparented to pid 1
+	/*
+	 * Inside a PID namespace our parent may legitimately be pid 1
+	 * (the namespace init) or we ourselves may be pid 1.  Either
+	 * case is expected when CLONE_NEWPID is in play — just bail
+	 * out of this child quietly rather than triggering a panic.
 	 */
+	if (pid == 1 || ppid == 1) {
+		debugf("pidns detected (pid=%d ppid=%d), exiting child.\n", pid, ppid);
+		_exit(EXIT_FAILURE);
+	}
+
 	if (pid == ppid) {
 		debugf("pid became ppid! exiting child.\n");
 		_exit(EXIT_FAILURE);
