@@ -1,7 +1,7 @@
 #pragma once
 
 #define KERNEL_ADDR 0xc0100220
-#define MODULE_ADDR 0xa0000000	// FIXME: Placeholder
+#define MODULE_ADDR 0xc0000000
 #define PAGE_OFFSET 0x80000000
 #define TASK_SIZE (PAGE_OFFSET)
 #define PAGE_SHIFT 12
