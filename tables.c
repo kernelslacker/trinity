@@ -572,6 +572,9 @@ const char * print_syscall_name(unsigned int callno, bool is32bit)
 		return "invalid-syscall";
 	}
 
+	if (table[callno].entry == NULL)
+		return "unknown";
+
 	return table[callno].entry->name;
 }
 
