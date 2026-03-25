@@ -500,6 +500,8 @@ static void __prune_objects(enum objecttype type, enum obj_scope scope)
 				obj = (struct object *) node;
 				destroy_object(obj, scope, type);
 				num_to_prune--;
+				if (num_to_prune == 0)
+					break;
 				pruned_any = true;
 			}
 		}
