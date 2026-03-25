@@ -84,21 +84,27 @@ static void post_mmap(struct syscallrecord *rec)
 {
 	char *p;
 	struct object *new;
+	bool is_anon;
 
 	p = (void *) rec->retval;
 	if (p == MAP_FAILED)
 		return;
 
+	is_anon = !!(rec->a4 & MAP_ANONYMOUS);
+
 	new = alloc_object();
 	new->map.name = strdup("misc");
 	new->map.size = rec->a2;
 	new->map.prot = rec->a3;
-//TODO: store fd if !anon
 	new->map.ptr = p;
-	new->map.type = CHILD_ANON;
 
-	// Add this to a list for use by subsequent syscalls.
-	add_object(new, OBJ_LOCAL, OBJ_MMAP_ANON);
+	if (is_anon) {
+		new->map.type = CHILD_ANON;
+		add_object(new, OBJ_LOCAL, OBJ_MMAP_ANON);
+	} else {
+		new->map.type = MMAPED_FILE;
+		add_object(new, OBJ_LOCAL, OBJ_MMAP_FILE);
+	}
 
 	/* Sometimes dirty the mapping. */
 	if (RAND_BOOL())
