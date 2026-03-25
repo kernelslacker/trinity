@@ -132,10 +132,19 @@ int get_random_fd(void)
 {
 	struct childdata *child = this_child();
 	unsigned int retries = 0;
+	uint32_t current_gen;
 
 	/* During init (no child context), skip fd_lifetime caching. */
 	if (child == NULL)
 		return get_new_random_fd();
+
+	/* If the global fd generation changed, our cached fd may be stale.
+	 * Invalidate and re-fetch instead of using a potentially-closed fd. */
+	current_gen = __atomic_load_n(&shm->fd_generation, __ATOMIC_ACQUIRE);
+	if (child->fd_lifetime > 0 && child->cached_fd_generation != current_gen) {
+		__atomic_add_fetch(&shm->stats.fd_stale_by_generation, 1, __ATOMIC_RELAXED);
+		child->fd_lifetime = 0;
+	}
 
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
@@ -149,6 +158,8 @@ regen:
 			if (++retries < 10)
 				goto regen;
 		}
+
+		child->cached_fd_generation = __atomic_load_n(&shm->fd_generation, __ATOMIC_ACQUIRE);
 
 		if (max_children > 5)
 			child->fd_lifetime = RAND_RANGE(5, max_children);
