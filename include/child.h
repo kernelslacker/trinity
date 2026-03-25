@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <types.h>
 #include "kcov.h"
@@ -30,6 +31,7 @@ struct childdata {
 	/* per-child fd caching to avoid cross-child races */
 	int current_fd;
 	unsigned int fd_lifetime;
+	uint32_t cached_fd_generation;	/* generation when current_fd was fetched */
 
 	unsigned char xcpu_count;
 

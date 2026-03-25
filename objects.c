@@ -71,6 +71,7 @@ void fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 	fd_hash[slot].fd = fd;
 	fd_hash[slot].obj = obj;
 	fd_hash[slot].type = type;
+	fd_hash[slot].generation = __atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
 }
 
 void fd_hash_remove(int fd)
@@ -88,6 +89,7 @@ void fd_hash_remove(int fd)
 			/* Delete and re-hash any entries displaced by this one */
 			fd_hash[slot].fd = -1;
 			fd_hash_count--;
+			__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
 			while (fd_hash[next].fd != -1) {
 				struct fd_hash_entry displaced = fd_hash[next];

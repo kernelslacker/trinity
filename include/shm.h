@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdint.h>
 #include "arch.h"
 #include "child.h"
 #include "exit.h"
@@ -22,6 +23,11 @@ struct shm_s {
 
 	/* Frequently updated by all children — own cache line. */
 	struct stats_s stats __attribute__((aligned(64)));
+
+	/* Global fd generation counter — bumped on every fd state change
+	 * (create, close, dup).  Children compare against their cached
+	 * copy to detect stale fds without fcntl(F_GETFD) probes. */
+	uint32_t fd_generation __attribute__((aligned(64)));
 
 	/* Written by main process — own cache line to avoid
 	 * false sharing with child-written stats above. */
