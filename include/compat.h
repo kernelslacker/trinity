@@ -1143,6 +1143,20 @@ struct sockaddr_nfc {
 };
 #endif
 
+#ifndef NFC_LLCP_MAX_SERVICE_NAME
+#define NFC_LLCP_MAX_SERVICE_NAME 63
+struct sockaddr_nfc_llcp {
+	sa_family_t sa_family;
+	__u32 dev_idx;
+	__u32 target_idx;
+	__u32 nfc_protocol;
+	__u8 dsap;
+	__u8 ssap;
+	char service_name[NFC_LLCP_MAX_SERVICE_NAME];
+	__kernel_size_t service_name_len;
+};
+#endif
+
 /* linux/inotify.h */
 #ifndef IN_EXCL_UNLINK
 #define IN_EXCL_UNLINK	0x04000000	/* exclude events on unlinked objects */
