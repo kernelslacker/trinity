@@ -1,6 +1,6 @@
 #pragma once
 
-// FIXME: depends on kernel bit size, userspace is always 32 bit
+// userspace is always 32 bit on parisc
 
 #define PAGE_OFFSET 0x10000000
 
@@ -9,9 +9,9 @@
 #define PAGE_OFFSET 0x40000000
 #endif
 
-#define KERNEL_ADDR	0xa0000000	// FIXME: Placeholder
-#define MODULE_ADDR     0xa0000000L	// FIXME: Placeholder
-#define TASK_SIZE 0xa0000000	// FIXME: Placeholder
+#define KERNEL_ADDR	0x10100000
+#define MODULE_ADDR     0x10000L	// TODO: runtime-dependent (parisc_vmalloc_start), this is an approximation
+#define TASK_SIZE 0xFFF00000
 
 #define PAGE_SHIFT 		12
 #define PTE_FILE_MAX_BITS	(32 - 11)
