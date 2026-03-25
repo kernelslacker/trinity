@@ -15,7 +15,7 @@ static int taint_fd = -1;
 
 int get_taint(void)
 {
-	unsigned int ret = 0;
+	int ret = 0;
 	char buffer[11];
 
 	/* Opening taint file had previously failed. Continue assuming untainted */
