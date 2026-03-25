@@ -34,6 +34,7 @@ void register_ioctl_group(const struct ioctl_group *grp)
 static const struct ioctl_group * match_ioctl(int fd, struct stat *stbuf, int matchcount)
 {
 	int i;
+	unsigned int retries = 0;
 
 retry:
 	for (i = 0; i < grps_cnt; ++i) {
@@ -51,7 +52,15 @@ retry:
 	}
 
 	// If we get here we failed the RAND_BOOL too many times.
-	goto retry;
+	if (++retries < 1000)
+		goto retry;
+
+	/* Exhausted retries — return the first match. */
+	for (i = 0; i < grps_cnt; ++i) {
+		if (grps[i]->fd_test && grps[i]->fd_test(fd, stbuf) == 0)
+			return grps[i];
+	}
+	return NULL;
 }
 
 const struct ioctl_group *find_ioctl_group(int fd)
