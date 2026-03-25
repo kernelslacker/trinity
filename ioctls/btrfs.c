@@ -20,7 +20,7 @@
 struct btrfs_ioctl_timespec_32 {
 	__u64 sec;
 	__u32 nsec;
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
 struct btrfs_ioctl_received_subvol_args_32 {
 	char	uuid[BTRFS_UUID_SIZE];  /* in */
