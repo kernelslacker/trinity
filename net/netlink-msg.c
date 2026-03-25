@@ -532,6 +532,78 @@ static size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type)
 }
 
 /*
+ * Generate body for NETLINK_AUDIT messages.
+ * Audit is special: it doesn't use nlattr TLVs. Message payloads are
+ * either binary structs (audit_status, audit_rule_data) or raw text.
+ * The caller should skip nlattr generation for audit messages.
+ */
+static size_t gen_audit_body(unsigned char *body, unsigned short nlmsg_type,
+			     size_t buflen)
+{
+	size_t body_len;
+
+	switch (nlmsg_type) {
+	case AUDIT_GET:
+		/* GET takes no body (kernel ignores payload) */
+		return 0;
+	case AUDIT_SET:
+		body_len = sizeof(struct audit_status);
+		break;
+	case AUDIT_ADD_RULE:
+	case AUDIT_DEL_RULE:
+	case AUDIT_LIST_RULES: {
+		/*
+		 * audit_rule_data is 1040 bytes base + variable buf[].
+		 * Generate the fixed part with fuzzed fields and a small
+		 * random buffer extension.
+		 */
+		size_t extra = rand() % 64;
+		body_len = sizeof(struct audit_rule_data) + extra;
+		if (body_len > buflen)
+			body_len = buflen;
+		generate_rand_bytes(body, body_len);
+		return body_len;
+	}
+	case AUDIT_USER:
+	case AUDIT_LOGIN:
+		/* Raw text payload */
+		body_len = RAND_RANGE(4, 128);
+		if (body_len > buflen)
+			body_len = buflen;
+		generate_rand_bytes(body, body_len);
+		return body_len;
+	case AUDIT_TTY_GET:
+	case AUDIT_TTY_SET:
+	case AUDIT_GET_FEATURE:
+	case AUDIT_SET_FEATURE:
+		body_len = sizeof(struct audit_status);
+		break;
+	case AUDIT_SIGNAL_INFO:
+		return 0; /* no body for get requests */
+	case AUDIT_TRIM:
+		return 0; /* no body */
+	case AUDIT_MAKE_EQUIV:
+		/* Two paths separated by NUL */
+		body_len = RAND_RANGE(4, 64);
+		if (body_len > buflen)
+			body_len = buflen;
+		generate_rand_bytes(body, body_len);
+		return body_len;
+	default:
+		body_len = RAND_RANGE(4, 64);
+		if (body_len > buflen)
+			body_len = buflen;
+		generate_rand_bytes(body, body_len);
+		return body_len;
+	}
+
+	if (body_len > buflen)
+		body_len = buflen;
+	generate_rand_bytes(body, body_len);
+	return body_len;
+}
+
+/*
  * Build a structured netlink message. The caller must free *buf.
  *
  * Structure: [nlmsghdr][protocol body][nlattr...nlattr]
@@ -578,6 +650,9 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		body_len = gen_nfnl_body(msg + offset);
 	} else if (triplet->protocol == NETLINK_XFRM) {
 		body_len = gen_xfrm_body(msg + offset, nlmsg_type);
+	} else if (triplet->protocol == NETLINK_AUDIT) {
+		body_len = gen_audit_body(msg + offset, nlmsg_type,
+					  buflen - offset);
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
@@ -586,8 +661,9 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	}
 	offset += body_len;
 
-	/* Append nlattr TLVs with protocol-appropriate types */
-	num_attrs = rand() % 8;
+	/* Append nlattr TLVs with protocol-appropriate types.
+	 * Audit messages don't use nlattr — skip for that protocol. */
+	num_attrs = (triplet->protocol == NETLINK_AUDIT) ? 0 : rand() % 8;
 	while (num_attrs-- > 0 && offset < buflen) {
 		unsigned short attr_hint = 0;
 
@@ -624,8 +700,9 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	int num_msgs;
 
 	/* Total buffer: room for messages with protocol body + attrs.
-	 * XFRM bodies can be up to 280 bytes, so base size must accommodate. */
-	total_len = NLMSG_HDRLEN + 320 + (rand() % 512);
+	 * XFRM bodies can be up to 280 bytes, audit_rule_data is 1040 bytes,
+	 * so base size must accommodate the largest possible body. */
+	total_len = NLMSG_HDRLEN + 1280 + (rand() % 512);
 	/* Multi-message batches need more space */
 	if (ONE_IN(4)) {
 		num_msgs = RAND_RANGE(2, 4);
