@@ -10,4 +10,5 @@ struct socket_triplet {
 struct socketinfo {
 	struct socket_triplet triplet;
 	int fd;
+	bool needs_setup;	/* deferred setsockopt/bind/listen */
 };

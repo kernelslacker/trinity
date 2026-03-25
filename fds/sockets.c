@@ -69,46 +69,42 @@ static struct object * add_socket(int fd, unsigned int domain, unsigned int type
 	obj->sockinfo.triplet.family = domain;
 	obj->sockinfo.triplet.type = type;
 	obj->sockinfo.triplet.protocol = protocol;
+	obj->sockinfo.needs_setup = true;
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_SOCKET);
 
 	return obj;
 }
 
-static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
+/*
+ * Perform deferred socket setup: setsockopt, bind, listen.
+ * Called lazily when a child first uses the socket, so each child
+ * gets its own random configuration rather than inheriting a
+ * one-shot setup from the parent.
+ */
+static void socket_setup_lazy(struct socketinfo *si)
 {
-	struct object *obj;
 	struct sockaddr *sa = NULL;
 	const struct netproto *proto;
 	socklen_t salen;
 	struct sockopt so = { 0, 0, 0, 0 };
-	int fd;
+	int fd = si->fd;
 
-	fd = socket(domain, type, protocol);
-	if (fd == -1)
-		return fd;
+	si->needs_setup = false;
 
-	obj = add_socket(fd, domain, type, protocol);
-
-	proto = net_protocols[domain].proto;
+	proto = net_protocols[si->triplet.family].proto;
 	if (proto != NULL)
 		if (proto->socket_setup != NULL)
 			proto->socket_setup(fd);
 
-	// TODO: Break socket setup (setsockopt, bind, listen) out into
-	// child ops instead of special casing it all at creation time.
-
 	/* Set some random socket options. */
-	sso_socket(&obj->sockinfo.triplet, &so, fd);
+	sso_socket(&si->triplet, &so, fd);
 
-	nr_sockets++;
-
-	/* Sometimes, listen on created sockets. */
+	/* Sometimes, bind and listen on the socket. */
 	if (RAND_BOOL()) {
 		int ret, one = 1;
 
-		/* fake a sockaddr. */
-		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, domain);
+		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
 		ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 		if (ret == -1)
@@ -117,17 +113,24 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		ret = bind(fd, sa, salen);
 		if (ret != -1)
 			(void) listen(fd, RAND_RANGE(1, 128));
-
-//		ret = accept4(fd, sa, &salen, SOCK_NONBLOCK);
-//		if (ret != -1) {
-//			obj = add_socket(ret, domain, type, protocol);
-//			nr_sockets++;
-//		}
 	}
 
 skip_bind:
 	if (sa != NULL)
 		free(sa);
+}
+
+static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
+{
+	int fd;
+
+	fd = socket(domain, type, protocol);
+	if (fd == -1)
+		return fd;
+
+	add_socket(fd, domain, type, protocol);
+
+	nr_sockets++;
 
 	return fd;
 }
@@ -500,6 +503,10 @@ struct socketinfo * get_rand_socketinfo(void)
 		return NULL;
 
 	obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
+
+	if (obj->sockinfo.needs_setup)
+		socket_setup_lazy(&obj->sockinfo);
+
 	return &obj->sockinfo;
 }
 
@@ -517,6 +524,9 @@ static int get_rand_socket_fd(void)
 int fd_from_socketinfo(struct socketinfo *si)
 {
 	if (si != NULL) {
+		if (si->needs_setup)
+			socket_setup_lazy(si);
+
 		if (!(ONE_IN(1000)))
 			return si->fd;
 	}
