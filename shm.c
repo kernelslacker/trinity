@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "fd-event.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
@@ -73,6 +74,12 @@ void init_shm(void)
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));
 
 		child->num = i;
+
+		/* Allocate per-child fd event ring in shared memory.
+		 * The ring is used by the child (producer) and parent
+		 * (consumer) for lock-free fd state change reporting. */
+		child->fd_event_ring = alloc_shared(sizeof(struct fd_event_ring));
+		fd_event_ring_init(child->fd_event_ring);
 	}
 	mprotect(shm->children, childptrslen, PROT_READ);
 

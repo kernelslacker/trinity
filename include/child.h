@@ -8,6 +8,8 @@
 #include "objects.h"
 #include "syscall.h"
 
+struct fd_event_ring;
+
 struct childdata {
 	/* The actual syscall records each child uses. */
 	struct syscallrecord syscall;
@@ -32,6 +34,10 @@ struct childdata {
 	int current_fd;
 	unsigned int fd_lifetime;
 	uint32_t cached_fd_generation;	/* generation when current_fd was fetched */
+
+	/* Ring buffer for reporting fd events to the parent.
+	 * Allocated in shared memory, one per child. */
+	struct fd_event_ring *fd_event_ring;
 
 	unsigned char xcpu_count;
 
