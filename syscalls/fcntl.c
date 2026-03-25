@@ -167,7 +167,11 @@ struct syscallentry syscall_fcntl = {
 	.arg2type = ARG_OP,
 	.arg2list = ARGLIST(fcntl_flags),
 	.arg3name = "arg",
-	.rettype = RET_FD,	//FIXME: Needs to mutate somehow depending on 'cmd'
+	/* RET_FD is only accurate for F_DUPFD and F_DUPFD_CLOEXEC.
+	 * Other commands return flags, pids, lease types, pipe sizes, etc.
+	 * Changing rettype per-invocation would require runtime dispatch
+	 * which the syscall entry structure doesn't support. */
+	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_fcntl,
