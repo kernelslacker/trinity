@@ -55,6 +55,30 @@ void register_fd_provider(const struct fd_provider *prov)
 	list_add_tail(&newnode->list, &fd_providers->list);
 }
 
+/*
+ * Print the names of all registered fd providers as a comma-separated
+ * list, for use in --enable-fds/--disable-fds help output.
+ */
+void dump_fd_provider_names(void)
+{
+	struct list_head *node;
+	bool first = true;
+
+	if (fd_providers == NULL)
+		return;
+
+	outputerr(" --enable-fds/--disable-fds= {");
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider = (struct fd_provider *) node;
+
+		if (!first)
+			outputerr(",");
+		outputerr("%s", provider->name);
+		first = false;
+	}
+	outputerr("}\n");
+}
+
 static void __open_fds(bool do_rand)
 {
 	struct list_head *node;

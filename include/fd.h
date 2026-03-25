@@ -24,6 +24,7 @@ struct fd_provider {
 };
 
 void register_fd_provider(const struct fd_provider *prov);
+void dump_fd_provider_names(void);
 
 unsigned int check_if_fd(struct syscallrecord *rec);
 

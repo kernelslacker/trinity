@@ -7,6 +7,7 @@
 
 #include "bdevs.h"
 #include "child.h"
+#include "fd.h"
 #include "net.h"
 #include "params.h"
 #include "domains.h"
@@ -58,36 +59,74 @@ bool kernel_taint_param_occured = false;
 
 void enable_disable_fd_usage(void)
 {
-	//TODO: Build this dynamically
-	outputerr(" --enable-fds/--disable-fds= {sockets,pipes,perf,epoll,eventfd,pseudo,timerfd,testfile,memfd,drm}\n");
+	dump_fd_provider_names();
 }
+
+struct option_help {
+	const char *name;	/* long option name (NULL = end of table) */
+	char shortopt;		/* short option char, or 0 if none */
+	const char *desc;	/* help text */
+};
+
+static const struct option_help option_descs[] = {
+	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
+	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
+	{ "children",		'C', "specify number of child processes" },
+	{ "clowntown",		 0,  "enable clowntown mode" },
+	{ "dangerous",		'd', "enable dangerous mode" },
+	{ "debug",		'D', "enable debug" },
+	{ "disable-fds",	 0,  NULL },	/* handled separately */
+	{ "dropprivs",		'X', "if run as root, switch to nobody [EXPERIMENTAL]" },
+	{ "dry-run",		 0,  "parse args and exit without fuzzing" },
+	{ "enable-fds",		 0,  NULL },	/* handled separately */
+	{ "exclude",		'x', "don't call a specific syscall" },
+	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time)" },
+	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
+	{ "help",		'h', "show this help" },
+	{ "ioctls",		'I', "list all ioctls" },
+	{ "kernel_taint",	'T', "controls which kernel taint flags should be considered (see README)" },
+	{ "list",		'L', "list all syscalls known on this architecture" },
+	{ "domain",		'P', "specify specific network domain for sockets" },
+	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
+	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
+	{ "show-unannotated",	 0,  "show unannotated syscalls" },
+	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
+	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
+	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
+	{ "victims",		'V', "path to victim files (may be repeated)" },
+	{ NULL,			 0,  NULL },
+};
+
+/* Short-only options that don't appear in longopts. */
+static const struct option_help shortonly_descs[] = {
+	{ NULL, 'c', "target specific syscall (name, optionally @32 or @64)" },
+	{ NULL, 'N', "do N syscalls then exit" },
+	{ NULL, 's', "use N as random seed" },
+	{ NULL,  0,  NULL },
+};
 
 static void usage(void)
 {
+	const struct option_help *h;
+
 	outputerr("%s\n", progname);
-	outputerr(" --arch, -a: selects syscalls for the specified architecture (32 or 64). Both by default.\n");
-	outputerr(" --bdev, -b <node>:  Add /dev node to list of block devices to use for destructive tests..\n");
-	outputerr(" --children,-C: specify number of child processes\n");
-	outputerr(" --debug,-D: enable debug\n");
-	outputerr(" --dropprivs, -X: if run as root, switch to nobody [EXPERIMENTAL]\n");
-	outputerr(" --exclude,-x: don't call a specific syscall\n");
+
+	for (h = option_descs; h->name != NULL; h++) {
+		if (h->desc == NULL)
+			continue;
+
+		if (h->shortopt)
+			outputerr(" --%s, -%c: %s\n", h->name, h->shortopt, h->desc);
+		else
+			outputerr(" --%s: %s\n", h->name, h->desc);
+	}
+
 	enable_disable_fd_usage();
-	outputerr(" --group,-g = {vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time}: only run syscalls from a certain group.\n");
-	outputerr(" --group-bias: bias syscall selection toward the same group as the previous call.\n");
-	outputerr(" --ioctls,-I: list all ioctls.\n");
-	outputerr(" --kernel_taint, -T: controls which kernel taint flags should be considered, for more details refer to README file. \n");
-	outputerr(" --list,-L: list all syscalls known on this architecture.\n");
-	outputerr(" --domain,-P: specify specific network domain for sockets.\n");
-	outputerr(" --no_domain,-E: specify network domains to be excluded from testing.\n");
-	outputerr(" --random,-r#: pick N syscalls at random and just fuzz those\n");
-	outputerr(" --stats: show errno distribution per syscall before exiting\n");
-	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
-	outputerr(" --verbose,-v: increase output verbosity. Repeat for more detail (-vv).\n");
-	outputerr(" --victims,-V: path to victim files (may be repeated).\n");
+
+	for (h = shortonly_descs; h->shortopt != 0; h++)
+		outputerr(" -%c: %s\n", h->shortopt, h->desc);
+
 	outputerr("\n");
-	outputerr(" -c#,@: target specific syscall (takes syscall name as parameter and optionally 32 or 64 as bit-width. Default:both).\n");
-	outputerr(" -N#: do # syscalls then exit.\n");
-	outputerr(" -s#: use # as random seed.\n");
 	exit(EXIT_SUCCESS);
 }
 
