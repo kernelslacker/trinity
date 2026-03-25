@@ -9,7 +9,10 @@
  * from @fd up to and including @max_fd are closed.
  * Currently, errors to close a given file descriptor are ignored.
  */
+#include "child.h"
+#include "fd-event.h"
 #include "objects.h"
+#include "pids.h"
 #include "sanitise.h"
 
 #define CLOSE_RANGE_UNSHARE     (1U << 1)
@@ -21,10 +24,12 @@ static unsigned long close_range_flags[] = {
 
 /*
  * If close_range succeeded without CLOEXEC flag, the fds in the range
- * are actually closed.  Scan object pools and remove any matching fds.
+ * are actually closed.  Enqueue CLOSE events for each fd so the parent
+ * can update the object pool.
  */
 static void post_close_range(struct syscallrecord *rec)
 {
+	struct childdata *child;
 	unsigned int fd, max_fd;
 
 	if (rec->retval != 0)
@@ -41,8 +46,16 @@ static void post_close_range(struct syscallrecord *rec)
 	if (max_fd - fd > 1024)
 		max_fd = fd + 1024;
 
-	for (; fd <= max_fd; fd++)
+	child = this_child();
+
+	for (; fd <= max_fd; fd++) {
+		if (child != NULL && child->fd_event_ring != NULL)
+			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
+					 (int) fd, -1, 0);
+
+		/* Parent-side path (no-op in children). */
 		remove_object_by_fd((int) fd);
+	}
 }
 
 struct syscallentry syscall_close_range = {
