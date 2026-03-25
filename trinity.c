@@ -38,6 +38,26 @@ bool no_bind_to_cpu;
 unsigned int max_children;
 struct rlimit max_files_rlimit;
 
+struct obj_init_entry {
+	const char *name;
+	void (*init)(void);
+};
+
+static const struct obj_init_entry object_init_table[] = {
+	{ "futexes",	create_futexes },
+	{ "sysv_shms",	create_sysv_shms },
+};
+
+static void init_global_objects(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(object_init_table); i++) {
+		output(0, "Initializing %s objects.\n", object_init_table[i].name);
+		object_init_table[i].init();
+	}
+}
+
 /*
  * just in case we're not using the test.sh harness, we
  * change to the tmp dir if it exists.
@@ -165,10 +185,7 @@ int main(int argc, char* argv[])
 
 	parse_devices();
 
-	/* FIXME: Some better object construction method needed. */
-	create_futexes();
-	create_sysv_shms();
-
+	init_global_objects();
 
 	setup_main_signals();
 
@@ -178,7 +195,7 @@ int main(int argc, char* argv[])
 
 	if (open_fds() == false) {
 		if (shm->exit_reason != STILL_RUNNING)
-			panic(EXIT_FD_INIT_FAILURE);	// FIXME: Later, push this down to multiple EXIT's.
+			panic(EXIT_FD_INIT_FAILURE);
 
 		_exit(EXIT_FAILURE);
 	}
