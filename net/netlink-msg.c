@@ -17,6 +17,8 @@
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/xfrm.h>
 #include <linux/audit.h>
+#include <linux/sock_diag.h>
+#include <linux/inet_diag.h>
 #include <linux/connector.h>
 #include <string.h>
 #include <stdlib.h>
@@ -137,8 +139,11 @@ static unsigned short pick_nlmsg_type(int protocol)
 			return GENL_ID_CTRL;
 		return RAND_RANGE(GENL_MIN_ID, GENL_MIN_ID + 64);
 	case NETLINK_SOCK_DIAG:
-		/* sock_diag message types: SOCK_DIAG_BY_FAMILY=20, etc */
-		return RAND_RANGE(16, 24);
+		/* SOCK_DIAG_BY_FAMILY=20, SOCK_DESTROY=21 are the main ones.
+		 * Also cover legacy inet_diag range and INET_DIAG_GETSOCK_MAX. */
+		if (RAND_BOOL())
+			return RAND_BOOL() ? SOCK_DIAG_BY_FAMILY : SOCK_DESTROY;
+		return RAND_RANGE(NLMSG_MIN_TYPE, INET_DIAG_GETSOCK_MAX);
 	case NETLINK_CONNECTOR:
 		return RAND_RANGE(0, 4);
 	default:
@@ -603,6 +608,47 @@ static size_t gen_audit_body(unsigned char *body, unsigned short nlmsg_type,
 	return body_len;
 }
 
+/* sock_diag request attribute types */
+static const unsigned short inet_diag_req_attrs[] = {
+	INET_DIAG_REQ_BYTECODE, INET_DIAG_REQ_SK_BPF_STORAGES,
+	INET_DIAG_REQ_PROTOCOL,
+};
+
+/*
+ * Generate body for NETLINK_SOCK_DIAG messages.
+ * Two main message types:
+ * - SOCK_DIAG_BY_FAMILY (20): generic sock_diag_req, then the kernel
+ *   dispatches to per-family handlers based on sdiag_family.
+ * - SOCK_DESTROY (21): inet_diag_req_v2 with socket identification.
+ * - Legacy types (< 20): inet_diag_req_v2.
+ */
+static size_t gen_sockdiag_body(unsigned char *body,
+				unsigned short nlmsg_type)
+{
+	switch (nlmsg_type) {
+	case SOCK_DIAG_BY_FAMILY: {
+		struct sock_diag_req req;
+		req.sdiag_family = rand_family();
+		req.sdiag_protocol = rand() % 256;
+		memcpy(body, &req, sizeof(req));
+		return sizeof(req);
+	}
+	default: {
+		/*
+		 * SOCK_DESTROY and legacy inet_diag types use
+		 * inet_diag_req_v2 (56 bytes). Fill with random data
+		 * but set sdiag_family to something useful.
+		 */
+		struct inet_diag_req_v2 req;
+		generate_rand_bytes((unsigned char *)&req, sizeof(req));
+		req.sdiag_family = rand_family();
+		req.sdiag_protocol = rand() % 256;
+		memcpy(body, &req, sizeof(req));
+		return sizeof(req);
+	}
+	}
+}
+
 /*
  * Build a structured netlink message. The caller must free *buf.
  *
@@ -653,6 +699,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	} else if (triplet->protocol == NETLINK_AUDIT) {
 		body_len = gen_audit_body(msg + offset, nlmsg_type,
 					  buflen - offset);
+	} else if (triplet->protocol == NETLINK_SOCK_DIAG) {
+		body_len = gen_sockdiag_body(msg + offset, nlmsg_type);
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
@@ -673,6 +721,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			attr_hint = pick_genl_attr_type(nlmsg_type);
 		else if (triplet->protocol == NETLINK_XFRM)
 			attr_hint = RAND_ARRAY(xfrma_attrs);
+		else if (triplet->protocol == NETLINK_SOCK_DIAG)
+			attr_hint = RAND_ARRAY(inet_diag_req_attrs);
 		offset = append_nlattr(msg, offset, buflen, attr_hint);
 	}
 
