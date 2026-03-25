@@ -204,7 +204,7 @@ static void open_fds_from_path(const char *dirpath)
 	 *
 	 * I'm not sure about this, might remove later.
 	 */
-	if (victim_path == NULL)
+	if (nr_victim_paths == 0)
 		flags |= FTW_PHYS;
 
 	ret = nftw(dirpath, file_tree_callback, 32, flags);
@@ -270,8 +270,10 @@ void generate_filelist(void)
 
 	num_pools = 0;
 
-	if (victim_path != NULL) {
-		add_pool(victim_path);
+	if (nr_victim_paths > 0) {
+		unsigned int i;
+		for (i = 0; i < nr_victim_paths; i++)
+			add_pool(victim_paths[i]);
 	} else {
 		add_pool("/dev");
 		add_pool("/proc");

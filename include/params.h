@@ -42,7 +42,9 @@ extern bool do_syslog;
 extern unsigned char desired_group;
 extern bool group_bias;
 extern bool user_set_seed;
-extern char *victim_path;
+extern char *victim_paths[];
+extern unsigned int nr_victim_paths;
+#define MAX_VICTIM_PATHS 32
 extern bool random_selection;
 extern unsigned int random_selection_num;
 

@@ -50,7 +50,8 @@ unsigned char desired_group = GROUP_NONE;
 
 char *specific_domain_optarg = NULL;
 
-char *victim_path = NULL;
+char *victim_paths[MAX_VICTIM_PATHS];
+unsigned int nr_victim_paths;
 
 unsigned int kernel_taint_mask = 0xFFFFFFFF;
 bool kernel_taint_param_occured = false;
@@ -82,7 +83,7 @@ static void usage(void)
 	outputerr(" --stats: show errno distribution per syscall before exiting\n");
 	outputerr(" --syslog,-S: log important info to syslog. (useful if syslog is remote)\n");
 	outputerr(" --verbose,-v: increase output verbosity. Repeat for more detail (-vv).\n");
-	outputerr(" --victims,-V: path to victim files.\n");
+	outputerr(" --victims,-V: path to victim files (may be repeated).\n");
 	outputerr("\n");
 	outputerr(" -c#,@: target specific syscall (takes syscall name as parameter and optionally 32 or 64 as bit-width. Default:both).\n");
 	outputerr(" -N#: do # syscalls then exit.\n");
@@ -265,14 +266,11 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'V':
-			if (victim_path == NULL) {
-				victim_path = strdup(optarg);
-				break;
-			} else {
-				outputstd("Sorry, only one victim path right now.\n");
+			if (nr_victim_paths >= MAX_VICTIM_PATHS) {
+				outputerr("Too many victim paths (max %d).\n", MAX_VICTIM_PATHS);
 				exit(EXIT_FAILURE);
 			}
-			//FIXME: Later, allow for multiple victim files
+			victim_paths[nr_victim_paths++] = strdup(optarg);
 			break;
 
 		case 'x':
