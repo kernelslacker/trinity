@@ -2,7 +2,7 @@
 
 #ifdef __arch64__
 #define KERNEL_ADDR	0xfffff80000000000
-#define MODULE_ADDR     0xffffffffa0000000L	// FIXME: Placeholder
+#define MODULE_ADDR     0x0000000010000000L
 #define TASK_SIZE ~0UL
 #define PAGE_SHIFT		13
 #define PTE_FILE_MAX_BITS	(64UL - PAGE_SHIFT - 1UL)
