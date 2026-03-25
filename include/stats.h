@@ -16,6 +16,8 @@ struct stats_s {
 	unsigned long fd_closed_tracked;
 	unsigned long fd_regenerated;
 	unsigned long fd_duped;
+	unsigned long fd_events_processed;
+	unsigned long fd_events_dropped;
 };
 
 void dump_stats(void);

@@ -50,13 +50,16 @@ void dump_stats(void)
 
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
 	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
-	    shm->stats.fd_duped) {
+	    shm->stats.fd_duped || shm->stats.fd_events_processed) {
 		printf("\nfd lifecycle: stale:%lu (generation:%lu) closed:%lu regenerated:%lu duped:%lu\n",
 			shm->stats.fd_stale_detected,
 			shm->stats.fd_stale_by_generation,
 			shm->stats.fd_closed_tracked,
 			shm->stats.fd_regenerated,
 			shm->stats.fd_duped);
+		printf("fd events: processed:%lu dropped:%lu\n",
+			shm->stats.fd_events_processed,
+			shm->stats.fd_events_dropped);
 	}
 
 	if (kcov_shm != NULL) {

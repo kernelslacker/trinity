@@ -103,7 +103,7 @@ void fd_hash_remove(int fd)
 	}
 }
 
-static struct fd_hash_entry *fd_hash_lookup(int fd)
+struct fd_hash_entry *fd_hash_lookup(int fd)
 {
 	unsigned int slot, i;
 
