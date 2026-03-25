@@ -4,7 +4,9 @@
 #include <sys/wait.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "maps.h"
 #include "pids.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -13,10 +15,6 @@
  * Because we don't want to forkbomb, we don't really do anything in the child process.
  * We only actually do a fork at all on the off-chance that it might trigger some oddness
  * in the VMAs we've created when we COW.
- *
- * TODO: Maybe do some dirty_mapping calls in the child ?
- * TODO: Maybe we could enforce an upper limit on the child count before we fork,
- *        and keep track of them using handle_child ?
  */
 
 static void post_fork(struct syscallrecord *rec)
@@ -25,8 +23,16 @@ static void post_fork(struct syscallrecord *rec)
 
 	pid = rec->retval;
 	if (pid == 0) {
-		// child
-		sleep(1);
+		/* If we're already at capacity, bail out immediately. */
+		if (shm->running_childs >= max_children) {
+			_exit(EXIT_SUCCESS);
+		}
+
+		/* Dirty a couple of random mappings to exercise COW paths. */
+		dirty_random_mapping();
+		if (RAND_BOOL())
+			dirty_random_mapping();
+
 		_exit(EXIT_SUCCESS);
 	} else {
 		__unused__ int ret;
