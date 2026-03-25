@@ -343,8 +343,9 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 		if (check_if_fd(rec) == true) {
 			snprintf(fdstr, sizeof(fdstr), "(fd = %u)", (unsigned int) rec->a1);
 			child->fd_lifetime = 0;
-			//close(rec->a1);
-			//TODO: Remove the fd from the object list.
+			/* Remove the bad fd from the object pool so it
+			 * won't be handed out again. */
+			remove_object_by_fd((int) rec->a1);
 		}
 	}
 
