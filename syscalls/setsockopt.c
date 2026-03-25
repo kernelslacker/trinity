@@ -158,7 +158,9 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	}
 
 	/* get a page for the optval to live in.
-	 * TODO: push this down into the per-proto .func calls
+	 * Pushing this into per-proto .setsockopt calls is deferred because
+	 * each protocol would need its own function pointer and allocation
+	 * strategy, and most protocols are fine with a single page.
 	 */
 	so->optval = (unsigned long) zmalloc(page_size);
 
