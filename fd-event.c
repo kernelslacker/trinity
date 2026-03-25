@@ -152,9 +152,14 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 			remove_object_by_fd(ev->fd1);
 			break;
 
-		case FD_EVENT_CREATED:
-			/* Phase 3 — not wired yet. */
+		case FD_EVENT_CREATED: {
+			struct object *obj = alloc_object();
+			if (obj != NULL) {
+				set_object_fd(obj, ev->objtype, ev->fd1);
+				add_object(obj, OBJ_GLOBAL, ev->objtype);
+			}
 			break;
+		}
 		}
 
 		tail = (tail + 1) & (FD_EVENT_RING_SIZE - 1);
