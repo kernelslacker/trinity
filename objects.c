@@ -269,10 +269,49 @@ bool objects_empty(enum objecttype type)
 }
 
 /*
+ * Invalidate the fd stored in an object by setting it to -1.
+ * Used before calling the destructor when the fd was already closed
+ * (e.g. after a successful close() syscall) to prevent double-close.
+ * The destructor's close(-1) call will harmlessly return EBADF.
+ */
+static void invalidate_object_fd(struct object *obj, enum objecttype type)
+{
+	switch (type) {
+	case OBJ_FD_PIPE:	obj->pipeobj.fd = -1; break;
+	case OBJ_FD_DEVFILE:	obj->fileobj.fd = -1; break;
+	case OBJ_FD_PROCFILE:	obj->fileobj.fd = -1; break;
+	case OBJ_FD_SYSFILE:	obj->fileobj.fd = -1; break;
+	case OBJ_FD_PERF:	obj->perfobj.fd = -1; break;
+	case OBJ_FD_EPOLL:	obj->epollobj.fd = -1; break;
+	case OBJ_FD_EVENTFD:	obj->eventfdobj.fd = -1; break;
+	case OBJ_FD_TIMERFD:	obj->timerfdobj.fd = -1; break;
+	case OBJ_FD_TESTFILE:	obj->testfileobj.fd = -1; break;
+	case OBJ_FD_MEMFD:	obj->memfdobj.fd = -1; break;
+	case OBJ_FD_DRM:	obj->drmfd = -1; break;
+	case OBJ_FD_INOTIFY:	obj->inotifyobj.fd = -1; break;
+	case OBJ_FD_SOCKET:	obj->sockinfo.fd = -1; break;
+	case OBJ_FD_USERFAULTFD: obj->userfaultobj.fd = -1; break;
+	case OBJ_FD_FANOTIFY:	obj->fanotifyobj.fd = -1; break;
+	case OBJ_FD_BPF_MAP:	obj->bpfobj.map_fd = -1; break;
+	case OBJ_FD_BPF_PROG:	obj->bpfprogobj.fd = -1; break;
+	case OBJ_FD_IO_URING:	obj->io_uringobj.fd = -1; break;
+	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = -1; break;
+	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = -1; break;
+	default:		break;
+	}
+}
+
+/*
  * Call the destructor for this object, and then release it.
  * Internal version — caller must hold objlock if operating on globals.
+ *
+ * If already_closed is true, the fd has already been closed by the
+ * kernel (e.g. after a successful close() syscall).  We invalidate
+ * the fd in the object so the destructor's close() call is a harmless
+ * no-op, while any other cleanup (munmap, free, etc.) still runs.
  */
-static void __destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+static void __destroy_object(struct object *obj, enum obj_scope scope,
+			     enum objecttype type, bool already_closed)
 {
 	struct objhead *head;
 	unsigned int idx, last;
@@ -296,6 +335,9 @@ static void __destroy_object(struct object *obj, enum obj_scope scope, enum obje
 	if (scope == OBJ_GLOBAL && is_fd_type(type))
 		fd_hash_remove(fd_from_object(obj, type));
 
+	if (already_closed && is_fd_type(type))
+		invalidate_object_fd(obj, type);
+
 	if (head->destroy != NULL)
 		head->destroy(obj);
 
@@ -310,7 +352,7 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 	if (scope == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
-	__destroy_object(obj, scope, type);
+	__destroy_object(obj, scope, type, false);
 
 	if (scope == OBJ_GLOBAL)
 		unlock(&shm->objlock);
@@ -335,7 +377,7 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 
 		obj = (struct object *) node;
 
-		__destroy_object(obj, scope, type);
+		__destroy_object(obj, scope, type, false);
 	}
 
 	head->num_entries = 0;
@@ -414,7 +456,7 @@ void remove_object_by_fd(int fd)
 	type = entry->type;
 
 	__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
-	__destroy_object(obj, OBJ_GLOBAL, type);
+	__destroy_object(obj, OBJ_GLOBAL, type, true);
 
 	unlock(&shm->objlock);
 
