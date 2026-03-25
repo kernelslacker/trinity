@@ -73,9 +73,18 @@ static struct bpf_fd_types bpf_fds[] = {
 static void bpf_map_dump(struct object *obj, enum obj_scope scope)
 {
 	u32 type = obj->bpfobj.map_type;
+	const char *name = "unknown";
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++) {
+		if (bpf_fds[i].map_type == type) {
+			name = bpf_fds[i].name;
+			break;
+		}
+	}
 
 	output(2, "bpf map fd:%d type:%s scope:%d\n",
-		obj->bpfobj.map_fd, (char *)&bpf_fds[type].name, scope);
+		obj->bpfobj.map_fd, name, scope);
 }
 
 static int open_bpf_fd(void)
