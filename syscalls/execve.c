@@ -6,12 +6,12 @@
  *
  * On success, execve() does not return
  * on error -1 is returned, and errno is set appropriately.
- *
- * TODO: Redirect stdin/stdout.
  */
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "arch.h"	// page_size
 #include "random.h"	// generate_rand_bytes
 #include "sanitise.h"
@@ -39,12 +39,38 @@ static unsigned long ** gen_ptrs_to_crap(unsigned int count)
 	return (unsigned long **) ptr;
 }
 
+/*
+ * Redirect stdin/stdout/stderr before execve so the new process
+ * can't block on reads or corrupt the fuzzer's output.
+ *
+ * stdin  <- /dev/null (prevents blocking reads)
+ * stdout -> /dev/null (prevents output corruption)
+ * stderr -> /dev/null (prevents output corruption)
+ *
+ * If the redirects fail we press on anyway — execve will almost
+ * certainly fail with our random argv, and the child exits either way.
+ */
+static void redirect_stdio(void)
+{
+	int devnull;
+
+	devnull = open("/dev/null", O_RDWR);
+	if (devnull == -1)
+		return;
+
+	(void) dup2(devnull, STDIN_FILENO);
+	(void) dup2(devnull, STDOUT_FILENO);
+	(void) dup2(devnull, STDERR_FILENO);
+
+	if (devnull > STDERR_FILENO)
+		close(devnull);
+}
+
 static void sanitise_execve(struct syscallrecord *rec)
 {
 	unsigned long **argv, **envp;
 
-	/* we don't want to block if something tries to read from stdin */
-	fclose(stdin);
+	redirect_stdio();
 
 	/* Fabricate argv */
 	argvcount = rand() % 32;
