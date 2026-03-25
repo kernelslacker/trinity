@@ -204,7 +204,7 @@ static void __inet6_setsockopt(struct sockopt *so)
 		if (RAND_BOOL())
 			so->optlen = 0;	// update
 		else
-			so->optlen = rand() % 64*1024;
+			so->optlen = rand() % (64 * 1024);
 		break;
 	case IPV6_IPSEC_POLICY:
 	case IPV6_XFRM_POLICY:
