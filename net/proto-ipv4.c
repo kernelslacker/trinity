@@ -11,6 +11,7 @@
 #include <linux/mroute.h>
 #include <linux/if.h>
 #include <limits.h>
+#include <stdio.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_bridge/ebtables.h>
 #include <linux/netfilter_arp/arp_tables.h>
@@ -29,6 +30,26 @@
 
 static int previous_ip;
 static unsigned int ip_lifetime = 0;
+static unsigned int optmem_max;
+
+static void __attribute__((constructor)) read_optmem_max(void)
+{
+	FILE *fp;
+	unsigned int val;
+
+	fp = fopen("/proc/sys/net/core/optmem_max", "r");
+	if (fp == NULL) {
+		optmem_max = 20480;	/* common default */
+		return;
+	}
+
+	if (fscanf(fp, "%u", &val) == 1)
+		optmem_max = val;
+	else
+		optmem_max = 20480;
+
+	fclose(fp);
+}
 
 struct addrtext {
 	const char *name;
@@ -230,8 +251,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		break;
 
 	case IP_MSFILTER:
-		//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
-		so->optlen = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+		so->optlen = rand() % optmem_max;
 		so->optlen |= IP_MSFILTER_SIZE(0);
 		break;
 
@@ -248,8 +268,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		break;
 
 	case MCAST_MSFILTER:
-		//FIXME: Read size from sysctl /proc/sys/net/core/optmem_max
-		so->optlen = rand() % sizeof(unsigned long)*(2*UIO_MAXIOV+512);
+		so->optlen = rand() % optmem_max;
 		so->optlen |= GROUP_FILTER_SIZE(0);
 		break;
 
