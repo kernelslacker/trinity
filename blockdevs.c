@@ -43,6 +43,10 @@ static void add_to_bdevlist(const char *name)
 
 	newnode = zmalloc(sizeof(struct bdevlist));
 	newnode->name = strdup(path);
+	if (!newnode->name) {
+		free(newnode);
+		return;
+	}
 	list_add_tail(&newnode->list, &bdevs->list);
 	nr_blockdevs++;
 }
