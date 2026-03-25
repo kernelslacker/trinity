@@ -254,8 +254,10 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
 
-		/* only check syscalls that completed. */
-		//FIXME: how else would we get here?
+		/* For EXTRA_FORK syscalls (e.g. execve), the grandchild runs
+		 * with state GOING_AWAY and may die or get killed before
+		 * setting state to AFTER.  Only process the result if the
+		 * syscall actually completed. */
 		if (rec->state == AFTER) {
 			if (err == ENOSYS)
 				deactivate_enosys(rec, entry, call);
