@@ -529,10 +529,18 @@ static bool spawn_child(int childno)
 
 static void replace_child(int childno)
 {
+	unsigned int retries = 0;
+
 	if (shm->exit_reason != STILL_RUNNING)
 		return;
 
-	while (spawn_child(childno) == false);
+	while (spawn_child(childno) == false) {
+		if (++retries >= 10) {
+			outputerr("Failed to replace child %d after %u fork attempts, giving up.\n",
+				childno, retries);
+			return;
+		}
+	}
 }
 
 /* Generate children*/
