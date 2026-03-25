@@ -8,7 +8,6 @@
 #include "sanitise.h"
 #include "utils.h"
 
-//FIXME: Double check on 32bit
 static void fabricate_struct(char *p, unsigned int len)
 {
 	unsigned int i = 0;
@@ -19,7 +18,7 @@ static void fabricate_struct(char *p, unsigned int len)
 
 		switch (rand() % 3) {
 		case 0:
-			if (!IS_ALIGNED(i, 8))
+			if (!IS_ALIGNED(i, sizeof(unsigned long)))
 				break;
 
 			i += sizeof(unsigned long);
@@ -75,8 +74,6 @@ static void fabricate_struct(char *p, unsigned int len)
 	}
 }
 
-//TODO: Some of this code used to assume page_size. It needs auditting
-// to be sure we don't write past len.
 void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	char *p;
