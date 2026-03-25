@@ -11,7 +11,8 @@
 #include <linux/if_alg.h>
 
 static const char *hashes[] = {
-	"md5", "sha1",
+	"md5", "sha1", "sha256", "sha384", "sha512",
+	"blake2b-256", "blake2b-512", "sm3",
 };
 
 static const char *algos[] = {
@@ -213,7 +214,7 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_alg *alg;
 	const char **algs = algos;
 	unsigned int type;
-	const char *types[] = { "aead", "hash", "rng", "skcipher", };
+	const char *types[] = { "aead", "hash", "rng", "skcipher", "akcipher", "kpp", };
 	unsigned int algo;
 
 	alg = zmalloc(sizeof(struct sockaddr_alg));
@@ -236,6 +237,12 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		break;
 	// skcipher
 	case 3:	algo = rand() % ARRAY_SIZE(algos);
+		break;
+	// akcipher
+	case 4:	algo = rand() % ARRAY_SIZE(algos);
+		break;
+	// kpp
+	case 5:	algo = rand() % ARRAY_SIZE(algos);
 		break;
 	default: unreachable();
 	}
