@@ -489,6 +489,7 @@ static void __prune_objects(enum objecttype type, enum obj_scope scope)
 
 	while (num_to_prune > 0) {
 		struct list_head *node, *list, *tmp;
+		bool pruned_any = false;
 
 		list = head->list;
 
@@ -499,8 +500,18 @@ static void __prune_objects(enum objecttype type, enum obj_scope scope)
 				obj = (struct object *) node;
 				destroy_object(obj, scope, type);
 				num_to_prune--;
-				//TODO: log something
+				pruned_any = true;
 			}
+		}
+
+		/* If we went through the whole list without pruning
+		 * anything, the list shrank underneath us.  Bail out
+		 * to avoid an infinite loop. */
+		if (!pruned_any) {
+			debugf("prune: wanted %u more from type %u but "
+			       "list is empty/depleted (%u entries)\n",
+			       num_to_prune, type, head->num_entries);
+			break;
 		}
 	}
 }
