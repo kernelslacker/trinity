@@ -110,7 +110,8 @@ retry:
 
 	case 1:	/* do a random IP protocol, even if it doesn't match this socket. */
 		proto = net_protocols[PF_INET].proto;
-		proto->setsockopt(so, triplet);
+		if (proto != NULL && proto->setsockopt != NULL)
+			proto->setsockopt(so, triplet);
 		break;
 
 	case 2:	/* Last resort: Generic socket options. */
