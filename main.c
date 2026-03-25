@@ -12,6 +12,7 @@
 
 #include "child.h"
 #include "debug.h"
+#include "fd-event.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
@@ -816,6 +817,11 @@ void main_loop(void)
 	while (shm->exit_reason == STILL_RUNNING) {
 
 		handle_children();
+
+		/* Drain fd events from all children's ring buffers.
+		 * This processes dup/close events that children couldn't
+		 * apply directly (COW heap prevents global pool mutation). */
+		fd_event_drain_all();
 
 		taint_check();
 
