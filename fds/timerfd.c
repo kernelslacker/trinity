@@ -106,6 +106,10 @@ static int init_timerfd_fds(void)
 		ret = __init_timerfd_fds(CLOCK_MONOTONIC);
 	if (ret != false)
 		ret = __init_timerfd_fds(CLOCK_BOOTTIME);
+	if (ret != false)
+		ret = __init_timerfd_fds(CLOCK_REALTIME_ALARM);
+	if (ret != false)
+		ret = __init_timerfd_fds(CLOCK_BOOTTIME_ALARM);
 
 	return ret;
 }
@@ -127,10 +131,12 @@ static int open_timerfd_fd(void)
 	struct object *obj;
 	int fd, clockid = CLOCK_REALTIME, flags;
 
-	switch (rand() % 3) {
+	switch (rand() % 5) {
 	case 0: clockid = CLOCK_REALTIME; break;
 	case 1: clockid = CLOCK_MONOTONIC; break;
 	case 2: clockid = CLOCK_BOOTTIME; break;
+	case 3: clockid = CLOCK_REALTIME_ALARM; break;
+	case 4: clockid = CLOCK_BOOTTIME_ALARM; break;
 	}
 	flags = RAND_BOOL() ? TFD_NONBLOCK : 0;
 	if (RAND_BOOL())
