@@ -112,9 +112,25 @@ static unsigned short pick_nlmsg_type(int protocol)
 		return RAND_ARRAY(xfrm_types);
 	case NETLINK_AUDIT:
 		return RAND_ARRAY(audit_types);
-	case NETLINK_NETFILTER:
-		/* nfnetlink: subsys << 8 | msg. subsys 0-15ish */
-		return ((rand() % 16) << 8) | (rand() % 16);
+	case NETLINK_NETFILTER: {
+		/* nfnetlink: subsys << 8 | msg.
+		 * Use proper NFNL_SUBSYS_* constants for better coverage. */
+		static const unsigned char nfnl_subsys[] = {
+			NFNL_SUBSYS_CTNETLINK, NFNL_SUBSYS_CTNETLINK_EXP,
+			NFNL_SUBSYS_QUEUE, NFNL_SUBSYS_ULOG,
+			NFNL_SUBSYS_OSF, NFNL_SUBSYS_IPSET,
+			NFNL_SUBSYS_ACCT, NFNL_SUBSYS_CTNETLINK_TIMEOUT,
+			NFNL_SUBSYS_CTHELPER, NFNL_SUBSYS_NFTABLES,
+			NFNL_SUBSYS_NFT_COMPAT, NFNL_SUBSYS_HOOK,
+		};
+		unsigned char subsys;
+
+		if (ONE_IN(8))
+			subsys = rand() % 16;
+		else
+			subsys = RAND_ARRAY(nfnl_subsys);
+		return (subsys << 8) | (rand() % 16);
+	}
 	case NETLINK_GENERIC:
 		/* genl: CTRL_CMD range or random family id */
 		if (RAND_BOOL())
@@ -407,6 +423,31 @@ static unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
 }
 
 /*
+ * Generate body for NETLINK_NETFILTER messages.
+ * nfnetlink messages have a nfgenmsg (4 bytes) after nlmsghdr.
+ * The nlmsg_type encodes subsystem << 8 | message.
+ * Also improve the type encoding in pick_nlmsg_type() via the
+ * nfnl_subsys table to use proper subsystem constants.
+ */
+static size_t gen_nfnl_body(unsigned char *body)
+{
+	struct nfgenmsg nfg;
+	static const unsigned char nf_families[] = {
+		AF_INET, AF_INET6, AF_BRIDGE, AF_UNSPEC,
+	};
+
+	if (ONE_IN(8))
+		nfg.nfgen_family = rand() % 256;
+	else
+		nfg.nfgen_family = RAND_ARRAY(nf_families);
+	nfg.version = RAND_BOOL() ? NFNETLINK_V0 : rand() % 4;
+	nfg.res_id = ONE_IN(4) ? rand16() : 0;
+
+	memcpy(body, &nfg, sizeof(nfg));
+	return sizeof(nfg);
+}
+
+/*
  * Build a structured netlink message. The caller must free *buf.
  *
  * Structure: [nlmsghdr][protocol body][nlattr...nlattr]
@@ -449,6 +490,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		body_len = gen_rtnl_body(msg + offset, nlmsg_type);
 	} else if (triplet->protocol == NETLINK_GENERIC) {
 		body_len = gen_genl_body(msg + offset, nlmsg_type);
+	} else if (triplet->protocol == NETLINK_NETFILTER) {
+		body_len = gen_nfnl_body(msg + offset);
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
