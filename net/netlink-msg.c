@@ -654,10 +654,11 @@ static size_t gen_sockdiag_body(unsigned char *body,
  *
  * Structure: [nlmsghdr][protocol body][nlattr...nlattr]
  *
- * For NETLINK_ROUTE, the protocol body is the correct struct for the
- * message type (ifinfomsg, rtmsg, etc.) with fuzzed field values.
- * For other protocols, it's random bytes since the interesting fuzzing
- * is in the message type dispatch.
+ * Protocol bodies are generated per-family: rtnetlink uses the correct
+ * struct (ifinfomsg, rtmsg, etc.), genl uses genlmsghdr, nfnetlink uses
+ * nfgenmsg, xfrm uses per-type structs, audit uses binary structs or
+ * text, and sock_diag uses inet_diag_req_v2. Unknown protocols fall
+ * back to random bytes.
  *
  * ~1 in 4 messages are multi-message batches (2-4 nlmsghdr chained
  * together) to exercise the kernel's NLMSG_NEXT iteration path.
