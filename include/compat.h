@@ -428,7 +428,7 @@ enum {
 #define PR_CAP_AMBIENT		47
 #endif
 
-//TODO wtf were 48,49 ?
+/* 48 and 49 were never assigned */
 
 // arm64 only
 #ifndef PR_SVE_SET_VL
