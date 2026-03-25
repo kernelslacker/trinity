@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <linux/limits.h>
 #include <sys/stat.h>
 #include "bdevs.h"
 #include "list.h"
@@ -19,11 +20,29 @@ static struct bdevlist *bdevs = NULL;
 static void add_to_bdevlist(const char *name)
 {
 	struct bdevlist *newnode;
+	struct stat sb;
+	char pathbuf[PATH_MAX];
+	const char *path = name;
 
-	//TODO: Check if it's a valid /dev node (also check if passed without leading "/dev/")
+	/* If the path doesn't start with /dev/, prepend it. */
+	if (strncmp(name, "/dev/", 5) != 0) {
+		snprintf(pathbuf, sizeof(pathbuf), "/dev/%s", name);
+		path = pathbuf;
+	}
+
+	/* Verify the path exists and is a block device. */
+	if (stat(path, &sb) == -1) {
+		printf("Couldn't stat %s: not a valid device node.\n", path);
+		return;
+	}
+
+	if (!S_ISBLK(sb.st_mode)) {
+		printf("%s is not a block device.\n", path);
+		return;
+	}
 
 	newnode = zmalloc(sizeof(struct bdevlist));
-	newnode->name = strdup(name);
+	newnode->name = strdup(path);
 	list_add_tail(&newnode->list, &bdevs->list);
 	nr_blockdevs++;
 }
