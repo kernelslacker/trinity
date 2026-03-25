@@ -1,6 +1,7 @@
 /*
  * Routines for parsing /proc/devices for use by the ioctl fuzzer.
  */
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,17 +20,18 @@ static struct {
 
 static size_t bldevs, chrdevs, miscdevs;
 
-static void parse_proc_devices(void)
+static bool parse_proc_devices(void)
 {
 	FILE *fp;
 	char *p, *name, *line = NULL;
 	size_t n = 0;
 	int block, major;
 	void *new;
+	bool success = true;
 
 	fp = fopen("/proc/devices", "r");
 	if (!fp)
-		return;
+		return false;
 
 	block = 0;
 
@@ -48,8 +50,9 @@ static void parse_proc_devices(void)
 
 			if (block) {
 				new = realloc(block_devs, (bldevs+1)*sizeof(*block_devs));
-				if (!new) {	// FIXME: We should propagate failure up here.
+				if (!new) {
 					free(name);
+					success = false;
 					break;
 				}
 				block_devs = new;
@@ -61,6 +64,7 @@ static void parse_proc_devices(void)
 				new = realloc(char_devs, (chrdevs+1)*sizeof(*char_devs));
 				if (!new) {
 					free(name);
+					success = false;
 					break;
 				}
 				char_devs = new;
@@ -74,9 +78,10 @@ static void parse_proc_devices(void)
 
 	fclose(fp);
 	free(line);
+	return success;
 }
 
-static void parse_proc_misc(void)
+static bool parse_proc_misc(void)
 {
 	FILE *fp;
 	char *name;
@@ -85,13 +90,14 @@ static void parse_proc_misc(void)
 
 	fp = fopen("/proc/misc", "r");
 	if (!fp)
-		return;
+		return false;
 
 	while (fscanf(fp, "%d %ms", &minor, &name) == 2) {
 		new = realloc(misc_devs, (miscdevs+1)*sizeof(*misc_devs));
 		if (!new) {
 			free(name);
-			break;
+			fclose(fp);
+			return false;
 		}
 		misc_devs = new;
 		misc_devs[miscdevs].major = 0;
@@ -101,15 +107,25 @@ static void parse_proc_misc(void)
 	}
 
 	fclose(fp);
+	return true;
 }
 
-void parse_devices(void)
+bool parse_devices(void)
 {
-	parse_proc_devices();
-	parse_proc_misc();
+	bool success = true;
+
+	if (!parse_proc_devices()) {
+		output(0, "Warning: failed to fully parse /proc/devices\n");
+		success = false;
+	}
+	if (!parse_proc_misc()) {
+		output(0, "Warning: failed to fully parse /proc/misc\n");
+		success = false;
+	}
 
 	output(2, "Parsed %zu char devices, %zu block devices, %zu misc devices.\n",
 			chrdevs, bldevs, miscdevs);
+	return success;
 }
 
 const char *map_dev(dev_t st_rdev, mode_t st_mode)
