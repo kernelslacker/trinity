@@ -83,9 +83,11 @@ static int __init_timerfd_fds(int clockid)
 		int fd;
 
 		fd = timerfd_create(clockid, flags[i]);
-		if (fd == -1)
+		if (fd == -1) {
 			if (errno == ENOSYS)
 				return false;
+			continue;
+		}
 
 		arm_timerfd(fd);
 
