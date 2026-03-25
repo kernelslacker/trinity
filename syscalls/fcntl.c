@@ -136,6 +136,28 @@ static unsigned long fcntl_flags[] = {
 	F_GETDELEG, F_SETDELEG,
 };
 
+/*
+ * Track fd-creating fcntl operations.  F_DUPFD and F_DUPFD_CLOEXEC
+ * return a new fd — bump the global generation so children
+ * invalidate their cached fds.
+ *
+ * Full object pool tracking requires the child-to-parent event
+ * queue (Phase 2).
+ */
+static void post_fcntl(struct syscallrecord *rec)
+{
+	if ((long) rec->retval < 0)
+		return;
+
+	switch (rec->a2) {
+	case F_DUPFD:
+	case F_DUPFD_CLOEXEC:
+		__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+		break;
+	}
+}
+
 struct syscallentry syscall_fcntl = {
 	.name = "fcntl",
 	.num_args = 3,
@@ -149,4 +171,5 @@ struct syscallentry syscall_fcntl = {
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_fcntl,
+	.post = post_fcntl,
 };
