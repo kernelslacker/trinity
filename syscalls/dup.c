@@ -1,6 +1,9 @@
 #include <unistd.h>
 #include <fcntl.h>
+#include "child.h"
+#include "fd-event.h"
 #include "objects.h"
+#include "pids.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
@@ -14,17 +17,20 @@
 
 /*
  * dup() creates a new fd pointing to the same file description.
- * We can't add the new fd to the global object pool from a child
- * process (COW heap), but we bump fd_generation so other children
- * know the fd table changed and invalidate their caches.
- *
- * Full object pool tracking for dup'd fds requires the child-to-parent
- * event queue (Phase 2).
+ * Enqueue a DUP event so the parent can create a new object with
+ * inherited type for the dup'd fd.
  */
 static void post_dup(struct syscallrecord *rec)
 {
+	struct childdata *child;
+
 	if ((long) rec->retval < 0)
 		return;
+
+	child = this_child();
+	if (child != NULL && child->fd_event_ring != NULL)
+		fd_event_enqueue(child->fd_event_ring, FD_EVENT_DUP,
+				 (int) rec->a1, (int) rec->retval, 0);
 
 	__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
@@ -42,14 +48,29 @@ struct syscallentry syscall_dup = {
 };
 
 /*
- * dup2/dup3 silently close newfd if it was open.
- * Remove any object holding newfd from the pool on success.
+ * dup2/dup3 silently close newfd if it was open, then dup oldfd to newfd.
+ * Enqueue a CLOSE event for newfd (if it was tracked) and a DUP event
+ * for the new oldfd→newfd mapping.
  */
 static void post_dup2(struct syscallrecord *rec)
 {
+	struct childdata *child;
+
 	if ((long) rec->retval < 0)
 		return;
 
+	child = this_child();
+	if (child != NULL && child->fd_event_ring != NULL) {
+		/* newfd was implicitly closed */
+		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
+				 (int) rec->a2, -1, 0);
+		/* oldfd was duped to newfd */
+		fd_event_enqueue(child->fd_event_ring, FD_EVENT_DUP,
+				 (int) rec->a1, (int) rec->retval, 0);
+	}
+
+	/* Parent-side path: remove_object_by_fd bails if not mainpid,
+	 * so this is a no-op in children.  Keep for parent context. */
 	remove_object_by_fd((int) rec->a2);
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 }

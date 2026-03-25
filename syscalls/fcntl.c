@@ -19,6 +19,8 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include "child.h"
+#include "fd-event.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -138,20 +140,24 @@ static unsigned long fcntl_flags[] = {
 
 /*
  * Track fd-creating fcntl operations.  F_DUPFD and F_DUPFD_CLOEXEC
- * return a new fd — bump the global generation so children
- * invalidate their cached fds.
- *
- * Full object pool tracking requires the child-to-parent event
- * queue (Phase 2).
+ * return a new fd — enqueue a DUP event so the parent can create
+ * a tracked object with inherited type.
  */
 static void post_fcntl(struct syscallrecord *rec)
 {
+	struct childdata *child;
+
 	if ((long) rec->retval < 0)
 		return;
 
 	switch (rec->a2) {
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
+		child = this_child();
+		if (child != NULL && child->fd_event_ring != NULL)
+			fd_event_enqueue(child->fd_event_ring, FD_EVENT_DUP,
+					 (int) rec->a1, (int) rec->retval, 0);
+
 		__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 		break;
