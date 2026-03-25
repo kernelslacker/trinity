@@ -1,5 +1,6 @@
 #include <ftw.h>
 #include <ctype.h>
+#include <fnmatch.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,8 +48,7 @@ static struct namelist *names = NULL;
 
 static int ignore_files(const char *path)
 {
-	unsigned int i, j;
-	unsigned int pathlen, offset = 0;
+	unsigned int i;
 
 	/* These are exact matches. */
 	const char *ignored_paths[] = {
@@ -62,55 +62,38 @@ static int ignore_files(const char *path)
 		NULL
 	};
 
-	/* Partial matches. */	//FIXME: This whole function should just use globs to pattern match.
+	/* Basename patterns matched with fnmatch(). */
 	const char *ignored_patterns[] = {
-
 		/* dangerous/noisy/annoying per-process stuff. */
-		"coredump_filter", "make-it-fail", "oom_adj", "oom_score_adj",
+		"coredump_filter",
+		"make-it-fail",
+		"oom_adj",
+		"oom_score_adj",
+
+		/* tty and sd devices */
+		"tty*",
+		"sd*",
 		NULL
 	};
 
-	pathlen = strlen(path);
-
-	/* First do the exact matches */
 	for (i = 0; ignored_paths[i]; i++) {
-		if (strlen(ignored_paths[i]) != pathlen) {
-			continue;
-		}
-
-		if (!strcmp(path, ignored_paths[i])) {
+		if (strcmp(path, ignored_paths[i]) == 0) {
 			debugf("Skipping %s\n", path);
 			return 1;
 		}
 	}
 
-	/* Now make sure none of the patterns match the end of the pathname */
-	for (j = 0; j < pathlen; j++) {
-		if (path[j] == '/')
-			offset = j;
-	}
-	offset++;
-
-	if (offset == 1)
+	/* Match patterns against the basename component of the path. */
+	const char *base = strrchr(path, '/');
+	if (base == NULL)
 		return 0;
+	base++;
 
 	for (i = 0; ignored_patterns[i]; i++) {
-		if (!strcmp(path + offset, ignored_patterns[i])) {
+		if (fnmatch(ignored_patterns[i], base, 0) == 0) {
 			debugf("Skipping pattern %s\n", path);
 			return 1;
 		}
-	}
-
-	/* special case to match tty* until I do globbing */
-	if (!strncmp(path + offset, "tty", 3)) {
-		debugf("Skipping %s\n", path);
-		return 1;
-	}
-
-	/* seriously though, I should add globbing */
-	if (!strncmp(path + offset, "sd", 2)) {
-		debugf("Skipping %s\n", path);
-		return 1;
 	}
 
 	return 0;
