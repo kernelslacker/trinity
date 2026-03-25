@@ -149,7 +149,7 @@ static const char * get_proto_name(unsigned int family, unsigned int proto)
 	}
 
 	str = calloc(1, 80);
-	sprintf(str, "Unknown(%u)", proto);
+	snprintf(str, 80, "Unknown(%u)", proto);
 	return str;
 }
 
@@ -174,7 +174,7 @@ static const char *decode_type(unsigned int type)
 		return "SOCK_PACKET";
 	}
 	str = calloc(1, 80);
-	sprintf(str, "Unknown(%u)", type);
+	snprintf(str, 80, "Unknown(%u)", type);
 	return str;
 }
 
