@@ -162,9 +162,33 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	case 2: return 0xffff800000000000UL | (low << 4);		// x86-64 canonical addr range 2 begin
 	case 3: return VDSO_ADDR | (low & 0x0fffff);
 	}
-#endif
+#elif defined(__aarch64__)
+	i = rand() % 4;
 
-	// FIXME: Add more arch specific addresses here.
+	switch (i) {
+	case 0: return MODULE_ADDR | (low & 0x03ffffff);		// module region
+	case 1: return 0xffffffbfc0000000UL | (low & 0x3fffffff);	// vmalloc region
+	case 2: return KERNEL_ADDR | (low & 0x0fffff);			// kernel text
+	case 3: return 0xffffff8000000000UL | (low & 0x3fffffff);	// KASAN shadow region
+	}
+#elif defined(__powerpc64__)
+	i = rand() % 4;
+
+	switch (i) {
+	case 0: return MODULE_ADDR | (low & 0x0fffffff);		// module region
+	case 1: return 0xd000100000000000UL | (low & 0x0fffffffffff);	// vmalloc region
+	case 2: return KERNEL_ADDR | (low & 0x0fffff);			// kernel text
+	case 3: return 0xc00000003fff0000UL | (low & 0xffff);		// SLB/bolted region end
+	}
+#elif defined(__s390x__)
+	i = rand() % 3;
+
+	switch (i) {
+	case 0: return MODULE_ADDR | (low & 0x7fffffff);		// module region
+	case 1: return 0x0000000000100000UL | (low & 0x0fffff);	// kernel text
+	case 2: return 0x0000020000000000UL | (low & 0x3fffffff);	// vmemmap region
+	}
+#endif
 
 	return i | low;
 }
