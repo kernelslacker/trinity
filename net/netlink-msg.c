@@ -447,6 +447,90 @@ static size_t gen_nfnl_body(unsigned char *body)
 	return sizeof(nfg);
 }
 
+/* XFRM attribute types */
+static const unsigned short xfrma_attrs[] = {
+	XFRMA_ALG_AUTH, XFRMA_ALG_CRYPT, XFRMA_ALG_COMP,
+	XFRMA_ENCAP, XFRMA_TMPL, XFRMA_SA, XFRMA_POLICY,
+	XFRMA_SEC_CTX, XFRMA_LTIME_VAL, XFRMA_REPLAY_VAL,
+	XFRMA_REPLAY_THRESH, XFRMA_ETIMER_THRESH,
+	XFRMA_SRCADDR, XFRMA_COADDR, XFRMA_LASTUSED,
+	XFRMA_POLICY_TYPE, XFRMA_MIGRATE,
+	XFRMA_ALG_AEAD, XFRMA_KMADDRESS, XFRMA_ALG_AUTH_TRUNC,
+	XFRMA_MARK, XFRMA_TFCPAD, XFRMA_REPLAY_ESN_VAL,
+	XFRMA_SA_EXTRA_FLAGS, XFRMA_PROTO, XFRMA_ADDRESS_FILTER,
+	XFRMA_OFFLOAD_DEV, XFRMA_SET_MARK, XFRMA_SET_MARK_MASK,
+	XFRMA_IF_ID, XFRMA_MTIMER_THRESH, XFRMA_SA_DIR,
+};
+
+/*
+ * Generate body for NETLINK_XFRM messages.
+ * Body struct varies by message type. The big structs (xfrm_usersa_info
+ * at 224 bytes, xfrm_userpolicy_info at 168 bytes) are filled with
+ * random data of the correct size. Getting the size right is what
+ * matters — it gets us past the initial copy_from_user length check
+ * into the deeper validation code where the interesting bugs live.
+ */
+static size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type)
+{
+	size_t body_len;
+
+	switch (nlmsg_type) {
+	case XFRM_MSG_NEWSA:
+	case XFRM_MSG_UPDSA:
+		body_len = sizeof(struct xfrm_usersa_info);
+		break;
+	case XFRM_MSG_DELSA:
+	case XFRM_MSG_GETSA:
+		body_len = sizeof(struct xfrm_usersa_id);
+		break;
+	case XFRM_MSG_NEWPOLICY:
+	case XFRM_MSG_UPDPOLICY:
+		body_len = sizeof(struct xfrm_userpolicy_info);
+		break;
+	case XFRM_MSG_DELPOLICY:
+	case XFRM_MSG_GETPOLICY:
+		body_len = sizeof(struct xfrm_userpolicy_id);
+		break;
+	case XFRM_MSG_ALLOCSPI:
+		body_len = sizeof(struct xfrm_userspi_info);
+		break;
+	case XFRM_MSG_ACQUIRE:
+		body_len = sizeof(struct xfrm_user_acquire);
+		break;
+	case XFRM_MSG_EXPIRE:
+		body_len = sizeof(struct xfrm_user_expire);
+		break;
+	case XFRM_MSG_POLEXPIRE:
+		body_len = sizeof(struct xfrm_user_polexpire);
+		break;
+	case XFRM_MSG_FLUSHSA:
+		body_len = sizeof(struct xfrm_usersa_flush);
+		break;
+	case XFRM_MSG_FLUSHPOLICY:
+		body_len = 0; /* no body */
+		break;
+	case XFRM_MSG_NEWAE:
+	case XFRM_MSG_GETAE:
+		body_len = sizeof(struct xfrm_aevent_id);
+		break;
+	case XFRM_MSG_MIGRATE:
+		body_len = sizeof(struct xfrm_user_migrate);
+		break;
+	case XFRM_MSG_GETSADINFO:
+	case XFRM_MSG_GETSPDINFO:
+		body_len = sizeof(__u32);
+		break;
+	default:
+		/* Unknown xfrm type: random body */
+		body_len = RAND_RANGE(4, 32);
+		break;
+	}
+
+	if (body_len > 0)
+		generate_rand_bytes(body, body_len);
+	return body_len;
+}
+
 /*
  * Build a structured netlink message. The caller must free *buf.
  *
@@ -492,6 +576,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		body_len = gen_genl_body(msg + offset, nlmsg_type);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
 		body_len = gen_nfnl_body(msg + offset);
+	} else if (triplet->protocol == NETLINK_XFRM) {
+		body_len = gen_xfrm_body(msg + offset, nlmsg_type);
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
@@ -509,6 +595,8 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			attr_hint = pick_rtnl_attr_type(nlmsg_type);
 		else if (triplet->protocol == NETLINK_GENERIC)
 			attr_hint = pick_genl_attr_type(nlmsg_type);
+		else if (triplet->protocol == NETLINK_XFRM)
+			attr_hint = RAND_ARRAY(xfrma_attrs);
 		offset = append_nlattr(msg, offset, buflen, attr_hint);
 	}
 
@@ -535,8 +623,9 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	unsigned char *msg;
 	int num_msgs;
 
-	/* Total buffer: room for up to 4 messages with attrs */
-	total_len = NLMSG_HDRLEN + 64 + (rand() % 512);
+	/* Total buffer: room for messages with protocol body + attrs.
+	 * XFRM bodies can be up to 280 bytes, so base size must accommodate. */
+	total_len = NLMSG_HDRLEN + 320 + (rand() % 512);
 	/* Multi-message batches need more space */
 	if (ONE_IN(4)) {
 		num_msgs = RAND_RANGE(2, 4);
