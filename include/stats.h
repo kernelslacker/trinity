@@ -12,6 +12,7 @@ struct stats_s {
 
 	/* fd lifecycle tracking */
 	unsigned long fd_stale_detected;
+	unsigned long fd_stale_by_generation;
 	unsigned long fd_closed_tracked;
 	unsigned long fd_regenerated;
 };
