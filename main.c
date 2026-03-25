@@ -582,7 +582,9 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		debugf("Sending PTRACE_DETACH (and then KILL)\n");
 		ptrace(PTRACE_DETACH, pid, NULL, NULL);
 		kill_pid(pid);
-		//FIXME: Won't we create a zombie here?
+		/* Reap the killed child to avoid leaving a zombie — once
+		 * reap_child() clears the pid slot nobody will waitpid() it. */
+		waitpid(pid, NULL, 0);
 		reap_child(children[childno], childno);
 		replace_child(childno);
 		return;
