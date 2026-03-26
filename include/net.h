@@ -91,7 +91,6 @@ extern const struct netproto proto_netrom;
 extern const struct netproto proto_netbeui;
 extern const struct netproto proto_iucv;
 extern const struct netproto proto_rxrpc;
-extern const struct netproto proto_phonet;
 extern const struct netproto proto_kcm;
 extern const struct netproto proto_qipcrtr;
 extern const struct netproto proto_smc;
