@@ -9,10 +9,11 @@
 sigjmp_buf ret_jump;
 
 volatile sig_atomic_t xcpu_pending;
+volatile sig_atomic_t ctrlc_pending;
 
 static void ctrlc_handler(__unused__ int sig)
 {
-	panic(EXIT_SIGINT);
+	ctrlc_pending = 1;
 }
 
 /*

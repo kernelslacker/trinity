@@ -466,6 +466,11 @@ void child_process(struct childdata *child, int childno)
 	}
 
 	while (shm->exit_reason == STILL_RUNNING) {
+		if (ctrlc_pending) {
+			panic(EXIT_SIGINT);
+			break;
+		}
+
 		/* If the parent reseeded, we should reflect the latest seed too. */
 		if (shm->seed != child->seed) {
 			//output(0, "child %d reseeded to %x\n", child->num, child->seed);
