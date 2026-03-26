@@ -1,7 +1,6 @@
 VERSION="2023.01"
 
 INSTALL_PREFIX ?= $(DESTDIR)
-INSTALL_PREFIX ?= $(HOME)
 NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
 
 ifeq ($(CC),)
