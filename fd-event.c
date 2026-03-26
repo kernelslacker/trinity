@@ -59,75 +59,6 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 }
 
 /*
- * Set the fd field in an object's type-specific union member.
- * Used to create minimal dup'd objects that inherit type from the source.
- */
-static void set_object_fd(struct object *obj, enum objecttype type, int fd)
-{
-	switch (type) {
-	case OBJ_FD_PIPE:	obj->pipeobj.fd = fd; break;
-	case OBJ_FD_DEVFILE:
-	case OBJ_FD_PROCFILE:
-	case OBJ_FD_SYSFILE:	obj->fileobj.fd = fd; break;
-	case OBJ_FD_PERF:	obj->perfobj.fd = fd; break;
-	case OBJ_FD_EPOLL:	obj->epollobj.fd = fd; break;
-	case OBJ_FD_EVENTFD:	obj->eventfdobj.fd = fd; break;
-	case OBJ_FD_TIMERFD:	obj->timerfdobj.fd = fd; break;
-	case OBJ_FD_TESTFILE:	obj->testfileobj.fd = fd; break;
-	case OBJ_FD_MEMFD:	obj->memfdobj.fd = fd; break;
-	case OBJ_FD_DRM:	obj->drmfd = fd; break;
-	case OBJ_FD_INOTIFY:	obj->inotifyobj.fd = fd; break;
-	case OBJ_FD_SOCKET:	obj->sockinfo.fd = fd; break;
-	case OBJ_FD_USERFAULTFD: obj->userfaultobj.fd = fd; break;
-	case OBJ_FD_FANOTIFY:	obj->fanotifyobj.fd = fd; break;
-	case OBJ_FD_BPF_MAP:	obj->bpfobj.map_fd = fd; break;
-	case OBJ_FD_BPF_PROG:	obj->bpfprogobj.fd = fd; break;
-	case OBJ_FD_IO_URING:	obj->io_uringobj.fd = fd; break;
-	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = fd; break;
-	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = fd; break;
-	default:		break;
-	}
-}
-
-/*
- * Process a single FD_EVENT_DUP: look up the source fd's type in the
- * hash table and create a new object with inherited type for the new fd.
- *
- * If the source fd has already been destroyed (race between child's dup
- * and parent's close processing), we skip silently — the dup'd fd will
- * be detected as stale via the generation counter.
- */
-static void handle_dup_event(int oldfd, int newfd)
-{
-	struct fd_hash_entry *entry;
-	struct object *obj;
-	enum objecttype type;
-
-	/* Look up source fd under objlock.  Copy the type out so we can
-	 * release the lock before allocating. */
-	lock(&shm->objlock);
-	entry = fd_hash_lookup(oldfd);
-	if (entry == NULL) {
-		unlock(&shm->objlock);
-		return;
-	}
-	type = entry->type;
-	unlock(&shm->objlock);
-
-	/* Create a minimal object for the dup'd fd, inheriting type.
-	 * We only set the fd field — the rest of the type-specific
-	 * metadata is irrelevant since this is a dup'd handle. */
-	obj = alloc_object();
-	if (obj == NULL)
-		return;
-
-	set_object_fd(obj, type, newfd);
-
-	/* add_object takes objlock internally. */
-	add_object(obj, OBJ_GLOBAL, type);
-}
-
-/*
  * Drain all pending events from one child's ring.
  * Single-consumer: only the parent writes tail.
  */
@@ -152,21 +83,24 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 
 		switch (ev->type) {
 		case FD_EVENT_DUP:
-			handle_dup_event(ev->fd1, ev->fd2);
+			/* The dup'd fd exists only in the child's fd table
+			 * (children have independent fd tables after fork).
+			 * Don't create global objects for fds the parent
+			 * doesn't own — the destructor would close() an
+			 * fd that either doesn't exist in the parent or
+			 * belongs to something else entirely. */
 			break;
 
 		case FD_EVENT_CLOSE:
 			remove_object_by_fd(ev->fd1);
 			break;
 
-		case FD_EVENT_CREATED: {
-			struct object *obj = alloc_object();
-			if (obj != NULL) {
-				set_object_fd(obj, ev->objtype, ev->fd1);
-				add_object(obj, OBJ_GLOBAL, ev->objtype);
-			}
+		case FD_EVENT_CREATED:
+			/* Like DUP, the new fd exists only in the child.
+			 * Adding it to OBJ_GLOBAL would create a phantom
+			 * object whose destructor closes an unrelated
+			 * parent fd. */
 			break;
-		}
 		}
 
 		tail = (tail + 1) & (FD_EVENT_RING_SIZE - 1);
