@@ -9,11 +9,8 @@
 #include "random.h"
 #include <linux/rds.h>
 
-#ifndef RDS_TRANSPORT
-#define RDS_TRANSPORT	26
-#endif
-#ifndef SO_RDS_ZCOPY
-#define SO_RDS_ZCOPY	9
+#ifndef SO_RDS_TRANSPORT
+#define SO_RDS_TRANSPORT	8
 #endif
 
 static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
@@ -47,7 +44,7 @@ static const unsigned int rds_opts[] = {
 	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
 	4, /* deprecated RDS_BARRIER 4 */
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST,
-	RDS_TRANSPORT, SO_RDS_ZCOPY,
+	SO_RDS_TRANSPORT,
 };
 
 #define SOL_RDS 276
