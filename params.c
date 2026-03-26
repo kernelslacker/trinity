@@ -309,7 +309,12 @@ void parse_args(int argc, char *argv[])
 				outputerr("Too many victim paths (max %d).\n", MAX_VICTIM_PATHS);
 				exit(EXIT_FAILURE);
 			}
-			victim_paths[nr_victim_paths++] = strdup(optarg);
+			victim_paths[nr_victim_paths] = strdup(optarg);
+			if (!victim_paths[nr_victim_paths]) {
+				outputerr("strdup failed\n");
+				exit(EXIT_FAILURE);
+			}
+			nr_victim_paths++;
 			break;
 
 		case 'x':
