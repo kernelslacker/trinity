@@ -18,7 +18,7 @@
 #include "random.h"
 #include "utils.h"
 
-static void alloc_zero_map(unsigned long size, int prot, const char *name)
+static void alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
 {
 	struct object *new;
 	int fd;
@@ -36,7 +36,7 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 	new->map.size = size;
 	new->map.prot = prot;
 	new->map.type = INITIAL_ANON;
-	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | MAP_SHARED, fd, 0);
+	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, fd, 0);
 	if (new->map.ptr == MAP_FAILED) {
 		outputerr("mmap failure:%s\n", strerror(errno));
 		exit(EXIT_FAILURE);
@@ -131,12 +131,16 @@ void setup_initial_mappings(void)
 	setup_mapping_sizes();
 
 	for (i = 0; i < ARRAY_SIZE(mapping_sizes); i++) {
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
-		alloc_zero_map(mapping_sizes[i], PROT_READ, "PROT_READ");
-		alloc_zero_map(mapping_sizes[i], PROT_WRITE, "PROT_WRITE");
-		alloc_zero_map(mapping_sizes[i], PROT_EXEC, "PROT_EXEC");
-		alloc_zero_map(mapping_sizes[i], PROT_NONE, "PROT_NONE");
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_EXEC, "PROT_READ | PROT_EXEC");
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE | PROT_EXEC, "PROT_READ | PROT_WRITE | PROT_EXEC");
+		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE, MAP_SHARED, "PROT_READ | PROT_WRITE");
+		alloc_zero_map(mapping_sizes[i], PROT_READ, MAP_SHARED, "PROT_READ");
+		alloc_zero_map(mapping_sizes[i], PROT_WRITE, MAP_SHARED, "PROT_WRITE");
+		alloc_zero_map(mapping_sizes[i], PROT_EXEC, MAP_SHARED, "PROT_EXEC");
+		alloc_zero_map(mapping_sizes[i], PROT_NONE, MAP_SHARED, "PROT_NONE");
+		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_EXEC, MAP_SHARED, "PROT_READ | PROT_EXEC");
+		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, "PROT_READ | PROT_WRITE | PROT_EXEC");
+		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE, MAP_PRIVATE, "PROT_READ | PROT_WRITE (private)");
+		alloc_zero_map(mapping_sizes[i], PROT_READ, MAP_PRIVATE, "PROT_READ (private)");
+		alloc_zero_map(mapping_sizes[i], PROT_WRITE, MAP_PRIVATE, "PROT_WRITE (private)");
+		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, "PROT_READ | PROT_WRITE | PROT_EXEC (private)");
 	}
 }
