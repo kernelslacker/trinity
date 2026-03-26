@@ -17,6 +17,13 @@
 #include "compat.h"
 #include "trinity.h"
 
+#ifndef MFD_NOEXEC_SEAL
+#define MFD_NOEXEC_SEAL 0x0008U
+#endif
+#ifndef MFD_EXEC
+#define MFD_EXEC 0x0010U
+#endif
+
 #ifndef USE_MEMFD_CREATE
 
 static int memfd_create(__unused__ const char *uname, __unused__ unsigned int flag)
@@ -72,6 +79,8 @@ static int init_memfd_fds(void)
 		MFD_CLOEXEC,
 		MFD_CLOEXEC | MFD_ALLOW_SEALING,
 		MFD_ALLOW_SEALING, MFD_HUGETLB,
+		MFD_NOEXEC_SEAL,
+		MFD_EXEC,
 	};
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD);
