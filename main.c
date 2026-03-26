@@ -312,6 +312,24 @@ static void dump_pid_stack(int pid)
 	fclose(fp);
 }
 
+static void dump_pid_syscall(int pid)
+{
+	FILE *fp;
+	char filename[80];
+	char buf[256];
+
+	snprintf(filename, sizeof(filename), "/proc/%d/syscall", pid);
+
+	fp = fopen(filename, "r");
+	if (fp == NULL)
+		return;
+
+	if (fgets(buf, sizeof(buf), fp) != NULL)
+		output(0, "pid %d syscall: %s", pid, buf);
+
+	fclose(fp);
+}
+
 static void stuck_syscall_info(struct childdata *child, int childno)
 {
 	struct syscallrecord *rec;
@@ -418,6 +436,8 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		output(0, "child %d (pid %u) unkillable after %u attempts, "
 			"forcibly reaping slot.\n",
 			childno, pid, child->kill_count);
+		dump_pid_stack(pid);
+		dump_pid_syscall(pid);
 		if (pidstatfiles[childno])
 			fclose(pidstatfiles[childno]);
 		pidstatfiles[childno] = NULL;
