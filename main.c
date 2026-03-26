@@ -68,8 +68,10 @@ static int shm_is_corrupt(void)
 		if (children == NULL)
 			return true;
 
-		child = children[i];
+		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
 		pid = pids[i];
+		if (child == NULL)
+			continue;
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -758,7 +760,11 @@ static void check_children_progressing(void)
 		return;
 
 	for_each_child(i) {
-		struct childdata *child = children[i];
+		struct childdata *child;
+
+		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
+		if (child == NULL)
+			continue;
 
 		if (is_child_making_progress(child, i) == false)
 			stall_count++;
