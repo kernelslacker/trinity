@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/types.h>
-#include <types.h>
+#include "types.h"
 #include "kcov.h"
 #include "objects.h"
 #include "syscall.h"
