@@ -2,13 +2,13 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include "child.h"
 #include "trinity.h"	// __unused__
-#include "pids.h"
 #include "signals.h"
 #include "shm.h"
 
 sigjmp_buf ret_jump;
+
+volatile sig_atomic_t xcpu_pending;
 
 static void ctrlc_handler(__unused__ int sig)
 {
@@ -45,9 +45,7 @@ static void sighandler(int sig)
 
 static void sigxcpu_handler(__unused__ int sig)
 {
-	struct childdata *child = this_child();
-
-	child->xcpu_count++;
+	xcpu_pending = 1;
 
 	siglongjmp(ret_jump, 1);
 }
