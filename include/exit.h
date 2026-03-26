@@ -1,7 +1,5 @@
 #pragma once
 
-extern unsigned char exit_reason;
-
 enum exit_reasons {
 	STILL_RUNNING = 0,
 	EXIT_NO_SYSCALLS_ENABLED = 1,
