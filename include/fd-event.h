@@ -16,7 +16,7 @@
  * just mean slightly delayed pool updates.
  */
 
-#define FD_EVENT_RING_SIZE 256	/* must be power of 2 */
+#define FD_EVENT_RING_SIZE 1024	/* must be power of 2 */
 
 enum fd_event_type {
 	FD_EVENT_DUP,		/* oldfd duplicated to newfd */
