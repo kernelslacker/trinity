@@ -75,7 +75,7 @@ static int init_pipes(void)
 	head->destroy = &pipefd_destructor;
 	head->dump = &pipefd_dump;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 16; i++)
 		open_pipe();
 
 	return true;
