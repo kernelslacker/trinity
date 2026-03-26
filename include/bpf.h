@@ -12,6 +12,18 @@ int get_rand_bpf_fd(void);
 #ifndef BPF_F_NO_COMMON_LRU
 #define BPF_F_NO_COMMON_LRU     (1U << 1)
 #endif
+#ifndef BPF_MAP_TYPE_RINGBUF
+#define BPF_MAP_TYPE_RINGBUF		27
+#endif
+#ifndef BPF_MAP_TYPE_BLOOM_FILTER
+#define BPF_MAP_TYPE_BLOOM_FILTER	30
+#endif
+#ifndef BPF_MAP_TYPE_USER_RINGBUF
+#define BPF_MAP_TYPE_USER_RINGBUF	31
+#endif
+#ifndef BPF_MAP_TYPE_ARENA
+#define BPF_MAP_TYPE_ARENA		33
+#endif
 
 /*
  * eBPF instruction definitions for the program generator.
