@@ -102,6 +102,10 @@ void init_child_mappings(void)
 		newobj = alloc_object();
 		newobj->map.ptr = m->ptr;
 		newobj->map.name = strdup(m->name);
+		if (!newobj->map.name) {
+			free(newobj);
+			continue;
+		}
 		newobj->map.size = m->size;
 		newobj->map.prot = m->prot;
 		/* We leave type as 'INITIAL' until we change the mapping
@@ -186,6 +190,10 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 	/* Create an MMAP of the same fd. */
 	obj = alloc_object();
 	obj->map.name = strdup(name);
+	if (!obj->map.name) {
+		free(obj);
+		return;
+	}
 	obj->map.size = len;
 
 retry_mmap:
