@@ -202,22 +202,14 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 	else
 		num_entries = RAND_RANGE(1, 256);
 
-	switch (argnum) {
-	case 1:	if (entry->arg2type == ARG_IOVECLEN)
-			rec->a2 = num_entries;
-		break;
-	case 2:	if (entry->arg3type == ARG_IOVECLEN)
-			rec->a3 = num_entries;
-		break;
-	case 3:	if (entry->arg4type == ARG_IOVECLEN)
-			rec->a4 = num_entries;
-		break;
-	case 4:	if (entry->arg5type == ARG_IOVECLEN)
-			rec->a5 = num_entries;
-		break;
-	case 5:	if (entry->arg6type == ARG_IOVECLEN)
-			rec->a6 = num_entries;
-		break;
+	if (argnum < 6 && entry->argtype[argnum] == ARG_IOVECLEN) {
+		switch (argnum) {
+		case 1:	rec->a2 = num_entries; break;
+		case 2:	rec->a3 = num_entries; break;
+		case 3:	rec->a4 = num_entries; break;
+		case 4:	rec->a5 = num_entries; break;
+		case 5:	rec->a6 = num_entries; break;
+		}
 	}
 	return (unsigned long) alloc_iovec(num_entries);
 }
@@ -229,24 +221,14 @@ static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct sysc
 
 	generate_sockaddr((struct sockaddr **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
-	switch (argnum) {
-	case 1:	if (entry->arg2type == ARG_SOCKADDRLEN)
-			rec->a2 = sockaddrlen;
-		break;
-	case 2:	if (entry->arg3type == ARG_SOCKADDRLEN)
-			rec->a3 = sockaddrlen;
-		break;
-	case 3:	if (entry->arg4type == ARG_SOCKADDRLEN)
-			rec->a4 = sockaddrlen;
-		break;
-	case 4:	if (entry->arg5type == ARG_SOCKADDRLEN)
-			rec->a5 = sockaddrlen;
-		break;
-	case 5:	if (entry->arg6type == ARG_SOCKADDRLEN)
-			rec->a6 = sockaddrlen;
-		break;
-	case 6:
-		break;
+	if (argnum < 6 && entry->argtype[argnum] == ARG_SOCKADDRLEN) {
+		switch (argnum) {
+		case 1:	rec->a2 = sockaddrlen; break;
+		case 2:	rec->a3 = sockaddrlen; break;
+		case 3:	rec->a4 = sockaddrlen; break;
+		case 4:	rec->a5 = sockaddrlen; break;
+		case 5:	rec->a6 = sockaddrlen; break;
+		}
 	}
 	return (unsigned long) sockaddr;
 }
@@ -292,24 +274,7 @@ static unsigned long handle_arg_mode_t(void)
 
 enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 {
-	enum argtype argtype = 0;
-
-	switch (argnum) {
-	case 1:	argtype = entry->arg1type;
-		break;
-	case 2:	argtype = entry->arg2type;
-		break;
-	case 3:	argtype = entry->arg3type;
-		break;
-	case 4:	argtype = entry->arg4type;
-		break;
-	case 5:	argtype = entry->arg5type;
-		break;
-	case 6:	argtype = entry->arg6type;
-		break;
-	}
-
-	return argtype;
+	return entry->argtype[argnum - 1];
 }
 
 static unsigned long gen_undefined_arg(unsigned int call)
@@ -430,17 +395,17 @@ void generic_sanitise(struct syscallrecord *rec)
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
-	if (entry->arg1type != 0)
+	if (entry->argtype[0] != 0)
 		rec->a1 = fill_arg(rec, 1);
-	if (entry->arg2type != 0)
+	if (entry->argtype[1] != 0)
 		rec->a2 = fill_arg(rec, 2);
-	if (entry->arg3type != 0)
+	if (entry->argtype[2] != 0)
 		rec->a3 = fill_arg(rec, 3);
-	if (entry->arg4type != 0)
+	if (entry->argtype[3] != 0)
 		rec->a4 = fill_arg(rec, 4);
-	if (entry->arg5type != 0)
+	if (entry->argtype[4] != 0)
 		rec->a5 = fill_arg(rec, 5);
-	if (entry->arg6type != 0)
+	if (entry->argtype[5] != 0)
 		rec->a6 = fill_arg(rec, 6);
 }
 
