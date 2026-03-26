@@ -718,10 +718,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 static void handle_children(void)
 {
 	unsigned int i;
-	sigset_t mask;
-	sigset_t orig_mask;
-	struct timespec timeout = { .tv_sec = 1 };
-	int ret;
+	int collected = 0;
 
 	if (shm->running_childs == 0)
 		return;
@@ -729,25 +726,6 @@ static void handle_children(void)
 	if (children == NULL)
 		return;
 
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGCHLD);
-
-	if (sigprocmask(SIG_BLOCK, &mask, &orig_mask) < 0) {
-		perror ("sigprocmask");
-		return;
-	}
-
-	ret = sigtimedwait(&mask, NULL, &timeout);
-	if (ret < 0) {
-		// timeout, go do something else.
-		if (errno == EAGAIN) {
-			return;
-		}
-	}
-
-	/* If we get this far, we either got EINTR, a SIGCHLD, or some other signal.
-	 * in either case, let's see if the children have anything going on
-	 */
 	for_each_child(i) {
 		int childstatus;
 		pid_t pid;
@@ -758,8 +736,14 @@ static void handle_children(void)
 			continue;
 
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+		if (pid > 0)
+			collected++;
 		handle_child(i, pid, childstatus);
 	}
+
+	/* If nothing happened, sleep briefly to avoid busy-looping. */
+	if (collected == 0)
+		usleep(250000);
 }
 
 static unsigned int stall_count;
