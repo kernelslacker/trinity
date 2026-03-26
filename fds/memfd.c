@@ -1,6 +1,7 @@
 /* memfd FDs */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,25 @@ static int memfd_create(__unused__ const char *uname, __unused__ unsigned int fl
 #endif
 }
 #endif
+
+static void arm_memfd(int fd)
+{
+	static const unsigned int seal_flags[] = {
+		F_SEAL_SEAL,
+		F_SEAL_SHRINK,
+		F_SEAL_GROW,
+		F_SEAL_WRITE,
+		F_SEAL_FUTURE_WRITE,
+	};
+	unsigned int seals = 0;
+	unsigned int i, count;
+
+	count = 1 + (rand() % 3);
+	for (i = 0; i < count; i++)
+		seals |= seal_flags[rand() % ARRAY_SIZE(seal_flags)];
+
+	fcntl(fd, F_ADD_SEALS, seals);
+}
 
 static void memfd_destructor(struct object *obj)
 {
@@ -69,6 +89,9 @@ static int init_memfd_fds(void)
 		if (fd < 0)
 			continue;
 
+		if (flags[i] & MFD_ALLOW_SEALING)
+			arm_memfd(fd);
+
 		obj = alloc_object();
 		obj->memfdobj.fd = fd;
 		obj->memfdobj.name = strdup(namestr);
@@ -103,6 +126,9 @@ static int open_memfd_fd(void)
 	fd = memfd_create("memfd", flags);
 	if (fd < 0)
 		return false;
+
+	if (flags & MFD_ALLOW_SEALING)
+		arm_memfd(fd);
 
 	obj = alloc_object();
 	obj->memfdobj.fd = fd;
