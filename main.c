@@ -407,6 +407,25 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	if (diff < 30)
 		return true;
 
+	/* After too many kill attempts, the child is truly stuck (D state,
+	 * frozen cgroup, etc). Forcibly reap the slot so we can spawn a
+	 * replacement. The original process becomes a zombie but at least
+	 * we don't permanently lose a child slot.
+	 *
+	 * This check must come before the D-state early return below,
+	 * otherwise unkillable D-state children never get reaped. */
+	if (child->kill_count >= 10) {
+		output(0, "child %d (pid %u) unkillable after %u attempts, "
+			"forcibly reaping slot.\n",
+			childno, pid, child->kill_count);
+		if (pidstatfiles[childno])
+			fclose(pidstatfiles[childno]);
+		pidstatfiles[childno] = NULL;
+		reap_child(child, childno);
+		replace_child(childno);
+		return true;
+	}
+
 	/* if we're blocked in uninteruptible sleep, SIGKILL won't help.
 	 * Still increment kill_count so we eventually reap the slot. */
 	state = get_pid_state(childno);
@@ -427,22 +446,6 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	/* if we're still around after 40s, repeatedly send SIGKILLs every second. */
 	if (diff < 40)
 		return false;
-
-	/* After too many kill attempts, the child is truly stuck (D state,
-	 * frozen cgroup, etc). Forcibly reap the slot so we can spawn a
-	 * replacement. The original process becomes a zombie but at least
-	 * we don't permanently lose a child slot. */
-	if (child->kill_count >= 10) {
-		output(0, "child %d (pid %u) unkillable after %u attempts, "
-			"forcibly reaping slot.\n",
-			childno, pid, child->kill_count);
-		if (pidstatfiles[childno])
-			fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
-		reap_child(child, childno);
-		replace_child(childno);
-		return true;
-	}
 
 	debugf("sending another SIGKILL to child %u (pid:%u). [kill count:%u] [diff:%lu]\n",
 		childno, pid, child->kill_count, diff);
