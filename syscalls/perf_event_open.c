@@ -335,6 +335,8 @@ static int init_pmus(void) {
 
 		/* read name */
 		pmus[pmu_num].name=strdup(entry->d_name);
+		if (!pmus[pmu_num].name)
+			break;
 		snprintf(dir_name, sizeof(dir_name), SYSFS"/%s",
 			entry->d_name);
 
@@ -392,14 +394,20 @@ static int init_pmus(void) {
 
 				pmus[pmu_num].formats[format_num].name=
 					strdup(format_entry->d_name);
+				if (!pmus[pmu_num].formats[format_num].name)
+					continue;
 				snprintf(temp_name, sizeof(temp_name), "%s/format/%s",
 					dir_name,format_entry->d_name);
 				fff=fopen(temp_name,"r");
 				if (fff!=NULL) {
 					result=fscanf(fff,"%s",format_value);
-					if (result==1) { 
+					if (result==1) {
 						pmus[pmu_num].formats[format_num].value=
 						strdup(format_value);
+						if (!pmus[pmu_num].formats[format_num].value) {
+							fclose(fff);
+							continue;
+						}
 					}
 					fclose(fff);
 
@@ -456,6 +464,8 @@ static int init_pmus(void) {
 
 				pmus[pmu_num].generic_events[generic_num].name=
 					strdup(event_entry->d_name);
+				if (!pmus[pmu_num].generic_events[generic_num].name)
+					continue;
 				snprintf(temp_name, sizeof(temp_name), "%s/events/%s",
 					dir_name,event_entry->d_name);
 				fff=fopen(temp_name,"r");
@@ -464,6 +474,10 @@ static int init_pmus(void) {
 					if (result==1) {
 						pmus[pmu_num].generic_events[generic_num].value=
 							strdup(event_value);
+						if (!pmus[pmu_num].generic_events[generic_num].value) {
+							fclose(fff);
+							continue;
+						}
 					}
 					fclose(fff);
 				}
