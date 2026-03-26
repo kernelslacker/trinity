@@ -7,6 +7,7 @@
 #include "arg-decoder.h"
 #include "params.h"	// quiet_level
 #include "pids.h"
+#include "sanitise.h"	// get_argval
 #include "shm.h"
 #include "syscall.h"
 #include "tables.h"
@@ -100,36 +101,13 @@ static char * decode_argtype(char *sptr, char *end, unsigned long reg, enum argt
 
 static char * render_arg(struct syscallrecord *rec, char *sptr, char *end, unsigned int argnum, struct syscallentry *entry)
 {
-	const char *name = NULL;
-	unsigned long reg = 0;
-	enum argtype type = 0;
+	const char *name;
+	unsigned long reg;
+	enum argtype type;
 
-	switch (argnum) {
-	case 1:	type = entry->arg1type;
-		name = entry->arg1name;
-		reg = rec->a1;
-		break;
-	case 2:	type = entry->arg2type;
-		name = entry->arg2name;
-		reg = rec->a2;
-		break;
-	case 3:	type = entry->arg3type;
-		name = entry->arg3name;
-		reg = rec->a3;
-		break;
-	case 4:	type = entry->arg4type;
-		name = entry->arg4name;
-		reg = rec->a4;
-		break;
-	case 5:	type = entry->arg5type;
-		name = entry->arg5name;
-		reg = rec->a5;
-		break;
-	case 6:	type = entry->arg6type;
-		name = entry->arg6name;
-		reg = rec->a6;
-		break;
-	}
+	type = entry->argtype[argnum - 1];
+	name = entry->argname[argnum - 1];
+	reg = get_argval(rec, argnum);
 
 	if (argnum != 1)
 		sptr = bprintf(sptr, end, ", ");
