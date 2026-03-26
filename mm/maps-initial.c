@@ -53,7 +53,9 @@ static void alloc_zero_map(unsigned long size, int prot, const char *name)
 
 unsigned long mapping_sizes[NR_MAPPING_SIZES] = {
 	-1,	/* over-written with page_size below */
+	64UL * 1024, 256UL * 1024,
 	MB(1), MB(2),
+	MB(4), MB(16), MB(64),
 	GB(1),
 };
 
@@ -114,7 +116,7 @@ static void setup_mapping_sizes(void)
 	}
 
 disable_1gb_mappings:
-	mapping_sizes[3] = page_size;
+	mapping_sizes[8] = page_size;
 }
 
 void setup_initial_mappings(void)
