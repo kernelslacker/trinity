@@ -122,13 +122,21 @@ void fd_event_drain_all(void)
 	unsigned int total = 0;
 
 	for_each_child(i) {
-		struct childdata *child = shm->children[i];
+		struct childdata *child;
 		struct fd_event_ring *ring;
 
+		/*
+		 * Snapshot the child pointer with an acquire load.
+		 * shm->children[i] lives in shared memory and a dying
+		 * child may be clearing or replacing it concurrently.
+		 * Without this, the compiler could re-read the pointer
+		 * between our NULL check and the dereference.
+		 */
+		child = __atomic_load_n(&shm->children[i], __ATOMIC_ACQUIRE);
 		if (child == NULL)
 			continue;
 
-		ring = child->fd_event_ring;
+		ring = __atomic_load_n(&child->fd_event_ring, __ATOMIC_ACQUIRE);
 		if (ring == NULL)
 			continue;
 
