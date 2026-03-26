@@ -189,11 +189,16 @@ void fd_event_drain_all(void)
 
 	for_each_child(i) {
 		struct childdata *child = shm->children[i];
+		struct fd_event_ring *ring;
 
-		if (child == NULL || child->fd_event_ring == NULL)
+		if (child == NULL)
 			continue;
 
-		total += fd_event_drain(child->fd_event_ring);
+		ring = child->fd_event_ring;
+		if (ring == NULL)
+			continue;
+
+		total += fd_event_drain(ring);
 	}
 
 	if (total > 0)
