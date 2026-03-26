@@ -135,7 +135,8 @@ int main(int argc, char* argv[])
 	}
 
 	page_size = getpagesize();
-	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+	long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+	num_online_cpus = (ncpus > 0) ? (unsigned int)ncpus : 1;
 	max_children = num_online_cpus * 4;	/* possibly overridden in params. */
 
 	select_syscall_tables();
