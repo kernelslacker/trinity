@@ -366,10 +366,10 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 	struct list_head *node, *list, *tmp;
 	struct objhead *head;
 
-	if (objects_empty(type) == true)
+	head = get_objhead(scope, type);
+	if (head->num_entries == 0)
 		return;
 
-	head = get_objhead(scope, type);
 	list = head->list;
 
 	list_for_each_safe(node, tmp, list) {
