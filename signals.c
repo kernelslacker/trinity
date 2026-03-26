@@ -15,6 +15,18 @@ static void ctrlc_handler(__unused__ int sig)
 	panic(EXIT_SIGINT);
 }
 
+/*
+ * SA_SIGINFO version: only honor SIGINT from the terminal (kernel) or
+ * ourselves.  Children fuzzing kill/tkill/tgkill can send us SIGINT —
+ * treat it the same as the other spoofable signals and ignore it.
+ */
+static void sigint_handler(__unused__ int sig, siginfo_t *info, __unused__ void *ctx)
+{
+	if (info->si_code > 0 || info->si_pid == getpid())
+		panic(EXIT_SIGINT);
+	/* Sent by a child process — ignore */
+}
+
 static void sighandler(int sig)
 {
 	switch (sig) {
@@ -143,5 +155,8 @@ void setup_main_signals(void)
 	(void)sigaction(SIGTRAP, &sa, NULL);
 	(void)sigaction(SIGSYS, &sa, NULL);
 
-	(void)signal(SIGINT, ctrlc_handler);
+	/* SIGINT: use SA_SIGINFO so we can ignore child-sent SIGINTs.
+	 * Real ctrl-c from the terminal has si_code > 0 (SI_KERNEL). */
+	sa.sa_sigaction = sigint_handler;
+	(void)sigaction(SIGINT, &sa, NULL);
 }
