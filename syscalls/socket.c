@@ -128,6 +128,9 @@ static void post_socket(struct syscallrecord *rec)
 	if (fd == -1)
 		return;
 
+	if (family >= TRINITY_PF_MAX)
+		return;
+
 	proto = net_protocols[family].proto;
 	if (proto != NULL)
 		if (proto->socket_setup != NULL)
