@@ -27,6 +27,12 @@
 #ifndef IP_MULTICAST_ALL
 #define IP_MULTICAST_ALL 49
 #endif
+#ifndef IP_LOCAL_PORT_RANGE
+#define IP_LOCAL_PORT_RANGE 51
+#endif
+#ifndef IP_PROTOCOL
+#define IP_PROTOCOL 52
+#endif
 
 static int previous_ip;
 static unsigned int ip_lifetime = 0;
