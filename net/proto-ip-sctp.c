@@ -1,5 +1,10 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <linux/sctp.h>
 #include "net.h"
+#include "random.h"
 #include "compat.h"
 
 static const unsigned int sctp_opts[] = {
@@ -31,5 +36,54 @@ static const unsigned int sctp_opts[] = {
 
 void sctp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	struct sctp_rtoinfo *rtoinfo;
+	struct sctp_assocparams *assocparams;
+	struct sctp_initmsg *initmsg;
+	__u32 *optval32;
+
 	so->optname = RAND_ARRAY(sctp_opts);
+
+	switch (so->optname) {
+	case SCTP_RTOINFO:
+		rtoinfo = (struct sctp_rtoinfo *) so->optval;
+		rtoinfo->srto_assoc_id = rand();
+		rtoinfo->srto_initial = rand() % 60000;
+		rtoinfo->srto_max = rand() % 60000;
+		rtoinfo->srto_min = rand() % 60000;
+		so->optlen = sizeof(struct sctp_rtoinfo);
+		break;
+
+	case SCTP_ASSOCINFO:
+		assocparams = (struct sctp_assocparams *) so->optval;
+		assocparams->sasoc_assoc_id = rand();
+		assocparams->sasoc_asocmaxrxt = rand();
+		assocparams->sasoc_number_peer_destinations = rand();
+		assocparams->sasoc_peer_rwnd = rand();
+		assocparams->sasoc_local_rwnd = rand();
+		assocparams->sasoc_cookie_life = rand();
+		so->optlen = sizeof(struct sctp_assocparams);
+		break;
+
+	case SCTP_INITMSG:
+		initmsg = (struct sctp_initmsg *) so->optval;
+		initmsg->sinit_num_ostreams = rand();
+		initmsg->sinit_max_instreams = rand();
+		initmsg->sinit_max_attempts = rand();
+		initmsg->sinit_max_init_timeo = rand();
+		so->optlen = sizeof(struct sctp_initmsg);
+		break;
+
+	case SCTP_NODELAY:
+	case SCTP_DISABLE_FRAGMENTS:
+	case SCTP_I_WANT_MAPPED_V4_ADDR:
+	case SCTP_AUTO_ASCONF:
+	case SCTP_REUSE_PORT:
+		optval32 = (__u32 *) so->optval;
+		*optval32 = RAND_BOOL();
+		so->optlen = sizeof(__u32);
+		break;
+
+	default:
+		break;
+	}
 }
