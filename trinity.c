@@ -129,7 +129,10 @@ int main(int argc, char* argv[])
 
 	mainpid = getpid();
 
-    getrlimit(RLIMIT_NOFILE, &max_files_rlimit);
+    if (getrlimit(RLIMIT_NOFILE, &max_files_rlimit) != 0) {
+		max_files_rlimit.rlim_cur = 1024;
+		max_files_rlimit.rlim_max = 1024;
+	}
 
 	page_size = getpagesize();
 	num_online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
