@@ -20,6 +20,7 @@
 #define CMP_MODE_RATIO 8
 
 struct cmp_hint_pool {
+	int lock;
 	unsigned int count;
 	unsigned long values[CMP_HINTS_PER_SYSCALL];
 };
