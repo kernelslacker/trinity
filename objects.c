@@ -144,6 +144,8 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 		struct childdata *child;
 
 		child = this_child();
+		if (child == NULL)
+			return NULL;
 		head = &child->objects[type];
 	}
 	return head;
