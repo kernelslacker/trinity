@@ -88,7 +88,7 @@ already_done:
 
 static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, struct kcov_child *kc)
 {
-	unsigned long ret = 0;
+	unsigned long ret = dry_run ? -1UL : 0;
 
 	errno = 0;
 
