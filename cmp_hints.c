@@ -65,9 +65,12 @@ static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 {
 	unsigned int i;
 
+	while (__atomic_test_and_set(&pool->lock, __ATOMIC_ACQUIRE))
+		;
+
 	for (i = 0; i < pool->count && i < CMP_HINTS_PER_SYSCALL; i++) {
 		if (pool->values[i] == val)
-			return;
+			goto out;
 	}
 
 	if (pool->count < CMP_HINTS_PER_SYSCALL) {
@@ -76,6 +79,9 @@ static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 	} else {
 		pool->values[rand() % CMP_HINTS_PER_SYSCALL] = val;
 	}
+
+out:
+	__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
 }
 
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
