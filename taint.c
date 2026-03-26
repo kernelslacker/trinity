@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -28,9 +29,17 @@ int get_taint(void)
 
 	ret = read(taint_fd, buffer, 10);
 
-	if (ret > 0)
-		ret = atoi(buffer);
-	else {
+	if (ret > 0) {
+		char *endptr;
+		long val;
+
+		errno = 0;
+		val = strtol(buffer, &endptr, 10);
+		if (errno != 0 || endptr == buffer)
+			ret = 0;
+		else
+			ret = (int)val;
+	} else {
 		/* We should never fail, but if we do, assume untainted. */
 		ret = 0;
 	}
