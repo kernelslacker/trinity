@@ -68,6 +68,10 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_LRU_HASH, sizeof(u32), sizeof(long), 10000, BPF_F_NO_COMMON_LRU, "LRU hash (no common LRU)" },
 	{ BPF_MAP_TYPE_LRU_PERCPU_HASH, sizeof(u32), sizeof(long), 1000, 0, "LRU percpu hash" },
 	{ BPF_MAP_TYPE_LPM_TRIE, 8, sizeof(long), 10000, 0, "LPM TRIE" },
+	{ BPF_MAP_TYPE_RINGBUF, 0, 0, 4096, 0, "ringbuf" },
+	{ BPF_MAP_TYPE_BLOOM_FILTER, 0, sizeof(u32), 100, 0, "bloom filter" },
+	{ BPF_MAP_TYPE_USER_RINGBUF, 0, 0, 4096, 0, "user ringbuf" },
+	{ BPF_MAP_TYPE_ARENA, 0, 0, 4096, 0, "arena" },
 };
 
 static void bpf_map_dump(struct object *obj, enum obj_scope scope)
