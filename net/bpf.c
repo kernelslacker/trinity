@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "bpf.h"
+#include "arch.h"
 #include "debug.h"
 #include "net.h"
 #include "params.h"
@@ -830,8 +831,15 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 	case STATE_GEN_ALLOW_SYSCALL:
 		used = 2;
 		memcpy(curr, allow_syscall, sizeof(allow_syscall));
-		/* We assume here that max_nr_syscalls was computed before */
-		curr[0].k = rand() % max_nr_syscalls;
+		/* Pick a syscall nr from whichever table is active. */
+		if (biarch) {
+			if (syscalls == syscalls_32bit)
+				curr[0].k = rand() % max_nr_32bit_syscalls;
+			else
+				curr[0].k = rand() % max_nr_64bit_syscalls;
+		} else {
+			curr[0].k = rand() % max_nr_syscalls;
+		}
 		break;
 	case STATE_GEN_KILL_PROCESS:
 		used = 1;
