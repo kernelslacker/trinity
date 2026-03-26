@@ -22,7 +22,7 @@ struct map {
 extern unsigned int num_initial_mappings;
 extern struct map *initial_mappings;
 
-#define NR_MAPPING_SIZES 4
+#define NR_MAPPING_SIZES 9
 extern unsigned long mapping_sizes[NR_MAPPING_SIZES];
 
 struct object;
