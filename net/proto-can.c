@@ -18,6 +18,18 @@
 #ifndef CAN_J1939
 #define CAN_J1939	7
 #endif
+#ifndef CANFD_MAX_DLEN
+#define CANFD_MAX_DLEN	64
+#endif
+#ifndef CANXL_MIN_DLEN
+#define CANXL_MIN_DLEN	1
+#endif
+#ifndef CANXL_MAX_DLEN
+#define CANXL_MAX_DLEN	2048
+#endif
+#ifndef CANXL_XLF
+#define CANXL_XLF	0x80
+#endif
 
 static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -31,6 +43,46 @@ static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	can->can_addr.tp.tx_id = rand();
 	*addr = (struct sockaddr *) can;
 	*addrlen = sizeof(struct sockaddr_can);
+}
+
+static void can_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, size_t *len)
+{
+	struct can_frame *cf;
+	struct canfd_frame *cfd;
+	struct canxl_frame *cxl;
+
+	switch (rand() % 3) {
+	case 0:
+		cf = zmalloc(sizeof(struct can_frame));
+		cf->can_id = rand() & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG | CAN_EFF_MASK);
+		cf->len = rand() % (CAN_MAX_DLEN + 1);
+		generate_rand_bytes(cf->data, CAN_MAX_DLEN);
+		*buf = cf;
+		*len = sizeof(struct can_frame);
+		break;
+
+	case 1:
+		cfd = zmalloc(sizeof(struct canfd_frame));
+		cfd->can_id = rand() & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG | CAN_EFF_MASK);
+		cfd->len = rand() % (CANFD_MAX_DLEN + 1);
+		cfd->flags = rand() & 0x07;
+		generate_rand_bytes(cfd->data, CANFD_MAX_DLEN);
+		*buf = cfd;
+		*len = sizeof(struct canfd_frame);
+		break;
+
+	default:
+		cxl = zmalloc(sizeof(struct canxl_frame));
+		cxl->prio = rand() & CAN_SFF_MASK;
+		cxl->flags = CANXL_XLF | (rand() & 0x03);
+		cxl->sdt = rand();
+		cxl->len = CANXL_MIN_DLEN + rand() % CANXL_MAX_DLEN;
+		cxl->af = rand();
+		generate_rand_bytes(cxl->data, CANXL_MAX_DLEN);
+		*buf = cxl;
+		*len = sizeof(struct canxl_frame);
+		break;
+	}
 }
 
 static struct socket_triplet can_triplets[] = {
@@ -88,6 +140,7 @@ static void can_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 const struct netproto proto_can = {
 	.name = "can",
 	.gen_sockaddr = can_gen_sockaddr,
+	.gen_msg = can_gen_msg,
 	.valid_triplets = can_triplets,
 	.nr_triplets = ARRAY_SIZE(can_triplets),
 	.setsockopt = can_setsockopt,
