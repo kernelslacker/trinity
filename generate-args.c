@@ -414,6 +414,8 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 		return (unsigned long) get_rand_socketinfo();
 
 	default:
+		outputerr("fill_arg: unhandled argtype %d for syscall %s (nr %d) arg %d\n",
+			argtype, entry->name, call, argnum);
 		break;
 	}
 
