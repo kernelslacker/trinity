@@ -383,23 +383,25 @@ static void socket_destructor(struct object *obj)
 	struct linger ling = { .l_onoff = false, .l_linger = 0 };
 	int fd;
 
-	/*
-	 * Skip bluetooth sockets — setsockopt(SO_LINGER) on PF_BLUETOOTH
-	 * can hang forever in the kernel.  See also the matching skip in
-	 * sso_socket().
-	 */
-	if (si->triplet.family == PF_BLUETOOTH)
-		return;
-
 	/* Grab an fd, and nuke it before someone else uses it. */
 	fd = si->fd;
 	si->fd = 0;
+
+	/*
+	 * Skip setsockopt/shutdown for bluetooth sockets —
+	 * setsockopt(SO_LINGER) on PF_BLUETOOTH can hang forever
+	 * in the kernel.  See also the matching skip in sso_socket().
+	 * But we must still close the fd or it leaks.
+	 */
+	if (si->triplet.family == PF_BLUETOOTH)
+		goto do_close;
 
 	/* disable linger */
 	(void) setsockopt(fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(struct linger));
 
 	(void) shutdown(fd, SHUT_RDWR);
 
+do_close:
 	if (close(fd) != 0)
 		output(1, "failed to close socket [%u:%u:%u].(%s)\n",
 			si->triplet.family,
