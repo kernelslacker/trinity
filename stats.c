@@ -74,8 +74,11 @@ void dump_stats(void)
 			kcov_shm->total_calls);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
+		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+		const struct syscalltable *table = biarch ? syscalls_64bit : syscalls;
+
 		memset(top_edges, 0, sizeof(top_edges));
-		for (i = 0; i < max_nr_syscalls; i++) {
+		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long edges = kcov_shm->per_syscall_edges[i];
 
 			if (edges == 0)
@@ -102,7 +105,7 @@ void dump_stats(void)
 		if (top_count > 0) {
 			printf("Top edge-producing syscalls:\n");
 			for (j = 0; j < top_count; j++) {
-				struct syscallentry *entry = syscalls[top_nr[j]].entry;
+				struct syscallentry *entry = table[top_nr[j]].entry;
 				const char *name = entry ? entry->name : "???";
 
 				printf("  %-24s %lu\n", name, top_edges[j]);
@@ -111,7 +114,7 @@ void dump_stats(void)
 
 		if (cold_count > 0) {
 			printf("Cold syscalls (need better sanitise): %u\n", cold_count);
-			for (i = 0; i < max_nr_syscalls; i++) {
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
 				struct syscallentry *entry;
 
 				if (kcov_shm->per_syscall_edges[i] == 0)
@@ -119,7 +122,7 @@ void dump_stats(void)
 				if (!kcov_syscall_is_cold(i))
 					continue;
 
-				entry = syscalls[i].entry;
+				entry = table[i].entry;
 				printf("  %-24s (edges:%lu, last new @ call %lu)\n",
 					entry ? entry->name : "???",
 					kcov_shm->per_syscall_edges[i],
