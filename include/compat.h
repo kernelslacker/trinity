@@ -87,6 +87,15 @@
 #define F_ADD_SEALS		(F_LINUX_SPECIFIC_BASE + 9)
 #define F_GET_SEALS		(F_LINUX_SPECIFIC_BASE + 10)
 #endif
+#ifndef F_SEAL_SEAL
+#define F_SEAL_SEAL		0x0001
+#define F_SEAL_SHRINK		0x0002
+#define F_SEAL_GROW		0x0004
+#define F_SEAL_WRITE		0x0008
+#endif
+#ifndef F_SEAL_FUTURE_WRITE
+#define F_SEAL_FUTURE_WRITE	0x0010
+#endif
 #ifndef F_GET_RW_HINT
 #define F_GET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 11)
 #define F_SET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 12)
