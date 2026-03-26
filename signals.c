@@ -33,7 +33,6 @@ static void sighandler(int sig)
 	case SIGALRM:
 		/* Re-arm the alarm. */
 		alarm(1);
-		(void)signal(sig, sighandler);
 
 		/* Jump back, maybe we'll make progress. */
 		siglongjmp(ret_jump, sig);
