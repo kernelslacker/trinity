@@ -1,5 +1,7 @@
 #ifdef USE_RDS
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include "net.h"
@@ -7,24 +9,45 @@
 #include "random.h"
 #include <linux/rds.h>
 
+#ifndef RDS_TRANSPORT
+#define RDS_TRANSPORT	26
+#endif
+#ifndef SO_RDS_ZCOPY
+#define SO_RDS_ZCOPY	9
+#endif
+
 static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
-	struct sockaddr_in *rds;
+	if (RAND_BOOL()) {
+		struct sockaddr_in *rds;
 
-	rds = zmalloc(sizeof(struct sockaddr_in));
+		rds = zmalloc(sizeof(struct sockaddr_in));
+		rds->sin_family = AF_INET;
+		rds->sin_addr.s_addr = random_ipv4_address();
+		rds->sin_port = rand() % 65535;
+		*addr = (struct sockaddr *) rds;
+		*addrlen = sizeof(struct sockaddr_in);
+	} else {
+		struct sockaddr_in6 *rds6;
 
-	rds->sin_family = AF_INET;
-	rds->sin_addr.s_addr = random_ipv4_address();
-	rds->sin_port = rand() % 65535;
-
-	*addr = (struct sockaddr *) rds;
-	*addrlen = sizeof(struct sockaddr_in);
+		rds6 = zmalloc(sizeof(struct sockaddr_in6));
+		rds6->sin6_family = AF_INET6;
+		/* 90% of the time, just do localhost */
+		if (ONE_IN(10))
+			inet_pton(AF_INET6, "fe80::", &rds6->sin6_addr);
+		else
+			inet_pton(AF_INET6, "::1", &rds6->sin6_addr);
+		rds6->sin6_port = rand() % 65535;
+		*addr = (struct sockaddr *) rds6;
+		*addrlen = sizeof(struct sockaddr_in6);
+	}
 }
 
 static const unsigned int rds_opts[] = {
 	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
 	4, /* deprecated RDS_BARRIER 4 */
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST,
+	RDS_TRANSPORT, SO_RDS_ZCOPY,
 };
 
 #define SOL_RDS 276
