@@ -53,7 +53,7 @@ struct syscallentry syscall_madvise = {
 };
 
 static unsigned long process_madvise_behaviours[] = {
-	MADV_COLD, MADV_PAGEOUT, MADV_WILLNEED,
+	MADV_COLD, MADV_PAGEOUT, MADV_WILLNEED, MADV_COLLAPSE,
 };
 static unsigned long process_madvise_flags[] = {
 	0,
