@@ -104,9 +104,26 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	}
 }
 
+#ifndef BT_VOICE
+#define BT_VOICE	11
+#endif
+#ifndef BT_SNDMTU
+#define BT_SNDMTU	12
+#endif
+#ifndef BT_RCVMTU
+#define BT_RCVMTU	13
+#endif
+#ifndef BT_PHY
+#define BT_PHY		14
+#endif
+#ifndef BT_MODE
+#define BT_MODE		15
+#endif
+
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
-	BT_CHANNEL_POLICY
+	BT_CHANNEL_POLICY, BT_VOICE, BT_SNDMTU, BT_RCVMTU,
+	BT_PHY, BT_MODE
 };
 
 static const unsigned int bluetooth_hci_opts[] = {
@@ -168,10 +185,14 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 #define BTPROTO_CMTP    5
 #define BTPROTO_HIDP    6
 #define BTPROTO_AVDTP   7
+#ifndef BTPROTO_ISO
+#define BTPROTO_ISO     8
+#endif
 
 static struct socket_triplet bluetooth_triplets[] = {
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_SEQPACKET },
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_SCO, .type = SOCK_SEQPACKET },
+	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_ISO, .type = SOCK_SEQPACKET },
 
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_STREAM },
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_RFCOMM, .type = SOCK_STREAM },
