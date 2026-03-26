@@ -520,6 +520,21 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		memcpy(copy + m , entry, sizeof(struct syscallentry));
 		copy[m].number = n;
 		copy[m].active_number = 0;
+
+		copy[m].argtype[0] = entry->arg1type;
+		copy[m].argtype[1] = entry->arg2type;
+		copy[m].argtype[2] = entry->arg3type;
+		copy[m].argtype[3] = entry->arg4type;
+		copy[m].argtype[4] = entry->arg5type;
+		copy[m].argtype[5] = entry->arg6type;
+
+		copy[m].argname[0] = entry->arg1name;
+		copy[m].argname[1] = entry->arg2name;
+		copy[m].argname[2] = entry->arg3name;
+		copy[m].argname[3] = entry->arg4name;
+		copy[m].argname[4] = entry->arg5name;
+		copy[m].argname[5] = entry->arg6name;
+
 		from[n].entry = &copy[m];
 		m++;
 	}

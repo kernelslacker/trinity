@@ -118,6 +118,7 @@ struct syscallentry {
 	const enum argtype arg4type;
 	const enum argtype arg5type;
 	const enum argtype arg6type;
+	enum argtype argtype[6];
 
 	const char *arg1name;
 	const char *arg2name;
@@ -125,6 +126,7 @@ struct syscallentry {
 	const char *arg4name;
 	const char *arg5name;
 	const char *arg6name;
+	const char *argname[6];
 
 	struct results results1;
 	struct results results2;
