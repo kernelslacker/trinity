@@ -178,7 +178,7 @@ int fd_from_object(struct object *obj, enum objecttype type);
 void remove_object_by_fd(int fd);
 
 /* fd hash table for O(1) fd→object lookup */
-#define FD_HASH_SIZE 256	/* power of 2, covers typical fd range */
+#define FD_HASH_SIZE 4096	/* power of 2, must exceed max tracked fds */
 
 struct fd_hash_entry {
 	int fd;			/* -1 = empty slot */
