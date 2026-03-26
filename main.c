@@ -442,6 +442,9 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 			fclose(pidstatfiles[childno]);
 		pidstatfiles[childno] = NULL;
 		reap_child(child, childno);
+		/* Collect the zombie if the process has actually exited.
+		 * If still in D-state, waitpid returns 0 (harmless). */
+		waitpid(pid, NULL, WNOHANG);
 		replace_child(childno);
 		return true;
 	}
@@ -624,6 +627,14 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 
 	case SIGALRM:
 		debugf("got a alarm signal from child %d (pid %d)\n", childno, pid);
+		if (stop == false) {
+			reap_child(children[childno], childno);
+			if (pidstatfiles[childno])
+				fclose(pidstatfiles[childno]);
+			pidstatfiles[childno] = NULL;
+			replace_child(childno);
+			return;
+		}
 		break;
 	case SIGFPE:
 	case SIGSEGV:
@@ -649,14 +660,20 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 
 	default:
 		if (__sig >= SIGRTMIN) {
-			debugf("Child %d got RT signal (%d). Ignoring.\n", pid, __sig);
-			return;
+			debugf("Child %d got RT signal (%d).\n", pid, __sig);
+		} else if (stop == true) {
+			debugf("Child %d was stopped by unhandled signal (%s).\n", pid, strsignal(WSTOPSIG(childstatus)));
+		} else {
+			debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
 		}
 
-		if (stop == true)
-			debugf("Child %d was stopped by unhandled signal (%s).\n", pid, strsignal(WSTOPSIG(childstatus)));
-		else
-			debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
+		if (stop == false) {
+			reap_child(children[childno], childno);
+			if (pidstatfiles[childno])
+				fclose(pidstatfiles[childno]);
+			pidstatfiles[childno] = NULL;
+			replace_child(childno);
+		}
 		return;
 	}
 }
