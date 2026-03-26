@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <getopt.h>
 #include <sys/types.h>
 
@@ -203,8 +204,17 @@ void parse_args(int argc, char *argv[])
 			toggle_syscall(optarg, true);
 			break;
 
-		case 'C':
-			user_specified_children = strtoll(optarg, NULL, 10);
+		case 'C': {
+			char *end;
+			unsigned long val;
+
+			errno = 0;
+			val = strtoul(optarg, &end, 10);
+			if (end == optarg || *end != '\0' || errno == ERANGE) {
+				outputerr("can't parse '%s' as a number\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			user_specified_children = (unsigned int)val;
 			max_children = user_specified_children;
 
 			if (max_children == 0) {
@@ -212,6 +222,7 @@ void parse_args(int argc, char *argv[])
 				exit(EXIT_FAILURE);
 			}
 			break;
+		}
 
 		case 'd':
 			dangerous = true;
@@ -262,30 +273,62 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		/* Set number of syscalls to do */
-		case 'N':
-			syscalls_todo = strtoll(optarg, NULL, 10);
-			break;
+		case 'N': {
+			char *end;
 
-		case 'P':
+			errno = 0;
+			syscalls_todo = strtoul(optarg, &end, 10);
+			if (end == optarg || *end != '\0' || errno == ERANGE) {
+				outputerr("can't parse '%s' as a number\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
+
+		case 'P': {
+			char *end;
+
+			errno = 0;
+			specific_domain = strtoul(optarg, &end, 10);
+			if (end == optarg || *end != '\0' || errno == ERANGE) {
+				outputerr("can't parse '%s' as a number\n", optarg);
+				exit(EXIT_FAILURE);
+			}
 			do_specific_domain = true;
-			specific_domain = strtol(optarg, NULL, 10);
 			specific_domain_optarg = optarg;
 			break;
+		}
 
-		case 'r':
+		case 'r': {
+			char *end;
+
 			if (do_exclude_syscall == true) {
 				outputerr("-r needs to be before any -x options.\n");
 				exit(EXIT_FAILURE);
 			}
+			errno = 0;
+			random_selection_num = strtoul(optarg, &end, 10);
+			if (end == optarg || *end != '\0' || errno == ERANGE) {
+				outputerr("can't parse '%s' as a number\n", optarg);
+				exit(EXIT_FAILURE);
+			}
 			random_selection = true;
-			random_selection_num = strtol(optarg, NULL, 10);
 			break;
+		}
 
 		/* Set seed */
-		case 's':
-			seed = strtol(optarg, NULL, 10);
+		case 's': {
+			char *end;
+
+			errno = 0;
+			seed = strtoul(optarg, &end, 10);
+			if (end == optarg || *end != '\0' || errno == ERANGE) {
+				outputerr("can't parse '%s' as a number\n", optarg);
+				exit(EXIT_FAILURE);
+			}
 			user_set_seed = true;
 			break;
+		}
 
 
 		case 'S':
