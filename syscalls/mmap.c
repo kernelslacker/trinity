@@ -94,6 +94,10 @@ static void post_mmap(struct syscallrecord *rec)
 
 	new = alloc_object();
 	new->map.name = strdup("misc");
+	if (!new->map.name) {
+		free(new);
+		return;
+	}
 	new->map.size = rec->a2;
 	new->map.prot = rec->a3;
 	new->map.ptr = p;
