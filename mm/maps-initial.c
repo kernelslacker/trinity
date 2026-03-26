@@ -134,5 +134,9 @@ void setup_initial_mappings(void)
 		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE, "PROT_READ | PROT_WRITE");
 		alloc_zero_map(mapping_sizes[i], PROT_READ, "PROT_READ");
 		alloc_zero_map(mapping_sizes[i], PROT_WRITE, "PROT_WRITE");
+		alloc_zero_map(mapping_sizes[i], PROT_EXEC, "PROT_EXEC");
+		alloc_zero_map(mapping_sizes[i], PROT_NONE, "PROT_NONE");
+		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_EXEC, "PROT_READ | PROT_EXEC");
+		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE | PROT_EXEC, "PROT_READ | PROT_WRITE | PROT_EXEC");
 	}
 }
