@@ -433,7 +433,13 @@ int fd_from_object(struct object *obj, enum objecttype type)
 
 /*
  * Look up an fd in the hash table and destroy its object.
- * Called after a successful close() or dup2() to keep the pool in sync.
+ * Called from fd_event_drain() after a child reported a close or dup2.
+ *
+ * The child closed its own copy of the fd (children have independent
+ * fd tables after fork).  The parent's copy is still open and must be
+ * closed here — pass already_closed=false so the destructor runs
+ * close() on the parent's fd.  Without this, every child close event
+ * leaks one fd in the parent, leading to fd exhaustion.
  */
 void remove_object_by_fd(int fd)
 {
@@ -456,7 +462,7 @@ void remove_object_by_fd(int fd)
 	type = entry->type;
 
 	__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
-	__destroy_object(obj, OBJ_GLOBAL, type, true);
+	__destroy_object(obj, OBJ_GLOBAL, type, false);
 
 	unlock(&shm->objlock);
 
