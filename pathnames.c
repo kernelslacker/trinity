@@ -105,6 +105,10 @@ static void add_to_namelist(const char *name)
 
 	newnode = zmalloc(sizeof(struct namelist));
 	newnode->name = strdup(name);
+	if (!newnode->name) {
+		free(newnode);
+		return;
+	}
 	INIT_LIST_HEAD(&newnode->list);
 	list_add_tail(&newnode->list, &names->list);
 }
