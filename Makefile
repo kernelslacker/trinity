@@ -74,7 +74,7 @@ SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
 
 VERSION_H	:= include/version.h
 
-HEADERS		:= $(patsubst %.h,%.h,$(wildcard *.h)) $(patsubst %.h,%.h,$(wildcard syscalls/*.h)) $(patsubst %.h,%.h,$(wildcard ioctls/*.h))
+HEADERS		:= $(wildcard *.h) $(wildcard syscalls/*.h) $(wildcard ioctls/*.h)
 
 SRCS		:= $(wildcard *.c) \
 		   $(wildcard childops/*.c) \
