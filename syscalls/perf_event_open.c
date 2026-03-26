@@ -330,6 +330,9 @@ static int init_pmus(void) {
 		if (!strcmp(".",entry->d_name)) continue;
 		if (!strcmp("..",entry->d_name)) continue;
 
+		if (pmu_num >= num_pmus)
+			break;
+
 		/* read name */
 		pmus[pmu_num].name=strdup(entry->d_name);
 		snprintf(dir_name, sizeof(dir_name), SYSFS"/%s",
@@ -383,6 +386,9 @@ static int init_pmus(void) {
 				if (format_entry==NULL) break;
 				if (!strcmp(".",format_entry->d_name)) continue;
 				if (!strcmp("..",format_entry->d_name)) continue;
+
+				if (format_num >= pmus[pmu_num].num_formats)
+					break;
 
 				pmus[pmu_num].formats[format_num].name=
 					strdup(format_entry->d_name);
@@ -444,6 +450,9 @@ static int init_pmus(void) {
 				if (event_entry==NULL) break;
 				if (!strcmp(".",event_entry->d_name)) continue;
 				if (!strcmp("..",event_entry->d_name)) continue;
+
+				if (generic_num >= pmus[pmu_num].num_generic_events)
+					break;
 
 				pmus[pmu_num].generic_events[generic_num].name=
 					strdup(event_entry->d_name);
