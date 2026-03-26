@@ -23,26 +23,25 @@ enum exit_reasons {
 	NUM_EXIT_REASONS = 16
 };
 
-static const char *reasons[NUM_EXIT_REASONS] = {
-  "Still running.",
-  "No more syscalls enabled.",
-  "Completed maximum number of operations.",
-  "No file descriptors open.",
-  "Lost track of a child.",
-  "shm corruption - Found a pid out of range.",
-  "ctrl-c",
-  "kernel became tainted.",
-  "SHM was corrupted!",
-  "Child reparenting problem",
-  "No files in file list.",
-  "Main process disappeared.",
-  "UID changed.",
-  "Something happened during fd init.",
-  "fork() failure",
-  "some kind of locking catastrophe",
-};
-
 static inline const char * decode_exit(enum exit_reasons reason)
 {
+	static const char * const reasons[NUM_EXIT_REASONS] = {
+		"Still running.",
+		"No more syscalls enabled.",
+		"Completed maximum number of operations.",
+		"No file descriptors open.",
+		"Lost track of a child.",
+		"shm corruption - Found a pid out of range.",
+		"ctrl-c",
+		"kernel became tainted.",
+		"SHM was corrupted!",
+		"Child reparenting problem",
+		"No files in file list.",
+		"Main process disappeared.",
+		"UID changed.",
+		"Something happened during fd init.",
+		"fork() failure",
+		"some kind of locking catastrophe",
+	};
 	return reasons[reason];
 }
