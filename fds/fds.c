@@ -45,6 +45,10 @@ void register_fd_provider(const struct fd_provider *prov)
 	}
 	newnode = zmalloc(sizeof(struct fd_provider));
 	newnode->name = strdup(prov->name);
+	if (!newnode->name) {
+		free(newnode);
+		return;
+	}
 	newnode->objtype = prov->objtype;
 	newnode->enabled = prov->enabled;
 	newnode->init = prov->init;
@@ -313,6 +317,11 @@ void process_fds_param(char *param, bool enable)
 	unsigned int len, i;
 	char *str_orig = strdup(param);
 	char *str = str_orig;
+
+	if (!str_orig) {
+		outputerr("strdup failed\n");
+		return;
+	}
 
 	len = strlen(param);
 
