@@ -104,6 +104,11 @@ static int init_memfd_fds(void)
 		obj = alloc_object();
 		obj->memfdobj.fd = fd;
 		obj->memfdobj.name = strdup(namestr);
+		if (!obj->memfdobj.name) {
+			close(fd);
+			free(obj);
+			continue;
+		}
 		obj->memfdobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
 	}
@@ -142,6 +147,11 @@ static int open_memfd_fd(void)
 	obj = alloc_object();
 	obj->memfdobj.fd = fd;
 	obj->memfdobj.name = strdup("memfd");
+	if (!obj->memfdobj.name) {
+		close(fd);
+		free(obj);
+		return false;
+	}
 	obj->memfdobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
 	return true;
