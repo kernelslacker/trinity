@@ -39,7 +39,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 		struct map *map;
 
 		map = get_map();
-		page_alloc[i] = (unsigned long) map->ptr;
+		page_alloc[i] = (unsigned long) (map ? map->ptr : NULL);
 	}
 	rec->a3 = (unsigned long) page_alloc;
 

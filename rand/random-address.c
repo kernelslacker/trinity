@@ -26,7 +26,7 @@ retry:	tries++;
 
 	if (RAND_BOOL()) {
 		map = get_map();
-		if (map->size < size)
+		if (map == NULL || map->size < size)
 			goto retry;
 
 		addr = map->ptr;
@@ -111,6 +111,12 @@ struct iovec * alloc_iovec(unsigned int num)
 
 	for (i = 0; i < num; i++) {
 		struct map *map = get_map();
+
+		if (map == NULL) {
+			iov[i].iov_base = NULL;
+			iov[i].iov_len = 0;
+			continue;
+		}
 
 		iov[i].iov_base = map->ptr;
 		if (RAND_BOOL())
