@@ -224,7 +224,7 @@ static void init_child(struct childdata *child, int childno)
 
 	set_seed(child);
 
-	init_object_lists(OBJ_LOCAL);
+	init_object_lists(OBJ_LOCAL, child);
 
 	init_child_mappings();
 
