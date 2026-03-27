@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "child.h"
 #include "fd.h"
 #include "list.h"
 #include "locks.h"
@@ -215,16 +216,20 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		prune_objects();
 }
 
-void init_object_lists(enum obj_scope scope)
+void init_object_lists(enum obj_scope scope, struct childdata *child)
 {
 	unsigned int i;
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
 		struct objhead *head;
 
-		head = get_objhead(scope, i);
-		if (head == NULL)
-			continue;
+		if (scope == OBJ_GLOBAL)
+			head = &shm->global_objects[i];
+		else {
+			if (child == NULL)
+				return;
+			head = &child->objects[i];
+		}
 
 		head->list = NULL;
 		head->array = NULL;
@@ -236,7 +241,7 @@ void init_object_lists(enum obj_scope scope)
 		 */
 		if (scope == OBJ_LOCAL) {
 			struct objhead *globalhead;
-			globalhead = get_objhead(OBJ_GLOBAL, i);
+			globalhead = &shm->global_objects[i];
 			head->max_entries = globalhead->max_entries;
 			head->destroy = globalhead->destroy;
 			head->dump = globalhead->dump;

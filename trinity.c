@@ -183,7 +183,7 @@ int main(int argc, char* argv[])
 	pids_init();
 
 	fd_hash_init();
-	init_object_lists(OBJ_GLOBAL);
+	init_object_lists(OBJ_GLOBAL, NULL);
 
 	setup_initial_mappings();
 
