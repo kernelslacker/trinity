@@ -47,6 +47,8 @@ static bool parse_proc_devices(void)
 				continue;
 			p++;
 			name = strdup(p);
+			if (!name)
+				continue;
 
 			if (block) {
 				new = realloc(block_devs, (bldevs+1)*sizeof(*block_devs));
