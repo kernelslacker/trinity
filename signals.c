@@ -48,8 +48,11 @@ static void sighandler(int sig)
 static void sigxcpu_handler(__unused__ int sig)
 {
 	xcpu_pending = 1;
-
-	siglongjmp(ret_jump, 1);
+	/* Don't siglongjmp here.  The signal interrupts the syscall
+	 * (SIGXCPU is installed without SA_RESTART), and the child
+	 * main loop checks xcpu_pending on the next iteration.
+	 * Longjmping from here risked orphaning locks held at the
+	 * time of the signal. */
 }
 
 /*
@@ -88,8 +91,16 @@ void mask_signals_child(void)
 	/* we want default behaviour for child process signals */
 	(void)signal(SIGCHLD, SIG_DFL);
 
-	/* Count SIGXCPUs */
-	(void)signal(SIGXCPU, sigxcpu_handler);
+	/* Count SIGXCPUs.  Install without SA_RESTART so the signal
+	 * interrupts blocking syscalls and control returns to the
+	 * child main loop where xcpu_pending is checked. */
+	{
+		struct sigaction xcpu_sa;
+		sigemptyset(&xcpu_sa.sa_mask);
+		xcpu_sa.sa_flags = 0;
+		xcpu_sa.sa_handler = sigxcpu_handler;
+		(void)sigaction(SIGXCPU, &xcpu_sa, NULL);
+	}
 
 	/* ignore signals we don't care about */
 	(void)signal(SIGFPE, SIG_IGN);
