@@ -390,8 +390,14 @@ static bool handle_sigreturn(int sigwas)
 
 	rec = &child->syscall;
 
-	/* If we held a lock before the signal happened, drop it. */
+	/* If we held a lock before the signal happened, drop it.
+	 * rec->lock is the most common case (held in __do_syscall),
+	 * but sibling-sent SIGALRM can also hit us while we hold
+	 * shm->syscalltable_lock (in syscall32/deactivate_enosys)
+	 * or shm->buglock (in check_parent_pid). */
 	bust_lock(&rec->lock);
+	bust_lock(&shm->syscalltable_lock);
+	bust_lock(&shm->buglock);
 
 	/* Check if we're blocked because we were stuck on an fd. */
 	lock(&rec->lock);
