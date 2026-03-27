@@ -63,6 +63,11 @@ static bool do_create(void)
 	obj = alloc_object();
 	obj->map.ptr = p;
 	obj->map.name = strdup("lifecycle");
+	if (!obj->map.name) {
+		munmap(p, size);
+		free(obj);
+		return true;	/* non-fatal */
+	}
 	obj->map.size = size;
 	obj->map.prot = prot;
 	obj->map.type = CHILD_ANON;
