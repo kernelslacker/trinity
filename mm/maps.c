@@ -209,7 +209,7 @@ retry_mmap:
 
 	obj->map.prot = prot;
 	obj->map.type = MMAPED_FILE;
-	obj->map.ptr = mmap(NULL, len, prot, get_rand_mmap_flags(), fd, offset);
+	obj->map.ptr = mmap(NULL, obj->map.size, prot, get_rand_mmap_flags(), fd, offset);
 	if (obj->map.ptr == MAP_FAILED) {
 		retries++;
 		if (retries == 100) {
