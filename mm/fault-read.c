@@ -97,6 +97,9 @@ static void read_last_page(struct map *map)
 	char buf[page_size];
 	char *ptr;
 
+	if (map->size < page_size)
+		return;
+
 	ptr = p + (map->size - page_size);
 	mprotect((void *) ptr, page_size, PROT_READ);
 	memcpy(buf, ptr, page_size);
