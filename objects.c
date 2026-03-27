@@ -185,6 +185,12 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		newarray = realloc(head->array, newcap * sizeof(struct object *));
 		if (newarray == NULL) {
 			list_del(&obj->list);
+			if (is_fd_type(type)) {
+				int fd = fd_from_object(obj, type);
+				if (fd >= 0)
+					close(fd);
+			}
+			free(obj);
 			if (scope == OBJ_GLOBAL)
 				unlock(&shm->objlock);
 			return;
