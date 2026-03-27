@@ -190,10 +190,10 @@ regen:
 
 		child->cached_fd_generation = __atomic_load_n(&shm->fd_generation, __ATOMIC_ACQUIRE);
 
-		if (max_children > 5)
+		if (max_children >= 5)
 			child->fd_lifetime = RAND_RANGE(5, max_children);
 		else
-			child->fd_lifetime = RAND_RANGE(max_children, 5);
+			child->fd_lifetime = RAND_RANGE(1, 5);
 	} else
 		child->fd_lifetime--;
 
