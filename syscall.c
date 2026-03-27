@@ -104,12 +104,17 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 		 */
 		call = nr + SYSCALL_OFFSET;
 		needalarm = syscalls[nr].entry->flags & NEED_ALARM;
-		if (needalarm)
-			(void)alarm(1);
 
 		lock(&rec->lock);
 		rec->state = state;
 		unlock(&rec->lock);
+
+		/* Arm the alarm after releasing rec->lock.  Previously
+		 * alarm(1) was above the lock region, creating a window
+		 * where SIGALRM could fire while we held the lock.  The
+		 * siglongjmp in the handler would then orphan it. */
+		if (needalarm)
+			(void)alarm(1);
 
 		if (rec->do32bit == false) {
 			if (kc != NULL && kc->cmp_mode)

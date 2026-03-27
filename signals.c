@@ -32,10 +32,11 @@ static void sighandler(int sig)
 {
 	switch (sig) {
 	case SIGALRM:
-		/* Re-arm the alarm. */
-		alarm(1);
-
-		/* Jump back, maybe we'll make progress. */
+		/* Jump back, maybe we'll make progress.
+		 * Don't re-arm the alarm here — do_syscall() will arm a
+		 * fresh one for the next NEED_ALARM syscall.  Re-arming
+		 * here just creates a stale 1-second timer that can fire
+		 * while we hold rec->lock in handle_sigreturn. */
 		siglongjmp(ret_jump, sig);
 		break;
 
