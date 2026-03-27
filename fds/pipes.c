@@ -99,7 +99,8 @@ static const struct fd_provider pipes_fd_provider = {
 	.enabled = true,
 	.init = &init_pipes,
 	.get = &get_rand_pipe_fd,
-	.open = &open_pipe,
+	.open = NULL, /* pipe regeneration creates a pair (+2 fds) but only 1 was
+		       * destroyed, leaking +1 fd per close/regenerate cycle */
 };
 
 REG_FD_PROV(pipes_fd_provider);
