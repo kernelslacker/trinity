@@ -452,6 +452,13 @@ void child_process(struct childdata *child, int childno)
 
 	ret = sigsetjmp(ret_jump, 1);
 	if (ret != 0) {
+		/* Cancel any re-armed alarm from the signal handler.
+		 * Without this, the 1-second alarm keeps ticking and can
+		 * fire again while we hold rec->lock in handle_sigreturn,
+		 * causing a re-entrance deadlock (EXIT_LOCKING_CATASTROPHE).
+		 * do_syscall() will re-arm it for the next NEED_ALARM syscall. */
+		alarm(0);
+
 		if (xcpu_pending) {
 			child->xcpu_count++;
 			xcpu_pending = 0;
