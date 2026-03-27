@@ -478,6 +478,17 @@ void child_process(struct childdata *child, int childno)
 			break;
 		}
 
+		/* SIGXCPU no longer longjmps — check the flag here. */
+		if (xcpu_pending) {
+			child->xcpu_count++;
+			xcpu_pending = 0;
+			if (child->xcpu_count == 100) {
+				debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n",
+					child->num, pids[child->num]);
+				goto out;
+			}
+		}
+
 		/* If the parent reseeded, we should reflect the latest seed too. */
 		if (shm->seed != child->seed) {
 			//output(0, "child %d reseeded to %x\n", child->num, child->seed);
