@@ -12,11 +12,26 @@ Trinity: Linux system call fuzzer.
 #######################################################################
 
 Twenty years after its public introduction, I haven't had time to work on this much
-at all in the last decade. You should consider this abandonware for the most part,
-however; I'm experimenting with use of LLM generation syscall definitions, which
-was previously one of the more laborious parts of keeping this up to date with
-modern kernel versions.  I may give it instructions to add some other bits later,
-let's see how it goes.
+at all in the last decade. You should consider this abandonware for the most part.
+Nearly every commit you see here (after the v1.9 tag) is being now generated autonomously by an LLM.
+
+Just updating the syscall definitions used to be one of the more laborious parts of
+keeping this up to date with modern kernel versions. It now tracks additions to Linus Torvalds
+mainline tree and adds new definitions as they get added upstream.
+
+I also seeded it with some TODO items, and had it explore the codebase to come up with its
+own ideas for fuzzing syscall interfaces, which it seems to have done a pretty decent job of so far.
+
+I pick up the latest commits and run it every so often, and give it feedback if it's
+introduced new bugs, which it fixes in its next cycle.
+This means on any given day, it might be completely broken.
+
+Don't bother sending PR's/email diffs, I just don't have time, all this activity
+is basically an experiment to see just how far the LLM can take it.
+
+(I especially don't have time to care about supporting older distributions outside of the ones I use any more.
+ If you make it work on some old enterprise distro, keep the changes in your distro package.
+ Chances are high the LLM will break them again soon anyway).
 
 For a stable syscall fuzzer, see syzkaller, which is actively maintained/supported.
 
@@ -132,28 +147,3 @@ Call every syscall except for splice.
 ./trinity -C16
 Run with 16 child processes
 
-
-#######################################################################
-
-Development discussion of trinity occurs at trinity@vger.kernel.org
-As with all vger mailing lists, subscribe by sending 'subscribe trinity'
-in the body of a mail to majordomo@vger.kernel.org
-
-######### Links to similar projects ####################################
-
-= tsys - 1991.
-  http://groups.google.com/groups?q=syscall+crashme&hl=en&lr=&ie=UTF-8&selm=1991Sep20.232550.5013%40smsc.sony.com&rnum=1
-
-= iknowthis
-  Fuzzer by Tavis Ormandy with very similar goals to this project.
-
-= sysfuzz
-  basic fuzzer by Ilja van Sprundel
-  mentioned in http://events.ccc.de/congress/2005/fahrplan/attachments/683-slides_fuzzing.pdf
-
-= xnufuzz
-  basic fuzzer for XNU.  Looks to be based on Ilja's sysfuzz.
-
-= kg_crashme / ak_crashme / dj_crashme
-  Kurt Garloff wrote a fuzzer similar to Ilja's sysfuzz in 2003.
-  The ak / dj variants were improvements added by Andi Kleen, and Dave Jones.
