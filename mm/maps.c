@@ -34,7 +34,7 @@ struct map * get_map(void)
 	else
 		scope = OBJ_LOCAL;
 
-	while (obj == NULL) {
+	for (int i = 0; i < 1000; i++) {
 		switch (rand() % 3) {
 		case 0:	type = OBJ_MMAP_ANON;
 			break;
@@ -45,9 +45,11 @@ struct map * get_map(void)
 		}
 
 		obj = get_random_object(type, scope);
+		if (obj != NULL)
+			return &obj->map;
 	}
 
-	return &obj->map;
+	return NULL;
 }
 
 void map_destructor(struct object *obj)
@@ -173,6 +175,8 @@ void dirty_random_mapping(void)
 	struct map *map;
 
 	map = get_map();
+	if (map == NULL)
+		return;
 
 	dirty_mapping(map);
 }
