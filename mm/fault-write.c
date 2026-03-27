@@ -121,7 +121,12 @@ static void dirty_first_page(struct map *map)
  * a strlen and go off the end. */
 static void dirty_last_page(struct map *map)
 {
-	char *p = map->ptr + map->size - page_size;
+	char *p;
+
+	if (map->size < page_size)
+		return;
+
+	p = map->ptr + map->size - page_size;
 
 	if (mark_page_rw(map, p) == true)
 		memset((void *) p, 'A', page_size);
