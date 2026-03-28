@@ -54,8 +54,8 @@ static void store_successful_fd(struct results *results, unsigned long value)
 
 static void store_successful_len(struct results *results, unsigned long value)
 {
-	/* First successful call — min is still at its zero-initialized value */
-	if (results->min == 0 && results->max == 0) {
+	if (!results->seen) {
+		results->seen = true;
 		results->min = value;
 		results->max = value;
 		return;
