@@ -52,7 +52,12 @@ static struct io_uringobj *mapped_ring;
 
 struct io_uringobj *get_io_uring_ring(void)
 {
-	return mapped_ring;
+	struct io_uringobj *ring;
+
+	lock(&shm->objlock);
+	ring = mapped_ring;
+	unlock(&shm->objlock);
+	return ring;
 }
 
 static void io_uring_destructor(struct object *obj)
