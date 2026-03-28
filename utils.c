@@ -164,6 +164,8 @@ int get_num_fds(void)
      if (dir == NULL)
           return 0;
      while ((dp = readdir(dir)) != NULL) {
+          if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
+               continue;
           fd_count++;
      }
      closedir(dir);
