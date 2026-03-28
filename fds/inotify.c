@@ -88,7 +88,7 @@ static int init_inotify_fds(void)
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		fd = inotify_init1(flags[i]);
 		if (fd < 0)
-			return false;
+			continue;
 
 		arm_inotify(fd);
 
