@@ -41,5 +41,7 @@ static inline const char * decode_exit(enum exit_reasons reason)
 		"fork() failure",
 		"some kind of locking catastrophe",
 	};
+	if ((unsigned int)reason >= NUM_EXIT_REASONS)
+		return "Unknown exit reason";
 	return reasons[reason];
 }
