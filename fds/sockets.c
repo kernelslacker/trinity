@@ -385,7 +385,7 @@ static void socket_destructor(struct object *obj)
 
 	/* Grab an fd, and nuke it before someone else uses it. */
 	fd = si->fd;
-	si->fd = 0;
+	si->fd = -1;
 
 	/*
 	 * Skip setsockopt/shutdown for bluetooth sockets —
