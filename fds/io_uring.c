@@ -97,8 +97,14 @@ static int open_io_uring_fd(void)
 	if (fd < 0)
 		return false;
 
-	/* mmap the SQ ring. Size is sq_off.array + sq_entries * sizeof(u32). */
-	sq_ring_sz = params.sq_off.array + params.sq_entries * sizeof(unsigned int);
+	/* mmap the SQ ring. Size is sq_off.array + sq_entries * sizeof(u32).
+	 * Guard against integer overflow from kernel-controlled values.
+	 */
+	if (__builtin_mul_overflow((size_t)params.sq_entries, sizeof(unsigned int), &sq_ring_sz) ||
+	    __builtin_add_overflow(sq_ring_sz, (size_t)params.sq_off.array, &sq_ring_sz)) {
+		close(fd);
+		return false;
+	}
 	sq_ring = mmap(NULL, sq_ring_sz, PROT_READ | PROT_WRITE,
 		       MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
 	if (sq_ring == MAP_FAILED) {
@@ -106,8 +112,12 @@ static int open_io_uring_fd(void)
 		return false;
 	}
 
-	/* mmap the SQE array. */
-	sqes_sz = params.sq_entries * 64;	/* sizeof(struct io_uring_sqe) */
+	/* mmap the SQE array — sizeof(struct io_uring_sqe) == 64. */
+	if (__builtin_mul_overflow((size_t)params.sq_entries, (size_t)64, &sqes_sz)) {
+		munmap(sq_ring, sq_ring_sz);
+		close(fd);
+		return false;
+	}
 	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
 		    MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
 	if (sqes == MAP_FAILED) {
