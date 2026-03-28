@@ -180,10 +180,15 @@ static void do_extrafork(struct syscallrecord *rec)
 	if (pid_alive(extrapid) == true)
 		usleep(100);
 
-	/* We take the rec lock here even though we don't obviously use it.
-	 * The reason, is that the grandchild is using it. */
-	lock(&rec->lock);
-	while (pid == 0) {
+	/* Do NOT hold rec->lock here. The grandchild acquires it inside
+	 * __do_syscall(), so holding it while waiting would deadlock:
+	 * parent holds lock -> waitpid(grandchild) -> grandchild spins
+	 * on same lock -> neither can make progress.
+	 *
+	 * Bound the loop to ~1 second (1000 * 1ms) so a D-state
+	 * grandchild can't stall us forever.
+	 */
+	for (int i = 0; pid == 0 && i < 1000; i++) {
 		int childstatus;
 
 		pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
@@ -191,7 +196,12 @@ static void do_extrafork(struct syscallrecord *rec)
 			kill(extrapid, SIGKILL);
 		usleep(1000);
 	}
-	unlock(&rec->lock);
+
+	/* Timed out. Force-kill and reap to prevent zombies. */
+	if (pid == 0) {
+		kill(extrapid, SIGKILL);
+		waitpid(extrapid, NULL, 0);
+	}
 }
 
 
