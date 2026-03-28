@@ -13,7 +13,10 @@
  *   [3] ip    - instruction pointer (unused here)
  */
 
+#include <errno.h>
+#include <signal.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "cmp_hints.h"
 #include "kcov.h"
@@ -64,9 +67,18 @@ static bool interesting_value(unsigned long val)
 static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 {
 	unsigned int i;
+	unsigned int spins = 0;
 
-	while (__atomic_test_and_set(&pool->lock, __ATOMIC_ACQUIRE))
-		;
+	while (__atomic_test_and_set(&pool->lock, __ATOMIC_ACQUIRE)) {
+		if (++spins > 1000000) {
+			pid_t owner = pool->locker_pid;
+
+			if (owner != 0 && kill(owner, 0) == -1 && errno == ESRCH)
+				__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
+			spins = 0;
+		}
+	}
+	pool->locker_pid = getpid();
 
 	for (i = 0; i < pool->count && i < CMP_HINTS_PER_SYSCALL; i++) {
 		if (pool->values[i] == val)
@@ -81,6 +93,7 @@ static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 	}
 
 out:
+	pool->locker_pid = 0;
 	__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
 }
 

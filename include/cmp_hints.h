@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 #include "types.h"
 
 /*
@@ -20,7 +22,8 @@
 #define CMP_MODE_RATIO 8
 
 struct cmp_hint_pool {
-	int lock;
+	unsigned char lock;
+	pid_t locker_pid;
 	unsigned int count;
 	unsigned long values[CMP_HINTS_PER_SYSCALL];
 };
