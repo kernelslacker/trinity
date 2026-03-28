@@ -460,7 +460,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	}
 
 	/* After 30 seconds of no progress, send a kill signal. */
-	if (diff == 30) {
+	if (diff >= 30) {
 		stuck_syscall_info(child, childno);
 		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
 				childno, pid);
