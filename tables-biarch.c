@@ -148,8 +148,15 @@ out:
 void enable_random_syscalls_biarch(void)
 {
 	unsigned int call32 = NOTFOUND, call64 = NOTFOUND;
+	unsigned int retries = 0;
 
 retry:
+
+	if (retries++ > max_nr_64bit_syscalls * 2) {
+		outputerr("enable_random_syscalls: no eligible syscall found after %u attempts\n",
+			  retries - 1);
+		return;
+	}
 
 	//Search for 64 bit version
 	if (do_64_arch) {

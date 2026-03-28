@@ -59,8 +59,15 @@ void enable_random_syscalls_uniarch(void)
 {
 	unsigned int call;
 	struct syscallentry *entry;
+	unsigned int retries = 0;
 
 retry:
+	if (retries++ > max_nr_syscalls * 2) {
+		outputerr("enable_random_syscalls: no eligible syscall found after %u attempts\n",
+			  retries - 1);
+		return;
+	}
+
 	call = rand() % max_nr_syscalls;
 	entry = syscalls[call].entry;
 
