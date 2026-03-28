@@ -546,6 +546,7 @@ static bool spawn_child(int childno)
 		// pidstatfiles[childno] may be NULL below if fd limit is reached.
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
 		panic(EXIT_NO_FDS);
+		return false;
 	}
 	pidstatfiles[childno] = open_child_pidstat(pid);
 	__atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
