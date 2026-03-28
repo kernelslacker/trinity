@@ -97,6 +97,7 @@ struct results {
 	 * Dynamically allocated on first successful fd arg. */
 	int *fdmap;
 	/* ARG_LEN: range of successful length values. */
+	bool seen;
 	unsigned int min, max;
 };
 
