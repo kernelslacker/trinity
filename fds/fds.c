@@ -239,7 +239,7 @@ int get_typed_fd(enum argtype type)
 	}
 
 retry:
-	if (objects_empty(objtype) || retries >= 10)
+	if (retries >= 10)
 		return get_random_fd();
 
 	obj = get_random_object(objtype, OBJ_GLOBAL);
