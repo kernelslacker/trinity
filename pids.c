@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <signal.h>
 #include <unistd.h>
@@ -146,6 +147,8 @@ static int read_pid_max(void)
 
 	result = strtoul(buf, &end, 10);
 	if (end == buf)
+		goto out;
+	if (errno == ERANGE)
 		goto out;
 
 	pidmax = result;
