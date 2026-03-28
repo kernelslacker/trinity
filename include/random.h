@@ -8,7 +8,9 @@
 
 #define RAND_BOOL()		(rand() & 1)
 #define RAND_BYTE()		(rand() & 0xff)
-#define RAND_RANGE(min, max)	((min) + rand() / (RAND_MAX / ((max) - (min) + 1) + 1))
+#define RAND_RANGE(min, max)	((min) <= (max) \
+	? (min) + rand() / (RAND_MAX / ((max) - (min) + 1) + 1) \
+	: (max) + rand() / (RAND_MAX / ((min) - (max) + 1) + 1))
 
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
