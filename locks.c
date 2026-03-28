@@ -83,7 +83,7 @@ void lock(lock_t *lk)
 	pid_t pid = getpid();
 
 	while (!trylock(lk)) {
-		if (lk->owner == pid) {
+		if (__atomic_load_n(&lk->owner, __ATOMIC_ACQUIRE) == pid) {
 			debugf("lol, already have lock!\n");
 			show_backtrace();
 			panic(EXIT_LOCKING_CATASTROPHE);
