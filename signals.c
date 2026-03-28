@@ -81,7 +81,7 @@ void mask_signals_child(void)
 	sigset_t ss;
 	int i;
 
-	for (i = 1; i < 512; i++) {
+	for (i = 1; i < _NSIG; i++) {
 		(void)sigfillset(&ss);
 		sa.sa_flags = SA_RESTART;
 		sa.sa_handler = sighandler;
