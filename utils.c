@@ -47,6 +47,10 @@ void * alloc_shared(unsigned int size)
 		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
 		shared_regions[nr_shared_regions].size = size;
 		nr_shared_regions++;
+	} else {
+		fprintf(stderr, "alloc_shared: MAX_SHARED_ALLOCS (%d) reached, "
+			"region %p won't be tracked by range_overlaps_shared()\n",
+			MAX_SHARED_ALLOCS, ret);
 	}
 
 	return ret;
