@@ -46,7 +46,7 @@ unsigned int init_seed(unsigned int seedparam)
 		output(0, "Using user passed random seed: %u.\n", seedparam);
 	else {
 		int urandomfd;
-		unsigned int r;
+		unsigned int r = getpid() ^ (unsigned int)time(NULL);
 
 		urandomfd = open("/dev/urandom", O_RDONLY);
 		if (urandomfd == -1) {
