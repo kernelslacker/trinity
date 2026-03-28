@@ -145,6 +145,7 @@ static int read_pid_max(void)
 	if (!fgets(buf, sizeof(buf), fp))
 		goto out;
 
+	errno = 0;
 	result = strtoul(buf, &end, 10);
 	if (end == buf)
 		goto out;
