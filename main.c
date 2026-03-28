@@ -623,7 +623,10 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		kill_pid(pid);
 		/* Reap the killed child to avoid leaving a zombie — once
 		 * reap_child() clears the pid slot nobody will waitpid() it. */
-		waitpid(pid, NULL, 0);
+		waitpid(pid, NULL, WNOHANG);
+		if (pidstatfiles[childno])
+			fclose(pidstatfiles[childno]);
+		pidstatfiles[childno] = NULL;
 		reap_child(children[childno], childno);
 		replace_child(childno);
 		return;
