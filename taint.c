@@ -72,7 +72,7 @@ bool is_tainted(void)
 }
 static void toggle_taint_flag(int bit)
 {
-	kernel_taint_mask |= (1 << bit);
+	kernel_taint_mask |= (1U << bit);
 }
 
 static void toggle_taint_flag_by_name(char *beg, char *end)
