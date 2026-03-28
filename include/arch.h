@@ -66,7 +66,7 @@
 #define SYSCALL_OFFSET 0
 #endif
 
-#define PAGE_MASK (~(page_size - 1))
+#define PAGE_MASK (~((unsigned long)(page_size) - 1))
 extern unsigned int page_size;
 
 extern bool biarch;
