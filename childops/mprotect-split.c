@@ -46,9 +46,12 @@ static unsigned long pick_subrange(struct map *map, unsigned long *lenp)
 	}
 
 	start_page = rand() % nr_pages;
+	/*
+	 * end_page is always <= nr_pages: rand() % (nr_pages - start_page)
+	 * is in [0, nr_pages - start_page - 1], so end_page is in
+	 * [start_page + 1, nr_pages].
+	 */
 	end_page = start_page + 1 + (rand() % (nr_pages - start_page));
-	if (end_page > nr_pages)
-		end_page = nr_pages;
 
 	*lenp = (end_page - start_page) * page_size;
 	return start_page * page_size;
