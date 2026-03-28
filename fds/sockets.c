@@ -446,7 +446,7 @@ static int open_sockets(void)
 		int fd;
 
 		bytesread = read(cachefile, buffer, sizeof(int) * 3);
-		if (bytesread == 0) {
+		if (bytesread <= 0) {
 			if (nr_sockets == 0)
 				goto regenerate;
 			break;
