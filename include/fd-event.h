@@ -35,15 +35,14 @@ struct fd_event_ring {
 	/* Written by child (producer), read by parent (consumer). */
 	_Atomic uint32_t head;
 
-	/* Padding to put head and tail on separate cache lines.
-	 * Avoids false sharing between child writes and parent reads. */
-	char __pad[60];
+	/* Overflow counter — bumped by child on ring-full drops. */
+	_Atomic uint32_t overflow;
+
+	/* Padding to put producer and consumer fields on separate cache lines. */
+	char __pad[56];
 
 	/* Written by parent (consumer), read by child (producer). */
 	_Atomic uint32_t tail;
-
-	/* Overflow counter — bumped by child on ring-full drops. */
-	_Atomic uint32_t overflow;
 
 	struct fd_event events[FD_EVENT_RING_SIZE];
 };
