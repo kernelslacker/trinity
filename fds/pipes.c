@@ -41,12 +41,21 @@ static void open_pipe_pair(unsigned int flags)
 	}
 
 	obj = alloc_object();
+	if (obj == NULL) {
+		close(pipes[0]);
+		close(pipes[1]);
+		return;
+	}
 	obj->pipeobj.fd = pipes[0];
 	obj->pipeobj.flags = flags;
 	obj->pipeobj.reader = true;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
 	obj = alloc_object();
+	if (obj == NULL) {
+		close(pipes[1]);
+		return;
+	}
 	obj->pipeobj.fd = pipes[1];
 	obj->pipeobj.flags = flags;
 	obj->pipeobj.reader = false;
