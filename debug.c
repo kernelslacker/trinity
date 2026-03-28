@@ -75,11 +75,13 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 
 	/* Now spin indefinitely (but allow ctrl-c) */
 
-	set_dontkillme(child, true);
+	if (child != NULL)
+		set_dontkillme(child, true);
 
 	while (1) {
 		if (shm->exit_reason == EXIT_SIGINT) {
-			set_dontkillme(child, false);
+			if (child != NULL)
+				set_dontkillme(child, false);
 			exit(EXIT_FAILURE);
 		}
 		sleep(1);
