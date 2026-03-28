@@ -207,5 +207,5 @@ void do_syscall(struct syscallrecord *rec, struct kcov_child *kc);
 void handle_syscall_ret(struct syscallrecord *rec);
 
 #define for_each_arg(_e, _i) \
-	for (_i = 1; _i <= _e->num_args; _i++)
+	for (_i = 1; _i <= (_e)->num_args; _i++)
 
