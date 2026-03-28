@@ -63,7 +63,7 @@ bool check_all_locks(void)
 
 static void __lock(lock_t *lk)
 {
-	lk->owner = getpid();
+	__atomic_store_n(&lk->owner, getpid(), __ATOMIC_RELEASE);
 }
 
 bool trylock(lock_t *lk)
