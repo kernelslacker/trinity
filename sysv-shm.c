@@ -57,14 +57,18 @@ void create_sysv_shms(void)
 		obj->sysv_shm.flags = flags;
 		obj->sysv_shm.size = size;
 
-		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
-
 		p = shmat(id, NULL, 0);
 		if (p == (void *) -1)
 			p = shmat(id, NULL, SHM_RDONLY);
 		if (p == (void *) -1)
 			p = shmat(id, NULL, SHM_EXEC);
-		if (p != (void *) -1)
-			obj->sysv_shm.ptr = p;
+		if (p == (void *) -1) {
+			shmctl(id, IPC_RMID, NULL);
+			free(obj);
+			continue;
+		}
+		obj->sysv_shm.ptr = p;
+
+		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
 	}
 }
