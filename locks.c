@@ -25,7 +25,7 @@ static bool check_lock(lock_t *lk)
 		return false;
 
 	/* First the easy case. If it's held by a dead pid, release it. */
-	pid = lk->owner;
+	pid = __atomic_load_n(&lk->owner, __ATOMIC_ACQUIRE);
 
 	/* if we're in the process of unlocking, it can show up as LOCKED
 	 * but with no owner. Just bail, we'll try again next time around.
