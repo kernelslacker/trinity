@@ -4,7 +4,7 @@
 #include "child.h"
 #include "types.h"
 
-#define ONE_IN(x)		((rand() % (x)) == 0)	// limit of RAND_MAX-1
+#define ONE_IN(x)		((x) > 0 && (rand() % (x)) == 0)
 
 #define RAND_BOOL()		(rand() & 1)
 #define RAND_BYTE()		(rand() & 0xff)
