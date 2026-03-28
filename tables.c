@@ -730,5 +730,8 @@ bool this_syscallname(const char *thisname)
 	unsigned int call = child->syscall.nr;
 	struct syscallentry *syscall_entry = syscalls[call].entry;
 
+	if (syscall_entry == NULL)
+		return false;
+
 	return strcmp(thisname, syscall_entry->name) == 0;
 }
