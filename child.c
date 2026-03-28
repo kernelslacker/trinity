@@ -28,6 +28,7 @@
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "uid.h"
+#include "sanitise.h"
 #include "utils.h"	// zmalloc
 
 /* Set to true once we detect that unprivileged pidns isn't available. */
@@ -412,6 +413,10 @@ static bool handle_sigreturn(int sigwas)
 					 (int) rec->a1, -1, 0);
 	}
 	unlock(&rec->lock);
+
+	/* Free any ARG_PATHNAME allocations made before the signal. */
+	if (rec->state >= PREP)
+		generic_free_arg(rec);
 
 	/* Check if we're making any progress at all. */
 	if (child->op_nr == last) {
