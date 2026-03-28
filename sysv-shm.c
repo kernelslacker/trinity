@@ -48,7 +48,7 @@ void create_sysv_shms(void)
 
 		size = page_size * (1 + rand() % 10);
 
-		id = shmget(IPC_PRIVATE, page_size, flags);
+		id = shmget(IPC_PRIVATE, size, flags);
 		if (id == -1) {
 			free(obj);
 			continue;
