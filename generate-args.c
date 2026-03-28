@@ -423,6 +423,9 @@ void generic_free_arg(struct syscallrecord *rec)
 
 		argtype = get_argtype(entry, i);
 
+		if (argtype == ARG_PATHNAME)
+			free((void *) get_argval(rec, i));
+
 		if (argtype == ARG_IOVEC)
 			free((void *) get_argval(rec, i));
 	}

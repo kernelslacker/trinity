@@ -341,17 +341,17 @@ const char * generate_pathname(void)
 	if (pathname == NULL)
 		return NULL;
 
-	/* 90% chance of returning an unmangled filename.
-	 * pathname points into fileindex[] which is stable for our lifetime,
-	 * so there's no need to copy it.
-	 */
-	if (!ONE_IN(10))
-		return pathname;
-
-	/* Create a bogus filename. */
 	newpath = zmalloc(MAX_PATH_LEN);
 
 	len = strlen(pathname);
+
+	/* 90% chance of returning an unmangled filename. */
+	if (!ONE_IN(10)) {
+		memcpy(newpath, pathname, len + 1);
+		return newpath;
+	}
+
+	/* Create a bogus filename. */
 
 	if (RAND_BOOL())
 		(void) memcpy(newpath, pathname, len);
