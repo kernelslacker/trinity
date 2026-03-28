@@ -35,9 +35,10 @@ static void drmfd_dump(struct object *obj, enum obj_scope scope)
 
 static int create_dumb(__unused__ int fd)
 {
-#if defined(DRM_IOCTL_MODE_CREATE_DUMB) && defined(DRM_IOCTL_PRIME_HANDLE_TO_FD)
+#if defined(DRM_IOCTL_MODE_CREATE_DUMB) && defined(DRM_IOCTL_PRIME_HANDLE_TO_FD) && defined(DRM_IOCTL_MODE_DESTROY_DUMB)
 	struct drm_mode_create_dumb create;
 	struct drm_prime_handle handle_to_fd;
+	struct drm_mode_destroy_dumb destroy;
 
 	memset(&create, 0, sizeof(create));
 	create.height = 1 << RAND_RANGE(0, 10);
@@ -54,6 +55,9 @@ static int create_dumb(__unused__ int fd)
 		handle_to_fd.flags = DRM_CLOEXEC;
 
 	if (ioctl(fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &handle_to_fd) < 0) {
+		memset(&destroy, 0, sizeof(destroy));
+		destroy.handle = create.handle;
+		ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
 		return -1;
 	}
 
