@@ -91,6 +91,7 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 {
 	struct syscallentry *entry;
 	unsigned int syscallnr;
+	int val;
 	bool do32;
 	unsigned int bias_attempts = 0;
 	unsigned int nr_syscalls;
@@ -110,10 +111,11 @@ retry:
 
 	/* If we got a syscallnr which is not active repeat the attempt,
 	 * since another child has switched that syscall off already.*/
-	if (active_syscalls[syscallnr] == 0)
+	val = active_syscalls[syscallnr];
+	if (val == 0)
 		goto retry;
 
-	syscallnr = active_syscalls[syscallnr] - 1;
+	syscallnr = val - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
 		deactivate_syscall(syscallnr, do32);
