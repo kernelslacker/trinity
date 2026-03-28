@@ -49,7 +49,9 @@ static int open_perf_fd(void)
 
 	fd = syscall(__NR_perf_event_open, rec.a1, rec.a2, rec.a3, rec.a4, rec.a5);
 	if (fd < 0) {
+		int saved_errno = errno;
 		freeptr(&rec.a1);
+		errno = saved_errno;
 		return false;
 	}
 
