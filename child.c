@@ -211,7 +211,7 @@ static void init_child(struct childdata *child, int childno)
 	mprotect(pids, max_children * sizeof(int), PROT_READ);
 
 	/* Wait for parent to set our childno */
-	while (pids[childno] != pid) {
+	while (__atomic_load_n(&pids[childno], __ATOMIC_RELAXED) != pid) {
 		/* Make sure parent is actually alive to wait for us. */
 		if (pid_alive(mainpid) == false) {
 			panic(EXIT_SHM_CORRUPTION);
@@ -538,7 +538,7 @@ void child_process(struct childdata *child, int childno)
 	}
 
 	/* If we're exiting because we tainted, wait here for it to be done. */
-	while (shm->postmortem_in_progress == true) {
+	while (__atomic_load_n(&shm->postmortem_in_progress, __ATOMIC_RELAXED) == true) {
 		/* Make sure the main process is still around. */
 		if (pid_alive(mainpid) == false)
 			goto out;

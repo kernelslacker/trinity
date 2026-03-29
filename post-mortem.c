@@ -122,7 +122,7 @@ void tainted_postmortem(void)
 
 	struct timespec taint_tp;
 
-	shm->postmortem_in_progress = true;
+	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
 
@@ -137,5 +137,5 @@ void tainted_postmortem(void)
 
 	dump_syscall_records(&taint_tp);
 
-	shm->postmortem_in_progress = false;
+	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELAXED);
 }
