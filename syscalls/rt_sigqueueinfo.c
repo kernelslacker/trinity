@@ -7,9 +7,22 @@
 #include "random.h"
 #include "sanitise.h"
 
+static unsigned long safe_signals[] = {
+	SIGHUP, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+	SIGBUS, SIGFPE, SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE,
+	SIGALRM, SIGCHLD, SIGCONT, SIGURG, SIGXCPU, SIGXFSZ,
+	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGSYS,
+};
+
 static void sanitise_rt_sigqueueinfo(struct syscallrecord *rec)
 {
 	siginfo_t *info;
+
+	/* Avoid SIGKILL, SIGSTOP, SIGTERM; use safe signals or realtime range. */
+	if (RAND_BOOL())
+		rec->a2 = RAND_ARRAY(safe_signals);
+	else
+		rec->a2 = SIGRTMIN + (rand() % (SIGRTMAX - SIGRTMIN + 1));
 
 	info = (siginfo_t *) get_writable_address(sizeof(*info));
 	memset(info, 0, sizeof(*info));
@@ -27,10 +40,8 @@ struct syscallentry syscall_rt_sigqueueinfo = {
 	.name = "rt_sigqueueinfo",
 	.group = GROUP_SIGNAL,
 	.num_args = 3,
-	.argtype = { [0] = ARG_PID, [1] = ARG_RANGE },
+	.argtype = { [0] = ARG_PID },
 	.argname = { [0] = "pid", [1] = "sig", [2] = "uinfo" },
-	.low2range = 0,
-	.hi2range = _NSIG,
 	.flags = AVOID_SYSCALL,	/* can disrupt signal handling */
 	.sanitise = sanitise_rt_sigqueueinfo,
 };
