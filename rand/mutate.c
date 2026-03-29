@@ -73,6 +73,27 @@ static unsigned long mutate_alignment(unsigned long val)
 }
 
 /*
+ * Zero-extend or sign-extend a narrow slice of val to 64 bits.
+ *
+ * Zero-extension produces values like 0x000000000000FFFF; sign-extension
+ * produces values like 0xFFFFFFFFFFFF8000.  Both patterns exercise kernel
+ * code that reads a 64-bit syscall argument and then casts it to a narrow
+ * signed type and back — a common source of sign-extension bugs.
+ */
+static unsigned long mutate_cross_width(unsigned long val)
+{
+	switch (rand() % 6) {
+	case 0: return (unsigned long)(unsigned char) val;		/* zero-extend 8→64 */
+	case 1: return (unsigned long)(unsigned short) val;		/* zero-extend 16→64 */
+	case 2: return (unsigned long)(unsigned int) val;		/* zero-extend 32→64 */
+	case 3: return (unsigned long)(signed long)(signed char) val;	/* sign-extend 8→64 */
+	case 4: return (unsigned long)(signed long)(short) val;		/* sign-extend 16→64 */
+	case 5: return (unsigned long)(signed long)(int) val;		/* sign-extend 32→64 */
+	}
+	return val;
+}
+
+/*
  * Apply a random mutation to an existing value.
  *
  * Strategies target kernel-specific bug classes:
@@ -83,10 +104,11 @@ static unsigned long mutate_alignment(unsigned long val)
  *   byte swap     -- catches endianness assumptions
  *   single-bit    -- flip one random bit (flag toggling)
  *   arith delta   -- add/subtract small value (off-by-one, overflow)
+ *   cross-width   -- zero/sign extend narrow value to 64 bits
  */
 unsigned long mutate_value(unsigned long val)
 {
-	switch (rand() % 7) {
+	switch (rand() % 8) {
 	case 0:
 		return mutate_truncate(val);
 	case 1:
@@ -114,6 +136,8 @@ unsigned long mutate_value(unsigned long val)
 			return val + delta;
 		return val - delta;
 	}
+	case 7:
+		return mutate_cross_width(val);
 	}
 	return val;
 }
