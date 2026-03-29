@@ -252,6 +252,29 @@ static bool generate_socket(unsigned int family, unsigned int protocol, unsigned
 	return false;
 }
 
+static unsigned int rand_proto_for_family(unsigned int family)
+{
+	static const unsigned int inet_protos[] = {
+		IPPROTO_IP, IPPROTO_ICMP, IPPROTO_IGMP, IPPROTO_IPIP,
+		IPPROTO_TCP, IPPROTO_EGP, IPPROTO_PUP, IPPROTO_UDP,
+		IPPROTO_IDP, IPPROTO_TP, IPPROTO_DCCP, IPPROTO_IPV6,
+		IPPROTO_RSVP, IPPROTO_GRE, IPPROTO_ESP, IPPROTO_AH,
+		IPPROTO_MTP, IPPROTO_BEETPH, IPPROTO_ENCAP, IPPROTO_PIM,
+		IPPROTO_COMP, IPPROTO_SCTP, IPPROTO_UDPLITE, IPPROTO_MPLS,
+		IPPROTO_RAW,
+	};
+
+	switch (family) {
+	case PF_INET:
+	case PF_INET6:
+		return RAND_ARRAY(inet_protos);
+	case PF_UNIX:
+		return 0;
+	default:
+		return rand() % 16;
+	}
+}
+
 static bool generate_specific_socket(int family)
 {
 	struct socket_triplet st;
@@ -271,7 +294,7 @@ static bool generate_specific_socket(int family)
 		return false;
 	}
 
-	st.protocol = rand() % 256;
+	st.protocol = rand_proto_for_family(st.family);
 
 	if (sanitise_socket_triplet(&st) == -1)
 		rand_proto_type(&st);
@@ -556,7 +579,7 @@ static int open_socket_fd(void)
 	if (valid_proto(st.family) == false)
 		return false;
 
-	st.protocol = rand() % 256;
+	st.protocol = rand_proto_for_family(st.family);
 	if (sanitise_socket_triplet(&st) == -1)
 		rand_proto_type(&st);
 
