@@ -24,7 +24,7 @@ static void post_fork(struct syscallrecord *rec)
 	pid = rec->retval;
 	if (pid == 0) {
 		/* If we're already at capacity, bail out immediately. */
-		if (shm->running_childs >= max_children) {
+		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) >= max_children) {
 			_exit(EXIT_SUCCESS);
 		}
 
