@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include "arch.h"
+#include "compat.h"
 #include "list.h"
 #include "maps.h"
 #include "random.h"
@@ -51,6 +52,42 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
 
 	close(fd);
+}
+
+/*
+ * Like alloc_zero_map, but returns false instead of exiting on mmap failure.
+ * Used for MAP_HUGETLB mappings which may not be available.
+ */
+static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
+{
+	struct object *new;
+	int fd;
+
+	if (size == 0)
+		return false;
+
+	fd = open("/dev/zero", O_RDWR);
+	if (fd == -1)
+		return false;
+
+	new = alloc_object();
+	new->map.size = size;
+	new->map.prot = prot;
+	new->map.flags = flags;
+	new->map.type = INITIAL_ANON;
+	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, fd, 0);
+	if (new->map.ptr == MAP_FAILED) {
+		free(new);
+		close(fd);
+		return false;
+	}
+
+	new->map.name = zmalloc(80);
+	snprintf(new->map.name, 80, "anon(%s)", name);
+	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
+
+	close(fd);
+	return true;
 }
 
 unsigned long mapping_sizes[NR_MAPPING_SIZES] = {
@@ -145,4 +182,25 @@ void setup_initial_mappings(void)
 		alloc_zero_map(mapping_sizes[i], PROT_WRITE, MAP_PRIVATE, "PROT_WRITE (private)");
 		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, "PROT_READ | PROT_WRITE | PROT_EXEC (private)");
 	}
+
+	/*
+	 * Try to create MAP_HUGETLB mappings.  These exercise the hugetlb
+	 * page fault and VMA paths.  We only use 2MB-aligned sizes since
+	 * that's the default huge page size on x86.  Failures are expected
+	 * when huge pages aren't configured or available.
+	 */
+	if (try_alloc_zero_map(MB(2), PROT_READ | PROT_WRITE,
+			       MAP_SHARED | MAP_HUGETLB,
+			       "PROT_READ | PROT_WRITE (hugetlb shared)"))
+		output(0, "Created 2MB MAP_HUGETLB shared mapping\n");
+
+	if (try_alloc_zero_map(MB(2), PROT_READ | PROT_WRITE,
+			       MAP_PRIVATE | MAP_HUGETLB,
+			       "PROT_READ | PROT_WRITE (hugetlb private)"))
+		output(0, "Created 2MB MAP_HUGETLB private mapping\n");
+
+	if (try_alloc_zero_map(MB(2), PROT_READ,
+			       MAP_SHARED | MAP_HUGETLB,
+			       "PROT_READ (hugetlb shared)"))
+		output(0, "Created 2MB MAP_HUGETLB read-only mapping\n");
 }
