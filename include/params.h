@@ -1,8 +1,9 @@
 #pragma once
 
 #include "types.h"
-#include "net.h"
 
+/* glibc headers might be older than the kernel, define our own PF_MAX */
+#define TRINITY_PF_MAX 46
 #define TAINT_PROPRIETARY_MODULE        0
 #define TAINT_FORCED_MODULE             1
 #define TAINT_UNSAFE_SMP                2
