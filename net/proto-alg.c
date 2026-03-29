@@ -3,6 +3,8 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include "random.h"
 #include "net.h"
 #include "compat.h"
@@ -280,9 +282,73 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = RAND_ARRAY(alg_opts);
 }
 
+/*
+ * Set up the AF_ALG lifecycle on fd:
+ * 1. bind() with a random algorithm type and name
+ * 2. setsockopt(ALG_SET_KEY) to set a key on the parent fd
+ * 3. accept() to get a child fd for crypto operations
+ * 4. Close the child fd — we just want to exercise the kernel path
+ */
+static void alg_socket_setup(int fd)
+{
+	struct sockaddr_alg sa;
+	unsigned char key[64];
+	int child_fd;
+	unsigned int keylen;
+	const char *hash_types[] = { "hash", "skcipher", "aead", "rng" };
+	const char *hash_algos[] = { "sha1", "sha256", "md5", "sha512" };
+	const char *skcipher_algos[] = { "cbc(aes)", "ecb(aes)", "ctr(aes)" };
+	const char *type;
+	unsigned int type_idx;
+
+	memset(&sa, 0, sizeof(sa));
+	sa.salg_family = AF_ALG;
+
+	type_idx = rand() % ARRAY_SIZE(hash_types);
+	type = hash_types[type_idx];
+	strncpy((char *)sa.salg_type, type, sizeof(sa.salg_type) - 1);
+
+	/* Pick an algorithm appropriate for the type */
+	switch (type_idx) {
+	case 0: /* hash */
+		strncpy((char *)sa.salg_name,
+			hash_algos[rand() % ARRAY_SIZE(hash_algos)],
+			sizeof(sa.salg_name) - 1);
+		break;
+	case 1: /* skcipher */
+		strncpy((char *)sa.salg_name,
+			skcipher_algos[rand() % ARRAY_SIZE(skcipher_algos)],
+			sizeof(sa.salg_name) - 1);
+		break;
+	default:
+		strncpy((char *)sa.salg_name,
+			hash_algos[rand() % ARRAY_SIZE(hash_algos)],
+			sizeof(sa.salg_name) - 1);
+		break;
+	}
+
+	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
+		return;
+
+	/* Set a key — required for skcipher/aead, harmless for hash */
+	keylen = (rand() % 32) + 16;	/* 16..47 bytes */
+	generate_rand_bytes(key, keylen);
+	(void) setsockopt(fd, SOL_ALG, ALG_SET_KEY, key, keylen);
+
+	/* accept() gives us a child fd for actual crypto I/O */
+	child_fd = accept(fd, NULL, NULL);
+	if (child_fd == -1)
+		return;
+
+	/* The child fd is where sendmsg/recvmsg would happen.
+	 * We close it here — the fuzzer will exercise the parent
+	 * fd via random setsockopt/sendmsg calls independently. */
+	close(child_fd);
+}
+
 const struct netproto proto_alg = {
 	.name = "alg",
-//	.socket = alg_rand_socket,
+	.socket_setup = alg_socket_setup,
 	.setsockopt = alg_setsockopt,
 	.gen_sockaddr = alg_gen_sockaddr,
 	.valid_triplets = alg_triplet,
