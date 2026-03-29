@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE4(msgsnd, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz, int, msgflg)
  */
+#include <stddef.h>
 #include <sys/types.h>
 #include <linux/msg.h>
 #include "compat.h"
@@ -9,6 +10,22 @@
 static unsigned long msgsnd_flags[] = {
 	MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT,
 };
+
+static void sanitise_msgsnd(struct syscallrecord *rec)
+{
+	struct msgbuf *msgp;
+	size_t msgsz = rand() % 256;
+
+	msgp = zmalloc(sizeof(struct msgbuf) + msgsz);
+	msgp->mtype = (rand() % 255) + 1;	/* mtype must be > 0 */
+	rec->a2 = (unsigned long) msgp;
+	rec->a3 = msgsz;
+}
+
+static void post_msgsnd(struct syscallrecord *rec)
+{
+	freeptr(&rec->a2);
+}
 
 struct syscallentry syscall_msgsnd = {
 	.name = "msgsnd",
@@ -20,4 +37,6 @@ struct syscallentry syscall_msgsnd = {
 	.hi1range = 65535,
 	.arg4list = ARGLIST(msgsnd_flags),
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_msgsnd,
+	.post = post_msgsnd,
 };
