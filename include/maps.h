@@ -17,6 +17,7 @@ struct map {
 	unsigned long size;
 	int prot;
 	int flags;
+	int fd;
 	unsigned char type;
 };
 

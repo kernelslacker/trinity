@@ -114,6 +114,7 @@ void init_child_mappings(void)
 		newobj->map.size = m->size;
 		newobj->map.prot = m->prot;
 		newobj->map.flags = m->flags;
+		newobj->map.fd = m->fd;
 		/* We leave type as 'INITIAL' until we change the mapping
 		 * by mprotect/mremap/munmap etc..
 		 */
@@ -212,6 +213,7 @@ retry_mmap:
 		offset = (obj->map.size > 0 ? rand() % obj->map.size : 0) & PAGE_MASK;
 
 	obj->map.prot = prot;
+	obj->map.fd = fd;
 	obj->map.type = MMAPED_FILE;
 	obj->map.ptr = mmap(NULL, obj->map.size, prot, get_rand_mmap_flags(), fd, offset);
 	if (obj->map.ptr == MAP_FAILED) {
