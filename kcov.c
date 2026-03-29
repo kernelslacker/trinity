@@ -98,7 +98,8 @@ void kcov_enable_trace(struct kcov_child *kc)
 		return;
 
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
-	ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC);
+	if (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0)
+		kc->active = false;
 }
 
 void kcov_enable_cmp(struct kcov_child *kc)
@@ -107,15 +108,17 @@ void kcov_enable_cmp(struct kcov_child *kc)
 		return;
 
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
-	ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_CMP);
+	if (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0)
+		kc->active = false;
 }
 
 void kcov_disable(struct kcov_child *kc)
 {
-	if (!kc->active)
+	if (kc->fd < 0 || kc->trace_buf == NULL)
 		return;
 
 	ioctl(kc->fd, KCOV_DISABLE, 0);
+	kc->active = true;
 }
 
 /*
