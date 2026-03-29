@@ -4,6 +4,7 @@
  */
 #include <linux/aio_abi.h>
 #include <string.h>
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "fd.h"
@@ -12,6 +13,8 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 {
 	struct iocb *iocb;
 	struct io_event *result;
+
+	rec->a1 = get_random_aio_ctx();
 
 	iocb = (struct iocb *) get_writable_address(sizeof(*iocb));
 	memset(iocb, 0, sizeof(*iocb));
@@ -30,7 +33,6 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 struct syscallentry syscall_io_cancel = {
 	.name = "io_cancel",
 	.num_args = 3,
-	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "ctx_id", [1] = "iocb", [2] = "result" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_cancel,
