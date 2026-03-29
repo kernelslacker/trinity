@@ -3,10 +3,13 @@
                             unsigned flags)
 
  */
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "net.h"
+#include "random.h"
 #include "sanitise.h"
+#include "trinity.h"
 #include "compat.h"
 
 static void sanitise_recv(struct syscallrecord *rec)
@@ -55,15 +58,67 @@ struct syscallentry syscall_recvfrom = {
 /*
  * SYSCALL_DEFINE3(recvmsg, int, fd, struct msghdr __user *, msg, unsigned int, flags)
  */
+static void sanitise_recvmsg(struct syscallrecord *rec)
+{
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct msghdr *msg;
+	struct sockaddr *sa = NULL;
+	socklen_t salen = 0;
+
+	if (si == NULL)		// handle --disable-fds=sockets
+		goto skip_si;
+
+	rec->a1 = fd_from_socketinfo(si);
+
+	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
+
+skip_si:
+	msg = zmalloc(sizeof(struct msghdr));
+	msg->msg_name = sa;
+	msg->msg_namelen = salen;
+
+	if (RAND_BOOL()) {
+		unsigned int num_entries = RAND_RANGE(1, 3);
+
+		msg->msg_iov = alloc_iovec(num_entries);
+		msg->msg_iovlen = num_entries;
+	}
+
+	if (RAND_BOOL()) {
+		msg->msg_controllen = rand32() % 4096;
+		msg->msg_control = zmalloc(msg->msg_controllen);
+	}
+
+	if (ONE_IN(100))
+		msg->msg_flags = rand32();
+	else
+		msg->msg_flags = 0;
+
+	rec->a2 = (unsigned long) msg;
+}
+
+static void post_recvmsg(struct syscallrecord *rec)
+{
+	struct msghdr *msg = (struct msghdr *) rec->a2;
+
+	if (msg != NULL) {
+		free(msg->msg_control);
+		free(msg->msg_iov);
+		free(msg->msg_name);
+		freeptr(&rec->a2);
+	}
+}
+
 struct syscallentry syscall_recvmsg = {
 	.name = "recvmsg",
 	.num_args = 3,
-	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LIST },
+	.argtype = { [0] = ARG_SOCKETINFO, [2] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "msg", [2] = "flags" },
 	.arg3list = ARGLIST(recv_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
-	.sanitise = sanitise_recv,	// same as recv
+	.sanitise = sanitise_recvmsg,
+	.post = post_recvmsg,
 };
 
 /*
