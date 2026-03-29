@@ -285,7 +285,7 @@ void handle_syscall_ret(struct syscallrecord *rec)
 				// But trinity isn't a 'normal' user program, we're doing
 				// stuff that libc hides from apps.
 				if (err < 512 || err > 530)
-					printf("errno out of range after doing %s: %d:%s\n",
+					outputerr("errno out of range after doing %s: %d:%s\n",
 						entry->name,
 						err, strerror(err));
 			}

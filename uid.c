@@ -97,7 +97,7 @@ void do_uid0_check(void)
 	}
 
 	if (clowntown == true) {
-		printf("THIS CLOWN GOES TO 11.\n");
+		output(0, "THIS CLOWN GOES TO 11.\n");
 		return;
 	}
 

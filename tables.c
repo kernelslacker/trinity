@@ -418,10 +418,10 @@ static void show_unannotated_biarch(void)
 				count++;
 		}
 		if (count != 0)
-			printf("%s has %u unannotated arguments\n", entry->name, count);
+			output(0, "%s has %u unannotated arguments\n", entry->name, count);
 	}
 
-	printf("\n");
+	output(0, "\n");
 
 	for_each_64bit_syscall(i) {
 		entry = syscalls_64bit[i].entry;
@@ -437,7 +437,7 @@ static void show_unannotated_biarch(void)
 			}
 		}
 		if (count != 0)
-			printf("%s has %u unannotated arguments\n", entry->name, count);
+			output(0, "%s has %u unannotated arguments\n", entry->name, count);
 	}
 }
 
