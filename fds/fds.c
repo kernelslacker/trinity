@@ -54,6 +54,7 @@ void register_fd_provider(const struct fd_provider *prov)
 	newnode->init = prov->init;
 	newnode->get = prov->get;
 	newnode->open = prov->open;
+	newnode->child_ops = prov->child_ops;
 	num_fd_providers++;
 
 	list_add_tail(&newnode->list, &fd_providers->list);
@@ -284,6 +285,26 @@ void try_regenerate_fd(enum objecttype type)
 				__atomic_add_fetch(&shm->stats.fd_regenerated, 1, __ATOMIC_RELAXED);
 			return;
 		}
+	}
+}
+
+/*
+ * Call child_ops for all initialized fd providers that have one.
+ * Invoked periodically from the child process to exercise fd-level
+ * operations (bind/listen/accept etc.) as fuzzing actions.
+ */
+void run_fd_provider_child_ops(void)
+{
+	struct list_head *node;
+
+	if (fd_providers == NULL)
+		return;
+
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider = (struct fd_provider *) node;
+
+		if (provider->initialized && provider->child_ops != NULL)
+			provider->child_ops();
 	}
 }
 

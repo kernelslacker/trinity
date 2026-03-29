@@ -19,12 +19,14 @@ struct fd_provider {
         int (*init)(void);
         int (*get)(void);
 	int (*open)(void);
+	void (*child_ops)(void);	/* optional: called periodically in child context */
 	bool enabled;
 	bool initialized;
 };
 
 void register_fd_provider(const struct fd_provider *prov);
 void dump_fd_provider_names(void);
+void run_fd_provider_child_ops(void);
 
 unsigned int check_if_fd(struct syscallrecord *rec);
 

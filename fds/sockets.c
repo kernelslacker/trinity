@@ -84,9 +84,7 @@ static struct object * add_socket(int fd, unsigned int domain, unsigned int type
  */
 static void socket_setup_lazy(struct socketinfo *si)
 {
-	struct sockaddr *sa = NULL;
 	const struct netproto *proto;
-	socklen_t salen;
 	struct sockopt so = { 0, 0, 0, 0 };
 	int fd = si->fd;
 
@@ -99,44 +97,6 @@ static void socket_setup_lazy(struct socketinfo *si)
 
 	/* Set some random socket options. */
 	sso_socket(&si->triplet, &so, fd);
-
-	/* Sometimes, bind and listen on the socket. */
-	if (RAND_BOOL()) {
-		int ret, one = 1;
-
-		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
-
-		ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-		if (ret == -1)
-			goto skip_bind;
-
-		ret = bind(fd, sa, salen);
-		if (ret != -1) {
-			int lret = listen(fd, RAND_RANGE(1, 128));
-			if (lret != -1) {
-				/*
-				 * Make the listening socket non-blocking so accept4
-				 * returns immediately if no connection is pending.
-				 * This creates connected socket pairs when another
-				 * child happens to connect, which are high-value for
-				 * fuzzing send/recv/ioctl paths.
-				 */
-				int flags = fcntl(fd, F_GETFL, 0);
-				if (flags != -1)
-					(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-				int afd = accept4(fd, NULL, NULL,
-						  SOCK_NONBLOCK | SOCK_CLOEXEC);
-				if (afd != -1)
-					(void) add_socket(afd, si->triplet.family,
-							  si->triplet.type,
-							  si->triplet.protocol);
-			}
-		}
-	}
-
-skip_bind:
-	if (sa != NULL)
-		free(sa);
 }
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
@@ -462,6 +422,51 @@ static void socket_dump(struct object *obj, enum obj_scope scope)
 		scope);
 }
 
+/*
+ * Child operation: randomly bind, listen, and accept4 on a socket.
+ * Called periodically during child fuzzing so sockets start unbound
+ * and children exercise the bind/listen/accept paths as fuzzing ops.
+ */
+static void socket_child_ops(void)
+{
+	struct socketinfo *si;
+	struct sockaddr *sa = NULL;
+	socklen_t salen;
+	int fd, ret, one = 1, flags, afd;
+
+	si = get_rand_socketinfo();
+	if (si == NULL)
+		return;
+
+	fd = si->fd;
+
+	generate_sockaddr((struct sockaddr **) &sa, &salen, si->triplet.family);
+
+	ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	if (ret == -1)
+		goto out;
+
+	ret = bind(fd, sa, salen);
+	if (ret == -1)
+		goto out;
+
+	ret = listen(fd, RAND_RANGE(1, 128));
+	if (ret == -1)
+		goto out;
+
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags != -1)
+		(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+	afd = accept4(fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
+	if (afd != -1)
+		(void) add_socket(afd, si->triplet.family,
+				  si->triplet.type, si->triplet.protocol);
+
+out:
+	free(sa);
+}
+
 static int open_sockets(void)
 {
 	struct objhead *head;
@@ -616,6 +621,7 @@ static const struct fd_provider socket_fd_provider = {
 	.init = &open_sockets,
 	.get = &get_rand_socket_fd,
 	.open = &open_socket_fd,
+	.child_ops = &socket_child_ops,
 };
 
 REG_FD_PROV(socket_fd_provider);
