@@ -25,7 +25,7 @@ struct syscall syscall_perfmonctl = {
 	.num_args = 4,
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg", [3] = "count" },
 	.argtype = { [0] = ARG_FD, [1] = ARG_LIST, [2] = ARG_ADDRESS },
-	.arg2list = {
+	.arg_params[1].list = {
 		.num = 12,
 		.values = { PFM_CREATE_CONTEXT, PFM_WRITE_PMCS, PFM_WRITE_PMDS,
 			    PFM_READ_PMDS, PFM_START, PFM_STOP, PFM_LOAD_CONTEXT,

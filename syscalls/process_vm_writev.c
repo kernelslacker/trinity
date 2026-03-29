@@ -15,5 +15,5 @@ struct syscallentry syscall_process_vm_writev = {
 	.num_args = 6,
 	.argtype = { [0] = ARG_PID, [1] = ARG_IOVEC, [2] = ARG_IOVECLEN, [3] = ARG_IOVEC, [4] = ARG_IOVECLEN, [5] = ARG_LIST },
 	.argname = { [0] = "pid", [1] = "lvec", [2] = "liovcnt", [3] = "rvec", [4] = "riovcnt", [5] = "flags" },
-	.arg6list = ARGLIST(process_vm_writev_flags),
+	.arg_params[5].list = ARGLIST(process_vm_writev_flags),
 };

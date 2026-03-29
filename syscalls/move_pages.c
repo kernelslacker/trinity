@@ -80,7 +80,7 @@ struct syscallentry syscall_move_pages = {
 	.num_args = 6,
 	.argtype = { [0] = ARG_PID, [1] = ARG_LEN, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_LIST },
 	.argname = { [0] = "pid", [1] = "nr_pages", [2] = "pages", [3] = "nodes", [4] = "status", [5] = "flags" },
-	.arg6list = ARGLIST(move_pages_flags),
+	.arg_params[5].list = ARGLIST(move_pages_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_move_pages,
 	.post = post_move_pages,

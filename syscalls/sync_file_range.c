@@ -48,7 +48,7 @@ struct syscallentry syscall_sync_file_range = {
 	.sanitise = sanitise_sync_file_range,
 	.argtype = { [0] = ARG_FD, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "offset", [2] = "nbytes", [3] = "flags" },
-	.arg4list = ARGLIST(sync_file_range_flags),
+	.arg_params[3].list = ARGLIST(sync_file_range_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
@@ -63,7 +63,7 @@ struct syscallentry syscall_sync_file_range2 = {
 	.sanitise = sanitise_sync_file_range,
 	.argtype = { [0] = ARG_FD, [1] = ARG_LIST, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "flags", [2] = "offset", [3] = "nbytes" },
-	.arg2list = ARGLIST(sync_file_range_flags),
+	.arg_params[1].list = ARGLIST(sync_file_range_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

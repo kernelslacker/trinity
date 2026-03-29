@@ -20,7 +20,7 @@ struct syscallentry syscall_fspick = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_OP },
 	.argname = { [0] = "dfd", [1] = "path", [2] = "flags" },
-	.arg3list = ARGLIST(fspick_flags),
+	.arg_params[2].list = ARGLIST(fspick_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,

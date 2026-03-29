@@ -20,7 +20,7 @@ struct syscallentry syscall_inotify_add_watch = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD_INOTIFY, [1] = ARG_PATHNAME, [2] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "pathname", [2] = "mask" },
-	.arg3list = ARGLIST(inotify_add_watch_masks),
+	.arg_params[2].list = ARGLIST(inotify_add_watch_masks),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

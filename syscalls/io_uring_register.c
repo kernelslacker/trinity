@@ -89,5 +89,5 @@ struct syscallentry syscall_io_uring_register = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_IO_URING, [1] = ARG_OP, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "opcode", [2] = "arg", [3] = "nr_args" },
-	.arg2list = ARGLIST(io_uring_register_opcodes),
+	.arg_params[1].list = ARGLIST(io_uring_register_opcodes),
 };

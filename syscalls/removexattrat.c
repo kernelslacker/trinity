@@ -23,7 +23,7 @@ struct syscallentry syscall_removexattrat = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "name" },
-	.arg3list = ARGLIST(removexattrat_at_flags),
+	.arg_params[2].list = ARGLIST(removexattrat_at_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_removexattrat,

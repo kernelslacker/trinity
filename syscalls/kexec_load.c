@@ -68,7 +68,7 @@ struct syscallentry syscall_kexec_load = {
 	.num_args = 4,
 	.argtype = { [3] = ARG_LIST },
 	.argname = { [0] = "entry", [1] = "nr_segments", [2] = "segments", [3] = "flags" },
-	.arg4list = ARGLIST(kexec_load_flags),
+	.arg_params[3].list = ARGLIST(kexec_load_flags),
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_kexec_load,

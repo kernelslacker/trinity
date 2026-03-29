@@ -69,7 +69,7 @@ struct syscallentry syscall_modify_ldt = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "func", [1] = "ptr", [2] = "bytecount" },
-	.arg1list = ARGLIST(modify_ldt_funcs),
+	.arg_params[0].list = ARGLIST(modify_ldt_funcs),
 	.sanitise = sanitise_modify_ldt,
 	.post = post_modify_ldt,
 };

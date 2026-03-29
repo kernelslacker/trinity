@@ -329,7 +329,7 @@ struct syscallentry syscall_futex = {
 	.num_args = 6,
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_OP, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS },
 	.argname = { [0] = "uaddr", [1] = "op", [2] = "val", [3] = "utime", [4] = "uaddr2", [5] = "val3" },
-	.arg2list = ARGLIST(futex_ops),
+	.arg_params[1].list = ARGLIST(futex_ops),
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex,
 	.post = post_futex,

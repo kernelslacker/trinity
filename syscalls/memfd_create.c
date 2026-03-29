@@ -32,7 +32,7 @@ struct syscallentry syscall_memfd_create = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_LIST },
 	.argname = { [0] = "uname", [1] = "flag" },
-	.arg2list = ARGLIST(memfd_create_flags),
+	.arg_params[1].list = ARGLIST(memfd_create_flags),
 	.rettype = RET_FD,
 	.post = post_memfd_create,
 	.group = GROUP_VFS,

@@ -54,7 +54,7 @@ struct syscallentry syscall_syslog = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_OP, [1] = ARG_MMAP, [2] = ARG_LEN },
 	.argname = { [0] = "type", [1] = "buf", [2] = "len" },
-	.arg1list = ARGLIST(syslog_types),
+	.arg_params[0].list = ARGLIST(syslog_types),
 	.sanitise = sanitise_syslog,
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,

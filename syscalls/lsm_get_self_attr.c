@@ -31,8 +31,8 @@ struct syscallentry syscall_lsm_get_self_attr = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_OP, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_NON_NULL_ADDRESS, [3] = ARG_LIST },
 	.argname = { [0] = "attr", [1] = "ctx", [2] = "size", [3] = "flags" },
-	.arg1list = ARGLIST(lsm_attrs),
-	.arg4list = ARGLIST(lsm_get_flags),
+	.arg_params[0].list = ARGLIST(lsm_attrs),
+	.arg_params[3].list = ARGLIST(lsm_get_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 };

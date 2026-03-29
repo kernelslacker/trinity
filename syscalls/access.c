@@ -17,6 +17,6 @@ struct syscallentry syscall_access = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LIST },
 	.argname = { [0] = "filename", [1] = "mode" },
-	.arg2list = ARGLIST(access_modes),
+	.arg_params[1].list = ARGLIST(access_modes),
 	.group = GROUP_VFS,
 };

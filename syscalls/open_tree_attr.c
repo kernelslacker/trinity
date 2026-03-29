@@ -25,7 +25,7 @@ struct syscallentry syscall_open_tree_attr = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [3] = ARG_ADDRESS, [4] = ARG_LEN },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags", [3] = "uattr", [4] = "usize" },
-	.arg3list = ARGLIST(open_tree_attr_flags),
+	.arg_params[2].list = ARGLIST(open_tree_attr_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,

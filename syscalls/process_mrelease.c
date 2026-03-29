@@ -13,5 +13,5 @@ struct syscallentry syscall_process_mrelease = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_FD_PIDFD, [1] = ARG_LIST },
 	.argname = { [0] = "pidfd", [1] = "flags" },
-	.arg2list = ARGLIST(process_mrelease_flags),
+	.arg_params[1].list = ARGLIST(process_mrelease_flags),
 };

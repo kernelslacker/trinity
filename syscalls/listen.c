@@ -8,8 +8,8 @@ struct syscallentry syscall_listen = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_FD_SOCKET, [1] = ARG_RANGE },
 	.argname = { [0] = "fd", [1] = "backlog" },
-	.low2range = 0,
-	.hi2range = 128,
+	.arg_params[1].range.low = 0,
+	.arg_params[1].range.hi = 128,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 };

@@ -61,7 +61,7 @@ struct syscallentry syscall_epoll_create1 = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "flags" },
-	.arg1list = ARGLIST(epoll_create_flags),
+	.arg_params[0].list = ARGLIST(epoll_create_flags),
 	.rettype = RET_FD,
 	.post = post_epoll_create,
 	.group = GROUP_VFS,

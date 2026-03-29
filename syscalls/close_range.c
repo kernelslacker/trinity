@@ -63,7 +63,7 @@ struct syscallentry syscall_close_range = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [1] = ARG_FD, [2] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "max_fd", [2] = "flags" },
-	.arg3list = ARGLIST(close_range_flags),
+	.arg_params[2].list = ARGLIST(close_range_flags),
 	.post = post_close_range,
 	.flags = AVOID_SYSCALL,
 	.rettype = RET_ZERO_SUCCESS,

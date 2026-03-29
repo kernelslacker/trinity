@@ -48,7 +48,7 @@ struct syscallentry syscall_s390_sthyi = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_LIST, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_RANGE },
 	.argname = { [0] = "function_code", [1] = "resp_buffer", [2] = "return_code", [3] = "resp_buffer" },
-	.arg1list = ARGLIST(syscall_s390_sthyi_arg1),
-	.low4range = 0,
-	.hi4range = 128
+	.arg_params[0].list = ARGLIST(syscall_s390_sthyi_arg1),
+	.arg_params[3].range.low = 0,
+	.arg_params[3].range.hi = 128
 };

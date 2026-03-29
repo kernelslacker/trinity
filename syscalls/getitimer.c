@@ -14,6 +14,6 @@ struct syscallentry syscall_getitimer = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_OP, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "which", [1] = "value" },
-	.arg1list = ARGLIST(getitimer_which),
+	.arg_params[0].list = ARGLIST(getitimer_which),
 	.rettype = RET_ZERO_SUCCESS,
 };

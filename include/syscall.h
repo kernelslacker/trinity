@@ -119,35 +119,22 @@ struct syscallentry {
 
 	const char *argname[6];
 
-	struct results results1;
-	struct results results2;
-	struct results results3;
-	struct results results4;
-	struct results results5;
-	struct results results6;
+	struct results results[6];
 
 	unsigned int successes, failures, attempted;
 	unsigned int errnos[NR_ERRNOS];
 
-	/* FIXME: At some point, if we grow more type specific parts here,
-	 * it may be worth union-ising this
+	/*
+	 * Per-argument type-specific parameters, indexed [0..5] for args 1..6.
+	 * ARG_RANGE uses .range.{low,hi}; ARG_OP/ARG_LIST uses .list.
+	 * An argument can only ever be one type, so these are unioned.
 	 */
-
-	/* ARG_RANGE */
-	const unsigned int low1range, hi1range;
-	const unsigned int low2range, hi2range;
-	const unsigned int low3range, hi3range;
-	const unsigned int low4range, hi4range;
-	const unsigned int low5range, hi5range;
-	const unsigned int low6range, hi6range;
-
-	/* ARG_OP / ARG_LIST */
-	const struct arglist arg1list;
-	const struct arglist arg2list;
-	const struct arglist arg3list;
-	const struct arglist arg4list;
-	const struct arglist arg5list;
-	const struct arglist arg6list;
+	struct arg_param {
+		union {
+			struct { unsigned int low, hi; } range;
+			struct arglist list;
+		};
+	} arg_params[6];
 
 	const unsigned int group;
 	const int rettype;

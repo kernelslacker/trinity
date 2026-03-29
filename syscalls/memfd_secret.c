@@ -16,7 +16,7 @@ struct syscallentry syscall_memfd_secret = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "flag" },
-	.arg1list = ARGLIST(memfd_secret_flags),
+	.arg_params[0].list = ARGLIST(memfd_secret_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 };

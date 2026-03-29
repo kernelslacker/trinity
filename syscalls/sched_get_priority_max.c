@@ -15,5 +15,5 @@ struct syscallentry syscall_sched_get_priority_max = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "policy" },
-	.arg1list = ARGLIST(sched_policies),
+	.arg_params[0].list = ARGLIST(sched_policies),
 };

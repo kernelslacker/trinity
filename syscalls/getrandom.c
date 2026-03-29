@@ -30,7 +30,7 @@ struct syscallentry syscall_getrandom = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_LIST },
 	.argname = { [0] = "buf", [1] = "count", [2] = "flags" },
-	.arg3list = ARGLIST(getrandom_flags),
+	.arg_params[2].list = ARGLIST(getrandom_flags),
 	.sanitise = sanitise_getrandom,
 	.group = GROUP_PROCESS,
 };

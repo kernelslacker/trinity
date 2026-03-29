@@ -55,8 +55,8 @@ struct syscallentry syscall_semtimedop = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_RANGE },
 	.argname = { [0] = "semid", [1] = "tsops", [2] = "nsops", [3] = "timeout" },
-	.low1range = 0,
-	.hi1range = 65535,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_semtimedop,
 };

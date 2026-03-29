@@ -23,7 +23,7 @@ struct syscallentry syscall_fsetxattr = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD, [2] = ARG_ADDRESS, [3] = ARG_LEN, [4] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "name", [2] = "value", [3] = "size", [4] = "flags" },
-	.arg5list = ARGLIST(fsetxattr_flags),
+	.arg_params[4].list = ARGLIST(fsetxattr_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

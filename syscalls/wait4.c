@@ -15,5 +15,5 @@ struct syscallentry syscall_wait4 = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_PID, [1] = ARG_ADDRESS, [2] = ARG_LIST, [3] = ARG_ADDRESS },
 	.argname = { [0] = "upid", [1] = "stat_addr", [2] = "options", [3] = "ru" },
-	.arg3list = ARGLIST(wait_options),
+	.arg_params[2].list = ARGLIST(wait_options),
 };

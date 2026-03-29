@@ -36,8 +36,8 @@ struct syscallentry syscall_timerfd_create = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_OP, [1] = ARG_LIST },
 	.argname = { [0] = "clockid", [1] = "flags" },
-	.arg1list = ARGLIST(timerfd_create_clockids),
-	.arg2list = ARGLIST(timerfd_create_flags),
+	.arg_params[0].list = ARGLIST(timerfd_create_clockids),
+	.arg_params[1].list = ARGLIST(timerfd_create_flags),
 	.rettype = RET_FD,
 	.post = post_timerfd_create,
 };

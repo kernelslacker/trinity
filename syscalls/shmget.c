@@ -27,8 +27,8 @@ struct syscallentry syscall_shmget = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_RANGE, [1] = ARG_LEN, [2] = ARG_LIST },
 	.argname = { [0] = "key", [1] = "size", [2] = "shmflg" },
-	.low1range = 0,
-	.hi1range = 65535,
-	.arg3list = ARGLIST(ipc_flags),
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
+	.arg_params[2].list = ARGLIST(ipc_flags),
 	.post = post_shmget,
 };

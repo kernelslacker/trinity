@@ -74,13 +74,13 @@ struct syscallentry syscall_mbind = {
 	.argname = { [0] = "start", [1] = "len", [2] = "mode", [3] = "nmask", [4] = "maxnode", [5] = "flags" },
 
 
-	.arg3list = ARGLIST(mbind_modes),
+	.arg_params[2].list = ARGLIST(mbind_modes),
 
 
-	.low5range = 0,
-	.hi5range = 32,
+	.arg_params[4].range.low = 0,
+	.arg_params[4].range.hi = 32,
 
-	.arg6list = ARGLIST(mbind_flags),
+	.arg_params[5].list = ARGLIST(mbind_flags),
 
 	.sanitise = sanitise_mbind,
 	.group = GROUP_VM,

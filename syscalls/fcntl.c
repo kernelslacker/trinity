@@ -178,7 +178,7 @@ struct syscallentry syscall_fcntl = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
-	.arg2list = ARGLIST(fcntl_flags),
+	.arg_params[1].list = ARGLIST(fcntl_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_fcntl,

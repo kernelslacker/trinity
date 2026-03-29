@@ -13,6 +13,6 @@ struct syscallentry syscall_pidfd_getfd = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD_PIDFD, [1] = ARG_FD, [2] = ARG_LIST },
 	.argname = { [0] = "pidfd", [1] = "fd", [2] = "flags" },
-	.arg3list = ARGLIST(pidfd_getfd_flags),
+	.arg_params[2].list = ARGLIST(pidfd_getfd_flags),
 	.rettype = RET_FD,
 };

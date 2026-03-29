@@ -15,6 +15,6 @@ struct syscallentry syscall_getpriority = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_OP, [1] = ARG_PID },
 	.argname = { [0] = "which", [1] = "who" },
-	.arg1list = ARGLIST(getpriority_which),
+	.arg_params[0].list = ARGLIST(getpriority_which),
 	.group = GROUP_SCHED,
 };

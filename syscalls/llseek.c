@@ -23,7 +23,7 @@ struct syscallentry syscall_llseek = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD, [3] = ARG_ADDRESS, [4] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "offset_high", [2] = "offset_low", [3] = "result", [4] = "origin" },
-	.arg5list = ARGLIST(llseek_origins),
+	.arg_params[4].list = ARGLIST(llseek_origins),
 	.sanitise = sanitise_llseek,
 	.group = GROUP_VFS,
 };

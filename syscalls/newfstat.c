@@ -32,6 +32,6 @@ struct syscallentry syscall_newfstatat = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_NON_NULL_ADDRESS, [3] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "statbuf", [3] = "flag" },
-	.arg4list = ARGLIST(newfstatat_flags),
+	.arg_params[3].list = ARGLIST(newfstatat_flags),
 	.group = GROUP_VFS,
 };

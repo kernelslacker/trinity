@@ -110,7 +110,7 @@ struct syscallentry syscall_dup3 = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [1] = ARG_FD, [2] = ARG_LIST },
 	.argname = { [0] = "oldfd", [1] = "newfd", [2] = "flags" },
-	.arg3list = ARGLIST(dup3_flags),
+	.arg_params[2].list = ARGLIST(dup3_flags),
 	.rettype = RET_FD,
 	.post = post_dup2,
 	.flags = NEED_ALARM,

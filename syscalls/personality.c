@@ -16,5 +16,5 @@ struct syscallentry syscall_personality = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "personality" },
-	.arg1list = ARGLIST(personalities),
+	.arg_params[0].list = ARGLIST(personalities),
 };

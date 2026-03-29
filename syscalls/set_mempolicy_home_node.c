@@ -13,8 +13,8 @@ struct syscallentry syscall_set_mempolicy_home_node = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_RANGE },
 	.argname = { [0] = "start", [1] = "len", [2] = "home_node", [3] = "flags" },
-	.low3range = 0,
-	.hi3range = 7,
+	.arg_params[2].range.low = 0,
+	.arg_params[2].range.hi = 7,
 	.sanitise = sanitise_set_mempolicy_home_node,
 	.group = GROUP_VM,
 };

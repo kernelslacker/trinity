@@ -18,6 +18,6 @@ struct syscallentry syscall_tgkill = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_PID, [1] = ARG_PID, [2] = ARG_OP },
 	.argname = { [0] = "tgid", [1] = "pid", [2] = "sig" },
-	.arg3list = ARGLIST(safe_signals),
+	.arg_params[2].list = ARGLIST(safe_signals),
 	.flags = AVOID_SYSCALL,
 };

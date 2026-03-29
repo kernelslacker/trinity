@@ -29,8 +29,8 @@ struct syscallentry syscall_shmat = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_RANGE, [2] = ARG_LIST },
 	.argname = { [0] = "shmid", [1] = "shmaddr", [2] = "shmflg" },
-	.low1range = 0,
-	.hi1range = 65535,
-	.arg3list = ARGLIST(shmat_flags),
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
+	.arg_params[2].list = ARGLIST(shmat_flags),
 	.sanitise = sanitise_shmat,
 };

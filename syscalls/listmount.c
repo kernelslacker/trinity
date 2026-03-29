@@ -51,7 +51,7 @@ struct syscallentry syscall_listmount = {
 	.num_args = 4,
 	.argtype = { [3] = ARG_LIST },
 	.argname = { [0] = "req", [1] = "mnt_ids", [2] = "nr_mnt_ids", [3] = "flags" },
-	.arg4list = ARGLIST(listmount_flags),
+	.arg_params[3].list = ARGLIST(listmount_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_listmount,

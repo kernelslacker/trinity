@@ -20,7 +20,7 @@ struct syscallentry syscall_msgget = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_RANGE, [1] = ARG_LIST },
 	.argname = { [0] = "key", [1] = "msgflg" },
-	.low1range = 0,
-	.hi1range = 65535,
-	.arg2list = ARGLIST(ipc_flags),
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
+	.arg_params[1].list = ARGLIST(ipc_flags),
 };

@@ -9,6 +9,6 @@ struct syscallentry syscall_timer_getoverrun = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_RANGE },
 	.argname = { [0] = "timer_id" },
-	.low1range = 0,
-	.hi1range = 31,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 31,
 };

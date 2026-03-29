@@ -42,5 +42,5 @@ struct syscallentry syscall_s390_guarded_storage = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_LIST, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "command", [1] = "gs_cb" },
-	.arg1list = ARGLIST(syscall_s390_guarded_storage_arg1),
+	.arg_params[0].list = ARGLIST(syscall_s390_guarded_storage_arg1),
 };

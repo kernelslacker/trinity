@@ -19,6 +19,6 @@ struct syscallentry syscall_request_key = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_OP },
 	.argname = { [0] = "_type", [1] = "_description", [2] = "_callout_info", [3] = "destringid" },
-	.arg4list = ARGLIST(request_key_ids),
+	.arg_params[3].list = ARGLIST(request_key_ids),
 	.group = GROUP_IPC,
 };

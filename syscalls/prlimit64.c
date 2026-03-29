@@ -47,7 +47,7 @@ struct syscallentry syscall_prlimit64 = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_PID, [1] = ARG_OP, [3] = ARG_ADDRESS },
 	.argname = { [0] = "pid", [1] = "resource", [2] = "new_rlim", [3] = "old_rlim" },
-	.arg2list = ARGLIST(rlimit_resources),
+	.arg_params[1].list = ARGLIST(rlimit_resources),
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_prlimit64,
 };

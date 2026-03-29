@@ -18,6 +18,6 @@ struct syscallentry syscall_tkill = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_PID, [1] = ARG_OP },
 	.argname = { [0] = "pid", [1] = "sig" },
-	.arg2list = ARGLIST(safe_signals),
+	.arg_params[1].list = ARGLIST(safe_signals),
 	.flags = AVOID_SYSCALL,
 };

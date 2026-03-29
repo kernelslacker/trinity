@@ -42,9 +42,9 @@ struct syscallentry syscall_shmctl = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_RANGE, [1] = ARG_OP, [2] = ARG_ADDRESS },
 	.argname = { [0] = "shmid", [1] = "cmd", [2] = "buf" },
-	.low1range = 0,
-	.hi1range = 65535,
-	.arg2list = ARGLIST(shmctl_ops),
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
+	.arg_params[1].list = ARGLIST(shmctl_ops),
 	.sanitise = sanitise_shmctl,
 	.post = post_shmctl,
 };

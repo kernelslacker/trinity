@@ -17,7 +17,7 @@ struct syscallentry syscall_flock = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "cmd" },
-	.arg2list = ARGLIST(flock_cmds),
+	.arg_params[1].list = ARGLIST(flock_cmds),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

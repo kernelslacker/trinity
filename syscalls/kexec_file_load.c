@@ -19,7 +19,7 @@ struct syscallentry syscall_kexec_file_load = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD, [1] = ARG_FD, [2] = ARG_LEN, [3] = ARG_ADDRESS, [4] = ARG_LIST },
 	.argname = { [0] = "kernel_fd", [1] = "initrd_fd", [2] = "cmdline_len", [3] = "cmdline_ptr", [4] = "flags" },
-	.arg5list = ARGLIST(kexec_file_load_flags),
+	.arg_params[4].list = ARGLIST(kexec_file_load_flags),
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,
 };

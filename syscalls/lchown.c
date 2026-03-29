@@ -8,10 +8,10 @@ struct syscallentry syscall_lchown = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_RANGE, [2] = ARG_RANGE },
 	.argname = { [0] = "filename", [1] = "user", [2] = "group" },
-	.low2range = 0,
-	.hi2range = 65535,
-	.low3range = 0,
-	.hi3range = 65535,
+	.arg_params[1].range.low = 0,
+	.arg_params[1].range.hi = 65535,
+	.arg_params[2].range.low = 0,
+	.arg_params[2].range.hi = 65535,
 	.group = GROUP_VFS,
 };
 
@@ -24,9 +24,9 @@ struct syscallentry syscall_lchown16 = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_RANGE, [2] = ARG_RANGE },
 	.argname = { [0] = "filename", [1] = "user", [2] = "group" },
-	.low2range = 0,
-	.hi2range = 65535,
-	.low3range = 0,
-	.hi3range = 65535,
+	.arg_params[1].range.low = 0,
+	.arg_params[1].range.hi = 65535,
+	.arg_params[2].range.low = 0,
+	.arg_params[2].range.hi = 65535,
 	.group = GROUP_VFS,
 };

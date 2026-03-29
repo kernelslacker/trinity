@@ -45,7 +45,7 @@ struct syscallentry syscall_setrlimit = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "resource", [1] = "rlim" },
-	.arg1list = ARGLIST(rlimit_resources),
+	.arg_params[0].list = ARGLIST(rlimit_resources),
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_setrlimit,
 };

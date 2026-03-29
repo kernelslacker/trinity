@@ -33,6 +33,6 @@ struct syscallentry syscall_sched_setscheduler = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_PID, [1] = ARG_OP, [2] = ARG_ADDRESS },
 	.argname = { [0] = "pid", [1] = "policy", [2] = "param" },
-	.arg2list = ARGLIST(sched_setscheduler_policies),
+	.arg_params[1].list = ARGLIST(sched_setscheduler_policies),
 	.sanitise = sanitise_sched_setscheduler,
 };
