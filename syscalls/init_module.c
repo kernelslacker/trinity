@@ -7,12 +7,8 @@
 struct syscallentry syscall_init_module = {
 	.name = "init_module",
 	.num_args = 3,
-	.arg1name = "umod",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
-	.arg3name = "uargs",
-	.arg3type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN, [2] = ARG_ADDRESS },
+	.argname = { [0] = "umod", [1] = "len", [2] = "uargs" },
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,
 };

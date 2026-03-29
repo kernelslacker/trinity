@@ -6,6 +6,6 @@
 struct syscallentry syscall_ssetmask = {
 	.name = "ssetmask",
 	.num_args = 1,
-	.arg1name = "newmask",
+	.argname = { [0] = "newmask" },
 	.group = GROUP_PROCESS,
 };

@@ -44,8 +44,8 @@ static unsigned long inotify_init1_flags[] = {
 struct syscallentry syscall_inotify_init1 = {
 	.name = "inotify_init1",
 	.num_args = 1,
-	.arg1name = "flags",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST },
+	.argname = { [0] = "flags" },
 	.arg1list = ARGLIST(inotify_init1_flags),
 	.group = GROUP_VFS,
 	.rettype = RET_FD,

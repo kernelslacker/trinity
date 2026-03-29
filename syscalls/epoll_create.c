@@ -33,8 +33,8 @@ static void post_epoll_create(struct syscallrecord *rec)
 struct syscallentry syscall_epoll_create = {
 	.name = "epoll_create",
 	.num_args = 1,
-	.arg1name = "size",
-	.arg1type = ARG_LEN,
+	.argtype = { [0] = ARG_LEN },
+	.argname = { [0] = "size" },
 	.rettype = RET_FD,
 	.post = post_epoll_create,
 	.group = GROUP_VFS,
@@ -59,8 +59,8 @@ static unsigned long epoll_create_flags[] = {
 struct syscallentry syscall_epoll_create1 = {
 	.name = "epoll_create1",
 	.num_args = 1,
-	.arg1name = "flags",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST },
+	.argname = { [0] = "flags" },
 	.arg1list = ARGLIST(epoll_create_flags),
 	.rettype = RET_FD,
 	.post = post_epoll_create,

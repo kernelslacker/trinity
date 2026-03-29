@@ -6,10 +6,8 @@
 struct syscallentry syscall_getcwd = {
 	.name = "getcwd",
 	.num_args = 2,
-	.arg1name = "buf",
-	.arg1type = ARG_NON_NULL_ADDRESS,
-	.arg2name = "size",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_LEN },
+	.argname = { [0] = "buf", [1] = "size" },
 	.rettype = RET_PATH,
 	.group = GROUP_VFS,
 };

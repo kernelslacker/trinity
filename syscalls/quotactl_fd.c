@@ -66,11 +66,8 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 struct syscallentry syscall_quotactl_fd = {
 	.name = "quotactl_fd",
 	.num_args = 4,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "cmd",
-	.arg3name = "id",
-	.arg4name = "addr",
+	.argtype = { [0] = ARG_FD },
+	.argname = { [0] = "fd", [1] = "cmd", [2] = "id", [3] = "addr" },
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_quotactl_fd,

@@ -298,12 +298,12 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	}
 	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
 
-	generic_post(entry->arg1type, rec->a1);
-	generic_post(entry->arg2type, rec->a2);
-	generic_post(entry->arg3type, rec->a3);
-	generic_post(entry->arg4type, rec->a4);
-	generic_post(entry->arg5type, rec->a5);
-	generic_post(entry->arg6type, rec->a6);
+	generic_post(entry->argtype[0], rec->a1);
+	generic_post(entry->argtype[1], rec->a2);
+	generic_post(entry->argtype[2], rec->a3);
+	generic_post(entry->argtype[3], rec->a4);
+	generic_post(entry->argtype[4], rec->a5);
+	generic_post(entry->argtype[5], rec->a6);
 
 	if (entry->post)
 	    entry->post(rec);

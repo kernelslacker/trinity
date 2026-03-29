@@ -25,9 +25,8 @@ struct syscallentry syscall_sched_setparam = {
 	.name = "sched_setparam",
 	.group = GROUP_SCHED,
 	.num_args = 2,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "param",
+	.argtype = { [0] = ARG_PID },
+	.argname = { [0] = "pid", [1] = "param" },
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_sched_setparam,
 };

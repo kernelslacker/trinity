@@ -14,9 +14,8 @@ static void sanitise_fremovexattr(struct syscallrecord *rec)
 struct syscallentry syscall_fremovexattr = {
 	.name = "fremovexattr",
 	.num_args = 2,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "name",
+	.argtype = { [0] = ARG_FD },
+	.argname = { [0] = "fd", [1] = "name" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

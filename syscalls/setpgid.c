@@ -7,8 +7,6 @@ struct syscallentry syscall_setpgid = {
 	.name = "setpgid",
 	.group = GROUP_PROCESS,
 	.num_args = 2,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "pgid",
-	.arg2type = ARG_PID,
+	.argtype = { [0] = ARG_PID, [1] = ARG_PID },
+	.argname = { [0] = "pid", [1] = "pgid" },
 };

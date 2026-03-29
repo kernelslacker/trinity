@@ -8,11 +8,9 @@ struct syscallentry syscall_signal = {
 	.name = "signal",
 	.group = GROUP_SIGNAL,
 	.num_args = 2,
-	.arg1name = "sig",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE, [1] = ARG_ADDRESS },
+	.argname = { [0] = "sig", [1] = "handler" },
 	.low1range = 0,
 	.hi1range = _NSIG,
-	.arg2name = "handler",
-	.arg2type = ARG_ADDRESS,
 	.flags = AVOID_SYSCALL,
 };

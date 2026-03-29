@@ -9,8 +9,8 @@
 struct syscallentry syscall_brk = {
 	.name = "brk",
 	.num_args = 1,
-	.arg1name = "brk",
-	.arg1type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS },
+	.argname = { [0] = "brk" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = AVOID_SYSCALL,
 	.group = GROUP_VM,

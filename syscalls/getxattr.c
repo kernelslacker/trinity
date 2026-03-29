@@ -15,13 +15,8 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 struct syscallentry syscall_getxattr = {
 	.name = "getxattr",
 	.num_args = 4,
-	.arg1name = "pathname",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "name",
-	.arg3name = "value",
-	.arg3type = ARG_ADDRESS,
-	.arg4name = "size",
-	.arg4type = ARG_LEN,
+	.argtype = { [0] = ARG_PATHNAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
+	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_getxattr,
 };

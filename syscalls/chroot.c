@@ -9,8 +9,8 @@
 struct syscallentry syscall_chroot = {
 	.name = "chroot",
 	.num_args = 1,
-	.arg1name = "filename",
-	.arg1type = ARG_PATHNAME,
+	.argtype = { [0] = ARG_PATHNAME },
+	.argname = { [0] = "filename" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,

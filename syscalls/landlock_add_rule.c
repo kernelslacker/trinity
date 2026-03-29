@@ -61,13 +61,9 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 struct syscallentry syscall_landlock_add_rule = {
 	.name = "landlock_add_rule",
 	.num_args = 4,
-	.arg1name = "ruleset_fd",
-	.arg1type = ARG_FD_LANDLOCK,
-	.arg2name = "rule_type",
-	.arg2type = ARG_OP,
+	.argtype = { [0] = ARG_FD_LANDLOCK, [1] = ARG_OP },
+	.argname = { [0] = "ruleset_fd", [1] = "rule_type", [2] = "rule_attr", [3] = "flags" },
 	.arg2list = ARGLIST(landlock_ruletypes),
-	.arg3name = "rule_attr",
-	.arg4name = "flags",
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_landlock_add_rule,
 };

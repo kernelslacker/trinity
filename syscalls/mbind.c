@@ -44,26 +44,16 @@ static unsigned long mbind_flags[] = {
 struct syscallentry syscall_mbind = {
 	.name = "mbind",
 	.num_args = 6,
-	.arg1name = "start",
-	.arg1type = ARG_MMAP,
+	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_LIST, [3] = ARG_ADDRESS, [4] = ARG_RANGE, [5] = ARG_LIST },
+	.argname = { [0] = "start", [1] = "len", [2] = "mode", [3] = "nmask", [4] = "maxnode", [5] = "flags" },
 
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
 
-	.arg3name = "mode",
-	.arg3type = ARG_LIST,
 	.arg3list = ARGLIST(mbind_modes),
 
-	.arg4name = "nmask",
-	.arg4type = ARG_ADDRESS,
 
-	.arg5name = "maxnode",
-	.arg5type = ARG_RANGE,
 	.low5range = 0,
 	.hi5range = 32,
 
-	.arg6name = "flags",
-	.arg6type = ARG_LIST,
 	.arg6list = ARGLIST(mbind_flags),
 
 	.sanitise = sanitise_mbind,

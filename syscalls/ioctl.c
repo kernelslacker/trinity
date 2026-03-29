@@ -41,10 +41,8 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 struct syscallentry syscall_ioctl = {
 	.name = "ioctl",
 	.num_args = 3,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "cmd",
-	.arg3name = "arg",
+	.argtype = { [0] = ARG_FD },
+	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.sanitise = sanitise_ioctl,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.group = GROUP_VFS,

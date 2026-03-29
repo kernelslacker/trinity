@@ -17,11 +17,10 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 struct syscallentry syscall_io_setup = {
 	.name = "io_setup",
 	.num_args = 2,
-	.arg1name = "nr_events",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE },
+	.argname = { [0] = "nr_events", [1] = "ctxp" },
 	.low1range = 1,
 	.hi1range = 256,
-	.arg2name = "ctxp",
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_setup,
 };

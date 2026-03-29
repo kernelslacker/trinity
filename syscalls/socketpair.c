@@ -45,11 +45,8 @@ out:
 struct syscallentry syscall_socketpair = {
 	.name = "socketpair",
 	.num_args = 4,
-	.arg1name = "family",
-	.arg2name = "type",
-	.arg3name = "protocol",
-	.arg4name = "usockvec",
-	.arg4type = ARG_ADDRESS,
+	.argtype = { [3] = ARG_ADDRESS },
+	.argname = { [0] = "family", [1] = "type", [2] = "protocol", [3] = "usockvec" },
 	.group = GROUP_NET,
 	.sanitise = sanitise_socketpair,
 	.post = post_socketpair,

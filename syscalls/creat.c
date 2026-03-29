@@ -9,10 +9,8 @@
 struct syscallentry syscall_creat = {
 	.name = "creat",
 	.num_args = 2,
-	.arg1name = "pathname",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "mode",
-	.arg2type = ARG_MODE_T,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_MODE_T },
+	.argname = { [0] = "pathname", [1] = "mode" },
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

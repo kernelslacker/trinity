@@ -12,9 +12,8 @@ static void sanitise_landlock_restrict_self(struct syscallrecord *rec)
 struct syscallentry syscall_landlock_restrict_self = {
 	.name = "landlock_restrict_self",
 	.num_args = 2,
-	.arg1name = "fd",
-	.arg1type = ARG_FD_LANDLOCK,
-	.arg2name = "flags",
+	.argtype = { [0] = ARG_FD_LANDLOCK },
+	.argname = { [0] = "fd", [1] = "flags" },
 	.sanitise = sanitise_landlock_restrict_self,
 	.group = GROUP_PROCESS,
 };

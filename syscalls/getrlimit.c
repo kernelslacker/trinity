@@ -18,10 +18,8 @@ static unsigned long getrlimit_resources[] = {
 struct syscallentry syscall_getrlimit = {
 	.name = "getrlimit",
 	.num_args = 2,
-	.arg1name = "resource",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "resource", [1] = "rlim" },
 	.arg1list = ARGLIST(getrlimit_resources),
-	.arg2name = "rlim",
-	.arg2type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_PROCESS,
 };

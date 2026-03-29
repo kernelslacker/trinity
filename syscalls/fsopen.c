@@ -33,9 +33,8 @@ static void sanitise_fsopen(struct syscallrecord *rec)
 struct syscallentry syscall_fsopen = {
 	.name = "fsopen",
 	.num_args = 2,
-	.arg1name = "_fs_name",
-	.arg2name = "flags",
-	.arg2type = ARG_OP,
+	.argtype = { [1] = ARG_OP },
+	.argname = { [0] = "_fs_name", [1] = "flags" },
 	.arg2list = ARGLIST(fsopen_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,

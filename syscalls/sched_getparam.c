@@ -7,8 +7,6 @@ struct syscallentry syscall_sched_getparam = {
 	.name = "sched_getparam",
 	.group = GROUP_SCHED,
 	.num_args = 2,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "param",
-	.arg2type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_PID, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "pid", [1] = "param" },
 };

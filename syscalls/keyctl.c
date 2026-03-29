@@ -205,13 +205,9 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 struct syscallentry syscall_keyctl = {
 	.name = "keyctl",
 	.num_args = 5,
-	.arg1name = "cmd",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP },
+	.argname = { [0] = "cmd", [1] = "arg2", [2] = "arg3", [3] = "arg4", [4] = "arg5" },
 	.arg1list = ARGLIST(keyctl_cmds),
-	.arg2name = "arg2",
-	.arg3name = "arg3",
-	.arg4name = "arg4",
-	.arg5name = "arg5",
 	.group = GROUP_IPC,
 	.sanitise = sanitise_keyctl,
 };

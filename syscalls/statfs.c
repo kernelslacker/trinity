@@ -6,10 +6,8 @@
 struct syscallentry syscall_statfs = {
 	.name = "statfs",
 	.num_args = 2,
-	.arg1name = "pathname",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "buf",
-	.arg2type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "pathname", [1] = "buf" },
 	.group = GROUP_VFS,
 };
 
@@ -20,11 +18,7 @@ struct syscallentry syscall_statfs = {
 struct syscallentry syscall_statfs64 = {
 	.name = "statfs64",
 	.num_args = 3,
-	.arg1name = "pathname",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "sz",
-	.arg2type = ARG_LEN,
-	.arg3name = "buf",
-	.arg3type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN, [2] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "pathname", [1] = "sz", [2] = "buf" },
 	.group = GROUP_VFS,
 };

@@ -7,6 +7,6 @@ struct syscallentry syscall_shmdt = {
 	.name = "shmdt",
 	.group = GROUP_IPC,
 	.num_args = 1,
-	.arg1name = "shmaddr",
-	.arg1type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS },
+	.argname = { [0] = "shmaddr" },
 };

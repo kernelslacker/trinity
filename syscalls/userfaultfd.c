@@ -32,8 +32,8 @@ static void post_userfaultfd(struct syscallrecord *rec)
 struct syscallentry syscall_userfaultfd = {
 	.name = "userfaultfd",
 	.num_args = 1,
-	.arg1name = "flags",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST },
+	.argname = { [0] = "flags" },
 	.arg1list = ARGLIST(userfaultfd_flags),
 	.flags = NEED_ALARM,
 	.rettype = RET_FD,

@@ -6,8 +6,6 @@
 struct syscallentry syscall_ioperm = {
 	.name = "ioperm",
 	.num_args = 3,
-	.arg1name = "from",
-	.arg2name = "num",
-	.arg3name = "turn_on",
+	.argname = { [0] = "from", [1] = "num", [2] = "turn_on" },
 	.flags = AVOID_SYSCALL | NEEDS_ROOT,
 };

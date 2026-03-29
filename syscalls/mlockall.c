@@ -24,8 +24,8 @@ static unsigned long mlockall_flags[] = {
 struct syscallentry syscall_mlockall = {
 	.name = "mlockall",
 	.num_args = 1,
-	.arg1name = "flags",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST },
+	.argname = { [0] = "flags" },
 	.arg1list = ARGLIST(mlockall_flags),
 	.group = GROUP_VM,
 };

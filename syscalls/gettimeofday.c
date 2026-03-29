@@ -7,8 +7,6 @@ struct syscallentry syscall_gettimeofday = {
 	.name = "gettimeofday",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.arg1name = "tv",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "tz",
-	.arg2type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
+	.argname = { [0] = "tv", [1] = "tz" },
 };

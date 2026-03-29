@@ -21,11 +21,8 @@ static void sanitise_lseek(struct syscallrecord *rec)
 struct syscallentry syscall_lseek = {
 	.name = "lseek",
 	.num_args = 3,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "offset",
-	.arg3name = "whence",
-	.arg3type = ARG_OP,
+	.argtype = { [0] = ARG_FD, [2] = ARG_OP },
+	.argname = { [0] = "fd", [1] = "offset", [2] = "whence" },
 	.arg3list = ARGLIST(lseek_whences),
 	.sanitise = sanitise_lseek,
 	.flags = NEED_ALARM,

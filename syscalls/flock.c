@@ -15,10 +15,8 @@ static unsigned long flock_cmds[] = {
 struct syscallentry syscall_flock = {
 	.name = "flock",
 	.num_args = 2,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "cmd",
-	.arg2type = ARG_OP,
+	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
+	.argname = { [0] = "fd", [1] = "cmd" },
 	.arg2list = ARGLIST(flock_cmds),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,

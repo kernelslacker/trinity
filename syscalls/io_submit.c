@@ -44,10 +44,8 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 struct syscallentry syscall_io_submit = {
 	.name = "io_submit",
 	.num_args = 3,
-	.arg1name = "ctx_id",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "nr",
-	.arg3name = "iocbpp",
+	.argtype = { [0] = ARG_ADDRESS },
+	.argname = { [0] = "ctx_id", [1] = "nr", [2] = "iocbpp" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_submit,

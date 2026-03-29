@@ -37,12 +37,9 @@ static void sanitise_rseq(struct syscallrecord *rec)
 struct syscallentry syscall_rseq = {
 	.name = "rseq",
 	.num_args = 4,
-	.arg1name = "rseq",
-	.arg2name = "rseq_len",
-	.arg3name = "flags",
-	.arg3type = ARG_LIST,
+	.argtype = { [2] = ARG_LIST },
+	.argname = { [0] = "rseq", [1] = "rseq_len", [2] = "flags", [3] = "sig" },
 	.arg3list = ARGLIST(rseq_flags),
-	.arg4name = "sig",
 	.sanitise = sanitise_rseq,
 	.group = GROUP_PROCESS,
 };

@@ -32,8 +32,8 @@ static void post_close(struct syscallrecord *rec)
 struct syscallentry syscall_close = {
 	.name = "close",
 	.num_args = 1,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.argtype = { [0] = ARG_FD },
+	.argname = { [0] = "fd" },
 	.flags = AVOID_SYSCALL,
 	.post = post_close,
 	.rettype = RET_ZERO_SUCCESS,

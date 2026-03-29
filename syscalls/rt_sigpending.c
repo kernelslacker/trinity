@@ -7,8 +7,6 @@ struct syscallentry syscall_rt_sigpending = {
 	.name = "rt_sigpending",
 	.group = GROUP_SIGNAL,
 	.num_args = 2,
-	.arg1name = "set",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "sigsetsize",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN },
+	.argname = { [0] = "set", [1] = "sigsetsize" },
 };

@@ -7,12 +7,8 @@
 struct syscallentry syscall_getcpu = {
 	.name = "getcpu",
 	.num_args = 3,
-	.arg1name = "cpup",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "nodep",
-	.arg2type = ARG_ADDRESS,
-	.arg3name = "unused",
-	.arg3type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
+	.argname = { [0] = "cpup", [1] = "nodep", [2] = "unused" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 };

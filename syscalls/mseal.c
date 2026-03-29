@@ -11,11 +11,8 @@ static void sanitise_mseal(struct syscallrecord *rec)
 struct syscallentry syscall_mseal = {
 	.name = "mseal",
 	.num_args = 3,
-	.arg1name = "start",
-	.arg1type = ARG_MMAP,
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
-	.arg3name = "flags",
+	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN },
+	.argname = { [0] = "start", [1] = "len", [2] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_mseal,

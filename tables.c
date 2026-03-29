@@ -235,45 +235,45 @@ int validate_syscall_tables(void)
 static void check_syscall(struct syscallentry *entry)
 {
 	/* check that we have a name set. */
-#define CHECK(NUMARGS, ARGNUM, ARGTYPE, ARGNAME)		\
+#define CHECK(NUMARGS, ARGNUM, ARGIDX)				\
 	if (entry == NULL)					\
 		return;						\
 	if (entry->num_args > 0) {				\
 		if (entry->num_args > NUMARGS) {		\
-			if (entry->ARGNAME == NULL)  {		\
+			if (entry->argname[ARGIDX] == NULL)  {	\
 				outputerr("arg %d of %s has no name\n", ARGNUM, entry->name);      \
 				exit(EXIT_FAILURE);		\
 			}					\
 		}						\
 	}							\
 
-	CHECK(0, 1, arg1type, arg1name);
-	CHECK(1, 2, arg2type, arg2name);
-	CHECK(2, 3, arg3type, arg3name);
-	CHECK(3, 4, arg4type, arg4name);
-	CHECK(4, 5, arg5type, arg5name);
-	CHECK(5, 6, arg6type, arg6name);
+	CHECK(0, 1, 0);
+	CHECK(1, 2, 1);
+	CHECK(2, 3, 2);
+	CHECK(3, 4, 3);
+	CHECK(4, 5, 4);
+	CHECK(5, 6, 5);
 
 	/* check if we have a type. */
 	/* note: not enabled by default, because we haven't annotated everything yet. */
 #undef CHECK
-#define CHECK(NUMARGS, ARGNUM, ARGTYPE, ARGNAME)		\
+#define CHECK(NUMARGS, ARGNUM, ARGIDX)				\
 	if (entry == NULL)					\
 		return;						\
 	if (entry->num_args > 0) {				\
 		if (entry->num_args > NUMARGS) {		\
-			if (entry->ARGTYPE == ARG_UNDEFINED) {	\
-				outputerr("%s has an undefined argument type for arg1 (%s)!\n", entry->name, entry->ARGNAME);	\
+			if (entry->argtype[ARGIDX] == ARG_UNDEFINED) {	\
+				outputerr("%s has an undefined argument type for arg%d (%s)!\n", entry->name, ARGNUM, entry->argname[ARGIDX]);	\
 			}					\
 		}						\
 	}							\
 
-/*	CHECK(0, 1, arg1type, arg1name);
-	CHECK(1, 2, arg2type, arg2name);
-	CHECK(2, 3, arg3type, arg3name);
-	CHECK(3, 4, arg4type, arg4name);
-	CHECK(4, 5, arg5type, arg5name);
-	CHECK(5, 6, arg6type, arg6name);
+/*	CHECK(0, 1, 0);
+	CHECK(1, 2, 1);
+	CHECK(2, 3, 2);
+	CHECK(3, 4, 3);
+	CHECK(4, 5, 4);
+	CHECK(5, 6, 5);
 */
 }
 
@@ -413,31 +413,9 @@ static void show_unannotated_biarch(void)
 
 		count = 0;
 
-		for (j = 1; j <= entry->num_args; j++) {
-			if (j == 1) {
-				if (entry->arg1type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 2) {
-				if (entry->arg2type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 3) {
-				if (entry->arg3type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 4) {
-				if (entry->arg4type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 5) {
-				if (entry->arg5type == ARG_UNDEFINED)
-					count++;
-			}
-			if (j == 6) {
-				if (entry->arg6type == ARG_UNDEFINED)
-					count++;
-			}
+		for (j = 0; j < entry->num_args; j++) {
+			if (entry->argtype[j] == ARG_UNDEFINED)
+				count++;
 		}
 		if (count != 0)
 			printf("%s has %u unannotated arguments\n", entry->name, count);
@@ -452,32 +430,10 @@ static void show_unannotated_biarch(void)
 
 		count = 0;
 
-		for (j = 1; j <= entry->num_args; j++) {
+		for (j = 0; j < entry->num_args; j++) {
 			if (search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, entry->name) == -1) {
-				if (j == 1) {
-					if (entry->arg1type == ARG_UNDEFINED)
-						count++;
-				}
-				if (j == 2) {
-					if (entry->arg2type == ARG_UNDEFINED)
-						count++;
-				}
-				if (j == 3) {
-					if (entry->arg3type == ARG_UNDEFINED)
-						count++;
-				}
-				if (j == 4) {
-					if (entry->arg4type == ARG_UNDEFINED)
-						count++;
-				}
-				if (j == 5) {
-					if (entry->arg5type == ARG_UNDEFINED)
-						count++;
-				}
-				if (j == 6) {
-					if (entry->arg6type == ARG_UNDEFINED)
-						count++;
-				}
+				if (entry->argtype[j] == ARG_UNDEFINED)
+					count++;
 			}
 		}
 		if (count != 0)
@@ -520,20 +476,6 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		memcpy(copy + m , entry, sizeof(struct syscallentry));
 		copy[m].number = n;
 		copy[m].active_number = 0;
-
-		copy[m].argtype[0] = entry->arg1type;
-		copy[m].argtype[1] = entry->arg2type;
-		copy[m].argtype[2] = entry->arg3type;
-		copy[m].argtype[3] = entry->arg4type;
-		copy[m].argtype[4] = entry->arg5type;
-		copy[m].argtype[5] = entry->arg6type;
-
-		copy[m].argname[0] = entry->arg1name;
-		copy[m].argname[1] = entry->arg2name;
-		copy[m].argname[2] = entry->arg3name;
-		copy[m].argname[3] = entry->arg4name;
-		copy[m].argname[4] = entry->arg5name;
-		copy[m].argname[5] = entry->arg6name;
 
 		from[n].entry = &copy[m];
 		m++;

@@ -46,15 +46,9 @@ struct syscallentry syscall_s390_sthyi = {
 	.sanitise = sanitise_s390_sthyi,
 	.post = post_s390_sthyi,
 	.num_args = 4,
-	.arg1name = "function_code",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_RANGE },
+	.argname = { [0] = "function_code", [1] = "resp_buffer", [2] = "return_code", [3] = "resp_buffer" },
 	.arg1list = ARGLIST(syscall_s390_sthyi_arg1),
-	.arg2name = "resp_buffer",
-	.arg2type = ARG_NON_NULL_ADDRESS,
-	.arg3name = "return_code",
-	.arg3type = ARG_ADDRESS,
-	.arg4name = "resp_buffer",
-	.arg4type = ARG_RANGE,
 	.low4range = 0,
 	.hi4range = 128
 };

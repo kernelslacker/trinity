@@ -14,11 +14,9 @@ static unsigned long syscall_runtime_instr_arg1[] = {
 struct syscallentry syscall_runtime_instr = {
 	.name = "runtime_instr",
 	.num_args = 2,
-	.arg1name = "on_off",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST, [1] = ARG_RANGE },
+	.argname = { [0] = "on_off", [1] = "sig_nr" },
 	.arg1list = ARGLIST(syscall_runtime_instr_arg1),
-	.arg2name = "sig_nr",
-	.arg2type = ARG_RANGE,
 	.low2range = 0,
 	.hi2range = 128,
 	.rettype = RET_ZERO_SUCCESS

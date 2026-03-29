@@ -12,7 +12,7 @@ static void sanitise_nice(struct syscallrecord *rec)
 struct syscallentry syscall_nice = {
 	.name = "nice",
 	.num_args = 1,
-	.arg1name = "increment",
+	.argname = { [0] = "increment" },
 	.sanitise = sanitise_nice,
 	.group = GROUP_SCHED,
 };

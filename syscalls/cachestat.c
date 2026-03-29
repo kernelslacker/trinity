@@ -44,11 +44,8 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 struct syscallentry syscall_cachestat = {
 	.name = "cachestat",
 	.num_args = 4,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "cstat_range",
-	.arg3name = "cstat",
-	.arg4name = "flags",
+	.argtype = { [0] = ARG_FD },
+	.argname = { [0] = "fd", [1] = "cstat_range", [2] = "cstat", [3] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_cachestat,

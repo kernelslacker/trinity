@@ -67,11 +67,9 @@ static unsigned long modify_ldt_funcs[] = {
 struct syscallentry syscall_modify_ldt = {
 	.name = "modify_ldt",
 	.num_args = 3,
-	.arg1name = "func",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP },
+	.argname = { [0] = "func", [1] = "ptr", [2] = "bytecount" },
 	.arg1list = ARGLIST(modify_ldt_funcs),
-	.arg2name = "ptr",
-	.arg3name = "bytecount",
 	.sanitise = sanitise_modify_ldt,
 	.post = post_modify_ldt,
 };

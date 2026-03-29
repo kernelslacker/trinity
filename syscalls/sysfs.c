@@ -30,11 +30,9 @@ static void sanitise_sysfs(struct syscallrecord *rec)
 struct syscallentry syscall_sysfs = {
 	.name = "sysfs",
 	.num_args = 3,
-	.arg1name = "option",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP },
+	.argname = { [0] = "option", [1] = "arg1", [2] = "arg2" },
 	.arg1list = ARGLIST(sysfs_options),
-	.arg2name = "arg1",
-	.arg3name = "arg2",
 	.sanitise = sanitise_sysfs,
 	.group = GROUP_PROCESS,
 };

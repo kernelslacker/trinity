@@ -17,10 +17,8 @@ struct syscallentry syscall_clock_gettime = {
 	.name = "clock_gettime",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.arg1name = "which_clock",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "which_clock", [1] = "tp" },
 	.arg1list = ARGLIST(clock_ids),
-	.arg2name = "tp",
-	.arg2type = ARG_NON_NULL_ADDRESS,
 	.rettype = RET_ZERO_SUCCESS,
 };

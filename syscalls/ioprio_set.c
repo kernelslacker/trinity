@@ -31,12 +31,9 @@ static void sanitise_ioprio_set(struct syscallrecord *rec)
 struct syscallentry syscall_ioprio_set = {
 	.name = "ioprio_set",
 	.num_args = 3,
-	.arg1name = "which",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP, [1] = ARG_PID },
+	.argname = { [0] = "which", [1] = "who", [2] = "ioprio" },
 	.arg1list = ARGLIST(ioprio_who),
-	.arg2name = "who",
-	.arg2type = ARG_PID,
-	.arg3name = "ioprio",
 	.sanitise = sanitise_ioprio_set,
 	.group = GROUP_SCHED,
 };

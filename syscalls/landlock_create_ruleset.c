@@ -48,10 +48,8 @@ static void post_landlock_create_ruleset(struct syscallrecord *rec)
 struct syscallentry syscall_landlock_create_ruleset = {
 	.name = "landlock_create_ruleset",
 	.num_args = 3,
-	.arg1name = "attr",
-	.arg2name = "size",
-	.arg3name = "flags",
-	.arg3type = ARG_LIST,
+	.argtype = { [2] = ARG_LIST },
+	.argname = { [0] = "attr", [1] = "size", [2] = "flags" },
 	.arg3list = ARGLIST(landlock_create_ruleset_flags),
 	.rettype = RET_FD,
 	.sanitise = sanitise_landlock_create_ruleset,

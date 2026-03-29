@@ -16,10 +16,8 @@ static void sanitise_mlock(__unused__ struct syscallrecord *rec)
 struct syscallentry syscall_mlock = {
 	.name = "mlock",
 	.num_args = 2,
-	.arg1name = "addr",
-	.arg1type = ARG_MMAP,
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN },
+	.argname = { [0] = "addr", [1] = "len" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,
 };
@@ -33,12 +31,8 @@ static unsigned long mlock2_flags[] = { MLOCK_ONFAULT };
 struct syscallentry syscall_mlock2 = {
 	.name = "mlock2",
 	.num_args = 3,
-	.arg1name = "start",
-	.arg1type = ARG_MMAP,
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
-	.arg3name = "flags",
-	.arg3type = ARG_LIST,
+	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_LIST },
+	.argname = { [0] = "start", [1] = "len", [2] = "flags" },
 	.arg3list = ARGLIST(mlock2_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,

@@ -167,12 +167,9 @@ static void post_fcntl(struct syscallrecord *rec)
 struct syscallentry syscall_fcntl = {
 	.name = "fcntl",
 	.num_args = 3,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "cmd",
-	.arg2type = ARG_OP,
+	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
+	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.arg2list = ARGLIST(fcntl_flags),
-	.arg3name = "arg",
 	/* RET_FD is only accurate for F_DUPFD and F_DUPFD_CLOEXEC.
 	 * Other commands return flags, pids, lease types, pipe sizes, etc.
 	 * Changing rettype per-invocation would require runtime dispatch

@@ -14,10 +14,8 @@ static unsigned long delete_module_flags[] = {
 struct syscallentry syscall_delete_module = {
 	.name = "delete_module",
 	.num_args = 2,
-	.arg1name = "name_user",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "flags",
-	.arg2type = ARG_LIST,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LIST },
+	.argname = { [0] = "name_user", [1] = "flags" },
 	.arg2list = ARGLIST(delete_module_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,

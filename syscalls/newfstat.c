@@ -6,10 +6,8 @@
 struct syscallentry syscall_newfstat = {
 	.name = "newfstat",
 	.num_args = 2,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "statbuf",
-	.arg2type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_FD, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "fd", [1] = "statbuf" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
@@ -32,14 +30,8 @@ static unsigned long newfstatat_flags[] = {
 struct syscallentry syscall_newfstatat = {
 	.name = "newfstatat",
 	.num_args = 4,
-	.arg1name = "dfd",
-	.arg1type = ARG_FD,
-	.arg2name = "filename",
-	.arg2type = ARG_PATHNAME,
-	.arg3name = "statbuf",
-	.arg3type = ARG_NON_NULL_ADDRESS,
-	.arg4name = "flag",
-	.arg4type = ARG_LIST,
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_NON_NULL_ADDRESS, [3] = ARG_LIST },
+	.argname = { [0] = "dfd", [1] = "filename", [2] = "statbuf", [3] = "flag" },
 	.arg4list = ARGLIST(newfstatat_flags),
 	.group = GROUP_VFS,
 };

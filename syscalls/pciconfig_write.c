@@ -7,12 +7,7 @@
 struct syscallentry syscall_pciconfig_write = {
 	.name = "pciconfig_write",
 	.num_args = 5,
-	.arg1name = "bus",
-	.arg2name = "dfn",
-	.arg3name = "off",
-	.arg4name = "len",
-	.arg4type = ARG_LEN,
-	.arg5name = "buf",
-	.arg5type = ARG_ADDRESS,
+	.argtype = { [3] = ARG_LEN, [4] = ARG_ADDRESS },
+	.argname = { [0] = "bus", [1] = "dfn", [2] = "off", [3] = "len", [4] = "buf" },
 	.group = GROUP_PROCESS,
 };

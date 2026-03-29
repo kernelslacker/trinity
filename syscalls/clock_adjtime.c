@@ -57,11 +57,10 @@ struct syscallentry syscall_clock_adjtime = {
 	.name = "clock_adjtime",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.arg1name = "which_clock",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE },
+	.argname = { [0] = "which_clock", [1] = "utx" },
 	.low1range = 0,
 	.hi1range = 16,
-	.arg2name = "utx",
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_clock_adjtime,
 };

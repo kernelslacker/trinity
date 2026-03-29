@@ -13,7 +13,7 @@ struct syscallentry syscall_sched_get_priority_min = {
 	.name = "sched_get_priority_min",
 	.group = GROUP_SCHED,
 	.num_args = 1,
-	.arg1name = "policy",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP },
+	.argname = { [0] = "policy" },
 	.arg1list = ARGLIST(sched_policies),
 };

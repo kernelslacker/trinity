@@ -44,8 +44,7 @@ struct syscallentry syscall_settimeofday = {
 	.name = "settimeofday",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.arg1name = "tv",
-	.arg2name = "tz",
+	.argname = { [0] = "tv", [1] = "tz" },
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_settimeofday,
 };

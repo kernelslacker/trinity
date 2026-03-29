@@ -17,12 +17,9 @@ static void sanitise_setpriority(struct syscallrecord *rec)
 struct syscallentry syscall_setpriority = {
 	.name = "setpriority",
 	.num_args = 3,
-	.arg1name = "which",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP, [1] = ARG_PID },
+	.argname = { [0] = "which", [1] = "who", [2] = "niceval" },
 	.arg1list = ARGLIST(setpriority_which),
-	.arg2name = "who",
-	.arg2type = ARG_PID,
-	.arg3name = "niceval",
 	.sanitise = sanitise_setpriority,
 	.group = GROUP_SCHED,
 };

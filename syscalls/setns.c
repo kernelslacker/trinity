@@ -12,10 +12,8 @@ struct syscallentry syscall_setns= {
 	.name = "setns",
 	.group = GROUP_PROCESS,
 	.num_args = 2,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "nstype",
-	.arg2type = ARG_LIST,
+	.argtype = { [0] = ARG_FD, [1] = ARG_LIST },
+	.argname = { [0] = "fd", [1] = "nstype" },
 	.arg2list = ARGLIST(setns_types),
 	.flags = NEED_ALARM,
 };

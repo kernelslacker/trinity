@@ -218,8 +218,8 @@ unsigned int check_if_fd(struct syscallrecord *rec)
 	if (entry == NULL)
 		return false;
 
-	if (!is_typed_fdarg(entry->arg1type)) {
-		switch (entry->arg1type) {
+	if (!is_typed_fdarg(entry->argtype[0])) {
+		switch (entry->argtype[0]) {
 		case ARG_FD:
 		case ARG_SOCKETINFO:
 			break;

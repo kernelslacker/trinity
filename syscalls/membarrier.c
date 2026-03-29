@@ -43,10 +43,9 @@ static void sanitise_membarrier(struct syscallrecord *rec)
 struct syscallentry syscall_membarrier = {
 	.name = "membarrier",
 	.num_args = 2,
-	.arg1type = ARG_OP,
-	.arg1name = "cmd",
+	.argtype = { [0] = ARG_OP },
+	.argname = { [0] = "cmd", [1] = "flags" },
 	.arg1list = ARGLIST(membarrier_cmds),
-	.arg2name = "flags",
 	.sanitise = sanitise_membarrier,
 	.group = GROUP_SCHED,
 };

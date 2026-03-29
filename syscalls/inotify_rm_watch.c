@@ -18,9 +18,8 @@ static void sanitise_inotify_rm_watch(struct syscallrecord *rec)
 struct syscallentry syscall_inotify_rm_watch = {
 	.name = "inotify_rm_watch",
 	.num_args = 2,
-	.arg1name = "fd",
-	.arg1type = ARG_FD_INOTIFY,
-	.arg2name = "wd",
+	.argtype = { [0] = ARG_FD_INOTIFY },
+	.argname = { [0] = "fd", [1] = "wd" },
 	.sanitise = sanitise_inotify_rm_watch,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
