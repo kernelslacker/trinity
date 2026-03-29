@@ -7,6 +7,13 @@
 #include "random.h"
 #include "sanitise.h"
 
+static unsigned long clock_ids[] = {
+	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
+	CLOCK_THREAD_CPUTIME_ID, CLOCK_MONOTONIC_RAW, CLOCK_REALTIME_COARSE,
+	CLOCK_MONOTONIC_COARSE, CLOCK_BOOTTIME, CLOCK_REALTIME_ALARM,
+	CLOCK_BOOTTIME_ALARM, CLOCK_TAI,
+};
+
 static unsigned long clock_adj_modes[] = {
 	ADJ_OFFSET, ADJ_FREQUENCY, ADJ_MAXERROR, ADJ_ESTERROR,
 	ADJ_STATUS, ADJ_TIMECONST, ADJ_SETOFFSET, ADJ_MICRO,
@@ -57,10 +64,9 @@ struct syscallentry syscall_clock_adjtime = {
 	.name = "clock_adjtime",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.argtype = { [0] = ARG_RANGE },
+	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "which_clock", [1] = "utx" },
-	.low1range = 0,
-	.hi1range = 16,
+	.arg1list = ARGLIST(clock_ids),
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_clock_adjtime,
 };
