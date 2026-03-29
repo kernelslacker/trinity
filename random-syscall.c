@@ -16,6 +16,7 @@
 #include "debug.h"
 #include "kcov.h"
 #include "locks.h"
+#include "minicorpus.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -199,8 +200,18 @@ bool random_syscall(struct childdata *child)
 
 	if (do_cmp)
 		cmp_hints_collect(child->kcov.trace_buf, rec->nr);
-	else
-		kcov_collect(&child->kcov, rec->nr);
+	else {
+		bool new_edges = kcov_collect(&child->kcov, rec->nr);
+
+		/* Save args that discovered new coverage, but only for
+		 * syscalls without sanitise (which may stash pointers). */
+		if (new_edges) {
+			struct syscallentry *save_entry = get_syscall_entry(rec->nr, rec->do32bit);
+
+			if (save_entry != NULL && save_entry->sanitise == NULL)
+				minicorpus_save(rec);
+		}
+	}
 
 	output_syscall_postfix(rec);
 

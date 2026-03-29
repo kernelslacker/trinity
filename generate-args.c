@@ -9,6 +9,7 @@
 #include "deferred-free.h"
 #include "fd.h"
 #include "maps.h"
+#include "minicorpus.h"
 #include "net.h"
 #include "pathnames.h"
 #include "random.h"
@@ -400,6 +401,15 @@ void generate_syscall_args(struct syscallrecord *rec)
 
 	entry = syscalls[rec->nr].entry;
 	rec->state = PREP;
+
+	/* For syscalls without sanitise callbacks, try replaying a
+	 * saved arg set from the mini-corpus. If replay succeeds,
+	 * skip generic_sanitise — the args are already populated. */
+	if (entry->sanitise == NULL && minicorpus_replay(rec)) {
+		rec->rettype = entry->rettype;
+		unlock(&rec->lock);
+		return;
+	}
 
 	generic_sanitise(rec);
 	rec->rettype = entry->rettype;
