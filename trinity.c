@@ -85,35 +85,18 @@ static void change_tmp_dir(void)
 
 static int set_exit_code(enum exit_reasons reason)
 {
-	int ret = EXIT_SUCCESS;
-
+	/* Clean exits return 0; everything else returns the reason
+	 * code directly so the parent can distinguish failure modes. */
 	switch (reason) {
-	case EXIT_NO_SYSCALLS_ENABLED:
-	case EXIT_NO_FDS:
-	case EXIT_LOST_CHILD:
-	case EXIT_PID_OUT_OF_RANGE:
-	case EXIT_KERNEL_TAINTED:
-	case EXIT_SHM_CORRUPTION:
-	case EXIT_REPARENT_PROBLEM:
-	case EXIT_NO_FILES:
-	case EXIT_MAIN_DISAPPEARED:
-	case EXIT_UID_CHANGED:
-	case EXIT_LOCKING_CATASTROPHE:
-	case EXIT_FORK_FAILURE:
-	case EXIT_FD_INIT_FAILURE:
-		ret = EXIT_FAILURE;
-		break;
-
-	default:
-	/* the next are just to shut up -Werror=switch-enum
-	 * pragma's are just as ugly imo. */
 	case STILL_RUNNING:
 	case EXIT_REACHED_COUNT:
 	case EXIT_SIGINT:
-	case NUM_EXIT_REASONS:
-		break;
+	case EXIT_USER_REQUEST:
+		return EXIT_SUCCESS;
+
+	default:
+		return (int)reason;
 	}
-	return ret;
 }
 
 int main(int argc, char* argv[])
@@ -201,7 +184,7 @@ int main(int argc, char* argv[])
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			panic(EXIT_FD_INIT_FAILURE);
 
-		_exit(EXIT_FAILURE);
+		_exit(EXIT_FD_INIT_FAILURE);
 	}
 
 	main_loop();

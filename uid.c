@@ -137,6 +137,6 @@ changed:
 		output(0, "uid changed! Was: %u, now %u\n", orig_uid, myuid);
 
 		panic(EXIT_UID_CHANGED);
-		_exit(EXIT_FAILURE);
+		_exit(EXIT_UID_CHANGED);
 	}
 }

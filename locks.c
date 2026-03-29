@@ -87,7 +87,7 @@ void lock(lock_t *lk)
 			debugf("lol, already have lock!\n");
 			show_backtrace();
 			panic(EXIT_LOCKING_CATASTROPHE);
-			_exit(EXIT_FAILURE);
+			_exit(EXIT_LOCKING_CATASTROPHE);
 		}
 
 		/* This is pretty horrible. But if we call lock()
@@ -107,7 +107,7 @@ void lock(lock_t *lk)
 			 * we don't want to spin forever, so just get out.
 			 */
 			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
-				_exit(EXIT_FAILURE);
+				_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
 
 		}
 
