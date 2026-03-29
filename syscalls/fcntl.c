@@ -122,6 +122,15 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		break;
 	}
 
+	switch (rec->a2) {
+	case F_DUPFD:
+	case F_DUPFD_CLOEXEC:
+		rec->rettype = RET_FD;
+		break;
+	default:
+		rec->rettype = RET_ZERO_SUCCESS;
+		break;
+	}
 }
 
 static unsigned long fcntl_flags[] = {
@@ -170,11 +179,6 @@ struct syscallentry syscall_fcntl = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.arg2list = ARGLIST(fcntl_flags),
-	/* RET_FD is only accurate for F_DUPFD and F_DUPFD_CLOEXEC.
-	 * Other commands return flags, pids, lease types, pipe sizes, etc.
-	 * Changing rettype per-invocation would require runtime dispatch
-	 * which the syscall entry structure doesn't support. */
-	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_fcntl,
