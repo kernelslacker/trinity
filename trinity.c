@@ -198,7 +198,7 @@ int main(int argc, char* argv[])
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
 	if (open_fds() == false) {
-		if (shm->exit_reason != STILL_RUNNING)
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			panic(EXIT_FD_INIT_FAILURE);
 
 		_exit(EXIT_FAILURE);
@@ -213,7 +213,7 @@ int main(int argc, char* argv[])
 	if (show_stats == true)
 		dump_stats();
 
-	ret = set_exit_code(shm->exit_reason);
+	ret = set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
 out:
 
 	exit(ret);

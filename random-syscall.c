@@ -99,7 +99,7 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 retry:
 	if (no_syscalls_enabled() == true) {
 		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
-		shm->exit_reason = EXIT_NO_SYSCALLS_ENABLED;
+		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
 		return FAIL;
 	}
 

@@ -337,7 +337,7 @@ static bool generate_sockets(void)
 			continue;
 
 		/* check for ctrl-c again. */
-		if (shm->exit_reason != STILL_RUNNING)
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			goto out_unlock;
 
 		if (proto == NULL)
@@ -486,7 +486,7 @@ regenerate:
 		}
 
 		/* check for ctrl-c */
-		if (shm->exit_reason != STILL_RUNNING) {
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING) {
 			close(cachefile);
 			return false;
 		}

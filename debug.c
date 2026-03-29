@@ -79,7 +79,7 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 		set_dontkillme(child, true);
 
 	while (1) {
-		if (shm->exit_reason == EXIT_SIGINT) {
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_SIGINT) {
 			if (child != NULL)
 				set_dontkillme(child, false);
 			exit(EXIT_FAILURE);
