@@ -273,6 +273,36 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		ms->imr_sourceaddr.s_addr = random_ipv4_address();
 		break;
 
+	case MCAST_JOIN_GROUP:
+	case MCAST_LEAVE_GROUP: {
+		struct group_req *gr = (struct group_req *) so->optval;
+		struct sockaddr_in *sin = (struct sockaddr_in *) &gr->gr_group;
+
+		gr->gr_interface = rand() % 10;
+		sin->sin_family = AF_INET;
+		sin->sin_addr.s_addr = htonl(0xe0000000 | rand() % 0xff);
+		so->optlen = sizeof(struct group_req);
+		break;
+	}
+
+	case MCAST_BLOCK_SOURCE:
+	case MCAST_UNBLOCK_SOURCE:
+	case MCAST_JOIN_SOURCE_GROUP:
+	case MCAST_LEAVE_SOURCE_GROUP: {
+		struct group_source_req *gsr = (struct group_source_req *) so->optval;
+		struct sockaddr_in *sin;
+
+		gsr->gsr_interface = rand() % 10;
+		sin = (struct sockaddr_in *) &gsr->gsr_group;
+		sin->sin_family = AF_INET;
+		sin->sin_addr.s_addr = htonl(0xe0000000 | rand() % 0xff);
+		sin = (struct sockaddr_in *) &gsr->gsr_source;
+		sin->sin_family = AF_INET;
+		sin->sin_addr.s_addr = random_ipv4_address();
+		so->optlen = sizeof(struct group_source_req);
+		break;
+	}
+
 	case MCAST_MSFILTER:
 		so->optlen = rand() % optmem_max;
 		so->optlen |= GROUP_FILTER_SIZE(0);
@@ -470,18 +500,31 @@ static struct socket_triplet ipv4_privileged_triplets[] = {
 	{ .family = PF_INET, .protocol = IPPROTO_MPLS, .type = SOCK_PACKET },
 
 
-	{ .family = PF_INET, .protocol = 0, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 1, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 2, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 3, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 4, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 5, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 6, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 7, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 8, .type = SOCK_RAW },
-	{ .family = PF_INET, .protocol = 9, .type = SOCK_RAW },
-
-	//TBD: Is it worth doing all 256 of these ?
+	{ .family = PF_INET, .protocol = IPPROTO_IP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_ICMP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_IGMP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_IPIP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_TCP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_EGP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_PUP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_UDP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_IDP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_TP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_DCCP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_IPV6, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_RSVP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_GRE, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_ESP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_AH, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_MTP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_BEETPH, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_ENCAP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_PIM, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_COMP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_UDPLITE, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_MPLS, .type = SOCK_RAW },
+	{ .family = PF_INET, .protocol = IPPROTO_RAW, .type = SOCK_RAW },
 };
 
 const struct netproto proto_ipv4 = {
