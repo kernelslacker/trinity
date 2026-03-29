@@ -33,9 +33,14 @@ static void post_mprotect(struct syscallrecord *rec)
 		map->prot = rec->a3;
 }
 
+#ifndef PROT_MTE
+#define PROT_MTE	0x20		/* aarch64 MTE (5.10+) */
+#endif
+
 static unsigned long mprotect_prots[] = {
 	PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM,
 	PROT_GROWSDOWN, PROT_GROWSUP,
+	PROT_MTE,
 };
 
 struct syscallentry syscall_mprotect = {
