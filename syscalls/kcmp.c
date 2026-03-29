@@ -19,6 +19,9 @@ static void sanitise_kcmp(struct syscallrecord *rec)
 	if (rec->a3 == KCMP_FILE) {
 		rec->a4 = get_random_fd();
 		rec->a5 = get_random_fd();
+	} else {
+		rec->a4 = 0;
+		rec->a5 = 0;
 	}
 }
 
