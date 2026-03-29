@@ -11,6 +11,28 @@ static unsigned long msgctl_cmds[] = {
 	MSG_INFO, MSG_STAT,
 };
 
+static void sanitise_msgctl(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case IPC_RMID:
+		rec->a3 = 0;
+		break;
+	case IPC_INFO:
+	case MSG_INFO:
+		rec->a3 = (unsigned long) zmalloc(sizeof(struct msginfo));
+		break;
+	default:
+		/* IPC_STAT, IPC_SET, MSG_STAT */
+		rec->a3 = (unsigned long) zmalloc(sizeof(struct msqid_ds));
+		break;
+	}
+}
+
+static void post_msgctl(struct syscallrecord *rec)
+{
+	freeptr(&rec->a3);
+}
+
 struct syscallentry syscall_msgctl = {
 	.name = "msgctl",
 	.group = GROUP_IPC,
@@ -20,4 +42,6 @@ struct syscallentry syscall_msgctl = {
 	.low1range = 0,
 	.hi1range = 65535,
 	.arg2list = ARGLIST(msgctl_cmds),
+	.sanitise = sanitise_msgctl,
+	.post = post_msgctl,
 };
