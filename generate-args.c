@@ -441,6 +441,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	rec->state = PREP;
 
 	generic_sanitise(rec);
+	rec->rettype = entry->rettype;
 	if (entry->sanitise)
 		entry->sanitise(rec);
 

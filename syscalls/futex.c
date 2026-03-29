@@ -303,6 +303,14 @@ out_setclock:
 	default:
 		break;
 	}
+	switch (rec->a2 & FUTEX_CMD_MASK) {
+	case FUTEX_FD:
+		rec->rettype = RET_FD;
+		break;
+	default:
+		rec->rettype = RET_ZERO_SUCCESS;
+		break;
+	}
 }
 
 static void post_futex(struct syscallrecord *rec)

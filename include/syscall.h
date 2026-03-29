@@ -33,6 +33,7 @@ struct syscallrecord {
 	struct timespec tp;
 
 	int errno_post;	/* what errno was after the syscall. */
+	int rettype;	/* per-call return type (copied from entry, may be overridden by sanitise) */
 
 	bool do32bit;
 	lock_t lock;
