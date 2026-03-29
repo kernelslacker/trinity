@@ -40,6 +40,19 @@ static unsigned long signalfd4_flags[] = {
 	SFD_CLOEXEC, SFD_NONBLOCK,
 };
 
+static void sanitise_signalfd4(struct syscallrecord *rec)
+{
+	sigset_t *set;
+
+	set = (sigset_t *) get_writable_address(sizeof(*set));
+	sigemptyset(set);
+	sigaddset(set, SIGUSR1);
+	sigaddset(set, SIGUSR2);
+
+	rec->a2 = (unsigned long) set;
+	rec->a3 = sizeof(sigset_t);
+}
+
 struct syscallentry syscall_signalfd4 = {
 	.name = "signalfd4",
 	.group = GROUP_SIGNAL,
@@ -47,6 +60,7 @@ struct syscallentry syscall_signalfd4 = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask", [3] = "flags" },
 	.arg4list = ARGLIST(signalfd4_flags),
+	.sanitise = sanitise_signalfd4,
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 };
