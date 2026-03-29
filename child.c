@@ -474,46 +474,35 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 }
 
 /*
- * We jump here on return from a signal. We do all the stuff here that we
- * otherwise couldn't do in a signal handler.
+ * Check if a SIGALRM timeout indicates a stuck-on-fd situation.
+ * If so, evict the fd and notify the parent.
  */
-static bool handle_sigreturn(int sigwas)
+static void handle_alarm_timeout(struct childdata *child)
 {
-	struct childdata *child = this_child();
-	struct syscallrecord *rec;
-	static unsigned int count = 0;
-	static unsigned int last = 0;
+	struct syscallrecord *rec = &child->syscall;
 
-	rec = &child->syscall;
+	if (rec->state != BEFORE)
+		return;
 
-	/* If we held a lock before the signal happened, drop it.
-	 * rec->lock is the most common case (held in __do_syscall),
-	 * but sibling-sent SIGALRM can also hit us while we hold
-	 * shm->syscalltable_lock (in syscall32/deactivate_enosys)
-	 * or shm->buglock (in check_parent_pid). */
-	bust_lock(&rec->lock);
-	bust_lock(&shm->syscalltable_lock);
-	bust_lock(&shm->buglock);
-
-	/* Check if we're blocked because we were stuck on an fd. */
-	lock(&rec->lock);
 	if (check_if_fd(rec) == true) {
-		/* Force this child to pick a new fd next time. */
 		child->fd_lifetime = 0;
 
-		/* Tell the parent to remove this fd from the pool
-		 * so no other child picks it up either. */
 		if (child->fd_event_ring != NULL)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
 					 (int) rec->a1, -1, 0);
 	}
-	unlock(&rec->lock);
+}
 
-	/* Free any ARG_PATHNAME allocations made before the signal. */
-	if (rec->state >= PREP)
-		generic_free_arg(rec);
+/*
+ * Stall detection: count consecutive alarm timeouts without the child
+ * making forward progress (op_nr advancing).  If the child is stuck,
+ * exit it so the parent can respawn a fresh one.
+ */
+static bool check_stall(struct childdata *child)
+{
+	static unsigned int count;
+	static unsigned int last;
 
-	/* Check if we're making any progress at all. */
 	if (child->op_nr == last) {
 		count++;
 	} else {
@@ -523,23 +512,9 @@ static bool handle_sigreturn(int sigwas)
 	if (count == stall_threshold(child->op_type)) {
 		output(1, "no progress for %u tries (op_type=%d), exiting child.\n",
 			count, child->op_type);
-		return false;
+		return true;
 	}
-
-	if (child->kill_count > 0) {
-		output(1, "[%d] Missed a kill signal, exiting\n", getpid());
-		return false;
-	}
-
-	if (sigwas == SIGHUP)
-		return false;
-
-	if (sigwas != SIGALRM)
-		output(1, "[%d] Back from signal handler! (sig was %s)\n", getpid(), strsignal(sigwas));
-	else {
-		child->op_nr++;
-	}
-	return true;
+	return false;
 }
 
 
@@ -584,7 +559,6 @@ static void check_fd_leaks(struct childdata *child)
 /*
  * This is the child main loop, entered after init_child has completed
  * from the fork_children() loop.
- * We also re-enter it from the signal handler code if something happened.
  */
 #define NEW_OP_COUNT 100000
 
@@ -594,35 +568,27 @@ void child_process(struct childdata *child, int childno)
 
 	init_child(child, childno);
 
-	ret = sigsetjmp(ret_jump, 1);
-	if (ret != 0) {
-		/* Cancel any re-armed alarm from the signal handler.
-		 * Without this, the 1-second alarm keeps ticking and can
-		 * fire again while we hold rec->lock in handle_sigreturn,
-		 * causing a re-entrance deadlock (EXIT_LOCKING_CATASTROPHE).
-		 * do_syscall() will re-arm it for the next NEED_ALARM syscall. */
-		alarm(0);
-
-		if (xcpu_pending) {
-			child->xcpu_count++;
-			xcpu_pending = 0;
-		}
-		if (child->xcpu_count == 100) {
-			debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n", child->num, pids[child->num]);
-			goto out;
-		}
-
-		if (handle_sigreturn(ret) == false)
-			goto out;	// Exit the child, things are getting too weird.
-	}
-
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 		if (ctrlc_pending) {
 			panic(EXIT_SIGINT);
 			break;
 		}
 
-		/* SIGXCPU no longer longjmps — check the flag here. */
+		/* SIGALRM: the blocking syscall returned EINTR.
+		 * Check for stalled-on-fd, detect stalls, and
+		 * count the timeout as an op. */
+		if (sigalrm_pending) {
+			sigalrm_pending = 0;
+			alarm(0);
+			handle_alarm_timeout(child);
+			if (check_stall(child))
+				goto out;
+			if (child->kill_count > 0) {
+				output(1, "[%d] Missed a kill signal, exiting\n", getpid());
+				goto out;
+			}
+		}
+
 		if (xcpu_pending) {
 			child->xcpu_count++;
 			xcpu_pending = 0;

@@ -6,8 +6,7 @@
 #include "signals.h"
 #include "shm.h"
 
-sigjmp_buf ret_jump;
-
+volatile sig_atomic_t sigalrm_pending;
 volatile sig_atomic_t xcpu_pending;
 volatile sig_atomic_t ctrlc_pending;
 
@@ -30,19 +29,24 @@ static void sigint_handler(__unused__ int sig, siginfo_t *info, __unused__ void 
 
 static void sighandler(int sig)
 {
-	switch (sig) {
-	case SIGALRM:
-		/* Jump back, maybe we'll make progress.
-		 * Don't re-arm the alarm here — do_syscall() will arm a
-		 * fresh one for the next NEED_ALARM syscall.  Re-arming
-		 * here just creates a stale 1-second timer that can fire
-		 * while we hold rec->lock in handle_sigreturn. */
-		siglongjmp(ret_jump, sig);
-		break;
+	/* Every signal except SIGALRM, SIGXCPU, and those handled
+	 * separately (SIGINT, SIGCHLD, etc.) exits the child. */
+	(void)sig;
+	_exit(EXIT_SUCCESS);
+}
 
-	default:
-		_exit(EXIT_SUCCESS);
-	}
+static void sigalrm_handler(__unused__ int sig)
+{
+	sigalrm_pending = 1;
+	/* Don't siglongjmp here.  SIGALRM is installed without
+	 * SA_RESTART, so the signal interrupts the blocking syscall
+	 * (it returns EINTR/ERESTARTNOHAND) and control returns to
+	 * the child main loop where sigalrm_pending is checked.
+	 *
+	 * The old code called siglongjmp() from here, which could
+	 * permanently leak glibc's allocator lock if the child was
+	 * inside malloc/free at signal delivery time, causing
+	 * deadlock or heap corruption on the next allocation. */
 }
 
 static void sigxcpu_handler(__unused__ int sig)
@@ -90,6 +94,17 @@ void mask_signals_child(void)
 	}
 	/* we want default behaviour for child process signals */
 	(void)signal(SIGCHLD, SIG_DFL);
+
+	/* SIGALRM: set a flag and let the interrupted syscall return
+	 * EINTR.  Installed without SA_RESTART so blocking syscalls
+	 * are interrupted rather than silently restarted. */
+	{
+		struct sigaction alrm_sa;
+		sigemptyset(&alrm_sa.sa_mask);
+		alrm_sa.sa_flags = 0;
+		alrm_sa.sa_handler = sigalrm_handler;
+		(void)sigaction(SIGALRM, &alrm_sa, NULL);
+	}
 
 	/* Count SIGXCPUs.  Install without SA_RESTART so the signal
 	 * interrupts blocking syscalls and control returns to the
