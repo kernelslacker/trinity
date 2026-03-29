@@ -3,6 +3,9 @@
  *                          const char __user *, uargs)
  */
 #include <errno.h>
+#include <linux/filter.h>
+#include "net.h"
+#include "random.h"
 #include "sanitise.h"
 
 #define SECCOMP_SET_MODE_STRICT		0
@@ -23,6 +26,33 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		rec->a2 = 0;
 		rec->a3 = 0;
 	}
+
+	if (rec->a1 == SECCOMP_SET_MODE_FILTER) {
+		/*
+		 * FILTER mode needs uargs pointing to a valid struct sock_fprog
+		 * containing a BPF program.  Use bpf_gen_seccomp() which builds
+		 * seccomp-flavoured cBPF programs with the Markov chain generator.
+		 */
+#ifdef USE_BPF
+		unsigned long *addr = NULL;
+		unsigned long len = 0;
+
+		bpf_gen_seccomp(&addr, &len);
+		rec->a3 = (unsigned long) addr;
+#endif
+	}
+}
+
+static void post_seccomp(struct syscallrecord *rec)
+{
+#ifdef USE_BPF
+	if (rec->a1 == SECCOMP_SET_MODE_FILTER && rec->a3) {
+		struct sock_fprog *fprog = (struct sock_fprog *) rec->a3;
+
+		free(fprog->filter);
+		freeptr(&rec->a3);
+	}
+#endif
 }
 
 static unsigned long seccomp_ops[] = {
@@ -47,5 +77,6 @@ struct syscallentry syscall_seccomp = {
 	.arg1list = ARGLIST(seccomp_ops),
 	.arg2list = ARGLIST(seccomp_flags),
 	.sanitise = sanitise_seccomp,
+	.post = post_seccomp,
 	.group = GROUP_PROCESS,
 };
