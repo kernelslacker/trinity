@@ -6,13 +6,17 @@
 #include "compat.h"
 
 #ifndef MPOL_DEFAULT
-#define MPOL_DEFAULT	0
-#define MPOL_PREFERRED	1
-#define MPOL_BIND	2
-#define MPOL_INTERLEAVE	3
-#define MPOL_LOCAL	4
-#define MPOL_PREFERRED_MANY 5
-#define MPOL_WEIGHTED_INTERLEAVE 6
+#define MPOL_DEFAULT		0
+#define MPOL_PREFERRED		1
+#define MPOL_BIND		2
+#define MPOL_INTERLEAVE		3
+#define MPOL_LOCAL		4
+#endif
+#ifndef MPOL_PREFERRED_MANY
+#define MPOL_PREFERRED_MANY	5	/* 5.15+ */
+#endif
+#ifndef MPOL_WEIGHTED_INTERLEAVE
+#define MPOL_WEIGHTED_INTERLEAVE 6	/* 6.9+ */
 #endif
 
 static unsigned long mempolicy_modes[] = {
