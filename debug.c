@@ -16,6 +16,7 @@
 #include "pids.h"
 #include "shm.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "version.h"
 
 #define BACKTRACE_SIZE 100
@@ -67,9 +68,9 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 {
 	struct childdata *child = this_child();
 
-	printf("BUG!: %s\n", bugtxt);
-	printf("BUG!: %s\n", VERSION);
-	printf("BUG!: [%d] %s:%s:%u\n", getpid(), filename, funcname, lineno);
+	outputerr("BUG!: %s\n", bugtxt);
+	outputerr("BUG!: %s\n", VERSION);
+	outputerr("BUG!: [%d] %s:%s:%u\n", getpid(), filename, funcname, lineno);
 
 	show_backtrace();
 

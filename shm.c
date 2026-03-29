@@ -15,6 +15,7 @@
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
+#include "trinity.h"
 #include "utils.h"
 
 struct shm_s *shm;
@@ -36,7 +37,7 @@ void create_shm(void)
 
 	/* clear the whole shm. */
 	memset(shm, 0, shm_size);
-	printf("shm:%p-%p (%u pages)\n", shm, (char *)shm + shm_size - 1, nr_shm_pages);
+	output(1, "shm:%p-%p (%u pages)\n", shm, (char *)shm + shm_size - 1, nr_shm_pages);
 }
 
 void init_shm(void)

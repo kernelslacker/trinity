@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include "bdevs.h"
 #include "list.h"
+#include "trinity.h"
 #include "types.h"
 #include "utils.h"
 
@@ -32,12 +33,12 @@ static void add_to_bdevlist(const char *name)
 
 	/* Verify the path exists and is a block device. */
 	if (stat(path, &sb) == -1) {
-		printf("Couldn't stat %s: not a valid device node.\n", path);
+		outputerr("Couldn't stat %s: not a valid device node.\n", path);
 		return;
 	}
 
 	if (!S_ISBLK(sb.st_mode)) {
-		printf("%s is not a block device.\n", path);
+		outputerr("%s is not a block device.\n", path);
 		return;
 	}
 
@@ -59,12 +60,12 @@ static void stat_dev(char *name)
 	ret = lstat(name, &sb);
 
 	if (ret == -1) {
-		printf("Couldn't open %s\n", name);
+		outputerr("Couldn't open %s\n", name);
 		exit(EXIT_FAILURE);
 	}
 
 	if (!(S_ISBLK(sb.st_mode))) {
-		printf("Sorry, %s doesn't look like a block device.\n", name);
+		outputerr("Sorry, %s doesn't look like a block device.\n", name);
 		exit(EXIT_FAILURE);
 	}
 
@@ -100,11 +101,11 @@ void dump_bdev_list(void)
 {
 	struct list_head *node;
 
-	printf("Found %u block devices.\n", nr_blockdevs);
+	output(1, "Found %u block devices.\n", nr_blockdevs);
 	list_for_each(node, &bdevs->list) {
 		struct bdevlist *nl;
 
 		nl = (struct bdevlist *) node;
-		printf("%s\n", nl->name);
+		output(1, "%s\n", nl->name);
 	}
 }

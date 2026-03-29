@@ -31,6 +31,7 @@
 #include "params.h"	// 'user_set_seed'
 #include "pids.h"
 #include "random.h"
+#include "trinity.h"
 #include "utils.h"
 
 /* The actual seed lives in the shm. This variable is used
@@ -50,12 +51,12 @@ unsigned int init_seed(unsigned int seedparam)
 
 		urandomfd = open("/dev/urandom", O_RDONLY);
 		if (urandomfd == -1) {
-			printf("urandom: %s\n", strerror(errno));
+			outputerr("urandom: %s\n", strerror(errno));
 			return false;
 		}
 
 		if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
-			printf("urandom: %s\n", strerror(errno));
+			outputerr("urandom: %s\n", strerror(errno));
 
 		close(urandomfd);
 

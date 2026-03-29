@@ -7,6 +7,7 @@
 #include "stats.h"
 #include "syscall.h"
 #include "tables.h"
+#include "trinity.h"
 
 static void dump_entry(const struct syscalltable *table, unsigned int i)
 {
@@ -20,11 +21,11 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 	if (entry->attempted == 0)
 		return;
 
-	printf("%s: (attempted:%u. success:%u. failures:%u.\n", entry->name, entry->attempted, entry->successes, entry->failures);
+	output(0, "%s: (attempted:%u. success:%u. failures:%u.\n", entry->name, entry->attempted, entry->successes, entry->failures);
 
 	for (j = 0; j < NR_ERRNOS; j++) {
 		if (entry->errnos[j] != 0) {
-			printf("    %s: %d\n", strerror(j), entry->errnos[j]);
+			output(0, "    %s: %d\n", strerror(j), entry->errnos[j]);
 		}
 	}
 }
@@ -34,11 +35,11 @@ void dump_stats(void)
 	unsigned int i;
 
 	if (biarch == true) {
-		printf("32bit:\n");
+		output(0, "32bit:\n");
 		for_each_32bit_syscall(i) {
 			dump_entry(syscalls_32bit, i);
 		}
-		printf("64bit:\n");
+		output(0, "64bit:\n");
 		for_each_64bit_syscall(i) {
 			dump_entry(syscalls_64bit, i);
 		}
@@ -51,13 +52,13 @@ void dump_stats(void)
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
 	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
 	    shm->stats.fd_duped || shm->stats.fd_events_processed) {
-		printf("\nfd lifecycle: stale:%lu (generation:%lu) closed:%lu regenerated:%lu duped:%lu\n",
+		output(0, "\nfd lifecycle: stale:%lu (generation:%lu) closed:%lu regenerated:%lu duped:%lu\n",
 			shm->stats.fd_stale_detected,
 			shm->stats.fd_stale_by_generation,
 			shm->stats.fd_closed_tracked,
 			shm->stats.fd_regenerated,
 			shm->stats.fd_duped);
-		printf("fd events: processed:%lu dropped:%lu\n",
+		output(0, "fd events: processed:%lu dropped:%lu\n",
 			shm->stats.fd_events_processed,
 			shm->stats.fd_events_dropped);
 	}
@@ -69,7 +70,7 @@ void dump_stats(void)
 		unsigned int cold_count = 0;
 		unsigned int j;
 
-		printf("\nKCOV coverage: %lu unique edges, %lu total PCs, %lu calls\n",
+		output(0, "\nKCOV coverage: %lu unique edges, %lu total PCs, %lu calls\n",
 			kcov_shm->edges_found, kcov_shm->total_pcs,
 			kcov_shm->total_calls);
 
@@ -103,17 +104,17 @@ void dump_stats(void)
 		}
 
 		if (top_count > 0) {
-			printf("Top edge-producing syscalls:\n");
+			output(0, "Top edge-producing syscalls:\n");
 			for (j = 0; j < top_count; j++) {
 				struct syscallentry *entry = table[top_nr[j]].entry;
 				const char *name = entry ? entry->name : "???";
 
-				printf("  %-24s %lu\n", name, top_edges[j]);
+				output(0, "  %-24s %lu\n", name, top_edges[j]);
 			}
 		}
 
 		if (cold_count > 0) {
-			printf("Cold syscalls (need better sanitise): %u\n", cold_count);
+			output(0, "Cold syscalls (need better sanitise): %u\n", cold_count);
 			for (i = 0; i < nr_syscalls_to_scan; i++) {
 				struct syscallentry *entry;
 
@@ -123,7 +124,7 @@ void dump_stats(void)
 					continue;
 
 				entry = table[i].entry;
-				printf("  %-24s (edges:%lu, last new @ call %lu)\n",
+				output(0, "  %-24s (edges:%lu, last new @ call %lu)\n",
 					entry ? entry->name : "???",
 					kcov_shm->per_syscall_edges[i],
 					kcov_shm->last_edge_at[i]);
@@ -140,7 +141,7 @@ void dump_stats(void)
 				syscalls_with_hints++;
 			}
 		}
-		printf("CMP hints: %u values across %u syscalls\n",
+		output(0, "CMP hints: %u values across %u syscalls\n",
 			total_hints, syscalls_with_hints);
 	}
 }

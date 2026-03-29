@@ -13,6 +13,7 @@
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
+#include "trinity.h"
 #include "utils.h"
 
 /*
@@ -37,7 +38,7 @@ void * alloc_shared(unsigned int size)
 
 	ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
 	if (ret == MAP_FAILED) {
-		printf("mmap %u failure\n", size);
+		outputerr("mmap %u failure\n", size);
 		exit(EXIT_FAILURE);
 	}
 	/* poison, to force users to set it to something sensible. */
@@ -48,7 +49,7 @@ void * alloc_shared(unsigned int size)
 		shared_regions[nr_shared_regions].size = size;
 		nr_shared_regions++;
 	} else {
-		fprintf(stderr, "alloc_shared: MAX_SHARED_ALLOCS (%d) reached, "
+		outputerr("alloc_shared: MAX_SHARED_ALLOCS (%d) reached, "
 			"region %p won't be tracked by range_overlaps_shared()\n",
 			MAX_SHARED_ALLOCS, ret);
 	}
@@ -83,7 +84,7 @@ void * __zmalloc(size_t size, const char *func)
 		if (p != NULL)
 			goto done;
 
-		printf("%s: malloc(%zu) failure.\n", func, size);
+		outputerr("%s: malloc(%zu) failure.\n", func, size);
 		exit(EXIT_FAILURE);
 	}
 

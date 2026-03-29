@@ -16,6 +16,7 @@
 #include "list.h"
 #include "maps.h"
 #include "random.h"
+#include "trinity.h"
 #include "utils.h"
 
 static void alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
@@ -101,15 +102,15 @@ static void setup_mapping_sizes(void)
 	}
 
 	if ((memfree * 1024) < GB(8ULL)) {
-		printf("Free memory: %.2fGB\n", (double) memfree / 1024 / 1024);
-		printf("Low on memory, disabling mmaping of 1GB pages\n");
+		output(0, "Free memory: %.2fGB\n", (double) memfree / 1024 / 1024);
+		output(0, "Low on memory, disabling mmaping of 1GB pages\n");
 		goto disable_1gb_mappings;
 	}
 
 
 	// Because of increased mem usage, don't do nr_cpus * 4
 	if (max_children > 4) {
-		printf("Limiting children from %u to %u\n",
+		output(0, "Limiting children from %u to %u\n",
 				max_children, max_children / 4);
 		max_children /= 4;
 		return;
