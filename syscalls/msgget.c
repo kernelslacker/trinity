@@ -5,7 +5,13 @@
 #include "sanitise.h"
 
 static unsigned long ipc_flags[] = {
-	IPC_CREAT, IPC_EXCL,
+	IPC_CREAT,
+	IPC_CREAT | 0600,
+	IPC_CREAT | 0644,
+	IPC_CREAT | 0666,
+	IPC_CREAT | IPC_EXCL | 0600,
+	IPC_CREAT | IPC_EXCL | 0644,
+	IPC_CREAT | IPC_EXCL | 0666,
 };
 
 struct syscallentry syscall_msgget = {
