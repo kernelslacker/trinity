@@ -111,7 +111,7 @@ struct syscallentry {
 
 	unsigned int number;
 	unsigned int active_number;
-	const char name[80];
+	const char *name;
 	const unsigned int num_args;
 	unsigned int flags;
 
