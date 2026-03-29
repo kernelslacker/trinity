@@ -42,8 +42,8 @@ static long syscall32(unsigned int call,
 	/* If we have CONFIG_IA32_EMULATION unset, we will segfault.
 	 * Detect this case, and force 64-bit only.
 	 */
-	if (shm->syscalls32_succeeded == false) {
-		if (shm->syscalls32_attempted >= (max_children * 2)) {
+	if (__atomic_load_n(&shm->syscalls32_succeeded, __ATOMIC_RELAXED) == false) {
+		if (__atomic_load_n(&shm->syscalls32_attempted, __ATOMIC_RELAXED) >= (max_children * 2)) {
 			unsigned int i;
 
 			lock(&shm->syscalltable_lock);
@@ -53,7 +53,7 @@ static long syscall32(unsigned int call,
 				goto already_done;
 
 			output(0, "Tried %d 32-bit syscalls unsuccessfully. Disabling all 32-bit syscalls.\n",
-					shm->syscalls32_attempted);
+					__atomic_load_n(&shm->syscalls32_attempted, __ATOMIC_RELAXED));
 
 			for (i = 0; i < max_nr_32bit_syscalls; i++) {
 				struct syscallentry *entry = syscalls[i].entry;
@@ -65,7 +65,7 @@ already_done:
 			unlock(&shm->syscalltable_lock);
 		}
 
-		shm->syscalls32_attempted++;
+		__atomic_add_fetch(&shm->syscalls32_attempted, 1, __ATOMIC_RELAXED);
 	}
 
 	DO_32_SYSCALL
@@ -75,7 +75,7 @@ already_done:
 		__res = -1;
 	}
 
-	shm->syscalls32_succeeded = true;
+	__atomic_store_n(&shm->syscalls32_succeeded, true, __ATOMIC_RELAXED);
 
 #else
 	#error Implement 32-on-64 syscall macro for this architecture.
