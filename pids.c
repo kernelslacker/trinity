@@ -95,7 +95,8 @@ void dump_childnos(void)
 	char *end = string + sizeof(string);
 	int n;
 
-	n = snprintf(sptr, end - sptr, "## pids: (%u active)\n", shm->running_childs);
+	n = snprintf(sptr, end - sptr, "## pids: (%u active)\n",
+		     __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED));
 	if (n > 0 && n < end - sptr)
 		sptr += n;
 
@@ -194,7 +195,7 @@ unsigned int get_pid(void)
 
 	/* If we get called from the parent, and there are no
 	 * children around yet, we need to not look at the pidmap. */
-	if (shm->running_childs == 0)
+	if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
 		return 0;
 
 	switch (rand() % 3) {

@@ -156,7 +156,7 @@ static void reap_dead_kids(void)
 		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 		handle_child(i, pid, childstatus);
 
-		if (shm->running_childs == 0)
+		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
 			return;
 	}
 
@@ -173,7 +173,7 @@ static void kill_all_kids(void)
 
 	reap_dead_kids();
 
-	if (shm->running_childs == 0)
+	if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
 		return;
 
 	/* Ok, some kids are still alive. 'help' them along with a SIGKILL */
@@ -552,7 +552,9 @@ static bool spawn_child(int childno)
 	__atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 
 	debugf("Created child %d (pid:%d) [total:%u/%u]\n",
-		childno, pid, shm->running_childs, max_children);
+		childno, pid,
+		__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED),
+		max_children);
 	return true;
 }
 
@@ -575,7 +577,7 @@ static void replace_child(int childno)
 /* Generate children*/
 static void fork_children(void)
 {
-	while (shm->running_childs < max_children) {
+	while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children) {
 		int childno;
 
 		if (shm->spawn_no_more == true)
@@ -726,7 +728,7 @@ static void handle_children(void)
 	unsigned int i;
 	int collected = 0;
 
-	if (shm->running_childs == 0)
+	if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
 		return;
 
 	if (children == NULL)
@@ -777,7 +779,7 @@ static void check_children_progressing(void)
 			hiscore = child->op_nr;
 	}
 
-	if (stall_count == shm->running_childs)
+	if (stall_count == __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED))
 		stall_genocide();
 }
 
@@ -889,7 +891,7 @@ void main_loop(void)
 		/* This should never happen, but just to catch corner cases, like if
 		 * fork() failed when we tried to replace a child.
 		 */
-		if (shm->running_childs < max_children)
+		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children)
 			fork_children();
 	}
 
@@ -912,16 +914,16 @@ void main_loop(void)
 			break;
 		}
 
-		if (last != shm->running_childs) {
-			last = shm->running_childs;
+		if (last != __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED)) {
+			last = __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED);
 
 			output(0, "exit_reason=%d, but %u children still running.\n",
 				__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED),
-				shm->running_childs);
+				__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED));
 		}
 
 		/* Wait for all the children to exit. */
-		while (shm->running_childs > 0) {
+		while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) > 0) {
 			taint_check();
 
 			handle_children();
