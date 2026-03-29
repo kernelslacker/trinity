@@ -4,6 +4,7 @@
  */
 #include <linux/aio_abi.h>
 #include <string.h>
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "fd.h"
@@ -19,6 +20,8 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	struct iocb *iocbs;
 	char *buf;
 	unsigned int nr, i;
+
+	rec->a1 = get_random_aio_ctx();
 
 	nr = 1 + (rand() % 4);
 	iocbs = (struct iocb *) get_writable_address(nr * sizeof(*iocbs));
@@ -44,7 +47,6 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 struct syscallentry syscall_io_submit = {
 	.name = "io_submit",
 	.num_args = 3,
-	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "ctx_id", [1] = "nr", [2] = "iocbpp" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

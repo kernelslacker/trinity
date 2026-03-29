@@ -103,8 +103,14 @@ struct io_uringobj {
 
 struct io_uringobj *get_io_uring_ring(void);
 
+unsigned long get_random_aio_ctx(void);
+
 struct landlockobj {
 	int fd;
+};
+
+struct aioobj {
+	unsigned long ctx;
 };
 
 struct object {
@@ -146,6 +152,8 @@ struct object {
 		struct io_uringobj io_uringobj;
 
 		struct landlockobj landlockobj;
+
+		struct aioobj aioobj;
 
 		struct socketinfo sockinfo;
 
