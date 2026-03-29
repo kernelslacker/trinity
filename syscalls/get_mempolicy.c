@@ -17,7 +17,7 @@ static unsigned long get_mempolicy_flags[] = {
 struct syscallentry syscall_get_mempolicy = {
 	.name = "get_mempolicy",
 	.num_args = 5,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_ADDRESS, [4] = ARG_LIST },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_MMAP, [4] = ARG_LIST },
 	.argname = { [0] = "policy", [1] = "nmask", [2] = "maxnode", [3] = "addr", [4] = "flags" },
 	.low3range = 0,
 	.hi3range = 1 << 9,	/* 1 << CONFIG_NODES_SHIFT */
