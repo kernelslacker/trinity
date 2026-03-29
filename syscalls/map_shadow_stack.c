@@ -11,11 +11,18 @@ static unsigned long map_shadow_stack_flags[] = {
 	SHADOW_STACK_SET_TOKEN,
 };
 
+static void sanitise_map_shadow_stack(struct syscallrecord *rec)
+{
+	/* Pass addr=0 to let the kernel choose the location. */
+	rec->a1 = 0;
+}
+
 struct syscallentry syscall_map_shadow_stack = {
 	.name = "map_shadow_stack",
 	.num_args = 3,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN, [2] = ARG_LIST },
+	.argtype = { [1] = ARG_LEN, [2] = ARG_LIST },
 	.argname = { [0] = "addr", [1] = "size", [2] = "flags" },
 	.arg3list = ARGLIST(map_shadow_stack_flags),
+	.sanitise = sanitise_map_shadow_stack,
 	.group = GROUP_VM,
 };
