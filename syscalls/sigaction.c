@@ -11,14 +11,21 @@
 #include "shm.h"
 #include "trinity.h"
 
+static struct sigaction *alloc_sigaction(void)
+{
+	struct sigaction *sa;
+
+	sa = (struct sigaction *) get_writable_address(sizeof(*sa));
+	sigemptyset(&sa->sa_mask);
+	sa->sa_flags = 0;
+	sa->sa_handler = RAND_BOOL() ? SIG_DFL : SIG_IGN;
+	return sa;
+}
+
 static void sanitise_rt_sigaction(struct syscallrecord *rec)
 {
-	if (RAND_BOOL())
-		rec->a2 = 0;
-
-	if (RAND_BOOL())
-		rec->a3 = 0;
-
+	rec->a2 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
+	rec->a3 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
 	rec->a4 = sizeof(sigset_t);
 }
 
