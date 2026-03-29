@@ -476,10 +476,15 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 /*
  * Check if a SIGALRM timeout indicates a stuck-on-fd situation.
  * If so, evict the fd and notify the parent.
+ * Only meaningful for CHILD_OP_SYSCALL — other op types don't use the
+ * syscall record, so skip the fd-eviction logic for them.
  */
 static void handle_alarm_timeout(struct childdata *child)
 {
 	struct syscallrecord *rec = &child->syscall;
+
+	if (child->op_type != CHILD_OP_SYSCALL)
+		return;
 
 	if (rec->state != BEFORE)
 		return;
@@ -612,10 +617,18 @@ void child_process(struct childdata *child, int childno)
 		 * be recycled by the allocator for the next sanitise. */
 		deferred_free_tick();
 
-		/* timestamp, and do the syscall */
+		/* timestamp, and dispatch the op */
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 		disable_coredumps();
+
+		/*
+		 * Non-syscall ops don't arm their own alarm; set one here so
+		 * SIGALRM-based stall detection can fire if the op hangs.
+		 * random_syscall() arms alarm internally for NEED_ALARM syscalls.
+		 */
+		if (child->op_type != CHILD_OP_SYSCALL)
+			alarm(1);
 
 		switch (child->op_type) {
 		case CHILD_OP_MMAP_LIFECYCLE:	ret = mmap_lifecycle(child); break;
@@ -624,6 +637,9 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_INODE_SPEWER:	ret = inode_spewer(child); break;
 		default:			ret = random_syscall(child); break;
 		}
+
+		if (child->op_type != CHILD_OP_SYSCALL)
+			alarm(0);
 
 		enable_coredumps();
 
