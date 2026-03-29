@@ -239,8 +239,9 @@ static const struct ioctl autofs_ioctls[] = {
 	IOCTL(AUTOFS_IOC_SETTIMEOUT),
 	IOCTL(AUTOFS_IOC_EXPIRE),
 	IOCTL(AUTOFS_IOC_EXPIRE_MULTI),
-	/* Both defines removed by kernel commit
-	 * 1f28c5d055032e7e8ee5e48198dca7e125d0eec6
+	/* AUTOFS_IOC_EXPIRE_INDIRECT and AUTOFS_IOC_EXPIRE_DIRECT were always
+	 * aliases of AUTOFS_IOC_EXPIRE_MULTI, never distinct ioctls. Removed
+	 * from kernel headers in commit 1f28c5d05503 as unused dead weight.
 	 */
 #ifdef AUTOFS_IOC_EXPIRE_INDIRECT
 	IOCTL(AUTOFS_IOC_EXPIRE_INDIRECT),

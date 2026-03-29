@@ -1606,14 +1606,6 @@ struct kvm_get_htab_fd {
 # define SHM_NORESERVE 010000
 #endif
 
-/* linux/auto_fs4.h */
-#ifndef AUTOFS_IOC_EXPIRE_INDIRECT
-#define AUTOFS_IOC_EXPIRE_INDIRECT AUTOFS_IOC_EXPIRE_MULTI
-#endif
-#ifndef AUTOFS_IOC_EXPIRE_DIRECT
-#define AUTOFS_IOC_EXPIRE_DIRECT AUTOFS_IOC_EXPIRE_MULTI
-#endif
-
 /* linux/mount.h */
 #ifndef MOVE_MOUNT_F_SYMLINKS
 #define MOVE_MOUNT_F_SYMLINKS           0x00000001 /* Follow symlinks on from path */
