@@ -8,7 +8,7 @@
 
 static void sanitise_setuid(struct syscallrecord *rec)
 {
-	rec->a1 = rand32();
+	rec->a1 = rand() % 65536;
 }
 
 struct syscallentry syscall_setuid = {
