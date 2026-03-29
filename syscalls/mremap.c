@@ -14,6 +14,10 @@
 #include "trinity.h"
 #include "compat.h"
 
+#ifndef MREMAP_DONTUNMAP
+#define MREMAP_DONTUNMAP	4
+#endif
+
 static const unsigned long alignments[] = {
 	MB(1), MB(2), MB(4), MB(4),
 	MB(10), MB(100),
@@ -51,6 +55,11 @@ static void sanitise_mremap(struct syscallrecord *rec)
 		newaddr |= align;
 		newaddr &= ~(align - 1);
 	}
+
+	/* MREMAP_DONTUNMAP requires MREMAP_MAYMOVE; when combined with
+	 * MREMAP_FIXED it remaps to new_addr without unmapping the source. */
+	if (rec->a4 & MREMAP_DONTUNMAP)
+		rec->a4 |= MREMAP_MAYMOVE;
 
 	rec->a5 = newaddr;
 
