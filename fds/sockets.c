@@ -111,8 +111,27 @@ static void socket_setup_lazy(struct socketinfo *si)
 			goto skip_bind;
 
 		ret = bind(fd, sa, salen);
-		if (ret != -1)
-			(void) listen(fd, RAND_RANGE(1, 128));
+		if (ret != -1) {
+			int lret = listen(fd, RAND_RANGE(1, 128));
+			if (lret != -1) {
+				/*
+				 * Make the listening socket non-blocking so accept4
+				 * returns immediately if no connection is pending.
+				 * This creates connected socket pairs when another
+				 * child happens to connect, which are high-value for
+				 * fuzzing send/recv/ioctl paths.
+				 */
+				int flags = fcntl(fd, F_GETFL, 0);
+				if (flags != -1)
+					(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+				int afd = accept4(fd, NULL, NULL,
+						  SOCK_NONBLOCK | SOCK_CLOEXEC);
+				if (afd != -1)
+					(void) add_socket(afd, si->triplet.family,
+							  si->triplet.type,
+							  si->triplet.protocol);
+			}
+		}
 	}
 
 skip_bind:
