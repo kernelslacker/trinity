@@ -219,9 +219,10 @@ static void post_sendmmsg(__unused__ struct syscallrecord *rec)
 struct syscallentry syscall_sendmmsg = {
 	.name = "sendmmsg",
 	.num_args = 4,
-	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST },
+	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "mmsg", [2] = "vlen", [3] = "flags" },
 	.arg4list = ARGLIST(sendflags),
+	.low3range = 1, .hi3range = 1024,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_sendmmsg,
