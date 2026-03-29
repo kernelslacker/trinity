@@ -30,7 +30,7 @@ static void post_memfd_create(struct syscallrecord *rec)
 struct syscallentry syscall_memfd_create = {
 	.name = "memfd_create",
 	.num_args = 2,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LIST },
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_LIST },
 	.argname = { [0] = "uname", [1] = "flag" },
 	.arg2list = ARGLIST(memfd_create_flags),
 	.rettype = RET_FD,
