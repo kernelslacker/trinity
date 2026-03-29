@@ -168,9 +168,10 @@ static void post_recvmmsg(__unused__ struct syscallrecord *rec)
 struct syscallentry syscall_recvmmsg = {
 	.name = "recvmmsg",
 	.num_args = 5,
-	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST, [4] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST, [4] = ARG_ADDRESS },
 	.argname = { [0] = "fd", [1] = "mmsg", [2] = "vlen", [3] = "flags", [4] = "timeout" },
 	.arg4list = ARGLIST(recv_flags),
+	.low3range = 1, .hi3range = 1024,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvmmsg,
