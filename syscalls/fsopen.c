@@ -5,16 +5,13 @@
 #include "random.h"
 #include "sanitise.h"
 
+/* Populated by mount.c constructor from /proc/filesystems. */
+extern const char **filesystem_types;
+extern unsigned int nr_filesystem_types;
+
 #define FSOPEN_CLOEXEC 0x00000001
 static unsigned long fsopen_flags[] = {
 	FSOPEN_CLOEXEC
-};
-
-static const char *fs_types[] = {
-	"ext4", "btrfs", "xfs", "tmpfs", "proc", "sysfs",
-	"devtmpfs", "devpts", "cgroup2", "overlay", "nfs",
-	"fuse", "hugetlbfs", "mqueue", "debugfs", "tracefs",
-	"securityfs", "pstore", "efivarfs", "bpf", "ramfs",
 };
 
 static void sanitise_fsopen(struct syscallrecord *rec)
@@ -22,7 +19,7 @@ static void sanitise_fsopen(struct syscallrecord *rec)
 	const char *fstype;
 	char *name;
 
-	fstype = fs_types[rand() % ARRAY_SIZE(fs_types)];
+	fstype = filesystem_types[rand() % nr_filesystem_types];
 	name = (char *) get_writable_address(32);
 	strncpy(name, fstype, 31);
 	name[31] = '\0';
