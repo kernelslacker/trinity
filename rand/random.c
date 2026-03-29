@@ -18,7 +18,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	unsigned long mask = 0;
 	unsigned int bits;
 
-	bits = RAND_RANGE(0, num);      /* num of bits to OR */
+	bits = rand() / (RAND_MAX / (num + 1) + 1);
 	if (bits == 0)
 		return mask;
 
