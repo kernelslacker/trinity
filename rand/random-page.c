@@ -80,7 +80,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	unsigned int i;
 	unsigned char separators[] = { ':', ',', '.', ' ', '-', '\0', };
 	unsigned char separator;
-	unsigned int randrange = 9;
+	unsigned int randrange = 10;
 
 	/* If we only have a small buffer, don't do
 	 * the longer generators. */
@@ -213,6 +213,13 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			}
 		}
 		ptr[rand() % len] = 0;
+		return;
+
+	/* NUL-terminated printable ASCII string. */
+	case 9:
+		for (i = 0; i + 1 < len; i++)
+			ptr[i] = 32 + rand() % (0x7f - 32);
+		ptr[len - 1] = '\0';
 		return;
 	}
 }
