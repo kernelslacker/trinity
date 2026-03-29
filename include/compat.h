@@ -1188,6 +1188,9 @@ struct sockaddr_nfc_llcp {
 #endif
 
 /* linux/kvm.h */
+#ifndef KVMIO
+#define KVMIO 0xAE
+#endif
 #ifndef KVM_GET_REG_LIST
 struct kvm_reg_list {
         __u64 n; /* number of regs */
