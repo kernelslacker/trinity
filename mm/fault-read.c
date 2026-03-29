@@ -7,6 +7,9 @@
 #include "random.h"
 #include "utils.h"
 
+/* 64KB covers the largest page size (arm64 with 64KB pages). */
+static char page_buf[65536];
+
 static unsigned int nr_pages(struct map *map)
 {
 	return map->size / page_size;
@@ -16,11 +19,10 @@ static void read_one_page(struct map *map)
 {
 	char *p = map->ptr;
 	unsigned long offset = (rand() % map->size) & PAGE_MASK;
-	char buf[page_size];
 
 	p += offset;
 	mprotect((void *) p, page_size, PROT_READ);
-	memcpy(buf, p, page_size);
+	memcpy(page_buf, p, page_size);
 }
 
 
@@ -28,14 +30,13 @@ static void read_whole_mapping(struct map *map)
 {
 	char *p = map->ptr;
 	unsigned int i, nr;
-	char buf[page_size];
 
 	nr = nr_pages(map);
 
 	for (i = 0; i < nr; i++) {
 		char *page = p + (i * page_size);
 		mprotect((void *) page, page_size, PROT_READ);
-		memcpy(buf, page, page_size);
+		memcpy(page_buf, page, page_size);
 	}
 }
 
@@ -43,7 +44,6 @@ static void read_every_other_page(struct map *map)
 {
 	char *p = map->ptr;
 	unsigned int i, nr, first;
-	char buf[page_size];
 
 	nr = nr_pages(map);
 
@@ -52,7 +52,7 @@ static void read_every_other_page(struct map *map)
 	for (i = first; i < nr; i+=2) {
 		char *page = p + (i * page_size);
 		mprotect((void *) page, page_size, PROT_READ);
-		memcpy(buf, page, page_size);
+		memcpy(page_buf, page, page_size);
 	}
 }
 
@@ -60,7 +60,6 @@ static void read_mapping_reverse(struct map *map)
 {
 	char *p = map->ptr;
 	unsigned int i, nr;
-	char buf[page_size];
 
 	if (nr_pages(map) == 0)
 		return;
@@ -70,7 +69,7 @@ static void read_mapping_reverse(struct map *map)
 	for (i = nr; i > 0; i--) {
 		char *page = p + (i * page_size);
 		mprotect((void *) page, page_size, PROT_READ);
-		memcpy(buf, page, page_size);
+		memcpy(page_buf, page, page_size);
 	}
 }
 
@@ -79,14 +78,13 @@ static void read_random_pages(struct map *map)
 {
 	char *p = map->ptr;
 	unsigned int i, nr;
-	char buf[page_size];
 
 	nr = nr_pages(map);
 
 	for (i = 0; i < nr; i++) {
 		char *page = p + ((rand() % nr) * page_size);
 		mprotect((void *) page, page_size, PROT_READ);
-		memcpy(buf, page, page_size);
+		memcpy(page_buf, page, page_size);
 	}
 }
 
@@ -94,7 +92,6 @@ static void read_random_pages(struct map *map)
 static void read_last_page(struct map *map)
 {
 	char *p = map->ptr;
-	char buf[page_size];
 	char *ptr;
 
 	if (map->size < page_size)
@@ -102,7 +99,7 @@ static void read_last_page(struct map *map)
 
 	ptr = p + (map->size - page_size);
 	mprotect((void *) ptr, page_size, PROT_READ);
-	memcpy(buf, ptr, page_size);
+	memcpy(page_buf, ptr, page_size);
 }
 
 static const struct faultfn read_faultfns[] = {
