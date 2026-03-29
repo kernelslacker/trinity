@@ -216,7 +216,7 @@ static void init_child(struct childdata *child, int childno)
 		if (pid_alive(mainpid) == false) {
 			panic(EXIT_SHM_CORRUPTION);
 			outputerr("BUG!: parent (%d) went away!\n", mainpid);
-			_exit(EXIT_FAILURE);
+			_exit(EXIT_SHM_CORRUPTION);
 		}
 	}
 
@@ -304,17 +304,17 @@ static void check_parent_pid(void)
 	 */
 	if (pid == 1 || ppid == 1) {
 		debugf("pidns detected (pid=%d ppid=%d), exiting child.\n", pid, ppid);
-		_exit(EXIT_FAILURE);
+		_exit(EXIT_REPARENT_PROBLEM);
 	}
 
 	if (pid == ppid) {
 		debugf("pid became ppid! exiting child.\n");
-		_exit(EXIT_FAILURE);
+		_exit(EXIT_REPARENT_PROBLEM);
 	}
 
 	if (ppid < 2) {
 		debugf("ppid == %d. pidns? exiting child.\n", ppid);
-		_exit(EXIT_FAILURE);
+		_exit(EXIT_REPARENT_PROBLEM);
 	}
 
 	lock(&shm->buglock);
@@ -333,7 +333,7 @@ static void check_parent_pid(void)
 
 out:
 	unlock(&shm->buglock);
-	_exit(EXIT_FAILURE);
+	_exit(EXIT_REPARENT_PROBLEM);
 }
 
 /*

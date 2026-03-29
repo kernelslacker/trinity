@@ -588,13 +588,13 @@ static void fork_children(void)
 		if (childno == CHILD_NOT_FOUND) {
 			outputerr("## Pid map was full!\n");
 			dump_childnos();
-			exit(EXIT_FAILURE);
+			exit(EXIT_LOST_CHILD);
 		}
 
 		if (spawn_child(childno) == false) {
 			outputerr("Couldn't fork initial children!\n");
 			panic(EXIT_FORK_FAILURE);
-			exit(EXIT_FAILURE);
+			exit(EXIT_FORK_FAILURE);
 		}
 
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
@@ -911,6 +911,7 @@ void main_loop(void)
 		if (++shutdown_attempts > 10) {
 			output(0, "Gave up waiting for children after %u attempts.\n",
 				shutdown_attempts);
+			panic(EXIT_TIMED_OUT);
 			break;
 		}
 

@@ -135,7 +135,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 		/* If we became tainted, get out as fast as we can. */
 		if (is_tainted() == true) {
 			panic(EXIT_KERNEL_TAINTED);
-			_exit(EXIT_FAILURE);
+			_exit(EXIT_KERNEL_TAINTED);
 		}
 
 		if (needalarm)

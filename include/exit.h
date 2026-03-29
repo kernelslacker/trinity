@@ -17,8 +17,11 @@ enum exit_reasons {
 	EXIT_FD_INIT_FAILURE = 13,
 	EXIT_FORK_FAILURE = 14,
 	EXIT_LOCKING_CATASTROPHE = 15,
+	EXIT_FD_EXHAUSTION = 16,
+	EXIT_TIMED_OUT = 17,
+	EXIT_USER_REQUEST = 18,
 
-	NUM_EXIT_REASONS = 16
+	NUM_EXIT_REASONS = 19
 };
 
 static inline const char * decode_exit(enum exit_reasons reason)
@@ -40,6 +43,9 @@ static inline const char * decode_exit(enum exit_reasons reason)
 		"Something happened during fd init.",
 		"fork() failure",
 		"some kind of locking catastrophe",
+		"fd exhaustion at runtime.",
+		"timed out waiting for children.",
+		"user requested exit.",
 	};
 	if ((unsigned int)reason >= NUM_EXIT_REASONS)
 		return "Unknown exit reason";
