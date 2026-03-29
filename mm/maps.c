@@ -70,8 +70,11 @@ void map_dump(struct object *obj, enum obj_scope scope)
 	m = &obj->map;
 
 	sizeunit(m->size, buf, sizeof(buf));
-	output(2, " start: %p size:%s  name: %s scope:%d\n",
-		m->ptr, buf, m->name, scope);
+	output(2, " start: %p size:%s  flags:%s%s  name: %s scope:%d\n",
+		m->ptr, buf,
+		(m->flags & MAP_SHARED) ? "shared" : "private",
+		(m->flags & MAP_HUGETLB) ? ",hugetlb" : "",
+		m->name, scope);
 }
 
 /*
@@ -110,6 +113,7 @@ void init_child_mappings(void)
 		}
 		newobj->map.size = m->size;
 		newobj->map.prot = m->prot;
+		newobj->map.flags = m->flags;
 		/* We leave type as 'INITIAL' until we change the mapping
 		 * by mprotect/mremap/munmap etc..
 		 */
