@@ -36,6 +36,7 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 	new = alloc_object();
 	new->map.size = size;
 	new->map.prot = prot;
+	new->map.flags = flags;
 	new->map.type = INITIAL_ANON;
 	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, fd, 0);
 	if (new->map.ptr == MAP_FAILED) {
