@@ -5,12 +5,19 @@
 #include <sys/socket.h>
 #include "child.h"
 #include "fd-event.h"
+#include "net.h"
 #include "objects.h"
 #include "sanitise.h"
 
 static void sanitise_socketpair(struct syscallrecord *rec)
 {
-	rec->a1 = AF_UNIX;
+	struct socket_triplet st = { .family = 0, .type = 0, .protocol = 0 };
+
+	gen_socket_args(&st);
+
+	rec->a1 = st.family;
+	rec->a2 = st.type;
+	rec->a3 = st.protocol;
 	rec->a4 = (unsigned long) malloc(sizeof(int) * 2);
 	if (!rec->a4)
 		return;
