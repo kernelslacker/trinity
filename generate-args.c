@@ -6,6 +6,7 @@
 #include "arch.h"
 #include "cmp_hints.h"
 #include "debug.h"
+#include "deferred-free.h"
 #include "fd.h"
 #include "maps.h"
 #include "net.h"
@@ -384,10 +385,10 @@ void generic_free_arg(struct syscallrecord *rec)
 		argtype = get_argtype(entry, i);
 
 		if (argtype == ARG_PATHNAME)
-			free((void *) get_argval(rec, i));
+			deferred_free_enqueue((void *) get_argval(rec, i), NULL);
 
 		if (argtype == ARG_IOVEC)
-			free((void *) get_argval(rec, i));
+			deferred_free_enqueue((void *) get_argval(rec, i), NULL);
 	}
 }
 

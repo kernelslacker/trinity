@@ -13,6 +13,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "deferred-free.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
@@ -250,13 +251,10 @@ already_done:
 	unlock(&shm->syscalltable_lock);
 }
 
-static void generic_post(const enum argtype type, unsigned long reg)
-{
-	void *ptr = (void *) reg;
-
-	if ((type == ARG_PATHNAME) && (ptr != NULL))
-		free(ptr);
-}
+/* generic_post was removed: the ARG_PATHNAME free it performed
+ * is now handled by generic_free_arg() via the deferred-free queue.
+ * The old code double-freed ARG_PATHNAME args (once here, once in
+ * generic_free_arg). */
 
 void handle_syscall_ret(struct syscallrecord *rec)
 {
@@ -297,13 +295,6 @@ void handle_syscall_ret(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.successes, 1, __ATOMIC_RELAXED);
 	}
 	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
-
-	generic_post(entry->argtype[0], rec->a1);
-	generic_post(entry->argtype[1], rec->a2);
-	generic_post(entry->argtype[2], rec->a3);
-	generic_post(entry->argtype[3], rec->a4);
-	generic_post(entry->argtype[4], rec->a5);
-	generic_post(entry->argtype[5], rec->a6);
 
 	if (entry->post)
 	    entry->post(rec);

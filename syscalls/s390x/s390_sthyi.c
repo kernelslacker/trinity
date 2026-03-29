@@ -8,6 +8,7 @@
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 static unsigned long syscall_s390_sthyi_arg1[] = {
 	STHYI_FC_CP_IFL_CAP,
@@ -38,7 +39,7 @@ static void sanitise_s390_sthyi(struct syscallrecord *rec)
 /* Free buffer, freeptr takes care of NULL */
 static void post_s390_sthyi(struct syscallrecord *rec)
 {
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_s390_sthyi = {

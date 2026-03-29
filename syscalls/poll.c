@@ -7,6 +7,7 @@
 #include "fd.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "compat.h"
 
 static const unsigned long poll_events[] = {
@@ -35,7 +36,7 @@ static void sanitise_poll(struct syscallrecord *rec)
 
 static void post_poll(struct syscallrecord *rec)
 {
-	freeptr(&rec->a1);
+	deferred_freeptr(&rec->a1);
 }
 
 struct syscallentry syscall_poll = {
@@ -77,8 +78,8 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 
 static void post_ppoll(struct syscallrecord *rec)
 {
-	freeptr(&rec->a1);
-	freeptr(&rec->a3);
+	deferred_freeptr(&rec->a1);
+	deferred_freeptr(&rec->a3);
 }
 
 struct syscallentry syscall_ppoll = {

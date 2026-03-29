@@ -17,6 +17,7 @@
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -66,9 +67,9 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 
 static void post_move_pages(struct syscallrecord *rec)
 {
-	freeptr(&rec->a3);
-	freeptr(&rec->a4);
-	freeptr(&rec->a5);
+	deferred_freeptr(&rec->a3);
+	deferred_freeptr(&rec->a4);
+	deferred_freeptr(&rec->a5);
 }
 
 static unsigned long move_pages_flags[] = {

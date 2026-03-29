@@ -5,6 +5,7 @@
 #include "files.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
@@ -133,7 +134,7 @@ static void sanitise_openat2(struct syscallrecord *rec)
 
 static void post_openat2(struct syscallrecord *rec)
 {
-	freeptr(&rec->a3);
+	deferred_freeptr(&rec->a3);
 }
 
 struct syscallentry syscall_openat2 = {

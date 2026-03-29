@@ -8,6 +8,7 @@
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
@@ -144,7 +145,7 @@ static void post_ptrace(struct syscallrecord *rec)
 	case PTRACE_GETSIGINFO:
 	case PTRACE_SETSIGMASK:
 	case PTRACE_GETSIGMASK:
-		freeptr(&rec->a4);
+		deferred_freeptr(&rec->a4);
 		break;
 	default:
 		break;

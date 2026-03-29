@@ -8,6 +8,7 @@
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 /*
  * Allocate buffer which fits the svc requirements:
@@ -36,7 +37,7 @@ static void sanitise_s390_pci_mmio_write(struct syscallrecord *rec)
 /* Free buffer, freeptr takes care of NULL */
 static void post_s390_pci_mmio(struct syscallrecord *rec)
 {
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_s390_pci_mmio_read = {

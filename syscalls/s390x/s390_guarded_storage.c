@@ -6,6 +6,7 @@
 
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 static unsigned long syscall_s390_guarded_storage_arg1[] = {
 	GS_ENABLE,
@@ -32,7 +33,7 @@ static void sanitise_s390_gs(struct syscallrecord *rec)
 /* Free buffer, freeptr takes care of NULL */
 static void post_s390_gs(struct syscallrecord *rec)
 {
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_s390_guarded_storage = {

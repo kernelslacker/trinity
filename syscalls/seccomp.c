@@ -7,6 +7,7 @@
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 #define SECCOMP_SET_MODE_STRICT		0
 #define SECCOMP_SET_MODE_FILTER		1
@@ -50,7 +51,7 @@ static void post_seccomp(struct syscallrecord *rec)
 		struct sock_fprog *fprog = (struct sock_fprog *) rec->a3;
 
 		free(fprog->filter);
-		freeptr(&rec->a3);
+		deferred_freeptr(&rec->a3);
 	}
 #endif
 }

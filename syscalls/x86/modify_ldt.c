@@ -10,6 +10,7 @@
 #define __ASSEMBLY__ 1
 #include <asm/ldt.h>
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
@@ -57,7 +58,7 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 
 static void post_modify_ldt(__unused__ struct syscallrecord *rec)
 {
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 static unsigned long modify_ldt_funcs[] = {

@@ -6,6 +6,7 @@
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
@@ -32,7 +33,7 @@ static void sanitise_write(struct syscallrecord *rec)
 
 static void post_write(struct syscallrecord *rec)
 {
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_write = {

@@ -4,6 +4,7 @@
 #include <linux/ipc.h>
 #include <linux/shm.h>
 #include "sanitise.h"
+#include "deferred-free.h"
 
 static unsigned long shmctl_ops[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
@@ -33,7 +34,7 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 
 static void post_shmctl(struct syscallrecord *rec)
 {
-	freeptr(&rec->a3);
+	deferred_freeptr(&rec->a3);
 }
 
 struct syscallentry syscall_shmctl = {

@@ -7,6 +7,7 @@
 #include <sched.h>
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 /*
  * struct ns_id_req from include/uapi/linux/nsfs.h.
@@ -58,7 +59,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 
 static void post_listns(struct syscallrecord *rec)
 {
-	freeptr(&rec->a1);
+	deferred_freeptr(&rec->a1);
 }
 
 struct syscallentry syscall_listns = {

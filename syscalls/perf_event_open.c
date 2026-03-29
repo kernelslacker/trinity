@@ -15,6 +15,7 @@
 #include "perf_event.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
@@ -1382,7 +1383,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 static void post_perf_event_open(struct syscallrecord *rec)
 {
-	freeptr(&rec->a1);
+	deferred_freeptr(&rec->a1);
 }
 
 static unsigned long perf_event_open_flags[] = {

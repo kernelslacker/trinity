@@ -5,6 +5,7 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include "sanitise.h"
+#include "deferred-free.h"
 
 static unsigned long msgctl_cmds[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
@@ -30,7 +31,7 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 
 static void post_msgctl(struct syscallrecord *rec)
 {
-	freeptr(&rec->a3);
+	deferred_freeptr(&rec->a3);
 }
 
 struct syscallentry syscall_msgctl = {

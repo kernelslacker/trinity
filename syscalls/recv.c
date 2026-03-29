@@ -9,6 +9,7 @@
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "trinity.h"
 #include "compat.h"
 
@@ -105,7 +106,7 @@ static void post_recvmsg(struct syscallrecord *rec)
 		free(msg->msg_control);
 		free(msg->msg_iov);
 		free(msg->msg_name);
-		freeptr(&rec->a2);
+		deferred_freeptr(&rec->a2);
 	}
 }
 

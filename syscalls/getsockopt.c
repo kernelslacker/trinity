@@ -6,6 +6,7 @@
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "utils.h"
 
 static void sanitise_getsockopt(struct syscallrecord *rec)
@@ -50,8 +51,8 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 
 static void post_getsockopt(struct syscallrecord *rec)
 {
-	freeptr(&rec->a4);
-	freeptr(&rec->a5);
+	deferred_freeptr(&rec->a4);
+	deferred_freeptr(&rec->a5);
 }
 
 struct syscallentry syscall_getsockopt = {
