@@ -103,9 +103,11 @@ static void post_mmap(struct syscallrecord *rec)
 	new->map.ptr = p;
 
 	if (is_anon) {
+		new->map.fd = -1;
 		new->map.type = CHILD_ANON;
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_ANON);
 	} else {
+		new->map.fd = rec->a5;
 		new->map.type = MMAPED_FILE;
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_FILE);
 	}

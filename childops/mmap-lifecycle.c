@@ -70,6 +70,7 @@ static bool do_create(void)
 	}
 	obj->map.size = size;
 	obj->map.prot = prot;
+	obj->map.fd = -1;
 	obj->map.type = CHILD_ANON;
 	add_object(obj, OBJ_LOCAL, OBJ_MMAP_ANON);
 
