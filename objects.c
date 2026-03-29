@@ -12,6 +12,25 @@
 #include "trinity.h"
 #include "utils.h"
 
+static struct list_head global_obj_list = { &global_obj_list, &global_obj_list };
+
+void register_global_obj_init(const struct global_obj_entry *entry)
+{
+	list_add_tail((struct list_head *) &entry->list, &global_obj_list);
+}
+
+void init_global_objects(void)
+{
+	struct list_head *pos;
+
+	list_for_each(pos, &global_obj_list) {
+		struct global_obj_entry *entry = (struct global_obj_entry *) pos;
+
+		output(0, "Initializing %s objects.\n", entry->name);
+		entry->init();
+	}
+}
+
 /*
  * Hash table mapping fd → (object, type) for O(1) lookup in
  * remove_object_by_fd().  Open-addressing with linear probing.

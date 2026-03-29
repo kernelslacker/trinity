@@ -72,3 +72,5 @@ void create_sysv_shms(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
 	}
 }
+
+REG_GLOBAL_OBJ(sysv_shms, create_sysv_shms);

@@ -19,8 +19,6 @@
 #include "random.h"
 #include "signals.h"
 #include "shm.h"
-#include "sysv-shm.h"
-#include "futex.h"
 #include "stats.h"
 #include "tables.h"
 #include "taint.h"
@@ -37,26 +35,6 @@ unsigned int num_online_cpus;
 bool no_bind_to_cpu;
 unsigned int max_children;
 struct rlimit max_files_rlimit;
-
-struct obj_init_entry {
-	const char *name;
-	void (*init)(void);
-};
-
-static const struct obj_init_entry object_init_table[] = {
-	{ "futexes",	create_futexes },
-	{ "sysv_shms",	create_sysv_shms },
-};
-
-static void init_global_objects(void)
-{
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(object_init_table); i++) {
-		output(0, "Initializing %s objects.\n", object_init_table[i].name);
-		object_init_table[i].init();
-	}
-}
 
 /*
  * just in case we're not using the test.sh harness, we

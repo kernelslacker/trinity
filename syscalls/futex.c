@@ -12,6 +12,7 @@
 #include <inttypes.h>
 #include "futex.h"
 #include "maps.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 
@@ -141,6 +142,8 @@ void create_futexes(void)
 
 	output(0, "Reserved/initialized %d futexes.\n", NFUTEXES);
 }
+
+REG_GLOBAL_OBJ(futexes, create_futexes);
 
 static inline uint32_t
 __cmpxchg(uint32_t *uaddr, uint32_t oldval, uint32_t newval)
