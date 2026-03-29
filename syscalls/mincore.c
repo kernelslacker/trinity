@@ -5,6 +5,7 @@
 #include "arch.h"
 #include "maps.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -23,7 +24,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 
 static void post_mincore(struct syscallrecord *rec)
 {
-	freeptr(&rec->a3);
+	deferred_freeptr(&rec->a3);
 }
 
 struct syscallentry syscall_mincore = {

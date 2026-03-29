@@ -9,6 +9,7 @@
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
@@ -158,7 +159,7 @@ static void post_sendmsg(__unused__ struct syscallrecord *rec)
 			free(msg->msg_iov);
 		}
 		free(msg->msg_name);	// free sockaddr
-		freeptr(&rec->a2);
+		deferred_freeptr(&rec->a2);
 	}
 }
 

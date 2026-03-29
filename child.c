@@ -31,6 +31,7 @@
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "uid.h"
+#include "deferred-free.h"
 #include "sanitise.h"
 #include "utils.h"	// zmalloc
 
@@ -370,6 +371,8 @@ static void init_child(struct childdata *child, int childno)
 	munge_process();
 
 	kcov_init_child(&child->kcov);
+
+	deferred_free_init();
 }
 
 /*
@@ -638,6 +641,11 @@ void child_process(struct childdata *child, int childno)
 
 		periodic_work();
 
+		/* Free any deferred allocations whose TTL has expired.
+		 * This runs before the syscall so that freed memory can
+		 * be recycled by the allocator for the next sanitise. */
+		deferred_free_tick();
+
 		/* timestamp, and do the syscall */
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
@@ -677,6 +685,7 @@ void child_process(struct childdata *child, int childno)
 	}
 
 out:
+	deferred_free_flush();
 	check_fd_leaks(child);
 	kcov_cleanup_child(&child->kcov);
 

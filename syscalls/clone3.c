@@ -8,6 +8,7 @@
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -61,7 +62,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 
 static void post_clone3(struct syscallrecord *rec)
 {
-	freeptr(&rec->a1);
+	deferred_freeptr(&rec->a1);
 }
 
 struct syscallentry syscall_clone3 = {

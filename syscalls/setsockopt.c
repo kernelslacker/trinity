@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <linux/filter.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "net.h"
 #include "compat.h"
 #include "random.h"
@@ -229,7 +230,7 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 
 static void post_setsockopt(struct syscallrecord *rec)
 {
-	freeptr(&rec->a4);
+	deferred_freeptr(&rec->a4);
 }
 
 struct syscallentry syscall_setsockopt = {

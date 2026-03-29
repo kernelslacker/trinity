@@ -8,6 +8,7 @@
 #include "net.h"
 #include "objects.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 static void sanitise_socketpair(struct syscallrecord *rec)
 {
@@ -46,7 +47,7 @@ static void post_socketpair(struct syscallrecord *rec)
 	}
 
 out:
-	freeptr(&rec->a4);
+	deferred_freeptr(&rec->a4);
 }
 
 struct syscallentry syscall_socketpair = {

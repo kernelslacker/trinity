@@ -10,6 +10,7 @@
 
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 #ifndef __NFDBITS
 #define __NFDBITS NFDBITS
@@ -52,10 +53,10 @@ static void sanitise_select(struct syscallrecord *rec)
 
 static void post_select(struct syscallrecord *rec)
 {
-	freeptr(&rec->a2);
-	freeptr(&rec->a3);
-	freeptr(&rec->a4);
-	freeptr(&rec->a5);
+	deferred_freeptr(&rec->a2);
+	deferred_freeptr(&rec->a3);
+	deferred_freeptr(&rec->a4);
+	deferred_freeptr(&rec->a5);
 }
 
 struct syscallentry syscall_select = {

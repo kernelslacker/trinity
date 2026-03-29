@@ -6,6 +6,7 @@
 #include <linux/msg.h>
 #include "compat.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 static unsigned long msgsnd_flags[] = {
 	MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT,
@@ -24,7 +25,7 @@ static void sanitise_msgsnd(struct syscallrecord *rec)
 
 static void post_msgsnd(struct syscallrecord *rec)
 {
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_msgsnd = {

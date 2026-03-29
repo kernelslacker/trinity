@@ -7,6 +7,7 @@
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 /*
  * Build a minimal-but-plausible ELF module image so the kernel gets past
@@ -139,7 +140,7 @@ static void sanitise_init_module(struct syscallrecord *rec)
 
 static void post_init_module(struct syscallrecord *rec)
 {
-	freeptr(&rec->a1);
+	deferred_freeptr(&rec->a1);
 }
 
 struct syscallentry syscall_init_module = {

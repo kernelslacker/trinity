@@ -5,6 +5,7 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 #ifndef IORING_SETUP_IOPOLL
 #define IORING_SETUP_IOPOLL		(1U << 0)
@@ -102,7 +103,7 @@ static void post_io_uring_setup(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 
 	if (fd == -1)
 		return;

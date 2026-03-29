@@ -12,6 +12,7 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
+#include "deferred-free.h"
 
 static __u32 get_kern_version(void)
 {
@@ -460,7 +461,7 @@ static void post_bpf(struct syscallrecord *rec)
 		break;
 	}
 
-	freeptr(&rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 static unsigned long bpf_cmds[] = {
