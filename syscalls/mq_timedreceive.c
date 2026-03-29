@@ -36,7 +36,7 @@ struct syscallentry syscall_mq_timedreceive = {
 	.name = "mq_timedreceive",
 	.group = GROUP_IPC,
 	.num_args = 5,
-	.argtype = { [0] = ARG_FD },
+	.argtype = { [0] = ARG_FD_MQ },
 	.argname = { [0] = "mqdes", [1] = "u_msg_ptr", [2] = "msg_len", [3] = "u_msg_prio", [4] = "u_abs_timeout" },
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_timedreceive,
