@@ -68,7 +68,7 @@ struct syscallentry syscall_statx = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [3] = ARG_LIST, [4] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags", [3] = "mask", [4] = "buffer" },
-	.arg3list = ARGLIST(statx_flags),
-	.arg4list = ARGLIST(statx_mask),
+	.arg_params[2].list = ARGLIST(statx_flags),
+	.arg_params[3].list = ARGLIST(statx_mask),
 	.group = GROUP_VFS,
 };

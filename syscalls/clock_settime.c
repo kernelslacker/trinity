@@ -52,7 +52,7 @@ struct syscallentry syscall_clock_settime = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "which_clock", [1] = "tp" },
-	.arg1list = ARGLIST(clock_ids),
+	.arg_params[0].list = ARGLIST(clock_ids),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_clock_settime,

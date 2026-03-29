@@ -45,7 +45,7 @@ struct syscallentry syscall_membarrier = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "cmd", [1] = "flags" },
-	.arg1list = ARGLIST(membarrier_cmds),
+	.arg_params[0].list = ARGLIST(membarrier_cmds),
 	.sanitise = sanitise_membarrier,
 	.group = GROUP_SCHED,
 };

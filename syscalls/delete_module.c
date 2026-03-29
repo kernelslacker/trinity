@@ -16,7 +16,7 @@ struct syscallentry syscall_delete_module = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LIST },
 	.argname = { [0] = "name_user", [1] = "flags" },
-	.arg2list = ARGLIST(delete_module_flags),
+	.arg_params[1].list = ARGLIST(delete_module_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,

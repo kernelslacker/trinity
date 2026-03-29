@@ -31,6 +31,6 @@ struct syscallentry syscall_kcmp = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_PID, [1] = ARG_PID, [2] = ARG_OP },
 	.argname = { [0] = "pid1", [1] = "pid2", [2] = "type", [3] = "idx1", [4] = "idx2" },
-	.arg3list = ARGLIST(kcmp_types),
+	.arg_params[2].list = ARGLIST(kcmp_types),
 	.sanitise = sanitise_kcmp,
 };

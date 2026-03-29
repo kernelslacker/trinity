@@ -33,7 +33,7 @@ struct syscallentry syscall_mlock2 = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_LIST },
 	.argname = { [0] = "start", [1] = "len", [2] = "flags" },
-	.arg3list = ARGLIST(mlock2_flags),
+	.arg_params[2].list = ARGLIST(mlock2_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,
 };

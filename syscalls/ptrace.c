@@ -167,7 +167,7 @@ struct syscallentry syscall_ptrace = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_OP, [1] = ARG_PID, [2] = ARG_ADDRESS },
 	.argname = { [0] = "request", [1] = "pid", [2] = "addr", [3] = "data" },
-	.arg1list = ARGLIST(ptrace_reqs),
+	.arg_params[0].list = ARGLIST(ptrace_reqs),
 	.sanitise = sanitise_ptrace,
 	.post = post_ptrace,
 

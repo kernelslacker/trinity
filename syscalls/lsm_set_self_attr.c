@@ -28,7 +28,7 @@ struct syscallentry syscall_lsm_set_self_attr = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "attr", [1] = "ctx", [2] = "size", [3] = "flags" },
-	.arg1list = ARGLIST(lsm_attrs),
+	.arg_params[0].list = ARGLIST(lsm_attrs),
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_lsm_set_self_attr,
 	.group = GROUP_PROCESS,

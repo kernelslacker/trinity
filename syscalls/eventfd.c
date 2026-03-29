@@ -53,7 +53,7 @@ struct syscallentry syscall_eventfd2 = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_LEN, [1] = ARG_LIST },
 	.argname = { [0] = "count", [1] = "flags" },
-	.arg2list = ARGLIST(eventfd2_flags),
+	.arg_params[1].list = ARGLIST(eventfd2_flags),
 	.rettype = RET_FD,
 	.post = post_eventfd_create,
 	.group = GROUP_IPC,

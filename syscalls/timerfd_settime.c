@@ -48,7 +48,7 @@ struct syscallentry syscall_timerfd_settime = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_TIMERFD, [1] = ARG_LIST, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS },
 	.argname = { [0] = "ufd", [1] = "flags", [2] = "utmr", [3] = "otmr" },
-	.arg2list = ARGLIST(timerfd_settime_flags),
+	.arg_params[1].list = ARGLIST(timerfd_settime_flags),
 	.sanitise = sanitise_timerfd_settime,
 	.flags = NEED_ALARM,
 };

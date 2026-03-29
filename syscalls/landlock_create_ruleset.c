@@ -50,7 +50,7 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.num_args = 3,
 	.argtype = { [2] = ARG_LIST },
 	.argname = { [0] = "attr", [1] = "size", [2] = "flags" },
-	.arg3list = ARGLIST(landlock_create_ruleset_flags),
+	.arg_params[2].list = ARGLIST(landlock_create_ruleset_flags),
 	.rettype = RET_FD,
 	.sanitise = sanitise_landlock_create_ruleset,
 	.post = post_landlock_create_ruleset,

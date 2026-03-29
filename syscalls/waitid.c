@@ -19,6 +19,6 @@ struct syscallentry syscall_waitid = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_OP, [1] = ARG_PID, [2] = ARG_ADDRESS, [3] = ARG_LIST, [4] = ARG_ADDRESS },
 	.argname = { [0] = "which", [1] = "upid", [2] = "infop", [3] = "options", [4] = "ru" },
-	.arg1list = ARGLIST(waitid_which),
-	.arg4list = ARGLIST(waitid_options),
+	.arg_params[0].list = ARGLIST(waitid_which),
+	.arg_params[3].list = ARGLIST(waitid_options),
 };

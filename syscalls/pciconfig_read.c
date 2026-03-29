@@ -9,8 +9,8 @@ struct syscallentry syscall_pciconfig_read = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_RANGE, [1] = ARG_RANGE, [2] = ARG_RANGE, [3] = ARG_LEN, [4] = ARG_ADDRESS },
 	.argname = { [0] = "bus", [1] = "dfn", [2] = "off", [3] = "len", [4] = "buf" },
-	.low1range = 0, .hi1range = 255,
-	.low2range = 0, .hi2range = 255,
-	.low3range = 0, .hi3range = 4095,
+	.arg_params[0].range.low = 0, .arg_params[0].range.hi = 255,
+	.arg_params[1].range.low = 0, .arg_params[1].range.hi = 255,
+	.arg_params[2].range.low = 0, .arg_params[2].range.hi = 4095,
 	.group = GROUP_PROCESS,
 };

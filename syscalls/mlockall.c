@@ -26,6 +26,6 @@ struct syscallentry syscall_mlockall = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "flags" },
-	.arg1list = ARGLIST(mlockall_flags),
+	.arg_params[0].list = ARGLIST(mlockall_flags),
 	.group = GROUP_VM,
 };

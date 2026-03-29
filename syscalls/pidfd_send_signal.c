@@ -45,7 +45,7 @@ struct syscallentry syscall_pidfd_send_signal = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_PIDFD, [1] = ARG_OP, [3] = ARG_OP },
 	.argname = { [0] = "pidfd", [1] = "sig", [2] = "info", [3] = "flags" },
-	.arg2list = ARGLIST(pidfd_signals),
-	.arg4list = ARGLIST(pidfd_send_signal_flags),
+	.arg_params[1].list = ARGLIST(pidfd_signals),
+	.arg_params[3].list = ARGLIST(pidfd_send_signal_flags),
 	.sanitise = sanitise_pidfd_send_signal,
 };

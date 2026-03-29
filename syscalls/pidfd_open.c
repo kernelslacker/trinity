@@ -29,7 +29,7 @@ struct syscallentry syscall_pidfd_open = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_PID, [1] = ARG_LIST },
 	.argname = { [0] = "pid", [1] = "flags" },
-	.arg2list = ARGLIST(pidfd_open_flags),
+	.arg_params[1].list = ARGLIST(pidfd_open_flags),
 	.rettype = RET_FD,
 	.post = post_pidfd_open,
 };

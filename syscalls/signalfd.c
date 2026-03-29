@@ -59,7 +59,7 @@ struct syscallentry syscall_signalfd4 = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask", [3] = "flags" },
-	.arg4list = ARGLIST(signalfd4_flags),
+	.arg_params[3].list = ARGLIST(signalfd4_flags),
 	.sanitise = sanitise_signalfd4,
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,

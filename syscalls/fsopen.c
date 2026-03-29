@@ -32,7 +32,7 @@ struct syscallentry syscall_fsopen = {
 	.num_args = 2,
 	.argtype = { [1] = ARG_OP },
 	.argname = { [0] = "_fs_name", [1] = "flags" },
-	.arg2list = ARGLIST(fsopen_flags),
+	.arg_params[1].list = ARGLIST(fsopen_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,

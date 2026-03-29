@@ -9,6 +9,6 @@ struct syscallentry syscall_timer_gettime = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_RANGE, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "timer_id", [1] = "setting" },
-	.low1range = 0,
-	.hi1range = 31,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 31,
 };

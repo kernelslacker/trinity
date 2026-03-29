@@ -23,7 +23,7 @@ struct syscallentry syscall_finit_module = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "uargs", [2] = "flags" },
-	.arg3list = ARGLIST(finit_module_flags),
+	.arg_params[2].list = ARGLIST(finit_module_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,

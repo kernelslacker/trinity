@@ -39,9 +39,9 @@ struct syscallentry syscall_futex_wake = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST },
 	.argname = { [0] = "uaddr", [1] = "mask", [2] = "nr", [3] = "flags" },
-	.low3range = 1,
-	.hi3range = 128,
-	.arg4list = ARGLIST(futex2_flags),
+	.arg_params[2].range.low = 1,
+	.arg_params[2].range.hi = 128,
+	.arg_params[3].list = ARGLIST(futex2_flags),
 	.sanitise = sanitise_futex_wake,
 	.group = GROUP_IPC,
 };

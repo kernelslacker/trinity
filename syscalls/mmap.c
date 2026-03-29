@@ -164,8 +164,8 @@ struct syscallentry syscall_mmap = {
 
 	.argtype = { [1] = ARG_LEN, [2] = ARG_LIST, [3] = ARG_OP, [4] = ARG_FD, [5] = ARG_LEN },
 	.argname = { [0] = "addr", [1] = "len", [2] = "prot", [3] = "flags", [4] = "fd", [5] = "off" },
-	.arg3list = ARGLIST(mmap_prots),
-	.arg4list = ARGLIST(mmap_excl_flags),
+	.arg_params[2].list = ARGLIST(mmap_prots),
+	.arg_params[3].list = ARGLIST(mmap_excl_flags),
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
@@ -181,8 +181,8 @@ struct syscallentry syscall_mmap2 = {
 
 	.argtype = { [1] = ARG_LEN, [2] = ARG_LIST, [3] = ARG_OP, [4] = ARG_FD, [5] = ARG_LEN },
 	.argname = { [0] = "addr", [1] = "len", [2] = "prot", [3] = "flags", [4] = "fd", [5] = "pgoff" },
-	.arg3list = ARGLIST(mmap_prots),
-	.arg4list = ARGLIST(mmap_excl_flags),
+	.arg_params[2].list = ARGLIST(mmap_prots),
+	.arg_params[3].list = ARGLIST(mmap_excl_flags),
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,

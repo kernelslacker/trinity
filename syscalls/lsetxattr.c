@@ -24,7 +24,7 @@ struct syscallentry syscall_lsetxattr = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_PATHNAME, [2] = ARG_ADDRESS, [3] = ARG_LEN, [4] = ARG_LIST },
 	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size", [4] = "flags" },
-	.arg5list = ARGLIST(lsetxattr_flags),
+	.arg_params[4].list = ARGLIST(lsetxattr_flags),
 	.group = GROUP_VFS,
 	.sanitise = sanitise_lsetxattr,
 };

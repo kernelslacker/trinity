@@ -43,7 +43,7 @@ struct syscallentry syscall_name_to_handle_at = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [4] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "name", [2] = "handle", [3] = "mnt_id", [4] = "flag" },
-	.arg5list = ARGLIST(name_to_handle_at_flags),
+	.arg_params[4].list = ARGLIST(name_to_handle_at_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_name_to_handle_at,

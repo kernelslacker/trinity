@@ -23,7 +23,7 @@ struct syscallentry syscall_lseek = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [2] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "offset", [2] = "whence" },
-	.arg3list = ARGLIST(lseek_whences),
+	.arg_params[2].list = ARGLIST(lseek_whences),
 	.sanitise = sanitise_lseek,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

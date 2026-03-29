@@ -17,7 +17,7 @@ struct syscallentry syscall_vmsplice = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_PIPE, [1] = ARG_IOVEC, [2] = ARG_IOVECLEN, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "iov", [2] = "nr_segs", [3] = "flags" },
-	.arg4list = ARGLIST(vmsplice_flags),
+	.arg_params[3].list = ARGLIST(vmsplice_flags),
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
 };

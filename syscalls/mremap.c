@@ -97,7 +97,7 @@ struct syscallentry syscall_mremap = {
 	.sanitise = sanitise_mremap,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "addr", [1] = "old_len", [2] = "new_len", [3] = "flags", [4] = "new_addr" },
-	.arg4list = ARGLIST(mremap_flags),
+	.arg_params[3].list = ARGLIST(mremap_flags),
 	.group = GROUP_VM,
 	.post = post_mremap,
 };

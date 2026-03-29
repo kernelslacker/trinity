@@ -16,8 +16,8 @@ struct syscallentry syscall_runtime_instr = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_LIST, [1] = ARG_RANGE },
 	.argname = { [0] = "on_off", [1] = "sig_nr" },
-	.arg1list = ARGLIST(syscall_runtime_instr_arg1),
-	.low2range = 0,
-	.hi2range = 128,
+	.arg_params[0].list = ARGLIST(syscall_runtime_instr_arg1),
+	.arg_params[1].range.low = 0,
+	.arg_params[1].range.hi = 128,
 	.rettype = RET_ZERO_SUCCESS
 };

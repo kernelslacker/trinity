@@ -1394,7 +1394,7 @@ struct syscallentry syscall_perf_event_open = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_PID, [2] = ARG_CPU, [3] = ARG_FD_PERF, [4] = ARG_LIST },
 	.argname = { [0] = "attr_uptr", [1] = "pid", [2] = "cpu", [3] = "group_fd", [4] = "flags" },
-	.arg5list = ARGLIST(perf_event_open_flags),
+	.arg_params[4].list = ARGLIST(perf_event_open_flags),
 	.rettype = RET_FD,
 	.sanitise = sanitise_perf_event_open,
 	.post = post_perf_event_open,

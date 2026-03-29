@@ -43,7 +43,7 @@ struct syscallentry syscall_clone = {
 	.flags = AVOID_SYSCALL,
 	.argtype = { [0] = ARG_LIST, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS },
 	.argname = { [0] = "clone_flags", [1] = "newsp", [2] = "parent_tid", [3] = "child_tid", [4] = "regs" },
-	.arg1list = ARGLIST(clone_flags),
+	.arg_params[0].list = ARGLIST(clone_flags),
 	.sanitise = sanitise_clone,
 	.rettype = RET_PID_T,
 };
@@ -64,7 +64,7 @@ struct syscallentry syscall_clone2 = {
 	.flags = AVOID_SYSCALL,
 	.argtype = { [0] = ARG_LIST, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_ADDRESS },
 	.argname = { [0] = "flags", [1] = "ustack_base", [2] = "ustack_size", [3] = "parent_tidptr", [4] = "child_tidptr", [5] = "tls" },
-	.arg1list = ARGLIST(clone_flags),
+	.arg_params[0].list = ARGLIST(clone_flags),
 	.sanitise = sanitise_clone,
 	.rettype = RET_PID_T,
 };

@@ -39,7 +39,7 @@ struct syscallentry syscall_rseq = {
 	.num_args = 4,
 	.argtype = { [2] = ARG_LIST },
 	.argname = { [0] = "rseq", [1] = "rseq_len", [2] = "flags", [3] = "sig" },
-	.arg3list = ARGLIST(rseq_flags),
+	.arg_params[2].list = ARGLIST(rseq_flags),
 	.sanitise = sanitise_rseq,
 	.group = GROUP_PROCESS,
 };

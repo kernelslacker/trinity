@@ -26,15 +26,7 @@ unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 
 static struct results * get_results_ptr(struct syscallentry *entry, unsigned int argnum)
 {
-	switch (argnum) {
-	case 1:	return &entry->results1;
-	case 2:	return &entry->results2;
-	case 3:	return &entry->results3;
-	case 4:	return &entry->results4;
-	case 5:	return &entry->results5;
-	case 6:	return &entry->results6;
-	}
-	unreachable();
+	return &entry->results[argnum - 1];
 }
 
 static void store_successful_fd(struct results *results, unsigned long value)

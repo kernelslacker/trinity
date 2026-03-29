@@ -14,7 +14,7 @@ struct syscallentry syscall_tee = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_PIPE, [1] = ARG_FD_PIPE, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "fdin", [1] = "fdout", [2] = "len", [3] = "flags" },
-	.arg4list = ARGLIST(tee_flags),
+	.arg_params[3].list = ARGLIST(tee_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

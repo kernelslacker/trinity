@@ -207,7 +207,7 @@ struct syscallentry syscall_keyctl = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "cmd", [1] = "arg2", [2] = "arg3", [3] = "arg4", [4] = "arg5" },
-	.arg1list = ARGLIST(keyctl_cmds),
+	.arg_params[0].list = ARGLIST(keyctl_cmds),
 	.group = GROUP_IPC,
 	.sanitise = sanitise_keyctl,
 };

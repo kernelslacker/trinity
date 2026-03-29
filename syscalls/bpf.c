@@ -492,7 +492,7 @@ struct syscallentry syscall_bpf = {
 
 	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "cmd", [1] = "uattr", [2] = "size" },
-	.arg1list = ARGLIST(bpf_cmds),
+	.arg_params[0].list = ARGLIST(bpf_cmds),
 	.sanitise = sanitise_bpf,
 	.post = post_bpf,
 };

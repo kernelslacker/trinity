@@ -46,7 +46,7 @@ struct syscallentry syscall_inotify_init1 = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "flags" },
-	.arg1list = ARGLIST(inotify_init1_flags),
+	.arg_params[0].list = ARGLIST(inotify_init1_flags),
 	.group = GROUP_VFS,
 	.rettype = RET_FD,
 	.post = post_inotify_init,

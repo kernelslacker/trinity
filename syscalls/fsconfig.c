@@ -117,7 +117,7 @@ struct syscallentry syscall_fsconfig = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "_key", [3] = "_value", [4] = "aux" },
-	.arg2list = ARGLIST(fsconfig_ops),
+	.arg_params[1].list = ARGLIST(fsconfig_ops),
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_fsconfig,

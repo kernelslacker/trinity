@@ -56,7 +56,7 @@ struct syscallentry syscall_accept4 = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_SOCKADDR, [2] = ARG_SOCKADDRLEN, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "upeer_sockaddr", [2] = "upeer_addrlen", [3] = "flags" },
-	.arg4list = ARGLIST(accept4_flags),
+	.arg_params[3].list = ARGLIST(accept4_flags),
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,

@@ -13,6 +13,6 @@ struct syscallentry syscall_alarm = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_RANGE },
 	.argname = { [0] = "seconds" },
-	.low1range = 0,
-	.hi1range = 5,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 5,
 };

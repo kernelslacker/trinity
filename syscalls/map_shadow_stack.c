@@ -22,7 +22,7 @@ struct syscallentry syscall_map_shadow_stack = {
 	.num_args = 3,
 	.argtype = { [1] = ARG_LEN, [2] = ARG_LIST },
 	.argname = { [0] = "addr", [1] = "size", [2] = "flags" },
-	.arg3list = ARGLIST(map_shadow_stack_flags),
+	.arg_params[2].list = ARGLIST(map_shadow_stack_flags),
 	.sanitise = sanitise_map_shadow_stack,
 	.group = GROUP_VM,
 };

@@ -15,5 +15,5 @@ struct syscallentry syscall_sigprocmask = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
 	.argname = { [0] = "how", [1] = "set", [2] = "oset" },
-	.arg1list = ARGLIST(sigprocmask_how),
+	.arg_params[0].list = ARGLIST(sigprocmask_how),
 };

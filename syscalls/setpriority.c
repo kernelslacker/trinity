@@ -19,7 +19,7 @@ struct syscallentry syscall_setpriority = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_OP, [1] = ARG_PID },
 	.argname = { [0] = "which", [1] = "who", [2] = "niceval" },
-	.arg1list = ARGLIST(setpriority_which),
+	.arg_params[0].list = ARGLIST(setpriority_which),
 	.sanitise = sanitise_setpriority,
 	.group = GROUP_SCHED,
 };

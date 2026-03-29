@@ -23,5 +23,5 @@ struct syscallentry syscall_rt_sigprocmask = {
 	.sanitise = sanitise_rt_sigprocmask,
 	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "how", [1] = "set", [2] = "oset", [3] = "sigsetsize" },
-	.arg1list = ARGLIST(sigprocmask_how),
+	.arg_params[0].list = ARGLIST(sigprocmask_how),
 };

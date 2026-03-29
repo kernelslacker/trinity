@@ -43,7 +43,7 @@ struct syscallentry syscall_madvise = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_OP },
 	.argname = { [0] = "start", [1] = "len_in", [2] = "advice" },
-	.arg3list = ARGLIST(madvise_advices),
+	.arg_params[2].list = ARGLIST(madvise_advices),
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,
 };
@@ -60,7 +60,7 @@ struct syscallentry syscall_process_madvise = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD_PIDFD, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_OP, [4] = ARG_OP },
 	.argname = { [0] = "pidfd", [1] = "vec", [2] = "vlen", [3] = "behaviour", [4] = "flags" },
-	.arg4list = ARGLIST(process_madvise_behaviours),
-	.arg5list = ARGLIST(process_madvise_flags),
+	.arg_params[3].list = ARGLIST(process_madvise_behaviours),
+	.arg_params[4].list = ARGLIST(process_madvise_flags),
 	.group = GROUP_VM,
 };

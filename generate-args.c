@@ -63,28 +63,8 @@ static unsigned long handle_arg_address(struct syscallrecord *rec, unsigned int 
 static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int argnum)
 {
 	unsigned long i;
-	unsigned long low = 0, high = 0;
-
-	switch (argnum) {
-	case 1:	low = entry->low1range;
-		high = entry->hi1range;
-		break;
-	case 2:	low = entry->low2range;
-		high = entry->hi2range;
-		break;
-	case 3:	low = entry->low3range;
-		high = entry->hi3range;
-		break;
-	case 4:	low = entry->low4range;
-		high = entry->hi4range;
-		break;
-	case 5:	low = entry->low5range;
-		high = entry->hi5range;
-		break;
-	case 6:	low = entry->low6range;
-		high = entry->hi6range;
-		break;
-	}
+	unsigned long low = entry->arg_params[argnum - 1].range.low;
+	unsigned long high = entry->arg_params[argnum - 1].range.hi;
 
 	if (high == 0) {
 		outputerr("%s forgets to set hirange!\n", entry->name);
@@ -114,28 +94,8 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 static void get_num_and_values(struct syscallentry *entry, unsigned int argnum,
 		unsigned int *num, const unsigned long **values)
 {
-	switch (argnum) {
-	case 1:	*num = entry->arg1list.num;
-		*values = entry->arg1list.values;
-		break;
-	case 2:	*num = entry->arg2list.num;
-		*values = entry->arg2list.values;
-		break;
-	case 3:	*num = entry->arg3list.num;
-		*values = entry->arg3list.values;
-		break;
-	case 4:	*num = entry->arg4list.num;
-		*values = entry->arg4list.values;
-		break;
-	case 5:	*num = entry->arg5list.num;
-		*values = entry->arg5list.values;
-		break;
-	case 6:	*num = entry->arg6list.num;
-		*values = entry->arg6list.values;
-		break;
-	default:
-		unreachable();
-	}
+	*num = entry->arg_params[argnum - 1].list.num;
+	*values = entry->arg_params[argnum - 1].list.values;
 
 	if (*num == 0)
 		BUG("ARG_OP/LIST with 0 args. What?\n");

@@ -8,10 +8,10 @@ struct syscallentry syscall_setreuid = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_RANGE, [1] = ARG_RANGE },
 	.argname = { [0] = "ruid", [1] = "euid" },
-	.low1range = 0,
-	.hi1range = 65535,
-	.low2range = 0,
-	.hi2range = 65535,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
+	.arg_params[1].range.low = 0,
+	.arg_params[1].range.hi = 65535,
 	.group = GROUP_PROCESS,
 };
 
@@ -25,9 +25,9 @@ struct syscallentry syscall_setreuid16 = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_RANGE, [1] = ARG_RANGE },
 	.argname = { [0] = "ruid", [1] = "euid" },
-	.low1range = 0,
-	.hi1range = 65535,
-	.low2range = 0,
-	.hi2range = 65535,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
+	.arg_params[1].range.low = 0,
+	.arg_params[1].range.hi = 65535,
 	.group = GROUP_PROCESS,
 };

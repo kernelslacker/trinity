@@ -16,7 +16,7 @@ struct syscallentry syscall_splice = {
 	.num_args = 6,
 	.argtype = { [0] = ARG_FD_PIPE, [1] = ARG_ADDRESS, [2] = ARG_FD_PIPE, [3] = ARG_ADDRESS, [4] = ARG_LEN, [5] = ARG_LIST },
 	.argname = { [0] = "fd_in", [1] = "off_in", [2] = "fd_out", [3] = "off_out", [4] = "len", [5] = "flags" },
-	.arg6list = ARGLIST(splice_flags),
+	.arg_params[5].list = ARGLIST(splice_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

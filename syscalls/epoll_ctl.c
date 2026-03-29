@@ -55,7 +55,7 @@ struct syscallentry syscall_epoll_ctl = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_OP, [2] = ARG_FD },
 	.argname = { [0] = "epfd", [1] = "op", [2] = "fd", [3] = "event" },
-	.arg2list = ARGLIST(epoll_ctl_ops),
+	.arg_params[1].list = ARGLIST(epoll_ctl_ops),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_epoll_ctl,

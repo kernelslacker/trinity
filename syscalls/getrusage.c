@@ -13,6 +13,6 @@ struct syscallentry syscall_getrusage = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_OP, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "who", [1] = "ru" },
-	.arg1list = ARGLIST(getrusage_who),
+	.arg_params[0].list = ARGLIST(getrusage_who),
 	.group = GROUP_PROCESS,
 };

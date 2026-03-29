@@ -44,6 +44,6 @@ struct syscallentry syscall_timer_create = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
 	.argname = { [0] = "which_clock", [1] = "timer_event_spec", [2] = "create_timer_id" },
-	.arg1list = ARGLIST(clock_ids),
+	.arg_params[0].list = ARGLIST(clock_ids),
 	.sanitise = timer_create_sanitise,
 };

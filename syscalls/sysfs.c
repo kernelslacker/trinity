@@ -32,7 +32,7 @@ struct syscallentry syscall_sysfs = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "option", [1] = "arg1", [2] = "arg2" },
-	.arg1list = ARGLIST(sysfs_options),
+	.arg_params[0].list = ARGLIST(sysfs_options),
 	.sanitise = sanitise_sysfs,
 	.group = GROUP_PROCESS,
 };

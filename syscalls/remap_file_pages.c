@@ -60,7 +60,7 @@ struct syscallentry syscall_remap_file_pages = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [4] = ARG_LIST },
 	.argname = { [0] = "start", [1] = "size", [2] = "prot", [3] = "pgoff", [4] = "flags" },
-	.arg5list = ARGLIST(remap_file_pages_flags),
+	.arg_params[4].list = ARGLIST(remap_file_pages_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_remap_file_pages,
 };

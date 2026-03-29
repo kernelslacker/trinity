@@ -46,8 +46,8 @@ struct syscallentry syscall_s390_pci_mmio_read = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_UNDEFINED, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_RANGE },
 	.argname = { [0] = "mmio_addr", [1] = "user_buffer", [2] = "length" },
-	.low3range = 0,
-	.hi3range = 1 << PAGE_SHIFT,
+	.arg_params[2].range.low = 0,
+	.arg_params[2].range.hi = 1 << PAGE_SHIFT,
 	.rettype = RET_ZERO_SUCCESS
 };
 
@@ -58,7 +58,7 @@ struct syscallentry syscall_s390_pci_mmio_write = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_UNDEFINED, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_RANGE },
 	.argname = { [0] = "mmio_addr", [1] = "user_buffer", [2] = "length" },
-	.low3range = 0,
-	.hi3range = 1 << PAGE_SHIFT,
+	.arg_params[2].range.low = 0,
+	.arg_params[2].range.hi = 1 << PAGE_SHIFT,
 	.rettype = RET_ZERO_SUCCESS
 };

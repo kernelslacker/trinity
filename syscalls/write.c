@@ -134,7 +134,7 @@ struct syscallentry syscall_pwritev2 = {
 	.num_args = 6,
 	.argtype = { [0] = ARG_FD, [1] = ARG_IOVEC, [2] = ARG_IOVECLEN, [5] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen", [3] = "pos_l", [4] = "pos_h", [5] = "flags" },
-	.arg6list = ARGLIST(pwritev2_flags),
+	.arg_params[5].list = ARGLIST(pwritev2_flags),
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_pwritev2,
 	.group = GROUP_VFS,

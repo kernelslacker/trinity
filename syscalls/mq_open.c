@@ -58,7 +58,7 @@ struct syscallentry syscall_mq_open = {
 	.num_args = 4,
 	.argtype = { [1] = ARG_LIST, [2] = ARG_MODE_T },
 	.argname = { [0] = "u_name", [1] = "oflag", [2] = "mode", [3] = "u_attr" },
-	.arg2list = ARGLIST(mq_open_flags),
+	.arg_params[1].list = ARGLIST(mq_open_flags),
 	.rettype = RET_FD,
 	.sanitise = sanitise_mq_open,
 };

@@ -286,7 +286,7 @@ struct syscallentry syscall_ipc = {
 	.num_args = 6,
 	.argtype = { [0] = ARG_OP, [4] = ARG_ADDRESS },
 	.argname = { [0] = "call", [1] = "first", [2] = "second", [3] = "third", [4] = "ptr", [5] = "fifth" },
-	.arg1list = ARGLIST(ipc_calls),
+	.arg_params[0].list = ARGLIST(ipc_calls),
 	.flags = IGNORE_ENOSYS,
 	.sanitise = sanitise_ipc,
 };

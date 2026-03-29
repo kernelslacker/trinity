@@ -37,7 +37,7 @@ struct syscallentry syscall_add_key = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_LEN, [4] = ARG_OP },
 	.argname = { [0] = "_type", [1] = "_description", [2] = "_payload", [3] = "plen", [4] = "ringid" },
-	.arg5list = ARGLIST(addkey_ringids),
+	.arg_params[4].list = ARGLIST(addkey_ringids),
 	.rettype = RET_KEY_SERIAL_T,
 	.sanitise = sanitise_add_key,
 	.group = GROUP_IPC,
