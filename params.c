@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <getopt.h>
+#include <limits.h>
 #include <sys/types.h>
 
 #include "bdevs.h"
@@ -212,6 +213,10 @@ void parse_args(int argc, char *argv[])
 			val = strtoul(optarg, &end, 10);
 			if (end == optarg || *end != '\0' || errno == ERANGE) {
 				outputerr("can't parse '%s' as a number\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			if (val > UINT_MAX) {
+				outputerr("children value %lu exceeds UINT_MAX\n", val);
 				exit(EXIT_FAILURE);
 			}
 			user_specified_children = (unsigned int)val;
