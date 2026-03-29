@@ -184,6 +184,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
 		newarray = realloc(head->array, newcap * sizeof(struct object *));
 		if (newarray == NULL) {
+			outputerr("add_object: realloc failed for type %u (cap %u)\n",
+				  type, newcap);
 			list_del(&obj->list);
 			if (is_fd_type(type)) {
 				int fd = fd_from_object(obj, type);
