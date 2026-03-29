@@ -4,13 +4,19 @@
  * On success, (all requested permissions granted) faccessat() returns 0.
  * On error, -1 is returned and errno is set to indicate the error.
  */
+#include <unistd.h>
 #include "sanitise.h"
+
+static unsigned long access_modes[] = {
+	F_OK, R_OK, W_OK, X_OK,
+};
 
 struct syscallentry syscall_faccessat = {
 	.name = "faccessat",
 	.num_args = 3,
-	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_MODE_T },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "mode" },
+	.arg3list = ARGLIST(access_modes),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
@@ -45,8 +51,9 @@ static unsigned long faccessat2_flags[] = {
 struct syscallentry syscall_faccessat2 = {
 	.name = "faccessat2",
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_MODE_T, [3] = ARG_LIST },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [3] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "mode", [3] = "flags" },
+	.arg3list = ARGLIST(access_modes),
 	.arg4list = ARGLIST(faccessat2_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
