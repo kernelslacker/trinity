@@ -21,7 +21,7 @@ struct syscallentry syscall_sched_getattr = {
 	.name = "sched_getattr",
 	.group = GROUP_SCHED,
 	.num_args = 3,
-	.argtype = { [0] = ARG_PID, [1] = ARG_ADDRESS, [2] = ARG_LEN },
+	.argtype = { [0] = ARG_PID, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "pid", [1] = "param", [2] = "size" },
 	.sanitise = sanitise_sched_getattr,
 };

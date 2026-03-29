@@ -29,7 +29,7 @@ static void sanitise_capget(struct syscallrecord *rec)
 struct syscallentry syscall_capget = {
 	.name = "capget",
 	.num_args = 2,
-	.argtype = { [1] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_ADDRESS },
 	.argname = { [0] = "header", [1] = "dataptr" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
