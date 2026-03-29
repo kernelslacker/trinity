@@ -29,7 +29,7 @@ static unsigned long recv_flags[] = {
 struct syscallentry syscall_recv = {
 	.name = "recv",
 	.num_args = 4,
-	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST },
+	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_MMAP, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "ubuf", [2] = "size", [3] = "flags" },
 	.arg4list = ARGLIST(recv_flags),
 	.flags = NEED_ALARM,
@@ -46,7 +46,7 @@ struct syscallentry syscall_recv = {
 struct syscallentry syscall_recvfrom = {
 	.name = "recvfrom",
 	.num_args = 6,
-	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST, [4] = ARG_SOCKADDR, [5] = ARG_SOCKADDRLEN },
+	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_MMAP, [2] = ARG_LEN, [3] = ARG_LIST, [4] = ARG_SOCKADDR, [5] = ARG_SOCKADDRLEN },
 	.argname = { [0] = "fd", [1] = "ubuf", [2] = "size", [3] = "flags", [4] = "addr", [5] = "addr_len" },
 	.arg4list = ARGLIST(recv_flags),
 	.flags = NEED_ALARM,
