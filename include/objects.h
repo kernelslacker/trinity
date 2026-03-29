@@ -184,6 +184,24 @@ struct object * alloc_object(void);
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type);
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type);
 void destroy_global_objects(void);
+
+/*
+ * Self-registration for global object initializers.  Each object subsystem
+ * calls REG_GLOBAL_OBJ() once (at program startup, via a constructor) to
+ * register its init function.  init_global_objects() iterates the list and
+ * calls every registered init in registration order.
+ *
+ * This mirrors the REG_FD_PROV() pattern used by fd providers and removes
+ * the need for trinity.c to maintain a manual object_init_table.
+ */
+struct global_obj_entry {
+	struct list_head list;
+	const char *name;
+	void (*init)(void);
+};
+
+void register_global_obj_init(const struct global_obj_entry *entry);
+void init_global_objects(void);
 struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
@@ -207,3 +225,15 @@ void fd_hash_init(void);
 void fd_hash_insert(int fd, struct object *obj, enum objecttype type);
 void fd_hash_remove(int fd);
 struct fd_hash_entry *fd_hash_lookup(int fd);
+
+#define REG_GLOBAL_OBJ(_tag, _init_fn)					\
+	static const struct global_obj_entry				\
+		__global_obj_entry_##_tag = {				\
+		.name = #_tag,						\
+		.init = (_init_fn),					\
+	};								\
+	static void __attribute__((constructor))			\
+	__register_global_obj_##_tag(void)				\
+	{								\
+		register_global_obj_init(&__global_obj_entry_##_tag);	\
+	}
