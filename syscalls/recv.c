@@ -126,6 +126,45 @@ struct syscallentry syscall_recvmsg = {
 	 unsigned int, vlen, unsigned int, flags,
 	 struct timespec __user *, timeout)
  */
+#define RECVMMSG_MAX_VLEN	4
+
+static unsigned int recvmmsg_vlen;
+static struct mmsghdr *recvmmsg_msgs;
+
+static void sanitise_recvmmsg(struct syscallrecord *rec)
+{
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	unsigned int i;
+
+	rec->a1 = fd_from_socketinfo(si);
+
+	recvmmsg_vlen = RAND_RANGE(1, RECVMMSG_MAX_VLEN);
+	recvmmsg_msgs = zmalloc(recvmmsg_vlen * sizeof(struct mmsghdr));
+
+	for (i = 0; i < recvmmsg_vlen; i++) {
+		struct msghdr *msg = &recvmmsg_msgs[i].msg_hdr;
+		unsigned int num_entries = RAND_RANGE(1, 3);
+
+		msg->msg_iov = alloc_iovec(num_entries);
+		msg->msg_iovlen = num_entries;
+	}
+
+	rec->a2 = (unsigned long) recvmmsg_msgs;
+	rec->a3 = recvmmsg_vlen;
+}
+
+static void post_recvmmsg(__unused__ struct syscallrecord *rec)
+{
+	if (recvmmsg_msgs != NULL) {
+		unsigned int i;
+
+		for (i = 0; i < recvmmsg_vlen; i++)
+			free(recvmmsg_msgs[i].msg_hdr.msg_iov);
+		free(recvmmsg_msgs);
+		recvmmsg_msgs = NULL;
+	}
+}
+
 struct syscallentry syscall_recvmmsg = {
 	.name = "recvmmsg",
 	.num_args = 5,
@@ -134,5 +173,6 @@ struct syscallentry syscall_recvmmsg = {
 	.arg4list = ARGLIST(recv_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
-	.sanitise = sanitise_recv,	// same as recv
+	.sanitise = sanitise_recvmmsg,
+	.post = post_recvmmsg,
 };
