@@ -104,7 +104,7 @@ static void filefd_dump(struct object *obj, enum obj_scope scope)
 /*
  * Per-pool provider: open files from a specific pathname pool.
  */
-static int open_pool_files(unsigned int pool_id, enum objecttype objtype)
+int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 {
 	struct objhead *head;
 	unsigned int i, nr_to_open, pool_count;
@@ -177,7 +177,7 @@ static int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 	return true;
 }
 
-static int get_rand_pool_fd(enum objecttype objtype)
+int get_rand_pool_fd(enum objecttype objtype)
 {
 	struct object *obj;
 
@@ -188,7 +188,7 @@ static int get_rand_pool_fd(enum objecttype objtype)
 	return obj->fileobj.fd;
 }
 
-static int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
+int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
 {
 	struct object *obj;
 	const char *filename;
@@ -221,22 +221,6 @@ static int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
 	}
 	return false;
 }
-
-/* /dev provider (pool 0) */
-static int init_devfiles(void)		{ return open_pool_files(0, OBJ_FD_DEVFILE); }
-static int get_rand_devfile_fd(void)	{ return get_rand_pool_fd(OBJ_FD_DEVFILE); }
-static int open_devfile_fd(void)	{ return open_pool_fd(0, OBJ_FD_DEVFILE); }
-
-static const struct fd_provider devfile_provider = {
-	.name = "dev",
-	.objtype = OBJ_FD_DEVFILE,
-	.enabled = true,
-	.init = &init_devfiles,
-	.get = &get_rand_devfile_fd,
-	.open = &open_devfile_fd,
-};
-
-REG_FD_PROV(devfile_provider);
 
 /* /proc provider (pool 1) */
 static int init_procfiles(void)		{ return open_pool_files(1, OBJ_FD_PROCFILE); }
