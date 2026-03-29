@@ -50,6 +50,14 @@ struct childdata {
 	 * Allocated in shared memory, one per child. */
 	struct fd_event_ring *fd_event_ring;
 
+	/* FD leak instrumentation: count fds created and closed by
+	 * this child's syscalls, with per-group breakdown.
+	 * On child exit, if fd_created - fd_closed > threshold,
+	 * we log which syscall groups are responsible. */
+	unsigned long fd_created;
+	unsigned long fd_closed;
+	unsigned long fd_created_by_group[NR_GROUPS];
+
 	unsigned char xcpu_count;
 
 	unsigned char kill_count;

@@ -163,6 +163,9 @@ void clean_childdata(struct childdata *child)
 	child->last_group = GROUP_NONE;
 	child->dropped_privs = false;
 	child->op_type = CHILD_OP_SYSCALL;
+	child->fd_created = 0;
+	child->fd_closed = 0;
+	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }
 
@@ -451,6 +454,44 @@ static bool handle_sigreturn(int sigwas)
 }
 
 
+#define FD_LEAK_THRESHOLD 50
+
+static void check_fd_leaks(struct childdata *child)
+{
+	static const char * const group_names[NR_GROUPS] = {
+		[GROUP_NONE] = "none",
+		[GROUP_VM] = "vm",
+		[GROUP_VFS] = "vfs",
+		[GROUP_NET] = "net",
+		[GROUP_IPC] = "ipc",
+		[GROUP_PROCESS] = "process",
+		[GROUP_SIGNAL] = "signal",
+		[GROUP_IO_URING] = "io_uring",
+		[GROUP_BPF] = "bpf",
+		[GROUP_SCHED] = "sched",
+		[GROUP_TIME] = "time",
+	};
+	long delta;
+	unsigned int i;
+
+	if (child->fd_created < child->fd_closed)
+		return;
+
+	delta = (long)(child->fd_created - child->fd_closed);
+	if (delta <= FD_LEAK_THRESHOLD)
+		return;
+
+	output(0, "fd leak: child %d created %lu closed %lu (delta %ld, %lu ops)\n",
+		child->num, child->fd_created, child->fd_closed,
+		delta, child->op_nr);
+
+	for (i = 0; i < NR_GROUPS; i++) {
+		if (child->fd_created_by_group[i] > 0)
+			output(0, "  group %-10s: %lu fds created\n",
+				group_names[i], child->fd_created_by_group[i]);
+	}
+}
+
 /*
  * This is the child main loop, entered after init_child has completed
  * from the fork_children() loop.
@@ -550,6 +591,7 @@ void child_process(struct childdata *child, int childno)
 	}
 
 out:
+	check_fd_leaks(child);
 	kcov_cleanup_child(&child->kcov);
 
 	debugf("child %d %d exiting.\n", childno, getpid());

@@ -206,10 +206,22 @@ bool random_syscall(struct childdata *child)
 
 	handle_syscall_ret(rec);
 
-	/* Track the group of the syscall we just executed for biasing. */
-	if (group_bias) {
-		entry = get_syscall_entry(rec->nr, rec->do32bit);
-		if (entry != NULL)
+	entry = get_syscall_entry(rec->nr, rec->do32bit);
+	if (entry != NULL) {
+		/* FD leak tracking: count successful fd-creating and
+		 * fd-closing syscalls per child for leak diagnosis. */
+		if (rec->retval != -1UL) {
+			if (entry->rettype == RET_FD) {
+				child->fd_created++;
+				if (entry->group < NR_GROUPS)
+					child->fd_created_by_group[entry->group]++;
+			}
+			if (strcmp(entry->name, "close") == 0)
+				child->fd_closed++;
+		}
+
+		/* Track the group for biasing. */
+		if (group_bias)
 			child->last_group = entry->group;
 	}
 
