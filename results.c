@@ -4,10 +4,12 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <sys/resource.h>
 #include "results.h"
 #include "sanitise.h"
 #include "syscall.h"
 #include "tables.h"
+#include "trinity.h"
 
 unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 {
@@ -35,17 +37,17 @@ static struct results * get_results_ptr(struct syscallentry *entry, unsigned int
 	unreachable();
 }
 
-#define FDMAP_SIZE 1024
-
 static void store_successful_fd(struct results *results, unsigned long value)
 {
 	int fd = (int) value;
+	rlim_t lim = max_files_rlimit.rlim_cur;
+	int fdmap_size = (lim == RLIM_INFINITY || lim > 1048576) ? 1048576 : (int)lim;
 
-	if (fd < 0 || fd >= FDMAP_SIZE)
+	if (fd < 0 || fd >= fdmap_size)
 		return;
 
 	if (results->fdmap == NULL) {
-		results->fdmap = calloc(FDMAP_SIZE, sizeof(int));
+		results->fdmap = calloc(fdmap_size, sizeof(int));
 		if (results->fdmap == NULL)
 			return;
 	}
