@@ -1,6 +1,6 @@
 /*
  * ioctl fuzzing for Intel SGX kernel driver (isgx)
- * based on intel_sgx: Intel SGX Driver v0.10 
+ * based on intel_sgx: Intel SGX Driver v0.10
  * Feb 25, 2018
  * Add support for SGXv2
  * Feb 26, 2018
@@ -10,6 +10,13 @@
 #include <linux/ioctl.h>
 #include "ioctls.h"
 #include "utils.h"
+
+#ifdef __has_include
+#  if __has_include(<linux/sgx.h>)
+#    include <linux/sgx.h>
+#    define HAVE_LINUX_SGX_H
+#  endif
+#endif
 
 #define SGX_MAGIC 0xA4
 
@@ -34,6 +41,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpacked"
+#ifndef HAVE_LINUX_SGX_H
 /**
  * struct sgx_enclave_create - parameter structure for the
  *                             %SGX_IOC_ENCLAVE_CREATE ioctl
@@ -42,6 +50,20 @@
 struct sgx_enclave_create  {
 	__u64	src;
 } __attribute__((__packed__));
+
+/**
+ * struct sgx_enclave_init - parameter structure for the
+ *                           %SGX_IOC_ENCLAVE_INIT ioctl
+ * @addr:	address in the ELRANGE
+ * @sigstruct:	address for the page data
+ * @einittoken:	EINITTOKEN
+ */
+struct sgx_enclave_init {
+	__u64	addr;
+	__u64	sigstruct;
+	__u64	einittoken;
+} __attribute__((__packed__));
+#endif /* !HAVE_LINUX_SGX_H */
 
 /**
  * struct sgx_enclave_add_page - parameter structure for the
@@ -56,19 +78,6 @@ struct sgx_enclave_add_page {
 	__u64	src;
 	__u64	secinfo;
 	__u16	mrmask;
-} __attribute__((__packed__));
-
-/**
- * struct sgx_enclave_init - parameter structure for the
- *                           %SGX_IOC_ENCLAVE_INIT ioctl
- * @addr:	address in the ELRANGE
- * @sigstruct:	address for the page data
- * @einittoken:	EINITTOKEN
- */
-struct sgx_enclave_init {
-	__u64	addr;
-	__u64	sigstruct;
-	__u64	einittoken;
 } __attribute__((__packed__));
 
 
