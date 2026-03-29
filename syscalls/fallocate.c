@@ -3,6 +3,8 @@
  *
  * fallocate() returns zero on success, and -1 on failure.
  */
+#include <stdint.h>
+#include "random.h"
 #include "sanitise.h"
 
 #define FALLOC_FL_KEEP_SIZE	0x01
@@ -20,12 +22,26 @@ static unsigned long fallocate_modes[] = {
 	FALLOC_FL_UNSHARE_RANGE,
 };
 
+static void sanitise_fallocate(struct syscallrecord *rec)
+{
+	int64_t offset = RAND_RANGE(0, 1ULL << 30);	/* [0, 1 GB] */
+	int64_t len = RAND_RANGE(1, 64ULL << 20);	/* [1, 64 MB] */
+
+	/* Prevent offset+len from overflowing loff_t */
+	if (offset + len < offset)
+		len = INT64_MAX - offset;
+
+	rec->a3 = (unsigned long) offset;
+	rec->a4 = (unsigned long) len;
+}
+
 struct syscallentry syscall_fallocate = {
 	.name = "fallocate",
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD, [1] = ARG_LIST, [2] = ARG_LEN, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "mode", [2] = "offset", [3] = "len" },
 	.arg2list = ARGLIST(fallocate_modes),
+	.sanitise = sanitise_fallocate,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
