@@ -15,6 +15,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"
 #include "list.h"
@@ -353,8 +354,10 @@ static void periodic_work(void)
 		check_parent_pid();
 
 	/* Every 100 iterations. */
-	if (!(periodic_counter % 100))
+	if (!(periodic_counter % 100)) {
 		dirty_random_mapping();
+		run_fd_provider_child_ops();
+	}
 
 	if (periodic_counter == 1000)
 		periodic_counter = 0;
