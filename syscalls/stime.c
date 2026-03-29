@@ -7,6 +7,6 @@ struct syscallentry syscall_stime = {
 	.name = "stime",
 	.group = GROUP_TIME,
 	.num_args = 1,
-	.arg1name = "tptr",
-	.arg1type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS },
+	.argname = { [0] = "tptr" },
 };

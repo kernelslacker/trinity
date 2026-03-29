@@ -6,11 +6,8 @@
 struct syscallentry syscall_lookup_dcookie = {
 	.name = "lookup_dcookie",
 	.num_args = 3,
-	.arg1name = "cookie64",
-	.arg2name = "buf",
-	.arg2type = ARG_ADDRESS,
-	.arg3name = "len",
-	.arg3type = ARG_LEN,
+	.argtype = { [1] = ARG_ADDRESS, [2] = ARG_LEN },
+	.argname = { [0] = "cookie64", [1] = "buf", [2] = "len" },
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 };

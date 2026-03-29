@@ -22,9 +22,8 @@ static void sanitise_pkey_alloc(struct syscallrecord *rec)
 struct syscallentry syscall_pkey_alloc = {
 	.name = "pkey_alloc",
 	.num_args = 2,
-	.arg1name = "flags",
-	.arg2name = "init_val",
-	.arg2type = ARG_LIST,
+	.argtype = { [1] = ARG_LIST },
+	.argname = { [0] = "flags", [1] = "init_val" },
 	.arg2list = ARGLIST(pkey_alloc_initvals),
 	.sanitise = sanitise_pkey_alloc,
 	.group = GROUP_VM,
@@ -33,8 +32,8 @@ struct syscallentry syscall_pkey_alloc = {
 struct syscallentry syscall_pkey_free = {
 	.name = "pkey_free",
 	.num_args = 1,
-	.arg1name = "key",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE },
+	.argname = { [0] = "key" },
 	.low1range = 0,
 	.hi1range = 15,
 	.group = GROUP_VM,

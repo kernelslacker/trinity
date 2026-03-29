@@ -6,9 +6,8 @@
 struct syscallentry syscall_bdflush = {
 	.name = "bdflush",
 	.num_args = 2,
-	.arg1name = "func",
-	.arg2name = "data",
-	.arg2type = ARG_ADDRESS,
+	.argtype = { [1] = ARG_ADDRESS },
+	.argname = { [0] = "func", [1] = "data" },
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,
 };

@@ -6,11 +6,8 @@
 struct syscallentry syscall_mknod = {
 	.name = "mknod",
 	.num_args = 3,
-	.arg1name = "filename",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "mode",
-	.arg2type = ARG_MODE_T,
-	.arg3name = "dev",
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_MODE_T },
+	.argname = { [0] = "filename", [1] = "mode", [2] = "dev" },
 	.group = GROUP_VFS,
 };
 
@@ -22,13 +19,8 @@ struct syscallentry syscall_mknod = {
 struct syscallentry syscall_mknodat = {
 	.name = "mknodat",
 	.num_args = 4,
-	.arg1name = "dfd",
-	.arg1type = ARG_FD,
-	.arg2name = "filename",
-	.arg2type = ARG_PATHNAME,
-	.arg3name = "mode",
-	.arg3type = ARG_MODE_T,
-	.arg4name = "dev",
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_MODE_T },
+	.argname = { [0] = "dfd", [1] = "filename", [2] = "mode", [3] = "dev" },
 	.flags = NEED_ALARM | NEEDS_ROOT,
 	.group = GROUP_VFS,
 };

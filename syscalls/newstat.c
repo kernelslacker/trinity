@@ -6,9 +6,7 @@
 struct syscallentry syscall_newstat = {
 	.name = "newstat",
 	.num_args = 2,
-	.arg1name = "filename",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "statbuf",
-	.arg2type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "filename", [1] = "statbuf" },
 	.group = GROUP_VFS,
 };

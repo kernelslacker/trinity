@@ -9,8 +9,8 @@
 struct syscallentry syscall_fsync = {
 	.name = "fsync",
 	.num_args = 1,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
+	.argtype = { [0] = ARG_FD },
+	.argname = { [0] = "fd" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | EXPENSIVE,
 	.group = GROUP_VFS,

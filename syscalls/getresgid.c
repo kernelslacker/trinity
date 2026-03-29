@@ -6,12 +6,8 @@
 struct syscallentry syscall_getresgid = {
 	.name = "getresgid",
 	.num_args = 3,
-	.arg1name = "rgid",
-	.arg1type = ARG_NON_NULL_ADDRESS,
-	.arg2name = "egid",
-	.arg2type = ARG_NON_NULL_ADDRESS,
-	.arg3name = "sgid",
-	.arg3type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "rgid", [1] = "egid", [2] = "sgid" },
 	.group = GROUP_PROCESS,
 };
 
@@ -24,11 +20,7 @@ struct syscallentry syscall_getresgid = {
 struct syscallentry syscall_getresgid16 = {
 	.name = "getresgid16",
 	.num_args = 3,
-	.arg1name = "rgid",
-	.arg1type = ARG_NON_NULL_ADDRESS,
-	.arg2name = "egid",
-	.arg2type = ARG_NON_NULL_ADDRESS,
-	.arg3name = "sgid",
-	.arg3type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "rgid", [1] = "egid", [2] = "sgid" },
 	.group = GROUP_PROCESS,
 };

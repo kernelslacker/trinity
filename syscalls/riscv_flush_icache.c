@@ -15,12 +15,8 @@ static unsigned long riscv_flush_icache_flags[] = {
 struct syscallentry syscall_riscv_flush_icache = {
 	.name = "riscv_flush_icache",
 	.num_args = 3,
-	.arg1name = "start",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "end",
-	.arg2type = ARG_ADDRESS,
-	.arg3name = "flags",
-	.arg3type = ARG_OP,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_OP },
+	.argname = { [0] = "start", [1] = "end", [2] = "flags" },
 	.arg3list = ARGLIST(riscv_flush_icache_flags),
 	.group = GROUP_PROCESS,
 };

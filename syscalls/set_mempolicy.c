@@ -53,11 +53,9 @@ static void sanitise_set_mempolicy(struct syscallrecord *rec)
 struct syscallentry syscall_set_mempolicy = {
 	.name = "set_mempolicy",
 	.num_args = 3,
-	.arg1name = "mode",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP },
+	.argname = { [0] = "mode", [1] = "nmask", [2] = "maxnode" },
 	.arg1list = ARGLIST(mempolicy_modes),
-	.arg2name = "nmask",
-	.arg3name = "maxnode",
 	.group = GROUP_VM,
 	.sanitise = sanitise_set_mempolicy,
 };

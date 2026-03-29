@@ -7,9 +7,7 @@ struct syscallentry syscall_rt_sigsuspend = {
 	.name = "rt_sigsuspend",
 	.group = GROUP_SIGNAL,
 	.num_args = 2,
-	.arg1name = "unewset",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "sigsetsize",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN },
+	.argname = { [0] = "unewset", [1] = "sigsetsize" },
 	.flags = AVOID_SYSCALL,
 };

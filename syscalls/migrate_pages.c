@@ -47,11 +47,8 @@ static void sanitise_migrate_pages(struct syscallrecord *rec)
 struct syscallentry syscall_migrate_pages = {
 	.name = "migrate_pages",
 	.num_args = 4,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "maxnode",
-	.arg3name = "old_nodes",
-	.arg4name = "new_nodes",
+	.argtype = { [0] = ARG_PID },
+	.argname = { [0] = "pid", [1] = "maxnode", [2] = "old_nodes", [3] = "new_nodes" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_migrate_pages,
 };

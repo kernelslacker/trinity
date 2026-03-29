@@ -14,8 +14,8 @@ static unsigned long memfd_secret_flags[] = {
 struct syscallentry syscall_memfd_secret = {
 	.name = "memfd_secret",
 	.num_args = 1,
-	.arg1name = "flag",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST },
+	.argname = { [0] = "flag" },
 	.arg1list = ARGLIST(memfd_secret_flags),
 	.rettype = RET_FD,
 	.group = GROUP_VFS,

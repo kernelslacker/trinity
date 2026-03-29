@@ -79,23 +79,23 @@ unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int 
 	entry = syscalls[call].entry;
 
 	if (argnum > 1)
-		if (is_arg_address(entry->arg1type) == true)
+		if (is_arg_address(entry->argtype[0]) == true)
 			addr = rec->a1;
 
 	if (argnum > 2)
-		if (is_arg_address(entry->arg2type) == true)
+		if (is_arg_address(entry->argtype[1]) == true)
 			addr = rec->a2;
 
 	if (argnum > 3)
-		if (is_arg_address(entry->arg3type) == true)
+		if (is_arg_address(entry->argtype[2]) == true)
 			addr = rec->a3;
 
 	if (argnum > 4)
-		if (is_arg_address(entry->arg4type) == true)
+		if (is_arg_address(entry->argtype[3]) == true)
 			addr = rec->a4;
 
 	if (argnum > 5)
-		if (is_arg_address(entry->arg5type) == true)
+		if (is_arg_address(entry->argtype[4]) == true)
 			addr = rec->a5;
 
 	return addr;

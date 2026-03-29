@@ -17,14 +17,8 @@ static unsigned long request_key_ids[] = {
 struct syscallentry syscall_request_key = {
 	.name = "request_key",
 	.num_args = 4,
-	.arg1name = "_type",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "_description",
-	.arg2type = ARG_ADDRESS,
-	.arg3name = "_callout_info",
-	.arg3type = ARG_ADDRESS,
-	.arg4name = "destringid",
-	.arg4type = ARG_OP,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_OP },
+	.argname = { [0] = "_type", [1] = "_description", [2] = "_callout_info", [3] = "destringid" },
 	.arg4list = ARGLIST(request_key_ids),
 	.group = GROUP_IPC,
 };

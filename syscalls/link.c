@@ -6,9 +6,7 @@
 struct syscallentry syscall_link = {
 	.name = "link",
 	.num_args = 2,
-	.arg1name = "oldname",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "newname",
-	.arg2type = ARG_PATHNAME,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_PATHNAME },
+	.argname = { [0] = "oldname", [1] = "newname" },
 	.group = GROUP_VFS,
 };

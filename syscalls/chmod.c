@@ -9,10 +9,8 @@
 struct syscallentry syscall_chmod = {
 	.name = "chmod",
 	.num_args = 2,
-	.arg1name = "filename",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "mode",
-	.arg2type = ARG_MODE_T,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_MODE_T },
+	.argname = { [0] = "filename", [1] = "mode" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 };

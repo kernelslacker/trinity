@@ -6,7 +6,7 @@
 struct syscallentry syscall_oldumount = {
 	.name = "oldumount",
 	.num_args = 1,
-	.arg1name = "name",
-	.arg1type = ARG_PATHNAME,
+	.argtype = { [0] = ARG_PATHNAME },
+	.argname = { [0] = "name" },
 	.group = GROUP_VFS,
 };

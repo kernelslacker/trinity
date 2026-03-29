@@ -78,7 +78,7 @@ static void sanitise_sysctl(struct syscallrecord *rec)
 struct syscallentry syscall_sysctl = {
 	.name = "sysctl",
 	.num_args = 1,
-	.arg1name = "args",
+	.argname = { [0] = "args" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_sysctl,
 };

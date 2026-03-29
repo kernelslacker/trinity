@@ -14,11 +14,7 @@ struct syscallentry syscall_sched_setscheduler = {
 	.name = "sched_setscheduler",
 	.group = GROUP_SCHED,
 	.num_args = 3,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "policy",
-	.arg2type = ARG_OP,
+	.argtype = { [0] = ARG_PID, [1] = ARG_OP, [2] = ARG_ADDRESS },
+	.argname = { [0] = "pid", [1] = "policy", [2] = "param" },
 	.arg2list = ARGLIST(sched_setscheduler_policies),
-	.arg3name = "param",
-	.arg3type = ARG_ADDRESS,
 };

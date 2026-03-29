@@ -30,10 +30,8 @@ struct syscallentry syscall_mq_getsetattr = {
 	.name = "mq_getsetattr",
 	.group = GROUP_IPC,
 	.num_args = 3,
-	.arg1name = "mqdes",
-	.arg1type = ARG_FD,
-	.arg2name = "u_mqstat",
-	.arg3name = "u_omqstat",
+	.argtype = { [0] = ARG_FD },
+	.argname = { [0] = "mqdes", [1] = "u_mqstat", [2] = "u_omqstat" },
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_getsetattr,
 };

@@ -40,9 +40,7 @@ struct syscallentry syscall_s390_guarded_storage = {
 	.sanitise = sanitise_s390_gs,
 	.post = post_s390_gs,
 	.num_args = 2,
-	.arg1name = "command",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "command", [1] = "gs_cb" },
 	.arg1list = ARGLIST(syscall_s390_guarded_storage_arg1),
-	.arg2name = "gs_cb",
-	.arg2type = ARG_NON_NULL_ADDRESS
 };

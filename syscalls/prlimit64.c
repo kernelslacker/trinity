@@ -45,14 +45,9 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 struct syscallentry syscall_prlimit64 = {
 	.name = "prlimit64",
 	.num_args = 4,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "resource",
-	.arg2type = ARG_OP,
+	.argtype = { [0] = ARG_PID, [1] = ARG_OP, [3] = ARG_ADDRESS },
+	.argname = { [0] = "pid", [1] = "resource", [2] = "new_rlim", [3] = "old_rlim" },
 	.arg2list = ARGLIST(rlimit_resources),
-	.arg3name = "new_rlim",
-	.arg4name = "old_rlim",
-	.arg4type = ARG_ADDRESS,
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_prlimit64,
 };

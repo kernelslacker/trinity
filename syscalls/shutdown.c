@@ -11,10 +11,8 @@ static unsigned long shutdown_hows[] = {
 struct syscallentry syscall_shutdown = {
 	.name = "shutdown",
 	.num_args = 2,
-	.arg1name = "fd",
-	.arg1type = ARG_FD_SOCKET,
-	.arg2name = "how",
-	.arg2type = ARG_OP,
+	.argtype = { [0] = ARG_FD_SOCKET, [1] = ARG_OP },
+	.argname = { [0] = "fd", [1] = "how" },
 	.arg2list = ARGLIST(shutdown_hows),
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,

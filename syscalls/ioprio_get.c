@@ -11,10 +11,8 @@ static unsigned long ioprio_who[] = {
 struct syscallentry syscall_ioprio_get = {
 	.name = "ioprio_get",
 	.num_args = 2,
-	.arg1name = "which",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP, [1] = ARG_PID },
+	.argname = { [0] = "which", [1] = "who" },
 	.arg1list = ARGLIST(ioprio_who),
-	.arg2name = "who",
-	.arg2type = ARG_PID,
 	.group = GROUP_SCHED,
 };

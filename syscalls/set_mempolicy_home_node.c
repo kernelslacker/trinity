@@ -11,15 +11,10 @@ static void sanitise_set_mempolicy_home_node(struct syscallrecord *rec)
 struct syscallentry syscall_set_mempolicy_home_node = {
 	.name = "set_mempolicy_home_node",
 	.num_args = 4,
-	.arg1name = "start",
-	.arg1type = ARG_MMAP,
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
-	.arg3name = "home_node",
-	.arg3type = ARG_RANGE,
+	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_RANGE },
+	.argname = { [0] = "start", [1] = "len", [2] = "home_node", [3] = "flags" },
 	.low3range = 0,
 	.hi3range = 7,
-	.arg4name = "flags",
 	.sanitise = sanitise_set_mempolicy_home_node,
 	.group = GROUP_VM,
 };

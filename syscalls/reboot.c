@@ -6,10 +6,7 @@
 struct syscallentry syscall_reboot = {
 	.name = "reboot",
 	.num_args = 4,
-	.arg1name = "magic1",
-	.arg2name = "magic2",
-	.arg3name = "cmd",
-	.arg4name = "arg",
-	.arg4type = ARG_ADDRESS,
+	.argtype = { [3] = ARG_ADDRESS },
+	.argname = { [0] = "magic1", [1] = "magic2", [2] = "cmd", [3] = "arg" },
 	.group = GROUP_PROCESS,
 };

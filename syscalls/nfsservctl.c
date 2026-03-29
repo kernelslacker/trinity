@@ -6,11 +6,8 @@
 struct syscallentry syscall_nfsservctl = {
 	.name = "nfsservctl",
 	.num_args = 3,
-	.arg1name = "cmd",
-	.arg2name = "arg",
-	.arg2type = ARG_ADDRESS,
-	.arg3name = "res",
-	.arg3type = ARG_ADDRESS,
+	.argtype = { [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
+	.argname = { [0] = "cmd", [1] = "arg", [2] = "res" },
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 };

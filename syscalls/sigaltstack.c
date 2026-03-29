@@ -49,8 +49,7 @@ struct syscallentry syscall_sigaltstack = {
 	.name = "sigaltstack",
 	.group = GROUP_SIGNAL,
 	.num_args = 2,
-	.arg1name = "uss",
-	.arg2name = "uoss",
-	.arg2type = ARG_ADDRESS,
+	.argtype = { [1] = ARG_ADDRESS },
+	.argname = { [0] = "uss", [1] = "uoss" },
 	.sanitise = sanitise_sigaltstack,
 };

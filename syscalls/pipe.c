@@ -9,8 +9,8 @@
 struct syscallentry syscall_pipe = {
 	.name = "pipe",
 	.num_args = 1,
-	.arg1name = "fildes",
-	.arg1type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "fildes" },
 	.group = GROUP_VFS,
 };
 
@@ -25,10 +25,8 @@ static unsigned long pipe2_flags[] = {
 struct syscallentry syscall_pipe2 = {
 	.name = "pipe2",
 	.num_args = 2,
-	.arg1name = "fildes",
-	.arg1type = ARG_NON_NULL_ADDRESS,
-	.arg2name = "flags",
-	.arg2type = ARG_LIST,
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_LIST },
+	.argname = { [0] = "fildes", [1] = "flags" },
 	.arg2list = ARGLIST(pipe2_flags),
 	.group = GROUP_VFS,
 };

@@ -127,11 +127,7 @@ struct syscallentry syscall_prctl = {
 	.name = "prctl",
 	.group = GROUP_PROCESS,
 	.num_args = 5,
-	.arg1name = "option",
-	.arg2name = "arg2",
-	.arg3name = "arg3",
-	.arg4name = "arg4",
-	.arg5name = "arg5",
+	.argname = { [0] = "option", [1] = "arg2", [2] = "arg3", [3] = "arg4", [4] = "arg5" },
 	.sanitise = sanitise_prctl,
 	.post = post_prctl,
 };

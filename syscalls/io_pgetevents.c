@@ -37,13 +37,8 @@ static void sanitise_io_pgetevents(struct syscallrecord *rec)
 struct syscallentry syscall_io_pgetevents = {
 	.name = "io_pgetevents",
 	.num_args = 6,
-	.arg1name = "ctx_id",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "min_nr",
-	.arg3name = "nr",
-	.arg4name = "events",
-	.arg5name = "timeout",
-	.arg6name = "usig",
+	.argtype = { [0] = ARG_ADDRESS },
+	.argname = { [0] = "ctx_id", [1] = "min_nr", [2] = "nr", [3] = "events", [4] = "timeout", [5] = "usig" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_pgetevents,
 };

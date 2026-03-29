@@ -6,10 +6,8 @@
 struct syscallentry syscall_rename = {
 	.name = "rename",
 	.num_args = 2,
-	.arg1name = "oldname",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "newname",
-	.arg2type = ARG_PATHNAME,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_PATHNAME },
+	.argname = { [0] = "oldname", [1] = "newname" },
 	.group = GROUP_VFS,
 };
 
@@ -21,14 +19,8 @@ struct syscallentry syscall_rename = {
 struct syscallentry syscall_renameat = {
 	.name = "renameat",
 	.num_args = 4,
-	.arg1name = "olddfd",
-	.arg1type = ARG_FD,
-	.arg2name = "oldname",
-	.arg2type = ARG_PATHNAME,
-	.arg3name = "newdfd",
-	.arg3type = ARG_FD,
-	.arg4name = "newname",
-	.arg4type = ARG_PATHNAME,
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_FD, [3] = ARG_PATHNAME },
+	.argname = { [0] = "olddfd", [1] = "oldname", [2] = "newdfd", [3] = "newname" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
@@ -49,16 +41,8 @@ static unsigned long renameat2_flags[] = {
 struct syscallentry syscall_renameat2 = {
 	.name = "renameat2",
 	.num_args = 5,
-	.arg1name = "olddfd",
-	.arg1type = ARG_FD,
-	.arg2name = "oldname",
-	.arg2type = ARG_PATHNAME,
-	.arg3name = "newdfd",
-	.arg3type = ARG_FD,
-	.arg4name = "newname",
-	.arg4type = ARG_PATHNAME,
-	.arg5name = "flags",
-	.arg5type = ARG_LIST,
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_FD, [3] = ARG_PATHNAME, [4] = ARG_LIST },
+	.argname = { [0] = "olddfd", [1] = "oldname", [2] = "newdfd", [3] = "newname", [4] = "flags" },
 	.arg5list = ARGLIST(renameat2_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

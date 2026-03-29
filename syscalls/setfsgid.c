@@ -6,8 +6,8 @@
 struct syscallentry syscall_setfsgid = {
 	.name = "setfsgid",
 	.num_args = 1,
-	.arg1name = "gid",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE },
+	.argname = { [0] = "gid" },
 	.low1range = 0,
 	.hi1range = 65535,
 	.group = GROUP_VFS,
@@ -20,8 +20,8 @@ struct syscallentry syscall_setfsgid = {
 struct syscallentry syscall_setfsgid16 = {
 	.name = "setfsgid16",
 	.num_args = 1,
-	.arg1name = "gid",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE },
+	.argname = { [0] = "gid" },
 	.low1range = 0,
 	.hi1range = 65535,
 	.group = GROUP_VFS,

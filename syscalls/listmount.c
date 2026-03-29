@@ -49,11 +49,8 @@ static void sanitise_listmount(struct syscallrecord *rec)
 struct syscallentry syscall_listmount = {
 	.name = "listmount",
 	.num_args = 4,
-	.arg1name = "req",
-	.arg2name = "mnt_ids",
-	.arg3name = "nr_mnt_ids",
-	.arg4name = "flags",
-	.arg4type = ARG_LIST,
+	.argtype = { [3] = ARG_LIST },
+	.argname = { [0] = "req", [1] = "mnt_ids", [2] = "nr_mnt_ids", [3] = "flags" },
 	.arg4list = ARGLIST(listmount_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,

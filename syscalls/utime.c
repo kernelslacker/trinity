@@ -7,8 +7,6 @@ struct syscallentry syscall_utime = {
 	.name = "utime",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.arg1name = "filename",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "times",
-	.arg2type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_ADDRESS },
+	.argname = { [0] = "filename", [1] = "times" },
 };

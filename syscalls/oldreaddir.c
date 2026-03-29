@@ -7,11 +7,7 @@
 struct syscallentry syscall_oldreaddir = {
 	.name = "old_readdir",
 	.num_args = 3,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "dirent",
-	.arg2type = ARG_NON_NULL_ADDRESS,
-	.arg3name = "count",
-	.arg3type = ARG_LEN,
+	.argtype = { [0] = ARG_FD, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN },
+	.argname = { [0] = "fd", [1] = "dirent", [2] = "count" },
 	.group = GROUP_VFS,
 };

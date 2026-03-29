@@ -6,8 +6,8 @@
 struct syscallentry syscall_umask = {
 	.name = "umask",
 	.num_args = 1,
-	.arg1name = "mask",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE },
+	.argname = { [0] = "mask" },
 	.low1range = 0,
 	.hi1range = 07777,
 	.group = GROUP_PROCESS,

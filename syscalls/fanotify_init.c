@@ -69,10 +69,9 @@ static void post_fanotify_init(struct syscallrecord *rec)
 struct syscallentry syscall_fanotify_init = {
 	.name = "fanotify_init",
 	.num_args = 2,
-	.arg1name = "flags",
-	.arg1type = ARG_LIST,
+	.argtype = { [0] = ARG_LIST },
+	.argname = { [0] = "flags", [1] = "event_f_flags" },
 	.arg1list = ARGLIST(fanotify_init_flags),
-	.arg2name = "event_f_flags",
 	.rettype = RET_FD,
 	.sanitise = sanitise_fanotify_init,
 	.post = post_fanotify_init,

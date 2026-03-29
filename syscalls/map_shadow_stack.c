@@ -14,12 +14,8 @@ static unsigned long map_shadow_stack_flags[] = {
 struct syscallentry syscall_map_shadow_stack = {
 	.name = "map_shadow_stack",
 	.num_args = 3,
-	.arg1name = "addr",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "size",
-	.arg2type = ARG_LEN,
-	.arg3name = "flags",
-	.arg3type = ARG_LIST,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN, [2] = ARG_LIST },
+	.argname = { [0] = "addr", [1] = "size", [2] = "flags" },
 	.arg3list = ARGLIST(map_shadow_stack_flags),
 	.group = GROUP_VM,
 };

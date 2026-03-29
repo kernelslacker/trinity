@@ -13,11 +13,7 @@ struct syscallentry syscall_sigprocmask = {
 	.name = "sigprocmask",
 	.group = GROUP_SIGNAL,
 	.num_args = 3,
-	.arg1name = "how",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
+	.argname = { [0] = "how", [1] = "set", [2] = "oset" },
 	.arg1list = ARGLIST(sigprocmask_how),
-	.arg2name = "set",
-	.arg2type = ARG_ADDRESS,
-	.arg3name = "oset",
-	.arg3type = ARG_ADDRESS,
 };

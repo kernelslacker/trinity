@@ -6,7 +6,7 @@
 struct syscallentry syscall_rmdir = {
 	.name =  "rmdir",
 	.num_args = 1,
-	.arg1name = "pathname",
-	.arg1type = ARG_PATHNAME,
+	.argtype = { [0] = ARG_PATHNAME },
+	.argname = { [0] = "pathname" },
 	.group = GROUP_VFS,
 };

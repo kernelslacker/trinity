@@ -14,7 +14,7 @@ static void sanitise_setuid(struct syscallrecord *rec)
 struct syscallentry syscall_setuid = {
 	.name = "setuid",
 	.num_args = 1,
-	.arg1name = "uid",
+	.argname = { [0] = "uid" },
 	.sanitise = sanitise_setuid,
 	.group = GROUP_PROCESS,
 };
@@ -26,7 +26,7 @@ struct syscallentry syscall_setuid = {
 struct syscallentry syscall_setuid16 = {
 	.name = "setuid16",
 	.num_args = 1,
-	.arg1name = "uid",
+	.argname = { [0] = "uid" },
 	.sanitise = sanitise_setuid,
 	.group = GROUP_PROCESS,
 };

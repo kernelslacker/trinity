@@ -12,11 +12,9 @@ struct syscallentry syscall_msgget = {
 	.name = "msgget",
 	.group = GROUP_IPC,
 	.num_args = 2,
-	.arg1name = "key",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE, [1] = ARG_LIST },
+	.argname = { [0] = "key", [1] = "msgflg" },
 	.low1range = 0,
 	.hi1range = 65535,
-	.arg2name = "msgflg",
-	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(ipc_flags),
 };

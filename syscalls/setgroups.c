@@ -6,12 +6,10 @@
 struct syscallentry syscall_setgroups = {
 	.name = "setgroups",
 	.num_args = 2,
-	.arg1name = "gidsetsize",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE, [1] = ARG_ADDRESS },
+	.argname = { [0] = "gidsetsize", [1] = "grouplist" },
 	.low1range = 0,
 	.hi1range = 65536,
-	.arg2name = "grouplist",
-	.arg2type = ARG_ADDRESS,
 	.group = GROUP_PROCESS,
 };
 
@@ -23,11 +21,9 @@ struct syscallentry syscall_setgroups = {
 struct syscallentry syscall_setgroups16 = {
 	.name = "setgroups16",
 	.num_args = 2,
-	.arg1name = "gidsetsize",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE, [1] = ARG_ADDRESS },
+	.argname = { [0] = "gidsetsize", [1] = "grouplist" },
 	.low1range = 0,
 	.hi1range = 65536,
-	.arg2name = "grouplist",
-	.arg2type = ARG_ADDRESS,
 	.group = GROUP_PROCESS,
 };

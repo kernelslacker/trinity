@@ -81,10 +81,8 @@ static void post_munmap(struct syscallrecord *rec)
 struct syscallentry syscall_munmap = {
 	.name = "munmap",
 	.num_args = 2,
-	.arg1name = "addr",
-	.arg1type = ARG_MMAP,
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN },
+	.argname = { [0] = "addr", [1] = "len" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_munmap,
 	.post = post_munmap,

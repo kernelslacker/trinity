@@ -7,8 +7,6 @@ struct syscallentry syscall_getunwind = {
 	.name = "getunwind",
 	.num_args = 2,
 	.flags = AVOID_SYSCALL, // IA-64 only
-	.arg1name = "buf",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "buf_size",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN },
+	.argname = { [0] = "buf", [1] = "buf_size" },
 };

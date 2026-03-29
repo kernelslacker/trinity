@@ -147,9 +147,7 @@ static void post_socket(struct syscallrecord *rec)
 struct syscallentry syscall_socket = {
 	.name = "socket",
 	.num_args = 3,
-	.arg1name = "family",
-	.arg2name = "type",
-	.arg3name = "protocol",
+	.argname = { [0] = "family", [1] = "type", [2] = "protocol" },
 	.rettype = RET_FD,
 	.group = GROUP_NET,
 	.sanitise = sanitise_socket,

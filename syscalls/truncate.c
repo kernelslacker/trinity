@@ -6,10 +6,8 @@
 struct syscallentry syscall_truncate = {
 	.name = "truncate",
 	.num_args = 2,
-	.arg1name = "path",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "length",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN },
+	.argname = { [0] = "path", [1] = "length" },
 	.group = GROUP_VFS,
 };
 
@@ -20,9 +18,7 @@ struct syscallentry syscall_truncate = {
 struct syscallentry syscall_truncate64 = {
 	.name = "truncate64",
 	.num_args = 2,
-	.arg1name = "path",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "length",
-	.arg2type = ARG_LEN,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN },
+	.argname = { [0] = "path", [1] = "length" },
 	.group = GROUP_VFS,
 };

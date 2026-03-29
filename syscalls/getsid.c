@@ -7,6 +7,6 @@ struct syscallentry syscall_getsid = {
 	.name = "getsid",
 	.group = GROUP_PROCESS,
 	.num_args = 1,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
+	.argtype = { [0] = ARG_PID },
+	.argname = { [0] = "pid" },
 };

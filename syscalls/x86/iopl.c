@@ -6,8 +6,7 @@
 struct syscallentry syscall_iopl = {
 	.name = "iopl",
 	.num_args = 2,
-	.arg1name = "level",
-	.arg2name = "regs",
-	.arg2type = ARG_ADDRESS,
+	.argtype = { [1] = ARG_ADDRESS },
+	.argname = { [0] = "level", [1] = "regs" },
 	.flags = NEEDS_ROOT,
 };

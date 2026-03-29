@@ -6,10 +6,8 @@
 struct syscallentry syscall_stat = {
 	.name = "stat",
 	.num_args = 2,
-	.arg1name = "filename",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "statbuf",
-	.arg2type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "filename", [1] = "statbuf" },
 	.group = GROUP_VFS,
 };
 
@@ -21,10 +19,8 @@ struct syscallentry syscall_stat = {
 struct syscallentry syscall_stat64 = {
 	.name = "stat64",
 	.num_args = 2,
-	.arg1name = "filename",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "statbuf",
-	.arg2type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "filename", [1] = "statbuf" },
 	.group = GROUP_VFS,
 };
 
@@ -70,17 +66,9 @@ static unsigned long statx_mask[] = {
 struct syscallentry syscall_statx = {
 	.name = "statx",
 	.num_args = 5,
-	.arg1name = "dfd",
-	.arg1type = ARG_FD,
-	.arg2name = "filename",
-	.arg2type = ARG_PATHNAME,
-	.arg3name = "flags",
-	.arg3type = ARG_LIST,
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [3] = ARG_LIST, [4] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags", [3] = "mask", [4] = "buffer" },
 	.arg3list = ARGLIST(statx_flags),
-	.arg4name = "mask",
-	.arg4type = ARG_LIST,
 	.arg4list = ARGLIST(statx_mask),
-	.arg5name = "buffer",
-	.arg5type = ARG_NON_NULL_ADDRESS,
 	.group = GROUP_VFS,
 };

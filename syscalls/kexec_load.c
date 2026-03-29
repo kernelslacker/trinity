@@ -66,11 +66,8 @@ static void sanitise_kexec_load(struct syscallrecord *rec)
 struct syscallentry syscall_kexec_load = {
 	.name = "kexec_load",
 	.num_args = 4,
-	.arg1name = "entry",
-	.arg2name = "nr_segments",
-	.arg3name = "segments",
-	.arg4name = "flags",
-	.arg4type = ARG_LIST,
+	.argtype = { [3] = ARG_LIST },
+	.argname = { [0] = "entry", [1] = "nr_segments", [2] = "segments", [3] = "flags" },
 	.arg4list = ARGLIST(kexec_load_flags),
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,

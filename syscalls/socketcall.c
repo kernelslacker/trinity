@@ -191,9 +191,8 @@ static void post_socketcall(struct syscallrecord *rec)
 struct syscallentry syscall_socketcall = {
 	.name = "socketcall",
 	.num_args = 2,
-	.arg1name = "call",
-	.arg2name = "args",
-	.arg2type = ARG_ADDRESS,
+	.argtype = { [1] = ARG_ADDRESS },
+	.argname = { [0] = "call", [1] = "args" },
 	.group = GROUP_NET,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_socketcall,

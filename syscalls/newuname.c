@@ -7,7 +7,7 @@
 struct syscallentry syscall_newuname = {
 	.name = "newuname",
 	.num_args = 1,
-	.arg1name = "name",
-	.arg1type = ARG_NON_NULL_ADDRESS,
+	.argtype = { [0] = ARG_NON_NULL_ADDRESS },
+	.argname = { [0] = "name" },
 	.group = GROUP_PROCESS,
 };

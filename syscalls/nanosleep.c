@@ -7,9 +7,7 @@ struct syscallentry syscall_nanosleep = {
 	.name = "nanosleep",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.arg1name = "rqtp",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "rmtp",
-	.arg2type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
+	.argname = { [0] = "rqtp", [1] = "rmtp" },
 	.flags = AVOID_SYSCALL, // Boring.  Can cause long sleeps.
 };

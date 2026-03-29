@@ -12,11 +12,7 @@ struct syscallentry syscall_waitpid = {
 	.name = "waitpid",
 	.group = GROUP_PROCESS,
 	.num_args = 3,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "stat_addr",
-	.arg2type = ARG_ADDRESS,
-	.arg3name = "options",
-	.arg3type = ARG_LIST,
+	.argtype = { [0] = ARG_PID, [1] = ARG_ADDRESS, [2] = ARG_LIST },
+	.argname = { [0] = "pid", [1] = "stat_addr", [2] = "options" },
 	.arg3list = ARGLIST(wait_options),
 };

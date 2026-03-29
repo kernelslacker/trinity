@@ -27,13 +27,10 @@ struct syscallentry syscall_rt_sigqueueinfo = {
 	.name = "rt_sigqueueinfo",
 	.group = GROUP_SIGNAL,
 	.num_args = 3,
-	.arg1name = "pid",
-	.arg1type = ARG_PID,
-	.arg2name = "sig",
-	.arg2type = ARG_RANGE,
+	.argtype = { [0] = ARG_PID, [1] = ARG_RANGE },
+	.argname = { [0] = "pid", [1] = "sig", [2] = "uinfo" },
 	.low2range = 0,
 	.hi2range = _NSIG,
-	.arg3name = "uinfo",
 	.flags = AVOID_SYSCALL,	/* can disrupt signal handling */
 	.sanitise = sanitise_rt_sigqueueinfo,
 };

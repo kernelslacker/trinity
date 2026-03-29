@@ -6,6 +6,6 @@
 struct syscallentry syscall_rtas = {
 	.name = "rtas",
 	.num_args = 1,
-	.arg1name = "uargs",
-	.arg1type = ARG_ADDRESS,
+	.argtype = { [0] = ARG_ADDRESS },
+	.argname = { [0] = "uargs" },
 };

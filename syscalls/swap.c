@@ -12,10 +12,8 @@ static unsigned long swapon_flags[] = {
 struct syscallentry syscall_swapon = {
 	.name = "swapon",
 	.num_args = 2,
-	.arg1name = "path",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "swap_flags",
-	.arg2type = ARG_LIST,
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LIST },
+	.argname = { [0] = "path", [1] = "swap_flags" },
 	.arg2list = ARGLIST(swapon_flags),
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
@@ -27,8 +25,8 @@ struct syscallentry syscall_swapon = {
 struct syscallentry syscall_swapoff = {
 	.name = "swapoff",
 	.num_args = 1,
-	.arg1name = "path",
-	.arg1type = ARG_PATHNAME,
+	.argtype = { [0] = ARG_PATHNAME },
+	.argname = { [0] = "path" },
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 };

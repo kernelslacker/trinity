@@ -11,8 +11,8 @@ struct syscallentry syscall_alarm = {
 	.name = "alarm",
 	.group = GROUP_TIME,
 	.num_args = 1,
-	.arg1name = "seconds",
-	.arg1type = ARG_RANGE,
+	.argtype = { [0] = ARG_RANGE },
+	.argname = { [0] = "seconds" },
 	.low1range = 0,
 	.hi1range = 5,
 };

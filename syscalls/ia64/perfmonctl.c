@@ -23,10 +23,8 @@
 struct syscall syscall_perfmonctl = {
 	.name = "perfmonctl",
 	.num_args = 4,
-	.arg1name = "fd",
-	.arg1type = ARG_FD,
-	.arg2name = "cmd",
-	.arg2type = ARG_LIST,
+	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg", [3] = "count" },
+	.argtype = { [0] = ARG_FD, [1] = ARG_LIST, [2] = ARG_ADDRESS },
 	.arg2list = {
 		.num = 12,
 		.values = { PFM_CREATE_CONTEXT, PFM_WRITE_PMCS, PFM_WRITE_PMDS,
@@ -34,8 +32,5 @@ struct syscall syscall_perfmonctl = {
 			    PFM_UNLOAD_CONTEXT, PFM_RESTART, PFM_CREATE_EVTSETS,
 			    PFM_DELETE_EVTSETS, PFM_GETINFO_EVTSETS },
 	},
-	.arg3name = "arg",
-	.arg3type = ARG_ADDRESS,
-	.arg4name = "count",
 };
 

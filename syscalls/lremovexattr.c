@@ -14,9 +14,8 @@ static void sanitise_lremovexattr(struct syscallrecord *rec)
 struct syscallentry syscall_lremovexattr = {
 	.name = "lremovexattr",
 	.num_args = 2,
-	.arg1name = "pathname",
-	.arg1type = ARG_PATHNAME,
-	.arg2name = "name",
+	.argtype = { [0] = ARG_PATHNAME },
+	.argname = { [0] = "pathname", [1] = "name" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_lremovexattr,
 };

@@ -11,12 +11,8 @@
 struct syscall syscall_sh_cacheflush = {
 	.name = "sh_cacheflush",
 	.num_args = 3,
-	.arg1name = "addr",
-	.arg1type = ARG_ADDRESS,
-	.arg2name = "len",
-	.arg2type = ARG_LEN,
-	.arg3name = "op",
-	.arg3type = ARG_LIST,
+	.argname = { [0] = "addr", [1] = "len", [2] = "op" },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN, [2] = ARG_LIST },
 	.arg3list = {
 		.num = 4,
 		.values = {

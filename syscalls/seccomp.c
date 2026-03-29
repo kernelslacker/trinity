@@ -42,14 +42,10 @@ static unsigned long seccomp_flags[] = {
 struct syscallentry syscall_seccomp = {
 	.name = "seccomp",
 	.num_args = 3,
-	.arg1name = "op",
-	.arg1type = ARG_OP,
+	.argtype = { [0] = ARG_OP, [1] = ARG_LIST, [2] = ARG_ADDRESS },
+	.argname = { [0] = "op", [1] = "flags", [2] = "uargs" },
 	.arg1list = ARGLIST(seccomp_ops),
-	.arg2name = "flags",
-	.arg2type = ARG_LIST,
 	.arg2list = ARGLIST(seccomp_flags),
-	.arg3name = "uargs",
-	.arg3type = ARG_ADDRESS,
 	.sanitise = sanitise_seccomp,
 	.group = GROUP_PROCESS,
 };

@@ -52,8 +52,7 @@ static void sanitise_capset(struct syscallrecord *rec)
 struct syscallentry syscall_capset = {
 	.name = "capset",
 	.num_args = 2,
-	.arg1name = "header",
-	.arg2name = "data",
+	.argname = { [0] = "header", [1] = "data" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_capset,
