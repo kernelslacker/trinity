@@ -9,6 +9,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sched.h>
+#include <sys/personality.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
@@ -192,6 +194,88 @@ static void bind_child_to_cpu(struct childdata *child)
 }
 
 /*
+ * Randomise process context before the child starts fuzzing syscalls.
+ * Called once per child from init_child().  Best-effort — errors are
+ * silently ignored so a failed operation never wedges the child.
+ *
+ * Deliberately omits CLONE_NEWPID (doesn't move us, affects future forks
+ * unpredictably) and CLONE_NEWUSER (drops caps, breaks privileged paths).
+ */
+static void munge_process(void)
+{
+	static const int extra_ns_flags[] = {
+		CLONE_NEWUTS,
+		CLONE_SYSVSEM,
+#ifdef CLONE_NEWCGROUP
+		CLONE_NEWCGROUP,
+#endif
+#ifdef CLONE_NEWTIME
+		CLONE_NEWTIME,
+#endif
+	};
+	static const unsigned long personas[] = {
+		PER_LINUX,
+		PER_LINUX | ADDR_NO_RANDOMIZE,
+		PER_LINUX | READ_IMPLIES_EXEC,
+		PER_LINUX | ADDR_COMPAT_LAYOUT,
+		PER_LINUX | MMAP_PAGE_ZERO,
+		PER_LINUX32,
+	};
+	static const int rlim_resources[] = {
+		RLIMIT_DATA,
+		RLIMIT_FSIZE,
+		RLIMIT_MSGQUEUE,
+		RLIMIT_NICE,
+	};
+	char cgpath[64];
+	unsigned int i;
+	int fd;
+
+	/* Additional namespace diversity on top of what init_child already does. */
+	for (i = 0; i < ARRAY_SIZE(extra_ns_flags); i++) {
+		if (RAND_BOOL())
+			unshare(extra_ns_flags[i]);
+	}
+
+	/* Random personality — stay within PER_LINUX family to remain sane. */
+	personality(RAND_ARRAY(personas));
+
+	/*
+	 * Best-effort cgroup migration.  Trinity can pre-create numbered
+	 * cgroups (/sys/fs/cgroup/trinity0..7) as writable directories;
+	 * if they don't exist we skip silently.
+	 */
+	snprintf(cgpath, sizeof(cgpath), "/sys/fs/cgroup/trinity%u/cgroup.procs",
+		 rand() % 8);
+	fd = open(cgpath, O_WRONLY);
+	if (fd >= 0) {
+		char pidbuf[16];
+		int len = snprintf(pidbuf, sizeof(pidbuf), "%d", getpid());
+		ssize_t ret __attribute__((unused));
+		ret = write(fd, pidbuf, (size_t) len);
+		close(fd);
+	}
+
+	/* Randomly tighten a subset of resource limits. */
+	for (i = 0; i < ARRAY_SIZE(rlim_resources); i++) {
+		struct rlimit lim;
+
+		if (!RAND_BOOL())
+			continue;
+		if (getrlimit(rlim_resources[i], &lim) != 0)
+			continue;
+		if (lim.rlim_cur == RLIM_INFINITY || lim.rlim_cur < 2)
+			continue;
+		/* Reduce to a random value in [50%, 100%) of current soft limit. */
+		lim.rlim_cur = lim.rlim_cur / 2 + rand() % (lim.rlim_cur / 2);
+		(void) setrlimit(rlim_resources[i], &lim);
+	}
+
+	/* Random umask. */
+	umask((mode_t)(rand() & 0777));
+}
+
+/*
  * Called from the fork_children loop in the main process.
  */
 static void init_child(struct childdata *child, int childno)
@@ -282,6 +366,8 @@ static void init_child(struct childdata *child, int childno)
 
 	if (orig_uid == 0)
 		child->dropped_privs = false;
+
+	munge_process();
 
 	kcov_init_child(&child->kcov);
 }
