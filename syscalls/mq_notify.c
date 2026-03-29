@@ -40,7 +40,7 @@ struct syscallentry syscall_mq_notify = {
 	.name = "mq_notify",
 	.group = GROUP_IPC,
 	.num_args = 2,
-	.argtype = { [0] = ARG_FD },
+	.argtype = { [0] = ARG_FD_MQ },
 	.argname = { [0] = "mqdes", [1] = "u_notification" },
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_notify,

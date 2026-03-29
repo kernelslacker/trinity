@@ -88,6 +88,11 @@ struct pidfdobj {
 	pid_t pid;
 };
 
+struct mqobj {
+	int fd;
+	char name[8];	/* "/trinN\0" */
+};
+
 struct io_uringobj {
 	int fd;
 	void *sq_ring;		/* mmap'd SQ ring, NULL if not mapped */
@@ -148,6 +153,8 @@ struct object {
 		struct bpfprogobj bpfprogobj;
 
 		struct pidfdobj pidfdobj;
+
+		struct mqobj mqobj;
 
 		struct io_uringobj io_uringobj;
 
