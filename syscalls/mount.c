@@ -1,21 +1,93 @@
 /*
  * SYSCALL_DEFINE5(mount, char __user *, dev_name, char __user *, dir_name,
-	 char __user *, type, unsigned long, flags, void __user *, data)
+ *	 char __user *, type, unsigned long, flags, void __user *, data)
  */
 
 #include <linux/fs.h>
 #include <linux/mount.h>
+#include <stdio.h>
 #include <string.h>
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "trinity.h"
 
-static const char *fs_types[] = {
+/* Filesystem types read from /proc/filesystems at startup. */
+const char **filesystem_types;
+unsigned int nr_filesystem_types;
+
+static const char *builtin_fs_types[] = {
 	"ext4", "btrfs", "xfs", "tmpfs", "proc", "sysfs",
 	"devtmpfs", "devpts", "cgroup2", "overlay", "nfs",
 	"fuse", "hugetlbfs", "mqueue", "debugfs", "tracefs",
 	"securityfs", "pstore", "efivarfs", "bpf", "ramfs",
 };
+
+static void __attribute__((constructor)) read_filesystem_types(void)
+{
+	FILE *fp;
+	char line[256];
+	unsigned int count = 0, alloc = 64;
+
+	fp = fopen("/proc/filesystems", "r");
+	if (!fp) {
+		filesystem_types = builtin_fs_types;
+		nr_filesystem_types = ARRAY_SIZE(builtin_fs_types);
+		return;
+	}
+
+	filesystem_types = malloc(alloc * sizeof(char *));
+	if (!filesystem_types) {
+		fclose(fp);
+		filesystem_types = builtin_fs_types;
+		nr_filesystem_types = ARRAY_SIZE(builtin_fs_types);
+		return;
+	}
+
+	while (fgets(line, sizeof(line), fp)) {
+		char *name;
+		size_t len;
+
+		/* Format: optional "nodev\t" prefix, then filesystem name */
+		name = line;
+		if (strncmp(name, "nodev", 5) == 0)
+			name += 5;
+		while (*name == '\t' || *name == ' ')
+			name++;
+
+		len = strlen(name);
+		if (len > 0 && name[len - 1] == '\n')
+			name[--len] = '\0';
+		if (len == 0)
+			continue;
+
+		if (count >= alloc) {
+			char **tmp;
+
+			alloc *= 2;
+			tmp = realloc(filesystem_types, alloc * sizeof(char *));
+			if (!tmp)
+				break;
+			filesystem_types = (const char **)tmp;
+		}
+
+		filesystem_types[count] = strdup(name);
+		if (!filesystem_types[count])
+			break;
+		count++;
+	}
+
+	fclose(fp);
+
+	if (count == 0) {
+		free(filesystem_types);
+		filesystem_types = builtin_fs_types;
+		nr_filesystem_types = ARRAY_SIZE(builtin_fs_types);
+		return;
+	}
+
+	nr_filesystem_types = count;
+}
 
 static unsigned long mount_flags[] = {
 	MS_RDONLY, MS_NOSUID, MS_NODEV, MS_NOEXEC,
@@ -33,7 +105,7 @@ static void sanitise_mount(struct syscallrecord *rec)
 	const char *fstype;
 	char *type;
 
-	fstype = fs_types[rand() % ARRAY_SIZE(fs_types)];
+	fstype = filesystem_types[rand() % nr_filesystem_types];
 	type = (char *) get_writable_address(32);
 	strncpy(type, fstype, 31);
 	type[31] = '\0';
