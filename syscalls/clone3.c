@@ -49,6 +49,10 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	args = zmalloc(sizeof(struct clone_args));
 
 	args->flags = set_rand_bitmask(ARRAY_SIZE(clone3_flags), clone3_flags);
+	if (args->flags & CLONE_THREAD)
+		args->flags |= CLONE_SIGHAND;
+	if (args->flags & CLONE_SIGHAND)
+		args->flags |= CLONE_VM;
 	args->exit_signal = rand() % _NSIG;
 
 	rec->a1 = (unsigned long) args;
