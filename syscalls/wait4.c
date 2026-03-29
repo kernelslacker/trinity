@@ -6,7 +6,7 @@
 #include "sanitise.h"
 
 static unsigned long wait_options[] = {
-	WNOHANG, WUNTRACED, WCONTINUED,
+	WNOHANG, WUNTRACED, WCONTINUED, __WALL, __WCLONE,
 };
 
 struct syscallentry syscall_wait4 = {
