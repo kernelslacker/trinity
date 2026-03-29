@@ -1085,18 +1085,6 @@ enum kcmp_type {
 #endif
 #endif
 
-/* linux/rxrpc.h */
-#ifndef RXRPC_USER_CALL_ID
-#define RXRPC_USER_CALL_ID      1       /* user call ID specifier */
-#define RXRPC_ABORT             2       /* abort request / notification [terminal] */
-#define RXRPC_ACK               3       /* [Server] RPC op final ACK received [terminal] */
-#define RXRPC_NET_ERROR         5       /* network error received [terminal] */
-#define RXRPC_BUSY              6       /* server busy received [terminal] */
-#define RXRPC_LOCAL_ERROR       7       /* local error generated [terminal] */
-#define RXRPC_NEW_CALL          8       /* [Server] new incoming call notification */
-#define RXRPC_ACCEPT            9       /* [Server] accept request */
-#endif
-
 /* net/bluetooth/bluetooth.h */
 #ifndef BT_SECURITY
 #define BT_SECURITY     4
@@ -1430,10 +1418,6 @@ struct kvm_get_htab_fd {
 	__u64	reserved[2];
 };
 #define KVM_PPC_GET_HTAB_FD	  _IOW(KVMIO,  0xaa, struct kvm_get_htab_fd)
-#endif
-
-#ifndef EM_ARM
-#define EM_ARM                    40
 #endif
 
 /* linux/mroute.h */
