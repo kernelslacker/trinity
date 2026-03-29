@@ -2,15 +2,18 @@
  * SYSCALL_DEFINE5(getsockopt, int, fd, int, level, int, optname, char __user *, optval, int __user *, optlen)
  */
 #include <stdlib.h>
+#include "arch.h"
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static void sanitise_getsockopt(struct syscallrecord *rec)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
 	struct socketinfo *si;
 	struct socket_triplet *triplet = NULL;
+	socklen_t *lenp;
 	int fd;
 
 	si = (struct socketinfo *) rec->a1;
@@ -35,14 +38,29 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 
 	/* do_setsockopt allocates optval — we only needed level/optname. */
 	free((void *) so.optval);
+
+	/* Allocate an output buffer for the kernel to write into. */
+	rec->a4 = (unsigned long) zmalloc(page_size);
+
+	/* Provide a valid socklen_t pointer initialized to the buffer size. */
+	lenp = zmalloc(sizeof(*lenp));
+	*lenp = page_size;
+	rec->a5 = (unsigned long) lenp;
+}
+
+static void post_getsockopt(struct syscallrecord *rec)
+{
+	freeptr(&rec->a4);
+	freeptr(&rec->a5);
 }
 
 struct syscallentry syscall_getsockopt = {
 	.name = "getsockopt",
 	.num_args = 5,
-	.argtype = { [0] = ARG_SOCKETINFO, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_SOCKETINFO },
 	.argname = { [0] = "fd", [1] = "level", [2] = "optname", [3] = "optval", [4] = "optlen" },
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_getsockopt,
+	.post = post_getsockopt,
 };
