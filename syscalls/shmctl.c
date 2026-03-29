@@ -10,6 +10,32 @@ static unsigned long shmctl_ops[] = {
 	SHM_INFO, SHM_STAT, SHM_LOCK, SHM_UNLOCK,
 };
 
+static void sanitise_shmctl(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case IPC_RMID:
+	case SHM_LOCK:
+	case SHM_UNLOCK:
+		rec->a3 = 0;
+		break;
+	case IPC_INFO:
+		rec->a3 = (unsigned long) zmalloc(sizeof(struct shminfo));
+		break;
+	case SHM_INFO:
+		rec->a3 = (unsigned long) zmalloc(sizeof(struct shm_info));
+		break;
+	default:
+		/* IPC_STAT, IPC_SET, SHM_STAT */
+		rec->a3 = (unsigned long) zmalloc(sizeof(struct shmid_ds));
+		break;
+	}
+}
+
+static void post_shmctl(struct syscallrecord *rec)
+{
+	freeptr(&rec->a3);
+}
+
 struct syscallentry syscall_shmctl = {
 	.name = "shmctl",
 	.group = GROUP_IPC,
@@ -19,4 +45,6 @@ struct syscallentry syscall_shmctl = {
 	.low1range = 0,
 	.hi1range = 65535,
 	.arg2list = ARGLIST(shmctl_ops),
+	.sanitise = sanitise_shmctl,
+	.post = post_shmctl,
 };
