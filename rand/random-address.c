@@ -119,10 +119,12 @@ struct iovec * alloc_iovec(unsigned int num)
 		}
 
 		iov[i].iov_base = map->ptr;
-		if (RAND_BOOL())
-			iov[i].iov_len = 20;
-		else
-			iov[i].iov_len = rand() % map->size;
+		if (RAND_BOOL()) {
+			const unsigned int lens[] = { 0, 1, page_size };
+			iov[i].iov_len = lens[rand() % 3];
+		} else {
+			iov[i].iov_len = map->size > 0 ? rand() % map->size : 0;
+		}
 	}
 
 	return iov;
