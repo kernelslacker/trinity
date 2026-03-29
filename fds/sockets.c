@@ -77,15 +77,13 @@ static struct object * add_socket(int fd, unsigned int domain, unsigned int type
 }
 
 /*
- * Perform deferred socket setup: setsockopt, bind, listen.
- * Called lazily when a child first uses the socket, so each child
- * gets its own random configuration rather than inheriting a
- * one-shot setup from the parent.
+ * Perform deferred per-protocol socket setup.
+ * Called lazily when a child first uses the socket.
+ * Random setsockopt is handled separately in socket_child_ops().
  */
 static void socket_setup_lazy(struct socketinfo *si)
 {
 	const struct netproto *proto;
-	struct sockopt so = { 0, 0, 0, 0 };
 	int fd = si->fd;
 
 	si->needs_setup = false;
@@ -94,9 +92,6 @@ static void socket_setup_lazy(struct socketinfo *si)
 	if (proto != NULL)
 		if (proto->socket_setup != NULL)
 			proto->socket_setup(fd);
-
-	/* Set some random socket options. */
-	sso_socket(&si->triplet, &so, fd);
 }
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
@@ -423,15 +418,17 @@ static void socket_dump(struct object *obj, enum obj_scope scope)
 }
 
 /*
- * Child operation: randomly bind, listen, and accept4 on a socket.
- * Called periodically during child fuzzing so sockets start unbound
- * and children exercise the bind/listen/accept paths as fuzzing ops.
+ * Child operation: randomly set socket options, bind, listen, and
+ * accept4 on a socket.  Called periodically during child fuzzing so
+ * sockets get random configurations and children exercise the
+ * setsockopt/bind/listen/accept paths as fuzzing ops.
  */
 static void socket_child_ops(void)
 {
 	struct socketinfo *si;
 	struct sockaddr *sa = NULL;
 	socklen_t salen;
+	struct sockopt so = { 0, 0, 0, 0 };
 	int fd, ret, one = 1, flags, afd;
 
 	si = get_rand_socketinfo();
@@ -439,6 +436,11 @@ static void socket_child_ops(void)
 		return;
 
 	fd = si->fd;
+
+	/* Set random socket options — moved here from socket_setup_lazy()
+	 * so each child exercises setsockopt at runtime rather than
+	 * doing a one-shot setup at first touch. */
+	sso_socket(&si->triplet, &so, fd);
 
 	generate_sockaddr((struct sockaddr **) &sa, &salen, si->triplet.family);
 
