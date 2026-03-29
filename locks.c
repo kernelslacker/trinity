@@ -100,13 +100,13 @@ void lock(lock_t *lk)
 			check_lock(lk);
 		} else {
 			/* Ok, we're a child pid. If we reached the limit, just exit */
-			if (shm->exit_reason == EXIT_REACHED_COUNT)
+			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REACHED_COUNT)
 				_exit(EXIT_SUCCESS);
 
 			/* if something bad happened, like main crashed,
 			 * we don't want to spin forever, so just get out.
 			 */
-			if (shm->exit_reason != STILL_RUNNING)
+			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 				_exit(EXIT_FAILURE);
 
 		}

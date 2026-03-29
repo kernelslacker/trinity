@@ -319,7 +319,7 @@ static void check_parent_pid(void)
 
 	lock(&shm->buglock);
 
-	if (shm->exit_reason == EXIT_REPARENT_PROBLEM)
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REPARENT_PROBLEM)
 		goto out;
 
 	output(0, "BUG!: CHILD (pid:%d) GOT REPARENTED! "
@@ -483,7 +483,7 @@ void child_process(struct childdata *child, int childno)
 			goto out;	// Exit the child, things are getting too weird.
 	}
 
-	while (shm->exit_reason == STILL_RUNNING) {
+	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 		if (ctrlc_pending) {
 			panic(EXIT_SIGINT);
 			break;
@@ -530,7 +530,8 @@ void child_process(struct childdata *child, int childno)
 
 		if (syscalls_todo) {
 			if (shm->stats.op_count >= syscalls_todo) {
-				shm->exit_reason = EXIT_REACHED_COUNT;
+				__atomic_store_n(&shm->exit_reason,
+						EXIT_REACHED_COUNT, __ATOMIC_RELAXED);
 				goto out;
 			}
 		}

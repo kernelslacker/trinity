@@ -188,7 +188,7 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 	if (check_stat_file(sb) == -1)
 		return FTW_CONTINUE;
 
-	if (shm->exit_reason != STILL_RUNNING)
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 		return FTW_STOP;
 
 	add_to_namelist(fpath);
@@ -213,7 +213,7 @@ static void open_fds_from_path(const char *dirpath)
 
 	ret = nftw(dirpath, file_tree_callback, 32, flags);
 	if (ret != 0) {
-		if (shm->exit_reason != EXIT_SIGINT)
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != EXIT_SIGINT)
 			output(0, "Something went wrong during nftw(%s). (%d:%s)\n",
 				dirpath, ret, strerror(errno));
 		return;
@@ -284,7 +284,7 @@ void generate_filelist(void)
 		add_pool("/sys");
 	}
 
-	if (shm->exit_reason != STILL_RUNNING)
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 		return;
 
 	if (files_in_index == 0) {

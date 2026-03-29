@@ -85,7 +85,7 @@ static int shm_is_corrupt(void)
 
 			dump_childnos();
 
-			if (shm->exit_reason == STILL_RUNNING)
+			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING)
 				panic(EXIT_PID_OUT_OF_RANGE);
 			dump_childdata(child);
 			once = true;
@@ -560,7 +560,7 @@ static void replace_child(int childno)
 {
 	unsigned int retries = 0;
 
-	if (shm->exit_reason != STILL_RUNNING)
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 		return;
 
 	while (spawn_child(childno) == false) {
@@ -595,7 +595,7 @@ static void fork_children(void)
 			exit(EXIT_FAILURE);
 		}
 
-		if (shm->exit_reason != STILL_RUNNING)
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			return;
 	}
 	shm->ready = true;
@@ -857,7 +857,7 @@ void main_loop(void)
 
 	fork_children();
 
-	while (shm->exit_reason == STILL_RUNNING) {
+	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 
 		handle_children();
 
@@ -873,7 +873,7 @@ void main_loop(void)
 
 		while (check_all_locks() == true) {
 			reap_dead_kids();
-			if (shm->exit_reason == EXIT_REACHED_COUNT)
+			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REACHED_COUNT)
 				kill_all_kids();
 		}
 
@@ -895,8 +895,8 @@ void main_loop(void)
 
 	/* if the pid map is corrupt, we can't trust that we'll
 	 * ever successfully finish pidmap_empty, so skip it */
-	if ((shm->exit_reason == EXIT_LOST_CHILD) ||
-	    (shm->exit_reason == EXIT_SHM_CORRUPTION))
+	if ((__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_LOST_CHILD) ||
+	    (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_SHM_CORRUPTION))
 		goto dont_wait;
 
 	handle_children();
@@ -916,7 +916,8 @@ void main_loop(void)
 			last = shm->running_childs;
 
 			output(0, "exit_reason=%d, but %u children still running.\n",
-				shm->exit_reason, shm->running_childs);
+				__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED),
+				shm->running_childs);
 		}
 
 		/* Wait for all the children to exit. */
@@ -935,7 +936,8 @@ corrupt:
 	kill_all_kids();
 
 dont_wait:
-	output(0, "Bailing main loop because %s.\n", decode_exit(shm->exit_reason));
+	output(0, "Bailing main loop because %s.\n",
+		decode_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
 }
 
 
@@ -946,5 +948,5 @@ dont_wait:
 void panic(int reason)
 {
 	shm->spawn_no_more = true;
-	shm->exit_reason = reason;
+	__atomic_store_n(&shm->exit_reason, reason, __ATOMIC_RELAXED);
 }

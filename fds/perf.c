@@ -107,7 +107,7 @@ static int init_perf_fds(void)
 			return false;
 		}
 
-		if (shm->exit_reason != STILL_RUNNING)
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			return false;
 	}
 
