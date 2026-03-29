@@ -11,6 +11,7 @@
 #include "cmp_hints.h"
 #include "fd-event.h"
 #include "kcov.h"
+#include "minicorpus.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -85,5 +86,6 @@ void init_shm(void)
 	mprotect(shm->children, childptrslen, PROT_READ);
 
 	kcov_init_global();
+	minicorpus_init();
 	cmp_hints_init();
 }
