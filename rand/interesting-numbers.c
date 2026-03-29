@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdint.h>
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
@@ -134,7 +135,7 @@ static unsigned short get_interesting_16bit_value(void)
 
 unsigned int get_interesting_32bit_value(void)
 {
-	switch (rand() % 10) {
+	switch (rand() % 13) {
 	case 0: return 0x80000000 >> (rand() & 0x1f);	// 2^n (1 -> 0x80000000)
 	case 1: return rand();							// 0 -> RAND_MAX (likely 0x7fffffff)
 	case 2: return (unsigned int) 0xff << (4 * (rand() % 7));
@@ -144,6 +145,9 @@ unsigned int get_interesting_32bit_value(void)
 	case 6: return 0xffffffff - page_size;
 	case 7: return page_size;
 	case 8: return page_size * ((rand() % (0xffffffff/page_size)) + 1);
+	case 9: return page_size - 1;					// PAGE_SIZE - 1: last byte before boundary
+	case 10: return page_size + 1;					// PAGE_SIZE + 1: one past boundary
+	case 11: return page_size * 2 - 1;				// PAGE_SIZE*2 - 1: straddles two pages
 	default: return 0xffffffff;						// max
 	}
 }
@@ -211,7 +215,7 @@ unsigned long get_interesting_value(void)
 #if WORD_BIT != 32
 
 	if (ONE_IN(4)) {
-		switch (rand() % 11) {
+		switch (rand() % 14) {
 		case 0: return 0x0000000100000000UL | low;
 		case 1: return 0x7fffffff00000000UL | low;
 		case 2: return 0x8000000000000000UL | low;
@@ -223,6 +227,9 @@ unsigned long get_interesting_value(void)
 		case 8: return MODULE_ADDR | (low & 0xffffff);
 		case 9: return per_arch_interesting_addr(low);
 		case 10: return (low << 32);
+		case 11: return SIZE_MAX - page_size + 1;	/* last allocation that crosses no page boundary */
+		case 12: return SIZE_MAX & ~((unsigned long)page_size - 1);	/* page-aligned near SIZE_MAX */
+		case 13: return (unsigned long)page_size * 2 - 1;		/* straddles two pages as size_t */
 		}
 	}
 
