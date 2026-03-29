@@ -6,7 +6,7 @@
 struct syscallentry syscall_sethostname = {
 	.name = "sethostname",
 	.num_args = 2,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN },
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN },
 	.argname = { [0] = "name", [1] = "len" },
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,
