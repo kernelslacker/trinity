@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "struct_catalog.h"
 #include "fd-event.h"
 #include "kcov.h"
 #include "minicorpus.h"
@@ -88,4 +89,5 @@ void init_shm(void)
 	kcov_init_global();
 	minicorpus_init();
 	cmp_hints_init();
+	struct_catalog_init();
 }
