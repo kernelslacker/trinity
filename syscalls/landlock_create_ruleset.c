@@ -29,6 +29,10 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		attr->handled_access_net = rand() % 4;	/* 0, 1, 2, or 3 (bind|connect) */
 
+	/* Random combination of IPC scope restrictions (landlock ABI v5+). */
+	if (RAND_BOOL())
+		attr->scoped = rand() & ((1ULL << 2) - 1);	/* bits 0-1: abstract unix socket, signal */
+
 	rec->a1 = (unsigned long) attr;
 	rec->a2 = sizeof(*attr);
 }
