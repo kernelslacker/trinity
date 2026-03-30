@@ -60,6 +60,7 @@ static const struct domain domains[] = {
 	{ "QIPCRTR",	PF_QIPCRTR },
 	{ "SMC",	PF_SMC },
 	{ "XDP",	PF_XDP },
+	{ "MCTP",	PF_MCTP },
 };
 
 static const struct domain *lookup_domain(const char *name)
