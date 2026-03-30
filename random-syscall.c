@@ -207,9 +207,13 @@ bool random_syscall(struct childdata *child)
 	output_syscall_prefix(rec);
 
 	/* Every CMP_MODE_RATIO-th syscall, run in CMP mode to collect
-	 * comparison operand hints instead of PC coverage. */
+	 * comparison operand hints instead of PC coverage.
+	 * Every KCOV_REMOTE_RATIO-th non-CMP syscall, use KCOV_REMOTE_ENABLE
+	 * to also collect coverage from softirqs/threaded-irqs/kthreads. */
 	do_cmp = child->kcov.active && ONE_IN(CMP_MODE_RATIO);
 	child->kcov.cmp_mode = do_cmp;
+	child->kcov.remote_mode = !do_cmp && child->kcov.remote_capable &&
+				  ONE_IN(KCOV_REMOTE_RATIO);
 
 	do_syscall(rec, &child->kcov);
 

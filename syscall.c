@@ -118,14 +118,18 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 			(void)alarm(1);
 
 		if (rec->do32bit == false) {
-			if (kc != NULL && kc->cmp_mode)
+			if (kc != NULL && kc->remote_mode)
+				kcov_enable_remote(kc);
+			else if (kc != NULL && kc->cmp_mode)
 				kcov_enable_cmp(kc);
 			else
 				kcov_enable_trace(kc);
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 			kcov_disable(kc);
 		} else {
-			if (kc != NULL && kc->cmp_mode)
+			if (kc != NULL && kc->remote_mode)
+				kcov_enable_remote(kc);
+			else if (kc != NULL && kc->cmp_mode)
 				kcov_enable_cmp(kc);
 			else
 				kcov_enable_trace(kc);

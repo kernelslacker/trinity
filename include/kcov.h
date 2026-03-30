@@ -31,11 +31,24 @@
 #define KCOV_TRACE_PC  0
 #define KCOV_TRACE_CMP 1
 
+/* KCOV remote coverage handle construction.
+ * KCOV_SUBSYSTEM_COMMON covers softirqs and threaded IRQ handlers. */
+#define KCOV_SUBSYSTEM_COMMON	(0x00ULL << 56)
+#define KCOV_SUBSYSTEM_MASK	(0xffULL << 56)
+#define KCOV_INSTANCE_MASK	(0xffffffffULL)
+
+/* Fraction of syscalls that use remote mode instead of per-thread mode.
+ * 1 in KCOV_REMOTE_RATIO syscalls will use KCOV_REMOTE_ENABLE. */
+#define KCOV_REMOTE_RATIO 10
+
 struct kcov_child {
 	int fd;
 	unsigned long *trace_buf;
-	bool active;    /* true if this child successfully opened kcov */
-	bool cmp_mode;  /* true when this syscall should use CMP tracing */
+	bool active;       /* true if this child successfully opened kcov */
+	bool cmp_mode;     /* true when this syscall should use CMP tracing */
+	bool remote_mode;  /* true when using KCOV_REMOTE_ENABLE */
+	bool remote_capable; /* true if kernel supports KCOV_REMOTE_ENABLE */
+	unsigned int child_id; /* unique child id for remote handle */
 };
 
 /* Shared coverage state, allocated in shared memory. */
@@ -44,6 +57,7 @@ struct kcov_shared {
 	unsigned long edges_found;
 	unsigned long total_pcs;
 	unsigned long total_calls;
+	unsigned long remote_calls;	/* calls using KCOV_REMOTE_ENABLE */
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
 	unsigned long last_edge_at[MAX_NR_SYSCALL];
 };
@@ -54,9 +68,9 @@ extern struct kcov_shared *kcov_shm;
 void kcov_init_global(void);
 
 /* Called per-child to try to open/mmap the kcov fd.
- * Returns true on success or if kcov is unavailable (not an error).
+ * child_id is a unique per-child identifier used for remote handles.
  * Sets kc->active = true only if kcov is usable. */
-void kcov_init_child(struct kcov_child *kc);
+void kcov_init_child(struct kcov_child *kc, unsigned int child_id);
 
 /* Called per-child on exit to clean up. */
 void kcov_cleanup_child(struct kcov_child *kc);
@@ -64,6 +78,7 @@ void kcov_cleanup_child(struct kcov_child *kc);
 /* Bracket the actual syscall() call with these. No-ops if !active. */
 void kcov_enable_trace(struct kcov_child *kc);
 void kcov_enable_cmp(struct kcov_child *kc);
+void kcov_enable_remote(struct kcov_child *kc);
 void kcov_disable(struct kcov_child *kc);
 
 /* After disabling, collect PCs and update the global bitmap.
