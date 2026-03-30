@@ -2,6 +2,7 @@
 #include <string.h>
 #include "arch.h"
 #include "cmp_hints.h"
+#include "edgepair.h"
 #include "kcov.h"
 #include "shm.h"
 #include "stats.h"
@@ -143,5 +144,71 @@ void dump_stats(void)
 		}
 		output(0, "CMP hints: %u values across %u syscalls\n",
 			total_hints, syscalls_with_hints);
+	}
+
+	if (edgepair_shm != NULL) {
+		unsigned int top_count = 0;
+		unsigned int cold_pairs = 0;
+		struct {
+			unsigned int prev_nr;
+			unsigned int curr_nr;
+			unsigned long new_edges;
+		} top[10];
+		unsigned int j;
+
+		memset(top, 0, sizeof(top));
+
+		output(0, "\nEdge-pair coverage: %lu unique pairs, %lu total pair-calls\n",
+			edgepair_shm->pairs_tracked,
+			edgepair_shm->total_pair_calls);
+
+		for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
+			struct edgepair_entry *e = &edgepair_shm->table[i];
+			unsigned long edges;
+
+			if (e->prev_nr == EDGEPAIR_EMPTY)
+				continue;
+
+			edges = e->new_edge_count;
+			if (edges == 0)
+				continue;
+
+			if (edgepair_is_cold(e->prev_nr, e->curr_nr))
+				cold_pairs++;
+
+			for (j = top_count; j > 0 && edges > top[j - 1].new_edges; j--) {
+				if (j < 10)
+					top[j] = top[j - 1];
+			}
+			if (j < 10) {
+				top[j].prev_nr = e->prev_nr;
+				top[j].curr_nr = e->curr_nr;
+				top[j].new_edges = edges;
+				if (top_count < 10)
+					top_count++;
+			}
+		}
+
+		if (top_count > 0) {
+			const struct syscalltable *table = biarch ? syscalls_64bit : syscalls;
+			unsigned int nr_max = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+
+			output(0, "Top edge-producing syscall pairs:\n");
+			for (j = 0; j < top_count; j++) {
+				const char *prev_name = "???";
+				const char *curr_name = "???";
+
+				if (top[j].prev_nr < nr_max && table[top[j].prev_nr].entry)
+					prev_name = table[top[j].prev_nr].entry->name;
+				if (top[j].curr_nr < nr_max && table[top[j].curr_nr].entry)
+					curr_name = table[top[j].curr_nr].entry->name;
+
+				output(0, "  %-20s -> %-20s %lu\n",
+					prev_name, curr_name, top[j].new_edges);
+			}
+		}
+
+		if (cold_pairs > 0)
+			output(0, "Cold pairs (saturated sequences): %u\n", cold_pairs);
 	}
 }

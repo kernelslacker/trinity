@@ -14,6 +14,7 @@
 #include "child.h"
 #include "cmp_hints.h"
 #include "debug.h"
+#include "edgepair.h"
 #include "kcov.h"
 #include "locks.h"
 #include "minicorpus.h"
@@ -163,6 +164,20 @@ retry:
 			goto retry;
 	}
 
+	/* Edge-pair sequence biasing: if we have a previous syscall,
+	 * prefer pairs that have produced new edges before.
+	 * Skip cold pairs (haven't found new edges recently) 50% of
+	 * the time.  Boost productive pairs by accepting them
+	 * immediately when we'd otherwise retry. */
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
+		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
+		    RAND_BOOL()) {
+			bias_attempts++;
+			if (bias_attempts < 20)
+				goto retry;
+		}
+	}
+
 	/* critical section for shm updates. */
 	lock(&rec->lock);
 	rec->do32bit = do32;
@@ -203,6 +218,10 @@ bool random_syscall(struct childdata *child)
 	else {
 		bool new_edges = kcov_collect(&child->kcov, rec->nr);
 
+		/* Record the (prev, curr) syscall pair for sequence coverage. */
+		if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
+			edgepair_record(child->last_syscall_nr, rec->nr, new_edges);
+
 		/* Save args that discovered new coverage, but only for
 		 * syscalls without sanitise (which may stash pointers). */
 		if (new_edges) {
@@ -234,6 +253,9 @@ bool random_syscall(struct childdata *child)
 		/* Track the group for biasing. */
 		if (group_bias)
 			child->last_group = entry->group;
+
+		/* Track syscall number for edge-pair sequence coverage. */
+		child->last_syscall_nr = rec->nr;
 	}
 
 	ret = true;

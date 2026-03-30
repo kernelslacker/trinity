@@ -17,6 +17,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include "edgepair.h"
 #include "kcov.h"
 #include "trinity.h"
 #include "utils.h"
@@ -42,6 +43,8 @@ void kcov_init_global(void)
 	memset(kcov_shm, 0, sizeof(struct kcov_shared));
 	output(0, "KCOV: coverage collection enabled (%d KB bitmap)\n",
 		KCOV_BITMAP_SIZE / 1024);
+
+	edgepair_init_global();
 }
 
 void kcov_init_child(struct kcov_child *kc)
