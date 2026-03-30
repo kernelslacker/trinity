@@ -14,7 +14,7 @@
 
 static struct list_head global_obj_list = { &global_obj_list, &global_obj_list };
 
-void register_global_obj_init(const struct global_obj_entry *entry)
+void register_global_obj_init(struct global_obj_entry *entry)
 {
 	list_add_tail((struct list_head *) &entry->list, &global_obj_list);
 }
