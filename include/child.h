@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include "types.h"
+#include "edgepair.h"
 #include "kcov.h"
 #include "objects.h"
 #include "syscall.h"
@@ -40,6 +41,9 @@ struct childdata {
 
 	/* Last syscall group executed, for group biasing. */
 	unsigned int last_group;
+
+	/* Last syscall number executed, for edge-pair tracking. */
+	unsigned int last_syscall_nr;
 
 	/* per-child fd caching to avoid cross-child races */
 	int current_fd;
