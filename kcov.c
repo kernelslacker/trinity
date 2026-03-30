@@ -6,12 +6,18 @@
  * tracing is enabled around each syscall. Collected PCs are hashed
  * into a global shared bitmap to track edge coverage.
  *
+ * When KCOV_REMOTE_ENABLE is available, a fraction of syscalls use
+ * remote mode to also collect coverage from softirqs, threaded IRQ
+ * handlers, and kthreads triggered by the syscall — deferred work
+ * that per-thread KCOV_ENABLE would miss.
+ *
  * If KCOV is not available, everything is silently skipped with no
  * runtime overhead beyond the initial open() attempt per child.
  */
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -23,9 +29,23 @@
 #include "utils.h"
 
 /* KCOV ioctl commands (from linux/kcov.h). */
-#define KCOV_INIT_TRACE _IOR('c', 1, unsigned long)
-#define KCOV_ENABLE     _IO('c', 100)
-#define KCOV_DISABLE    _IO('c', 101)
+#define KCOV_INIT_TRACE    _IOR('c', 1, unsigned long)
+#define KCOV_ENABLE        _IO('c', 100)
+#define KCOV_DISABLE       _IO('c', 101)
+#define KCOV_REMOTE_ENABLE _IOW('c', 102, struct kcov_remote_arg)
+
+/*
+ * Userspace copy of struct kcov_remote_arg from linux/kcov.h.
+ * We define it here to avoid requiring kernel headers at build time.
+ */
+struct kcov_remote_arg {
+	uint32_t	trace_mode;
+	uint32_t	area_size;
+	uint32_t	num_handles;
+	uint32_t	__pad;
+	uint64_t	common_handle;
+	uint64_t	handles[];
+};
 
 struct kcov_shared *kcov_shm = NULL;
 
@@ -47,12 +67,15 @@ void kcov_init_global(void)
 	edgepair_init_global();
 }
 
-void kcov_init_child(struct kcov_child *kc)
+void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 {
 	kc->fd = -1;
 	kc->trace_buf = NULL;
 	kc->active = false;
 	kc->cmp_mode = false;
+	kc->remote_mode = false;
+	kc->remote_capable = false;
+	kc->child_id = child_id;
 
 	if (kcov_shm == NULL)
 		return;
@@ -80,6 +103,25 @@ void kcov_init_child(struct kcov_child *kc)
 	}
 
 	kc->active = true;
+
+	/* Probe for KCOV_REMOTE_ENABLE support.  Try a remote enable/disable
+	 * cycle — if the ioctl succeeds, the kernel supports it. */
+	{
+		struct kcov_remote_arg *arg;
+
+		arg = calloc(1, sizeof(*arg));
+		if (arg != NULL) {
+			arg->trace_mode = KCOV_TRACE_PC;
+			arg->area_size = KCOV_TRACE_SIZE;
+			arg->num_handles = 0;
+			arg->common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
+			if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, arg) == 0) {
+				ioctl(kc->fd, KCOV_DISABLE, 0);
+				kc->remote_capable = true;
+			}
+			free(arg);
+		}
+	}
 }
 
 void kcov_cleanup_child(struct kcov_child *kc)
@@ -115,6 +157,36 @@ void kcov_enable_cmp(struct kcov_child *kc)
 		kc->active = false;
 }
 
+void kcov_enable_remote(struct kcov_child *kc)
+{
+	struct kcov_remote_arg *arg;
+
+	if (!kc->active || !kc->remote_capable)
+		return;
+
+	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
+
+	arg = calloc(1, sizeof(*arg));
+	if (arg == NULL)
+		return;
+
+	arg->trace_mode = KCOV_TRACE_PC;
+	arg->area_size = KCOV_TRACE_SIZE;
+	arg->num_handles = 0;
+	arg->common_handle = KCOV_SUBSYSTEM_COMMON | (kc->child_id + 1);
+
+	if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, arg) < 0) {
+		/* Fall back to per-thread mode if remote fails at runtime. */
+		kc->remote_capable = false;
+		free(arg);
+		if (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0)
+			kc->active = false;
+		return;
+	}
+
+	free(arg);
+}
+
 void kcov_disable(struct kcov_child *kc)
 {
 	if (kc->fd < 0 || kc->trace_buf == NULL)
@@ -147,6 +219,10 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 
 	call_nr = __atomic_fetch_add(&kcov_shm->total_calls,
 		1, __ATOMIC_RELAXED);
+
+	if (kc->remote_mode)
+		__atomic_fetch_add(&kcov_shm->remote_calls,
+			1, __ATOMIC_RELAXED);
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
 	if (count > KCOV_TRACE_SIZE - 1)

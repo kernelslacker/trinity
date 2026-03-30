@@ -71,9 +71,9 @@ void dump_stats(void)
 		unsigned int cold_count = 0;
 		unsigned int j;
 
-		output(0, "\nKCOV coverage: %lu unique edges, %lu total PCs, %lu calls\n",
+		output(0, "\nKCOV coverage: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
 			kcov_shm->edges_found, kcov_shm->total_pcs,
-			kcov_shm->total_calls);
+			kcov_shm->total_calls, kcov_shm->remote_calls);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
