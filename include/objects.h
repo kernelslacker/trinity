@@ -200,7 +200,7 @@ struct global_obj_entry {
 	void (*init)(void);
 };
 
-void register_global_obj_init(const struct global_obj_entry *entry);
+void register_global_obj_init(struct global_obj_entry *entry);
 void init_global_objects(void);
 struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
@@ -227,7 +227,7 @@ void fd_hash_remove(int fd);
 struct fd_hash_entry *fd_hash_lookup(int fd);
 
 #define REG_GLOBAL_OBJ(_tag, _init_fn)					\
-	static const struct global_obj_entry				\
+	static struct global_obj_entry					\
 		__global_obj_entry_##_tag = {				\
 		.name = #_tag,						\
 		.init = (_init_fn),					\
