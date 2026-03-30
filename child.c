@@ -171,6 +171,9 @@ void clean_childdata(struct childdata *child)
 	child->fd_closed = 0;
 	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
+
+	if (child->fd_event_ring)
+		fd_event_ring_init(child->fd_event_ring);
 }
 
 static void bind_child_to_cpu(struct childdata *child)
