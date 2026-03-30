@@ -107,7 +107,9 @@ struct trinity_io_uring_sqe {
 #define IORING_OP_READV_FIXED	60
 #define IORING_OP_WRITEV_FIXED	61
 #define IORING_OP_PIPE		62
-#define IORING_OP_LAST		63
+#define IORING_OP_NOP128	63
+#define IORING_OP_URING_CMD128	64
+#define IORING_OP_LAST		65
 #endif
 
 /* SQE flags */
