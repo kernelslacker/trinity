@@ -795,7 +795,7 @@ static void print_stats(void)
 		if (shm->stats.op_count - lastcount > 10000) {
 			struct timespec now;
 			unsigned long rate = 0;
-			char stalltxt[]=" STALLED:XXXX";
+			char stalltxt[32] = "";
 
 			clock_gettime(CLOCK_MONOTONIC, &now);
 			if (last_tp.tv_sec > 0) {
