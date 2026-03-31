@@ -105,8 +105,6 @@ static void dirty_random_pages(struct map *map)
 	}
 }
 
-/*
- */
 static void dirty_first_page(struct map *map)
 {
 	char *p = map->ptr;

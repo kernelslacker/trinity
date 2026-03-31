@@ -60,7 +60,7 @@ static void stat_dev(char *name)
 	ret = lstat(name, &sb);
 
 	if (ret == -1) {
-		outputerr("Couldn't open %s\n", name);
+		outputerr("Couldn't stat %s\n", name);
 		exit(EXIT_FAILURE);
 	}
 

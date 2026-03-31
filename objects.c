@@ -421,12 +421,7 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 	head->array_capacity = 0;
 }
 
-/* Destroy all the global objects.
- *
- * We close this before quitting. All OBJ_LOCAL's got destroyed
- * when the children exited, leaving just these OBJ_GLOBALs
- * to clean up.
- */
+/* Destroy all global objects on exit. */
 void destroy_global_objects(void)
 {
 	unsigned int i;
@@ -505,10 +500,6 @@ void remove_object_by_fd(int fd)
 	try_regenerate_fd(type);
 }
 
-/*
- * Think of this as a poor mans garbage collector, to prevent
- * us from exhausting all the available fd's in the system etc.
- */
 static void __prune_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;

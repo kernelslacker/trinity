@@ -73,7 +73,7 @@ static void read_mapping_reverse(struct map *map)
 	}
 }
 
-/* fault in a random set of map->size pages. (some may be faulted >once) */
+/* fault in all pages of the mapping. */
 static void read_random_pages(struct map *map)
 {
 	char *p = map->ptr;

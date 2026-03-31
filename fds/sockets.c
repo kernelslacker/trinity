@@ -357,7 +357,6 @@ static bool generate_sockets(void)
 			ret |= generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
 	}
 
-	/* This is here temporarily until we have sufficient ->valid_proto's */
 	while (nr_sockets < NR_SOCKET_FDS) {
 		r = rand() % TRINITY_PF_MAX;
 		for (i = 0; i < 10; i++)
