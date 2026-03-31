@@ -47,9 +47,14 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	/* arg = fd */
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
-	case F_SETLEASE:
 		rec->a3 = (unsigned long) get_random_fd();
 		break;
+
+	case F_SETLEASE: {
+		int lease_types[] = { F_RDLCK, F_WRLCK, F_UNLCK };
+		rec->a3 = lease_types[rand() % 3];
+		break;
+	}
 
 	/* no arg */
 	case F_GETFD:
