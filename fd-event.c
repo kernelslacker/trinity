@@ -38,7 +38,9 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 	uint32_t head, tail, next;
 
 	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	head &= (FD_EVENT_RING_SIZE - 1);
 	tail = atomic_load_explicit(&ring->tail, memory_order_acquire);
+	tail &= (FD_EVENT_RING_SIZE - 1);
 
 	next = (head + 1) & (FD_EVENT_RING_SIZE - 1);
 	if (next == tail) {
@@ -75,8 +77,10 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 		       overflow);
 
 	tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
+	tail &= (FD_EVENT_RING_SIZE - 1);
 	/* Acquire pairs with child's release-store of head. */
 	head = atomic_load_explicit(&ring->head, memory_order_acquire);
+	head &= (FD_EVENT_RING_SIZE - 1);
 
 	while (tail != head) {
 		struct fd_event *ev = &ring->events[tail];
