@@ -3,6 +3,7 @@
  */
 #include <stdlib.h>
 #include "arch.h"	// page_size
+#include "fd.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
@@ -15,6 +16,10 @@ static void sanitise_write(struct syscallrecord *rec)
 {
 	unsigned int size;
 	void *ptr;
+
+	/* Last line of defense: don't write to stdin/stdout/stderr. */
+	if (rec->a1 <= 2)
+		rec->a1 = get_random_fd();
 
 	if (RAND_BOOL())
 		size = 1;
@@ -51,12 +56,19 @@ struct syscallentry syscall_write = {
  * SYSCALL_DEFINE3(writev, unsigned long, fd, const struct iovec __user *, vec, unsigned long, vlen)
  */
 
+static void sanitise_writev(struct syscallrecord *rec)
+{
+	if (rec->a1 <= 2)
+		rec->a1 = get_random_fd();
+}
+
 struct syscallentry syscall_writev = {
 	.name = "writev",
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [1] = ARG_IOVEC, [2] = ARG_IOVECLEN },
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen" },
 	.flags = NEED_ALARM,
+	.sanitise = sanitise_writev,
 	.group = GROUP_VFS,
 };
 
@@ -95,6 +107,8 @@ struct syscallentry syscall_pwrite64 = {
 
 static void sanitise_pwritev(struct syscallrecord *rec)
 {
+	if (rec->a1 <= 2)
+		rec->a1 = get_random_fd();
 	rec->a5 = 0;
 	rec->a4 = rand64() & 0x7fffffff;
 }
@@ -121,6 +135,8 @@ static unsigned long pwritev2_flags[] = {
 
 static void sanitise_pwritev2(struct syscallrecord *rec)
 {
+	if (rec->a1 <= 2)
+		rec->a1 = get_random_fd();
 	if (RAND_BOOL()) {
 		rec->a4 = (unsigned long) -1;
 		rec->a5 = (unsigned long) -1;
