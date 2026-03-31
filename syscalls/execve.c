@@ -80,7 +80,7 @@ static void sanitise_execve(struct syscallrecord *rec)
 	envpcount = rand() % 32;
 	envp = gen_ptrs_to_crap(envpcount);
 
-	if (this_syscallname("execve") == false) {
+	if (this_syscallname("execve") == true) {
 		rec->a2 = (unsigned long) argv;
 		rec->a3 = (unsigned long) envp;
 	} else {
