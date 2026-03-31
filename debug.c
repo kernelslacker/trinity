@@ -47,9 +47,9 @@ static void show_child_backtrace(void)
 {
 	struct childdata *child = this_child();
 
-	set_dontkillme(child, false);
-	__show_backtrace();
 	set_dontkillme(child, true);
+	__show_backtrace();
+	set_dontkillme(child, false);
 }
 
 void show_backtrace(void)
