@@ -244,7 +244,10 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 	}
 
 	/* Body: random operations */
-	body_len = TIER1_MIN_INSNS + (rand() % (max_insns - TIER1_MIN_INSNS - 2));
+	if (max_insns <= TIER1_MIN_INSNS + 2)
+		body_len = pos + 1;
+	else
+		body_len = TIER1_MIN_INSNS + (rand() % (max_insns - TIER1_MIN_INSNS - 2));
 	if (body_len > max_insns - 2)
 		body_len = max_insns - 2;
 
@@ -386,7 +389,10 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 	insns[pos++] = EBPF_MOV64_IMM(BPF_REG_0, 0);
 	reg_set(&rs, BPF_REG_0);
 
-	body_len = TIER2_MIN_INSNS + (rand() % (max_insns - TIER2_MIN_INSNS - 2));
+	if (max_insns <= TIER2_MIN_INSNS + 2)
+		body_len = pos + 1;
+	else
+		body_len = TIER2_MIN_INSNS + (rand() % (max_insns - TIER2_MIN_INSNS - 2));
 	if (body_len > max_insns - 2)
 		body_len = max_insns - 2;
 
@@ -516,7 +522,12 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
  */
 static int gen_tier3(struct bpf_insn *insns, int max_insns)
 {
-	int len = TIER3_MIN_INSNS + (rand() % (max_insns - TIER3_MIN_INSNS));
+	int len;
+
+	if (max_insns <= TIER3_MIN_INSNS)
+		len = TIER3_MIN_INSNS;
+	else
+		len = TIER3_MIN_INSNS + (rand() % (max_insns - TIER3_MIN_INSNS));
 
 	for (int i = 0; i < len - 1; i++) {
 		int choice = rand() % 100;
