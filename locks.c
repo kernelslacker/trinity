@@ -27,11 +27,16 @@ static bool check_lock(lock_t *lk)
 	/* First the easy case. If it's held by a dead pid, release it. */
 	pid = __atomic_load_n(&lk->owner, __ATOMIC_ACQUIRE);
 
-	/* if we're in the process of unlocking, it can show up as LOCKED
-	 * but with no owner. Just bail, we'll try again next time around.
+	/* unlock() clears owner before clearing lock. A child killed
+	 * between those two stores leaves lock=LOCKED, owner=0 forever.
+	 * Force-unlock it — if a live process really were mid-unlock,
+	 * the window is nanoseconds and we only check from main's loop.
 	 */
-	if (pid == 0)
-		return false;
+	if (pid == 0) {
+		debugf("Found orphaned lock (owner=0). Freeing.\n");
+		unlock(lk);
+		return true;
+	}
 
 	if (pid_alive(pid) == false) {
 		if (errno != ESRCH)
