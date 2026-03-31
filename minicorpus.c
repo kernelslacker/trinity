@@ -70,7 +70,9 @@ void minicorpus_save(struct syscallrecord *rec)
 	if (minicorpus_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return;
 
-	entry = syscalls[nr].entry;
+	entry = get_syscall_entry(nr, rec->do32bit);
+	if (entry == NULL)
+		return;
 
 	ring = &minicorpus_shm->rings[nr];
 
@@ -171,7 +173,9 @@ bool minicorpus_replay(struct syscallrecord *rec)
 
 	ring_unlock(ring);
 
-	entry = syscalls[nr].entry;
+	entry = get_syscall_entry(nr, rec->do32bit);
+	if (entry == NULL)
+		return false;
 
 	/* Apply the snapshot with per-argument mutations. */
 	for (i = 0; i < entry->num_args && i < 6; i++) {
