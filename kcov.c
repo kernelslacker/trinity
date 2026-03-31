@@ -193,7 +193,6 @@ void kcov_disable(struct kcov_child *kc)
 		return;
 
 	ioctl(kc->fd, KCOV_DISABLE, 0);
-	kc->active = true;
 }
 
 /*
