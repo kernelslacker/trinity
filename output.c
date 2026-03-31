@@ -41,7 +41,7 @@ void output(char level, const char *fmt, ...)
 
 	if (pid == mainpid)
 		prefix = main_prefix;
-	else if (prefix == NULL) {
+	else {
 		int childno;
 
 		childno = find_childno(pid);
