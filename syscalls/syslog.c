@@ -23,7 +23,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 {
 	struct map *map;
 
-	map = (struct map*) rec->a2;
+	map = get_map();
 	if (map == NULL) {
 		rec->a2 = 0;
 		rec->a3 = 0;
