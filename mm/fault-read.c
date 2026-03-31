@@ -18,7 +18,12 @@ static unsigned int nr_pages(struct map *map)
 static void read_one_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned long offset = (rand() % map->size) & PAGE_MASK;
+	unsigned long offset;
+
+	if (map->size == 0)
+		return;
+
+	offset = (rand() % map->size) & PAGE_MASK;
 
 	p += offset;
 	mprotect((void *) p, page_size, PROT_READ);
