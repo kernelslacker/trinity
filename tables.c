@@ -253,28 +253,6 @@ static void check_syscall(struct syscallentry *entry)
 	CHECK(3, 4, 3);
 	CHECK(4, 5, 4);
 	CHECK(5, 6, 5);
-
-	/* check if we have a type. */
-	/* note: not enabled by default, because we haven't annotated everything yet. */
-#undef CHECK
-#define CHECK(NUMARGS, ARGNUM, ARGIDX)				\
-	if (entry == NULL)					\
-		return;						\
-	if (entry->num_args > 0) {				\
-		if (entry->num_args > NUMARGS) {		\
-			if (entry->argtype[ARGIDX] == ARG_UNDEFINED) {	\
-				outputerr("%s has an undefined argument type for arg%d (%s)!\n", entry->name, ARGNUM, entry->argname[ARGIDX]);	\
-			}					\
-		}						\
-	}							\
-
-/*	CHECK(0, 1, 0);
-	CHECK(1, 2, 1);
-	CHECK(2, 3, 2);
-	CHECK(3, 4, 3);
-	CHECK(4, 5, 4);
-	CHECK(5, 6, 5);
-*/
 }
 
 static void sanity_check(const struct syscalltable *table, unsigned int nr)
@@ -441,16 +419,10 @@ static void show_unannotated_biarch(void)
 	}
 }
 
-static void show_unannotated_uniarch(void)
-{
-}
-
 void show_unannotated_args(void)
 {
 	if (biarch == true)
 		show_unannotated_biarch();
-	else
-		show_unannotated_uniarch();
 }
 
 /*

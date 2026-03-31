@@ -66,7 +66,6 @@ static struct socket_triplet atmsvc_triplet[] = {
 
 const struct netproto proto_atmpvc = {
 	.name = "atmpvc",
-//	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,
 	.gen_sockaddr = atmpvc_gen_sockaddr,
 	.valid_triplets = atmpvc_triplet,
@@ -74,7 +73,6 @@ const struct netproto proto_atmpvc = {
 };
 const struct netproto proto_atmsvc = {
 	.name = "atmsvc",
-//	.socket = atm_rand_socket,
 	.setsockopt = atm_setsockopt,
 	.gen_sockaddr = atmsvc_gen_sockaddr,
 	.valid_triplets = atmsvc_triplet,

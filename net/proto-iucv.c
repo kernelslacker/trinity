@@ -71,7 +71,6 @@ static struct socket_triplet iucv_triplets[] = {
 
 const struct netproto proto_iucv = {
 	.name = "iucv",
-//	.socket = iucv_rand_socket,
 	.setsockopt = iucv_setsockopt,
 	.gen_sockaddr = iucv_gen_sockaddr,
 	.valid_triplets = iucv_triplets,

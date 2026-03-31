@@ -52,7 +52,6 @@ static int shm_is_corrupt(void)
 	unsigned long current_previous_op_count = shm->stats.previous_op_count;
 	unsigned long current_op_count = shm->stats.op_count;
 
-	//if (shm->stats.op_count < shm->stats.previous_op_count) {
 	if (current_op_count < current_previous_op_count) {
 		output(0, "Execcount went backwards! (old:%lu new:%lu):\n",
 			shm->stats.previous_op_count, shm->stats.op_count);
@@ -693,7 +692,6 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 {
 	switch (childpid) {
 	case 0:
-		//debugf("Nothing changed. children:%d\n", shm->running_childs);
 		break;
 
 	case -1:
