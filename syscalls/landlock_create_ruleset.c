@@ -9,10 +9,16 @@
 #include "random.h"
 #include "sanitise.h"
 
-#define LANDLOCK_CREATE_RULESET_VERSION                 (1U << 0)
+#ifndef LANDLOCK_CREATE_RULESET_VERSION
+#define LANDLOCK_CREATE_RULESET_VERSION			(1U << 0)
+#endif
+#ifndef LANDLOCK_CREATE_RULESET_ERRATA
+#define LANDLOCK_CREATE_RULESET_ERRATA			(1U << 1)
+#endif
 
 static unsigned long landlock_create_ruleset_flags[] = {
 	LANDLOCK_CREATE_RULESET_VERSION,
+	LANDLOCK_CREATE_RULESET_ERRATA,
 };
 
 static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
