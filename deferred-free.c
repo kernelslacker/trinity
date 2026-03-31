@@ -16,6 +16,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #include "deferred-free.h"
 #include "random.h"
@@ -54,9 +55,9 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * is 5-50 and we tick every syscall. */
 	if (ring_count == DEFERRED_RING_SIZE) {
 		unsigned int oldest = 0;
-		unsigned int min_ttl = ring[0].ttl;
+		unsigned int min_ttl = UINT_MAX;
 
-		for (i = 1; i < DEFERRED_RING_SIZE; i++) {
+		for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 			if (ring[i].ptr != NULL && ring[i].ttl < min_ttl) {
 				min_ttl = ring[i].ttl;
 				oldest = i;
