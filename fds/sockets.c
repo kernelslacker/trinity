@@ -201,7 +201,7 @@ static bool write_socket_to_cache(struct socket_triplet *st)
 	buffer[1] = st->type;
 	buffer[2] = st->protocol;
 	n = write(cachefile, &buffer, sizeof(int) * 3);
-	if (n == -1) {
+	if (n != sizeof(int) * 3) {
 		outputerr("something went wrong writing the cachefile! : %s\n", strerror(errno));
 		return false;
 	}
