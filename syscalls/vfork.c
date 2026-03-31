@@ -6,7 +6,7 @@
 struct syscallentry syscall_vfork = {
 	.name = "vfork",
 	.group = GROUP_PROCESS,
-	.num_args = 1,
+	.num_args = 0,
 	.flags = AVOID_SYSCALL | EXTRA_FORK, // No args, confuses fuzzer
 	.argname = { [0] = "regs" },
 };
