@@ -159,7 +159,7 @@ int main(int argc, char* argv[])
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
 	if (open_fds() == false) {
-		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING)
 			panic(EXIT_FD_INIT_FAILURE);
 
 		_exit(EXIT_FD_INIT_FAILURE);
