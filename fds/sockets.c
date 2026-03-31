@@ -503,6 +503,10 @@ static int open_sockets(void)
 				goto regenerate;
 			break;
 		}
+		if (bytesread != (int)(sizeof(int) * 3)) {
+			output(1, "short read from socket cachefile, regenerating.\n");
+			goto regenerate;
+		}
 
 		domain = buffer[0];
 		type = buffer[1];
