@@ -93,6 +93,15 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		rec->a2 = 0;
 		rec->a3 = (unsigned long) action;
 	}
+
+	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES) {
+		/*
+		 * uargs must point to a writable struct seccomp_notif_sizes
+		 * (3 x __u16) for the kernel to fill in.
+		 */
+		rec->a2 = 0;
+		rec->a3 = (unsigned long) zmalloc(3 * sizeof(uint16_t));
+	}
 }
 
 static void post_seccomp(struct syscallrecord *rec)
@@ -106,6 +115,9 @@ static void post_seccomp(struct syscallrecord *rec)
 	}
 #endif
 	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL && rec->a3)
+		deferred_freeptr(&rec->a3);
+
+	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES && rec->a3)
 		deferred_freeptr(&rec->a3);
 }
 
