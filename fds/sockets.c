@@ -23,7 +23,7 @@
 unsigned int nr_sockets = 0;
 
 static const char *cachefilename="trinity.socketcache";
-static int cachefile;
+static int cachefile = -1;
 
 static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd)
 {
