@@ -8,20 +8,11 @@
 #include "random.h"
 #include "sanitise.h"
 
-#ifndef TFD_CLOEXEC
-#define TFD_CLOEXEC 02000000
-#endif
-
-#ifndef TFD_NONBLOCK
-#define TFD_NONBLOCK 04000
-#endif
-
 #ifndef TFD_TIMER_CANCEL_ON_SET
 #define TFD_TIMER_CANCEL_ON_SET (1 << 1)
 #endif
 
 static unsigned long timerfd_settime_flags[] = {
-	TFD_NONBLOCK, TFD_CLOEXEC,
 	TFD_TIMER_ABSTIME, TFD_TIMER_CANCEL_ON_SET,
 };
 
