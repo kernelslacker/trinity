@@ -169,7 +169,7 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 	else
 		num_entries = RAND_RANGE(1, 256);
 
-	if (argnum < 6 && entry->argtype[argnum - 1] == ARG_IOVECLEN) {
+	if (argnum < 6 && entry->argtype[argnum] == ARG_IOVECLEN) {
 		switch (argnum) {
 		case 1:	rec->a2 = num_entries; break;
 		case 2:	rec->a3 = num_entries; break;
@@ -188,7 +188,7 @@ static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct sysc
 
 	generate_sockaddr((struct sockaddr **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
-	if (argnum < 6 && entry->argtype[argnum - 1] == ARG_SOCKADDRLEN) {
+	if (argnum < 6 && entry->argtype[argnum] == ARG_SOCKADDRLEN) {
 		switch (argnum) {
 		case 1:	rec->a2 = sockaddrlen; break;
 		case 2:	rec->a3 = sockaddrlen; break;
