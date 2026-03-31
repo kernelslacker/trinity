@@ -3,11 +3,14 @@
  *                          const char __user *, uargs)
  */
 #include <errno.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <linux/filter.h>
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "utils.h"
 
 #define SECCOMP_SET_MODE_STRICT		0
 #define SECCOMP_SET_MODE_FILTER		1
@@ -20,6 +23,42 @@
 #define SECCOMP_FILTER_FLAG_NEW_LISTENER	(1UL << 3)
 #define SECCOMP_FILTER_FLAG_TSYNC_ESRCH		(1UL << 4)
 #define SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV	(1UL << 5)
+
+#ifndef SECCOMP_RET_KILL_PROCESS
+#define SECCOMP_RET_KILL_PROCESS	0x80000000U
+#endif
+#ifndef SECCOMP_RET_KILL_THREAD
+#define SECCOMP_RET_KILL_THREAD		0x00000000U
+#endif
+#ifndef SECCOMP_RET_TRAP
+#define SECCOMP_RET_TRAP		0x00030000U
+#endif
+#ifndef SECCOMP_RET_ERRNO
+#define SECCOMP_RET_ERRNO		0x00050000U
+#endif
+#ifndef SECCOMP_RET_USER_NOTIF
+#define SECCOMP_RET_USER_NOTIF		0x7fc00000U
+#endif
+#ifndef SECCOMP_RET_TRACE
+#define SECCOMP_RET_TRACE		0x7ff00000U
+#endif
+#ifndef SECCOMP_RET_LOG
+#define SECCOMP_RET_LOG			0x7ffc0000U
+#endif
+#ifndef SECCOMP_RET_ALLOW
+#define SECCOMP_RET_ALLOW		0x7fff0000U
+#endif
+
+static const uint32_t seccomp_ret_actions[] = {
+	SECCOMP_RET_KILL_PROCESS,
+	SECCOMP_RET_KILL_THREAD,
+	SECCOMP_RET_TRAP,
+	SECCOMP_RET_ERRNO,
+	SECCOMP_RET_USER_NOTIF,
+	SECCOMP_RET_TRACE,
+	SECCOMP_RET_LOG,
+	SECCOMP_RET_ALLOW,
+};
 
 static void sanitise_seccomp(struct syscallrecord *rec)
 {
@@ -42,6 +81,18 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) addr;
 #endif
 	}
+
+	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL) {
+		/*
+		 * uargs must point to a uint32_t containing the action to probe.
+		 * Pick a random valid SECCOMP_RET_* action.
+		 */
+		uint32_t *action = zmalloc(sizeof(*action));
+
+		*action = seccomp_ret_actions[rand() % ARRAY_SIZE(seccomp_ret_actions)];
+		rec->a2 = 0;
+		rec->a3 = (unsigned long) action;
+	}
 }
 
 static void post_seccomp(struct syscallrecord *rec)
@@ -54,6 +105,8 @@ static void post_seccomp(struct syscallrecord *rec)
 		deferred_freeptr(&rec->a3);
 	}
 #endif
+	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL && rec->a3)
+		deferred_freeptr(&rec->a3);
 }
 
 static unsigned long seccomp_ops[] = {
