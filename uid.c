@@ -24,8 +24,14 @@ void dump_uids(void)
 	uid_t uid, euid, suid;
 	gid_t gid, egid, sgid;
 
-	getresuid(&uid, &euid, &suid);
-	getresgid(&gid, &egid, &sgid);
+	if (getresuid(&uid, &euid, &suid) == -1) {
+		perror("getresuid");
+		return;
+	}
+	if (getresgid(&gid, &egid, &sgid) == -1) {
+		perror("getresgid");
+		return;
+	}
 
 	outputstd("initial uid:%u gid:%u euid:%u egid:%u suid:%u sgid:%u\n",
 		uid, gid, euid, egid, suid, sgid);
