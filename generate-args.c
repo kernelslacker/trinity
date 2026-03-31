@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -89,7 +90,11 @@ static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int a
 		}
 	}
 
-	i = low + (unsigned long) rand64() % (high - low + 1);
+	/* Guard against overflow: if high == ULONG_MAX, high - low + 1 wraps to 0 */
+	if (high - low == ULONG_MAX)
+		i = low + (unsigned long) rand64();
+	else
+		i = low + (unsigned long) rand64() % (high - low + 1);
 	return i;
 }
 
