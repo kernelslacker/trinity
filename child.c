@@ -610,7 +610,6 @@ void child_process(struct childdata *child, int childno)
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
 		if (shm->seed != child->seed) {
-			//output(0, "child %d reseeded to %x\n", child->num, child->seed);
 			set_seed(child);
 		}
 

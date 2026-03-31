@@ -27,7 +27,6 @@ static struct socket_triplet rxrpc_triplet[] = {
 
 const struct netproto proto_rxrpc = {
 	.name = "rxrpc",
-//	.socket = rxrpc_rand_socket,
 	.setsockopt = rxrpc_setsockopt,
 	.valid_triplets = rxrpc_triplet,
 	.nr_triplets = ARRAY_SIZE(rxrpc_triplet),

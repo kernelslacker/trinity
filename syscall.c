@@ -177,7 +177,6 @@ static void do_extrafork(struct syscallrecord *rec)
 
 	/* misc failure. */
 	if (extrapid == -1) {
-		//debugf("Couldn't fork grandchild: %s\n", strerror(errno));
 		return;
 	}
 
@@ -254,11 +253,6 @@ static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *en
 already_done:
 	unlock(&shm->syscalltable_lock);
 }
-
-/* generic_post was removed: the ARG_PATHNAME free it performed
- * is now handled by generic_free_arg() via the deferred-free queue.
- * The old code double-freed ARG_PATHNAME args (once here, once in
- * generic_free_arg). */
 
 void handle_syscall_ret(struct syscallrecord *rec)
 {

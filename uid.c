@@ -53,7 +53,6 @@ bool drop_privs(struct childdata *child)
 		exit(EXIT_FAILURE);
 	}
 
-//	debugf("set uid to %u and gid to %d (nobody)\n", nobody_uid, nobody_gid);
 	child->dropped_privs = true;
 	return true;
 }

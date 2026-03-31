@@ -160,7 +160,6 @@ static void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		{ .func = pppox_PX_PROTO_OE },
 		{ .func = pppox_PX_PROTO_OL2TP },
 #ifdef USE_PPPOX_PPTP
-//		{ .func = pppox_PX_PROTO_PPTP },	// TBD
 #endif
 	};
 
@@ -207,7 +206,6 @@ static struct socket_triplet pppox_triplets[] = {
 
 const struct netproto proto_pppol2tp = {
 	.name = "pppol2tp",
-//	.socket = pppol2tp_rand_socket,
 	.setsockopt = pppol2tp_setsockopt,
 	.gen_sockaddr = pppox_gen_sockaddr,
 	.valid_triplets = pppox_triplets,
