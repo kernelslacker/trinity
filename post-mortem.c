@@ -38,7 +38,7 @@ static bool ts_before(const struct timespec *a, const struct timespec *b)
 	return a->tv_nsec < b->tv_nsec;
 }
 
-static void dump_syscall_rec(FILE *fd, struct syscallrecord *rec)
+static void dump_syscall_rec(FILE *fp, struct syscallrecord *rec)
 {
 	switch (rec->state) {
 	case UNKNOWN:
@@ -48,11 +48,11 @@ static void dump_syscall_rec(FILE *fd, struct syscallrecord *rec)
 		/* haven't finished setting up, so don't dump. */
 		break;
 	case BEFORE:
-		fprintf(fd, "%.*s\n", PREBUFFER_LEN, rec->prebuffer);
+		fprintf(fp, "%.*s\n", PREBUFFER_LEN, rec->prebuffer);
 		break;
 	case AFTER:
 	case GOING_AWAY:
-		fprintf(fd, "%.*s%.*s\n", PREBUFFER_LEN, rec->prebuffer,
+		fprintf(fp, "%.*s%.*s\n", PREBUFFER_LEN, rec->prebuffer,
 			POSTBUFFER_LEN, rec->postbuffer);
 		break;
 	}

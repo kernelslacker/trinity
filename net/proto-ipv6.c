@@ -348,7 +348,6 @@ static struct socket_triplet ipv6_privileged_triplets[] = {
 	{ .family = PF_INET6, .protocol = 7, .type = SOCK_RAW },
 	{ .family = PF_INET6, .protocol = 8, .type = SOCK_RAW },
 	{ .family = PF_INET6, .protocol = 9, .type = SOCK_RAW },
-	//TBD: Is it worth doing all 256 of these ?
 };
 
 const struct netproto proto_inet6 = {

@@ -15,8 +15,6 @@ void create_shm(void);
 void init_shm(void);
 
 struct shm_s {
-	/* Sacrificial padding — absorbs stray writes from children whose
-	 * random syscall buffer pointers land on the start of the shm. */
 	char __padding[4096];
 
 	struct childdata **children;

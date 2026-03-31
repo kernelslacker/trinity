@@ -120,7 +120,7 @@ static int get_rand_memfd_fd(void)
 {
 	struct object *obj;
 
-	/* check if eventfd unavailable/disabled. */
+	/* check if memfd unavailable/disabled. */
 	if (objects_empty(OBJ_FD_MEMFD) == true)
 		return -1;
 

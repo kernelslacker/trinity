@@ -79,7 +79,7 @@ static int get_rand_fanotifyfd(void)
 {
 	struct object *obj;
 
-	/* check if eventfd unavailable/disabled. */
+	/* check if fanotify unavailable/disabled. */
 	if (objects_empty(OBJ_FD_FANOTIFY) == true)
 		return -1;
 

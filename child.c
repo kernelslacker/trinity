@@ -75,9 +75,6 @@ static void disable_coredumps(void)
 	prctl(PR_SET_DUMPABLE, false);
 }
 
-/*
- * Re-enable core dumps after do_syscall completes.
- */
 static void enable_coredumps(void)
 {
 	struct rlimit limit = {

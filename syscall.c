@@ -100,9 +100,6 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
 		bool needalarm;
 
 		nr = rec->nr;
-		/* Some architectures (IA64/MIPS) start their Linux syscalls
-		 * At non-zero, and have other ABIs below.
-		 */
 		call = nr + SYSCALL_OFFSET;
 		needalarm = syscalls[nr].entry->flags & NEED_ALARM;
 

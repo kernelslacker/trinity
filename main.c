@@ -102,8 +102,6 @@ static int shm_is_corrupt(void)
  * 1. From reap_dead_kids if it finds reference to a pid that no longer exists.
  * 2. From handle_child() if it gets a SIGBUS or SIGSTOP from the child,
  *    or if it dies from natural causes.
- *
- * The reaper lock protects against these happening at the same time.
  */
 void reap_child(struct childdata *child, int childno)
 {
