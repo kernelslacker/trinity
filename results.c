@@ -5,8 +5,10 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include "locks.h"
 #include "results.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -39,9 +41,15 @@ static void store_successful_fd(struct results *results, unsigned long value)
 		return;
 
 	if (results->fdmap == NULL) {
-		results->fdmap = calloc(fdmap_size, sizeof(int));
-		if (results->fdmap == NULL)
-			return;
+		lock(&shm->syscalltable_lock);
+		if (results->fdmap == NULL) {
+			results->fdmap = calloc(fdmap_size, sizeof(int));
+			if (results->fdmap == NULL) {
+				unlock(&shm->syscalltable_lock);
+				return;
+			}
+		}
+		unlock(&shm->syscalltable_lock);
 	}
 	results->fdmap[fd] = true;
 }
