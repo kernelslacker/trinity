@@ -175,7 +175,7 @@ void pids_init(void)
 
 	output(0, "Using pid_max = %d\n", pidmax);
 
-	pids = alloc_shared(max_children * sizeof(int));
+	pids = alloc_shared(max_children * sizeof(pid_t));
 	for_each_child(i)
 		pids[i] = EMPTY_PIDSLOT;
 }
