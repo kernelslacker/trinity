@@ -97,7 +97,7 @@ int get_rand_pipe_fd(void)
 	obj = get_random_object(OBJ_FD_PIPE, OBJ_GLOBAL);
 
 	if (obj == NULL)
-		return 0;
+		return -1;
 
 	return obj->pipeobj.fd;
 }
