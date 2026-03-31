@@ -72,9 +72,6 @@ struct syscallentry syscall_sendto = {
 /*
  * SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
  */
-/* Set when sanitise_sendmsg uses gen_msg so post_sendmsg knows to free iov_base */
-static int sendmsg_used_gen_msg;
-
 static void sanitise_sendmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
@@ -82,7 +79,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	struct sockaddr *sa = NULL;
 	socklen_t salen = 0;
 
-	sendmsg_used_gen_msg = 0;
+	rec->a4 = 0;	/* sendmsg_used_gen_msg: set to 1 if gen_msg path taken */
 
 	if (si == NULL)	// handle --disable-fds=sockets
 		goto skip_si;
@@ -118,7 +115,7 @@ skip_si:
 				iov->iov_len = len;
 				msg->msg_iov = iov;
 				msg->msg_iovlen = 1;
-				sendmsg_used_gen_msg = 1;
+				rec->a4 = 1;
 				goto set_control;
 			}
 		}
@@ -148,13 +145,13 @@ set_control:
 	rec->a2 = (unsigned long) msg;
 }
 
-static void post_sendmsg(__unused__ struct syscallrecord *rec)
+static void post_sendmsg(struct syscallrecord *rec)
 {
 	struct msghdr *msg = (struct msghdr *) rec->a2;
 
 	if (msg != NULL) {
 		if (msg->msg_iov != NULL) {
-			if (sendmsg_used_gen_msg)
+			if (rec->a4)
 				free(msg->msg_iov[0].iov_base);
 			free(msg->msg_iov);
 		}
@@ -180,20 +177,20 @@ struct syscallentry syscall_sendmsg = {
  */
 #define SENDMMSG_MAX_VLEN	4
 
-static unsigned int sendmmsg_vlen;
 static struct mmsghdr *sendmmsg_msgs;
 
 static void sanitise_sendmmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	unsigned int vlen;
 	unsigned int i;
 
 	rec->a1 = fd_from_socketinfo(si);
 
-	sendmmsg_vlen = RAND_RANGE(1, SENDMMSG_MAX_VLEN);
-	sendmmsg_msgs = zmalloc(sendmmsg_vlen * sizeof(struct mmsghdr));
+	vlen = RAND_RANGE(1, SENDMMSG_MAX_VLEN);
+	sendmmsg_msgs = zmalloc(vlen * sizeof(struct mmsghdr));
 
-	for (i = 0; i < sendmmsg_vlen; i++) {
+	for (i = 0; i < vlen; i++) {
 		struct msghdr *msg = &sendmmsg_msgs[i].msg_hdr;
 		unsigned int num_entries = RAND_RANGE(1, 3);
 
@@ -202,15 +199,15 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) sendmmsg_msgs;
-	rec->a3 = sendmmsg_vlen;
+	rec->a3 = vlen;
 }
 
-static void post_sendmmsg(__unused__ struct syscallrecord *rec)
+static void post_sendmmsg(struct syscallrecord *rec)
 {
 	if (sendmmsg_msgs != NULL) {
 		unsigned int i;
 
-		for (i = 0; i < sendmmsg_vlen; i++)
+		for (i = 0; i < (unsigned int) rec->a3; i++)
 			free(sendmmsg_msgs[i].msg_hdr.msg_iov);
 		free(sendmmsg_msgs);
 		sendmmsg_msgs = NULL;
