@@ -7,19 +7,18 @@
 #include "sanitise.h"
 #include "trinity.h"
 
-static off_t sendfile_offset;
-static off_t sendfile64_offset;
-
 static void sanitise_sendfile(struct syscallrecord *rec)
 {
-	sendfile_offset = RAND_RANGE(0, 1ULL << 30);
-	rec->a3 = (unsigned long) &sendfile_offset;
+	off_t *offset = (off_t *) get_writable_address(sizeof(off_t));
+	*offset = RAND_RANGE(0, 1ULL << 30);
+	rec->a3 = (unsigned long) offset;
 }
 
 static void sanitise_sendfile64(struct syscallrecord *rec)
 {
-	sendfile64_offset = RAND_RANGE(0, 1ULL << 30);
-	rec->a3 = (unsigned long) &sendfile64_offset;
+	off_t *offset = (off_t *) get_writable_address(sizeof(off_t));
+	*offset = RAND_RANGE(0, 1ULL << 30);
+	rec->a3 = (unsigned long) offset;
 }
 
 struct syscallentry syscall_sendfile = {

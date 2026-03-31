@@ -18,15 +18,14 @@ static unsigned long copy_file_range_flags[] = {
 	0,	// so far, no flags, MBZ.
 };
 
-static loff_t cfr_off_in;
-static loff_t cfr_off_out;
-
 static void sanitise_copy_file_range(struct syscallrecord *rec)
 {
-	cfr_off_in = RAND_RANGE(0, 1ULL << 30);
-	cfr_off_out = RAND_RANGE(0, 1ULL << 30);
-	rec->a2 = (unsigned long) &cfr_off_in;
-	rec->a4 = (unsigned long) &cfr_off_out;
+	loff_t *off_in = (loff_t *) get_writable_address(sizeof(loff_t));
+	loff_t *off_out = (loff_t *) get_writable_address(sizeof(loff_t));
+	*off_in = RAND_RANGE(0, 1ULL << 30);
+	*off_out = RAND_RANGE(0, 1ULL << 30);
+	rec->a2 = (unsigned long) off_in;
+	rec->a4 = (unsigned long) off_out;
 }
 
 struct syscallentry syscall_copy_file_range = {
