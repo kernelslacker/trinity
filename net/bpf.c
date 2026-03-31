@@ -861,9 +861,9 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 	/* Also give it a tiny chance to fuzz some crap into it */
 	if (ONE_IN(10000))
 		curr[0].code |= (uint16_t) rand();
-	if (ONE_IN(10000))
+	if (used > 1 && ONE_IN(10000))
 		curr[1].code |= (uint16_t) rand();
-	if (ONE_IN(10000))
+	if (used > 2 && ONE_IN(10000))
 		curr[2].code |= (uint16_t) rand();
 
 	return used;
