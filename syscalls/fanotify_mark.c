@@ -34,6 +34,11 @@
 #define FAN_EVENT_ON_CHILD      0x08000000      /* interested in child events */
 #define FAN_CLOSE               (FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE) /* close */
 
+#define FAN_CREATE		0x100000000UL	/* File or directory was created */
+#define FAN_DELETE		0x200000000UL	/* File or directory was deleted */
+#define FAN_MOVED_FROM		0x400000000UL	/* File was moved from X */
+#define FAN_MOVED_TO		0x800000000UL	/* File was moved to Y */
+
 static void sanitise_fanotify_mark(struct syscallrecord *rec)
 {
 	unsigned int flagvals[5] = { FAN_MARK_DONT_FOLLOW, FAN_MARK_ONLYDIR, FAN_MARK_MOUNT,
@@ -45,9 +50,6 @@ static void sanitise_fanotify_mark(struct syscallrecord *rec)
 	// set additional flags
 	for (i = 0; i < numflags; i++)
 		rec->a2 |= flagvals[i];
-
-	// Set mask
-	rec->a3 &= 0xffffffff;
 }
 
 static unsigned long fanotify_mark_flags[] = {
@@ -57,6 +59,7 @@ static unsigned long fanotify_mark_flags[] = {
 static unsigned long fanotify_mark_mask[] = {
 	FAN_ACCESS, FAN_MODIFY, FAN_CLOSE, FAN_OPEN,
 	FAN_OPEN_PERM, FAN_ACCESS_PERM, FAN_EVENT_ON_CHILD,
+	FAN_CREATE, FAN_DELETE, FAN_MOVED_FROM, FAN_MOVED_TO,
 };
 
 struct syscallentry syscall_fanotify_mark = {
