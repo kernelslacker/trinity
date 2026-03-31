@@ -198,7 +198,7 @@ regen:
 	} else
 		child->fd_lifetime--;
 
-	if (child->current_fd == 0) {
+	if (child->current_fd <= 2) {
 		child->fd_lifetime = 0;
 		goto regen;
 	}
