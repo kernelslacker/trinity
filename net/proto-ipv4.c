@@ -268,7 +268,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		mcaddr = 0xe0000000 | rand() % 0xff;
 
 		ms = (struct ip_mreq_source *) so->optval;
-		ms->imr_multiaddr.s_addr = mcaddr;
+		ms->imr_multiaddr.s_addr = htonl(mcaddr);
 		ms->imr_interface.s_addr = random_ipv4_address();
 		ms->imr_sourceaddr.s_addr = random_ipv4_address();
 		break;
