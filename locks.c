@@ -117,7 +117,7 @@ void lock(lock_t *lk)
 
 void unlock(lock_t *lk)
 {
-	lk->owner = 0;
+	__atomic_store_n(&lk->owner, 0, __ATOMIC_RELAXED);
 	__atomic_store_n(&lk->lock, UNLOCKED, __ATOMIC_RELEASE);
 }
 
