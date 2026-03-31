@@ -337,7 +337,7 @@ static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 	[IPPROTO_TP] = { .func = NULL },
 	[IPPROTO_DCCP] = { .sol = SOL_DCCP, .func = &dccp_setsockopt },
 #ifdef USE_IPV6
-	[IPPROTO_IPV6] = { .sol = SOL_ICMPV6, .func = &icmpv6_setsockopt },
+	[IPPROTO_IPV6] = { .sol = SOL_IPV6, .func = &icmpv6_setsockopt },
 #endif
 	[IPPROTO_RSVP] = { .func = NULL },
 	[IPPROTO_GRE] = { .func = NULL },
