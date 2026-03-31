@@ -5,25 +5,27 @@
 #include "objects.h"
 #include "sanitise.h"
 
-static unsigned long *aio_ctxp;
-
 static void sanitise_io_setup(struct syscallrecord *rec)
 {
+	unsigned long *ctxp;
+
 	/* ctxp must point to a zero-initialized aio_context_t */
-	aio_ctxp = (unsigned long *) get_writable_address(sizeof(*aio_ctxp));
-	*aio_ctxp = 0;
-	rec->a2 = (unsigned long) aio_ctxp;
+	ctxp = (unsigned long *) get_writable_address(sizeof(*ctxp));
+	*ctxp = 0;
+	rec->a2 = (unsigned long) ctxp;
 }
 
 static void post_io_setup(struct syscallrecord *rec)
 {
 	struct object *obj;
+	unsigned long *ctxp;
 	unsigned long ctx;
 
 	if ((long) rec->retval != 0)
 		return;
 
-	ctx = *aio_ctxp;
+	ctxp = (unsigned long *) rec->a2;
+	ctx = *ctxp;
 	if (ctx == 0)
 		return;
 
