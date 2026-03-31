@@ -40,7 +40,7 @@ struct syscallentry syscall_epoll_pwait = {
 struct syscallentry syscall_epoll_pwait2 = {
 	.name = "epoll_pwait2",
 	.num_args = 6,
-	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_LEN },
+	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_RANGE, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_LEN },
 	.argname = { [0] = "epfd", [1] = "events", [2] = "maxevents", [3] = "timeout", [4] = "sigmask", [5] = "sigsetsize" },
 	.arg_params[2].range.low = 1,
 	.arg_params[2].range.hi = 128,
