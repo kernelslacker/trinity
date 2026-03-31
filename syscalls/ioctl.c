@@ -32,7 +32,8 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 		case 1:	rec->a3 = (unsigned long) get_non_null_address();
 			break;
 		case 2:	grp = get_random_ioctl_group();
-			grp->sanitise(grp, rec);
+			if (grp)
+				grp->sanitise(grp, rec);
 			break;
 		}
 	}
