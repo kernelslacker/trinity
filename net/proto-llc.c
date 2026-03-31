@@ -66,10 +66,15 @@ const struct netproto proto_llc = {
 	.nr_triplets = ARRAY_SIZE(llc_triplets),
 };
 
+static struct socket_triplet netbeui_triplets[] = {
+	{ .family = PF_NETBEUI, .protocol = 0, .type = SOCK_DGRAM },
+	{ .family = PF_NETBEUI, .protocol = 0, .type = SOCK_STREAM },
+};
+
 const struct netproto proto_netbeui = {
 	.name = "netbeui",
 	.setsockopt = netbeui_setsockopt,
 	.gen_sockaddr = llc_gen_sockaddr,
-	.valid_triplets = llc_triplets,
-	.nr_triplets = ARRAY_SIZE(llc_triplets),
+	.valid_triplets = netbeui_triplets,
+	.nr_triplets = ARRAY_SIZE(netbeui_triplets),
 };
