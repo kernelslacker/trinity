@@ -15,6 +15,7 @@ static void fabricate_struct(char *p, unsigned int len)
 	while (i < len) {
 		void **ptr = (void*) &p[i];
 		unsigned long val = 0;
+		unsigned int old_i = i;
 
 		switch (rand() % 3) {
 		case 0:
@@ -70,6 +71,12 @@ static void fabricate_struct(char *p, unsigned int len)
 				*((unsigned char *)ptr + 1) = RAND_BYTE();
 			}
 			break;
+		}
+
+		/* If no case advanced i (misaligned), write one byte to guarantee progress. */
+		if (old_i == i) {
+			p[i] = RAND_BYTE();
+			i++;
 		}
 	}
 }
