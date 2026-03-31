@@ -20,7 +20,8 @@ void rand_proto_type(struct socket_triplet *st)
 {
 	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_DCCP, SOCK_PACKET };
 
-	st->protocol = RAND_ARRAY(types);
+	st->type = RAND_ARRAY(types);
+	st->protocol = 0;
 }
 
 static bool do_priv(struct socket_triplet *st, const struct netproto *proto)
