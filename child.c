@@ -164,6 +164,8 @@ void clean_childdata(struct childdata *child)
 	child->last_syscall_nr = EDGEPAIR_NO_PREV;
 	child->dropped_privs = false;
 	child->op_type = CHILD_OP_SYSCALL;
+	child->stall_count = 0;
+	child->stall_last = 0;
 	child->fd_created = 0;
 	child->fd_closed = 0;
 	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
@@ -509,18 +511,15 @@ static void handle_alarm_timeout(struct childdata *child)
  */
 static bool check_stall(struct childdata *child)
 {
-	static unsigned int count;
-	static unsigned int last;
-
-	if (child->op_nr == last) {
-		count++;
+	if (child->op_nr == child->stall_last) {
+		child->stall_count++;
 	} else {
-		count = 0;
-		last = child->op_nr;
+		child->stall_count = 0;
+		child->stall_last = child->op_nr;
 	}
-	if (count == stall_threshold(child->op_type)) {
+	if (child->stall_count == stall_threshold(child->op_type)) {
 		output(1, "no progress for %u tries (op_type=%d), exiting child.\n",
-			count, child->op_type);
+			child->stall_count, child->op_type);
 		return true;
 	}
 	return false;

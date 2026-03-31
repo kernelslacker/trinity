@@ -71,6 +71,10 @@ struct childdata {
 	bool dropped_privs;
 
 	enum child_op_type op_type;
+
+	/* Stall detection state: consecutive alarm timeouts without progress. */
+	unsigned int stall_count;
+	unsigned int stall_last;
 };
 
 extern unsigned int max_children;
