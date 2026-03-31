@@ -288,7 +288,7 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 		if (RAND_BOOL()) {
 			unsigned int i;
 			/* If this is the 2nd or more ARG_FD, make it unique */
-			for (i = 0; i < argnum; i++) {
+			for (i = 1; i < argnum; i++) {
 				enum argtype arg;
 				arg = get_argtype(entry, i);
 				if (arg == ARG_FD)
