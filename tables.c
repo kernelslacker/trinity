@@ -670,7 +670,7 @@ bool this_syscallname(const char *thisname)
 {
 	struct childdata *child = this_child();
 	unsigned int call = child->syscall.nr;
-	struct syscallentry *syscall_entry = syscalls[call].entry;
+	struct syscallentry *syscall_entry = get_syscall_entry(call, child->syscall.do32bit);
 
 	if (syscall_entry == NULL)
 		return false;
