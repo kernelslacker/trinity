@@ -558,6 +558,8 @@ struct socketinfo * get_rand_socketinfo(void)
 		return NULL;
 
 	obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
+	if (obj == NULL)
+		return NULL;
 
 	if (obj->sockinfo.needs_setup)
 		socket_setup_lazy(&obj->sockinfo);
