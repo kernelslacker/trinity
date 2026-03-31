@@ -39,8 +39,8 @@ static void kcm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 }
 
 static struct socket_triplet kcm_triplets[] = {
-	{ .family = PF_KCM, .protocol = KCMPROTO_CONNECTED, .type = SOCK_PACKET },
 	{ .family = PF_KCM, .protocol = KCMPROTO_CONNECTED, .type = SOCK_DGRAM },
+	{ .family = PF_KCM, .protocol = KCMPROTO_CONNECTED, .type = SOCK_SEQPACKET },
 };
 
 const struct netproto proto_kcm = {
