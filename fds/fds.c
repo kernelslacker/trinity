@@ -182,7 +182,7 @@ regen:
 		child->current_fd = get_new_random_fd();
 
 		/* Validate the fd is still alive */
-		if (child->current_fd > 0 &&
+		if (child->current_fd >= 0 &&
 		    fcntl(child->current_fd, F_GETFD) == -1 && errno == EBADF) {
 			__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
 			if (++retries < 10)
