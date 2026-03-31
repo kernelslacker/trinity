@@ -310,8 +310,11 @@ static void init_child(struct childdata *child, int childno)
 		}
 	}
 
-	/* Cache our childno/pid for O(1) lookups in this_child()/find_childno() */
-	set_child_cache(childno, pid);
+	/* Cache our childno/pid for O(1) lookups in this_child()/find_childno().
+	 * Pass the child pointer directly — don't re-derive it from
+	 * shm->children[] which is in shared memory and can be corrupted
+	 * by a sibling's stray write. */
+	set_child_cache(childno, pid, child);
 
 	set_seed(child);
 

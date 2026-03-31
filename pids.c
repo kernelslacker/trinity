@@ -17,11 +17,13 @@ pid_t *pids;
 /* Per-child cache: set once in init_child(), avoids O(n) scans. */
 static int cached_childno = CHILD_NOT_FOUND;
 static pid_t cached_pid = EMPTY_PIDSLOT;
+static struct childdata *cached_child = NULL;
 
-void set_child_cache(int childno, pid_t pid)
+void set_child_cache(int childno, pid_t pid, struct childdata *child)
 {
 	cached_childno = childno;
 	cached_pid = pid;
+	cached_child = child;
 }
 
 bool pid_alive(pid_t pid)
@@ -50,7 +52,7 @@ bool pid_alive(pid_t pid)
 struct childdata * this_child(void)
 {
 	if (cached_childno != CHILD_NOT_FOUND && cached_pid == getpid())
-		return shm->children[cached_childno];
+		return cached_child;
 
 	/* Fallback for main process or before cache is set */
 	pid_t mypid = getpid();
