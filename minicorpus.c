@@ -15,6 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
 #include "random.h"
@@ -184,6 +185,10 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		/* ~25% chance to mutate each arg. */
 		if (ONE_IN(4))
 			val = mutate_arg(val);
+
+		/* Don't let fd args land on stdin/stdout/stderr. */
+		if (is_fdarg(entry->argtype[i]) && val <= 2)
+			val = (unsigned long) get_random_fd();
 
 		switch (i) {
 		case 0: rec->a1 = val; break;
