@@ -150,12 +150,21 @@ unsigned int open_fds(void)
 int get_new_random_fd(void)
 {
 	struct fd_provider *provider;
+	unsigned int retries = 0;
+	int fd;
 
 	if (num_active_providers == 0)
 		return -1;
 
+retry:
 	provider = active_providers[rand() % num_active_providers];
-	return provider->get();
+	fd = provider->get();
+	if (fd >= 0 && fd <= 2) {
+		if (++retries < 10)
+			goto retry;
+		return -1;
+	}
+	return fd;
 }
 
 int get_random_fd(void)
@@ -250,6 +259,10 @@ retry:
 
 	fd = fd_from_object(obj, objtype);
 	if (fd < 0)
+		return get_random_fd();
+
+	/* Don't hand out stdin/stdout/stderr to syscalls. */
+	if (fd <= 2)
 		return get_random_fd();
 
 	/* Validate fd is still alive */
