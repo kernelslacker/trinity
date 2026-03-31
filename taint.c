@@ -12,20 +12,23 @@
 
 int kernel_taint_initial = 0;
 
-static int taint_fd = -1;
+static bool taint_available = false;
 
 int get_taint(void)
 {
-	int ret = 0;
+	int fd, ret = 0;
 	char buffer[11];
 
-	/* Opening taint file had previously failed. Continue assuming untainted */
-	if (taint_fd == -1)
+	if (!taint_available)
 		return 0;
 
-	buffer[10] = 0; //make sure that we can fit the whole int.
+	fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return 0;
 
-	ret = pread(taint_fd, buffer, 10, 0);
+	buffer[10] = 0;
+
+	ret = read(fd, buffer, 10);
 
 	if (ret > 0) {
 		char *endptr;
@@ -38,10 +41,10 @@ int get_taint(void)
 		else
 			ret = (int)val;
 	} else {
-		/* We should never fail, but if we do, assume untainted. */
 		ret = 0;
 	}
 
+	close(fd);
 	return ret;
 }
 
@@ -144,7 +147,13 @@ void process_taint_arg(char *taintarg)
 
 void init_taint_checking(void)
 {
-	taint_fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+	int fd;
+
+	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+	if (fd >= 0) {
+		taint_available = true;
+		close(fd);
+	}
 
 	kernel_taint_initial = get_taint();
 	if (kernel_taint_initial != 0)
