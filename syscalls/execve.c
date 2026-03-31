@@ -20,9 +20,6 @@
 #include "trinity.h"	// __unused__
 #include "compat.h"
 
-static unsigned int argvcount;
-static unsigned int envpcount;
-
 static unsigned long ** gen_ptrs_to_crap(unsigned int count)
 {
 	void **ptr;
@@ -69,6 +66,7 @@ static void redirect_stdio(void)
 static void sanitise_execve(struct syscallrecord *rec)
 {
 	unsigned long **argv, **envp;
+	unsigned int argvcount, envpcount;
 
 	redirect_stdio();
 
@@ -79,6 +77,9 @@ static void sanitise_execve(struct syscallrecord *rec)
 	/* Fabricate envp */
 	envpcount = rand() % 32;
 	envp = gen_ptrs_to_crap(envpcount);
+
+	/* Pack both counts into a6 (unused by both execve and execveat). */
+	rec->a6 = ((unsigned long)argvcount << 32) | envpcount;
 
 	if (this_syscallname("execve") == true) {
 		rec->a2 = (unsigned long) argv;
@@ -93,7 +94,8 @@ static void sanitise_execve(struct syscallrecord *rec)
  * has to worry about the case where execve returned a failure.
  */
 
-static void free_execve_ptrs(void **argv, void **envp)
+static void free_execve_ptrs(void **argv, void **envp,
+			      unsigned int argvcount, unsigned int envpcount)
 {
 	unsigned int i;
 
@@ -108,12 +110,16 @@ static void free_execve_ptrs(void **argv, void **envp)
 
 static void post_execve(struct syscallrecord *rec)
 {
-	free_execve_ptrs((void **) rec->a2, (void **) rec->a3);
+	free_execve_ptrs((void **) rec->a2, (void **) rec->a3,
+			 (unsigned int)(rec->a6 >> 32),
+			 (unsigned int)(rec->a6 & 0xFFFFFFFF));
 }
 
 static void post_execveat(struct syscallrecord *rec)
 {
-	free_execve_ptrs((void **) rec->a3, (void **) rec->a4);
+	free_execve_ptrs((void **) rec->a3, (void **) rec->a4,
+			 (unsigned int)(rec->a6 >> 32),
+			 (unsigned int)(rec->a6 & 0xFFFFFFFF));
 }
 
 struct syscallentry syscall_execve = {
