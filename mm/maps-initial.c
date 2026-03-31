@@ -6,7 +6,6 @@
  * private copies, and then perform operations upon them.
  */
 #include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,16 +22,9 @@
 static void alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
 {
 	struct object *new;
-	int fd;
 
 	if (size == 0)
 		return;
-
-	fd = open("/dev/zero", O_RDWR);
-	if (fd == -1) {
-		outputerr("couldn't open /dev/zero\n");
-		exit(EXIT_FAILURE);
-	}
 
 	new = alloc_object();
 	new->map.size = size;
@@ -40,7 +32,7 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 	new->map.flags = flags;
 	new->map.fd = -1;
 	new->map.type = INITIAL_ANON;
-	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, fd, 0);
+	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, -1, 0);
 	if (new->map.ptr == MAP_FAILED) {
 		outputerr("mmap failure:%s\n", strerror(errno));
 		exit(EXIT_FAILURE);
@@ -51,8 +43,6 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 	snprintf(new->map.name, 80, "anon(%s)", name);
 
 	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
-
-	close(fd);
 }
 
 /*
@@ -62,13 +52,8 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
 {
 	struct object *new;
-	int fd;
 
 	if (size == 0)
-		return false;
-
-	fd = open("/dev/zero", O_RDWR);
-	if (fd == -1)
 		return false;
 
 	new = alloc_object();
@@ -77,10 +62,9 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	new->map.flags = flags;
 	new->map.fd = -1;
 	new->map.type = INITIAL_ANON;
-	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, fd, 0);
+	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, -1, 0);
 	if (new->map.ptr == MAP_FAILED) {
 		free(new);
-		close(fd);
 		return false;
 	}
 
@@ -88,7 +72,6 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	snprintf(new->map.name, 80, "anon(%s)", name);
 	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
 
-	close(fd);
 	return true;
 }
 
