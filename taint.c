@@ -25,9 +25,7 @@ int get_taint(void)
 
 	buffer[10] = 0; //make sure that we can fit the whole int.
 
-	lseek(taint_fd, 0, SEEK_SET);
-
-	ret = read(taint_fd, buffer, 10);
+	ret = pread(taint_fd, buffer, 10, 0);
 
 	if (ret > 0) {
 		char *endptr;
