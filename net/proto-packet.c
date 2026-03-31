@@ -145,9 +145,9 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 }
 
 static struct socket_triplet packet_triplets[] = {
-	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_PACKET },
-	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_RAW },
-	{ .family = PF_PACKET, .protocol = 768, .type = SOCK_DGRAM },
+	{ .family = PF_PACKET, .protocol = ETH_P_ALL, .type = SOCK_PACKET },
+	{ .family = PF_PACKET, .protocol = ETH_P_ALL, .type = SOCK_RAW },
+	{ .family = PF_PACKET, .protocol = ETH_P_ALL, .type = SOCK_DGRAM },
 };
 
 const struct netproto proto_packet = {
