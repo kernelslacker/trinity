@@ -536,6 +536,7 @@ regenerate:
 
 		/* check for ctrl-c */
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING) {
+			unlock_cachefile();
 			close(cachefile);
 			return false;
 		}
