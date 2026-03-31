@@ -545,6 +545,9 @@ static bool spawn_child(int childno)
 	{
 		// pidstatfiles[childno] may be NULL below if fd limit is reached.
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
+		kill_pid(pid);
+		waitpid(pid, NULL, 0);
+		reap_child(children[childno], childno);
 		panic(EXIT_NO_FDS);
 		return false;
 	}
