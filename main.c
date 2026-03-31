@@ -287,10 +287,8 @@ static void dump_pid_stack(int pid)
 	snprintf(filename, sizeof(filename), "/proc/%d/stack", pid);
 
 	fp = fopen(filename, "r");
-	if (fp == NULL) {
-		output(0, "Couldn't dump stack info for pid %d: %s\n", pid, strerror(errno));
+	if (fp == NULL)
 		return;
-	}
 
 	while (!(feof(fp))) {
 		size_t n = 0;
