@@ -112,7 +112,7 @@ static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 	sgio->ioh.usr_ptr = NULL;
 	sgio->ioh.flags |= SG_FLAG_DIRECT_IO;
 
-	rec->a3 = (unsigned long) get_address();
+	rec->a3 = (unsigned long) sgio;
 }
 
 static void scsi_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
