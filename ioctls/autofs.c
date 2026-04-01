@@ -310,7 +310,7 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 		} else {
 			int i;
 
-			arg->size += rand();
+			arg->size += rand() % 256;
 			for (i=0; i < 10; ++i)
 				arg->path[i] = rand();
 		}
