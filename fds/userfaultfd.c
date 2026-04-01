@@ -101,6 +101,8 @@ static int get_rand_userfaultfd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_USERFAULTFD, OBJ_GLOBAL);
+	if (obj == NULL)
+		return -1;
 	return obj->userfaultobj.fd;
 }
 
