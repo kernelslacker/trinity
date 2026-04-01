@@ -141,6 +141,8 @@ static int open_drm_fd(void)
 		return false;
 
 	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);
+	if (obj == NULL)
+		return false;
 	base_fd = obj->drmfd;
 
 	dfd = create_dumb(base_fd);
@@ -167,6 +169,8 @@ static int get_rand_drm_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);
+	if (obj == NULL)
+		return -1;
 	return obj->drmfd;
 }
 

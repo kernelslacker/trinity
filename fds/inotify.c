@@ -110,6 +110,8 @@ static int get_rand_inotify_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_INOTIFY, OBJ_GLOBAL);
+	if (obj == NULL)
+		return -1;
 	return obj->inotifyobj.fd;
 }
 

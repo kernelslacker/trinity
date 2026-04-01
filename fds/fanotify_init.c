@@ -84,6 +84,8 @@ static int get_rand_fanotifyfd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_FANOTIFY, OBJ_GLOBAL);
+	if (obj == NULL)
+		return -1;
 	return obj->fanotifyobj.fd;
 }
 

@@ -187,6 +187,8 @@ int get_rand_pool_fd(enum objecttype objtype)
 		return -1;
 
 	obj = get_random_object(objtype, OBJ_GLOBAL);
+	if (obj == NULL)
+		return -1;
 	return obj->fileobj.fd;
 }
 

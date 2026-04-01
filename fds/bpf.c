@@ -138,6 +138,8 @@ int get_rand_bpf_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
+	if (obj == NULL)
+		return -1;
 	return obj->bpfobj.map_fd;
 }
 
