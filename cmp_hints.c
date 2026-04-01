@@ -143,16 +143,18 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 unsigned long cmp_hints_get(unsigned int nr)
 {
 	struct cmp_hint_pool *pool;
+	unsigned int count;
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return 0;
 
 	pool = &cmp_hints_shm->pools[nr];
 
-	if (pool->count == 0)
+	count = __atomic_load_n(&pool->count, __ATOMIC_RELAXED);
+	if (count == 0)
 		return 0;
 
-	return pool->values[rand() % pool->count];
+	return pool->values[rand() % count];
 }
 
 bool cmp_hints_available(unsigned int nr)
