@@ -116,8 +116,36 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 			arg->num_handles = 0;
 			arg->common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
 			if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, arg) == 0) {
-				ioctl(kc->fd, KCOV_DISABLE, 0);
-				kc->remote_capable = true;
+				if (ioctl(kc->fd, KCOV_DISABLE, 0) == 0) {
+					kc->remote_capable = true;
+				} else {
+					/* fd stuck in enabled state — close
+					 * and reopen to reset. */
+					close(kc->fd);
+					munmap(kc->trace_buf,
+						KCOV_TRACE_SIZE * sizeof(unsigned long));
+					kc->trace_buf = NULL;
+					kc->fd = open("/sys/kernel/debug/kcov", O_RDWR);
+					if (kc->fd < 0 ||
+					    ioctl(kc->fd, KCOV_INIT_TRACE, KCOV_TRACE_SIZE) < 0) {
+						if (kc->fd >= 0) {
+							close(kc->fd);
+							kc->fd = -1;
+						}
+						kc->active = false;
+					} else {
+						kc->trace_buf = mmap(NULL,
+							KCOV_TRACE_SIZE * sizeof(unsigned long),
+							PROT_READ | PROT_WRITE, MAP_SHARED,
+							kc->fd, 0);
+						if (kc->trace_buf == MAP_FAILED) {
+							kc->trace_buf = NULL;
+							close(kc->fd);
+							kc->fd = -1;
+							kc->active = false;
+						}
+					}
+				}
 			}
 			free(arg);
 		}
