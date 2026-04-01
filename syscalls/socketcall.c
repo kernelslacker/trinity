@@ -11,6 +11,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "deferred-free.h"
 
 static int get_random_socket_fd(void)
 {
@@ -185,7 +186,7 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 
 static void post_socketcall(struct syscallrecord *rec)
 {
-	free((void *) rec->a2);
+	deferred_freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_socketcall = {
