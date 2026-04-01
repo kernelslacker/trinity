@@ -24,6 +24,7 @@
 struct cmp_hint_pool {
 	unsigned char lock;
 	pid_t locker_pid;
+	unsigned int lock_gen;
 	unsigned int count;
 	unsigned long values[CMP_HINTS_PER_SYSCALL];
 };

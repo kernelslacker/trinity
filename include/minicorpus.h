@@ -28,6 +28,7 @@ struct corpus_entry {
 struct corpus_ring {
 	unsigned char lock;
 	pid_t locker_pid;
+	unsigned int lock_gen;		/* generation counter for dead-owner detection */
 	unsigned int head;		/* next write slot (mod CORPUS_RING_SIZE) */
 	unsigned int count;		/* entries stored (max CORPUS_RING_SIZE) */
 	struct corpus_entry entries[CORPUS_RING_SIZE];
