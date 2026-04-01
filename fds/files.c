@@ -67,8 +67,10 @@ retry_flags:
 		obj->fileobj.flags = flags;
 
 		fcntl_flags = random_fcntl_setfl_flags();
-		fcntl(fd, F_SETFL, fcntl_flags);
-		obj->fileobj.fcntl_flags = fcntl_flags;
+		if (fd != -1) {
+			fcntl(fd, F_SETFL, fcntl_flags);
+			obj->fileobj.fcntl_flags = fcntl_flags;
+		}
 	}
 
 	if (fd < 0) {
