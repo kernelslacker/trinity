@@ -55,31 +55,44 @@ static struct edgepair_entry *find_or_insert(unsigned int prev_nr,
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
 		unsigned int slot_prev, slot_curr;
 
-		slot_prev = __atomic_load_n(&e->prev_nr, __ATOMIC_RELAXED);
+		slot_prev = __atomic_load_n(&e->prev_nr, __ATOMIC_ACQUIRE);
 		slot_curr = __atomic_load_n(&e->curr_nr, __ATOMIC_RELAXED);
 
 		/* Found existing entry for this pair. */
 		if (slot_prev == prev_nr && slot_curr == curr_nr)
 			return e;
 
-		/* Empty slot — try to claim it. */
+		/* Empty slot — try to claim it.
+		 *
+		 * Store curr_nr first (relaxed), then CAS prev_nr with
+		 * release ordering.  A reader that loads prev_nr with
+		 * acquire and sees a non-EMPTY value is guaranteed to
+		 * also see the curr_nr store, closing the window where
+		 * a half-initialized entry was visible.
+		 */
 		if (slot_prev == EDGEPAIR_EMPTY) {
 			unsigned int expected = EDGEPAIR_EMPTY;
 
-			/* CAS on prev_nr to claim the slot. */
+			/* Write curr_nr before publishing via CAS. */
+			__atomic_store_n(&e->curr_nr, curr_nr,
+				__ATOMIC_RELAXED);
+
+			/* CAS on prev_nr to claim the slot (release). */
 			if (__atomic_compare_exchange_n(&e->prev_nr,
 				&expected, prev_nr, false,
-				__ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-				__atomic_store_n(&e->curr_nr, curr_nr,
-					__ATOMIC_RELAXED);
+				__ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
 				__atomic_fetch_add(&edgepair_shm->pairs_tracked,
 					1, __ATOMIC_RELAXED);
 				return e;
 			}
 			/* CAS failed — another child claimed it.
-			 * Re-check if they inserted the same pair. */
-			slot_prev = __atomic_load_n(&e->prev_nr,
+			 * Restore curr_nr (best effort, may be overwritten). */
+			__atomic_store_n(&e->curr_nr, EDGEPAIR_EMPTY,
 				__ATOMIC_RELAXED);
+
+			/* Re-check if they inserted the same pair. */
+			slot_prev = __atomic_load_n(&e->prev_nr,
+				__ATOMIC_ACQUIRE);
 			slot_curr = __atomic_load_n(&e->curr_nr,
 				__ATOMIC_RELAXED);
 			if (slot_prev == prev_nr && slot_curr == curr_nr)
@@ -128,7 +141,7 @@ static struct edgepair_entry *find_entry(unsigned int prev_nr,
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
 		unsigned int slot_prev, slot_curr;
 
-		slot_prev = __atomic_load_n(&e->prev_nr, __ATOMIC_RELAXED);
+		slot_prev = __atomic_load_n(&e->prev_nr, __ATOMIC_ACQUIRE);
 		if (slot_prev == EDGEPAIR_EMPTY)
 			return NULL;
 
