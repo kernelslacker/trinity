@@ -73,8 +73,11 @@ struct shm_s {
 	 */
 	bool debug;
 
-	/* set to true if a child hits an EPERM trying to unshare() */
-	bool unshare_perm_err;
+	/* set to true if a child hits an EPERM/EINVAL trying to
+	 * unshare(CLONE_NEWPID). Stored in shm so the flag propagates
+	 * across fork() — a process-local static would be duplicated
+	 * into each child's address space. */
+	bool no_pidns;
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;
