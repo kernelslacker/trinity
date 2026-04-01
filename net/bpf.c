@@ -895,6 +895,9 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	if (addrlen != NULL && bpf == NULL)
 		bpf = zmalloc(sizeof(struct sock_fprog));
 
+	if (bpf == NULL)
+		return;
+
 	bpf->len = avail = rand() % 50;
 	/* Give it from time to time a chance to load big filters as well. */
 	if (ONE_IN(1000))
