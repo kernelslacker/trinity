@@ -12,18 +12,15 @@
 #include "sanitise.h"
 #include "deferred-free.h"
 
-#ifndef __NFDBITS
-#define __NFDBITS NFDBITS
-#endif
-
 static void sanitise_select(struct syscallrecord *rec)
 {
-	unsigned int i;
+	unsigned int nfds, i;
 
 	struct timeval *tv;
 	fd_set *rfds, *wfds, *exfds;
 
-	rec->a1 = rand32() % 1024;
+	nfds = (rand32() % 1023) + 1;
+	rec->a1 = nfds;
 
 	rfds = zmalloc(sizeof(fd_set));
 	wfds = zmalloc(sizeof(fd_set));
@@ -35,9 +32,9 @@ static void sanitise_select(struct syscallrecord *rec)
 
 	/* set some random fd's. */
 	for (i = 0; i < rand32() % 10; i++) {
-		FD_SET(rand32() % (__NFDBITS - 1), rfds);
-		FD_SET(rand32() % (__NFDBITS - 1), wfds);
-		FD_SET(rand32() % (__NFDBITS - 1), exfds);
+		FD_SET(rand32() % nfds, rfds);
+		FD_SET(rand32() % nfds, wfds);
+		FD_SET(rand32() % nfds, exfds);
 	}
 
 	rec->a2 = (unsigned long) rfds;
