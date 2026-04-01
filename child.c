@@ -35,8 +35,9 @@
 #include "sanitise.h"
 #include "utils.h"	// zmalloc
 
-/* Set to true once we detect that unprivileged pidns isn't available. */
-static bool no_pidns;
+/* Set to true once we detect that unprivileged pidns isn't available.
+ * Lives in shared memory (shm->no_pidns) so the flag propagates across
+ * fork() — see init_child() below. */
 
 /*
  * Provide temporary immunity from the reaper
@@ -363,10 +364,10 @@ static void init_child(struct childdata *child, int childno)
 	 * kernels without user_namespaces, or missing CONFIG_PID_NS).
 	 */
 #ifdef CLONE_NEWPID
-	if (RAND_BOOL() && !no_pidns) {
+	if (RAND_BOOL() && !shm->no_pidns) {
 		if (unshare(CLONE_NEWPID) == -1) {
 			if (errno == EPERM || errno == EINVAL)
-				no_pidns = true;
+				shm->no_pidns = true;
 		}
 	}
 #endif
