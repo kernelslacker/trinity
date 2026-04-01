@@ -118,6 +118,9 @@ static int open_testfile_fds(void)
 		}
 	}
 
+	if (obj != NULL)
+		free(obj);
+
 	return true;
 }
 
