@@ -58,6 +58,11 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	case SO_ATTACH_FILTER: {
 		unsigned long *optval = NULL, optlen = 0;
 
+		/* Free any optval allocated by the caller (do_setsockopt)
+		 * before we replace it with the BPF filter. */
+		free((void *) so->optval);
+		so->optval = 0;
+
 #ifdef USE_BPF
 		bpf_gen_filter(&optval, &optlen);
 #endif
