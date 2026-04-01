@@ -62,6 +62,7 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		bpf_gen_filter(&optval, &optlen);
 #endif
 
+		free((void *) so->optval);
 		so->optval = (unsigned long) optval;
 		so->optlen = optlen;
 		break;
