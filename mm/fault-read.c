@@ -71,10 +71,12 @@ static void read_mapping_reverse(struct map *map)
 
 	nr = nr_pages(map) - 1;
 
-	for (i = nr; i > 0; i--) {
+	for (i = nr; ; i--) {
 		char *page = p + (i * page_size);
 		mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
+		if (i == 0)
+			break;
 	}
 }
 

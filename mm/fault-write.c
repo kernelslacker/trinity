@@ -88,10 +88,12 @@ static void dirty_mapping_reverse(struct map *map)
 
 	nr = nr_pages(map) - 1;
 
-	for (i = nr; i > 0; i--) {
+	for (i = nr; ; i--) {
 		char *p = map->ptr + (i * page_size);
 		if (mark_page_rw(p) == true)
 			*p = rand();
+		if (i == 0)
+			break;
 	}
 }
 
