@@ -13,6 +13,7 @@ void icmpv6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tri
 {
 	struct icmp6_filter *filter;
 
+	so->level = SOL_ICMPV6;
 	so->optname = RAND_ARRAY(icmpv6_opts);
 
 	switch (so->optname) {
