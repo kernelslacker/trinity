@@ -9,6 +9,7 @@ struct syscallentry syscall_truncate = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN },
 	.argname = { [0] = "path", [1] = "length" },
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 /*
@@ -21,4 +22,5 @@ struct syscallentry syscall_truncate64 = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN },
 	.argname = { [0] = "path", [1] = "length" },
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

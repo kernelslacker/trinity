@@ -9,4 +9,5 @@ struct syscallentry syscall_gettimeofday = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "tv", [1] = "tz" },
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -9,6 +9,7 @@ struct syscallentry syscall_rename = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_PATHNAME },
 	.argname = { [0] = "oldname", [1] = "newname" },
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 /*
@@ -23,6 +24,7 @@ struct syscallentry syscall_renameat = {
 	.argname = { [0] = "olddfd", [1] = "oldname", [2] = "newdfd", [3] = "newname" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 /*
@@ -46,4 +48,5 @@ struct syscallentry syscall_renameat2 = {
 	.arg_params[4].list = ARGLIST(renameat2_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

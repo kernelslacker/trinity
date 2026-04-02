@@ -9,4 +9,5 @@ struct syscallentry syscall_sched_getscheduler = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_PID },
 	.argname = { [0] = "pid" },
+	.rettype = RET_BORING,
 };

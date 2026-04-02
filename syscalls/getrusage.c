@@ -15,4 +15,5 @@ struct syscallentry syscall_getrusage = {
 	.argname = { [0] = "who", [1] = "ru" },
 	.arg_params[0].list = ARGLIST(getrusage_who),
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

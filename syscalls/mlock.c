@@ -20,6 +20,7 @@ struct syscallentry syscall_mlock = {
 	.argname = { [0] = "addr", [1] = "len" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 /*
@@ -36,4 +37,5 @@ struct syscallentry syscall_mlock2 = {
 	.arg_params[2].list = ARGLIST(mlock2_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,
+	.rettype = RET_ZERO_SUCCESS,
 };
