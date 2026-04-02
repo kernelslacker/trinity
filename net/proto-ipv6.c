@@ -91,7 +91,7 @@ static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ipv6->sin6_family = PF_INET6;
 
 	gen_random_ipv6_address(&ipv6->sin6_addr);
-	ipv6->sin6_port = htons(rand() % 65535);
+	ipv6->sin6_port = htons(rand() % 65536);
 	ipv6->sin6_flowinfo = rand();
 	ipv6->sin6_scope_id = rand();
 
