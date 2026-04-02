@@ -10,6 +10,7 @@ struct syscallentry syscall_newfstat = {
 	.argname = { [0] = "fd", [1] = "statbuf" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 
@@ -34,4 +35,5 @@ struct syscallentry syscall_newfstatat = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "statbuf", [3] = "flag" },
 	.arg_params[3].list = ARGLIST(newfstatat_flags),
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

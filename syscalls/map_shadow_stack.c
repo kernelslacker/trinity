@@ -25,4 +25,5 @@ struct syscallentry syscall_map_shadow_stack = {
 	.arg_params[2].list = ARGLIST(map_shadow_stack_flags),
 	.sanitise = sanitise_map_shadow_stack,
 	.group = GROUP_VM,
+	.rettype = RET_BORING,
 };

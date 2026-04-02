@@ -9,4 +9,5 @@ struct syscallentry syscall_newstat = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

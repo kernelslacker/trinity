@@ -11,4 +11,5 @@ struct syscallentry syscall_timer_gettime = {
 	.argname = { [0] = "timer_id", [1] = "setting" },
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 31,
+	.rettype = RET_ZERO_SUCCESS,
 };
