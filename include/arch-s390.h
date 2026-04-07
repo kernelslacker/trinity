@@ -22,7 +22,7 @@
 #endif /* __s390x__ */
 
 #define PAGE_OFFSET		0x0UL
-#define PTRACE_GETREGS		0
-#define PTRACE_GETFPREGS	0
-#define PTRACE_SETREGS		0
-#define PTRACE_SETFPREGS	0
+#define PTRACE_GETREGS		12
+#define PTRACE_SETREGS		13
+#define PTRACE_GETFPREGS	14
+#define PTRACE_SETFPREGS	15
