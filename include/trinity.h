@@ -9,6 +9,7 @@ extern bool no_bind_to_cpu;
 extern char *progname;
 
 void main_loop(void);
+void reset_epoch_state(void);
 
 void panic(int reason);
 

@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include <time.h>
+
 #include "child.h"
 #include "debug.h"
 #include "fd-event.h"
@@ -851,8 +853,13 @@ static void taint_check(void)
 
 void main_loop(void)
 {
+	struct timespec epoch_start;
+
 	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
 	children = shm->children;
+
+	if (epoch_timeout)
+		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
 
 	fork_children();
 
@@ -879,6 +886,20 @@ void main_loop(void)
 		if (syscalls_todo && (shm->stats.op_count >= syscalls_todo)) {
 			output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
 			panic(EXIT_REACHED_COUNT);
+		}
+
+		if (epoch_iterations && (shm->stats.op_count >= epoch_iterations)) {
+			output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
+			panic(EXIT_EPOCH_DONE);
+		}
+
+		if (epoch_timeout) {
+			struct timespec now;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			if ((unsigned int)(now.tv_sec - epoch_start.tv_sec) >= epoch_timeout) {
+				output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
+				panic(EXIT_EPOCH_DONE);
+			}
 		}
 
 		check_children_progressing();
@@ -940,6 +961,32 @@ dont_wait:
 		decode_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
 }
 
+
+/*
+ * Reset shared state between epochs.  Coverage data (kcov bitmap,
+ * cmp_hints, minicorpus, edgepair) is deliberately preserved so
+ * that coverage accumulates across epoch boundaries.
+ */
+void reset_epoch_state(void)
+{
+	unsigned int i;
+
+	__atomic_store_n(&shm->exit_reason, STILL_RUNNING, __ATOMIC_RELAXED);
+	shm->spawn_no_more = false;
+	shm->ready = false;
+	__atomic_store_n(&shm->running_childs, 0, __ATOMIC_RELAXED);
+
+	shm->stats.op_count = 0;
+	shm->stats.previous_op_count = 0;
+
+	for_each_child(i) {
+		pids[i] = EMPTY_PIDSLOT;
+		clean_childdata(shm->children[i]);
+		fd_event_ring_init(shm->children[i]->fd_event_ring);
+	}
+
+	reseed();
+}
 
 /*
  * Something potentially bad happened. Alert all processes by setting appropriate shm vars.

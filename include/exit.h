@@ -20,8 +20,9 @@ enum exit_reasons {
 	EXIT_FD_EXHAUSTION = 16,
 	EXIT_TIMED_OUT = 17,
 	EXIT_USER_REQUEST = 18,
+	EXIT_EPOCH_DONE = 19,
 
-	NUM_EXIT_REASONS = 19
+	NUM_EXIT_REASONS = 20
 };
 
 static inline const char * decode_exit(enum exit_reasons reason)
@@ -46,6 +47,7 @@ static inline const char * decode_exit(enum exit_reasons reason)
 		"fd exhaustion at runtime.",
 		"timed out waiting for children.",
 		"user requested exit.",
+		"epoch completed.",
 	};
 	if ((unsigned int)reason >= NUM_EXIT_REASONS)
 		return "Unknown exit reason";

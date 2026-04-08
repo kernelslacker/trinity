@@ -57,4 +57,7 @@ extern bool kernel_taint_param_occured;
 
 extern unsigned int user_specified_children;
 
+extern unsigned long epoch_iterations;
+extern unsigned int epoch_timeout;
+
 void enable_disable_fd_usage(void);
