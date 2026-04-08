@@ -194,15 +194,27 @@ unsigned int get_pid(void)
 {
 	unsigned int i;
 	pid_t pid = 0;
+	unsigned int dice;
 
 	/* If we get called from the parent, and there are no
 	 * children around yet, we need to not look at the pidmap. */
 	if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
 		return 0;
 
-	switch (rand() % 3) {
-	case 0:
-	{	unsigned int retries = 0;
+	/*
+	 * Bias heavily toward real live child PIDs so that process-targeting
+	 * syscalls (kill, ptrace, waitpid, etc.) actually reach running
+	 * processes rather than failing with ESRCH.
+	 *
+	 *  70%: a real child from pids[]
+	 *  15%: our own PID (valid, exercises self-targeting)
+	 *  10%: 0 (process group semantics)
+	 *   5%: 1 (init; only when dangerous flag set)
+	 */
+	dice = rand() % 100;
+
+	if (dice < 70) {
+		unsigned int retries = 0;
 retry:		i = rand() % max_children;
 		pid = pids[i];
 		if (pid == EMPTY_PIDSLOT || pid == getppid()) {
@@ -210,16 +222,18 @@ retry:		i = rand() % max_children;
 				return getpid();
 			goto retry;
 		}
-		break;
+		return pid;
 	}
 
-	case 1:	pid = 0;
-		break;
+	if (dice < 85)
+		return getpid();
 
-	case 2:	if (dangerous == false)	// We don't want root trying to kill init.
-			pid = 1;
-		break;
-	}
+	if (dice < 95)
+		return 0;
 
-	return pid;
+	/* dice 95-99: return 1 only when dangerous is set */
+	if (dangerous)
+		return 1;
+
+	return getpid();
 }
