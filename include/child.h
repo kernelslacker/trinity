@@ -11,6 +11,17 @@
 
 struct fd_event_ring;
 
+/*
+ * Circular ring of file descriptors returned by recent fd-creating syscalls.
+ * Used to bias ARG_FD generation toward fds that are known to be open.
+ */
+#define CHILD_FD_RING_SIZE 16
+
+struct child_fd_ring {
+	int fds[CHILD_FD_RING_SIZE];
+	unsigned int head;
+};
+
 enum child_op_type {
 	CHILD_OP_SYSCALL = 0,	/* default: fuzz random syscalls */
 	CHILD_OP_FAULT_INJECT,	/* future: fault injection workloads */
@@ -75,6 +86,10 @@ struct childdata {
 	/* Stall detection state: consecutive alarm timeouts without progress. */
 	unsigned int stall_count;
 	unsigned int stall_last;
+
+	/* Ring of fds returned by recent fd-creating syscalls.
+	 * Consulted preferentially when generating ARG_FD arguments. */
+	struct child_fd_ring live_fds;
 };
 
 extern unsigned int max_children;
@@ -82,6 +97,8 @@ extern unsigned int max_children;
 struct childdata * this_child(void);
 
 void clean_childdata(struct childdata *child);
+
+void child_fd_ring_push(struct child_fd_ring *ring, int fd);
 
 void init_child_mappings(void);
 

@@ -249,6 +249,9 @@ bool random_syscall(struct childdata *child)
 				child->fd_created++;
 				if (entry->group < NR_GROUPS)
 					child->fd_created_by_group[entry->group]++;
+				/* Track returned fd for preferential reuse in arg generation. */
+				if ((int)rec->retval > 2)
+					child_fd_ring_push(&child->live_fds, (int)rec->retval);
 			}
 			if (strcmp(entry->name, "close") == 0)
 				child->fd_closed++;

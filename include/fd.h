@@ -33,6 +33,7 @@ unsigned int check_if_fd(struct syscallrecord *rec);
 int get_random_fd(void);
 int get_new_random_fd(void);
 int get_typed_fd(enum argtype type);
+int get_child_live_fd(struct childdata *child);
 void try_regenerate_fd(enum objecttype type);
 
 #define REG_FD_PROV(_struct) \
