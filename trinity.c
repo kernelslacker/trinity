@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
@@ -70,10 +71,71 @@ static int set_exit_code(enum exit_reasons reason)
 	case EXIT_REACHED_COUNT:
 	case EXIT_SIGINT:
 	case EXIT_USER_REQUEST:
+	case EXIT_EPOCH_DONE:
 		return EXIT_SUCCESS;
 
 	default:
 		return (int)reason;
+	}
+}
+
+/*
+ * Epoch-based forking wrapper around main_loop().
+ *
+ * Forks a child process that runs main_loop() for a bounded number of
+ * iterations or wall-clock seconds.  When the epoch limit is reached,
+ * the child exits cleanly and the parent resets shared state and forks
+ * a new epoch child.  Coverage data (kcov bitmap, cmp_hints, minicorpus,
+ * edgepair) lives in MAP_SHARED memory and accumulates across epochs.
+ *
+ * This periodic restart prevents state accumulation (leaked fds, stale
+ * mappings, corrupted objects) from degrading fuzzing effectiveness.
+ */
+static void epoch_loop(void)
+{
+	unsigned int epoch_nr = 0;
+	pid_t epoch_pid;
+	int status;
+
+	while (1) {
+		epoch_nr++;
+		output(0, "Starting epoch %u\n", epoch_nr);
+
+		epoch_pid = fork();
+		if (epoch_pid == -1) {
+			outputerr("epoch_loop: fork failed: %s\n", strerror(errno));
+			return;
+		}
+
+		if (epoch_pid == 0) {
+			/* Epoch child: become the effective main process. */
+			mainpid = getpid();
+			setup_main_signals();
+			main_loop();
+			_exit(set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
+		}
+
+		/* Epoch parent: wait for the epoch child to finish. */
+		if (waitpid(epoch_pid, &status, 0) == -1) {
+			outputerr("epoch_loop: waitpid failed: %s\n", strerror(errno));
+			return;
+		}
+
+		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
+			output(0, "Epoch %u exited abnormally (status=%d), stopping.\n",
+				epoch_nr, status);
+			return;
+		}
+
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != EXIT_EPOCH_DONE) {
+			output(0, "Epoch %u ended with reason %s, stopping.\n",
+				epoch_nr,
+				decode_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
+			return;
+		}
+
+		output(0, "Epoch %u complete, resetting for next epoch.\n", epoch_nr);
+		reset_epoch_state();
 	}
 }
 
@@ -165,7 +227,10 @@ int main(int argc, char* argv[])
 		_exit(EXIT_FD_INIT_FAILURE);
 	}
 
-	main_loop();
+	if (epoch_iterations || epoch_timeout)
+		epoch_loop();
+	else
+		main_loop();
 
 	destroy_global_objects();
 
