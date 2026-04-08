@@ -55,6 +55,12 @@ void set_dontkillme(struct childdata *child, bool state)
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 }
 
+void child_fd_ring_push(struct child_fd_ring *ring, int fd)
+{
+	ring->fds[ring->head % CHILD_FD_RING_SIZE] = fd;
+	ring->head++;
+}
+
 /*
  * For the child processes, we don't want core dumps (unless we're running with -D)
  * This is because it's not uncommon for us to get segfaults etc when we're doing
@@ -171,6 +177,10 @@ void clean_childdata(struct childdata *child)
 	child->fd_closed = 0;
 	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
+
+	/* Reset live fd ring: -1 marks all slots as empty. */
+	memset(child->live_fds.fds, 0xff, sizeof(child->live_fds.fds));
+	child->live_fds.head = 0;
 
 	if (child->fd_event_ring)
 		fd_event_ring_init(child->fd_event_ring);

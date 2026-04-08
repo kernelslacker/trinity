@@ -278,6 +278,34 @@ retry:
 }
 
 /*
+ * Return a live fd from this child's recent-returns ring, or -1 if none
+ * are available.  Validates each candidate with fcntl(F_GETFD) and
+ * evicts stale entries (EBADF) inline to keep the ring clean.
+ */
+int get_child_live_fd(struct childdata *child)
+{
+	struct child_fd_ring *ring = &child->live_fds;
+	unsigned int i, retries;
+
+	for (retries = 0; retries < CHILD_FD_RING_SIZE; retries++) {
+		i = rand() % CHILD_FD_RING_SIZE;
+		int fd = ring->fds[i];
+
+		if (fd <= 2)
+			continue;
+
+		if (fcntl(fd, F_GETFD) == -1 && errno == EBADF) {
+			ring->fds[i] = -1;
+			continue;
+		}
+
+		return fd;
+	}
+
+	return -1;
+}
+
+/*
  * Try to create a replacement fd after one was destroyed.
  * Finds the provider for the given object type and calls its
  * .open hook if available.

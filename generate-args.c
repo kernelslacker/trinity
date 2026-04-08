@@ -285,6 +285,17 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 		return gen_undefined_arg(call);
 
 	case ARG_FD:
+		/* Prefer live fds returned by recent syscalls (70% of the time). */
+		if (rand() % 10 < 7) {
+			struct childdata *child = this_child();
+
+			if (child != NULL) {
+				int live_fd = get_child_live_fd(child);
+
+				if (live_fd >= 0)
+					return live_fd;
+			}
+		}
 		if (RAND_BOOL()) {
 			unsigned int i;
 			/* If this is the 2nd or more ARG_FD, make it unique */
