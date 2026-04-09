@@ -47,15 +47,15 @@ struct trinity_io_uring_params {
 	unsigned char cq_off[40];
 };
 
-/* The ring with valid mappings, used by io_uring_enter sanitise. */
-static struct io_uringobj *mapped_ring;
+/* The ring with valid mappings is stored in shm->mapped_ring,
+ * shared across all children.  Protected by shm->objlock. */
 
 struct io_uringobj *get_io_uring_ring(void)
 {
 	struct io_uringobj *ring;
 
 	lock(&shm->objlock);
-	ring = mapped_ring;
+	ring = shm->mapped_ring;
 	unlock(&shm->objlock);
 	return ring;
 }
@@ -68,8 +68,12 @@ static void io_uring_destructor(struct object *obj)
 		munmap(ring->sqes, ring->sqes_sz);
 	if (ring->sq_ring)
 		munmap(ring->sq_ring, ring->sq_ring_sz);
-	if (mapped_ring == ring)
-		mapped_ring = NULL;
+
+	lock(&shm->objlock);
+	if (shm->mapped_ring == ring)
+		shm->mapped_ring = NULL;
+	unlock(&shm->objlock);
+
 	close(ring->fd);
 }
 
@@ -140,7 +144,11 @@ static int open_io_uring_fd(void)
 	ring->off_array = params.sq_off.array;
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IO_URING);
-	mapped_ring = ring;
+
+	lock(&shm->objlock);
+	shm->mapped_ring = ring;
+	unlock(&shm->objlock);
+
 	return true;
 #else
 	return false;

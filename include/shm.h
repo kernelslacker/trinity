@@ -11,6 +11,8 @@
 #include "syscall.h"
 #include "types.h"
 
+struct io_uringobj;
+
 void create_shm(void);
 void init_shm(void);
 
@@ -53,6 +55,10 @@ struct shm_s {
 #endif
 	/* generic object cache*/
 	struct objhead global_objects[MAX_OBJECT_TYPES];
+
+	/* io_uring ring with valid mappings, shared across children.
+	 * Protected by objlock. */
+	struct io_uringobj *mapped_ring;
 
 	/* Contended child<>child locks — own cache line. */
 	lock_t syscalltable_lock __attribute__((aligned(64)));
