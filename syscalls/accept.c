@@ -15,6 +15,7 @@ static void sanitise_accept(struct syscallrecord *rec)
 
 static void post_accept(struct syscallrecord *rec)
 {
+	struct fd_hash_entry *listen_entry;
 	struct object *new;
 	int fd = rec->retval;
 
@@ -23,6 +24,13 @@ static void post_accept(struct syscallrecord *rec)
 
 	new = alloc_object();
 	new->sockinfo.fd = fd;
+
+	/* Inherit triplet from the listening socket. */
+	listen_entry = fd_hash_lookup(rec->a1);
+	if (listen_entry != NULL && listen_entry->type == OBJ_FD_SOCKET) {
+		new->sockinfo.triplet = listen_entry->obj->sockinfo.triplet;
+	}
+
 	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
 }
 
