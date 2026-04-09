@@ -1,4 +1,4 @@
-VERSION="2023.01"
+VERSION="2026.04"
 
 INSTALL_PREFIX ?= $(DESTDIR)
 NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
@@ -7,7 +7,6 @@ ifeq ($(CC),)
 CC := gcc
 endif
 CC := $(CROSS_COMPILE)$(CC)
-LD := $(CROSS_COMPILE)$(LD)
 
 CFLAGS ?= -g -O2 -D_FORTIFY_SOURCE=2
 CFLAGS += -Wall -Wextra -I. -Iinclude/ -include config.h -Wimplicit -D_GNU_SOURCE -D__linux__
