@@ -219,5 +219,5 @@ struct syscallentry syscall_io_uring_enter = {
 	.arg_params[3].list = ARGLIST(io_uring_enter_flags),
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_io_uring_enter,
-	.rettype = RET_BORING,
+	.rettype = RET_ZERO_SUCCESS,
 };
