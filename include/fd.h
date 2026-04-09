@@ -28,7 +28,7 @@ void register_fd_provider(const struct fd_provider *prov);
 void dump_fd_provider_names(void);
 void run_fd_provider_child_ops(void);
 
-unsigned int check_if_fd(struct syscallrecord *rec);
+bool check_if_fd(struct syscallrecord *rec);
 
 int get_random_fd(void);
 int get_new_random_fd(void);

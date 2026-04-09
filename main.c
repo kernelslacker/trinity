@@ -208,7 +208,7 @@ static void kill_all_kids(void)
 
 /* if the first arg was an fd, find out which one it was.
  * Call with syscallrecord lock held. */
-unsigned int check_if_fd(struct syscallrecord *rec)
+bool check_if_fd(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
 	unsigned int fd;
