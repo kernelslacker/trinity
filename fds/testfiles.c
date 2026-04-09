@@ -48,7 +48,7 @@ static int open_testfile(struct object *obj, char *filename)
 		const unsigned long open_flags[] = { O_DIRECT, O_DSYNC, O_SYNC, };
 		int flags = 0;
 
-		flags = set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);;
+		flags = set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);
 		obj->testfileobj.flags = O_CREAT | flags;
 		fd = open(filename, O_CREAT | flags, 0666);
 		obj->testfileobj.fopened = false;
