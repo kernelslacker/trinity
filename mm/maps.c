@@ -158,9 +158,13 @@ void dirty_mapping(struct map *map)
 	switch (map->prot) {
 	case PROT_WRITE:
 	case PROT_WRITE|PROT_READ:
+	case PROT_WRITE|PROT_EXEC:
+	case PROT_WRITE|PROT_READ|PROT_EXEC:
 		random_map_writefn(map);
 		break;
 	case PROT_READ:
+	case PROT_READ|PROT_EXEC:
+	case PROT_EXEC:
 		random_map_readfn(map);
 		break;
 	case PROT_SEM:
