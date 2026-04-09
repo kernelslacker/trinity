@@ -173,7 +173,7 @@ void dump_syscall_tables_uniarch(void)
 
 void display_enabled_syscalls_uniarch(void)
 {
-        unsigned int i;
+	unsigned int i;
 
 	for_each_syscall(i) {
 		struct syscallentry *entry = syscalls[i].entry;
