@@ -17,7 +17,7 @@
  *   1 = operational (fd generation, socket cache, done parsing)
  *   2 = debug (device details, per-socket info, map details)
  */
-void output(char level, const char *fmt, ...)
+void output(int level, const char *fmt, ...)
 {
 	va_list args;
 	int n;
