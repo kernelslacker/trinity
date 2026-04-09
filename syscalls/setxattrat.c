@@ -26,6 +26,7 @@ struct syscallentry syscall_setxattrat = {
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "name", [4] = "uargs", [5] = "usize" },
 	.arg_params[2].list = ARGLIST(setxattrat_at_flags),
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_setxattrat,
 };
