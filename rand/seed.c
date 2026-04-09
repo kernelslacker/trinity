@@ -51,14 +51,12 @@ unsigned int init_seed(unsigned int seedparam)
 
 		urandomfd = open("/dev/urandom", O_RDONLY);
 		if (urandomfd == -1) {
-			outputerr("urandom: %s\n", strerror(errno));
-			return false;
+			outputerr("urandom: %s, using fallback seed\n", strerror(errno));
+		} else {
+			if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
+				outputerr("urandom: %s\n", strerror(errno));
+			close(urandomfd);
 		}
-
-		if (read(urandomfd, &r, sizeof(r)) != sizeof(r))
-			outputerr("urandom: %s\n", strerror(errno));
-
-		close(urandomfd);
 
 		seedparam = r;
 		srand(r);
