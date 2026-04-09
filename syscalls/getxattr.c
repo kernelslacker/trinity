@@ -17,6 +17,8 @@ struct syscallentry syscall_getxattr = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_PATHNAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size" },
+	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_getxattr,
 };

@@ -21,6 +21,8 @@ struct syscallentry syscall_listxattr = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "list", [2] = "size" },
+	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
 
@@ -30,8 +32,10 @@ struct syscallentry syscall_listxattr = {
  */
 struct syscallentry syscall_llistxattr = {
 	.name = "llistxattr",
+	.num_args = 3,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "list", [2] = "size" },
-	.num_args = 3,
+	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

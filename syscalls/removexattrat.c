@@ -25,6 +25,7 @@ struct syscallentry syscall_removexattrat = {
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "name" },
 	.arg_params[2].list = ARGLIST(removexattrat_at_flags),
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_removexattrat,
 };
