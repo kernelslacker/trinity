@@ -3,10 +3,10 @@
 	fd_set __user *, exp, struct timeval __user *, tvp)
  */
 #include <sys/time.h>
-       #include <stdio.h>
-       #include <stdlib.h>
-       #include <sys/types.h>
-       #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "random.h"
 #include "sanitise.h"
