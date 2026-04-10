@@ -189,7 +189,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 
 	head = get_objhead(scope, type);
 	if (head->list == NULL) {
-		head->list = zmalloc(sizeof(struct object));
+		head->list = zmalloc(sizeof(struct list_head));
 		INIT_LIST_HEAD(head->list);
 	}
 
