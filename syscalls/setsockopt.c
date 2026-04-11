@@ -35,7 +35,9 @@ static const unsigned int socket_opts[] = {
 	SO_PASSPIDFD, SO_PEERPIDFD,
 	SO_DEVMEM_LINEAR, SO_DEVMEM_DMABUF, SO_DEVMEM_DONTNEED,
 	SO_RCVPRIORITY, SO_PASSRIGHTS, SO_INQ,
-	SCM_TS_OPT_ID,		/* v6.12 */
+#ifdef SCM_TS_OPT_ID
+	SCM_TS_OPT_ID,
+#endif
 };
 
 static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
