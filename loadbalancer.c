@@ -123,7 +123,7 @@ void lb_tick(void)
 	unsigned int load100, load_hi, load_crit;
 	unsigned int cur, target;
 
-	if (shm->spawn_no_more)
+	if (__atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
 		return;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);

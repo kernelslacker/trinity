@@ -347,7 +347,7 @@ static void init_child(struct childdata *child, int childno)
 	oom_score_adj(500);
 
 	/* Wait for all the children to start up. */
-	while (shm->ready == false)
+	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
 		sleep(1);
 
 	set_make_it_fail();
