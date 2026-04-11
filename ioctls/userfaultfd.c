@@ -83,6 +83,25 @@ static void sanitise_uffdio_zeropage(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) uz;
 }
 
+static void sanitise_uffdio_writeprotect(struct syscallrecord *rec)
+{
+	struct uffdio_writeprotect *uwp;
+	struct map *map;
+	static const unsigned long wp_modes[] = {
+		UFFDIO_WRITEPROTECT_MODE_WP,
+		UFFDIO_WRITEPROTECT_MODE_DONTWAKE,
+	};
+
+	uwp = (struct uffdio_writeprotect *) get_writable_address(sizeof(*uwp));
+	map = get_map();
+	if (map) {
+		uwp->range.start = (unsigned long) map->ptr;
+		uwp->range.len = map->size;
+	}
+	uwp->mode = set_rand_bitmask(ARRAY_SIZE(wp_modes), wp_modes);
+	rec->a3 = (unsigned long) uwp;
+}
+
 static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -96,6 +115,9 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 		break;
 	case UFFDIO_ZEROPAGE:
 		sanitise_uffdio_zeropage(rec);
+		break;
+	case UFFDIO_WRITEPROTECT:
+		sanitise_uffdio_writeprotect(rec);
 		break;
 	default:
 		break;
