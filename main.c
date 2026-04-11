@@ -169,7 +169,7 @@ static void kill_all_kids(void)
 	unsigned int i;
 	int children_seen = 0;
 
-	shm->spawn_no_more = true;
+	__atomic_store_n(&shm->spawn_no_more, true, __ATOMIC_RELEASE);
 
 	reap_dead_kids();
 
@@ -516,7 +516,7 @@ static bool spawn_child(int childno)
 	 * will do the same syscalls as the one in the child it's replacing.
 	 * (special case startup, or we reseed unnecessarily)
 	 */
-	if (shm->ready == true)
+	if (__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
 		reseed();
 
 	/* Wipe out any state left from a previous child running in this slot. */
@@ -589,7 +589,7 @@ static void fork_children(void)
 	while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children) {
 		int childno;
 
-		if (shm->spawn_no_more == true)
+		if (__atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
 			return;
 
 		/* Find a space for it in the pid map */
@@ -609,7 +609,7 @@ static void fork_children(void)
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			return;
 	}
-	shm->ready = true;
+	__atomic_store_n(&shm->ready, true, __ATOMIC_RELEASE);
 }
 
 static void handle_childsig(int childno, int childstatus, bool stop)
@@ -984,8 +984,8 @@ void reset_epoch_state(void)
 	unsigned int i;
 
 	__atomic_store_n(&shm->exit_reason, STILL_RUNNING, __ATOMIC_RELAXED);
-	shm->spawn_no_more = false;
-	shm->ready = false;
+	__atomic_store_n(&shm->spawn_no_more, false, __ATOMIC_RELEASE);
+	__atomic_store_n(&shm->ready, false, __ATOMIC_RELEASE);
 	__atomic_store_n(&shm->running_childs, 0, __ATOMIC_RELAXED);
 
 	shm->stats.op_count = 0;
@@ -1006,6 +1006,6 @@ void reset_epoch_state(void)
  */
 void panic(int reason)
 {
-	shm->spawn_no_more = true;
+	__atomic_store_n(&shm->spawn_no_more, true, __ATOMIC_RELEASE);
 	__atomic_store_n(&shm->exit_reason, reason, __ATOMIC_RELAXED);
 }
