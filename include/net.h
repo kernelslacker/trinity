@@ -94,6 +94,7 @@ extern const struct netproto proto_rxrpc;
 extern const struct netproto proto_kcm;
 extern const struct netproto proto_qipcrtr;
 extern const struct netproto proto_smc;
+extern const struct netproto proto_vsock;
 extern const struct netproto proto_xdp;
 
 /* bpf */
