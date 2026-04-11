@@ -10,9 +10,6 @@
 #ifdef __powerpc__
 #include "syscalls-ppc.h"
 #endif
-#ifdef __ia64__
-#include "syscalls-ia64.h"
-#endif
 #ifdef __sparc__
 #include "syscalls-sparc.h"
 #endif

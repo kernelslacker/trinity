@@ -47,25 +47,3 @@ struct syscallentry syscall_clone = {
 	.sanitise = sanitise_clone,
 	.rettype = RET_PID_T,
 };
-
-
-#ifdef __ia64__
-/*
- * sys_clone2(u64 flags, u64 ustack_base, u64 ustack_size, u64 parent_tidptr, u64 child_tidptr, u64 tls)
- *
- * On success, the thread ID of the child process is returned in the caller's thread of execution.
- * On failure, -1 is returned in the caller's context, no child process will be created, and errno will be set appropriately.
- */
-
-struct syscallentry syscall_clone2 = {
-	.name = "clone",
-	.group = GROUP_PROCESS,
-	.num_args = 6,
-	.flags = AVOID_SYSCALL,
-	.argtype = { [0] = ARG_LIST, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_ADDRESS },
-	.argname = { [0] = "flags", [1] = "ustack_base", [2] = "ustack_size", [3] = "parent_tidptr", [4] = "child_tidptr", [5] = "tls" },
-	.arg_params[0].list = ARGLIST(clone_flags),
-	.sanitise = sanitise_clone,
-	.rettype = RET_PID_T,
-};
-#endif
