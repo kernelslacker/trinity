@@ -298,6 +298,17 @@ static void init_child(struct childdata *child, int childno)
 	pid_t pid = getpid();
 	char childname[17];
 	unsigned int i;
+	int devnull;
+
+	/* Redirect stdout/stderr to /dev/null so no syscall
+	 * (splice, sendfile, vmsplice, etc.) can spew to the terminal. */
+	devnull = open("/dev/null", O_WRONLY);
+	if (devnull >= 0) {
+		dup2(devnull, STDOUT_FILENO);
+		dup2(devnull, STDERR_FILENO);
+		if (devnull > STDERR_FILENO)
+			close(devnull);
+	}
 
 	/* Re-set num from the stack-based childno in case shared memory
 	 * was corrupted by a sibling's stray write. */
