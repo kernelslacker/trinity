@@ -18,8 +18,8 @@ static const struct ioctl kvm_ioctls[] = {
 #if defined(__s390__)
 	IOCTL(KVM_S390_UCAS_MAP),
 	IOCTL(KVM_S390_UCAS_UNMAP),
-#endif
 	IOCTL(KVM_S390_VCPU_FAULT),
+#endif
 	IOCTL(KVM_CREATE_IRQCHIP),
 	IOCTL(KVM_IRQ_LINE),
 	IOCTL(KVM_GET_IRQCHIP),
