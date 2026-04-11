@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <linux/sched.h>
+#include "arch.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
@@ -62,6 +63,15 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	if (args->flags & CLONE_SIGHAND)
 		args->flags |= CLONE_VM;
 	args->exit_signal = rand() % _NSIG;
+
+	if (args->flags & CLONE_VM) {
+		void *stack = get_writable_address(page_size);
+
+		if (stack != NULL) {
+			args->stack = (unsigned long) stack;
+			args->stack_size = page_size;
+		}
+	}
 
 	rec->a1 = (unsigned long) args;
 	rec->a2 = RAND_ARRAY(clone3_sizes);
