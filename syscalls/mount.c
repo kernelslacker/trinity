@@ -98,6 +98,8 @@ static unsigned long mount_flags[] = {
 	MS_RELATIME, MS_KERNMOUNT, MS_I_VERSION, MS_STRICTATIME,
 	MS_SNAP_STABLE, MS_NOSEC, MS_BORN, MS_ACTIVE,
 	MS_NOUSER,
+	MS_NOSYMFOLLOW,		/* v5.10 */
+	MS_LAZYTIME,		/* v4.0 */
 };
 
 static void sanitise_mount(struct syscallrecord *rec)
