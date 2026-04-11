@@ -4,10 +4,12 @@
  *		struct xattr_args __user *, uargs, size_t, usize)
  */
 #include <fcntl.h>
-#include <linux/xattr.h>
 #include "sanitise.h"
 #include "xattr.h"
 #include "compat.h"
+#ifdef USE_XATTR_ARGS
+#include <linux/xattr.h>
+#endif
 
 static unsigned long getxattrat_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
@@ -15,19 +17,24 @@ static unsigned long getxattrat_at_flags[] = {
 
 static void sanitise_getxattrat(struct syscallrecord *rec)
 {
-	static const unsigned int flag_choices[] = { 0, XATTR_CREATE, XATTR_REPLACE };
-	struct xattr_args *args;
 	char *name = (char *) get_writable_address(256);
 
 	gen_xattr_name(name, 256);
 	rec->a4 = (unsigned long) name;
 
-	args = (struct xattr_args *) get_writable_address(sizeof(*args));
-	args->value = (unsigned long) get_writable_address(256);
-	args->size = 256;
-	args->flags = flag_choices[rand() % 3];
-	rec->a5 = (unsigned long) args;
-	rec->a6 = sizeof(*args);
+#ifdef USE_XATTR_ARGS
+	{
+		static const unsigned int flag_choices[] = { 0, XATTR_CREATE, XATTR_REPLACE };
+		struct xattr_args *args;
+
+		args = (struct xattr_args *) get_writable_address(sizeof(*args));
+		args->value = (unsigned long) get_writable_address(256);
+		args->size = 256;
+		args->flags = flag_choices[rand() % 3];
+		rec->a5 = (unsigned long) args;
+		rec->a6 = sizeof(*args);
+	}
+#endif
 }
 
 struct syscallentry syscall_getxattrat = {
