@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <linux/sched.h>
 #include "arch.h"
+#include "fd.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
@@ -90,6 +91,9 @@ static void sanitise_clone3(struct syscallrecord *rec)
 		args->set_tid = (unsigned long) set_tid;
 		args->set_tid_size = count;
 	}
+
+	if (args->flags & CLONE_INTO_CGROUP)
+		args->cgroup = get_random_fd();
 
 	rec->a1 = (unsigned long) args;
 	rec->a2 = RAND_ARRAY(clone3_sizes);
