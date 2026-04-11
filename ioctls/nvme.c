@@ -3,8 +3,110 @@
 #include <linux/nvme_ioctl.h>
 
 #include "compat.h"
-#include "utils.h"
 #include "ioctls.h"
+#include "random.h"
+#include "sanitise.h"
+#include "utils.h"
+
+static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
+{
+	struct nvme_passthru_cmd *cmd;
+	static const __u8 admin_opcodes[] = { 0x06, 0x09, 0x0a, 0x0c };
+
+	cmd = (struct nvme_passthru_cmd *) get_writable_address(sizeof(*cmd));
+	cmd->opcode = admin_opcodes[rand() % ARRAY_SIZE(admin_opcodes)];
+	cmd->nsid = RAND_BOOL() ? 0 : rand32();
+	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->data_len = 4096;
+	cmd->timeout_ms = 1000;
+	cmd->cdw10 = rand32();
+	cmd->cdw11 = rand32();
+	cmd->cdw12 = rand32();
+	cmd->cdw13 = rand32();
+	cmd->cdw14 = rand32();
+	cmd->cdw15 = rand32();
+	rec->a3 = (unsigned long) cmd;
+}
+
+static void sanitise_nvme_admin64_cmd(struct syscallrecord *rec)
+{
+	struct nvme_passthru_cmd64 *cmd;
+	static const __u8 admin_opcodes[] = { 0x06, 0x09, 0x0a, 0x0c };
+
+	cmd = (struct nvme_passthru_cmd64 *) get_writable_address(sizeof(*cmd));
+	cmd->opcode = admin_opcodes[rand() % ARRAY_SIZE(admin_opcodes)];
+	cmd->nsid = RAND_BOOL() ? 0 : rand32();
+	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->data_len = 4096;
+	cmd->timeout_ms = 1000;
+	cmd->cdw10 = rand32();
+	cmd->cdw11 = rand32();
+	cmd->cdw12 = rand32();
+	cmd->cdw13 = rand32();
+	cmd->cdw14 = rand32();
+	cmd->cdw15 = rand32();
+	rec->a3 = (unsigned long) cmd;
+}
+
+static void sanitise_nvme_io_cmd(struct syscallrecord *rec)
+{
+	struct nvme_passthru_cmd *cmd;
+
+	cmd = (struct nvme_passthru_cmd *) get_writable_address(sizeof(*cmd));
+	cmd->opcode = RAND_BOOL() ? 0x01 : 0x02;
+	cmd->nsid = RAND_BOOL() ? 1 : rand32();
+	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->data_len = 4096;
+	rec->a3 = (unsigned long) cmd;
+}
+
+static void sanitise_nvme_io64_cmd(struct syscallrecord *rec)
+{
+	struct nvme_passthru_cmd64 *cmd;
+
+	cmd = (struct nvme_passthru_cmd64 *) get_writable_address(sizeof(*cmd));
+	cmd->opcode = RAND_BOOL() ? 0x01 : 0x02;
+	cmd->nsid = RAND_BOOL() ? 1 : rand32();
+	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->data_len = 4096;
+	rec->a3 = (unsigned long) cmd;
+}
+
+static void sanitise_nvme_submit_io(struct syscallrecord *rec)
+{
+	struct nvme_user_io *io;
+
+	io = (struct nvme_user_io *) get_writable_address(sizeof(*io));
+	io->opcode = RAND_BOOL() ? 0x01 : 0x02;
+	io->addr = (unsigned long) get_writable_address(4096);
+	io->nblocks = rand() % 8;
+	rec->a3 = (unsigned long) io;
+}
+
+static void nvme_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+	case NVME_IOCTL_ADMIN_CMD:
+		sanitise_nvme_admin_cmd(rec);
+		break;
+	case NVME_IOCTL_ADMIN64_CMD:
+		sanitise_nvme_admin64_cmd(rec);
+		break;
+	case NVME_IOCTL_IO_CMD:
+		sanitise_nvme_io_cmd(rec);
+		break;
+	case NVME_IOCTL_IO64_CMD:
+		sanitise_nvme_io64_cmd(rec);
+		break;
+	case NVME_IOCTL_SUBMIT_IO:
+		sanitise_nvme_submit_io(rec);
+		break;
+	default:
+		break;
+	}
+}
 
 static const struct ioctl nvme_ioctls[] = {
 	IOCTL(NVME_IOCTL_ID),
@@ -12,6 +114,8 @@ static const struct ioctl nvme_ioctls[] = {
 	IOCTL(NVME_IOCTL_SUBMIT_IO),
 	IOCTL(NVME_IOCTL_IO_CMD),
 	IOCTL(NVME_IOCTL_RESET),
+	IOCTL(NVME_IOCTL_ADMIN64_CMD),
+	IOCTL(NVME_IOCTL_IO64_CMD),
 };
 
 static const char *const nvme_devs[] = {
@@ -22,7 +126,7 @@ static const struct ioctl_group nvme_grp_misc = {
 	.devtype = DEV_CHAR,
 	.devs = nvme_devs,
 	.devs_cnt = ARRAY_SIZE(nvme_devs),
-	.sanitise = pick_random_ioctl,
+	.sanitise = nvme_sanitise,
 	.ioctls = nvme_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(nvme_ioctls),
 };
@@ -33,7 +137,7 @@ static const struct ioctl_group nvme_grp_block = {
 	.devtype = DEV_BLOCK,
 	.devs = nvme_devs,
 	.devs_cnt = ARRAY_SIZE(nvme_devs),
-	.sanitise = pick_random_ioctl,
+	.sanitise = nvme_sanitise,
 	.ioctls = nvme_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(nvme_ioctls),
 };
