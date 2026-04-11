@@ -73,6 +73,13 @@ static void sanitise_clone3(struct syscallrecord *rec)
 		}
 	}
 
+	if (args->flags & CLONE_PIDFD) {
+		void *pidfd = get_writable_address(sizeof(int));
+
+		if (pidfd != NULL)
+			args->pidfd = (unsigned long) pidfd;
+	}
+
 	rec->a1 = (unsigned long) args;
 	rec->a2 = RAND_ARRAY(clone3_sizes);
 }
