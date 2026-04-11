@@ -49,7 +49,7 @@ static unsigned long randbits(int limit)
 	unsigned long r = 0;
 
 	for (i = 0; i < num; i++)
-		r |= (1UL << (rand() % (limit - 1)));
+		r |= (1UL << (rand() % limit));
 
 	return r;
 }
