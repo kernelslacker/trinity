@@ -289,6 +289,12 @@ static const struct ioctl drm_ioctls[] = {
 #ifdef DRM_IOCTL_MODE_REVOKE_LEASE
 	IOCTL(DRM_IOCTL_MODE_REVOKE_LEASE),
 #endif
+#ifdef DRM_IOCTL_CRTC_GET_SEQUENCE
+	IOCTL(DRM_IOCTL_CRTC_GET_SEQUENCE),
+#endif
+#ifdef DRM_IOCTL_CRTC_QUEUE_SEQUENCE
+	IOCTL(DRM_IOCTL_CRTC_QUEUE_SEQUENCE),
+#endif
 
 #ifdef USE_DRM_EXYNOS
 	/* exynos_drm.h */
