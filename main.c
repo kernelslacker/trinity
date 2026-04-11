@@ -644,15 +644,12 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 
 	case SIGALRM:
 		debugf("got a alarm signal from child %d (pid %d)\n", childno, pid);
-		if (stop == false) {
-			reap_child(children[childno], childno);
-			if (pidstatfiles[childno])
-				fclose(pidstatfiles[childno]);
-			pidstatfiles[childno] = NULL;
-			replace_child(childno);
-			return;
-		}
-		break;
+		reap_child(children[childno], childno);
+		if (pidstatfiles[childno])
+			fclose(pidstatfiles[childno]);
+		pidstatfiles[childno] = NULL;
+		replace_child(childno);
+		return;
 	case SIGFPE:
 	case SIGSEGV:
 	case SIGKILL:
