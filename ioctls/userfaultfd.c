@@ -68,6 +68,21 @@ static void sanitise_uffdio_copy(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) uc;
 }
 
+static void sanitise_uffdio_zeropage(struct syscallrecord *rec)
+{
+	struct uffdio_zeropage *uz;
+	struct map *map;
+
+	uz = (struct uffdio_zeropage *) get_writable_address(sizeof(*uz));
+	map = get_map();
+	if (map) {
+		uz->range.start = (unsigned long) map->ptr;
+		uz->range.len = map->size;
+	}
+	uz->mode = RAND_BOOL() ? UFFDIO_ZEROPAGE_MODE_DONTWAKE : 0;
+	rec->a3 = (unsigned long) uz;
+}
+
 static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -78,6 +93,9 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 		break;
 	case UFFDIO_COPY:
 		sanitise_uffdio_copy(rec);
+		break;
+	case UFFDIO_ZEROPAGE:
+		sanitise_uffdio_zeropage(rec);
 		break;
 	default:
 		break;
