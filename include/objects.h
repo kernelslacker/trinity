@@ -97,6 +97,10 @@ struct seccomp_notifobj {
 	int fd;
 };
 
+struct iommufdobj {
+	int fd;
+};
+
 struct io_uringobj {
 	int fd;
 	void *sq_ring;		/* mmap'd SQ ring, NULL if not mapped */
@@ -161,6 +165,8 @@ struct object {
 		struct mqobj mqobj;
 
 		struct seccomp_notifobj seccomp_notifobj;
+
+		struct iommufdobj iommufdobj;
 
 		struct io_uringobj io_uringobj;
 
