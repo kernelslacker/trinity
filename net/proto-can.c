@@ -31,6 +31,54 @@
 #define CANXL_XLF	0x80
 #endif
 
+#ifndef SOL_CAN_ISOTP
+#define SOL_CAN_ISOTP	(SOL_CAN_BASE + CAN_ISOTP)
+#endif
+#ifndef SOL_CAN_J1939
+#define SOL_CAN_J1939	(SOL_CAN_BASE + CAN_J1939)
+#endif
+
+#define CAN_ISOTP_OPTS		1
+#define CAN_ISOTP_RECV_FC	2
+#define CAN_ISOTP_TX_STMIN	3
+#define CAN_ISOTP_RX_STMIN	4
+#define CAN_ISOTP_LL_OPTS	5
+
+struct can_isotp_options {
+	__u32 flags;
+	__u32 frame_txtime;
+	__u8  ext_address;
+	__u8  txpad_content;
+	__u8  rxpad_content;
+	__u8  rx_ext_address;
+};
+
+struct can_isotp_fc_options {
+	__u8 bs;
+	__u8 stmin;
+	__u8 wftmax;
+};
+
+struct can_isotp_ll_options {
+	__u8 mtu;
+	__u8 tx_dl;
+	__u8 tx_flags;
+};
+
+#define SO_J1939_FILTER		1
+#define SO_J1939_PROMISC	2
+#define SO_J1939_SEND_PRIO	3
+#define SO_J1939_ERRQUEUE	4
+
+struct j1939_filter {
+	__u64 name;
+	__u64 name_mask;
+	__u32 pgn;
+	__u32 pgn_mask;
+	__u8  addr;
+	__u8  addr_mask;
+};
+
 static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_can *can;
@@ -39,8 +87,24 @@ static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	can->can_family = AF_CAN;
 	can->can_ifindex = rand();
-	can->can_addr.tp.rx_id = rand();
-	can->can_addr.tp.tx_id = rand();
+
+	switch (rand() % 3) {
+	case 0:
+		/* ISOTP: fill .tp union member */
+		can->can_addr.tp.rx_id = rand();
+		can->can_addr.tp.tx_id = rand();
+		break;
+	case 1:
+		/* J1939: fill .j1939 union member */
+		can->can_addr.j1939.name = rand64();
+		can->can_addr.j1939.pgn = rand() & 0x3ffff;
+		can->can_addr.j1939.addr = RAND_BOOL() ? rand() % 0xfe : 0xff;
+		break;
+	default:
+		/* CAN_RAW: no address needed, zero is fine */
+		break;
+	}
+
 	*addr = (struct sockaddr *) can;
 	*addrlen = sizeof(struct sockaddr_can);
 }
@@ -99,10 +163,102 @@ static const unsigned int can_raw_opts[] = {
 	CAN_RAW_XL_FRAMES,
 };
 
-static void can_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+static void can_isotp_setsockopt(struct sockopt *so)
+{
+	static const unsigned int isotp_opts[] = {
+		CAN_ISOTP_OPTS, CAN_ISOTP_RECV_FC,
+		CAN_ISOTP_TX_STMIN, CAN_ISOTP_RX_STMIN,
+		CAN_ISOTP_LL_OPTS,
+	};
+	struct can_isotp_options *opts;
+	struct can_isotp_fc_options *fc;
+	struct can_isotp_ll_options *ll;
+
+	so->level = SOL_CAN_ISOTP;
+	so->optname = RAND_ARRAY(isotp_opts);
+
+	switch (so->optname) {
+	case CAN_ISOTP_OPTS:
+		opts = (struct can_isotp_options *) so->optval;
+		opts->flags = rand() & 0x3fff;
+		opts->frame_txtime = rand();
+		opts->ext_address = rand();
+		opts->txpad_content = rand();
+		opts->rxpad_content = rand();
+		opts->rx_ext_address = rand();
+		so->optlen = sizeof(struct can_isotp_options);
+		break;
+	case CAN_ISOTP_RECV_FC:
+		fc = (struct can_isotp_fc_options *) so->optval;
+		fc->bs = rand();
+		fc->stmin = rand();
+		fc->wftmax = rand();
+		so->optlen = sizeof(struct can_isotp_fc_options);
+		break;
+	case CAN_ISOTP_TX_STMIN:
+	case CAN_ISOTP_RX_STMIN:
+		*(unsigned int *) so->optval = rand();
+		so->optlen = sizeof(unsigned int);
+		break;
+	case CAN_ISOTP_LL_OPTS:
+		ll = (struct can_isotp_ll_options *) so->optval;
+		ll->mtu = RAND_BOOL() ? 16 : 72;
+		ll->tx_dl = 8;
+		ll->tx_flags = rand() & 0x07;
+		so->optlen = sizeof(struct can_isotp_ll_options);
+		break;
+	}
+}
+
+static void can_j1939_setsockopt(struct sockopt *so)
+{
+	static const unsigned int j1939_opts[] = {
+		SO_J1939_FILTER, SO_J1939_PROMISC,
+		SO_J1939_SEND_PRIO, SO_J1939_ERRQUEUE,
+	};
+	struct j1939_filter *filter;
+
+	so->level = SOL_CAN_J1939;
+	so->optname = RAND_ARRAY(j1939_opts);
+
+	switch (so->optname) {
+	case SO_J1939_FILTER:
+		filter = (struct j1939_filter *) so->optval;
+		filter->name = rand64();
+		filter->name_mask = rand64();
+		filter->pgn = rand() & 0x3ffff;
+		filter->pgn_mask = rand() & 0x3ffff;
+		filter->addr = rand();
+		filter->addr_mask = rand();
+		so->optlen = sizeof(struct j1939_filter);
+		break;
+	case SO_J1939_PROMISC:
+	case SO_J1939_ERRQUEUE:
+		*(unsigned int *) so->optval = RAND_BOOL();
+		so->optlen = sizeof(unsigned int);
+		break;
+	case SO_J1939_SEND_PRIO:
+		*(unsigned int *) so->optval = rand() % 8;
+		so->optlen = sizeof(unsigned int);
+		break;
+	}
+}
+
+static void can_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
 	struct can_filter *filter;
 	unsigned int *optval32;
+
+	switch (triplet->protocol) {
+	case CAN_ISOTP:
+		can_isotp_setsockopt(so);
+		return;
+	case CAN_J1939:
+		can_j1939_setsockopt(so);
+		return;
+	default:
+		break;
+	}
 
 	so->level = SOL_CAN_RAW;
 	so->optname = RAND_ARRAY(can_raw_opts);
