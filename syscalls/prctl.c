@@ -42,6 +42,17 @@
 #define PR_PPC_SET_DEXCR		73
 #endif
 
+/* Capabilities added after Linux 5.8/5.9 — guard for older build systems. */
+#ifndef CAP_PERFMON
+#define CAP_PERFMON		38
+#endif
+#ifndef CAP_BPF
+#define CAP_BPF			39
+#endif
+#ifndef CAP_CHECKPOINT_RESTORE
+#define CAP_CHECKPOINT_RESTORE	40
+#endif
+
 static int prctl_opts[] = {
 	PR_SET_PDEATHSIG, PR_GET_PDEATHSIG, PR_GET_DUMPABLE, PR_SET_DUMPABLE,
 	PR_GET_UNALIGN, PR_SET_UNALIGN, PR_GET_KEEPCAPS, PR_SET_KEEPCAPS,
