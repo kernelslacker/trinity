@@ -210,5 +210,7 @@ void dump_stats(void)
 
 		if (cold_pairs > 0)
 			output(0, "Cold pairs (saturated sequences): %u\n", cold_pairs);
+
+		edgepair_dump_to_file("edgepair.dump");
 	}
 }
