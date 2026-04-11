@@ -137,7 +137,7 @@ unsigned int get_interesting_32bit_value(void)
 {
 	switch (rand() % 13) {
 	case 0: return 0x80000000 >> (rand() & 0x1f);	// 2^n (1 -> 0x80000000)
-	case 1: return rand();							// 0 -> RAND_MAX (likely 0x7fffffff)
+	case 1: return rand32();						// 0 -> 0xffffffff
 	case 2: return (unsigned int) 0xff << (4 * (rand() % 7));
 	case 3: return 0xffff0000;
 	case 4: return 0xffffe000;
