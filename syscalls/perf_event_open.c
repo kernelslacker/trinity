@@ -940,6 +940,8 @@ static long long random_read_format(void)
 		read_format |= PERF_FORMAT_TOTAL_TIME_ENABLED;
 	if (RAND_BOOL())
 		read_format |= PERF_FORMAT_TOTAL_TIME_RUNNING;
+	if (RAND_BOOL())
+		read_format |= PERF_FORMAT_LOST;
 
 	return read_format;
 }
