@@ -718,7 +718,7 @@ static long long random_event_config(__u32 *event_type,
 		}
 		break;
 	case PERF_TYPE_SOFTWARE:
-		switch (rand() % 12) {
+		switch (rand() % 13) {
 		case 0:
 			config = PERF_COUNT_SW_CPU_CLOCK;
 			break;
@@ -753,6 +753,9 @@ static long long random_event_config(__u32 *event_type,
 			config = PERF_COUNT_SW_BPF_OUTPUT;
 			break;
 		case 11:
+			config = PERF_COUNT_SW_CGROUP_SWITCHES;
+			break;
+		case 12:
 			config = rand64();
 			break;
 		default:
