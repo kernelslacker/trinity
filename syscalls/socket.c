@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #include "debug.h"
 #include "net.h"
 #include "objects.h"
@@ -129,8 +130,10 @@ static void post_socket(struct syscallrecord *rec)
 	if (fd == -1)
 		return;
 
-	if (family >= TRINITY_PF_MAX)
+	if (family >= TRINITY_PF_MAX) {
+		close(fd);
 		return;
+	}
 
 	proto = net_protocols[family].proto;
 	if (proto != NULL)
