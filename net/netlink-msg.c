@@ -83,9 +83,15 @@ static unsigned short gen_nlmsg_flags(void)
 	if (RAND_BOOL())
 		flags |= NLM_F_ACK;
 
+	if (RAND_BOOL())
+		flags |= NLM_F_ECHO;
+
 	/* GET-style: dump flags */
 	if (RAND_BOOL())
 		flags |= NLM_F_DUMP;
+
+	if (RAND_BOOL())
+		flags |= NLM_F_ATOMIC;
 
 	/* NEW-style: create/replace flags */
 	if (RAND_BOOL()) {
@@ -98,6 +104,12 @@ static unsigned short gen_nlmsg_flags(void)
 		if (RAND_BOOL())
 			flags |= NLM_F_APPEND;
 	}
+
+	/* DELETE-style: bulk/non-recursive flags */
+	if (RAND_BOOL())
+		flags |= NLM_F_NONREC;
+	if (RAND_BOOL())
+		flags |= NLM_F_BULK;
 
 	return flags;
 }
