@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <linux/filter.h>
 #include "net.h"
 #include "random.h"
@@ -109,6 +110,12 @@ static void post_seccomp(struct syscallrecord *rec)
 #ifdef USE_BPF
 	if (rec->a1 == SECCOMP_SET_MODE_FILTER && rec->a3) {
 		struct sock_fprog *fprog = (struct sock_fprog *) rec->a3;
+
+		/* When SECCOMP_FILTER_FLAG_NEW_LISTENER is set, a successful
+		 * SECCOMP_SET_MODE_FILTER returns a notification fd. */
+		if ((rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER) &&
+		    (int)rec->retval >= 0)
+			close((int)rec->retval);
 
 		free(fprog->filter);
 		deferred_freeptr(&rec->a3);
