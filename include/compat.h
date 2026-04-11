@@ -425,11 +425,6 @@ enum {
 #define PR_GET_THP_DISABLE      42
 #endif
 
-#ifndef PR_MPX_ENABLE_MANAGEMENT
-#define PR_MPX_ENABLE_MANAGEMENT  43
-#define PR_MPX_DISABLE_MANAGEMENT 44
-#endif
-
 #ifdef __mips__
 #ifndef PR_SET_FP_MODE
 #define PR_SET_FP_MODE         45
