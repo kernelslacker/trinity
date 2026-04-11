@@ -935,7 +935,7 @@ static int random_attr_size(void) {
 
 	int size=0;
 
-	switch(rand() % 10) {
+	switch(rand() % 13) {
 	case 0:	size = PERF_ATTR_SIZE_VER0;
 		break;
 	case 1: size = PERF_ATTR_SIZE_VER1;
@@ -948,13 +948,19 @@ static int random_attr_size(void) {
 		break;
 	case 5: size = PERF_ATTR_SIZE_VER5;
 		break;
-	case 6: size = sizeof(struct perf_event_attr);
+	case 6: size = PERF_ATTR_SIZE_VER6;
 		break;
-	case 7: size = rand32();
+	case 7: size = PERF_ATTR_SIZE_VER7;
 		break;
-	case 8:	size = get_len();
+	case 8: size = PERF_ATTR_SIZE_VER8;
 		break;
-	case 9: size = 0;
+	case 9: size = sizeof(struct perf_event_attr);
+		break;
+	case 10: size = rand32();
+		break;
+	case 11: size = get_len();
+		break;
+	case 12: size = 0;
 		break;
 	default:
 		break;
@@ -1061,6 +1067,16 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->use_clockid = RAND_BOOL();
 	attr->context_switch = RAND_BOOL();
 	attr->write_backward = RAND_BOOL();
+	attr->namespaces = RAND_BOOL();
+	attr->ksymbol = RAND_BOOL();
+	attr->bpf_event = RAND_BOOL();
+	attr->aux_output = RAND_BOOL();
+	attr->cgroup = RAND_BOOL();
+	attr->text_poke = RAND_BOOL();
+	attr->build_id = RAND_BOOL();
+	attr->inherit_thread = RAND_BOOL();
+	attr->remove_on_exec = RAND_BOOL();
+	attr->sigtrap = RAND_BOOL();
 
 	/* wakeup events not relevant */
 
@@ -1131,6 +1147,16 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->use_clockid = RAND_BOOL();
 	attr->context_switch = RAND_BOOL();
 	attr->write_backward = RAND_BOOL();
+	attr->namespaces = RAND_BOOL();
+	attr->ksymbol = RAND_BOOL();
+	attr->bpf_event = RAND_BOOL();
+	attr->aux_output = RAND_BOOL();
+	attr->cgroup = RAND_BOOL();
+	attr->text_poke = RAND_BOOL();
+	attr->build_id = RAND_BOOL();
+	attr->inherit_thread = RAND_BOOL();
+	attr->remove_on_exec = RAND_BOOL();
+	attr->sigtrap = RAND_BOOL();
 
 	attr->wakeup_events = rand32();
 
@@ -1255,6 +1281,19 @@ static void create_random_event(struct perf_event_attr *attr)
 	attr->exclude_callchain_user = RAND_BOOL();
 	attr->mmap2 = RAND_BOOL();
 	attr->comm_exec = RAND_BOOL();
+	attr->use_clockid = RAND_BOOL();
+	attr->context_switch = RAND_BOOL();
+	attr->write_backward = RAND_BOOL();
+	attr->namespaces = RAND_BOOL();
+	attr->ksymbol = RAND_BOOL();
+	attr->bpf_event = RAND_BOOL();
+	attr->aux_output = RAND_BOOL();
+	attr->cgroup = RAND_BOOL();
+	attr->text_poke = RAND_BOOL();
+	attr->build_id = RAND_BOOL();
+	attr->inherit_thread = RAND_BOOL();
+	attr->remove_on_exec = RAND_BOOL();
+	attr->sigtrap = RAND_BOOL();
 
 	attr->wakeup_events=rand32();
 

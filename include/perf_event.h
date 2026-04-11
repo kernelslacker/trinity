@@ -296,6 +296,9 @@ enum perf_event_read_format {
 					/* add: sample_stack_user */
 #define PERF_ATTR_SIZE_VER4	104	/* add: sample_regs_intr */
 #define PERF_ATTR_SIZE_VER5	112	/* add: aux_watermark */
+#define PERF_ATTR_SIZE_VER6	120	/* add: aux_sample_size */
+#define PERF_ATTR_SIZE_VER7	128	/* add: sig_data */
+#define PERF_ATTR_SIZE_VER8	136	/* add: config3 */
 
 /*
  * Hardware event_id to monitor via a performance monitoring event:
@@ -368,7 +371,16 @@ struct perf_event_attr {
 				context_switch :  1, /* context switch data */
 				write_backward :  1, /* Write ring buffer from end to beginning */
 				namespaces     :  1, /* include namespaces data */
-				__reserved_1   : 35;
+				ksymbol        :  1, /* include ksymbol events */
+				bpf_event      :  1, /* include bpf events */
+				aux_output     :  1, /* generate AUX records instead of events */
+				cgroup         :  1, /* include cgroup events */
+				text_poke      :  1, /* include text poke events */
+				build_id       :  1, /* use build id in mmap2 events */
+				inherit_thread :  1, /* children only inherit if cloned with CLONE_THREAD */
+				remove_on_exec :  1, /* event is removed from task on exec */
+				sigtrap        :  1, /* send synchronous SIGTRAP on event */
+				__reserved_1   : 26;
 
 	union {
 		__u32		wakeup_events;	  /* wakeup every n events */
@@ -414,6 +426,10 @@ struct perf_event_attr {
 	__u32	aux_watermark;
 	__u16	sample_max_stack;
 	__u16	__reserved_2;	/* align to __u64 */
+	__u32	aux_sample_size;
+	__u32	aux_action;
+	__u64	sig_data;
+	__u64	config3;	/* extension of config2 */
 };
 
 #define perf_flags(attr)	(*(&(attr)->read_format + 1))
