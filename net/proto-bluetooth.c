@@ -46,9 +46,16 @@ struct sockaddr_sco {
 	bdaddr_t	sco_bdaddr;
 };
 
+/* ISO socket address (unicast — no broadcast extension) */
+struct sockaddr_iso {
+	sa_family_t	iso_family;
+	bdaddr_t	iso_bdaddr;
+	__u8		iso_bdaddr_type;
+};
+
 static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
-	switch (rand() % 4) {
+	switch (rand() % 5) {
 	case 0: {
 		/* HCI — raw access to Bluetooth controller */
 		struct sockaddr_hci *hci;
@@ -101,6 +108,19 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		*addrlen = sizeof(struct sockaddr_sco);
 		break;
 	}
+
+	case 4: {
+		/* ISO — LE Audio (unicast, no broadcast extension) */
+		struct sockaddr_iso *iso;
+
+		iso = zmalloc(sizeof(struct sockaddr_iso));
+		iso->iso_family = AF_BLUETOOTH;
+		generate_rand_bytes(iso->iso_bdaddr.b, 6);
+		iso->iso_bdaddr_type = rand() % 3;
+		*addr = (struct sockaddr *) iso;
+		*addrlen = sizeof(struct sockaddr_iso);
+		break;
+	}
 	}
 }
 
@@ -119,11 +139,14 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 #ifndef BT_MODE
 #define BT_MODE		15
 #endif
+#ifndef BT_ISO_QOS
+#define BT_ISO_QOS	17
+#endif
 
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
 	BT_CHANNEL_POLICY, BT_VOICE, BT_SNDMTU, BT_RCVMTU,
-	BT_PHY, BT_MODE
+	BT_PHY, BT_MODE, BT_ISO_QOS
 };
 
 static const unsigned int bluetooth_hci_opts[] = {
