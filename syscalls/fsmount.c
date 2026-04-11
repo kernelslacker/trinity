@@ -1,6 +1,7 @@
 /*
  *  SYSCALL_DEFINE3(fsmount, int, fs_fd, unsigned int, flags, unsigned int, attr_flags)
  */
+#include <unistd.h>
 #include "sanitise.h"
 
 #define FSMOUNT_CLOEXEC         0x00000001
@@ -32,6 +33,14 @@ static unsigned long fsmount_attr_flags[] = {
 	MOUNT_ATTR_NOSYMFOLLOW,
 };
 
+static void post_fsmount(struct syscallrecord *rec)
+{
+	int fd = rec->retval;
+
+	if (fd != -1)
+		close(fd);
+}
+
 struct syscallentry syscall_fsmount = {
 	.name = "fsmount",
 	.num_args = 3,
@@ -42,4 +51,5 @@ struct syscallentry syscall_fsmount = {
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
+	.post = post_fsmount,
 };

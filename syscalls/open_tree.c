@@ -3,6 +3,7 @@
  */
 #include "sanitise.h"
 #include <fcntl.h>
+#include <unistd.h>
 
 #ifndef OPEN_TREE_CLONE
 #define OPEN_TREE_CLONE         1               /* Clone the target tree and attach the clone */
@@ -22,6 +23,14 @@ static unsigned long open_tree_flags[] = {
 	OPEN_TREE_CLONE, OPEN_TREE_CLOEXEC, OPEN_TREE_NAMESPACE,
 };
 
+static void post_open_tree(struct syscallrecord *rec)
+{
+	int fd = rec->retval;
+
+	if (fd != -1)
+		close(fd);
+}
+
 struct syscallentry syscall_open_tree = {
 	.name = "open_tree",
 	.num_args = 3,
@@ -31,4 +40,5 @@ struct syscallentry syscall_open_tree = {
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
+	.post = post_open_tree,
 };

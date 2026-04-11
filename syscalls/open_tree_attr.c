@@ -3,6 +3,7 @@
  *		unsigned, flags, struct mount_attr __user *, uattr, size_t, usize)
  */
 #include <fcntl.h>
+#include <unistd.h>
 #include "sanitise.h"
 #include "compat.h"
 
@@ -20,6 +21,14 @@ static unsigned long open_tree_attr_flags[] = {
 	OPEN_TREE_CLONE, OPEN_TREE_CLOEXEC,
 };
 
+static void post_open_tree_attr(struct syscallrecord *rec)
+{
+	int fd = rec->retval;
+
+	if (fd != -1)
+		close(fd);
+}
+
 struct syscallentry syscall_open_tree_attr = {
 	.name = "open_tree_attr",
 	.num_args = 5,
@@ -29,4 +38,5 @@ struct syscallentry syscall_open_tree_attr = {
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
+	.post = post_open_tree_attr,
 };
