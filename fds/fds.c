@@ -120,7 +120,7 @@ static void __open_fds(bool do_rand)
 	}
 }
 
-unsigned int open_fds(void)
+bool open_fds(void)
 {
 	struct list_head *node;
 
@@ -144,7 +144,7 @@ unsigned int open_fds(void)
 	output(0, "Enabled %d/%d fd providers. initialized:%d.\n",
 		num_fd_providers_enabled, num_fd_providers, num_fd_providers_initialized);
 
-	return true;
+	return num_fd_providers_enabled > 0;
 }
 
 int get_new_random_fd(void)
