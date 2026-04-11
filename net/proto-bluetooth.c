@@ -1,57 +1,24 @@
+#ifdef USE_BLUETOOTH
 #include <stdlib.h>
 #include <string.h>
+#include <bluetooth/bluetooth.h>
+#include <bluetooth/hci.h>
+#include <bluetooth/l2cap.h>
+#include <bluetooth/rfcomm.h>
+#include <bluetooth/sco.h>
 #include "net.h"
 #include "compat.h"
 #include "random.h"
 
-/* Bluetooth address — 6 bytes, little-endian */
-typedef struct {
-	unsigned char b[6];
-} bdaddr_t;
-
-/* HCI socket address */
-struct sockaddr_hci {
-	sa_family_t	hci_family;
-	unsigned short	hci_dev;
-	unsigned short	hci_channel;
-};
-
-#ifndef HCI_CHANNEL_RAW
-#define HCI_CHANNEL_RAW		0
-#define HCI_CHANNEL_USER	1
-#define HCI_CHANNEL_MONITOR	2
-#define HCI_CHANNEL_CONTROL	3
-#define HCI_CHANNEL_LOGGING	4
-#endif
-
-/* L2CAP socket address */
-struct sockaddr_l2 {
-	sa_family_t	l2_family;
-	unsigned short	l2_psm;
-	bdaddr_t	l2_bdaddr;
-	unsigned short	l2_cid;
-	unsigned char	l2_bdaddr_type;
-};
-
-/* RFCOMM socket address */
-struct sockaddr_rc {
-	sa_family_t	rc_family;
-	bdaddr_t	rc_bdaddr;
-	unsigned char	rc_channel;
-};
-
-/* SCO socket address */
-struct sockaddr_sco {
-	sa_family_t	sco_family;
-	bdaddr_t	sco_bdaddr;
-};
-
-/* ISO socket address (unicast — no broadcast extension) */
+/* ISO socket address — added in kernel 5.10; not yet in all libbluetooth versions */
+#ifndef BTPROTO_ISO
+#define BTPROTO_ISO     8
 struct sockaddr_iso {
 	sa_family_t	iso_family;
 	bdaddr_t	iso_bdaddr;
 	__u8		iso_bdaddr_type;
 };
+#endif
 
 static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -159,8 +126,6 @@ static const unsigned int bluetooth_l2cap_opts[] = {
 
 static const unsigned int bluetooth_rfcomm_opts[] = { RFCOMM_LM };
 
-#define SOL_BLUETOOTH 274
-
 static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_BLUETOOTH;
@@ -200,18 +165,6 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 	}
 }
 
-#define BTPROTO_L2CAP   0
-#define BTPROTO_HCI     1
-#define BTPROTO_SCO     2
-#define BTPROTO_RFCOMM  3
-#define BTPROTO_BNEP    4
-#define BTPROTO_CMTP    5
-#define BTPROTO_HIDP    6
-#define BTPROTO_AVDTP   7
-#ifndef BTPROTO_ISO
-#define BTPROTO_ISO     8
-#endif
-
 static struct socket_triplet bluetooth_triplets[] = {
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_L2CAP, .type = SOCK_SEQPACKET },
 	{ .family = PF_BLUETOOTH, .protocol = BTPROTO_SCO, .type = SOCK_SEQPACKET },
@@ -238,3 +191,4 @@ const struct netproto proto_bluetooth = {
 	.valid_triplets = bluetooth_triplets,
 	.nr_triplets = ARRAY_SIZE(bluetooth_triplets),
 };
+#endif /* USE_BLUETOOTH */
