@@ -8,6 +8,14 @@
 #include "random.h"
 #include "sanitise.h"
 
+static unsigned long safe_signals[] = {
+	SIGHUP, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+	SIGBUS, SIGFPE, SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE,
+	SIGALRM, SIGTERM, SIGCHLD, SIGCONT,
+	SIGURG, SIGXCPU, SIGXFSZ, SIGVTALRM,
+	SIGPROF, SIGWINCH, SIGIO, SIGSYS,
+};
+
 static void sanitise_rt_tgsigqueueinfo(struct syscallrecord *rec)
 {
 	siginfo_t *info;
@@ -27,9 +35,8 @@ struct syscallentry syscall_rt_tgsigqueueinfo = {
 	.name = "rt_tgsigqueueinfo",
 	.group = GROUP_SIGNAL,
 	.num_args = 4,
-	.argtype = { [0] = ARG_PID, [1] = ARG_PID, [2] = ARG_RANGE },
+	.argtype = { [0] = ARG_PID, [1] = ARG_PID, [2] = ARG_OP },
 	.argname = { [0] = "tgid", [1] = "pid", [2] = "sig", [3] = "uinfo" },
-	.arg_params[2].range.low = 0,
-	.arg_params[2].range.hi = _NSIG,
+	.arg_params[2].list = ARGLIST(safe_signals),
 	.sanitise = sanitise_rt_tgsigqueueinfo,
 };
