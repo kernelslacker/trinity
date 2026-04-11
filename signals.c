@@ -5,25 +5,28 @@
 #include "trinity.h"	// __unused__
 #include "signals.h"
 #include "shm.h"
+#include "pids.h"
 
 volatile sig_atomic_t sigalrm_pending;
 volatile sig_atomic_t xcpu_pending;
 volatile sig_atomic_t ctrlc_pending;
 
-static void ctrlc_handler(__unused__ int sig)
-{
-	ctrlc_pending = 1;
-}
-
 /*
  * SA_SIGINFO version: only honor SIGINT from the terminal (kernel) or
  * ourselves.  Children fuzzing kill/tkill/tgkill can send us SIGINT —
  * treat it the same as the other spoofable signals and ignore it.
+ *
+ * Used by both parent and children.  The parent calls panic() directly;
+ * children set ctrlc_pending and let the main loop exit cleanly.
  */
 static void sigint_handler(__unused__ int sig, siginfo_t *info, __unused__ void *ctx)
 {
-	if (info->si_code > 0 || info->si_pid == getpid())
-		panic(EXIT_SIGINT);
+	if (info->si_code > 0 || info->si_pid == getpid()) {
+		if (getpid() == mainpid)
+			panic(EXIT_SIGINT);
+		else
+			ctrlc_pending = 1;
+	}
 	/* Sent by a child process — ignore */
 }
 
@@ -135,8 +138,16 @@ void mask_signals_child(void)
 		(void)signal(SIGSEGV, SIG_DFL);
 	}
 
-	/* trap ctrl-c */
-	(void)signal(SIGINT, ctrlc_handler);
+	/* trap ctrl-c — use SA_SIGINFO so we can ignore child-sent SIGINTs,
+	 * same as the parent handler. Without this, children fuzzing
+	 * rt_tgsigqueueinfo/kill with SIGINT cause phantom ctrl-c exits. */
+	{
+		struct sigaction int_sa;
+		sigemptyset(&int_sa.sa_mask);
+		int_sa.sa_flags = SA_SIGINFO;
+		int_sa.sa_sigaction = sigint_handler;
+		(void)sigaction(SIGINT, &int_sa, NULL);
+	}
 }
 
 
