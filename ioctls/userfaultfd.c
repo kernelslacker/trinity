@@ -121,6 +121,21 @@ static void sanitise_uffdio_continue(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) uc;
 }
 
+static void sanitise_uffdio_poison(struct syscallrecord *rec)
+{
+	struct uffdio_poison *up;
+	struct map *map;
+
+	up = (struct uffdio_poison *) get_writable_address(sizeof(*up));
+	map = get_map();
+	if (map) {
+		up->range.start = (unsigned long) map->ptr;
+		up->range.len = map->size;
+	}
+	up->mode = RAND_BOOL() ? UFFDIO_POISON_MODE_DONTWAKE : 0;
+	rec->a3 = (unsigned long) up;
+}
+
 static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -140,6 +155,9 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 		break;
 	case UFFDIO_CONTINUE:
 		sanitise_uffdio_continue(rec);
+		break;
+	case UFFDIO_POISON:
+		sanitise_uffdio_poison(rec);
 		break;
 	default:
 		break;
