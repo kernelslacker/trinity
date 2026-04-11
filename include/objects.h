@@ -93,6 +93,10 @@ struct mqobj {
 	char name[8];	/* "/trinN\0" */
 };
 
+struct seccomp_notifobj {
+	int fd;
+};
+
 struct io_uringobj {
 	int fd;
 	void *sq_ring;		/* mmap'd SQ ring, NULL if not mapped */
@@ -155,6 +159,8 @@ struct object {
 		struct pidfdobj pidfdobj;
 
 		struct mqobj mqobj;
+
+		struct seccomp_notifobj seccomp_notifobj;
 
 		struct io_uringobj io_uringobj;
 
