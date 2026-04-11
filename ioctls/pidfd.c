@@ -5,6 +5,8 @@
 
 #include "ioctls.h"
 #include "objects.h"
+#include "random.h"
+#include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
 
@@ -48,11 +50,15 @@
 #endif
 
 /*
- * PIDFD_GET_INFO takes a struct pidfd_info pointer.  We don't need the
- * struct definition here — the fuzzer just passes random data — but we
- * do need the ioctl number.  Define a minimal placeholder if the real
- * header doesn't provide it.
+ * PIDFD_INFO_* flags and struct pidfd_info were added in Linux 6.13.
+ * Define them locally if the kernel headers don't provide them.
  */
+#ifndef PIDFD_INFO_PID
+#define PIDFD_INFO_PID		(1UL << 0)
+#define PIDFD_INFO_CREDS	(1UL << 1)
+#define PIDFD_INFO_CGROUPID	(1UL << 2)
+#endif
+
 #ifndef PIDFD_GET_INFO
 struct pidfd_info {
 	__u64 mask;
@@ -68,12 +74,7 @@ struct pidfd_info {
 	__u32 sgid;
 	__u32 fsuid;
 	__u32 fsgid;
-	__s32 exit_code;
-	struct {
-		__u32 coredump_mask;
-		__u32 coredump_signal;
-	};
-	__u64 supported_mask;
+	__u32 spare0[1];
 };
 #define PIDFD_GET_INFO _IOWR(PIDFS_IOCTL_MAGIC, 11, struct pidfd_info)
 #endif
@@ -93,6 +94,25 @@ static int pidfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	return -1;
 }
 
+static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	struct pidfd_info *info;
+	static const unsigned long info_flags[] = {
+		PIDFD_INFO_PID,
+		PIDFD_INFO_CREDS,
+		PIDFD_INFO_CGROUPID,
+	};
+
+	pick_random_ioctl(grp, rec);
+
+	if (rec->a2 != PIDFD_GET_INFO)
+		return;
+
+	info = (struct pidfd_info *) get_writable_address(sizeof(*info));
+	info->mask = set_rand_bitmask(ARRAY_SIZE(info_flags), info_flags);
+	rec->a3 = (unsigned long) info;
+}
+
 static const struct ioctl pidfd_ioctls[] = {
 	IOCTL(PIDFD_GET_CGROUP_NAMESPACE),
 	IOCTL(PIDFD_GET_IPC_NAMESPACE),
@@ -110,7 +130,7 @@ static const struct ioctl pidfd_ioctls[] = {
 static const struct ioctl_group pidfd_grp = {
 	.name = "pidfd",
 	.fd_test = pidfd_fd_test,
-	.sanitise = pick_random_ioctl,
+	.sanitise = pidfd_sanitise,
 	.ioctls = pidfd_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(pidfd_ioctls),
 };
