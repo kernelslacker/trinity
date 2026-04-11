@@ -80,12 +80,27 @@ static void sanitise_clone3(struct syscallrecord *rec)
 			args->pidfd = (unsigned long) pidfd;
 	}
 
+	if (args->flags & CLONE_NEWPID) {
+		unsigned int count = RAND_RANGE(1, 3);
+		pid_t *set_tid = zmalloc(count * sizeof(pid_t));
+		unsigned int i;
+
+		for (i = 0; i < count; i++)
+			set_tid[i] = get_pid();
+		args->set_tid = (unsigned long) set_tid;
+		args->set_tid_size = count;
+	}
+
 	rec->a1 = (unsigned long) args;
 	rec->a2 = RAND_ARRAY(clone3_sizes);
 }
 
 static void post_clone3(struct syscallrecord *rec)
 {
+	struct clone_args *args = (struct clone_args *)(unsigned long) rec->a1;
+
+	if (args != NULL && args->set_tid != 0)
+		deferred_free_enqueue((void *)(unsigned long) args->set_tid, NULL);
 	deferred_freeptr(&rec->a1);
 }
 
