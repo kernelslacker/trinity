@@ -102,6 +102,25 @@ static void sanitise_uffdio_writeprotect(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) uwp;
 }
 
+static void sanitise_uffdio_continue(struct syscallrecord *rec)
+{
+	struct uffdio_continue *uc;
+	struct map *map;
+	static const unsigned long continue_modes[] = {
+		UFFDIO_CONTINUE_MODE_DONTWAKE,
+		UFFDIO_CONTINUE_MODE_WP,
+	};
+
+	uc = (struct uffdio_continue *) get_writable_address(sizeof(*uc));
+	map = get_map();
+	if (map) {
+		uc->range.start = (unsigned long) map->ptr;
+		uc->range.len = map->size;
+	}
+	uc->mode = set_rand_bitmask(ARRAY_SIZE(continue_modes), continue_modes);
+	rec->a3 = (unsigned long) uc;
+}
+
 static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -118,6 +137,9 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 		break;
 	case UFFDIO_WRITEPROTECT:
 		sanitise_uffdio_writeprotect(rec);
+		break;
+	case UFFDIO_CONTINUE:
+		sanitise_uffdio_continue(rec);
 		break;
 	default:
 		break;
