@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <mqueue.h>
 #include <string.h>
+#include <unistd.h>
 #include "random.h"
 #include "sanitise.h"
 
@@ -52,6 +53,21 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) attr;
 }
 
+static void post_mq_open(struct syscallrecord *rec)
+{
+	int fd = rec->retval;
+
+	if (fd == -1)
+		return;
+
+	close(fd);
+
+	/* Also unlink the queue to avoid leaking kernel IPC resources.
+	 * The name pointer from sanitise is in the writable page and
+	 * stays valid through the post handler. */
+	mq_unlink((const char *) rec->a1);
+}
+
 struct syscallentry syscall_mq_open = {
 	.name = "mq_open",
 	.group = GROUP_IPC,
@@ -61,4 +77,5 @@ struct syscallentry syscall_mq_open = {
 	.arg_params[1].list = ARGLIST(mq_open_flags),
 	.rettype = RET_FD,
 	.sanitise = sanitise_mq_open,
+	.post = post_mq_open,
 };
