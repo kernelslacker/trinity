@@ -24,18 +24,6 @@
 #define MFD_EXEC 0x0010U
 #endif
 
-#ifndef USE_MEMFD_CREATE
-
-static int memfd_create(__unused__ const char *uname, __unused__ unsigned int flag)
-{
-#ifdef SYS_memfd_create
-	return syscall(SYS_memfd_create, uname, flag);
-#else
-	return -ENOSYS;
-#endif
-}
-#endif
-
 static void arm_memfd(int fd)
 {
 	static const unsigned int seal_flags[] = {
