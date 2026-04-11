@@ -15,31 +15,6 @@
 #include "ioctls.h"
 #include "utils.h"
 
-/* Copy-paste relevant stuff from header, as it is buggy. */
-/* #include <drm/sis_drm.h> */
-
-/* SiS specific ioctls */
-#define NOT_USED_0_3
-#define DRM_SIS_FB_ALLOC	0x04
-#define DRM_SIS_FB_FREE	        0x05
-#define NOT_USED_6_12
-#define DRM_SIS_AGP_INIT	0x13
-#define DRM_SIS_AGP_ALLOC	0x14
-#define DRM_SIS_AGP_FREE	0x15
-#define DRM_SIS_FB_INIT	        0x16
-
-#define DRM_IOCTL_SIS_FB_ALLOC		DRM_IOWR(DRM_COMMAND_BASE + DRM_SIS_FB_ALLOC, drm_sis_mem_t)
-#define DRM_IOCTL_SIS_FB_FREE		DRM_IOW( DRM_COMMAND_BASE + DRM_SIS_FB_FREE, drm_sis_mem_t)
-#define DRM_IOCTL_SIS_AGP_INIT		DRM_IOWR(DRM_COMMAND_BASE + DRM_SIS_AGP_INIT, drm_sis_agp_t)
-#define DRM_IOCTL_SIS_AGP_ALLOC		DRM_IOWR(DRM_COMMAND_BASE + DRM_SIS_AGP_ALLOC, drm_sis_mem_t)
-#define DRM_IOCTL_SIS_AGP_FREE		DRM_IOW( DRM_COMMAND_BASE + DRM_SIS_AGP_FREE, drm_sis_mem_t)
-#define DRM_IOCTL_SIS_FB_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_SIS_FB_INIT, drm_sis_fb_t)
-/*
-#define DRM_IOCTL_SIS_FLIP		DRM_IOW( 0x48, drm_sis_flip_t)
-#define DRM_IOCTL_SIS_FLIP_INIT		DRM_IO(  0x49)
-#define DRM_IOCTL_SIS_FLIP_FINAL	DRM_IO(  0x50)
-*/
-
 /* deprecated nouveau ioctls */
 /*
  * Copyright 2005 Stephane Marchesin.
@@ -138,24 +113,6 @@ struct drm_nouveau_gpuobj_free {
 #ifndef DRM_IOCTL_NOUVEAU_GPUOBJ_FREE
 #define DRM_IOCTL_NOUVEAU_GPUOBJ_FREE        DRM_IOW (DRM_COMMAND_BASE + DRM_NOUVEAU_GPUOBJ_FREE, struct drm_nouveau_gpuobj_free)
 #endif
-
-typedef struct {
-	int context;
-	unsigned long offset;
-	unsigned long size;
-	unsigned long free;
-} drm_sis_mem_t;
-
-typedef struct {
-	unsigned long offset, size;
-} drm_sis_agp_t;
-
-typedef struct {
-	unsigned long offset, size;
-} drm_sis_fb_t;
-
-/* header is buggy. */
-/* #include <drm/via_drm.h> */
 
 static const struct ioctl drm_ioctls[] = {
 	/* drm/drm.h */
@@ -432,32 +389,6 @@ static const struct ioctl drm_ioctls[] = {
 #ifdef DRM_IOCTL_RADEON_GEM_VA
 	IOCTL(DRM_IOCTL_RADEON_GEM_VA),
 #endif
-
-	/* sis_drm.h */
-	IOCTL(DRM_IOCTL_SIS_FB_ALLOC),
-	IOCTL(DRM_IOCTL_SIS_FB_FREE),
-	IOCTL(DRM_IOCTL_SIS_AGP_INIT),
-	IOCTL(DRM_IOCTL_SIS_AGP_ALLOC),
-	IOCTL(DRM_IOCTL_SIS_AGP_FREE),
-	IOCTL(DRM_IOCTL_SIS_FB_INIT),
-
-	/* via_drm.h */
-	/*
-	IOCTL(DRM_IOCTL_VIA_ALLOCMEM),
-	IOCTL(DRM_IOCTL_VIA_FREEMEM),
-	IOCTL(DRM_IOCTL_VIA_AGP_INIT),
-	IOCTL(DRM_IOCTL_VIA_FB_INIT),
-	IOCTL(DRM_IOCTL_VIA_MAP_INIT),
-	IOCTL(DRM_IOCTL_VIA_DEC_FUTEX),
-	IOCTL(DRM_IOCTL_VIA_DMA_INIT),
-	IOCTL(DRM_IOCTL_VIA_CMDBUFFER),
-	IOCTL(DRM_IOCTL_VIA_FLUSH),
-	IOCTL(DRM_IOCTL_VIA_PCICMD),
-	IOCTL(DRM_IOCTL_VIA_CMDBUF_SIZE),
-	IOCTL(DRM_IOCTL_VIA_WAIT_IRQ),
-	IOCTL(DRM_IOCTL_VIA_DMA_BLIT),
-	IOCTL(DRM_IOCTL_VIA_BLIT_SYNC),
-	*/
 };
 
 static const char *const drm_devs[] = {
