@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "child.h"
+#include "fd.h"
 #include "fd-event.h"
 #include "objects.h"
 #include "pids.h"
@@ -52,6 +53,14 @@ struct syscallentry syscall_dup = {
  * Enqueue a CLOSE event for newfd (if it was tracked) and a DUP event
  * for the new oldfd→newfd mapping.
  */
+
+static void sanitise_dup2(struct syscallrecord *rec)
+{
+	/* Don't let newfd clobber stdin/stdout/stderr. */
+	while (rec->a2 <= 2)
+		rec->a2 = get_random_fd();
+}
+
 static void post_dup2(struct syscallrecord *rec)
 {
 	struct childdata *child;
@@ -88,6 +97,7 @@ struct syscallentry syscall_dup2 = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_FD },
 	.argname = { [0] = "oldfd", [1] = "newfd" },
 	.rettype = RET_FD,
+	.sanitise = sanitise_dup2,
 	.post = post_dup2,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
@@ -112,6 +122,7 @@ struct syscallentry syscall_dup3 = {
 	.argname = { [0] = "oldfd", [1] = "newfd", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(dup3_flags),
 	.rettype = RET_FD,
+	.sanitise = sanitise_dup2,
 	.post = post_dup2,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
