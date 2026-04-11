@@ -46,11 +46,35 @@ static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
  */
 static void arm_userfaultfd(int fd)
 {
+	static const __u64 feature_flags[] = {
+		UFFD_FEATURE_PAGEFAULT_FLAG_WP,
+		UFFD_FEATURE_EVENT_FORK,
+		UFFD_FEATURE_EVENT_REMAP,
+		UFFD_FEATURE_EVENT_REMOVE,
+		UFFD_FEATURE_MISSING_HUGETLBFS,
+		UFFD_FEATURE_MISSING_SHMEM,
+		UFFD_FEATURE_EVENT_UNMAP,
+		UFFD_FEATURE_SIGBUS,
+		UFFD_FEATURE_THREAD_ID,
+		UFFD_FEATURE_MINOR_HUGETLBFS,
+		UFFD_FEATURE_MINOR_SHMEM,
+		UFFD_FEATURE_EXACT_ADDRESS,
+		UFFD_FEATURE_WP_HUGETLBFS_SHMEM,
+		UFFD_FEATURE_WP_UNPOPULATED,
+		UFFD_FEATURE_POISON,
+		UFFD_FEATURE_WP_ASYNC,
+		UFFD_FEATURE_MOVE,
+	};
 	struct uffdio_api api;
+	unsigned int i;
 
 	memset(&api, 0, sizeof(api));
 	api.api = UFFD_API;
 	api.features = 0;
+	for (i = 0; i < ARRAY_SIZE(feature_flags); i++) {
+		if (rand() & 1)
+			api.features |= feature_flags[i];
+	}
 
 	ioctl(fd, UFFDIO_API, &api);
 }
