@@ -119,6 +119,7 @@ df = $(DEPDIR)/$(*D)/$(*F)
 
 clean:
 	@rm -f $(OBJS)
+	@rm -f *.o net/*.o
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags
