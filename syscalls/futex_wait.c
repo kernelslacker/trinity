@@ -22,9 +22,13 @@
 #define FUTEX2_PRIVATE		0x80
 #endif
 
+#ifndef FUTEX2_MPOL
+#define FUTEX2_MPOL		0x08
+#endif
+
 static unsigned long futex2_flags[] = {
 	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U32, FUTEX2_SIZE_U64,
-	FUTEX2_NUMA, FUTEX2_PRIVATE,
+	FUTEX2_NUMA, FUTEX2_PRIVATE, FUTEX2_MPOL,
 };
 
 static unsigned long futex_wait_clockids[] = {

@@ -211,8 +211,13 @@ static inline int random_futex_wake_op(void)
 		FUTEX_OP_CMP_EQ, FUTEX_OP_CMP_NE, FUTEX_OP_CMP_LT,
 		FUTEX_OP_CMP_LE, FUTEX_OP_CMP_GT, FUTEX_OP_CMP_GE,
 	};
+	unsigned int op = RAND_ARRAY(op_flags) | RAND_ARRAY(cmp_flags);
 
-	return RAND_ARRAY(op_flags) | RAND_ARRAY(cmp_flags);
+	/* Exercise the shift path: bit 3 of op field uses (1 << oparg) */
+	if (RAND_BOOL())
+		op |= FUTEX_OP_OPARG_SHIFT;
+
+	return op;
 }
 
 /*
