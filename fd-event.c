@@ -72,9 +72,12 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 	/* Check and reset overflow counter. */
 	overflow = atomic_exchange_explicit(&ring->overflow, 0,
 					    memory_order_relaxed);
-	if (overflow > 0)
+	if (overflow > 0) {
 		output(1, "fd_event: ring overflow, %u events dropped\n",
 		       overflow);
+		__atomic_add_fetch(&shm->stats.fd_events_dropped, overflow,
+				   __ATOMIC_RELAXED);
+	}
 
 	tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
 	tail &= (FD_EVENT_RING_SIZE - 1);
