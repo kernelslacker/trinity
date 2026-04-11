@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "files.h"
 #include "random.h"
 #include "sanitise.h"
@@ -65,6 +66,21 @@ static void sanitise_openat(struct syscallrecord *rec)
 }
 
 /*
+ * Close fds returned by open-family syscalls.  These fds point at
+ * random filesystem paths and are not part of the curated fd pool
+ * (which has its own providers for /dev, /proc, /sys, testfiles).
+ * Without this, every successful open/openat/openat2/creat leaks
+ * an fd in the child, eventually exhausting the fd table.
+ */
+static void post_open(struct syscallrecord *rec)
+{
+	int fd = rec->retval;
+
+	if (fd != -1)
+		close(fd);
+}
+
+/*
  * SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, int, mode)
  */
 struct syscallentry syscall_open = {
@@ -76,6 +92,7 @@ struct syscallentry syscall_open = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_open,
+	.post = post_open,
 	.group = GROUP_VFS,
 };
 
@@ -91,6 +108,7 @@ struct syscallentry syscall_openat = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
+	.post = post_open,
 	.group = GROUP_VFS,
 };
 
@@ -134,6 +152,10 @@ static void sanitise_openat2(struct syscallrecord *rec)
 
 static void post_openat2(struct syscallrecord *rec)
 {
+	int fd = rec->retval;
+
+	if (fd != -1)
+		close(fd);
 	deferred_freeptr(&rec->a3);
 }
 
@@ -163,5 +185,6 @@ struct syscallentry syscall_open_by_handle_at = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,	// For now we only sanitise .flags, which is also arg3
+	.post = post_open,
 	.group = GROUP_VFS,
 };
