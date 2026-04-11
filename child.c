@@ -685,8 +685,10 @@ void child_process(struct childdata *child, int childno)
 		default:			ret = random_syscall(child); break;
 		}
 
-		if (child->op_type != CHILD_OP_SYSCALL)
+		if (child->op_type != CHILD_OP_SYSCALL) {
 			alarm(0);
+			__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
+		}
 
 		enable_coredumps();
 
