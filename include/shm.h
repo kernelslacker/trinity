@@ -68,7 +68,7 @@ struct shm_s {
 	/* various flags. */
 	enum exit_reasons exit_reason;
 	bool dont_make_it_fail;
-	bool spawn_no_more;
+	_Atomic bool spawn_no_more;
 	bool ready;
 	bool postmortem_in_progress;
 
