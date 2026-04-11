@@ -360,9 +360,6 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 #elif defined(__alpha__)
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		AUDIT_ARCH_ALPHA
-#elif defined(__ia64__)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_IA64
 #elif defined(__sh__)
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		AUDIT_ARCH_SH

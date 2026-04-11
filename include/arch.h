@@ -14,10 +14,6 @@
 #include "arch-ppc.h"
 #endif
 
-#ifdef __ia64__
-#include "arch-ia64.h"
-#endif
-
 #ifdef __sparc__
 #include "arch-sparc.h"
 #endif
