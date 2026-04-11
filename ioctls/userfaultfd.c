@@ -46,6 +46,28 @@ static void sanitise_uffdio_register(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) ur;
 }
 
+static void sanitise_uffdio_copy(struct syscallrecord *rec)
+{
+	struct uffdio_copy *uc;
+	struct map *map;
+	static const unsigned long copy_modes[] = {
+		UFFDIO_COPY_MODE_DONTWAKE,
+		UFFDIO_COPY_MODE_WP,
+	};
+
+	uc = (struct uffdio_copy *) get_writable_address(sizeof(*uc));
+	map = get_map();
+	if (map) {
+		uc->dst = (unsigned long) map->ptr;
+		uc->len = map->size;
+	}
+	map = get_map();
+	if (map)
+		uc->src = (unsigned long) map->ptr;
+	uc->mode = set_rand_bitmask(ARRAY_SIZE(copy_modes), copy_modes);
+	rec->a3 = (unsigned long) uc;
+}
+
 static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -53,6 +75,9 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 	switch (rec->a2) {
 	case UFFDIO_REGISTER:
 		sanitise_uffdio_register(rec);
+		break;
+	case UFFDIO_COPY:
+		sanitise_uffdio_copy(rec);
 		break;
 	default:
 		break;
