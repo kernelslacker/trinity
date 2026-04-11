@@ -181,6 +181,12 @@ enum perf_branch_sample_type_shift {
 
 	PERF_SAMPLE_BRANCH_TYPE_SAVE_SHIFT	= 16, /* save branch type */
 
+	PERF_SAMPLE_BRANCH_HW_INDEX_SHIFT	= 17, /* save low level index of raw branch records */
+
+	PERF_SAMPLE_BRANCH_PRIV_SAVE_SHIFT	= 18, /* save privilege mode */
+
+	PERF_SAMPLE_BRANCH_COUNTERS_SHIFT	= 19, /* save occurrences of events on a branch */
+
 	PERF_SAMPLE_BRANCH_MAX_SHIFT		/* non-ABI */
 };
 
@@ -207,6 +213,15 @@ enum perf_branch_sample_type {
 
 	PERF_SAMPLE_BRANCH_TYPE_SAVE	=
 		1U << PERF_SAMPLE_BRANCH_TYPE_SAVE_SHIFT,
+
+	PERF_SAMPLE_BRANCH_HW_INDEX	=
+		1U << PERF_SAMPLE_BRANCH_HW_INDEX_SHIFT,
+
+	PERF_SAMPLE_BRANCH_PRIV_SAVE	=
+		1U << PERF_SAMPLE_BRANCH_PRIV_SAVE_SHIFT,
+
+	PERF_SAMPLE_BRANCH_COUNTERS	=
+		1U << PERF_SAMPLE_BRANCH_COUNTERS_SHIFT,
 
 	PERF_SAMPLE_BRANCH_MAX		= 1U << PERF_SAMPLE_BRANCH_MAX_SHIFT,
 };
