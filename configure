@@ -105,7 +105,7 @@ fi
 #############################################################################################
 # is /usr/include/linux/if_pppox.h new enough to feature pppol2tpv3
 #
-echo -n "[*] Checking if pppox can use pppol2tv3.. "
+echo -n "[*] Checking if pppox can use pppol2tpv3.. "
 rm -f "$TMP" || exit 1
 
 cat >"$TMP.c" << EOF
