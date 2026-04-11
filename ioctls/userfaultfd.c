@@ -136,6 +136,28 @@ static void sanitise_uffdio_poison(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) up;
 }
 
+static void sanitise_uffdio_move(struct syscallrecord *rec)
+{
+	struct uffdio_move *um;
+	struct map *map;
+	static const unsigned long move_modes[] = {
+		UFFDIO_MOVE_MODE_DONTWAKE,
+		UFFDIO_MOVE_MODE_ALLOW_SRC_HOLES,
+	};
+
+	um = (struct uffdio_move *) get_writable_address(sizeof(*um));
+	map = get_map();
+	if (map) {
+		um->dst = (unsigned long) map->ptr;
+		um->len = map->size;
+	}
+	map = get_map();
+	if (map)
+		um->src = (unsigned long) map->ptr;
+	um->mode = set_rand_bitmask(ARRAY_SIZE(move_modes), move_modes);
+	rec->a3 = (unsigned long) um;
+}
+
 static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -158,6 +180,9 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 		break;
 	case UFFDIO_POISON:
 		sanitise_uffdio_poison(rec);
+		break;
+	case UFFDIO_MOVE:
+		sanitise_uffdio_move(rec);
 		break;
 	default:
 		break;
