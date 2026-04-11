@@ -295,6 +295,12 @@ static const struct ioctl drm_ioctls[] = {
 #ifdef DRM_IOCTL_CRTC_QUEUE_SEQUENCE
 	IOCTL(DRM_IOCTL_CRTC_QUEUE_SEQUENCE),
 #endif
+#ifdef DRM_IOCTL_MODE_CLOSEFB
+	IOCTL(DRM_IOCTL_MODE_CLOSEFB),
+#endif
+#ifdef DRM_IOCTL_SET_CLIENT_NAME
+	IOCTL(DRM_IOCTL_SET_CLIENT_NAME),
+#endif
 
 #ifdef USE_DRM_EXYNOS
 	/* exynos_drm.h */
