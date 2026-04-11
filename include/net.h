@@ -96,6 +96,7 @@ extern const struct netproto proto_qipcrtr;
 extern const struct netproto proto_smc;
 extern const struct netproto proto_vsock;
 extern const struct netproto proto_xdp;
+extern const struct netproto proto_mctp;
 
 /* bpf */
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
