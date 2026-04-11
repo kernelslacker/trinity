@@ -61,10 +61,16 @@ static unsigned int fd_hash_slot(int fd)
 static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type)
 {
 	unsigned int slot;
+	unsigned int probe;
 
 	slot = fd_hash_slot(fd);
-	while (fd_hash[slot].fd != -1)
+	for (probe = 0; probe < FD_HASH_SIZE; probe++) {
+		if (fd_hash[slot].fd == -1)
+			break;
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
+	}
+	if (probe == FD_HASH_SIZE)
+		return;
 
 	fd_hash[slot].fd = fd;
 	fd_hash[slot].obj = obj;
