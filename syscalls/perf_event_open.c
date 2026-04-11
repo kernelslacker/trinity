@@ -907,6 +907,16 @@ static long long random_sample_type(void)
 		sample_type |= PERF_SAMPLE_REGS_INTR;
 	if (RAND_BOOL())
 		sample_type |= PERF_SAMPLE_PHYS_ADDR;
+	if (RAND_BOOL())
+		sample_type |= PERF_SAMPLE_AUX;
+	if (RAND_BOOL())
+		sample_type |= PERF_SAMPLE_CGROUP;
+	if (RAND_BOOL())
+		sample_type |= PERF_SAMPLE_DATA_PAGE_SIZE;
+	if (RAND_BOOL())
+		sample_type |= PERF_SAMPLE_CODE_PAGE_SIZE;
+	if (RAND_BOOL())
+		sample_type |= PERF_SAMPLE_WEIGHT_STRUCT;
 
 	return sample_type;
 }
