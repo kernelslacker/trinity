@@ -2,20 +2,21 @@
  *   SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit, u32, min_complete, u32, flags, const sigset_t __user *, sig, size_t, sigsz)
  */
 #include <string.h>
+#include <linux/io_uring.h>
 
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 
-#define IORING_ENTER_GETEVENTS		(1U << 0)
-#define IORING_ENTER_SQ_WAKEUP		(1U << 1)
-#define IORING_ENTER_SQ_WAIT		(1U << 2)
-#define IORING_ENTER_EXT_ARG		(1U << 3)
-#define IORING_ENTER_REGISTERED_RING	(1U << 4)
-#define IORING_ENTER_ABS_TIMER		(1U << 5)
-#define IORING_ENTER_EXT_ARG_REG	(1U << 6)
-#define IORING_ENTER_NO_IOWAIT		(1U << 7)
+/* Opcodes added after Linux 6.12 — not in Debian 13 kernel headers. */
+#ifndef IORING_OP_NOP128
+#define IORING_OP_NOP128	63
+#define IORING_OP_URING_CMD128	64
+#define TRINITY_IORING_OP_LAST	65
+#else
+#define TRINITY_IORING_OP_LAST	IORING_OP_LAST
+#endif
 
 static unsigned long io_uring_enter_flags[] = {
 	IORING_ENTER_GETEVENTS, IORING_ENTER_SQ_WAKEUP,
@@ -41,76 +42,6 @@ struct trinity_io_uring_sqe {
 	unsigned long long addr3;
 	unsigned long long __pad2;
 };
-
-/* Common opcodes from linux/io_uring.h */
-#ifndef IORING_OP_NOP
-#define IORING_OP_NOP		0
-#define IORING_OP_READV		1
-#define IORING_OP_WRITEV	2
-#define IORING_OP_FSYNC		3
-#define IORING_OP_READ_FIXED	4
-#define IORING_OP_WRITE_FIXED	5
-#define IORING_OP_POLL_ADD	6
-#define IORING_OP_POLL_REMOVE	7
-#define IORING_OP_SYNC_FILE_RANGE 8
-#define IORING_OP_SENDMSG	9
-#define IORING_OP_RECVMSG	10
-#define IORING_OP_TIMEOUT	11
-#define IORING_OP_TIMEOUT_REMOVE 12
-#define IORING_OP_ACCEPT	13
-#define IORING_OP_ASYNC_CANCEL	14
-#define IORING_OP_LINK_TIMEOUT	15
-#define IORING_OP_CONNECT	16
-#define IORING_OP_FALLOCATE	17
-#define IORING_OP_OPENAT	18
-#define IORING_OP_CLOSE		19
-#define IORING_OP_FILES_UPDATE	20
-#define IORING_OP_STATX		21
-#define IORING_OP_READ		22
-#define IORING_OP_WRITE		23
-#define IORING_OP_FADVISE	24
-#define IORING_OP_MADVISE	25
-#define IORING_OP_SEND		26
-#define IORING_OP_RECV		27
-#define IORING_OP_OPENAT2	28
-#define IORING_OP_EPOLL_CTL	29
-#define IORING_OP_SPLICE	30
-#define IORING_OP_PROVIDE_BUFFERS 31
-#define IORING_OP_REMOVE_BUFFERS 32
-#define IORING_OP_TEE		33
-#define IORING_OP_SHUTDOWN	34
-#define IORING_OP_RENAMEAT	35
-#define IORING_OP_UNLINKAT	36
-#define IORING_OP_MKDIRAT	37
-#define IORING_OP_SYMLINKAT	38
-#define IORING_OP_LINKAT	39
-#define IORING_OP_MSG_RING	40
-#define IORING_OP_FSETXATTR	41
-#define IORING_OP_SETXATTR	42
-#define IORING_OP_FGETXATTR	43
-#define IORING_OP_GETXATTR	44
-#define IORING_OP_SOCKET	45
-#define IORING_OP_URING_CMD	46
-#define IORING_OP_SEND_ZC	47
-#define IORING_OP_SENDMSG_ZC	48
-#define IORING_OP_READ_MULTISHOT 49
-#define IORING_OP_WAITID	50
-#define IORING_OP_FUTEX_WAIT	51
-#define IORING_OP_FUTEX_WAKE	52
-#define IORING_OP_FUTEX_WAITV	53
-#define IORING_OP_FIXED_FD_INSTALL 54
-#define IORING_OP_FTRUNCATE	55
-#define IORING_OP_BIND		56
-#define IORING_OP_LISTEN	57
-#define IORING_OP_RECV_ZC	58
-#define IORING_OP_EPOLL_WAIT	59
-#define IORING_OP_READV_FIXED	60
-#define IORING_OP_WRITEV_FIXED	61
-#define IORING_OP_PIPE		62
-#define IORING_OP_NOP128	63
-#define IORING_OP_URING_CMD128	64
-#define IORING_OP_LAST		65
-#endif
 
 /* SQE flags */
 #ifndef IOSQE_FIXED_FILE
@@ -141,7 +72,7 @@ static void fill_sqe(struct trinity_io_uring_sqe *sqe)
 	if (ONE_IN(8))
 		sqe->opcode = rand() & 0xff;
 	else
-		sqe->opcode = rand() % IORING_OP_LAST;
+		sqe->opcode = rand() % TRINITY_IORING_OP_LAST;
 
 	/* SQE flags: random combination of valid bits, rarely garbage. */
 	if (ONE_IN(10))
