@@ -50,10 +50,6 @@
 #include "arch-parisc.h"
 #endif
 
-#ifdef __tile__
-#include "arch-tile.h"
-#endif
-
 #if defined(__riscv) || defined(__riscv__)
 #if __riscv_xlen == 64
 #include "arch-riscv64.h"
