@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <linux/nfc.h>
 #include <stdlib.h>
 #include "compat.h"
 #include "net.h"
@@ -39,8 +40,6 @@ static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		*addrlen = sizeof(struct sockaddr_nfc);
 	}
 }
-
-#define SOL_NFC 280
 
 static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/socket.h>
+#include <linux/types.h>
 
 /* bits/eventfd.h */
 #ifndef EFD_SEMAPHORE
@@ -1125,32 +1126,6 @@ enum kcmp_type {
 #define SO_IPRMDATA_MSG 0x0080          /* send/recv IPRM_DATA msgs */
 #define SO_MSGLIMIT     0x1000          /* get/set IUCV MSGLIMIT */
 #define SO_MSGSIZE      0x0800          /* get maximum msgsize */
-#endif
-
-/* linux/nfc.h */
-#ifndef sockaddr_nfc
-#include <linux/types.h>
-
-struct sockaddr_nfc {
-	sa_family_t sa_family;
-	__u32 dev_idx;
-	__u32 target_idx;
-	__u32 nfc_protocol;
-};
-#endif
-
-#ifndef NFC_LLCP_MAX_SERVICE_NAME
-#define NFC_LLCP_MAX_SERVICE_NAME 63
-struct sockaddr_nfc_llcp {
-	sa_family_t sa_family;
-	__u32 dev_idx;
-	__u32 target_idx;
-	__u32 nfc_protocol;
-	__u8 dsap;
-	__u8 ssap;
-	char service_name[NFC_LLCP_MAX_SERVICE_NAME];
-	__kernel_size_t service_name_len;
-};
 #endif
 
 /* linux/inotify.h */
