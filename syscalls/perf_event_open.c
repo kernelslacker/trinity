@@ -1026,6 +1026,12 @@ static long long random_branch_sample_type(void)
 		branch_sample |= PERF_SAMPLE_BRANCH_NO_CYCLES;
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_TYPE_SAVE;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_HW_INDEX;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_PRIV_SAVE;
+	if (RAND_BOOL())
+		branch_sample |= PERF_SAMPLE_BRANCH_COUNTERS;
 
 
 	return branch_sample;
