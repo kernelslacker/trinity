@@ -1383,6 +1383,10 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 static void post_perf_event_open(struct syscallrecord *rec)
 {
+	int fd = rec->retval;
+
+	if (fd != -1)
+		close(fd);
 	deferred_freeptr(&rec->a1);
 }
 
