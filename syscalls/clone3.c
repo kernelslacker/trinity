@@ -95,6 +95,20 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	if (args->flags & CLONE_INTO_CGROUP)
 		args->cgroup = get_random_fd();
 
+	if (args->flags & CLONE_CHILD_SETTID) {
+		void *child_tid = get_writable_address(sizeof(int));
+
+		if (child_tid != NULL)
+			args->child_tid = (unsigned long) child_tid;
+	}
+
+	if (args->flags & CLONE_PARENT_SETTID) {
+		void *parent_tid = get_writable_address(sizeof(int));
+
+		if (parent_tid != NULL)
+			args->parent_tid = (unsigned long) parent_tid;
+	}
+
 	rec->a1 = (unsigned long) args;
 	rec->a2 = RAND_ARRAY(clone3_sizes);
 }
