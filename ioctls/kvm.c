@@ -42,7 +42,6 @@ static const struct ioctl kvm_ioctls[] = {
 	IOCTL(KVM_GET_TSC_KHZ),
 	IOCTL(KVM_SIGNAL_MSI),
 #ifdef X86
-	IOCTL(KVM_SET_MEMORY_ALIAS),
 	IOCTL(KVM_GET_PIT),
 	IOCTL(KVM_SET_PIT),
 	IOCTL(KVM_GET_PIT2),
