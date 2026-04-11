@@ -42,6 +42,15 @@ static const struct ioctl vfio_ioctls[] = {
 #ifdef VFIO_IOMMU_DIRTY_PAGES
 	IOCTL(VFIO_IOMMU_DIRTY_PAGES),
 #endif
+#ifdef VFIO_DEVICE_BIND_IOMMUFD
+	IOCTL(VFIO_DEVICE_BIND_IOMMUFD),
+#endif
+#ifdef VFIO_DEVICE_ATTACH_IOMMUFD_PT
+	IOCTL(VFIO_DEVICE_ATTACH_IOMMUFD_PT),
+#endif
+#ifdef VFIO_DEVICE_DETACH_IOMMUFD_PT
+	IOCTL(VFIO_DEVICE_DETACH_IOMMUFD_PT),
+#endif
 };
 
 static const char *const vfio_devs[] = {
