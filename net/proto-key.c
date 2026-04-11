@@ -1,40 +1,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdlib.h>
+#include <linux/pfkeyv2.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"
-
-#define PF_KEY_V2	2
-
-/* SADB message types */
-#define SADB_GETSPI		1
-#define SADB_UPDATE		2
-#define SADB_ADD		3
-#define SADB_DELETE		4
-#define SADB_GET		5
-#define SADB_REGISTER		7
-#define SADB_FLUSH		9
-#define SADB_DUMP		10
-#define SADB_X_PROMISC		11
-#define SADB_X_SPDADD		13
-#define SADB_X_SPDFLUSH		17
-
-/* SA types */
-#define SADB_SATYPE_AH		2
-#define SADB_SATYPE_ESP		3
-#define SADB_X_SATYPE_IPCOMP	9
-
-struct sadb_msg {
-	__u8  sadb_msg_version;
-	__u8  sadb_msg_type;
-	__u8  sadb_msg_errno;
-	__u8  sadb_msg_satype;
-	__u16 sadb_msg_len;
-	__u16 sadb_msg_reserved;
-	__u32 sadb_msg_seq;
-	__u32 sadb_msg_pid;
-};
 
 static void key_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
