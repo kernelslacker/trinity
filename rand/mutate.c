@@ -60,8 +60,8 @@ static unsigned long mutate_alignment(unsigned long val)
 		/* Align down to page boundary */
 		return val & ~(page_size - 1);
 	case 1:
-		/* One byte past a page boundary */
-		return (val & ~(page_size - 1)) + page_size + 1;
+		/* One byte past a page boundary (first byte of next page) */
+		return (val | (page_size - 1)) + 1;
 	case 2:
 		/* Align to cacheline (64 bytes) */
 		return val & ~63UL;
