@@ -8,7 +8,7 @@
 
 void setup_fd_providers(void);
 
-unsigned int open_fds(void);
+bool open_fds(void);
 
 void process_fds_param(char *optarg, bool enable);
 
