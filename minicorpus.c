@@ -73,6 +73,7 @@ void minicorpus_save(struct syscallrecord *rec)
 	struct corpus_entry *ent;
 	struct syscallentry *entry;
 	unsigned int nr = rec->nr;
+	unsigned int i;
 
 	if (minicorpus_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return;
@@ -93,6 +94,13 @@ void minicorpus_save(struct syscallrecord *rec)
 	ent->args[4] = rec->a5;
 	ent->args[5] = rec->a6;
 	ent->num_args = entry->num_args;
+
+	/* Saved fd numbers are stale on replay — zero them out so mutate_arg
+	 * gets a fresh fd rather than trying to reuse a closed one. */
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		if (is_fdarg(entry->argtype[i]))
+			ent->args[i] = 0;
+	}
 
 	ring->head++;
 	if (ring->count < CORPUS_RING_SIZE)
