@@ -26,6 +26,7 @@
 #include "taint.h"
 #include "trinity.h"
 #include "utils.h"
+#include "loadbalancer.h"
 
 static void handle_child(int childno, pid_t childpid, int childstatus);
 static void replace_child(int childno);
@@ -565,6 +566,14 @@ static void replace_child(int childno)
 	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 		return;
 
+	/*
+	 * If the load balancer has reduced max_children below the number
+	 * currently running, let this slot stay empty so the child count
+	 * drains down to the new limit naturally.
+	 */
+	if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) >= max_children)
+		return;
+
 	while (spawn_child(childno) == false) {
 		if (++retries >= 10) {
 			outputerr("Failed to replace child %d after %u fork attempts, giving up.\n",
@@ -861,6 +870,7 @@ void main_loop(void)
 	if (epoch_timeout)
 		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
 
+	lb_init();
 	fork_children();
 
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
@@ -905,6 +915,8 @@ void main_loop(void)
 		check_children_progressing();
 
 		print_stats();
+
+		lb_tick();
 
 		/* This should never happen, but just to catch corner cases, like if
 		 * fork() failed when we tried to replace a child.
