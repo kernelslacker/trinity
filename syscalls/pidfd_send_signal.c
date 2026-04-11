@@ -21,7 +21,14 @@ static unsigned long pidfd_send_signal_flags[] = {
 
 static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 {
-	siginfo_t *info;
+#ifdef PIDFD_SELF_THREAD
+	/* Sometimes pass a self-referencing sentinel instead of a real pidfd. */
+	if (rand() % 4 == 0) {
+		rec->a1 = RAND_BOOL() ? (unsigned long)PIDFD_SELF_THREAD
+				      : (unsigned long)PIDFD_SELF_THREAD_GROUP;
+		return;
+	}
+#endif
 
 	/* Half the time pass NULL — kernel fills in default siginfo. */
 	if (RAND_BOOL()) {
@@ -30,7 +37,7 @@ static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 	}
 
 	/* Otherwise allocate a valid siginfo_t with SI_QUEUE. */
-	info = (siginfo_t *) get_writable_address(sizeof(*info));
+	siginfo_t *info = (siginfo_t *) get_writable_address(sizeof(*info));
 	memset(info, 0, sizeof(*info));
 	info->si_code = SI_QUEUE;
 	info->si_pid = getpid();
