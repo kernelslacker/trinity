@@ -8,6 +8,10 @@
 
 #define SOL_RXRPC 272
 
+#ifndef RXRPC_MANAGE_RESPONSE
+#define RXRPC_MANAGE_RESPONSE 7
+#endif
+
 static const unsigned int rxrpc_opts[] = {
 	RXRPC_MIN_SECURITY_LEVEL,
 	RXRPC_UPGRADEABLE_SERVICE,
