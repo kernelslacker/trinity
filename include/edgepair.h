@@ -30,6 +30,9 @@
 /* Sentinel for "no previous syscall yet". */
 #define EDGEPAIR_NO_PREV	0xFFFFU
 
+/* Magic number for edgepair binary dump files. */
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A00U
+
 struct edgepair_entry {
 	unsigned int prev_nr;		/* previous syscall number */
 	unsigned int curr_nr;		/* current syscall number */
@@ -68,3 +71,9 @@ bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr);
  * at least once.  Used to boost productive sequences.
  */
 bool edgepair_is_productive(unsigned int prev_nr, unsigned int curr_nr);
+
+/*
+ * Dump the edge-pair hash table to a binary file for offline analysis.
+ * File format: 4-byte EDGEPAIR_DUMP_MAGIC followed by struct edgepair_shared.
+ */
+void edgepair_dump_to_file(const char *path);

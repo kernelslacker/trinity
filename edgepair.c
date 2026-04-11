@@ -7,6 +7,7 @@
  * worst case we get a duplicate entry that wastes a slot.
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include "edgepair.h"
@@ -190,4 +191,29 @@ bool edgepair_is_productive(unsigned int prev_nr, unsigned int curr_nr)
 		return false;
 
 	return __atomic_load_n(&e->new_edge_count, __ATOMIC_RELAXED) > 0;
+}
+
+void edgepair_dump_to_file(const char *path)
+{
+	FILE *f;
+	uint32_t magic = EDGEPAIR_DUMP_MAGIC;
+
+	if (edgepair_shm == NULL)
+		return;
+
+	f = fopen(path, "wb");
+	if (f == NULL) {
+		perror("edgepair: failed to open dump file");
+		return;
+	}
+
+	if (fwrite(&magic, sizeof(magic), 1, f) != 1 ||
+	    fwrite(edgepair_shm, sizeof(*edgepair_shm), 1, f) != 1) {
+		perror("edgepair: failed to write dump file");
+		fclose(f);
+		return;
+	}
+
+	fclose(f);
+	output(0, "KCOV: edge-pair data dumped to %s\n", path);
 }
