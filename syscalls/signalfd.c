@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(signalfd, int, ufd, sigset_t __user *, user_mask, size_t, sizemask)
  */
 #include <signal.h>
+#include <unistd.h>
 #include "sanitise.h"
 
 static void sanitise_signalfd(struct syscallrecord *rec)
@@ -17,6 +18,14 @@ static void sanitise_signalfd(struct syscallrecord *rec)
 	rec->a3 = sizeof(sigset_t);
 }
 
+static void post_signalfd(struct syscallrecord *rec)
+{
+	int fd = rec->retval;
+
+	if (fd != -1)
+		close(fd);
+}
+
 struct syscallentry syscall_signalfd = {
 	.name = "signalfd",
 	.group = GROUP_SIGNAL,
@@ -24,6 +33,7 @@ struct syscallentry syscall_signalfd = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask" },
 	.sanitise = sanitise_signalfd,
+	.post = post_signalfd,
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 };
@@ -61,6 +71,7 @@ struct syscallentry syscall_signalfd4 = {
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(signalfd4_flags),
 	.sanitise = sanitise_signalfd4,
+	.post = post_signalfd,
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 };
