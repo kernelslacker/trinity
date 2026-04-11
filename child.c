@@ -480,8 +480,6 @@ static void periodic_work(void)
 static unsigned int stall_threshold(enum child_op_type op_type)
 {
 	switch (op_type) {
-	case CHILD_OP_FAULT_INJECT:	return 50;
-	case CHILD_OP_FD_CHURN:		return 30;
 	case CHILD_OP_MMAP_LIFECYCLE:	return 30;
 	case CHILD_OP_MPROTECT_SPLIT:	return 30;
 	case CHILD_OP_MLOCK_PRESSURE:	return 50;
@@ -576,6 +574,28 @@ static void check_fd_leaks(struct childdata *child)
 }
 
 /*
+ * Pick an op type for this iteration.  Syscalls dominate (~95%),
+ * with the remaining ~5% spread across the alternative ops.
+ * This gives the VM-stress and inode paths occasional exercise
+ * without starving the main syscall fuzzer.
+ */
+static enum child_op_type pick_op_type(void)
+{
+	unsigned int r = rand() % 100;
+
+	if (r < 95)
+		return CHILD_OP_SYSCALL;
+
+	switch (r % 4) {
+	case 0: return CHILD_OP_MMAP_LIFECYCLE;
+	case 1: return CHILD_OP_MPROTECT_SPLIT;
+	case 2: return CHILD_OP_MLOCK_PRESSURE;
+	case 3: return CHILD_OP_INODE_SPEWER;
+	}
+	return CHILD_OP_SYSCALL;
+}
+
+/*
  * This is the child main loop, entered after init_child has completed
  * from the fork_children() loop.
  */
@@ -629,6 +649,9 @@ void child_process(struct childdata *child, int childno)
 		 * This runs before the syscall so that freed memory can
 		 * be recycled by the allocator for the next sanitise. */
 		deferred_free_tick();
+
+		/* Pick an op type for this iteration. */
+		child->op_type = pick_op_type();
 
 		/* timestamp, and dispatch the op */
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);
