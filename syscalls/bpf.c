@@ -6,6 +6,7 @@
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include <linux/version.h>
+#include <unistd.h>
 #include "arch.h"
 #include "bpf.h"
 #include "net.h"
@@ -459,6 +460,36 @@ static void post_bpf(struct syscallrecord *rec)
 
 	default:
 		break;
+	}
+
+	/* Close fds returned by commands not tracked above.  Many BPF
+	 * commands return fds: GET_FD_BY_ID variants, OBJ_GET,
+	 * RAW_TRACEPOINT_OPEN, BTF_LOAD, LINK_CREATE, ENABLE_STATS,
+	 * ITER_CREATE, TOKEN_CREATE.  We can't blindly close on all
+	 * commands because non-fd commands return 0 for success, and
+	 * closing fd 0 would destroy stdin. */
+	if (fd >= 0) {
+		switch (rec->a1) {
+		case BPF_MAP_CREATE:
+		case BPF_PROG_LOAD:
+			/* Already tracked above. */
+			break;
+		case BPF_OBJ_GET:
+		case BPF_PROG_GET_FD_BY_ID:
+		case BPF_MAP_GET_FD_BY_ID:
+		case BPF_BTF_GET_FD_BY_ID:
+		case BPF_LINK_GET_FD_BY_ID:
+		case BPF_RAW_TRACEPOINT_OPEN:
+		case BPF_BTF_LOAD:
+		case BPF_LINK_CREATE:
+		case BPF_ENABLE_STATS:
+		case BPF_ITER_CREATE:
+		case BPF_TOKEN_CREATE:
+			close(fd);
+			break;
+		default:
+			break;
+		}
 	}
 
 	deferred_freeptr(&rec->a2);
