@@ -40,9 +40,6 @@
 #ifdef __hppa__
 #include "syscalls-parisc.h"
 #endif
-#ifdef __tile__
-#include "syscalls-tile.h"
-#endif
 #if defined(__riscv) || defined(__riscv__)
 #if __riscv_xlen == 64
 #include "syscalls-riscv64.h"
