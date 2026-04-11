@@ -58,7 +58,7 @@ static void arm_landlock(int ruleset_fd)
 
 		memset(&attr, 0, sizeof(attr));
 		attr.parent_fd = path_fd;
-		attr.allowed_access = 1 + (rand() % 0xfff);
+		attr.allowed_access = 1 + (rand() % 0xffff);
 
 		syscall(__NR_landlock_add_rule, ruleset_fd,
 			LANDLOCK_RULE_PATH_BENEATH, &attr, 0);
@@ -74,7 +74,7 @@ static int open_landlock_fd(void)
 	unsigned long long attr;
 	int fd;
 
-	attr = 0xfff;	/* LANDLOCK_ACCESS_FS_* bits */
+	attr = 0xffff;	/* LANDLOCK_ACCESS_FS_* bits */
 	fd = syscall(__NR_landlock_create_ruleset, &attr, sizeof(attr), 0);
 	if (fd < 0)
 		return false;
