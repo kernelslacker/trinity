@@ -4,80 +4,12 @@
 #include <netinet/in.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
+#include <linux/can/isotp.h>
+#include <linux/can/j1939.h>
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"
-
-#ifndef SOL_CAN_RAW
-#define SOL_CAN_RAW	(SOL_CAN_BASE + CAN_RAW)
-#endif
-#ifndef CAN_ISOTP
-#define CAN_ISOTP	6
-#endif
-#ifndef CAN_J1939
-#define CAN_J1939	7
-#endif
-#ifndef CANFD_MAX_DLEN
-#define CANFD_MAX_DLEN	64
-#endif
-#ifndef CANXL_MIN_DLEN
-#define CANXL_MIN_DLEN	1
-#endif
-#ifndef CANXL_MAX_DLEN
-#define CANXL_MAX_DLEN	2048
-#endif
-#ifndef CANXL_XLF
-#define CANXL_XLF	0x80
-#endif
-
-#ifndef SOL_CAN_ISOTP
-#define SOL_CAN_ISOTP	(SOL_CAN_BASE + CAN_ISOTP)
-#endif
-#ifndef SOL_CAN_J1939
-#define SOL_CAN_J1939	(SOL_CAN_BASE + CAN_J1939)
-#endif
-
-#define CAN_ISOTP_OPTS		1
-#define CAN_ISOTP_RECV_FC	2
-#define CAN_ISOTP_TX_STMIN	3
-#define CAN_ISOTP_RX_STMIN	4
-#define CAN_ISOTP_LL_OPTS	5
-
-struct can_isotp_options {
-	__u32 flags;
-	__u32 frame_txtime;
-	__u8  ext_address;
-	__u8  txpad_content;
-	__u8  rxpad_content;
-	__u8  rx_ext_address;
-};
-
-struct can_isotp_fc_options {
-	__u8 bs;
-	__u8 stmin;
-	__u8 wftmax;
-};
-
-struct can_isotp_ll_options {
-	__u8 mtu;
-	__u8 tx_dl;
-	__u8 tx_flags;
-};
-
-#define SO_J1939_FILTER		1
-#define SO_J1939_PROMISC	2
-#define SO_J1939_SEND_PRIO	3
-#define SO_J1939_ERRQUEUE	4
-
-struct j1939_filter {
-	__u64 name;
-	__u64 name_mask;
-	__u32 pgn;
-	__u32 pgn_mask;
-	__u8  addr;
-	__u8  addr_mask;
-};
 
 static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
