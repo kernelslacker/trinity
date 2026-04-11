@@ -112,7 +112,7 @@ void reap_child(struct childdata *child, int childno)
 	if( pids[childno] == EMPTY_PIDSLOT )
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
-	unlock(&child->syscall.lock);
+	bust_lock(&child->syscall.lock);
 	__atomic_sub_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 	pids[childno] = EMPTY_PIDSLOT;
 }
