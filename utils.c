@@ -24,7 +24,7 @@
  * mprotect) can avoid clobbering trinity's own shared state.
  */
 
-#define MAX_SHARED_ALLOCS 128
+#define MAX_SHARED_ALLOCS 512
 
 static struct {
 	unsigned long addr;
