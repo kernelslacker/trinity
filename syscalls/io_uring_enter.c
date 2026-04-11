@@ -9,13 +9,20 @@
 #include "random.h"
 #include "sanitise.h"
 
-/* Opcodes added after Linux 6.12 — not in Debian 13 kernel headers. */
+/* Constants added after Linux 6.12 — not in Debian 13 kernel headers. */
 #ifndef IORING_OP_NOP128
 #define IORING_OP_NOP128	63
 #define IORING_OP_URING_CMD128	64
 #define TRINITY_IORING_OP_LAST	65
 #else
 #define TRINITY_IORING_OP_LAST	IORING_OP_LAST
+#endif
+
+#ifndef IORING_ENTER_EXT_ARG_REG
+#define IORING_ENTER_EXT_ARG_REG	(1U << 6)
+#endif
+#ifndef IORING_ENTER_NO_IOWAIT
+#define IORING_ENTER_NO_IOWAIT		(1U << 7)
 #endif
 
 static unsigned long io_uring_enter_flags[] = {
