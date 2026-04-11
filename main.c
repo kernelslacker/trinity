@@ -234,7 +234,7 @@ bool check_if_fd(struct syscallrecord *rec)
 	fd = rec->a1;
 
 	/* if it's out of range, it's not going to be valid. */
-	if (fd > 1024)
+	if (fd > max_files_rlimit.rlim_cur)
 		return false;
 
 	return true;
