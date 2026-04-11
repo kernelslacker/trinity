@@ -109,6 +109,9 @@ static void sanitise_clone3(struct syscallrecord *rec)
 			args->parent_tid = (unsigned long) parent_tid;
 	}
 
+	if (args->flags & CLONE_SETTLS)
+		args->tls = (unsigned long) get_address();
+
 	rec->a1 = (unsigned long) args;
 	rec->a2 = RAND_ARRAY(clone3_sizes);
 }
