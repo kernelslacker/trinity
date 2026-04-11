@@ -4,7 +4,10 @@
 #include <linux/userfaultfd.h>
 
 #include "ioctls.h"
+#include "maps.h"
 #include "objects.h"
+#include "random.h"
+#include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
 
@@ -23,6 +26,39 @@ static int userfaultfd_fd_test(int fd, const struct stat *st __attribute__((unus
 	return -1;
 }
 
+static void sanitise_uffdio_register(struct syscallrecord *rec)
+{
+	struct uffdio_register *ur;
+	struct map *map;
+	static const unsigned long register_modes[] = {
+		UFFDIO_REGISTER_MODE_MISSING,
+		UFFDIO_REGISTER_MODE_WP,
+		UFFDIO_REGISTER_MODE_MINOR,
+	};
+
+	ur = (struct uffdio_register *) get_writable_address(sizeof(*ur));
+	map = get_map();
+	if (map) {
+		ur->range.start = (unsigned long) map->ptr;
+		ur->range.len = map->size;
+	}
+	ur->mode = set_rand_bitmask(ARRAY_SIZE(register_modes), register_modes);
+	rec->a3 = (unsigned long) ur;
+}
+
+static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+	case UFFDIO_REGISTER:
+		sanitise_uffdio_register(rec);
+		break;
+	default:
+		break;
+	}
+}
+
 static const struct ioctl userfaultfd_ioctls[] = {
 	IOCTL(UFFDIO_API),
 	IOCTL(UFFDIO_REGISTER),
@@ -39,7 +75,7 @@ static const struct ioctl userfaultfd_ioctls[] = {
 static const struct ioctl_group userfaultfd_grp = {
 	.name = "userfaultfd",
 	.fd_test = userfaultfd_fd_test,
-	.sanitise = pick_random_ioctl,
+	.sanitise = userfaultfd_sanitise,
 	.ioctls = userfaultfd_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(userfaultfd_ioctls),
 };
