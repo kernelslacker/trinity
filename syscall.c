@@ -193,8 +193,6 @@ static void do_extrafork(struct syscallrecord *rec)
 		int childstatus;
 
 		pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		if (pid_alive(extrapid) == true)
-			kill(extrapid, SIGKILL);
 		usleep(1000);
 	}
 
