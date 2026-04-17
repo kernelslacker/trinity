@@ -318,8 +318,8 @@ static void init_child(struct childdata *child, int childno)
 	 * decide which struct to skip — a corrupted num would cause us
 	 * to mprotect our own childdata and then SIGSEGV on write. */
 	for_each_child(i) {
-		if ((unsigned int)childno != i && shm->children[i] != NULL)
-			mprotect(shm->children[i], sizeof(struct childdata), PROT_READ);
+		if ((unsigned int)childno != i && children[i] != NULL)
+			mprotect(children[i], sizeof(struct childdata), PROT_READ);
 	}
 
 	mprotect(pids, max_children * sizeof(int), PROT_READ);
@@ -336,8 +336,8 @@ static void init_child(struct childdata *child, int childno)
 
 	/* Cache our childno/pid for O(1) lookups in this_child()/find_childno().
 	 * Pass the child pointer directly — don't re-derive it from
-	 * shm->children[] which is in shared memory and can be corrupted
-	 * by a sibling's stray write. */
+	 * children[] which sits in mprotected shared memory but accessing
+	 * via the cached argument avoids the indirection on the hot path. */
 	set_child_cache(childno, pid, child);
 
 	set_seed(child);

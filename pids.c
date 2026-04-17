@@ -60,7 +60,7 @@ struct childdata * this_child(void)
 
 	for_each_child(i) {
 		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == mypid)
-			return shm->children[i];
+			return children[i];
 	}
 	return NULL;
 }

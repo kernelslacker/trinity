@@ -89,7 +89,7 @@ static void dump_syscall_records(const struct timespec *taint_tp,
 	for_each_child(i) {
 		struct syscallrecord *rec;
 
-		rec = snapshots ? &snapshots[i] : &shm->children[i]->syscall;
+		rec = snapshots ? &snapshots[i] : &children[i]->syscall;
 
 		if (rec->state == UNKNOWN || rec->state == PREP)
 			continue;
@@ -105,7 +105,7 @@ static void dump_syscall_records(const struct timespec *taint_tp,
 		struct syscallrecord *rec;
 
 		rec = snapshots ? &snapshots[entries[i].idx]
-				: &shm->children[entries[i].idx]->syscall;
+				: &children[entries[i].idx]->syscall;
 
 		if (!taint_marked && ts_before(taint_tp, &entries[i].tp)) {
 			fprintf(fd, "--- taint detected at %ld.%09ld ---\n",
@@ -149,7 +149,7 @@ void tainted_postmortem(void)
 	snapshots = malloc(max_children * sizeof(struct syscallrecord));
 	if (snapshots != NULL) {
 		for_each_child(i)
-			snapshots[i] = shm->children[i]->syscall;
+			snapshots[i] = children[i]->syscall;
 	}
 
 	panic(EXIT_KERNEL_TAINTED);

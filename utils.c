@@ -134,7 +134,7 @@ void kill_pid(pid_t pid)
 
 	childno = find_childno(pid);
 	if (childno != CHILD_NOT_FOUND) {
-		if (shm->children[childno]->dontkillme == true)
+		if (children[childno]->dontkillme == true)
 			return;
 	}
 

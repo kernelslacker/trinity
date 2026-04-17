@@ -134,12 +134,11 @@ void fd_event_drain_all(void)
 
 		/*
 		 * Snapshot the child pointer with an acquire load.
-		 * shm->children[i] lives in shared memory and a dying
-		 * child may be clearing or replacing it concurrently.
-		 * Without this, the compiler could re-read the pointer
-		 * between our NULL check and the dereference.
+		 * children[i] lives in shared memory (the array itself
+		 * is mprotected PROT_READ after init, but we still want
+		 * a stable read here against compiler reordering).
 		 */
-		child = __atomic_load_n(&shm->children[i], __ATOMIC_ACQUIRE);
+		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
 		if (child == NULL)
 			continue;
 

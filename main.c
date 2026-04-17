@@ -34,11 +34,6 @@ static void replace_child(int childno);
  * Kept out of shared memory so children's stray writes can't corrupt them. */
 static FILE **pidstatfiles;
 
-/* Parent-local cache of shm->children pointer.  The pointer in shm is
- * in MAP_SHARED memory and could be corrupted by a child's stray write.
- * Cached once at main_loop() entry before any children are forked. */
-static struct childdata **children;
-
 static unsigned long hiscore = 0;
 
 /*
@@ -209,7 +204,7 @@ static void kill_all_kids(void)
 		reap_dead_kids();
 	if (check_all_locks() == true) {
 		for_each_child(i)
-			bust_lock(&shm->children[i]->syscall.lock);
+			bust_lock(&children[i]->syscall.lock);
 		bust_lock(&shm->syscalltable_lock);
 	}
 }
@@ -859,7 +854,6 @@ void main_loop(void)
 	struct timespec epoch_start;
 
 	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
-	children = shm->children;
 
 	if (epoch_timeout)
 		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
@@ -984,8 +978,8 @@ void reset_epoch_state(void)
 
 	for_each_child(i) {
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
-		clean_childdata(shm->children[i]);
-		fd_event_ring_init(shm->children[i]->fd_event_ring);
+		clean_childdata(children[i]);
+		fd_event_ring_init(children[i]->fd_event_ring);
 	}
 
 	reseed();

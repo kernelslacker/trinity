@@ -27,8 +27,6 @@ void shm_set_readonly(void);
 struct shm_s {
 	char __padding[4096];
 
-	struct childdata **children;
-
 	/* Frequently updated by all children — own cache line. */
 	struct stats_s stats __attribute__((aligned(64)));
 
@@ -95,3 +93,13 @@ struct shm_s {
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;
+
+/*
+ * Global pointer to the children array.  Lives in normal data segment
+ * (NOT in shm), so each forked process gets its own COW copy.  A stray
+ * child write to this pointer corrupts only that one child's copy and
+ * cannot zero out the pointer for parent or siblings.  The pointed-to
+ * array is mprotected PROT_READ in init_shm() so its contents are
+ * also protected.
+ */
+extern struct childdata **children;
