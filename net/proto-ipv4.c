@@ -18,6 +18,7 @@
 #include <linux/netfilter/ipset/ip_set.h>
 #include <linux/ip_vs.h>
 #include "compat.h"
+#include "arch.h"
 #include "net.h"
 #include "random.h"
 #include "tls.h"
@@ -257,7 +258,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		break;
 
 	case IP_MSFILTER:
-		so->optlen = rand() % optmem_max;
+		so->optlen = rand() % page_size;
 		so->optlen |= IP_MSFILTER_SIZE(0);
 		break;
 
@@ -304,7 +305,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	}
 
 	case MCAST_MSFILTER:
-		so->optlen = rand() % optmem_max;
+		so->optlen = rand() % page_size;
 		so->optlen |= GROUP_FILTER_SIZE(0);
 		break;
 
