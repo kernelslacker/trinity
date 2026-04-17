@@ -57,11 +57,13 @@ const struct struct_desc *struct_catalog_lookup(const char *name);
 
 /*
  * Find which struct (if any) syscall nr uses at arg_idx (1-based).
+ * do32bit selects the 32-bit or 64-bit table on biarch builds.
  * Returns NULL if not cataloged.
  * Must be called after struct_catalog_init().
  */
 const struct struct_desc *struct_arg_lookup(unsigned int nr,
-					    unsigned int arg_idx);
+					    unsigned int arg_idx,
+					    bool do32bit);
 
 /*
  * Given a CMP hint value and a struct descriptor, return the index of
