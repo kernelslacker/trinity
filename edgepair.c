@@ -7,12 +7,35 @@
  * worst case we get a duplicate entry that wastes a slot.
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "edgepair.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * The first two fields of edgepair_entry (prev_nr, curr_nr) are both
+ * unsigned int (4 bytes each), laid out contiguously at offset 0.
+ * We load/CAS them as a single uint64_t to atomically claim slots
+ * without the race that two separate stores allowed.
+ */
+_Static_assert(offsetof(struct edgepair_entry, prev_nr) == 0,
+	       "prev_nr must be at offset 0 for packed CAS");
+_Static_assert(offsetof(struct edgepair_entry, curr_nr) == 4,
+	       "curr_nr must be at offset 4 for packed CAS");
+_Static_assert(sizeof(unsigned int) == 4,
+	       "unsigned int must be 4 bytes for packed CAS");
+
+/* Pack a (prev, curr) pair into the uint64_t layout matching memory order. */
+static uint64_t pack_pair(unsigned int prev, unsigned int curr)
+{
+	struct { unsigned int p; unsigned int c; } tmp = { prev, curr };
+	uint64_t packed;
+	memcpy(&packed, &tmp, sizeof(packed));
+	return packed;
+}
 
 struct edgepair_shared *edgepair_shm = NULL;
 
@@ -46,57 +69,41 @@ static unsigned int pair_hash(unsigned int prev, unsigned int curr)
 /*
  * Find or insert a pair in the table.  Returns pointer to the entry,
  * or NULL if the table is full in this probe window.
+ *
+ * Uses a single CAS on the packed {prev_nr, curr_nr} uint64_t to
+ * atomically claim an empty slot.  This eliminates the race where
+ * two threads could interleave separate stores to prev_nr and curr_nr,
+ * corrupting the entry.
  */
 static struct edgepair_entry *find_or_insert(unsigned int prev_nr,
 					     unsigned int curr_nr)
 {
 	unsigned int idx = pair_hash(prev_nr, curr_nr);
+	uint64_t target = pack_pair(prev_nr, curr_nr);
+	uint64_t empty = pack_pair(EDGEPAIR_EMPTY, EDGEPAIR_EMPTY);
 
 	for (unsigned int probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
-		unsigned int slot_prev, slot_curr;
-
-		slot_prev = __atomic_load_n(&e->prev_nr, __ATOMIC_ACQUIRE);
-		slot_curr = __atomic_load_n(&e->curr_nr, __ATOMIC_RELAXED);
+		uint64_t slot = __atomic_load_n((uint64_t *)e, __ATOMIC_ACQUIRE);
 
 		/* Found existing entry for this pair. */
-		if (slot_prev == prev_nr && slot_curr == curr_nr)
+		if (slot == target)
 			return e;
 
-		/* Empty slot — try to claim it.
-		 *
-		 * Store curr_nr first (relaxed), then CAS prev_nr with
-		 * release ordering.  A reader that loads prev_nr with
-		 * acquire and sees a non-EMPTY value is guaranteed to
-		 * also see the curr_nr store, closing the window where
-		 * a half-initialized entry was visible.
-		 */
-		if (slot_prev == EDGEPAIR_EMPTY) {
-			unsigned int expected = EDGEPAIR_EMPTY;
+		/* Empty slot — try to claim it with a single CAS. */
+		if (slot == empty) {
+			uint64_t expected = empty;
 
-			/* Write curr_nr before publishing via CAS. */
-			__atomic_store_n(&e->curr_nr, curr_nr,
-				__ATOMIC_RELAXED);
-
-			/* CAS on prev_nr to claim the slot (release). */
-			if (__atomic_compare_exchange_n(&e->prev_nr,
-				&expected, prev_nr, false,
+			if (__atomic_compare_exchange_n((uint64_t *)e,
+				&expected, target, false,
 				__ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
 				__atomic_fetch_add(&edgepair_shm->pairs_tracked,
 					1, __ATOMIC_RELAXED);
 				return e;
 			}
 			/* CAS failed — another child claimed it.
-			 * Restore curr_nr (best effort, may be overwritten). */
-			__atomic_store_n(&e->curr_nr, EDGEPAIR_EMPTY,
-				__ATOMIC_RELAXED);
-
-			/* Re-check if they inserted the same pair. */
-			slot_prev = __atomic_load_n(&e->prev_nr,
-				__ATOMIC_ACQUIRE);
-			slot_curr = __atomic_load_n(&e->curr_nr,
-				__ATOMIC_RELAXED);
-			if (slot_prev == prev_nr && slot_curr == curr_nr)
+			 * Check if they inserted the same pair. */
+			if (expected == target)
 				return e;
 		}
 
@@ -137,17 +144,17 @@ static struct edgepair_entry *find_entry(unsigned int prev_nr,
 					 unsigned int curr_nr)
 {
 	unsigned int idx = pair_hash(prev_nr, curr_nr);
+	uint64_t target = pack_pair(prev_nr, curr_nr);
+	uint64_t empty = pack_pair(EDGEPAIR_EMPTY, EDGEPAIR_EMPTY);
 
 	for (unsigned int probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
-		unsigned int slot_prev, slot_curr;
+		uint64_t slot = __atomic_load_n((uint64_t *)e, __ATOMIC_ACQUIRE);
 
-		slot_prev = __atomic_load_n(&e->prev_nr, __ATOMIC_ACQUIRE);
-		if (slot_prev == EDGEPAIR_EMPTY)
+		if (slot == empty)
 			return NULL;
 
-		slot_curr = __atomic_load_n(&e->curr_nr, __ATOMIC_RELAXED);
-		if (slot_prev == prev_nr && slot_curr == curr_nr)
+		if (slot == target)
 			return e;
 
 		idx = (idx + 1) & EDGEPAIR_TABLE_MASK;
