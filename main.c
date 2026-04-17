@@ -814,34 +814,27 @@ static void print_stats(void)
 
 			if (stall_count > 0 && stall_count < 10000)
 				snprintf(stalltxt, sizeof(stalltxt), " STALLED:%u", stall_count);
-			output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec\n",
-				shm->stats.op_count,
-				shm->stats.failures, shm->stats.successes,
-				hiscore,
-				stall_count ? stalltxt : "",
-				rate);
+
 			if (kcov_shm != NULL) {
 				static unsigned long last_edges = 0;
-				static unsigned int plateau_intervals = 0;
 				unsigned long edges = kcov_shm->edges_found;
+				long delta = edges - last_edges;
 
-				if (edges == last_edges && last_edges > 0) {
-					plateau_intervals++;
-					if (plateau_intervals == 10)
-						output(0, "  KCOV: coverage plateau at %lu edges\n", edges);
-					else if (plateau_intervals > 10 && (plateau_intervals % 50) == 0)
-						output(0, "  KCOV: still at plateau (%lu edges, %u intervals)\n",
-							edges, plateau_intervals);
-					else
-						output(0, "  KCOV: %lu edges\n", edges);
-				} else {
-					if (plateau_intervals >= 10)
-						output(0, "  KCOV: %lu edges (plateau broken!)\n", edges);
-					else
-						output(0, "  KCOV: %lu edges\n", edges);
-					plateau_intervals = 0;
-				}
+				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec  KCOV: [%lu edges, +%ld]\n",
+					shm->stats.op_count,
+					shm->stats.failures, shm->stats.successes,
+					hiscore,
+					stall_count ? stalltxt : "",
+					rate,
+					edges, last_edges > 0 ? delta : 0);
 				last_edges = edges;
+			} else {
+				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec\n",
+					shm->stats.op_count,
+					shm->stats.failures, shm->stats.successes,
+					hiscore,
+					stall_count ? stalltxt : "",
+					rate);
 			}
 			lastcount = shm->stats.op_count;
 		}
