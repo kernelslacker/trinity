@@ -51,7 +51,13 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_KCM] = { .proto = &proto_kcm },
 	[PF_QIPCRTR] = { .proto = &proto_qipcrtr },
 	[PF_SMC] = { .proto = &proto_smc },
+#ifdef USE_VSOCK
 	[PF_VSOCK] = { .proto = &proto_vsock },
+#endif
+#ifdef USE_XDP
 	[PF_XDP] = { .proto = &proto_xdp },
+#endif
+#ifdef USE_MCTP
 	[PF_MCTP] = { .proto = &proto_mctp },
+#endif
 };

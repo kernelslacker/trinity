@@ -1,3 +1,4 @@
+#ifdef USE_XDP
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/mman.h>
@@ -224,3 +225,4 @@ const struct netproto proto_xdp = {
 	.valid_triplets = xdp_triplet,
 	.nr_triplets = ARRAY_SIZE(xdp_triplet),
 };
+#endif /* USE_XDP */

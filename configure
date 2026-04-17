@@ -388,6 +388,9 @@ check_header netrose/rose.h USE_ROSE
 check_header netax25/ax25.h USE_NETAX25
 check_header netipx/ipx.h USE_IPX
 check_header bluetooth/bluetooth.h USE_BLUETOOTH
+check_header linux/vm_sockets.h USE_VSOCK
+check_header linux/if_xdp.h USE_XDP
+check_header linux/mctp.h USE_MCTP
 
 #############################################################################################
 
