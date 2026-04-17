@@ -57,6 +57,7 @@ static void caif_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->level = SOL_CAIF;
 
 	so->optname = RAND_ARRAY(caif_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 static struct socket_triplet caif_triplet[] = {

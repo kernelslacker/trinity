@@ -28,7 +28,13 @@ static void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	static const unsigned int pnpipe_opts[] = {
+		PNPIPE_ENCAP, PNPIPE_IFINDEX, PNPIPE_HANDLE, PNPIPE_INITSTATE,
+	};
+
 	so->level = SOL_PNPIPE;
+	so->optname = RAND_ARRAY(pnpipe_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 static struct socket_triplet phonet_triplets[] = {

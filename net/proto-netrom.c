@@ -27,6 +27,7 @@ static void netrom_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 
 	so->level = SOL_NETROM;
 	so->optname = RAND_ARRAY(netrom_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 static struct socket_triplet netrom_triplet[] = {

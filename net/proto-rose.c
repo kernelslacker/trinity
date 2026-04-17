@@ -42,6 +42,7 @@ static void rose_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 {
 	so->level = SOL_ROSE;
 	so->optname = RAND_ARRAY(rose_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 static struct socket_triplet rose_triplets[] = {
