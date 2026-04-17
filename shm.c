@@ -23,6 +23,8 @@
 
 struct shm_s *shm;
 
+struct childdata **children;
+
 #define SHM_PROT_PAGES 30
 
 unsigned int shm_size;
@@ -81,7 +83,7 @@ void init_shm(void)
 	childptrslen += page_size - 1;
 	childptrslen &= PAGE_MASK;
 
-	shm->children = alloc_shared(childptrslen);
+	children = alloc_shared(childptrslen);
 
 	/* We allocate the childdata structs as shared mappings, because
 	 * the forking process needs to peek into each childs syscall records
@@ -91,7 +93,7 @@ void init_shm(void)
 		struct childdata *child;
 
 		child = alloc_shared(sizeof(struct childdata));
-		shm->children[i] = child;
+		children[i] = child;
 
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));
 
@@ -103,7 +105,7 @@ void init_shm(void)
 		child->fd_event_ring = alloc_shared(sizeof(struct fd_event_ring));
 		fd_event_ring_init(child->fd_event_ring);
 	}
-	mprotect(shm->children, childptrslen, PROT_READ);
+	mprotect(children, childptrslen, PROT_READ);
 
 	kcov_init_global();
 	minicorpus_init();
