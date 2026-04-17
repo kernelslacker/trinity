@@ -22,18 +22,28 @@ static void pppox_PX_PROTO_OE(struct sockaddr **addr, socklen_t *addrlen)
 	pppox = zmalloc(sizeof(struct sockaddr_pppox));
 
 	pppox->sa_family = PF_PPPOX;
-	pppox->sa_protocol = rand() % 3;
-
-	pppox->sa_addr.pppoe.sid = rand();
-	for (i = 0; i < ETH_ALEN; i++)
-		pppox->sa_addr.pppoe.remote[i] = rand();
-	for (i = 0; i < IFNAMSIZ; i++)
-		pppox->sa_addr.pppoe.dev[i] = rand();
 
 #ifdef USE_PPPOX_PPTP
-	pppox->sa_addr.pptp.call_id = rand();
-	pppox->sa_addr.pptp.sin_addr.s_addr = random_ipv4_address();
+	pppox->sa_protocol = rand() % 3;
+#else
+	pppox->sa_protocol = PX_PROTO_OE;
 #endif
+
+	switch (pppox->sa_protocol) {
+#ifdef USE_PPPOX_PPTP
+	case PX_PROTO_PPTP:
+		pppox->sa_addr.pptp.call_id = rand();
+		pppox->sa_addr.pptp.sin_addr.s_addr = random_ipv4_address();
+		break;
+#endif
+	default:
+		pppox->sa_addr.pppoe.sid = rand();
+		for (i = 0; i < ETH_ALEN; i++)
+			pppox->sa_addr.pppoe.remote[i] = rand();
+		for (i = 0; i < IFNAMSIZ; i++)
+			pppox->sa_addr.pppoe.dev[i] = rand();
+		break;
+	}
 
 	*addr = (struct sockaddr *) pppox;
 	*addrlen = sizeof(struct sockaddr_pppox);
