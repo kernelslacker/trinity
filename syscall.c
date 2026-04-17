@@ -57,7 +57,7 @@ static long syscall32(unsigned int call,
 					__atomic_load_n(&shm->syscalls32_attempted, __ATOMIC_RELAXED));
 
 			for (i = 0; i < max_nr_32bit_syscalls; i++) {
-				struct syscallentry *entry = syscalls[i].entry;
+				struct syscallentry *entry = syscalls_32bit[i].entry;
 
 				if (entry->active_number != 0)
 					deactivate_syscall(i, true);
