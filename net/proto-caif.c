@@ -18,16 +18,30 @@ static void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	caif = zmalloc(sizeof(struct sockaddr_caif));
 
 	caif->family = PF_CAIF;
-	caif->u.at.type = rand();
-	for (i = 0; i < 16; i++)
-		caif->u.util.service[i] = rand();
-	caif->u.dgm.connection_id = rand();
-	caif->u.dgm.nsapi = rand();
-	caif->u.rfm.connection_id = rand();
-	for (i = 0; i < 16; i++)
-		caif->u.rfm.volume[i] = rand();
-	caif->u.dbg.type = rand();
-	caif->u.dbg.service = rand();
+
+	switch (rand() % CAIFPROTO_MAX) {
+	case CAIFPROTO_AT:
+		caif->u.at.type = rand();
+		break;
+	case CAIFPROTO_UTIL:
+		for (i = 0; i < 16; i++)
+			caif->u.util.service[i] = rand();
+		break;
+	case CAIFPROTO_DATAGRAM:
+	case CAIFPROTO_DATAGRAM_LOOP:
+		caif->u.dgm.connection_id = rand();
+		caif->u.dgm.nsapi = rand();
+		break;
+	case CAIFPROTO_RFM:
+		caif->u.rfm.connection_id = rand();
+		for (i = 0; i < 16; i++)
+			caif->u.rfm.volume[i] = rand();
+		break;
+	case CAIFPROTO_DEBUG:
+		caif->u.dbg.type = rand();
+		caif->u.dbg.service = rand();
+		break;
+	}
 	*addr = (struct sockaddr *) caif;
 	*addrlen = sizeof(struct sockaddr_caif);
 }
