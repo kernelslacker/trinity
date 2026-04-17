@@ -57,6 +57,8 @@
 #define PIDFD_INFO_PID		(1UL << 0)
 #define PIDFD_INFO_CREDS	(1UL << 1)
 #define PIDFD_INFO_CGROUPID	(1UL << 2)
+#define PIDFD_INFO_EXIT		(1UL << 3)
+#define PIDFD_INFO_COREDUMP	(1UL << 4)
 #endif
 
 #ifndef PIDFD_GET_INFO
@@ -75,6 +77,9 @@ struct pidfd_info {
 	__u32 fsuid;
 	__u32 fsgid;
 	__u32 spare0[1];
+	__s32 exit_code;
+	__u64 coredump_mask;
+	__u64 __spare1[2];
 };
 #define PIDFD_GET_INFO _IOWR(PIDFS_IOCTL_MAGIC, 11, struct pidfd_info)
 #endif
@@ -101,6 +106,8 @@ static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		PIDFD_INFO_PID,
 		PIDFD_INFO_CREDS,
 		PIDFD_INFO_CGROUPID,
+		PIDFD_INFO_EXIT,
+		PIDFD_INFO_COREDUMP,
 	};
 
 	pick_random_ioctl(grp, rec);
