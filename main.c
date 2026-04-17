@@ -820,7 +820,7 @@ static void print_stats(void)
 				unsigned long edges = kcov_shm->edges_found;
 				long delta = edges - last_edges;
 
-				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec  KCOV: [%lu edges, +%ld]\n",
+				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]\n",
 					shm->stats.op_count,
 					shm->stats.failures, shm->stats.successes,
 					hiscore,
