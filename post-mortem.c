@@ -58,7 +58,8 @@ static void dump_syscall_rec(FILE *fp, struct syscallrecord *rec)
 	}
 }
 
-static void dump_syscall_records(const struct timespec *taint_tp)
+static void dump_syscall_records(const struct timespec *taint_tp,
+				 struct syscallrecord *snapshots)
 {
 	FILE *fd;
 	unsigned int i, nr_active;
@@ -71,6 +72,12 @@ static void dump_syscall_records(const struct timespec *taint_tp)
 		return;
 	}
 
+	/* If snapshot allocation failed, fall back to live records
+	 * (racy but better than no dump at all). */
+	if (snapshots == NULL) {
+		outputerr("post-mortem: snapshot alloc failed, using live records\n");
+	}
+
 	entries = malloc(max_children * sizeof(*entries));
 	if (!entries) {
 		outputerr("Failed to allocate sort buffer\n");
@@ -80,7 +87,9 @@ static void dump_syscall_records(const struct timespec *taint_tp)
 
 	nr_active = 0;
 	for_each_child(i) {
-		struct syscallrecord *rec = &shm->children[i]->syscall;
+		struct syscallrecord *rec;
+
+		rec = snapshots ? &snapshots[i] : &shm->children[i]->syscall;
 
 		if (rec->state == UNKNOWN || rec->state == PREP)
 			continue;
@@ -93,7 +102,10 @@ static void dump_syscall_records(const struct timespec *taint_tp)
 	qsort(entries, nr_active, sizeof(*entries), cmp_timespec);
 
 	for (i = 0; i < nr_active; i++) {
-		struct syscallrecord *rec = &shm->children[entries[i].idx]->syscall;
+		struct syscallrecord *rec;
+
+		rec = snapshots ? &snapshots[entries[i].idx]
+				: &shm->children[entries[i].idx]->syscall;
 
 		if (!taint_marked && ts_before(taint_tp, &entries[i].tp)) {
 			fprintf(fd, "--- taint detected at %ld.%09ld ---\n",
@@ -121,10 +133,24 @@ void tainted_postmortem(void)
 	int taint = get_taint();
 
 	struct timespec taint_tp;
+	unsigned int i;
+	struct syscallrecord *snapshots;
 
 	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
+
+	/* Snapshot all syscall records BEFORE calling panic().
+	 * panic() sets exit_reason which causes children to exit their
+	 * main loops.  Children still in-flight can modify their
+	 * syscallrecord (state, prebuffer, postbuffer) between the
+	 * syscall return and the exit check.  Snapshotting first gives
+	 * us a consistent view for the dump. */
+	snapshots = malloc(max_children * sizeof(struct syscallrecord));
+	if (snapshots != NULL) {
+		for_each_child(i)
+			snapshots[i] = shm->children[i]->syscall;
+	}
 
 	panic(EXIT_KERNEL_TAINTED);
 
@@ -135,7 +161,9 @@ void tainted_postmortem(void)
 	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
 	closelog();
 
-	dump_syscall_records(&taint_tp);
+	dump_syscall_records(&taint_tp, snapshots);
+
+	free(snapshots);
 
 	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELAXED);
 }
