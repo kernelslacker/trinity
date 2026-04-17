@@ -452,6 +452,8 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		return;
 
 	list = head->list;
+	if (list == NULL)
+		return;
 
 	list_for_each_safe(node, tmp, list) {
 		struct object *obj;
