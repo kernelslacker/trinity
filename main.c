@@ -200,9 +200,16 @@ static void kill_all_kids(void)
 	if (children_seen == 0)
 		__atomic_store_n(&shm->running_childs, 0, __ATOMIC_RELAXED);
 
-	/* Check that no dead children hold locks. */
-	while (check_all_locks() == true)
+	/* Check that no dead children hold locks.  Bound the loop: a child
+	 * stuck in D-state can hold a lock indefinitely; after 10 iterations
+	 * force-bust any remaining locks so we don't spin forever. */
+	for (i = 0; check_all_locks() == true && i < 10; i++)
 		reap_dead_kids();
+	if (check_all_locks() == true) {
+		for_each_child(i)
+			bust_lock(&shm->children[i]->syscall.lock);
+		bust_lock(&shm->syscalltable_lock);
+	}
 }
 
 
