@@ -16,8 +16,8 @@ static void ipx_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ipx = zmalloc(sizeof(struct sockaddr_ipx));
 
 	ipx->sipx_family = PF_IPX;
-	ipx->sipx_port = rand();
-	ipx->sipx_network = rand();
+	ipx->sipx_port = htons(rand());
+	ipx->sipx_network = htonl(rand());
 	for (i = 0; i < 6; i++)
 		ipx->sipx_node[i] = rand();
 	ipx->sipx_type = rand();
