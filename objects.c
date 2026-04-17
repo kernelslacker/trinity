@@ -178,6 +178,14 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 }
 
 
+/*
+ * Fixed capacity for global object arrays.  These are allocated in
+ * MAP_SHARED memory so children can safely read them.  Using realloc()
+ * on private heap would put the new array in the parent's address space
+ * only, causing children to SIGSEGV when they follow the pointer.
+ */
+#define GLOBAL_OBJ_MAX_CAPACITY	1024
+
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
@@ -195,14 +203,35 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 
 	head = get_objhead(scope, type);
 	if (head->list == NULL) {
-		head->list = zmalloc(sizeof(struct list_head));
+		if (scope == OBJ_GLOBAL) {
+			head->list = alloc_shared(sizeof(struct list_head));
+		} else {
+			head->list = zmalloc(sizeof(struct list_head));
+		}
 		INIT_LIST_HEAD(head->list);
 	}
 
 	list_add_tail(&obj->list, head->list);
 
-	/* Grow parallel array if needed */
-	if (head->num_entries >= head->array_capacity) {
+	/* For global objects, the array was pre-allocated in shared
+	 * memory by init_object_lists().  Never realloc — just reject
+	 * if we've hit the fixed capacity. */
+	if (scope == OBJ_GLOBAL) {
+		if (head->num_entries >= head->array_capacity) {
+			outputerr("add_object: global array full for type %u "
+				  "(cap %u)\n", type, head->array_capacity);
+			list_del(&obj->list);
+			if (is_fd_type(type)) {
+				int fd = fd_from_object(obj, type);
+				if (fd >= 0)
+					close(fd);
+			}
+			free(obj);
+			unlock(&shm->objlock);
+			return;
+		}
+	} else if (head->num_entries >= head->array_capacity) {
+		/* Local objects: grow via realloc on private heap. */
 		struct object **newarray;
 		unsigned int newcap;
 
@@ -218,8 +247,6 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 					close(fd);
 			}
 			free(obj);
-			if (scope == OBJ_GLOBAL)
-				unlock(&shm->objlock);
 			return;
 		}
 		head->array = newarray;
@@ -265,9 +292,20 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		}
 
 		head->list = NULL;
-		head->array = NULL;
 		head->num_entries = 0;
-		head->array_capacity = 0;
+
+		if (scope == OBJ_GLOBAL) {
+			/* Pre-allocate the parallel array in MAP_SHARED memory
+			 * so children can safely read it.  Never realloc. */
+			head->array = alloc_shared(GLOBAL_OBJ_MAX_CAPACITY *
+						   sizeof(struct object *));
+			memset(head->array, 0, GLOBAL_OBJ_MAX_CAPACITY *
+			       sizeof(struct object *));
+			head->array_capacity = GLOBAL_OBJ_MAX_CAPACITY;
+		} else {
+			head->array = NULL;
+			head->array_capacity = 0;
+		}
 
 		/*
 		 * child lists can inherit properties from global lists.
@@ -424,9 +462,16 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 	}
 
 	head->num_entries = 0;
-	free(head->array);
-	head->array = NULL;
-	head->array_capacity = 0;
+	/* Only free private-heap arrays (OBJ_LOCAL).  OBJ_GLOBAL arrays
+	 * were allocated with alloc_shared() and cannot be freed. */
+	if (scope == OBJ_LOCAL) {
+		free(head->array);
+		head->array = NULL;
+		head->array_capacity = 0;
+	} else {
+		/* Zero out the shared array for reuse. */
+		memset(head->array, 0, head->array_capacity * sizeof(struct object *));
+	}
 }
 
 /* Destroy all global objects on exit. */
