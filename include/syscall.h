@@ -102,7 +102,7 @@ struct arglist {
 struct results {
 	/* ARG_FD: tracks which fd values have succeeded.
 	 * Dynamically allocated on first successful fd arg. */
-	int *fdmap;
+	bool *fdmap;
 	/* ARG_LEN: range of successful length values. */
 	bool seen;
 	unsigned int min, max;
