@@ -85,8 +85,15 @@ static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 void mask_signals_child(void)
 {
 	struct sigaction sa;
-	sigset_t ss;
+	sigset_t ss, oldss;
 	int i;
+
+	/* Block all signals while we install handlers.  Without this,
+	 * a signal arriving between the catch-all sighandler install
+	 * and the proper handler install would silently _exit(SUCCESS),
+	 * masking the real cause of the child's death. */
+	sigfillset(&ss);
+	sigprocmask(SIG_BLOCK, &ss, &oldss);
 
 	for (i = 1; i < _NSIG; i++) {
 		(void)sigfillset(&ss);
@@ -148,6 +155,9 @@ void mask_signals_child(void)
 		int_sa.sa_sigaction = sigint_handler;
 		(void)sigaction(SIGINT, &int_sa, NULL);
 	}
+
+	/* All handlers installed — unblock signals. */
+	sigprocmask(SIG_SETMASK, &oldss, NULL);
 }
 
 
