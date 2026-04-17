@@ -41,15 +41,9 @@ static void store_successful_fd(struct results *results, unsigned long value)
 		return;
 
 	if (results->fdmap == NULL) {
-		lock(&shm->syscalltable_lock);
-		if (results->fdmap == NULL) {
-			results->fdmap = calloc(fdmap_size, sizeof(int));
-			if (results->fdmap == NULL) {
-				unlock(&shm->syscalltable_lock);
-				return;
-			}
-		}
-		unlock(&shm->syscalltable_lock);
+		results->fdmap = calloc(fdmap_size, sizeof(bool));
+		if (results->fdmap == NULL)
+			return;
 	}
 	results->fdmap[fd] = true;
 }
