@@ -144,10 +144,26 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 	switch (so->level) {
 	case SOL_HCI:
 		so->optname = RAND_ARRAY(bluetooth_hci_opts);
+		switch (so->optname) {
+		case HCI_FILTER:
+			so->optlen = sizeof(struct hci_filter);
+			break;
+		default:
+			so->optlen = sizeof(unsigned int);
+			break;
+		}
 		break;
 
 	case SOL_L2CAP:
 		so->optname = RAND_ARRAY(bluetooth_l2cap_opts);
+		switch (so->optname) {
+		case L2CAP_OPTIONS:
+			so->optlen = sizeof(struct l2cap_options);
+			break;
+		default:
+			so->optlen = sizeof(unsigned int);
+			break;
+		}
 		break;
 
 	case SOL_SCO:   /* no options currently */
@@ -155,10 +171,25 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 
 	case SOL_RFCOMM:
 		so->optname = RAND_ARRAY(bluetooth_rfcomm_opts);
+		so->optlen = sizeof(unsigned int);
 		break;
 
 	case SOL_BLUETOOTH:
 		so->optname = RAND_ARRAY(bluetooth_opts);
+		switch (so->optname) {
+		case BT_SECURITY:
+			so->optlen = sizeof(struct bt_security);
+			break;
+		case BT_POWER:
+			so->optlen = sizeof(struct bt_power);
+			break;
+		case BT_VOICE:
+			so->optlen = sizeof(struct bt_voice);
+			break;
+		default:
+			so->optlen = sizeof(unsigned int);
+			break;
+		}
 		break;
 
 	default: break;

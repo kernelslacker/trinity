@@ -46,11 +46,14 @@ static void llc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 {
 	so->level = SOL_LLC;
 	so->optname = RAND_ARRAY(llc_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 static void netbeui_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_NETBEUI;
+	so->optname = RAND_ARRAY(llc_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 static struct socket_triplet llc_triplets[] = {

@@ -33,6 +33,7 @@ static void ax25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 {
 	so->level = SOL_AX25;
 	so->optname = RAND_ARRAY(ax25_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 #define AX25_P_ROSE 1
