@@ -13,6 +13,7 @@
 #include "net.h"
 #include "objects.h"
 #include "params.h"	// quiet_level, do_specific_domain
+#include "pids.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -72,6 +73,12 @@ static struct object * add_socket(int fd, unsigned int domain, unsigned int type
 	obj->sockinfo.needs_setup = true;
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_SOCKET);
+
+	/* add_object frees obj and returns without inserting when called
+	 * from a child process (OBJ_GLOBAL from non-mainpid).  Signal
+	 * failure by returning NULL so callers can close the fd. */
+	if (getpid() != mainpid)
+		return NULL;
 
 	return obj;
 }
@@ -460,9 +467,11 @@ static void socket_child_ops(void)
 		(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
 	afd = accept4(fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
-	if (afd != -1)
-		(void) add_socket(afd, si->triplet.family,
-				  si->triplet.type, si->triplet.protocol);
+	if (afd != -1) {
+		if (!add_socket(afd, si->triplet.family,
+				si->triplet.type, si->triplet.protocol))
+			close(afd);
+	}
 
 out:
 	free(sa);
