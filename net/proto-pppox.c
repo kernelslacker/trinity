@@ -85,7 +85,7 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(__unused__ struct sockaddr **addr,
 	pppol2tpin6->pppol2tp.d_tunnel = rand();
 	pppol2tpin6->pppol2tp.d_session = rand();
 	pppol2tpin6->pppol2tp.addr.sin6_family = AF_INET6;
-	pppol2tpin6->pppol2tp.addr.sin6_port = rand();
+	pppol2tpin6->pppol2tp.addr.sin6_port = htons(rand());
 	pppol2tpin6->pppol2tp.addr.sin6_flowinfo = rand();
 	pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[0] = 0;
 	pppol2tpin6->pppol2tp.addr.sin6_addr.s6_addr32[1] = 0;
@@ -136,7 +136,7 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6(__unused__ struct sockaddr **addr
 	pppol2tpv3in6->pppol2tp.d_tunnel = rand();
 	pppol2tpv3in6->pppol2tp.d_session = rand();
 	pppol2tpv3in6->pppol2tp.addr.sin6_family = AF_INET6;
-	pppol2tpv3in6->pppol2tp.addr.sin6_port = rand();
+	pppol2tpv3in6->pppol2tp.addr.sin6_port = htons(rand());
 	pppol2tpv3in6->pppol2tp.addr.sin6_flowinfo = rand();
 	pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[0] = 0;
 	pppol2tpv3in6->pppol2tp.addr.sin6_addr.s6_addr32[1] = 0;

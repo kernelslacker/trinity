@@ -21,7 +21,7 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		rds = zmalloc(sizeof(struct sockaddr_in));
 		rds->sin_family = AF_INET;
 		rds->sin_addr.s_addr = random_ipv4_address();
-		rds->sin_port = rand() % 65535;
+		rds->sin_port = htons(rand() % 65535);
 		*addr = (struct sockaddr *) rds;
 		*addrlen = sizeof(struct sockaddr_in);
 	} else {
@@ -34,7 +34,7 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 			inet_pton(AF_INET6, "fe80::", &rds6->sin6_addr);
 		else
 			inet_pton(AF_INET6, "::1", &rds6->sin6_addr);
-		rds6->sin6_port = rand() % 65535;
+		rds6->sin6_port = htons(rand() % 65535);
 		*addr = (struct sockaddr *) rds6;
 		*addrlen = sizeof(struct sockaddr_in6);
 	}

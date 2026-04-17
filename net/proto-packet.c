@@ -10,6 +10,11 @@
 #include "random.h"
 #include "compat.h"
 
+/* ETH_P_* values are big-endian Ethernet types; socket() for PF_PACKET
+ * expects them in network byte order.  Use a compile-time byte-swap so
+ * the constant can appear in a static initializer. */
+#define ETH_P_ALL_NBO (((ETH_P_ALL & 0xff) << 8) | ((ETH_P_ALL >> 8) & 0xff))
+
 static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ll *ll;
@@ -145,9 +150,9 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 }
 
 static struct socket_triplet packet_triplets[] = {
-	{ .family = PF_PACKET, .protocol = ETH_P_ALL, .type = SOCK_PACKET },
-	{ .family = PF_PACKET, .protocol = ETH_P_ALL, .type = SOCK_RAW },
-	{ .family = PF_PACKET, .protocol = ETH_P_ALL, .type = SOCK_DGRAM },
+	{ .family = PF_PACKET, .protocol = ETH_P_ALL_NBO, .type = SOCK_PACKET },
+	{ .family = PF_PACKET, .protocol = ETH_P_ALL_NBO, .type = SOCK_RAW },
+	{ .family = PF_PACKET, .protocol = ETH_P_ALL_NBO, .type = SOCK_DGRAM },
 };
 
 const struct netproto proto_packet = {
