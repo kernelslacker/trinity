@@ -63,9 +63,11 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 				oldest = i;
 			}
 		}
-		ring[oldest].free_func(ring[oldest].ptr);
-		ring[oldest].ptr = NULL;
-		ring_count--;
+		if (ring[oldest].ptr != NULL && ring[oldest].free_func != NULL) {
+			ring[oldest].free_func(ring[oldest].ptr);
+			ring[oldest].ptr = NULL;
+			ring_count--;
+		}
 	}
 
 	/* Find an empty slot. */
