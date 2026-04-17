@@ -228,10 +228,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 /* ------------------------------------------------------------------ */
 
 /*
- * desc_by_nr[syscall_nr][arg_idx - 1] -> struct_desc* or NULL.
+ * desc_by_nr_64[syscall_nr][arg_idx - 1] -> struct_desc* or NULL.
+ * desc_by_nr_32[syscall_nr][arg_idx - 1] -> struct_desc* or NULL.
  * Populated at init time by scanning the active syscall table.
+ * Split to avoid collisions when biarch builds have different syscall
+ * numbers for 32-bit and 64-bit that happen to overlap.
  */
-static const struct struct_desc *desc_by_nr[MAX_NR_SYSCALL][6];
+static const struct struct_desc *desc_by_nr_64[MAX_NR_SYSCALL][6];
+static const struct struct_desc *desc_by_nr_32[MAX_NR_SYSCALL][6];
 
 /* ------------------------------------------------------------------ */
 /* API                                                                  */
@@ -249,11 +253,14 @@ const struct struct_desc *struct_catalog_lookup(const char *name)
 }
 
 const struct struct_desc *struct_arg_lookup(unsigned int nr,
-					    unsigned int arg_idx)
+					    unsigned int arg_idx,
+					    bool do32bit)
 {
 	if (nr >= MAX_NR_SYSCALL || arg_idx < 1 || arg_idx > 6)
 		return NULL;
-	return desc_by_nr[nr][arg_idx - 1];
+	if (do32bit)
+		return desc_by_nr_32[nr][arg_idx - 1];
+	return desc_by_nr_64[nr][arg_idx - 1];
 }
 
 /*
@@ -297,7 +304,8 @@ void struct_catalog_init(void)
 	unsigned int i;
 	int nr;
 
-	memset(desc_by_nr, 0, sizeof(desc_by_nr));
+	memset(desc_by_nr_64, 0, sizeof(desc_by_nr_64));
+	memset(desc_by_nr_32, 0, sizeof(desc_by_nr_32));
 
 	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
 		if (sa->arg_idx < 1 || sa->arg_idx > 6)
@@ -309,19 +317,19 @@ void struct_catalog_init(void)
 						  max_nr_64bit_syscalls,
 						  sa->syscall_name);
 			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL)
-				desc_by_nr[nr][sa->arg_idx - 1] = sa->desc;
+				desc_by_nr_64[nr][sa->arg_idx - 1] = sa->desc;
 
 			nr = search_syscall_table(syscalls_32bit,
 						  max_nr_32bit_syscalls,
 						  sa->syscall_name);
 			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL)
-				desc_by_nr[nr][sa->arg_idx - 1] = sa->desc;
+				desc_by_nr_32[nr][sa->arg_idx - 1] = sa->desc;
 		} else {
 			nr = search_syscall_table(syscalls,
 						  max_nr_syscalls,
 						  sa->syscall_name);
 			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL)
-				desc_by_nr[nr][sa->arg_idx - 1] = sa->desc;
+				desc_by_nr_64[nr][sa->arg_idx - 1] = sa->desc;
 		}
 	}
 
