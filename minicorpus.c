@@ -6,8 +6,10 @@
  * snapshot may be replayed with per-argument mutations to explore
  * nearby input space.
  *
- * Only syscalls without sanitise callbacks participate — those with
- * sanitise may allocate pointers that become stale, causing UAF.
+ * Syscalls with sanitise callbacks or with arg types that carry
+ * heap pointers (ARG_IOVEC, ARG_PATHNAME, ARG_SOCKADDR, ARG_MMAP)
+ * are excluded — those pointers become stale after deferred-free
+ * eviction, causing UAF on replay.
  */
 
 #include <errno.h>
@@ -81,6 +83,21 @@ void minicorpus_save(struct syscallrecord *rec)
 	entry = get_syscall_entry(nr, rec->do32bit);
 	if (entry == NULL)
 		return;
+
+	/* Reject syscalls whose args carry heap pointers allocated by
+	 * generic_sanitise().  After deferred-free eviction those pointers
+	 * go stale, and replaying them feeds freed memory to the kernel. */
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		switch (entry->argtype[i]) {
+		case ARG_IOVEC:
+		case ARG_PATHNAME:
+		case ARG_SOCKADDR:
+		case ARG_MMAP:
+			return;
+		default:
+			break;
+		}
+	}
 
 	ring = &minicorpus_shm->rings[nr];
 
@@ -191,6 +208,20 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	entry = get_syscall_entry(nr, rec->do32bit);
 	if (entry == NULL)
 		return false;
+
+	/* Don't replay into syscalls with pointer-bearing arg types.
+	 * Same rationale as minicorpus_save(). */
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		switch (entry->argtype[i]) {
+		case ARG_IOVEC:
+		case ARG_PATHNAME:
+		case ARG_SOCKADDR:
+		case ARG_MMAP:
+			return false;
+		default:
+			break;
+		}
+	}
 
 	/* Apply the snapshot with per-argument mutations. */
 	for (i = 0; i < entry->num_args && i < 6; i++) {
