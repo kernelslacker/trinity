@@ -43,14 +43,24 @@ static void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	tipc->family = AF_TIPC;
 	tipc->addrtype = RAND_ARRAY(tipc_addrtype);
 	tipc->scope = rand();
-	tipc->addr.id.ref = rand();
-	tipc->addr.id.node = rand();
-	tipc->addr.nameseq.type = rand();
-	tipc->addr.nameseq.lower = rand();
-	tipc->addr.nameseq.upper = rand();
-	tipc->addr.name.name.type = rand();
-	tipc->addr.name.name.instance = rand();
-	tipc->addr.name.domain = rand();
+
+	switch (tipc->addrtype) {
+	case TIPC_ADDR_ID:
+		tipc->addr.id.ref = rand();
+		tipc->addr.id.node = rand();
+		break;
+	case TIPC_ADDR_NAMESEQ:	/* also TIPC_SERVICE_RANGE */
+		tipc->addr.nameseq.type = rand();
+		tipc->addr.nameseq.lower = rand();
+		tipc->addr.nameseq.upper = rand();
+		break;
+	case TIPC_ADDR_NAME:
+	default:
+		tipc->addr.name.name.type = rand();
+		tipc->addr.name.name.instance = rand();
+		tipc->addr.name.domain = rand();
+		break;
+	}
 	*addr = (struct sockaddr *) tipc;
 	*addrlen = sizeof(struct sockaddr_tipc);
 }
