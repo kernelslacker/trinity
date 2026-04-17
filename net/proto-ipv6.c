@@ -64,7 +64,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 		inet_pton(AF_INET6, p, v6);
 
 		v4 = random_ipv4_address();
-		v6->s6_addr32[3] = htonl(v4);
+		v6->s6_addr32[3] = v4;
 
 	} else {
 		/* actual v6 addresses. */
