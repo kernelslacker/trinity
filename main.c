@@ -555,6 +555,10 @@ static bool spawn_child(int childno)
 		panic(EXIT_NO_FDS);
 		return false;
 	}
+	if (pidstatfiles[childno]) {
+		fclose(pidstatfiles[childno]);
+		pidstatfiles[childno] = NULL;
+	}
 	pidstatfiles[childno] = open_child_pidstat(pid);
 	__atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 
