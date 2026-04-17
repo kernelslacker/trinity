@@ -318,7 +318,7 @@ static void init_child(struct childdata *child, int childno)
 	 * decide which struct to skip — a corrupted num would cause us
 	 * to mprotect our own childdata and then SIGSEGV on write. */
 	for_each_child(i) {
-		if ((unsigned int)childno != i)
+		if ((unsigned int)childno != i && shm->children[i] != NULL)
 			mprotect(shm->children[i], sizeof(struct childdata), PROT_READ);
 	}
 
