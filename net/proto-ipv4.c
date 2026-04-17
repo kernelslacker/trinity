@@ -395,6 +395,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	case 0: {
 		struct tls12_crypto_info_aes_gcm_128 *ci = (struct tls12_crypto_info_aes_gcm_128 *) p;
 
+		generate_rand_bytes(p, sizeof(*ci));
 		ci->info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 		ci->info.cipher_type = TLS_CIPHER_AES_GCM_128;
 		so->optlen = sizeof(*ci);
@@ -403,6 +404,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	case 1: {
 		struct tls12_crypto_info_aes_gcm_256 *ci = (struct tls12_crypto_info_aes_gcm_256 *) p;
 
+		generate_rand_bytes(p, sizeof(*ci));
 		ci->info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 		ci->info.cipher_type = TLS_CIPHER_AES_GCM_256;
 		so->optlen = sizeof(*ci);
@@ -411,6 +413,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	case 2: {
 		struct tls12_crypto_info_aes_ccm_128 *ci = (struct tls12_crypto_info_aes_ccm_128 *) p;
 
+		generate_rand_bytes(p, sizeof(*ci));
 		ci->info.version = TLS_1_2_VERSION;
 		ci->info.cipher_type = TLS_CIPHER_AES_CCM_128;
 		so->optlen = sizeof(*ci);
@@ -419,6 +422,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	case 3: {
 		struct tls12_crypto_info_chacha20_poly1305 *ci = (struct tls12_crypto_info_chacha20_poly1305 *) p;
 
+		generate_rand_bytes(p, sizeof(*ci));
 		ci->info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 		ci->info.cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
 		so->optlen = sizeof(*ci);
@@ -427,6 +431,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	case 4: {
 		struct tls12_crypto_info_sm4_gcm *ci = (struct tls12_crypto_info_sm4_gcm *) p;
 
+		generate_rand_bytes(p, sizeof(*ci));
 		ci->info.version = TLS_1_3_VERSION;
 		ci->info.cipher_type = TLS_CIPHER_SM4_GCM;
 		so->optlen = sizeof(*ci);
@@ -435,6 +440,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	case 5: {
 		struct tls12_crypto_info_sm4_ccm *ci = (struct tls12_crypto_info_sm4_ccm *) p;
 
+		generate_rand_bytes(p, sizeof(*ci));
 		ci->info.version = TLS_1_3_VERSION;
 		ci->info.cipher_type = TLS_CIPHER_SM4_CCM;
 		so->optlen = sizeof(*ci);
