@@ -28,10 +28,17 @@ static void rxrpc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	rxrpc->srx_service = rand();
 	rxrpc->transport_type = SOCK_DGRAM;
 
-	rxrpc->transport_len = sizeof(struct sockaddr_in);
-	rxrpc->transport.sin.sin_family = AF_INET;
-	rxrpc->transport.sin.sin_addr.s_addr = random_ipv4_address();
-	rxrpc->transport.sin.sin_port = htons(rand() % 65536);
+	if (RAND_BOOL()) {
+		rxrpc->transport_len = sizeof(struct sockaddr_in);
+		rxrpc->transport.sin.sin_family = AF_INET;
+		rxrpc->transport.sin.sin_addr.s_addr = random_ipv4_address();
+		rxrpc->transport.sin.sin_port = htons(rand() % 65536);
+	} else {
+		rxrpc->transport_len = sizeof(struct sockaddr_in6);
+		rxrpc->transport.sin6.sin6_family = AF_INET6;
+		rxrpc->transport.sin6.sin6_addr.s6_addr32[3] = htonl(1); /* ::1 */
+		rxrpc->transport.sin6.sin6_port = htons(rand() % 65536);
+	}
 
 	*addr = (struct sockaddr *) rxrpc;
 	*addrlen = sizeof(struct sockaddr_rxrpc);
