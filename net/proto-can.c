@@ -72,7 +72,7 @@ static void can_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, s
 		cxl->prio = rand() & CAN_SFF_MASK;
 		cxl->flags = CANXL_XLF | (rand() & 0x03);
 		cxl->sdt = rand();
-		cxl->len = CANXL_MIN_DLEN + rand() % CANXL_MAX_DLEN;
+		cxl->len = CANXL_MIN_DLEN + rand() % (CANXL_MAX_DLEN - CANXL_MIN_DLEN + 1);
 		cxl->af = rand();
 		generate_rand_bytes(cxl->data, CANXL_MAX_DLEN);
 		*buf = cxl;
