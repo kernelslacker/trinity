@@ -16,6 +16,14 @@ struct io_uringobj;
 void create_shm(void);
 void init_shm(void);
 
+/*
+ * Toggle write protection on the shm struct page(s).  Used to bracket
+ * parent-only writes so that stray pointer writes from fuzzing children
+ * fault instead of silently corrupting shared state.
+ */
+void shm_set_writable(void);
+void shm_set_readonly(void);
+
 struct shm_s {
 	char __padding[4096];
 

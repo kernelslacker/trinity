@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "debug.h"
 #include "struct_catalog.h"
 #include "fd-event.h"
 #include "kcov.h"
@@ -25,6 +26,24 @@ struct shm_s *shm;
 #define SHM_PROT_PAGES 30
 
 unsigned int shm_size;
+
+/*
+ * alloc_shared() returns page-aligned mmap addresses, so the shm
+ * struct itself is page-aligned and shm_size is rounded up to a page
+ * multiple in create_shm().  That makes mprotect() over the entire
+ * range valid.
+ */
+void shm_set_writable(void)
+{
+	if (mprotect(shm, shm_size, PROT_READ | PROT_WRITE) != 0)
+		BUG("shm_set_writable: mprotect failed\n");
+}
+
+void shm_set_readonly(void)
+{
+	if (mprotect(shm, shm_size, PROT_READ) != 0)
+		BUG("shm_set_readonly: mprotect failed\n");
+}
 
 void create_shm(void)
 {
