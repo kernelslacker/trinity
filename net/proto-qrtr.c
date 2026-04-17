@@ -18,7 +18,6 @@ static void qrtr_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 static struct socket_triplet qipcrtr_triplet[] = {
 	{ .family = PF_QIPCRTR, .protocol = 0, .type = SOCK_DGRAM },
-	{ .family = PF_QIPCRTR, .protocol = 0, .type = SOCK_STREAM },
 };
 
 const struct netproto proto_qipcrtr = {
