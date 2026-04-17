@@ -475,31 +475,6 @@ static struct socket_triplet ipv4_triplets[] = {
 };
 
 static struct socket_triplet ipv4_privileged_triplets[] = {
-	{ .family = PF_INET, .protocol = IPPROTO_ICMP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_IGMP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_IPIP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_TCP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_EGP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_PUP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_UDP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_IDP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_TP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_DCCP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_IPV6, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_RSVP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_GRE, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_ESP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_AH, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_MTP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_BEETPH, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_ENCAP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_PIM, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_COMP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_UDPLITE, .type = SOCK_PACKET },
-	{ .family = PF_INET, .protocol = IPPROTO_MPLS, .type = SOCK_PACKET },
-
-
 	{ .family = PF_INET, .protocol = IPPROTO_IP, .type = SOCK_RAW },
 	{ .family = PF_INET, .protocol = IPPROTO_ICMP, .type = SOCK_RAW },
 	{ .family = PF_INET, .protocol = IPPROTO_IGMP, .type = SOCK_RAW },
