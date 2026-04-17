@@ -59,7 +59,7 @@ struct childdata * this_child(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (pids[i] == mypid)
+		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == mypid)
 			return shm->children[i];
 	}
 	return NULL;
@@ -73,7 +73,7 @@ int find_childno(pid_t mypid)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (pids[i] == mypid)
+		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == mypid)
 			return i;
 	}
 	return CHILD_NOT_FOUND;
@@ -84,7 +84,7 @@ bool pidmap_empty(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		if (pids[i] != EMPTY_PIDSLOT)
+		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) != EMPTY_PIDSLOT)
 			return false;
 	}
 	return true;
@@ -110,10 +110,10 @@ void dump_childnos(void)
 			if (i + j >= max_children)
 				break;
 
-			if (pids[i + j] == EMPTY_PIDSLOT) {
+			if (__atomic_load_n(&pids[i + j], __ATOMIC_RELAXED) == EMPTY_PIDSLOT) {
 				n = snprintf(sptr, end - sptr, "[empty] ");
 			} else {
-				pid_t pid = pids[i + j];
+				pid_t pid = __atomic_load_n(&pids[i + j], __ATOMIC_RELAXED);
 
 				n = snprintf(sptr, end - sptr, "%u ", pid);
 			}
@@ -179,7 +179,7 @@ void pids_init(void)
 
 	pids = alloc_shared(max_children * sizeof(pid_t));
 	for_each_child(i)
-		pids[i] = EMPTY_PIDSLOT;
+		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 }
 
 int pid_is_valid(pid_t pid)
@@ -216,7 +216,7 @@ unsigned int get_pid(void)
 	if (dice < 70) {
 		unsigned int retries = 0;
 retry:		i = rand() % max_children;
-		pid = pids[i];
+		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (pid == EMPTY_PIDSLOT || pid == getppid()) {
 			if (++retries >= 100)
 				return getpid();
