@@ -36,7 +36,6 @@ static const unsigned int udp_opts[] = {
 void udp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned short *optval16;
-	char *optval;
 
 	so->optname = RAND_ARRAY(udp_opts);
 
@@ -47,10 +46,12 @@ void udp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 	case UDP_GRO:
 		break;
 
-	case UDP_ENCAP:
-		optval = (char *) so->optval;
-		optval[0] = RAND_RANGE(1, UDP_ENCAP_RXRPC);
+	case UDP_ENCAP: {
+		unsigned int *optval32 = (unsigned int *) so->optval;
+		*optval32 = RAND_RANGE(1, UDP_ENCAP_RXRPC);
+		so->optlen = sizeof(unsigned int);
 		break;
+	}
 
 	case UDP_SEGMENT:
 		/* GSO segment size — typical MTU-derived values are most interesting. */

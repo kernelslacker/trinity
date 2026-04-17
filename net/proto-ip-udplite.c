@@ -44,7 +44,6 @@ void udplite_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tr
 {
 	unsigned int *optval32;
 	unsigned short *optval16;
-	char *optval;
 
 	so->optname = RAND_ARRAY(udplite_opts);
 
@@ -55,10 +54,12 @@ void udplite_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tr
 	case UDP_GRO:
 		break;
 
-	case UDP_ENCAP:
-		optval = (char *) so->optval;
-		optval[0] = RAND_RANGE(1, UDP_ENCAP_RXRPC);
+	case UDP_ENCAP: {
+		unsigned int *encap = (unsigned int *) so->optval;
+		*encap = RAND_RANGE(1, UDP_ENCAP_RXRPC);
+		so->optlen = sizeof(unsigned int);
 		break;
+	}
 
 	case UDP_SEGMENT:
 		optval16 = (unsigned short *) so->optval;
