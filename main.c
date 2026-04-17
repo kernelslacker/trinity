@@ -107,6 +107,8 @@ static int shm_is_corrupt(void)
  */
 void reap_child(struct childdata *child, int childno)
 {
+	if (child == NULL)
+		return;
 	/* Don't reap a child again */
 	if (__atomic_load_n(&pids[childno], __ATOMIC_RELAXED) == EMPTY_PIDSLOT)
 		return;
