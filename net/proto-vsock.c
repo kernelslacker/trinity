@@ -1,7 +1,6 @@
+#ifdef USE_VSOCK
 #include <sys/time.h>
 #include <stdlib.h>
-/* for struct sockaddr and sa_family_t, needed in vm_sockets.h, fixed by 22bbc1dcd0d6 */
-#include <sys/socket.h>
 #include <linux/vm_sockets.h>
 #include "net.h"
 #include "random.h"
@@ -115,3 +114,4 @@ const struct netproto proto_vsock = {
 	.valid_triplets = vsock_triplets,
 	.nr_triplets = ARRAY_SIZE(vsock_triplets),
 };
+#endif /* USE_VSOCK */

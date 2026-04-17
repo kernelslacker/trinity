@@ -1,3 +1,4 @@
+#ifdef USE_MCTP
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/mctp.h>
@@ -5,6 +6,22 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+
+#ifndef MCTP_NET_ANY
+#define MCTP_NET_ANY		0x0
+#endif
+#ifndef MCTP_ADDR_ANY
+#define MCTP_ADDR_ANY		0xff
+#endif
+#ifndef MCTP_TAG_MASK
+#define MCTP_TAG_MASK		0x07
+#endif
+#ifndef MCTP_TAG_OWNER
+#define MCTP_TAG_OWNER		0x08
+#endif
+#ifndef MCTP_OPT_ADDR_EXT
+#define MCTP_OPT_ADDR_EXT	1
+#endif
 
 static void mctp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -42,3 +59,4 @@ const struct netproto proto_mctp = {
 	.valid_triplets = mctp_triplets,
 	.nr_triplets = ARRAY_SIZE(mctp_triplets),
 };
+#endif /* USE_MCTP */
