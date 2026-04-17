@@ -44,7 +44,9 @@ static void epoll_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 
 	pick_random_ioctl(grp, rec);
 
-	params = (struct epoll_params *) get_writable_address(sizeof(*params));
+	params = (struct epoll_params *) get_writable_struct(sizeof(*params));
+	if (!params)
+		return;
 
 	if (rec->a2 == EPIOCSPARAMS) {
 		params->busy_poll_usecs = rand() % 1000000;

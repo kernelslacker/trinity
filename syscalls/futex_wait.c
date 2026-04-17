@@ -40,7 +40,9 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	/* val: write a known value to uaddr so the comparison can succeed */
 	__u32 *futex_word;
 
-	futex_word = (__u32 *) get_writable_address(sizeof(*futex_word));
+	futex_word = (__u32 *) get_writable_struct(sizeof(*futex_word));
+	if (!futex_word)
+		return;
 	*futex_word = rand32();
 	rec->a1 = (unsigned long) futex_word;
 	rec->a2 = *futex_word;	/* match the value we just wrote */
@@ -57,7 +59,9 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	if (RAND_BOOL()) {
 		struct timespec *ts;
 
-		ts = (struct timespec *) get_writable_address(sizeof(*ts));
+		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
+		if (!ts)
+			return;
 		ts->tv_sec = 0;
 		ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
 		rec->a5 = (unsigned long) ts;

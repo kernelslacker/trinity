@@ -52,6 +52,11 @@ void * get_non_null_address(void)
 	return get_writable_address(size);
 }
 
+void * get_writable_struct(size_t size)
+{
+	return get_writable_address(size);
+}
+
 void * get_address(void)
 {
 	if (ONE_IN(100))

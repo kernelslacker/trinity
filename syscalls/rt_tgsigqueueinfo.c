@@ -20,7 +20,9 @@ static void sanitise_rt_tgsigqueueinfo(struct syscallrecord *rec)
 {
 	siginfo_t *info;
 
-	info = (siginfo_t *) get_writable_address(sizeof(*info));
+	info = (siginfo_t *) get_writable_struct(sizeof(*info));
+	if (!info)
+		return;
 	memset(info, 0, sizeof(*info));
 
 	info->si_code = SI_QUEUE;

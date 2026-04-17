@@ -11,7 +11,9 @@ static void sanitise_sched_setaffinity(struct syscallrecord *rec)
 	cpu_set_t *mask;
 	unsigned int i, ncpus;
 
-	mask = (cpu_set_t *) get_writable_address(sizeof(*mask));
+	mask = (cpu_set_t *) get_writable_struct(sizeof(*mask));
+	if (!mask)
+		return;
 	CPU_ZERO(mask);
 
 	switch (rand() % 4) {

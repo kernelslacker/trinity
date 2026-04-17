@@ -9,7 +9,9 @@ static void sanitise_sched_setparam(struct syscallrecord *rec)
 {
 	struct sched_param *sp;
 
-	sp = (struct sched_param *) get_writable_address(sizeof(*sp));
+	sp = (struct sched_param *) get_writable_struct(sizeof(*sp));
+	if (!sp)
+		return;
 
 	switch (rand() % 4) {
 	case 0: sp->sched_priority = 0; break;			/* SCHED_OTHER/BATCH/IDLE */

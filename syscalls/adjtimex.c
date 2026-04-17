@@ -19,7 +19,9 @@ static void sanitise_adjtimex(struct syscallrecord *rec)
 {
 	struct timex *tx;
 
-	tx = (struct timex *) get_writable_address(sizeof(*tx));
+	tx = (struct timex *) get_writable_struct(sizeof(*tx));
+	if (!tx)
+		return;
 	memset(tx, 0, sizeof(*tx));
 
 	tx->modes = RAND_ARRAY(adj_modes);

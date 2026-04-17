@@ -108,7 +108,9 @@ static void sanitise_mount(struct syscallrecord *rec)
 	char *type;
 
 	fstype = filesystem_types[rand() % nr_filesystem_types];
-	type = (char *) get_writable_address(32);
+	type = (char *) get_writable_struct(32);
+	if (!type)
+		return;
 	strncpy(type, fstype, 31);
 	type[31] = '\0';
 
@@ -150,7 +152,9 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	unsigned int i, nbits;
 	__u64 attrs;
 
-	ma = (struct mount_attr *) get_writable_address(sizeof(*ma));
+	ma = (struct mount_attr *) get_writable_struct(sizeof(*ma));
+	if (!ma)
+		return;
 	memset(ma, 0, sizeof(*ma));
 
 	/* Build random attr_set (things to turn on). */

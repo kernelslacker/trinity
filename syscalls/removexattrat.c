@@ -13,7 +13,10 @@ static unsigned long removexattrat_at_flags[] = {
 
 static void sanitise_removexattrat(struct syscallrecord *rec)
 {
-	char *name = (char *) get_writable_address(256);
+	char *name = (char *) get_writable_struct(256);
+
+	if (!name)
+		return;
 	gen_xattr_name(name, 256);
 	rec->a4 = (unsigned long) name;
 }

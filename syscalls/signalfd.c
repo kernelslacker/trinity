@@ -9,7 +9,9 @@ static void sanitise_signalfd(struct syscallrecord *rec)
 {
 	sigset_t *set;
 
-	set = (sigset_t *) get_writable_address(sizeof(*set));
+	set = (sigset_t *) get_writable_struct(sizeof(*set));
+	if (!set)
+		return;
 	sigemptyset(set);
 	sigaddset(set, SIGUSR1);
 	sigaddset(set, SIGUSR2);
@@ -54,7 +56,9 @@ static void sanitise_signalfd4(struct syscallrecord *rec)
 {
 	sigset_t *set;
 
-	set = (sigset_t *) get_writable_address(sizeof(*set));
+	set = (sigset_t *) get_writable_struct(sizeof(*set));
+	if (!set)
+		return;
 	sigemptyset(set);
 	sigaddset(set, SIGUSR1);
 	sigaddset(set, SIGUSR2);

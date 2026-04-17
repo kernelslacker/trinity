@@ -296,6 +296,8 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 	case AUTOFS_DEV_IOCTL_ASKUMOUNT:
 	case AUTOFS_DEV_IOCTL_ISMOUNTPOINT:
 		arg = (struct autofs_dev_ioctl *) rec->a3;
+		if (!arg)
+			break;
 		init_autofs_dev_ioctl(arg);
 		arg->ioctlfd = get_random_fd();
 		arg->fail.token = rand();

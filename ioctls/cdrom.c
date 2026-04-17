@@ -74,15 +74,17 @@ static void cdrom_send_packet_sanitise(struct syscallrecord *rec)
 	struct cdrom_generic_command *cgc;
 	unsigned int i;
 
-	cgc = (struct cdrom_generic_command *) get_writable_address(sizeof(*cgc));
+	cgc = (struct cdrom_generic_command *) get_writable_struct(sizeof(*cgc));
+	if (!cgc)
+		return;
 
 	cgc->cmd[0] = cdrom_scsi_opcodes[rand() % ARRAY_SIZE(cdrom_scsi_opcodes)];
 	for (i = 1; i < CDROM_PACKET_SIZE; i++)
 		cgc->cmd[i] = (unsigned char) rand();
 
-	cgc->buffer = (unsigned char *) get_writable_address(4096);
+	cgc->buffer = (unsigned char *) get_writable_struct(4096);
 	cgc->buflen = 4096;
-	cgc->sense = (struct request_sense *) get_writable_address(sizeof(struct request_sense));
+	cgc->sense = (struct request_sense *) get_writable_struct(sizeof(struct request_sense));
 
 	switch (rand() % 3) {
 	case 0:	cgc->data_direction = CGC_DATA_READ;	break;
@@ -112,7 +114,9 @@ static void cdrom_dvd_auth_sanitise(struct syscallrecord *rec)
 	};
 	dvd_authinfo *dai;
 
-	dai = (dvd_authinfo *) get_writable_address(sizeof(*dai));
+	dai = (dvd_authinfo *) get_writable_struct(sizeof(*dai));
+	if (!dai)
+		return;
 	memset(dai, 0, sizeof(*dai));
 	dai->type = auth_types[rand() % ARRAY_SIZE(auth_types)];
 
