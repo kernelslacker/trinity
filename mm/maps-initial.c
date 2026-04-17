@@ -138,6 +138,7 @@ static void setup_mapping_sizes(void)
 		max_children /= 4;
 		return;
 	}
+	return;
 
 disable_1gb_mappings:
 	mapping_sizes[8] = page_size;
