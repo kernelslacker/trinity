@@ -26,6 +26,7 @@ static void x25_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	unsigned int *optval;
 
 	so->level = SOL_X25;
+	so->optname = X25_QBITINCL;
 
 	optval = (unsigned int *) so->optval;
 	*optval = RAND_BOOL();
