@@ -149,7 +149,7 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 
 static bool is_fd_type(enum objecttype type)
 {
-	return type >= OBJ_FD_PIPE && type <= OBJ_FD_MQ;
+	return type >= OBJ_FD_PIPE && type <= OBJ_FD_IOMMUFD;
 }
 
 struct object * alloc_object(void)
@@ -338,6 +338,8 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = -1; break;
 	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = -1; break;
 	case OBJ_FD_MQ:		obj->mqobj.fd = -1; break;
+	case OBJ_FD_SECCOMP_NOTIF: obj->seccomp_notifobj.fd = -1; break;
+	case OBJ_FD_IOMMUFD:	obj->iommufdobj.fd = -1; break;
 	default:		break;
 	}
 }
@@ -464,6 +466,8 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_LANDLOCK:	return obj->landlockobj.fd;
 	case OBJ_FD_PIDFD:	return obj->pidfdobj.fd;
 	case OBJ_FD_MQ:		return obj->mqobj.fd;
+	case OBJ_FD_SECCOMP_NOTIF: return obj->seccomp_notifobj.fd;
+	case OBJ_FD_IOMMUFD:	return obj->iommufdobj.fd;
 	default:		return -1;
 	}
 }
