@@ -70,7 +70,7 @@ static int shm_is_corrupt(void)
 			return true;
 
 		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
-		pid = pids[i];
+		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (child == NULL)
 			continue;
 		if (pid == EMPTY_PIDSLOT)
@@ -108,12 +108,12 @@ static int shm_is_corrupt(void)
 void reap_child(struct childdata *child, int childno)
 {
 	/* Don't reap a child again */
-	if( pids[childno] == EMPTY_PIDSLOT )
+	if (__atomic_load_n(&pids[childno], __ATOMIC_RELAXED) == EMPTY_PIDSLOT)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	bust_lock(&child->syscall.lock);
 	__atomic_sub_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
-	pids[childno] = EMPTY_PIDSLOT;
+	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
 }
 
 /* Make sure there's no dead kids lying around.
@@ -132,7 +132,7 @@ static void reap_dead_kids(void)
 		pid_t pid;
 		int childstatus;
 
-		pid = pids[i];
+		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -179,7 +179,7 @@ static void kill_all_kids(void)
 	for_each_child(i) {
 		pid_t pid;
 
-		pid = pids[i];
+		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -345,7 +345,7 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	bool do32;
 	char state;
 
-	pid = pids[childno];
+	pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
 
 	if (shm->debug == false)
 		return;
@@ -397,7 +397,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	pid_t pid;
 	char state;
 
-	pid = pids[childno];
+	pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
 
 	if (pid == EMPTY_PIDSLOT)
 		return true;
@@ -493,7 +493,7 @@ static void stall_genocide(void)
 	unsigned int i;
 
 	for_each_child(i) {
-		pid_t pid = pids[i];
+		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -543,7 +543,7 @@ static bool spawn_child(int childno)
 	}
 
 	/* Child won't get out of init_child until we write the pid */
-	pids[childno] = pid;
+	__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
 	int nr_fds = get_num_fds();
 	if ((max_files_rlimit.rlim_cur - nr_fds) < 3)
 	{
@@ -617,7 +617,7 @@ static void fork_children(void)
 static void handle_childsig(int childno, int childstatus, bool stop)
 {
 	int __sig;
-	pid_t pid = pids[childno];
+	pid_t pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
 
 	if (children == NULL)
 		return;
@@ -745,7 +745,7 @@ static void handle_children(void)
 		int childstatus;
 		pid_t pid;
 
-		pid = pids[i];
+		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 
 		if (pid == EMPTY_PIDSLOT)
 			continue;
@@ -988,7 +988,7 @@ void reset_epoch_state(void)
 	shm->stats.previous_op_count = 0;
 
 	for_each_child(i) {
-		pids[i] = EMPTY_PIDSLOT;
+		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 		clean_childdata(shm->children[i]);
 		fd_event_ring_init(shm->children[i]->fd_event_ring);
 	}

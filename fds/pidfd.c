@@ -60,8 +60,8 @@ static int open_pidfd_fd(void)
 	if (shm->running_childs > 0) {
 		unsigned int i = rand() % max_children;
 
-		if (pids[i] != EMPTY_PIDSLOT)
-			pid = pids[i];
+		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) != EMPTY_PIDSLOT)
+			pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 	}
 
 	fd = open_pidfd(pid, flags);

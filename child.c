@@ -190,7 +190,7 @@ static void bind_child_to_cpu(struct childdata *child)
 {
 	cpu_set_t set;
 	unsigned int cpudest;
-	pid_t pid = pids[child->num];
+	pid_t pid = __atomic_load_n(&pids[child->num], __ATOMIC_RELAXED);
 
 	if (no_bind_to_cpu == true)
 		return;
@@ -325,7 +325,7 @@ static void init_child(struct childdata *child, int childno)
 	mprotect(pids, max_children * sizeof(int), PROT_READ);
 
 	/* Wait for parent to set our childno */
-	while (__atomic_load_n(&pids[childno], __ATOMIC_RELAXED) != pid) {
+	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
 		/* Make sure parent is actually alive to wait for us. */
 		if (pid_alive(mainpid) == false) {
 			panic(EXIT_SHM_CORRUPTION);
@@ -624,7 +624,7 @@ void child_process(struct childdata *child, int childno)
 			xcpu_pending = 0;
 			if (child->xcpu_count == 100) {
 				debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n",
-					child->num, pids[child->num]);
+					child->num, __atomic_load_n(&pids[child->num], __ATOMIC_RELAXED));
 				goto out;
 			}
 		}
