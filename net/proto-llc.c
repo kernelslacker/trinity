@@ -66,6 +66,25 @@ const struct netproto proto_llc = {
 	.nr_triplets = ARRAY_SIZE(llc_triplets),
 };
 
+static void netbeui_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+{
+	struct sockaddr_llc *llc;
+	unsigned int i;
+
+	llc = zmalloc(sizeof(struct sockaddr_llc));
+
+	llc->sllc_family = PF_NETBEUI;
+	llc->sllc_arphrd = ARPHRD_ETHER;
+	llc->sllc_test = rand();
+	llc->sllc_xid = rand();
+	llc->sllc_ua = rand();
+	llc->sllc_sap = rand();
+	for (i = 0; i < IFHWADDRLEN; i++)
+		llc->sllc_mac[i] = rand();
+	*addr = (struct sockaddr *) llc;
+	*addrlen = sizeof(struct sockaddr_llc);
+}
+
 static struct socket_triplet netbeui_triplets[] = {
 	{ .family = PF_NETBEUI, .protocol = 0, .type = SOCK_DGRAM },
 	{ .family = PF_NETBEUI, .protocol = 0, .type = SOCK_STREAM },
@@ -74,7 +93,7 @@ static struct socket_triplet netbeui_triplets[] = {
 const struct netproto proto_netbeui = {
 	.name = "netbeui",
 	.setsockopt = netbeui_setsockopt,
-	.gen_sockaddr = llc_gen_sockaddr,
+	.gen_sockaddr = netbeui_gen_sockaddr,
 	.valid_triplets = netbeui_triplets,
 	.nr_triplets = ARRAY_SIZE(netbeui_triplets),
 };
