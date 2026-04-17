@@ -92,6 +92,8 @@ void init_child_mappings(void)
 	head->dump = &map_dump;
 
 	globallist = shm->global_objects[OBJ_MMAP_ANON].list;
+	if (globallist == NULL)
+		return;
 
 	/* Copy the initial mapping list to the child.
 	 * Note we're only copying pointers here, the actual mmaps
