@@ -37,7 +37,9 @@ static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 	}
 
 	/* Otherwise allocate a valid siginfo_t with SI_QUEUE. */
-	siginfo_t *info = (siginfo_t *) get_writable_address(sizeof(*info));
+	siginfo_t *info = (siginfo_t *) get_writable_struct(sizeof(*info));
+	if (!info)
+		return;
 	memset(info, 0, sizeof(*info));
 	info->si_code = SI_QUEUE;
 	info->si_pid = getpid();

@@ -46,7 +46,9 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	unsigned int i, nbits;
 	__u64 param;
 
-	req = (struct mnt_id_req *) get_writable_address(sizeof(*req));
+	req = (struct mnt_id_req *) get_writable_struct(sizeof(*req));
+	if (!req)
+		return;
 	memset(req, 0, sizeof(*req));
 
 	req->size = MNT_ID_REQ_SIZE_VER0;

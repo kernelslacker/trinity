@@ -21,7 +21,9 @@ static void sanitise_fsopen(struct syscallrecord *rec)
 	char *name;
 
 	fstype = filesystem_types[rand() % nr_filesystem_types];
-	name = (char *) get_writable_address(32);
+	name = (char *) get_writable_struct(32);
+	if (!name)
+		return;
 	strncpy(name, fstype, 31);
 	name[31] = '\0';
 

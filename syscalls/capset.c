@@ -25,7 +25,9 @@ static void sanitise_capset(struct syscallrecord *rec)
 	struct __user_cap_data_struct *data;
 	unsigned int version;
 
-	hdr = (struct __user_cap_header_struct *) get_writable_address(sizeof(*hdr));
+	hdr = (struct __user_cap_header_struct *) get_writable_struct(sizeof(*hdr));
+	if (!hdr)
+		return;
 	version = RAND_ARRAY(cap_versions);
 	hdr->version = version;
 	hdr->pid = get_pid();
@@ -33,12 +35,16 @@ static void sanitise_capset(struct syscallrecord *rec)
 
 	/* v1 uses 1 data struct, v2/v3 use 2. */
 	if (version == _LINUX_CAPABILITY_VERSION_1) {
-		data = (struct __user_cap_data_struct *) get_writable_address(sizeof(*data));
+		data = (struct __user_cap_data_struct *) get_writable_struct(sizeof(*data));
+		if (!data)
+			return;
 		data->effective = rand32();
 		data->permitted = rand32();
 		data->inheritable = rand32();
 	} else {
-		data = (struct __user_cap_data_struct *) get_writable_address(2 * sizeof(*data));
+		data = (struct __user_cap_data_struct *) get_writable_struct(2 * sizeof(*data));
+		if (!data)
+			return;
 		data[0].effective = rand32();
 		data[0].permitted = rand32();
 		data[0].inheritable = rand32();

@@ -17,6 +17,7 @@ unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum);
 void *get_address(void);
 void *get_non_null_address(void);
 void *get_writable_address(unsigned long size);
+void *get_writable_struct(size_t size);
 unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int argnum);
 struct iovec * alloc_iovec(unsigned int num);
 unsigned long get_len(void);

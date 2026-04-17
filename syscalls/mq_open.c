@@ -19,7 +19,9 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	char *name;
 
 	/* Generate a valid mq name: must start with '/' */
-	name = (char *) get_writable_address(32);
+	name = (char *) get_writable_struct(32);
+	if (!name)
+		return;
 	name[0] = '/';
 	name[1] = 't';
 	name[2] = 'r';
@@ -28,7 +30,9 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	name[5] = '0' + (rand() % 10);
 	name[6] = '\0';
 
-	attr = (struct mq_attr *) get_writable_address(sizeof(*attr));
+	attr = (struct mq_attr *) get_writable_struct(sizeof(*attr));
+	if (!attr)
+		return;
 	memset(attr, 0, sizeof(*attr));
 
 	switch (rand() % 3) {

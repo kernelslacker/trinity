@@ -50,7 +50,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		unsigned int nsops, i;
 
 		nsops = 1 + (rand() % 8);
-		sops = (struct sembuf *) get_writable_address(nsops * sizeof(*sops));
+		sops = (struct sembuf *) get_writable_struct(nsops * sizeof(*sops));
+		if (!sops)
+			break;
 		for (i = 0; i < nsops; i++) {
 			sops[i].sem_num = rand() % 32;
 			sops[i].sem_op = (rand() % 5) - 2;	/* -2..2 */
@@ -66,7 +68,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 
 		if (call == SEMTIMEDOP) {
 			struct timespec *ts;
-			ts = (struct timespec *) get_writable_address(sizeof(*ts));
+			ts = (struct timespec *) get_writable_struct(sizeof(*ts));
+			if (!ts)
+				break;
 			ts->tv_sec = 0;
 			ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
 			rec->a6 = (unsigned long) ts;
@@ -102,7 +106,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		case IPC_SET:
 		case SEM_STAT: {
 			struct semid_ds *buf;
-			buf = (struct semid_ds *) get_writable_address(sizeof(*buf));
+			buf = (struct semid_ds *) get_writable_struct(sizeof(*buf));
+			if (!buf)
+				break;
 			memset(buf, 0, sizeof(*buf));
 			rec->a5 = (unsigned long) buf;
 			break;
@@ -116,7 +122,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 			unsigned short *arr;
 			unsigned int nsems = 1 + (rand() % 32);
 			unsigned int j;
-			arr = (unsigned short *) get_writable_address(nsems * sizeof(*arr));
+			arr = (unsigned short *) get_writable_struct(nsems * sizeof(*arr));
+			if (!arr)
+				break;
 			for (j = 0; j < nsems; j++)
 				arr[j] = rand() % 32768;
 			rec->a5 = (unsigned long) arr;
@@ -126,7 +134,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		case SEM_INFO: {
 			/* Kernel writes struct seminfo */
 			void *buf;
-			buf = get_writable_address(256);
+			buf = get_writable_struct(256);
+			if (!buf)
+				break;
 			memset(buf, 0, 256);
 			rec->a5 = (unsigned long) buf;
 			break;
@@ -143,7 +153,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		size_t msgsz;
 
 		msgsz = 1 + (rand() % 256);
-		mb = (struct msgbuf *) get_writable_address(sizeof(long) + msgsz);
+		mb = (struct msgbuf *) get_writable_struct(sizeof(long) + msgsz);
+		if (!mb)
+			break;
 		mb->mtype = 1 + (rand() % 100);
 		memset(mb->mtext, 'A', msgsz);
 
@@ -168,10 +180,14 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		} *tmp;
 		struct msgbuf *mb;
 
-		mb = (struct msgbuf *) get_writable_address(sizeof(long) + 256);
+		mb = (struct msgbuf *) get_writable_struct(sizeof(long) + 256);
+		if (!mb)
+			break;
 		memset(mb, 0, sizeof(long) + 256);
 
-		tmp = (void *) get_writable_address(sizeof(*tmp));
+		tmp = (void *) get_writable_struct(sizeof(*tmp));
+		if (!tmp)
+			break;
 		tmp->msgp = mb;
 		tmp->msgtyp = rand() % 10;	/* 0=any type */
 
@@ -205,7 +221,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		case IPC_SET:
 		case MSG_STAT: {
 			struct msqid_ds *buf;
-			buf = (struct msqid_ds *) get_writable_address(sizeof(*buf));
+			buf = (struct msqid_ds *) get_writable_struct(sizeof(*buf));
+			if (!buf)
+				break;
 			memset(buf, 0, sizeof(*buf));
 			rec->a5 = (unsigned long) buf;
 			break;
@@ -213,7 +231,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		case IPC_INFO:
 		case MSG_INFO: {
 			void *buf;
-			buf = get_writable_address(256);
+			buf = get_writable_struct(256);
+			if (!buf)
+				break;
 			memset(buf, 0, 256);
 			rec->a5 = (unsigned long) buf;
 			break;
@@ -232,10 +252,14 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		break;
 	}
 
-	case SHMDT:
+	case SHMDT: {
 		/* ptr=shmaddr — use a valid writable page */
-		rec->a5 = (unsigned long) get_writable_address(4096);
+		void *addr = get_writable_struct(4096);
+
+		if (addr)
+			rec->a5 = (unsigned long) addr;
 		break;
+	}
 
 	case SHMGET:
 		/* first=key, second=size, third=shmflg */
@@ -261,7 +285,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		case IPC_SET:
 		case SHM_STAT: {
 			struct shmid_ds *buf;
-			buf = (struct shmid_ds *) get_writable_address(sizeof(*buf));
+			buf = (struct shmid_ds *) get_writable_struct(sizeof(*buf));
+			if (!buf)
+				break;
 			memset(buf, 0, sizeof(*buf));
 			rec->a5 = (unsigned long) buf;
 			break;
@@ -269,7 +295,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		case IPC_INFO:
 		case SHM_INFO: {
 			void *buf;
-			buf = get_writable_address(256);
+			buf = get_writable_struct(256);
+			if (!buf)
+				break;
 			memset(buf, 0, 256);
 			rec->a5 = (unsigned long) buf;
 			break;

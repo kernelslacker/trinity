@@ -12,7 +12,9 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 {
 	struct sched_attr *sa;
 
-	sa = (struct sched_attr *) get_writable_address(sizeof(*sa));
+	sa = (struct sched_attr *) get_writable_struct(sizeof(*sa));
+	if (!sa)
+		return;
 	memset(sa, 0, sizeof(*sa));
 
 	sa->size = sizeof(*sa);

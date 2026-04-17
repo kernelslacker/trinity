@@ -13,7 +13,9 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 	struct cachestat_range *range;
 	struct cachestat *cs;
 
-	range = (struct cachestat_range *) get_writable_address(sizeof(*range));
+	range = (struct cachestat_range *) get_writable_struct(sizeof(*range));
+	if (!range)
+		return;
 
 	switch (rand() % 4) {
 	case 0: /* entire file */
@@ -34,7 +36,9 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 		break;
 	}
 
-	cs = (struct cachestat *) get_writable_address(sizeof(*cs));
+	cs = (struct cachestat *) get_writable_struct(sizeof(*cs));
+	if (!cs)
+		return;
 
 	rec->a2 = (unsigned long) range;
 	rec->a3 = (unsigned long) cs;

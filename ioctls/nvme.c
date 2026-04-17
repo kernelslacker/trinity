@@ -13,10 +13,12 @@ static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 	struct nvme_passthru_cmd *cmd;
 	static const __u8 admin_opcodes[] = { 0x06, 0x09, 0x0a, 0x0c };
 
-	cmd = (struct nvme_passthru_cmd *) get_writable_address(sizeof(*cmd));
+	cmd = (struct nvme_passthru_cmd *) get_writable_struct(sizeof(*cmd));
+	if (!cmd)
+		return;
 	cmd->opcode = admin_opcodes[rand() % ARRAY_SIZE(admin_opcodes)];
 	cmd->nsid = RAND_BOOL() ? 0 : rand32();
-	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->addr = (unsigned long) get_writable_struct(4096);
 	cmd->data_len = 4096;
 	cmd->timeout_ms = 1000;
 	cmd->cdw10 = rand32();
@@ -33,10 +35,12 @@ static void sanitise_nvme_admin64_cmd(struct syscallrecord *rec)
 	struct nvme_passthru_cmd64 *cmd;
 	static const __u8 admin_opcodes[] = { 0x06, 0x09, 0x0a, 0x0c };
 
-	cmd = (struct nvme_passthru_cmd64 *) get_writable_address(sizeof(*cmd));
+	cmd = (struct nvme_passthru_cmd64 *) get_writable_struct(sizeof(*cmd));
+	if (!cmd)
+		return;
 	cmd->opcode = admin_opcodes[rand() % ARRAY_SIZE(admin_opcodes)];
 	cmd->nsid = RAND_BOOL() ? 0 : rand32();
-	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->addr = (unsigned long) get_writable_struct(4096);
 	cmd->data_len = 4096;
 	cmd->timeout_ms = 1000;
 	cmd->cdw10 = rand32();
@@ -52,10 +56,12 @@ static void sanitise_nvme_io_cmd(struct syscallrecord *rec)
 {
 	struct nvme_passthru_cmd *cmd;
 
-	cmd = (struct nvme_passthru_cmd *) get_writable_address(sizeof(*cmd));
+	cmd = (struct nvme_passthru_cmd *) get_writable_struct(sizeof(*cmd));
+	if (!cmd)
+		return;
 	cmd->opcode = RAND_BOOL() ? 0x01 : 0x02;
 	cmd->nsid = RAND_BOOL() ? 1 : rand32();
-	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->addr = (unsigned long) get_writable_struct(4096);
 	cmd->data_len = 4096;
 	rec->a3 = (unsigned long) cmd;
 }
@@ -64,10 +70,12 @@ static void sanitise_nvme_io64_cmd(struct syscallrecord *rec)
 {
 	struct nvme_passthru_cmd64 *cmd;
 
-	cmd = (struct nvme_passthru_cmd64 *) get_writable_address(sizeof(*cmd));
+	cmd = (struct nvme_passthru_cmd64 *) get_writable_struct(sizeof(*cmd));
+	if (!cmd)
+		return;
 	cmd->opcode = RAND_BOOL() ? 0x01 : 0x02;
 	cmd->nsid = RAND_BOOL() ? 1 : rand32();
-	cmd->addr = (unsigned long) get_writable_address(4096);
+	cmd->addr = (unsigned long) get_writable_struct(4096);
 	cmd->data_len = 4096;
 	rec->a3 = (unsigned long) cmd;
 }
@@ -76,9 +84,11 @@ static void sanitise_nvme_submit_io(struct syscallrecord *rec)
 {
 	struct nvme_user_io *io;
 
-	io = (struct nvme_user_io *) get_writable_address(sizeof(*io));
+	io = (struct nvme_user_io *) get_writable_struct(sizeof(*io));
+	if (!io)
+		return;
 	io->opcode = RAND_BOOL() ? 0x01 : 0x02;
-	io->addr = (unsigned long) get_writable_address(4096);
+	io->addr = (unsigned long) get_writable_struct(4096);
 	io->nblocks = rand() % 8;
 	rec->a3 = (unsigned long) io;
 }

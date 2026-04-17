@@ -11,7 +11,9 @@ static void sanitise_fuse_backing_open(struct syscallrecord *rec)
 {
 	struct fuse_backing_map *map;
 
-	map = (struct fuse_backing_map *) get_writable_address(sizeof(*map));
+	map = (struct fuse_backing_map *) get_writable_struct(sizeof(*map));
+	if (!map)
+		return;
 	map->fd = get_random_fd();
 	map->flags = 0;
 	map->padding = 0;
@@ -22,7 +24,9 @@ static void sanitise_fuse_backing_close(struct syscallrecord *rec)
 {
 	uint32_t *id;
 
-	id = (uint32_t *) get_writable_address(sizeof(*id));
+	id = (uint32_t *) get_writable_struct(sizeof(*id));
+	if (!id)
+		return;
 	*id = rand32();
 	rec->a3 = (unsigned long) id;
 }

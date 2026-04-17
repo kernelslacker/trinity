@@ -36,7 +36,9 @@ static void sanitise_uffdio_register(struct syscallrecord *rec)
 		UFFDIO_REGISTER_MODE_MINOR,
 	};
 
-	ur = (struct uffdio_register *) get_writable_address(sizeof(*ur));
+	ur = (struct uffdio_register *) get_writable_struct(sizeof(*ur));
+	if (!ur)
+		return;
 	map = get_map();
 	if (map) {
 		ur->range.start = (unsigned long) map->ptr;
@@ -55,7 +57,9 @@ static void sanitise_uffdio_copy(struct syscallrecord *rec)
 		UFFDIO_COPY_MODE_WP,
 	};
 
-	uc = (struct uffdio_copy *) get_writable_address(sizeof(*uc));
+	uc = (struct uffdio_copy *) get_writable_struct(sizeof(*uc));
+	if (!uc)
+		return;
 	map = get_map();
 	if (map) {
 		uc->dst = (unsigned long) map->ptr;
@@ -73,7 +77,9 @@ static void sanitise_uffdio_zeropage(struct syscallrecord *rec)
 	struct uffdio_zeropage *uz;
 	struct map *map;
 
-	uz = (struct uffdio_zeropage *) get_writable_address(sizeof(*uz));
+	uz = (struct uffdio_zeropage *) get_writable_struct(sizeof(*uz));
+	if (!uz)
+		return;
 	map = get_map();
 	if (map) {
 		uz->range.start = (unsigned long) map->ptr;
@@ -92,7 +98,9 @@ static void sanitise_uffdio_writeprotect(struct syscallrecord *rec)
 		UFFDIO_WRITEPROTECT_MODE_DONTWAKE,
 	};
 
-	uwp = (struct uffdio_writeprotect *) get_writable_address(sizeof(*uwp));
+	uwp = (struct uffdio_writeprotect *) get_writable_struct(sizeof(*uwp));
+	if (!uwp)
+		return;
 	map = get_map();
 	if (map) {
 		uwp->range.start = (unsigned long) map->ptr;
@@ -111,7 +119,9 @@ static void sanitise_uffdio_continue(struct syscallrecord *rec)
 		UFFDIO_CONTINUE_MODE_WP,
 	};
 
-	uc = (struct uffdio_continue *) get_writable_address(sizeof(*uc));
+	uc = (struct uffdio_continue *) get_writable_struct(sizeof(*uc));
+	if (!uc)
+		return;
 	map = get_map();
 	if (map) {
 		uc->range.start = (unsigned long) map->ptr;
@@ -126,7 +136,9 @@ static void sanitise_uffdio_poison(struct syscallrecord *rec)
 	struct uffdio_poison *up;
 	struct map *map;
 
-	up = (struct uffdio_poison *) get_writable_address(sizeof(*up));
+	up = (struct uffdio_poison *) get_writable_struct(sizeof(*up));
+	if (!up)
+		return;
 	map = get_map();
 	if (map) {
 		up->range.start = (unsigned long) map->ptr;
@@ -145,7 +157,9 @@ static void sanitise_uffdio_move(struct syscallrecord *rec)
 		UFFDIO_MOVE_MODE_ALLOW_SRC_HOLES,
 	};
 
-	um = (struct uffdio_move *) get_writable_address(sizeof(*um));
+	um = (struct uffdio_move *) get_writable_struct(sizeof(*um));
+	if (!um)
+		return;
 	map = get_map();
 	if (map) {
 		um->dst = (unsigned long) map->ptr;
