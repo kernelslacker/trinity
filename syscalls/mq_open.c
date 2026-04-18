@@ -61,7 +61,7 @@ static void post_mq_open(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if (fd == -1)
+	if ((long)rec->retval < 0)
 		return;
 
 	close(fd);

@@ -47,7 +47,7 @@ static void post_landlock_create_ruleset(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if (fd == -1)
+	if ((long)rec->retval < 0)
 		return;
 
 	struct object *new = alloc_object();

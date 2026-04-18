@@ -105,7 +105,7 @@ static void post_io_uring_setup(struct syscallrecord *rec)
 
 	deferred_freeptr(&rec->a2);
 
-	if (fd == -1)
+	if ((long)rec->retval < 0)
 		return;
 
 	struct object *new = alloc_object();
