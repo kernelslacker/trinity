@@ -88,20 +88,28 @@ static bool parse_proc_devices(void)
 static bool parse_proc_misc(void)
 {
 	FILE *fp;
+	char *line = NULL;
+	size_t n = 0;
 	char *name;
 	int minor;
 	void *new;
+	bool success = true;
 
 	fp = fopen("/proc/misc", "r");
 	if (!fp)
 		return false;
 
-	while (fscanf(fp, "%d %ms", &minor, &name) == 2) {
+	while (getline(&line, &n, fp) >= 0) {
+		name = NULL;
+		if (sscanf(line, "%d %ms", &minor, &name) != 2) {
+			free(name);
+			continue;
+		}
 		new = realloc(misc_devs, (miscdevs+1)*sizeof(*misc_devs));
 		if (!new) {
 			free(name);
-			fclose(fp);
-			return false;
+			success = false;
+			break;
 		}
 		misc_devs = new;
 		misc_devs[miscdevs].major = 0;
@@ -111,7 +119,8 @@ static bool parse_proc_misc(void)
 	}
 
 	fclose(fp);
-	return true;
+	free(line);
+	return success;
 }
 
 bool parse_devices(void)
