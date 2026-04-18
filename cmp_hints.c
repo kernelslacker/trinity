@@ -73,7 +73,7 @@ static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 		if (++spins > 1000000) {
 			unsigned int gen = __atomic_load_n(&pool->lock_gen,
 				__ATOMIC_ACQUIRE);
-			pid_t owner = pool->locker_pid;
+			pid_t owner = __atomic_load_n(&pool->locker_pid, __ATOMIC_RELAXED);
 
 			if (owner != 0 && kill(owner, 0) == -1 &&
 			    errno == ESRCH &&
@@ -83,7 +83,7 @@ static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 			spins = 0;
 		}
 	}
-	pool->locker_pid = getpid();
+	__atomic_store_n(&pool->locker_pid, getpid(), __ATOMIC_RELAXED);
 	__atomic_fetch_add(&pool->lock_gen, 1, __ATOMIC_RELEASE);
 
 	for (i = 0; i < pool->count && i < CMP_HINTS_PER_SYSCALL; i++) {
@@ -99,7 +99,7 @@ static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 	}
 
 out:
-	pool->locker_pid = 0;
+	__atomic_store_n(&pool->locker_pid, 0, __ATOMIC_RELAXED);
 	__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
 }
 
