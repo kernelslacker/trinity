@@ -166,10 +166,13 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 {
 	unsigned long num_entries;
 
-	if (RAND_BOOL())
-		num_entries = 1;
-	else
+	/* Each iovec entry pulls a map under a global lock, so bias toward
+	 * small counts: 90% of the time pick 1-8, only occasionally exercise
+	 * the larger 1-256 range. */
+	if (ONE_IN(10))
 		num_entries = RAND_RANGE(1, 256);
+	else
+		num_entries = RAND_RANGE(1, 8);
 
 	if (argnum < 6 && entry->argtype[argnum] == ARG_IOVECLEN) {
 		switch (argnum) {
