@@ -9,6 +9,14 @@
 
 #define BUFSIZE 1024	// decoded syscall args are fprintf'd directly, this is for everything else.
 
+/* Set once at child init to avoid repeated getpid() syscalls in the output hot path. */
+static pid_t my_pid = 0;
+
+void output_set_pid(pid_t pid)
+{
+	my_pid = pid;
+}
+
 /*
  * level defines whether it gets displayed to the screen.
  * quiet_level defaults to 1 (only level 0 prints).
@@ -37,7 +45,7 @@ void output(int level, const char *fmt, ...)
 	}
 
 	/* prefix preparation */
-	pid = getpid();
+	pid = my_pid ? my_pid : getpid();
 
 	if (pid == mainpid)
 		prefix = main_prefix;

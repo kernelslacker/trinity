@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sys/types.h>
 #include "types.h"
 
 extern unsigned int num_online_cpus;
@@ -22,6 +23,7 @@ void panic(int reason);
 #define MAX_LOGLEVEL 3
 #define CONT -1
 void output(int level, const char *fmt, ...);
+void output_set_pid(pid_t pid);
 void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
 void debugf(const char *fmt, ...);
