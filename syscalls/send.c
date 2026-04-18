@@ -177,40 +177,41 @@ struct syscallentry syscall_sendmsg = {
  */
 #define SENDMMSG_MAX_VLEN	4
 
-static struct mmsghdr *sendmmsg_msgs;
-
 static void sanitise_sendmmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct mmsghdr *msgs;
 	unsigned int vlen;
 	unsigned int i;
 
 	rec->a1 = fd_from_socketinfo(si);
 
 	vlen = RAND_RANGE(1, SENDMMSG_MAX_VLEN);
-	sendmmsg_msgs = zmalloc(vlen * sizeof(struct mmsghdr));
+	msgs = zmalloc(vlen * sizeof(struct mmsghdr));
 
 	for (i = 0; i < vlen; i++) {
-		struct msghdr *msg = &sendmmsg_msgs[i].msg_hdr;
+		struct msghdr *msg = &msgs[i].msg_hdr;
 		unsigned int num_entries = RAND_RANGE(1, 3);
 
 		msg->msg_iov = alloc_iovec(num_entries);
 		msg->msg_iovlen = num_entries;
 	}
 
-	rec->a2 = (unsigned long) sendmmsg_msgs;
+	rec->a2 = (unsigned long) msgs;
 	rec->a3 = vlen;
 }
 
 static void post_sendmmsg(struct syscallrecord *rec)
 {
-	if (sendmmsg_msgs != NULL) {
+	struct mmsghdr *msgs = (struct mmsghdr *) rec->a2;
+
+	if (msgs != NULL) {
 		unsigned int i;
 
 		for (i = 0; i < (unsigned int) rec->a3; i++)
-			free(sendmmsg_msgs[i].msg_hdr.msg_iov);
-		free(sendmmsg_msgs);
-		sendmmsg_msgs = NULL;
+			free(msgs[i].msg_hdr.msg_iov);
+		free(msgs);
+		rec->a2 = 0;
 	}
 }
 
