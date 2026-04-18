@@ -49,6 +49,8 @@ static unsigned long handle_arg_address(struct syscallrecord *rec, unsigned int 
 	 * and munge that instead of returning a new one from get_address() */
 
 	addr = find_previous_arg_address(rec, argnum);
+	if (addr == 0)
+		return (unsigned long) get_address();
 
 	switch (rand() % 4) {
 	case 0:	break;	/* return unmodified */
