@@ -150,9 +150,9 @@ static void xdp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	case 5: xdp->sxdp_flags = rand() & 0x1f; break;
 	}
 
-	xdp->sxdp_ifindex = rand() % 4;	/* 0=invalid, 1=lo, 2-3=maybe eth */
-	xdp->sxdp_queue_id = rand() % 8;
-	xdp->sxdp_shared_umem_fd = rand() % 16;
+	xdp->sxdp_ifindex = rand() % 512;
+	xdp->sxdp_queue_id = rand() % 256;
+	xdp->sxdp_shared_umem_fd = rand() % 1024;
 
 	*addr = (struct sockaddr *) xdp;
 	*addrlen = sizeof(struct sockaddr_xdp);
