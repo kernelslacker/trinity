@@ -103,6 +103,9 @@ void init_child_mappings(void)
 		struct map *m;
 		struct object *globalobj, *newobj;
 
+		if (node == NULL)
+			break;
+
 		globalobj = (struct object *) node;
 		m = &globalobj->map;
 
