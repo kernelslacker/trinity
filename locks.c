@@ -137,7 +137,7 @@ void bust_lock(lock_t *lk)
 {
 	if (__atomic_load_n(&lk->lock, __ATOMIC_RELAXED) == UNLOCKED)
 		return;
-	if (getpid() != lk->owner)
+	if (getpid() != __atomic_load_n(&lk->owner, __ATOMIC_RELAXED))
 		return;
 	unlock(lk);
 }
