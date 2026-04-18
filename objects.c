@@ -190,6 +190,7 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
+	bool was_protected = false;
 
 	/* Children must not mutate global objects — the objhead metadata
 	 * is in shared memory but the objects/arrays are in per-process
@@ -199,8 +200,17 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		return;
 	}
 
-	if (scope == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL) {
 		lock(&shm->objlock);
+		/* Most parent-side OBJ_GLOBAL adds happen during init,
+		 * before freeze.  The post-freeze case is fd regeneration
+		 * via try_regenerate_fd() — temporarily lift the RO
+		 * protection so the list/array writes can land. */
+		if (globals_are_protected()) {
+			thaw_global_objects();
+			was_protected = true;
+		}
+	}
 
 	head = get_objhead(scope, type);
 	if (head->list == NULL) {
@@ -228,8 +238,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 					close(fd);
 			}
 			free(obj);
-			unlock(&shm->objlock);
-			return;
+			goto out_unlock;
 		}
 	} else if (head->num_entries >= head->array_capacity) {
 		/* Local objects: grow via realloc on private heap. */
@@ -270,16 +279,19 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			if (fd >= 0)
 				close(fd);
 			free(obj);
-			unlock(&shm->objlock);
-			return;
+			goto out_unlock;
 		}
 	}
 
 	if (head->dump != NULL)
 		head->dump(obj, scope);
 
-	if (scope == OBJ_GLOBAL)
+out_unlock:
+	if (scope == OBJ_GLOBAL) {
+		if (was_protected)
+			freeze_global_objects();
 		unlock(&shm->objlock);
+	}
 
 	/* if we just added something to a child list, check
 	 * to see if we need to do some pruning.
@@ -442,16 +454,26 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
+	bool was_protected = false;
+
 	if (scope == OBJ_GLOBAL && getpid() != mainpid)
 		return;
 
-	if (scope == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL) {
 		lock(&shm->objlock);
+		if (globals_are_protected()) {
+			thaw_global_objects();
+			was_protected = true;
+		}
+	}
 
 	__destroy_object(obj, scope, type, false);
 
-	if (scope == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL) {
+		if (was_protected)
+			freeze_global_objects();
 		unlock(&shm->objlock);
+	}
 }
 
 /*
@@ -557,14 +579,22 @@ void remove_object_by_fd(int fd)
 	struct fd_hash_entry *entry;
 	struct object *obj;
 	enum objecttype type;
+	bool was_protected = false;
 
 	if (getpid() != mainpid)
 		return;
 
 	lock(&shm->objlock);
 
+	if (globals_are_protected()) {
+		thaw_global_objects();
+		was_protected = true;
+	}
+
 	entry = fd_hash_lookup(fd);
 	if (entry == NULL) {
+		if (was_protected)
+			freeze_global_objects();
 		unlock(&shm->objlock);
 		return;
 	}
@@ -577,7 +607,14 @@ void remove_object_by_fd(int fd)
 
 	unlock(&shm->objlock);
 
+	/* try_regenerate_fd() may call add_object() which sees the
+	 * thawed state (globals_are_protected() returns false here)
+	 * and skips its own thaw/refreeze.  We refreeze afterwards
+	 * so the regeneration's writes stay covered by our window. */
 	try_regenerate_fd(type);
+
+	if (was_protected)
+		freeze_global_objects();
 }
 
 static void __prune_objects(enum objecttype type, enum obj_scope scope)
