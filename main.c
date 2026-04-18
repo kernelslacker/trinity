@@ -222,6 +222,7 @@ static void kill_all_kids(void)
 		for_each_child(i)
 			bust_lock(&children[i]->syscall.lock);
 		bust_lock(&shm->syscalltable_lock);
+		bust_lock(&shm->objlock);
 	}
 }
 
