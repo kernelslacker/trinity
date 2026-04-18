@@ -94,7 +94,7 @@ void dump_syscallrec(struct syscallrecord *rec)
 	output(0, " nr:%d a1:%lx a2:%lx a3:%lx a4:%lx a5:%lx a6:%lx retval:%ld errno_post:%d\n",
 		rec->nr, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6, rec->retval, rec->errno_post);
 	output(0, " do32bit:%d\n", rec->do32bit);
-	output(0, " lock:%d {owner:%d)\n", rec->lock.lock, rec->lock.owner);
+	output(0, " lock:%d (owner:%d)\n", LOCK_STATE(rec->lock.state), LOCK_OWNER(rec->lock.state));
 	output(0, " state:%d\n", rec->state);
 	output(0, " prebuffer : %p (len:%zu)\n", rec->prebuffer, strnlen(rec->prebuffer, PREBUFFER_LEN));
 	output(0, " -> %.*s\n", PREBUFFER_LEN, rec->prebuffer);
