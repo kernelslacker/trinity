@@ -73,13 +73,29 @@ unsigned int init_seed(unsigned int seedparam)
 	return seedparam;
 }
 
+/*
+ * Splitmix32-style mixer. Combines two 32-bit values with good
+ * avalanche so that nearby (seed, childno) pairs land far apart.
+ * Plain addition (seed + childno + 1) collides easily: e.g.
+ * (100, 0) and (99, 1) both produce 101.
+ */
+static unsigned int seed_combine(unsigned int seedval, unsigned int childno)
+{
+	unsigned int x = seedval ^ ((childno + 1) * 0x9e3779b1U);
+
+	x = (x ^ (x >> 16)) * 0x85ebca6bU;
+	x = (x ^ (x >> 13)) * 0xc2b2ae35U;
+	x = x ^ (x >> 16);
+	return x;
+}
+
 /* Mix in the childno so that all children get different randomness.
  * we can't use the actual pid or anything else 'random' because otherwise reproducing
  * seeds with -s would be much harder to replicate.
  */
 void set_seed(struct childdata *child)
 {
-	srand(shm->seed + (child->num + 1));
+	srand(seed_combine(shm->seed, child->num));
 	child->seed = shm->seed;
 }
 
