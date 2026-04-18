@@ -126,7 +126,7 @@ static void reap_dead_kids(void)
 		return;
 
 	for_each_child(i) {
-		pid_t pid;
+		pid_t pid, wpid;
 		int childstatus;
 
 		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
@@ -149,8 +149,8 @@ static void reap_dead_kids(void)
 			continue;
 		}
 
-		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		handle_child(i, pid, childstatus);
+		wpid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+		handle_child(i, wpid, childstatus);
 
 		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
 			return;
