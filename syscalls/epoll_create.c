@@ -14,7 +14,7 @@ static void post_epoll_create(struct syscallrecord *rec)
 	struct epollobj *eo;
 	int fd = rec->retval;
 
-	if (fd == -1)
+	if ((long)rec->retval < 0)
 		return;
 
 	new = alloc_object();

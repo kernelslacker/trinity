@@ -19,7 +19,7 @@ static void post_accept(struct syscallrecord *rec)
 	struct object *new;
 	int fd = rec->retval;
 
-	if (fd == -1)
+	if ((long)rec->retval < 0)
 		return;
 
 	new = alloc_object();
