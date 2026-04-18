@@ -171,7 +171,7 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		/* arg2=key, arg3=timeout, arg4=error, arg5=dest_keyring */
 		rec->a2 = (unsigned long) random_key_id();
 		rec->a3 = rand() % 60;
-		rec->a4 = 1 + (rand() % 133);	/* errno range */
+		rec->a4 = 1 + (rand() % 4095);	/* errno range: 1..MAX_ERRNO */
 		rec->a5 = (unsigned long) random_key_id();
 		break;
 
