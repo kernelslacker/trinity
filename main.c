@@ -762,7 +762,7 @@ static void handle_children(void)
 
 	/* If nothing happened, sleep briefly to avoid busy-looping. */
 	if (collected == 0)
-		usleep(250000);
+		usleep(25000);
 }
 
 static unsigned int stall_count;
