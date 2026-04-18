@@ -72,9 +72,34 @@ bool trylock(lock_t *lk)
 					   __ATOMIC_RELAXED);
 }
 
+/*
+ * If a child held this lock and got killed (SIGABRT, SIGSEGV, etc.),
+ * the lock is permanently held by a dead pid. Detect that case and
+ * release. We need ABA protection: between sampling owner=A and
+ * checking kill(A,0), the lock could have been released and re-acquired
+ * by a recycled pid. Compare the entire state word — if it's unchanged,
+ * nothing happened in between, so it's safe to CAS the lock to 0.
+ */
+static void try_release_dead_holder(lock_t *lk)
+{
+	unsigned long sampled = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
+	pid_t owner = LOCK_OWNER(sampled);
+
+	if (LOCK_STATE(sampled) != LOCKED || owner == 0)
+		return;
+	if (kill(owner, 0) != -1 || errno != ESRCH)
+		return;
+
+	/* Owner is dead. Try to release ONLY if nothing changed since
+	 * we sampled — a CAS to 0 with the sampled state as expected. */
+	__atomic_compare_exchange_n(&lk->state, &sampled, 0,
+				    0, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+}
+
 void lock(lock_t *lk)
 {
 	pid_t pid = getpid();
+	unsigned int spins = 0;
 
 	while (!trylock(lk)) {
 		unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
@@ -105,6 +130,13 @@ void lock(lock_t *lk)
 			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 				_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
 
+			/* After spinning a long time, check if the holder
+			 * died. Children can't rely on parent's check_lock()
+			 * because the parent might be busy or stuck itself. */
+			if (++spins > 1000000) {
+				try_release_dead_holder(lk);
+				spins = 0;
+			}
 		}
 
 		sched_yield();
