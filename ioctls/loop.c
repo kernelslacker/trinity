@@ -9,8 +9,7 @@
 #include "utils.h"
 #include "ioctls.h"
 
-/* Intentionally mix the loop and loop-control ioctls. */
-static const struct ioctl loop_ioctls[] = {
+static const struct ioctl loop_dev_ioctls[] = {
 	IOCTL(LOOP_SET_FD),
 	IOCTL(LOOP_CLR_FD),
 	IOCTL(LOOP_SET_STATUS),
@@ -19,7 +18,9 @@ static const struct ioctl loop_ioctls[] = {
 	IOCTL(LOOP_GET_STATUS64),
 	IOCTL(LOOP_CHANGE_FD),
 	IOCTL(LOOP_SET_CAPACITY),
+};
 
+static const struct ioctl loop_ctrl_ioctls[] = {
 #ifdef LOOP_CTL_ADD
 	IOCTL(LOOP_CTL_ADD),
 #endif
@@ -40,8 +41,8 @@ static const struct ioctl_group loop_ctrl_grp = {
 	.devs = loop_ctrl_devs,
 	.devs_cnt = ARRAY_SIZE(loop_ctrl_devs),
 	.sanitise = pick_random_ioctl,
-	.ioctls = loop_ioctls,
-	.ioctls_cnt = ARRAY_SIZE(loop_ioctls),
+	.ioctls = loop_ctrl_ioctls,
+	.ioctls_cnt = ARRAY_SIZE(loop_ctrl_ioctls),
 };
 
 REG_IOCTL_GROUP(loop_ctrl_grp)
@@ -91,8 +92,8 @@ static int loop_fd_test(int fd __attribute__((unused)), const struct stat *st)
 static const struct ioctl_group loop_grp = {
 	.fd_test = loop_fd_test,
 	.sanitise = pick_random_ioctl,
-	.ioctls = loop_ioctls,
-	.ioctls_cnt = ARRAY_SIZE(loop_ioctls),
+	.ioctls = loop_dev_ioctls,
+	.ioctls_cnt = ARRAY_SIZE(loop_dev_ioctls),
 };
 
 REG_IOCTL_GROUP(loop_grp)
