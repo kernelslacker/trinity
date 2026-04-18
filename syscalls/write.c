@@ -80,12 +80,7 @@ struct syscallentry syscall_writev = {
 static void sanitise_pwrite64(struct syscallrecord *rec)
 {
 	sanitise_write(rec);
-
-retry_pos:
-	if ((int) rec->a4 < 0) {
-		rec->a4 = rand64();
-		goto retry_pos;
-	}
+	rec->a4 = rand64() & 0x7fffffffffffffffULL;
 }
 
 struct syscallentry syscall_pwrite64 = {
