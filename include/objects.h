@@ -234,7 +234,7 @@ struct fd_hash_entry {
 };
 
 void fd_hash_init(void);
-void fd_hash_insert(int fd, struct object *obj, enum objecttype type);
+bool fd_hash_insert(int fd, struct object *obj, enum objecttype type);
 void fd_hash_remove(int fd);
 struct fd_hash_entry *fd_hash_lookup(int fd);
 

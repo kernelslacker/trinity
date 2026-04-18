@@ -77,15 +77,15 @@ static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type)
 	fd_hash[slot].type = type;
 }
 
-void fd_hash_insert(int fd, struct object *obj, enum objecttype type)
+bool fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 {
 	unsigned int slot;
 
 	if (fd < 0)
-		return;
+		return true;
 
 	if (fd_hash_count >= FD_HASH_SIZE)
-		return;
+		return false;
 
 	slot = fd_hash_slot(fd);
 	while (fd_hash[slot].fd != -1 && fd_hash[slot].fd != fd)
@@ -98,6 +98,7 @@ void fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 	fd_hash[slot].obj = obj;
 	fd_hash[slot].type = type;
 	fd_hash[slot].generation = __atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
+	return true;
 }
 
 void fd_hash_remove(int fd)
@@ -260,7 +261,18 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	/* Track global fd-type objects in the hash table */
 	if (scope == OBJ_GLOBAL && is_fd_type(type)) {
 		int fd = fd_from_object(obj, type);
-		fd_hash_insert(fd, obj, type);
+		if (!fd_hash_insert(fd, obj, type)) {
+			outputerr("add_object: fd hash full for type %u, dropping fd %d\n",
+				  type, fd);
+			head->num_entries--;
+			head->array[head->num_entries] = NULL;
+			list_del(&obj->list);
+			if (fd >= 0)
+				close(fd);
+			free(obj);
+			unlock(&shm->objlock);
+			return;
+		}
 	}
 
 	if (head->dump != NULL)
