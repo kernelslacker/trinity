@@ -20,6 +20,9 @@ static void sanitise_fsopen(struct syscallrecord *rec)
 	const char *fstype;
 	char *name;
 
+	if (nr_filesystem_types == 0)
+		return;
+
 	fstype = filesystem_types[rand() % nr_filesystem_types];
 	name = (char *) get_writable_struct(32);
 	if (!name)
