@@ -95,7 +95,9 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	unsigned int syscallnr;
 	int val;
 	bool do32;
-	unsigned int bias_attempts = 0;
+	unsigned int group_attempts = 0;
+	unsigned int kcov_attempts = 0;
+	unsigned int edgepair_attempts = 0;
 	unsigned int nr_syscalls;
 
 retry:
@@ -147,8 +149,8 @@ retry:
 		if (dice < 70) {
 			/* Try to pick from same group */
 			if (!syscall_in_group(syscallnr, do32, child->last_group)) {
-				bias_attempts++;
-				if (bias_attempts < 20)
+				group_attempts++;
+				if (group_attempts < 20)
 					goto retry;
 				/* Gave up, accept this one. */
 			}
@@ -159,8 +161,8 @@ retry:
 	/* Coverage-guided cold avoidance: if this syscall has stopped
 	 * finding new edges, skip it 50% of the time. */
 	if (kcov_syscall_is_cold(syscallnr) && RAND_BOOL()) {
-		bias_attempts++;
-		if (bias_attempts < 20)
+		kcov_attempts++;
+		if (kcov_attempts < 20)
 			goto retry;
 	}
 
@@ -172,8 +174,8 @@ retry:
 	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
 		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
 		    RAND_BOOL()) {
-			bias_attempts++;
-			if (bias_attempts < 20)
+			edgepair_attempts++;
+			if (edgepair_attempts < 20)
 				goto retry;
 		}
 	}
