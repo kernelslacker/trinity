@@ -416,9 +416,10 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	/* Swap-with-last removal from the parallel array */
 	idx = obj->array_idx;
 	last = head->num_entries - 1;
-	if (idx != last && head->array[last] != NULL) {
+	if (idx != last) {
 		head->array[idx] = head->array[last];
-		head->array[idx]->array_idx = idx;
+		if (head->array[idx] != NULL)
+			head->array[idx]->array_idx = idx;
 	}
 	head->array[last] = NULL;
 
