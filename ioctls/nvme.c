@@ -11,7 +11,13 @@
 static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 {
 	struct nvme_passthru_cmd *cmd;
-	static const __u8 admin_opcodes[] = { 0x06, 0x09, 0x0a, 0x0c };
+	/* 0x02=Get Log Page, 0x06=Identify, 0x08=Abort, 0x09=Set Features,
+	 * 0x0a=Get Features, 0x10=Firmware Activate, 0x11=Firmware Download,
+	 * 0x14=Self-test, 0x80=Format NVM.  AER (0x0c) omitted: blocks until
+	 * cancelled and hangs the fuzzer. */
+	static const __u8 admin_opcodes[] = {
+		0x02, 0x06, 0x08, 0x09, 0x0a, 0x10, 0x11, 0x14, 0x80,
+	};
 
 	cmd = (struct nvme_passthru_cmd *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
@@ -33,7 +39,9 @@ static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 static void sanitise_nvme_admin64_cmd(struct syscallrecord *rec)
 {
 	struct nvme_passthru_cmd64 *cmd;
-	static const __u8 admin_opcodes[] = { 0x06, 0x09, 0x0a, 0x0c };
+	static const __u8 admin_opcodes[] = {
+		0x02, 0x06, 0x08, 0x09, 0x0a, 0x10, 0x11, 0x14, 0x80,
+	};
 
 	cmd = (struct nvme_passthru_cmd64 *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
