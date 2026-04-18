@@ -113,14 +113,15 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, co
 
 	//Check if the call is activated already, and deactivate it only if needed
 	if ((entry->active_number != 0) && (*nr_active > 0)) {
-		unsigned int i;
+		unsigned int idx = entry->active_number - 1;
+		unsigned int last = *nr_active - 1;
 
-		for (i = entry->active_number - 1; i < *nr_active - 1; i++) {
-			active_syscall[i] = active_syscall[i + 1];
-			table[active_syscall[i] - 1].entry->active_number = i + 1;
+		// Swap with the last active entry to avoid O(N) memmove.
+		if (idx != last) {
+			active_syscall[idx] = active_syscall[last];
+			table[active_syscall[idx] - 1].entry->active_number = idx + 1;
 		}
-		//The last step is to erase the last item.
-		active_syscall[*nr_active - 1] = 0;
+		active_syscall[last] = 0;
 		(*nr_active) -= 1;
 		entry->active_number = 0;
 	}
