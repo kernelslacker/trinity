@@ -64,15 +64,18 @@ static int init_fanotify_fds(void)
 {
 	struct objhead *head;
 	unsigned int i;
+	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FANOTIFY);
 	head->destroy = &fanotifyfd_destructor;
 	head->dump = &fanotifyfd_dump;
 
-	for (i = 0; i < NR_FANOTIFYFDS; i++)
-		open_fanotify_fd();
+	for (i = 0; i < NR_FANOTIFYFDS; i++) {
+		if (open_fanotify_fd())
+			ret = true;
+	}
 
-	return true;
+	return ret;
 }
 
 static int get_rand_fanotifyfd(void)

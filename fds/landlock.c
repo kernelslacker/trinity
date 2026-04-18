@@ -98,9 +98,7 @@ static int init_landlock_fds(void)
 	head->destroy = &landlock_destructor;
 	head->dump = &landlock_dump;
 
-	open_landlock_fd();
-
-	return true;
+	return open_landlock_fd();
 }
 
 static int get_rand_landlock_fd(void)
