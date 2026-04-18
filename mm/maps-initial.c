@@ -115,7 +115,7 @@ static void setup_mapping_sizes(void)
 	 * want to do it every single run.  It's worth doing it
 	 * occasionally though, to stress the oom paths.
 	 */
-	if (!(ONE_IN(100)))
+	if (!ONE_IN(100))
 		goto disable_1gb_mappings;
 
 	memfree = get_free_mem();
