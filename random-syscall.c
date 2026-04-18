@@ -98,12 +98,22 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	unsigned int group_attempts = 0;
 	unsigned int kcov_attempts = 0;
 	unsigned int edgepair_attempts = 0;
+	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
 
 retry:
 	if (no_syscalls_enabled() == true) {
 		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	/* Bail if we have spent too many iterations failing to pick a
+	 * usable syscall.  Without this cap, a sparse active_syscalls
+	 * table or a table dominated by EXPENSIVE syscalls (kept at
+	 * 1-in-1000) can wedge the child in a tight retry loop. */
+	if (outer_attempts++ > 10000) {
+		output(0, "[%d] set_syscall_nr exceeded retry budget\n", getpid());
 		return FAIL;
 	}
 
