@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 
 #include "debug.h"
 #include "domains.h"
@@ -23,8 +22,6 @@
 
 unsigned int nr_sockets = 0;
 
-static const char *cachefilename="trinity.socketcache";
-static int cachefile = -1;
 
 static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd)
 {
@@ -116,49 +113,6 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	return fd;
 }
 
-static void lock_cachefile(int type)
-{
-	struct flock fl = {
-		.l_len = 0,
-		.l_start = 0,
-		.l_whence = SEEK_SET,
-	};
-
-	fl.l_pid = getpid();
-	fl.l_type = type;
-
-	if (verbosity >= MAX_LOGLEVEL)
-		output(2, "waiting on lock for cachefile\n");
-
-	if (fcntl(cachefile, F_SETLKW, &fl) == -1) {
-		perror("fcntl F_SETLKW");
-		return;
-	}
-
-	if (verbosity >= MAX_LOGLEVEL)
-		output(2, "took lock for cachefile\n");
-}
-
-static void unlock_cachefile(void)
-{
-	struct flock fl = {
-		.l_len = 0,
-		.l_start = 0,
-		.l_whence = SEEK_SET,
-	};
-
-	fl.l_pid = getpid();
-	fl.l_type = F_UNLCK;
-
-	if (fcntl(cachefile, F_SETLK, &fl) == -1) {
-		perror("fcntl F_UNLCK F_SETLK ");
-		return;
-	}
-
-	if (verbosity >= MAX_LOGLEVEL)
-		output(2, "dropped lock for cachefile\n");
-}
-
 static unsigned int valid_proto(unsigned int family)
 {
 	const char *famstr;
@@ -196,39 +150,13 @@ static unsigned int valid_proto(unsigned int family)
 	return true;
 }
 
-static bool write_socket_to_cache(struct socket_triplet *st)
-{
-	unsigned int buffer[3];
-	int n;
-
-	if (cachefile == -1)
-		return false;
-
-	buffer[0] = st->family;
-	buffer[1] = st->type;
-	buffer[2] = st->protocol;
-	n = write(cachefile, &buffer, sizeof(int) * 3);
-	if (n != sizeof(int) * 3) {
-		outputerr("something went wrong writing the cachefile! : %s\n", strerror(errno));
-		return false;
-	}
-	return true;
-}
-
 static bool generate_socket(unsigned int family, unsigned int protocol, unsigned int type)
 {
-	struct socket_triplet st;
 	int fd;
 
-	st.family = family;
-	st.type = type;
-	st.protocol = protocol;
-
-	fd = open_socket(st.family, st.type, st.protocol);
-	if (fd > -1) {
-		write_socket_to_cache(&st);
+	fd = open_socket(family, type, protocol);
+	if (fd > -1)
 		return true;
-	}
 	output(2, "Couldn't open socket %u:%u:%u. %s\n", family, type, protocol, strerror(errno));
 	return false;
 }
@@ -288,7 +216,7 @@ static bool generate_specific_socket(int family)
 		return false;
 	}
 
-	return write_socket_to_cache(&st);
+	return true;
 }
 
 #define NR_SOCKET_FDS 50
@@ -298,21 +226,14 @@ static bool generate_sockets(void)
 	int i, r, ret = false;
 	bool domains_disabled = false;
 
-	cachefile = creat(cachefilename, S_IWUSR|S_IRUSR);
-	if (cachefile == -1) {
-		outputerr("Couldn't open cachefile for writing! (%s)\n", strerror(errno));
-		return false;
-	}
-	lock_cachefile(F_WRLCK);
-
 	if (do_specific_domain == true) {
 		while (nr_sockets < NR_SOCKET_FDS) {
 			ret = generate_specific_socket(specific_domain);
 
 			if (ret == false)
-				goto out_unlock;
+				return ret;
 		}
-		goto out_unlock;
+		return ret;
 	}
 
 	/*
@@ -329,7 +250,7 @@ static bool generate_sockets(void)
 
 	if (domains_disabled == true) {
 		output(0, "All domains disabled!\n");
-		goto out_unlock;
+		return ret;
 	}
 
 	for (i = 0; i < TRINITY_PF_MAX; i++) {
@@ -342,7 +263,7 @@ static bool generate_sockets(void)
 
 		/* check for ctrl-c again. */
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
-			goto out_unlock;
+			return ret;
 
 		if (proto == NULL)
 			continue;
@@ -369,12 +290,6 @@ static bool generate_sockets(void)
 		for (i = 0; i < 10; i++)
 			if (generate_specific_socket(r) == false)
 				break;
-	}
-
-out_unlock:
-	if (cachefile != -1) {
-		unlock_cachefile();
-		close(cachefile);
 	}
 
 	return ret;
@@ -480,86 +395,15 @@ out:
 static int open_sockets(void)
 {
 	struct objhead *head;
-	int bytesread = -1;
 	int ret;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
 	head->destroy = &socket_destructor;
 	head->dump = &socket_dump;
 
-	cachefile = open(cachefilename, O_RDONLY);
-	if (cachefile < 0) {
-		output(1, "Couldn't find socket cachefile. Regenerating.\n");
-		ret = generate_sockets();
-		output(1, "created %u sockets\n", nr_sockets);
-		return ret;
-	}
-
-	lock_cachefile(F_RDLCK);
-
-	while (bytesread != 0) {
-		unsigned int domain, type, protocol;
-		unsigned int buffer[3];
-		int fd;
-
-		bytesread = read(cachefile, buffer, sizeof(int) * 3);
-		if (bytesread < 0) {
-			output(1, "read error on socket cachefile: %s\n", strerror(errno));
-			break;
-		}
-		if (bytesread == 0) {
-			if (nr_sockets == 0)
-				goto regenerate;
-			break;
-		}
-		if (bytesread != (int)(sizeof(int) * 3)) {
-			output(1, "short read from socket cachefile, regenerating.\n");
-			goto regenerate;
-		}
-
-		domain = buffer[0];
-		type = buffer[1];
-		protocol = buffer[2];
-
-		if (domain >= TRINITY_PF_MAX) {
-			output(1, "cachefile contained invalid domain %u\n", domain);
-			goto regenerate;
-		}
-
-		if ((do_specific_domain == true && domain != specific_domain) ||
-		    (no_domains[domain] == true)) {
-			output(1, "ignoring socket cachefile due to specific "
-			       "protocol request (or protocol disabled), "
-			       "and stale data in cachefile.\n");
-regenerate:
-				unlock_cachefile();	/* drop the reader lock. */
-				close(cachefile);
-				unlink(cachefilename);
-
-				ret = generate_sockets();
-				return ret;
-		}
-
-		fd = open_socket(domain, type, protocol);
-		if (fd < 0) {
-			output(1, "Cachefile is stale. Need to regenerate.\n");
-			goto regenerate;
-		}
-
-		/* check for ctrl-c */
-		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING) {
-			unlock_cachefile();
-			close(cachefile);
-			return false;
-		}
-	}
-
-	output(1, "%u sockets created based on info from socket cachefile.\n", nr_sockets);
-
-	unlock_cachefile();
-	close(cachefile);
-
-	return true;
+	ret = generate_sockets();
+	output(1, "created %u sockets\n", nr_sockets);
+	return ret;
 }
 
 struct socketinfo * get_rand_socketinfo(void)
