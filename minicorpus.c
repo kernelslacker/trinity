@@ -49,7 +49,7 @@ static void ring_lock(struct corpus_ring *ring)
 		if (++spins > 1000000) {
 			unsigned int gen = __atomic_load_n(&ring->lock_gen,
 				__ATOMIC_ACQUIRE);
-			pid_t owner = ring->locker_pid;
+			pid_t owner = __atomic_load_n(&ring->locker_pid, __ATOMIC_RELAXED);
 
 			if (owner != 0 && kill(owner, 0) == -1 &&
 			    errno == ESRCH &&
@@ -59,13 +59,13 @@ static void ring_lock(struct corpus_ring *ring)
 			spins = 0;
 		}
 	}
-	ring->locker_pid = getpid();
+	__atomic_store_n(&ring->locker_pid, getpid(), __ATOMIC_RELAXED);
 	__atomic_fetch_add(&ring->lock_gen, 1, __ATOMIC_RELEASE);
 }
 
 static void ring_unlock(struct corpus_ring *ring)
 {
-	ring->locker_pid = 0;
+	__atomic_store_n(&ring->locker_pid, 0, __ATOMIC_RELAXED);
 	__atomic_clear(&ring->lock, __ATOMIC_RELEASE);
 }
 
