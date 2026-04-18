@@ -101,8 +101,9 @@ static void sanitise_uffdio_copy(struct syscallrecord *rec)
 		uc->len = map->size;
 	}
 	map = get_map();
-	if (map)
-		uc->src = (unsigned long) map->ptr;
+	if (!map)
+		return;
+	uc->src = (unsigned long) map->ptr;
 	uc->mode = set_rand_bitmask(ARRAY_SIZE(copy_modes), copy_modes);
 	rec->a3 = (unsigned long) uc;
 }
@@ -201,8 +202,9 @@ static void sanitise_uffdio_move(struct syscallrecord *rec)
 		um->len = map->size;
 	}
 	map = get_map();
-	if (map)
-		um->src = (unsigned long) map->ptr;
+	if (!map)
+		return;
+	um->src = (unsigned long) map->ptr;
 	um->mode = set_rand_bitmask(ARRAY_SIZE(move_modes), move_modes);
 	rec->a3 = (unsigned long) um;
 }
