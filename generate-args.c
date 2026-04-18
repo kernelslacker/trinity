@@ -408,6 +408,9 @@ void generic_free_arg(struct syscallrecord *rec)
 
 		if (argtype == ARG_IOVEC)
 			deferred_free_enqueue((void *) get_argval(rec, i), NULL);
+
+		if (argtype == ARG_SOCKADDR)
+			deferred_free_enqueue((void *) get_argval(rec, i), NULL);
 	}
 }
 
