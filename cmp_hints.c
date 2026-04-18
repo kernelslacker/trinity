@@ -60,13 +60,8 @@ static bool interesting_value(unsigned long val)
 	return true;
 }
 
-/*
- * Add a value to the hint pool for a given syscall number.
- * Deduplicates and overwrites a random slot when full.
- */
-static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
+static void pool_lock(struct cmp_hint_pool *pool)
 {
-	unsigned int i;
 	unsigned int spins = 0;
 
 	while (__atomic_test_and_set(&pool->lock, __ATOMIC_ACQUIRE)) {
@@ -85,22 +80,50 @@ static void pool_add(struct cmp_hint_pool *pool, unsigned long val)
 	}
 	__atomic_store_n(&pool->locker_pid, getpid(), __ATOMIC_RELAXED);
 	__atomic_fetch_add(&pool->lock_gen, 1, __ATOMIC_RELEASE);
+}
 
-	for (i = 0; i < pool->count && i < CMP_HINTS_PER_SYSCALL; i++) {
-		if (pool->values[i] == val)
-			goto out;
+static void pool_unlock(struct cmp_hint_pool *pool)
+{
+	__atomic_store_n(&pool->locker_pid, 0, __ATOMIC_RELAXED);
+	__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
+}
+
+/*
+ * Insert val into the sorted values[] array. Dedups via binary search.
+ * When the pool is full, evicts a random slot. Caller must hold pool->lock.
+ */
+static void pool_add_locked(struct cmp_hint_pool *pool, unsigned long val)
+{
+	unsigned int lo = 0, hi = pool->count, mid;
+
+	while (lo < hi) {
+		mid = (lo + hi) / 2;
+		if (pool->values[mid] == val)
+			return;
+		if (pool->values[mid] < val)
+			lo = mid + 1;
+		else
+			hi = mid;
 	}
 
 	if (pool->count < CMP_HINTS_PER_SYSCALL) {
-		pool->values[pool->count] = val;
+		memmove(&pool->values[lo + 1], &pool->values[lo],
+			(pool->count - lo) * sizeof(unsigned long));
+		pool->values[lo] = val;
 		pool->count++;
 	} else {
-		pool->values[rand() % CMP_HINTS_PER_SYSCALL] = val;
-	}
+		unsigned int victim = rand() % CMP_HINTS_PER_SYSCALL;
+		unsigned int pos = (victim < lo) ? lo - 1 : lo;
 
-out:
-	__atomic_store_n(&pool->locker_pid, 0, __ATOMIC_RELAXED);
-	__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
+		if (victim < pos) {
+			memmove(&pool->values[victim], &pool->values[victim + 1],
+				(pos - victim) * sizeof(unsigned long));
+		} else if (victim > pos) {
+			memmove(&pool->values[pos + 1], &pool->values[pos],
+				(victim - pos) * sizeof(unsigned long));
+		}
+		pool->values[pos] = val;
+	}
 }
 
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
@@ -122,6 +145,10 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 	if (count > (KCOV_TRACE_SIZE - 1) / WORDS_PER_CMP)
 		count = (KCOV_TRACE_SIZE - 1) / WORDS_PER_CMP;
 
+	if (count == 0)
+		return;
+
+	pool_lock(pool);
 	for (i = 0; i < count; i++) {
 		unsigned long type = trace_buf[1 + i * WORDS_PER_CMP];
 		unsigned long arg1 = trace_buf[1 + i * WORDS_PER_CMP + 1];
@@ -134,10 +161,11 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 			continue;
 
 		if (interesting_value(arg1))
-			pool_add(pool, arg1);
+			pool_add_locked(pool, arg1);
 		if (interesting_value(arg2))
-			pool_add(pool, arg2);
+			pool_add_locked(pool, arg2);
 	}
+	pool_unlock(pool);
 }
 
 unsigned long cmp_hints_get(unsigned int nr)
