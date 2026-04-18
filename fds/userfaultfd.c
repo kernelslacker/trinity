@@ -126,15 +126,18 @@ static int init_userfaultfds(void)
 {
 	struct objhead *head;
 	unsigned int i;
+	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
 	head->destroy = &userfaultfd_destructor;
 	head->dump = &userfaultfd_dump;
 
-	for (i = 0; i < 4; i++)
-		open_userfaultfd();
+	for (i = 0; i < 4; i++) {
+		if (open_userfaultfd())
+			ret = true;
+	}
 
-	return true;
+	return ret;
 }
 
 static int get_rand_userfaultfd(void)

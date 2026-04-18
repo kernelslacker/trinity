@@ -163,9 +163,7 @@ static int init_io_uring_fds(void)
 	head->destroy = &io_uring_destructor;
 	head->dump = &io_uring_dump;
 
-	open_io_uring_fd();
-
-	return true;
+	return open_io_uring_fd();
 }
 
 static int get_rand_io_uring_fd(void)

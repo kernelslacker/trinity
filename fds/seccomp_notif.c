@@ -87,6 +87,7 @@ static int open_seccomp_notif(void)
 static int init_seccomp_notif_fds(void)
 {
 	struct objhead *head;
+	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SECCOMP_NOTIF);
 	head->destroy = &seccomp_notif_destructor;
@@ -94,10 +95,12 @@ static int init_seccomp_notif_fds(void)
 
 	/* Create a small pool.  Each call installs a new seccomp filter,
 	 * so don't go overboard. */
-	open_seccomp_notif();
-	open_seccomp_notif();
+	if (open_seccomp_notif())
+		ret = true;
+	if (open_seccomp_notif())
+		ret = true;
 
-	return true;
+	return ret;
 }
 
 static int get_rand_seccomp_notif_fd(void)
