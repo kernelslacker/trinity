@@ -26,6 +26,41 @@ static int userfaultfd_fd_test(int fd, const struct stat *st __attribute__((unus
 	return -1;
 }
 
+static void sanitise_uffdio_api(struct syscallrecord *rec)
+{
+	struct uffdio_api *ua;
+	static const unsigned long api_features[] = {
+		UFFD_FEATURE_PAGEFAULT_FLAG_WP,
+		UFFD_FEATURE_EVENT_FORK,
+		UFFD_FEATURE_EVENT_REMAP,
+		UFFD_FEATURE_EVENT_REMOVE,
+		UFFD_FEATURE_EVENT_UNMAP,
+		UFFD_FEATURE_MISSING_HUGETLBFS,
+		UFFD_FEATURE_MISSING_SHMEM,
+		UFFD_FEATURE_SIGBUS,
+		UFFD_FEATURE_THREAD_ID,
+		UFFD_FEATURE_MINOR_HUGETLBFS,
+		UFFD_FEATURE_MINOR_SHMEM,
+		UFFD_FEATURE_EXACT_ADDRESS,
+		UFFD_FEATURE_WP_HUGETLBFS_SHMEM,
+		UFFD_FEATURE_WP_UNPOPULATED,
+		UFFD_FEATURE_POISON,
+		UFFD_FEATURE_WP_ASYNC,
+		UFFD_FEATURE_MOVE,
+	};
+
+	ua = (struct uffdio_api *) get_writable_struct(sizeof(*ua));
+	if (!ua)
+		return;
+	/* Most of the time perform a real handshake (api == UFFD_API)
+	 * so any subsequent ioctl on this fd has a chance of succeeding.
+	 * Occasionally fuzz the api number to exercise the reject path. */
+	ua->api = ONE_IN(20) ? (__u64) rand64() : UFFD_API;
+	ua->features = set_rand_bitmask(ARRAY_SIZE(api_features), api_features);
+	ua->ioctls = 0;
+	rec->a3 = (unsigned long) ua;
+}
+
 static void sanitise_uffdio_register(struct syscallrecord *rec)
 {
 	struct uffdio_register *ur;
@@ -177,6 +212,9 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 	pick_random_ioctl(grp, rec);
 
 	switch (rec->a2) {
+	case UFFDIO_API:
+		sanitise_uffdio_api(rec);
+		break;
 	case UFFDIO_REGISTER:
 		sanitise_uffdio_register(rec);
 		break;
