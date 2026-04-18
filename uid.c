@@ -135,8 +135,17 @@ void check_uid(void)
 
 changed:
 		/* unshare() can change us to /proc/sys/kernel/overflowuid */
-		if (myuid == 65534)
-			return;
+		{
+			uid_t overflowuid = 65534;
+			FILE *fp = fopen("/proc/sys/kernel/overflowuid", "r");
+			if (fp) {
+				if (fscanf(fp, "%u", &overflowuid) != 1)
+					overflowuid = 65534;
+				fclose(fp);
+			}
+			if (myuid == overflowuid)
+				return;
+		}
 
 		output(0, "uid changed! Was: %u, now %u\n", orig_uid, myuid);
 
