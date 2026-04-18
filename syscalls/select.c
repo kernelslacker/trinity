@@ -14,7 +14,7 @@
 
 static void sanitise_select(struct syscallrecord *rec)
 {
-	unsigned int nfds, i;
+	unsigned int nfds, i, nset;
 
 	struct timeval *tv;
 	fd_set *rfds, *wfds, *exfds;
@@ -30,8 +30,9 @@ static void sanitise_select(struct syscallrecord *rec)
 	FD_ZERO(wfds);
 	FD_ZERO(exfds);
 
+	nset = rand32() % 10;
 	/* set some random fd's. */
-	for (i = 0; i < rand32() % 10; i++) {
+	for (i = 0; i < nset; i++) {
 		FD_SET(rand32() % nfds, rfds);
 		FD_SET(rand32() % nfds, wfds);
 		FD_SET(rand32() % nfds, exfds);
