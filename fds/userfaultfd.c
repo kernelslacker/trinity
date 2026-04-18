@@ -31,7 +31,7 @@ static int userfaultfd_create(__unused__ unsigned int flag)
  * Alternative path: open /dev/userfaultfd and issue USERFAULTFD_IOC_NEW
  * to get a userfaultfd.  Available since kernel v6.1.
  */
-static int devuserfaultfd_create(void)
+static int devuserfaultfd_create(unsigned int flag)
 {
 	int devfd, fd;
 
@@ -39,7 +39,7 @@ static int devuserfaultfd_create(void)
 	if (devfd < 0)
 		return -1;
 
-	fd = ioctl(devfd, USERFAULTFD_IOC_NEW, NULL);
+	fd = ioctl(devfd, USERFAULTFD_IOC_NEW, (unsigned long)flag);
 	close(devfd);
 	return fd;
 }
@@ -106,7 +106,7 @@ static int open_userfaultfd(void)
 		flags |= O_CLOEXEC;
 
 	if (RAND_BOOL())
-		fd = devuserfaultfd_create();
+		fd = devuserfaultfd_create(flags);
 	else
 		fd = userfaultfd_create(flags);
 
