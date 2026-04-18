@@ -62,30 +62,12 @@ static bool interesting_value(unsigned long val)
 
 static void pool_lock(struct cmp_hint_pool *pool)
 {
-	unsigned int spins = 0;
-
-	while (__atomic_test_and_set(&pool->lock, __ATOMIC_ACQUIRE)) {
-		if (++spins > 1000000) {
-			unsigned int gen = __atomic_load_n(&pool->lock_gen,
-				__ATOMIC_ACQUIRE);
-			pid_t owner = __atomic_load_n(&pool->locker_pid, __ATOMIC_RELAXED);
-
-			if (owner != 0 && kill(owner, 0) == -1 &&
-			    errno == ESRCH &&
-			    __atomic_load_n(&pool->lock_gen,
-				__ATOMIC_RELAXED) == gen)
-				__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
-			spins = 0;
-		}
-	}
-	__atomic_store_n(&pool->locker_pid, getpid(), __ATOMIC_RELAXED);
-	__atomic_fetch_add(&pool->lock_gen, 1, __ATOMIC_RELEASE);
+	lock(&pool->lock);
 }
 
 static void pool_unlock(struct cmp_hint_pool *pool)
 {
-	__atomic_store_n(&pool->locker_pid, 0, __ATOMIC_RELAXED);
-	__atomic_clear(&pool->lock, __ATOMIC_RELEASE);
+	unlock(&pool->lock);
 }
 
 /*

@@ -2,6 +2,7 @@
 
 #include <sys/types.h>
 
+#include "locks.h"
 #include "types.h"
 
 /*
@@ -22,9 +23,7 @@
 #define CMP_MODE_RATIO 8
 
 struct cmp_hint_pool {
-	unsigned char lock;
-	pid_t locker_pid;
-	unsigned int lock_gen;
+	lock_t lock;
 	unsigned int count;
 	unsigned long values[CMP_HINTS_PER_SYSCALL];
 };
