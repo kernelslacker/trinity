@@ -43,11 +43,11 @@ unsigned long rand_single_bit(unsigned char size)
 }
 
 /*
- * set N bits, where N= rand(0 - WORDSIZE/2)
+ * set N bits, where N is in the range [0, limit/2].
  */
 static unsigned long randbits(int limit)
 {
-	unsigned int num = rand() % (limit / 2);
+	unsigned int num = rand() % (limit / 2 + 1);
 	unsigned int i;
 	unsigned long r = 0;
 
