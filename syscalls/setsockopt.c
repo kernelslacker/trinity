@@ -118,10 +118,12 @@ retry:
 		}
 		goto retry;
 
-	case 1:	/* do a random IP protocol, even if it doesn't match this socket. */
-		proto = net_protocols[PF_INET].proto;
-		if (proto != NULL && proto->setsockopt != NULL)
-			proto->setsockopt(so, triplet);
+	case 1:	/* protocol-specific setsockopt for this socket's family. */
+		if (triplet->family < TRINITY_PF_MAX) {
+			proto = net_protocols[triplet->family].proto;
+			if (proto != NULL && proto->setsockopt != NULL)
+				proto->setsockopt(so, triplet);
+		}
 		break;
 
 	case 2:	/* Last resort: Generic socket options. */
