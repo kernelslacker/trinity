@@ -44,9 +44,8 @@ bool drop_privs(struct childdata *child)
 		exit(EXIT_FAILURE);
 	}
 
-	if (setgroups(0, NULL) == -1) {
-		;
-	}
+	if (setgroups(0, NULL) == -1)
+		output(0, "Warning: setgroups failed (%s)\n", strerror(errno));
 
 	if (setresuid(nobody_uid, nobody_uid, nobody_uid) < 0) {
 		output(0, "Error setting nobody uid (%s)\n", strerror(errno));
