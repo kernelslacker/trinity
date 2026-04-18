@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(map_shadow_stack, unsigned long, addr, unsigned long, size, unsigned int, flags)
  */
+#include <sys/mman.h>
 #include "sanitise.h"
 
 #ifndef SHADOW_STACK_SET_TOKEN
@@ -17,6 +18,16 @@ static void sanitise_map_shadow_stack(struct syscallrecord *rec)
 	rec->a1 = 0;
 }
 
+static void post_map_shadow_stack(struct syscallrecord *rec)
+{
+	void *p = (void *)rec->retval;
+
+	if (p == MAP_FAILED)
+		return;
+
+	munmap(p, rec->a2);
+}
+
 struct syscallentry syscall_map_shadow_stack = {
 	.name = "map_shadow_stack",
 	.num_args = 3,
@@ -24,6 +35,7 @@ struct syscallentry syscall_map_shadow_stack = {
 	.argname = { [0] = "addr", [1] = "size", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(map_shadow_stack_flags),
 	.sanitise = sanitise_map_shadow_stack,
+	.post = post_map_shadow_stack,
 	.group = GROUP_VM,
-	.rettype = RET_ZERO_SUCCESS,
+	.rettype = RET_ADDRESS,
 };

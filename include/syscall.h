@@ -155,6 +155,7 @@ struct syscallentry {
 #define RET_NUM_BYTES		6
 #define RET_GID_T		7
 #define RET_UID_T		8
+#define RET_ADDRESS		9
 
 #define GROUP_NONE	0
 #define GROUP_VM	1
