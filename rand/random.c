@@ -198,7 +198,11 @@ u64 rand64(void)
 		break;
 	case 4:	r = randbits(64);
 		break;
-	case 5:	r = (u64) rand() << 32 | rand();
+	case 5:	/* glibc rand() returns only 31 bits, so a single
+		 * shift-and-OR leaves bits 31 and 63 always zero.
+		 * Combine three calls with shifts and XOR to cover
+		 * all 64 bits. */
+		r = ((u64) rand() << 33) ^ ((u64) rand() << 16) ^ (u64) rand();
 		break;
 	case 6:	r = rept_byte();
 		break;
