@@ -575,7 +575,7 @@ void remove_object_by_fd(int fd)
 static void __prune_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
-	unsigned int num_to_prune;
+	struct list_head *node, *list, *tmp;
 
 	head = get_objhead(scope, type);
 
@@ -587,35 +587,13 @@ static void __prune_objects(enum objecttype type, enum obj_scope scope)
 	if (head->num_entries < head->max_entries)
 		return;
 
-	num_to_prune = rand() % head->num_entries;
+	/* Single pass: prune each entry with 1/10 probability. */
+	list = head->list;
+	list_for_each_safe(node, tmp, list) {
+		if (ONE_IN(10)) {
+			struct object *obj = (struct object *) node;
 
-	while (num_to_prune > 0) {
-		struct list_head *node, *list, *tmp;
-		bool pruned_any = false;
-
-		list = head->list;
-
-		list_for_each_safe(node, tmp, list) {
-			if (ONE_IN(10)) {
-				struct object *obj;
-
-				obj = (struct object *) node;
-				destroy_object(obj, scope, type);
-				num_to_prune--;
-				if (num_to_prune == 0)
-					break;
-				pruned_any = true;
-			}
-		}
-
-		/* If we went through the whole list without pruning
-		 * anything, the list shrank underneath us.  Bail out
-		 * to avoid an infinite loop. */
-		if (!pruned_any) {
-			debugf("prune: wanted %u more from type %u but "
-			       "list is empty/depleted (%u entries)\n",
-			       num_to_prune, type, head->num_entries);
-			break;
+			destroy_object(obj, scope, type);
 		}
 	}
 }
