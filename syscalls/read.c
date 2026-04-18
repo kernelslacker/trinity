@@ -51,12 +51,7 @@ struct syscallentry syscall_readv = {
 static void sanitise_pread64(struct syscallrecord *rec)
 {
 	rec->a3 = rand() % page_size;
-
-retry_pos:
-	if ((int) rec->a4 < 0) {
-		rec->a4 = rand64();
-		goto retry_pos;
-	}
+	rec->a4 = rand64() & 0x7fffffffffffffffULL;
 }
 
 struct syscallentry syscall_pread64 = {
