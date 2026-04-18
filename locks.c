@@ -123,8 +123,17 @@ void lock(lock_t *lk)
 
 void unlock(lock_t *lk)
 {
-	__atomic_store_n(&lk->owner, 0, __ATOMIC_RELEASE);
+	/* Release the lock BEFORE clearing the owner. If we're killed
+	 * (SIGABRT from glibc malloc detector, etc.) between the two
+	 * stores, the lock should still be release-able by whatever
+	 * acquires it next — they'll overwrite owner with their pid.
+	 *
+	 * The other order (owner=0, then lock=UNLOCKED) leaves
+	 * lock=LOCKED with owner=0 if we're killed mid-unlock — a
+	 * permanent deadlock that no waiter can break, because both
+	 * the trylock CAS and the in-lock self-deadlock check fail. */
 	__atomic_store_n(&lk->lock, UNLOCKED, __ATOMIC_RELEASE);
+	__atomic_store_n(&lk->owner, 0, __ATOMIC_RELAXED);
 }
 
 /*
