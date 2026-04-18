@@ -6,6 +6,7 @@
  */
 
 #include <linux/sched.h>
+#include "clone.h"
 #include "sanitise.h"
 
 #ifndef CLONE_NEWCGROUP
@@ -23,17 +24,9 @@ static unsigned long clone_flags[] = {
 	CLONE_PIDFD, CLONE_NEWTIME,
 };
 
-/*
- * Enforce mandatory flag dependencies from the kernel:
- *   CLONE_THREAD requires CLONE_SIGHAND
- *   CLONE_SIGHAND requires CLONE_VM
- */
 static void sanitise_clone(struct syscallrecord *rec)
 {
-	if (rec->a1 & CLONE_THREAD)
-		rec->a1 |= CLONE_SIGHAND;
-	if (rec->a1 & CLONE_SIGHAND)
-		rec->a1 |= CLONE_VM;
+	enforce_clone_flag_deps(&rec->a1);
 }
 
 struct syscallentry syscall_clone = {
