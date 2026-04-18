@@ -109,7 +109,15 @@ void reap_child(struct childdata *child, int childno)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	bust_lock(&child->syscall.lock);
-	__atomic_sub_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
+
+	unsigned int cur;
+	do {
+		cur = __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED);
+		if (cur == 0)
+			break;
+	} while (!__atomic_compare_exchange_n(&shm->running_childs, &cur, cur - 1,
+					       0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
+
 	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
 }
 
