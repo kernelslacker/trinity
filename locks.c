@@ -16,28 +16,19 @@
  */
 static bool check_lock(lock_t *lk)
 {
+	unsigned long s;
 	pid_t pid;
 
 	if (lk == NULL)
 		return false;
 
+	s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
+
 	/* We don't care about unlocked locks */
-	if (__atomic_load_n(&lk->lock, __ATOMIC_RELAXED) != LOCKED)
+	if (LOCK_STATE(s) != LOCKED)
 		return false;
 
-	/* First the easy case. If it's held by a dead pid, release it. */
-	pid = __atomic_load_n(&lk->owner, __ATOMIC_ACQUIRE);
-
-	/* unlock() clears owner before clearing lock. A child killed
-	 * between those two stores leaves lock=LOCKED, owner=0 forever.
-	 * Force-unlock it — if a live process really were mid-unlock,
-	 * the window is nanoseconds and we only check from main's loop.
-	 */
-	if (pid == 0) {
-		debugf("Found orphaned lock (owner=0). Freeing.\n");
-		unlock(lk);
-		return true;
-	}
+	pid = LOCK_OWNER(s);
 
 	if (pid_alive(pid) == false) {
 		if (errno != ESRCH)
@@ -67,21 +58,18 @@ bool check_all_locks(void)
 	return ret;
 }
 
-static void __lock(lock_t *lk)
-{
-	__atomic_store_n(&lk->owner, getpid(), __ATOMIC_RELEASE);
-}
-
 bool trylock(lock_t *lk)
 {
-	unsigned char expected = UNLOCKED;
+	unsigned long expected = 0;
+	unsigned long desired = MAKE_LOCK(getpid(), LOCKED);
 
-	if (__atomic_compare_exchange_n(&lk->lock, &expected, LOCKED,
-					0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-		__lock(lk);
-		return true;
-	}
-	return false;
+	/* Single CAS sets both lock state AND owner atomically.
+	 * No torn state possible — if we die after this, the lock
+	 * appears fully held by us, and the next check_lock pass
+	 * will recognize the dead pid and release it. */
+	return __atomic_compare_exchange_n(&lk->state, &expected, desired,
+					   0, __ATOMIC_ACQUIRE,
+					   __ATOMIC_RELAXED);
 }
 
 void lock(lock_t *lk)
@@ -89,7 +77,9 @@ void lock(lock_t *lk)
 	pid_t pid = getpid();
 
 	while (!trylock(lk)) {
-		if (__atomic_load_n(&lk->owner, __ATOMIC_ACQUIRE) == pid) {
+		unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
+
+		if (LOCK_OWNER(s) == pid) {
 			debugf("lol, already have lock!\n");
 			show_backtrace();
 			panic(EXIT_LOCKING_CATASTROPHE);
@@ -123,17 +113,9 @@ void lock(lock_t *lk)
 
 void unlock(lock_t *lk)
 {
-	/* Release the lock BEFORE clearing the owner. If we're killed
-	 * (SIGABRT from glibc malloc detector, etc.) between the two
-	 * stores, the lock should still be release-able by whatever
-	 * acquires it next — they'll overwrite owner with their pid.
-	 *
-	 * The other order (owner=0, then lock=UNLOCKED) leaves
-	 * lock=LOCKED with owner=0 if we're killed mid-unlock — a
-	 * permanent deadlock that no waiter can break, because both
-	 * the trylock CAS and the in-lock self-deadlock check fail. */
-	__atomic_store_n(&lk->lock, UNLOCKED, __ATOMIC_RELEASE);
-	__atomic_store_n(&lk->owner, 0, __ATOMIC_RELAXED);
+	/* Single store clears both lock state and owner atomically.
+	 * No torn unlock state possible. */
+	__atomic_store_n(&lk->state, 0, __ATOMIC_RELEASE);
 }
 
 /*
@@ -145,9 +127,11 @@ void unlock(lock_t *lk)
  */
 void bust_lock(lock_t *lk)
 {
-	if (__atomic_load_n(&lk->lock, __ATOMIC_RELAXED) == UNLOCKED)
+	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_RELAXED);
+
+	if (LOCK_STATE(s) != LOCKED)
 		return;
-	if (getpid() != __atomic_load_n(&lk->owner, __ATOMIC_RELAXED))
+	if (LOCK_OWNER(s) != getpid())
 		return;
 	unlock(lk);
 }
