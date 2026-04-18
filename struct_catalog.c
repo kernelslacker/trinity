@@ -21,6 +21,7 @@
 
 #include "struct_catalog.h"
 #include "arch.h"
+#include "random.h"
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
@@ -281,20 +282,39 @@ static unsigned int natural_width(unsigned long val)
 int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val)
 {
 	unsigned int want = natural_width(val);
-	unsigned int i;
+	unsigned int i, count, pick;
 
 	/*
-	 * First pass: exact size match — most specific.
-	 * Second pass: any field large enough to hold the value.
+	 * Two passes: prefer exact size matches, fall back to fields large
+	 * enough to hold the value.  Within each pass pick uniformly at random
+	 * so every qualifying field gets exercised.
 	 */
+	count = 0;
 	for (i = 0; i < desc->num_fields; i++) {
 		if (desc->fields[i].size == want)
-			return (int) i;
+			count++;
 	}
+	if (count) {
+		pick = rand32() % count;
+		for (i = 0; i < desc->num_fields; i++) {
+			if (desc->fields[i].size == want && pick-- == 0)
+				return (int) i;
+		}
+	}
+
+	count = 0;
 	for (i = 0; i < desc->num_fields; i++) {
 		if (desc->fields[i].size >= want)
-			return (int) i;
+			count++;
 	}
+	if (count) {
+		pick = rand32() % count;
+		for (i = 0; i < desc->num_fields; i++) {
+			if (desc->fields[i].size >= want && pick-- == 0)
+				return (int) i;
+		}
+	}
+
 	return -1;
 }
 
