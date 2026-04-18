@@ -75,20 +75,26 @@ static void stat_dev(char *name)
 void process_bdev_param(char *optarg)
 {
 	unsigned int len, i;
-	char *str = optarg;
+	char *buf, *str;
 
-	len = strlen(optarg);
+	buf = strdup(optarg);
+	if (!buf)
+		return;
+
+	str = buf;
+	len = strlen(buf);
 
 	/* Check if there are any commas. If so, split them into multiple devs. */
 	for (i = 0; i < len; i++) {
-		if (optarg[i] == ',') {
-			optarg[i] = 0;
+		if (buf[i] == ',') {
+			buf[i] = '\0';
 			stat_dev(str);
-			str = optarg + i + 1;
+			str = buf + i + 1;
 		}
 	}
 
 	stat_dev(str);
+	free(buf);
 }
 
 void init_bdev_list(void)
