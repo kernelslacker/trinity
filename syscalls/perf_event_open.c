@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include "maps.h"
+#include "objects.h"
 #include "perf.h"
 #include "perf_event.h"
 #include "random.h"
@@ -1445,8 +1446,10 @@ static void post_perf_event_open(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if (fd != -1)
+	if (fd != -1) {
+		remove_object_by_fd(fd);
 		close(fd);
+	}
 	deferred_freeptr(&rec->a1);
 }
 
