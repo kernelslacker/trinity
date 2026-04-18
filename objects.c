@@ -483,6 +483,8 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		free(head->array);
 		head->array = NULL;
 		head->array_capacity = 0;
+		free(head->list);
+		head->list = NULL;
 	} else {
 		/* Zero out the shared array for reuse. */
 		memset(head->array, 0, head->array_capacity * sizeof(struct object *));
