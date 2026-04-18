@@ -59,10 +59,13 @@ unsigned int init_seed(unsigned int seedparam)
 		}
 
 		seedparam = r;
-		srand(r);
-
 		output(0, "Initial random seed: %u\n", seedparam);
 	}
+
+	/* Always seed the parent RNG, including the -s path.  Previously
+	 * srand() was only called for the auto-generated seed branch,
+	 * leaving the parent at the default state when -s was used. */
+	srand(seedparam);
 
 	if (do_syslog == true) {
 		openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
