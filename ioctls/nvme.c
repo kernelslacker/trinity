@@ -95,6 +95,7 @@ static void sanitise_nvme_submit_io(struct syscallrecord *rec)
 	io = (struct nvme_user_io *) get_writable_struct(sizeof(*io));
 	if (!io)
 		return;
+	memset(io, 0, sizeof(*io));
 	io->opcode = RAND_BOOL() ? 0x01 : 0x02;
 	io->addr = (unsigned long) get_writable_struct(4096);
 	io->nblocks = rand() % 8;
