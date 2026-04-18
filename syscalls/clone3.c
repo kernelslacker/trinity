@@ -93,7 +93,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	}
 
 	if (args->flags & CLONE_INTO_CGROUP)
-		args->cgroup = get_random_fd();
+		args->cgroup = (unsigned int) get_random_fd();
 
 	if (args->flags & CLONE_CHILD_SETTID) {
 		void *child_tid = get_writable_address(sizeof(int));
@@ -130,6 +130,7 @@ struct syscallentry syscall_clone3 = {
 	.group = GROUP_PROCESS,
 	.num_args = 2,
 	.flags = AVOID_SYSCALL,
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN },
 	.argname = { [0] = "uargs", [1] = "size" },
 	.sanitise = sanitise_clone3,
 	.post = post_clone3,
