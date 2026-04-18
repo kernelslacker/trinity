@@ -76,6 +76,8 @@ static int init_inotify_fds(void)
 
 	fd = inotify_init();
 	if (fd < 0)
+		fd = inotify_init1(0);
+	if (fd < 0)
 		return false;
 
 	arm_inotify(fd);
