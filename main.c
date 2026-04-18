@@ -517,6 +517,7 @@ static bool spawn_child(int childno)
 {
 	struct childdata *child;
 	int pid = 0;
+	int nr_fds;
 
 	if (children == NULL)
 		return false;
@@ -532,6 +533,13 @@ static bool spawn_child(int childno)
 
 	/* Wipe out any state left from a previous child running in this slot. */
 	clean_childdata(child);
+
+	nr_fds = get_num_fds();
+	if ((max_files_rlimit.rlim_cur - nr_fds) < 3) {
+		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
+		panic(EXIT_NO_FDS);
+		return false;
+	}
 
 	fflush(stdout);
 	pid = fork();
@@ -549,17 +557,6 @@ static bool spawn_child(int childno)
 
 	/* Child won't get out of init_child until we write the pid */
 	__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
-	int nr_fds = get_num_fds();
-	if ((max_files_rlimit.rlim_cur - nr_fds) < 3)
-	{
-		// pidstatfiles[childno] may be NULL below if fd limit is reached.
-		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
-		kill_pid(pid);
-		waitpid(pid, NULL, 0);
-		reap_child(children[childno], childno);
-		panic(EXIT_NO_FDS);
-		return false;
-	}
 	if (pidstatfiles[childno]) {
 		fclose(pidstatfiles[childno]);
 		pidstatfiles[childno] = NULL;
