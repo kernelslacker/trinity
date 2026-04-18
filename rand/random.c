@@ -19,8 +19,11 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	unsigned int bits;
 
 	bits = rand() / (RAND_MAX / (num + 1) + 1);
+	/* Always set at least one bit. Returning a zero mask means
+	 * many flag-style ioctls (e.g. UFFDIO_REGISTER) get rejected
+	 * with EINVAL, wasting a syscall. */
 	if (bits == 0)
-		return mask;
+		bits = 1;
 
 	for (i = 0; i < bits; i++)
 		mask |= values[rand() % num];
