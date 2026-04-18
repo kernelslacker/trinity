@@ -467,21 +467,16 @@ static void periodic_work(void)
 	static unsigned int periodic_counter = 0;
 
 	periodic_counter++;
-	if (periodic_counter < 10)
-		return;
 
-	/* Every ten iterations. */
-	if (!(periodic_counter % 10))
+	/* Every 16 iterations. */
+	if (!(periodic_counter & 15))
 		check_parent_pid();
 
-	/* Every 100 iterations. */
-	if (!(periodic_counter % 100)) {
+	/* Every 128 iterations. */
+	if (!(periodic_counter & 127)) {
 		dirty_random_mapping();
 		run_fd_provider_child_ops();
 	}
-
-	if (periodic_counter == 1000)
-		periodic_counter = 0;
 }
 
 /*
