@@ -25,6 +25,7 @@
 #include "taint.h"
 #include "trinity.h"
 #include "uid.h"
+#include "utils.h"
 #include "version.h"
 
 pid_t mainpid;
@@ -226,6 +227,16 @@ int main(int argc, char* argv[])
 
 		_exit(EXIT_FD_INIT_FAILURE);
 	}
+
+	/*
+	 * After open_fds() returns no caller adds new global objects, and
+	 * children are rejected from add_object() anyway.  Lock the global
+	 * object list heads and parallel arrays read-only before forking
+	 * the first fuzz child so stray writes from children SIGSEGV at
+	 * the source instead of corrupting list pointers the parent (or a
+	 * later child) trips over during init_child_mappings().
+	 */
+	freeze_global_objects();
 
 	if (epoch_iterations || epoch_timeout)
 		epoch_loop();

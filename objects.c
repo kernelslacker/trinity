@@ -498,6 +498,12 @@ void destroy_global_objects(void)
 {
 	unsigned int i;
 
+	/* The list heads and parallel arrays were mprotected RO after
+	 * init.  Cleanup needs to mutate them, so re-enable writes in
+	 * this process first.  Children are gone by the time we get
+	 * here so we do not need to coordinate with them. */
+	thaw_global_objects();
+
 	for (i = 0; i < MAX_OBJECT_TYPES; i++)
 		destroy_objects(i, OBJ_GLOBAL);
 }
