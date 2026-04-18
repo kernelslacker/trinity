@@ -71,8 +71,13 @@ static void disable_coredumps(void)
 	struct rlimit limit = { .rlim_cur = 0, .rlim_max = 0 };
 
 	if (shm->debug == true) {
-		(void)signal(SIGABRT, SIG_DFL);
-		(void)signal(SIGSEGV, SIG_DFL);
+		struct sigaction sa;
+
+		sa.sa_handler = SIG_DFL;
+		sa.sa_flags = 0;
+		sigemptyset(&sa.sa_mask);
+		(void)sigaction(SIGABRT, &sa, NULL);
+		(void)sigaction(SIGSEGV, &sa, NULL);
 		return;
 	}
 
