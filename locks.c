@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -116,7 +117,7 @@ void lock(lock_t *lk)
 
 		}
 
-		usleep(1);
+		sched_yield();
 	}
 }
 
