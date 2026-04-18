@@ -56,8 +56,10 @@ struct syscallentry syscall_dup = {
 
 static void sanitise_dup2(struct syscallrecord *rec)
 {
+	unsigned int tries = 0;
+
 	/* Don't let newfd clobber stdin/stdout/stderr. */
-	while (rec->a2 <= 2)
+	while (rec->a2 <= 2 && tries++ < 32)
 		rec->a2 = get_random_fd();
 }
 
