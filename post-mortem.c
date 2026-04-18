@@ -148,8 +148,11 @@ void tainted_postmortem(void)
 	 * us a consistent view for the dump. */
 	snapshots = malloc(max_children * sizeof(struct syscallrecord));
 	if (snapshots != NULL) {
-		for_each_child(i)
+		for_each_child(i) {
+			lock(&children[i]->syscall.lock);
 			snapshots[i] = children[i]->syscall;
+			unlock(&children[i]->syscall.lock);
+		}
 	}
 
 	panic(EXIT_KERNEL_TAINTED);
