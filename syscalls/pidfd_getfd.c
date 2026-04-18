@@ -10,13 +10,6 @@ static unsigned long pidfd_getfd_flags[] = {
 	0,
 };
 
-static void post_pidfd_getfd(struct syscallrecord *rec)
-{
-	int fd = rec->retval;
-
-	if (fd != -1)
-		close(fd);
-}
 
 #ifdef PIDFD_SELF_THREAD
 static void sanitise_pidfd_getfd(struct syscallrecord *rec)
@@ -39,5 +32,5 @@ struct syscallentry syscall_pidfd_getfd = {
 #ifdef PIDFD_SELF_THREAD
 	.sanitise = sanitise_pidfd_getfd,
 #endif
-	.post = post_pidfd_getfd,
+	.post = generic_post_close_fd,
 };

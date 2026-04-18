@@ -16,14 +16,6 @@ static unsigned long fspick_flags[] = {
 	FSPICK_EMPTY_PATH,
 };
 
-static void post_fspick(struct syscallrecord *rec)
-{
-	int fd = rec->retval;
-
-	if (fd != -1)
-		close(fd);
-}
-
 struct syscallentry syscall_fspick = {
 	.name = "fspick",
 	.num_args = 3,
@@ -33,5 +25,5 @@ struct syscallentry syscall_fspick = {
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
-	.post = post_fspick,
+	.post = generic_post_close_fd,
 };
