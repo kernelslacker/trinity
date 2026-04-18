@@ -584,6 +584,7 @@ static void replace_child(int childno)
 				childno, retries);
 			return;
 		}
+		usleep(retries * 10000);
 	}
 }
 
