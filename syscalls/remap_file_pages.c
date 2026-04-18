@@ -45,9 +45,9 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	/* "The prot argument must be specified as 0" */
 	rec->a3 = 0;
 
-	/* Pick a random pgoff. */
-	if (RAND_BOOL())
-		offset = rand() & (size / page_size);
+	/* Pick a random pgoff in [0, size_in_pages). */
+	if (RAND_BOOL() && size >= page_size)
+		offset = rand() % (size / page_size);
 	else
 		offset = 0;
 	rec->a4 = offset;
