@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <linux/sched.h>
 #include "arch.h"
+#include "clone.h"
 #include "fd.h"
 #include "maps.h"
 #include "random.h"
@@ -59,10 +60,12 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	args = zmalloc(sizeof(struct clone_args));
 
 	args->flags = set_rand_bitmask(ARRAY_SIZE(clone3_flags), clone3_flags);
-	if (args->flags & CLONE_THREAD)
-		args->flags |= CLONE_SIGHAND;
-	if (args->flags & CLONE_SIGHAND)
-		args->flags |= CLONE_VM;
+	{
+		unsigned long f = (unsigned long)args->flags;
+
+		enforce_clone_flag_deps(&f);
+		args->flags = f;
+	}
 	args->exit_signal = rand() % _NSIG;
 
 	if (args->flags & CLONE_VM) {
