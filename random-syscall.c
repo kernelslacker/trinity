@@ -227,7 +227,7 @@ bool random_syscall(struct childdata *child)
 	child->kcov.remote_mode = !do_cmp && child->kcov.remote_capable &&
 				  ONE_IN(KCOV_REMOTE_RATIO);
 
-	do_syscall(rec, &child->kcov);
+	do_syscall(rec, &child->kcov, child);
 
 	if (do_cmp)
 		cmp_hints_collect(child->kcov.trace_buf, rec->nr);

@@ -185,8 +185,11 @@ struct syscalltable {
 #define NEEDS_ROOT		(1<<9)
 
 struct kcov_child;
+struct childdata;
 
-void do_syscall(struct syscallrecord *rec, struct kcov_child *kc);
+#define LOCAL_OP_FLUSH_BATCH	1000
+
+void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childdata *child);
 void handle_syscall_ret(struct syscallrecord *rec);
 
 #define for_each_arg(_e, _i) \

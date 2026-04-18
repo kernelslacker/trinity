@@ -46,6 +46,12 @@ struct childdata {
 	struct timespec tp;
 	unsigned long op_nr;
 
+	/* Per-child syscall counter, batch-flushed to shm->stats.op_count
+	 * every LOCAL_OP_FLUSH_BATCH ops to avoid contending one cache line
+	 * across all children. Aggregated by the parent when an exact total
+	 * is needed. */
+	unsigned long local_op_count;
+
 	unsigned int seed;
 
 	unsigned int num;

@@ -87,13 +87,25 @@ already_done:
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
-static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, struct kcov_child *kc)
+static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
+			 struct kcov_child *kc, struct childdata *child)
 {
 	unsigned long ret = dry_run ? -1UL : 0;
 
 	errno = 0;
 
-	__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
+	/* Bump our per-child counter; flush to the shared atomic in batches
+	 * so we don't bounce shm->stats.op_count's cache line on every call. */
+	if (child != NULL) {
+		child->local_op_count++;
+		if (child->local_op_count >= LOCAL_OP_FLUSH_BATCH) {
+			__atomic_add_fetch(&shm->stats.op_count,
+					   child->local_op_count, __ATOMIC_RELAXED);
+			child->local_op_count = 0;
+		}
+	} else {
+		__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
+	}
 
 	if (dry_run == false) {
 		int nr, call;
@@ -155,7 +167,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state, str
  * child process with something unknown to us. We use a 'throwaway' process
  * to do the execve in, and let it run for a max of a second before we kill it
  */
-static void do_extrafork(struct syscallrecord *rec)
+static void do_extrafork(struct syscallrecord *rec, struct childdata *child)
 {
 	pid_t pid = 0;
 	pid_t extrapid;
@@ -166,7 +178,7 @@ static void do_extrafork(struct syscallrecord *rec)
 		char childname[]="trinity-subchild";
 		prctl(PR_SET_NAME, (unsigned long) &childname);
 
-		__do_syscall(rec, GOING_AWAY, NULL);
+		__do_syscall(rec, GOING_AWAY, NULL, child);
 		/* if this was for eg. an successful execve, we should never get here.
 		 * if it failed though... */
 		_exit(EXIT_SUCCESS);
@@ -204,7 +216,7 @@ static void do_extrafork(struct syscallrecord *rec)
 }
 
 
-void do_syscall(struct syscallrecord *rec, struct kcov_child *kc)
+void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childdata *child)
 {
 	struct syscallentry *entry;
 	unsigned int call;
@@ -213,10 +225,10 @@ void do_syscall(struct syscallrecord *rec, struct kcov_child *kc)
 	entry = syscalls[call].entry;
 
 	if (entry->flags & EXTRA_FORK)
-		do_extrafork(rec);
+		do_extrafork(rec, child);
 	else
 		 /* common-case, do the syscall in this child process. */
-		__do_syscall(rec, BEFORE, kc);
+		__do_syscall(rec, BEFORE, kc, child);
 
 	/* timestamp again for when we returned */
 	clock_gettime(CLOCK_MONOTONIC, &rec->tp);
