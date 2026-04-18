@@ -82,10 +82,16 @@ static int init_perf_fds(void)
 			case ENOSYS:
 				return false;
 			case EINVAL:
+			case EMFILE:
+			case ENOMEM:
+			case EBUSY:
 				inval_count++;
 				break;
 			case EACCES:
 				perm_count++;
+				break;
+			default:
+				inval_count++;
 				break;
 			}
 		}
