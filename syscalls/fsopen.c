@@ -33,14 +33,6 @@ static void sanitise_fsopen(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) name;
 }
 
-static void post_fsopen(struct syscallrecord *rec)
-{
-	int fd = rec->retval;
-
-	if (fd != -1)
-		close(fd);
-}
-
 struct syscallentry syscall_fsopen = {
 	.name = "fsopen",
 	.num_args = 2,
@@ -51,5 +43,5 @@ struct syscallentry syscall_fsopen = {
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_fsopen,
-	.post = post_fsopen,
+	.post = generic_post_close_fd,
 };

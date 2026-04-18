@@ -216,6 +216,12 @@ static void do_extrafork(struct syscallrecord *rec, struct childdata *child)
 }
 
 
+void generic_post_close_fd(struct syscallrecord *rec)
+{
+	if ((long)rec->retval >= 0)
+		close((int)rec->retval);
+}
+
 void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childdata *child)
 {
 	struct syscallentry *entry;

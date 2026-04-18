@@ -33,14 +33,6 @@ static unsigned long fsmount_attr_flags[] = {
 	MOUNT_ATTR_NOSYMFOLLOW,
 };
 
-static void post_fsmount(struct syscallrecord *rec)
-{
-	int fd = rec->retval;
-
-	if (fd != -1)
-		close(fd);
-}
-
 struct syscallentry syscall_fsmount = {
 	.name = "fsmount",
 	.num_args = 3,
@@ -51,5 +43,5 @@ struct syscallentry syscall_fsmount = {
 	.rettype = RET_FD,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
-	.post = post_fsmount,
+	.post = generic_post_close_fd,
 };
