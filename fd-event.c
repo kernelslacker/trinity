@@ -127,6 +127,16 @@ void fd_event_drain_all(void)
 {
 	unsigned int i;
 	unsigned int total = 0;
+	bool was_protected;
+
+	/* Bracket the entire drain with a single thaw/refreeze pair.
+	 * Each remove_object_by_fd() call would otherwise issue O(N)
+	 * mprotect syscalls per event; with high fd churn that adds
+	 * up to thousands of mprotects per drain. Lift once, drain,
+	 * refreeze. */
+	was_protected = globals_are_protected();
+	if (was_protected)
+		thaw_global_objects();
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -152,4 +162,7 @@ void fd_event_drain_all(void)
 	if (total > 0)
 		__atomic_add_fetch(&shm->stats.fd_events_processed, total,
 				   __ATOMIC_RELAXED);
+
+	if (was_protected)
+		freeze_global_objects();
 }
