@@ -70,7 +70,7 @@ static char * decode_argtype(char *sptr, char *end, unsigned long reg, enum argt
 		/* Although generic sanitise has set this to a map struct,
 		 * common_set_mmap_ptr_len() will subsequently set it to the ->ptr
 		 * in the per syscall ->sanitise routine. */
-		sptr = bprintf(sptr, end, "%p", (void *) reg);
+		sptr = bprintf(sptr, end, "0x%lx", reg);
 		break;
 
 	case ARG_OP:
