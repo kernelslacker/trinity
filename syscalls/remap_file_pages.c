@@ -19,6 +19,8 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	size_t start = 0;
 
 	map = common_set_mmap_ptr_len();
+	if (map == NULL || map->size == 0)
+		return;
 
 	if (RAND_BOOL()) {
 		start = rand() % map->size;
