@@ -35,10 +35,17 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 		size = rand() % map->size;
 
 		/* if we screwed with the start, we need to take it
-		 * into account so we don't go off the end.
+		 * into account so we don't go off the end.  size and
+		 * start are independent draws so size <= start is
+		 * possible — clamp to a single page rather than
+		 * underflow into a huge size_t.
 		 */
-		if (start != 0)
-			size -= start;
+		if (start != 0) {
+			if (size > start)
+				size -= start;
+			else
+				size = page_size;
+		}
 	}
 	rec->a2 = size;
 
