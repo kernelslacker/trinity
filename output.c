@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include "arg-decoder.h"
 #include "pids.h"
-#include "params.h"	// quiet_level
+#include "params.h"	// verbosity
 #include "shm.h"
 
 #define BUFSIZE 1024	// decoded syscall args are fprintf'd directly, this is for everything else.
@@ -19,8 +19,8 @@ void output_set_pid(pid_t pid)
 
 /*
  * level defines whether it gets displayed to the screen.
- * quiet_level defaults to 1 (only level 0 prints).
- * Each -v increases quiet_level: -v shows 0+1, -vv shows 0+1+2.
+ * verbosity defaults to 1 (only level 0 prints).
+ * Each -v increases verbosity: -v shows 0+1, -vv shows 0+1+2.
  *   0 = important (errors, taint, startup info, syscall counts)
  *   1 = operational (fd generation, socket cache, done parsing)
  *   2 = debug (device details, per-socket info, map details)
@@ -36,7 +36,7 @@ void output(int level, const char *fmt, ...)
 	char continuationtxt[]="";
 	char child_prefix[32];
 
-	if (level >= quiet_level)
+	if (level >= verbosity)
 		return;
 
 	if (level == CONT) {
@@ -73,7 +73,7 @@ skip_pid:
 
 /*
 * Used as a way to consolidated all printf calls if someones one to redirect it to somewhere else.
-* note: this function ignores quiet_level since it main purpose is error output.
+* note: this function ignores verbosity since it main purpose is error output.
 */
 void outputerr(const char *fmt, ...)
 {
@@ -96,6 +96,6 @@ void outputstd(const char *fmt, ...)
 
 void output_rendered_buffer(char *buffer)
 {
-	if (quiet_level > 1)
+	if (verbosity > 1)
 		fprintf(stdout, "%s", buffer);
 }

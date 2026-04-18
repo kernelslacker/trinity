@@ -920,7 +920,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
 
-	if (quiet_level >= MAX_LOGLEVEL)
+	if (verbosity >= MAX_LOGLEVEL)
 		bpf_disasm_all(bpf->filter, bpf->len);
 }
 
@@ -1001,7 +1001,7 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	if (addrlen != NULL)
 		*addrlen = sizeof(struct sock_fprog);
 
-	if (quiet_level >= MAX_LOGLEVEL)
+	if (verbosity >= MAX_LOGLEVEL)
 		bpf_disasm_all(bpf->filter, bpf->len);
 }
 #endif

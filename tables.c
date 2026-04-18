@@ -596,7 +596,7 @@ int munge_tables(void)
 
 	count_syscalls_enabled();
 
-	if (quiet_level >= MAX_LOGLEVEL)
+	if (verbosity >= MAX_LOGLEVEL)
 		display_enabled_syscalls();
 
 	if (validate_syscall_tables() == false) {
