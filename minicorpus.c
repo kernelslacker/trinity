@@ -140,14 +140,18 @@ static unsigned long mutate_arg(unsigned long val)
 		/* flip a random bit */
 		val ^= 1UL << (rand() % (sizeof(unsigned long) * 8));
 		break;
-	case 1:
-		/* add small delta */
-		val += 1 + (rand() % 16);
+	case 1: {
+		/* add small delta, saturate at ULONG_MAX */
+		unsigned long delta = 1 + (unsigned long)(rand() % 16);
+		val = ((unsigned long)-1 - val < delta) ? (unsigned long)-1 : val + delta;
 		break;
-	case 2:
-		/* subtract small delta */
-		val -= 1 + (rand() % 16);
+	}
+	case 2: {
+		/* subtract small delta, saturate at 0 */
+		unsigned long delta = 1 + (unsigned long)(rand() % 16);
+		val = (val < delta) ? 0 : val - delta;
 		break;
+	}
 	case 3:
 		/* replace with boundary */
 		val = get_boundary_value();
