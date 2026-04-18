@@ -141,7 +141,11 @@ static void cdrom_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		rec->a3 = rand() % 56;
 		break;
 	case CDROM_SELECT_DISC:
-		rec->a3 = rand() % 16;
+		switch (rand() % 10) {
+		case 0:  rec->a3 = CDSL_CURRENT; break;
+		case 1:  rec->a3 = CDSL_NONE;    break;
+		default: rec->a3 = rand() % 16;  break;
+		}
 		break;
 	default:
 		break;
