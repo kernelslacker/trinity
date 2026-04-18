@@ -97,7 +97,6 @@ bool fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 	fd_hash[slot].fd = fd;
 	fd_hash[slot].obj = obj;
 	fd_hash[slot].type = type;
-	fd_hash[slot].generation = __atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
 	return true;
 }
 

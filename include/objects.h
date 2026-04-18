@@ -230,7 +230,6 @@ struct fd_hash_entry {
 	int fd;			/* -1 = empty slot */
 	enum objecttype type;
 	struct object *obj;
-	uint32_t generation;	/* bumped on every create/close/dup */
 };
 
 void fd_hash_init(void);
