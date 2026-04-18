@@ -132,7 +132,8 @@ bool open_fds(void)
 	__open_fds(false);
 
 	/* Build array of active providers for O(1) random selection. */
-	active_providers = zmalloc(num_fd_providers_enabled * sizeof(struct fd_provider *));
+	active_providers = zmalloc((num_fd_providers_enabled > 0 ? num_fd_providers_enabled : 1) *
+				   sizeof(struct fd_provider *));
 	num_active_providers = 0;
 	list_for_each(node, &fd_providers->list) {
 		struct fd_provider *provider = (struct fd_provider *) node;
