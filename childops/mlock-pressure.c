@@ -101,7 +101,37 @@ bool mlock_pressure(struct childdata *child)
 		if (RAND_BOOL())
 			flags |= MCL_ONFAULT;
 
-		mlockall(flags);
+		if (mlockall(flags) == 0 && (flags & MCL_FUTURE)) {
+			/*
+			 * MCL_FUTURE only matters if we make new mappings
+			 * while mlockall is active. Allocate a handful of
+			 * short-lived mappings so the MCL_FUTURE intercept
+			 * path actually fires before we unlock.
+			 */
+			unsigned int i, n = 1 + (rand() % 4);
+			void *probes[4] = {NULL, NULL, NULL, NULL};
+			size_t lens[4] = {0, 0, 0, 0};
+
+			for (i = 0; i < n; i++) {
+				size_t len = page_size * (1 + (rand() % 8));
+				void *p = mmap(NULL, len,
+					       PROT_READ | PROT_WRITE,
+					       MAP_PRIVATE | MAP_ANONYMOUS,
+					       -1, 0);
+
+				if (p == MAP_FAILED)
+					continue;
+				/* Touch a byte so non-ONFAULT locking actually
+				 * binds a physical page. */
+				*(volatile char *)p = 0;
+				probes[i] = p;
+				lens[i] = len;
+			}
+			for (i = 0; i < n; i++) {
+				if (probes[i] != NULL)
+					munmap(probes[i], lens[i]);
+			}
+		}
 
 		/* Always unlock to avoid running out of lockable memory. */
 		munlockall();
