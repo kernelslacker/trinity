@@ -198,10 +198,8 @@ static bool generate_specific_socket(int family)
 	if (get_domain_name(st.family) == NULL)
 		return false;
 
-	if (valid_proto(st.family) == false) {
-		outputerr("Can't do protocol %s\n", get_domain_name(st.family));
+	if (valid_proto(st.family) == false)
 		return false;
-	}
 
 	st.protocol = rand_proto_for_family(st.family);
 
@@ -210,7 +208,7 @@ static bool generate_specific_socket(int family)
 
 	fd = open_socket(st.family, st.type, st.protocol);
 	if (fd == -1) {
-		output(0, "Couldn't open socket (%u:%u:%u). %s\n",
+		output(2, "Couldn't open socket (%u:%u:%u). %s\n",
 				st.family, st.type, st.protocol,
 				strerror(errno));
 		return false;
