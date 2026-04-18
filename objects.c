@@ -577,9 +577,6 @@ static void __prune_objects(enum objecttype type, enum obj_scope scope)
 	struct objhead *head;
 	unsigned int num_to_prune;
 
-	if (RAND_BOOL())
-		return;
-
 	head = get_objhead(scope, type);
 
 	/* 0 = don't ever prune. */
