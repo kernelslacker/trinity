@@ -34,6 +34,7 @@ int get_taint(void)
 		char *endptr;
 		long val;
 
+		buffer[ret] = '\0';
 		errno = 0;
 		val = strtol(buffer, &endptr, 10);
 		if (errno != 0 || endptr == buffer)
