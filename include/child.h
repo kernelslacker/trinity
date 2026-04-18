@@ -24,8 +24,6 @@ struct child_fd_ring {
 
 enum child_op_type {
 	CHILD_OP_SYSCALL = 0,	/* default: fuzz random syscalls */
-	CHILD_OP_FAULT_INJECT,	/* future: fault injection workloads */
-	CHILD_OP_FD_CHURN,	/* future: fd lifecycle stress */
 	CHILD_OP_MMAP_LIFECYCLE,
 	CHILD_OP_MPROTECT_SPLIT,
 	CHILD_OP_MLOCK_PRESSURE,
