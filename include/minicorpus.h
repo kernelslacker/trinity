@@ -1,5 +1,6 @@
 #pragma once
 
+#include "locks.h"
 #include "syscall.h"
 
 /*
@@ -26,9 +27,7 @@ struct corpus_entry {
 };
 
 struct corpus_ring {
-	unsigned char lock;
-	pid_t locker_pid;
-	unsigned int lock_gen;		/* generation counter for dead-owner detection */
+	lock_t lock;
 	unsigned int head;		/* next write slot (mod CORPUS_RING_SIZE) */
 	unsigned int count;		/* entries stored (max CORPUS_RING_SIZE) */
 	struct corpus_entry entries[CORPUS_RING_SIZE];

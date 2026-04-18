@@ -43,30 +43,12 @@ void minicorpus_init(void)
 
 static void ring_lock(struct corpus_ring *ring)
 {
-	unsigned int spins = 0;
-
-	while (__atomic_test_and_set(&ring->lock, __ATOMIC_ACQUIRE)) {
-		if (++spins > 1000000) {
-			unsigned int gen = __atomic_load_n(&ring->lock_gen,
-				__ATOMIC_ACQUIRE);
-			pid_t owner = __atomic_load_n(&ring->locker_pid, __ATOMIC_RELAXED);
-
-			if (owner != 0 && kill(owner, 0) == -1 &&
-			    errno == ESRCH &&
-			    __atomic_load_n(&ring->lock_gen,
-				__ATOMIC_RELAXED) == gen)
-				__atomic_clear(&ring->lock, __ATOMIC_RELEASE);
-			spins = 0;
-		}
-	}
-	__atomic_store_n(&ring->locker_pid, getpid(), __ATOMIC_RELAXED);
-	__atomic_fetch_add(&ring->lock_gen, 1, __ATOMIC_RELEASE);
+	lock(&ring->lock);
 }
 
 static void ring_unlock(struct corpus_ring *ring)
 {
-	__atomic_store_n(&ring->locker_pid, 0, __ATOMIC_RELAXED);
-	__atomic_clear(&ring->lock, __ATOMIC_RELEASE);
+	unlock(&ring->lock);
 }
 
 void minicorpus_save(struct syscallrecord *rec)
