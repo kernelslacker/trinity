@@ -31,10 +31,11 @@
 static struct {
 	unsigned long addr;
 	unsigned long size;
+	bool is_global_obj;
 } shared_regions[MAX_SHARED_ALLOCS];
 static unsigned int nr_shared_regions;
 
-void * alloc_shared(unsigned int size)
+static void * __alloc_shared(unsigned int size, bool is_global_obj)
 {
 	void *ret;
 
@@ -49,6 +50,7 @@ void * alloc_shared(unsigned int size)
 	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
 		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
 		shared_regions[nr_shared_regions].size = size;
+		shared_regions[nr_shared_regions].is_global_obj = is_global_obj;
 		nr_shared_regions++;
 	} else {
 		outputerr("alloc_shared: MAX_SHARED_ALLOCS (%d) reached, "
@@ -57,6 +59,50 @@ void * alloc_shared(unsigned int size)
 	}
 
 	return ret;
+}
+
+void * alloc_shared(unsigned int size)
+{
+	return __alloc_shared(size, false);
+}
+
+/*
+ * Allocate shared memory for global object data (list heads, parallel
+ * arrays, etc.).  Tagged so freeze_global_objects() can mprotect just
+ * these regions PROT_READ once init is done — children that stray-write
+ * into the global object pool then SIGSEGV at the source instead of
+ * silently corrupting list pointers.
+ */
+void * alloc_shared_global(unsigned int size)
+{
+	return __alloc_shared(size, true);
+}
+
+static void mprotect_global_obj_regions(int prot)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		if (!shared_regions[i].is_global_obj)
+			continue;
+		if (mprotect((void *) shared_regions[i].addr,
+			     shared_regions[i].size, prot) != 0) {
+			outputerr("mprotect_global_obj_regions: failed for %p (%lu bytes, prot=%d): %s\n",
+				  (void *) shared_regions[i].addr,
+				  shared_regions[i].size, prot,
+				  strerror(errno));
+		}
+	}
+}
+
+void freeze_global_objects(void)
+{
+	mprotect_global_obj_regions(PROT_READ);
+}
+
+void thaw_global_objects(void)
+{
+	mprotect_global_obj_regions(PROT_READ | PROT_WRITE);
 }
 
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
