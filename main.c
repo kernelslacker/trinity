@@ -110,6 +110,14 @@ void reap_child(struct childdata *child, int childno)
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	bust_lock(&child->syscall.lock);
 
+	/* Flush any unbatched per-child syscall count into the shared total
+	 * so it isn't lost when the child slot is recycled. */
+	if (child->local_op_count > 0) {
+		__atomic_add_fetch(&shm->stats.op_count,
+				   child->local_op_count, __ATOMIC_RELAXED);
+		child->local_op_count = 0;
+	}
+
 	unsigned int cur;
 	do {
 		cur = __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED);
@@ -794,9 +802,27 @@ static void check_children_progressing(void)
 		stall_genocide();
 }
 
+static unsigned long sum_local_op_counts(void)
+{
+	unsigned long sum = 0;
+	unsigned int i;
+
+	if (children == NULL)
+		return 0;
+
+	for_each_child(i) {
+		struct childdata *child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
+
+		if (child != NULL)
+			sum += child->local_op_count;
+	}
+	return sum;
+}
+
 static void print_stats(void)
 {
-	unsigned long op_count = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+	unsigned long op_count = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED) +
+				 sum_local_op_counts();
 
 	if (op_count > 1) {
 		static unsigned long lastcount = 0;
