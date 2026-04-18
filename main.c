@@ -46,16 +46,16 @@ static int shm_is_corrupt(void)
 {
 	unsigned int i;
 
-	unsigned long current_previous_op_count = shm->stats.previous_op_count;
-	unsigned long current_op_count = shm->stats.op_count;
+	unsigned long current_previous_op_count = __atomic_load_n(&shm->stats.previous_op_count, __ATOMIC_RELAXED);
+	unsigned long current_op_count = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
 
 	if (current_op_count < current_previous_op_count) {
 		output(0, "Execcount went backwards! (old:%lu new:%lu):\n",
-			shm->stats.previous_op_count, shm->stats.op_count);
+			current_previous_op_count, current_op_count);
 		panic(EXIT_SHM_CORRUPTION);
 		return true;
 	}
-	shm->stats.previous_op_count = shm->stats.op_count;
+	__atomic_store_n(&shm->stats.previous_op_count, current_op_count, __ATOMIC_RELAXED);
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -796,11 +796,13 @@ static void check_children_progressing(void)
 
 static void print_stats(void)
 {
-	if (shm->stats.op_count > 1) {
+	unsigned long op_count = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+
+	if (op_count > 1) {
 		static unsigned long lastcount = 0;
 		static struct timespec last_tp = { 0 };
 
-		if (shm->stats.op_count - lastcount > 10000) {
+		if (op_count - lastcount > 10000) {
 			struct timespec now;
 			unsigned long rate = 0;
 			char stalltxt[32] = "";
@@ -810,7 +812,7 @@ static void print_stats(void)
 				double elapsed = (now.tv_sec - last_tp.tv_sec) +
 					(now.tv_nsec - last_tp.tv_nsec) / 1e9;
 				if (elapsed > 0.01)
-					rate = (unsigned long)((shm->stats.op_count - lastcount) / elapsed);
+					rate = (unsigned long)((op_count - lastcount) / elapsed);
 			}
 			last_tp = now;
 
@@ -823,8 +825,9 @@ static void print_stats(void)
 				long delta = edges - last_edges;
 
 				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]\n",
-					shm->stats.op_count,
-					shm->stats.failures, shm->stats.successes,
+					op_count,
+					__atomic_load_n(&shm->stats.failures, __ATOMIC_RELAXED),
+					__atomic_load_n(&shm->stats.successes, __ATOMIC_RELAXED),
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate,
@@ -832,13 +835,14 @@ static void print_stats(void)
 				last_edges = edges;
 			} else {
 				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec\n",
-					shm->stats.op_count,
-					shm->stats.failures, shm->stats.successes,
+					op_count,
+					__atomic_load_n(&shm->stats.failures, __ATOMIC_RELAXED),
+					__atomic_load_n(&shm->stats.successes, __ATOMIC_RELAXED),
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate);
 			}
-			lastcount = shm->stats.op_count;
+			lastcount = op_count;
 		}
 	}
 }
@@ -887,12 +891,12 @@ void main_loop(void)
 				kill_all_kids();
 		}
 
-		if (syscalls_todo && (shm->stats.op_count >= syscalls_todo)) {
+		if (syscalls_todo && (__atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED) >= syscalls_todo)) {
 			output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
 			panic(EXIT_REACHED_COUNT);
 		}
 
-		if (epoch_iterations && (shm->stats.op_count >= epoch_iterations)) {
+		if (epoch_iterations && (__atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED) >= epoch_iterations)) {
 			output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
 			panic(EXIT_EPOCH_DONE);
 		}
