@@ -340,6 +340,7 @@ static void init_child(struct childdata *child, int childno)
 	 * children[] which sits in mprotected shared memory but accessing
 	 * via the cached argument avoids the indirection on the hot path. */
 	set_child_cache(childno, pid, child);
+	output_set_pid(pid);
 
 	set_seed(child);
 
