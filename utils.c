@@ -78,6 +78,8 @@ void * alloc_shared_global(unsigned int size)
 	return __alloc_shared(size, true);
 }
 
+static bool global_objects_protected;
+
 static void mprotect_global_obj_regions(int prot)
 {
 	unsigned int i;
@@ -98,11 +100,18 @@ static void mprotect_global_obj_regions(int prot)
 void freeze_global_objects(void)
 {
 	mprotect_global_obj_regions(PROT_READ);
+	global_objects_protected = true;
 }
 
 void thaw_global_objects(void)
 {
 	mprotect_global_obj_regions(PROT_READ | PROT_WRITE);
+	global_objects_protected = false;
+}
+
+bool globals_are_protected(void)
+{
+	return global_objects_protected;
 }
 
 bool range_overlaps_shared(unsigned long addr, unsigned long len)

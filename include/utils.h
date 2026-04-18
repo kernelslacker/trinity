@@ -14,6 +14,7 @@ void * alloc_shared(unsigned int size);
 void * alloc_shared_global(unsigned int size);
 void freeze_global_objects(void);
 void thaw_global_objects(void);
+bool globals_are_protected(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
 
 void * __zmalloc(size_t size, const char *func);
