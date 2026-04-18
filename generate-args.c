@@ -29,7 +29,7 @@ static int get_cpu(void)
 	case 0: return -1;
 	case 1: return rand() % 4096;
 	case 2: return INT_MAX;
-	case 3 ... 98:
+	case 3 ... 99:
 		return rand() % num_online_cpus;
 	}
 	return 0;
