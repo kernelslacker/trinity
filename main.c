@@ -304,9 +304,10 @@ static void dump_pid_stack(int pid)
 	if (fp == NULL)
 		return;
 
+	size_t n = 0;
+	char *line = NULL;
+
 	while (!(feof(fp))) {
-		size_t n = 0;
-		char *line = NULL;
 		if (getline(&line, &n, fp) != -1) {
 			output(0, "pid %d stack: %s", pid, line);
 		} else {
@@ -316,8 +317,8 @@ static void dump_pid_stack(int pid)
 			fclose(fp);
 			return;
 		}
-		free(line);
 	}
+	free(line);
 	output(0, "------------------------------------------------\n");
 
 	fclose(fp);
