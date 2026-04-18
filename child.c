@@ -326,6 +326,7 @@ static void init_child(struct childdata *child, int childno)
 
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
+		sched_yield();
 		/* Make sure parent is actually alive to wait for us. */
 		if (pid_alive(mainpid) == false) {
 			panic(EXIT_SHM_CORRUPTION);
