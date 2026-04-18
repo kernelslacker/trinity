@@ -2,7 +2,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -154,21 +156,39 @@ void freeptr(unsigned long *p)
 
 int get_num_fds(void)
 {
-     int fd_count;
-     char buf[64];
-     struct dirent *dp;
+	struct linux_dirent64 {
+		uint64_t       d_ino;
+		int64_t        d_off;
+		unsigned short d_reclen;
+		unsigned char  d_type;
+		char           d_name[];
+	};
+	char path[64];
+	char buf[4096];
+	int fd, fd_count = 0;
+	long nread, pos;
 
-     snprintf(buf, 64, "/proc/%i/fd/", mainpid);
+	snprintf(path, sizeof(path), "/proc/%i/fd", mainpid);
 
-     fd_count = 0;
-     DIR *dir = opendir(buf);
-     if (dir == NULL)
-          return 0;
-     while ((dp = readdir(dir)) != NULL) {
-          if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
-               continue;
-          fd_count++;
-     }
-     closedir(dir);
-     return fd_count;
+	fd = open(path, O_RDONLY | O_DIRECTORY);
+	if (fd == -1)
+		return 0;
+
+	while ((nread = syscall(SYS_getdents64, fd, buf, sizeof(buf))) > 0) {
+		for (pos = 0; pos < nread; ) {
+			struct linux_dirent64 *de = (struct linux_dirent64 *)(buf + pos);
+			const char *name = de->d_name;
+
+			/* Skip "." and ".." */
+			if (!(name[0] == '.' &&
+			      (name[1] == '\0' ||
+			       (name[1] == '.' && name[2] == '\0'))))
+				fd_count++;
+
+			pos += de->d_reclen;
+		}
+	}
+
+	close(fd);
+	return fd_count;
 }
