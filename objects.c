@@ -205,7 +205,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	head = get_objhead(scope, type);
 	if (head->list == NULL) {
 		if (scope == OBJ_GLOBAL) {
-			head->list = alloc_shared(sizeof(struct list_head));
+			head->list = alloc_shared_global(sizeof(struct list_head));
 		} else {
 			head->list = zmalloc(sizeof(struct list_head));
 		}
@@ -308,9 +308,11 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 
 		if (scope == OBJ_GLOBAL) {
 			/* Pre-allocate the parallel array in MAP_SHARED memory
-			 * so children can safely read it.  Never realloc. */
-			head->array = alloc_shared(GLOBAL_OBJ_MAX_CAPACITY *
-						   sizeof(struct object *));
+			 * so children can safely read it.  Never realloc.
+			 * Tagged global so freeze_global_objects() will mprotect
+			 * it RO once init is done. */
+			head->array = alloc_shared_global(GLOBAL_OBJ_MAX_CAPACITY *
+							  sizeof(struct object *));
 			memset(head->array, 0, GLOBAL_OBJ_MAX_CAPACITY *
 			       sizeof(struct object *));
 			head->array_capacity = GLOBAL_OBJ_MAX_CAPACITY;
