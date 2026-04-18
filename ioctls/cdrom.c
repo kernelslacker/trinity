@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <linux/cdrom.h>
@@ -82,8 +83,13 @@ static void cdrom_send_packet_sanitise(struct syscallrecord *rec)
 	for (i = 1; i < CDROM_PACKET_SIZE; i++)
 		cgc->cmd[i] = (unsigned char) rand();
 
-	cgc->buffer = (unsigned char *) get_writable_struct(4096);
-	cgc->buflen = 4096;
+	{
+		static const unsigned int buflens[] = {
+			0, 1, 4096, 4097, 65535, (unsigned int) INT_MAX,
+		};
+		cgc->buflen = buflens[rand() % ARRAY_SIZE(buflens)];
+		cgc->buffer = (unsigned char *) get_writable_struct(65536);
+	}
 	cgc->sense = (struct request_sense *) get_writable_struct(sizeof(struct request_sense));
 
 	switch (rand() % 3) {
