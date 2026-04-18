@@ -36,7 +36,7 @@ extern bool dry_run;
 extern bool show_unannotated;
 extern bool show_syscall_list;
 extern bool show_ioctl_list;
-extern unsigned char quiet_level;
+extern unsigned char verbosity;
 extern bool dangerous;
 extern bool dropprivs;
 extern bool do_syslog;

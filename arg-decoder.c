@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include "arch.h"	//PAGE_MASK
 #include "arg-decoder.h"
-#include "params.h"	// quiet_level
+#include "params.h"	// verbosity
 #include "pids.h"
 #include "sanitise.h"	// get_argval
 #include "shm.h"

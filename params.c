@@ -36,7 +36,7 @@ bool dry_run = false;
 bool show_unannotated = false;
 bool show_syscall_list = false;
 bool show_ioctl_list = false;
-unsigned char quiet_level = 1;
+unsigned char verbosity = 1;
 bool dangerous = false;
 bool dropprivs = false;
 bool do_syslog = false;
@@ -356,7 +356,7 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'v':
-			quiet_level++;
+			verbosity++;
 			break;
 
 		case 'V':
@@ -415,8 +415,8 @@ void parse_args(int argc, char *argv[])
 			break;
 		}
 	}
-	if (quiet_level > MAX_LOGLEVEL)
-		quiet_level = MAX_LOGLEVEL;
+	if (verbosity > MAX_LOGLEVEL)
+		verbosity = MAX_LOGLEVEL;
 
 	output(1, "Done parsing arguments.\n");
 }
