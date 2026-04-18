@@ -46,6 +46,8 @@ static bool parse_proc_devices(void)
 			if ((p = strrchr(line, ' ')) == NULL)
 				continue;
 			p++;
+			if (*p == '\0')
+				continue;
 			name = strdup(p);
 			if (!name)
 				continue;
