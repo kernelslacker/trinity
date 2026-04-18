@@ -214,10 +214,11 @@ unsigned int get_pid(void)
 	dice = rand() % 100;
 
 	if (dice < 70) {
+		pid_t ppid = getppid();
 		unsigned int retries = 0;
 retry:		i = rand() % max_children;
 		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
-		if (pid == EMPTY_PIDSLOT || pid == getppid()) {
+		if (pid == EMPTY_PIDSLOT || pid == ppid) {
 			if (++retries >= 100)
 				return getpid();
 			goto retry;
