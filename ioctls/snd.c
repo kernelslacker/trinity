@@ -197,6 +197,139 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	}
 }
 
+static const unsigned int pcm_rates[] = {
+	8000, 11025, 16000, 22050, 32000, 44100, 48000, 64000, 88200, 96000, 192000,
+};
+
+static void fill_snd_pcm_hw_params(struct snd_pcm_hw_params *p)
+{
+	unsigned int rate;
+	unsigned int channels;
+	/* index within intervals[]: param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL */
+	unsigned int rate_idx = SNDRV_PCM_HW_PARAM_RATE - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL;
+	unsigned int chan_idx = SNDRV_PCM_HW_PARAM_CHANNELS - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL;
+
+	rate = pcm_rates[rand() % ARRAY_SIZE(pcm_rates)];
+	channels = rand() % 8 + 1;
+
+	p->rmask = ~0U;		/* request all params */
+	p->intervals[rate_idx].min = rate;
+	p->intervals[rate_idx].max = rate;
+	p->intervals[rate_idx].integer = 1;
+	p->intervals[chan_idx].min = channels;
+	p->intervals[chan_idx].max = channels;
+	p->intervals[chan_idx].integer = 1;
+	/* leave format mask zero: kernel will open it up */
+}
+
+static void sanitise_snd_pcm(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_PCM_IOCTL_INFO: {
+		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->device = rand() % 8;
+			info->subdevice = rand() % 8;
+			info->stream = rand() & 1;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_TSTAMP:
+	case SNDRV_PCM_IOCTL_TTSTAMP: {
+		int *mode = get_writable_struct(sizeof(int));
+		if (mode) {
+			*mode = rand() % 3;
+			rec->a3 = (unsigned long) mode;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_HW_REFINE:
+	case SNDRV_PCM_IOCTL_HW_PARAMS: {
+		struct snd_pcm_hw_params *p = get_writable_struct(sizeof(*p));
+		if (p) {
+			fill_snd_pcm_hw_params(p);
+			rec->a3 = (unsigned long) p;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_SW_PARAMS: {
+		struct snd_pcm_sw_params *p = get_writable_struct(sizeof(*p));
+		if (p) {
+			p->avail_min = rand() % 4096 + 1;
+			p->start_threshold = rand() % 8192 + 1;
+			p->stop_threshold = rand() % 8192 + 1;
+			p->tstamp_mode = rand() % 2;
+			p->period_step = 1;
+			rec->a3 = (unsigned long) p;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_STATUS: {
+		struct snd_pcm_status *st = get_writable_struct(sizeof(*st));
+		if (st)
+			rec->a3 = (unsigned long) st;
+		break;
+	}
+	case SNDRV_PCM_IOCTL_DELAY: {
+		snd_pcm_sframes_t *delay = get_writable_struct(sizeof(*delay));
+		if (delay)
+			rec->a3 = (unsigned long) delay;
+		break;
+	}
+	case SNDRV_PCM_IOCTL_CHANNEL_INFO: {
+		struct snd_pcm_channel_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->channel = rand() % 8;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_SYNC_PTR: {
+		struct snd_pcm_sync_ptr *sp = get_writable_struct(sizeof(*sp));
+		if (sp)
+			rec->a3 = (unsigned long) sp;
+		break;
+	}
+	case SNDRV_PCM_IOCTL_WRITEI_FRAMES:
+	case SNDRV_PCM_IOCTL_READI_FRAMES: {
+		struct snd_xferi *xfer = get_writable_struct(sizeof(*xfer));
+		if (xfer) {
+			unsigned int frames = rand() % 1024 + 1;
+			xfer->frames = frames;
+			xfer->buf = get_writable_struct(frames * 8);	/* up to 8 bytes/frame */
+			rec->a3 = (unsigned long) xfer;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_WRITEN_FRAMES:
+	case SNDRV_PCM_IOCTL_READN_FRAMES: {
+		struct snd_xfern *xfer = get_writable_struct(sizeof(*xfer));
+		if (xfer) {
+			unsigned int frames = rand() % 1024 + 1;
+			unsigned int channels = rand() % 8 + 1;
+			unsigned int i;
+			xfer->frames = frames;
+			xfer->bufs = get_writable_struct(channels * sizeof(void *));
+			for (i = 0; xfer->bufs && i < channels; i++)
+				xfer->bufs[i] = get_writable_struct(frames * 4);
+			rec->a3 = (unsigned long) xfer;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_LINK: {
+		int *fd = get_writable_struct(sizeof(int));
+		if (fd) {
+			*fd = rand() % 1024;
+			rec->a3 = (unsigned long) fd;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -234,6 +367,25 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_CTL_IOCTL_POWER:
 	case SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS:
 		sanitise_snd_ctl(rec);
+		break;
+
+	/* snd-pcm */
+	case SNDRV_PCM_IOCTL_INFO:
+	case SNDRV_PCM_IOCTL_TSTAMP:
+	case SNDRV_PCM_IOCTL_TTSTAMP:
+	case SNDRV_PCM_IOCTL_HW_REFINE:
+	case SNDRV_PCM_IOCTL_HW_PARAMS:
+	case SNDRV_PCM_IOCTL_SW_PARAMS:
+	case SNDRV_PCM_IOCTL_STATUS:
+	case SNDRV_PCM_IOCTL_DELAY:
+	case SNDRV_PCM_IOCTL_SYNC_PTR:
+	case SNDRV_PCM_IOCTL_CHANNEL_INFO:
+	case SNDRV_PCM_IOCTL_WRITEI_FRAMES:
+	case SNDRV_PCM_IOCTL_READI_FRAMES:
+	case SNDRV_PCM_IOCTL_WRITEN_FRAMES:
+	case SNDRV_PCM_IOCTL_READN_FRAMES:
+	case SNDRV_PCM_IOCTL_LINK:
+		sanitise_snd_pcm(rec);
 		break;
 
 	default:
