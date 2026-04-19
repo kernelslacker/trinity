@@ -291,6 +291,8 @@ static bool ensure_discovery(void)
 
 	if (do_discovery(genl_sock) < 0 || catalog_count == 0) {
 		discovery_failed = true;
+		close(genl_sock);
+		genl_sock = -1;
 		if (!warned_unsupported) {
 			warned_unsupported = true;
 			output(0, "genetlink_fuzzer: GETFAMILY discovery yielded %u families, disabling\n",
@@ -299,6 +301,8 @@ static bool ensure_discovery(void)
 		return false;
 	}
 
+	/* genl_sock stays open for this child's lifetime; send_fuzzed_msg()
+	 * uses it on every subsequent call. */
 	discovery_done = true;
 	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
 			   catalog_count, __ATOMIC_RELAXED);
