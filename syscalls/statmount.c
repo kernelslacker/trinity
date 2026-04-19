@@ -27,6 +27,19 @@
 #define STATMOUNT_OPT_ARRAY		0x00000400U
 #define STATMOUNT_OPT_SEC_ARRAY		0x00000800U
 #endif
+/* statmount() param mask bits added in Linux v6.15. */
+#ifndef STATMOUNT_SUPPORTED_MASK
+#define STATMOUNT_SUPPORTED_MASK	0x00001000U
+#endif
+/* statmount() param mask bits added in Linux v7.0. */
+#ifndef STATMOUNT_MNT_UIDMAP
+#define STATMOUNT_MNT_UIDMAP		0x00002000U
+#define STATMOUNT_MNT_GIDMAP		0x00004000U
+#endif
+/* statmount() syscall flags bit added in Linux v7.0. */
+#ifndef STATMOUNT_BY_FD
+#define STATMOUNT_BY_FD			0x00000001U
+#endif
 
 static unsigned long statmount_params[] = {
 	STATMOUNT_SB_BASIC, STATMOUNT_MNT_BASIC, STATMOUNT_PROPAGATE_FROM,
@@ -37,6 +50,12 @@ static unsigned long statmount_params[] = {
 #endif
 #ifdef STATMOUNT_OPT_ARRAY
 	STATMOUNT_OPT_ARRAY, STATMOUNT_OPT_SEC_ARRAY,
+#endif
+#ifdef STATMOUNT_SUPPORTED_MASK
+	STATMOUNT_SUPPORTED_MASK,
+#endif
+#ifdef STATMOUNT_MNT_UIDMAP
+	STATMOUNT_MNT_UIDMAP, STATMOUNT_MNT_GIDMAP,
 #endif
 };
 
@@ -68,7 +87,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) req;
 	rec->a3 = 4096;	/* reasonable output buffer size */
-	rec->a4 = 0;		/* flags must be zero */
+	rec->a4 = ONE_IN(4) ? STATMOUNT_BY_FD : 0;
 }
 
 struct syscallentry syscall_statmount = {

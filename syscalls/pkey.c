@@ -7,8 +7,13 @@
 
 #define PKEY_DISABLE_ACCESS     0x1
 #define PKEY_DISABLE_WRITE      0x2
+/* PKEY_UNRESTRICTED added in Linux v6.15 (asm-generic/mman-common.h). */
+#ifndef PKEY_UNRESTRICTED
+#define PKEY_UNRESTRICTED       0x0
+#endif
 
 static unsigned long pkey_alloc_initvals[] = {
+	PKEY_UNRESTRICTED,
 	PKEY_DISABLE_ACCESS,
 	PKEY_DISABLE_WRITE,
 };
