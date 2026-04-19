@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include "child.h"
 #include "pids.h"
 #include "shm.h"
@@ -250,17 +251,6 @@ static bool extract_kernel_header(const char *kmsg, size_t kmsg_len,
 	return true;
 }
 
-static void dump_kmsg(FILE *fp, const char *kmsg, size_t kmsg_len)
-{
-	fprintf(fp, "\n--- kernel ring buffer at taint time ---\n");
-	if (kmsg_len > 0) {
-		fwrite(kmsg, 1, kmsg_len, fp);
-		if (kmsg[kmsg_len - 1] != '\n')
-			fputc('\n', fp);
-	}
-	fprintf(fp, "--- end kernel ring buffer ---\n");
-}
-
 /*
  * Slurp a tiny /proc/<pid>/<name> file into fp.  Silent on any error:
  * the child may have just exited, the file may be unreadable for this
@@ -330,16 +320,53 @@ static char *capture_child_runtime_state(size_t *out_len)
 	return buf;
 }
 
-static void dump_child_runtime(FILE *fp, const char *runtime_buf,
-			       size_t runtime_len)
+/*
+ * Build "trinity-post-mortem-YYYYMMDD-HHMMSS-<seed>" into out[].  The
+ * sortable date plus the seed suffix keep neighbour taints from
+ * colliding when multiple hosts dump into a shared collection point.
+ * Returns 0 on success, -1 on truncation or time conversion failure.
+ */
+static int format_artifact_dirname(char *out, size_t outlen, unsigned int seed)
 {
-	fprintf(fp, "\n--- per-child runtime state at taint time ---\n");
-	if (runtime_len > 0) {
-		fwrite(runtime_buf, 1, runtime_len, fp);
-		if (runtime_buf[runtime_len - 1] != '\n')
+	time_t now = time(NULL);
+	struct tm tm;
+	char ts[32];
+	int n;
+
+	if (localtime_r(&now, &tm) == NULL)
+		return -1;
+	if (strftime(ts, sizeof(ts), "%Y%m%d-%H%M%S", &tm) == 0)
+		return -1;
+	n = snprintf(out, outlen, "trinity-post-mortem-%s-%u", ts, seed);
+	if (n < 0 || (size_t) n >= outlen)
+		return -1;
+	return 0;
+}
+
+static FILE *open_artifact(const char *dir, const char *name)
+{
+	char path[256];
+	int n;
+
+	n = snprintf(path, sizeof(path), "%s/%s", dir, name);
+	if (n < 0 || (size_t) n >= sizeof(path))
+		return NULL;
+	return fopen(path, "w");
+}
+
+static void write_artifact_buf(const char *dir, const char *name,
+			       const char *buf, size_t len)
+{
+	FILE *fp = open_artifact(dir, name);
+
+	if (fp == NULL)
+		return;
+	if (len > 0) {
+		fwrite(buf, 1, len, fp);
+		if (buf[len - 1] != '\n')
 			fputc('\n', fp);
 	}
-	fprintf(fp, "--- end per-child runtime state ---\n");
+	fclose(fp);
 }
 
 void tainted_postmortem(void)
@@ -353,10 +380,13 @@ void tainted_postmortem(void)
 	bool have_header = false;
 	char *runtime_buf;
 	size_t runtime_len = 0;
+	unsigned int seed;
+	char dirname[128];
 
 	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
+	seed = shm->seed;
 
 	/* Slurp the kernel ring buffer first — closer in time to the taint
 	 * event means a smaller chance the WARN/Oops has aged out under
@@ -374,30 +404,50 @@ void tainted_postmortem(void)
 	panic(EXIT_KERNEL_TAINTED);
 
 	output(0, "kernel became tainted! (%d/%d) Last seed was %u\n",
-		taint, kernel_taint_initial, shm->seed);
+		taint, kernel_taint_initial, seed);
 
 	openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
-	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
+	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", seed);
 	closelog();
 
-	fp = fopen("trinity-post-mortem.log", "w");
-	if (!fp) {
-		outputerr("Failed to write post mortem log (%s)\n", strerror(errno));
+	if (format_artifact_dirname(dirname, sizeof(dirname), seed) < 0 ||
+	    mkdir(dirname, 0755) != 0) {
+		outputerr("Failed to create post-mortem dir (%s)\n",
+			  strerror(errno));
 		goto out;
 	}
+	output(0, "Post-mortem artifact: %s/\n", dirname);
 
-	if (have_header)
-		fprintf(fp, "KERNEL: %s\n\n", header);
+	/* Small triage header. The bulky data lives in sibling files. */
+	fp = open_artifact(dirname, "summary.log");
+	if (fp != NULL) {
+		if (have_header)
+			fprintf(fp, "KERNEL: %s\n", header);
+		fprintf(fp, "taint:  0x%x (was 0x%x at startup)\n",
+			taint, kernel_taint_initial);
+		fprintf(fp, "seed:   %u\n", seed);
+		fclose(fp);
+	}
 
-	dump_syscall_records(fp, &taint_tp);
+	fp = open_artifact(dirname, "syscall-rings.log");
+	if (fp != NULL) {
+		dump_syscall_records(fp, &taint_tp);
+		fclose(fp);
+	}
 
-	if (runtime_buf != NULL)
-		dump_child_runtime(fp, runtime_buf, runtime_len);
+	if (runtime_buf != NULL && runtime_len > 0)
+		write_artifact_buf(dirname, "child-state.log",
+				   runtime_buf, runtime_len);
 
-	if (kmsg != NULL)
-		dump_kmsg(fp, kmsg, kmsg_len);
+	if (kmsg != NULL && kmsg_len > 0)
+		write_artifact_buf(dirname, "dmesg.txt", kmsg, kmsg_len);
 
-	fclose(fp);
+	/* Replay marker: `trinity -s $(cat seed)` reproduces this run. */
+	fp = open_artifact(dirname, "seed");
+	if (fp != NULL) {
+		fprintf(fp, "%u\n", seed);
+		fclose(fp);
+	}
 
 out:
 	free(kmsg);
