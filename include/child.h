@@ -50,6 +50,7 @@ enum child_op_type {
 	CHILD_OP_BARRIER_RACER,
 	CHILD_OP_GENETLINK_FUZZER,
 	CHILD_OP_PERF_CHAINS,
+	CHILD_OP_TRACEFS_FUZZER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -159,3 +160,4 @@ bool sched_cycler(struct childdata *child);
 bool barrier_racer(struct childdata *child);
 bool genetlink_fuzzer(struct childdata *child);
 bool perf_event_chains(struct childdata *child);
+bool tracefs_fuzzer(struct childdata *child);

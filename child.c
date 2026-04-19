@@ -563,6 +563,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_BARRIER_RACER:		return 30;
 	case CHILD_OP_GENETLINK_FUZZER:		return 30;
 	case CHILD_OP_PERF_CHAINS:		return 30;
+	case CHILD_OP_TRACEFS_FUZZER:		return 60;
 	default:				return 10;
 	}
 }
@@ -665,18 +666,19 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	switch (r % 11) {
-	case 0: return CHILD_OP_MMAP_LIFECYCLE;
-	case 1: return CHILD_OP_MPROTECT_SPLIT;
-	case 2: return CHILD_OP_MLOCK_PRESSURE;
-	case 3: return CHILD_OP_INODE_SPEWER;
-	case 4: return CHILD_OP_PROCFS_WRITER;
-	case 5: return CHILD_OP_MEMORY_PRESSURE;
-	case 6: return CHILD_OP_USERNS_FUZZER;
-	case 7: return CHILD_OP_SCHED_CYCLER;
-	case 8: return CHILD_OP_BARRIER_RACER;
-	case 9: return CHILD_OP_GENETLINK_FUZZER;
+	switch (r % 12) {
+	case 0:  return CHILD_OP_MMAP_LIFECYCLE;
+	case 1:  return CHILD_OP_MPROTECT_SPLIT;
+	case 2:  return CHILD_OP_MLOCK_PRESSURE;
+	case 3:  return CHILD_OP_INODE_SPEWER;
+	case 4:  return CHILD_OP_PROCFS_WRITER;
+	case 5:  return CHILD_OP_MEMORY_PRESSURE;
+	case 6:  return CHILD_OP_USERNS_FUZZER;
+	case 7:  return CHILD_OP_SCHED_CYCLER;
+	case 8:  return CHILD_OP_BARRIER_RACER;
+	case 9:  return CHILD_OP_GENETLINK_FUZZER;
 	case 10: return CHILD_OP_PERF_CHAINS;
+	case 11: return CHILD_OP_TRACEFS_FUZZER;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -764,6 +766,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_BARRIER_RACER:		ret = barrier_racer(child); break;
 		case CHILD_OP_GENETLINK_FUZZER:		ret = genetlink_fuzzer(child); break;
 		case CHILD_OP_PERF_CHAINS:		ret = perf_event_chains(child); break;
+		case CHILD_OP_TRACEFS_FUZZER:		ret = tracefs_fuzzer(child); break;
 		default:				ret = random_syscall(child); break;
 		}
 
