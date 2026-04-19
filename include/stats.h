@@ -83,6 +83,16 @@ struct stats_s {
 	unsigned long bpf_lifecycle_triggered;		/* trigger phase reached */
 	unsigned long bpf_lifecycle_eperm;		/* PROG_LOAD/ATTACH denied */
 
+	/* fds/bpf provisioning counters: cumulative count of fds we
+	 * successfully published into the global object pool, including
+	 * regenerations after stale-fd teardown.  Tells you how much of
+	 * trinity's fd-providing infrastructure BPF actually contributes
+	 * — zero means the kernel rejected every load and the BPF cross-
+	 * subsystem surface (SO_ATTACH_BPF, PERF_EVENT_IOC_SET_BPF, etc.)
+	 * is unreachable. */
+	unsigned long bpf_maps_provided;
+	unsigned long bpf_progs_provided;
+
 	/* recipe_runner childop counters */
 	unsigned long recipe_runs;		/* total recipe_runner invocations */
 	unsigned long recipe_completed;		/* full sequence ran without failure */
