@@ -10,6 +10,35 @@
 #define FAN_UNLIMITED_QUEUE	0x00000010
 #define FAN_UNLIMITED_MARKS	0x00000020
 
+/* FID-based reporting flags (5.1+); guard in case headers already define them. */
+#ifndef FAN_REPORT_TID
+#define FAN_REPORT_TID		0x00000100
+#endif
+#ifndef FAN_REPORT_FID
+#define FAN_REPORT_FID		0x00000200
+#endif
+#ifndef FAN_REPORT_DIR_FID
+#define FAN_REPORT_DIR_FID	0x00000400
+#endif
+#ifndef FAN_REPORT_NAME
+#define FAN_REPORT_NAME		0x00000800
+#endif
+#ifndef FAN_REPORT_TARGET_FID
+#define FAN_REPORT_TARGET_FID	0x00001000
+#endif
+#ifndef FAN_REPORT_PIDFD
+#define FAN_REPORT_PIDFD	0x00000080
+#endif
+#ifndef FAN_REPORT_FD_ERROR
+#define FAN_REPORT_FD_ERROR	0x00002000
+#endif
+#ifndef FAN_REPORT_MNT
+#define FAN_REPORT_MNT		0x00004000
+#endif
+#ifndef FAN_ENABLE_AUDIT
+#define FAN_ENABLE_AUDIT	0x00000040
+#endif
+
 #include <fcntl.h>
 #include "fanotify.h"
 #include "objects.h"
@@ -17,8 +46,11 @@
 #include "sanitise.h"
 
 static unsigned long fanotify_init_flags[] = {
-	FAN_CLOEXEC , FAN_NONBLOCK, FAN_UNLIMITED_QUEUE , FAN_UNLIMITED_MARKS,
+	FAN_CLOEXEC, FAN_NONBLOCK, FAN_UNLIMITED_QUEUE, FAN_UNLIMITED_MARKS,
 	FAN_CLASS_NOTIF, FAN_CLASS_CONTENT, FAN_CLASS_PRE_CONTENT,
+	FAN_REPORT_TID, FAN_REPORT_FID, FAN_REPORT_DIR_FID, FAN_REPORT_NAME,
+	FAN_REPORT_TARGET_FID, FAN_REPORT_PIDFD, FAN_REPORT_FD_ERROR,
+	FAN_REPORT_MNT, FAN_ENABLE_AUDIT,
 };
 
 unsigned long get_fanotify_init_flags(void)
