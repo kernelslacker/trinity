@@ -18,8 +18,14 @@
  * save and replay.
  */
 
-/* Number of arg snapshots retained per syscall number. */
-#define CORPUS_RING_SIZE 8
+/* Number of arg snapshots retained per syscall number.
+ *
+ * 8 was sized for the original syscall set and very short runs.  Anything
+ * busier — long fuzzing sessions, or syscalls that find new edges in
+ * bursts — evicted promising snapshots before they got a chance to be
+ * replayed.  32 slots (~1.8 MB total shared memory across MAX_NR_SYSCALL
+ * rings) widens the replay window without burning meaningful memory. */
+#define CORPUS_RING_SIZE 32
 
 struct corpus_entry {
 	unsigned long args[6];
