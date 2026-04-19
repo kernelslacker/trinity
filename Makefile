@@ -36,6 +36,8 @@ LDFLAGS += -rdynamic
 
 # glibc versions before 2.17 for clock_gettime
 LDLIBS += -lrt
+# barrier_racer uses process-shared pthread barriers
+LDLIBS += -lpthread
 
 # gcc only.
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
