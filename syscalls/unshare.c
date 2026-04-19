@@ -4,11 +4,16 @@
 #include <linux/sched.h>
 #include "sanitise.h"
 
+#ifndef UNSHARE_EMPTY_MNTNS
+#define UNSHARE_EMPTY_MNTNS	0x00100000
+#endif
+
 static unsigned long unshare_flags[] = {
 	CLONE_THREAD, CLONE_FS, CLONE_NEWNS, CLONE_SIGHAND,
 	CLONE_VM, CLONE_FILES, CLONE_SYSVSEM, CLONE_NEWUTS,
 	CLONE_NEWIPC, CLONE_NEWNET, CLONE_NEWUSER, CLONE_NEWPID,
 	CLONE_NEWCGROUP, CLONE_NEWTIME,
+	UNSHARE_EMPTY_MNTNS,
 };
 
 struct syscallentry syscall_unshare = {
