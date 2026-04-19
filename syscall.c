@@ -87,10 +87,47 @@ already_done:
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
+/*
+ * Maybe arm /proc/self/fail-nth so the next syscall sees an allocation
+ * failure on its Nth slab/page alloc.  Returns true if we wrote a value.
+ *
+ * We deliberately do this *here*, after all sanitise_*() and arg-generation
+ * has happened, so the fault hits the kernel's path through the syscall
+ * itself rather than any of trinity's setup allocations.
+ *
+ * Skip on the EXTRA_FORK throwaway path (state == GOING_AWAY): the
+ * grandchild inherits the fd, but the file inode refers to the opener's
+ * (i.e. parent child's) task — writing through it would arm fault
+ * injection on the *parent*'s next syscall, not the grandchild's.
+ */
+static bool maybe_inject_fault(struct childdata *child, enum syscallstate state)
+{
+	char buf[16];
+	int n, len;
+
+	if (child == NULL || child->fail_nth_fd == -1)
+		return false;
+
+	if (state != BEFORE)
+		return false;
+
+	if (!ONE_IN(20))
+		return false;
+
+	n = RAND_RANGE(1, 8);
+	len = snprintf(buf, sizeof(buf), "%d", n);
+
+	if (write(child->fail_nth_fd, buf, (size_t)len) != len)
+		return false;
+
+	return true;
+}
+
 static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 			 struct kcov_child *kc, struct childdata *child)
 {
 	unsigned long ret = dry_run ? -1UL : 0;
+	bool fault_armed = false;
 
 	errno = 0;
 
@@ -126,6 +163,8 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 		if (needalarm)
 			(void)alarm(1);
 
+		fault_armed = maybe_inject_fault(child, state);
+
 		if (rec->do32bit == false) {
 			if (kc != NULL && kc->remote_mode)
 				kcov_enable_remote(kc);
@@ -144,6 +183,15 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 				kcov_enable_trace(kc);
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 			kcov_disable(kc);
+		}
+
+		/* fail-nth resets to 0 in the kernel after the syscall completes.
+		 * Tally whether the armed fault actually triggered (-ENOMEM) vs
+		 * went unconsumed (the syscall didn't reach an allocation we hit). */
+		if (fault_armed) {
+			__atomic_add_fetch(&shm->stats.fault_injected, 1, __ATOMIC_RELAXED);
+			if (ret == (unsigned long)-1L && errno == ENOMEM)
+				__atomic_add_fetch(&shm->stats.fault_consumed, 1, __ATOMIC_RELAXED);
 		}
 
 		/* If we became tainted, get out as fast as we can. */

@@ -66,6 +66,11 @@ struct shm_s {
 	/* various flags. */
 	enum exit_reasons exit_reason;
 	bool dont_make_it_fail;
+
+	/* Set to true once we detect that /proc/self/fail-nth can't be
+	 * opened (kernel built without CONFIG_FAULT_INJECTION, etc.).
+	 * Lives in shm so the flag propagates across fork(). */
+	bool no_fail_nth;
 	_Atomic bool spawn_no_more;
 	_Atomic bool ready;
 	bool postmortem_in_progress;
