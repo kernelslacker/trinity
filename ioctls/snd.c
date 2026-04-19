@@ -465,6 +465,157 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	}
 }
 
+static void fill_snd_seq_addr(struct snd_seq_addr *addr)
+{
+	addr->client = rand() % 128;
+	addr->port = rand() % 256;
+}
+
+static void sanitise_snd_seq(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_SEQ_IOCTL_SYSTEM_INFO: {
+		struct snd_seq_system_info *info = get_writable_struct(sizeof(*info));
+		if (info)
+			rec->a3 = (unsigned long) info;
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_RUNNING_MODE: {
+		struct snd_seq_running_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->client = rand() % 128;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_GET_CLIENT_INFO:
+	case SNDRV_SEQ_IOCTL_SET_CLIENT_INFO:
+	case SNDRV_SEQ_IOCTL_QUERY_NEXT_CLIENT: {
+		struct snd_seq_client_info *ci = get_writable_struct(sizeof(*ci));
+		if (ci) {
+			ci->client = RAND_BOOL() ? -1 : (int)(rand() % 128);
+			rec->a3 = (unsigned long) ci;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_CREATE_PORT:
+	case SNDRV_SEQ_IOCTL_DELETE_PORT:
+	case SNDRV_SEQ_IOCTL_GET_PORT_INFO:
+	case SNDRV_SEQ_IOCTL_SET_PORT_INFO:
+	case SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT: {
+		struct snd_seq_port_info *pi = get_writable_struct(sizeof(*pi));
+		if (pi) {
+			fill_snd_seq_addr(&pi->addr);
+			if (rec->a2 == SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT)
+				pi->addr.port = (unsigned char)(rand() % 256) - 1;
+			pi->capability = rand();
+			pi->type = rand();
+			pi->midi_channels = rand() % 16 + 1;
+			rec->a3 = (unsigned long) pi;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_SUBSCRIBE_PORT:
+	case SNDRV_SEQ_IOCTL_UNSUBSCRIBE_PORT:
+	case SNDRV_SEQ_IOCTL_GET_SUBSCRIPTION: {
+		struct snd_seq_port_subscribe *sub = get_writable_struct(sizeof(*sub));
+		if (sub) {
+			fill_snd_seq_addr(&sub->sender);
+			fill_snd_seq_addr(&sub->dest);
+			rec->a3 = (unsigned long) sub;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_CREATE_QUEUE:
+	case SNDRV_SEQ_IOCTL_DELETE_QUEUE:
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_INFO:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_INFO:
+	case SNDRV_SEQ_IOCTL_GET_NAMED_QUEUE: {
+		struct snd_seq_queue_info *qi = get_writable_struct(sizeof(*qi));
+		if (qi) {
+			qi->queue = rand() % 8;
+			qi->owner = rand() % 128;
+			rec->a3 = (unsigned long) qi;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_STATUS: {
+		struct snd_seq_queue_status *qs = get_writable_struct(sizeof(*qs));
+		if (qs) {
+			qs->queue = rand() % 8;
+			rec->a3 = (unsigned long) qs;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_TEMPO:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_TEMPO: {
+		struct snd_seq_queue_tempo *qt = get_writable_struct(sizeof(*qt));
+		if (qt) {
+			qt->queue = rand() % 8;
+			qt->tempo = rand() % 2000000 + 60000;	/* 60ms-2s per beat */
+			qt->ppq = rand() % 480 + 24;
+			rec->a3 = (unsigned long) qt;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_TIMER:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_TIMER: {
+		struct snd_seq_queue_timer *timer = get_writable_struct(sizeof(*timer));
+		if (timer) {
+			timer->queue = rand() % 8;
+			timer->type = rand() % 3;
+			fill_snd_timer_id(&timer->u.alsa.id);
+			timer->u.alsa.resolution = rand() % 480 + 24;
+			rec->a3 = (unsigned long) timer;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_CLIENT:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_CLIENT: {
+		struct snd_seq_queue_client *qc = get_writable_struct(sizeof(*qc));
+		if (qc) {
+			qc->queue = rand() % 8;
+			qc->client = rand() % 128;
+			qc->used = RAND_BOOL();
+			rec->a3 = (unsigned long) qc;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_GET_CLIENT_POOL:
+	case SNDRV_SEQ_IOCTL_SET_CLIENT_POOL: {
+		struct snd_seq_client_pool *cp = get_writable_struct(sizeof(*cp));
+		if (cp) {
+			cp->client = rand() % 128;
+			cp->output_pool = rand() % 1024 + 64;
+			cp->input_pool = rand() % 512 + 32;
+			cp->output_room = rand() % 64 + 1;
+			rec->a3 = (unsigned long) cp;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_REMOVE_EVENTS: {
+		struct snd_seq_remove_events *re = get_writable_struct(sizeof(*re));
+		if (re) {
+			re->remove_mode = rand() & 0x3ff;
+			rec->a3 = (unsigned long) re;
+		}
+		break;
+	}
+	case SNDRV_SEQ_IOCTL_QUERY_SUBS: {
+		struct snd_seq_query_subs *qs = get_writable_struct(sizeof(*qs));
+		if (qs) {
+			fill_snd_seq_addr(&qs->root);
+			qs->type = rand() & 1;
+			qs->index = rand() % 64;
+			rec->a3 = (unsigned long) qs;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -543,6 +694,39 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_TIMER_IOCTL_PARAMS:
 	case SNDRV_TIMER_IOCTL_STATUS:
 		sanitise_snd_timer(rec);
+		break;
+
+	/* snd-seq */
+	case SNDRV_SEQ_IOCTL_SYSTEM_INFO:
+	case SNDRV_SEQ_IOCTL_RUNNING_MODE:
+	case SNDRV_SEQ_IOCTL_GET_CLIENT_INFO:
+	case SNDRV_SEQ_IOCTL_SET_CLIENT_INFO:
+	case SNDRV_SEQ_IOCTL_CREATE_PORT:
+	case SNDRV_SEQ_IOCTL_DELETE_PORT:
+	case SNDRV_SEQ_IOCTL_GET_PORT_INFO:
+	case SNDRV_SEQ_IOCTL_SET_PORT_INFO:
+	case SNDRV_SEQ_IOCTL_SUBSCRIBE_PORT:
+	case SNDRV_SEQ_IOCTL_UNSUBSCRIBE_PORT:
+	case SNDRV_SEQ_IOCTL_CREATE_QUEUE:
+	case SNDRV_SEQ_IOCTL_DELETE_QUEUE:
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_INFO:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_INFO:
+	case SNDRV_SEQ_IOCTL_GET_NAMED_QUEUE:
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_STATUS:
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_TEMPO:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_TEMPO:
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_TIMER:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_TIMER:
+	case SNDRV_SEQ_IOCTL_GET_QUEUE_CLIENT:
+	case SNDRV_SEQ_IOCTL_SET_QUEUE_CLIENT:
+	case SNDRV_SEQ_IOCTL_GET_CLIENT_POOL:
+	case SNDRV_SEQ_IOCTL_SET_CLIENT_POOL:
+	case SNDRV_SEQ_IOCTL_REMOVE_EVENTS:
+	case SNDRV_SEQ_IOCTL_QUERY_SUBS:
+	case SNDRV_SEQ_IOCTL_GET_SUBSCRIPTION:
+	case SNDRV_SEQ_IOCTL_QUERY_NEXT_CLIENT:
+	case SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT:
+		sanitise_snd_seq(rec);
 		break;
 
 	default:
