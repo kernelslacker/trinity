@@ -137,7 +137,7 @@ static const char * const trace_option_names[] = {
  * Per-child event enable-file cache.  Discovered once from
  * TRACEFS_ROOT/events/ at the first invocation.
  */
-static char (*event_enable_paths)[MAX_PATH];
+static char event_enable_paths[MAX_EVENTS][MAX_PATH];
 static unsigned int nr_event_enables;
 static bool events_discovered;
 
@@ -179,8 +179,6 @@ static void discover_event_enables(void)
 	d1 = opendir(events_root);
 	if (d1 == NULL)
 		return;
-
-	event_enable_paths = zmalloc(MAX_EVENTS * sizeof(*event_enable_paths));
 
 	while ((de1 = readdir(d1)) != NULL && nr_event_enables < MAX_EVENTS) {
 		char sub[MAX_PATH];
