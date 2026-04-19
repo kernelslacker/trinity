@@ -51,6 +51,9 @@ static const struct ioctl vfio_ioctls[] = {
 #ifdef VFIO_DEVICE_DETACH_IOMMUFD_PT
 	IOCTL(VFIO_DEVICE_DETACH_IOMMUFD_PT),
 #endif
+#ifdef VFIO_MIG_GET_PRECOPY_INFO
+	IOCTL(VFIO_MIG_GET_PRECOPY_INFO),
+#endif
 };
 
 static const char *const vfio_devs[] = {
