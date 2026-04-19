@@ -20,8 +20,14 @@
 #define KCOV_TRACE_SIZE (64 << 10)
 
 /* Size of the global coverage bitmap in bytes.
- * 64KB = 512K bits. PCs are hashed into this bitmap. */
-#define KCOV_BITMAP_SIZE (64 << 10)
+ * 1MB = 8M bits.  PCs are hashed into this bitmap.
+ *
+ * Birthday-paradox 50% collision threshold is ~1.177 * sqrt(N), so 8M bits
+ * stays useful out to ~3400 distinct PCs before false saturation skews the
+ * cold-syscall, edgepair, and minicorpus heuristics that all consume this
+ * bitmap.  Modern kernel builds easily blow past the old 512K-bit budget
+ * within seconds. */
+#define KCOV_BITMAP_SIZE (1 << 20)
 
 /* If a syscall hasn't found new edges in this many global calls,
  * it's considered "cold" and deprioritized during selection. */
