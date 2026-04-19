@@ -26,6 +26,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -33,17 +34,35 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/inotify.h>
+#include <sys/ipc.h>
+#include <sys/mman.h>
+#include <sys/msg.h>
+#include <sys/sem.h>
+#include <sys/shm.h>
 #include <sys/signalfd.h>
+#include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
+#include <linux/memfd.h>
 
 #include "arch.h"
 #include "child.h"
+#include "compat.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC		0x0001U
+#endif
+#ifndef MFD_ALLOW_SEALING
+#define MFD_ALLOW_SEALING	0x0002U
+#endif
 
 struct recipe {
 	const char *name;
@@ -261,12 +280,343 @@ out:
 	return ok;
 }
 
+/*
+ * Recipe 6: memfd seal lifecycle.
+ *
+ * Creates a sealable memfd, writes a page of data, ftruncates to a
+ * page size, mmaps it RW, dirties the mapping, then munmaps and seals
+ * with F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE.  This is the canonical
+ * sequence that exercises the seal-vs-active-mapping accounting and
+ * the writable-mapping refcount the seal path checks.
+ */
+static bool recipe_memfd_seal(void)
+{
+	int fd = -1;
+	void *p = MAP_FAILED;
+	char data[64];
+	bool ok = false;
+
+	fd = (int)syscall(__NR_memfd_create, "trinity-recipe",
+			  MFD_CLOEXEC | MFD_ALLOW_SEALING);
+	if (fd < 0)
+		goto out;
+
+	memset(data, 'r', sizeof(data));
+	if (write(fd, data, sizeof(data)) != (ssize_t)sizeof(data))
+		goto out;
+
+	if (ftruncate(fd, page_size) < 0)
+		goto out;
+
+	p = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED)
+		goto out;
+
+	((volatile char *)p)[0] = (char)(rand() & 0xff);
+
+	if (munmap(p, page_size) < 0)
+		goto out;
+	p = MAP_FAILED;
+
+	if (fcntl(fd, F_ADD_SEALS,
+		  F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE) < 0)
+		goto out;
+
+	ok = true;
+out:
+	if (p != MAP_FAILED)
+		munmap(p, page_size);
+	if (fd >= 0)
+		close(fd);
+	return ok;
+}
+
+/*
+ * Recipe 7: TCP server lifecycle.
+ *
+ * socket → setsockopt(SO_REUSEADDR) → bind to 127.0.0.1 with port 0
+ * (kernel chooses) → listen → accept (non-blocking, expected EAGAIN
+ * since nobody connects) → shutdown → close.  Drives the listening
+ * socket through its full state-machine setup and teardown so the
+ * tcp_close, sk_state_change, and reqsk-queue cleanup paths run.
+ */
+static bool recipe_tcp_server(void)
+{
+	struct sockaddr_in sin;
+	socklen_t slen;
+	int s = -1;
+	int one = 1;
+	int flags;
+	bool ok = false;
+
+	s = socket(AF_INET, SOCK_STREAM, 0);
+	if (s < 0)
+		goto out;
+
+	(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_port = 0;
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0)
+		goto out;
+
+	if (listen(s, 4) < 0)
+		goto out;
+
+	flags = fcntl(s, F_GETFL);
+	if (flags >= 0)
+		(void)fcntl(s, F_SETFL, flags | O_NONBLOCK);
+
+	slen = sizeof(sin);
+	{
+		int conn = accept(s, (struct sockaddr *)&sin, &slen);
+		if (conn >= 0)
+			close(conn);
+	}
+
+	(void)shutdown(s, SHUT_RDWR);
+
+	ok = true;
+out:
+	if (s >= 0)
+		close(s);
+	return ok;
+}
+
+/*
+ * Recipe 8: inotify watch lifecycle.
+ *
+ * Init an inotify fd, add a watch on /tmp (always exists, attribute
+ * changes are common enough to trigger occasional events but the
+ * recipe doesn't rely on one firing), perform a non-blocking read
+ * (typically EAGAIN), remove the watch, close.  Exercises the
+ * inotify_handle_event / fsnotify_destroy_marks teardown paths.
+ */
+static bool recipe_inotify(void)
+{
+	char buf[1024];
+	ssize_t r __unused__;
+	int fd = -1;
+	int wd = -1;
+	bool ok = false;
+
+	fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (fd < 0)
+		goto out;
+
+	wd = inotify_add_watch(fd, "/tmp",
+			       IN_CREATE | IN_DELETE | IN_ATTRIB);
+	if (wd < 0)
+		goto out;
+
+	r = read(fd, buf, sizeof(buf));
+
+	if (inotify_rm_watch(fd, wd) < 0)
+		goto out;
+	wd = -1;
+
+	ok = true;
+out:
+	if (wd >= 0)
+		(void)inotify_rm_watch(fd, wd);
+	if (fd >= 0)
+		close(fd);
+	return ok;
+}
+
+/*
+ * Recipe 9: SysV shared-memory segment lifecycle.
+ *
+ * shmget(IPC_PRIVATE) → shmat → write to the segment → shmdt → shmctl
+ * (IPC_RMID).  IPC_PRIVATE keys produce per-process unique segments,
+ * so concurrent recipe runs in sibling children don't collide.
+ */
+static bool recipe_shmget(void)
+{
+	void *addr = (void *)-1;
+	int shmid = -1;
+	bool ok = false;
+
+	shmid = shmget(IPC_PRIVATE, page_size, IPC_CREAT | 0600);
+	if (shmid < 0)
+		goto out;
+
+	addr = shmat(shmid, NULL, 0);
+	if (addr == (void *)-1)
+		goto out;
+
+	((volatile char *)addr)[0] = (char)(rand() & 0xff);
+
+	if (shmdt(addr) < 0)
+		goto out;
+	addr = (void *)-1;
+
+	if (shmctl(shmid, IPC_RMID, NULL) < 0)
+		goto out;
+	shmid = -1;
+
+	ok = true;
+out:
+	if (addr != (void *)-1)
+		(void)shmdt(addr);
+	if (shmid >= 0)
+		(void)shmctl(shmid, IPC_RMID, NULL);
+	return ok;
+}
+
+/*
+ * Recipe 10: SysV message queue lifecycle.
+ *
+ * msgget(IPC_PRIVATE) → msgsnd → msgrcv → msgctl(IPC_RMID).
+ * Uses a small fixed-size struct so we hit the common-case allocation
+ * path without stressing the kernel's per-queue size limits.
+ */
+struct trinity_msgbuf {
+	long mtype;
+	char mtext[32];
+};
+
+static bool recipe_msgget(void)
+{
+	struct trinity_msgbuf m;
+	int qid = -1;
+	bool ok = false;
+
+	qid = msgget(IPC_PRIVATE, IPC_CREAT | 0600);
+	if (qid < 0)
+		goto out;
+
+	m.mtype = 1;
+	memset(m.mtext, 'm', sizeof(m.mtext));
+	if (msgsnd(qid, &m, sizeof(m.mtext), IPC_NOWAIT) < 0)
+		goto out;
+
+	if (msgrcv(qid, &m, sizeof(m.mtext), 0, IPC_NOWAIT) < 0)
+		goto out;
+
+	if (msgctl(qid, IPC_RMID, NULL) < 0)
+		goto out;
+	qid = -1;
+
+	ok = true;
+out:
+	if (qid >= 0)
+		(void)msgctl(qid, IPC_RMID, NULL);
+	return ok;
+}
+
+/*
+ * Recipe 11: SysV semaphore lifecycle.
+ *
+ * semget(IPC_PRIVATE, 1) → semop(P=-1) — but only after we've already
+ * SETVAL'd the semaphore to 1 so the P doesn't block — then semop(V=+1)
+ * → semctl(IPC_RMID).
+ *
+ * union semun is glibc-private and not declared in any header; callers
+ * must provide their own definition per the man page.
+ */
+union trinity_semun {
+	int val;
+	struct semid_ds *buf;
+	unsigned short *array;
+};
+
+static bool recipe_semget(void)
+{
+	struct sembuf op;
+	union trinity_semun arg;
+	int sid = -1;
+	bool ok = false;
+
+	sid = semget(IPC_PRIVATE, 1, IPC_CREAT | 0600);
+	if (sid < 0)
+		goto out;
+
+	arg.val = 1;
+	if (semctl(sid, 0, SETVAL, arg) < 0)
+		goto out;
+
+	op.sem_num = 0;
+	op.sem_op = -1;
+	op.sem_flg = IPC_NOWAIT;
+	if (semop(sid, &op, 1) < 0)
+		goto out;
+
+	op.sem_op = 1;
+	op.sem_flg = 0;
+	if (semop(sid, &op, 1) < 0)
+		goto out;
+
+	if (semctl(sid, 0, IPC_RMID) < 0)
+		goto out;
+	sid = -1;
+
+	ok = true;
+out:
+	if (sid >= 0)
+		(void)semctl(sid, 0, IPC_RMID);
+	return ok;
+}
+
+/*
+ * Recipe 12: POSIX timer lifecycle.
+ *
+ * timer_create(SIGEV_NONE) — SIGEV_NONE means no notification fires
+ * even if the timer expires, which keeps the recipe safe to run inside
+ * the existing signal regime — settime relative for a few ms, gettime
+ * to read it back, query overrun count, delete.
+ */
+static bool recipe_posix_timer(void)
+{
+	struct sigevent sev;
+	struct itimerspec its, cur;
+	timer_t tid = NULL;
+	bool created = false;
+	bool ok = false;
+
+	memset(&sev, 0, sizeof(sev));
+	sev.sigev_notify = SIGEV_NONE;
+	if (timer_create(CLOCK_MONOTONIC, &sev, &tid) < 0)
+		goto out;
+	created = true;
+
+	memset(&its, 0, sizeof(its));
+	its.it_value.tv_sec = 0;
+	its.it_value.tv_nsec = 1000000;	/* 1 ms */
+	if (timer_settime(tid, 0, &its, NULL) < 0)
+		goto out;
+
+	if (timer_gettime(tid, &cur) < 0)
+		goto out;
+
+	(void)timer_getoverrun(tid);
+
+	if (timer_delete(tid) < 0)
+		goto out;
+	created = false;
+
+	ok = true;
+out:
+	if (created)
+		(void)timer_delete(tid);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
-	{ "timerfd",  recipe_timerfd  },
-	{ "eventfd",  recipe_eventfd  },
-	{ "pipe",     recipe_pipe     },
-	{ "epoll",    recipe_epoll    },
-	{ "signalfd", recipe_signalfd },
+	{ "timerfd",     recipe_timerfd     },
+	{ "eventfd",     recipe_eventfd     },
+	{ "pipe",        recipe_pipe        },
+	{ "epoll",       recipe_epoll       },
+	{ "signalfd",    recipe_signalfd    },
+	{ "memfd_seal",  recipe_memfd_seal  },
+	{ "tcp_server",  recipe_tcp_server  },
+	{ "inotify",     recipe_inotify     },
+	{ "shmget",      recipe_shmget      },
+	{ "msgget",      recipe_msgget      },
+	{ "semget",      recipe_semget      },
+	{ "posix_timer", recipe_posix_timer },
 };
 
 bool recipe_runner(struct childdata *child)
