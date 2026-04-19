@@ -87,6 +87,12 @@ struct shm_s {
 	 * across fork() — a process-local static would be duplicated
 	 * into each child's address space. */
 	bool no_pidns;
+
+	/* recipe_runner discovery latches: a recipe whose first invocation
+	 * detects an absent kernel feature (ENOSYS, missing config) flips
+	 * its slot here so siblings stop probing.  Indexed by the recipe's
+	 * slot in the static catalog inside recipe-runner.c. */
+	bool recipe_disabled[MAX_RECIPES];
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;
