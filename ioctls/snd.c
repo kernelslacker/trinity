@@ -616,6 +616,33 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	}
 }
 
+static void sanitise_snd_ump(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_UMP_IOCTL_ENDPOINT_INFO: {
+		struct snd_ump_endpoint_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->card = rand() % 8;
+			info->device = rand() % 8;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_UMP_IOCTL_BLOCK_INFO: {
+		struct snd_ump_block_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->card = rand() % 8;
+			info->device = rand() % 8;
+			info->block_id = rand() % SNDRV_UMP_MAX_BLOCKS;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -681,6 +708,12 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_RAWMIDI_IOCTL_DROP:
 	case SNDRV_RAWMIDI_IOCTL_DRAIN:
 		sanitise_snd_rawmidi(rec);
+		break;
+
+	/* snd-ump */
+	case SNDRV_UMP_IOCTL_ENDPOINT_INFO:
+	case SNDRV_UMP_IOCTL_BLOCK_INFO:
+		sanitise_snd_ump(rec);
 		break;
 
 	/* snd-timer */
@@ -817,6 +850,8 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_RAWMIDI_IOCTL_STATUS),
 	IOCTL(SNDRV_RAWMIDI_IOCTL_DROP),
 	IOCTL(SNDRV_RAWMIDI_IOCTL_DRAIN),
+	IOCTL(SNDRV_UMP_IOCTL_ENDPOINT_INFO),
+	IOCTL(SNDRV_UMP_IOCTL_BLOCK_INFO),
 	IOCTL(SNDRV_TIMER_IOCTL_PVERSION),
 	IOCTL(SNDRV_TIMER_IOCTL_NEXT_DEVICE),
 	IOCTL(SNDRV_TIMER_IOCTL_TREAD),
