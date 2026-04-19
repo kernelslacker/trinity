@@ -144,6 +144,98 @@ static void sanitise_vt_kbd_repeat(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) r;
 }
 
+/* VT_* family */
+
+static void fill_vt_mode(struct vt_mode *m)
+{
+	m->mode   = RAND_BOOL() ? VT_AUTO : VT_PROCESS;
+	m->waitv  = RAND_BOOL();
+	m->relsig = rand() % 31 + 1;	/* SIGHUP=1 .. SIGSYS=31 */
+	m->acqsig = rand() % 31 + 1;
+	m->frsig  = 0;			/* unused, must be 0 */
+}
+
+static void sanitise_vt_vt_mode(struct syscallrecord *rec)
+{
+	struct vt_mode *m;
+
+	m = get_writable_struct(sizeof(*m));
+	if (!m)
+		return;
+	fill_vt_mode(m);
+	rec->a3 = (unsigned long) m;
+}
+
+static void sanitise_vt_vt_stat(struct syscallrecord *rec)
+{
+	struct vt_stat *s;
+
+	s = get_writable_struct(sizeof(*s));
+	if (!s)
+		return;
+	s->v_active = rand() % 63 + 1;		/* VT 1-63 */
+	s->v_signal = rand() % 31 + 1;
+	s->v_state  = rand() & 0xffff;
+	rec->a3 = (unsigned long) s;
+}
+
+static void sanitise_vt_vt_sizes(struct syscallrecord *rec)
+{
+	struct vt_sizes *sz;
+
+	sz = get_writable_struct(sizeof(*sz));
+	if (!sz)
+		return;
+	sz->v_rows       = rand() % 50 + 24;	/* 24-73 rows */
+	sz->v_cols       = rand() % 120 + 80;	/* 80-199 columns */
+	sz->v_scrollsize = rand() % 256;
+	rec->a3 = (unsigned long) sz;
+}
+
+static void sanitise_vt_vt_consize(struct syscallrecord *rec)
+{
+	struct vt_consize *c;
+	unsigned int rows, cols;
+
+	c = get_writable_struct(sizeof(*c));
+	if (!c)
+		return;
+	rows = rand() % 50 + 24;
+	cols = rand() % 120 + 80;
+	c->v_rows = rows;
+	c->v_cols = cols;
+	c->v_vlin = rows * (rand() % 16 + 8);	/* rows * cell_height pixels */
+	c->v_clin = rand() % 16 + 8;
+	c->v_vcol = cols * (rand() % 8 + 8);	/* cols * cell_width pixels */
+	c->v_ccol = rand() % 8 + 8;
+	rec->a3 = (unsigned long) c;
+}
+
+static void sanitise_vt_vt_event(struct syscallrecord *rec)
+{
+	struct vt_event *e;
+
+	e = get_writable_struct(sizeof(*e));
+	if (!e)
+		return;
+	e->event = rand() & VT_MAX_EVENT;
+	e->oldev = rand() % 63 + 1;
+	e->newev = rand() % 63 + 1;
+	rec->a3 = (unsigned long) e;
+}
+
+static void sanitise_vt_setactivate(struct syscallrecord *rec)
+{
+	struct vt_setactivate *sa;
+
+	sa = get_writable_struct(sizeof(*sa));
+	if (!sa)
+		return;
+	sa->console = rand() % 63 + 1;
+	fill_vt_mode(&sa->mode);
+	rec->a3 = (unsigned long) sa;
+}
+
 static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -228,6 +320,51 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 	case KDSIGACCEPT:
 		rec->a3 = rand() % 32 + 1;
 		break;
+
+	/* VT_* family */
+	case VT_GETMODE:
+	case VT_SETMODE:
+		sanitise_vt_vt_mode(rec);
+		break;
+
+	case VT_GETSTATE:
+		sanitise_vt_vt_stat(rec);
+		break;
+
+	case VT_RESIZE:
+		sanitise_vt_vt_sizes(rec);
+		break;
+
+	case VT_RESIZEX:
+		sanitise_vt_vt_consize(rec);
+		break;
+
+	case VT_WAITEVENT:
+		sanitise_vt_vt_event(rec);
+		break;
+
+	case VT_SETACTIVATE:
+		sanitise_vt_setactivate(rec);
+		break;
+
+	case VT_ACTIVATE:
+	case VT_WAITACTIVE:
+	case VT_DISALLOCATE:
+		rec->a3 = rand() % 63 + 1;	/* VT number 1-63 */
+		break;
+
+	case VT_RELDISP:
+		/* 0 = refuse, 1 = release, VT_ACKACQ = acknowledge acquire */
+		rec->a3 = rand() % 3;
+		break;
+
+	case VT_GETHIFONTMASK: {
+		unsigned short *p = get_writable_struct(sizeof(unsigned short));
+
+		if (p)
+			rec->a3 = (unsigned long) p;
+		break;
+	}
 
 	default:
 		break;
