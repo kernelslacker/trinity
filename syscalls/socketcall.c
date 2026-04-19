@@ -169,17 +169,13 @@ static const struct socketcall_ptr socketcallptrs[] = {
 static void sanitise_socketcall(struct syscallrecord *rec)
 {
 	unsigned long *args;
-	unsigned int i, r;
+	unsigned int r;
 
 	args = zmalloc(6 * sizeof(unsigned long));
 
 	r = rand() % ARRAY_SIZE(socketcallptrs);
 	rec->a1 = socketcallptrs[r].call;
-
-	for (i = 0; i < ARRAY_SIZE(socketcallptrs); i++) {
-		if (socketcallptrs[i].call == rec->a1)
-			socketcallptrs[i].func(args);
-	}
+	socketcallptrs[r].func(args);
 
 	rec->a2 = (unsigned long) args;
 }
