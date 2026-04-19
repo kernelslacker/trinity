@@ -65,6 +65,138 @@ static void sanitise_snd_hwdep(struct syscallrecord *rec)
 	}
 }
 
+static void fill_snd_ctl_elem_id(struct snd_ctl_elem_id *id)
+{
+	id->numid = RAND_BOOL() ? 0 : rand() % 64;
+	id->iface = rand() % 7;		/* SNDRV_CTL_ELEM_IFACE_* 0-6 */
+	id->device = rand() % 8;
+	id->subdevice = rand() % 8;
+	id->index = rand() % 8;
+}
+
+static void sanitise_snd_ctl(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_CTL_IOCTL_CARD_INFO: {
+		struct snd_ctl_card_info *info = get_writable_struct(sizeof(*info));
+		if (info)
+			rec->a3 = (unsigned long) info;
+		break;
+	}
+	case SNDRV_CTL_IOCTL_ELEM_LIST: {
+		struct snd_ctl_elem_list *list = get_writable_struct(sizeof(*list));
+		if (list) {
+			unsigned int space = rand() % 16 + 1;
+			list->offset = rand() % 64;
+			list->space = space;
+			list->pids = get_writable_struct(space * sizeof(*list->pids));
+			rec->a3 = (unsigned long) list;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_ELEM_INFO:
+	case SNDRV_CTL_IOCTL_ELEM_ADD:
+	case SNDRV_CTL_IOCTL_ELEM_REPLACE: {
+		struct snd_ctl_elem_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			fill_snd_ctl_elem_id(&info->id);
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_ELEM_READ:
+	case SNDRV_CTL_IOCTL_ELEM_WRITE: {
+		struct snd_ctl_elem_value *val = get_writable_struct(sizeof(*val));
+		if (val) {
+			fill_snd_ctl_elem_id(&val->id);
+			rec->a3 = (unsigned long) val;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_ELEM_LOCK:
+	case SNDRV_CTL_IOCTL_ELEM_UNLOCK:
+	case SNDRV_CTL_IOCTL_ELEM_REMOVE: {
+		struct snd_ctl_elem_id *id = get_writable_struct(sizeof(*id));
+		if (id) {
+			fill_snd_ctl_elem_id(id);
+			rec->a3 = (unsigned long) id;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_TLV_READ:
+	case SNDRV_CTL_IOCTL_TLV_WRITE:
+	case SNDRV_CTL_IOCTL_TLV_COMMAND: {
+		unsigned int datalen = (rand() % 8 + 1) * 4;
+		/* snd_ctl_tlv has a flexible array member, allocate with data */
+		struct snd_ctl_tlv *tlv = get_writable_struct(sizeof(*tlv) + datalen);
+		if (tlv) {
+			tlv->numid = rand() % 64;
+			tlv->length = datalen;
+			rec->a3 = (unsigned long) tlv;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_HWDEP_NEXT_DEVICE:
+	case SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE:
+	case SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE: {
+		int *dev = get_writable_struct(sizeof(int));
+		if (dev) {
+			*dev = (int)(rand() % 8) - 1;	/* -1 to get first, 0-7 otherwise */
+			rec->a3 = (unsigned long) dev;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_HWDEP_INFO: {
+		struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->device = rand() % 8;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_PCM_INFO: {
+		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->device = rand() % 8;
+			info->subdevice = rand() % 8;
+			info->stream = rand() & 1;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_RAWMIDI_INFO: {
+		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->device = rand() % 8;
+			info->subdevice = rand() % 8;
+			info->stream = rand() % 3;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_PCM_PREFER_SUBDEVICE:
+	case SNDRV_CTL_IOCTL_RAWMIDI_PREFER_SUBDEVICE:
+	case SNDRV_CTL_IOCTL_POWER: {
+		int *val = get_writable_struct(sizeof(int));
+		if (val) {
+			*val = rand() % 8;
+			rec->a3 = (unsigned long) val;
+		}
+		break;
+	}
+	case SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS: {
+		int *sub = get_writable_struct(sizeof(int));
+		if (sub) {
+			*sub = RAND_BOOL();
+			rec->a3 = (unsigned long) sub;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -75,6 +207,33 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_HWDEP_IOCTL_DSP_STATUS:
 	case SNDRV_HWDEP_IOCTL_DSP_LOAD:
 		sanitise_snd_hwdep(rec);
+		break;
+
+	/* snd-control */
+	case SNDRV_CTL_IOCTL_CARD_INFO:
+	case SNDRV_CTL_IOCTL_ELEM_LIST:
+	case SNDRV_CTL_IOCTL_ELEM_INFO:
+	case SNDRV_CTL_IOCTL_ELEM_READ:
+	case SNDRV_CTL_IOCTL_ELEM_WRITE:
+	case SNDRV_CTL_IOCTL_ELEM_LOCK:
+	case SNDRV_CTL_IOCTL_ELEM_UNLOCK:
+	case SNDRV_CTL_IOCTL_ELEM_ADD:
+	case SNDRV_CTL_IOCTL_ELEM_REPLACE:
+	case SNDRV_CTL_IOCTL_ELEM_REMOVE:
+	case SNDRV_CTL_IOCTL_TLV_READ:
+	case SNDRV_CTL_IOCTL_TLV_WRITE:
+	case SNDRV_CTL_IOCTL_TLV_COMMAND:
+	case SNDRV_CTL_IOCTL_HWDEP_NEXT_DEVICE:
+	case SNDRV_CTL_IOCTL_HWDEP_INFO:
+	case SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE:
+	case SNDRV_CTL_IOCTL_PCM_INFO:
+	case SNDRV_CTL_IOCTL_PCM_PREFER_SUBDEVICE:
+	case SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE:
+	case SNDRV_CTL_IOCTL_RAWMIDI_INFO:
+	case SNDRV_CTL_IOCTL_RAWMIDI_PREFER_SUBDEVICE:
+	case SNDRV_CTL_IOCTL_POWER:
+	case SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS:
+		sanitise_snd_ctl(rec);
 		break;
 
 	default:
