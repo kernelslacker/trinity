@@ -44,8 +44,18 @@ static void * __alloc_shared(unsigned int size, bool is_global_obj)
 		outputerr("mmap %u failure\n", size);
 		exit(EXIT_FAILURE);
 	}
-	/* poison, to force users to set it to something sensible. */
-	memset(ret, rand(), size);
+	/* poison with independently-random bytes to expose uninitialized reads. */
+	{
+		unsigned char *p = ret;
+		size_t i;
+
+		for (i = 0; i + sizeof(unsigned int) <= size; i += sizeof(unsigned int)) {
+			unsigned int r = rand32();
+			memcpy(p + i, &r, sizeof(r));
+		}
+		for (; i < size; i++)
+			p[i] = (unsigned char)rand();
+	}
 
 	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
 		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
