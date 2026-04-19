@@ -1,7 +1,9 @@
 /*
  *   SYSCALL_DEFINE4(io_uring_register, unsigned int, fd, unsigned int, opcode, void __user *, arg, unsigned int, nr_args)
  */
+#include <string.h>
 #include <linux/io_uring.h>
+#include "arch.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -89,6 +91,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 {
 	struct io_uringobj *ring;
 	unsigned int opcode;
+	unsigned int nr;
+	void *buf;
 
 	ring = get_io_uring_ring();
 	if (ring != NULL)
@@ -96,21 +100,80 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 
 	opcode = rec->a2;
 
-	/*
-	 * Some opcodes take no arg or nr_args — zero them out so the kernel
-	 * doesn't fault on a garbage address before reaching interesting code.
-	 */
 	switch (opcode) {
+	/* Opcodes that take no arg — clear both to avoid early EFAULT. */
 	case IORING_UNREGISTER_BUFFERS:
 	case IORING_UNREGISTER_FILES:
 	case IORING_UNREGISTER_EVENTFD:
 	case IORING_REGISTER_ENABLE_RINGS:
 	case IORING_REGISTER_PERSONALITY:
+	case IORING_UNREGISTER_PERSONALITY:
 	case IORING_UNREGISTER_IOWQ_AFF:
 		rec->a3 = 0;
 		rec->a4 = 0;
 		break;
+
+	/*
+	 * IORING_REGISTER_BUFFERS: arg = struct iovec[], nr_args = count.
+	 * Kernel iterates the array copying each iovec from userspace.
+	 */
+	case IORING_REGISTER_BUFFERS:
+		nr = 1 + (rand() % 8);
+		rec->a3 = (unsigned long) alloc_iovec(nr);
+		rec->a4 = nr;
+		break;
+
+	/*
+	 * IORING_REGISTER_FILES: arg = int[] of fds, nr_args = count.
+	 * Use -1 as placeholder; kernel accepts sparse sets with -1 holes.
+	 */
+	case IORING_REGISTER_FILES:
+		nr = 1 + (rand() % 16);
+		buf = get_writable_struct(nr * sizeof(int));
+		if (buf)
+			memset(buf, 0xff, nr * sizeof(int));  /* fill with -1 */
+		rec->a3 = (unsigned long) buf;
+		rec->a4 = nr;
+		break;
+
+	/*
+	 * IORING_REGISTER_PROBE: arg = struct io_uring_probe with trailing
+	 * ops[], nr_args = number of op slots.
+	 */
+	case IORING_REGISTER_PROBE: {
+		struct io_uring_probe *probe;
+		nr = IORING_OP_LAST;
+		probe = (struct io_uring_probe *)
+			get_writable_struct(sizeof(*probe) +
+					    nr * sizeof(probe->ops[0]));
+		if (probe)
+			memset(probe, 0, sizeof(*probe) + nr * sizeof(probe->ops[0]));
+		rec->a3 = (unsigned long) probe;
+		rec->a4 = nr;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_IOWQ_MAX_WORKERS: arg = uint[2] (bounded/unbounded),
+	 * nr_args = 2.
+	 */
+	case IORING_REGISTER_IOWQ_MAX_WORKERS:
+		buf = get_writable_struct(2 * sizeof(unsigned int));
+		rec->a3 = (unsigned long) buf;
+		rec->a4 = 2;
+		break;
+
+	/*
+	 * For opcodes with struct args we don't model in detail, provide a
+	 * zeroed page so the kernel reaches argument parsing rather than
+	 * faulting immediately on a garbage pointer.
+	 */
 	default:
+		buf = get_writable_address(page_size);
+		if (buf)
+			memset(buf, 0, page_size);
+		rec->a3 = (unsigned long) buf;
+		rec->a4 = 1;
 		break;
 	}
 }
