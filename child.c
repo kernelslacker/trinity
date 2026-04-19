@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -59,6 +60,22 @@ void child_fd_ring_push(struct child_fd_ring *ring, int fd)
 {
 	ring->fds[ring->head % CHILD_FD_RING_SIZE] = fd;
 	ring->head++;
+}
+
+/*
+ * Single-producer push: copy the just-completed syscallrecord into the
+ * ring slot, then publish the new head with a release-store so the
+ * post-mortem reader observes a fully-written entry when it sees the
+ * matching head value.
+ */
+void child_syscall_ring_push(struct child_syscall_ring *ring,
+			     const struct syscallrecord *rec)
+{
+	uint32_t head;
+
+	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	ring->recent[head & (CHILD_SYSCALL_RING_SIZE - 1)] = *rec;
+	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
 }
 
 /*
@@ -190,6 +207,13 @@ void clean_childdata(struct childdata *child)
 	/* Reset live fd ring: -1 marks all slots as empty. */
 	memset(child->live_fds.fds, 0xff, sizeof(child->live_fds.fds));
 	child->live_fds.head = 0;
+
+	/* Reset syscall ring; UNKNOWN state in zeroed slots is filtered
+	 * by the post-mortem reader so a freshly-spawned child contributes
+	 * nothing until it has actually completed a syscall. */
+	memset(child->syscall_ring.recent, 0, sizeof(child->syscall_ring.recent));
+	atomic_store_explicit(&child->syscall_ring.head, 0,
+			      memory_order_relaxed);
 
 	if (child->fd_event_ring)
 		fd_event_ring_init(child->fd_event_ring);
