@@ -44,7 +44,7 @@
 
 #define MAX_DISCOVERY_ENTRIES	1024
 #define MAX_DISCOVERY_DEPTH	3
-#define MAX_PATH_LEN		256
+#define PROCFS_MAX_PATH		256
 
 enum tree_kind {
 	TREE_PROC = 0,
@@ -53,7 +53,7 @@ enum tree_kind {
 };
 
 struct discovered_entry {
-	char path[MAX_PATH_LEN];
+	char path[PROCFS_MAX_PATH];
 	enum tree_kind tree;
 };
 
@@ -107,7 +107,7 @@ static void add_entry(const char *path)
 {
 	if (nr_entries >= MAX_DISCOVERY_ENTRIES)
 		return;
-	if (strlen(path) >= MAX_PATH_LEN)
+	if (strlen(path) >= PROCFS_MAX_PATH)
 		return;
 	if (path_blocklisted(path))
 		return;
@@ -137,7 +137,7 @@ static void walk_dir(const char *root, unsigned int depth_left)
 		return;
 
 	while ((de = readdir(dir)) != NULL) {
-		char child[MAX_PATH_LEN];
+		char child[PROCFS_MAX_PATH];
 		struct stat st;
 
 		if (de->d_name[0] == '.')
@@ -185,7 +185,7 @@ static void add_per_task_files(const char *base)
 		"timerslack_ns",
 		"autogroup",
 	};
-	char path[MAX_PATH_LEN];
+	char path[PROCFS_MAX_PATH];
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(names); i++) {
@@ -198,7 +198,7 @@ static void add_per_task_files(const char *base)
 
 static void discover_targets(void)
 {
-	char per_pid[MAX_PATH_LEN];
+	char per_pid[PROCFS_MAX_PATH];
 
 	entries = zmalloc(MAX_DISCOVERY_ENTRIES * sizeof(*entries));
 

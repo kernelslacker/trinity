@@ -45,7 +45,7 @@
 
 #define TRACEFS_ROOT	"/sys/kernel/debug/tracing"
 #define MAX_EVENTS	512
-#define MAX_PATH	256
+#define TRACEFS_MAX_PATH	256
 
 /*
  * Stable kernel symbols likely to exist on any kernel build.  Used as
@@ -137,7 +137,7 @@ static const char * const trace_option_names[] = {
  * Per-child event enable-file cache.  Discovered once from
  * TRACEFS_ROOT/events/ at the first invocation.
  */
-static char event_enable_paths[MAX_EVENTS][MAX_PATH];
+static char event_enable_paths[MAX_EVENTS][TRACEFS_MAX_PATH];
 static unsigned int nr_event_enables;
 static bool events_discovered;
 
@@ -168,7 +168,7 @@ static bool check_tracefs(void)
  */
 static void discover_event_enables(void)
 {
-	char events_root[MAX_PATH];
+	char events_root[TRACEFS_MAX_PATH];
 	DIR *d1;
 	struct dirent *de1;
 
@@ -181,7 +181,7 @@ static void discover_event_enables(void)
 		return;
 
 	while ((de1 = readdir(d1)) != NULL && nr_event_enables < MAX_EVENTS) {
-		char sub[MAX_PATH];
+		char sub[TRACEFS_MAX_PATH];
 		DIR *d2;
 		struct dirent *de2;
 
@@ -194,7 +194,7 @@ static void discover_event_enables(void)
 			if (access(sub, W_OK) == 0 &&
 			    nr_event_enables < MAX_EVENTS) {
 				snprintf(event_enable_paths[nr_event_enables],
-					 MAX_PATH, "%s", sub);
+					 TRACEFS_MAX_PATH, "%s", sub);
 				nr_event_enables++;
 			}
 		}
@@ -210,7 +210,7 @@ static void discover_event_enables(void)
 
 		while ((de2 = readdir(d2)) != NULL &&
 		       nr_event_enables < MAX_EVENTS) {
-			char path[MAX_PATH];
+			char path[TRACEFS_MAX_PATH];
 
 			if (de2->d_name[0] == '.')
 				continue;
@@ -220,7 +220,7 @@ static void discover_event_enables(void)
 				     de2->d_name) < (int)sizeof(path) &&
 			    access(path, W_OK) == 0) {
 				snprintf(event_enable_paths[nr_event_enables],
-					 MAX_PATH, "%s", path);
+					 TRACEFS_MAX_PATH, "%s", path);
 				nr_event_enables++;
 			}
 		}
@@ -235,7 +235,7 @@ static void discover_event_enables(void)
  */
 static void discover_tracers(void)
 {
-	char path[MAX_PATH];
+	char path[TRACEFS_MAX_PATH];
 	FILE *f;
 	char word[32];
 
@@ -293,7 +293,7 @@ static void write_rand_bytes(const char *path, unsigned int maxlen)
  */
 static void do_kprobe_events(void)
 {
-	char path[MAX_PATH];
+	char path[TRACEFS_MAX_PATH];
 	char spec[256];
 	const char *sym;
 	unsigned int probe_num;
@@ -351,7 +351,7 @@ static void do_kprobe_events(void)
  */
 static void do_uprobe_events(void)
 {
-	char path[MAX_PATH];
+	char path[TRACEFS_MAX_PATH];
 	char spec[256];
 	unsigned int probe_num;
 	unsigned long offset;
@@ -489,7 +489,7 @@ static void do_event_enable(void)
 /* Write a trace_option name (with optional "no" prefix) to trace_options. */
 static void do_trace_options(void)
 {
-	char path[MAX_PATH];
+	char path[TRACEFS_MAX_PATH];
 	char option[64];
 
 	snprintf(path, sizeof(path), "%s/trace_options", TRACEFS_ROOT);
@@ -509,7 +509,7 @@ static void do_trace_options(void)
 /* Switch the current tracer -- exercises the tracer registration path. */
 static void do_current_tracer(void)
 {
-	char path[MAX_PATH];
+	char path[TRACEFS_MAX_PATH];
 
 	snprintf(path, sizeof(path), "%s/current_tracer", TRACEFS_ROOT);
 
@@ -529,7 +529,7 @@ static void do_current_tracer(void)
 /* Toggle tracing on/off. */
 static void do_tracing_on(void)
 {
-	char path[MAX_PATH];
+	char path[TRACEFS_MAX_PATH];
 
 	snprintf(path, sizeof(path), "%s/tracing_on", TRACEFS_ROOT);
 	write_str(path, RAND_BOOL() ? "1" : "0");
@@ -541,7 +541,7 @@ static void do_tracing_on(void)
 /* Resize the ring buffer -- exercises the buffer reallocation path. */
 static void do_buffer_size(void)
 {
-	char path[MAX_PATH];
+	char path[TRACEFS_MAX_PATH];
 	char val[32];
 	static const unsigned int sizes[] = {
 		0, 1, 4, 16, 64, 128, 256, 512, 1024, 4096,
