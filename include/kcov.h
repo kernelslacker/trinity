@@ -65,6 +65,7 @@ struct kcov_shared {
 	unsigned long total_calls;
 	unsigned long remote_calls;	/* calls using KCOV_REMOTE_ENABLE */
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
+	unsigned long per_syscall_calls[MAX_NR_SYSCALL];
 	unsigned long last_edge_at[MAX_NR_SYSCALL];
 	/* Snapshot of per_syscall_edges at the previous stats interval.
 	 * Used to compute per-interval edge growth rate. */
@@ -98,3 +99,9 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr);
 /* Returns true if syscall nr hasn't found new edges recently.
  * Used by syscall selection to deprioritize saturated syscalls. */
 bool kcov_syscall_is_cold(unsigned int nr);
+
+/* Returns the recommended skip percentage (0-90) for syscall nr based on
+ * how stale its coverage is.  0 means "not cold, don't skip"; otherwise
+ * the value grows with the staleness gap so persistently cold syscalls
+ * are deprioritized harder than ones that just crossed the threshold. */
+unsigned int kcov_syscall_cold_skip_pct(unsigned int nr);

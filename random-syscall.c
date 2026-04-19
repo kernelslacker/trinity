@@ -169,11 +169,18 @@ retry:
 	}
 
 	/* Coverage-guided cold avoidance: if this syscall has stopped
-	 * finding new edges, skip it 50% of the time. */
-	if (kcov_syscall_is_cold(syscallnr) && RAND_BOOL()) {
-		kcov_attempts++;
-		if (kcov_attempts < 20)
-			goto retry;
+	 * finding new edges, skip it with a probability that grows the
+	 * staler it gets — a syscall stuck for one threshold-window gets
+	 * the same 50% baseline as before, but one stuck for ten gets
+	 * skipped 90% of the time. */
+	{
+		unsigned int skip_pct = kcov_syscall_cold_skip_pct(syscallnr);
+
+		if (skip_pct > 0 && (unsigned int)(rand() % 100) < skip_pct) {
+			kcov_attempts++;
+			if (kcov_attempts < 20)
+				goto retry;
+		}
 	}
 
 	/* Edge-pair sequence biasing: if we have a previous syscall,
