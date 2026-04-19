@@ -954,8 +954,8 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 
 		/* Fill out jump offsets if jmp instruction */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_JMP) {
-			bpf->filter[i].jt = (uint8_t) rand() % bpf->len;
-			bpf->filter[i].jf = (uint8_t) rand() % bpf->len;
+			bpf->filter[i].jt = (uint8_t) (rand() % bpf->len);
+			bpf->filter[i].jf = (uint8_t) (rand() % bpf->len);
 		}
 
 		/* Also give it a chance if not BPF_JMP */
