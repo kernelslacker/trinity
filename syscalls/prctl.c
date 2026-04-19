@@ -156,16 +156,38 @@ static void sanitise_prctl(struct syscallrecord *rec)
 static void post_prctl(struct syscallrecord *rec)
 {
 	struct sock_fprog *bpf;
+	long got;
 
-	if (rec->a1 != PR_SET_SECCOMP)
+	switch (rec->a1) {
+	case PR_SET_SECCOMP:
+		bpf = (struct sock_fprog *) rec->a3;
+		if (bpf == NULL)
+			return;
+		free(bpf->filter);
+		free(bpf);
 		return;
 
-	bpf = (struct sock_fprog *) rec->a3;
-	if (bpf == NULL)
+	case PR_SET_NO_NEW_PRIVS:
+		/*
+		 * Oracle: PR_SET_NO_NEW_PRIVS is sticky and one-way.  After a
+		 * successful set the read-back via PR_GET_NO_NEW_PRIVS must
+		 * return 1.  A different value is silent corruption of a
+		 * security-critical task flag — this is the bit that gates
+		 * suid-binary execve and seccomp filter installation.
+		 */
+		if ((long) rec->retval != 0)
+			return;
+		if (!ONE_IN(20))
+			return;
+		got = prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0);
+		if (got != 1) {
+			output(0, "cred oracle: prctl(PR_SET_NO_NEW_PRIVS) "
+			       "succeeded but PR_GET_NO_NEW_PRIVS=%ld\n", got);
+			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
 		return;
-
-	free(bpf->filter);
-	free(bpf);
+	}
 }
 
 struct syscallentry syscall_prctl = {
