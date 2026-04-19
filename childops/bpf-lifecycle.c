@@ -82,6 +82,7 @@
 #include "arch.h"
 #include "bpf.h"
 #include "child.h"
+#include "objects.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -225,6 +226,38 @@ static bool socket_filter_disabled;
 static bool cgroup_disabled;
 
 /*
+ * Publish a freshly-created BPF map fd into the per-child object pool
+ * so subsequent get_rand_bpf_fd() calls see the live mutating map
+ * alongside the static templates the bpf-map provider seeded.  Returns
+ * the obj* for use with destroy_object during teardown.
+ *
+ * Ownership transfers to the pool — the destructor wired up by the
+ * bpf-map provider closes the fd when destroy_object runs.  Caller
+ * must NOT close the fd directly after publishing.
+ */
+static struct object *publish_map_fd(int fd, uint32_t map_type)
+{
+	struct object *obj;
+
+	obj = alloc_object();
+	obj->bpfobj.map_fd = fd;
+	obj->bpfobj.map_type = map_type;
+	add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
+	return obj;
+}
+
+static struct object *publish_prog_fd(int fd, uint32_t prog_type)
+{
+	struct object *obj;
+
+	obj = alloc_object();
+	obj->bpfprogobj.fd = fd;
+	obj->bpfprogobj.prog_type = prog_type;
+	add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
+	return obj;
+}
+
+/*
  * Combo A — SOCKET_FILTER, the unprivileged-friendly path.
  *
  * Returns true if the full chain ran (even with non-fatal in-flight
@@ -236,6 +269,8 @@ static bool combo_socket_filter(void)
 	int sv[2] = { -1, -1 };
 	int map_fd = -1;
 	int prog_fd = -1;
+	struct object *map_obj = NULL;
+	struct object *prog_obj = NULL;
 	uint32_t key;
 	char buf[16];
 	int i;
@@ -247,6 +282,7 @@ static bool combo_socket_filter(void)
 	map_fd = create_array_map();
 	if (map_fd < 0)
 		goto out;
+	map_obj = publish_map_fd(map_fd, BPF_MAP_TYPE_ARRAY);
 
 	prog_fd = load_template_prog(BPF_PROG_TYPE_SOCKET_FILTER, map_fd);
 	if (prog_fd < 0) {
@@ -262,6 +298,7 @@ static bool combo_socket_filter(void)
 	}
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle_progs_loaded, 1,
 			   __ATOMIC_RELAXED);
+	prog_obj = publish_prog_fd(prog_fd, BPF_PROG_TYPE_SOCKET_FILTER);
 
 	if (socketpair(AF_UNIX, SOCK_DGRAM, 0, sv) < 0) {
 		sv[0] = sv[1] = -1;
@@ -313,9 +350,22 @@ out:
 		close(sv[0]);
 	if (sv[1] >= 0)
 		close(sv[1]);
-	if (prog_fd >= 0)
+	/*
+	 * The prog/map fds were published into the local pool above and
+	 * the destructor wired up by the bpf-{prog,map} provider closes
+	 * them when destroy_object runs.  Manual close stays only for the
+	 * pre-publish error paths where create_array_map() succeeded but
+	 * load_template_prog() failed before publish_prog_fd() ran (and
+	 * the symmetric early-create-failure path where map_obj is also
+	 * NULL).
+	 */
+	if (prog_obj)
+		destroy_object(prog_obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
+	else if (prog_fd >= 0)
 		close(prog_fd);
-	if (map_fd >= 0)
+	if (map_obj)
+		destroy_object(map_obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
+	else if (map_fd >= 0)
 		close(map_fd);
 	return ok;
 }
@@ -355,6 +405,8 @@ static bool combo_cgroup_skb(void)
 	int cgroup_fd = -1;
 	int map_fd = -1;
 	int prog_fd = -1;
+	struct object *map_obj = NULL;
+	struct object *prog_obj = NULL;
 	union bpf_attr attr;
 	char path[64];
 	uint32_t key;
@@ -375,6 +427,7 @@ static bool combo_cgroup_skb(void)
 	map_fd = create_array_map();
 	if (map_fd < 0)
 		goto out;
+	map_obj = publish_map_fd(map_fd, BPF_MAP_TYPE_ARRAY);
 
 	prog_fd = load_template_prog(BPF_PROG_TYPE_CGROUP_SKB, map_fd);
 	if (prog_fd < 0) {
@@ -390,6 +443,7 @@ static bool combo_cgroup_skb(void)
 	}
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle_progs_loaded, 1,
 			   __ATOMIC_RELAXED);
+	prog_obj = publish_prog_fd(prog_fd, BPF_PROG_TYPE_CGROUP_SKB);
 
 	for (key = 0; key < MAP_ENTRIES; key++)
 		update_elem(map_fd, key, rand32());
@@ -436,9 +490,15 @@ out:
 	}
 	if (cgroup_fd >= 0)
 		close(cgroup_fd);
-	if (prog_fd >= 0)
+	/* See combo_socket_filter() for why prog_obj/map_obj cleanup
+	 * goes through destroy_object — the destructors close the fds. */
+	if (prog_obj)
+		destroy_object(prog_obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
+	else if (prog_fd >= 0)
 		close(prog_fd);
-	if (map_fd >= 0)
+	if (map_obj)
+		destroy_object(map_obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
+	else if (map_fd >= 0)
 		close(map_fd);
 	return ok;
 }
