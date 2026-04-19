@@ -39,6 +39,11 @@ struct stats_s {
 	/* memory_pressure childop: MADV_PAGEOUT + refault cycles */
 	unsigned long memory_pressure_runs;
 
+	/* userns_fuzzer childop counters */
+	unsigned long userns_runs;		/* total userns_fuzzer invocations */
+	unsigned long userns_inner_crashed;	/* inner child died by signal */
+	unsigned long userns_unsupported;	/* CLONE_NEWUSER refused, noop path */
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task
