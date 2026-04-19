@@ -34,18 +34,22 @@ void init_global_objects(void)
 /*
  * Hash table mapping fd → (object, type) for O(1) lookup in
  * remove_object_by_fd().  Open-addressing with linear probing.
+ *
+ * The table itself lives in shm (shm->fd_hash) so children can read
+ * the per-slot generation counter the parent updates on every fd-table
+ * mutation.  Mutations happen under shm->objlock; child reads of the
+ * gen field are unlocked and use ACQUIRE semantics.
  */
-static struct fd_hash_entry fd_hash[FD_HASH_SIZE];
-
-static unsigned int fd_hash_count;
 
 void fd_hash_init(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < FD_HASH_SIZE; i++)
-		fd_hash[i].fd = -1;
-	fd_hash_count = 0;
+	for (i = 0; i < FD_HASH_SIZE; i++) {
+		shm->fd_hash[i].fd = -1;
+		shm->fd_hash[i].gen = 0;
+	}
+	shm->fd_hash_count = 0;
 }
 
 static unsigned int fd_hash_slot(int fd)
@@ -54,49 +58,61 @@ static unsigned int fd_hash_slot(int fd)
 }
 
 /*
- * Internal insert that doesn't update fd_hash_count.
- * Used by fd_hash_remove to re-hash displaced entries
- * that are already counted.
+ * Internal insert that preserves the entry's existing generation and
+ * doesn't update fd_hash_count.  Used by fd_hash_remove to re-hash
+ * displaced entries: the entry's identity is unchanged, only its slot,
+ * so any cached gen on a child must continue to match.
  */
-static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type)
+static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
+			     uint32_t gen)
 {
 	unsigned int slot;
 	unsigned int probe;
 
 	slot = fd_hash_slot(fd);
 	for (probe = 0; probe < FD_HASH_SIZE; probe++) {
-		if (fd_hash[slot].fd == -1)
+		if (shm->fd_hash[slot].fd == -1)
 			break;
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 	}
 	if (probe == FD_HASH_SIZE)
 		return;
 
-	fd_hash[slot].fd = fd;
-	fd_hash[slot].obj = obj;
-	fd_hash[slot].type = type;
+	shm->fd_hash[slot].obj = obj;
+	shm->fd_hash[slot].type = type;
+	__atomic_store_n(&shm->fd_hash[slot].gen, gen, __ATOMIC_RELEASE);
+	__atomic_store_n(&shm->fd_hash[slot].fd, fd, __ATOMIC_RELEASE);
 }
 
 bool fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 {
 	unsigned int slot;
+	uint32_t gen;
 
 	if (fd < 0)
 		return true;
 
-	if (fd_hash_count >= FD_HASH_SIZE)
+	if (shm->fd_hash_count >= FD_HASH_SIZE)
 		return false;
 
 	slot = fd_hash_slot(fd);
-	while (fd_hash[slot].fd != -1 && fd_hash[slot].fd != fd)
+	while (shm->fd_hash[slot].fd != -1 && shm->fd_hash[slot].fd != fd)
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 
-	if (fd_hash[slot].fd == -1)
-		fd_hash_count++;
+	if (shm->fd_hash[slot].fd == -1)
+		shm->fd_hash_count++;
 
-	fd_hash[slot].fd = fd;
-	fd_hash[slot].obj = obj;
-	fd_hash[slot].type = type;
+	shm->fd_hash[slot].obj = obj;
+	shm->fd_hash[slot].type = type;
+	/*
+	 * Bump the slot's generation so any child that cached the
+	 * previous occupant's (or absence) gen sees a mismatch.  The
+	 * RELEASE-store on fd publishes the entry — children using
+	 * ACQUIRE-load on fd see the updated gen too.
+	 */
+	gen = shm->fd_hash[slot].gen + 1;
+	__atomic_store_n(&shm->fd_hash[slot].gen, gen, __ATOMIC_RELEASE);
+	__atomic_store_n(&shm->fd_hash[slot].fd, fd, __ATOMIC_RELEASE);
 	return true;
 }
 
@@ -109,18 +125,30 @@ void fd_hash_remove(int fd)
 
 	slot = fd_hash_slot(fd);
 	for (i = 0; i < FD_HASH_SIZE; i++) {
-		if (fd_hash[slot].fd == -1)
+		if (shm->fd_hash[slot].fd == -1)
 			return;
-		if (fd_hash[slot].fd == fd) {
-			/* Delete and re-hash any entries displaced by this one */
-			fd_hash[slot].fd = -1;
-			fd_hash_count--;
+		if (shm->fd_hash[slot].fd == fd) {
+			uint32_t gen;
+
+			/*
+			 * Mark the slot empty and bump its generation so a
+			 * child that cached this fd's gen sees a mismatch
+			 * even before any replacement is inserted here.
+			 */
+			gen = shm->fd_hash[slot].gen + 1;
+			__atomic_store_n(&shm->fd_hash[slot].gen, gen,
+					 __ATOMIC_RELEASE);
+			__atomic_store_n(&shm->fd_hash[slot].fd, -1,
+					 __ATOMIC_RELEASE);
+			shm->fd_hash_count--;
 			__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELEASE);
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
-			while (fd_hash[next].fd != -1) {
-				struct fd_hash_entry displaced = fd_hash[next];
-				fd_hash[next].fd = -1;
-				fd_hash_reinsert(displaced.fd, displaced.obj, displaced.type);
+			while (shm->fd_hash[next].fd != -1) {
+				struct fd_hash_entry displaced = shm->fd_hash[next];
+				__atomic_store_n(&shm->fd_hash[next].fd, -1,
+						 __ATOMIC_RELEASE);
+				fd_hash_reinsert(displaced.fd, displaced.obj,
+						 displaced.type, displaced.gen);
 				next = (next + 1) & (FD_HASH_SIZE - 1);
 			}
 			return;
@@ -138,10 +166,12 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 
 	slot = fd_hash_slot(fd);
 	for (i = 0; i < FD_HASH_SIZE; i++) {
-		if (fd_hash[slot].fd == -1)
+		int slot_fd = __atomic_load_n(&shm->fd_hash[slot].fd, __ATOMIC_ACQUIRE);
+
+		if (slot_fd == -1)
 			return NULL;
-		if (fd_hash[slot].fd == fd)
-			return &fd_hash[slot];
+		if (slot_fd == fd)
+			return &shm->fd_hash[slot];
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 	}
 	return NULL;

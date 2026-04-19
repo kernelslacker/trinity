@@ -230,6 +230,14 @@ struct fd_hash_entry {
 	int fd;			/* -1 = empty slot */
 	enum objecttype type;
 	struct object *obj;
+	/*
+	 * Bumped on every state-change for this slot (fresh insert, removal).
+	 * Preserved when an entry is merely rehashed to a different slot
+	 * because the entry's identity is unchanged.  Children cache this
+	 * value alongside an fd to detect close-then-reopen-to-same-fd
+	 * recycling without a syscall probe.
+	 */
+	uint32_t gen;
 };
 
 void fd_hash_init(void);
