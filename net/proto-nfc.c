@@ -41,9 +41,21 @@ static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	}
 }
 
+static const unsigned int nfc_opts[] = {
+	NFC_LLCP_RW, NFC_LLCP_MIUX,
+	NFC_LLCP_REMOTE_MIU, NFC_LLCP_REMOTE_LTO, NFC_LLCP_REMOTE_RW,
+};
+
 static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	unsigned int *optval32;
+
 	so->level = SOL_NFC;
+	so->optname = RAND_ARRAY(nfc_opts);
+
+	optval32 = (unsigned int *) so->optval;
+	*optval32 = rand();
+	so->optlen = sizeof(unsigned int);
 }
 
 static struct socket_triplet nfc_triplets[] = {
