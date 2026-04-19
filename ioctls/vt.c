@@ -144,6 +144,91 @@ static void sanitise_vt_kbd_repeat(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) r;
 }
 
+/* TIOC* and termios family */
+
+static void fill_termios_flags(tcflag_t *iflag, tcflag_t *oflag,
+				tcflag_t *cflag, tcflag_t *lflag)
+{
+	/* baud rates: B50 through B4000000 (powers of two index into B* constants) */
+	static const tcflag_t baud_rates[] = {
+		B50, B75, B110, B134, B150, B200, B300, B600,
+		B1200, B1800, B2400, B4800, B9600, B19200, B38400,
+		B57600, B115200, B230400,
+	};
+	tcflag_t baud = baud_rates[rand() % ARRAY_SIZE(baud_rates)];
+
+	*iflag = rand() & (IGNBRK|BRKINT|IGNPAR|PARMRK|INPCK|ISTRIP|
+			   INLCR|IGNCR|ICRNL|IXON|IXANY|IXOFF|IMAXBEL);
+	*oflag = rand() & (OPOST|ONLCR|OCRNL|ONOCR|ONLRET|OFILL);
+	*cflag = baud | (RAND_BOOL() ? CS8 : CS7) | CREAD |
+		 (RAND_BOOL() ? PARENB : 0) | (RAND_BOOL() ? CLOCAL : 0);
+	*lflag = rand() & (ISIG|ICANON|ECHO|ECHOE|ECHOK|ECHONL|
+			   NOFLSH|TOSTOP|IEXTEN);
+}
+
+static void sanitise_vt_termios(struct syscallrecord *rec)
+{
+	struct termios *t;
+
+	t = get_writable_struct(sizeof(*t));
+	if (!t)
+		return;
+	fill_termios_flags(&t->c_iflag, &t->c_oflag, &t->c_cflag, &t->c_lflag);
+	t->c_line = rand() % 16;
+	rec->a3 = (unsigned long) t;
+}
+
+static void sanitise_vt_termios2(struct syscallrecord *rec)
+{
+	struct termios2 *t;
+
+	t = get_writable_struct(sizeof(*t));
+	if (!t)
+		return;
+	fill_termios_flags(&t->c_iflag, &t->c_oflag, &t->c_cflag, &t->c_lflag);
+	t->c_line   = rand() % 16;
+	t->c_ispeed = rand() % 4000000 + 50;
+	t->c_ospeed = rand() % 4000000 + 50;
+	rec->a3 = (unsigned long) t;
+}
+
+static void sanitise_vt_winsize(struct syscallrecord *rec)
+{
+	struct winsize *w;
+	unsigned short rows, cols;
+
+	w = get_writable_struct(sizeof(*w));
+	if (!w)
+		return;
+	rows = rand() % 200 + 1;
+	cols = rand() % 300 + 1;
+	w->ws_row    = rows;
+	w->ws_col    = cols;
+	w->ws_xpixel = cols * (rand() % 8 + 8);
+	w->ws_ypixel = rows * (rand() % 8 + 8);
+	rec->a3 = (unsigned long) w;
+}
+
+static void sanitise_vt_serial_struct(struct syscallrecord *rec)
+{
+	struct serial_struct *s;
+
+	s = get_writable_struct(sizeof(*s));
+	if (!s)
+		return;
+	s->type            = rand() % 16;
+	s->line            = rand() % 64;
+	s->port            = rand() % 0x400;
+	s->irq             = rand() % 16;
+	s->flags           = rand() & 0x7ffffff;
+	s->xmit_fifo_size  = rand() % 256;
+	s->custom_divisor  = rand() % 256 + 1;
+	s->baud_base       = rand() % 115200 + 1200;
+	s->close_delay     = rand() % 500;
+	s->closing_wait    = RAND_BOOL() ? 65535 : rand() % 3000;
+	rec->a3 = (unsigned long) s;
+}
+
 /* Unimap family */
 
 static void sanitise_vt_unimapdesc(struct syscallrecord *rec)
@@ -493,6 +578,97 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 
 	case PIO_UNIMAPCLR:
 		sanitise_vt_unimapinit(rec);
+		break;
+
+	/* TIOC* and termios family */
+	case TCGETS:
+	case TCSETS:
+	case TCSETSW:
+	case TCSETSF:
+	case TCGETA:
+	case TCSETA:
+	case TCSETAW:
+	case TCSETAF:
+	case TIOCGLCKTRMIOS:
+	case TIOCSLCKTRMIOS:
+		sanitise_vt_termios(rec);
+		break;
+
+#ifdef TCGETS2
+	case TCGETS2:
+#endif
+#ifdef TCSETS2
+	case TCSETS2:
+#endif
+#ifdef TCSETSW2
+	case TCSETSW2:
+#endif
+#ifdef TCSETSF2
+	case TCSETSF2:
+#endif
+#if defined(TCGETS2) || defined(TCSETS2) || defined(TCSETSW2) || defined(TCSETSF2)
+		sanitise_vt_termios2(rec);
+		break;
+#endif
+
+	case TIOCGWINSZ:
+	case TIOCSWINSZ:
+		sanitise_vt_winsize(rec);
+		break;
+
+	case TIOCGSERIAL:
+	case TIOCSSERIAL:
+		sanitise_vt_serial_struct(rec);
+		break;
+
+	case TIOCSPGRP: {
+		pid_t *p = get_writable_struct(sizeof(pid_t));
+
+		if (p) {
+			*p = rand() % 65535 + 1;
+			rec->a3 = (unsigned long) p;
+		}
+		break;
+	}
+
+	case TIOCMBIS:
+	case TIOCMBIC:
+	case TIOCMSET: {
+		int *bits = get_writable_struct(sizeof(int));
+
+		if (bits) {
+			*bits = rand() & (TIOCM_LE|TIOCM_DTR|TIOCM_RTS|TIOCM_ST|
+					  TIOCM_SR|TIOCM_CTS|TIOCM_CAR|TIOCM_RNG|
+					  TIOCM_DSR);
+			rec->a3 = (unsigned long) bits;
+		}
+		break;
+	}
+
+	case TIOCSPTLCK:
+#ifdef TIOCSIG
+	case TIOCSIG:
+#endif
+	case TIOCSSOFTCAR:
+	case TIOCPKT:
+	case TIOCSETD:
+	case FIONBIO:
+	case FIOASYNC:
+	case TIOCMIWAIT: {
+		int *p = get_writable_struct(sizeof(int));
+
+		if (p) {
+			*p = rand();
+			rec->a3 = (unsigned long) p;
+		}
+		break;
+	}
+
+	case TCSBRK:
+	case TCSBRKP:
+	case TCXONC:
+	case TCFLSH:
+		rec->a3 = rand() % 4;
 		break;
 
 	default:
