@@ -113,6 +113,10 @@ struct childdata {
 	/* Ring of recently completed syscall records, drained by the parent
 	 * during post-mortem to reconstruct a fleet-wide chronology. */
 	struct child_syscall_ring syscall_ring;
+
+	/* fd to /proc/self/fail-nth, opened once per child.  -1 means
+	 * fault injection is unavailable on this kernel/config. */
+	int fail_nth_fd;
 };
 
 extern unsigned int max_children;

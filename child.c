@@ -150,6 +150,32 @@ static void set_make_it_fail(void)
 }
 
 /*
+ * Open /proc/self/fail-nth so we can later arm allocation-failure injection
+ * for individual syscalls.  Requires CONFIG_FAULT_INJECTION (and typically
+ * CONFIG_FAILSLAB / CONFIG_FAIL_PAGE_ALLOC) on the running kernel; the
+ * actual failslab=N tunable must be set up out-of-band via debugfs.
+ *
+ * If the open fails (kernel built without fault injection, perms, etc.)
+ * leave fail_nth_fd at -1 so all later code becomes a no-op, and remember
+ * the result in shm so siblings stop probing too.
+ */
+static void open_fail_nth(struct childdata *child)
+{
+	int fd;
+
+	if (shm->no_fail_nth == true)
+		return;
+
+	fd = open("/proc/self/fail-nth", O_WRONLY);
+	if (fd == -1) {
+		shm->no_fail_nth = true;
+		return;
+	}
+
+	child->fail_nth_fd = fd;
+}
+
+/*
  * We call this occasionally to set some FPU state, in the hopes that we
  * might tickle some weird FPU/scheduler related bugs
  */
@@ -215,6 +241,8 @@ void clean_childdata(struct childdata *child)
 	memset(child->syscall_ring.recent, 0, sizeof(child->syscall_ring.recent));
 	atomic_store_explicit(&child->syscall_ring.head, 0,
 			      memory_order_relaxed);
+
+	child->fail_nth_fd = -1;
 
 	if (child->fd_event_ring)
 		fd_event_ring_init(child->fd_event_ring);
@@ -398,6 +426,8 @@ static void init_child(struct childdata *child, int childno)
 		sleep(1);
 
 	set_make_it_fail();
+
+	open_fail_nth(child);
 
 	if (RAND_BOOL())
 		use_fpu();
@@ -750,6 +780,11 @@ out:
 	deferred_free_flush();
 	check_fd_leaks(child);
 	kcov_cleanup_child(&child->kcov);
+
+	if (child->fail_nth_fd != -1) {
+		close(child->fail_nth_fd);
+		child->fail_nth_fd = -1;
+	}
 
 	debugf("child %d %d exiting.\n", childno, getpid());
 }

@@ -18,6 +18,13 @@ struct stats_s {
 	unsigned long fd_duped;
 	unsigned long fd_events_processed;
 	unsigned long fd_events_dropped;
+
+	/* Fault injection (/proc/self/fail-nth):
+	 *   fault_injected  — number of syscalls we armed fail-nth for
+	 *   fault_consumed  — subset that returned -ENOMEM, i.e. the fault
+	 *                     actually triggered an allocation failure */
+	unsigned long fault_injected;
+	unsigned long fault_consumed;
 };
 
 void dump_stats(void);

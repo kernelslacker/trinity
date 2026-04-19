@@ -50,6 +50,12 @@ void dump_stats(void)
 		}
 	}
 
+	if (shm->stats.fault_injected) {
+		output(0, "\nFault injection: %lu syscalls armed via /proc/self/fail-nth, %lu returned -ENOMEM\n",
+			shm->stats.fault_injected,
+			shm->stats.fault_consumed);
+	}
+
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
 	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
 	    shm->stats.fd_duped || shm->stats.fd_events_processed) {
