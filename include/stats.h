@@ -62,6 +62,13 @@ struct stats_s {
 	unsigned long perf_chains_groups_created;	/* group leader fd opened successfully */
 	unsigned long perf_chains_ioctl_ops;	/* PERF_EVENT_IOC_* calls made */
 
+	/* tracefs_fuzzer childop counters */
+	unsigned long tracefs_kprobe_writes;		/* writes to kprobe_events */
+	unsigned long tracefs_uprobe_writes;		/* writes to uprobe_events */
+	unsigned long tracefs_filter_writes;		/* writes to set_ftrace_filter/notrace/graph */
+	unsigned long tracefs_event_enable_writes;	/* writes to events subsystem enable files */
+	unsigned long tracefs_misc_writes;		/* trace_options, current_tracer, etc. */
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task

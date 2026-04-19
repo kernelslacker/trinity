@@ -111,6 +111,17 @@ void dump_stats(void)
 			shm->stats.perf_chains_ioctl_ops);
 	}
 
+	if (shm->stats.tracefs_kprobe_writes || shm->stats.tracefs_uprobe_writes ||
+	    shm->stats.tracefs_filter_writes || shm->stats.tracefs_event_enable_writes ||
+	    shm->stats.tracefs_misc_writes) {
+		output(0, "\ntracefs fuzzer: kprobe:%lu uprobe:%lu filter:%lu event_enable:%lu misc:%lu\n",
+			shm->stats.tracefs_kprobe_writes,
+			shm->stats.tracefs_uprobe_writes,
+			shm->stats.tracefs_filter_writes,
+			shm->stats.tracefs_event_enable_writes,
+			shm->stats.tracefs_misc_writes);
+	}
+
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
 		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",
