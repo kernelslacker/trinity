@@ -53,6 +53,7 @@ enum child_op_type {
 	CHILD_OP_TRACEFS_FUZZER,
 	CHILD_OP_BPF_LIFECYCLE,
 	CHILD_OP_FAULT_INJECTOR,
+	CHILD_OP_RECIPE_RUNNER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -127,6 +128,11 @@ struct childdata {
 	/* fd to /proc/self/fail-nth, opened once per child.  -1 means
 	 * fault injection is unavailable on this kernel/config. */
 	int fail_nth_fd;
+
+	/* Name of the recipe currently executing inside recipe_runner(),
+	 * or NULL when no recipe is in flight.  Read by post-mortem to
+	 * attribute a kernel taint to a specific multi-syscall sequence. */
+	const char *current_recipe_name;
 };
 
 extern unsigned int max_children;
@@ -165,3 +171,4 @@ bool perf_event_chains(struct childdata *child);
 bool tracefs_fuzzer(struct childdata *child);
 bool bpf_lifecycle(struct childdata *child);
 bool fault_injector(struct childdata *child);
+bool recipe_runner(struct childdata *child);

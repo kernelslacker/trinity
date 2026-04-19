@@ -144,6 +144,14 @@ void dump_stats(void)
 			shm->stats.bpf_lifecycle_eperm);
 	}
 
+	if (shm->stats.recipe_runs) {
+		output(0, "\nrecipe runner: runs:%lu completed:%lu partial:%lu unsupported:%lu\n",
+			shm->stats.recipe_runs,
+			shm->stats.recipe_completed,
+			shm->stats.recipe_partial,
+			shm->stats.recipe_unsupported);
+	}
+
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
 		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",

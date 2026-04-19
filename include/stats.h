@@ -78,6 +78,12 @@ struct stats_s {
 	unsigned long bpf_lifecycle_triggered;		/* trigger phase reached */
 	unsigned long bpf_lifecycle_eperm;		/* PROG_LOAD/ATTACH denied */
 
+	/* recipe_runner childop counters */
+	unsigned long recipe_runs;		/* total recipe_runner invocations */
+	unsigned long recipe_completed;		/* full sequence ran without failure */
+	unsigned long recipe_partial;		/* at least one step failed */
+	unsigned long recipe_unsupported;	/* discovery probe latched recipe off */
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task
