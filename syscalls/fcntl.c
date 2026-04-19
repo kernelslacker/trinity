@@ -152,6 +152,8 @@ static unsigned long fcntl_flags[] = {
 
 static void post_fcntl(struct syscallrecord *rec)
 {
+	long got;
+
 	if ((long) rec->retval < 0)
 		return;
 
@@ -160,6 +162,23 @@ static void post_fcntl(struct syscallrecord *rec)
 	case F_DUPFD_CLOEXEC:
 		__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+		break;
+
+	case F_SETFL:
+		/*
+		 * Oracle: flags we just set must survive a round-trip through
+		 * F_GETFL.  A missing bit means the kernel silently dropped a
+		 * status flag — a sign of fd-table or file-struct corruption.
+		 */
+		got = fcntl((int) rec->a1, F_GETFL);
+		if (got >= 0 && (got & rec->a3) != rec->a3) {
+			output(0, "fd oracle: fcntl(%lu, F_SETFL, 0x%lx) "
+			       "but F_GETFL=0x%lx (missing bits: 0x%lx)\n",
+			       rec->a1, rec->a3, (unsigned long) got,
+			       rec->a3 & ~(unsigned long) got);
+			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
 		break;
 	}
 }

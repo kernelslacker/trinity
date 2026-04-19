@@ -70,6 +70,9 @@ void dump_stats(void)
 			shm->stats.fd_events_dropped);
 	}
 
+	if (shm->stats.fd_oracle_anomalies)
+		output(0, "fd oracle anomalies: %lu\n", shm->stats.fd_oracle_anomalies);
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

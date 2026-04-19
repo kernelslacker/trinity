@@ -25,6 +25,9 @@ struct stats_s {
 	 *                     actually triggered an allocation failure */
 	unsigned long fault_injected;
 	unsigned long fault_consumed;
+
+	/* post-syscall oracle anomaly counts */
+	unsigned long fd_oracle_anomalies;
 };
 
 void dump_stats(void);

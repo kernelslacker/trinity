@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include "child.h"
@@ -6,6 +7,7 @@
 #include "pids.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "trinity.h"
 #include "compat.h"
 
 /*
@@ -52,6 +54,7 @@ static void sanitise_dup2(struct syscallrecord *rec)
 static void post_dup2(struct syscallrecord *rec)
 {
 	struct childdata *child;
+	struct stat st_old, st_new;
 
 	if ((long) rec->retval < 0)
 		return;
@@ -62,6 +65,27 @@ static void post_dup2(struct syscallrecord *rec)
 				 (int) rec->a2, -1, 0);
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+
+	/*
+	 * Oracle: dup2(oldfd, newfd) must produce two fds pointing at the same
+	 * inode.  A dev/ino mismatch means the fd-table was corrupted by the
+	 * kernel — silent data-corruption, not a crash.
+	 */
+	if (fstat((int) rec->a1, &st_old) == 0 &&
+	    fstat((int) rec->retval, &st_new) == 0) {
+		if (st_old.st_dev != st_new.st_dev ||
+		    st_old.st_ino != st_new.st_ino) {
+			output(0, "fd oracle: dup2(%lu->%lu) inode mismatch "
+			       "dev=%lu:%lu ino=%lu:%lu\n",
+			       rec->a1, rec->retval,
+			       (unsigned long) st_old.st_dev,
+			       (unsigned long) st_new.st_dev,
+			       (unsigned long) st_old.st_ino,
+			       (unsigned long) st_new.st_ino);
+			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
 }
 
 /*
