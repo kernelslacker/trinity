@@ -69,6 +69,15 @@ struct stats_s {
 	unsigned long tracefs_event_enable_writes;	/* writes to events subsystem enable files */
 	unsigned long tracefs_misc_writes;		/* trace_options, current_tracer, etc. */
 
+	/* bpf_lifecycle childop counters */
+	unsigned long bpf_lifecycle_runs;		/* total bpf_lifecycle invocations */
+	unsigned long bpf_lifecycle_progs_loaded;	/* successful BPF_PROG_LOAD */
+	unsigned long bpf_lifecycle_verifier_rejects;	/* PROG_LOAD rejected (non-EPERM) */
+	unsigned long bpf_lifecycle_attached;		/* successful attach (either combo) */
+	unsigned long bpf_lifecycle_attach_failed;	/* attach syscall failed */
+	unsigned long bpf_lifecycle_triggered;		/* trigger phase reached */
+	unsigned long bpf_lifecycle_eperm;		/* PROG_LOAD/ATTACH denied */
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task
