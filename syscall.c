@@ -163,8 +163,6 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 		if (needalarm)
 			(void)alarm(1);
 
-		fault_armed = maybe_inject_fault(child, state);
-
 		if (rec->do32bit == false) {
 			if (kc != NULL && kc->remote_mode)
 				kcov_enable_remote(kc);
@@ -172,6 +170,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 				kcov_enable_cmp(kc);
 			else
 				kcov_enable_trace(kc);
+			fault_armed = maybe_inject_fault(child, state);
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 			kcov_disable(kc);
 		} else {
@@ -181,6 +180,7 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 				kcov_enable_cmp(kc);
 			else
 				kcov_enable_trace(kc);
+			fault_armed = maybe_inject_fault(child, state);
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 			kcov_disable(kc);
 		}
