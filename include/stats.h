@@ -42,6 +42,12 @@ struct stats_s {
 	unsigned long zombie_slots_pending;	/* current count (gauge) */
 	unsigned long zombies_reaped;		/* total successfully reaped */
 	unsigned long zombies_timed_out;	/* force-reused after timeout */
+
+	/* Times we caught a child's local_op_count above LOCAL_OP_FLUSH_BATCH,
+	 * which is impossible during normal operation (the child flushes and
+	 * resets at that threshold).  Indicates a stray write into childdata
+	 * from somebody other than the slot's current owner. */
+	unsigned long local_op_count_corrupted;
 };
 
 void dump_stats(void);

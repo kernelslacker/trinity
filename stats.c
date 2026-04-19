@@ -92,6 +92,11 @@ void dump_stats(void)
 			shm->stats.zombies_timed_out);
 	}
 
+	if (shm->stats.local_op_count_corrupted) {
+		output(0, "\nlocal_op_count corruption events: %lu\n",
+			shm->stats.local_op_count_corrupted);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
