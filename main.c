@@ -144,10 +144,15 @@ void reap_child(struct childdata *child, int childno)
 
 	/* Flush any unbatched per-child syscall count into the shared total
 	 * so it isn't lost when the child slot is recycled. */
-	if (child->local_op_count > 0) {
-		__atomic_add_fetch(&shm->stats.op_count,
-				   child->local_op_count, __ATOMIC_RELAXED);
-		child->local_op_count = 0;
+	{
+		unsigned long local = __atomic_load_n(&child->local_op_count,
+						      __ATOMIC_RELAXED);
+		if (local > 0) {
+			__atomic_add_fetch(&shm->stats.op_count, local,
+					   __ATOMIC_RELAXED);
+			__atomic_store_n(&child->local_op_count, 0,
+					 __ATOMIC_RELAXED);
+		}
 	}
 
 	unsigned int cur;
@@ -941,7 +946,7 @@ unsigned long sum_local_op_counts(void)
 		if (child == NULL)
 			continue;
 
-		count = child->local_op_count;
+		count = __atomic_load_n(&child->local_op_count, __ATOMIC_RELAXED);
 		/* The child flushes and zeroes local_op_count once it hits
 		 * LOCAL_OP_FLUSH_BATCH, so a higher value can only come from
 		 * a stray write — most likely a former occupant of this slot
@@ -952,7 +957,7 @@ unsigned long sum_local_op_counts(void)
 			output(0, "child %u local_op_count corrupted (0x%lx), "
 				"capping. Possible stray write into recycled slot.\n",
 				i, count);
-			child->local_op_count = 0;
+			__atomic_store_n(&child->local_op_count, 0, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.local_op_count_corrupted, 1,
 					   __ATOMIC_RELAXED);
 			count = LOCAL_OP_FLUSH_BATCH;
