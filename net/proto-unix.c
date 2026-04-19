@@ -15,6 +15,10 @@
 #define SO_PEEK_OFF	42
 #endif
 
+#ifndef SO_PASSPIDFD
+#define SO_PASSPIDFD	77
+#endif
+
 #ifndef SCM_RIGHTS
 #define SCM_RIGHTS	0x01
 #endif
@@ -65,7 +69,7 @@ static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 }
 
 static const unsigned int unix_opts[] = {
-	SO_PASSCRED, SO_PEEK_OFF,
+	SO_PASSCRED, SO_PEEK_OFF, SO_PASSPIDFD,
 };
 
 static void unix_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
@@ -77,6 +81,7 @@ static void unix_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 
 	switch (so->optname) {
 	case SO_PASSCRED:
+	case SO_PASSPIDFD:
 		optval32 = (int *) so->optval;
 		*optval32 = RAND_BOOL();
 		so->optlen = sizeof(int);
