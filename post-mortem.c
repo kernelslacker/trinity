@@ -1,3 +1,4 @@
+#include <sys/klog.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -5,6 +6,7 @@
 #include <fcntl.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
@@ -16,6 +18,15 @@
 #include "syscall.h"
 #include "post-mortem.h"
 #include "utils.h"
+
+/* From <sys/klog.h>; redeclared so a missing or stripped header
+ * (some embedded toolchains) doesn't break the build. */
+#ifndef SYSLOG_ACTION_READ_ALL
+#define SYSLOG_ACTION_READ_ALL 3
+#endif
+#ifndef SYSLOG_ACTION_SIZE_BUFFER
+#define SYSLOG_ACTION_SIZE_BUFFER 10
+#endif
 
 struct ring_entry {
 	unsigned int child_idx;
@@ -134,15 +145,143 @@ static void dump_syscall_records(FILE *fp, const struct timespec *taint_tp)
 	free(entries);
 }
 
+/*
+ * Snapshot the current contents of the kernel ring buffer.  klogctl is
+ * easier to reason about than a polled /dev/kmsg reader: one syscall,
+ * one allocation, no fd lifecycle.  Returns a NUL-terminated, malloc'd
+ * buffer (caller frees) and writes the byte count via *out_len.  NULL
+ * on failure (kernel.dmesg_restrict + non-root, OOM, etc).
+ */
+static char *slurp_kmsg(size_t *out_len)
+{
+	int total_size, n;
+	char *buf;
+
+	total_size = klogctl(SYSLOG_ACTION_SIZE_BUFFER, NULL, 0);
+	if (total_size <= 0)
+		return NULL;
+
+	buf = malloc((size_t) total_size + 1);
+	if (!buf)
+		return NULL;
+
+	n = klogctl(SYSLOG_ACTION_READ_ALL, buf, total_size);
+	if (n < 0) {
+		free(buf);
+		return NULL;
+	}
+
+	buf[n] = '\0';
+	*out_len = (size_t) n;
+	return buf;
+}
+
+/*
+ * Walk the kmsg buffer looking for the first line that names a kernel
+ * fault class — WARN/BUG/Oops/KASAN/etc.  Use the *latest* match in the
+ * buffer: when the kernel piles on multiple reports (panic_on_warn off,
+ * or a cascade) the most recent line is the one our taint poll just
+ * caught.  Returns true and fills out[] if a match was found.
+ */
+static bool extract_kernel_header(const char *kmsg, size_t kmsg_len,
+				  char *out, size_t outlen)
+{
+	static const char * const triggers[] = {
+		"WARNING:", "BUG:", "Oops:", "general protection fault",
+		"KASAN:", "UBSAN:", "Kernel panic", "Internal error",
+		"Unable to handle kernel",
+	};
+	const char *p = kmsg;
+	const char *end = kmsg + kmsg_len;
+	const char *best_body = NULL;
+	const char *best_trigger = NULL;
+	size_t best_len = 0;
+
+	while (p < end) {
+		const char *eol = memchr(p, '\n', (size_t)(end - p));
+		size_t linelen = eol ? (size_t)(eol - p) : (size_t)(end - p);
+		unsigned int i;
+
+		for (i = 0; i < ARRAY_SIZE(triggers); i++) {
+			size_t tlen = strlen(triggers[i]);
+			const char *m = memmem(p, linelen, triggers[i], tlen);
+
+			if (m == NULL)
+				continue;
+			best_body = m;
+			best_len = linelen - (size_t)(m - p);
+			best_trigger = triggers[i];
+			break;
+		}
+		if (!eol)
+			break;
+		p = eol + 1;
+	}
+
+	if (!best_body)
+		return false;
+
+	/* For WARNING: lines, the post-" at " payload (file:line + symbol)
+	 * is what's actionable; the leading "CPU: N PID: M" tells us little
+	 * we don't already know.  Drop it but keep the WARNING tag. */
+	if (strncmp(best_trigger, "WARNING:", strlen("WARNING:")) == 0) {
+		const char *at = memmem(best_body, best_len, " at ", 4);
+
+		if (at != NULL) {
+			size_t skip = (size_t)(at + 4 - best_body);
+
+			best_body += skip;
+			best_len -= skip;
+		}
+		snprintf(out, outlen, "WARNING %.*s",
+			 (int) best_len, best_body);
+	} else {
+		snprintf(out, outlen, "%.*s", (int) best_len, best_body);
+	}
+
+	/* rtrim — kernel lines sometimes carry CR or trailing spaces. */
+	{
+		size_t n = strlen(out);
+
+		while (n && (out[n - 1] == ' ' || out[n - 1] == '\r' ||
+			     out[n - 1] == '\n' || out[n - 1] == '\t'))
+			out[--n] = '\0';
+	}
+	return true;
+}
+
+static void dump_kmsg(FILE *fp, const char *kmsg, size_t kmsg_len)
+{
+	fprintf(fp, "\n--- kernel ring buffer at taint time ---\n");
+	if (kmsg_len > 0) {
+		fwrite(kmsg, 1, kmsg_len, fp);
+		if (kmsg[kmsg_len - 1] != '\n')
+			fputc('\n', fp);
+	}
+	fprintf(fp, "--- end kernel ring buffer ---\n");
+}
+
 void tainted_postmortem(void)
 {
 	int taint = get_taint();
 	struct timespec taint_tp;
 	FILE *fp;
+	char *kmsg;
+	size_t kmsg_len = 0;
+	char header[256];
+	bool have_header = false;
 
 	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
+
+	/* Slurp the kernel ring buffer first — closer in time to the taint
+	 * event means a smaller chance the WARN/Oops has aged out under
+	 * other kernel chatter. */
+	kmsg = slurp_kmsg(&kmsg_len);
+	if (kmsg != NULL)
+		have_header = extract_kernel_header(kmsg, kmsg_len,
+						    header, sizeof(header));
 
 	panic(EXIT_KERNEL_TAINTED);
 
@@ -159,9 +298,17 @@ void tainted_postmortem(void)
 		goto out;
 	}
 
+	if (have_header)
+		fprintf(fp, "KERNEL: %s\n\n", header);
+
 	dump_syscall_records(fp, &taint_tp);
+
+	if (kmsg != NULL)
+		dump_kmsg(fp, kmsg, kmsg_len);
+
 	fclose(fp);
 
 out:
+	free(kmsg);
 	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELAXED);
 }
