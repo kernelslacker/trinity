@@ -295,7 +295,7 @@ bool kcov_syscall_is_cold(unsigned int nr)
 	last = __atomic_load_n(&kcov_shm->last_edge_at[nr], __ATOMIC_RELAXED);
 
 	/* Never found any edges — not cold, just unexplored. */
-	if (last == 0 && kcov_shm->per_syscall_edges[nr] == 0)
+	if (last == 0 && __atomic_load_n(&kcov_shm->per_syscall_edges[nr], __ATOMIC_RELAXED) == 0)
 		return false;
 
 	return (total - last) > KCOV_COLD_THRESHOLD;

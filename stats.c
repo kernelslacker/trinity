@@ -104,9 +104,12 @@ void dump_stats(void)
 		unsigned int cold_count = 0;
 		unsigned int j;
 
+		unsigned long kc_edges  = __atomic_load_n(&kcov_shm->edges_found,   __ATOMIC_RELAXED);
+		unsigned long kc_pcs    = __atomic_load_n(&kcov_shm->total_pcs,     __ATOMIC_RELAXED);
+		unsigned long kc_calls  = __atomic_load_n(&kcov_shm->total_calls,   __ATOMIC_RELAXED);
+		unsigned long kc_remote = __atomic_load_n(&kcov_shm->remote_calls,  __ATOMIC_RELAXED);
 		output(0, "\nKCOV coverage: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
-			kcov_shm->edges_found, kcov_shm->total_pcs,
-			kcov_shm->total_calls, kcov_shm->remote_calls);
+			kc_edges, kc_pcs, kc_calls, kc_remote);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
@@ -114,7 +117,7 @@ void dump_stats(void)
 
 		memset(top_edges, 0, sizeof(top_edges));
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			unsigned long edges = kcov_shm->per_syscall_edges[i];
+			unsigned long edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
 
 			if (edges == 0)
 				continue;
@@ -157,7 +160,7 @@ void dump_stats(void)
 			memset(delta_edges, 0, sizeof(delta_edges));
 			for (i = 0; i < nr_syscalls_to_scan; i++) {
 				unsigned long prev = kcov_shm->per_syscall_edges_previous[i];
-				unsigned long curr = kcov_shm->per_syscall_edges[i];
+				unsigned long curr = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
 				unsigned long delta = (curr > prev) ? curr - prev : 0;
 
 				if (delta > 0)
@@ -191,9 +194,9 @@ void dump_stats(void)
 			}
 
 			/* Snapshot current counts for the next interval. */
-			memcpy(kcov_shm->per_syscall_edges_previous,
-			       kcov_shm->per_syscall_edges,
-			       nr_syscalls_to_scan * sizeof(unsigned long));
+			for (i = 0; i < nr_syscalls_to_scan; i++)
+				kcov_shm->per_syscall_edges_previous[i] =
+					__atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
 		}
 
 		if (cold_count > 0) {
@@ -201,7 +204,9 @@ void dump_stats(void)
 			for (i = 0; i < nr_syscalls_to_scan; i++) {
 				struct syscallentry *entry;
 
-				if (kcov_shm->per_syscall_edges[i] == 0)
+				unsigned long slot_edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+
+				if (slot_edges == 0)
 					continue;
 				if (!kcov_syscall_is_cold(i))
 					continue;
@@ -209,7 +214,7 @@ void dump_stats(void)
 				entry = table[i].entry;
 				output(0, "  %-24s (edges:%lu, last new @ call %lu)\n",
 					entry ? entry->name : "???",
-					kcov_shm->per_syscall_edges[i],
+					slot_edges,
 					kcov_shm->last_edge_at[i]);
 			}
 		}
