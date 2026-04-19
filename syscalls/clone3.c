@@ -34,6 +34,12 @@
 #ifndef CLONE_INTO_CGROUP
 #define CLONE_INTO_CGROUP 0x200000000ULL
 #endif
+#ifndef CLONE_AUTOREAP
+#define CLONE_AUTOREAP		(1ULL << 34)
+#define CLONE_NNP		(1ULL << 35)
+#define CLONE_PIDFD_AUTOKILL	(1ULL << 36)
+#define CLONE_EMPTY_MNTNS	(1ULL << 37)
+#endif
 
 static unsigned long clone3_flags[] = {
 	CLONE_VM, CLONE_FS, CLONE_FILES, CLONE_SIGHAND,
@@ -44,6 +50,7 @@ static unsigned long clone3_flags[] = {
 	CLONE_NEWIPC, CLONE_NEWUSER, CLONE_NEWPID, CLONE_NEWNET,
 	CLONE_IO, CLONE_NEWTIME,
 	CLONE_CLEAR_SIGHAND, CLONE_INTO_CGROUP,
+	CLONE_AUTOREAP, CLONE_NNP, CLONE_PIDFD_AUTOKILL, CLONE_EMPTY_MNTNS,
 };
 
 static unsigned long clone3_sizes[] = {
