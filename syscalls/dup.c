@@ -22,7 +22,7 @@ static void post_dup(struct syscallrecord *rec)
 	if ((long) rec->retval < 0)
 		return;
 
-	__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELEASE);
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 }
 
