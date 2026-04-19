@@ -18,7 +18,8 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 		rec->a2 = 0;
 	}
 
-	/* Stash map pointer in unused arg slot for post callback. */
+	/* Stash map pointer in unused arg slot for post callback.
+	 * NULL is fine — post_mprotect checks before dereferencing. */
 	rec->a5 = (unsigned long) map;
 }
 
@@ -29,7 +30,7 @@ static void post_mprotect(struct syscallrecord *rec)
 {
 	struct map *map = (struct map *) rec->a5;
 
-	if (rec->retval == 0)
+	if (rec->retval == 0 && map != NULL)
 		map->prot = rec->a3;
 }
 
