@@ -44,6 +44,7 @@ enum child_op_type {
 	CHILD_OP_MLOCK_PRESSURE,
 	CHILD_OP_INODE_SPEWER,
 	CHILD_OP_PROCFS_WRITER,
+	CHILD_OP_MEMORY_PRESSURE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -147,3 +148,4 @@ bool mprotect_split(struct childdata *child);
 bool mlock_pressure(struct childdata *child);
 bool inode_spewer(struct childdata *child);
 bool procfs_writer(struct childdata *child);
+bool memory_pressure(struct childdata *child);
