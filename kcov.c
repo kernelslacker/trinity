@@ -225,12 +225,25 @@ void kcov_disable(struct kcov_child *kc)
 
 /*
  * Hash a kernel PC value into a bitmap index.
- * Simple xor-shift to spread PCs across the bitmap.
+ *
+ * The previous xor-shift mixed too few of the bits in a typical kernel PC.
+ * Two PCs that landed within the same cacheline (low 6 bits identical) and
+ * shared the same upper bits ended up hashed to indices differing only in
+ * the low 7 bits, clustering thousands of distinct PCs into a tiny bitmap
+ * range and triggering false coverage saturation.
+ *
+ * Murmur3's 64-bit finalizer mixes every input bit into every output bit
+ * with a single multiply/xor pair per round, which is enough to avoid the
+ * cacheline clustering without breaking the PC's locality for the rest of
+ * the pipeline.
  */
 static unsigned int pc_to_bit(unsigned long pc)
 {
-	pc ^= pc >> 17;
-	pc ^= pc >> 7;
+	pc ^= pc >> 33;
+	pc *= 0xff51afd7ed558ccdUL;
+	pc ^= pc >> 33;
+	pc *= 0xc4ceb9fe1a85ec53UL;
+	pc ^= pc >> 33;
 	return (unsigned int)(pc % (KCOV_BITMAP_SIZE * 8));
 }
 
