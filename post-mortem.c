@@ -261,6 +261,87 @@ static void dump_kmsg(FILE *fp, const char *kmsg, size_t kmsg_len)
 	fprintf(fp, "--- end kernel ring buffer ---\n");
 }
 
+/*
+ * Slurp a tiny /proc/<pid>/<name> file into fp.  Silent on any error:
+ * the child may have just exited, the file may be unreadable for this
+ * uid, or the kernel may not export it on this build.  Trinity runs
+ * unprivileged often enough that EACCES is expected, not exceptional.
+ */
+static void slurp_proc_file(FILE *fp, pid_t pid, const char *name)
+{
+	char path[64];
+	char buf[4096];
+	FILE *src;
+	size_t n;
+	int last = -1;
+
+	snprintf(path, sizeof(path), "/proc/%d/%s", (int) pid, name);
+	src = fopen(path, "r");
+	if (src == NULL)
+		return;
+
+	fprintf(fp, "%s:\n", name);
+	while ((n = fread(buf, 1, sizeof(buf), src)) > 0) {
+		fwrite(buf, 1, n, fp);
+		last = (unsigned char) buf[n - 1];
+	}
+	if (last != -1 && last != '\n')
+		fputc('\n', fp);
+	fclose(src);
+}
+
+/*
+ * Capture per-child kernel state from /proc just before panic() flips
+ * the spawn_no_more flag.  Children may move on the moment we tell them
+ * to wind down, so the snapshot has to happen while they're still doing
+ * whatever caused the taint.  Buffered into memory rather than written
+ * straight to the log because the log file isn't open yet.
+ *
+ * Returns a malloc'd buffer (caller frees) or NULL on allocation failure.
+ * *out_len is the number of bytes written; zero is legitimate (no live
+ * children, all opens failed) and the caller should treat that as
+ * "nothing to dump".
+ */
+static char *capture_child_runtime_state(size_t *out_len)
+{
+	char *buf = NULL;
+	size_t len = 0;
+	FILE *fp;
+	unsigned int i;
+
+	fp = open_memstream(&buf, &len);
+	if (fp == NULL)
+		return NULL;
+
+	for_each_child(i) {
+		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
+
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+		fprintf(fp, "--- child %u (pid %d) runtime state ---\n",
+			i, (int) pid);
+		slurp_proc_file(fp, pid, "stack");
+		slurp_proc_file(fp, pid, "syscall");
+		slurp_proc_file(fp, pid, "wchan");
+	}
+
+	fclose(fp);
+	*out_len = len;
+	return buf;
+}
+
+static void dump_child_runtime(FILE *fp, const char *runtime_buf,
+			       size_t runtime_len)
+{
+	fprintf(fp, "\n--- per-child runtime state at taint time ---\n");
+	if (runtime_len > 0) {
+		fwrite(runtime_buf, 1, runtime_len, fp);
+		if (runtime_buf[runtime_len - 1] != '\n')
+			fputc('\n', fp);
+	}
+	fprintf(fp, "--- end per-child runtime state ---\n");
+}
+
 void tainted_postmortem(void)
 {
 	int taint = get_taint();
@@ -270,6 +351,8 @@ void tainted_postmortem(void)
 	size_t kmsg_len = 0;
 	char header[256];
 	bool have_header = false;
+	char *runtime_buf;
+	size_t runtime_len = 0;
 
 	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELAXED);
 
@@ -282,6 +365,11 @@ void tainted_postmortem(void)
 	if (kmsg != NULL)
 		have_header = extract_kernel_header(kmsg, kmsg_len,
 						    header, sizeof(header));
+
+	/* Same urgency for /proc per-child state: must happen before panic()
+	 * tells children to stop, while they're still parked in whatever
+	 * syscall tripped the taint flag. */
+	runtime_buf = capture_child_runtime_state(&runtime_len);
 
 	panic(EXIT_KERNEL_TAINTED);
 
@@ -303,6 +391,9 @@ void tainted_postmortem(void)
 
 	dump_syscall_records(fp, &taint_tp);
 
+	if (runtime_buf != NULL)
+		dump_child_runtime(fp, runtime_buf, runtime_len);
+
 	if (kmsg != NULL)
 		dump_kmsg(fp, kmsg, kmsg_len);
 
@@ -310,5 +401,6 @@ void tainted_postmortem(void)
 
 out:
 	free(kmsg);
+	free(runtime_buf);
 	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELAXED);
 }
