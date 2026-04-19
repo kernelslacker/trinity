@@ -490,10 +490,14 @@ enum {
 #ifndef PR_RSEQ_SLICE_EXTENSION
 #define PR_RSEQ_SLICE_EXTENSION		79
 #endif
-#ifndef PR_GET_INDIR_BR_LP_STATUS
-#define PR_GET_INDIR_BR_LP_STATUS	80
-#define PR_SET_INDIR_BR_LP_STATUS	81
-#define PR_LOCK_INDIR_BR_LP_STATUS	82
+#ifndef PR_GET_CFI
+#define PR_GET_CFI			80
+#define PR_SET_CFI			81
+/* PR_LOCK_INDIR_BR_LP_STATUS (82) was dropped before v7.0 final */
+#define PR_CFI_BRANCH_LANDING_PADS	0
+#define PR_CFI_ENABLE			(1U << 0)
+#define PR_CFI_DISABLE			(1U << 1)
+#define PR_CFI_LOCK			(1U << 2)
 #endif
 #ifndef PR_SET_PTRACER
 #define PR_SET_PTRACER			0x59616d61
