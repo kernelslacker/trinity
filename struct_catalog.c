@@ -11,9 +11,11 @@
 
 #include <stddef.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/timex.h>
 #include <sys/resource.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
 #include <time.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
@@ -21,6 +23,7 @@
 
 #include "struct_catalog.h"
 #include "arch.h"
+#include "perf_event.h"
 #include "random.h"
 #include "tables.h"
 #include "trinity.h"
@@ -135,6 +138,65 @@ static const struct struct_field epoll_event_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct perf_event_attr (perf_event_open)                            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Only the addressable scalar fields are listed; the long bitfield run
+ * (disabled, inherit, ..., sigtrap, __reserved_1) cannot be referenced
+ * by offsetof and is intentionally omitted.  CMP attribution still
+ * benefits from every full-byte field below — particularly type, size,
+ * sample_type, read_format, branch_sample_type, sample_regs_*, and the
+ * union'd config / bp_addr / bp_len slots that the kernel constantly
+ * compares against PERF_* constants.
+ */
+static const struct struct_field perf_event_attr_fields[] = {
+	FIELD(struct perf_event_attr, type),
+	FIELD(struct perf_event_attr, size),
+	FIELD(struct perf_event_attr, config),
+	FIELD(struct perf_event_attr, sample_period),
+	FIELD(struct perf_event_attr, sample_type),
+	FIELD(struct perf_event_attr, read_format),
+	FIELD(struct perf_event_attr, wakeup_events),
+	FIELD(struct perf_event_attr, bp_type),
+	FIELD(struct perf_event_attr, bp_addr),
+	FIELD(struct perf_event_attr, bp_len),
+	FIELD(struct perf_event_attr, branch_sample_type),
+	FIELD(struct perf_event_attr, sample_regs_user),
+	FIELD(struct perf_event_attr, sample_stack_user),
+	FIELD(struct perf_event_attr, clockid),
+	FIELD(struct perf_event_attr, sample_regs_intr),
+	FIELD(struct perf_event_attr, aux_watermark),
+	FIELD(struct perf_event_attr, sample_max_stack),
+	FIELD(struct perf_event_attr, aux_sample_size),
+	FIELD(struct perf_event_attr, aux_action),
+	FIELD(struct perf_event_attr, sig_data),
+	FIELD(struct perf_event_attr, config3),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct sigaction (rt_sigaction, sigaction)                          */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field sigaction_fields[] = {
+	FIELD(struct sigaction, sa_flags),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct msghdr (sendmsg, recvmsg)                                    */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field msghdr_fields[] = {
+	FIELD(struct msghdr, msg_name),
+	FIELD(struct msghdr, msg_namelen),
+	FIELD(struct msghdr, msg_iov),
+	FIELD(struct msghdr, msg_iovlen),
+	FIELD(struct msghdr, msg_control),
+	FIELD(struct msghdr, msg_controllen),
+	FIELD(struct msghdr, msg_flags),
+};
+
+/* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -181,6 +243,24 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= epoll_event_fields,
 		.num_fields	= ARRAY_SIZE(epoll_event_fields),
 	},
+	{
+		.name		= "perf_event_attr",
+		.struct_size	= sizeof(struct perf_event_attr),
+		.fields		= perf_event_attr_fields,
+		.num_fields	= ARRAY_SIZE(perf_event_attr_fields),
+	},
+	{
+		.name		= "sigaction",
+		.struct_size	= sizeof(struct sigaction),
+		.fields		= sigaction_fields,
+		.num_fields	= ARRAY_SIZE(sigaction_fields),
+	},
+	{
+		.name		= "msghdr",
+		.struct_size	= sizeof(struct msghdr),
+		.fields		= msghdr_fields,
+		.num_fields	= ARRAY_SIZE(msghdr_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -220,6 +300,18 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "timerfd_settime",	3, &struct_catalog[5] },
 	/* epoll_ctl(int, int, int, struct epoll_event *) */
 	{ "epoll_ctl",		4, &struct_catalog[6] },
+	/* perf_event_open(struct perf_event_attr *, pid_t, int, int, ulong) */
+	{ "perf_event_open",	1, &struct_catalog[7] },
+	/* rt_sigaction(int, const struct sigaction *, struct sigaction *, size_t) */
+	{ "rt_sigaction",	2, &struct_catalog[8] },
+	{ "rt_sigaction",	3, &struct_catalog[8] },
+	/* sigaction(int, const struct old_sigaction *, struct old_sigaction *) */
+	{ "sigaction",		2, &struct_catalog[8] },
+	{ "sigaction",		3, &struct_catalog[8] },
+	/* sendmsg(int, const struct msghdr *, int) */
+	{ "sendmsg",		2, &struct_catalog[9] },
+	/* recvmsg(int, struct msghdr *, int) */
+	{ "recvmsg",		2, &struct_catalog[9] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
