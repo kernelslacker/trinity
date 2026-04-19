@@ -76,6 +76,14 @@ void dump_stats(void)
 	if (shm->stats.mmap_oracle_anomalies)
 		output(0, "mmap oracle anomalies: %lu\n", shm->stats.mmap_oracle_anomalies);
 
+	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
+	    shm->stats.debugfs_writes) {
+		output(0, "\nprocfs/sysfs writes: proc:%lu sys:%lu debugfs:%lu\n",
+			shm->stats.procfs_writes,
+			shm->stats.sysfs_writes,
+			shm->stats.debugfs_writes);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
