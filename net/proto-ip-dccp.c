@@ -12,5 +12,22 @@ static const unsigned int dccp_opts[] = {
 
 void dccp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	unsigned int *optval32;
+
 	so->optname = RAND_ARRAY(dccp_opts);
+
+	switch (so->optname) {
+	case DCCP_SOCKOPT_SERVICE:
+		/* __be32 service code */
+		optval32 = (unsigned int *) so->optval;
+		*optval32 = rand();
+		so->optlen = sizeof(unsigned int);
+		break;
+	default:
+		/* Most options take a plain int */
+		optval32 = (unsigned int *) so->optval;
+		*optval32 = rand();
+		so->optlen = sizeof(unsigned int);
+		break;
+	}
 }
