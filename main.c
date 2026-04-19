@@ -137,7 +137,7 @@ void reap_child(struct childdata *child, int childno)
 	if (child == NULL)
 		return;
 	/* Don't reap a child again */
-	if (__atomic_load_n(&pids[childno], __ATOMIC_RELAXED) == EMPTY_PIDSLOT)
+	if (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) == EMPTY_PIDSLOT)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	bust_lock(&child->syscall.lock);
@@ -177,7 +177,7 @@ static void reap_dead_kids(void)
 		pid_t pid, wpid;
 		int childstatus;
 
-		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
+		pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
@@ -753,7 +753,7 @@ static void fork_children(void)
 static void handle_childsig(int childno, int childstatus, bool stop)
 {
 	int __sig;
-	pid_t pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
+	pid_t pid = __atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE);
 
 	if (children == NULL)
 		return;
