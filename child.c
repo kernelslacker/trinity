@@ -559,6 +559,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_PROCFS_WRITER:		return 60;
 	case CHILD_OP_MEMORY_PRESSURE:		return 30;
 	case CHILD_OP_USERNS_FUZZER:		return 60;
+	case CHILD_OP_SCHED_CYCLER:		return 30;
 	default:				return 10;
 	}
 }
@@ -661,7 +662,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	switch (r % 7) {
+	switch (r % 8) {
 	case 0: return CHILD_OP_MMAP_LIFECYCLE;
 	case 1: return CHILD_OP_MPROTECT_SPLIT;
 	case 2: return CHILD_OP_MLOCK_PRESSURE;
@@ -669,6 +670,7 @@ static enum child_op_type pick_op_type(void)
 	case 4: return CHILD_OP_PROCFS_WRITER;
 	case 5: return CHILD_OP_MEMORY_PRESSURE;
 	case 6: return CHILD_OP_USERNS_FUZZER;
+	case 7: return CHILD_OP_SCHED_CYCLER;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -752,6 +754,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_PROCFS_WRITER:		ret = procfs_writer(child); break;
 		case CHILD_OP_MEMORY_PRESSURE:		ret = memory_pressure(child); break;
 		case CHILD_OP_USERNS_FUZZER:		ret = userns_fuzzer(child); break;
+		case CHILD_OP_SCHED_CYCLER:		ret = sched_cycler(child); break;
 		default:				ret = random_syscall(child); break;
 		}
 
