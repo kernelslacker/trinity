@@ -60,6 +60,9 @@ struct kcov_shared {
 	unsigned long remote_calls;	/* calls using KCOV_REMOTE_ENABLE */
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
 	unsigned long last_edge_at[MAX_NR_SYSCALL];
+	/* Snapshot of per_syscall_edges at the previous stats interval.
+	 * Used to compute per-interval edge growth rate. */
+	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL];
 };
 
 extern struct kcov_shared *kcov_shm;
