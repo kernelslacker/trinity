@@ -7,6 +7,17 @@
 #include "sanitise.h"
 #include "utils.h"
 
+static void sanitise_fuse_clone(struct syscallrecord *rec)
+{
+	uint32_t *fd;
+
+	fd = (uint32_t *) get_writable_struct(sizeof(*fd));
+	if (!fd)
+		return;
+	*fd = get_random_fd();
+	rec->a3 = (unsigned long) fd;
+}
+
 static void sanitise_fuse_backing_open(struct syscallrecord *rec)
 {
 	struct fuse_backing_map *map;
@@ -36,6 +47,9 @@ static void fuse_sanitise(const struct ioctl_group *grp, struct syscallrecord *r
 	pick_random_ioctl(grp, rec);
 
 	switch (rec->a2) {
+	case FUSE_DEV_IOC_CLONE:
+		sanitise_fuse_clone(rec);
+		break;
 	case FUSE_DEV_IOC_BACKING_OPEN:
 		sanitise_fuse_backing_open(rec);
 		break;
