@@ -25,6 +25,8 @@ struct shm_s *shm;
 
 struct childdata **children;
 
+struct fd_event_ring **expected_fd_event_rings;
+
 #define SHM_PROT_PAGES 30
 
 unsigned int shm_size;
@@ -67,6 +69,15 @@ void init_shm(void)
 
 	children = alloc_shared(childptrslen);
 
+	/*
+	 * Allocate the canary array as a global object so freeze_global_objects()
+	 * will mprotect it PROT_READ before the first child forks.  Any write
+	 * to it after that point will SIGSEGV at the source.  We store one
+	 * pointer per child slot and compare in fd_event_drain_all().
+	 */
+	expected_fd_event_rings = alloc_shared_global(
+		max_children * sizeof(struct fd_event_ring *));
+
 	/* We allocate the childdata structs as shared mappings, because
 	 * the forking process needs to peek into each childs syscall records
 	 * to make sure they are making progress.
@@ -86,6 +97,11 @@ void init_shm(void)
 		 * (consumer) for lock-free fd state change reporting. */
 		child->fd_event_ring = alloc_shared(sizeof(struct fd_event_ring));
 		fd_event_ring_init(child->fd_event_ring);
+
+		/* Record the ring address in the canary array.  The array
+		 * is mprotected PROT_READ by freeze_global_objects() before
+		 * any child runs, so any post-init write to it will fault. */
+		expected_fd_event_rings[i] = child->fd_event_ring;
 	}
 	mprotect(children, childptrslen, PROT_READ);
 
