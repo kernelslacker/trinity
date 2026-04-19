@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -75,9 +76,24 @@ static void sanitise_openat(struct syscallrecord *rec)
 static void post_open(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
+	struct stat st;
 
-	if (fd != -1)
-		close(fd);
+	if (fd == -1)
+		return;
+
+	/*
+	 * Oracle: a freshly opened fd must refer to a valid inode.  If fstat
+	 * fails here the kernel handed us an fd that doesn't point at anything
+	 * — a clear sign of fd-table corruption.
+	 */
+	if (fstat(fd, &st) != 0) {
+		output(0, "fd oracle: open/openat returned fd %d but "
+		       "fstat failed (errno %d)\n", fd, errno);
+		__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+	}
+
+	close(fd);
 }
 
 /*
