@@ -84,6 +84,14 @@ void dump_stats(void)
 			shm->stats.debugfs_writes);
 	}
 
+	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
+	    shm->stats.zombie_slots_pending) {
+		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",
+			shm->stats.zombie_slots_pending,
+			shm->stats.zombies_reaped,
+			shm->stats.zombies_timed_out);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
