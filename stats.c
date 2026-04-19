@@ -91,6 +91,11 @@ void dump_stats(void)
 		output(0, "memory pressure runs (MADV_PAGEOUT+refault): %lu\n",
 			shm->stats.memory_pressure_runs);
 
+	if (shm->stats.barrier_racer_runs)
+		output(0, "barrier racer: %lu runs, %lu inner workers crashed\n",
+			shm->stats.barrier_racer_runs,
+			shm->stats.barrier_racer_inner_crashed);
+
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
 		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",

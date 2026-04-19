@@ -48,6 +48,10 @@ struct stats_s {
 	unsigned long userns_inner_crashed;	/* inner child died by signal */
 	unsigned long userns_unsupported;	/* CLONE_NEWUSER refused, noop path */
 
+	/* barrier_racer childop counters */
+	unsigned long barrier_racer_runs;	/* total barrier_racer invocations */
+	unsigned long barrier_racer_inner_crashed; /* inner worker died by signal */
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task

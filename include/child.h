@@ -47,6 +47,7 @@ enum child_op_type {
 	CHILD_OP_MEMORY_PRESSURE,
 	CHILD_OP_USERNS_FUZZER,
 	CHILD_OP_SCHED_CYCLER,
+	CHILD_OP_BARRIER_RACER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -153,3 +154,4 @@ bool procfs_writer(struct childdata *child);
 bool memory_pressure(struct childdata *child);
 bool userns_fuzzer(struct childdata *child);
 bool sched_cycler(struct childdata *child);
+bool barrier_racer(struct childdata *child);
