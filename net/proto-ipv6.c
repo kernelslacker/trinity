@@ -344,16 +344,16 @@ static struct socket_triplet ipv6_triplets[] = {
 };
 
 static struct socket_triplet ipv6_privileged_triplets[] = {
-	{ .family = PF_INET6, .protocol = 0, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 1, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 2, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 3, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 4, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 5, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 6, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 7, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 8, .type = SOCK_RAW },
-	{ .family = PF_INET6, .protocol = 9, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_ICMPV6,  .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_TCP,     .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_UDP,     .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_DCCP,    .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_GRE,     .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_ESP,     .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_AH,      .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_SCTP,    .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_UDPLITE, .type = SOCK_RAW },
+	{ .family = PF_INET6, .protocol = IPPROTO_RAW,     .type = SOCK_RAW },
 };
 
 const struct netproto proto_inet6 = {
