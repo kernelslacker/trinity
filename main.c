@@ -34,6 +34,38 @@ static void replace_child(int childno);
  * Kept out of shared memory so children's stray writes can't corrupt them. */
 static FILE **pidstatfiles;
 
+/*
+ * Parent-local tracking of slots whose former occupant is in the kernel
+ * as an unkillable D-state task.  We have already cleared the pid slot
+ * (via reap_child), but the kernel may still wake the task to finish its
+ * syscall and let it write back into our shared childdata.  If we hand
+ * the slot to a freshly-forked replacement child before the kernel has
+ * fully torn the zombie down, those late writes corrupt fields the new
+ * child owns (local_op_count, tp, fd_event_ring head/tail, etc.).
+ *
+ * Two observed corruption cases trace back to exactly this race:
+ *   1. local_op_count appearing with bit 58 set ("Ran 288230376159883121
+ *      syscalls"), which is the new child's small counter ORed with a
+ *      stale write from the post-reap zombie.
+ *   2. fd_event_ring contents containing a non-canonical pointer
+ *      0x9c000000890000 that segfaulted fd_event_drain — a half-written
+ *      ring index from a ghost producer that no longer existed by the
+ *      time the parent looked.
+ *
+ * zombie_pids[childno] holds the pid we are still waiting on, or
+ * EMPTY_PIDSLOT if the slot is not in zombie-pending state.
+ * zombie_since[childno] is the CLOCK_MONOTONIC second at which we
+ * registered the zombie, used to bound the wait.
+ */
+static pid_t *zombie_pids;
+static time_t *zombie_since;
+
+/* If the kernel still hasn't released a zombie task after this long,
+ * something is badly wrong (likely a kernel bug worth investigating).
+ * We log loudly and reuse the slot anyway, accepting a possible
+ * one-shot corruption in exchange for not stalling fuzzing forever. */
+#define ZOMBIE_REAP_TIMEOUT_SEC 300
+
 static unsigned long hiscore = 0;
 
 /*
@@ -400,6 +432,108 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 }
 
 /*
+ * Move a slot into zombie-pending state.  The child is unkillable
+ * (D-state) and we have given up trying to make it die, but the kernel
+ * still owns the task struct and may run it again.  Clear the slot so
+ * stats stay sensible, but do NOT spawn a replacement: we have to wait
+ * until waitpid confirms the kernel released the task, otherwise the
+ * zombie's last writes will land in the replacement child's childdata.
+ */
+static void register_zombie_slot(int childno, pid_t pid)
+{
+	struct timespec now;
+
+	output(0, "child %d (pid %u) unkillable, deferring slot reuse "
+		"until kernel releases the D-state task.\n",
+		childno, pid);
+	dump_pid_stack(pid);
+	dump_pid_syscall(pid);
+
+	if (pidstatfiles[childno]) {
+		fclose(pidstatfiles[childno]);
+		pidstatfiles[childno] = NULL;
+	}
+
+	reap_child(children[childno], childno);
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	zombie_pids[childno] = pid;
+	zombie_since[childno] = now.tv_sec;
+	__atomic_add_fetch(&shm->stats.zombie_slots_pending, 1, __ATOMIC_RELAXED);
+}
+
+/*
+ * Walk the zombie-pending slots and try to retire each one.
+ * waitpid(WNOHANG) returns the pid once the kernel has fully torn down
+ * the task — at that point no further writes to the slot are possible
+ * and we can safely spawn a replacement.  If the wait times out
+ * (ZOMBIE_REAP_TIMEOUT_SEC), log loudly and reuse the slot anyway:
+ * indefinite throughput loss is worse than one possible corruption.
+ */
+static void process_zombie_pending(void)
+{
+	struct timespec now;
+	unsigned int i;
+
+	if (zombie_pids == NULL)
+		return;
+
+	if (__atomic_load_n(&shm->stats.zombie_slots_pending,
+			    __ATOMIC_RELAXED) == 0)
+		return;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	for_each_child(i) {
+		pid_t pid = zombie_pids[i];
+		pid_t wpid;
+		bool retire = false;
+		bool timed_out = false;
+
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+
+		wpid = waitpid(pid, NULL, WNOHANG);
+		if (wpid == pid) {
+			retire = true;
+		} else if (wpid == -1 && errno == ECHILD) {
+			/* Kernel has no record of this pid as our child
+			 * — it's gone (already reaped or never existed in
+			 * a way we can wait on).  Safe to reuse the slot. */
+			retire = true;
+		} else if ((now.tv_sec - zombie_since[i]) >= ZOMBIE_REAP_TIMEOUT_SEC) {
+			retire = true;
+			timed_out = true;
+		}
+
+		if (!retire)
+			continue;
+
+		if (timed_out) {
+			output(0, "child %d zombie (pid %u) still pending after "
+				"%d seconds — forcing slot reuse. Kernel may be "
+				"buggy; investigate the D-state task manually.\n",
+				i, pid, ZOMBIE_REAP_TIMEOUT_SEC);
+			__atomic_add_fetch(&shm->stats.zombies_timed_out, 1,
+					   __ATOMIC_RELAXED);
+		} else {
+			output(0, "child %d zombie (pid %u) finally released "
+				"by kernel after %ld seconds; reusing slot.\n",
+				i, pid, (long)(now.tv_sec - zombie_since[i]));
+			__atomic_add_fetch(&shm->stats.zombies_reaped, 1,
+					   __ATOMIC_RELAXED);
+		}
+
+		zombie_pids[i] = EMPTY_PIDSLOT;
+		zombie_since[i] = 0;
+		__atomic_sub_fetch(&shm->stats.zombie_slots_pending, 1,
+				   __ATOMIC_RELAXED);
+
+		replace_child(i);
+	}
+}
+
+/*
  * Check that a child is making forward progress by comparing the timestamps it
  * recorded before making its last syscall.
  * If no progress is being made, send SIGKILLs to it.
@@ -447,26 +581,15 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		return true;
 
 	/* After too many kill attempts, the child is truly stuck (D state,
-	 * frozen cgroup, etc). Forcibly reap the slot so we can spawn a
-	 * replacement. The original process becomes a zombie but at least
-	 * we don't permanently lose a child slot.
+	 * frozen cgroup, etc).  Hand the slot to the zombie-pending list:
+	 * we will reuse it once waitpid confirms the kernel released the
+	 * task.  Reusing immediately would let the still-alive D-state task
+	 * write into the replacement child's childdata as soon as it wakes.
 	 *
 	 * This check must come before the D-state early return below,
 	 * otherwise unkillable D-state children never get reaped. */
 	if (child->kill_count >= 10) {
-		output(0, "child %d (pid %u) unkillable after %u attempts, "
-			"forcibly reaping slot.\n",
-			childno, pid, child->kill_count);
-		dump_pid_stack(pid);
-		dump_pid_syscall(pid);
-		if (pidstatfiles[childno])
-			fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
-		reap_child(child, childno);
-		/* Collect the zombie if the process has actually exited.
-		 * If still in D-state, waitpid returns 0 (harmless). */
-		waitpid(pid, NULL, WNOHANG);
-		replace_child(childno);
+		register_zombie_slot(childno, pid);
 		return true;
 	}
 
@@ -890,8 +1013,13 @@ static void taint_check(void)
 void main_loop(void)
 {
 	struct timespec epoch_start;
+	unsigned int i;
 
 	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
+	zombie_pids = zmalloc(max_children * sizeof(pid_t));
+	zombie_since = zmalloc(max_children * sizeof(time_t));
+	for_each_child(i)
+		zombie_pids[i] = EMPTY_PIDSLOT;
 
 	if (epoch_timeout)
 		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
@@ -938,6 +1066,8 @@ void main_loop(void)
 		}
 
 		check_children_progressing();
+
+		process_zombie_pending();
 
 		print_stats();
 
