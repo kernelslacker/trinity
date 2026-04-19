@@ -431,24 +431,28 @@ static void do_ftrace_filter(void)
 	ssize_t ret __unused__;
 
 	switch (rand() % 4) {
-	case 0:
+	case 0: {
 		/* Named glob */
+		const char *s = RAND_ARRAY(globs);
+
 		fd = open(path, O_WRONLY | O_NONBLOCK);
 		if (fd < 0)
 			break;
-		ret = write(fd, RAND_ARRAY(globs),
-			    strlen(RAND_ARRAY(globs)));
+		ret = write(fd, s, strlen(s));
 		close(fd);
 		break;
-	case 1:
+	}
+	case 1: {
 		/* A known symbol from our kprobe target list */
+		const char *s = RAND_ARRAY(kprobe_targets);
+
 		fd = open(path, O_WRONLY | O_NONBLOCK);
 		if (fd < 0)
 			break;
-		ret = write(fd, RAND_ARRAY(kprobe_targets),
-			    strlen(RAND_ARRAY(kprobe_targets)));
+		ret = write(fd, s, strlen(s));
 		close(fd);
 		break;
+	}
 	case 2:
 		/* Clear filter by writing empty string */
 		write_str(path, "");
