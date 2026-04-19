@@ -141,7 +141,6 @@ void fd_hash_remove(int fd)
 			__atomic_store_n(&shm->fd_hash[slot].fd, -1,
 					 __ATOMIC_RELEASE);
 			shm->fd_hash_count--;
-			__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELEASE);
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
 			while (shm->fd_hash[next].fd != -1) {
 				struct fd_hash_entry displaced = shm->fd_hash[next];
