@@ -565,6 +565,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_PERF_CHAINS:		return 30;
 	case CHILD_OP_TRACEFS_FUZZER:		return 60;
 	case CHILD_OP_BPF_LIFECYCLE:		return 40;
+	case CHILD_OP_FAULT_INJECTOR:		return 20;
 	default:				return 10;
 	}
 }
@@ -667,7 +668,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	switch (r % 13) {
+	switch (r % 14) {
 	case 0:  return CHILD_OP_MMAP_LIFECYCLE;
 	case 1:  return CHILD_OP_MPROTECT_SPLIT;
 	case 2:  return CHILD_OP_MLOCK_PRESSURE;
@@ -681,6 +682,7 @@ static enum child_op_type pick_op_type(void)
 	case 10: return CHILD_OP_PERF_CHAINS;
 	case 11: return CHILD_OP_TRACEFS_FUZZER;
 	case 12: return CHILD_OP_BPF_LIFECYCLE;
+	case 13: return CHILD_OP_FAULT_INJECTOR;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -770,6 +772,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_PERF_CHAINS:		ret = perf_event_chains(child); break;
 		case CHILD_OP_TRACEFS_FUZZER:		ret = tracefs_fuzzer(child); break;
 		case CHILD_OP_BPF_LIFECYCLE:		ret = bpf_lifecycle(child); break;
+		case CHILD_OP_FAULT_INJECTOR:		ret = fault_injector(child); break;
 		default:				ret = random_syscall(child); break;
 		}
 
