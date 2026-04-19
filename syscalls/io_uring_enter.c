@@ -9,7 +9,24 @@
 #include "random.h"
 #include "sanitise.h"
 
-/* Constants added after Linux 6.12 — not in Debian 13 kernel headers. */
+/* io_uring opcodes added in Linux v6.15 — not in older kernel headers. */
+#ifndef IORING_OP_RECV_ZC
+#define IORING_OP_RECV_ZC	58
+#endif
+#ifndef IORING_OP_EPOLL_WAIT
+#define IORING_OP_EPOLL_WAIT	59
+#endif
+#ifndef IORING_OP_READV_FIXED
+#define IORING_OP_READV_FIXED	60
+#endif
+#ifndef IORING_OP_WRITEV_FIXED
+#define IORING_OP_WRITEV_FIXED	61
+#endif
+/* io_uring opcodes added in Linux v6.16 — not in older kernel headers. */
+#ifndef IORING_OP_PIPE
+#define IORING_OP_PIPE		62
+#endif
+/* io_uring opcodes added in Linux v7.0 — not in older kernel headers. */
 #ifndef IORING_OP_NOP128
 #define IORING_OP_NOP128	63
 #define IORING_OP_URING_CMD128	64
