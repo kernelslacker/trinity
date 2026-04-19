@@ -96,6 +96,14 @@ void dump_stats(void)
 			shm->stats.barrier_racer_runs,
 			shm->stats.barrier_racer_inner_crashed);
 
+	if (shm->stats.genetlink_families_discovered ||
+	    shm->stats.genetlink_msgs_sent) {
+		output(0, "\ngenetlink fuzzer: families_discovered:%lu (cumulative across children) msgs_sent:%lu eperm:%lu\n",
+			shm->stats.genetlink_families_discovered,
+			shm->stats.genetlink_msgs_sent,
+			shm->stats.genetlink_eperm);
+	}
+
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
 		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",
