@@ -30,6 +30,11 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	unsigned long newaddr = 0;
 
 	map = common_set_mmap_ptr_len();
+	if (map == NULL) {
+		/* No mapping available; stash NULL for post_mremap to skip. */
+		rec->a6 = 0;
+		return;
+	}
 
 	if (range_overlaps_shared(rec->a1, rec->a2)) {
 		rec->a1 = 0;
@@ -76,7 +81,7 @@ static void post_mremap(struct syscallrecord *rec)
 	struct map *map = (struct map *) rec->a6;
 	void *ptr = (void *) rec->retval;
 
-	if (ptr == MAP_FAILED)
+	if (ptr == MAP_FAILED || map == NULL)
 		return;
 
 	map->ptr = ptr;
