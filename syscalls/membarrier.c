@@ -1,5 +1,5 @@
 /*
- * SYSCALL_DEFINE2(membarrier, int, cmd, int, flags)
+ * SYSCALL_DEFINE3(membarrier, int, cmd, unsigned int, flags, int, cpu_id)
  */
 #include <stdlib.h>
 #include "random.h"
@@ -42,9 +42,9 @@ static void sanitise_membarrier(struct syscallrecord *rec)
 
 struct syscallentry syscall_membarrier = {
 	.name = "membarrier",
-	.num_args = 2,
-	.argtype = { [0] = ARG_OP },
-	.argname = { [0] = "cmd", [1] = "flags" },
+	.num_args = 3,
+	.argtype = { [0] = ARG_OP, [2] = ARG_CPU },
+	.argname = { [0] = "cmd", [1] = "flags", [2] = "cpu_id" },
 	.arg_params[0].list = ARGLIST(membarrier_cmds),
 	.sanitise = sanitise_membarrier,
 	.group = GROUP_SCHED,
