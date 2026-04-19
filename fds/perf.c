@@ -9,6 +9,7 @@
 #include <asm/unistd.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "perf.h"
 #include "shm.h"
@@ -17,10 +18,45 @@
 
 #define MAX_PERF_FDS 10
 
+/*
+ * Pool entries are a mix of group leaders (group_fd == -1 at create time)
+ * and members (group_fd == some pool leader's fd).  destroy_objects() walks
+ * the list in insertion order and calls each entry's destructor; if a
+ * leader is destroyed while one of its members is still open, the kernel
+ * detaches the member from the group and re-promotes it to a standalone
+ * orphan event before the member's own close arrives.  That extra
+ * promote/teardown round-trip is wasted work and is not what
+ * childops/perf-event-chains.c models when it explicitly closes members
+ * before the leader.  Walk the rest of the pool first and pre-close any
+ * members of this fd, invalidating their fd field so the outer loop's
+ * later destructor invocation skips its own close().
+ */
 static void perffd_destructor(struct object *obj)
 {
+	int leader_fd = obj->perfobj.fd;
+
+	if (leader_fd >= 0) {
+		struct objhead *head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
+
+		if (head != NULL && head->list != NULL) {
+			struct list_head *node, *tmp;
+
+			list_for_each_safe(node, tmp, head->list) {
+				struct object *peer = (struct object *) node;
+
+				if (peer->perfobj.fd < 0)
+					continue;
+				if (peer->perfobj.group_fd != leader_fd)
+					continue;
+				close(peer->perfobj.fd);
+				peer->perfobj.fd = -1;
+			}
+		}
+	}
+
 	free(obj->perfobj.eventattr);
-	close(obj->perfobj.fd);
+	if (leader_fd >= 0)
+		close(leader_fd);
 }
 
 static void perffd_dump(struct object *obj, enum obj_scope scope)
