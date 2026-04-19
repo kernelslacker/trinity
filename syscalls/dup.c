@@ -3,7 +3,6 @@
 #include "child.h"
 #include "fd.h"
 #include "fd-event.h"
-#include "objects.h"
 #include "pids.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -80,9 +79,6 @@ static void post_dup2(struct syscallrecord *rec)
 				 (int) rec->a1, (int) rec->retval, 0);
 	}
 
-	/* Parent-side path: remove_object_by_fd bails if not mainpid,
-	 * so this is a no-op in children.  Keep for parent context. */
-	remove_object_by_fd((int) rec->a2);
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 }
 
