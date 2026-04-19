@@ -100,6 +100,14 @@ void dump_stats(void)
 			shm->stats.local_op_count_corrupted);
 	}
 
+	if (shm->stats.fd_event_ring_corrupted)
+		output(0, "\nfd_event_ring non-canonical pointer events: %lu\n",
+			shm->stats.fd_event_ring_corrupted);
+
+	if (shm->stats.fd_event_ring_overwritten)
+		output(0, "\nfd_event_ring canary mismatch events: %lu\n",
+			shm->stats.fd_event_ring_overwritten);
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

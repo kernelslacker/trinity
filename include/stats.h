@@ -49,6 +49,16 @@ struct stats_s {
 	 * resets at that threshold).  Indicates a stray write into childdata
 	 * from somebody other than the slot's current owner. */
 	unsigned long local_op_count_corrupted;
+
+	/* fd_event_drain_all() found a child->fd_event_ring pointer that
+	 * failed the canonical-address / minimum-address sanity check.
+	 * Defense-in-depth against D-state zombie write-after-reap. */
+	unsigned long fd_event_ring_corrupted;
+
+	/* fd_event_drain_all() found a live child->fd_event_ring that
+	 * differed from the mprotected canary copy taken at init time.
+	 * Indicates the pointer was overwritten after init. */
+	unsigned long fd_event_ring_overwritten;
 };
 
 void dump_stats(void);

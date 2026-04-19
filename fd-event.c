@@ -7,6 +7,7 @@
  */
 
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include "fd.h"
@@ -139,6 +140,28 @@ void fd_event_drain_all(void)
 		ring = __atomic_load_n(&child->fd_event_ring, __ATOMIC_ACQUIRE);
 		if (ring == NULL)
 			continue;
+
+		/*
+		 * Sanity-check the ring pointer before dereferencing it.
+		 * A D-state zombie waking after its slot was recycled can
+		 * write a wild pointer here.  We saw 0x9c000000890000 in
+		 * the wild: bit 47 set but bits 48-63 clear, which is
+		 * non-canonical on x86-64.  Catch that pattern and any
+		 * obviously low address rather than taking a SIGSEGV.
+		 */
+		{
+			uintptr_t raddr = (uintptr_t)ring;
+			uintptr_t top = raddr >> 47;
+
+			if (raddr < 0x10000 ||
+			    (top != 0 && top != 0x1ffff)) {
+				output(0, "fd_event: child[%u] ring pointer %p is non-canonical, skipping\n",
+				       i, ring);
+				__atomic_add_fetch(&shm->stats.fd_event_ring_corrupted, 1,
+						   __ATOMIC_RELAXED);
+				continue;
+			}
+		}
 
 		total += fd_event_drain(ring);
 	}
