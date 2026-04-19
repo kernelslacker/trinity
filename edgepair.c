@@ -17,9 +17,11 @@
 
 /*
  * The first two fields of edgepair_entry (prev_nr, curr_nr) are both
- * unsigned int (4 bytes each), laid out contiguously at offset 0.
- * We load/CAS them as a single uint64_t to atomically claim slots
- * without the race that two separate stores allowed.
+ * unsigned int (4 bytes each), laid out contiguously at offset 0 inside
+ * the anonymous union.  We load/CAS them via the .key uint64_t union
+ * member to atomically claim slots — accessing the same storage through
+ * the union is well-defined in C11, avoiding the strict-aliasing UB that
+ * a raw (uint64_t *) cast would incur.
  */
 _Static_assert(offsetof(struct edgepair_entry, prev_nr) == 0,
 	       "prev_nr must be at offset 0 for packed CAS");
@@ -84,7 +86,7 @@ static struct edgepair_entry *find_or_insert(unsigned int prev_nr,
 
 	for (unsigned int probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
-		uint64_t slot = __atomic_load_n((uint64_t *)e, __ATOMIC_ACQUIRE);
+		uint64_t slot = __atomic_load_n(&e->key, __ATOMIC_ACQUIRE);
 
 		/* Found existing entry for this pair. */
 		if (slot == target)
@@ -94,7 +96,7 @@ static struct edgepair_entry *find_or_insert(unsigned int prev_nr,
 		if (slot == empty) {
 			uint64_t expected = empty;
 
-			if (__atomic_compare_exchange_n((uint64_t *)e,
+			if (__atomic_compare_exchange_n(&e->key,
 				&expected, target, false,
 				__ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
 				__atomic_fetch_add(&edgepair_shm->pairs_tracked,
@@ -149,7 +151,7 @@ static struct edgepair_entry *find_entry(unsigned int prev_nr,
 
 	for (unsigned int probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
-		uint64_t slot = __atomic_load_n((uint64_t *)e, __ATOMIC_ACQUIRE);
+		uint64_t slot = __atomic_load_n(&e->key, __ATOMIC_ACQUIRE);
 
 		if (slot == empty)
 			return NULL;
