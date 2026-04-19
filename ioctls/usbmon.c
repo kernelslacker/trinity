@@ -2,6 +2,8 @@
 #include <linux/types.h>
 
 #include "ioctls.h"
+#include "random.h"
+#include "sanitise.h"
 #include "utils.h"
 
 /* drivers/usb/mon/mon_bin.c */
@@ -46,6 +48,76 @@ struct mon_bin_mfetch {
 	__u32 nflush;		/* Number of events to flush */
 };
 
+/* mon_bin_hdr is 64 bytes in the 64-bit kernel ABI */
+#define MON_BIN_HDR_SIZE 64
+
+static void sanitise_usbmon_get(struct syscallrecord *rec)
+{
+	struct mon_bin_get *g;
+	size_t alloc;
+
+	g = (struct mon_bin_get *) get_writable_struct(sizeof(*g));
+	if (!g)
+		return;
+	g->hdr = get_writable_struct(MON_BIN_HDR_SIZE);
+	alloc = rand() % 4096;
+	g->data = get_writable_struct(alloc + 1);
+	g->alloc = alloc;
+	rec->a3 = (unsigned long) g;
+}
+
+static void sanitise_usbmon_mfetch(struct syscallrecord *rec)
+{
+	struct mon_bin_mfetch *m;
+	__u32 nfetch;
+
+	m = (struct mon_bin_mfetch *) get_writable_struct(sizeof(*m));
+	if (!m)
+		return;
+	nfetch = rand() % 32 + 1;
+	m->offvec = (__u32 *) get_writable_struct(nfetch * sizeof(__u32));
+	m->nfetch = nfetch;
+	m->nflush = rand() % 32;
+	rec->a3 = (unsigned long) m;
+}
+
+static void usbmon_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+	case MON_IOCG_STATS: {
+		struct mon_bin_stats *s = (struct mon_bin_stats *) get_writable_struct(sizeof(*s));
+		if (s)
+			rec->a3 = (unsigned long) s;
+		break;
+	}
+
+	case MON_IOCX_GET:
+	case MON_IOCX_GETX:
+		sanitise_usbmon_get(rec);
+		break;
+
+	case MON_IOCX_MFETCH:
+		sanitise_usbmon_mfetch(rec);
+		break;
+
+	case MON_IOCT_RING_SIZE:
+		/* direct integer argument, not a pointer */
+		rec->a3 = rand() % (1024 * 1024);
+		break;
+
+	/* _IO ioctls: return value only, no pointer argument */
+	case MON_IOCQ_URB_LEN:
+	case MON_IOCQ_RING_SIZE:
+	case MON_IOCH_MFLUSH:
+		break;
+
+	default:
+		break;
+	}
+}
+
 static const struct ioctl usbmon_ioctls[] = {
 	IOCTL(MON_IOCQ_URB_LEN),
 	IOCTL(MON_IOCG_STATS),
@@ -65,7 +137,7 @@ static const struct ioctl_group usbmon_grp = {
 	.devtype = DEV_CHAR,
 	.devs = usbmon_devs,
 	.devs_cnt = ARRAY_SIZE(usbmon_devs),
-	.sanitise = pick_random_ioctl,
+	.sanitise = usbmon_sanitise,
 	.ioctls = usbmon_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(usbmon_ioctls),
 };
