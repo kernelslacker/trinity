@@ -242,6 +242,11 @@ enum {
 	PERF_BR_SYSRET		= 8,	/* syscall return */
 	PERF_BR_COND_CALL	= 9,	/* conditional function call */
 	PERF_BR_COND_RET	= 10,	/* conditional function return */
+	PERF_BR_ERET		= 11,	/* exception return */
+	PERF_BR_IRQ		= 12,	/* irq */
+	PERF_BR_SERROR		= 13,	/* system error */
+	PERF_BR_NO_TX		= 14,	/* not in transaction */
+	PERF_BR_EXTEND_ABI	= 15,	/* extended ABI */
 	PERF_BR_MAX,
 };
 
@@ -953,6 +958,11 @@ enum perf_event_type {
 	 * };
 	 */
 	PERF_RECORD_NAMESPACES			= 16,
+	PERF_RECORD_KSYMBOL			= 17,
+	PERF_RECORD_BPF_EVENT			= 18,
+	PERF_RECORD_CGROUP			= 19,
+	PERF_RECORD_TEXT_POKE			= 20,
+	PERF_RECORD_AUX_OUTPUT_HW_ID		= 21,
 
 	PERF_RECORD_MAX,			/* non-ABI */
 };
