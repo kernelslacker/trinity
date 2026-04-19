@@ -332,6 +332,10 @@ void dump_stats(void)
 			edgepair_shm->pairs_tracked,
 			edgepair_shm->total_pair_calls);
 
+		if (edgepair_shm->pairs_dropped > 0)
+			output(0, "Edge-pair table overflow: %lu inserts dropped (consider growing EDGEPAIR_TABLE_SIZE)\n",
+				edgepair_shm->pairs_dropped);
+
 		for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
 			struct edgepair_entry *e = &edgepair_shm->table[i];
 			unsigned long edges;

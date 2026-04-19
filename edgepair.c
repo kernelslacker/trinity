@@ -131,8 +131,11 @@ void edgepair_record(unsigned int prev_nr, unsigned int curr_nr,
 		1, __ATOMIC_RELAXED);
 
 	e = find_or_insert(prev_nr, curr_nr);
-	if (e == NULL)
+	if (e == NULL) {
+		__atomic_fetch_add(&edgepair_shm->pairs_dropped,
+			1, __ATOMIC_RELAXED);
 		return;
+	}
 
 	__atomic_fetch_add(&e->total_count, 1, __ATOMIC_RELAXED);
 
