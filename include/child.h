@@ -22,6 +22,21 @@ struct child_fd_ring {
 	unsigned int head;
 };
 
+/*
+ * Per-child ring of recently completed syscall records.  The owning child
+ * is the sole producer; the parent reads the ring in post-mortem context
+ * to assemble a chronological fleet-wide trace of what was running just
+ * before the kernel taint flag flipped.  Lock-free SPSC: producer issues
+ * a release-store of head after writing the slot; consumer issues an
+ * acquire-load of head before reading slots.  Size must be a power of 2.
+ */
+#define CHILD_SYSCALL_RING_SIZE 16
+
+struct child_syscall_ring {
+	struct syscallrecord recent[CHILD_SYSCALL_RING_SIZE];
+	_Atomic uint32_t head;
+};
+
 enum child_op_type {
 	CHILD_OP_SYSCALL = 0,	/* default: fuzz random syscalls */
 	CHILD_OP_MMAP_LIFECYCLE,
@@ -94,6 +109,10 @@ struct childdata {
 	/* Ring of fds returned by recent fd-creating syscalls.
 	 * Consulted preferentially when generating ARG_FD arguments. */
 	struct child_fd_ring live_fds;
+
+	/* Ring of recently completed syscall records, drained by the parent
+	 * during post-mortem to reconstruct a fleet-wide chronology. */
+	struct child_syscall_ring syscall_ring;
 };
 
 extern unsigned int max_children;
@@ -103,6 +122,9 @@ struct childdata * this_child(void);
 void clean_childdata(struct childdata *child);
 
 void child_fd_ring_push(struct child_fd_ring *ring, int fd);
+
+void child_syscall_ring_push(struct child_syscall_ring *ring,
+			     const struct syscallrecord *rec);
 
 void init_child_mappings(void);
 

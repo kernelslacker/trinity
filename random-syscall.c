@@ -252,6 +252,11 @@ bool random_syscall(struct childdata *child)
 
 	handle_syscall_ret(rec);
 
+	/* Snapshot the completed call into the per-child ring so the parent
+	 * has a chronological window of recent activity if a kernel taint
+	 * fires before the next syscall. */
+	child_syscall_ring_push(&child->syscall_ring, rec);
+
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry != NULL) {
 		/* FD leak tracking: count successful fd-creating and

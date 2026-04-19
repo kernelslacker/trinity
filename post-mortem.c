@@ -3,9 +3,12 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdatomic.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include "child.h"
 #include "pids.h"
 #include "shm.h"
 #include "taint.h"
@@ -14,20 +17,20 @@
 #include "post-mortem.h"
 #include "utils.h"
 
-struct child_sort_entry {
-	unsigned int idx;
-	struct timespec tp;
+struct ring_entry {
+	unsigned int child_idx;
+	struct syscallrecord rec;
 };
 
-static int cmp_timespec(const void *a, const void *b)
+static int cmp_ring_entry(const void *a, const void *b)
 {
-	const struct child_sort_entry *ea = a;
-	const struct child_sort_entry *eb = b;
+	const struct ring_entry *ea = a;
+	const struct ring_entry *eb = b;
 
-	if (ea->tp.tv_sec != eb->tp.tv_sec)
-		return (ea->tp.tv_sec < eb->tp.tv_sec) ? -1 : 1;
-	if (ea->tp.tv_nsec != eb->tp.tv_nsec)
-		return (ea->tp.tv_nsec < eb->tp.tv_nsec) ? -1 : 1;
+	if (ea->rec.tp.tv_sec != eb->rec.tp.tv_sec)
+		return (ea->rec.tp.tv_sec < eb->rec.tp.tv_sec) ? -1 : 1;
+	if (ea->rec.tp.tv_nsec != eb->rec.tp.tv_nsec)
+		return (ea->rec.tp.tv_nsec < eb->rec.tp.tv_nsec) ? -1 : 1;
 	return 0;
 }
 
@@ -38,14 +41,12 @@ static bool ts_before(const struct timespec *a, const struct timespec *b)
 	return a->tv_nsec < b->tv_nsec;
 }
 
-static void dump_syscall_rec(FILE *fp, struct syscallrecord *rec)
+static void dump_syscall_rec(FILE *fp, const struct syscallrecord *rec)
 {
 	switch (rec->state) {
 	case UNKNOWN:
-		/* new child, so nothing to dump. */
-		break;
 	case PREP:
-		/* haven't finished setting up, so don't dump. */
+		/* unwritten or in-flight: filtered before we get here. */
 		break;
 	case BEFORE:
 		fprintf(fp, "%.*s\n", PREBUFFER_LEN, rec->prebuffer);
@@ -58,102 +59,90 @@ static void dump_syscall_rec(FILE *fp, struct syscallrecord *rec)
 	}
 }
 
-static void dump_syscall_records(const struct timespec *taint_tp,
-				 struct syscallrecord *snapshots)
+/*
+ * Drain one child's syscall ring into the entries array.  Returns the
+ * number of entries copied.  Lock-free SPSC: acquire-load on head pairs
+ * with the child's release-store after writing the slot, so any entry
+ * we observe in [head-N, head-1] was fully written before head was
+ * published.  A straggling write from a still-running child can only
+ * race against the slot at (head % N), which we don't read.
+ */
+static unsigned int drain_child_ring(unsigned int idx,
+				     struct ring_entry *out)
 {
-	FILE *fd;
-	unsigned int i, nr_active;
-	struct child_sort_entry *entries;
-	bool taint_marked = false;
+	struct child_syscall_ring *ring = &children[idx]->syscall_ring;
+	uint32_t head, count, j;
+	unsigned int n = 0;
 
-	fd = fopen("trinity-post-mortem.log", "w");
-	if (!fd) {
-		outputerr("Failed to write post mortem log (%s)\n", strerror(errno));
-		return;
-	}
+	head = atomic_load_explicit(&ring->head, memory_order_acquire);
+	count = head < CHILD_SYSCALL_RING_SIZE ? head : CHILD_SYSCALL_RING_SIZE;
 
-	/* If snapshot allocation failed, fall back to live records
-	 * (racy but better than no dump at all). */
-	if (snapshots == NULL) {
-		outputerr("post-mortem: snapshot alloc failed, using live records\n");
-	}
+	for (j = 0; j < count; j++) {
+		uint32_t slot = (head - count + j) & (CHILD_SYSCALL_RING_SIZE - 1);
+		struct syscallrecord *rec = &ring->recent[slot];
 
-	entries = malloc(max_children * sizeof(*entries));
-	if (!entries) {
-		outputerr("Failed to allocate sort buffer\n");
-		fclose(fd);
-		return;
-	}
-
-	nr_active = 0;
-	for_each_child(i) {
-		struct syscallrecord *rec;
-
-		rec = snapshots ? &snapshots[i] : &children[i]->syscall;
-
-		if (rec->state == UNKNOWN || rec->state == PREP)
+		/* Skip slots that haven't received a completed syscall yet. */
+		if (rec->state != AFTER && rec->state != GOING_AWAY)
 			continue;
 
-		entries[nr_active].idx = i;
-		entries[nr_active].tp = rec->tp;
-		nr_active++;
+		out[n].child_idx = idx;
+		out[n].rec = *rec;
+		n++;
+	}
+	return n;
+}
+
+static void dump_syscall_records(FILE *fp, const struct timespec *taint_tp)
+{
+	struct ring_entry *entries;
+	unsigned int i, total = 0;
+	bool taint_marked = false;
+	size_t cap;
+
+	cap = (size_t)max_children * CHILD_SYSCALL_RING_SIZE;
+	entries = malloc(cap * sizeof(*entries));
+	if (!entries) {
+		outputerr("post-mortem: failed to allocate ring snapshot buffer\n");
+		return;
 	}
 
-	qsort(entries, nr_active, sizeof(*entries), cmp_timespec);
+	for_each_child(i)
+		total += drain_child_ring(i, entries + total);
 
-	for (i = 0; i < nr_active; i++) {
-		struct syscallrecord *rec;
+	qsort(entries, total, sizeof(*entries), cmp_ring_entry);
 
-		rec = snapshots ? &snapshots[entries[i].idx]
-				: &children[entries[i].idx]->syscall;
+	for (i = 0; i < total; i++) {
+		const struct syscallrecord *rec = &entries[i].rec;
 
-		if (!taint_marked && ts_before(taint_tp, &entries[i].tp)) {
-			fprintf(fd, "--- taint detected at %ld.%09ld ---\n",
+		if (!taint_marked && ts_before(taint_tp, &rec->tp)) {
+			fprintf(fp, "--- taint detected at %ld.%09ld ---\n",
 				(long) taint_tp->tv_sec, taint_tp->tv_nsec);
 			taint_marked = true;
 		}
 
-		fprintf(fd, "[child %u @ %ld.%09ld] ", entries[i].idx,
+		fprintf(fp, "[child %u @ %ld.%09ld] ", entries[i].child_idx,
 			(long) rec->tp.tv_sec, rec->tp.tv_nsec);
-		dump_syscall_rec(fd, rec);
-		fprintf(fd, "\n");
+		dump_syscall_rec(fp, rec);
+		fprintf(fp, "\n");
 	}
 
 	if (!taint_marked) {
-		fprintf(fd, "--- taint detected at %ld.%09ld (after all recorded syscalls) ---\n",
+		fprintf(fp, "--- taint detected at %ld.%09ld (after all recorded syscalls) ---\n",
 			(long) taint_tp->tv_sec, taint_tp->tv_nsec);
 	}
 
 	free(entries);
-	fclose(fd);
 }
 
 void tainted_postmortem(void)
 {
 	int taint = get_taint();
-
 	struct timespec taint_tp;
-	unsigned int i;
-	struct syscallrecord *snapshots;
+	FILE *fp;
 
 	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
-
-	/* Snapshot all syscall records BEFORE calling panic().
-	 * panic() sets exit_reason which causes children to exit their
-	 * main loops.  Children still in-flight can modify their
-	 * syscallrecord (state, prebuffer, postbuffer) between the
-	 * syscall return and the exit check.  Snapshotting first gives
-	 * us a consistent view for the dump. */
-	snapshots = malloc(max_children * sizeof(struct syscallrecord));
-	if (snapshots != NULL) {
-		for_each_child(i) {
-			lock(&children[i]->syscall.lock);
-			snapshots[i] = children[i]->syscall;
-			unlock(&children[i]->syscall.lock);
-		}
-	}
 
 	panic(EXIT_KERNEL_TAINTED);
 
@@ -164,9 +153,15 @@ void tainted_postmortem(void)
 	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", shm->seed);
 	closelog();
 
-	dump_syscall_records(&taint_tp, snapshots);
+	fp = fopen("trinity-post-mortem.log", "w");
+	if (!fp) {
+		outputerr("Failed to write post mortem log (%s)\n", strerror(errno));
+		goto out;
+	}
 
-	free(snapshots);
+	dump_syscall_records(fp, &taint_tp);
+	fclose(fp);
 
+out:
 	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELAXED);
 }
