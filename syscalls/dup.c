@@ -19,11 +19,33 @@
 
 static void post_dup(struct syscallrecord *rec)
 {
+	struct stat st_old, st_new;
+
 	if ((long) rec->retval < 0)
 		return;
 
 	__atomic_add_fetch(&shm->fd_generation, 1, __ATOMIC_RELEASE);
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+
+	/*
+	 * Oracle: dup(oldfd) must produce a new fd pointing at the same inode.
+	 * A dev/ino mismatch means the fd-table was corrupted by the kernel.
+	 */
+	if (fstat((int) rec->a1, &st_old) == 0 &&
+	    fstat((int) rec->retval, &st_new) == 0) {
+		if (st_old.st_dev != st_new.st_dev ||
+		    st_old.st_ino != st_new.st_ino) {
+			output(0, "fd oracle: dup(%lu->%lu) inode mismatch "
+			       "dev=%lu:%lu ino=%lu:%lu\n",
+			       rec->a1, rec->retval,
+			       (unsigned long) st_old.st_dev,
+			       (unsigned long) st_new.st_dev,
+			       (unsigned long) st_old.st_ino,
+			       (unsigned long) st_new.st_ino);
+			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
 }
 
 struct syscallentry syscall_dup = {
