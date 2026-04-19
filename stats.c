@@ -91,6 +91,11 @@ void dump_stats(void)
 		output(0, "memory pressure runs (MADV_PAGEOUT+refault): %lu\n",
 			shm->stats.memory_pressure_runs);
 
+	if (shm->stats.sched_cycler_runs)
+		output(0, "sched_cycler: runs:%lu eperm:%lu\n",
+			shm->stats.sched_cycler_runs,
+			shm->stats.sched_cycler_eperm);
+
 	if (shm->stats.barrier_racer_runs)
 		output(0, "barrier racer: %lu runs, %lu inner workers crashed\n",
 			shm->stats.barrier_racer_runs,
