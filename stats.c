@@ -122,6 +122,17 @@ void dump_stats(void)
 			shm->stats.tracefs_misc_writes);
 	}
 
+	if (shm->stats.bpf_lifecycle_runs) {
+		output(0, "\nbpf lifecycle: runs:%lu progs_loaded:%lu attached:%lu triggered:%lu verifier_rejects:%lu attach_failed:%lu eperm:%lu\n",
+			shm->stats.bpf_lifecycle_runs,
+			shm->stats.bpf_lifecycle_progs_loaded,
+			shm->stats.bpf_lifecycle_attached,
+			shm->stats.bpf_lifecycle_triggered,
+			shm->stats.bpf_lifecycle_verifier_rejects,
+			shm->stats.bpf_lifecycle_attach_failed,
+			shm->stats.bpf_lifecycle_eperm);
+	}
+
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
 		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",
