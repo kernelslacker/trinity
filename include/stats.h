@@ -29,6 +29,11 @@ struct stats_s {
 	/* post-syscall oracle anomaly counts */
 	unsigned long fd_oracle_anomalies;
 	unsigned long mmap_oracle_anomalies;
+
+	/* procfs_writer childop: per-tree write counts */
+	unsigned long procfs_writes;
+	unsigned long sysfs_writes;
+	unsigned long debugfs_writes;
 };
 
 void dump_stats(void);
