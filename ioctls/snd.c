@@ -20,6 +20,8 @@
 /* #include <sound/emu10k1.h> */
 
 #include "ioctls.h"
+#include "random.h"
+#include "sanitise.h"
 #include "utils.h"
 
 /* include/sound/hda_hwdep.h */
@@ -30,6 +32,55 @@ struct hda_verb_ioctl {
 #define HDA_IOCTL_PVERSION              _IOR('H', 0x10, int)
 #define HDA_IOCTL_VERB_WRITE            _IOWR('H', 0x11, struct hda_verb_ioctl)
 #define HDA_IOCTL_GET_WCAP              _IOWR('H', 0x12, struct hda_verb_ioctl)
+
+static void sanitise_snd_hwdep(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_HWDEP_IOCTL_INFO: {
+		struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->device = rand() % 8;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_HWDEP_IOCTL_DSP_STATUS: {
+		struct snd_hwdep_dsp_status *st = get_writable_struct(sizeof(*st));
+		if (st)
+			rec->a3 = (unsigned long) st;
+		break;
+	}
+	case SNDRV_HWDEP_IOCTL_DSP_LOAD: {
+		struct snd_hwdep_dsp_image *img = get_writable_struct(sizeof(*img));
+		if (img) {
+			img->index = rand() % 8;
+			img->length = rand() % 4096 + 1;
+			img->image = get_writable_struct(img->length);
+			rec->a3 = (unsigned long) img;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+	/* snd-hwdep */
+	case SNDRV_HWDEP_IOCTL_INFO:
+	case SNDRV_HWDEP_IOCTL_DSP_STATUS:
+	case SNDRV_HWDEP_IOCTL_DSP_LOAD:
+		sanitise_snd_hwdep(rec);
+		break;
+
+	default:
+		break;
+	}
+}
 
 static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_SEQ_IOCTL_PVERSION),
@@ -230,7 +281,7 @@ static const struct ioctl_group sound_grp = {
 	.devtype = DEV_CHAR,
 	.devs = sound_devs,
 	.devs_cnt = ARRAY_SIZE(sound_devs),
-	.sanitise = pick_random_ioctl,
+	.sanitise = sound_sanitise,
 	.ioctls = sound_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(sound_ioctls),
 };
