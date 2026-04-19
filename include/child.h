@@ -89,7 +89,12 @@ struct childdata {
 	/* per-child fd caching to avoid cross-child races */
 	int current_fd;
 	unsigned int fd_lifetime;
-	uint32_t cached_fd_generation;	/* generation when current_fd was fetched */
+	/* Per-slot generation snapshot from current_fd's fd_hash entry,
+	 * taken when the fd was fetched.  A mismatch on the next iteration
+	 * indicates the slot was emptied or the fd number was recycled
+	 * onto a fresh object; either way the cached fd is no longer
+	 * trustworthy. */
+	uint32_t cached_fd_generation;
 
 	/* Ring buffer for reporting fd events to the parent.
 	 * Allocated in shared memory, one per child. */

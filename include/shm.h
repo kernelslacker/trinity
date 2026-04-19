@@ -22,11 +22,6 @@ struct shm_s {
 	/* Frequently updated by all children — own cache line. */
 	struct stats_s stats __attribute__((aligned(64)));
 
-	/* Global fd generation counter — bumped on every fd state change
-	 * (create, close, dup).  Children compare against their cached
-	 * copy to detect stale fds without fcntl(F_GETFD) probes. */
-	uint32_t fd_generation __attribute__((aligned(64)));
-
 	/*
 	 * fd→object hash table.  Lives in shm so children can read the
 	 * per-slot generation counter the parent updates on every
