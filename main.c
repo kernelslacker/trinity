@@ -803,7 +803,7 @@ static void check_children_progressing(void)
 		stall_genocide();
 }
 
-static unsigned long sum_local_op_counts(void)
+unsigned long sum_local_op_counts(void)
 {
 	unsigned long sum = 0;
 	unsigned int i;
