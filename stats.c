@@ -73,6 +73,9 @@ void dump_stats(void)
 	if (shm->stats.fd_oracle_anomalies)
 		output(0, "fd oracle anomalies: %lu\n", shm->stats.fd_oracle_anomalies);
 
+	if (shm->stats.mmap_oracle_anomalies)
+		output(0, "mmap oracle anomalies: %lu\n", shm->stats.mmap_oracle_anomalies);
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

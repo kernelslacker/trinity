@@ -115,6 +115,22 @@ static void post_mmap(struct syscallrecord *rec)
 	/* Sometimes dirty the mapping. */
 	if (RAND_BOOL())
 		dirty_mapping(&new->map);
+
+	/*
+	 * Oracle: 1-in-100 chance — verify the new mapping is visible in
+	 * /proc/self/maps with the expected prot bits.  A missing or
+	 * mismatched entry means the kernel's VMA tree is inconsistent
+	 * with what it handed back as a successful mmap return address.
+	 */
+	if (ONE_IN(100)) {
+		if (!proc_maps_check((unsigned long) p, rec->a2, rec->a3, true)) {
+			output(0, "mmap oracle: mapping at %p size %lu prot 0x%lx "
+			       "not visible in /proc/self/maps with expected prot\n",
+			       p, rec->a2, rec->a3);
+			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
 }
 
 static char * decode_mmap(struct syscallrecord *rec, unsigned int argnum)
