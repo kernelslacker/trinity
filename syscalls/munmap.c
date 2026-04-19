@@ -16,6 +16,14 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	struct map *map = common_set_mmap_ptr_len();
 	int action = 0;
 
+	if (map == NULL) {
+		/* No mapping to unmap. Stash NULL/0 so post_munmap sees
+		 * action != WHOLE and skips the container_of deref. */
+		rec->a3 = 0;
+		rec->a4 = 0;
+		return;
+	}
+
 	if (ONE_IN(20) == true) {
 		/* delete the whole mapping. */
 		action = WHOLE;
