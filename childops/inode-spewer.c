@@ -39,18 +39,12 @@
 #define FALLOC_FL_PUNCH_HOLE 0x02
 #endif
 
-static char spew_dir[128];
 static unsigned long file_counter;
-static bool dir_created;
 
-static void ensure_spew_dir(void)
+static void ensure_spew_dir(char *dir, size_t len)
 {
-	if (dir_created)
-		return;
-
-	snprintf(spew_dir, sizeof(spew_dir), "/tmp/trinity-inodes-%d", getpid());
-	mkdir(spew_dir, 0700);
-	dir_created = true;
+	snprintf(dir, len, "/tmp/trinity-inodes-%d", getpid());
+	(void)mkdir(dir, 0700);
 }
 
 static unsigned long pick_file_size(void)
@@ -71,11 +65,12 @@ static unsigned long pick_file_size(void)
  */
 static bool do_create_and_destroy(void)
 {
+	char spew_dir[128];
 	char path[256];
 	int fd;
 	unsigned long size;
 
-	ensure_spew_dir();
+	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
 	snprintf(path, sizeof(path), "%s/%lu", spew_dir, file_counter++);
 
@@ -134,10 +129,11 @@ static bool do_create_and_destroy(void)
  */
 static bool do_batch_spew(void)
 {
+	char spew_dir[128];
 	char paths[32][256];
 	unsigned int i, count;
 
-	ensure_spew_dir();
+	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
 	count = 4 + (rand() % 28);
 
@@ -173,9 +169,10 @@ static bool do_batch_spew(void)
  */
 static bool do_mkdir_rmdir(void)
 {
+	char spew_dir[128];
 	char path[256];
 
-	ensure_spew_dir();
+	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
 	snprintf(path, sizeof(path), "%s/d%lu", spew_dir, file_counter++);
 
@@ -190,10 +187,11 @@ static bool do_mkdir_rmdir(void)
  */
 static bool do_link_dance(void)
 {
+	char spew_dir[128];
 	char src[256], dst[256];
 	int fd, ret __unused__;
 
-	ensure_spew_dir();
+	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
 	snprintf(src, sizeof(src), "%s/%lu", spew_dir, file_counter++);
 
