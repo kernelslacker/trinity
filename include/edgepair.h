@@ -34,8 +34,13 @@
 #define EDGEPAIR_DUMP_MAGIC	0xEDDA7A00U
 
 struct edgepair_entry {
-	unsigned int prev_nr;		/* previous syscall number */
-	unsigned int curr_nr;		/* current syscall number */
+	union {
+		struct {
+			unsigned int prev_nr;	/* previous syscall number */
+			unsigned int curr_nr;	/* current syscall number */
+		};
+		uint64_t key;		/* atomic view of {prev_nr, curr_nr} pair */
+	};
 	unsigned long new_edge_count;	/* times this pair found new edges */
 	unsigned long total_count;	/* total times this pair was executed */
 	unsigned long last_new_at;	/* global pair-call number when last new */
