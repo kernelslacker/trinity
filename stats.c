@@ -104,6 +104,13 @@ void dump_stats(void)
 			shm->stats.genetlink_eperm);
 	}
 
+	if (shm->stats.perf_chains_runs) {
+		output(0, "\nperf event chains: runs:%lu groups_created:%lu ioctl_ops:%lu\n",
+			shm->stats.perf_chains_runs,
+			shm->stats.perf_chains_groups_created,
+			shm->stats.perf_chains_ioctl_ops);
+	}
+
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
 		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",
