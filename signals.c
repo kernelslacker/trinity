@@ -164,6 +164,7 @@ void mask_signals_child(void)
 void setup_main_signals(void)
 {
 	struct sigaction sa;
+	int i;
 
 	(void)signal(SIGCHLD, SIG_DFL);
 
@@ -183,6 +184,15 @@ void setup_main_signals(void)
 	(void)signal(SIGXCPU, SIG_IGN);
 	(void)signal(SIGPIPE, SIG_IGN);
 	(void)signal(SIGIO, SIG_IGN);
+
+	/* Ignore RT signals — children fuzzing rt_sigqueueinfo,
+	 * pidfd_send_signal, timer_create/settime with sigev_signo in
+	 * [SIGRTMIN..SIGRTMAX], etc. can deliver any RT signal to us.
+	 * Default kernel action for an unhandled RT signal is termination,
+	 * which silently exits trinity ("Real-time signal N" printed by
+	 * glibc).  Mirror the same loop the children use in mask_signals_child. */
+	for (i = SIGRTMIN; i <= SIGRTMAX; i++)
+		(void)signal(i, SIG_IGN);
 
 	/*
 	 * Use SA_SIGINFO for fault/core-dump signals so we can distinguish
