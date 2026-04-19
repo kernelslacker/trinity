@@ -330,6 +330,51 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	}
 }
 
+static void sanitise_snd_rawmidi(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_RAWMIDI_IOCTL_INFO: {
+		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
+		if (info) {
+			info->device = rand() % 8;
+			info->subdevice = rand() % 8;
+			info->stream = rand() % 3;
+			rec->a3 = (unsigned long) info;
+		}
+		break;
+	}
+	case SNDRV_RAWMIDI_IOCTL_PARAMS: {
+		struct snd_rawmidi_params *p = get_writable_struct(sizeof(*p));
+		if (p) {
+			p->stream = rand() & 1;
+			p->buffer_size = (rand() % 16 + 1) * 4096;
+			p->avail_min = rand() % 256 + 1;
+			rec->a3 = (unsigned long) p;
+		}
+		break;
+	}
+	case SNDRV_RAWMIDI_IOCTL_STATUS: {
+		struct snd_rawmidi_status *st = get_writable_struct(sizeof(*st));
+		if (st) {
+			st->stream = rand() & 1;
+			rec->a3 = (unsigned long) st;
+		}
+		break;
+	}
+	case SNDRV_RAWMIDI_IOCTL_DROP:
+	case SNDRV_RAWMIDI_IOCTL_DRAIN: {
+		int *stream = get_writable_struct(sizeof(int));
+		if (stream) {
+			*stream = rand() & 1;
+			rec->a3 = (unsigned long) stream;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -386,6 +431,15 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_PCM_IOCTL_READN_FRAMES:
 	case SNDRV_PCM_IOCTL_LINK:
 		sanitise_snd_pcm(rec);
+		break;
+
+	/* snd-rawmidi */
+	case SNDRV_RAWMIDI_IOCTL_INFO:
+	case SNDRV_RAWMIDI_IOCTL_PARAMS:
+	case SNDRV_RAWMIDI_IOCTL_STATUS:
+	case SNDRV_RAWMIDI_IOCTL_DROP:
+	case SNDRV_RAWMIDI_IOCTL_DRAIN:
+		sanitise_snd_rawmidi(rec);
 		break;
 
 	default:
