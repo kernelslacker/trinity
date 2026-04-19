@@ -144,6 +144,12 @@ void dump_stats(void)
 			shm->stats.bpf_lifecycle_eperm);
 	}
 
+	if (shm->stats.bpf_maps_provided || shm->stats.bpf_progs_provided) {
+		output(0, "bpf fd provider: maps_provided:%lu progs_provided:%lu\n",
+			shm->stats.bpf_maps_provided,
+			shm->stats.bpf_progs_provided);
+	}
+
 	if (shm->stats.recipe_runs) {
 		output(0, "\nrecipe runner: runs:%lu completed:%lu partial:%lu unsupported:%lu\n",
 			shm->stats.recipe_runs,

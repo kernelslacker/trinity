@@ -41,7 +41,7 @@ static int bpf_create_map(enum bpf_map_type map_type, unsigned int key_size,
 }
 
 
-static void bpf_destructor(struct object *obj)
+static void bpf_map_destructor(struct object *obj)
 {
 	close(obj->bpfobj.map_fd);
 }
@@ -108,6 +108,7 @@ static int open_bpf_fd(void)
 	obj->bpfobj.map_fd = fd;
 	obj->bpfobj.map_type = bpf_fds[idx].map_type;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
+	__atomic_add_fetch(&shm->stats.bpf_maps_provided, 1, __ATOMIC_RELAXED);
 	return true;
 }
 
@@ -120,7 +121,7 @@ static int init_bpf_fds(void)
 	setrlimit(RLIMIT_MEMLOCK, &r);
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	head->destroy = &bpf_destructor;
+	head->destroy = &bpf_map_destructor;
 	head->dump = &bpf_map_dump;
 
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++)
