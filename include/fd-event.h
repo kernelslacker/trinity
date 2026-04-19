@@ -19,16 +19,14 @@
 #define FD_EVENT_RING_SIZE 1024	/* must be power of 2 */
 
 enum fd_event_type {
-	FD_EVENT_DUP,		/* oldfd duplicated to newfd */
 	FD_EVENT_CLOSE,		/* fd was closed */
-	FD_EVENT_CREATED,	/* new fd from syscall return (Phase 3) */
 };
 
 struct fd_event {
 	enum fd_event_type type;
-	int fd1;		/* source fd (dup), or closed fd */
-	int fd2;		/* new fd (dup), unused for close */
-	enum objecttype objtype;/* for CREATED events; unused otherwise */
+	int fd1;		/* closed fd */
+	int fd2;
+	enum objecttype objtype;
 };
 
 struct fd_event_ring {
