@@ -96,6 +96,12 @@ void dump_stats(void)
 			shm->stats.sched_cycler_runs,
 			shm->stats.sched_cycler_eperm);
 
+	if (shm->stats.userns_runs)
+		output(0, "userns_fuzzer: runs:%lu inner_crashed:%lu unsupported:%lu\n",
+			shm->stats.userns_runs,
+			shm->stats.userns_inner_crashed,
+			shm->stats.userns_unsupported);
+
 	if (shm->stats.barrier_racer_runs)
 		output(0, "barrier racer: %lu runs, %lu inner workers crashed\n",
 			shm->stats.barrier_racer_runs,
