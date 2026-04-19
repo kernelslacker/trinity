@@ -153,6 +153,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 unsigned long cmp_hints_get(unsigned int nr)
 {
 	struct cmp_hint_pool *pool;
+	unsigned long val = 0;
 	unsigned int count;
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
@@ -160,11 +161,13 @@ unsigned long cmp_hints_get(unsigned int nr)
 
 	pool = &cmp_hints_shm->pools[nr];
 
-	count = __atomic_load_n(&pool->count, __ATOMIC_RELAXED);
-	if (count == 0)
-		return 0;
+	pool_lock(pool);
+	count = pool->count;
+	if (count > 0)
+		val = pool->values[rand() % count];
+	pool_unlock(pool);
 
-	return pool->values[rand() % count];
+	return val;
 }
 
 bool cmp_hints_available(unsigned int nr)
@@ -172,5 +175,6 @@ bool cmp_hints_available(unsigned int nr)
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
 
-	return cmp_hints_shm->pools[nr].count > 0;
+	return __atomic_load_n(&cmp_hints_shm->pools[nr].count,
+			       __ATOMIC_RELAXED) > 0;
 }
