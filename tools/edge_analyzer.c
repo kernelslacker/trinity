@@ -21,13 +21,14 @@
 
 /*
  * These must match include/edgepair.h and edgepair.c exactly.
- * If edgepair.h changes its struct layout or hash function, update here.
+ * If edgepair.h changes its struct layout or hash function, update here
+ * and bump EDGEPAIR_DUMP_MAGIC so old dumps fail loudly.
  */
-#define EDGEPAIR_TABLE_SIZE	4096
+#define EDGEPAIR_TABLE_SIZE	65536
 #define EDGEPAIR_TABLE_MASK	(EDGEPAIR_TABLE_SIZE - 1)
 #define EDGEPAIR_EMPTY		0xFFFFFFFFU
-#define EDGEPAIR_MAX_PROBE	16
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A00U
+#define EDGEPAIR_MAX_PROBE	32
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A01U
 
 struct edgepair_entry {
 	unsigned int  prev_nr;
@@ -41,6 +42,7 @@ struct edgepair_shared {
 	struct edgepair_entry table[EDGEPAIR_TABLE_SIZE];
 	unsigned long total_pair_calls;
 	unsigned long pairs_tracked;
+	unsigned long pairs_dropped;
 };
 
 /* Must match pair_hash() in edgepair.c. */
@@ -98,6 +100,8 @@ static void analyze_utilization(const struct edgepair_shared *shm)
 		productive,
 		occupied ? 100.0 * productive / occupied : 0.0);
 	printf("  pairs_tracked: %lu\n", shm->pairs_tracked);
+	printf("  pairs_dropped: %lu  (inserts that overflowed the probe window)\n",
+		shm->pairs_dropped);
 	printf("  total_calls:   %lu\n", shm->total_pair_calls);
 	printf("  total_exec:    %lu  (pair executions counted)\n", total_exec);
 	printf("  total_new:     %lu  (new-edge events counted)\n", total_new);
