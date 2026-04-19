@@ -38,7 +38,6 @@
  * (kernel has historically had bugs around the depth limit).
  */
 
-#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <sched.h>
@@ -47,10 +46,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mount.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <linux/bpf.h>
+#include <linux/capability.h>
+#include <linux/if.h>
+#include <linux/if_tun.h>
+#include <linux/keyctl.h>
+#include <linux/perf_event.h>
 
 #include "child.h"
+#include "random.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -110,13 +120,214 @@ static bool establish_root_in_userns(void)
 }
 
 /*
- * Inner-fuzzer body.  Will be replaced in a follow-up commit with a
- * curated dispatcher of ns_capable()-gated syscalls.  Until then the
- * inner child just enters the namespace, proves uid 0 was established,
- * and exits — exercising the userns setup path itself.
+ * Curated set of ns_capable()-gated operations.  Each handler runs
+ * exactly one syscall with mostly-trivial arguments inside the
+ * userns the inner child just entered.  Errors are intentionally
+ * ignored — most calls will fail (EINVAL, EPERM, EBADF, ENOENT...).
+ * The point is to exercise the kernel's check-and-dispatch path on
+ * code reachable only with ns_capable() returning true.
  */
+
+/*
+ * Set the root mount to MS_PRIVATE so subsequent mounts in the
+ * inner mount namespace cannot propagate back to the parent
+ * namespace via shared-subtree groups.  Without this, a successful
+ * mount() call in our private mount ns could in some configurations
+ * appear in the host's mount tree.
+ */
+static void make_root_private(void)
+{
+	(void)mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL);
+}
+
+/*
+ * mount() — exercises the mount path that became reachable to
+ * unprivileged users via userns: do_new_mount → ns_capable on the
+ * mount ns's owning userns.  We unshare a fresh mount ns first so
+ * the resulting tmpfs is contained.
+ */
+static void op_mount_tmpfs(void)
+{
+	if (unshare(CLONE_NEWNS) != 0)
+		return;
+	make_root_private();
+	(void)mount("none", "/tmp", "tmpfs", 0, NULL);
+}
+
+/*
+ * unshare() of secondary namespaces — each of these unshare paths
+ * runs an ns_capable check against the current userns.  Picking one
+ * at random per call gives all five paths coverage over time without
+ * leaving the inner child in a deeply-nested namespace state.
+ */
+static void op_unshare_secondary(void)
+{
+	static const int flags[] = {
+		CLONE_NEWNET,
+		CLONE_NEWPID,
+		CLONE_NEWIPC,
+		CLONE_NEWUTS,
+#ifdef CLONE_NEWCGROUP
+		CLONE_NEWCGROUP,
+#endif
+	};
+	int flag = flags[rand() % ARRAY_SIZE(flags)];
+
+	(void)unshare(flag);
+
+	/*
+	 * If we just entered a fresh UTS ns, exercise the sethostname
+	 * path too — it's another ns_capable(CAP_SYS_ADMIN) check.
+	 */
+	if (flag == CLONE_NEWUTS) {
+		int ret __attribute__((unused));
+
+		ret = sethostname("trinity-fuzz", 12);
+	}
+}
+
+/*
+ * bpf(BPF_PROG_LOAD) — many program types are gated by CAP_BPF
+ * (and historically CAP_SYS_ADMIN) checked via ns_capable.  We
+ * submit a minimally-formed program so the verifier itself is the
+ * primary target; license string is required and the kernel
+ * compares it via strcmp, GPL is the simplest match.
+ */
+static void op_bpf_prog_load(void)
+{
+	struct bpf_insn insns[] = {
+		{ .code = 0xb7, .dst_reg = 0, .imm = 0 },	/* mov r0, 0 */
+		{ .code = 0x95, },				/* exit */
+	};
+	union bpf_attr attr;
+	char license[] = "GPL";
+
+	memset(&attr, 0, sizeof(attr));
+	attr.prog_type = BPF_PROG_TYPE_SOCKET_FILTER;
+	attr.insn_cnt = ARRAY_SIZE(insns);
+	attr.insns = (uintptr_t)insns;
+	attr.license = (uintptr_t)license;
+
+	(void)syscall(__NR_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
+}
+
+/*
+ * perf_event_open() — software events are reachable from
+ * unprivileged users in a userns; perf_paranoid checks fall back
+ * through ns_capable for many gates.  PERF_TYPE_SOFTWARE /
+ * PERF_COUNT_SW_TASK_CLOCK is the most permissive event combo.
+ */
+static void op_perf_event_open(void)
+{
+	struct perf_event_attr attr;
+	int fd;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.type = PERF_TYPE_SOFTWARE;
+	attr.size = sizeof(attr);
+	attr.config = PERF_COUNT_SW_TASK_CLOCK;
+	attr.disabled = 1;
+	attr.exclude_kernel = 1;
+	attr.exclude_hv = 1;
+
+	fd = (int)syscall(__NR_perf_event_open, &attr, 0, -1, -1, 0UL);
+	if (fd >= 0)
+		close(fd);
+}
+
+/*
+ * TUN/TAP — TUNSETIFF requires CAP_NET_ADMIN against the userns
+ * owning the netns.  Since we just entered a fresh userns and the
+ * default netns is owned by init_user_ns, this typically fails
+ * with EPERM, which is itself the interesting code path: the check
+ * runs through tun_set_iff → ns_capable.  Distros without
+ * /dev/net/tun device node skip silently.
+ */
+static void op_tun_setiff(void)
+{
+	struct ifreq ifr;
+	int fd;
+
+	fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK);
+	if (fd < 0)
+		return;
+
+	memset(&ifr, 0, sizeof(ifr));
+	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+	strncpy(ifr.ifr_name, "trinityX", IFNAMSIZ - 1);
+
+	(void)ioctl(fd, TUNSETIFF, &ifr);
+	close(fd);
+}
+
+/*
+ * keyctl(KEYCTL_JOIN_SESSION_KEYRING, NULL) — creates an anonymous
+ * session keyring.  In a userns the owning user ID matches the
+ * uid 0 we just mapped, so the call succeeds where it would
+ * normally need privileged caller intent.  Exercises the keyring
+ * lookup, alloc, and link paths.
+ */
+static void op_keyctl_session(void)
+{
+	(void)syscall(__NR_keyctl, KEYCTL_JOIN_SESSION_KEYRING,
+		      (unsigned long)NULL, 0UL, 0UL, 0UL);
+}
+
+/*
+ * prctl(PR_CAPBSET_DROP, cap) — needs CAP_SETPCAP, which userns
+ * grants.  Drop a randomly-chosen capability from our bounding
+ * set.  The inner child exits immediately after, so the dropped
+ * cap state vanishes with the process.
+ */
+static void op_prctl_capbset_drop(void)
+{
+	static const int caps[] = {
+		CAP_CHOWN,
+		CAP_DAC_OVERRIDE,
+		CAP_FOWNER,
+		CAP_NET_ADMIN,
+		CAP_SYS_ADMIN,
+		CAP_SYS_RESOURCE,
+	};
+	int cap = caps[rand() % ARRAY_SIZE(caps)];
+
+	(void)prctl(PR_CAPBSET_DROP, (unsigned long)cap, 0UL, 0UL, 0UL);
+}
+
+/*
+ * setns() — try to enter init's user namespace.  This always fails
+ * with EPERM (you can't ascend the userns hierarchy) but the
+ * failure goes through nsproxy code that historically had bugs
+ * around refcount handling and ns ownership checks.
+ */
+static void op_setns_init_userns(void)
+{
+	int fd;
+
+	fd = open("/proc/1/ns/user", O_RDONLY);
+	if (fd < 0)
+		return;
+
+	(void)setns(fd, CLONE_NEWUSER);
+	close(fd);
+}
+
+typedef void (*inner_op_fn)(void);
+
+static const inner_op_fn inner_ops[] = {
+	op_mount_tmpfs,
+	op_unshare_secondary,
+	op_bpf_prog_load,
+	op_perf_event_open,
+	op_tun_setiff,
+	op_keyctl_session,
+	op_prctl_capbset_drop,
+	op_setns_init_userns,
+};
+
 static void run_inner_fuzzer(void)
 {
+	inner_ops[rand() % ARRAY_SIZE(inner_ops)]();
 }
 
 /*
