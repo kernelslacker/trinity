@@ -9,6 +9,7 @@
 
 static const struct ioctl msr_ioctls[] = {
 	IOCTL(X86_IOC_RDMSR_REGS),
+	IOCTL(X86_IOC_WRMSR_REGS),
 };
 
 static const char *const msr_devs[] = {
