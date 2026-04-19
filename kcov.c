@@ -287,29 +287,67 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 
 	__atomic_fetch_add(&kcov_shm->total_pcs, count, __ATOMIC_RELAXED);
 
-	if (found_new && nr < MAX_NR_SYSCALL) {
-		__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr],
+	if (nr < MAX_NR_SYSCALL) {
+		__atomic_fetch_add(&kcov_shm->per_syscall_calls[nr],
 			1, __ATOMIC_RELAXED);
-		__atomic_store_n(&kcov_shm->last_edge_at[nr],
-			call_nr, __ATOMIC_RELAXED);
+		if (found_new) {
+			__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr],
+				1, __ATOMIC_RELAXED);
+			__atomic_store_n(&kcov_shm->last_edge_at[nr],
+				call_nr, __ATOMIC_RELAXED);
+		}
 	}
 
 	return found_new;
 }
 
-bool kcov_syscall_is_cold(unsigned int nr)
+unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 {
-	unsigned long total, last;
+	unsigned long edges, gap;
+	unsigned int pct;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return false;
+		return 0;
 
-	total = __atomic_load_n(&kcov_shm->total_calls, __ATOMIC_RELAXED);
-	last = __atomic_load_n(&kcov_shm->last_edge_at[nr], __ATOMIC_RELAXED);
+	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
+		__ATOMIC_RELAXED);
 
-	/* Never found any edges — not cold, just unexplored. */
-	if (last == 0 && __atomic_load_n(&kcov_shm->per_syscall_edges[nr], __ATOMIC_RELAXED) == 0)
-		return false;
+	if (edges == 0) {
+		/* Never produced an edge.  Until this syscall has had
+		 * KCOV_COLD_THRESHOLD attempts of its own, leave it alone —
+		 * total_calls grows from every other syscall too, so basing
+		 * the cutoff on total_calls would prematurely retire any
+		 * syscall that the dispatch loop happens to under-pick.
+		 * Once it has clearly had a fair shot, skip aggressively. */
+		gap = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
+			__ATOMIC_RELAXED);
+	} else {
+		unsigned long total, last;
 
-	return (total - last) > KCOV_COLD_THRESHOLD;
+		total = __atomic_load_n(&kcov_shm->total_calls,
+			__ATOMIC_RELAXED);
+		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
+			__ATOMIC_RELAXED);
+		if (total <= last)
+			return 0;
+		gap = total - last;
+	}
+
+	if (gap <= KCOV_COLD_THRESHOLD)
+		return 0;
+
+	/* Graduated skip: the further past the threshold, the more we skip.
+	 * Each additional KCOV_COLD_THRESHOLD-sized step adds 10 percentage
+	 * points on top of the 50% baseline that the old flat heuristic used,
+	 * capped at 90% so even the deadest syscall still gets called once
+	 * every ~10 attempts in case kernel state changes underneath us. */
+	pct = 50 + (unsigned int)((gap / KCOV_COLD_THRESHOLD) * 10);
+	if (pct > 90)
+		pct = 90;
+	return pct;
+}
+
+bool kcov_syscall_is_cold(unsigned int nr)
+{
+	return kcov_syscall_cold_skip_pct(nr) > 0;
 }
