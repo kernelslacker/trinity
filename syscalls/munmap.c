@@ -84,6 +84,21 @@ static void post_munmap(struct syscallrecord *rec)
 		struct object *obj = container_of(map, struct object, map);
 		destroy_object(obj, OBJ_LOCAL, OBJ_MMAP_ANON);
 	}
+
+	/*
+	 * Oracle: 1-in-100 chance — verify the unmapped range is gone from
+	 * /proc/self/maps.  Any overlapping entry means the kernel's VMA
+	 * teardown silently failed despite returning success.
+	 */
+	if (rec->a1 != 0 && rec->a2 > 0 && ONE_IN(100)) {
+		if (!proc_maps_check(rec->a1, rec->a2, 0, false)) {
+			output(0, "mmap oracle: munmap(%lx, %lu) succeeded "
+			       "but range still in /proc/self/maps\n",
+			       rec->a1, rec->a2);
+			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
 }
 
 struct syscallentry syscall_munmap = {

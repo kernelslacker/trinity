@@ -30,8 +30,25 @@ static void post_mprotect(struct syscallrecord *rec)
 {
 	struct map *map = (struct map *) rec->a5;
 
-	if (rec->retval == 0 && map != NULL)
-		map->prot = rec->a3;
+	if (rec->retval != 0 || map == NULL)
+		return;
+
+	map->prot = rec->a3;
+
+	/*
+	 * Oracle: 1-in-100 chance — verify /proc/self/maps reflects the prot
+	 * change we just applied.  A stale or wrong entry signals that the
+	 * kernel's VMA prot state diverged from what mprotect reported back.
+	 */
+	if (rec->a2 > 0 && ONE_IN(100)) {
+		if (!proc_maps_check(rec->a1, rec->a2, rec->a3, true)) {
+			output(0, "mmap oracle: mprotect(%lx, %lu, 0x%lx) "
+			       "succeeded but prot not in /proc/self/maps\n",
+			       rec->a1, rec->a2, rec->a3);
+			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
 }
 
 #ifndef PROT_MTE

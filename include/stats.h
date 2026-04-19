@@ -28,6 +28,7 @@ struct stats_s {
 
 	/* post-syscall oracle anomaly counts */
 	unsigned long fd_oracle_anomalies;
+	unsigned long mmap_oracle_anomalies;
 };
 
 void dump_stats(void);

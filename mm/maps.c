@@ -1,3 +1,5 @@
+#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -242,4 +244,58 @@ retry_mmap:
 
 	add_object(obj, scope, type);
 	return;
+}
+
+/*
+ * Read /proc/self/maps and verify a VMA invariant about [addr, addr+len).
+ *
+ * expect_present=true: at least one entry overlapping the range must exist
+ * with rwx prot bits matching expected_prot.
+ * expect_present=false: no entry may overlap the range at all.
+ *
+ * Returns true when the invariant holds, false when it is violated.
+ * Returns true on I/O errors to avoid false positives.
+ */
+bool proc_maps_check(unsigned long addr, unsigned long len,
+		     int expected_prot, bool expect_present)
+{
+	FILE *f;
+	char line[256];
+	unsigned long start, end;
+	char perms[5];
+	bool found = false;
+
+	f = fopen("/proc/self/maps", "r");
+	if (!f)
+		return true;
+
+	while (fgets(line, sizeof(line), f)) {
+		if (sscanf(line, "%lx-%lx %4s", &start, &end, perms) != 3)
+			continue;
+		if (end <= addr || start >= addr + len)
+			continue;
+
+		if (expect_present) {
+			int map_prot = 0;
+
+			if (perms[0] == 'r')
+				map_prot |= PROT_READ;
+			if (perms[1] == 'w')
+				map_prot |= PROT_WRITE;
+			if (perms[2] == 'x')
+				map_prot |= PROT_EXEC;
+
+			if ((map_prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) ==
+			    (expected_prot & (PROT_READ | PROT_WRITE | PROT_EXEC))) {
+				found = true;
+				break;
+			}
+		} else {
+			found = true;
+			break;
+		}
+	}
+
+	fclose(f);
+	return expect_present ? found : !found;
 }
