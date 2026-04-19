@@ -16,6 +16,7 @@
 #include "bpf.h"
 #include "fd.h"
 #include "objects.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
@@ -132,13 +133,32 @@ static int init_bpf_fds(void)
 
 int get_rand_bpf_fd(void)
 {
-	struct object *obj;
+	struct object *obj = NULL;
+	struct objhead *local;
 
-	/* check if bpf unavailable/disabled. */
-	if (objects_empty(OBJ_FD_BPF_MAP) == true)
-		return -1;
-
-	obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
+	/*
+	 * Coin-flip preference for the per-child local pool first.  Map
+	 * fds get added to OBJ_LOCAL by post_bpf (BPF_MAP_CREATE) and by
+	 * the bpf_lifecycle childop, but until now nothing read from
+	 * there — every consumer landed on OBJ_GLOBAL with the static
+	 * provider templates.  Probabilistic preference keeps both pools
+	 * feeding the syscall sanitiser so freshly-created fds with
+	 * partially-mutated map state can race the static templates and
+	 * the lifecycle teardown.  Falls through to global on miss so
+	 * children with empty local pools still see the templates.
+	 *
+	 * get_objhead(OBJ_LOCAL, ...) returns NULL outside child context;
+	 * guard the lookup so non-child callers (init, regeneration in
+	 * the parent) safely fall through to the global pool.
+	 */
+	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_MAP);
+	if (local != NULL && local->num_entries > 0 && RAND_BOOL())
+		obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_LOCAL);
+	if (obj == NULL) {
+		if (objects_empty(OBJ_FD_BPF_MAP) == true)
+			return -1;
+		obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
+	}
 	if (obj == NULL)
 		return -1;
 	return obj->bpfobj.map_fd;
@@ -315,12 +335,18 @@ static int init_bpf_prog_fds(void)
 
 int get_rand_bpf_prog_fd(void)
 {
-	struct object *obj;
+	struct object *obj = NULL;
+	struct objhead *local;
 
-	if (objects_empty(OBJ_FD_BPF_PROG) == true)
-		return -1;
-
-	obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_GLOBAL);
+	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first. */
+	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_PROG);
+	if (local != NULL && local->num_entries > 0 && RAND_BOOL())
+		obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_LOCAL);
+	if (obj == NULL) {
+		if (objects_empty(OBJ_FD_BPF_PROG) == true)
+			return -1;
+		obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_GLOBAL);
+	}
 	if (obj == NULL)
 		return -1;
 	return obj->bpfprogobj.fd;
