@@ -46,6 +46,7 @@ enum child_op_type {
 	CHILD_OP_PROCFS_WRITER,
 	CHILD_OP_MEMORY_PRESSURE,
 	CHILD_OP_USERNS_FUZZER,
+	CHILD_OP_SCHED_CYCLER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -151,3 +152,4 @@ bool inode_spewer(struct childdata *child);
 bool procfs_writer(struct childdata *child);
 bool memory_pressure(struct childdata *child);
 bool userns_fuzzer(struct childdata *child);
+bool sched_cycler(struct childdata *child);
