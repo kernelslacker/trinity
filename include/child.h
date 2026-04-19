@@ -52,6 +52,7 @@ enum child_op_type {
 	CHILD_OP_PERF_CHAINS,
 	CHILD_OP_TRACEFS_FUZZER,
 	CHILD_OP_BPF_LIFECYCLE,
+	CHILD_OP_FAULT_INJECTOR,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -163,3 +164,4 @@ bool genetlink_fuzzer(struct childdata *child);
 bool perf_event_chains(struct childdata *child);
 bool tracefs_fuzzer(struct childdata *child);
 bool bpf_lifecycle(struct childdata *child);
+bool fault_injector(struct childdata *child);
