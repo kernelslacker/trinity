@@ -205,7 +205,8 @@ void clean_childdata(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 	/* Reset live fd ring: -1 marks all slots as empty. */
-	memset(child->live_fds.fds, 0xff, sizeof(child->live_fds.fds));
+	for (int i = 0; i < CHILD_FD_RING_SIZE; i++)
+		child->live_fds.fds[i] = -1;
 	child->live_fds.head = 0;
 
 	/* Reset syscall ring; UNKNOWN state in zeroed slots is filtered
