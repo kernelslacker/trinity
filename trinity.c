@@ -246,7 +246,8 @@ int main(int argc, char* argv[])
 	destroy_global_objects();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
-		shm->stats.op_count, shm->stats.successes, shm->stats.failures);
+		shm->stats.op_count + sum_local_op_counts(),
+		shm->stats.successes, shm->stats.failures);
 	if (show_stats == true)
 		dump_stats();
 
