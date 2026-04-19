@@ -383,7 +383,7 @@ void tainted_postmortem(void)
 	unsigned int seed;
 	char dirname[128];
 
-	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELEASE);
 
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
 	seed = shm->seed;
@@ -452,5 +452,5 @@ void tainted_postmortem(void)
 out:
 	free(kmsg);
 	free(runtime_buf);
-	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELEASE);
 }

@@ -771,7 +771,7 @@ void child_process(struct childdata *child, int childno)
 	}
 
 	/* If we're exiting because we tainted, wait here for it to be done. */
-	while (__atomic_load_n(&shm->postmortem_in_progress, __ATOMIC_RELAXED) == true) {
+	while (__atomic_load_n(&shm->postmortem_in_progress, __ATOMIC_ACQUIRE) == true) {
 		/* Make sure the main process is still around. */
 		if (pid_alive(mainpid) == false)
 			goto out;
