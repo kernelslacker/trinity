@@ -4,9 +4,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include "child.h"
-#include "fd-event.h"
-#include "objects.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 
@@ -17,25 +14,6 @@ static void sanitise_pipe(struct syscallrecord *rec)
 
 static void post_pipe(struct syscallrecord *rec)
 {
-	int *fds;
-	struct childdata *child;
-
-	if (rec->retval != 0)
-		goto out;
-
-	fds = (int *) rec->a1;
-	if (fds == NULL)
-		goto out;
-
-	child = this_child();
-	if (child != NULL && child->fd_event_ring != NULL) {
-		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CREATED,
-				 fds[0], -1, OBJ_FD_PIPE);
-		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CREATED,
-				 fds[1], -1, OBJ_FD_PIPE);
-	}
-
-out:
 	deferred_freeptr(&rec->a1);
 }
 

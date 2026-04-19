@@ -2,7 +2,7 @@
  * fd event ring buffer — lock-free SPSC queue for child-to-parent
  * fd state change reporting.
  *
- * Each child produces events (dup, close) into its own ring.
+ * Each child produces close events into its own ring.
  * The parent drains events and updates the global object pool.
  */
 
@@ -89,24 +89,8 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 		struct fd_event *ev = &ring->events[tail];
 
 		switch (ev->type) {
-		case FD_EVENT_DUP:
-			/* The dup'd fd exists only in the child's fd table
-			 * (children have independent fd tables after fork).
-			 * Don't create global objects for fds the parent
-			 * doesn't own — the destructor would close() an
-			 * fd that either doesn't exist in the parent or
-			 * belongs to something else entirely. */
-			break;
-
 		case FD_EVENT_CLOSE:
 			remove_object_by_fd(ev->fd1);
-			break;
-
-		case FD_EVENT_CREATED:
-			/* Like DUP, the new fd exists only in the child.
-			 * Adding it to OBJ_GLOBAL would create a phantom
-			 * object whose destructor closes an unrelated
-			 * parent fd. */
 			break;
 		}
 
