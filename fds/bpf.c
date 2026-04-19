@@ -144,8 +144,8 @@ int get_rand_bpf_fd(void)
 	return obj->bpfobj.map_fd;
 }
 
-static const struct fd_provider bpf_fd_provider = {
-	.name = "bpf",
+static const struct fd_provider bpf_map_fd_provider = {
+	.name = "bpf-map",
 	.objtype = OBJ_FD_BPF_MAP,
 	.enabled = true,
 	.init = &init_bpf_fds,
@@ -153,5 +153,187 @@ static const struct fd_provider bpf_fd_provider = {
 	.open = &open_bpf_fd,
 };
 
-REG_FD_PROV(bpf_fd_provider);
+REG_FD_PROV(bpf_map_fd_provider);
+
+/*
+ * BPF program fd provider.
+ *
+ * Loads a small set of verifier-clean template programs at startup
+ * (one per supported program type) and publishes the resulting fds
+ * into the global object pool.  Other syscalls — setsockopt with
+ * SO_ATTACH_BPF, perf_event_open + PERF_EVENT_IOC_SET_BPF, the
+ * bpf(PROG_ATTACH/LINK_CREATE) commands, etc. — pull these fds via
+ * get_rand_bpf_prog_fd() and end up exercising the cross-subsystem
+ * paths that hold most live BPF CVEs.
+ *
+ * Capability gates reject most program types when trinity runs
+ * unprivileged; the init loop tries each template and keeps whichever
+ * successfully loaded.  ENOSYS on any attempt latches the whole
+ * provider off (kernel built without BPF).  EPERM/EACCES on a single
+ * type just skips that template.
+ */
+struct bpf_prog_template {
+	u32 prog_type;
+	const char *name;
+};
+
+static struct bpf_prog_template bpf_prog_templates[] = {
+	{ BPF_PROG_TYPE_SOCKET_FILTER,	"socket_filter" },
+	{ BPF_PROG_TYPE_KPROBE,		"kprobe" },
+	{ BPF_PROG_TYPE_TRACEPOINT,	"tracepoint" },
+	{ BPF_PROG_TYPE_CGROUP_SKB,	"cgroup_skb" },
+	{ BPF_PROG_TYPE_CGROUP_SOCK,	"cgroup_sock" },
+	{ BPF_PROG_TYPE_XDP,		"xdp" },
+	{ BPF_PROG_TYPE_PERF_EVENT,	"perf_event" },
+	{ BPF_PROG_TYPE_RAW_TRACEPOINT,	"raw_tracepoint" },
+	{ BPF_PROG_TYPE_SCHED_CLS,	"sched_cls" },
+	{ BPF_PROG_TYPE_SCHED_ACT,	"sched_act" },
+};
+
+#define MAX_BPF_PROG_FDS	10
+
+static const char bpf_prog_license[] = "GPL";
+
+static int bpf_load_template_prog(unsigned int prog_type)
+{
+	/*
+	 * The minimal verifier-clean program: r0 = 0; exit.
+	 * Two instructions, no helper calls, no map references — passes
+	 * every prog type that doesn't require a BTF attach target.
+	 */
+	struct bpf_insn insns[] = {
+		EBPF_MOV64_IMM(BPF_REG_0, 0),
+		EBPF_EXIT(),
+	};
+	union bpf_attr attr;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.prog_type = prog_type;
+	attr.insn_cnt = ARRAY_SIZE(insns);
+	attr.insns = (u64)(uintptr_t)insns;
+	attr.license = (u64)(uintptr_t)bpf_prog_license;
+
+	return bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+}
+
+static const char *bpf_prog_template_name(u32 prog_type)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++)
+		if (bpf_prog_templates[i].prog_type == prog_type)
+			return bpf_prog_templates[i].name;
+	return "unknown";
+}
+
+static void bpf_prog_destructor(struct object *obj)
+{
+	close(obj->bpfprogobj.fd);
+}
+
+static void bpf_prog_dump(struct object *obj, enum obj_scope scope)
+{
+	output(2, "bpf prog fd:%d type:%s scope:%d\n",
+		obj->bpfprogobj.fd,
+		bpf_prog_template_name(obj->bpfprogobj.prog_type),
+		scope);
+}
+
+/*
+ * Single-shot template load + publish.  Used both to pre-fill the
+ * pool from init and for per-syscall regeneration via try_regenerate_fd
+ * after a stale-fd teardown.
+ */
+static int open_bpf_prog_fd(void)
+{
+	struct object *obj;
+	unsigned int idx;
+	int fd;
+
+	idx = rand() % ARRAY_SIZE(bpf_prog_templates);
+	fd = bpf_load_template_prog(bpf_prog_templates[idx].prog_type);
+	if (fd < 0)
+		return false;
+
+	obj = alloc_object();
+	obj->bpfprogobj.fd = fd;
+	obj->bpfprogobj.prog_type = bpf_prog_templates[idx].prog_type;
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
+	__atomic_add_fetch(&shm->stats.bpf_progs_provided, 1, __ATOMIC_RELAXED);
+	return true;
+}
+
+static int init_bpf_prog_fds(void)
+{
+	struct objhead *head;
+	struct rlimit r = {1 << 20, 1 << 20};
+	unsigned int i;
+	unsigned int loaded = 0;
+
+	/*
+	 * The map provider already raised RLIMIT_MEMLOCK if it ran first;
+	 * the providers are visited in REG_FD_PROV registration order which
+	 * isn't guaranteed, so re-set it here.  setrlimit is idempotent.
+	 */
+	setrlimit(RLIMIT_MEMLOCK, &r);
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_PROG);
+	head->destroy = &bpf_prog_destructor;
+	head->dump = &bpf_prog_dump;
+
+	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++) {
+		struct object *obj;
+		int fd;
+
+		fd = bpf_load_template_prog(bpf_prog_templates[i].prog_type);
+		if (fd < 0) {
+			/*
+			 * ENOSYS = no BPF in this kernel; fail the whole
+			 * provider so we don't keep retrying for nothing.
+			 * EPERM/EACCES = capability gate on this prog type
+			 * specifically; skip it and move on.
+			 */
+			if (errno == ENOSYS)
+				return false;
+			continue;
+		}
+
+		obj = alloc_object();
+		obj->bpfprogobj.fd = fd;
+		obj->bpfprogobj.prog_type = bpf_prog_templates[i].prog_type;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
+		__atomic_add_fetch(&shm->stats.bpf_progs_provided, 1,
+				   __ATOMIC_RELAXED);
+		loaded++;
+
+		if (loaded >= MAX_BPF_PROG_FDS)
+			break;
+	}
+
+	return true;
+}
+
+int get_rand_bpf_prog_fd(void)
+{
+	struct object *obj;
+
+	if (objects_empty(OBJ_FD_BPF_PROG) == true)
+		return -1;
+
+	obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_GLOBAL);
+	if (obj == NULL)
+		return -1;
+	return obj->bpfprogobj.fd;
+}
+
+static const struct fd_provider bpf_prog_fd_provider = {
+	.name = "bpf-prog",
+	.objtype = OBJ_FD_BPF_PROG,
+	.enabled = true,
+	.init = &init_bpf_prog_fds,
+	.get = &get_rand_bpf_prog_fd,
+	.open = &open_bpf_prog_fd,
+};
+
+REG_FD_PROV(bpf_prog_fd_provider);
 #endif

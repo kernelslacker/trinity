@@ -348,13 +348,13 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_PROG_ATTACH:
 	case BPF_PROG_DETACH:
 		attr->target_fd = get_rand_bpf_fd();
-		attr->attach_bpf_fd = get_rand_bpf_fd();
+		attr->attach_bpf_fd = get_rand_bpf_prog_fd();
 		attr->attach_type = RAND_ARRAY(bpf_attach_types);
 		rec->a3 = 16;
 		break;
 
 	case BPF_PROG_TEST_RUN:
-		attr->test.prog_fd = get_rand_bpf_fd();
+		attr->test.prog_fd = get_rand_bpf_prog_fd();
 		attr->test.data_size_in = rand() % page_size;
 		attr->test.data_in = (u64) get_address();
 		attr->test.data_size_out = rand() % page_size;
@@ -387,7 +387,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 
 	case BPF_LINK_CREATE:
-		attr->link_create.prog_fd = get_rand_bpf_fd();
+		attr->link_create.prog_fd = get_rand_bpf_prog_fd();
 		attr->link_create.target_fd = get_rand_bpf_fd();
 		attr->link_create.attach_type = RAND_ARRAY(bpf_attach_types);
 		attr->link_create.flags = rand() % 16;
@@ -396,7 +396,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	case BPF_LINK_UPDATE:
 		attr->link_update.link_fd = get_rand_bpf_fd();
-		attr->link_update.new_prog_fd = get_rand_bpf_fd();
+		attr->link_update.new_prog_fd = get_rand_bpf_prog_fd();
 		attr->link_update.flags = rand() % 4;
 		rec->a3 = sizeof(attr->link_update);
 		break;
@@ -418,7 +418,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 
 	case BPF_PROG_BIND_MAP:
-		attr->prog_bind_map.prog_fd = get_rand_bpf_fd();
+		attr->prog_bind_map.prog_fd = get_rand_bpf_prog_fd();
 		attr->prog_bind_map.map_fd = get_rand_bpf_fd();
 		attr->prog_bind_map.flags = 0;
 		rec->a3 = sizeof(attr->prog_bind_map);
