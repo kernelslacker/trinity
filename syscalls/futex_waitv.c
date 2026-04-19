@@ -21,12 +21,21 @@
 #define FUTEX2_NUMA		0x04
 #endif
 
+#ifndef FUTEX2_MPOL
+#define FUTEX2_MPOL		0x08
+#endif
+
 #ifndef FUTEX_32
 #define FUTEX_32		FUTEX2_SIZE_U32
 #endif
 
 #ifndef FUTEX2_PRIVATE
 #define FUTEX2_PRIVATE		FUTEX_PRIVATE_FLAG
+#endif
+
+/* Sentinel for "no NUMA node preference" in FUTEX2_MPOL waiters. */
+#ifndef FUTEX_NO_NODE
+#define FUTEX_NO_NODE		(-1)
 #endif
 
 static unsigned long futex_waitv_clockids[] = {
@@ -55,6 +64,10 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 		waiters[i].flags = FUTEX2_SIZE_U32;
 		if (RAND_BOOL())
 			waiters[i].flags |= FUTEX2_PRIVATE;
+		if (RAND_BOOL()) {
+			waiters[i].flags |= FUTEX2_MPOL;
+			waiters[i].__reserved = (__u32)FUTEX_NO_NODE;
+		}
 	}
 
 	/* Short timeout so we don't block forever. */
