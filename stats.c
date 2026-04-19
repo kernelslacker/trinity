@@ -76,6 +76,9 @@ void dump_stats(void)
 	if (shm->stats.mmap_oracle_anomalies)
 		output(0, "mmap oracle anomalies: %lu\n", shm->stats.mmap_oracle_anomalies);
 
+	if (shm->stats.cred_oracle_anomalies)
+		output(0, "cred oracle anomalies: %lu\n", shm->stats.cred_oracle_anomalies);
+
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
 		output(0, "\nprocfs/sysfs writes: proc:%lu sys:%lu debugfs:%lu\n",
