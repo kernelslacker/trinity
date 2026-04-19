@@ -207,12 +207,9 @@ static const struct ioctl vt_ioctls[] = {
 };
 
 static const char *const vt_devs[] = {
-	"/dev/vc/0",
 	"tty",
 	"ttyS",
-	"/dev/tty",
-	"/dev/console",
-	"/dev/ptmx",
+	"ptmx",
 	"vcs",
 };
 
