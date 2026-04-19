@@ -173,6 +173,9 @@ void clean_childdata(struct childdata *child)
 	child->xcpu_count = 0;
 	child->op_nr = 0;
 	child->local_op_count = 0;
+	child->current_fd = -1;
+	child->fd_lifetime = 0;
+	child->cached_fd_generation = 0;
 	child->last_group = GROUP_NONE;
 	child->last_syscall_nr = EDGEPAIR_NO_PREV;
 	child->dropped_privs = false;
