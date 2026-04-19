@@ -150,6 +150,7 @@ void dump_stats(void)
 			shm->stats.recipe_completed,
 			shm->stats.recipe_partial,
 			shm->stats.recipe_unsupported);
+		recipe_runner_dump_stats();
 	}
 
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||

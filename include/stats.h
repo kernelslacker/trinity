@@ -1,5 +1,10 @@
 #pragma once
 
+/* Upper bound on the recipe_runner catalog size.  recipe-runner.c
+ * asserts at startup that its table fits.  Sized large enough to
+ * accommodate future recipes without reshuffling shared memory. */
+#define MAX_RECIPES 32
+
 /* Various statistics. */
 
 struct stats_s {
@@ -84,6 +89,12 @@ struct stats_s {
 	unsigned long recipe_partial;		/* at least one step failed */
 	unsigned long recipe_unsupported;	/* discovery probe latched recipe off */
 
+	/* Per-recipe completion counts, indexed by the recipe's slot in the
+	 * static catalog inside recipe-runner.c.  Dumped via
+	 * recipe_runner_dump_stats() so stats.c stays decoupled from the
+	 * catalog layout. */
+	unsigned long recipe_completed_per[MAX_RECIPES];
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task
@@ -110,3 +121,7 @@ struct stats_s {
 };
 
 void dump_stats(void);
+
+/* Implemented in childops/recipe-runner.c; emits per-recipe completion
+ * counts so the catalog layout stays private to that file. */
+void recipe_runner_dump_stats(void);

@@ -26,6 +26,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <mqueue.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -34,7 +36,9 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/fanotify.h>
 #include <sys/inotify.h>
+#include <sys/ioctl.h>
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
@@ -47,13 +51,16 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <linux/futex.h>
 #include <linux/memfd.h>
+#include <linux/userfaultfd.h>
 
 #include "arch.h"
 #include "child.h"
 #include "compat.h"
 #include "random.h"
 #include "shm.h"
+#include "stats.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -64,9 +71,16 @@
 #define MFD_ALLOW_SEALING	0x0002U
 #endif
 
+/*
+ * A discoverable recipe sets *unsupported = true on its first failed
+ * probe to indicate the kernel lacks the relevant feature (ENOSYS,
+ * missing CONFIG_*, etc.).  The dispatcher latches the recipe off in
+ * shm so siblings stop probing.  Non-discoverable recipes leave the
+ * pointer NULL.
+ */
 struct recipe {
 	const char *name;
-	bool (*run)(void);
+	bool (*run)(bool *unsupported);
 };
 
 /*
@@ -78,7 +92,7 @@ struct recipe {
  * current setting, then closes.  Exercises the timerfd code path
  * end-to-end including the wait-queue plumbing the read side hits.
  */
-static bool recipe_timerfd(void)
+static bool recipe_timerfd(bool *unsupported __unused__)
 {
 	struct itimerspec its;
 	struct itimerspec cur;
@@ -116,7 +130,7 @@ out:
  * reads it back, then writes again to verify the counter resets after
  * a non-semaphore read.  Closes cleanly.
  */
-static bool recipe_eventfd(void)
+static bool recipe_eventfd(bool *unsupported __unused__)
 {
 	uint64_t v;
 	ssize_t r __unused__;
@@ -153,7 +167,7 @@ out:
  * whole pipe through a deliberate sequence: create, write, read
  * back, flip O_NONBLOCK on each end, close.
  */
-static bool recipe_pipe(void)
+static bool recipe_pipe(bool *unsupported __unused__)
 {
 	int pfd[2] = { -1, -1 };
 	char buf[16];
@@ -194,7 +208,7 @@ out:
  * both fds.  Exercises EPOLL_CTL_ADD / MOD / DEL on the same target —
  * the path that hits the rb-tree update and wake-callback registration.
  */
-static bool recipe_epoll(void)
+static bool recipe_epoll(bool *unsupported __unused__)
 {
 	struct epoll_event ev;
 	struct epoll_event evs[4];
@@ -243,7 +257,7 @@ out:
  * sighandlers — the goal is the signalfd construction/teardown path,
  * not signal delivery itself.
  */
-static bool recipe_signalfd(void)
+static bool recipe_signalfd(bool *unsupported __unused__)
 {
 	sigset_t ss, oldss;
 	struct signalfd_siginfo si;
@@ -289,7 +303,7 @@ out:
  * sequence that exercises the seal-vs-active-mapping accounting and
  * the writable-mapping refcount the seal path checks.
  */
-static bool recipe_memfd_seal(void)
+static bool recipe_memfd_seal(bool *unsupported __unused__)
 {
 	int fd = -1;
 	void *p = MAP_FAILED;
@@ -340,7 +354,7 @@ out:
  * socket through its full state-machine setup and teardown so the
  * tcp_close, sk_state_change, and reqsk-queue cleanup paths run.
  */
-static bool recipe_tcp_server(void)
+static bool recipe_tcp_server(bool *unsupported __unused__)
 {
 	struct sockaddr_in sin;
 	socklen_t slen;
@@ -394,7 +408,7 @@ out:
  * (typically EAGAIN), remove the watch, close.  Exercises the
  * inotify_handle_event / fsnotify_destroy_marks teardown paths.
  */
-static bool recipe_inotify(void)
+static bool recipe_inotify(bool *unsupported __unused__)
 {
 	char buf[1024];
 	ssize_t r __unused__;
@@ -433,7 +447,7 @@ out:
  * (IPC_RMID).  IPC_PRIVATE keys produce per-process unique segments,
  * so concurrent recipe runs in sibling children don't collide.
  */
-static bool recipe_shmget(void)
+static bool recipe_shmget(bool *unsupported __unused__)
 {
 	void *addr = (void *)-1;
 	int shmid = -1;
@@ -478,7 +492,7 @@ struct trinity_msgbuf {
 	char mtext[32];
 };
 
-static bool recipe_msgget(void)
+static bool recipe_msgget(bool *unsupported __unused__)
 {
 	struct trinity_msgbuf m;
 	int qid = -1;
@@ -523,7 +537,7 @@ union trinity_semun {
 	unsigned short *array;
 };
 
-static bool recipe_semget(void)
+static bool recipe_semget(bool *unsupported __unused__)
 {
 	struct sembuf op;
 	union trinity_semun arg;
@@ -568,7 +582,7 @@ out:
  * the existing signal regime — settime relative for a few ms, gettime
  * to read it back, query overrun count, delete.
  */
-static bool recipe_posix_timer(void)
+static bool recipe_posix_timer(bool *unsupported __unused__)
 {
 	struct sigevent sev;
 	struct itimerspec its, cur;
@@ -604,41 +618,330 @@ out:
 	return ok;
 }
 
+/*
+ * Recipe 13: POSIX message queue lifecycle.
+ *
+ * mq_open(O_CREAT | O_EXCL) → mq_send → mq_receive → mq_close →
+ * mq_unlink.  CONFIG_POSIX_MQUEUE may be off on stripped-down kernels
+ * — first failure with ENOSYS or ENOENT (mqueue not mounted) latches
+ * the recipe off via *unsupported.
+ *
+ * The queue name embeds getpid() to keep concurrent recipe runs in
+ * sibling children from racing on a shared name; O_EXCL gives us a
+ * second layer of safety against name collisions on retry.
+ */
+static bool recipe_mq_open(bool *unsupported)
+{
+	struct mq_attr attr;
+	char qname[64];
+	mqd_t q = (mqd_t)-1;
+	char buf[128];
+	bool ok = false;
+
+	snprintf(qname, sizeof(qname), "/trinity-recipe-%d-%u",
+		 (int)getpid(), (unsigned int)rand());
+
+	memset(&attr, 0, sizeof(attr));
+	attr.mq_maxmsg = 4;
+	attr.mq_msgsize = 64;
+	q = mq_open(qname, O_CREAT | O_EXCL | O_RDWR | O_NONBLOCK,
+		    0600, &attr);
+	if (q == (mqd_t)-1) {
+		if (errno == ENOSYS || errno == ENOENT) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	if (mq_send(q, "trinity", 7, 0) < 0)
+		goto out;
+
+	if (mq_receive(q, buf, sizeof(buf), NULL) < 0)
+		goto out;
+
+	if (mq_close(q) < 0)
+		goto out;
+	q = (mqd_t)-1;
+
+	if (mq_unlink(qname) < 0)
+		goto out;
+
+	ok = true;
+out:
+	if (q != (mqd_t)-1) {
+		(void)mq_close(q);
+		(void)mq_unlink(qname);
+	}
+	return ok;
+}
+
+/*
+ * Recipe 14: futex lifecycle on a shared anonymous mapping.
+ *
+ * mmap MAP_SHARED | MAP_ANONYMOUS → futex(FUTEX_WAIT) with a short
+ * timeout (expected to return ETIMEDOUT immediately because the value
+ * doesn't match) → futex(FUTEX_WAKE) on the same address (zero waiters
+ * to wake) → munmap.  Exercises the futex hash-bucket lookup, the
+ * timeout path, and the cleanup of the futex queue.
+ *
+ * Using MAP_SHARED puts the futex on the shared key path inside the
+ * kernel, which is the more interesting variant — the private path is
+ * what most application code hits.
+ */
+static bool recipe_futex(bool *unsupported __unused__)
+{
+	struct timespec ts;
+	uint32_t *futex_addr = MAP_FAILED;
+	bool ok = false;
+
+	futex_addr = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+			  MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (futex_addr == MAP_FAILED)
+		goto out;
+
+	*futex_addr = 0;
+
+	ts.tv_sec = 0;
+	ts.tv_nsec = 1000000;	/* 1 ms */
+	/* Pass an expected value of 1, but the actual value is 0 — the
+	 * kernel returns EAGAIN immediately without queuing.  This still
+	 * exercises the hash lookup and the futex_wait_setup path. */
+	(void)syscall(__NR_futex, futex_addr, FUTEX_WAIT, 1, &ts,
+		      NULL, 0);
+
+	(void)syscall(__NR_futex, futex_addr, FUTEX_WAKE, INT_MAX,
+		      NULL, NULL, 0);
+
+	ok = true;
+out:
+	if (futex_addr != MAP_FAILED)
+		(void)munmap(futex_addr, page_size);
+	return ok;
+}
+
+/*
+ * Recipe 15: fanotify watch lifecycle.
+ *
+ * fanotify_init(FAN_CLASS_NOTIF | FAN_NONBLOCK) → fanotify_mark(ADD)
+ * on /tmp → non-blocking read (typically EAGAIN) → fanotify_mark
+ * (REMOVE) → close.  Requires CAP_SYS_ADMIN on most kernels — first
+ * EPERM/ENOSYS latches the recipe off.
+ */
+static bool recipe_fanotify(bool *unsupported)
+{
+	char buf[1024];
+	int fd = -1;
+	bool marked = false;
+	ssize_t r __unused__;
+	bool ok = false;
+
+	fd = fanotify_init(FAN_CLASS_NOTIF | FAN_NONBLOCK | FAN_CLOEXEC,
+			   O_RDONLY);
+	if (fd < 0) {
+		if (errno == EPERM || errno == ENOSYS) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	if (fanotify_mark(fd, FAN_MARK_ADD,
+			  FAN_MODIFY | FAN_ACCESS, AT_FDCWD, "/tmp") < 0)
+		goto out;
+	marked = true;
+
+	r = read(fd, buf, sizeof(buf));
+
+	if (fanotify_mark(fd, FAN_MARK_REMOVE,
+			  FAN_MODIFY | FAN_ACCESS, AT_FDCWD, "/tmp") < 0)
+		goto out;
+	marked = false;
+
+	ok = true;
+out:
+	if (marked)
+		(void)fanotify_mark(fd, FAN_MARK_REMOVE,
+				    FAN_MODIFY | FAN_ACCESS,
+				    AT_FDCWD, "/tmp");
+	if (fd >= 0)
+		close(fd);
+	return ok;
+}
+
+/*
+ * Recipe 16: userfaultfd lifecycle.
+ *
+ * userfaultfd → ioctl(UFFDIO_API) → mmap a private region →
+ * ioctl(UFFDIO_REGISTER) for missing-page faults → ioctl
+ * (UFFDIO_UNREGISTER) → munmap → close.  We deliberately don't
+ * touch the registered region from the same thread (that would block
+ * forever waiting for a userfaultfd handler to fill the page).
+ *
+ * userfaultfd may be off (vm.unprivileged_userfaultfd=0 plus no
+ * CAP_SYS_PTRACE, or kernel built without CONFIG_USERFAULTFD) —
+ * EPERM/ENOSYS latches the recipe off.
+ */
+static bool recipe_userfaultfd(bool *unsupported)
+{
+	struct uffdio_api api;
+	struct uffdio_register reg;
+	struct uffdio_range range;
+	void *region = MAP_FAILED;
+	int fd = -1;
+	bool registered = false;
+	bool ok = false;
+
+	fd = (int)syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
+	if (fd < 0) {
+		if (errno == EPERM || errno == ENOSYS) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	memset(&api, 0, sizeof(api));
+	api.api = UFFD_API;
+	if (ioctl(fd, UFFDIO_API, &api) < 0)
+		goto out;
+
+	region = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (region == MAP_FAILED)
+		goto out;
+
+	memset(&reg, 0, sizeof(reg));
+	reg.range.start = (uintptr_t)region;
+	reg.range.len = page_size;
+	reg.mode = UFFDIO_REGISTER_MODE_MISSING;
+	if (ioctl(fd, UFFDIO_REGISTER, &reg) < 0)
+		goto out;
+	registered = true;
+
+	range.start = (uintptr_t)region;
+	range.len = page_size;
+	if (ioctl(fd, UFFDIO_UNREGISTER, &range) < 0)
+		goto out;
+	registered = false;
+
+	ok = true;
+out:
+	if (registered) {
+		range.start = (uintptr_t)region;
+		range.len = page_size;
+		(void)ioctl(fd, UFFDIO_UNREGISTER, &range);
+	}
+	if (region != MAP_FAILED)
+		(void)munmap(region, page_size);
+	if (fd >= 0)
+		close(fd);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
-	{ "timerfd",     recipe_timerfd     },
-	{ "eventfd",     recipe_eventfd     },
-	{ "pipe",        recipe_pipe        },
-	{ "epoll",       recipe_epoll       },
-	{ "signalfd",    recipe_signalfd    },
-	{ "memfd_seal",  recipe_memfd_seal  },
-	{ "tcp_server",  recipe_tcp_server  },
-	{ "inotify",     recipe_inotify     },
-	{ "shmget",      recipe_shmget      },
-	{ "msgget",      recipe_msgget      },
-	{ "semget",      recipe_semget      },
-	{ "posix_timer", recipe_posix_timer },
+	{ "timerfd",      recipe_timerfd      },
+	{ "eventfd",      recipe_eventfd      },
+	{ "pipe",         recipe_pipe         },
+	{ "epoll",        recipe_epoll        },
+	{ "signalfd",     recipe_signalfd     },
+	{ "memfd_seal",   recipe_memfd_seal   },
+	{ "tcp_server",   recipe_tcp_server   },
+	{ "inotify",      recipe_inotify      },
+	{ "shmget",       recipe_shmget       },
+	{ "msgget",       recipe_msgget       },
+	{ "semget",       recipe_semget       },
+	{ "posix_timer",  recipe_posix_timer  },
+	{ "mq_open",      recipe_mq_open      },
+	{ "futex",        recipe_futex        },
+	{ "fanotify",     recipe_fanotify     },
+	{ "userfaultfd",  recipe_userfaultfd  },
 };
+
+/*
+ * Build-time guarantee that the catalog fits in the shm bookkeeping
+ * arrays sized via MAX_RECIPES in stats.h.  Bumping the catalog past
+ * MAX_RECIPES without growing the arrays would silently overflow
+ * shm->recipe_disabled and shm->stats.recipe_completed_per.
+ */
+_Static_assert(ARRAY_SIZE(recipes) <= MAX_RECIPES,
+	       "recipe catalog outgrew MAX_RECIPES; bump it in stats.h");
 
 bool recipe_runner(struct childdata *child)
 {
 	const struct recipe *r;
+	unsigned int idx;
+	unsigned int tries;
+	bool unsupported = false;
 	bool ok;
 
 	__atomic_add_fetch(&shm->stats.recipe_runs, 1, __ATOMIC_RELAXED);
 
-	r = &recipes[rand() % ARRAY_SIZE(recipes)];
+	/* Pick a recipe that hasn't been latched off.  A few retries are
+	 * enough — even if every discovery-probe recipe is disabled, at
+	 * worst one in four picks will land on a non-discoverable one. */
+	for (tries = 0; tries < 8; tries++) {
+		idx = (unsigned int)rand() % (unsigned int)ARRAY_SIZE(recipes);
+		if (!__atomic_load_n(&shm->recipe_disabled[idx],
+				     __ATOMIC_RELAXED))
+			break;
+	}
+	if (tries == 8)
+		return true;	/* nothing runnable on this kernel */
+
+	r = &recipes[idx];
+
+	output(1, "recipe: running %s\n", r->name);
 
 	/* Publish the active recipe name so post-mortem can attribute a
 	 * kernel taint to the sequence in flight.  Cleared on completion
 	 * regardless of success/failure so a stale name never lingers. */
 	child->current_recipe_name = r->name;
-	ok = r->run();
+	ok = r->run(&unsupported);
 	child->current_recipe_name = NULL;
 
-	if (ok)
-		__atomic_add_fetch(&shm->stats.recipe_completed, 1, __ATOMIC_RELAXED);
-	else
-		__atomic_add_fetch(&shm->stats.recipe_partial, 1, __ATOMIC_RELAXED);
+	if (unsupported)
+		__atomic_store_n(&shm->recipe_disabled[idx], true,
+				 __ATOMIC_RELAXED);
+
+	if (ok) {
+		__atomic_add_fetch(&shm->stats.recipe_completed, 1,
+				   __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.recipe_completed_per[idx], 1,
+				   __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.recipe_partial, 1,
+				   __ATOMIC_RELAXED);
+	}
 
 	return true;
+}
+
+/*
+ * Emit per-recipe completion counts and, where applicable, the
+ * latched-disabled state.  Called from dump_stats() so the catalog
+ * layout stays private to this file.
+ */
+void recipe_runner_dump_stats(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(recipes); i++) {
+		unsigned long n = __atomic_load_n(
+			&shm->stats.recipe_completed_per[i],
+			__ATOMIC_RELAXED);
+		bool disabled = __atomic_load_n(
+			&shm->recipe_disabled[i],
+			__ATOMIC_RELAXED);
+
+		if (n == 0 && !disabled)
+			continue;
+
+		output(0, "  %-14s %lu%s\n",
+			recipes[i].name, n,
+			disabled ? " (disabled — kernel feature absent)" : "");
+	}
 }
