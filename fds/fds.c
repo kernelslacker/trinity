@@ -172,34 +172,52 @@ int get_random_fd(void)
 {
 	struct childdata *child = this_child();
 	unsigned int retries = 0;
-	uint32_t current_gen;
 
 	/* During init (no child context), skip fd_lifetime caching. */
 	if (child == NULL)
 		return get_new_random_fd();
 
-	/* If the global fd generation changed, our cached fd may be stale.
-	 * Invalidate and re-fetch instead of using a potentially-closed fd. */
-	current_gen = __atomic_load_n(&shm->fd_generation, __ATOMIC_ACQUIRE);
-	if (child->fd_lifetime > 0 && child->cached_fd_generation != current_gen) {
-		__atomic_add_fetch(&shm->stats.fd_stale_by_generation, 1, __ATOMIC_RELAXED);
-		child->fd_lifetime = 0;
+	/*
+	 * If our cached fd's slot has been mutated since we cached it
+	 * (close, reopen, or simply emptied) the slot's generation will
+	 * differ from what we recorded.  A NULL lookup also counts as
+	 * stale — the fd was removed from tracking.
+	 */
+	if (child->fd_lifetime > 0) {
+		struct fd_hash_entry *e = fd_hash_lookup(child->current_fd);
+
+		if (e == NULL ||
+		    __atomic_load_n(&e->gen, __ATOMIC_ACQUIRE) !=
+		    child->cached_fd_generation) {
+			__atomic_add_fetch(&shm->stats.fd_stale_by_generation, 1,
+					   __ATOMIC_RELAXED);
+			child->fd_lifetime = 0;
+		}
 	}
 
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
 	if (child->fd_lifetime == 0) {
+		struct fd_hash_entry *e;
+
 		child->current_fd = get_new_random_fd();
 
-		/* Validate the fd is still alive */
-		if (child->current_fd >= 0 &&
-		    fcntl(child->current_fd, F_GETFD) == -1 && errno == EBADF) {
-			__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
-			if (++retries < 10)
-				goto regen;
+		/*
+		 * Cache the slot's generation so the next iteration can
+		 * detect close-then-reopen-to-same-fd recycling without a
+		 * syscall.  An untracked fd (e.g. a child-private fd not in
+		 * the global pool) gets cached_fd_generation = 0; that won't
+		 * match any real entry's gen, so the next iteration will
+		 * always re-fetch.
+		 */
+		e = fd_hash_lookup(child->current_fd);
+		if (e == NULL && child->current_fd >= 0 && retries++ < 10) {
+			__atomic_add_fetch(&shm->stats.fd_stale_detected, 1,
+					   __ATOMIC_RELAXED);
+			goto regen;
 		}
-
-		child->cached_fd_generation = __atomic_load_n(&shm->fd_generation, __ATOMIC_ACQUIRE);
+		child->cached_fd_generation = e ?
+			__atomic_load_n(&e->gen, __ATOMIC_ACQUIRE) : 0;
 
 		if (max_children >= 5)
 			child->fd_lifetime = RAND_RANGE(5, max_children);
@@ -221,9 +239,9 @@ regen:
  * kind of fd (epoll, timerfd, socket, etc.).  Falls back to get_random_fd()
  * if no objects of that type exist.
  *
- * Validates that the fd is still alive via fcntl(F_GETFD).  If stale
- * (EBADF), destroys the object and retries up to 10 times before
- * falling back to get_random_fd().
+ * Validates the fd is still tracked by the parent via the fd_hash
+ * lookup — a missing entry means the fd was closed (in another child or
+ * by a cleanup path) and the object snapshot we got is stale.
  */
 int get_typed_fd(enum argtype type)
 {
@@ -266,8 +284,8 @@ retry:
 	if (fd <= 2)
 		return get_random_fd();
 
-	/* Validate fd is still alive */
-	if (fcntl(fd, F_GETFD) == -1 && errno == EBADF) {
+	/* Validate fd is still tracked. */
+	if (fd_hash_lookup(fd) == NULL) {
 		__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
 		destroy_object(obj, OBJ_GLOBAL, objtype);
 		try_regenerate_fd(objtype);
