@@ -936,9 +936,28 @@ unsigned long sum_local_op_counts(void)
 
 	for_each_child(i) {
 		struct childdata *child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
+		unsigned long count;
 
-		if (child != NULL)
-			sum += child->local_op_count;
+		if (child == NULL)
+			continue;
+
+		count = child->local_op_count;
+		/* The child flushes and zeroes local_op_count once it hits
+		 * LOCAL_OP_FLUSH_BATCH, so a higher value can only come from
+		 * a stray write — most likely a former occupant of this slot
+		 * that the kernel woke up after we reaped it.  Cap the value
+		 * we report, zero it so we don't keep tripping on the same
+		 * corruption, and log a stat for the operator. */
+		if (count >= LOCAL_OP_FLUSH_BATCH) {
+			output(0, "child %u local_op_count corrupted (0x%lx), "
+				"capping. Possible stray write into recycled slot.\n",
+				i, count);
+			child->local_op_count = 0;
+			__atomic_add_fetch(&shm->stats.local_op_count_corrupted, 1,
+					   __ATOMIC_RELAXED);
+			count = LOCAL_OP_FLUSH_BATCH;
+		}
+		sum += count;
 	}
 	return sum;
 }
