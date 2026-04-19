@@ -11,56 +11,40 @@
 #include "utils.h"
 
 /*
- * pidfd.h may not be available on older toolchains, so define the
- * ioctl magic and commands locally if the header is missing.
+ * Kernel headers before 6.9 lack the pidfs ioctl magic and all ten
+ * namespace-getter commands; guard the whole batch on the first symbol.
  */
-#ifndef PIDFS_IOCTL_MAGIC
-#define PIDFS_IOCTL_MAGIC 0xFF
-#endif
-
 #ifndef PIDFD_GET_CGROUP_NAMESPACE
-#define PIDFD_GET_CGROUP_NAMESPACE            _IO(PIDFS_IOCTL_MAGIC, 1)
-#endif
-#ifndef PIDFD_GET_IPC_NAMESPACE
-#define PIDFD_GET_IPC_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 2)
-#endif
-#ifndef PIDFD_GET_MNT_NAMESPACE
-#define PIDFD_GET_MNT_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 3)
-#endif
-#ifndef PIDFD_GET_NET_NAMESPACE
-#define PIDFD_GET_NET_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 4)
-#endif
-#ifndef PIDFD_GET_PID_NAMESPACE
-#define PIDFD_GET_PID_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 5)
-#endif
-#ifndef PIDFD_GET_PID_FOR_CHILDREN_NAMESPACE
-#define PIDFD_GET_PID_FOR_CHILDREN_NAMESPACE  _IO(PIDFS_IOCTL_MAGIC, 6)
-#endif
-#ifndef PIDFD_GET_TIME_NAMESPACE
-#define PIDFD_GET_TIME_NAMESPACE              _IO(PIDFS_IOCTL_MAGIC, 7)
-#endif
-#ifndef PIDFD_GET_TIME_FOR_CHILDREN_NAMESPACE
-#define PIDFD_GET_TIME_FOR_CHILDREN_NAMESPACE _IO(PIDFS_IOCTL_MAGIC, 8)
-#endif
-#ifndef PIDFD_GET_USER_NAMESPACE
-#define PIDFD_GET_USER_NAMESPACE              _IO(PIDFS_IOCTL_MAGIC, 9)
-#endif
-#ifndef PIDFD_GET_UTS_NAMESPACE
-#define PIDFD_GET_UTS_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 10)
+# ifndef PIDFS_IOCTL_MAGIC
+#  define PIDFS_IOCTL_MAGIC                    0xFF
+# endif
+# define PIDFD_GET_CGROUP_NAMESPACE            _IO(PIDFS_IOCTL_MAGIC, 1)
+# define PIDFD_GET_IPC_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 2)
+# define PIDFD_GET_MNT_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 3)
+# define PIDFD_GET_NET_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 4)
+# define PIDFD_GET_PID_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 5)
+# define PIDFD_GET_PID_FOR_CHILDREN_NAMESPACE  _IO(PIDFS_IOCTL_MAGIC, 6)
+# define PIDFD_GET_TIME_NAMESPACE              _IO(PIDFS_IOCTL_MAGIC, 7)
+# define PIDFD_GET_TIME_FOR_CHILDREN_NAMESPACE _IO(PIDFS_IOCTL_MAGIC, 8)
+# define PIDFD_GET_USER_NAMESPACE              _IO(PIDFS_IOCTL_MAGIC, 9)
+# define PIDFD_GET_UTS_NAMESPACE               _IO(PIDFS_IOCTL_MAGIC, 10)
 #endif
 
 /*
- * PIDFD_INFO_* flags and struct pidfd_info were added in Linux 6.13.
- * Define them locally if the kernel headers don't provide them.
+ * Linux 6.13 added PIDFD_INFO_* flags as a unit; guard all five on the
+ * first flag.
  */
 #ifndef PIDFD_INFO_PID
-#define PIDFD_INFO_PID		(1UL << 0)
-#define PIDFD_INFO_CREDS	(1UL << 1)
-#define PIDFD_INFO_CGROUPID	(1UL << 2)
-#define PIDFD_INFO_EXIT		(1UL << 3)
-#define PIDFD_INFO_COREDUMP	(1UL << 4)
+# define PIDFD_INFO_PID      (1UL << 0)
+# define PIDFD_INFO_CREDS    (1UL << 1)
+# define PIDFD_INFO_CGROUPID (1UL << 2)
+# define PIDFD_INFO_EXIT     (1UL << 3)
+# define PIDFD_INFO_COREDUMP (1UL << 4)
 #endif
 
+/*
+ * struct pidfd_info and PIDFD_GET_INFO also landed in Linux 6.13.
+ */
 #ifndef PIDFD_GET_INFO
 struct pidfd_info {
 	__u64 mask;
@@ -81,7 +65,7 @@ struct pidfd_info {
 	__u64 coredump_mask;
 	__u64 __spare1[2];
 };
-#define PIDFD_GET_INFO _IOWR(PIDFS_IOCTL_MAGIC, 11, struct pidfd_info)
+# define PIDFD_GET_INFO _IOWR(PIDFS_IOCTL_MAGIC, 11, struct pidfd_info)
 #endif
 
 static int pidfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
