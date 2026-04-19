@@ -114,6 +114,55 @@ void dump_stats(void)
 			}
 		}
 
+		/* Top-N by per-interval edge growth (delta since last dump_stats). */
+		{
+			unsigned int delta_nr[10];
+			unsigned long delta_edges[10];
+			unsigned int delta_count = 0;
+			bool any_delta = false;
+
+			memset(delta_edges, 0, sizeof(delta_edges));
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long prev = kcov_shm->per_syscall_edges_previous[i];
+				unsigned long curr = kcov_shm->per_syscall_edges[i];
+				unsigned long delta = (curr > prev) ? curr - prev : 0;
+
+				if (delta > 0)
+					any_delta = true;
+
+				if (delta == 0)
+					continue;
+
+				for (j = delta_count; j > 0 && delta > delta_edges[j - 1]; j--) {
+					if (j < 10) {
+						delta_edges[j] = delta_edges[j - 1];
+						delta_nr[j] = delta_nr[j - 1];
+					}
+				}
+				if (j < 10) {
+					delta_edges[j] = delta;
+					delta_nr[j] = i;
+					if (delta_count < 10)
+						delta_count++;
+				}
+			}
+
+			if (any_delta && delta_count > 0) {
+				output(0, "Top syscalls by recent edge growth:\n");
+				for (j = 0; j < delta_count; j++) {
+					struct syscallentry *entry = table[delta_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+
+					output(0, "  %-24s +%lu\n", name, delta_edges[j]);
+				}
+			}
+
+			/* Snapshot current counts for the next interval. */
+			memcpy(kcov_shm->per_syscall_edges_previous,
+			       kcov_shm->per_syscall_edges,
+			       nr_syscalls_to_scan * sizeof(unsigned long));
+		}
+
 		if (cold_count > 0) {
 			output(0, "Cold syscalls (need better sanitise): %u\n", cold_count);
 			for (i = 0; i < nr_syscalls_to_scan; i++) {
