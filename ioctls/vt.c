@@ -144,6 +144,45 @@ static void sanitise_vt_kbd_repeat(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) r;
 }
 
+/* Unimap family */
+
+static void sanitise_vt_unimapdesc(struct syscallrecord *rec)
+{
+	struct unimapdesc *d;
+	unsigned short cnt;
+	struct unipair *pairs;
+	unsigned short i;
+
+	d = get_writable_struct(sizeof(*d));
+	if (!d)
+		return;
+	cnt = rand() % 256 + 1;
+	pairs = get_writable_struct(cnt * sizeof(*pairs));
+	if (pairs) {
+		for (i = 0; i < cnt; i++) {
+			pairs[i].unicode = rand() & 0xffff;
+			pairs[i].fontpos = rand() % 512;
+		}
+	}
+	d->entry_ct = cnt;
+	d->entries  = pairs;
+	rec->a3 = (unsigned long) d;
+}
+
+static void sanitise_vt_unimapinit(struct syscallrecord *rec)
+{
+	struct unimapinit *u;
+
+	u = get_writable_struct(sizeof(*u));
+	if (!u)
+		return;
+	/* 0 = kernel chooses; otherwise a power-of-two hint */
+	u->advised_hashsize  = RAND_BOOL() ? 0 : (1 << (rand() % 8 + 4));
+	u->advised_hashstep  = RAND_BOOL() ? 0 : (rand() % 16 + 1);
+	u->advised_hashlevel = RAND_BOOL() ? 0 : (rand() % 8 + 1);
+	rec->a3 = (unsigned long) u;
+}
+
 /* PIO/GIO font and screenmap family */
 
 static void sanitise_vt_font_raw(struct syscallrecord *rec)
@@ -444,6 +483,16 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 	case GIO_CMAP:
 	case PIO_CMAP:
 		sanitise_vt_cmap(rec);
+		break;
+
+	/* Unimap family */
+	case GIO_UNIMAP:
+	case PIO_UNIMAP:
+		sanitise_vt_unimapdesc(rec);
+		break;
+
+	case PIO_UNIMAPCLR:
+		sanitise_vt_unimapinit(rec);
 		break;
 
 	default:
