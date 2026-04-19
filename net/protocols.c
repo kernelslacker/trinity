@@ -48,6 +48,8 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 #ifdef USE_IF_ALG
 	[PF_ALG] = { .proto = &proto_alg },
 #endif
+	[PF_IB] = { .proto = &proto_ib },
+	[PF_MPLS] = { .proto = &proto_mpls },
 	[PF_KCM] = { .proto = &proto_kcm },
 	[PF_QIPCRTR] = { .proto = &proto_qipcrtr },
 	[PF_SMC] = { .proto = &proto_smc },
