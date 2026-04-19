@@ -36,6 +36,9 @@ struct stats_s {
 	unsigned long sysfs_writes;
 	unsigned long debugfs_writes;
 
+	/* memory_pressure childop: MADV_PAGEOUT + refault cycles */
+	unsigned long memory_pressure_runs;
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task

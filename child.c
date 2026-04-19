@@ -555,9 +555,10 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_MMAP_LIFECYCLE:	return 30;
 	case CHILD_OP_MPROTECT_SPLIT:	return 30;
 	case CHILD_OP_MLOCK_PRESSURE:	return 50;
-	case CHILD_OP_INODE_SPEWER:	return 40;
-	case CHILD_OP_PROCFS_WRITER:	return 60;
-	default:			return 10;
+	case CHILD_OP_INODE_SPEWER:		return 40;
+	case CHILD_OP_PROCFS_WRITER:		return 60;
+	case CHILD_OP_MEMORY_PRESSURE:		return 30;
+	default:				return 10;
 	}
 }
 
@@ -659,12 +660,13 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	switch (r % 5) {
+	switch (r % 6) {
 	case 0: return CHILD_OP_MMAP_LIFECYCLE;
 	case 1: return CHILD_OP_MPROTECT_SPLIT;
 	case 2: return CHILD_OP_MLOCK_PRESSURE;
 	case 3: return CHILD_OP_INODE_SPEWER;
 	case 4: return CHILD_OP_PROCFS_WRITER;
+	case 5: return CHILD_OP_MEMORY_PRESSURE;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -744,9 +746,10 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_MMAP_LIFECYCLE:	ret = mmap_lifecycle(child); break;
 		case CHILD_OP_MPROTECT_SPLIT:	ret = mprotect_split(child); break;
 		case CHILD_OP_MLOCK_PRESSURE:	ret = mlock_pressure(child); break;
-		case CHILD_OP_INODE_SPEWER:	ret = inode_spewer(child); break;
-		case CHILD_OP_PROCFS_WRITER:	ret = procfs_writer(child); break;
-		default:			ret = random_syscall(child); break;
+		case CHILD_OP_INODE_SPEWER:		ret = inode_spewer(child); break;
+		case CHILD_OP_PROCFS_WRITER:		ret = procfs_writer(child); break;
+		case CHILD_OP_MEMORY_PRESSURE:		ret = memory_pressure(child); break;
+		default:				ret = random_syscall(child); break;
 		}
 
 		if (child->op_type != CHILD_OP_SYSCALL) {
