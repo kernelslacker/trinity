@@ -77,6 +77,10 @@ struct trinity_io_uring_sqe {
 #define IOSQE_BUFFER_SELECT	(1U << 5)
 #define IOSQE_CQE_SKIP_SUCCESS	(1U << 6)
 #endif
+/* IORING_OP_TIMEOUT op_flags bit added in Linux v7.1 merge window. */
+#ifndef IORING_TIMEOUT_IMMEDIATE_ARG
+#define IORING_TIMEOUT_IMMEDIATE_ARG	(1U << 7)
+#endif
 
 static unsigned int read_ring_u32(void *ring, unsigned int offset)
 {
