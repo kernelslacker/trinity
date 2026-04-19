@@ -27,6 +27,15 @@ struct shm_s {
 	 * copy to detect stale fds without fcntl(F_GETFD) probes. */
 	uint32_t fd_generation __attribute__((aligned(64)));
 
+	/*
+	 * fd→object hash table.  Lives in shm so children can read the
+	 * per-slot generation counter the parent updates on every
+	 * fd_table mutation.  Reads from children are unlocked; writes
+	 * from the parent happen under shm->objlock.
+	 */
+	struct fd_hash_entry fd_hash[FD_HASH_SIZE] __attribute__((aligned(64)));
+	unsigned int fd_hash_count;
+
 	/* Written by main process — own cache line to avoid
 	 * false sharing with child-written stats above. */
 	unsigned int running_childs __attribute__((aligned(64)));
