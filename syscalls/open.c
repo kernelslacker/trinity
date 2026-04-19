@@ -113,6 +113,52 @@ struct syscallentry syscall_open = {
 };
 
 /*
+ * Oracle: openat(AT_FDCWD, path, O_PATH) must produce an fd whose inode
+ * matches stat(path).  A mismatch means the kernel wired the fd to the wrong
+ * file-struct — silent corruption that KASAN won't catch.  Skip when
+ * O_NOFOLLOW is also set: symlink fds diverge from their stat targets and
+ * would generate false positives.
+ */
+static void post_openat(struct syscallrecord *rec)
+{
+	int fd = rec->retval;
+	const char *path = (const char *) rec->a2;
+	unsigned long flags = rec->a3;
+	struct stat st_fd, st_path;
+
+	if (fd == -1)
+		return;
+
+	if (fstat(fd, &st_fd) != 0) {
+		output(0, "fd oracle: openat returned fd %d but "
+		       "fstat failed (errno %d)\n", fd, errno);
+		__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+		close(fd);
+		return;
+	}
+
+	if ((flags & O_PATH) && !(flags & O_NOFOLLOW) &&
+	    (int) rec->a1 == AT_FDCWD && path != NULL) {
+		if (stat(path, &st_path) == 0 &&
+		    (st_fd.st_dev != st_path.st_dev ||
+		     st_fd.st_ino != st_path.st_ino)) {
+			output(0, "fd oracle: openat(%s, O_PATH) inode mismatch "
+			       "fd=(%lu:%lu) path=(%lu:%lu)\n",
+			       path,
+			       (unsigned long) st_fd.st_dev,
+			       (unsigned long) st_fd.st_ino,
+			       (unsigned long) st_path.st_dev,
+			       (unsigned long) st_path.st_ino);
+			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
+
+	close(fd);
+}
+
+/*
  * SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, int, mode)
  */
 struct syscallentry syscall_openat = {
@@ -124,7 +170,7 @@ struct syscallentry syscall_openat = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
-	.post = post_open,
+	.post = post_openat,
 	.group = GROUP_VFS,
 };
 
