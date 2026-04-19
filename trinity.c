@@ -12,6 +12,7 @@
 #include "fd.h"
 #include "files.h"
 #include "ioctls.h"
+#include "kmsg-monitor.h"
 #include "maps.h"
 #include "objects.h"
 #include "pids.h"
@@ -175,6 +176,8 @@ int main(int argc, char* argv[])
 
 	init_shm();
 
+	kmsg_monitor_start();
+
 	init_taint_checking();
 
 	if (munge_tables() == false) {
@@ -253,6 +256,7 @@ int main(int argc, char* argv[])
 
 	ret = set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
 out:
+	kmsg_monitor_stop();
 
 	exit(ret);
 }
