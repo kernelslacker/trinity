@@ -375,6 +375,96 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	}
 }
 
+static void fill_snd_timer_id(struct snd_timer_id *tid)
+{
+	tid->dev_class = (int)(rand() % 4) - 1;	/* -1 (none) to 3 (PCM) */
+	tid->dev_sclass = rand() % 4;
+	tid->card = RAND_BOOL() ? -1 : (int)(rand() % 8);
+	tid->device = RAND_BOOL() ? -1 : (int)(rand() % 32);
+	tid->subdevice = rand() % 8;
+}
+
+static void sanitise_snd_timer(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_TIMER_IOCTL_NEXT_DEVICE: {
+		struct snd_timer_id *tid = get_writable_struct(sizeof(*tid));
+		if (tid) {
+			fill_snd_timer_id(tid);
+			rec->a3 = (unsigned long) tid;
+		}
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_GINFO: {
+		struct snd_timer_ginfo *gi = get_writable_struct(sizeof(*gi));
+		if (gi) {
+			fill_snd_timer_id(&gi->tid);
+			rec->a3 = (unsigned long) gi;
+		}
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_GPARAMS: {
+		struct snd_timer_gparams *gp = get_writable_struct(sizeof(*gp));
+		if (gp) {
+			fill_snd_timer_id(&gp->tid);
+			gp->period_num = rand() % 1000000 + 1;
+			gp->period_den = rand() % 1000000 + 1;
+			rec->a3 = (unsigned long) gp;
+		}
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_GSTATUS: {
+		struct snd_timer_gstatus *gs = get_writable_struct(sizeof(*gs));
+		if (gs) {
+			fill_snd_timer_id(&gs->tid);
+			rec->a3 = (unsigned long) gs;
+		}
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_SELECT: {
+		struct snd_timer_select *sel = get_writable_struct(sizeof(*sel));
+		if (sel) {
+			fill_snd_timer_id(&sel->id);
+			rec->a3 = (unsigned long) sel;
+		}
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_INFO: {
+		struct snd_timer_info *info = get_writable_struct(sizeof(*info));
+		if (info)
+			rec->a3 = (unsigned long) info;
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_STATUS: {
+		struct snd_timer_status *st = get_writable_struct(sizeof(*st));
+		if (st)
+			rec->a3 = (unsigned long) st;
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_PARAMS: {
+		struct snd_timer_params *p = get_writable_struct(sizeof(*p));
+		if (p) {
+			p->flags = rand() & 0x7;
+			p->ticks = rand() % 64 + 1;
+			p->queue_size = rand() % (1024 - 32) + 32;
+			p->filter = ~0U;	/* all events */
+			rec->a3 = (unsigned long) p;
+		}
+		break;
+	}
+	case SNDRV_TIMER_IOCTL_TREAD: {
+		int *tread = get_writable_struct(sizeof(int));
+		if (tread) {
+			*tread = RAND_BOOL();
+			rec->a3 = (unsigned long) tread;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -440,6 +530,19 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_RAWMIDI_IOCTL_DROP:
 	case SNDRV_RAWMIDI_IOCTL_DRAIN:
 		sanitise_snd_rawmidi(rec);
+		break;
+
+	/* snd-timer */
+	case SNDRV_TIMER_IOCTL_NEXT_DEVICE:
+	case SNDRV_TIMER_IOCTL_TREAD:
+	case SNDRV_TIMER_IOCTL_GINFO:
+	case SNDRV_TIMER_IOCTL_GPARAMS:
+	case SNDRV_TIMER_IOCTL_GSTATUS:
+	case SNDRV_TIMER_IOCTL_SELECT:
+	case SNDRV_TIMER_IOCTL_INFO:
+	case SNDRV_TIMER_IOCTL_PARAMS:
+	case SNDRV_TIMER_IOCTL_STATUS:
+		sanitise_snd_timer(rec);
 		break;
 
 	default:
