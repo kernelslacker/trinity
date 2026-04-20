@@ -72,15 +72,27 @@ void minicorpus_save(struct syscallrecord *rec)
 	if (entry == NULL)
 		return;
 
-	/* Reject syscalls whose args carry heap pointers allocated by
-	 * generic_sanitise().  After deferred-free eviction those pointers
-	 * go stale, and replaying them feeds freed memory to the kernel. */
+	/* Reject syscalls whose args don't survive replay across runs.
+	 *
+	 *  - ARG_IOVEC / ARG_PATHNAME / ARG_SOCKADDR / ARG_MMAP: heap pointers
+	 *    allocated by generic_sanitise().  After deferred-free eviction
+	 *    they go stale and replaying them feeds freed memory to the kernel.
+	 *
+	 *  - ARG_PID: a pid valid in the saving run is meaningless in the
+	 *    replaying run.  Worse, due to dense trinity pid allocation and
+	 *    kernel pid recycling, a stale pid frequently HITS a current
+	 *    trinity child or the parent — replay of kill/tkill/tgkill/
+	 *    pidfd_send_signal/rt_sigqueueinfo entries cascade-SIGKILLs the
+	 *    fleet.  Observed 2026-04-20 immediately after warm-start landed:
+	 *    639-entry corpus → wave of "pid X has disappeared" reaps within
+	 *    seconds of fork-out. */
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		switch (entry->argtype[i]) {
 		case ARG_IOVEC:
 		case ARG_PATHNAME:
 		case ARG_SOCKADDR:
 		case ARG_MMAP:
+		case ARG_PID:
 			return;
 		default:
 			break;
@@ -101,9 +113,15 @@ void minicorpus_save(struct syscallrecord *rec)
 	ent->num_args = entry->num_args;
 
 	/* Saved fd numbers are stale on replay — zero them out so mutate_arg
-	 * gets a fresh fd rather than trying to reuse a closed one. */
+	 * gets a fresh fd rather than trying to reuse a closed one.  Same
+	 * treatment for ARG_ADDRESS / ARG_NON_NULL_ADDRESS: raw user pointers
+	 * from the saving run's address space are garbage in the replaying
+	 * run, but the runtime can re-derive a valid writable page if the
+	 * slot is zero. */
 	for (i = 0; i < entry->num_args && i < 6; i++) {
-		if (is_fdarg(entry->argtype[i]))
+		if (is_fdarg(entry->argtype[i]) ||
+		    entry->argtype[i] == ARG_ADDRESS ||
+		    entry->argtype[i] == ARG_NON_NULL_ADDRESS)
 			ent->args[i] = 0;
 	}
 
@@ -256,7 +274,7 @@ bool minicorpus_replay(struct syscallrecord *rec)
  */
 
 #define CORPUS_FILE_MAGIC	0x54524E43U	/* "TRNC" */
-#define CORPUS_FILE_VERSION	2U
+#define CORPUS_FILE_VERSION	3U
 
 /* Linux utsname fields are __NEW_UTS_LEN+1 = 65 bytes including NUL. */
 #define CORPUS_UTSNAME_LEN	65
