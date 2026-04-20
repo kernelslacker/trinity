@@ -212,9 +212,10 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
  * MAP_SHARED memory so children can safely read them.  Using realloc()
  * on private heap would put the new array in the parent's address space
  * only, causing children to SIGSEGV when they follow the pointer.
+ *
+ * Exposed in objects.h so other code (e.g. mm/maps.c) can use the
+ * same upper bound when defending against corrupt global lists.
  */
-#define GLOBAL_OBJ_MAX_CAPACITY	1024
-
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;

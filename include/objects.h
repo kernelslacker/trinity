@@ -199,6 +199,13 @@ struct objhead {
 	void (*dump)(struct object *obj, enum obj_scope scope);
 };
 
+/*
+ * Cap for the number of objects on a global objhead list.  Allocated up
+ * front in shm so children never need to follow a parent-private array
+ * pointer.  See the matching comment above add_object().
+ */
+#define GLOBAL_OBJ_MAX_CAPACITY	1024
+
 struct object * alloc_object(void);
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type);
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type);

@@ -100,33 +100,54 @@ void init_child_mappings(void)
 	/* Copy the initial mapping list to the child.
 	 * Note we're only copying pointers here, the actual mmaps
 	 * will be faulted into the child when they get accessed.
+	 *
+	 * Defensive: cap iteration at the global capacity (a corrupt
+	 * list with a circular `next` would otherwise loop forever) and
+	 * skip entries whose name pointer is bogus.  See child #9 spawn
+	 * crash where m->name had been overwritten with 0x610000.
 	 */
-	list_for_each(node, globallist) {
-		struct map *m;
-		struct object *globalobj, *newobj;
+	{
+		unsigned int seen = 0;
+		const unsigned int max_iter = GLOBAL_OBJ_MAX_CAPACITY + 1;
 
-		if (node == NULL)
-			break;
+		list_for_each(node, globallist) {
+			struct map *m;
+			struct object *globalobj, *newobj;
 
-		globalobj = (struct object *) node;
-		m = &globalobj->map;
+			if (node == NULL)
+				break;
 
-		newobj = alloc_object();
-		newobj->map.ptr = m->ptr;
-		newobj->map.name = strdup(m->name);
-		if (!newobj->map.name) {
-			free(newobj);
-			continue;
+			if (++seen > max_iter) {
+				outputerr("init_child_mappings: global mmap list looks corrupt (>%u entries), bailing\n",
+					  max_iter);
+				break;
+			}
+
+			globalobj = (struct object *) node;
+			m = &globalobj->map;
+
+			if (m->name == NULL) {
+				outputerr("init_child_mappings: skipping global map with NULL name\n");
+				continue;
+			}
+
+			newobj = alloc_object();
+			newobj->map.ptr = m->ptr;
+			newobj->map.name = strdup(m->name);
+			if (!newobj->map.name) {
+				free(newobj);
+				continue;
+			}
+			newobj->map.size = m->size;
+			newobj->map.prot = m->prot;
+			newobj->map.flags = m->flags;
+			newobj->map.fd = m->fd;
+			/* We leave type as 'INITIAL' until we change the mapping
+			 * by mprotect/mremap/munmap etc..
+			 */
+			newobj->map.type = INITIAL_ANON;
+			add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
 		}
-		newobj->map.size = m->size;
-		newobj->map.prot = m->prot;
-		newobj->map.flags = m->flags;
-		newobj->map.fd = m->fd;
-		/* We leave type as 'INITIAL' until we change the mapping
-		 * by mprotect/mremap/munmap etc..
-		 */
-		newobj->map.type = INITIAL_ANON;
-		add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
 	}
 }
 
