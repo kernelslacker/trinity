@@ -95,7 +95,7 @@ static ssize_t do_copy_file_range(int fd_in, off_t *off_in,
 
 static void make_base_path(char *buf, size_t len)
 {
-	snprintf(buf, len, "/tmp/trinity-fslife-%d-%u",
+	snprintf(buf, len, "trinity-fslife-%d-%u",
 		 (int)getpid(), fslife_seq++);
 }
 
