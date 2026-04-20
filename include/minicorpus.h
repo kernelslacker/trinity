@@ -58,3 +58,24 @@ void minicorpus_save(struct syscallrecord *rec);
  * was available or the dice roll said to generate fresh args.
  * Only call when entry->sanitise == NULL. */
 bool minicorpus_replay(struct syscallrecord *rec);
+
+/* Persist the in-memory corpus rings to a file at @path.
+ * Writes via a .tmp file and renames atomically.  Returns true on
+ * success, false on any I/O failure (caller should treat as advisory). */
+bool minicorpus_save_file(const char *path);
+
+/* Load a previously-persisted corpus from @path into the rings.
+ * Discards entries silently when the file is missing, the magic/version
+ * header doesn't match, the kernel major.minor differs from the running
+ * kernel, or a per-entry CRC fails.
+ *
+ * @loaded and @discarded receive counts for stats reporting; either may
+ * be NULL.  Returns true if at least one entry was loaded. */
+bool minicorpus_load_file(const char *path,
+		unsigned int *loaded, unsigned int *discarded);
+
+/* Default per-arch persistence path (e.g. ~/.cache/trinity/corpus/x86_64).
+ * Returned pointer is owned by the callee and remains valid until the
+ * next call.  Returns NULL if no suitable path can be derived (no $HOME,
+ * mkdir failure, etc.). */
+const char *minicorpus_default_path(void);
