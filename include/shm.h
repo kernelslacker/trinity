@@ -59,7 +59,8 @@ struct shm_s {
 	struct objhead global_objects[MAX_OBJECT_TYPES];
 
 	/* io_uring ring with valid mappings, shared across children.
-	 * Protected by objlock. */
+	 * Init write uses RELEASE; child reads use ACQUIRE (lockless).
+	 * Destructor nulls this under objlock. */
 	struct io_uringobj *mapped_ring;
 
 	/* Contended child<>child locks — own cache line. */
