@@ -97,6 +97,14 @@ struct shm_s {
 	 * its slot here so siblings stop probing.  Indexed by the recipe's
 	 * slot in the static catalog inside recipe-runner.c. */
 	bool recipe_disabled[MAX_RECIPES];
+
+	/* iouring_recipes discovery latches: mirrors recipe_disabled but
+	 * scoped to the iouring-recipes childop catalog. */
+	bool iouring_recipe_disabled[MAX_IOURING_RECIPES];
+
+	/* Set to true once we confirm io_uring_setup returns ENOSYS.
+	 * Avoids repeated failed probes from every child. */
+	bool iouring_enosys;
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;

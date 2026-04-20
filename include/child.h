@@ -54,6 +54,7 @@ enum child_op_type {
 	CHILD_OP_BPF_LIFECYCLE,
 	CHILD_OP_FAULT_INJECTOR,
 	CHILD_OP_RECIPE_RUNNER,
+	CHILD_OP_IOURING_RECIPES,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -177,3 +178,4 @@ bool tracefs_fuzzer(struct childdata *child);
 bool bpf_lifecycle(struct childdata *child);
 bool fault_injector(struct childdata *child);
 bool recipe_runner(struct childdata *child);
+bool iouring_recipes(struct childdata *child);

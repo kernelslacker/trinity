@@ -159,6 +159,15 @@ void dump_stats(void)
 		recipe_runner_dump_stats();
 	}
 
+	if (shm->stats.iouring_recipes_runs) {
+		output(0, "\nio_uring recipes: runs:%lu completed:%lu partial:%lu enosys:%lu\n",
+			shm->stats.iouring_recipes_runs,
+			shm->stats.iouring_recipes_completed,
+			shm->stats.iouring_recipes_partial,
+			shm->stats.iouring_recipes_enosys);
+		iouring_recipes_dump_stats();
+	}
+
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
 		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",
