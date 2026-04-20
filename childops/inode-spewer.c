@@ -235,25 +235,19 @@ bool inode_spewer(struct childdata *child)
 }
 
 /*
- * Called from child_process() out: block on graceful exit so we don't
- * leak an empty trinity-inodes-<pid> directory per child.  No-op if
- * the spewer never ran in this child (most do not).  SIGKILL'd
- * children still leak — fixing those would need a parent-side reaper.
+ * Drain trinity-inodes-<pid>/ and rmdir it.  Used by both the
+ * graceful-exit cleanup (own pid) and the parent-side reaper
+ * (reaped child's pid, in case the child was SIGKILL'd before
+ * running its own cleanup).
  */
-void inode_spewer_cleanup(void)
+static void cleanup_spew_dir_for(pid_t pid)
 {
 	char dir[128];
 	DIR *d;
 	struct dirent *de;
 
-	if (!spew_dir_created)
-		return;
+	snprintf(dir, sizeof(dir), "trinity-inodes-%d", (int)pid);
 
-	snprintf(dir, sizeof(dir), "trinity-inodes-%d", getpid());
-
-	/* Drain any stragglers (e.g. files left behind by an interrupted
-	 * iteration).  Normal iterations unlink before returning, so this
-	 * is usually a no-op. */
 	d = opendir(dir);
 	if (d != NULL) {
 		while ((de = readdir(d)) != NULL) {
@@ -274,5 +268,31 @@ void inode_spewer_cleanup(void)
 	}
 
 	(void)rmdir(dir);
+}
+
+/*
+ * Called from child_process() out: block on graceful exit so we don't
+ * leak an empty trinity-inodes-<pid> directory per child.  No-op if
+ * the spewer never ran in this child (most do not).
+ */
+void inode_spewer_cleanup(void)
+{
+	if (!spew_dir_created)
+		return;
+	cleanup_spew_dir_for(getpid());
 	spew_dir_created = false;
+}
+
+/*
+ * Called from the parent after reaping a child, to mop up the case
+ * where the child was SIGKILL'd before inode_spewer_cleanup() ran.
+ * No-op when the dir doesn't exist (most children never invoke the
+ * inode spewer); cheap opendir/rmdir otherwise.  Same cwd as the
+ * child since trinity chdirs into tmpdir at startup before forking.
+ */
+void inode_spewer_reap(pid_t pid)
+{
+	if (pid <= 0)
+		return;
+	cleanup_spew_dir_for(pid);
 }

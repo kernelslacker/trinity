@@ -134,10 +134,13 @@ static int shm_is_corrupt(void)
  */
 void reap_child(struct childdata *child, int childno)
 {
+	pid_t pid;
+
 	if (child == NULL)
 		return;
 	/* Don't reap a child again */
-	if (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) == EMPTY_PIDSLOT)
+	pid = __atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE);
+	if (pid == EMPTY_PIDSLOT)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	bust_lock(&child->syscall.lock);
@@ -164,6 +167,10 @@ void reap_child(struct childdata *child, int childno)
 					       0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 
 	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
+
+	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
+	 * never ran in the child.  No-op when the dir doesn't exist. */
+	inode_spewer_reap(pid);
 }
 
 /* Make sure there's no dead kids lying around.
