@@ -111,8 +111,59 @@ static void audit_fd_bucket(void)
 	}
 }
 
+/*
+ * Bucket 1: mmap refcount check via /proc/self/maps.
+ *
+ * Walk the global pool for all three mmap object types and verify each
+ * recorded mapping is still visible in /proc/self/maps at the expected
+ * address, size, and protection.  Reuses proc_maps_check(), which handles
+ * /proc open failures gracefully (returns true on I/O error, so we only
+ * report genuine mismatches).
+ *
+ * The global object array lives in MAP_SHARED memory so we can read it from
+ * child context without a lock.  We null-check each slot to tolerate the
+ * parent concurrently pruning entries under objlock.
+ */
 static void audit_mmap_bucket(void)
 {
+	static const enum objecttype mmap_types[] = {
+		OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE,
+	};
+	unsigned int t;
+
+	for (t = 0; t < ARRAY_SIZE(mmap_types); t++) {
+		struct objhead *head;
+		unsigned int i;
+
+		head = get_objhead(OBJ_GLOBAL, mmap_types[t]);
+		if (head == NULL || head->num_entries == 0 || head->array == NULL)
+			continue;
+
+		for (i = 0; i < head->num_entries; i++) {
+			struct object *obj;
+			struct map *m;
+			unsigned long addr;
+
+			if (i >= head->array_capacity)
+				break;
+
+			obj = head->array[i];
+			if (obj == NULL)
+				continue;
+
+			m = &obj->map;
+			addr = (unsigned long) m->ptr;
+			if (addr == 0 || m->size == 0)
+				continue;
+
+			if (!proc_maps_check(addr, m->size, m->prot, true)) {
+				output(0, "refcount audit: mapping %p size=%lu prot=0x%x missing from /proc/self/maps\n",
+				       m->ptr, m->size, m->prot);
+				__atomic_add_fetch(&shm->stats.refcount_audit_mmap_anomalies,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
+	}
 }
 
 static void audit_socket_bucket(void)
