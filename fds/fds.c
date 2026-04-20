@@ -254,6 +254,7 @@ int get_typed_fd(enum argtype type)
 	case ARG_FD_EPOLL:	objtype = OBJ_FD_EPOLL; break;
 	case ARG_FD_EVENTFD:	objtype = OBJ_FD_EVENTFD; break;
 	case ARG_FD_FANOTIFY:	objtype = OBJ_FD_FANOTIFY; break;
+	case ARG_FD_FS_CTX:	objtype = OBJ_FD_FS_CTX; break;
 	case ARG_FD_INOTIFY:	objtype = OBJ_FD_INOTIFY; break;
 	case ARG_FD_IO_URING:	objtype = OBJ_FD_IO_URING; break;
 	case ARG_FD_LANDLOCK:	objtype = OBJ_FD_LANDLOCK; break;

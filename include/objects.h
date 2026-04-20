@@ -101,6 +101,10 @@ struct iommufdobj {
 	int fd;
 };
 
+struct fsctxobj {
+	int fd;
+};
+
 struct io_uringobj {
 	int fd;
 	unsigned int setup_flags;
@@ -168,6 +172,8 @@ struct object {
 		struct seccomp_notifobj seccomp_notifobj;
 
 		struct iommufdobj iommufdobj;
+
+		struct fsctxobj fsctxobj;
 
 		struct io_uringobj io_uringobj;
 

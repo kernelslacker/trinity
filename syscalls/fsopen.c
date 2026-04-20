@@ -3,6 +3,7 @@
  */
 #include <string.h>
 #include <unistd.h>
+#include "object-types.h"
 #include "random.h"
 #include "sanitise.h"
 
@@ -40,8 +41,8 @@ struct syscallentry syscall_fsopen = {
 	.argname = { [0] = "_fs_name", [1] = "flags" },
 	.arg_params[1].list = ARGLIST(fsopen_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_FS_CTX,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_fsopen,
-	.post = generic_post_close_fd,
 };

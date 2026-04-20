@@ -2,6 +2,7 @@
  *  SYSCALL_DEFINE3(fsmount, int, fs_fd, unsigned int, flags, unsigned int, attr_flags)
  */
 #include <unistd.h>
+#include "object-types.h"
 #include "sanitise.h"
 
 #define FSMOUNT_CLOEXEC         0x00000001
@@ -42,7 +43,7 @@ static unsigned long fsmount_attr_flags[] = {
 struct syscallentry syscall_fsmount = {
 	.name = "fsmount",
 	.num_args = 3,
-	.argtype = { [0] = ARG_FD, [1] = ARG_OP, [2] = ARG_OP },
+	.argtype = { [0] = ARG_FD_FS_CTX, [1] = ARG_OP, [2] = ARG_OP },
 	.argname = { [0] = "fs_fd", [1] = "flags", [2] = "attr_flags" },
 	.arg_params[1].list = ARGLIST(fsmount_flags),
 	.arg_params[2].list = ARGLIST(fsmount_attr_flags),

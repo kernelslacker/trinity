@@ -2,6 +2,7 @@
  *  SYSCALL_DEFINE3(fspick, int, dfd, const char __user *, path, unsigned int, flags)
  */
 #include <unistd.h>
+#include "object-types.h"
 #include "sanitise.h"
 
 #define FSPICK_CLOEXEC          0x00000001
@@ -23,7 +24,7 @@ struct syscallentry syscall_fspick = {
 	.argname = { [0] = "dfd", [1] = "path", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(fspick_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_FS_CTX,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
-	.post = generic_post_close_fd,
 };
