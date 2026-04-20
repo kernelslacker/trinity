@@ -3,6 +3,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include "locks.h"
+#include "object-types.h"
 #include "types.h"
 #include "utils.h"
 
@@ -143,6 +144,16 @@ struct syscallentry {
 
 	const unsigned int group;
 	const int rettype;
+
+	/*
+	 * Object type for the fd this syscall returns, or OBJ_NONE if
+	 * the syscall does not return a trackable fd.  Set once in the
+	 * syscallentry; the generic post-hook in handle_syscall_ret()
+	 * uses it to register the returned fd into the per-type pool
+	 * automatically, without each new fd-creating syscall having
+	 * to write its own .post handler.
+	 */
+	enum objecttype ret_objtype;
 };
 
 #define RET_BORING		-1

@@ -1,6 +1,13 @@
 #pragma once
 
 enum objecttype {
+	/*
+	 * Sentinel placed at slot 0 so a default-initialised
+	 * ret_objtype field (zero) reads as "no fd to track".
+	 * All real types follow; the cost is one unused objhead
+	 * slot in every per-scope array.
+	 */
+	OBJ_NONE,
 	OBJ_MMAP_ANON,
 	OBJ_MMAP_FILE,
 	OBJ_MMAP_TESTFILE,

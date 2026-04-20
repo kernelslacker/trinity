@@ -559,6 +559,68 @@ void destroy_global_objects(void)
 }
 
 /*
+ * Store an fd into the appropriate union field for this object type.
+ * The inverse of fd_from_object(); used by the generic post-hook that
+ * registers fds returned by RET_FD syscalls without a custom handler.
+ */
+void set_object_fd(struct object *obj, enum objecttype type, int fd)
+{
+	switch (type) {
+	case OBJ_FD_PIPE:	obj->pipeobj.fd = fd; break;
+	case OBJ_FD_DEVFILE:
+	case OBJ_FD_PROCFILE:
+	case OBJ_FD_SYSFILE:	obj->fileobj.fd = fd; break;
+	case OBJ_FD_PERF:	obj->perfobj.fd = fd; break;
+	case OBJ_FD_EPOLL:	obj->epollobj.fd = fd; break;
+	case OBJ_FD_EVENTFD:	obj->eventfdobj.fd = fd; break;
+	case OBJ_FD_TIMERFD:	obj->timerfdobj.fd = fd; break;
+	case OBJ_FD_TESTFILE:	obj->testfileobj.fd = fd; break;
+	case OBJ_FD_MEMFD:	obj->memfdobj.fd = fd; break;
+	case OBJ_FD_DRM:	obj->drmfd = fd; break;
+	case OBJ_FD_INOTIFY:	obj->inotifyobj.fd = fd; break;
+	case OBJ_FD_SOCKET:	obj->sockinfo.fd = fd; break;
+	case OBJ_FD_USERFAULTFD: obj->userfaultobj.fd = fd; break;
+	case OBJ_FD_FANOTIFY:	obj->fanotifyobj.fd = fd; break;
+	case OBJ_FD_BPF_MAP:	obj->bpfobj.map_fd = fd; break;
+	case OBJ_FD_BPF_PROG:	obj->bpfprogobj.fd = fd; break;
+	case OBJ_FD_IO_URING:	obj->io_uringobj.fd = fd; break;
+	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = fd; break;
+	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = fd; break;
+	case OBJ_FD_MQ:		obj->mqobj.fd = fd; break;
+	case OBJ_FD_SECCOMP_NOTIF: obj->seccomp_notifobj.fd = fd; break;
+	case OBJ_FD_IOMMUFD:	obj->iommufdobj.fd = fd; break;
+	default:		break;
+	}
+}
+
+/*
+ * Linear search the per-child OBJ_LOCAL pool of one type for an fd.
+ * Used by the generic post-hook to detect fds that a syscall-specific
+ * post handler already registered, so we don't double-track them.
+ * O(n) over a small n (typically tens of entries).
+ */
+struct object *find_local_object_by_fd(enum objecttype type, int fd)
+{
+	struct objhead *head;
+	unsigned int i;
+
+	if (fd < 0)
+		return NULL;
+
+	head = get_objhead(OBJ_LOCAL, type);
+	if (head == NULL || head->num_entries == 0)
+		return NULL;
+
+	for (i = 0; i < head->num_entries; i++) {
+		struct object *obj = head->array[i];
+
+		if (obj != NULL && fd_from_object(obj, type) == fd)
+			return obj;
+	}
+	return NULL;
+}
+
+/*
  * Extract the fd from an object, given its type.
  * Returns -1 for non-fd object types.
  */

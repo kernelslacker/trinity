@@ -15,6 +15,7 @@
 #include "child.h"
 #include "deferred-free.h"
 #include "kcov.h"
+#include "objects.h"
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -270,6 +271,40 @@ void generic_post_close_fd(struct syscallrecord *rec)
 		close((int)rec->retval);
 }
 
+/*
+ * Generic post-hook: register the fd returned by an annotated syscall
+ * into its typed OBJ_LOCAL pool.  Runs after entry->post so a
+ * syscall-specific handler that already registered the fd (and possibly
+ * stored extra metadata like socket triplet, eventfd count, etc.)
+ * stays authoritative; we only fill in what nobody else tracked.
+ */
+static void register_returned_fd(const struct syscallentry *entry,
+				 struct syscallrecord *rec)
+{
+	enum objecttype type = entry->ret_objtype;
+	struct object *obj;
+	int fd;
+
+	if (type == OBJ_NONE)
+		return;
+	if ((long)rec->retval < 0)
+		return;
+
+	fd = (int)rec->retval;
+	if (fd <= 2)
+		return;
+
+	if (find_local_object_by_fd(type, fd) != NULL)
+		return;
+
+	obj = alloc_object();
+	set_object_fd(obj, type, fd);
+	add_object(obj, OBJ_LOCAL, type);
+
+	__atomic_add_fetch(&shm->stats.fd_runtime_registered, 1,
+			   __ATOMIC_RELAXED);
+}
+
 void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childdata *child)
 {
 	struct syscallentry *entry;
@@ -357,6 +392,8 @@ void handle_syscall_ret(struct syscallrecord *rec)
 
 	if (entry->post)
 	    entry->post(rec);
+
+	register_returned_fd(entry, rec);
 
 	check_uid();
 
