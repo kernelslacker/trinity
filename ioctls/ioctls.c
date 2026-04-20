@@ -149,6 +149,17 @@ void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 	rec->a4 = random_ioctl_arg();
 	rec->a5 = random_ioctl_arg();
 	rec->a6 = random_ioctl_arg();
+
+	/* random_ioctl_arg() returns rand64() half the time; many ioctl
+	 * requests treat the arg as a writable user pointer (_IOR / _IOWR).
+	 * If a fuzzed arg overlapped one of trinity's alloc_shared regions
+	 * the kernel would scribble its result over our bookkeeping.  We
+	 * don't decode the request to know which slot is the buffer, so
+	 * defensively scrub all four. */
+	avoid_shared_buffer(&rec->a3, page_size);
+	avoid_shared_buffer(&rec->a4, page_size);
+	avoid_shared_buffer(&rec->a5, page_size);
+	avoid_shared_buffer(&rec->a6, page_size);
 }
 
 void dump_ioctls(void)
