@@ -193,6 +193,10 @@ void dump_stats(void)
 		output(0, "\nfd_event_ring canary mismatch events: %lu\n",
 			shm->stats.fd_event_ring_overwritten);
 
+	if (shm->stats.shared_buffer_redirected)
+		output(0, "\nshared-buffer redirects: %lu (output-buffer args rewritten away from alloc_shared regions)\n",
+			shm->stats.shared_buffer_redirected);
+
 	if (shm->stats.refcount_audit_runs)
 		output(0, "\nrefcount audit: runs:%lu fd-anomalies:%lu mmap-anomalies:%lu sock-anomalies:%lu\n",
 			shm->stats.refcount_audit_runs,
