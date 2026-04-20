@@ -14,8 +14,10 @@
  * path including orphan inode handling when fds are still open.
  */
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,11 +45,13 @@
 #endif
 
 static unsigned long file_counter;
+static bool spew_dir_created;
 
 static void ensure_spew_dir(char *dir, size_t len)
 {
 	snprintf(dir, len, "trinity-inodes-%d", getpid());
 	(void)mkdir(dir, 0700);
+	spew_dir_created = true;
 }
 
 static unsigned long pick_file_size(void)
@@ -228,4 +232,47 @@ bool inode_spewer(struct childdata *child)
 	}
 
 	return true;
+}
+
+/*
+ * Called from child_process() out: block on graceful exit so we don't
+ * leak an empty trinity-inodes-<pid> directory per child.  No-op if
+ * the spewer never ran in this child (most do not).  SIGKILL'd
+ * children still leak — fixing those would need a parent-side reaper.
+ */
+void inode_spewer_cleanup(void)
+{
+	char dir[128];
+	DIR *d;
+	struct dirent *de;
+
+	if (!spew_dir_created)
+		return;
+
+	snprintf(dir, sizeof(dir), "trinity-inodes-%d", getpid());
+
+	/* Drain any stragglers (e.g. files left behind by an interrupted
+	 * iteration).  Normal iterations unlink before returning, so this
+	 * is usually a no-op. */
+	d = opendir(dir);
+	if (d != NULL) {
+		while ((de = readdir(d)) != NULL) {
+			/* dir is up to 128 bytes, d_name up to 255 — be
+			 * generous so snprintf can't truncate. */
+			char path[512];
+
+			if (de->d_name[0] == '.' &&
+			    (de->d_name[1] == '\0' ||
+			     (de->d_name[1] == '.' && de->d_name[2] == '\0')))
+				continue;
+
+			snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
+			if (unlink(path) == -1 && errno == EISDIR)
+				(void)rmdir(path);
+		}
+		closedir(d);
+	}
+
+	(void)rmdir(dir);
+	spew_dir_created = false;
 }
