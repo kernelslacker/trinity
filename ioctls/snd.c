@@ -644,6 +644,100 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 	}
 }
 
+static const int afmt_vals[] = {
+	AFMT_MU_LAW, AFMT_A_LAW, AFMT_IMA_ADPCM, AFMT_U8,
+	AFMT_S16_LE, AFMT_S16_BE, AFMT_S8, AFMT_U16_LE,
+	AFMT_U16_BE, AFMT_MPEG, AFMT_AC3, AFMT_QUERY,
+};
+
+static void sanitise_oss_dsp(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDCTL_DSP_SPEED: {
+		int *rate = get_writable_struct(sizeof(int));
+		if (rate) {
+			*rate = pcm_rates[rand() % ARRAY_SIZE(pcm_rates)];
+			rec->a3 = (unsigned long) rate;
+		}
+		break;
+	}
+	case SNDCTL_DSP_STEREO: {
+		int *stereo = get_writable_struct(sizeof(int));
+		if (stereo) {
+			*stereo = rand() & 1;
+			rec->a3 = (unsigned long) stereo;
+		}
+		break;
+	}
+	case SNDCTL_DSP_CHANNELS: {
+		int *ch = get_writable_struct(sizeof(int));
+		if (ch) {
+			*ch = rand() % 8 + 1;
+			rec->a3 = (unsigned long) ch;
+		}
+		break;
+	}
+	case SNDCTL_DSP_SETFMT: {
+		int *fmt = get_writable_struct(sizeof(int));
+		if (fmt) {
+			*fmt = afmt_vals[rand() % ARRAY_SIZE(afmt_vals)];
+			rec->a3 = (unsigned long) fmt;
+		}
+		break;
+	}
+	case SNDCTL_DSP_SETFRAGMENT: {
+		/* low 16 bits: log2(fragment size), 4-15; high 16 bits: max fragments */
+		int *frag = get_writable_struct(sizeof(int));
+		if (frag) {
+			int fsz = rand() % 12 + 4;
+			int nf = RAND_BOOL() ? 0 : (rand() % 15 + 2);
+			*frag = fsz | (nf << 16);
+			rec->a3 = (unsigned long) frag;
+		}
+		break;
+	}
+	case SNDCTL_DSP_SUBDIVIDE: {
+		int *sub = get_writable_struct(sizeof(int));
+		if (sub) {
+			/* legal values are 1, 2, 4 */
+			static const int subdivs[] = { 1, 2, 4 };
+			*sub = subdivs[rand() % 3];
+			rec->a3 = (unsigned long) sub;
+		}
+		break;
+	}
+	case SNDCTL_DSP_SETTRIGGER: {
+		int *trig = get_writable_struct(sizeof(int));
+		if (trig) {
+			*trig = rand() & (PCM_ENABLE_INPUT | PCM_ENABLE_OUTPUT);
+			rec->a3 = (unsigned long) trig;
+		}
+		break;
+	}
+	case SNDCTL_DSP_GETOSPACE:
+	case SNDCTL_DSP_GETISPACE: {
+		audio_buf_info *info = get_writable_struct(sizeof(*info));
+		if (info)
+			rec->a3 = (unsigned long) info;
+		break;
+	}
+	case SNDCTL_DSP_GETIPTR:
+	case SNDCTL_DSP_GETOPTR: {
+		count_info *ci = get_writable_struct(sizeof(*ci));
+		if (ci)
+			rec->a3 = (unsigned long) ci;
+		break;
+	}
+	default: {
+		/* GETBLKSIZE, GETFMTS, GETCAPS, GETTRIGGER, GETODELAY: writable int */
+		int *val = get_writable_struct(sizeof(int));
+		if (val)
+			rec->a3 = (unsigned long) val;
+		break;
+	}
+	}
+}
+
 static void sanitise_oss_mixer(struct syscallrecord *rec)
 {
 	switch (rec->a2) {
@@ -752,6 +846,26 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_TIMER_IOCTL_PARAMS:
 	case SNDRV_TIMER_IOCTL_STATUS:
 		sanitise_snd_timer(rec);
+		break;
+
+	/* OSS PCM (/dev/dsp, type 'P') */
+	case SNDCTL_DSP_SPEED:
+	case SNDCTL_DSP_STEREO:
+	case SNDCTL_DSP_GETBLKSIZE:
+	case SNDCTL_DSP_SETFMT:
+	case SNDCTL_DSP_CHANNELS:
+	case SNDCTL_DSP_SUBDIVIDE:
+	case SNDCTL_DSP_SETFRAGMENT:
+	case SNDCTL_DSP_GETFMTS:
+	case SNDCTL_DSP_GETOSPACE:
+	case SNDCTL_DSP_GETISPACE:
+	case SNDCTL_DSP_GETCAPS:
+	case SNDCTL_DSP_GETTRIGGER:
+	case SNDCTL_DSP_SETTRIGGER:
+	case SNDCTL_DSP_GETIPTR:
+	case SNDCTL_DSP_GETOPTR:
+	case SNDCTL_DSP_GETODELAY:
+		sanitise_oss_dsp(rec);
 		break;
 
 	/* OSS mixer (/dev/mixer, type 'M') */
@@ -988,6 +1102,29 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_EMUX_IOCTL_REMOVE_LAST_SAMPLES),
 	IOCTL(SNDRV_EMUX_IOCTL_MEM_AVAIL),
 	IOCTL(SNDRV_EMUX_IOCTL_MISC_MODE),
+
+	/* OSS PCM ioctls (/dev/dsp) */
+	IOCTL(SNDCTL_DSP_RESET),
+	IOCTL(SNDCTL_DSP_SYNC),
+	IOCTL(SNDCTL_DSP_SPEED),
+	IOCTL(SNDCTL_DSP_STEREO),
+	IOCTL(SNDCTL_DSP_GETBLKSIZE),
+	IOCTL(SNDCTL_DSP_SETFMT),
+	IOCTL(SNDCTL_DSP_CHANNELS),
+	IOCTL(SNDCTL_DSP_POST),
+	IOCTL(SNDCTL_DSP_SUBDIVIDE),
+	IOCTL(SNDCTL_DSP_SETFRAGMENT),
+	IOCTL(SNDCTL_DSP_GETFMTS),
+	IOCTL(SNDCTL_DSP_GETOSPACE),
+	IOCTL(SNDCTL_DSP_GETISPACE),
+	IOCTL(SNDCTL_DSP_NONBLOCK),
+	IOCTL(SNDCTL_DSP_GETCAPS),
+	IOCTL(SNDCTL_DSP_GETTRIGGER),
+	IOCTL(SNDCTL_DSP_SETTRIGGER),
+	IOCTL(SNDCTL_DSP_GETIPTR),
+	IOCTL(SNDCTL_DSP_GETOPTR),
+	IOCTL(SNDCTL_DSP_SETDUPLEX),
+	IOCTL(SNDCTL_DSP_GETODELAY),
 
 	/* OSS mixer ioctls (/dev/mixer) */
 	IOCTL(SOUND_MIXER_READ_VOLUME),
