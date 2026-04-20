@@ -105,6 +105,7 @@ struct syscallentry syscall_fanotify_init = {
 	.argname = { [0] = "flags", [1] = "event_f_flags" },
 	.arg_params[0].list = ARGLIST(fanotify_init_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_FANOTIFY,
 	.sanitise = sanitise_fanotify_init,
 	.post = post_fanotify_init,
 	.group = GROUP_VFS,

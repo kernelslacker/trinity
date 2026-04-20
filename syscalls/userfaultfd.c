@@ -37,6 +37,7 @@ struct syscallentry syscall_userfaultfd = {
 	.arg_params[0].list = ARGLIST(userfaultfd_flags),
 	.flags = NEED_ALARM,
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_USERFAULTFD,
 	.post = post_userfaultfd,
 	.group = GROUP_VM,
 };

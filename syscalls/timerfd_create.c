@@ -39,5 +39,6 @@ struct syscallentry syscall_timerfd_create = {
 	.arg_params[0].list = ARGLIST(timerfd_create_clockids),
 	.arg_params[1].list = ARGLIST(timerfd_create_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_TIMERFD,
 	.post = post_timerfd_create,
 };

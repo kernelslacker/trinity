@@ -62,6 +62,7 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.argname = { [0] = "attr", [1] = "size", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(landlock_create_ruleset_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_LANDLOCK,
 	.sanitise = sanitise_landlock_create_ruleset,
 	.post = post_landlock_create_ruleset,
 	.group = GROUP_PROCESS,

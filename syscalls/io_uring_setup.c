@@ -120,6 +120,7 @@ struct syscallentry syscall_io_uring_setup = {
 	.argtype = { [1] = ARG_ADDRESS },
 	.argname = { [0] = "entries", [1] = "params" },
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_IO_URING,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_io_uring_setup,
 	.post = post_io_uring_setup,

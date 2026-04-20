@@ -36,6 +36,7 @@ struct syscallentry syscall_epoll_create = {
 	.argtype = { [0] = ARG_LEN },
 	.argname = { [0] = "size" },
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_EPOLL,
 	.post = post_epoll_create,
 	.group = GROUP_VFS,
 };
@@ -63,6 +64,7 @@ struct syscallentry syscall_epoll_create1 = {
 	.argname = { [0] = "flags" },
 	.arg_params[0].list = ARGLIST(epoll_create_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_EPOLL,
 	.post = post_epoll_create,
 	.group = GROUP_VFS,
 };

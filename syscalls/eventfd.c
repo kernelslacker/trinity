@@ -30,6 +30,7 @@ struct syscallentry syscall_eventfd = {
 	.argtype = { [0] = ARG_LEN },
 	.argname = { [0] = "count" },
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_EVENTFD,
 	.post = post_eventfd_create,
 	.group = GROUP_IPC,
 };
@@ -55,6 +56,7 @@ struct syscallentry syscall_eventfd2 = {
 	.argname = { [0] = "count", [1] = "flags" },
 	.arg_params[1].list = ARGLIST(eventfd2_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_EVENTFD,
 	.post = post_eventfd_create,
 	.group = GROUP_IPC,
 };
