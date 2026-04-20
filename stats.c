@@ -204,6 +204,15 @@ void dump_stats(void)
 			shm->stats.refcount_audit_mmap_anomalies,
 			shm->stats.refcount_audit_sock_anomalies);
 
+	if (shm->stats.fs_lifecycle_tmpfs || shm->stats.fs_lifecycle_ramfs ||
+	    shm->stats.fs_lifecycle_overlay || shm->stats.fs_lifecycle_unsupported)
+		output(0, "\nfs lifecycle: tmpfs:%lu ramfs:%lu rdonly:%lu overlay:%lu unsupported:%lu\n",
+			shm->stats.fs_lifecycle_tmpfs,
+			shm->stats.fs_lifecycle_ramfs,
+			shm->stats.fs_lifecycle_rdonly,
+			shm->stats.fs_lifecycle_overlay,
+			shm->stats.fs_lifecycle_unsupported);
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

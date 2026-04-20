@@ -57,6 +57,7 @@ enum child_op_type {
 	CHILD_OP_IOURING_RECIPES,
 	CHILD_OP_FD_STRESS,
 	CHILD_OP_REFCOUNT_AUDITOR,
+	CHILD_OP_FS_LIFECYCLE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -183,3 +184,4 @@ bool recipe_runner(struct childdata *child);
 bool iouring_recipes(struct childdata *child);
 bool fd_stress(struct childdata *child);
 bool refcount_auditor(struct childdata *child);
+bool fs_lifecycle(struct childdata *child);
