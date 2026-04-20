@@ -40,6 +40,7 @@
 #include "child.h"
 #include "random.h"
 #include "shm.h"
+#include "text-payloads.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -254,6 +255,21 @@ static void discover_tracers(void)
 	fclose(f);
 }
 
+static void write_text_payload(const char *path)
+{
+	char buf[256];
+	unsigned int len;
+	int fd;
+	ssize_t ret __unused__;
+
+	fd = open(path, O_WRONLY | O_NONBLOCK);
+	if (fd < 0)
+		return;
+	len = gen_text_payload(buf, sizeof(buf));
+	ret = write(fd, buf, len);
+	close(fd);
+}
+
 static void write_str(const char *path, const char *str)
 {
 	int fd = open(path, O_WRONLY | O_NONBLOCK);
@@ -265,24 +281,6 @@ static void write_str(const char *path, const char *str)
 	close(fd);
 }
 
-static void write_rand_bytes(const char *path, unsigned int maxlen)
-{
-	unsigned char buf[128];
-	unsigned int len;
-	int fd;
-	ssize_t ret __unused__;
-
-	fd = open(path, O_WRONLY | O_NONBLOCK);
-	if (fd < 0)
-		return;
-
-	len = 1 + (rand() % maxlen);
-	if (len > sizeof(buf))
-		len = sizeof(buf);
-	generate_rand_bytes(buf, len);
-	ret = write(fd, buf, len);
-	close(fd);
-}
 
 /*
  * Generate a kprobe_events spec string.  Produces four kinds:
@@ -327,8 +325,12 @@ static void do_kprobe_events(void)
 			 probe_num, sym);
 		break;
 	default:
-		/* garbage -- stresses the error path */
-		write_rand_bytes(path, 64);
+		/*
+		 * Content-aware payload: format specifiers, numeric boundaries,
+		 * and long strings reach deeper into the parser than random bytes
+		 * that fail at the first character.
+		 */
+		write_text_payload(path);
 		__atomic_add_fetch(&shm->stats.tracefs_kprobe_writes,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -381,8 +383,7 @@ static void do_uprobe_events(void)
 		snprintf(spec, sizeof(spec), "-:trinity_u%u", probe_num);
 		break;
 	default:
-		/* garbage */
-		write_rand_bytes(path, 64);
+		write_text_payload(path);
 		__atomic_add_fetch(&shm->stats.tracefs_uprobe_writes,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -456,12 +457,20 @@ static void do_ftrace_filter(void)
 		write_str(path, "");
 		break;
 	default:
-		/* Garbage glob-like string */
-		snprintf(spec, sizeof(spec), "%c%c%c*",
-			 'a' + (rand() % 26),
-			 'a' + (rand() % 26),
-			 'a' + (rand() % 26));
-		write_str(path, spec);
+		/*
+		 * Alternate between random glob-like strings and content-aware
+		 * payloads.  The glob matcher calls into vsnprintf internally,
+		 * so format specifiers and long strings are interesting here.
+		 */
+		if (RAND_BOOL()) {
+			snprintf(spec, sizeof(spec), "%c%c%c*",
+				 'a' + (rand() % 26),
+				 'a' + (rand() % 26),
+				 'a' + (rand() % 26));
+			write_str(path, spec);
+		} else {
+			write_text_payload(path);
+		}
 		break;
 	}
 
