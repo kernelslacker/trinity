@@ -191,8 +191,18 @@ static void reap_dead_kids(void)
 			continue;
 
 		if (pid_alive(pid) == false) {
-			/* If it disappeared, reap it. */
 			if (errno == ESRCH) {
+				/* pid_alive treats zombies as not-alive so check_lock
+				 * can release locks held by dying children.  A zombie
+				 * still has an exit status to harvest — try waitpid
+				 * first so we route through handle_child like a normal
+				 * exit, instead of silently dropping the status and
+				 * leaking the zombie task struct. */
+				wpid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+				if (wpid > 0) {
+					handle_child(i, wpid, childstatus);
+					continue;
+				}
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
 				reap_child(children[i], i);
 				reaped++;
