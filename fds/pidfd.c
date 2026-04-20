@@ -101,6 +101,7 @@ static int init_pidfd_fds(void)
 static int get_rand_pidfd(void)
 {
 	struct object *obj;
+	int fd;
 
 	if (objects_empty(OBJ_FD_PIDFD) == true)
 		return -1;
@@ -108,7 +109,13 @@ static int get_rand_pidfd(void)
 	obj = get_random_object(OBJ_FD_PIDFD, OBJ_GLOBAL);
 	if (obj == NULL)
 		return -1;
-	return obj->pidfdobj.fd;
+
+	fd = obj->pidfdobj.fd;
+	if (fcntl(fd, F_GETFD) < 0) {
+		destroy_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
+		return -1;
+	}
+	return fd;
 }
 
 static const struct fd_provider pidfd_fd_provider = {
