@@ -103,6 +103,7 @@ struct iommufdobj {
 
 struct io_uringobj {
 	int fd;
+	unsigned int setup_flags;
 	void *sq_ring;		/* mmap'd SQ ring, NULL if not mapped */
 	void *sqes;		/* mmap'd SQE array */
 	size_t sq_ring_sz;	/* mmap size for munmap */
