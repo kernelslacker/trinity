@@ -22,18 +22,22 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <linux/futex.h>
 #include <linux/io_uring.h>
 
 #include "arch.h"
@@ -579,6 +583,555 @@ static bool recipe_nop_cqe_skip(struct iour_ctx *ctx,
 	return true;
 }
 
+/* ------------------------------------------------------------------ *
+ * Recipe 8: ASYNC_CANCEL on an in-flight op
+ *
+ * Submit a POLL_ADD that won't fire (eventfd stays at zero) so it
+ * remains pending in the ring, then immediately cancel it via
+ * IORING_OP_ASYNC_CANCEL targeting the same user_data.  This is the
+ * canonical cancellation race that surfaces in io_uring CVEs involving
+ * use-after-free on the request-completion path when a cancel races
+ * the natural completion.
+ * ------------------------------------------------------------------ */
+static bool recipe_async_cancel(struct iour_ctx *ctx,
+				bool *unsupported __unused__)
+{
+	struct io_uring_sqe sqes[2];
+	int evfd = -1;
+	bool ok = false;
+	int r;
+
+	evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (evfd < 0)
+		goto out;
+
+	/* POLL_ADD that won't fire — stays pending. */
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode        = IORING_OP_POLL_ADD;
+	sqes[0].fd            = evfd;
+	sqes[0].poll32_events = POLLIN;
+	sqes[0].user_data     = 70;
+
+	/* ASYNC_CANCEL targeting user_data=70. */
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_ASYNC_CANCEL;
+	sqes[1].addr      = 70;
+	sqes[1].user_data = 71;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		goto out;
+
+	r = iour_enter(ctx, 2, 1);
+	if (r < 0)
+		goto out;
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (evfd >= 0)
+		close(evfd);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 9: READ_FIXED with IORING_REGISTER_BUFFERS (registered fixed buffers)
+ *
+ * Register a page-sized buffer with the ring, then submit
+ * IORING_OP_READ_FIXED targeting buffer index 0 against /dev/zero.
+ * This exercises the registered-buffer fast path: the kernel skips the
+ * per-syscall get_user_pages and reads directly into the pre-pinned
+ * region.  Unregister before teardown to exercise the unpin path.
+ * ------------------------------------------------------------------ */
+static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
+				     bool *unsupported __unused__)
+{
+	struct iovec iov;
+	struct io_uring_sqe sqe;
+	void *buf = MAP_FAILED;
+	int devzero = -1;
+	bool registered = false;
+	bool ok = false;
+	int r;
+
+	buf = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (buf == MAP_FAILED)
+		goto out;
+
+	iov.iov_base = buf;
+	iov.iov_len  = page_size;
+
+	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+			 IORING_REGISTER_BUFFERS, &iov, 1);
+	if (r < 0)
+		goto out;
+	registered = true;
+
+	devzero = open("/dev/zero", O_RDONLY | O_CLOEXEC);
+	if (devzero < 0)
+		goto out;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_READ_FIXED;
+	sqe.fd        = devzero;
+	sqe.addr      = (__u64)(uintptr_t)buf;
+	sqe.len       = (unsigned int)page_size;
+	sqe.buf_index = 0;
+	sqe.user_data = 80;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		goto out;
+
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		goto out;
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (registered)
+		(void)syscall(__NR_io_uring_register, ctx->fd,
+			      IORING_UNREGISTER_BUFFERS, NULL, 0);
+	if (devzero >= 0)
+		close(devzero);
+	if (buf != MAP_FAILED)
+		munmap(buf, page_size);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 10: WRITE_FIXED + READ_FIXED using the same registered buffer
+ *
+ * Register one buffer, write into it via WRITE_FIXED on a pipe, then
+ * read it back via READ_FIXED.  Both ops share buffer index 0 and are
+ * submitted as a linked pair.  This exercises the fixed-buffer fast
+ * path in both directions within a structured sequence.
+ * ------------------------------------------------------------------ */
+static bool recipe_write_read_fixed(struct iour_ctx *ctx,
+				    bool *unsupported __unused__)
+{
+	struct io_uring_sqe sqes[2];
+	struct iovec iov;
+	int pfd[2] = { -1, -1 };
+	void *buf = MAP_FAILED;
+	bool registered = false;
+	bool ok = false;
+	int r;
+
+	buf = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (buf == MAP_FAILED)
+		goto out;
+
+	memset(buf, 'W', page_size);
+
+	iov.iov_base = buf;
+	iov.iov_len  = page_size;
+
+	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+			 IORING_REGISTER_BUFFERS, &iov, 1);
+	if (r < 0)
+		goto out;
+	registered = true;
+
+	if (pipe(pfd) < 0)
+		goto out;
+
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode    = IORING_OP_WRITE_FIXED;
+	sqes[0].fd        = pfd[1];
+	sqes[0].addr      = (__u64)(uintptr_t)buf;
+	sqes[0].len       = 64;
+	sqes[0].buf_index = 0;
+	sqes[0].flags     = IOSQE_IO_LINK;
+	sqes[0].user_data = 90;
+
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_READ_FIXED;
+	sqes[1].fd        = pfd[0];
+	sqes[1].addr      = (__u64)(uintptr_t)buf;
+	sqes[1].len       = 64;
+	sqes[1].buf_index = 0;
+	sqes[1].user_data = 91;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		goto out;
+
+	r = iour_enter(ctx, 2, 2);
+	if (r < 0)
+		goto out;
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (registered)
+		(void)syscall(__NR_io_uring_register, ctx->fd,
+			      IORING_UNREGISTER_BUFFERS, NULL, 0);
+	if (pfd[0] >= 0) close(pfd[0]);
+	if (pfd[1] >= 0) close(pfd[1]);
+	if (buf != MAP_FAILED)
+		munmap(buf, page_size);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 11: PROVIDE_BUFFERS + recv into provided buffer + REMOVE_BUFFERS
+ *
+ * Register a buffer ring via IORING_OP_PROVIDE_BUFFERS so the kernel
+ * manages buffer selection, submit a RECV with IOSQE_BUFFER_SELECT so
+ * the kernel picks a buffer from the group, then remove the buffers.
+ * Exercises the provided-buffer lifecycle: add → select → consume →
+ * remove, including the CQE upper-16-bits buffer-ID reporting path.
+ * ------------------------------------------------------------------ */
+static bool recipe_provide_buffers(struct iour_ctx *ctx,
+				   bool *unsupported __unused__)
+{
+#define PBUF_GROUP_ID	1
+#define PBUF_COUNT	4
+#define PBUF_BUF_SIZE	256
+
+	struct io_uring_sqe sqe;
+	char *bufs = NULL;
+	int sv[2] = { -1, -1 };
+	bool provided = false;
+	bool ok = false;
+	int r;
+
+	bufs = malloc((size_t)PBUF_COUNT * PBUF_BUF_SIZE);
+	if (!bufs)
+		goto out;
+	memset(bufs, 0, (size_t)PBUF_COUNT * PBUF_BUF_SIZE);
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0)
+		goto out;
+
+	/* PROVIDE_BUFFERS: addr=start, len=buf_size, fd=count, off=start_bid. */
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_PROVIDE_BUFFERS;
+	sqe.addr      = (__u64)(uintptr_t)bufs;
+	sqe.len       = PBUF_BUF_SIZE;
+	sqe.fd        = PBUF_COUNT;
+	sqe.off       = 0;
+	sqe.buf_group = PBUF_GROUP_ID;
+	sqe.user_data = 100;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		goto out;
+
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		goto out;
+	iour_drain_cqes(ctx);
+	provided = true;
+
+	{
+		const char msg[] = "recipe";
+		ssize_t w __unused__ = write(sv[0], msg, sizeof(msg));
+	}
+
+	/* RECV with IOSQE_BUFFER_SELECT — kernel picks buffer from group. */
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_RECV;
+	sqe.fd        = sv[1];
+	sqe.len       = PBUF_BUF_SIZE;
+	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.buf_group = PBUF_GROUP_ID;
+	sqe.user_data = 101;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		goto out;
+
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		goto out;
+	iour_drain_cqes(ctx);
+
+	/* REMOVE_BUFFERS: fd=count, buf_group=group_id. */
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_REMOVE_BUFFERS;
+	sqe.fd        = PBUF_COUNT;
+	sqe.buf_group = PBUF_GROUP_ID;
+	sqe.user_data = 102;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		goto out;
+
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		goto out;
+	iour_drain_cqes(ctx);
+	provided = false;
+
+	ok = true;
+out:
+	if (provided) {
+		struct io_uring_sqe s;
+
+		sqe_clear(&s);
+		s.opcode    = IORING_OP_REMOVE_BUFFERS;
+		s.fd        = PBUF_COUNT;
+		s.buf_group = PBUF_GROUP_ID;
+		s.user_data = 103;
+		if (iour_submit_sqes(ctx, &s, 1))
+			iour_enter(ctx, 1, 0);
+		iour_drain_cqes(ctx);
+	}
+	if (sv[0] >= 0) close(sv[0]);
+	if (sv[1] >= 0) close(sv[1]);
+	free(bufs);
+	return ok;
+
+#undef PBUF_GROUP_ID
+#undef PBUF_COUNT
+#undef PBUF_BUF_SIZE
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 12: MSG_RING — inter-ring notification
+ *
+ * Create a second io_uring ring, then send a notification from the
+ * primary ring (ctx->fd) to the secondary ring via IORING_OP_MSG_RING.
+ * This exercises the cross-ring messaging path added in Linux 5.18,
+ * including CQE posting into a foreign ring's completion queue.
+ * First failure with ENOSYS latches the recipe off.
+ * ------------------------------------------------------------------ */
+#ifndef IORING_OP_MSG_RING
+#define IORING_OP_MSG_RING	40
+#endif
+
+static bool recipe_msg_ring(struct iour_ctx *ctx, bool *unsupported)
+{
+	struct iour_ctx dst;
+	struct io_uring_sqe sqe;
+	bool dst_ok = false;
+	bool ok = false;
+	int r;
+
+	if (!iour_setup(&dst, 8))
+		goto out;
+	dst_ok = true;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_MSG_RING;
+	sqe.fd        = dst.fd;
+	sqe.len       = 0;
+	sqe.off       = 0xdeadbeefULL;
+	sqe.user_data = 110;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		goto out;
+
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	iour_drain_cqes(ctx);
+	iour_drain_cqes(&dst);
+	ok = true;
+out:
+	if (dst_ok)
+		iour_teardown(&dst);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 13: STATX with a registered file index
+ *
+ * Register one fd with the ring's file table, then submit
+ * IORING_OP_STATX targeting the registered fd via IOSQE_FIXED_FILE.
+ * This exercises the registered-file fast path that avoids the
+ * per-syscall fdget_pos lookup.
+ * ------------------------------------------------------------------ */
+static bool recipe_statx_fixed_file(struct iour_ctx *ctx,
+				    bool *unsupported __unused__)
+{
+	struct io_uring_sqe sqe;
+	struct statx stx;
+	int fds[1] = { -1 };
+	int devnull = -1;
+	bool registered = false;
+	bool ok = false;
+	int r;
+	static const char empty[] = "";
+
+	devnull = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (devnull < 0)
+		goto out;
+
+	fds[0] = devnull;
+	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+			 IORING_REGISTER_FILES, fds, 1);
+	if (r < 0)
+		goto out;
+	registered = true;
+
+	memset(&stx, 0, sizeof(stx));
+
+	sqe_clear(&sqe);
+	sqe.opcode      = IORING_OP_STATX;
+	sqe.fd          = 0;
+	sqe.flags       = IOSQE_FIXED_FILE;
+	sqe.addr        = (__u64)(uintptr_t)empty;
+	sqe.len         = AT_STATX_SYNC_AS_STAT;
+	sqe.off         = (__u64)(uintptr_t)&stx;
+	sqe.statx_flags = AT_EMPTY_PATH;
+	sqe.user_data   = 120;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		goto out;
+
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		goto out;
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (registered)
+		(void)syscall(__NR_io_uring_register, ctx->fd,
+			      IORING_UNREGISTER_FILES, NULL, 0);
+	if (devnull >= 0)
+		close(devnull);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 14: FUTEX_WAIT + FUTEX_WAKE via io_uring
+ *
+ * Map a shared page, submit IORING_OP_FUTEX_WAIT with an expected value
+ * that doesn't match (fast EAGAIN path), then IORING_OP_FUTEX_WAKE on
+ * the same address.  Exercises the io_uring futex dispatch path added
+ * in Linux 6.7.  First ENOSYS latches the recipe off.
+ * ------------------------------------------------------------------ */
+#ifndef IORING_OP_FUTEX_WAIT
+#define IORING_OP_FUTEX_WAIT	46
+#define IORING_OP_FUTEX_WAKE	47
+#endif
+
+static bool recipe_futex_wait_wake(struct iour_ctx *ctx, bool *unsupported)
+{
+	struct io_uring_sqe sqes[2];
+	uint32_t *addr = MAP_FAILED;
+	bool ok = false;
+	int r;
+
+	addr = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+		    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (addr == MAP_FAILED)
+		goto out;
+
+	*addr = 0;
+
+	/* FUTEX_WAIT with val=1 — mismatches *addr=0, returns EAGAIN. */
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode      = IORING_OP_FUTEX_WAIT;
+	sqes[0].fd          = FUTEX_BITSET_MATCH_ANY;
+	sqes[0].addr        = (__u64)(uintptr_t)addr;
+	sqes[0].addr2       = 1;
+	sqes[0].futex_flags = FUTEX_PRIVATE_FLAG;
+	sqes[0].user_data   = 130;
+
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode      = IORING_OP_FUTEX_WAKE;
+	sqes[1].fd          = FUTEX_BITSET_MATCH_ANY;
+	sqes[1].addr        = (__u64)(uintptr_t)addr;
+	sqes[1].off         = INT_MAX;
+	sqes[1].futex_flags = FUTEX_PRIVATE_FLAG;
+	sqes[1].user_data   = 131;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		goto out;
+
+	r = iour_enter(ctx, 2, 1);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (addr != MAP_FAILED)
+		munmap(addr, page_size);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 15: EPOLL_WAIT via io_uring
+ *
+ * Create an epoll fd with an eventfd registered, then submit
+ * IORING_OP_EPOLL_WAIT with timeout_ms=0.  Nothing is ready so the
+ * wait returns immediately, but the kernel walks the epoll wait-list
+ * setup and teardown path inside io_uring's implementation.  Added in
+ * Linux 6.15; first ENOSYS/EINVAL latches the recipe off.
+ * ------------------------------------------------------------------ */
+#ifndef IORING_OP_EPOLL_WAIT
+#define IORING_OP_EPOLL_WAIT	59
+#endif
+
+static bool recipe_epoll_wait(struct iour_ctx *ctx, bool *unsupported)
+{
+	struct io_uring_sqe sqe;
+	struct epoll_event ev;
+	struct epoll_event evs[4];
+	int epfd = -1;
+	int evfd = -1;
+	bool ok = false;
+	int r;
+
+	epfd = epoll_create1(EPOLL_CLOEXEC);
+	if (epfd < 0)
+		goto out;
+
+	evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (evfd < 0)
+		goto out;
+
+	memset(&ev, 0, sizeof(ev));
+	ev.events  = EPOLLIN;
+	ev.data.fd = evfd;
+	if (epoll_ctl(epfd, EPOLL_CTL_ADD, evfd, &ev) < 0)
+		goto out;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_EPOLL_WAIT;
+	sqe.fd        = epfd;
+	sqe.addr      = (__u64)(uintptr_t)evs;
+	sqe.len       = ARRAY_SIZE(evs);
+	sqe.off       = 0;
+	sqe.user_data = 140;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		goto out;
+
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (evfd >= 0) close(evfd);
+	if (epfd >= 0) close(epfd);
+	return ok;
+}
+
 static const struct iour_recipe catalog[] = {
 	{ "nop_chain",              recipe_nop_chain              },
 	{ "timeout_drain",          recipe_timeout_drain          },
@@ -587,6 +1140,14 @@ static const struct iour_recipe catalog[] = {
 	{ "openat_close_linked",    recipe_openat_close_linked    },
 	{ "socket_shutdown_linked", recipe_socket_shutdown_linked },
 	{ "nop_cqe_skip",           recipe_nop_cqe_skip           },
+	{ "async_cancel",           recipe_async_cancel           },
+	{ "fixed_buffer_read",      recipe_fixed_buffer_read      },
+	{ "write_read_fixed",       recipe_write_read_fixed       },
+	{ "provide_buffers",        recipe_provide_buffers        },
+	{ "msg_ring",               recipe_msg_ring               },
+	{ "statx_fixed_file",       recipe_statx_fixed_file       },
+	{ "futex_wait_wake",        recipe_futex_wait_wake        },
+	{ "epoll_wait",             recipe_epoll_wait             },
 };
 
 _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
