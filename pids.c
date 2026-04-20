@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <signal.h>
@@ -26,8 +27,20 @@ void set_child_cache(int childno, pid_t pid, struct childdata *child)
 	cached_child = child;
 }
 
+/*
+ * Returns true if the process exists in the kernel's task table AND is
+ * actually runnable.  Zombies (state Z) and dying tasks (state X) are
+ * counted as NOT alive — they can't release locks, can't write to shm,
+ * can't do anything except wait to be reaped.  Treating a zombie as
+ * "alive" deadlocks any path that's waiting for the holder to do
+ * something (notably check_lock() in locks.c).
+ */
 bool pid_alive(pid_t pid)
 {
+	char path[64];
+	char state = '?';
+	FILE *f;
+
 	if (pid < -1) {
 		syslogf("kill_pid tried to kill %d!\n", pid);
 		show_backtrace();
@@ -44,9 +57,42 @@ bool pid_alive(pid_t pid)
 		return true;
 	}
 
-	if (kill(pid, 0) == 0)
-		return true;
-	return false;
+	if (kill(pid, 0) != 0)
+		return false;
+
+	/* kill() returned 0, so the task struct exists.  Check whether
+	 * it's a zombie via /proc/<pid>/stat — third whitespace-separated
+	 * field is a single-char state. */
+	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+	f = fopen(path, "r");
+	if (f == NULL) {
+		/* Race: process exited between kill() and fopen.  Treat as
+		 * not alive — caller will recover. */
+		errno = ESRCH;
+		return false;
+	}
+	/* Format: pid (comm with possible spaces) state ppid ...
+	 * The comm may contain ')' so look for the LAST ')' then read
+	 * the next whitespace token. */
+	{
+		char buf[512];
+		size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+		buf[n] = '\0';
+		char *rparen = strrchr(buf, ')');
+		if (rparen != NULL && rparen[1] == ' ' && rparen[2] != '\0')
+			state = rparen[2];
+	}
+	fclose(f);
+
+	if (state == 'Z' || state == 'X') {
+		/* Set errno so callers (notably check_lock) treat this
+		 * the same as a fully-dead pid and release the lock
+		 * instead of bailing on the EPERM-style guard. */
+		errno = ESRCH;
+		return false;
+	}
+
+	return true;
 }
 
 struct childdata * this_child(void)
