@@ -171,6 +171,7 @@ bool mprotect_split(struct childdata *child);
 bool mlock_pressure(struct childdata *child);
 bool inode_spewer(struct childdata *child);
 bool procfs_writer(struct childdata *child);
+void procfs_writer_init(void);
 bool memory_pressure(struct childdata *child);
 bool userns_fuzzer(struct childdata *child);
 bool sched_cycler(struct childdata *child);

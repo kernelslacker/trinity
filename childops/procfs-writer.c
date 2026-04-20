@@ -264,10 +264,30 @@ static void do_one_write(const struct discovered_entry *e)
 	bump_tree_counter(e->tree);
 }
 
+/*
+ * Walk the discovery trees once in the parent, before fork_children.
+ * Each child inherits the entries[] table and discovery_done=true via
+ * the fork's COW pages, so no child has to repeat the ~thousands of
+ * lstat()+access() syscalls the discovery walk costs.  Without this
+ * pre-init, every freshly-forked child that picked PROCFS_WRITER on
+ * its first iteration would block for hundreds of ms re-walking the
+ * same six sysfs/proc trees, which dropped iters/s by an order of
+ * magnitude under realistic dispatch ratios.
+ */
+void procfs_writer_init(void)
+{
+	if (discovery_done == false) {
+		discover_targets();
+		discovery_done = true;
+	}
+}
+
 bool procfs_writer(struct childdata *child)
 {
 	(void)child;
 
+	/* discover_targets() should have been called from the parent, but
+	 * keep the lazy fallback so a missing init does not break the op. */
 	if (discovery_done == false) {
 		discover_targets();
 		discovery_done = true;
