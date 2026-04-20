@@ -4,7 +4,10 @@
  *
  * Creates temporary files, optionally extends them with ftruncate()
  * or fallocate(), then closes and unlinks them.  Files are created
- * under /tmp/trinity-inodes-<pid>/ which is cleaned up on exit.
+ * under trinity-inodes-<pid>/ inside trinity's own work directory
+ * (the "tmp/" subdir trinity chdirs into at startup), never in the
+ * system /tmp tmpfs — the latter would blow up host memory and
+ * persist across runs.
  *
  * This exercises: inode alloc/free, dentry cache pressure, directory
  * hash table growth, extent allocation (fallocate), and the unlink
@@ -43,7 +46,7 @@ static unsigned long file_counter;
 
 static void ensure_spew_dir(char *dir, size_t len)
 {
-	snprintf(dir, len, "/tmp/trinity-inodes-%d", getpid());
+	snprintf(dir, len, "trinity-inodes-%d", getpid());
 	(void)mkdir(dir, 0700);
 }
 
