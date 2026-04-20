@@ -1,13 +1,20 @@
 /*
  * SYSCALL_DEFINE2(newstat, const char __user *, filename, struct stat __user *, statbuf)
  */
+#include "arch.h"
 #include "sanitise.h"
+
+static void sanitise_statbuf_a2(struct syscallrecord *rec)
+{
+	avoid_shared_buffer(&rec->a2, page_size);
+}
 
 struct syscallentry syscall_stat = {
 	.name = "stat",
 	.num_args = 2,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "filename", [1] = "statbuf" },
+	.sanitise = sanitise_statbuf_a2,
 	.group = GROUP_VFS,
 };
 
@@ -21,6 +28,7 @@ struct syscallentry syscall_stat64 = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "filename", [1] = "statbuf" },
+	.sanitise = sanitise_statbuf_a2,
 	.group = GROUP_VFS,
 };
 
@@ -63,6 +71,11 @@ static unsigned long statx_mask[] = {
 	STATX_MNT_ID_UNIQUE, STATX_SUBVOL,
 };
 
+static void sanitise_statx(struct syscallrecord *rec)
+{
+	avoid_shared_buffer(&rec->a5, page_size);
+}
+
 struct syscallentry syscall_statx = {
 	.name = "statx",
 	.num_args = 5,
@@ -70,5 +83,6 @@ struct syscallentry syscall_statx = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags", [3] = "mask", [4] = "buffer" },
 	.arg_params[2].list = ARGLIST(statx_flags),
 	.arg_params[3].list = ARGLIST(statx_mask),
+	.sanitise = sanitise_statx,
 	.group = GROUP_VFS,
 };
