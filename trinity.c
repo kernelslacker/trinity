@@ -14,6 +14,7 @@
 #include "ioctls.h"
 #include "kmsg-monitor.h"
 #include "maps.h"
+#include "minicorpus.h"
 #include "objects.h"
 #include "pids.h"
 #include "params.h"
@@ -240,6 +241,23 @@ int main(int argc, char* argv[])
 	 * later child) trips over during init_child_mappings().
 	 */
 	freeze_global_objects();
+
+	/*
+	 * Warm-start the corpus from the previous run if a persisted file
+	 * exists.  Replayed entries take effect once children start fuzzing
+	 * via the existing minicorpus_replay() path.  Failures are silent —
+	 * a missing or stale file just means we boot cold.
+	 */
+	{
+		const char *path = minicorpus_default_path();
+		if (path != NULL) {
+			unsigned int loaded = 0, discarded = 0;
+			minicorpus_load_file(path, &loaded, &discarded);
+			if (loaded || discarded)
+				output(0, "minicorpus: warm-started %u entries from %s (%u discarded)\n",
+					loaded, path, discarded);
+		}
+	}
 
 	if (epoch_iterations || epoch_timeout)
 		epoch_loop();
