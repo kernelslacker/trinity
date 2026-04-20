@@ -50,6 +50,9 @@ bool group_bias = false;
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
 
+bool no_warm_start = false;
+char *warm_start_path = NULL;
+
 bool user_set_seed = false;
 
 unsigned char desired_group = GROUP_NONE;
@@ -101,6 +104,8 @@ static const struct option_help option_descs[] = {
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },
+	{ "no-warm-start",	 0,  "skip loading and saving the persisted minicorpus" },
+	{ "warm-start-path",	 0,  "override the on-disk minicorpus path (default: $XDG_CACHE_HOME/trinity/corpus/<arch>)" },
 	{ NULL,			 0,  NULL },
 };
 
@@ -167,6 +172,8 @@ static const struct option longopts[] = {
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
 	{ "victims", required_argument, NULL, 'V' },
+	{ "no-warm-start", no_argument, NULL, 0 },
+	{ "warm-start-path", required_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
 
 void parse_args(int argc, char *argv[])
@@ -411,6 +418,18 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("stats", longopts[opt_index].name) == 0)
 				show_stats = true;
+
+			if (strcmp("no-warm-start", longopts[opt_index].name) == 0)
+				no_warm_start = true;
+
+			if (strcmp("warm-start-path", longopts[opt_index].name) == 0) {
+				free(warm_start_path);
+				warm_start_path = strdup(optarg);
+				if (!warm_start_path) {
+					outputerr("strdup failed\n");
+					exit(EXIT_FAILURE);
+				}
+			}
 
 			break;
 		}
