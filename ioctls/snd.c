@@ -5,6 +5,7 @@
 #include <time.h>
 #include <linux/types.h>
 #include <linux/ioctl.h>
+#include <linux/soundcard.h>
 #include <sound/asound.h>
 #include <sound/asound_fm.h>
 #include <sound/asequencer.h>
@@ -643,6 +644,30 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 	}
 }
 
+static void sanitise_oss_mixer(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SOUND_MIXER_INFO: {
+		mixer_info *info = get_writable_struct(sizeof(*info));
+		if (info)
+			rec->a3 = (unsigned long) info;
+		break;
+	}
+	default: {
+		/* MIXER_WRITE: packed stereo volume — low byte left, high byte right (0-100 each).
+		 * MIXER_READ and bitmask reads (DEVMASK, RECMASK, RECSRC, etc.) just need
+		 * a writable int. */
+		int *val = get_writable_struct(sizeof(int));
+		if (val) {
+			if (_IOC_DIR(rec->a2) & _IOC_WRITE)
+				*val = (rand() % 101) | ((rand() % 101) << 8);
+			rec->a3 = (unsigned long) val;
+		}
+		break;
+	}
+	}
+}
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -727,6 +752,54 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_TIMER_IOCTL_PARAMS:
 	case SNDRV_TIMER_IOCTL_STATUS:
 		sanitise_snd_timer(rec);
+		break;
+
+	/* OSS mixer (/dev/mixer, type 'M') */
+	case SOUND_MIXER_READ_VOLUME:
+	case SOUND_MIXER_READ_BASS:
+	case SOUND_MIXER_READ_TREBLE:
+	case SOUND_MIXER_READ_SYNTH:
+	case SOUND_MIXER_READ_PCM:
+	case SOUND_MIXER_READ_SPEAKER:
+	case SOUND_MIXER_READ_LINE:
+	case SOUND_MIXER_READ_MIC:
+	case SOUND_MIXER_READ_CD:
+	case SOUND_MIXER_READ_IMIX:
+	case SOUND_MIXER_READ_ALTPCM:
+	case SOUND_MIXER_READ_RECLEV:
+	case SOUND_MIXER_READ_IGAIN:
+	case SOUND_MIXER_READ_OGAIN:
+	case SOUND_MIXER_READ_LINE1:
+	case SOUND_MIXER_READ_LINE2:
+	case SOUND_MIXER_READ_LINE3:
+	case SOUND_MIXER_READ_RECSRC:
+	case SOUND_MIXER_READ_DEVMASK:
+	case SOUND_MIXER_READ_RECMASK:
+	case SOUND_MIXER_READ_STEREODEVS:
+	case SOUND_MIXER_READ_CAPS:
+	case SOUND_MIXER_WRITE_VOLUME:
+	case SOUND_MIXER_WRITE_BASS:
+	case SOUND_MIXER_WRITE_TREBLE:
+	case SOUND_MIXER_WRITE_SYNTH:
+	case SOUND_MIXER_WRITE_PCM:
+	case SOUND_MIXER_WRITE_SPEAKER:
+	case SOUND_MIXER_WRITE_LINE:
+	case SOUND_MIXER_WRITE_MIC:
+	case SOUND_MIXER_WRITE_CD:
+	case SOUND_MIXER_WRITE_IMIX:
+	case SOUND_MIXER_WRITE_ALTPCM:
+	case SOUND_MIXER_WRITE_RECLEV:
+	case SOUND_MIXER_WRITE_IGAIN:
+	case SOUND_MIXER_WRITE_OGAIN:
+	case SOUND_MIXER_WRITE_LINE1:
+	case SOUND_MIXER_WRITE_LINE2:
+	case SOUND_MIXER_WRITE_LINE3:
+	case SOUND_MIXER_WRITE_RECSRC:
+	case SOUND_MIXER_INFO:
+#ifdef OSS_GETVERSION
+	case OSS_GETVERSION:
+#endif
+		sanitise_oss_mixer(rec);
 		break;
 
 	/* snd-seq */
@@ -915,6 +988,52 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_EMUX_IOCTL_REMOVE_LAST_SAMPLES),
 	IOCTL(SNDRV_EMUX_IOCTL_MEM_AVAIL),
 	IOCTL(SNDRV_EMUX_IOCTL_MISC_MODE),
+
+	/* OSS mixer ioctls (/dev/mixer) */
+	IOCTL(SOUND_MIXER_READ_VOLUME),
+	IOCTL(SOUND_MIXER_READ_BASS),
+	IOCTL(SOUND_MIXER_READ_TREBLE),
+	IOCTL(SOUND_MIXER_READ_SYNTH),
+	IOCTL(SOUND_MIXER_READ_PCM),
+	IOCTL(SOUND_MIXER_READ_SPEAKER),
+	IOCTL(SOUND_MIXER_READ_LINE),
+	IOCTL(SOUND_MIXER_READ_MIC),
+	IOCTL(SOUND_MIXER_READ_CD),
+	IOCTL(SOUND_MIXER_READ_IMIX),
+	IOCTL(SOUND_MIXER_READ_ALTPCM),
+	IOCTL(SOUND_MIXER_READ_RECLEV),
+	IOCTL(SOUND_MIXER_READ_IGAIN),
+	IOCTL(SOUND_MIXER_READ_OGAIN),
+	IOCTL(SOUND_MIXER_READ_LINE1),
+	IOCTL(SOUND_MIXER_READ_LINE2),
+	IOCTL(SOUND_MIXER_READ_LINE3),
+	IOCTL(SOUND_MIXER_READ_RECSRC),
+	IOCTL(SOUND_MIXER_READ_DEVMASK),
+	IOCTL(SOUND_MIXER_READ_RECMASK),
+	IOCTL(SOUND_MIXER_READ_STEREODEVS),
+	IOCTL(SOUND_MIXER_READ_CAPS),
+	IOCTL(SOUND_MIXER_WRITE_VOLUME),
+	IOCTL(SOUND_MIXER_WRITE_BASS),
+	IOCTL(SOUND_MIXER_WRITE_TREBLE),
+	IOCTL(SOUND_MIXER_WRITE_SYNTH),
+	IOCTL(SOUND_MIXER_WRITE_PCM),
+	IOCTL(SOUND_MIXER_WRITE_SPEAKER),
+	IOCTL(SOUND_MIXER_WRITE_LINE),
+	IOCTL(SOUND_MIXER_WRITE_MIC),
+	IOCTL(SOUND_MIXER_WRITE_CD),
+	IOCTL(SOUND_MIXER_WRITE_IMIX),
+	IOCTL(SOUND_MIXER_WRITE_ALTPCM),
+	IOCTL(SOUND_MIXER_WRITE_RECLEV),
+	IOCTL(SOUND_MIXER_WRITE_IGAIN),
+	IOCTL(SOUND_MIXER_WRITE_OGAIN),
+	IOCTL(SOUND_MIXER_WRITE_LINE1),
+	IOCTL(SOUND_MIXER_WRITE_LINE2),
+	IOCTL(SOUND_MIXER_WRITE_LINE3),
+	IOCTL(SOUND_MIXER_WRITE_RECSRC),
+	IOCTL(SOUND_MIXER_INFO),
+#ifdef OSS_GETVERSION
+	IOCTL(OSS_GETVERSION),
+#endif
 
 	{ .name = "SNDRV_EMU10K1_IOCTL_INFO", .request = _IOC(_IOC_NONE,'H',0x10,0), },
 	{ .name = "SNDRV_EMU10K1_IOCTL_CODE_POKE", .request = _IOC(_IOC_NONE,'H',0x11,0), },
