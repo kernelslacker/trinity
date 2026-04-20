@@ -26,6 +26,8 @@
 #include <arpa/inet.h>
 #include "net.h"
 #include "random.h"
+#include "shm.h"
+#include "trinity.h"
 
 /* Forward declaration — called via gen_msg hook from proto-netlink.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
@@ -1285,6 +1287,124 @@ static size_t gen_sockdiag_body(unsigned char *body,
  * together) to exercise the kernel's NLMSG_NEXT iteration path.
  */
 
+/*
+ * Pick a protocol-appropriate nlattr type for the given netlink protocol
+ * and message type.  Returns 0 when the family has no curated table, in
+ * which case the caller should fall back to a random type.  Centralised
+ * here so both the flat append path and the nested container helper draw
+ * from the same per-family tables.
+ */
+static unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
+{
+	switch (protocol) {
+	case NETLINK_ROUTE:
+		return pick_rtnl_attr_type(nlmsg_type);
+	case NETLINK_GENERIC:
+		return pick_genl_attr_type(nlmsg_type);
+	case NETLINK_XFRM:
+		return RAND_ARRAY(xfrma_attrs);
+	case NETLINK_SOCK_DIAG:
+		return RAND_ARRAY(inet_diag_req_attrs);
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Emit a NLA_F_NESTED container at buf+offset.  The outer nlattr carries
+ * the NLA_F_NESTED flag and an nla_len that covers a payload of N child
+ * nlattrs (1-3) padded to NLA_ALIGNTO.  Each child's type is drawn from
+ * the same per-family table used for flat attributes; payloads are sized
+ * via the existing structured generators where applicable, falling back
+ * to short random blobs.  Children are deliberately one level deep —
+ * deeper recursion is left for a follow-up.
+ *
+ * Returns the new offset.  If there isn't room for a header plus at
+ * least one child, the original offset is returned and no bytes are
+ * written.  Bumps shm->stats.netlink_nested_attrs_emitted on success so
+ * we can confirm in the dump that the new path is actually firing.
+ */
+static size_t append_nested_attr_container(unsigned char *buf, size_t offset,
+					   size_t buflen,
+					   unsigned short outer_type,
+					   int protocol,
+					   unsigned short nlmsg_type,
+					   unsigned char body_family,
+					   int rtnl_group)
+{
+	struct nlattr nla;
+	unsigned char *inner;
+	size_t inner_avail;
+	size_t inner_off = 0;
+	size_t total;
+	int child_count;
+
+	/* Need outer header + at least one minimum-sized child */
+	if (offset + NLA_HDRLEN + NLA_HDRLEN + 4 > buflen)
+		return offset;
+
+	inner = buf + offset + NLA_HDRLEN;
+	inner_avail = buflen - offset - NLA_HDRLEN;
+	/* Cap so a single nested container can't dominate the message */
+	if (inner_avail > 256)
+		inner_avail = 256;
+
+	child_count = RAND_RANGE(1, 3);
+	while (child_count-- > 0 && inner_off + NLA_HDRLEN + 4 <= inner_avail) {
+		struct nlattr child;
+		unsigned short ctype;
+		size_t cpayload;
+		size_t structured_len;
+		size_t ctotal;
+
+		ctype = pick_attr_hint(protocol, nlmsg_type);
+		if (ctype == 0)
+			ctype = rand16();
+
+		/* Try the rtnetlink structured payload generator first; it
+		 * returns 0 for non-rtnl groups and for types it doesn't know,
+		 * in which case we fall back to a short random blob. */
+		structured_len = gen_rta_payload(inner, inner_off + NLA_HDRLEN,
+						 inner_avail, ctype,
+						 body_family, rtnl_group);
+		if (structured_len > 0) {
+			cpayload = structured_len;
+		} else {
+			cpayload = RAND_RANGE(4, 32);
+			if (cpayload > inner_avail - inner_off - NLA_HDRLEN)
+				cpayload = inner_avail - inner_off - NLA_HDRLEN;
+		}
+
+		ctotal = NLA_ALIGN(NLA_HDRLEN + cpayload);
+		if (inner_off + ctotal > inner_avail)
+			break;
+
+		child.nla_len = NLA_HDRLEN + cpayload;
+		child.nla_type = ctype;
+		memcpy(inner + inner_off, &child, NLA_HDRLEN);
+		if (structured_len == 0 && cpayload > 0)
+			generate_rand_bytes(inner + inner_off + NLA_HDRLEN,
+					    cpayload);
+		inner_off += ctotal;
+	}
+
+	if (inner_off == 0)
+		return offset;
+
+	nla.nla_len = NLA_HDRLEN + inner_off;
+	nla.nla_type = outer_type | NLA_F_NESTED;
+	memcpy(buf + offset, &nla, NLA_HDRLEN);
+
+	total = NLA_ALIGN(NLA_HDRLEN + inner_off);
+	if (offset + total > buflen)
+		total = buflen - offset;
+
+	__atomic_add_fetch(&shm->stats.netlink_nested_attrs_emitted, 1,
+			   __ATOMIC_RELAXED);
+
+	return offset + total;
+}
+
 /* Build a single nlmsghdr at msg+offset. Returns new offset (NLMSG_ALIGN'd). */
 static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			      struct socket_triplet *triplet)
@@ -1338,16 +1458,30 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	 * Audit messages don't use nlattr — skip for that protocol. */
 	num_attrs = (triplet->protocol == NETLINK_AUDIT) ? 0 : rand() % 8;
 	while (num_attrs-- > 0 && offset < buflen) {
-		unsigned short attr_hint = 0;
+		unsigned short attr_hint;
 
-		if (triplet->protocol == NETLINK_ROUTE)
-			attr_hint = pick_rtnl_attr_type(nlmsg_type);
-		else if (triplet->protocol == NETLINK_GENERIC)
-			attr_hint = pick_genl_attr_type(nlmsg_type);
-		else if (triplet->protocol == NETLINK_XFRM)
-			attr_hint = RAND_ARRAY(xfrma_attrs);
-		else if (triplet->protocol == NETLINK_SOCK_DIAG)
-			attr_hint = RAND_ARRAY(inet_diag_req_attrs);
+		attr_hint = pick_attr_hint(triplet->protocol, nlmsg_type);
+
+		/* ~14% of attrs become real NLA_F_NESTED containers with
+		 * 1-3 typed children, exercising the kernel's nested-policy
+		 * walkers in addition to the flat fast path. */
+		if (ONE_IN(7)) {
+			size_t new_off;
+			unsigned short outer = attr_hint ? attr_hint : rand16();
+
+			new_off = append_nested_attr_container(msg, offset,
+							       buflen, outer,
+							       triplet->protocol,
+							       nlmsg_type,
+							       body_family,
+							       rtnl_group);
+			if (new_off > offset) {
+				offset = new_off;
+				continue;
+			}
+			/* Not enough room — fall through to the flat path. */
+		}
+
 		offset = append_nlattr(msg, offset, buflen, attr_hint,
 				       body_family, rtnl_group);
 	}
