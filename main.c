@@ -447,6 +447,28 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 static void register_zombie_slot(int childno, pid_t pid)
 {
 	struct timespec now;
+	pid_t wpid;
+
+	/* Fast path: it's not uncommon for the kernel to release a
+	 * transient D-state task between our kill loop giving up and
+	 * us reaching this function.  A non-blocking waitpid here
+	 * tells us if the task is already gone — if so, skip the whole
+	 * deferral machinery and just reap+replace immediately and
+	 * silently.  Saves the unkillable-log + stack/syscall dump +
+	 * zombie_pids[] bookkeeping that would otherwise fire and then
+	 * unwind on the very next process_zombie_pending() pass. */
+	wpid = waitpid(pid, NULL, WNOHANG);
+	if (wpid == pid || (wpid == -1 && errno == ECHILD)) {
+		if (pidstatfiles[childno]) {
+			fclose(pidstatfiles[childno]);
+			pidstatfiles[childno] = NULL;
+		}
+		reap_child(children[childno], childno);
+		replace_child(childno);
+		__atomic_add_fetch(&shm->stats.zombies_reaped, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
 
 	output(0, "child %d (pid %u) unkillable, deferring slot reuse "
 		"until kernel releases the D-state task.\n",
