@@ -264,6 +264,23 @@ int main(int argc, char* argv[])
 	else
 		main_loop();
 
+	/*
+	 * Persist the minicorpus on graceful exit so the next run starts
+	 * warm.  Skip after a corruption or crash — saving from a poisoned
+	 * shm could feed garbage back in on restart.
+	 */
+	{
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *path = minicorpus_default_path();
+			if (path != NULL && minicorpus_save_file(path))
+				output(0, "minicorpus: persisted to %s\n", path);
+		}
+	}
+
 	destroy_global_objects();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
