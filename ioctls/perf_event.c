@@ -26,6 +26,8 @@ static int perf_event_fd_test(int fd, const struct stat *st __attribute__((unuse
 	struct list_head *globallist, *node;
 
 	globallist = shm->global_objects[OBJ_FD_PERF].list;
+	if (globallist == NULL)
+		return -1;
 
 	list_for_each(node, globallist) {
 		struct object *obj = (struct object *) node;
