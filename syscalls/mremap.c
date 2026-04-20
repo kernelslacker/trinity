@@ -59,6 +59,16 @@ static void sanitise_mremap(struct syscallrecord *rec)
 		newaddr <<= shift;
 		newaddr |= align;
 		newaddr &= ~(align - 1);
+
+		/* MREMAP_FIXED unmaps any prior mapping at [newaddr,
+		 * newaddr + rec->a3) before placing the relocated
+		 * mapping there.  Reject if that range overlaps a
+		 * trinity-owned shared region — otherwise we silently
+		 * unmap our own bookkeeping. */
+		if (range_overlaps_shared(newaddr, rec->a3)) {
+			rec->a4 &= ~MREMAP_FIXED;
+			newaddr = 0;
+		}
 	}
 
 	/* MREMAP_DONTUNMAP requires MREMAP_MAYMOVE; when combined with
