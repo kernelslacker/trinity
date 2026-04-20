@@ -569,6 +569,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_FAULT_INJECTOR:		return 20;
 	case CHILD_OP_RECIPE_RUNNER:		return 40;
 	case CHILD_OP_IOURING_RECIPES:		return 40;
+	case CHILD_OP_FD_STRESS:		return 30;
 	default:				return 10;
 	}
 }
@@ -671,7 +672,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	switch (r % 16) {
+	switch (r % 17) {
 	case 0:  return CHILD_OP_MMAP_LIFECYCLE;
 	case 1:  return CHILD_OP_MPROTECT_SPLIT;
 	case 2:  return CHILD_OP_MLOCK_PRESSURE;
@@ -688,6 +689,7 @@ static enum child_op_type pick_op_type(void)
 	case 13: return CHILD_OP_FAULT_INJECTOR;
 	case 14: return CHILD_OP_RECIPE_RUNNER;
 	case 15: return CHILD_OP_IOURING_RECIPES;
+	case 16: return CHILD_OP_FD_STRESS;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -780,6 +782,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_FAULT_INJECTOR:		ret = fault_injector(child); break;
 		case CHILD_OP_RECIPE_RUNNER:		ret = recipe_runner(child); break;
 		case CHILD_OP_IOURING_RECIPES:		ret = iouring_recipes(child); break;
+		case CHILD_OP_FD_STRESS:		ret = fd_stress(child); break;
 		default:				ret = random_syscall(child); break;
 		}
 
