@@ -108,6 +108,12 @@ struct stats_s {
 	unsigned long recipe_partial;		/* at least one step failed */
 	unsigned long recipe_unsupported;	/* discovery probe latched recipe off */
 
+	/* fd_stress childop counters, one per stress mode */
+	unsigned long fdstress_close_reopen;
+	unsigned long fdstress_dup2_replace;
+	unsigned long fdstress_type_confusion;
+	unsigned long fdstress_cloexec_toggle;
+
 	/* Per-recipe completion counts, indexed by the recipe's slot in the
 	 * static catalog inside recipe-runner.c.  Dumped via
 	 * recipe_runner_dump_stats() so stats.c stays decoupled from the

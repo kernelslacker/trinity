@@ -55,6 +55,7 @@ enum child_op_type {
 	CHILD_OP_FAULT_INJECTOR,
 	CHILD_OP_RECIPE_RUNNER,
 	CHILD_OP_IOURING_RECIPES,
+	CHILD_OP_FD_STRESS,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -179,3 +180,4 @@ bool bpf_lifecycle(struct childdata *child);
 bool fault_injector(struct childdata *child);
 bool recipe_runner(struct childdata *child);
 bool iouring_recipes(struct childdata *child);
+bool fd_stress(struct childdata *child);
