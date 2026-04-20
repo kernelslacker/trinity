@@ -115,6 +115,10 @@ void dump_stats(void)
 			shm->stats.genetlink_eperm);
 	}
 
+	if (shm->stats.netlink_nested_attrs_emitted)
+		output(0, "netlink generator: NLA_F_NESTED containers emitted:%lu\n",
+			shm->stats.netlink_nested_attrs_emitted);
+
 	if (shm->stats.perf_chains_runs) {
 		output(0, "\nperf event chains: runs:%lu groups_created:%lu ioctl_ops:%lu\n",
 			shm->stats.perf_chains_runs,

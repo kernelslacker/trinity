@@ -71,6 +71,9 @@ struct stats_s {
 	unsigned long genetlink_msgs_sent;		/* successful send() to a family */
 	unsigned long genetlink_eperm;			/* family rejected with EPERM/EACCES */
 
+	/* netlink message generator: NLA_F_NESTED containers emitted */
+	unsigned long netlink_nested_attrs_emitted;
+
 	/* perf_event_chains childop counters */
 	unsigned long perf_chains_runs;		/* total invocations */
 	unsigned long perf_chains_groups_created;	/* group leader fd opened successfully */
