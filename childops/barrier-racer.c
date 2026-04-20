@@ -221,7 +221,7 @@ static void cleanup_dup2_race(struct racer_shared *s)
 
 static bool setup_ftruncate_race(struct racer_shared *s)
 {
-	char path[] = "/tmp/trinity-racer-XXXXXX";
+	char path[] = "trinity-racer-XXXXXX";
 	int fd;
 
 	fd = mkstemp(path);
