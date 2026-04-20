@@ -87,22 +87,32 @@ unsigned int gen_embedded_nul(char *buf, unsigned int buflen)
  * Printf-style format specifiers.
  *
  * A kernel driver that accidentally passes user data as the format argument
- * to printk or seq_printf will interpret these as format strings.  %n is
- * particularly dangerous as it writes to an arbitrary pointer.
+ * to printk / seq_printf / sprintf-family interprets these as format strings.
+ * Kernel printk dropped %n support years ago (commit f2d5dcb48f7b "vsprintf:
+ * remove %n handling", v5.2), so the classic write-where primitive is inert
+ * against modern kernels — focus on the surfaces that ARE still processed:
+ * %s with bogus pointers (kernel uses pgtable check + zero-substitution but
+ * the path is still reachable), %p extended specifiers (%pS, %pK, %pV, %pa),
+ * and excessive padding/precision fields that exercise the formatter's
+ * length math.
  */
 unsigned int gen_format_string_attack(char *buf, unsigned int buflen)
 {
 	static const char * const payloads[] = {
 		"%s%s%s%s%s%s%s%s%s%s",
-		"%n%n%n%n%n%n%n%n%n%n",
 		"%d%d%d%d%d%d%d%d%d%d",
 		"%p%p%p%p%p%p%p%p%p%p",
+		"%pS%pS%pS%pS%pS",          /* symbol resolution */
+		"%pK%pK%pK%pK%pK",          /* kernel-pointer hash */
+		"%pV",                       /* struct vsprintf args — funky path */
+		"%pa%pa%pa%pa",             /* phys_addr_t */
 		"%%",
 		"%x%x%x%x%x%x%x%x%x%x",
-		"%s%n%s%n%s%n%s%n",
-		"AAAA%08x%08x%08x%08x%n",
-		"%99999999d",
-		"%0*d",
+		"AAAA%08x%08x%08x%08x",
+		"%99999999d",                /* width math overflow */
+		"%.99999999d",               /* precision math overflow */
+		"%0*d",                      /* * width consumed from arg list */
+		"%2147483647s",              /* INT_MAX width */
 	};
 	const char *s = RAND_ARRAY(payloads);
 	unsigned int n = cap((unsigned int)strlen(s), buflen);
