@@ -256,15 +256,27 @@ bool minicorpus_replay(struct syscallrecord *rec)
  */
 
 #define CORPUS_FILE_MAGIC	0x54524E43U	/* "TRNC" */
-#define CORPUS_FILE_VERSION	1U
+#define CORPUS_FILE_VERSION	2U
+
+/* Linux utsname fields are __NEW_UTS_LEN+1 = 65 bytes including NUL. */
+#define CORPUS_UTSNAME_LEN	65
 
 struct corpus_file_header {
 	uint32_t magic;
 	uint32_t version;
-	uint32_t kernel_major;
-	uint32_t kernel_minor;
+	uint32_t kernel_major;	/* parsed from utsname.release, kept for diag */
+	uint32_t kernel_minor;	/* same */
 	uint32_t max_nr_syscall;
 	uint32_t reserved;
+	/* Full utsname.release and utsname.version strings.  release encodes
+	 * the patch sublevel and any local version suffix (-rcN, -fbkN,
+	 * vendor patches), version encodes the build timestamp + git hash
+	 * for kernel builds that include them.  Strict equality on both
+	 * means "same compiled kernel image" — the only safe granularity
+	 * for replay, since e.g. 7.0 vs 7.0-rc1 can differ in syscall
+	 * behavior despite matching major.minor. */
+	char kernel_release[CORPUS_UTSNAME_LEN];
+	char kernel_version[CORPUS_UTSNAME_LEN];
 };
 
 struct corpus_file_entry {
@@ -391,6 +403,15 @@ bool minicorpus_save_file(const char *path)
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	if (!current_kernel_version(&hdr.kernel_major, &hdr.kernel_minor))
 		return false;
+	{
+		struct utsname u;
+		if (uname(&u) != 0)
+			return false;
+		strncpy(hdr.kernel_release, u.release, sizeof(hdr.kernel_release) - 1);
+		hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
+		strncpy(hdr.kernel_version, u.version, sizeof(hdr.kernel_version) - 1);
+		hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
+	}
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp", path);
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
@@ -491,6 +512,25 @@ bool minicorpus_load_file(const char *path,
 	    hdr.kernel_minor != cur_minor) {
 		close(fd);
 		return false;
+	}
+
+	{
+		struct utsname u;
+		if (uname(&u) != 0) {
+			close(fd);
+			return false;
+		}
+		/* Force NUL termination on the on-disk strings before strncmp,
+		 * defensive against truncated/corrupt headers. */
+		hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
+		hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
+		if (strncmp(hdr.kernel_release, u.release,
+			    sizeof(hdr.kernel_release)) != 0 ||
+		    strncmp(hdr.kernel_version, u.version,
+			    sizeof(hdr.kernel_version)) != 0) {
+			close(fd);
+			return false;
+		}
 	}
 
 	for (;;) {
