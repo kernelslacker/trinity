@@ -167,7 +167,7 @@ void kcov_cleanup_child(struct kcov_child *kc)
 
 void kcov_enable_trace(struct kcov_child *kc)
 {
-	if (!kc->active)
+	if (kc == NULL || !kc->active)
 		return;
 
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
@@ -177,7 +177,7 @@ void kcov_enable_trace(struct kcov_child *kc)
 
 void kcov_enable_cmp(struct kcov_child *kc)
 {
-	if (!kc->active)
+	if (kc == NULL || !kc->active)
 		return;
 
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
@@ -189,7 +189,7 @@ void kcov_enable_remote(struct kcov_child *kc)
 {
 	struct kcov_remote_arg *arg;
 
-	if (!kc->active || !kc->remote_capable)
+	if (kc == NULL || !kc->active || !kc->remote_capable)
 		return;
 
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
@@ -217,7 +217,7 @@ void kcov_enable_remote(struct kcov_child *kc)
 
 void kcov_disable(struct kcov_child *kc)
 {
-	if (kc->fd < 0 || kc->trace_buf == NULL)
+	if (kc == NULL || kc->fd < 0 || kc->trace_buf == NULL)
 		return;
 
 	ioctl(kc->fd, KCOV_DISABLE, 0);
