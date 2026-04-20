@@ -5,6 +5,10 @@
  * accommodate future recipes without reshuffling shared memory. */
 #define MAX_RECIPES 32
 
+/* Upper bound on the iouring_recipes catalog.  iouring-recipes.c asserts
+ * at build time that its table fits. */
+#define MAX_IOURING_RECIPES 32
+
 /* Various statistics. */
 
 struct stats_s {
@@ -128,6 +132,18 @@ struct stats_s {
 	 * differed from the mprotected canary copy taken at init time.
 	 * Indicates the pointer was overwritten after init. */
 	unsigned long fd_event_ring_overwritten;
+
+	/* iouring_recipes childop counters */
+	unsigned long iouring_recipes_runs;		/* total invocations */
+	unsigned long iouring_recipes_completed;	/* recipe completed successfully */
+	unsigned long iouring_recipes_partial;		/* at least one step failed */
+	unsigned long iouring_recipes_enosys;		/* io_uring_setup returned ENOSYS */
+
+	/* Per-iouring-recipe completion counts, indexed by the recipe's slot in
+	 * the static catalog inside iouring-recipes.c.  Dumped via
+	 * iouring_recipes_dump_stats() so stats.c stays decoupled from the
+	 * catalog layout. */
+	unsigned long iouring_recipe_completed_per[MAX_IOURING_RECIPES];
 };
 
 void dump_stats(void);
@@ -135,3 +151,7 @@ void dump_stats(void);
 /* Implemented in childops/recipe-runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
 void recipe_runner_dump_stats(void);
+
+/* Implemented in childops/iouring-recipes.c; emits per-recipe completion
+ * counts so the catalog layout stays private to that file. */
+void iouring_recipes_dump_stats(void);
