@@ -102,6 +102,20 @@ static void sanitise_nvme_submit_io(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) io;
 }
 
+static void sanitise_nvme_io64_cmd_vec(struct syscallrecord *rec)
+{
+	struct nvme_passthru_cmd64 *cmd;
+
+	cmd = (struct nvme_passthru_cmd64 *) get_writable_struct(sizeof(*cmd));
+	if (!cmd)
+		return;
+	cmd->opcode  = RAND_BOOL() ? 0x01 : 0x02;
+	cmd->nsid    = RAND_BOOL() ? 1 : rand32();
+	cmd->vec_cnt = 1;
+	cmd->addr    = (unsigned long) get_writable_struct(4096);
+	rec->a3 = (unsigned long) cmd;
+}
+
 static void nvme_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -119,6 +133,9 @@ static void nvme_sanitise(const struct ioctl_group *grp, struct syscallrecord *r
 	case NVME_IOCTL_IO64_CMD:
 		sanitise_nvme_io64_cmd(rec);
 		break;
+	case NVME_IOCTL_IO64_CMD_VEC:
+		sanitise_nvme_io64_cmd_vec(rec);
+		break;
 	case NVME_IOCTL_SUBMIT_IO:
 		sanitise_nvme_submit_io(rec);
 		break;
@@ -133,8 +150,11 @@ static const struct ioctl nvme_ioctls[] = {
 	IOCTL(NVME_IOCTL_SUBMIT_IO),
 	IOCTL(NVME_IOCTL_IO_CMD),
 	IOCTL(NVME_IOCTL_RESET),
+	IOCTL(NVME_IOCTL_SUBSYS_RESET),
+	IOCTL(NVME_IOCTL_RESCAN),
 	IOCTL(NVME_IOCTL_ADMIN64_CMD),
 	IOCTL(NVME_IOCTL_IO64_CMD),
+	IOCTL(NVME_IOCTL_IO64_CMD_VEC),
 };
 
 static const char *const nvme_devs[] = {
