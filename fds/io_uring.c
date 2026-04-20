@@ -19,6 +19,25 @@
 #define IORING_OFF_SQES		0x10000000ULL
 #endif
 
+#ifndef IORING_SETUP_IOPOLL
+#define IORING_SETUP_IOPOLL	(1U << 0)
+#endif
+#ifndef IORING_SETUP_SQPOLL
+#define IORING_SETUP_SQPOLL	(1U << 1)
+#endif
+#ifndef IORING_SETUP_CQSIZE
+#define IORING_SETUP_CQSIZE	(1U << 3)
+#endif
+#ifndef IORING_SETUP_CLAMP
+#define IORING_SETUP_CLAMP	(1U << 4)
+#endif
+#ifndef IORING_SETUP_SINGLE_ISSUER
+#define IORING_SETUP_SINGLE_ISSUER	(1U << 12)
+#endif
+#ifndef IORING_SETUP_DEFER_TASKRUN
+#define IORING_SETUP_DEFER_TASKRUN	(1U << 13)
+#endif
+
 /* Offsets within the mmap'd SQ ring where key fields live. */
 struct trinity_sqring_offsets {
 	unsigned int head;
@@ -45,6 +64,21 @@ struct trinity_io_uring_params {
 	struct trinity_sqring_offsets sq_off;
 	/* cq_off follows but we don't need it */
 	unsigned char cq_off[40];
+};
+
+/* Ring topologies to create at startup.  Varied flags exercise different
+ * kernel submission/completion paths.  Failures are silently skipped —
+ * SQPOLL and IOPOLL require privileges or hardware that may not be present. */
+static const struct {
+	unsigned int entries;
+	unsigned int flags;
+} ring_configs[] = {
+	{ 4,  0 },
+	{ 16, IORING_SETUP_CLAMP },
+	{ 32, IORING_SETUP_CQSIZE },
+	{ 8,  IORING_SETUP_SQPOLL },
+	{ 4,  IORING_SETUP_IOPOLL },
+	{ 8,  IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN },
 };
 
 /* The ring with valid mappings is stored in shm->mapped_ring,
@@ -81,12 +115,12 @@ static void io_uring_dump(struct object *obj, enum obj_scope scope)
 {
 	struct io_uringobj *ring = &obj->io_uringobj;
 
-	output(2, "io_uring fd:%d sq_entries:%u mapped:%s scope:%d\n",
-		ring->fd, ring->sq_entries,
+	output(2, "io_uring fd:%d sq_entries:%u flags:0x%x mapped:%s scope:%d\n",
+		ring->fd, ring->sq_entries, ring->setup_flags,
 		ring->sq_ring ? "yes" : "no", scope);
 }
 
-static int open_io_uring_fd(void)
+static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
 {
 #ifdef __NR_io_uring_setup
 	struct trinity_io_uring_params params;
@@ -97,7 +131,12 @@ static int open_io_uring_fd(void)
 	int fd;
 
 	memset(&params, 0, sizeof(params));
-	fd = syscall(__NR_io_uring_setup, 4, &params);
+	params.flags = flags;
+	/* IORING_SETUP_CQSIZE: supply a CQ twice the SQ depth */
+	if (flags & IORING_SETUP_CQSIZE)
+		params.cq_entries = entries * 2;
+
+	fd = syscall(__NR_io_uring_setup, entries, &params);
 	if (fd < 0)
 		return false;
 
@@ -133,6 +172,7 @@ static int open_io_uring_fd(void)
 	obj = alloc_object();
 	ring = &obj->io_uringobj;
 	ring->fd = fd;
+	ring->setup_flags = flags;
 	ring->sq_ring = sq_ring;
 	ring->sq_ring_sz = sq_ring_sz;
 	ring->sqes = sqes;
@@ -151,19 +191,32 @@ static int open_io_uring_fd(void)
 
 	return true;
 #else
+	(void)entries; (void)flags;
 	return false;
 #endif
+}
+
+static int open_io_uring_fd(void)
+{
+	unsigned int i = rand() % ARRAY_SIZE(ring_configs);
+
+	return open_io_uring_fd_config(ring_configs[i].entries,
+				       ring_configs[i].flags);
 }
 
 static int init_io_uring_fds(void)
 {
 	struct objhead *head;
+	unsigned int i, count = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_IO_URING);
 	head->destroy = &io_uring_destructor;
 	head->dump = &io_uring_dump;
 
-	return open_io_uring_fd();
+	for (i = 0; i < ARRAY_SIZE(ring_configs); i++)
+		count += open_io_uring_fd_config(ring_configs[i].entries,
+						 ring_configs[i].flags);
+	return count > 0;
 }
 
 static int get_rand_io_uring_fd(void)
