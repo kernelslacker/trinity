@@ -155,6 +155,12 @@ struct stats_s {
 	 * iouring_recipes_dump_stats() so stats.c stays decoupled from the
 	 * catalog layout. */
 	unsigned long iouring_recipe_completed_per[MAX_IOURING_RECIPES];
+
+	/* refcount_auditor childop counters */
+	unsigned long refcount_audit_runs;
+	unsigned long refcount_audit_fd_anomalies;
+	unsigned long refcount_audit_mmap_anomalies;
+	unsigned long refcount_audit_sock_anomalies;
 };
 
 void dump_stats(void);

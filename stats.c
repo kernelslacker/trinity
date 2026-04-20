@@ -189,6 +189,13 @@ void dump_stats(void)
 		output(0, "\nfd_event_ring canary mismatch events: %lu\n",
 			shm->stats.fd_event_ring_overwritten);
 
+	if (shm->stats.refcount_audit_runs)
+		output(0, "\nrefcount audit: runs:%lu fd-anomalies:%lu mmap-anomalies:%lu sock-anomalies:%lu\n",
+			shm->stats.refcount_audit_runs,
+			shm->stats.refcount_audit_fd_anomalies,
+			shm->stats.refcount_audit_mmap_anomalies,
+			shm->stats.refcount_audit_sock_anomalies);
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
