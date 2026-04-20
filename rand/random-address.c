@@ -26,7 +26,23 @@ retry:	tries++;
 
 	if (RAND_BOOL()) {
 		map = get_map();
-		if (map == NULL || map->size < size)
+		if (map == NULL)
+			goto retry;
+		/*
+		 * Sanity-guard the map pointer before deref.  Heap pointers
+		 * land at >= 0x10000 and below the user/kernel VA boundary;
+		 * anything else is a stale or corrupted slot from the
+		 * per-child OBJ_MMAP pool and dereferencing it SIGSEGVs.
+		 * Log loudly so the corruption source is visible — this
+		 * branch ought to be impossible.
+		 */
+		if ((uintptr_t)map < 0x10000UL ||
+		    (uintptr_t)map >= 0x800000000000UL) {
+			outputerr("get_writable_address: bogus map pointer %p "
+				  "from get_map() — pool corruption?\n", map);
+			goto retry;
+		}
+		if (map->size < size)
 			goto retry;
 
 		addr = map->ptr;
