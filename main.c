@@ -522,9 +522,18 @@ static void process_zombie_pending(void)
 			__atomic_add_fetch(&shm->stats.zombies_timed_out, 1,
 					   __ATOMIC_RELAXED);
 		} else {
-			output(0, "child %d zombie (pid %u) finally released "
-				"by kernel after %ld seconds; reusing slot.\n",
-				i, pid, (long)(now.tv_sec - zombie_since[i]));
+			long elapsed = (long)(now.tv_sec - zombie_since[i]);
+			/* Only report when the kernel actually held the
+			 * zombie around long enough to be operationally
+			 * interesting.  Sub-second hold times are normal
+			 * when the D-state was transient and the kernel
+			 * reaped between our kill loop giving up and the
+			 * next process_zombie_pending() pass — silent
+			 * stats counter is enough. */
+			if (elapsed >= 1)
+				output(0, "child %d zombie (pid %u) finally "
+					"released by kernel after %ld seconds; "
+					"reusing slot.\n", i, pid, elapsed);
 			__atomic_add_fetch(&shm->stats.zombies_reaped, 1,
 					   __ATOMIC_RELAXED);
 		}
