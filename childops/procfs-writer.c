@@ -20,9 +20,9 @@
  * Errors are ignored — most writes will EINVAL/EACCES, which is fine; the
  * goal is to exercise the kernel's write handler, not to succeed.
  *
- * Future enhancement (not implemented): parse text-based interfaces such
- * as ftrace's set_ftrace_filter and feed them format-appropriate content
- * rather than raw garbage.
+ * One write in four uses gen_text_payload() from rand/text-payloads.c with a
+ * 4 KB buffer, exercising long-string, embedded-NUL, format-specifier, and
+ * numeric-boundary paths that raw garbage bytes rarely reach.
  */
 
 #include <dirent.h>
@@ -39,6 +39,7 @@
 #include "child.h"
 #include "random.h"
 #include "shm.h"
+#include "text-payloads.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -235,6 +236,12 @@ static void bump_tree_counter(enum tree_kind tree)
 static void do_one_write(const struct discovered_entry *e)
 {
 	unsigned char buf[256];
+	/*
+	 * Larger buffer for text payloads: kernel sysfs/procfs parsers read up
+	 * to PAGE_SIZE, so 4 KB gives long-string generators room to exercise
+	 * the buffer-length checks that 256-byte writes never reach.
+	 */
+	char text_buf[4096];
 	unsigned int len;
 	ssize_t ret __unused__;
 	int fd;
@@ -243,10 +250,14 @@ static void do_one_write(const struct discovered_entry *e)
 	if (fd < 0)
 		return;
 
-	len = 1 + (rand() % sizeof(buf));
-	generate_rand_bytes(buf, len);
-
-	ret = write(fd, buf, len);
+	if (ONE_IN(4)) {
+		len = gen_text_payload(text_buf, sizeof(text_buf));
+		ret = write(fd, text_buf, len);
+	} else {
+		len = 1 + (rand() % sizeof(buf));
+		generate_rand_bytes(buf, len);
+		ret = write(fd, buf, len);
+	}
 
 	close(fd);
 
