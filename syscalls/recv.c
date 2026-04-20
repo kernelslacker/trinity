@@ -16,6 +16,13 @@
 static void sanitise_recv(struct syscallrecord *rec)
 {
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+
+	/* recv/recvfrom both pass a2 as the user output buffer with length
+	 * a3 — the kernel writes the received bytes there.  ARG_MMAP hands
+	 * us a struct map pointer rather than a real buffer, so the kernel
+	 * scribbles into adjacent heap memory; defensively redirect away
+	 * from any range that overlaps trinity's alloc_shared regions. */
+	avoid_shared_buffer(&rec->a2, rec->a3);
 }
 
 static unsigned long recv_flags[] = {
