@@ -172,6 +172,13 @@ struct stats_s {
 	unsigned long refcount_audit_fd_anomalies;
 	unsigned long refcount_audit_mmap_anomalies;
 	unsigned long refcount_audit_sock_anomalies;
+
+	/* fs_lifecycle childop counters */
+	unsigned long fs_lifecycle_tmpfs;	/* tmpfs, quota, and bind variants */
+	unsigned long fs_lifecycle_ramfs;	/* ramfs variant */
+	unsigned long fs_lifecycle_rdonly;	/* read-only proc/sysfs traversal */
+	unsigned long fs_lifecycle_overlay;	/* overlayfs variant */
+	unsigned long fs_lifecycle_unsupported;	/* unshare/mount denied (EPERM) */
 };
 
 void dump_stats(void);

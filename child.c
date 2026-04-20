@@ -570,6 +570,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_RECIPE_RUNNER:		return 40;
 	case CHILD_OP_IOURING_RECIPES:		return 40;
 	case CHILD_OP_FD_STRESS:		return 30;
+	case CHILD_OP_FS_LIFECYCLE:		return 60;
 	default:				return 10;
 	}
 }
@@ -672,7 +673,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	switch (r % 18) {
+	switch (r % 19) {
 	case 0:  return CHILD_OP_MMAP_LIFECYCLE;
 	case 1:  return CHILD_OP_MPROTECT_SPLIT;
 	case 2:  return CHILD_OP_MLOCK_PRESSURE;
@@ -691,6 +692,7 @@ static enum child_op_type pick_op_type(void)
 	case 15: return CHILD_OP_IOURING_RECIPES;
 	case 16: return CHILD_OP_FD_STRESS;
 	case 17: return CHILD_OP_REFCOUNT_AUDITOR;
+	case 18: return CHILD_OP_FS_LIFECYCLE;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -785,6 +787,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_IOURING_RECIPES:		ret = iouring_recipes(child); break;
 		case CHILD_OP_FD_STRESS:		ret = fd_stress(child); break;
 		case CHILD_OP_REFCOUNT_AUDITOR:		ret = refcount_auditor(child); break;
+		case CHILD_OP_FS_LIFECYCLE:		ret = fs_lifecycle(child); break;
 		default:				ret = random_syscall(child); break;
 		}
 
