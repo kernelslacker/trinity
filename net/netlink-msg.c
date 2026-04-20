@@ -16,6 +16,8 @@
 #include <linux/fib_rules.h>
 #include <linux/genetlink.h>
 #include <linux/netfilter/nfnetlink.h>
+#include <linux/netfilter/nfnetlink_conntrack.h>
+#include <linux/netfilter/nf_tables.h>
 #include <linux/xfrm.h>
 #include <linux/audit.h>
 #include <linux/sock_diag.h>
@@ -887,11 +889,46 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	}
 }
 
-/* genl controller attributes (GENL_ID_CTRL messages) */
-static const unsigned short genl_ctrl_attrs[] = {
-	CTRL_ATTR_FAMILY_ID, CTRL_ATTR_FAMILY_NAME, CTRL_ATTR_VERSION,
-	CTRL_ATTR_HDRSIZE, CTRL_ATTR_MAXATTR, CTRL_ATTR_OPS,
-	CTRL_ATTR_MCAST_GROUPS, CTRL_ATTR_POLICY, CTRL_ATTR_OP,
+/*
+ * Per-family attribute spec tables.
+ *
+ * Each entry pairs an attribute type with its kernel-side kind (NLA_U8,
+ * NLA_STRING, NLA_NESTED, etc.) and an upper bound on the payload
+ * length.  This carries enough information for the generator to emit
+ * an attribute that survives the family's nla_policy validation gate
+ * (nla_parse_nested_deprecated, nla_validate) and reaches the deeper
+ * command dispatch where bugs actually live.  Without this, most
+ * generated attrs are length-rejected with -EINVAL before any code
+ * the family cares about gets to run.
+ */
+enum nla_kind {
+	NLA_KIND_U8,
+	NLA_KIND_U16,
+	NLA_KIND_U32,
+	NLA_KIND_U64,
+	NLA_KIND_BINARY,
+	NLA_KIND_STRING,
+	NLA_KIND_NESTED,
+	NLA_KIND_FLAG,
+};
+
+struct nla_attr_spec {
+	unsigned short type;
+	unsigned short kind;
+	unsigned short max_len;	/* upper bound on payload; 0 for fixed kinds */
+};
+
+/* genl controller (GENL_ID_CTRL) attributes */
+static const struct nla_attr_spec ctrl_specs[] = {
+	{ CTRL_ATTR_FAMILY_ID,    NLA_KIND_U16,    2 },
+	{ CTRL_ATTR_FAMILY_NAME,  NLA_KIND_STRING, GENL_NAMSIZ },
+	{ CTRL_ATTR_VERSION,      NLA_KIND_U32,    4 },
+	{ CTRL_ATTR_HDRSIZE,      NLA_KIND_U32,    4 },
+	{ CTRL_ATTR_MAXATTR,      NLA_KIND_U32,    4 },
+	{ CTRL_ATTR_OPS,          NLA_KIND_NESTED, 0 },
+	{ CTRL_ATTR_MCAST_GROUPS, NLA_KIND_NESTED, 0 },
+	{ CTRL_ATTR_POLICY,       NLA_KIND_NESTED, 0 },
+	{ CTRL_ATTR_OP,           NLA_KIND_U32,    4 },
 };
 
 static unsigned char rand_family(void)
@@ -1042,11 +1079,14 @@ static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
 	return sizeof(genl);
 }
 
-/* Pick an nlattr type for genl controller messages. */
+/* Pick an nlattr type for genl controller messages.  Reads through the
+ * ctrl_specs spec table; the legacy flat-attr code path still needs a
+ * raw nla_type when nesting a NETLINK_GENERIC controller attr via
+ * append_nested_attr_container().  The spec-driven path bypasses this. */
 static unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
 {
 	if (nlmsg_type == GENL_ID_CTRL)
-		return RAND_ARRAY(genl_ctrl_attrs);
+		return ctrl_specs[rand() % ARRAY_SIZE(ctrl_specs)].type;
 	return 0; /* unknown family: fall back to random */
 }
 
@@ -1075,19 +1115,106 @@ static size_t gen_nfnl_body(unsigned char *body)
 	return sizeof(nfg);
 }
 
-/* XFRM attribute types */
-static const unsigned short xfrma_attrs[] = {
-	XFRMA_ALG_AUTH, XFRMA_ALG_CRYPT, XFRMA_ALG_COMP,
-	XFRMA_ENCAP, XFRMA_TMPL, XFRMA_SA, XFRMA_POLICY,
-	XFRMA_SEC_CTX, XFRMA_LTIME_VAL, XFRMA_REPLAY_VAL,
-	XFRMA_REPLAY_THRESH, XFRMA_ETIMER_THRESH,
-	XFRMA_SRCADDR, XFRMA_COADDR, XFRMA_LASTUSED,
-	XFRMA_POLICY_TYPE, XFRMA_MIGRATE,
-	XFRMA_ALG_AEAD, XFRMA_KMADDRESS, XFRMA_ALG_AUTH_TRUNC,
-	XFRMA_MARK, XFRMA_TFCPAD, XFRMA_REPLAY_ESN_VAL,
-	XFRMA_SA_EXTRA_FLAGS, XFRMA_PROTO, XFRMA_ADDRESS_FILTER,
-	XFRMA_OFFLOAD_DEV, XFRMA_SET_MARK, XFRMA_SET_MARK_MASK,
-	XFRMA_IF_ID, XFRMA_MTIMER_THRESH, XFRMA_SA_DIR,
+/* XFRM attribute spec table (XFRMA_*) */
+static const struct nla_attr_spec xfrma_specs[] = {
+	{ XFRMA_ALG_AUTH,        NLA_KIND_BINARY, 128 },
+	{ XFRMA_ALG_CRYPT,       NLA_KIND_BINARY, 128 },
+	{ XFRMA_ALG_COMP,        NLA_KIND_BINARY, 128 },
+	{ XFRMA_ALG_AEAD,        NLA_KIND_BINARY, 128 },
+	{ XFRMA_ALG_AUTH_TRUNC,  NLA_KIND_BINARY, 128 },
+	{ XFRMA_ENCAP,           NLA_KIND_BINARY, 24 },
+	{ XFRMA_TMPL,            NLA_KIND_BINARY, 64 },
+	{ XFRMA_SA,              NLA_KIND_NESTED, 0 },
+	{ XFRMA_POLICY,          NLA_KIND_NESTED, 0 },
+	{ XFRMA_SEC_CTX,         NLA_KIND_BINARY, 32 },
+	{ XFRMA_LTIME_VAL,       NLA_KIND_BINARY, 32 },
+	{ XFRMA_REPLAY_VAL,      NLA_KIND_BINARY, 16 },
+	{ XFRMA_REPLAY_THRESH,   NLA_KIND_U32,    4 },
+	{ XFRMA_ETIMER_THRESH,   NLA_KIND_U32,    4 },
+	{ XFRMA_SRCADDR,         NLA_KIND_BINARY, 16 },
+	{ XFRMA_COADDR,          NLA_KIND_BINARY, 16 },
+	{ XFRMA_LASTUSED,        NLA_KIND_U64,    8 },
+	{ XFRMA_POLICY_TYPE,     NLA_KIND_BINARY, 4 },
+	{ XFRMA_MIGRATE,         NLA_KIND_BINARY, 64 },
+	{ XFRMA_KMADDRESS,       NLA_KIND_BINARY, 36 },
+	{ XFRMA_MARK,            NLA_KIND_BINARY, 8 },
+	{ XFRMA_TFCPAD,          NLA_KIND_U32,    4 },
+	{ XFRMA_REPLAY_ESN_VAL,  NLA_KIND_BINARY, 32 },
+	{ XFRMA_SA_EXTRA_FLAGS,  NLA_KIND_U32,    4 },
+	{ XFRMA_PROTO,           NLA_KIND_U8,     1 },
+	{ XFRMA_ADDRESS_FILTER,  NLA_KIND_BINARY, 36 },
+	{ XFRMA_OFFLOAD_DEV,     NLA_KIND_BINARY, 8 },
+	{ XFRMA_SET_MARK,        NLA_KIND_U32,    4 },
+	{ XFRMA_SET_MARK_MASK,   NLA_KIND_U32,    4 },
+	{ XFRMA_IF_ID,           NLA_KIND_U32,    4 },
+	{ XFRMA_MTIMER_THRESH,   NLA_KIND_U32,    4 },
+	{ XFRMA_SA_DIR,          NLA_KIND_U8,     1 },
+};
+
+/* ctnetlink attribute spec table (CTA_*) */
+static const struct nla_attr_spec cta_specs[] = {
+	{ CTA_TUPLE_ORIG,     NLA_KIND_NESTED, 0 },
+	{ CTA_TUPLE_REPLY,    NLA_KIND_NESTED, 0 },
+	{ CTA_STATUS,         NLA_KIND_U32,    4 },
+	{ CTA_PROTOINFO,      NLA_KIND_NESTED, 0 },
+	{ CTA_HELP,           NLA_KIND_NESTED, 0 },
+	{ CTA_NAT_SRC,        NLA_KIND_NESTED, 0 },
+	{ CTA_NAT_DST,        NLA_KIND_NESTED, 0 },
+	{ CTA_TIMEOUT,        NLA_KIND_U32,    4 },
+	{ CTA_MARK,           NLA_KIND_U32,    4 },
+	{ CTA_MARK_MASK,      NLA_KIND_U32,    4 },
+	{ CTA_COUNTERS_ORIG,  NLA_KIND_NESTED, 0 },
+	{ CTA_COUNTERS_REPLY, NLA_KIND_NESTED, 0 },
+	{ CTA_USE,            NLA_KIND_U32,    4 },
+	{ CTA_ID,             NLA_KIND_U32,    4 },
+	{ CTA_TUPLE_MASTER,   NLA_KIND_NESTED, 0 },
+	{ CTA_SEQ_ADJ_ORIG,   NLA_KIND_NESTED, 0 },
+	{ CTA_SEQ_ADJ_REPLY,  NLA_KIND_NESTED, 0 },
+	{ CTA_ZONE,           NLA_KIND_U16,    2 },
+	{ CTA_TIMESTAMP,      NLA_KIND_NESTED, 0 },
+	{ CTA_LABELS,         NLA_KIND_BINARY, 16 },
+	{ CTA_LABELS_MASK,    NLA_KIND_BINARY, 16 },
+	{ CTA_SYNPROXY,       NLA_KIND_NESTED, 0 },
+	{ CTA_FILTER,         NLA_KIND_NESTED, 0 },
+	{ CTA_STATUS_MASK,    NLA_KIND_U32,    4 },
+};
+
+/* nftables attribute spec table (NFTA_*) — covers the table/chain/rule/set
+ * top-level namespaces, which are what userspace tooling spends most of
+ * its time emitting. */
+static const struct nla_attr_spec nfta_specs[] = {
+	/* NFT_MSG_*TABLE */
+	{ NFTA_TABLE_NAME,       NLA_KIND_STRING, 32 },
+	{ NFTA_TABLE_FLAGS,      NLA_KIND_U32,    4 },
+	{ NFTA_TABLE_HANDLE,     NLA_KIND_U64,    8 },
+	{ NFTA_TABLE_USERDATA,   NLA_KIND_BINARY, 64 },
+	/* NFT_MSG_*CHAIN */
+	{ NFTA_CHAIN_TABLE,      NLA_KIND_STRING, 32 },
+	{ NFTA_CHAIN_HANDLE,     NLA_KIND_U64,    8 },
+	{ NFTA_CHAIN_NAME,       NLA_KIND_STRING, 32 },
+	{ NFTA_CHAIN_HOOK,       NLA_KIND_NESTED, 0 },
+	{ NFTA_CHAIN_POLICY,     NLA_KIND_U32,    4 },
+	{ NFTA_CHAIN_TYPE,       NLA_KIND_STRING, 16 },
+	{ NFTA_CHAIN_FLAGS,      NLA_KIND_U32,    4 },
+	{ NFTA_CHAIN_USERDATA,   NLA_KIND_BINARY, 64 },
+	/* NFT_MSG_*RULE */
+	{ NFTA_RULE_TABLE,       NLA_KIND_STRING, 32 },
+	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING, 32 },
+	{ NFTA_RULE_HANDLE,      NLA_KIND_U64,    8 },
+	{ NFTA_RULE_EXPRESSIONS, NLA_KIND_NESTED, 0 },
+	{ NFTA_RULE_POSITION,    NLA_KIND_U64,    8 },
+	{ NFTA_RULE_USERDATA,    NLA_KIND_BINARY, 64 },
+	/* NFT_MSG_*SET */
+	{ NFTA_SET_TABLE,        NLA_KIND_STRING, 32 },
+	{ NFTA_SET_NAME,         NLA_KIND_STRING, 32 },
+	{ NFTA_SET_FLAGS,        NLA_KIND_U32,    4 },
+	{ NFTA_SET_KEY_TYPE,     NLA_KIND_U32,    4 },
+	{ NFTA_SET_KEY_LEN,      NLA_KIND_U32,    4 },
+	{ NFTA_SET_DATA_TYPE,    NLA_KIND_U32,    4 },
+	{ NFTA_SET_DATA_LEN,     NLA_KIND_U32,    4 },
+	{ NFTA_SET_POLICY,       NLA_KIND_U32,    4 },
+	{ NFTA_SET_TIMEOUT,      NLA_KIND_U64,    8 },
+	{ NFTA_SET_USERDATA,     NLA_KIND_BINARY, 64 },
 };
 
 /*
@@ -1231,10 +1358,11 @@ static size_t gen_audit_body(unsigned char *body, unsigned short nlmsg_type,
 	return body_len;
 }
 
-/* sock_diag request attribute types */
-static const unsigned short inet_diag_req_attrs[] = {
-	INET_DIAG_REQ_BYTECODE, INET_DIAG_REQ_SK_BPF_STORAGES,
-	INET_DIAG_REQ_PROTOCOL,
+/* sock_diag (INET_DIAG_*) request attribute spec table */
+static const struct nla_attr_spec inet_diag_specs[] = {
+	{ INET_DIAG_REQ_BYTECODE,        NLA_KIND_BINARY, 256 },
+	{ INET_DIAG_REQ_SK_BPF_STORAGES, NLA_KIND_NESTED, 0 },
+	{ INET_DIAG_REQ_PROTOCOL,        NLA_KIND_U8,     1 },
 };
 
 /*
@@ -1301,11 +1429,12 @@ static unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
 		return pick_rtnl_attr_type(nlmsg_type);
 	case NETLINK_GENERIC:
 		return pick_genl_attr_type(nlmsg_type);
-	case NETLINK_XFRM:
-		return RAND_ARRAY(xfrma_attrs);
-	case NETLINK_SOCK_DIAG:
-		return RAND_ARRAY(inet_diag_req_attrs);
 	default:
+		/* XFRM, SOCK_DIAG, ctnetlink, nftables, genl-ctrl now have
+		 * dedicated nla_attr_spec tables consulted directly by
+		 * build_one_nlmsg, so they no longer need a raw type pick
+		 * here.  Anything that lands in this default returns 0 and
+		 * the caller falls back to a random type. */
 		return 0;
 	}
 }
@@ -1405,6 +1534,248 @@ static size_t append_nested_attr_container(unsigned char *buf, size_t offset,
 	return offset + total;
 }
 
+/*
+ * Compute payload length implied by an nla_attr_spec.  Variable-length
+ * kinds (STRING, BINARY) draw a length in [4, max_len], or just take
+ * max_len when it's already <= 4.
+ */
+static size_t spec_payload_len(const struct nla_attr_spec *spec)
+{
+	switch (spec->kind) {
+	case NLA_KIND_U8:	return 1;
+	case NLA_KIND_U16:	return 2;
+	case NLA_KIND_U32:	return 4;
+	case NLA_KIND_U64:	return 8;
+	case NLA_KIND_FLAG:	return 0;
+	case NLA_KIND_STRING:
+	case NLA_KIND_BINARY:
+		if (spec->max_len > 4)
+			return RAND_RANGE(4, spec->max_len);
+		return spec->max_len;
+	case NLA_KIND_NESTED:
+		/* Caller decides — nested kinds get a recursive emission */
+		return 0;
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Fill a payload buffer per spec kind: STRING gets NUL-terminated random
+ * lowercase ASCII (the typical shape of names like NFTA_TABLE_NAME or
+ * IFLA_INFO_KIND), everything else gets random bytes.
+ */
+static void spec_fill_payload(unsigned char *p, size_t len,
+			      const struct nla_attr_spec *spec)
+{
+	if (len == 0)
+		return;
+	if (spec->kind == NLA_KIND_STRING) {
+		size_t i;
+
+		for (i = 0; i + 1 < len; i++)
+			p[i] = 'a' + (rand() % 26);
+		p[len - 1] = '\0';
+	} else {
+		generate_rand_bytes(p, len);
+	}
+}
+
+/*
+ * Emit a single attribute described by a freshly picked spec, treating
+ * NESTED as a small binary payload.  Used inside append_specced_nested
+ * so children stay one level deep — matches the depth limit set by
+ * commit "net/netlink: add nested NLA_F_NESTED attribute support".
+ */
+static size_t append_specced_flat(unsigned char *buf, size_t offset,
+				  size_t buflen,
+				  const struct nla_attr_spec *table,
+				  size_t nr_specs)
+{
+	const struct nla_attr_spec *spec;
+	struct nlattr nla;
+	size_t payload_len;
+	size_t total;
+
+	if (!table || nr_specs == 0)
+		return offset;
+	if (offset + NLA_HDRLEN > buflen)
+		return offset;
+
+	spec = &table[rand() % nr_specs];
+
+	if (spec->kind == NLA_KIND_NESTED)
+		payload_len = 16;	/* placeholder bytes — no recursion */
+	else
+		payload_len = spec_payload_len(spec);
+
+	/* Cap any single child inside a nested container at 64 bytes so
+	 * one greedy STRING/BINARY can't push out the rest of the
+	 * children.  The kernel-side nla_strlen / max_len gates only care
+	 * about the upper bound of each individual attr, not the sum. */
+	if (payload_len > 64)
+		payload_len = 64;
+
+	total = NLA_ALIGN(NLA_HDRLEN + payload_len);
+	if (offset + total > buflen) {
+		if (buflen - offset < NLA_HDRLEN)
+			return offset;
+		total = buflen - offset;
+		payload_len = total - NLA_HDRLEN;
+	}
+
+	nla.nla_len = NLA_HDRLEN + payload_len;
+	nla.nla_type = spec->type;
+	memcpy(buf + offset, &nla, NLA_HDRLEN);
+	spec_fill_payload(buf + offset + NLA_HDRLEN, payload_len, spec);
+
+	return offset + total;
+}
+
+/*
+ * Emit a NLA_F_NESTED outer attr whose payload is 1-3 children drawn
+ * from the same spec table.  Mirrors append_nested_attr_container() but
+ * walks a typed spec table for kind/max_len information.  Increments
+ * the same nested counter so the dump output stays consistent across
+ * spec-driven and pick_attr_hint-driven nesting.
+ */
+static size_t append_specced_nested(unsigned char *buf, size_t offset,
+				    size_t buflen,
+				    unsigned short outer_type,
+				    const struct nla_attr_spec *table,
+				    size_t nr_specs)
+{
+	struct nlattr nla;
+	unsigned char *inner;
+	size_t inner_avail;
+	size_t inner_off = 0;
+	size_t total;
+	int child_count;
+
+	if (offset + NLA_HDRLEN + NLA_HDRLEN + 4 > buflen)
+		return offset;
+
+	inner = buf + offset + NLA_HDRLEN;
+	inner_avail = buflen - offset - NLA_HDRLEN;
+	if (inner_avail > 256)
+		inner_avail = 256;
+
+	child_count = RAND_RANGE(1, 3);
+	while (child_count-- > 0) {
+		size_t new_off = append_specced_flat(inner, inner_off,
+						     inner_avail,
+						     table, nr_specs);
+		if (new_off == inner_off)
+			break;
+		inner_off = new_off;
+	}
+
+	if (inner_off == 0)
+		return offset;
+
+	nla.nla_len = NLA_HDRLEN + inner_off;
+	nla.nla_type = outer_type | NLA_F_NESTED;
+	memcpy(buf + offset, &nla, NLA_HDRLEN);
+
+	total = NLA_ALIGN(NLA_HDRLEN + inner_off);
+	if (offset + total > buflen)
+		total = buflen - offset;
+
+	__atomic_add_fetch(&shm->stats.netlink_nested_attrs_emitted, 1,
+			   __ATOMIC_RELAXED);
+
+	return offset + total;
+}
+
+/*
+ * Top-level entry for spec-driven attribute emission.  Picks a random
+ * spec and delegates to the nested or flat path as appropriate.  Used
+ * exclusively by build_one_nlmsg for families with a curated
+ * nla_attr_spec table; the legacy random-payload append_nlattr() path
+ * still serves families without specs.
+ */
+static size_t append_specced_nlattr(unsigned char *buf, size_t offset,
+				    size_t buflen,
+				    const struct nla_attr_spec *table,
+				    size_t nr_specs)
+{
+	const struct nla_attr_spec *spec;
+	struct nlattr nla;
+	size_t payload_len;
+	size_t total;
+
+	if (!table || nr_specs == 0)
+		return offset;
+	if (offset + NLA_HDRLEN > buflen)
+		return offset;
+
+	spec = &table[rand() % nr_specs];
+
+	if (spec->kind == NLA_KIND_NESTED)
+		return append_specced_nested(buf, offset, buflen, spec->type,
+					     table, nr_specs);
+
+	payload_len = spec_payload_len(spec);
+
+	total = NLA_ALIGN(NLA_HDRLEN + payload_len);
+	if (offset + total > buflen) {
+		if (buflen - offset < NLA_HDRLEN)
+			return offset;
+		total = buflen - offset;
+		payload_len = total - NLA_HDRLEN;
+	}
+
+	nla.nla_len = NLA_HDRLEN + payload_len;
+	nla.nla_type = spec->type;
+	memcpy(buf + offset, &nla, NLA_HDRLEN);
+	spec_fill_payload(buf + offset + NLA_HDRLEN, payload_len, spec);
+
+	return offset + total;
+}
+
+/*
+ * Return the nla_attr_spec table for a given protocol/nlmsg_type pair,
+ * setting *nr_out to its element count.  NULL means the family is not
+ * spec-aware and the caller should fall back to the legacy flat-attr
+ * generator.  Netfilter dispatches by subsystem nibble of nlmsg_type
+ * since CTNETLINK and NFTABLES occupy different sub-namespaces.
+ */
+static const struct nla_attr_spec *pick_spec_table(int protocol,
+						   unsigned short nlmsg_type,
+						   size_t *nr_out)
+{
+	switch (protocol) {
+	case NETLINK_GENERIC:
+		if (nlmsg_type == GENL_ID_CTRL) {
+			*nr_out = ARRAY_SIZE(ctrl_specs);
+			return ctrl_specs;
+		}
+		return NULL;
+	case NETLINK_XFRM:
+		*nr_out = ARRAY_SIZE(xfrma_specs);
+		return xfrma_specs;
+	case NETLINK_NETFILTER: {
+		unsigned char subsys = nlmsg_type >> 8;
+
+		if (subsys == NFNL_SUBSYS_CTNETLINK ||
+		    subsys == NFNL_SUBSYS_CTNETLINK_EXP) {
+			*nr_out = ARRAY_SIZE(cta_specs);
+			return cta_specs;
+		}
+		if (subsys == NFNL_SUBSYS_NFTABLES) {
+			*nr_out = ARRAY_SIZE(nfta_specs);
+			return nfta_specs;
+		}
+		return NULL;
+	}
+	case NETLINK_SOCK_DIAG:
+		*nr_out = ARRAY_SIZE(inet_diag_specs);
+		return inet_diag_specs;
+	default:
+		return NULL;
+	}
+}
+
 /* Build a single nlmsghdr at msg+offset. Returns new offset (NLMSG_ALIGN'd). */
 static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			      struct socket_triplet *triplet)
@@ -1457,33 +1828,58 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	/* Append nlattr TLVs with protocol-appropriate types.
 	 * Audit messages don't use nlattr — skip for that protocol. */
 	num_attrs = (triplet->protocol == NETLINK_AUDIT) ? 0 : rand() % 8;
-	while (num_attrs-- > 0 && offset < buflen) {
-		unsigned short attr_hint;
+	if (num_attrs > 0) {
+		const struct nla_attr_spec *spec_table;
+		size_t nr_specs = 0;
 
-		attr_hint = pick_attr_hint(triplet->protocol, nlmsg_type);
+		spec_table = pick_spec_table(triplet->protocol, nlmsg_type,
+					     &nr_specs);
 
-		/* ~14% of attrs become real NLA_F_NESTED containers with
-		 * 1-3 typed children, exercising the kernel's nested-policy
-		 * walkers in addition to the flat fast path. */
-		if (ONE_IN(7)) {
+		while (num_attrs-- > 0 && offset < buflen) {
+			unsigned short attr_hint;
 			size_t new_off;
-			unsigned short outer = attr_hint ? attr_hint : rand16();
 
-			new_off = append_nested_attr_container(msg, offset,
-							       buflen, outer,
-							       triplet->protocol,
-							       nlmsg_type,
-							       body_family,
-							       rtnl_group);
-			if (new_off > offset) {
+			/* Spec-driven path: families with a curated
+			 * nla_attr_spec table (XFRM, ctnetlink, nftables,
+			 * genl-ctrl, sock_diag) emit attrs sized to their
+			 * per-type kind.  This dramatically lowers the
+			 * EINVAL rejection rate at the family's nla_policy
+			 * gate. */
+			if (spec_table) {
+				new_off = append_specced_nlattr(msg, offset,
+								buflen,
+								spec_table,
+								nr_specs);
+				if (new_off == offset)
+					break;
 				offset = new_off;
 				continue;
 			}
-			/* Not enough room — fall through to the flat path. */
-		}
 
-		offset = append_nlattr(msg, offset, buflen, attr_hint,
-				       body_family, rtnl_group);
+			/* Legacy random-payload path for families without
+			 * a spec table — currently NETLINK_ROUTE (which has
+			 * its own structured per-group payload generators)
+			 * and unknown families. */
+			attr_hint = pick_attr_hint(triplet->protocol,
+						   nlmsg_type);
+
+			if (ONE_IN(7)) {
+				unsigned short outer = attr_hint
+					? attr_hint : rand16();
+
+				new_off = append_nested_attr_container(msg,
+					offset, buflen, outer,
+					triplet->protocol, nlmsg_type,
+					body_family, rtnl_group);
+				if (new_off > offset) {
+					offset = new_off;
+					continue;
+				}
+			}
+
+			offset = append_nlattr(msg, offset, buflen, attr_hint,
+					       body_family, rtnl_group);
+		}
 	}
 
 	/* Set nlmsg_len — usually correct, sometimes corrupted */
