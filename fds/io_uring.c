@@ -81,17 +81,12 @@ static const struct {
 	{ 8,  IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN },
 };
 
-/* The ring with valid mappings is stored in shm->mapped_ring,
- * shared across all children.  Protected by shm->objlock. */
-
+/* Child-side read of mapped_ring: ACQUIRE pairs with the parent-side RELEASE
+ * store in open_io_uring_fd_config().  No lock needed — mapped_ring is a
+ * single pointer published once at init and not freed while rings are live. */
 struct io_uringobj *get_io_uring_ring(void)
 {
-	struct io_uringobj *ring;
-
-	lock(&shm->objlock);
-	ring = shm->mapped_ring;
-	unlock(&shm->objlock);
-	return ring;
+	return __atomic_load_n(&shm->mapped_ring, __ATOMIC_ACQUIRE);
 }
 
 static void io_uring_destructor(struct object *obj)
@@ -185,9 +180,8 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IO_URING);
 
-	lock(&shm->objlock);
-	shm->mapped_ring = ring;
-	unlock(&shm->objlock);
+	/* RELEASE store: pairs with the child-side ACQUIRE in get_io_uring_ring(). */
+	__atomic_store_n(&shm->mapped_ring, ring, __ATOMIC_RELEASE);
 
 	return true;
 #else
