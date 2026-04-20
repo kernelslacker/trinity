@@ -22,11 +22,14 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/eventfd.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
@@ -346,9 +349,244 @@ static bool recipe_timeout_drain(struct iour_ctx *ctx,
 	return true;
 }
 
+/* ------------------------------------------------------------------ *
+ * Recipe 3: POLL_ADD multi-shot + POLL_REMOVE
+ *
+ * Create an eventfd, register a POLL_ADD with IORING_POLL_ADD_MULTI
+ * so the kernel installs a persistent poll-wait, then immediately
+ * submit a POLL_REMOVE targeting the same user_data.  This races the
+ * removal against the poll-wait registration — the kernel must handle
+ * the cancellation regardless of which path wins.
+ * ------------------------------------------------------------------ */
+#ifndef IORING_POLL_ADD_MULTI
+#define IORING_POLL_ADD_MULTI	(1U << 0)
+#endif
+
+static bool recipe_poll_multishot(struct iour_ctx *ctx,
+				  bool *unsupported __unused__)
+{
+	struct io_uring_sqe sqes[2];
+	int evfd = -1;
+	bool ok = false;
+	int r;
+
+	evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (evfd < 0)
+		goto out;
+
+	/* POLL_ADD with IORING_POLL_ADD_MULTI (multi-shot). */
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode        = IORING_OP_POLL_ADD;
+	sqes[0].fd            = evfd;
+	sqes[0].poll32_events = POLLIN;
+	sqes[0].len           = IORING_POLL_ADD_MULTI;
+	sqes[0].user_data     = 20;
+
+	/* POLL_REMOVE by user_data to cancel the multi-shot above. */
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_POLL_REMOVE;
+	sqes[1].addr      = 20;
+	sqes[1].user_data = 21;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		goto out;
+
+	r = iour_enter(ctx, 2, 1);
+	if (r < 0)
+		goto out;
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (evfd >= 0)
+		close(evfd);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 4: SEND + RECV over a socketpair with linked SQEs
+ *
+ * Create a UNIX socketpair, link a SEND into a RECV.  IOSQE_IO_LINK
+ * on the SEND means the RECV only starts when SEND completes — this
+ * walks the linked-request dispatch and the UNIX socket I/O path
+ * within a single submission batch.
+ * ------------------------------------------------------------------ */
+static bool recipe_send_recv_linked(struct iour_ctx *ctx,
+				    bool *unsupported __unused__)
+{
+	struct io_uring_sqe sqes[2];
+	int sv[2] = { -1, -1 };
+	char buf[32];
+	bool ok = false;
+	int r;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
+		       0, sv) < 0)
+		goto out;
+
+	memset(buf, 's', sizeof(buf));
+
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode    = IORING_OP_SEND;
+	sqes[0].fd        = sv[0];
+	sqes[0].addr      = (__u64)(uintptr_t)buf;
+	sqes[0].len       = sizeof(buf);
+	sqes[0].flags     = IOSQE_IO_LINK;
+	sqes[0].user_data = 30;
+
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_RECV;
+	sqes[1].fd        = sv[1];
+	sqes[1].addr      = (__u64)(uintptr_t)buf;
+	sqes[1].len       = sizeof(buf);
+	sqes[1].user_data = 31;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		goto out;
+
+	r = iour_enter(ctx, 2, 2);
+	if (r < 0)
+		goto out;
+
+	iour_drain_cqes(ctx);
+	ok = true;
+out:
+	if (sv[0] >= 0) close(sv[0]);
+	if (sv[1] >= 0) close(sv[1]);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 5: OPENAT + CLOSE in linked SQEs (teardown race)
+ *
+ * Open /dev/null via IORING_OP_OPENAT then immediately chain a CLOSE.
+ * The CLOSE uses fd=0 as a placeholder — it will produce EBADF or get
+ * cancelled by the link chain.  The interesting path is the linked-
+ * cancel sequence when the second request references a result not yet
+ * available from the first.
+ * ------------------------------------------------------------------ */
+static bool recipe_openat_close_linked(struct iour_ctx *ctx,
+				       bool *unsupported __unused__)
+{
+	struct io_uring_sqe sqes[2];
+	int r;
+	static const char devnull[] = "/dev/null";
+
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode     = IORING_OP_OPENAT;
+	sqes[0].fd         = AT_FDCWD;
+	sqes[0].addr       = (__u64)(uintptr_t)devnull;
+	sqes[0].open_flags = O_RDONLY;
+	sqes[0].flags      = IOSQE_IO_LINK;
+	sqes[0].user_data  = 40;
+
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_CLOSE;
+	sqes[1].fd        = 0;
+	sqes[1].user_data = 41;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		return false;
+
+	r = iour_enter(ctx, 2, 1);
+	if (r < 0)
+		return false;
+
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 6: SOCKET + SHUTDOWN in linked SQEs
+ *
+ * IORING_OP_SOCKET creates a TCP socket through the ring.  Linking a
+ * SHUTDOWN on fd=-1 (placeholder — result fd not wired up at submission
+ * time) exercises the linked-request setup/teardown and the SHUTDOWN
+ * opcode path.
+ * ------------------------------------------------------------------ */
+static bool recipe_socket_shutdown_linked(struct iour_ctx *ctx,
+					  bool *unsupported)
+{
+	struct io_uring_sqe sqes[2];
+	int r;
+
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode    = IORING_OP_SOCKET;
+	sqes[0].fd        = AF_INET;
+	sqes[0].off       = SOCK_STREAM;
+	sqes[0].user_data = 50;
+	sqes[0].flags     = IOSQE_IO_LINK;
+
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_SHUTDOWN;
+	sqes[1].fd        = -1;
+	sqes[1].len       = SHUT_RDWR;
+	sqes[1].user_data = 51;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		return false;
+
+	r = iour_enter(ctx, 2, 1);
+	if (r < 0) {
+		if (errno == ENOSYS) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe 7: NOP chain with IOSQE_CQE_SKIP_SUCCESS
+ *
+ * Submit three NOPs where the middle one has IOSQE_CQE_SKIP_SUCCESS.
+ * The kernel should post CQEs for the first and last but suppress the
+ * middle one on success.  This exercises the CQE-skip accounting path
+ * and its interaction with linked requests.
+ * ------------------------------------------------------------------ */
+static bool recipe_nop_cqe_skip(struct iour_ctx *ctx,
+				bool *unsupported __unused__)
+{
+	struct io_uring_sqe sqes[3];
+	int r;
+
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode    = IORING_OP_NOP;
+	sqes[0].flags     = IOSQE_IO_LINK;
+	sqes[0].user_data = 60;
+
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_NOP;
+	sqes[1].flags     = IOSQE_IO_LINK | IOSQE_CQE_SKIP_SUCCESS;
+	sqes[1].user_data = 61;
+
+	sqe_clear(&sqes[2]);
+	sqes[2].opcode    = IORING_OP_NOP;
+	sqes[2].user_data = 62;
+
+	if (!iour_submit_sqes(ctx, sqes, 3))
+		return false;
+
+	r = iour_enter(ctx, 3, 2);
+	if (r < 0)
+		return false;
+
+	iour_drain_cqes(ctx);
+	return true;
+}
+
 static const struct iour_recipe catalog[] = {
-	{ "nop_chain",     recipe_nop_chain     },
-	{ "timeout_drain", recipe_timeout_drain },
+	{ "nop_chain",              recipe_nop_chain              },
+	{ "timeout_drain",          recipe_timeout_drain          },
+	{ "poll_multishot",         recipe_poll_multishot         },
+	{ "send_recv_linked",       recipe_send_recv_linked       },
+	{ "openat_close_linked",    recipe_openat_close_linked    },
+	{ "socket_shutdown_linked", recipe_socket_shutdown_linked },
+	{ "nop_cqe_skip",           recipe_nop_cqe_skip           },
 };
 
 _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
