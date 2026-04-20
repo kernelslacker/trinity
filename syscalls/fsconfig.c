@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include "fd.h"
+#include "object-types.h"
 #include "random.h"
 #include "sanitise.h"
 
@@ -115,7 +116,7 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 struct syscallentry syscall_fsconfig = {
 	.name = "fsconfig",
 	.num_args = 5,
-	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
+	.argtype = { [0] = ARG_FD_FS_CTX, [1] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "_key", [3] = "_value", [4] = "aux" },
 	.arg_params[1].list = ARGLIST(fsconfig_ops),
 	.group = GROUP_VFS,
