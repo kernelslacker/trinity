@@ -6,6 +6,7 @@
 #ifdef USE_BACKTRACE
 #include <execinfo.h>
 #endif
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <syslog.h>
@@ -102,6 +103,32 @@ void dump_syscallrec(struct syscallrecord *rec)
 	output(0, " -> %.*s\n", POSTBUFFER_LEN, rec->postbuffer);
 }
 
+/*
+ * dump_childdata is only called from the shm-corruption path, so the
+ * struct we're handed is by definition untrustworthy.  Refuse to call
+ * head->dump (a function pointer) unless the surrounding counters
+ * pass a basic sanity check; otherwise we crash dereferencing junk
+ * while trying to *report* the corruption.
+ */
+#define OBJHEAD_SANE_LIMIT	(1U << 16)
+
+static bool objhead_looks_sane(const struct objhead *head)
+{
+	if (head->num_entries > OBJHEAD_SANE_LIMIT)
+		return false;
+	if (head->max_entries > OBJHEAD_SANE_LIMIT)
+		return false;
+	if (head->array_capacity > OBJHEAD_SANE_LIMIT)
+		return false;
+	if (head->num_entries > head->array_capacity)
+		return false;
+	if (head->max_entries > head->array_capacity)
+		return false;
+	if (head->num_entries > 0 && head->array == NULL)
+		return false;
+	return true;
+}
+
 void dump_childdata(struct childdata *child)
 {
 	output(0, "child struct @%p\n", child);
@@ -119,6 +146,13 @@ void dump_childdata(struct childdata *child)
 
 			if (head->num_entries == 0)
 				continue;
+
+			if (!objhead_looks_sane(head)) {
+				output(0, " objhead[%u]: <corrupt: entries=%u max=%u capacity=%u array=%p>\n",
+					i, head->num_entries, head->max_entries,
+					head->array_capacity, head->array);
+				continue;
+			}
 
 			output(0, " objhead[%u]: %u entries (max %u, capacity %u)\n",
 				i, head->num_entries, head->max_entries,
