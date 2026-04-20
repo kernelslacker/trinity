@@ -147,6 +147,14 @@ struct stats_s {
 	 * Indicates the pointer was overwritten after init. */
 	unsigned long fd_event_ring_overwritten;
 
+	/* avoid_shared_buffer() caught an output-buffer syscall arg whose
+	 * address overlapped one of trinity's alloc_shared() regions and
+	 * rewrote it to a non-shared address.  A non-zero count means the
+	 * arg-generation path is producing pointers into our own shared
+	 * state — without this redirect the kernel would write the syscall
+	 * result on top of trinity bookkeeping. */
+	unsigned long shared_buffer_redirected;
+
 	/* iouring_recipes childop counters */
 	unsigned long iouring_recipes_runs;		/* total invocations */
 	unsigned long iouring_recipes_completed;	/* recipe completed successfully */

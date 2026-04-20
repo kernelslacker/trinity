@@ -57,6 +57,37 @@ void * get_writable_struct(size_t size)
 	return get_writable_address(size);
 }
 
+/*
+ * Defense-in-depth for output-buffer syscall args.  A fuzzed pointer that
+ * lands inside one of trinity's own alloc_shared() regions — childdata,
+ * the global stats blob, fd-event rings, etc. — turns any "kernel writes
+ * here" syscall (read, recv, getdents, statx, ioctl _IOR, ...) into a
+ * silent corruption of trinity bookkeeping.  Symptoms include impossible
+ * counter values, non-canonical pointers, and crashes far from the
+ * scribbled write.  Sanitisers that hand the kernel a writable buffer
+ * call this to swap the address out for a known-safe one before the
+ * syscall is issued.
+ */
+void avoid_shared_buffer(unsigned long *addr, unsigned long len)
+{
+	void *replacement;
+
+	if (addr == NULL)
+		return;
+	if (*addr == 0)
+		return;
+	if (!range_overlaps_shared(*addr, len))
+		return;
+
+	replacement = get_writable_address(len ? len : page_size);
+	if (replacement == NULL)
+		return;
+
+	*addr = (unsigned long) replacement;
+	if (shm != NULL)
+		shm->stats.shared_buffer_redirected++;
+}
+
 void * get_address(void)
 {
 	if (ONE_IN(100))
