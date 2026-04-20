@@ -34,6 +34,7 @@ struct syscallentry syscall_memfd_create = {
 	.argname = { [0] = "uname", [1] = "flag" },
 	.arg_params[1].list = ARGLIST(memfd_create_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_MEMFD,
 	.post = post_memfd_create,
 	.group = GROUP_VFS,
 };

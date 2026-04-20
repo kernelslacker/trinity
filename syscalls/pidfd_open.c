@@ -31,5 +31,6 @@ struct syscallentry syscall_pidfd_open = {
 	.argname = { [0] = "pid", [1] = "flags" },
 	.arg_params[1].list = ARGLIST(pidfd_open_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_PIDFD,
 	.post = post_pidfd_open,
 };
