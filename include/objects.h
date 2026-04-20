@@ -221,6 +221,8 @@ bool objects_empty(enum objecttype type);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);
+void set_object_fd(struct object *obj, enum objecttype type, int fd);
+struct object *find_local_object_by_fd(enum objecttype type, int fd);
 void remove_object_by_fd(int fd);
 
 /* fd hash table for O(1) fd→object lookup */

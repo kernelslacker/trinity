@@ -28,6 +28,11 @@ struct stats_s {
 	unsigned long fd_events_processed;
 	unsigned long fd_events_dropped;
 
+	/* Number of fds the generic ret_objtype post-hook auto-registered
+	 * into a per-type OBJ_LOCAL pool because no syscall-specific .post
+	 * had already done so. */
+	unsigned long fd_runtime_registered;
+
 	/* Fault injection (/proc/self/fail-nth):
 	 *   fault_injected  — number of syscalls we armed fail-nth for
 	 *   fault_consumed  — subset that returned -ENOMEM, i.e. the fault
