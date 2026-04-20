@@ -343,8 +343,21 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 			head = &child->objects[i];
 		}
 
-		head->list = NULL;
 		head->num_entries = 0;
+
+		/* Pre-allocate the list head as an empty self-referential
+		 * sentinel.  Without this, add_object lazily allocates on
+		 * first add — meaning any list_for_each on a type that
+		 * never had an object added (e.g. perf events disabled,
+		 * seccomp_notif unsupported, etc.) dereferences NULL and
+		 * SIGSEGVs the caller.  In production builds the catch-all
+		 * sighandler swallows the SIGSEGV into _exit(EXIT_SUCCESS),
+		 * so the crash is silent and impossible to attribute. */
+		if (scope == OBJ_GLOBAL)
+			head->list = alloc_shared_global(sizeof(struct list_head));
+		else
+			head->list = zmalloc(sizeof(struct list_head));
+		INIT_LIST_HEAD(head->list);
 
 		if (scope == OBJ_GLOBAL) {
 			/* Pre-allocate the parallel array in MAP_SHARED memory
