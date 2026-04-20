@@ -60,4 +60,7 @@ extern unsigned int user_specified_children;
 extern unsigned long epoch_iterations;
 extern unsigned int epoch_timeout;
 
+extern bool no_warm_start;
+extern char *warm_start_path;
+
 void enable_disable_fd_usage(void);

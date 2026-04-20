@@ -248,8 +248,9 @@ int main(int argc, char* argv[])
 	 * via the existing minicorpus_replay() path.  Failures are silent —
 	 * a missing or stale file just means we boot cold.
 	 */
-	{
-		const char *path = minicorpus_default_path();
+	if (!no_warm_start) {
+		const char *path = warm_start_path ? warm_start_path
+						   : minicorpus_default_path();
 		if (path != NULL) {
 			unsigned int loaded = 0, discarded = 0;
 			minicorpus_load_file(path, &loaded, &discarded);
@@ -269,13 +270,14 @@ int main(int argc, char* argv[])
 	 * warm.  Skip after a corruption or crash — saving from a poisoned
 	 * shm could feed garbage back in on restart.
 	 */
-	{
+	if (!no_warm_start) {
 		enum exit_reasons er =
 			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
 
 		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
 		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *path = minicorpus_default_path();
+			const char *path = warm_start_path ? warm_start_path
+							   : minicorpus_default_path();
 			if (path != NULL && minicorpus_save_file(path))
 				output(0, "minicorpus: persisted to %s\n", path);
 		}
