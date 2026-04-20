@@ -27,13 +27,13 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	if (ONE_IN(20) == true) {
 		/* delete the whole mapping. */
 		action = WHOLE;
-		/* Stash map pointer and action in unused arg slots for post callback. */
-		rec->a3 = (unsigned long) map;
-		rec->a4 = action;
-		return;
-	}
-
-	if (RAND_BOOL()) {
+		/* For WHOLE, post_munmap will destroy the obj and call
+		 * map_destructor → munmap(map->ptr, map->size).  Use the
+		 * full extent here so the shared-region check below covers
+		 * the same span the destructor will unmap. */
+		rec->a1 = (unsigned long) map->ptr;
+		rec->a2 = map->size;
+	} else if (RAND_BOOL()) {
 		/* unmap a range of the mapping. */
 		unsigned long nr_pages;
 		unsigned long offset, offsetpagenr;
@@ -61,10 +61,13 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	/*
 	 * Make sure we don't unmap the shm region — children fuzzing
 	 * munmap can blow away trinity's shared state and crash everyone.
+	 * For WHOLE, also drop the action so post_munmap doesn't run the
+	 * destructor (which would munmap(map->ptr, map->size) regardless).
 	 */
 	if (range_overlaps_shared(rec->a1, rec->a2)) {
 		rec->a1 = 0;
 		rec->a2 = 0;
+		action = 0;
 	}
 
 	/* Stash map pointer and action in unused arg slots for post callback. */
