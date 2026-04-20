@@ -243,6 +243,13 @@ int main(int argc, char* argv[])
 	freeze_global_objects();
 
 	/*
+	 * One-shot childop discovery passes that walk large directory trees.
+	 * Doing them in the parent before fork lets all children inherit the
+	 * results via COW instead of repeating the walk per child.
+	 */
+	procfs_writer_init();
+
+	/*
 	 * Warm-start the corpus from the previous run if a persisted file
 	 * exists.  Replayed entries take effect once children start fuzzing
 	 * via the existing minicorpus_replay() path.  Failures are silent —
