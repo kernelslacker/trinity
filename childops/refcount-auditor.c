@@ -46,6 +46,9 @@
 /* Latched once if /proc/self/fdinfo is inaccessible (containerized, etc.). */
 static bool proc_unavailable;
 
+/* Latched once if /proc/net is inaccessible. */
+static bool proc_net_unavailable;
+
 /*
  * Probe /proc availability via the fdinfo directory.
  * Returns false and latches proc_unavailable on first failure.
@@ -166,8 +169,152 @@ static void audit_mmap_bucket(void)
 	}
 }
 
+/*
+ * Parse one /proc/net file and collect the inode numbers found at the given
+ * 1-indexed field position in each data line (the header line is skipped).
+ * Returns the count written to out[].  Stops when max is reached.
+ */
+#define MAX_PROC_NET_INODES 4096
+
+static unsigned int collect_proc_net_inodes(const char *path,
+					    unsigned int inode_field,
+					    ino_t *out, unsigned int max)
+{
+	FILE *f;
+	char line[256];
+	unsigned int count = 0;
+	bool skip_header = true;
+
+	f = fopen(path, "r");
+	if (!f)
+		return 0;
+
+	while (fgets(line, sizeof(line), f) && count < max) {
+		char *tok, *saveptr, *p;
+		unsigned int field;
+		unsigned long inode;
+
+		if (skip_header) {
+			skip_header = false;
+			continue;
+		}
+
+		p = line;
+		for (field = 1; field <= inode_field; field++) {
+			tok = strtok_r(p, " \t\n", &saveptr);
+			p = NULL;
+			if (tok == NULL)
+				break;
+			if (field == inode_field) {
+				if (sscanf(tok, "%lu", &inode) == 1 && inode != 0)
+					out[count++] = (ino_t)inode;
+			}
+		}
+	}
+
+	fclose(f);
+	return count;
+}
+
+/*
+ * Bucket 2: socket refcount check via /proc/net/{tcp,udp,tcp6,udp6,unix,packet}.
+ *
+ * For each tracked socket in the global OBJ_FD_SOCKET pool, fstat the fd to
+ * obtain its kernel inode number.  Then verify the inode appears in at least
+ * one of the /proc/net files.  A missing inode means the kernel freed the
+ * socket struct while trinity's pool still holds the fd — a refcount imbalance
+ * that will produce a UAF once the fd is eventually used.
+ *
+ * We collect inodes from all six /proc/net files up front to avoid re-parsing
+ * them once per socket.  If /proc/net/tcp is unavailable we latch a flag and
+ * skip all future invocations rather than accumulating spurious anomalies.
+ */
 static void audit_socket_bucket(void)
 {
+	static const struct {
+		const char *path;
+		unsigned int inode_field;
+	} net_files[] = {
+		{ "/proc/net/tcp",    10 },
+		{ "/proc/net/udp",    10 },
+		{ "/proc/net/tcp6",   10 },
+		{ "/proc/net/udp6",   10 },
+		{ "/proc/net/unix",    7 },
+		{ "/proc/net/packet",  9 },
+	};
+	struct objhead *head;
+	ino_t *net_inodes;
+	unsigned int net_count = 0;
+	unsigned int t, i;
+
+	if (proc_net_unavailable)
+		return;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
+	if (head == NULL || head->num_entries == 0 || head->array == NULL)
+		return;
+
+	net_inodes = malloc(MAX_PROC_NET_INODES * sizeof(*net_inodes));
+	if (!net_inodes)
+		return;
+
+	for (t = 0; t < ARRAY_SIZE(net_files) && net_count < MAX_PROC_NET_INODES; t++) {
+		unsigned int n;
+
+		n = collect_proc_net_inodes(net_files[t].path,
+					    net_files[t].inode_field,
+					    net_inodes + net_count,
+					    MAX_PROC_NET_INODES - net_count);
+		net_count += n;
+	}
+
+	if (net_count == 0) {
+		proc_net_unavailable = true;
+		free(net_inodes);
+		return;
+	}
+
+	for (i = 0; i < head->num_entries; i++) {
+		struct object *obj;
+		struct socketinfo *si;
+		struct stat st;
+		unsigned int j;
+		bool found;
+
+		if (i >= head->array_capacity)
+			break;
+
+		obj = head->array[i];
+		if (obj == NULL)
+			continue;
+
+		si = &obj->sockinfo;
+		if (si->fd < 0)
+			continue;
+
+		if (fstat(si->fd, &st) != 0)
+			continue;
+
+		if (st.st_ino == 0)
+			continue;
+
+		found = false;
+		for (j = 0; j < net_count; j++) {
+			if (net_inodes[j] == st.st_ino) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			output(0, "refcount audit: socket fd %d inode %lu missing from /proc/net\n",
+			       si->fd, (unsigned long)st.st_ino);
+			__atomic_add_fetch(&shm->stats.refcount_audit_sock_anomalies,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	free(net_inodes);
 }
 
 bool refcount_auditor(struct childdata *child __unused__)
