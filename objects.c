@@ -190,6 +190,23 @@ struct object * alloc_object(void)
 	return obj;
 }
 
+/*
+ * Release an obj struct via the right deallocator for its (scope, type).
+ * OBJ_GLOBAL types that opted into the shared obj heap (shared_alloc=true,
+ * set by the type's init function) came from alloc_shared_obj() and must
+ * be returned via free_shared_obj() — calling free() on a pointer into
+ * the shared heap would hand a non-malloc'd address to glibc.  All other
+ * callers used zmalloc() and want plain free().
+ */
+static void release_obj(struct object *obj, enum obj_scope scope,
+			enum objecttype type)
+{
+	if (scope == OBJ_GLOBAL && shm->global_objects[type].shared_alloc)
+		free_shared_obj(obj, sizeof(struct object));
+	else
+		free(obj);
+}
+
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
@@ -226,7 +243,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * is in shared memory but the objects/arrays are in per-process
 	 * heap (COW after fork).  Mixing the two corrupts everything. */
 	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
-		free(obj);
+		release_obj(obj, scope, type);
 		return;
 	}
 
@@ -267,7 +284,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 				if (fd >= 0)
 					close(fd);
 			}
-			free(obj);
+			release_obj(obj, scope, type);
 			goto out_unlock;
 		}
 	} else if (head->num_entries >= head->array_capacity) {
@@ -286,7 +303,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 				if (fd >= 0)
 					close(fd);
 			}
-			free(obj);
+			release_obj(obj, scope, type);
 			return;
 		}
 		head->array = newarray;
@@ -327,7 +344,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			list_del(&obj->list);
 			if (fd >= 0)
 				close(fd);
-			free(obj);
+			release_obj(obj, scope, type);
 			goto out_unlock;
 		}
 	}
@@ -590,7 +607,7 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	if (head->destroy != NULL)
 		head->destroy(obj);
 
-	free(obj);
+	release_obj(obj, scope, type);
 }
 
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
