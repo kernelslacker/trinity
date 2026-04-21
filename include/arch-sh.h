@@ -2,9 +2,9 @@
 
 #include <stdint.h>
 
-#if WORD_BIT == 64
+#ifdef __SH5__
 #define KERNEL_ADDR             0xfffff80000000000
-#define MODULE_ADDR		0xc0000000L	// TODO: sh64 was removed from the kernel; for sh32, P3SEG = 0xc0000000
+#define MODULE_ADDR		0xc0000000L
 #define TASK_SIZE               ~0UL
 #define PAGE_SHIFT              12
 #define PTE_FILE_MAX_BITS       29
