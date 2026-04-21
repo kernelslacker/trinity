@@ -9,6 +9,7 @@
 #include <sys/syscall.h>
 
 #include "child.h"
+#include "fd-event.h"
 #include "fd.h"
 #include "objects.h"
 #include "params.h"
@@ -112,7 +113,11 @@ static int get_rand_pidfd(void)
 
 	fd = obj->pidfdobj.fd;
 	if (fcntl(fd, F_GETFD) < 0) {
-		destroy_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
+		struct childdata *child = this_child();
+
+		if (child != NULL && child->fd_event_ring != NULL)
+			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
+					 fd, -1, 0, 0, 0);
 		return -1;
 	}
 	return fd;
