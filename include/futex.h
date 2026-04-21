@@ -10,5 +10,6 @@ struct __lock {
 };
 
 void create_futexes(void);
+void init_child_futexes(void);
 u32 * get_futex(void);
 struct __lock * get_random_lock(void);

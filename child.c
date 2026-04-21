@@ -19,6 +19,7 @@
 #include "arch.h"
 #include "child.h"
 #include "fd.h"
+#include "futex.h"
 #include "fd-event.h"
 #include "kcov.h"
 #include "list.h"
@@ -410,6 +411,7 @@ static void init_child(struct childdata *child, int childno)
 	init_object_lists(OBJ_LOCAL, child);
 
 	init_child_mappings();
+	init_child_futexes();
 
 	dirty_random_mapping();
 

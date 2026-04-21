@@ -15,6 +15,7 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
+#include "shm.h"
 
 #define FUTEX_UNLOCKED (0)
 #define FUTEX_LOCKED (!FUTEX_UNLOCKED)
@@ -71,8 +72,6 @@ struct __lock * get_random_lock(void)
 
 	obj = get_random_object(OBJ_FUTEX, scope);
 	if (!obj)
-		obj = get_random_object(OBJ_MMAP_ANON, OBJ_GLOBAL);
-	if (!obj)
 		return NULL;
 
 	return &obj->lock;
@@ -95,8 +94,6 @@ static uint32_t * get_futex_mmap(void)
 		scope = OBJ_LOCAL;
 
 	obj = get_random_object(OBJ_MMAP_ANON, scope);
-	if (!obj)
-		obj = get_random_object(OBJ_MMAP_ANON, OBJ_GLOBAL);
 	if (!obj)
 		return NULL;
 
@@ -144,6 +141,54 @@ void create_futexes(void)
 }
 
 REG_GLOBAL_OBJ(futexes, create_futexes);
+
+/*
+ * Seed a child's local OBJ_FUTEX pool from the global pool at fork time.
+ * Mirrors init_child_mappings(): walk the global list under a capacity cap,
+ * allocate a fresh local object per entry, copy the lock fields, and add to
+ * OBJ_LOCAL.  Children then read only their own pool — no global list access,
+ * no shm->objlock from child context.
+ */
+void init_child_futexes(void)
+{
+	struct list_head *globallist, *node;
+	struct objhead *head;
+
+	head = get_objhead(OBJ_LOCAL, OBJ_FUTEX);
+	head->dump = dump_futex;
+
+	globallist = shm->global_objects[OBJ_FUTEX].list;
+	if (globallist == NULL)
+		return;
+
+	{
+		unsigned int seen = 0;
+		const unsigned int max_iter = GLOBAL_OBJ_MAX_CAPACITY + 1;
+
+		list_for_each(node, globallist) {
+			struct object *globalobj, *newobj;
+			struct __lock *src, *dst;
+
+			if (node == NULL)
+				break;
+
+			if (++seen > max_iter) {
+				outputerr("init_child_futexes: global futex list looks corrupt (>%u entries), bailing\n",
+					  max_iter);
+				break;
+			}
+
+			globalobj = (struct object *) node;
+			src = &globalobj->lock;
+
+			newobj = alloc_object();
+			dst = &newobj->lock;
+			dst->futex = src->futex;
+			dst->owner_pid = src->owner_pid;
+			add_object(newobj, OBJ_LOCAL, OBJ_FUTEX);
+		}
+	}
+}
 
 static inline uint32_t
 __cmpxchg(uint32_t *uaddr, uint32_t oldval, uint32_t newval)
