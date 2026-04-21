@@ -26,6 +26,21 @@
 #define FTW_STOP 1
 #endif
 
+/*
+ * Maximum number of paths collected by the startup walk.  Caps memory and
+ * walk time — large /sys trees can contain tens of thousands of entries.
+ */
+#define MAX_WALKED_PATHS 10000
+
+/*
+ * Probability (0-100) that generate_pathname() draws from the walked pool
+ * rather than from the hardcoded interesting-paths list.  The hardcoded
+ * list is a lightweight fallback that guarantees coverage of a few
+ * high-value paths even when the walk yields nothing (e.g. running
+ * unprivileged in a container with a minimal /proc).
+ */
+#define WALKED_PATH_RATIO 50
+
 unsigned int files_in_index = 0;
 const char **fileindex;
 
@@ -39,12 +54,29 @@ struct pathname_pool {
 static struct pathname_pool pools[MAX_PATHNAME_POOLS];
 static unsigned int num_pools;
 
+/* Set to true when the walk terminates early due to MAX_WALKED_PATHS. */
+static bool pool_cap_reached;
+
 struct namelist {
 	struct list_head list;
 	const char *name;
 };
 
 static struct namelist *names = NULL;
+
+/*
+ * Hardcoded paths that are guaranteed to exist on a standard Linux system.
+ * Used when WALKED_PATH_RATIO says to skip the walked pool, ensuring that
+ * a few high-signal paths always get exercised regardless of walk results.
+ */
+static const char * const interesting_paths[] = {
+	"/dev/null", "/dev/zero", "/dev/urandom", "/dev/full",
+	"/dev/stdin", "/dev/stdout",
+	"/proc/self/status", "/proc/self/maps", "/proc/self/cmdline",
+	"/proc/version", "/proc/meminfo", "/proc/cpuinfo",
+	"/sys/kernel/vmcoreinfo",
+	NULL
+};
 
 static int ignore_files(const char *path)
 {
@@ -59,6 +91,22 @@ static int ignore_files(const char *path)
 
 		/* dangerous/noisy/annoying stuff in /dev */
 		"/dev/log", "/dev/mem", "/dev/kmsg", "/dev/kmem",
+		NULL
+	};
+
+	/*
+	 * Prefix matches: skip entire subtrees that are privileged,
+	 * dangerous, or have no fuzzing value.
+	 *
+	 * /sys/kernel/debug  — debugfs, requires CAP_SYS_ADMIN; most nodes
+	 *                      are not readable unprivileged and walking it is
+	 *                      noisy.
+	 * /sys/firmware/efi/efivars — EFI variables: writing to these can
+	 *                      permanently brick the machine.  Skip entirely.
+	 */
+	const char *ignored_prefixes[] = {
+		"/sys/kernel/debug/",
+		"/sys/firmware/efi/efivars/",
 		NULL
 	};
 
@@ -79,6 +127,13 @@ static int ignore_files(const char *path)
 	for (i = 0; ignored_paths[i]; i++) {
 		if (strcmp(path, ignored_paths[i]) == 0) {
 			debugf("Skipping %s\n", path);
+			return 1;
+		}
+	}
+
+	for (i = 0; ignored_prefixes[i]; i++) {
+		if (strncmp(path, ignored_prefixes[i], strlen(ignored_prefixes[i])) == 0) {
+			debugf("Skipping prefix %s\n", path);
 			return 1;
 		}
 	}
@@ -184,6 +239,12 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 	if (strncmp(fpath, "/proc/", 6) == 0 && isdigit(fpath[6]))
 		return FTW_SKIP_SUBTREE;
 
+	/* Stop collecting once the pool cap is reached. */
+	if (files_in_index >= MAX_WALKED_PATHS) {
+		pool_cap_reached = true;
+		return FTW_STOP;
+	}
+
 	// Check we can read it.
 	if (check_stat_file(sb) == -1)
 		return FTW_CONTINUE;
@@ -203,6 +264,8 @@ static void open_fds_from_path(const char *dirpath)
 	int flags = FTW_DEPTH | FTW_ACTIONRETVAL | FTW_MOUNT;
 	int ret;
 
+	pool_cap_reached = false;
+
 	/* By default, don't follow symlinks so we only get each file once.
 	 * But, if we do something like -V /lib, then follow it
 	 *
@@ -212,7 +275,7 @@ static void open_fds_from_path(const char *dirpath)
 		flags |= FTW_PHYS;
 
 	ret = nftw(dirpath, file_tree_callback, 32, flags);
-	if (ret != 0) {
+	if (ret != 0 && !pool_cap_reached) {
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != EXIT_SIGINT)
 			output(0, "Something went wrong during nftw(%s). (%d:%s)\n",
 				dirpath, ret, strerror(errno));
@@ -222,24 +285,43 @@ static void open_fds_from_path(const char *dirpath)
 	output(0, "Added %d filenames from %s\n", files_in_index - before, dirpath);
 }
 
-/* Generate an index of pointers to the filenames */
+/*
+ * Build the fileindex from the namelist, storing all strings in a single
+ * alloc_shared_global() slab so children inherit them via MAP_SHARED rather
+ * than as COW heap pages.  The index array itself is also shared-global so
+ * freeze_global_objects() can mprotect it read-only before the first child
+ * is forked.
+ */
 static const char ** list_to_index(struct namelist *namelist)
 {
 	struct list_head *node, *tmp;
 	struct namelist *nl;
 	const char **findex;
 	unsigned int i = 0;
+	unsigned int total_str_bytes = 0;
+	char *slab;
+	unsigned int slab_off = 0;
 
-	findex = zmalloc(sizeof(char *) * files_in_index);
+	/* First pass: measure total string storage needed. */
+	list_for_each(node, &namelist->list) {
+		nl = (struct namelist *) node;
+		total_str_bytes += strlen(nl->name) + 1;
+	}
 
+	findex = alloc_shared_global(sizeof(char *) * files_in_index);
+	slab = alloc_shared_global(total_str_bytes ? total_str_bytes : 1);
+
+	/* Second pass: copy strings into the slab and build the index. */
 	list_for_each_safe(node, tmp, &namelist->list) {
 		nl = (struct namelist *) node;
-		findex[i++] = nl->name;
+		unsigned int len = strlen(nl->name) + 1;
 
-		/* Destroy the list head, but keep the ->name alloc because
-		 * now the index points to it.
-		 */
+		memcpy(slab + slab_off, nl->name, len);
+		findex[i++] = slab + slab_off;
+		slab_off += len;
+
 		list_del(&nl->list);
+		free((char *) nl->name);
 		free(nl);
 	}
 	free(names);
@@ -332,11 +414,35 @@ unsigned int get_pool_file_count(unsigned int pool_id)
 	return pools[pool_id].count;
 }
 
+/* Return a random path from the startup-walked pool, or NULL if empty. */
+const char * get_random_walked_pathname(void)
+{
+	return get_filename();
+}
+
 const char * generate_pathname(void)
 {
-	const char *pathname = get_filename();
+	const char *pathname;
 	char *newpath;
 	unsigned int len;
+
+	/*
+	 * WALKED_PATH_RATIO percent of the time, draw from the startup-walked
+	 * pool of real filesystem paths (/dev, /proc, /sys).  The rest of the
+	 * time, pick from a small hardcoded list of paths that are guaranteed
+	 * to exist and are known to exercise interesting kernel code paths.
+	 * This ensures some coverage even in container environments where the
+	 * walk yields few or no readable entries.
+	 */
+	if (files_in_index > 0 && (int)(rand() % 100) < WALKED_PATH_RATIO) {
+		pathname = get_filename();
+	} else {
+		unsigned int n;
+
+		for (n = 0; interesting_paths[n] != NULL; n++)
+			;
+		pathname = interesting_paths[rand() % n];
+	}
 
 	if (pathname == NULL)
 		return NULL;
