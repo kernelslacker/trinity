@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <linux/filter.h>
 #include "arch.h"
+#include "bpf.h"
 #include "deferred-free.h"
 #include "net.h"
 #include "compat.h"
@@ -74,6 +75,23 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		so->optlen = optlen;
 		break;
 	}
+
+	case SO_ATTACH_BPF:
+	case SO_ATTACH_REUSEPORT_EBPF:
+	case SO_DETACH_REUSEPORT_BPF: {
+#ifdef USE_BPF
+		int prog_fd = get_rand_bpf_prog_fd();
+		if (prog_fd >= 0) {
+			int *buf = malloc(sizeof(int));
+			*buf = prog_fd;
+			free((void *) so->optval);
+			so->optval = (unsigned long) buf;
+			so->optlen = sizeof(int);
+		}
+#endif
+		break;
+	}
+
 	default:
 		break;
 	}
