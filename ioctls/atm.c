@@ -13,6 +13,7 @@
 #include <linux/atmlec.h>
 #include <linux/atmmpc.h>
 #include <linux/atm_tcp.h>
+#include <linux/atmbr2684.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -96,6 +97,22 @@ static void sanitise_atm_iobuf(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) iobuf;
 }
 
+static void sanitise_br2684_filter_set(struct syscallrecord *rec)
+{
+	struct br2684_filter_set *fs;
+
+	fs = (struct br2684_filter_set *) get_writable_struct(sizeof(*fs));
+	if (!fs)
+		return;
+	fs->ifspec.method = rand() % 3;	/* BR2684_FIND_BYNOTHING/BYNUM/BYIFNAME */
+	if (fs->ifspec.method == BR2684_FIND_BYNUM)
+		fs->ifspec.spec.devnum = rand() % 16;
+	/* netmask 0 disables the filter; use a non-zero mask most of the time */
+	fs->filter.netmask = RAND_BOOL() ? 0 : 0xffffff00u;
+	fs->filter.prefix = rand();
+	rec->a3 = (unsigned long) fs;
+}
+
 static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -174,6 +191,10 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		}
 		break;
 	}
+
+	case BR2684_SETFILT:
+		sanitise_br2684_filter_set(rec);
+		break;
 
 	case SONET_GETSTAT:
 	case SONET_GETSTATZ: {
@@ -266,6 +287,8 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ZATM_SETPOOL),
 	IOCTL(ATM_ADDPARTY),
 	IOCTL(ATM_DROPPARTY),
+	/* BR2684 bridged RFC2684 backend filter */
+	IOCTL(BR2684_SETFILT),
 	/* ATMTCP virtual driver; all _IO, no arg */
 	IOCTL(SIOCSIFATMTCP),
 	IOCTL(ATMTCP_CREATE),
