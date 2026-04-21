@@ -197,6 +197,20 @@ static const struct struct_field msghdr_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct sockaddr_storage (bind, connect, sendto, ...)                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Only ss_family is interesting from a CMP standpoint — the kernel's
+ * sockaddr dispatch starts by comparing it against AF_* constants.  The
+ * rest of the buffer is opaque padding whose meaning depends entirely on
+ * which family the kernel routed to.
+ */
+static const struct struct_field sockaddr_storage_fields[] = {
+	FIELD(struct sockaddr_storage, ss_family),
+};
+
+/* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -261,6 +275,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= msghdr_fields,
 		.num_fields	= ARRAY_SIZE(msghdr_fields),
 	},
+	{
+		.name		= "sockaddr_storage",
+		.struct_size	= sizeof(struct sockaddr_storage),
+		.fields		= sockaddr_storage_fields,
+		.num_fields	= ARRAY_SIZE(sockaddr_storage_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -312,6 +332,12 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "sendmsg",		2, &struct_catalog[9] },
 	/* recvmsg(int, struct msghdr *, int) */
 	{ "recvmsg",		2, &struct_catalog[9] },
+	/* bind(int, struct sockaddr *, socklen_t) */
+	{ "bind",		2, &struct_catalog[10] },
+	/* connect(int, struct sockaddr *, socklen_t) */
+	{ "connect",		2, &struct_catalog[10] },
+	/* sendto(int, const void *, size_t, int, struct sockaddr *, socklen_t) */
+	{ "sendto",		5, &struct_catalog[10] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
