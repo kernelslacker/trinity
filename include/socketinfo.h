@@ -12,3 +12,6 @@ struct socketinfo {
 	int fd;
 	bool needs_setup;	/* deferred setsockopt/bind/listen */
 };
+
+struct object;
+struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol);
