@@ -10,6 +10,8 @@
 #include <linux/atm_idt77105.h>
 #include <linux/atmclip.h>
 #include <linux/atmarp.h>
+#include <linux/atmlec.h>
+#include <linux/atmmpc.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -263,6 +265,12 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ZATM_SETPOOL),
 	IOCTL(ATM_ADDPARTY),
 	IOCTL(ATM_DROPPARTY),
+	/* LAN Emulation and MPOA control sockets; all _IO, no arg */
+	IOCTL(ATMLEC_CTRL),
+	IOCTL(ATMLEC_DATA),
+	IOCTL(ATMLEC_MCAST),
+	IOCTL(ATMMPC_CTRL),
+	IOCTL(ATMMPC_DATA),
 	/* Classical IP over ATM and ARP daemon control; all _IO, no arg */
 	IOCTL(SIOCMKCLIP),
 	IOCTL(ATMARPD_CTRL),
