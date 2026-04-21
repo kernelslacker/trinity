@@ -1,0 +1,21 @@
+# Valgrind suppressions for trinity.
+#
+# Usage: valgrind --suppressions=./valgrind.supp ./trinity ...
+#
+# These suppress known false positives where valgrind's generic syscall
+# wrappers don't understand the calling convention of an ioctl that takes
+# a scalar third argument rather than a pointer.
+
+# KCOV_INIT_TRACE's third argument is the trace-buffer size in words
+# (KCOV_TRACE_SIZE = 64<<10 = 0x10000).  Valgrind 3.24's generic ioctl
+# wrapper assumes the third arg is a pointer and reports the integer
+# value as "Address 0x10000 is not stack'd, malloc'd or (recently) free'd".
+# The kernel correctly interprets it as a value; this is purely valgrind
+# blindness to KCOV's interface.
+{
+   kcov_init_trace_size_arg
+   Memcheck:Param
+   ioctl(generic)
+   fun:ioctl
+   fun:kcov_init_child
+}

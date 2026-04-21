@@ -30,4 +30,15 @@ if [[ -e /sys/kernel/debug/kcov ]]; then
     done
 fi
 
+# When running under valgrind, recommend the suppressions file so the
+# known KCOV_INIT_TRACE false positive doesn't drown the real output.
+if [[ -n "${RUNNING_ON_VALGRIND:-}" ]]; then
+    script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+    supp_file="${script_dir}/../valgrind.supp"
+    if [[ -r "${supp_file}" ]] && [[ "${VALGRIND_OPTS:-}" != *"${supp_file}"* ]]; then
+        echo "NOTE: running under valgrind without trinity's suppressions file." >&2
+        echo "  For cleaner output add: --suppressions=${supp_file}" >&2
+    fi
+fi
+
 exec ./trinity "$@"
