@@ -7,6 +7,7 @@
 #include <linux/atm_he.h>
 #include <linux/atm_nicstar.h>
 #include <linux/atm_zatm.h>
+#include <linux/atm_idt77105.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -114,6 +115,9 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	case ATM_GETLOOP:
 	case ATM_SETLOOP:
 	case ATM_QUERYLOOP:
+	/* vendor PHY-private ioctls (IDT77105) */
+	case IDT77105_GETSTAT:
+	case IDT77105_GETSTATZ:
 	/* vendor SAR-private ioctls; ENI_MEMDUMP == HE_GET_REG numerically */
 	case ENI_MEMDUMP:
 	case ENI_SETMULT:
@@ -242,6 +246,9 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_SETSC),
 	IOCTL(ATM_SETBACKEND),
 	IOCTL(ATM_NEWBACKENDIF),
+	/* vendor PHY-private driver ioctls */
+	IOCTL(IDT77105_GETSTAT),
+	IOCTL(IDT77105_GETSTATZ),
 	/* vendor SAR-private driver ioctls */
 	IOCTL(ENI_MEMDUMP),
 	IOCTL(ENI_SETMULT),
