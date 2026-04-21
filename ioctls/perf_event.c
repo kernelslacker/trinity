@@ -1,8 +1,10 @@
 #include <linux/perf_event.h>
 #include <sys/stat.h>
 
+#include "bpf.h"
 #include "ioctls.h"
 #include "objects.h"
+#include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
 
@@ -39,9 +41,17 @@ static int perf_event_fd_test(int fd, const struct stat *st __attribute__((unuse
 	return -1;
 }
 
+static void perf_event_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	if (rec->a2 == PERF_EVENT_IOC_SET_BPF || rec->a2 == PERF_EVENT_IOC_QUERY_BPF)
+		rec->a3 = (unsigned long) get_rand_bpf_prog_fd();
+}
+
 static const struct ioctl_group perf_event_grp = {
 	.fd_test = perf_event_fd_test,
-	.sanitise = pick_random_ioctl,
+	.sanitise = perf_event_sanitise,
 	.ioctls = perf_event_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(perf_event_ioctls),
 };
