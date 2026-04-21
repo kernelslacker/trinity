@@ -192,9 +192,21 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 	for (i = 0; i < vlen; i++) {
 		struct msghdr *msg = &msgs[i].msg_hdr;
 		unsigned int num_entries = RAND_RANGE(1, 3);
+		struct sockaddr *sa = NULL;
+		socklen_t salen = 0;
 
 		msg->msg_iov = alloc_iovec(num_entries);
 		msg->msg_iovlen = num_entries;
+
+		if (si != NULL)
+			generate_sockaddr(&sa, &salen, si->triplet.family);
+		msg->msg_name = sa;
+		msg->msg_namelen = salen;
+
+		if (RAND_BOOL()) {
+			msg->msg_controllen = rand32() % 20480;
+			msg->msg_control = get_address();
+		}
 	}
 
 	rec->a2 = (unsigned long) msgs;
@@ -208,8 +220,10 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	if (msgs != NULL) {
 		unsigned int i;
 
-		for (i = 0; i < (unsigned int) rec->a3; i++)
+		for (i = 0; i < (unsigned int) rec->a3; i++) {
 			free(msgs[i].msg_hdr.msg_iov);
+			free(msgs[i].msg_hdr.msg_name);
+		}
 		free(msgs);
 		rec->a2 = 0;
 	}
