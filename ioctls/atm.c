@@ -12,6 +12,7 @@
 #include <linux/atmarp.h>
 #include <linux/atmlec.h>
 #include <linux/atmmpc.h>
+#include <linux/atm_tcp.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -265,6 +266,10 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ZATM_SETPOOL),
 	IOCTL(ATM_ADDPARTY),
 	IOCTL(ATM_DROPPARTY),
+	/* ATMTCP virtual driver; all _IO, no arg */
+	IOCTL(SIOCSIFATMTCP),
+	IOCTL(ATMTCP_CREATE),
+	IOCTL(ATMTCP_REMOVE),
 	/* LAN Emulation and MPOA control sockets; all _IO, no arg */
 	IOCTL(ATMLEC_CTRL),
 	IOCTL(ATMLEC_DATA),
