@@ -3,6 +3,10 @@
 #include <linux/atmdev.h>
 #include <linux/atm.h>
 #include <linux/sonet.h>
+#include <linux/atm_eni.h>
+#include <linux/atm_he.h>
+#include <linux/atm_nicstar.h>
+#include <linux/atm_zatm.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -110,6 +114,14 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	case ATM_GETLOOP:
 	case ATM_SETLOOP:
 	case ATM_QUERYLOOP:
+	/* vendor SAR-private ioctls; ENI_MEMDUMP == HE_GET_REG numerically */
+	case ENI_MEMDUMP:
+	case ENI_SETMULT:
+	case NS_GETPSTAT:
+	case ZATM_GETPOOL:
+	/* ZATM_GETPOOLZ == NS_SETBUFLEV numerically; one label covers both */
+	case ZATM_GETPOOLZ:
+	case ZATM_SETPOOL:
 		sanitise_atmif_sioc(rec);
 		break;
 
@@ -230,6 +242,16 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_SETSC),
 	IOCTL(ATM_SETBACKEND),
 	IOCTL(ATM_NEWBACKENDIF),
+	/* vendor SAR-private driver ioctls */
+	IOCTL(ENI_MEMDUMP),
+	IOCTL(ENI_SETMULT),
+	IOCTL(HE_GET_REG),
+	IOCTL(NS_GETPSTAT),
+	IOCTL(NS_SETBUFLEV),
+	IOCTL(NS_ADJBUFLEV),
+	IOCTL(ZATM_GETPOOL),
+	IOCTL(ZATM_GETPOOLZ),
+	IOCTL(ZATM_SETPOOL),
 	IOCTL(ATM_ADDPARTY),
 	IOCTL(ATM_DROPPARTY),
 	IOCTL(SONET_GETSTAT),
