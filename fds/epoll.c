@@ -8,10 +8,12 @@
 #include <sys/epoll.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 
 #define MAX_EPOLL_FDS 10
 
@@ -57,6 +59,15 @@ static void epoll_destructor(struct object *obj)
 	close(obj->epollobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->epollobj fields (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj — which
+ * matters because head->dump runs from dump_childdata() in the
+ * parent's crash diagnostics path even when a child triggered the
+ * crash.
+ */
 static void epoll_dump(struct object *obj, enum obj_scope scope)
 {
 	struct epollobj *eo = &obj->epollobj;
@@ -67,42 +78,40 @@ static void epoll_dump(struct object *obj, enum obj_scope scope)
 
 static int init_epoll_fds(void)
 {
-	struct object *obj = NULL;
+	struct object *obj;
 	struct objhead *head;
 	unsigned int i = 0;
-	int fd = -1;
+	int fd, use_create1;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EPOLL);
 	head->destroy = &epoll_destructor;
 	head->dump = &epoll_dump;
+	head->shared_alloc = true;
 
 	while (i < MAX_EPOLL_FDS) {
-
-		if (obj == NULL)
-			obj = alloc_object();
-
-		if (RAND_BOOL()) {
-			obj->epollobj.create1 = false;
-			obj->epollobj.flags = 0;
-			fd = epoll_create(1);
-		} else{
-			obj->epollobj.create1 = true;
-			obj->epollobj.flags = EPOLL_CLOEXEC;
+		use_create1 = RAND_BOOL();
+		if (use_create1)
 			fd = epoll_create1(EPOLL_CLOEXEC);
-		}
+		else
+			fd = epoll_create(1);
 
-		if (fd != -1) {
-			obj->epollobj.fd = fd;
-			add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
-			arm_epoll(fd);
-			i++;
-			obj = NULL;	// alloc a new obj.
-		} else {
-			/* not sure what happened. */
+		if (fd == -1) {
 			output(0, "init_epoll_fds fail: %s\n", strerror(errno));
-			free(obj);
 			return false;
 		}
+
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL) {
+			close(fd);
+			return false;
+		}
+		INIT_LIST_HEAD(&obj->list);
+		obj->epollobj.fd = fd;
+		obj->epollobj.create1 = use_create1;
+		obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
+		add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
+		arm_epoll(fd);
+		i++;
 	}
 	return true;
 }
@@ -110,25 +119,26 @@ static int init_epoll_fds(void)
 static int open_epoll_fd(void)
 {
 	struct object *obj;
-	int fd;
+	int fd, use_create1;
 
-	obj = alloc_object();
-	if (RAND_BOOL()) {
-		obj->epollobj.create1 = false;
-		obj->epollobj.flags = 0;
-		fd = epoll_create(1);
-	} else {
-		obj->epollobj.create1 = true;
-		obj->epollobj.flags = EPOLL_CLOEXEC;
+	use_create1 = RAND_BOOL();
+	if (use_create1)
 		fd = epoll_create1(EPOLL_CLOEXEC);
-	}
+	else
+		fd = epoll_create(1);
 
-	if (fd == -1) {
-		free(obj);
+	if (fd == -1)
+		return false;
+
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
 		return false;
 	}
-
+	INIT_LIST_HEAD(&obj->list);
 	obj->epollobj.fd = fd;
+	obj->epollobj.create1 = use_create1;
+	obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
 	arm_epoll(fd);
 	return true;
