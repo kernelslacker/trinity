@@ -379,12 +379,32 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		rec->a3 = 8;
 		break;
 
-	case BPF_OBJ_GET_INFO_BY_FD:
-		attr->info.bpf_fd = get_rand_bpf_fd();
+	case BPF_OBJ_GET_INFO_BY_FD: {
+		/*
+		 * The kernel dispatches to a different obj_get_info_by_fd
+		 * implementation per fd type (map / prog / btf / link), each
+		 * with its own info struct layout and copy-out path.  Coin-flip
+		 * between the map and prog pools so both kernel paths get
+		 * exercised; fall back to whichever pool is non-empty.  btf
+		 * and link fd providers don't exist yet (future work).
+		 */
+		int fd;
+
+		if (RAND_BOOL()) {
+			fd = get_rand_bpf_prog_fd();
+			if (fd == -1)
+				fd = get_rand_bpf_fd();
+		} else {
+			fd = get_rand_bpf_fd();
+			if (fd == -1)
+				fd = get_rand_bpf_prog_fd();
+		}
+		attr->info.bpf_fd = fd;
 		attr->info.info_len = rand() % page_size;
 		attr->info.info = (u64) get_writable_address(page_size);
 		rec->a3 = sizeof(attr->info);
 		break;
+	}
 
 	case BPF_LINK_CREATE:
 		attr->link_create.prog_fd = get_rand_bpf_prog_fd();
