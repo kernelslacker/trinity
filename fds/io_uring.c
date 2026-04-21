@@ -92,16 +92,22 @@ struct io_uringobj *get_io_uring_ring(void)
 static void io_uring_destructor(struct object *obj)
 {
 	struct io_uringobj *ring = &obj->io_uringobj;
+	struct io_uringobj *expected = ring;
 
 	if (ring->sqes)
 		munmap(ring->sqes, ring->sqes_sz);
 	if (ring->sq_ring)
 		munmap(ring->sq_ring, ring->sq_ring_sz);
 
-	lock(&shm->objlock);
-	if (shm->mapped_ring == ring)
-		shm->mapped_ring = NULL;
-	unlock(&shm->objlock);
+	/* Lockless clear: pairs with the ACQUIRE load in get_io_uring_ring()
+	 * and the RELEASE store in open_io_uring_fd_config().  The destructor
+	 * is reachable from child context via prune_objects() destroying
+	 * OBJ_LOCAL OBJ_FD_IO_URING entries (post_io_uring_setup adds those,
+	 * and the destructor is inherited from the OBJ_GLOBAL provider).
+	 * Taking shm->objlock from a child would risk deadlocking the parent
+	 * if the child was killed mid-lock — same class as e4e32ff0. */
+	__atomic_compare_exchange_n(&shm->mapped_ring, &expected, NULL,
+				    false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 
 	close(ring->fd);
 }
