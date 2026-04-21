@@ -60,10 +60,9 @@ struct pidfd_info {
 	__u32 sgid;
 	__u32 fsuid;
 	__u32 fsgid;
-	__u32 spare0[1];
 	__s32 exit_code;
-	__u64 coredump_mask;
-	__u64 __spare1[2];
+	__u32 coredump_mask;
+	__u32 __spare1;
 };
 # define PIDFD_GET_INFO _IOWR(PIDFS_IOCTL_MAGIC, 11, struct pidfd_info)
 #endif
