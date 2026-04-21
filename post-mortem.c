@@ -422,7 +422,7 @@ void tainted_postmortem(void)
 	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELEASE);
 
 	clock_gettime(CLOCK_MONOTONIC, &taint_tp);
-	seed = shm->seed;
+	seed = __atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
 
 	/* Slurp the kernel ring buffer first — closer in time to the taint
 	 * event means a smaller chance the WARN/Oops has aged out under

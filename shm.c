@@ -60,7 +60,7 @@ void init_shm(void)
 	shm->stats.op_count = 0;
 	shm->stats.previous_op_count = 0;
 
-	shm->seed = init_seed(seed);
+	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 
 	childptrslen = max_children * sizeof(struct childdata *);
 	/* round up to page size */
