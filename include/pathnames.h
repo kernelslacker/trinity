@@ -17,4 +17,5 @@ void generate_filelist(void);
 const char * get_filename(void);
 const char * get_filename_for_pool(unsigned int pool_id);
 unsigned int get_pool_file_count(unsigned int pool_id);
+const char * get_random_walked_pathname(void);
 const char * generate_pathname(void);
