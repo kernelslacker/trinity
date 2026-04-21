@@ -1,6 +1,9 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
+#ifdef USE_BACKTRACE
+#include <execinfo.h>
+#endif
 
 #include "trinity.h"	// __unused__
 #include "signals.h"
@@ -75,7 +78,16 @@ static void sigxcpu_handler(__unused__ int sig)
 static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 {
 	if (info->si_code > 0 || info->si_pid == getpid()) {
-		/* Real fault or self-sent (e.g. glibc abort) — die properly */
+		/* Real fault or self-sent (e.g. glibc abort) — dump a
+		 * backtrace and siginfo to stderr first so we have a handle
+		 * on the crash even when no coredump lands (ulimit -c 0 or a
+		 * restrictive core_pattern), then die properly. */
+#ifdef USE_BACKTRACE
+		void *frames[64];
+		int nframes = backtrace(frames, 64);
+		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
+#endif
+		psiginfo(info, "trinity main: fatal signal");
 		signal(sig, SIG_DFL);
 		raise(sig);
 	}
