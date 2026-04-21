@@ -11,6 +11,7 @@
 #include "child.h"
 #include "fd-event.h"
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
@@ -18,6 +19,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 /* PIDFD_NONBLOCK == O_NONBLOCK on Linux */
 #ifndef PIDFD_NONBLOCK
@@ -29,6 +31,15 @@ static void pidfd_destructor(struct object *obj)
 	close(obj->pidfdobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->pidfdobj fields (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj — which
+ * matters because head->dump runs from dump_childdata() in the
+ * parent's crash diagnostics path even when a child triggered the
+ * crash.
+ */
 static void pidfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct pidfdobj *po = &obj->pidfdobj;
@@ -69,7 +80,12 @@ static int open_pidfd_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->pidfdobj.fd = fd;
 	obj->pidfdobj.pid = pid;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
@@ -85,12 +101,26 @@ static int init_pidfd_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIDFD);
 	head->destroy = &pidfd_destructor;
 	head->dump = &pidfd_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  pidfd is the PoC for
+	 * the structural fix to the OBJ_GLOBAL-in-parent-heap class of
+	 * crashes; the rest of the providers stay on alloc_object()
+	 * until each is converted in turn.
+	 */
+	head->shared_alloc = true;
 
 	/* Children haven't been forked yet at init time, so only pid 1
 	 * is available.  open_pidfd_fd() will pick child pids at runtime. */
 	fd = open_pidfd(1, 0);
 	if (fd >= 0) {
-		obj = alloc_object();
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL) {
+			close(fd);
+			return false;
+		}
+		INIT_LIST_HEAD(&obj->list);
 		obj->pidfdobj.fd = fd;
 		obj->pidfdobj.pid = 1;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);

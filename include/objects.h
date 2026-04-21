@@ -210,6 +210,15 @@ struct objhead {
 	unsigned int max_entries;
 	void (*destroy)(struct object *obj);
 	void (*dump)(struct object *obj, enum obj_scope scope);
+	/*
+	 * If true, obj structs for this (scope=OBJ_GLOBAL) type came from
+	 * alloc_shared_obj() and __destroy_object() must release them via
+	 * free_shared_obj() rather than free().  Set per-type by an
+	 * fd_provider/REG_GLOBAL_OBJ init that opted into shared-heap
+	 * allocation.  Ignored for OBJ_LOCAL pools — child-private objs
+	 * always come from zmalloc().
+	 */
+	bool shared_alloc;
 };
 
 /*
