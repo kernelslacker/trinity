@@ -26,7 +26,7 @@ static unsigned long clone_flags[] = {
 
 static void sanitise_clone(struct syscallrecord *rec)
 {
-	enforce_clone_flag_deps(&rec->a1);
+	enforce_clone_flag_deps(&rec->a1, true);
 }
 
 struct syscallentry syscall_clone = {
