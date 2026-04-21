@@ -85,6 +85,15 @@ struct shm_s {
 	lock_t objlock;
 	lock_t buglock;
 
+	/*
+	 * Bump-pointer cursor into the shared obj heap (see
+	 * alloc_shared_obj() in utils.c).  In shm so concurrent
+	 * allocators across processes share one cursor — the heap is
+	 * mmap'd MAP_SHARED before fork, but post-fork allocs need a
+	 * cross-process view of "which slot is next".
+	 */
+	_Atomic size_t shared_obj_heap_used;
+
 	/* various flags. */
 	enum exit_reasons exit_reason;
 	_Atomic bool dont_make_it_fail;

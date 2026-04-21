@@ -12,6 +12,8 @@
 
 void * alloc_shared(unsigned int size);
 void * alloc_shared_global(unsigned int size);
+void * alloc_shared_obj(size_t size);
+void free_shared_obj(void *p, size_t size);
 void freeze_global_objects(void);
 void thaw_global_objects(void);
 bool globals_are_protected(void);
