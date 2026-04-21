@@ -133,6 +133,122 @@ void minicorpus_save(struct syscallrecord *rec)
 }
 
 /*
+ * Per-process attribution stash for the weighted mutator scheduler.
+ *
+ * mutate_arg() bumps mut_attrib[op] every time it picks case `op`.  After
+ * the syscall completes, the post-coverage path drains the stash via
+ * minicorpus_mut_attrib_commit() (folding it into shm-wide trials/wins)
+ * or minicorpus_mut_attrib_clear() (dropping it for cmp-mode calls).
+ *
+ * Process-local — children fork before any mutate_arg call, so each child
+ * has its own copy.  No locking needed: a child runs single-threaded.
+ */
+static unsigned int mut_attrib[MUT_NUM_OPS];
+
+/*
+ * Floor on the per-case weight in the weighted scheduler.
+ *
+ * Weights are scaled to [0, 1000] (see weighted_pick_case() comment).
+ * A floor of 50 keeps even a thoroughly-failed case at ~5% of a winning
+ * case's weight, so it still gets picked occasionally.  Without a floor,
+ * a case that produced zero wins after many trials would asymptote to
+ * weight 0 and never be retried — and kernel state changes underneath
+ * us, so a previously-dead case can become productive later.
+ */
+#define MUT_WEIGHT_FLOOR 50
+
+/*
+ * Pick a mutator case 0..MUT_NUM_OPS-1 weighted by historical productivity.
+ *
+ * Each case's weight is the Beta(1,1)-prior posterior mean of its success
+ * rate, scaled to [0, 1000]:
+ *
+ *     w[op] = max(MUT_WEIGHT_FLOOR, (wins[op] + 1) * 1000 / (trials[op] + 2))
+ *
+ * Why this formula:
+ *
+ *  - The Beta(1,1) prior (uniform) gives every case w=500 on cold start
+ *    when trials=wins=0, so we degrade gracefully to uniform random pick
+ *    until evidence accumulates.  No special-casing for the empty-stats
+ *    state, no warm-up phase to misconfigure.
+ *
+ *  - Add-one (Laplace) smoothing in the numerator and add-two in the
+ *    denominator keep the formula well-defined at trials=0 and prevent a
+ *    single early success from pinning a case to weight 1000.  It's the
+ *    closed-form posterior mean of a Beta-binomial, not an ad-hoc fudge.
+ *
+ *  - We use the posterior MEAN rather than full Thompson sampling
+ *    (Beta-distribution sampling).  Thompson would also work and be
+ *    technically more exploration-aware, but it requires a Gamma
+ *    sampler in libc that doesn't exist; the floor + uniform-prior
+ *    combination here gives most of the same exploration benefit with
+ *    a few lines of integer arithmetic.
+ *
+ *  - The floor is on the absolute weight, not on relative pick probability.
+ *    With six cases and one heavily winning, the floored cases share the
+ *    remaining mass — never starved, never dominant.
+ *
+ * Called once per primitive mutation (not once per syscall): a 4-deep
+ * stack consults the scheduler four times.  All loads are __atomic
+ * RELAXED — slightly stale fleet-wide counts are fine, the scheduler
+ * is statistical not exact.
+ */
+static unsigned int weighted_pick_case(void)
+{
+	unsigned int weights[MUT_NUM_OPS];
+	unsigned int total = 0;
+	unsigned int r, accum, i;
+
+	for (i = 0; i < MUT_NUM_OPS; i++) {
+		unsigned long t = __atomic_load_n(&minicorpus_shm->mut_trials[i],
+						  __ATOMIC_RELAXED);
+		unsigned long s = __atomic_load_n(&minicorpus_shm->mut_wins[i],
+						  __ATOMIC_RELAXED);
+		unsigned long w = ((s + 1) * 1000UL) / (t + 2UL);
+
+		if (w < MUT_WEIGHT_FLOOR)
+			w = MUT_WEIGHT_FLOOR;
+		weights[i] = (unsigned int)w;
+		total += weights[i];
+	}
+
+	r = (unsigned int)(rand() % total);
+	accum = 0;
+	for (i = 0; i < MUT_NUM_OPS; i++) {
+		accum += weights[i];
+		if (r < accum)
+			return i;
+	}
+	return MUT_NUM_OPS - 1;
+}
+
+void minicorpus_mut_attrib_commit(bool found_new)
+{
+	unsigned int i;
+
+	if (minicorpus_shm == NULL)
+		return;
+
+	for (i = 0; i < MUT_NUM_OPS; i++) {
+		unsigned int picks = mut_attrib[i];
+
+		if (picks == 0)
+			continue;
+		__atomic_fetch_add(&minicorpus_shm->mut_trials[i],
+				   picks, __ATOMIC_RELAXED);
+		if (found_new)
+			__atomic_fetch_add(&minicorpus_shm->mut_wins[i],
+					   picks, __ATOMIC_RELAXED);
+		mut_attrib[i] = 0;
+	}
+}
+
+void minicorpus_mut_attrib_clear(void)
+{
+	memset(mut_attrib, 0, sizeof(mut_attrib));
+}
+
+/*
  * Per-arg mutation stacking depth.
  *
  * Drawing inspiration from AFL's havoc stage, when we mutate an argument
@@ -156,10 +272,18 @@ void minicorpus_save(struct syscallrecord *rec)
  *   - bit flip: toggle a single random bit
  *   - add/sub:  adjust by a small delta (1..16)
  *   - boundary: replace with a boundary value (0, -1, page_size, etc.)
+ *
+ * Case selection is biased by historical productivity (see
+ * weighted_pick_case()).  The selected case is recorded in mut_attrib[]
+ * for post-syscall attribution by minicorpus_mut_attrib_commit().
  */
 static unsigned long mutate_arg(unsigned long val)
 {
-	switch (rand() % 6) {
+	unsigned int op = weighted_pick_case();
+
+	mut_attrib[op]++;
+
+	switch (op) {
 	case 0:
 		/* flip a random bit */
 		val ^= 1UL << (rand() % (sizeof(unsigned long) * 8));

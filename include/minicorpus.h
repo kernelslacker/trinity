@@ -39,8 +39,22 @@ struct corpus_ring {
 	struct corpus_entry entries[CORPUS_RING_SIZE];
 };
 
+/* Number of distinct primitive mutator cases inside mutate_arg().
+ * The numerical IDs (0=bit-flip, 1=add, 2=sub, 3=boundary, 4=byte-shuffle,
+ * 5=keep) are stable — weighted scheduling counters are indexed by them
+ * and any reordering must be reflected in mut_trials/mut_wins below. */
+#define MUT_NUM_OPS 6
+
 struct minicorpus_shared {
 	struct corpus_ring rings[MAX_NR_SYSCALL];
+	/* Per-mutator-case productivity counters used by weighted pick:
+	 *   mut_trials[op] = times case `op` was selected fleet-wide
+	 *   mut_wins[op]   = times a call whose mutations included `op`
+	 *                    discovered new coverage
+	 * Both updated via __atomic ops; consumed by weighted_pick_case()
+	 * in minicorpus.c. */
+	unsigned long mut_trials[MUT_NUM_OPS];
+	unsigned long mut_wins[MUT_NUM_OPS];
 };
 
 extern struct minicorpus_shared *minicorpus_shm;
@@ -58,6 +72,24 @@ void minicorpus_save(struct syscallrecord *rec);
  * was available or the dice roll said to generate fresh args.
  * Only call when entry->sanitise == NULL. */
 bool minicorpus_replay(struct syscallrecord *rec);
+
+/* Mutator-case attribution.
+ *
+ * mutate_arg() accumulates per-case pick counts in process-local stash
+ * during arg generation.  The post-syscall path commits or discards that
+ * stash exactly once per syscall:
+ *   - commit() folds the stash into shm-wide trials, and (if
+ *     found_new) into wins, then clears the stash.  Call from the
+ *     normal coverage path after kcov_collect().
+ *   - clear() drops the stash without crediting.  Call from paths that
+ *     don't produce a found_new signal (cmp-mode syscalls), so a future
+ *     commit isn't fed stale counts from a previous call.
+ *
+ * Exactly one of commit/clear must run per syscall; otherwise a later
+ * commit will mis-attribute mutations from an earlier syscall to a
+ * coverage event that didn't include them. */
+void minicorpus_mut_attrib_commit(bool found_new);
+void minicorpus_mut_attrib_clear(void);
 
 /* Persist the in-memory corpus rings to a file at @path.
  * Writes via a .tmp file and renames atomically.  Returns true on
