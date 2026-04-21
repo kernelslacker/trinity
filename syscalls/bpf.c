@@ -419,14 +419,14 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 
 	case BPF_LINK_UPDATE:
-		attr->link_update.link_fd = get_rand_bpf_fd();
+		attr->link_update.link_fd = get_rand_bpf_link_fd();
 		attr->link_update.new_prog_fd = get_rand_bpf_prog_fd();
 		attr->link_update.flags = rand() % 4;
 		rec->a3 = sizeof(attr->link_update);
 		break;
 
 	case BPF_LINK_DETACH:
-		attr->link_detach.link_fd = get_rand_bpf_fd();
+		attr->link_detach.link_fd = get_rand_bpf_link_fd();
 		rec->a3 = 4;
 		break;
 
@@ -436,7 +436,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 
 	case BPF_ITER_CREATE:
-		attr->iter_create.link_fd = get_rand_bpf_fd();
+		attr->iter_create.link_fd = get_rand_bpf_link_fd();
 		attr->iter_create.flags = 0;
 		rec->a3 = sizeof(attr->iter_create);
 		break;
@@ -519,30 +519,60 @@ static void post_bpf(struct syscallrecord *rec)
 		}
 		break;
 
+	case BPF_LINK_CREATE:
+		/*
+		 * Live link fd — feed the per-child link pool so subsequent
+		 * BPF_LINK_UPDATE / BPF_LINK_DETACH / BPF_ITER_CREATE calls
+		 * pick it up via get_rand_bpf_link_fd() and reach the link
+		 * dispatch paths instead of bouncing on EINVAL from a
+		 * type-confused map fd.
+		 */
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpflinkobj.fd = fd;
+			obj->bpflinkobj.attach_type = attr->link_create.attach_type;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_LINK);
+		}
+		break;
+
+	case BPF_LINK_GET_FD_BY_ID:
+		/*
+		 * Same fd kind as LINK_CREATE returns, sourced via id-lookup.
+		 * Attach type unknown at lookup time — leave it 0; it's
+		 * metadata only.
+		 */
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpflinkobj.fd = fd;
+			obj->bpflinkobj.attach_type = 0;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_LINK);
+		}
+		break;
+
 	default:
 		break;
 	}
 
 	/* Close fds returned by commands not tracked above.  Many BPF
-	 * commands return fds: BTF_GET_FD_BY_ID, LINK_GET_FD_BY_ID,
-	 * OBJ_GET, RAW_TRACEPOINT_OPEN, BTF_LOAD, LINK_CREATE,
-	 * ENABLE_STATS, ITER_CREATE, TOKEN_CREATE.  We can't blindly
-	 * close on all commands because non-fd commands return 0 for
-	 * success, and closing fd 0 would destroy stdin. */
+	 * commands return fds: BTF_GET_FD_BY_ID, OBJ_GET,
+	 * RAW_TRACEPOINT_OPEN, BTF_LOAD, ENABLE_STATS, ITER_CREATE,
+	 * TOKEN_CREATE.  We can't blindly close on all commands because
+	 * non-fd commands return 0 for success, and closing fd 0 would
+	 * destroy stdin. */
 	if (fd >= 0) {
 		switch (rec->a1) {
 		case BPF_MAP_CREATE:
 		case BPF_PROG_LOAD:
 		case BPF_MAP_GET_FD_BY_ID:
 		case BPF_PROG_GET_FD_BY_ID:
+		case BPF_LINK_CREATE:
+		case BPF_LINK_GET_FD_BY_ID:
 			/* Already tracked above. */
 			break;
 		case BPF_OBJ_GET:
 		case BPF_BTF_GET_FD_BY_ID:
-		case BPF_LINK_GET_FD_BY_ID:
 		case BPF_RAW_TRACEPOINT_OPEN:
 		case BPF_BTF_LOAD:
-		case BPF_LINK_CREATE:
 		case BPF_ENABLE_STATS:
 		case BPF_ITER_CREATE:
 		case BPF_TOKEN_CREATE:
