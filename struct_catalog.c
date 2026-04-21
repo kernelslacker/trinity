@@ -21,6 +21,11 @@
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
 
+#include "config.h"
+#ifdef USE_BPF
+#include <linux/bpf.h>
+#endif
+
 #include "struct_catalog.h"
 #include "arch.h"
 #include "perf_event.h"
@@ -211,6 +216,45 @@ static const struct struct_field sockaddr_storage_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* union bpf_attr (bpf)                                                */
+/* ------------------------------------------------------------------ */
+
+#ifdef USE_BPF
+/*
+ * union bpf_attr is a tagged union dispatched on the bpf() cmd argument.
+ * Every command's anonymous struct starts at offset 0, so most of the
+ * fields below collide on offset — that's intentional.  The CMP heuristic
+ * picks at random across same-size matches, so a u32 CMP hint may resolve
+ * to map_type, prog_type, attach_type, or any of the other enum-bearing
+ * slots the kernel constantly compares against the BPF_* constant space.
+ *
+ * Only the most-compared scalar fields are listed; the deeper per-cmd
+ * substructs (test, link_create, link_update, raw_tracepoint, info, ...)
+ * carry mostly fds and addresses that the kernel passes through rather
+ * than compares.
+ */
+static const struct struct_field bpf_attr_fields[] = {
+	FIELD(union bpf_attr, map_type),
+	FIELD(union bpf_attr, key_size),
+	FIELD(union bpf_attr, value_size),
+	FIELD(union bpf_attr, max_entries),
+	FIELD(union bpf_attr, map_flags),
+	FIELD(union bpf_attr, prog_type),
+	FIELD(union bpf_attr, insn_cnt),
+	FIELD(union bpf_attr, log_level),
+	FIELD(union bpf_attr, log_size),
+	FIELD(union bpf_attr, kern_version),
+	FIELD(union bpf_attr, prog_flags),
+	FIELD(union bpf_attr, expected_attach_type),
+	FIELD(union bpf_attr, attach_type),
+	FIELD(union bpf_attr, attach_flags),
+	FIELD(union bpf_attr, start_id),
+	FIELD(union bpf_attr, prog_id),
+	FIELD(union bpf_attr, map_id),
+};
+#endif
+
+/* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -281,6 +325,14 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sockaddr_storage_fields,
 		.num_fields	= ARRAY_SIZE(sockaddr_storage_fields),
 	},
+#ifdef USE_BPF
+	{
+		.name		= "bpf_attr",
+		.struct_size	= sizeof(union bpf_attr),
+		.fields		= bpf_attr_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_fields),
+	},
+#endif
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -338,6 +390,10 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "connect",		2, &struct_catalog[10] },
 	/* sendto(int, const void *, size_t, int, struct sockaddr *, socklen_t) */
 	{ "sendto",		5, &struct_catalog[10] },
+#ifdef USE_BPF
+	/* bpf(int, union bpf_attr *, unsigned int) */
+	{ "bpf",		2, &struct_catalog[11] },
+#endif
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
