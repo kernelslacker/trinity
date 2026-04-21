@@ -8,10 +8,12 @@
 #include <sys/timerfd.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 #include "compat.h"
 
 static void timerfd_destructor(struct object *obj)
@@ -19,6 +21,15 @@ static void timerfd_destructor(struct object *obj)
 	close(obj->timerfdobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->timerfdobj fields (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj — which
+ * matters because head->dump runs from dump_childdata() in the
+ * parent's crash diagnostics path even when a child triggered the
+ * crash.
+ */
 static void timerfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct timerfdobj *to = &obj->timerfdobj;
@@ -77,6 +88,14 @@ static int __init_timerfd_fds(int clockid)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TIMERFD);
 	head->destroy = &timerfd_destructor;
 	head->dump = &timerfd_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  timerfdobj is {int fd;
+	 * int clockid; int flags;} — no pointer members — so the migration
+	 * is mechanical and scoped entirely to this file.
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
@@ -91,7 +110,12 @@ static int __init_timerfd_fds(int clockid)
 
 		arm_timerfd(fd);
 
-		obj = alloc_object();
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL) {
+			close(fd);
+			continue;
+		}
+		INIT_LIST_HEAD(&obj->list);
 		obj->timerfdobj.fd = fd;
 		obj->timerfdobj.clockid = clockid;
 		obj->timerfdobj.flags = flags[i];
@@ -152,7 +176,12 @@ static int open_timerfd_fd(void)
 
 	arm_timerfd(fd);
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->timerfdobj.fd = fd;
 	obj->timerfdobj.clockid = clockid;
 	obj->timerfdobj.flags = flags;
