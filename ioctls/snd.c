@@ -355,6 +355,23 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 		}
 		break;
 	}
+	case SNDRV_PCM_IOCTL_PAUSE: {
+		int *push = get_writable_struct(sizeof(int));
+		if (push) {
+			*push = RAND_BOOL();	/* 1=pause, 0=resume */
+			rec->a3 = (unsigned long) push;
+		}
+		break;
+	}
+	case SNDRV_PCM_IOCTL_REWIND:
+	case SNDRV_PCM_IOCTL_FORWARD: {
+		snd_pcm_uframes_t *frames = get_writable_struct(sizeof(*frames));
+		if (frames) {
+			*frames = rand() % 4096 + 1;
+			rec->a3 = (unsigned long) frames;
+		}
+		break;
+	}
 	default:
 		break;
 	}
@@ -929,6 +946,9 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_PCM_IOCTL_WRITEN_FRAMES:
 	case SNDRV_PCM_IOCTL_READN_FRAMES:
 	case SNDRV_PCM_IOCTL_LINK:
+	case SNDRV_PCM_IOCTL_PAUSE:
+	case SNDRV_PCM_IOCTL_REWIND:
+	case SNDRV_PCM_IOCTL_FORWARD:
 		sanitise_snd_pcm(rec);
 		break;
 
