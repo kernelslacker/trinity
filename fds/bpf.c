@@ -362,4 +362,75 @@ static const struct fd_provider bpf_prog_fd_provider = {
 };
 
 REG_FD_PROV(bpf_prog_fd_provider);
+
+/*
+ * BPF link fd provider.
+ *
+ * Links are bpf-prog-attachment handles returned by BPF_LINK_CREATE
+ * (and by BPF_LINK_GET_FD_BY_ID looking up an existing link by id).
+ * They underpin BPF_LINK_UPDATE / BPF_LINK_DETACH / BPF_ITER_CREATE
+ * and the LINK info-by-fd dispatch path inside BPF_OBJ_GET_INFO_BY_FD.
+ *
+ * No init seeding: a successful BPF_LINK_CREATE needs a (prog_fd,
+ * target_fd, attach_type) triple where the kernel hook actually
+ * accepts that combination, and most attach types either need
+ * privileges trinity doesn't have or attach targets we don't model.
+ * The pool fills lazily as the syscall fuzz path lands successful
+ * LINK_CREATE / LINK_GET_FD_BY_ID calls — same lazy-fill pattern as
+ * the per-child pool entries the existing map / prog providers
+ * rely on.  .open is left NULL for the same reason.
+ */
+static void bpf_link_destructor(struct object *obj)
+{
+	close(obj->bpflinkobj.fd);
+}
+
+static void bpf_link_dump(struct object *obj, enum obj_scope scope)
+{
+	output(2, "bpf link fd:%d attach_type:%u scope:%d\n",
+		obj->bpflinkobj.fd,
+		obj->bpflinkobj.attach_type,
+		scope);
+}
+
+static int init_bpf_link_fds(void)
+{
+	struct objhead *head;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_LINK);
+	head->destroy = &bpf_link_destructor;
+	head->dump = &bpf_link_dump;
+
+	return true;
+}
+
+int get_rand_bpf_link_fd(void)
+{
+	struct object *obj = NULL;
+	struct objhead *local;
+
+	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first. */
+	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_LINK);
+	if (local != NULL && local->num_entries > 0 && RAND_BOOL())
+		obj = get_random_object(OBJ_FD_BPF_LINK, OBJ_LOCAL);
+	if (obj == NULL) {
+		if (objects_empty(OBJ_FD_BPF_LINK) == true)
+			return -1;
+		obj = get_random_object(OBJ_FD_BPF_LINK, OBJ_GLOBAL);
+	}
+	if (obj == NULL)
+		return -1;
+	return obj->bpflinkobj.fd;
+}
+
+static const struct fd_provider bpf_link_fd_provider = {
+	.name = "bpf-link",
+	.objtype = OBJ_FD_BPF_LINK,
+	.enabled = true,
+	.init = &init_bpf_link_fds,
+	.get = &get_rand_bpf_link_fd,
+	.open = NULL,
+};
+
+REG_FD_PROV(bpf_link_fd_provider);
 #endif

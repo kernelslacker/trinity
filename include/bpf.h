@@ -4,6 +4,7 @@
 
 int get_rand_bpf_fd(void);
 int get_rand_bpf_prog_fd(void);
+int get_rand_bpf_link_fd(void);
 
 #ifndef BPF_MAP_TYPE_LRU_HASH
 #define BPF_MAP_TYPE_LRU_HASH 9

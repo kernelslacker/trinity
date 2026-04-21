@@ -83,6 +83,11 @@ struct bpfprogobj {
 	u32 prog_type;
 };
 
+struct bpflinkobj {
+	int fd;
+	u32 attach_type;
+};
+
 struct pidfdobj {
 	int fd;
 	pid_t pid;
@@ -164,6 +169,8 @@ struct object {
 		struct bpfobj bpfobj;
 
 		struct bpfprogobj bpfprogobj;
+
+		struct bpflinkobj bpflinkobj;
 
 		struct pidfdobj pidfdobj;
 
