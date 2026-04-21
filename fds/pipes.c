@@ -8,18 +8,28 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "pipes.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void pipefd_destructor(struct object *obj)
 {
 	close(obj->pipeobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->pipeobj fields (now in shm via
+ * alloc_shared_obj) and the scope scalar.  No process-local pointers
+ * are dereferenced, so calling this from a different process than the
+ * allocator is correct — relevant because head->dump runs from
+ * dump_childdata() in the parent's crash diagnostics path even when a
+ * child triggered the crash.
+ */
 static void pipefd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct pipeobj *po = &obj->pipeobj;
@@ -40,22 +50,24 @@ static void open_pipe_pair(unsigned int flags)
 		return;
 	}
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
 		close(pipes[0]);
 		close(pipes[1]);
 		return;
 	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->pipeobj.fd = pipes[0];
 	obj->pipeobj.flags = flags;
 	obj->pipeobj.reader = true;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
 		close(pipes[1]);
 		return;
 	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->pipeobj.fd = pipes[1];
 	obj->pipeobj.flags = flags;
 	obj->pipeobj.reader = false;
@@ -83,6 +95,12 @@ static int init_pipes(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
 	head->destroy = &pipefd_destructor;
 	head->dump = &pipefd_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < 16; i++)
 		open_pipe();
