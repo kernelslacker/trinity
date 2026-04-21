@@ -332,7 +332,6 @@ retry:
 	/* Validate fd is still tracked. */
 	if (fd_hash_lookup(fd) == NULL) {
 		__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
-		destroy_object(obj, OBJ_GLOBAL, objtype);
 		request_fd_regen(objtype);
 		retries++;
 		goto retry;
