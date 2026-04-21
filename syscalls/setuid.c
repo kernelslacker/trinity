@@ -8,11 +8,6 @@
 #include "sanitise.h"
 #include "trinity.h"
 
-static void sanitise_setuid(struct syscallrecord *rec)
-{
-	rec->a1 = rand() % 65536;
-}
-
 /*
  * Oracle: after a successful setuid(N), POSIX guarantees geteuid() == N
  * regardless of whether we had CAP_SETUID (root sets all three; non-root
@@ -41,8 +36,10 @@ static void post_setuid(struct syscallrecord *rec)
 struct syscallentry syscall_setuid = {
 	.name = "setuid",
 	.num_args = 1,
+	.argtype = { [0] = ARG_RANGE },
 	.argname = { [0] = "uid" },
-	.sanitise = sanitise_setuid,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
 	.post = post_setuid,
 	.group = GROUP_PROCESS,
 };
@@ -54,7 +51,9 @@ struct syscallentry syscall_setuid = {
 struct syscallentry syscall_setuid16 = {
 	.name = "setuid16",
 	.num_args = 1,
+	.argtype = { [0] = ARG_RANGE },
 	.argname = { [0] = "uid" },
-	.sanitise = sanitise_setuid,
+	.arg_params[0].range.low = 0,
+	.arg_params[0].range.hi = 65535,
 	.group = GROUP_PROCESS,
 };
