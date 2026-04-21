@@ -34,8 +34,6 @@ CFLAGS += -Wno-missing-field-initializers
 # needed for show_backtrace() to work correctly.
 LDFLAGS += -rdynamic
 
-# glibc versions before 2.17 for clock_gettime
-LDLIBS += -lrt
 # barrier_racer uses process-shared pthread barriers
 LDLIBS += -lpthread
 
