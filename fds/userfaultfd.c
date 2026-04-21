@@ -10,6 +10,7 @@
 #include <linux/userfaultfd.h>
 
 #include "fd.h"
+#include "list.h"
 #include "userfaultfd.h"
 #include "objects.h"
 #include "random.h"
@@ -17,6 +18,7 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "utils.h"
 
 static int userfaultfd_create(__unused__ unsigned int flag)
 {
@@ -49,6 +51,15 @@ static void userfaultfd_destructor(struct object *obj)
 	close(obj->userfaultobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->userfaultobj fields (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj — which
+ * matters because head->dump runs from dump_childdata() in the
+ * parent's crash diagnostics path even when a child triggered the
+ * crash.
+ */
 static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct userfaultobj *uo = &obj->userfaultobj;
@@ -115,7 +126,12 @@ static int open_userfaultfd(void)
 
 	arm_userfaultfd(fd);
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->userfaultobj.fd = fd;
 	obj->userfaultobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
@@ -131,6 +147,14 @@ static int init_userfaultfds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
 	head->destroy = &userfaultfd_destructor;
 	head->dump = &userfaultfd_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  struct userfaultobj is
+	 * {int fd; int flags;} — no pointer members — so the migration is
+	 * purely mechanical.
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < 4; i++) {
 		if (open_userfaultfd())
