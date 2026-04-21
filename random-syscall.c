@@ -236,14 +236,23 @@ bool random_syscall(struct childdata *child)
 
 	do_syscall(rec, &child->kcov, child);
 
-	if (do_cmp)
+	if (do_cmp) {
 		cmp_hints_collect(child->kcov.trace_buf, rec->nr);
-	else {
+		/* cmp-mode runs don't produce a found_new signal, so the
+		 * mutator-attribution stash from generate_syscall_args has
+		 * no coverage event to bind to.  Drop it instead of letting
+		 * it leak into the next non-cmp syscall's commit. */
+		minicorpus_mut_attrib_clear();
+	} else {
 		bool new_edges = kcov_collect(&child->kcov, rec->nr);
 
 		/* Record the (prev, curr) syscall pair for sequence coverage. */
 		if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
 			edgepair_record(child->last_syscall_nr, rec->nr, new_edges);
+
+		/* Credit each mutator case picked during this call's
+		 * arg generation, with wins iff this call found new edges. */
+		minicorpus_mut_attrib_commit(new_edges);
 
 		/* Save args that discovered new coverage, but only for
 		 * syscalls without sanitise (which may stash pointers). */
