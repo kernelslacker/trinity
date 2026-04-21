@@ -667,15 +667,33 @@ static void check_fd_leaks(struct childdata *child)
  * with the remaining ~5% spread across the alternative ops.
  * This gives the VM-stress and inode paths occasional exercise
  * without starving the main syscall fuzzer.
+ *
+ * Cases 5-18 are gated here: they are structurally reachable (the r%19 bug
+ * is fixed) but their throughput cost is unknown.  procfs_writer (case 4)
+ * crashed iters/s 8x at default rate before its discovery path was hoisted.
+ * Enable the dormant ops one at a time once each has been load-tested.
+ * To enable an op: set its entry below to 0.
  */
+static const int dormant_op_disabled[19] = {
+	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
+	1, 1, 1, 1, 1,	/* 5-9:  dormant: memory_pressure, userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
+	1, 1, 1, 1, 1,	/* 10-14: dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, fault_injector, recipe_runner */
+	1, 1, 1, 1,	/* 15-18: dormant: iouring_recipes, fd_stress, refcount_auditor, fs_lifecycle */
+};
+
 static enum child_op_type pick_op_type(void)
 {
 	unsigned int r = rand() % 100;
+	unsigned int pick;
 
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	switch (rand() % 19) {
+	pick = rand() % 19;
+	if (dormant_op_disabled[pick])
+		return CHILD_OP_SYSCALL;
+
+	switch (pick) {
 	case 0:  return CHILD_OP_MMAP_LIFECYCLE;
 	case 1:  return CHILD_OP_MPROTECT_SPLIT;
 	case 2:  return CHILD_OP_MLOCK_PRESSURE;
