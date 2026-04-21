@@ -6,6 +6,7 @@
 #include "list.h"
 #include "locks.h"
 #include "objects.h"
+#include "params.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -331,7 +332,11 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		}
 	}
 
-	if (head->dump != NULL)
+	/* Per-object dumps are debug noise at startup (NFUTEXES = 5 * cpus
+	 * identical "futex: 0 owner:0 scope:1" lines, etc.).  Gate on -vv.
+	 * dump_childdata() calls head->dump directly for crash diagnostics
+	 * and is unaffected by this gate. */
+	if (head->dump != NULL && verbosity > 2)
 		head->dump(obj, scope);
 
 out_unlock:
