@@ -17,11 +17,13 @@ unsigned long get_len(void)
 		return get_sizeof_boundary_value();
 
 	if (RAND_BOOL()) {
-		switch (rand() % 4) {
+		switch (rand() % 6) {
 		case 0:	return sizeof(char);
-		case 1:	return sizeof(int);
-		case 2:	return sizeof(long);
-		case 3: return page_size;
+		case 1:	return sizeof(short);
+		case 2:	return sizeof(int);
+		case 3:	return sizeof(long);
+		case 4: return sizeof(void *);
+		case 5: return page_size;
 		}
 	}
 
