@@ -249,6 +249,26 @@ void minicorpus_mut_attrib_clear(void)
 }
 
 /*
+ * Cross-arg splice ratio.  With probability 1/SPLICE_RATIO, an arg in
+ * a replay starts from a sibling arg's snapshot value rather than its
+ * own, before the per-arg mutator chain runs on it.
+ *
+ * Why splice within the same syscall (rather than across syscalls or
+ * across snapshots): args within one syscall invocation share semantic
+ * structure — flags fields tend to share bit-encodings, length fields
+ * tend to share scale, fd fields tend to be related — and splicing
+ * preserves that structure while shuffling which slot each value lands
+ * in.  Cross-snapshot or cross-syscall splice would mostly produce
+ * type-incoherent gibberish; intra-syscall keeps the splice on a chain
+ * of values the kernel already validated together.
+ *
+ * 10% is conservative: too much splice and we lose the per-arg
+ * locality the corpus is meant to preserve.  Tunable here without
+ * touching call sites.
+ */
+#define SPLICE_RATIO 10
+
+/*
  * Per-arg mutation stacking depth.
  *
  * Drawing inspiration from AFL's havoc stage, when we mutate an argument
@@ -405,6 +425,20 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	/* Apply the snapshot with per-argument mutations. */
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		unsigned long val = snapshot.args[i];
+
+		/* Cross-arg splice: with probability 1/SPLICE_RATIO, replace
+		 * this arg's starting value with a sibling arg's value from
+		 * the same snapshot.  Runs BEFORE the mutator chain so the
+		 * spliced value gets mutated in place rather than passed
+		 * straight through.  Requires num_args >= 2 (otherwise there
+		 * is no other slot to splice from). */
+		if (entry->num_args >= 2 && ONE_IN(SPLICE_RATIO)) {
+			unsigned int offset = 1 +
+				(unsigned int)(rand() % (entry->num_args - 1));
+			unsigned int src = (i + offset) % entry->num_args;
+
+			val = snapshot.args[src];
+		}
 
 		/* ~25% chance to mutate each arg.  When we do mutate, apply
 		 * a stack of 1..STACK_MAX primitive mutations (geometric,
