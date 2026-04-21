@@ -76,6 +76,10 @@ struct shm_s {
 	 * Destructor nulls this under objlock. */
 	struct io_uringobj *mapped_ring;
 
+	/* AIO context seeded by init_aio_global_ctx() in the parent.
+	 * Init write uses RELEASE; child reads use ACQUIRE (lockless). */
+	unsigned long aio_ctx_cached;
+
 	/* Contended child<>child locks — own cache line. */
 	lock_t syscalltable_lock __attribute__((aligned(64)));
 	lock_t objlock;
