@@ -785,6 +785,82 @@ static void sanitise_oss_mixer(struct syscallrecord *rec)
 	}
 }
 
+#ifdef USE_SNDDRV_COMPRESS_OFFLOAD
+static const __u32 compr_codecs[] = {
+	SND_AUDIOCODEC_PCM,
+	SND_AUDIOCODEC_MP3,
+	SND_AUDIOCODEC_AMR,
+	SND_AUDIOCODEC_AMRWB,
+	SND_AUDIOCODEC_AAC,
+	SND_AUDIOCODEC_WMA,
+	SND_AUDIOCODEC_VORBIS,
+	SND_AUDIOCODEC_FLAC,
+	SND_AUDIOCODEC_IEC61937,
+};
+
+static void fill_snd_codec(struct snd_codec *c)
+{
+	c->id = compr_codecs[rand() % ARRAY_SIZE(compr_codecs)];
+	c->ch_in = rand() % 8 + 1;
+	c->ch_out = rand() % 8 + 1;
+	c->sample_rate = pcm_rates[rand() % ARRAY_SIZE(pcm_rates)];
+	c->bit_rate = (rand() % 320 + 32) * 1000;
+	/* leave profile/level/format/options zero — kernel validates per codec */
+}
+
+static void sanitise_snd_compress(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+	case SNDRV_COMPRESS_GET_CAPS: {
+		struct snd_compr_caps *caps = get_writable_struct(sizeof(*caps));
+		if (caps)
+			rec->a3 = (unsigned long) caps;
+		break;
+	}
+	case SNDRV_COMPRESS_GET_CODEC_CAPS: {
+		struct snd_compr_codec_caps *cc = get_writable_struct(sizeof(*cc));
+		if (cc) {
+			cc->codec = compr_codecs[rand() % ARRAY_SIZE(compr_codecs)];
+			rec->a3 = (unsigned long) cc;
+		}
+		break;
+	}
+	case SNDRV_COMPRESS_SET_PARAMS: {
+		struct snd_compr_params *p = get_writable_struct(sizeof(*p));
+		if (p) {
+			/* fragment_size: power of two between 4 KB and 64 KB */
+			p->buffer.fragment_size = 1U << (rand() % 5 + 12);
+			p->buffer.fragments = rand() % 8 + 2;
+			fill_snd_codec(&p->codec);
+			p->no_wake_mode = RAND_BOOL();
+			rec->a3 = (unsigned long) p;
+		}
+		break;
+	}
+	case SNDRV_COMPRESS_GET_PARAMS: {
+		struct snd_codec *c = get_writable_struct(sizeof(*c));
+		if (c)
+			rec->a3 = (unsigned long) c;
+		break;
+	}
+	case SNDRV_COMPRESS_TSTAMP: {
+		struct snd_compr_tstamp *t = get_writable_struct(sizeof(*t));
+		if (t)
+			rec->a3 = (unsigned long) t;
+		break;
+	}
+	case SNDRV_COMPRESS_AVAIL: {
+		struct snd_compr_avail *a = get_writable_struct(sizeof(*a));
+		if (a)
+			rec->a3 = (unsigned long) a;
+		break;
+	}
+	default:
+		break;
+	}
+}
+#endif /* USE_SNDDRV_COMPRESS_OFFLOAD */
+
 static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -944,6 +1020,18 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 #endif
 		sanitise_oss_mixer(rec);
 		break;
+
+#ifdef USE_SNDDRV_COMPRESS_OFFLOAD
+	/* snd-compress (compressed audio offload) */
+	case SNDRV_COMPRESS_GET_CAPS:
+	case SNDRV_COMPRESS_GET_CODEC_CAPS:
+	case SNDRV_COMPRESS_SET_PARAMS:
+	case SNDRV_COMPRESS_GET_PARAMS:
+	case SNDRV_COMPRESS_TSTAMP:
+	case SNDRV_COMPRESS_AVAIL:
+		sanitise_snd_compress(rec);
+		break;
+#endif
 
 	/* snd-seq */
 	case SNDRV_SEQ_IOCTL_SYSTEM_INFO:
