@@ -51,7 +51,7 @@ static void post_close_range(struct syscallrecord *rec)
 	for (; fd <= max_fd; fd++) {
 		if (child != NULL && child->fd_event_ring != NULL)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 (int) fd, -1, 0);
+					 (int) fd, -1, 0, 0, 0);
 
 		/* Parent-side path (no-op in children). */
 		remove_object_by_fd((int) fd);

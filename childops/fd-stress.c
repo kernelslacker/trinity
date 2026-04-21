@@ -137,7 +137,7 @@ static void notify_close(struct childdata *child, int fd)
 		return;
 	if (fd < 0)
 		return;
-	fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd, -1, 0);
+	fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd, -1, 0, 0, 0);
 }
 
 static bool fd_stress_close_reopen(struct childdata *child)
