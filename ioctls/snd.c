@@ -289,10 +289,16 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 		}
 		break;
 	}
-	case SNDRV_PCM_IOCTL_STATUS: {
+	case SNDRV_PCM_IOCTL_STATUS:
+	case SNDRV_PCM_IOCTL_STATUS_EXT: {
 		struct snd_pcm_status *st = get_writable_struct(sizeof(*st));
-		if (st)
+		if (st) {
+			/* STATUS_EXT reads audio_tstamp_data as a request hint
+			 * for which timestamp variant to report. */
+			if (rec->a2 == SNDRV_PCM_IOCTL_STATUS_EXT)
+				st->audio_tstamp_data = rand() % 4;
 			rec->a3 = (unsigned long) st;
+		}
 		break;
 	}
 	case SNDRV_PCM_IOCTL_DELAY: {
@@ -914,6 +920,7 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_PCM_IOCTL_HW_PARAMS:
 	case SNDRV_PCM_IOCTL_SW_PARAMS:
 	case SNDRV_PCM_IOCTL_STATUS:
+	case SNDRV_PCM_IOCTL_STATUS_EXT:
 	case SNDRV_PCM_IOCTL_DELAY:
 	case SNDRV_PCM_IOCTL_SYNC_PTR:
 	case SNDRV_PCM_IOCTL_CHANNEL_INFO:
