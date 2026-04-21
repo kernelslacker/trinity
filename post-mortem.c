@@ -11,9 +11,13 @@
 #include <string.h>
 #include <syslog.h>
 #include <time.h>
+#include "arch.h"
 #include "child.h"
+#include "edgepair.h"
+#include "kcov.h"
 #include "pids.h"
 #include "shm.h"
+#include "tables.h"
 #include "taint.h"
 #include "trinity.h"
 #include "syscall.h"
@@ -369,6 +373,38 @@ static void write_artifact_buf(const char *dir, const char *name,
 	fclose(fp);
 }
 
+static void dump_kcov_state(FILE *fp)
+{
+	unsigned long edges, pcs, calls, remote;
+	unsigned int i, cold = 0;
+	unsigned int nr_to_scan;
+
+	if (kcov_shm == NULL) {
+		fprintf(fp, "KCOV: not available\n");
+		return;
+	}
+
+	edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
+	pcs    = __atomic_load_n(&kcov_shm->total_pcs,    __ATOMIC_RELAXED);
+	calls  = __atomic_load_n(&kcov_shm->total_calls,  __ATOMIC_RELAXED);
+	remote = __atomic_load_n(&kcov_shm->remote_calls, __ATOMIC_RELAXED);
+
+	fprintf(fp, "KCOV: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
+		edges, pcs, calls, remote);
+
+	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	for (i = 0; i < nr_to_scan; i++) {
+		if (kcov_syscall_is_cold(i))
+			cold++;
+	}
+	fprintf(fp, "KCOV: %u cold syscalls\n", cold);
+
+	if (edgepair_shm != NULL)
+		fprintf(fp, "KCOV: edgepairs: %lu unique, %lu dropped\n",
+			edgepair_shm->pairs_tracked,
+			edgepair_shm->pairs_dropped);
+}
+
 void tainted_postmortem(void)
 {
 	int taint = get_taint();
@@ -446,6 +482,12 @@ void tainted_postmortem(void)
 	fp = open_artifact(dirname, "seed");
 	if (fp != NULL) {
 		fprintf(fp, "%u\n", seed);
+		fclose(fp);
+	}
+
+	fp = open_artifact(dirname, "kcov.log");
+	if (fp != NULL) {
+		dump_kcov_state(fp);
 		fclose(fp);
 	}
 
