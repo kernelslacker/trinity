@@ -133,12 +133,23 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		break;
 	}
 
-	case ATM_SETBACKEND: {
+	case ATM_SETBACKEND:
+	case ATM_NEWBACKENDIF: {
 		/* atm_backend_t (unsigned short): raw=0, ppp=1, br2684=2 */
 		atm_backend_t *be = (atm_backend_t *) get_writable_struct(sizeof(*be));
 		if (be) {
 			*be = rand() % 3;
 			rec->a3 = (unsigned long) be;
+		}
+		break;
+	}
+
+	case ATM_DROPPARTY: {
+		/* int: party endpoint ID (1..127 for N-UNI) */
+		int *pid = (int *) get_writable_struct(sizeof(int));
+		if (pid) {
+			*pid = rand() % 127 + 1;
+			rec->a3 = (unsigned long) pid;
 		}
 		break;
 	}
@@ -218,7 +229,9 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_QUERYLOOP),
 	IOCTL(ATM_SETSC),
 	IOCTL(ATM_SETBACKEND),
+	IOCTL(ATM_NEWBACKENDIF),
 	IOCTL(ATM_ADDPARTY),
+	IOCTL(ATM_DROPPARTY),
 	IOCTL(SONET_GETSTAT),
 	IOCTL(SONET_GETSTATZ),
 	IOCTL(SONET_SETDIAG),
