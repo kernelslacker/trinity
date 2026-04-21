@@ -93,6 +93,16 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 		case FD_EVENT_CLOSE:
 			remove_object_by_fd(ev->fd1);
 			break;
+		case FD_EVENT_REGEN_REQUEST:
+			/* Clear the rate-limit slot first so any child
+			 * that races with us still gets to enqueue a
+			 * follow-up request rather than silently
+			 * dropping it. */
+			atomic_store_explicit(
+				&shm->fd_regen_pending[ev->objtype], 0,
+				memory_order_relaxed);
+			try_regenerate_fd(ev->objtype);
+			break;
 		}
 
 		tail = (tail + 1) & (FD_EVENT_RING_SIZE - 1);

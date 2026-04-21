@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include "arch.h"
 #include "child.h"
@@ -7,6 +8,7 @@
 #include "files.h"
 #include "locks.h"
 #include "net.h"
+#include "object-types.h"
 #include "stats.h"
 #include "syscall.h"
 #include "types.h"
@@ -57,6 +59,17 @@ struct shm_s {
 #endif
 	/* generic object cache*/
 	struct objhead global_objects[MAX_OBJECT_TYPES];
+
+	/*
+	 * Per-objecttype hint: a child enqueueing FD_EVENT_REGEN_REQUEST
+	 * sets the slot to 1, the parent's drain loop clears it before
+	 * running the regen.  Stops the ring filling up with duplicate
+	 * regen hints when many children notice the same exhausted pool
+	 * inside the same drain cycle.  A late-arriving request that
+	 * happens after the parent clears just gets a fresh enqueue,
+	 * so this is purely a hint, not a correctness gate.
+	 */
+	_Atomic uint8_t fd_regen_pending[MAX_OBJECT_TYPES];
 
 	/* io_uring ring with valid mappings, shared across children.
 	 * Init write uses RELEASE; child reads use ACQUIRE (lockless).

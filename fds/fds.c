@@ -1,11 +1,14 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "fd.h"
+#include "fd-event.h"
 #include "list.h"
 #include "net.h"
 #include "objects.h"
@@ -235,6 +238,47 @@ regen:
 }
 
 /*
+ * Ask the parent to top up the global pool for objtype.  Safe from
+ * either parent or child context: in the parent we just call
+ * try_regenerate_fd() directly (the only path the global pool can be
+ * mutated from), while in a child we hand the request to the parent
+ * via the per-child fd_event ring.
+ *
+ * The shm-wide fd_regen_pending[type] flag dedups concurrent requests:
+ * if the parent has already been notified for this type and hasn't
+ * drained the request yet, additional notifications are skipped to
+ * avoid filling the ring with duplicates while a single regen would
+ * satisfy them all.
+ */
+static void request_fd_regen(enum objecttype type)
+{
+	struct childdata *child;
+	uint8_t prev;
+
+	if (getpid() == mainpid) {
+		try_regenerate_fd(type);
+		return;
+	}
+
+	child = this_child();
+	if (child == NULL || child->fd_event_ring == NULL)
+		return;
+
+	prev = atomic_exchange_explicit(&shm->fd_regen_pending[type], 1,
+					memory_order_relaxed);
+	if (prev != 0)
+		return;
+
+	if (!fd_event_enqueue(child->fd_event_ring, FD_EVENT_REGEN_REQUEST,
+			      -1, -1, type)) {
+		/* Ring overflow — drop the rate-limit so the next caller
+		 * gets to retry instead of permanently muting this type. */
+		atomic_store_explicit(&shm->fd_regen_pending[type], 0,
+				      memory_order_relaxed);
+	}
+}
+
+/*
  * Return an fd of a specific type for syscalls that expect a particular
  * kind of fd (epoll, timerfd, socket, etc.).  Falls back to get_random_fd()
  * if no objects of that type exist.
@@ -289,7 +333,7 @@ retry:
 	if (fd_hash_lookup(fd) == NULL) {
 		__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
 		destroy_object(obj, OBJ_GLOBAL, objtype);
-		try_regenerate_fd(objtype);
+		request_fd_regen(objtype);
 		retries++;
 		goto retry;
 	}
