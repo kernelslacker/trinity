@@ -14,6 +14,8 @@
 
 static const char *hashes[] = {
 	"md5", "sha1", "sha256", "sha384", "sha512",
+	"sha3-256", "sha3-384", "sha3-512",
+	"hmac(sha256)", "hmac(sha3-256)",
 	"blake2b-256", "blake2b-512", "sm3",
 };
 
@@ -61,7 +63,11 @@ static const char *skcipher_algos[] = {
 	"lrw(aes)",
 	"cts(cbc(aes))",
 	"chacha20",
-	"salsa20",
+	"xchacha20",
+	"xchacha12",
+	"cbc(sm4)",
+	"ecb(sm4)",
+	"ctr(sm4)",
 };
 
 static const char *akcipher_algos[] = {
