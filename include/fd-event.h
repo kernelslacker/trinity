@@ -20,11 +20,18 @@
 
 enum fd_event_type {
 	FD_EVENT_CLOSE,		/* fd was closed */
+	FD_EVENT_REGEN_REQUEST,	/* refill the pool of objtype */
 };
 
+/*
+ * For FD_EVENT_CLOSE the closed fd is in fd1.  For FD_EVENT_REGEN_REQUEST
+ * fd1/fd2 are unused (-1) and only objtype is meaningful — the parent
+ * runs that provider's open hook in its own context where add_object()
+ * on OBJ_GLOBAL is allowed to mutate the pool.
+ */
 struct fd_event {
 	enum fd_event_type type;
-	int fd1;		/* closed fd */
+	int fd1;		/* closed fd (FD_EVENT_CLOSE only) */
 	int fd2;
 	enum objecttype objtype;
 };
