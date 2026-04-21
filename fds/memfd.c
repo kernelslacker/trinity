@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 
 #include "fd.h"
+#include "list.h"
 #include "memfd.h"
 #include "objects.h"
 #include "random.h"
@@ -16,6 +17,7 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "utils.h"
 
 #ifndef MFD_NOEXEC_SEAL
 #define MFD_NOEXEC_SEAL 0x0008U
@@ -45,11 +47,23 @@ static void arm_memfd(int fd)
 
 static void memfd_destructor(struct object *obj)
 {
-	free(obj->memfdobj.name);
-	obj->memfdobj.name = NULL;
+	if (obj->memfdobj.name != NULL) {
+		free_shared_str(obj->memfdobj.name,
+				strlen(obj->memfdobj.name) + 1);
+		obj->memfdobj.name = NULL;
+	}
 	close(obj->memfdobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->memfdobj fields, all of which
+ * (including the name string) now live in shm via alloc_shared_obj /
+ * alloc_shared_strdup.  No process-local pointers are dereferenced,
+ * so this is correct to call from a different process than the one
+ * that allocated the obj — which matters because head->dump runs
+ * from dump_childdata() in the parent's crash diagnostics path even
+ * when a child triggered the crash.
+ */
 static void memfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct memfdobj *mo = &obj->memfdobj;
@@ -74,6 +88,14 @@ static int init_memfd_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD);
 	head->destroy = &memfd_destructor;
 	head->dump = &memfd_dump;
+	/*
+	 * Route obj structs for this provider through the shared obj
+	 * heap so post-fork regen via try_regenerate_fd() → open_memfd_fd
+	 * produces obj structs that already-forked children can see.
+	 * The name field is the second pointer hung off this obj — it
+	 * goes through the shared string heap below.
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
@@ -89,12 +111,17 @@ static int init_memfd_fds(void)
 		if (flags[i] & MFD_ALLOW_SEALING)
 			arm_memfd(fd);
 
-		obj = alloc_object();
-		obj->memfdobj.fd = fd;
-		obj->memfdobj.name = strdup(namestr);
-		if (!obj->memfdobj.name) {
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL) {
 			close(fd);
-			free(obj);
+			continue;
+		}
+		INIT_LIST_HEAD(&obj->list);
+		obj->memfdobj.fd = fd;
+		obj->memfdobj.name = alloc_shared_strdup(namestr);
+		if (obj->memfdobj.name == NULL) {
+			close(fd);
+			free_shared_obj(obj, sizeof(struct object));
 			continue;
 		}
 		obj->memfdobj.flags = flags[i];
@@ -134,12 +161,17 @@ static int open_memfd_fd(void)
 	if (flags & MFD_ALLOW_SEALING)
 		arm_memfd(fd);
 
-	obj = alloc_object();
-	obj->memfdobj.fd = fd;
-	obj->memfdobj.name = strdup("memfd");
-	if (!obj->memfdobj.name) {
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
 		close(fd);
-		free(obj);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
+	obj->memfdobj.fd = fd;
+	obj->memfdobj.name = alloc_shared_strdup("memfd");
+	if (obj->memfdobj.name == NULL) {
+		close(fd);
+		free_shared_obj(obj, sizeof(struct object));
 		return false;
 	}
 	obj->memfdobj.flags = flags;
