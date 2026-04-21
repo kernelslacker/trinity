@@ -133,6 +133,24 @@ void minicorpus_save(struct syscallrecord *rec)
 }
 
 /*
+ * Per-arg mutation stacking depth.
+ *
+ * Drawing inspiration from AFL's havoc stage, when we mutate an argument
+ * we apply 1..STACK_MAX mutations in sequence rather than always exactly
+ * one.  Stacking lets us reach states that no single mutator can produce
+ * (e.g. bit-flip then add-delta then boundary-replace), which is where the
+ * long-tail edges tend to live once the easy single-mutation neighbours
+ * have been exhausted.
+ *
+ * STACK_MAX caps the chain so a single arg can't burn unbounded entropy
+ * and so the mutated value keeps some relationship to the snapshot —
+ * past ~4 mutations on a scalar the result is indistinguishable from a
+ * fresh random value, at which point the corpus snapshot has stopped
+ * doing useful guidance work.
+ */
+#define STACK_MAX 4
+
+/*
  * Apply a small mutation to a single argument value.
  * The mutations are designed to explore nearby input space:
  *   - bit flip: toggle a single random bit
@@ -174,6 +192,33 @@ static unsigned long mutate_arg(unsigned long val)
 		/* keep original — sometimes the saved value is good as-is */
 		break;
 	}
+	return val;
+}
+
+/*
+ * Pick a stacking depth in [1, STACK_MAX] using a capped geometric
+ * distribution with rate 1/2: P(1)=1/2, P(2)=1/4, P(3)=1/8, P(4)=1/8
+ * (the tail mass collapses into the cap).  The bias toward small N
+ * keeps most replays close to the corpus snapshot — only a minority
+ * get aggressively stacked into deeper exploration.
+ */
+static unsigned int pick_stack_depth(void)
+{
+	unsigned int n = 1;
+
+	while (n < STACK_MAX && RAND_BOOL())
+		n++;
+	return n;
+}
+
+/*
+ * Apply mutate_arg n_muts times in sequence.  The stack composes the
+ * primitive mutations into a single transformation per call site.
+ */
+static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts)
+{
+	while (n_muts-- > 0)
+		val = mutate_arg(val);
 	return val;
 }
 
@@ -237,9 +282,11 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		unsigned long val = snapshot.args[i];
 
-		/* ~25% chance to mutate each arg. */
+		/* ~25% chance to mutate each arg.  When we do mutate, apply
+		 * a stack of 1..STACK_MAX primitive mutations (geometric,
+		 * biased toward small N) rather than a single one. */
 		if (ONE_IN(4))
-			val = mutate_arg(val);
+			val = mutate_arg_stacked(val, pick_stack_depth());
 
 		/* Don't let fd args land on stdin/stdout/stderr. */
 		if (is_fdarg(entry->argtype[i]) && val <= 2)
