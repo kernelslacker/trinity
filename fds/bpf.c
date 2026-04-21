@@ -433,4 +433,71 @@ static const struct fd_provider bpf_link_fd_provider = {
 };
 
 REG_FD_PROV(bpf_link_fd_provider);
+
+/*
+ * BPF BTF fd provider.
+ *
+ * BTF fds come from BPF_BTF_LOAD (parse a BTF blob) and from
+ * BPF_BTF_GET_FD_BY_ID (look up an existing kernel/module BTF).
+ * They feed BPF_OBJ_GET_INFO_BY_FD's BTF dispatch path so the
+ * kernel's btf_get_info_by_fd() runs against real BTF objects
+ * instead of EBADFD-bouncing on a type-confused fd.
+ *
+ * No init seeding: BPF_BTF_LOAD wants a well-formed BTF binary
+ * (header + type table + string table), and trinity has no BTF
+ * generator.  BPF_BTF_GET_FD_BY_ID could in theory probe the
+ * kernel's vmlinux BTF (id 1 on most kernels), but that's a
+ * speculative cross-platform assumption and the syscall fuzz path
+ * gets there anyway via random id probing.  .open is left NULL.
+ */
+static void bpf_btf_destructor(struct object *obj)
+{
+	close(obj->bpfbtfobj.fd);
+}
+
+static void bpf_btf_dump(struct object *obj, enum obj_scope scope)
+{
+	output(2, "bpf btf fd:%d scope:%d\n", obj->bpfbtfobj.fd, scope);
+}
+
+static int init_bpf_btf_fds(void)
+{
+	struct objhead *head;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_BTF);
+	head->destroy = &bpf_btf_destructor;
+	head->dump = &bpf_btf_dump;
+
+	return true;
+}
+
+int get_rand_bpf_btf_fd(void)
+{
+	struct object *obj = NULL;
+	struct objhead *local;
+
+	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first. */
+	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_BTF);
+	if (local != NULL && local->num_entries > 0 && RAND_BOOL())
+		obj = get_random_object(OBJ_FD_BPF_BTF, OBJ_LOCAL);
+	if (obj == NULL) {
+		if (objects_empty(OBJ_FD_BPF_BTF) == true)
+			return -1;
+		obj = get_random_object(OBJ_FD_BPF_BTF, OBJ_GLOBAL);
+	}
+	if (obj == NULL)
+		return -1;
+	return obj->bpfbtfobj.fd;
+}
+
+static const struct fd_provider bpf_btf_fd_provider = {
+	.name = "bpf-btf",
+	.objtype = OBJ_FD_BPF_BTF,
+	.enabled = true,
+	.init = &init_bpf_btf_fds,
+	.get = &get_rand_bpf_btf_fd,
+	.open = NULL,
+};
+
+REG_FD_PROV(bpf_btf_fd_provider);
 #endif
