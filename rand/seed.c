@@ -98,8 +98,8 @@ static unsigned int seed_combine(unsigned int seedval, unsigned int childno)
  */
 void set_seed(struct childdata *child)
 {
-	srand(seed_combine(shm->seed, child->num));
-	child->seed = shm->seed;
+	srand(seed_combine(__atomic_load_n(&shm->seed, __ATOMIC_RELAXED), child->num));
+	child->seed = __atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
 }
 
 /*
@@ -116,5 +116,5 @@ void reseed(void)
 	}
 
 	/* We are reseeding. */
-	shm->seed += max_children;
+	__atomic_fetch_add(&shm->seed, max_children, __ATOMIC_RELAXED);
 }

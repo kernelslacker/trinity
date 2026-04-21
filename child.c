@@ -132,19 +132,19 @@ static void set_make_it_fail(void)
 	/* If we failed last time, it's probably because we don't
 	 * have fault-injection enabled, so don't bother trying in future.
 	 */
-	if (shm->dont_make_it_fail == true)
+	if (__atomic_load_n(&shm->dont_make_it_fail, __ATOMIC_RELAXED))
 		return;
 
 	fd = open("/proc/self/make-it-fail", O_WRONLY);
 	if (fd == -1) {
-		shm->dont_make_it_fail = true;
+		__atomic_store_n(&shm->dont_make_it_fail, true, __ATOMIC_RELAXED);
 		return;
 	}
 
 	if (write(fd, buf, 1) == -1) {
 		if (errno != EPERM)
 			outputerr("writing to /proc/self/make-it-fail failed! (%s)\n", strerror(errno));
-		shm->dont_make_it_fail = true;
+		__atomic_store_n(&shm->dont_make_it_fail, true, __ATOMIC_RELAXED);
 	}
 
 	close(fd);
@@ -454,10 +454,10 @@ static void init_child(struct childdata *child, int childno)
 	 * kernels without user_namespaces, or missing CONFIG_PID_NS).
 	 */
 #ifdef CLONE_NEWPID
-	if (RAND_BOOL() && !shm->no_pidns) {
+	if (RAND_BOOL() && !__atomic_load_n(&shm->no_pidns, __ATOMIC_RELAXED)) {
 		if (unshare(CLONE_NEWPID) == -1) {
 			if (errno == EPERM || errno == EINVAL)
-				shm->no_pidns = true;
+				__atomic_store_n(&shm->no_pidns, true, __ATOMIC_RELAXED);
 		}
 	}
 #endif
@@ -743,7 +743,7 @@ void child_process(struct childdata *child, int childno)
 		}
 
 		/* If the parent reseeded, we should reflect the latest seed too. */
-		if (shm->seed != child->seed) {
+		if (__atomic_load_n(&shm->seed, __ATOMIC_RELAXED) != child->seed) {
 			set_seed(child);
 		}
 

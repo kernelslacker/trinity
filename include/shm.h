@@ -38,7 +38,7 @@ struct shm_s {
 	unsigned int running_childs __attribute__((aligned(64)));
 
 	/* rng related state */
-	unsigned int seed;
+	_Atomic unsigned int seed;
 
 	/* Indices of syscall in syscall table that are active.
 	 * All indices shifted by +1. Empty index equals to 0.
@@ -87,7 +87,7 @@ struct shm_s {
 
 	/* various flags. */
 	enum exit_reasons exit_reason;
-	bool dont_make_it_fail;
+	_Atomic bool dont_make_it_fail;
 
 	/* Set to true once we detect that /proc/self/fail-nth can't be
 	 * opened (kernel built without CONFIG_FAULT_INJECTION, etc.).
@@ -108,7 +108,7 @@ struct shm_s {
 	 * unshare(CLONE_NEWPID). Stored in shm so the flag propagates
 	 * across fork() — a process-local static would be duplicated
 	 * into each child's address space. */
-	bool no_pidns;
+	_Atomic bool no_pidns;
 
 	/* recipe_runner discovery latches: a recipe whose first invocation
 	 * detects an absent kernel feature (ENOSYS, missing config) flips
