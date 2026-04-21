@@ -37,6 +37,8 @@ static const unsigned long boundary_values[] = {
 	0x80000000,			/* INT_MIN (as unsigned) */
 	0x80000001,			/* INT_MIN + 1 */
 	0xfffffffe,			/* UINT_MAX - 1 */
+	0x200000,			/* 2MB hugepage size */
+	0x40000000,			/* 1GB hugepage size */
 	0xffffffff,			/* UINT_MAX */
 #if WORD_BIT == 64
 	0x100000000UL,			/* UINT_MAX + 1 */
