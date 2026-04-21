@@ -97,6 +97,25 @@ static void sanitise_mtd_write_req(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) req;
 }
 
+#ifdef MEMREAD
+static void sanitise_mtd_read_req(struct syscallrecord *rec)
+{
+	struct mtd_read_req *req;
+
+	req = (struct mtd_read_req *) get_writable_struct(sizeof(*req));
+	if (!req)
+		return;
+	req->start = rand64();
+	req->len = rand() % 4096;
+	req->ooblen = rand() % 128;
+	req->mode = rand() % 3;
+	req->usr_data = (unsigned long) get_writable_struct(req->len + 1);
+	if (RAND_BOOL())
+		req->usr_oob = (unsigned long) get_writable_struct(req->ooblen + 1);
+	rec->a3 = (unsigned long) req;
+}
+#endif
+
 static void mtd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -137,6 +156,18 @@ static void mtd_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 #ifdef MEMWRITE
 	case MEMWRITE:
 		sanitise_mtd_write_req(rec);
+		break;
+#endif
+
+#ifdef OTPERASE
+	case OTPERASE:
+		sanitise_otp_info(rec);
+		break;
+#endif
+
+#ifdef MEMREAD
+	case MEMREAD:
+		sanitise_mtd_read_req(rec);
 		break;
 #endif
 
@@ -225,6 +256,12 @@ static const struct ioctl mtd_ioctls[] = {
 #endif
 #ifdef MEMWRITE
 	IOCTL(MEMWRITE),
+#endif
+#ifdef OTPERASE
+	IOCTL(OTPERASE),
+#endif
+#ifdef MEMREAD
+	IOCTL(MEMREAD),
 #endif
 };
 
