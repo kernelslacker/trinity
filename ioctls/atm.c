@@ -8,6 +8,8 @@
 #include <linux/atm_nicstar.h>
 #include <linux/atm_zatm.h>
 #include <linux/atm_idt77105.h>
+#include <linux/atmclip.h>
+#include <linux/atmarp.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -261,6 +263,12 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ZATM_SETPOOL),
 	IOCTL(ATM_ADDPARTY),
 	IOCTL(ATM_DROPPARTY),
+	/* Classical IP over ATM and ARP daemon control; all _IO, no arg */
+	IOCTL(SIOCMKCLIP),
+	IOCTL(ATMARPD_CTRL),
+	IOCTL(ATMARP_MKIP),
+	IOCTL(ATMARP_SETENTRY),
+	IOCTL(ATMARP_ENCAP),
 	IOCTL(SONET_GETSTAT),
 	IOCTL(SONET_GETSTATZ),
 	IOCTL(SONET_SETDIAG),
