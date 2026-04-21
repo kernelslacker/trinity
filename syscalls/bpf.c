@@ -490,25 +490,54 @@ static void post_bpf(struct syscallrecord *rec)
 		}
 		break;
 
+	case BPF_MAP_GET_FD_BY_ID:
+		/*
+		 * Looked-up map fd is the same kind of object as one fresh
+		 * from BPF_MAP_CREATE — just sourced via id-lookup against
+		 * the kernel's id table.  Publish into the per-child pool so
+		 * subsequent map-fd consumers (LOOKUP_ELEM, UPDATE_ELEM,
+		 * FREEZE, etc.) can pick it up.  Map type is unknown at this
+		 * point; leaving it as BPF_MAP_TYPE_UNSPEC just makes the
+		 * dump output read "unknown" — no behavioural impact since
+		 * map_type is metadata only.
+		 */
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpfobj.map_fd = fd;
+			obj->bpfobj.map_type = BPF_MAP_TYPE_UNSPEC;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
+		}
+		break;
+
+	case BPF_PROG_GET_FD_BY_ID:
+		/* Same logic as BPF_MAP_GET_FD_BY_ID for prog fds. */
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpfprogobj.fd = fd;
+			obj->bpfprogobj.prog_type = BPF_PROG_TYPE_UNSPEC;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
+		}
+		break;
+
 	default:
 		break;
 	}
 
 	/* Close fds returned by commands not tracked above.  Many BPF
-	 * commands return fds: GET_FD_BY_ID variants, OBJ_GET,
-	 * RAW_TRACEPOINT_OPEN, BTF_LOAD, LINK_CREATE, ENABLE_STATS,
-	 * ITER_CREATE, TOKEN_CREATE.  We can't blindly close on all
-	 * commands because non-fd commands return 0 for success, and
-	 * closing fd 0 would destroy stdin. */
+	 * commands return fds: BTF_GET_FD_BY_ID, LINK_GET_FD_BY_ID,
+	 * OBJ_GET, RAW_TRACEPOINT_OPEN, BTF_LOAD, LINK_CREATE,
+	 * ENABLE_STATS, ITER_CREATE, TOKEN_CREATE.  We can't blindly
+	 * close on all commands because non-fd commands return 0 for
+	 * success, and closing fd 0 would destroy stdin. */
 	if (fd >= 0) {
 		switch (rec->a1) {
 		case BPF_MAP_CREATE:
 		case BPF_PROG_LOAD:
+		case BPF_MAP_GET_FD_BY_ID:
+		case BPF_PROG_GET_FD_BY_ID:
 			/* Already tracked above. */
 			break;
 		case BPF_OBJ_GET:
-		case BPF_PROG_GET_FD_BY_ID:
-		case BPF_MAP_GET_FD_BY_ID:
 		case BPF_BTF_GET_FD_BY_ID:
 		case BPF_LINK_GET_FD_BY_ID:
 		case BPF_RAW_TRACEPOINT_OPEN:
