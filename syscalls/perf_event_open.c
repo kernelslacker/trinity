@@ -1344,7 +1344,18 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	int group_leader=0;
 	void *addr;
 
-	addr = zmalloc(sizeof(struct perf_event_attr));
+	/*
+	 * Allocate generously: random_attr_size() can set attr->size to any
+	 * PERF_ATTR_SIZE_VER constant or to the local sizeof(), and the
+	 * running kernel may know larger sizes than our headers do (newer
+	 * kernels add PERF_ATTR_SIZE_VER<N> with N > our local max).  The
+	 * kernel copies attr->size bytes from this pointer, so under-allocating
+	 * surfaces as an unaddressable read in valgrind / heap corruption in
+	 * production.  1024 bytes covers every plausible future VER value with
+	 * headroom; the rand32()/get_len() cases that exceed this still trip
+	 * -E2BIG in the kernel before any copy happens.
+	 */
+	addr = zmalloc(1024);
 	rec->a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
 
