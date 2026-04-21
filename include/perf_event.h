@@ -250,6 +250,42 @@ enum {
 	PERF_BR_MAX,
 };
 
+/*
+ * Common branch speculation outcome classifications:
+ */
+enum {
+	PERF_BR_SPEC_NA				= 0,	/* Not available */
+	PERF_BR_SPEC_WRONG_PATH			= 1,	/* Speculative but on wrong path */
+	PERF_BR_NON_SPEC_CORRECT_PATH		= 2,	/* Non-speculative but on correct path */
+	PERF_BR_SPEC_CORRECT_PATH		= 3,	/* Speculative and on correct path */
+	PERF_BR_SPEC_MAX,
+};
+
+enum {
+	PERF_BR_NEW_FAULT_ALGN			= 0,	/* Alignment fault */
+	PERF_BR_NEW_FAULT_DATA			= 1,	/* Data fault */
+	PERF_BR_NEW_FAULT_INST			= 2,	/* Inst fault */
+	PERF_BR_NEW_ARCH_1			= 3,	/* Architecture specific */
+	PERF_BR_NEW_ARCH_2			= 4,	/* Architecture specific */
+	PERF_BR_NEW_ARCH_3			= 5,	/* Architecture specific */
+	PERF_BR_NEW_ARCH_4			= 6,	/* Architecture specific */
+	PERF_BR_NEW_ARCH_5			= 7,	/* Architecture specific */
+	PERF_BR_NEW_MAX,
+};
+
+enum {
+	PERF_BR_PRIV_UNKNOWN			= 0,
+	PERF_BR_PRIV_USER			= 1,
+	PERF_BR_PRIV_KERNEL			= 2,
+	PERF_BR_PRIV_HV				= 3,
+};
+
+#define PERF_BR_ARM64_FIQ			PERF_BR_NEW_ARCH_1
+#define PERF_BR_ARM64_DEBUG_HALT		PERF_BR_NEW_ARCH_2
+#define PERF_BR_ARM64_DEBUG_EXIT		PERF_BR_NEW_ARCH_3
+#define PERF_BR_ARM64_DEBUG_INST		PERF_BR_NEW_ARCH_4
+#define PERF_BR_ARM64_DEBUG_DATA		PERF_BR_NEW_ARCH_5
+
 #define PERF_SAMPLE_BRANCH_PLM_ALL \
 	(PERF_SAMPLE_BRANCH_USER|\
 	 PERF_SAMPLE_BRANCH_KERNEL|\
