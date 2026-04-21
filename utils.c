@@ -198,6 +198,157 @@ void free_shared_obj(void *p, size_t size)
 	memset(p, 0, size);
 }
 
+/*
+ * Shared string heap — backing store for string-shaped fields
+ * (filenames, label strings, fixed-size attr buffers) hung off objs
+ * that live in the shared obj heap.
+ *
+ * Same MAP_SHARED-before-fork argument as the obj heap: any obj
+ * struct that is reachable from shm->global_objects[] must point only
+ * at memory that other processes can also reach, and the only way to
+ * satisfy that for allocations made after fork (the regen path) is to
+ * carve out of a region that was already mapped before any child
+ * forked.
+ *
+ * Why a sibling slab instead of reusing the obj heap:
+ *
+ *   The obj heap is sized for ~28k struct objects at ~150 B each; if
+ *   strings shared the cursor, a regen-heavy provider could starve
+ *   future obj allocations and vice versa, with no way for an
+ *   exhaustion message to distinguish "out of obj slots" from "out of
+ *   string slots".  Splitting the cursor (and the backing region)
+ *   keeps each pool's failure mode independent and self-describing.
+ *   The sizing tradeoff is also different: obj structs are uniform,
+ *   strings are variable-length and dominated by short labels, so the
+ *   string pool can be much smaller.
+ *
+ * Capacity (64 KiB):
+ *
+ *   The string-bearing OBJ_GLOBAL providers (file/testfile, perf,
+ *   memfd) hold short payloads — file paths typically under ~100 B,
+ *   memfd labels under ~32 B, perf_event_attr buffers ~120 B (kernel
+ *   caps the attr at PAGE_SIZE but trinity only memcpy's a struct's
+ *   worth back into the obj for replay/dump).  At ~64 B average that
+ *   is ~1k entries; at ~120 B per perf entry it is ~545.  Both
+ *   comfortably exceed GLOBAL_OBJ_MAX_CAPACITY (1024) for the labels
+ *   case and cover hundreds of regens for the perf case.  If long
+ *   fuzz runs show "alloc_shared_str: heap exhausted" the cap can be
+ *   raised — bump-and-leak makes growth the only reasonable answer.
+ *
+ * Why two entry points (alloc_shared_str + alloc_shared_strdup):
+ *
+ *   The eventual callers split cleanly into two shapes:
+ *
+ *     - strdup-style:  init_*_fds() and the .open regen hooks have
+ *       a NUL-terminated source string (filename, label) and want a
+ *       pointer to a stable shm copy of it.  alloc_shared_strdup()
+ *       collapses the strlen+alloc+strcpy sequence at the call site.
+ *
+ *     - empty-buffer:  perf's open_perf_fd() has a fixed-size attr
+ *       struct and just wants raw zeroed bytes to memcpy into.
+ *       alloc_shared_str(sizeof(struct perf_event_attr)) hands back
+ *       exactly that, with no NUL-termination contract.
+ *
+ *   Both share one heap and one free; the strdup variant is a thin
+ *   wrapper around the primitive, not a separate allocator.
+ *
+ * Free strategy:
+ *
+ *   Mirror of free_shared_obj — poison the slot to zeros so a
+ *   use-after-free surfaces as a "" / NUL-byte read rather than a
+ *   live-looking string, and leak the slot (no freelist).  Callers
+ *   pass the original allocation size; for strdup-style strings that
+ *   is strlen(p)+1 at free time, which is correct for a still-NUL-
+ *   terminated string and harmless overshoot if it isn't (the buffer
+ *   was zero-initialised anyway).
+ */
+#define SHARED_STR_HEAP_SIZE (64U * 1024U)
+
+static char *shared_str_heap;
+static size_t shared_str_heap_capacity;
+
+static void shared_str_heap_init(void)
+{
+	/* Same pre-fork-mapping requirement as the obj heap: the first
+	 * caller must run in the parent before any child forks, which
+	 * holds for all current callers (init_*_fds via open_fds()
+	 * before fork_children()). */
+	shared_str_heap_capacity = SHARED_STR_HEAP_SIZE;
+	shared_str_heap = alloc_shared(shared_str_heap_capacity);
+}
+
+void * alloc_shared_str(size_t size)
+{
+	size_t old_used, new_used;
+	void *p;
+
+	if (size == 0)
+		return NULL;
+
+	if (shared_str_heap == NULL)
+		shared_str_heap_init();
+
+	/* Round up so each allocation starts pointer-aligned.  The
+	 * primitive is generic — strings don't need it, but the empty-
+	 * buffer callers (perf_event_attr) do, and one rule keeps the
+	 * accounting simple. */
+	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+
+	/* Lock-free bump via CAS on the shm-resident cursor.  RELAXED
+	 * is sufficient for the same reason as alloc_shared_obj: the
+	 * caller publishes the obj (and therefore the string pointer)
+	 * to consumers via add_object()'s RELEASE store on
+	 * num_entries. */
+	old_used = __atomic_load_n(&shm->shared_str_heap_used,
+				   __ATOMIC_RELAXED);
+	do {
+		new_used = old_used + size;
+		if (new_used > shared_str_heap_capacity) {
+			outputerr("alloc_shared_str: heap exhausted "
+				  "(cap %zu, used %zu, req %zu)\n",
+				  shared_str_heap_capacity, old_used,
+				  size);
+			return NULL;
+		}
+	} while (!__atomic_compare_exchange_n(&shm->shared_str_heap_used,
+					      &old_used, new_used,
+					      false,
+					      __ATOMIC_RELAXED,
+					      __ATOMIC_RELAXED));
+
+	p = shared_str_heap + old_used;
+	memset(p, 0, size);
+	return p;
+}
+
+char * alloc_shared_strdup(const char *src)
+{
+	size_t len;
+	char *dst;
+
+	if (src == NULL)
+		return NULL;
+
+	len = strlen(src) + 1;
+	dst = alloc_shared_str(len);
+	if (dst == NULL)
+		return NULL;
+
+	memcpy(dst, src, len);
+	return dst;
+}
+
+void free_shared_str(void *p, size_t size)
+{
+	if (p == NULL || size == 0)
+		return;
+
+	/* Same poison-and-leak strategy as free_shared_obj — see the
+	 * design note above SHARED_STR_HEAP_SIZE. */
+	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+	memset(p, 0, size);
+}
+
 static bool global_objects_protected;
 
 static void mprotect_global_obj_regions(int prot)

@@ -94,6 +94,15 @@ struct shm_s {
 	 */
 	_Atomic size_t shared_obj_heap_used;
 
+	/*
+	 * Sibling cursor for the shared string heap (see
+	 * alloc_shared_str() in utils.c).  Same shm-cursor argument as
+	 * shared_obj_heap_used; kept in a separate slab so string and
+	 * obj allocations don't crowd each other and so each pool's
+	 * exhaustion message names the right pool.
+	 */
+	_Atomic size_t shared_str_heap_used;
+
 	/* various flags. */
 	enum exit_reasons exit_reason;
 	_Atomic bool dont_make_it_fail;
