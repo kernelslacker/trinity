@@ -90,12 +90,27 @@ static void disable_coredumps(void)
 
 	if (shm->debug == true) {
 		struct sigaction sa;
+		struct rlimit unlim = {
+			.rlim_cur = RLIM_INFINITY,
+			.rlim_max = RLIM_INFINITY
+		};
 
 		sa.sa_handler = SIG_DFL;
 		sa.sa_flags = 0;
 		sigemptyset(&sa.sa_mask);
 		(void)sigaction(SIGABRT, &sa, NULL);
 		(void)sigaction(SIGSEGV, &sa, NULL);
+
+		/*
+		 * Force core dumps on regardless of inherited RLIMIT_CORE.
+		 * Without this, a parent shell with the typical `ulimit -c 0`
+		 * silently propagates to children — segfaults appear in dmesg
+		 * (which always logs SIGSEGV) but no core file lands, defeating
+		 * the whole point of -D for post-mortem debugging.
+		 */
+		if (setrlimit(RLIMIT_CORE, &unlim) != 0)
+			perror("setrlimit(RLIMIT_CORE)");
+		prctl(PR_SET_DUMPABLE, true);
 		return;
 	}
 
