@@ -70,10 +70,19 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	{
 		unsigned long f = (unsigned long)args->flags;
 
-		enforce_clone_flag_deps(&f);
+		enforce_clone_flag_deps(&f, false);
 		args->flags = f;
 	}
 	args->exit_signal = rand() % _NSIG;
+
+	/*
+	 * clone3_args_valid() rejects a non-zero exit_signal when
+	 * CLONE_THREAD or CLONE_PARENT is set. Force it to zero so
+	 * the call reaches copy_process() instead of bouncing at the
+	 * argument validator.
+	 */
+	if (args->flags & (CLONE_THREAD | CLONE_PARENT))
+		args->exit_signal = 0;
 
 	if (args->flags & CLONE_VM) {
 		void *stack = get_writable_address(page_size);
