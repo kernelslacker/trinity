@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
+#include "child.h"
+#include "fd-event.h"
 #include "maps.h"
 #include "objects.h"
 #include "perf.h"
@@ -1447,6 +1449,15 @@ static void post_perf_event_open(struct syscallrecord *rec)
 	int fd = rec->retval;
 
 	if (fd != -1) {
+		struct childdata *child = this_child();
+
+		/* Notify the parent so it can remove this fd from the object
+		 * pool.  remove_object_by_fd() is a no-op in child context. */
+		if (child != NULL && child->fd_event_ring != NULL)
+			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
+					 fd, -1, 0, 0, 0);
+
+		/* Parent-side path (no-op in children). */
 		remove_object_by_fd(fd);
 		close(fd);
 	}
