@@ -17,6 +17,7 @@
 #include "pids.h"
 #include "shm.h"
 #include "syscall.h"
+#include "tables.h"
 #include "trinity.h"
 #include "version.h"
 
@@ -92,8 +93,11 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 
 void dump_syscallrec(struct syscallrecord *rec)
 {
-	output(0, " nr:%d a1:%lx a2:%lx a3:%lx a4:%lx a5:%lx a6:%lx retval:%ld errno_post:%d\n",
-		rec->nr, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6, rec->retval, rec->errno_post);
+	struct syscallentry *entry = get_syscall_entry(rec->nr, rec->do32bit);
+	const char *name = entry ? entry->name : "?";
+
+	output(0, " nr:%d (%s) a1:%lx a2:%lx a3:%lx a4:%lx a5:%lx a6:%lx retval:%ld errno_post:%d\n",
+		rec->nr, name, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6, rec->retval, rec->errno_post);
 	output(0, " do32bit:%d\n", rec->do32bit);
 	output(0, " lock:%d (owner:%d)\n", LOCK_STATE(rec->lock.state), LOCK_OWNER(rec->lock.state));
 	output(0, " state:%d\n", rec->state);
