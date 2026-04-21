@@ -66,6 +66,29 @@ static void sanitise_snd_hwdep(struct syscallrecord *rec)
 	}
 }
 
+static void sanitise_snd_hda_verb(struct syscallrecord *rec)
+{
+	struct hda_verb_ioctl *v;
+	unsigned int nid, verb, param;
+
+	switch (rec->a2) {
+	case HDA_IOCTL_VERB_WRITE:
+	case HDA_IOCTL_GET_WCAP:
+		v = get_writable_struct(sizeof(*v));
+		if (!v)
+			break;
+		/* nid in the top byte; verb in bits 8-23; param in low byte. */
+		nid = rand() & 0xff;
+		verb = rand() & 0xffff;
+		param = rand() & 0xff;
+		v->verb = (nid << 24) | (verb << 8) | param;
+		rec->a3 = (unsigned long) v;
+		break;
+	default:
+		break;
+	}
+}
+
 static void fill_snd_ctl_elem_id(struct snd_ctl_elem_id *id)
 {
 	id->numid = RAND_BOOL() ? 0 : rand() % 64;
@@ -772,6 +795,12 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_HWDEP_IOCTL_DSP_STATUS:
 	case SNDRV_HWDEP_IOCTL_DSP_LOAD:
 		sanitise_snd_hwdep(rec);
+		break;
+
+	/* snd-hda-codec hwdep verb interface */
+	case HDA_IOCTL_VERB_WRITE:
+	case HDA_IOCTL_GET_WCAP:
+		sanitise_snd_hda_verb(rec);
 		break;
 
 	/* snd-control */
