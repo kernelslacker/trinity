@@ -11,8 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "fd.h"
-/* Defined in fds/sockets.c */
-struct object *add_socket(int fd, unsigned int family, unsigned int type, unsigned int protocol);
 #include "fd-event.h"
 #include "locks.h"
 #include "objects.h"
