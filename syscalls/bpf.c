@@ -27,6 +27,10 @@ static __u32 get_kern_version(void)
 	return KERNEL_VERSION(major, minor, patch);
 }
 
+static const char *const bpf_raw_tp_names[] = {
+	"sys_enter", "sys_exit", "sched_switch", "sched_wakeup", "task_newtask",
+};
+
 static unsigned long bpf_prog_types[] = {
 	BPF_PROG_TYPE_UNSPEC,
 	BPF_PROG_TYPE_SOCKET_FILTER,
@@ -442,6 +446,12 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->prog_bind_map.map_fd = get_rand_bpf_fd();
 		attr->prog_bind_map.flags = 0;
 		rec->a3 = sizeof(attr->prog_bind_map);
+		break;
+
+	case BPF_RAW_TRACEPOINT_OPEN:
+		attr->raw_tracepoint.prog_fd = get_rand_bpf_prog_fd();
+		attr->raw_tracepoint.name = (u64) RAND_ARRAY(bpf_raw_tp_names);
+		rec->a3 = sizeof(attr->raw_tracepoint);
 		break;
 
 	default:
