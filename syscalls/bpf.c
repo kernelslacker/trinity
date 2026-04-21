@@ -387,21 +387,24 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		/*
 		 * The kernel dispatches to a different obj_get_info_by_fd
 		 * implementation per fd type (map / prog / btf / link), each
-		 * with its own info struct layout and copy-out path.  Coin-flip
-		 * between the map and prog pools so both kernel paths get
-		 * exercised; fall back to whichever pool is non-empty.  btf
-		 * and link fd providers don't exist yet (future work).
+		 * with its own info struct layout and copy-out path.  Pick
+		 * one of the four pools at random, then fall through to any
+		 * other non-empty pool so we still produce an fd when the
+		 * preferred pool is empty.  All four fd kinds get coverage
+		 * once the link / btf pools start filling from the syscall
+		 * fuzz path.
 		 */
-		int fd;
+		int fd = -1;
+		unsigned int start = rand() % 4;
+		unsigned int i;
 
-		if (RAND_BOOL()) {
-			fd = get_rand_bpf_prog_fd();
-			if (fd == -1)
-				fd = get_rand_bpf_fd();
-		} else {
-			fd = get_rand_bpf_fd();
-			if (fd == -1)
-				fd = get_rand_bpf_prog_fd();
+		for (i = 0; i < 4 && fd == -1; i++) {
+			switch ((start + i) % 4) {
+			case 0: fd = get_rand_bpf_prog_fd(); break;
+			case 1: fd = get_rand_bpf_fd(); break;
+			case 2: fd = get_rand_bpf_link_fd(); break;
+			case 3: fd = get_rand_bpf_btf_fd(); break;
+			}
 		}
 		attr->info.bpf_fd = fd;
 		attr->info.info_len = rand() % page_size;
@@ -549,14 +552,31 @@ static void post_bpf(struct syscallrecord *rec)
 		}
 		break;
 
+	case BPF_BTF_LOAD:
+	case BPF_BTF_GET_FD_BY_ID:
+		/*
+		 * BTF fd, either freshly parsed from a (typically malformed)
+		 * BTF blob or sourced via id-lookup against the kernel's btf
+		 * id table.  Feed the per-child BTF pool so the BTF-specific
+		 * dispatch in BPF_OBJ_GET_INFO_BY_FD has fds to operate on.
+		 */
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpfbtfobj.fd = fd;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_BTF);
+		}
+		break;
+
 	default:
 		break;
 	}
 
-	/* Close fds returned by commands not tracked above.  Many BPF
-	 * commands return fds: BTF_GET_FD_BY_ID, OBJ_GET,
-	 * RAW_TRACEPOINT_OPEN, BTF_LOAD, ENABLE_STATS, ITER_CREATE,
-	 * TOKEN_CREATE.  We can't blindly close on all commands because
+	/* Close fds returned by commands not tracked above.  The
+	 * remaining commands that can return an fd are OBJ_GET,
+	 * RAW_TRACEPOINT_OPEN, ENABLE_STATS, ITER_CREATE, and
+	 * TOKEN_CREATE — none of them produce a kind of fd that fits
+	 * one of our pools, so they get closed immediately to avoid
+	 * leaking.  We can't blindly close on all commands because
 	 * non-fd commands return 0 for success, and closing fd 0 would
 	 * destroy stdin. */
 	if (fd >= 0) {
@@ -567,12 +587,12 @@ static void post_bpf(struct syscallrecord *rec)
 		case BPF_PROG_GET_FD_BY_ID:
 		case BPF_LINK_CREATE:
 		case BPF_LINK_GET_FD_BY_ID:
+		case BPF_BTF_LOAD:
+		case BPF_BTF_GET_FD_BY_ID:
 			/* Already tracked above. */
 			break;
 		case BPF_OBJ_GET:
-		case BPF_BTF_GET_FD_BY_ID:
 		case BPF_RAW_TRACEPOINT_OPEN:
-		case BPF_BTF_LOAD:
 		case BPF_ENABLE_STATS:
 		case BPF_ITER_CREATE:
 		case BPF_TOKEN_CREATE:
