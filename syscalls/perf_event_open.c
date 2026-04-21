@@ -1345,17 +1345,17 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	void *addr;
 
 	/*
-	 * Allocate generously: random_attr_size() can set attr->size to any
-	 * PERF_ATTR_SIZE_VER constant or to the local sizeof(), and the
-	 * running kernel may know larger sizes than our headers do (newer
-	 * kernels add PERF_ATTR_SIZE_VER<N> with N > our local max).  The
-	 * kernel copies attr->size bytes from this pointer, so under-allocating
-	 * surfaces as an unaddressable read in valgrind / heap corruption in
-	 * production.  1024 bytes covers every plausible future VER value with
-	 * headroom; the rand32()/get_len() cases that exceed this still trip
-	 * -E2BIG in the kernel before any copy happens.
+	 * Allocate PAGE_SIZE: random_attr_size() can set attr->size to any
+	 * PERF_ATTR_SIZE_VER constant, sizeof(struct perf_event_attr),
+	 * rand32(), or get_len().  The kernel's perf_copy_attr() rejects
+	 * size > PAGE_SIZE with -E2BIG, but happily copies any value up to
+	 * and including PAGE_SIZE bytes from this pointer.  Smaller
+	 * allocations under-feed copy_struct_from_user() and surface as
+	 * unaddressable reads in valgrind / heap corruption in production.
+	 * PAGE_SIZE matches the kernel's own upper bound, so any size the
+	 * kernel will actually try to copy stays within our buffer.
 	 */
-	addr = zmalloc(1024);
+	addr = zmalloc(page_size);
 	rec->a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
 
