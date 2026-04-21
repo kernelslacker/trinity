@@ -8,10 +8,12 @@
 #include <sys/inotify.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 
 static const char *watch_paths[] = {
 	"/tmp", "/proc", "/sys", "/dev", "/dev/shm",
@@ -50,6 +52,15 @@ static void inotify_destructor(struct object *obj)
 	close(obj->inotifyobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->inotifyobj fields (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj — which
+ * matters because head->dump runs from dump_childdata() in the
+ * parent's crash diagnostics path even when a child triggered the
+ * crash.
+ */
 static void inotify_dump(struct object *obj, enum obj_scope scope)
 {
 	struct inotifyobj *io = &obj->inotifyobj;
@@ -73,6 +84,14 @@ static int init_inotify_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_INOTIFY);
 	head->destroy = &inotify_destructor;
 	head->dump = &inotify_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  inotifyobj is {int fd; int flags;}
+	 * with no pointer members, so this is a mechanical conversion that
+	 * matches the pidfd template exactly.
+	 */
+	head->shared_alloc = true;
 
 	fd = inotify_init();
 	if (fd < 0)
@@ -82,7 +101,12 @@ static int init_inotify_fds(void)
 
 	arm_inotify(fd);
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = 0;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
@@ -94,7 +118,12 @@ static int init_inotify_fds(void)
 
 		arm_inotify(fd);
 
-		obj = alloc_object();
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL) {
+			close(fd);
+			continue;
+		}
+		INIT_LIST_HEAD(&obj->list);
 		obj->inotifyobj.fd = fd;
 		obj->inotifyobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
@@ -132,7 +161,12 @@ static int open_inotify_fd(void)
 
 	arm_inotify(fd);
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
