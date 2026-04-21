@@ -8,10 +8,12 @@
 #include <sys/eventfd.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 #include "compat.h"
 
 static void eventfd_destructor(struct object *obj)
@@ -19,6 +21,15 @@ static void eventfd_destructor(struct object *obj)
 	close(obj->eventfdobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->eventfdobj fields (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj — which
+ * matters because head->dump runs from dump_childdata() in the
+ * parent's crash diagnostics path even when a child triggered the
+ * crash.
+ */
 static void eventfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct eventfdobj *eo = &obj->eventfdobj;
@@ -45,6 +56,7 @@ static int init_eventfd_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EVENTFD);
 	head->destroy = &eventfd_destructor;
 	head->dump = &eventfd_dump;
+	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
@@ -55,7 +67,12 @@ static int init_eventfd_fds(void)
 		if (fd < 0)
 			continue;
 
-		obj = alloc_object();
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL) {
+			close(fd);
+			return false;
+		}
+		INIT_LIST_HEAD(&obj->list);
 		obj->eventfdobj.fd = fd;
 		obj->eventfdobj.count = count;
 		obj->eventfdobj.flags = flags[i];
@@ -95,7 +112,12 @@ static int open_eventfd_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->eventfdobj.fd = fd;
 	obj->eventfdobj.count = count;
 	obj->eventfdobj.flags = flags;
