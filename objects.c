@@ -294,16 +294,35 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	head->array[head->num_entries] = obj;
 	obj->array_idx = head->num_entries;
 
-	head->num_entries++;
+	/*
+	 * RELEASE-publish the new count so a child doing a lockless
+	 * ACQUIRE-load in get_random_object() that sees count=N+1 also
+	 * sees the array[N] = obj write that preceded it.  For OBJ_LOCAL
+	 * the pool is per-child private, so a plain store suffices.
+	 */
+	if (scope == OBJ_GLOBAL)
+		__atomic_store_n(&head->num_entries, head->num_entries + 1,
+				 __ATOMIC_RELEASE);
+	else
+		head->num_entries++;
 
 	/* Track global fd-type objects in the hash table */
 	if (scope == OBJ_GLOBAL && is_fd_type(type)) {
 		int fd = fd_from_object(obj, type);
 		if (!fd_hash_insert(fd, obj, type)) {
+			unsigned int rollback = head->num_entries - 1;
+
 			outputerr("add_object: fd hash full for type %u, dropping fd %d\n",
 				  type, fd);
-			head->num_entries--;
-			head->array[head->num_entries] = NULL;
+			/*
+			 * Drop the count first so a concurrent lockless child
+			 * read picking up the new snapshot sees the lower
+			 * count and won't index past the (about-to-be-NULLed)
+			 * tail slot.  RELEASE pairs with the child's ACQUIRE.
+			 */
+			__atomic_store_n(&head->num_entries, rollback,
+					 __ATOMIC_RELEASE);
+			head->array[rollback] = NULL;
 			list_del(&obj->list);
 			if (fd >= 0)
 				close(fd);
@@ -388,15 +407,75 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 	}
 }
 
+/*
+ * Pick a random object from a pool.
+ *
+ * Lockless child read path (OBJ_GLOBAL):
+ *   Children must NOT take shm->objlock here.  Doing so deadlocks the
+ *   fleet whenever a child is killed mid-syscall while holding objlock —
+ *   the parent's reaper then blocks forever waiting for the dead child
+ *   to release a lock it can never release.  The defensive pid_alive()
+ *   bypass added in e4e32ff0 (zombie pid_alive) papered over one
+ *   instance of this; eliminating the lock acquisition on the child
+ *   read path closes the whole class.  Audit (task 4LSD-ae2QTmkKyPKHPo7hQ)
+ *   identified 23 HIGH sites where children reach this lock; this fix
+ *   collapses the entire category-A cluster (get_random_object on the
+ *   syscall arg-pickers' hot path).
+ *
+ * Memory ordering:
+ *   The child snapshots head->num_entries with __ATOMIC_ACQUIRE,
+ *   pairing with the parent mutators (add_object, __destroy_object)
+ *   that publish updates with __ATOMIC_RELEASE.  Acquire/release
+ *   guarantees that if the child observes count = N+1, it also
+ *   observes the parent's array[N] = obj store that preceded the
+ *   count bump.  Without this pairing, a child could pick an index
+ *   into a slot whose backing store hadn't yet propagated.
+ *   Modeled on fd_hash_lookup() (objects.c:159) which uses the same
+ *   pattern for the parallel fd hash table.
+ *
+ * Worst-case race:
+ *   The child reads array[idx] without taking objlock, so it can read
+ *   a stale pointer that the parent is concurrently overwriting (swap-
+ *   with-last in __destroy_object) or whose target object the parent
+ *   has just free()d.  This is the SAME failure mode as the existing
+ *   "OBJ_GLOBAL objects allocated in parent heap break for children"
+ *   problem tracked in trinity-todo.md (item: OBJ_GLOBAL pool entries
+ *   allocated in parent heap break for children) — the structural fix
+ *   is to allocate the struct objects themselves in shared memory.
+ *   Until that lands, the caller validates the returned pointer and
+ *   the catch-all sighandler turns any raw deref crash into _exit;
+ *   we are NOT making it worse, only widening an existing window.
+ *
+ * Why lockless is safe enough:
+ *   1. Parent mutators run while shm->global_objects is mprotect-thawed
+ *      and re-freeze on completion — the array memory itself isn't
+ *      remapped or relocated under the child (capacity is fixed at
+ *      init, GLOBAL_OBJ_MAX_CAPACITY).
+ *   2. ACQUIRE/RELEASE on num_entries gives a consistent (count, slots)
+ *      pair w.r.t. the most recent publish.
+ *   3. The remaining race (stale array[idx] pointer) is upper-bounded
+ *      by the OBJ_GLOBAL-in-parent-heap problem and addressed by the
+ *      separately-tracked structural fix.
+ */
 struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
 	struct object *obj;
 
+	head = get_objhead(scope, type);
+
+	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
+		unsigned int snapshot;
+
+		snapshot = __atomic_load_n(&head->num_entries,
+					   __ATOMIC_ACQUIRE);
+		if (snapshot == 0)
+			return NULL;
+		return head->array[rand() % snapshot];
+	}
+
 	if (scope == OBJ_GLOBAL)
 		lock(&shm->objlock);
-
-	head = get_objhead(scope, type);
 
 	if (head->num_entries == 0)
 		obj = NULL;
@@ -480,7 +559,19 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	}
 	head->array[last] = NULL;
 
-	head->num_entries--;
+	/*
+	 * Publish the new count with RELEASE semantics so a concurrent
+	 * lockless child read in get_random_object() that observes the
+	 * shrunk count cannot also observe an inconsistent earlier state
+	 * of the array slots.  See the design comment above
+	 * get_random_object().  __prune_objects(OBJ_GLOBAL) is currently
+	 * disabled but routes through here, so this also covers it
+	 * defensively.
+	 */
+	if (scope == OBJ_GLOBAL)
+		__atomic_store_n(&head->num_entries, last, __ATOMIC_RELEASE);
+	else
+		head->num_entries--;
 
 	/* Remove from fd hash table */
 	if (scope == OBJ_GLOBAL && is_fd_type(type))
