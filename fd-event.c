@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "fd.h"
+/* Defined in fds/sockets.c */
+struct object *add_socket(int fd, unsigned int family, unsigned int type, unsigned int protocol);
 #include "fd-event.h"
 #include "locks.h"
 #include "objects.h"
@@ -34,7 +36,8 @@ void fd_event_ring_init(struct fd_event_ring *ring)
 bool fd_event_enqueue(struct fd_event_ring *ring,
 		      enum fd_event_type type,
 		      int fd1, int fd2,
-		      enum objecttype objtype)
+		      enum objecttype objtype,
+		      unsigned int socktype, unsigned int protocol)
 {
 	uint32_t head, tail, next;
 
@@ -55,6 +58,8 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 	ring->events[head].fd1 = fd1;
 	ring->events[head].fd2 = fd2;
 	ring->events[head].objtype = objtype;
+	ring->events[head].socktype = socktype;
+	ring->events[head].protocol = protocol;
 
 	/* Ensure the event data is visible before advancing head. */
 	atomic_store_explicit(&ring->head, next, memory_order_release);
@@ -102,6 +107,10 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 				&shm->fd_regen_pending[ev->objtype], 0,
 				memory_order_relaxed);
 			try_regenerate_fd(ev->objtype);
+			break;
+		case FD_EVENT_NEWSOCK:
+			add_socket(ev->fd1, (unsigned int)ev->fd2,
+				   ev->socktype, ev->protocol);
 			break;
 		}
 

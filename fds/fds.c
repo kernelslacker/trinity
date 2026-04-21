@@ -270,7 +270,7 @@ static void request_fd_regen(enum objecttype type)
 		return;
 
 	if (!fd_event_enqueue(child->fd_event_ring, FD_EVENT_REGEN_REQUEST,
-			      -1, -1, type)) {
+			      -1, -1, type, 0, 0)) {
 		/* Ring overflow — drop the rate-limit so the next caller
 		 * gets to retry instead of permanently muting this type. */
 		atomic_store_explicit(&shm->fd_regen_pending[type], 0,

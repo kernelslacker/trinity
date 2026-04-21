@@ -83,7 +83,7 @@ static void post_dup2(struct syscallrecord *rec)
 	child = this_child();
 	if (child != NULL && child->fd_event_ring != NULL)
 		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-				 (int) rec->a2, -1, 0);
+				 (int) rec->a2, -1, 0, 0, 0);
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 

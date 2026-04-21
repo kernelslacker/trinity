@@ -7,8 +7,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include "child.h"
 #include "debug.h"
 #include "domains.h"
+#include "fd-event.h"
 #include "net.h"
 #include "objects.h"
 #include "params.h"	// verbosity, do_specific_domain
@@ -57,7 +59,7 @@ retry:
 		free((void *) so->optval);
 }
 
-static struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol)
+struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	struct object *obj;
 
@@ -381,8 +383,12 @@ static void socket_child_ops(void)
 
 	afd = accept4(fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
 	if (afd != -1) {
-		if (!add_socket(afd, si->triplet.family,
-				si->triplet.type, si->triplet.protocol))
+		struct childdata *child = this_child();
+
+		if (child == NULL || child->fd_event_ring == NULL ||
+		    !fd_event_enqueue(child->fd_event_ring, FD_EVENT_NEWSOCK,
+				      afd, (int)si->triplet.family, 0,
+				      si->triplet.type, si->triplet.protocol))
 			close(afd);
 	}
 

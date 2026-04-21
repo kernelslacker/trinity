@@ -598,7 +598,7 @@ static void handle_alarm_timeout(struct childdata *child)
 
 		if (child->fd_event_ring != NULL)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 (int) rec->a1, -1, 0);
+					 (int) rec->a1, -1, 0, 0, 0);
 	}
 }
 
