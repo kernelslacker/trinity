@@ -1,5 +1,6 @@
 /* trinity ioctl() support routines */
 
+#include <linux/ioctl.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -138,24 +139,81 @@ static unsigned long random_ioctl_arg(void)
 	}
 }
 
+/*
+ * Pick an arg shape for the given ioctl request based on the
+ * _IOC_DIR / _IOC_SIZE fields baked into the request number.  Any
+ * ioctl defined via _IO()/_IOR()/_IOW()/_IOWR() (the bulk of trinity's
+ * tables — V4L2, btrfs, binder, DRM, vhost, ...) carries enough
+ * information here to choose between a scalar and a properly-sized
+ * pointer, which is most of what the kernel checks before dispatching
+ * into real handler logic.
+ *
+ * Legacy raw-constant ioctls (TCGETS-style 0x5401, sockios, ...) do
+ * not encode anything reliable: their _IOC_TYPE may collide with an
+ * ASCII char, their _IOC_SIZE bits are part of the magic number, and
+ * their _IOC_DIR bits are typically zero.  We catch the obvious case
+ * (_IOC_TYPE == 0) and defer to the historical coin flip; the rest
+ * land in the dir==NONE branch and get handed a scalar, which matches
+ * one of the two outcomes the old generator already produced.  An
+ * EFAULT-probe pass is the proper fix for the legacy surface and is
+ * tracked as a separate change.
+ */
+static unsigned long ioctl_arg_for_request(unsigned int request)
+{
+	unsigned int dir, size;
+	void *buf;
+
+	if (_IOC_TYPE(request) == 0)
+		return random_ioctl_arg();
+
+	dir = _IOC_DIR(request);
+	if (dir == _IOC_NONE)
+		return (unsigned long) rand64();
+
+	size = _IOC_SIZE(request);
+	if (size == 0 || size > page_size)
+		size = page_size;
+
+	buf = get_writable_address(size);
+	if (buf == NULL)
+		return random_ioctl_arg();
+
+	/*
+	 * _IOC_WRITE means userland writes / kernel reads (the _IOW and
+	 * _IOWR families).  Without meaningful contents the kernel
+	 * usually rejects on first-field validation, so seed the buffer
+	 * with random bytes.  Pure _IOC_READ ioctls have the kernel
+	 * writing back into the buffer — we just needed a writable
+	 * destination address.
+	 */
+	if (dir & _IOC_WRITE)
+		generate_rand_bytes((unsigned char *) buf, size);
+
+	return (unsigned long) buf;
+}
+
 void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	int ioctlnr;
+	unsigned int request;
 
 	ioctlnr = rand() % grp->ioctls_cnt;
+	request = grp->ioctls[ioctlnr].request;
 
-	rec->a2 = grp->ioctls[ioctlnr].request;
-	rec->a3 = random_ioctl_arg();
+	rec->a2 = request;
+	rec->a3 = ioctl_arg_for_request(request);
 	rec->a4 = random_ioctl_arg();
 	rec->a5 = random_ioctl_arg();
 	rec->a6 = random_ioctl_arg();
 
-	/* random_ioctl_arg() returns rand64() half the time; many ioctl
-	 * requests treat the arg as a writable user pointer (_IOR / _IOWR).
-	 * If a fuzzed arg overlapped one of trinity's alloc_shared regions
-	 * the kernel would scribble its result over our bookkeeping.  We
-	 * don't decode the request to know which slot is the buffer, so
-	 * defensively scrub all four. */
+	/*
+	 * a3 is the real ioctl arg.  ioctl_arg_for_request() draws from
+	 * get_writable_address() which already steers around shared
+	 * regions, but keep the defensive scrub so a future refactor
+	 * can't quietly expose trinity bookkeeping to a kernel writeback.
+	 * a4..a6 still come from the unconstrained generator and need
+	 * the scrub directly.
+	 */
 	avoid_shared_buffer(&rec->a3, page_size);
 	avoid_shared_buffer(&rec->a4, page_size);
 	avoid_shared_buffer(&rec->a5, page_size);
