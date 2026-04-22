@@ -515,9 +515,30 @@ static void shared_str_heap_init(void)
 	/* Same pre-fork-mapping requirement as the obj heap: the first
 	 * caller must run in the parent before any child forks, which
 	 * holds for all current callers (init_*_fds via open_fds()
-	 * before fork_children()). */
+	 * before fork_children()).
+	 *
+	 * Tagged is_global_obj=true so freeze_global_objects() mprotects
+	 * the region PROT_READ once init is done.  Same defence as the
+	 * obj heap (commit fbce60744dfb): a child syscall whose user-
+	 * pointer arg aliases into a slot here would otherwise let the
+	 * kernel scribble through it and silently corrupt a name string,
+	 * a perf_event_attr replay buffer, or an OBJ_MMAP_ANON map name —
+	 * surfacing later as a libc string-fn SEGV in the parent's dump
+	 * path or as a perf_event_open EINVAL once the cached eventattr
+	 * stops parsing.  The freeze closes that wild-write surface.
+	 *
+	 * Parent-side writers (alloc_shared_str, alloc_shared_strdup,
+	 * free_shared_str, plus caller snprintf/memcpy into freshly-
+	 * allocated slots) all run from the same paths the obj heap
+	 * commit already covered: pre-freeze init_*_fds(), and post-
+	 * freeze regen via try_regenerate_fd() inside fd_event_drain_all
+	 * or remove_object_by_fd's outer thaw bracket.  No new brackets
+	 * needed — every existing alloc_shared_strdup site is paired
+	 * with an alloc_shared_obj() in the same function, and those
+	 * sites are exactly the ones the obj heap freeze already
+	 * established as safe. */
 	shared_str_heap_capacity = SHARED_STR_HEAP_SIZE;
-	shared_str_heap = alloc_shared(shared_str_heap_capacity);
+	shared_str_heap = alloc_shared_global(shared_str_heap_capacity);
 }
 
 void * alloc_shared_str(size_t size)
