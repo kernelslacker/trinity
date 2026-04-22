@@ -37,6 +37,9 @@ LDFLAGS += -rdynamic
 # barrier_racer uses process-shared pthread barriers
 LDLIBS += -lpthread
 
+# pc_format.c uses dladdr() to resolve PIE-relative offsets
+LDLIBS += -ldl
+
 # gcc only.
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op
