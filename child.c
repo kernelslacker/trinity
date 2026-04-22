@@ -390,6 +390,15 @@ static void init_child(struct childdata *child, int childno)
 			close(devnull);
 	}
 
+	/* Detach from the controlling terminal so a fuzzed
+	 * open("/dev/tty", O_WRONLY) followed by write() can't reach the
+	 * operator's shell.  The dup2 above only covers fds 0/1/2; this
+	 * closes the wider class of paths that re-acquire the tty (open of
+	 * /dev/tty itself, ioctl(TIOCSCTTY), etc.).  setsid() makes us our
+	 * own session leader without a controlling terminal — subsequent
+	 * /dev/tty opens fail with ENXIO. */
+	(void) setsid();
+
 	/* Re-set num from the stack-based childno in case shared memory
 	 * was corrupted by a sibling's stray write. */
 	child->num = childno;
