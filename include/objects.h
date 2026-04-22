@@ -252,6 +252,7 @@ void register_global_obj_init(struct global_obj_entry *entry);
 void init_global_objects(void);
 struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
+void validate_global_object_lists(void);
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 bool objects_empty(enum objecttype type);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);

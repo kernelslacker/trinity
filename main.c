@@ -16,6 +16,7 @@
 #include "debug.h"
 #include "fd-event.h"
 #include "kcov.h"
+#include "objects.h"
 #include "params.h"
 #include "pids.h"
 #include "post-mortem.h"
@@ -1112,9 +1113,19 @@ void main_loop(void)
 	output(1, "phase: fork_children\n");
 	fork_children();
 
+	unsigned int main_loop_iter = 0;
+
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 
 		handle_children();
+
+		/* Periodic global-list sanity walk under -vv.  Catches
+		 * obj-heap corruption at the next idle pass instead of
+		 * waiting for the next list_add/list_del to fault.  Gated
+		 * tightly because the walk traverses every entry of every
+		 * global obj list on every fire. */
+		if (verbosity > 2 && (++main_loop_iter % 1000) == 0)
+			validate_global_object_lists();
 
 		/* Drain fd events from all children's ring buffers.
 		 * This processes dup/close events that children couldn't
