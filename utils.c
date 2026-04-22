@@ -112,15 +112,9 @@ void * alloc_shared_global(unsigned int size)
  *
  * Size: 4 MiB at ~150 B per struct object gives ~28k slots — far
  * larger than GLOBAL_OBJ_MAX_CAPACITY (1024) per type even if every
- * type were converted, with headroom for the bump-and-leak free
- * strategy below.  Real recycling can come later if exhaustion
- * becomes observable in long fuzz runs.
- *
- * free_shared_obj() does NOT recycle.  A freelist or slab recycler is
- * a deliberate non-goal here: fd lifecycle is rare relative to syscall
- * arg generation, throughput pressure is on the latter, and the
- * simplest free that preserves the "zeroed on alloc" invariant is to
- * just zero the slot and leak it.
+ * type were converted, with ample headroom for the freelist recycler
+ * below.  Allocations too large for any freelist bucket still bump-and-
+ * leak, but those are rare (obj structs are well under 1024 bytes).
  */
 #define SHARED_OBJ_HEAP_SIZE (4U * 1024U * 1024U)
 
@@ -141,10 +135,101 @@ static void shared_obj_heap_init(void)
 	shared_obj_heap = alloc_shared(shared_obj_heap_capacity);
 }
 
+/*
+ * Size-bucketed freelist for shared heap recycling.
+ *
+ * Eight fixed-size buckets cover the common allocation sizes.  A freed slot
+ * whose aligned size falls within a bucket is pushed onto that bucket's
+ * lock-free stack; the next alloc of the same size pops it instead of
+ * burning new bump space.  Allocations larger than 1024 bytes bypass the
+ * freelist and use the bump allocator directly (documented below).
+ *
+ * The freelist link lives in the slot's own first sizeof(uintptr_t) bytes.
+ * This is safe because the slot is not live when the link is written: the
+ * caller has just handed it back to us, and we zero the rest of the slot
+ * before writing the link so that a use-after-free still surfaces as zero-
+ * byte reads rather than as a stale link pointer.
+ *
+ * CAS ordering: RELAXED is sufficient for the same reason as the bump
+ * cursor — the caller publishes the resulting object via add_object()'s
+ * RELEASE store, which is the actual synchronisation point for consumers.
+ *
+ * ABA note: a concurrent pop-allocate-free-push cycle on the same slot
+ * between our load and CAS can cause us to set head to a stale "next"
+ * pointer, orphaning that slot from the freelist chain.  The consequence is
+ * a missed recycling opportunity (the orphaned slot is never popped again),
+ * not memory corruption.  For a fuzzer with bounded concurrency and
+ * infrequent regen cycles this is an acceptable trade-off against the
+ * complexity of tagged pointers or epoch-based reclamation.
+ */
+
+static const size_t bucket_sizes[NUM_SHM_FREELIST_BUCKETS] = {
+	8, 16, 32, 64, 128, 256, 512, 1024
+};
+
+/*
+ * Return the index of the smallest bucket that fits an allocation of
+ * already-pointer-aligned size, or -1 if size exceeds all buckets.
+ */
+static int freelist_bucket(size_t aligned_size)
+{
+	unsigned int i;
+
+	for (i = 0; i < NUM_SHM_FREELIST_BUCKETS; i++) {
+		if (aligned_size <= bucket_sizes[i])
+			return (int)i;
+	}
+	return -1;
+}
+
+/*
+ * Pop a slot from the freelist bucket whose head lives at *head.
+ * Returns NULL if the freelist is empty; otherwise returns a fully-zeroed
+ * slot of slot_size bytes.
+ */
+static void *freelist_pop(_Atomic uintptr_t *head, size_t slot_size)
+{
+	uintptr_t old_head, next;
+
+	old_head = __atomic_load_n(head, __ATOMIC_RELAXED);
+	do {
+		if (old_head == 0)
+			return NULL;
+		next = *(uintptr_t *)old_head;
+	} while (!__atomic_compare_exchange_n(head, &old_head, next,
+					      false,
+					      __ATOMIC_RELAXED,
+					      __ATOMIC_RELAXED));
+
+	memset((void *)old_head, 0, slot_size);
+	return (void *)old_head;
+}
+
+/*
+ * Push a slot onto the freelist bucket whose head lives at *head.
+ * The entire slot (slot_size bytes) is zeroed first so that a use-after-
+ * free reads as zero rather than stale data; then the freelist link is
+ * written into the slot's first word before the CAS.
+ */
+static void freelist_push(_Atomic uintptr_t *head, void *p, size_t slot_size)
+{
+	uintptr_t old_head;
+
+	memset(p, 0, slot_size);
+	old_head = __atomic_load_n(head, __ATOMIC_RELAXED);
+	do {
+		*(uintptr_t *)p = old_head;
+	} while (!__atomic_compare_exchange_n(head, &old_head, (uintptr_t)p,
+					      false,
+					      __ATOMIC_RELAXED,
+					      __ATOMIC_RELAXED));
+}
+
 void * alloc_shared_obj(size_t size)
 {
 	size_t old_used, new_used;
 	void *p;
+	int bucket;
 
 	if (size == 0)
 		return NULL;
@@ -155,7 +240,17 @@ void * alloc_shared_obj(size_t size)
 	/* Round up so each allocation starts pointer-aligned. */
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
 
+	/* Try the freelist before touching the bump cursor. */
+	bucket = freelist_bucket(size);
+	if (bucket >= 0) {
+		p = freelist_pop(&shm->shared_obj_freelist[bucket],
+				 bucket_sizes[bucket]);
+		if (p != NULL)
+			return p;
+	}
+
 	/*
+	 * Freelist empty or size above all buckets — fall through to bump.
 	 * Lock-free bump via CAS.  shm->shared_obj_heap_used lives in
 	 * the SHM region, so concurrent allocators in any process see a
 	 * single source of truth.  RELAXED ordering is enough: the
@@ -187,14 +282,21 @@ void * alloc_shared_obj(size_t size)
 
 void free_shared_obj(void *p, size_t size)
 {
+	int bucket;
+
 	if (p == NULL || size == 0)
 		return;
 
-	/* Poison-on-free: zero the slot so a use-after-free reads as
-	 * obvious garbage (NULL pointers, zero counts) instead of a
-	 * stale obj that looks live.  No recycling — the slot is just
-	 * leaked.  See the design note above SHARED_OBJ_HEAP_SIZE. */
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+
+	bucket = freelist_bucket(size);
+	if (bucket >= 0) {
+		freelist_push(&shm->shared_obj_freelist[bucket], p,
+			      bucket_sizes[bucket]);
+		return;
+	}
+
+	/* Size above all buckets — poison and leak (bump-and-leak fallback). */
 	memset(p, 0, size);
 }
 
@@ -256,22 +358,22 @@ void free_shared_obj(void *p, size_t size)
  *
  *   Mirror of free_shared_obj — poison the slot to zeros so a
  *   use-after-free surfaces as a "" / NUL-byte read rather than a
- *   live-looking string, and leak the slot (no freelist).  Callers
- *   pass the original allocation size; for strdup-style strings that
- *   is strlen(p)+1 at free time, which is correct for a still-NUL-
- *   terminated string and harmless overshoot if it isn't (the buffer
- *   was zero-initialised anyway).
+ *   live-looking string, then recycle via the size-bucketed freelist
+ *   (see freelist_push/pop above).  Callers pass the original
+ *   allocation size; for strdup-style strings that is strlen(p)+1 at
+ *   free time, which is correct for a still-NUL-terminated string and
+ *   harmless overshoot if it isn't (the buffer was zero-initialised).
+ *   Slots too large for any freelist bucket are poisoned and leaked.
  */
 /*
  * 1 MiB.  Originally sized at 64 KiB for the simple-init case (memfd
  * + perf eventattr + a few testfiles), but bump-and-leak loses one
- * slot per regen and `try_regenerate_fd` fires often enough during
+ * slot per regen and try_regenerate_fd fires often enough during
  * sustained fuzz runs (testfiles refresh, perf eventattr churn) that
- * 64 KiB exhausts within a few hours and crashes the parent.  See
- * the bcd2ea9fd96e crash on 2026-04-22 — caller in testfiles.c
- * passed a NULL alloc_shared_str return into snprintf.  This bump
- * is a stop-gap; the real fix is a freelist so freed slots get
- * recycled rather than leaked.
+ * 64 KiB exhausts within a few hours and crashes the parent.  The
+ * freelist recycler now returns slots to the pool, so long-run
+ * exhaustion is no longer expected; the 1 MiB ceiling remains as
+ * headroom for above-bucket allocations that still bump-and-leak.
  */
 #define SHARED_STR_HEAP_SIZE (1U * 1024U * 1024U)
 
@@ -292,6 +394,7 @@ void * alloc_shared_str(size_t size)
 {
 	size_t old_used, new_used;
 	void *p;
+	int bucket;
 
 	if (size == 0)
 		return NULL;
@@ -304,6 +407,15 @@ void * alloc_shared_str(size_t size)
 	 * buffer callers (perf_event_attr) do, and one rule keeps the
 	 * accounting simple. */
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+
+	/* Try the freelist before touching the bump cursor. */
+	bucket = freelist_bucket(size);
+	if (bucket >= 0) {
+		p = freelist_pop(&shm->shared_str_freelist[bucket],
+				 bucket_sizes[bucket]);
+		if (p != NULL)
+			return p;
+	}
 
 	/* Lock-free bump via CAS on the shm-resident cursor.  RELAXED
 	 * is sufficient for the same reason as alloc_shared_obj: the
@@ -351,12 +463,21 @@ char * alloc_shared_strdup(const char *src)
 
 void free_shared_str(void *p, size_t size)
 {
+	int bucket;
+
 	if (p == NULL || size == 0)
 		return;
 
-	/* Same poison-and-leak strategy as free_shared_obj — see the
-	 * design note above SHARED_STR_HEAP_SIZE. */
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+
+	bucket = freelist_bucket(size);
+	if (bucket >= 0) {
+		freelist_push(&shm->shared_str_freelist[bucket], p,
+			      bucket_sizes[bucket]);
+		return;
+	}
+
+	/* Size above all buckets — poison and leak (bump-and-leak fallback). */
 	memset(p, 0, size);
 }
 

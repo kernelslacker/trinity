@@ -104,6 +104,21 @@ struct shm_s {
 	 */
 	_Atomic size_t shared_str_heap_used;
 
+	/*
+	 * Per-bucket freelist heads for the shared obj and str heaps.
+	 * NUM_SHM_FREELIST_BUCKETS fixed-size slots (8..1024 bytes, powers of
+	 * two); allocations above 1024 bytes bypass the freelist and use the
+	 * bump allocator directly.  Each head is a uintptr_t storing the
+	 * address of the most-recently-freed slot in that bucket (0 = empty).
+	 * The link to the next free slot is stored in the slot's own first
+	 * sizeof(uintptr_t) bytes (safe because the slot is, by definition,
+	 * not live when the link is written).  Manipulated by lock-free CAS in
+	 * freelist_push/pop in utils.c.
+	 */
+#define NUM_SHM_FREELIST_BUCKETS 8
+	_Atomic uintptr_t shared_obj_freelist[NUM_SHM_FREELIST_BUCKETS];
+	_Atomic uintptr_t shared_str_freelist[NUM_SHM_FREELIST_BUCKETS];
+
 	/* various flags. */
 	enum exit_reasons exit_reason;
 	_Atomic bool dont_make_it_fail;
