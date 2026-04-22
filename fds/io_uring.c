@@ -9,10 +9,12 @@
 #include <sys/syscall.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #ifndef IORING_OFF_SQ_RING
 #define IORING_OFF_SQ_RING	0ULL
@@ -170,7 +172,14 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
 		return false;
 	}
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		munmap(sqes, sqes_sz);
+		munmap(sq_ring, sq_ring_sz);
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	ring = &obj->io_uringobj;
 	ring->fd = fd;
 	ring->setup_flags = flags;
@@ -212,6 +221,39 @@ static int init_io_uring_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_IO_URING);
 	head->destroy = &io_uring_destructor;
 	head->dump = &io_uring_dump;
+	/*
+	 * Route the io_uringobj struct through the shared obj heap so
+	 * post-fork regen via try_regenerate_fd() → open_io_uring_fd
+	 * produces objs that already-forked children can see when they
+	 * load shm->mapped_ring and walk into the obj's scalar fields
+	 * (fd, off_*, sq_entries, sq_ring_sz, sqes_sz).
+	 *
+	 * Scope of this conversion: the obj struct ONLY.  The two mmap'd
+	 * pointers carried inside the obj (sq_ring, sqes) are NOT routed
+	 * through the shared str heap — they are kernel-backed mappings
+	 * obtained via mmap(MAP_SHARED) on the io_uring fd, not heap
+	 * allocations, and re-routing them is meaningless.  Their cross-
+	 * process visibility is governed by the page table of the process
+	 * that called mmap(): for rings created in init_io_uring_fds()
+	 * (pre-fork) every child inherits the mapping at the same VA via
+	 * fork(), so dereferences from child context (e.g. sanitise_io_
+	 * uring_enter() reading sq_off_mask via ring->sq_ring) work; for
+	 * rings created post-fork via try_regenerate_fd() the mapping
+	 * exists only in the parent and a child dereference would fault.
+	 *
+	 * That post-fork mmap-pointer hazard is pre-existing (the obj
+	 * struct itself was already a parent-private hazard before this
+	 * conversion masked the further deref) and orthogonal to the
+	 * obj-on-shared-heap structural fix this commit lands.  Closing
+	 * it requires either (a) gating the shm->mapped_ring publication
+	 * to init-phase rings only so post-fork rings are never picked
+	 * up by child sanitisers, or (b) skipping io_uring's .open hook
+	 * so the pool never regenerates from child context.  Either is a
+	 * separate change — the obj-struct migration here strictly
+	 * improves the pre-fork-ring case (no more obj read fault) while
+	 * leaving the post-fork-ring failure mode unchanged.
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(ring_configs); i++)
 		count += open_io_uring_fd_config(ring_configs[i].entries,
