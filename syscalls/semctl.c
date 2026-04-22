@@ -3,6 +3,7 @@
  */
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include "arch.h"
 #include "sanitise.h"
 
 static unsigned long semctl_cmds[] = {
@@ -11,6 +12,23 @@ static unsigned long semctl_cmds[] = {
 	SETVAL, SETALL,
 	SEM_STAT, SEM_INFO, SEM_STAT_ANY,
 };
+
+static void sanitise_semctl(struct syscallrecord *rec)
+{
+	/*
+	 * arg (a4) is a union semun.  For the read-side commands the
+	 * relevant field is a pointer the kernel writes into:
+	 *   IPC_STAT / SEM_STAT / SEM_STAT_ANY -> struct semid_ds
+	 *   IPC_INFO / SEM_INFO                -> struct seminfo
+	 *   GETALL                             -> unsigned short array
+	 * The ARG_ADDRESS slot drops a random-pool pointer in here for all
+	 * commands; for the write-side ones the redirect is a no-op cost,
+	 * for the read-side ones it stops a fuzzed pointer landing inside
+	 * an alloc_shared region.  page_size is the conservative upper
+	 * bound across all the variants.
+	 */
+	avoid_shared_buffer(&rec->a4, page_size);
+}
 
 struct syscallentry syscall_semctl = {
 	.name = "semctl",
@@ -23,4 +41,5 @@ struct syscallentry syscall_semctl = {
 	.arg_params[1].range.low = 0,
 	.arg_params[1].range.hi = 250,
 	.arg_params[2].list = ARGLIST(semctl_cmds),
+	.sanitise = sanitise_semctl,
 };
