@@ -235,6 +235,13 @@ void dump_stats(void)
 			shm->stats.futex_storm_inner_crashed,
 			shm->stats.futex_storm_iters);
 
+	if (shm->stats.pipe_thrash_runs) {
+		stat_row("pipe_thrash", "runs",         shm->stats.pipe_thrash_runs);
+		stat_row("pipe_thrash", "pipes",        shm->stats.pipe_thrash_pipes);
+		stat_row("pipe_thrash", "socketpairs",  shm->stats.pipe_thrash_socketpairs);
+		stat_row("pipe_thrash", "alloc_failed", shm->stats.pipe_thrash_alloc_failed);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

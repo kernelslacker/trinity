@@ -705,12 +705,12 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[21] = {
+static const int dormant_op_disabled[22] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 1, 1,	/* 10-14: dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, fault_injector, recipe_runner */
 	1, 1, 1, 1, 1,	/* 15-19: dormant: iouring_recipes, fd_stress, refcount_auditor, fs_lifecycle, signal_storm */
-	1,		/* 20: dormant: futex_storm */
+	1, 1,		/* 20-21: dormant: futex_storm, pipe_thrash */
 };
 
 static enum child_op_type pick_op_type(void)
@@ -721,7 +721,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 21;
+	pick = rand() % 22;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -747,6 +747,7 @@ static enum child_op_type pick_op_type(void)
 	case 18: return CHILD_OP_FS_LIFECYCLE;
 	case 19: return CHILD_OP_SIGNAL_STORM;
 	case 20: return CHILD_OP_FUTEX_STORM;
+	case 21: return CHILD_OP_PIPE_THRASH;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -844,6 +845,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_FS_LIFECYCLE:		ret = fs_lifecycle(child); break;
 		case CHILD_OP_SIGNAL_STORM:		ret = signal_storm(child); break;
 		case CHILD_OP_FUTEX_STORM:		ret = futex_storm(child); break;
+		case CHILD_OP_PIPE_THRASH:		ret = pipe_thrash(child); break;
 		default:				ret = run_sequence_chain(child); break;
 		}
 
