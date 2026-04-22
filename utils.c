@@ -154,14 +154,42 @@ static void shared_obj_heap_init(void)
  * cursor — the caller publishes the resulting object via add_object()'s
  * RELEASE store, which is the actual synchronisation point for consumers.
  *
- * ABA note: a concurrent pop-allocate-free-push cycle on the same slot
- * between our load and CAS can cause us to set head to a stale "next"
- * pointer, orphaning that slot from the freelist chain.  The consequence is
- * a missed recycling opportunity (the orphaned slot is never popped again),
- * not memory corruption.  For a fuzzer with bounded concurrency and
- * infrequent regen cycles this is an acceptable trade-off against the
- * complexity of tagged pointers or epoch-based reclamation.
+ * ABA safety via tagged pointer.  A naive lock-free stack with a single
+ * pointer head is vulnerable to the classic ABA race: a popper reads
+ * old_head=X and next=*X, but before its CAS another thread pops X, pops
+ * X.next, and then pushes X back.  The CAS still sees head==X and succeeds,
+ * but it installs the stale "next" value, leaving head pointing at a slot
+ * that has already been handed back to a caller.  Two callers then think
+ * they own the same slot; both fill it with list_head links, and at exit
+ * the iteration walks a corrupted chain and faults inside __destroy_object
+ * (list_del with NULL prev/next from a slot that the other owner has since
+ * zeroed via free_shared_obj's poison-on-free).
+ *
+ * The mitigation is a 16-bit version counter packed into the high bits of
+ * the head word.  Each push and pop increments the version; the CAS
+ * compares the full 64-bit (version, ptr) tuple.  The A→B→A sequence above
+ * now leaves the head as (X, ver+2) rather than (X, ver), so the racer's
+ * CAS fails on the version mismatch and it retries with a fresh load.
+ *
+ * The packing exploits the canonical-form invariant of x86_64 user-space
+ * virtual addresses: only bits 0-47 are significant, and bit 47 is 0 for
+ * any user-space pointer (kernel pointers have bit 47 == 1 and are
+ * sign-extended into the upper 16 bits).  We therefore stash the version
+ * counter in bits 48-63, recover the pointer with a 48-bit mask, and need
+ * no sign extension on read.  The slot's stored "next" link is just the
+ * raw pointer (no version bits) — the version lives only in the head.
+ *
+ * The 16-bit version is finite: a perfectly-timed sequence of exactly
+ * 65536 push/pop pairs in the gap between a victim's load and CAS would
+ * wrap the version back to its original value and re-expose the race.
+ * For a process-bounded fuzzer with sub-microsecond critical sections
+ * this is astronomically improbable; if it ever proves observable the
+ * head can be widened to a 128-bit (ptr, version) tuple and switched to a
+ * cmpxchg16b-based DWCAS without any caller change.
  */
+
+#define FREELIST_PTR_MASK	((uint64_t)((1ULL << 48) - 1))
+#define FREELIST_VER_SHIFT	48
 
 static const size_t bucket_sizes[NUM_SHM_FREELIST_BUCKETS] = {
 	8, 16, 32, 64, 128, 256, 512, 1024
@@ -185,41 +213,58 @@ static int freelist_bucket(size_t aligned_size)
 /*
  * Pop a slot from the freelist bucket whose head lives at *head.
  * Returns NULL if the freelist is empty; otherwise returns a fully-zeroed
- * slot of slot_size bytes.
+ * slot of slot_size bytes.  ABA-safe via the version tag in the high
+ * bits of the head — see the block comment above.
  */
-static void *freelist_pop(_Atomic uintptr_t *head, size_t slot_size)
+static void *freelist_pop(_Atomic uint64_t *head, size_t slot_size)
 {
-	uintptr_t old_head, next;
+	uint64_t old_tagged, new_tagged;
+	uintptr_t ptr, next;
+	uint16_t new_ver;
 
-	old_head = __atomic_load_n(head, __ATOMIC_RELAXED);
+	old_tagged = __atomic_load_n(head, __ATOMIC_RELAXED);
 	do {
-		if (old_head == 0)
+		ptr = (uintptr_t)(old_tagged & FREELIST_PTR_MASK);
+		if (ptr == 0)
 			return NULL;
-		next = *(uintptr_t *)old_head;
-	} while (!__atomic_compare_exchange_n(head, &old_head, next,
+		/* The slot's first word holds the next pointer, with no
+		 * version bits — versions live only in the head. */
+		next = *(uintptr_t *)ptr;
+		new_ver = (uint16_t)(old_tagged >> FREELIST_VER_SHIFT) + 1;
+		new_tagged = ((uint64_t)next & FREELIST_PTR_MASK) |
+			     ((uint64_t)new_ver << FREELIST_VER_SHIFT);
+	} while (!__atomic_compare_exchange_n(head, &old_tagged, new_tagged,
 					      false,
 					      __ATOMIC_RELAXED,
 					      __ATOMIC_RELAXED));
 
-	memset((void *)old_head, 0, slot_size);
-	return (void *)old_head;
+	memset((void *)ptr, 0, slot_size);
+	return (void *)ptr;
 }
 
 /*
  * Push a slot onto the freelist bucket whose head lives at *head.
  * The entire slot (slot_size bytes) is zeroed first so that a use-after-
  * free reads as zero rather than stale data; then the freelist link is
- * written into the slot's first word before the CAS.
+ * written into the slot's first word before the CAS.  The version tag in
+ * the head is incremented on every successful CAS to keep poppers safe
+ * from ABA — see the block comment above.
  */
-static void freelist_push(_Atomic uintptr_t *head, void *p, size_t slot_size)
+static void freelist_push(_Atomic uint64_t *head, void *p, size_t slot_size)
 {
-	uintptr_t old_head;
+	uint64_t old_tagged, new_tagged;
+	uint16_t new_ver;
 
 	memset(p, 0, slot_size);
-	old_head = __atomic_load_n(head, __ATOMIC_RELAXED);
+	old_tagged = __atomic_load_n(head, __ATOMIC_RELAXED);
 	do {
-		*(uintptr_t *)p = old_head;
-	} while (!__atomic_compare_exchange_n(head, &old_head, (uintptr_t)p,
+		/* Store only the pointer half of the previous head into our
+		 * slot — the version stays in the head word. */
+		*(uintptr_t *)p = (uintptr_t)(old_tagged & FREELIST_PTR_MASK);
+		new_ver = (uint16_t)(old_tagged >> FREELIST_VER_SHIFT) + 1;
+		new_tagged = ((uint64_t)(uintptr_t)p & FREELIST_PTR_MASK) |
+			     ((uint64_t)new_ver << FREELIST_VER_SHIFT);
+	} while (!__atomic_compare_exchange_n(head, &old_tagged, new_tagged,
 					      false,
 					      __ATOMIC_RELAXED,
 					      __ATOMIC_RELAXED));
