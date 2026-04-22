@@ -9,6 +9,7 @@
 
 #include "fd.h"
 #include "fanotify.h"
+#include "list.h"
 #include "objects.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -32,6 +33,12 @@ static void fanotifyfd_destructor(struct object *obj)
 	close(obj->fanotifyobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->fanotifyobj fields (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj.
+ */
 static void fanotifyfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fanotifyobj *fo = &obj->fanotifyobj;
@@ -52,7 +59,12 @@ static int open_fanotify_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->fanotifyobj.fd = fd;
 	obj->fanotifyobj.flags = flags;
 	obj->fanotifyobj.eventflags = eventflags;
@@ -69,6 +81,14 @@ static int init_fanotify_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FANOTIFY);
 	head->destroy = &fanotifyfd_destructor;
 	head->dump = &fanotifyfd_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  fanotifyobj is
+	 * {int fd; int flags; int eventflags;} with no pointer members,
+	 * so this is a mechanical conversion matching the pidfd template.
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < NR_FANOTIFYFDS; i++) {
 		if (open_fanotify_fd())
