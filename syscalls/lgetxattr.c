@@ -10,6 +10,7 @@ static void sanitise_lgetxattr(struct syscallrecord *rec)
 	char *name = (char *) get_writable_address(256);
 	gen_xattr_name(name, 256);
 	rec->a2 = (unsigned long) name;
+	avoid_shared_buffer(&rec->a3, rec->a4);
 }
 
 struct syscallentry syscall_lgetxattr = {

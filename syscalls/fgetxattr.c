@@ -13,6 +13,7 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
 		return;
 	gen_xattr_name(name, 256);
 	rec->a2 = (unsigned long) name;
+	avoid_shared_buffer(&rec->a3, rec->a4);
 }
 
 struct syscallentry syscall_fgetxattr = {
