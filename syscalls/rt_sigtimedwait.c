@@ -27,6 +27,13 @@ static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) set;
 	rec->a3 = (unsigned long) ts;
 	rec->a4 = sizeof(sigset_t);
+
+	/*
+	 * uinfo (a2) is the kernel's writeback target for the siginfo of the
+	 * dequeued signal.  ARG_ADDRESS draws from the random pool, so scrub
+	 * it against the alloc_shared regions before the syscall is issued.
+	 */
+	avoid_shared_buffer(&rec->a2, sizeof(siginfo_t));
 }
 
 struct syscallentry syscall_rt_sigtimedwait = {
