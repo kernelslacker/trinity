@@ -11,6 +11,7 @@
 #include "debug.h"
 #include "domains.h"
 #include "fd-event.h"
+#include "list.h"
 #include "net.h"
 #include "objects.h"
 #include "params.h"	// verbosity, do_specific_domain
@@ -63,7 +64,12 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 {
 	struct object *obj;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return NULL;
+	}
+	INIT_LIST_HEAD(&obj->list);
 
 	obj->sockinfo.fd = fd;
 	obj->sockinfo.triplet.family = domain;
@@ -404,6 +410,42 @@ static int open_sockets(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
 	head->destroy = &socket_destructor;
 	head->dump = &socket_dump;
+	/*
+	 * Route obj structs for this provider through the shared obj
+	 * heap.  Sockets is the largest fan-in of the remaining shared-
+	 * heap holdouts: add_socket() is the single allocation site but
+	 * is reached from three runtime contexts that all need the obj
+	 * to land in shm:
+	 *
+	 *   - generate_sockets() at init: the per-protocol valid-triplet
+	 *     fan-out (and the random-fill loop that brings nr_sockets
+	 *     up to NR_SOCKET_FDS).  Pre-fork in the parent.
+	 *
+	 *   - open_socket_fd(): the .open hook fired by try_regenerate_
+	 *     fd() when the pool drops below threshold.  Picks a random
+	 *     family/type/protocol triplet and opens a fresh socket.
+	 *     Runs in the parent post-fork — exactly the case the
+	 *     shared obj heap exists to serve.
+	 *
+	 *   - fd-event.c FD_EVENT_NEWSOCK drain: a child that
+	 *     successfully accept4()s an inbound connection in
+	 *     socket_child_ops() enqueues the new fd plus the parent
+	 *     family/type/protocol scalars; the parent's event drain
+	 *     calls add_socket() with those, transferring the fd into
+	 *     the global pool.  Runs in the parent post-fork on every
+	 *     drained event, so the obj must land somewhere children
+	 *     can see — same structural property as the regen path.
+	 *
+	 * struct socketinfo carries no pointer fields (triplet is three
+	 * ints, fd is an int, needs_setup is a bool), so this is an obj-
+	 * struct-only conversion — no companion alloc_shared_str() calls
+	 * for heap-allocated members.  The transient sockaddr buffer
+	 * built by generate_sockaddr() inside socket_child_ops() lives
+	 * for the duration of one accept4() attempt and is freed in the
+	 * same function via free(sa); it is not attached to the obj and
+	 * therefore stays on the private heap.
+	 */
+	head->shared_alloc = true;
 
 	ret = generate_sockets();
 	output(1, "created %u sockets\n", nr_sockets);
