@@ -301,6 +301,22 @@ void * alloc_shared_obj(size_t size)
 				 bucket_sizes[bucket]);
 		if (p != NULL)
 			return p;
+		/*
+		 * Round bump-allocated slots up to the bucket's size so
+		 * adjacent slots in the bump region are bucket_size bytes
+		 * apart.  Without this the bump cursor advances by `size`
+		 * (e.g. 88 for sizeof(struct object)) but freelist_push and
+		 * freelist_pop both memset the full bucket_size (128), so
+		 * the first free of a bump slot wholesale-zeroes the first
+		 * (bucket_size - size) bytes of the next slot — corrupting
+		 * its list_head and surfacing as a "back-link broken"
+		 * crash deep inside list_del or list_add later.  Bug class
+		 * was masked while the obj heap was unprotected (wild
+		 * writes from child syscalls swamped the signal); became
+		 * deterministic the moment fbce60744dfb mprotected the
+		 * heap and removed all the other corruption sources.
+		 */
+		size = bucket_sizes[bucket];
 	}
 
 	/*
@@ -502,6 +518,11 @@ void * alloc_shared_str(size_t size)
 				 bucket_sizes[bucket]);
 		if (p != NULL)
 			return p;
+		/* Round bump to bucket size so the first free of a bump
+		 * slot doesn't overrun the next slot via freelist_push's
+		 * bucket-size memset.  See the matching comment in
+		 * alloc_shared_obj for the full bug-class explanation. */
+		size = bucket_sizes[bucket];
 	}
 
 	/* Lock-free bump via CAS on the shm-resident cursor.  RELAXED
