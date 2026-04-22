@@ -29,6 +29,13 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 		sigev = NULL;
 
 	rec->a2 = (unsigned long)sigev;
+
+	/*
+	 * created_timer_id (a3) is the kernel's output: timer_create writes
+	 * the new timer_t there on success.  Random pool can land it inside
+	 * an alloc_shared region, so scrub.
+	 */
+	avoid_shared_buffer(&rec->a3, sizeof(timer_t));
 }
 
 static unsigned long clock_ids[] = {
