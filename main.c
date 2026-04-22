@@ -1087,6 +1087,8 @@ void main_loop(void)
 	struct timespec epoch_start;
 	unsigned int i;
 
+	output(1, "phase: entering main_loop\n");
+
 	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
 	zombie_pids = zmalloc(max_children * sizeof(pid_t));
 	zombie_since = zmalloc(max_children * sizeof(time_t));
@@ -1096,6 +1098,7 @@ void main_loop(void)
 	if (epoch_timeout)
 		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
 
+	output(1, "phase: fork_children\n");
 	fork_children();
 
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
