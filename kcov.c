@@ -59,6 +59,24 @@ void kcov_init_global(void)
 		return;
 	close(fd);
 
+	/*
+	 * Stays alloc_shared() rather than alloc_shared_global().
+	 * Children are the producers for every field in struct kcov_shared:
+	 * kcov_collect() (called from random-syscall.c in child context after
+	 * each syscall) writes to bitmap[] via fetch_or, bumps total_calls /
+	 * remote_calls / total_pcs / edges_found, and updates the
+	 * per_syscall_calls / per_syscall_edges / last_edge_at arrays.
+	 * Freezing this region PROT_READ post-init would EFAULT every child's
+	 * coverage update on the hot path and disable the fuzzer's coverage
+	 * feedback loop entirely — the wild-write defence is incompatible
+	 * with the region's intentional child-writability.
+	 *
+	 * Wild-write risk this leaves open: a child syscall whose user-buffer
+	 * arg aliases into kcov_shm could let the kernel corrupt the bitmap
+	 * (false-positive coverage inflation) or the per-syscall counters
+	 * (a bogus last_edge_at value would stick a syscall in or out of the
+	 * cold-skip pool).  Diagnostics only; doesn't crash the parent.
+	 */
 	kcov_shm = alloc_shared(sizeof(struct kcov_shared));
 	memset(kcov_shm, 0, sizeof(struct kcov_shared));
 	output(0, "KCOV: coverage collection enabled (%d KB bitmap)\n",
