@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include "debug.h"
 #include "objects.h"
+#include "params.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -660,8 +661,23 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 		unsigned long r_start = shared_regions[i].addr;
 		unsigned long r_end = r_start + shared_regions[i].size;
 
-		if (addr < r_end && end > r_start)
+		if (addr < r_end && end > r_start) {
+			unsigned long n;
+
+			n = __atomic_add_fetch(&shm->stats.range_overlap_rejects,
+					       1, __ATOMIC_RELAXED);
+
+			/* Under -v, emit one line per 1000 rejects with the
+			 * caller PC so we can correlate which arg-generation
+			 * path is most often producing into-shared addresses. */
+			if (verbosity > 1 && (n % 1000) == 0) {
+				output(1, "range_overlaps_shared: %lu cumulative rejects "
+					"(latest addr=0x%lx len=%lu caller=%p)\n",
+					n, addr, len,
+					__builtin_return_address(0));
+			}
 			return true;
+		}
 	}
 	return false;
 }
