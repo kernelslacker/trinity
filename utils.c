@@ -12,6 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "debug.h"
+#include "objects.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -284,6 +285,7 @@ void * alloc_shared_obj(size_t size)
 	size_t old_used, new_used;
 	void *p;
 	int bucket;
+	void *caller = __builtin_return_address(0);
 
 	if (size == 0)
 		return NULL;
@@ -299,8 +301,11 @@ void * alloc_shared_obj(size_t size)
 	if (bucket >= 0) {
 		p = freelist_pop(&shm->shared_obj_freelist[bucket],
 				 bucket_sizes[bucket]);
-		if (p != NULL)
+		if (p != NULL) {
+			output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%p\n",
+				p, size, caller);
 			return p;
+		}
 		/*
 		 * Round bump-allocated slots up to the bucket's size so
 		 * adjacent slots in the bump region are bucket_size bytes
@@ -347,12 +352,15 @@ void * alloc_shared_obj(size_t size)
 
 	p = shared_obj_heap + old_used;
 	memset(p, 0, size);
+	output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%p\n",
+		p, size, caller);
 	return p;
 }
 
 void free_shared_obj(void *p, size_t size)
 {
 	int bucket;
+	void *caller = __builtin_return_address(0);
 
 	if (p == NULL || size == 0)
 		return;
@@ -377,6 +385,21 @@ void free_shared_obj(void *p, size_t size)
 		struct list_head *next = fake->next;
 		struct list_head *prev = fake->prev;
 
+		/* Free-time lifecycle log under -vv.  Only emit list.next /
+		 * list.prev when this allocation is large enough to embed a
+		 * struct list_head (struct object's first member).  Smaller
+		 * allocations (e.g. raw 16-byte list-head sentinels) still
+		 * fit the test, so use sizeof(struct object) as the gate
+		 * for the embedded-list-head case — matches the layout
+		 * alloc_shared_obj is most commonly used for. */
+		if (size == sizeof(struct object))
+			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%p "
+				"list.next=%p list.prev=%p\n",
+				p, size, caller, next, prev);
+		else
+			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%p\n",
+				p, size, caller);
+
 		if ((uintptr_t)next > 0x100000000UL &&
 		    (uintptr_t)prev > 0x100000000UL &&
 		    next != LIST_POISON1 && prev != LIST_POISON2 &&
@@ -388,6 +411,9 @@ void free_shared_obj(void *p, size_t size)
 			__BUG("free_shared_obj: slot is list-linked",
 				__FILE__, __func__, __LINE__);
 		}
+	} else {
+		output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%p\n",
+			p, size, caller);
 	}
 
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
