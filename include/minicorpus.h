@@ -94,6 +94,13 @@ void minicorpus_save(struct syscallrecord *rec);
  * Only call when entry->sanitise == NULL. */
 bool minicorpus_replay(struct syscallrecord *rec);
 
+/* Apply the per-arg mutator chain (cross-arg splice + weighted-stack
+ * mutate + fd safety) to args[6] in place.  Used by both per-syscall
+ * mini-corpus replay and chain-corpus replay so the mutation engine
+ * and its productivity counters are shared.  @entry supplies argtype[]
+ * and num_args; pass NULL-checked entry. */
+void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry);
+
 /* Mutator-case attribution.
  *
  * mutate_arg() accumulates per-case pick counts in process-local stash

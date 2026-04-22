@@ -89,6 +89,7 @@ struct chain_corpus_ring {
 	unsigned int head;			/* next write slot mod CHAIN_CORPUS_RING_SIZE */
 	unsigned int count;			/* entries stored, max CHAIN_CORPUS_RING_SIZE */
 	unsigned long save_count;		/* chains saved on new-coverage (atomic) */
+	unsigned long replay_count;		/* chains dispatched as replays (atomic) */
 	struct chain_entry *slots[CHAIN_CORPUS_RING_SIZE];
 };
 
@@ -96,3 +97,11 @@ extern struct chain_corpus_ring *chain_corpus_shm;
 
 void chain_corpus_init(void);
 void chain_corpus_save(const struct chain_step *steps, unsigned int len);
+
+/*
+ * Snapshot a random saved chain into @out.  Returns true on success
+ * (out->len populated, out->steps[] copied), false if the corpus is
+ * empty.  The snapshot is taken under the ring lock so the caller's
+ * copy is stable across subsequent saves and evictions.
+ */
+bool chain_corpus_pick(struct chain_entry *out);

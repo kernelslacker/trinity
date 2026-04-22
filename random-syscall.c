@@ -21,6 +21,7 @@
 #include "params.h"
 #include "pids.h"
 #include "random.h"
+#include "sequence.h"
 #include "shm.h"
 #include "signals.h"
 #include "sanitise.h"
@@ -215,52 +216,59 @@ retry:
  */
 #define CHAIN_SUBST_PCT 30
 
-bool random_syscall_step(struct childdata *child,
-			 bool have_substitute,
-			 unsigned long substitute_retval,
-			 bool *found_new)
+/*
+ * Apply Phase 1 retval substitution to rec in place.  Used by both the
+ * fresh-args path (random_syscall_step) and the corpus-replay path
+ * (replay_syscall_step) so the chain semantics — substituted args reach
+ * the kernel and show up in the trace — are identical regardless of
+ * where the args came from.  No-op when no substitute is offered, the
+ * dice roll comes up against, or the syscall takes zero args.
+ */
+static void apply_chain_substitution(struct syscallrecord *rec,
+				     struct syscallentry *entry,
+				     bool have_substitute,
+				     unsigned long substitute_retval)
 {
-	struct syscallrecord *rec;
-	struct syscallentry *entry;
-	int ret = false;
-	bool do_cmp;
+	unsigned int slot;
 
-	rec = &child->syscall;
+	if (!have_substitute)
+		return;
+	if (entry == NULL || entry->num_args == 0)
+		return;
+	if ((unsigned int)(rand() % 100) >= CHAIN_SUBST_PCT)
+		return;
 
-	if (set_syscall_nr(rec, child) == FAIL)
-		return FAIL;
-
-	memset(rec->postbuffer, 0, POSTBUFFER_LEN);
-
-	/* Generate arguments, print them out */
-	generate_syscall_args(rec);
-
-	/* Sequence-chain substitution.  When the previous step in the chain
-	 * returned a usable value, with CHAIN_SUBST_PCT probability splice
-	 * it into one randomly-chosen arg slot of this call, overwriting
-	 * whatever the generator produced.  Done after generate_syscall_args
-	 * so the substituted value is what the kernel actually sees, and
-	 * before output_syscall_prefix so the trace reflects the real call. */
-	if (have_substitute &&
-	    (unsigned int)(rand() % 100) < CHAIN_SUBST_PCT) {
-		entry = syscalls[rec->nr].entry;
-		if (entry != NULL && entry->num_args > 0) {
-			unsigned int slot = 1 +
-				(unsigned int)(rand() % entry->num_args);
-
-			switch (slot) {
-			case 1: rec->a1 = substitute_retval; break;
-			case 2: rec->a2 = substitute_retval; break;
-			case 3: rec->a3 = substitute_retval; break;
-			case 4: rec->a4 = substitute_retval; break;
-			case 5: rec->a5 = substitute_retval; break;
-			case 6: rec->a6 = substitute_retval; break;
-			}
-			if (minicorpus_shm != NULL)
-				__atomic_fetch_add(&minicorpus_shm->chain_substitution_count,
-						   1, __ATOMIC_RELAXED);
-		}
+	slot = 1 + (unsigned int)(rand() % entry->num_args);
+	switch (slot) {
+	case 1: rec->a1 = substitute_retval; break;
+	case 2: rec->a2 = substitute_retval; break;
+	case 3: rec->a3 = substitute_retval; break;
+	case 4: rec->a4 = substitute_retval; break;
+	case 5: rec->a5 = substitute_retval; break;
+	case 6: rec->a6 = substitute_retval; break;
 	}
+	if (minicorpus_shm != NULL)
+		__atomic_fetch_add(&minicorpus_shm->chain_substitution_count,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
+ * Dispatch a fully-prepared syscallrecord and run the per-call
+ * post-dispatch bookkeeping: kcov collection / cmp-hint collection,
+ * edge-pair recording, mutator-attribution commit, mini-corpus save,
+ * trace output, fd-ring update, group/last_syscall_nr tracking.
+ *
+ * Caller has already populated rec->nr, rec->do32bit, rec->a1..a6, the
+ * postbuffer is already cleared, and any chain substitution has been
+ * applied.  The two callers (random_syscall_step and replay_syscall_step)
+ * differ only in how they got the args into rec; everything from
+ * output_syscall_prefix forward is shared.
+ */
+static bool dispatch_step(struct childdata *child, bool *found_new)
+{
+	struct syscallrecord *rec = &child->syscall;
+	struct syscallentry *entry;
+	bool do_cmp;
 
 	output_syscall_prefix(rec);
 
@@ -346,12 +354,108 @@ bool random_syscall_step(struct childdata *child,
 		child->last_syscall_nr = rec->nr;
 	}
 
-	ret = true;
+	return true;
+}
 
-	return ret;
+bool random_syscall_step(struct childdata *child,
+			 bool have_substitute,
+			 unsigned long substitute_retval,
+			 bool *found_new)
+{
+	struct syscallrecord *rec = &child->syscall;
+	struct syscallentry *entry;
+
+	if (set_syscall_nr(rec, child) == FAIL)
+		return FAIL;
+
+	memset(rec->postbuffer, 0, POSTBUFFER_LEN);
+
+	/* Generate arguments, print them out */
+	generate_syscall_args(rec);
+
+	/* Sequence-chain substitution.  When the previous step in the chain
+	 * returned a usable value, with CHAIN_SUBST_PCT probability splice
+	 * it into one randomly-chosen arg slot of this call, overwriting
+	 * whatever the generator produced.  Done after generate_syscall_args
+	 * so the substituted value is what the kernel actually sees, and
+	 * before output_syscall_prefix so the trace reflects the real call. */
+	entry = get_syscall_entry(rec->nr, rec->do32bit);
+	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
+
+	return dispatch_step(child, found_new);
 }
 
 bool random_syscall(struct childdata *child)
 {
 	return random_syscall_step(child, false, 0, NULL);
+}
+
+/*
+ * Replay a saved chain step: stage the saved (nr, do32bit, args) into
+ * rec, run the saved args through the per-arg mutator chain, apply any
+ * Phase 1 retval substitution from the prior step, and dispatch through
+ * the same path random_syscall_step uses.  Returns FAIL when the saved
+ * syscall is no longer callable in this run (deactivated, AVOID_SYSCALL,
+ * needs root we don't have, or has a sanitise that would stash stale
+ * pointers); the chain executor falls back to fresh args in that case.
+ *
+ * The mutator call goes to minicorpus_mutate_args, which is the same
+ * splice + weighted-stack-mutate engine the per-syscall mini-corpus
+ * replay uses.  Sharing the mutator means chain replay automatically
+ * inherits productivity tuning from the existing weighted scheduler
+ * rather than duplicating the mutation logic with its own counters.
+ */
+bool replay_syscall_step(struct childdata *child,
+			 const struct chain_step *saved,
+			 bool have_substitute,
+			 unsigned long substitute_retval,
+			 bool *found_new)
+{
+	struct syscallrecord *rec = &child->syscall;
+	struct syscallentry *entry;
+	unsigned long args[6];
+
+	if (saved->nr >= MAX_NR_SYSCALL)
+		return FAIL;
+
+	entry = get_syscall_entry(saved->nr, saved->do32bit);
+	if (entry == NULL)
+		return FAIL;
+
+	/* sanitise-bearing syscalls allocate and stash heap pointers into
+	 * arg slots during generic_sanitise; replay would feed stale args
+	 * to those slots.  Same gate the mini-corpus uses for the same
+	 * reason. */
+	if (entry->sanitise != NULL)
+		return FAIL;
+
+	/* The syscall may have been deactivated since the chain was saved
+	 * (returned ENOSYS, hit AVOID_SYSCALL, lost a CAP_*).  Bail out
+	 * rather than replay an inert call. */
+	if (!validate_specific_syscall_silent(
+			saved->do32bit ? syscalls_32bit :
+			(biarch ? syscalls_64bit : syscalls),
+			(int)saved->nr))
+		return FAIL;
+
+	memcpy(args, saved->args, sizeof(args));
+	minicorpus_mutate_args(args, entry);
+
+	lock(&rec->lock);
+	rec->do32bit = saved->do32bit;
+	rec->nr = saved->nr;
+	unlock(&rec->lock);
+
+	rec->a1 = args[0];
+	rec->a2 = args[1];
+	rec->a3 = args[2];
+	rec->a4 = args[3];
+	rec->a5 = args[4];
+	rec->a6 = args[5];
+
+	memset(rec->postbuffer, 0, POSTBUFFER_LEN);
+
+	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
+
+	return dispatch_step(child, found_new);
 }
