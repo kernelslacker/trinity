@@ -1,6 +1,7 @@
 /* DRM FDs */
 
 #include "fd.h"
+#include "list.h"
 #include "memfd.h"
 #include "objects.h"
 #include "random.h"
@@ -8,6 +9,7 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "utils.h"
 
 #ifdef USE_DRM
 
@@ -71,7 +73,12 @@ static void add_drm_obj(int fd)
 {
 	struct object *obj;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->drmfd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_DRM);
 
@@ -91,6 +98,18 @@ static int open_drm_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DRM);
 	head->destroy = &drmfd_destructor;
 	head->dump = &drmfd_dump;
+	/*
+	 * Route obj structs for this provider through the shared obj
+	 * heap so post-fork regen via try_regenerate_fd() → open_drm_fd
+	 * → add_drm_obj produces obj structs that already-forked
+	 * children can see without chasing parent-private pointers in
+	 * the destructor's close() or in any future drmfd consumer.
+	 * The obj here only carries a raw fd in the union (obj->drmfd);
+	 * no other pointer fields hang off it, so this conversion is a
+	 * straight obj-struct-only migration with no companion string
+	 * heap allocations.
+	 */
+	head->shared_alloc = true;
 
 	dir = opendir("/dev/dri/");
 	if (!dir)
