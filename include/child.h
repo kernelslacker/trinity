@@ -61,6 +61,7 @@ enum child_op_type {
 	CHILD_OP_FS_LIFECYCLE,
 	CHILD_OP_SIGNAL_STORM,
 	CHILD_OP_FUTEX_STORM,
+	CHILD_OP_PIPE_THRASH,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -209,3 +210,4 @@ bool refcount_auditor(struct childdata *child);
 bool fs_lifecycle(struct childdata *child);
 bool signal_storm(struct childdata *child);
 bool futex_storm(struct childdata *child);
+bool pipe_thrash(struct childdata *child);

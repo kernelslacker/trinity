@@ -191,6 +191,12 @@ struct stats_s {
 	unsigned long futex_storm_inner_crashed; /* inner worker died by signal */
 	unsigned long futex_storm_iters;	/* cumulative inner-worker futex syscalls */
 
+	/* pipe_thrash childop counters */
+	unsigned long pipe_thrash_runs;		/* total pipe_thrash invocations */
+	unsigned long pipe_thrash_pipes;	/* successful pipe()/pipe2() calls */
+	unsigned long pipe_thrash_socketpairs;	/* successful socketpair() calls */
+	unsigned long pipe_thrash_alloc_failed;	/* create syscall returned -1 */
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially
