@@ -30,6 +30,7 @@ extern unsigned long mapping_sizes[NR_MAPPING_SIZES];
 
 struct object;
 void map_destructor(struct object *obj);
+void map_destructor_shared(struct object *obj);
 void map_dump(struct object *obj, enum obj_scope scope);
 
 void setup_initial_mappings(void);
