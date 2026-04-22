@@ -10,10 +10,12 @@
 #include "exit.h"
 #include "fd.h"
 #include "files.h"
+#include "list.h"
 #include "objects.h"
 #include "pathnames.h"
 #include "random.h"
 #include "syscalls/syscalls.h"
+#include "utils.h"
 
 int open_with_fopen(const char *filename, int flags)
 {
@@ -114,6 +116,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 	head = get_objhead(OBJ_GLOBAL, objtype);
 	head->destroy = &filefd_destructor;
 	head->dump = &filefd_dump;
+	head->shared_alloc = true;
 
 	generate_filelist();
 
@@ -129,9 +132,14 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 	for (i = 0; i < nr_to_open; i++) {
 		struct stat sb;
 		const char *filename;
-		struct object *obj = alloc_object();
+		struct object *obj;
 		int fd = -1;
 		int flags;
+
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL)
+			break;
+		INIT_LIST_HEAD(&obj->list);
 
 		do {
 			int ret;
@@ -152,7 +160,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 		} while (fd == -1);
 
 		if (fd == -1) {
-			free(obj);
+			free_shared_obj(obj, sizeof(struct object));
 			break;
 		}
 
@@ -212,10 +220,13 @@ int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
 		if (flags == -1)
 			continue;
 
-		obj = alloc_object();
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL)
+			return false;
+		INIT_LIST_HEAD(&obj->list);
 		fd = open_file(obj, filename, flags);
 		if (fd == -1) {
-			free(obj);
+			free_shared_obj(obj, sizeof(struct object));
 			continue;
 		}
 
