@@ -15,12 +15,14 @@
 
 #include "bpf.h"
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "utils.h"
 
 static int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
@@ -75,6 +77,12 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_ARENA, 0, 0, 4096, 0, "arena" },
 };
 
+/*
+ * Cross-process safe: reads obj->bpfobj fields (now in shm via
+ * alloc_shared_obj) and looks up the map type name from the static
+ * bpf_fds[] table.  No process-local pointers are dereferenced, so
+ * it is correct to call this from a different process than the allocator.
+ */
 static void bpf_map_dump(struct object *obj, enum obj_scope scope)
 {
 	u32 type = obj->bpfobj.map_type;
@@ -105,7 +113,12 @@ static int open_bpf_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->bpfobj.map_fd = fd;
 	obj->bpfobj.map_type = bpf_fds[idx].map_type;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
@@ -124,6 +137,14 @@ static int init_bpf_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_MAP);
 	head->destroy = &bpf_map_destructor;
 	head->dump = &bpf_map_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  bpfobj is {u32 map_type;
+	 * int map_fd;} with no pointer members, so this is a mechanical
+	 * conversion matching the pidfd template.
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++)
 		open_bpf_fd();
@@ -251,6 +272,13 @@ static void bpf_prog_destructor(struct object *obj)
 	close(obj->bpfprogobj.fd);
 }
 
+/*
+ * Cross-process safe: reads obj->bpfprogobj fields (now in shm via
+ * alloc_shared_obj) and looks up the prog type name from the static
+ * bpf_prog_templates[] table.  No process-local pointers are
+ * dereferenced, so it is correct to call this from a different process
+ * than the allocator.
+ */
 static void bpf_prog_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "bpf prog fd:%d type:%s scope:%d\n",
@@ -275,7 +303,12 @@ static int open_bpf_prog_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->bpfprogobj.fd = fd;
 	obj->bpfprogobj.prog_type = bpf_prog_templates[idx].prog_type;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
@@ -300,6 +333,12 @@ static int init_bpf_prog_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_PROG);
 	head->destroy = &bpf_prog_destructor;
 	head->dump = &bpf_prog_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  bpfprogobj is
+	 * {int fd; u32 prog_type;} with no pointer members — mechanical
+	 * conversion matching the pidfd template.
+	 */
+	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++) {
 		struct object *obj;
@@ -318,7 +357,12 @@ static int init_bpf_prog_fds(void)
 			continue;
 		}
 
-		obj = alloc_object();
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL) {
+			close(fd);
+			continue;
+		}
+		INIT_LIST_HEAD(&obj->list);
 		obj->bpfprogobj.fd = fd;
 		obj->bpfprogobj.prog_type = bpf_prog_templates[i].prog_type;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
@@ -385,6 +429,11 @@ static void bpf_link_destructor(struct object *obj)
 	close(obj->bpflinkobj.fd);
 }
 
+/*
+ * Cross-process safe: reads obj->bpflinkobj fields (now in shm via
+ * alloc_shared_obj) and the scope scalar.  No process-local pointers
+ * are dereferenced.
+ */
 static void bpf_link_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "bpf link fd:%d attach_type:%u scope:%d\n",
@@ -400,6 +449,12 @@ static int init_bpf_link_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_LINK);
 	head->destroy = &bpf_link_destructor;
 	head->dump = &bpf_link_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  bpflinkobj is
+	 * {int fd; u32 attach_type;} with no pointer members — mechanical
+	 * conversion matching the pidfd template.
+	 */
+	head->shared_alloc = true;
 
 	return true;
 }
@@ -455,6 +510,11 @@ static void bpf_btf_destructor(struct object *obj)
 	close(obj->bpfbtfobj.fd);
 }
 
+/*
+ * Cross-process safe: reads obj->bpfbtfobj.fd (now in shm via
+ * alloc_shared_obj) and the scope scalar.  No process-local pointers
+ * are dereferenced.
+ */
 static void bpf_btf_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "bpf btf fd:%d scope:%d\n", obj->bpfbtfobj.fd, scope);
@@ -467,6 +527,12 @@ static int init_bpf_btf_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_BTF);
 	head->destroy = &bpf_btf_destructor;
 	head->dump = &bpf_btf_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  bpfbtfobj is
+	 * {int fd;} with no pointer members — mechanical conversion
+	 * matching the pidfd template.
+	 */
+	head->shared_alloc = true;
 
 	return true;
 }
