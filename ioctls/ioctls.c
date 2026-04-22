@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "efault_cache.h"
 #include "files.h"
 #include "ioctls.h"
 #include "random.h"
@@ -125,6 +126,26 @@ const struct ioctl_group *get_random_ioctl_group(void)
 	return grps[rand() % grps_cnt];
 }
 
+/*
+ * Stable index of grp in the registered-groups table.  Constructor
+ * registration order is deterministic and identical across all forked
+ * children, so the index works as the group half of the EFAULT-probe
+ * cache key without needing to hash a pointer that varies between
+ * processes.  Linear scan is fine — grps_cnt is at most 48.
+ */
+int ioctl_group_index(const struct ioctl_group *grp)
+{
+	int i;
+
+	if (grp == NULL)
+		return -1;
+
+	for (i = 0; i < grps_cnt; ++i)
+		if (grps[i] == grp)
+			return i;
+	return -1;
+}
+
 static unsigned long random_ioctl_arg(void)
 {
 	if (RAND_BOOL()) {
@@ -140,56 +161,82 @@ static unsigned long random_ioctl_arg(void)
 }
 
 /*
- * Pick an arg shape for the given ioctl request based on the
- * _IOC_DIR / _IOC_SIZE fields baked into the request number.  Any
- * ioctl defined via _IO()/_IOR()/_IOW()/_IOWR() (the bulk of trinity's
- * tables — V4L2, btrfs, binder, DRM, vhost, ...) carries enough
- * information here to choose between a scalar and a properly-sized
- * pointer, which is most of what the kernel checks before dispatching
- * into real handler logic.
+ * Pick an arg shape for the given ioctl request, in three tiers.
  *
- * Legacy raw-constant ioctls (TCGETS-style 0x5401, sockios, ...) do
- * not encode anything reliable: their _IOC_TYPE may collide with an
- * ASCII char, their _IOC_SIZE bits are part of the magic number, and
- * their _IOC_DIR bits are typically zero.  We catch the obvious case
- * (_IOC_TYPE == 0) and defer to the historical coin flip; the rest
- * land in the dir==NONE branch and get handed a scalar, which matches
- * one of the two outcomes the old generator already produced.  An
- * EFAULT-probe pass is the proper fix for the legacy surface and is
- * tracked as a separate change.
+ *   Tier 1 — decoded path.  Ioctls defined via _IO*() with a non-zero
+ *     _IOC_TYPE and non-NONE _IOC_DIR carry their arg size in the
+ *     request number.  Trust it: hand the kernel a properly-sized
+ *     buffer, seeded with random bytes for the _IOW / _IOWR families.
+ *     Covers the bulk of V4L2, btrfs, binder, DRM, vhost, ...
+ *
+ *   Tier 2 — EFAULT-probe cache.  Legacy raw-constant ioctls
+ *     (TCGETS-style 0x5401, sockios) and _IO()-encoded ioctls that
+ *     secretly take a pointer carry no shape information in the
+ *     request.  Probe at runtime by calling with a bogus arg and
+ *     watching errno; cache the verdict per (group, request) in shm
+ *     so every other child reuses it.  See efault_cache.c.
+ *
+ *   Tier 3 — legacy 50/50.  When the probe is opted out (KVM, vhost,
+ *     vfio, iommufd, loop-control all allocate kernel state on
+ *     dispatch), inconclusive, or transiently failed (EBADF on a
+ *     mismatched fd), fall back to the historical coin flip between
+ *     a random scalar and a writable page.
  */
-static unsigned long ioctl_arg_for_request(unsigned int request)
+static unsigned long ioctl_arg_for_request(const struct ioctl_group *grp,
+					   int fd, unsigned int request)
 {
 	unsigned int dir, size;
 	void *buf;
+	enum ioctl_arg_class cls;
 
-	if (_IOC_TYPE(request) == 0)
-		return random_ioctl_arg();
+	/* Tier 1. */
+	if (_IOC_TYPE(request) != 0) {
+		dir = _IOC_DIR(request);
+		if (dir != _IOC_NONE) {
+			size = _IOC_SIZE(request);
+			if (size == 0 || size > page_size)
+				size = page_size;
 
-	dir = _IOC_DIR(request);
-	if (dir == _IOC_NONE)
+			buf = get_writable_address(size);
+			if (buf == NULL)
+				return random_ioctl_arg();
+
+			/*
+			 * _IOC_WRITE means userland writes / kernel reads
+			 * (the _IOW and _IOWR families).  Without meaningful
+			 * contents the kernel usually rejects on first-field
+			 * validation, so seed the buffer with random bytes.
+			 * Pure _IOC_READ ioctls have the kernel writing back
+			 * into the buffer — we just needed a writable dest.
+			 */
+			if (dir & _IOC_WRITE)
+				generate_rand_bytes((unsigned char *) buf,
+						    size);
+
+			return (unsigned long) buf;
+		}
+	}
+
+	/* Tier 2. */
+	cls = ioctl_efault_classify(grp, fd, request);
+	switch (cls) {
+	case IOCTL_ARG_SCALAR:
 		return (unsigned long) rand64();
-
-	size = _IOC_SIZE(request);
-	if (size == 0 || size > page_size)
-		size = page_size;
-
-	buf = get_writable_address(size);
-	if (buf == NULL)
-		return random_ioctl_arg();
-
-	/*
-	 * _IOC_WRITE means userland writes / kernel reads (the _IOW and
-	 * _IOWR families).  Without meaningful contents the kernel
-	 * usually rejects on first-field validation, so seed the buffer
-	 * with random bytes.  Pure _IOC_READ ioctls have the kernel
-	 * writing back into the buffer — we just needed a writable
-	 * destination address.
-	 */
-	if (dir & _IOC_WRITE)
+	case IOCTL_ARG_POINTER:
+		size = _IOC_SIZE(request);
+		if (size == 0 || size > page_size)
+			size = page_size;
+		buf = get_writable_address(size);
+		if (buf == NULL)
+			return random_ioctl_arg();
 		generate_rand_bytes((unsigned char *) buf, size);
-
-	return (unsigned long) buf;
+		return (unsigned long) buf;
+	case IOCTL_ARG_INCONCLUSIVE:
+	case IOCTL_ARG_UNKNOWN:
+	default:
+		/* Tier 3. */
+		return random_ioctl_arg();
+	}
 }
 
 void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
@@ -201,7 +248,7 @@ void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 	request = grp->ioctls[ioctlnr].request;
 
 	rec->a2 = request;
-	rec->a3 = ioctl_arg_for_request(request);
+	rec->a3 = ioctl_arg_for_request(grp, (int) rec->a1, request);
 	rec->a4 = random_ioctl_arg();
 	rec->a5 = random_ioctl_arg();
 	rec->a6 = random_ioctl_arg();
