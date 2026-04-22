@@ -430,6 +430,24 @@ void show_unannotated_args(void)
  * This changes the pointers in the table 'from' to be copies in
  * shared mmaps across all children.  We do this so that a child can
  * modify the flags field (adding AVOID for eg) and have other processes see the change.
+ *
+ * Stays alloc_shared() rather than alloc_shared_global() — the comment
+ * above is the freeze blocker.  Children write the per-entry flags
+ * field (e.g. AVOID_SYSCALL added by deactivate_syscall after a
+ * syscall demonstrates it crashes the kernel) and the active_number
+ * field is mutated through deactivate_syscall_in_table /
+ * activate_syscall_in_table from any context that toggles the active
+ * set.  Promoting this region to alloc_shared_global() would EFAULT
+ * those writes and lock the syscall table to its post-init shape
+ * forever — which would defeat the dynamic-deactivation safety net
+ * that keeps the fuzzer from re-triggering a known-bad syscall.
+ *
+ * Wild-write risk this leaves open: a child syscall buffer pointer
+ * aliasing into the table could corrupt a syscallentry's argtype[] /
+ * num_args / flags, which would then drive the random-syscall
+ * generator down a wrong arg path until the corruption clears.
+ * Bounded — random-syscall.c gates on the shape it sees and won't
+ * crash the parent on a malformed entry.
  */
 static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsigned int nr)
 {
