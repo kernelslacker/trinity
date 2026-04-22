@@ -17,6 +17,7 @@
 #include "params.h"
 #include "pids.h"
 #include "random.h"
+#include "sequence.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -107,6 +108,7 @@ void init_shm(void)
 
 	kcov_init_global();
 	minicorpus_init();
+	chain_corpus_init();
 	cmp_hints_init();
 	struct_catalog_init();
 }

@@ -217,7 +217,8 @@ retry:
 
 bool random_syscall_step(struct childdata *child,
 			 bool have_substitute,
-			 unsigned long substitute_retval)
+			 unsigned long substitute_retval,
+			 bool *found_new)
 {
 	struct syscallrecord *rec;
 	struct syscallentry *entry;
@@ -284,6 +285,15 @@ bool random_syscall_step(struct childdata *child,
 	} else {
 		bool new_edges = kcov_collect(&child->kcov, rec->nr);
 
+		/* Surface this step's new-coverage signal to the chain
+		 * executor (when called via run_sequence_chain).  cmp-mode
+		 * runs above leave *found_new at its caller-supplied default,
+		 * which is the right semantic — they don't produce an edge
+		 * count, so they neither qualify nor disqualify the chain
+		 * for save. */
+		if (found_new != NULL)
+			*found_new = new_edges;
+
 		/* Record the (prev, curr) syscall pair for sequence coverage. */
 		if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
 			edgepair_record(child->last_syscall_nr, rec->nr, new_edges);
@@ -343,5 +353,5 @@ bool random_syscall_step(struct childdata *child,
 
 bool random_syscall(struct childdata *child)
 {
-	return random_syscall_step(child, false, 0);
+	return random_syscall_step(child, false, 0, NULL);
 }

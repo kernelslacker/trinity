@@ -5,6 +5,7 @@
 #include "edgepair.h"
 #include "kcov.h"
 #include "minicorpus.h"
+#include "sequence.h"
 #include "shm.h"
 #include "stats.h"
 #include "syscall.h"
@@ -396,6 +397,22 @@ void dump_stats(void)
 			pct10 = r_wins * 1000UL / r_count;
 			output(0, "Corpus replay: %lu replays  %lu wins (%lu.%lu%%)\n",
 			       r_count, r_wins, pct10 / 10, pct10 % 10);
+		}
+
+		{
+			unsigned long c_iter = __atomic_load_n(
+				&minicorpus_shm->chain_iter_count,
+				__ATOMIC_RELAXED);
+			unsigned long c_subst = __atomic_load_n(
+				&minicorpus_shm->chain_substitution_count,
+				__ATOMIC_RELAXED);
+			unsigned long c_save = chain_corpus_shm ? __atomic_load_n(
+				&chain_corpus_shm->save_count,
+				__ATOMIC_RELAXED) : 0UL;
+
+			if (c_iter > 0)
+				output(0, "Sequence chains: %lu iters  %lu substitutions  %lu corpus saves\n",
+				       c_iter, c_subst, c_save);
 		}
 	}
 
