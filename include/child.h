@@ -165,6 +165,9 @@ void reap_child(struct childdata *child, int childno);
 
 /* Childops */
 bool random_syscall(struct childdata *child);
+bool random_syscall_step(struct childdata *child,
+			 bool have_substitute,
+			 unsigned long substitute_retval);
 bool drop_privs(struct childdata *child);
 bool mmap_lifecycle(struct childdata *child);
 bool mprotect_split(struct childdata *child);
