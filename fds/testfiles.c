@@ -91,6 +91,13 @@ static int open_testfile_fds(void)
 		int fd;
 
 		filename = alloc_shared_str(64);
+		if (filename == NULL) {
+			/* shared str heap exhausted — bail out of init.  Caller
+			 * has whatever testfiles got created so far; that's
+			 * still useful, no need to crash. */
+			output(2, "testfile init aborted: shared str heap exhausted at i=%u\n", i);
+			break;
+		}
 		snprintf(filename, 64, "trinity-testfile%u", i);
 
 		if (obj == NULL) {
@@ -147,6 +154,8 @@ static int open_testfile_fd(void)
 	int fd;
 
 	filename = alloc_shared_str(64);
+	if (filename == NULL)
+		return false;	/* shared str heap exhausted; skip regen */
 	snprintf(filename, 64, "trinity-testfile%u", 1 + (rand() % MAX_TESTFILES));
 
 	obj = alloc_shared_obj(sizeof(struct object));

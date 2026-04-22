@@ -262,7 +262,18 @@ void free_shared_obj(void *p, size_t size)
  *   terminated string and harmless overshoot if it isn't (the buffer
  *   was zero-initialised anyway).
  */
-#define SHARED_STR_HEAP_SIZE (64U * 1024U)
+/*
+ * 1 MiB.  Originally sized at 64 KiB for the simple-init case (memfd
+ * + perf eventattr + a few testfiles), but bump-and-leak loses one
+ * slot per regen and `try_regenerate_fd` fires often enough during
+ * sustained fuzz runs (testfiles refresh, perf eventattr churn) that
+ * 64 KiB exhausts within a few hours and crashes the parent.  See
+ * the bcd2ea9fd96e crash on 2026-04-22 — caller in testfiles.c
+ * passed a NULL alloc_shared_str return into snprintf.  This bump
+ * is a stop-gap; the real fix is a freelist so freed slots get
+ * recycled rather than leaked.
+ */
+#define SHARED_STR_HEAP_SIZE (1U * 1024U * 1024U)
 
 static char *shared_str_heap;
 static size_t shared_str_heap_capacity;
