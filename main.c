@@ -1072,20 +1072,16 @@ static void print_stats(void)
 				unsigned long edges = kcov_shm->edges_found;
 				long delta = edges - last_edges;
 
-				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]\n",
+				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]\n",
 					op_count,
-					__atomic_load_n(&shm->stats.failures, __ATOMIC_RELAXED),
-					__atomic_load_n(&shm->stats.successes, __ATOMIC_RELAXED),
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate,
 					edges, last_edges > 0 ? delta : 0);
 				last_edges = edges;
 			} else {
-				output(0, "%ld iterations. [F:%ld S:%ld HI:%ld%s] %lu/sec\n",
+				output(0, "%ld iterations. [HI:%ld%s] %lu/sec\n",
 					op_count,
-					__atomic_load_n(&shm->stats.failures, __ATOMIC_RELAXED),
-					__atomic_load_n(&shm->stats.successes, __ATOMIC_RELAXED),
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate);
