@@ -12,11 +12,13 @@
 #include <linux/seccomp.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
+#include "utils.h"
 
 #ifndef SECCOMP_SET_MODE_FILTER
 #define SECCOMP_SET_MODE_FILTER 1
@@ -36,6 +38,15 @@ static void seccomp_notif_destructor(struct object *obj)
 	close(obj->seccomp_notifobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->seccomp_notifobj.fd (now in shm
+ * via alloc_shared_obj) and the scope scalar.  No process-local
+ * pointers are dereferenced, so it is correct to call this from a
+ * different process than the one that allocated the obj — which
+ * matters because head->dump runs from dump_childdata() in the
+ * parent's crash diagnostics path even when a child triggered the
+ * crash.
+ */
 static void seccomp_notif_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "seccomp_notif fd:%d scope:%d\n",
@@ -78,7 +89,12 @@ static int open_seccomp_notif(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->seccomp_notifobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_SECCOMP_NOTIF);
 	return true;
@@ -92,6 +108,14 @@ static int init_seccomp_notif_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SECCOMP_NOTIF);
 	head->destroy = &seccomp_notif_destructor;
 	head->dump = &seccomp_notif_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  seccomp_notifobj is {int fd;}
+	 * with no pointer members, so this is a mechanical conversion that
+	 * matches the pidfd template exactly.
+	 */
+	head->shared_alloc = true;
 
 	/* Create a small pool.  Each call installs a new seccomp filter,
 	 * so don't go overboard. */
