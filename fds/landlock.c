@@ -11,11 +11,13 @@
 #include <linux/landlock.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void landlock_destructor(struct object *obj)
 {
@@ -132,7 +134,12 @@ static int open_landlock_fd(void)
 
 	arm_landlock(fd);
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->landlockobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_LANDLOCK);
 	return true;
@@ -148,6 +155,7 @@ static int init_landlock_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_LANDLOCK);
 	head->destroy = &landlock_destructor;
 	head->dump = &landlock_dump;
+	head->shared_alloc = true;
 
 	return open_landlock_fd();
 }
