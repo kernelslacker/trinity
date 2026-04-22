@@ -7,6 +7,7 @@
 
 #include "arch.h"
 #include "compat.h"
+#include "list.h"
 #include "random.h"
 #include "sysv-shm.h"
 #include "objects.h"
@@ -34,6 +35,7 @@ void create_sysv_shms(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_SYSV_SHM);
 	head->dump = dump_sysv_shm;
+	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(shmget_flags); i++) {
 		void *p;
@@ -42,7 +44,10 @@ void create_sysv_shms(void)
 		int flags;
 		int id;
 
-		obj = alloc_object();
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL)
+			continue;
+		INIT_LIST_HEAD(&obj->list);
 
 		flags = 0660 | IPC_CREAT | IPC_EXCL | shmget_flags[i];
 
@@ -50,7 +55,7 @@ void create_sysv_shms(void)
 
 		id = shmget(IPC_PRIVATE, size, flags);
 		if (id == -1) {
-			free(obj);
+			free_shared_obj(obj, sizeof(struct object));
 			continue;
 		}
 		obj->sysv_shm.id = id;
@@ -64,7 +69,7 @@ void create_sysv_shms(void)
 			p = shmat(id, NULL, SHM_EXEC);
 		if (p == (void *) -1) {
 			shmctl(id, IPC_RMID, NULL);
-			free(obj);
+			free_shared_obj(obj, sizeof(struct object));
 			continue;
 		}
 		obj->sysv_shm.ptr = p;
