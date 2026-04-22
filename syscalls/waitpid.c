@@ -8,6 +8,11 @@ static unsigned long wait_options[] = {
 	WNOHANG, WUNTRACED, WCONTINUED,
 };
 
+static void sanitise_waitpid(struct syscallrecord *rec)
+{
+	avoid_shared_buffer(&rec->a2, sizeof(int));
+}
+
 struct syscallentry syscall_waitpid = {
 	.name = "waitpid",
 	.group = GROUP_PROCESS,
@@ -15,4 +20,5 @@ struct syscallentry syscall_waitpid = {
 	.argtype = { [0] = ARG_PID, [1] = ARG_ADDRESS, [2] = ARG_LIST },
 	.argname = { [0] = "pid", [1] = "stat_addr", [2] = "options" },
 	.arg_params[2].list = ARGLIST(wait_options),
+	.sanitise = sanitise_waitpid,
 };
