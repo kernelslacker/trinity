@@ -222,6 +222,13 @@ void dump_stats(void)
 			shm->stats.fs_lifecycle_overlay,
 			shm->stats.fs_lifecycle_unsupported);
 
+	if (shm->stats.signal_storm_runs)
+		output(0, "\nsignal storm: runs:%lu kill:%lu sigqueue:%lu no_targets:%lu\n",
+			shm->stats.signal_storm_runs,
+			shm->stats.signal_storm_kill,
+			shm->stats.signal_storm_sigqueue,
+			shm->stats.signal_storm_no_targets);
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
