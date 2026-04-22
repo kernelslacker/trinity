@@ -107,6 +107,16 @@ static int ignore_files(const char *path)
 	const char *ignored_prefixes[] = {
 		"/sys/kernel/debug/",
 		"/sys/firmware/efi/efivars/",
+		/*
+		 * Pseudo-terminal device files.  The basename-pattern check
+		 * below catches /dev/tty* but a /dev/pts/<N> entry has the
+		 * basename "<N>" (just a number) and slips through.  A child
+		 * that opens the operator's pts and writes to it spews garbage
+		 * bytes into the controlling terminal even with the dup2-to-
+		 * /dev/null + setsid() guards in init_child, because /dev/pts
+		 * opens are by-path and bypass the controlling-terminal layer.
+		 */
+		"/dev/pts/",
 		NULL
 	};
 
