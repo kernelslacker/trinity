@@ -14,6 +14,7 @@
 #include "debug.h"
 #include "objects.h"
 #include "params.h"
+#include "pc_format.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -287,6 +288,7 @@ void * alloc_shared_obj(size_t size)
 	void *p;
 	int bucket;
 	void *caller = __builtin_return_address(0);
+	char pcbuf[128];
 
 	if (size == 0)
 		return NULL;
@@ -303,8 +305,9 @@ void * alloc_shared_obj(size_t size)
 		p = freelist_pop(&shm->shared_obj_freelist[bucket],
 				 bucket_sizes[bucket]);
 		if (p != NULL) {
-			output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%p\n",
-				p, size, caller);
+			output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%s\n",
+				p, size,
+				pc_to_string(caller, pcbuf, sizeof(pcbuf)));
 			return p;
 		}
 		/*
@@ -353,8 +356,8 @@ void * alloc_shared_obj(size_t size)
 
 	p = shared_obj_heap + old_used;
 	memset(p, 0, size);
-	output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%p\n",
-		p, size, caller);
+	output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%s\n",
+		p, size, pc_to_string(caller, pcbuf, sizeof(pcbuf)));
 	return p;
 }
 
@@ -362,6 +365,7 @@ void free_shared_obj(void *p, size_t size)
 {
 	int bucket;
 	void *caller = __builtin_return_address(0);
+	char pcbuf[128];
 
 	if (p == NULL || size == 0)
 		return;
@@ -394,12 +398,15 @@ void free_shared_obj(void *p, size_t size)
 		 * for the embedded-list-head case — matches the layout
 		 * alloc_shared_obj is most commonly used for. */
 		if (size == sizeof(struct object))
-			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%p "
+			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s "
 				"list.next=%p list.prev=%p\n",
-				p, size, caller, next, prev);
+				p, size,
+				pc_to_string(caller, pcbuf, sizeof(pcbuf)),
+				next, prev);
 		else
-			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%p\n",
-				p, size, caller);
+			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s\n",
+				p, size,
+				pc_to_string(caller, pcbuf, sizeof(pcbuf)));
 
 		if ((uintptr_t)next > 0x100000000UL &&
 		    (uintptr_t)prev > 0x100000000UL &&
@@ -413,8 +420,9 @@ void free_shared_obj(void *p, size_t size)
 				__FILE__, __func__, __LINE__);
 		}
 	} else {
-		output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%p\n",
-			p, size, caller);
+		output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s\n",
+			p, size,
+			pc_to_string(caller, pcbuf, sizeof(pcbuf)));
 	}
 
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
@@ -739,10 +747,13 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 			 * caller PC so we can correlate which arg-generation
 			 * path is most often producing into-shared addresses. */
 			if (verbosity > 1 && (n % 1000) == 0) {
+				char pcbuf[128];
+
 				output(1, "range_overlaps_shared: %lu cumulative rejects "
-					"(latest addr=0x%lx len=%lu caller=%p)\n",
+					"(latest addr=0x%lx len=%lu caller=%s)\n",
 					n, addr, len,
-					__builtin_return_address(0));
+					pc_to_string(__builtin_return_address(0),
+						     pcbuf, sizeof(pcbuf)));
 			}
 			return true;
 		}
