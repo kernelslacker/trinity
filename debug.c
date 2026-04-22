@@ -16,6 +16,7 @@
 #include "list.h"
 #include "params.h"
 #include "pids.h"
+#include "pre_crash_ring.h"
 #include "shm.h"
 #include "syscall.h"
 #include "tables.h"
@@ -76,6 +77,18 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 	outputerr("BUG!: [%d] %s:%s:%u\n", getpid(), filename, funcname, lineno);
 
 	show_backtrace();
+
+	/* Drain the pre-crash syscall ring(s).  For a child-side BUG, dump
+	 * just this child's ring — that is by far the most relevant trace.
+	 * For a parent-side BUG (this_child() returns NULL), iterate every
+	 * child: parent crashes are typically downstream fallout from a
+	 * child's recent wild write, so the offending syscall is sitting
+	 * in some child's ring even though the parent has no obvious
+	 * pointer to which one. */
+	if (child != NULL)
+		pre_crash_ring_dump(child);
+	else
+		pre_crash_ring_dump_all();
 
 	/* Now spin indefinitely (but allow ctrl-c) */
 
