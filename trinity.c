@@ -175,6 +175,7 @@ int main(int argc, char* argv[])
 
 	change_tmp_dir();
 
+	output(1, "phase: init_shm\n");
 	init_shm();
 
 	/* Always print mainpid so a gdb-attach round-trip is one line away
@@ -216,12 +217,15 @@ int main(int argc, char* argv[])
 	pids_init();
 
 	fd_hash_init();
+	output(1, "phase: init_object_lists\n");
 	init_object_lists(OBJ_GLOBAL, NULL);
 
+	output(1, "phase: setup_initial_mappings\n");
 	setup_initial_mappings();
 
 	parse_devices();
 
+	output(1, "phase: init_global_objects\n");
 	init_global_objects();
 
 	setup_main_signals();
@@ -230,6 +234,7 @@ int main(int argc, char* argv[])
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
 
+	output(1, "phase: open_fds\n");
 	if (open_fds() == false) {
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING)
 			panic(EXIT_FD_INIT_FAILURE);
@@ -245,6 +250,7 @@ int main(int argc, char* argv[])
 	 * the source instead of corrupting list pointers the parent (or a
 	 * later child) trips over during init_child_mappings().
 	 */
+	output(1, "phase: freeze_global_objects\n");
 	freeze_global_objects();
 
 	/*
