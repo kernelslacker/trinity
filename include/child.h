@@ -60,6 +60,7 @@ enum child_op_type {
 	CHILD_OP_REFCOUNT_AUDITOR,
 	CHILD_OP_FS_LIFECYCLE,
 	CHILD_OP_SIGNAL_STORM,
+	CHILD_OP_FUTEX_STORM,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -207,3 +208,4 @@ bool fd_stress(struct childdata *child);
 bool refcount_auditor(struct childdata *child);
 bool fs_lifecycle(struct childdata *child);
 bool signal_storm(struct childdata *child);
+bool futex_storm(struct childdata *child);

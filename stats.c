@@ -229,6 +229,12 @@ void dump_stats(void)
 		stat_row("signal_storm", "no_targets", shm->stats.signal_storm_no_targets);
 	}
 
+	if (shm->stats.futex_storm_runs)
+		output(0, "\nfutex storm: runs:%lu inner_crashed:%lu iters:%lu\n",
+			shm->stats.futex_storm_runs,
+			shm->stats.futex_storm_inner_crashed,
+			shm->stats.futex_storm_iters);
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
