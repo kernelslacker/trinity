@@ -20,6 +20,7 @@
 #include "minicorpus.h"
 #include "params.h"
 #include "pids.h"
+#include "pre_crash_ring.h"
 #include "random.h"
 #include "sequence.h"
 #include "shm.h"
@@ -328,6 +329,11 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 	 * has a chronological window of recent activity if a kernel taint
 	 * fires before the next syscall. */
 	child_syscall_ring_push(&child->syscall_ring, rec);
+
+	/* Also append a compact record to the per-child pre-crash ring,
+	 * dumped on __BUG() to attribute the assertion to a specific
+	 * recent syscall.  rec->tp was just refreshed in do_syscall(). */
+	pre_crash_ring_record(child, rec, &rec->tp);
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry != NULL) {
