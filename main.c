@@ -167,7 +167,14 @@ void reap_child(struct childdata *child, int childno)
 	} while (!__atomic_compare_exchange_n(&shm->running_childs, &cur, cur - 1,
 					       0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 
-	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
+	{
+		bool was_protected = globals_are_protected();
+		if (was_protected)
+			thaw_global_objects();
+		__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
+		if (was_protected)
+			freeze_global_objects();
+	}
 
 	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
 	 * never ran in the child.  No-op when the dir doesn't exist. */
@@ -743,7 +750,14 @@ static bool spawn_child(int childno)
 	}
 
 	/* Child won't get out of init_child until we write the pid */
-	__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
+	{
+		bool was_protected = globals_are_protected();
+		if (was_protected)
+			thaw_global_objects();
+		__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
+		if (was_protected)
+			freeze_global_objects();
+	}
 	if (pidstatfiles[childno]) {
 		fclose(pidstatfiles[childno]);
 		pidstatfiles[childno] = NULL;
@@ -1241,10 +1255,17 @@ void reset_epoch_state(void)
 	shm->stats.op_count = 0;
 	shm->stats.previous_op_count = 0;
 
-	for_each_child(i) {
-		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
-		clean_childdata(children[i]);
-		fd_event_ring_init(children[i]->fd_event_ring);
+	{
+		bool was_protected = globals_are_protected();
+		if (was_protected)
+			thaw_global_objects();
+		for_each_child(i) {
+			__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
+			clean_childdata(children[i]);
+			fd_event_ring_init(children[i]->fd_event_ring);
+		}
+		if (was_protected)
+			freeze_global_objects();
 	}
 
 	reseed();

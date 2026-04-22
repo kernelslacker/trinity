@@ -223,7 +223,23 @@ void pids_init(void)
 
 	output(0, "Using pid_max = %d\n", pidmax);
 
-	pids = alloc_shared(max_children * sizeof(pid_t));
+	/*
+	 * pids[] is read by children (get_pid() biases random pid args
+	 * toward live children) but written ONLY by the parent (spawn_child
+	 * stores the new pid, reap_child clears to EMPTY_PIDSLOT).  Tagging
+	 * it as a global obj region gets it mprotected PROT_READ post-init
+	 * so a child syscall that wild-writes through a buffer pointer
+	 * aliasing into pids[] EFAULTs in the kernel rather than silently
+	 * stamping garbage values.  Symptoms when unprotected: the parent's
+	 * pidmap sanity check fires with "Found pid 0 at pidslot N" because
+	 * a wild write zeroed a slot the child didn't legitimately own.
+	 *
+	 * The parent's own writes (spawn_child, reap_child) bracket their
+	 * pids[] mutations with the existing thaw_global_objects /
+	 * freeze_global_objects pair so the freeze defence applies to
+	 * children only.
+	 */
+	pids = alloc_shared_global(max_children * sizeof(pid_t));
 	for_each_child(i)
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 }
