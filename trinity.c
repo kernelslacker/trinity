@@ -177,6 +177,11 @@ int main(int argc, char* argv[])
 
 	init_shm();
 
+	/* Always print mainpid so a gdb-attach round-trip is one line away
+	 * instead of needing a separate `ps ax | grep trinity`.  Not gated
+	 * on -v: the cost is one line per run, the saving is per-debug. */
+	output(0, "mainpid=%d\n", mainpid);
+
 	kmsg_monitor_start();
 
 	init_taint_checking();
