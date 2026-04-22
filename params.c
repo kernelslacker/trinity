@@ -45,6 +45,7 @@ unsigned int random_selection_num;
 
 bool clowntown = false;
 bool show_stats = false;
+bool quiet = false;
 bool group_bias = false;
 
 unsigned long epoch_iterations = 0;
@@ -97,6 +98,7 @@ static const struct option_help option_descs[] = {
 	{ "kernel_taint",	'T', "controls which kernel taint flags should be considered (see README)" },
 	{ "list",		'L', "list all syscalls known on this architecture" },
 	{ "domain",		'P', "specify specific network domain for sockets" },
+	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
@@ -142,7 +144,7 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:r:s:ST:V:vx:X";
+static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:X";
 
 static const struct option longopts[] = {
 	{ "arch", required_argument, NULL, 'a' },
@@ -166,6 +168,7 @@ static const struct option longopts[] = {
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
+	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
 	{ "stats", no_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
@@ -317,6 +320,10 @@ void parse_args(int argc, char *argv[])
 			specific_domain_optarg = optarg;
 			break;
 		}
+
+		case 'q':
+			quiet = true;
+			break;
 
 		case 'r': {
 			char *end;

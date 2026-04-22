@@ -1046,6 +1046,9 @@ static void print_stats(void)
 	unsigned long op_count = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED) +
 				 sum_local_op_counts();
 
+	if (quiet)
+		return;
+
 	if (op_count > 1) {
 		static unsigned long lastcount = 0;
 		static struct timespec last_tp = { 0 };
