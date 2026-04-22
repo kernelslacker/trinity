@@ -55,6 +55,14 @@ static void sanitise_listns(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) req;
 	rec->a3 = RAND_RANGE(1, 512);
+
+	/*
+	 * ns_ids (a2) is the kernel's writeback target: a u64 array of the
+	 * matching namespace ids, up to a3 entries.  ARG_NON_NULL_ADDRESS
+	 * draws from the random pool, so a fuzzed pointer can land inside
+	 * an alloc_shared region.
+	 */
+	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(__u64));
 }
 
 static void post_listns(struct syscallrecord *rec)
