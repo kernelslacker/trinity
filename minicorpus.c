@@ -40,6 +40,35 @@ void minicorpus_init(void)
 	if (kcov_shm == NULL)
 		return;
 
+	/*
+	 * Stays alloc_shared() rather than alloc_shared_global().
+	 * Children are the producers for almost every field of the region:
+	 *   - rings[nr].entries[]: minicorpus_save() writes saved arg
+	 *     snapshots from child context after every coverage-positive
+	 *     syscall, under the per-ring lock.
+	 *   - rings[nr].lock: held by both child save and child replay.
+	 *   - mut_trials[] / mut_wins[]: minicorpus_mut_attrib_commit()
+	 *     atomically increments these from child context after every
+	 *     non-cmp syscall.
+	 *   - replay_count, splice_hits, splice_wins, replay_wins,
+	 *     stack_depth_histogram[], chain_iter_count: bumped from
+	 *     mutate_arg / minicorpus_mutate_args / chain replay paths,
+	 *     all in child context.
+	 * The only parent-side write is minicorpus_load_file (corpus
+	 * warm-start) which runs strictly before fork_children() — pre-
+	 * freeze, so it would be unaffected — but the post-fork paths
+	 * dominate, and they need the region writable.  Cannot be
+	 * mprotected without crippling per-call replay and the weighted
+	 * mutator scheduler.
+	 *
+	 * Wild-write risk this leaves open: a child syscall buffer pointer
+	 * aliasing into the corpus could corrupt a saved snapshot's args[]
+	 * (the next replay feeds garbage to the kernel — at worst ENOSYS /
+	 * EINVAL, not a parent crash) or stick a ring->lock byte (one
+	 * syscall's saves/replays stall).  The mut_attrib counters can be
+	 * skewed but the weight floor (MUT_WEIGHT_FLOOR=50) keeps the
+	 * scheduler operational.  No parent crash surface.
+	 */
 	minicorpus_shm = alloc_shared(sizeof(struct minicorpus_shared));
 	memset(minicorpus_shm, 0, sizeof(struct minicorpus_shared));
 	output(0, "KCOV: mini-corpus allocated (%lu KB, %d entries/syscall)\n",
