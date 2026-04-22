@@ -251,11 +251,31 @@ void __list_del_entry_valid_or_die(struct list_head *entry,
 	if (prev->next != entry) {
 		outputerr("list_del corruption at %s:%s:%u: entry=%p prev=%p but prev->next=%p (expected entry) — back-link broken\n",
 			file, func, line, entry, prev, prev->next);
+		outputerr(" entry contents: list.next=%p list.prev=%p\n", entry->next, entry->prev);
+		outputerr(" prev contents:  list.next=%p list.prev=%p\n", prev->next, prev->prev);
 		__BUG("list_del: prev->next != entry", file, func, line);
 	}
 	if (next->prev != entry) {
 		outputerr("list_del corruption at %s:%s:%u: entry=%p next=%p but next->prev=%p (expected entry) — back-link broken\n",
 			file, func, line, entry, next, next->prev);
+		outputerr(" entry contents: list.next=%p list.prev=%p\n", entry->next, entry->prev);
+		outputerr(" next contents:  list.next=%p list.prev=%p\n", next->next, next->prev);
+		/*
+		 * Distinguish the three forensic states with a one-line summary:
+		 *   - both next->next and next->prev are NULL  -> next was zeroed
+		 *     wholesale (freelist_push of a still-linked obj, or a memset
+		 *     that hit it).
+		 *   - next->prev is NULL and next->next looks like a freelist
+		 *     link (a shared-heap-range pointer)        -> next is on the
+		 *     freelist right now (free_shared_obj without list_del).
+		 *   - next->prev is NULL and next->next looks like a valid list
+		 *     pointer                                   -> stray 8-byte
+		 *     write to next->prev only.
+		 */
+		if (next->prev == NULL && next->next == NULL)
+			outputerr(" forensic: next is fully zeroed (freelist-push leftover or wholesale memset)\n");
+		else if (next->prev == NULL)
+			outputerr(" forensic: only next->prev is zero; next->next=%p (single 8-byte clobber, or freelist-linked)\n", next->next);
 		__BUG("list_del: next->prev != entry", file, func, line);
 	}
 }
