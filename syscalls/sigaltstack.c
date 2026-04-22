@@ -43,6 +43,14 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	}
 
 	rec->a1 = (unsigned long) ss;
+
+	/*
+	 * uoss (a2) is the kernel's writeback target for the previous stack:
+	 * the kernel fills its three fields when uoss is non-NULL.
+	 * ARG_ADDRESS draws from the random pool, so a fuzzed pointer can
+	 * land inside an alloc_shared region.
+	 */
+	avoid_shared_buffer(&rec->a2, sizeof(stack_t));
 }
 
 struct syscallentry syscall_sigaltstack = {

@@ -10,6 +10,14 @@
 static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 {
 	rec->a4 = sizeof(sigset_t);
+
+	/*
+	 * oset (a3) is the kernel's writeback target for the previous mask
+	 * (a4 bytes wide).  ARG_ADDRESS draws from the random pool, so a
+	 * fuzzed pointer can land inside an alloc_shared region and let the
+	 * kernel scribble bookkeeping.
+	 */
+	avoid_shared_buffer(&rec->a3, rec->a4);
 }
 
 static unsigned long sigprocmask_how[] = {
