@@ -10,16 +10,24 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 
 static void iommufd_destructor(struct object *obj)
 {
 	close(obj->iommufdobj.fd);
 }
 
+/*
+ * Cross-process safe: only reads obj->iommufdobj.fd (now in shm via
+ * alloc_shared_obj) and the scope scalar.  No process-local pointers
+ * are dereferenced, so it is correct to call this from a different
+ * process than the one that allocated the obj.
+ */
 static void iommufd_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "iommufd fd:%d scope:%d\n", obj->iommufdobj.fd, scope);
@@ -44,12 +52,25 @@ static int init_iommufd_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_IOMMUFD);
 	head->destroy = &iommufd_destructor;
 	head->dump = &iommufd_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  __destroy_object()
+	 * checks this flag to route the obj struct release through
+	 * free_shared_obj() instead of free().  iommufdobj is {int fd;}
+	 * with no pointer members, so this is a mechanical conversion that
+	 * matches the pidfd template exactly.
+	 */
+	head->shared_alloc = true;
 
 	fd = open_iommufd();
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->iommufdobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IOMMUFD);
 	return true;
@@ -77,7 +98,12 @@ static int open_iommufd_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->iommufdobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IOMMUFD);
 	return true;
