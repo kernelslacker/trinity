@@ -67,6 +67,15 @@ struct minicorpus_shared {
 	/* Distribution of stacking depths chosen by pick_stack_depth().
 	 * Index is the depth value (1..STACK_MAX); index 0 is unused. */
 	unsigned long stack_depth_histogram[STACK_MAX + 1];
+
+	/* Sequence-chain telemetry (Phase 1).  chain_iter_count is bumped
+	 * once per chain dispatched; chain_substitution_count is bumped
+	 * each time a step's arg slot was overwritten with the previous
+	 * step's return value.  The ratio measures the realised substitution
+	 * frequency and lets the gating probability inside the chain
+	 * executor be tuned against observed coverage outcomes. */
+	unsigned long chain_iter_count;
+	unsigned long chain_substitution_count;
 };
 
 extern struct minicorpus_shared *minicorpus_shm;

@@ -35,6 +35,7 @@
 #include "uid.h"
 #include "deferred-free.h"
 #include "sanitise.h"
+#include "sequence.h"
 #include "utils.h"	// zmalloc
 
 /* Set to true once we detect that unprivileged pidns isn't available.
@@ -823,7 +824,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_FD_STRESS:		ret = fd_stress(child); break;
 		case CHILD_OP_REFCOUNT_AUDITOR:		ret = refcount_auditor(child); break;
 		case CHILD_OP_FS_LIFECYCLE:		ret = fs_lifecycle(child); break;
-		default:				ret = random_syscall(child); break;
+		default:				ret = run_sequence_chain(child); break;
 		}
 
 		if (child->op_type != CHILD_OP_SYSCALL) {

@@ -206,7 +206,18 @@ retry:
 	return true;
 }
 
-bool random_syscall(struct childdata *child)
+/*
+ * Probability (in percent) that, when a substitute retval is offered by
+ * the sequence-chain executor, one randomly-chosen arg slot is overwritten
+ * with it.  Exposed here (rather than in sequence.c) because the substitution
+ * itself happens between argument generation and dispatch, which lives in
+ * this file.  Tunable independently of the chain length distribution.
+ */
+#define CHAIN_SUBST_PCT 30
+
+bool random_syscall_step(struct childdata *child,
+			 bool have_substitute,
+			 unsigned long substitute_retval)
 {
 	struct syscallrecord *rec;
 	struct syscallentry *entry;
@@ -222,6 +233,33 @@ bool random_syscall(struct childdata *child)
 
 	/* Generate arguments, print them out */
 	generate_syscall_args(rec);
+
+	/* Sequence-chain substitution.  When the previous step in the chain
+	 * returned a usable value, with CHAIN_SUBST_PCT probability splice
+	 * it into one randomly-chosen arg slot of this call, overwriting
+	 * whatever the generator produced.  Done after generate_syscall_args
+	 * so the substituted value is what the kernel actually sees, and
+	 * before output_syscall_prefix so the trace reflects the real call. */
+	if (have_substitute &&
+	    (unsigned int)(rand() % 100) < CHAIN_SUBST_PCT) {
+		entry = syscalls[rec->nr].entry;
+		if (entry != NULL && entry->num_args > 0) {
+			unsigned int slot = 1 +
+				(unsigned int)(rand() % entry->num_args);
+
+			switch (slot) {
+			case 1: rec->a1 = substitute_retval; break;
+			case 2: rec->a2 = substitute_retval; break;
+			case 3: rec->a3 = substitute_retval; break;
+			case 4: rec->a4 = substitute_retval; break;
+			case 5: rec->a5 = substitute_retval; break;
+			case 6: rec->a6 = substitute_retval; break;
+			}
+			if (minicorpus_shm != NULL)
+				__atomic_fetch_add(&minicorpus_shm->chain_substitution_count,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
 
 	output_syscall_prefix(rec);
 
@@ -301,4 +339,9 @@ bool random_syscall(struct childdata *child)
 	ret = true;
 
 	return ret;
+}
+
+bool random_syscall(struct childdata *child)
+{
+	return random_syscall_step(child, false, 0);
 }
