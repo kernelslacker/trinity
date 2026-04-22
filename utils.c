@@ -652,6 +652,53 @@ bool globals_are_protected(void)
 	return global_objects_protected;
 }
 
+/*
+ * Dump current obj-heap accounting under -vv: bytes consumed by the
+ * bump allocator, the bucket-size table, and the depth of each
+ * freelist bucket measured by walking it.  The walk traverses one
+ * pointer per slot so it is O(depth) per bucket; gated tightly
+ * because deep buckets (post heavy regen churn) can be expensive.
+ *
+ * Helps debug "is the recycler actually recycling?" — a busy run with
+ * many obj allocs but consistently empty buckets means free_shared_obj
+ * is not being called for most slots; the bump cursor will then race
+ * shared_obj_heap_capacity and eventually exhaust the heap.
+ */
+void dump_obj_heap_stats(void)
+{
+	unsigned int i;
+	size_t used;
+	char usedbuf[32], capbuf[32];
+
+	if (verbosity <= 2)
+		return;
+
+	used = __atomic_load_n(&shm->shared_obj_heap_used, __ATOMIC_RELAXED);
+	sizeunit(used, usedbuf, sizeof(usedbuf));
+	sizeunit(shared_obj_heap_capacity, capbuf, sizeof(capbuf));
+	output(0, "obj heap: used=%s / cap=%s (%zu / %zu bytes)\n",
+		usedbuf, capbuf, used, shared_obj_heap_capacity);
+
+	for (i = 0; i < NUM_SHM_FREELIST_BUCKETS; i++) {
+		uint64_t tagged;
+		uintptr_t ptr;
+		unsigned int depth = 0;
+
+		tagged = __atomic_load_n(&shm->shared_obj_freelist[i],
+					 __ATOMIC_RELAXED);
+		ptr = (uintptr_t)(tagged & FREELIST_PTR_MASK);
+		/* Walk the singly-linked freelist; each slot's first word
+		 * holds the next pointer (no version bits — those live only
+		 * in the head). */
+		while (ptr != 0 && depth < 1000000) {
+			depth++;
+			ptr = *(uintptr_t *)ptr;
+		}
+		output(0, "  freelist[%zuB]: depth=%u\n",
+			bucket_sizes[i], depth);
+	}
+}
+
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
 {
 	unsigned long end = addr + len;

@@ -21,6 +21,7 @@ void freeze_global_objects(void);
 void thaw_global_objects(void);
 bool globals_are_protected(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
+void dump_obj_heap_stats(void);
 
 void * __zmalloc(size_t size, const char *func);
 #define zmalloc(size)	__zmalloc(size, __func__)
