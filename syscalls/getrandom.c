@@ -16,9 +16,10 @@
 #define GRND_INSECURE  0x0004
 #endif
 
-static void sanitise_getrandom(__unused__ struct syscallrecord *rec)
+static void sanitise_getrandom(struct syscallrecord *rec)
 {
 	(void) common_set_mmap_ptr_len();
+	avoid_shared_buffer(&rec->a1, rec->a2);
 }
 
 static unsigned long getrandom_flags[] = {

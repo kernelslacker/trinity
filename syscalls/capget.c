@@ -24,6 +24,7 @@ static void sanitise_capget(struct syscallrecord *rec)
 	hdr->pid = get_pid();
 
 	rec->a1 = (unsigned long) hdr;
+	avoid_shared_buffer(&rec->a2, 2 * sizeof(struct __user_cap_data_struct));
 }
 
 struct syscallentry syscall_capget = {

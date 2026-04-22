@@ -5,6 +5,7 @@
  * or zero if no file descriptor became ready during the requested timeout milliseconds.
  * When an error occurs, returns -1 and errno is set appropriately.
  */
+#include <sys/epoll.h>
 #include "random.h"
 #include "sanitise.h"
 
@@ -16,6 +17,7 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
 	case 1: rec->a4 = 0; break;			/* immediate */
 	default: rec->a4 = 1 + (rand() % 100); break;	/* short wait */
 	}
+	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(struct epoll_event));
 }
 
 struct syscallentry syscall_epoll_wait = {

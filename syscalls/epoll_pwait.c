@@ -11,6 +11,7 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
  * or zero if no file descriptor became ready during the requested timeout milliseconds.
  * When an error occurs, returns -1 and errno is set appropriately.
  */
+#include <sys/epoll.h>
 #include "random.h"
 #include "sanitise.h"
 
@@ -22,6 +23,12 @@ static void sanitise_epoll_pwait(struct syscallrecord *rec)
 	case 1: rec->a4 = 0; break;			/* immediate */
 	default: rec->a4 = 1 + (rand() % 100); break;	/* short wait */
 	}
+	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(struct epoll_event));
+}
+
+static void sanitise_epoll_pwait2(struct syscallrecord *rec)
+{
+	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(struct epoll_event));
 }
 
 struct syscallentry syscall_epoll_pwait = {
@@ -44,6 +51,7 @@ struct syscallentry syscall_epoll_pwait2 = {
 	.argname = { [0] = "epfd", [1] = "events", [2] = "maxevents", [3] = "timeout", [4] = "sigmask", [5] = "sigsetsize" },
 	.arg_params[2].range.low = 1,
 	.arg_params[2].range.hi = 128,
+	.sanitise = sanitise_epoll_pwait2,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

@@ -33,6 +33,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) map->ptr;
 	rec->a3 = rand() % map->size;
 	rec->a3 &= PAGE_MASK;
+	avoid_shared_buffer(&rec->a2, rec->a3);
 }
 
 static unsigned long syslog_types[] = {
