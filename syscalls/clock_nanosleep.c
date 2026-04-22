@@ -39,6 +39,14 @@ static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) ts;
+
+	/*
+	 * rmtp (a4) is the kernel's "remaining time on EINTR" output buffer:
+	 * if the sleep is interrupted, the kernel writes the unslept residual
+	 * timespec there.  Random pool can land it inside an alloc_shared
+	 * region, so scrub.
+	 */
+	avoid_shared_buffer(&rec->a4, sizeof(struct timespec));
 }
 
 struct syscallentry syscall_clock_nanosleep = {

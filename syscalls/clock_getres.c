@@ -13,6 +13,11 @@ static unsigned long clock_ids[] = {
 	CLOCK_MONOTONIC_COARSE, CLOCK_BOOTTIME,
 };
 
+static void sanitise_clock_getres(struct syscallrecord *rec)
+{
+	avoid_shared_buffer(&rec->a2, sizeof(struct timespec));
+}
+
 struct syscallentry syscall_clock_getres = {
 	.name = "clock_getres",
 	.group = GROUP_TIME,
@@ -20,5 +25,6 @@ struct syscallentry syscall_clock_getres = {
 	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS },
 	.argname = { [0] = "which_clock", [1] = "tp" },
 	.arg_params[0].list = ARGLIST(clock_ids),
+	.sanitise = sanitise_clock_getres,
 	.rettype = RET_ZERO_SUCCESS,
 };
