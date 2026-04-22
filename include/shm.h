@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "arch.h"
 #include "child.h"
+#include "efault_cache.h"
 #include "exit.h"
 #include "files.h"
 #include "locks.h"
@@ -141,6 +142,17 @@ struct shm_s {
 	/* Set to true once we confirm io_uring_setup returns ENOSYS.
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;
+
+	/*
+	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
+	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
+	 * for the slot encoding and the probing protocol.  Lives in shm so
+	 * a verdict reached by one child is reused by all the others — the
+	 * kernel's ioctl tables are global and the probe has side effects
+	 * we want to amortise.  Zero-initialised by create_shm(); packed ==
+	 * 0 is the empty-slot sentinel.
+	 */
+	_Atomic uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;
