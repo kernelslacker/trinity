@@ -102,13 +102,22 @@ void * alloc_shared_global(unsigned int size)
  * that region.  Children inherit the mapping at fork time and see
  * subsequent parent writes via ordinary shared-memory semantics.
  *
- * The backing region is allocated with alloc_shared() (not
- * alloc_shared_global) — alloc_shared_global tags the region for
- * mprotect(PROT_READ) at freeze time, which would block the regen
- * path's writes.  We accept losing the freeze-time defence on the
- * obj heap; the existing shm->global_objects array (still
- * alloc_shared_global) is what catches stray child writes that
- * scribble into the parallel pointer array.
+ * The backing region is tagged is_global_obj=true so
+ * freeze_global_objects() mprotects it PROT_READ once init is done.
+ * Children that wild-write through a stray syscall buffer pointer
+ * targeting an obj slot then EFAULT inside the kernel rather than
+ * silently corrupting struct object list_heads — which is the bug
+ * class that previously surfaced as parent crashes inside list_del
+ * traversals.  Parent-side mutations (alloc_shared_obj, free_shared_obj,
+ * list_add via add_object, list_del via __destroy_object, plus the
+ * regen path's field writes) all happen under the existing
+ * thaw/refreeze brackets in fd_event_drain_all, add_object,
+ * remove_object_by_fd, and destroy_global_objects.  Pre-freeze init
+ * runs unprotected, which is when init_*_fds populates the heap.
+ *
+ * The chain corpus was the one child-side writer; commit f43e89c779f1
+ * inlined its slots into chain_corpus_shm so the obj heap is now
+ * exclusively a parent write target.
  *
  * Size: 4 MiB at ~150 B per struct object gives ~28k slots — far
  * larger than GLOBAL_OBJ_MAX_CAPACITY (1024) per type even if every
@@ -132,7 +141,7 @@ static void shared_obj_heap_init(void)
 	 * init_shm) because it keeps the contract local to this file.
 	 */
 	shared_obj_heap_capacity = SHARED_OBJ_HEAP_SIZE;
-	shared_obj_heap = alloc_shared(shared_obj_heap_capacity);
+	shared_obj_heap = alloc_shared_global(shared_obj_heap_capacity);
 }
 
 /*
