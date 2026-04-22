@@ -41,6 +41,50 @@ static void sighandler(int sig)
 	_exit(EXIT_SUCCESS);
 }
 
+/*
+ * Child-side fault handler.  Mirrors main_fault_handler in spirit but
+ * preserves the existing non-debug clean-exit behaviour:
+ *
+ *   - Real fault (kernel-generated, si_code > 0) or self-sent (abort,
+ *     stack-smash from libc):
+ *       * dump backtrace + psiginfo to stderr so we have ANY signal
+ *         in the log even when the core is unwindable (fault from
+ *         stack-corruption disturbs the unwind chain — gdb on the
+ *         core often gets nothing)
+ *       * in debug mode: signal(SIG_DFL) + raise(sig) so the kernel
+ *         dumps a core (RLIMIT_CORE was bumped to unlimited in
+ *         child.c::disable_coredumps for -D)
+ *       * in non-debug: _exit(EXIT_SUCCESS) — matches the legacy
+ *         sighandler so the parent's reaper sees a normal exit and
+ *         respawns without crash-loop noise
+ *
+ *   - Sibling-spoofed (process-sent, kill/tkill/tgkill/rt_sigqueueinfo
+ *     fuzzing aimed at us): ignore — fuzzer noise.
+ */
+static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
+{
+	if (info->si_code <= 0 && info->si_pid != getpid()) {
+		/* Sibling spoof — ignore. */
+		return;
+	}
+#ifdef USE_BACKTRACE
+	{
+		void *frames[64];
+		int nframes = backtrace(frames, 64);
+
+		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
+	}
+#endif
+	psiginfo(info, "trinity child: fatal signal");
+
+	if (shm->debug == true) {
+		(void)signal(sig, SIG_DFL);
+		raise(sig);
+	} else {
+		_exit(EXIT_SUCCESS);
+	}
+}
+
 static void sigalrm_handler(__unused__ int sig)
 {
 	sigalrm_pending = 1;
@@ -151,10 +195,25 @@ void mask_signals_child(void)
 	for (i = SIGRTMIN; i <= SIGRTMAX; i++)
 		(void)signal(i, SIG_IGN);
 
-	/* If we are in debug mode, we want segfaults and core dumps */
-	if (shm->debug == true) {
-		(void)signal(SIGABRT, SIG_DFL);
-		(void)signal(SIGSEGV, SIG_DFL);
+	/*
+	 * Install child_fault_handler for the kernel-fault signals.
+	 * Replaces both the catch-all sighandler (which silently
+	 * _exit'd, masking the cause) and the debug-mode SIG_DFL
+	 * override (which dumped a core but no inline backtrace).
+	 * The handler dumps a backtrace + psiginfo to stderr in BOTH
+	 * modes; in debug it then re-raises with SIG_DFL so the kernel
+	 * still drops a core, in non-debug it _exit's cleanly so the
+	 * parent's reaper doesn't see a crash and crash-loop.
+	 */
+	{
+		struct sigaction fault_sa;
+		sigemptyset(&fault_sa.sa_mask);
+		fault_sa.sa_flags = SA_SIGINFO;
+		fault_sa.sa_sigaction = child_fault_handler;
+		(void)sigaction(SIGSEGV, &fault_sa, NULL);
+		(void)sigaction(SIGABRT, &fault_sa, NULL);
+		(void)sigaction(SIGBUS,  &fault_sa, NULL);
+		(void)sigaction(SIGILL,  &fault_sa, NULL);
 	}
 
 	/* trap ctrl-c — use SA_SIGINFO so we can ignore child-sent SIGINTs,
