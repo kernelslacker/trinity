@@ -176,6 +176,20 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		rec->a4 = 1;
 		break;
 	}
+
+	/*
+	 * Several opcodes above (PROBE, IOWQ_MAX_WORKERS, the default
+	 * catch-all) hand the kernel a get_writable_address()-derived
+	 * pointer as a writeback target.  get_writable_address() pulls
+	 * from the OBJ_MMAP pool which is structurally distinct from the
+	 * alloc_shared() regions, but a VA-space alias is not impossible
+	 * and the kernel writeback into a stomped shared region produces
+	 * exactly the silent-corruption symptom we just chased through
+	 * init_child_mappings.  Mirror the defensive scrub
+	 * pick_random_ioctl() runs after ioctl_arg_for_request() — same
+	 * reasoning, same shape, same negligible cost.
+	 */
+	avoid_shared_buffer(&rec->a3, page_size);
 }
 
 struct syscallentry syscall_io_uring_register = {
