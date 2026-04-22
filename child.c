@@ -692,7 +692,7 @@ static void check_fd_leaks(struct childdata *child)
  */
 static const int dormant_op_disabled[19] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
-	1, 1, 1, 1, 1,	/* 5-9:  dormant: memory_pressure, userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
+	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 1, 1,	/* 10-14: dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, fault_injector, recipe_runner */
 	1, 1, 1, 1,	/* 15-18: dormant: iouring_recipes, fd_stress, refcount_auditor, fs_lifecycle */
 };
