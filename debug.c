@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
+#include "list.h"
 #include "params.h"
 #include "pids.h"
 #include "shm.h"
@@ -179,6 +180,85 @@ void dump_childdata(struct childdata *child)
 	output(0, "dontkillme: %d\n", child->dontkillme);
 	output(0, "\n");
 };
+
+/*
+ * Mirror of the Linux kernel's CONFIG_DEBUG_LIST validators.
+ *
+ * On any failure we log the specific corruption class observed (NULL
+ * pointer, poison, or broken back-link) along with the call site, then
+ * route to __BUG so the existing backtrace+spin path lets gdb attach
+ * before the process is reaped.
+ */
+void __list_add_valid_or_die(struct list_head *new,
+                             struct list_head *prev,
+                             struct list_head *next,
+                             const char *file,
+                             const char *func,
+                             unsigned int line)
+{
+	if (prev == NULL || next == NULL) {
+		outputerr("list_add corruption at %s:%s:%u: prev=%p next=%p new=%p (NULL insertion point — caller passed in a torn list head)\n",
+			file, func, line, prev, next, new);
+		__BUG("list_add: NULL prev or next", file, func, line);
+	}
+	if (new == prev || new == next) {
+		outputerr("list_add corruption at %s:%s:%u: new=%p coincides with prev=%p or next=%p (double-add or self-insertion)\n",
+			file, func, line, new, prev, next);
+		__BUG("list_add: self-insertion", file, func, line);
+	}
+	if (next->prev != prev) {
+		outputerr("list_add corruption at %s:%s:%u: next->prev should be prev (%p) but is %p (next=%p new=%p) — surrounding link trampled\n",
+			file, func, line, prev, next->prev, next, new);
+		__BUG("list_add: next->prev != prev", file, func, line);
+	}
+	if (prev->next != next) {
+		outputerr("list_add corruption at %s:%s:%u: prev->next should be next (%p) but is %p (prev=%p new=%p) — surrounding link trampled\n",
+			file, func, line, next, prev->next, prev, new);
+		__BUG("list_add: prev->next != next", file, func, line);
+	}
+}
+
+void __list_del_entry_valid_or_die(struct list_head *entry,
+                                   const char *file,
+                                   const char *func,
+                                   unsigned int line)
+{
+	struct list_head *prev, *next;
+
+	if (entry == NULL) {
+		outputerr("list_del corruption at %s:%s:%u: entry pointer itself is NULL\n",
+			file, func, line);
+		__BUG("list_del: entry == NULL", file, func, line);
+	}
+	if (entry->next == NULL || entry->prev == NULL) {
+		outputerr("list_del corruption at %s:%s:%u: entry=%p has NULL link (next=%p prev=%p) — entry was zeroed by a stray write or never INIT_LIST_HEAD'd\n",
+			file, func, line, entry, entry->next, entry->prev);
+		__BUG("list_del: entry next/prev is NULL", file, func, line);
+	}
+	if (entry->next == LIST_POISON1) {
+		outputerr("list_del corruption at %s:%s:%u: entry=%p next is LIST_POISON1 — double list_del or use-after-list_del\n",
+			file, func, line, entry);
+		__BUG("list_del: entry->next == LIST_POISON1", file, func, line);
+	}
+	if (entry->prev == LIST_POISON2) {
+		outputerr("list_del corruption at %s:%s:%u: entry=%p prev is LIST_POISON2 — double list_del or use-after-list_del\n",
+			file, func, line, entry);
+		__BUG("list_del: entry->prev == LIST_POISON2", file, func, line);
+	}
+
+	prev = entry->prev;
+	next = entry->next;
+	if (prev->next != entry) {
+		outputerr("list_del corruption at %s:%s:%u: entry=%p prev=%p but prev->next=%p (expected entry) — back-link broken\n",
+			file, func, line, entry, prev, prev->next);
+		__BUG("list_del: prev->next != entry", file, func, line);
+	}
+	if (next->prev != entry) {
+		outputerr("list_del corruption at %s:%s:%u: entry=%p next=%p but next->prev=%p (expected entry) — back-link broken\n",
+			file, func, line, entry, next, next->prev);
+		__BUG("list_del: next->prev != entry", file, func, line);
+	}
+}
 
 /*
  * debugging output.
