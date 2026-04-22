@@ -40,6 +40,13 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 		rlim->rlim_cur = rlim->rlim_max;
 
 	rec->a3 = (unsigned long) rlim;
+
+	/*
+	 * old_rlim (a4) is the kernel's writeback target for the previous
+	 * limit values: ARG_ADDRESS draws from the random pool, so a fuzzed
+	 * pointer can land inside an alloc_shared region.  Scrub it.
+	 */
+	avoid_shared_buffer(&rec->a4, sizeof(struct rlimit64));
 }
 
 struct syscallentry syscall_prlimit64 = {

@@ -8,6 +8,7 @@
  */
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include "arch.h"
 #include "random.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -61,6 +62,15 @@ static void sanitise_ustat(struct syscallrecord *rec)
 {
 	init_ustat_devs();
 	rec->a1 = ustat_devs[rand() % ustat_nr_devs];
+
+	/*
+	 * On a successful lookup the kernel writes a struct ustat (~32B)
+	 * into a2.  ARG_NON_NULL_ADDRESS draws from the random pool, so
+	 * scrub the writeback target against the alloc_shared regions.
+	 * struct ustat is not exposed by glibc, so use a page as an upper
+	 * bound on the kernel's writeback window.
+	 */
+	avoid_shared_buffer(&rec->a2, page_size);
 }
 
 struct syscallentry syscall_ustat = {
