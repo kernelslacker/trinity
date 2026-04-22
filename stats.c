@@ -11,6 +11,7 @@
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void dump_entry(const struct syscalltable *table, unsigned int i)
 {
@@ -202,6 +203,8 @@ void dump_stats(void)
 	if (shm->stats.range_overlap_rejects)
 		output(0, "range_overlaps_shared rejects: %lu\n",
 			shm->stats.range_overlap_rejects);
+
+	dump_obj_heap_stats();
 
 	if (shm->stats.refcount_audit_runs)
 		output(0, "\nrefcount audit: runs:%lu fd-anomalies:%lu mmap-anomalies:%lu sock-anomalies:%lu\n",
