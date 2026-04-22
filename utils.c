@@ -332,6 +332,39 @@ void free_shared_obj(void *p, size_t size)
 	if (p == NULL || size == 0)
 		return;
 
+	/*
+	 * Catch the most common allocator-side misuse: free-while-still-on-a-
+	 * list.  The next list_del that walks past the freed slot will see
+	 * a fully-zeroed neighbor (freelist_push memsets the slot) and trip
+	 * the debug-list back-link check — but that diagnostic fires at the
+	 * *unlucky* call site, not the buggy one.  This check fires here, at
+	 * the bad free, with the offending caller still on the backtrace.
+	 *
+	 * We don't know the slot's struct shape from p alone, so heuristically
+	 * treat it as a leading struct list_head and only abort when both
+	 * fields look like real heap pointers (the unambiguous signature of
+	 * a live linked entry).  Small ints (e.g. struct chain_entry's `len`
+	 * + step nr at offsets 0/8), NULLs, self-references, and POISON
+	 * values all skip past safely.
+	 */
+	if (size >= sizeof(struct list_head)) {
+		struct list_head *fake = p;
+		struct list_head *next = fake->next;
+		struct list_head *prev = fake->prev;
+
+		if ((uintptr_t)next > 0x100000000UL &&
+		    (uintptr_t)prev > 0x100000000UL &&
+		    next != LIST_POISON1 && prev != LIST_POISON2 &&
+		    next != fake && prev != fake) {
+			outputerr("free_shared_obj: slot %p (size=%zu) appears "
+				"to be currently linked: list.next=%p list.prev=%p "
+				"— caller forgot to list_del before free\n",
+				p, size, next, prev);
+			__BUG("free_shared_obj: slot is list-linked",
+				__FILE__, __func__, __LINE__);
+		}
+	}
+
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
 
 	bucket = freelist_bucket(size);
