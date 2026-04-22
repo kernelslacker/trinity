@@ -4,6 +4,7 @@
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "kcov.h"
+#include "minicorpus.h"
 #include "shm.h"
 #include "stats.h"
 #include "syscall.h"
@@ -333,6 +334,68 @@ void dump_stats(void)
 					slot_edges,
 					kcov_shm->last_edge_at[i]);
 			}
+		}
+	}
+
+	if (minicorpus_shm != NULL) {
+		static const char * const op_names[MUT_NUM_OPS] = {
+			"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep"
+		};
+		unsigned long tot_trials = 0;
+		unsigned long r_count, r_wins, s_hits, s_wins, pct10;
+		unsigned long histo_total;
+		char hbuf[80];
+		int hpos;
+
+		for (i = 0; i < MUT_NUM_OPS; i++)
+			tot_trials += __atomic_load_n(&minicorpus_shm->mut_trials[i],
+						      __ATOMIC_RELAXED);
+
+		if (tot_trials > 0) {
+			output(0, "\nMutator productivity (wins/trials):\n");
+			for (i = 0; i < MUT_NUM_OPS; i++) {
+				unsigned long t = __atomic_load_n(&minicorpus_shm->mut_trials[i],
+								  __ATOMIC_RELAXED);
+				unsigned long w = __atomic_load_n(&minicorpus_shm->mut_wins[i],
+								  __ATOMIC_RELAXED);
+				pct10 = t ? (w * 1000UL / t) : 0UL;
+				output(0, "  %-10s %lu/%lu (%lu.%lu%%)\n",
+				       op_names[i], w, t, pct10 / 10, pct10 % 10);
+			}
+		}
+
+		s_hits = __atomic_load_n(&minicorpus_shm->splice_hits, __ATOMIC_RELAXED);
+		s_wins = __atomic_load_n(&minicorpus_shm->splice_wins, __ATOMIC_RELAXED);
+		if (s_hits > 0) {
+			pct10 = s_wins * 1000UL / s_hits;
+			output(0, "Splice: %lu hits  %lu wins (%lu.%lu%%)\n",
+			       s_hits, s_wins, pct10 / 10, pct10 % 10);
+		}
+
+		histo_total = 0;
+		for (i = 1; i <= STACK_MAX; i++)
+			histo_total += __atomic_load_n(&minicorpus_shm->stack_depth_histogram[i],
+						       __ATOMIC_RELAXED);
+		if (histo_total > 0) {
+			hpos = 0;
+			for (i = 1; i <= STACK_MAX; i++) {
+				unsigned long d = __atomic_load_n(
+					&minicorpus_shm->stack_depth_histogram[i],
+					__ATOMIC_RELAXED);
+				hpos += snprintf(hbuf + hpos, sizeof(hbuf) - hpos,
+						 " [%u]:%lu", i, d);
+				if (hpos >= (int)sizeof(hbuf) - 1)
+					break;
+			}
+			output(0, "Stack depth:%s\n", hbuf);
+		}
+
+		r_count = __atomic_load_n(&minicorpus_shm->replay_count, __ATOMIC_RELAXED);
+		r_wins  = __atomic_load_n(&minicorpus_shm->replay_wins,  __ATOMIC_RELAXED);
+		if (r_count > 0) {
+			pct10 = r_wins * 1000UL / r_count;
+			output(0, "Corpus replay: %lu replays  %lu wins (%lu.%lu%%)\n",
+			       r_count, r_wins, pct10 / 10, pct10 % 10);
 		}
 	}
 

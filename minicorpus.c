@@ -146,6 +146,17 @@ void minicorpus_save(struct syscallrecord *rec)
 static unsigned int mut_attrib[MUT_NUM_OPS];
 
 /*
+ * Process-local replay and splice attribution flags.
+ *
+ * Set by minicorpus_replay() when the respective event occurs; consumed
+ * and cleared by minicorpus_mut_attrib_commit() / minicorpus_mut_attrib_clear()
+ * to attribute wins without needing a second pass over the call path.
+ * Per-process — same fork/single-threaded guarantee as mut_attrib[].
+ */
+static bool this_replay_ran;
+static bool this_replay_spliced;
+
+/*
  * Floor on the per-case weight in the weighted scheduler.
  *
  * Weights are scaled to [0, 1000] (see weighted_pick_case() comment).
@@ -241,11 +252,27 @@ void minicorpus_mut_attrib_commit(bool found_new)
 					   picks, __ATOMIC_RELAXED);
 		mut_attrib[i] = 0;
 	}
+
+	if (this_replay_ran) {
+		if (found_new)
+			__atomic_fetch_add(&minicorpus_shm->replay_wins,
+					   1UL, __ATOMIC_RELAXED);
+		this_replay_ran = false;
+	}
+
+	if (this_replay_spliced) {
+		if (found_new)
+			__atomic_fetch_add(&minicorpus_shm->splice_wins,
+					   1UL, __ATOMIC_RELAXED);
+		this_replay_spliced = false;
+	}
 }
 
 void minicorpus_mut_attrib_clear(void)
 {
 	memset(mut_attrib, 0, sizeof(mut_attrib));
+	this_replay_ran = false;
+	this_replay_spliced = false;
 }
 
 /*
@@ -283,8 +310,9 @@ void minicorpus_mut_attrib_clear(void)
  * past ~4 mutations on a scalar the result is indistinguishable from a
  * fresh random value, at which point the corpus snapshot has stopped
  * doing useful guidance work.
- */
-#define STACK_MAX 4
+ *
+ * STACK_MAX is defined in minicorpus.h (shared with stats.c for the
+ * stack_depth_histogram array bounds). */
 
 /*
  * Apply a small mutation to a single argument value.
@@ -438,13 +466,21 @@ bool minicorpus_replay(struct syscallrecord *rec)
 			unsigned int src = (i + offset) % entry->num_args;
 
 			val = snapshot.args[src];
+			__atomic_fetch_add(&minicorpus_shm->splice_hits,
+					   1UL, __ATOMIC_RELAXED);
+			this_replay_spliced = true;
 		}
 
 		/* ~25% chance to mutate each arg.  When we do mutate, apply
 		 * a stack of 1..STACK_MAX primitive mutations (geometric,
 		 * biased toward small N) rather than a single one. */
-		if (ONE_IN(4))
-			val = mutate_arg_stacked(val, pick_stack_depth());
+		if (ONE_IN(4)) {
+			unsigned int depth = pick_stack_depth();
+
+			__atomic_fetch_add(&minicorpus_shm->stack_depth_histogram[depth],
+					   1UL, __ATOMIC_RELAXED);
+			val = mutate_arg_stacked(val, depth);
+		}
 
 		/* Don't let fd args land on stdin/stdout/stderr. */
 		if (is_fdarg(entry->argtype[i]) && val <= 2)
@@ -459,6 +495,9 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		case 5: rec->a6 = val; break;
 		}
 	}
+
+	__atomic_fetch_add(&minicorpus_shm->replay_count, 1UL, __ATOMIC_RELAXED);
+	this_replay_ran = true;
 
 	return true;
 }

@@ -45,6 +45,9 @@ struct corpus_ring {
  * and any reordering must be reflected in mut_trials/mut_wins below. */
 #define MUT_NUM_OPS 6
 
+/* Maximum mutation stacking depth per argument (see pick_stack_depth()). */
+#define STACK_MAX 4
+
 struct minicorpus_shared {
 	struct corpus_ring rings[MAX_NR_SYSCALL];
 	/* Per-mutator-case productivity counters used by weighted pick:
@@ -55,6 +58,15 @@ struct minicorpus_shared {
 	 * in minicorpus.c. */
 	unsigned long mut_trials[MUT_NUM_OPS];
 	unsigned long mut_wins[MUT_NUM_OPS];
+	/* Replay-path measurement counters for the mutation trio.
+	 * All updated via __atomic RELAXED; read at dump_stats() time. */
+	unsigned long replay_count;		/* replays that ran (returned true) */
+	unsigned long replay_wins;		/* replays that found new coverage */
+	unsigned long splice_hits;		/* per-arg splice firings */
+	unsigned long splice_wins;		/* replays with splice that found new coverage */
+	/* Distribution of stacking depths chosen by pick_stack_depth().
+	 * Index is the depth value (1..STACK_MAX); index 0 is unused. */
+	unsigned long stack_depth_histogram[STACK_MAX + 1];
 };
 
 extern struct minicorpus_shared *minicorpus_shm;
