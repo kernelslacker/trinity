@@ -54,6 +54,12 @@ struct map * get_map(void)
 	return NULL;
 }
 
+/*
+ * Destructor for OBJ_LOCAL mmap entries (init_child_mappings copies and
+ * the children's own runtime mmaps).  The obj struct and the name string
+ * both live on the calling process's private heap, so we use the regular
+ * libc free path.
+ */
 void map_destructor(struct object *obj)
 {
 	struct map *map;
@@ -62,6 +68,25 @@ void map_destructor(struct object *obj)
 	munmap(map->ptr, map->size);
 	free(map->name);
 	map->name = NULL;
+}
+
+/*
+ * Destructor for OBJ_GLOBAL mmap entries created via mmap_fd() and
+ * setup_initial_mappings().  The obj struct itself is freed by
+ * release_obj() (it sees head->shared_alloc and routes to
+ * free_shared_obj); we only need to release the name string and
+ * unmap the actual mapping here.
+ */
+void map_destructor_shared(struct object *obj)
+{
+	struct map *map;
+
+	map = &obj->map;
+	munmap(map->ptr, map->size);
+	if (map->name != NULL) {
+		free_shared_str(map->name, strlen(map->name) + 1);
+		map->name = NULL;
+	}
 }
 
 void map_dump(struct object *obj, enum obj_scope scope)
@@ -228,12 +253,31 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 	off_t offset;
 	int retries = 0;
 
-	/* Create an MMAP of the same fd. */
-	obj = alloc_object();
-	obj->map.name = strdup(name);
-	if (!obj->map.name) {
-		free(obj);
-		return;
+	/*
+	 * Create an MMAP of the same fd.  OBJ_GLOBAL entries are added to
+	 * shm-visible lists that children walk, so the obj struct AND the
+	 * name string MUST live in shared memory — otherwise children
+	 * dereference parent-private pointers and SEGV in libc string
+	 * functions when they read the name (the bug class the rest of
+	 * the OBJ_GLOBAL sweep closed).
+	 */
+	if (scope == OBJ_GLOBAL) {
+		obj = alloc_shared_obj(sizeof(struct object));
+		if (obj == NULL)
+			return;
+		INIT_LIST_HEAD(&obj->list);
+		obj->map.name = alloc_shared_strdup(name);
+		if (obj->map.name == NULL) {
+			free_shared_obj(obj, sizeof(struct object));
+			return;
+		}
+	} else {
+		obj = alloc_object();
+		obj->map.name = strdup(name);
+		if (!obj->map.name) {
+			free(obj);
+			return;
+		}
 	}
 	obj->map.size = len;
 
@@ -251,9 +295,16 @@ retry_mmap:
 	if (obj->map.ptr == MAP_FAILED) {
 		retries++;
 		if (retries == 100) {
-			free(obj->map.name);
-			obj->map.name = NULL;
-			free(obj);
+			if (scope == OBJ_GLOBAL) {
+				free_shared_str(obj->map.name,
+						strlen(obj->map.name) + 1);
+				obj->map.name = NULL;
+				free_shared_obj(obj, sizeof(struct object));
+			} else {
+				free(obj->map.name);
+				obj->map.name = NULL;
+				free(obj);
+			}
 			obj = NULL;
 			return;
 		} else
@@ -262,6 +313,10 @@ retry_mmap:
 
 	head = get_objhead(scope, type);
 	head->dump = &map_dump;
+	if (scope == OBJ_GLOBAL) {
+		head->shared_alloc = true;
+		head->destroy = &map_destructor_shared;
+	}
 
 	add_object(obj, scope, type);
 	return;
