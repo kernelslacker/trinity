@@ -110,6 +110,11 @@ static void __open_fds(bool do_rand)
 				continue;
 		}
 
+		/* Print before calling so a stall inside provider->init() is
+		 * pinned to the last-printed name.  Mirrors the existing
+		 * "Initializing %s objects." line that init_global_objects()
+		 * emits for REG_GLOBAL_OBJ entries. */
+		output(0, "Initializing %s fds.\n", provider->name);
 		provider->enabled = provider->init();
 		if (provider->enabled == true) {
 			provider->initialized = true;
