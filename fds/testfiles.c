@@ -10,6 +10,7 @@
 
 #include "fd.h"
 #include "files.h"
+#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -24,7 +25,10 @@
 static void testfile_destructor(struct object *obj)
 {
 	close(obj->testfileobj.fd);
-	free((void *) obj->testfileobj.filename);
+	if (obj->testfileobj.filename != NULL) {
+		free_shared_str((void *) obj->testfileobj.filename, 64);
+		obj->testfileobj.filename = NULL;
+	}
 }
 
 static void testfile_dump(struct object *obj, enum obj_scope scope)
@@ -80,16 +84,28 @@ static int open_testfile_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
 	head->destroy = &testfile_destructor;
 	head->dump = &testfile_dump;
+	head->shared_alloc = true;
 
 	while (nr < MAX_TESTFILE_FDS) {
 		char *filename;
 		int fd;
 
-		filename = zmalloc(64);
+		filename = alloc_shared_str(64);
 		snprintf(filename, 64, "trinity-testfile%u", i);
 
-		if (obj == NULL)
-			obj = alloc_object();
+		if (obj == NULL) {
+			obj = alloc_shared_obj(sizeof(struct object));
+			if (obj == NULL) {
+				free_shared_str(filename, 64);
+				fails++;
+				if (fails == 100) {
+					output(2, "testfile creation is failing a lot. last error:%s\n", strerror(errno));
+					break;
+				}
+				continue;
+			}
+			INIT_LIST_HEAD(&obj->list);
+		}
 
 		fd = open_testfile(obj, filename);
 		if (fd != -1) {
@@ -109,7 +125,7 @@ static int open_testfile_fds(void)
 			mmap_fd(fd, strdup(filename), page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
 
 		} else {
-			free(filename);
+			free_shared_str(filename, 64);
 			fails++;
 			if (fails == 100) {
 				output(2, "testfile creation is failing a lot. last error:%s\n", strerror(errno));
@@ -119,7 +135,7 @@ static int open_testfile_fds(void)
 	}
 
 	if (obj != NULL)
-		free(obj);
+		free_shared_obj(obj, sizeof(struct object));
 
 	return true;
 }
@@ -130,14 +146,19 @@ static int open_testfile_fd(void)
 	char *filename;
 	int fd;
 
-	filename = zmalloc(64);
+	filename = alloc_shared_str(64);
 	snprintf(filename, 64, "trinity-testfile%u", 1 + (rand() % MAX_TESTFILES));
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		free_shared_str(filename, 64);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	fd = open_testfile(obj, filename);
 	if (fd == -1) {
-		free(filename);
-		free(obj);
+		free_shared_str(filename, 64);
+		free_shared_obj(obj, sizeof(struct object));
 		return false;
 	}
 
