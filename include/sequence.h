@@ -90,7 +90,17 @@ struct chain_corpus_ring {
 	unsigned int count;			/* entries stored, max CHAIN_CORPUS_RING_SIZE */
 	unsigned long save_count;		/* chains saved on new-coverage (atomic) */
 	unsigned long replay_count;		/* chains dispatched as replays (atomic) */
-	struct chain_entry *slots[CHAIN_CORPUS_RING_SIZE];
+	/*
+	 * Inline storage instead of a pointer table.  The original design
+	 * alloc_shared_obj'd each entry from the same heap that backs
+	 * struct object, which forced the obj heap to remain writable from
+	 * children (chain_corpus_save runs in child context).  That defeated
+	 * any mprotect-based wild-write defence on the obj heap.  An inline
+	 * array of fixed-size entries lives in shm directly, costs ~74 KiB
+	 * total (256 * 296 B), and lets the obj heap be mprotect'd RO post-
+	 * init for everyone.
+	 */
+	struct chain_entry slots[CHAIN_CORPUS_RING_SIZE];
 };
 
 extern struct chain_corpus_ring *chain_corpus_shm;

@@ -117,23 +117,15 @@ static bool chain_is_replay_safe(const struct chain_step *steps,
 }
 
 /*
- * Push a fresh chain into the ring, evicting the oldest slot if the
- * ring is full.  The eviction free is performed AFTER the lock is
- * released because once we have replaced ring->slots[slot] under the
- * lock, no concurrent reader can land on the evicted pointer — they
- * either saw the old pointer before our store and are working with
- * a stable copy, or they see the new pointer.  Holding the lock
- * across free_shared_obj would needlessly extend the critical section.
- *
- * Errno-only allocation failures (heap exhausted, etc.) are silently
- * dropped: missing one save event is a measurement loss, not a
- * correctness issue, and the next productive chain will save normally.
+ * Push a fresh chain into the ring, overwriting the oldest slot in place
+ * when the ring is full.  Slots are inline structs in shm (no separate
+ * allocation), so the write is a memcpy under the ring lock and there is
+ * no eviction free path to defer.
  */
 void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 {
 	struct chain_corpus_ring *ring = chain_corpus_shm;
 	struct chain_entry *ent;
-	struct chain_entry *evicted = NULL;
 	unsigned int slot;
 
 	if (ring == NULL || len == 0 || len > MAX_SEQ_LEN)
@@ -142,26 +134,17 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 	if (!chain_is_replay_safe(steps, len))
 		return;
 
-	ent = alloc_shared_obj(sizeof(struct chain_entry));
-	if (ent == NULL)
-		return;
-
-	ent->len = len;
-	memcpy(ent->steps, steps, len * sizeof(struct chain_step));
-
 	lock(&ring->lock);
 
 	slot = ring->head % CHAIN_CORPUS_RING_SIZE;
-	evicted = ring->slots[slot];
-	ring->slots[slot] = ent;
+	ent = &ring->slots[slot];
+	ent->len = len;
+	memcpy(ent->steps, steps, len * sizeof(struct chain_step));
 	ring->head++;
 	if (ring->count < CHAIN_CORPUS_RING_SIZE)
 		ring->count++;
 
 	unlock(&ring->lock);
-
-	if (evicted != NULL)
-		free_shared_obj(evicted, sizeof(struct chain_entry));
 
 	__atomic_fetch_add(&ring->save_count, 1UL, __ATOMIC_RELAXED);
 }
@@ -169,16 +152,14 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 bool chain_corpus_pick(struct chain_entry *out)
 {
 	struct chain_corpus_ring *ring = chain_corpus_shm;
-	struct chain_entry *src;
 	unsigned int slot;
 
 	if (ring == NULL || out == NULL)
 		return false;
 
 	/* Lock-protected snapshot.  Holding the lock for the memcpy keeps
-	 * the snapshot consistent against a concurrent eviction freeing
-	 * the entry's storage out from under us — the alloc_shared_obj
-	 * heap recycles slots immediately. */
+	 * the snapshot consistent against a concurrent in-place save
+	 * overwriting the slot we are reading from. */
 	lock(&ring->lock);
 
 	if (ring->count == 0) {
@@ -191,12 +172,7 @@ bool chain_corpus_pick(struct chain_entry *out)
 	 * CHAIN_CORPUS_RING_SIZE. */
 	slot = (ring->head - ring->count + (rand() % ring->count)) %
 	       CHAIN_CORPUS_RING_SIZE;
-	src = ring->slots[slot];
-	if (src == NULL) {
-		unlock(&ring->lock);
-		return false;
-	}
-	*out = *src;
+	*out = ring->slots[slot];
 
 	unlock(&ring->lock);
 	return true;
