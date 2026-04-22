@@ -38,6 +38,23 @@ void cmp_hints_init(void)
 	if (kcov_shm == NULL)
 		return;
 
+	/*
+	 * Stays alloc_shared() rather than alloc_shared_global().
+	 * Children are the producers for the per-syscall pools — every
+	 * cmp-mode syscall calls cmp_hints_collect() in child context, which
+	 * acquires pool->lock and mutates pool->values[] / pool->count via
+	 * pool_add_locked.  An mprotect PROT_READ on this region would EFAULT
+	 * the lock-acquire write itself (the lock byte lives inside the
+	 * region) and disable the CMP-guided arg generation entirely.
+	 *
+	 * Wild-write risk this leaves open: a child syscall whose user-buffer
+	 * arg aliases into a pool could let the kernel scribble into
+	 * pool->values[] (corrupt sorted invariant; pool_add_locked tolerates
+	 * out-of-order entries via the binary-search dedup, so worst case is
+	 * a duplicate insertion or a missed dedup — not a crash) or into the
+	 * lock byte (a stuck lock would deadlock subsequent cmp_hints_collect
+	 * callers in that one syscall slot).  Diagnostic-grade only.
+	 */
 	cmp_hints_shm = alloc_shared(sizeof(struct cmp_hints_shared));
 	memset(cmp_hints_shm, 0, sizeof(struct cmp_hints_shared));
 	output(0, "KCOV: CMP hint pool allocated (%lu KB)\n",
