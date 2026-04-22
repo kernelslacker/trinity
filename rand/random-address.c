@@ -163,6 +163,7 @@ struct iovec * alloc_iovec(unsigned int num)
 
 	for (i = 0; i < num; i++) {
 		struct map *map = get_map();
+		unsigned long base;
 
 		if (map == NULL) {
 			iov[i].iov_base = NULL;
@@ -180,6 +181,21 @@ struct iovec * alloc_iovec(unsigned int num)
 		} else {
 			iov[i].iov_len = map->size > 0 ? rand() % map->size : 0;
 		}
+
+		/*
+		 * readv/preadv/preadv2/recvmsg/recvmmsg all hand each
+		 * iov_base to the kernel as an output buffer.  A get_map()
+		 * pointer can in principle alias one of trinity's
+		 * alloc_shared() regions (children blob, fd_event_ring,
+		 * shared obj/string heaps), in which case the kernel write
+		 * silently scribbles bookkeeping.  Same defence the
+		 * read/recv/getdents/ioctl paths already apply at the
+		 * syscallrecord layer, lifted into the iovec builder so
+		 * every caller is covered in one place.
+		 */
+		base = (unsigned long) iov[i].iov_base;
+		avoid_shared_buffer(&base, iov[i].iov_len);
+		iov[i].iov_base = (void *) base;
 	}
 
 	return iov;
