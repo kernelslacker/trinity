@@ -797,6 +797,17 @@ static void fork_children(void)
 			exit(EXIT_FORK_FAILURE);
 		}
 
+		/* Per-spawn visibility under -v.  Today only the final
+		 * "all children running" state is observable; if a fork
+		 * silently no-ops or stalls partway through populating the
+		 * pidmap there's no way to tell which slot we got stuck
+		 * on.  spawn_child has already published the pid into
+		 * pids[childno] by this point. */
+		output(1, "forked child %u/%u (pid %d)\n",
+			__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED),
+			max_children,
+			__atomic_load_n(&pids[childno], __ATOMIC_RELAXED));
+
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			return;
 	}
