@@ -180,6 +180,12 @@ struct stats_s {
 	unsigned long fs_lifecycle_overlay;	/* overlayfs variant */
 	unsigned long fs_lifecycle_unsupported;	/* unshare/mount denied (EPERM) */
 
+	/* signal_storm childop counters */
+	unsigned long signal_storm_runs;	/* total signal_storm invocations */
+	unsigned long signal_storm_kill;	/* kill() calls issued */
+	unsigned long signal_storm_sigqueue;	/* sigqueue() calls issued */
+	unsigned long signal_storm_no_targets;	/* no live siblings to signal */
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially
