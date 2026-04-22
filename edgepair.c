@@ -43,7 +43,23 @@ struct edgepair_shared *edgepair_shm = NULL;
 
 void edgepair_init_global(void)
 {
-	/* Only allocate if KCOV is available (caller checks). */
+	/* Only allocate if KCOV is available (caller checks).
+	 *
+	 * Stays alloc_shared() rather than alloc_shared_global().
+	 * Children are the producers for the table[] entries (find_or_insert
+	 * CASes the packed key, then bumps total_count / new_edge_count /
+	 * last_new_at) and for the top-level counters (pairs_tracked,
+	 * pairs_dropped, total_pair_calls).  edgepair_record() runs in
+	 * child context after every non-cmp syscall.  An mprotect PROT_READ
+	 * on this region would EFAULT every child's edge-pair update and
+	 * cripple the (prev, curr) coverage path.
+	 *
+	 * Wild-write risk this leaves open: a child syscall whose user-buffer
+	 * arg aliases into the table could let the kernel zero a slot's
+	 * packed key, which a subsequent find_or_insert would re-claim — at
+	 * worst the cold-pair detector loses one bucket of history.  No
+	 * parent-side crash surface.
+	 */
 	edgepair_shm = alloc_shared(sizeof(struct edgepair_shared));
 	memset(edgepair_shm, 0, sizeof(struct edgepair_shared));
 
