@@ -54,7 +54,11 @@ static void perffd_destructor(struct object *obj)
 		}
 	}
 
-	free(obj->perfobj.eventattr);
+	if (obj->perfobj.eventattr != NULL) {
+		free_shared_str(obj->perfobj.eventattr,
+				sizeof(struct perf_event_attr));
+		obj->perfobj.eventattr = NULL;
+	}
 	if (leader_fd >= 0)
 		close(leader_fd);
 }
@@ -84,9 +88,21 @@ static int open_perf_fd(void)
 		return false;
 	}
 
-	obj = alloc_object();
+	obj = alloc_shared_obj(sizeof(struct object));
+	if (obj == NULL) {
+		freeptr(&rec.a1);
+		close(fd);
+		return false;
+	}
+	INIT_LIST_HEAD(&obj->list);
 	obj->perfobj.fd = fd;
-	obj->perfobj.eventattr = zmalloc(sizeof(struct perf_event_attr));
+	obj->perfobj.eventattr = alloc_shared_str(sizeof(struct perf_event_attr));
+	if (obj->perfobj.eventattr == NULL) {
+		freeptr(&rec.a1);
+		free_shared_obj(obj, sizeof(struct object));
+		close(fd);
+		return false;
+	}
 	memcpy(obj->perfobj.eventattr, (void *) rec.a1, sizeof(struct perf_event_attr));
 	freeptr(&rec.a1);
 	obj->perfobj.pid = rec.a2;
@@ -107,6 +123,18 @@ static int init_perf_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
 	head->destroy = &perffd_destructor;
 	head->dump = &perffd_dump;
+	/*
+	 * Route both the perfobj struct and its eventattr buffer through
+	 * the shared heaps so post-fork regen via try_regenerate_fd() →
+	 * open_perf_fd produces objs that already-forked children can see
+	 * without chasing parent-private pointers in the destructor's
+	 * free path or in any future eventattr consumer.  The buffer is
+	 * the persistent obj-attached copy (sizeof(struct perf_event_attr));
+	 * the larger PAGE_SIZE syscall buffer in sanitise_perf_event_open
+	 * is transient — freed in the same call after memcpy — and stays
+	 * on the private heap.
+	 */
+	head->shared_alloc = true;
 
 	while (i < MAX_PERF_FDS) {
 		if (open_perf_fd() == true) {
