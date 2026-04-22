@@ -66,6 +66,33 @@ void chain_corpus_init(void)
 	if (kcov_shm == NULL)
 		return;
 
+	/*
+	 * Stays alloc_shared() rather than alloc_shared_global().
+	 * Children are the producers for chain_corpus_shm: chain_corpus_save
+	 * runs in child context after run_sequence_chain notices a
+	 * coverage-positive chain, takes ring->lock, memcpy's the saved
+	 * chain_step entries into ring->slots[], and bumps ring->head /
+	 * ring->count / ring->save_count.  chain_corpus_pick (also from
+	 * child context) takes the same lock to read.  An mprotect PROT_READ
+	 * on this region would EFAULT the lock acquire and the per-save
+	 * memcpy, killing both phases of the chain corpus.
+	 *
+	 * The save path is exactly the slot-inlined design from f43e89c779f1
+	 * — chain steps used to live in obj-heap-allocated chain_entry slots
+	 * and the inline conversion in that commit deliberately moved them
+	 * out of the obj heap so the obj-heap freeze (fbce60744dfb) could
+	 * land.  Conversely that means this region is intentionally outside
+	 * the freeze pool; the trade is "child-writable corpus" for "freeze-
+	 * safe obj heap".
+	 *
+	 * Wild-write risk this leaves open: a child syscall buffer pointer
+	 * aliasing into a slot could corrupt a stored chain (next replay
+	 * dispatches garbage syscalls — bounded by replay_syscall_step's
+	 * deactivation / sanitise checks, which drop the chain on first
+	 * unsafe step) or stick the ring lock (chain saves and replays
+	 * stall fleet-wide until a kernel-side timeout reaps the holder).
+	 * No parent crash surface.
+	 */
 	chain_corpus_shm = alloc_shared(sizeof(struct chain_corpus_ring));
 	memset(chain_corpus_shm, 0, sizeof(struct chain_corpus_ring));
 	output(0, "Sequence chain corpus allocated (%u slots, %lu B per entry)\n",
