@@ -409,10 +409,13 @@ void dump_stats(void)
 			unsigned long c_save = chain_corpus_shm ? __atomic_load_n(
 				&chain_corpus_shm->save_count,
 				__ATOMIC_RELAXED) : 0UL;
+			unsigned long c_replay = chain_corpus_shm ? __atomic_load_n(
+				&chain_corpus_shm->replay_count,
+				__ATOMIC_RELAXED) : 0UL;
 
 			if (c_iter > 0)
-				output(0, "Sequence chains: %lu iters  %lu substitutions  %lu corpus saves\n",
-				       c_iter, c_subst, c_save);
+				output(0, "Sequence chains: %lu iters  %lu substitutions  %lu corpus saves  %lu replays\n",
+				       c_iter, c_subst, c_save, c_replay);
 		}
 	}
 

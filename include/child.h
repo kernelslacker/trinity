@@ -169,6 +169,12 @@ bool random_syscall_step(struct childdata *child,
 			 bool have_substitute,
 			 unsigned long substitute_retval,
 			 bool *found_new);
+struct chain_step;
+bool replay_syscall_step(struct childdata *child,
+			 const struct chain_step *saved,
+			 bool have_substitute,
+			 unsigned long substitute_retval,
+			 bool *found_new);
 bool drop_privs(struct childdata *child);
 bool mmap_lifecycle(struct childdata *child);
 bool mprotect_split(struct childdata *child);

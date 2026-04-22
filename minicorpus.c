@@ -394,6 +394,70 @@ static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts)
 	return val;
 }
 
+/*
+ * Apply the per-arg mutator chain (cross-arg splice + weighted-stack
+ * mutate + fd safety) to args[6] in place, using @entry's argtype[]
+ * for splice eligibility and fd substitution.  Both the per-syscall
+ * mini-corpus replay path and the chain-corpus replay path call this
+ * so the mutation logic — and the splice/replay/mut_attrib telemetry
+ * it bumps — is a single shared engine.
+ *
+ * Splice and mutate read from a local snapshot of the input so a
+ * sibling arg's value used for splice is the original input, not an
+ * already-mutated peer; matches the per-syscall behaviour.
+ */
+void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
+{
+	unsigned long snapshot[6];
+	unsigned int i;
+
+	if (entry == NULL || minicorpus_shm == NULL)
+		return;
+
+	memcpy(snapshot, args, sizeof(snapshot));
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		unsigned long val = snapshot[i];
+
+		/* Cross-arg splice: with probability 1/SPLICE_RATIO, replace
+		 * this arg's starting value with a sibling arg's value from
+		 * the same snapshot.  Runs BEFORE the mutator chain so the
+		 * spliced value gets mutated in place rather than passed
+		 * straight through.  Requires num_args >= 2 (otherwise there
+		 * is no other slot to splice from). */
+		if (entry->num_args >= 2 && ONE_IN(SPLICE_RATIO)) {
+			unsigned int offset = 1 +
+				(unsigned int)(rand() % (entry->num_args - 1));
+			unsigned int src = (i + offset) % entry->num_args;
+
+			val = snapshot[src];
+			__atomic_fetch_add(&minicorpus_shm->splice_hits,
+					   1UL, __ATOMIC_RELAXED);
+			this_replay_spliced = true;
+		}
+
+		/* ~25% chance to mutate each arg.  When we do mutate, apply
+		 * a stack of 1..STACK_MAX primitive mutations (geometric,
+		 * biased toward small N) rather than a single one. */
+		if (ONE_IN(4)) {
+			unsigned int depth = pick_stack_depth();
+
+			__atomic_fetch_add(&minicorpus_shm->stack_depth_histogram[depth],
+					   1UL, __ATOMIC_RELAXED);
+			val = mutate_arg_stacked(val, depth);
+		}
+
+		/* Don't let fd args land on stdin/stdout/stderr. */
+		if (is_fdarg(entry->argtype[i]) && val <= 2)
+			val = (unsigned long) get_random_fd();
+
+		args[i] = val;
+	}
+
+	__atomic_fetch_add(&minicorpus_shm->replay_count, 1UL, __ATOMIC_RELAXED);
+	this_replay_ran = true;
+}
+
 bool minicorpus_replay(struct syscallrecord *rec)
 {
 	struct corpus_ring *ring;
@@ -450,54 +514,14 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		}
 	}
 
-	/* Apply the snapshot with per-argument mutations. */
-	for (i = 0; i < entry->num_args && i < 6; i++) {
-		unsigned long val = snapshot.args[i];
+	minicorpus_mutate_args(snapshot.args, entry);
 
-		/* Cross-arg splice: with probability 1/SPLICE_RATIO, replace
-		 * this arg's starting value with a sibling arg's value from
-		 * the same snapshot.  Runs BEFORE the mutator chain so the
-		 * spliced value gets mutated in place rather than passed
-		 * straight through.  Requires num_args >= 2 (otherwise there
-		 * is no other slot to splice from). */
-		if (entry->num_args >= 2 && ONE_IN(SPLICE_RATIO)) {
-			unsigned int offset = 1 +
-				(unsigned int)(rand() % (entry->num_args - 1));
-			unsigned int src = (i + offset) % entry->num_args;
-
-			val = snapshot.args[src];
-			__atomic_fetch_add(&minicorpus_shm->splice_hits,
-					   1UL, __ATOMIC_RELAXED);
-			this_replay_spliced = true;
-		}
-
-		/* ~25% chance to mutate each arg.  When we do mutate, apply
-		 * a stack of 1..STACK_MAX primitive mutations (geometric,
-		 * biased toward small N) rather than a single one. */
-		if (ONE_IN(4)) {
-			unsigned int depth = pick_stack_depth();
-
-			__atomic_fetch_add(&minicorpus_shm->stack_depth_histogram[depth],
-					   1UL, __ATOMIC_RELAXED);
-			val = mutate_arg_stacked(val, depth);
-		}
-
-		/* Don't let fd args land on stdin/stdout/stderr. */
-		if (is_fdarg(entry->argtype[i]) && val <= 2)
-			val = (unsigned long) get_random_fd();
-
-		switch (i) {
-		case 0: rec->a1 = val; break;
-		case 1: rec->a2 = val; break;
-		case 2: rec->a3 = val; break;
-		case 3: rec->a4 = val; break;
-		case 4: rec->a5 = val; break;
-		case 5: rec->a6 = val; break;
-		}
-	}
-
-	__atomic_fetch_add(&minicorpus_shm->replay_count, 1UL, __ATOMIC_RELAXED);
-	this_replay_ran = true;
+	rec->a1 = snapshot.args[0];
+	rec->a2 = snapshot.args[1];
+	rec->a3 = snapshot.args[2];
+	rec->a4 = snapshot.args[3];
+	rec->a5 = snapshot.args[4];
+	rec->a6 = snapshot.args[5];
 
 	return true;
 }
