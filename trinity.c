@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
@@ -182,6 +183,36 @@ int main(int argc, char* argv[])
 	 * instead of needing a separate `ps ax | grep trinity`.  Not gated
 	 * on -v: the cost is one line per run, the saving is per-debug. */
 	output(0, "mainpid=%d\n", mainpid);
+
+	/*
+	 * Print and persist the active seed unconditionally.  init_seed()
+	 * already prints the value, but it's the parameter copy and the
+	 * line wording differs between the auto and -s paths; this is the
+	 * canonical post-init shm->seed at a known anchor (`[main] seed=`)
+	 * for log-grep tooling.  Also drop the value into ./last-run-seed
+	 * (we are already chdir'd into tmp/ via change_tmp_dir) in decimal
+	 * form so a stochastic crash can be re-run with
+	 *     trinity --seed=$(cat tmp/last-run-seed) ...
+	 * Failures are non-fatal — a missing file just means no auto-replay.
+	 */
+	{
+		unsigned int active_seed =
+			__atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
+		FILE *f;
+
+		output(0, "[main] seed=0x%lx\n", (unsigned long)active_seed);
+
+		f = fopen("last-run-seed", "w");
+		if (f == NULL) {
+			outputerr("last-run-seed: fopen failed: %s\n",
+				strerror(errno));
+		} else {
+			if (fprintf(f, "%u\n", active_seed) < 0)
+				outputerr("last-run-seed: fprintf failed: %s\n",
+					strerror(errno));
+			fclose(f);
+		}
+	}
 
 	kmsg_monitor_start();
 
