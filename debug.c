@@ -165,8 +165,23 @@ void dump_childdata(struct childdata *child)
 
 			if (head->dump != NULL) {
 				unsigned int j;
-				for (j = 0; j < head->num_entries; j++)
+				for (j = 0; j < head->num_entries; j++) {
+					/*
+					 * dump_childdata is called from the shm-corruption /
+					 * sanity-check path against another process's per-
+					 * child OBJ_LOCAL pool, so head->array[] may be in
+					 * the middle of an add/destroy when we read it.  A
+					 * NULL slot inside the [0..num_entries) window
+					 * indicates an in-flight mutation (or earlier
+					 * corruption); skip it rather than dereferencing
+					 * NULL inside the type-specific dump function.
+					 */
+					if (head->array[j] == NULL) {
+						output(0, "  array[%u]: NULL (in-flight or corrupt)\n", j);
+						continue;
+					}
 					head->dump(head->array[j], OBJ_LOCAL);
+				}
 			}
 		}
 	}
