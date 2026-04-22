@@ -13,6 +13,29 @@
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Aggregate-stats table column widths. Header + every row uses the same
+ * format string so output is greppable (grep '^fd_lifecycle ') and
+ * human-scannable (columns line up).
+ */
+#define STATS_ROW_FMT "%-22s  %-32s  %lu\n"
+#define STATS_HDR_FMT "%-22s  %-32s  %s\n"
+
+static void stats_emit_header(void)
+{
+	output(0, "\n");
+	output(0, STATS_HDR_FMT, "CATEGORY", "METRIC", "VALUE");
+	output(0, STATS_HDR_FMT,
+	       "----------------------",
+	       "--------------------------------",
+	       "-----");
+}
+
+static void stat_row(const char *category, const char *metric, unsigned long value)
+{
+	output(0, STATS_ROW_FMT, category, metric, value);
+}
+
 static void dump_entry(const struct syscalltable *table, unsigned int i)
 {
 	struct syscallentry *entry;
@@ -53,181 +76,158 @@ void dump_stats(void)
 		}
 	}
 
+	stats_emit_header();
+
 	if (shm->stats.fault_injected) {
-		output(0, "\nFault injection: %lu syscalls armed via /proc/self/fail-nth, %lu returned -ENOMEM\n",
-			shm->stats.fault_injected,
-			shm->stats.fault_consumed);
+		stat_row("fault_injection", "armed_fail_nth",  shm->stats.fault_injected);
+		stat_row("fault_injection", "returned_enomem", shm->stats.fault_consumed);
 	}
 
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
 	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
 	    shm->stats.fd_duped || shm->stats.fd_events_processed) {
-		output(0, "\nfd lifecycle: stale:%lu (generation:%lu) closed:%lu regenerated:%lu duped:%lu\n",
-			shm->stats.fd_stale_detected,
-			shm->stats.fd_stale_by_generation,
-			shm->stats.fd_closed_tracked,
-			shm->stats.fd_regenerated,
-			shm->stats.fd_duped);
-		output(0, "fd events: processed:%lu dropped:%lu\n",
-			shm->stats.fd_events_processed,
-			shm->stats.fd_events_dropped);
+		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
+		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd_stale_by_generation);
+		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd_closed_tracked);
+		stat_row("fd_lifecycle", "regenerated",         shm->stats.fd_regenerated);
+		stat_row("fd_lifecycle", "duped",               shm->stats.fd_duped);
+		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd_events_processed);
+		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd_events_dropped);
 	}
 
 	if (shm->stats.fd_oracle_anomalies)
-		output(0, "fd oracle anomalies: %lu\n", shm->stats.fd_oracle_anomalies);
-
+		stat_row("oracle", "fd_anomalies",   shm->stats.fd_oracle_anomalies);
 	if (shm->stats.mmap_oracle_anomalies)
-		output(0, "mmap oracle anomalies: %lu\n", shm->stats.mmap_oracle_anomalies);
-
+		stat_row("oracle", "mmap_anomalies", shm->stats.mmap_oracle_anomalies);
 	if (shm->stats.cred_oracle_anomalies)
-		output(0, "cred oracle anomalies: %lu\n", shm->stats.cred_oracle_anomalies);
+		stat_row("oracle", "cred_anomalies", shm->stats.cred_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
-		output(0, "\nprocfs/sysfs writes: proc:%lu sys:%lu debugfs:%lu\n",
-			shm->stats.procfs_writes,
-			shm->stats.sysfs_writes,
-			shm->stats.debugfs_writes);
+		stat_row("vfs_writes", "procfs",  shm->stats.procfs_writes);
+		stat_row("vfs_writes", "sysfs",   shm->stats.sysfs_writes);
+		stat_row("vfs_writes", "debugfs", shm->stats.debugfs_writes);
 	}
 
 	if (shm->stats.memory_pressure_runs)
-		output(0, "memory pressure runs (MADV_PAGEOUT+refault): %lu\n",
-			shm->stats.memory_pressure_runs);
+		stat_row("memory_pressure", "runs_madv_pageout", shm->stats.memory_pressure_runs);
 
-	if (shm->stats.sched_cycler_runs)
-		output(0, "sched_cycler: runs:%lu eperm:%lu\n",
-			shm->stats.sched_cycler_runs,
-			shm->stats.sched_cycler_eperm);
+	if (shm->stats.sched_cycler_runs) {
+		stat_row("sched_cycler", "runs",  shm->stats.sched_cycler_runs);
+		stat_row("sched_cycler", "eperm", shm->stats.sched_cycler_eperm);
+	}
 
-	if (shm->stats.userns_runs)
-		output(0, "userns_fuzzer: runs:%lu inner_crashed:%lu unsupported:%lu\n",
-			shm->stats.userns_runs,
-			shm->stats.userns_inner_crashed,
-			shm->stats.userns_unsupported);
+	if (shm->stats.userns_runs) {
+		stat_row("userns_fuzzer", "runs",          shm->stats.userns_runs);
+		stat_row("userns_fuzzer", "inner_crashed", shm->stats.userns_inner_crashed);
+		stat_row("userns_fuzzer", "unsupported",   shm->stats.userns_unsupported);
+	}
 
-	if (shm->stats.barrier_racer_runs)
-		output(0, "barrier racer: %lu runs, %lu inner workers crashed\n",
-			shm->stats.barrier_racer_runs,
-			shm->stats.barrier_racer_inner_crashed);
+	if (shm->stats.barrier_racer_runs) {
+		stat_row("barrier_racer", "runs",          shm->stats.barrier_racer_runs);
+		stat_row("barrier_racer", "inner_crashed", shm->stats.barrier_racer_inner_crashed);
+	}
 
 	if (shm->stats.genetlink_families_discovered ||
 	    shm->stats.genetlink_msgs_sent) {
-		output(0, "\ngenetlink fuzzer: families_discovered:%lu (cumulative across children) msgs_sent:%lu eperm:%lu\n",
-			shm->stats.genetlink_families_discovered,
-			shm->stats.genetlink_msgs_sent,
-			shm->stats.genetlink_eperm);
+		stat_row("genetlink_fuzzer", "families_discovered", shm->stats.genetlink_families_discovered);
+		stat_row("genetlink_fuzzer", "msgs_sent",           shm->stats.genetlink_msgs_sent);
+		stat_row("genetlink_fuzzer", "eperm",               shm->stats.genetlink_eperm);
 	}
 
 	if (shm->stats.netlink_nested_attrs_emitted)
-		output(0, "netlink generator: NLA_F_NESTED containers emitted:%lu\n",
-			shm->stats.netlink_nested_attrs_emitted);
+		stat_row("netlink_generator", "nested_attrs_emitted", shm->stats.netlink_nested_attrs_emitted);
 
 	if (shm->stats.perf_chains_runs) {
-		output(0, "\nperf event chains: runs:%lu groups_created:%lu ioctl_ops:%lu\n",
-			shm->stats.perf_chains_runs,
-			shm->stats.perf_chains_groups_created,
-			shm->stats.perf_chains_ioctl_ops);
+		stat_row("perf_event_chains", "runs",           shm->stats.perf_chains_runs);
+		stat_row("perf_event_chains", "groups_created", shm->stats.perf_chains_groups_created);
+		stat_row("perf_event_chains", "ioctl_ops",      shm->stats.perf_chains_ioctl_ops);
 	}
 
 	if (shm->stats.tracefs_kprobe_writes || shm->stats.tracefs_uprobe_writes ||
 	    shm->stats.tracefs_filter_writes || shm->stats.tracefs_event_enable_writes ||
 	    shm->stats.tracefs_misc_writes) {
-		output(0, "\ntracefs fuzzer: kprobe:%lu uprobe:%lu filter:%lu event_enable:%lu misc:%lu\n",
-			shm->stats.tracefs_kprobe_writes,
-			shm->stats.tracefs_uprobe_writes,
-			shm->stats.tracefs_filter_writes,
-			shm->stats.tracefs_event_enable_writes,
-			shm->stats.tracefs_misc_writes);
+		stat_row("tracefs_fuzzer", "kprobe_writes",       shm->stats.tracefs_kprobe_writes);
+		stat_row("tracefs_fuzzer", "uprobe_writes",       shm->stats.tracefs_uprobe_writes);
+		stat_row("tracefs_fuzzer", "filter_writes",       shm->stats.tracefs_filter_writes);
+		stat_row("tracefs_fuzzer", "event_enable_writes", shm->stats.tracefs_event_enable_writes);
+		stat_row("tracefs_fuzzer", "misc_writes",         shm->stats.tracefs_misc_writes);
 	}
 
 	if (shm->stats.bpf_lifecycle_runs) {
-		output(0, "\nbpf lifecycle: runs:%lu progs_loaded:%lu attached:%lu triggered:%lu verifier_rejects:%lu attach_failed:%lu eperm:%lu\n",
-			shm->stats.bpf_lifecycle_runs,
-			shm->stats.bpf_lifecycle_progs_loaded,
-			shm->stats.bpf_lifecycle_attached,
-			shm->stats.bpf_lifecycle_triggered,
-			shm->stats.bpf_lifecycle_verifier_rejects,
-			shm->stats.bpf_lifecycle_attach_failed,
-			shm->stats.bpf_lifecycle_eperm);
+		stat_row("bpf_lifecycle", "runs",             shm->stats.bpf_lifecycle_runs);
+		stat_row("bpf_lifecycle", "progs_loaded",     shm->stats.bpf_lifecycle_progs_loaded);
+		stat_row("bpf_lifecycle", "attached",         shm->stats.bpf_lifecycle_attached);
+		stat_row("bpf_lifecycle", "triggered",        shm->stats.bpf_lifecycle_triggered);
+		stat_row("bpf_lifecycle", "verifier_rejects", shm->stats.bpf_lifecycle_verifier_rejects);
+		stat_row("bpf_lifecycle", "attach_failed",    shm->stats.bpf_lifecycle_attach_failed);
+		stat_row("bpf_lifecycle", "eperm",            shm->stats.bpf_lifecycle_eperm);
 	}
 
 	if (shm->stats.bpf_maps_provided || shm->stats.bpf_progs_provided) {
-		output(0, "bpf fd provider: maps_provided:%lu progs_provided:%lu\n",
-			shm->stats.bpf_maps_provided,
-			shm->stats.bpf_progs_provided);
+		stat_row("bpf_fd_provider", "maps_provided",  shm->stats.bpf_maps_provided);
+		stat_row("bpf_fd_provider", "progs_provided", shm->stats.bpf_progs_provided);
 	}
 
 	if (shm->stats.recipe_runs) {
-		output(0, "\nrecipe runner: runs:%lu completed:%lu partial:%lu unsupported:%lu\n",
-			shm->stats.recipe_runs,
-			shm->stats.recipe_completed,
-			shm->stats.recipe_partial,
-			shm->stats.recipe_unsupported);
+		stat_row("recipe_runner", "runs",        shm->stats.recipe_runs);
+		stat_row("recipe_runner", "completed",   shm->stats.recipe_completed);
+		stat_row("recipe_runner", "partial",     shm->stats.recipe_partial);
+		stat_row("recipe_runner", "unsupported", shm->stats.recipe_unsupported);
 		recipe_runner_dump_stats();
 	}
 
 	if (shm->stats.iouring_recipes_runs) {
-		output(0, "\nio_uring recipes: runs:%lu completed:%lu partial:%lu enosys:%lu\n",
-			shm->stats.iouring_recipes_runs,
-			shm->stats.iouring_recipes_completed,
-			shm->stats.iouring_recipes_partial,
-			shm->stats.iouring_recipes_enosys);
+		stat_row("iouring_recipes", "runs",      shm->stats.iouring_recipes_runs);
+		stat_row("iouring_recipes", "completed", shm->stats.iouring_recipes_completed);
+		stat_row("iouring_recipes", "partial",   shm->stats.iouring_recipes_partial);
+		stat_row("iouring_recipes", "enosys",    shm->stats.iouring_recipes_enosys);
 		iouring_recipes_dump_stats();
 	}
 
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
-		output(0, "\nzombie slots: pending:%lu reaped:%lu timed-out:%lu\n",
-			shm->stats.zombie_slots_pending,
-			shm->stats.zombies_reaped,
-			shm->stats.zombies_timed_out);
+		stat_row("zombie_slots", "pending",   shm->stats.zombie_slots_pending);
+		stat_row("zombie_slots", "reaped",    shm->stats.zombies_reaped);
+		stat_row("zombie_slots", "timed_out", shm->stats.zombies_timed_out);
 	}
 
-	if (shm->stats.local_op_count_corrupted) {
-		output(0, "\nlocal_op_count corruption events: %lu\n",
-			shm->stats.local_op_count_corrupted);
-	}
-
+	if (shm->stats.local_op_count_corrupted)
+		stat_row("corruption", "local_op_count",         shm->stats.local_op_count_corrupted);
 	if (shm->stats.fd_event_ring_corrupted)
-		output(0, "\nfd_event_ring non-canonical pointer events: %lu\n",
-			shm->stats.fd_event_ring_corrupted);
-
+		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
 	if (shm->stats.fd_event_ring_overwritten)
-		output(0, "\nfd_event_ring canary mismatch events: %lu\n",
-			shm->stats.fd_event_ring_overwritten);
+		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd_event_ring_overwritten);
 
 	if (shm->stats.shared_buffer_redirected)
-		output(0, "\nshared-buffer redirects: %lu (output-buffer args rewritten away from alloc_shared regions)\n",
-			shm->stats.shared_buffer_redirected);
-
+		stat_row("shared_buffer", "args_redirected",     shm->stats.shared_buffer_redirected);
 	if (shm->stats.range_overlap_rejects)
-		output(0, "range_overlaps_shared rejects: %lu\n",
-			shm->stats.range_overlap_rejects);
+		stat_row("shared_buffer", "range_overlap_rejects", shm->stats.range_overlap_rejects);
 
 	dump_obj_heap_stats();
 
-	if (shm->stats.refcount_audit_runs)
-		output(0, "\nrefcount audit: runs:%lu fd-anomalies:%lu mmap-anomalies:%lu sock-anomalies:%lu\n",
-			shm->stats.refcount_audit_runs,
-			shm->stats.refcount_audit_fd_anomalies,
-			shm->stats.refcount_audit_mmap_anomalies,
-			shm->stats.refcount_audit_sock_anomalies);
+	if (shm->stats.refcount_audit_runs) {
+		stat_row("refcount_audit", "runs",           shm->stats.refcount_audit_runs);
+		stat_row("refcount_audit", "fd_anomalies",   shm->stats.refcount_audit_fd_anomalies);
+		stat_row("refcount_audit", "mmap_anomalies", shm->stats.refcount_audit_mmap_anomalies);
+		stat_row("refcount_audit", "sock_anomalies", shm->stats.refcount_audit_sock_anomalies);
+	}
 
 	if (shm->stats.fs_lifecycle_tmpfs || shm->stats.fs_lifecycle_ramfs ||
-	    shm->stats.fs_lifecycle_overlay || shm->stats.fs_lifecycle_unsupported)
-		output(0, "\nfs lifecycle: tmpfs:%lu ramfs:%lu rdonly:%lu overlay:%lu unsupported:%lu\n",
-			shm->stats.fs_lifecycle_tmpfs,
-			shm->stats.fs_lifecycle_ramfs,
-			shm->stats.fs_lifecycle_rdonly,
-			shm->stats.fs_lifecycle_overlay,
-			shm->stats.fs_lifecycle_unsupported);
+	    shm->stats.fs_lifecycle_overlay || shm->stats.fs_lifecycle_unsupported) {
+		stat_row("fs_lifecycle", "tmpfs",       shm->stats.fs_lifecycle_tmpfs);
+		stat_row("fs_lifecycle", "ramfs",       shm->stats.fs_lifecycle_ramfs);
+		stat_row("fs_lifecycle", "rdonly",      shm->stats.fs_lifecycle_rdonly);
+		stat_row("fs_lifecycle", "overlay",     shm->stats.fs_lifecycle_overlay);
+		stat_row("fs_lifecycle", "unsupported", shm->stats.fs_lifecycle_unsupported);
+	}
 
-	if (shm->stats.signal_storm_runs)
-		output(0, "\nsignal storm: runs:%lu kill:%lu sigqueue:%lu no_targets:%lu\n",
-			shm->stats.signal_storm_runs,
-			shm->stats.signal_storm_kill,
-			shm->stats.signal_storm_sigqueue,
-			shm->stats.signal_storm_no_targets);
+	if (shm->stats.signal_storm_runs) {
+		stat_row("signal_storm", "runs",       shm->stats.signal_storm_runs);
+		stat_row("signal_storm", "kill",       shm->stats.signal_storm_kill);
+		stat_row("signal_storm", "sigqueue",   shm->stats.signal_storm_sigqueue);
+		stat_row("signal_storm", "no_targets", shm->stats.signal_storm_no_targets);
+	}
 
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
@@ -240,8 +240,11 @@ void dump_stats(void)
 		unsigned long kc_pcs    = __atomic_load_n(&kcov_shm->total_pcs,     __ATOMIC_RELAXED);
 		unsigned long kc_calls  = __atomic_load_n(&kcov_shm->total_calls,   __ATOMIC_RELAXED);
 		unsigned long kc_remote = __atomic_load_n(&kcov_shm->remote_calls,  __ATOMIC_RELAXED);
-		output(0, "\nKCOV coverage: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
-			kc_edges, kc_pcs, kc_calls, kc_remote);
+
+		stat_row("kcov_coverage", "unique_edges", kc_edges);
+		stat_row("kcov_coverage", "total_pcs",    kc_pcs);
+		stat_row("kcov_coverage", "total_calls",  kc_calls);
+		stat_row("kcov_coverage", "remote_calls", kc_remote);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
@@ -442,8 +445,8 @@ void dump_stats(void)
 				syscalls_with_hints++;
 			}
 		}
-		output(0, "CMP hints: %u values across %u syscalls\n",
-			total_hints, syscalls_with_hints);
+		stat_row("cmp_hints", "values_total",        total_hints);
+		stat_row("cmp_hints", "syscalls_with_hints", syscalls_with_hints);
 	}
 
 	if (edgepair_shm != NULL) {
@@ -458,13 +461,11 @@ void dump_stats(void)
 
 		memset(top, 0, sizeof(top));
 
-		output(0, "\nEdge-pair coverage: %lu unique pairs, %lu total pair-calls\n",
-			edgepair_shm->pairs_tracked,
-			edgepair_shm->total_pair_calls);
+		stat_row("edgepair_coverage", "unique_pairs",     edgepair_shm->pairs_tracked);
+		stat_row("edgepair_coverage", "total_pair_calls", edgepair_shm->total_pair_calls);
 
 		if (edgepair_shm->pairs_dropped > 0)
-			output(0, "Edge-pair table overflow: %lu inserts dropped (consider growing EDGEPAIR_TABLE_SIZE)\n",
-				edgepair_shm->pairs_dropped);
+			stat_row("edgepair_coverage", "inserts_dropped", edgepair_shm->pairs_dropped);
 
 		for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
 			struct edgepair_entry *e = &edgepair_shm->table[i];
@@ -513,7 +514,7 @@ void dump_stats(void)
 		}
 
 		if (cold_pairs > 0)
-			output(0, "Cold pairs (saturated sequences): %u\n", cold_pairs);
+			stat_row("edgepair_coverage", "cold_pairs", cold_pairs);
 
 		edgepair_dump_to_file("edgepair.dump");
 	}
