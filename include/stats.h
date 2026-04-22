@@ -179,6 +179,12 @@ struct stats_s {
 	unsigned long fs_lifecycle_rdonly;	/* read-only proc/sysfs traversal */
 	unsigned long fs_lifecycle_overlay;	/* overlayfs variant */
 	unsigned long fs_lifecycle_unsupported;	/* unshare/mount denied (EPERM) */
+
+	/* range_overlaps_shared() rejected an addr/len because it overlapped
+	 * one of trinity's tracked alloc_shared regions.  Tells you whether
+	 * the wild-write defense is doing meaningful work or trivially
+	 * bypassing every input. */
+	unsigned long range_overlap_rejects;
 };
 
 void dump_stats(void);

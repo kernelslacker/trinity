@@ -199,6 +199,10 @@ void dump_stats(void)
 		output(0, "\nshared-buffer redirects: %lu (output-buffer args rewritten away from alloc_shared regions)\n",
 			shm->stats.shared_buffer_redirected);
 
+	if (shm->stats.range_overlap_rejects)
+		output(0, "range_overlaps_shared rejects: %lu\n",
+			shm->stats.range_overlap_rejects);
+
 	if (shm->stats.refcount_audit_runs)
 		output(0, "\nrefcount audit: runs:%lu fd-anomalies:%lu mmap-anomalies:%lu sock-anomalies:%lu\n",
 			shm->stats.refcount_audit_runs,
