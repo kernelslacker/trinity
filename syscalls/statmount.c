@@ -88,6 +88,16 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) req;
 	rec->a3 = 4096;	/* reasonable output buffer size */
 	rec->a4 = ONE_IN(4) ? STATMOUNT_BY_FD : 0;
+
+	/*
+	 * buf (a2) is the kernel's writeback target for struct statmount
+	 * plus its variable-length tail (mount opts, fs type strings, etc).
+	 * The sanitise above declared a3 = 4096 as the buffer size; mirror
+	 * that as the avoid_shared_buffer length.  ARG_ADDRESS draws from
+	 * the random pool, so a fuzzed pointer can land inside an
+	 * alloc_shared region.
+	 */
+	avoid_shared_buffer(&rec->a2, rec->a3);
 }
 
 struct syscallentry syscall_statmount = {
