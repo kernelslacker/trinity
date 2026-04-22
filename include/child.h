@@ -7,6 +7,7 @@
 #include "edgepair.h"
 #include "kcov.h"
 #include "objects.h"
+#include "pre_crash_ring.h"
 #include "syscall.h"
 
 struct fd_event_ring;
@@ -133,6 +134,12 @@ struct childdata {
 	/* Ring of recently completed syscall records, drained by the parent
 	 * during post-mortem to reconstruct a fleet-wide chronology. */
 	struct child_syscall_ring syscall_ring;
+
+	/* Compact rolling history of recently completed syscalls, drained
+	 * on __BUG() to recover what this child was doing just before an
+	 * assertion failure (most often a parent-side list/fd-event drain
+	 * crash caused by a child wild write hundreds of syscalls back). */
+	struct pre_crash_ring pre_crash;
 
 	/* fd to /proc/self/fail-nth, opened once per child.  -1 means
 	 * fault injection is unavailable on this kernel/config. */
