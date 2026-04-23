@@ -399,7 +399,8 @@ void generic_free_arg(struct syscallrecord *rec)
 
 	call = rec->nr;
 
-	entry = syscalls[call].entry;
+	entry = get_syscall_entry(call, rec->do32bit);
+	BUG_ON(entry == NULL);
 
 	for_each_arg(entry, i) {
 		enum argtype argtype;
