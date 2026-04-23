@@ -71,6 +71,7 @@ void create_sysv_shms(void)
 			continue;
 		}
 		obj->sysv_shm.ptr = p;
+		track_shared_region((unsigned long)p, size);
 
 		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
 	}
