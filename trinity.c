@@ -217,32 +217,44 @@ int main(int argc, char* argv[])
 	output(0, "mainpid=%d\n", mainpid);
 
 	/*
-	 * Print and persist the active seed unconditionally.  init_seed()
-	 * already prints the value, but it's the parameter copy and the
-	 * line wording differs between the auto and -s paths; this is the
-	 * canonical post-init shm->seed at a known anchor (`[main] seed=`)
-	 * for log-grep tooling.  Also drop the value into ./last-run-seed
-	 * (we are already chdir'd into tmp/ via change_tmp_dir) in decimal
-	 * form so a stochastic crash can be re-run with
+	 * Print the active post-init shm->seed unconditionally as a canonical
+	 * `[main] seed=` anchor for log-grep tooling -- init_seed() already
+	 * prints the value, but the line wording differs between the auto
+	 * and -s paths.
+	 *
+	 * Persist only the auto-generated seed: drop the value into
+	 * ./last-run-seed (we are already chdir'd into tmp/ via
+	 * change_tmp_dir) so a stochastic crash can be re-run with
 	 *     trinity --seed=$(cat tmp/last-run-seed) ...
-	 * Failures are non-fatal — a missing file just means no auto-replay.
+	 * The user-supplied (-s/--seed) path doesn't need persisting -- the
+	 * caller already has the value they passed in, and overwriting the
+	 * file would lose the last auto-generated seed.
+	 *
+	 * Write atomically via .tmp + rename (mirrors minicorpus.c) so a
+	 * partial write never replaces a previous good value.  Best effort:
+	 * all failures are silent, the file is informational.
 	 */
 	{
 		unsigned int active_seed =
 			__atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
-		FILE *f;
 
-		output(0, "[main] seed=0x%lx\n", (unsigned long)active_seed);
+		output(0, "[main] seed=0x%x\n", active_seed);
 
-		f = fopen("last-run-seed", "w");
-		if (f == NULL) {
-			outputerr("last-run-seed: fopen failed: %s\n",
-				strerror(errno));
-		} else {
-			if (fprintf(f, "%u\n", active_seed) < 0)
-				outputerr("last-run-seed: fprintf failed: %s\n",
-					strerror(errno));
-			fclose(f);
+		if (user_set_seed == false) {
+			FILE *f = fopen("last-run-seed.tmp", "w");
+
+			if (f != NULL) {
+				int wrote = fprintf(f, "%u\n", active_seed);
+				int closed = fclose(f);
+
+				if (wrote > 0 && closed == 0) {
+					if (rename("last-run-seed.tmp",
+							"last-run-seed") != 0)
+						(void)unlink("last-run-seed.tmp");
+				} else {
+					(void)unlink("last-run-seed.tmp");
+				}
+			}
 		}
 	}
 
