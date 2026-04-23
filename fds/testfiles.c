@@ -127,7 +127,7 @@ static int open_testfile_fds(void)
 
 			obj = NULL;	// Make it alloc a new one.
 
-			mmap_fd(fd, strdup(filename), page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
+			mmap_fd(fd, filename, page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
 
 		} else {
 			free_shared_str(filename, 64);
