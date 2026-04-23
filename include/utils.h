@@ -21,6 +21,7 @@ void freeze_global_objects(void);
 void thaw_global_objects(void);
 bool globals_are_protected(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
+void track_shared_region(unsigned long addr, unsigned long size);
 void dump_obj_heap_stats(void);
 
 /*

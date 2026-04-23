@@ -74,6 +74,28 @@ static void * __alloc_shared(unsigned int size, bool is_global_obj)
 	return ret;
 }
 
+/*
+ * Add an externally-mmap'd region to the shared_regions tracker so the
+ * range_overlaps_shared() guards in the mm-syscall sanitisers refuse
+ * fuzzed munmap/mremap/madvise/mprotect calls that target it.  Used by
+ * code that mmaps via something other than alloc_shared() and still
+ * needs the region protected from the fuzzer -- e.g., the per-child
+ * kcov ring buffer mapped from /sys/kernel/debug/kcov.
+ */
+void track_shared_region(unsigned long addr, unsigned long size)
+{
+	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
+		shared_regions[nr_shared_regions].addr = addr;
+		shared_regions[nr_shared_regions].size = size;
+		shared_regions[nr_shared_regions].is_global_obj = false;
+		nr_shared_regions++;
+	} else {
+		outputerr("track_shared_region: MAX_SHARED_ALLOCS (%d) reached, "
+			"region %p won't be tracked by range_overlaps_shared()\n",
+			MAX_SHARED_ALLOCS, (void *)addr);
+	}
+}
+
 void * alloc_shared(unsigned int size)
 {
 	return __alloc_shared(size, false);
