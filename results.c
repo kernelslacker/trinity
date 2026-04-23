@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include "debug.h"
 #include "locks.h"
 #include "results.h"
 #include "sanitise.h"
@@ -68,7 +69,8 @@ void handle_success(struct syscallrecord *rec)
 	unsigned int i, call;
 
 	call = rec->nr;
-	entry = syscalls[call].entry;
+	entry = get_syscall_entry(call, rec->do32bit);
+	BUG_ON(entry == NULL);
 
 	for_each_arg(entry, i) {
 		struct results *results;
