@@ -28,7 +28,7 @@ void init_global_objects(void)
 	list_for_each(pos, &global_obj_list) {
 		struct global_obj_entry *entry = (struct global_obj_entry *) pos;
 
-		output(0, "Initializing %s objects.\n", entry->name);
+		output(1, "Initializing %s objects.\n", entry->name);
 		entry->init();
 	}
 }
