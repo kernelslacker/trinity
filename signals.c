@@ -90,10 +90,11 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 	 * swallowed — without this we have zero forensics on child SEGVs.
 	 */
 	{
-		char path[64];
+		char path[PATH_MAX + 64];
 		int fd;
 
-		snprintf(path, sizeof(path), "/tmp/trinity-bug-%d.log", (int)getpid());
+		snprintf(path, sizeof(path), "%s/trinity-bug-%d.log",
+			 trinity_tmpdir_abs(), (int)getpid());
 		fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
 		if (fd >= 0) {
 			dup2(fd, STDERR_FILENO);
