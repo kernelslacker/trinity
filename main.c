@@ -799,6 +799,13 @@ static void replace_child(int childno)
 	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 		return;
 
+	/* Don't replace if the fleet has been halted (e.g. a __BUG fired
+	 * in some child and we're now keeping the survivors quiescent so
+	 * an operator can gdb-attach for inspection).  The slot stays
+	 * empty rather than respawning into a known-corrupt environment. */
+	if (__atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
+		return;
+
 	while (spawn_child(childno) == false) {
 		if (++retries >= 10) {
 			outputerr("Failed to replace child %d after %u fork attempts, giving up.\n",
