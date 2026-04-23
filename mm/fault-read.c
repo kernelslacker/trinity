@@ -2,6 +2,8 @@
  * Routines to fault-in mapped pages.
  */
 
+#include <errno.h>
+#include <sys/mman.h>
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
@@ -9,6 +11,22 @@
 
 /* 64KB covers the largest page size (arm64 with 64KB pages). */
 static char page_buf[65536];
+
+/*
+ * Wrapper so every read-side mprotect() in this file logs a structured
+ * failure line (PROT bits + region size + caller PC) instead of the
+ * original "silently ignore non-zero returns" behaviour.  The reader
+ * still proceeds to the memcpy on failure — pages already mapped with
+ * a stricter prot will just satisfy the read regardless, and a true
+ * EFAULT surfaces in the memcpy where we can't do anything more useful
+ * about it.
+ */
+static void read_mprotect(void *addr, size_t len, int prot)
+{
+	if (mprotect(addr, len, prot) != 0)
+		log_mprotect_failure(addr, len, prot,
+				     __builtin_return_address(0), errno);
+}
 
 static unsigned int nr_pages(struct map *map)
 {
@@ -26,7 +44,7 @@ static void read_one_page(struct map *map)
 	offset = (rand() % map->size) & PAGE_MASK;
 
 	p += offset;
-	mprotect((void *) p, page_size, PROT_READ);
+	read_mprotect((void *) p, page_size, PROT_READ);
 	memcpy(page_buf, p, page_size);
 }
 
@@ -40,7 +58,7 @@ static void read_whole_mapping(struct map *map)
 
 	for (i = 0; i < nr; i++) {
 		char *page = p + (i * page_size);
-		mprotect((void *) page, page_size, PROT_READ);
+		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 	}
 }
@@ -56,7 +74,7 @@ static void read_every_other_page(struct map *map)
 
 	for (i = first; i < nr; i+=2) {
 		char *page = p + (i * page_size);
-		mprotect((void *) page, page_size, PROT_READ);
+		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 	}
 }
@@ -73,7 +91,7 @@ static void read_mapping_reverse(struct map *map)
 
 	for (i = nr; ; i--) {
 		char *page = p + (i * page_size);
-		mprotect((void *) page, page_size, PROT_READ);
+		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 		if (i == 0)
 			break;
@@ -90,7 +108,7 @@ static void read_random_pages(struct map *map)
 
 	for (i = 0; i < nr; i++) {
 		char *page = p + ((rand() % nr) * page_size);
-		mprotect((void *) page, page_size, PROT_READ);
+		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 	}
 }
@@ -105,7 +123,7 @@ static void read_last_page(struct map *map)
 		return;
 
 	ptr = p + (map->size - page_size);
-	mprotect((void *) ptr, page_size, PROT_READ);
+	read_mprotect((void *) ptr, page_size, PROT_READ);
 	memcpy(page_buf, ptr, page_size);
 }
 
