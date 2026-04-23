@@ -34,53 +34,6 @@ void init_global_objects(void)
 }
 
 /*
- * Walk every global obj list and invoke the existing list validator on
- * each entry.  __list_del_entry_valid_or_die() emits the standard
- * "back-link broken" / "entry was zeroed" / "use-after-list_del"
- * diagnostics and __BUGs on the first inconsistency, so a corruption
- * gets pinned to the next idle pass instead of waiting for the next
- * unrelated list_add or list_del to crash.
- *
- * Read-only walk: the obj heap is mprotected PROT_READ post-freeze,
- * which still permits the loads we need.  The lists themselves are
- * mutated only from the parent (under shm->objlock); main_loop is the
- * only parent thread, so a same-process walk does not race against a
- * concurrent mutator.
- */
-void validate_global_object_lists(void)
-{
-	unsigned int i;
-
-	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
-		struct objhead *head = &shm->global_objects[i];
-		struct list_head *list = head->list;
-		struct list_head *pos;
-
-		if (list == NULL)
-			continue;
-
-		/* Head links must point somewhere — a NULL head means the
-		 * list head itself was zeroed by a stray write. */
-		if (list->next == NULL || list->prev == NULL) {
-			outputerr("validate_global_object_lists: type %u: "
-				"head=%p has NULL link (next=%p prev=%p)\n",
-				i, list, list->next, list->prev);
-			__BUG("global list head corrupted",
-			      __FILE__, __func__, __LINE__);
-		}
-
-		/* Walk and revalidate every entry.  This catches the case
-		 * the existing per-mutation validator can't: corruption that
-		 * happened *between* mutations (a wild write while no
-		 * list_add/list_del was in flight). */
-		for (pos = list->next; pos != list; pos = pos->next) {
-			__list_del_entry_valid_or_die(pos, __FILE__,
-						      __func__, __LINE__);
-		}
-	}
-}
-
-/*
  * Hash table mapping fd → (object, type) for O(1) lookup in
  * remove_object_by_fd().  Open-addressing with linear probing.
  *
@@ -232,10 +185,7 @@ static bool is_fd_type(enum objecttype type)
 
 struct object * alloc_object(void)
 {
-	struct object *obj;
-	obj = zmalloc(sizeof(struct object));
-	INIT_LIST_HEAD(&obj->list);
-	return obj;
+	return zmalloc(sizeof(struct object));
 }
 
 /*
@@ -280,7 +230,7 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
  * only, causing children to SIGSEGV when they follow the pointer.
  *
  * Exposed in objects.h so other code (e.g. mm/maps.c) can use the
- * same upper bound when defending against corrupt global lists.
+ * same upper bound when defending against a corrupt num_entries.
  */
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
@@ -300,7 +250,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		/* Most parent-side OBJ_GLOBAL adds happen during init,
 		 * before freeze.  The post-freeze case is fd regeneration
 		 * via try_regenerate_fd() — temporarily lift the RO
-		 * protection so the list/array writes can land. */
+		 * protection so the array writes can land. */
 		if (globals_are_protected()) {
 			thaw_global_objects();
 			was_protected = true;
@@ -308,14 +258,6 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	}
 
 	head = get_objhead(scope, type);
-	if (head->list == NULL) {
-		if (scope == OBJ_GLOBAL) {
-			head->list = alloc_shared_global(sizeof(struct list_head));
-		} else {
-			head->list = zmalloc(sizeof(struct list_head));
-		}
-		INIT_LIST_HEAD(head->list);
-	}
 
 	/* For global objects, the array was pre-allocated in shared
 	 * memory by init_object_lists().  Never realloc — just reject
@@ -429,20 +371,6 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		}
 
 		head->num_entries = 0;
-
-		/* Pre-allocate the list head as an empty self-referential
-		 * sentinel.  Without this, add_object lazily allocates on
-		 * first add — meaning any list_for_each on a type that
-		 * never had an object added (e.g. perf events disabled,
-		 * seccomp_notif unsupported, etc.) dereferences NULL and
-		 * SIGSEGVs the caller.  In production builds the catch-all
-		 * sighandler swallows the SIGSEGV into _exit(EXIT_SUCCESS),
-		 * so the crash is silent and impossible to attribute. */
-		if (scope == OBJ_GLOBAL)
-			head->list = alloc_shared_global(sizeof(struct list_head));
-		else
-			head->list = zmalloc(sizeof(struct list_head));
-		INIT_LIST_HEAD(head->list);
 
 		if (scope == OBJ_GLOBAL) {
 			/* Pre-allocate the parallel array in MAP_SHARED memory
@@ -692,11 +620,7 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 	/* Drain the array via repeated head->array[0] destroy.
 	 * __destroy_object() does swap-with-last on the parallel array,
 	 * so consuming the front slot each time pulls a fresh entry into
-	 * slot 0 until num_entries reaches 0.  No iterator needed — this
-	 * matches the natural "clear all" semantic of destroy_objects
-	 * without depending on linked-list traversal.  The list itself is
-	 * still maintained by add_object/destroy_object (list_del runs
-	 * inside __destroy_object), it just isn't walked here anymore. */
+	 * slot 0 until num_entries reaches 0. */
 	while (head->num_entries > 0) {
 		struct object *obj = head->array[0];
 
@@ -716,8 +640,6 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		free(head->array);
 		head->array = NULL;
 		head->array_capacity = 0;
-		free(head->list);
-		head->list = NULL;
 	} else {
 		/* Zero out the shared array for reuse. */
 		memset(head->array, 0, head->array_capacity * sizeof(struct object *));
@@ -729,10 +651,10 @@ void destroy_global_objects(void)
 {
 	unsigned int i;
 
-	/* The list heads and parallel arrays were mprotected RO after
-	 * init.  Cleanup needs to mutate them, so re-enable writes in
-	 * this process first.  Children are gone by the time we get
-	 * here so we do not need to coordinate with them. */
+	/* The parallel arrays were mprotected RO after init.  Cleanup
+	 * needs to mutate them, so re-enable writes in this process first.
+	 * Children are gone by the time we get here so we do not need to
+	 * coordinate with them. */
 	thaw_global_objects();
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++)

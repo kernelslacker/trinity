@@ -9,7 +9,6 @@
 
 #include "fd.h"
 #include "fanotify.h"
-#include "list.h"
 #include "objects.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -64,7 +63,6 @@ static int open_fanotify_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->fanotifyobj.fd = fd;
 	obj->fanotifyobj.flags = flags;
 	obj->fanotifyobj.eventflags = eventflags;

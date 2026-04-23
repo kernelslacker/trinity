@@ -8,7 +8,6 @@
 #include <sys/timerfd.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -115,7 +114,6 @@ static int __init_timerfd_fds(int clockid)
 			close(fd);
 			continue;
 		}
-		INIT_LIST_HEAD(&obj->list);
 		obj->timerfdobj.fd = fd;
 		obj->timerfdobj.clockid = clockid;
 		obj->timerfdobj.flags = flags[i];
@@ -181,7 +179,6 @@ static int open_timerfd_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->timerfdobj.fd = fd;
 	obj->timerfdobj.clockid = clockid;
 	obj->timerfdobj.flags = flags;

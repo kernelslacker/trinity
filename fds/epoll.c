@@ -8,7 +8,6 @@
 #include <sys/epoll.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -105,7 +104,6 @@ static int init_epoll_fds(void)
 			close(fd);
 			return false;
 		}
-		INIT_LIST_HEAD(&obj->list);
 		obj->epollobj.fd = fd;
 		obj->epollobj.create1 = use_create1;
 		obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
@@ -135,7 +133,6 @@ static int open_epoll_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->epollobj.fd = fd;
 	obj->epollobj.create1 = use_create1;
 	obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;

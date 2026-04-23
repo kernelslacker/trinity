@@ -10,7 +10,6 @@
 #include <linux/userfaultfd.h>
 
 #include "fd.h"
-#include "list.h"
 #include "userfaultfd.h"
 #include "objects.h"
 #include "random.h"
@@ -131,7 +130,6 @@ static int open_userfaultfd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->userfaultobj.fd = fd;
 	obj->userfaultobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);

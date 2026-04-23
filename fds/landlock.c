@@ -11,7 +11,6 @@
 #include <linux/landlock.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -139,7 +138,6 @@ static int open_landlock_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->landlockobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_LANDLOCK);
 	return true;

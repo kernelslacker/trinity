@@ -10,7 +10,6 @@
 #include "exit.h"
 #include "fd.h"
 #include "files.h"
-#include "list.h"
 #include "objects.h"
 #include "pathnames.h"
 #include "random.h"
@@ -139,7 +138,6 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 		obj = alloc_shared_obj(sizeof(struct object));
 		if (obj == NULL)
 			break;
-		INIT_LIST_HEAD(&obj->list);
 
 		do {
 			int ret;
@@ -223,7 +221,6 @@ int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
 		obj = alloc_shared_obj(sizeof(struct object));
 		if (obj == NULL)
 			return false;
-		INIT_LIST_HEAD(&obj->list);
 		fd = open_file(obj, filename, flags);
 		if (fd == -1) {
 			free_shared_obj(obj, sizeof(struct object));

@@ -7,7 +7,6 @@
 
 #include "arch.h"
 #include "compat.h"
-#include "list.h"
 #include "random.h"
 #include "sysv-shm.h"
 #include "objects.h"
@@ -47,7 +46,6 @@ void create_sysv_shms(void)
 		obj = alloc_shared_obj(sizeof(struct object));
 		if (obj == NULL)
 			continue;
-		INIT_LIST_HEAD(&obj->list);
 
 		flags = 0660 | IPC_CREAT | IPC_EXCL | shmget_flags[i];
 

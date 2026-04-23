@@ -11,7 +11,6 @@
 #include "debug.h"
 #include "domains.h"
 #include "fd-event.h"
-#include "list.h"
 #include "net.h"
 #include "objects.h"
 #include "params.h"	// verbosity, do_specific_domain
@@ -69,7 +68,6 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 		close(fd);
 		return NULL;
 	}
-	INIT_LIST_HEAD(&obj->list);
 
 	obj->sockinfo.fd = fd;
 	obj->sockinfo.triplet.family = domain;

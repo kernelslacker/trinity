@@ -15,7 +15,6 @@
 
 #include "bpf.h"
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -118,7 +117,6 @@ static int open_bpf_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->bpfobj.map_fd = fd;
 	obj->bpfobj.map_type = bpf_fds[idx].map_type;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
@@ -308,7 +306,6 @@ static int open_bpf_prog_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->bpfprogobj.fd = fd;
 	obj->bpfprogobj.prog_type = bpf_prog_templates[idx].prog_type;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
@@ -362,7 +359,6 @@ static int init_bpf_prog_fds(void)
 			close(fd);
 			continue;
 		}
-		INIT_LIST_HEAD(&obj->list);
 		obj->bpfprogobj.fd = fd;
 		obj->bpfprogobj.prog_type = bpf_prog_templates[i].prog_type;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);

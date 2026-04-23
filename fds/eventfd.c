@@ -8,7 +8,6 @@
 #include <sys/eventfd.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -72,7 +71,6 @@ static int init_eventfd_fds(void)
 			close(fd);
 			return false;
 		}
-		INIT_LIST_HEAD(&obj->list);
 		obj->eventfdobj.fd = fd;
 		obj->eventfdobj.count = count;
 		obj->eventfdobj.flags = flags[i];
@@ -117,7 +115,6 @@ static int open_eventfd_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->eventfdobj.fd = fd;
 	obj->eventfdobj.count = count;
 	obj->eventfdobj.flags = flags;

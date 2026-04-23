@@ -9,7 +9,6 @@
 #include <asm/unistd.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "perf.h"
 #include "shm.h"
@@ -93,7 +92,6 @@ static int open_perf_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->perfobj.fd = fd;
 	obj->perfobj.eventattr = alloc_shared_str(sizeof(struct perf_event_attr));
 	if (obj->perfobj.eventattr == NULL) {

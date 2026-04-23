@@ -9,7 +9,6 @@
 #include <sys/syscall.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -179,7 +178,6 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	ring = &obj->io_uringobj;
 	ring->fd = fd;
 	ring->setup_flags = flags;

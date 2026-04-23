@@ -141,7 +141,6 @@ struct aioobj {
 };
 
 struct object {
-	struct list_head list;
 	unsigned int array_idx;		/* index in objhead->array */
 	union {
 		struct map map;
@@ -203,7 +202,6 @@ struct object {
 };
 
 struct objhead {
-	struct list_head *list;
 	struct object **array;		/* parallel array for O(1) random access */
 	unsigned int num_entries;
 	unsigned int array_capacity;
@@ -287,7 +285,6 @@ void register_global_obj_init(struct global_obj_entry *entry);
 void init_global_objects(void);
 struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
-void validate_global_object_lists(void);
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 bool objects_empty(enum objecttype type);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);
