@@ -9,7 +9,6 @@
 #
 # Helpers defined:
 #   obj <addr>          dump (struct object *)<addr>
-#   walk-list <head>    iterate a global obj list_head, dump each entry
 #   regions             dump shared_regions[] (mmap'd shared allocations)
 #   sym <pc>            wrap `info symbol` for a one-liner
 #   attach              find the parent trinity pid and `attach` to it
@@ -45,9 +44,7 @@ define obj
     else
         set $o = (struct object *) $arg0
         printf "(struct object *) %p\n", $o
-        printf "  array_idx = %u\n", $o->array_idx
-        printf "  list.next = %p\n", $o->list.next
-        printf "  list.prev = %p\n", $o->list.prev
+        printf "  array_idx = %u   (slot in owning objhead->array[])\n", $o->array_idx
         # Best-effort: struct object stores its payload in an anonymous
         # union and does not carry an explicit name/type field — type
         # is implied by which objhead owns it.  Dump the full struct so
@@ -59,57 +56,12 @@ define obj
 end
 document obj
 Dump a struct object at <addr>.
-Prints the list-head pointers, array_idx, and the full struct (which
-includes the payload union — pick the arm appropriate for the object
-type).
+Prints array_idx (the object's slot in its owning objhead->array[])
+and the full struct (which includes the payload union — pick the arm
+appropriate for the object type).  The list_head ring was removed in
+the array-only refactor; objects are now reached via objhead->array[].
 
 Usage: obj <addr>
-end
-
-# ---------------------------------------------------------------------
-# walk-list <head_addr>
-# ---------------------------------------------------------------------
-# Iterate a struct list_head ring starting at <head_addr>.  Stops when
-# we wrap back to the head or hit a known poison value.  For each
-# element, prints the list_head address and the surrounding struct
-# object (the head itself is a list_head pointer, not an object —
-# entries are objects whose `list` member is on the ring).
-define walk-list
-    if $argc != 1
-        printf "usage: walk-list <head_addr>\n"
-    else
-        set $head = (struct list_head *) $arg0
-        set $pos  = $head->next
-        set $idx  = 0
-        set $max  = 4096
-        printf "list head @ %p\n", $head
-        while $pos != $head && $idx < $max
-            if $pos == 0 || $pos == (struct list_head *)0xdead000000000100 || $pos == (struct list_head *)0xdead000000000122
-                printf "  [%u] %p  POISON/NULL — list corrupt, stopping\n", $idx, $pos
-                loop_break
-            end
-            # struct object embeds list_head as the first member, so the
-            # containing object pointer == the list_head pointer.  If
-            # that ever changes, switch to container_of-style math here.
-            set $o = (struct object *) $pos
-            printf "  [%u] list@%p  obj@%p  array_idx=%u\n", $idx, $pos, $o, $o->array_idx
-            set $pos = $pos->next
-            set $idx = $idx + 1
-        end
-        if $idx >= $max
-            printf "  stopped at iteration cap (%u) — list may be cyclic-but-detached\n", $max
-        else
-            printf "walked %u element(s)\n", $idx
-        end
-    end
-end
-document walk-list
-Walk a struct list_head ring and print each element.
-Stops on wrap-around to the head, on LIST_POISON1/POISON2, or after
-4096 iterations as a safety cap.  Assumes the list_head is the first
-member of a struct object (true for objects on global obj lists).
-
-Usage: walk-list <head_addr>
 end
 
 # ---------------------------------------------------------------------
@@ -192,7 +144,7 @@ Equivalent to running `gdb -p <pid>` by hand.
 Usage: attach
 end
 
-printf "Trinity gdb helpers loaded — commands: obj, walk-list, regions, sym, attach\n"
+printf "Trinity gdb helpers loaded — commands: obj, regions, sym, attach\n"
 printf "  `help <cmd>` for details on each.\n"
 GDBEOF
 
