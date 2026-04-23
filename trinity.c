@@ -78,8 +78,15 @@ const char *trinity_tmpdir_abs(void)
  * test target.  Falls back to /tmp if getcwd() somehow fails.
  */
 const char *__asan_default_options(void);
+__attribute__((no_sanitize_address))
 const char *__asan_default_options(void)
 {
+	/* This function is called by libasan during its own initialisation,
+	 * BEFORE the shadow-memory mappings are live.  Without
+	 * no_sanitize_address the compiler emits a function-entry redzone
+	 * setup that touches the (still-unmapped) shadow region and SEGVs
+	 * at the opening brace.  Same reason any function libasan itself
+	 * marks with __attribute__((no_sanitize("address"))) does so. */
 	static char buf[PATH_MAX + 96];
 	char cwd[PATH_MAX];
 
