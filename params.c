@@ -28,6 +28,7 @@ bool do_64_arch = true;
 
 unsigned int specific_domain = 0;
 unsigned int user_specified_children = 0;
+unsigned int alt_op_children = 0;
 
 bool do_specific_domain = false;
 bool no_domains[TRINITY_PF_MAX];
@@ -126,6 +127,7 @@ struct option_help {
 };
 
 static const struct option_help option_descs[] = {
+	{ "alt-op-children",	 0,  "reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing them at 1% in every child" },
 	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "children",		'C', "specify number of child processes" },
@@ -197,6 +199,7 @@ static void usage(void)
 static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:X";
 
 static const struct option longopts[] = {
+	{ "alt-op-children", required_argument, NULL, 0 },
 	{ "arch", required_argument, NULL, 'a' },
 	{ "bdev", required_argument, NULL, 'b' },
 	{ "children", required_argument, NULL, 'C' },
@@ -453,6 +456,23 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 0:
+			if (strcmp("alt-op-children", longopts[opt_index].name) == 0) {
+				char *end;
+				unsigned long val;
+
+				errno = 0;
+				val = strtoul(optarg, &end, 10);
+				if (end == optarg || *end != '\0' || errno == ERANGE) {
+					outputerr("can't parse '%s' as a number\n", optarg);
+					exit(EXIT_FAILURE);
+				}
+				if (val > UINT_MAX) {
+					outputerr("--alt-op-children value %lu exceeds UINT_MAX\n", val);
+					exit(EXIT_FAILURE);
+				}
+				alt_op_children = (unsigned int)val;
+			}
+
 			if (strcmp("clowntown", longopts[opt_index].name) == 0)
 				clowntown = true;
 

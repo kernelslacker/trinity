@@ -204,6 +204,18 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
+	/* --alt-op-children clamp.  Reserving more slots than the total
+	 * fleet would leave zero default syscall children, which defeats
+	 * the throughput-preservation rationale.  Cap at max_children-1
+	 * so at least one slot still runs the default 95/5 mix. */
+	if (alt_op_children >= max_children) {
+		unsigned int clamped = max_children > 0 ? max_children - 1 : 0;
+
+		outputerr("warning: --alt-op-children=%u >= --children=%u; clamping to %u so at least one syscall child remains\n",
+			alt_op_children, max_children, clamped);
+		alt_op_children = clamped;
+	}
+
 	init_uids();
 
 	change_tmp_dir();

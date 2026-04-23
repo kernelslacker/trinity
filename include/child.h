@@ -186,6 +186,22 @@ void init_child_mappings(void);
 
 void child_process(struct childdata *child, int childno);
 
+/* Dedicated alt-op children: when --alt-op-children=N is set, the first
+ * N child slots run a fixed alt op for life (round-robin from a static
+ * rotation table) instead of the default 95%-syscall / 5%-altop mix.
+ * Lets slow VMA / inode / mlock / fork-storm paths get continuous
+ * exercise without slowing the throughput-optimised default children.
+ *
+ * assign_dedicated_alt_op() runs in the parent right before fork(),
+ * stamping child->op_type so the freshly-spawned child reads its
+ * assigned op out of shared memory before it enters the dispatch loop.
+ *
+ * log_alt_op_config() prints the reservation count and the start of the
+ * rotation under -v.  No-op when --alt-op-children is 0.
+ */
+void assign_dedicated_alt_op(struct childdata *child, int childno);
+void log_alt_op_config(void);
+
 void set_dontkillme(struct childdata *child, bool state);
 
 void reap_child(struct childdata *child, int childno);

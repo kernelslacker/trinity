@@ -58,6 +58,7 @@ extern unsigned int kernel_taint_mask;
 extern bool kernel_taint_param_occured;
 
 extern unsigned int user_specified_children;
+extern unsigned int alt_op_children;
 
 extern unsigned long epoch_iterations;
 extern unsigned int epoch_timeout;
