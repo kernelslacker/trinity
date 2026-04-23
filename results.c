@@ -32,23 +32,6 @@ static struct results * get_results_ptr(struct syscallentry *entry, unsigned int
 	return &entry->results[argnum - 1];
 }
 
-static void store_successful_fd(struct results *results, unsigned long value)
-{
-	int fd = (int) value;
-	rlim_t lim = max_files_rlimit.rlim_cur;
-	int fdmap_size = (lim == RLIM_INFINITY || lim > 1048576) ? 1048576 : (int)lim;
-
-	if (fd < 0 || fd >= fdmap_size)
-		return;
-
-	if (results->fdmap == NULL) {
-		results->fdmap = calloc(fdmap_size, sizeof(bool));
-		if (results->fdmap == NULL)
-			return;
-	}
-	results->fdmap[fd] = true;
-}
-
 static void store_successful_len(struct results *results, unsigned long value)
 {
 	if (!results->seen) {
@@ -79,36 +62,7 @@ void handle_success(struct syscallrecord *rec)
 
 		results = get_results_ptr(entry, i);
 
-		if (is_typed_fdarg(argtype)) {
-			store_successful_fd(results, value);
-			continue;
-		}
-
-		switch (argtype) {
-		case ARG_FD:
-			store_successful_fd(results, value);
-			break;
-		case ARG_LEN:
+		if (argtype == ARG_LEN)
 			store_successful_len(results, value);
-			break;
-		case ARG_UNDEFINED:
-		case ARG_ADDRESS:
-		case ARG_MODE_T:
-		case ARG_NON_NULL_ADDRESS:
-		case ARG_PID:
-		case ARG_RANGE:
-		case ARG_OP:
-		case ARG_LIST:
-		case ARG_CPU:
-		case ARG_PATHNAME:
-		case ARG_IOVEC:
-		case ARG_IOVECLEN:
-		case ARG_SOCKADDR:
-		case ARG_SOCKADDRLEN:
-		case ARG_MMAP:
-		case ARG_SOCKETINFO:
-		default:
-			break;
-		}
 	}
 }
