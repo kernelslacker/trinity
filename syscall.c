@@ -361,7 +361,8 @@ void handle_syscall_ret(struct syscallrecord *rec)
 	unsigned int call;
 
 	call = rec->nr;
-	entry = syscalls[call].entry;
+	entry = get_syscall_entry(call, rec->do32bit);
+	BUG_ON(entry == NULL);
 
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
