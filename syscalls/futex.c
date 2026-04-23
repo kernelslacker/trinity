@@ -151,42 +151,28 @@ REG_GLOBAL_OBJ(futexes, create_futexes);
  */
 void init_child_futexes(void)
 {
-	struct list_head *globallist, *node;
-	struct objhead *head;
+	struct objhead *head, *globalhead;
+	struct object *globalobj;
+	unsigned int idx;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_FUTEX);
 	head->dump = dump_futex;
 
-	globallist = shm->global_objects[OBJ_FUTEX].list;
-	if (globallist == NULL)
+	globalhead = &shm->global_objects[OBJ_FUTEX];
+	if (globalhead->array == NULL)
 		return;
 
-	{
-		unsigned int seen = 0;
-		const unsigned int max_iter = GLOBAL_OBJ_MAX_CAPACITY + 1;
+	for_each_obj(globalhead, globalobj, idx) {
+		struct object *newobj;
+		struct __lock *src, *dst;
 
-		list_for_each(node, globallist) {
-			struct object *globalobj, *newobj;
-			struct __lock *src, *dst;
+		src = &globalobj->lock;
 
-			if (node == NULL)
-				break;
-
-			if (++seen > max_iter) {
-				outputerr("init_child_futexes: global futex list looks corrupt (>%u entries), bailing\n",
-					  max_iter);
-				break;
-			}
-
-			globalobj = (struct object *) node;
-			src = &globalobj->lock;
-
-			newobj = alloc_object();
-			dst = &newobj->lock;
-			dst->futex = src->futex;
-			dst->owner_pid = src->owner_pid;
-			add_object(newobj, OBJ_LOCAL, OBJ_FUTEX);
-		}
+		newobj = alloc_object();
+		dst = &newobj->lock;
+		dst->futex = src->futex;
+		dst->owner_pid = src->owner_pid;
+		add_object(newobj, OBJ_LOCAL, OBJ_FUTEX);
 	}
 }
 

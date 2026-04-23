@@ -25,15 +25,15 @@ static const struct ioctl perf_event_ioctls[] = {
 
 static int perf_event_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
-	struct list_head *globallist, *node;
+	struct objhead *head;
+	struct object *obj;
+	unsigned int idx;
 
-	globallist = shm->global_objects[OBJ_FD_PERF].list;
-	if (globallist == NULL)
+	head = &shm->global_objects[OBJ_FD_PERF];
+	if (head->array == NULL)
 		return -1;
 
-	list_for_each(node, globallist) {
-		struct object *obj = (struct object *) node;
-
+	for_each_obj(head, obj, idx) {
 		if (obj->perfobj.fd == fd)
 			return 0;
 	}
