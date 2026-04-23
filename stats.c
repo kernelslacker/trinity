@@ -242,6 +242,14 @@ void dump_stats(void)
 		stat_row("pipe_thrash", "alloc_failed", shm->stats.pipe_thrash_alloc_failed);
 	}
 
+	if (shm->stats.fork_storm_runs) {
+		stat_row("fork_storm", "runs",          shm->stats.fork_storm_runs);
+		stat_row("fork_storm", "forks",         shm->stats.fork_storm_forks);
+		stat_row("fork_storm", "failed",        shm->stats.fork_storm_failed);
+		stat_row("fork_storm", "nested",        shm->stats.fork_storm_nested);
+		stat_row("fork_storm", "reaped_signal", shm->stats.fork_storm_reaped_signal);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

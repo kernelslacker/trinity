@@ -62,6 +62,7 @@ enum child_op_type {
 	CHILD_OP_SIGNAL_STORM,
 	CHILD_OP_FUTEX_STORM,
 	CHILD_OP_PIPE_THRASH,
+	CHILD_OP_FORK_STORM,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -222,3 +223,4 @@ bool fs_lifecycle(struct childdata *child);
 bool signal_storm(struct childdata *child);
 bool futex_storm(struct childdata *child);
 bool pipe_thrash(struct childdata *child);
+bool fork_storm(struct childdata *child);
