@@ -262,6 +262,14 @@ void clean_childdata(struct childdata *child)
 	child->fail_nth_fd = -1;
 	child->current_recipe_name = NULL;
 
+	/* Clear any __BUG() stamp left by the prior occupant of this slot
+	 * so the parent's zombie-pending warning doesn't mis-attribute the
+	 * fresh child's eventual exit to the previous one's assertion. */
+	child->hit_bug = false;
+	child->bug_text = NULL;
+	child->bug_func = NULL;
+	child->bug_lineno = 0;
+
 	if (child->fd_event_ring)
 		fd_event_ring_init(child->fd_event_ring);
 }
