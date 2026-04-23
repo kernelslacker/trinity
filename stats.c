@@ -250,6 +250,12 @@ void dump_stats(void)
 		stat_row("fork_storm", "reaped_signal", shm->stats.fork_storm_reaped_signal);
 	}
 
+	if (shm->stats.flock_thrash_runs) {
+		stat_row("flock_thrash", "runs",   shm->stats.flock_thrash_runs);
+		stat_row("flock_thrash", "locks",  shm->stats.flock_thrash_locks);
+		stat_row("flock_thrash", "failed", shm->stats.flock_thrash_failed);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
