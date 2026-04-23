@@ -272,6 +272,13 @@ void dump_stats(void)
 		stat_row("mount_churn", "failed",  shm->stats.mount_churn_failed);
 	}
 
+	if (shm->stats.uffd_runs) {
+		stat_row("uffd_churn", "runs",        shm->stats.uffd_runs);
+		stat_row("uffd_churn", "registers",   shm->stats.uffd_registers);
+		stat_row("uffd_churn", "unregisters", shm->stats.uffd_unregisters);
+		stat_row("uffd_churn", "failed",      shm->stats.uffd_failed);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

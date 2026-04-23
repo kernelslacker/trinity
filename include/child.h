@@ -66,6 +66,7 @@ enum child_op_type {
 	CHILD_OP_FLOCK_THRASH,
 	CHILD_OP_CGROUP_CHURN,
 	CHILD_OP_MOUNT_CHURN,
+	CHILD_OP_UFFD_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -230,3 +231,4 @@ bool fork_storm(struct childdata *child);
 bool flock_thrash(struct childdata *child);
 bool cgroup_churn(struct childdata *child);
 bool mount_churn(struct childdata *child);
+bool uffd_churn(struct childdata *child);
