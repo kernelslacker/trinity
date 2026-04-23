@@ -256,6 +256,13 @@ void dump_stats(void)
 		stat_row("flock_thrash", "failed", shm->stats.flock_thrash_failed);
 	}
 
+	if (shm->stats.cgroup_churn_runs) {
+		stat_row("cgroup_churn", "runs",   shm->stats.cgroup_churn_runs);
+		stat_row("cgroup_churn", "mkdirs", shm->stats.cgroup_mkdirs);
+		stat_row("cgroup_churn", "rmdirs", shm->stats.cgroup_rmdirs);
+		stat_row("cgroup_churn", "failed", shm->stats.cgroup_failed);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];

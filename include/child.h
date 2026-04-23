@@ -64,6 +64,7 @@ enum child_op_type {
 	CHILD_OP_PIPE_THRASH,
 	CHILD_OP_FORK_STORM,
 	CHILD_OP_FLOCK_THRASH,
+	CHILD_OP_CGROUP_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -226,3 +227,4 @@ bool futex_storm(struct childdata *child);
 bool pipe_thrash(struct childdata *child);
 bool fork_storm(struct childdata *child);
 bool flock_thrash(struct childdata *child);
+bool cgroup_churn(struct childdata *child);
