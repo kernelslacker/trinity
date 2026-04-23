@@ -149,6 +149,12 @@ static const struct ioctl rtc_ioctls[] = {
 #ifdef RTC_VL_CLR
 	IOCTL(RTC_VL_CLR),
 #endif
+#ifdef RTC_PARAM_GET
+	IOCTL(RTC_PARAM_GET),
+#endif
+#ifdef RTC_PARAM_SET
+	IOCTL(RTC_PARAM_SET),
+#endif
 };
 
 static const char *const rtc_devs[] = {
