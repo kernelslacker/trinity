@@ -102,9 +102,6 @@ struct arglist {
 #define NR_ERRNOS 133	// Number in /usr/include/asm-generic/errno.h
 
 struct results {
-	/* ARG_FD: tracks which fd values have succeeded.
-	 * Dynamically allocated on first successful fd arg. */
-	bool *fdmap;
 	/* ARG_LEN: range of successful length values. */
 	bool seen;
 	unsigned int min, max;
