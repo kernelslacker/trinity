@@ -307,4 +307,30 @@ void setup_main_signals(void)
 	 * Real ctrl-c from the terminal has si_code > 0 (SI_KERNEL). */
 	sa.sa_sigaction = sigint_handler;
 	(void)sigaction(SIGINT, &sa, NULL);
+
+	/*
+	 * Eager-load libgcc_s.so.1 by calling backtrace() once now, while
+	 * malloc is healthy and no fault handler can fire.  The first
+	 * backtrace() in a process triggers
+	 *   libc_unwind_link_get -> __libc_dlopen_mode("libgcc_s.so.1")
+	 *     -> _dl_load_cache_lookup -> strdup -> malloc
+	 * If we instead reach backtrace() for the first time from the
+	 * SIGABRT handler raised by a glibc malloc assertion (heap
+	 * corruption -> abort), the main_arena lock is already held by
+	 * this very thread.  The recursive malloc inside dlopen then
+	 * deadlocks forever in lll_lock_wait_private and we lose every
+	 * child to a futex_wait we cannot recover from -- the diagnostic
+	 * machinery itself becomes the bug.
+	 *
+	 * Doing it here, in the parent before fork, ensures libgcc_s is
+	 * already mapped in every child via copy-on-write inheritance, so
+	 * neither child_fault_handler nor main_fault_handler can hit the
+	 * dlopen path at signal time.
+	 */
+#ifdef USE_BACKTRACE
+	{
+		void *stub[1];
+		(void)backtrace(stub, 1);
+	}
+#endif
 }
