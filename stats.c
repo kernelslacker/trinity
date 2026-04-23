@@ -101,6 +101,8 @@ void dump_stats(void)
 		stat_row("oracle", "mmap_anomalies", shm->stats.mmap_oracle_anomalies);
 	if (shm->stats.cred_oracle_anomalies)
 		stat_row("oracle", "cred_anomalies", shm->stats.cred_oracle_anomalies);
+	if (shm->stats.sched_oracle_anomalies)
+		stat_row("oracle", "sched_anomalies", shm->stats.sched_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
