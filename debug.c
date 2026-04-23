@@ -21,6 +21,7 @@
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
+#include "utils.h"
 #include "version.h"
 
 #define BACKTRACE_SIZE 100
@@ -191,6 +192,19 @@ void dump_childdata(struct childdata *child)
 					 */
 					if (head->array[j] == NULL) {
 						output(0, "  array[%u]: NULL (in-flight or corrupt)\n", j);
+						continue;
+					}
+					/* Validate the obj pointer points into a tracked shared region.  When
+					 * dump_childdata is called from the shm-corruption / sanity-check path
+					 * the entire array can be holding stale pointers, NULL-pointers, or
+					 * post-free poison.  range_overlaps_shared() returns true iff the
+					 * range falls inside any region we allocated via alloc_shared* — if
+					 * it doesn't, the entry can't be a real obj (any obj struct lives in
+					 * shared_obj_heap which IS tracked) so skip rather than dereferencing. */
+					if (!range_overlaps_shared((unsigned long)head->array[j],
+								   sizeof(struct object))) {
+						output(0, "  array[%u]: %p (outside any shared region — corrupt)\n",
+						       j, head->array[j]);
 						continue;
 					}
 					head->dump(head->array[j], OBJ_LOCAL);
