@@ -563,8 +563,11 @@ static void process_zombie_pending(void)
 
 		if (timed_out) {
 			output(0, "child %d zombie (pid %u) still pending after "
-				"%d seconds — forcing slot reuse. Kernel may be "
-				"buggy; investigate the D-state task manually.\n",
+				"%d seconds — forcing slot reuse. Possible causes: "
+				"a child trapped in __BUG()'s spin loop (check stderr "
+				"for a preceding 'BUG!:' line for that pid), a D-state "
+				"task in the kernel finishing a cancelled syscall, or "
+				"a real kernel bug holding the task table entry.\n",
 				i, pid, ZOMBIE_REAP_TIMEOUT_SEC);
 			__atomic_add_fetch(&shm->stats.zombies_timed_out, 1,
 					   __ATOMIC_RELAXED);
