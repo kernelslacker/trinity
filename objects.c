@@ -317,8 +317,6 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		INIT_LIST_HEAD(head->list);
 	}
 
-	list_add_tail(&obj->list, head->list);
-
 	/* For global objects, the array was pre-allocated in shared
 	 * memory by init_object_lists().  Never realloc — just reject
 	 * if we've hit the fixed capacity. */
@@ -326,7 +324,6 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		if (head->num_entries >= head->array_capacity) {
 			outputerr("add_object: global array full for type %u "
 				  "(cap %u)\n", type, head->array_capacity);
-			list_del(&obj->list);
 			if (is_fd_type(type)) {
 				int fd = fd_from_object(obj, type);
 				if (fd >= 0)
@@ -345,7 +342,6 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		if (newarray == NULL) {
 			outputerr("add_object: realloc failed for type %u (cap %u)\n",
 				  type, newcap);
-			list_del(&obj->list);
 			if (is_fd_type(type)) {
 				int fd = fd_from_object(obj, type);
 				if (fd >= 0)
@@ -389,7 +385,6 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			__atomic_store_n(&head->num_entries, rollback,
 					 __ATOMIC_RELEASE);
 			head->array[rollback] = NULL;
-			list_del(&obj->list);
 			if (fd >= 0)
 				close(fd);
 			release_obj(obj, scope, type);
@@ -616,8 +611,6 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 {
 	struct objhead *head;
 	unsigned int idx, last;
-
-	list_del(&obj->list);
 
 	head = get_objhead(scope, type);
 
