@@ -43,6 +43,27 @@ bool no_bind_to_cpu;
 unsigned int max_children;
 struct rlimit max_files_rlimit;
 
+#ifdef __SANITIZE_ADDRESS__
+/*
+ * ASAN reads this on init (before main()) to set its default options.
+ * Without it, ASAN error reports go to stderr — and init_child() does
+ * dup2(devnull, STDERR_FILENO) at child startup so children's fuzzed
+ * syscall spew can't pollute the operator's terminal.  Side effect:
+ * every ASAN report from a child is silently lost, leaving us blind to
+ * exactly the diagnostic we ran ASAN to obtain.  log_path redirects
+ * each report to /tmp/trinity-asan-<PID>.<PID>, sidestepping stderr
+ * entirely.  abort_on_error=1 makes ASAN raise SIGABRT after the
+ * report so child_fault_handler still runs and a coredump still
+ * lands.  disable_coredump=0 keeps cores enabled (ASAN's default is
+ * 1, which suppresses the core).
+ */
+const char *__asan_default_options(void);
+const char *__asan_default_options(void)
+{
+	return "log_path=/tmp/trinity-asan-:abort_on_error=1:disable_coredump=0";
+}
+#endif
+
 /*
  * just in case we're not using the test.sh harness, we
  * change to the tmp dir if it exists.
