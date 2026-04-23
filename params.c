@@ -51,6 +51,53 @@ bool group_bias = false;
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
 
+/*
+ * Parse a duration string with optional suffix:
+ *   s = seconds (default if no suffix)
+ *   m = minutes
+ *   h = hours
+ *   d = days
+ * On success, writes the value (in seconds) to *out and returns true.
+ * Returns false for empty input, garbage, multi-char suffix, unknown
+ * suffix, negative values, or anything that overflows unsigned int.
+ */
+static bool parse_duration(const char *s, unsigned int *out)
+{
+	char *end;
+	unsigned long val;
+	unsigned long mult = 1;
+
+	if (s == NULL || *s == '\0')
+		return false;
+
+	errno = 0;
+	val = strtoul(s, &end, 10);
+	if (end == s || errno == ERANGE)
+		return false;
+
+	if (*end != '\0') {
+		if (end[1] != '\0')
+			return false;
+		switch (*end) {
+		case 's': mult = 1; break;
+		case 'm': mult = 60UL; break;
+		case 'h': mult = 60UL * 60; break;
+		case 'd': mult = 60UL * 60 * 24; break;
+		default: return false;
+		}
+	}
+
+	if (mult != 0 && val > ULONG_MAX / mult)
+		return false;
+	val *= mult;
+
+	if (val > UINT_MAX)
+		return false;
+
+	*out = (unsigned int)val;
+	return true;
+}
+
 bool no_warm_start = false;
 char *warm_start_path = NULL;
 
@@ -97,6 +144,7 @@ static const struct option_help option_descs[] = {
 	{ "ioctls",		'I', "list all ioctls" },
 	{ "kernel_taint",	'T', "controls which kernel taint flags should be considered (see README)" },
 	{ "list",		'L', "list all syscalls known on this architecture" },
+	{ "max-runtime",	 0,  "maximum runtime before exit, with optional suffix s/m/h/d (e.g., 30s, 10m, 2h, 1d). Overrides --epoch-timeout." },
 	{ "domain",		'P', "specify specific network domain for sockets" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
@@ -165,6 +213,7 @@ static const struct option longopts[] = {
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
 	{ "list", no_argument, NULL, 'L' },
+	{ "max-runtime", required_argument, NULL, 0 },
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
@@ -183,6 +232,8 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 	int opt_index = 0;
+	bool max_runtime_set = false;
+	bool epoch_timeout_set = false;
 
 	while ((opt = getopt_long(argc, argv, paramstr, longopts, &opt_index)) != -1) {
 		switch (opt) {
@@ -414,8 +465,26 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("epoch-iterations", longopts[opt_index].name) == 0)
 				epoch_iterations = strtoul(optarg, NULL, 10);
 
-			if (strcmp("epoch-timeout", longopts[opt_index].name) == 0)
-				epoch_timeout = strtoul(optarg, NULL, 10);
+			if (strcmp("epoch-timeout", longopts[opt_index].name) == 0) {
+				if (max_runtime_set) {
+					outputerr("warning: --max-runtime takes precedence; ignoring --epoch-timeout\n");
+				} else {
+					epoch_timeout = strtoul(optarg, NULL, 10);
+					epoch_timeout_set = true;
+				}
+			}
+
+			if (strcmp("max-runtime", longopts[opt_index].name) == 0) {
+				unsigned int seconds;
+				if (!parse_duration(optarg, &seconds)) {
+					outputerr("can't parse '%s' as a duration (use number with optional s/m/h/d suffix)\n", optarg);
+					exit(EXIT_FAILURE);
+				}
+				if (epoch_timeout_set)
+					outputerr("warning: --max-runtime overrides previously set --epoch-timeout\n");
+				epoch_timeout = seconds;
+				max_runtime_set = true;
+			}
 
 			if (strcmp("group-bias", longopts[opt_index].name) == 0)
 				group_bias = true;
