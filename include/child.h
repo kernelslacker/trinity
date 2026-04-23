@@ -67,6 +67,7 @@ enum child_op_type {
 	CHILD_OP_CGROUP_CHURN,
 	CHILD_OP_MOUNT_CHURN,
 	CHILD_OP_UFFD_CHURN,
+	CHILD_OP_IOURING_FLOOD,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -232,3 +233,4 @@ bool flock_thrash(struct childdata *child);
 bool cgroup_churn(struct childdata *child);
 bool mount_churn(struct childdata *child);
 bool uffd_churn(struct childdata *child);
+bool iouring_flood(struct childdata *child);
