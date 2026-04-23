@@ -228,6 +228,41 @@ struct objhead {
  */
 #define GLOBAL_OBJ_MAX_CAPACITY	1024
 
+/*
+ * Iterate the parallel array of an objhead.
+ *
+ * Walks head->array[0..num_entries) and yields each non-NULL slot as
+ * `obj`, with `idx` set to the slot index.  NULL slots are skipped:
+ * __destroy_object()'s swap-with-last leaves the previously-last slot
+ * NULL until num_entries is decremented, so a walker that doesn't hold
+ * shm->objlock can legitimately observe a transient NULL mid-removal.
+ *
+ * The (idx < array_capacity) bound is a defence against a corrupt
+ * num_entries (a stray write past the cap): without it a torn count
+ * would walk off the end of the array.  array_capacity is fixed at
+ * init time for OBJ_GLOBAL pools (GLOBAL_OBJ_MAX_CAPACITY) and never
+ * shrinks for OBJ_LOCAL.
+ *
+ * No atomics are emitted by the macro.  Callers that need a stable
+ * snapshot of num_entries (lockless child reads of an OBJ_GLOBAL pool)
+ * must take it themselves with __ATOMIC_ACQUIRE before iterating, the
+ * same way get_random_object() does today.
+ *
+ * Usage:
+ *	struct object *obj;
+ *	unsigned int idx;
+ *
+ *	for_each_obj(head, obj, idx) {
+ *		... use obj ...
+ *	}
+ */
+#define for_each_obj(head, obj, idx)					\
+	for ((idx) = 0;							\
+	     (idx) < (head)->num_entries &&				\
+	     (idx) < (head)->array_capacity;				\
+	     (idx)++)							\
+		if (((obj) = (head)->array[idx]) != NULL)
+
 struct object * alloc_object(void);
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type);
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type);
