@@ -265,6 +265,13 @@ void dump_stats(void)
 		stat_row("cgroup_churn", "failed", shm->stats.cgroup_failed);
 	}
 
+	if (shm->stats.mount_churn_runs) {
+		stat_row("mount_churn", "runs",    shm->stats.mount_churn_runs);
+		stat_row("mount_churn", "mounts",  shm->stats.mount_churn_mounts);
+		stat_row("mount_churn", "umounts", shm->stats.mount_churn_umounts);
+		stat_row("mount_churn", "failed",  shm->stats.mount_churn_failed);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
