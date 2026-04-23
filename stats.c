@@ -1,10 +1,12 @@
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include "arch.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "kcov.h"
 #include "minicorpus.h"
+#include "params.h"
 #include "sequence.h"
 #include "shm.h"
 #include "stats.h"
@@ -57,9 +59,511 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 	}
 }
 
+/*
+ * JSON helpers for --stats-json. Emit straight to stdout (no [main] prefix
+ * from output()), so post-run scripts can redirect stdout and parse the
+ * result with jq / json.loads / serde_json without stripping anything.
+ */
+static void json_emit_string(const char *s)
+{
+	putchar('"');
+	if (s != NULL) {
+		for (; *s != '\0'; s++) {
+			unsigned char c = (unsigned char)*s;
+
+			switch (c) {
+			case '"':  fputs("\\\"", stdout); break;
+			case '\\': fputs("\\\\", stdout); break;
+			case '\b': fputs("\\b", stdout);  break;
+			case '\f': fputs("\\f", stdout);  break;
+			case '\n': fputs("\\n", stdout);  break;
+			case '\r': fputs("\\r", stdout);  break;
+			case '\t': fputs("\\t", stdout);  break;
+			default:
+				if (c < 0x20)
+					printf("\\u%04x", c);
+				else
+					putchar(c);
+			}
+		}
+	}
+	putchar('"');
+}
+
+/* Emit one syscall entry. Returns true if anything was printed. Caller is
+ * responsible for emitting a leading comma between successive entries. */
+static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
+{
+	struct syscallentry *entry;
+	unsigned int j;
+	bool first_errno = true;
+
+	entry = table[i].entry;
+	if (entry == NULL || entry->attempted == 0)
+		return false;
+
+	putchar('{');
+	fputs("\"name\":", stdout);
+	json_emit_string(entry->name);
+	printf(",\"attempted\":%u,\"successes\":%u,\"failures\":%u,\"errnos\":{",
+		entry->attempted, entry->successes, entry->failures);
+	for (j = 0; j < NR_ERRNOS; j++) {
+		if (entry->errnos[j] == 0)
+			continue;
+		if (!first_errno)
+			putchar(',');
+		printf("\"%u\":%u", j, entry->errnos[j]);
+		first_errno = false;
+	}
+	fputs("}}", stdout);
+	return true;
+}
+
+static void json_emit_syscalls_array(void)
+{
+	unsigned int i;
+	bool first = true;
+
+	fputs("\"syscalls\":[", stdout);
+	if (biarch == true) {
+		for_each_32bit_syscall(i) {
+			if (syscalls_32bit[i].entry == NULL ||
+			    syscalls_32bit[i].entry->attempted == 0)
+				continue;
+			if (!first)
+				putchar(',');
+			json_emit_syscall(syscalls_32bit, i);
+			first = false;
+		}
+		for_each_64bit_syscall(i) {
+			if (syscalls_64bit[i].entry == NULL ||
+			    syscalls_64bit[i].entry->attempted == 0)
+				continue;
+			if (!first)
+				putchar(',');
+			json_emit_syscall(syscalls_64bit, i);
+			first = false;
+		}
+	} else {
+		for_each_syscall(i) {
+			if (syscalls[i].entry == NULL ||
+			    syscalls[i].entry->attempted == 0)
+				continue;
+			if (!first)
+				putchar(',');
+			json_emit_syscall(syscalls, i);
+			first = false;
+		}
+	}
+	putchar(']');
+}
+
+static void json_emit_kcov_section(void)
+{
+	unsigned int i, j;
+	const struct syscalltable *table;
+	unsigned int nr_syscalls_to_scan;
+	unsigned long kc_edges, kc_pcs, kc_calls, kc_remote;
+	unsigned int top_nr[10];
+	unsigned long top_edges[10];
+	unsigned int top_count = 0;
+	unsigned int delta_nr[10];
+	unsigned long delta_edges[10];
+	unsigned int delta_count = 0;
+
+	if (kcov_shm == NULL) {
+		fputs(",\"kcov\":null", stdout);
+		return;
+	}
+
+	kc_edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
+	kc_pcs    = __atomic_load_n(&kcov_shm->total_pcs,    __ATOMIC_RELAXED);
+	kc_calls  = __atomic_load_n(&kcov_shm->total_calls,  __ATOMIC_RELAXED);
+	kc_remote = __atomic_load_n(&kcov_shm->remote_calls, __ATOMIC_RELAXED);
+
+	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	table = biarch ? syscalls_64bit : syscalls;
+
+	memset(top_edges, 0, sizeof(top_edges));
+	memset(delta_edges, 0, sizeof(delta_edges));
+
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		unsigned long edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+		unsigned long prev  = kcov_shm->per_syscall_edges_previous[i];
+		unsigned long delta = (edges > prev) ? edges - prev : 0;
+
+		if (edges > 0) {
+			for (j = top_count; j > 0 && edges > top_edges[j - 1]; j--) {
+				if (j < 10) {
+					top_edges[j] = top_edges[j - 1];
+					top_nr[j] = top_nr[j - 1];
+				}
+			}
+			if (j < 10) {
+				top_edges[j] = edges;
+				top_nr[j] = i;
+				if (top_count < 10)
+					top_count++;
+			}
+		}
+
+		if (delta > 0) {
+			for (j = delta_count; j > 0 && delta > delta_edges[j - 1]; j--) {
+				if (j < 10) {
+					delta_edges[j] = delta_edges[j - 1];
+					delta_nr[j] = delta_nr[j - 1];
+				}
+			}
+			if (j < 10) {
+				delta_edges[j] = delta;
+				delta_nr[j] = i;
+				if (delta_count < 10)
+					delta_count++;
+			}
+		}
+	}
+
+	printf(",\"kcov\":{\"unique_edges\":%lu,\"total_pcs\":%lu,"
+		"\"total_calls\":%lu,\"remote_calls\":%lu",
+		kc_edges, kc_pcs, kc_calls, kc_remote);
+
+	fputs(",\"top_syscalls\":[", stdout);
+	for (j = 0; j < top_count; j++) {
+		struct syscallentry *entry = table[top_nr[j]].entry;
+
+		if (j > 0)
+			putchar(',');
+		fputs("{\"name\":", stdout);
+		json_emit_string(entry ? entry->name : "???");
+		printf(",\"edges\":%lu}", top_edges[j]);
+	}
+	putchar(']');
+
+	fputs(",\"top_recent_growth\":[", stdout);
+	for (j = 0; j < delta_count; j++) {
+		struct syscallentry *entry = table[delta_nr[j]].entry;
+
+		if (j > 0)
+			putchar(',');
+		fputs("{\"name\":", stdout);
+		json_emit_string(entry ? entry->name : "???");
+		printf(",\"delta\":%lu}", delta_edges[j]);
+	}
+	putchar(']');
+
+	fputs(",\"cold_syscalls\":[", stdout);
+	{
+		bool first_cold = true;
+
+		for (i = 0; i < nr_syscalls_to_scan; i++) {
+			unsigned long slot_edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+			struct syscallentry *entry;
+
+			if (slot_edges == 0)
+				continue;
+			if (!kcov_syscall_is_cold(i))
+				continue;
+
+			entry = table[i].entry;
+			if (!first_cold)
+				putchar(',');
+			fputs("{\"name\":", stdout);
+			json_emit_string(entry ? entry->name : "???");
+			printf(",\"edges\":%lu,\"last_edge_at\":%lu}",
+				slot_edges, kcov_shm->last_edge_at[i]);
+			first_cold = false;
+		}
+	}
+	putchar(']');
+
+	/* Snapshot current counts for the next interval, matching text path. */
+	for (i = 0; i < nr_syscalls_to_scan; i++)
+		kcov_shm->per_syscall_edges_previous[i] =
+			__atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+
+	putchar('}');
+}
+
+static void json_emit_minicorpus_section(void)
+{
+	static const char * const op_names[MUT_NUM_OPS] = {
+		"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep",
+		"bswap-add", "bswap-sub", "fd-swap"
+	};
+	unsigned int i;
+	unsigned long s_hits, s_wins, r_count, r_wins;
+	unsigned long c_iter, c_subst, c_save, c_replay;
+
+	if (minicorpus_shm == NULL) {
+		fputs(",\"minicorpus\":null", stdout);
+		return;
+	}
+
+	fputs(",\"minicorpus\":{\"mutators\":[", stdout);
+	for (i = 0; i < MUT_NUM_OPS; i++) {
+		unsigned long t = __atomic_load_n(&minicorpus_shm->mut_trials[i], __ATOMIC_RELAXED);
+		unsigned long w = __atomic_load_n(&minicorpus_shm->mut_wins[i],   __ATOMIC_RELAXED);
+
+		if (i > 0)
+			putchar(',');
+		fputs("{\"name\":", stdout);
+		json_emit_string(op_names[i]);
+		printf(",\"trials\":%lu,\"wins\":%lu}", t, w);
+	}
+	putchar(']');
+
+	s_hits = __atomic_load_n(&minicorpus_shm->splice_hits, __ATOMIC_RELAXED);
+	s_wins = __atomic_load_n(&minicorpus_shm->splice_wins, __ATOMIC_RELAXED);
+	printf(",\"splice\":{\"hits\":%lu,\"wins\":%lu}", s_hits, s_wins);
+
+	fputs(",\"stack_depth_histogram\":{", stdout);
+	for (i = 1; i <= STACK_MAX; i++) {
+		unsigned long d = __atomic_load_n(
+			&minicorpus_shm->stack_depth_histogram[i], __ATOMIC_RELAXED);
+
+		if (i > 1)
+			putchar(',');
+		printf("\"%u\":%lu", i, d);
+	}
+	putchar('}');
+
+	r_count = __atomic_load_n(&minicorpus_shm->replay_count, __ATOMIC_RELAXED);
+	r_wins  = __atomic_load_n(&minicorpus_shm->replay_wins,  __ATOMIC_RELAXED);
+	printf(",\"replay\":{\"count\":%lu,\"wins\":%lu}", r_count, r_wins);
+
+	c_iter   = __atomic_load_n(&minicorpus_shm->chain_iter_count,         __ATOMIC_RELAXED);
+	c_subst  = __atomic_load_n(&minicorpus_shm->chain_substitution_count, __ATOMIC_RELAXED);
+	c_save   = chain_corpus_shm ? __atomic_load_n(&chain_corpus_shm->save_count,   __ATOMIC_RELAXED) : 0UL;
+	c_replay = chain_corpus_shm ? __atomic_load_n(&chain_corpus_shm->replay_count, __ATOMIC_RELAXED) : 0UL;
+	printf(",\"sequence_chains\":{\"iter_count\":%lu,\"substitutions\":%lu,"
+		"\"corpus_saves\":%lu,\"corpus_replays\":%lu}",
+		c_iter, c_subst, c_save, c_replay);
+
+	putchar('}');
+}
+
+static void json_emit_cmp_hints_section(void)
+{
+	unsigned int i, total_hints = 0, syscalls_with_hints = 0;
+
+	if (cmp_hints_shm == NULL) {
+		fputs(",\"cmp_hints\":null", stdout);
+		return;
+	}
+
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		if (cmp_hints_shm->pools[i].count > 0) {
+			total_hints += cmp_hints_shm->pools[i].count;
+			syscalls_with_hints++;
+		}
+	}
+	printf(",\"cmp_hints\":{\"values_total\":%u,\"syscalls_with_hints\":%u}",
+		total_hints, syscalls_with_hints);
+}
+
+static void json_emit_edgepair_section(void)
+{
+	unsigned int i, j;
+	unsigned int top_count = 0;
+	unsigned int cold_pairs = 0;
+	struct {
+		unsigned int prev_nr;
+		unsigned int curr_nr;
+		unsigned long new_edges;
+	} top[10];
+	const struct syscalltable *table;
+	unsigned int nr_max;
+
+	if (edgepair_shm == NULL) {
+		fputs(",\"edgepair\":null", stdout);
+		return;
+	}
+
+	memset(top, 0, sizeof(top));
+	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
+		struct edgepair_entry *e = &edgepair_shm->table[i];
+		unsigned long edges;
+
+		if (e->prev_nr == EDGEPAIR_EMPTY)
+			continue;
+		edges = e->new_edge_count;
+		if (edges == 0)
+			continue;
+		if (edgepair_is_cold(e->prev_nr, e->curr_nr))
+			cold_pairs++;
+
+		for (j = top_count; j > 0 && edges > top[j - 1].new_edges; j--) {
+			if (j < 10)
+				top[j] = top[j - 1];
+		}
+		if (j < 10) {
+			top[j].prev_nr = e->prev_nr;
+			top[j].curr_nr = e->curr_nr;
+			top[j].new_edges = edges;
+			if (top_count < 10)
+				top_count++;
+		}
+	}
+
+	printf(",\"edgepair\":{\"unique_pairs\":%lu,\"total_pair_calls\":%lu,"
+		"\"inserts_dropped\":%lu,\"cold_pairs\":%u,\"top_pairs\":[",
+		edgepair_shm->pairs_tracked, edgepair_shm->total_pair_calls,
+		edgepair_shm->pairs_dropped, cold_pairs);
+
+	table = biarch ? syscalls_64bit : syscalls;
+	nr_max = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	for (j = 0; j < top_count; j++) {
+		const char *prev_name = "???";
+		const char *curr_name = "???";
+
+		if (top[j].prev_nr < nr_max && table[top[j].prev_nr].entry)
+			prev_name = table[top[j].prev_nr].entry->name;
+		if (top[j].curr_nr < nr_max && table[top[j].curr_nr].entry)
+			curr_name = table[top[j].curr_nr].entry->name;
+
+		if (j > 0)
+			putchar(',');
+		fputs("{\"prev\":", stdout);
+		json_emit_string(prev_name);
+		fputs(",\"curr\":", stdout);
+		json_emit_string(curr_name);
+		printf(",\"new_edges\":%lu}", top[j].new_edges);
+	}
+	fputs("]}", stdout);
+
+	/* Match text path: still dump the full table to its on-disk file. */
+	edgepair_dump_to_file("edgepair.dump");
+}
+
+/*
+ * Emit every counter from struct stats_s as a single JSON object.
+ * All scalar counters are emitted unconditionally so consumers see a stable
+ * schema regardless of which subsystems happened to fire on this run.
+ */
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	printf(",\"stats\":{"
+		"\"fault_injection\":{\"armed_fail_nth\":%lu,\"returned_enomem\":%lu},"
+		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
+			"\"closed_tracked\":%lu,\"regenerated\":%lu,\"duped\":%lu,"
+			"\"events_processed\":%lu,\"events_dropped\":%lu,"
+			"\"runtime_registered\":%lu},"
+		"\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
+			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu},"
+		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
+		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
+		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
+		"\"userns_fuzzer\":{\"runs\":%lu,\"inner_crashed\":%lu,\"unsupported\":%lu},"
+		"\"barrier_racer\":{\"runs\":%lu,\"inner_crashed\":%lu},"
+		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
+		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
+		"\"perf_event_chains\":{\"runs\":%lu,\"groups_created\":%lu,\"ioctl_ops\":%lu},"
+		"\"tracefs_fuzzer\":{\"kprobe_writes\":%lu,\"uprobe_writes\":%lu,"
+			"\"filter_writes\":%lu,\"event_enable_writes\":%lu,\"misc_writes\":%lu},"
+		"\"bpf_lifecycle\":{\"runs\":%lu,\"progs_loaded\":%lu,\"attached\":%lu,"
+			"\"triggered\":%lu,\"verifier_rejects\":%lu,\"attach_failed\":%lu,\"eperm\":%lu},"
+		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},"
+		"\"recipe_runner\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"unsupported\":%lu},"
+		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
+		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},"
+		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
+			"\"fd_event_ring_canary\":%lu},"
+		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlap_rejects\":%lu},"
+		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
+			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
+		"\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
+			"\"overlay\":%lu,\"unsupported\":%lu},"
+		"\"signal_storm\":{\"runs\":%lu,\"kill\":%lu,\"sigqueue\":%lu,\"no_targets\":%lu},"
+		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
+		"\"pipe_thrash\":{\"runs\":%lu,\"pipes\":%lu,\"socketpairs\":%lu,\"alloc_failed\":%lu},"
+		"\"fork_storm\":{\"runs\":%lu,\"forks\":%lu,\"failed\":%lu,"
+			"\"nested\":%lu,\"reaped_signal\":%lu},"
+		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
+		"\"cgroup_churn\":{\"runs\":%lu,\"mkdirs\":%lu,\"rmdirs\":%lu,\"failed\":%lu},"
+		"\"mount_churn\":{\"runs\":%lu,\"mounts\":%lu,\"umounts\":%lu,\"failed\":%lu},"
+		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
+		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu}"
+		"}",
+		shm->stats.fault_injected, shm->stats.fault_consumed,
+		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
+		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
+		shm->stats.fd_duped, shm->stats.fd_events_processed,
+		shm->stats.fd_events_dropped, shm->stats.fd_runtime_registered,
+		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
+		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
+		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
+		shm->stats.memory_pressure_runs,
+		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
+		shm->stats.userns_runs, shm->stats.userns_inner_crashed, shm->stats.userns_unsupported,
+		shm->stats.barrier_racer_runs, shm->stats.barrier_racer_inner_crashed,
+		shm->stats.genetlink_families_discovered, shm->stats.genetlink_msgs_sent,
+		shm->stats.genetlink_eperm,
+		shm->stats.netlink_nested_attrs_emitted,
+		shm->stats.perf_chains_runs, shm->stats.perf_chains_groups_created,
+		shm->stats.perf_chains_ioctl_ops,
+		shm->stats.tracefs_kprobe_writes, shm->stats.tracefs_uprobe_writes,
+		shm->stats.tracefs_filter_writes, shm->stats.tracefs_event_enable_writes,
+		shm->stats.tracefs_misc_writes,
+		shm->stats.bpf_lifecycle_runs, shm->stats.bpf_lifecycle_progs_loaded,
+		shm->stats.bpf_lifecycle_attached, shm->stats.bpf_lifecycle_triggered,
+		shm->stats.bpf_lifecycle_verifier_rejects, shm->stats.bpf_lifecycle_attach_failed,
+		shm->stats.bpf_lifecycle_eperm,
+		shm->stats.bpf_maps_provided, shm->stats.bpf_progs_provided,
+		shm->stats.recipe_runs, shm->stats.recipe_completed,
+		shm->stats.recipe_partial, shm->stats.recipe_unsupported,
+		shm->stats.iouring_recipes_runs, shm->stats.iouring_recipes_completed,
+		shm->stats.iouring_recipes_partial, shm->stats.iouring_recipes_enosys,
+		shm->stats.zombie_slots_pending, shm->stats.zombies_reaped,
+		shm->stats.zombies_timed_out,
+		shm->stats.local_op_count_corrupted, shm->stats.fd_event_ring_corrupted,
+		shm->stats.fd_event_ring_overwritten,
+		shm->stats.shared_buffer_redirected, shm->stats.range_overlap_rejects,
+		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
+		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
+		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
+		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
+		shm->stats.fs_lifecycle_unsupported,
+		shm->stats.signal_storm_runs, shm->stats.signal_storm_kill,
+		shm->stats.signal_storm_sigqueue, shm->stats.signal_storm_no_targets,
+		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
+		shm->stats.futex_storm_iters,
+		shm->stats.pipe_thrash_runs, shm->stats.pipe_thrash_pipes,
+		shm->stats.pipe_thrash_socketpairs, shm->stats.pipe_thrash_alloc_failed,
+		shm->stats.fork_storm_runs, shm->stats.fork_storm_forks,
+		shm->stats.fork_storm_failed, shm->stats.fork_storm_nested,
+		shm->stats.fork_storm_reaped_signal,
+		shm->stats.flock_thrash_runs, shm->stats.flock_thrash_locks,
+		shm->stats.flock_thrash_failed,
+		shm->stats.cgroup_churn_runs, shm->stats.cgroup_mkdirs,
+		shm->stats.cgroup_rmdirs, shm->stats.cgroup_failed,
+		shm->stats.mount_churn_runs, shm->stats.mount_churn_mounts,
+		shm->stats.mount_churn_umounts, shm->stats.mount_churn_failed,
+		shm->stats.uffd_runs, shm->stats.uffd_registers,
+		shm->stats.uffd_unregisters, shm->stats.uffd_failed,
+		shm->stats.iouring_runs, shm->stats.iouring_submits,
+		shm->stats.iouring_reaped, shm->stats.iouring_failed);
+
+	json_emit_kcov_section();
+	json_emit_minicorpus_section();
+	json_emit_cmp_hints_section();
+	json_emit_edgepair_section();
+
+	fputs("}\n", stdout);
+	fflush(stdout);
+}
+
 void dump_stats(void)
 {
 	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
 
 	if (biarch == true) {
 		output(0, "32bit:\n");
