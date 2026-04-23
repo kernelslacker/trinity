@@ -222,6 +222,12 @@ struct stats_s {
 	unsigned long fork_storm_nested;	/* depth-1 nested forks completed */
 	unsigned long fork_storm_reaped_signal;	/* grandchildren reaped that died by signal */
 
+	/* uffd_churn childop counters */
+	unsigned long uffd_runs;		/* total uffd_churn invocations */
+	unsigned long uffd_registers;		/* successful UFFDIO_REGISTER */
+	unsigned long uffd_unregisters;		/* successful UFFDIO_UNREGISTER */
+	unsigned long uffd_failed;		/* userfaultfd/UFFDIO_API/mmap/REGISTER/UNREGISTER returned -1 */
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially
