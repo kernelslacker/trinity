@@ -218,19 +218,72 @@ retry:
 #define CHAIN_SUBST_PCT 30
 
 /*
+ * Substituting the previous syscall's return value (almost always a
+ * small integer — fd, retval, error code) into a pointer-typed arg
+ * slot produces a wild pointer.  The rendering path then SEGVs in
+ * printf("%s", small_int) → strlen(0x402), or the kernel deref'es a
+ * wild address, depending on which slot got stomped.  Restrict
+ * substitution to slots whose argtype legitimately accepts a numeric
+ * value.
+ */
+static bool argtype_accepts_numeric_substitute(enum argtype t)
+{
+	switch (t) {
+	case ARG_UNDEFINED:
+	case ARG_FD:
+	case ARG_LEN:
+	case ARG_MODE_T:
+	case ARG_PID:
+	case ARG_RANGE:
+	case ARG_OP:
+	case ARG_LIST:
+	case ARG_CPU:
+	case ARG_IOVECLEN:
+	case ARG_SOCKADDRLEN:
+	case ARG_FD_EPOLL:
+	case ARG_FD_EVENTFD:
+	case ARG_FD_FANOTIFY:
+	case ARG_FD_FS_CTX:
+	case ARG_FD_INOTIFY:
+	case ARG_FD_IO_URING:
+	case ARG_FD_LANDLOCK:
+	case ARG_FD_MEMFD:
+	case ARG_FD_MQ:
+	case ARG_FD_PERF:
+	case ARG_FD_PIDFD:
+	case ARG_FD_PIPE:
+	case ARG_FD_SOCKET:
+	case ARG_FD_TIMERFD:
+		return true;
+	case ARG_ADDRESS:
+	case ARG_NON_NULL_ADDRESS:
+	case ARG_PATHNAME:
+	case ARG_IOVEC:
+	case ARG_SOCKADDR:
+	case ARG_MMAP:
+	case ARG_SOCKETINFO:
+		return false;
+	}
+	return false;
+}
+
+/*
  * Apply Phase 1 retval substitution to rec in place.  Used by both the
  * fresh-args path (random_syscall_step) and the corpus-replay path
  * (replay_syscall_step) so the chain semantics — substituted args reach
  * the kernel and show up in the trace — are identical regardless of
  * where the args came from.  No-op when no substitute is offered, the
- * dice roll comes up against, or the syscall takes zero args.
+ * dice roll comes up against, the syscall takes zero args, or no arg
+ * slot has a numeric-substitute-compatible argtype.
  */
 static void apply_chain_substitution(struct syscallrecord *rec,
 				     struct syscallentry *entry,
 				     bool have_substitute,
 				     unsigned long substitute_retval)
 {
-	unsigned int slot;
+	unsigned int safe_slots[6];
+	unsigned int nsafe = 0;
+	unsigned int i, slot;
 
 	if (!have_substitute)
 		return;
@@ -239,7 +292,14 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	if ((unsigned int)(rand() % 100) >= CHAIN_SUBST_PCT)
 		return;
 
-	slot = 1 + (unsigned int)(rand() % entry->num_args);
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		if (argtype_accepts_numeric_substitute(get_argtype(entry, i + 1)))
+			safe_slots[nsafe++] = i + 1;
+	}
+	if (nsafe == 0)
+		return;
+
+	slot = safe_slots[rand() % nsafe];
 	switch (slot) {
 	case 1: rec->a1 = substitute_retval; break;
 	case 2: rec->a2 = substitute_retval; break;
