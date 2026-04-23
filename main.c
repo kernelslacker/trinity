@@ -562,13 +562,30 @@ static void process_zombie_pending(void)
 			continue;
 
 		if (timed_out) {
-			output(0, "child %d zombie (pid %u) still pending after "
-				"%d seconds — forcing slot reuse. Possible causes: "
-				"a child trapped in __BUG()'s spin loop (check stderr "
-				"for a preceding 'BUG!:' line for that pid), a D-state "
-				"task in the kernel finishing a cancelled syscall, or "
-				"a real kernel bug holding the task table entry.\n",
-				i, pid, ZOMBIE_REAP_TIMEOUT_SEC);
+			struct childdata *child =
+				__atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
+			bool from_bug = (child != NULL &&
+				__atomic_load_n(&child->hit_bug, __ATOMIC_ACQUIRE));
+
+			if (from_bug) {
+				output(0, "child %d zombie (pid %u) still pending "
+					"after %d seconds — child hit __BUG() "
+					"(\"%s\" at %s:%u) and exited; kernel is "
+					"finishing the SIGKILL teardown. Not a "
+					"kernel bug.\n",
+					i, pid, ZOMBIE_REAP_TIMEOUT_SEC,
+					child->bug_text ? child->bug_text : "?",
+					child->bug_func ? child->bug_func : "?",
+					child->bug_lineno);
+			} else {
+				output(0, "child %d zombie (pid %u) still pending "
+					"after %d seconds — forcing slot reuse. "
+					"Possible causes: a D-state task in the "
+					"kernel finishing a cancelled syscall, or "
+					"a real kernel bug holding the task table "
+					"entry.\n",
+					i, pid, ZOMBIE_REAP_TIMEOUT_SEC);
+			}
 			__atomic_add_fetch(&shm->stats.zombies_timed_out, 1,
 					   __ATOMIC_RELAXED);
 		} else {

@@ -152,6 +152,17 @@ struct childdata {
 	 * or NULL when no recipe is in flight.  Read by post-mortem to
 	 * attribute a kernel taint to a specific multi-syscall sequence. */
 	const char *current_recipe_name;
+
+	/* Set by __BUG() in the child immediately before _exit() so the
+	 * parent's reap path can attribute a "child gone" event to a self-
+	 * inflicted assertion failure rather than a kernel zombie or wild
+	 * SIGKILL.  bug_text is a string-literal pointer (the bugtxt arg
+	 * passed to __BUG, which is always a literal at the call site).
+	 * bug_lineno + bug_func let the parent print the call site too. */
+	bool hit_bug;
+	const char *bug_text;
+	const char *bug_func;
+	unsigned int bug_lineno;
 };
 
 extern unsigned int max_children;

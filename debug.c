@@ -107,12 +107,24 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 	 * makes the parent's response immediate and the warning channel
 	 * meaningful again.
 	 *
+	 * Stamp the bug into the per-child shm record before _exit so
+	 * the parent's reap path can attribute the dying child to a
+	 * self-inflicted assertion rather than a real zombie / kernel
+	 * D-state.  Strings are literals at the __BUG() call site, so
+	 * stashing the pointer is safe across the _exit (the strings
+	 * live in the .rodata segment which the parent shares).
+	 *
 	 * Parent-side BUGs always spin: the parent is the only process
 	 * worth attaching gdb to, and there's no further-up reaper to
 	 * confuse.
 	 */
-	if (child != NULL && shm->debug == false)
+	if (child != NULL && shm->debug == false) {
+		child->bug_text = bugtxt;
+		child->bug_func = funcname;
+		child->bug_lineno = lineno;
+		__atomic_store_n(&child->hit_bug, true, __ATOMIC_RELEASE);
 		_exit(EXIT_FAILURE);
+	}
 
 	/* Now spin indefinitely (but allow ctrl-c) */
 
