@@ -312,8 +312,7 @@ void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childda
 	unsigned int call;
 
 	call = rec->nr;
-	BUG_ON(call >= max_nr_syscalls);
-	entry = syscalls[call].entry;
+	entry = get_syscall_entry(call, rec->do32bit);
 	BUG_ON(entry == NULL);
 
 	if (entry->flags & EXTRA_FORK)
