@@ -228,6 +228,12 @@ struct stats_s {
 	unsigned long uffd_unregisters;		/* successful UFFDIO_UNREGISTER */
 	unsigned long uffd_failed;		/* userfaultfd/UFFDIO_API/mmap/REGISTER/UNREGISTER returned -1 */
 
+	/* iouring_flood childop counters */
+	unsigned long iouring_runs;		/* total iouring_flood invocations */
+	unsigned long iouring_submits;		/* SQEs successfully submitted via io_uring_enter */
+	unsigned long iouring_reaped;		/* CQEs drained from the completion ring */
+	unsigned long iouring_failed;		/* setup/mmap/submit_burst/io_uring_enter returned -1 */
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially

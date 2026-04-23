@@ -279,6 +279,13 @@ void dump_stats(void)
 		stat_row("uffd_churn", "failed",      shm->stats.uffd_failed);
 	}
 
+	if (shm->stats.iouring_runs) {
+		stat_row("iouring_flood", "runs",     shm->stats.iouring_runs);
+		stat_row("iouring_flood", "submits",  shm->stats.iouring_submits);
+		stat_row("iouring_flood", "reaped",   shm->stats.iouring_reaped);
+		stat_row("iouring_flood", "failed",   shm->stats.iouring_failed);
+	}
+
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
 		unsigned long top_edges[10];
