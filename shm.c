@@ -2,6 +2,7 @@
  * Shared mapping creation.
  */
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -178,7 +179,9 @@ void init_shm(void)
 		 * any child runs, so any post-init write to it will fault. */
 		expected_fd_event_rings[i] = child->fd_event_ring;
 	}
-	mprotect(children, childptrslen, PROT_READ);
+	if (mprotect(children, childptrslen, PROT_READ) != 0)
+		log_mprotect_failure(children, (size_t) childptrslen, PROT_READ,
+				     __builtin_return_address(0), errno);
 
 	kcov_init_global();
 	minicorpus_init();

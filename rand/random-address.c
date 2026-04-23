@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -56,7 +57,10 @@ retry:	tries++;
 		addr = obj->sysv_shm.ptr;
 	}
 
-	mprotect(addr, size, PROT_READ | PROT_WRITE);
+	if (mprotect(addr, size, PROT_READ | PROT_WRITE) != 0)
+		log_mprotect_failure(addr, (size_t) size,
+				     PROT_READ | PROT_WRITE,
+				     __builtin_return_address(0), errno);
 
 	return addr;
 }

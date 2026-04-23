@@ -2,6 +2,8 @@
  * Routines to dirty/fault-in mapped pages.
  */
 
+#include <errno.h>
+#include <sys/mman.h>
 #include <unistd.h>	// getpagesize
 #include "arch.h"
 #include "maps.h"
@@ -11,21 +13,31 @@
 
 static bool mark_map_rw(struct map *map)
 {
+	int prot = PROT_READ | PROT_WRITE;
 	int ret;
-	ret = mprotect(map->ptr, map->size, PROT_READ|PROT_WRITE);
-	if (ret < 0)
-		return false;
 
-	map->prot = PROT_READ|PROT_WRITE;
+	ret = mprotect(map->ptr, map->size, prot);
+	if (ret < 0) {
+		log_mprotect_failure(map->ptr, (size_t) map->size, prot,
+				     __builtin_return_address(0), errno);
+		return false;
+	}
+
+	map->prot = prot;
 	return true;
 }
 
 static bool mark_page_rw(void *page)
 {
+	int prot = PROT_READ | PROT_WRITE;
 	int ret;
-	ret = mprotect(page, page_size, PROT_READ|PROT_WRITE);
-	if (ret < 0)
+
+	ret = mprotect(page, page_size, prot);
+	if (ret < 0) {
+		log_mprotect_failure(page, (size_t) page_size, prot,
+				     __builtin_return_address(0), errno);
 		return false;
+	}
 
 	return true;
 }

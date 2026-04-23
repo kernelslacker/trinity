@@ -23,6 +23,18 @@ bool globals_are_protected(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
 void dump_obj_heap_stats(void);
 
+/*
+ * Log an mprotect() failure as:
+ *   mprotect(addr=%p, len=%zu, prot=0x%x [READ|WRITE|EXEC]) failed at
+ *   <binary>+0xOFFSET: <strerror>
+ *
+ * `caller` should be __builtin_return_address(0) from the call site so
+ * the resolved PC points back through the wrapper to the strategy that
+ * triggered the mprotect.  `err` is the captured errno value.
+ */
+void log_mprotect_failure(void *addr, size_t len, int prot,
+			  void *caller, int err);
+
 void * __zmalloc(size_t size, const char *func);
 #define zmalloc(size)	__zmalloc(size, __func__)
 

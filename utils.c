@@ -591,6 +591,48 @@ void free_shared_str(void *p, size_t size)
 	memset(p, 0, size);
 }
 
+/*
+ * Render a PROT_* mask as "READ|WRITE|EXEC" into the caller-provided
+ * buffer.  Empties to "NONE" for prot==PROT_NONE so the diagnostic line
+ * is never silently truncated to nothing between the brackets.  Unknown
+ * upper bits (PROT_GROWSDOWN, pkey bits, ...) are left to the raw
+ * 0x%x rendering at the call site.
+ */
+static void prot_to_string(int prot, char *buf, size_t buflen)
+{
+	int n = 0;
+
+	if (buf == NULL || buflen == 0)
+		return;
+
+	buf[0] = '\0';
+
+	if (prot & PROT_READ)
+		n += snprintf(buf + n, buflen - (size_t)n, "READ");
+	if (prot & PROT_WRITE)
+		n += snprintf(buf + n, buflen - (size_t)n,
+			      "%sWRITE", n ? "|" : "");
+	if (prot & PROT_EXEC)
+		n += snprintf(buf + n, buflen - (size_t)n,
+			      "%sEXEC", n ? "|" : "");
+
+	if (n == 0)
+		snprintf(buf, buflen, "NONE");
+}
+
+void log_mprotect_failure(void *addr, size_t len, int prot,
+			  void *caller, int err)
+{
+	char protbuf[32];
+	char pcbuf[128];
+
+	prot_to_string(prot, protbuf, sizeof(protbuf));
+	outputerr("mprotect(addr=%p, len=%zu, prot=0x%x [%s]) failed at %s: %s\n",
+		  addr, len, prot, protbuf,
+		  pc_to_string(caller, pcbuf, sizeof(pcbuf)),
+		  strerror(err));
+}
+
 static bool global_objects_protected;
 
 static void mprotect_global_obj_regions(int prot)
@@ -598,15 +640,18 @@ static void mprotect_global_obj_regions(int prot)
 	unsigned int i;
 
 	for (i = 0; i < nr_shared_regions; i++) {
+		void *addr;
+		size_t len;
+
 		if (!shared_regions[i].is_global_obj)
 			continue;
-		if (mprotect((void *) shared_regions[i].addr,
-			     shared_regions[i].size, prot) != 0) {
-			outputerr("mprotect_global_obj_regions: failed for %p (%lu bytes, prot=%d): %s\n",
-				  (void *) shared_regions[i].addr,
-				  shared_regions[i].size, prot,
-				  strerror(errno));
-		}
+
+		addr = (void *) shared_regions[i].addr;
+		len = (size_t) shared_regions[i].size;
+		if (mprotect(addr, len, prot) != 0)
+			log_mprotect_failure(addr, len, prot,
+					     __builtin_return_address(0),
+					     errno);
 	}
 }
 
