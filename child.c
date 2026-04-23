@@ -613,6 +613,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_FD_STRESS:		return 30;
 	case CHILD_OP_FS_LIFECYCLE:		return 60;
 	case CHILD_OP_FLOCK_THRASH:		return 30;
+	case CHILD_OP_CGROUP_CHURN:		return 30;
 	default:				return 10;
 	}
 }
@@ -714,12 +715,12 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[24] = {
+static const int dormant_op_disabled[25] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 1, 1,	/* 10-14: dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, fault_injector, recipe_runner */
 	1, 1, 1, 1, 1,	/* 15-19: dormant: iouring_recipes, fd_stress, refcount_auditor, fs_lifecycle, signal_storm */
-	1, 1, 1, 1,	/* 20-23: dormant: futex_storm, pipe_thrash, fork_storm, flock_thrash */
+	1, 1, 1, 1, 1,	/* 20-24: dormant: futex_storm, pipe_thrash, fork_storm, flock_thrash, cgroup_churn */
 };
 
 static enum child_op_type pick_op_type(void)
@@ -730,7 +731,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 24;
+	pick = rand() % 25;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -759,6 +760,7 @@ static enum child_op_type pick_op_type(void)
 	case 21: return CHILD_OP_PIPE_THRASH;
 	case 22: return CHILD_OP_FORK_STORM;
 	case 23: return CHILD_OP_FLOCK_THRASH;
+	case 24: return CHILD_OP_CGROUP_CHURN;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -859,6 +861,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_PIPE_THRASH:		ret = pipe_thrash(child); break;
 		case CHILD_OP_FORK_STORM:		ret = fork_storm(child); break;
 		case CHILD_OP_FLOCK_THRASH:		ret = flock_thrash(child); break;
+		case CHILD_OP_CGROUP_CHURN:		ret = cgroup_churn(child); break;
 		default:				ret = run_sequence_chain(child); break;
 		}
 

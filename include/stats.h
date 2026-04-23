@@ -202,6 +202,12 @@ struct stats_s {
 	unsigned long flock_thrash_locks;	/* successful flock() calls */
 	unsigned long flock_thrash_failed;	/* flock() returned -1 (EWOULDBLOCK/EINTR/...) */
 
+	/* cgroup_churn childop counters */
+	unsigned long cgroup_churn_runs;	/* total cgroup_churn invocations */
+	unsigned long cgroup_mkdirs;		/* successful mkdir() under /sys/fs/cgroup/ */
+	unsigned long cgroup_rmdirs;		/* successful rmdir() under /sys/fs/cgroup/ */
+	unsigned long cgroup_failed;		/* mkdir or rmdir returned -1 */
+
 	/* fork_storm childop counters */
 	unsigned long fork_storm_runs;		/* total fork_storm invocations */
 	unsigned long fork_storm_forks;		/* grandchildren successfully forked */
