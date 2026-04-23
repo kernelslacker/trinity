@@ -7,6 +7,7 @@
 #include <linux/if_xdp.h>
 #include "net.h"
 #include "random.h"
+#include "utils.h"
 #include "compat.h"
 
 #ifndef SOL_XDP
@@ -72,6 +73,7 @@ static void xdp_socket_setup(int fd)
 			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (umem_area == MAP_FAILED)
 		return;
+	track_shared_region((unsigned long)umem_area, XDP_UMEM_SIZE);
 
 	/* 2. Register UMEM */
 	memset(&reg, 0, sizeof(reg));

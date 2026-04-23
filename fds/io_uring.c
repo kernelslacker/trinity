@@ -156,6 +156,7 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
 		close(fd);
 		return false;
 	}
+	track_shared_region((unsigned long)sq_ring, sq_ring_sz);
 
 	/* mmap the SQE array — sizeof(struct io_uring_sqe) == 64. */
 	if (__builtin_mul_overflow((size_t)params.sq_entries, (size_t)64, &sqes_sz)) {
@@ -170,6 +171,7 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
 		close(fd);
 		return false;
 	}
+	track_shared_region((unsigned long)sqes, sqes_sz);
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
