@@ -45,6 +45,7 @@ unsigned int random_selection_num;
 
 bool clowntown = false;
 bool show_stats = false;
+bool stats_json = false;
 bool quiet = false;
 bool group_bias = false;
 
@@ -151,6 +152,7 @@ static const struct option_help option_descs[] = {
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
+	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },
@@ -220,6 +222,7 @@ static const struct option longopts[] = {
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
 	{ "stats", no_argument, NULL, 0 },
+	{ "stats-json", no_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
@@ -494,6 +497,11 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("stats", longopts[opt_index].name) == 0)
 				show_stats = true;
+
+			if (strcmp("stats-json", longopts[opt_index].name) == 0) {
+				stats_json = true;
+				show_stats = true;
+			}
 
 			if (strcmp("no-warm-start", longopts[opt_index].name) == 0)
 				no_warm_start = true;

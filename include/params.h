@@ -51,6 +51,7 @@ extern unsigned int random_selection_num;
 
 extern bool clowntown;
 extern bool show_stats;
+extern bool stats_json;
 extern bool quiet;
 
 extern unsigned int kernel_taint_mask;
