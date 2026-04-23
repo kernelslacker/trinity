@@ -81,22 +81,22 @@ const char *__asan_default_options(void);
 __attribute__((no_sanitize_address))
 const char *__asan_default_options(void)
 {
-	/* This function is called by libasan during its own initialisation,
-	 * BEFORE the shadow-memory mappings are live.  Without
-	 * no_sanitize_address the compiler emits a function-entry redzone
-	 * setup that touches the (still-unmapped) shadow region and SEGVs
-	 * at the opening brace.  Same reason any function libasan itself
-	 * marks with __attribute__((no_sanitize("address"))) does so. */
-	static char buf[PATH_MAX + 96];
-	char cwd[PATH_MAX];
-
-	if (getcwd(cwd, sizeof(cwd)) == NULL)
-		return "log_path=/tmp/trinity-asan-:abort_on_error=1:disable_coredump=0";
-
-	snprintf(buf, sizeof(buf),
-		 "log_path=%s/tmp/trinity-asan-:abort_on_error=1:disable_coredump=0",
-		 cwd);
-	return buf;
+	/*
+	 * libasan calls this during its own InitializeFlags pass, before
+	 * shadow memory is mapped AND before its libc interceptor table is
+	 * populated.  no_sanitize_address keeps the compiler from emitting
+	 * a function-entry redzone setup, but any libc call from here
+	 * (snprintf, getcwd, ...) goes through a still-NULL interceptor
+	 * pointer and SEGVs at PC=0.  Return a static string only.
+	 *
+	 * "trinity-asan-" is a relative path; libasan opens it at
+	 * error-write time, when each child's cwd is <source>/tmp/ (set
+	 * by change_tmp_dir() in the parent before fork()).  So reports
+	 * land in tmp/trinity-asan-<PID>.<PID> alongside the cores.  A
+	 * child that fuzzes chdir() would write its report wherever the
+	 * fuzzed cwd ended up — acceptable corner case.
+	 */
+	return "log_path=trinity-asan-:abort_on_error=1:disable_coredump=0";
 }
 #endif
 
