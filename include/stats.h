@@ -44,6 +44,7 @@ struct stats_s {
 	unsigned long fd_oracle_anomalies;
 	unsigned long mmap_oracle_anomalies;
 	unsigned long cred_oracle_anomalies;
+	unsigned long sched_oracle_anomalies;
 
 	/* procfs_writer childop: per-tree write counts */
 	unsigned long procfs_writes;
