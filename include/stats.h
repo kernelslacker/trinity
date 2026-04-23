@@ -209,6 +209,12 @@ struct stats_s {
 	unsigned long cgroup_rmdirs;		/* successful rmdir() under /sys/fs/cgroup/ */
 	unsigned long cgroup_failed;		/* mkdir or rmdir returned -1 */
 
+	/* mount_churn childop counters */
+	unsigned long mount_churn_runs;		/* total mount_churn invocations */
+	unsigned long mount_churn_mounts;	/* successful mount() in private ns */
+	unsigned long mount_churn_umounts;	/* successful umount2() */
+	unsigned long mount_churn_failed;	/* mkdir/mount/umount returned -1 */
+
 	/* fork_storm childop counters */
 	unsigned long fork_storm_runs;		/* total fork_storm invocations */
 	unsigned long fork_storm_forks;		/* grandchildren successfully forked */
