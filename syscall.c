@@ -149,10 +149,13 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 	if (dry_run == false) {
 		int nr, call;
 		bool needalarm;
+		struct syscallentry *entry;
 
 		nr = rec->nr;
 		call = nr + SYSCALL_OFFSET;
-		needalarm = syscalls[nr].entry->flags & NEED_ALARM;
+		entry = get_syscall_entry(nr, rec->do32bit);
+		BUG_ON(entry == NULL);
+		needalarm = entry->flags & NEED_ALARM;
 
 		lock(&rec->lock);
 		rec->state = state;
