@@ -370,7 +370,8 @@ void dump_stats(void)
 
 	if (minicorpus_shm != NULL) {
 		static const char * const op_names[MUT_NUM_OPS] = {
-			"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep"
+			"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep",
+			"bswap-add", "bswap-sub"
 		};
 		unsigned long tot_trials = 0;
 		unsigned long r_count, r_wins, s_hits, s_wins, pct10;
