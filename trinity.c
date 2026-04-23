@@ -276,9 +276,9 @@ int main(int argc, char* argv[])
 	/*
 	 * After open_fds() returns no caller adds new global objects, and
 	 * children are rejected from add_object() anyway.  Lock the global
-	 * object list heads and parallel arrays read-only before forking
+	 * object metadata and parallel arrays read-only before forking
 	 * the first fuzz child so stray writes from children SIGSEGV at
-	 * the source instead of corrupting list pointers the parent (or a
+	 * the source instead of corrupting array entries the parent (or a
 	 * later child) trips over during init_child_mappings().
 	 */
 	output(1, "phase: freeze_global_objects\n");
