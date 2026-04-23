@@ -168,6 +168,21 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 			free(arg);
 		}
 	}
+
+	/*
+	 * Register the kcov ring buffer with the shared-region tracker so
+	 * the range_overlaps_shared() guards in the mm-syscall sanitisers
+	 * (munmap, mremap, madvise, mprotect) refuse fuzzed addresses that
+	 * land inside it.  Without this, fuzzed madvise(MADV_REMOVE, ...)
+	 * or madvise(MADV_DONTNEED, ...) on the kcov pages punches their
+	 * physical backing out and the next kcov_collect() reads it,
+	 * tripping SIGBUS at kcov.c:290 ("Nonexisting physical address").
+	 * Done after the remote-probe re-mmap dance so we register the
+	 * final, stable address.
+	 */
+	if (kc->trace_buf != NULL)
+		track_shared_region((unsigned long)kc->trace_buf,
+				    KCOV_TRACE_SIZE * sizeof(unsigned long));
 }
 
 void kcov_cleanup_child(struct kcov_child *kc)
