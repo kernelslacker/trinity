@@ -41,9 +41,17 @@ struct corpus_ring {
 
 /* Number of distinct primitive mutator cases inside mutate_arg().
  * The numerical IDs (0=bit-flip, 1=add, 2=sub, 3=boundary, 4=byte-shuffle,
- * 5=keep) are stable — weighted scheduling counters are indexed by them
- * and any reordering must be reflected in mut_trials/mut_wins below. */
-#define MUT_NUM_OPS 6
+ * 5=keep, 6=bswap-add, 7=bswap-sub) are stable — weighted scheduling
+ * counters are indexed by them and any reordering must be reflected in
+ * mut_trials/mut_wins below.
+ *
+ * Cases 6/7 are endian-aware add/sub: byte-swap the value at a
+ * randomly-picked width (16/32/64), apply the delta, swap back.  This
+ * reaches arithmetic neighbours of values that the kernel interprets
+ * with ntohs/ntohl (sockaddr ports, raw IP headers, netfilter rules,
+ * netlink BE attrs) — values that look like noise to a native-endian
+ * add/sub mutator. */
+#define MUT_NUM_OPS 8
 
 /* Maximum mutation stacking depth per argument (see pick_stack_depth()). */
 #define STACK_MAX 4

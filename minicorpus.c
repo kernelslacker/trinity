@@ -392,6 +392,50 @@ static unsigned long mutate_arg(unsigned long val)
 	case 5:
 		/* keep original — sometimes the saved value is good as-is */
 		break;
+	case 6: {
+		/* endian-aware add: byte-swap at a width chosen by 50/33/17
+		 * bias toward 32/16/64-bit, add a small delta in network-order
+		 * interpretation, swap back.  Hits arithmetic neighbours of BE
+		 * fields (sockaddr ports/addrs, raw IP headers, netfilter
+		 * rules, netlink BE attrs) that native-endian add/sub misses
+		 * because the magnitude byte sits at the opposite end of the
+		 * word.  Width bias matches the prevalence of __be32/__be16/
+		 * __be64 in the kernel API surface. */
+		unsigned long delta = 1 + (unsigned long)(rand() % 16);
+		unsigned int w = rand() % 6;
+		if (w <= 2) {
+			uint32_t v = __builtin_bswap32((uint32_t)val);
+			val = (val & ~0xffffffffUL) |
+			      __builtin_bswap32(v + (uint32_t)delta);
+		} else if (w <= 4) {
+			uint16_t v = __builtin_bswap16((uint16_t)val);
+			val = (val & ~0xffffUL) |
+			      __builtin_bswap16(v + (uint16_t)delta);
+		} else {
+			val = __builtin_bswap64(__builtin_bswap64(val) + delta);
+		}
+		break;
+	}
+	case 7: {
+		/* endian-aware sub: mirror of case 6.  Subtracts in
+		 * network-order interpretation; underflow wraps within the
+		 * chosen width, which is fine — the resulting bit pattern is
+		 * still an interesting boundary in the post-swap space. */
+		unsigned long delta = 1 + (unsigned long)(rand() % 16);
+		unsigned int w = rand() % 6;
+		if (w <= 2) {
+			uint32_t v = __builtin_bswap32((uint32_t)val);
+			val = (val & ~0xffffffffUL) |
+			      __builtin_bswap32(v - (uint32_t)delta);
+		} else if (w <= 4) {
+			uint16_t v = __builtin_bswap16((uint16_t)val);
+			val = (val & ~0xffffUL) |
+			      __builtin_bswap16(v - (uint16_t)delta);
+		} else {
+			val = __builtin_bswap64(__builtin_bswap64(val) - delta);
+		}
+		break;
+	}
 	}
 	return val;
 }
