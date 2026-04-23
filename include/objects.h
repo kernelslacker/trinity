@@ -57,6 +57,11 @@ struct memfdobj {
 	int flags;
 };
 
+struct memfd_secretobj {
+	int fd;
+	int flags;
+};
+
 struct inotifyobj {
 	int fd;
 	int flags;
@@ -160,6 +165,8 @@ struct object {
 		struct fileobj testfileobj;
 
 		struct memfdobj memfdobj;
+
+		struct memfd_secretobj memfd_secretobj;
 
 		int drmfd;
 
