@@ -197,6 +197,11 @@ struct stats_s {
 	unsigned long pipe_thrash_socketpairs;	/* successful socketpair() calls */
 	unsigned long pipe_thrash_alloc_failed;	/* create syscall returned -1 */
 
+	/* flock_thrash childop counters */
+	unsigned long flock_thrash_runs;	/* total flock_thrash invocations */
+	unsigned long flock_thrash_locks;	/* successful flock() calls */
+	unsigned long flock_thrash_failed;	/* flock() returned -1 (EWOULDBLOCK/EINTR/...) */
+
 	/* fork_storm childop counters */
 	unsigned long fork_storm_runs;		/* total fork_storm invocations */
 	unsigned long fork_storm_forks;		/* grandchildren successfully forked */
