@@ -91,6 +91,29 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 	else
 		pre_crash_ring_dump_all();
 
+	/*
+	 * For child-side BUGs in non-debug runs, _exit cleanly so the
+	 * parent reaps and respawns within milliseconds.  Spinning is
+	 * useful for live gdb-attach during interactive debugging
+	 * (-D mode), but for unattended runs every spinning child
+	 * eventually trips the parent's progress watchdog, takes a
+	 * SIGKILL, gets stuck D-state in the kernel finishing the
+	 * cancelled nanosleep, and eventually surfaces as the misleading
+	 * "Kernel may be buggy; investigate the D-state task manually"
+	 * 300-second zombie-pending warning.  The kernel is fine — we
+	 * were the ones holding the slot hostage.  Dave saw this fire
+	 * for several children in tonight's overnight run, all from the
+	 * same OBJ_LOCAL list-corruption __BUG.  Letting the child die
+	 * makes the parent's response immediate and the warning channel
+	 * meaningful again.
+	 *
+	 * Parent-side BUGs always spin: the parent is the only process
+	 * worth attaching gdb to, and there's no further-up reaper to
+	 * confuse.
+	 */
+	if (child != NULL && shm->debug == false)
+		_exit(EXIT_FAILURE);
+
 	/* Now spin indefinitely (but allow ctrl-c) */
 
 	if (child != NULL)
