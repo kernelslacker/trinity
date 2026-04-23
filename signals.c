@@ -2,6 +2,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>	// umask
 #include <unistd.h>
 #ifdef USE_BACKTRACE
 #include <execinfo.h>
@@ -69,6 +70,18 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		/* Sibling spoof — ignore. */
 		return;
 	}
+	/*
+	 * Reset the umask before creating any files.  The umask syscall is
+	 * itself fuzzed, so a child that drew umask(0777) and then crashed
+	 * would otherwise have its /tmp/trinity-bug-<pid>.log redirect file
+	 * created with mode 0644 & ~0777 == 0, and the kernel/userspace
+	 * coredump helper would create the core file with the same 0000
+	 * mode and abort with "cannot preserve file permissions".  umask()
+	 * is async-signal-safe (POSIX 2024 §2.4.3) so this is safe to call
+	 * from a signal handler.  Returning the old mask is intentionally
+	 * ignored — this child is about to die.
+	 */
+	(void)umask(0);
 	/*
 	 * Child stdin/stdout/stderr were dup2'd to /dev/null in init_child
 	 * (see child.c) to silence syscall spew to the operator's terminal.
