@@ -14,6 +14,7 @@
 #include <linux/atmmpc.h>
 #include <linux/atm_tcp.h>
 #include <linux/atmbr2684.h>
+#include <linux/atmsvc.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -291,6 +292,10 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(SIOCSIFATMTCP),
 	IOCTL(ATMTCP_CREATE),
 	IOCTL(ATMTCP_REMOVE),
+	/* SVC signaling daemon control socket; _IO, no arg */
+#ifdef ATMSIGD_CTRL
+	IOCTL(ATMSIGD_CTRL),
+#endif
 	/* LAN Emulation and MPOA control sockets; all _IO, no arg */
 	IOCTL(ATMLEC_CTRL),
 	IOCTL(ATMLEC_DATA),

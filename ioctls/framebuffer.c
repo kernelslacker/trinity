@@ -1,5 +1,13 @@
 #include <linux/ioctl.h>
 #include <linux/fb.h>
+#ifdef __has_include
+# if __has_include(<linux/arcfb.h>)
+#  include <linux/arcfb.h>
+# endif
+# if __has_include(<linux/radeonfb.h>)
+#  include <linux/radeonfb.h>
+# endif
+#endif
 
 #include "ioctls.h"
 #include "random.h"
@@ -184,6 +192,18 @@ static const struct ioctl fb_ioctls[] = {
 	IOCTL(FBIOGET_DISPINFO),
 #ifdef FBIO_WAITFORVSYNC
 	IOCTL(FBIO_WAITFORVSYNC),
+#endif
+#ifdef FBIO_WAITEVENT
+	IOCTL(FBIO_WAITEVENT),
+#endif
+#ifdef FBIO_GETCONTROL2
+	IOCTL(FBIO_GETCONTROL2),
+#endif
+#ifdef FBIO_RADEON_GET_MIRROR
+	IOCTL(FBIO_RADEON_GET_MIRROR),
+#endif
+#ifdef FBIO_RADEON_SET_MIRROR
+	IOCTL(FBIO_RADEON_SET_MIRROR),
 #endif
 };
 
