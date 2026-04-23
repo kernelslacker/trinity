@@ -63,14 +63,30 @@ static const struct ioctl btrfs_ioctls[] = {
 	{ .name = "BTRFS_IOC_SUBVOL_CREATE", .request = BTRFS_IOC_SUBVOL_CREATE, },
 	{ .name = "BTRFS_IOC_SUBVOL_CREATE_V2", .request = BTRFS_IOC_SUBVOL_CREATE_V2, },
 	{ .name = "BTRFS_IOC_SNAP_DESTROY", .request = BTRFS_IOC_SNAP_DESTROY, },
+#ifdef BTRFS_IOC_SNAP_DESTROY_V2
+	{ .name = "BTRFS_IOC_SNAP_DESTROY_V2", .request = BTRFS_IOC_SNAP_DESTROY_V2, },
+#endif
 	{ .name = "BTRFS_IOC_SUBVOL_GETFLAGS", .request = BTRFS_IOC_SUBVOL_GETFLAGS, },
 	{ .name = "BTRFS_IOC_SUBVOL_SETFLAGS", .request = BTRFS_IOC_SUBVOL_SETFLAGS, },
+#ifdef BTRFS_IOC_SUBVOL_SYNC_WAIT
+	{ .name = "BTRFS_IOC_SUBVOL_SYNC_WAIT", .request = BTRFS_IOC_SUBVOL_SYNC_WAIT, },
+#endif
 	{ .name = "BTRFS_IOC_DEFAULT_SUBVOL", .request = BTRFS_IOC_DEFAULT_SUBVOL, },
 	{ .name = "BTRFS_IOC_DEFRAG", .request = BTRFS_IOC_DEFRAG, },
 	{ .name = "BTRFS_IOC_DEFRAG_RANGE", .request = BTRFS_IOC_DEFRAG_RANGE, },
 	{ .name = "BTRFS_IOC_RESIZE", .request = BTRFS_IOC_RESIZE, },
+	{ .name = "BTRFS_IOC_SCAN_DEV", .request = BTRFS_IOC_SCAN_DEV, },
+#ifdef BTRFS_IOC_FORGET_DEV
+	{ .name = "BTRFS_IOC_FORGET_DEV", .request = BTRFS_IOC_FORGET_DEV, },
+#endif
 	{ .name = "BTRFS_IOC_ADD_DEV", .request = BTRFS_IOC_ADD_DEV, },
 	{ .name = "BTRFS_IOC_RM_DEV", .request = BTRFS_IOC_RM_DEV, },
+#ifdef BTRFS_IOC_RM_DEV_V2
+	{ .name = "BTRFS_IOC_RM_DEV_V2", .request = BTRFS_IOC_RM_DEV_V2, },
+#endif
+#ifdef BTRFS_IOC_DEVICES_READY
+	{ .name = "BTRFS_IOC_DEVICES_READY", .request = BTRFS_IOC_DEVICES_READY, },
+#endif
 	{ .name = "BTRFS_IOC_FS_INFO", .request = BTRFS_IOC_FS_INFO, },
 	{ .name = "BTRFS_IOC_DEV_INFO", .request = BTRFS_IOC_DEV_INFO, },
 	{ .name = "BTRFS_IOC_BALANCE", .request = BTRFS_IOC_BALANCE, },
@@ -79,8 +95,14 @@ static const struct ioctl btrfs_ioctls[] = {
 	{ .name = "BTRFS_IOC_TREE_SEARCH", .request = BTRFS_IOC_TREE_SEARCH, },
 	{ .name = "BTRFS_IOC_TREE_SEARCH_V2", .request = BTRFS_IOC_TREE_SEARCH_V2, },
 	{ .name = "BTRFS_IOC_INO_LOOKUP", .request = BTRFS_IOC_INO_LOOKUP, },
+#ifdef BTRFS_IOC_INO_LOOKUP_USER
+	{ .name = "BTRFS_IOC_INO_LOOKUP_USER", .request = BTRFS_IOC_INO_LOOKUP_USER, },
+#endif
 	{ .name = "BTRFS_IOC_INO_PATHS", .request = BTRFS_IOC_INO_PATHS, },
 	{ .name = "BTRFS_IOC_LOGICAL_INO", .request = BTRFS_IOC_LOGICAL_INO, },
+#ifdef BTRFS_IOC_LOGICAL_INO_V2
+	{ .name = "BTRFS_IOC_LOGICAL_INO_V2", .request = BTRFS_IOC_LOGICAL_INO_V2, },
+#endif
 	{ .name = "BTRFS_IOC_SPACE_INFO", .request = BTRFS_IOC_SPACE_INFO, },
 	{ .name = "BTRFS_IOC_SYNC", .request = BTRFS_IOC_SYNC, },
 	{ .name = "BTRFS_IOC_START_SYNC", .request = BTRFS_IOC_START_SYNC, },
@@ -94,6 +116,12 @@ static const struct ioctl btrfs_ioctls[] = {
 	{ .name = "BTRFS_IOC_SET_RECEIVED_SUBVOL", .request = BTRFS_IOC_SET_RECEIVED_SUBVOL, },
 	{ .name = "BTRFS_IOC_SET_RECEIVED_SUBVOL_32", .request = BTRFS_IOC_SET_RECEIVED_SUBVOL_32, },
 	{ .name = "BTRFS_IOC_SEND", .request = BTRFS_IOC_SEND, },
+#ifdef BTRFS_IOC_ENCODED_READ
+	{ .name = "BTRFS_IOC_ENCODED_READ", .request = BTRFS_IOC_ENCODED_READ, },
+#endif
+#ifdef BTRFS_IOC_ENCODED_WRITE
+	{ .name = "BTRFS_IOC_ENCODED_WRITE", .request = BTRFS_IOC_ENCODED_WRITE, },
+#endif
 	{ .name = "BTRFS_IOC_GET_DEV_STATS", .request = BTRFS_IOC_GET_DEV_STATS, },
 	{ .name = "BTRFS_IOC_QUOTA_CTL", .request = BTRFS_IOC_QUOTA_CTL, },
 	{ .name = "BTRFS_IOC_QGROUP_ASSIGN", .request = BTRFS_IOC_QGROUP_ASSIGN, },
@@ -108,6 +136,15 @@ static const struct ioctl btrfs_ioctls[] = {
 	{ .name = "BTRFS_IOC_GET_SUPPORTED_FEATURES", .request = BTRFS_IOC_GET_SUPPORTED_FEATURES, },
 	{ .name = "BTRFS_IOC_GET_FEATURES", .request = BTRFS_IOC_GET_FEATURES, },
 	{ .name = "BTRFS_IOC_SET_FEATURES", .request = BTRFS_IOC_SET_FEATURES, },
+#ifdef BTRFS_IOC_GET_SUBVOL_INFO
+	{ .name = "BTRFS_IOC_GET_SUBVOL_INFO", .request = BTRFS_IOC_GET_SUBVOL_INFO, },
+#endif
+#ifdef BTRFS_IOC_GET_SUBVOL_ROOTREF
+	{ .name = "BTRFS_IOC_GET_SUBVOL_ROOTREF", .request = BTRFS_IOC_GET_SUBVOL_ROOTREF, },
+#endif
+	{ .name = "BTRFS_IOC_CLONE", .request = BTRFS_IOC_CLONE, },
+	{ .name = "BTRFS_IOC_CLONE_RANGE", .request = BTRFS_IOC_CLONE_RANGE, },
+	{ .name = "BTRFS_IOC_FILE_EXTENT_SAME", .request = BTRFS_IOC_FILE_EXTENT_SAME, },
 };
 
 static const struct ioctl_group btrfs_grp = {
