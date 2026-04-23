@@ -1,5 +1,7 @@
-#include <stdlib.h>
+#include <fcntl.h>
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #ifdef USE_BACKTRACE
 #include <execinfo.h>
@@ -67,6 +69,24 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		/* Sibling spoof — ignore. */
 		return;
 	}
+	/*
+	 * Child stdin/stdout/stderr were dup2'd to /dev/null in init_child
+	 * (see child.c) to silence syscall spew to the operator's terminal.
+	 * Redirect stderr to a per-pid log file so the backtrace + psiginfo
+	 * output below lands in /tmp/trinity-bug-<pid>.log instead of being
+	 * swallowed — without this we have zero forensics on child SEGVs.
+	 */
+	{
+		char path[64];
+		int fd;
+
+		snprintf(path, sizeof(path), "/tmp/trinity-bug-%d.log", (int)getpid());
+		fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+		if (fd >= 0) {
+			dup2(fd, STDERR_FILENO);
+			close(fd);
+		}
+	}
 #ifdef USE_BACKTRACE
 	{
 		void *frames[64];
@@ -76,6 +96,7 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 	}
 #endif
 	psiginfo(info, "trinity child: fatal signal");
+	fflush(stderr);
 
 	if (shm->debug == true) {
 		(void)signal(sig, SIG_DFL);
