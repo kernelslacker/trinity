@@ -62,6 +62,7 @@ retry:
 struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol)
 {
 	struct object *obj;
+	const struct netproto *proto;
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
@@ -73,7 +74,14 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	obj->sockinfo.triplet.family = domain;
 	obj->sockinfo.triplet.type = type;
 	obj->sockinfo.triplet.protocol = protocol;
-	obj->sockinfo.needs_setup = true;
+
+	/* Run per-protocol socket setup eagerly, before the obj is
+	 * published into the global pool.  The shared obj heap is
+	 * mprotected READ-ONLY post-init (commit fbce60744dfb), so any
+	 * deferred write to obj->sockinfo from a child SEGVs. */
+	proto = net_protocols[domain].proto;
+	if (proto != NULL && proto->socket_setup != NULL)
+		proto->socket_setup(fd);
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_SOCKET);
 
@@ -84,24 +92,6 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 		return NULL;
 
 	return obj;
-}
-
-/*
- * Perform deferred per-protocol socket setup.
- * Called lazily when a child first uses the socket.
- * Random setsockopt is handled separately in socket_child_ops().
- */
-static void socket_setup_lazy(struct socketinfo *si)
-{
-	const struct netproto *proto;
-	int fd = si->fd;
-
-	si->needs_setup = false;
-
-	proto = net_protocols[si->triplet.family].proto;
-	if (proto != NULL)
-		if (proto->socket_setup != NULL)
-			proto->socket_setup(fd);
 }
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
@@ -362,9 +352,8 @@ static void socket_child_ops(void)
 
 	fd = si->fd;
 
-	/* Set random socket options — moved here from socket_setup_lazy()
-	 * so each child exercises setsockopt at runtime rather than
-	 * doing a one-shot setup at first touch. */
+	/* Set random socket options at runtime so each child exercises
+	 * setsockopt rather than doing a one-shot setup at add time. */
 	sso_socket(&si->triplet, &so, fd);
 
 	generate_sockaddr((struct sockaddr **) &sa, &salen, si->triplet.family);
@@ -435,9 +424,9 @@ static int open_sockets(void)
 	 *     can see — same structural property as the regen path.
 	 *
 	 * struct socketinfo carries no pointer fields (triplet is three
-	 * ints, fd is an int, needs_setup is a bool), so this is an obj-
-	 * struct-only conversion — no companion alloc_shared_str() calls
-	 * for heap-allocated members.  The transient sockaddr buffer
+	 * ints, fd is an int), so this is an obj-struct-only conversion
+	 * — no companion alloc_shared_str() calls for heap-allocated
+	 * members.  The transient sockaddr buffer
 	 * built by generate_sockaddr() inside socket_child_ops() lives
 	 * for the duration of one accept4() attempt and is freed in the
 	 * same function via free(sa); it is not attached to the obj and
@@ -462,9 +451,6 @@ struct socketinfo * get_rand_socketinfo(void)
 	if (obj == NULL)
 		return NULL;
 
-	if (obj->sockinfo.needs_setup)
-		socket_setup_lazy(&obj->sockinfo);
-
 	return &obj->sockinfo;
 }
 
@@ -482,9 +468,6 @@ static int get_rand_socket_fd(void)
 int fd_from_socketinfo(struct socketinfo *si)
 {
 	if (si != NULL) {
-		if (si->needs_setup)
-			socket_setup_lazy(si);
-
 		if (!(ONE_IN(1000)))
 			return si->fd;
 	}
