@@ -1,4 +1,6 @@
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -64,6 +66,36 @@ static void change_tmp_dir(void)
 	ret = chdir(tmpdir);
 	if (ret == -1)
 		output(0, "Couldn't change to %s\n", tmpdir);
+}
+
+/*
+ * Trinity assumes the operator can find cores after a crash.  Surface
+ * the kernel's core_pattern at startup so the log records exactly where
+ * (or to which helper) cores were going to land.  Verbose-only — most
+ * runs don't need the noise.  Silent on any failure: a kernel without
+ * procfs or with the file removed is a degraded but valid environment.
+ */
+static void print_core_pattern(void)
+{
+	char buf[PATH_MAX];
+	ssize_t n;
+	int fd;
+
+	fd = open("/proc/sys/kernel/core_pattern", O_RDONLY);
+	if (fd == -1)
+		return;
+
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+
+	if (n <= 0)
+		return;
+
+	buf[n] = '\0';
+	if (buf[n - 1] == '\n')
+		buf[n - 1] = '\0';
+
+	output(1, "core_pattern: %s\n", buf);
 }
 
 static int set_exit_code(enum exit_reasons reason)
@@ -213,6 +245,8 @@ int main(int argc, char* argv[])
 			fclose(f);
 		}
 	}
+
+	print_core_pattern();
 
 	kmsg_monitor_start();
 
