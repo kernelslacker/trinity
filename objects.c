@@ -687,26 +687,36 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
  */
 static void destroy_objects(enum objecttype type, enum obj_scope scope)
 {
-	struct list_head *node, *list, *tmp;
 	struct objhead *head;
 
 	head = get_objhead(scope, type);
 	if (head->num_entries == 0)
 		return;
 
-	list = head->list;
-	if (list == NULL)
+	if (head->array == NULL)
 		return;
 
-	list_for_each_safe(node, tmp, list) {
-		struct object *obj;
+	/* Drain the array via repeated head->array[0] destroy.
+	 * __destroy_object() does swap-with-last on the parallel array,
+	 * so consuming the front slot each time pulls a fresh entry into
+	 * slot 0 until num_entries reaches 0.  No iterator needed — this
+	 * matches the natural "clear all" semantic of destroy_objects
+	 * without depending on linked-list traversal.  The list itself is
+	 * still maintained by add_object/destroy_object (list_del runs
+	 * inside __destroy_object), it just isn't walked here anymore. */
+	while (head->num_entries > 0) {
+		struct object *obj = head->array[0];
 
-		obj = (struct object *) node;
-
+		if (obj == NULL) {
+			/* Shouldn't happen — num_entries says it's live —
+			 * but guard against a torn state rather than
+			 * looping forever. */
+			head->num_entries--;
+			continue;
+		}
 		__destroy_object(obj, scope, type, false);
 	}
 
-	head->num_entries = 0;
 	/* Only free private-heap arrays (OBJ_LOCAL).  OBJ_GLOBAL arrays
 	 * were allocated with alloc_shared() and cannot be freed. */
 	if (scope == OBJ_LOCAL) {
@@ -894,7 +904,7 @@ void remove_object_by_fd(int fd)
 static void __prune_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
-	struct list_head *node, *list, *tmp;
+	unsigned int i;
 
 	head = get_objhead(scope, type);
 
@@ -906,14 +916,24 @@ static void __prune_objects(enum objecttype type, enum obj_scope scope)
 	if (head->num_entries < head->max_entries)
 		return;
 
-	/* Single pass: prune each entry with 1/10 probability. */
-	list = head->list;
-	list_for_each_safe(node, tmp, list) {
-		if (ONE_IN(10)) {
-			struct object *obj = (struct object *) node;
+	if (head->array == NULL)
+		return;
 
+	/* Single pass: prune each entry with 1/10 probability.
+	 *
+	 * Walk the array in reverse.  destroy_object() does swap-with-last
+	 * on the parallel array, so a forward walk would skip whichever
+	 * entry got pulled into the current slot from the back.  Walking
+	 * from the back means any swap-in source is from a position we
+	 * have already visited, so each live entry is considered exactly
+	 * once. */
+	for (i = head->num_entries; i > 0; i--) {
+		struct object *obj = head->array[i - 1];
+
+		if (obj == NULL)
+			continue;
+		if (ONE_IN(10))
 			destroy_object(obj, scope, type);
-		}
 	}
 }
 
