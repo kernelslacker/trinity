@@ -505,6 +505,7 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_TIMERFD:	obj->timerfdobj.fd = -1; break;
 	case OBJ_FD_TESTFILE:	obj->testfileobj.fd = -1; break;
 	case OBJ_FD_MEMFD:	obj->memfdobj.fd = -1; break;
+	case OBJ_FD_MEMFD_SECRET: obj->memfd_secretobj.fd = -1; break;
 	case OBJ_FD_DRM:	obj->drmfd = -1; break;
 	case OBJ_FD_INOTIFY:	obj->inotifyobj.fd = -1; break;
 	case OBJ_FD_SOCKET:	obj->sockinfo.fd = -1; break;
@@ -679,6 +680,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_TIMERFD:	obj->timerfdobj.fd = fd; break;
 	case OBJ_FD_TESTFILE:	obj->testfileobj.fd = fd; break;
 	case OBJ_FD_MEMFD:	obj->memfdobj.fd = fd; break;
+	case OBJ_FD_MEMFD_SECRET: obj->memfd_secretobj.fd = fd; break;
 	case OBJ_FD_DRM:	obj->drmfd = fd; break;
 	case OBJ_FD_INOTIFY:	obj->inotifyobj.fd = fd; break;
 	case OBJ_FD_SOCKET:	obj->sockinfo.fd = fd; break;
@@ -743,6 +745,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_TIMERFD:	return obj->timerfdobj.fd;
 	case OBJ_FD_TESTFILE:	return obj->testfileobj.fd;
 	case OBJ_FD_MEMFD:	return obj->memfdobj.fd;
+	case OBJ_FD_MEMFD_SECRET: return obj->memfd_secretobj.fd;
 	case OBJ_FD_DRM:	return obj->drmfd;
 	case OBJ_FD_INOTIFY:	return obj->inotifyobj.fd;
 	case OBJ_FD_SOCKET:	return obj->sockinfo.fd;
