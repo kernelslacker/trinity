@@ -19,7 +19,10 @@
 #include <limits.h>
 
 #include "deferred-free.h"
+#include "pc_format.h"
 #include "random.h"
+#include "trinity.h"
+#include "utils.h"
 
 #define DEFERRED_RING_SIZE	64
 #define DEFERRED_TTL_MIN	5
@@ -49,6 +52,34 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 
 	if (free_func == NULL)
 		free_func = free;
+
+	/*
+	 * Refuse to enqueue a pointer that lands inside one of trinity's
+	 * own mmap'd shared regions.  ASAN catches these as bad-free
+	 * (libasan: "attempting free on address which was not malloc()-ed"),
+	 * non-ASAN runs silently corrupt the glibc allocator.  Either way
+	 * the underlying bug is some arg generator handing back a tracked-
+	 * mmap pointer for an arg slot whose argtype (PATHNAME, IOVEC,
+	 * SOCKADDR) generic_free_arg expects to be heap-allocated.
+	 *
+	 * Logging the caller PC so we can still find the offending
+	 * generator -- the guard fixes the symptom but the rejection log
+	 * is the breadcrumb to the root cause.  Limited to one print per
+	 * 1000 rejects to keep noise sane.
+	 */
+	if (range_overlaps_shared((unsigned long)ptr, 1) && free_func == free) {
+		static unsigned long rejects;
+		unsigned long n = ++rejects;
+		if ((n % 1000) == 1) {
+			char pcbuf[128];
+			outputerr("deferred_free_enqueue: rejected ptr=%p "
+				  "(overlaps shared region) caller=%s "
+				  "[%lu cumulative]\n", ptr,
+				  pc_to_string(__builtin_return_address(0),
+					       pcbuf, sizeof(pcbuf)), n);
+		}
+		return;
+	}
 
 	/* If the ring is full, force-free the oldest (lowest TTL) entry
 	 * to make room.  In practice this rarely happens — TTL range
