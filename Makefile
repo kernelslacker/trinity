@@ -46,15 +46,16 @@ CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
 endif
 
-# `make debug` enables AddressSanitizer with -Og/-ggdb3 debuginfo.  ASAN
-# would have caught the 2026-04-22 freelist bucket-overrun (5f6b9d611a7e)
-# immediately as a heap-buffer-overflow instead of letting it manifest
-# later as a wild write.  Frame pointers stay omitted because the 32-on-64
-# DO_32_SYSCALL inline asm in include/arch-x86-64.h clobbers %rbp; ASAN
-# still produces good backtraces from the DWARF info -ggdb3 emits.  The
-# trailing -Og overrides the earlier -O2; _FORTIFY_SOURCE is undefined
-# because it requires optimization.
-ifeq ($(MAKECMDGOALS),debug)
+# `make asan` (also `make debug` for backwards-compat) enables
+# AddressSanitizer with -Og/-ggdb3 debuginfo.  ASAN would have caught
+# the 2026-04-22 freelist bucket-overrun (5f6b9d611a7e) immediately as
+# a heap-buffer-overflow instead of letting it manifest later as a wild
+# write.  Frame pointers stay omitted because the 32-on-64
+# DO_32_SYSCALL inline asm in include/arch-x86-64.h clobbers %rbp;
+# ASAN still produces good backtraces from the DWARF info -ggdb3 emits.
+# The trailing -Og overrides the earlier -O2; _FORTIFY_SOURCE is
+# undefined because it requires optimization.
+ifneq ($(filter asan debug,$(MAKECMDGOALS)),)
 CFLAGS += -U_FORTIFY_SOURCE -fsanitize=address -Og -ggdb3
 LDFLAGS += -fsanitize=address
 endif
@@ -65,6 +66,8 @@ QUIET_CC = $(Q:@=@echo    '  CC	'$@;)
 
 
 all: trinity
+
+asan: trinity
 
 debug: trinity
 
