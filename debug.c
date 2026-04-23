@@ -92,41 +92,43 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsig
 		pre_crash_ring_dump_all();
 
 	/*
-	 * For child-side BUGs in non-debug runs, _exit cleanly so the
-	 * parent reaps and respawns within milliseconds.  Spinning is
-	 * useful for live gdb-attach during interactive debugging
-	 * (-D mode), but for unattended runs every spinning child
-	 * eventually trips the parent's progress watchdog, takes a
-	 * SIGKILL, gets stuck D-state in the kernel finishing the
-	 * cancelled nanosleep, and eventually surfaces as the misleading
-	 * "Kernel may be buggy; investigate the D-state task manually"
-	 * 300-second zombie-pending warning.  The kernel is fine — we
-	 * were the ones holding the slot hostage.  Dave saw this fire
-	 * for several children in tonight's overnight run, all from the
-	 * same OBJ_LOCAL list-corruption __BUG.  Letting the child die
-	 * makes the parent's response immediate and the warning channel
-	 * meaningful again.
-	 *
-	 * Stamp the bug into the per-child shm record before _exit so
-	 * the parent's reap path can attribute the dying child to a
-	 * self-inflicted assertion rather than a real zombie / kernel
-	 * D-state.  Strings are literals at the __BUG() call site, so
-	 * stashing the pointer is safe across the _exit (the strings
-	 * live in the .rodata segment which the parent shares).
-	 *
-	 * Parent-side BUGs always spin: the parent is the only process
-	 * worth attaching gdb to, and there's no further-up reaper to
-	 * confuse.
+	 * Stamp the bug into the per-child shm record so the parent's
+	 * reap path can attribute the dying child to a self-inflicted
+	 * assertion.  Strings are literals at the __BUG() call site so
+	 * stashing the pointer is safe (they live in .rodata which all
+	 * processes share).
 	 */
-	if (child != NULL && shm->debug == false) {
+	if (child != NULL) {
 		child->bug_text = bugtxt;
 		child->bug_func = funcname;
 		child->bug_lineno = lineno;
 		__atomic_store_n(&child->hit_bug, true, __ATOMIC_RELEASE);
-		_exit(EXIT_FAILURE);
 	}
 
-	/* Now spin indefinitely (but allow ctrl-c) */
+	/*
+	 * Halt fleet-wide spawning on first BUG.  Existing children keep
+	 * running until they exit naturally; the BUG'd child stays alive
+	 * (spinning below) so gdb can attach to it directly to inspect
+	 * the corruption that tripped the assertion.  Other slots drain
+	 * to empty as their children exit; replace_child skips them
+	 * because of this flag.  Parent stays alive in main_loop (we
+	 * deliberately do NOT set exit_reason) so it's also gdb-able.
+	 *
+	 * The whole fuzz fleet gets quarantined on a single BUG.  This
+	 * is by design: every BUG firing represents a bug Trinity itself
+	 * found and that we want to investigate, not silently respawn
+	 * past.  If the noise of catching every duplicate becomes a
+	 * problem, change replace_child's bug-quarantine behaviour
+	 * before changing this — never silence the BUG itself.
+	 */
+	__atomic_store_n(&shm->spawn_no_more, true, __ATOMIC_RELEASE);
+
+	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
+		getpid());
+
+	/* Now spin indefinitely (but allow ctrl-c).  set_dontkillme keeps
+	 * the parent's progress watchdog from SIGKILL'ing us, so the
+	 * spinning child stays alive and ptrace-attachable. */
 
 	if (child != NULL)
 		set_dontkillme(child, true);
