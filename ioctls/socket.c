@@ -5,16 +5,14 @@
 
 static int socket_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
-	struct list_head *globallist, *node;
+	struct objhead *head;
+	struct object *obj;
+	unsigned int idx;
 
-	globallist = shm->global_objects[OBJ_FD_SOCKET].list;
+	head = &shm->global_objects[OBJ_FD_SOCKET];
 
-	list_for_each(node, globallist) {
-		struct object *obj;
-		struct socketinfo *si;
-
-		obj = (struct object *) node;
-		si = &obj->sockinfo;
+	for_each_obj(head, obj, idx) {
+		struct socketinfo *si = &obj->sockinfo;
 
 		if (si->fd == fd)
 			return 0;

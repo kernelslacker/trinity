@@ -111,68 +111,52 @@ void map_dump(struct object *obj, enum obj_scope scope)
  */
 void init_child_mappings(void)
 {
-	struct list_head *globallist, *node;
-	struct objhead *head;
+	struct objhead *head, *globalhead;
+	struct object *globalobj;
+	unsigned int idx;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
 	head->destroy = &map_destructor;
 	head->dump = &map_dump;
 
-	globallist = shm->global_objects[OBJ_MMAP_ANON].list;
-	if (globallist == NULL)
+	globalhead = &shm->global_objects[OBJ_MMAP_ANON];
+	if (globalhead->array == NULL)
 		return;
 
 	/* Copy the initial mapping list to the child.
 	 * Note we're only copying pointers here, the actual mmaps
 	 * will be faulted into the child when they get accessed.
 	 *
-	 * Defensive: cap iteration at the global capacity (a corrupt
-	 * list with a circular `next` would otherwise loop forever) and
-	 * skip entries whose name pointer is bogus.  See child #9 spawn
-	 * crash where m->name had been overwritten with 0x610000.
+	 * Skip entries whose name pointer is bogus.  See child #9 spawn
+	 * crash where m->name had been overwritten with 0x610000.  The
+	 * iteration bound is provided by for_each_obj (array_capacity);
+	 * no additional cap is needed.
 	 */
-	{
-		unsigned int seen = 0;
-		const unsigned int max_iter = GLOBAL_OBJ_MAX_CAPACITY + 1;
+	for_each_obj(globalhead, globalobj, idx) {
+		struct map *m = &globalobj->map;
+		struct object *newobj;
 
-		list_for_each(node, globallist) {
-			struct map *m;
-			struct object *globalobj, *newobj;
-
-			if (node == NULL)
-				break;
-
-			if (++seen > max_iter) {
-				outputerr("init_child_mappings: global mmap list looks corrupt (>%u entries), bailing\n",
-					  max_iter);
-				break;
-			}
-
-			globalobj = (struct object *) node;
-			m = &globalobj->map;
-
-			if (m->name == NULL) {
-				outputerr("init_child_mappings: skipping global map with NULL name\n");
-				continue;
-			}
-
-			newobj = alloc_object();
-			newobj->map.ptr = m->ptr;
-			newobj->map.name = strdup(m->name);
-			if (!newobj->map.name) {
-				free(newobj);
-				continue;
-			}
-			newobj->map.size = m->size;
-			newobj->map.prot = m->prot;
-			newobj->map.flags = m->flags;
-			newobj->map.fd = m->fd;
-			/* We leave type as 'INITIAL' until we change the mapping
-			 * by mprotect/mremap/munmap etc..
-			 */
-			newobj->map.type = INITIAL_ANON;
-			add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
+		if (m->name == NULL) {
+			outputerr("init_child_mappings: skipping global map with NULL name\n");
+			continue;
 		}
+
+		newobj = alloc_object();
+		newobj->map.ptr = m->ptr;
+		newobj->map.name = strdup(m->name);
+		if (!newobj->map.name) {
+			free(newobj);
+			continue;
+		}
+		newobj->map.size = m->size;
+		newobj->map.prot = m->prot;
+		newobj->map.flags = m->flags;
+		newobj->map.fd = m->fd;
+		/* We leave type as 'INITIAL' until we change the mapping
+		 * by mprotect/mremap/munmap etc..
+		 */
+		newobj->map.type = INITIAL_ANON;
+		add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
 	}
 }
 
