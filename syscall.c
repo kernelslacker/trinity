@@ -13,6 +13,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "debug.h"
 #include "deferred-free.h"
 #include "kcov.h"
 #include "objects.h"
@@ -311,7 +312,9 @@ void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childda
 	unsigned int call;
 
 	call = rec->nr;
+	BUG_ON(call >= max_nr_syscalls);
 	entry = syscalls[call].entry;
+	BUG_ON(entry == NULL);
 
 	if (entry->flags & EXTRA_FORK)
 		do_extrafork(rec, child);
