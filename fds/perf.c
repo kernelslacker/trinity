@@ -38,12 +38,11 @@ static void perffd_destructor(struct object *obj)
 	if (leader_fd >= 0) {
 		struct objhead *head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
 
-		if (head != NULL && head->list != NULL) {
-			struct list_head *node, *tmp;
+		if (head != NULL && head->array != NULL) {
+			struct object *peer;
+			unsigned int idx;
 
-			list_for_each_safe(node, tmp, head->list) {
-				struct object *peer = (struct object *) node;
-
+			for_each_obj(head, peer, idx) {
 				if (peer->perfobj.fd < 0)
 					continue;
 				if (peer->perfobj.group_fd != leader_fd)
