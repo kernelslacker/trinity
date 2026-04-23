@@ -233,7 +233,7 @@ static bool this_replay_spliced;
  * RELAXED — slightly stale fleet-wide counts are fine, the scheduler
  * is statistical not exact.
  */
-static unsigned int weighted_pick_case(void)
+static unsigned int weighted_pick_case(enum argtype atype)
 {
 	unsigned int weights[MUT_NUM_OPS];
 	unsigned int total = 0;
@@ -250,6 +250,16 @@ static unsigned int weighted_pick_case(void)
 			w = MUT_WEIGHT_FLOOR;
 		weights[i] = (unsigned int)w;
 		total += weights[i];
+	}
+
+	/* Case 8 (fd-swap) only does anything useful on fd-typed slots —
+	 * pulling a random pool fd into a non-fd arg would just look like
+	 * a small-integer noise mutation.  Zero its weight for non-fd args
+	 * so the scheduler doesn't waste pick budget on it (and so its
+	 * trials/wins ratio stays a meaningful signal of fd-swap value). */
+	if (!is_fdarg(atype)) {
+		total -= weights[8];
+		weights[8] = 0;
 	}
 
 	r = (unsigned int)(rand() % total);
@@ -354,9 +364,9 @@ void minicorpus_mut_attrib_clear(void)
  * weighted_pick_case()).  The selected case is recorded in mut_attrib[]
  * for post-syscall attribution by minicorpus_mut_attrib_commit().
  */
-static unsigned long mutate_arg(unsigned long val)
+static unsigned long mutate_arg(unsigned long val, enum argtype atype)
 {
-	unsigned int op = weighted_pick_case();
+	unsigned int op = weighted_pick_case(atype);
 
 	mut_attrib[op]++;
 
@@ -436,6 +446,43 @@ static unsigned long mutate_arg(unsigned long val)
 		}
 		break;
 	}
+	case 8: {
+		/* fd-pool cross-pollination.  Picked only for fd-typed args
+		 * (weighted_pick_case() zeros this case for non-fd slots).
+		 * With ~50% probability replace val with a different live fd
+		 * drawn from the global pool — get_random_fd() picks across
+		 * any active fd provider, so an ARG_FD_PIPE slot can land on
+		 * a socket / io_uring / memfd / etc., exercising kernel paths
+		 * that mix fd flavours (vmsplice between odd pairs, io_uring
+		 * registering odd fds, fcntl on weird types).
+		 *
+		 * The other ~50% applies a small integer add inline, matching
+		 * case 1's semantics: fd slots still see arithmetic-neighbour
+		 * exploration so we don't lose the "off-by-one fd index"
+		 * coverage that case 1 normally provides on this slot.
+		 *
+		 * If get_random_fd() returns a sentinel (-1, no providers; or
+		 * a stdio fd 0/1/2 that the fd-safety pass downstream would
+		 * patch anyway), fall through to the integer path so the
+		 * mutation isn't a no-op.  Counts as one case-8 trial in the
+		 * scheduler regardless of which branch fired. */
+		bool swapped = false;
+
+		if (RAND_BOOL()) {
+			int fd = get_random_fd();
+
+			if (fd > 2) {
+				val = (unsigned long)fd;
+				swapped = true;
+			}
+		}
+		if (!swapped) {
+			unsigned long delta = 1 + (unsigned long)(rand() % 16);
+			val = ((unsigned long)-1 - val < delta) ?
+			      (unsigned long)-1 : val + delta;
+		}
+		break;
+	}
 	}
 	return val;
 }
@@ -460,10 +507,11 @@ static unsigned int pick_stack_depth(void)
  * Apply mutate_arg n_muts times in sequence.  The stack composes the
  * primitive mutations into a single transformation per call site.
  */
-static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts)
+static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts,
+					enum argtype atype)
 {
 	while (n_muts-- > 0)
-		val = mutate_arg(val);
+		val = mutate_arg(val, atype);
 	return val;
 }
 
@@ -517,7 +565,7 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
 
 			__atomic_fetch_add(&minicorpus_shm->stack_depth_histogram[depth],
 					   1UL, __ATOMIC_RELAXED);
-			val = mutate_arg_stacked(val, depth);
+			val = mutate_arg_stacked(val, depth, entry->argtype[i]);
 		}
 
 		/* Don't let fd args land on stdin/stdout/stderr. */
