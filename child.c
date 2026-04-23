@@ -727,6 +727,133 @@ static const int dormant_op_disabled[28] = {
 	1, 1, 1,	/* 25-27: dormant: mount_churn, uffd_churn, iouring_flood */
 };
 
+/*
+ * Round-robin rotation for dedicated alt-op children.  The slow,
+ * pressure-style ops are listed first (mmap_lifecycle, mprotect_split,
+ * mlock_pressure, inode_spewer) because those are the paths the design
+ * brief explicitly calls out as too expensive to mix into the syscall
+ * hot loop even at 1%.  fork/futex/signal/pipe/flock storms come next,
+ * then the cgroup/mount/uffd/io_uring churners, and finally the heavier
+ * subsystem fuzzers (perf, tracefs, bpf, fault-injector, recipes).  The
+ * dispatch in child_process() already has cases for every entry below,
+ * so a dedicated child stamped with any of these op types runs straight
+ * through the existing per-op function on every iteration.
+ *
+ * Bypasses the dormant_op_disabled[] gate by design: random pickers stay
+ * gated until each op has been load-tested, but a child reserved for a
+ * specific op runs it deliberately.
+ */
+static const enum child_op_type alt_op_rotation[] = {
+	CHILD_OP_MMAP_LIFECYCLE,
+	CHILD_OP_MPROTECT_SPLIT,
+	CHILD_OP_MLOCK_PRESSURE,
+	CHILD_OP_INODE_SPEWER,
+	CHILD_OP_FORK_STORM,
+	CHILD_OP_FUTEX_STORM,
+	CHILD_OP_SIGNAL_STORM,
+	CHILD_OP_PIPE_THRASH,
+	CHILD_OP_FLOCK_THRASH,
+	CHILD_OP_CGROUP_CHURN,
+	CHILD_OP_MOUNT_CHURN,
+	CHILD_OP_UFFD_CHURN,
+	CHILD_OP_IOURING_FLOOD,
+	CHILD_OP_MEMORY_PRESSURE,
+	CHILD_OP_USERNS_FUZZER,
+	CHILD_OP_SCHED_CYCLER,
+	CHILD_OP_BARRIER_RACER,
+	CHILD_OP_GENETLINK_FUZZER,
+	CHILD_OP_PERF_CHAINS,
+	CHILD_OP_TRACEFS_FUZZER,
+	CHILD_OP_BPF_LIFECYCLE,
+	CHILD_OP_FAULT_INJECTOR,
+	CHILD_OP_RECIPE_RUNNER,
+	CHILD_OP_IOURING_RECIPES,
+	CHILD_OP_FD_STRESS,
+	CHILD_OP_REFCOUNT_AUDITOR,
+	CHILD_OP_FS_LIFECYCLE,
+	CHILD_OP_PROCFS_WRITER,
+};
+#define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
+
+static const char *alt_op_name(enum child_op_type op)
+{
+	switch (op) {
+	case CHILD_OP_SYSCALL:		return "syscall";
+	case CHILD_OP_MMAP_LIFECYCLE:	return "mmap_lifecycle";
+	case CHILD_OP_MPROTECT_SPLIT:	return "mprotect_split";
+	case CHILD_OP_MLOCK_PRESSURE:	return "mlock_pressure";
+	case CHILD_OP_INODE_SPEWER:	return "inode_spewer";
+	case CHILD_OP_PROCFS_WRITER:	return "procfs_writer";
+	case CHILD_OP_MEMORY_PRESSURE:	return "memory_pressure";
+	case CHILD_OP_USERNS_FUZZER:	return "userns_fuzzer";
+	case CHILD_OP_SCHED_CYCLER:	return "sched_cycler";
+	case CHILD_OP_BARRIER_RACER:	return "barrier_racer";
+	case CHILD_OP_GENETLINK_FUZZER:	return "genetlink_fuzzer";
+	case CHILD_OP_PERF_CHAINS:	return "perf_chains";
+	case CHILD_OP_TRACEFS_FUZZER:	return "tracefs_fuzzer";
+	case CHILD_OP_BPF_LIFECYCLE:	return "bpf_lifecycle";
+	case CHILD_OP_FAULT_INJECTOR:	return "fault_injector";
+	case CHILD_OP_RECIPE_RUNNER:	return "recipe_runner";
+	case CHILD_OP_IOURING_RECIPES:	return "iouring_recipes";
+	case CHILD_OP_FD_STRESS:	return "fd_stress";
+	case CHILD_OP_REFCOUNT_AUDITOR:	return "refcount_auditor";
+	case CHILD_OP_FS_LIFECYCLE:	return "fs_lifecycle";
+	case CHILD_OP_SIGNAL_STORM:	return "signal_storm";
+	case CHILD_OP_FUTEX_STORM:	return "futex_storm";
+	case CHILD_OP_PIPE_THRASH:	return "pipe_thrash";
+	case CHILD_OP_FORK_STORM:	return "fork_storm";
+	case CHILD_OP_FLOCK_THRASH:	return "flock_thrash";
+	case CHILD_OP_CGROUP_CHURN:	return "cgroup_churn";
+	case CHILD_OP_MOUNT_CHURN:	return "mount_churn";
+	case CHILD_OP_UFFD_CHURN:	return "uffd_churn";
+	case CHILD_OP_IOURING_FLOOD:	return "iouring_flood";
+	case NR_CHILD_OP_TYPES:		break;
+	}
+	return "unknown";
+}
+
+void assign_dedicated_alt_op(struct childdata *child, int childno)
+{
+	if (alt_op_children == 0 || childno < 0)
+		return;
+	if ((unsigned int)childno >= alt_op_children)
+		return;
+	child->op_type = alt_op_rotation[(unsigned int)childno % NR_ALT_OP_ROTATION];
+}
+
+void log_alt_op_config(void)
+{
+	char buf[512];
+	size_t off = 0;
+	unsigned int i;
+	unsigned int show;
+
+	if (alt_op_children == 0)
+		return;
+
+	/* Dave wants the head of the rotation visible at -v so the
+	 * assignment for the first few slots is eyeballable.  Cap at 5
+	 * (or fewer if alt_op_children itself is smaller) and append
+	 * an ellipsis when there are more rotation entries left. */
+	show = alt_op_children < 5 ? alt_op_children : 5;
+	if (show > NR_ALT_OP_ROTATION)
+		show = NR_ALT_OP_ROTATION;
+
+	for (i = 0; i < show; i++) {
+		int n = snprintf(buf + off, sizeof(buf) - off, "%s%s",
+				 off ? ", " : "",
+				 alt_op_name(alt_op_rotation[i]));
+		if (n <= 0 || (size_t)n >= sizeof(buf) - off)
+			break;
+		off += (size_t)n;
+	}
+	if (show < NR_ALT_OP_ROTATION && off < sizeof(buf) - 1)
+		(void) snprintf(buf + off, sizeof(buf) - off, ", ...");
+
+	output(1, "[main] alt-op children: %u reserved, rotation = %s\n",
+		alt_op_children, buf);
+}
+
 static enum child_op_type pick_op_type(void)
 {
 	unsigned int r = rand() % 100;
@@ -827,8 +954,15 @@ void child_process(struct childdata *child, int childno)
 		 * be recycled by the allocator for the next sanitise. */
 		deferred_free_tick();
 
-		/* Pick an op type for this iteration. */
-		child->op_type = pick_op_type();
+		/* Pick an op type for this iteration.  Dedicated alt-op
+		 * children (--alt-op-children=N reserves the first N
+		 * slots) keep the op_type stamped by the parent at fork
+		 * time and skip the random picker entirely; any other
+		 * child uses the default 95% syscall / 5% alt-op mix. */
+		if (alt_op_children == 0 ||
+		    childno < 0 ||
+		    (unsigned int)childno >= alt_op_children)
+			child->op_type = pick_op_type();
 
 		/* timestamp, and dispatch the op */
 		clock_gettime(CLOCK_MONOTONIC, &child->tp);

@@ -748,6 +748,12 @@ static bool spawn_child(int childno)
 	/* Wipe out any state left from a previous child running in this slot. */
 	clean_childdata(child);
 
+	/* If this slot is reserved for a dedicated alt op (the first
+	 * --alt-op-children=N slots), stamp the assigned op_type now so
+	 * the freshly-spawned child reads it out of shared memory before
+	 * its dispatch loop runs.  No-op when --alt-op-children is 0. */
+	assign_dedicated_alt_op(child, childno);
+
 	nr_fds = get_num_fds();
 	if ((max_files_rlimit.rlim_cur - nr_fds) < 3) {
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
@@ -1149,6 +1155,8 @@ void main_loop(void)
 
 	if (epoch_timeout)
 		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
+
+	log_alt_op_config();
 
 	output(1, "phase: fork_children\n");
 	fork_children();
