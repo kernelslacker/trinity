@@ -40,6 +40,7 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 		outputerr("mmap failure:%s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+	track_shared_region((unsigned long)new->map.ptr, size);
 
 	new->map.name = alloc_shared_str(80);
 	if (new->map.name == NULL) {
@@ -75,6 +76,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 		free_shared_obj(new, sizeof(struct object));
 		return false;
 	}
+	track_shared_region((unsigned long)new->map.ptr, size);
 
 	new->map.name = alloc_shared_str(80);
 	if (new->map.name == NULL) {
