@@ -7,7 +7,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "arch.h"
-#include "list.h"
 #include "child.h"
 #include "maps.h"
 #include "random.h"
@@ -249,7 +248,6 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 		obj = alloc_shared_obj(sizeof(struct object));
 		if (obj == NULL)
 			return;
-		INIT_LIST_HEAD(&obj->list);
 		obj->map.name = alloc_shared_strdup(name);
 		if (obj->map.name == NULL) {
 			free_shared_obj(obj, sizeof(struct object));

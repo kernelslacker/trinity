@@ -9,7 +9,6 @@
 #include <sys/mman.h>
 
 #include "fd.h"
-#include "list.h"
 #include "memfd.h"
 #include "objects.h"
 #include "random.h"
@@ -116,7 +115,6 @@ static int init_memfd_fds(void)
 			close(fd);
 			continue;
 		}
-		INIT_LIST_HEAD(&obj->list);
 		obj->memfdobj.fd = fd;
 		obj->memfdobj.name = alloc_shared_strdup(namestr);
 		if (obj->memfdobj.name == NULL) {
@@ -166,7 +164,6 @@ static int open_memfd_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->memfdobj.fd = fd;
 	obj->memfdobj.name = alloc_shared_strdup("memfd");
 	if (obj->memfdobj.name == NULL) {

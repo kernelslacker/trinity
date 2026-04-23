@@ -13,7 +13,6 @@
 #include <sys/mman.h>
 #include "arch.h"
 #include "compat.h"
-#include "list.h"
 #include "maps.h"
 #include "random.h"
 #include "trinity.h"
@@ -31,7 +30,6 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 		outputerr("alloc_shared_obj failure for OBJ_MMAP_ANON\n");
 		exit(EXIT_FAILURE);
 	}
-	INIT_LIST_HEAD(&new->list);
 	new->map.size = size;
 	new->map.prot = prot;
 	new->map.flags = flags;
@@ -67,7 +65,6 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	new = alloc_shared_obj(sizeof(struct object));
 	if (new == NULL)
 		return false;
-	INIT_LIST_HEAD(&new->list);
 	new->map.size = size;
 	new->map.prot = prot;
 	new->map.flags = flags;

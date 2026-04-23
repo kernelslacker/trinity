@@ -11,7 +11,6 @@
 #include "child.h"
 #include "fd-event.h"
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
@@ -85,7 +84,6 @@ static int open_pidfd_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->pidfdobj.fd = fd;
 	obj->pidfdobj.pid = pid;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
@@ -120,7 +118,6 @@ static int init_pidfd_fds(void)
 			close(fd);
 			return false;
 		}
-		INIT_LIST_HEAD(&obj->list);
 		obj->pidfdobj.fd = fd;
 		obj->pidfdobj.pid = 1;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);

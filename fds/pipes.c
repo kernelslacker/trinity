@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "pipes.h"
 #include "random.h"
@@ -56,7 +55,6 @@ static void open_pipe_pair(unsigned int flags)
 		close(pipes[1]);
 		return;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->pipeobj.fd = pipes[0];
 	obj->pipeobj.flags = flags;
 	obj->pipeobj.reader = true;
@@ -67,7 +65,6 @@ static void open_pipe_pair(unsigned int flags)
 		close(pipes[1]);
 		return;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->pipeobj.fd = pipes[1];
 	obj->pipeobj.flags = flags;
 	obj->pipeobj.reader = false;

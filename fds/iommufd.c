@@ -10,7 +10,6 @@
 #include <unistd.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -70,7 +69,6 @@ static int init_iommufd_fds(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->iommufdobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IOMMUFD);
 	return true;
@@ -103,7 +101,6 @@ static int open_iommufd_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->iommufdobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IOMMUFD);
 	return true;

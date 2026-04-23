@@ -12,7 +12,6 @@
 #include <linux/seccomp.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -94,7 +93,6 @@ static int open_seccomp_notif(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->seccomp_notifobj.fd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_SECCOMP_NOTIF);
 	return true;

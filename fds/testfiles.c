@@ -10,7 +10,6 @@
 
 #include "fd.h"
 #include "files.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -111,7 +110,6 @@ static int open_testfile_fds(void)
 				}
 				continue;
 			}
-			INIT_LIST_HEAD(&obj->list);
 		}
 
 		fd = open_testfile(obj, filename);
@@ -163,7 +161,6 @@ static int open_testfile_fd(void)
 		free_shared_str(filename, 64);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	fd = open_testfile(obj, filename);
 	if (fd == -1) {
 		free_shared_str(filename, 64);

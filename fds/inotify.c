@@ -8,7 +8,6 @@
 #include <sys/inotify.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -106,7 +105,6 @@ static int init_inotify_fds(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = 0;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
@@ -123,7 +121,6 @@ static int init_inotify_fds(void)
 			close(fd);
 			continue;
 		}
-		INIT_LIST_HEAD(&obj->list);
 		obj->inotifyobj.fd = fd;
 		obj->inotifyobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
@@ -166,7 +163,6 @@ static int open_inotify_fd(void)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);

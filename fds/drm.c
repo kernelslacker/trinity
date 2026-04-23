@@ -1,7 +1,6 @@
 /* DRM FDs */
 
 #include "fd.h"
-#include "list.h"
 #include "memfd.h"
 #include "objects.h"
 #include "random.h"
@@ -78,7 +77,6 @@ static void add_drm_obj(int fd)
 		close(fd);
 		return;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->drmfd = fd;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_DRM);
 

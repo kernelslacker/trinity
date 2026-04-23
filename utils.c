@@ -80,11 +80,11 @@ void * alloc_shared(unsigned int size)
 }
 
 /*
- * Allocate shared memory for global object data (list heads, parallel
- * arrays, etc.).  Tagged so freeze_global_objects() can mprotect just
- * these regions PROT_READ once init is done — children that stray-write
- * into the global object pool then SIGSEGV at the source instead of
- * silently corrupting list pointers.
+ * Allocate shared memory for global object data (parallel arrays, obj
+ * structs themselves, etc.).  Tagged so freeze_global_objects() can
+ * mprotect just these regions PROT_READ once init is done — children
+ * that stray-write into the global object pool then SIGSEGV at the
+ * source instead of silently corrupting parent state.
  */
 void * alloc_shared_global(unsigned int size)
 {
@@ -109,14 +109,13 @@ void * alloc_shared_global(unsigned int size)
  * freeze_global_objects() mprotects it PROT_READ once init is done.
  * Children that wild-write through a stray syscall buffer pointer
  * targeting an obj slot then EFAULT inside the kernel rather than
- * silently corrupting struct object list_heads — which is the bug
- * class that previously surfaced as parent crashes inside list_del
- * traversals.  Parent-side mutations (alloc_shared_obj, free_shared_obj,
- * list_add via add_object, list_del via __destroy_object, plus the
- * regen path's field writes) all happen under the existing
- * thaw/refreeze brackets in fd_event_drain_all, add_object,
- * remove_object_by_fd, and destroy_global_objects.  Pre-freeze init
- * runs unprotected, which is when init_*_fds populates the heap.
+ * silently corrupting parent state.  Parent-side mutations
+ * (alloc_shared_obj, free_shared_obj, add_object's array publish,
+ * __destroy_object's swap-with-last, plus the regen path's field
+ * writes) all happen under the existing thaw/refreeze brackets in
+ * fd_event_drain_all, add_object, remove_object_by_fd, and
+ * destroy_global_objects.  Pre-freeze init runs unprotected, which
+ * is when init_*_fds populates the heap.
  *
  * The chain corpus was the one child-side writer; commit f43e89c779f1
  * inlined its slots into chain_corpus_shm so the obj heap is now
@@ -172,10 +171,9 @@ static void shared_obj_heap_init(void)
  * X.next, and then pushes X back.  The CAS still sees head==X and succeeds,
  * but it installs the stale "next" value, leaving head pointing at a slot
  * that has already been handed back to a caller.  Two callers then think
- * they own the same slot; both fill it with list_head links, and at exit
- * the iteration walks a corrupted chain and faults inside __destroy_object
- * (list_del with NULL prev/next from a slot that the other owner has since
- * zeroed via free_shared_obj's poison-on-free).
+ * they own the same slot; the resulting double-use corrupts whichever
+ * obj struct was layered over the slot and faults later in unrelated
+ * code paths far from the buggy free.
  *
  * The mitigation is a 16-bit version counter packed into the high bits of
  * the head word.  Each push and pop increments the version; the CAS
@@ -318,10 +316,10 @@ void * alloc_shared_obj(size_t size)
 		 * freelist_pop both memset the full bucket_size (128), so
 		 * the first free of a bump slot wholesale-zeroes the first
 		 * (bucket_size - size) bytes of the next slot — corrupting
-		 * its list_head and surfacing as a "back-link broken"
-		 * crash deep inside list_del or list_add later.  Bug class
-		 * was masked while the obj heap was unprotected (wild
-		 * writes from child syscalls swamped the signal); became
+		 * the next allocation's leading fields and surfacing as
+		 * mysterious crashes on the consumer side.  Bug class was
+		 * masked while the obj heap was unprotected (wild writes
+		 * from child syscalls swamped the signal); became
 		 * deterministic the moment fbce60744dfb mprotected the
 		 * heap and removed all the other corruption sources.
 		 */
@@ -370,60 +368,8 @@ void free_shared_obj(void *p, size_t size)
 	if (p == NULL || size == 0)
 		return;
 
-	/*
-	 * Catch the most common allocator-side misuse: free-while-still-on-a-
-	 * list.  The next list_del that walks past the freed slot will see
-	 * a fully-zeroed neighbor (freelist_push memsets the slot) and trip
-	 * the debug-list back-link check — but that diagnostic fires at the
-	 * *unlucky* call site, not the buggy one.  This check fires here, at
-	 * the bad free, with the offending caller still on the backtrace.
-	 *
-	 * We don't know the slot's struct shape from p alone, so heuristically
-	 * treat it as a leading struct list_head and only abort when both
-	 * fields look like real heap pointers (the unambiguous signature of
-	 * a live linked entry).  Small ints (e.g. struct chain_entry's `len`
-	 * + step nr at offsets 0/8), NULLs, self-references, and POISON
-	 * values all skip past safely.
-	 */
-	if (size >= sizeof(struct list_head)) {
-		struct list_head *fake = p;
-		struct list_head *next = fake->next;
-		struct list_head *prev = fake->prev;
-
-		/* Free-time lifecycle log under -vv.  Only emit list.next /
-		 * list.prev when this allocation is large enough to embed a
-		 * struct list_head (struct object's first member).  Smaller
-		 * allocations (e.g. raw 16-byte list-head sentinels) still
-		 * fit the test, so use sizeof(struct object) as the gate
-		 * for the embedded-list-head case — matches the layout
-		 * alloc_shared_obj is most commonly used for. */
-		if (size == sizeof(struct object))
-			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s "
-				"list.next=%p list.prev=%p\n",
-				p, size,
-				pc_to_string(caller, pcbuf, sizeof(pcbuf)),
-				next, prev);
-		else
-			output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s\n",
-				p, size,
-				pc_to_string(caller, pcbuf, sizeof(pcbuf)));
-
-		if ((uintptr_t)next > 0x100000000UL &&
-		    (uintptr_t)prev > 0x100000000UL &&
-		    next != LIST_POISON1 && prev != LIST_POISON2 &&
-		    next != fake && prev != fake) {
-			outputerr("free_shared_obj: slot %p (size=%zu) appears "
-				"to be currently linked: list.next=%p list.prev=%p "
-				"— caller forgot to list_del before free\n",
-				p, size, next, prev);
-			__BUG("free_shared_obj: slot is list-linked",
-				__FILE__, __func__, __LINE__);
-		}
-	} else {
-		output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s\n",
-			p, size,
-			pc_to_string(caller, pcbuf, sizeof(pcbuf)));
-	}
+	output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s\n",
+		p, size, pc_to_string(caller, pcbuf, sizeof(pcbuf)));
 
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
 

@@ -9,7 +9,6 @@
 #include <unistd.h>
 
 #include "fd.h"
-#include "list.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -70,7 +69,6 @@ static int open_one_mq(int idx)
 		close(fd);
 		return false;
 	}
-	INIT_LIST_HEAD(&obj->list);
 	obj->mqobj.fd = fd;
 	memcpy(obj->mqobj.name, name, sizeof(name));
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_MQ);
