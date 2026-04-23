@@ -197,6 +197,13 @@ struct stats_s {
 	unsigned long pipe_thrash_socketpairs;	/* successful socketpair() calls */
 	unsigned long pipe_thrash_alloc_failed;	/* create syscall returned -1 */
 
+	/* fork_storm childop counters */
+	unsigned long fork_storm_runs;		/* total fork_storm invocations */
+	unsigned long fork_storm_forks;		/* grandchildren successfully forked */
+	unsigned long fork_storm_failed;	/* fork() returned -1 (e.g. EAGAIN) */
+	unsigned long fork_storm_nested;	/* depth-1 nested forks completed */
+	unsigned long fork_storm_reaped_signal;	/* grandchildren reaped that died by signal */
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially
