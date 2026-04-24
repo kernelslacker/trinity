@@ -51,6 +51,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -140,7 +141,7 @@ static void __attribute__((noreturn)) grandchild(void)
 			great_grandchild();
 
 		if (pid > 0) {
-			(void)waitpid(pid, &status, 0);
+			(void)waitpid_eintr(pid, &status, 0);
 			__atomic_add_fetch(&shm->stats.fork_storm_nested,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -195,11 +196,11 @@ static unsigned int run_round(void)
 		pid_t r;
 
 		if (RAND_BOOL()) {
-			r = waitpid(pids[i], &status, WNOHANG);
+			r = waitpid_eintr(pids[i], &status, WNOHANG);
 			if (r == 0)
-				r = waitpid(pids[i], &status, 0);
+				r = waitpid_eintr(pids[i], &status, 0);
 		} else {
-			r = waitpid(pids[i], &status, 0);
+			r = waitpid_eintr(pids[i], &status, 0);
 		}
 
 		if (r != pids[i])
