@@ -134,11 +134,17 @@ static bool establish_root_in_userns(void)
  * inner mount namespace cannot propagate back to the parent
  * namespace via shared-subtree groups.  Without this, a successful
  * mount() call in our private mount ns could in some configurations
- * appear in the host's mount tree.
+ * appear in the host's mount tree.  Returns false on failure so the
+ * caller can skip the follow-up mount entirely.
  */
-static void make_root_private(void)
+static bool make_root_private(void)
 {
-	(void)mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL);
+	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
+		output(0, "userns_fuzzer: MS_PRIVATE remount failed (errno=%d), aborting tmpfs mount\n",
+		       errno);
+		return false;
+	}
+	return true;
 }
 
 /*
@@ -151,7 +157,8 @@ static void op_mount_tmpfs(void)
 {
 	if (unshare(CLONE_NEWNS) != 0)
 		return;
-	make_root_private();
+	if (!make_root_private())
+		return;
 	(void)mount("none", "/tmp", "tmpfs", 0, NULL);
 }
 
