@@ -10,6 +10,9 @@
 #define MB(_x) ((_x) * 1024UL * 1024UL)
 #define GB(_x) ((_x) * 1024UL * MB(1))
 
+#define MAX_SHARED_ALLOCS 512
+extern unsigned int nr_shared_regions;
+
 void * alloc_shared(unsigned int size);
 void * alloc_shared_global(unsigned int size);
 void * alloc_shared_obj(size_t size);
@@ -22,6 +25,7 @@ void thaw_global_objects(void);
 bool globals_are_protected(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
 void track_shared_region(unsigned long addr, unsigned long size);
+void register_loaded_image_segments(void);
 void dump_obj_heap_stats(void);
 
 /*

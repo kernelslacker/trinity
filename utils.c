@@ -29,14 +29,12 @@
  * mprotect) can avoid clobbering trinity's own shared state.
  */
 
-#define MAX_SHARED_ALLOCS 512
-
 static struct {
 	unsigned long addr;
 	unsigned long size;
 	bool is_global_obj;
 } shared_regions[MAX_SHARED_ALLOCS];
-static unsigned int nr_shared_regions;
+unsigned int nr_shared_regions;
 
 static void * __alloc_shared(unsigned int size, bool is_global_obj)
 {

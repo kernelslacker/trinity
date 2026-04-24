@@ -282,6 +282,14 @@ int main(int argc, char* argv[])
 		alt_op_children = clamped;
 	}
 
+	/* Register trinity's own .data/.bss + every loaded DSO's writable
+	 * PT_LOAD segments with shared_regions[] BEFORE fork_children() so
+	 * range_overlaps_shared() refuses fuzzed mm-syscalls that target
+	 * trinity's own statics.  All children inherit the populated table
+	 * via the COW post-fork copy.  Run after parse_args so -v is
+	 * honoured for the per-DSO summary lines. */
+	register_loaded_image_segments();
+
 	init_uids();
 
 	change_tmp_dir();
