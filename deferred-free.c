@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/mman.h>
 
 #include "deferred-free.h"
 #include "pc_format.h"
@@ -34,12 +35,42 @@ struct deferred_entry {
 	unsigned int ttl;
 };
 
-static struct deferred_entry ring[DEFERRED_RING_SIZE];
+/*
+ * Ring storage lives in an mmap'd region whose address range is registered
+ * with shared_regions[] via track_shared_region().  That tracking lets
+ * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed
+ * pointers/lengths that would land inside the ring -- previously the array
+ * lived in trinity's BSS, which is NOT registered with shared_regions[],
+ * so a fuzzed write could scribble ring[i].ptr with a pid-shaped value
+ * (residual-cores triage matched si_addr=0x378a02 against the killing
+ * process's pid) and the next deferred_free_tick() would free() the bogus
+ * pointer.
+ *
+ * MAP_PRIVATE (not MAP_SHARED via alloc_shared()) is deliberate: the queue
+ * is process-local by contract -- pointers come from each child's own
+ * post-fork heap.  Sharing the ring across forks would let one child's
+ * deferred_free_tick() free a pointer enqueued by a different child --
+ * either a double free if both children reach ttl==0 on the same slot, or
+ * cross-heap chunk-metadata corruption because the freeing child's glibc
+ * has no record of an allocation at that address.  Each forked child needs
+ * its own COW copy of the ring; only the address range is shared with
+ * the tracker.
+ */
+static struct deferred_entry *ring;
 static unsigned int ring_count;
 
 void deferred_free_init(void)
 {
-	memset(ring, 0, sizeof(ring));
+	const size_t bytes = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
+
+	ring = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (ring == MAP_FAILED) {
+		outputerr("deferred_free_init: mmap %zu failed\n", bytes);
+		exit(EXIT_FAILURE);
+	}
+	memset(ring, 0, bytes);
+	track_shared_region((unsigned long)ring, bytes);
 	ring_count = 0;
 }
 
