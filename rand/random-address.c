@@ -43,6 +43,18 @@ retry:	tries++;
 				  "from get_map() — pool corruption?\n", map);
 			goto retry;
 		}
+		/*
+		 * If the map struct itself sits in a tracked shared region,
+		 * the prot-bookkeeping store below would either SIGSEGV
+		 * (post-freeze the OBJ_GLOBAL backing heap is mprotect
+		 * PROT_READ) or scribble shared bookkeeping (an OBJ_LOCAL
+		 * map pointer that aliased into the shared heap is by
+		 * definition a stale slot — OBJ_LOCAL maps live on the
+		 * child's private heap, never inside any tracked region).
+		 * Either way, retry to pick a different slot.
+		 */
+		if (range_overlaps_shared((unsigned long)map, sizeof(*map)))
+			goto retry;
 		if (map->size < size)
 			goto retry;
 
