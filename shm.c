@@ -11,6 +11,7 @@
 #include "child.h"
 #include "cmp_hints.h"
 #include "debug.h"
+#include "deferred-free.h"
 #include "struct_catalog.h"
 #include "fd-event.h"
 #include "kcov.h"
@@ -188,4 +189,12 @@ void init_shm(void)
 	chain_corpus_init();
 	cmp_hints_init();
 	struct_catalog_init();
+
+	/*
+	 * Allocate the deferred-free ring in the parent before any child
+	 * forks so its address range is registered with shared_regions[]
+	 * once and inherited (MAP_PRIVATE / COW) by every forked child.
+	 * See deferred-free.c for the rationale on MAP_PRIVATE vs MAP_SHARED.
+	 */
+	deferred_free_init();
 }
