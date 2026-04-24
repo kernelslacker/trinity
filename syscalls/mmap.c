@@ -78,6 +78,23 @@ static void sanitise_mmap(struct syscallrecord *rec)
 			rec->a6 &= PAGE_MASK;
 		}
 	}
+
+	/*
+	 * MAP_FIXED unmaps any existing VMA covering [addr, addr + len)
+	 * before placing the new mapping there.  If that range overlaps
+	 * a trinity-owned shared region — kcov trace_buf, the global
+	 * stats blob, child-data, ... — the original VMA is silently
+	 * replaced by a (possibly shorter) anon/file mapping.  Reads of
+	 * shared bookkeeping past the new mapping's end then SIGBUS.
+	 * Drop MAP_FIXED and clear the hint so the kernel picks a free
+	 * slot instead.  MAP_FIXED_NOREPLACE returns -EEXIST on overlap
+	 * rather than punching, so leave it alone.
+	 */
+	if ((rec->a4 & MAP_FIXED) &&
+	    range_overlaps_shared(rec->a1, rec->a2)) {
+		rec->a4 &= ~MAP_FIXED;
+		rec->a1 = 0;
+	}
 }
 
 static void post_mmap(struct syscallrecord *rec)
