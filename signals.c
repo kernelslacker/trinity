@@ -109,8 +109,44 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
 	}
 #endif
-	psiginfo(info, "trinity child: fatal signal");
-	fflush(stderr);
+	/*
+	 * Don't use psiginfo() -- it calls fmemopen(), which calls
+	 * calloc(), which deadlocks if this signal was raised by glibc's
+	 * own abort() while malloc's arena lock is still held by us.
+	 * Same family as the libgcc_s/backtrace deadlock fixed in
+	 * 81143aaeaba6, just one frame up.  Hand-roll a signal-safe
+	 * equivalent: lookup table for the 4 signals we trap, snprintf
+	 * to a stack buffer, single write().  No allocator involvement.
+	 */
+	{
+		static const struct {
+			int sig;
+			const char *name;
+		} sigtab[] = {
+			{ SIGSEGV, "SIGSEGV" },
+			{ SIGABRT, "SIGABRT" },
+			{ SIGBUS,  "SIGBUS"  },
+			{ SIGILL,  "SIGILL"  },
+		};
+		const char *signame = "UNKNOWN";
+		char buf[256];
+		int len, i;
+
+		for (i = 0; (size_t)i < sizeof(sigtab) / sizeof(sigtab[0]); i++) {
+			if (sigtab[i].sig == sig) {
+				signame = sigtab[i].name;
+				break;
+			}
+		}
+		len = snprintf(buf, sizeof(buf),
+			"trinity child: fatal signal: %s (si_code=%d, si_addr=%p, si_pid=%d)\n",
+			signame, info->si_code, info->si_addr, (int)info->si_pid);
+		if (len > 0) {
+			if ((size_t)len > sizeof(buf))
+				len = sizeof(buf);
+			(void)write(STDERR_FILENO, buf, (size_t)len);
+		}
+	}
 
 	if (shm->debug == true) {
 		(void)signal(sig, SIG_DFL);
