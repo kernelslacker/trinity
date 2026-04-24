@@ -183,6 +183,44 @@ static bool is_fd_type(enum objecttype type)
 	return type >= OBJ_FD_PIPE && type <= OBJ_FD_FS_CTX;
 }
 
+/*
+ * The trinity obj pool is split across two allocators by design:
+ *
+ *   OBJ_GLOBAL: the obj struct lives in the shared obj heap
+ *               (alloc_shared_obj).  Every OBJ_GLOBAL provider sets
+ *               head->shared_alloc=true in its init function and
+ *               allocates each obj from the shared heap.  Initialised
+ *               in the parent before fork so children inherit the
+ *               array via the shm mapping; children then read those
+ *               pointers and follow them to the per-obj struct in
+ *               shared memory.  Children MUST NOT add to or destroy
+ *               from these pools (enforced by the early return in
+ *               add_object/destroy_object when getpid() != mainpid).
+ *
+ *   OBJ_LOCAL:  the obj struct lives in the calling process's private
+ *               heap (alloc_object → zmalloc → malloc).  Each child
+ *               manages its own pool independently — head->array
+ *               itself sits in shm (under child->objects[type]) so
+ *               the parent's sanity walker can see slot count and
+ *               raw addresses, but the obj structs the array points
+ *               to are unreachable from any other process's address
+ *               space.  head->shared_alloc is ignored for OBJ_LOCAL
+ *               pools; release_obj() routes to plain free().
+ *
+ * The split is intentional.  OBJ_GLOBAL types are parent-curated
+ * resources visible fleet-wide (testfiles, mq's, pidfds, ...).
+ * OBJ_LOCAL types are per-child runtime state (sockets the child
+ * opened, futexes the child created, ...).  Migrating OBJ_LOCAL into
+ * the shared heap would mix per-child state into shared bookkeeping
+ * with no benefit and would force every child to coordinate against
+ * alloc_shared_obj's lock-free CAS bump on every syscall pre/post
+ * hook — pointless contention on the hot path.
+ *
+ * Anything that walks another process's OBJ_LOCAL pool (debug.c
+ * dump_childdata is the one current caller) cannot dereference the
+ * obj pointers — they are foreign-private.  See the matching note
+ * in dump_childdata().
+ */
 struct object * alloc_object(void)
 {
 	return zmalloc(sizeof(struct object));
@@ -190,11 +228,16 @@ struct object * alloc_object(void)
 
 /*
  * Release an obj struct via the right deallocator for its (scope, type).
+ *
  * OBJ_GLOBAL types that opted into the shared obj heap (shared_alloc=true,
  * set by the type's init function) came from alloc_shared_obj() and must
  * be returned via free_shared_obj() — calling free() on a pointer into
- * the shared heap would hand a non-malloc'd address to glibc.  All other
- * callers used zmalloc() and want plain free().
+ * the shared heap would hand a non-malloc'd address to glibc.
+ *
+ * Everything else (OBJ_LOCAL always, plus any OBJ_GLOBAL type that did
+ * not opt into the shared heap) came from alloc_object() → zmalloc()
+ * and must be released with plain free().  See the architectural note
+ * above alloc_object() for the rationale behind the split.
  */
 static void release_obj(struct object *obj, enum obj_scope scope,
 			enum objecttype type)
