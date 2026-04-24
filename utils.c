@@ -36,6 +36,27 @@ static struct {
 } shared_regions[MAX_SHARED_ALLOCS];
 unsigned int nr_shared_regions;
 
+/*
+ * Fire once when shared_regions[] first runs out of slots.  Per-call
+ * outputerr() would spam stderr from inside init_shm()'s for_each_child
+ * loop on a host whose max_children pushes the table past capacity --
+ * one warning is enough to flag the overflow class and tell the operator
+ * to either raise MAX_SHARED_ALLOCS or move the table to dynamic resize.
+ */
+static void note_shared_overflow(const char *who, const void *addr)
+{
+	static bool warned;
+
+	if (warned)
+		return;
+	warned = true;
+	outputerr("%s: MAX_SHARED_ALLOCS (%d) reached at region %p; "
+		"this and later regions are untracked -- raise "
+		"MAX_SHARED_ALLOCS or move shared_regions[] to dynamic "
+		"resize\n",
+		who, MAX_SHARED_ALLOCS, addr);
+}
+
 static void * __alloc_shared(unsigned int size, bool is_global_obj)
 {
 	void *ret;
@@ -64,9 +85,7 @@ static void * __alloc_shared(unsigned int size, bool is_global_obj)
 		shared_regions[nr_shared_regions].is_global_obj = is_global_obj;
 		nr_shared_regions++;
 	} else {
-		outputerr("alloc_shared: MAX_SHARED_ALLOCS (%d) reached, "
-			"region %p won't be tracked by range_overlaps_shared()\n",
-			MAX_SHARED_ALLOCS, ret);
+		note_shared_overflow("alloc_shared", ret);
 	}
 
 	return ret;
@@ -88,9 +107,7 @@ void track_shared_region(unsigned long addr, unsigned long size)
 		shared_regions[nr_shared_regions].is_global_obj = false;
 		nr_shared_regions++;
 	} else {
-		outputerr("track_shared_region: MAX_SHARED_ALLOCS (%d) reached, "
-			"region %p won't be tracked by range_overlaps_shared()\n",
-			MAX_SHARED_ALLOCS, (void *)addr);
+		note_shared_overflow("track_shared_region", (const void *)addr);
 	}
 }
 

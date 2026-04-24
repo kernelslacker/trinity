@@ -10,7 +10,7 @@
 #define MB(_x) ((_x) * 1024UL * 1024UL)
 #define GB(_x) ((_x) * 1024UL * MB(1))
 
-#define MAX_SHARED_ALLOCS 512
+#define MAX_SHARED_ALLOCS 4096
 extern unsigned int nr_shared_regions;
 
 void * alloc_shared(unsigned int size);
