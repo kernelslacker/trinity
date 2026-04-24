@@ -60,6 +60,7 @@
 #include <linux/perf_event.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -369,7 +370,7 @@ bool userns_fuzzer(struct childdata *child)
 		_exit(0);	/* unreachable */
 	}
 
-	if (waitpid(pid, &status, 0) < 0)
+	if (waitpid_eintr(pid, &status, 0) < 0)
 		return true;
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
