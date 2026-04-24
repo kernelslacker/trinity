@@ -142,9 +142,11 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 			"trinity child: fatal signal: %s (si_code=%d, si_addr=%p, si_pid=%d)\n",
 			signame, info->si_code, info->si_addr, (int)info->si_pid);
 		if (len > 0) {
+			ssize_t w;
 			if ((size_t)len > sizeof(buf))
 				len = sizeof(buf);
-			(void)write(STDERR_FILENO, buf, (size_t)len);
+			w = write(STDERR_FILENO, buf, (size_t)len);
+			(void)w;	/* dying anyway; can't act on a short write */
 		}
 	}
 
