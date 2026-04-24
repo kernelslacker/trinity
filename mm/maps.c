@@ -67,6 +67,28 @@ struct map * get_map(void)
 			continue;
 		}
 
+		/*
+		 * Even when the obj pointer is sane, the map struct itself
+		 * may have been stomped on by a stray syscall write, leaving
+		 * a believable ptr but a wildly wrong size.  Consumers like
+		 * gen_xattr_name's snprintf, generate_syscall_args, and
+		 * alloc_iovec then read/write past the real mapping and we
+		 * SEGV/SIGBUS at fixed-pattern addresses.
+		 *
+		 * Legitimate allocations top out at GB(1) (mapping_sizes[8]
+		 * in maps-initial.c, pick_size in mmap-lifecycle.c).  Cap at
+		 * GB(4) so the live 1GB tier passes cleanly while ASCII
+		 * patterns and stomped pointers (which land in the TB+ range)
+		 * are rejected.  Zero is also bogus — a real mapping always
+		 * has at least one page.
+		 */
+		if (obj->map.size == 0 || obj->map.size > GB(4UL)) {
+			outputerr("get_map: bogus map->size %lu for obj %p "
+				  "(type %u, scope %d)\n",
+				  obj->map.size, obj, type, scope);
+			continue;
+		}
+
 		return &obj->map;
 	}
 
