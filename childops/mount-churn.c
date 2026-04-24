@@ -43,6 +43,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -146,10 +147,11 @@ bool mount_churn(struct childdata *child)
 		const char *fstype = fstypes[(unsigned int)rand() % ARRAY_SIZE(fstypes)];
 		unsigned long flags = pick_flags();
 		unsigned long seq = ++mount_churn_seq;
-		char path[64];
+		char path[PATH_MAX + 64];
 
 		snprintf(path, sizeof(path),
-			 "trinity-mountchurn-%d-%lu", (int)pid, seq);
+			 "%s/trinity-mountchurn-%d-%lu",
+			 trinity_tmpdir_abs(), (int)pid, seq);
 
 		if (mkdir(path, 0755) != 0) {
 			__atomic_add_fetch(&shm->stats.mount_churn_failed,
