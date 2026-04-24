@@ -58,6 +58,21 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	else
 		offset = 0;
 	rec->a4 = offset;
+
+	/*
+	 * remap_file_pages(2) installs a non-linear mapping over
+	 * [start, start + size), which on modern kernels is emulated by
+	 * tearing down any existing VMA in that range and replacing it.
+	 * After the start adjustment above, the [a1, a1 + a2) range can
+	 * easily land inside a trinity-owned shared region (kcov
+	 * trace_buf, stats blob, child-data) and silently punch a hole
+	 * through it — the consumer then SIGBUSes on the next access
+	 * past the new mapping's end.  Reject the call if it would.
+	 */
+	if (range_overlaps_shared(rec->a1, rec->a2)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
 }
 
 static unsigned long remap_file_pages_flags[] = {
