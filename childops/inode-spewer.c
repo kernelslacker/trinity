@@ -17,6 +17,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +50,8 @@ static bool spew_dir_created;
 
 static void ensure_spew_dir(char *dir, size_t len)
 {
-	snprintf(dir, len, "trinity-inodes-%d", getpid());
+	snprintf(dir, len, "%s/trinity-inodes-%d",
+		 trinity_tmpdir_abs(), getpid());
 	(void)mkdir(dir, 0700);
 	spew_dir_created = true;
 }
@@ -72,8 +74,8 @@ static unsigned long pick_file_size(void)
  */
 static bool do_create_and_destroy(void)
 {
-	char spew_dir[128];
-	char path[256];
+	char spew_dir[PATH_MAX + 32];
+	char path[PATH_MAX + 64];
 	int fd;
 	unsigned long size;
 
@@ -136,8 +138,8 @@ static bool do_create_and_destroy(void)
  */
 static bool do_batch_spew(void)
 {
-	char spew_dir[128];
-	char paths[32][256];
+	char spew_dir[PATH_MAX + 32];
+	char paths[32][PATH_MAX + 64];
 	unsigned int i, count;
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
@@ -158,7 +160,7 @@ static bool do_batch_spew(void)
 	/* Unlink in random order for extra churn. */
 	for (i = 0; i < count; i++) {
 		unsigned int j = rand() % count;
-		char tmp[256];
+		char tmp[PATH_MAX + 64];
 		memcpy(tmp, paths[i], sizeof(tmp));
 		memcpy(paths[i], paths[j], sizeof(paths[i]));
 		memcpy(paths[j], tmp, sizeof(tmp));
@@ -176,8 +178,8 @@ static bool do_batch_spew(void)
  */
 static bool do_mkdir_rmdir(void)
 {
-	char spew_dir[128];
-	char path[256];
+	char spew_dir[PATH_MAX + 32];
+	char path[PATH_MAX + 64];
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
@@ -194,8 +196,8 @@ static bool do_mkdir_rmdir(void)
  */
 static bool do_link_dance(void)
 {
-	char spew_dir[128];
-	char src[256], dst[256];
+	char spew_dir[PATH_MAX + 32];
+	char src[PATH_MAX + 64], dst[PATH_MAX + 64];
 	int fd, ret __unused__;
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
@@ -242,18 +244,17 @@ bool inode_spewer(struct childdata *child)
  */
 static void cleanup_spew_dir_for(pid_t pid)
 {
-	char dir[128];
+	char dir[PATH_MAX + 32];
 	DIR *d;
 	struct dirent *de;
 
-	snprintf(dir, sizeof(dir), "trinity-inodes-%d", (int)pid);
+	snprintf(dir, sizeof(dir), "%s/trinity-inodes-%d",
+		 trinity_tmpdir_abs(), (int)pid);
 
 	d = opendir(dir);
 	if (d != NULL) {
 		while ((de = readdir(d)) != NULL) {
-			/* dir is up to 128 bytes, d_name up to 255 — be
-			 * generous so snprintf can't truncate. */
-			char path[512];
+			char path[PATH_MAX + 32 + NAME_MAX + 2];
 
 			if (de->d_name[0] == '.' &&
 			    (de->d_name[1] == '\0' ||
@@ -287,8 +288,9 @@ void inode_spewer_cleanup(void)
  * Called from the parent after reaping a child, to mop up the case
  * where the child was SIGKILL'd before inode_spewer_cleanup() ran.
  * No-op when the dir doesn't exist (most children never invoke the
- * inode spewer); cheap opendir/rmdir otherwise.  Same cwd as the
- * child since trinity chdirs into tmpdir at startup before forking.
+ * inode spewer); cheap opendir/rmdir otherwise.  Path is built from
+ * trinity_tmpdir_abs() so it works regardless of where the child (or
+ * the parent) wandered via fuzzed chdir() between startup and reap.
  */
 void inode_spewer_reap(pid_t pid)
 {
