@@ -96,13 +96,20 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 
 static int open_socket(unsigned int domain, unsigned int type, unsigned int protocol)
 {
+	struct object *obj;
 	int fd;
 
 	fd = socket(domain, type, protocol);
 	if (fd == -1)
 		return fd;
 
-	add_socket(fd, domain, type, protocol);
+	/* add_socket() owns the fd on failure: on shared-heap exhaustion
+	 * it close()s the fd before returning NULL, and on the non-mainpid
+	 * path it frees the obj after add_object() drops it.  Either way
+	 * the fd is not safe to publish, so don't bump nr_sockets. */
+	obj = add_socket(fd, domain, type, protocol);
+	if (obj == NULL)
+		return -1;
 
 	nr_sockets++;
 
