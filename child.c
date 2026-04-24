@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sched.h>
+#include <sys/mount.h>
 #include <sys/personality.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -477,7 +478,23 @@ static void init_child(struct childdata *child, int childno)
 	mask_signals_child();
 
 	if (RAND_BOOL()) {
-		unshare(CLONE_NEWNS);
+		/* unshare(CLONE_NEWNS) gives this child its own mount namespace,
+		 * but the new ns inherits propagation mode from the parent.  On
+		 * most distros / is MS_SHARED, so without an explicit MS_PRIVATE
+		 * remount any mount() this child later issues — including the
+		 * random ones from the syscall fuzzer — propagates back into the
+		 * host's mount tree.  Make the new ns recursively private so
+		 * downstream mount churn stays contained.  If the remount is
+		 * rejected (EPERM in some sandboxed configs) we can't undo the
+		 * unshare, so log it loudly and continue: the child is still
+		 * usable, just not isolated for mount fuzzing. */
+		if (unshare(CLONE_NEWNS) == 0) {
+			if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0)
+				output(0, "child %d: MS_PRIVATE remount failed (errno=%d) "
+				       "after unshare(CLONE_NEWNS); mounts in this child "
+				       "may propagate to host mount table\n",
+				       childno, errno);
+		}
 		unshare(CLONE_NEWIPC);
 		unshare(CLONE_IO);
 		unshare(CLONE_NEWNET);
