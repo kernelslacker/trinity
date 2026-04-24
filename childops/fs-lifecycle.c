@@ -148,7 +148,15 @@ static bool ensure_private_ns(void)
 		return false;
 	}
 
-	(void)mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL);
+	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
+		ns_unsupported = true;
+		__atomic_add_fetch(&shm->stats.fs_lifecycle_unsupported,
+				   1, __ATOMIC_RELAXED);
+		output(0, "fs_lifecycle: MS_PRIVATE remount failed (errno=%d), disabling\n",
+		       errno);
+		return false;
+	}
+
 	ns_unshared = true;
 	return true;
 }
