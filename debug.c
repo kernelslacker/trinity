@@ -231,16 +231,30 @@ void dump_childdata(struct childdata *child)
 						output(0, "  array[%u]: NULL (in-flight or corrupt)\n", j);
 						continue;
 					}
-					/* Validate the obj pointer points into a tracked shared region.  When
-					 * dump_childdata is called from the shm-corruption / sanity-check path
-					 * the entire array can be holding stale pointers, NULL-pointers, or
-					 * post-free poison.  range_overlaps_shared() returns true iff the
-					 * range falls inside any region we allocated via alloc_shared* — if
-					 * it doesn't, the entry can't be a real obj (any obj struct lives in
-					 * shared_obj_heap which IS tracked) so skip rather than dereferencing. */
+					/*
+					 * dump_childdata always runs in the parent against another
+					 * process's per-child OBJ_LOCAL pool.  Legitimate OBJ_LOCAL
+					 * obj structs live in the owning child's private heap
+					 * (alloc_object → zmalloc → malloc — see the architectural
+					 * note above alloc_object()), so dereferencing the pointer
+					 * from this process would touch unmapped or unrelated
+					 * memory and SEGV.  We cannot deref it here even when the
+					 * entry is perfectly healthy in its owner.
+					 *
+					 * range_overlaps_shared() narrows that to the one case
+					 * where deref IS safe from the parent: the entry happens
+					 * to point inside a tracked shared region (the most likely
+					 * cause being a wild write that stamped a shared-heap
+					 * pointer into the per-child array).  Anything else —
+					 * private-heap pointer from the owning child OR genuine
+					 * post-corruption garbage — gets logged as an address and
+					 * skipped, which prevents the type-specific dumper from
+					 * SEGVing mid-diagnostic and hiding the higher-level shm
+					 * sanity report.
+					 */
 					if (!range_overlaps_shared((unsigned long)head->array[j],
 								   sizeof(struct object))) {
-						output(0, "  array[%u]: %p (outside any shared region — corrupt)\n",
+						output(0, "  array[%u]: %p (private-heap or wild — not safe to deref from this process)\n",
 						       j, head->array[j]);
 						continue;
 					}
