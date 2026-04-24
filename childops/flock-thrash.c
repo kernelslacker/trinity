@@ -31,6 +31,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,9 +66,10 @@ struct flock_slot {
 
 static int open_one(unsigned int idx)
 {
-	char path[32];
+	char path[PATH_MAX + 32];
 
-	snprintf(path, sizeof(path), "trinity-testfile%u", idx);
+	snprintf(path, sizeof(path), "%s/trinity-testfile%u",
+		 trinity_tmpdir_abs(), idx);
 	return open(path, O_RDWR | O_CREAT, 0666);
 }
 
