@@ -106,10 +106,22 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 				memory_order_relaxed);
 			try_regenerate_fd(ev->objtype);
 			break;
-		case FD_EVENT_NEWSOCK:
-			add_socket(ev->fd1, (unsigned int)ev->fd2,
-				   ev->socktype, ev->protocol);
+		case FD_EVENT_NEWSOCK: {
+			struct object *obj;
+
+			/* add_socket() owns the fd on failure: on shared-heap
+			 * exhaustion it close()s the fd before returning NULL.
+			 * Capture the return so we don't silently treat a
+			 * failed allocation as a successful publish.  Same
+			 * hazard as the open_socket() call site fixed in
+			 * commit 5373a93f1782. */
+			obj = add_socket(ev->fd1, (unsigned int)ev->fd2,
+					 ev->socktype, ev->protocol);
+			if (obj == NULL)
+				output(1, "fd_event: NEWSOCK add_socket() failed for fd %d (heap exhausted?)\n",
+				       ev->fd1);
 			break;
+		}
 		}
 
 		tail = (tail + 1) & (FD_EVENT_RING_SIZE - 1);
