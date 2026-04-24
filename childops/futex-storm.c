@@ -42,6 +42,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -241,7 +242,7 @@ bool futex_storm(struct childdata *child)
 		for (i = 0; i < alive; i++)
 			kill(pids[i], SIGKILL);
 		for (i = 0; i < alive; i++)
-			waitpid(pids[i], &status, 0);
+			waitpid_eintr(pids[i], &status, 0);
 		goto out_barrier;
 	}
 
@@ -263,7 +264,7 @@ bool futex_storm(struct childdata *child)
 		int spin;
 
 		for (spin = 0; spin < 50; spin++) {
-			r = waitpid(pids[i], &status, WNOHANG);
+			r = waitpid_eintr(pids[i], &status, WNOHANG);
 			if (r == pids[i] || r < 0)
 				break;
 			budget.tv_sec  = 0;
@@ -272,7 +273,7 @@ bool futex_storm(struct childdata *child)
 		}
 		if (r == 0) {
 			kill(pids[i], SIGKILL);
-			waitpid(pids[i], &status, 0);
+			waitpid_eintr(pids[i], &status, 0);
 			continue;
 		}
 		if (r == pids[i] && WIFSIGNALED(status))

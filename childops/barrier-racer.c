@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -456,12 +457,12 @@ bool barrier_racer(struct childdata *child)
 		for (i = 0; i < alive; i++)
 			kill(pids[i], SIGKILL);
 		for (i = 0; i < alive; i++)
-			waitpid(pids[i], &status, 0);
+			waitpid_eintr(pids[i], &status, 0);
 		goto out_cleanup;
 	}
 
 	for (i = 0; i < alive; i++) {
-		if (waitpid(pids[i], &status, 0) < 0)
+		if (waitpid_eintr(pids[i], &status, 0) < 0)
 			continue;
 		if (WIFSIGNALED(status))
 			__atomic_add_fetch(&shm->stats.barrier_racer_inner_crashed,
