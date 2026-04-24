@@ -294,8 +294,6 @@ retry_mmap:
 	obj->map.fd = fd;
 	obj->map.type = MMAPED_FILE;
 	obj->map.ptr = mmap(NULL, obj->map.size, prot, get_rand_mmap_flags(), fd, offset);
-	if (obj->map.ptr != MAP_FAILED)
-		track_shared_region((unsigned long)obj->map.ptr, obj->map.size);
 	if (obj->map.ptr == MAP_FAILED) {
 		retries++;
 		if (retries == 100) {
@@ -314,6 +312,7 @@ retry_mmap:
 		} else
 			goto retry_mmap;
 	}
+	track_shared_region((unsigned long)obj->map.ptr, obj->map.size);
 
 	head = get_objhead(scope, type);
 	head->dump = &map_dump;
