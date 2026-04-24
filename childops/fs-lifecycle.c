@@ -32,6 +32,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -95,8 +96,8 @@ static ssize_t do_copy_file_range(int fd_in, off_t *off_in,
 
 static void make_base_path(char *buf, size_t len)
 {
-	snprintf(buf, len, "trinity-fslife-%d-%u",
-		 (int)getpid(), fslife_seq++);
+	snprintf(buf, len, "%s/trinity-fslife-%d-%u",
+		 trinity_tmpdir_abs(), (int)getpid(), fslife_seq++);
 }
 
 /*
@@ -163,8 +164,10 @@ static bool ensure_private_ns(void)
  */
 static void do_tmpfs_lifecycle(void)
 {
-	char base[128], dira[160], dirb[160];
-	char filea[200], fileb[200], filec[200], moved[200];
+	char base[PATH_MAX + 64];
+	char dira[PATH_MAX + 96], dirb[PATH_MAX + 96];
+	char filea[PATH_MAX + 128], fileb[PATH_MAX + 128];
+	char filec[PATH_MAX + 128], moved[PATH_MAX + 128];
 	int fd_a = -1, fd_b = -1, fd_c = -1;
 	bool mounted = false;
 
@@ -257,7 +260,9 @@ out_rmdir:
  */
 static void do_ramfs_lifecycle(void)
 {
-	char base[128], subdir[160], filea[200], fileb[200], linkpath[200];
+	char base[PATH_MAX + 64], subdir[PATH_MAX + 96];
+	char filea[PATH_MAX + 128], fileb[PATH_MAX + 128];
+	char linkpath[PATH_MAX + 128];
 	int fd_a = -1, fd_b = -1;
 	bool mounted = false;
 
@@ -334,7 +339,7 @@ static void do_rdonly_lifecycle(void)
 		{ "sysfs", "block"   },
 	};
 	const char *fstype, *probe;
-	char base[128], probepath[200];
+	char base[PATH_MAX + 64], probepath[PATH_MAX + 128];
 	bool mounted = false;
 	struct stat st;
 	unsigned int idx;
@@ -386,8 +391,11 @@ out_rmdir:
  */
 static void do_overlay_lifecycle(void)
 {
-	char base[128], lower[160], upper[160], work[160], merged[160];
-	char opt[640], lfile[200], mfile[200];
+	char base[PATH_MAX + 64];
+	char lower[PATH_MAX + 96], upper[PATH_MAX + 96];
+	char work[PATH_MAX + 96], merged[PATH_MAX + 96];
+	char opt[3 * (PATH_MAX + 96) + 64];
+	char lfile[PATH_MAX + 128], mfile[PATH_MAX + 128];
 	int fd = -1;
 	bool base_mounted = false, overlay_mounted = false;
 
@@ -463,7 +471,7 @@ out_rmdir:
  */
 static void do_quota_lifecycle(void)
 {
-	char base[128], fpath[200];
+	char base[PATH_MAX + 64], fpath[PATH_MAX + 128];
 	int fd = -1;
 	bool mounted = false;
 
@@ -517,7 +525,7 @@ out_rmdir:
  */
 static void do_bind_lifecycle(void)
 {
-	char src[120], dst[128], fpath[200];
+	char src[PATH_MAX + 64], dst[PATH_MAX + 96], fpath[PATH_MAX + 128];
 	int fd = -1;
 	bool src_mounted = false, dst_mounted = false;
 
