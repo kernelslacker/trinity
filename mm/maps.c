@@ -46,8 +46,28 @@ struct map * get_map(void)
 		}
 
 		obj = get_random_object(type, scope);
-		if (obj != NULL)
-			return &obj->map;
+		if (obj == NULL)
+			continue;
+
+		/*
+		 * Defend against stale or corrupted slot pointers leaking
+		 * out of the OBJ_MMAP pool.  Heap pointers land at
+		 * >= 0x10000 and below the 47-bit user/kernel boundary;
+		 * any obj pointer outside that window can't be a real obj
+		 * struct, and dereferencing it via &obj->map then map->ptr
+		 * scribbles garbage into whatever syscall arg buffer the
+		 * caller is filling (alloc_iovec via the iovec generator
+		 * was the trigger — its iov_base ended up at sub-page
+		 * addresses like 0x1d8).  Skip the slot and try again.
+		 */
+		if ((uintptr_t)obj < 0x10000UL ||
+		    (uintptr_t)obj >= 0x800000000000UL) {
+			outputerr("get_map: bogus obj %p in OBJ_MMAP pool "
+				  "(type %u, scope %d)\n", obj, type, scope);
+			continue;
+		}
+
+		return &obj->map;
 	}
 
 	return NULL;
