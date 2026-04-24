@@ -507,8 +507,6 @@ static void init_child(struct childdata *child, int childno)
 	munge_process();
 
 	kcov_init_child(&child->kcov, child->num);
-
-	deferred_free_init();
 }
 
 /*
