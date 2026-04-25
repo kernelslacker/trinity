@@ -76,9 +76,14 @@ bool trylock(lock_t *lk)
  * If a child held this lock and got killed (SIGABRT, SIGSEGV, etc.),
  * the lock is permanently held by a dead pid. Detect that case and
  * release. We need ABA protection: between sampling owner=A and
- * checking kill(A,0), the lock could have been released and re-acquired
+ * checking liveness, the lock could have been released and re-acquired
  * by a recycled pid. Compare the entire state word — if it's unchanged,
  * nothing happened in between, so it's safe to CAS the lock to 0.
+ *
+ * Use pid_alive() rather than a raw kill(pid, 0): a zombie holder still
+ * has a task struct (kill returns 0) but cannot release the lock, so a
+ * naive kill-only check leaves us spinning forever waiting for a corpse
+ * that hasn't been reaped yet.
  */
 static void try_release_dead_holder(lock_t *lk)
 {
@@ -87,7 +92,7 @@ static void try_release_dead_holder(lock_t *lk)
 
 	if (LOCK_STATE(sampled) != LOCKED || owner == 0)
 		return;
-	if (kill(owner, 0) != -1 || errno != ESRCH)
+	if (pid_alive(owner))
 		return;
 
 	/* Owner is dead. Try to release ONLY if nothing changed since
