@@ -104,6 +104,23 @@ void register_loaded_image_segments(void)
 	       st.regions_registered, st.objects_with_writable,
 	       st.objects_with_writable == 1 ? "" : "s");
 
+	/* Sanity floor: every supported libc layout produces at least two
+	 * writable PT_LOAD segments -- the main executable's data/BSS and
+	 * libc's data/BSS.  Older distros where libpthread is a separate
+	 * DSO add a third (libpthread data); modern glibc folds libpthread
+	 * into libc and the count stays at two.  A count below two means
+	 * dl_iterate_phdr() didn't enumerate what we expect (statically
+	 * linked binary, exotic loader, or detection failure), and the
+	 * shared_regions[] table is missing protection for trinity's own
+	 * static state -- a fuzzed munmap of BSS would then go unblocked. */
+	if (st.regions_registered < 2) {
+		outputerr("image-segments: only %u writable PT_LOAD segment%s registered "
+			  "(expected >=2: main exe data + libc data); trinity's static "
+			  "state may not be protected from fuzzed mmap/munmap/mprotect\n",
+			  st.regions_registered,
+			  st.regions_registered == 1 ? "" : "s");
+	}
+
 	/* High-water warning: if shared_regions[] is past 90% capacity
 	 * after this batch, the per-child kcov ring registration that
 	 * happens during open_fds() -- and any future tracker calls --
