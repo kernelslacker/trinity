@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include "child.h"
 #include "debug.h"
 #include "objects.h"
 #include "params.h"
@@ -18,6 +19,7 @@
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
+#include "tables.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -756,6 +758,17 @@ void dump_obj_heap_stats(void)
 	}
 }
 
+/* Tunable: how often range_overlaps_shared() emits a -v summary line.
+ * Lower = noisier, higher = blunter. */
+#define RANGE_OVERLAPS_SHARED_REJECT_REPORT_INTERVAL 10000
+
+/* Last syscall to trip a range_overlaps_shared() reject.  Last-write-wins;
+ * a coarse hint for which sanitiser is doing the most work, not a precise
+ * audit trail.  No lock — torn reads are acceptable for a diagnostic. */
+static unsigned int last_reject_syscall_nr;
+static unsigned char last_reject_do32bit;
+static unsigned char last_reject_have_syscall;
+
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
 {
 	unsigned long end = addr + len;
@@ -767,21 +780,40 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 
 		if (addr < r_end && end > r_start) {
 			unsigned long n;
+			struct childdata *child;
 
-			n = __atomic_add_fetch(&shm->stats.range_overlap_rejects,
+			n = __atomic_add_fetch(&shm->stats.range_overlaps_shared_rejects,
 					       1, __ATOMIC_RELAXED);
 
-			/* Under -v, emit one line per 1000 rejects with the
-			 * caller PC so we can correlate which arg-generation
-			 * path is most often producing into-shared addresses. */
-			if (verbosity > 1 && (n % 1000) == 0) {
-				char pcbuf[128];
+			child = this_child();
+			if (child != NULL) {
+				__atomic_store_n(&last_reject_syscall_nr,
+						 child->syscall.nr, __ATOMIC_RELAXED);
+				__atomic_store_n(&last_reject_do32bit,
+						 child->syscall.do32bit ? 1 : 0,
+						 __ATOMIC_RELAXED);
+				__atomic_store_n(&last_reject_have_syscall, 1,
+						 __ATOMIC_RELAXED);
+			}
+
+			if (verbosity > 1 &&
+			    (n % RANGE_OVERLAPS_SHARED_REJECT_REPORT_INTERVAL) == 0) {
+				const char *sname = "?";
+				unsigned int snr;
+				unsigned char s32;
+
+				if (__atomic_load_n(&last_reject_have_syscall,
+						    __ATOMIC_RELAXED)) {
+					snr = __atomic_load_n(&last_reject_syscall_nr,
+							      __ATOMIC_RELAXED);
+					s32 = __atomic_load_n(&last_reject_do32bit,
+							      __ATOMIC_RELAXED);
+					sname = print_syscall_name(snr, s32 != 0);
+				}
 
 				output(1, "range_overlaps_shared: %lu cumulative rejects "
-					"(latest addr=0x%lx len=%lu caller=%s)\n",
-					n, addr, len,
-					pc_to_string(__builtin_return_address(0),
-						     pcbuf, sizeof(pcbuf)));
+					"(latest syscall=%s addr=0x%lx len=%lu)\n",
+					n, sname, addr, len);
 			}
 			return true;
 		}
