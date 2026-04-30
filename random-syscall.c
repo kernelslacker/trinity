@@ -378,6 +378,14 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 
 			if (save_entry != NULL && save_entry->sanitise == NULL)
 				minicorpus_save(rec);
+
+			/* Coverage-delta-triggered persistence: snapshot the
+			 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
+			 * fleet-wide edges so a crash mid-run only loses the
+			 * last cadence window of state, not the whole run.
+			 * Cheap fast path when the gap isn't reached; only one
+			 * caller per window actually runs the save. */
+			minicorpus_maybe_snapshot();
 		}
 	}
 
