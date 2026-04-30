@@ -113,6 +113,7 @@ static int shm_is_corrupt(void)
 			output(0, "Sanity check failed! Found pid %d at pidslot %u!\n", pid, i);
 
 			dump_childnos();
+			dump_pids_page_state();
 
 			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING)
 				panic(EXIT_PID_OUT_OF_RANGE);
