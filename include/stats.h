@@ -238,7 +238,7 @@ struct stats_s {
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially
 	 * bypassing every input. */
-	unsigned long range_overlap_rejects;
+	unsigned long range_overlaps_shared_rejects;
 };
 
 void dump_stats(void);
