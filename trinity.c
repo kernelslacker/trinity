@@ -438,6 +438,11 @@ int main(int argc, char* argv[])
 			if (loaded || discarded)
 				output(0, "minicorpus: warm-started %u entries from %s (%u discarded)\n",
 					loaded, path, discarded);
+			/* Wire up periodic mid-run snapshots to the same path.
+			 * Done before fork so children inherit snapshot_path COW;
+			 * skipped under --no-warm-start since the user has opted
+			 * out of on-disk corpus persistence entirely. */
+			minicorpus_enable_snapshots(path);
 		}
 	}
 

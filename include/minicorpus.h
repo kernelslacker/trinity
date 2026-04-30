@@ -94,6 +94,15 @@ struct minicorpus_shared {
 	 * executor be tuned against observed coverage outcomes. */
 	unsigned long chain_iter_count;
 	unsigned long chain_substitution_count;
+
+	/* Edge-count high-water-mark for the last periodic mid-run snapshot.
+	 * minicorpus_maybe_snapshot() compares kcov_shm->edges_found against
+	 * this value and, when the gap reaches MINICORPUS_SNAPSHOT_EDGES, races
+	 * to advance the field via compare-exchange.  The single CAS winner
+	 * triggers the save; losers see the new high-water-mark on their next
+	 * call and early-return until another window's worth of edges
+	 * accumulates. */
+	unsigned long edges_at_last_snapshot;
 };
 
 extern struct minicorpus_shared *minicorpus_shm;
@@ -138,7 +147,10 @@ void minicorpus_mut_attrib_commit(bool found_new);
 void minicorpus_mut_attrib_clear(void);
 
 /* Persist the in-memory corpus rings to a file at @path.
- * Writes via a .tmp file and renames atomically.  Returns true on
+ * Writes via a per-pid .tmp file and renames atomically — safe under
+ * concurrent callers (CAS in minicorpus_maybe_snapshot serialises
+ * normal periodic saves, the per-pid suffix is belt-and-braces against
+ * a periodic save racing the on-shutdown save).  Returns true on
  * success, false on any I/O failure (caller should treat as advisory). */
 bool minicorpus_save_file(const char *path);
 
@@ -157,3 +169,38 @@ bool minicorpus_load_file(const char *path,
  * next call.  Returns NULL if no suitable path can be derived (no $HOME,
  * mkdir failure, etc.). */
 const char *minicorpus_default_path(void);
+
+/* Coverage-delta gap (in newly-discovered edges, fleet-wide) between
+ * periodic mid-run snapshots.
+ *
+ * Why mid-run snapshots: the on-shutdown save in trinity.c only runs on
+ * graceful exit.  An shm-corruption trip or hard crash mid-run skips
+ * the save entirely and the entire accumulated corpus is lost.  The
+ * 2026-04-21 shm-corruption tree dropped ~810k edges of state this way.
+ *
+ * Triggering off coverage delta rather than wall-time keeps the save
+ * cadence proportional to actual fuzzing progress: an idle or stalled
+ * run doesn't burn I/O on snapshots that capture nothing new, while a
+ * productive burst snapshots quickly enough to bound loss.
+ *
+ * 100k is the loss-vs-overhead trade.  Smaller gaps cap loss tighter
+ * but spend more I/O bandwidth on the save path; larger gaps risk
+ * losing more progress per crash.  At observed steady-state edge growth
+ * (~10-30k edges/min on a busy fleet) this fires every few minutes. */
+#define MINICORPUS_SNAPSHOT_EDGES 100000
+
+/* Configure the path that minicorpus_maybe_snapshot() will save to.
+ * Call once from the parent before fork (the path string is copied into
+ * a process-local buffer, so children inherit it via COW).  Pass NULL
+ * to disable mid-run snapshots — callers honour --no-warm-start by not
+ * calling this. */
+void minicorpus_enable_snapshots(const char *path);
+
+/* Check the per-snapshot coverage gap and, if reached, race to claim
+ * the next snapshot via compare-exchange.  The single winning caller
+ * runs minicorpus_save_file() to the configured path; everyone else
+ * early-returns.  Cheap fast path on the no-trigger case (one atomic
+ * load each from kcov_shm->edges_found and the high-water-mark, plus
+ * a comparison).  Safe to call from any child after every kcov edge
+ * event. */
+void minicorpus_maybe_snapshot(void);

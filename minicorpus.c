@@ -796,6 +796,7 @@ bool minicorpus_save_file(const char *path)
 {
 	struct corpus_file_header hdr;
 	struct corpus_file_entry ent;
+	struct corpus_entry snapshot[CORPUS_RING_SIZE];
 	char tmppath[PATH_MAX];
 	int fd;
 	unsigned int nr;
@@ -820,7 +821,11 @@ bool minicorpus_save_file(const char *path)
 		hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
 	}
 
-	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp", path);
+	/* Per-pid tmp suffix so a periodic save and the on-shutdown save
+	 * can't open the same .tmp file with O_TRUNC and interleave their
+	 * writes into a corrupt blob.  The atomic rename still gives the
+	 * final on-disk file all-or-nothing semantics. */
+	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d", path, (int)getpid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
 		return false;
 
@@ -833,19 +838,31 @@ bool minicorpus_save_file(const char *path)
 
 	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
 		struct corpus_ring *ring = &minicorpus_shm->rings[nr];
-		unsigned int oldest, i;
+		unsigned int snap_count, oldest, i;
 
-		if (ring->count == 0)
+		/* Lock briefly to copy the ring out into a local buffer, then
+		 * release before the disk write.  Mid-run snapshots run while
+		 * children are actively appending to rings; without the lock,
+		 * head/count and entries[] can be read in inconsistent
+		 * combinations.  Hold time is bounded by a memcpy of at most
+		 * CORPUS_RING_SIZE entries (~1.8 KB), so per-ring writer stall
+		 * is microseconds even under heavy contention. */
+		ring_lock(ring);
+		snap_count = ring->count;
+		if (snap_count == 0) {
+			ring_unlock(ring);
 			continue;
-
-		oldest = (ring->head - ring->count) % CORPUS_RING_SIZE;
-
-		for (i = 0; i < ring->count; i++) {
-			struct corpus_entry *src;
+		}
+		oldest = (ring->head - snap_count) % CORPUS_RING_SIZE;
+		for (i = 0; i < snap_count; i++) {
 			unsigned int slot = (oldest + i) % CORPUS_RING_SIZE;
-			unsigned int j;
+			snapshot[i] = ring->entries[slot];
+		}
+		ring_unlock(ring);
 
-			src = &ring->entries[slot];
+		for (i = 0; i < snap_count; i++) {
+			struct corpus_entry *src = &snapshot[i];
+			unsigned int j;
 
 			memset(&ent, 0, sizeof(ent));
 			ent.nr = nr;
@@ -1056,4 +1073,62 @@ const char *minicorpus_default_path(void)
 	if (ret < 0 || (size_t)ret >= sizeof(pathbuf))
 		return NULL;
 	return pathbuf;
+}
+
+/*
+ * Periodic mid-run snapshot trigger.
+ *
+ * The save path itself is set in the parent before fork via
+ * minicorpus_enable_snapshots() and inherited COW by every child.  All
+ * children call minicorpus_maybe_snapshot() after each kcov edge event;
+ * the function early-returns cheaply unless the fleet-wide edge count
+ * has advanced MINICORPUS_SNAPSHOT_EDGES past the last snapshot's
+ * high-water-mark.  When the gap is reached, a single CAS on
+ * minicorpus_shm->edges_at_last_snapshot picks one caller as the saver
+ * — it runs minicorpus_save_file() while everyone else loses the CAS
+ * and returns.  The next snapshot opportunity opens once the next
+ * MINICORPUS_SNAPSHOT_EDGES window has accumulated.
+ */
+static char snapshot_path[PATH_MAX];
+static bool snapshot_enabled;
+
+void minicorpus_enable_snapshots(const char *path)
+{
+	size_t len;
+
+	if (path == NULL)
+		return;
+	len = strlen(path);
+	if (len == 0 || len >= sizeof(snapshot_path))
+		return;
+	memcpy(snapshot_path, path, len + 1);
+	snapshot_enabled = true;
+}
+
+void minicorpus_maybe_snapshot(void)
+{
+	unsigned long edges_now, old;
+
+	if (!snapshot_enabled || minicorpus_shm == NULL || kcov_shm == NULL)
+		return;
+
+	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	old = __atomic_load_n(&minicorpus_shm->edges_at_last_snapshot,
+			      __ATOMIC_RELAXED);
+
+	if (edges_now < old + MINICORPUS_SNAPSHOT_EDGES)
+		return;
+
+	/* Race for the slot.  Whoever wins the CAS is responsible for the
+	 * save; the others see the new high-water-mark on their next call
+	 * and early-return.  RELAXED ordering is enough — the save itself
+	 * is independently consistent (per-ring lock during read), and the
+	 * counter is just gating who runs, not what they observe. */
+	if (!__atomic_compare_exchange_n(&minicorpus_shm->edges_at_last_snapshot,
+					 &old, edges_now,
+					 false,
+					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		return;
+
+	minicorpus_save_file(snapshot_path);
 }
