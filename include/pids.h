@@ -17,5 +17,6 @@ int find_childno(pid_t mypid);
 void set_child_cache(int childno, pid_t pid, struct childdata *child);
 bool pidmap_empty(void);
 void dump_childnos(void);
+void dump_pids_page_state(void);
 int pid_is_valid(pid_t);
 void pids_init(void);

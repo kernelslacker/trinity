@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <signal.h>
 #include <unistd.h>
@@ -173,6 +175,75 @@ void dump_childnos(void)
 		outputerr("%s", string);
 		sptr = string;
 	}
+}
+
+/*
+ * Diagnostic dump of the pids[] page contents and the parent's view
+ * of its VMA permissions, called from the shm-corruption path when
+ * sanity_check() trips on an out-of-range pid.  Tells us whether the
+ * corruption is a single wild write (one slot bad), a wider memset
+ * (many slots bad), or a page-level event such as MAP_FIXED replacement
+ * or MADV_DONTNEED on the shared backing (whole page zeroed).  Also
+ * confirms whether the parent's mprotect freeze is still in effect at
+ * trip time (r-- vs rw-) — silent loss of the freeze would let parent
+ * paths scribble without bracketing.
+ */
+void dump_pids_page_state(void)
+{
+	uintptr_t base = (uintptr_t) pids;
+	uintptr_t page = base & ~((uintptr_t) 4095);
+	const unsigned char *p = (const unsigned char *) page;
+	unsigned int dump_bytes = 512;
+	unsigned int i, nz = 0;
+	int fd;
+
+	outputerr("=== pids[] page state at corruption ===\n");
+	outputerr("pids base=%p page_aligned=0x%lx max_children=%u array_bytes=%zu\n",
+		  pids, (unsigned long) page, max_children,
+		  max_children * sizeof(pid_t));
+
+	fd = open("/proc/self/maps", O_RDONLY);
+	if (fd >= 0) {
+		char buf[8192];
+		ssize_t n = read(fd, buf, sizeof(buf) - 1);
+		close(fd);
+		if (n > 0) {
+			char *line = buf;
+			char *end = buf + n;
+			buf[n] = '\0';
+			while (line < end) {
+				char *nl = memchr(line, '\n', end - line);
+				unsigned long lo = 0, hi = 0;
+				if (nl != NULL)
+					*nl = '\0';
+				if (sscanf(line, "%lx-%lx", &lo, &hi) == 2 &&
+				    page >= lo && page < hi) {
+					outputerr("/proc/self/maps: %s\n", line);
+				}
+				if (nl == NULL)
+					break;
+				line = nl + 1;
+			}
+		}
+	}
+
+	outputerr("page hexdump [0..%u):\n", dump_bytes);
+	for (i = 0; i < dump_bytes; i += 16) {
+		outputerr("  +0x%03x: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			  i,
+			  p[i+0], p[i+1], p[i+2],  p[i+3],
+			  p[i+4], p[i+5], p[i+6],  p[i+7],
+			  p[i+8], p[i+9], p[i+10], p[i+11],
+			  p[i+12], p[i+13], p[i+14], p[i+15]);
+	}
+
+	for (i = dump_bytes; i < 4096; i++)
+		if (p[i] != 0)
+			nz++;
+	outputerr("page tail [%u..4096): %u non-zero bytes\n", dump_bytes, nz);
+	outputerr("running_childs=%u\n",
+		  __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED));
+	outputerr("=== end pids[] page state ===\n");
 }
 
 static pid_t pidmax;
