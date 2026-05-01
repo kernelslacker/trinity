@@ -12,7 +12,7 @@
 #include "shm.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define IOCTL_GROUPS_MAX 48
+#define IOCTL_GROUPS_MAX 64
 
 static const struct ioctl_group *grps[IOCTL_GROUPS_MAX];
 static int grps_cnt;
@@ -131,7 +131,7 @@ const struct ioctl_group *get_random_ioctl_group(void)
  * registration order is deterministic and identical across all forked
  * children, so the index works as the group half of the EFAULT-probe
  * cache key without needing to hash a pointer that varies between
- * processes.  Linear scan is fine — grps_cnt is at most 48.
+ * processes.  Linear scan is fine — grps_cnt is at most 64.
  */
 int ioctl_group_index(const struct ioctl_group *grp)
 {
