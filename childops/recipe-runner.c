@@ -1305,6 +1305,80 @@ static bool recipe_net_tcp(bool *unsupported __unused__)
 }
 
 /*
+ * Recipe 23: AF_INET raw socket sweep.
+ *
+ * Walks several proto values through socket(AF_INET, SOCK_RAW, X) ->
+ * setsockopt -> bind -> shutdown -> close in one pass.  Drives
+ * raw_create, raw_hash_sk / raw_v4_hash, the IP-level setsockopt
+ * dispatcher, raw_bind, and raw_close in sequence so the per-proto
+ * demuxer state lives across multiple lifecycle stages within a
+ * single recipe invocation.
+ *
+ * Random callers of socket() rarely pick AF_INET + SOCK_RAW + a
+ * specific IPPROTO; trinity's standard arg picker hits AF_INET with
+ * SOCK_STREAM/SOCK_DGRAM and almost never builds the raw-protocol
+ * fanout.  The IP_HDRINCL + IP_PKTINFO + IP_RECVERR option triplet
+ * each takes its own slot in the inet_sk option mask, and walking all
+ * three on the same socket exercises the option-set ordering the
+ * isolated-syscall path almost never reaches.
+ *
+ * Raw sockets are CAP_NET_RAW gated.  EPERM/EACCES on the first
+ * socket() call latches the recipe off so siblings stop probing.
+ * Subsequent per-proto failures inside the loop are tolerated --
+ * kernels can leave specific ipprotos unimplemented (or restricted via
+ * /proc/sys/net/ipv4) without the whole feature being absent.
+ */
+static bool recipe_net_raw(bool *unsupported)
+{
+	static const int protos[] = {
+		IPPROTO_RAW,
+		IPPROTO_ICMP,
+		IPPROTO_UDP,
+		IPPROTO_TCP,
+	};
+	struct sockaddr_in sin;
+	unsigned int i;
+	unsigned int completed = 0;
+
+	for (i = 0; i < ARRAY_SIZE(protos); i++) {
+		int s;
+		int one = 1;
+
+		s = socket(AF_INET, SOCK_RAW, protos[i]);
+		if (s < 0) {
+			if (i == 0 && (errno == EPERM || errno == EACCES ||
+				       errno == ENOSYS)) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+				return false;
+			}
+			continue;
+		}
+
+		/* Walk a few IP-level option entries.  IP_HDRINCL is
+		 * implicit on IPPROTO_RAW but setting it explicitly drives
+		 * the option path; IP_PKTINFO and IP_RECVERR each take their
+		 * own slot in the inet_sk option mask. */
+		(void)setsockopt(s, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one));
+		(void)setsockopt(s, IPPROTO_IP, IP_PKTINFO, &one, sizeof(one));
+		(void)setsockopt(s, IPPROTO_IP, IP_RECVERR, &one, sizeof(one));
+
+		memset(&sin, 0, sizeof(sin));
+		sin.sin_family = AF_INET;
+		sin.sin_port = 0;
+		sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		(void)bind(s, (struct sockaddr *)&sin, sizeof(sin));
+
+		(void)shutdown(s, SHUT_RDWR);
+		close(s);
+		completed++;
+	}
+
+	return completed > 0;
+}
+
+/*
  * Recipe 22: AF_UNIX SOCK_STREAM out-of-band data lifecycle.
  *
  *   socketpair(AF_UNIX, SOCK_STREAM)
@@ -1414,6 +1488,7 @@ static const struct recipe recipes[] = {
 	{ "net_unix_gc",  recipe_net_unix_gc  },
 	{ "net_tcp",      recipe_net_tcp      },
 	{ "net_unix_oob", recipe_net_unix_oob },
+	{ "net_raw",      recipe_net_raw      },
 };
 
 /*
