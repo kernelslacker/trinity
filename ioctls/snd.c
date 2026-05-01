@@ -499,7 +499,11 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 		}
 		break;
 	}
-	case SNDRV_TIMER_IOCTL_TREAD: {
+	case SNDRV_TIMER_IOCTL_TREAD:
+#if defined(SNDRV_TIMER_IOCTL_TREAD64) && __BITS_PER_LONG == 64
+	case SNDRV_TIMER_IOCTL_TREAD64:
+#endif
+	{
 		int *tread = get_writable_struct(sizeof(int));
 		if (tread) {
 			*tread = RAND_BOOL();
@@ -507,6 +511,18 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 		}
 		break;
 	}
+#ifdef SNDRV_TIMER_IOCTL_CREATE
+	case SNDRV_TIMER_IOCTL_CREATE: {
+		struct snd_timer_uinfo *ui = get_writable_struct(sizeof(*ui));
+		if (ui) {
+			ui->resolution = (rand() % 1000000ULL + 1) * 1000ULL;
+			ui->fd = -1;
+			ui->id = rand() % 256;
+			rec->a3 = (unsigned long) ui;
+		}
+		break;
+	}
+#endif
 	default:
 		break;
 	}
@@ -658,6 +674,18 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 		}
 		break;
 	}
+#ifdef SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO
+	case SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO:
+	case SNDRV_SEQ_IOCTL_SET_CLIENT_UMP_INFO: {
+		struct snd_seq_client_ump_info *ui = get_writable_struct(sizeof(*ui));
+		if (ui) {
+			ui->client = RAND_BOOL() ? -1 : (int)(rand() % 128);
+			ui->type = rand() & 1;	/* ENDPOINT or BLOCK */
+			rec->a3 = (unsigned long) ui;
+		}
+		break;
+	}
+#endif
 	default:
 		break;
 	}
@@ -666,7 +694,11 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 static void sanitise_snd_ump(struct syscallrecord *rec)
 {
 	switch (rec->a2) {
-	case SNDRV_UMP_IOCTL_ENDPOINT_INFO: {
+	case SNDRV_UMP_IOCTL_ENDPOINT_INFO:
+#ifdef SNDRV_CTL_IOCTL_UMP_ENDPOINT_INFO
+	case SNDRV_CTL_IOCTL_UMP_ENDPOINT_INFO:
+#endif
+	{
 		struct snd_ump_endpoint_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
 			info->card = rand() % 8;
@@ -675,7 +707,11 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 		}
 		break;
 	}
-	case SNDRV_UMP_IOCTL_BLOCK_INFO: {
+	case SNDRV_UMP_IOCTL_BLOCK_INFO:
+#ifdef SNDRV_CTL_IOCTL_UMP_BLOCK_INFO
+	case SNDRV_CTL_IOCTL_UMP_BLOCK_INFO:
+#endif
+	{
 		struct snd_ump_block_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
 			info->card = rand() % 8;
@@ -685,8 +721,50 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 		}
 		break;
 	}
+#ifdef SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE
+	case SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE: {
+		int *dev = get_writable_struct(sizeof(int));
+		if (dev) {
+			*dev = (int)(rand() % 8) - 1;
+			rec->a3 = (unsigned long) dev;
+		}
+		break;
+	}
+#endif
 	default:
 		break;
+	}
+}
+
+static void sanitise_snd_hdspm(struct syscallrecord *rec)
+{
+	/* All HDSPM ioctls just take a pointer to a driver-specific struct.
+	 * The kernel populates them as _IOR. Allocate enough space for the
+	 * largest member (~8KB) and let the driver fail validation cleanly
+	 * if it doesn't recognise the device. */
+	void *buf = get_writable_struct(8192);
+	if (buf)
+		rec->a3 = (unsigned long) buf;
+}
+
+static const int copr_codes[] = {
+	0, 1, 2, 3, 4, 0xff, 0x100,
+};
+
+static void sanitise_oss_copr(struct syscallrecord *rec)
+{
+	/* OSS coprocessor ioctls are legacy SoundBlaster DSP poke/peek.
+	 * All take pointers to small structs (copr_buffer ~4KB,
+	 * copr_debug_buf ~8 bytes, copr_msg ~4KB). Allocate generously and
+	 * leave fields zero — the driver will validate ranges. */
+	void *buf = get_writable_struct(4096);
+	if (buf) {
+		/* First two ints in copr_buffer/copr_debug_buf are command
+		 * and parm — drive them with bounded values. */
+		int *p = buf;
+		p[0] = copr_codes[rand() % ARRAY_SIZE(copr_codes)];
+		p[1] = rand() % 1024;
+		rec->a3 = (unsigned long) buf;
 	}
 }
 
@@ -793,6 +871,27 @@ static void sanitise_oss_mixer(struct syscallrecord *rec)
 			rec->a3 = (unsigned long) info;
 		break;
 	}
+#ifdef SOUND_MIXER_ACCESS
+	case SOUND_MIXER_ACCESS: {
+		mixer_record *mr = get_writable_struct(sizeof(*mr));
+		if (mr)
+			rec->a3 = (unsigned long) mr;
+		break;
+	}
+#endif
+#ifdef SOUND_MIXER_GETLEVELS
+	case SOUND_MIXER_GETLEVELS:
+	case SOUND_MIXER_SETLEVELS: {
+		mixer_vol_table *vt = get_writable_struct(sizeof(*vt));
+		if (vt) {
+			vt->num = rand() % SOUND_MIXER_NRDEVICES;
+			vt->levels[0] = rand() % 101;
+			vt->levels[1] = rand() % 101;
+			rec->a3 = (unsigned long) vt;
+		}
+		break;
+	}
+#endif
 	default: {
 		/* MIXER_WRITE: packed stereo volume — low byte left, high byte right (0-100 each).
 		 * MIXER_READ and bitmask reads (DEVMASK, RECMASK, RECSRC, etc.) just need
@@ -961,15 +1060,26 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		sanitise_snd_rawmidi(rec);
 		break;
 
-	/* snd-ump */
+	/* snd-ump (also reachable via /dev/snd/controlC* with the SNDRV_CTL_* aliases) */
 	case SNDRV_UMP_IOCTL_ENDPOINT_INFO:
 	case SNDRV_UMP_IOCTL_BLOCK_INFO:
+#ifdef SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE
+	case SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE:
+	case SNDRV_CTL_IOCTL_UMP_ENDPOINT_INFO:
+	case SNDRV_CTL_IOCTL_UMP_BLOCK_INFO:
+#endif
 		sanitise_snd_ump(rec);
 		break;
 
 	/* snd-timer */
 	case SNDRV_TIMER_IOCTL_NEXT_DEVICE:
 	case SNDRV_TIMER_IOCTL_TREAD:
+#if defined(SNDRV_TIMER_IOCTL_TREAD64) && __BITS_PER_LONG == 64
+	case SNDRV_TIMER_IOCTL_TREAD64:
+#endif
+#ifdef SNDRV_TIMER_IOCTL_CREATE
+	case SNDRV_TIMER_IOCTL_CREATE:
+#endif
 	case SNDRV_TIMER_IOCTL_GINFO:
 	case SNDRV_TIMER_IOCTL_GPARAMS:
 	case SNDRV_TIMER_IOCTL_GSTATUS:
@@ -997,6 +1107,21 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDCTL_DSP_GETIPTR:
 	case SNDCTL_DSP_GETOPTR:
 	case SNDCTL_DSP_GETODELAY:
+#ifdef SNDCTL_DSP_GETCHANNELMASK
+	case SNDCTL_DSP_GETCHANNELMASK:
+#endif
+#ifdef SNDCTL_DSP_BIND_CHANNEL
+	case SNDCTL_DSP_BIND_CHANNEL:
+#endif
+#ifdef SNDCTL_DSP_GETSPDIF
+	case SNDCTL_DSP_GETSPDIF:
+#endif
+#ifdef SNDCTL_DSP_SETSPDIF
+	case SNDCTL_DSP_SETSPDIF:
+#endif
+#ifdef SNDCTL_DSP_PROFILE
+	case SNDCTL_DSP_PROFILE:
+#endif
 		sanitise_oss_dsp(rec);
 		break;
 
@@ -1042,11 +1167,60 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SOUND_MIXER_WRITE_LINE3:
 	case SOUND_MIXER_WRITE_RECSRC:
 	case SOUND_MIXER_INFO:
+#ifdef SOUND_MIXER_AGC
+	case SOUND_MIXER_AGC:
+#endif
+#ifdef SOUND_MIXER_3DSE
+	case SOUND_MIXER_3DSE:
+#endif
+#ifdef SOUND_MIXER_ACCESS
+	case SOUND_MIXER_ACCESS:
+#endif
+#ifdef SOUND_MIXER_GETLEVELS
+	case SOUND_MIXER_GETLEVELS:
+	case SOUND_MIXER_SETLEVELS:
+#endif
 #ifdef OSS_GETVERSION
 	case OSS_GETVERSION:
 #endif
 		sanitise_oss_mixer(rec);
 		break;
+
+	/* snd-hdspm (RME HDSPe MADI/AES/RayDAT/AIO) — newer ioctls only */
+#ifdef SNDRV_HDSPM_IOCTL_GET_PEAK_RMS
+	case SNDRV_HDSPM_IOCTL_GET_PEAK_RMS:
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_CONFIG
+	case SNDRV_HDSPM_IOCTL_GET_CONFIG:
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_LTC
+	case SNDRV_HDSPM_IOCTL_GET_LTC:
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_STATUS
+	case SNDRV_HDSPM_IOCTL_GET_STATUS:
+#endif
+#if defined(SNDRV_HDSPM_IOCTL_GET_PEAK_RMS) || \
+    defined(SNDRV_HDSPM_IOCTL_GET_CONFIG)  || \
+    defined(SNDRV_HDSPM_IOCTL_GET_LTC)     || \
+    defined(SNDRV_HDSPM_IOCTL_GET_STATUS)
+		sanitise_snd_hdspm(rec);
+		break;
+#endif
+
+	/* OSS DSP coprocessor (legacy SoundBlaster) */
+#ifdef SNDCTL_COPR_LOAD
+	case SNDCTL_COPR_LOAD:
+	case SNDCTL_COPR_RDATA:
+	case SNDCTL_COPR_RCODE:
+	case SNDCTL_COPR_WDATA:
+	case SNDCTL_COPR_WCODE:
+	case SNDCTL_COPR_RUN:
+	case SNDCTL_COPR_HALT:
+	case SNDCTL_COPR_SENDMSG:
+	case SNDCTL_COPR_RCVMSG:
+		sanitise_oss_copr(rec);
+		break;
+#endif
 
 #ifdef USE_SNDDRV_COMPRESS_OFFLOAD
 	/* snd-compress (compressed audio offload) */
@@ -1090,6 +1264,10 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_SEQ_IOCTL_GET_SUBSCRIPTION:
 	case SNDRV_SEQ_IOCTL_QUERY_NEXT_CLIENT:
 	case SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT:
+#ifdef SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO
+	case SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO:
+	case SNDRV_SEQ_IOCTL_SET_CLIENT_UMP_INFO:
+#endif
 		sanitise_snd_seq(rec);
 		break;
 
@@ -1100,11 +1278,18 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 
 static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_SEQ_IOCTL_PVERSION),
+#ifdef SNDRV_SEQ_IOCTL_USER_PVERSION
+	IOCTL(SNDRV_SEQ_IOCTL_USER_PVERSION),
+#endif
 	IOCTL(SNDRV_SEQ_IOCTL_CLIENT_ID),
 	IOCTL(SNDRV_SEQ_IOCTL_SYSTEM_INFO),
 	IOCTL(SNDRV_SEQ_IOCTL_RUNNING_MODE),
 	IOCTL(SNDRV_SEQ_IOCTL_GET_CLIENT_INFO),
 	IOCTL(SNDRV_SEQ_IOCTL_SET_CLIENT_INFO),
+#ifdef SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO
+	IOCTL(SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO),
+	IOCTL(SNDRV_SEQ_IOCTL_SET_CLIENT_UMP_INFO),
+#endif
 	IOCTL(SNDRV_SEQ_IOCTL_CREATE_PORT),
 	IOCTL(SNDRV_SEQ_IOCTL_DELETE_PORT),
 	IOCTL(SNDRV_SEQ_IOCTL_GET_PORT_INFO),
@@ -1147,6 +1332,9 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_HWDEP_IOCTL_DSP_STATUS),
 	IOCTL(SNDRV_HWDEP_IOCTL_DSP_LOAD),
 	IOCTL(SNDRV_PCM_IOCTL_PVERSION),
+#ifdef SNDRV_PCM_IOCTL_USER_PVERSION
+	IOCTL(SNDRV_PCM_IOCTL_USER_PVERSION),
+#endif
 	IOCTL(SNDRV_PCM_IOCTL_INFO),
 	IOCTL(SNDRV_PCM_IOCTL_TSTAMP),
 	IOCTL(SNDRV_PCM_IOCTL_TTSTAMP),
@@ -1176,6 +1364,9 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_PCM_IOCTL_LINK),
 	IOCTL(SNDRV_PCM_IOCTL_UNLINK),
 	IOCTL(SNDRV_RAWMIDI_IOCTL_PVERSION),
+#ifdef SNDRV_RAWMIDI_IOCTL_USER_PVERSION
+	IOCTL(SNDRV_RAWMIDI_IOCTL_USER_PVERSION),
+#endif
 	IOCTL(SNDRV_RAWMIDI_IOCTL_INFO),
 	IOCTL(SNDRV_RAWMIDI_IOCTL_PARAMS),
 	IOCTL(SNDRV_RAWMIDI_IOCTL_STATUS),
@@ -1186,6 +1377,16 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_TIMER_IOCTL_PVERSION),
 	IOCTL(SNDRV_TIMER_IOCTL_NEXT_DEVICE),
 	IOCTL(SNDRV_TIMER_IOCTL_TREAD),
+	/* TREAD_OLD == TREAD on LP64; only TREAD64 is distinct on 64-bit */
+#if defined(SNDRV_TIMER_IOCTL_TREAD64) && __BITS_PER_LONG == 64
+	IOCTL(SNDRV_TIMER_IOCTL_TREAD64),
+#endif
+#ifdef SNDRV_TIMER_IOCTL_CREATE
+	IOCTL(SNDRV_TIMER_IOCTL_CREATE),
+#endif
+#ifdef SNDRV_TIMER_IOCTL_TRIGGER
+	IOCTL(SNDRV_TIMER_IOCTL_TRIGGER),
+#endif
 	IOCTL(SNDRV_TIMER_IOCTL_GINFO),
 	IOCTL(SNDRV_TIMER_IOCTL_GPARAMS),
 	IOCTL(SNDRV_TIMER_IOCTL_GSTATUS),
@@ -1220,6 +1421,15 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE),
 	IOCTL(SNDRV_CTL_IOCTL_RAWMIDI_INFO),
 	IOCTL(SNDRV_CTL_IOCTL_RAWMIDI_PREFER_SUBDEVICE),
+#ifdef SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE
+	IOCTL(SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE),
+#endif
+#ifdef SNDRV_CTL_IOCTL_UMP_ENDPOINT_INFO
+	IOCTL(SNDRV_CTL_IOCTL_UMP_ENDPOINT_INFO),
+#endif
+#ifdef SNDRV_CTL_IOCTL_UMP_BLOCK_INFO
+	IOCTL(SNDRV_CTL_IOCTL_UMP_BLOCK_INFO),
+#endif
 	IOCTL(SNDRV_CTL_IOCTL_POWER),
 	IOCTL(SNDRV_CTL_IOCTL_POWER_STATE),
 	IOCTL(HDA_IOCTL_PVERSION),
@@ -1233,6 +1443,18 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDRV_HDSP_IOCTL_GET_9632_AEB),
 	IOCTL(SNDRV_HDSPM_IOCTL_GET_VERSION),
 	IOCTL(SNDRV_HDSPM_IOCTL_GET_MIXER),
+#ifdef SNDRV_HDSPM_IOCTL_GET_PEAK_RMS
+	IOCTL(SNDRV_HDSPM_IOCTL_GET_PEAK_RMS),
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_CONFIG
+	IOCTL(SNDRV_HDSPM_IOCTL_GET_CONFIG),
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_LTC
+	IOCTL(SNDRV_HDSPM_IOCTL_GET_LTC),
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_STATUS
+	IOCTL(SNDRV_HDSPM_IOCTL_GET_STATUS),
+#endif
 	IOCTL(SNDRV_SB_CSP_IOCTL_INFO),
 	IOCTL(SNDRV_SB_CSP_IOCTL_LOAD_CODE),
 	IOCTL(SNDRV_SB_CSP_IOCTL_UNLOAD_CODE),
@@ -1269,6 +1491,34 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SNDCTL_DSP_GETOPTR),
 	IOCTL(SNDCTL_DSP_SETDUPLEX),
 	IOCTL(SNDCTL_DSP_GETODELAY),
+#ifdef SNDCTL_DSP_GETCHANNELMASK
+	IOCTL(SNDCTL_DSP_GETCHANNELMASK),
+#endif
+#ifdef SNDCTL_DSP_BIND_CHANNEL
+	IOCTL(SNDCTL_DSP_BIND_CHANNEL),
+#endif
+#ifdef SNDCTL_DSP_GETSPDIF
+	IOCTL(SNDCTL_DSP_GETSPDIF),
+#endif
+#ifdef SNDCTL_DSP_SETSPDIF
+	IOCTL(SNDCTL_DSP_SETSPDIF),
+#endif
+#ifdef SNDCTL_DSP_PROFILE
+	IOCTL(SNDCTL_DSP_PROFILE),
+#endif
+
+	/* OSS DSP coprocessor (/dev/dsp[N], legacy SoundBlaster — type 'C') */
+#ifdef SNDCTL_COPR_LOAD
+	IOCTL(SNDCTL_COPR_LOAD),
+	IOCTL(SNDCTL_COPR_RDATA),
+	IOCTL(SNDCTL_COPR_RCODE),
+	IOCTL(SNDCTL_COPR_WDATA),
+	IOCTL(SNDCTL_COPR_WCODE),
+	IOCTL(SNDCTL_COPR_RUN),
+	IOCTL(SNDCTL_COPR_HALT),
+	IOCTL(SNDCTL_COPR_SENDMSG),
+	IOCTL(SNDCTL_COPR_RCVMSG),
+#endif
 
 	/* OSS mixer ioctls (/dev/mixer) */
 	IOCTL(SOUND_MIXER_READ_VOLUME),
@@ -1311,6 +1561,21 @@ static const struct ioctl sound_ioctls[] = {
 	IOCTL(SOUND_MIXER_WRITE_LINE2),
 	IOCTL(SOUND_MIXER_WRITE_LINE3),
 	IOCTL(SOUND_MIXER_WRITE_RECSRC),
+	/* SOUND_MIXER_{MUTE,LOUD,ENHANCE} alias to SOUND_MIXER_NONE — skip
+	 * the READ/WRITE wrappers; they collide with SOUND_MIXER_VOLUME. */
+#ifdef SOUND_MIXER_AGC
+	IOCTL(SOUND_MIXER_AGC),
+#endif
+#ifdef SOUND_MIXER_3DSE
+	IOCTL(SOUND_MIXER_3DSE),
+#endif
+#ifdef SOUND_MIXER_ACCESS
+	IOCTL(SOUND_MIXER_ACCESS),
+#endif
+#ifdef SOUND_MIXER_GETLEVELS
+	IOCTL(SOUND_MIXER_GETLEVELS),
+	IOCTL(SOUND_MIXER_SETLEVELS),
+#endif
 	IOCTL(SOUND_MIXER_INFO),
 #ifdef OSS_GETVERSION
 	IOCTL(OSS_GETVERSION),
