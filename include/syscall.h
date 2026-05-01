@@ -101,10 +101,20 @@ struct arglist {
 
 #define NR_ERRNOS 133	// Number in /usr/include/asm-generic/errno.h
 
+/* Per-(syscall,argnum) scoreboard of low-numbered fds (0..255) that have
+ * survived a successful call.  Inline 32-byte bitmap so the whole struct
+ * stays POD and lives in alloc_shared() memory -- no per-process pointers
+ * (see commit e065bf1241a1 for why pointers do not work here). */
+#define SUCCESS_FD_SCOREBOARD_BITS	256
+#define SUCCESS_FD_SCOREBOARD_BYTES	(SUCCESS_FD_SCOREBOARD_BITS / 8)
+
 struct results {
 	/* ARG_LEN: range of successful length values. */
 	bool seen;
 	unsigned int min, max;
+	/* ARG_FD / typed-fd: bit `fd` set if get_random_fd / get_typed_fd
+	 * returned that low fd for this slot and the call succeeded. */
+	unsigned char success_fds[SUCCESS_FD_SCOREBOARD_BYTES];
 };
 
 struct syscallentry {

@@ -46,6 +46,36 @@ static void store_successful_len(struct results *results, unsigned long value)
 		results->max = value;
 }
 
+static void store_successful_fd(struct results *results, unsigned long value)
+{
+	int fd = (int) value;
+
+	if (fd < 0 || fd >= SUCCESS_FD_SCOREBOARD_BITS)
+		return;
+	results->success_fds[fd >> 3] |= (unsigned char)(1U << (fd & 7));
+}
+
+/*
+ * Return a randomly chosen fd whose bit is set in the slot's scoreboard,
+ * or -1 if no fd has succeeded for this slot yet.  Skips 0/1/2 defensively
+ * even though store_successful_fd() never sets them (get_random_fd /
+ * get_typed_fd refuse to hand them out).
+ */
+int pick_successful_fd(struct results *results)
+{
+	int candidates[SUCCESS_FD_SCOREBOARD_BITS];
+	int n = 0;
+	int fd;
+
+	for (fd = 3; fd < SUCCESS_FD_SCOREBOARD_BITS; fd++) {
+		if (results->success_fds[fd >> 3] & (unsigned char)(1U << (fd & 7)))
+			candidates[n++] = fd;
+	}
+	if (n == 0)
+		return -1;
+	return candidates[rand() % n];
+}
+
 void handle_success(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
@@ -64,5 +94,7 @@ void handle_success(struct syscallrecord *rec)
 
 		if (argtype == ARG_LEN)
 			store_successful_len(results, value);
+		else if (is_fdarg(argtype))
+			store_successful_fd(results, value);
 	}
 }

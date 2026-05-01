@@ -14,6 +14,7 @@
 #include "net.h"
 #include "pathnames.h"
 #include "random.h"
+#include "results.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -281,6 +282,18 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 		return 0;
 
 	argtype = get_argtype(entry, argnum);
+
+	/* For fd-typed args, occasionally re-pick a low fd that previously
+	 * succeeded for this exact (syscall, argnum) slot.  Targets the
+	 * sweet spot where the kernel accepted the fd last time, so we keep
+	 * exercising the post-validation path instead of bouncing off
+	 * EBADF/EINVAL on a fresh random pick. */
+	if (is_fdarg(argtype) && RAND_BOOL()) {
+		int fd = pick_successful_fd(&entry->results[argnum - 1]);
+
+		if (fd >= 0)
+			return (unsigned long) fd;
+	}
 
 	if (is_typed_fdarg(argtype))
 		return get_typed_fd(argtype);
