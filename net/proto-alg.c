@@ -13,10 +13,20 @@
 #include <linux/if_alg.h>
 
 static const char *hashes[] = {
-	"md5", "sha1", "sha256", "sha384", "sha512",
-	"sha3-256", "sha3-384", "sha3-512",
-	"hmac(sha256)", "hmac(sha3-256)",
-	"blake2b-256", "blake2b-512", "sm3",
+	"md4", "md5",
+	"sha1", "sha224", "sha256", "sha384", "sha512",
+	"sha3-224", "sha3-256", "sha3-384", "sha3-512",
+	"hmac(md5)", "hmac(sha1)",
+	"hmac(sha224)", "hmac(sha256)", "hmac(sha384)", "hmac(sha512)",
+	"hmac(sha3-256)",
+	"rmd160",
+	"streebog256", "streebog512",
+	"wp256", "wp384", "wp512",
+	"blake2b-160", "blake2b-256", "blake2b-384", "blake2b-512",
+	"crc32", "crc32c", "xxhash64",
+	"digest_null",
+	"cmac(aes)", "xcbc(aes)", "cbcmac(aes)",
+	"sm3",
 };
 
 static const char *aead_algos[] = {
