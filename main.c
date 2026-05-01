@@ -85,6 +85,12 @@ static int shm_is_corrupt(void)
 	if (current_op_count < current_previous_op_count) {
 		output(0, "Execcount went backwards! (old:%lu new:%lu):\n",
 			current_previous_op_count, current_op_count);
+		/* op_count regression is a shm-wide corruption signal.  Dump
+		 * pids[] page state too — if the same wild write that hit
+		 * stats also hit the pid array, we want to see it; if pids[]
+		 * is intact the /proc/self/maps line still tells us whether
+		 * the freeze is silently gone. */
+		dump_pids_page_state();
 		panic(EXIT_SHM_CORRUPTION);
 		return true;
 	}
