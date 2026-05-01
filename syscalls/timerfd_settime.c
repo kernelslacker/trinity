@@ -31,6 +31,7 @@ static void sanitise_timerfd_settime(struct syscallrecord *rec)
 	its->it_value.tv_nsec = 0;
 
 	rec->a3 = (unsigned long) its;
+	avoid_shared_buffer(&rec->a4, sizeof(struct itimerspec));
 }
 
 struct syscallentry syscall_timerfd_settime = {

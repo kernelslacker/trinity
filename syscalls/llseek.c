@@ -16,6 +16,7 @@ static void sanitise_llseek(struct syscallrecord *rec)
 {
 	rec->a2 = 0;	/* offset_high: keep offset < 4GB */
 	rec->a3 = rand64() & 0x7fffffff;	/* offset_low: non-negative */
+	avoid_shared_buffer(&rec->a4, sizeof(loff_t));
 }
 
 struct syscallentry syscall_llseek = {
