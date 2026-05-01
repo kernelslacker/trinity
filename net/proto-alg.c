@@ -150,6 +150,10 @@ static const char *skcipher_algos[] = {
 
 static const char *akcipher_algos[] = {
 	"rsa",
+	"pkcs1pad(rsa,sha224)",
+	"pkcs1pad(rsa,sha256)",
+	"pkcs1pad(rsa,sha384)",
+	"pkcs1pad(rsa,sha512)",
 };
 
 static const char *kpp_algos[] = {
