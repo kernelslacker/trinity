@@ -161,6 +161,12 @@ struct shm_s {
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;
 
+	/* socket_family_chain childop unsupported latch.  Set to true after
+	 * an invocation hits a burst of ESRCH/EPERM/ENOPROTOOPT errors,
+	 * indicating the kernel was built without CRYPTO_USER_API or AF_ALG
+	 * is otherwise locked down.  Siblings then skip the chain entirely. */
+	bool socket_family_chain_unsupported;
+
 	/*
 	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
 	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
