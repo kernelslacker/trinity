@@ -54,8 +54,11 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <linux/bpf.h>
 #include <linux/futex.h>
+#include <linux/io_uring.h>
 #include <linux/memfd.h>
+#include <linux/perf_event.h>
 #include <linux/userfaultfd.h>
 
 #include "arch.h"
@@ -72,6 +75,18 @@
 #endif
 #ifndef MFD_ALLOW_SEALING
 #define MFD_ALLOW_SEALING	0x0002U
+#endif
+
+#ifndef __NR_io_uring_setup
+#define __NR_io_uring_setup	425
+#define __NR_io_uring_enter	426
+#define __NR_io_uring_register	427
+#endif
+
+#ifndef IORING_OFF_SQ_RING
+#define IORING_OFF_SQ_RING	0ULL
+#define IORING_OFF_CQ_RING	0x8000000ULL
+#define IORING_OFF_SQES		0x10000000ULL
 #endif
 
 /*
@@ -2142,6 +2157,209 @@ out:
 	return ok;
 }
 
+/*
+ * Recipe 29: io_uring fixed-file register/unregister vs in-flight ref.
+ *
+ * Single-threaded.  Set up a private io_uring, mmap the SQ/CQ rings and
+ * SQE array, IORING_REGISTER_FILES with one /dev/null fd in slot 0,
+ * close the original /dev/null fd so the registered table holds the
+ * sole reference, submit IORING_OP_READ on fixed-file index 0 with
+ * IOSQE_FIXED_FILE via io_uring_enter(to_submit=1, min_complete=0)
+ * (submit-and-return without reaping), then IORING_UNREGISTER_FILES
+ * back-to-back.  Drain any CQEs and tear down.
+ *
+ * Targets the fixed-file refcount machinery in fs/io_uring/rsrc.c —
+ * the in-flight request grabs a ref on the registered slot via the
+ * rsrc_node mechanism, and UNREGISTER must reconcile the slot release
+ * against any extant refs.  /dev/null EOF means the read completes
+ * inline in the common case, but under sibling load (mm pressure,
+ * scheduler preemption) the dispatch can defer to io-wq and the
+ * unregister observes a non-zero rsrc-node refcount.  The exact
+ * window is small but the path under test — io_rsrc_node_destroy /
+ * io_rsrc_data_free / io_wait_rsrc_data — is the same one with a
+ * recurring history of UAFs and double-frees in this subsystem.
+ *
+ * Closing the original /dev/null fd between REGISTER and the SQE
+ * submit is intentional: it forces the registered table to be the
+ * sole owner of the file's struct file ref.  When the read references
+ * the file via the registered index, the lookup goes through the
+ * rsrc node, not the caller's fdtable — which is exactly the path
+ * the bug class lives on.
+ *
+ * Single-threaded variant rather than the 2-thread shape used by
+ * recipe 26 (recipe_timerfd_xclose) because UNREGISTER_FILES is
+ * synchronous against in-flight refs: a 2nd thread would have to
+ * cancel the request before unregister returned, complicating the
+ * sequence without buying any additional path coverage.
+ *
+ * Latch shape covers the ways the feature can be absent on the very
+ * first probe:
+ *   - io_uring_setup ENOSYS    (CONFIG_IO_URING off)
+ *   - io_uring_setup EPERM     (kernel.io_uring_disabled sysctl)
+ *   - mmap MAP_FAILED with EOPNOTSUPP/EPERM on the very first try
+ *     (locked-down kernels that present the syscall but reject mmap)
+ *   - REGISTER_FILES EINVAL/ENOSYS on first call (half-wired surface)
+ */
+static bool recipe_iouring_fixed_uaf(bool *unsupported)
+{
+	struct io_uring_params p;
+	struct io_uring_sqe *sqes_arr;
+	void *sq_ring = MAP_FAILED;
+	void *cq_ring = MAP_FAILED;
+	void *sqes = MAP_FAILED;
+	size_t sq_sz = 0, cq_sz = 0, sqes_sz = 0;
+	bool single_mmap = false;
+	int ring_fd = -1;
+	int devnull = -1;
+	int fds[1];
+	unsigned int *sq_array;
+	unsigned int mask, head, tail;
+	bool registered = false;
+	bool ok = false;
+	int r;
+
+	memset(&p, 0, sizeof(p));
+	ring_fd = (int)syscall(__NR_io_uring_setup, 8U, &p);
+	if (ring_fd < 0) {
+		if (errno == ENOSYS || errno == EPERM) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	sq_sz = (size_t)p.sq_off.array +
+		(size_t)p.sq_entries * sizeof(unsigned int);
+	cq_sz = (size_t)p.cq_off.cqes +
+		(size_t)p.cq_entries * sizeof(struct io_uring_cqe);
+	sqes_sz = (size_t)p.sq_entries * sizeof(struct io_uring_sqe);
+
+	sq_ring = mmap(NULL, sq_sz, PROT_READ | PROT_WRITE,
+		       MAP_SHARED | MAP_POPULATE, ring_fd, IORING_OFF_SQ_RING);
+	if (sq_ring == MAP_FAILED) {
+		if (errno == EOPNOTSUPP || errno == EPERM) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	if (p.features & IORING_FEAT_SINGLE_MMAP) {
+		cq_ring = sq_ring;
+		single_mmap = true;
+	} else {
+		cq_ring = mmap(NULL, cq_sz, PROT_READ | PROT_WRITE,
+			       MAP_SHARED | MAP_POPULATE,
+			       ring_fd, IORING_OFF_CQ_RING);
+		if (cq_ring == MAP_FAILED)
+			goto out;
+	}
+
+	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
+		    MAP_SHARED | MAP_POPULATE, ring_fd, IORING_OFF_SQES);
+	if (sqes == MAP_FAILED)
+		goto out;
+
+	devnull = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (devnull < 0)
+		goto out;
+
+	fds[0] = devnull;
+	r = (int)syscall(__NR_io_uring_register, ring_fd,
+			 IORING_REGISTER_FILES, fds, 1U);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+	registered = true;
+
+	/* Drop the caller's fdtable ref now that the registered table owns
+	 * a ref on the same struct file.  Subsequent ops via the fixed-file
+	 * index route through the rsrc_node lookup -- the path the UAF
+	 * class lives on, not the regular fdget. */
+	close(devnull);
+	devnull = -1;
+
+	sqes_arr = (struct io_uring_sqe *)sqes;
+	memset(&sqes_arr[0], 0, sizeof(sqes_arr[0]));
+	sqes_arr[0].opcode    = IORING_OP_READ;
+	sqes_arr[0].fd        = 0;		/* registered slot index */
+	sqes_arr[0].flags     = IOSQE_FIXED_FILE;
+	sqes_arr[0].len       = 16;
+	sqes_arr[0].user_data = 0xfeedface;
+
+	mask = *(volatile unsigned int *)((char *)sq_ring + p.sq_off.ring_mask);
+	head = *(volatile unsigned int *)((char *)sq_ring + p.sq_off.head);
+	tail = *(volatile unsigned int *)((char *)sq_ring + p.sq_off.tail);
+	if ((tail - head) >= p.sq_entries)
+		goto out;
+
+	sq_array = (unsigned int *)((char *)sq_ring + p.sq_off.array);
+	sq_array[tail & mask] = 0;
+	__sync_synchronize();
+	*(volatile unsigned int *)((char *)sq_ring + p.sq_off.tail) = tail + 1;
+
+	/* Submit-and-return: min_complete=0 means we don't wait for the
+	 * read to land in the CQ before kicking off the unregister.  The
+	 * race window is the gap between the kernel queueing the request
+	 * (which grabs the rsrc-node ref) and posting the completion
+	 * (which drops it). */
+	(void)syscall(__NR_io_uring_enter, ring_fd, 1U, 0U,
+		      0U /* no GETEVENTS */, NULL, 0UL);
+
+	(void)syscall(__NR_io_uring_register, ring_fd,
+		      IORING_UNREGISTER_FILES, NULL, 0U);
+	registered = false;
+
+	/* Drain any CQEs that landed before/during the unregister.  No
+	 * assertion on what we find -- the path under test is the
+	 * unregister vs in-flight ref reconciliation, not whether the
+	 * read returned 0 or -ECANCELED. */
+	{
+		unsigned int cmask, chead, ctail;
+		struct io_uring_cqe *cqes;
+
+		cmask = *(volatile unsigned int *)((char *)cq_ring +
+						   p.cq_off.ring_mask);
+		chead = *(volatile unsigned int *)((char *)cq_ring +
+						   p.cq_off.head);
+		ctail = *(volatile unsigned int *)((char *)cq_ring +
+						   p.cq_off.tail);
+		cqes = (struct io_uring_cqe *)((char *)cq_ring +
+					       p.cq_off.cqes);
+		while (chead != ctail) {
+			(void)cqes[chead & cmask];
+			chead++;
+		}
+		__sync_synchronize();
+		*(volatile unsigned int *)((char *)cq_ring +
+					   p.cq_off.head) = chead;
+	}
+
+	ok = true;
+out:
+	if (registered)
+		(void)syscall(__NR_io_uring_register, ring_fd,
+			      IORING_UNREGISTER_FILES, NULL, 0U);
+	if (sqes != MAP_FAILED)
+		munmap(sqes, sqes_sz);
+	if (cq_ring != MAP_FAILED && !single_mmap)
+		munmap(cq_ring, cq_sz);
+	if (sq_ring != MAP_FAILED)
+		munmap(sq_ring, sq_sz);
+	if (devnull >= 0)
+		close(devnull);
+	if (ring_fd >= 0)
+		close(ring_fd);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -2171,6 +2389,7 @@ static const struct recipe recipes[] = {
 	{ "timerfd_xclose", recipe_timerfd_xclose },
 	{ "signalfd_delivery", recipe_signalfd_delivery },
 	{ "epoll_xclose", recipe_epoll_xclose },
+	{ "iouring_fixed_uaf", recipe_iouring_fixed_uaf },
 };
 
 /*
