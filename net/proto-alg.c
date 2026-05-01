@@ -58,17 +58,25 @@ static const char *aead_algos[] = {
 };
 
 static const char *rng_algos[] = {
-	"ansi_cprng",
+	"stdrng",
 	"drbg_nopr_ctr_aes128",
 	"drbg_nopr_ctr_aes192",
 	"drbg_nopr_ctr_aes256",
 	"drbg_nopr_hmac_sha256",
+	"drbg_nopr_hmac_sha384",
+	"drbg_nopr_hmac_sha512",
 	"drbg_nopr_sha256",
+	"drbg_nopr_sha384",
+	"drbg_nopr_sha512",
 	"drbg_pr_ctr_aes128",
 	"drbg_pr_ctr_aes192",
 	"drbg_pr_ctr_aes256",
 	"drbg_pr_hmac_sha256",
+	"drbg_pr_hmac_sha384",
+	"drbg_pr_hmac_sha512",
 	"drbg_pr_sha256",
+	"drbg_pr_sha384",
+	"drbg_pr_sha512",
 	"jitterentropy_rng",
 };
 
