@@ -1141,6 +1141,37 @@ static void taint_check(void)
 	}
 }
 
+/*
+ * How often, in op_count units, to run validate_global_objects() from
+ * main_loop.  Cost per pass is bounded by MAX_OBJECT_TYPES *
+ * GLOBAL_OBJ_MAX_CAPACITY pointer checks (~32K), trivial relative to
+ * a million syscalls.  Scan cadence is the dial that decides how
+ * many ops sit between a wild write and its detection: at the
+ * default 1M, the 2026-04-22 corruption (which surfaced ~80k ops
+ * after the stomp) would have been caught on the very next pass.
+ *
+ * Lower this when actively bisecting a corruption — values down to
+ * 1 are valid (and slow).  Gated on -vv so production runs pay
+ * nothing.
+ */
+#define GLOBAL_SANITY_WALK_INTERVAL	1000000UL
+
+static void periodic_global_sanity_walk(void)
+{
+	static unsigned long last_walk_op = 0;
+	unsigned long op;
+
+	if (verbosity <= 2)
+		return;
+
+	op = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+	if (op - last_walk_op < GLOBAL_SANITY_WALK_INTERVAL)
+		return;
+
+	last_walk_op = op;
+	validate_global_objects();
+}
+
 void main_loop(void)
 {
 	struct timespec epoch_start;
@@ -1172,6 +1203,8 @@ void main_loop(void)
 		fd_event_drain_all();
 
 		taint_check();
+
+		periodic_global_sanity_walk();
 
 		if (shm_is_corrupt() == true)
 			goto corrupt;

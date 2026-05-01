@@ -294,6 +294,7 @@ struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 bool objects_empty(enum objecttype type);
+void validate_global_objects(void);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);
