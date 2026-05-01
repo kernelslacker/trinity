@@ -8,6 +8,7 @@
 #include "random.h"
 #include "net.h"
 #include "compat.h"
+#include "proto-alg-dict.h"
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
@@ -179,53 +180,94 @@ static const char *sig_algos[] = {
 	"mldsa87",
 };
 
+/*
+ * Static-fallback accessor consumed by net/proto-alg-dict.c.  The dict
+ * merges these entries with whatever it parses from /proc/crypto, so
+ * containers/locked-down envs with an empty /proc/crypto still get a
+ * working algorithm list.  Keep these arrays in lockstep with upstream
+ * crypto/ — see Q2.30 refresh against linux 7.1-rc1.
+ */
+void alg_static_fallback_get(enum alg_dict_type type,
+			     const char *const **arr, unsigned int *count)
+{
+	switch (type) {
+	case ALG_DICT_AEAD:
+		*arr = aead_algos;	*count = ARRAY_SIZE(aead_algos);	break;
+	case ALG_DICT_HASH:
+		*arr = hashes;		*count = ARRAY_SIZE(hashes);		break;
+	case ALG_DICT_RNG:
+		*arr = rng_algos;	*count = ARRAY_SIZE(rng_algos);		break;
+	case ALG_DICT_SKCIPHER:
+		*arr = skcipher_algos;	*count = ARRAY_SIZE(skcipher_algos);	break;
+	case ALG_DICT_AKCIPHER:
+		*arr = akcipher_algos;	*count = ARRAY_SIZE(akcipher_algos);	break;
+	case ALG_DICT_KPP:
+		*arr = kpp_algos;	*count = ARRAY_SIZE(kpp_algos);		break;
+	case ALG_DICT_SIG:
+		*arr = sig_algos;	*count = ARRAY_SIZE(sig_algos);		break;
+	default:
+		*arr = NULL;		*count = 0;				break;
+	}
+}
+
+/*
+ * Pick a salg_type / salg_name pair from the runtime dictionary.
+ * Falls back to the static fallback arrays via the dict's own merge
+ * if /proc/crypto was empty.  If the dict bucket is somehow still
+ * empty (init never ran), drop back to the static array directly so
+ * we never emit a NULL salg_name.
+ */
+static void pick_alg(enum alg_dict_type type, const char *type_str,
+		     struct sockaddr_alg *alg)
+{
+	const char **names;
+	const char *pick = NULL;
+	unsigned int n;
+
+	strncpy((char *)alg->salg_type, type_str, sizeof(alg->salg_type) - 1);
+	alg->salg_type[sizeof(alg->salg_type) - 1] = '\0';
+
+	names = alg_dict_names(type, &n);
+	if (n == 0) {
+		const char *const *fallback;
+
+		alg_static_fallback_get(type, &fallback, &n);
+		if (n != 0)
+			pick = fallback[rand() % n];
+	} else {
+		pick = names[rand() % n];
+	}
+
+	if (pick != NULL) {
+		strncpy((char *)alg->salg_name, pick,
+			sizeof(alg->salg_name) - 1);
+		alg->salg_name[sizeof(alg->salg_name) - 1] = '\0';
+	}
+}
+
 static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
+	static const struct {
+		enum alg_dict_type type;
+		const char *str;
+	} types[] = {
+		{ ALG_DICT_AEAD,	"aead"		},
+		{ ALG_DICT_HASH,	"hash"		},
+		{ ALG_DICT_RNG,		"rng"		},
+		{ ALG_DICT_SKCIPHER,	"skcipher"	},
+		{ ALG_DICT_AKCIPHER,	"akcipher"	},
+		{ ALG_DICT_KPP,		"kpp"		},
+		{ ALG_DICT_SIG,		"sig"		},
+	};
 	struct sockaddr_alg *alg;
-	const char **algs = NULL;
-	unsigned int type;
-	const char *types[] = { "aead", "hash", "rng", "skcipher", "akcipher", "kpp", "sig", };
-	unsigned int algo;
+	unsigned int idx;
 
 	alg = zmalloc(sizeof(struct sockaddr_alg));
 
 	alg->salg_family = PF_ALG;
 
-	type = rand() % ARRAY_SIZE(types);
-	strcpy((char *)alg->salg_type, types[type]);
-
-	switch (type) {
-	// aead
-	case 0:	algs = aead_algos;
-		algo = rand() % ARRAY_SIZE(aead_algos);
-		break;
-	// hash
-	case 1:	algs = hashes;
-		algo = rand() % ARRAY_SIZE(hashes);
-		break;
-	// rng
-	case 2:	algs = rng_algos;
-		algo = rand() % ARRAY_SIZE(rng_algos);
-		break;
-	// skcipher
-	case 3:	algs = skcipher_algos;
-		algo = rand() % ARRAY_SIZE(skcipher_algos);
-		break;
-	// akcipher
-	case 4:	algs = akcipher_algos;
-		algo = rand() % ARRAY_SIZE(akcipher_algos);
-		break;
-	// kpp
-	case 5:	algs = kpp_algos;
-		algo = rand() % ARRAY_SIZE(kpp_algos);
-		break;
-	// sig
-	case 6:	algs = sig_algos;
-		algo = rand() % ARRAY_SIZE(sig_algos);
-		break;
-	default: unreachable();
-	}
-	strcpy((char *)alg->salg_name, algs[algo]);
+	idx = rand() % ARRAY_SIZE(types);
+	pick_alg(types[idx].type, types[idx].str, alg);
 
 	alg->salg_feat = rand32();
 	alg->salg_mask = rand32();
@@ -268,41 +310,25 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
  */
 static void alg_socket_setup(int fd)
 {
+	static const struct {
+		enum alg_dict_type type;
+		const char *str;
+	} setup_types[] = {
+		{ ALG_DICT_HASH,	"hash"		},
+		{ ALG_DICT_SKCIPHER,	"skcipher"	},
+		{ ALG_DICT_AEAD,	"aead"		},
+		{ ALG_DICT_RNG,		"rng"		},
+	};
 	struct sockaddr_alg sa;
 	unsigned char key[64];
 	int child_fd;
-	unsigned int keylen;
-	const char *hash_types[] = { "hash", "skcipher", "aead", "rng" };
-	const char *hash_algos[] = { "sha1", "sha256", "md5", "sha512" };
-	const char *setup_skcipher_algos[] = { "cbc(aes)", "ecb(aes)", "ctr(aes)" };
-	const char *type;
-	unsigned int type_idx;
+	unsigned int keylen, idx;
 
 	memset(&sa, 0, sizeof(sa));
 	sa.salg_family = AF_ALG;
 
-	type_idx = rand() % ARRAY_SIZE(hash_types);
-	type = hash_types[type_idx];
-	strncpy((char *)sa.salg_type, type, sizeof(sa.salg_type) - 1);
-
-	/* Pick an algorithm appropriate for the type */
-	switch (type_idx) {
-	case 0: /* hash */
-		strncpy((char *)sa.salg_name,
-			hash_algos[rand() % ARRAY_SIZE(hash_algos)],
-			sizeof(sa.salg_name) - 1);
-		break;
-	case 1: /* skcipher */
-		strncpy((char *)sa.salg_name,
-			setup_skcipher_algos[rand() % ARRAY_SIZE(setup_skcipher_algos)],
-			sizeof(sa.salg_name) - 1);
-		break;
-	default:
-		strncpy((char *)sa.salg_name,
-			hash_algos[rand() % ARRAY_SIZE(hash_algos)],
-			sizeof(sa.salg_name) - 1);
-		break;
-	}
+	idx = rand() % ARRAY_SIZE(setup_types);
+	pick_alg(setup_types[idx].type, setup_types[idx].str, &sa);
 
 	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
 		return;

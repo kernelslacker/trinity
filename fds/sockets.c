@@ -13,6 +13,7 @@
 #include "fd-event.h"
 #include "net.h"
 #include "objects.h"
+#include "proto-alg-dict.h"
 #include "params.h"	// verbosity, do_specific_domain
 #include "pids.h"
 #include "random.h"
@@ -440,6 +441,14 @@ static int open_sockets(void)
 	 * therefore stays on the private heap.
 	 */
 	head->shared_alloc = true;
+
+#ifdef USE_IF_ALG
+	/* Build the AF_ALG algorithm dictionary in the parent before any
+	 * socket setup runs.  generate_sockets() below calls into
+	 * proto_alg.socket_setup() which consumes the dict; children
+	 * inherit the populated tables via COW. */
+	init_alg_template_dict();
+#endif
 
 	ret = generate_sockets();
 	output(1, "created %u sockets\n", nr_sockets);
