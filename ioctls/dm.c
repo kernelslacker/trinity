@@ -25,6 +25,15 @@ static const struct ioctl dm_ioctls[] = {
 	IOCTL(DM_LIST_VERSIONS),
 	IOCTL(DM_TARGET_MSG),
 	IOCTL(DM_DEV_SET_GEOMETRY),
+#ifdef DM_DEV_ARM_POLL
+	IOCTL(DM_DEV_ARM_POLL),
+#endif
+#ifdef DM_GET_TARGET_VERSION
+	IOCTL(DM_GET_TARGET_VERSION),
+#endif
+#ifdef DM_MPATH_PROBE_PATHS
+	IOCTL(DM_MPATH_PROBE_PATHS),
+#endif
 };
 
 static const char *const dm_devs[] = {
