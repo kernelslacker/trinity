@@ -535,6 +535,108 @@ bool objects_empty(enum objecttype type)
 }
 
 /*
+ * Periodic global-pool sanity walk.
+ *
+ * Post-Q3.1 OBJ_GLOBAL pools have no list ring — objects are tracked
+ * exclusively through head->array[0..num_entries).  This routine is
+ * the tripwire we lacked during the 2026-04-22 wild-write hunt: a
+ * stomp into a global head or array slot is reported here, on the
+ * parent's idle pass, instead of waiting for the next innocent caller
+ * to deref the trampled slot and SEGV ~80k iterations later.
+ *
+ * For every type, we check:
+ *   - array_capacity is either 0 (uninitialised slot) or exactly the
+ *     pre-init cap (GLOBAL_OBJ_MAX_CAPACITY).  Anything else means the
+ *     head struct itself has been overwritten — the array allocation
+ *     is fixed at init and never resized for OBJ_GLOBAL.
+ *   - num_entries is bounded by array_capacity.
+ *   - head->array is non-NULL whenever num_entries > 0.
+ *   - Every slot in [0, num_entries) is non-NULL.  Unlike OBJ_LOCAL
+ *     where __destroy_object's swap-with-last can transiently leave a
+ *     NULL inside the window between the array store and the count
+ *     decrement, on OBJ_GLOBAL pools we hold shm->objlock around the
+ *     whole mutation, so a NULL slot inside the live window from
+ *     under the lock is unambiguously corruption.
+ *   - For shared_alloc heads, every slot points into a tracked shared
+ *     region.  A parent-private heap pointer here is the canonical
+ *     "stray write stamped a malloc'd address into shared bookkeeping"
+ *     failure mode the wild-write hunt was chasing.
+ *
+ * Parent-only.  Children's COW snapshot of head->array would be
+ * stale relative to parent mutations and would generate spurious
+ * reports.  The walker takes shm->objlock so it sees a consistent
+ * snapshot even if a regen path is mid-mutation.  The mprotect-RO
+ * guard on the array is left in place — reads work fine on RO maps
+ * and we have no need to write.
+ *
+ * Reporting style follows the existing list-validator class
+ * (debug.c::__list_add_valid_or_die et al.): one outputerr line per
+ * finding, including type index and slot coordinates so a corruption
+ * report can be cross-referenced against the -vv ADD-OBJ trace.
+ */
+void validate_global_objects(void)
+{
+	unsigned int type;
+	unsigned int corruptions = 0;
+
+	lock(&shm->objlock);
+
+	for (type = 0; type < MAX_OBJECT_TYPES; type++) {
+		struct objhead *head = &shm->global_objects[type];
+		unsigned int n = head->num_entries;
+		unsigned int cap = head->array_capacity;
+		unsigned int idx;
+
+		if (cap != 0 && cap != GLOBAL_OBJ_MAX_CAPACITY) {
+			outputerr("global-list sanity: type=%u corrupt head: array_capacity=%u (expected 0 or %u) num_entries=%u max_entries=%u array=%p\n",
+				type, cap, GLOBAL_OBJ_MAX_CAPACITY,
+				n, head->max_entries, head->array);
+			corruptions++;
+			continue;
+		}
+
+		if (n > cap) {
+			outputerr("global-list sanity: type=%u corrupt head: num_entries=%u > array_capacity=%u max_entries=%u array=%p\n",
+				type, n, cap, head->max_entries, head->array);
+			corruptions++;
+			continue;
+		}
+
+		if (n > 0 && head->array == NULL) {
+			outputerr("global-list sanity: type=%u corrupt head: num_entries=%u but array=NULL\n",
+				type, n);
+			corruptions++;
+			continue;
+		}
+
+		for (idx = 0; idx < n; idx++) {
+			struct object *obj = head->array[idx];
+
+			if (obj == NULL) {
+				outputerr("global-list sanity: type=%u slot %u/%u is NULL inside live window — wild write or torn destroy\n",
+					type, idx, n);
+				corruptions++;
+				continue;
+			}
+
+			if (head->shared_alloc &&
+			    !range_overlaps_shared((unsigned long)obj,
+						   sizeof(struct object))) {
+				outputerr("global-list sanity: type=%u slot %u/%u: obj=%p not in any tracked shared region (shared_alloc head — stamped private pointer?)\n",
+					type, idx, n, obj);
+				corruptions++;
+			}
+		}
+	}
+
+	unlock(&shm->objlock);
+
+	if (corruptions > 0)
+		outputerr("global-list sanity: %u corruption(s) detected this pass\n",
+			corruptions);
+}
+
+/*
  * Invalidate the fd stored in an object by setting it to -1.
  * Used before calling the destructor when the fd was already closed
  * (e.g. after a successful close() syscall) to prevent double-close.
