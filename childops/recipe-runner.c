@@ -906,6 +906,74 @@ out:
 	return ok;
 }
 
+/*
+ * Recipe 18: anon-VMA split-and-coalesce lifecycle.
+ *
+ * mmap a 4-page private anonymous region → dirty every page so the
+ * VMA owns populated PTEs → mprotect the middle two pages to PROT_READ
+ * (splits one VMA into three: [RW][R][RW]) → mprotect them back to
+ * RW (vma_merge collapses the three into one again) → munmap the
+ * single middle page (re-splits with an unmapped hole) → munmap the
+ * full original range (kernel walks the residual head + tail VMAs
+ * across the punched gap).
+ *
+ * Exercises split_vma, vma_merge, and the munmap-with-hole path in
+ * one sequence — all three are common UAF/refcount fault sites that
+ * isolated random mmap/munmap calls rarely reach because they need a
+ * specific multi-VMA layout to begin with.  The existing
+ * mprotect-split childop drives the split path with random
+ * arguments; this recipe forces the deterministic split→merge→hole
+ * trajectory the random caller almost never hits.
+ */
+static bool recipe_mm_vma(bool *unsupported __unused__)
+{
+	void *region = MAP_FAILED;
+	size_t total = (size_t)page_size * 4;
+	char *base;
+	bool ok = false;
+
+	region = mmap(NULL, total, PROT_READ | PROT_WRITE,
+		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (region == MAP_FAILED)
+		goto out;
+	base = region;
+
+	base[0 * page_size] = 'a';
+	base[1 * page_size] = 'b';
+	base[2 * page_size] = 'c';
+	base[3 * page_size] = 'd';
+
+	/* Split: middle two pages drop to PROT_READ.  Single VMA
+	 * becomes three: [RW][R][RW]. */
+	if (mprotect(base + page_size, (size_t)page_size * 2,
+		     PROT_READ) < 0)
+		goto out;
+
+	/* Coalesce: promote middle back to RW.  vma_merge should fold
+	 * all three fragments back into one VMA. */
+	if (mprotect(base + page_size, (size_t)page_size * 2,
+		     PROT_READ | PROT_WRITE) < 0)
+		goto out;
+
+	/* Punch a hole — splits the (now-merged) VMA again, this time
+	 * with a real unmapped gap between the surviving fragments. */
+	if (munmap(base + page_size, page_size) < 0)
+		goto out;
+
+	/* Tear down everything that's left.  munmap across an unmapped
+	 * region is well-defined; the kernel just unmaps what's still
+	 * present.  This is the path we want to drive. */
+	if (munmap(region, total) < 0)
+		goto out;
+	region = MAP_FAILED;
+
+	ok = true;
+out:
+	if (region != MAP_FAILED)
+		(void)munmap(region, total);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -924,6 +992,7 @@ static const struct recipe recipes[] = {
 	{ "fanotify",     recipe_fanotify     },
 	{ "userfaultfd",  recipe_userfaultfd  },
 	{ "vfs_leases",   recipe_vfs_leases   },
+	{ "mm_vma",       recipe_mm_vma       },
 };
 
 /*
