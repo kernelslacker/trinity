@@ -160,6 +160,12 @@ static const char *kpp_algos[] = {
 	"dh",
 	"ecdh-nist-p192",
 	"ecdh-nist-p256",
+	"ecdh-nist-p384",
+	"ffdhe2048",
+	"ffdhe3072",
+	"ffdhe4096",
+	"ffdhe6144",
+	"ffdhe8192",
 };
 
 static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
