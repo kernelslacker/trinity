@@ -4,7 +4,11 @@
  * Each child tries to open /sys/kernel/debug/kcov at startup. If the
  * kernel supports KCOV, per-thread trace buffers are mmapped and PC
  * tracing is enabled around each syscall. Collected PCs are hashed
- * into a global shared bitmap to track edge coverage.
+ * into a global shared bucket-seen table to track edge coverage with
+ * AFL-style hit-count bucketing: a syscall that hits the same edge five
+ * times is distinguishable from one that hits it two hundred times, so
+ * mutations that nudge loop-trip counts past bucket boundaries register
+ * as new coverage.
  *
  * When KCOV_REMOTE_ENABLE is available, a fraction of syscalls use
  * remote mode to also collect coverage from softirqs, threaded IRQ
@@ -17,6 +21,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -63,24 +68,26 @@ void kcov_init_global(void)
 	 * Stays alloc_shared() rather than alloc_shared_global().
 	 * Children are the producers for every field in struct kcov_shared:
 	 * kcov_collect() (called from random-syscall.c in child context after
-	 * each syscall) writes to bitmap[] via fetch_or, bumps total_calls /
-	 * remote_calls / total_pcs / edges_found, and updates the
-	 * per_syscall_calls / per_syscall_edges / last_edge_at arrays.
+	 * each syscall) writes to bucket_seen[] via fetch_or, bumps
+	 * total_calls / remote_calls / total_pcs / edges_found, and updates
+	 * the per_syscall_calls / per_syscall_edges / last_edge_at arrays.
 	 * Freezing this region PROT_READ post-init would EFAULT every child's
 	 * coverage update on the hot path and disable the fuzzer's coverage
 	 * feedback loop entirely — the wild-write defence is incompatible
 	 * with the region's intentional child-writability.
 	 *
 	 * Wild-write risk this leaves open: a child syscall whose user-buffer
-	 * arg aliases into kcov_shm could let the kernel corrupt the bitmap
-	 * (false-positive coverage inflation) or the per-syscall counters
-	 * (a bogus last_edge_at value would stick a syscall in or out of the
+	 * arg aliases into kcov_shm could let the kernel corrupt the
+	 * bucket_seen table (false-positive coverage inflation, including
+	 * spurious bucket bits) or the per-syscall counters (a bogus
+	 * last_edge_at value would stick a syscall in or out of the
 	 * cold-skip pool).  Diagnostics only; doesn't crash the parent.
 	 */
 	kcov_shm = alloc_shared(sizeof(struct kcov_shared));
 	memset(kcov_shm, 0, sizeof(struct kcov_shared));
-	output(0, "KCOV: coverage collection enabled (%d KB bitmap)\n",
-		KCOV_BITMAP_SIZE / 1024);
+	output(0, "KCOV: coverage collection enabled (%lu MB bucket-seen table, %u edges, %u buckets)\n",
+		(unsigned long)KCOV_NUM_EDGES / (1024 * 1024),
+		KCOV_NUM_EDGES, KCOV_NUM_BUCKETS);
 
 	edgepair_init_global();
 }
@@ -94,8 +101,19 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	kc->remote_mode = false;
 	kc->remote_capable = false;
 	kc->child_id = child_id;
+	kc->dedup = NULL;
 
 	if (kcov_shm == NULL)
+		return;
+
+	/*
+	 * Per-child, child-private dedup table for hit-count bucketing.
+	 * malloc() so post-fork children get their own copy under COW —
+	 * the table is reset on every kcov_collect() so no cross-child
+	 * sharing is needed.
+	 */
+	kc->dedup = malloc(KCOV_DEDUP_SIZE * sizeof(*kc->dedup));
+	if (kc->dedup == NULL)
 		return;
 
 	kc->fd = open("/sys/kernel/debug/kcov", O_RDWR);
@@ -195,6 +213,10 @@ void kcov_cleanup_child(struct kcov_child *kc)
 		close(kc->fd);
 		kc->fd = -1;
 	}
+	if (kc->dedup != NULL) {
+		free(kc->dedup);
+		kc->dedup = NULL;
+	}
 	kc->active = false;
 }
 
@@ -257,7 +279,7 @@ void kcov_disable(struct kcov_child *kc)
 }
 
 /*
- * Hash a kernel PC value into a bitmap index.
+ * Hash a kernel PC value into an edge index.
  *
  * The previous xor-shift mixed too few of the bits in a typical kernel PC.
  * Two PCs that landed within the same cacheline (low 6 bits identical) and
@@ -270,14 +292,69 @@ void kcov_disable(struct kcov_child *kc)
  * cacheline clustering without breaking the PC's locality for the rest of
  * the pipeline.
  */
-static unsigned int pc_to_bit(unsigned long pc)
+static unsigned int pc_to_edge(unsigned long pc)
 {
 	pc ^= pc >> 33;
 	pc *= 0xff51afd7ed558ccdUL;
 	pc ^= pc >> 33;
 	pc *= 0xc4ceb9fe1a85ec53UL;
 	pc ^= pc >> 33;
-	return (unsigned int)(pc % (KCOV_BITMAP_SIZE * 8));
+	return (unsigned int)(pc & (KCOV_NUM_EDGES - 1));
+}
+
+/*
+ * AFL-style hit-count classification.  Returns the bucket index 0..7 for
+ * a count >= 1.  Counts of 1, 2, 3 each get their own bucket (loops with
+ * very small iteration counts are common and worth distinguishing); larger
+ * counts collapse into geometric ranges so a 100-iteration loop and a
+ * 90-iteration loop don't fight over distinct novelty events.
+ */
+static unsigned int bucket_for_count(unsigned int n)
+{
+	if (n <= 1)
+		return 0;
+	if (n == 2)
+		return 1;
+	if (n == 3)
+		return 2;
+	if (n <= 7)
+		return 3;
+	if (n <= 15)
+		return 4;
+	if (n <= 31)
+		return 5;
+	if (n <= 127)
+		return 6;
+	return 7;
+}
+
+/*
+ * Per-call dedup: count how many times this trace has hit a given edge.
+ * Returns the updated count (1 on first sight, ++count on repeat).  On
+ * probe overflow returns 1, which makes the caller register the hit in
+ * bucket 0 — graceful degradation to old "any-hit" semantics for the
+ * pathological edge in the pathological call.
+ */
+static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge)
+{
+	unsigned int slot = (edge * 0x9E3779B1U) & KCOV_DEDUP_MASK;
+	unsigned int probe;
+
+	for (probe = 0; probe < KCOV_DEDUP_MAX_PROBE; probe++) {
+		struct kcov_dedup_slot *s = &dedup[slot];
+
+		if (s->edge_idx == UINT32_MAX) {
+			s->edge_idx = edge;
+			s->count = 1;
+			return 1;
+		}
+		if (s->edge_idx == edge) {
+			s->count++;
+			return s->count;
+		}
+		slot = (slot + 1) & KCOV_DEDUP_MASK;
+	}
+	return 1;
 }
 
 bool kcov_collect(struct kcov_child *kc, unsigned int nr)
@@ -301,17 +378,27 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 	if (count > KCOV_TRACE_SIZE - 1)
 		count = KCOV_TRACE_SIZE - 1;
 
+	/* Wipe the dedup table so per-edge counts start fresh for this call. */
+	memset(kc->dedup, 0xFF, KCOV_DEDUP_SIZE * sizeof(*kc->dedup));
+
 	for (idx = 0; idx < count; idx++) {
 		unsigned long pc_val = kc->trace_buf[idx + 1];
-		unsigned int bit = pc_to_bit(pc_val);
-		unsigned int byte_idx = bit / 8;
-		unsigned char bit_mask = 1U << (bit % 8);
-		unsigned char old;
+		unsigned int edge = pc_to_edge(pc_val);
+		unsigned int local_count = dedup_inc(kc->dedup, edge);
+		unsigned int bucket = bucket_for_count(local_count);
+		unsigned char mask, old;
 
-		old = __atomic_fetch_or(&kcov_shm->bitmap[byte_idx],
-			bit_mask, __ATOMIC_RELAXED);
+		/* Skip the atomic OR when this hit kept us inside the same
+		 * bucket as the previous hit on this edge — there is no
+		 * possible new bit to set, so the global write is wasted. */
+		if (local_count > 1 && bucket == bucket_for_count(local_count - 1))
+			continue;
 
-		if (!(old & bit_mask)) {
+		mask = (unsigned char)(1U << bucket);
+		old = __atomic_fetch_or(&kcov_shm->bucket_seen[edge],
+			mask, __ATOMIC_RELAXED);
+
+		if (!(old & mask)) {
 			__atomic_fetch_add(&kcov_shm->edges_found,
 				1, __ATOMIC_RELAXED);
 			found_new = true;
