@@ -8,6 +8,7 @@
 #include "locks.h"
 #include "objects.h"
 #include "params.h"
+#include "pc_format.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
@@ -279,6 +280,10 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
 	bool was_protected = false;
+	char pcbuf[128];
+
+	output(2, "ADD-OBJ slot=%p type=%d caller=%s\n", obj, type,
+		pc_to_string(__builtin_return_address(0), pcbuf, sizeof(pcbuf)));
 
 	/* Children must not mutate global objects — the objhead metadata
 	 * is in shared memory but the objects/arrays are in per-process
