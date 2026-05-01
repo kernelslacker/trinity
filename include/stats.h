@@ -241,6 +241,12 @@ struct stats_s {
 	unsigned long close_racer_failed;		/* socketpair/pipe2 returned -1 */
 	unsigned long close_racer_thread_spawn_fail;	/* pthread_create returned non-zero */
 
+	/* socket_family_chain childop counters */
+	unsigned long socket_family_chain_runs;			/* total invocations */
+	unsigned long socket_family_chain_completed;		/* >=1 inner cycle reached recv */
+	unsigned long socket_family_chain_failed;		/* every inner cycle bailed early */
+	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially
