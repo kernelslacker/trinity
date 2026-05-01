@@ -26,6 +26,7 @@
 #include "shm.h"
 #include "signals.h"
 #include "sanitise.h"
+#include "stats.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -405,6 +406,9 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry != NULL) {
+		/* Dispatch-time category histogram, surfaced under -vv. */
+		shm->stats.syscall_category_count[stats_syscall_category(entry->name)]++;
+
 		/* FD leak tracking: count successful fd-creating and
 		 * fd-closing syscalls per child for leak diagnosis. */
 		if (rec->retval != -1UL) {

@@ -39,6 +39,91 @@ static void stat_row(const char *category, const char *metric, unsigned long val
 	output(0, STATS_ROW_FMT, category, metric, value);
 }
 
+/*
+ * Mechanical name-prefix → category lookup.  The table is ordered so that
+ * longer prefixes shadow shorter ones for the same head ("readlink" before
+ * "read", "sendfile" before "send"); first match wins.  Operator-grade
+ * categorisation, not a taxonomy — anything not listed lands in OTHER.
+ */
+unsigned int stats_syscall_category(const char *name)
+{
+	static const struct { const char *p; unsigned char cat; } tab[] = {
+		{ "readlink", SYSCAT_FILE },   { "preadv",   SYSCAT_READ },
+		{ "pread",    SYSCAT_READ },   { "read",     SYSCAT_READ },
+		{ "pwritev",  SYSCAT_WRITE },  { "pwrite",   SYSCAT_WRITE },
+		{ "writev",   SYSCAT_WRITE },  { "write",    SYSCAT_WRITE },
+		{ "open",     SYSCAT_OPEN },   { "creat",    SYSCAT_OPEN },
+		{ "mmap",     SYSCAT_MMAP },   { "munmap",   SYSCAT_MMAP },
+		{ "mremap",   SYSCAT_MMAP },   { "mprotect", SYSCAT_MMAP },
+		{ "madvise",  SYSCAT_MMAP },   { "msync",    SYSCAT_MMAP },
+		{ "mbind",    SYSCAT_MMAP },   { "mlock",    SYSCAT_MMAP },
+		{ "munlock",  SYSCAT_MMAP },   { "mincore",  SYSCAT_MMAP },
+		{ "brk",      SYSCAT_MMAP },
+		{ "sendfile", SYSCAT_FILE },
+		{ "socket",   SYSCAT_SOCKET }, { "bind",     SYSCAT_SOCKET },
+		{ "listen",   SYSCAT_SOCKET }, { "accept",   SYSCAT_SOCKET },
+		{ "connect",  SYSCAT_SOCKET }, { "send",     SYSCAT_SOCKET },
+		{ "recv",     SYSCAT_SOCKET }, { "shutdown", SYSCAT_SOCKET },
+		{ "getsock",  SYSCAT_SOCKET }, { "setsock",  SYSCAT_SOCKET },
+		{ "getpeer",  SYSCAT_SOCKET },
+		{ "fork",     SYSCAT_PROCESS },{ "vfork",    SYSCAT_PROCESS },
+		{ "clone",    SYSCAT_PROCESS },{ "exec",     SYSCAT_PROCESS },
+		{ "exit",     SYSCAT_PROCESS },{ "wait",     SYSCAT_PROCESS },
+		{ "kill",     SYSCAT_PROCESS },{ "tkill",    SYSCAT_PROCESS },
+		{ "tgkill",   SYSCAT_PROCESS },{ "pidfd",    SYSCAT_PROCESS },
+		{ "futex",    SYSCAT_IPC },    { "mq_",      SYSCAT_IPC },
+		{ "msg",      SYSCAT_IPC },    { "sem",      SYSCAT_IPC },
+		{ "shm",      SYSCAT_IPC },    { "pipe",     SYSCAT_IPC },
+		{ "eventfd",  SYSCAT_IPC },    { "signalfd", SYSCAT_IPC },
+		{ "rt_sig",   SYSCAT_IPC },    { "sigaction",SYSCAT_IPC },
+		{ "stat",     SYSCAT_FILE },   { "fstat",    SYSCAT_FILE },
+		{ "lstat",    SYSCAT_FILE },   { "access",   SYSCAT_FILE },
+		{ "chmod",    SYSCAT_FILE },   { "chown",    SYSCAT_FILE },
+		{ "fchmod",   SYSCAT_FILE },   { "fchown",   SYSCAT_FILE },
+		{ "lchown",   SYSCAT_FILE },   { "link",     SYSCAT_FILE },
+		{ "unlink",   SYSCAT_FILE },   { "symlink",  SYSCAT_FILE },
+		{ "rename",   SYSCAT_FILE },   { "mkdir",    SYSCAT_FILE },
+		{ "rmdir",    SYSCAT_FILE },   { "close",    SYSCAT_FILE },
+		{ "dup",      SYSCAT_FILE },   { "fcntl",    SYSCAT_FILE },
+		{ "ioctl",    SYSCAT_FILE },   { "lseek",    SYSCAT_FILE },
+		{ "truncate", SYSCAT_FILE },   { "ftruncate",SYSCAT_FILE },
+		{ "fsync",    SYSCAT_FILE },   { "fdatasync",SYSCAT_FILE },
+		{ "sync",     SYSCAT_FILE },
+	};
+	unsigned int i;
+
+	if (name == NULL)
+		return SYSCAT_OTHER;
+	for (i = 0; i < ARRAY_SIZE(tab); i++)
+		if (strncmp(name, tab[i].p, strlen(tab[i].p)) == 0)
+			return tab[i].cat;
+	return SYSCAT_OTHER;
+}
+
+static void dump_syscall_category_histogram(void)
+{
+	static const char * const cat_names[NR_SYSCAT] = {
+		"read", "write", "open", "mmap", "socket",
+		"process", "file", "ipc", "other",
+	};
+	unsigned long total = 0;
+	unsigned int i;
+
+	for (i = 0; i < NR_SYSCAT; i++)
+		total += shm->stats.syscall_category_count[i];
+	if (total == 0)
+		return;
+
+	output(0, "Syscall category histogram (total: %lu):\n", total);
+	for (i = 0; i < NR_SYSCAT; i++) {
+		unsigned long c = shm->stats.syscall_category_count[i];
+		unsigned long pct10 = total ? (c * 1000UL / total) : 0UL;
+
+		output(0, "  %-8s %10lu  (%lu.%lu%%)\n",
+		       cat_names[i], c, pct10 / 10, pct10 % 10);
+	}
+}
+
 static void dump_entry(const struct syscalltable *table, unsigned int i)
 {
 	struct syscallentry *entry;
@@ -809,6 +894,9 @@ void dump_stats(void)
 		if (verbosity > 1)
 			dump_range_overlaps_shared_top_offenders();
 	}
+
+	if (verbosity > 1)
+		dump_syscall_category_histogram();
 
 	dump_obj_heap_stats();
 
