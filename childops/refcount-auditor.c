@@ -77,9 +77,12 @@ static bool check_proc_available(void)
  * the fd is open but the underlying file struct has been freed — a refcount
  * imbalance between the pool and the kernel.
  *
- * False-positive discipline: we confirm the fd is locally open via
- * fcntl(F_GETFD) before checking fdinfo, so transient hash entries being
- * concurrently removed by the parent do not cause spurious reports.
+ * False-positive discipline: we dup() the fd to obtain a stable handle
+ * to the underlying file struct, then stat /proc/self/fdinfo/<newfd>.
+ * The dup pins the file struct against concurrent close by a sibling
+ * (close-racer, fd-stress) — without it, the F_GETFD→stat window allowed
+ * a sibling close between the two syscalls to produce spurious
+ * "fd missing from /proc" reports.
  */
 static void audit_fd_bucket(void)
 {
@@ -91,26 +94,30 @@ static void audit_fd_bucket(void)
 	for (i = 0; i < FD_HASH_SIZE; i++) {
 		char path[64];
 		struct stat st;
-		int fd;
+		int fd, newfd;
 
 		fd = __atomic_load_n(&shm->fd_hash[i].fd, __ATOMIC_ACQUIRE);
 		if (fd < 0)
 			continue;
 
 		/*
-		 * Confirm the fd is locally open; skip on failure to tolerate
-		 * the parent concurrently removing the entry from the hash.
+		 * dup() atomically: succeeds with a new descriptor pointing at
+		 * the same file struct, or fails with EBADF if a sibling has
+		 * already closed fd.  Either outcome is race-free; the failure
+		 * case means the entry is genuinely gone, not a TOCTOU artifact.
 		 */
-		if (fcntl(fd, F_GETFD) < 0)
+		newfd = dup(fd);
+		if (newfd < 0)
 			continue;
 
-		snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", fd);
+		snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", newfd);
 		if (stat(path, &st) != 0 && errno == ENOENT) {
 			output(0, "refcount audit: fd %d tracked in pool but /proc/self/fdinfo/%d missing\n",
-			       fd, fd);
+			       fd, newfd);
 			__atomic_add_fetch(&shm->stats.refcount_audit_fd_anomalies,
 					   1, __ATOMIC_RELAXED);
 		}
+		close(newfd);
 	}
 }
 
