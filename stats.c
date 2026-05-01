@@ -566,6 +566,66 @@ static void dump_stats_json(void)
 	fflush(stdout);
 }
 
+/*
+ * Walk the per-syscall range_overlaps_shared() reject buckets and emit the
+ * top 10 worst offenders.  Names the syscalls whose arg generators are most
+ * often producing pointers into trinity's own shared regions, so they can
+ * be retrofitted with avoid_shared_buffer() (or similar) sanitisation.
+ */
+#define ROS_TOPN 10
+
+static void dump_range_overlaps_shared_top_offenders(void)
+{
+	struct {
+		unsigned int nr;
+		bool do32bit;
+		unsigned long count;
+	} top[ROS_TOPN];
+	unsigned int top_count = 0;
+	unsigned int i, j;
+
+	memset(top, 0, sizeof(top));
+
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		unsigned long c64 = shm->stats.range_overlaps_shared_rejects_per_syscall_64[i];
+		unsigned long c32 = shm->stats.range_overlaps_shared_rejects_per_syscall_32[i];
+		unsigned int pass;
+		unsigned long c;
+		bool is32;
+
+		for (pass = 0; pass < 2; pass++) {
+			c = pass ? c32 : c64;
+			is32 = pass ? true : false;
+
+			if (c == 0)
+				continue;
+
+			for (j = top_count; j > 0 && c > top[j - 1].count; j--) {
+				if (j < ROS_TOPN)
+					top[j] = top[j - 1];
+			}
+			if (j < ROS_TOPN) {
+				top[j].nr = i;
+				top[j].do32bit = is32;
+				top[j].count = c;
+				if (top_count < ROS_TOPN)
+					top_count++;
+			}
+		}
+	}
+
+	if (top_count == 0)
+		return;
+
+	output(0, "Top range_overlaps_shared() offenders by syscall:\n");
+	for (j = 0; j < top_count; j++) {
+		const char *sname = print_syscall_name(top[j].nr, top[j].do32bit);
+
+		output(0, "  %-24s %s %lu\n",
+			sname, top[j].do32bit ? "(32)" : "(64)", top[j].count);
+	}
+}
+
 void dump_stats(void)
 {
 	unsigned int i;
@@ -719,9 +779,12 @@ void dump_stats(void)
 
 	if (shm->stats.shared_buffer_redirected)
 		stat_row("shared_buffer", "args_redirected",     shm->stats.shared_buffer_redirected);
-	if (shm->stats.range_overlaps_shared_rejects)
+	if (shm->stats.range_overlaps_shared_rejects) {
 		stat_row("shared_buffer", "range_overlaps_shared_rejects",
 			 shm->stats.range_overlaps_shared_rejects);
+		if (verbosity > 1)
+			dump_range_overlaps_shared_top_offenders();
+	}
 
 	dump_obj_heap_stats();
 
