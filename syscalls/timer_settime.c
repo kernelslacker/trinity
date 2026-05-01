@@ -38,6 +38,7 @@ static void sanitise_timer_settime(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) its;
+	avoid_shared_buffer(&rec->a4, sizeof(struct itimerspec));
 }
 
 struct syscallentry syscall_timer_settime = {
