@@ -115,7 +115,23 @@ struct results {
 	/* ARG_FD / typed-fd: bit `fd` set if get_random_fd / get_typed_fd
 	 * returned that low fd for this slot and the call succeeded. */
 	unsigned char success_fds[SUCCESS_FD_SCOREBOARD_BYTES];
+	/* ARG_FD / typed-fd: bit `fd` set after the same fd has failed
+	 * FAIL_RUN_THRESHOLD times in a row on this slot.  fill_arg() uses
+	 * it to bias re-rolls away from (slot, fd) pairs the kernel keeps
+	 * rejecting (EBADF/EINVAL/etc).  Cleared by store_successful_fd(). */
+	unsigned char failed_fds[SUCCESS_FD_SCOREBOARD_BYTES];
+	/* Run-length tracking for the failed_fds bitmap.  Only the most
+	 * recently-failing fd is tracked (full per-fd counters would cost
+	 * 256 bytes per slot); good enough since we only care about long
+	 * consecutive runs against a single fd, which is the actual symptom
+	 * of a permanently-broken (slot, fd) pair.  fail_run_count == 0
+	 * means no run in flight (so static-zero init "just works"). */
+	unsigned char fail_run_fd;
+	unsigned char fail_run_count;	/* saturating; 0 = no run in flight */
 };
+
+#define FAIL_RUN_THRESHOLD	3
+#define FAILED_FD_REROLL_LIMIT	16
 
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);

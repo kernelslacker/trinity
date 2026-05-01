@@ -380,6 +380,7 @@ void handle_syscall_ret(struct syscallrecord *rec)
 			if (err == ENOSYS)
 				deactivate_enosys(rec, entry, call);
 
+			handle_failure(rec);
 			__atomic_add_fetch(&entry->failures, 1, __ATOMIC_RELAXED);
 			if (err < NR_ERRNOS) {
 				__atomic_add_fetch(&entry->errnos[err], 1, __ATOMIC_RELAXED);

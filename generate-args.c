@@ -295,14 +295,35 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 			return (unsigned long) fd;
 	}
 
-	if (is_typed_fdarg(argtype))
-		return get_typed_fd(argtype);
+	/* Inverse of the success-bias above: with 70% probability, reject
+	 * candidates whose bit is set in this slot's failed_fds bitmap and
+	 * re-roll, up to FAILED_FD_REROLL_LIMIT times.  After that we fall
+	 * through with whatever the last roll returned, so the explored fd
+	 * space is never strictly closed off. */
+	if (is_typed_fdarg(argtype)) {
+		struct results *results = &entry->results[argnum - 1];
+		bool filter = (rand() % 10) < 7;
+		int fd = 0;
+		int tries;
+
+		for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+			fd = get_typed_fd(argtype);
+			if (!filter || !fd_recently_failed(results, fd))
+				break;
+		}
+		return (unsigned long) fd;
+	}
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
 		return gen_undefined_arg(call);
 
-	case ARG_FD:
+	case ARG_FD: {
+		struct results *results = &entry->results[argnum - 1];
+		bool filter;
+		int fd = 0;
+		int tries;
+
 		/* Prefer live fds returned by recent syscalls (70% of the time). */
 		if (rand() % 10 < 7) {
 			struct childdata *child = this_child();
@@ -324,7 +345,16 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 					return get_new_random_fd();
 			}
 		}
-		return get_random_fd();
+
+		/* Same failed_fds re-roll bias as the typed-fd path above. */
+		filter = (rand() % 10) < 7;
+		for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+			fd = get_random_fd();
+			if (!filter || !fd_recently_failed(results, fd))
+				break;
+		}
+		return (unsigned long) fd;
+	}
 
 	case ARG_LEN:
 		return (unsigned long) get_len();
