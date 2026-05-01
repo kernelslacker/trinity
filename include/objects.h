@@ -15,6 +15,8 @@ struct fileobj {
 	int flags;
 	int fd;
 	bool fopened;
+	bool pagecache_backed;
+	bool is_setuid;
 	int fcntl_flags;
 };
 
