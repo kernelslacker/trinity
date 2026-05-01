@@ -52,6 +52,8 @@ static int open_file(struct object *obj, const char *filename, int flags)
 	int randflags = 0;
 
 	obj->fileobj.filename = filename;
+	obj->fileobj.pagecache_backed = false;
+	obj->fileobj.is_setuid = false;
 
 	/* OR in some random flags. */
 retry_flags:

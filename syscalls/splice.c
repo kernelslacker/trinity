@@ -4,6 +4,7 @@
 	size_t, len, unsigned int, flags)
  */
 #include <fcntl.h>
+#include "files.h"
 #include "random.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -22,6 +23,21 @@ static void sanitise_splice(struct syscallrecord *rec)
 	*off_out = RAND_RANGE(0, 1ULL << 30);
 	rec->a2 = (unsigned long) off_in;
 	rec->a4 = (unsigned long) off_out;
+
+	/*
+	 * ~25% of the time, replace fd_in with a page-cache-backed fd so
+	 * we exercise splice_read_to_pipe() against real backing pages
+	 * instead of the default pipe-to-pipe shuffle.  argtype stays
+	 * ARG_FD_PIPE so the natural pipe→pipe coverage is preserved on
+	 * the other 75%.  A -1 from get_rand_pagecache_fd() (provider
+	 * disabled or pool empty) leaves rec->a1 untouched.
+	 */
+	if ((rand() % 100) < 25) {
+		int fd = get_rand_pagecache_fd();
+
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 }
 
 struct syscallentry syscall_splice = {
