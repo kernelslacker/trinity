@@ -29,6 +29,8 @@
 #include <limits.h>
 #include <mqueue.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1079,6 +1081,23 @@ static ssize_t scm_send_one_fd(int sock, int fd)
 }
 
 /*
+ * Bound on racer-side blocking syscalls in 2nd-thread recipes.  Long
+ * enough that a close() consistently lands while the racer is mid-
+ * syscall, short enough that pthread_join() returns in well under one
+ * alarm tick.  Mirrors close-racer.c's RACER_TIMEOUT_MS.
+ */
+#define RECIPE_RACER_TIMEOUT_MS		100
+
+/*
+ * Latch threshold: if pthread_create fails this many times back-to-back
+ * inside a single recipe invocation, stop trying for the rest of it.
+ * Mirrors close-racer.c's THREAD_SPAWN_LATCH.  fork_storm or cgroup_churn
+ * can push us into EAGAIN territory on nproc/thread limits, and there is
+ * no point hammering a limit that won't lift mid-op.
+ */
+#define RECIPE_THREAD_SPAWN_LATCH	3
+
+/*
  * Recipe 20: AF_UNIX garbage-collector cycle lifecycle.
  *
  * Build two AF_UNIX socketpairs and use SCM_RIGHTS to wire a reference
@@ -1144,6 +1163,147 @@ out:
 	return ok;
 }
 
+/*
+ * Racer thread for recipe_net_tcp.  Blocks in poll() with a bounded
+ * timeout, then attempts accept() on the (possibly already-closed)
+ * listen fd.  Both calls have hard ceilings: poll's is the timeout
+ * argument; accept inherits the fd's O_NONBLOCK so it returns
+ * immediately with EAGAIN/EBADF/EINVAL regardless of whether the
+ * close raced ahead, mid-syscall, or behind it.
+ *
+ * EBADF is the fdget-vs-close lookup race we are hunting; EINVAL is
+ * the in-flight close caught at the LISTEN-state check; success is
+ * the close-after-accept-completed sub-window (no peer ever connects,
+ * so accept won't actually return a connection — the path is reached
+ * only via a pending SYN that landed under the bind+listen window).
+ */
+struct tcp_racer_arg {
+	int listen_fd;
+};
+
+static void *tcp_racer_thread(void *arg)
+{
+	struct tcp_racer_arg *ra = arg;
+	struct sockaddr_in sin;
+	socklen_t slen = sizeof(sin);
+	struct pollfd pfd;
+	int conn;
+
+	pfd.fd = ra->listen_fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	(void)poll(&pfd, 1, RECIPE_RACER_TIMEOUT_MS);
+
+	conn = accept(ra->listen_fd, (struct sockaddr *)&sin, &slen);
+	if (conn >= 0)
+		close(conn);
+	return NULL;
+}
+
+/*
+ * Recipe 21: TCP listening-socket close-vs-accept race.
+ *
+ * Per cycle (1..MAX_CYCLES):
+ *
+ *   socket(AF_INET, SOCK_STREAM) -> setsockopt(SO_REUSEADDR) -> bind to
+ *   127.0.0.1:0 (kernel picks port) -> listen -> O_NONBLOCK -> spawn
+ *   racer thread blocked in poll(POLLIN, 100ms) + accept() -> usleep
+ *   0..100us race-window jitter -> close(s) (the race) -> pthread_join.
+ *
+ * Targets the kernel paths inet_csk_listen_stop, inet_csk_destroy_sock,
+ * tcp_close, and the request-sock-queue teardown that fire when a
+ * listening socket is destroyed while another task is mid-accept().
+ * Threads share the fdtable, which is the bug class — a sibling
+ * process closing the same numeric fd in its own table never races
+ * with our fdget.  Distinct from recipe_tcp_server (recipe 7) which
+ * runs accept-then-close serially on a single thread; this one drives
+ * the *concurrent* accept-vs-close window.
+ *
+ * Bounded racer syscalls (poll with timeout, accept on O_NONBLOCK fd)
+ * mean plain pthread_join always returns within ~100ms.  Sidesteps the
+ * wedge problem where pthread_cancel against a thread stuck in an
+ * uninterruptible read is unreliable and detached threads leak state.
+ *
+ * THREAD_SPAWN_LATCH=3 consecutive pthread_create failures bails for
+ * the rest of the invocation — under nproc/thread limits the EAGAIN
+ * won't lift mid-op while fork_storm or cgroup_churn are competing for
+ * the budget.
+ *
+ * Returns ok=true if any cycle reached close+join.  All-cycles-failed
+ * counts as partial.  Per-cycle failures are tolerated mid-loop because
+ * one bad cycle (e.g. ephemeral port exhaustion under sibling load)
+ * shouldn't penalise the whole recipe.
+ */
+#define RECIPE_NET_TCP_MAX_CYCLES	4
+
+static bool recipe_net_tcp(bool *unsupported __unused__)
+{
+	unsigned int cycles;
+	unsigned int i;
+	unsigned int spawn_fail_streak = 0;
+	unsigned int completed = 0;
+
+	cycles = 1 + ((unsigned int)rand() % RECIPE_NET_TCP_MAX_CYCLES);
+
+	for (i = 0; i < cycles; i++) {
+		struct tcp_racer_arg ra;
+		struct sockaddr_in sin;
+		pthread_t tid;
+		int s = -1;
+		int one = 1;
+		int flags;
+		int rc;
+
+		s = socket(AF_INET, SOCK_STREAM, 0);
+		if (s < 0)
+			continue;
+
+		(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
+				 &one, sizeof(one));
+
+		memset(&sin, 0, sizeof(sin));
+		sin.sin_family = AF_INET;
+		sin.sin_port = 0;
+		sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+			close(s);
+			continue;
+		}
+
+		if (listen(s, 4) < 0) {
+			close(s);
+			continue;
+		}
+
+		flags = fcntl(s, F_GETFL);
+		if (flags >= 0)
+			(void)fcntl(s, F_SETFL, flags | O_NONBLOCK);
+
+		ra.listen_fd = s;
+		rc = pthread_create(&tid, NULL, tcp_racer_thread, &ra);
+		if (rc != 0) {
+			close(s);
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+				break;
+			continue;
+		}
+		spawn_fail_streak = 0;
+
+		/* Variable race window — 0..100us picks a random sub-window
+		 * of the racer's poll/accept to land the close in. */
+		if ((rand() & 0xff) != 0)
+			usleep((useconds_t)(rand() % 101));
+
+		(void)close(s);
+
+		(void)pthread_join(tid, NULL);
+
+		completed++;
+	}
+
+	return completed > 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -1165,6 +1325,7 @@ static const struct recipe recipes[] = {
 	{ "mm_vma",       recipe_mm_vma       },
 	{ "mm_memfd",     recipe_mm_memfd     },
 	{ "net_unix_gc",  recipe_net_unix_gc  },
+	{ "net_tcp",      recipe_net_tcp      },
 };
 
 /*
