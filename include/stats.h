@@ -11,6 +11,22 @@
  * at build time that its table fits. */
 #define MAX_IOURING_RECIPES 32
 
+/* Coarse syscall categories used by the dispatch-time histogram.  Order
+ * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
+ * matched by the prefix table in stats.c. */
+enum syscall_category {
+	SYSCAT_READ = 0,
+	SYSCAT_WRITE,
+	SYSCAT_OPEN,
+	SYSCAT_MMAP,
+	SYSCAT_SOCKET,
+	SYSCAT_PROCESS,
+	SYSCAT_FILE,
+	SYSCAT_IPC,
+	SYSCAT_OTHER,
+	NR_SYSCAT,
+};
+
 /* Various statistics. */
 
 struct stats_s {
@@ -263,7 +279,15 @@ struct stats_s {
 	 * (same nr means a different syscall on each table). */
 	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
 	unsigned long range_overlaps_shared_rejects_per_syscall_32[MAX_NR_SYSCALL];
+
+	/* Coarse-grained histogram of which syscall categories the random
+	 * picker has been dispatching, bumped per syscall in dispatch_step().
+	 * Lets the operator spot when sanitiser/group-bias drift has skewed
+	 * the distribution away from the table they expected. */
+	unsigned long syscall_category_count[NR_SYSCAT];
 };
+
+unsigned int stats_syscall_category(const char *name);
 
 void dump_stats(void);
 
