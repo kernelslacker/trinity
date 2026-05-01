@@ -168,12 +168,23 @@ static const char *kpp_algos[] = {
 	"ffdhe8192",
 };
 
+static const char *sig_algos[] = {
+	"ecdsa-nist-p192",
+	"ecdsa-nist-p256",
+	"ecdsa-nist-p384",
+	"ecdsa-nist-p521",
+	"ecrdsa",
+	"mldsa44",
+	"mldsa65",
+	"mldsa87",
+};
+
 static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_alg *alg;
 	const char **algs = NULL;
 	unsigned int type;
-	const char *types[] = { "aead", "hash", "rng", "skcipher", "akcipher", "kpp", };
+	const char *types[] = { "aead", "hash", "rng", "skcipher", "akcipher", "kpp", "sig", };
 	unsigned int algo;
 
 	alg = zmalloc(sizeof(struct sockaddr_alg));
@@ -207,6 +218,10 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	// kpp
 	case 5:	algs = kpp_algos;
 		algo = rand() % ARRAY_SIZE(kpp_algos);
+		break;
+	// sig
+	case 6:	algs = sig_algos;
+		algo = rand() % ARRAY_SIZE(sig_algos);
 		break;
 	default: unreachable();
 	}
