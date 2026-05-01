@@ -544,6 +544,17 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 		break;
 	}
 
+#ifdef VT_GETCONSIZECSRPOS
+	case VT_GETCONSIZECSRPOS: {
+		/* Kernel writes struct vt_consizecsrpos: 4 × __u16. */
+		void *p = get_writable_struct(4 * sizeof(unsigned short));
+
+		if (p)
+			rec->a3 = (unsigned long) p;
+		break;
+	}
+#endif
+
 	/* PIO/GIO font and screenmap family */
 	case GIO_FONT:
 	case PIO_FONT:
@@ -693,6 +704,9 @@ static const struct ioctl vt_ioctls[] = {
 	IOCTL(VT_GETHIFONTMASK),
 	IOCTL(VT_WAITEVENT),
 	IOCTL(VT_SETACTIVATE),
+#ifdef VT_GETCONSIZECSRPOS
+	IOCTL(VT_GETCONSIZECSRPOS),
+#endif
 
 	IOCTL(GIO_FONT),
 	IOCTL(PIO_FONT),
