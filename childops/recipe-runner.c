@@ -1306,6 +1306,155 @@ static bool recipe_net_tcp(bool *unsupported __unused__)
 }
 
 /*
+ * Recipe 25: userfaultfd write-protect lifecycle.
+ *
+ * open /dev/userfaultfd (or fall back to the userfaultfd() syscall on
+ * older kernels) -> UFFDIO_API to negotiate -> mmap a 2-page private
+ * anonymous region -> touch both pages so PTEs are present ->
+ * UFFDIO_REGISTER with MISSING|WP -> UFFDIO_WRITEPROTECT(MODE_WP) to
+ * apply WP across both pages -> UFFDIO_WRITEPROTECT(mode=DONTWAKE) to
+ * clear it again -> UFFDIO_UNREGISTER -> munmap -> close.
+ *
+ * Distinct from recipe 16 (recipe_userfaultfd) which only exercises
+ * the MISSING register-mode path.  The WP path is much newer (5.7+
+ * for anon, 5.19+ for shmem) and lives on its own ioctl with its own
+ * change_pte_range walker (mwriteprotect_range -> uffd_wp_range ->
+ * change_protection_range).  The set + clear sequence drives the WP
+ * bit toggle in both directions through the same VMA and the same
+ * present-PTE walk -- the path the 2024 madvise-vs-WP race fix and
+ * the 5.19 shmem-WP backports addressed.
+ *
+ * Random callers of ioctl rarely guess UFFDIO_WRITEPROTECT against a
+ * uffd that's been registered with MODE_WP, so the WP-toggle path
+ * stays cold without a deliberate driver.  Touching the pages before
+ * registering is required: UFFDIO_WRITEPROTECT walks present PTEs
+ * only; an un-faulted region would no-op the toggle and we wouldn't
+ * drive the change_protection path we care about.
+ *
+ * Latch shape covers every way the feature can be absent:
+ *   - /dev/userfaultfd open ENOENT     (no devtmpfs entry, older kernel)
+ *   - /dev/userfaultfd open EPERM/EACCES (DAC denial)
+ *   - userfaultfd() syscall ENOSYS     (CONFIG_USERFAULTFD off)
+ *   - userfaultfd() syscall EPERM      (CAP_SYS_PTRACE missing under
+ *                                       unprivileged_userfaultfd=0)
+ *   - UFFDIO_REGISTER with MODE_WP returning EINVAL
+ *                                      (kernel pre-WP support, or arch
+ *                                       lacks pte_uffd_wp)
+ *   - UFFDIO_WRITEPROTECT itself returning EINVAL
+ *                                      (half-supported backport: WP
+ *                                       register flag landed but the
+ *                                       toggle ioctl did not)
+ *
+ * Once latched, the dispatcher stops siblings from re-probing the
+ * unsupported feature on every recipe pick.
+ */
+static bool recipe_uffd_wp(bool *unsupported)
+{
+	struct uffdio_api api;
+	struct uffdio_register reg;
+	struct uffdio_range range;
+	struct uffdio_writeprotect wp;
+	void *region = MAP_FAILED;
+	size_t len = (size_t)page_size * 2;
+	int fd = -1;
+	bool registered = false;
+	bool ok = false;
+
+	fd = open("/dev/userfaultfd", O_CLOEXEC | O_RDWR | O_NONBLOCK);
+	if (fd < 0) {
+		int open_errno = errno;
+
+		/* /dev/userfaultfd is missing or denied -- fall back to the
+		 * userfaultfd() syscall, which on older kernels is the only
+		 * way in (and gates on CAP_SYS_PTRACE under
+		 * unprivileged_userfaultfd=0). */
+		fd = (int)syscall(__NR_userfaultfd,
+				  O_CLOEXEC | O_NONBLOCK);
+		if (fd < 0) {
+			if (errno == EPERM || errno == EACCES ||
+			    errno == ENOSYS || open_errno == ENOENT) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+			}
+			goto out;
+		}
+	}
+
+	memset(&api, 0, sizeof(api));
+	api.api = UFFD_API;
+	if (ioctl(fd, UFFDIO_API, &api) < 0)
+		goto out;
+
+	region = mmap(NULL, len, PROT_READ | PROT_WRITE,
+		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (region == MAP_FAILED)
+		goto out;
+
+	/* Populate PTEs.  UFFDIO_WRITEPROTECT walks present PTEs only;
+	 * an un-faulted region would no-op the toggle. */
+	((volatile char *)region)[0] = 'a';
+	((volatile char *)region)[page_size] = 'b';
+
+	memset(&reg, 0, sizeof(reg));
+	reg.range.start = (uintptr_t)region;
+	reg.range.len = len;
+	reg.mode = UFFDIO_REGISTER_MODE_MISSING | UFFDIO_REGISTER_MODE_WP;
+	if (ioctl(fd, UFFDIO_REGISTER, &reg) < 0) {
+		if (errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+	registered = true;
+
+	/* Set WP across both pages -- drives mwriteprotect_range ->
+	 * uffd_wp_range -> change_protection_range with the WP bit
+	 * being applied to present PTEs. */
+	memset(&wp, 0, sizeof(wp));
+	wp.range.start = (uintptr_t)region;
+	wp.range.len = len;
+	wp.mode = UFFDIO_WRITEPROTECT_MODE_WP;
+	if (ioctl(fd, UFFDIO_WRITEPROTECT, &wp) < 0) {
+		if (errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	/* Clear WP -- same walker, opposite direction.  DONTWAKE skips
+	 * the wake step (we have no waiters), so this drives the toggle
+	 * without the wake-side bookkeeping that's already covered by
+	 * the MISSING-mode recipe. */
+	wp.mode = UFFDIO_WRITEPROTECT_MODE_DONTWAKE;
+	if (ioctl(fd, UFFDIO_WRITEPROTECT, &wp) < 0)
+		goto out;
+
+	range.start = (uintptr_t)region;
+	range.len = len;
+	if (ioctl(fd, UFFDIO_UNREGISTER, &range) < 0)
+		goto out;
+	registered = false;
+
+	ok = true;
+out:
+	if (registered) {
+		range.start = (uintptr_t)region;
+		range.len = len;
+		(void)ioctl(fd, UFFDIO_UNREGISTER, &range);
+	}
+	if (region != MAP_FAILED)
+		(void)munmap(region, len);
+	if (fd >= 0)
+		close(fd);
+	return ok;
+}
+
+/*
  * Recipe 24: fsnotify cross-fd watch lifecycle.
  *
  * inotify_init1 (watcher fd) -> open a fresh per-pid file under /tmp
@@ -1602,6 +1751,7 @@ static const struct recipe recipes[] = {
 	{ "net_unix_oob", recipe_net_unix_oob },
 	{ "net_raw",      recipe_net_raw      },
 	{ "fsnotify_xwatch", recipe_fsnotify_xwatch },
+	{ "uffd_wp",      recipe_uffd_wp      },
 };
 
 /*
