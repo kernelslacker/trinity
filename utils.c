@@ -787,10 +787,20 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 
 			child = this_child();
 			if (child != NULL) {
+				unsigned int nr = child->syscall.nr;
+				bool do32 = child->syscall.do32bit;
+
+				if (nr < MAX_NR_SYSCALL) {
+					unsigned long *bucket = do32 ?
+						&shm->stats.range_overlaps_shared_rejects_per_syscall_32[nr] :
+						&shm->stats.range_overlaps_shared_rejects_per_syscall_64[nr];
+					__atomic_add_fetch(bucket, 1, __ATOMIC_RELAXED);
+				}
+
 				__atomic_store_n(&last_reject_syscall_nr,
-						 child->syscall.nr, __ATOMIC_RELAXED);
+						 nr, __ATOMIC_RELAXED);
 				__atomic_store_n(&last_reject_do32bit,
-						 child->syscall.do32bit ? 1 : 0,
+						 do32 ? 1 : 0,
 						 __ATOMIC_RELAXED);
 				__atomic_store_n(&last_reject_have_syscall, 1,
 						 __ATOMIC_RELAXED);

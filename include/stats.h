@@ -1,5 +1,7 @@
 #pragma once
 
+#include "syscall.h"	/* MAX_NR_SYSCALL */
+
 /* Upper bound on the recipe_runner catalog size.  recipe-runner.c
  * asserts at startup that its table fits.  Sized large enough to
  * accommodate future recipes without reshuffling shared memory. */
@@ -252,6 +254,13 @@ struct stats_s {
 	 * the wild-write defense is doing meaningful work or trivially
 	 * bypassing every input. */
 	unsigned long range_overlaps_shared_rejects;
+
+	/* Per-syscall reject counts indexed by syscall.nr, bumped from the
+	 * range_overlaps_shared() trip site so dump_stats() can name the top
+	 * offenders.  Two arrays so 32/64-bit syscall numbers don't smear
+	 * (same nr means a different syscall on each table). */
+	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
+	unsigned long range_overlaps_shared_rejects_per_syscall_32[MAX_NR_SYSCALL];
 };
 
 void dump_stats(void);
