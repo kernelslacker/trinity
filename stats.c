@@ -453,7 +453,8 @@ static void dump_stats_json(void)
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
 			"\"runtime_registered\":%lu},"
 		"\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
-			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu},"
+			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu,"
+			"\"uid_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -496,6 +497,7 @@ static void dump_stats_json(void)
 		shm->stats.fd_events_dropped, shm->stats.fd_runtime_registered,
 		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
 		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
+		shm->stats.uid_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -610,6 +612,8 @@ void dump_stats(void)
 		stat_row("oracle", "cred_anomalies", shm->stats.cred_oracle_anomalies);
 	if (shm->stats.sched_oracle_anomalies)
 		stat_row("oracle", "sched_anomalies", shm->stats.sched_oracle_anomalies);
+	if (shm->stats.uid_oracle_anomalies)
+		stat_row("oracle", "uid_anomalies",   shm->stats.uid_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
