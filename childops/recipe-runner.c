@@ -2575,6 +2575,226 @@ static bool recipe_bpf_htab_iter_del(bool *unsupported)
 	return completed > 0;
 }
 
+/*
+ * Racer thread for recipe_perf_mmap_close.  Loops short poll(POLLIN)
+ * + non-blocking read() of the perf counter value across the
+ * RECIPE_RACER_TIMEOUT_MS window so the racer is consistently inside
+ * either perf_poll() or perf_read() on the file when the main thread
+ * closes it.  Both calls have hard ceilings: poll's via its timeout
+ * argument; read short-circuits to -EBADF / -ESRCH after the file or
+ * context is torn down.
+ *
+ * EBADF on either call is the fdget-vs-close lookup race we are
+ * hunting; success on read is the close-after-counter-read sub-window
+ * where the syscall completed before close landed.
+ */
+struct perf_mmap_close_racer_arg {
+	int		perf_fd;
+	struct timespec	deadline;
+};
+
+static bool perf_mmap_close_deadline_passed(const struct timespec *deadline)
+{
+	struct timespec now;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+		return true;
+	if (now.tv_sec > deadline->tv_sec)
+		return true;
+	if (now.tv_sec == deadline->tv_sec && now.tv_nsec >= deadline->tv_nsec)
+		return true;
+	return false;
+}
+
+static void *perf_mmap_close_racer_thread(void *arg)
+{
+	struct perf_mmap_close_racer_arg *ra = arg;
+	struct pollfd pfd;
+	uint64_t value;
+	ssize_t r __unused__;
+
+	while (!perf_mmap_close_deadline_passed(&ra->deadline)) {
+		pfd.fd = ra->perf_fd;
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+		(void)poll(&pfd, 1, 5);
+
+		r = read(ra->perf_fd, &value, sizeof(value));
+	}
+	return NULL;
+}
+
+/*
+ * Recipe 31: perf_event mmap close-vs-read race.
+ *
+ * Per cycle (1..MAX_CYCLES):
+ *
+ *   perf_event_open(PERF_TYPE_SOFTWARE/PERF_COUNT_SW_CPU_CLOCK,
+ *                   sample_period=1ms, sample_type=TID|TIME,
+ *                   pid=0/cpu=-1, disabled=1) -> mmap (1 + N) pages
+ *   SHARED -> PERF_EVENT_IOC_ENABLE -> spawn racer that loops
+ *   poll(POLLIN, 5ms) + read(perf_fd) under a 100ms deadline ->
+ *   usleep 0..100us race-window jitter -> close(perf_fd) (the race)
+ *   -> pthread_join -> munmap.
+ *
+ * Targets perf_release / perf_event_release_kernel and the ring-
+ * buffer teardown reachable when a perf event with an active mmap
+ * is closed concurrently with another task in perf_poll() or
+ * perf_read() on the same fd.  The bug class lives on:
+ *   - the fdget-vs-close lookup race in perf_poll/perf_read
+ *   - the wait-queue cleanup vs poll_wait() on the event's poll head
+ *   - the rb (ring buffer) refcount machinery -- mmap holds an rb
+ *     ref that survives close() until munmap, so perf_release sees
+ *     the rb still attached while the racer's syscalls hold a file
+ *     ref
+ *
+ * Threads share the fdtable, which is the bug class -- a sibling
+ * process closing the same numeric fd in its own table never races
+ * with our fdget.  Distinct from childops/perf-event-chains.c which
+ * exercises the group/multiplex surface single-threaded; this recipe
+ * drives the *concurrent* close-vs-read window on the file lifetime
+ * with an active sampling mmap.
+ *
+ * Bounded racer (deadline-gated poll(5ms) + read on a counter file
+ * that returns immediately once the event is gone) means plain
+ * pthread_join always returns within ~100ms.  Sidesteps the wedge
+ * problem where pthread_cancel against a thread mid-poll is
+ * unreliable and detached threads leak state.  Mirrors the 2-thread
+ * shape from recipe_timerfd_xclose and recipe_bpf_htab_iter_del,
+ * sharing RECIPE_RACER_TIMEOUT_MS and RECIPE_THREAD_SPAWN_LATCH.
+ *
+ * THREAD_SPAWN_LATCH=3 consecutive pthread_create failures bails
+ * for the rest of the invocation -- under nproc/thread limits the
+ * EAGAIN won't lift mid-op while fork_storm or cgroup_churn are
+ * competing for the budget.
+ *
+ * Latch shape covers every way the feature can be absent on the
+ * very first probe:
+ *   - perf_event_open ENOSYS         (CONFIG_PERF_EVENTS off)
+ *   - perf_event_open EACCES / EPERM (kernel.perf_event_paranoid
+ *                                     restricts even SW events)
+ *   - perf_event_open EOPNOTSUPP     (no software PMU available)
+ *   - perf_event_open EINVAL         (PERF_TYPE_SOFTWARE config
+ *                                     unsupported on stripped builds)
+ *   - mmap MAP_FAILED EPERM/EACCES   (mmap of perf rings disabled)
+ *
+ * Once latched, the dispatcher stops siblings from re-probing the
+ * unsupported feature on every recipe pick.
+ */
+#define RECIPE_PERF_MMAP_MAX_CYCLES	4
+#define RECIPE_PERF_MMAP_DATA_PAGES	4U	/* power of two */
+
+static bool recipe_perf_mmap_close(bool *unsupported)
+{
+	struct perf_event_attr attr;
+	unsigned int cycles;
+	unsigned int i;
+	unsigned int spawn_fail_streak = 0;
+	unsigned int completed = 0;
+	size_t mmap_sz;
+
+	mmap_sz = (size_t)(1U + RECIPE_PERF_MMAP_DATA_PAGES) *
+		  (size_t)page_size;
+	cycles = 1 + ((unsigned int)rand() % RECIPE_PERF_MMAP_MAX_CYCLES);
+
+	for (i = 0; i < cycles; i++) {
+		struct perf_mmap_close_racer_arg ra;
+		pthread_t tid;
+		void *ring;
+		int perf_fd;
+		int rc;
+
+		memset(&attr, 0, sizeof(attr));
+		attr.type           = PERF_TYPE_SOFTWARE;
+		attr.size           = sizeof(attr);
+		attr.config         = PERF_COUNT_SW_CPU_CLOCK;
+		attr.sample_period  = 1000000ULL;	/* 1 ms */
+		attr.sample_type    = PERF_SAMPLE_TID | PERF_SAMPLE_TIME;
+		attr.disabled       = 1;
+		attr.exclude_kernel = 1;
+		attr.exclude_hv     = 1;
+
+		perf_fd = (int)syscall(__NR_perf_event_open, &attr,
+				       0 /* this thread */,
+				       -1 /* any cpu */,
+				       -1 /* no group leader */,
+				       0UL /* flags */);
+		if (perf_fd < 0) {
+			if (i == 0 && (errno == ENOSYS || errno == EACCES ||
+				       errno == EPERM ||
+				       errno == EOPNOTSUPP ||
+				       errno == EINVAL)) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+				return false;
+			}
+			continue;
+		}
+
+		ring = mmap(NULL, mmap_sz, PROT_READ | PROT_WRITE,
+			    MAP_SHARED, perf_fd, 0);
+		if (ring == MAP_FAILED) {
+			if (i == 0 && (errno == EPERM || errno == EACCES)) {
+				close(perf_fd);
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+				return false;
+			}
+			close(perf_fd);
+			continue;
+		}
+
+		/* Activate sampling so the ring has a chance to fill while
+		 * the racer is poll/read-ing. */
+		(void)ioctl(perf_fd, PERF_EVENT_IOC_ENABLE, 0);
+
+		ra.perf_fd = perf_fd;
+		if (clock_gettime(CLOCK_MONOTONIC, &ra.deadline) < 0) {
+			munmap(ring, mmap_sz);
+			close(perf_fd);
+			continue;
+		}
+		ra.deadline.tv_nsec += RECIPE_RACER_TIMEOUT_MS * 1000000L;
+		while (ra.deadline.tv_nsec >= 1000000000L) {
+			ra.deadline.tv_nsec -= 1000000000L;
+			ra.deadline.tv_sec  += 1;
+		}
+
+		rc = pthread_create(&tid, NULL,
+				    perf_mmap_close_racer_thread, &ra);
+		if (rc != 0) {
+			munmap(ring, mmap_sz);
+			close(perf_fd);
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+				break;
+			continue;
+		}
+		spawn_fail_streak = 0;
+
+		/* Variable race window -- 0..100us picks a random sub-
+		 * window of the racer's poll/read loop to land the close
+		 * in. */
+		if ((rand() & 0xff) != 0)
+			usleep((useconds_t)(rand() % 101));
+
+		(void)close(perf_fd);
+
+		(void)pthread_join(tid, NULL);
+
+		/* Drop the mmap reference last -- the rb refcount survives
+		 * close() until the final munmap, exercising the
+		 * perf_mmap_close vm_op teardown after the close race has
+		 * completed. */
+		munmap(ring, mmap_sz);
+
+		completed++;
+	}
+
+	return completed > 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -2606,6 +2826,7 @@ static const struct recipe recipes[] = {
 	{ "epoll_xclose", recipe_epoll_xclose },
 	{ "iouring_fixed_uaf", recipe_iouring_fixed_uaf },
 	{ "bpf_htab_iter_del", recipe_bpf_htab_iter_del },
+	{ "perf_mmap_close", recipe_perf_mmap_close },
 };
 
 /*
