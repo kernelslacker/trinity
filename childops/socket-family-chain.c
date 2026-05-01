@@ -43,6 +43,7 @@
 
 #include "child.h"
 #include "compat.h"
+#include "proto-alg-dict.h"
 #include "random.h"
 #include "shm.h"
 #include "stats.h"
@@ -67,84 +68,13 @@
 #define INNER_MAX	4
 #define ERR_BURST_LIMIT	5
 
-/*
- * Static fallback algo dictionary.  Mirrors the lists in net/proto-alg.c
- * deliberately — the proto-alg arrays are file-static and we want this
- * childop self-contained.  Trinity entry-3 is supposed to deliver a real
- * algo template dictionary; until that lands the fallback keeps v1 useful
- * on its own.
- */
-
 #ifdef USE_IF_ALG
 
-static const char * const sfc_hashes[] = {
-	"md5", "sha1", "sha256", "sha384", "sha512",
-	"sha3-256", "sha3-384", "sha3-512",
-	"hmac(sha256)", "hmac(sha3-256)",
-	"blake2b-256", "blake2b-512", "sm3",
-};
-
-static const char * const sfc_aead_algos[] = {
-	"gcm(aes)",
-	"ccm(aes)",
-	"rfc4106(gcm(aes))",
-	"rfc4309(ccm(aes))",
-	"rfc4543(gcm(aes))",
-	"rfc7539(chacha20,poly1305)",
-	"rfc7539esp(chacha20,poly1305)",
-	"authenc(hmac(sha1),cbc(aes))",
-	"authenc(hmac(sha1),cbc(des3_ede))",
-	"authenc(hmac(sha256),cbc(aes))",
-	"authenc(hmac(sha512),cbc(aes))",
-};
-
-static const char * const sfc_rng_algos[] = {
-	"ansi_cprng",
-	"drbg_nopr_ctr_aes128",
-	"drbg_nopr_ctr_aes192",
-	"drbg_nopr_ctr_aes256",
-	"drbg_nopr_hmac_sha256",
-	"drbg_nopr_sha256",
-	"drbg_pr_ctr_aes128",
-	"drbg_pr_ctr_aes192",
-	"drbg_pr_ctr_aes256",
-	"drbg_pr_hmac_sha256",
-	"drbg_pr_sha256",
-	"jitterentropy_rng",
-};
-
-static const char * const sfc_skcipher_algos[] = {
-	"cbc(aes)",
-	"cbc(des)",
-	"cbc(des3_ede)",
-	"cbc(camellia)",
-	"ecb(aes)",
-	"ecb(des)",
-	"ecb(des3_ede)",
-	"ecb(camellia)",
-	"ctr(aes)",
-	"ctr(camellia)",
-	"xts(aes)",
-	"lrw(aes)",
-	"cts(cbc(aes))",
-	"chacha20",
-	"xchacha20",
-	"xchacha12",
-	"cbc(sm4)",
-	"ecb(sm4)",
-	"ctr(sm4)",
-};
-
-static const char * const sfc_akcipher_algos[] = {
-	"rsa",
-};
-
-static const char * const sfc_kpp_algos[] = {
-	"dh",
-	"ecdh-nist-p192",
-	"ecdh-nist-p256",
-};
-
+/*
+ * The salg_type strings we exercise.  This is a strict subset of the
+ * dict's ALG_DICT_* enum — sig is intentionally excluded; the AF_ALG
+ * sig path isn't part of the v1 chain.
+ */
 enum sfc_type_idx {
 	SFC_TYPE_AEAD = 0,
 	SFC_TYPE_HASH,
@@ -164,29 +94,17 @@ static const char * const sfc_types[SFC_NR_TYPES] = {
 	[SFC_TYPE_KPP]      = "kpp",
 };
 
+static const enum alg_dict_type sfc_to_dict[SFC_NR_TYPES] = {
+	[SFC_TYPE_AEAD]     = ALG_DICT_AEAD,
+	[SFC_TYPE_HASH]     = ALG_DICT_HASH,
+	[SFC_TYPE_RNG]      = ALG_DICT_RNG,
+	[SFC_TYPE_SKCIPHER] = ALG_DICT_SKCIPHER,
+	[SFC_TYPE_AKCIPHER] = ALG_DICT_AKCIPHER,
+	[SFC_TYPE_KPP]      = ALG_DICT_KPP,
+};
+
 /* The Copy Fail-shaped name we want to land on with elevated probability. */
 #define AUTHENCESN_NAME	"authencesn(hmac(sha256),cbc(aes))"
-
-static const char *pick_alg_name(enum sfc_type_idx type)
-{
-	switch (type) {
-	case SFC_TYPE_AEAD:
-		return sfc_aead_algos[rand() % ARRAY_SIZE(sfc_aead_algos)];
-	case SFC_TYPE_HASH:
-		return sfc_hashes[rand() % ARRAY_SIZE(sfc_hashes)];
-	case SFC_TYPE_RNG:
-		return sfc_rng_algos[rand() % ARRAY_SIZE(sfc_rng_algos)];
-	case SFC_TYPE_SKCIPHER:
-		return sfc_skcipher_algos[rand() % ARRAY_SIZE(sfc_skcipher_algos)];
-	case SFC_TYPE_AKCIPHER:
-		return sfc_akcipher_algos[rand() % ARRAY_SIZE(sfc_akcipher_algos)];
-	case SFC_TYPE_KPP:
-		return sfc_kpp_algos[rand() % ARRAY_SIZE(sfc_kpp_algos)];
-	case SFC_NR_TYPES:
-		break;
-	}
-	return sfc_hashes[0];
-}
 
 /*
  * One coherent AF_ALG chain.  Returns false on a clean kernel-not-supported
@@ -202,7 +120,6 @@ static bool run_one_chain(unsigned int *err_burst)
 	struct iovec iov;
 	struct msghdr msg;
 	enum sfc_type_idx type;
-	const char *name;
 	int parent_fd = -1;
 	int child_fd = -1;
 	unsigned int keylen;
@@ -234,11 +151,7 @@ static bool run_one_chain(unsigned int *err_burst)
 			__ATOMIC_RELAXED);
 	} else {
 		type = (enum sfc_type_idx)(rand() % SFC_NR_TYPES);
-		name = pick_alg_name(type);
-		strncpy((char *)sa.salg_type, sfc_types[type],
-			sizeof(sa.salg_type) - 1);
-		strncpy((char *)sa.salg_name, name,
-			sizeof(sa.salg_name) - 1);
+		pick_alg(sfc_to_dict[type], sfc_types[type], &sa);
 	}
 
 	if (bind(parent_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
