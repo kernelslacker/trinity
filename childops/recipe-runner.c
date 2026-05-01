@@ -1304,6 +1304,93 @@ static bool recipe_net_tcp(bool *unsupported __unused__)
 	return completed > 0;
 }
 
+/*
+ * Recipe 22: AF_UNIX SOCK_STREAM out-of-band data lifecycle.
+ *
+ *   socketpair(AF_UNIX, SOCK_STREAM)
+ *   send 8 inline bytes                    // normal data ahead of OOB
+ *   send 1 byte, MSG_OOB                   // splits the receive queue
+ *   send 4 more inline bytes               // data after the OOB marker
+ *   recv 1 byte, MSG_OOB                   // consume the OOB byte
+ *   recv up to 16 bytes, normal            // drain around the gap
+ *   shutdown(SHUT_WR)                      // stops further writes
+ *   recv (best-effort) any straggler
+ *   close
+ *
+ * Drives unix_stream_sendmsg's MSG_OOB path (the urg skb tagging), the
+ * unix_stream_read_generic / unix_stream_recv_urg split-and-rejoin
+ * logic, and the receive-queue manipulation that has to keep the OOB
+ * gap consistent across a normal recv that straddles it.  Sending data
+ * both before and after the OOB byte is the structural minimum for
+ * exercising the gap-around path — a single OOB byte alone hits a
+ * trivial fast path that elides most of the bookkeeping.
+ *
+ * AF_UNIX OOB has been a recurring source of bugs since it was added
+ * (commit 314001f0bf92, 5.15) — skb-extension lifetime issues, the
+ * 2023 unix_stream_recv_urg accounting fixes, the splice-vs-OOB races.
+ * Random callers of send/recv almost never set MSG_OOB on a SOCK_STREAM
+ * AF_UNIX socket, so the path stays cold without a dedicated recipe.
+ *
+ * EOPNOTSUPP (CONFIG_AF_UNIX_OOB unset, or building on a kernel
+ * predating the OOB support) latches the recipe off via *unsupported.
+ * EINVAL on OOB send is the same signal under some kernel
+ * configurations and is handled the same way.
+ */
+static bool recipe_net_unix_oob(bool *unsupported)
+{
+	int sv[2] = { -1, -1 };
+	char buf[16];
+	char oob;
+	ssize_t r __unused__;
+	bool ok = false;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0)
+		goto out;
+
+	if (send(sv[0], "trinity8", 8, 0) != 8)
+		goto out;
+
+	if (send(sv[0], "U", 1, MSG_OOB) != 1) {
+		if (errno == EOPNOTSUPP || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	if (send(sv[0], "tail", 4, 0) != 4)
+		goto out;
+
+	/* Pull the OOB byte first.  On AF_UNIX SOCK_STREAM the OOB byte
+	 * is held in a side slot until consumed; subsequent normal recv
+	 * has to skip the gap it left in the inline stream. */
+	if (recv(sv[1], &oob, 1, MSG_OOB) != 1)
+		goto out;
+
+	/* Drain the inline data — the kernel must stitch together the
+	 * pre-OOB and post-OOB segments into one contiguous read.  Best-
+	 * effort: short reads are fine, the path under test is the queue
+	 * walk, not the byte count. */
+	r = recv(sv[1], buf, sizeof(buf), 0);
+
+	if (shutdown(sv[0], SHUT_WR) < 0)
+		goto out;
+
+	/* Final non-blocking drain to flush any straggler skb the
+	 * shutdown path may have transitioned in.  EAGAIN/0 are both
+	 * acceptable; this read is for path coverage, not correctness. */
+	r = recv(sv[1], buf, sizeof(buf), MSG_DONTWAIT);
+
+	ok = true;
+out:
+	if (sv[0] >= 0)
+		close(sv[0]);
+	if (sv[1] >= 0)
+		close(sv[1]);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -1326,6 +1413,7 @@ static const struct recipe recipes[] = {
 	{ "mm_memfd",     recipe_mm_memfd     },
 	{ "net_unix_gc",  recipe_net_unix_gc  },
 	{ "net_tcp",      recipe_net_tcp      },
+	{ "net_unix_oob", recipe_net_unix_oob },
 };
 
 /*
