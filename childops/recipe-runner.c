@@ -974,6 +974,73 @@ out:
 	return ok;
 }
 
+/*
+ * Recipe 19: memfd-as-mmap-source lifecycle.
+ *
+ * memfd_create(MFD_CLOEXEC) → ftruncate to 4 pages → mmap MAP_SHARED
+ * over the whole file → write a distinct byte to each page (faulting
+ * in four shmem pages) → read each one back to verify the page-cache
+ * round-trip → munmap → close.
+ *
+ * Distinct from recipe_memfd_seal: that recipe targets the seal
+ * accounting path (sealable memfd, write-then-seal); this one drives
+ * the plain memfd-as-anon-file mmap/fault path so the shmem fault
+ * handler, page-cache insertion, and mapping teardown all run in one
+ * sequence.  Together they cover both the storage and the locking
+ * faces of memfd.
+ *
+ * memfd_create may be missing on stripped-down kernels (very old, or
+ * built without CONFIG_MEMFD_CREATE) — ENOSYS latches the recipe off.
+ */
+static bool recipe_mm_memfd(bool *unsupported)
+{
+	int fd = -1;
+	void *p = MAP_FAILED;
+	size_t total = (size_t)page_size * 4;
+	char *base;
+	size_t i;
+	bool ok = false;
+
+	fd = (int)syscall(__NR_memfd_create, "trinity-recipe-mm-memfd",
+			  MFD_CLOEXEC);
+	if (fd < 0) {
+		if (errno == ENOSYS) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	if (ftruncate(fd, (off_t)total) < 0)
+		goto out;
+
+	p = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED)
+		goto out;
+	base = p;
+
+	for (i = 0; i < total; i += page_size)
+		base[i] = (char)('m' + (i / page_size));
+
+	for (i = 0; i < total; i += page_size)
+		if (((volatile char *)base)[i] !=
+		    (char)('m' + (i / page_size)))
+			goto out;
+
+	if (munmap(p, total) < 0)
+		goto out;
+	p = MAP_FAILED;
+
+	ok = true;
+out:
+	if (p != MAP_FAILED)
+		(void)munmap(p, total);
+	if (fd >= 0)
+		close(fd);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -993,6 +1060,7 @@ static const struct recipe recipes[] = {
 	{ "userfaultfd",  recipe_userfaultfd  },
 	{ "vfs_leases",   recipe_vfs_leases   },
 	{ "mm_vma",       recipe_mm_vma       },
+	{ "mm_memfd",     recipe_mm_memfd     },
 };
 
 /*
