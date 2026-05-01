@@ -19,15 +19,33 @@
  * 64K entries is 512KB on 64-bit, enough for most syscall paths. */
 #define KCOV_TRACE_SIZE (64 << 10)
 
-/* Size of the global coverage bitmap in bytes.
- * 1MB = 8M bits.  PCs are hashed into this bitmap.
- *
- * Birthday-paradox 50% collision threshold is ~1.177 * sqrt(N), so 8M bits
- * stays useful out to ~3400 distinct PCs before false saturation skews the
- * cold-syscall, edgepair, and minicorpus heuristics that all consume this
- * bitmap.  Modern kernel builds easily blow past the old 512K-bit budget
- * within seconds. */
-#define KCOV_BITMAP_SIZE (1 << 20)
+/* Number of distinct edge slots PCs hash into.
+ * 8M slots preserves the prior bitmap's birthday-paradox headroom: 50%
+ * collision threshold is ~1.177 * sqrt(N), so the table stays useful out
+ * to ~3400 distinct PCs before false saturation skews the cold-syscall,
+ * edgepair, and minicorpus heuristics that all consume the coverage signal.
+ * Modern kernel builds easily blow past the old 512K-slot budget within
+ * seconds. */
+#define KCOV_NUM_EDGES (1 << 23)
+
+/* AFL-style hit-count bucketing.  Each edge stores an 8-bit mask where bit
+ * i is set if the edge has ever been hit a count that falls in bucket i:
+ *   bucket 0: 1 hit            bucket 4: 8-15 hits
+ *   bucket 1: 2 hits           bucket 5: 16-31 hits
+ *   bucket 2: 3 hits           bucket 6: 32-127 hits
+ *   bucket 3: 4-7 hits         bucket 7: 128+ hits
+ * A hit count entering a never-seen bucket for a known edge counts as new
+ * coverage — same trigger semantics as a never-seen edge in the old bitmap. */
+#define KCOV_NUM_BUCKETS 8
+
+/* Per-child dedup table for counting per-edge hits within a single trace.
+ * Open-addressed, linear probing.  Sized so that the typical syscall's
+ * unique-edge count fits well below 50% load factor; on probe overflow the
+ * caller treats the entry as a single hit (degrades to old behaviour for
+ * that edge in that one call). */
+#define KCOV_DEDUP_SIZE 16384
+#define KCOV_DEDUP_MASK (KCOV_DEDUP_SIZE - 1)
+#define KCOV_DEDUP_MAX_PROBE 32
 
 /* If a syscall hasn't found new edges in this many global calls,
  * it's considered "cold" and deprioritized during selection. */
@@ -47,6 +65,14 @@
  * 1 in KCOV_REMOTE_RATIO syscalls will use KCOV_REMOTE_ENABLE. */
 #define KCOV_REMOTE_RATIO 10
 
+/* Per-call dedup slot — counts how many times a single trace hit a given
+ * edge so the hit count can be classified into a bucket.  edge_idx ==
+ * UINT32_MAX marks an empty slot. */
+struct kcov_dedup_slot {
+	uint32_t edge_idx;
+	uint32_t count;
+};
+
 struct kcov_child {
 	int fd;
 	unsigned long *trace_buf;
@@ -55,11 +81,16 @@ struct kcov_child {
 	bool remote_mode;  /* true when using KCOV_REMOTE_ENABLE */
 	bool remote_capable; /* true if kernel supports KCOV_REMOTE_ENABLE */
 	unsigned int child_id; /* unique child id for remote handle */
+	struct kcov_dedup_slot *dedup;	/* KCOV_DEDUP_SIZE entries, child-private */
 };
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
-	unsigned char bitmap[KCOV_BITMAP_SIZE];
+	/* Per-edge bucket-seen mask.  See KCOV_NUM_BUCKETS comment above for
+	 * the bucket layout.  A child's atomic-OR on this byte that flips a
+	 * never-seen bucket bit is the "new coverage" signal that drives the
+	 * minicorpus, edgepair, and mutator-attribution feedback loops. */
+	unsigned char bucket_seen[KCOV_NUM_EDGES];
 	unsigned long edges_found;
 	unsigned long total_pcs;
 	unsigned long total_calls;
