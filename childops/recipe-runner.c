@@ -842,6 +842,70 @@ out:
 	return ok;
 }
 
+/*
+ * Recipe 17: file-lease lifecycle.
+ *
+ * Open a fresh per-pid file under /tmp → unlink immediately so the
+ * fd is the sole reference → fcntl(F_SETLEASE, F_RDLCK) to install a
+ * read lease → F_GETLEASE to read it back → upgrade to F_WRLCK →
+ * release with F_UNLCK → close.
+ *
+ * Drives the file_lock alloc/free path and the lm_setup / lm_change
+ * vfs_setlease callbacks.  F_WRLCK upgrade requires no other openers
+ * of the inode, which is guaranteed because the file is anonymous
+ * (already unlinked) and the fd lives only in this process.
+ *
+ * F_SETLEASE may fail with EACCES (caller lacks CAP_LEASE and isn't
+ * the owner — shouldn't happen since we just created the file but
+ * not impossible under exotic credential setups), ENOLCK (kernel lock
+ * cache exhausted), or EAGAIN (lease conflict raced).  Any of those
+ * latches the recipe off via *unsupported.
+ */
+static bool recipe_vfs_leases(bool *unsupported)
+{
+	char path[64];
+	int fd = -1;
+	int lease;
+	bool ok = false;
+
+	snprintf(path, sizeof(path), "/tmp/trinity-recipe-lease-%d-%u",
+		 (int)getpid(), (unsigned int)rand());
+
+	fd = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+	if (fd < 0)
+		goto out;
+
+	/* Unlink immediately — the file lives only via this fd, so
+	 * concurrent recipe runs in sibling children can't race to open
+	 * it and break the F_WRLCK upgrade preconditions. */
+	(void)unlink(path);
+
+	if (fcntl(fd, F_SETLEASE, F_RDLCK) < 0) {
+		if (errno == EACCES || errno == ENOLCK || errno == EAGAIN) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	lease = fcntl(fd, F_GETLEASE);
+	if (lease < 0)
+		goto out;
+
+	if (fcntl(fd, F_SETLEASE, F_WRLCK) < 0)
+		goto out;
+
+	if (fcntl(fd, F_SETLEASE, F_UNLCK) < 0)
+		goto out;
+
+	ok = true;
+out:
+	if (fd >= 0)
+		close(fd);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -859,6 +923,7 @@ static const struct recipe recipes[] = {
 	{ "futex",        recipe_futex        },
 	{ "fanotify",     recipe_fanotify     },
 	{ "userfaultfd",  recipe_userfaultfd  },
+	{ "vfs_leases",   recipe_vfs_leases   },
 };
 
 /*
