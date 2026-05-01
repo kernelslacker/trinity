@@ -324,8 +324,13 @@ void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childda
 		 /* common-case, do the syscall in this child process. */
 		__do_syscall(rec, BEFORE, kc, child);
 
-	/* timestamp again for when we returned */
-	clock_gettime(CLOCK_MONOTONIC, &rec->tp);
+	/* Reuse the iteration-start timestamp child->tp captured at the top
+	 * of random_syscall_step() rather than calling clock_gettime() again.
+	 * rec->tp's consumers (taint timestamp ordering in post-mortem, and
+	 * pre_crash_ring entry timestamps) only need second-level granularity
+	 * for crash attribution — paying for a second clock read per syscall
+	 * was pure overhead in the hot path. */
+	rec->tp = child->tp;
 }
 
 /*
