@@ -1862,6 +1862,153 @@ static bool recipe_timerfd_xclose(bool *unsupported)
 	return completed > 0;
 }
 
+/*
+ * Recipe 27: signalfd queue-drain and mask-update lifecycle.
+ *
+ * Single-threaded.  Block 3 RT signals via sigprocmask, attach a
+ * signalfd watching all 3, queue 3 sigqueue() deliveries with payloads,
+ * drain via read() in a loop until EAGAIN, update the signalfd mask
+ * via signalfd(sfd, &reduced) to drop one watched signal, queue one
+ * more delivery on the dropped signal and one on a still-watched
+ * signal, drain via read() again, then drain any residual via
+ * sigtimedwait() so nothing is pending when we restore the original
+ * mask.
+ *
+ * Distinct from recipe 5 (recipe_signalfd) which only drives
+ * create / EAGAIN-read / close on a single signal with no actual
+ * delivery.  This recipe drives:
+ *   - the multi-entry signalfd_read path (multiple struct
+ *     signalfd_siginfo packed into one read buffer when the queue
+ *     holds more than one)
+ *   - the signalfd update-mask path (signalfd() with a non-(-1) fd
+ *     argument), which lives on the signalfd_setup_pipe / context
+ *     update path and rewires ctx->sigmask while the fd is still
+ *     installed
+ *   - the queue accounting that has to keep dropped-signal
+ *     deliveries out of the signalfd reader's view but still in the
+ *     task's pending set for sigtimedwait to drain
+ *
+ * Random callers of signalfd() rarely target an existing fd to update
+ * its mask, and almost never inject sigqueue() with payloads against
+ * an fd they're about to drain, so the multi-entry read + mask-update
+ * path stays cold without a deliberate driver.
+ *
+ * sigtimedwait drain on the way out is mandatory: an unblocked SIGRT
+ * with a delivery still queued in task->pending would fire on the
+ * sigprocmask restore and either kill the child or get caught by
+ * Trinity's signal handler with confusing provenance.
+ *
+ * Latch shape covers every way the feature can be absent:
+ *   - signalfd() ENOSYS         (CONFIG_SIGNALFD off, very stripped)
+ *   - signalfd() update EINVAL  (kernel rejects mask-update via an
+ *                                extant fd under specific config combos)
+ */
+static bool recipe_signalfd_delivery(bool *unsupported)
+{
+	sigset_t ss, reduced, oldss;
+	struct signalfd_siginfo buf[8];
+	union sigval sv;
+	struct timespec zero_ts;
+	siginfo_t drained;
+	pid_t self;
+	ssize_t r __unused__;
+	int sigs[3];
+	int sfd = -1;
+	bool mask_saved = false;
+	bool ok = false;
+
+	/* SIGRTMIN+8..+10 -- well clear of glibc's reserved RT signals
+	 * and Trinity's own SIGALRM/SIGXCPU/SIGINT.  Matches the
+	 * existing recipe_signalfd's RT-signal regime. */
+	sigs[0] = SIGRTMIN + 8;
+	sigs[1] = SIGRTMIN + 9;
+	sigs[2] = SIGRTMIN + 10;
+	if (sigs[2] >= SIGRTMAX)
+		goto out;
+
+	sigemptyset(&ss);
+	sigaddset(&ss, sigs[0]);
+	sigaddset(&ss, sigs[1]);
+	sigaddset(&ss, sigs[2]);
+	if (sigprocmask(SIG_BLOCK, &ss, &oldss) < 0)
+		goto out;
+	mask_saved = true;
+
+	sfd = signalfd(-1, &ss, SFD_NONBLOCK | SFD_CLOEXEC);
+	if (sfd < 0) {
+		if (errno == ENOSYS) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	self = getpid();
+
+	/* Queue three deliveries, one per watched signal, with distinct
+	 * payloads.  sigqueue() routes through the per-signal pending
+	 * queue with a real siginfo; plain raise() / kill() take a fast
+	 * path that elides the queue entry. */
+	sv.sival_int = 0x10;
+	(void)sigqueue(self, sigs[0], sv);
+	sv.sival_int = 0x20;
+	(void)sigqueue(self, sigs[1], sv);
+	sv.sival_int = 0x30;
+	(void)sigqueue(self, sigs[2], sv);
+
+	/* Drain the signalfd until EAGAIN.  Each read pulls 1..N
+	 * struct signalfd_siginfo entries; the kernel packs as many as
+	 * fit in our buffer and the queue holds. */
+	while ((r = read(sfd, buf, sizeof(buf))) > 0)
+		;
+
+	/* Update mask via signalfd() with the existing fd -- drops
+	 * sigs[2] from the watched set.  Drives the mask-update path
+	 * that random callers rarely hit. */
+	sigemptyset(&reduced);
+	sigaddset(&reduced, sigs[0]);
+	sigaddset(&reduced, sigs[1]);
+	if (signalfd(sfd, &reduced, SFD_NONBLOCK | SFD_CLOEXEC) < 0) {
+		if (errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	/* Inject the dropped signal -- it should land in task->pending
+	 * but stay invisible to the signalfd reader -- plus a still-
+	 * watched one.  Best-effort: a kernel bug here is exactly what
+	 * we want exposed, so we don't assert on the read return. */
+	sv.sival_int = 0x40;
+	(void)sigqueue(self, sigs[2], sv);
+	sv.sival_int = 0x50;
+	(void)sigqueue(self, sigs[0], sv);
+
+	while ((r = read(sfd, buf, sizeof(buf))) > 0)
+		;
+
+	ok = true;
+out:
+	if (sfd >= 0)
+		close(sfd);
+
+	/* Drain any residual pending signals before restoring the mask.
+	 * sigtimedwait with a zero timeout is the only safe way to
+	 * dequeue a sigqueue() delivery that signalfd's mask-update
+	 * dropped from view but left in task->pending. */
+	if (mask_saved) {
+		zero_ts.tv_sec = 0;
+		zero_ts.tv_nsec = 0;
+		while (sigtimedwait(&ss, &drained, &zero_ts) >= 0)
+			;
+		(void)sigprocmask(SIG_SETMASK, &oldss, NULL);
+	}
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -1889,6 +2036,7 @@ static const struct recipe recipes[] = {
 	{ "fsnotify_xwatch", recipe_fsnotify_xwatch },
 	{ "uffd_wp",      recipe_uffd_wp      },
 	{ "timerfd_xclose", recipe_timerfd_xclose },
+	{ "signalfd_delivery", recipe_signalfd_delivery },
 };
 
 /*
