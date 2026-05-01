@@ -2009,6 +2009,139 @@ out:
 	return ok;
 }
 
+/*
+ * Recipe 28: epoll watched-fd implicit-close lifecycle.
+ *
+ * Single-threaded.  epoll_create1 -> create N (=4) eventfds ->
+ * EPOLL_CTL_ADD all of them -> close half of them WITHOUT
+ * EPOLL_CTL_DEL first (kernel must do the implicit removal via
+ * eventpoll_release_file in __fput) -> EPOLL_CTL_ADD a fresh fd to
+ * exercise the rb-tree against the just-mutated tree -> epoll_wait
+ * (0ms) to walk rdllist and per-epitem ready-list -> EPOLL_CTL_DEL
+ * the surviving registrations explicitly -> close everything.
+ *
+ * Drives the eventpoll_release_file -> ep_remove path that fires when
+ * a watched fd is closed without being explicitly EPOLL_CTL_DEL'd
+ * first.  The file's f_ep list management has to drop the struct
+ * epitem ref atomically with the fd close, walking back into the epoll
+ * instance's rbtree and rdllist from the file side -- the path with
+ * a long history of UAFs and refcount mismatches.
+ *
+ * Distinct from recipe 4 (recipe_epoll) which only drives the explicit
+ * ADD/MOD/DEL path on a single watched fd.  This recipe is the close-
+ * without-DEL variant -- the implicit removal that the standard
+ * recipe never reaches.  Random callers of close() rarely close a fd
+ * that's currently registered on an epoll set, so the implicit-removal
+ * edge stays cold without a deliberate driver.
+ *
+ * Adding a fresh fd between the implicit-close burst and the
+ * epoll_wait drives the rb-tree insertion against a tree the implicit
+ * cleanup just mutated -- the path most likely to expose ordering
+ * bugs in the rb-tree update under a concurrent ep_release walk.
+ *
+ * Latch shape covers the ways the feature can be absent on the very
+ * first epoll_create1:
+ *   - ENOSYS  (CONFIG_EPOLL off, very stripped)
+ * Plus EINVAL on the first EPOLL_CTL_ADD with EPOLLIN against an
+ * eventfd, which is implausible in practice but flags a half-wired
+ * epoll surface (the create syscall present, the ctl path stubbed).
+ */
+#define RECIPE_EPOLL_XCLOSE_NFDS	4
+
+static bool recipe_epoll_xclose(bool *unsupported)
+{
+	struct epoll_event ev;
+	struct epoll_event evs[RECIPE_EPOLL_XCLOSE_NFDS + 1];
+	int evfds[RECIPE_EPOLL_XCLOSE_NFDS];
+	int extra = -1;
+	int epfd = -1;
+	unsigned int i;
+	bool ok = false;
+
+	for (i = 0; i < ARRAY_SIZE(evfds); i++)
+		evfds[i] = -1;
+
+	epfd = epoll_create1(EPOLL_CLOEXEC);
+	if (epfd < 0) {
+		if (errno == ENOSYS) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(evfds); i++) {
+		evfds[i] = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+		if (evfds[i] < 0)
+			goto out;
+
+		memset(&ev, 0, sizeof(ev));
+		ev.events = EPOLLIN | EPOLLET;
+		ev.data.fd = evfds[i];
+		if (epoll_ctl(epfd, EPOLL_CTL_ADD, evfds[i], &ev) < 0) {
+			if (i == 0 && errno == EINVAL) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+			}
+			goto out;
+		}
+	}
+
+	/* Close half of the watched fds without an EPOLL_CTL_DEL first.
+	 * The kernel must drop the corresponding epitem entries via
+	 * eventpoll_release_file as part of __fput.  No EPOLL_CTL_DEL =
+	 * the implicit-removal path is what we want to drive. */
+	for (i = 0; i < ARRAY_SIZE(evfds) / 2; i++) {
+		close(evfds[i]);
+		evfds[i] = -1;
+	}
+
+	/* Add a fresh fd after the implicit removals -- exercises the
+	 * rb-tree insertion against a tree the implicit-cleanup path
+	 * just mutated. */
+	extra = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (extra >= 0) {
+		memset(&ev, 0, sizeof(ev));
+		ev.events = EPOLLIN;
+		ev.data.fd = extra;
+		(void)epoll_ctl(epfd, EPOLL_CTL_ADD, extra, &ev);
+	}
+
+	/* Drain whatever's ready.  Best-effort -- the eventfds are all
+	 * 0 so nothing is expected, but the wait still walks rdllist
+	 * and the per-epitem ready-list which is the path under test. */
+	(void)epoll_wait(epfd, evs, ARRAY_SIZE(evs), 0);
+
+	/* Tear down the surviving registrations explicitly so we
+	 * exercise both ep_remove paths in one recipe. */
+	for (i = ARRAY_SIZE(evfds) / 2; i < ARRAY_SIZE(evfds); i++) {
+		if (evfds[i] >= 0) {
+			(void)epoll_ctl(epfd, EPOLL_CTL_DEL, evfds[i], NULL);
+			close(evfds[i]);
+			evfds[i] = -1;
+		}
+	}
+
+	if (extra >= 0) {
+		(void)epoll_ctl(epfd, EPOLL_CTL_DEL, extra, NULL);
+		close(extra);
+		extra = -1;
+	}
+
+	ok = true;
+out:
+	for (i = 0; i < ARRAY_SIZE(evfds); i++)
+		if (evfds[i] >= 0)
+			close(evfds[i]);
+	if (extra >= 0)
+		close(extra);
+	if (epfd >= 0)
+		close(epfd);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -2037,6 +2170,7 @@ static const struct recipe recipes[] = {
 	{ "uffd_wp",      recipe_uffd_wp      },
 	{ "timerfd_xclose", recipe_timerfd_xclose },
 	{ "signalfd_delivery", recipe_signalfd_delivery },
+	{ "epoll_xclose", recipe_epoll_xclose },
 };
 
 /*
