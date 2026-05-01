@@ -48,6 +48,7 @@
 #include <sys/shm.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
@@ -1305,6 +1306,117 @@ static bool recipe_net_tcp(bool *unsupported __unused__)
 }
 
 /*
+ * Recipe 24: fsnotify cross-fd watch lifecycle.
+ *
+ * inotify_init1 (watcher fd) -> open a fresh per-pid file under /tmp
+ * (modifier fd, kept distinct from the watcher) -> inotify_add_watch
+ * on that path -> write/fchmod/close on the modifier fd to drive
+ * three distinct event types (IN_MODIFY, IN_ATTRIB, IN_CLOSE_WRITE)
+ * -> non-blocking read on the watcher to drain the queued events ->
+ * unlink the file -> non-blocking read again to catch the
+ * IN_DELETE_SELF + automatic mark teardown -> inotify_rm_watch ->
+ * close watcher.
+ *
+ * The cross-fd shape is the point.  Recipe 8 (recipe_inotify) only
+ * exercises init / add_watch / read / rm_watch / close on /tmp without
+ * driving any modifications from a separate fd, so the notification
+ * delivery path (fsnotify_call_mark_by_event_type, the per-mark hlist
+ * walk that dispatches into inotify_handle_inode_event, the event-
+ * queue alloc inside inotify_handle_event) never runs.  Driving the
+ * mod operations from a fd that the watcher does not own forces
+ * fsnotify to route an event to a mark whose installer holds a
+ * different file struct -- the cross-context lifetime path that has
+ * historically leaked under teardown races (the 2024 fsnotify_mark
+ * refcount fixes, the inotify event-queue bounds tightening, the
+ * recurring IN_DELETE_SELF auto-removal UAFs).
+ *
+ * Random write/fchmod/close calls in trinity rarely hit a path that
+ * is actively being watched, and the standalone inotify_add_watch in
+ * recipe 8 never fires events because /tmp is too noisy for any
+ * specific event to be attributed to it.  The deterministic
+ * watcher + fresh-file + cross-fd-mod sequence makes the notification
+ * delivery edge fire on every invocation.
+ *
+ * ENOSYS on inotify_init1 (extremely unlikely on modern kernels but
+ * possible on stripped-down builds without CONFIG_INOTIFY_USER)
+ * latches the recipe off.  Per-event read failures and individual
+ * mod failures are tolerated -- the recipe cares about driving the
+ * dispatch path, not about specific event counts arriving.
+ */
+static bool recipe_fsnotify_xwatch(bool *unsupported)
+{
+	char path[64];
+	char buf[1024];
+	int wfd = -1;
+	int wd = -1;
+	int mod = -1;
+	ssize_t r __unused__;
+	bool ok = false;
+
+	snprintf(path, sizeof(path), "/tmp/trinity-recipe-fsx-%d-%u",
+		 (int)getpid(), (unsigned int)rand());
+
+	wfd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (wfd < 0) {
+		if (errno == ENOSYS) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+
+	mod = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+	if (mod < 0)
+		goto out;
+
+	wd = inotify_add_watch(wfd, path,
+			       IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE |
+			       IN_DELETE_SELF);
+	if (wd < 0)
+		goto out;
+
+	/* Drive three notification types from the modifier fd that the
+	 * watcher does not own.  Each call routes into fsnotify with a
+	 * file struct distinct from the one held by the inotify mark --
+	 * the cross-context delivery path. */
+	if (write(mod, "x", 1) != 1)
+		goto out;
+	(void)fchmod(mod, 0644);
+	close(mod);
+	mod = -1;
+
+	/* Drain queued events.  Best-effort -- the read path is what we
+	 * care about, not the byte count.  EAGAIN is acceptable on a
+	 * heavily loaded box where the wake hasn't propagated yet. */
+	r = read(wfd, buf, sizeof(buf));
+
+	if (unlink(path) < 0)
+		goto out;
+
+	/* IN_DELETE_SELF + automatic mark teardown.  The watcher mark
+	 * stays armed across the unlink and gets torn down by fsnotify
+	 * itself rather than the explicit rm_watch below -- that's the
+	 * implicit-teardown path the dispatcher has to walk. */
+	r = read(wfd, buf, sizeof(buf));
+
+	if (inotify_rm_watch(wfd, wd) < 0 && errno != EINVAL)
+		goto out;
+	wd = -1;
+
+	ok = true;
+out:
+	if (wd >= 0)
+		(void)inotify_rm_watch(wfd, wd);
+	if (mod >= 0)
+		close(mod);
+	if (wfd >= 0)
+		close(wfd);
+	(void)unlink(path);
+	return ok;
+}
+
+/*
  * Recipe 23: AF_INET raw socket sweep.
  *
  * Walks several proto values through socket(AF_INET, SOCK_RAW, X) ->
@@ -1489,6 +1601,7 @@ static const struct recipe recipes[] = {
 	{ "net_tcp",      recipe_net_tcp      },
 	{ "net_unix_oob", recipe_net_unix_oob },
 	{ "net_raw",      recipe_net_raw      },
+	{ "fsnotify_xwatch", recipe_fsnotify_xwatch },
 };
 
 /*
