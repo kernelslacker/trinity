@@ -391,6 +391,10 @@ void generic_sanitise(struct syscallrecord *rec)
 	call = rec->nr;
 	entry = syscalls[call].entry;
 
+	/* Defensive: zero arg slots so any ARG_UNDEFINED entry doesn't
+	 * inherit stale values from the previous syscall's record. */
+	memset(&rec->a1, 0, 6 * sizeof(unsigned long));
+
 	if (entry->argtype[0] != 0)
 		rec->a1 = fill_arg(rec, 1);
 	if (entry->argtype[1] != 0)
