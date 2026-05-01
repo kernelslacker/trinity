@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "arch.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
@@ -633,6 +634,23 @@ void dump_stats(void)
 	if (stats_json) {
 		dump_stats_json();
 		return;
+	}
+
+	{
+		time_t start = shm->start_time;
+		time_t now = time(NULL);
+		long elapsed = (start > 0 && now >= start) ? (long)(now - start) : 0;
+		struct tm tm;
+		char ts[32];
+
+		if (start > 0 && localtime_r(&start, &tm) != NULL &&
+		    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm) > 0) {
+			output(1, "runtime: %ldh%02ldm%02lds (since %s)\n",
+			       elapsed / 3600,
+			       (elapsed / 60) % 60,
+			       elapsed % 60,
+			       ts);
+		}
 	}
 
 	if (biarch == true) {

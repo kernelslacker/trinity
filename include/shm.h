@@ -2,6 +2,7 @@
 
 #include <stdatomic.h>
 #include <stdint.h>
+#include <time.h>
 #include "arch.h"
 #include "child.h"
 #include "efault_cache.h"
@@ -24,6 +25,11 @@ struct shm_s {
 
 	/* Frequently updated by all children — own cache line. */
 	struct stats_s stats __attribute__((aligned(64)));
+
+	/* Wall-clock time init_shm() ran.  Read-only after init; used by
+	 * dump_stats() to log absolute runtime alongside iters/s, which lets
+	 * crash post-mortem correlate trinity output to external logs. */
+	time_t start_time;
 
 	/*
 	 * fd→object hash table.  Lives in shm so children can read the
