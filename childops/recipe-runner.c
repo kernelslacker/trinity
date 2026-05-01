@@ -2360,6 +2360,221 @@ out:
 	return ok;
 }
 
+/*
+ * Racer thread for recipe_bpf_htab_iter_del.  Walks the hash map's keyspace
+ * issuing BPF_MAP_DELETE_ELEM against each pre-populated key, with a
+ * deadline check between iterations so the racer self-bounds even under
+ * heavy contention.  Re-populates and re-deletes in a loop until the
+ * deadline elapses, so the iteration side has a continuously-mutating
+ * bucket walk to step through.
+ *
+ * Each bpf() syscall is unbounded only by the kernel's per-call work,
+ * which for a single-element hash op is effectively trivial.  The
+ * deadline gate ensures pthread_join() returns within ~100ms regardless
+ * of how the iteration side schedules.
+ */
+struct bpf_htab_racer_arg {
+	int		map_fd;
+	uint32_t	max_entries;
+	struct timespec	deadline;
+};
+
+static bool bpf_htab_deadline_passed(const struct timespec *deadline)
+{
+	struct timespec now;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+		return true;
+	if (now.tv_sec > deadline->tv_sec)
+		return true;
+	if (now.tv_sec == deadline->tv_sec && now.tv_nsec >= deadline->tv_nsec)
+		return true;
+	return false;
+}
+
+static void *bpf_htab_racer_thread(void *arg)
+{
+	struct bpf_htab_racer_arg *ra = arg;
+	union bpf_attr attr;
+	uint32_t key, value;
+
+	while (!bpf_htab_deadline_passed(&ra->deadline)) {
+		for (key = 0; key < ra->max_entries; key++) {
+			if (bpf_htab_deadline_passed(&ra->deadline))
+				return NULL;
+			memset(&attr, 0, sizeof(attr));
+			attr.map_fd = ra->map_fd;
+			attr.key    = (uintptr_t)&key;
+			(void)syscall(__NR_bpf, BPF_MAP_DELETE_ELEM,
+				      &attr, sizeof(attr));
+		}
+		for (key = 0; key < ra->max_entries; key++) {
+			if (bpf_htab_deadline_passed(&ra->deadline))
+				return NULL;
+			value = key ^ 0xa5a5a5a5;
+			memset(&attr, 0, sizeof(attr));
+			attr.map_fd = ra->map_fd;
+			attr.key    = (uintptr_t)&key;
+			attr.value  = (uintptr_t)&value;
+			attr.flags  = 0;	/* BPF_ANY */
+			(void)syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM,
+				      &attr, sizeof(attr));
+		}
+	}
+	return NULL;
+}
+
+/*
+ * Recipe 30: BPF hash-map iterate vs delete cross-thread race.
+ *
+ * Per cycle (1..MAX_CYCLES):
+ *
+ *   bpf(BPF_MAP_CREATE, BPF_MAP_TYPE_HASH, key=u32, value=u32,
+ *       max_entries=N) -> populate N entries via BPF_MAP_UPDATE_ELEM ->
+ *   spawn racer thread that loops {DELETE_ELEM × N -> UPDATE_ELEM × N}
+ *   under a 100ms deadline -> main thread walks the keyspace via
+ *   BPF_MAP_GET_NEXT_KEY (chained from a NULL prev_key) up to N+8
+ *   iterations or until -ENOENT -> usleep 0..100us race-window jitter
+ *   -> pthread_join -> close map_fd.
+ *
+ * Targets the htab_map_get_next_key RCU-walk in kernel/bpf/hashtab.c
+ * concurrent with htab_map_delete_elem.  The bug class: htab uses RCU
+ * for the bucket lists but the iterator's "next" pointer can dangle if
+ * the element it just observed is deleted before the next dereference,
+ * and the bucket-lock acquisition order between iterate and delete has
+ * to keep the chain walk consistent under concurrent prepend/remove.
+ *
+ * Distinct from recipe_bpf_lifecycle (childops/bpf-lifecycle.c) which
+ * drives BPF_MAP_TYPE_ARRAY (no chain walk, no per-bucket lock) plus a
+ * loaded program; this recipe drives the *concurrent* iterate-vs-delete
+ * window on a real hash map's bucket chain.  Random callers of bpf()
+ * almost never construct a populated hash map and walk it from one
+ * thread while another thread mutates it; the path stays cold without
+ * a deliberate driver.
+ *
+ * Bounded racer (deadline-gated bpf() ops, no blocking calls) means
+ * plain pthread_join always returns within ~100ms.  THREAD_SPAWN_LATCH=3
+ * consecutive pthread_create failures bails for the rest of the
+ * invocation.
+ *
+ * Latch shape covers the ways the feature can be absent on the very
+ * first probe:
+ *   - bpf() ENOSYS                   (CONFIG_BPF_SYSCALL off)
+ *   - BPF_MAP_CREATE EPERM           (kernel.unprivileged_bpf_disabled
+ *                                     and we lack CAP_BPF)
+ *   - BPF_MAP_CREATE EINVAL          (BPF_MAP_TYPE_HASH unsupported on
+ *                                     a stripped kernel build)
+ */
+#define RECIPE_BPF_HTAB_MAX_CYCLES	4
+#define RECIPE_BPF_HTAB_ENTRIES		16
+
+static bool recipe_bpf_htab_iter_del(bool *unsupported)
+{
+	unsigned int cycles;
+	unsigned int i;
+	unsigned int spawn_fail_streak = 0;
+	unsigned int completed = 0;
+
+	cycles = 1 + ((unsigned int)rand() % RECIPE_BPF_HTAB_MAX_CYCLES);
+
+	for (i = 0; i < cycles; i++) {
+		struct bpf_htab_racer_arg ra;
+		union bpf_attr attr;
+		pthread_t tid;
+		uint32_t key, value, next_key;
+		int map_fd;
+		int rc;
+		unsigned int walked;
+
+		memset(&attr, 0, sizeof(attr));
+		attr.map_type    = BPF_MAP_TYPE_HASH;
+		attr.key_size    = sizeof(uint32_t);
+		attr.value_size  = sizeof(uint32_t);
+		attr.max_entries = RECIPE_BPF_HTAB_ENTRIES;
+		map_fd = (int)syscall(__NR_bpf, BPF_MAP_CREATE,
+				      &attr, sizeof(attr));
+		if (map_fd < 0) {
+			if (i == 0 && (errno == ENOSYS || errno == EPERM ||
+				       errno == EINVAL)) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+				return false;
+			}
+			continue;
+		}
+
+		/* Pre-populate so the racer's first DELETE pass has work and
+		 * the iterate path has a non-empty keyspace to walk. */
+		for (key = 0; key < RECIPE_BPF_HTAB_ENTRIES; key++) {
+			value = key ^ 0xa5a5a5a5;
+			memset(&attr, 0, sizeof(attr));
+			attr.map_fd = map_fd;
+			attr.key    = (uintptr_t)&key;
+			attr.value  = (uintptr_t)&value;
+			attr.flags  = 0;	/* BPF_ANY */
+			(void)syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM,
+				      &attr, sizeof(attr));
+		}
+
+		ra.map_fd      = map_fd;
+		ra.max_entries = RECIPE_BPF_HTAB_ENTRIES;
+		if (clock_gettime(CLOCK_MONOTONIC, &ra.deadline) < 0) {
+			close(map_fd);
+			continue;
+		}
+		ra.deadline.tv_nsec += RECIPE_RACER_TIMEOUT_MS * 1000000L;
+		while (ra.deadline.tv_nsec >= 1000000000L) {
+			ra.deadline.tv_nsec -= 1000000000L;
+			ra.deadline.tv_sec  += 1;
+		}
+
+		rc = pthread_create(&tid, NULL, bpf_htab_racer_thread, &ra);
+		if (rc != 0) {
+			close(map_fd);
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+				break;
+			continue;
+		}
+		spawn_fail_streak = 0;
+
+		/* Variable race window -- 0..100us picks a random sub-window
+		 * of the racer's loop to begin our iteration in. */
+		if ((rand() & 0xff) != 0)
+			usleep((useconds_t)(rand() % 101));
+
+		/* Walk the keyspace with chained GET_NEXT_KEY, starting from
+		 * NULL (returns the first key in iteration order).  Bounded
+		 * by 2*N+8 iterations: under a racing populator we can revisit
+		 * keys, so an unbounded loop could spin if the racer keeps
+		 * re-inserting.  -ENOENT terminates iteration normally. */
+		{
+			uint32_t *prev = NULL;
+			uint32_t prev_key = 0;
+			unsigned int cap = 2 * RECIPE_BPF_HTAB_ENTRIES + 8;
+
+			for (walked = 0; walked < cap; walked++) {
+				memset(&attr, 0, sizeof(attr));
+				attr.map_fd = map_fd;
+				attr.key    = (uintptr_t)prev;
+				attr.next_key = (uintptr_t)&next_key;
+				if ((int)syscall(__NR_bpf, BPF_MAP_GET_NEXT_KEY,
+						 &attr, sizeof(attr)) < 0)
+					break;
+				prev_key = next_key;
+				prev = &prev_key;
+			}
+		}
+
+		(void)pthread_join(tid, NULL);
+		close(map_fd);
+
+		completed++;
+	}
+
+	return completed > 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -2390,6 +2605,7 @@ static const struct recipe recipes[] = {
 	{ "signalfd_delivery", recipe_signalfd_delivery },
 	{ "epoll_xclose", recipe_epoll_xclose },
 	{ "iouring_fixed_uaf", recipe_iouring_fixed_uaf },
+	{ "bpf_htab_iter_del", recipe_bpf_htab_iter_del },
 };
 
 /*
