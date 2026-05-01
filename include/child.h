@@ -68,6 +68,7 @@ enum child_op_type {
 	CHILD_OP_MOUNT_CHURN,
 	CHILD_OP_UFFD_CHURN,
 	CHILD_OP_IOURING_FLOOD,
+	CHILD_OP_CLOSE_RACER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -250,3 +251,4 @@ bool cgroup_churn(struct childdata *child);
 bool mount_churn(struct childdata *child);
 bool uffd_churn(struct childdata *child);
 bool iouring_flood(struct childdata *child);
+bool close_racer(struct childdata *child);

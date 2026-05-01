@@ -486,7 +486,8 @@ static void dump_stats_json(void)
 		"\"cgroup_churn\":{\"runs\":%lu,\"mkdirs\":%lu,\"rmdirs\":%lu,\"failed\":%lu},"
 		"\"mount_churn\":{\"runs\":%lu,\"mounts\":%lu,\"umounts\":%lu,\"failed\":%lu},"
 		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
-		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu}"
+		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
+		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -545,7 +546,9 @@ static void dump_stats_json(void)
 		shm->stats.uffd_runs, shm->stats.uffd_registers,
 		shm->stats.uffd_unregisters, shm->stats.uffd_failed,
 		shm->stats.iouring_runs, shm->stats.iouring_submits,
-		shm->stats.iouring_reaped, shm->stats.iouring_failed);
+		shm->stats.iouring_reaped, shm->stats.iouring_failed,
+		shm->stats.close_racer_runs, shm->stats.close_racer_pairs,
+		shm->stats.close_racer_failed, shm->stats.close_racer_thread_spawn_fail);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -789,6 +792,13 @@ void dump_stats(void)
 		stat_row("iouring_flood", "submits",  shm->stats.iouring_submits);
 		stat_row("iouring_flood", "reaped",   shm->stats.iouring_reaped);
 		stat_row("iouring_flood", "failed",   shm->stats.iouring_failed);
+	}
+
+	if (shm->stats.close_racer_runs) {
+		stat_row("close_racer", "runs",              shm->stats.close_racer_runs);
+		stat_row("close_racer", "pairs",             shm->stats.close_racer_pairs);
+		stat_row("close_racer", "failed",            shm->stats.close_racer_failed);
+		stat_row("close_racer", "thread_spawn_fail", shm->stats.close_racer_thread_spawn_fail);
 	}
 
 	if (kcov_shm != NULL) {
