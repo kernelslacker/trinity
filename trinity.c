@@ -350,6 +350,11 @@ int main(int argc, char* argv[])
 
 	init_taint_checking();
 
+	if (show_disabled_syscalls == true) {
+		print_disabled_syscalls();
+		goto out;
+	}
+
 	if (munge_tables() == false) {
 		ret = EXIT_FAILURE;
 		goto out;

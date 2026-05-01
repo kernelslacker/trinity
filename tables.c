@@ -379,6 +379,45 @@ void dump_syscall_tables(void)
 		dump_syscall_tables_uniarch();
 }
 
+static void print_disabled_in_table(const struct syscalltable *table,
+				    unsigned int nr, const char *label)
+{
+	struct syscallentry *entry;
+	unsigned int i, count = 0;
+
+	for (i = 0; i < nr; i++) {
+		entry = table[i].entry;
+		if (entry == NULL)
+			continue;
+
+		if (!(entry->flags & (AVOID_SYSCALL | NEED_ALARM)))
+			continue;
+
+		outputstd("%s %u %s :", label, entry->number, entry->name);
+		if (entry->flags & AVOID_SYSCALL)
+			outputstd(" AVOID_SYSCALL");
+		if (entry->flags & NEED_ALARM)
+			outputstd(" NEED_ALARM");
+		outputstd("\n");
+		count++;
+	}
+
+	outputstd("%s: %u disabled syscall%s\n",
+		label, count, count == 1 ? "" : "s");
+}
+
+void print_disabled_syscalls(void)
+{
+	if (biarch == true) {
+		print_disabled_in_table(syscalls_32bit, max_nr_32bit_syscalls,
+					"[32-bit]");
+		print_disabled_in_table(syscalls_64bit, max_nr_64bit_syscalls,
+					"[64-bit]");
+	} else {
+		print_disabled_in_table(syscalls, max_nr_syscalls, "syscall");
+	}
+}
+
 static void show_unannotated_biarch(void)
 {
 	struct syscallentry *entry;
