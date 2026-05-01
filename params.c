@@ -37,6 +37,7 @@ bool dry_run = false;
 bool show_unannotated = false;
 bool show_syscall_list = false;
 bool show_ioctl_list = false;
+bool show_disabled_syscalls = false;
 unsigned char verbosity = 1;
 bool dangerous = false;
 bool dropprivs = false;
@@ -151,6 +152,7 @@ static const struct option_help option_descs[] = {
 	{ "domain",		'P', "specify specific network domain for sockets" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
+	{ "print-disabled-syscalls", 0, "print syscalls disabled via AVOID_SYSCALL or NEED_ALARM and exit" },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
@@ -222,6 +224,7 @@ static const struct option longopts[] = {
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
+	{ "print-disabled-syscalls", no_argument, NULL, 0 },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
 	{ "stats", no_argument, NULL, 0 },
@@ -525,6 +528,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("no-warm-start", longopts[opt_index].name) == 0)
 				no_warm_start = true;
+
+			if (strcmp("print-disabled-syscalls", longopts[opt_index].name) == 0)
+				show_disabled_syscalls = true;
 
 			if (strcmp("warm-start-path", longopts[opt_index].name) == 0) {
 				free(warm_start_path);
