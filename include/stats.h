@@ -234,6 +234,12 @@ struct stats_s {
 	unsigned long iouring_reaped;		/* CQEs drained from the completion ring */
 	unsigned long iouring_failed;		/* setup/mmap/submit_burst/io_uring_enter returned -1 */
 
+	/* close_racer childop counters */
+	unsigned long close_racer_runs;			/* total close_racer invocations */
+	unsigned long close_racer_pairs;		/* cycles where close+join completed */
+	unsigned long close_racer_failed;		/* socketpair/pipe2 returned -1 */
+	unsigned long close_racer_thread_spawn_fail;	/* pthread_create returned non-zero */
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially
