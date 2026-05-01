@@ -1041,6 +1041,109 @@ out:
 	return ok;
 }
 
+/*
+ * Send a single fd over an AF_UNIX socket via SCM_RIGHTS ancillary
+ * data.  Helper for recipe_net_unix_gc, which needs to construct a
+ * deliberate fd-cycle topology in the unix garbage collector's view.
+ *
+ * Returns the sendmsg() return value (1 on success — the iov is one
+ * filler byte; AF_UNIX sendmsg with empty iov but non-empty cmsg is
+ * undefined on some kernels, so we always carry at least one data
+ * byte).  Negative on failure with errno set.
+ */
+static ssize_t scm_send_one_fd(int sock, int fd)
+{
+	struct msghdr msg;
+	struct iovec iov;
+	struct cmsghdr *cmsg;
+	char filler = 'g';
+	char cmsgbuf[CMSG_SPACE(sizeof(int))];
+
+	memset(&msg, 0, sizeof(msg));
+	memset(cmsgbuf, 0, sizeof(cmsgbuf));
+
+	iov.iov_base = &filler;
+	iov.iov_len = 1;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = cmsgbuf;
+	msg.msg_controllen = sizeof(cmsgbuf);
+
+	cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type = SCM_RIGHTS;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+	memcpy(CMSG_DATA(cmsg), &fd, sizeof(int));
+
+	return sendmsg(sock, &msg, 0);
+}
+
+/*
+ * Recipe 20: AF_UNIX garbage-collector cycle lifecycle.
+ *
+ * Build two AF_UNIX socketpairs and use SCM_RIGHTS to wire a reference
+ * cycle the kernel can only break via unix_gc():
+ *
+ *   socketpair() -> sv1[0] <-> sv1[1]
+ *   socketpair() -> sv2[0] <-> sv2[1]
+ *   sendmsg(sv1[0], SCM_RIGHTS, [sv2[1]])  // sv2[1] queued in sv1[1]
+ *   sendmsg(sv2[0], SCM_RIGHTS, [sv1[1]])  // sv1[1] queued in sv2[1]
+ *
+ * After all four user fds are closed, sv1[1] and sv2[1] are kept alive
+ * solely by the in-flight refs in each other's receive queues.  No fd
+ * table holds them; each is reachable only via the other.  The unix
+ * garbage collector (net/unix/garbage.c) has to walk the in-flight
+ * graph, identify the unreachable cycle, and tear both down — the path
+ * with the long history of UAFs and refcount mismatches (CVE-2021-0920,
+ * CVE-2022-32296, the 2024 unix_gc rework, etc.).
+ *
+ * Random callers of sendmsg+SCM_RIGHTS in trinity rarely build a cycle
+ * — they pass random fds, almost never both ends of a freshly-paired
+ * socket — so the GC cycle path stays cold without a deliberate recipe
+ * to drive it.
+ *
+ * Cleanup closes anything still open on every exit path.  In the happy
+ * case all four fds are already cleared to -1 before we fall through.
+ */
+static bool recipe_net_unix_gc(bool *unsupported __unused__)
+{
+	int sv1[2] = { -1, -1 };
+	int sv2[2] = { -1, -1 };
+	bool ok = false;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv1) < 0)
+		goto out;
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv2) < 0)
+		goto out;
+
+	if (scm_send_one_fd(sv1[0], sv2[1]) != 1)
+		goto out;
+
+	if (scm_send_one_fd(sv2[0], sv1[1]) != 1)
+		goto out;
+
+	/* Drop every user-visible reference.  sv1[1] and sv2[1] now live
+	 * only via the SCM_RIGHTS payloads queued in each other — a cycle
+	 * unreachable from any fdtable.  Closing in this order forces the
+	 * GC to reckon with the cycle on the next teardown pass. */
+	close(sv1[0]); sv1[0] = -1;
+	close(sv1[1]); sv1[1] = -1;
+	close(sv2[0]); sv2[0] = -1;
+	close(sv2[1]); sv2[1] = -1;
+
+	ok = true;
+out:
+	if (sv1[0] >= 0)
+		close(sv1[0]);
+	if (sv1[1] >= 0)
+		close(sv1[1]);
+	if (sv2[0] >= 0)
+		close(sv2[0]);
+	if (sv2[1] >= 0)
+		close(sv2[1]);
+	return ok;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -1061,6 +1164,7 @@ static const struct recipe recipes[] = {
 	{ "vfs_leases",   recipe_vfs_leases   },
 	{ "mm_vma",       recipe_mm_vma       },
 	{ "mm_memfd",     recipe_mm_memfd     },
+	{ "net_unix_gc",  recipe_net_unix_gc  },
 };
 
 /*
