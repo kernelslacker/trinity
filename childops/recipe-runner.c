@@ -1726,6 +1726,142 @@ out:
 	return ok;
 }
 
+/*
+ * Racer thread for recipe_timerfd_xclose.  Blocks in poll() with a
+ * bounded timeout, then drains a single non-blocking read on the
+ * (possibly already-closed) timerfd.  Both calls have hard ceilings:
+ * poll's is the timeout argument; read inherits TFD_NONBLOCK so it
+ * returns immediately with EAGAIN/EBADF/EINVAL regardless of whether
+ * the close raced ahead, mid-syscall, or behind it.
+ *
+ * EBADF on either call is the fdget-vs-close lookup race we are
+ * hunting; success on read is the close-after-read-completed sub-
+ * window where the timer expired before the close landed.
+ */
+struct timerfd_xclose_racer_arg {
+	int tfd;
+};
+
+static void *timerfd_xclose_racer_thread(void *arg)
+{
+	struct timerfd_xclose_racer_arg *ra = arg;
+	struct pollfd pfd;
+	uint64_t expirations;
+	ssize_t r __unused__;
+
+	pfd.fd = ra->tfd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	(void)poll(&pfd, 1, RECIPE_RACER_TIMEOUT_MS);
+
+	r = read(ra->tfd, &expirations, sizeof(expirations));
+	return NULL;
+}
+
+/*
+ * Recipe 26: timerfd cross-thread close-vs-read race.
+ *
+ * Per cycle (1..MAX_CYCLES):
+ *
+ *   timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC) ->
+ *   timerfd_settime(50ms initial + 50ms periodic) -> spawn racer
+ *   thread blocked in poll(POLLIN, 100ms) + read() -> usleep 0..100us
+ *   race-window jitter -> close(tfd) (the race) -> pthread_join.
+ *
+ * Targets the kernel paths timerfd_release, timerfd_remove_cancel_on_set,
+ * and the wait-queue cleanup that fire when a timerfd is destroyed
+ * while another task is mid-poll() or mid-read() on it.  Threads share
+ * the fdtable, which is the bug class -- a sibling process closing the
+ * same numeric fd in its own table never races with our fdget.  Distinct
+ * from recipe 1 (recipe_timerfd) which runs settime/read/gettime
+ * serially on a single thread; this one drives the *concurrent*
+ * read-vs-close window.
+ *
+ * Bounded racer syscalls (poll with timeout, read on TFD_NONBLOCK fd)
+ * mean plain pthread_join always returns within ~100ms.  Sidesteps the
+ * wedge problem where pthread_cancel against a thread stuck in an
+ * uninterruptible read is unreliable and detached threads leak state.
+ *
+ * THREAD_SPAWN_LATCH=3 consecutive pthread_create failures bails for
+ * the rest of the invocation -- under nproc/thread limits the EAGAIN
+ * won't lift mid-op while fork_storm or cgroup_churn are competing for
+ * the budget.
+ *
+ * timerfd may be missing on stripped-down kernels (no
+ * CONFIG_TIMERFD_CREATE).  ENOSYS / EINVAL / EPERM on the very first
+ * timerfd_create latches the recipe off via *unsupported.
+ *
+ * Returns ok=true if any cycle reached close+join.  Per-cycle failures
+ * are tolerated mid-loop because one bad cycle (e.g. ephemeral resource
+ * pressure under sibling load) shouldn't penalise the whole recipe.
+ */
+#define RECIPE_TIMERFD_XCLOSE_MAX_CYCLES	4
+
+static bool recipe_timerfd_xclose(bool *unsupported)
+{
+	struct itimerspec its;
+	unsigned int cycles;
+	unsigned int i;
+	unsigned int spawn_fail_streak = 0;
+	unsigned int completed = 0;
+
+	cycles = 1 + ((unsigned int)rand() % RECIPE_TIMERFD_XCLOSE_MAX_CYCLES);
+
+	for (i = 0; i < cycles; i++) {
+		struct timerfd_xclose_racer_arg ra;
+		pthread_t tid;
+		int tfd;
+		int rc;
+
+		tfd = timerfd_create(CLOCK_MONOTONIC,
+				     TFD_NONBLOCK | TFD_CLOEXEC);
+		if (tfd < 0) {
+			if (i == 0 && (errno == ENOSYS || errno == EINVAL ||
+				       errno == EPERM)) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+				return false;
+			}
+			continue;
+		}
+
+		memset(&its, 0, sizeof(its));
+		its.it_value.tv_sec = 0;
+		its.it_value.tv_nsec = 50 * 1000 * 1000;	/* 50 ms */
+		its.it_interval.tv_sec = 0;
+		its.it_interval.tv_nsec = 50 * 1000 * 1000;
+		if (timerfd_settime(tfd, 0, &its, NULL) < 0) {
+			close(tfd);
+			continue;
+		}
+
+		ra.tfd = tfd;
+		rc = pthread_create(&tid, NULL,
+				    timerfd_xclose_racer_thread, &ra);
+		if (rc != 0) {
+			close(tfd);
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+				break;
+			continue;
+		}
+		spawn_fail_streak = 0;
+
+		/* Variable race window -- 0..100us picks a random sub-window
+		 * of the racer's poll/read to land the close in. */
+		if ((rand() & 0xff) != 0)
+			usleep((useconds_t)(rand() % 101));
+
+		(void)close(tfd);
+
+		(void)pthread_join(tid, NULL);
+
+		completed++;
+	}
+
+	return completed > 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -1752,6 +1888,7 @@ static const struct recipe recipes[] = {
 	{ "net_raw",      recipe_net_raw      },
 	{ "fsnotify_xwatch", recipe_fsnotify_xwatch },
 	{ "uffd_wp",      recipe_uffd_wp      },
+	{ "timerfd_xclose", recipe_timerfd_xclose },
 };
 
 /*
