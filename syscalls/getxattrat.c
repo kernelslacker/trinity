@@ -4,6 +4,7 @@
  *		struct xattr_args __user *, uargs, size_t, usize)
  */
 #include <fcntl.h>
+#include "arch.h"
 #include "sanitise.h"
 #include "xattr.h"
 #include "compat.h"
@@ -40,6 +41,8 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 		rec->a5 = (unsigned long) args;
 		rec->a6 = sizeof(*args);
 	}
+#else
+	avoid_shared_buffer(&rec->a5, page_size);
 #endif
 }
 
