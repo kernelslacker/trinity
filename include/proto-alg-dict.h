@@ -44,4 +44,16 @@ const char **alg_dict_names(enum alg_dict_type type, unsigned int *count);
 void alg_static_fallback_get(enum alg_dict_type type,
 			     const char *const **arr, unsigned int *count);
 
+struct sockaddr_alg;
+
+/*
+ * Fill salg_type and salg_name on the supplied sockaddr_alg by drawing
+ * a random algorithm name from the dict bucket for `type`, falling back
+ * to the static fallback array if the dict bucket is empty.  Never emits
+ * a NULL salg_name; if both the dict and the fallback are empty the
+ * salg_name field is left untouched.
+ */
+void pick_alg(enum alg_dict_type type, const char *type_str,
+	      struct sockaddr_alg *alg);
+
 #endif

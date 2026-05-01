@@ -8,6 +8,8 @@
 
 #ifdef USE_IF_ALG
 
+#include <linux/if_alg.h>
+
 struct alg_name_list {
 	const char **names;
 	unsigned int count;
@@ -252,6 +254,41 @@ const char **alg_dict_names(enum alg_dict_type type, unsigned int *count)
 	}
 	*count = dict[type].count;
 	return dict[type].names;
+}
+
+/*
+ * Pick a salg_type / salg_name pair from the runtime dictionary.
+ * Falls back to the static fallback arrays via the dict's own merge
+ * if /proc/crypto was empty.  If the dict bucket is somehow still
+ * empty (init never ran), drop back to the static array directly so
+ * we never emit a NULL salg_name.
+ */
+void pick_alg(enum alg_dict_type type, const char *type_str,
+	      struct sockaddr_alg *alg)
+{
+	const char **names;
+	const char *pick = NULL;
+	unsigned int n;
+
+	strncpy((char *)alg->salg_type, type_str, sizeof(alg->salg_type) - 1);
+	alg->salg_type[sizeof(alg->salg_type) - 1] = '\0';
+
+	names = alg_dict_names(type, &n);
+	if (n == 0) {
+		const char *const *fallback;
+
+		alg_static_fallback_get(type, &fallback, &n);
+		if (n != 0)
+			pick = fallback[rand() % n];
+	} else {
+		pick = names[rand() % n];
+	}
+
+	if (pick != NULL) {
+		strncpy((char *)alg->salg_name, pick,
+			sizeof(alg->salg_name) - 1);
+		alg->salg_name[sizeof(alg->salg_name) - 1] = '\0';
+	}
 }
 
 #endif /* USE_IF_ALG */
