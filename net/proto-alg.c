@@ -30,17 +30,31 @@ static const char *hashes[] = {
 };
 
 static const char *aead_algos[] = {
+	"aegis128",
 	"gcm(aes)",
+	"gcm(sm4)",
 	"ccm(aes)",
+	"ccm(sm4)",
 	"rfc4106(gcm(aes))",
+	"rfc4106(gcm(sm4))",
 	"rfc4309(ccm(aes))",
+	"rfc4309(ccm(sm4))",
 	"rfc4543(gcm(aes))",
+	"rfc4543(gcm(sm4))",
 	"rfc7539(chacha20,poly1305)",
 	"rfc7539esp(chacha20,poly1305)",
 	"authenc(hmac(sha1),cbc(aes))",
 	"authenc(hmac(sha1),cbc(des3_ede))",
+	"authenc(hmac(sha224),cbc(aes))",
 	"authenc(hmac(sha256),cbc(aes))",
+	"authenc(hmac(sha384),cbc(aes))",
 	"authenc(hmac(sha512),cbc(aes))",
+	"authencesn(hmac(sha1),cbc(aes))",
+	"authencesn(hmac(sha1),cbc(des3_ede))",
+	"authencesn(hmac(sha256),cbc(aes))",
+	"authencesn(hmac(sha512),cbc(aes))",
+	"krb5enc(hmac(sha1),cts(cbc(aes)))",
+	"krb5enc(cmac(camellia),cts(cbc(camellia)))",
 };
 
 static const char *rng_algos[] = {
