@@ -584,6 +584,7 @@ static void dump_stats_json(void)
 				"\"getsockname_anomalies\":%lu,"
 				"\"getpeername_anomalies\":%lu,"
 				"\"file_getattr_anomalies\":%lu,"
+				"\"sched_getattr_anomalies\":%lu,"
 				"\"getrusage_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
@@ -675,6 +676,7 @@ static void dump_stats_json(void)
 		shm->stats.getsockname_oracle_anomalies,
 		shm->stats.getpeername_oracle_anomalies,
 		shm->stats.file_getattr_oracle_anomalies,
+		shm->stats.sched_getattr_oracle_anomalies,
 		shm->stats.getrusage_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
@@ -993,6 +995,9 @@ void dump_stats(void)
 	if (shm->stats.file_getattr_oracle_anomalies)
 		stat_row("oracle", "file_getattr_anomalies",
 			 shm->stats.file_getattr_oracle_anomalies);
+	if (shm->stats.sched_getattr_oracle_anomalies)
+		stat_row("oracle", "sched_getattr_anomalies",
+			 shm->stats.sched_getattr_oracle_anomalies);
 	if (shm->stats.getrusage_oracle_anomalies)
 		stat_row("oracle", "getrusage_anomalies",
 			 shm->stats.getrusage_oracle_anomalies);
