@@ -266,6 +266,7 @@ bool socket_family_chain(struct childdata *child __unused__)
 		__atomic_add_fetch(&shm->stats.socket_family_chain_failed,
 				   1, __ATOMIC_RELAXED);
 
+	alarm(0);
 	return true;
 }
 
