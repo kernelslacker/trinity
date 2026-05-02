@@ -348,9 +348,10 @@ int effector_map_calibrate(void)
 	unsigned int probed = 0;
 	unsigned long total_significant = 0;
 	unsigned int s, a, b;
+	unsigned int nmax = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
 
 	output(0, "effector-map: calibration starting (probing %u syscalls max)\n",
-		max_nr_syscalls);
+		nmax);
 
 	install_probe_watchdog();
 
@@ -365,7 +366,7 @@ int effector_map_calibrate(void)
 		return -1;
 	}
 
-	for (nr = 0; nr < max_nr_syscalls && nr < MAX_NR_SYSCALL; nr++) {
+	for (nr = 0; nr < nmax && nr < MAX_NR_SYSCALL; nr++) {
 		struct syscallentry *entry = get_syscall_entry(nr, false);
 
 		if (!calibratable(entry))
