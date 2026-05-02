@@ -40,6 +40,15 @@ static const struct ioctl input_ioctls[] = {
 	IOCTL(EVIOCRMFF),
 	IOCTL(EVIOCGEFFECTS),
 	IOCTL(EVIOCGRAB),
+#ifdef EVIOCREVOKE
+	IOCTL(EVIOCREVOKE),
+#endif
+#ifdef EVIOCGMASK
+	IOCTL(EVIOCGMASK),
+#endif
+#ifdef EVIOCSMASK
+	IOCTL(EVIOCSMASK),
+#endif
 #ifdef EVIOCSCLOCKID
 	IOCTL(EVIOCSCLOCKID),
 #endif
