@@ -42,6 +42,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "maps.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -647,19 +648,33 @@ static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
 {
 	struct iovec iov;
 	struct io_uring_sqe sqe;
-	void *buf = MAP_FAILED;
+	struct map *m = NULL;
+	void *buf = NULL;
+	size_t buf_sz = 0;
 	int devzero = -1;
 	bool registered = false;
 	bool ok = false;
 	int r;
 
-	buf = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
-		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (buf == MAP_FAILED)
+	/* Draw the registered-buffer backing storage from the parent's
+	 * inherited mapping pool.  Sibling iouring children draw from the
+	 * same pool, so the kernel will sometimes see two rings register the
+	 * same physical pages — that overlap is the CV.4 target, exercising
+	 * io_uring's per-buffer pinning / tracking against shared backing.
+	 *
+	 * The pool owns the mapping: do NOT munmap on cleanup, and do NOT
+	 * memset / fill before submission — sibling ops may be reading from
+	 * the same page concurrently.  The READ_FIXED below WILL overwrite
+	 * the buffer with /dev/zero data, which is the intentional cross-
+	 * child mutation we want the kernel to race against. */
+	m = get_map();
+	if (m == NULL)
 		goto out;
+	buf = m->ptr;
+	buf_sz = m->size;
 
 	iov.iov_base = buf;
-	iov.iov_len  = page_size;
+	iov.iov_len  = buf_sz;
 
 	r = (int)syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
@@ -675,7 +690,7 @@ static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
 	sqe.opcode    = IORING_OP_READ_FIXED;
 	sqe.fd        = devzero;
 	sqe.addr      = (__u64)(uintptr_t)buf;
-	sqe.len       = (unsigned int)page_size;
+	sqe.len       = (unsigned int)buf_sz;
 	sqe.buf_index = 0;
 	sqe.user_data = 80;
 
@@ -694,8 +709,6 @@ out:
 			      IORING_UNREGISTER_BUFFERS, NULL, 0);
 	if (devzero >= 0)
 		close(devzero);
-	if (buf != MAP_FAILED)
-		munmap(buf, page_size);
 	return ok;
 }
 
@@ -712,21 +725,32 @@ static bool recipe_write_read_fixed(struct iour_ctx *ctx,
 {
 	struct io_uring_sqe sqes[2];
 	struct iovec iov;
+	struct map *m = NULL;
 	int pfd[2] = { -1, -1 };
-	void *buf = MAP_FAILED;
+	void *buf = NULL;
+	size_t buf_sz = 0;
 	bool registered = false;
 	bool ok = false;
 	int r;
 
-	buf = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
-		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (buf == MAP_FAILED)
+	/* Same pool draw as recipe_fixed_buffer_read above — the registered
+	 * buffer comes from the parent's inherited mapping pool, shared with
+	 * sibling iouring children.  See the commentary there for the
+	 * rationale and the brick-risks (no munmap, no memset).
+	 *
+	 * The 64-byte WRITE_FIXED publishes whatever happens to be in the
+	 * pool entry into the pipe, then READ_FIXED reads it back; the write
+	 * content is intentionally undefined — io_uring users routinely
+	 * register buffers without zeroing them, and the shared-pool overlap
+	 * is what we want the kernel's fixed-buffer fast path to race on. */
+	m = get_map();
+	if (m == NULL)
 		goto out;
-
-	memset(buf, 'W', page_size);
+	buf = m->ptr;
+	buf_sz = m->size;
 
 	iov.iov_base = buf;
-	iov.iov_len  = page_size;
+	iov.iov_len  = buf_sz;
 
 	r = (int)syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
@@ -769,8 +793,6 @@ out:
 			      IORING_UNREGISTER_BUFFERS, NULL, 0);
 	if (pfd[0] >= 0) close(pfd[0]);
 	if (pfd[1] >= 0) close(pfd[1]);
-	if (buf != MAP_FAILED)
-		munmap(buf, page_size);
 	return ok;
 }
 
