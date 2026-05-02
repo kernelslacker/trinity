@@ -67,4 +67,6 @@ extern unsigned int epoch_timeout;
 extern bool no_warm_start;
 extern char *warm_start_path;
 
+extern bool do_effector_map;
+
 void enable_disable_fd_usage(void);
