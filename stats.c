@@ -905,6 +905,20 @@ void dump_stats(void)
 	if (verbosity > 1)
 		dump_syscall_category_histogram();
 
+	{
+		size_t used = __atomic_load_n(&shm->shared_obj_heap_used,
+					      __ATOMIC_RELAXED);
+		size_t cap = obj_heap_get_capacity();
+		unsigned long allocs = __atomic_load_n(&shm->stats.obj_heap_allocs,
+						       __ATOMIC_RELAXED);
+		unsigned long frees = __atomic_load_n(&shm->stats.obj_heap_frees,
+						      __ATOMIC_RELAXED);
+		unsigned long pct10 = cap ? (used * 1000UL / cap) : 0UL;
+
+		output(1, "obj-heap: %lu.%lu%% used (%zu / %zu bytes), %lu allocs, %lu frees\n",
+			pct10 / 10, pct10 % 10, used, cap, allocs, frees);
+	}
+
 	dump_obj_heap_stats();
 
 	if (shm->stats.refcount_audit_runs) {

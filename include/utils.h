@@ -27,6 +27,7 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len);
 void track_shared_region(unsigned long addr, unsigned long size);
 void register_loaded_image_segments(void);
 void dump_obj_heap_stats(void);
+size_t obj_heap_get_capacity(void);
 
 /*
  * Log an mprotect() failure as:

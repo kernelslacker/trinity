@@ -342,6 +342,8 @@ void * alloc_shared_obj(size_t size)
 		p = freelist_pop(&shm->shared_obj_freelist[bucket],
 				 bucket_sizes[bucket]);
 		if (p != NULL) {
+			__atomic_add_fetch(&shm->stats.obj_heap_allocs, 1,
+					   __ATOMIC_RELAXED);
 			output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%s\n",
 				p, size,
 				pc_to_string(caller, pcbuf, sizeof(pcbuf)));
@@ -393,6 +395,7 @@ void * alloc_shared_obj(size_t size)
 
 	p = shared_obj_heap + old_used;
 	memset(p, 0, size);
+	__atomic_add_fetch(&shm->stats.obj_heap_allocs, 1, __ATOMIC_RELAXED);
 	output(2, "[shm-alloc] alloc obj p=%p sz=%zu caller=%s\n",
 		p, size, pc_to_string(caller, pcbuf, sizeof(pcbuf)));
 	return p;
@@ -407,6 +410,7 @@ void free_shared_obj(void *p, size_t size)
 	if (p == NULL || size == 0)
 		return;
 
+	__atomic_add_fetch(&shm->stats.obj_heap_frees, 1, __ATOMIC_RELAXED);
 	output(2, "[shm-alloc] free obj p=%p sz=%zu caller=%s\n",
 		p, size, pc_to_string(caller, pcbuf, sizeof(pcbuf)));
 
@@ -738,6 +742,16 @@ bool globals_are_protected(void)
  * is not being called for most slots; the bump cursor will then race
  * shared_obj_heap_capacity and eventually exhaust the heap.
  */
+/*
+ * Read-side accessor for the obj-heap capacity, which is otherwise file-
+ * static.  dump_stats() reads it (alongside shm->shared_obj_heap_used and
+ * the alloc/free counters) to print a one-line pressure summary under -v.
+ */
+size_t obj_heap_get_capacity(void)
+{
+	return shared_obj_heap_capacity;
+}
+
 void dump_obj_heap_stats(void)
 {
 	unsigned int i;

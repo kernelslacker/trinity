@@ -287,6 +287,14 @@ struct stats_s {
 	 * Lets the operator spot when sanitiser/group-bias drift has skewed
 	 * the distribution away from the table they expected. */
 	unsigned long syscall_category_count[NR_SYSCAT];
+
+	/* Shared obj-heap pressure counters: cumulative successful allocs
+	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
+	 * by dump_stats() under -v to print a one-line utilisation summary
+	 * — a busy run with many allocs but few frees flags a leak before
+	 * the heap actually exhausts. */
+	unsigned long obj_heap_allocs;
+	unsigned long obj_heap_frees;
 };
 
 unsigned int stats_syscall_category(const char *name);
