@@ -590,7 +590,8 @@ static void dump_stats_json(void)
 				"\"getcpu_anomalies\":%lu,"
 				"\"clock_gettime_anomalies\":%lu,"
 				"\"get_mempolicy_anomalies\":%lu,"
-				"\"lsm_get_self_attr_anomalies\":%lu},"
+				"\"lsm_get_self_attr_anomalies\":%lu,"
+				"\"prlimit64_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -688,6 +689,7 @@ static void dump_stats_json(void)
 		shm->stats.clock_gettime_oracle_anomalies,
 		shm->stats.get_mempolicy_oracle_anomalies,
 		shm->stats.lsm_get_self_attr_oracle_anomalies,
+		shm->stats.prlimit64_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -1026,6 +1028,9 @@ void dump_stats(void)
 	if (shm->stats.lsm_get_self_attr_oracle_anomalies)
 		stat_row("oracle", "lsm_get_self_attr_anomalies",
 			 shm->stats.lsm_get_self_attr_oracle_anomalies);
+	if (shm->stats.prlimit64_oracle_anomalies)
+		stat_row("oracle", "prlimit64_anomalies",
+			 shm->stats.prlimit64_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
