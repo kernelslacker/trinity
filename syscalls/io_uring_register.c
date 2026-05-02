@@ -4,6 +4,7 @@
 #include <string.h>
 #include <linux/io_uring.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -192,6 +193,19 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a3, page_size);
 }
 
+/*
+ * IORING_REGISTER_BUFFERS is the only opcode whose sanitise path
+ * allocates memory (via alloc_iovec()) into rec->a3.  Other opcodes
+ * use pool-managed pointers (get_writable_address / get_writable_struct)
+ * that must not be free()d.  Gate the deferred free on opcode so we
+ * release exactly the iovec we allocated.
+ */
+static void post_io_uring_register(struct syscallrecord *rec)
+{
+	if (rec->a2 == IORING_REGISTER_BUFFERS && rec->a3 != 0)
+		deferred_free_enqueue((void *)(unsigned long) rec->a3, NULL);
+}
+
 struct syscallentry syscall_io_uring_register = {
 	.name = "io_uring_register",
 	.group = GROUP_IO_URING,
@@ -201,5 +215,6 @@ struct syscallentry syscall_io_uring_register = {
 	.arg_params[1].list = ARGLIST(io_uring_register_opcodes),
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_io_uring_register,
+	.post = post_io_uring_register,
 	.rettype = RET_ZERO_SUCCESS,
 };
