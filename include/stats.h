@@ -104,6 +104,7 @@ struct stats_s {
 	unsigned long capget_oracle_anomalies;
 	unsigned long newlstat_oracle_anomalies;
 	unsigned long newstat_oracle_anomalies;
+	unsigned long lsm_list_modules_oracle_anomalies;
 	unsigned long getrusage_oracle_anomalies;
 
 	/* procfs_writer childop: per-tree write counts */
