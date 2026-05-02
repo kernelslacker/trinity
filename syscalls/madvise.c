@@ -47,20 +47,3 @@ struct syscallentry syscall_madvise = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,
 };
-
-static unsigned long process_madvise_behaviours[] = {
-	MADV_COLD, MADV_PAGEOUT, MADV_WILLNEED, MADV_COLLAPSE,
-};
-static unsigned long process_madvise_flags[] = {
-	0,
-};
-
-struct syscallentry syscall_process_madvise = {
-	.name = "process_madvise",
-	.num_args = 5,
-	.argtype = { [0] = ARG_FD_PIDFD, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_OP, [4] = ARG_OP },
-	.argname = { [0] = "pidfd", [1] = "vec", [2] = "vlen", [3] = "behaviour", [4] = "flags" },
-	.arg_params[3].list = ARGLIST(process_madvise_behaviours),
-	.arg_params[4].list = ARGLIST(process_madvise_flags),
-	.group = GROUP_VM,
-};
