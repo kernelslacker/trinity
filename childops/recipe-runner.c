@@ -57,6 +57,7 @@
 #include <linux/bpf.h>
 #include <linux/futex.h>
 #include <linux/io_uring.h>
+#include <linux/keyctl.h>
 #include <linux/memfd.h>
 #include <linux/perf_event.h>
 #include <linux/userfaultfd.h>
@@ -2795,6 +2796,216 @@ static bool recipe_perf_mmap_close(bool *unsupported)
 	return completed > 0;
 }
 
+/*
+ * Racer thread for recipe_keys_revoke_race.  Loops keyctl(KEYCTL_READ)
+ * against a freshly-created "user" key under a 100ms deadline.  keyctl
+ * is not poll()-able, so the deadline-loop shape mirrors recipe_perf_
+ * mmap_close rather than the poll-then-read shape used by recipe_
+ * timerfd_xclose -- maximises the chance the racer is consistently
+ * inside keyctl_read / key_validate / type->read on the keyring data
+ * when the main thread lands keyctl_revoke.
+ *
+ * EKEYREVOKED on read is the post-revoke success path; EACCES /
+ * ENOKEY is the lookup-after-unlink window; success is the
+ * read-completed-before-revoke sub-window.  All terminate the
+ * syscall in well under one alarm tick.
+ */
+struct keys_revoke_racer_arg {
+	int32_t		key_id;		/* key_serial_t */
+	struct timespec	deadline;
+};
+
+static bool keys_revoke_deadline_passed(const struct timespec *deadline)
+{
+	struct timespec now;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+		return true;
+	if (now.tv_sec > deadline->tv_sec)
+		return true;
+	if (now.tv_sec == deadline->tv_sec && now.tv_nsec >= deadline->tv_nsec)
+		return true;
+	return false;
+}
+
+static void *keys_revoke_racer_thread(void *arg)
+{
+	struct keys_revoke_racer_arg *ra = arg;
+	unsigned char buf[64];
+	long r __unused__;
+
+	/* Tight-spin keyctl_read.  user-type payloads are tiny so each
+	 * call returns almost immediately; no usleep between iterations
+	 * keeps the racer maximally inside the kernel-side validate /
+	 * type->read window when revoke lands. */
+	while (!keys_revoke_deadline_passed(&ra->deadline)) {
+		r = syscall(__NR_keyctl, (unsigned long)KEYCTL_READ,
+			    (unsigned long)ra->key_id,
+			    (unsigned long)buf,
+			    (unsigned long)sizeof(buf), 0UL);
+	}
+	return NULL;
+}
+
+/*
+ * Recipe 32: keyring key revoke-vs-read race.
+ *
+ * Per cycle (1..MAX_CYCLES):
+ *
+ *   keyctl(KEYCTL_JOIN_SESSION_KEYRING, NULL) (once per recipe call) ->
+ *   add_key("user", "trinity-keys-revoke-race-NN", payload, 16,
+ *           KEY_SPEC_SESSION_KEYRING) -> spawn racer that loops
+ *   keyctl(KEYCTL_READ) under a 100ms deadline -> usleep 0..100us
+ *   race-window jitter -> keyctl(KEYCTL_REVOKE) (the race) ->
+ *   pthread_join -> keyctl(KEYCTL_UNLINK).
+ *
+ * Targets the kernel paths key_revoke / type->revoke vs keyctl_read /
+ * key_validate / type->read, plus the RCU teardown of struct
+ * user_key_payload on user_revoke().  Both threads share the same
+ * key_serial_t, which is the bug class -- a sibling process operating
+ * on a separate keyring never races with our key_validate.  Distinct
+ * from random keyctl callers in the syscall fuzzer that target a
+ * key in isolation; this recipe drives the *concurrent* read-vs-
+ * revoke window on a key with an active reader.
+ *
+ * Bounded racer (deadline-gated keyctl_read returning immediately on
+ * EKEYREVOKED / ENOKEY / EACCES) means plain pthread_join always
+ * returns within ~100ms.  Sidesteps the wedge problem where pthread_
+ * cancel against a thread mid-syscall is unreliable and detached
+ * threads leak state.  Mirrors the deadline-loop shape from recipe_
+ * perf_mmap_close, sharing RECIPE_RACER_TIMEOUT_MS and RECIPE_THREAD_
+ * SPAWN_LATCH.
+ *
+ * THREAD_SPAWN_LATCH=3 consecutive pthread_create failures bails
+ * for the rest of the invocation -- under nproc/thread limits the
+ * EAGAIN won't lift mid-op while fork_storm or cgroup_churn are
+ * competing for the budget.
+ *
+ * Latch shape covers every way the feature can be absent on the
+ * very first probe:
+ *   - keyctl ENOSYS                 (CONFIG_KEYS off)
+ *   - keyctl JOIN EPERM / EACCES    (LSM denies session keyring)
+ *   - add_key ENOSYS / EPERM        (key type "user" disabled / LSM)
+ *   - add_key EDQUOT                (kernel.keys.maxkeys exhausted)
+ *
+ * Once latched, the dispatcher stops siblings from re-probing the
+ * unsupported feature on every recipe pick.
+ *
+ * Per-cycle add_key failures mid-loop are tolerated (one bad cycle,
+ * e.g. ephemeral EDQUOT under sibling load, shouldn't penalise the
+ * whole recipe).  Cleanup unlinks the key from the session keyring
+ * after revoke so gc_works can progress promptly; EKEYREVOKED on the
+ * unlink itself is fine and intentionally ignored.
+ */
+#define RECIPE_KEYS_REVOKE_MAX_CYCLES	4
+#define RECIPE_KEYS_REVOKE_PAYLOAD_LEN	16
+
+static bool recipe_keys_revoke_race(bool *unsupported)
+{
+	unsigned char payload[RECIPE_KEYS_REVOKE_PAYLOAD_LEN];
+	char desc[64];
+	unsigned int cycles;
+	unsigned int i;
+	unsigned int spawn_fail_streak = 0;
+	unsigned int completed = 0;
+	long jr;
+
+	/* Anchor a session keyring up-front so add_key has somewhere to
+	 * link.  Each call creates a fresh anonymous session keyring;
+	 * no other recipe touches keyrings, so this does not clobber
+	 * sibling state inside the trinity child. */
+	jr = syscall(__NR_keyctl, (unsigned long)KEYCTL_JOIN_SESSION_KEYRING,
+		     0UL, 0UL, 0UL, 0UL);
+	if (jr < 0) {
+		if (errno == ENOSYS || errno == EPERM ||
+		    errno == EOPNOTSUPP || errno == EACCES) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+					   __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+
+	memset(payload, 0xa5, sizeof(payload));
+
+	cycles = 1 + ((unsigned int)rand() % RECIPE_KEYS_REVOKE_MAX_CYCLES);
+
+	for (i = 0; i < cycles; i++) {
+		struct keys_revoke_racer_arg ra;
+		pthread_t tid;
+		long key;
+		int rc;
+
+		snprintf(desc, sizeof(desc),
+			 "trinity-keys-revoke-race-%u-%u",
+			 (unsigned int)getpid(), i);
+
+		key = syscall(__NR_add_key, "user", desc,
+			      payload, (size_t)sizeof(payload),
+			      (unsigned long)KEY_SPEC_SESSION_KEYRING);
+		if (key < 0) {
+			if (i == 0 && (errno == ENOSYS || errno == EPERM ||
+				       errno == EOPNOTSUPP ||
+				       errno == EDQUOT)) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+				return false;
+			}
+			continue;
+		}
+
+		ra.key_id = (int32_t)key;
+		if (clock_gettime(CLOCK_MONOTONIC, &ra.deadline) < 0) {
+			(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
+				      (unsigned long)key,
+				      (unsigned long)KEY_SPEC_SESSION_KEYRING,
+				      0UL, 0UL);
+			continue;
+		}
+		ra.deadline.tv_nsec += RECIPE_RACER_TIMEOUT_MS * 1000000L;
+		while (ra.deadline.tv_nsec >= 1000000000L) {
+			ra.deadline.tv_nsec -= 1000000000L;
+			ra.deadline.tv_sec  += 1;
+		}
+
+		rc = pthread_create(&tid, NULL,
+				    keys_revoke_racer_thread, &ra);
+		if (rc != 0) {
+			(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
+				      (unsigned long)key,
+				      (unsigned long)KEY_SPEC_SESSION_KEYRING,
+				      0UL, 0UL);
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+				break;
+			continue;
+		}
+		spawn_fail_streak = 0;
+
+		/* Variable race window -- 0..100us picks a random sub-window
+		 * of the racer's read loop to land the revoke in. */
+		if ((rand() & 0xff) != 0)
+			usleep((useconds_t)(rand() % 101));
+
+		(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_REVOKE,
+			      (unsigned long)key, 0UL, 0UL, 0UL);
+
+		(void)pthread_join(tid, NULL);
+
+		/* Best-effort cleanup -- the key is revoked, but unlinking
+		 * from the session keyring lets gc_works progress sooner.
+		 * EKEYREVOKED on the unlink itself is fine. */
+		(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
+			      (unsigned long)key,
+			      (unsigned long)KEY_SPEC_SESSION_KEYRING,
+			      0UL, 0UL);
+
+		completed++;
+	}
+
+	return completed > 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -2827,6 +3038,7 @@ static const struct recipe recipes[] = {
 	{ "iouring_fixed_uaf", recipe_iouring_fixed_uaf },
 	{ "bpf_htab_iter_del", recipe_bpf_htab_iter_del },
 	{ "perf_mmap_close", recipe_perf_mmap_close },
+	{ "keys_revoke_race", recipe_keys_revoke_race },
 };
 
 /*
