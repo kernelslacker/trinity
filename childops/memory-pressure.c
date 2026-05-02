@@ -19,17 +19,15 @@
 
 #include "arch.h"
 #include "child.h"
+#include "maps.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
-/* Stay well under any realistic memory limit. */
-#define PRESSURE_MIN_MB  4
-#define PRESSURE_MAX_MB 32
-
 bool memory_pressure(struct childdata *child)
 {
+	struct map *m;
 	size_t len;
 	void *region;
 	volatile unsigned char *p;
@@ -37,13 +35,26 @@ bool memory_pressure(struct childdata *child)
 
 	(void)child;
 
-	/* Pick a random region size between PRESSURE_MIN_MB and PRESSURE_MAX_MB. */
-	len = MB(PRESSURE_MIN_MB + (rand() % (PRESSURE_MAX_MB - PRESSURE_MIN_MB + 1)));
+	/*
+	 * Draw the region from the parent's inherited mapping pool instead
+	 * of mmap()ing a fresh private allocation per invocation.  The pool
+	 * is built once in the parent and shared COW into every child, so
+	 * sibling memory_pressure invocations running concurrently will
+	 * sometimes target the same physical pages — that convergence is
+	 * the point: it amplifies LRU contention and exposes the
+	 * eviction / refault race surface to multiple reclaimers at once,
+	 * which is far harder to provoke with disjoint per-child regions.
+	 *
+	 * The pool is owned by the parent: do NOT munmap on cleanup.
+	 * Tearing down a pool entry would unmap pages that every other
+	 * sibling drawing the same map is still treating as live.
+	 */
+	m = get_map();
+	if (m == NULL)
+		return false;
 
-	region = mmap(NULL, len, PROT_READ | PROT_WRITE,
-		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (region == MAP_FAILED)
-		return true;
+	region = m->ptr;
+	len = m->size;
 
 	/*
 	 * Dirty each page so MADV_PAGEOUT has real work to do.  Without
@@ -67,8 +78,6 @@ bool memory_pressure(struct childdata *child)
 	stride = 3 * page_size;
 	for (i = 0; i < len; i += stride)
 		(void)p[i];
-
-	munmap(region, len);
 
 	__atomic_add_fetch(&shm->stats.memory_pressure_runs, 1, __ATOMIC_RELAXED);
 
