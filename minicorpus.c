@@ -23,6 +23,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
+#include "effector-map.h"
 #include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
@@ -356,15 +357,21 @@ void minicorpus_mut_attrib_clear(void)
 /*
  * Apply a small mutation to a single argument value.
  * The mutations are designed to explore nearby input space:
- *   - bit flip: toggle a single random bit
+ *   - bit flip: toggle a single bit, biased by per-(syscall, arg)
+ *               significance from the effector map when one is loaded
  *   - add/sub:  adjust by a small delta (1..16)
  *   - boundary: replace with a boundary value (0, -1, page_size, etc.)
  *
  * Case selection is biased by historical productivity (see
  * weighted_pick_case()).  The selected case is recorded in mut_attrib[]
  * for post-syscall attribution by minicorpus_mut_attrib_commit().
+ *
+ * @nr / @arg are the syscall table index and zero-based arg slot for
+ * the value being mutated.  They are only consulted for the bit-flip
+ * case to look up effector-map weights; other cases ignore them.
  */
-static unsigned long mutate_arg(unsigned long val, enum argtype atype)
+static unsigned long mutate_arg(unsigned long val, enum argtype atype,
+		unsigned int nr, unsigned int arg)
 {
 	unsigned int op = weighted_pick_case(atype);
 
@@ -372,8 +379,10 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype)
 
 	switch (op) {
 	case 0:
-		/* flip a random bit */
-		val ^= 1UL << (rand() % (sizeof(unsigned long) * 8));
+		/* flip a bit picked by effector-map weight (uniform when no
+		 * calibration data is loaded for this slot — see
+		 * effector_pick_bit). */
+		val ^= 1UL << effector_pick_bit(nr, arg);
 		break;
 	case 1: {
 		/* add small delta, saturate at ULONG_MAX */
@@ -506,12 +515,15 @@ static unsigned int pick_stack_depth(void)
 /*
  * Apply mutate_arg n_muts times in sequence.  The stack composes the
  * primitive mutations into a single transformation per call site.
+ * @nr / @arg pass through to mutate_arg's bit-flip case for effector-map
+ * weighting.
  */
 static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts,
-					enum argtype atype)
+					enum argtype atype,
+					unsigned int nr, unsigned int arg)
 {
 	while (n_muts-- > 0)
-		val = mutate_arg(val, atype);
+		val = mutate_arg(val, atype, nr, arg);
 	return val;
 }
 
@@ -523,11 +535,17 @@ static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts,
  * so the mutation logic — and the splice/replay/mut_attrib telemetry
  * it bumps — is a single shared engine.
  *
+ * @nr is the syscall table index for the call whose args are being
+ * mutated; passed through to mutate_arg's bit-flip case so it can
+ * consult the effector map for per-(syscall, arg) bit weights.  Both
+ * callers already have the value (rec->nr / saved->nr).
+ *
  * Splice and mutate read from a local snapshot of the input so a
  * sibling arg's value used for splice is the original input, not an
  * already-mutated peer; matches the per-syscall behaviour.
  */
-void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
+void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
+		unsigned int nr)
 {
 	unsigned long snapshot[6];
 	unsigned int i;
@@ -565,7 +583,8 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
 
 			__atomic_fetch_add(&minicorpus_shm->stack_depth_histogram[depth],
 					   1UL, __ATOMIC_RELAXED);
-			val = mutate_arg_stacked(val, depth, entry->argtype[i]);
+			val = mutate_arg_stacked(val, depth, entry->argtype[i],
+					nr, i);
 		}
 
 		/* Don't let fd args land on stdin/stdout/stderr. */
@@ -635,7 +654,7 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		}
 	}
 
-	minicorpus_mutate_args(snapshot.args, entry);
+	minicorpus_mutate_args(snapshot.args, entry, nr);
 
 	rec->a1 = snapshot.args[0];
 	rec->a2 = snapshot.args[1];

@@ -125,8 +125,11 @@ bool minicorpus_replay(struct syscallrecord *rec);
  * mutate + fd safety) to args[6] in place.  Used by both per-syscall
  * mini-corpus replay and chain-corpus replay so the mutation engine
  * and its productivity counters are shared.  @entry supplies argtype[]
- * and num_args; pass NULL-checked entry. */
-void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry);
+ * and num_args; pass NULL-checked entry.  @nr is the syscall table
+ * index — passed through to the bit-flip mutator so it can consult
+ * the effector map for per-(syscall, arg) bit weights. */
+void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
+		unsigned int nr);
 
 /* Mutator-case attribution.
  *

@@ -517,7 +517,7 @@ bool replay_syscall_step(struct childdata *child,
 		return FAIL;
 
 	memcpy(args, saved->args, sizeof(args));
-	minicorpus_mutate_args(args, entry);
+	minicorpus_mutate_args(args, entry, saved->nr);
 
 	lock(&rec->lock);
 	rec->do32bit = saved->do32bit;
