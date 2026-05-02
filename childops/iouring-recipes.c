@@ -666,8 +666,17 @@ static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
 	 * memset / fill before submission — sibling ops may be reading from
 	 * the same page concurrently.  The READ_FIXED below WILL overwrite
 	 * the buffer with /dev/zero data, which is the intentional cross-
-	 * child mutation we want the kernel to race against. */
-	m = get_map();
+	 * child mutation we want the kernel to race against.
+	 *
+	 * Filter the pool draw on PROT_WRITE: IORING_REGISTER_BUFFERS pins
+	 * the user pages with FOLL_WRITE (so a non-writable mapping fails
+	 * register with -EFAULT before exercising the fast path), and the
+	 * READ_FIXED below has the kernel writing /dev/zero data into the
+	 * buffer — drawing a PROT_READ-only or PROT_NONE pool entry would
+	 * either short-circuit the register or fault on the kernel-side
+	 * copy.  Either way the recipe never reaches the fixed-buffer
+	 * fast path it's meant to exercise. */
+	m = get_map_with_prot(PROT_WRITE);
 	if (m == NULL)
 		goto out;
 	buf = m->ptr;
@@ -742,8 +751,15 @@ static bool recipe_write_read_fixed(struct iour_ctx *ctx,
 	 * pool entry into the pipe, then READ_FIXED reads it back; the write
 	 * content is intentionally undefined — io_uring users routinely
 	 * register buffers without zeroing them, and the shared-pool overlap
-	 * is what we want the kernel's fixed-buffer fast path to race on. */
-	m = get_map();
+	 * is what we want the kernel's fixed-buffer fast path to race on.
+	 *
+	 * Filter the pool draw on PROT_READ | PROT_WRITE: WRITE_FIXED has
+	 * the kernel reading from the buffer (needs PROT_READ) and
+	 * READ_FIXED has it writing back into the buffer (needs PROT_WRITE),
+	 * and IORING_REGISTER_BUFFERS itself pins with FOLL_WRITE.  Both
+	 * directions and the register pin all have to succeed for the linked
+	 * pair to actually exercise the fixed-buffer fast path. */
+	m = get_map_with_prot(PROT_READ | PROT_WRITE);
 	if (m == NULL)
 		goto out;
 	buf = m->ptr;

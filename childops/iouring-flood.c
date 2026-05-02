@@ -379,7 +379,7 @@ bool iouring_flood(struct childdata *child)
 	 * and we must NOT memset the buffer — clobbering it would corrupt
 	 * the shared state that other childops also draw from. */
 	if (iobuf == NULL) {
-		struct map *m = get_map();
+		struct map *m = get_map_with_prot(PROT_READ | PROT_WRITE);
 
 		if (m == NULL) {
 			__atomic_add_fetch(&shm->stats.iouring_failed,
