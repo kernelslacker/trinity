@@ -271,6 +271,7 @@ struct stats_s {
 	unsigned long socket_family_chain_completed;		/* >=1 inner cycle reached recv */
 	unsigned long socket_family_chain_failed;		/* every inner cycle bailed early */
 	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
+	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
 
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
