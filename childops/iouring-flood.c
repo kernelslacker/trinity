@@ -49,6 +49,7 @@
 
 #include "arch.h"		/* page_size */
 #include "child.h"
+#include "maps.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -366,22 +367,27 @@ bool iouring_flood(struct childdata *child)
 	if (ns_unsupported)
 		return true;
 
-	/* Lazy alloc of the shared READ / WRITE buffer.  Each child is a
-	 * separate process so this static lives in the child's private
-	 * address space; the mapping survives across invocations within
-	 * the same child. */
+	/* Lazy bind of the shared READ / WRITE buffer to one of the parent's
+	 * inherited mapping-pool entries.  The pool is built once in the
+	 * parent and shared COW into every child, so siblings running
+	 * iouring_flood concurrently will sometimes draw the same physical
+	 * page — that overlap is intentional, it converges io_uring's
+	 * per-buffer tracking on the same backing storage and amplifies
+	 * any racy bookkeeping in the submission / completion fast path.
+	 *
+	 * The pool is owned by the parent: we must NOT munmap on cleanup,
+	 * and we must NOT memset the buffer — clobbering it would corrupt
+	 * the shared state that other childops also draw from. */
 	if (iobuf == NULL) {
-		iobuf_sz = page_size;
-		iobuf = mmap(NULL, iobuf_sz, PROT_READ | PROT_WRITE,
-			     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		if (iobuf == MAP_FAILED) {
-			iobuf = NULL;
-			iobuf_sz = 0;
+		struct map *m = get_map();
+
+		if (m == NULL) {
 			__atomic_add_fetch(&shm->stats.iouring_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
-		memset(iobuf, 'F', iobuf_sz);
+		iobuf = m->ptr;
+		iobuf_sz = m->size;
 	}
 
 	dev_null_rd = open("/dev/null", O_RDONLY | O_CLOEXEC);
