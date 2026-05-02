@@ -121,6 +121,7 @@ struct stats_s {
 	unsigned long prlimit64_oracle_anomalies;
 	unsigned long sigaltstack_oracle_anomalies;
 	unsigned long olduname_oracle_anomalies;
+	unsigned long lookup_dcookie_oracle_anomalies;
 
 	/* procfs_writer childop: per-tree write counts */
 	unsigned long procfs_writes;
