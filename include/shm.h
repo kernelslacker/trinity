@@ -12,6 +12,7 @@
 #include "net.h"
 #include "object-types.h"
 #include "stats.h"
+#include "strategy.h"
 #include "syscall.h"
 #include "types.h"
 
@@ -172,6 +173,39 @@ struct shm_s {
 	 * indicating the kernel was built without CRYPTO_USER_API or AF_ALG
 	 * is otherwise locked down.  Siblings then skip the chain entirely. */
 	bool socket_family_chain_unsupported;
+
+	/*
+	 * Multi-strategy syscall picker — see include/strategy.h.
+	 *
+	 * current_strategy: fleet-wide active strategy enum.  Children read
+	 *   it on every syscall pick (relaxed atomic, single int read — cheap).
+	 *   Updated only by the CAS-winning child at a rotation boundary.
+	 *
+	 * syscalls_at_last_switch: shm->stats.op_count at the most recent
+	 *   rotation.  Doubles as the CAS guard — a child computes
+	 *   (op_count - syscalls_at_last_switch); if that crosses
+	 *   STRATEGY_WINDOW it tries to CAS this field forward to op_count.
+	 *   The CAS winner performs the strategy switch and emits the stats
+	 *   line; losers just continue with the new strategy on their next
+	 *   pick.
+	 *
+	 * edges_at_window_start: snapshot of edges_by_strategy[prev] taken
+	 *   at the previous switch.  Lets the next switch compute
+	 *   "edges discovered in the window that just ended" as
+	 *   edges_by_strategy[prev] - edges_at_window_start.  Written only
+	 *   by the CAS-winning child during a switch — sequential w.r.t.
+	 *   the CAS, so no atomic needed.
+	 *
+	 * edges_by_strategy[]: cumulative count of new-edge discoveries
+	 *   attributed to each strategy.  Bumped from dispatch_step when
+	 *   kcov_collect reports a new edge, indexed by the strategy that
+	 *   was active at the moment of attribution.  Cmp-mode runs do not
+	 *   produce a new-edge signal and are not attributed.
+	 */
+	_Atomic int current_strategy;
+	_Atomic unsigned long syscalls_at_last_switch;
+	unsigned long edges_at_window_start;
+	unsigned long edges_by_strategy[NR_STRATEGIES];
 
 	/*
 	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
