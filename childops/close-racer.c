@@ -221,7 +221,7 @@ bool close_racer(struct childdata *child)
 		/* Variable race window — 0..100us picks a random sub-window
 		 * of the racer's syscall to land the close in. */
 		if ((rand() & 0xff) != 0)
-			usleep((useconds_t)(rand() % 101));
+			usleep((useconds_t)(1 + rand() % 100));
 
 		(void)close(sv[0]);
 		(void)close(sv[1]);
