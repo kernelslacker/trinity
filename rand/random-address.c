@@ -144,7 +144,7 @@ unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int 
 	unsigned int call;
 
 	call = rec->nr;
-	entry = syscalls[call].entry;
+	entry = get_syscall_entry(call, rec->do32bit);
 
 	if (argnum > 1)
 		if (is_arg_address(entry->argtype[0]) == true)

@@ -276,7 +276,7 @@ static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
 	enum argtype argtype;
 
 	call = rec->nr;
-	entry = syscalls[call].entry;
+	entry = get_syscall_entry(call, rec->do32bit);
 
 	if (argnum > entry->num_args)
 		return 0;
@@ -471,7 +471,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 
 	lock(&rec->lock);
 
-	entry = syscalls[rec->nr].entry;
+	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	rec->state = PREP;
 
 	/* For syscalls without sanitise callbacks, try replaying a
