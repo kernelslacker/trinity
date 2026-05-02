@@ -95,6 +95,15 @@ void init_shm(void)
 
 	shm->start_time = time(NULL);
 
+	/* Multi-strategy rotation starts on the heuristic.  The window
+	 * boundary is op_count - syscalls_at_last_switch, so seeding both
+	 * the strategy and the switch-tick at zero gives the first window
+	 * a full STRATEGY_WINDOW ops on the heuristic before the first
+	 * rotation fires. */
+	__atomic_store_n(&shm->current_strategy, STRATEGY_HEURISTIC, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
+	shm->edges_at_window_start = 0;
+
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 
 	childptrslen = max_children * sizeof(struct childdata *);

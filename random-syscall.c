@@ -27,6 +27,7 @@
 #include "signals.h"
 #include "sanitise.h"
 #include "stats.h"
+#include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -92,7 +93,14 @@ static bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_gro
 	return entry->group == target_group;
 }
 
-static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
+/*
+ * Pick the syscall to run under STRATEGY_HEURISTIC: uniform draw from
+ * active_syscalls, then layered biases — group affinity (70% prefer last
+ * group), kcov cold-skip (probabilistic), edgepair freshness (50% skip
+ * cold pairs).  This is trinity's pre-rotation default behaviour.
+ */
+static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
+				     struct childdata *child)
 {
 	struct syscallentry *entry;
 	unsigned int syscallnr;
@@ -210,6 +218,101 @@ retry:
 }
 
 /*
+ * Pick the syscall to run under STRATEGY_RANDOM: uniform draw from
+ * active_syscalls with no further biasing.  The "shake the dust off"
+ * pass — useless on its own, but exposes paths the heuristic biases
+ * systematically suppress (cold syscalls, productive-pair-only flow).
+ *
+ * Active_syscalls + EXPENSIVE + AVOID_SYSCALL gating remain because
+ * those are correctness gates, not selection biases — bypassing them
+ * just wastes iterations on calls we know we can't make.
+ */
+static bool set_syscall_nr_random(struct syscallrecord *rec,
+				   struct childdata *child)
+{
+	struct syscallentry *entry;
+	unsigned int syscallnr;
+	int val;
+	bool do32;
+	unsigned int outer_attempts = 0;
+	unsigned int nr_syscalls;
+
+	(void)child;
+
+retry:
+	if (no_syscalls_enabled() == true) {
+		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	if (outer_attempts++ > 10000) {
+		output(0, "[%d] set_syscall_nr_random exceeded retry budget\n", getpid());
+		return FAIL;
+	}
+
+	do32 = choose_syscall_table(&nr_syscalls);
+	if (biarch == false)
+		nr_syscalls = max_nr_syscalls;
+	syscallnr = rand() % nr_syscalls;
+
+	val = active_syscalls[syscallnr];
+	if (val == 0)
+		goto retry;
+
+	syscallnr = val - 1;
+
+	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
+		deactivate_syscall(syscallnr, do32);
+		goto retry;
+	}
+
+	entry = get_syscall_entry(syscallnr, do32);
+	if (entry->flags & EXPENSIVE) {
+		if (!ONE_IN(1000))
+			goto retry;
+	}
+
+	lock(&rec->lock);
+	rec->do32bit = do32;
+	rec->nr = syscallnr;
+	unlock(&rec->lock);
+
+	return true;
+}
+
+/*
+ * Strategy dispatch table.  Indexed by enum strategy_t, returns the
+ * pick_syscall implementation for that strategy.  New strategies (bandit,
+ * coverage-frontier, HEALER pair-bias, group-saturation, newly-discovered,
+ * genetic) plug in here as separate follow-up commits.
+ */
+typedef bool (*pick_syscall_fn)(struct syscallrecord *rec, struct childdata *child);
+
+static const pick_syscall_fn strategy_pickers[NR_STRATEGIES] = {
+	[STRATEGY_HEURISTIC] = set_syscall_nr_heuristic,
+	[STRATEGY_RANDOM] = set_syscall_nr_random,
+};
+
+/*
+ * Dispatch syscall selection through the active strategy's picker.
+ * Reads shm->current_strategy with relaxed atomic — the value can change
+ * mid-call (another child wins the rotation CAS) but the worst case is a
+ * single misattribution at the boundary, which is acceptable noise over
+ * a 1M-op window.  Out-of-range guard preserves correctness even if a
+ * wild write into shm corrupts the strategy index.
+ */
+static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
+{
+	int strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
+
+	if (strat < 0 || strat >= NR_STRATEGIES)
+		strat = STRATEGY_HEURISTIC;
+
+	return strategy_pickers[strat](rec, child);
+}
+
+/*
  * Probability (in percent) that, when a substitute retval is offered by
  * the sequence-chain executor, one randomly-chosen arg slot is overwritten
  * with it.  Exposed here (rather than in sequence.c) because the substitution
@@ -315,6 +418,62 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 }
 
 /*
+ * Check the rotation boundary and, if crossed, atomically claim the
+ * switch and bump shm->current_strategy round-robin to the next strategy.
+ *
+ * The rotation clock is shm->stats.op_count (fleet-wide ops, including
+ * non-syscall alt-ops — every child contributes ticks at the same rate).
+ * A child that observes (op_count - syscalls_at_last_switch) >=
+ * STRATEGY_WINDOW tries to CAS syscalls_at_last_switch forward to the
+ * current op_count; the CAS winner performs the switch and emits the
+ * stats line, the losers fall through and continue with the new strategy
+ * on their next syscall pick.
+ *
+ * Per-strategy attribution: the just-finished window's edge delta is
+ * computed as edges_by_strategy[prev] - edges_at_window_start.  After
+ * the switch, edges_at_window_start is reseeded with the new strategy's
+ * current cumulative edge count, so the next switch will compute the
+ * delta correctly even if other strategies' counters are bumped during
+ * the grace period.
+ */
+static void maybe_rotate_strategy(void)
+{
+	unsigned long now;
+	unsigned long last;
+	int prev, next;
+	unsigned long edges_now, edges_in_window, syscalls_in_window;
+
+	now = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+	last = __atomic_load_n(&shm->syscalls_at_last_switch, __ATOMIC_RELAXED);
+
+	if (now - last < STRATEGY_WINDOW)
+		return;
+
+	if (!__atomic_compare_exchange_n(&shm->syscalls_at_last_switch,
+					 &last, now,
+					 false,
+					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		return;
+
+	prev = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
+	if (prev < 0 || prev >= NR_STRATEGIES)
+		prev = STRATEGY_HEURISTIC;
+
+	edges_now = __atomic_load_n(&shm->edges_by_strategy[prev], __ATOMIC_RELAXED);
+	edges_in_window = edges_now - shm->edges_at_window_start;
+	syscalls_in_window = now - last;
+
+	next = (prev + 1) % NR_STRATEGIES;
+
+	shm->edges_at_window_start =
+		__atomic_load_n(&shm->edges_by_strategy[next], __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->current_strategy, next, __ATOMIC_RELEASE);
+
+	output(0, "strategy: switched to %d (prev %d: edges=%lu, syscalls=%lu)\n",
+	       next, prev, edges_in_window, syscalls_in_window);
+}
+
+/*
  * Dispatch a fully-prepared syscallrecord and run the per-call
  * post-dispatch bookkeeping: kcov collection / cmp-hint collection,
  * edge-pair recording, mutator-attribution commit, mini-corpus save,
@@ -376,6 +535,7 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 		 * syscalls without sanitise (which may stash pointers). */
 		if (new_edges) {
 			struct syscallentry *save_entry = get_syscall_entry(rec->nr, rec->do32bit);
+			int strat;
 
 			if (save_entry != NULL && save_entry->sanitise == NULL)
 				minicorpus_save(rec);
@@ -387,6 +547,15 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 			 * Cheap fast path when the gap isn't reached; only one
 			 * caller per window actually runs the save. */
 			minicorpus_maybe_snapshot();
+
+			/* Attribute this new edge to the strategy that was
+			 * active when it was discovered.  Cumulative; the
+			 * window delta is computed by maybe_rotate_strategy
+			 * against shm->edges_at_window_start. */
+			strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
+			if (strat >= 0 && strat < NR_STRATEGIES)
+				__atomic_fetch_add(&shm->edges_by_strategy[strat],
+						   1, __ATOMIC_RELAXED);
 		}
 	}
 
@@ -431,6 +600,11 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 		/* Track syscall number for edge-pair sequence coverage. */
 		child->last_syscall_nr = rec->nr;
 	}
+
+	/* Cheap end-of-call check for the strategy rotation boundary.
+	 * Two relaxed loads + a compare in the common case; the CAS only
+	 * fires once per ~STRATEGY_WINDOW ops fleet-wide. */
+	maybe_rotate_strategy();
 
 	return true;
 }
