@@ -3688,6 +3688,324 @@ static bool recipe_seccomp_listener_exec(bool *unsupported)
 	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+/*
+ * Inner child of recipe_cgroup_kill_events.  Joins the freshly-mkdir'd
+ * cgroup by writing its own pid into <cgroup>/cgroup.procs, signals
+ * the supervisor that it is in (or attempted to be in) the cgroup via
+ * a single byte on the pipe write end, then pause()s waiting for the
+ * SIGKILL the supervisor will issue via the cgroup.kill control file.
+ *
+ * The signal-byte handshake exists so the supervisor doesn't race
+ * ahead and write to cgroup.kill before the inner has joined the
+ * cgroup -- otherwise __cgroup_kill walks an empty css_task_iter and
+ * the populated/frozen state on cgroup.events never changes,
+ * defeating the kernfs_notify wake-poll part of the recipe.
+ *
+ * cgroup.procs write may legitimately fail (EACCES on a non-delegated
+ * subtree under unprivileged trinity, EBUSY in the no-internal-procs
+ * window, ENOSPC under cgroup.max.descendants, ...); the inner sends
+ * the signal byte regardless so the supervisor doesn't stall, and the
+ * supervisor's backup SIGKILL covers the "inner not in the cgroup"
+ * case.
+ */
+static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
+	__attribute__((noreturn));
+static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
+{
+	char procs_path[128];
+	char pidbuf[16];
+	ssize_t w __unused__;
+	int procs_fd;
+	int len;
+	char ack = '!';
+
+	(void)snprintf(procs_path, sizeof(procs_path), "%s/cgroup.procs",
+		       cgroup_path);
+	procs_fd = open(procs_path, O_WRONLY);
+	if (procs_fd >= 0) {
+		len = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
+		w = write(procs_fd, pidbuf, (size_t)len);
+		close(procs_fd);
+	}
+
+	/* One byte is enough -- the supervisor read()s exactly one byte and
+	 * doesn't care about the value, only the wakeup. */
+	w = write(pipe_w, &ack, 1);
+	close(pipe_w);
+
+	(void)pause();
+	_exit(0);
+}
+
+/*
+ * Supervisor body of recipe_cgroup_kill_events.  Owns the cgroup
+ * lifecycle (mkdir -> ... -> rmdir) and the cgroup.events / cgroup.kill
+ * fds.  Forks a single inner that joins the cgroup and pauses, then
+ * drives the cgroup.kill -> kernfs_notify -> cgroup.events post-kill
+ * read sequence.
+ *
+ * Exit codes (consumed by recipe_cgroup_kill_events):
+ *   0  -- ran the full mkdir/open/fork/kill/notify/read/waitpid/rmdir
+ *         sequence
+ *   1  -- mkdir or open(cgroup.events|cgroup.kill) returned an
+ *         "unsupported" errno -- triggers the *unsupported latch in
+ *         the parent
+ *   2  -- transient post-cgroup-create failure (pipe2 / fork / open
+ *         non-ENOENT) -- not unsupported, just retry next cycle
+ */
+#define RECIPE_CGROUP_KILL_NOTIFY_MS	200
+
+static int recipe_cgroup_kill_supervisor(void)
+{
+	char cgroup_path[64];
+	char path[128];
+	char readbuf[256];
+	struct pollfd pfd;
+	ssize_t r __unused__;
+	ssize_t w __unused__;
+	int events_fd = -1;
+	int kill_fd = -1;
+	int pipefd[2] = { -1, -1 };
+	pid_t inner = -1;
+	int rc;
+	int status;
+	bool cgroup_made = false;
+	char ack;
+
+	(void)snprintf(cgroup_path, sizeof(cgroup_path),
+		       "/sys/fs/cgroup/trinity-kill-%d", (int)getpid());
+
+	if (mkdir(cgroup_path, 0755) != 0) {
+		if (errno == EACCES || errno == EPERM || errno == EROFS ||
+		    errno == ENOENT || errno == ENOTDIR)
+			return 1;
+		return 2;
+	}
+	cgroup_made = true;
+
+	(void)snprintf(path, sizeof(path), "%s/cgroup.events", cgroup_path);
+	events_fd = open(path, O_RDONLY | O_NONBLOCK);
+	if (events_fd < 0) {
+		/* cgroup.events appears whenever cgroup v2 is mounted; ENOENT
+		 * here means the kernel doesn't expose it (extremely old
+		 * cgroup v2, or a controller-less hierarchy). */
+		rc = (errno == ENOENT) ? 1 : 2;
+		goto out;
+	}
+
+	(void)snprintf(path, sizeof(path), "%s/cgroup.kill", cgroup_path);
+	kill_fd = open(path, O_WRONLY);
+	if (kill_fd < 0) {
+		/* cgroup.kill landed in 5.14; ENOENT here is the canonical
+		 * "feature absent" signal that latches the recipe off. */
+		rc = (errno == ENOENT) ? 1 : 2;
+		goto out;
+	}
+
+	if (pipe2(pipefd, O_CLOEXEC) != 0) {
+		rc = 2;
+		goto out;
+	}
+
+	inner = fork();
+	if (inner < 0) {
+		rc = 2;
+		goto out;
+	}
+
+	if (inner == 0) {
+		/* Inner doesn't need the supervisor's copies of these fds. */
+		close(events_fd);
+		close(kill_fd);
+		close(pipefd[0]);
+		cgroup_kill_inner(cgroup_path, pipefd[1]);
+		/* unreachable -- inner uses _exit on every path */
+	}
+
+	/* Supervisor closes its write end; only the inner writes. */
+	close(pipefd[1]);
+	pipefd[1] = -1;
+
+	/* Wait for the inner's "I'm in (or tried) the cgroup" handshake.
+	 * read() blocks until the inner write()s; if the inner died
+	 * before signalling we get EOF / 0 bytes and proceed regardless --
+	 * the backup SIGKILL + waitpid below cleans up. */
+	r = read(pipefd[0], &ack, 1);
+
+	/* Pre-kill best-effort baseline read of cgroup.events.  Drives
+	 * cgroup_events_show against a freshly-populated cgroup before any
+	 * state change so the post-kill read has a comparator. */
+	pfd.fd = events_fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	(void)poll(&pfd, 1, 0);
+	r = read(events_fd, readbuf, sizeof(readbuf));
+
+	/* Trigger cgroup.kill: write "1\n".  Drives cgroup_kill_write ->
+	 * cgroup_kill_control -> __cgroup_kill which walks css_task_iter
+	 * and SIGKILLs every task in this cgroup.  Side effect: the
+	 * populated state on cgroup.events flips to 0 once the killed
+	 * task is reaped, which fires kernfs_notify on the events file. */
+	w = write(kill_fd, "1\n", 2);
+
+	/* Wait up to 200ms for the kernfs_notify wake.  POLLPRI is the
+	 * documented wake event for cgroup.events (kernfs_notify uses
+	 * EPOLLPRI); some kernels also flag POLLIN.  A 200ms ceiling is
+	 * generous enough that even a heavily-loaded host wakes here, but
+	 * tight enough not to dominate the recipe's wall clock. */
+	pfd.fd = events_fd;
+	pfd.events = POLLPRI | POLLIN;
+	pfd.revents = 0;
+	(void)poll(&pfd, 1, RECIPE_CGROUP_KILL_NOTIFY_MS);
+
+	/* Post-kill read: rewind and re-read cgroup.events to drive
+	 * cgroup_events_show again, this time with the
+	 * populated/frozen/exit state mutated by __cgroup_kill.  lseek
+	 * back to 0 because kernfs files are seekable and a re-read
+	 * without rewind would just yield EOF. */
+	(void)lseek(events_fd, 0, SEEK_SET);
+	r = read(events_fd, readbuf, sizeof(readbuf));
+
+	/* Backup SIGKILL: covers the case where the inner failed to join
+	 * the cgroup (write to cgroup.procs was denied), so cgroup.kill
+	 * walked an empty iter and didn't reap the inner.  kill() on a
+	 * pid already-killed-by-cgroup is a harmless no-op. */
+	(void)kill(inner, SIGKILL);
+	(void)waitpid_eintr(inner, &status, 0);
+	inner = -1;
+
+	rc = 0;
+
+out:
+	if (inner > 0) {
+		(void)kill(inner, SIGKILL);
+		(void)waitpid_eintr(inner, &status, 0);
+	}
+	if (pipefd[0] >= 0)
+		close(pipefd[0]);
+	if (pipefd[1] >= 0)
+		close(pipefd[1]);
+	if (kill_fd >= 0)
+		close(kill_fd);
+	if (events_fd >= 0)
+		close(events_fd);
+	if (cgroup_made)
+		(void)rmdir(cgroup_path);
+	return rc;
+}
+
+/*
+ * Recipe 36: cgroup v2 cgroup.kill + cgroup.events lifecycle.
+ *
+ * Per call:
+ *
+ *   fork() -> supervisor ->
+ *     mkdir("/sys/fs/cgroup/trinity-kill-PID", 0755) ->
+ *     open("<cg>/cgroup.events", O_RDONLY|O_NONBLOCK) ->
+ *     open("<cg>/cgroup.kill",   O_WRONLY) ->
+ *     pipe2(pipefd, O_CLOEXEC) ->
+ *     fork() -> inner ->
+ *       open("<cg>/cgroup.procs", O_WRONLY) -> write "<pid>\n"
+ *       write(pipefd[1], &ack, 1)            [signal supervisor]
+ *       pause()                              [waits for cgroup.kill SIGKILL]
+ *     supervisor:
+ *       read(pipefd[0], &ack, 1)             [sync with inner]
+ *       poll(events_fd, POLLIN, 0) + read    [pre-kill baseline]
+ *       write(kill_fd, "1\n", 2)             [trigger cgroup.kill]
+ *       poll(events_fd, POLLPRI|POLLIN, 200ms)  [kernfs_notify wake]
+ *       lseek(events_fd, 0, SEEK_SET) + read [post-kill state]
+ *       kill(inner, SIGKILL); waitpid_eintr  [backup reap]
+ *       close fds
+ *       rmdir("<cg>")
+ *     _exit(rc)
+ *   parent: waitpid_eintr(supervisor); WEXITSTATUS == 1 latches.
+ *
+ * Targets the kernel paths that fire when cgroup v2's cgroup.kill
+ * control file is written and downstream readers observe the
+ * populated-state change via kernfs_notify:
+ *   - cgroup_mkdir + the kernfs node creation that auto-populates
+ *     cgroup.events / cgroup.kill / cgroup.procs / cgroup.controllers
+ *   - cgroup_procs_write (write to <cg>/cgroup.procs): the migrate
+ *     path (cgroup_attach_task / cgroup_migrate / cgroup_post_fork
+ *     for the css_set move) under cgroup_mutex
+ *   - cgroup_kill_write -> cgroup_kill_control -> __cgroup_kill: the
+ *     css_task_iter walk that group_send_sig_info(SIGKILL)s every
+ *     member task; this is the entire cgroup.kill bug surface
+ *   - kernfs_notify -> kernfs_notify_workfn -> wake the events_fd
+ *     waitqueue with EPOLLPRI: triggered when populated transitions
+ *     1 -> 0 after the killed inner is reaped
+ *   - cgroup_events_show / cgroup_file_open / cgroup_file_release on
+ *     the read-after-notify path (lseek(0) + read drives the
+ *     seq_file regenerate path with mutated state)
+ *   - cgroup_rmdir against a recently-emptied cgroup (offline_css for
+ *     each subsys, kernfs_remove)
+ *
+ * Distinct from childops/cgroup-churn.c which mkdirs/rmdirs as fast
+ * as possible to drive cgroup_mkdir/rmdir under contention but never
+ * populates a cgroup with tasks, never opens cgroup.events, and
+ * never exercises cgroup.kill.  This recipe is the only place
+ * trinity drives the cgroup.kill -> SIGKILL members ->
+ * kernfs_notify wake -> cgroup.events re-read sequence end-to-end.
+ *
+ * Single-thread by design: cgroup state changes serialise through
+ * cgroup_mutex, and the recipe's bug surface is the kill-vs-notify-
+ * vs-read ordering, not concurrent writers to cgroup.kill.  The
+ * inner-vs-supervisor process pair gives the kernel a real task to
+ * SIGKILL out of the cgroup, which is the only way to make
+ * populated transition 1 -> 0 and fire the kernfs_notify wake.
+ *
+ * Latch shape covers every way the feature can be absent on the
+ * very first probe.  The supervisor reports any of these via exit
+ * code 1:
+ *   - mkdir EACCES         (unprivileged trinity, /sys/fs/cgroup not
+ *                           delegated to this user)
+ *   - mkdir EPERM          (LSM denial)
+ *   - mkdir EROFS          (cgroup v1 root mounted read-only)
+ *   - mkdir ENOENT         (no /sys/fs/cgroup/ at all)
+ *   - mkdir ENOTDIR        (something is mounted at /sys/fs/cgroup
+ *                           that isn't cgroupfs)
+ *   - open(cgroup.events) ENOENT  (no cgroup v2 events interface)
+ *   - open(cgroup.kill)   ENOENT  (pre-5.14 kernel without
+ *                                   cgroup.kill)
+ *
+ * Once latched the dispatcher stops siblings from re-probing.
+ *
+ * Cleanup ordering on every supervisor exit path: SIGKILL the inner
+ * (idempotent if cgroup.kill already reaped it), waitpid_eintr,
+ * close events/kill/pipe fds, rmdir the cgroup directory.  rmdir
+ * is best-effort -- a cgroup with lingering offlining state may
+ * return EBUSY transiently; we don't retry, the next recipe call
+ * uses a fresh PID-named directory anyway.
+ *
+ * Per-call fork failure (EAGAIN under nproc/thread limits) is
+ * reported by the supervisor as exit code 2 (transient); the
+ * dispatcher will pick again next cycle.
+ */
+static bool recipe_cgroup_kill_events(bool *unsupported)
+{
+	pid_t supervisor;
+	int status;
+
+	supervisor = fork();
+	if (supervisor < 0)
+		return false;
+
+	if (supervisor == 0)
+		_exit(recipe_cgroup_kill_supervisor());
+
+	if (waitpid_eintr(supervisor, &status, 0) < 0)
+		return false;
+
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+		*unsupported = true;
+		__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -3724,6 +4042,7 @@ static const struct recipe recipes[] = {
 	{ "ptrace_seize_exitkill", recipe_ptrace_seize_exitkill },
 	{ "mount_userns_dance", recipe_mount_userns_dance },
 	{ "seccomp_listener_exec", recipe_seccomp_listener_exec },
+	{ "cgroup_kill_events", recipe_cgroup_kill_events },
 };
 
 /*
