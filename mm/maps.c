@@ -96,6 +96,36 @@ struct map * get_map(void)
 }
 
 /*
+ * Like get_map(), but only return entries whose protection bits include
+ * every bit set in required_prot.  Pool entries (mm/maps-initial.c) are
+ * created with EVERY combination of PROT_READ / PROT_WRITE / PROT_EXEC /
+ * PROT_NONE — including PROT_NONE and write-less mappings — so consumers
+ * that touch the region with a specific access pattern (e.g. a dirty-each-
+ * page loop, or io_uring opcodes that direct the kernel to read or write
+ * the user buffer) MUST filter, otherwise drawing a PROT_READ-only or
+ * PROT_NONE entry will SEGV_ACCERR on the first incompatible access.
+ *
+ * The most common need is PROT_WRITE (the consumer writes to the region);
+ * PROT_READ alone is also reasonable for read-only consumers.  Returns
+ * NULL if no matching entry is drawn within the same retry budget as
+ * get_map().
+ */
+struct map * get_map_with_prot(int required_prot)
+{
+	for (int i = 0; i < 1000; i++) {
+		struct map *m = get_map();
+
+		if (m == NULL)
+			return NULL;
+
+		if ((m->prot & required_prot) == required_prot)
+			return m;
+	}
+
+	return NULL;
+}
+
+/*
  * Destructor for OBJ_LOCAL mmap entries (init_child_mappings copies and
  * the children's own runtime mmaps).  The obj struct and the name string
  * both live on the calling process's private heap, so we use the regular
