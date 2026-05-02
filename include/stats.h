@@ -88,6 +88,7 @@ struct stats_s {
 	unsigned long sched_yield_oracle_anomalies;
 	unsigned long getpagesize_oracle_anomalies;
 	unsigned long time_oracle_anomalies;
+	unsigned long gettimeofday_oracle_anomalies;
 	unsigned long newuname_oracle_anomalies;
 	unsigned long rt_sigpending_oracle_anomalies;
 	unsigned long sched_getaffinity_oracle_anomalies;
