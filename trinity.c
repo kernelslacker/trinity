@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "effector-map.h"
 #include "fd.h"
 #include "files.h"
 #include "ioctls.h"
@@ -427,6 +428,20 @@ int main(int argc, char* argv[])
 	 * results via COW instead of repeating the walk per child.
 	 */
 	procfs_writer_init();
+
+	/*
+	 * --effector-map: one-shot calibration pass that probes per-bit
+	 * input significance under KCOV and exits.  Runs after open_fds /
+	 * freeze_global_objects so fill_arg() has the full fd, address,
+	 * and pid pools available, but before warm-start so the calibration
+	 * baseline isn't biased by a replayed corpus snapshot (the
+	 * calibration path itself bypasses minicorpus_replay; skipping
+	 * warm-start here also avoids loading a corpus we will not use).
+	 */
+	if (do_effector_map) {
+		(void)effector_map_calibrate();
+		goto out;
+	}
 
 	/*
 	 * Warm-start the corpus from the previous run if a persisted file
