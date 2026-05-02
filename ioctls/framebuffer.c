@@ -105,44 +105,66 @@ static void fb_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 	pick_random_ioctl(grp, rec);
 
 	switch (rec->a2) {
+#ifdef FBIOGET_VSCREENINFO
 	case FBIOGET_VSCREENINFO:
+#endif
+#ifdef FBIOPUT_VSCREENINFO
 	case FBIOPUT_VSCREENINFO:
+#endif
+#ifdef FBIOPAN_DISPLAY
 	case FBIOPAN_DISPLAY:
+#endif
 		sanitise_fb_var_screeninfo(rec);
 		break;
 
+#ifdef FBIOGET_FSCREENINFO
 	case FBIOGET_FSCREENINFO: {
 		struct fb_fix_screeninfo *fix = get_writable_struct(sizeof(*fix));
 		if (fix)
 			rec->a3 = (unsigned long) fix;
 		break;
 	}
+#endif
 
+#ifdef FBIOGETCMAP
 	case FBIOGETCMAP:
+#endif
+#ifdef FBIOPUTCMAP
 	case FBIOPUTCMAP:
+#endif
 		sanitise_fb_cmap(rec);
 		break;
 
+#ifdef FBIO_CURSOR
 	case FBIO_CURSOR:
 		sanitise_fb_cursor(rec);
 		break;
+#endif
 
+#ifdef FBIOGET_CON2FBMAP
 	case FBIOGET_CON2FBMAP:
+#endif
+#ifdef FBIOPUT_CON2FBMAP
 	case FBIOPUT_CON2FBMAP:
+#endif
 		sanitise_fb_con2fbmap(rec);
 		break;
 
+#ifdef FBIOBLANK
 	case FBIOBLANK:
 		/* arg is a blank level, not a pointer */
 		rec->a3 = rand() % 5;
 		break;
+#endif
 
+#ifdef FBIOGET_VBLANK
 	case FBIOGET_VBLANK: {
 		struct fb_vblank *vbl = get_writable_struct(sizeof(*vbl));
 		if (vbl)
 			rec->a3 = (unsigned long) vbl;
 		break;
 	}
+#endif
 
 #ifdef FBIO_WAITFORVSYNC
 	case FBIO_WAITFORVSYNC: {
@@ -155,12 +177,25 @@ static void fb_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 	}
 #endif
 
+#ifdef FBIO_ALLOC
 	case FBIO_ALLOC:
+#endif
+#ifdef FBIO_FREE
 	case FBIO_FREE:
+#endif
+#ifdef FBIOGET_GLYPH
 	case FBIOGET_GLYPH:
+#endif
+#ifdef FBIOGET_HWCINFO
 	case FBIOGET_HWCINFO:
+#endif
+#ifdef FBIOPUT_MODEINFO
 	case FBIOPUT_MODEINFO:
-	case FBIOGET_DISPINFO: {
+#endif
+#ifdef FBIOGET_DISPINFO
+	case FBIOGET_DISPINFO:
+#endif
+	{
 		void *buf = get_writable_struct(256);
 		if (buf)
 			rec->a3 = (unsigned long) buf;
@@ -173,23 +208,57 @@ static void fb_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 }
 
 static const struct ioctl fb_ioctls[] = {
+#ifdef FBIOGET_VSCREENINFO
 	IOCTL(FBIOGET_VSCREENINFO),
+#endif
+#ifdef FBIOPUT_VSCREENINFO
 	IOCTL(FBIOPUT_VSCREENINFO),
+#endif
+#ifdef FBIOGET_FSCREENINFO
 	IOCTL(FBIOGET_FSCREENINFO),
+#endif
+#ifdef FBIOGETCMAP
 	IOCTL(FBIOGETCMAP),
+#endif
+#ifdef FBIOPUTCMAP
 	IOCTL(FBIOPUTCMAP),
+#endif
+#ifdef FBIOPAN_DISPLAY
 	IOCTL(FBIOPAN_DISPLAY),
+#endif
+#ifdef FBIO_CURSOR
 	IOCTL(FBIO_CURSOR),
+#endif
+#ifdef FBIOGET_CON2FBMAP
 	IOCTL(FBIOGET_CON2FBMAP),
+#endif
+#ifdef FBIOPUT_CON2FBMAP
 	IOCTL(FBIOPUT_CON2FBMAP),
+#endif
+#ifdef FBIOBLANK
 	IOCTL(FBIOBLANK),
+#endif
+#ifdef FBIOGET_VBLANK
 	IOCTL(FBIOGET_VBLANK),
+#endif
+#ifdef FBIO_ALLOC
 	IOCTL(FBIO_ALLOC),
+#endif
+#ifdef FBIO_FREE
 	IOCTL(FBIO_FREE),
+#endif
+#ifdef FBIOGET_GLYPH
 	IOCTL(FBIOGET_GLYPH),
+#endif
+#ifdef FBIOGET_HWCINFO
 	IOCTL(FBIOGET_HWCINFO),
+#endif
+#ifdef FBIOPUT_MODEINFO
 	IOCTL(FBIOPUT_MODEINFO),
+#endif
+#ifdef FBIOGET_DISPINFO
 	IOCTL(FBIOGET_DISPINFO),
+#endif
 #ifdef FBIO_WAITFORVSYNC
 	IOCTL(FBIO_WAITFORVSYNC),
 #endif
@@ -212,6 +281,7 @@ static const char *const fb_chardevs[] = {
 };
 
 static const struct ioctl_group fb_grp = {
+	.name = "fb",
 	.devtype = DEV_CHAR,
 	.devs = fb_chardevs,
 	.devs_cnt = ARRAY_SIZE(fb_chardevs),
