@@ -573,7 +573,8 @@ static void dump_stats_json(void)
 				"\"getrlimit_anomalies\":%lu,"
 				"\"sysinfo_anomalies\":%lu,"
 				"\"times_anomalies\":%lu,"
-				"\"clock_getres_anomalies\":%lu},"
+				"\"clock_getres_anomalies\":%lu,"
+				"\"getrusage_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -654,6 +655,7 @@ static void dump_stats_json(void)
 		shm->stats.sysinfo_oracle_anomalies,
 		shm->stats.times_oracle_anomalies,
 		shm->stats.clock_getres_oracle_anomalies,
+		shm->stats.getrusage_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -941,6 +943,9 @@ void dump_stats(void)
 	if (shm->stats.clock_getres_oracle_anomalies)
 		stat_row("oracle", "clock_getres_anomalies",
 			 shm->stats.clock_getres_oracle_anomalies);
+	if (shm->stats.getrusage_oracle_anomalies)
+		stat_row("oracle", "getrusage_anomalies",
+			 shm->stats.getrusage_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
