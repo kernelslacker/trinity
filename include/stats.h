@@ -69,6 +69,7 @@ struct stats_s {
 	unsigned long getegid_oracle_anomalies;
 	unsigned long getuid_oracle_anomalies;
 	unsigned long getgid_oracle_anomalies;
+	unsigned long getppid_oracle_anomalies;
 
 	/* procfs_writer childop: per-tree write counts */
 	unsigned long procfs_writes;
