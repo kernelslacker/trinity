@@ -419,7 +419,7 @@ void generic_sanitise(struct syscallrecord *rec)
 	unsigned int call;
 
 	call = rec->nr;
-	entry = syscalls[call].entry;
+	entry = get_syscall_entry(call, rec->do32bit);
 
 	/* Defensive: zero arg slots so any ARG_UNDEFINED entry doesn't
 	 * inherit stale values from the previous syscall's record. */
