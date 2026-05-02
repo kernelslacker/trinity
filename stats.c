@@ -564,7 +564,8 @@ static void dump_stats_json(void)
 				"\"newuname_anomalies\":%lu,"
 				"\"rt_sigpending_anomalies\":%lu,"
 				"\"sched_getaffinity_anomalies\":%lu,"
-				"\"rt_sigprocmask_anomalies\":%lu},"
+				"\"rt_sigprocmask_anomalies\":%lu,"
+				"\"sched_getparam_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -636,6 +637,7 @@ static void dump_stats_json(void)
 		shm->stats.rt_sigpending_oracle_anomalies,
 		shm->stats.sched_getaffinity_oracle_anomalies,
 		shm->stats.rt_sigprocmask_oracle_anomalies,
+		shm->stats.sched_getparam_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -897,6 +899,9 @@ void dump_stats(void)
 	if (shm->stats.rt_sigprocmask_oracle_anomalies)
 		stat_row("oracle", "rt_sigprocmask_anomalies",
 			 shm->stats.rt_sigprocmask_oracle_anomalies);
+	if (shm->stats.sched_getparam_oracle_anomalies)
+		stat_row("oracle", "sched_getparam_anomalies",
+			 shm->stats.sched_getparam_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
