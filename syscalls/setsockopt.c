@@ -234,7 +234,7 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	si = (struct socketinfo *) rec->a1;
 	if (si == NULL) {
 		rec->a1 = get_random_fd();
-		rec->a4 = (unsigned long) zmalloc(page_size);
+		rec->a4 = 0;
 		return;
 	}
 
