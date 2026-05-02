@@ -35,5 +35,34 @@
  * syscall against KCOV.  Returns 0 on success, non-zero if KCOV is not
  * available.  Runs in the parent process; expected to be invoked once
  * after init_shm / open_fds / freeze_global_objects, in lieu of the
- * normal fuzz loop. */
+ * normal fuzz loop.  On success the populated map is persisted via
+ * effector_map_save_file() to the path returned by
+ * effector_map_default_path(). */
 int effector_map_calibrate(void);
+
+/* Persist the in-memory effector map to @path.  Writes via a per-pid
+ * .tmp file and renames atomically — same pattern as minicorpus_save_file.
+ * Returns true on success, false on any I/O failure. */
+bool effector_map_save_file(const char *path);
+
+/* Load a previously-persisted effector map from @path into the in-memory
+ * table.  Returns true if the file was loaded; false if missing,
+ * truncated, magic/version mismatched, dimensions disagreed with the
+ * compiled-in MAX_NR_SYSCALL / EFFECTOR_NR_ARGS / EFFECTOR_BITS_PER_ARG,
+ * the kernel utsname differed from the running kernel, or the payload
+ * CRC failed.  All failures leave the in-memory map unchanged. */
+bool effector_map_load_file(const char *path);
+
+/* Default per-arch effector-map path, parallel to
+ * minicorpus_default_path().  Builds and mkdir -p's
+ * $XDG_CACHE_HOME/trinity/effector/ (or $HOME/.cache/...).  Returns
+ * NULL if no suitable path can be derived.  Returned pointer is owned
+ * by a static buffer and remains valid until the next call. */
+const char *effector_map_default_path(void);
+
+/* Read-only accessor for the in-memory map.  Returns the saturated
+ * significance byte for (nr, arg, bit), or 0 if any index is out of
+ * range.  Used by argument mutators to bias bit selection toward
+ * effective bits. */
+unsigned char effector_map_score(unsigned int nr, unsigned int arg,
+		unsigned int bit);
