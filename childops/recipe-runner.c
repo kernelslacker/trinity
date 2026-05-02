@@ -44,6 +44,7 @@
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/msg.h>
+#include <sys/ptrace.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sys/signalfd.h>
@@ -52,6 +53,7 @@
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <linux/bpf.h>
@@ -64,6 +66,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "childops-util.h"
 #include "compat.h"
 #include "random.h"
 #include "shm.h"
@@ -3006,6 +3009,180 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 	return completed > 0;
 }
 
+/*
+ * Recipe 33: ptrace SEIZE+EXITKILL lifecycle.
+ *
+ * Per cycle (1..MAX_CYCLES):
+ *
+ *   fork() -> inner child blocks in pause() -> parent runs the
+ *   SEIZE-style lifecycle on the tracee:
+ *
+ *     ptrace(PTRACE_SEIZE, child, 0,
+ *            PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD) ->
+ *     ptrace(PTRACE_INTERRUPT, child, 0, 0) ->
+ *     waitpid(child, &status, __WALL) for the group-stop ->
+ *     ptrace(PTRACE_GETSIGINFO, child, 0, &si) ->
+ *     ptrace(PTRACE_SETOPTIONS, child, 0,
+ *            PTRACE_O_EXITKILL | PTRACE_O_TRACEEXIT) ->
+ *     ptrace(PTRACE_CONT, child, 0, 0) ->
+ *     kill(child, SIGKILL) ->
+ *     waitpid_eintr(child, &status, 0) reaps.
+ *
+ * Targets the kernel paths ptrace_attach (SEIZE branch) vs ptrace_
+ * attach (legacy ATTACH branch), the PTRACE_INTERRUPT group-stop
+ * delivery against a task in TASK_INTERRUPTIBLE pause(), the
+ * PTRACE_O_EXITKILL flag wiring (set on attach via the data param,
+ * mutated mid-trace via SETOPTIONS), the GETSIGINFO read of the
+ * tracee's last_siginfo while it's group-stopped, and the SIGKILL-
+ * vs-ptrace-stop teardown that exits a tracee out of a ptrace stop
+ * via fatal_signal_pending().
+ *
+ * Distinct from the random-syscall ptrace path in syscalls/ptrace.c
+ * which feeds isolated requests against arbitrary pids and is gated
+ * AVOID_SYSCALL.  This recipe drives the structured SEIZE-then-INTERRUPT-
+ * then-GETSIGINFO-then-SETOPTIONS-then-CONT lifecycle on a tracee
+ * the recipe itself owns -- arguments are concrete and ordered, so
+ * the kernel paths between SEIZE and DETACH/teardown are reachable
+ * end-to-end on every cycle.
+ *
+ * Single-thread by design: ptrace state is task-scoped and the
+ * SEIZE/INTERRUPT handshake serialises naturally inside the parent.
+ * Kernel-side concurrency (signal-vs-ptrace_stop, EXITKILL-on-tracer-
+ * exit) is exercised by the kernel's own task-switch interleaving
+ * between our parent's syscalls and the tracee's pause()/wakeup
+ * transitions.
+ *
+ * EXITKILL is the *attribute* under test even though we tear down
+ * the tracee explicitly with SIGKILL: the flag must be settable on
+ * SEIZE, mutable via SETOPTIONS, and not interfere with the normal
+ * stop/resume cycle.  A kernel bug in the EXITKILL plumbing that
+ * killed the tracee prematurely (before our SIGKILL) would land
+ * a WIFSIGNALED early -- still safe under waitpid_eintr.
+ *
+ * Latch shape covers every way the feature can be absent on the
+ * very first probe:
+ *   - ptrace SEIZE ENOSYS           (kernel < 3.4, vanishingly rare)
+ *   - ptrace SEIZE EPERM            (YAMA ptrace_scope=2/3, LSM denial)
+ *   - ptrace SEIZE EACCES           (LSM denial via security_ptrace_
+ *                                    access_check)
+ *
+ * Once latched, the dispatcher stops siblings from re-probing the
+ * unsupported feature on every recipe pick.
+ *
+ * Per-cycle fork failure (EAGAIN under nproc/thread limits) is
+ * tolerated mid-loop; FORK_FAIL_LATCH=3 consecutive failures bails
+ * for the rest of the invocation since competing fork_storm /
+ * cgroup_churn won't lift the limit mid-op.
+ *
+ * Cleanup ordering on every exit path: SIGKILL the tracee (idempotent
+ * if already dead), waitpid_eintr to reap the zombie, return.  The
+ * inner child uses _exit() in its (unreachable) tail to skip atexit
+ * handlers that could touch trinity shared state from a stopped
+ * tracee context.
+ */
+#define RECIPE_PTRACE_SEIZE_MAX_CYCLES		4
+#define RECIPE_PTRACE_SEIZE_FORK_FAIL_LATCH	3
+
+static bool recipe_ptrace_seize_exitkill(bool *unsupported)
+{
+	unsigned int cycles;
+	unsigned int i;
+	unsigned int fork_fail_streak = 0;
+	unsigned int completed = 0;
+
+	cycles = 1 + ((unsigned int)rand() % RECIPE_PTRACE_SEIZE_MAX_CYCLES);
+
+	for (i = 0; i < cycles; i++) {
+		siginfo_t si;
+		pid_t pid;
+		long pr;
+		int status;
+
+		pid = fork();
+		if (pid < 0) {
+			if (++fork_fail_streak >=
+			    RECIPE_PTRACE_SEIZE_FORK_FAIL_LATCH)
+				break;
+			continue;
+		}
+		fork_fail_streak = 0;
+
+		if (pid == 0) {
+			/* Inner tracee: block in pause() so the parent has
+			 * a deterministic stop point to SEIZE+INTERRUPT.
+			 * Any SIGKILL from the parent reaps us cleanly.
+			 * _exit() skips atexit handlers that could touch
+			 * trinity shared state from a stopped-and-resumed
+			 * tracee context. */
+			(void)pause();
+			_exit(0);
+		}
+
+		pr = ptrace(PTRACE_SEIZE, pid, (void *)0,
+			    (void *)(unsigned long)
+			    (PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD));
+		if (pr < 0) {
+			if (i == 0 && (errno == ENOSYS || errno == EPERM ||
+				       errno == EACCES)) {
+				(void)kill(pid, SIGKILL);
+				(void)waitpid_eintr(pid, &status, 0);
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+						   1, __ATOMIC_RELAXED);
+				return false;
+			}
+			(void)kill(pid, SIGKILL);
+			(void)waitpid_eintr(pid, &status, 0);
+			continue;
+		}
+
+		/* Move the tracee into PTRACE_EVENT_STOP.  SEIZE never
+		 * sends an initial SIGSTOP (unlike ATTACH); INTERRUPT is
+		 * the only way to drive a SEIZE'd tracee into a stop. */
+		(void)ptrace(PTRACE_INTERRUPT, pid, (void *)0, (void *)0);
+
+		if (waitpid_eintr(pid, &status, __WALL) < 0) {
+			(void)kill(pid, SIGKILL);
+			(void)waitpid_eintr(pid, &status, 0);
+			continue;
+		}
+
+		/* If the tracee already died (kernel killed it for whatever
+		 * reason), there's no live ptrace state to drive -- just
+		 * count the cycle and move on.  This also covers the
+		 * EXITKILL-fired-early path where the kernel decided to
+		 * kill the tracee on attach. */
+		if (!WIFSTOPPED(status)) {
+			completed++;
+			continue;
+		}
+
+		/* Light interaction with the stopped tracee.  Both calls
+		 * exercise paths gated on the tracee being in a ptrace
+		 * stop; failures are best-effort and intentionally ignored
+		 * (a kernel bug here is exactly what we want exposed). */
+		memset(&si, 0, sizeof(si));
+		(void)ptrace(PTRACE_GETSIGINFO, pid, (void *)0, &si);
+
+		(void)ptrace(PTRACE_SETOPTIONS, pid, (void *)0,
+			     (void *)(unsigned long)
+			     (PTRACE_O_EXITKILL | PTRACE_O_TRACEEXIT));
+
+		(void)ptrace(PTRACE_CONT, pid, (void *)0, (void *)0);
+
+		/* Tear down: SIGKILL bypasses ptrace and reaps the tracee
+		 * via fatal_signal_pending() out of pause() / any ptrace
+		 * stop.  waitpid_eintr drains the zombie so we don't leak
+		 * a child across recipe invocations. */
+		(void)kill(pid, SIGKILL);
+		(void)waitpid_eintr(pid, &status, 0);
+
+		completed++;
+	}
+
+	return completed > 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -3039,6 +3216,7 @@ static const struct recipe recipes[] = {
 	{ "bpf_htab_iter_del", recipe_bpf_htab_iter_del },
 	{ "perf_mmap_close", recipe_perf_mmap_close },
 	{ "keys_revoke_race", recipe_keys_revoke_race },
+	{ "ptrace_seize_exitkill", recipe_ptrace_seize_exitkill },
 };
 
 /*
