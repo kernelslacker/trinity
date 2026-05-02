@@ -71,6 +71,7 @@ struct stats_s {
 	unsigned long getgid_oracle_anomalies;
 	unsigned long getppid_oracle_anomalies;
 	unsigned long getpid_oracle_anomalies;
+	unsigned long getpgid_oracle_anomalies;
 	unsigned long geteuid_oracle_anomalies;
 	unsigned long getsid_oracle_anomalies;
 
