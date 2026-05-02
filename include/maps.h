@@ -36,6 +36,7 @@ void map_dump(struct object *obj, enum obj_scope scope);
 void setup_initial_mappings(void);
 
 struct map * get_map(void);
+struct map * get_map_with_prot(int required_prot);
 
 struct map * common_set_mmap_ptr_len(void);
 
