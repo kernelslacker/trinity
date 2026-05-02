@@ -118,12 +118,12 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 
 	kc->fd = open("/sys/kernel/debug/kcov", O_RDWR);
 	if (kc->fd < 0)
-		return;
+		goto err_free_dedup;
 
 	if (ioctl(kc->fd, KCOV_INIT_TRACE, KCOV_TRACE_SIZE) < 0) {
 		close(kc->fd);
 		kc->fd = -1;
-		return;
+		goto err_free_dedup;
 	}
 
 	kc->trace_buf = mmap(NULL,
@@ -135,7 +135,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 		close(kc->fd);
 		kc->fd = -1;
 		kc->trace_buf = NULL;
-		return;
+		goto err_free_dedup;
 	}
 
 	kc->active = true;
@@ -201,6 +201,11 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	if (kc->trace_buf != NULL)
 		track_shared_region((unsigned long)kc->trace_buf,
 				    KCOV_TRACE_SIZE * sizeof(unsigned long));
+	return;
+
+err_free_dedup:
+	free(kc->dedup);
+	kc->dedup = NULL;
 }
 
 void kcov_cleanup_child(struct kcov_child *kc)
