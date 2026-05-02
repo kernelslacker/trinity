@@ -26,6 +26,7 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -43,6 +44,7 @@
 
 #include "child.h"
 #include "compat.h"
+#include "files.h"
 #include "proto-alg-dict.h"
 #include "random.h"
 #include "shm.h"
@@ -67,6 +69,14 @@
 #define INNER_MIN	1
 #define INNER_MAX	4
 #define ERR_BURST_LIMIT	5
+
+/*
+ * Probability (out of 100) that the data leg is replaced by a splice
+ * sequence pulling from a page-cache-backed source fd through a pipe
+ * into the AF_ALG child socket.  The remaining ~70% keeps the natural
+ * sendmsg(buffer) path that already lands the bug class we care about.
+ */
+#define SPLICE_SUBST_PCT	30
 
 #ifdef USE_IF_ALG
 
@@ -122,10 +132,12 @@ static bool run_one_chain(unsigned int *err_burst)
 	enum sfc_type_idx type;
 	int parent_fd = -1;
 	int child_fd = -1;
+	int splice_pfd[2] = { -1, -1 };
 	unsigned int keylen;
 	unsigned int sndlen;
 	unsigned int rcvlen;
 	bool forced_authencesn = false;
+	bool used_splice = false;
 	bool ok = false;
 
 	parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
@@ -191,16 +203,54 @@ static bool run_one_chain(unsigned int *err_burst)
 	 * absent signal, so don't bump err_burst. */
 
 	sndlen = 16 + (rand() % (256 - 16 + 1));
-	sndbuf = zmalloc(sndlen);
-	generate_rand_bytes(sndbuf, sndlen);
 
-	iov.iov_base = sndbuf;
-	iov.iov_len  = sndlen;
-	memset(&msg, 0, sizeof(msg));
-	msg.msg_iov    = &iov;
-	msg.msg_iovlen = 1;
+	/*
+	 * Data leg.  ~SPLICE_SUBST_PCT% of the time, replace the sendmsg
+	 * buffer path with splice(tagged_fd -> pipe -> child_fd) using a
+	 * page-cache-backed source fd from the OBJ_FD_PAGECACHE pool.  The
+	 * pipe pair is owned by run_one_chain() — splice_pfd[] is initialised
+	 * to {-1, -1} and torn down in the unified out: block, matching the
+	 * per-resource flag-and-cleanup pattern in iouring-recipes.c.
+	 *
+	 * On any setup failure (no fd available, pipe2 ENFILE, the input
+	 * splice returning <= 0 because the AF_ALG sink isn't accepting yet,
+	 * etc.) we fall through to the sendmsg path so the chain still
+	 * exercises the bug-class data path it was built for.
+	 */
+	if ((rand() % 100) < SPLICE_SUBST_PCT) {
+		int tagged_fd = get_rand_pagecache_fd();
 
-	(void) sendmsg(child_fd, &msg, MSG_NOSIGNAL);
+		if (tagged_fd >= 0 && pipe2(splice_pfd, O_CLOEXEC) == 0) {
+			ssize_t in_n;
+
+			__atomic_add_fetch(
+				&shm->stats.socket_family_chain_splice_attempts,
+				1, __ATOMIC_RELAXED);
+
+			in_n = splice(tagged_fd, NULL, splice_pfd[1], NULL,
+				      sndlen,
+				      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
+			if (in_n > 0) {
+				(void) splice(splice_pfd[0], NULL, child_fd,
+					      NULL, (size_t) in_n,
+					      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
+				used_splice = true;
+			}
+		}
+	}
+
+	if (!used_splice) {
+		sndbuf = zmalloc(sndlen);
+		generate_rand_bytes(sndbuf, sndlen);
+
+		iov.iov_base = sndbuf;
+		iov.iov_len  = sndlen;
+		memset(&msg, 0, sizeof(msg));
+		msg.msg_iov    = &iov;
+		msg.msg_iovlen = 1;
+
+		(void) sendmsg(child_fd, &msg, MSG_NOSIGNAL);
+	}
 
 	rcvlen = 16 + (rand() % (256 - 16 + 1));
 	rcvbuf = zmalloc(rcvlen);
@@ -209,6 +259,10 @@ static bool run_one_chain(unsigned int *err_burst)
 	*err_burst = 0;
 	ok = true;
 out:
+	if (splice_pfd[0] >= 0)
+		close(splice_pfd[0]);
+	if (splice_pfd[1] >= 0)
+		close(splice_pfd[1]);
 	if (child_fd >= 0)
 		close(child_fd);
 	if (parent_fd >= 0)

@@ -578,7 +578,7 @@ static void dump_stats_json(void)
 		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
 		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},"
-		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu}"
+		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -650,7 +650,8 @@ static void dump_stats_json(void)
 		shm->stats.socket_family_chain_runs,
 		shm->stats.socket_family_chain_completed,
 		shm->stats.socket_family_chain_failed,
-		shm->stats.socket_family_chain_authencesn_attempts);
+		shm->stats.socket_family_chain_authencesn_attempts,
+		shm->stats.socket_family_chain_splice_attempts);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1021,6 +1022,7 @@ void dump_stats(void)
 		stat_row("socket_family_chain", "completed",           shm->stats.socket_family_chain_completed);
 		stat_row("socket_family_chain", "failed",              shm->stats.socket_family_chain_failed);
 		stat_row("socket_family_chain", "authencesn_attempts", shm->stats.socket_family_chain_authencesn_attempts);
+		stat_row("socket_family_chain", "splice_attempts",     shm->stats.socket_family_chain_splice_attempts);
 	}
 
 	if (kcov_shm != NULL) {
