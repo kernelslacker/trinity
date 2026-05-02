@@ -554,7 +554,8 @@ static void dump_stats_json(void)
 				"\"sched_getscheduler_anomalies\":%lu,"
 				"\"getgroups_anomalies\":%lu,"
 				"\"getresuid_anomalies\":%lu,"
-				"\"getresgid_anomalies\":%lu},"
+				"\"getresgid_anomalies\":%lu,"
+				"\"umask_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -616,6 +617,7 @@ static void dump_stats_json(void)
 		shm->stats.getgroups_oracle_anomalies,
 		shm->stats.getresuid_oracle_anomalies,
 		shm->stats.getresgid_oracle_anomalies,
+		shm->stats.umask_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -851,6 +853,8 @@ void dump_stats(void)
 		stat_row("oracle", "getresuid_anomalies", shm->stats.getresuid_oracle_anomalies);
 	if (shm->stats.getresgid_oracle_anomalies)
 		stat_row("oracle", "getresgid_anomalies", shm->stats.getresgid_oracle_anomalies);
+	if (shm->stats.umask_oracle_anomalies)
+		stat_row("oracle", "umask_anomalies", shm->stats.umask_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
