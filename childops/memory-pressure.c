@@ -49,7 +49,7 @@ bool memory_pressure(struct childdata *child)
 	 * Tearing down a pool entry would unmap pages that every other
 	 * sibling drawing the same map is still treating as live.
 	 */
-	m = get_map();
+	m = get_map_with_prot(PROT_WRITE);
 	if (m == NULL)
 		return false;
 
