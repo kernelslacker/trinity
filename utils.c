@@ -640,20 +640,35 @@ void free_shared_str(void *p, size_t size)
 static void prot_to_string(int prot, char *buf, size_t buflen)
 {
 	int n = 0;
+	int written;
 
 	if (buf == NULL || buflen == 0)
 		return;
 
 	buf[0] = '\0';
 
-	if (prot & PROT_READ)
-		n += snprintf(buf + n, buflen - (size_t)n, "READ");
-	if (prot & PROT_WRITE)
-		n += snprintf(buf + n, buflen - (size_t)n,
-			      "%sWRITE", n ? "|" : "");
-	if (prot & PROT_EXEC)
-		n += snprintf(buf + n, buflen - (size_t)n,
-			      "%sEXEC", n ? "|" : "");
+	/* snprintf returns the would-have-written length even when truncated.
+	 * Naive `n += snprintf(buf+n, buflen-n, ...)` advances n past buflen
+	 * once the buffer fills, so the next call writes outside buf.  Currently
+	 * safe at buflen=32 with the three short strings but identical cliff
+	 * to the stats.c stack-depth histogram cumulator.  Bound n each step. */
+	if ((prot & PROT_READ) && (size_t)n < buflen) {
+		written = snprintf(buf + n, buflen - (size_t)n, "READ");
+		if (written > 0)
+			n += written;
+	}
+	if ((prot & PROT_WRITE) && (size_t)n < buflen) {
+		written = snprintf(buf + n, buflen - (size_t)n,
+				   "%sWRITE", n ? "|" : "");
+		if (written > 0)
+			n += written;
+	}
+	if ((prot & PROT_EXEC) && (size_t)n < buflen) {
+		written = snprintf(buf + n, buflen - (size_t)n,
+				   "%sEXEC", n ? "|" : "");
+		if (written > 0)
+			n += written;
+	}
 
 	if (n == 0)
 		snprintf(buf, buflen, "NONE");

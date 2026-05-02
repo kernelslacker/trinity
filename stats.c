@@ -1162,15 +1162,24 @@ void dump_stats(void)
 			histo_total += __atomic_load_n(&minicorpus_shm->stack_depth_histogram[i],
 						       __ATOMIC_RELAXED);
 		if (histo_total > 0) {
+			int written;
+
 			hpos = 0;
 			for (i = 1; i <= STACK_MAX; i++) {
 				unsigned long d = __atomic_load_n(
 					&minicorpus_shm->stack_depth_histogram[i],
 					__ATOMIC_RELAXED);
-				hpos += snprintf(hbuf + hpos, sizeof(hbuf) - hpos,
-						 " [%u]:%lu", i, d);
+				/* Bound BEFORE snprintf — sizeof(hbuf)-hpos goes to
+				 * zero when full, but snprintf still returns the
+				 * would-have-written length and the next iteration's
+				 * hbuf+hpos lands past the buffer.  Stop here. */
 				if (hpos >= (int)sizeof(hbuf) - 1)
 					break;
+				written = snprintf(hbuf + hpos, sizeof(hbuf) - hpos,
+						   " [%u]:%lu", i, d);
+				if (written < 0)
+					break;
+				hpos += written;
 			}
 			output(0, "Stack depth:%s\n", hbuf);
 		}
