@@ -148,11 +148,19 @@ static bool fd_stress_close_reopen(struct childdata *child)
 	if (fd <= 2)
 		return true;
 
-	if (close(fd) == 0) {
-		notify_close(child, fd);
+	/*
+	 * Mark the slot dead BEFORE the close.  notify_close() enqueues a
+	 * removal request the parent will service, so by the time close()
+	 * returns and the kernel is free to recycle this fd number, the
+	 * pool entry is already on its way out.  The reverse order leaves
+	 * a window where this child can pick the same fd back out of the
+	 * pool (or have the kernel reassign it via an unrelated open) and
+	 * issue a type-aware syscall against a wrong-flavoured file struct.
+	 */
+	notify_close(child, fd);
+	if (close(fd) == 0)
 		__atomic_add_fetch(&shm->stats.fdstress_close_reopen, 1,
 				   __ATOMIC_RELAXED);
-	}
 	return true;
 }
 
@@ -170,11 +178,13 @@ static bool fd_stress_dup2_replace(struct childdata *child)
 	if (tries == 8)
 		return true;
 
-	if (dup2(fd_src, fd_dst) >= 0) {
-		notify_close(child, fd_dst);
+	/* Same ordering invariant as close-reopen: publish the slot's
+	 * impending death before dup2's implicit close runs, otherwise the
+	 * pool can hand fd_dst back to a typed consumer mid-replace. */
+	notify_close(child, fd_dst);
+	if (dup2(fd_src, fd_dst) >= 0)
 		__atomic_add_fetch(&shm->stats.fdstress_dup2_replace, 1,
 				   __ATOMIC_RELAXED);
-	}
 	return true;
 }
 
@@ -189,16 +199,18 @@ static bool fd_stress_type_confusion(struct childdata *child)
 	/*
 	 * dup2 closes fd_b silently and replaces it with a copy of
 	 * fd_a's struct file.  The pool still records fd_b as type_b,
-	 * so subsequent get_typed_fd(arg-of-type_b) will hand out an
-	 * fd that's actually backed by an object of type_a.  That's
-	 * the whole point — see if any consumer assumes the file_ops
-	 * match the trinity-side type label.
+	 * so subsequent get_typed_fd(arg-of-type_b) hands out an fd that's
+	 * actually backed by an object of type_a — this is the deliberate
+	 * type-confusion fuzzing window.  Notify before dup2 so the pool
+	 * pruning is in flight by the time the kernel-side replacement
+	 * lands; the fuzzing window then closes when the parent drains
+	 * (bounded by main-loop frequency) rather than running open-ended
+	 * until a consumer happens to discover the mismatch.
 	 */
-	if (dup2(fd_a, fd_b) >= 0) {
-		notify_close(child, fd_b);
+	notify_close(child, fd_b);
+	if (dup2(fd_a, fd_b) >= 0)
 		__atomic_add_fetch(&shm->stats.fdstress_type_confusion, 1,
 				   __ATOMIC_RELAXED);
-	}
 	return true;
 }
 
