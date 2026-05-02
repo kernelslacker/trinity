@@ -96,6 +96,7 @@ struct stats_s {
 	unsigned long rt_sigprocmask_oracle_anomalies;
 	unsigned long sched_getparam_oracle_anomalies;
 	unsigned long getrlimit_oracle_anomalies;
+	unsigned long sysinfo_oracle_anomalies;
 
 	/* procfs_writer childop: per-tree write counts */
 	unsigned long procfs_writes;
