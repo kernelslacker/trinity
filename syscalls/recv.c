@@ -111,7 +111,7 @@ static void post_recvmsg(struct syscallrecord *rec)
 
 	if (msg != NULL) {
 		free(msg->msg_control);
-		free(msg->msg_iov);
+		deferred_free_enqueue(msg->msg_iov, NULL);
 		free(msg->msg_name);
 		deferred_freeptr(&rec->a2);
 	}
@@ -180,11 +180,11 @@ static void post_recvmmsg(struct syscallrecord *rec)
 		unsigned int i;
 
 		for (i = 0; i < (unsigned int) rec->a3; i++) {
-			free(msgs[i].msg_hdr.msg_iov);
+			deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
 			free(msgs[i].msg_hdr.msg_control);
 			free(msgs[i].msg_hdr.msg_name);
 		}
-		free(msgs);
+		deferred_free_enqueue(msgs, NULL);
 	}
 }
 
