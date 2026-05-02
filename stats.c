@@ -558,7 +558,8 @@ static void dump_stats_json(void)
 				"\"umask_anomalies\":%lu,"
 				"\"sched_get_priority_max_anomalies\":%lu,"
 				"\"sched_get_priority_min_anomalies\":%lu,"
-				"\"sched_yield_anomalies\":%lu},"
+				"\"sched_yield_anomalies\":%lu,"
+				"\"getpagesize_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -624,6 +625,7 @@ static void dump_stats_json(void)
 		shm->stats.sched_get_priority_max_oracle_anomalies,
 		shm->stats.sched_get_priority_min_oracle_anomalies,
 		shm->stats.sched_yield_oracle_anomalies,
+		shm->stats.getpagesize_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -870,6 +872,9 @@ void dump_stats(void)
 	if (shm->stats.sched_yield_oracle_anomalies)
 		stat_row("oracle", "sched_yield_anomalies",
 			 shm->stats.sched_yield_oracle_anomalies);
+	if (shm->stats.getpagesize_oracle_anomalies)
+		stat_row("oracle", "getpagesize_anomalies",
+			 shm->stats.getpagesize_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
