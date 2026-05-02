@@ -31,6 +31,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,6 +44,7 @@
 #include <sys/ioctl.h>
 #include <sys/ipc.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/msg.h>
 #include <sys/ptrace.h>
 #include <sys/sem.h>
@@ -3183,6 +3185,211 @@ static bool recipe_ptrace_seize_exitkill(bool *unsupported)
 	return completed > 0;
 }
 
+/*
+ * Inner-child helper for recipe_mount_userns_dance: write a single line
+ * to the named /proc/self/{uid_map,gid_map,setgroups} file.  Returns
+ * true on a complete write, false otherwise.  Best-effort: callers
+ * decide whether a partial map is fatal for their op.  Mirrors the
+ * write_one_line helper in childops/userns-fuzzer.c -- intentionally
+ * duplicated rather than hoisted, since recipe-runner.c is a self-
+ * contained dispatcher and the helper is a 10-line inline that would
+ * not benefit from a cross-file abstraction.
+ */
+static bool mount_userns_write_one_line(const char *path, const char *line)
+{
+	ssize_t wlen;
+	size_t len;
+	int fd;
+
+	fd = open(path, O_WRONLY);
+	if (fd < 0)
+		return false;
+
+	len = strlen(line);
+	wlen = write(fd, line, len);
+	close(fd);
+	return wlen == (ssize_t)len;
+}
+
+/*
+ * Inner child of recipe_mount_userns_dance.  Enters a fresh user
+ * namespace + mount namespace, establishes the uid/gid 0 mapping
+ * inside the userns, then drives the mount lifecycle described in
+ * the recipe header below.  Exits with a status code the parent can
+ * decode to differentiate "feature unsupported" from "ran to
+ * completion".
+ *
+ * Exit codes:
+ *   0  -- ran the dance to completion (some mount calls may have
+ *         failed on the way; that's tolerated, the recipe is about
+ *         driving the path, not asserting the result)
+ *   1  -- unshare(CLONE_NEWUSER | CLONE_NEWNS) failed -- triggers
+ *         the *unsupported latch in the parent
+ *   2  -- map establishment failed -- not an unsupported signal
+ *         (could be transient EBUSY on the maps, or LSM-specific)
+ *   3  -- mount("none", "/", MS_PRIVATE) failed -- can't proceed
+ *         safely without a private root inside the new mount ns
+ */
+static void mount_userns_dance_inner(void) __attribute__((noreturn));
+static void mount_userns_dance_inner(void)
+{
+	char buf[64];
+	uid_t uid = getuid();
+	gid_t gid = getgid();
+
+	if (unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0)
+		_exit(1);
+
+	/* setgroups must be denied before gid_map can be written when
+	 * the writer is unprivileged, per Documentation/admin-guide/
+	 * namespaces/user.rst.  The uid_map write order doesn't matter
+	 * but we stage all three for symmetry. */
+	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)uid);
+	if (!mount_userns_write_one_line("/proc/self/uid_map", buf))
+		_exit(2);
+
+	if (!mount_userns_write_one_line("/proc/self/setgroups", "deny\n"))
+		_exit(2);
+
+	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)gid);
+	if (!mount_userns_write_one_line("/proc/self/gid_map", buf))
+		_exit(2);
+
+	/* MS_REC | MS_PRIVATE on the root is mandatory before any further
+	 * mount() in this ns -- without it, propagation could leak our
+	 * tmpfs into the host mount tree on systems where / is MS_SHARED.
+	 * The trinity child already did this once on its own CLONE_NEWNS
+	 * unshare at startup, but our fresh CLONE_NEWNS resets the
+	 * propagation state and we have to redo it. */
+	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0)
+		_exit(3);
+
+	/* tmpfs at /tmp.  Drives the do_new_mount path through the new
+	 * userns/mountns, including the ns_capable check against the ns's
+	 * owning userns and the superblock allocation. */
+	if (mount("none", "/tmp", "tmpfs", 0, NULL) != 0) {
+		/* No tmpfs available, or LSM denial -- still exit success
+		 * because the unshare/map path itself was driven. */
+		_exit(0);
+	}
+
+	/* Propagation flag mutation: change /tmp to MS_PRIVATE
+	 * explicitly.  Drives the mount-flag-change path
+	 * (do_change_type) distinct from the initial mount creation. */
+	(void)mount(NULL, "/tmp", NULL, MS_PRIVATE, NULL);
+
+	/* Remount with new flags: MS_RDONLY|MS_REMOUNT.  Drives the
+	 * do_remount path which walks the superblock's remount_fs op
+	 * and rewrites mnt_flags atomically. */
+	(void)mount(NULL, "/tmp", NULL, MS_RDONLY | MS_REMOUNT, NULL);
+
+	/* Lazy unmount: MNT_DETACH.  Drives the do_umount path with
+	 * MNT_DETACH semantics -- detaches from the namespace tree
+	 * immediately but defers the actual cleanup until the last
+	 * reference drops. */
+	(void)umount2("/tmp", MNT_DETACH);
+
+	_exit(0);
+}
+
+/*
+ * Recipe 34: mount/userns dance.
+ *
+ * Per call:
+ *
+ *   fork() -> inner child -> unshare(CLONE_NEWUSER | CLONE_NEWNS) ->
+ *   write /proc/self/uid_map + setgroups=deny + gid_map ->
+ *   mount("none", "/", NULL, MS_REC|MS_PRIVATE, NULL) ->
+ *   mount("none", "/tmp", "tmpfs", 0, NULL) ->
+ *   mount(NULL, "/tmp", NULL, MS_PRIVATE, NULL) ->
+ *   mount(NULL, "/tmp", NULL, MS_RDONLY|MS_REMOUNT, NULL) ->
+ *   umount2("/tmp", MNT_DETACH) ->
+ *   _exit(0); parent waitpid_eintr.
+ *
+ * Targets the kernel paths that fire when a userns and a mount ns
+ * are created together with the mount ns owned by the new userns:
+ *   - copy_user_ns + copy_mnt_ns + the ownership chain that links
+ *     the new mnt_ns->user_ns to the freshly-allocated user_ns
+ *   - proc_uid_map_write / proc_gid_map_write / proc_setgroups_write
+ *     paths with their EBUSY-vs-already-set state machine
+ *   - do_change_type (propagation-flag mutation, distinct from
+ *     initial mount creation)
+ *   - do_remount (superblock remount_fs op, mnt_flags rewrite under
+ *     namespace_sem)
+ *   - do_umount with MNT_DETACH (deferred-cleanup path that
+ *     decouples namespace removal from final put_mnt_ns)
+ *
+ * Distinct from childops/userns-fuzzer.c which enters CLONE_NEWUSER
+ * but only dispatches a single ns_capable-gated op; distinct from
+ * childops/fs-lifecycle.c which drives mount lifecycles inside the
+ * trinity child's existing CLONE_NEWNS without a fresh userns.  The
+ * combination -- fresh userns *and* fresh mountns *and* a multi-step
+ * propagation/remount/detach sequence -- is unreachable through any
+ * single existing op.
+ *
+ * Single-thread by design: namespace/mount state changes are
+ * serialised by namespace_sem inside the kernel and the per-step
+ * sequence is the bug surface, not concurrency.  Forking an inner
+ * child contains the userns/mountns transition so trinity's outer
+ * state (caps, original mount tree) is never disturbed; a crash
+ * inside the dance is reaped here as WIFSIGNALED without disturbing
+ * sibling recipes.
+ *
+ * Latch shape covers every way the feature can be absent on the
+ * very first probe.  The inner child reports unshare failure via
+ * exit code 1, and the parent treats WEXITSTATUS(status) == 1 as
+ * the unsupported signal:
+ *   - unshare CLONE_NEWUSER EPERM        (user.max_user_namespaces=0,
+ *                                         kernel.unprivileged_userns_clone=0,
+ *                                         LSM denial)
+ *   - unshare CLONE_NEWUSER ENOSYS       (CONFIG_USER_NS=n, very rare)
+ *   - unshare CLONE_NEWNS EPERM          (CONFIG_NAMESPACES=n -- all
+ *                                         namespace ops denied)
+ *
+ * Once latched, the dispatcher stops siblings from re-probing the
+ * unsupported feature on every recipe pick.
+ *
+ * Per-call fork failure (EAGAIN under nproc/thread limits) returns
+ * partial; no in-loop tolerance because there's only one fork per
+ * recipe call.  WIFSIGNALED on the inner child (e.g. OOM-kill)
+ * counts as ran-the-path but partial.
+ */
+static bool recipe_mount_userns_dance(bool *unsupported)
+{
+	pid_t pid;
+	int status;
+
+	pid = fork();
+	if (pid < 0)
+		return false;
+
+	if (pid == 0) {
+		mount_userns_dance_inner();
+		/* unreachable -- inner uses _exit on every path */
+	}
+
+	if (waitpid_eintr(pid, &status, 0) < 0)
+		return false;
+
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+		/* unshare(CLONE_NEWUSER | CLONE_NEWNS) failed -- almost
+		 * certainly EPERM from a hardened policy.  Latch so the
+		 * dispatcher stops picking this recipe. */
+		*unsupported = true;
+		__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/* Any other exit code -- including WIFSIGNALED, WEXITSTATUS in
+	 * {0, 2, 3} -- counts as having driven the path far enough to
+	 * be useful.  WEXITSTATUS 2/3 indicate map-write or root-
+	 * remount failure after a successful unshare; the unshare itself
+	 * is the dominant kernel surface and is exercised in those
+	 * paths regardless. */
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -3217,6 +3424,7 @@ static const struct recipe recipes[] = {
 	{ "perf_mmap_close", recipe_perf_mmap_close },
 	{ "keys_revoke_race", recipe_keys_revoke_race },
 	{ "ptrace_seize_exitkill", recipe_ptrace_seize_exitkill },
+	{ "mount_userns_dance", recipe_mount_userns_dance },
 };
 
 /*
