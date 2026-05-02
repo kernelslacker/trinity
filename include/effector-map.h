@@ -66,3 +66,11 @@ const char *effector_map_default_path(void);
  * effective bits. */
 unsigned char effector_map_score(unsigned int nr, unsigned int arg,
 		unsigned int bit);
+
+/* Pick a bit index in [0, EFFECTOR_BITS_PER_ARG) weighted by the
+ * effector-map row for (nr, arg).  A +1 floor on every bit's weight
+ * keeps zero-significance bits in rotation (calibration is noisy; a
+ * row that all measured zero degrades cleanly to a uniform pick).
+ * Used by mutate_arg's bit-flip case to bias toward bits the kernel
+ * actually branches on. */
+unsigned int effector_pick_bit(unsigned int nr, unsigned int arg);

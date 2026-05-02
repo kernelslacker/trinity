@@ -69,6 +69,39 @@ unsigned char effector_map_score(unsigned int nr, unsigned int arg,
 	return effector_map[nr][arg][bit];
 }
 
+unsigned int effector_pick_bit(unsigned int nr, unsigned int arg)
+{
+	unsigned int weights[EFFECTOR_BITS_PER_ARG];
+	unsigned int total = 0;
+	unsigned int b, accum, r;
+
+	if (nr >= MAX_NR_SYSCALL || arg >= EFFECTOR_NR_ARGS)
+		return (unsigned int)(rand() %
+				(int)EFFECTOR_BITS_PER_ARG);
+
+	/* Floor each weight at 1 so a row that has never been calibrated
+	 * (all zeros) degrades to a uniform pick — same expected behaviour
+	 * as the pre-effector-map random bit-flip — and so a calibrated
+	 * row still gives every bit non-zero pick probability.  Calibration
+	 * is intentionally noisy (single baseline per syscall, accumulated
+	 * side effects across probes); a row may have measured 0 for a bit
+	 * that is in fact significant under a different baseline.  Without
+	 * the floor, those bits would never be retried. */
+	for (b = 0; b < EFFECTOR_BITS_PER_ARG; b++) {
+		weights[b] = (unsigned int)effector_map[nr][arg][b] + 1U;
+		total += weights[b];
+	}
+
+	r = (unsigned int)(rand() % (int)total);
+	accum = 0;
+	for (b = 0; b < EFFECTOR_BITS_PER_ARG; b++) {
+		accum += weights[b];
+		if (r < accum)
+			return b;
+	}
+	return EFFECTOR_BITS_PER_ARG - 1;
+}
+
 /*
  * Per-call edge fingerprint.  We hash each PC the kernel reported into
  * a 16K-bit table and compare two fingerprints by popcounting the XOR.
