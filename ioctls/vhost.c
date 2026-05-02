@@ -21,6 +21,27 @@ static const struct ioctl vhost_ioctls[] = {
 	IOCTL(VHOST_SET_VRING_CALL),
 	IOCTL(VHOST_SET_VRING_ERR),
 	IOCTL(VHOST_NET_SET_BACKEND),
+#ifdef VHOST_GET_BACKEND_FEATURES
+	IOCTL(VHOST_GET_BACKEND_FEATURES),
+#endif
+#ifdef VHOST_SET_BACKEND_FEATURES
+	IOCTL(VHOST_SET_BACKEND_FEATURES),
+#endif
+#ifdef VHOST_NEW_WORKER
+	IOCTL(VHOST_NEW_WORKER),
+#endif
+#ifdef VHOST_FREE_WORKER
+	IOCTL(VHOST_FREE_WORKER),
+#endif
+#ifdef VHOST_ATTACH_VRING_WORKER
+	IOCTL(VHOST_ATTACH_VRING_WORKER),
+#endif
+#ifdef VHOST_GET_VRING_WORKER
+	IOCTL(VHOST_GET_VRING_WORKER),
+#endif
+#ifdef VHOST_SET_FORK_FROM_OWNER
+	IOCTL(VHOST_SET_FORK_FROM_OWNER),
+#endif
 #ifdef VHOST_SCSI_SET_ENDPOINT
 	IOCTL(VHOST_SCSI_SET_ENDPOINT),
 #endif
@@ -36,10 +57,17 @@ static const struct ioctl vhost_ioctls[] = {
 #ifdef VHOST_SCSI_GET_EVENTS_MISSED
 	IOCTL(VHOST_SCSI_GET_EVENTS_MISSED),
 #endif
+#ifdef VHOST_VSOCK_SET_GUEST_CID
+	IOCTL(VHOST_VSOCK_SET_GUEST_CID),
+#endif
+#ifdef VHOST_VSOCK_SET_RUNNING
+	IOCTL(VHOST_VSOCK_SET_RUNNING),
+#endif
 };
 
 static const char *const vhost_devs[] = {
 	"vhost-net",
+	"vhost-vsock",
 };
 
 static const struct ioctl_group vhost_grp = {
