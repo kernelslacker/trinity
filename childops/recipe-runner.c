@@ -46,6 +46,7 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/msg.h>
+#include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
@@ -55,15 +56,18 @@
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <linux/bpf.h>
+#include <linux/filter.h>
 #include <linux/futex.h>
 #include <linux/io_uring.h>
 #include <linux/keyctl.h>
 #include <linux/memfd.h>
 #include <linux/perf_event.h>
+#include <linux/seccomp.h>
 #include <linux/userfaultfd.h>
 
 #include "arch.h"
@@ -3390,6 +3394,300 @@ static bool recipe_mount_userns_dance(bool *unsupported)
 	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+/*
+ * Compatibility shims for hosts whose linux/seccomp.h predates the
+ * USER_NOTIF listener interface (added in 5.0) or the explicit ALLOW
+ * "fake-success" response mode.  Defining the constants locally lets
+ * recipe-runner.c build everywhere; the *runtime* check is the seccomp()
+ * syscall itself, which returns EINVAL on kernels without the feature
+ * and is caught by the unsupported latch below.
+ */
+#ifndef SECCOMP_SET_MODE_FILTER
+#define SECCOMP_SET_MODE_FILTER		1
+#endif
+#ifndef SECCOMP_FILTER_FLAG_NEW_LISTENER
+#define SECCOMP_FILTER_FLAG_NEW_LISTENER	(1UL << 3)
+#endif
+#ifndef SECCOMP_RET_USER_NOTIF
+#define SECCOMP_RET_USER_NOTIF		0x7fc00000U
+#endif
+#ifndef SECCOMP_RET_ALLOW
+#define SECCOMP_RET_ALLOW		0x7fff0000U
+#endif
+
+/*
+ * Inner child of recipe_seccomp_listener_exec.  Inherits the seccomp
+ * filter installed by the supervisor; calls uname() (trapped to
+ * USER_NOTIF and held until the supervisor responds via NOTIF_SEND)
+ * then execve()s /bin/true to drive the post-filter exec path.
+ *
+ * uname() is the trap point because glibc never calls it implicitly
+ * post-fork along any path we care about — picking getpid() (the
+ * obvious other "single-arg, side-effect-free" candidate) would risk
+ * the supervisor self-deadlocking the moment libc's own bookkeeping
+ * called getpid() between seccomp() install and the first NOTIF_RECV.
+ *
+ * syscall(__NR_uname, ...) bypasses any libc wrapping that might cache
+ * the result or route via vDSO; we want the raw seccomp trap, not a
+ * cached struct utsname.  /bin/true is a tiny binary that returns 0;
+ * the recipe doesn't depend on its output, only on driving execve()
+ * through the post-seccomp-filter task_struct.
+ */
+static void seccomp_listener_inner(void) __attribute__((noreturn));
+static void seccomp_listener_inner(void)
+{
+	struct utsname u;
+
+	(void)syscall(__NR_uname, &u);
+
+	(void)execl("/bin/true", "/bin/true", (char *)NULL);
+
+	_exit(0);
+}
+
+/*
+ * Build and install a SECCOMP_RET_USER_NOTIF filter that traps
+ * __NR_uname.  Returns the listener fd from the kernel on success,
+ * -1 on failure with errno preserved for the caller's latch.
+ */
+static int seccomp_listener_install(void)
+{
+	struct sock_filter filter[] = {
+		/* A = seccomp_data.nr (syscall number) */
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			 offsetof(struct seccomp_data, nr)),
+		/* if (A == __NR_uname) goto notify */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_uname, 0, 1),
+		/* notify: return USER_NOTIF (kernel parks the syscall and
+		 * blocks the calling thread until the listener responds) */
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
+		/* allow: return ALLOW (everything else passes through) */
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+	};
+	struct sock_fprog prog = {
+		.len = (unsigned short)ARRAY_SIZE(filter),
+		.filter = filter,
+	};
+
+	return (int)syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
+			    SECCOMP_FILTER_FLAG_NEW_LISTENER, &prog);
+}
+
+/*
+ * Supervisor body of recipe_seccomp_listener_exec.  Runs in its own
+ * fork() so the seccomp filter never touches trinity's outer child:
+ * once SECCOMP_SET_MODE_FILTER is installed, every uname() in the
+ * task and its descendants traps through the listener fd, and the
+ * filter cannot be removed.
+ *
+ * Exit codes (consumed by recipe_seccomp_listener_exec):
+ *   0  -- ran the full poll/RECV/ID_VALID/SEND/close/waitpid sequence
+ *   1  -- prctl(NO_NEW_PRIVS) or seccomp() returned an "unsupported"
+ *         errno (ENOSYS / EINVAL / EACCES) — triggers the *unsupported
+ *         latch in the parent
+ *   2  -- transient failure pre-listener (prctl other errno, fork failure)
+ *   3  -- post-listener flow failure (poll timeout, RECV error) — listener
+ *         was created so the feature is supported, just didn't complete
+ *         this cycle
+ */
+#define RECIPE_SECCOMP_LISTENER_POLL_MS	1000
+
+static int recipe_seccomp_listener_supervisor(void)
+{
+	struct seccomp_notif req;
+	struct seccomp_notif_resp resp;
+	struct pollfd pfd;
+	pid_t inner;
+	int listener;
+	int status;
+	int pr;
+
+	/* NO_NEW_PRIVS is the precondition for an unprivileged
+	 * SECCOMP_SET_MODE_FILTER.  ENOSYS here means
+	 * CONFIG_SECCOMP=n (PR_SET_NO_NEW_PRIVS landed in 3.5; the
+	 * separate seccomp(2) syscall in 3.17). */
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1UL, 0UL, 0UL, 0UL) != 0) {
+		if (errno == ENOSYS)
+			return 1;
+		return 2;
+	}
+
+	listener = seccomp_listener_install();
+	if (listener < 0) {
+		/* ENOSYS  : pre-3.17 kernel without the seccomp() syscall.
+		 * EINVAL  : SECCOMP_FILTER_FLAG_NEW_LISTENER unsupported
+		 *           (pre-5.0) or BPF program rejected.
+		 * EACCES  : LSM denial / NO_NEW_PRIVS missing on a code path
+		 *           that bypassed the prctl above. */
+		if (errno == ENOSYS || errno == EINVAL || errno == EACCES)
+			return 1;
+		return 2;
+	}
+
+	inner = fork();
+	if (inner < 0) {
+		close(listener);
+		return 2;
+	}
+
+	if (inner == 0) {
+		/* Inner does not need its inherited copy of the listener
+		 * fd; closing it here keeps the kernel-side reference count
+		 * accurate so the supervisor's close() actually releases the
+		 * notification queue. */
+		close(listener);
+		seccomp_listener_inner();
+		/* unreachable -- inner uses _exit on every path */
+	}
+
+	/* Pre-poll the listener so a wedged/dead inner doesn't park us
+	 * inside NOTIF_RECV indefinitely.  POLLIN fires once the kernel
+	 * has a notification ready; POLLHUP fires if every task that
+	 * could trap has died. */
+	pfd.fd = listener;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	pr = poll(&pfd, 1, RECIPE_SECCOMP_LISTENER_POLL_MS);
+	if (pr <= 0) {
+		(void)kill(inner, SIGKILL);
+		(void)waitpid_eintr(inner, &status, 0);
+		close(listener);
+		return 3;
+	}
+
+	memset(&req, 0, sizeof(req));
+	if (ioctl(listener, SECCOMP_IOCTL_NOTIF_RECV, &req) < 0) {
+		(void)kill(inner, SIGKILL);
+		(void)waitpid_eintr(inner, &status, 0);
+		close(listener);
+		return 3;
+	}
+
+	/* ID_VALID returns 0 if the notification is still live, ENOENT if
+	 * the trapped task died between RECV and now.  Best-effort: a
+	 * dead-tracee response from SEND will fail harmlessly with ENOENT
+	 * too, and we proceed to teardown either way. */
+	(void)ioctl(listener, SECCOMP_IOCTL_NOTIF_ID_VALID, &req.id);
+
+	memset(&resp, 0, sizeof(resp));
+	resp.id = req.id;
+	resp.val = 0;
+	resp.error = 0;
+	resp.flags = 0;
+	(void)ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND, &resp);
+
+	close(listener);
+	(void)waitpid_eintr(inner, &status, 0);
+	return 0;
+}
+
+/*
+ * Recipe 35: seccomp USER_NOTIF listener + traced exec.
+ *
+ * Per call:
+ *
+ *   fork() -> supervisor ->
+ *     prctl(PR_SET_NO_NEW_PRIVS, 1) ->
+ *     seccomp(SET_MODE_FILTER, FLAG_NEW_LISTENER, &prog)
+ *       (BPF: __NR_uname -> USER_NOTIF, else ALLOW) ->
+ *     fork() -> inner ->
+ *       syscall(__NR_uname, &u)              [trapped, parks here]
+ *       execl("/bin/true", ...)              [post-trap exec]
+ *       _exit(0)
+ *     supervisor:
+ *       poll(listener, POLLIN, 1s) ->
+ *       ioctl(SECCOMP_IOCTL_NOTIF_RECV, &req) ->
+ *       ioctl(SECCOMP_IOCTL_NOTIF_ID_VALID, &req.id) ->
+ *       ioctl(SECCOMP_IOCTL_NOTIF_SEND, &resp{id, val=0, error=0}) ->
+ *       close(listener) ->
+ *       waitpid_eintr(inner) ->
+ *     _exit(rc)
+ *   parent: waitpid_eintr(supervisor); WEXITSTATUS == 1 latches.
+ *
+ * Targets the kernel paths that fire when a SECCOMP_RET_USER_NOTIF
+ * filter parks a syscall and userspace drives the listener:
+ *   - prctl PR_SET_NO_NEW_PRIVS (task_struct->no_new_privs flip)
+ *   - do_seccomp(SECCOMP_SET_MODE_FILTER, FLAG_NEW_LISTENER) ->
+ *     anon_inode_getfd("seccomp notify") with the new
+ *     seccomp_notif_ctx; filter is installed in current->seccomp.filter
+ *     and inherited across the subsequent fork
+ *   - fork copy_process inherits seccomp.filter; the inner's first
+ *     uname() hits __seccomp_filter, marks the syscall as parked, and
+ *     blocks on the listener's wait queue
+ *   - SECCOMP_IOCTL_NOTIF_RECV (seccomp_notify_recv: dequeues the
+ *     parked notification, copies seccomp_notif to userspace)
+ *   - SECCOMP_IOCTL_NOTIF_ID_VALID (seccomp_notify_id_valid: looks up
+ *     the notif by id under the ctx's mutex)
+ *   - SECCOMP_IOCTL_NOTIF_SEND (seccomp_notify_send: matches the
+ *     response by id, writes val/error into the parked syscall's
+ *     result, wakes the trapped task)
+ *   - close(listener) (seccomp_notify_release: tears down the
+ *     notification queue, fails any in-flight ID_VALID with ENOENT)
+ *   - search_binary_handler / load_elf_binary path on the inner's
+ *     execl() *after* a seccomp filter has been installed and trapped
+ *     once -- the post-trap exec path is the bug surface that's
+ *     unreachable if you only install a filter or only trap.
+ *
+ * Distinct from fds/seccomp_notif.c which installs the filter inside
+ * the trinity child for ioctl-fuzzing the listener fd from random_syscall
+ * paths.  That provider never traps (its filter targets getpid which
+ * the child doesn't call from the post-install code path) and never
+ * drives the RECV/ID_VALID/SEND lifecycle end-to-end.  This recipe is
+ * the only place trinity exercises the parked-syscall / NOTIF_SEND
+ * matchup with a real trapped syscall on the inner.
+ *
+ * Single-thread by design: the seccomp listener model is intrinsically
+ * a 1:1 supervisor/tracee handshake, and the kernel serialises
+ * RECV/SEND through the notif_ctx mutex.  The race surface here is
+ * inner-trap-vs-supervisor-RECV / SEND-vs-inner-resume, all driven by
+ * task scheduling between the two processes the recipe owns.
+ *
+ * Latch shape:
+ *   - prctl(NO_NEW_PRIVS) ENOSYS               -- CONFIG_SECCOMP=n
+ *   - seccomp() ENOSYS                         -- pre-3.17 kernel
+ *   - seccomp() EINVAL                         -- FLAG_NEW_LISTENER
+ *                                                 unsupported (pre-5.0)
+ *                                                 or LSM-rewritten
+ *   - seccomp() EACCES                         -- LSM denial
+ *
+ * The supervisor encodes "any of these triggered" as exit code 1; the
+ * parent translates that to *unsupported = true and the dispatcher
+ * stops siblings from re-probing.
+ *
+ * Cleanup ordering on every supervisor exit path: SIGKILL the inner
+ * (idempotent if already dead/exec'd-and-exited), waitpid_eintr,
+ * close the listener.  /bin/true exits 0 in <1ms on every distro
+ * trinity targets; the supervisor's waitpid never blocks for long.
+ *
+ * Per-call fork failure (EAGAIN under nproc/thread limits) is reported
+ * by the supervisor as exit code 2 -- not unsupported, just transient,
+ * the dispatcher will pick again next cycle.
+ */
+static bool recipe_seccomp_listener_exec(bool *unsupported)
+{
+	pid_t supervisor;
+	int status;
+
+	supervisor = fork();
+	if (supervisor < 0)
+		return false;
+
+	if (supervisor == 0)
+		_exit(recipe_seccomp_listener_supervisor());
+
+	if (waitpid_eintr(supervisor, &status, 0) < 0)
+		return false;
+
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+		*unsupported = true;
+		__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 static const struct recipe recipes[] = {
 	{ "timerfd",      recipe_timerfd      },
 	{ "eventfd",      recipe_eventfd      },
@@ -3425,6 +3723,7 @@ static const struct recipe recipes[] = {
 	{ "keys_revoke_race", recipe_keys_revoke_race },
 	{ "ptrace_seize_exitkill", recipe_ptrace_seize_exitkill },
 	{ "mount_userns_dance", recipe_mount_userns_dance },
+	{ "seccomp_listener_exec", recipe_seccomp_listener_exec },
 };
 
 /*
