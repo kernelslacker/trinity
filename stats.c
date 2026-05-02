@@ -569,6 +569,7 @@ static void dump_stats_json(void)
 				"\"rt_sigprocmask_anomalies\":%lu,"
 				"\"sched_getparam_anomalies\":%lu,"
 				"\"sched_rr_get_interval_anomalies\":%lu,"
+				"\"get_robust_list_anomalies\":%lu,"
 				"\"getrlimit_anomalies\":%lu,"
 				"\"sysinfo_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
@@ -646,6 +647,7 @@ static void dump_stats_json(void)
 		shm->stats.rt_sigprocmask_oracle_anomalies,
 		shm->stats.sched_getparam_oracle_anomalies,
 		shm->stats.sched_rr_get_interval_oracle_anomalies,
+		shm->stats.get_robust_list_oracle_anomalies,
 		shm->stats.getrlimit_oracle_anomalies,
 		shm->stats.sysinfo_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
@@ -920,6 +922,9 @@ void dump_stats(void)
 	if (shm->stats.sched_rr_get_interval_oracle_anomalies)
 		stat_row("oracle", "sched_rr_get_interval_anomalies",
 			 shm->stats.sched_rr_get_interval_oracle_anomalies);
+	if (shm->stats.get_robust_list_oracle_anomalies)
+		stat_row("oracle", "get_robust_list_anomalies",
+			 shm->stats.get_robust_list_oracle_anomalies);
 	if (shm->stats.getrlimit_oracle_anomalies)
 		stat_row("oracle", "getrlimit_anomalies",
 			 shm->stats.getrlimit_oracle_anomalies);
