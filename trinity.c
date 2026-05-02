@@ -464,6 +464,20 @@ int main(int argc, char* argv[])
 			 * out of on-disk corpus persistence entirely. */
 			minicorpus_enable_snapshots(path);
 		}
+
+		/* Effector map warm-start runs alongside the corpus warm-start
+		 * — both are pre-fork loads of stale-but-still-relevant
+		 * calibration data.  Children inherit the populated table via
+		 * COW; a missing file just means mutators fall back to uniform
+		 * bit selection.  Failures are silent: the loader rejects
+		 * dimension or kernel-utsname mismatches, and a stale map
+		 * shouldn't degrade fuzzing — it just becomes inert. */
+		{
+			const char *epath = effector_map_default_path();
+
+			if (epath != NULL && effector_map_load_file(epath))
+				output(0, "effector-map: loaded from %s\n", epath);
+		}
 	}
 
 	if (epoch_iterations || epoch_timeout)
