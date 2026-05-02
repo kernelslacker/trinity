@@ -592,7 +592,8 @@ static void dump_stats_json(void)
 				"\"get_mempolicy_anomalies\":%lu,"
 				"\"lsm_get_self_attr_anomalies\":%lu,"
 				"\"prlimit64_anomalies\":%lu,"
-				"\"sigaltstack_anomalies\":%lu},"
+				"\"sigaltstack_anomalies\":%lu,"
+				"\"olduname_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -692,6 +693,7 @@ static void dump_stats_json(void)
 		shm->stats.lsm_get_self_attr_oracle_anomalies,
 		shm->stats.prlimit64_oracle_anomalies,
 		shm->stats.sigaltstack_oracle_anomalies,
+		shm->stats.olduname_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -1036,6 +1038,9 @@ void dump_stats(void)
 	if (shm->stats.sigaltstack_oracle_anomalies)
 		stat_row("oracle", "sigaltstack_anomalies",
 			 shm->stats.sigaltstack_oracle_anomalies);
+	if (shm->stats.olduname_oracle_anomalies)
+		stat_row("oracle", "olduname_anomalies",
+			 shm->stats.olduname_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
