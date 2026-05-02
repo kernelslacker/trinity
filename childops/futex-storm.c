@@ -138,11 +138,30 @@ static void inner_worker(struct futex_storm_shared *s)
 	 * Each fork() inherits the parent's libc PRNG state, so without a
 	 * reseed every worker would walk the same op/idx sequence and the
 	 * "race" would degenerate into N copies of the same syscall.
-	 * Mix pid + a CLOCK_MONOTONIC tick to diverge the workers.
+	 *
+	 * Seed BEFORE pthread_barrier_wait so the cost of seeding is not
+	 * folded into the post-release thundering herd, and mix three
+	 * sources because no single one is sufficient on its own:
+	 *   - getpid() aliases across rapidly-forked siblings (PIDs
+	 *     differ by 1..N in this loop),
+	 *   - CLOCK_MONOTONIC tv_nsec collides when workers are forked
+	 *     within the same scheduler tick,
+	 *   - one byte from getrandom() is guaranteed to differ per
+	 *     worker.  A stack address (&now) would NOT help here:
+	 *     fork() preserves the child VM layout, so &now is the same
+	 *     virtual address in every worker.  getrandom() is the
+	 *     cheapest source we have that actually diverges per fork.
+	 *
+	 * If getrandom() fails, extra stays 0 and we fall back to the
+	 * (pid ^ tv_nsec) seed — degraded, but no worse than before.
 	 */
 	struct timespec now;
+	unsigned char extra = 0;
+
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	srand((unsigned int)(getpid() ^ now.tv_nsec));
+	(void)syscall(__NR_getrandom, &extra, sizeof(extra), 0);
+	srand((unsigned int)(getpid() ^ now.tv_nsec ^
+			     ((unsigned int)extra << 16)));
 
 	pthread_barrier_wait(&s->barrier);
 
