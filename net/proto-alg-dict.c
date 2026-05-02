@@ -128,8 +128,12 @@ static void parse_proc_crypto(void)
 				enum alg_dict_type b = kernel_type_to_bucket(cur_type);
 
 				if (b != ALG_DICT_NR_TYPES) {
-					if (!list_contains(&dict[b], cur_name))
-						list_append(&dict[b], strdup(cur_name));
+					if (!list_contains(&dict[b], cur_name)) {
+						char *dup = strdup(cur_name);
+
+						if (dup != NULL)
+							list_append(&dict[b], dup);
+					}
 					dict_from_proc = true;
 				}
 			}
@@ -158,8 +162,12 @@ static void parse_proc_crypto(void)
 		enum alg_dict_type b = kernel_type_to_bucket(cur_type);
 
 		if (b != ALG_DICT_NR_TYPES) {
-			if (!list_contains(&dict[b], cur_name))
-				list_append(&dict[b], strdup(cur_name));
+			if (!list_contains(&dict[b], cur_name)) {
+				char *dup = strdup(cur_name);
+
+				if (dup != NULL)
+					list_append(&dict[b], dup);
+			}
 			dict_from_proc = true;
 		}
 	}
