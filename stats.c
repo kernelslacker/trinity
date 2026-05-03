@@ -643,6 +643,7 @@ static void dump_stats_json(void)
 		"\"pidfd_storm\":{\"runs\":%lu,\"signals\":%lu,\"getfds\":%lu,\"failed\":%lu},"
 		"\"madvise_cycler\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
 		"\"keyring_spam\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
+		"\"vdso_mremap_race\":{\"runs\":%lu,\"mutations\":%lu,\"helper_segvs\":%lu},"
 		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
 			"\"remove\":%lu,\"list\":%lu,\"failed\":%lu},"
@@ -784,6 +785,8 @@ static void dump_stats_json(void)
 		shm->stats.madvise_cycler_failed,
 		shm->stats.keyring_spam_runs, shm->stats.keyring_spam_calls,
 		shm->stats.keyring_spam_failed,
+		shm->stats.vdso_race_runs, shm->stats.vdso_race_mutations,
+		shm->stats.vdso_race_helper_segvs,
 		shm->stats.flock_thrash_runs, shm->stats.flock_thrash_locks,
 		shm->stats.flock_thrash_failed,
 		shm->stats.xattr_thrash_runs, shm->stats.xattr_thrash_set,
@@ -1339,6 +1342,12 @@ void dump_stats(void)
 		stat_row("keyring_spam", "runs",   shm->stats.keyring_spam_runs);
 		stat_row("keyring_spam", "calls",  shm->stats.keyring_spam_calls);
 		stat_row("keyring_spam", "failed", shm->stats.keyring_spam_failed);
+	}
+
+	if (shm->stats.vdso_race_runs) {
+		stat_row("vdso_mremap_race", "runs",         shm->stats.vdso_race_runs);
+		stat_row("vdso_mremap_race", "mutations",    shm->stats.vdso_race_mutations);
+		stat_row("vdso_mremap_race", "helper_segvs", shm->stats.vdso_race_helper_segvs);
 	}
 
 	if (shm->stats.flock_thrash_runs) {
