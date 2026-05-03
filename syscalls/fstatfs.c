@@ -154,12 +154,110 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a3, rec->a2 ? rec->a2 : page_size);
 }
 
+/*
+ * Oracle: fstatfs64(fd, sz, buf) is the explicit-size sibling of
+ * fstatfs.  The struct shape is the same (struct statfs64, typically
+ * 88 bytes on x86_64); the only wire difference is the sz argument
+ * the caller passes to identify the buffer length.  The kernel
+ * rejects any sz that does not match its own sizeof(struct statfs64)
+ * with -EINVAL, so once we have gated on retval == 0 we know the
+ * caller-supplied sz matches the kernel's expected size and the full
+ * struct was filled.
+ *
+ * The same eight stable fields apply for the same reasons as fstatfs:
+ * f_type, f_bsize, f_blocks, f_files, f_namelen, f_frsize, f_flags,
+ * and the two halves of f_fsid.  f_bfree, f_bavail, f_ffree drift
+ * legitimately under sibling allocator activity and stay excluded;
+ * f_spare[] is reserved padding with no contract.
+ *
+ * Re-issue the syscall with the original sz so the recheck mirrors
+ * the original call exactly — if a sibling closes the fd between the
+ * two calls the recheck returns -EBADF and we benign-skip the
+ * sample.  ONE_IN(100) sampling, single counter bump per anomalous
+ * sample, no early-return on first divergence so multi-field damage
+ * surfaces in one log line.
+ *
+ * fstatfs64 is a 32-bit-compat-only syscall — the syscall number is
+ * not defined on x86_64 and other LP64 archs that fold the fstatfs
+ * and fstatfs64 entry points together.  Gate the recheck on
+ * SYS_fstatfs64 being present so the file still compiles on those
+ * archs; the syscall table on those builds never reaches
+ * syscall_fstatfs64 anyway, so the .post hook is unreachable in
+ * practice.
+ */
+#ifdef SYS_fstatfs64
+static void post_fstatfs64(struct syscallrecord *rec)
+{
+	struct statfs64 first, recheck;
+	int fd;
+	size_t sz;
+	int diverged = 0;
+
+	if (!ONE_IN(100))
+		return;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	if (rec->a3 == 0)
+		return;
+
+	fd = (int) rec->a1;
+	sz = (size_t) rec->a2;
+	memcpy(&first, (void *)(unsigned long) rec->a3, sizeof(first));
+
+	if (syscall(SYS_fstatfs64, fd, sz, &recheck) != 0)
+		return;
+
+	if (first.f_type    != recheck.f_type)    diverged = 1;
+	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
+	if (first.f_blocks  != recheck.f_blocks)  diverged = 1;
+	if (first.f_files   != recheck.f_files)   diverged = 1;
+	if (first.f_namelen != recheck.f_namelen) diverged = 1;
+	if (first.f_frsize  != recheck.f_frsize)  diverged = 1;
+	if (first.f_flags   != recheck.f_flags)   diverged = 1;
+	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0]) diverged = 1;
+	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
+
+	if (!diverged)
+		return;
+
+	output(0,
+	       "fstatfs64 oracle anomaly: fd=%d sz=%zu "
+	       "first={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
+	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x} "
+	       "recall={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
+	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x}\n",
+	       fd, sz,
+	       (unsigned long) first.f_type, (long) first.f_bsize,
+	       (unsigned long long) first.f_blocks,
+	       (unsigned long long) first.f_files,
+	       (long) first.f_namelen, (long) first.f_frsize,
+	       (unsigned long) first.f_flags,
+	       (unsigned int) first.f_fsid.__val[0],
+	       (unsigned int) first.f_fsid.__val[1],
+	       (unsigned long) recheck.f_type, (long) recheck.f_bsize,
+	       (unsigned long long) recheck.f_blocks,
+	       (unsigned long long) recheck.f_files,
+	       (long) recheck.f_namelen, (long) recheck.f_frsize,
+	       (unsigned long) recheck.f_flags,
+	       (unsigned int) recheck.f_fsid.__val[0],
+	       (unsigned int) recheck.f_fsid.__val[1]);
+
+	__atomic_add_fetch(&shm->stats.fstatfs64_oracle_anomalies, 1,
+			   __ATOMIC_RELAXED);
+}
+#endif
+
 struct syscallentry syscall_fstatfs64 = {
 	.name = "fstatfs64",
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD, [1] = ARG_LEN, [2] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "fd", [1] = "sz", [2] = "buf" },
 	.sanitise = sanitise_fstatfs64,
+#ifdef SYS_fstatfs64
+	.post = post_fstatfs64,
+#endif
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
