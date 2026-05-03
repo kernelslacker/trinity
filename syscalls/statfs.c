@@ -153,12 +153,110 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a3, rec->a2 ? rec->a2 : page_size);
 }
 
+/*
+ * Oracle: statfs64(pathname, sz, buf) is the 3-arg explicit-size variant
+ * of statfs.  The kernel resolves pathname to a dentry, walks to its
+ * mount, and fills struct statfs64 with the same eight stable fields
+ * plus the three legitimately-drifting free-space counters.  The post
+ * handler mirrors post_statfs exactly: TOCTOU pathname snapshot into a
+ * PATH_MAX stack buffer before the recheck, f_fsid mount-drift gate
+ * (both halves must match), and field-by-field comparison of the eight
+ * stable fields with no early return so multi-field corruption surfaces
+ * in a single sample.  The only shape delta from post_statfs is the sz
+ * argument: snapshot rec->a2 and pass that exact value back into the
+ * recheck issue rather than synthesizing one, so the recheck sees the
+ * same buffer-size semantics the kernel saw the first time.
+ *
+ * Some 64-bit architectures fold statfs64 into statfs and do not define
+ * SYS_statfs64.  Guard the .post handler and wire-up so the file still
+ * compiles cleanly in those configurations; the syscall table on those
+ * builds never reaches syscall_statfs64 anyway, so the .post hook is
+ * unreachable in practice.
+ */
+#ifdef SYS_statfs64
+static void post_statfs64(struct syscallrecord *rec)
+{
+	char snap_path[PATH_MAX];
+	struct statfs64 snap, recheck;
+	size_t sz_snapshot;
+	int diverged = 0;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	if (rec->a1 == 0)
+		return;
+
+	if (rec->a2 < sizeof(struct statfs64))
+		return;
+
+	if (rec->a3 == 0)
+		return;
+
+	if (!ONE_IN(100))
+		return;
+
+	sz_snapshot = (size_t) rec->a2;
+
+	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
+		sizeof(snap_path) - 1);
+	snap_path[sizeof(snap_path) - 1] = '\0';
+	memcpy(&snap, (void *)(unsigned long) rec->a3, sizeof(snap));
+
+	if (syscall(SYS_statfs64, snap_path, sz_snapshot, &recheck) != 0)
+		return;
+
+	if (snap.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
+	    snap.f_fsid.__val[1] != recheck.f_fsid.__val[1])
+		return;
+
+	if (snap.f_type    != recheck.f_type)    diverged = 1;
+	if (snap.f_bsize   != recheck.f_bsize)   diverged = 1;
+	if (snap.f_blocks  != recheck.f_blocks)  diverged = 1;
+	if (snap.f_files   != recheck.f_files)   diverged = 1;
+	if (snap.f_namelen != recheck.f_namelen) diverged = 1;
+	if (snap.f_frsize  != recheck.f_frsize)  diverged = 1;
+	if (snap.f_flags   != recheck.f_flags)   diverged = 1;
+
+	if (!diverged)
+		return;
+
+	output(0,
+	       "statfs64 oracle anomaly: path=%s sz=%zu "
+	       "first={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
+	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x} "
+	       "recall={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
+	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x}\n",
+	       snap_path, sz_snapshot,
+	       (unsigned long) snap.f_type, (long) snap.f_bsize,
+	       (unsigned long long) snap.f_blocks,
+	       (unsigned long long) snap.f_files,
+	       (long) snap.f_namelen, (long) snap.f_frsize,
+	       (unsigned long) snap.f_flags,
+	       (unsigned int) snap.f_fsid.__val[0],
+	       (unsigned int) snap.f_fsid.__val[1],
+	       (unsigned long) recheck.f_type, (long) recheck.f_bsize,
+	       (unsigned long long) recheck.f_blocks,
+	       (unsigned long long) recheck.f_files,
+	       (long) recheck.f_namelen, (long) recheck.f_frsize,
+	       (unsigned long) recheck.f_flags,
+	       (unsigned int) recheck.f_fsid.__val[0],
+	       (unsigned int) recheck.f_fsid.__val[1]);
+
+	__atomic_add_fetch(&shm->stats.statfs64_oracle_anomalies, 1,
+			   __ATOMIC_RELAXED);
+}
+#endif
+
 struct syscallentry syscall_statfs64 = {
 	.name = "statfs64",
 	.num_args = 3,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN, [2] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "pathname", [1] = "sz", [2] = "buf" },
 	.sanitise = sanitise_statfs64,
+#ifdef SYS_statfs64
+	.post = post_statfs64,
+#endif
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
 };
