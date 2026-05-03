@@ -294,19 +294,6 @@ retry:
 }
 
 /*
- * Strategy dispatch table.  Indexed by enum strategy_t, returns the
- * pick_syscall implementation for that strategy.  New strategies (bandit,
- * coverage-frontier, HEALER pair-bias, group-saturation, newly-discovered,
- * genetic) plug in here as separate follow-up commits.
- */
-typedef bool (*pick_syscall_fn)(struct syscallrecord *rec, struct childdata *child);
-
-static const pick_syscall_fn strategy_pickers[NR_STRATEGIES] = {
-	[STRATEGY_HEURISTIC] = set_syscall_nr_heuristic,
-	[STRATEGY_RANDOM] = set_syscall_nr_random,
-};
-
-/*
  * Dispatch syscall selection through the active strategy's picker.
  * Reads shm->current_strategy with relaxed atomic — the value can change
  * mid-call (another child wins the rotation CAS) but the worst case is a
@@ -321,7 +308,14 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	if (strat < 0 || strat >= NR_STRATEGIES)
 		strat = STRATEGY_HEURISTIC;
 
-	return strategy_pickers[strat](rec, child);
+	switch (strat) {
+	case STRATEGY_HEURISTIC:
+		return set_syscall_nr_heuristic(rec, child);
+	case STRATEGY_RANDOM:
+		return set_syscall_nr_random(rec, child);
+	default:
+		__builtin_unreachable();
+	}
 }
 
 /*
