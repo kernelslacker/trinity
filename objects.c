@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
+#include "deferred-free.h"
 #include "fd.h"
 #include "list.h"
 #include "locks.h"
@@ -237,8 +238,15 @@ struct object * alloc_object(void)
  *
  * Everything else (OBJ_LOCAL always, plus any OBJ_GLOBAL type that did
  * not opt into the shared heap) came from alloc_object() → zmalloc()
- * and must be released with plain free().  See the architectural note
- * above alloc_object() for the rationale behind the split.
+ * and is routed through deferred_free_enqueue() rather than free()'d
+ * immediately.  Plain free() ends an obj struct's lifetime the moment
+ * __destroy_object() drops the slot, but get_map() and friends read
+ * &obj->map after taking the slot pointer out of head->array — if the
+ * arg-gen path that invoked get_map() (or a stale slot pointer that
+ * survived a wild value-result-syscall write) hands the freed chunk
+ * back, the next deref hits a glibc-reclaimed cache line.  Routing
+ * through deferred_free gives the chunk a 5-50 syscall TTL, which is
+ * far longer than any in-flight get_map() consumer holds the pointer.
  */
 static void release_obj(struct object *obj, enum obj_scope scope,
 			enum objecttype type)
@@ -246,7 +254,7 @@ static void release_obj(struct object *obj, enum obj_scope scope,
 	if (scope == OBJ_GLOBAL && shm->global_objects[type].shared_alloc)
 		free_shared_obj(obj, sizeof(struct object));
 	else
-		free(obj);
+		deferred_free_enqueue(obj, free);
 }
 
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
