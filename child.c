@@ -631,6 +631,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_PIDFD_STORM:		return 30;
 	case CHILD_OP_MADVISE_CYCLER:		return 30;
 	case CHILD_OP_KEYRING_SPAM:		return 30;
+	case CHILD_OP_VDSO_MREMAP_RACE:		return 30;
 	case CHILD_OP_CGROUP_CHURN:		return 30;
 	case CHILD_OP_MOUNT_CHURN:		return 40;
 	case CHILD_OP_UFFD_CHURN:		return 30;
@@ -739,7 +740,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[35] = {
+static const int dormant_op_disabled[36] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -747,6 +748,7 @@ static const int dormant_op_disabled[35] = {
 	1, 1, 1, 1, 1,	/* 20-24: dormant: futex_storm, pipe_thrash, fork_storm, flock_thrash, cgroup_churn */
 	1, 1, 1, 1, 1,	/* 25-29: dormant: mount_churn, uffd_churn, iouring_flood, close_racer, socket_family_chain */
 	1, 1, 1, 1, 1,	/* 30-34: dormant: xattr_thrash, pidfd_storm, madvise_cycler, epoll_volatility, keyring_spam */
+	1,		/* 35:    dormant: vdso_mremap_race */
 };
 
 /*
@@ -785,6 +787,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_CLOSE_RACER,
 	CHILD_OP_EPOLL_VOLATILITY,
 	CHILD_OP_KEYRING_SPAM,
+	CHILD_OP_VDSO_MREMAP_RACE,
 	CHILD_OP_MEMORY_PRESSURE,
 	CHILD_OP_USERNS_FUZZER,
 	CHILD_OP_SCHED_CYCLER,
@@ -843,6 +846,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_MADVISE_CYCLER:	return "madvise_cycler";
 	case CHILD_OP_EPOLL_VOLATILITY:	return "epoll_volatility";
 	case CHILD_OP_KEYRING_SPAM:	return "keyring_spam";
+	case CHILD_OP_VDSO_MREMAP_RACE:	return "vdso_mremap_race";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -898,7 +902,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 35;
+	pick = rand() % 36;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -938,6 +942,7 @@ static enum child_op_type pick_op_type(void)
 	case 32: return CHILD_OP_MADVISE_CYCLER;
 	case 33: return CHILD_OP_EPOLL_VOLATILITY;
 	case 34: return CHILD_OP_KEYRING_SPAM;
+	case 35: return CHILD_OP_VDSO_MREMAP_RACE;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -1056,6 +1061,7 @@ void child_process(struct childdata *child, int childno)
 		case CHILD_OP_MADVISE_CYCLER:		ret = madvise_cycler(child); break;
 		case CHILD_OP_EPOLL_VOLATILITY:		ret = epoll_volatility(child); break;
 		case CHILD_OP_KEYRING_SPAM:		ret = keyring_spam(child); break;
+		case CHILD_OP_VDSO_MREMAP_RACE:		ret = vdso_mremap_race(child); break;
 		default:				ret = run_sequence_chain(child); break;
 		}
 

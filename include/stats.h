@@ -351,6 +351,11 @@ struct stats_s {
 	unsigned long keyring_spam_calls;	/* total add_key/keyctl ops attempted */
 	unsigned long keyring_spam_failed;	/* add_key/keyctl returned -1 */
 
+	/* vdso_mremap_race childop counters */
+	unsigned long vdso_race_runs;		/* total vdso_mremap_race invocations */
+	unsigned long vdso_race_mutations;	/* mutator-side mremap/mprotect/madvise/munmap issued */
+	unsigned long vdso_race_helper_segvs;	/* spinner helper killed by SIGSEGV/SIGBUS */
+
 	/* uffd_churn childop counters */
 	unsigned long uffd_runs;		/* total uffd_churn invocations */
 	unsigned long uffd_registers;		/* successful UFFDIO_REGISTER */
