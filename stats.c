@@ -636,6 +636,7 @@ static void dump_stats_json(void)
 		"\"fork_storm\":{\"runs\":%lu,\"forks\":%lu,\"failed\":%lu,"
 			"\"nested\":%lu,\"reaped_signal\":%lu},"
 		"\"pidfd_storm\":{\"runs\":%lu,\"signals\":%lu,\"getfds\":%lu,\"failed\":%lu},"
+		"\"madvise_cycler\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
 		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
 			"\"remove\":%lu,\"list\":%lu,\"failed\":%lu},"
@@ -766,6 +767,8 @@ static void dump_stats_json(void)
 		shm->stats.fork_storm_reaped_signal,
 		shm->stats.pidfd_storm_runs, shm->stats.pidfd_storm_signals,
 		shm->stats.pidfd_storm_getfds, shm->stats.pidfd_storm_failed,
+		shm->stats.madvise_cycler_runs, shm->stats.madvise_cycler_calls,
+		shm->stats.madvise_cycler_failed,
 		shm->stats.flock_thrash_runs, shm->stats.flock_thrash_locks,
 		shm->stats.flock_thrash_failed,
 		shm->stats.xattr_thrash_runs, shm->stats.xattr_thrash_set,
@@ -1289,6 +1292,12 @@ void dump_stats(void)
 		stat_row("pidfd_storm", "signals", shm->stats.pidfd_storm_signals);
 		stat_row("pidfd_storm", "getfds",  shm->stats.pidfd_storm_getfds);
 		stat_row("pidfd_storm", "failed",  shm->stats.pidfd_storm_failed);
+	}
+
+	if (shm->stats.madvise_cycler_runs) {
+		stat_row("madvise_cycler", "runs",   shm->stats.madvise_cycler_runs);
+		stat_row("madvise_cycler", "calls",  shm->stats.madvise_cycler_calls);
+		stat_row("madvise_cycler", "failed", shm->stats.madvise_cycler_failed);
 	}
 
 	if (shm->stats.flock_thrash_runs) {
