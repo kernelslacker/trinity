@@ -112,6 +112,14 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
 
+	/* Pick the syscall table once per call: in uniarch the result is
+	 * a constant, and even in biarch the do32 dice rolls once per
+	 * pick — re-rolling under the retry budget (up to 10 000 spins
+	 * on a sparse table) burned ~5 cycles per iteration for nothing. */
+	do32 = choose_syscall_table(&nr_syscalls);
+	if (biarch == false)
+		nr_syscalls = max_nr_syscalls;
+
 retry:
 	if (no_syscalls_enabled() == true) {
 		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
@@ -128,10 +136,6 @@ retry:
 		return FAIL;
 	}
 
-	/* Ok, we're doing another syscall, let's pick one. */
-	do32 = choose_syscall_table(&nr_syscalls);
-	if (biarch == false)
-		nr_syscalls = max_nr_syscalls;
 	syscallnr = rand() % nr_syscalls;
 
 	/* If we got a syscallnr which is not active repeat the attempt,
@@ -239,6 +243,12 @@ static bool set_syscall_nr_random(struct syscallrecord *rec,
 
 	(void)child;
 
+	/* See the matching comment in set_syscall_nr_heuristic — the table
+	 * pick is a per-call decision, not a per-retry one. */
+	do32 = choose_syscall_table(&nr_syscalls);
+	if (biarch == false)
+		nr_syscalls = max_nr_syscalls;
+
 retry:
 	if (no_syscalls_enabled() == true) {
 		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
@@ -251,9 +261,6 @@ retry:
 		return FAIL;
 	}
 
-	do32 = choose_syscall_table(&nr_syscalls);
-	if (biarch == false)
-		nr_syscalls = max_nr_syscalls;
 	syscallnr = rand() % nr_syscalls;
 
 	val = active_syscalls[syscallnr];
