@@ -31,6 +31,18 @@
 #define DEFERRED_TTL_MIN	5
 #define DEFERRED_TTL_MAX	50
 
+/*
+ * Run the actual TTL-decrement-and-free loop on 1-in-N tick calls.
+ * The other (N-1) calls bail before taking the mprotect bracket.
+ * N must be a power of two so the modulo collapses to a bitmask.
+ *
+ * Side effect: TTL is effectively multiplied by N.  Nominal range
+ * 5-50 syscalls becomes 40-400 syscalls of in-ring lifetime.  This
+ * is fine -- and arguably better for catching UAF overlap -- but
+ * worth knowing when reading the TTL constants above.
+ */
+#define DEFERRED_TICK_BATCH	8
+
 struct deferred_entry {
 	void *ptr;
 	void (*free_func)(void *);
@@ -234,11 +246,26 @@ void deferred_freeptr(unsigned long *p)
 
 void deferred_free_tick(void)
 {
+	static unsigned int tick_count;
 	unsigned int i;
 
 	/* Cheap path: ring_count is read while still locked, but it lives
 	 * in BSS (not in the protected ring), so this access is safe. */
 	if (ring_count == 0)
+		return;
+
+	/*
+	 * Batch ticks: run the full mprotect+walk+free bracket only on
+	 * 1-in-DEFERRED_TICK_BATCH calls.  The other calls bail here
+	 * without taking the mprotect bracket -- ~7x reduction in
+	 * mprotect syscalls (and matching TLB-shootdown traffic across
+	 * sibling fuzz children).  See DEFERRED_TICK_BATCH comment for
+	 * the TTL-multiplier side effect.
+	 *
+	 * tick_count is BSS-resident (not in the ring), and per-child by
+	 * fork's COW, so this static is safe to touch without unlocking.
+	 */
+	if ((++tick_count & (DEFERRED_TICK_BATCH - 1)) != 0)
 		return;
 
 	/* On unlock failure the page is still PROT_NONE; bail rather
