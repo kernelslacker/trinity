@@ -153,7 +153,7 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 {
 	struct chain_corpus_ring *ring = chain_corpus_shm;
 	struct chain_entry *ent;
-	unsigned int slot;
+	unsigned int slot, head, count;
 
 	if (ring == NULL || len == 0 || len > MAX_SEQ_LEN)
 		return;
@@ -163,13 +163,21 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 
 	lock(&ring->lock);
 
-	slot = ring->head % CHAIN_CORPUS_RING_SIZE;
+	head = ring->head;
+	slot = head % CHAIN_CORPUS_RING_SIZE;
 	ent = &ring->slots[slot];
 	ent->len = len;
 	memcpy(ent->steps, steps, len * sizeof(struct chain_step));
-	ring->head++;
-	if (ring->count < CHAIN_CORPUS_RING_SIZE)
-		ring->count++;
+
+	/* Publish head/count with release semantics so the lockless
+	 * chain_corpus_pick reader, which loads them with acquire, sees the
+	 * slot writes that produced this entry.  The lock still serialises
+	 * concurrent writers; the atomic stores only exist to give the
+	 * lockless reader a well-defined view of the sequence fields. */
+	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
+	count = ring->count;
+	if (count < CHAIN_CORPUS_RING_SIZE)
+		__atomic_store_n(&ring->count, count + 1, __ATOMIC_RELEASE);
 
 	unlock(&ring->lock);
 
@@ -179,29 +187,45 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 bool chain_corpus_pick(struct chain_entry *out)
 {
 	struct chain_corpus_ring *ring = chain_corpus_shm;
-	unsigned int slot;
+	unsigned int count, head, slot;
 
 	if (ring == NULL || out == NULL)
 		return false;
 
-	/* Lock-protected snapshot.  Holding the lock for the memcpy keeps
-	 * the snapshot consistent against a concurrent in-place save
-	 * overwriting the slot we are reading from. */
-	lock(&ring->lock);
-
-	if (ring->count == 0) {
-		unlock(&ring->lock);
+	/*
+	 * Lockless reader.  Atomic-load a snapshot of count and head, then
+	 * struct-copy the chosen slot without holding ring->lock.  The
+	 * picker used to take ring->lock for the full chain_entry memcpy
+	 * (~MAX_SEQ_LEN * sizeof(struct chain_step)), and CHAIN_REPLAY_RATIO
+	 * routes ~25% of fuzzer iterations through here, so the lock used
+	 * to be a non-trivial contention point with both child producers
+	 * (chain_corpus_save) and child consumers fighting for it.
+	 *
+	 * Race tolerance: a concurrent chain_corpus_save can overwrite the
+	 * slot we are mid-copy on, leaving @out with fields mixed from the
+	 * old and the new chain.  The same risk is already documented in
+	 * chain_corpus_init for wild-write corruption — replay_syscall_step
+	 * drops the chain on the first deactivated/sanitise-tagged step,
+	 * and a torn chain that survives those checks just dispatches one
+	 * iteration's worth of slightly-corrupted args to the kernel, which
+	 * is exactly what the fuzzer is doing on its other 75% of iterations
+	 * anyway.  No reader-side validity invariant is broken: count is
+	 * monotonic non-decreasing up to CHAIN_CORPUS_RING_SIZE so once we
+	 * observe count > 0 the slot range is well-defined, and len is
+	 * always written in [1, MAX_SEQ_LEN] so even a torn-read len can't
+	 * walk @out->steps past its fixed-size array.
+	 */
+	count = __atomic_load_n(&ring->count, __ATOMIC_ACQUIRE);
+	if (count == 0)
 		return false;
-	}
+
+	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
 
 	/* Pick uniformly across the live entries.  The newest entry is
 	 * at (head - 1), the oldest at (head - count); both wrap mod
 	 * CHAIN_CORPUS_RING_SIZE. */
-	slot = (ring->head - ring->count + (rand() % ring->count)) %
-	       CHAIN_CORPUS_RING_SIZE;
+	slot = (head - count + (rand() % count)) % CHAIN_CORPUS_RING_SIZE;
 	*out = ring->slots[slot];
-
-	unlock(&ring->lock);
 	return true;
 }
 
