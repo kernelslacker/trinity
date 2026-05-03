@@ -76,6 +76,7 @@ enum child_op_type {
 	CHILD_OP_EPOLL_VOLATILITY,
 	CHILD_OP_KEYRING_SPAM,
 	CHILD_OP_VDSO_MREMAP_RACE,
+	CHILD_OP_NUMA_MIGRATION,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -266,3 +267,4 @@ bool madvise_cycler(struct childdata *child);
 bool epoll_volatility(struct childdata *child);
 bool keyring_spam(struct childdata *child);
 bool vdso_mremap_race(struct childdata *child);
+bool numa_migration_churn(struct childdata *child);

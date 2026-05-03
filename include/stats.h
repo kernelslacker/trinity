@@ -365,6 +365,12 @@ struct stats_s {
 	unsigned long vdso_race_mutations;	/* mutator-side mremap/mprotect/madvise/munmap issued */
 	unsigned long vdso_race_helper_segvs;	/* spinner helper killed by SIGSEGV/SIGBUS */
 
+	/* numa_migration_churn childop counters */
+	unsigned long numa_migration_runs;	/* total numa_migration_churn invocations */
+	unsigned long numa_migration_calls;	/* total mbind/migrate/move/set_mempolicy calls issued */
+	unsigned long numa_migration_failed;	/* migration syscall returned -1 */
+	unsigned long numa_migration_no_numa;	/* attempted invocations skipped (single-node host) */
+
 	/* uffd_churn childop counters */
 	unsigned long uffd_runs;		/* total uffd_churn invocations */
 	unsigned long uffd_registers;		/* successful UFFDIO_REGISTER */
