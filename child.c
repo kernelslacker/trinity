@@ -1043,6 +1043,62 @@ static void adapt_budget(enum child_op_type op_type,
 }
 
 /*
+ * Dispatch table for the per-iteration childop call.  Indexed by
+ * enum child_op_type; a NULL slot means "fall through to the
+ * sequence-chain path" (CHILD_OP_SYSCALL is handled by the 95% fast
+ * path in pick_op_type and reaches the dispatcher only when it ends
+ * up running random_syscall via run_sequence_chain).
+ *
+ * A dense table replaces what was a 38-case switch in the dispatch
+ * site: a single indirect call out of a cache-friendly array,
+ * instead of the jump-table the compiler emits per branch site.
+ */
+static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
+	[CHILD_OP_SYSCALL]		= NULL,
+	[CHILD_OP_MMAP_LIFECYCLE]	= mmap_lifecycle,
+	[CHILD_OP_MPROTECT_SPLIT]	= mprotect_split,
+	[CHILD_OP_MLOCK_PRESSURE]	= mlock_pressure,
+	[CHILD_OP_INODE_SPEWER]		= inode_spewer,
+	[CHILD_OP_PROCFS_WRITER]	= procfs_writer,
+	[CHILD_OP_MEMORY_PRESSURE]	= memory_pressure,
+	[CHILD_OP_USERNS_FUZZER]	= userns_fuzzer,
+	[CHILD_OP_SCHED_CYCLER]		= sched_cycler,
+	[CHILD_OP_BARRIER_RACER]	= barrier_racer,
+	[CHILD_OP_GENETLINK_FUZZER]	= genetlink_fuzzer,
+	[CHILD_OP_PERF_CHAINS]		= perf_event_chains,
+	[CHILD_OP_TRACEFS_FUZZER]	= tracefs_fuzzer,
+	[CHILD_OP_BPF_LIFECYCLE]	= bpf_lifecycle,
+	[CHILD_OP_FAULT_INJECTOR]	= fault_injector,
+	[CHILD_OP_RECIPE_RUNNER]	= recipe_runner,
+	[CHILD_OP_IOURING_RECIPES]	= iouring_recipes,
+	[CHILD_OP_FD_STRESS]		= fd_stress,
+	[CHILD_OP_REFCOUNT_AUDITOR]	= refcount_auditor,
+	[CHILD_OP_FS_LIFECYCLE]		= fs_lifecycle,
+	[CHILD_OP_SIGNAL_STORM]		= signal_storm,
+	[CHILD_OP_FUTEX_STORM]		= futex_storm,
+	[CHILD_OP_PIPE_THRASH]		= pipe_thrash,
+	[CHILD_OP_FORK_STORM]		= fork_storm,
+	[CHILD_OP_FLOCK_THRASH]		= flock_thrash,
+	[CHILD_OP_CGROUP_CHURN]		= cgroup_churn,
+	[CHILD_OP_MOUNT_CHURN]		= mount_churn,
+	[CHILD_OP_UFFD_CHURN]		= uffd_churn,
+	[CHILD_OP_IOURING_FLOOD]	= iouring_flood,
+	[CHILD_OP_CLOSE_RACER]		= close_racer,
+	[CHILD_OP_SOCKET_FAMILY_CHAIN]	= socket_family_chain,
+	[CHILD_OP_XATTR_THRASH]		= xattr_thrash,
+	[CHILD_OP_PIDFD_STORM]		= pidfd_storm,
+	[CHILD_OP_MADVISE_CYCLER]	= madvise_cycler,
+	[CHILD_OP_EPOLL_VOLATILITY]	= epoll_volatility,
+	[CHILD_OP_KEYRING_SPAM]		= keyring_spam,
+	[CHILD_OP_VDSO_MREMAP_RACE]	= vdso_mremap_race,
+	[CHILD_OP_NUMA_MIGRATION]	= numa_migration_churn,
+	[CHILD_OP_CPU_HOTPLUG_RIDER]	= cpu_hotplug_rider,
+};
+
+_Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
+	"op_dispatch must have one slot per enum child_op_type");
+
+/*
  * This is the child main loop, entered after init_child has completed
  * from the fork_children() loop.
  */
@@ -1137,47 +1193,11 @@ void child_process(struct childdata *child, int childno)
 					  __ATOMIC_RELAXED)
 			: 0UL;
 
-		switch (child->op_type) {
-		case CHILD_OP_MMAP_LIFECYCLE:	ret = mmap_lifecycle(child); break;
-		case CHILD_OP_MPROTECT_SPLIT:	ret = mprotect_split(child); break;
-		case CHILD_OP_MLOCK_PRESSURE:	ret = mlock_pressure(child); break;
-		case CHILD_OP_INODE_SPEWER:		ret = inode_spewer(child); break;
-		case CHILD_OP_PROCFS_WRITER:		ret = procfs_writer(child); break;
-		case CHILD_OP_MEMORY_PRESSURE:		ret = memory_pressure(child); break;
-		case CHILD_OP_USERNS_FUZZER:		ret = userns_fuzzer(child); break;
-		case CHILD_OP_SCHED_CYCLER:		ret = sched_cycler(child); break;
-		case CHILD_OP_BARRIER_RACER:		ret = barrier_racer(child); break;
-		case CHILD_OP_GENETLINK_FUZZER:		ret = genetlink_fuzzer(child); break;
-		case CHILD_OP_PERF_CHAINS:		ret = perf_event_chains(child); break;
-		case CHILD_OP_TRACEFS_FUZZER:		ret = tracefs_fuzzer(child); break;
-		case CHILD_OP_BPF_LIFECYCLE:		ret = bpf_lifecycle(child); break;
-		case CHILD_OP_FAULT_INJECTOR:		ret = fault_injector(child); break;
-		case CHILD_OP_RECIPE_RUNNER:		ret = recipe_runner(child); break;
-		case CHILD_OP_IOURING_RECIPES:		ret = iouring_recipes(child); break;
-		case CHILD_OP_FD_STRESS:		ret = fd_stress(child); break;
-		case CHILD_OP_REFCOUNT_AUDITOR:		ret = refcount_auditor(child); break;
-		case CHILD_OP_FS_LIFECYCLE:		ret = fs_lifecycle(child); break;
-		case CHILD_OP_SIGNAL_STORM:		ret = signal_storm(child); break;
-		case CHILD_OP_FUTEX_STORM:		ret = futex_storm(child); break;
-		case CHILD_OP_PIPE_THRASH:		ret = pipe_thrash(child); break;
-		case CHILD_OP_FORK_STORM:		ret = fork_storm(child); break;
-		case CHILD_OP_FLOCK_THRASH:		ret = flock_thrash(child); break;
-		case CHILD_OP_CGROUP_CHURN:		ret = cgroup_churn(child); break;
-		case CHILD_OP_MOUNT_CHURN:		ret = mount_churn(child); break;
-		case CHILD_OP_UFFD_CHURN:		ret = uffd_churn(child); break;
-		case CHILD_OP_IOURING_FLOOD:		ret = iouring_flood(child); break;
-		case CHILD_OP_CLOSE_RACER:		ret = close_racer(child); break;
-		case CHILD_OP_SOCKET_FAMILY_CHAIN:	ret = socket_family_chain(child); break;
-		case CHILD_OP_XATTR_THRASH:		ret = xattr_thrash(child); break;
-		case CHILD_OP_PIDFD_STORM:		ret = pidfd_storm(child); break;
-		case CHILD_OP_MADVISE_CYCLER:		ret = madvise_cycler(child); break;
-		case CHILD_OP_EPOLL_VOLATILITY:		ret = epoll_volatility(child); break;
-		case CHILD_OP_KEYRING_SPAM:		ret = keyring_spam(child); break;
-		case CHILD_OP_VDSO_MREMAP_RACE:		ret = vdso_mremap_race(child); break;
-		case CHILD_OP_NUMA_MIGRATION:		ret = numa_migration_churn(child); break;
-		case CHILD_OP_CPU_HOTPLUG_RIDER:	ret = cpu_hotplug_rider(child); break;
-		default:				ret = run_sequence_chain(child); break;
-		}
+		bool (*op_fn)(struct childdata *) =
+			(child->op_type < NR_CHILD_OP_TYPES)
+				? op_dispatch[child->op_type]
+				: NULL;
+		ret = op_fn ? op_fn(child) : run_sequence_chain(child);
 
 		if (child->op_type != CHILD_OP_SYSCALL) {
 			alarm(0);
