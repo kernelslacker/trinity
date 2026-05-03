@@ -120,7 +120,7 @@ static void post_seccomp(struct syscallrecord *rec)
 		if (looks_like_corrupted_ptr(fprog)) {
 			outputerr("post_seccomp: rejected suspicious fprog=%p "
 				  "(pid-scribbled?)\n", fprog);
-			shm->stats.post_handler_corrupt_ptr++;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			return;
 		}
 

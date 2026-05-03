@@ -117,7 +117,7 @@ void avoid_shared_buffer(unsigned long *addr, unsigned long len)
 
 	*addr = (unsigned long) replacement;
 	if (shm != NULL)
-		shm->stats.shared_buffer_redirected++;
+		__atomic_add_fetch(&shm->stats.shared_buffer_redirected, 1, __ATOMIC_RELAXED);
 }
 
 void * get_address(void)

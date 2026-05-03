@@ -153,7 +153,7 @@ static void post_clone3(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(args)) {
 		outputerr("post_clone3: rejected suspicious args=%p (pid-scribbled?)\n",
 			  args);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 

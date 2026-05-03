@@ -483,7 +483,7 @@ static void post_bpf(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(attr)) {
 		outputerr("post_bpf: rejected suspicious attr=%p (pid-scribbled?)\n",
 			  attr);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
