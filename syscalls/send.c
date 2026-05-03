@@ -229,6 +229,7 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 static void post_sendmmsg(struct syscallrecord *rec)
 {
 	struct mmsghdr *msgs = (struct mmsghdr *) rec->a2;
+	unsigned int vlen = (unsigned int) rec->a3;
 	unsigned int i;
 
 	if (msgs == NULL)
@@ -245,7 +246,25 @@ static void post_sendmmsg(struct syscallrecord *rec)
 		return;
 	}
 
-	for (i = 0; i < (unsigned int) rec->a3; i++) {
+	/*
+	 * Snapshot rec->a3 (vlen) and bound against the sanitiser cap.
+	 * 914fbc6f1ff6 caught the msgs pointer scribble but missed vlen:
+	 * sanitise_sendmmsg picks vlen ∈ [1, SENDMMSG_MAX_VLEN] and zmallocs
+	 * vlen * sizeof(struct mmsghdr), but a sibling fuzzed value-result
+	 * syscall can scribble rec->a3 to an arbitrary value between the
+	 * call and the post handler running.  The loop then walks past the
+	 * 256-byte (4 * sizeof(mmsghdr)) allocation — heap-buffer-overflow
+	 * 16 bytes after the region, ASAN c4 trip 2026-05-03 at line 249.
+	 * Anything above the cap can't be a real vlen for this call.
+	 */
+	if (vlen > SENDMMSG_MAX_VLEN) {
+		outputerr("post_sendmmsg: rejected suspicious vlen=%u "
+			  "(pid-scribbled?)\n", vlen);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+
+	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
 		free(msgs[i].msg_hdr.msg_name);
 	}

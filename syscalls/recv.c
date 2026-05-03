@@ -190,6 +190,7 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 static void post_recvmmsg(struct syscallrecord *rec)
 {
 	struct mmsghdr *msgs = (struct mmsghdr *) rec->a2;
+	unsigned int vlen = (unsigned int) rec->a3;
 	unsigned int i;
 
 	if (msgs == NULL)
@@ -206,7 +207,22 @@ static void post_recvmmsg(struct syscallrecord *rec)
 		return;
 	}
 
-	for (i = 0; i < (unsigned int) rec->a3; i++) {
+	/*
+	 * Snapshot rec->a3 (vlen) and bound against the sanitiser cap.
+	 * Same shape as the post_sendmmsg vlen scribble: 914fbc6f1ff6 added
+	 * the msgs pointer guard but rec->a3 is just as exposed to a
+	 * sibling fuzzed value-result syscall scribbling it between the
+	 * call and the post handler running.  The loop would walk past the
+	 * vlen * sizeof(struct mmsghdr) allocation, heap-buffer-overflow.
+	 */
+	if (vlen > RECVMMSG_MAX_VLEN) {
+		outputerr("post_recvmmsg: rejected suspicious vlen=%u "
+			  "(pid-scribbled?)\n", vlen);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+
+	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
 		free(msgs[i].msg_hdr.msg_control);
 		free(msgs[i].msg_hdr.msg_name);
