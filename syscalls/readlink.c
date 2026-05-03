@@ -154,6 +154,121 @@ static void sanitise_readlinkat(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a3, rec->a4 ? rec->a4 : page_size);
 }
 
+#if defined(SYS_readlinkat) || defined(__NR_readlinkat)
+#ifndef SYS_readlinkat
+#define SYS_readlinkat __NR_readlinkat
+#endif
+
+/*
+ * Oracle: readlinkat(dfd, pathname, buf, bufsiz) is the *at variant of
+ * readlink -- pathname is resolved relative to dfd (or AT_FDCWD), the
+ * symlink target string is copied verbatim into buf, and retval is the
+ * exact byte count.  Output is NOT NUL-terminated.  The return-value
+ * semantics are identical to readlink: two back-to-back calls with the
+ * same (dfd, pathname) -- absent a sibling rename / symlink-replace /
+ * mount-shift on the same dirfd -- must produce a byte-identical target
+ * of identical length.  Same failure modes apply: copy_to_user mis-write,
+ * sibling buffer scribble, 32-on-64 compat truncation, dcache race.
+ *
+ * TOCTOU defeat: snapshot pathname (rec->a2) AND the first retval bytes
+ * of the receive buffer (rec->a3) into stack-locals BEFORE re-issuing
+ * the syscall.  The re-call MUST target a fresh stack buffer, never
+ * rec->a3 -- a sibling could mutate the original receive buffer mid-
+ * syscall and forge a clean compare.  Drop the sample if the re-call
+ * returns <= 0 (sibling unlinked the symlink, dirfd closed mid-flight,
+ * EPERM from setuid race -- all benign) or returns a different length
+ * (sibling re-symlinked to a different-length target -- benign size-
+ * class drift).  Bump the anomaly counter once on byte divergence and
+ * emit a hex-dump diagnostic of the first 32 bytes of each.  Sample
+ * one in a hundred to stay in line with the rest of the oracle family.
+ *
+ * Extra gate vs readlink: kernel reporting retval > bufsiz is itself
+ * an anomaly (kernel claims to have written more bytes than the buffer
+ * could hold).  Bump the counter with a distinct diagnostic and bail
+ * without re-issuing -- byte compare is meaningless when the original
+ * write length already violates the buffer bound.
+ */
+static void post_readlinkat(struct syscallrecord *rec)
+{
+	char snap_path[4096];
+	unsigned char first_buf[4096];
+	unsigned char recheck_buf[4096];
+	size_t snap_len;
+	int dfd;
+	long rc;
+
+	if (!ONE_IN(100))
+		return;
+
+	if ((long) rec->retval <= 0)
+		return;
+
+	if (rec->a2 == 0)
+		return;
+
+	if (rec->a3 == 0)
+		return;
+
+	if (rec->a4 == 0)
+		return;
+
+	if ((long) rec->retval > (long) rec->a4) {
+		output(0,
+		       "[oracle:readlinkat] retval=%ld exceeds bufsiz=%ld\n",
+		       (long) rec->retval, (long) rec->a4);
+		__atomic_add_fetch(&shm->stats.readlinkat_oracle_anomalies,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	dfd = (int) rec->a1;
+
+	strncpy(snap_path, (const char *)(unsigned long) rec->a2,
+		sizeof(snap_path) - 1);
+	snap_path[sizeof(snap_path) - 1] = '\0';
+
+	snap_len = (size_t) rec->retval;
+	if (snap_len > sizeof(first_buf))
+		snap_len = sizeof(first_buf);
+
+	memcpy(first_buf, (void *)(unsigned long) rec->a3, snap_len);
+
+	rc = syscall(SYS_readlinkat, dfd, snap_path, recheck_buf,
+		     (int) sizeof(recheck_buf));
+
+	if (rc <= 0)
+		return;
+
+	if ((size_t) rc != snap_len)
+		return;
+
+	if (memcmp(first_buf, recheck_buf, snap_len) == 0)
+		return;
+
+	{
+		char first_hex[32 * 2 + 1];
+		char recheck_hex[32 * 2 + 1];
+		size_t i, dump_len;
+
+		dump_len = snap_len < 32 ? snap_len : 32;
+		for (i = 0; i < dump_len; i++) {
+			snprintf(first_hex + i * 2, 3, "%02x",
+				 (unsigned char) first_buf[i]);
+			snprintf(recheck_hex + i * 2, 3, "%02x",
+				 (unsigned char) recheck_buf[i]);
+		}
+		first_hex[dump_len * 2] = '\0';
+		recheck_hex[dump_len * 2] = '\0';
+
+		output(0,
+		       "[oracle:readlinkat] dfd=%d path=%s len=%zu first %s vs recheck %s\n",
+		       dfd, snap_path, snap_len, first_hex, recheck_hex);
+		__atomic_add_fetch(&shm->stats.readlinkat_oracle_anomalies,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+#endif /* SYS_readlinkat || __NR_readlinkat */
+
 struct syscallentry syscall_readlinkat = {
 	.name = "readlinkat",
 	.num_args = 4,
@@ -162,4 +277,7 @@ struct syscallentry syscall_readlinkat = {
 	.sanitise = sanitise_readlinkat,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+#if defined(SYS_readlinkat) || defined(__NR_readlinkat)
+	.post = post_readlinkat,
+#endif
 };
