@@ -113,6 +113,8 @@ static void post_execve(struct syscallrecord *rec)
 {
 	void **argv = (void **) rec->a2;
 	void **envp = (void **) rec->a3;
+	unsigned int argvcount = (unsigned int)(rec->a6 >> 32);
+	unsigned int envpcount = (unsigned int)(rec->a6 & 0xFFFFFFFF);
 
 	/*
 	 * free_execve_ptrs() walks argv[]/envp[] then free()s the outer
@@ -125,15 +127,28 @@ static void post_execve(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
-	free_execve_ptrs(argv, envp,
-			 (unsigned int)(rec->a6 >> 32),
-			 (unsigned int)(rec->a6 & 0xFFFFFFFF));
+	/*
+	 * sanitise_execve() bounds both counts by rand() % 32, so anything
+	 * over 32 means rec->a6 was scribbled by a sibling syscall between
+	 * sanitise and post.  Walking the array with a bogus count reads
+	 * far past the end of the allocation; leak instead — the child
+	 * process is dying anyway.
+	 */
+	if (argvcount > 32 || envpcount > 32) {
+		outputerr("post_execve: rejected suspicious argvcount=%u envpcount=%u "
+			  "(a6-scribbled?)\n", argvcount, envpcount);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		return;
+	}
+	free_execve_ptrs(argv, envp, argvcount, envpcount);
 }
 
 static void post_execveat(struct syscallrecord *rec)
 {
 	void **argv = (void **) rec->a3;
 	void **envp = (void **) rec->a4;
+	unsigned int argvcount = (unsigned int)(rec->a6 >> 32);
+	unsigned int envpcount = (unsigned int)(rec->a6 & 0xFFFFFFFF);
 
 	if (looks_like_corrupted_ptr(argv) || looks_like_corrupted_ptr(envp)) {
 		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
@@ -141,9 +156,13 @@ static void post_execveat(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
-	free_execve_ptrs(argv, envp,
-			 (unsigned int)(rec->a6 >> 32),
-			 (unsigned int)(rec->a6 & 0xFFFFFFFF));
+	if (argvcount > 32 || envpcount > 32) {
+		outputerr("post_execveat: rejected suspicious argvcount=%u envpcount=%u "
+			  "(a6-scribbled?)\n", argvcount, envpcount);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		return;
+	}
+	free_execve_ptrs(argv, envp, argvcount, envpcount);
 }
 
 struct syscallentry syscall_execve = {
