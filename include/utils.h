@@ -101,6 +101,9 @@ int get_num_fds(void);
 
 #define unreachable() __builtin_unreachable()
 
+#define likely(x)	__builtin_expect(!!(x), 1)
+#define unlikely(x)	__builtin_expect(!!(x), 0)
+
 #define RAND_ELEMENT(_array, _element) \
 	_array[rand() % ARRAY_SIZE(_array)]._element
 
