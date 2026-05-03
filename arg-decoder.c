@@ -195,9 +195,9 @@ void output_syscall_prefix(struct syscallrecord *rec)
 
 	len = render_syscall_prefix(rec, buffer);
 
-	/* copy child-local buffer to shm, and zero out trailing bytes */
+	/* copy child-local buffer to shm, NUL-terminate */
 	memcpy(rec->prebuffer, buffer, len);
-	memset(rec->prebuffer + len, 0, PREBUFFER_LEN - len);
+	rec->prebuffer[len] = '\0';
 
 	output_rendered_buffer(rec->prebuffer);
 }
@@ -212,9 +212,9 @@ void output_syscall_postfix(struct syscallrecord *rec)
 
 	len = render_syscall_postfix(rec, buffer);
 
-	/* copy child-local buffer to shm, and zero out trailing bytes */
+	/* copy child-local buffer to shm, NUL-terminate */
 	memcpy(rec->postbuffer, buffer, len);
-	memset(rec->postbuffer + len, 0, POSTBUFFER_LEN - len);
+	rec->postbuffer[len] = '\0';
 
 	output_rendered_buffer(rec->postbuffer);
 }

@@ -624,7 +624,7 @@ bool random_syscall_step(struct childdata *child,
 	if (set_syscall_nr(rec, child) == FAIL)
 		return FAIL;
 
-	memset(rec->postbuffer, 0, POSTBUFFER_LEN);
+	rec->postbuffer[0] = '\0';
 
 	/* Generate arguments, print them out */
 	generate_syscall_args(rec);
@@ -709,7 +709,7 @@ bool replay_syscall_step(struct childdata *child,
 	rec->a5 = args[4];
 	rec->a6 = args[5];
 
-	memset(rec->postbuffer, 0, POSTBUFFER_LEN);
+	rec->postbuffer[0] = '\0';
 
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 
