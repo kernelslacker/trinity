@@ -13,6 +13,8 @@
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "utils.h"
+#include "shm.h"
+#include "trinity.h"
 #include "compat.h"
 
 #ifndef CLONE_ARGS_SIZE_VER0
@@ -139,7 +141,23 @@ static void post_clone3(struct syscallrecord *rec)
 {
 	struct clone_args *args = (struct clone_args *)(unsigned long) rec->a1;
 
-	if (args != NULL && args->set_tid != 0)
+	/*
+	 * Snapshot rec->a1 once and reject pid-scribbled values before
+	 * deref'ing args->set_tid.  Cluster-1/2/3 guard: a sibling fuzzed
+	 * value-result syscall can scribble rec->a1 with a tid/pid between
+	 * syscall return and post-handler entry, and the args->set_tid
+	 * deref then crashes with si_addr==si_pid.
+	 */
+	if (args == NULL)
+		return;
+	if (looks_like_corrupted_ptr(args)) {
+		outputerr("post_clone3: rejected suspicious args=%p (pid-scribbled?)\n",
+			  args);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+
+	if (args->set_tid != 0)
 		deferred_free_enqueue((void *)(unsigned long) args->set_tid, NULL);
 	deferred_freeptr(&rec->a1);
 }

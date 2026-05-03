@@ -248,6 +248,15 @@ struct stats_s {
 	 * the corruption happened before the guard was active. */
 	unsigned long deferred_free_corrupt_ptr;
 
+	/* A post handler caught a pid-scribbled / canonical-out-of-range /
+	 * misaligned value in rec->aN (or a struct reachable from it) and
+	 * refused to deref or free it.  Bumped by both the per-handler
+	 * looks_like_corrupted_ptr() guards and the central guard inside
+	 * deferred_free_enqueue().  Non-zero means cluster-1/2/3 scribbles
+	 * are still landing in rec-> memory -- the post-handler guard is
+	 * doing its job and converting would-be SIGSEGVs into a counter. */
+	unsigned long post_handler_corrupt_ptr;
+
 	/* avoid_shared_buffer() caught an output-buffer syscall arg whose
 	 * address overlapped one of trinity's alloc_shared() regions and
 	 * rewrote it to a non-shared address.  A non-zero count means the

@@ -4,10 +4,14 @@
  * When successful, epoll_ctl() returns zero.
  * When an error occurs, epoll_ctl() returns -1 and errno is set appropriately.
  */
+#include <stdlib.h>
 #include <sys/epoll.h>
 #include "fd.h"
 #include "sanitise.h"
 #include "random.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 #ifndef EPOLLEXCLUSIVE
@@ -43,7 +47,23 @@ static void sanitise_epoll_ctl(struct syscallrecord *rec)
 
 static void post_epoll_ctl(struct syscallrecord *rec)
 {
-	free((void *)rec->a4);
+	void *ep = (void *) rec->a4;
+
+	if (ep == NULL)
+		return;
+
+	/*
+	 * epoll_ctl free()s rec->a4 directly (not via deferred_free_enqueue),
+	 * so the central guard in deferred-free.c won't catch a pid-scribbled
+	 * value here -- check inline.  Cluster-1/2/3 guard.
+	 */
+	if (looks_like_corrupted_ptr(ep)) {
+		outputerr("post_epoll_ctl: rejected suspicious ep=%p "
+			  "(pid-scribbled?)\n", ep);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+	free(ep);
 }
 
 static unsigned long epoll_ctl_ops[] = {

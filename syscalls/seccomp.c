@@ -11,6 +11,8 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
 #include "utils.h"
 
 #define SECCOMP_SET_MODE_STRICT		0
@@ -110,6 +112,17 @@ static void post_seccomp(struct syscallrecord *rec)
 #ifdef USE_BPF
 	if (rec->a1 == SECCOMP_SET_MODE_FILTER && rec->a3) {
 		struct sock_fprog *fprog = (struct sock_fprog *) rec->a3;
+
+		/*
+		 * Snapshot rec->a3 as fprog and reject pid-scribbled values
+		 * before deref'ing fprog->filter.  Cluster-1/2/3 guard.
+		 */
+		if (looks_like_corrupted_ptr(fprog)) {
+			outputerr("post_seccomp: rejected suspicious fprog=%p "
+				  "(pid-scribbled?)\n", fprog);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
 
 		/* When SECCOMP_FILTER_FLAG_NEW_LISTENER is set, a successful
 		 * SECCOMP_SET_MODE_FILTER returns a notification fd. */

@@ -85,6 +85,15 @@ void kill_pid(pid_t pid);
 
 void freeptr(unsigned long *p);
 
+/*
+ * Heuristic: does `p` look like a fuzzed value-result syscall scribbled
+ * a non-pointer (typically a pid/tid or a small int) into a slot trinity
+ * was about to deref or free?  Returns true if the value cannot plausibly
+ * be a heap pointer we handed out.  See utils.c for the rationale and
+ * the cluster-1/2/3 crash signature this guards against.
+ */
+bool looks_like_corrupted_ptr(const void *p);
+
 int get_num_fds(void);
 
 #define __stringify_1(x...)     #x

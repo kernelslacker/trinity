@@ -14,6 +14,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 static __u32 get_kern_version(void)
 {
@@ -467,6 +470,22 @@ static void post_bpf(struct syscallrecord *rec)
 {
 	union bpf_attr *attr = (union bpf_attr *) rec->a2;
 	int fd = rec->retval;
+
+	/*
+	 * Snapshot rec->a2 once at entry and reject if it looks like a
+	 * pid-scribbled value before we deref attr->map_type / attr->insns
+	 * etc.  Cluster-1/2/3 root cause: a sibling fuzzed value-result
+	 * syscall scribbles rec->a2 with a tid/pid between syscall return
+	 * and this handler running.  Without the guard, the attr->* deref
+	 * crashes inside the switch arms (typical signature: si_addr ==
+	 * killing process's pid).
+	 */
+	if (looks_like_corrupted_ptr(attr)) {
+		outputerr("post_bpf: rejected suspicious attr=%p (pid-scribbled?)\n",
+			  attr);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
 
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
