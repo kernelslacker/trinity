@@ -319,6 +319,12 @@ struct stats_s {
 	unsigned long fork_storm_nested;	/* depth-1 nested forks completed */
 	unsigned long fork_storm_reaped_signal;	/* grandchildren reaped that died by signal */
 
+	/* pidfd_storm childop counters */
+	unsigned long pidfd_storm_runs;		/* total pidfd_storm invocations */
+	unsigned long pidfd_storm_signals;	/* successful pidfd_send_signal calls */
+	unsigned long pidfd_storm_getfds;	/* successful pidfd_getfd calls */
+	unsigned long pidfd_storm_failed;	/* pidfd_open/send_signal/getfd returned -1 */
+
 	/* uffd_churn childop counters */
 	unsigned long uffd_runs;		/* total uffd_churn invocations */
 	unsigned long uffd_registers;		/* successful UFFDIO_REGISTER */

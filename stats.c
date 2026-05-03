@@ -635,6 +635,7 @@ static void dump_stats_json(void)
 		"\"pipe_thrash\":{\"runs\":%lu,\"pipes\":%lu,\"socketpairs\":%lu,\"alloc_failed\":%lu},"
 		"\"fork_storm\":{\"runs\":%lu,\"forks\":%lu,\"failed\":%lu,"
 			"\"nested\":%lu,\"reaped_signal\":%lu},"
+		"\"pidfd_storm\":{\"runs\":%lu,\"signals\":%lu,\"getfds\":%lu,\"failed\":%lu},"
 		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
 			"\"remove\":%lu,\"list\":%lu,\"failed\":%lu},"
@@ -763,6 +764,8 @@ static void dump_stats_json(void)
 		shm->stats.fork_storm_runs, shm->stats.fork_storm_forks,
 		shm->stats.fork_storm_failed, shm->stats.fork_storm_nested,
 		shm->stats.fork_storm_reaped_signal,
+		shm->stats.pidfd_storm_runs, shm->stats.pidfd_storm_signals,
+		shm->stats.pidfd_storm_getfds, shm->stats.pidfd_storm_failed,
 		shm->stats.flock_thrash_runs, shm->stats.flock_thrash_locks,
 		shm->stats.flock_thrash_failed,
 		shm->stats.xattr_thrash_runs, shm->stats.xattr_thrash_set,
@@ -1279,6 +1282,13 @@ void dump_stats(void)
 		stat_row("fork_storm", "failed",        shm->stats.fork_storm_failed);
 		stat_row("fork_storm", "nested",        shm->stats.fork_storm_nested);
 		stat_row("fork_storm", "reaped_signal", shm->stats.fork_storm_reaped_signal);
+	}
+
+	if (shm->stats.pidfd_storm_runs) {
+		stat_row("pidfd_storm", "runs",    shm->stats.pidfd_storm_runs);
+		stat_row("pidfd_storm", "signals", shm->stats.pidfd_storm_signals);
+		stat_row("pidfd_storm", "getfds",  shm->stats.pidfd_storm_getfds);
+		stat_row("pidfd_storm", "failed",  shm->stats.pidfd_storm_failed);
 	}
 
 	if (shm->stats.flock_thrash_runs) {
