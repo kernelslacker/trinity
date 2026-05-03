@@ -238,6 +238,12 @@ struct stats_s {
 	 * Indicates the pointer was overwritten after init. */
 	unsigned long fd_event_ring_overwritten;
 
+	/* deferred_free_tick() saw a sub-page (pid-shaped) pointer in a
+	 * ring slot and refused to call free() on it.  Non-zero means the
+	 * mprotect guard around the ring is being bypassed somehow, or
+	 * the corruption happened before the guard was active. */
+	unsigned long deferred_free_corrupt_ptr;
+
 	/* avoid_shared_buffer() caught an output-buffer syscall arg whose
 	 * address overlapped one of trinity's alloc_shared() regions and
 	 * rewrote it to a non-shared address.  A non-zero count means the
