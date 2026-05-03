@@ -371,6 +371,13 @@ struct stats_s {
 	unsigned long numa_migration_failed;	/* migration syscall returned -1 */
 	unsigned long numa_migration_no_numa;	/* attempted invocations skipped (single-node host) */
 
+	/* cpu_hotplug_rider childop counters */
+	unsigned long cpu_hotplug_runs;			/* total cpu_hotplug_rider invocations */
+	unsigned long cpu_hotplug_affinity_calls;	/* sched_setaffinity/sched_setattr issued */
+	unsigned long cpu_hotplug_sysfs_writes;		/* attempted writes to cpuN online file */
+	unsigned long cpu_hotplug_eperm;		/* sysfs writes that hit -EACCES/-EPERM */
+	unsigned long cpu_hotplug_actual_offlines;	/* real offline+online cycles (root only) */
+
 	/* uffd_churn childop counters */
 	unsigned long uffd_runs;		/* total uffd_churn invocations */
 	unsigned long uffd_registers;		/* successful UFFDIO_REGISTER */
