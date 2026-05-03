@@ -247,14 +247,34 @@ struct object * alloc_object(void)
  * back, the next deref hits a glibc-reclaimed cache line.  Routing
  * through deferred_free gives the chunk a 5-50 syscall TTL, which is
  * far longer than any in-flight get_map() consumer holds the pointer.
+ *
+ * Before handing the chunk to the deferred-free ring we memset it to
+ * zero.  The destructor (called by __destroy_object before us) has
+ * already torn down the obj's referenced state — for OBJ_MMAP_*
+ * map_destructor() unmaps the VMA and frees map->name, so the
+ * unzeroed remainder (map.ptr, map.size, map.prot, map.flags, fd,
+ * type, array_idx) describes a mapping that no longer exists.  A
+ * later get_map() read of those fields via a stale slot pointer
+ * would happily pass the size>0 / size<4GB sanity check at
+ * mm/maps.c:85 and return a map* whose ptr addresses an unmapped
+ * VMA — a SIGSEGV/EFAULT in the very next consumer.  Zeroing makes
+ * the post-destroy contents trip the size==0 band of that same check
+ * instead, so a stale-slot read is rejected at the get_map boundary
+ * rather than propagating into the syscall.  The memset is also
+ * cheap on never-published objs (the add_object failure paths give
+ * us a zmalloc'd chunk whose contents are already zero) and the
+ * zeroed pointer fields make any double-deref reachable via a wild
+ * slot pointer fault on a NULL access instead of a wild address.
  */
 static void release_obj(struct object *obj, enum obj_scope scope,
 			enum objecttype type)
 {
-	if (scope == OBJ_GLOBAL && shm->global_objects[type].shared_alloc)
+	if (scope == OBJ_GLOBAL && shm->global_objects[type].shared_alloc) {
 		free_shared_obj(obj, sizeof(struct object));
-	else
-		deferred_free_enqueue(obj, free);
+		return;
+	}
+	memset(obj, 0, sizeof(*obj));
+	deferred_free_enqueue(obj, free);
 }
 
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
