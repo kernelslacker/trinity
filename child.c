@@ -1054,6 +1054,14 @@ void child_process(struct childdata *child, int childno)
 
 	init_child(child, childno);
 
+	/* Whether this child is a dedicated alt-op slot is fixed for the
+	 * child's lifetime: alt_op_children is set at startup and childno
+	 * is constant per child.  Compute the predicate once instead of
+	 * re-deriving it (3 loads + 2 branches) every loop iteration. */
+	const bool use_dedicated_op = (alt_op_children != 0 &&
+				       childno >= 0 &&
+				       (unsigned int)childno < alt_op_children);
+
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 		if (ctrlc_pending) {
 			panic(EXIT_SIGINT);
@@ -1102,9 +1110,7 @@ void child_process(struct childdata *child, int childno)
 		 * slots) keep the op_type stamped by the parent at fork
 		 * time and skip the random picker entirely; any other
 		 * child uses the default 95% syscall / 5% alt-op mix. */
-		if (alt_op_children == 0 ||
-		    childno < 0 ||
-		    (unsigned int)childno >= alt_op_children)
+		if (use_dedicated_op == false)
 			child->op_type = pick_op_type();
 
 		/* timestamp, and dispatch the op */
