@@ -86,6 +86,23 @@ static void post_munmap(struct syscallrecord *rec)
 	if (action == WHOLE) {
 		struct object *obj = container_of(map, struct object, map);
 		destroy_object(obj, OBJ_LOCAL, OBJ_MMAP_ANON);
+	} else if (map != NULL) {
+		/*
+		 * Sub-range munmap (19/20 invocations) punches a hole in the
+		 * pool entry but leaves map->ptr / map->size unchanged.  A later
+		 * get_map_with_prot() consumer (memory_pressure / iouring_flood
+		 * / iouring_recipes / madvise_pattern_cycler) would then write
+		 * into the punched-out range and SEGV_MAPERR on the first
+		 * unmapped page.  Mirror the conservative invalidate from
+		 * post_mprotect: blanket-disable the entry by clearing
+		 * map->prot so get_map_with_prot(any) skips it.  Middle-of-
+		 * mapping holes can't be expressed in a single (ptr, size)
+		 * pair, so prot=0 is the only universally correct option.
+		 * False-negatives (consumer skips a mapping that may still be
+		 * partially writable) are acceptable; false-positives crash
+		 * the child.
+		 */
+		map->prot = 0;
 	}
 
 	/*
