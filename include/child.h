@@ -183,6 +183,27 @@ struct childdata {
 
 extern unsigned int max_children;
 
+/*
+ * Compute the adaptive iteration count for an opt-in childop.  Reads
+ * the per-op multiplier (Q8.8 fixed point) maintained by adapt_budget()
+ * out of shm->stats.childop_budget_mult[op] and scales `base` by it.
+ *
+ * If the slot is zero (uninitialised, or wild-write zeroed), fall back
+ * to `base` so the loop never collapses to zero iterations — preserves
+ * the pre-CV.13 behaviour as the safe default.
+ *
+ * Caller must have shm.h in scope (childop .c files already do).  The
+ * macro evaluates `op` and `base` exactly once each via statement-
+ * expression locals, which matters because callers sometimes pass
+ * expressions with side effects for `base` (none today, but cheap to
+ * future-proof).
+ */
+#define BUDGETED(op, base) ({						\
+	uint16_t _m = shm->stats.childop_budget_mult[(op)];		\
+	unsigned int _b = (unsigned int)(base);				\
+	_m ? ((_b * (unsigned int)_m) >> 8) : _b;			\
+})
+
 struct childdata * this_child(void);
 
 void clean_childdata(struct childdata *child);

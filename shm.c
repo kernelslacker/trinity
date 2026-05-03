@@ -93,6 +93,15 @@ void init_shm(void)
 	shm->stats.op_count = 0;
 	shm->stats.previous_op_count = 0;
 
+	/* Seed the per-childop adaptive-budget multipliers at unity (1.0x in
+	 * Q8.8) so a fresh run starts with every opt-in childop running its
+	 * hardcoded MAX_ITERATIONS / BUDGET_NS unchanged.  adapt_budget()
+	 * ratchets these up or down post-invocation based on the kcov edge
+	 * delta.  The zero_streak counters intentionally stay at 0 — that's
+	 * the correct starting state for the hysteresis. */
+	for (i = 0; i < NR_CHILD_OP_TYPES; i++)
+		shm->stats.childop_budget_mult[i] = ADAPT_BUDGET_UNITY;
+
 	shm->start_time = time(NULL);
 
 	/* Multi-strategy rotation starts on the heuristic.  The window
