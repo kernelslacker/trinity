@@ -31,6 +31,7 @@
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
+#include "utils.h"
 
 /*
  * This function decides if we're going to be doing a 32bit or 64bit syscall.
@@ -515,7 +516,7 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 
 	do_syscall(rec, &child->kcov, child);
 
-	if (do_cmp) {
+	if (unlikely(do_cmp)) {
 		cmp_hints_collect(child->kcov.trace_buf, rec->nr);
 		/* cmp-mode runs don't produce a found_new signal, so the
 		 * mutator-attribution stash from generate_syscall_args has
@@ -544,7 +545,7 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 
 		/* Save args that discovered new coverage, but only for
 		 * syscalls without sanitise (which may stash pointers). */
-		if (new_edges) {
+		if (unlikely(new_edges)) {
 			struct syscallentry *save_entry = get_syscall_entry(rec->nr, rec->do32bit);
 			int strat;
 
@@ -585,7 +586,7 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 	pre_crash_ring_record(child, rec, &rec->tp);
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
-	if (entry != NULL) {
+	if (likely(entry != NULL)) {
 		/* Dispatch-time category histogram, surfaced under -vv.
 		 * entry->syscall_category is resolved once at table-init
 		 * time (copy_syscall_table) so this stays a single indexed
