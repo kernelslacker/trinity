@@ -74,6 +74,7 @@ enum child_op_type {
 	CHILD_OP_PIDFD_STORM,
 	CHILD_OP_MADVISE_CYCLER,
 	CHILD_OP_EPOLL_VOLATILITY,
+	CHILD_OP_KEYRING_SPAM,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -262,3 +263,4 @@ bool xattr_thrash(struct childdata *child);
 bool pidfd_storm(struct childdata *child);
 bool madvise_cycler(struct childdata *child);
 bool epoll_volatility(struct childdata *child);
+bool keyring_spam(struct childdata *child);
