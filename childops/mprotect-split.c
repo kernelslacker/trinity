@@ -98,15 +98,30 @@ bool mprotect_split(struct childdata *child)
 			new_prot = RAND_ARRAY(prots);
 	}
 
-	mprotect(addr, len, new_prot);
+	if (mprotect(addr, len, new_prot) != 0)
+		return true;
 
 	/*
-	 * If we mprotect'd the whole mapping, update the tracked prot.
-	 * Sub-range changes intentionally leave map->prot stale — we
-	 * want to encourage re-merges with the "restore" path above.
+	 * Update the tracked prot.  For a whole-range change new_prot
+	 * describes every page exactly.  For a sub-range, intersect:
+	 * the result is the set of permission bits GUARANTEED present
+	 * in every page of the mapping.
+	 *
+	 * get_map_with_prot() filters pool draws by m->prot, so a stale
+	 * m->prot that still claims PROT_WRITE for a mapping whose
+	 * sub-range we just downgraded to PROT_READ leaks into consumers
+	 * (memory_pressure's per-page dirty loop, iouring_flood,
+	 * iouring_recipes, madvise_pattern_cycler), which then SEGV_ACCERR
+	 * on the first downgraded page.  Tracking the intersection is
+	 * conservative — a sub-range upgrade (e.g. PROT_NONE map gaining
+	 * PROT_RW pages) is not reflected, so the filter may skip a
+	 * mapping that actually has writable pages somewhere.  That's an
+	 * acceptable false-negative; a false-positive crashes the child.
 	 */
 	if (offset == 0 && len == map->size)
 		map->prot = new_prot;
+	else
+		map->prot &= new_prot;
 
 	return true;
 }
