@@ -60,29 +60,40 @@ enum syscall_category {
 	NR_SYSCAT,
 };
 
-/* Various statistics. */
+/* Various statistics.
+ *
+ * Fields are grouped by access pattern with cacheline padding between
+ * groups so that one child's writes to a low-frequency counter do not
+ * invalidate the cacheline a sibling is bumping for op_count on every
+ * syscall.  At 32 children all incrementing different fields packed
+ * into the same cacheline the resulting MESI traffic absorbs a large
+ * fraction of fleet syscall throughput; reshaping into the four groups
+ * below isolates the hot fast path from the rare-condition counters
+ * and the per-childop / parent-side bookkeeping.
+ *
+ * Group A (hot per-syscall): bumped on every syscall by every child.
+ *   Kept first so it lands on the cacheline shm_s already aligns
+ *   stats to.  Deliberately small — successive counters a child
+ *   touches in a single dispatch_step() should ideally hit the same
+ *   line on that child's L1 even if siblings invalidate it.
+ *
+ * Group B (per-syscall but rare-condition): on the syscall path but
+ *   only bumped when an oracle anomaly fires or a corrupted pointer
+ *   is detected — most syscalls touch nothing in this group.
+ *
+ * Group C (per-childop): bumped per childop invocation, which is
+ *   orders of magnitude less frequent than per-syscall.
+ *
+ * Group D (diagnostic / startup / parent-side / one-shot): mostly
+ *   parent-bumped or written rarely; kept apart so child writes in
+ *   groups A-C never invalidate the parent's line and vice versa.
+ */
 
 struct stats_s {
+	/* ---- Group A: hot per-syscall ---- */
 	unsigned long op_count;
 	unsigned long successes;
 	unsigned long failures;
-
-	/* Counts to tell if we're making progress or not. */
-	unsigned long previous_op_count;	/* combined total of all children */
-
-	/* fd lifecycle tracking */
-	unsigned long fd_stale_detected;
-	unsigned long fd_stale_by_generation;
-	unsigned long fd_closed_tracked;
-	unsigned long fd_regenerated;
-	unsigned long fd_duped;
-	unsigned long fd_events_processed;
-	unsigned long fd_events_dropped;
-
-	/* Number of fds the generic ret_objtype post-hook auto-registered
-	 * into a per-type OBJ_LOCAL pool because no syscall-specific .post
-	 * had already done so. */
-	unsigned long fd_runtime_registered;
 
 	/* Fault injection (/proc/self/fail-nth):
 	 *   fault_injected  — number of syscalls we armed fail-nth for
@@ -91,8 +102,37 @@ struct stats_s {
 	unsigned long fault_injected;
 	unsigned long fault_consumed;
 
+	/* avoid_shared_buffer() caught an output-buffer syscall arg whose
+	 * address overlapped one of trinity's alloc_shared() regions and
+	 * rewrote it to a non-shared address.  A non-zero count means the
+	 * arg-generation path is producing pointers into our own shared
+	 * state — without this redirect the kernel would write the syscall
+	 * result on top of trinity bookkeeping. */
+	unsigned long shared_buffer_redirected;
+
+	/* range_overlaps_shared() rejected an addr/len because it overlapped
+	 * one of trinity's tracked alloc_shared regions.  Tells you whether
+	 * the wild-write defense is doing meaningful work or trivially
+	 * bypassing every input. */
+	unsigned long range_overlaps_shared_rejects;
+
+	/* Per-syscall reject counts indexed by syscall.nr, bumped from the
+	 * range_overlaps_shared() trip site so dump_stats() can name the top
+	 * offenders.  Two arrays so 32/64-bit syscall numbers don't smear
+	 * (same nr means a different syscall on each table). */
+	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
+	unsigned long range_overlaps_shared_rejects_per_syscall_32[MAX_NR_SYSCALL];
+
+	/* Coarse-grained histogram of which syscall categories the random
+	 * picker has been dispatching, bumped per syscall in dispatch_step().
+	 * Lets the operator spot when sanitiser/group-bias drift has skewed
+	 * the distribution away from the table they expected. */
+	unsigned long syscall_category_count[NR_SYSCAT];
+
+	/* ---- Group B: per-syscall, rare-condition ---- */
+
 	/* post-syscall oracle anomaly counts */
-	unsigned long fd_oracle_anomalies;
+	unsigned long fd_oracle_anomalies __attribute__((aligned(64)));
 	unsigned long mmap_oracle_anomalies;
 	unsigned long cred_oracle_anomalies;
 	unsigned long sched_oracle_anomalies;
@@ -173,8 +213,25 @@ struct stats_s {
 	unsigned long readlinkat_oracle_anomalies;
 	unsigned long sysfs_oracle_anomalies;
 
+	/* A post handler caught a pid-scribbled / canonical-out-of-range /
+	 * misaligned value in rec->aN (or a struct reachable from it) and
+	 * refused to deref or free it.  Bumped by both the per-handler
+	 * looks_like_corrupted_ptr() guards and the central guard inside
+	 * deferred_free_enqueue().  Non-zero means cluster-1/2/3 scribbles
+	 * are still landing in rec-> memory -- the post-handler guard is
+	 * doing its job and converting would-be SIGSEGVs into a counter. */
+	unsigned long post_handler_corrupt_ptr;
+
+	/* deferred_free_tick() saw a sub-page (pid-shaped) pointer in a
+	 * ring slot and refused to call free() on it.  Non-zero means the
+	 * mprotect guard around the ring is being bypassed somehow, or
+	 * the corruption happened before the guard was active. */
+	unsigned long deferred_free_corrupt_ptr;
+
+	/* ---- Group C: per-childop ---- */
+
 	/* procfs_writer childop: per-tree write counts */
-	unsigned long procfs_writes;
+	unsigned long procfs_writes __attribute__((aligned(64)));
 	unsigned long sysfs_writes;
 	unsigned long debugfs_writes;
 
@@ -223,16 +280,6 @@ struct stats_s {
 	unsigned long bpf_lifecycle_triggered;		/* trigger phase reached */
 	unsigned long bpf_lifecycle_eperm;		/* PROG_LOAD/ATTACH denied */
 
-	/* fds/bpf provisioning counters: cumulative count of fds we
-	 * successfully published into the global object pool, including
-	 * regenerations after stale-fd teardown.  Tells you how much of
-	 * trinity's fd-providing infrastructure BPF actually contributes
-	 * — zero means the kernel rejected every load and the BPF cross-
-	 * subsystem surface (SO_ATTACH_BPF, PERF_EVENT_IOC_SET_BPF, etc.)
-	 * is unreachable. */
-	unsigned long bpf_maps_provided;
-	unsigned long bpf_progs_provided;
-
 	/* recipe_runner childop counters */
 	unsigned long recipe_runs;		/* total recipe_runner invocations */
 	unsigned long recipe_completed;		/* full sequence ran without failure */
@@ -250,53 +297,6 @@ struct stats_s {
 	 * recipe_runner_dump_stats() so stats.c stays decoupled from the
 	 * catalog layout. */
 	unsigned long recipe_completed_per[MAX_RECIPES];
-
-	/* Slots held in zombie-pending state because the kernel still has
-	 * the unkillable D-state task around and may yet wake it to write
-	 * into childdata.  Reusing a slot before the kernel tears the task
-	 * down lets the post-wake writes corrupt the replacement child. */
-	unsigned long zombie_slots_pending;	/* current count (gauge) */
-	unsigned long zombies_reaped;		/* total successfully reaped */
-	unsigned long zombies_timed_out;	/* force-reused after timeout */
-
-	/* Times we caught a child's local_op_count above LOCAL_OP_FLUSH_BATCH,
-	 * which is impossible during normal operation (the child flushes and
-	 * resets at that threshold).  Indicates a stray write into childdata
-	 * from somebody other than the slot's current owner. */
-	unsigned long local_op_count_corrupted;
-
-	/* fd_event_drain_all() found a child->fd_event_ring pointer that
-	 * failed the canonical-address / minimum-address sanity check.
-	 * Defense-in-depth against D-state zombie write-after-reap. */
-	unsigned long fd_event_ring_corrupted;
-
-	/* fd_event_drain_all() found a live child->fd_event_ring that
-	 * differed from the mprotected canary copy taken at init time.
-	 * Indicates the pointer was overwritten after init. */
-	unsigned long fd_event_ring_overwritten;
-
-	/* deferred_free_tick() saw a sub-page (pid-shaped) pointer in a
-	 * ring slot and refused to call free() on it.  Non-zero means the
-	 * mprotect guard around the ring is being bypassed somehow, or
-	 * the corruption happened before the guard was active. */
-	unsigned long deferred_free_corrupt_ptr;
-
-	/* A post handler caught a pid-scribbled / canonical-out-of-range /
-	 * misaligned value in rec->aN (or a struct reachable from it) and
-	 * refused to deref or free it.  Bumped by both the per-handler
-	 * looks_like_corrupted_ptr() guards and the central guard inside
-	 * deferred_free_enqueue().  Non-zero means cluster-1/2/3 scribbles
-	 * are still landing in rec-> memory -- the post-handler guard is
-	 * doing its job and converting would-be SIGSEGVs into a counter. */
-	unsigned long post_handler_corrupt_ptr;
-
-	/* avoid_shared_buffer() caught an output-buffer syscall arg whose
-	 * address overlapped one of trinity's alloc_shared() regions and
-	 * rewrote it to a non-shared address.  A non-zero count means the
-	 * arg-generation path is producing pointers into our own shared
-	 * state — without this redirect the kernel would write the syscall
-	 * result on top of trinity bookkeeping. */
-	unsigned long shared_buffer_redirected;
 
 	/* iouring_recipes childop counters */
 	unsigned long iouring_recipes_runs;		/* total invocations */
@@ -436,33 +436,6 @@ struct stats_s {
 	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
 	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
 
-	/* range_overlaps_shared() rejected an addr/len because it overlapped
-	 * one of trinity's tracked alloc_shared regions.  Tells you whether
-	 * the wild-write defense is doing meaningful work or trivially
-	 * bypassing every input. */
-	unsigned long range_overlaps_shared_rejects;
-
-	/* Per-syscall reject counts indexed by syscall.nr, bumped from the
-	 * range_overlaps_shared() trip site so dump_stats() can name the top
-	 * offenders.  Two arrays so 32/64-bit syscall numbers don't smear
-	 * (same nr means a different syscall on each table). */
-	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
-	unsigned long range_overlaps_shared_rejects_per_syscall_32[MAX_NR_SYSCALL];
-
-	/* Coarse-grained histogram of which syscall categories the random
-	 * picker has been dispatching, bumped per syscall in dispatch_step().
-	 * Lets the operator spot when sanitiser/group-bias drift has skewed
-	 * the distribution away from the table they expected. */
-	unsigned long syscall_category_count[NR_SYSCAT];
-
-	/* Shared obj-heap pressure counters: cumulative successful allocs
-	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
-	 * by dump_stats() under -v to print a one-line utilisation summary
-	 * — a busy run with many allocs but few frees flags a leak before
-	 * the heap actually exhausts. */
-	unsigned long obj_heap_allocs;
-	unsigned long obj_heap_frees;
-
 	/* Per-childop adaptive-budget multiplier, indexed by enum
 	 * child_op_type.  Q8.8 fixed point: 256 == 1.0x.  Updated post-
 	 * invocation by adapt_budget() based on the kcov_shm->edges_found
@@ -480,6 +453,67 @@ struct stats_s {
 	 * shrink ratchet fires and the streak resets.  The hysteresis
 	 * keeps a single noise dip from immediately halving the budget. */
 	uint16_t childop_zero_streak[NR_CHILD_OP_TYPES];
+
+	/* ---- Group D: diagnostic / parent-side / one-shot ---- */
+
+	/* Counts to tell if we're making progress or not. */
+	unsigned long previous_op_count __attribute__((aligned(64)));	/* combined total of all children */
+
+	/* fd lifecycle tracking */
+	unsigned long fd_stale_detected;
+	unsigned long fd_stale_by_generation;
+	unsigned long fd_closed_tracked;
+	unsigned long fd_regenerated;
+	unsigned long fd_duped;
+	unsigned long fd_events_processed;
+	unsigned long fd_events_dropped;
+
+	/* Number of fds the generic ret_objtype post-hook auto-registered
+	 * into a per-type OBJ_LOCAL pool because no syscall-specific .post
+	 * had already done so. */
+	unsigned long fd_runtime_registered;
+
+	/* fds/bpf provisioning counters: cumulative count of fds we
+	 * successfully published into the global object pool, including
+	 * regenerations after stale-fd teardown.  Tells you how much of
+	 * trinity's fd-providing infrastructure BPF actually contributes
+	 * — zero means the kernel rejected every load and the BPF cross-
+	 * subsystem surface (SO_ATTACH_BPF, PERF_EVENT_IOC_SET_BPF, etc.)
+	 * is unreachable. */
+	unsigned long bpf_maps_provided;
+	unsigned long bpf_progs_provided;
+
+	/* Slots held in zombie-pending state because the kernel still has
+	 * the unkillable D-state task around and may yet wake it to write
+	 * into childdata.  Reusing a slot before the kernel tears the task
+	 * down lets the post-wake writes corrupt the replacement child. */
+	unsigned long zombie_slots_pending;	/* current count (gauge) */
+	unsigned long zombies_reaped;		/* total successfully reaped */
+	unsigned long zombies_timed_out;	/* force-reused after timeout */
+
+	/* Times we caught a child's local_op_count above LOCAL_OP_FLUSH_BATCH,
+	 * which is impossible during normal operation (the child flushes and
+	 * resets at that threshold).  Indicates a stray write into childdata
+	 * from somebody other than the slot's current owner. */
+	unsigned long local_op_count_corrupted;
+
+	/* fd_event_drain_all() found a child->fd_event_ring pointer that
+	 * failed the canonical-address / minimum-address sanity check.
+	 * Defense-in-depth against D-state zombie write-after-reap. */
+	unsigned long fd_event_ring_corrupted;
+
+	/* fd_event_drain_all() found a live child->fd_event_ring that
+	 * differed from the mprotected canary copy taken at init time.
+	 * Indicates the pointer was overwritten after init. */
+	unsigned long fd_event_ring_overwritten;
+
+	/* Shared obj-heap pressure counters: cumulative successful allocs
+	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
+	 * by dump_stats() under -v to print a one-line utilisation summary
+	 * — a busy run with many allocs but few frees flags a leak before
+	 * the heap actually exhausts. */
+	unsigned long obj_heap_allocs;
+	unsigned long obj_heap_frees;
 };
 
 unsigned int stats_syscall_category(const char *name);
