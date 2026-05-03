@@ -30,6 +30,14 @@ struct syscallrecord {
 	unsigned long a6;
 	unsigned long retval;
 
+	/*
+	 * Per-syscall scratch slot owned by .post handlers.  Sanitise stashes
+	 * a pointer or value here (typically a copy of an argN that needs to
+	 * outlive .post) so the post path is immune to the argN slot being
+	 * scribbled by sibling syscalls between BEFORE and AFTER.
+	 */
+	unsigned long post_state;
+
 	/* timestamp (written before the syscall, and updated afterwards. */
 	struct timespec tp;
 
