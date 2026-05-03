@@ -77,7 +77,7 @@ struct shm_s {
 	 * happens after the parent clears just gets a fresh enqueue,
 	 * so this is purely a hint, not a correctness gate.
 	 */
-	_Atomic uint8_t fd_regen_pending[MAX_OBJECT_TYPES];
+	_Atomic uint8_t fd_regen_pending[MAX_OBJECT_TYPES] __attribute__((aligned(64)));
 
 	/* io_uring ring with valid mappings, shared across children.
 	 * Init write uses RELEASE; child reads use ACQUIRE (lockless).
@@ -100,7 +100,7 @@ struct shm_s {
 	 * mmap'd MAP_SHARED before fork, but post-fork allocs need a
 	 * cross-process view of "which slot is next".
 	 */
-	_Atomic size_t shared_obj_heap_used;
+	_Atomic size_t shared_obj_heap_used __attribute__((aligned(64)));
 
 	/*
 	 * Sibling cursor for the shared string heap (see
