@@ -109,7 +109,12 @@ static void pool_add_locked(struct cmp_hint_pool *pool, unsigned long val)
 		memmove(&pool->values[lo + 1], &pool->values[lo],
 			(pool->count - lo) * sizeof(unsigned long));
 		pool->values[lo] = val;
-		pool->count++;
+		/*
+		 * RELEASE-store count so a lockless reader in cmp_hints_get
+		 * that observes the new count is guaranteed to also see the
+		 * values[] store above.
+		 */
+		__atomic_store_n(&pool->count, pool->count + 1, __ATOMIC_RELEASE);
 	} else {
 		unsigned int victim = rand() % CMP_HINTS_PER_SYSCALL;
 		unsigned int pos = (victim < lo) ? lo - 1 : lo;
@@ -170,7 +175,6 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 unsigned long cmp_hints_get(unsigned int nr)
 {
 	struct cmp_hint_pool *pool;
-	unsigned long val = 0;
 	unsigned int count;
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
@@ -178,13 +182,29 @@ unsigned long cmp_hints_get(unsigned int nr)
 
 	pool = &cmp_hints_shm->pools[nr];
 
-	pool_lock(pool);
-	count = pool->count;
-	if (count > 0)
-		val = pool->values[rand() % count];
-	pool_unlock(pool);
+	/*
+	 * Lockless read.  Multiple children fuzzing the same syscall would
+	 * otherwise serialize on pool->lock just to grab one hint.
+	 *
+	 * Tolerated races:
+	 *   - Stale count: we may pick an idx within an older snapshot, which
+	 *     still indexes a populated slot (count is monotonic up to the
+	 *     CMP_HINTS_PER_SYSCALL cap; once full, count stops moving).
+	 *   - Concurrent insert/eviction shifting values[] under us: each slot
+	 *     is a naturally-aligned unsigned long, so the read is atomic at
+	 *     the hardware level — we get either the pre- or post-shift value.
+	 *     Both are valid hints that lived in the pool, possibly a duplicate
+	 *     of a neighbouring entry.
+	 *
+	 * For fuzzer hints these are all benign — values[] entries are direct
+	 * unsigned longs substituted as syscall args, never dereferenced, and a
+	 * stale or duplicated hint is no worse than picking a different one.
+	 */
+	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
+	if (count == 0)
+		return 0;
 
-	return val;
+	return pool->values[rand() % count];
 }
 
 bool cmp_hints_available(unsigned int nr)
