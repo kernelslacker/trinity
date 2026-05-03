@@ -577,6 +577,7 @@ static void dump_stats_json(void)
 				"\"capget_anomalies\":%lu,"
 				"\"newlstat_anomalies\":%lu,"
 				"\"newstat_anomalies\":%lu,"
+				"\"newfstat_anomalies\":%lu,"
 				"\"uname_anomalies\":%lu,"
 				"\"lsm_list_modules_anomalies\":%lu,"
 				"\"listmount_anomalies\":%lu,"
@@ -690,6 +691,7 @@ static void dump_stats_json(void)
 		shm->stats.capget_oracle_anomalies,
 		shm->stats.newlstat_oracle_anomalies,
 		shm->stats.newstat_oracle_anomalies,
+		shm->stats.newfstat_oracle_anomalies,
 		shm->stats.uname_oracle_anomalies,
 		shm->stats.lsm_list_modules_oracle_anomalies,
 		shm->stats.listmount_oracle_anomalies,
@@ -1017,6 +1019,9 @@ void dump_stats(void)
 	if (shm->stats.newstat_oracle_anomalies)
 		stat_row("oracle", "newstat_anomalies",
 			 shm->stats.newstat_oracle_anomalies);
+	if (shm->stats.newfstat_oracle_anomalies)
+		stat_row("oracle", "newfstat_anomalies",
+			 shm->stats.newfstat_oracle_anomalies);
 	if (shm->stats.uname_oracle_anomalies)
 		stat_row("oracle", "uname_anomalies",
 			 shm->stats.uname_oracle_anomalies);
