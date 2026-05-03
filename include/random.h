@@ -12,6 +12,28 @@
 	? (min) + rand() / (RAND_MAX / ((max) - (min) + 1) + 1) \
 	: (max) + rand() / (RAND_MAX / ((min) - (max) + 1) + 1))
 
+/*
+ * Edge-value injection.  A childop that picks a numeric arg from random
+ * can wrap it in RAND_NEGATIVE_OR(...) to get its computed default value
+ * most of the time, but with probability 1/RAND_NEGATIVE_RATIO substitute
+ * one curated boundary value (0, -1, INT_MAX, LONG_MIN, page_size +/- 1,
+ * etc.) instead.  Use only for args whose value is passed to the kernel
+ * where bounds-checking matters; do not use for in-process indices into
+ * trinity-owned arrays where a negative would just walk our own memory.
+ *
+ * The 1-in-50 default is deliberately low: higher rates produce noise
+ * without finding new bugs once a kernel path's bounds-check has been
+ * exercised once.
+ */
+#define RAND_NEGATIVE_RATIO	50
+
+long get_negative_edge_value(void);
+
+#define RAND_NEGATIVE_OR(default_val) \
+	((rand() % RAND_NEGATIVE_RATIO == 0) \
+	 ? get_negative_edge_value() \
+	 : (long)(default_val))
+
 extern unsigned int seed;
 unsigned int init_seed(unsigned int seed);
 void set_seed(struct childdata *child);

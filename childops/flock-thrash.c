@@ -122,7 +122,11 @@ bool flock_thrash(struct childdata *child)
 				op |= LOCK_NB;
 		}
 
-		rc = flock(s->fd, op);
+		/* 1-in-RAND_NEGATIVE_RATIO sub the carefully-curated op for
+		 * a garbage value — exercises sys_flock's argument validation
+		 * (LOCK_MAND removal, unknown bit rejection) which the curated
+		 * mix above never reaches. */
+		rc = flock(s->fd, (int)RAND_NEGATIVE_OR(op));
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.flock_thrash_locks,
 					   1, __ATOMIC_RELAXED);

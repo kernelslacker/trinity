@@ -236,7 +236,12 @@ bool madvise_cycler(struct childdata *child)
 		advice = advice_cycle[advice_idx];
 		advice_idx = (advice_idx + 1) % (unsigned int) ARRAY_SIZE(advice_cycle);
 
-		rc = madvise(region + offset, len, advice);
+		/* 1-in-RAND_NEGATIVE_RATIO sub the page-aligned valid len for
+		 * a curated edge value — exercises the kernel's range
+		 * validation (PAGE_ALIGN overflow, end < start, len near
+		 * SIZE_MAX) which the partial-VMA path above never reaches. */
+		rc = madvise(region + offset,
+			     (size_t)RAND_NEGATIVE_OR(len), advice);
 		__atomic_add_fetch(&shm->stats.madvise_cycler_calls,
 				   1, __ATOMIC_RELAXED);
 		if (rc < 0) {
