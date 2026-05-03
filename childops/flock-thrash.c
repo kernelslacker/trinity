@@ -51,9 +51,11 @@
  * spread across files no one else is touching. */
 #define NR_FLOCK_FDS	4
 
-/* Hard cap on inner iterations.  Sized to leave the SIGALRM stall
+/* Default cap on inner iterations.  Sized to leave the SIGALRM stall
  * detector ample headroom: at ~10us per blocked flock() round-trip the
- * worst-case loop completes well under the 1-second alarm. */
+ * worst-case loop completes well under the 1-second alarm.  This is
+ * the BUDGETED() base — adapt_budget() can scale it from 0.25x to 4x
+ * (16 to 256 iters) based on the recent kcov edge-rate signal. */
 #define MAX_ITERATIONS	64
 
 /* Per-fd lock state so we strictly alternate acquire/release.  Without
@@ -77,7 +79,7 @@ bool flock_thrash(struct childdata *child)
 {
 	struct flock_slot slots[NR_FLOCK_FDS];
 	unsigned int opened = 0;
-	unsigned int iter;
+	unsigned int iter, iter_cap;
 	unsigned int i;
 
 	(void)child;
@@ -97,7 +99,8 @@ bool flock_thrash(struct childdata *child)
 	if (opened == 0)
 		return true;
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	iter_cap = BUDGETED(CHILD_OP_FLOCK_THRASH, MAX_ITERATIONS);
+	for (iter = 0; iter < iter_cap; iter++) {
 		struct flock_slot *s = &slots[(unsigned int)rand() % opened];
 		int op;
 		int rc;

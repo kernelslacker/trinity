@@ -93,9 +93,12 @@
  * and SIGALRM stall detection still has headroom. */
 #define BUDGET_NS	200000000L	/* 200 ms */
 
-/* Hard cap on inner cycle iterations.  Each iteration is one madvise()
+/* Default cap on inner cycle iterations.  Each iteration is one madvise()
  * plus an optional small touch loop; both are cheap, so 64 gives plenty
- * of cache-hot pressure without risking the SIGALRM stall detector. */
+ * of cache-hot pressure without risking the SIGALRM stall detector.
+ * This is the BUDGETED() base — adapt_budget() can scale it from 0.25x
+ * to 4x (16 to 256 iters) based on the recent kcov edge-rate signal.
+ * The wall-clock BUDGET_NS still applies as the absolute backstop. */
 #define MAX_ITERATIONS	64
 
 /* Curated advice set.  Recent modes that random_syscall barely covers
@@ -188,7 +191,7 @@ bool madvise_cycler(struct childdata *child)
 	unsigned char *region;
 	unsigned long region_len, nr_pages;
 	struct timespec start;
-	unsigned int iter;
+	unsigned int iter, iter_cap;
 	unsigned int advice_idx;
 
 	(void) child;
@@ -228,7 +231,8 @@ bool madvise_cycler(struct childdata *child)
 	 * MADV_FREE first. */
 	advice_idx = (unsigned int) rand() % (unsigned int) ARRAY_SIZE(advice_cycle);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER, MAX_ITERATIONS);
+	for (iter = 0; iter < iter_cap; iter++) {
 		unsigned long offset, len;
 		int advice, rc;
 

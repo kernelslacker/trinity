@@ -1,6 +1,39 @@
 #pragma once
 
+#include <stdint.h>
+#include "child.h"	/* NR_CHILD_OP_TYPES */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
+
+/*
+ * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
+ * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the
+ * runtime feedback loop can shift any one op away from its hard-coded
+ * MAX_ITERATIONS / BUDGET_NS — at the floor a 64-iter op still runs 16
+ * iters per invocation, at the ceiling it runs 256.
+ */
+#define ADAPT_BUDGET_UNITY	256	/* 1.0x */
+#define ADAPT_BUDGET_MIN	64	/* 0.25x */
+#define ADAPT_BUDGET_MAX	1024	/* 4.0x */
+
+/*
+ * Edge-delta floor that classifies an invocation as productive.  Reads
+ * the GLOBAL kcov_shm->edges_found counter, so a fleet running with N
+ * children adds baseline noise on every dispatch — the threshold has to
+ * sit clear of the noise floor or every op gets boosted just by being
+ * invoked while siblings are productive.  16 is calibrated for the
+ * default fleet size; for very large fleets the noise floor may rise
+ * above this value and the boost ratchet effectively stalls (which is
+ * the safer failure mode — multipliers stay near 1.0x and behaviour
+ * matches the pre-CV.13 fixed budgets).
+ */
+#define ADAPT_BUDGET_THRESHOLD	16
+
+/*
+ * Consecutive sub-threshold invocations required before the shrink
+ * ratchet fires.  Hysteresis: a single noisy zero-delta invocation in
+ * the middle of a productive streak should not halve the budget.
+ */
+#define ADAPT_BUDGET_ZERO_STREAK	4
 
 /* Upper bound on the recipe_runner catalog size.  recipe-runner.c
  * asserts at startup that its table fits.  Sized large enough to
@@ -429,6 +462,24 @@ struct stats_s {
 	 * the heap actually exhausts. */
 	unsigned long obj_heap_allocs;
 	unsigned long obj_heap_frees;
+
+	/* Per-childop adaptive-budget multiplier, indexed by enum
+	 * child_op_type.  Q8.8 fixed point: 256 == 1.0x.  Updated post-
+	 * invocation by adapt_budget() based on the kcov_shm->edges_found
+	 * delta observed during dispatch.  Read by the BUDGETED() macro
+	 * inside opt-in childops so productive ops get more inner-loop
+	 * iterations and dud ops shrink toward the floor.  Values clamp to
+	 * [ADAPT_BUDGET_MIN, ADAPT_BUDGET_MAX]; a 0 entry means "uninit,
+	 * fall back to 1.0x" so a wild-write to this region degrades to
+	 * the existing fixed-budget behaviour rather than zeroing the loop. */
+	uint16_t childop_budget_mult[NR_CHILD_OP_TYPES];
+
+	/* Consecutive invocations of an op_type whose edge delta did not
+	 * clear ADAPT_BUDGET_THRESHOLD.  Reset to 0 on a productive
+	 * invocation; once the streak hits ADAPT_BUDGET_ZERO_STREAK the
+	 * shrink ratchet fires and the streak resets.  The hysteresis
+	 * keeps a single noise dip from immediately halving the budget. */
+	uint16_t childop_zero_streak[NR_CHILD_OP_TYPES];
 };
 
 unsigned int stats_syscall_category(const char *name);

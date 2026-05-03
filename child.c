@@ -956,6 +956,88 @@ static enum child_op_type pick_op_type(void)
 }
 
 /*
+ * Post-invocation feedback for the per-childop budget multiplier.
+ *
+ * Reads kcov_shm->edges_found before and after the dispatch call (the
+ * caller hands us the bracketed values).  If the delta clears
+ * ADAPT_BUDGET_THRESHOLD we treat the invocation as productive: bump
+ * the multiplier by 25% (Q8.8 *5/4) and clear the zero-streak.
+ * Otherwise increment the zero-streak; once it hits
+ * ADAPT_BUDGET_ZERO_STREAK the shrink ratchet fires (multiplier *4/5)
+ * and the streak resets.  Both moves clamp to [ADAPT_BUDGET_MIN,
+ * ADAPT_BUDGET_MAX].
+ *
+ * Caveats deliberately accepted:
+ *
+ *   - The "edges in window" signal is the GLOBAL edge counter, so
+ *     siblings running productive syscalls during our dispatch inflate
+ *     our delta.  Most childops don't bracket their own kernel-side
+ *     work with KCOV_ENABLE/DISABLE (they're not random_syscall
+ *     callers), so a per-child counter wouldn't fire for them either —
+ *     the signal we DO have is the only signal available without
+ *     restructuring the KCOV plumbing.  The threshold is calibrated to
+ *     filter out modest sibling noise; on very large fleets the noise
+ *     floor rises and the boost ratchet stalls (safe failure mode —
+ *     multipliers stay near 1.0x and behaviour matches pre-CV.13
+ *     fixed budgets).
+ *
+ *   - Updates are RELAXED non-RMW stores.  Two children tail-racing on
+ *     the same op_type can lose an update; the worst case is the
+ *     ratchet converges a few invocations later than the strict-RMW
+ *     model would.  Ratchet caps make divergence bounded in either
+ *     direction.
+ *
+ *   - CHILD_OP_SYSCALL is excluded entirely.  random_syscall has its
+ *     own cold-syscall heuristics inside kcov.c and we don't want this
+ *     loop fighting those for control of the dominant ~95% path.
+ */
+static void adapt_budget(enum child_op_type op_type,
+			 unsigned long edges_before,
+			 unsigned long edges_after)
+{
+	uint16_t mult, new_mult;
+	uint16_t streak;
+	unsigned long delta;
+
+	if (op_type == CHILD_OP_SYSCALL || op_type >= NR_CHILD_OP_TYPES)
+		return;
+
+	mult = __atomic_load_n(&shm->stats.childop_budget_mult[op_type],
+			       __ATOMIC_RELAXED);
+	if (mult == 0)
+		mult = ADAPT_BUDGET_UNITY;
+
+	delta = (edges_after >= edges_before) ? (edges_after - edges_before) : 0;
+
+	if (delta >= ADAPT_BUDGET_THRESHOLD) {
+		/* Productive: boost by 25% (Q8.8 *5/4), clamped at the cap. */
+		new_mult = (uint16_t)((unsigned int)mult * 5U / 4U);
+		if (new_mult > ADAPT_BUDGET_MAX)
+			new_mult = ADAPT_BUDGET_MAX;
+		__atomic_store_n(&shm->stats.childop_zero_streak[op_type],
+				 0, __ATOMIC_RELAXED);
+	} else {
+		/* Hysteresis: only shrink after ADAPT_BUDGET_ZERO_STREAK
+		 * consecutive sub-threshold invocations, so a single noise
+		 * dip doesn't immediately cut the budget. */
+		streak = (uint16_t)__atomic_add_fetch(
+			&shm->stats.childop_zero_streak[op_type],
+			1, __ATOMIC_RELAXED);
+		if (streak < ADAPT_BUDGET_ZERO_STREAK)
+			return;
+		new_mult = (uint16_t)((unsigned int)mult * 4U / 5U);
+		if (new_mult < ADAPT_BUDGET_MIN)
+			new_mult = ADAPT_BUDGET_MIN;
+		__atomic_store_n(&shm->stats.childop_zero_streak[op_type],
+				 0, __ATOMIC_RELAXED);
+	}
+
+	if (new_mult != mult)
+		__atomic_store_n(&shm->stats.childop_budget_mult[op_type],
+				 new_mult, __ATOMIC_RELAXED);
+}
+
+/*
  * This is the child main loop, entered after init_child has completed
  * from the fork_children() loop.
  */
@@ -1033,6 +1115,17 @@ void child_process(struct childdata *child, int childno)
 		if (child->op_type != CHILD_OP_SYSCALL)
 			alarm(1);
 
+		/* Snapshot the global edge counter for adapt_budget()'s
+		 * post-invocation feedback.  Cheap (single relaxed atomic
+		 * load) and only meaningful if KCOV is active; otherwise the
+		 * counter stays at zero and the delta is always 0, which
+		 * correctly degrades to "never boost, never shrink" — the
+		 * multiplier sticks at 1.0x and behaviour matches pre-CV.13. */
+		unsigned long edges_before = (kcov_shm != NULL)
+			? __atomic_load_n(&kcov_shm->edges_found,
+					  __ATOMIC_RELAXED)
+			: 0UL;
+
 		switch (child->op_type) {
 		case CHILD_OP_MMAP_LIFECYCLE:	ret = mmap_lifecycle(child); break;
 		case CHILD_OP_MPROTECT_SPLIT:	ret = mprotect_split(child); break;
@@ -1078,6 +1171,15 @@ void child_process(struct childdata *child, int childno)
 		if (child->op_type != CHILD_OP_SYSCALL) {
 			alarm(0);
 			__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
+		}
+
+		/* Feed the post-invocation edge delta back into the per-op
+		 * budget multiplier.  Skipped when KCOV is unavailable —
+		 * adapt_budget() needs a real signal to ratchet on. */
+		if (kcov_shm != NULL) {
+			unsigned long edges_after = __atomic_load_n(
+				&kcov_shm->edges_found, __ATOMIC_RELAXED);
+			adapt_budget(child->op_type, edges_before, edges_after);
 		}
 
 		enable_coredumps();
