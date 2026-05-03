@@ -1,8 +1,17 @@
 /*
  * SYSCALL_DEFINE2(newstat, const char __user *, filename, struct stat __user *, statbuf)
  */
+#include <fcntl.h>
+#include <limits.h>
+#include <linux/stat.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
+#include "shm.h"
+#include "trinity.h"
 
 static void sanitise_statbuf_a2(struct syscallrecord *rec)
 {
@@ -76,6 +85,164 @@ static void sanitise_statx(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a5, page_size);
 }
 
+/*
+ * Oracle: statx(dfd, pathname, flags, mask, statxbuf) is the modern
+ * path-based stat — it resolves pathname relative to dfd, applies the
+ * lookup flags (AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT, AT_EMPTY_PATH,
+ * AT_STATX_SYNC_*), and fills only those struct statx fields the caller
+ * asked for in mask AND that the underlying filesystem actually supports.
+ * The reply's stx_mask reports which fields are valid; everything else
+ * in the buffer is undefined.  All five args steer either name resolution
+ * or which fields the kernel writes, so all five must be snapshotted
+ * before the re-issue.
+ *
+ * Mask intersection wrinkle: comparing a field that the original call
+ * filled but the recheck did not (or vice versa) would false-positive
+ * on transient mask differences — a filesystem that lazily computes
+ * STATX_BLOCKS, a btrfs subvolume crossing, a recheck arriving before
+ * STATX_BTIME has been read off disk.  Compare only fields whose bit
+ * is set in BOTH stx_masks: valid_mask = first.stx_mask & recheck.stx_mask.
+ *
+ * Mask-gated fields (compare iff valid_mask has the bit):
+ *   STATX_TYPE | STATX_MODE   stx_mode (one __u16, fed by either bit)
+ *   STATX_NLINK              stx_nlink
+ *   STATX_UID                stx_uid
+ *   STATX_GID                stx_gid
+ *   STATX_INO                stx_ino
+ *   STATX_SIZE               stx_size
+ *   STATX_BLOCKS             stx_blocks
+ *
+ * Always-on fields (kernel fills unconditionally per the UAPI):
+ *   stx_blksize, stx_dev_major+stx_dev_minor, stx_rdev_major+stx_rdev_minor
+ *
+ * Excluded (would drift legitimately or carry no inode-stable signal):
+ *   stx_atime / stx_mtime / stx_ctime / stx_btime — sibling read / write /
+ *     chmod legitimately advances these.
+ *   stx_attributes / stx_attributes_mask — file-attribute flags can
+ *     legitimately flip (chattr +i, FS_DAX_FL toggle, FS_VERITY_FL set).
+ *   stx_mnt_id — bind-mount churn / mount propagation across a private
+ *     namespace can change this without the inode changing.
+ *   stx_dio_mem_align / stx_dio_offset_align / stx_subvol /
+ *     stx_atomic_write_* — rare reconfiguration paths that legitimately
+ *     change without the underlying inode rotating.
+ *
+ * A divergence in the compared fields is not benign drift; it points
+ * at one of:
+ *
+ *   - copy_to_user mis-write that leaves a torn struct statx in user
+ *     memory (partial write, wrong-offset fill, residual stack data).
+ *   - struct-layout shift on a kernel/glibc skew that lands stx_ino in
+ *     the stx_size slot, or stx_blocks in stx_blksize.
+ *   - sibling-thread scribble of the user receive buffer between the
+ *     original syscall return and our post-hook re-read.
+ *   - sibling-thread rename / replace of the path component between the
+ *     original lookup and the recheck (caught only because we resolved
+ *     the snapshotted path and got a different inode).
+ *
+ * TOCTOU defeat (five buffers worth of it): pathname, flags, mask, and
+ * statxbuf are all reachable from sibling-scribbleable user memory or
+ * shared bookkeeping.  Snapshot the dfd, the path (PATH_MAX stack
+ * buffer), the flags word, the mask word, and the original statx result
+ * before re-issue.  Switching flags between calls would change lookup
+ * semantics (NOFOLLOW vs follow, sync mode) and produce a benign
+ * "different inode" or "different field" divergence that is purely an
+ * artifact of our own race window — preserving the original eliminates
+ * that source.  The mask preservation matters too: requesting different
+ * fields the second time would shift which bits the kernel sets in
+ * stx_mask and break the intersection logic.
+ *
+ * If the recheck syscall itself fails, a sibling has closed the dfd,
+ * unlinked the path, or scribbled the statxbuf into an unmapped region;
+ * all benign.  Treat any non-zero return from syscall(SYS_statx) as
+ * "give up, sample skipped" so we never report on a torn-down path or
+ * descriptor.  Sample one in a hundred to stay in line with the rest of
+ * the oracle family; compare each field individually with no early-return
+ * so multi-field corruption surfaces in a single sample, but bump the
+ * anomaly counter only once per sample.
+ */
+static void post_statx(struct syscallrecord *rec)
+{
+	struct statx first, recheck;
+	char local_path[PATH_MAX];
+	unsigned int flags, mask, valid_mask;
+	int dfd;
+	int diverged = 0;
+
+	if (!ONE_IN(100))
+		return;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	if (rec->a2 == 0 || rec->a5 == 0)
+		return;
+
+	dfd = (int) rec->a1;
+	strncpy(local_path, (const char *)(unsigned long) rec->a2, PATH_MAX - 1);
+	local_path[PATH_MAX - 1] = '\0';
+	flags = (unsigned int) rec->a3;
+	mask = (unsigned int) rec->a4;
+	memcpy(&first, (void *)(unsigned long) rec->a5, sizeof(first));
+
+	if (syscall(SYS_statx, dfd, local_path, flags, mask, &recheck) != 0)
+		return;
+
+	valid_mask = first.stx_mask & recheck.stx_mask;
+
+	if (valid_mask & (STATX_TYPE | STATX_MODE))
+		if (first.stx_mode != recheck.stx_mode) diverged = 1;
+	if (valid_mask & STATX_NLINK)
+		if (first.stx_nlink != recheck.stx_nlink) diverged = 1;
+	if (valid_mask & STATX_UID)
+		if (first.stx_uid != recheck.stx_uid) diverged = 1;
+	if (valid_mask & STATX_GID)
+		if (first.stx_gid != recheck.stx_gid) diverged = 1;
+	if (valid_mask & STATX_INO)
+		if (first.stx_ino != recheck.stx_ino) diverged = 1;
+	if (valid_mask & STATX_SIZE)
+		if (first.stx_size != recheck.stx_size) diverged = 1;
+	if (valid_mask & STATX_BLOCKS)
+		if (first.stx_blocks != recheck.stx_blocks) diverged = 1;
+
+	if (first.stx_blksize    != recheck.stx_blksize)    diverged = 1;
+	if (first.stx_dev_major  != recheck.stx_dev_major)  diverged = 1;
+	if (first.stx_dev_minor  != recheck.stx_dev_minor)  diverged = 1;
+	if (first.stx_rdev_major != recheck.stx_rdev_major) diverged = 1;
+	if (first.stx_rdev_minor != recheck.stx_rdev_minor) diverged = 1;
+
+	if (!diverged)
+		return;
+
+	output(0,
+	       "statx oracle anomaly: dfd=%d path=%s flags=%x mask=%x valid_mask=%x "
+	       "first={mask=%x,mode=%o,nlink=%u,uid=%u,gid=%u,ino=%llu,size=%llu,"
+	       "blocks=%llu,blksize=%u,dev=%u:%u,rdev=%u:%u} "
+	       "recall={mask=%x,mode=%o,nlink=%u,uid=%u,gid=%u,ino=%llu,size=%llu,"
+	       "blocks=%llu,blksize=%u,dev=%u:%u,rdev=%u:%u}\n",
+	       dfd, local_path, flags, mask, valid_mask,
+	       (unsigned int) first.stx_mask, (unsigned int) first.stx_mode,
+	       (unsigned int) first.stx_nlink, (unsigned int) first.stx_uid,
+	       (unsigned int) first.stx_gid,
+	       (unsigned long long) first.stx_ino,
+	       (unsigned long long) first.stx_size,
+	       (unsigned long long) first.stx_blocks,
+	       (unsigned int) first.stx_blksize,
+	       (unsigned int) first.stx_dev_major, (unsigned int) first.stx_dev_minor,
+	       (unsigned int) first.stx_rdev_major, (unsigned int) first.stx_rdev_minor,
+	       (unsigned int) recheck.stx_mask, (unsigned int) recheck.stx_mode,
+	       (unsigned int) recheck.stx_nlink, (unsigned int) recheck.stx_uid,
+	       (unsigned int) recheck.stx_gid,
+	       (unsigned long long) recheck.stx_ino,
+	       (unsigned long long) recheck.stx_size,
+	       (unsigned long long) recheck.stx_blocks,
+	       (unsigned int) recheck.stx_blksize,
+	       (unsigned int) recheck.stx_dev_major, (unsigned int) recheck.stx_dev_minor,
+	       (unsigned int) recheck.stx_rdev_major, (unsigned int) recheck.stx_rdev_minor);
+
+	__atomic_add_fetch(&shm->stats.statx_oracle_anomalies, 1,
+			   __ATOMIC_RELAXED);
+}
+
 struct syscallentry syscall_statx = {
 	.name = "statx",
 	.num_args = 5,
@@ -84,5 +251,7 @@ struct syscallentry syscall_statx = {
 	.arg_params[2].list = ARGLIST(statx_flags),
 	.arg_params[3].list = ARGLIST(statx_mask),
 	.sanitise = sanitise_statx,
+	.post = post_statx,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };
