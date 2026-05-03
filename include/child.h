@@ -100,14 +100,60 @@ enum child_op_type {
 	NR_CHILD_OP_TYPES,
 };
 
+/*
+ * Layout note — the leading 64 bytes are the per-syscall hot block.
+ *
+ * Every field in the leading cacheline is read or written on (almost)
+ * every syscall by the dispatch_step / __do_syscall / kcov_collect path
+ * or the random-syscall picker.  Keeping them packed in one line saves
+ * the 1-3 cacheline misses per call the previous layout incurred when
+ * the giant 4 KiB syscallrecord (with PREBUFFER_LEN=4096) sat at the
+ * front of the struct and pushed every other hot field out into
+ * cachelines that had to be re-fetched on each call.
+ *
+ * The static_assert in child.c pins op_nr (the last hot field) to an
+ * offset under 64 so a future field reorder that breaks this property
+ * fails the build instead of silently regressing the hot path.
+ *
+ * struct childdata itself is aligned to 64 bytes so each per-child
+ * allocation starts on a fresh cacheline; without this, alloc_shared
+ * could hand out a struct whose first 8 bytes share a line with the
+ * preceding allocation's tail.
+ */
 struct childdata {
-	/* The actual syscall records each child uses. */
-	struct syscallrecord syscall;
+	/* ---- Hot leading cacheline (64 bytes) ---- */
 
-	/* Per-child KCOV state (fd + trace buffer). */
+	/* Per-child KCOV state (fd + trace buffer + active/cmp/remote flags).
+	 * Touched on every syscall: dispatch_step gates cmp_mode/remote_mode
+	 * off kcov.active and kcov.remote_capable, __do_syscall hands &kcov
+	 * to the kcov_enable_X / kcov_disable wrappers, and kcov_collect
+	 * mutates dedup + current_generation per call. */
 	struct kcov_child kcov;
 
-	struct objhead objects[MAX_OBJECT_TYPES];
+	/* Last syscall number executed, for edge-pair tracking.
+	 * Read every call (edgepair_is_cold gate) and written every call
+	 * (post-dispatch update). */
+	unsigned int last_syscall_nr;
+
+	/* Last syscall group executed, for group biasing.
+	 * Read every call (group_bias gate) and conditionally written. */
+	unsigned int last_group;
+
+	/* Per-iteration child-op counter, written every loop iteration in
+	 * child_process and consulted by the stall detector. */
+	unsigned long op_nr;
+
+	/* Per-child syscall counter, batch-flushed to shm->stats.op_count
+	 * every LOCAL_OP_FLUSH_BATCH ops to avoid contending one cache line
+	 * across all children.  Incremented inside __do_syscall on every
+	 * call.  Aggregated by the parent when an exact total is needed. */
+	unsigned long local_op_count;
+
+	/* ---- End of hot leading cacheline ---- */
+
+	/* Warm fields: read or written per call but not in inner retry
+	 * loops.  Kept adjacent so the second cacheline absorbs whatever
+	 * the first one missed. */
 
 	/* Pointer to the active-syscall lookup table for this child's
 	 * current pick.  Uniarch: set once at child init to
@@ -119,23 +165,8 @@ struct childdata {
 
 	/* last time the child made progress. */
 	struct timespec tp;
-	unsigned long op_nr;
 
-	/* Per-child syscall counter, batch-flushed to shm->stats.op_count
-	 * every LOCAL_OP_FLUSH_BATCH ops to avoid contending one cache line
-	 * across all children. Aggregated by the parent when an exact total
-	 * is needed. */
-	unsigned long local_op_count;
-
-	unsigned int seed;
-
-	unsigned int num;
-
-	/* Last syscall group executed, for group biasing. */
-	unsigned int last_group;
-
-	/* Last syscall number executed, for edge-pair tracking. */
-	unsigned int last_syscall_nr;
+	enum child_op_type op_type;
 
 	/* per-child fd caching to avoid cross-child races */
 	int current_fd;
@@ -147,17 +178,18 @@ struct childdata {
 	 * trustworthy. */
 	uint32_t cached_fd_generation;
 
-	/* Ring buffer for reporting fd events to the parent.
-	 * Allocated in shared memory, one per child. */
-	struct fd_event_ring *fd_event_ring;
+	/* fd to /proc/self/fail-nth, opened once per child.  -1 means
+	 * fault injection is unavailable on this kernel/config.  Read on
+	 * every call by maybe_inject_fault. */
+	int fail_nth_fd;
 
-	/* FD leak instrumentation: count fds created and closed by
-	 * this child's syscalls, with per-group breakdown.
-	 * On child exit, if fd_created - fd_closed > threshold,
-	 * we log which syscall groups are responsible. */
-	unsigned long fd_created;
-	unsigned long fd_closed;
-	unsigned long fd_created_by_group[NR_GROUPS];
+	unsigned int seed;
+
+	unsigned int num;
+
+	/* Stall detection state: consecutive alarm timeouts without progress. */
+	unsigned int stall_count;
+	unsigned int stall_last;
 
 	unsigned char xcpu_count;
 
@@ -167,29 +199,17 @@ struct childdata {
 
 	bool dropped_privs;
 
-	enum child_op_type op_type;
+	/* FD leak instrumentation: count fds created and closed by
+	 * this child's syscalls, with per-group breakdown.
+	 * On child exit, if fd_created - fd_closed > threshold,
+	 * we log which syscall groups are responsible. */
+	unsigned long fd_created;
+	unsigned long fd_closed;
+	unsigned long fd_created_by_group[NR_GROUPS];
 
-	/* Stall detection state: consecutive alarm timeouts without progress. */
-	unsigned int stall_count;
-	unsigned int stall_last;
-
-	/* Ring of fds returned by recent fd-creating syscalls.
-	 * Consulted preferentially when generating ARG_FD arguments. */
-	struct child_fd_ring live_fds;
-
-	/* Ring of recently completed syscall records, drained by the parent
-	 * during post-mortem to reconstruct a fleet-wide chronology. */
-	struct child_syscall_ring syscall_ring;
-
-	/* Compact rolling history of recently completed syscalls, drained
-	 * on __BUG() to recover what this child was doing just before an
-	 * assertion failure (most often a parent-side list/fd-event drain
-	 * crash caused by a child wild write hundreds of syscalls back). */
-	struct pre_crash_ring pre_crash;
-
-	/* fd to /proc/self/fail-nth, opened once per child.  -1 means
-	 * fault injection is unavailable on this kernel/config. */
-	int fail_nth_fd;
+	/* Ring buffer for reporting fd events to the parent.
+	 * Allocated in shared memory, one per child. */
+	struct fd_event_ring *fd_event_ring;
 
 	/* Name of the recipe currently executing inside recipe_runner(),
 	 * or NULL when no recipe is in flight.  Read by post-mortem to
@@ -206,7 +226,34 @@ struct childdata {
 	const char *bug_text;
 	const char *bug_func;
 	unsigned int bug_lineno;
-};
+
+	/* ---- Cold tail: large rings and the per-call syscallrecord with
+	 * its 4 KiB prebuffer.  Pushed past every hot/warm field so reads
+	 * of any field above land in the leading cacheline(s) instead of
+	 * dragging the prebuffer's lines into L1. ---- */
+
+	/* Ring of fds returned by recent fd-creating syscalls.
+	 * Consulted preferentially when generating ARG_FD arguments. */
+	struct child_fd_ring live_fds;
+
+	struct objhead objects[MAX_OBJECT_TYPES];
+
+	/* Ring of recently completed syscall records, drained by the parent
+	 * during post-mortem to reconstruct a fleet-wide chronology. */
+	struct child_syscall_ring syscall_ring;
+
+	/* Compact rolling history of recently completed syscalls, drained
+	 * on __BUG() to recover what this child was doing just before an
+	 * assertion failure (most often a parent-side list/fd-event drain
+	 * crash caused by a child wild write hundreds of syscalls back). */
+	struct pre_crash_ring pre_crash;
+
+	/* The actual syscall records each child uses.  Dominated by a 4 KiB
+	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6
+	 * / retval / lock / state are touched on the hot path, and those are
+	 * already in the rec's own first cacheline. */
+	struct syscallrecord syscall;
+} __attribute__((aligned(64)));
 
 extern unsigned int max_children;
 
