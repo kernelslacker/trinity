@@ -132,19 +132,14 @@ static char * render_arg(struct syscallrecord *rec, char *sptr, char *end, unsig
 /*
  * Used from output_syscall_prefix, and also from postmortem dumper
  */
-static unsigned int render_syscall_prefix(struct syscallrecord *rec, char *bufferstart)
+static unsigned int render_syscall_prefix(struct syscallrecord *rec,
+					  struct syscallentry *entry,
+					  char *bufferstart)
 {
-	struct syscallentry *entry;
 	struct childdata *child = this_child();
 	char *sptr = bufferstart;
 	char *end = bufferstart + PREBUFFER_LEN;
 	unsigned int i;
-	unsigned int syscallnr;
-
-	syscallnr = rec->nr;
-	entry = get_syscall_entry(syscallnr, rec->do32bit);
-	if (entry == NULL)
-		return 0;
 
 	sptr = bprintf(sptr, end, "[child%u:%u] [%lu] %s",
 			child->num, __atomic_load_n(&pids[child->num], __ATOMIC_RELAXED), child->op_nr,
@@ -185,7 +180,7 @@ static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *buff
  * They render the buffer, and output it to stdout.
  * Other contexts (like post-mortem) directly use the buffers.
  */
-void output_syscall_prefix(struct syscallrecord *rec)
+void output_syscall_prefix(struct syscallrecord *rec, struct syscallentry *entry)
 {
 	static char *buffer = NULL;
 	unsigned int len;
@@ -193,7 +188,7 @@ void output_syscall_prefix(struct syscallrecord *rec)
 	if (buffer == NULL)
 		buffer = zmalloc(PREBUFFER_LEN);
 
-	len = render_syscall_prefix(rec, buffer);
+	len = render_syscall_prefix(rec, entry, buffer);
 
 	/* copy child-local buffer to shm, NUL-terminate */
 	memcpy(rec->prebuffer, buffer, len);

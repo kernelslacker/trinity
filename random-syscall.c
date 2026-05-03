@@ -491,13 +491,13 @@ static void maybe_rotate_strategy(void)
  * differ only in how they got the args into rec; everything from
  * output_syscall_prefix forward is shared.
  */
-static bool dispatch_step(struct childdata *child, bool *found_new)
+static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
+			  bool *found_new)
 {
 	struct syscallrecord *rec = &child->syscall;
-	struct syscallentry *entry;
 	bool do_cmp;
 
-	output_syscall_prefix(rec);
+	output_syscall_prefix(rec, entry);
 
 	/* Every CMP_MODE_RATIO-th syscall, run in CMP mode to collect
 	 * comparison operand hints instead of PC coverage.
@@ -508,7 +508,7 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 	child->kcov.remote_mode = !do_cmp && child->kcov.remote_capable &&
 				  ONE_IN(KCOV_REMOTE_RATIO);
 
-	do_syscall(rec, &child->kcov, child);
+	do_syscall(rec, entry, &child->kcov, child);
 
 	if (unlikely(do_cmp)) {
 		cmp_hints_collect(child->kcov.trace_buf, rec->nr);
@@ -540,10 +540,9 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 		/* Save args that discovered new coverage, but only for
 		 * syscalls without sanitise (which may stash pointers). */
 		if (unlikely(new_edges)) {
-			struct syscallentry *save_entry = get_syscall_entry(rec->nr, rec->do32bit);
 			int strat;
 
-			if (save_entry != NULL && save_entry->sanitise == NULL)
+			if (entry->sanitise == NULL)
 				minicorpus_save(rec);
 
 			/* Coverage-delta-triggered persistence: snapshot the
@@ -567,7 +566,7 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 
 	output_syscall_postfix(rec);
 
-	handle_syscall_ret(rec);
+	handle_syscall_ret(rec, entry);
 
 	/* Snapshot the completed call into the per-child ring so the parent
 	 * has a chronological window of recent activity if a kernel taint
@@ -579,37 +578,34 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 	 * recent syscall.  rec->tp was just refreshed in do_syscall(). */
 	pre_crash_ring_record(child, rec, &rec->tp);
 
-	entry = get_syscall_entry(rec->nr, rec->do32bit);
-	if (likely(entry != NULL)) {
-		/* Dispatch-time category histogram, surfaced under -vv.
-		 * entry->syscall_category is resolved once at table-init
-		 * time (copy_syscall_table) so this stays a single indexed
-		 * atomic increment on the hot path. */
-		__atomic_add_fetch(&shm->stats.syscall_category_count[entry->syscall_category],
-				   1, __ATOMIC_RELAXED);
+	/* Dispatch-time category histogram, surfaced under -vv.
+	 * entry->syscall_category is resolved once at table-init
+	 * time (copy_syscall_table) so this stays a single indexed
+	 * atomic increment on the hot path. */
+	__atomic_add_fetch(&shm->stats.syscall_category_count[entry->syscall_category],
+			   1, __ATOMIC_RELAXED);
 
-		/* FD leak tracking: count successful fd-creating and
-		 * fd-closing syscalls per child for leak diagnosis. */
-		if (rec->retval != -1UL) {
-			if (entry->rettype == RET_FD) {
-				child->fd_created++;
-				if (entry->group < NR_GROUPS)
-					child->fd_created_by_group[entry->group]++;
-				/* Track returned fd for preferential reuse in arg generation. */
-				if ((int)rec->retval > 2)
-					child_fd_ring_push(&child->live_fds, (int)rec->retval);
-			}
-			if (strcmp(entry->name, "close") == 0)
-				child->fd_closed++;
+	/* FD leak tracking: count successful fd-creating and
+	 * fd-closing syscalls per child for leak diagnosis. */
+	if (rec->retval != -1UL) {
+		if (entry->rettype == RET_FD) {
+			child->fd_created++;
+			if (entry->group < NR_GROUPS)
+				child->fd_created_by_group[entry->group]++;
+			/* Track returned fd for preferential reuse in arg generation. */
+			if ((int)rec->retval > 2)
+				child_fd_ring_push(&child->live_fds, (int)rec->retval);
 		}
-
-		/* Track the group for biasing. */
-		if (group_bias)
-			child->last_group = entry->group;
-
-		/* Track syscall number for edge-pair sequence coverage. */
-		child->last_syscall_nr = rec->nr;
+		if (strcmp(entry->name, "close") == 0)
+			child->fd_closed++;
 	}
+
+	/* Track the group for biasing. */
+	if (group_bias)
+		child->last_group = entry->group;
+
+	/* Track syscall number for edge-pair sequence coverage. */
+	child->last_syscall_nr = rec->nr;
 
 	/* Cheap end-of-call check for the strategy rotation boundary.
 	 * Two relaxed loads + a compare in the common case; the CAS only
@@ -644,7 +640,7 @@ bool random_syscall_step(struct childdata *child,
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 
-	return dispatch_step(child, found_new);
+	return dispatch_step(child, entry, found_new);
 }
 
 bool random_syscall(struct childdata *child)
@@ -719,5 +715,5 @@ bool replay_syscall_step(struct childdata *child,
 
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 
-	return dispatch_step(child, found_new);
+	return dispatch_step(child, entry, found_new);
 }

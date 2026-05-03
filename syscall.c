@@ -125,7 +125,8 @@ static bool maybe_inject_fault(struct childdata *child, enum syscallstate state)
 	return true;
 }
 
-static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
+static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
+			 enum syscallstate state,
 			 struct kcov_child *kc, struct childdata *child)
 {
 	unsigned long ret = dry_run ? -1UL : 0;
@@ -147,14 +148,10 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
 	}
 
 	if (dry_run == false) {
-		int nr, call;
+		int call;
 		bool needalarm;
-		struct syscallentry *entry;
 
-		nr = rec->nr;
-		call = nr + SYSCALL_OFFSET;
-		entry = get_syscall_entry(nr, rec->do32bit);
-		BUG_ON(entry == NULL);
+		call = rec->nr + SYSCALL_OFFSET;
 		needalarm = entry->flags & NEED_ALARM;
 
 		lock(&rec->lock);
@@ -220,7 +217,8 @@ static void __do_syscall(struct syscallrecord *rec, enum syscallstate state,
  * child process with something unknown to us. We use a 'throwaway' process
  * to do the execve in, and let it run for a max of a second before we kill it
  */
-static void do_extrafork(struct syscallrecord *rec, struct childdata *child)
+static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
+			 struct childdata *child)
 {
 	pid_t pid = 0;
 	pid_t extrapid;
@@ -231,7 +229,7 @@ static void do_extrafork(struct syscallrecord *rec, struct childdata *child)
 		char childname[]="trinity-subchild";
 		prctl(PR_SET_NAME, (unsigned long) &childname);
 
-		__do_syscall(rec, GOING_AWAY, NULL, child);
+		__do_syscall(rec, entry, GOING_AWAY, NULL, child);
 		/* if this was for eg. an successful execve, we should never get here.
 		 * if it failed though... */
 		_exit(EXIT_SUCCESS);
@@ -309,20 +307,14 @@ static void register_returned_fd(const struct syscallentry *entry,
 			   __ATOMIC_RELAXED);
 }
 
-void do_syscall(struct syscallrecord *rec, struct kcov_child *kc, struct childdata *child)
+void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
+		struct kcov_child *kc, struct childdata *child)
 {
-	struct syscallentry *entry;
-	unsigned int call;
-
-	call = rec->nr;
-	entry = get_syscall_entry(call, rec->do32bit);
-	BUG_ON(entry == NULL);
-
 	if (entry->flags & EXTRA_FORK)
-		do_extrafork(rec, child);
+		do_extrafork(rec, entry, child);
 	else
 		 /* common-case, do the syscall in this child process. */
-		__do_syscall(rec, BEFORE, kc, child);
+		__do_syscall(rec, entry, BEFORE, kc, child);
 
 	/* Reuse the iteration-start timestamp child->tp captured at the top
 	 * of random_syscall_step() rather than calling clock_gettime() again.
@@ -360,14 +352,9 @@ already_done:
 	unlock(&shm->syscalltable_lock);
 }
 
-void handle_syscall_ret(struct syscallrecord *rec)
+void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 {
-	struct syscallentry *entry;
-	unsigned int call;
-
-	call = rec->nr;
-	entry = get_syscall_entry(call, rec->do32bit);
-	BUG_ON(entry == NULL);
+	unsigned int call = rec->nr;
 
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
