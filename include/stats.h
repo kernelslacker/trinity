@@ -128,6 +128,7 @@ struct stats_s {
 	unsigned long listxattrat_oracle_anomalies;
 	unsigned long flistxattr_oracle_anomalies;
 	unsigned long listxattr_oracle_anomalies;
+	unsigned long llistxattr_oracle_anomalies;
 	unsigned long sysfs_oracle_anomalies;
 
 	/* procfs_writer childop: per-tree write counts */
