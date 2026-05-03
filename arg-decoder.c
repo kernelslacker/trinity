@@ -130,7 +130,10 @@ static char * render_arg(struct syscallrecord *rec, char *sptr, char *end, unsig
 }
 
 /*
- * Used from output_syscall_prefix, and also from postmortem dumper
+ * Render the live -vv trace line for one syscall into bufferstart.
+ * Returns the number of bytes written (excluding the NUL).  Only feeds
+ * output_syscall_prefix; the post-mortem dumper reconstructs from the
+ * chronicle ring instead of reading the rendered prebuffer.
  */
 static unsigned int render_syscall_prefix(struct syscallrecord *rec,
 					  struct syscallentry *entry,
@@ -176,14 +179,26 @@ static unsigned int render_syscall_postfix(struct syscallrecord *rec, char *buff
 	return sptr - bufferstart;
 }
 
-/* These next two functions are always called from child_random_syscalls() by a fuzzing child.
- * They render the buffer, and output it to stdout.
- * Other contexts (like post-mortem) directly use the buffers.
+/* These next two functions are called from dispatch_step() once per syscall.
+ * They render a one-line trace into the shm-resident pre/postbuffer and feed
+ * it to output_rendered_buffer for live emission.  output_rendered_buffer
+ * itself only prints at verbosity > 1, and the post-mortem dumper reads
+ * structured chronicle_slot fields rather than these rendered buffers, so
+ * the per-call render is wasted work on the common (verbosity <= 1) path.
+ * Skip it unless the live trace will be printed or a post-mortem is
+ * currently running (where any in-parent diagnostic that defensively reads
+ * rec->pre/postbuffer should still find a coherent string).
  */
 void output_syscall_prefix(struct syscallrecord *rec, struct syscallentry *entry)
 {
 	static char *buffer = NULL;
 	unsigned int len;
+
+	if (verbosity <= 1 &&
+	    !__atomic_load_n(&shm->postmortem_in_progress, __ATOMIC_ACQUIRE)) {
+		rec->prebuffer[0] = '\0';
+		return;
+	}
 
 	if (buffer == NULL)
 		buffer = zmalloc(PREBUFFER_LEN);
@@ -201,6 +216,12 @@ void output_syscall_postfix(struct syscallrecord *rec)
 {
 	static char *buffer = NULL;
 	unsigned int len;
+
+	if (verbosity <= 1 &&
+	    !__atomic_load_n(&shm->postmortem_in_progress, __ATOMIC_ACQUIRE)) {
+		rec->postbuffer[0] = '\0';
+		return;
+	}
 
 	if (buffer == NULL)
 		buffer = zmalloc(POSTBUFFER_LEN);
