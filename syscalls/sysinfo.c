@@ -7,6 +7,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_sysinfo(struct syscallrecord *rec)
 {
@@ -67,6 +68,18 @@ static void post_sysinfo(struct syscallrecord *rec)
 
 	if (rec->a1 == 0)
 		return;
+
+	{
+		void *info = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (looks_like_corrupted_ptr(info)) {
+			outputerr("post_sysinfo: rejected suspicious info=%p (pid-scribbled?)\n",
+				  info);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&user_view, (void *)(unsigned long) rec->a1,
 	       sizeof(user_view));

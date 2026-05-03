@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long listxattrat_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
@@ -96,6 +97,20 @@ static void post_listxattrat(struct syscallrecord *rec)
 
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *list_p = (void *)(unsigned long) rec->a4;
+		void *path_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a4/a2. */
+		if (looks_like_corrupted_ptr(list_p) ||
+		    looks_like_corrupted_ptr(path_p)) {
+			outputerr("post_listxattrat: rejected suspicious list=%p pathname=%p (pid-scribbled?)\n",
+				  list_p, path_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(snap_path, (char *)(unsigned long) rec->a2, sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';

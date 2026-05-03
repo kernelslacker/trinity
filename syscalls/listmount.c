@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 #if defined(SYS_listmount) || defined(__NR_listmount)
 #ifndef SYS_listmount
@@ -110,6 +111,20 @@ static void post_listmount(struct syscallrecord *rec)
 
 	if (rec->a1 == 0 || rec->a2 == 0 || rec->a3 == 0)
 		return;
+
+	{
+		void *req_p = (void *)(unsigned long) rec->a1;
+		void *ids_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		if (looks_like_corrupted_ptr(req_p) ||
+		    looks_like_corrupted_ptr(ids_p)) {
+			outputerr("post_listmount: rejected suspicious req=%p mnt_ids=%p (pid-scribbled?)\n",
+				  req_p, ids_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first_req, (void *) rec->a1, sizeof(first_req));
 

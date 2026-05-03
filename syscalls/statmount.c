@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 #if defined(SYS_statmount) || defined(__NR_statmount)
 #ifndef SYS_statmount
@@ -170,6 +171,20 @@ static void post_statmount(struct syscallrecord *rec)
 
 	if (rec->a3 < sizeof(struct statmount))
 		return;
+
+	{
+		void *req_p = (void *)(unsigned long) rec->a1;
+		void *buf_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		if (looks_like_corrupted_ptr(req_p) ||
+		    looks_like_corrupted_ptr(buf_p)) {
+			outputerr("post_statmount: rejected suspicious req=%p buf=%p (pid-scribbled?)\n",
+				  req_p, buf_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first_req, (void *) rec->a1, sizeof(first_req));
 	memcpy(&first_buf, (void *) rec->a2, sizeof(first_buf));

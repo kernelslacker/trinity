@@ -8,6 +8,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_getresuid(struct syscallrecord *rec)
 {
@@ -46,6 +47,22 @@ static void post_getresuid(struct syscallrecord *rec)
 
 	if ((long) rec->retval != 0)
 		return;
+
+	{
+		void *r = (void *)(unsigned long) rec->a1;
+		void *e = (void *)(unsigned long) rec->a2;
+		void *s = (void *)(unsigned long) rec->a3;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2/a3. */
+		if (looks_like_corrupted_ptr(r) ||
+		    looks_like_corrupted_ptr(e) ||
+		    looks_like_corrupted_ptr(s)) {
+			outputerr("post_getresuid: rejected suspicious ruid=%p euid=%p suid=%p (pid-scribbled?)\n",
+				  r, e, s);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	kruid = *(uid_t *)(unsigned long) rec->a1;
 	keuid = *(uid_t *)(unsigned long) rec->a2;

@@ -7,6 +7,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long getrusage_who[] = {
 	RUSAGE_SELF, RUSAGE_CHILDREN, RUSAGE_THREAD,
@@ -98,6 +99,19 @@ static void post_getrusage(struct syscallrecord *rec)
 		return;
 
 	who = (int) rec->a1;
+
+	{
+		void *ru = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(ru)) {
+			outputerr("post_getrusage: rejected suspicious ru=%p (pid-scribbled?)\n",
+				  ru);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
+
 	memcpy(&first, (struct rusage *)(unsigned long) rec->a2,
 	       sizeof(first));
 

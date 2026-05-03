@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_fstatfs(struct syscallrecord *rec)
 {
@@ -85,6 +86,19 @@ static void post_fstatfs(struct syscallrecord *rec)
 		return;
 
 	fd = (int) rec->a1;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(buf)) {
+			outputerr("post_fstatfs: rejected suspicious buf=%p (pid-scribbled?)\n",
+				  buf);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
+
 	memcpy(&first, (void *)(unsigned long) rec->a2, sizeof(first));
 
 	if (syscall(SYS_fstatfs, fd, &recheck) != 0)
@@ -204,6 +218,19 @@ static void post_fstatfs64(struct syscallrecord *rec)
 
 	fd = (int) rec->a1;
 	sz = (size_t) rec->a2;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a3;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+		if (looks_like_corrupted_ptr(buf)) {
+			outputerr("post_fstatfs64: rejected suspicious buf=%p (pid-scribbled?)\n",
+				  buf);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
+
 	memcpy(&first, (void *)(unsigned long) rec->a3, sizeof(first));
 
 	if (syscall(SYS_fstatfs64, fd, sz, &recheck) != 0)

@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 {
@@ -66,6 +67,18 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 		return;
 	if (rec->a4 != sizeof(sigset_t))
 		return;
+
+	{
+		void *oset = (void *)(unsigned long) rec->a3;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+		if (looks_like_corrupted_ptr(oset)) {
+			outputerr("post_rt_sigprocmask: rejected suspicious oset=%p (pid-scribbled?)\n",
+				  oset);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&buf, (void *)(unsigned long)rec->a3, sizeof(buf));
 	memcpy(&syscall_blocked, &buf, sizeof(syscall_blocked));

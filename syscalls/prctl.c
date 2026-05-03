@@ -19,6 +19,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 /* ARM pointer authentication (added in 5.8) */
 #ifndef PR_PAC_SET_ENABLED_KEYS
@@ -163,6 +164,13 @@ static void post_prctl(struct syscallrecord *rec)
 		bpf = (struct sock_fprog *) rec->a3;
 		if (bpf == NULL)
 			return;
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+		if (looks_like_corrupted_ptr(bpf)) {
+			outputerr("post_prctl: rejected suspicious bpf=%p (pid-scribbled?)\n",
+				  (void *) bpf);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
 		free(bpf->filter);
 		free(bpf);
 		return;

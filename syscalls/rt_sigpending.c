@@ -10,6 +10,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_rt_sigpending(struct syscallrecord *rec)
 {
@@ -49,6 +50,18 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 		return;
 	if (rec->a2 != sizeof(sigset_t))
 		return;
+
+	{
+		void *set = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (looks_like_corrupted_ptr(set)) {
+			outputerr("post_rt_sigpending: rejected suspicious set=%p (pid-scribbled?)\n",
+				  set);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&buf, (void *)(unsigned long)rec->a1, sizeof(buf));
 	memcpy(&syscall_pending, &buf, sizeof(syscall_pending));

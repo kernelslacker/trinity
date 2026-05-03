@@ -9,6 +9,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_sched_getparam(struct syscallrecord *rec)
 {
@@ -51,6 +52,18 @@ static void post_sched_getparam(struct syscallrecord *rec)
 
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *param = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(param)) {
+			outputerr("post_sched_getparam: rejected suspicious param=%p (pid-scribbled?)\n",
+				  param);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memset(&local, 0, sizeof(local));
 	if (sched_getparam(0, &local) == -1)

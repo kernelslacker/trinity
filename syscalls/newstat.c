@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_newstat(struct syscallrecord *rec)
 {
@@ -72,6 +73,19 @@ static void post_newstat(struct syscallrecord *rec)
 
 	if (rec->a1 == 0 || rec->a2 == 0)
 		return;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a2;
+		void *path = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+			outputerr("post_newstat: rejected suspicious statbuf=%p filename=%p (pid-scribbled?)\n",
+				  buf, path);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first, (void *)(unsigned long) rec->a2, sizeof(first));
 	strncpy(local_path, (const char *)(unsigned long) rec->a1, PATH_MAX - 1);

@@ -19,6 +19,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_lookup_dcookie(struct syscallrecord *rec)
 {
@@ -86,6 +87,18 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 
 	if (rec->a3 == 0)
 		return;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(buf)) {
+			outputerr("post_lookup_dcookie: rejected suspicious buf=%p (pid-scribbled?)\n",
+				  buf);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	snap_len = (size_t) rec->retval;
 	if (snap_len > sizeof(first))

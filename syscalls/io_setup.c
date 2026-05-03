@@ -8,6 +8,8 @@
 #include "pids.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 static void sanitise_io_setup(struct syscallrecord *rec)
 {
@@ -29,6 +31,17 @@ static void post_io_setup(struct syscallrecord *rec)
 		return;
 
 	ctxp = (unsigned long *) rec->a2;
+
+	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+	if (ctxp == NULL)
+		return;
+	if (looks_like_corrupted_ptr(ctxp)) {
+		outputerr("post_io_setup: rejected suspicious ctxp=%p (pid-scribbled?)\n",
+			  (void *) ctxp);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+
 	ctx = *ctxp;
 	if (ctx == 0)
 		return;

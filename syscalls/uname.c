@@ -19,6 +19,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #ifndef SYS_uname
 #define SYS_uname __NR_uname
@@ -79,6 +80,18 @@ static void post_uname(struct syscallrecord *rec)
 
 	if (rec->a1 == 0)
 		return;
+
+	{
+		void *name = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (looks_like_corrupted_ptr(name)) {
+			outputerr("post_uname: rejected suspicious name=%p (pid-scribbled?)\n",
+				  name);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first, (void *)(unsigned long) rec->a1, sizeof(first));
 

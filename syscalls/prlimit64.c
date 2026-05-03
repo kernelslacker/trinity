@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #if defined(SYS_prlimit64) || defined(__NR_prlimit64)
 #ifndef SYS_prlimit64
@@ -142,6 +143,18 @@ static void post_prlimit64(struct syscallrecord *rec)
 
 	if (resource_snap >= RLIMIT_NLIMITS)
 		return;
+
+	{
+		void *old_rlim = (void *)(unsigned long) rec->a4;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a4. */
+		if (looks_like_corrupted_ptr(old_rlim)) {
+			outputerr("post_prlimit64: rejected suspicious old_rlim=%p (pid-scribbled?)\n",
+				  old_rlim);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first_rlim, (const void *)(unsigned long) rec->a4,
 	       sizeof(first_rlim));

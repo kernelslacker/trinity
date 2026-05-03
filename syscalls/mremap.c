@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 #ifndef MREMAP_DONTUNMAP
 #define MREMAP_DONTUNMAP	4
@@ -93,6 +94,14 @@ static void post_mremap(struct syscallrecord *rec)
 
 	if (ptr == MAP_FAILED || map == NULL)
 		return;
+
+	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a6. */
+	if (looks_like_corrupted_ptr(map)) {
+		outputerr("post_mremap: rejected suspicious map=%p (pid-scribbled?)\n",
+			  (void *) map);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
 
 	map->ptr = ptr;
 	map->size = rec->a3;

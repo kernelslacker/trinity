@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_statfs(struct syscallrecord *rec)
 {
@@ -80,6 +81,19 @@ static void post_statfs(struct syscallrecord *rec)
 
 	if (!ONE_IN(100))
 		return;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a2;
+		void *path = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+			outputerr("post_statfs: rejected suspicious buf=%p pathname=%p (pid-scribbled?)\n",
+				  buf, path);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
 		sizeof(snap_path) - 1);
@@ -197,6 +211,19 @@ static void post_statfs64(struct syscallrecord *rec)
 		return;
 
 	sz_snapshot = (size_t) rec->a2;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a3;
+		void *path = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3/a1. */
+		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+			outputerr("post_statfs64: rejected suspicious buf=%p pathname=%p (pid-scribbled?)\n",
+				  buf, path);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
 		sizeof(snap_path) - 1);

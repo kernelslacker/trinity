@@ -10,6 +10,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_sched_rr_get_interval(struct syscallrecord *rec)
 {
@@ -63,6 +64,18 @@ static void post_sched_rr_get_interval(struct syscallrecord *rec)
 
 	if ((pid_t) rec->a1 != 0 && (pid_t) rec->a1 != gettid())
 		return;
+
+	{
+		void *interval = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(interval)) {
+			outputerr("post_sched_rr_get_interval: rejected suspicious interval=%p (pid-scribbled?)\n",
+				  interval);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&user_ts, (struct timespec *)(unsigned long) rec->a2,
 	       sizeof(user_ts));
