@@ -4,12 +4,129 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <string.h>
+#include <sys/statfs.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "arch.h"
+#include "random.h"
 #include "sanitise.h"
+#include "shm.h"
+#include "trinity.h"
 
 static void sanitise_fstatfs(struct syscallrecord *rec)
 {
 	avoid_shared_buffer(&rec->a2, page_size);
+}
+
+/*
+ * Oracle: fstatfs(fd, buf) writes filesystem-wide statistics for the
+ * mount that backs the open file referenced by fd.  This is the
+ * simplest entry of the statfs-family oracle — the descriptor itself
+ * names the mount, so there is no path string to snapshot and no
+ * name-resolution TOCTOU window for a sibling to widen by scribbling
+ * user memory between original return and re-call.
+ *
+ * Most struct statfs fields describe properties that are intrinsic to
+ * the mount and do not drift on benign sibling activity:
+ *
+ *   - f_type    filesystem magic; pinned for an open inode's mount
+ *   - f_bsize   preferred block size; stable for the mount lifetime
+ *   - f_blocks  total data blocks; resizing a live FS is rare enough
+ *                 that a divergence is worth surfacing
+ *   - f_files   total inode slots; same rationale as f_blocks
+ *   - f_namelen max filename length; stable per FS type
+ *   - f_frsize  fragment size; stable per FS type
+ *   - f_flags   mount flags; remount can move them but the event is
+ *                 rare enough that we want to know it happened
+ *   - f_fsid    filesystem identifier (two ints); pinned per mount
+ *
+ * The free-space counters (f_bfree, f_bavail, f_ffree) are excluded
+ * — every concurrent write, allocate, or unlink legitimately moves
+ * them and including them would dwarf any real signal in benign
+ * drift.  f_spare[] is also excluded; the kernel zeroes it but the
+ * field is reserved padding with no defined stable contract.  A
+ * divergence in the remaining eight fields points at one of:
+ *
+ *   - copy_to_user mis-write that leaves a torn struct statfs in
+ *     user memory (partial write, wrong-offset fill, residual stack
+ *     data).
+ *   - struct-layout shift on a kernel/glibc skew that lands f_type in
+ *     the f_bsize slot, or f_blocks in f_files.
+ *   - 32-bit-on-64-bit compat sign-extension or truncation of the
+ *     wide block / inode counters.
+ *   - sibling-thread scribble of the user receive buffer between the
+ *     original syscall return and our post-hook re-read.
+ *   - genuine remount / online-resize racing the fuzz run, in which
+ *     case the divergence is real and worth a log line.
+ *
+ * The only benign-divergence path is a sibling closing the fd between
+ * the original syscall and the recheck — that just makes the recheck
+ * fail with -EBADF.  Treat any non-zero return from
+ * syscall(SYS_fstatfs) as "give up, sample skipped" so we never
+ * report on a torn-down fd.  Sample one in a hundred to stay in line
+ * with the rest of the oracle family; compare each field individually
+ * with no early-return so multi-field corruption surfaces in a single
+ * sample, but bump the anomaly counter only once per sample.
+ */
+static void post_fstatfs(struct syscallrecord *rec)
+{
+	struct statfs first, recheck;
+	int fd;
+	int diverged = 0;
+
+	if (!ONE_IN(100))
+		return;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	if (rec->a2 == 0)
+		return;
+
+	fd = (int) rec->a1;
+	memcpy(&first, (void *)(unsigned long) rec->a2, sizeof(first));
+
+	if (syscall(SYS_fstatfs, fd, &recheck) != 0)
+		return;
+
+	if (first.f_type    != recheck.f_type)    diverged = 1;
+	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
+	if (first.f_blocks  != recheck.f_blocks)  diverged = 1;
+	if (first.f_files   != recheck.f_files)   diverged = 1;
+	if (first.f_namelen != recheck.f_namelen) diverged = 1;
+	if (first.f_frsize  != recheck.f_frsize)  diverged = 1;
+	if (first.f_flags   != recheck.f_flags)   diverged = 1;
+	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0]) diverged = 1;
+	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
+
+	if (!diverged)
+		return;
+
+	output(0,
+	       "fstatfs oracle anomaly: fd=%d "
+	       "first={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
+	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x} "
+	       "recall={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
+	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x}\n",
+	       fd,
+	       (unsigned long) first.f_type, (long) first.f_bsize,
+	       (unsigned long long) first.f_blocks,
+	       (unsigned long long) first.f_files,
+	       (long) first.f_namelen, (long) first.f_frsize,
+	       (unsigned long) first.f_flags,
+	       (unsigned int) first.f_fsid.__val[0],
+	       (unsigned int) first.f_fsid.__val[1],
+	       (unsigned long) recheck.f_type, (long) recheck.f_bsize,
+	       (unsigned long long) recheck.f_blocks,
+	       (unsigned long long) recheck.f_files,
+	       (long) recheck.f_namelen, (long) recheck.f_frsize,
+	       (unsigned long) recheck.f_flags,
+	       (unsigned int) recheck.f_fsid.__val[0],
+	       (unsigned int) recheck.f_fsid.__val[1]);
+
+	__atomic_add_fetch(&shm->stats.fstatfs_oracle_anomalies, 1,
+			   __ATOMIC_RELAXED);
 }
 
 struct syscallentry syscall_fstatfs = {
@@ -18,6 +135,7 @@ struct syscallentry syscall_fstatfs = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "fd", [1] = "buf" },
 	.sanitise = sanitise_fstatfs,
+	.post = post_fstatfs,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,

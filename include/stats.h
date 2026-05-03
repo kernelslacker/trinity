@@ -107,6 +107,7 @@ struct stats_s {
 	unsigned long newfstat_oracle_anomalies;
 	unsigned long newfstatat_oracle_anomalies;
 	unsigned long statx_oracle_anomalies;
+	unsigned long fstatfs_oracle_anomalies;
 	unsigned long uname_oracle_anomalies;
 	unsigned long lsm_list_modules_oracle_anomalies;
 	unsigned long listmount_oracle_anomalies;
