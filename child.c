@@ -39,6 +39,16 @@
 #include "sequence.h"
 #include "utils.h"	// zmalloc
 
+/*
+ * Pin op_nr — the trailing field of the per-syscall hot block — to an
+ * offset under 64 so a future field reorder that moves any of the hot
+ * block (kcov, last_syscall_nr, last_group, op_nr, local_op_count) past
+ * the leading cacheline boundary fails the build instead of silently
+ * regressing the per-call cache-miss budget the layout was tuned for.
+ */
+_Static_assert(offsetof(struct childdata, op_nr) < 64,
+	"struct childdata: op_nr (per-syscall hot field) escaped the leading cacheline");
+
 /* Set to true once we detect that unprivileged pidns isn't available.
  * Lives in shared memory (shm->no_pidns) so the flag propagates across
  * fork() — see init_child() below. */
