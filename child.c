@@ -605,19 +605,18 @@ out:
 /*
  * Here we call various functions that perform checks/changes that
  * we don't want to happen on every iteration of the child loop.
+ *
+ * The caller gates entry on (op_nr & 15) == 0, so reaching here is
+ * already the "every 16 iterations" event — check_parent_pid runs
+ * unconditionally.  The deeper 128-iteration gate is folded into the
+ * op_nr argument so this function carries no static state at all.
  */
-static void periodic_work(void)
+static void periodic_work(unsigned long op_nr)
 {
-	static unsigned int periodic_counter = 0;
-
-	periodic_counter++;
-
-	/* Every 16 iterations. */
-	if (!(periodic_counter & 15))
-		check_parent_pid();
+	check_parent_pid();
 
 	/* Every 128 iterations. */
-	if (!(periodic_counter & 127)) {
+	if ((op_nr & 127) == 0) {
 		dirty_random_mapping();
 		run_fd_provider_child_ops();
 	}
@@ -1171,7 +1170,8 @@ void child_process(struct childdata *child, int childno)
 			set_seed(child);
 		}
 
-		periodic_work();
+		if ((child->op_nr & 15) == 0)
+			periodic_work(child->op_nr);
 
 		/* Free any deferred allocations whose TTL has expired.
 		 * This runs before the syscall so that freed memory can
