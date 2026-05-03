@@ -24,6 +24,21 @@ static void sanitise_madvise(struct syscallrecord *rec)
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
+
+	/*
+	 * MADV_GUARD_INSTALL plants guard PTEs that fault on access without
+	 * touching prot. common_set_mmap_ptr_len() above always pins this call
+	 * to a sub-range of a pool entry, so range_overlaps_shared() never
+	 * fires for it (pool entries aren't tracked in shared_regions[]). The
+	 * map's prot stays PROT_READ|PROT_WRITE, so get_map_with_prot() will
+	 * later hand the same entry to memory_pressure / iouring_* /
+	 * madvise-cycler, which then SEGV on the first per-page write into
+	 * the guarded range. Neutralise the call to keep the pool usable.
+	 */
+	if (rec->a3 == MADV_GUARD_INSTALL) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
 }
 
 static unsigned long madvise_advices[] = {
