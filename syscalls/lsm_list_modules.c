@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #ifndef SYS_lsm_list_modules
 #define SYS_lsm_list_modules __NR_lsm_list_modules
@@ -92,6 +93,20 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 
 	if (rec->a1 == 0 || rec->a2 == 0)
 		return;
+
+	{
+		void *ids_p = (void *)(unsigned long) rec->a1;
+		void *size_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		if (looks_like_corrupted_ptr(ids_p) ||
+		    looks_like_corrupted_ptr(size_p)) {
+			outputerr("post_lsm_list_modules: rejected suspicious ids=%p size=%p (pid-scribbled?)\n",
+				  ids_p, size_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first_size, (void *)(unsigned long) rec->a2,
 	       sizeof(first_size));

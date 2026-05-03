@@ -8,6 +8,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_mprotect(struct syscallrecord *rec)
 {
@@ -32,6 +33,14 @@ static void post_mprotect(struct syscallrecord *rec)
 
 	if (rec->retval != 0 || map == NULL)
 		return;
+
+	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a5. */
+	if (looks_like_corrupted_ptr(map)) {
+		outputerr("post_mprotect: rejected suspicious map=%p (pid-scribbled?)\n",
+			  (void *) map);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
 
 	/*
 	 * common_set_mmap_ptr_len() forces rec->a1 = map->ptr but sets

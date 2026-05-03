@@ -12,6 +12,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_getcpu(struct syscallrecord *rec)
 {
@@ -167,6 +168,20 @@ static void post_getcpu(struct syscallrecord *rec)
 		return;
 	if (rec->a1 == 0 || rec->a2 == 0)
 		return;
+
+	{
+		void *cpup = (void *)(unsigned long) rec->a1;
+		void *nodep = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		if (looks_like_corrupted_ptr(cpup) ||
+		    looks_like_corrupted_ptr(nodep)) {
+			outputerr("post_getcpu: rejected suspicious cpup=%p nodep=%p (pid-scribbled?)\n",
+				  cpup, nodep);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	/*
 	 * Snapshot both user slots before any cross-check so a sibling

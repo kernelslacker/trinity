@@ -11,6 +11,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_setgroups(struct syscallrecord *rec)
 {
@@ -141,6 +142,15 @@ static void post_setgroups(struct syscallrecord *rec)
 		return;
 
 	list_set = (gid_t *) rec->a2;
+
+	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2.  list_set is
+	 * deref'd in both the getgroups compare and the procfs compare below. */
+	if (n_set > 0 && list_set != NULL && looks_like_corrupted_ptr(list_set)) {
+		outputerr("post_setgroups: rejected suspicious grouplist=%p (pid-scribbled?)\n",
+			  (void *) list_set);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
 
 	if (ONE_IN(20)) {
 		n_get = getgroups(0, NULL);

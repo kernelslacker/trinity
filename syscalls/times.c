@@ -7,6 +7,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_times(struct syscallrecord *rec)
 {
@@ -66,6 +67,18 @@ static void post_times(struct syscallrecord *rec)
 
 	if (rec->a1 == 0)
 		return;
+
+	{
+		void *tbuf = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (looks_like_corrupted_ptr(tbuf)) {
+			outputerr("post_times: rejected suspicious tbuf=%p (pid-scribbled?)\n",
+				  tbuf);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first, (struct tms *)(unsigned long) rec->a1, sizeof(first));
 

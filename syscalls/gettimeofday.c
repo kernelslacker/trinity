@@ -8,6 +8,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_gettimeofday(struct syscallrecord *rec)
 {
@@ -58,6 +59,18 @@ static void post_gettimeofday(struct syscallrecord *rec)
 
 	if (rec->a1 == 0)
 		return;
+
+	{
+		void *tv = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (looks_like_corrupted_ptr(tv)) {
+			outputerr("post_gettimeofday: rejected suspicious tv=%p (pid-scribbled?)\n",
+				  tv);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&local_tv, (void *) rec->a1, sizeof(local_tv));
 

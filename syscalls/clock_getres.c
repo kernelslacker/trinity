@@ -12,6 +12,7 @@
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long clock_ids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
@@ -79,6 +80,19 @@ static void post_clock_getres(struct syscallrecord *rec)
 		return;
 
 	clockid = (clockid_t) rec->a1;
+
+	{
+		void *tp = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(tp)) {
+			outputerr("post_clock_getres: rejected suspicious tp=%p (pid-scribbled?)\n",
+				  tp);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
+
 	memcpy(&first, (struct timespec *)(unsigned long) rec->a2,
 	       sizeof(first));
 

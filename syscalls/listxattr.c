@@ -7,6 +7,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_listxattr(struct syscallrecord *rec)
 {
@@ -88,6 +89,18 @@ static void post_flistxattr(struct syscallrecord *rec)
 
 	if (snap_fd < 0)
 		return;
+
+	{
+		void *list_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(list_p)) {
+			outputerr("post_flistxattr: rejected suspicious list=%p (pid-scribbled?)\n",
+				  list_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	snap_len = (size_t) rec->retval;
 	if (snap_len > sizeof(first_buf))
@@ -220,6 +233,20 @@ static void post_listxattr(struct syscallrecord *rec)
 	if (rec->a2 == 0)
 		return;
 
+	{
+		void *list_p = (void *)(unsigned long) rec->a2;
+		void *path_p = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		if (looks_like_corrupted_ptr(list_p) ||
+		    looks_like_corrupted_ptr(path_p)) {
+			outputerr("post_listxattr: rejected suspicious list=%p pathname=%p (pid-scribbled?)\n",
+				  list_p, path_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
+
 	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
@@ -350,6 +377,20 @@ static void post_llistxattr(struct syscallrecord *rec)
 
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *list_p = (void *)(unsigned long) rec->a2;
+		void *path_p = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		if (looks_like_corrupted_ptr(list_p) ||
+		    looks_like_corrupted_ptr(path_p)) {
+			outputerr("post_llistxattr: rejected suspicious list=%p pathname=%p (pid-scribbled?)\n",
+				  list_p, path_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
 		sizeof(snap_path) - 1);

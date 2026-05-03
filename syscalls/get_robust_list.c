@@ -12,6 +12,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_get_robust_list(struct syscallrecord *rec)
 {
@@ -77,6 +78,20 @@ static void post_get_robust_list(struct syscallrecord *rec)
 
 	if ((pid_t) rec->a1 != 0 && (pid_t) rec->a1 != gettid())
 		return;
+
+	{
+		void *head_p = (void *)(unsigned long) rec->a2;
+		void *len_p = (void *)(unsigned long) rec->a3;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a3. */
+		if (looks_like_corrupted_ptr(head_p) ||
+		    looks_like_corrupted_ptr(len_p)) {
+			outputerr("post_get_robust_list: rejected suspicious head_ptr=%p len_ptr=%p (pid-scribbled?)\n",
+				  head_p, len_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&user_head, (void *)(unsigned long) rec->a2, sizeof(user_head));
 	memcpy(&user_len,  (void *)(unsigned long) rec->a3, sizeof(user_len));

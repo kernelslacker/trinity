@@ -8,6 +8,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #define WHOLE 1
 
@@ -82,6 +83,14 @@ static void post_munmap(struct syscallrecord *rec)
 
 	if (rec->retval != 0)
 		return;
+
+	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+	if (map != NULL && looks_like_corrupted_ptr(map)) {
+		outputerr("post_munmap: rejected suspicious map=%p (pid-scribbled?)\n",
+			  (void *) map);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
 
 	if (action == WHOLE) {
 		struct object *obj = container_of(map, struct object, map);

@@ -14,6 +14,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #define SCHED_ATTR_SIZE_VER0	48
 
@@ -117,6 +118,18 @@ static void post_sched_getattr(struct syscallrecord *rec)
 
 	if (rec->a3 < SCHED_ATTR_SIZE_VER0)
 		return;
+
+	{
+		void *uattr = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(uattr)) {
+			outputerr("post_sched_getattr: rejected suspicious uattr=%p (pid-scribbled?)\n",
+				  uattr);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	cpy_len = (size_t) rec->a3;
 	if (cpy_len > sizeof(user_snap))

@@ -12,6 +12,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_newuname(struct syscallrecord *rec)
 {
@@ -75,6 +76,18 @@ static void post_newuname(struct syscallrecord *rec)
 		return;
 	if (rec->a1 == 0)
 		return;
+
+	{
+		void *name = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (looks_like_corrupted_ptr(name)) {
+			outputerr("post_newuname: rejected suspicious name=%p (pid-scribbled?)\n",
+				  name);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	/* Local copy defends against a concurrent overwrite of the syscall
 	 * output buffer while we're walking it. */

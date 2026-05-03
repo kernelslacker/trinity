@@ -10,6 +10,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_readlink(struct syscallrecord *rec)
 {
@@ -84,6 +85,19 @@ static void post_readlink(struct syscallrecord *rec)
 
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a2;
+		void *path = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+			outputerr("post_readlink: rejected suspicious buf=%p path=%p (pid-scribbled?)\n",
+				  buf, path);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
 		sizeof(snap_path) - 1);
@@ -222,6 +236,19 @@ static void post_readlinkat(struct syscallrecord *rec)
 	}
 
 	dfd = (int) rec->a1;
+
+	{
+		void *buf = (void *)(unsigned long) rec->a3;
+		void *path = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3/a2. */
+		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+			outputerr("post_readlinkat: rejected suspicious buf=%p pathname=%p (pid-scribbled?)\n",
+				  buf, path);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(snap_path, (const char *)(unsigned long) rec->a2,
 		sizeof(snap_path) - 1);

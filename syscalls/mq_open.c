@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include "random.h"
 #include "sanitise.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 static unsigned long mq_open_flags[] = {
 	O_RDONLY, O_WRONLY, O_RDWR,
@@ -65,6 +68,20 @@ static void post_mq_open(struct syscallrecord *rec)
 		return;
 
 	close(fd);
+
+	{
+		void *name = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (name == NULL)
+			return;
+		if (looks_like_corrupted_ptr(name)) {
+			outputerr("post_mq_open: rejected suspicious u_name=%p (pid-scribbled?)\n",
+				  name);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	/* Also unlink the queue to avoid leaking kernel IPC resources.
 	 * The name pointer from sanitise is in the writable page and

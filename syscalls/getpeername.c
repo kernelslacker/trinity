@@ -14,6 +14,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_getpeername(struct syscallrecord *rec)
 {
@@ -95,6 +96,20 @@ static void post_getpeername(struct syscallrecord *rec)
 		return;
 
 	fd = (int) rec->a1;
+
+	{
+		void *addr_p = (void *)(unsigned long) rec->a2;
+		void *len_p = (void *)(unsigned long) rec->a3;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a3. */
+		if (looks_like_corrupted_ptr(addr_p) ||
+		    looks_like_corrupted_ptr(len_p)) {
+			outputerr("post_getpeername: rejected suspicious usockaddr=%p usockaddr_len=%p (pid-scribbled?)\n",
+				  addr_p, len_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first_len, (const void *) rec->a3, sizeof(socklen_t));
 	if (first_len == 0 || first_len > sizeof(struct sockaddr_storage))

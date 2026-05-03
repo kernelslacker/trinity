@@ -10,6 +10,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static const unsigned int cap_versions[] = {
 	_LINUX_CAPABILITY_VERSION_1,
@@ -91,6 +92,14 @@ static void post_capset(struct syscallrecord *rec)
 	data = (struct __user_cap_data_struct *) rec->a2;
 	if (!hdr || !data)
 		return;
+
+	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+	if (looks_like_corrupted_ptr(hdr) || looks_like_corrupted_ptr(data)) {
+		outputerr("post_capset: rejected suspicious header=%p data=%p (pid-scribbled?)\n",
+			  hdr, data);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
 
 	/* CAP_SYS_TIME == 25 lives in data[0] for v1/v2/v3. */
 	if ((data[0].effective & (1u << CAP_SYS_TIME)) != 0)

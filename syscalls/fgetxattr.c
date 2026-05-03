@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 #include "xattr.h"
 
 static void sanitise_fgetxattr(struct syscallrecord *rec)
@@ -100,6 +101,19 @@ static void post_fgetxattr(struct syscallrecord *rec)
 
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *value = (void *)(unsigned long) rec->a3;
+		void *name = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3/a2. */
+		if (looks_like_corrupted_ptr(value) || looks_like_corrupted_ptr(name)) {
+			outputerr("post_fgetxattr: rejected suspicious value=%p name=%p (pid-scribbled?)\n",
+				  value, name);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(snap_name, (char *)(unsigned long) rec->a2, sizeof(snap_name) - 1);
 	snap_name[sizeof(snap_name) - 1] = '\0';

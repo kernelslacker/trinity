@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_sigpending(struct syscallrecord *rec)
 {
@@ -68,6 +69,18 @@ static void post_sigpending(struct syscallrecord *rec)
 		return;
 	if (rec->a1 == 0)
 		return;
+
+	{
+		void *set = (void *)(unsigned long) rec->a1;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		if (looks_like_corrupted_ptr(set)) {
+			outputerr("post_sigpending: rejected suspicious set=%p (pid-scribbled?)\n",
+				  set);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	/*
 	 * Snapshot the user buffer BEFORE the proc read so a sibling-thread

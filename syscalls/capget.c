@@ -12,6 +12,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static const unsigned int cap_versions[] = {
 	_LINUX_CAPABILITY_VERSION_1,
@@ -90,6 +91,20 @@ static void post_capget(struct syscallrecord *rec)
 
 	if (rec->a1 == 0 || rec->a2 == 0)
 		return;
+
+	{
+		void *hdr_p = (void *)(unsigned long) rec->a1;
+		void *data_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		if (looks_like_corrupted_ptr(hdr_p) ||
+		    looks_like_corrupted_ptr(data_p)) {
+			outputerr("post_capget: rejected suspicious header=%p dataptr=%p (pid-scribbled?)\n",
+				  hdr_p, data_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&hdr_first, (void *)(unsigned long) rec->a1, sizeof(hdr_first));
 	slots = (hdr_first.version == _LINUX_CAPABILITY_VERSION_1) ? 1 : 2;

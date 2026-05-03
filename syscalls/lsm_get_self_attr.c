@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #ifndef LSM_ATTR_CURRENT
 #define LSM_ATTR_CURRENT	100
@@ -132,6 +133,15 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	ctx_snap      = rec->a2;
 	size_ptr_snap = rec->a3;
 	flags_snap    = (u32) rec->a4;
+
+	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a3. */
+	if (looks_like_corrupted_ptr((void *) ctx_snap) ||
+	    looks_like_corrupted_ptr((void *) size_ptr_snap)) {
+		outputerr("post_lsm_get_self_attr: rejected suspicious ctx=%p size=%p (pid-scribbled?)\n",
+			  (void *) ctx_snap, (void *) size_ptr_snap);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
 
 	memcpy(&size_first, (const void *) size_ptr_snap, sizeof(size_first));
 	if (size_first > LSM_CTX_BUF_MAX)

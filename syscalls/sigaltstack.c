@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 #if defined(SYS_sigaltstack) || defined(__NR_sigaltstack)
 #ifndef SYS_sigaltstack
@@ -133,6 +134,18 @@ static void post_sigaltstack(struct syscallrecord *rec)
 
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *uoss = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(uoss)) {
+			outputerr("post_sigaltstack: rejected suspicious uoss=%p (pid-scribbled?)\n",
+				  uoss);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&first_ss, (const void *)(unsigned long) rec->a2,
 	       sizeof(first_ss));

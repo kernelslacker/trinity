@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 #if defined(SYS_file_getattr) || defined(__NR_file_getattr)
 #ifndef SYS_file_getattr
@@ -98,6 +99,19 @@ static void post_file_getattr(struct syscallrecord *rec)
 
 	dfd = (int) rec->a1;
 	at_flags = (unsigned int) rec->a5;
+
+	{
+		void *ufattr = (void *)(unsigned long) rec->a3;
+		void *path = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3/a2. */
+		if (looks_like_corrupted_ptr(ufattr) || looks_like_corrupted_ptr(path)) {
+			outputerr("post_file_getattr: rejected suspicious ufattr=%p filename=%p (pid-scribbled?)\n",
+				  ufattr, path);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	strncpy(path_local, (const char *) rec->a2, PATH_MAX - 1);
 	path_local[PATH_MAX - 1] = '\0';

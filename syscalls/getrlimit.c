@@ -10,6 +10,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 static unsigned long getrlimit_resources[] = {
 	RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU, RLIMIT_DATA,
@@ -55,6 +56,18 @@ static void post_getrlimit(struct syscallrecord *rec)
 
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *rlim_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(rlim_p)) {
+			outputerr("post_getrlimit: rejected suspicious rlim=%p (pid-scribbled?)\n",
+				  rlim_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	memcpy(&syscall_buf, (struct rlimit *)(unsigned long) rec->a2,
 	       sizeof(syscall_buf));

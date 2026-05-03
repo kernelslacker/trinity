@@ -15,6 +15,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 {
@@ -71,6 +72,20 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	 * as "self" (kernel maps 0 -> current); skip if it names another task. */
 	if (rec->a1 != 0 && rec->a1 != (unsigned long)gettid())
 		return;
+
+	{
+		void *mask = (void *)(unsigned long) rec->a3;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+		if (mask == NULL)
+			return;
+		if (looks_like_corrupted_ptr(mask)) {
+			outputerr("post_sched_getaffinity: rejected suspicious user_mask_ptr=%p (pid-scribbled?)\n",
+				  mask);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	copied = (size_t)rec->retval;
 	if (copied > sizeof(cpu_set_t))

@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #define MPOL_F_NODE     (1<<0)  /* return next IL mode instead of node mask */
 #define MPOL_F_ADDR     (1<<1)  /* look up vma using address */
@@ -130,6 +131,20 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 
 	if (rec->a5 & MPOL_F_ADDR)
 		return;
+
+	{
+		void *policy_p = (void *)(unsigned long) rec->a1;
+		void *nmask_p = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		if (looks_like_corrupted_ptr(policy_p) ||
+		    looks_like_corrupted_ptr(nmask_p)) {
+			outputerr("post_get_mempolicy: rejected suspicious policy=%p nmask=%p (pid-scribbled?)\n",
+				  policy_p, nmask_p);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	maxnode_snap = rec->a3;
 	addr_snap    = rec->a4;

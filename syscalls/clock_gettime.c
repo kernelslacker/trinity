@@ -11,6 +11,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 static unsigned long clock_ids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
@@ -80,6 +81,18 @@ static void post_clock_gettime(struct syscallrecord *rec)
 		return;
 	if (rec->a2 == 0)
 		return;
+
+	{
+		void *tp = (void *)(unsigned long) rec->a2;
+
+		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		if (looks_like_corrupted_ptr(tp)) {
+			outputerr("post_clock_gettime: rejected suspicious tp=%p (pid-scribbled?)\n",
+				  tp);
+			shm->stats.post_handler_corrupt_ptr++;
+			return;
+		}
+	}
 
 	/*
 	 * Snapshot the user buffer first so a sibling thread can't
