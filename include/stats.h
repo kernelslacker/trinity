@@ -286,6 +286,14 @@ struct stats_s {
 	unsigned long flock_thrash_locks;	/* successful flock() calls */
 	unsigned long flock_thrash_failed;	/* flock() returned -1 (EWOULDBLOCK/EINTR/...) */
 
+	/* xattr_thrash childop counters */
+	unsigned long xattr_thrash_runs;	/* total xattr_thrash invocations */
+	unsigned long xattr_thrash_set;		/* successful set/fsetxattr calls */
+	unsigned long xattr_thrash_get;		/* successful get/fgetxattr calls */
+	unsigned long xattr_thrash_remove;	/* successful remove/fremovexattr calls */
+	unsigned long xattr_thrash_list;	/* successful list/flistxattr calls */
+	unsigned long xattr_thrash_failed;	/* any xattr syscall returned -1 */
+
 	/* cgroup_churn childop counters */
 	unsigned long cgroup_churn_runs;	/* total cgroup_churn invocations */
 	unsigned long cgroup_mkdirs;		/* successful mkdir() under /sys/fs/cgroup/ */

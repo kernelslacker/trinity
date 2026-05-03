@@ -70,6 +70,7 @@ enum child_op_type {
 	CHILD_OP_IOURING_FLOOD,
 	CHILD_OP_CLOSE_RACER,
 	CHILD_OP_SOCKET_FAMILY_CHAIN,
+	CHILD_OP_XATTR_THRASH,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -254,3 +255,4 @@ bool uffd_churn(struct childdata *child);
 bool iouring_flood(struct childdata *child);
 bool close_racer(struct childdata *child);
 bool socket_family_chain(struct childdata *child);
+bool xattr_thrash(struct childdata *child);
