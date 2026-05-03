@@ -5,6 +5,11 @@
 
 static void sanitise_mseal(struct syscallrecord *rec)
 {
+	if (range_overlaps_shared(rec->a1, rec->a2)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
+
 	rec->a3 = 0;	/* no flags defined yet, must be zero */
 }
 
