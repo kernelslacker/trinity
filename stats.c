@@ -598,7 +598,8 @@ static void dump_stats_json(void)
 				"\"getxattr_anomalies\":%lu,"
 				"\"lgetxattr_anomalies\":%lu,"
 				"\"fgetxattr_anomalies\":%lu,"
-				"\"listxattrat_anomalies\":%lu},"
+				"\"listxattrat_anomalies\":%lu,"
+				"\"flistxattr_anomalies\":%lu},"
 		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -704,6 +705,7 @@ static void dump_stats_json(void)
 		shm->stats.lgetxattr_oracle_anomalies,
 		shm->stats.fgetxattr_oracle_anomalies,
 		shm->stats.listxattrat_oracle_anomalies,
+		shm->stats.flistxattr_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
@@ -1066,6 +1068,9 @@ void dump_stats(void)
 	if (shm->stats.listxattrat_oracle_anomalies)
 		stat_row("oracle", "listxattrat_anomalies",
 			 shm->stats.listxattrat_oracle_anomalies);
+	if (shm->stats.flistxattr_oracle_anomalies)
+		stat_row("oracle", "flistxattr_anomalies",
+			 shm->stats.flistxattr_oracle_anomalies);
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
