@@ -122,7 +122,7 @@ static void post_execve(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(argv) || looks_like_corrupted_ptr(envp)) {
 		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
 			  "(pid-scribbled?)\n", argv, envp);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 	free_execve_ptrs(argv, envp,
@@ -138,7 +138,7 @@ static void post_execveat(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(argv) || looks_like_corrupted_ptr(envp)) {
 		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
 			  "(pid-scribbled?)\n", argv, envp);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 	free_execve_ptrs(argv, envp,

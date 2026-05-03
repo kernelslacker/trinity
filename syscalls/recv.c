@@ -122,7 +122,7 @@ static void post_recvmsg(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(msg)) {
 		outputerr("post_recvmsg: rejected suspicious msg=%p "
 			  "(pid-scribbled?)\n", msg);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -203,7 +203,7 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(msgs)) {
 		outputerr("post_recvmmsg: rejected suspicious msgs=%p "
 			  "(pid-scribbled?)\n", msgs);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -218,7 +218,7 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	if (vlen > RECVMMSG_MAX_VLEN) {
 		outputerr("post_recvmmsg: rejected suspicious vlen=%u "
 			  "(pid-scribbled?)\n", vlen);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 

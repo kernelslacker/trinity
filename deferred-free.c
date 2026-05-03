@@ -159,7 +159,7 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	if (looks_like_corrupted_ptr(ptr) && free_func == free) {
 		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
 			  "(pid-scribbled?)\n", ptr);
-		shm->stats.post_handler_corrupt_ptr++;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -303,7 +303,7 @@ void deferred_free_tick(void)
 		if ((unsigned long)ptr < 0x10000) {
 			outputerr("deferred_free: rejected suspicious ptr=%p "
 				  "in slot %u (looks pid-shaped)\n", ptr, i);
-			shm->stats.deferred_free_corrupt_ptr++;
+			__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			continue;
 		}
 
