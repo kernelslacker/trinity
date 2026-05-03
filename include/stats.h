@@ -307,6 +307,11 @@ struct stats_s {
 	unsigned long xattr_thrash_list;	/* successful list/flistxattr calls */
 	unsigned long xattr_thrash_failed;	/* any xattr syscall returned -1 */
 
+	/* epoll_volatility childop counters */
+	unsigned long epoll_volatility_runs;		/* total epoll_volatility invocations */
+	unsigned long epoll_volatility_ctl_calls;	/* total epoll_ctl ADD/MOD/DEL calls (success + fail) */
+	unsigned long epoll_volatility_failed;		/* epoll_ctl returned -1 (EEXIST/ENOENT/EINVAL/...) */
+
 	/* cgroup_churn childop counters */
 	unsigned long cgroup_churn_runs;	/* total cgroup_churn invocations */
 	unsigned long cgroup_mkdirs;		/* successful mkdir() under /sys/fs/cgroup/ */

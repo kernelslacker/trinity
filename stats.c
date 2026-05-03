@@ -641,6 +641,7 @@ static void dump_stats_json(void)
 		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
 			"\"remove\":%lu,\"list\":%lu,\"failed\":%lu},"
+		"\"epoll_volatility\":{\"runs\":%lu,\"ctl_calls\":%lu,\"failed\":%lu},"
 		"\"cgroup_churn\":{\"runs\":%lu,\"mkdirs\":%lu,\"rmdirs\":%lu,\"failed\":%lu},"
 		"\"mount_churn\":{\"runs\":%lu,\"mounts\":%lu,\"umounts\":%lu,\"failed\":%lu},"
 		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
@@ -777,6 +778,9 @@ static void dump_stats_json(void)
 		shm->stats.xattr_thrash_runs, shm->stats.xattr_thrash_set,
 		shm->stats.xattr_thrash_get, shm->stats.xattr_thrash_remove,
 		shm->stats.xattr_thrash_list, shm->stats.xattr_thrash_failed,
+		shm->stats.epoll_volatility_runs,
+		shm->stats.epoll_volatility_ctl_calls,
+		shm->stats.epoll_volatility_failed,
 		shm->stats.cgroup_churn_runs, shm->stats.cgroup_mkdirs,
 		shm->stats.cgroup_rmdirs, shm->stats.cgroup_failed,
 		shm->stats.mount_churn_runs, shm->stats.mount_churn_mounts,
@@ -1321,6 +1325,12 @@ void dump_stats(void)
 		stat_row("xattr_thrash", "remove", shm->stats.xattr_thrash_remove);
 		stat_row("xattr_thrash", "list",   shm->stats.xattr_thrash_list);
 		stat_row("xattr_thrash", "failed", shm->stats.xattr_thrash_failed);
+	}
+
+	if (shm->stats.epoll_volatility_runs) {
+		stat_row("epoll_volatility", "runs",      shm->stats.epoll_volatility_runs);
+		stat_row("epoll_volatility", "ctl_calls", shm->stats.epoll_volatility_ctl_calls);
+		stat_row("epoll_volatility", "failed",    shm->stats.epoll_volatility_failed);
 	}
 
 	if (shm->stats.cgroup_churn_runs) {

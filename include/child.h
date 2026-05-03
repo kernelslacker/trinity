@@ -73,6 +73,7 @@ enum child_op_type {
 	CHILD_OP_XATTR_THRASH,
 	CHILD_OP_PIDFD_STORM,
 	CHILD_OP_MADVISE_CYCLER,
+	CHILD_OP_EPOLL_VOLATILITY,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -260,3 +261,4 @@ bool socket_family_chain(struct childdata *child);
 bool xattr_thrash(struct childdata *child);
 bool pidfd_storm(struct childdata *child);
 bool madvise_cycler(struct childdata *child);
+bool epoll_volatility(struct childdata *child);
