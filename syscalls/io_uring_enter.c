@@ -127,14 +127,18 @@ static void fill_sqe(struct trinity_io_uring_sqe *sqe)
 	 * unconditionally.  For write-direction ops the redirect is a
 	 * no-op cost (kernel reads the same bytes from the replacement
 	 * buffer); for read-direction ops it closes the same shm-overlap
-	 * window the read/recv/getdents sanitisers already close.  Length
-	 * is sqe->len when meaningful, page_size as a fall-back when the
-	 * fuzzer rolled an oversized or zero len.
+	 * window the read/recv/getdents sanitisers already close.
+	 *
+	 * Pass the full sqe->len so the entire buffer range is checked
+	 * against shared regions and a same-sized replacement is chosen.
+	 * Capping at page_size left ops like IORING_OP_MADVISE,
+	 * READ_FIXED/WRITE_FIXED, and SEND/RECV free to walk past the
+	 * first page into shared bookkeeping (incl. the kcov mmap).
+	 * page_size is still the floor when the fuzzer rolled len == 0,
+	 * since some opcodes don't consult sqe->len at all.
 	 */
 	addr = (unsigned long) sqe->addr;
-	avoid_shared_buffer(&addr,
-			    (sqe->len > 0 && sqe->len <= page_size) ?
-				    sqe->len : page_size);
+	avoid_shared_buffer(&addr, sqe->len > 0 ? sqe->len : page_size);
 	sqe->addr = addr;
 
 	/* op_flags: varies by opcode but we just fuzz it. */
