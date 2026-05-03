@@ -82,6 +82,9 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 
 		bpf_gen_seccomp(&addr, &len);
 		rec->a3 = (unsigned long) addr;
+		/* Snapshot for the post handler -- a3 may be scribbled by a
+		 * sibling syscall before post_seccomp() runs. */
+		rec->post_state = (unsigned long) addr;
 #endif
 	}
 
@@ -95,6 +98,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		*action = seccomp_ret_actions[rand() % ARRAY_SIZE(seccomp_ret_actions)];
 		rec->a2 = 0;
 		rec->a3 = (unsigned long) action;
+		rec->post_state = (unsigned long) action;
 	}
 
 	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES) {
@@ -102,25 +106,31 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		 * uargs must point to a writable struct seccomp_notif_sizes
 		 * (3 x __u16) for the kernel to fill in.
 		 */
+		void *sizes = zmalloc(3 * sizeof(uint16_t));
+
 		rec->a2 = 0;
-		rec->a3 = (unsigned long) zmalloc(3 * sizeof(uint16_t));
+		rec->a3 = (unsigned long) sizes;
+		rec->post_state = (unsigned long) sizes;
 	}
 }
 
 static void post_seccomp(struct syscallrecord *rec)
 {
 #ifdef USE_BPF
-	if (rec->a1 == SECCOMP_SET_MODE_FILTER && rec->a3) {
-		struct sock_fprog *fprog = (struct sock_fprog *) rec->a3;
+	if (rec->a1 == SECCOMP_SET_MODE_FILTER && rec->post_state) {
+		struct sock_fprog *fprog = (struct sock_fprog *) rec->post_state;
 
 		/*
-		 * Snapshot rec->a3 as fprog and reject pid-scribbled values
-		 * before deref'ing fprog->filter.  Cluster-1/2/3 guard.
+		 * Even though post_state is private to the post handler, the
+		 * whole syscallrecord can still be wholesale-stomped (e.g. by
+		 * a child reusing the slot), so keep the corruption guard.
 		 */
 		if (looks_like_corrupted_ptr(fprog)) {
 			outputerr("post_seccomp: rejected suspicious fprog=%p "
 				  "(pid-scribbled?)\n", fprog);
 			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			rec->a3 = 0;
+			rec->post_state = 0;
 			return;
 		}
 
@@ -131,14 +141,19 @@ static void post_seccomp(struct syscallrecord *rec)
 			close((int)rec->retval);
 
 		free(fprog->filter);
-		deferred_freeptr(&rec->a3);
+		rec->a3 = 0;
+		deferred_freeptr(&rec->post_state);
 	}
 #endif
-	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL && rec->a3)
-		deferred_freeptr(&rec->a3);
+	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL && rec->post_state) {
+		rec->a3 = 0;
+		deferred_freeptr(&rec->post_state);
+	}
 
-	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES && rec->a3)
-		deferred_freeptr(&rec->a3);
+	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES && rec->post_state) {
+		rec->a3 = 0;
+		deferred_freeptr(&rec->post_state);
+	}
 }
 
 static unsigned long seccomp_ops[] = {
