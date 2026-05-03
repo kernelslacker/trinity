@@ -5,6 +5,11 @@
 
 static void sanitise_set_mempolicy_home_node(struct syscallrecord *rec)
 {
+	if (range_overlaps_shared(rec->a1, rec->a2)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
+
 	rec->a4 = 0;	// no flags right now
 }
 
