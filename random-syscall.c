@@ -575,8 +575,12 @@ static bool dispatch_step(struct childdata *child, bool *found_new)
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry != NULL) {
-		/* Dispatch-time category histogram, surfaced under -vv. */
-		shm->stats.syscall_category_count[stats_syscall_category(entry->name)]++;
+		/* Dispatch-time category histogram, surfaced under -vv.
+		 * entry->syscall_category is resolved once at table-init
+		 * time (copy_syscall_table) so this stays a single indexed
+		 * atomic increment on the hot path. */
+		__atomic_add_fetch(&shm->stats.syscall_category_count[entry->syscall_category],
+				   1, __ATOMIC_RELAXED);
 
 		/* FD leak tracking: count successful fd-creating and
 		 * fd-closing syscalls per child for leak diagnosis. */

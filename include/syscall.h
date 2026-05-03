@@ -178,6 +178,16 @@ struct syscallentry {
 	 * to write its own .post handler.
 	 */
 	enum objecttype ret_objtype;
+
+	/*
+	 * Cached coarse syscall category (enum syscall_category, fits in a
+	 * byte).  Resolved once from .name at table-init time in
+	 * copy_syscall_table() so the dispatch path can index
+	 * syscall_category_count[] directly instead of re-running the
+	 * ~70-entry strncmp prefix scan in stats_syscall_category() on
+	 * every call.
+	 */
+	unsigned char syscall_category;
 };
 
 #define RET_BORING		-1
