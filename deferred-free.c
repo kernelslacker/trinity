@@ -14,6 +14,7 @@
  * syscalls, so the tick overhead is negligible.
  */
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -70,17 +71,35 @@ static size_t ring_bytes;
  * deferred_free_tick+0x49 with si_addr ~= si_pid).  mprotect is
  * async-signal-safe so these are safe to call from anywhere
  * deferred_free_* is reachable.
+ *
+ * ring_unlock() returns false on mprotect failure so callers bail out
+ * before touching ring[].  Failure is rare but does happen under
+ * fuzzing pressure (kernel VMA-limit ENOMEM when the per-process
+ * map_count cap is approached, transient EAGAIN under memory pressure,
+ * or a not-yet-sanitised mm-syscall slipping past the shared-region
+ * filter and modifying the ring's VMA).  When the original bracket
+ * landed it logged-and-returned, leaving the page at PROT_NONE while
+ * the caller fell through into the ring access loop -- ~311 self-
+ * inflicted SEGV_ACCERR crashes per 1.5h fuzz run with si_addr
+ * matching the ring page, split across deferred_free_tick+0x7e
+ * (the ring[i].ttl read in the loop body) and deferred_free_enqueue
+ * +0x89 (the ring[i].ptr == NULL slot scan).
  */
-static void ring_unlock(void)
+static bool ring_unlock(void)
 {
-	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0)
-		outputerr("deferred_free: mprotect RW failed\n");
+	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0) {
+		outputerr("deferred_free: mprotect RW failed: %s\n",
+			  strerror(errno));
+		return false;
+	}
+	return true;
 }
 
 static void ring_lock(void)
 {
 	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
-		outputerr("deferred_free: mprotect NONE failed\n");
+		outputerr("deferred_free: mprotect NONE failed: %s\n",
+			  strerror(errno));
 }
 
 void deferred_free_init(void)
@@ -163,7 +182,14 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 		return;
 	}
 
-	ring_unlock();
+	/* If ring_unlock() fails the page stays PROT_NONE; falling
+	 * through into the slot scan would SEGV_ACCERR.  Free the ptr
+	 * directly so the caller's contract (ptr is no longer their
+	 * problem) still holds. */
+	if (!ring_unlock()) {
+		free_func(ptr);
+		return;
+	}
 
 	/* If the ring is full, force-free the oldest (lowest TTL) entry
 	 * to make room.  In practice this rarely happens — TTL range
@@ -215,7 +241,11 @@ void deferred_free_tick(void)
 	if (ring_count == 0)
 		return;
 
-	ring_unlock();
+	/* On unlock failure the page is still PROT_NONE; bail rather
+	 * than SEGV_ACCERR in the loop below.  Entries stay queued and
+	 * will be retried on the next tick. */
+	if (!ring_unlock())
+		return;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
@@ -260,7 +290,11 @@ void deferred_free_flush(void)
 {
 	unsigned int i;
 
-	ring_unlock();
+	/* Called from the child exit path; if unlock fails the deferred
+	 * ptrs leak, but the child is going away so the kernel reaps
+	 * them at exit.  Better than SEGV_ACCERR-ing on the way out. */
+	if (!ring_unlock())
+		return;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		if (ring[i].ptr != NULL) {
