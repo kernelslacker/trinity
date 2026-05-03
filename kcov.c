@@ -102,17 +102,20 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	kc->remote_capable = false;
 	kc->child_id = child_id;
 	kc->dedup = NULL;
+	kc->current_generation = 0;
 
 	if (kcov_shm == NULL)
 		return;
 
 	/*
 	 * Per-child, child-private dedup table for hit-count bucketing.
-	 * malloc() so post-fork children get their own copy under COW —
-	 * the table is reset on every kcov_collect() so no cross-child
-	 * sharing is needed.
+	 * calloc() so post-fork children get their own copy under COW with
+	 * every slot's generation field starting at 0.  The first
+	 * kcov_collect() bumps current_generation to 1, so all slots
+	 * immediately look stale and the table behaves as if just wiped —
+	 * without paying the per-call memset cost.
 	 */
-	kc->dedup = malloc(KCOV_DEDUP_SIZE * sizeof(*kc->dedup));
+	kc->dedup = calloc(KCOV_DEDUP_SIZE, sizeof(*kc->dedup));
 	if (kc->dedup == NULL)
 		return;
 
@@ -339,8 +342,13 @@ static unsigned int bucket_for_count(unsigned int n)
  * probe overflow returns 1, which makes the caller register the hit in
  * bucket 0 — graceful degradation to old "any-hit" semantics for the
  * pathological edge in the pathological call.
+ *
+ * A slot is treated as empty when its generation field doesn't match the
+ * caller's current generation; this lets kcov_collect() invalidate the
+ * entire table by bumping a single counter instead of zeroing it per call.
  */
-static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge)
+static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
+	uint32_t generation)
 {
 	unsigned int slot = (edge * 0x9E3779B1U) & KCOV_DEDUP_MASK;
 	unsigned int probe;
@@ -348,7 +356,8 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge)
 	for (probe = 0; probe < KCOV_DEDUP_MAX_PROBE; probe++) {
 		struct kcov_dedup_slot *s = &dedup[slot];
 
-		if (s->edge_idx == UINT32_MAX) {
+		if (s->generation != generation) {
+			s->generation = generation;
 			s->edge_idx = edge;
 			s->count = 1;
 			return 1;
@@ -383,13 +392,24 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 	if (count > KCOV_TRACE_SIZE - 1)
 		count = KCOV_TRACE_SIZE - 1;
 
-	/* Wipe the dedup table so per-edge counts start fresh for this call. */
-	memset(kc->dedup, 0xFF, KCOV_DEDUP_SIZE * sizeof(*kc->dedup));
+	/*
+	 * Invalidate the dedup table by bumping the generation counter — every
+	 * slot whose generation doesn't match is implicitly empty.  On
+	 * wraparound (every 2^32 calls, ~70 days at 700 calls/sec) we'd
+	 * collide with stale slots carrying the now-recycled generation, so
+	 * fall back to a one-shot wipe and restart at generation 1.
+	 */
+	kc->current_generation++;
+	if (kc->current_generation == 0) {
+		memset(kc->dedup, 0, KCOV_DEDUP_SIZE * sizeof(*kc->dedup));
+		kc->current_generation = 1;
+	}
 
 	for (idx = 0; idx < count; idx++) {
 		unsigned long pc_val = kc->trace_buf[idx + 1];
 		unsigned int edge = pc_to_edge(pc_val);
-		unsigned int local_count = dedup_inc(kc->dedup, edge);
+		unsigned int local_count = dedup_inc(kc->dedup, edge,
+			kc->current_generation);
 		unsigned int bucket = bucket_for_count(local_count);
 		unsigned char mask, old;
 

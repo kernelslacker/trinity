@@ -42,7 +42,13 @@
  * Open-addressed, linear probing.  Sized so that the typical syscall's
  * unique-edge count fits well below 50% load factor; on probe overflow the
  * caller treats the entry as a single hit (degrades to old behaviour for
- * that edge in that one call). */
+ * that edge in that one call).
+ *
+ * Slot validity is tracked via a generation counter — a slot is "live" only
+ * when its generation matches the child's current_generation, otherwise it's
+ * stale from a prior call and treated as empty.  Bumping current_generation
+ * at the top of kcov_collect() invalidates the entire table in O(1) instead
+ * of the per-call wipe the previous sentinel-based design needed. */
 #define KCOV_DEDUP_SIZE 16384
 #define KCOV_DEDUP_MASK (KCOV_DEDUP_SIZE - 1)
 #define KCOV_DEDUP_MAX_PROBE 32
@@ -66,11 +72,14 @@
 #define KCOV_REMOTE_RATIO 10
 
 /* Per-call dedup slot — counts how many times a single trace hit a given
- * edge so the hit count can be classified into a bucket.  edge_idx ==
- * UINT32_MAX marks an empty slot. */
+ * edge so the hit count can be classified into a bucket.  A slot is "live"
+ * for the current call only when generation == kcov_child::current_generation;
+ * any other value means the slot is stale from a prior call and should be
+ * treated as empty. */
 struct kcov_dedup_slot {
 	uint32_t edge_idx;
 	uint32_t count;
+	uint32_t generation;
 };
 
 struct kcov_child {
@@ -82,6 +91,7 @@ struct kcov_child {
 	bool remote_capable; /* true if kernel supports KCOV_REMOTE_ENABLE */
 	unsigned int child_id; /* unique child id for remote handle */
 	struct kcov_dedup_slot *dedup;	/* KCOV_DEDUP_SIZE entries, child-private */
+	uint32_t current_generation;	/* bumped per kcov_collect() to invalidate dedup */
 };
 
 /* Shared coverage state, allocated in shared memory. */
