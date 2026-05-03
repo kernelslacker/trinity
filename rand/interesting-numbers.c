@@ -61,6 +61,29 @@ unsigned long get_boundary_value(void)
 }
 
 /*
+ * Curated edge values for RAND_NEGATIVE_OR().  Built at call time rather
+ * than as a static initializer because page_size is resolved at runtime.
+ * Kept short on purpose — once a bounds-check path has been hit by any
+ * one of these the marginal value of more entries drops fast.
+ */
+long get_negative_edge_value(void)
+{
+	const long values[] = {
+		0, -1, 1,
+		INT_MAX, INT_MIN, INT_MAX - 1, INT_MIN + 1,
+		(long)UINT_MAX, (long)UINT_MAX + 1,
+		LONG_MAX, LONG_MIN, LONG_MAX - 1, LONG_MIN + 1,
+		(long)page_size - 1, (long)page_size, (long)page_size + 1,
+		(long)page_size * 2 - 1, (long)page_size * 2,
+		(long)page_size * 2 + 1,
+		-4096L,			/* typical IS_ERR threshold */
+	};
+	const unsigned int n = sizeof(values) / sizeof(values[0]);
+
+	return values[rand() % n];
+}
+
+/*
  * Boundary values divided by common struct sizes, targeting integer
  * overflow in kernel allocation-size calculations (count * sizeof).
  * The kernel frequently does: kmalloc(count * sizeof(struct foo))

@@ -280,14 +280,18 @@ static void fill_sqe(struct io_uring_sqe *s,
 		s->opcode = IORING_OP_READ;
 		s->fd     = dev_null_rd;
 		s->addr   = (__u64)(uintptr_t)iobuf;
-		s->len    = (unsigned int)(iobuf_sz / 2);
+		/* 1-in-RAND_NEGATIVE_RATIO sub the in-bounds len for a
+		 * curated edge value — exercises io_uring's per-op length
+		 * validation against /dev/null where the read is harmless
+		 * regardless of the requested size. */
+		s->len    = (unsigned int)RAND_NEGATIVE_OR((long)(iobuf_sz / 2));
 		s->off    = 0;
 		break;
 	default:
 		s->opcode = IORING_OP_WRITE;
 		s->fd     = dev_null_wr;
 		s->addr   = (__u64)(uintptr_t)iobuf;
-		s->len    = (unsigned int)(iobuf_sz / 2);
+		s->len    = (unsigned int)RAND_NEGATIVE_OR((long)(iobuf_sz / 2));
 		s->off    = 0;
 		break;
 	}

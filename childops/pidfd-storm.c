@@ -222,7 +222,14 @@ bool pidfd_storm(struct childdata *child)
 		if (rand() % 2 == 0) {
 			int sig = storm_signals[rand() % (int) ARRAY_SIZE(storm_signals)];
 
-			rc = sys_pidfd_send_signal(s->pidfd, sig, NULL, 0);
+			/* 1-in-RAND_NEGATIVE_RATIO sub the curated benign signal
+			 * for a curated edge value (-1, 0, INT_MAX, ...) — the
+			 * curated set above is all valid signals, so this is the
+			 * only path that exercises pidfd_send_signal's signo
+			 * range check (valid_signal()). */
+			rc = sys_pidfd_send_signal(s->pidfd,
+						   (int)RAND_NEGATIVE_OR(sig),
+						   NULL, 0);
 			if (rc == 0) {
 				__atomic_add_fetch(&shm->stats.pidfd_storm_signals,
 						   1, __ATOMIC_RELAXED);
