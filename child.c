@@ -524,6 +524,11 @@ static void init_child(struct childdata *child, int childno)
 	munge_process();
 
 	kcov_init_child(&child->kcov, child->num);
+
+	/* Uniarch: pin the active-syscalls pointer once.  Biarch leaves
+	 * this NULL — the first choose_syscall_table call refreshes it. */
+	if (!biarch)
+		child->active_syscalls = shm->active_syscalls;
 }
 
 /*

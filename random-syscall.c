@@ -38,42 +38,42 @@
  * to 'we asked to do a 32bit only syscall' and more.. Hairy.
  */
 
-static int *active_syscalls;
-
-static bool choose_syscall_table(unsigned int *nr_syscalls_out)
+/*
+ * Biarch-only: pick which syscall table this call uses, refresh the
+ * caller's per-child active_syscalls pointer, and return do32.  Uniarch
+ * builds bypass this entirely — child->active_syscalls is set once at
+ * init time to shm->active_syscalls and never re-evaluated.
+ */
+static bool choose_syscall_table(struct childdata *child,
+				 unsigned int *nr_syscalls_out)
 {
 	bool do32 = false;
 
-	if (biarch == false) {
-		active_syscalls = shm->active_syscalls;
-	} else {
+	/* First, check that we have syscalls enabled in either table. */
+	if (validate_syscall_table_64() == false) {
+		use_64bit = false;
+		/* If no 64bit syscalls enabled, force 32bit. */
+		do32 = true;
+	}
 
-		/* First, check that we have syscalls enabled in either table. */
-		if (validate_syscall_table_64() == false) {
-			use_64bit = false;
-			/* If no 64bit syscalls enabled, force 32bit. */
+	if (validate_syscall_table_32() == false)
+		use_32bit = false;
+
+	/* If both tables enabled, pick randomly. */
+	if ((use_64bit == true) && (use_32bit == true)) {
+		/* 10% possibility of a 32bit syscall */
+		if (ONE_IN(10))
 			do32 = true;
-		}
+	}
 
-		if (validate_syscall_table_32() == false)
-			use_32bit = false;
-
-		/* If both tables enabled, pick randomly. */
-		if ((use_64bit == true) && (use_32bit == true)) {
-			/* 10% possibility of a 32bit syscall */
-			if (ONE_IN(10))
-				do32 = true;
-		}
-
-		if (do32 == false) {
-			syscalls = syscalls_64bit;
-			active_syscalls = shm->active_syscalls64;
-			*nr_syscalls_out = max_nr_64bit_syscalls;
-		} else {
-			syscalls = syscalls_32bit;
-			active_syscalls = shm->active_syscalls32;
-			*nr_syscalls_out = max_nr_32bit_syscalls;
-		}
+	if (do32 == false) {
+		syscalls = syscalls_64bit;
+		child->active_syscalls = shm->active_syscalls64;
+		*nr_syscalls_out = max_nr_64bit_syscalls;
+	} else {
+		syscalls = syscalls_32bit;
+		child->active_syscalls = shm->active_syscalls32;
+		*nr_syscalls_out = max_nr_32bit_syscalls;
 	}
 	return do32;
 }
@@ -116,9 +116,12 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 	 * a constant, and even in biarch the do32 dice rolls once per
 	 * pick — re-rolling under the retry budget (up to 10 000 spins
 	 * on a sparse table) burned ~5 cycles per iteration for nothing. */
-	do32 = choose_syscall_table(&nr_syscalls);
-	if (biarch == false)
+	if (biarch) {
+		do32 = choose_syscall_table(child, &nr_syscalls);
+	} else {
+		do32 = false;
 		nr_syscalls = max_nr_syscalls;
+	}
 
 retry:
 	if (no_syscalls_enabled() == true) {
@@ -140,7 +143,7 @@ retry:
 
 	/* If we got a syscallnr which is not active repeat the attempt,
 	 * since another child has switched that syscall off already.*/
-	val = active_syscalls[syscallnr];
+	val = child->active_syscalls[syscallnr];
 	if (val == 0)
 		goto retry;
 
@@ -241,13 +244,14 @@ static bool set_syscall_nr_random(struct syscallrecord *rec,
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
 
-	(void)child;
-
 	/* See the matching comment in set_syscall_nr_heuristic — the table
 	 * pick is a per-call decision, not a per-retry one. */
-	do32 = choose_syscall_table(&nr_syscalls);
-	if (biarch == false)
+	if (biarch) {
+		do32 = choose_syscall_table(child, &nr_syscalls);
+	} else {
+		do32 = false;
 		nr_syscalls = max_nr_syscalls;
+	}
 
 retry:
 	if (no_syscalls_enabled() == true) {
@@ -263,7 +267,7 @@ retry:
 
 	syscallnr = rand() % nr_syscalls;
 
-	val = active_syscalls[syscallnr];
+	val = child->active_syscalls[syscallnr];
 	if (val == 0)
 		goto retry;
 

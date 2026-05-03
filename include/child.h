@@ -90,6 +90,14 @@ struct childdata {
 
 	struct objhead objects[MAX_OBJECT_TYPES];
 
+	/* Pointer to the active-syscall lookup table for this child's
+	 * current pick.  Uniarch: set once at child init to
+	 * shm->active_syscalls and never written again.  Biarch: refreshed
+	 * by choose_syscall_table on every pick (the do32 dice picks one
+	 * of shm->active_syscalls{32,64}).  Per-child storage so the
+	 * biarch update doesn't need an atomic store on a process-global. */
+	int *active_syscalls;
+
 	/* last time the child made progress. */
 	struct timespec tp;
 	unsigned long op_nr;
