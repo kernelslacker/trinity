@@ -10,6 +10,7 @@
 #include "arch.h"
 #include "arch-syscalls.h"
 #include "params.h"
+#include "stats.h"
 #include "syscall.h"
 #include "shm.h"
 #include "tables.h"
@@ -506,6 +507,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		memcpy(copy + m , entry, sizeof(struct syscallentry));
 		copy[m].number = n;
 		copy[m].active_number = 0;
+		copy[m].syscall_category = stats_syscall_category(copy[m].name);
 
 		from[n].entry = &copy[m];
 		m++;
