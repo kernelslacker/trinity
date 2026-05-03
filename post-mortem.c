@@ -35,7 +35,7 @@
 
 struct ring_entry {
 	unsigned int child_idx;
-	struct syscallrecord rec;
+	struct chronicle_slot slot;
 };
 
 static int cmp_ring_entry(const void *a, const void *b)
@@ -43,10 +43,10 @@ static int cmp_ring_entry(const void *a, const void *b)
 	const struct ring_entry *ea = a;
 	const struct ring_entry *eb = b;
 
-	if (ea->rec.tp.tv_sec != eb->rec.tp.tv_sec)
-		return (ea->rec.tp.tv_sec < eb->rec.tp.tv_sec) ? -1 : 1;
-	if (ea->rec.tp.tv_nsec != eb->rec.tp.tv_nsec)
-		return (ea->rec.tp.tv_nsec < eb->rec.tp.tv_nsec) ? -1 : 1;
+	if (ea->slot.tp.tv_sec != eb->slot.tp.tv_sec)
+		return (ea->slot.tp.tv_sec < eb->slot.tp.tv_sec) ? -1 : 1;
+	if (ea->slot.tp.tv_nsec != eb->slot.tp.tv_nsec)
+		return (ea->slot.tp.tv_nsec < eb->slot.tp.tv_nsec) ? -1 : 1;
 	return 0;
 }
 
@@ -57,22 +57,41 @@ static bool ts_before(const struct timespec *a, const struct timespec *b)
 	return a->tv_nsec < b->tv_nsec;
 }
 
-static void dump_syscall_rec(FILE *fp, const struct syscallrecord *rec)
+/*
+ * Render one chronicle slot to fp.  The child no longer stages a fully
+ * pre-rendered prebuffer/postbuffer for us — those would have cost a
+ * 4 KiB struct copy on every push — so we reconstruct a one-line summary
+ * here from the structured fields.  Args are printed as raw hex with the
+ * syscall table's argname[] labels; per-arg decode() callbacks aren't
+ * usable from the parent because they may dereference user-space
+ * pointers from the child's address space.
+ */
+static void dump_syscall_slot(FILE *fp, const struct chronicle_slot *slot)
 {
-	switch (rec->state) {
-	case UNKNOWN:
-	case PREP:
-		/* unwritten or in-flight: filtered before we get here. */
-		break;
-	case BEFORE:
-		fprintf(fp, "%.*s\n", PREBUFFER_LEN, rec->prebuffer);
-		break;
-	case AFTER:
-	case GOING_AWAY:
-		fprintf(fp, "%.*s%.*s\n", PREBUFFER_LEN, rec->prebuffer,
-			POSTBUFFER_LEN, rec->postbuffer);
-		break;
+	struct syscallentry *entry = get_syscall_entry(slot->nr, slot->do32bit);
+	const unsigned long args[6] = {
+		slot->a1, slot->a2, slot->a3, slot->a4, slot->a5, slot->a6,
+	};
+	const char *name = entry ? entry->name : "?";
+	unsigned int n_args = entry ? entry->num_args : 6;
+	unsigned int i;
+
+	fprintf(fp, "%s%s(", slot->do32bit ? "[32BIT] " : "", name);
+	for (i = 0; i < n_args; i++) {
+		const char *argname = (entry && entry->argname[i]) ?
+			entry->argname[i] : NULL;
+		if (i > 0)
+			fprintf(fp, ", ");
+		if (argname)
+			fprintf(fp, "%s=0x%lx", argname, args[i]);
+		else
+			fprintf(fp, "0x%lx", args[i]);
 	}
+	if (IS_ERR(slot->retval))
+		fprintf(fp, ") = %ld (%s)\n", (long) slot->retval,
+			strerror(slot->errno_post));
+	else
+		fprintf(fp, ") = %ld\n", (long) slot->retval);
 }
 
 /*
@@ -94,15 +113,15 @@ static unsigned int drain_child_ring(unsigned int idx,
 	count = head < CHILD_SYSCALL_RING_SIZE ? head : CHILD_SYSCALL_RING_SIZE;
 
 	for (j = 0; j < count; j++) {
-		uint32_t slot = (head - count + j) & (CHILD_SYSCALL_RING_SIZE - 1);
-		struct syscallrecord *rec = &ring->recent[slot];
+		uint32_t idx_slot = (head - count + j) & (CHILD_SYSCALL_RING_SIZE - 1);
+		struct chronicle_slot *slot = &ring->recent[idx_slot];
 
-		/* Skip slots that haven't received a completed syscall yet. */
-		if (rec->state != AFTER && rec->state != GOING_AWAY)
+		/* Skip slots that a freshly spawned child has not yet filled. */
+		if (!slot->valid)
 			continue;
 
 		out[n].child_idx = idx;
-		out[n].rec = *rec;
+		out[n].slot = *slot;
 		n++;
 	}
 	return n;
@@ -128,18 +147,17 @@ static void dump_syscall_records(FILE *fp, const struct timespec *taint_tp)
 	qsort(entries, total, sizeof(*entries), cmp_ring_entry);
 
 	for (i = 0; i < total; i++) {
-		const struct syscallrecord *rec = &entries[i].rec;
+		const struct chronicle_slot *slot = &entries[i].slot;
 
-		if (!taint_marked && ts_before(taint_tp, &rec->tp)) {
+		if (!taint_marked && ts_before(taint_tp, &slot->tp)) {
 			fprintf(fp, "--- taint detected at %ld.%09ld ---\n",
 				(long) taint_tp->tv_sec, taint_tp->tv_nsec);
 			taint_marked = true;
 		}
 
 		fprintf(fp, "[child %u @ %ld.%09ld] ", entries[i].child_idx,
-			(long) rec->tp.tv_sec, rec->tp.tv_nsec);
-		dump_syscall_rec(fp, rec);
-		fprintf(fp, "\n");
+			(long) slot->tp.tv_sec, slot->tp.tv_nsec);
+		dump_syscall_slot(fp, slot);
 	}
 
 	if (!taint_marked) {
