@@ -250,32 +250,24 @@ void kcov_enable_cmp(struct kcov_child *kc)
 
 void kcov_enable_remote(struct kcov_child *kc)
 {
-	struct kcov_remote_arg *arg;
+	struct kcov_remote_arg arg = {0};
 
 	if (kc == NULL || !kc->active || !kc->remote_capable)
 		return;
 
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
 
-	arg = calloc(1, sizeof(*arg));
-	if (arg == NULL)
-		return;
+	arg.trace_mode = KCOV_TRACE_PC;
+	arg.area_size = KCOV_TRACE_SIZE;
+	arg.num_handles = 0;
+	arg.common_handle = KCOV_SUBSYSTEM_COMMON | (kc->child_id + 1);
 
-	arg->trace_mode = KCOV_TRACE_PC;
-	arg->area_size = KCOV_TRACE_SIZE;
-	arg->num_handles = 0;
-	arg->common_handle = KCOV_SUBSYSTEM_COMMON | (kc->child_id + 1);
-
-	if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, arg) < 0) {
+	if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, &arg) < 0) {
 		/* Fall back to per-thread mode if remote fails at runtime. */
 		kc->remote_capable = false;
-		free(arg);
 		if (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0)
 			kc->active = false;
-		return;
 	}
-
-	free(arg);
 }
 
 void kcov_disable(struct kcov_child *kc)
