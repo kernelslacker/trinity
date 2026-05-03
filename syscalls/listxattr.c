@@ -284,6 +284,119 @@ struct syscallentry syscall_listxattr = {
 /*
  * SYSCALL_DEFINE3(llistxattr, const char __user *, pathname, char __user *, list, size_t, size)
  */
+#if defined(SYS_llistxattr) || defined(__NR_llistxattr)
+#ifndef SYS_llistxattr
+#define SYS_llistxattr __NR_llistxattr
+#endif
+
+/*
+ * Oracle: llistxattr(path, list, size) is the lstat-style sister of
+ * listxattr -- it walks `path` WITHOUT following a terminal symlink,
+ * so the inode it queries is the symlink itself (when one is present)
+ * rather than its target.  That changes the TOCTOU surface in one
+ * specific way: a sibling unlink/relink of the symlink between the
+ * original return and our re-issue still resolves to the symlink
+ * inode, but a sibling swap of the symlink target is now in scope as
+ * a benign size-class drift cause -- swapping the target inode under
+ * a stable symlink leaves llistxattr's view of the symlink xattr set
+ * unchanged, but a parallel symlink replacement (unlink + symlink to
+ * a different target) gives us a different terminal inode with a
+ * potentially different xattr name set, and that drift is caught by
+ * the snap_len mismatch gate exactly as for the path-walk variant.
+ * Otherwise the failure modes mirror listxattr exactly:
+ *
+ *   - copy_to_user mis-write into the wrong user slot, leaving the
+ *     original receive buffer torn (partial write, wrong-offset fill,
+ *     residual stack data) while the re-call lands clean.
+ *   - sibling-thread scribble of the user receive buffer between the
+ *     original syscall return and our post-hook re-read.
+ *   - 32-on-64 compat ABI truncating a size_t and shipping a short
+ *     payload while reporting the full retval.
+ *   - dcache race serving the second lookup a different inode for the
+ *     same path string (rename/mount-shift, or symlink replacement,
+ *     between the two calls resolves the same name to a different
+ *     symlink inode with a different xattr name set).
+ *
+ * TOCTOU defeat: identical to listxattr -- snapshot the path string
+ * and the first retval bytes of the receive buffer to stack-locals
+ * BEFORE re-issuing the syscall, target a fresh stack buffer for the
+ * re-call (never rec->a2), drop on rc <= 0 or length mismatch,
+ * memcmp exactly snap_len bytes without early-return so multi-byte
+ * tears surface in a single sample, bump the anomaly counter once.
+ * Sample one in a hundred to stay in line with the rest of the
+ * oracle family.
+ *
+ * On most fleets llistxattr rarely returns a non-empty list (most
+ * symlinks have no xattrs) and the retval > 0 gate keeps this oracle
+ * dormant; it costs ~zero on no-xattr hosts and protects niche
+ * xattr-heavy ones.
+ */
+static void post_llistxattr(struct syscallrecord *rec)
+{
+	char snap_path[4096];
+	unsigned char first_buf[4096];
+	unsigned char recheck_buf[4096];
+	size_t snap_len;
+	long rc;
+
+	if (!ONE_IN(100))
+		return;
+
+	if ((long) rec->retval <= 0)
+		return;
+
+	if (rec->a1 == 0)
+		return;
+
+	if (rec->a2 == 0)
+		return;
+
+	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
+		sizeof(snap_path) - 1);
+	snap_path[sizeof(snap_path) - 1] = '\0';
+
+	snap_len = (size_t) rec->retval;
+	if (snap_len > sizeof(first_buf))
+		snap_len = sizeof(first_buf);
+
+	memcpy(first_buf, (void *)(unsigned long) rec->a2, snap_len);
+
+	rc = syscall(SYS_llistxattr, snap_path, recheck_buf,
+		     sizeof(recheck_buf));
+
+	if (rc <= 0)
+		return;
+
+	if ((size_t) rc != snap_len)
+		return;
+
+	if (memcmp(first_buf, recheck_buf, snap_len) == 0)
+		return;
+
+	{
+		char first_hex[32 * 2 + 1];
+		char recheck_hex[32 * 2 + 1];
+		size_t i, dump_len;
+
+		dump_len = snap_len < 32 ? snap_len : 32;
+		for (i = 0; i < dump_len; i++) {
+			snprintf(first_hex + i * 2, 3, "%02x",
+				 (unsigned char) first_buf[i]);
+			snprintf(recheck_hex + i * 2, 3, "%02x",
+				 (unsigned char) recheck_buf[i]);
+		}
+		first_hex[dump_len * 2] = '\0';
+		recheck_hex[dump_len * 2] = '\0';
+
+		output(0,
+		       "[oracle:llistxattr] path=%s len=%zu first %s vs recheck %s\n",
+		       snap_path, snap_len, first_hex, recheck_hex);
+		__atomic_add_fetch(&shm->stats.llistxattr_oracle_anomalies,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+#endif /* SYS_llistxattr || __NR_llistxattr */
+
 struct syscallentry syscall_llistxattr = {
 	.name = "llistxattr",
 	.num_args = 3,
@@ -293,4 +406,7 @@ struct syscallentry syscall_llistxattr = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+#if defined(SYS_llistxattr) || defined(__NR_llistxattr)
+	.post = post_llistxattr,
+#endif
 };
