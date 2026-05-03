@@ -55,11 +55,34 @@ retry:	tries++;
 		 */
 		if (range_overlaps_shared((unsigned long)map, sizeof(*map)))
 			goto retry;
+		/*
+		 * Honor the prot=0 invalidation that post_munmap and
+		 * post_mprotect stamp onto pool entries when a sibling
+		 * syscall hole-punches or downgrades prot on the
+		 * underlying VMAs.  Without this skip, a stale entry
+		 * sails past every check and the caller faults on first
+		 * access (SEGV_MAPERR on hole-punched pages, SEGV_ACCERR
+		 * on PROT_NONE pages).  Mirrors the (m->prot & req) == req
+		 * filter in get_map_with_prot(); the prot=0 case is the
+		 * common ground that catches every consumer.
+		 */
+		if (map->prot == 0)
+			goto retry;
 		if (map->size < size)
 			goto retry;
 
 		addr = map->ptr;
-		map->prot = PROT_READ | PROT_WRITE;
+		/*
+		 * Don't update map->prot here.  The mprotect below is a
+		 * sub-range upgrade (size <= map->size) so cacheing
+		 * PROT_READ|PROT_WRITE for the whole mapping would lie
+		 * to future get_map_with_prot() consumers about pages
+		 * outside [addr, addr+size).  Worse, it would silently
+		 * undo any concurrent post_munmap / post_mprotect
+		 * invalidation that landed between the read of map->prot
+		 * above and this write.  Leave the cached invariant
+		 * owned by the post-syscall hooks.
+		 */
 	} else {
 		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
 		if (obj == NULL)
