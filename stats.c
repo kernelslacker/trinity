@@ -625,7 +625,7 @@ static void dump_stats_json(void)
 		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
 		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},"
 		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
-			"\"fd_event_ring_canary\":%lu},"
+			"\"fd_event_ring_canary\":%lu,\"deferred_free_corrupt_ptr\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
 			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
@@ -752,6 +752,7 @@ static void dump_stats_json(void)
 		shm->stats.zombies_timed_out,
 		shm->stats.local_op_count_corrupted, shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
+		shm->stats.deferred_free_corrupt_ptr,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
@@ -1219,6 +1220,8 @@ void dump_stats(void)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
 	if (shm->stats.fd_event_ring_overwritten)
 		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd_event_ring_overwritten);
+	if (shm->stats.deferred_free_corrupt_ptr)
+		stat_row("corruption", "deferred_free_corrupt_ptr", shm->stats.deferred_free_corrupt_ptr);
 
 	if (shm->stats.shared_buffer_redirected)
 		stat_row("shared_buffer", "args_redirected",     shm->stats.shared_buffer_redirected);

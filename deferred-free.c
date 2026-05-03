@@ -22,6 +22,7 @@
 #include "deferred-free.h"
 #include "pc_format.h"
 #include "random.h"
+#include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -58,20 +59,46 @@ struct deferred_entry {
  */
 static struct deferred_entry *ring;
 static unsigned int ring_count;
+static size_t ring_bytes;
+
+/*
+ * Bracket every writer/reader of ring[] with mprotect().  Between
+ * ticks the ring sits at PROT_NONE; any fuzzed value-result syscall
+ * that tries to scribble inside it now SIGSEGVs in the kernel's
+ * copy_from_user instead of silently overwriting ring[i].ptr with a
+ * pid-shaped value (the cluster-1 root cause: ~200 SIGSEGVs at
+ * deferred_free_tick+0x49 with si_addr ~= si_pid).  mprotect is
+ * async-signal-safe so these are safe to call from anywhere
+ * deferred_free_* is reachable.
+ */
+static void ring_unlock(void)
+{
+	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0)
+		outputerr("deferred_free: mprotect RW failed\n");
+}
+
+static void ring_lock(void)
+{
+	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
+		outputerr("deferred_free: mprotect NONE failed\n");
+}
 
 void deferred_free_init(void)
 {
-	const size_t bytes = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
+	const size_t raw = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
 
-	ring = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
+	ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
+
+	ring = mmap(NULL, ring_bytes, PROT_READ | PROT_WRITE,
 		    MAP_PRIVATE | MAP_ANON, -1, 0);
 	if (ring == MAP_FAILED) {
-		outputerr("deferred_free_init: mmap %zu failed\n", bytes);
+		outputerr("deferred_free_init: mmap %zu failed\n", ring_bytes);
 		exit(EXIT_FAILURE);
 	}
-	memset(ring, 0, bytes);
-	track_shared_region((unsigned long)ring, bytes);
+	memset(ring, 0, ring_bytes);
+	track_shared_region((unsigned long)ring, ring_bytes);
 	ring_count = 0;
+	ring_lock();
 }
 
 void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
@@ -97,6 +124,9 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * generator -- the guard fixes the symptom but the rejection log
 	 * is the breadcrumb to the root cause.  Limited to one print per
 	 * 1000 rejects to keep noise sane.
+	 *
+	 * This range check runs BEFORE ring_unlock() so we don't pay the
+	 * mprotect cost on rejected enqueues.
 	 */
 	if (range_overlaps_shared((unsigned long)ptr, 1) && free_func == free) {
 		static unsigned long rejects;
@@ -111,6 +141,8 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 		}
 		return;
 	}
+
+	ring_unlock();
 
 	/* If the ring is full, force-free the oldest (lowest TTL) entry
 	 * to make room.  In practice this rarely happens — TTL range
@@ -139,9 +171,11 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 			ring[i].free_func = free_func;
 			ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
 			ring_count++;
-			return;
+			break;
 		}
 	}
+
+	ring_lock();
 }
 
 void deferred_freeptr(unsigned long *p)
@@ -155,8 +189,12 @@ void deferred_free_tick(void)
 {
 	unsigned int i;
 
+	/* Cheap path: ring_count is read while still locked, but it lives
+	 * in BSS (not in the protected ring), so this access is safe. */
 	if (ring_count == 0)
 		return;
+
+	ring_unlock();
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
@@ -177,13 +215,31 @@ void deferred_free_tick(void)
 		fn = ring[i].free_func;
 		ring[i].ptr = NULL;
 		ring_count--;
+
+		/* Sanity-check ptr before invoking fn().  A sub-page address
+		 * cannot be a real heap pointer; if we see one here it's
+		 * almost certainly a fuzzed value-result syscall having
+		 * scribbled a pid-shaped value into the ring before the
+		 * mprotect guard was added (or a bypass that defeated it).
+		 * Drop the pointer rather than crash on free(). */
+		if ((unsigned long)ptr < 0x10000) {
+			outputerr("deferred_free: rejected suspicious ptr=%p "
+				  "in slot %u (looks pid-shaped)\n", ptr, i);
+			shm->stats.deferred_free_corrupt_ptr++;
+			continue;
+		}
+
 		fn(ptr);
 	}
+
+	ring_lock();
 }
 
 void deferred_free_flush(void)
 {
 	unsigned int i;
+
+	ring_unlock();
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		if (ring[i].ptr != NULL) {
@@ -192,4 +248,6 @@ void deferred_free_flush(void)
 		}
 	}
 	ring_count = 0;
+
+	ring_lock();
 }
