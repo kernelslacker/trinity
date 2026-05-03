@@ -346,6 +346,11 @@ struct stats_s {
 	unsigned long madvise_cycler_calls;	/* total madvise() calls issued */
 	unsigned long madvise_cycler_failed;	/* madvise() returned -1 */
 
+	/* keyring_spam childop counters */
+	unsigned long keyring_spam_runs;	/* total keyring_spam invocations */
+	unsigned long keyring_spam_calls;	/* total add_key/keyctl ops attempted */
+	unsigned long keyring_spam_failed;	/* add_key/keyctl returned -1 */
+
 	/* uffd_churn childop counters */
 	unsigned long uffd_runs;		/* total uffd_churn invocations */
 	unsigned long uffd_registers;		/* successful UFFDIO_REGISTER */
