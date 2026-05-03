@@ -30,11 +30,30 @@ struct child_fd_ring {
  * before the kernel taint flag flipped.  Lock-free SPSC: producer issues
  * a release-store of head after writing the slot; consumer issues an
  * acquire-load of head before reading slots.  Size must be a power of 2.
+ *
+ * Each slot holds only the structured fields the post-mortem reader needs
+ * to reconstruct a one-line summary (syscall name, args, return value,
+ * errno, timestamp) — not the 4 KiB pre-rendered prebuffer/postbuffer
+ * that the live -v output uses.  Keeps the per-syscall push to a
+ * field-by-field copy of ~80 bytes instead of a 4 KiB struct copy that
+ * trashed L1/L2 on every call.
  */
 #define CHILD_SYSCALL_RING_SIZE 16
 
+struct chronicle_slot {
+	struct timespec tp;		/* CLOCK_MONOTONIC at syscall return. */
+	unsigned long a1, a2, a3, a4, a5, a6;	/* arg values as the kernel saw them. */
+	unsigned long retval;		/* return value the kernel reported. */
+	unsigned int nr;		/* index into the syscall table. */
+	int errno_post;			/* errno after return. */
+	bool do32bit;			/* selects which table nr indexes. */
+	bool valid;			/* false in zero-init slots; the post-mortem
+					 * reader uses this to skip slots a freshly
+					 * spawned child has not yet filled. */
+};
+
 struct child_syscall_ring {
-	struct syscallrecord recent[CHILD_SYSCALL_RING_SIZE];
+	struct chronicle_slot recent[CHILD_SYSCALL_RING_SIZE];
 	_Atomic uint32_t head;
 };
 

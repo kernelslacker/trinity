@@ -66,18 +66,35 @@ void child_fd_ring_push(struct child_fd_ring *ring, int fd)
 }
 
 /*
- * Single-producer push: copy the just-completed syscallrecord into the
- * ring slot, then publish the new head with a release-store so the
- * post-mortem reader observes a fully-written entry when it sees the
- * matching head value.
+ * Single-producer push: extract the structured fields the post-mortem
+ * reader consumes into the chronicle slot, then publish the new head
+ * with a release-store so the reader observes a fully-written entry
+ * when it sees the matching head value.  Field-by-field instead of a
+ * struct copy because struct syscallrecord is dominated by the 4 KiB
+ * pre-rendered prebuffer the post-mortem path doesn't need.
  */
 void child_syscall_ring_push(struct child_syscall_ring *ring,
 			     const struct syscallrecord *rec)
 {
+	struct chronicle_slot *slot;
 	uint32_t head;
 
 	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
-	ring->recent[head & (CHILD_SYSCALL_RING_SIZE - 1)] = *rec;
+	slot = &ring->recent[head & (CHILD_SYSCALL_RING_SIZE - 1)];
+
+	slot->tp = rec->tp;
+	slot->a1 = rec->a1;
+	slot->a2 = rec->a2;
+	slot->a3 = rec->a3;
+	slot->a4 = rec->a4;
+	slot->a5 = rec->a5;
+	slot->a6 = rec->a6;
+	slot->retval = rec->retval;
+	slot->nr = rec->nr;
+	slot->errno_post = rec->errno_post;
+	slot->do32bit = rec->do32bit;
+	slot->valid = true;
+
 	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
 }
 
