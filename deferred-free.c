@@ -112,6 +112,27 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 		free_func = free;
 
 	/*
+	 * Reject pid-scribbled / canonical-out-of-range / misaligned values
+	 * BEFORE they ever reach the ring.  Cluster-1/2/3 root cause
+	 * (residual-cores triage 2026-05-02): a sibling fuzzed value-result
+	 * syscall scribbles a tid/pid into rec->aN, the post handler does
+	 * deferred_freeptr(&rec->aN) which arrives here, and N syscalls
+	 * later deferred_free_tick() free()s the pid -- SIGSEGV with
+	 * si_addr==si_pid.  Drop the bad value at the post-handler boundary
+	 * (one counter bumped, ring slot stays empty) instead of letting
+	 * the corruption propagate into the ring.  Gated on free_func==free
+	 * because custom free funcs may legitimately receive non-heap
+	 * tokens (caller knows what they're doing); same gating convention
+	 * as the range_overlaps_shared check below.
+	 */
+	if (looks_like_corrupted_ptr(ptr) && free_func == free) {
+		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
+			  "(pid-scribbled?)\n", ptr);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+
+	/*
 	 * Refuse to enqueue a pointer that lands inside one of trinity's
 	 * own mmap'd shared regions.  ASAN catches these as bad-free
 	 * (libasan: "attempting free on address which was not malloc()-ed"),

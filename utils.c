@@ -940,6 +940,68 @@ void freeptr(unsigned long *p)
 	*p = 0L;
 }
 
+/*
+ * looks_like_corrupted_ptr - heuristic test for "this slot used to hold
+ * a pointer we malloc'd, but somebody scribbled a non-pointer over it".
+ *
+ * Cluster-1 / cluster-2 / cluster-3 crash signature (residual-cores
+ * triage 2026-05-02): si_addr in the killing siginfo equals si_pid (e.g.
+ * si_addr=0x378a02 against pid 0x378a02).  The shape comes from a fuzzed
+ * value-result syscall in some sibling child landing in trinity-internal
+ * memory -- rec->aN, a struct field reachable from rec->aN, or a slot in
+ * the deferred-free ring -- and overwriting a pointer that a post handler
+ * was about to deref or pass to free(), with the kernel-issued tid/pid
+ * value.  The deferred-free ring already mprotects between ticks so a
+ * scribble there now SIGSEGVs in copy_from_user, but the rec-> path is
+ * unprotected by construction (the kernel must be able to write into
+ * rec->aN -- that's the whole point).
+ *
+ * Three rejection bands, all heuristic:
+ *
+ *   - v < 0x10000:  cannot be a real heap pointer.  PIDs (pid_max is
+ *     typically 4 million on Linux) and small ints land here.  This is
+ *     the same gate deferred_free_tick() uses as a belt-and-braces
+ *     check at free time; we want to reject earlier so the ring slot
+ *     never holds a bogus value at all.
+ *
+ *   - v >= (1UL << 47):  above the x86_64 user canonical limit.  glibc
+ *     malloc / mmap / brk hand out addresses well below this; a value
+ *     here is either a kernel pointer leaked back (bug regardless of
+ *     post-handler state) or a tornadic write of a high-bit pattern.
+ *
+ *   - v & 0x7:  misaligned for an 8-byte pointer.  Every trinity heap
+ *     allocator (zmalloc, alloc_iovec, get_writable_*, alloc_object)
+ *     hands back >= 8-byte aligned memory.  A misaligned value in a
+ *     slot we expect to free is almost certainly a partial overwrite.
+ *
+ * False positive cost: a legitimate-but-weird pointer would be dropped
+ * (memory leak), not freed.  A leak in a post handler is benign --
+ * children turn over fast and the heap evaporates at exit.  The
+ * alternative (false negative) is the cluster-1/2/3 SIGSEGV class we
+ * are trying to kill, so we err strict.  Audited against current post
+ * handlers (deferred_freeptr, deferred_free_enqueue callers, direct
+ * free() on rec->aN): every pointer those receive is heap-allocated
+ * via 8-byte aligned routines, so the misalign band is safe at all
+ * present call sites.  If a future caller is shown to legitimately
+ * pass an unaligned value, drop the alignment check rather than
+ * dropping the others.
+ *
+ * Returns true if the pointer looks scribbled and the caller should
+ * drop it instead of dereferencing or freeing.
+ */
+bool looks_like_corrupted_ptr(const void *p)
+{
+	unsigned long v = (unsigned long) p;
+
+	if (v < 0x10000)
+		return true;
+	if (v >= (1UL << 47))
+		return true;
+	if (v & 0x7)
+		return true;
+	return false;
+}
+
 int get_num_fds(void)
 {
 	struct linux_dirent64 {

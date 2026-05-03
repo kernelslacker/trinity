@@ -18,6 +18,7 @@
 #include "shm.h"
 #include "tables.h"
 #include "trinity.h"	// __unused__
+#include "utils.h"
 #include "compat.h"
 
 static unsigned long ** gen_ptrs_to_crap(unsigned int count)
@@ -110,14 +111,37 @@ static void free_execve_ptrs(void **argv, void **envp,
 
 static void post_execve(struct syscallrecord *rec)
 {
-	free_execve_ptrs((void **) rec->a2, (void **) rec->a3,
+	void **argv = (void **) rec->a2;
+	void **envp = (void **) rec->a3;
+
+	/*
+	 * free_execve_ptrs() walks argv[]/envp[] then free()s the outer
+	 * arrays.  A pid-scribble in either rec->a2 or rec->a3 makes the
+	 * inner walk crash on the first deref.  Cluster-1/2/3 guard.
+	 */
+	if (looks_like_corrupted_ptr(argv) || looks_like_corrupted_ptr(envp)) {
+		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
+			  "(pid-scribbled?)\n", argv, envp);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+	free_execve_ptrs(argv, envp,
 			 (unsigned int)(rec->a6 >> 32),
 			 (unsigned int)(rec->a6 & 0xFFFFFFFF));
 }
 
 static void post_execveat(struct syscallrecord *rec)
 {
-	free_execve_ptrs((void **) rec->a3, (void **) rec->a4,
+	void **argv = (void **) rec->a3;
+	void **envp = (void **) rec->a4;
+
+	if (looks_like_corrupted_ptr(argv) || looks_like_corrupted_ptr(envp)) {
+		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
+			  "(pid-scribbled?)\n", argv, envp);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
+	}
+	free_execve_ptrs(argv, envp,
 			 (unsigned int)(rec->a6 >> 32),
 			 (unsigned int)(rec->a6 & 0xFFFFFFFF));
 }

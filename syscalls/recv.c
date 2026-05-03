@@ -10,7 +10,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 static void sanitise_recv(struct syscallrecord *rec)
@@ -109,12 +111,25 @@ static void post_recvmsg(struct syscallrecord *rec)
 {
 	struct msghdr *msg = (struct msghdr *) rec->a2;
 
-	if (msg != NULL) {
-		free(msg->msg_control);
-		deferred_free_enqueue(msg->msg_iov, NULL);
-		free(msg->msg_name);
-		deferred_freeptr(&rec->a2);
+	if (msg == NULL)
+		return;
+
+	/*
+	 * Snapshot rec->a2 as msg and reject pid-scribbled values before
+	 * deref'ing msg->msg_control / msg->msg_iov / msg->msg_name.
+	 * Cluster-1/2/3 guard.
+	 */
+	if (looks_like_corrupted_ptr(msg)) {
+		outputerr("post_recvmsg: rejected suspicious msg=%p "
+			  "(pid-scribbled?)\n", msg);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
 	}
+
+	free(msg->msg_control);
+	deferred_free_enqueue(msg->msg_iov, NULL);
+	free(msg->msg_name);
+	deferred_freeptr(&rec->a2);
 }
 
 struct syscallentry syscall_recvmsg = {
@@ -175,17 +190,28 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 static void post_recvmmsg(struct syscallrecord *rec)
 {
 	struct mmsghdr *msgs = (struct mmsghdr *) rec->a2;
+	unsigned int i;
 
-	if (msgs != NULL) {
-		unsigned int i;
+	if (msgs == NULL)
+		return;
 
-		for (i = 0; i < (unsigned int) rec->a3; i++) {
-			deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
-			free(msgs[i].msg_hdr.msg_control);
-			free(msgs[i].msg_hdr.msg_name);
-		}
-		deferred_free_enqueue(msgs, NULL);
+	/*
+	 * Snapshot rec->a2 as msgs and reject pid-scribbled values before
+	 * walking the mmsghdr array.  Cluster-1/2/3 guard.
+	 */
+	if (looks_like_corrupted_ptr(msgs)) {
+		outputerr("post_recvmmsg: rejected suspicious msgs=%p "
+			  "(pid-scribbled?)\n", msgs);
+		shm->stats.post_handler_corrupt_ptr++;
+		return;
 	}
+
+	for (i = 0; i < (unsigned int) rec->a3; i++) {
+		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
+		free(msgs[i].msg_hdr.msg_control);
+		free(msgs[i].msg_hdr.msg_name);
+	}
+	deferred_free_enqueue(msgs, NULL);
 }
 
 struct syscallentry syscall_recvmmsg = {
