@@ -147,6 +147,125 @@ struct syscallentry syscall_flistxattr = {
 /*
  * SYSCALL_DEFINE3(listxattr, const char __user *, pathname, char __user *, list, size_t, size
  */
+#if defined(SYS_listxattr) || defined(__NR_listxattr)
+#ifndef SYS_listxattr
+#define SYS_listxattr __NR_listxattr
+#endif
+
+/*
+ * Oracle: listxattr(path, list, size) walks `path`, resolves it to an
+ * inode (following symlinks), and fills `list` with the NUL-separated
+ * names of the extended attributes attached to that inode, returning
+ * the byte length of the namebuffer written.  This is the path-walk
+ * variant; unlike the fd-based flistxattr, it goes through the dcache
+ * and mount namespace on every call, so it picks up dcache races and
+ * rename/mount-shift effects in addition to the copy_to_user shapes.
+ * Two back-to-back lookups of the same path from the same task --
+ * assuming no sibling lsetxattr/lremovexattr or rename races in
+ * between -- must produce a byte-identical name list of identical
+ * length.  A divergence between the original syscall payload and an
+ * immediate re-call points at one of:
+ *
+ *   - copy_to_user mis-write into the wrong user slot, leaving the
+ *     original receive buffer torn (partial write, wrong-offset fill,
+ *     residual stack data) while the re-call lands clean.
+ *   - sibling-thread scribble of the user receive buffer between the
+ *     original syscall return and our post-hook re-read.
+ *   - 32-on-64 compat ABI truncating a size_t and shipping a short
+ *     payload while reporting the full retval.
+ *   - dcache race serving the second lookup a different inode for the
+ *     same path string (rename/mount-shift between the two calls
+ *     resolves the same name to a different file with a different
+ *     xattr name set).
+ *
+ * TOCTOU defeat: both the path string (rec->a1) and the list buffer
+ * (rec->a2) are reachable from sibling trinity children and either
+ * could be mutated between the original return and our re-issue.
+ * Snapshot the path bytes into a stack-local string and the first
+ * retval bytes of the receive buffer into a stack-local buffer BEFORE
+ * re-issuing the syscall.  The re-call MUST target a fresh stack
+ * buffer, never rec->a2 -- a sibling could mutate the original
+ * receive buffer mid-syscall and forge a clean compare.  Drop the
+ * sample if the re-call returns <= 0 (sibling unlinked the path or
+ * cleared every xattr -- benign ENOENT/ENOATTR/0) or if it returns a
+ * different length (sibling lsetxattr/lremovexattr changed the name
+ * set -- benign size-class drift).  Compare exactly snap_len bytes
+ * with memcmp; do not early-return on first divergence so a multi-
+ * byte tear surfaces in a single sample, but bump the anomaly counter
+ * only once.  Sample one in a hundred to stay in line with the rest
+ * of the oracle family.
+ *
+ * On most fleets listxattr rarely returns a non-empty list (most
+ * files have no xattrs) and the retval > 0 gate keeps this oracle
+ * dormant; it costs ~zero on no-xattr hosts and protects niche
+ * xattr-heavy ones.
+ */
+static void post_listxattr(struct syscallrecord *rec)
+{
+	char snap_path[4096];
+	unsigned char first_buf[4096];
+	unsigned char recheck_buf[4096];
+	size_t snap_len;
+	long rc;
+
+	if (!ONE_IN(100))
+		return;
+
+	if ((long) rec->retval <= 0)
+		return;
+
+	if (rec->a1 == 0)
+		return;
+
+	if (rec->a2 == 0)
+		return;
+
+	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
+		sizeof(snap_path) - 1);
+	snap_path[sizeof(snap_path) - 1] = '\0';
+
+	snap_len = (size_t) rec->retval;
+	if (snap_len > sizeof(first_buf))
+		snap_len = sizeof(first_buf);
+
+	memcpy(first_buf, (void *)(unsigned long) rec->a2, snap_len);
+
+	rc = syscall(SYS_listxattr, snap_path, recheck_buf,
+		     sizeof(recheck_buf));
+
+	if (rc <= 0)
+		return;
+
+	if ((size_t) rc != snap_len)
+		return;
+
+	if (memcmp(first_buf, recheck_buf, snap_len) == 0)
+		return;
+
+	{
+		char first_hex[32 * 2 + 1];
+		char recheck_hex[32 * 2 + 1];
+		size_t i, dump_len;
+
+		dump_len = snap_len < 32 ? snap_len : 32;
+		for (i = 0; i < dump_len; i++) {
+			snprintf(first_hex + i * 2, 3, "%02x",
+				 (unsigned char) first_buf[i]);
+			snprintf(recheck_hex + i * 2, 3, "%02x",
+				 (unsigned char) recheck_buf[i]);
+		}
+		first_hex[dump_len * 2] = '\0';
+		recheck_hex[dump_len * 2] = '\0';
+
+		output(0,
+		       "[oracle:listxattr] path=%s len=%zu first %s vs recheck %s\n",
+		       snap_path, snap_len, first_hex, recheck_hex);
+		__atomic_add_fetch(&shm->stats.listxattr_oracle_anomalies,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+#endif /* SYS_listxattr || __NR_listxattr */
+
 struct syscallentry syscall_listxattr = {
 	.name = "listxattr",
 	.num_args = 3,
@@ -156,6 +275,9 @@ struct syscallentry syscall_listxattr = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+#if defined(SYS_listxattr) || defined(__NR_listxattr)
+	.post = post_listxattr,
+#endif
 };
 
 
