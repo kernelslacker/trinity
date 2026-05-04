@@ -6,6 +6,7 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include "sanitise.h"
+#include "trinity.h"
 
 static unsigned long waitid_options[] = {
 	WNOHANG, WEXITED, WSTOPPED, WCONTINUED, WNOWAIT,
@@ -21,6 +22,25 @@ static void sanitise_waitid(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a5, sizeof(struct rusage));
 }
 
+/*
+ * Kernel ABI: waitid() is RET_ZERO_SUCCESS — it returns 0 on success
+ * (with the reaped child's identity copied into *infop->si_pid, not the
+ * retval) and -1 on failure. Structurally distinct from waitpid/wait4,
+ * which return the pid in retval. Any retval other than 0 or -1 is a
+ * kernel ABI regression. Mirrors the strong-validator pattern from the
+ * VAL11/VAL12 series.
+ */
+static void post_waitid(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == 0 || ret == -1L)
+		return;
+
+	output(0, "waitid oracle: retval %ld is invalid (must be 0 on success or -1 on failure)\n",
+	       ret);
+}
+
 struct syscallentry syscall_waitid = {
 	.name = "waitid",
 	.group = GROUP_PROCESS,
@@ -30,4 +50,5 @@ struct syscallentry syscall_waitid = {
 	.arg_params[0].list = ARGLIST(waitid_which),
 	.arg_params[3].list = ARGLIST(waitid_options),
 	.sanitise = sanitise_waitid,
+	.post = post_waitid,
 };
