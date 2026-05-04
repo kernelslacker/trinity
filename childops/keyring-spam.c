@@ -68,6 +68,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -184,6 +185,7 @@ bool keyring_spam(struct childdata *child)
 	int32_t live[LIVE_KEYS_RING];
 	struct timespec start;
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned char payload[16];
 
 	(void) child;
@@ -195,7 +197,7 @@ bool keyring_spam(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		enum keyring_op op;
 		int anchor;
 		long rc;

@@ -67,6 +67,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -162,6 +163,7 @@ bool epoll_volatility(struct childdata *child)
 	unsigned int n_epfds = 0;
 	unsigned int n_target_fds = 0;
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int i, j;
 
 	(void) child;
@@ -191,7 +193,7 @@ bool epoll_volatility(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		unsigned int op = (unsigned int) rand() % 16;
 		unsigned int epfd_idx = (unsigned int) rand() % n_epfds;
 		struct epoll_event ev;

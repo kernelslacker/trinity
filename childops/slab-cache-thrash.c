@@ -76,6 +76,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "stats.h"
@@ -112,7 +113,7 @@ _Static_assert((int)SLAB_FILES_CACHE + 1 == NR_SLAB_TARGETS,
 /* Compute the clamped burst size for this invocation. */
 static unsigned int pick_burst(void)
 {
-	unsigned int n = BUDGETED(CHILD_OP_SLAB_CACHE_THRASH, MAX_ITERATIONS);
+	unsigned int n = BUDGETED(CHILD_OP_SLAB_CACHE_THRASH, JITTER_RANGE(MAX_ITERATIONS));
 
 	if (n < SLAB_THRASH_MIN)
 		n = SLAB_THRASH_MIN;

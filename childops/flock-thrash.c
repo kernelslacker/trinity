@@ -41,6 +41,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -99,7 +100,7 @@ bool flock_thrash(struct childdata *child)
 	if (opened == 0)
 		return true;
 
-	iter_cap = BUDGETED(CHILD_OP_FLOCK_THRASH, MAX_ITERATIONS);
+	iter_cap = BUDGETED(CHILD_OP_FLOCK_THRASH, JITTER_RANGE(MAX_ITERATIONS));
 	for (iter = 0; iter < iter_cap; iter++) {
 		struct flock_slot *s = &slots[(unsigned int)rand() % opened];
 		int op;

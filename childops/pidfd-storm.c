@@ -58,6 +58,7 @@
 
 #include "child.h"
 #include "childops-util.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -163,6 +164,7 @@ bool pidfd_storm(struct childdata *child)
 	struct timespec start;
 	unsigned int active = 0;
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int i;
 
 	(void) child;
@@ -212,7 +214,7 @@ bool pidfd_storm(struct childdata *child)
 	 * iteration and either signalling or pulling an fd out of it. */
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		struct pidfd_slot *s = &slots[(unsigned int) rand() % active];
 		int rc;
 

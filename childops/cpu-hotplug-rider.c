@@ -62,6 +62,7 @@
 #include <linux/sched/types.h>
 
 #include "child.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -269,6 +270,7 @@ bool cpu_hotplug_rider(struct childdata *child)
 	cpu_set_t set;
 	struct sched_attr attr;
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int affinity_calls = 0;
 	unsigned int sysfs_writes = 0;
 	unsigned int eperm_count = 0;
@@ -287,7 +289,7 @@ bool cpu_hotplug_rider(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		unsigned int pick = (unsigned int) rand() % 4;
 
 		switch (pick) {
