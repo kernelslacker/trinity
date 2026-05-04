@@ -3,6 +3,7 @@
  *                unsigned long, liovcnt, const struct iovec __user *, rvec,
  *                unsigned long, riovcnt, unsigned long, flags)
  */
+#include <limits.h>
 #include <sys/uio.h>
 #include "sanitise.h"
 #include "trinity.h"
@@ -50,6 +51,16 @@ static void sanitise_process_vm_writev(struct syscallrecord *rec)
 	}
 }
 
+static void post_process_vm_writev(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < 0 || ret > SSIZE_MAX)
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_process_vm_writev = {
 	.name = "process_vm_writev",
 	.group = GROUP_PROCESS,
@@ -58,4 +69,5 @@ struct syscallentry syscall_process_vm_writev = {
 	.argname = { [0] = "pid", [1] = "lvec", [2] = "liovcnt", [3] = "rvec", [4] = "riovcnt", [5] = "flags" },
 	.arg_params[5].list = ARGLIST(process_vm_writev_flags),
 	.sanitise = sanitise_process_vm_writev,
+	.post = post_process_vm_writev,
 };
