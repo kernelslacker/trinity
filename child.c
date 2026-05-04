@@ -447,13 +447,39 @@ static void init_child(struct childdata *child, int childno)
 
 	/* Use childno (on stack) not child->num (in shared memory) to
 	 * decide which struct to skip — a corrupted num would cause us
-	 * to mprotect our own childdata and then SIGSEGV on write. */
+	 * to mprotect our own childdata and then SIGSEGV on write.
+	 *
+	 * mprotect() can return -ENOMEM here if the kernel runs out of VMA
+	 * slots / address-space budget while splitting the mapping that
+	 * covers a sibling's childdata.  A silent failure leaves that
+	 * sibling's struct writable from this child's perspective, which is
+	 * exactly the cross-child scribble vector the snapshot/post-handler
+	 * guards exist to defend against -- a value-result syscall buffer
+	 * pointing at a sibling's rec->aN can then corrupt it.  Don't abort
+	 * the whole child on a single failure: the freeze is best-effort
+	 * hardening and aborting would turn a transient kernel limit into a
+	 * fleet-wide outage.  Bump a counter and outputerr the failed pair
+	 * so an operator can tell whether this is a rare anomaly or a real
+	 * runtime vector. */
 	for_each_child(i) {
-		if ((unsigned int)childno != i && children[i] != NULL)
-			mprotect(children[i], sizeof(struct childdata), PROT_READ);
+		if ((unsigned int)childno != i && children[i] != NULL) {
+			if (mprotect(children[i], sizeof(struct childdata), PROT_READ) != 0) {
+				outputerr("init_child: mprotect(sibling %u childdata) failed: %s\n",
+					  i, strerror(errno));
+				__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
+						   __ATOMIC_RELAXED);
+			}
+		}
 	}
 
-	mprotect(pids, max_children * sizeof(int), PROT_READ);
+	/* Same rationale for the shared pids[] array: a stray sibling write
+	 * into pids[] could spoof a child's pid, breaking pid_alive() / the
+	 * watchdog reaper.  Diagnose+count, don't abort. */
+	if (mprotect(pids, max_children * sizeof(int), PROT_READ) != 0) {
+		outputerr("init_child: mprotect(pids[]) failed: %s\n", strerror(errno));
+		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
+				   __ATOMIC_RELAXED);
+	}
 
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
