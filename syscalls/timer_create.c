@@ -8,7 +8,10 @@
 
 #include "sanitise.h"
 #include "random.h"
+#include "shm.h"
 #include "compat.h"
+#include "trinity.h"
+#include "utils.h"
 
 static void timer_create_sanitise(struct syscallrecord *rec)
 {
@@ -45,6 +48,37 @@ static unsigned long clock_ids[] = {
 	CLOCK_REALTIME_ALARM, CLOCK_BOOTTIME_ALARM,
 };
 
+/*
+ * timer_create allocates a kernel k_itimer slab object and writes the
+ * resulting timer_t out to *created_timer_id.  The fuzzer never deletes
+ * the timer, so each successful call leaks a k_itimer for the lifetime
+ * of the child, climbs RLIMIT_SIGPENDING / per-uid limits, and pins
+ * slab memory.  Mirror the IPC RMID-style cleanup applied to
+ * semget/msgget: on success, dereference the user out-pointer and
+ * timer_delete() the freshly-created id.  Sibling syscalls
+ * (timer_settime/_gettime/_getoverrun) may occasionally race the
+ * deletion; that is the same tradeoff the IPC cleanup accepts and the
+ * underlying kernel paths still get exercised.
+ */
+static void post_timer_create(struct syscallrecord *rec)
+{
+	timer_t *idp;
+	timer_t tid;
+
+	if ((long) rec->retval < 0)
+		return;
+
+	idp = (timer_t *) rec->a3;
+	if (looks_like_corrupted_ptr(idp)) {
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	tid = *idp;
+	timer_delete(tid);
+}
+
 struct syscallentry syscall_timer_create = {
 	.name = "timer_create",
 	.group = GROUP_TIME,
@@ -53,4 +87,5 @@ struct syscallentry syscall_timer_create = {
 	.argname = { [0] = "which_clock", [1] = "timer_event_spec", [2] = "create_timer_id" },
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.sanitise = timer_create_sanitise,
+	.post = post_timer_create,
 };
