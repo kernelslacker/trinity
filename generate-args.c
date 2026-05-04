@@ -422,8 +422,14 @@ void generic_sanitise(struct syscallrecord *rec)
 	entry = get_syscall_entry(call, rec->do32bit);
 
 	/* Defensive: zero arg slots so any ARG_UNDEFINED entry doesn't
-	 * inherit stale values from the previous syscall's record. */
+	 * inherit stale values from the previous syscall's record.  Also
+	 * zero the post_state snapshot slot — sanitisers that use it
+	 * allocate fresh in this dispatch, and a stale value left by a
+	 * previous syscall (e.g. one whose post handler did not reach the
+	 * deferred_freeptr) would otherwise survive into a post handler
+	 * that now reads it as a live pointer. */
 	memset(&rec->a1, 0, 6 * sizeof(unsigned long));
+	rec->post_state = 0;
 
 	if (entry->argtype[0] != 0)
 		rec->a1 = fill_arg(rec, 1);
