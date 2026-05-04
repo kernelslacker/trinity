@@ -7,14 +7,33 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the four rt_sigprocmask input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot retarget the oracle at a foreign oset user
+ * buffer, smear the sigsetsize length check, or steer the set != NULL
+ * gate that decides whether to run the procfs cross-check at all.
+ */
+struct rt_sigprocmask_post_state {
+	unsigned long how;
+	unsigned long set;
+	unsigned long oset;
+	unsigned long sigsetsize;
+};
+
 static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 {
+	struct rt_sigprocmask_post_state *snap;
+
 	rec->a4 = sizeof(sigset_t);
 
 	/*
@@ -24,6 +43,33 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 	 * kernel scribble bookkeeping.
 	 */
 	avoid_shared_buffer(&rec->a3, rec->a4);
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
+	/*
+	 * Snapshot the four input args read by the post oracle.  Without
+	 * this the post handler reads rec->a2/a3/a4 at post-time, when a
+	 * sibling syscall may have scribbled the slots:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original oset user buffer pointer, so the source
+	 * memcpy would touch a foreign allocation that the guard never
+	 * inspected, the sigsetsize gate would resolve against a scribbled
+	 * value, and a stomped a2 (set) could flip the "skip when set !=
+	 * NULL" gate either way -- letting the oracle race against a
+	 * concurrent mutation, or silently suppressing a real comparison.
+	 * post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->how        = rec->a1;
+	snap->set        = rec->a2;
+	snap->oset       = rec->a3;
+	snap->sigsetsize = rec->a4;
+	rec->post_state = (unsigned long) snap;
 }
 
 static unsigned long sigprocmask_how[] = {
@@ -49,6 +95,8 @@ static unsigned long sigprocmask_how[] = {
  */
 static void post_rt_sigprocmask(struct syscallrecord *rec)
 {
+	struct rt_sigprocmask_post_state *snap =
+		(struct rt_sigprocmask_post_state *) rec->post_state;
 	FILE *f;
 	char line[128];
 	uint64_t syscall_blocked, proc_blocked = 0;
@@ -56,36 +104,52 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	bool have_sigblk = false;
 	sigset_t buf;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
 
-	if (rec->retval != 0)
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_rt_sigprocmask: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
 		return;
-	if (rec->a2 != 0)
-		return;
-	if (rec->a3 == 0)
-		return;
-	if (rec->a4 != sizeof(sigset_t))
-		return;
-
-	{
-		void *oset = (void *)(unsigned long) rec->a3;
-
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
-		if (looks_like_corrupted_ptr(oset)) {
-			outputerr("post_rt_sigprocmask: rejected suspicious oset=%p (pid-scribbled?)\n",
-				  oset);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
-		}
 	}
 
-	memcpy(&buf, (void *)(unsigned long)rec->a3, sizeof(buf));
+	if (!ONE_IN(100))
+		goto out_free;
+
+	if (rec->retval != 0)
+		goto out_free;
+	if (snap->set != 0)
+		goto out_free;
+	if (snap->oset == 0)
+		goto out_free;
+	if (snap->sigsetsize != sizeof(sigset_t))
+		goto out_free;
+
+	/*
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner pointer field.  Reject
+	 * a pid-scribbled oset before deref.
+	 */
+	if (looks_like_corrupted_ptr((void *) snap->oset)) {
+		outputerr("post_rt_sigprocmask: rejected suspicious oset=%p (post_state-scribbled?)\n",
+			  (void *) snap->oset);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		goto out_free;
+	}
+
+	memcpy(&buf, (const void *) snap->oset, sizeof(buf));
 	memcpy(&syscall_blocked, &buf, sizeof(syscall_blocked));
 
 	f = fopen("/proc/self/status", "r");
 	if (!f)
-		return;
+		goto out_free;
 	while (fgets(line, sizeof(line), f)) {
 		if (strncmp(line, "SigBlk:", 7) == 0) {
 			if (sscanf(line + 7, "%lx", &sigblk) == 1)
@@ -96,7 +160,7 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	fclose(f);
 
 	if (!have_sigblk)
-		return;
+		goto out_free;
 
 	proc_blocked = (uint64_t)sigblk;
 
@@ -108,6 +172,9 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.rt_sigprocmask_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_rt_sigprocmask = {
