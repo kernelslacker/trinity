@@ -29,6 +29,19 @@ static void post_getppid(struct syscallrecord *rec)
 	pid_t got, proc_ppid = (pid_t)-1;
 	unsigned int ppid;
 
+	long ret = (long) rec->retval;
+
+	/*
+	 * Kernel ABI: getppid() cannot fail; retval must be in
+	 * [0, PID_MAX_LIMIT=4194304]. PPid==0 is legitimate (init has no
+	 * parent in its own pid_ns), so the lower bound is 0, not 1.
+	 */
+	if (ret < 0 || ret > 4194304) {
+		output(0, "getppid oracle: returned ppid %ld is out of range (must be in [0, PID_MAX_LIMIT=4194304], never -1)\n",
+		       ret);
+		return;
+	}
+
 	if (!ONE_IN(100))
 		return;
 
