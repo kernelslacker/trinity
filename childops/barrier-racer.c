@@ -238,7 +238,8 @@ static void worker_ftruncate_race(struct racer_shared *s)
 	static const off_t sizes[] = { 0, 4096, 8192, 65536, 0 };
 
 	int ret __attribute__((unused));
-	ret = ftruncate(s->fd, sizes[rand() % ARRAY_SIZE(sizes)]);
+	ret = ftruncate(s->fd,
+			(off_t)RAND_NEGATIVE_OR(sizes[rand() % ARRAY_SIZE(sizes)]));
 }
 
 static void cleanup_ftruncate_race(struct racer_shared *s)
