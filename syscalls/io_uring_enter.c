@@ -9,6 +9,7 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
+#include "shm.h"
 
 /* io_uring opcodes added in Linux v6.15 — not in older kernel headers. */
 #ifndef IORING_OP_RECV_ZC
@@ -180,8 +181,32 @@ static void sanitise_io_uring_enter(struct syscallrecord *rec)
 	for (idx = 0; idx < to_submit; idx++) {
 		unsigned int sqe_idx = (tail + idx) & mask;
 
+		/*
+		 * mask lives in kernel-shared SQ ring memory, set once by
+		 * the kernel at io_uring_setup time and otherwise read-only
+		 * from userspace.  But "otherwise read-only" only holds if
+		 * no other code in this process has stomped on the SQ ring
+		 * header -- a fuzzed write/recv/sendmsg whose buffer pointer
+		 * landed inside the SQ ring rewrites mask to whatever bytes
+		 * happened to be in the source.  An over-large mask
+		 * (UINT_MAX in the worst case) makes (tail + idx) & mask
+		 * walk past the actual SQE allocation, and the fill_sqe
+		 * memset below faults on the first unmapped page.
+		 *
+		 * Bound against ring->sq_entries which we cached in our
+		 * private state at setup and never re-read from kernel
+		 * memory.  Bail on the first out-of-bounds slot rather than
+		 * skipping individual iterations -- once the mask is bogus
+		 * the rest of the batch is unreliable too.
+		 */
+		if (sqe_idx >= ring->sq_entries) {
+			__atomic_add_fetch(&shm->stats.iouring_enter_mask_corrupt,
+					   1, __ATOMIC_RELAXED);
+			return;
+		}
+
 		fill_sqe(&sqes[sqe_idx]);
-		sq_array[(tail + idx) & mask] = sqe_idx;
+		sq_array[sqe_idx] = sqe_idx;
 	}
 
 	/* Publish the new tail. */
