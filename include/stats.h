@@ -622,6 +622,12 @@ void dump_stats(void);
  * advances by a threshold count over a one-minute window. */
 void corrupt_ptr_spike_check(void);
 
+/* Per-tick scan: every 10 minutes, emits per-second rates for the defense
+ * counters surfaced once-per-run by dump_stats(), so an operator watching
+ * a long fuzz run can tell which guards are catching real wild writes vs
+ * sitting at noise without waiting for the run to finish. */
+void defense_counters_periodic_dump(void);
+
 /* Implemented in childops/recipe-runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
 void recipe_runner_dump_stats(void);
