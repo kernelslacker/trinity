@@ -39,6 +39,14 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	 * an alloc_shared region, so scrub.
 	 */
 	avoid_shared_buffer(&rec->a3, sizeof(timer_t));
+
+	/*
+	 * Snapshot the user out-pointer for the post handler.  Sibling
+	 * syscalls in the child can scribble rec->aN between sanitise and
+	 * post; reading from a private slot keeps the deref pointed at the
+	 * buffer the kernel actually wrote into.
+	 */
+	rec->post_state = rec->a3;
 }
 
 static unsigned long clock_ids[] = {
@@ -68,13 +76,15 @@ static void post_timer_create(struct syscallrecord *rec)
 	if ((long) rec->retval < 0)
 		return;
 
-	idp = (timer_t *) rec->a3;
+	idp = (timer_t *) rec->post_state;
 	if (looks_like_corrupted_ptr(rec, idp)) {
+		rec->post_state = 0;
 		return;
 	}
 
 	tid = *idp;
 	timer_delete(tid);
+	rec->post_state = 0;
 }
 
 struct syscallentry syscall_timer_create = {
