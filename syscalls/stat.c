@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -81,9 +82,49 @@ static unsigned long statx_mask[] = {
 	STATX_MNT_ID_UNIQUE, STATX_SUBVOL,
 };
 
+/*
+ * Snapshot of the five statx input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect us at a foreign pathname or statxbuf,
+ * cannot flip the dfd, and cannot smear the lookup flags or the field-
+ * select mask used to seed the re-issue.
+ */
+struct statx_post_state {
+	unsigned long dfd;
+	unsigned long pathname;
+	unsigned long flags;
+	unsigned long mask;
+	unsigned long statxbuf;
+};
+
 static void sanitise_statx(struct syscallrecord *rec)
 {
+	struct statx_post_state *snap;
+
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a5, page_size);
+
+	/*
+	 * Snapshot the five input args for the post oracle.  Without this
+	 * the post handler reads rec->a1..a5 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * pathname or statxbuf pointers, so the strncpy / memcpy / re-issue
+	 * would touch a foreign allocation, and a stomped flags or mask
+	 * word would change the lookup semantics or the bits the kernel
+	 * sets in stx_mask and break the intersection logic on the
+	 * re-issue.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->dfd      = rec->a1;
+	snap->pathname = rec->a2;
+	snap->flags    = rec->a3;
+	snap->mask     = rec->a4;
+	snap->statxbuf = rec->a5;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -142,15 +183,22 @@ static void sanitise_statx(struct syscallrecord *rec)
  *
  * TOCTOU defeat (five buffers worth of it): pathname, flags, mask, and
  * statxbuf are all reachable from sibling-scribbleable user memory or
- * shared bookkeeping.  Snapshot the dfd, the path (PATH_MAX stack
- * buffer), the flags word, the mask word, and the original statx result
- * before re-issue.  Switching flags between calls would change lookup
+ * shared bookkeeping.  The five input args (dfd, pathname, flags, mask,
+ * statxbuf) are snapshotted at sanitise time into a heap struct in
+ * rec->post_state, so a sibling that scribbles rec->aN between syscall
+ * return and post entry cannot retarget the dfd, redirect the strncpy
+ * at a foreign pathname, smear the flags or mask used to seed the
+ * re-issue, or steer the memcpy at a foreign statxbuf.  We still copy
+ * the path into a PATH_MAX stack buffer and the original statx result
+ * into a stack-local before re-issuing, so a sibling that scribbles the
+ * user buffers themselves between the two reads cannot smear the
+ * comparison.  Switching flags between calls would change lookup
  * semantics (NOFOLLOW vs follow, sync mode) and produce a benign
  * "different inode" or "different field" divergence that is purely an
- * artifact of our own race window — preserving the original eliminates
- * that source.  The mask preservation matters too: requesting different
- * fields the second time would shift which bits the kernel sets in
- * stx_mask and break the intersection logic.
+ * artifact of our own race window — preserving the snapshotted flags
+ * eliminates that source.  The mask preservation matters too:
+ * requesting different fields the second time would shift which bits
+ * the kernel sets in stx_mask and break the intersection logic.
  *
  * If the recheck syscall itself fails, a sibling has closed the dfd,
  * unlinked the path, or scribbled the statxbuf into an unmapped region;
@@ -163,44 +211,65 @@ static void sanitise_statx(struct syscallrecord *rec)
  */
 static void post_statx(struct syscallrecord *rec)
 {
+	struct statx_post_state *snap = (struct statx_post_state *) rec->post_state;
 	struct statx first, recheck;
 	char local_path[PATH_MAX];
 	unsigned int flags, mask, valid_mask;
 	int dfd;
 	int diverged = 0;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_statx: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a2 == 0 || rec->a5 == 0)
-		return;
+	if (snap->pathname == 0 || snap->statxbuf == 0)
+		goto out_free;
 
-	dfd = (int) rec->a1;
+	dfd = (int) snap->dfd;
 
 	{
-		void *buf = (void *)(unsigned long) rec->a5;
-		void *path = (void *)(unsigned long) rec->a2;
+		void *buf = (void *)(unsigned long) snap->statxbuf;
+		void *path = (void *)(unsigned long) snap->pathname;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a5/a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner pointer
+		 * fields.  Reject pid-scribbled statxbuf/pathname before deref.
+		 */
 		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
-			outputerr("post_statx: rejected suspicious buffer=%p filename=%p (pid-scribbled?)\n",
+			outputerr("post_statx: rejected suspicious buffer=%p filename=%p (post_state-scribbled?)\n",
 				  buf, path);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	strncpy(local_path, (const char *)(unsigned long) rec->a2, PATH_MAX - 1);
+	strncpy(local_path, (const char *)(unsigned long) snap->pathname, PATH_MAX - 1);
 	local_path[PATH_MAX - 1] = '\0';
-	flags = (unsigned int) rec->a3;
-	mask = (unsigned int) rec->a4;
-	memcpy(&first, (void *)(unsigned long) rec->a5, sizeof(first));
+	flags = (unsigned int) snap->flags;
+	mask = (unsigned int) snap->mask;
+	memcpy(&first, (void *)(unsigned long) snap->statxbuf, sizeof(first));
 
 	if (syscall(SYS_statx, dfd, local_path, flags, mask, &recheck) != 0)
-		return;
+		goto out_free;
 
 	valid_mask = first.stx_mask & recheck.stx_mask;
 
@@ -226,7 +295,7 @@ static void post_statx(struct syscallrecord *rec)
 	if (first.stx_rdev_minor != recheck.stx_rdev_minor) diverged = 1;
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	output(0,
 	       "statx oracle anomaly: dfd=%d path=%s flags=%x mask=%x valid_mask=%x "
@@ -256,6 +325,9 @@ static void post_statx(struct syscallrecord *rec)
 
 	__atomic_add_fetch(&shm->stats.statx_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_statx = {
