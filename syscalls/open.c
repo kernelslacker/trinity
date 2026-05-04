@@ -127,7 +127,7 @@ static void post_openat(struct syscallrecord *rec)
 	unsigned long flags = rec->a3;
 	struct stat st_fd, st_path;
 
-	if (fd == -1)
+	if (fd < 0 || fd >= (1 << 20))
 		return;
 
 	if (fstat(fd, &st_fd) != 0) {
