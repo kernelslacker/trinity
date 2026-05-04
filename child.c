@@ -407,13 +407,50 @@ static void munge_process(void)
 }
 
 /*
+ * Mprotect every sibling's childdata to PROT_READ in our address space.
+ *
+ * Called from init_child for the initial sweep, and from the top of the
+ * child_process loop as a catch-up sweep when shm->sibling_freeze_gen
+ * has bumped (a new sibling joined since we last ran).  Idempotent:
+ * mprotect on an already-PROT_READ region is a cheap no-op for slots
+ * that haven't changed protection.
+ *
+ * Uses my_childno (caller's stack value) rather than child->num so a
+ * sibling's stray write that corrupted our own num field can't trick
+ * us into mprotecting our own region and then SIGSEGV'ing on the next
+ * write.
+ *
+ * mprotect can return -ENOMEM if the kernel runs out of VMA slots
+ * splitting the mapping that covers a sibling's childdata.  Best-effort
+ * hardening — count the failure and keep going rather than aborting,
+ * which would turn a transient kernel limit into a fleet-wide outage.
+ */
+static void freeze_sibling_childdata(int my_childno)
+{
+	unsigned int i;
+
+	for_each_child(i) {
+		if ((unsigned int)my_childno == i)
+			continue;
+		if (children[i] == NULL)
+			continue;
+		if (mprotect(children[i], sizeof(struct childdata), PROT_READ) != 0) {
+			outputerr("freeze_sibling_childdata: mprotect(sibling %u childdata) failed: %s\n",
+				  i, strerror(errno));
+			__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
+}
+
+/*
  * Called from the fork_children loop in the main process.
  */
 static void init_child(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
 	char childname[17];
-	unsigned int i;
+	unsigned int new_gen;
 	int devnull;
 
 	/* Redirect stdin/stdout/stderr to /dev/null so no syscall
@@ -445,36 +482,28 @@ static void init_child(struct childdata *child, int childno)
 	 * was corrupted by a sibling's stray write. */
 	child->num = childno;
 
-	/* Use childno (on stack) not child->num (in shared memory) to
-	 * decide which struct to skip — a corrupted num would cause us
-	 * to mprotect our own childdata and then SIGSEGV on write.
+	/* Initial sibling-childdata freeze.  See freeze_sibling_childdata
+	 * for the per-mprotect rationale.  After it returns we publish a
+	 * fresh sibling_freeze_gen so existing siblings refreeze on their
+	 * next loop top check and pull our own region into PROT_READ —
+	 * closing the startup-race window where a faster sibling's value-
+	 * result kernel write could land in our not-yet-frozen childdata.
 	 *
-	 * mprotect() can return -ENOMEM here if the kernel runs out of VMA
-	 * slots / address-space budget while splitting the mapping that
-	 * covers a sibling's childdata.  A silent failure leaves that
-	 * sibling's struct writable from this child's perspective, which is
-	 * exactly the cross-child scribble vector the snapshot/post-handler
-	 * guards exist to defend against -- a value-result syscall buffer
-	 * pointing at a sibling's rec->aN can then corrupt it.  Don't abort
-	 * the whole child on a single failure: the freeze is best-effort
-	 * hardening and aborting would turn a transient kernel limit into a
-	 * fleet-wide outage.  Bump a counter and outputerr the failed pair
-	 * so an operator can tell whether this is a rare anomaly or a real
-	 * runtime vector. */
-	for_each_child(i) {
-		if ((unsigned int)childno != i && children[i] != NULL) {
-			if (mprotect(children[i], sizeof(struct childdata), PROT_READ) != 0) {
-				outputerr("init_child: mprotect(sibling %u childdata) failed: %s\n",
-					  i, strerror(errno));
-				__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
-						   __ATOMIC_RELAXED);
-			}
-		}
-	}
+	 * RELEASE on the bump pairs with the ACQUIRE load on the loop top
+	 * check so any sibling that observes the new gen also observes the
+	 * children[] entries this child relies on.  Cache last_seen with
+	 * the just-bumped value so we don't immediately self-trigger a
+	 * refreeze on our first loop iteration. */
+	freeze_sibling_childdata(childno);
+	new_gen = __atomic_add_fetch(&shm->sibling_freeze_gen, 1, __ATOMIC_RELEASE);
+	child->last_seen_freeze_gen = new_gen;
 
 	/* Same rationale for the shared pids[] array: a stray sibling write
 	 * into pids[] could spoof a child's pid, breaking pid_alive() / the
-	 * watchdog reaper.  Diagnose+count, don't abort. */
+	 * watchdog reaper.  Done here (not in freeze_sibling_childdata)
+	 * because pids[] is a single allocation that doesn't grow — one
+	 * mprotect at init time is enough; the per-loop refreeze path only
+	 * needs to chase newly-spawned childdata regions. */
 	if (mprotect(pids, max_children * sizeof(int), PROT_READ) != 0) {
 		outputerr("init_child: mprotect(pids[]) failed: %s\n", strerror(errno));
 		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
@@ -1171,6 +1200,22 @@ void child_process(struct childdata *child, int childno)
 				       (unsigned int)childno < alt_op_children);
 
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
+		/* Catch-up sibling refreeze: a new sibling that ran init_child
+		 * since our last sweep bumped shm->sibling_freeze_gen.  Re-run
+		 * the mprotect sweep to pull that sibling's childdata into our
+		 * PROT_READ set so a stray value-result kernel write of ours
+		 * can't land there.  ACQUIRE pairs with the RELEASE bump in
+		 * init_child.  No-op (single relaxed-equivalent load) on the
+		 * common case where no sibling spawned. */
+		unsigned int gen = __atomic_load_n(&shm->sibling_freeze_gen,
+						   __ATOMIC_ACQUIRE);
+		if (gen != child->last_seen_freeze_gen) {
+			freeze_sibling_childdata(child->num);
+			child->last_seen_freeze_gen = gen;
+			__atomic_add_fetch(&shm->stats.sibling_refreeze_count, 1,
+					   __ATOMIC_RELAXED);
+		}
+
 		if (ctrlc_pending) {
 			panic(EXIT_SIGINT);
 			break;

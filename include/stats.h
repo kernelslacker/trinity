@@ -242,6 +242,18 @@ struct stats_s {
 	 * whether the failure is rare or a real runtime vector. */
 	unsigned long sibling_mprotect_failed;
 
+	/* init_child() bumps shm->sibling_freeze_gen after its for_each_child
+	 * mprotect loop completes; each child re-checks the gen at the top of
+	 * its child_process loop and, on mismatch, re-runs the mprotect sweep
+	 * to pull any newly-spawned sibling into PROT_READ.  This counter
+	 * ticks once per refreeze.  Expected pattern: a burst at startup
+	 * (max_children-1 refreezes per child as the fleet fills in), then
+	 * occasional bumps as replace_child() respawns dead slots.  A
+	 * runaway count (e.g. tens of refreezes per second long after
+	 * startup) would indicate constant child churn — useful signal when
+	 * paired with reaper / SEGV stats. */
+	unsigned long sibling_refreeze_count;
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */
