@@ -13,9 +13,41 @@
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the two newfstat input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives
+ * in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot retarget the re-issue at a
+ * different fd or redirect the source memcpy at a foreign user buffer.
+ */
+struct newfstat_post_state {
+	unsigned long fd;
+	unsigned long statbuf;
+};
+
 static void sanitise_newfstat(struct syscallrecord *rec)
 {
+	struct newfstat_post_state *snap;
+
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a2, page_size);
+
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * statbuf pointer, so the source memcpy would touch a foreign
+	 * allocation, and a stomped fd would silently steer the re-issue
+	 * against a different inode entirely.  post_state is private to
+	 * the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->fd      = rec->a1;
+	snap->statbuf = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -56,37 +88,61 @@ static void sanitise_newfstat(struct syscallrecord *rec)
  */
 static void post_newfstat(struct syscallrecord *rec)
 {
+	struct newfstat_post_state *snap =
+		(struct newfstat_post_state *) rec->post_state;
 	struct stat first, recheck;
 	int fd;
 	int diverged = 0;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_newfstat: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->statbuf == 0)
+		goto out_free;
 
-	fd = (int) rec->a1;
+	fd = (int) snap->fd;
 
 	{
-		void *buf = (void *)(unsigned long) rec->a2;
+		void *buf = (void *)(unsigned long) snap->statbuf;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner statbuf
+		 * field.  Reject pid-scribbled statbuf before deref.
+		 */
 		if (looks_like_corrupted_ptr(buf)) {
-			outputerr("post_newfstat: rejected suspicious statbuf=%p (pid-scribbled?)\n",
+			outputerr("post_newfstat: rejected suspicious statbuf=%p (post_state-scribbled?)\n",
 				  buf);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) rec->a2, sizeof(first));
+	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));
 
 	if (syscall(SYS_fstat, fd, &recheck) != 0)
-		return;
+		goto out_free;
 
 	if (first.st_dev     != recheck.st_dev)     diverged = 1;
 	if (first.st_ino     != recheck.st_ino)     diverged = 1;
@@ -100,7 +156,7 @@ static void post_newfstat(struct syscallrecord *rec)
 	if (first.st_blocks  != recheck.st_blocks)  diverged = 1;
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	output(0,
 	       "newfstat oracle anomaly: fd=%d "
@@ -122,6 +178,9 @@ static void post_newfstat(struct syscallrecord *rec)
 
 	__atomic_add_fetch(&shm->stats.newfstat_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_newfstat = {
