@@ -6,6 +6,11 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
+
+#ifndef SCHED_EXT
+#define SCHED_EXT 7
+#endif
 
 /*
  * Oracle: sched_getscheduler(pid) reads the target task's scheduling
@@ -31,6 +36,26 @@ static void post_sched_getscheduler(struct syscallrecord *rec)
 		return;
 	if ((long) rec->retval < 0)
 		return;
+
+	/*
+	 * Kernel ABI: sched_getscheduler() returns one of the SCHED_*
+	 * policy enum values — SCHED_OTHER(0), SCHED_FIFO(1), SCHED_RR(2),
+	 * SCHED_BATCH(3), SCHED_IDLE(5), SCHED_DEADLINE(6), SCHED_EXT(7) —
+	 * read from task_struct->policy on the resolved target.  Failure
+	 * returns -1UL and is already short-circuited above.  A success
+	 * retval outside [0, SCHED_EXT] is structurally impossible from
+	 * the scheduler core: it indicates a sign-extension tear, a
+	 * -errno leaking onto the success path, or a torn read of
+	 * ->policy.  Reject before the ONE_IN(100) re-call oracle, which
+	 * would otherwise miss 99 out of 100 corruptions.
+	 */
+	if ((long) rec->retval > SCHED_EXT) {
+		outputerr("post_sched_getscheduler: retval %ld outside [0, SCHED_EXT]\n",
+			  (long) rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
+
 	if (!ONE_IN(100))
 		return;
 
