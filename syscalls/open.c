@@ -79,7 +79,7 @@ static void post_open(struct syscallrecord *rec)
 	int fd = rec->retval;
 	struct stat st;
 
-	if (fd == -1)
+	if (fd < 0 || fd >= (1 << 20))
 		return;
 
 	/*
