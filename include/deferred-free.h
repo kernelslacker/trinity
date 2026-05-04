@@ -16,6 +16,19 @@
 void deferred_free_init(void);
 
 /*
+ * Record a heap pointer that may later be passed back through
+ * deferred_free_enqueue().  Called from __zmalloc() so every malloc
+ * result trinity ever produces is registered without needing per-site
+ * opt-in.  Pointers are kept in a small per-process ring (LRU eviction);
+ * deferred_free_enqueue() consumes the matching entry to confirm the
+ * pointer is a real malloc result before queuing it for free().
+ *
+ * Process-local — must be called after fork inherits the COW heap.
+ * NULL is silently ignored.
+ */
+void deferred_alloc_track(void *ptr);
+
+/*
  * Enqueue a pointer for deferred freeing.  free_func is called when
  * the entry's TTL expires; pass NULL to use free().
  */
