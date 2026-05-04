@@ -117,6 +117,11 @@ static void do_set_seccomp(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) optval;
 	rec->a4 = 0;
 	rec->a5 = 0;
+	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
+	 * syscall before post_prctl() runs, leaving a real-but-wrong heap
+	 * pointer that the corruption guard cannot distinguish from the
+	 * original sock_fprog. */
+	rec->post_state = (unsigned long) optval;
 }
 #else
 static void do_set_seccomp(__unused__ struct syscallrecord *rec) { }
@@ -161,18 +166,26 @@ static void post_prctl(struct syscallrecord *rec)
 
 	switch (rec->a1) {
 	case PR_SET_SECCOMP:
-		bpf = (struct sock_fprog *) rec->a3;
+		bpf = (struct sock_fprog *) rec->post_state;
 		if (bpf == NULL)
 			return;
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+		/*
+		 * post_state is private to the post handler, but the whole
+		 * syscallrecord can still be wholesale-stomped, so keep the
+		 * corruption guard as a backstop.
+		 */
 		if (looks_like_corrupted_ptr(bpf)) {
 			outputerr("post_prctl: rejected suspicious bpf=%p (pid-scribbled?)\n",
 				  (void *) bpf);
 			shm->stats.post_handler_corrupt_ptr++;
+			rec->a3 = 0;
+			rec->post_state = 0;
 			return;
 		}
 		free(bpf->filter);
 		free(bpf);
+		rec->a3 = 0;
+		rec->post_state = 0;
 		return;
 
 	case PR_SET_NO_NEW_PRIVS:

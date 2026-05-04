@@ -21,6 +21,7 @@
 #include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 #include <time.h>
 
@@ -1358,6 +1359,13 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	addr = zmalloc(page_size);
 	rec->a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
+	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
+	 * syscall before post_perf_event_open() runs, leaving a real-but-wrong
+	 * heap pointer that the corruption guard cannot distinguish from the
+	 * original perf_event_attr.  Without the snapshot the post handler
+	 * frees the wrong allocation, leaking ours and corrupting another
+	 * sanitise routine's live buffer. */
+	rec->post_state = (unsigned long) addr;
 
 	/* cpu */
 	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
@@ -1457,6 +1465,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 static void post_perf_event_open(struct syscallrecord *rec)
 {
+	void *attr = (void *) rec->post_state;
 	int fd = rec->retval;
 
 	if (fd != -1) {
@@ -1472,7 +1481,26 @@ static void post_perf_event_open(struct syscallrecord *rec)
 		remove_object_by_fd(fd);
 		close(fd);
 	}
-	deferred_freeptr(&rec->a1);
+
+	if (attr == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the free
+	 * path against handing a non-heap value to free().
+	 */
+	if (looks_like_corrupted_ptr(attr)) {
+		outputerr("post_perf_event_open: rejected suspicious attr=%p "
+			  "(pid-scribbled?)\n", attr);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a1 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a1 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long perf_event_open_flags[] = {
