@@ -9,6 +9,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 static unsigned long syscall_s390_sthyi_arg1[] = {
 	STHYI_FC_CP_IFL_CAP,
@@ -24,6 +27,10 @@ static void sanitise_s390_sthyi(struct syscallrecord *rec)
 	void *addr = size ? malloc(size) : NULL;
 
 	rec->a2 = (unsigned long)addr;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall before post_s390_sthyi() runs.  size==0 / malloc() failure
+	 * leaves addr == NULL, which the snapshot mirrors. */
+	rec->post_state = (unsigned long)addr;
 
 	/* Use NULL, random or valid address */
 	switch (rand() % 3) {
@@ -36,10 +43,23 @@ static void sanitise_s390_sthyi(struct syscallrecord *rec)
 	}
 }
 
-/* Free buffer, freeptr takes care of NULL */
 static void post_s390_sthyi(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a2);
+	void *addr = (void *) rec->post_state;
+
+	if (addr == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(addr)) {
+		outputerr("post_s390_sthyi: rejected suspicious addr=%p (pid-scribbled?)\n", addr);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_s390_sthyi = {

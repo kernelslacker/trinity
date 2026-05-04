@@ -9,6 +9,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 /*
  * Allocate buffer which fits the svc requirements:
@@ -24,6 +27,10 @@ static void sanitise_s390_pci_mmio(struct syscallrecord *rec)
 	if (rec->a3 == 0)
 		rec->a3 = 1;
 	rec->a2 = (unsigned long)malloc(rec->a3);
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall before post_s390_pci_mmio() runs.  malloc() failure leaves
+	 * a2 == NULL, which the snapshot mirrors. */
+	rec->post_state = rec->a2;
 }
 
 /* Allocate buffer and generate random data. */
@@ -34,10 +41,23 @@ static void sanitise_s390_pci_mmio_write(struct syscallrecord *rec)
 		generate_rand_bytes((void *)rec->a2, rec->a3);
 }
 
-/* Free buffer, freeptr takes care of NULL */
 static void post_s390_pci_mmio(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a2);
+	void *buf = (void *) rec->post_state;
+
+	if (buf == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(buf)) {
+		outputerr("post_s390_pci_mmio: rejected suspicious buf=%p (pid-scribbled?)\n", buf);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_s390_pci_mmio_read = {

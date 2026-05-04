@@ -23,6 +23,11 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 	//struct user_desc *desc;
 	void *ldt;
 
+	/* Clear post_state up front so the no-alloc cases below leave the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record. */
+	rec->post_state = 0;
+
 	switch (rec->a1) {
 	case 0:
 		/* read the ldt into the memory pointed to by ptr.
@@ -30,6 +35,9 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		ldt = zmalloc(ALLOCSIZE);
 		rec->a2 = (unsigned long) ldt;
 		rec->a3 = ALLOCSIZE;
+		/* Snapshot for the post handler -- a2 may be scribbled by a
+		 * sibling syscall before post_modify_ldt() runs. */
+		rec->post_state = (unsigned long) ldt;
 		break;
 
 	case 1:
@@ -56,9 +64,23 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 	}
 }
 
-static void post_modify_ldt(__unused__ struct syscallrecord *rec)
+static void post_modify_ldt(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a2);
+	void *ldt = (void *) rec->post_state;
+
+	if (ldt == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(ldt)) {
+		outputerr("post_modify_ldt: rejected suspicious ldt=%p (pid-scribbled?)\n", ldt);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long modify_ldt_funcs[] = {
