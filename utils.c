@@ -1004,6 +1004,86 @@ bool looks_like_corrupted_ptr(const void *p)
 	return false;
 }
 
+/*
+ * Cached extent of the brk()-managed glibc arena, captured once at
+ * init time from /proc/self/maps.  COW-shared into every forked child
+ * (the heap address range stays stable across fork -- the kernel just
+ * marks the pages CoW), so a single pre-fork parse covers the whole
+ * fleet.  Zero start means we never found a [heap] line; in that case
+ * is_in_glibc_heap() falls back to "always true" so we don't reject
+ * legitimate frees on platforms or builds where glibc has chosen an
+ * mmap-only allocation strategy and the brk arena is empty.
+ */
+static unsigned long heap_start;
+static unsigned long heap_end;
+
+/*
+ * Parse /proc/self/maps once and stash the [heap] extent.  Must be
+ * called before fork; the result is read by every child via the
+ * inherited COW BSS.  The [heap] line in /proc/self/maps looks like:
+ *   55a1b3c00000-55a1b3c21000 rw-p 00000000 00:00 0   [heap]
+ * Two hex addresses separated by '-', followed by perms and the
+ * trailing path component being the literal string "[heap]".
+ *
+ * If the line is missing (rare: glibc tuned to MALLOC_MMAP_THRESHOLD_=0
+ * or the binary somehow hasn't grown brk yet), heap_start stays 0 and
+ * the validator becomes a no-op -- we'd rather permit a marginal free
+ * than reject every malloc result on a misconfigured host.
+ */
+void heap_bounds_init(void)
+{
+	FILE *f;
+	char line[512];
+
+	f = fopen("/proc/self/maps", "r");
+	if (f == NULL) {
+		outputerr("heap_bounds_init: open /proc/self/maps failed: %s\n",
+			  strerror(errno));
+		return;
+	}
+
+	while (fgets(line, sizeof(line), f) != NULL) {
+		unsigned long start, end;
+
+		if (strstr(line, "[heap]") == NULL)
+			continue;
+		if (sscanf(line, "%lx-%lx", &start, &end) != 2)
+			continue;
+		if (end <= start)
+			continue;
+
+		heap_start = start;
+		heap_end = end;
+		break;
+	}
+
+	fclose(f);
+}
+
+/*
+ * Bounds check: is @p inside the cached glibc brk arena?  Two
+ * compares, branch-predictable, no syscalls.  Returns true if the
+ * heap extent is unknown (init never found a [heap] line) so the
+ * caller treats the validator as permissive in that case.
+ *
+ * Backstop for the bad-free class where a sibling stomp scribbles a
+ * snapshot/arg slot with a value that defeats both the pointer-shape
+ * heuristic (looks_like_corrupted_ptr) and -- in the worst case --
+ * coincidentally matches a tracked malloc result still resident in
+ * the alloc-track ring.  An attacker-controlled or wildly-stomped
+ * value that lands outside the brk arena entirely (stack, shared
+ * region, mmap'd library, executable mapping) is rejected here even
+ * if the upstream guards let it through.
+ */
+bool is_in_glibc_heap(const void *p)
+{
+	unsigned long v = (unsigned long) p;
+
+	if (heap_start == 0)
+		return true;
+	return v >= heap_start && v < heap_end;
+}
+
 int get_num_fds(void)
 {
 	struct linux_dirent64 {

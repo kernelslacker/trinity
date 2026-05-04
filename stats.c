@@ -630,7 +630,8 @@ static void dump_stats_json(void)
 		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},"
 		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"deferred_free_corrupt_ptr\":%lu,"
-			"\"post_handler_corrupt_ptr\":%lu,\"rec_canary_stomped\":%lu,"
+			"\"post_handler_corrupt_ptr\":%lu,\"snapshot_non_heap_reject\":%lu,"
+			"\"rec_canary_stomped\":%lu,"
 			"\"sibling_mprotect_failed\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
@@ -767,6 +768,7 @@ static void dump_stats_json(void)
 		shm->stats.fd_event_ring_overwritten,
 		shm->stats.deferred_free_corrupt_ptr,
 		shm->stats.post_handler_corrupt_ptr,
+		shm->stats.snapshot_non_heap_reject,
 		shm->stats.rec_canary_stomped,
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
@@ -1310,6 +1312,8 @@ void dump_stats(void)
 		stat_row("corruption", "deferred_free_corrupt_ptr", shm->stats.deferred_free_corrupt_ptr);
 	if (shm->stats.post_handler_corrupt_ptr)
 		stat_row("corruption", "post_handler_corrupt_ptr", shm->stats.post_handler_corrupt_ptr);
+	if (shm->stats.snapshot_non_heap_reject)
+		stat_row("corruption", "snapshot_non_heap_reject", shm->stats.snapshot_non_heap_reject);
 	if (shm->stats.rec_canary_stomped)
 		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
 	if (shm->stats.sibling_mprotect_failed)
