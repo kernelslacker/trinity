@@ -61,7 +61,7 @@ static bool do_mlock(struct map *map)
 	if (RAND_BOOL())
 		mlock(addr, len);
 	else
-		mlock2(addr, len, RAND_BOOL() ? MLOCK_ONFAULT : 0);
+		mlock2(addr, len, (int)RAND_NEGATIVE_OR(RAND_BOOL() ? MLOCK_ONFAULT : 0));
 
 	return true;
 }
