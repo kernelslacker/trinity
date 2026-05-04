@@ -19,6 +19,7 @@
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
+#include "pre_crash_ring.h"
 #include "random.h"
 #include "results.h"
 #include "sanitise.h"
@@ -156,6 +157,12 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 
 		lock(&rec->lock);
 		rec->state = state;
+		/* Stamp the wholesale-stomp canary just before dispatch so
+		 * handle_syscall_ret() can tell whether anything overwrote
+		 * the rec while the kernel had control.  One store on the hot
+		 * path; the matching load is paired with the AFTER snapshot
+		 * read inside the post handler. */
+		rec->_canary = REC_CANARY_MAGIC;
 		unlock(&rec->lock);
 
 		/* Arm the alarm after releasing rec->lock.  Previously
@@ -352,9 +359,56 @@ already_done:
 	unlock(&shm->syscalltable_lock);
 }
 
+/*
+ * Rate-limited (at most once per second per child) WARNING for canary
+ * mismatches.  A wholesale stomp from a sibling syscall can land on
+ * many recs in quick succession; without throttling the log floods.
+ * Per-process static is fine — one storm from one child is interesting,
+ * the second sample from the same child within a second adds nothing.
+ */
+static void canary_stomp_warn_ratelimited(const struct syscallentry *entry,
+					  uint64_t observed)
+{
+	static struct timespec last_warn;
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	if (now.tv_sec == last_warn.tv_sec)
+		return;
+	last_warn = now;
+
+	outputerr("WARNING: rec canary stomped during %s: observed=0x%lx (expected 0x%lx) -- syscallrecord wholesale-clobbered between BEFORE and AFTER\n",
+		  entry->name, (unsigned long) observed,
+		  (unsigned long) REC_CANARY_MAGIC);
+}
+
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 {
 	unsigned int call = rec->nr;
+
+	/* Wholesale-stomp check: if anything overwrote the rec while the
+	 * kernel had control, the canary won't match.  Catches the rarer
+	 * class the per-arg snapshot pattern can't shadow (bookkeeping
+	 * fields, the whole struct alias-clobbered by a sibling
+	 * value-result write).  Informational — the call has already
+	 * returned and downstream guards (post_handler_corrupt_ptr, the
+	 * snapshots, deferred_free's pid-shape filter) still cover the
+	 * pointer-deref hazards individually; we're just here to surface
+	 * that the wholesale class is firing. */
+	{
+		uint64_t observed = rec->_canary;
+
+		if (unlikely(observed != REC_CANARY_MAGIC)) {
+			__atomic_add_fetch(&shm->stats.rec_canary_stomped, 1,
+					   __ATOMIC_RELAXED);
+			pre_crash_ring_record_canary(this_child(), rec, observed);
+			canary_stomp_warn_ratelimited(entry, observed);
+			/* Restamp so a second post-handler invocation on the
+			 * same rec (none today, but cheap insurance) doesn't
+			 * re-fire on the stale mismatch. */
+			rec->_canary = REC_CANARY_MAGIC;
+		}
+	}
 
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;

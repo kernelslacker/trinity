@@ -28,16 +28,19 @@ struct syscallrecord;
 #define PRE_CRASH_RING_SIZE	64
 
 /*
- * Two event kinds share the ring so the post-mortem reader sees a single
+ * Three event kinds share the ring so the post-mortem reader sees a single
  * chronologically-ordered stream.  SYSCALL slots populate every field
  * normally; TAINT slots reuse the existing fields to encode the taint
- * delta context (see pre_crash_ring_record_taint() for the encoding) so
- * we don't need to grow the per-entry footprint just for the soft-taint
- * watcher.
+ * delta context (see pre_crash_ring_record_taint() for the encoding); CANARY
+ * slots encode the syscallrecord wholesale-stomp event detected by the
+ * post-handler canary check (see pre_crash_ring_record_canary() for the
+ * encoding) so we don't need to grow the per-entry footprint just for new
+ * watcher kinds.
  */
 enum pre_crash_kind {
 	PRE_CRASH_KIND_SYSCALL = 0,
 	PRE_CRASH_KIND_TAINT,
+	PRE_CRASH_KIND_CANARY,
 };
 
 struct pre_crash_entry {
@@ -76,6 +79,22 @@ void pre_crash_ring_record_taint(struct childdata *child,
 				 unsigned long tainted_now,
 				 unsigned int op_type,
 				 unsigned long op_nr);
+
+/*
+ * Push a wholesale-stomp context entry: handle_syscall_ret() observed
+ * rec->_canary != REC_CANARY_MAGIC, meaning the entire syscallrecord
+ * was rewritten between BEFORE and AFTER.  observed is the canary value
+ * actually read (gives a hint at the clobber pattern: NUL-bytes →
+ * value-result memset, ASCII → string write, pointer-shaped → struct
+ * embedded pointer, etc.); the rec's nominal a1..a6 / nr / retval at the
+ * moment of detection are preserved alongside so post-mortem can tell
+ * which call was running when the stomp landed (the values themselves
+ * are no longer trustworthy but the syscall_nr usually survives).
+ * Lock-free SPSC same as the syscall path.
+ */
+void pre_crash_ring_record_canary(struct childdata *child,
+				  const struct syscallrecord *rec,
+				  uint64_t observed);
 
 void pre_crash_ring_dump(struct childdata *child);
 
