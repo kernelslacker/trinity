@@ -195,6 +195,8 @@ static void post_fcntl(struct syscallrecord *rec)
 	switch (rec->a2) {
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
+		if ((long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
+			break;
 		__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 		break;
 
