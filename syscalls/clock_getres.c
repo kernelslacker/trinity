@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -20,9 +21,40 @@ static unsigned long clock_ids[] = {
 	CLOCK_MONOTONIC_COARSE, CLOCK_BOOTTIME,
 };
 
+/*
+ * Snapshot of the two clock_getres input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot retarget the re-issue at a different clockid or
+ * redirect the source memcpy at a foreign user buffer.
+ */
+struct clock_getres_post_state {
+	unsigned long clockid;
+	unsigned long tp;
+};
+
 static void sanitise_clock_getres(struct syscallrecord *rec)
 {
+	struct clock_getres_post_state *snap;
+
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a2, sizeof(struct timespec));
+
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original tp
+	 * pointer, and a stomped clockid would silently steer the re-issue
+	 * at a different clock and forge a divergence.  post_state is
+	 * private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->clockid = rec->a1;
+	snap->tp      = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -45,20 +77,21 @@ static void sanitise_clock_getres(struct syscallrecord *rec)
  *   - sibling-thread scribble of the user receive buffer between the
  *     syscall return and our post-hook re-read.
  *
- * TOCTOU defeat (two arguments worth of it): the clockid sits in rec->a1
- * and a sibling thread can scribble that field between the original syscall
- * return and our re-issue.  If we re-call with whatever rec->a1 happens to
- * hold by then we will resolve a different clock, get a different
- * resolution, and report a false divergence.  Snapshot the clockid into a
- * stack-local before the re-call.  Likewise snapshot the user buffer
- * contents into a stack-local copy first so a sibling-thread scribble of
- * rec->a2's payload after the original return cannot drive a false
- * divergence.  If the re-call fails, give up rather than report.  Compare
- * tv_sec and tv_nsec individually with no early-return so multi-field
- * corruption surfaces in a single sample, but bump the anomaly counter only
- * once per sample.  Emit one log line carrying both 2-tuples plus the
- * clockid so the operator sees the full divergence shape at once.  Sample
- * one in a hundred to stay in line with the rest of the oracle family.
+ * TOCTOU defeat (two arguments worth of it): the clockid and the user
+ * buffer pointer are snapshotted at sanitise time into a heap struct in
+ * rec->post_state, so a sibling that scribbles rec->a1/a2 between syscall
+ * return and post entry cannot retarget the re-issue against a different
+ * clockid (which would resolve a different resolution and forge a
+ * divergence) or redirect the source memcpy at a foreign user buffer.
+ * The buffer payload is then snapshotted into a stack-local before the
+ * re-call so a sibling-thread scribble of the user buffer itself after
+ * the original return cannot drive a false divergence either.  If the
+ * re-call fails, give up rather than report.  Compare tv_sec and tv_nsec
+ * individually with no early-return so multi-field corruption surfaces
+ * in a single sample, but bump the anomaly counter only once per sample.
+ * Emit one log line carrying both 2-tuples plus the clockid so the
+ * operator sees the full divergence shape at once.  Sample one in a
+ * hundred to stay in line with the rest of the oracle family.
  *
  * The dynamic clockids in clock_ids[] (CLOCK_PROCESS_CPUTIME_ID,
  * CLOCK_THREAD_CPUTIME_ID) resolve to per-task hrtimer resolution but the
@@ -67,37 +100,59 @@ static void sanitise_clock_getres(struct syscallrecord *rec)
  */
 static void post_clock_getres(struct syscallrecord *rec)
 {
+	struct clock_getres_post_state *snap =
+		(struct clock_getres_post_state *) rec->post_state;
 	clockid_t clockid;
 	struct timespec first, recall;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_clock_getres: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->tp == 0)
+		goto out_free;
 
-	clockid = (clockid_t) rec->a1;
+	clockid = (clockid_t) snap->clockid;
 
 	{
-		void *tp = (void *)(unsigned long) rec->a2;
+		void *tp = (void *)(unsigned long) snap->tp;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner tp
+		 * pointer field.  Reject pid-scribbled tp before deref.
+		 */
 		if (looks_like_corrupted_ptr(tp)) {
-			outputerr("post_clock_getres: rejected suspicious tp=%p (pid-scribbled?)\n",
+			outputerr("post_clock_getres: rejected suspicious tp=%p (post_state-scribbled?)\n",
 				  tp);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (struct timespec *)(unsigned long) rec->a2,
+	memcpy(&first, (struct timespec *)(unsigned long) snap->tp,
 	       sizeof(first));
 
 	if (syscall(SYS_clock_getres, clockid, &recall) != 0)
-		return;
+		goto out_free;
 
 	if (first.tv_sec != recall.tv_sec ||
 	    first.tv_nsec != recall.tv_nsec) {
@@ -109,6 +164,9 @@ static void post_clock_getres(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.clock_getres_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_clock_getres = {
