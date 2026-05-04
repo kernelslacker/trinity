@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 /*
  * Oracle: getpid() returns this task's thread group id in the caller's
@@ -28,6 +29,15 @@ static void post_getpid(struct syscallrecord *rec)
 	char line[128];
 	pid_t got, proc_tgid = (pid_t)-1;
 	unsigned int tgid;
+	long ret = (long) rec->retval;
+
+	/* Kernel ABI: getpid() cannot fail; retval must be in [1, PID_MAX_LIMIT=4194304]. */
+	if (ret < 1 || ret > 4194304) {
+		output(0, "getpid oracle: returned pid %ld is out of range (must be in [1, PID_MAX_LIMIT=4194304], never -1)\n",
+		       ret);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
 
 	if (!ONE_IN(100))
 		return;
