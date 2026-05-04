@@ -9,6 +9,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include "deferred-free.h"
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
@@ -16,9 +17,59 @@
 #include "trinity.h"
 #include "utils.h"
 
+#if defined(SYS_getpeername) || defined(__NR_getpeername)
+#ifndef SYS_getpeername
+#define SYS_getpeername __NR_getpeername
+#endif
+#define HAVE_SYS_GETPEERNAME 1
+#endif
+
+#ifdef HAVE_SYS_GETPEERNAME
+/*
+ * Snapshot of the three getpeername input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot retarget the re-issue at a different fd or
+ * redirect the source memcpy at a foreign user buffer.
+ */
+struct getpeername_post_state {
+	unsigned long fd;
+	unsigned long usockaddr;
+	unsigned long usockaddr_len;
+};
+#endif
+
 static void sanitise_getpeername(struct syscallrecord *rec)
 {
+#ifdef HAVE_SYS_GETPEERNAME
+	struct getpeername_post_state *snap;
+
+	rec->post_state = 0;
+#endif
+
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+
+#ifdef HAVE_SYS_GETPEERNAME
+	/*
+	 * Snapshot the three input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buffer pointers, so the source memcpy would touch a foreign
+	 * allocation, and a stomped fd would steer the re-issue against a
+	 * different socket entirely.  post_state is private to the post
+	 * handler.  Gated on HAVE_SYS_GETPEERNAME to mirror the .post
+	 * registration -- on systems without SYS_getpeername the post
+	 * handler is not registered and a snapshot only the post handler
+	 * can free would leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->fd            = rec->a1;
+	snap->usockaddr     = rec->a2;
+	snap->usockaddr_len = rec->a3;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -43,12 +94,16 @@ static void sanitise_getpeername(struct syscallrecord *rec)
  *     addrlen word at rec->a3 between the original syscall return and our
  *     re-issue, via alloc_shared in another trinity child task.
  *
- * TOCTOU defeat: a sibling thread in the same trinity child can scribble
- * either the addr buffer at rec->a2 or the addrlen word at rec->a3
- * between the syscall return and our post-hook.  Snapshot both into
- * stack-locals immediately, then re-issue with fresh private stack
- * buffers (do NOT pass rec->a2/rec->a3 -- a sibling could mutate them
- * mid-syscall and we want a clean compare).
+ * TOCTOU defeat: the three input args (fd, usockaddr, usockaddr_len)
+ * are snapshotted at sanitise time into a heap struct in rec->post_state,
+ * so a sibling that scribbles rec->aN between syscall return and post
+ * entry cannot steer the re-issue against a different fd or redirect the
+ * source memcpy at a foreign user buffer.  The addr and addrlen payloads
+ * pointed to by the snapshot are then snapshotted into stack-locals
+ * before re-issuing, with fresh private stack buffers handed to the
+ * re-call (do NOT pass the snapshot's usockaddr/usockaddr_len -- a
+ * sibling could mutate the user buffers themselves mid-syscall and forge
+ * a clean compare).
  *
  * Family-aware compare:
  *   - AF_UNIX: full sockaddr bytes (sun_family + sun_path) are stable, so
@@ -75,8 +130,11 @@ static void sanitise_getpeername(struct syscallrecord *rec)
  * silently skipped.  recheck_len != first_len is also treated as benign
  * size-class drift rather than corruption.
  */
+#ifdef HAVE_SYS_GETPEERNAME
 static void post_getpeername(struct syscallrecord *rec)
 {
+	struct getpeername_post_state *snap =
+		(struct getpeername_post_state *) rec->post_state;
 	struct sockaddr_storage first_addr;
 	struct sockaddr_storage recheck_addr;
 	socklen_t first_len;
@@ -86,47 +144,68 @@ static void post_getpeername(struct syscallrecord *rec)
 	int fd;
 	int rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_getpeername: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a2 == 0 || rec->a3 == 0)
-		return;
+	if (snap->usockaddr == 0 || snap->usockaddr_len == 0)
+		goto out_free;
 
-	fd = (int) rec->a1;
+	fd = (int) snap->fd;
 
 	{
-		void *addr_p = (void *)(unsigned long) rec->a2;
-		void *len_p = (void *)(unsigned long) rec->a3;
+		void *addr_p = (void *)(unsigned long) snap->usockaddr;
+		void *len_p = (void *)(unsigned long) snap->usockaddr_len;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a3. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner pointer
+		 * fields.  Reject pid-scribbled usockaddr/usockaddr_len before
+		 * deref.
+		 */
 		if (looks_like_corrupted_ptr(addr_p) ||
 		    looks_like_corrupted_ptr(len_p)) {
-			outputerr("post_getpeername: rejected suspicious usockaddr=%p usockaddr_len=%p (pid-scribbled?)\n",
+			outputerr("post_getpeername: rejected suspicious usockaddr=%p usockaddr_len=%p (post_state-scribbled?)\n",
 				  addr_p, len_p);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first_len, (const void *) rec->a3, sizeof(socklen_t));
+	memcpy(&first_len, (const void *) snap->usockaddr_len, sizeof(socklen_t));
 	if (first_len == 0 || first_len > sizeof(struct sockaddr_storage))
-		return;
+		goto out_free;
 
 	memset(&first_addr, 0, sizeof(first_addr));
-	memcpy(&first_addr, (const void *) rec->a2, first_len);
+	memcpy(&first_addr, (const void *) snap->usockaddr, first_len);
 
 	recheck_len = sizeof(struct sockaddr_storage);
 	memset(&recheck_addr, 0, sizeof(recheck_addr));
 	rc = syscall(SYS_getpeername, fd, (struct sockaddr *) &recheck_addr,
 		     &recheck_len);
 	if (rc != 0)
-		return;
+		goto out_free;
 
 	if (recheck_len != first_len)
-		return;
+		goto out_free;
 
 	family = first_addr.ss_family;
 	diverged = false;
@@ -155,7 +234,7 @@ static void post_getpeername(struct syscallrecord *rec)
 		break;
 	}
 	default:
-		return;
+		goto out_free;
 	}
 
 	if (diverged) {
@@ -188,7 +267,11 @@ static void post_getpeername(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.getpeername_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
+#endif
 
 struct syscallentry syscall_getpeername = {
 	.name = "getpeername",
@@ -199,5 +282,7 @@ struct syscallentry syscall_getpeername = {
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_getpeername,
+#ifdef HAVE_SYS_GETPEERNAME
 	.post = post_getpeername,
+#endif
 };
