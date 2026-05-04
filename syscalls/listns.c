@@ -34,6 +34,10 @@ struct ns_id_req {
 #define CLONE_NEWCGROUP		0x02000000
 #endif
 
+#ifndef CLONE_NEWTIME
+#define CLONE_NEWTIME		0x00000080
+#endif
+
 static unsigned long listns_flags[] = {
 	LISTNS_CURRENT_USER,
 };
@@ -46,6 +50,7 @@ static unsigned long ns_types[] = {
 	CLONE_NEWPID,
 	CLONE_NEWNET,
 	CLONE_NEWCGROUP,
+	CLONE_NEWTIME,
 };
 
 static void sanitise_listns(struct syscallrecord *rec)
