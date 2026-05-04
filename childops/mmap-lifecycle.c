@@ -56,7 +56,7 @@ static bool do_create(void)
 	if (ONE_IN(3))
 		flags |= MAP_POPULATE;
 
-	p = mmap(NULL, size, prot, flags, -1, 0);
+	p = mmap(NULL, size, prot, (int)RAND_NEGATIVE_OR(flags), -1, 0);
 	if (p == MAP_FAILED)
 		return true;	/* non-fatal */
 

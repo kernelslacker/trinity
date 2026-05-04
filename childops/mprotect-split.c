@@ -98,7 +98,7 @@ bool mprotect_split(struct childdata *child)
 			new_prot = RAND_ARRAY(prots);
 	}
 
-	if (mprotect(addr, len, new_prot) != 0)
+	if (mprotect(addr, len, (int)RAND_NEGATIVE_OR(new_prot)) != 0)
 		return true;
 
 	/*
