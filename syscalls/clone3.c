@@ -143,7 +143,27 @@ static void sanitise_clone3(struct syscallrecord *rec)
 
 static void post_clone3(struct syscallrecord *rec)
 {
-	struct clone_args *args = (struct clone_args *)(unsigned long) rec->post_state;
+	struct clone_args *args;
+
+	/*
+	 * Kernel ABI: parent retval is the child pid in [1, PID_MAX_LIMIT=4194304],
+	 * 0 in the child, or -1UL on failure. Anything else is a corrupted retval
+	 * (sign-extension tear or pid_ns translation bug) — reject before touching
+	 * the args snapshot or running the post-cleanup path.
+	 */
+	if (rec->retval > 4194304UL && rec->retval != (unsigned long)-1L) {
+		output(0, "post_clone3: rejected returned pid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
+		       rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		/* still need to release post_state deferred buf if non-zero */
+		if (rec->post_state) {
+			rec->a1 = 0;
+			deferred_freeptr(&rec->post_state);
+		}
+		return;
+	}
+
+	args = (struct clone_args *)(unsigned long) rec->post_state;
 
 	if (args == NULL)
 		return;
