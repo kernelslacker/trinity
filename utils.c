@@ -1117,7 +1117,7 @@ bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
 		else
 			name = "<deferred-free>";
 
-		outputerr("corrupt-ptr reject sample: syscall=%s value=0x%lx "
+		output(0, "corrupt-ptr reject sample: syscall=%s value=0x%lx "
 			  "label=%s caller=%s\n",
 			  name, v, corrupt_ptr_label(v),
 			  pc_to_string(__builtin_return_address(0),
