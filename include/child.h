@@ -132,6 +132,7 @@ enum child_op_type {
 	CHILD_OP_VDSO_MREMAP_RACE,
 	CHILD_OP_NUMA_MIGRATION,
 	CHILD_OP_CPU_HOTPLUG_RIDER,
+	CHILD_OP_SLAB_CACHE_THRASH,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -434,3 +435,4 @@ bool keyring_spam(struct childdata *child);
 bool vdso_mremap_race(struct childdata *child);
 bool numa_migration_churn(struct childdata *child);
 bool cpu_hotplug_rider(struct childdata *child);
+bool slab_cache_thrash(struct childdata *child);
