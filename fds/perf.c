@@ -14,6 +14,7 @@
 #include "perf.h"
 #include "shm.h"
 #include "sanitise.h"
+#include "trinity.h"
 #include "utils.h"
 
 #define MAX_PERF_FDS 10
@@ -87,11 +88,15 @@ static int open_perf_fd(void)
 		int saved_errno = errno;
 		freeptr(&rec.a1);
 		errno = saved_errno;
+		/* No log here: failure-classification is handled by the
+		 * init_perf_fds caller, which inspects errno across many
+		 * attempts. Logging per call would flood. */
 		return false;
 	}
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
+		outputerr("open_perf_fd: alloc_shared_obj failed\n");
 		freeptr(&rec.a1);
 		close(fd);
 		return false;
@@ -99,6 +104,7 @@ static int open_perf_fd(void)
 	obj->perfobj.fd = fd;
 	obj->perfobj.eventattr = alloc_shared_str(sizeof(struct perf_event_attr));
 	if (obj->perfobj.eventattr == NULL) {
+		outputerr("open_perf_fd: alloc_shared_str(perf_event_attr) failed\n");
 		freeptr(&rec.a1);
 		free_shared_obj(obj, sizeof(struct object));
 		close(fd);
@@ -145,6 +151,7 @@ static int init_perf_fds(void)
 		} else {
 			switch (errno) {
 			case ENOSYS:
+				outputerr("init_perf_fds: perf_event_open returned ENOSYS (kernel lacks CONFIG_PERF_EVENTS)\n");
 				return false;
 			case EINVAL:
 			case EMFILE:

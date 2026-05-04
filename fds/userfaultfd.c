@@ -120,13 +120,17 @@ static int open_userfaultfd(void)
 	else
 		fd = userfaultfd_create(flags);
 
-	if (fd < 0)
+	if (fd < 0) {
+		outputerr("open_userfaultfd: userfaultfd creation failed: %s\n",
+			strerror(errno));
 		return false;
+	}
 
 	arm_userfaultfd(fd);
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
+		outputerr("open_userfaultfd: alloc_shared_obj failed\n");
 		close(fd);
 		return false;
 	}
