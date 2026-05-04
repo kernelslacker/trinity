@@ -34,12 +34,19 @@ static void post_getpgrp(struct syscallrecord *rec)
 	char line[256];
 	pid_t got, proc_pgid = (pid_t)-1;
 
+	long ret = (long) rec->retval;
+
+	/* Kernel ABI: getpgrp() cannot fail; retval must be in [1, PID_MAX_LIMIT=4194304]. */
+	if (ret < 1 || ret > 4194304) {
+		output(0, "getpgrp oracle: returned pgid %ld is out of range (must be in [1, PID_MAX_LIMIT=4194304], never -1)\n",
+		       ret);
+		return;
+	}
+
 	if (!ONE_IN(100))
 		return;
 
 	got = (pid_t) rec->retval;
-	if (got == (pid_t)-1)
-		return;
 
 	f = fopen("/proc/self/status", "r");
 	if (!f)
