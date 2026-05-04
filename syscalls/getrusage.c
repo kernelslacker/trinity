@@ -3,6 +3,8 @@
  */
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -13,9 +15,56 @@ static unsigned long getrusage_who[] = {
 	RUSAGE_SELF, RUSAGE_CHILDREN, RUSAGE_THREAD,
 };
 
+#if defined(SYS_getrusage) || defined(__NR_getrusage)
+/*
+ * Snapshot of the two getrusage input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot flip the who selector to a different accounting
+ * domain (RUSAGE_SELF vs RUSAGE_THREAD vs RUSAGE_CHILDREN diverge wildly)
+ * or redirect the source memcpy at a foreign user buffer.
+ */
+struct getrusage_post_state {
+	unsigned long who;
+	unsigned long ru;
+};
+#endif
+
 static void sanitise_getrusage(struct syscallrecord *rec)
 {
+#if defined(SYS_getrusage) || defined(__NR_getrusage)
+	struct getrusage_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+#endif
+
 	avoid_shared_buffer(&rec->a2, sizeof(struct rusage));
+
+#if defined(SYS_getrusage) || defined(__NR_getrusage)
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original ru
+	 * user-buffer pointer, so the source memcpy would touch a foreign
+	 * allocation, and a stomped who slot retargets the re-issue at a
+	 * different accounting domain than the first call ran in.
+	 * post_state is private to the post handler.  Gated on the syscall
+	 * number macro to mirror the .post registration -- on systems
+	 * without SYS_getrusage the post handler's re-issue would not work
+	 * and a snapshot only the post handler can free would leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->who       = rec->a1;
+	snap->ru        = rec->a2;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -55,10 +104,15 @@ static void sanitise_getrusage(struct syscallrecord *rec)
  * rec->a1 happens to hold by then resolves a different accounting
  * domain (RUSAGE_THREAD vs RUSAGE_CHILDREN are wildly different
  * numerically) and produces a false divergence; comparing against a
- * scribbled rec->a2 payload does the same.  Snapshot both into stack-
- * locals before the re-call.  If the re-call fails (a sibling thread
- * raced credentials or otherwise broke the second call) give up rather
- * than report.
+ * scribbled rec->a2 payload does the same.  The two input args are
+ * snapshotted at sanitise time into a heap struct in rec->post_state, so
+ * the post handler reads who and the ru pointer from the snapshot rather
+ * than from rec->aN.  The user-buffer payload at *ru is then copied into
+ * a stack-local before the re-call, with a private stack buffer for the
+ * recall result so a sibling cannot mutate it mid-syscall and forge a
+ * clean compare.  If the re-call fails (a sibling thread raced
+ * credentials or otherwise broke the second call) give up rather than
+ * report.
  *
  * Comparison rules:
  *   - ru_utime / ru_stime are timeval pairs that the kernel updates
@@ -84,39 +138,62 @@ static void sanitise_getrusage(struct syscallrecord *rec)
  */
 static void post_getrusage(struct syscallrecord *rec)
 {
+#if defined(SYS_getrusage) || defined(__NR_getrusage)
+	struct getrusage_post_state *snap =
+		(struct getrusage_post_state *) rec->post_state;
 	int who;
 	struct rusage first, recall;
 	int utime_dec, stime_dec;
 	int diverged = 0;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_getrusage: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->ru == 0)
+		goto out_free;
 
-	who = (int) rec->a1;
+	who = (int) snap->who;
 
 	{
-		void *ru = (void *)(unsigned long) rec->a2;
+		void *ru = (void *)(unsigned long) snap->ru;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner ru
+		 * pointer field.  Reject pid-scribbled ru before deref.
+		 */
 		if (looks_like_corrupted_ptr(ru)) {
-			outputerr("post_getrusage: rejected suspicious ru=%p (pid-scribbled?)\n",
+			outputerr("post_getrusage: rejected suspicious ru=%p (post_state-scribbled?)\n",
 				  ru);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (struct rusage *)(unsigned long) rec->a2,
+	memcpy(&first, (struct rusage *)(unsigned long) snap->ru,
 	       sizeof(first));
 
 	if (getrusage(who, &recall) != 0)
-		return;
+		goto out_free;
 
 	utime_dec = (recall.ru_utime.tv_sec < first.ru_utime.tv_sec) ||
 		    (recall.ru_utime.tv_sec == first.ru_utime.tv_sec &&
@@ -166,6 +243,12 @@ static void post_getrusage(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.getrusage_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
+#else
+	(void) rec;
+#endif
 }
 
 struct syscallentry syscall_getrusage = {
