@@ -254,6 +254,21 @@ struct stats_s {
 	 * paired with reaper / SEGV stats. */
 	unsigned long sibling_refreeze_count;
 
+	/* periodic_work re-issues a curated set of "should be deterministic
+	 * across short windows" syscalls (uname, sysinfo, getrlimit/prlimit64
+	 * RLIMIT_NOFILE, sched_getparam(0)) and compares the result against
+	 * the previous tick's reading cached in childdata.sentinel_prev.  Any
+	 * divergence outside the expected drift fields (loads/uptime/freeram
+	 * et al. are excluded) is the fingerprint of a fuzzed value-result
+	 * syscall buffer scribbling the cached struct or a kernel-managed
+	 * datum: a wild write into the cache surfaces as the live re-read
+	 * disagreeing with what we captured previously, and a wild write into
+	 * the kernel-managed copy surfaces the same way from the other side.
+	 * Bumped per diverging field, so a single sample with multi-field
+	 * corruption contributes more than one to the count -- intentional,
+	 * to amplify multi-field clobbers above noise from singleton drifts. */
+	unsigned long divergence_sentinel_anomalies;
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */

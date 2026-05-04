@@ -1256,6 +1256,8 @@ void dump_stats(void)
 		stat_row("corruption", "deferred_free_corrupt_ptr", shm->stats.deferred_free_corrupt_ptr);
 	if (shm->stats.post_handler_corrupt_ptr)
 		stat_row("corruption", "post_handler_corrupt_ptr", shm->stats.post_handler_corrupt_ptr);
+	if (shm->stats.divergence_sentinel_anomalies)
+		stat_row("corruption", "divergence_sentinel_anomalies", shm->stats.divergence_sentinel_anomalies);
 
 	if (shm->stats.shared_buffer_redirected)
 		stat_row("shared_buffer", "args_redirected",     shm->stats.shared_buffer_redirected);
