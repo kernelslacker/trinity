@@ -43,6 +43,7 @@
 #include "arch.h"
 #include "child.h"
 #include "maps.h"
+#include "random.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -115,7 +116,8 @@ static bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
 	ctx->fd = -1;
 
 	memset(&p, 0, sizeof(p));
-	ctx->fd = (int)syscall(__NR_io_uring_setup, entries, &p);
+	ctx->fd = (int)syscall(__NR_io_uring_setup,
+			       (unsigned int)RAND_NEGATIVE_OR(entries), &p);
 	if (ctx->fd < 0)
 		return false;
 

@@ -452,7 +452,7 @@ static bool combo_cgroup_skb(void)
 	attr.target_fd = cgroup_fd;
 	attr.attach_bpf_fd = prog_fd;
 	attr.attach_type = BPF_CGROUP_INET_INGRESS;
-	attr.attach_flags = BPF_F_ALLOW_MULTI;
+	attr.attach_flags = (uint32_t)RAND_NEGATIVE_OR(BPF_F_ALLOW_MULTI);
 	if (sys_bpf(BPF_PROG_ATTACH, &attr, sizeof(attr)) < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			__atomic_add_fetch(&shm->stats.bpf_lifecycle_eperm,
