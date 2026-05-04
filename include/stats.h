@@ -228,6 +228,20 @@ struct stats_s {
 	 * the corruption happened before the guard was active. */
 	unsigned long deferred_free_corrupt_ptr;
 
+	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
+	 * every other child's childdata (and on the shared pids[] array) so
+	 * a value-result syscall buffer in one sibling can't scribble over
+	 * another sibling's rec->aN.  Each mprotect can fail with -ENOMEM
+	 * if the kernel hits a per-mm VMA-count or address-space limit
+	 * while splitting the existing mapping.  A non-zero count means at
+	 * least one freeze step silently left a sibling's childdata (or
+	 * pids[]) writable -- the cross-child scribble vector that the
+	 * post-handler / snapshot guards exist to defend against is open
+	 * for that sibling pair.  We don't abort the child on a single
+	 * failure (best-effort hardening), but the counter lets us tell
+	 * whether the failure is rare or a real runtime vector. */
+	unsigned long sibling_mprotect_failed;
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */
