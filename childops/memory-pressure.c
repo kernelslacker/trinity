@@ -66,8 +66,12 @@ bool memory_pressure(struct childdata *child)
 	for (i = 0; i < len; i += page_size)
 		p[i] = (unsigned char)(i & 0xff);
 
-	/* Evict: ask the kernel to reclaim the entire region. */
-	madvise(region, len, MADV_PAGEOUT);
+	/* Evict: ask the kernel to reclaim the entire region.
+	 * 1-in-RAND_NEGATIVE_RATIO sub the curated MADV_PAGEOUT advice
+	 * for a curated edge value — exercises madvise_behavior_valid's
+	 * unknown/negative advice rejection which the single MADV_*
+	 * constant above never reaches. */
+	madvise(region, len, (int)RAND_NEGATIVE_OR(MADV_PAGEOUT));
 
 	/*
 	 * Refault: read back one byte per page, forcing a page fault for each.
