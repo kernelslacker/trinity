@@ -8,8 +8,13 @@
 #define SHADOW_STACK_SET_TOKEN	0x1
 #endif
 
+#ifndef SHADOW_STACK_SET_MARKER
+#define SHADOW_STACK_SET_MARKER	0x2
+#endif
+
 static unsigned long map_shadow_stack_flags[] = {
 	SHADOW_STACK_SET_TOKEN,
+	SHADOW_STACK_SET_MARKER,
 };
 
 static void sanitise_map_shadow_stack(struct syscallrecord *rec)
