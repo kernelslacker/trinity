@@ -11,15 +11,33 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the three sched_getaffinity input args read by the post
+ * oracle, captured at sanitise time and consumed by the post handler.
+ * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning and
+ * the post handler running cannot redirect the oracle at a foreign mask
+ * buffer, retarget the pid filter, or smear the cmp_len bound.
+ */
+struct sched_getaffinity_post_state {
+	unsigned long pid;
+	unsigned long len;
+	unsigned long mask;
+};
+
 static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 {
 	cpu_set_t *mask;
+	struct sched_getaffinity_post_state *snap;
+
+	rec->post_state = 0;
 
 	mask = (cpu_set_t *) get_writable_address(sizeof(*mask));
 
@@ -33,6 +51,21 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) mask;
+
+	/*
+	 * Snapshot the three input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2/a3 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * mask pointer, and the post-handler's pid filter and the memcpy
+	 * bound would resolve against scribbled values.  post_state is
+	 * private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->pid  = rec->a1;
+	snap->len  = rec->a2;
+	snap->mask = rec->a3;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -53,6 +86,7 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
  */
 static void post_sched_getaffinity(struct syscallrecord *rec)
 {
+	struct sched_getaffinity_post_state *snap = (struct sched_getaffinity_post_state *) rec->post_state;
 	FILE *f;
 	char line[4096];
 	cpu_set_t syscall_buf, proc_buf;
@@ -62,28 +96,48 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	uint32_t chunks[sizeof(cpu_set_t) / sizeof(uint32_t)];
 	int nchunks = 0, i;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_sched_getaffinity: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long)rec->retval <= 0)
-		return;
+		goto out_free;
 
-	/* a1 is the pid argument; sanitise leaves it caller-init.  Treat 0
-	 * as "self" (kernel maps 0 -> current); skip if it names another task. */
-	if (rec->a1 != 0 && rec->a1 != (unsigned long)gettid())
-		return;
+	/* pid argument; sanitise leaves it caller-init.  Treat 0 as "self"
+	 * (kernel maps 0 -> current); skip if it names another task. */
+	if (snap->pid != 0 && snap->pid != (unsigned long)gettid())
+		goto out_free;
 
 	{
-		void *mask = (void *)(unsigned long) rec->a3;
+		void *mask = (void *)(unsigned long) snap->mask;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner mask
+		 * pointer field.  Reject pid-scribbled mask before deref.
+		 */
 		if (mask == NULL)
-			return;
+			goto out_free;
 		if (looks_like_corrupted_ptr(mask)) {
-			outputerr("post_sched_getaffinity: rejected suspicious user_mask_ptr=%p (pid-scribbled?)\n",
+			outputerr("post_sched_getaffinity: rejected suspicious user_mask_ptr=%p (post_state-scribbled?)\n",
 				  mask);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
@@ -92,11 +146,11 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 		copied = sizeof(cpu_set_t);
 
 	memset(&syscall_buf, 0, sizeof(syscall_buf));
-	memcpy(&syscall_buf, (void *)(unsigned long)rec->a3, copied);
+	memcpy(&syscall_buf, (void *)(unsigned long) snap->mask, copied);
 
 	f = fopen("/proc/self/status", "r");
 	if (!f)
-		return;
+		goto out_free;
 	while (fgets(line, sizeof(line), f)) {
 		if (strncmp(line, "Cpus_allowed:", 13) == 0) {
 			have_line = true;
@@ -106,7 +160,7 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	fclose(f);
 
 	if (!have_line)
-		return;
+		goto out_free;
 
 	memset(chunks, 0, sizeof(chunks));
 	p = line + 13;
@@ -123,7 +177,7 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	}
 
 	if (nchunks == 0)
-		return;
+		goto out_free;
 
 	memset(&proc_buf, 0, sizeof(proc_buf));
 	/* Reverse order: leftmost printed chunk is the highest 32-bit word. */
@@ -150,6 +204,9 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.sched_getaffinity_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_sched_getaffinity = {
