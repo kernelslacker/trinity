@@ -882,6 +882,57 @@ static void dump_range_overlaps_shared_top_offenders(void)
 	}
 }
 
+/*
+ * Spike detector for shm->stats.post_handler_corrupt_ptr.  Called once
+ * per main_loop tick from the parent.  Emits a single-line WARNING when
+ * the counter advances by at least CORRUPT_PTR_SPIKE_THRESHOLD over a
+ * CORRUPT_PTR_SPIKE_WINDOW_SEC window.
+ *
+ * The counter ticks whenever a post-handler caught a pid-shaped or
+ * canonical-out-of-range pointer in rec->aN -- i.e. the snapshot
+ * pattern intercepted a wild write.  A slow trickle is normal noise; a
+ * sudden burst is the signal that scribbles are landing in rec-> memory
+ * often enough to matter.  Per-window throttling keeps the log quiet
+ * during a steady drip and re-arms after each report so a sustained
+ * spike emits one line per minute, not a flood.
+ */
+#define CORRUPT_PTR_SPIKE_THRESHOLD	100UL
+#define CORRUPT_PTR_SPIKE_WINDOW_SEC	60
+
+void corrupt_ptr_spike_check(void)
+{
+	static unsigned long window_baseline;
+	static struct timespec window_start;
+	struct timespec now;
+	unsigned long current, delta;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	/* First call: arm the window from the live counter so any
+	 * pre-existing count carried over from earlier in the run is
+	 * not mis-attributed to this window. */
+	if (window_start.tv_sec == 0) {
+		window_start = now;
+		window_baseline = __atomic_load_n(&shm->stats.post_handler_corrupt_ptr,
+						  __ATOMIC_RELAXED);
+		return;
+	}
+
+	if ((now.tv_sec - window_start.tv_sec) < CORRUPT_PTR_SPIKE_WINDOW_SEC)
+		return;
+
+	current = __atomic_load_n(&shm->stats.post_handler_corrupt_ptr,
+				  __ATOMIC_RELAXED);
+	delta = current - window_baseline;
+
+	if (delta >= CORRUPT_PTR_SPIKE_THRESHOLD)
+		output(0, "WARNING: post_handler_corrupt_ptr spiked +%lu in %us (total %lu) -- snapshot guards are catching scribbles\n",
+		       delta, CORRUPT_PTR_SPIKE_WINDOW_SEC, current);
+
+	window_start = now;
+	window_baseline = current;
+}
+
 void dump_stats(void)
 {
 	unsigned int i;

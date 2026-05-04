@@ -570,6 +570,10 @@ unsigned int stats_syscall_category(const char *name);
 
 void dump_stats(void);
 
+/* Per-tick scan: emits a WARNING when shm->stats.post_handler_corrupt_ptr
+ * advances by a threshold count over a one-minute window. */
+void corrupt_ptr_spike_check(void);
+
 /* Implemented in childops/recipe-runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
 void recipe_runner_dump_stats(void);
