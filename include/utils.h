@@ -94,6 +94,20 @@ void freeptr(unsigned long *p);
  */
 bool looks_like_corrupted_ptr(const void *p);
 
+/*
+ * Cache the [heap] extent from /proc/self/maps.  Call once before
+ * fork; every child inherits the cached bounds via COW BSS.
+ */
+void heap_bounds_init(void);
+
+/*
+ * Bounds check: is @p inside the cached glibc brk arena?  Returns
+ * true if the heap extent is unknown (validator is permissive in
+ * that case so a misconfigured init can't reject every legitimate
+ * free).  Cheap: two compares, no syscalls.
+ */
+bool is_in_glibc_heap(const void *p);
+
 int get_num_fds(void);
 
 #define __stringify_1(x...)     #x

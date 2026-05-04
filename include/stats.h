@@ -229,6 +229,20 @@ struct stats_s {
 	 * doing its job and converting would-be SIGSEGVs into a counter. */
 	unsigned long post_handler_corrupt_ptr;
 
+	/* deferred_free_enqueue() saw a pointer that passed the pid-shape
+	 * heuristic but landed outside the cached brk arena -- can't be a
+	 * real __zmalloc() result.  Defense-in-depth alongside the live-
+	 * malloc ring: catches the case where a wholesale stomp scribbles
+	 * a snapshot/arg slot with a value pointing into the stack, an
+	 * mmap'd library, an executable mapping, or one of trinity's own
+	 * MAP_PRIVATE regions.  The ground-truth alloc-track ring catches
+	 * heap-region values that weren't malloc'd; this counter catches
+	 * non-heap values entirely.  Non-zero means rec-> stomps are
+	 * still landing -- the validator converted what would have been
+	 * a libc free()-on-non-heap (ASAN bad-free, or silent allocator
+	 * corruption on non-ASAN builds) into a counter bump. */
+	unsigned long snapshot_non_heap_reject;
+
 	/* deferred_free_tick() saw a sub-page (pid-shaped) pointer in a
 	 * ring slot and refused to call free() on it.  Non-zero means the
 	 * mprotect guard around the ring is being bypassed somehow, or

@@ -188,6 +188,15 @@ void deferred_free_init(void)
 	track_shared_region((unsigned long)ring, ring_bytes);
 	ring_count = 0;
 	ring_lock();
+
+	/*
+	 * Cache the brk-arena extent now, before any child forks.  Every
+	 * child inherits the bounds via COW BSS so is_in_glibc_heap()
+	 * needs no further /proc/self/maps reads at runtime.  Read here
+	 * rather than at use-site: a syscall fuzzer parsing /proc on
+	 * every deferred_free_enqueue would dwarf the work it's gating.
+	 */
+	heap_bounds_init();
 }
 
 void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
@@ -218,6 +227,35 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
 			  "(pid-scribbled?)\n", ptr);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
+	 * Heap-bounds backstop: every pointer __zmalloc() can hand back
+	 * lives inside the brk arena cached at init time.  A scribbled
+	 * snapshot/arg slot whose value passes the shape heuristic above
+	 * but lands in the stack, an mmap'd library, an executable
+	 * mapping, or one of trinity's own MAP_PRIVATE regions cannot be
+	 * a real malloc result -- free()ing it is undefined.  Two
+	 * compares, branch-predictable, no syscalls; cheaper than the
+	 * O(N) alloc-track scan below and catches the case where the
+	 * stomp value coincidentally matches a recently-evicted ring
+	 * slot the alloc-track ring no longer remembers.  Custom
+	 * free_func callers stay exempt -- mirrors the gating convention
+	 * used by the shape and shared-region bands.
+	 */
+	if (free_func == free && !is_in_glibc_heap(ptr)) {
+		static unsigned long non_heap_drops;
+		unsigned long n = ++non_heap_drops;
+		if ((n % 1000) == 1) {
+			char pcbuf[128];
+			outputerr("deferred_free_enqueue: rejected ptr=%p "
+				  "(outside glibc heap) caller=%s "
+				  "[%lu cumulative]\n", ptr,
+				  pc_to_string(__builtin_return_address(0),
+					       pcbuf, sizeof(pcbuf)), n);
+		}
+		__atomic_add_fetch(&shm->stats.snapshot_non_heap_reject, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
