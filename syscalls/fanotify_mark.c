@@ -9,6 +9,29 @@
 #include "shm.h"
 #include "trinity.h"
 
+/* Event mask bits added in newer kernels; guard for older toolchains. */
+#ifndef FAN_ATTRIB
+#define FAN_ATTRIB		0x00000004
+#endif
+#ifndef FAN_DELETE_SELF
+#define FAN_DELETE_SELF		0x00000400
+#endif
+#ifndef FAN_MOVE_SELF
+#define FAN_MOVE_SELF		0x00000800
+#endif
+#ifndef FAN_OPEN_EXEC
+#define FAN_OPEN_EXEC		0x00001000
+#endif
+#ifndef FAN_OPEN_EXEC_PERM
+#define FAN_OPEN_EXEC_PERM	0x00040000
+#endif
+#ifndef FAN_RENAME
+#define FAN_RENAME		0x10000000
+#endif
+#ifndef FAN_ONDIR
+#define FAN_ONDIR		0x40000000
+#endif
+
 static void sanitise_fanotify_mark(struct syscallrecord *rec)
 {
 	static const unsigned int flagvals[] = {
@@ -28,9 +51,14 @@ static unsigned long fanotify_mark_flags[] = {
 };
 
 static unsigned long fanotify_mark_mask[] = {
-	FAN_ACCESS, FAN_MODIFY, FAN_CLOSE, FAN_OPEN,
-	FAN_OPEN_PERM, FAN_ACCESS_PERM, FAN_EVENT_ON_CHILD,
-	FAN_CREATE, FAN_DELETE, FAN_MOVED_FROM, FAN_MOVED_TO,
+	FAN_ACCESS, FAN_MODIFY, FAN_ATTRIB,
+	FAN_CLOSE, FAN_CLOSE_WRITE, FAN_CLOSE_NOWRITE,
+	FAN_OPEN, FAN_OPEN_EXEC,
+	FAN_OPEN_PERM, FAN_ACCESS_PERM, FAN_OPEN_EXEC_PERM,
+	FAN_EVENT_ON_CHILD, FAN_ONDIR,
+	FAN_CREATE, FAN_DELETE, FAN_DELETE_SELF,
+	FAN_MOVED_FROM, FAN_MOVED_TO, FAN_MOVE_SELF,
+	FAN_RENAME,
 };
 
 struct syscallentry syscall_fanotify_mark = {
