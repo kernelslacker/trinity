@@ -57,6 +57,25 @@ static void sanitise_poll(struct syscallrecord *rec)
 static void post_poll(struct syscallrecord *rec)
 {
 	void *ufds = (void *) rec->post_state;
+	unsigned long nfds = rec->a2;
+
+	/*
+	 * Kernel ABI: poll(2) on success returns the count of fds with
+	 * non-zero revents — a value in [0, nfds] computed by do_sys_poll()
+	 * walking the user-supplied pollfd array. Failure returns -1UL with
+	 * EFAULT/EINTR/EINVAL/ENOMEM via the syscall return path. Anything
+	 * > nfds (excluding -1UL) is a structural ABI regression: a
+	 * sign-extension tear, a torn write of the count, or -errno leaking
+	 * through the success return slot. Validate before the snapshot
+	 * teardown so the corruption is caught even when the post_state
+	 * pointer is NULL or scribbled; fall through to the existing free
+	 * path so the heap allocation is still released.
+	 */
+	if (rec->retval != (unsigned long)-1L && rec->retval > nfds) {
+		outputerr("post_poll: retval %ld outside [0, %lu] and != -1UL\n",
+			  (long) rec->retval, nfds);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
 
 	if (ufds == NULL)
 		return;
@@ -139,6 +158,26 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 static void post_ppoll(struct syscallrecord *rec)
 {
 	struct ppoll_post_state *snap = (struct ppoll_post_state *) rec->post_state;
+	unsigned long nfds = rec->a2;
+
+	/*
+	 * Kernel ABI: ppoll(2) on success returns the count of fds with
+	 * non-zero revents — a value in [0, nfds] from do_sys_poll(), the
+	 * shared inner routine. Failure returns -1UL with
+	 * EFAULT/EINTR/EINVAL/ENOMEM. Anything > nfds (excluding -1UL) is a
+	 * structural ABI regression matching the poll(2) shape: a
+	 * sign-extension tear, a torn write of the count by a parallel
+	 * signal-restart path, or -errno leaking through the success slot.
+	 * Validate before the snapshot teardown so the corruption is caught
+	 * even when snap is NULL or scribbled; the existing snap cleanup
+	 * still runs against any retval shape so the heap allocations are
+	 * freed either way.
+	 */
+	if (rec->retval != (unsigned long)-1L && rec->retval > nfds) {
+		outputerr("post_ppoll: retval %ld outside [0, %lu] and != -1UL\n",
+			  (long) rec->retval, nfds);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
 
 	rec->a1 = 0;
 	rec->a3 = 0;
