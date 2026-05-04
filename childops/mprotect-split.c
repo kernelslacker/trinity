@@ -9,11 +9,13 @@
  */
 
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "arch.h"
 #include "child.h"
+#include "effector-map.h"
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
@@ -56,6 +58,22 @@ enum prot_mode {
 
 #define PROT_MODE_ITERS 4
 
+/* Full PROT_R/W/X lattice (8 combinations, indexed by the same 3-bit
+ * mask the kernel uses internally).  The PROT_RANDOM_BITMASK mode used
+ * to draw rand() & 0x07 directly; routing through the effector-map lets
+ * the per-bit significance scores for mprotect's prot arg bias the pick
+ * toward combinations the kernel branches harder on. */
+static const unsigned long prot_lattice[] = {
+	0,
+	PROT_READ,
+	PROT_WRITE,
+	PROT_READ | PROT_WRITE,
+	PROT_EXEC,
+	PROT_READ | PROT_EXEC,
+	PROT_WRITE | PROT_EXEC,
+	PROT_READ | PROT_WRITE | PROT_EXEC,
+};
+
 static int prot_for_mode(enum prot_mode mode, unsigned int iter)
 {
 	switch (mode) {
@@ -66,7 +84,8 @@ static int prot_for_mode(enum prot_mode mode, unsigned int iter)
 	case PROT_MODE_X_TOGGLE:
 		return (iter & 1) ? (PROT_READ | PROT_EXEC) : PROT_READ;
 	case PROT_MODE_RANDOM_BITMASK:
-		return (int)(rand() & 0x07);
+		return (int)prot_lattice[effector_pick_array_index(EFFECTOR_NR(__NR_mprotect), 2,
+				prot_lattice, ARRAY_SIZE(prot_lattice))];
 	default:
 		return PROT_NONE;
 	}

@@ -55,10 +55,12 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <time.h>
 
 #include "arch.h"
 #include "child.h"
+#include "effector-map.h"
 #include "jitter.h"
 #include "maps.h"
 #include "random.h"
@@ -106,7 +108,7 @@
  * with valid args, plus MADV_DONTNEED (the canonical anonymous-zap
  * baseline, useful as a control between the lazier MADV_FREE and the
  * reclaim-driven MADV_PAGEOUT) and MADV_NORMAL as a reset. */
-static const int advice_cycle[] = {
+static const unsigned long advice_cycle[] = {
 	MADV_FREE,
 	MADV_COLD,
 	MADV_PAGEOUT,
@@ -227,10 +229,15 @@ bool madvise_cycler(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	/* Start the cycle at a random offset into the advice list so
-	 * concurrent madvise_cycler invocations don't all hammer
-	 * MADV_FREE first. */
-	advice_idx = (unsigned int) rand() % (unsigned int) ARRAY_SIZE(advice_cycle);
+	/* Start the cycle at an offset into the advice list so concurrent
+	 * madvise_cycler invocations don't all hammer MADV_FREE first.
+	 * Bias the start through the effector map: advice values whose
+	 * bit pattern overlaps the kernel's hot branches on madvise's
+	 * advice arg get more starting weight, putting their reclaim /
+	 * populate / collapse paths under pressure first while the wall-
+	 * clock budget is still fresh. */
+	advice_idx = effector_pick_array_index(EFFECTOR_NR(__NR_madvise), 2,
+			advice_cycle, ARRAY_SIZE(advice_cycle));
 
 	iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER, JITTER_RANGE(MAX_ITERATIONS));
 	for (iter = 0; iter < iter_cap; iter++) {
@@ -238,7 +245,7 @@ bool madvise_cycler(struct childdata *child)
 		int advice, rc;
 
 		offset = pick_subrange(nr_pages, &len);
-		advice = advice_cycle[advice_idx];
+		advice = (int)advice_cycle[advice_idx];
 		advice_idx = (advice_idx + 1) % (unsigned int) ARRAY_SIZE(advice_cycle);
 
 		/* 1-in-RAND_NEGATIVE_RATIO sub the page-aligned valid len for

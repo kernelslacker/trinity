@@ -33,11 +33,13 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "child.h"
+#include "effector-map.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -68,7 +70,7 @@
  * instead of bouncing on -EINVAL.  0 (plain pipe2 with no flags) is
  * included so we cover the "pipe2 == pipe" fast path too.
  */
-static const int pipe2_flags[] = {
+static const unsigned long pipe2_flags[] = {
 	0,
 	O_CLOEXEC,
 	O_NONBLOCK,
@@ -79,7 +81,7 @@ static const int pipe2_flags[] = {
 	O_CLOEXEC | O_NONBLOCK | O_DIRECT,
 };
 
-static const int socketpair_types[] = {
+static const unsigned long socketpair_types[] = {
 	SOCK_STREAM,
 	SOCK_DGRAM,
 	SOCK_SEQPACKET,
@@ -148,14 +150,14 @@ bool pipe_thrash(struct childdata *child)
 			break;
 		case 1:
 			rc = pipe2(pair,
-				   (int)RAND_NEGATIVE_OR(pipe2_flags[rand() % (int)ARRAY_SIZE(pipe2_flags)]));
+				   (int)RAND_NEGATIVE_OR(pipe2_flags[effector_pick_array_index(EFFECTOR_NR(__NR_pipe2), 1, pipe2_flags, ARRAY_SIZE(pipe2_flags))]));
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.pipe_thrash_pipes,
 						   1, __ATOMIC_RELAXED);
 			break;
 		default:
 			rc = socketpair(AF_UNIX,
-					socketpair_types[rand() % (int)ARRAY_SIZE(socketpair_types)],
+					(int)socketpair_types[effector_pick_array_index(EFFECTOR_NR(__NR_socketpair), 1, socketpair_types, ARRAY_SIZE(socketpair_types))],
 					0, pair);
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.pipe_thrash_socketpairs,

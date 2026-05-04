@@ -8,12 +8,14 @@
  */
 
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "arch.h"
 #include "child.h"
+#include "effector-map.h"
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
@@ -35,14 +37,21 @@ static unsigned long pick_size(void)
 	}
 }
 
+/* Curated mmap prot combinations.  Always PROT_READ-bearing — a fully
+ * unreadable anonymous map is uninteresting for the dirty/mremap/teardown
+ * paths this op then drives, so we exclude PROT_NONE and the W-only /
+ * X-only oddities mprotect_split is responsible for covering. */
+static const unsigned long mmap_prot_combos[] = {
+	PROT_READ,
+	PROT_READ | PROT_WRITE,
+	PROT_READ | PROT_EXEC,
+	PROT_READ | PROT_WRITE | PROT_EXEC,
+};
+
 static int pick_prot(void)
 {
-	switch (rand() % 4) {
-	case 0:	return PROT_READ;
-	case 1:	return PROT_READ | PROT_WRITE;
-	case 2:	return PROT_READ | PROT_EXEC;
-	default: return PROT_READ | PROT_WRITE | PROT_EXEC;
-	}
+	return (int)mmap_prot_combos[effector_pick_array_index(EFFECTOR_NR(__NR_mmap), 2,
+			mmap_prot_combos, ARRAY_SIZE(mmap_prot_combos))];
 }
 
 static bool do_create(void)
