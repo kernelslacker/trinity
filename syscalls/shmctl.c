@@ -5,6 +5,9 @@
 #include <linux/shm.h>
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 static unsigned long shmctl_ops[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
@@ -13,28 +16,51 @@ static unsigned long shmctl_ops[] = {
 
 static void sanitise_shmctl(struct syscallrecord *rec)
 {
+	void *buf = NULL;
+
+	rec->post_state = 0;
+
 	switch (rec->a2) {
 	case IPC_RMID:
 	case SHM_LOCK:
 	case SHM_UNLOCK:
 		rec->a3 = 0;
-		break;
+		return;
 	case IPC_INFO:
-		rec->a3 = (unsigned long) zmalloc(sizeof(struct shminfo));
+		buf = zmalloc(sizeof(struct shminfo));
 		break;
 	case SHM_INFO:
-		rec->a3 = (unsigned long) zmalloc(sizeof(struct shm_info));
+		buf = zmalloc(sizeof(struct shm_info));
 		break;
 	default:
 		/* IPC_STAT, IPC_SET, SHM_STAT */
-		rec->a3 = (unsigned long) zmalloc(sizeof(struct shmid_ds));
+		buf = zmalloc(sizeof(struct shmid_ds));
 		break;
 	}
+
+	rec->a3 = (unsigned long) buf;
+	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
+	 * syscall before post_shmctl() runs. */
+	rec->post_state = (unsigned long) buf;
 }
 
 static void post_shmctl(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a3);
+	void *buf = (void *) rec->post_state;
+
+	if (buf == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(buf)) {
+		outputerr("post_shmctl: rejected suspicious buf=%p (pid-scribbled?)\n", buf);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a3 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a3 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_shmctl = {

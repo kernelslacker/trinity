@@ -4,9 +4,12 @@
 #include <stddef.h>
 #include <sys/types.h>
 #include <linux/msg.h>
-#include "compat.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
+#include "compat.h"
 
 static unsigned long msgsnd_flags[] = {
 	MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT,
@@ -21,11 +24,28 @@ static void sanitise_msgsnd(struct syscallrecord *rec)
 	msgp->mtype = (rand() % 255) + 1;	/* mtype must be > 0 */
 	rec->a2 = (unsigned long) msgp;
 	rec->a3 = msgsz;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall before post_msgsnd() runs. */
+	rec->post_state = (unsigned long) msgp;
 }
 
 static void post_msgsnd(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a2);
+	void *msgp = (void *) rec->post_state;
+
+	if (msgp == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(msgp)) {
+		outputerr("post_msgsnd: rejected suspicious msgp=%p (pid-scribbled?)\n", msgp);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_msgsnd = {

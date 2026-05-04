@@ -10,6 +10,7 @@
 #include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 static unsigned long open_o_flags_base[] = {
@@ -210,15 +211,32 @@ static void sanitise_openat2(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) how;
 	rec->a4 = sizeof(struct open_how);
+	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
+	 * syscall before post_openat2() runs. */
+	rec->post_state = (unsigned long) how;
 }
 
 static void post_openat2(struct syscallrecord *rec)
 {
+	void *how = (void *) rec->post_state;
 	int fd = rec->retval;
 
 	if (fd != -1)
 		close(fd);
-	deferred_freeptr(&rec->a3);
+
+	if (how == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(how)) {
+		outputerr("post_openat2: rejected suspicious how=%p (pid-scribbled?)\n", how);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a3 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a3 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_openat2 = {
