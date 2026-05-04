@@ -299,7 +299,13 @@ static void op_prctl_capbset_drop(void)
 	};
 	int cap = caps[rand() % ARRAY_SIZE(caps)];
 
-	(void)prctl(PR_CAPBSET_DROP, (unsigned long)cap, 0UL, 0UL, 0UL);
+	/* 1-in-RAND_NEGATIVE_RATIO sub the curated valid cap for an edge
+	 * value — exercises the kernel's cap_valid()/cap > CAP_LAST_CAP
+	 * rejection in PR_CAPBSET_DROP which the curated mix above never
+	 * reaches. */
+	(void)prctl(PR_CAPBSET_DROP,
+		    (unsigned long)(int)RAND_NEGATIVE_OR(cap),
+		    0UL, 0UL, 0UL);
 }
 
 /*
