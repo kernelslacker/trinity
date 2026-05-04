@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <asm/unistd.h>
 
 #include "fd.h"
@@ -46,6 +47,7 @@ static void perffd_destructor(struct object *obj)
 					continue;
 				if (peer->perfobj.group_fd != leader_fd)
 					continue;
+				ioctl(peer->perfobj.fd, PERF_EVENT_IOC_DISABLE, 0);
 				close(peer->perfobj.fd);
 				peer->perfobj.fd = -1;
 			}
@@ -57,8 +59,10 @@ static void perffd_destructor(struct object *obj)
 				sizeof(struct perf_event_attr));
 		obj->perfobj.eventattr = NULL;
 	}
-	if (leader_fd >= 0)
+	if (leader_fd >= 0) {
+		ioctl(leader_fd, PERF_EVENT_IOC_DISABLE, 0);
 		close(leader_fd);
+	}
 }
 
 static void perffd_dump(struct object *obj, enum obj_scope scope)
