@@ -9,15 +9,48 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the two fstatfs input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives
+ * in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot retarget the re-issue at a
+ * different fd or redirect the source memcpy at a foreign user buffer.
+ */
+struct fstatfs_post_state {
+	unsigned long fd;
+	unsigned long buf;
+};
+
 static void sanitise_fstatfs(struct syscallrecord *rec)
 {
+	struct fstatfs_post_state *snap;
+
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a2, page_size);
+
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buf pointer, so the source memcpy would touch a foreign
+	 * allocation, and a stomped fd would silently steer the re-issue
+	 * against a different mount entirely.  post_state is private to
+	 * the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->fd  = rec->a1;
+	snap->buf = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -72,37 +105,61 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
  */
 static void post_fstatfs(struct syscallrecord *rec)
 {
+	struct fstatfs_post_state *snap =
+		(struct fstatfs_post_state *) rec->post_state;
 	struct statfs first, recheck;
 	int fd;
 	int diverged = 0;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_fstatfs: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->buf == 0)
+		goto out_free;
 
-	fd = (int) rec->a1;
+	fd = (int) snap->fd;
 
 	{
-		void *buf = (void *)(unsigned long) rec->a2;
+		void *buf = (void *)(unsigned long) snap->buf;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner buf
+		 * field.  Reject pid-scribbled buf before deref.
+		 */
 		if (looks_like_corrupted_ptr(buf)) {
-			outputerr("post_fstatfs: rejected suspicious buf=%p (pid-scribbled?)\n",
+			outputerr("post_fstatfs: rejected suspicious buf=%p (post_state-scribbled?)\n",
 				  buf);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) rec->a2, sizeof(first));
+	memcpy(&first, (void *)(unsigned long) snap->buf, sizeof(first));
 
 	if (syscall(SYS_fstatfs, fd, &recheck) != 0)
-		return;
+		goto out_free;
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
@@ -115,7 +172,7 @@ static void post_fstatfs(struct syscallrecord *rec)
 	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	output(0,
 	       "fstatfs oracle anomaly: fd=%d "
@@ -141,6 +198,9 @@ static void post_fstatfs(struct syscallrecord *rec)
 
 	__atomic_add_fetch(&shm->stats.fstatfs_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_fstatfs = {
