@@ -8,20 +8,71 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+#if defined(SYS_getcpu) || defined(__NR_getcpu)
+#define HAVE_SYS_GETCPU 1
+#endif
+
+#ifdef HAVE_SYS_GETCPU
+/*
+ * Snapshot of the two getcpu input args read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the oracle at a foreign cpup / nodep
+ * user buffer.  rec->a3 (the deprecated tcache buffer) is not read by the
+ * post handler and is therefore not snapshotted.
+ */
+struct getcpu_post_state {
+	unsigned long cpup;
+	unsigned long nodep;
+};
+#endif
+
 static void sanitise_getcpu(struct syscallrecord *rec)
 {
+#ifdef HAVE_SYS_GETCPU
+	struct getcpu_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+#endif
+
 	avoid_shared_buffer(&rec->a1, sizeof(unsigned int));
 	avoid_shared_buffer(&rec->a2, sizeof(unsigned int));
 	avoid_shared_buffer(&rec->a3, page_size);
+
+#ifdef HAVE_SYS_GETCPU
+	/*
+	 * Snapshot the two input args read by the post oracle.  Without
+	 * this the post handler reads rec->a1/a2 at post-time, when a
+	 * sibling syscall may have scribbled the slots:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original cpup / nodep user buffer pointers, so
+	 * the source memcpy would touch a foreign allocation that the guard
+	 * never inspected.  post_state is private to the post handler.
+	 * Gated on HAVE_SYS_GETCPU to mirror the .post registration -- on
+	 * systems without SYS_getcpu the post handler is not registered and
+	 * a snapshot only the post handler can free would leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->cpup  = rec->a1;
+	snap->nodep = rec->a2;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
-#if defined(SYS_getcpu) || defined(__NR_getcpu)
+#ifdef HAVE_SYS_GETCPU
 /*
  * Parse a sysfs cpulist/nodelist (single line, comma-separated ranges
  * like "0-3,7,9-11" or just "0-N") and return the highest id mentioned.
@@ -151,36 +202,53 @@ static long count_sysfs_nodes(void)
  *     return and our post-hook read — caught because the snapshot
  *     happens before the cross-check.
  *
- * Wrapped in #if defined(SYS_getcpu) || defined(__NR_getcpu) for
- * consistency with the rest of the oracle batch; getcpu has been in
- * Linux since 2.6.20 but minimal libcs may omit the macro.
+ * Wrapped in HAVE_SYS_GETCPU (defined when SYS_getcpu / __NR_getcpu is
+ * visible) for consistency with the rest of the oracle batch; getcpu has
+ * been in Linux since 2.6.20 but minimal libcs may omit the macro.
  */
 static void post_getcpu(struct syscallrecord *rec)
 {
+	struct getcpu_post_state *snap =
+		(struct getcpu_post_state *) rec->post_state;
 	unsigned int cpu_user, node_user;
 	long nproc_configured;
 	long max_node;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_getcpu: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if (rec->retval != 0)
-		return;
-	if (rec->a1 == 0 || rec->a2 == 0)
-		return;
+		goto out_free;
+	if (snap->cpup == 0 || snap->nodep == 0)
+		goto out_free;
 
-	{
-		void *cpup = (void *)(unsigned long) rec->a1;
-		void *nodep = (void *)(unsigned long) rec->a2;
-
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
-		if (looks_like_corrupted_ptr(cpup) ||
-		    looks_like_corrupted_ptr(nodep)) {
-			outputerr("post_getcpu: rejected suspicious cpup=%p nodep=%p (pid-scribbled?)\n",
-				  cpup, nodep);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
-		}
+	/*
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
+	 * pid-scribbled cpup/nodep before deref.
+	 */
+	if (looks_like_corrupted_ptr((void *) snap->cpup) ||
+	    looks_like_corrupted_ptr((void *) snap->nodep)) {
+		outputerr("post_getcpu: rejected suspicious cpup=%p nodep=%p (post_state-scribbled?)\n",
+			  (void *) snap->cpup, (void *) snap->nodep);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		goto out_free;
 	}
 
 	/*
@@ -188,10 +256,8 @@ static void post_getcpu(struct syscallrecord *rec)
 	 * thread can't scribble the buffer between the snapshot and the
 	 * sysfs comparison.
 	 */
-	memcpy(&cpu_user, (const void *)(unsigned long)rec->a1,
-	       sizeof(cpu_user));
-	memcpy(&node_user, (const void *)(unsigned long)rec->a2,
-	       sizeof(node_user));
+	memcpy(&cpu_user, (const void *) snap->cpup, sizeof(cpu_user));
+	memcpy(&node_user, (const void *) snap->nodep, sizeof(node_user));
 
 	nproc_configured = sysconf(_SC_NPROCESSORS_CONF);
 	if (nproc_configured > 0 &&
@@ -211,6 +277,9 @@ static void post_getcpu(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.getcpu_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
@@ -222,7 +291,7 @@ struct syscallentry syscall_getcpu = {
 	.sanitise = sanitise_getcpu,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
-#if defined(SYS_getcpu) || defined(__NR_getcpu)
+#ifdef HAVE_SYS_GETCPU
 	.post = post_getcpu,
 #endif
 };
