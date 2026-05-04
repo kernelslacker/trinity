@@ -48,33 +48,20 @@ static int open_file(struct object *obj, const char *filename, int flags)
 {
 	int fd;
 	int tries = 0;
-	int fcntl_flags = 0;
 	int randflags = 0;
 
 	obj->fileobj.filename = filename;
 	obj->fileobj.pagecache_backed = false;
 	obj->fileobj.is_setuid = false;
+	obj->fileobj.fopened = false;
+	obj->fileobj.fcntl_flags = 0;
 
 	/* OR in some random flags. */
 retry_flags:
 
-	if (RAND_BOOL()) {
-		randflags = get_o_flags();
-		obj->fileobj.flags = flags | randflags;
-		fd = open(filename, flags | randflags | O_NONBLOCK, 0666);
-		obj->fileobj.fopened = false;
-		obj->fileobj.fcntl_flags = 0;
-	} else {
-		fd = open_with_fopen(filename, flags);
-		obj->fileobj.fopened = true;
-		obj->fileobj.flags = flags;
-
-		fcntl_flags = random_fcntl_setfl_flags();
-		if (fd != -1) {
-			fcntl(fd, F_SETFL, fcntl_flags);
-			obj->fileobj.fcntl_flags = fcntl_flags;
-		}
-	}
+	randflags = get_o_flags();
+	obj->fileobj.flags = flags | randflags;
+	fd = open(filename, flags | randflags | O_NONBLOCK, 0666);
 
 	if (fd < 0) {
 		/*
