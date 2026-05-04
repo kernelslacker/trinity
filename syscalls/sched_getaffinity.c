@@ -111,6 +111,20 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * Kernel ABI: sys_sched_getaffinity returns the cpumask size in
+	 * bytes copied (capped at snap->len) on success, or -1UL on failure.
+	 * Anything > snap->len (excluding -1UL) is a sign-extension tear or
+	 * kernel buffer-overrun — reject before the ONE_IN(100) sample gate,
+	 * which would otherwise miss 99% of corrupted retvals.
+	 */
+	if (rec->retval != (unsigned long)-1L && rec->retval > snap->len) {
+		outputerr("post_sched_getaffinity: retval %ld outside [0, %zu]\n",
+			  (long)rec->retval, (size_t)snap->len);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	if (!ONE_IN(100))
 		goto out_free;
 
