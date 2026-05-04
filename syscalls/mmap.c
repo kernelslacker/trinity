@@ -130,6 +130,21 @@ static void post_mmap(struct syscallrecord *rec)
 	if (p == MAP_FAILED)
 		return;
 
+	/*
+	 * Oracle: a successful mmap return must be page-aligned.  A
+	 * misaligned address indicates the kernel handed back a value
+	 * that cannot be a real VMA base — feeding it into the object
+	 * pool would cache a bogus map->ptr that later munmap /
+	 * mprotect / memory-pressure consumers walk into.
+	 */
+	if ((unsigned long) p & (page_size - 1)) {
+		output(0, "mmap oracle: returned addr %p is not page-aligned (page_size=%u)\n",
+		       p, page_size);
+		__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
 	is_anon = !!(rec->a4 & MAP_ANONYMOUS);
 
 	new = alloc_object();
