@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 /*
  * Oracle: geteuid() returns the effective uid (current_euid()), so the
@@ -28,6 +29,17 @@ static void post_geteuid(struct syscallrecord *rec)
 	char line[128];
 	uid_t got, proc_euid = (uid_t)-1;
 	unsigned int ruid, euid, suid, fsuid;
+
+	/* Kernel ABI: geteuid() is infallible — from_kuid_munged(current_user_ns(),
+	 * current_euid()) cannot fail and the syscall return path has no error case.
+	 * A retval of -1UL is a structural ABI violation (e.g. -errno leaking
+	 * through the syscall return path), not a uid mismatch the procfs Uid:
+	 * oracle would catch. */
+	if (rec->retval == -1UL) {
+		output(0, "geteuid oracle: returned uid -1UL is structurally invalid (infallible syscall)\n");
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
 
 	if (!ONE_IN(100))
 		return;
