@@ -7,15 +7,48 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the two newlstat input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives
+ * in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot redirect the strncpy at a
+ * foreign pathname or steer the source memcpy at a foreign user
+ * statbuf.
+ */
+struct newlstat_post_state {
+	unsigned long filename;
+	unsigned long statbuf;
+};
+
 static void sanitise_newlstat(struct syscallrecord *rec)
 {
+	struct newlstat_post_state *snap;
+
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a2, page_size);
+
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * pathname or statbuf pointers, so the strncpy / memcpy would touch
+	 * a foreign allocation and the re-issue could resolve a different
+	 * symlink entirely.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->filename = rec->a1;
+	snap->statbuf  = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -56,38 +89,63 @@ static void sanitise_newlstat(struct syscallrecord *rec)
  */
 static void post_newlstat(struct syscallrecord *rec)
 {
+	struct newlstat_post_state *snap =
+		(struct newlstat_post_state *) rec->post_state;
 	struct stat first, recheck;
 	char local_path[PATH_MAX];
 	int diverged = 0;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_newlstat: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0 || rec->a2 == 0)
-		return;
+	if (snap->filename == 0 || snap->statbuf == 0)
+		goto out_free;
 
 	{
-		void *buf = (void *)(unsigned long) rec->a2;
-		void *path = (void *)(unsigned long) rec->a1;
+		void *buf = (void *)(unsigned long) snap->statbuf;
+		void *path = (void *)(unsigned long) snap->filename;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner
+		 * statbuf / filename fields.  Reject pid-scribbled pointers
+		 * before deref.
+		 */
 		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
-			outputerr("post_newlstat: rejected suspicious statbuf=%p filename=%p (pid-scribbled?)\n",
+			outputerr("post_newlstat: rejected suspicious statbuf=%p filename=%p (post_state-scribbled?)\n",
 				  buf, path);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) rec->a2, sizeof(first));
-	strncpy(local_path, (const char *)(unsigned long) rec->a1, PATH_MAX - 1);
+	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));
+	strncpy(local_path, (const char *)(unsigned long) snap->filename, PATH_MAX - 1);
 	local_path[PATH_MAX - 1] = '\0';
 
 	if (syscall(SYS_lstat, local_path, &recheck) != 0)
-		return;
+		goto out_free;
 
 	if (first.st_dev     != recheck.st_dev)     diverged = 1;
 	if (first.st_ino     != recheck.st_ino)     diverged = 1;
@@ -101,7 +159,7 @@ static void post_newlstat(struct syscallrecord *rec)
 	if (first.st_blocks  != recheck.st_blocks)  diverged = 1;
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	output(0,
 	       "newlstat oracle anomaly: path=%s "
@@ -123,6 +181,9 @@ static void post_newlstat(struct syscallrecord *rec)
 
 	__atomic_add_fetch(&shm->stats.newlstat_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_newlstat = {
