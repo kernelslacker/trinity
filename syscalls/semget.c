@@ -1,10 +1,12 @@
 /*
  * SYSCALL_DEFINE3(semget, key_t, key, int, nsems, int, semflg)
  */
+#include <limits.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long ipc_flags[] = {
 	IPC_CREAT, IPC_EXCL,
@@ -12,10 +14,32 @@ static unsigned long ipc_flags[] = {
 
 static void post_semget(struct syscallrecord *rec)
 {
-	if (rec->retval == (unsigned long) -1L)
+	long ret = (long) rec->retval;
+
+	/* Ordinary error return: -1 with errno set. */
+	if (ret < 0)
 		return;
 
-	semctl((int) rec->retval, 0, IPC_RMID);
+	/*
+	 * semget() returns either -1 or a non-negative int in
+	 * 0..INT_MAX. A retval that decodes outside that range is the
+	 * footprint of a wild write into the syscallrecord retval slot
+	 * (or a torn read of a concurrent update). The (int) cast at
+	 * the bottom of this function would silently truncate the
+	 * garbage to a plausible 31-bit id and hand it to
+	 * semctl(IPC_RMID), removing whatever unrelated sysv-sem
+	 * object on the host happens to share that id.
+	 */
+	if (ret > INT_MAX) {
+		output(0, "semget oracle: returned IPC id 0x%lx out of "
+			  "range (must be 0..INT_MAX)\n",
+			  (unsigned long) rec->retval);
+		(void) looks_like_corrupted_ptr(rec,
+						(const void *) rec->retval);
+		return;
+	}
+
+	semctl((int) ret, 0, IPC_RMID);
 }
 
 struct syscallentry syscall_semget = {
