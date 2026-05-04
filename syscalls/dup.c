@@ -21,7 +21,7 @@ static void post_dup(struct syscallrecord *rec)
 {
 	struct stat st_old, st_new;
 
-	if ((long) rec->retval < 0)
+	if ((long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
 		return;
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
