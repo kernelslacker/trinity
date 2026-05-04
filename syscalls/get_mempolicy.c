@@ -9,6 +9,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -39,10 +40,31 @@ static unsigned long get_mempolicy_flags[] = {
 	MPOL_F_NODE, MPOL_F_ADDR, MPOL_F_MEMS_ALLOWED,
 };
 
+#ifdef HAVE_SYS_GET_MEMPOLICY
+/*
+ * Snapshot of all five get_mempolicy args, captured at sanitise time and
+ * consumed by the post oracle.  Lives in rec->post_state, a slot the
+ * syscall ABI does not expose, so a sibling syscall scribbling rec->aN
+ * between the syscall returning and the post handler running cannot
+ * smear the policy/nmask comparison or hand the re-call the wrong
+ * (maxnode, addr, flags) tuple.
+ */
+struct get_mempolicy_post_state {
+	unsigned long policy;
+	unsigned long nmask;
+	unsigned long maxnode;
+	unsigned long addr;
+	unsigned long flags;
+};
+#endif
+
 static void sanitise_get_mempolicy(struct syscallrecord *rec)
 {
 	unsigned long maxnode = rec->a3;
 	unsigned long nmask_bytes;
+#ifdef HAVE_SYS_GET_MEMPOLICY
+	struct get_mempolicy_post_state *snap;
+#endif
 
 	/*
 	 * The kernel writes an int through policy (a1) and up to maxnode
@@ -57,6 +79,24 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 	if (nmask_bytes == 0)
 		nmask_bytes = sizeof(long);
 	avoid_shared_buffer(&rec->a2, nmask_bytes);
+
+#ifdef HAVE_SYS_GET_MEMPOLICY
+	/*
+	 * Snapshot all five args for the post oracle.  Without this the
+	 * post handler reads rec->aN at post-time, when a sibling syscall
+	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user buffer
+	 * pointers, so the memcpy / re-call would touch a foreign
+	 * allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->policy  = rec->a1;
+	snap->nmask   = rec->a2;
+	snap->maxnode = rec->a3;
+	snap->addr    = rec->a4;
+	snap->flags   = rec->a5;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -87,12 +127,12 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
  * the second writes the allowed-mems bitmap into nmask -- both are stable
  * for a same-task read at this sample rate.
  *
- * TOCTOU defeat: snapshot all five args plus both buffer payloads into
- * stack-locals BEFORE re-issuing, so a sibling that scribbles either
- * rec->aN or the user buffers between syscall return and the post hook
- * cannot smear the comparison.  The re-call uses fresh stack buffers
- * (NOT rec->a1 / rec->a2 -- a sibling could mutate them mid-syscall and
- * forge a clean compare).
+ * TOCTOU defeat: all five args are snapshotted at sanitise time into a
+ * heap struct in rec->post_state, so a sibling that scribbles rec->aN
+ * between syscall return and post entry cannot smear the comparison nor
+ * misdirect the re-call.  The re-call uses fresh stack buffers for the
+ * policy/nmask payloads (NOT the original user buffers -- a sibling could
+ * mutate them mid-syscall and forge a clean compare).
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  Per-field bumps with no early-return so simultaneous
@@ -109,70 +149,84 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 #ifdef HAVE_SYS_GET_MEMPOLICY
 static void post_get_mempolicy(struct syscallrecord *rec)
 {
+	struct get_mempolicy_post_state *snap = (struct get_mempolicy_post_state *) rec->post_state;
 	int policy_first;
 	int policy_recall;
 	unsigned long nmask_first[MAX_NMASK_LONGS];
 	unsigned long nmask_recall[MAX_NMASK_LONGS];
-	unsigned long maxnode_snap;
-	unsigned long addr_snap;
-	unsigned long flags_snap;
 	size_t nmask_words;
 	size_t nmask_bytes;
 	long rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_get_mempolicy: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0 || rec->a2 == 0)
-		return;
+	if (snap->policy == 0 || snap->nmask == 0)
+		goto out_free;
 
-	if (rec->a5 & MPOL_F_ADDR)
-		return;
+	if (snap->flags & MPOL_F_ADDR)
+		goto out_free;
 
 	{
-		void *policy_p = (void *)(unsigned long) rec->a1;
-		void *nmask_p = (void *)(unsigned long) rec->a2;
+		void *policy_p = (void *)(unsigned long) snap->policy;
+		void *nmask_p = (void *)(unsigned long) snap->nmask;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner pointer
+		 * fields.  Reject pid-scribbled policy/nmask before deref.
+		 */
 		if (looks_like_corrupted_ptr(policy_p) ||
 		    looks_like_corrupted_ptr(nmask_p)) {
-			outputerr("post_get_mempolicy: rejected suspicious policy=%p nmask=%p (pid-scribbled?)\n",
+			outputerr("post_get_mempolicy: rejected suspicious policy=%p nmask=%p (post_state-scribbled?)\n",
 				  policy_p, nmask_p);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	maxnode_snap = rec->a3;
-	addr_snap    = rec->a4;
-	flags_snap   = rec->a5;
-
-	nmask_words = (maxnode_snap + 63) / 64;
+	nmask_words = (snap->maxnode + 63) / 64;
 	if (nmask_words == 0)
 		nmask_words = 1;
 	if (nmask_words > MAX_NMASK_LONGS)
-		return;
+		goto out_free;
 	nmask_bytes = nmask_words * sizeof(unsigned long);
 
-	memcpy(&policy_first, (const void *)(unsigned long) rec->a1,
+	memcpy(&policy_first, (const void *)(unsigned long) snap->policy,
 	       sizeof(policy_first));
-	memcpy(nmask_first, (const void *)(unsigned long) rec->a2,
+	memcpy(nmask_first, (const void *)(unsigned long) snap->nmask,
 	       nmask_bytes);
 
 	memset(&policy_recall, 0, sizeof(policy_recall));
 	memset(nmask_recall, 0, nmask_bytes);
 	rc = syscall(SYS_get_mempolicy, &policy_recall, nmask_recall,
-		     maxnode_snap, addr_snap, flags_snap);
+		     snap->maxnode, snap->addr, snap->flags);
 	if (rc != 0)
-		return;
+		goto out_free;
 
 	if (policy_first != policy_recall) {
 		output(0,
 		       "[oracle:get_mempolicy] policy %d vs %d (maxnode=%lu flags=0x%lx)\n",
-		       policy_first, policy_recall, maxnode_snap, flags_snap);
+		       policy_first, policy_recall, snap->maxnode, snap->flags);
 		__atomic_add_fetch(&shm->stats.get_mempolicy_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -180,10 +234,13 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	if (memcmp(nmask_first, nmask_recall, nmask_bytes) != 0) {
 		output(0,
 		       "[oracle:get_mempolicy] nmask diverged over %zu bytes (maxnode=%lu flags=0x%lx)\n",
-		       nmask_bytes, maxnode_snap, flags_snap);
+		       nmask_bytes, snap->maxnode, snap->flags);
 		__atomic_add_fetch(&shm->stats.get_mempolicy_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
