@@ -5,15 +5,52 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the two sched_getparam input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot retarget the pid self-filter or redirect the
+ * source memcpy at a foreign user buffer.
+ */
+struct sched_getparam_post_state {
+	unsigned long pid;
+	unsigned long param;
+};
+
 static void sanitise_sched_getparam(struct syscallrecord *rec)
 {
+	struct sched_getparam_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a2, sizeof(struct sched_param));
+
+	/*
+	 * Snapshot both input args for the post oracle.  Without this the
+	 * post handler reads rec->aN at post-time, when a sibling syscall
+	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original param
+	 * pointer, so the source memcpy would touch a foreign allocation,
+	 * and the pid self-filter would resolve against a scribbled value.
+	 * post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->pid   = rec->a1;
+	snap->param = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -30,46 +67,77 @@ static void sanitise_sched_getparam(struct syscallrecord *rec)
  *
  * Restrict to self (pid == 0 or pid == gettid()): re-calling for some
  * other pid races against that task's own sched_setparam and tells us
- * nothing.  Skip if rec->a2 is NULL — the kernel rejects that with
- * -EFAULT and there is no buffer to compare.  If the re-call itself
- * returns -1 (the original syscall succeeded but the re-call lost a
- * race or the task's sched class changed underneath), give up rather
- * than report a false divergence.  Sample one in a hundred to stay in
- * line with the rest of the oracle family.
+ * nothing.  Skip if the param pointer is NULL — the kernel rejects that
+ * with -EFAULT and there is no buffer to compare.
+ *
+ * TOCTOU defeat: the two input args (pid, param) are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling
+ * that scribbles rec->aN between syscall return and post entry cannot
+ * retarget the pid self-filter or redirect the source memcpy at a
+ * foreign user buffer.  The re-call is issued against a fresh private
+ * stack buffer (do NOT pass the snapshot's param -- a sibling could
+ * mutate the user buffer itself mid-syscall and forge a clean compare).
+ *
+ * If the re-call itself returns -1 (the original syscall succeeded but
+ * the re-call lost a race or the task's sched class changed underneath),
+ * give up rather than report a false divergence.  Sample one in a
+ * hundred to stay in line with the rest of the oracle family.
  */
 static void post_sched_getparam(struct syscallrecord *rec)
 {
+	struct sched_getparam_post_state *snap =
+		(struct sched_getparam_post_state *) rec->post_state;
 	struct sched_param local, syscall_buf;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_sched_getparam: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 != 0 && rec->a1 != (unsigned long) gettid())
-		return;
+	if (snap->pid != 0 && snap->pid != (unsigned long) gettid())
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->param == 0)
+		goto out_free;
 
 	{
-		void *param = (void *)(unsigned long) rec->a2;
+		void *param = (void *)(unsigned long) snap->param;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner pointer
+		 * field.  Reject pid-scribbled param before deref.
+		 */
 		if (looks_like_corrupted_ptr(param)) {
-			outputerr("post_sched_getparam: rejected suspicious param=%p (pid-scribbled?)\n",
+			outputerr("post_sched_getparam: rejected suspicious param=%p (post_state-scribbled?)\n",
 				  param);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
 	memset(&local, 0, sizeof(local));
 	if (sched_getparam(0, &local) == -1)
-		return;
+		goto out_free;
 
-	memcpy(&syscall_buf, (struct sched_param *)(unsigned long) rec->a2,
+	memcpy(&syscall_buf, (struct sched_param *)(unsigned long) snap->param,
 	       sizeof(syscall_buf));
 
 	if (local.sched_priority != syscall_buf.sched_priority) {
@@ -78,6 +146,9 @@ static void post_sched_getparam(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.sched_getparam_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_sched_getparam = {
