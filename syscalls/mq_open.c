@@ -135,6 +135,12 @@ static void post_mq_open(struct syscallrecord *rec)
 	if ((long)rec->retval < 0)
 		goto out_free;
 
+	if ((unsigned long)rec->retval >= (1UL << 20)) {
+		outputerr("post_mq_open: rejecting out-of-bound fd=%ld\n", (long)rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	close(fd);
 
 	{
