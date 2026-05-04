@@ -7,26 +7,57 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the two setgroups input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect us at a foreign grouplist or hand the
+ * oracle a different gidsetsize than the kernel actually consumed.  The
+ * count field is a scalar but is kept in the snapshot for symmetry with
+ * the rest of the snapshot family and to make the rec->aN read sites
+ * uniformly route through the snapshot.
+ */
+struct setgroups_post_state {
+	unsigned long count;
+	unsigned long list;
+};
+
 static void sanitise_setgroups(struct syscallrecord *rec)
 {
 	int count = (int) rec->a1;
+	struct setgroups_post_state *snap;
 	gid_t *list;
 	int i;
 
-	if (count <= 0 || count > 65536)
-		return;
+	rec->post_state = 0;
 
-	list = (gid_t *) get_writable_address(count * sizeof(gid_t));
-	for (i = 0; i < count; i++)
-		list[i] = (gid_t) rand();
+	if (count > 0 && count <= 65536) {
+		list = (gid_t *) get_writable_address(count * sizeof(gid_t));
+		for (i = 0; i < count; i++)
+			list[i] = (gid_t) rand();
+		rec->a2 = (unsigned long) list;
+	}
 
-	rec->a2 = (unsigned long) list;
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buffer pointer, so the memcpy / qsort would touch a foreign
+	 * allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->count = rec->a1;
+	snap->list = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 static int gid_cmp(const void *a, const void *b)
@@ -128,28 +159,61 @@ static int read_proc_groups(gid_t **out, int *n_out)
  * not deduplicate) so a benign reordering — or, more importantly, a
  * swap of two entries in storage — does not trip; only an actual
  * drop, addition, or value mismatch counts.
+ *
+ * TOCTOU defeat: the gidsetsize (rec->a1) and grouplist pointer
+ * (rec->a2) are both reachable from sibling trinity children and a
+ * concurrent write can scribble either between the original return and
+ * our oracle work.  Both args are snapshotted at sanitise time into a
+ * heap struct in rec->post_state, so a sibling that scribbles rec->aN
+ * between syscall return and post entry cannot redirect us at a
+ * foreign grouplist or hand the oracle a different count than the
+ * kernel actually consumed.
  */
 static void post_setgroups(struct syscallrecord *rec)
 {
+	struct setgroups_post_state *snap =
+		(struct setgroups_post_state *) rec->post_state;
 	int n_set, n_get, n_proc = 0;
 	gid_t *list_set, *list_get, *sorted, *proc_list = NULL;
 
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_setgroups: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	n_set = (int) rec->a1;
+	n_set = (int) snap->count;
 	if (n_set < 0 || n_set > 65536)
-		return;
+		goto out_free;
 
-	list_set = (gid_t *) rec->a2;
+	list_set = (gid_t *) snap->list;
 
-	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2.  list_set is
-	 * deref'd in both the getgroups compare and the procfs compare below. */
+	/*
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner pointer field.  Reject
+	 * pid-scribbled grouplist before deref -- list_set is read in both
+	 * the getgroups compare and the procfs compare below.
+	 */
 	if (n_set > 0 && list_set != NULL && looks_like_corrupted_ptr(list_set)) {
-		outputerr("post_setgroups: rejected suspicious grouplist=%p (pid-scribbled?)\n",
+		outputerr("post_setgroups: rejected suspicious grouplist=%p (post_state-scribbled?)\n",
 			  (void *) list_set);
-		shm->stats.post_handler_corrupt_ptr++;
-		return;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		goto out_free;
 	}
 
 	if (ONE_IN(20)) {
@@ -196,12 +260,12 @@ static void post_setgroups(struct syscallrecord *rec)
 
 procfs:
 	if (!ONE_IN(100))
-		return;
+		goto out_free;
 	if (n_set > 0 && list_set == NULL)
-		return;
+		goto out_free;
 
 	if (read_proc_groups(&proc_list, &n_proc) < 0)
-		return;
+		goto out_free;
 
 	if (n_proc != n_set) {
 		output(0, "setgroups oracle: setgroups(%d, ...) succeeded but "
@@ -210,18 +274,18 @@ procfs:
 		__atomic_add_fetch(&shm->stats.setgroups_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		free(proc_list);
-		return;
+		goto out_free;
 	}
 
 	if (n_set == 0) {
 		free(proc_list);
-		return;
+		goto out_free;
 	}
 
 	sorted = malloc((size_t) n_set * sizeof(gid_t));
 	if (!sorted) {
 		free(proc_list);
-		return;
+		goto out_free;
 	}
 	memcpy(sorted, list_set, (size_t) n_set * sizeof(gid_t));
 	qsort(sorted, (size_t) n_set, sizeof(gid_t), gid_cmp);
@@ -237,6 +301,9 @@ procfs:
 
 	free(sorted);
 	free(proc_list);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_setgroups = {
