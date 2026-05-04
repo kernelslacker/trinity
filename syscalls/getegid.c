@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 /*
  * Oracle: getegid() and /proc/self/status's "Gid:" line (real, effective,
@@ -24,6 +25,17 @@ static void post_getegid(struct syscallrecord *rec)
 	char line[128];
 	gid_t got, proc_egid = (gid_t)-1;
 	unsigned int rgid, egid, sgid, fsgid;
+
+	/* Kernel ABI: getegid() is infallible — from_kgid_munged(current_user_ns(),
+	 * current_egid()) cannot fail and the syscall return path has no error case.
+	 * A retval of -1UL is a structural ABI violation (e.g. -errno leaking
+	 * through the syscall return path), not a gid mismatch the procfs Gid:
+	 * oracle would catch. */
+	if (rec->retval == -1UL) {
+		output(0, "getegid oracle: returned gid -1UL is structurally invalid (infallible syscall)\n");
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
 
 	if (!ONE_IN(100))
 		return;
