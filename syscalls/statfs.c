@@ -7,15 +7,55 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+#if defined(SYS_statfs) || defined(__NR_statfs)
+/*
+ * Snapshot of the two statfs input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives
+ * in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot redirect the strncpy at a
+ * foreign pathname or steer the source memcpy at a foreign user
+ * buffer.
+ */
+struct statfs_post_state {
+	unsigned long pathname;
+	unsigned long buf;
+};
+#endif
+
 static void sanitise_statfs(struct syscallrecord *rec)
 {
 	avoid_shared_buffer(&rec->a2, page_size);
+
+#if defined(SYS_statfs) || defined(__NR_statfs)
+	{
+		struct statfs_post_state *snap;
+
+		rec->post_state = 0;
+
+		/*
+		 * Snapshot the two input args for the post oracle.  Without
+		 * this the post handler reads rec->aN at post-time, when a
+		 * sibling syscall may have scribbled the slots:
+		 * looks_like_corrupted_ptr() cannot tell a real-but-wrong
+		 * heap address from the original user pathname or buf
+		 * pointers, so the strncpy / memcpy would touch a foreign
+		 * allocation and the re-issue could resolve a different mount
+		 * entirely.  post_state is private to the post handler.
+		 */
+		snap = zmalloc(sizeof(*snap));
+		snap->pathname = rec->a1;
+		snap->buf      = rec->a2;
+		rec->post_state = (unsigned long) snap;
+	}
+#endif
 }
 
 /*
@@ -66,57 +106,82 @@ static void sanitise_statfs(struct syscallrecord *rec)
 #if defined(SYS_statfs) || defined(__NR_statfs)
 static void post_statfs(struct syscallrecord *rec)
 {
+	struct statfs_post_state *snap =
+		(struct statfs_post_state *) rec->post_state;
 	char snap_path[PATH_MAX];
-	struct statfs snap, recheck;
+	struct statfs first, recheck;
 	int diverged = 0;
 
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_statfs: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0)
-		return;
+	if (snap->pathname == 0)
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->buf == 0)
+		goto out_free;
 
 	if (!ONE_IN(100))
-		return;
+		goto out_free;
 
 	{
-		void *buf = (void *)(unsigned long) rec->a2;
-		void *path = (void *)(unsigned long) rec->a1;
+		void *buf = (void *)(unsigned long) snap->buf;
+		void *path = (void *)(unsigned long) snap->pathname;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner buf /
+		 * pathname fields.  Reject pid-scribbled pointers before
+		 * deref.
+		 */
 		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
-			outputerr("post_statfs: rejected suspicious buf=%p pathname=%p (pid-scribbled?)\n",
+			outputerr("post_statfs: rejected suspicious buf=%p pathname=%p (post_state-scribbled?)\n",
 				  buf, path);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
+	strncpy(snap_path, (const char *)(unsigned long) snap->pathname,
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
-	memcpy(&snap, (void *)(unsigned long) rec->a2, sizeof(snap));
+	memcpy(&first, (void *)(unsigned long) snap->buf, sizeof(first));
 
 	if (syscall(SYS_statfs, snap_path, &recheck) != 0)
-		return;
+		goto out_free;
 
-	if (snap.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
-	    snap.f_fsid.__val[1] != recheck.f_fsid.__val[1])
-		return;
+	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
+	    first.f_fsid.__val[1] != recheck.f_fsid.__val[1])
+		goto out_free;
 
-	if (snap.f_type    != recheck.f_type)    diverged = 1;
-	if (snap.f_bsize   != recheck.f_bsize)   diverged = 1;
-	if (snap.f_blocks  != recheck.f_blocks)  diverged = 1;
-	if (snap.f_files   != recheck.f_files)   diverged = 1;
-	if (snap.f_namelen != recheck.f_namelen) diverged = 1;
-	if (snap.f_frsize  != recheck.f_frsize)  diverged = 1;
-	if (snap.f_flags   != recheck.f_flags)   diverged = 1;
+	if (first.f_type    != recheck.f_type)    diverged = 1;
+	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
+	if (first.f_blocks  != recheck.f_blocks)  diverged = 1;
+	if (first.f_files   != recheck.f_files)   diverged = 1;
+	if (first.f_namelen != recheck.f_namelen) diverged = 1;
+	if (first.f_frsize  != recheck.f_frsize)  diverged = 1;
+	if (first.f_flags   != recheck.f_flags)   diverged = 1;
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	output(0,
 	       "statfs oracle anomaly: path=%s "
@@ -125,13 +190,13 @@ static void post_statfs(struct syscallrecord *rec)
 	       "recall={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
 	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x}\n",
 	       snap_path,
-	       (unsigned long) snap.f_type, (long) snap.f_bsize,
-	       (unsigned long long) snap.f_blocks,
-	       (unsigned long long) snap.f_files,
-	       (long) snap.f_namelen, (long) snap.f_frsize,
-	       (unsigned long) snap.f_flags,
-	       (unsigned int) snap.f_fsid.__val[0],
-	       (unsigned int) snap.f_fsid.__val[1],
+	       (unsigned long) first.f_type, (long) first.f_bsize,
+	       (unsigned long long) first.f_blocks,
+	       (unsigned long long) first.f_files,
+	       (long) first.f_namelen, (long) first.f_frsize,
+	       (unsigned long) first.f_flags,
+	       (unsigned int) first.f_fsid.__val[0],
+	       (unsigned int) first.f_fsid.__val[1],
 	       (unsigned long) recheck.f_type, (long) recheck.f_bsize,
 	       (unsigned long long) recheck.f_blocks,
 	       (unsigned long long) recheck.f_files,
@@ -142,6 +207,9 @@ static void post_statfs(struct syscallrecord *rec)
 
 	__atomic_add_fetch(&shm->stats.statfs_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
