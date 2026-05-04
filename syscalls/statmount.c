@@ -11,6 +11,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -75,11 +76,34 @@ static unsigned long statmount_params[] = {
 #endif
 };
 
+#ifdef HAVE_SYS_STATMOUNT
+/*
+ * Snapshot of the three statmount input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect us at a foreign req / buf and cannot
+ * smear the bufsize bound used to seed the re-issue.  bufsize is a
+ * scalar but kept in the snap struct for symmetry with the two
+ * pointer fields.
+ */
+struct statmount_post_state {
+	unsigned long req;
+	unsigned long buffer;
+	unsigned long bufsize;
+};
+#endif
+
 static void sanitise_statmount(struct syscallrecord *rec)
 {
 	struct mnt_id_req *req;
 	unsigned int i, nbits;
 	__u64 param;
+#ifdef HAVE_SYS_STATMOUNT
+	struct statmount_post_state *snap;
+
+	rec->post_state = 0;
+#endif
 
 	req = (struct mnt_id_req *) get_writable_struct(sizeof(*req));
 	if (!req)
@@ -114,6 +138,25 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	 * alloc_shared region.
 	 */
 	avoid_shared_buffer(&rec->a2, rec->a3);
+
+#ifdef HAVE_SYS_STATMOUNT
+	/*
+	 * Snapshot the three input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buffer pointers, so the memcpy / re-issue would touch a foreign
+	 * allocation.  post_state is private to the post handler.  Gated on
+	 * HAVE_SYS_STATMOUNT to mirror the .post registration -- on systems
+	 * without SYS_statmount the post handler is not registered and a
+	 * snapshot only the post handler can free would leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->req       = rec->a1;
+	snap->buffer    = rec->a2;
+	snap->bufsize   = rec->a3;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -136,12 +179,15 @@ static void sanitise_statmount(struct syscallrecord *rec)
  *     rec->a1/rec->a2 between the original syscall return and our
  *     re-issue via alloc_shared in another trinity child task.
  *
- * TOCTOU defeat: a sibling thread in the same trinity child can scribble
- * either the request struct at rec->a1 or the buf payload at rec->a2
- * between the syscall return and our post-hook.  Snapshot both into
- * stack-locals, then re-issue with a fresh private stack request and a
- * fresh private stack buf (do NOT pass rec->a1/rec->a2 -- a sibling could
- * mutate them mid-syscall and we want a clean compare).  The flags arg is
+ * TOCTOU defeat: the three input args (req, buffer, bufsize) are
+ * snapshotted at sanitise time into a heap struct in rec->post_state, so
+ * a sibling that scribbles rec->aN between syscall return and post entry
+ * cannot redirect us at a foreign req / buf and cannot smear the bufsize
+ * bound used to seed the re-issue.  We still snapshot both the request
+ * struct and the buf payload into stack-locals before re-issuing, with a
+ * fresh private stack request and a fresh private stack buf (do NOT pass
+ * the snapshot's req / buffer -- a sibling could mutate the user buffers
+ * themselves mid-syscall and forge a clean compare).  The flags arg is
  * forced to zero on the re-call.
  *
  * Per-audit note: only the FIXED prefix (sizeof(struct statmount)) is
@@ -155,39 +201,61 @@ static void sanitise_statmount(struct syscallrecord *rec)
 static void post_statmount(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_STATMOUNT
+	struct statmount_post_state *snap =
+		(struct statmount_post_state *) rec->post_state;
 	struct mnt_id_req first_req;
 	struct statmount first_buf;
 	struct statmount recheck_buf;
 	long rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_statmount: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0 || rec->a2 == 0)
-		return;
+	if (snap->req == 0 || snap->buffer == 0)
+		goto out_free;
 
-	if (rec->a3 < sizeof(struct statmount))
-		return;
+	if (snap->bufsize < sizeof(struct statmount))
+		goto out_free;
 
 	{
-		void *req_p = (void *)(unsigned long) rec->a1;
-		void *buf_p = (void *)(unsigned long) rec->a2;
+		void *req_p = (void *)(unsigned long) snap->req;
+		void *buf_p = (void *)(unsigned long) snap->buffer;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner pointer
+		 * fields.  Reject pid-scribbled req/buffer before deref.
+		 */
 		if (looks_like_corrupted_ptr(req_p) ||
 		    looks_like_corrupted_ptr(buf_p)) {
-			outputerr("post_statmount: rejected suspicious req=%p buf=%p (pid-scribbled?)\n",
+			outputerr("post_statmount: rejected suspicious req=%p buf=%p (post_state-scribbled?)\n",
 				  req_p, buf_p);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first_req, (void *) rec->a1, sizeof(first_req));
-	memcpy(&first_buf, (void *) rec->a2, sizeof(first_buf));
+	memcpy(&first_req, (void *) snap->req, sizeof(first_req));
+	memcpy(&first_buf, (void *) snap->buffer, sizeof(first_buf));
 
 	{
 		struct mnt_id_req recheck_req = first_req;
@@ -197,7 +265,7 @@ static void post_statmount(struct syscallrecord *rec)
 	}
 
 	if (rc < 0)
-		return;
+		goto out_free;
 
 	if (memcmp(&first_buf, &recheck_buf, sizeof(struct statmount)) != 0) {
 		const u64 *first_words = (const u64 *) &first_buf;
@@ -235,6 +303,9 @@ static void post_statmount(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.statmount_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 #else
 	(void) rec;
 #endif
