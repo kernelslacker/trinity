@@ -1061,14 +1061,68 @@ void post_handler_corrupt_ptr_bump(struct syscallrecord *rec)
 	corrupt_ptr_attr_record(nr, do32bit);
 }
 
+/*
+ * Categorise a rejected pointer value into one of four heuristic bands
+ * so the sample log line tells us at a glance whether the rejection is
+ * obvious noise (NULL-ish, pid-shaped, kernel-VA leak) or whether the
+ * value sits in the heap-shape range and the shape heuristic itself is
+ * the false positive.  The pid_max ceiling of 4194304 (the kernel
+ * default for 64-bit boots) is used for the pid-shaped band so a stray
+ * tid lands here even though it would also satisfy v >= 0x10000.
+ */
+static const char *corrupt_ptr_label(unsigned long v)
+{
+	if (v < 0x10000)
+		return "NULL-ish";
+	if (v < 4194304)
+		return "pid-shaped";
+	if (v >= 0x800000000000UL)
+		return "kernel-VA";
+	return "heap-shaped";
+}
+
+/*
+ * Sample-rate for the per-rejection log line.  At the observed sustained
+ * rate of ~900 rejections/min a 1-in-100 sample emits roughly nine lines
+ * per minute -- enough to characterise the value distribution without
+ * flooding the log faster than the operator can read it.
+ */
+#define CORRUPT_PTR_SAMPLE_INTERVAL	100
+
 bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
 {
 	unsigned long v = (unsigned long) p;
+	unsigned long n;
 
 	if (v >= 0x10000 && v < (1UL << 47) && (v & 0x7) == 0)
 		return false;
 
 	post_handler_corrupt_ptr_bump(rec);
+
+	/*
+	 * Sample every CORRUPT_PTR_SAMPLE_INTERVALth rejection.  Counter
+	 * is shm-resident so the sample cadence is fleet-global rather than
+	 * per-child -- a host with 32 children would otherwise emit 32x the
+	 * sample volume.  RELAXED ordering: the sample is opportunistic;
+	 * losing one to a torn read between siblings does not matter.
+	 */
+	n = __atomic_add_fetch(&shm->stats.corrupt_ptr_sample_seq, 1,
+			       __ATOMIC_RELAXED);
+	if ((n % CORRUPT_PTR_SAMPLE_INTERVAL) == 1) {
+		const char *name;
+		char pcbuf[128];
+
+		if (rec != NULL)
+			name = print_syscall_name(rec->nr, rec->do32bit);
+		else
+			name = "<deferred-free>";
+
+		outputerr("corrupt-ptr reject sample: syscall=%s value=0x%lx "
+			  "label=%s caller=%s\n",
+			  name, v, corrupt_ptr_label(v),
+			  pc_to_string(__builtin_return_address(0),
+				       pcbuf, sizeof(pcbuf)));
+	}
 	return true;
 }
 
