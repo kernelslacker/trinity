@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -335,11 +336,30 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 
 	head = get_objhead(scope, type);
 
+	/*
+	 * Snapshot head->num_entries once and use the snapshot for the
+	 * grow check, the size computation, the slot write, and the
+	 * publish below.  head->num_entries lives in shm (per-child for
+	 * OBJ_LOCAL, shm->global_objects[] for OBJ_GLOBAL) and is reachable
+	 * from any fuzzed value-result syscall whose length argument lands
+	 * inside that struct -- the same wild-write hazard that motivated
+	 * the OBJHEAD_SANE_LIMIT defence in objhead_looks_sane().  Without
+	 * a local snapshot, a stomp landing between the grow check and the
+	 * slot write lets the index used at head->array[N]=obj diverge
+	 * from the index the grow check sized for, and the slot write
+	 * lands past the array's bounds (heap-buffer-overflow at
+	 * objects.c:411).  Snapshotting once also collapses two reloads
+	 * the compiler can't elide across the malloc / mprotect calls in
+	 * the OBJ_LOCAL grow path, where every reload of head->num_entries
+	 * widens the same TOCTOU window.
+	 */
+	unsigned int n = head->num_entries;
+
 	/* For global objects, the array was pre-allocated in shared
 	 * memory by init_object_lists().  Never realloc — just reject
 	 * if we've hit the fixed capacity. */
 	if (scope == OBJ_GLOBAL) {
-		if (head->num_entries >= head->array_capacity) {
+		if (n >= head->array_capacity) {
 			outputerr("add_object: global array full for type %u "
 				  "(cap %u)\n", type, head->array_capacity);
 			if (is_fd_type(type)) {
@@ -350,7 +370,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			release_obj(obj, scope, type);
 			goto out_unlock;
 		}
-	} else if (head->num_entries >= head->array_capacity) {
+	} else if (n >= head->array_capacity) {
 		/*
 		 * Local objects: grow on the private heap.
 		 *
@@ -385,7 +405,32 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		struct object **oldarray;
 		unsigned int newcap, oldcap;
 
+		/*
+		 * Doubling-then-walk: the entry condition n >= array_capacity
+		 * normally means n == array_capacity, so doubling
+		 * array_capacity gives newcap = 2*n which strictly exceeds
+		 * the index we are about to write.  If a wild write has
+		 * scribbled head->num_entries past array_capacity, the
+		 * single double can come back smaller than the snapshot --
+		 * walk the doubling until newcap > n.  Bail with a
+		 * release_obj if a further double would overflow unsigned
+		 * int rather than letting the OOB land.
+		 */
 		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
+		while (newcap <= n) {
+			if (newcap > UINT_MAX / 2) {
+				outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
+					  type, n, head->array_capacity);
+				if (is_fd_type(type)) {
+					int fd = fd_from_object(obj, type);
+					if (fd >= 0)
+						close(fd);
+				}
+				release_obj(obj, scope, type);
+				return;
+			}
+			newcap *= 2;
+		}
 		newarray = malloc(newcap * sizeof(struct object *));
 		if (newarray == NULL) {
 			outputerr("add_object: malloc failed for type %u (cap %u)\n",
@@ -408,8 +453,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray, free);
 	}
-	head->array[head->num_entries] = obj;
-	obj->array_idx = head->num_entries;
+	head->array[n] = obj;
+	obj->array_idx = n;
 
 	/*
 	 * RELEASE-publish the new count so a child doing a lockless
@@ -418,17 +463,14 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * the pool is per-child private, so a plain store suffices.
 	 */
 	if (scope == OBJ_GLOBAL)
-		__atomic_store_n(&head->num_entries, head->num_entries + 1,
-				 __ATOMIC_RELEASE);
+		__atomic_store_n(&head->num_entries, n + 1, __ATOMIC_RELEASE);
 	else
-		head->num_entries++;
+		head->num_entries = n + 1;
 
 	/* Track global fd-type objects in the hash table */
 	if (scope == OBJ_GLOBAL && is_fd_type(type)) {
 		int fd = fd_from_object(obj, type);
 		if (!fd_hash_insert(fd, obj, type)) {
-			unsigned int rollback = head->num_entries - 1;
-
 			outputerr("add_object: fd hash full for type %u, dropping fd %d\n",
 				  type, fd);
 			/*
@@ -436,10 +478,14 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			 * read picking up the new snapshot sees the lower
 			 * count and won't index past the (about-to-be-NULLed)
 			 * tail slot.  RELEASE pairs with the child's ACQUIRE.
+			 * Roll back to the same n the slot write used so a
+			 * wild write that scribbled head->num_entries between
+			 * the publish above and here can't drop the count to
+			 * a stale value or NULL the wrong slot.
 			 */
-			__atomic_store_n(&head->num_entries, rollback,
+			__atomic_store_n(&head->num_entries, n,
 					 __ATOMIC_RELEASE);
-			head->array[rollback] = NULL;
+			head->array[n] = NULL;
 			if (fd >= 0)
 				close(fd);
 			release_obj(obj, scope, type);
