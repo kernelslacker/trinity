@@ -18,6 +18,9 @@
 #ifndef MPOL_WEIGHTED_INTERLEAVE
 #define MPOL_WEIGHTED_INTERLEAVE 6	/* 6.9+ */
 #endif
+#ifndef MPOL_F_NUMA_BALANCING
+#define MPOL_F_NUMA_BALANCING (1 << 13)	/* 5.12+ */
+#endif
 
 static unsigned long mempolicy_modes[] = {
 	MPOL_DEFAULT, MPOL_PREFERRED, MPOL_BIND,
@@ -52,6 +55,13 @@ static void sanitise_set_mempolicy(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) mask;
 	rec->a3 = maxnode;
+
+	/* Mode flags live in the high bits of the mode arg.  OR in
+	 * MPOL_F_NUMA_BALANCING occasionally; only valid with MPOL_BIND
+	 * but the kernel rejects it cleanly elsewhere, which is also
+	 * worth exercising. */
+	if (ONE_IN(8))
+		rec->a1 |= MPOL_F_NUMA_BALANCING;
 }
 
 struct syscallentry syscall_set_mempolicy = {
