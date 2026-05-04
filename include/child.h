@@ -187,6 +187,14 @@ struct childdata {
 
 	unsigned int num;
 
+	/* Snapshot of shm->sibling_freeze_gen taken when we last ran the
+	 * sibling-childdata mprotect sweep.  Read at the top of every
+	 * child_process loop iteration; on mismatch we re-run the sweep so
+	 * any sibling spawned since our last pass joins our PROT_READ set.
+	 * See the comment on shm_s::sibling_freeze_gen for the race this
+	 * closes. */
+	unsigned int last_seen_freeze_gen;
+
 	/* Stall detection state: consecutive alarm timeouts without progress. */
 	unsigned int stall_count;
 	unsigned int stall_last;

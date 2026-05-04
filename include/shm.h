@@ -33,6 +33,32 @@ struct shm_s {
 	time_t start_time;
 
 	/*
+	 * Monotonic generation counter bumped by each new child after it
+	 * completes its sibling-childdata freeze in init_child.  Each child
+	 * caches the last value it saw and re-checks it at the top of the
+	 * child_process loop; a mismatch triggers a catch-up refreeze that
+	 * pulls any newly-spawned sibling into our PROT_READ set.
+	 *
+	 * Closes the startup race where a sibling that was mid-syscall when
+	 * a fresh child was forked still has the new child's childdata at
+	 * PROT_READWRITE in its view.  In that window a value-result kernel
+	 * write triggered by the busy sibling can land inside the new
+	 * child's not-yet-frozen region (childdata is alloc_shared and so
+	 * occupies a discrete 4 KiB-aligned mmap slot per child — random
+	 * pointer args from the busy sibling can fall there).  The window
+	 * was previously open forever; now it shrinks to "until each
+	 * existing sibling reaches its next loop top check", typically one
+	 * syscall worth of latency.
+	 *
+	 * Lives next to start_time deliberately: that slot was padding
+	 * before the 64-byte-aligned fd_hash cacheline, so adding the
+	 * counter doesn't introduce false sharing with anything hot.  Only
+	 * written on spawn (rare); reads are RELAXED-equivalent loads on
+	 * the loop top — one pulled cacheline shared across all readers.
+	 */
+	_Atomic unsigned int sibling_freeze_gen;
+
+	/*
 	 * fd→object hash table.  Lives in shm so children can read the
 	 * per-slot generation counter the parent updates on every
 	 * fd_table mutation.  Reads from children are unlocked; writes
