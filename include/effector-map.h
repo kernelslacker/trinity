@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arch.h"
 #include "syscall.h"
 
 /*
@@ -74,3 +75,29 @@ unsigned char effector_map_score(unsigned int nr, unsigned int arg,
  * Used by mutate_arg's bit-flip case to bias toward bits the kernel
  * actually branches on. */
 unsigned int effector_pick_bit(unsigned int nr, unsigned int arg);
+
+/* Pick an array index in [0, n) weighted by per-bit effector-map
+ * significance for (nr, arg).  Each entry's weight is 1 + the sum of
+ * effector_map_score(nr, arg, b) over bits b set in vals[i] — the
+ * same +1 floor effector_pick_bit uses, so an uncalibrated row
+ * degrades cleanly to a uniform pick.
+ *
+ * For childops with hand-rolled curated bitmask arrays whose chosen
+ * entry feeds a syscall arg directly: routes the array-index pick
+ * through the same per-bit significance signal that drives
+ * random_syscall's bit-flip mutator, so flag combinations the kernel
+ * branches harder on get more replay weight per invocation.
+ *
+ * Caps n at EFFECTOR_BITS_PER_ARG to keep the on-stack weights
+ * buffer fixed-size; n above the cap and out-of-range (nr, arg) fall
+ * back to a uniform pick.  n == 0 returns 0. */
+unsigned int effector_pick_array_index(unsigned int nr, unsigned int arg,
+		const unsigned long *vals, unsigned int n);
+
+/* Convert a libc __NR_* macro to the trinity table index that the
+ * effector_map_score / effector_pick_bit / effector_pick_array_index
+ * accessors expect.  No-op on x86_64 (SYSCALL_OFFSET == 0); on archs
+ * with a non-zero offset (mips o32/n32/n64) the subtraction folds the
+ * raw kernel number back into the table-index space the calibrator
+ * indexes the map by. */
+#define EFFECTOR_NR(nr)	((unsigned int)((int)(nr) - SYSCALL_OFFSET))

@@ -102,6 +102,49 @@ unsigned int effector_pick_bit(unsigned int nr, unsigned int arg)
 	return EFFECTOR_BITS_PER_ARG - 1;
 }
 
+unsigned int effector_pick_array_index(unsigned int nr, unsigned int arg,
+		const unsigned long *vals, unsigned int n)
+{
+	/* Stack array sized to the per-bit fan-out; childop curated flag
+	 * arrays don't approach this.  An oversized array degrades to a
+	 * uniform pick rather than allocating. */
+	unsigned int weights[EFFECTOR_BITS_PER_ARG];
+	unsigned int total = 0;
+	unsigned int i, b, accum, r;
+
+	if (n == 0)
+		return 0;
+	if (n > EFFECTOR_BITS_PER_ARG ||
+	    nr >= MAX_NR_SYSCALL ||
+	    arg >= EFFECTOR_NR_ARGS)
+		return (unsigned int)(rand() % (int)n);
+
+	/* Per-entry weight = 1 (floor, same rationale as effector_pick_bit)
+	 * + sum of significance over bits the entry actually sets.  Entries
+	 * with no bits set (e.g. a curated 0 sentinel for "no flags") still
+	 * get the floor and remain in rotation. */
+	for (i = 0; i < n; i++) {
+		unsigned long v = vals[i];
+		unsigned int w = 1U;
+
+		for (b = 0; b < EFFECTOR_BITS_PER_ARG; b++) {
+			if (v & (1UL << b))
+				w += (unsigned int)effector_map[nr][arg][b];
+		}
+		weights[i] = w;
+		total += w;
+	}
+
+	r = (unsigned int)(rand() % (int)total);
+	accum = 0;
+	for (i = 0; i < n; i++) {
+		accum += weights[i];
+		if (r < accum)
+			return i;
+	}
+	return n - 1;
+}
+
 /*
  * Per-call edge fingerprint.  We hash each PC the kernel reported into
  * a 16K-bit table and compare two fingerprints by popcounting the XOR.
