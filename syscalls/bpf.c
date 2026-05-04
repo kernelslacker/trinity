@@ -295,6 +295,11 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	attr = zmalloc(sizeof(union bpf_attr));
 	rec->a2 = (unsigned long) attr;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall before post_bpf() runs, leaving a real-but-wrong heap
+	 * pointer that the corruption guard cannot distinguish from the
+	 * original union bpf_attr. */
+	rec->post_state = (unsigned long) attr;
 
 	switch (rec->a1) {
 	case BPF_MAP_CREATE:
@@ -468,22 +473,22 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 static void post_bpf(struct syscallrecord *rec)
 {
-	union bpf_attr *attr = (union bpf_attr *) rec->a2;
+	union bpf_attr *attr = (union bpf_attr *) rec->post_state;
 	int fd = rec->retval;
 
 	/*
-	 * Snapshot rec->a2 once at entry and reject if it looks like a
-	 * pid-scribbled value before we deref attr->map_type / attr->insns
-	 * etc.  Cluster-1/2/3 root cause: a sibling fuzzed value-result
-	 * syscall scribbles rec->a2 with a tid/pid between syscall return
-	 * and this handler running.  Without the guard, the attr->* deref
-	 * crashes inside the switch arms (typical signature: si_addr ==
-	 * killing process's pid).
+	 * post_state is private to the post handler and is not exposed to
+	 * the syscall ABI, so the argN-scribbling sibling paths leave it
+	 * alone.  The whole syscallrecord can still be wholesale-stomped
+	 * (e.g. by a child reusing the slot), so keep the corruption guard
+	 * as a backstop.
 	 */
 	if (looks_like_corrupted_ptr(attr)) {
 		outputerr("post_bpf: rejected suspicious attr=%p (pid-scribbled?)\n",
 			  attr);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
 		return;
 	}
 
@@ -622,7 +627,8 @@ static void post_bpf(struct syscallrecord *rec)
 		}
 	}
 
-	deferred_freeptr(&rec->a2);
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long bpf_cmds[] = {
