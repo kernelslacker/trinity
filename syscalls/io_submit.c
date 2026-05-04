@@ -8,6 +8,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "fd.h"
+#include "utils.h"
 
 static int iocb_cmds[] = {
 	IOCB_CMD_PREAD, IOCB_CMD_PWRITE, IOCB_CMD_FSYNC,
@@ -44,6 +45,16 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) iocbpp;
 }
 
+static void post_io_submit(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < 0 || ret > (long) rec->a2)
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_io_submit = {
 	.name = "io_submit",
 	.num_args = 3,
@@ -51,4 +62,5 @@ struct syscallentry syscall_io_submit = {
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_submit,
+	.post = post_io_submit,
 };
