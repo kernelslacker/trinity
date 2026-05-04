@@ -144,23 +144,31 @@ set_control:
 		msg->msg_flags = 0;
 
 	rec->a2 = (unsigned long) msg;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall (e.g. an objects.c add_object realloc) before post_sendmsg()
+	 * runs, leaving a real-but-wrong heap pointer that the corruption
+	 * guard cannot distinguish from the original. */
+	rec->post_state = (unsigned long) msg;
 }
 
 static void post_sendmsg(struct syscallrecord *rec)
 {
-	struct msghdr *msg = (struct msghdr *) rec->a2;
+	struct msghdr *msg = (struct msghdr *) rec->post_state;
 
 	if (msg == NULL)
 		return;
 
 	/*
-	 * Snapshot rec->a2 as msg and reject pid-scribbled values before
-	 * deref'ing msg->msg_iov / msg->msg_name.  Cluster-1/2/3 guard.
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so keep the
+	 * corruption guard.
 	 */
 	if (looks_like_corrupted_ptr(msg)) {
 		outputerr("post_sendmsg: rejected suspicious msg=%p "
 			  "(pid-scribbled?)\n", msg);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
 		return;
 	}
 
@@ -170,7 +178,8 @@ static void post_sendmsg(struct syscallrecord *rec)
 		deferred_free_enqueue(msg->msg_iov, NULL);
 	}
 	free(msg->msg_name);	// free sockaddr
-	deferred_freeptr(&rec->a2);
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_sendmsg = {
@@ -224,11 +233,16 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) msgs;
 	rec->a3 = vlen;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall (e.g. an objects.c add_object realloc) before
+	 * post_sendmmsg() runs, leaving a real-but-wrong heap pointer that
+	 * the corruption guard cannot distinguish from the original. */
+	rec->post_state = (unsigned long) msgs;
 }
 
 static void post_sendmmsg(struct syscallrecord *rec)
 {
-	struct mmsghdr *msgs = (struct mmsghdr *) rec->a2;
+	struct mmsghdr *msgs = (struct mmsghdr *) rec->post_state;
 	unsigned int vlen = (unsigned int) rec->a3;
 	unsigned int i;
 
@@ -236,13 +250,16 @@ static void post_sendmmsg(struct syscallrecord *rec)
 		return;
 
 	/*
-	 * Snapshot rec->a2 as msgs and reject pid-scribbled values before
-	 * walking the mmsghdr array.  Cluster-1/2/3 guard.
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so keep the
+	 * corruption guard.
 	 */
 	if (looks_like_corrupted_ptr(msgs)) {
 		outputerr("post_sendmmsg: rejected suspicious msgs=%p "
 			  "(pid-scribbled?)\n", msgs);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
 		return;
 	}
 
@@ -261,6 +278,8 @@ static void post_sendmmsg(struct syscallrecord *rec)
 		outputerr("post_sendmmsg: rejected suspicious vlen=%u "
 			  "(pid-scribbled?)\n", vlen);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
 		return;
 	}
 
@@ -268,8 +287,8 @@ static void post_sendmmsg(struct syscallrecord *rec)
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
 		free(msgs[i].msg_hdr.msg_name);
 	}
-	deferred_free_enqueue(msgs, NULL);
 	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_sendmmsg = {
