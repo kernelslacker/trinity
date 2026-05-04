@@ -11,6 +11,7 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static void sanitise_io_getevents(struct syscallrecord *rec)
 {
@@ -34,10 +35,21 @@ static void sanitise_io_getevents(struct syscallrecord *rec)
 	rec->a5 = (unsigned long) ts;
 }
 
+static void post_io_getevents(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < 0 || ret > (long) rec->a3)
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_io_getevents = {
 	.name = "io_getevents",
 	.num_args = 5,
 	.argname = { [0] = "ctx_id", [1] = "min_nr", [2] = "nr", [3] = "events", [4] = "timeout" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_getevents,
+	.post = post_io_getevents,
 };
