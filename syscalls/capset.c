@@ -6,6 +6,7 @@
  */
 #include <linux/capability.h>
 #include <sys/time.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -19,6 +20,19 @@ static const unsigned int cap_versions[] = {
 };
 
 /*
+ * Snapshot of the two capset input args read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect us at a foreign data buffer and forge a
+ * clean compare against poisoned memory.
+ */
+struct capset_post_state {
+	unsigned long header;
+	unsigned long data;
+};
+
+/*
  * Fill header with valid version and pid.
  * Fill data with random capability bitmasks.
  * v3 uses two __user_cap_data_struct entries (64-bit capability sets).
@@ -27,7 +41,10 @@ static void sanitise_capset(struct syscallrecord *rec)
 {
 	struct __user_cap_header_struct *hdr;
 	struct __user_cap_data_struct *data;
+	struct capset_post_state *snap;
 	unsigned int version;
+
+	rec->post_state = 0;
 
 	hdr = (struct __user_cap_header_struct *) get_writable_struct(sizeof(*hdr));
 	if (!hdr)
@@ -57,6 +74,19 @@ static void sanitise_capset(struct syscallrecord *rec)
 		data[1].inheritable = rand32();
 	}
 	rec->a2 = (unsigned long) data;
+
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original
+	 * buffer pointers, so the data[0].effective read would touch a
+	 * foreign allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->header = rec->a1;
+	snap->data   = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -77,33 +107,59 @@ static void sanitise_capset(struct syscallrecord *rec)
  * "still EPERM" and tell us nothing.  A future enhancement is the full
  * cap-matrix oracle that walks every CAP_* after every cap-related
  * syscall and verifies its effective state matches our model.
+ *
+ * Scribble defeat: the two input args (header, data) are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot redirect
+ * us at a foreign data buffer.
  */
 static void post_capset(struct syscallrecord *rec)
 {
+	struct capset_post_state *snap = (struct capset_post_state *) rec->post_state;
 	struct __user_cap_header_struct *hdr;
 	struct __user_cap_data_struct *data;
 
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_capset: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 	if (!ONE_IN(20))
-		return;
+		goto out_free;
 
-	hdr = (struct __user_cap_header_struct *) rec->a1;
-	data = (struct __user_cap_data_struct *) rec->a2;
+	hdr = (struct __user_cap_header_struct *) snap->header;
+	data = (struct __user_cap_data_struct *) snap->data;
 	if (!hdr || !data)
-		return;
+		goto out_free;
 
-	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+	/*
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
+	 * pid-scribbled header/data before deref.
+	 */
 	if (looks_like_corrupted_ptr(hdr) || looks_like_corrupted_ptr(data)) {
-		outputerr("post_capset: rejected suspicious header=%p data=%p (pid-scribbled?)\n",
+		outputerr("post_capset: rejected suspicious header=%p data=%p (post_state-scribbled?)\n",
 			  hdr, data);
-		shm->stats.post_handler_corrupt_ptr++;
-		return;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		goto out_free;
 	}
 
 	/* CAP_SYS_TIME == 25 lives in data[0] for v1/v2/v3. */
 	if ((data[0].effective & (1u << CAP_SYS_TIME)) != 0)
-		return;
+		goto out_free;
 
 	if (settimeofday(NULL, NULL) == 0) {
 		output(0, "cred oracle: capset cleared CAP_SYS_TIME from effective "
@@ -112,6 +168,9 @@ static void post_capset(struct syscallrecord *rec)
 				   __ATOMIC_RELAXED);
 	}
 	/* EPERM (or any other failure) means the kernel agrees with itself. */
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_capset = {
