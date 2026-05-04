@@ -228,7 +228,8 @@ static void do_tmpfs_lifecycle(void)
 	if (fd_c >= 0) {
 #ifdef __NR_copy_file_range
 		off_t off_in = 0, off_out = 0;
-		(void)do_copy_file_range(fd_b, &off_in, fd_c, &off_out, 4096, 0);
+		(void)do_copy_file_range(fd_b, &off_in, fd_c, &off_out, 4096,
+					 (unsigned int)RAND_NEGATIVE_OR(0));
 #endif
 		{
 			off_t off = 0;
