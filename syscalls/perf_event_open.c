@@ -1469,7 +1469,7 @@ static void post_perf_event_open(struct syscallrecord *rec)
 	void *attr = (void *) rec->post_state;
 	int fd = rec->retval;
 
-	if (fd != -1) {
+	if (fd >= 0 && fd < (1 << 20)) {
 		struct childdata *child = this_child();
 
 		/* Notify the parent so it can remove this fd from the object
@@ -1507,6 +1507,9 @@ static void post_perf_event_open(struct syscallrecord *rec)
 		 */
 		ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
 		close(fd);
+	} else if (fd != -1) {
+		outputerr("post_perf_event_open: rejecting out-of-bound fd=%d\n", fd);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
 	if (attr == NULL)
