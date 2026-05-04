@@ -4,6 +4,7 @@
 	const char __user *, _callout_info,
 	key_serial_t, destringid)
  */
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <linux/keyctl.h>
@@ -19,10 +20,16 @@ static unsigned long request_key_ids[] = {
 
 static void post_request_key(struct syscallrecord *rec)
 {
-	if ((long) rec->retval < 0)
-		return;
+	long ret = (long) rec->retval;
 
-	syscall(SYS_keyctl, KEYCTL_INVALIDATE, (long) rec->retval);
+	if (ret <= 0 || ret > INT32_MAX) {
+		if (ret > 0)
+			output(0, "request_key oracle: returned key_serial_t %ld is out of range (must be 1..INT32_MAX)\n",
+				ret);
+		return;
+	}
+
+	syscall(SYS_keyctl, KEYCTL_INVALIDATE, ret);
 }
 
 struct syscallentry syscall_request_key = {
