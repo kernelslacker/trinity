@@ -1,4 +1,4 @@
-VERSION="2026.04"
+VERSION="2026.05"
 
 INSTALL_PREFIX ?= $(DESTDIR)
 NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
