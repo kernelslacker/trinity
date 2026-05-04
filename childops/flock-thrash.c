@@ -59,13 +59,48 @@
  * (16 to 256 iters) based on the recent kcov edge-rate signal. */
 #define MAX_ITERATIONS	64
 
-/* Per-fd lock state so we strictly alternate acquire/release.  Without
- * this we'd issue back-to-back LOCK_EX on the same fd, which the kernel
- * treats as a no-op upgrade and skips the contention path entirely. */
+/* Per-fd lock state.  In ORDER_ALTERNATE we use s->held to strictly
+ * alternate acquire/release; otherwise it's just bookkeeping the other
+ * orderings consult to bias their choices.  Without alternation we'd
+ * issue back-to-back LOCK_EX on the same fd, which the kernel treats as
+ * a no-op upgrade and skips the contention path entirely — the LOOSE
+ * order deliberately seeks that path out. */
 struct flock_slot {
 	int fd;
 	bool held;
 };
+
+/* Per-invocation acquire/release ordering.  The default alternation
+ * keeps every fd cycling through the same per-inode flc_flock list
+ * states; varying the order surfaces races that only fire when the
+ * list sees an unusual operation sequence. */
+enum thrash_order {
+	/* Baseline: strict acquire-then-release alternation. */
+	ORDER_ALTERNATE,
+	/* First half pure acquires, second half pure releases.  Pushes
+	 * the per-inode list to its peak depth, then drains in random
+	 * fd-pick order so locks_wake_up_blocks sees wakees that aren't
+	 * the FIFO-oldest waiter. */
+	ORDER_HOLD_BATCH,
+	/* Ignore s->held: re-issue LOCK_EX on held slots (kernel hits the
+	 * upgrade/conversion path the alternation avoids) and sometimes
+	 * LOCK_UN on !held slots (no-op release fast path). */
+	ORDER_LOOSE,
+	NR_THRASH_ORDERS,
+};
+
+static void shuffle_slots(struct flock_slot *s, unsigned int n)
+{
+	unsigned int i;
+
+	for (i = n; i > 1; i--) {
+		unsigned int j = (unsigned int)rand() % i;
+		struct flock_slot tmp = s[i - 1];
+
+		s[i - 1] = s[j];
+		s[j] = tmp;
+	}
+}
 
 static int open_one(unsigned int idx)
 {
@@ -80,8 +115,9 @@ bool flock_thrash(struct childdata *child)
 {
 	struct flock_slot slots[NR_FLOCK_FDS];
 	unsigned int opened = 0;
-	unsigned int iter, iter_cap;
+	unsigned int iter, iter_cap, phase_split;
 	unsigned int i;
+	enum thrash_order order;
 
 	(void)child;
 
@@ -101,29 +137,71 @@ bool flock_thrash(struct childdata *child)
 		return true;
 
 	iter_cap = BUDGETED(CHILD_OP_FLOCK_THRASH, JITTER_RANGE(MAX_ITERATIONS));
+	order = (enum thrash_order)((unsigned int)rand() % NR_THRASH_ORDERS);
+	phase_split = iter_cap / 2;
 	for (iter = 0; iter < iter_cap; iter++) {
 		struct flock_slot *s = &slots[(unsigned int)rand() % opened];
 		int op;
 		int rc;
 
-		if (s->held) {
-			op = LOCK_UN;
-		} else {
-			/* ~25% LOCK_SH, otherwise LOCK_EX.  Mixing in shared
-			 * locks exercises the SH<->EX upgrade/downgrade
-			 * waitqueue paths in addition to the EX-only fast
-			 * path. */
-			op = (rand() % 4 == 0) ? LOCK_SH : LOCK_EX;
+		switch (order) {
+		case ORDER_HOLD_BATCH:
+			/* Phase 1: only acquire on !held slots; phase 2:
+			 * only release on held slots.  Random fd picks make
+			 * phase 2's release order a shuffle of acquire
+			 * order, so wakeups don't follow the FIFO waiter
+			 * sequence. */
+			if (iter < phase_split) {
+				if (s->held)
+					continue;
+				op = (rand() % 4 == 0) ? LOCK_SH : LOCK_EX;
+				if (rand() % 4 == 0)
+					op |= LOCK_NB;
+			} else {
+				if (!s->held)
+					continue;
+				op = LOCK_UN;
+			}
+			break;
+		case ORDER_LOOSE:
+			/* Don't gate on s->held.  1/8 LOCK_UN regardless of
+			 * state hits the no-op release fast path when
+			 * !held; LOCK_EX on a held slot exercises the
+			 * conversion path (flock_lock_inode replacing the
+			 * existing lock without going through the wait
+			 * queue). */
+			if (rand() % 8 == 0) {
+				op = LOCK_UN;
+			} else {
+				op = (rand() % 4 == 0) ? LOCK_SH : LOCK_EX;
+				if (rand() % 4 == 0)
+					op |= LOCK_NB;
+			}
+			break;
+		case ORDER_ALTERNATE:
+		default:
+			if (s->held) {
+				op = LOCK_UN;
+			} else {
+				/* ~25% LOCK_SH, otherwise LOCK_EX.  Mixing
+				 * in shared locks exercises the SH<->EX
+				 * upgrade/downgrade waitqueue paths in
+				 * addition to the EX-only fast path. */
+				op = (rand() % 4 == 0) ? LOCK_SH : LOCK_EX;
 
-			/* ~25% non-blocking.  Higher than the pure-variety
-			 * mix because under cross-process contention the
-			 * blocking acquire path can pin the child for the
-			 * full alarm window if every other child is also
-			 * holding LOCK_EX; the LOCK_NB sprinkle keeps the
-			 * loop ticking and exercises the EWOULDBLOCK reject
-			 * path the blocking variant skips. */
-			if (rand() % 4 == 0)
-				op |= LOCK_NB;
+				/* ~25% non-blocking.  Higher than the pure-
+				 * variety mix because under cross-process
+				 * contention the blocking acquire path can
+				 * pin the child for the full alarm window
+				 * if every other child is also holding
+				 * LOCK_EX; the LOCK_NB sprinkle keeps the
+				 * loop ticking and exercises the
+				 * EWOULDBLOCK reject path the blocking
+				 * variant skips. */
+				if (rand() % 4 == 0)
+					op |= LOCK_NB;
+			}
+			break;
 		}
 
 		/* 1-in-RAND_NEGATIVE_RATIO sub the carefully-curated op for
@@ -146,6 +224,13 @@ bool flock_thrash(struct childdata *child)
 		}
 	}
 
+	/* Vary teardown order: half the time close in open order (FIFO),
+	 * the other half shuffled.  Close-driven release walks the per-
+	 * inode list in a different order than the explicit LOCK_UN path,
+	 * and varying that order keeps any latent assumption about close
+	 * sequence honest. */
+	if (rand() % 2 == 0)
+		shuffle_slots(slots, opened);
 	for (i = 0; i < opened; i++)
 		close(slots[i].fd);
 
