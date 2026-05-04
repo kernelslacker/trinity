@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -20,10 +21,26 @@ static const unsigned int cap_versions[] = {
 	_LINUX_CAPABILITY_VERSION_3,
 };
 
+/*
+ * Snapshot of the two capget input args read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect us at a foreign header / data buffer
+ * and forge a clean compare against poisoned memory.
+ */
+struct capget_post_state {
+	unsigned long header;
+	unsigned long data;
+};
+
 /* Fill a __user_cap_header_struct with a valid version and pid. */
 static void sanitise_capget(struct syscallrecord *rec)
 {
 	struct __user_cap_header_struct *hdr;
+	struct capget_post_state *snap;
+
+	rec->post_state = 0;
 
 	hdr = (struct __user_cap_header_struct *) get_writable_address(sizeof(*hdr));
 	hdr->version = RAND_ARRAY(cap_versions);
@@ -31,6 +48,19 @@ static void sanitise_capget(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) hdr;
 	avoid_shared_buffer(&rec->a2, 2 * sizeof(struct __user_cap_data_struct));
+
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buffer pointers, so the memcpy / re-call would touch a foreign
+	 * allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->header = rec->a1;
+	snap->data   = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -55,12 +85,14 @@ static void sanitise_capget(struct syscallrecord *rec)
  *
  * TOCTOU defeat (two buffers worth of it): both the input header and the
  * output data pages are user memory and a sibling thread can scribble
- * either between the original syscall return and our re-issue.  If we
- * re-call with whatever rec->a1's payload happens to hold by then we may
- * resolve a different version/pid combination, get different masks, and
- * report a false divergence; if we read rec->a2 after a sibling scribble
- * we'd compare against poisoned data.  Snapshot BOTH buffers into stack-
- * locals before the re-call.  If the re-call fails, give up rather than
+ * either between the original syscall return and our re-issue.  The two
+ * input args (header, data) are snapshotted at sanitise time into a heap
+ * struct in rec->post_state, so a sibling that scribbles rec->aN between
+ * syscall return and post entry cannot redirect us at a foreign header /
+ * data buffer.  We still snapshot BOTH user buffers' contents into stack-
+ * locals before the re-call (NOT pointing the re-call at the original
+ * data buffer -- a sibling could mutate the user buffer mid-syscall and
+ * forge a clean compare).  If the re-call fails, give up rather than
  * report.  Compare each mask field individually with no early-return so
  * multi-field corruption surfaces in a single sample, but bump the
  * anomaly counter only once per sample.  Sample one in a hundred to stay
@@ -76,6 +108,7 @@ static void sanitise_capget(struct syscallrecord *rec)
  */
 static void post_capget(struct syscallrecord *rec)
 {
+	struct capget_post_state *snap = (struct capget_post_state *) rec->post_state;
 	struct __user_cap_header_struct hdr_first, hdr_recall;
 	struct __user_cap_data_struct data_first[2] = { { 0 } };
 	struct __user_cap_data_struct data_recall[2] = { { 0 } };
@@ -83,37 +116,57 @@ static void post_capget(struct syscallrecord *rec)
 	int diverged = 0;
 	unsigned int i;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_capget: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0 || rec->a2 == 0)
-		return;
+	if (snap->header == 0 || snap->data == 0)
+		goto out_free;
 
 	{
-		void *hdr_p = (void *)(unsigned long) rec->a1;
-		void *data_p = (void *)(unsigned long) rec->a2;
+		void *hdr_p = (void *)(unsigned long) snap->header;
+		void *data_p = (void *)(unsigned long) snap->data;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner pointer
+		 * fields.  Reject pid-scribbled header/data before deref.
+		 */
 		if (looks_like_corrupted_ptr(hdr_p) ||
 		    looks_like_corrupted_ptr(data_p)) {
-			outputerr("post_capget: rejected suspicious header=%p dataptr=%p (pid-scribbled?)\n",
+			outputerr("post_capget: rejected suspicious header=%p dataptr=%p (post_state-scribbled?)\n",
 				  hdr_p, data_p);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&hdr_first, (void *)(unsigned long) rec->a1, sizeof(hdr_first));
+	memcpy(&hdr_first, (void *)(unsigned long) snap->header, sizeof(hdr_first));
 	slots = (hdr_first.version == _LINUX_CAPABILITY_VERSION_1) ? 1 : 2;
-	memcpy(data_first, (void *)(unsigned long) rec->a2,
+	memcpy(data_first, (void *)(unsigned long) snap->data,
 	       slots * sizeof(struct __user_cap_data_struct));
 
 	hdr_recall = hdr_first;
 	if (syscall(SYS_capget, &hdr_recall, data_recall) != 0)
-		return;
+		goto out_free;
 
 	if (hdr_first.version != hdr_recall.version)
 		diverged = 1;
@@ -126,7 +179,7 @@ static void post_capget(struct syscallrecord *rec)
 	}
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	if (slots == 2) {
 		output(0,
@@ -158,6 +211,9 @@ static void post_capget(struct syscallrecord *rec)
 
 	__atomic_add_fetch(&shm->stats.capget_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_capget = {
