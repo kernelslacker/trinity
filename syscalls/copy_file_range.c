@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "tables.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long copy_file_range_flags[] = {
 	0,	// so far, no flags, MBZ.
@@ -28,6 +29,16 @@ static void sanitise_copy_file_range(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) off_out;
 }
 
+static void post_copy_file_range(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < 0 || (size_t) ret > (size_t) rec->a5)
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_copy_file_range = {
 	.name = "copy_file_range",
 	.num_args = 6,
@@ -35,6 +46,7 @@ struct syscallentry syscall_copy_file_range = {
 	.argname = { [0] = "fd_in", [1] = "off_in", [2] = "fd_out", [3] = "off_out", [4] = "len", [5] = "flags" },
 	.arg_params[5].list = ARGLIST(copy_file_range_flags),
 	.sanitise = sanitise_copy_file_range,
+	.post = post_copy_file_range,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
