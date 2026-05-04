@@ -4,6 +4,7 @@
  */
 #include <stdlib.h>
 #include <linux/fanotify.h>
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -31,18 +32,109 @@
 #ifndef FAN_ONDIR
 #define FAN_ONDIR		0x40000000
 #endif
+#ifndef FAN_FS_ERROR
+#define FAN_FS_ERROR		0x00008000
+#endif
+#ifndef FAN_PRE_ACCESS
+#define FAN_PRE_ACCESS		0x00100000
+#endif
+#ifndef FAN_MNT_ATTACH
+#define FAN_MNT_ATTACH		0x01000000
+#endif
+#ifndef FAN_MNT_DETACH
+#define FAN_MNT_DETACH		0x02000000
+#endif
+
+/* Modifier flag bits added in newer kernels. */
+#ifndef FAN_MARK_FILESYSTEM
+#define FAN_MARK_FILESYSTEM	0x00000100
+#endif
+#ifndef FAN_MARK_EVICTABLE
+#define FAN_MARK_EVICTABLE	0x00000200
+#endif
+#ifndef FAN_MARK_IGNORE
+#define FAN_MARK_IGNORE		0x00000400
+#endif
+#ifndef FAN_MARK_INODE
+#define FAN_MARK_INODE		0x00000000
+#endif
+#ifndef FAN_MARK_MNTNS
+#define FAN_MARK_MNTNS		0x00000110
+#endif
+
+#ifndef FAN_REPORT_FID
+#define FAN_REPORT_FID		0x00000200
+#endif
+#ifndef FAN_CLASS_NOTIF
+#define FAN_CLASS_NOTIF		0x00000000
+#endif
+#ifndef FAN_CLASS_CONTENT
+#define FAN_CLASS_CONTENT	0x00000004
+#endif
+#ifndef FAN_CLASS_PRE_CONTENT
+#define FAN_CLASS_PRE_CONTENT	0x00000008
+#endif
+
+/* Mask covering every object-type bit used by Group C choices. */
+#define FAN_MARK_OBJTYPE_MASK	(FAN_MARK_MOUNT | FAN_MARK_FILESYSTEM)
+/* Bits that encode the init-fd's class (NOTIF / CONTENT / PRE_CONTENT). */
+#define FAN_CLASS_MASK		(FAN_CLASS_CONTENT | FAN_CLASS_PRE_CONTENT)
 
 static void sanitise_fanotify_mark(struct syscallrecord *rec)
 {
-	static const unsigned int flagvals[] = {
-		FAN_MARK_DONT_FOLLOW, FAN_MARK_ONLYDIR, FAN_MARK_MOUNT,
-		FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORED_SURV_MODIFY,
+	/* Group A: free-mix modifiers (any subset is legal together). */
+	static const unsigned int free_mix[] = {
+		FAN_MARK_DONT_FOLLOW, FAN_MARK_ONLYDIR,
+		FAN_MARK_EVICTABLE, FAN_MARK_IGNORED_SURV_MODIFY,
 	};
+	/* Group B: ignore semantics — at most one (kernel EINVALs combos). */
+	static const unsigned int ignore_choice[] = {
+		FAN_MARK_IGNORED_MASK, FAN_MARK_IGNORE,
+	};
+	/* Group C: object-type — pick one (low-nibble + bit 8 are exclusive). */
+	static const unsigned int objtype_choice[] = {
+		FAN_MARK_INODE, FAN_MARK_MOUNT,
+		FAN_MARK_FILESYSTEM, FAN_MARK_MNTNS,
+	};
+	struct fd_hash_entry *entry;
+	unsigned int chosen_objtype;
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(flagvals); i++) {
+	for (i = 0; i < ARRAY_SIZE(free_mix); i++) {
 		if (RAND_BOOL())
-			rec->a2 |= flagvals[i];
+			rec->a2 |= free_mix[i];
+	}
+
+	if (RAND_BOOL())
+		rec->a2 |= ignore_choice[rand() % ARRAY_SIZE(ignore_choice)];
+
+	chosen_objtype = objtype_choice[rand() % ARRAY_SIZE(objtype_choice)];
+	rec->a2 = (rec->a2 & ~(unsigned long)FAN_MARK_OBJTYPE_MASK) | chosen_objtype;
+
+	/* FAN_MNT_ATTACH/DETACH are only legal when the mark is on a mntns. */
+	if (chosen_objtype == FAN_MARK_MNTNS) {
+		if (RAND_BOOL())
+			rec->a3 |= FAN_MNT_ATTACH;
+		if (RAND_BOOL())
+			rec->a3 |= FAN_MNT_DETACH;
+	}
+
+	/*
+	 * FAN_FS_ERROR / FAN_PRE_ACCESS are gated on the init-fd's class.
+	 * Look up the fanotify fd in a1 and read back the flags it was
+	 * opened with so we only OR in valid combinations.
+	 */
+	entry = fd_hash_lookup((int)rec->a1);
+	if (entry != NULL && entry->type == OBJ_FD_FANOTIFY && entry->obj != NULL) {
+		unsigned int init_flags = entry->obj->fanotifyobj.flags;
+		unsigned int class_bits = init_flags & FAN_CLASS_MASK;
+
+		if (class_bits == FAN_CLASS_NOTIF &&
+		    (init_flags & FAN_REPORT_FID) && RAND_BOOL())
+			rec->a3 |= FAN_FS_ERROR;
+
+		if (class_bits == FAN_CLASS_PRE_CONTENT && RAND_BOOL())
+			rec->a3 |= FAN_PRE_ACCESS;
 	}
 }
 
