@@ -363,7 +363,6 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		rec->a3 = 4;
 		break;
 
-	case BPF_OBJ_PIN:
 	case BPF_OBJ_GET:
 		attr->map_fd = get_rand_bpf_fd();
 		rec->a3 = 32;
@@ -690,7 +689,7 @@ static void post_bpf(struct syscallrecord *rec)
 static unsigned long bpf_cmds[] = {
 	BPF_MAP_CREATE, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM,
 	BPF_MAP_DELETE_ELEM, BPF_MAP_GET_NEXT_KEY,
-	BPF_PROG_LOAD, BPF_OBJ_PIN, BPF_OBJ_GET,
+	BPF_PROG_LOAD, BPF_OBJ_GET,
 	BPF_PROG_ATTACH, BPF_PROG_DETACH, BPF_PROG_TEST_RUN,
 	BPF_PROG_GET_NEXT_ID, BPF_MAP_GET_NEXT_ID,
 	BPF_PROG_GET_FD_BY_ID, BPF_MAP_GET_FD_BY_ID,
