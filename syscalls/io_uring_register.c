@@ -1,6 +1,7 @@
 /*
  *   SYSCALL_DEFINE4(io_uring_register, unsigned int, fd, unsigned int, opcode, void __user *, arg, unsigned int, nr_args)
  */
+#include <limits.h>
 #include <string.h>
 #include <linux/io_uring.h>
 #include "arch.h"
@@ -267,6 +268,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 {
 	struct io_uring_register_post_state *snap =
 		(struct io_uring_register_post_state *) rec->post_state;
+	unsigned long ret = rec->retval;
 
 	rec->a3 = 0;
 
@@ -283,6 +285,70 @@ static void post_io_uring_register(struct syscallrecord *rec)
 			  "post_state=%p (pid-scribbled?)\n", snap);
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * Per-opcode STRONG-VAL.  io_uring_register(2) is a multiplexer;
+	 * each opcode has its own retval shape but every opcode shares the
+	 * same -1UL failure return via the syscall return path.  On a
+	 * non-failure return, three families of shape exist:
+	 *
+	 *   IORING_REGISTER_RING_FDS / IORING_UNREGISTER_RING_FDS: kernel
+	 *     loops over the user-supplied ring-fd array in
+	 *     fs/io_uring/register.c::io_ringfd_register /
+	 *     io_ringfd_unregister and returns the loop count, bounded by
+	 *     nr_args (rec->a4).  Anything > nr_args is a structural
+	 *     regression: torn write of the count or -errno leaking through
+	 *     the success return slot.
+	 *
+	 *   IORING_REGISTER_PERSONALITY: kernel allocates a personality id
+	 *     via xa_alloc_cyclic() with XA_LIMIT(1, INT_MAX) and returns
+	 *     the new id.  0 or any value > INT_MAX would be a structural
+	 *     regression -- xa_alloc_cyclic() never returns 0 with that
+	 *     limit, and ids do not legitimately span the high half of an
+	 *     unsigned long.
+	 *
+	 *   All other emitted opcodes (BUFFERS / FILES / EVENTFD /
+	 *     EVENTFD_ASYNC / FILES_UPDATE / BUFFERS_UPDATE / IOWQ_AFF /
+	 *     IOWQ_MAX_WORKERS / FILE_ALLOC_RANGE / SYNC_CANCEL / NAPI /
+	 *     PROBE / RESTRICTIONS / ENABLE_RINGS / *_UPDATE / etc.):
+	 *     kernel returns 0 on success.  Any non-zero, non-(-1UL) value
+	 *     is a sign-extension tear at the syscall ABI boundary or
+	 *     -errno leaking through the success slot.  This default is
+	 *     fail-soft for any future opcode the kernel adds: legitimate
+	 *     0/-1UL still passes; only a spurious mid-range retval trips.
+	 *
+	 * Validate using the snapshot's opcode (not rec->a2) so a sibling
+	 * scribble of rec->a2 cannot misroute the dispatch.  -1UL fall-
+	 * through is intentional -- every opcode's documented failure path
+	 * lands there.  The buffer cleanup tail below runs unchanged on
+	 * every retval shape so heap allocations are released either way.
+	 */
+	if (ret != (unsigned long)-1L) {
+		switch (snap->opcode) {
+		case IORING_REGISTER_RING_FDS:
+		case IORING_UNREGISTER_RING_FDS:
+			if (ret > rec->a4) {
+				outputerr("post_io_uring_register: opcode=%u rejected count retval=0x%lx > nr_args=%lu\n",
+					  snap->opcode, ret, rec->a4);
+				post_handler_corrupt_ptr_bump(rec, NULL);
+			}
+			break;
+		case IORING_REGISTER_PERSONALITY:
+			if (ret < 1 || ret > (unsigned long) INT_MAX) {
+				outputerr("post_io_uring_register: opcode=PERSONALITY rejected id retval=0x%lx outside [1, INT_MAX]\n",
+					  ret);
+				post_handler_corrupt_ptr_bump(rec, NULL);
+			}
+			break;
+		default:
+			if (ret != 0) {
+				outputerr("post_io_uring_register: opcode=%u rejected RZS retval=0x%lx (expected 0 or -1UL)\n",
+					  snap->opcode, ret);
+				post_handler_corrupt_ptr_bump(rec, NULL);
+			}
+			break;
+		}
 	}
 
 	/*
