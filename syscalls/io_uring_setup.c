@@ -6,6 +6,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 #ifndef IORING_SETUP_IOPOLL
 #define IORING_SETUP_IOPOLL		(1U << 0)
@@ -97,14 +100,31 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 		params->sq_thread_idle = RAND_RANGE(100, 10000);
 
 	rec->a2 = (unsigned long) params;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall before post_io_uring_setup() runs. */
+	rec->post_state = (unsigned long) params;
 }
 
 static void post_io_uring_setup(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
+	void *params = (void *) rec->post_state;
 
-	deferred_freeptr(&rec->a2);
+	if (params == NULL)
+		goto check_ret;
 
+	if (looks_like_corrupted_ptr(params)) {
+		outputerr("post_io_uring_setup: rejected suspicious params=%p (pid-scribbled?)\n", params);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		goto check_ret;
+	}
+
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
+
+check_ret:
 	if ((long)rec->retval < 0)
 		return;
 

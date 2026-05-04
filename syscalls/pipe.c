@@ -6,15 +6,37 @@
 #include <fcntl.h>
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 static void sanitise_pipe(struct syscallrecord *rec)
 {
-	rec->a1 = (unsigned long) malloc(sizeof(int) * 2);
+	void *p = malloc(sizeof(int) * 2);
+
+	rec->a1 = (unsigned long) p;
+	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
+	 * syscall before post_pipe() runs. */
+	rec->post_state = (unsigned long) p;
 }
 
 static void post_pipe(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a1);
+	void *fildes = (void *) rec->post_state;
+
+	if (fildes == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(fildes)) {
+		outputerr("post_pipe: rejected suspicious fildes=%p (pid-scribbled?)\n", fildes);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a1 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a1 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_pipe = {
@@ -36,7 +58,12 @@ static unsigned long pipe2_flags[] = {
 
 static void sanitise_pipe2(struct syscallrecord *rec)
 {
-	rec->a1 = (unsigned long) malloc(sizeof(int) * 2);
+	void *p = malloc(sizeof(int) * 2);
+
+	rec->a1 = (unsigned long) p;
+	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
+	 * syscall before post_pipe() runs. */
+	rec->post_state = (unsigned long) p;
 }
 
 struct syscallentry syscall_pipe2 = {

@@ -8,6 +8,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 static const unsigned long poll_events[] = {
@@ -32,11 +35,28 @@ static void sanitise_poll(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) pollfd;
 	rec->a2 = num_fds;
+	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
+	 * syscall before post_poll() runs. */
+	rec->post_state = (unsigned long) pollfd;
 }
 
 static void post_poll(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a1);
+	void *ufds = (void *) rec->post_state;
+
+	if (ufds == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(ufds)) {
+		outputerr("post_poll: rejected suspicious ufds=%p (pid-scribbled?)\n", ufds);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a1 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a1 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_poll = {

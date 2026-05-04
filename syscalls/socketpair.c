@@ -6,6 +6,9 @@
 #include "net.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 static void sanitise_socketpair(struct syscallrecord *rec)
 {
@@ -19,11 +22,28 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) malloc(sizeof(int) * 2);
 	if (!rec->a4)
 		return;
+	/* Snapshot for the post handler -- a4 may be scribbled by a sibling
+	 * syscall before post_socketpair() runs. */
+	rec->post_state = rec->a4;
 }
 
 static void post_socketpair(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a4);
+	void *usockvec = (void *) rec->post_state;
+
+	if (usockvec == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(usockvec)) {
+		outputerr("post_socketpair: rejected suspicious usockvec=%p (pid-scribbled?)\n", usockvec);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a4 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a4 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_socketpair = {

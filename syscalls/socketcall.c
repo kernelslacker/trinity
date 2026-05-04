@@ -12,6 +12,7 @@
 #include "trinity.h"
 #include "compat.h"
 #include "deferred-free.h"
+#include "utils.h"
 
 static int get_random_socket_fd(void)
 {
@@ -178,11 +179,28 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 	socketcallptrs[r].func(args);
 
 	rec->a2 = (unsigned long) args;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall before post_socketcall() runs. */
+	rec->post_state = (unsigned long) args;
 }
 
 static void post_socketcall(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a2);
+	void *args = (void *) rec->post_state;
+
+	if (args == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(args)) {
+		outputerr("post_socketcall: rejected suspicious args=%p (pid-scribbled?)\n", args);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_socketcall = {

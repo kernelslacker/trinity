@@ -8,6 +8,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 /*
  * Build a minimal-but-plausible ELF module image so the kernel gets past
@@ -136,11 +139,29 @@ static void sanitise_init_module(struct syscallrecord *rec)
 
 	/* arg3: uargs — NUL-terminated module parameter string */
 	rec->a3 = (unsigned long) RAND_ARRAY(module_params);
+
+	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
+	 * syscall before post_init_module() runs. */
+	rec->post_state = (unsigned long) buf;
 }
 
 static void post_init_module(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a1);
+	void *umod = (void *) rec->post_state;
+
+	if (umod == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(umod)) {
+		outputerr("post_init_module: rejected suspicious umod=%p (pid-scribbled?)\n", umod);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a1 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a1 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_init_module = {
