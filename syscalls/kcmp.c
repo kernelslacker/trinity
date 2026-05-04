@@ -7,6 +7,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "trinity.h"
 
 static unsigned long kcmp_types[] = {
 	KCMP_FILE, KCMP_VM, KCMP_FILES, KCMP_FS,
@@ -25,6 +26,18 @@ static void sanitise_kcmp(struct syscallrecord *rec)
 	}
 }
 
+static void post_kcmp(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+
+	if (ret > 3)
+		output(0, "kcmp oracle: returned %ld is out of range (must be 0..3 or -1)\n",
+			ret);
+}
+
 struct syscallentry syscall_kcmp = {
 	.name = "kcmp",
 	.group = GROUP_PROCESS,
@@ -33,4 +46,5 @@ struct syscallentry syscall_kcmp = {
 	.argname = { [0] = "pid1", [1] = "pid2", [2] = "type", [3] = "idx1", [4] = "idx2" },
 	.arg_params[2].list = ARGLIST(kcmp_types),
 	.sanitise = sanitise_kcmp,
+	.post = post_kcmp,
 };
