@@ -8,6 +8,7 @@
  * On success add_key() returns the serial number of the key it created or updated.
  * On error, the value -1 will be returned and errno will have been set to an appropriate error.
  */
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <linux/keyctl.h>
@@ -37,10 +38,16 @@ static unsigned long addkey_ringids[] = {
 
 static void post_add_key(struct syscallrecord *rec)
 {
-	if ((long) rec->retval < 0)
-		return;
+	long ret = (long) rec->retval;
 
-	syscall(SYS_keyctl, KEYCTL_INVALIDATE, (long) rec->retval);
+	if (ret <= 0 || ret > INT32_MAX) {
+		if (ret > 0)
+			output(0, "add_key oracle: returned key_serial_t %ld is out of range (must be 1..INT32_MAX)\n",
+				ret);
+		return;
+	}
+
+	syscall(SYS_keyctl, KEYCTL_INVALIDATE, ret);
 }
 
 struct syscallentry syscall_add_key = {
