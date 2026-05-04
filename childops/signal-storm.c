@@ -130,7 +130,7 @@ bool signal_storm(struct childdata *child)
 		int sig = pick_signal();
 
 		if (RAND_BOOL()) {
-			(void)kill(pid, sig);
+			(void)kill(pid, (int)RAND_NEGATIVE_OR(sig));
 			__atomic_add_fetch(&shm->stats.signal_storm_kill,
 					   1, __ATOMIC_RELAXED);
 		} else {
