@@ -1,11 +1,12 @@
 /*
  * SYSCALL_DEFINE3(inotify_add_watch, int, fd, const char __user *, pathname, u32, mask)
  */
+#include <limits.h>
+#include <sys/inotify.h>
+
 #include "sanitise.h"
 #include "compat.h"
 #include "trinity.h"
-
-#include <sys/inotify.h>
 
 static unsigned long inotify_add_watch_masks[] = {
 	IN_ACCESS, IN_MODIFY, IN_ATTRIB, IN_CLOSE_WRITE,
@@ -18,10 +19,16 @@ static unsigned long inotify_add_watch_masks[] = {
 
 static void post_inotify_add_watch(struct syscallrecord *rec)
 {
-	if ((long) rec->retval < 0)
-		return;
+	long ret = (long) rec->retval;
 
-	inotify_rm_watch((int) rec->a1, (int) rec->retval);
+	if (ret < 1 || ret > INT_MAX) {
+		if (ret >= 0)
+			output(0, "inotify_add_watch oracle: returned watch descriptor %ld is out of range (must be 1..INT_MAX)\n",
+				ret);
+		return;
+	}
+
+	inotify_rm_watch((int) rec->a1, (int) ret);
 }
 
 struct syscallentry syscall_inotify_add_watch = {
