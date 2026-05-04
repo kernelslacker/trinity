@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_getgroups(struct syscallrecord *rec)
 {
@@ -34,6 +35,24 @@ static void post_getgroups(struct syscallrecord *rec)
 {
 	FILE *f;
 	char line[8192];
+
+	/*
+	 * Kernel ABI: success retval is the supplementary group count for
+	 * the calling task, a non-negative int capped at NGROUPS_MAX =
+	 * 65536 (linux/posix_types.h). Failure returns -1UL with EFAULT or
+	 * EINVAL on the syscall return path. Anything > NGROUPS_MAX on
+	 * success — or any other "negative" value besides -1UL — is a
+	 * structural ABI regression: a sign-extension tear, a torn read of
+	 * group_info->ngroups, or -errno leaking through the return path.
+	 * Reject before the ONE_IN(100) re-read oracle, which would
+	 * otherwise miss it 99% of the time.
+	 */
+	if (rec->retval != (unsigned long)-1L && rec->retval > 65536UL) {
+		outputerr("post_getgroups: retval %ld outside [0, NGROUPS_MAX] and != -1UL\n",
+			  (long) rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
 
 	if (!ONE_IN(100))
 		return;
