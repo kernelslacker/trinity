@@ -1141,10 +1141,6 @@ enum kcmp_type {
 #define MSG_COPY        040000
 #endif
 
-#ifndef MS_SNAP_STABLE
-#define MS_SNAP_STABLE	(1<<27)
-#endif
-
 #ifndef MS_NOSEC
 #define MS_NOSEC        (1<<28)
 #endif
