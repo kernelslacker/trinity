@@ -7,6 +7,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
 #include "utils.h"
 
 static void sanitise_getsockopt(struct syscallrecord *rec)
@@ -47,11 +48,40 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	lenp = zmalloc(sizeof(*lenp));
 	*lenp = page_size;
 	rec->a5 = (unsigned long) lenp;
+
+	/* Snapshot the optval pointer for the post handler -- a4 may be
+	 * scribbled by a sibling syscall before post_getsockopt() runs,
+	 * leaving a real-but-wrong heap pointer that the corruption guard
+	 * cannot distinguish from the original page-sized output buffer.
+	 * Without the snapshot the post handler frees the wrong allocation,
+	 * leaking ours and corrupting another sanitise routine's live
+	 * buffer.  The lenp slot in a5 is a 4-byte allocation that is not
+	 * walked, only freed; it is left under the existing path. */
+	rec->post_state = rec->a4;
 }
 
 static void post_getsockopt(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a4);
+	void *optval = (void *) rec->post_state;
+
+	if (optval != NULL) {
+		/*
+		 * post_state is private to the post handler, but the whole
+		 * syscallrecord can still be wholesale-stomped, so guard the
+		 * free path against handing a non-heap value to free().
+		 */
+		if (looks_like_corrupted_ptr(optval)) {
+			outputerr("post_getsockopt: rejected suspicious optval=%p "
+				  "(pid-scribbled?)\n", optval);
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			rec->a4 = 0;
+			rec->post_state = 0;
+		} else {
+			rec->a4 = 0;
+			deferred_freeptr(&rec->post_state);
+		}
+	}
+
 	deferred_freeptr(&rec->a5);
 }
 
