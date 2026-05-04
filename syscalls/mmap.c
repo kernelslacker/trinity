@@ -21,6 +21,14 @@
 // need this to actually get MAP_UNINITIALIZED defined
 #define CONFIG_MMAP_ALLOW_UNINITIALIZED
 
+#ifndef MAP_SHARED_VALIDATE
+#define MAP_SHARED_VALIDATE 0x03
+#endif
+
+#ifndef MAP_SYNC
+#define MAP_SYNC 0x080000
+#endif
+
 static void do_anon(struct syscallrecord *rec)
 {
 	/* no fd if anonymous mapping. */
@@ -28,13 +36,18 @@ static void do_anon(struct syscallrecord *rec)
 	rec->a6 = 0;
 }
 
+/*
+ * Type bits live in the low 2 bits of the mmap flags word: exactly one
+ * of MAP_SHARED (0x01), MAP_PRIVATE (0x02), or MAP_SHARED_VALIDATE (0x03).
+ * Picking the type is mutually exclusive — never OR these together.
+ */
 unsigned long mmap_excl_flags[] = {
-	MAP_SHARED, MAP_PRIVATE,
+	MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE,
 };
 
 unsigned long get_rand_mmap_flags(void)
 {
-	unsigned long flags;
+	unsigned long type, flags;
 
 	const unsigned long mmap_flags[] = {
 		MAP_FIXED, MAP_ANONYMOUS, MAP_GROWSDOWN, MAP_DENYWRITE,
@@ -46,9 +59,19 @@ unsigned long get_rand_mmap_flags(void)
 #endif
 	};
 
-	flags = RAND_ARRAY(mmap_excl_flags);
+	type = RAND_ARRAY(mmap_excl_flags);
+	flags = type;
 	if (RAND_BOOL())
 		flags |= set_rand_bitmask(ARRAY_SIZE(mmap_flags), mmap_flags);
+
+	/*
+	 * MAP_SYNC is only accepted when the type bit is MAP_SHARED_VALIDATE.
+	 * MAP_SHARED|MAP_SYNC returns -EOPNOTSUPP and MAP_PRIVATE|MAP_SYNC
+	 * returns -EINVAL, so don't waste calls generating those paths from
+	 * the modifier array — gate MAP_SYNC on the picked type.
+	 */
+	if (type == MAP_SHARED_VALIDATE && RAND_BOOL())
+		flags |= MAP_SYNC;
 
 	return flags;
 }
