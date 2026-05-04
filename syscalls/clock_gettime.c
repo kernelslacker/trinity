@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/syscall.h>
 #include <time.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -19,9 +20,49 @@ static unsigned long clock_ids[] = {
 	CLOCK_MONOTONIC_COARSE, CLOCK_BOOTTIME,
 };
 
+#if defined(SYS_clock_gettime) || defined(__NR_clock_gettime)
+/*
+ * Snapshot of the two clock_gettime input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer or smear the clockid the per-clock invariant set is keyed off.
+ */
+struct clock_gettime_post_state {
+	unsigned long clockid;
+	unsigned long tp;
+};
+#endif
+
 static void sanitise_clock_gettime(struct syscallrecord *rec)
 {
+#if defined(SYS_clock_gettime) || defined(__NR_clock_gettime)
+	struct clock_gettime_post_state *snap;
+
+	rec->post_state = 0;
+#endif
+
 	avoid_shared_buffer(&rec->a2, sizeof(struct timespec));
+
+#if defined(SYS_clock_gettime) || defined(__NR_clock_gettime)
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original tp
+	 * pointer, so the source memcpy would touch a foreign allocation.
+	 * post_state is private to the post handler.  Gated on
+	 * SYS_clock_gettime / __NR_clock_gettime to mirror the .post
+	 * registration -- on systems without the syscall the post handler
+	 * is not registered and a snapshot only the post handler can free
+	 * would leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->clockid = rec->a1;
+	snap->tp      = rec->a2;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 #if defined(SYS_clock_gettime) || defined(__NR_clock_gettime)
@@ -72,25 +113,47 @@ static void sanitise_clock_gettime(struct syscallrecord *rec)
  */
 static void post_clock_gettime(struct syscallrecord *rec)
 {
+	struct clock_gettime_post_state *snap =
+		(struct clock_gettime_post_state *) rec->post_state;
 	struct timespec ts_user;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_clock_gettime: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if (rec->retval != 0)
-		return;
-	if (rec->a2 == 0)
-		return;
+		goto out_free;
+	if (snap->tp == 0)
+		goto out_free;
 
 	{
-		void *tp = (void *)(unsigned long) rec->a2;
+		void *tp = (void *)(unsigned long) snap->tp;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner tp
+		 * pointer field.  Reject pid-scribbled tp before deref.
+		 */
 		if (looks_like_corrupted_ptr(tp)) {
-			outputerr("post_clock_gettime: rejected suspicious tp=%p (pid-scribbled?)\n",
+			outputerr("post_clock_gettime: rejected suspicious tp=%p (post_state-scribbled?)\n",
 				  tp);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
@@ -98,7 +161,7 @@ static void post_clock_gettime(struct syscallrecord *rec)
 	 * Snapshot the user buffer first so a sibling thread can't
 	 * scribble it between the snapshot and the range checks.
 	 */
-	memcpy(&ts_user, (const void *)(unsigned long)rec->a2,
+	memcpy(&ts_user, (const void *)(unsigned long) snap->tp,
 	       sizeof(ts_user));
 
 	if (ts_user.tv_nsec < 0 || ts_user.tv_nsec >= 1000000000) {
@@ -114,6 +177,9 @@ static void post_clock_gettime(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.clock_gettime_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
