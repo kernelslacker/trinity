@@ -63,11 +63,53 @@ static const uint32_t seccomp_ret_actions[] = {
 	SECCOMP_RET_ALLOW,
 };
 
+/*
+ * Snapshot of the dispatch op and the per-op heap pointer the post
+ * handler reads, captured at sanitise time and consumed by the post
+ * handler.  Lives in rec->post_state, a slot the syscall ABI does not
+ * expose, so the post path is immune to a sibling syscall scribbling
+ * rec->a1 (op) or rec->a3 (heap pointer) between the syscall returning
+ * and the post handler running.  The old post handler dispatched off
+ * rec->a1 directly: a flip from SECCOMP_GET_ACTION_AVAIL or
+ * SECCOMP_GET_NOTIF_SIZES into SECCOMP_SET_MODE_FILTER would deref the
+ * smaller allocation as a sock_fprog and reach a wild fprog->filter
+ * free; a flip away from SECCOMP_SET_MODE_FILTER would leak the
+ * sock_fprog and its filter.
+ *
+ * Per-op allocation matrix.  Of the four SECCOMP_* ops, three allocate
+ * a heap buffer that the post handler has to free:
+ *
+ *   SECCOMP_SET_MODE_FILTER  -> struct sock_fprog *
+ *   SECCOMP_GET_ACTION_AVAIL -> uint32_t *
+ *   SECCOMP_GET_NOTIF_SIZES  -> seccomp_notif_sizes-sized buffer
+ *
+ * SECCOMP_SET_MODE_STRICT does not allocate; sanitise leaves
+ * post_state NULL and the post handler returns early on snap == NULL.
+ *
+ * Note: for SECCOMP_SET_MODE_FILTER the post handler also reads
+ * rec->a2 to decide whether SECCOMP_FILTER_FLAG_NEW_LISTENER set the
+ * listener-fd return.  That flag word is a separate scribble vector
+ * from the opcode and is left to a future change -- the worst-case
+ * outcome of a flag scribble there is a wrongly-classified retval (an
+ * extra close() of a non-fd or a missed close() of a real listener
+ * fd), not a UAF.
+ */
+struct seccomp_post_state {
+	unsigned int op;
+	void *heap;
+};
+
 static void sanitise_seccomp(struct syscallrecord *rec)
 {
+	struct seccomp_post_state *snap;
+	void *heap = NULL;
+
+	rec->post_state = 0;
+
 	if (rec->a1 == SECCOMP_SET_MODE_STRICT) {
 		rec->a2 = 0;
 		rec->a3 = 0;
+		return;
 	}
 
 	if (rec->a1 == SECCOMP_SET_MODE_FILTER) {
@@ -82,9 +124,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 
 		bpf_gen_seccomp(&addr, &len);
 		rec->a3 = (unsigned long) addr;
-		/* Snapshot for the post handler -- a3 may be scribbled by a
-		 * sibling syscall before post_seccomp() runs. */
-		rec->post_state = (unsigned long) addr;
+		heap = addr;
 #endif
 	}
 
@@ -98,7 +138,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		*action = seccomp_ret_actions[rand() % ARRAY_SIZE(seccomp_ret_actions)];
 		rec->a2 = 0;
 		rec->a3 = (unsigned long) action;
-		rec->post_state = (unsigned long) action;
+		heap = action;
 	}
 
 	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES) {
@@ -110,29 +150,65 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 
 		rec->a2 = 0;
 		rec->a3 = (unsigned long) sizes;
-		rec->post_state = (unsigned long) sizes;
+		heap = sizes;
+	}
+
+	/*
+	 * Snapshot the op alongside the heap pointer.  rec->a1 (op) and
+	 * rec->a3 (heap) are both ABI-exposed; the old post handler
+	 * dispatched off rec->a1 directly and a sibling scribble would
+	 * either leak the sock_fprog or coerce the smaller GET_*
+	 * allocation into being treated as one.
+	 */
+	if (heap != NULL) {
+		snap = zmalloc(sizeof(*snap));
+		snap->op = rec->a1;
+		snap->heap = heap;
+		rec->post_state = (unsigned long) snap;
 	}
 }
 
 static void post_seccomp(struct syscallrecord *rec)
 {
-#ifdef USE_BPF
-	if (rec->a1 == SECCOMP_SET_MODE_FILTER && rec->post_state) {
-		struct sock_fprog *fprog = (struct sock_fprog *) rec->post_state;
+	struct seccomp_post_state *snap = (struct seccomp_post_state *) rec->post_state;
 
-		/*
-		 * Even though post_state is private to the post handler, the
-		 * whole syscallrecord can still be wholesale-stomped (e.g. by
-		 * a child reusing the slot), so keep the corruption guard.
-		 */
-		if (looks_like_corrupted_ptr(fprog)) {
-			outputerr("post_seccomp: rejected suspicious fprog=%p "
-				  "(pid-scribbled?)\n", fprog);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
-			rec->a3 = 0;
-			rec->post_state = 0;
-			return;
-		}
+	rec->a3 = 0;
+
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_seccomp: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Defense in depth: if something corrupted the snapshot itself,
+	 * the inner heap pointer may no longer reference our allocation.
+	 * snap is only allocated when a heap pointer was paired with it,
+	 * so a NULL here is itself corruption -- the < 0x10000 band of
+	 * looks_like_corrupted_ptr() catches it without a separate guard.
+	 */
+	if (looks_like_corrupted_ptr(snap->heap)) {
+		outputerr("post_seccomp: rejected suspicious snap heap=%p (post_state-scribbled?)\n",
+			  snap->heap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
+		return;
+	}
+
+	switch (snap->op) {
+#ifdef USE_BPF
+	case SECCOMP_SET_MODE_FILTER: {
+		struct sock_fprog *fprog = (struct sock_fprog *) snap->heap;
 
 		/* When SECCOMP_FILTER_FLAG_NEW_LISTENER is set, a successful
 		 * SECCOMP_SET_MODE_FILTER returns a notification fd. */
@@ -141,19 +217,17 @@ static void post_seccomp(struct syscallrecord *rec)
 			close((int)rec->retval);
 
 		free(fprog->filter);
-		rec->a3 = 0;
-		deferred_freeptr(&rec->post_state);
+		deferred_free_enqueue(fprog, NULL);
+		break;
 	}
 #endif
-	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL && rec->post_state) {
-		rec->a3 = 0;
-		deferred_freeptr(&rec->post_state);
+	case SECCOMP_GET_ACTION_AVAIL:
+	case SECCOMP_GET_NOTIF_SIZES:
+		deferred_free_enqueue(snap->heap, NULL);
+		break;
 	}
 
-	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES && rec->post_state) {
-		rec->a3 = 0;
-		deferred_freeptr(&rec->post_state);
-	}
+	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long seccomp_ops[] = {

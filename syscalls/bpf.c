@@ -267,9 +267,29 @@ static unsigned long bpf_attach_types[] = {
 	BPF_TRACE_FSESSION,
 };
 
+/*
+ * Snapshot of the dispatch cmd and the heap-allocated union bpf_attr
+ * the post handler reads, captured at sanitise time and consumed by the
+ * post handler.  Lives in rec->post_state, a slot the syscall ABI does
+ * not expose, so the post path is immune to a sibling syscall scribbling
+ * rec->a1 (the cmd) or rec->a2 (the attr pointer) between the syscall
+ * returning and the post handler running.  The old post handler
+ * dispatched off rec->a1 directly: a sibling scribble of the cmd
+ * between syscall return and post entry would steer object-pool seeding
+ * and the BPF_PROG_LOAD instruction-buffer free into the wrong arms,
+ * misclassifying a fresh map fd as a prog fd (or vice versa) and
+ * silently leaking the program insns.
+ */
+struct bpf_post_state {
+	unsigned int cmd;
+	union bpf_attr *attr;
+};
+
 static void sanitise_bpf(struct syscallrecord *rec)
 {
+	struct bpf_post_state *snap;
 	union bpf_attr *attr;
+	unsigned int cmd = rec->a1;
 	unsigned long bpf_map_types[] = {
 		BPF_MAP_TYPE_HASH, BPF_MAP_TYPE_ARRAY,
 		BPF_MAP_TYPE_PROG_ARRAY, BPF_MAP_TYPE_PERF_EVENT_ARRAY,
@@ -293,15 +313,12 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		BPF_MAP_TYPE_INSN_ARRAY,
 	};
 
+	rec->post_state = 0;
+
 	attr = zmalloc(sizeof(union bpf_attr));
 	rec->a2 = (unsigned long) attr;
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall before post_bpf() runs, leaving a real-but-wrong heap
-	 * pointer that the corruption guard cannot distinguish from the
-	 * original union bpf_attr. */
-	rec->post_state = (unsigned long) attr;
 
-	switch (rec->a1) {
+	switch (cmd) {
 	case BPF_MAP_CREATE:
 		attr->map_type = RAND_ARRAY(bpf_map_types);
 		attr->key_size = rand() % 1024;
@@ -469,12 +486,33 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		rec->a3 = sizeof(union bpf_attr);
 		break;
 	}
+
+	/*
+	 * Snapshot the cmd alongside the heap pointer.  rec->a1 (cmd) and
+	 * rec->a2 (attr) are both ABI-exposed and a sibling syscall can
+	 * scribble either between syscall return and post entry; the old
+	 * post handler dispatched off rec->a1 directly, so a flip from a
+	 * pool-seeding cmd to BPF_PROG_LOAD would skip the insn-buffer free
+	 * and a flip in the other direction would dereference attr fields
+	 * that bpf_prog_load() never wrote.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->cmd = cmd;
+	snap->attr = attr;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_bpf(struct syscallrecord *rec)
 {
-	union bpf_attr *attr = (union bpf_attr *) rec->post_state;
+	struct bpf_post_state *snap = (struct bpf_post_state *) rec->post_state;
+	union bpf_attr *attr;
+	unsigned int cmd;
 	int fd = rec->retval;
+
+	rec->a2 = 0;
+
+	if (snap == NULL)
+		return;
 
 	/*
 	 * post_state is private to the post handler and is not exposed to
@@ -483,16 +521,34 @@ static void post_bpf(struct syscallrecord *rec)
 	 * (e.g. by a child reusing the slot), so keep the corruption guard
 	 * as a backstop.
 	 */
-	if (looks_like_corrupted_ptr(attr)) {
-		outputerr("post_bpf: rejected suspicious attr=%p (pid-scribbled?)\n",
-			  attr);
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_bpf: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
-		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
-	switch (rec->a1) {
+	/*
+	 * Defense in depth: if something corrupted the snapshot itself,
+	 * the inner attr pointer may no longer reference our heap
+	 * allocation.  attr is always allocated by sanitise (no opcode
+	 * skips the zmalloc), so NULL here is itself corruption -- the
+	 * < 0x10000 band of looks_like_corrupted_ptr() catches it without
+	 * a separate NULL guard.
+	 */
+	if (looks_like_corrupted_ptr(snap->attr)) {
+		outputerr("post_bpf: rejected suspicious snap attr=%p (post_state-scribbled?)\n",
+			  snap->attr);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
+		return;
+	}
+
+	cmd = snap->cmd;
+	attr = snap->attr;
+
+	switch (cmd) {
 	case BPF_MAP_CREATE:
 		if (fd >= 0) {
 			struct object *obj = alloc_object();
@@ -604,7 +660,7 @@ static void post_bpf(struct syscallrecord *rec)
 	 * non-fd commands return 0 for success, and closing fd 0 would
 	 * destroy stdin. */
 	if (fd >= 0) {
-		switch (rec->a1) {
+		switch (cmd) {
 		case BPF_MAP_CREATE:
 		case BPF_PROG_LOAD:
 		case BPF_MAP_GET_FD_BY_ID:
@@ -627,7 +683,7 @@ static void post_bpf(struct syscallrecord *rec)
 		}
 	}
 
-	rec->a2 = 0;
+	deferred_free_enqueue(attr, NULL);
 	deferred_freeptr(&rec->post_state);
 }
 
