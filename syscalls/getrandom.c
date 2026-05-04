@@ -5,6 +5,7 @@
 #include "maps.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 #ifndef GRND_NONBLOCK
 #define GRND_NONBLOCK  0x0001
@@ -26,6 +27,16 @@ static unsigned long getrandom_flags[] = {
 	GRND_NONBLOCK, GRND_RANDOM, GRND_INSECURE,
 };
 
+static void post_getrandom(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < 0 || (size_t) ret > (size_t) rec->a2)
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_getrandom = {
 	.name = "getrandom",
 	.num_args = 3,
@@ -33,5 +44,6 @@ struct syscallentry syscall_getrandom = {
 	.argname = { [0] = "buf", [1] = "count", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(getrandom_flags),
 	.sanitise = sanitise_getrandom,
+	.post = post_getrandom,
 	.group = GROUP_PROCESS,
 };
