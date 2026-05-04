@@ -104,14 +104,34 @@ struct syscallrecord;
 bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p);
 
 /*
+ * Variant that additionally records @caller_pc into the deferred-free
+ * sub-attribution ring on a positive (rec==NULL) result.  Use this from
+ * the rec==NULL site inside deferred_free_enqueue so the dump can break
+ * the deferred-free pseudo-handler row down by call site; pass
+ * __builtin_return_address(0) so the recorded PC identifies the caller
+ * of deferred_free_enqueue rather than deferred_free_enqueue itself.
+ * The plain looks_like_corrupted_ptr() above is a thin wrapper that
+ * calls this with caller_pc=NULL -- syscall post-handler callers do
+ * not need PC attribution, the (nr, do32bit) row already names them.
+ */
+bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
+				 void *caller_pc);
+
+/*
  * Bump the post_handler_corrupt_ptr counter and record per-handler
  * attribution.  Use directly only at sites that detect corruption via a
  * mechanism other than looks_like_corrupted_ptr (e.g. the alloc-track
  * ring miss inside deferred_free_enqueue) -- shape-heuristic callers
  * should go through looks_like_corrupted_ptr() above, which calls this
  * internally on a positive result.  rec==NULL for non-syscall callers.
+ *
+ * @caller_pc, when non-NULL on the rec==NULL path, additionally feeds a
+ * caller-PC sub-attribution ring so the deferred-free pseudo-handler
+ * row of the per-handler dump can be broken down by call site.  Pass
+ * NULL when caller-site attribution is irrelevant (rec!=NULL paths
+ * already get per-syscall attribution) or unavailable.
  */
-void post_handler_corrupt_ptr_bump(struct syscallrecord *rec);
+void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc);
 
 /*
  * Cache the [heap] extent from /proc/self/maps.  Call once before

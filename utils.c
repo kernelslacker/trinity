@@ -1044,7 +1044,52 @@ static void corrupt_ptr_attr_record(unsigned int nr, bool do32bit)
 	unlock(&shm->stats.corrupt_ptr_attr_lock);
 }
 
-void post_handler_corrupt_ptr_bump(struct syscallrecord *rec)
+/*
+ * Record a caller PC into the deferred-free sub-attribution ring.
+ * Same eviction policy as corrupt_ptr_attr_record: bump the matching
+ * slot if present, otherwise displace the lowest-count slot.  The lock
+ * is held across both the search and the eviction so a concurrent
+ * insertion cannot lose a bump.  Skipped when pc==NULL -- rec!=NULL
+ * post-handler callers do not need PC attribution because the
+ * (nr, do32bit) row already identifies them.
+ */
+static void corrupt_ptr_pc_record(void *pc)
+{
+	struct corrupt_ptr_pc_entry *ring = shm->stats.corrupt_ptr_pc;
+	unsigned int i, victim;
+	unsigned long victim_count;
+
+	if (pc == NULL)
+		return;
+
+	lock(&shm->stats.corrupt_ptr_pc_lock);
+
+	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
+		if (ring[i].count != 0 && ring[i].pc == pc) {
+			ring[i].count++;
+			unlock(&shm->stats.corrupt_ptr_pc_lock);
+			return;
+		}
+	}
+
+	victim = 0;
+	victim_count = ring[0].count;
+	for (i = 1; i < CORRUPT_PTR_PC_SLOTS; i++) {
+		if (ring[i].count < victim_count) {
+			victim = i;
+			victim_count = ring[i].count;
+		}
+		if (victim_count == 0)
+			break;
+	}
+
+	ring[victim].pc = pc;
+	ring[victim].count = victim_count + 1;
+
+	unlock(&shm->stats.corrupt_ptr_pc_lock);
+}
+
+void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc)
 {
 	unsigned int nr;
 	bool do32bit;
@@ -1057,6 +1102,7 @@ void post_handler_corrupt_ptr_bump(struct syscallrecord *rec)
 	} else {
 		nr = CORRUPT_PTR_ATTR_NR_NONE;
 		do32bit = false;
+		corrupt_ptr_pc_record(caller_pc);
 	}
 	corrupt_ptr_attr_record(nr, do32bit);
 }
@@ -1089,7 +1135,8 @@ static const char *corrupt_ptr_label(unsigned long v)
  */
 #define CORRUPT_PTR_SAMPLE_INTERVAL	100
 
-bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
+bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
+				 void *caller_pc)
 {
 	unsigned long v = (unsigned long) p;
 	unsigned long n;
@@ -1097,7 +1144,7 @@ bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
 	if (v >= 0x10000 && v < (1UL << 47) && (v & 0x7) == 0)
 		return false;
 
-	post_handler_corrupt_ptr_bump(rec);
+	post_handler_corrupt_ptr_bump(rec, caller_pc);
 
 	/*
 	 * Sample every CORRUPT_PTR_SAMPLE_INTERVALth rejection.  Counter
@@ -1124,6 +1171,11 @@ bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
 				       pcbuf, sizeof(pcbuf)));
 	}
 	return true;
+}
+
+bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
+{
+	return looks_like_corrupted_ptr_pc(rec, p, NULL);
 }
 
 /*
