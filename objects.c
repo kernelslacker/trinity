@@ -367,7 +367,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		 * lands inside a glibc-reclaimed chunk.
 		 *
 		 * Routing the old container through deferred_free_enqueue()
-		 * gives it the same 5-50 syscall (effective 40-400 with
+		 * gives it the same 5-50 syscall (effective 80-800 with
 		 * DEFERRED_TICK_BATCH) TTL the obj struct frees already
 		 * enjoy via release_obj() above.  That is far longer than
 		 * any in-flight head->array reader's window, and closes the
