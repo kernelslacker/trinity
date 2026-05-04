@@ -65,23 +65,98 @@ static const int safe_signals[] = {
 #define MAX_TARGETS		4
 #define MAX_ITERATIONS		32
 
-static int pick_signal(void)
+/*
+ * Per-invocation burst ordering.  Baseline MIXED draws (target, mode,
+ * sig) independently each iteration; the other orderings cluster
+ * deliveries to push specific per-task pending-queue shapes the
+ * high-entropy uniform draw can't reach.
+ *
+ *   SAME_TARGET_BURST: K (2-8) signals at one target, then move on
+ *     -> grows __sigqueue / shared_pending depth on a single task.
+ *   MODE_GROUPED: all-kill burst then all-sigqueue burst per target
+ *     -> exercises kill -> sigqueue transition on the pending queue.
+ *   CATALOG_RESTRICTED: whole burst is RT-only or standard-only
+ *     -> RT-only hits the queued-RT siginfo path; standard-only hits
+ *        the bitmap-collapse path where back-to-back identical
+ *        deliveries coalesce instead of queueing one entry each.
+ */
+enum storm_order {
+	ORDER_MIXED,
+	ORDER_SAME_TARGET_BURST,
+	ORDER_MODE_GROUPED,
+	ORDER_CATALOG_RESTRICTED,
+	NR_STORM_ORDERS,
+};
+
+enum catalog_mode {
+	CATALOG_ANY,
+	CATALOG_RT_ONLY,
+	CATALOG_STD_ONLY,
+};
+
+static int pick_signal_in(enum catalog_mode mode)
 {
-	/* ~25%: real-time signal.  rt_sigqueueinfo / dequeue paths are
-	 * meaningfully different from the legacy signal queue, so bias
-	 * toward them here. */
-	if (rand() % 4 == 0) {
+	/* CATALOG_ANY: ~25% RT bias, matching the original mix.
+	 * rt_sigqueueinfo / dequeue paths are meaningfully different
+	 * from the legacy signal queue. */
+	if (mode == CATALOG_RT_ONLY ||
+	    (mode == CATALOG_ANY && rand() % 4 == 0)) {
 		int span = SIGRTMAX - SIGRTMIN + 1;
 
 		if (span <= 0)
 			return SIGUSR1;
 		return SIGRTMIN + (rand() % span);
 	}
-
 	if (ONE_IN(SIGTERM_ONE_IN))
 		return SIGTERM;
-
 	return safe_signals[rand() % ARRAY_SIZE(safe_signals)];
+}
+
+static void emit_signal(pid_t pid, int sig, bool use_kill)
+{
+	if (use_kill) {
+		(void)kill(pid, (int)RAND_NEGATIVE_OR(sig));
+		__atomic_add_fetch(&shm->stats.signal_storm_kill,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		union sigval sv;
+
+		sv.sival_int = (int)rand32();
+		(void)sigqueue(pid, sig, sv);
+		__atomic_add_fetch(&shm->stats.signal_storm_sigqueue,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
+ * Reorder snapshotted targets: forward (no-op), reverse, or shuffle.
+ * The natural sequential walk follows pids[] slot order which roughly
+ * tracks fork order; reversing or shuffling exposes per-CPU run-queue
+ * locality bugs that order-dependent wakeup paths can mask when the
+ * burst orderings (SAME_TARGET_BURST, MODE_GROUPED) actually walk the
+ * target array in sequence rather than picking uniformly.
+ */
+static void reorder_targets(pid_t *t, unsigned int n)
+{
+	unsigned int pick = rand() % 3;
+	unsigned int i;
+
+	if (pick == 1) {
+		for (i = 0; i < n / 2; i++) {
+			pid_t tmp = t[i];
+
+			t[i] = t[n - 1 - i];
+			t[n - 1 - i] = tmp;
+		}
+	} else if (pick == 2) {
+		for (i = n; i > 1; i--) {
+			unsigned int j = (unsigned int)rand() % i;
+			pid_t tmp = t[i - 1];
+
+			t[i - 1] = t[j];
+			t[j] = tmp;
+		}
+	}
 }
 
 bool signal_storm(struct childdata *child)
@@ -91,6 +166,8 @@ bool signal_storm(struct childdata *child)
 	pid_t ppid = getppid();
 	unsigned int ntargets = 0;
 	unsigned int i, iters;
+	enum storm_order order;
+	enum catalog_mode catalog;
 
 	(void)child;
 
@@ -125,22 +202,63 @@ bool signal_storm(struct childdata *child)
 	}
 
 	iters = 1 + (rand() % MAX_ITERATIONS);
-	for (i = 0; i < iters; i++) {
-		pid_t pid = targets[rand() % ntargets];
-		int sig = pick_signal();
+	order = (enum storm_order)((unsigned int)rand() % NR_STORM_ORDERS);
+	reorder_targets(targets, ntargets);
 
-		if (RAND_BOOL()) {
-			(void)kill(pid, (int)RAND_NEGATIVE_OR(sig));
-			__atomic_add_fetch(&shm->stats.signal_storm_kill,
-					   1, __ATOMIC_RELAXED);
-		} else {
-			union sigval sv;
+	if (order == ORDER_CATALOG_RESTRICTED)
+		catalog = RAND_BOOL() ? CATALOG_RT_ONLY : CATALOG_STD_ONLY;
+	else
+		catalog = CATALOG_ANY;
 
-			sv.sival_int = (int)rand32();
-			(void)sigqueue(pid, sig, sv);
-			__atomic_add_fetch(&shm->stats.signal_storm_sigqueue,
-					   1, __ATOMIC_RELAXED);
+	switch (order) {
+	case ORDER_SAME_TARGET_BURST: {
+		unsigned int t = 0;
+
+		i = 0;
+		while (i < iters) {
+			pid_t pid = targets[t % ntargets];
+			unsigned int burst = 2 + (rand() % 7); /* 2..8 */
+			unsigned int k;
+
+			for (k = 0; k < burst && i < iters; k++, i++) {
+				int sig = pick_signal_in(catalog);
+
+				emit_signal(pid, sig, RAND_BOOL());
+			}
+			t++;
 		}
+		break;
+	}
+	case ORDER_MODE_GROUPED: {
+		unsigned int t = 0;
+
+		i = 0;
+		while (i < iters) {
+			pid_t pid = targets[t % ntargets];
+			unsigned int kburst = 1 + (rand() % 4); /* 1..4 */
+			unsigned int qburst = 1 + (rand() % 4);
+			unsigned int k;
+
+			for (k = 0; k < kburst && i < iters; k++, i++)
+				emit_signal(pid, pick_signal_in(catalog),
+					    true);
+			for (k = 0; k < qburst && i < iters; k++, i++)
+				emit_signal(pid, pick_signal_in(catalog),
+					    false);
+			t++;
+		}
+		break;
+	}
+	case ORDER_MIXED:
+	case ORDER_CATALOG_RESTRICTED:
+	default:
+		for (i = 0; i < iters; i++) {
+			pid_t pid = targets[rand() % ntargets];
+			int sig = pick_signal_in(catalog);
+
+			emit_signal(pid, sig, RAND_BOOL());
+		}
+		break;
 	}
 
 	return true;
