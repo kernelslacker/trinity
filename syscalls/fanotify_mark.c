@@ -3,6 +3,8 @@
 	__u64 mask, int dfd, const char  __user * pathname)
  */
 #include <stdlib.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include <linux/fanotify.h>
 #include "objects.h"
 #include "random.h"
@@ -153,6 +155,29 @@ static unsigned long fanotify_mark_mask[] = {
 	FAN_RENAME,
 };
 
+static void post_fanotify_mark(struct syscallrecord *rec)
+{
+#ifdef SYS_fanotify_mark
+	unsigned long flags;
+
+	if ((long) rec->retval != 0)
+		return;
+	if (!(rec->a2 & FAN_MARK_ADD))
+		return;
+
+	/*
+	 * Mirror the ADD with a REMOVE carrying the same flags, mask, dfd
+	 * and pathname so the kernel finds and clears the mark we just
+	 * created.  REMOVE / FLUSH calls are no-ops to clean up — REMOVE
+	 * is itself the cleanup, and FLUSH already wiped the type-bucket.
+	 */
+	flags = (rec->a2 & ~(unsigned long)FAN_MARK_ADD) | FAN_MARK_REMOVE;
+	syscall(SYS_fanotify_mark, rec->a1, flags, rec->a3, rec->a4, rec->a5);
+#else
+	(void) rec;
+#endif
+}
+
 struct syscallentry syscall_fanotify_mark = {
 	.name = "fanotify_mark",
 	.num_args = 5,
@@ -161,6 +186,7 @@ struct syscallentry syscall_fanotify_mark = {
 	.arg_params[1].list = ARGLIST(fanotify_mark_flags),
 	.arg_params[2].list = ARGLIST(fanotify_mark_mask),
 	.sanitise = sanitise_fanotify_mark,
+	.post = post_fanotify_mark,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
