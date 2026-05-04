@@ -44,6 +44,13 @@
  * at build time that its table fits. */
 #define MAX_IOURING_RECIPES 32
 
+/* Number of distinct slab classes the slab_cache_thrash childop targets,
+ * one entry per enum slab_target in childops/slab-cache-thrash.c.  Sized
+ * here (rather than in the childop) so the per-target run counter array
+ * can live inside struct stats_s.  A static_assert in slab-cache-thrash.c
+ * fails the build if the two ever drift. */
+#define NR_SLAB_TARGETS 7
+
 /* Coarse syscall categories used by the dispatch-time histogram.  Order
  * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
  * matched by the prefix table in stats.c. */
@@ -498,6 +505,14 @@ struct stats_s {
 	unsigned long socket_family_chain_failed;		/* every inner cycle bailed early */
 	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
 	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
+
+	/* slab_cache_thrash childop: per-target burst invocation count,
+	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
+	 * private to the childop since nothing else needs the symbolic
+	 * names).  NR_SLAB_TARGETS is asserted equal to the enum tail at
+	 * build time inside the childop, so a future target added there
+	 * without resizing this array is caught by the assert. */
+	unsigned long slab_cache_thrash_runs[NR_SLAB_TARGETS];
 
 	/* Per-childop adaptive-budget multiplier, indexed by enum
 	 * child_op_type.  Q8.8 fixed point: 256 == 1.0x.  Updated post-

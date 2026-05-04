@@ -787,6 +787,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_CLOSE_RACER:		return 30;
 	case CHILD_OP_XATTR_THRASH:		return 30;
 	case CHILD_OP_EPOLL_VOLATILITY:		return 30;
+	case CHILD_OP_SLAB_CACHE_THRASH:	return 30;
 	default:				return 10;
 	}
 }
@@ -888,7 +889,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[38] = {
+static const int dormant_op_disabled[39] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -896,7 +897,7 @@ static const int dormant_op_disabled[38] = {
 	1, 1, 1, 1, 1,	/* 20-24: dormant: futex_storm, pipe_thrash, fork_storm, flock_thrash, cgroup_churn */
 	1, 1, 1, 1, 1,	/* 25-29: dormant: mount_churn, uffd_churn, iouring_flood, close_racer, socket_family_chain */
 	1, 1, 1, 1, 1,	/* 30-34: dormant: xattr_thrash, pidfd_storm, madvise_cycler, epoll_volatility, keyring_spam */
-	1, 1, 1,	/* 35-37: dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider */
+	1, 1, 1, 1,	/* 35-38: dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider, slab_cache_thrash */
 };
 
 /*
@@ -999,6 +1000,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_VDSO_MREMAP_RACE:	return "vdso_mremap_race";
 	case CHILD_OP_NUMA_MIGRATION:	return "numa_migration";
 	case CHILD_OP_CPU_HOTPLUG_RIDER: return "cpu_hotplug_rider";
+	case CHILD_OP_SLAB_CACHE_THRASH: return "slab_cache_thrash";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1054,7 +1056,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 38;
+	pick = rand() % 39;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -1097,6 +1099,7 @@ static enum child_op_type pick_op_type(void)
 	case 35: return CHILD_OP_VDSO_MREMAP_RACE;
 	case 36: return CHILD_OP_NUMA_MIGRATION;
 	case 37: return CHILD_OP_CPU_HOTPLUG_RIDER;
+	case 38: return CHILD_OP_SLAB_CACHE_THRASH;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -1234,6 +1237,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_VDSO_MREMAP_RACE]	= vdso_mremap_race,
 	[CHILD_OP_NUMA_MIGRATION]	= numa_migration_churn,
 	[CHILD_OP_CPU_HOTPLUG_RIDER]	= cpu_hotplug_rider,
+	[CHILD_OP_SLAB_CACHE_THRASH]	= slab_cache_thrash,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
