@@ -314,6 +314,45 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	output(2, "ADD-OBJ slot=%p type=%d caller=%s\n", obj, type,
 		pc_to_string(__builtin_return_address(0), pcbuf, sizeof(pcbuf)));
 
+	/*
+	 * Reject obviously-corrupted fd values before they enter any pool.
+	 * 1<<20 = 1048576 matches the kernel's NR_OPEN ceiling
+	 * (include/uapi/linux/fs.h), the absolute upper bound RLIMIT_NOFILE
+	 * may be raised to on every distro we exercise -- so any retval
+	 * decoding to a value past this is a smoking-gun upper-bit
+	 * corruption (sign-extended or wholesale-stomped rec->retval) that
+	 * the existing "(long)retval >= 0" gate in register_returned_fd /
+	 * the per-syscall .post handlers let through because the lower bits
+	 * happened to be positive.  Registering such a value into an
+	 * OBJ_FD_* pool causes a later get_random_object() consumer to hand
+	 * it back to the kernel as a real fd, where it either trips EBADF
+	 * noise or, worse, a coincidentally-truncated int slot lands on a
+	 * file-table entry an unrelated path opened.  This is the same wild-
+	 * write hazard class the per-caller-PC attribution ring landed in
+	 * 8d1eade3b63c was built to surface; routing the rejection through
+	 * post_handler_corrupt_ptr_bump on the rec==NULL path feeds that
+	 * ring with the .post handler's return address so the dump names
+	 * the syscall whose retval produced the bogus fd.
+	 * __builtin_return_address read at depth 0 only -- depth >0 trips
+	 * -Wframe-address and the resulting PC is unsafe under aggressive
+	 * optimisation, so the PC capture site is always add_object itself
+	 * and the recorded address names add_object's immediate caller.
+	 */
+	if (is_fd_type(type)) {
+		int fd = fd_from_object(obj, type);
+
+		if (fd < 0 || fd >= (1 << 20)) {
+			outputerr("add_object: rejecting out-of-bound fd=%d "
+				  "type=%u caller=%s\n", fd, type,
+				  pc_to_string(__builtin_return_address(0),
+					       pcbuf, sizeof(pcbuf)));
+			post_handler_corrupt_ptr_bump(NULL,
+						      __builtin_return_address(0));
+			release_obj(obj, scope, type);
+			return;
+		}
+	}
+
 	/* Children must not mutate global objects — the objhead metadata
 	 * is in shared memory but the objects/arrays are in per-process
 	 * heap (COW after fork).  Mixing the two corrupts everything. */
