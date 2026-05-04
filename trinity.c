@@ -515,5 +515,21 @@ int main(int argc, char* argv[])
 out:
 	kmsg_monitor_stop();
 
+#ifdef __SANITIZE_ADDRESS__
+	/*
+	 * ASAN/LSAN build: skip atexit handlers on the parent's normal
+	 * shutdown.  Trinity intentionally leaves a number of allocations
+	 * unfreed at teardown (per-child mmap pools, sysv_shm regions,
+	 * fd-event ring backing, etc.).  Under libasan, exit() runs
+	 * __cxa_finalize -> __do_global_dtors_aux -> __lsan::DoLeakCheck(),
+	 * which finds those unreachable allocations and tkill()s the parent
+	 * with SIGABRT before reaper-of-children completes -- orphaning
+	 * surviving fuzz children that then burn CPU indefinitely.  Children
+	 * still go through their own _exit()/exit() paths, so LSAN coverage
+	 * of real leaks introduced by the fuzz path is unaffected.
+	 */
+	_exit(ret);
+#else
 	exit(ret);
+#endif
 }
