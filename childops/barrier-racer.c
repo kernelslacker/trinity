@@ -46,6 +46,7 @@
 
 #include "child.h"
 #include "childops-util.h"
+#include "effector-map.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -235,11 +236,11 @@ static bool setup_ftruncate_race(struct racer_shared *s)
 
 static void worker_ftruncate_race(struct racer_shared *s)
 {
-	static const off_t sizes[] = { 0, 4096, 8192, 65536, 0 };
+	static const unsigned long sizes[] = { 0, 4096, 8192, 65536, 0 };
 
 	int ret __attribute__((unused));
 	ret = ftruncate(s->fd,
-			(off_t)RAND_NEGATIVE_OR(sizes[rand() % ARRAY_SIZE(sizes)]));
+			(off_t)RAND_NEGATIVE_OR(sizes[effector_pick_array_index(EFFECTOR_NR(__NR_ftruncate), 1, sizes, ARRAY_SIZE(sizes))]));
 }
 
 static void cleanup_ftruncate_race(struct racer_shared *s)
