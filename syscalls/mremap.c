@@ -176,6 +176,22 @@ static void post_mremap(struct syscallrecord *rec)
 		goto out_free;
 	}
 
+	/*
+	 * Oracle: a successful mremap return must be page-aligned.
+	 * mremap may return the same address it received (no MREMAP_FIXED,
+	 * no resize-to-move) or a freshly placed address; either way the
+	 * kernel ABI requires a PAGE_SIZE-aligned base.  Caching a
+	 * misaligned ptr into map->ptr would corrupt every subsequent
+	 * consumer that trusts the bookkeeping pointer is a real VMA base.
+	 */
+	if ((unsigned long) ptr & (page_size - 1)) {
+		output(0, "mremap oracle: returned addr %p is not page-aligned (page_size=%u)\n",
+		       ptr, page_size);
+		__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+		goto out_free;
+	}
+
 	map->ptr = ptr;
 	map->size = snap->new_len;
 
