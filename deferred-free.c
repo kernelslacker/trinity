@@ -218,6 +218,39 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 		free_func = free;
 
 	/*
+	 * Alignment is non-negotiable.  glibc malloc returns >= 8-byte
+	 * aligned chunks on x86_64, so a free() candidate with low bits set
+	 * cannot be a real allocation start.  libasan internally CHECKs
+	 * alignment in its poisoning path (asan_poisoning.cpp:
+	 * "AddrIsAlignedByGranularity(addr) != 0") and aborts the child on
+	 * the misaligned address before its bad-free reporter ever runs --
+	 * the cluster shows up as a CHECK-failed crash without an ASAN
+	 * report attached, which is harder to triage than a normal bad-free.
+	 *
+	 * Enforced unconditionally (independent of free_func) because an
+	 * alt-allocator wrapper that ultimately routes to libasan-protected
+	 * free() inherits the same alignment constraint -- the sentinel /
+	 * non-heap-token tolerance carved out for custom free_func callers
+	 * by the bands below cannot relax this one.  The existing shape
+	 * heuristic also rejects misaligned values, but only for the
+	 * free_func == free path; this guard closes the custom-free_func
+	 * gap and provides a single explicit chokepoint that survives
+	 * future refactors of the conditional bands.
+	 */
+	if (((unsigned long)ptr & 0x7) != 0) {
+		static unsigned long misalign_drops;
+		unsigned long n = ++misalign_drops;
+		if ((n % 1000) == 1) {
+			char pcbuf[128];
+			outputerr("deferred_free_enqueue: rejected misaligned "
+				  "ptr=%p caller=%s [%lu cumulative]\n", ptr,
+				  pc_to_string(__builtin_return_address(0),
+					       pcbuf, sizeof(pcbuf)), n);
+		}
+		return;
+	}
+
+	/*
 	 * Reject pid-scribbled / canonical-out-of-range / misaligned values
 	 * BEFORE they ever reach the ring.  Cluster-1/2/3 root cause
 	 * (residual-cores triage 2026-05-02): a sibling fuzzed value-result
@@ -435,6 +468,23 @@ void deferred_free_tick(void)
 		if ((unsigned long)ptr < 0x10000) {
 			outputerr("deferred_free: rejected suspicious ptr=%p "
 				  "in slot %u (looks pid-shaped)\n", ptr, i);
+			__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			continue;
+		}
+
+		/*
+		 * Alignment defense-in-depth at the free() boundary.  Ring
+		 * entries should be alignment-safe by construction (enqueue's
+		 * unconditional alignment guard rejects misaligned input and
+		 * the mprotect bracket prevents post-enqueue scribbles), but
+		 * a misaligned ptr reaching libasan's free interceptor trips
+		 * an internal CHECK in asan_poisoning.cpp and aborts the
+		 * child without an ASAN bad-free report, which is harder to
+		 * triage.  Mirrors the sub-page band above.
+		 */
+		if (((unsigned long)ptr & 0x7) != 0) {
+			outputerr("deferred_free: rejected misaligned ptr=%p "
+				  "in slot %u\n", ptr, i);
 			__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			continue;
 		}
