@@ -175,8 +175,11 @@ static bool run_one_chain(unsigned int *err_burst)
 
 	keylen = (rand() % 3 == 0) ? 16 : ((rand() & 1) ? 32 : 64);
 	generate_rand_bytes(key, keylen);
+	/* 1-in-RAND_NEGATIVE_RATIO sub the curated 16/32/64 keylen for a
+	 * curated edge value — exercises __sys_setsockopt's optlen < 0
+	 * rejection (cast to int) which the curated mix never reaches. */
 	if (setsockopt(parent_fd, SOL_ALG, ALG_SET_KEY,
-		       key, keylen) < 0) {
+		       key, (socklen_t)RAND_NEGATIVE_OR(keylen)) < 0) {
 		if (errno == EPERM || errno == ENOPROTOOPT)
 			(*err_burst)++;
 		/* Some algos (rng, akcipher) reject ALG_SET_KEY — keep
