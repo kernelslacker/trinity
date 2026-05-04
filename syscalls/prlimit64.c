@@ -9,6 +9,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -20,6 +21,24 @@
 #define SYS_prlimit64 __NR_prlimit64
 #endif
 #define HAVE_SYS_PRLIMIT64 1
+#endif
+
+#ifdef HAVE_SYS_PRLIMIT64
+/*
+ * Snapshot of the four prlimit64 input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the oracle at a foreign old_rlim
+ * buffer, retarget the pid self-filter, or smear the resource bound
+ * used to gate the re-issue.
+ */
+struct prlimit64_post_state {
+	unsigned long pid;
+	unsigned long resource;
+	unsigned long new_rlim;
+	unsigned long old_rlim;
+};
 #endif
 
 static unsigned long rlimit_resources[] = {
@@ -44,6 +63,11 @@ static rlim64_t random_rlim64(void)
 static void sanitise_prlimit64(struct syscallrecord *rec)
 {
 	struct rlimit64 *rlim;
+#ifdef HAVE_SYS_PRLIMIT64
+	struct prlimit64_post_state *snap;
+
+	rec->post_state = 0;
+#endif
 
 	rlim = (struct rlimit64 *) get_writable_address(sizeof(*rlim));
 	rlim->rlim_cur = random_rlim64();
@@ -61,6 +85,28 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	 * pointer can land inside an alloc_shared region.  Scrub it.
 	 */
 	avoid_shared_buffer(&rec->a4, sizeof(struct rlimit64));
+
+#ifdef HAVE_SYS_PRLIMIT64
+	/*
+	 * Snapshot the four input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original
+	 * old_rlim pointer, the pid self-filter would resolve against a
+	 * scribbled value, and the resource bound check could be smeared
+	 * past RLIMIT_NLIMITS.  post_state is private to the post handler.
+	 * Gated on HAVE_SYS_PRLIMIT64 to mirror the .post registration --
+	 * on systems without SYS_prlimit64 the post handler is not
+	 * registered and a snapshot only the post handler can free would
+	 * leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->pid       = rec->a1;
+	snap->resource  = rec->a2;
+	snap->new_rlim  = rec->a3;
+	snap->old_rlim  = rec->a4;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -93,12 +139,15 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
  * future kernel/glibc adds resource constants the sanitiser table does not
  * yet know about.
  *
- * TOCTOU defeat: snapshot all four args plus the rlimit64 payload into
- * stack-locals BEFORE re-issuing, so a sibling that scribbles either
- * rec->aN or the user buffer between syscall return and the post hook
- * cannot smear the comparison.  The re-call uses a fresh stack buffer
- * (NOT rec->a4 -- a sibling could mutate it mid-syscall and forge a clean
- * compare).
+ * TOCTOU defeat: the four input args (pid, resource, new_rlim, old_rlim)
+ * are snapshotted at sanitise time into a heap struct in rec->post_state,
+ * so a sibling that scribbles rec->aN between syscall return and post
+ * entry cannot redirect the oracle at a foreign old_rlim, retarget the
+ * pid self-filter, or smear the resource bound that gates the re-issue.
+ * The rlimit64 payload at *old_rlim is then snapshotted into a stack-local
+ * before re-issuing, and the re-call writes into a fresh private stack
+ * buffer (NOT the snapshot's old_rlim -- a sibling could mutate the user
+ * buffer itself mid-syscall and forge a clean compare).
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  Per-field bumps with no early-return so simultaneous
@@ -117,60 +166,79 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 #ifdef HAVE_SYS_PRLIMIT64
 static void post_prlimit64(struct syscallrecord *rec)
 {
+	struct prlimit64_post_state *snap =
+		(struct prlimit64_post_state *) rec->post_state;
 	struct rlimit64 first_rlim;
 	struct rlimit64 recheck_rlim;
-	pid_t pid_snap;
-	unsigned int resource_snap;
 	long rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_prlimit64: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a3 != 0)
-		return;
+	if (snap->new_rlim != 0)
+		goto out_free;
 
-	if (rec->a4 == 0)
-		return;
+	if (snap->old_rlim == 0)
+		goto out_free;
 
-	pid_snap      = (pid_t) rec->a1;
-	resource_snap = (unsigned int) rec->a2;
+	if (snap->pid != 0 &&
+	    snap->pid != (unsigned long) syscall(SYS_gettid))
+		goto out_free;
 
-	if (pid_snap != 0 && pid_snap != (pid_t) syscall(SYS_gettid))
-		return;
-
-	if (resource_snap >= RLIMIT_NLIMITS)
-		return;
+	if (snap->resource >= RLIMIT_NLIMITS)
+		goto out_free;
 
 	{
-		void *old_rlim = (void *)(unsigned long) rec->a4;
+		void *old_rlim = (void *)(unsigned long) snap->old_rlim;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a4. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner
+		 * old_rlim pointer field.  Reject pid-scribbled old_rlim
+		 * before deref.
+		 */
 		if (looks_like_corrupted_ptr(old_rlim)) {
-			outputerr("post_prlimit64: rejected suspicious old_rlim=%p (pid-scribbled?)\n",
+			outputerr("post_prlimit64: rejected suspicious old_rlim=%p (post_state-scribbled?)\n",
 				  old_rlim);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first_rlim, (const void *)(unsigned long) rec->a4,
+	memcpy(&first_rlim, (const void *)(unsigned long) snap->old_rlim,
 	       sizeof(first_rlim));
 
 	memset(&recheck_rlim, 0, sizeof(recheck_rlim));
-	rc = syscall(SYS_prlimit64, pid_snap, resource_snap, NULL,
-		     &recheck_rlim);
+	rc = syscall(SYS_prlimit64, (pid_t) snap->pid,
+		     (unsigned int) snap->resource, NULL, &recheck_rlim);
 	if (rc != 0)
-		return;
+		goto out_free;
 
 	if (first_rlim.rlim_cur != recheck_rlim.rlim_cur) {
 		output(0,
 		       "[oracle:prlimit64] rlim_cur %llu vs %llu (resource=%u)\n",
 		       (unsigned long long) first_rlim.rlim_cur,
 		       (unsigned long long) recheck_rlim.rlim_cur,
-		       resource_snap);
+		       (unsigned int) snap->resource);
 		__atomic_add_fetch(&shm->stats.prlimit64_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
@@ -180,10 +248,13 @@ static void post_prlimit64(struct syscallrecord *rec)
 		       "[oracle:prlimit64] rlim_max %llu vs %llu (resource=%u)\n",
 		       (unsigned long long) first_rlim.rlim_max,
 		       (unsigned long long) recheck_rlim.rlim_max,
-		       resource_snap);
+		       (unsigned int) snap->resource);
 		__atomic_add_fetch(&shm->stats.prlimit64_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
