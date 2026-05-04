@@ -10,6 +10,7 @@
 #include "net.h"
 #include "compat.h"
 #include "random.h"
+#include "shm.h"
 #include "utils.h"	// RAND_ARRAY
 
 static const unsigned int socket_opts[] = {
@@ -254,11 +255,38 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	rec->a3 = so.optname;
 	rec->a4 = so.optval;
 	rec->a5 = so.optlen;
+	/* Snapshot for the post handler -- a4 may be scribbled by a sibling
+	 * syscall before post_setsockopt() runs, leaving a real-but-wrong
+	 * heap pointer that the corruption guard cannot distinguish from the
+	 * original optval.  Without the snapshot the post handler frees the
+	 * wrong allocation, leaking ours and corrupting another sanitise
+	 * routine's live buffer. */
+	rec->post_state = so.optval;
 }
 
 static void post_setsockopt(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a4);
+	void *optval = (void *) rec->post_state;
+
+	if (optval == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the free
+	 * path against handing a non-heap value to free().
+	 */
+	if (looks_like_corrupted_ptr(optval)) {
+		outputerr("post_setsockopt: rejected suspicious optval=%p "
+			  "(pid-scribbled?)\n", optval);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a4 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a4 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_setsockopt = {
